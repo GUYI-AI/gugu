@@ -9,7 +9,7 @@ import { PageHeader } from '@renderer/lib/components/page-header';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { LibraryHost } from './library-host';
 
-function LegacyIntegrations({ inSettings }: { inSettings: boolean }) {
+function LegacyIntegrations({ inSettings, inlineDetail, initialConnectorId }: { inSettings: boolean; inlineDetail: boolean; initialConnectorId?: string }) {
   const { translate } = useSessionMessages();
   return (
     <div className={inSettings ? 'space-y-2' : 'space-y-8'}>
@@ -18,21 +18,23 @@ function LegacyIntegrations({ inSettings }: { inSettings: boolean }) {
       ) : (
         <PageHeader sticky title={translate('settings.integrations')} />
       )}
-      <IntegrationsCard inSettings={inSettings} />
+      <IntegrationsCard inSettings={inSettings} inlineDetail={inlineDetail} initialConnectorId={initialConnectorId} />
     </div>
   );
 }
 
-export const RoutedIntegrationsLibraryPage = observer(function RoutedIntegrationsLibraryPage({ host, inSettings = false }: {
+export const RoutedIntegrationsLibraryPage = observer(function RoutedIntegrationsLibraryPage({ host, inSettings = false, inlineDetail = false, initialConnectorId }: {
   host: LibraryHost;
   inSettings?: boolean;
+  inlineDetail?: boolean;
+  initialConnectorId?: string;
 }) {
   const devices = useDevicesStore();
   const deviceId = host.remote?.deviceId ?? devices.devices.find(row => row.is_current_device)?.device_id ?? null;
-  const legacy = <LegacyIntegrations inSettings={inSettings} />;
+  const legacy = <LegacyIntegrations inSettings={inSettings} inlineDetail={inlineDetail} initialConnectorId={initialConnectorId} />;
   return (
     <ConnectionRouteBoundary
-      owner={route => <OwnerConnectorsSettings route={route} deviceId={deviceId} />}
+      owner={route => <OwnerConnectorsSettings route={route} deviceId={deviceId} initialConnectorId={initialConnectorId} />}
       legacy={host.remote || inSettings ? <IntegrationsProvider>{legacy}</IntegrationsProvider> : legacy}
     />
   );

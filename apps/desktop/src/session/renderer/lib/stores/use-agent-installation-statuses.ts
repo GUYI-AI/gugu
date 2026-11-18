@@ -436,6 +436,7 @@ export function useAgentInstallationStatuses() {
     install: installMutation.mutate,
     installAsync: installMutation.mutateAsync,
     update: updateMutation.mutate,
+    updateAsync: updateMutation.mutateAsync,
     uninstall: uninstallMutation.mutate,
     uninstallAsync,
     setUsedInstallation: setUsedMutation.mutate,

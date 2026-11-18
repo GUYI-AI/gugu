@@ -1,3 +1,5 @@
+import { AppIcon } from '@renderer/lib/components/app-icon';
+import type { InstalledItem } from '@renderer/features/extensions/installed/installed-item';
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
 import { useAppDetailRequest } from '@renderer/features/apps/use-app-detail-request';
 import type { ExtensionAppDetailLink } from '@gugu/core/shared/ui/guguLink';
@@ -144,14 +146,18 @@ export type AppDetail =
 
 const appDetailId = (detail: AppDetail) => (detail.page === 'market' ? detail.subject.manifest.id : detail.extensionId);
 
-export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({ detailLink, onOpenAgentDetail, marketPage, onMarketPageChange, onCloseDetailLink }: {
+export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({ detailLink, onOpenAgentDetail, marketPage, onMarketPageChange, onCloseDetailLink, openInstalled, renderInstalledApps, onOpenInstalledApp }: {
   detailLink?: ExtensionAppDetailLink;
   onCloseDetailLink?: () => void;
   marketPage?: MarketplaceTab;
   onMarketPageChange?: (page: MarketplaceTab) => void;
   onOpenAgentDetail?: (agentId: string) => void;
+  openInstalled?: () => void;
+  renderInstalledApps?: (items: readonly InstalledItem[], state: { loading?: boolean; error?: boolean }) => ReactNode;
+  onOpenInstalledApp?: (extensionId: string) => void;
 }) {
   const { translate, locale } = useSessionMessages();
+  const inventoryOnly = !!renderInstalledApps;
   // #6264 资源库看的是哪台咕咕:本机是全局那份清单与 `rpc.extensions`;另一台咕咕桌面是它自己的那份,
   // 动作经设备 RPC 转到它的主进程,它自己的窗口跟着补上 / 撤下 tab。页面长相不变。
   const library = useLibraryHost();
@@ -481,7 +487,10 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   };
   const onMarketRefreshedRef = useRef(onMarketRefreshed);
   onMarketRefreshedRef.current = onMarketRefreshed;
-  useEffect(() => host.onEvent(marketRefreshedChannel, (refreshed) => onMarketRefreshedRef.current(refreshed)), []);
+  useEffect(() => {
+    if (inventoryOnly) return;
+    return host.onEvent(marketRefreshedChannel, (refreshed) => onMarketRefreshedRef.current(refreshed));
+  }, [host, inventoryOnly]);
 
   const shown = useContext(SurfaceShownContext);
   useEffect(() => {
@@ -497,6 +506,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     // 打开设置页时也查一次「有什么要告诉你的」(spec:启动时一次、打开设置页时一次,
     // ❌ 轮询)。embedded.tsx 已经在启动时查过一次;这里是「打开设置页时」那一次。
     void store.checkUpdates();
+    if (inventoryOnly) return;
     // 这一次和下面的市场清单都先从那台机器手上的目录答(❌ 等下载站);同时让它去下载站取一趟,回来的结果走
     // onMarketRefreshed。结果用回答带回:别的机器的推送未必转得到这个窗口。比这一版旧的机器没有这一问,照旧现取。
     void api
@@ -505,14 +515,14 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         if (result.success && result.data) onMarketRefreshedRef.current(result.data);
       })
       .catch((error: unknown) => log.warn('App market refresh not asked:', error));
-  }, [refresh, shown]);
+  }, [refresh, shown, inventoryOnly]);
 
   // 首次与每次搜索词变化:从第 0 页重来。读的是手上那份目录,和上面那趟更新检查同一份;
   // 下载站那趟取回来变了,两边由 onMarketRefreshed 一起重读。
   useEffect(() => {
-    if (remote && !remote.online) return;
+    if (inventoryOnly || (remote && !remote.online)) return;
     void readShelf(debouncedQuery);
-  }, [readShelf, debouncedQuery, remote?.online]);
+  }, [readShelf, debouncedQuery, remote?.online, inventoryOnly]);
 
   /**
    * 从市场装:装法只有一条 —— main 的 installExtensionFromMarket(群里的「用 X 打开」、首启那一页、agent 的 app_install 走的
@@ -522,7 +532,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
    * ⚠️ 用户点头的是「这个包声明了什么」:main 读的是解开的那一份 manifest,不是清单上那张卡片写的。
    */
   const installFromShelf = useCallback(
-    async (ref: MarketSourceRef, extensionId?: string, confirm?: ConfirmMarketInstall) => {
+    async (ref: MarketSourceRef, extensionId?: string, options: { confirm?: ConfirmMarketInstall; singleMachine?: boolean } = {}) => {
+      const { confirm, singleMachine = false } = options;
       if (extensionId) {
         if (inFlight.current[extensionId]) return;
         beginPending(extensionId, 'inspecting');
@@ -547,11 +558,11 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         const machine = remoteRef.current?.deviceLabel;
         const prompt = installConsentPrompt(machine ? { ...ask, machine } : ask, ask.manifest);
         // owner 10-16「装的时候一次选好装到哪几台」: the person's other online computers, each by name, ticked in the same sheet.
-        const alsoOn = alsoOnMachines(findRemoteHostsBridge()?.listDevices() ?? [], remoteRef.current?.deviceId);
+        const alsoOn = singleMachine ? undefined : alsoOnMachines(findRemoteHostsBridge()?.listDevices() ?? [], remoteRef.current?.deviceId);
         await askToInstall(prompt, ask.manifestDigest, ask.given, async (also) => {
           await completeMarketInstall(ask);
-          for (const deviceId of also ?? []) await installOnAlso(deviceId, alsoOn.find((one) => one.id === deviceId)?.label ?? deviceId, ask);
-        }, machine, alsoOn);
+          for (const deviceId of also ?? []) await installOnAlso(deviceId, alsoOn?.find((one) => one.id === deviceId)?.label ?? deviceId, ask);
+        }, machine, alsoOn, singleMachine);
       } catch (error) {
         log.error('extension market install failed:', error);
         toast({
@@ -560,7 +571,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           tier: 'error',
           action: {
             label: translateRef.current('extensions.retry'),
-            onClick: () => void installFromShelf(ref, extensionId, confirm),
+            onClick: () => void installFromShelf(ref, extensionId, options),
           },
         });
       } finally {
@@ -606,9 +617,10 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     /** Another machine's App page: the one it installs on (its agents are that machine's). */
     machine?: string,
     /** owner 10-16: the person's other computers it may also go on, with the same yes. */
-    alsoOn?: InstallAlsoOnMachine[]
+    alsoOn?: InstallAlsoOnMachine[],
+    waitForAnswer = false
   ) => {
-    const inShell = given || alsoOn?.length
+    const inShell = given || alsoOn?.length || waitForAnswer
       ? askInShell(prompt, `${digest}:${Date.now()}`, INSTALL_CONSENT_HUMAN_WINDOW_MS, given, undefined, machine, alsoOn)
       : null;
     if (inShell) {
@@ -616,12 +628,17 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       if (answer.outcome === 'confirmed') await agreed(answer.alsoOn);
       return;
     }
-    showConfirm({
-      ...prompt,
-      // The session page's own dialog draws the same body as the shell's sheet: with programs, their commands fold under it.
-      description: prompt.details ? <ConsentBody description={prompt.description} details={prompt.details} /> : prompt.description,
-      onSuccess: () => void agreed(),
-    });
+    const description = prompt.details ? <ConsentBody description={prompt.description} details={prompt.details} /> : prompt.description;
+    if (waitForAnswer) {
+      await new Promise<void>((resolve, reject) => showConfirm({
+        ...prompt,
+        description,
+        onSuccess: () => { void agreed().then(resolve, reject); },
+        onClose: resolve,
+      }));
+      return;
+    }
+    showConfirm({ ...prompt, description, onSuccess: () => void agreed() });
   };
 
   /** owner 10-16 The same release on another of the person's computers, with the yes given in the sheet (`installAgreedOn`). */
@@ -836,7 +853,11 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       // 它的设置页随它一起没了:回到进来的地方(市场页还在,按钮回到「安装」);从别处直接进来的回「已安装」。
       const leaving = detailRef.current;
       if (leaving?.page === 'manage' && leaving.extensionId === app.id) {
-        if (!leaving.from) setTab('installed');
+        if (!leaving.from) {
+          onCloseDetailLink?.();
+          if (openInstalled) openInstalled();
+          else setTab('installed');
+        }
         setDetail(leaving.from ?? null);
       }
       setJustInstalled((current) => (current === app.id ? null : current));
@@ -1153,6 +1174,51 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     />
   );
 
+  if (renderInstalledApps) {
+    const items: InstalledItem[] = installedRows.map((manifest) => {
+      const name = localizedManifestText(manifest, locale).name;
+      const state = lifecycleOf(manifest.id);
+      const currentVersion = manifest.version;
+      const icon = store.appIcons[manifest.id];
+      return {
+        id: manifest.id,
+        name,
+        version: currentVersion,
+        icon: (size) => icon
+          ? <img aria-hidden="true" alt="" src={icon} width={size} height={size} />
+          : <AppIcon id={manifest.id} size={size} />,
+        open: onOpenInstalledApp ? () => onOpenInstalledApp(manifest.id) : undefined,
+        busy: !!pending[manifest.id] || !!switching[manifest.id],
+        enabled: store.isEnabled(manifest.id),
+        setEnabled: store.isPreinstalled(manifest.id) ? undefined : (next) => switchExtension(manifest, next),
+        update: state?.kind === 'update' ? async () => {
+          await installFromShelf({ extensionId: manifest.id, version: state.version }, manifest.id, { singleMachine: true });
+          if (store.manifests.find((entry) => entry.id === manifest.id)?.version !== state.version) {
+            throw new Error('The app update did not complete');
+          }
+        } : undefined,
+        remove: store.isPreinstalled(manifest.id) ? undefined : async () => {
+          await uninstall(manifest);
+          if (store.manifests.some((entry) => entry.id === manifest.id)) throw new Error('The app was not removed');
+        },
+      };
+    });
+    for (const entry of store.invalid) {
+      const id = entry.dirName;
+      items.push({
+        id,
+        name: id,
+        icon: () => <ExtensionMonogram name={id} broken />,
+        busy: !!pending[id],
+        remove: async () => {
+          await uninstall({ id, name: id });
+          if (store.invalid.some((row) => row.dirName === id)) throw new Error('The app was not removed');
+        },
+      });
+    }
+    return renderInstalledApps(items, { loading: inventory === 'loading', error: inventory === 'error' });
+  }
+
   const header = (aside?: ReactNode) => (
     <PageHeader sticky title={translate('extensions.tabMarket')} aside={aside} />
   );
@@ -1267,7 +1333,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
               openApp(managed.id);
               return;
             }
-            if (!detail.from) setTab('installed');
+            if (!detail.from) { if (openInstalled) openInstalled(); else setTab('installed'); }
             setDetail(detail.from ?? null);
           }}
           onLifecycle={() => runLifecycle(managed.id)}
@@ -1341,7 +1407,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           </ToggleGroup>
           <div className="mk-market-actions">
             {search}
-            <Button type="button" variant="outline" size="sm" data-testid="extensions-tab-installed" onClick={() => setTab('installed')}>
+            <Button type="button" variant="outline" size="sm" data-testid={openInstalled ? 'extensions-open-installed' : 'extensions-tab-installed'}
+              onClick={openInstalled ?? (() => setTab('installed'))}>
               <Archive className="size-4" aria-hidden />
               {translate('extensions.tabInstalled')}
               {store.updateCount > 0 && <span className="mk-seg-dot" aria-hidden />}
@@ -1543,7 +1610,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
               pending={pending[marketItem.manifest.id]}
               pendingPercent={downloadPercent[marketItem.manifest.id]}
               canChangeVersion={!store.isPreinstalled(marketItem.manifest.id)}
-              onInstall={(ref, confirm) => void installFromShelf(ref, marketItem.manifest.id, confirm)}
+              onInstall={(ref, confirm) => void installFromShelf(ref, marketItem.manifest.id, { confirm })}
               onLifecycle={() => {
                 if (marketAction?.kind === 'open') closeMarketDetail();
                 runLifecycle(marketItem.manifest.id, marketItem);

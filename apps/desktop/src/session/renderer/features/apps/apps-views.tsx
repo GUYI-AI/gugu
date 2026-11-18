@@ -3,7 +3,7 @@ import { action, observable } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { AppErrorDetails, AppErrorMark } from '@/components/appSlot/AppErrorMark';
 import { WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
-import type { ReactElement, ReactNode } from 'react';
+import { useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import { SquareArrowOutUpRight, Settings } from '@/lib/icons';
 import { followLink } from '@/lib/guguLinks';
@@ -24,6 +24,8 @@ import { useNavigate, useParams } from '@renderer/lib/layout/navigation-provider
 import { appState } from '@renderer/lib/stores/app-state';
 import { navigateBack } from '@renderer/lib/components/nav-buttons';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
+import { InstalledManager } from '@renderer/features/extensions/installed/InstalledManager';
+import type { InstalledSection } from '@renderer/features/extensions/installed/installed-item';
 import { AgentAppDetailPage } from './agent-app-detail-page';
 import { restoreAgentDetailComposer } from './agent-app-detail-navigation';
 import { Button } from '@renderer/lib/ui/button';
@@ -32,9 +34,26 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
   const { params, setParams } = useParams('apps');
   const { navigate } = useNavigate();
+  const currentViewId = appState.navigation.currentViewId;
   const { translate } = useSessionMessages();
-  const { agentDetail, agentDetailFrom, detail } = params;
+  const { agentDetail, agentDetailFrom, detail, installedSection: requestedInstalled, installedDeviceId: requestedDevice } = params;
   const marketHost = detail?.deviceId ? deviceDetailHost(detail.deviceId) : LOCAL_LIBRARY_HOST;
+  const [installedSection, setInstalledSection] = useState<InstalledSection | null>(null);
+  const [installedDeviceId, setInstalledDeviceId] = useState<string>();
+  useEffect(() => {
+    if (currentViewId !== 'apps' || requestedInstalled !== 'connectors') return;
+    setInstalledDeviceId(requestedDevice);
+    setInstalledSection('connectors');
+    setParams({ installedSection: undefined, installedDeviceId: undefined });
+  }, [currentViewId, requestedInstalled, requestedDevice, setParams]);
+  useEffect(() => {
+    if (currentViewId !== 'apps') setInstalledSection(null);
+  }, [currentViewId]);
+  const launchInstalled = () => {
+    setInstalledDeviceId(undefined);
+    setInstalledSection('agents');
+  };
+
   const closeAgentDetail = () => {
     if (agentDetailFrom !== 'apps' && appState.history.canGoBack) {
       navigateBack(true);
@@ -52,11 +71,12 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
             <LibraryHostProvider value={marketHost} key={marketHost.key}>
               <ExtensionsLibraryPage
                 detail={detail}
+                openInstalled={launchInstalled}
                 onCloseDetailLink={() => setParams({ detail: undefined })}
                 marketPage={params.marketPage}
                 onMarketPageChange={(marketPage) => setParams({ marketPage })}
                 onOpenAgentDetail={(agentId) => setParams({
-                  agentDetail: { kind: 'agent-app-detail', agentId },
+                  agentDetail: { kind: 'agent-app-detail', agentId, ...(marketHost.remote && { deviceId: marketHost.remote.deviceId }) },
                   agentDetailFrom: 'apps',
                 })}
               />
@@ -64,6 +84,11 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
           </PageContent>
         </PageLayout>
       </div>
+      {installedSection && currentViewId === 'apps' && <InstalledManager key={`${installedSection}:${installedDeviceId ?? 'local'}`}
+        initialSection={installedSection} initialDeviceId={installedDeviceId}
+        onClose={() => setInstalledSection(null)}
+        onOpenAgent={(agentId, deviceId) => { void followLink({ kind: 'agent-app-detail', agentId, deviceId }); }}
+        onOpenApp={(extensionId, deviceId) => { void followLink({ kind: 'app-detail', extensionId, deviceId }); }} />}
       {agentDetail && (
         <PageLayout key={`${agentDetail.deviceId ?? 'local'}:${agentDetail.agentId}`}>
           <PageContent className="max-w-none">
