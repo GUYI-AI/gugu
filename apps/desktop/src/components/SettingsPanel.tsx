@@ -57,7 +57,7 @@ const sectionsFor = (mobile: boolean): ActiveSection[] =>
 const MOBILE_SECTIONS_FOR_PLATFORM = sectionsFor(true)
 const DESKTOP_SECTIONS_FOR_PLATFORM = sectionsFor(false)
 /** 内页自己没有一句话说明的几页:由这里补在最上面(其余各页自己有,❌ 重复)。 */
-const DataImportSection = lazy(() => import('./settings/data-import/DataImportSection').then((module) => ({ default: module.DataImportSection })))
+const DataImportSection = lazy(() => import('./settings/data-import/DesktopDataImportSection').then((module) => ({ default: module.DesktopDataImportSection })))
 const MobileAppsSection = lazy(() => import('./settings/MobileAppsSection').then((module) => ({ default: module.MobileAppsSection })))
 
 /**
