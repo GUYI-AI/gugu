@@ -19,7 +19,6 @@ import { rpc } from '@renderer/lib/ipc';
 import { sidebarStore } from '@renderer/lib/stores/app-state';
 import {
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -156,8 +155,11 @@ const ChoiceList = observer(function ChoiceList({ project, folders, readFailed, 
 
   return (
     <>
-      {reading ? <DropdownMenuLabel className="text-xs text-foreground-muted">{translate('projects.folders.loading')}</DropdownMenuLabel> : null}
-      {readFailed ? <DropdownMenuLabel className="text-xs text-foreground-muted">{translate('projects.picker.readFailed')}</DropdownMenuLabel> : null}
+      {(reading || readFailed) && (
+        <div role="status" className="px-2 py-1.5 text-xs font-medium text-foreground-muted">
+          {translate(readFailed ? 'projects.picker.readFailed' : 'projects.folders.loading')}
+        </div>
+      )}
       {folders.map((folder) => (
         <DropdownMenuItem
           key={folder.workspaceId}
