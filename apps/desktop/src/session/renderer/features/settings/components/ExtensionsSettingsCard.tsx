@@ -152,6 +152,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   onOpenInstalledApp?: (extensionId: string) => void;
 }) {
   const { translate, locale } = useSessionMessages();
+  const inventoryOnly = !!renderInstalledApps;
   // #6264 资源库看的是哪台咕咕:本机是全局那份清单与 `rpc.extensions`;另一台咕咕桌面是它自己的那份,
   // 动作经设备 RPC 转到它的主进程,它自己的窗口跟着补上 / 撤下 tab。页面长相不变。
   const library = useLibraryHost();
@@ -477,7 +478,10 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   };
   const onMarketRefreshedRef = useRef(onMarketRefreshed);
   onMarketRefreshedRef.current = onMarketRefreshed;
-  useEffect(() => host.onEvent(marketRefreshedChannel, (refreshed) => onMarketRefreshedRef.current(refreshed)), []);
+  useEffect(() => {
+    if (inventoryOnly) return;
+    return host.onEvent(marketRefreshedChannel, (refreshed) => onMarketRefreshedRef.current(refreshed));
+  }, [host, inventoryOnly]);
 
   const shown = useContext(SurfaceShownContext);
   const openedAt = useRef<number | null>(null);
@@ -490,6 +494,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     // 打开设置页时也查一次「有什么要告诉你的」(spec:启动时一次、打开设置页时一次,
     // ❌ 轮询)。embedded.tsx 已经在启动时查过一次;这里是「打开设置页时」那一次。
     void store.checkUpdates();
+    if (inventoryOnly) return;
     // 这一次和下面的市场清单都先从那台机器手上的目录答(❌ 等下载站);同时让它去下载站取一趟,回来的结果走
     // onMarketRefreshed。结果用回答带回:别的机器的推送未必转得到这个窗口。比这一版旧的机器没有这一问,照旧现取。
     void api
@@ -498,14 +503,14 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         if (result.success && result.data) onMarketRefreshedRef.current(result.data);
       })
       .catch((error: unknown) => log.warn('App market refresh not asked:', error));
-  }, [refresh, shown]);
+  }, [refresh, shown, inventoryOnly]);
 
   // 首次与每次搜索词变化:从第 0 页重来。读的是手上那份目录,和上面那趟更新检查同一份;
   // 下载站那趟取回来变了,两边由 onMarketRefreshed 一起重读。
   useEffect(() => {
-    if (remote && !remote.online) return;
+    if (inventoryOnly || (remote && !remote.online)) return;
     void readShelf(debouncedQuery);
-  }, [readShelf, debouncedQuery, remote?.online]);
+  }, [readShelf, debouncedQuery, remote?.online, inventoryOnly]);
 
   /**
    * 从市场装:装法只有一条 —— main 的 installExtensionFromMarket(群里的「用 X 打开」、首启那一页、agent 的 app_install 走的
@@ -1265,7 +1270,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         },
       });
     }
-    return renderInstalledApps(items, { loading: inventory === 'loading', error: !!inventoryError });
+    return renderInstalledApps(items, { loading: inventory === 'loading', error: inventory === 'error' });
   }
 
   const header = (aside?: ReactNode) => (

@@ -98,8 +98,8 @@ function ConnectorItems({ render, directManagement }: Props) {
   return (
     <div className="gg-installed-connector-pane">
       {render([...connectedApps, ...installedMcp], {
-        loading: (library.isLoading && !library.hasData) || (!connections.hasConfiguredConnections && !connections.configuredConnectionsError),
-        error: !!library.error || !!connections.configuredConnectionsError || !!connections.listError,
+        loading: (library.listLoading && !library.hasData) || (!connections.hasConfiguredConnections && !connections.configuredConnectionsError),
+        error: !!library.listError || !!connections.configuredConnectionsError || !!connections.listError,
       })}
       {directManagement && (
         <div className="gg-installed-connector-footer">
