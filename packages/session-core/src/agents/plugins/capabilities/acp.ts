@@ -142,6 +142,12 @@ export type AcpSpawnContext = {
   env: Record<string, string>;
   /** Absolute path to the resolved host CLI binary (mirrors prompt's CommandContext.cli). */
   cli: string;
+  /** Original native conversation, when resuming or forking a stored conversation. */
+  providerSessionId?: string | null;
+  /** Other programs resolved by the host, preserving the user's selected installations. */
+  programs?: Readonly<Record<string, string>>;
+  /** Login only: null selects the primary program; a string selects a declared companion. */
+  authProgram?: string | null;
   /** Main-process-issued platform credentials. Present only on the private ACP worker path. */
   platform?: AcpPlatformInjection;
   /**
@@ -304,6 +310,7 @@ export interface AcpCommandDiscoveryContext {
 
 /** `IAcpBehavior.prepareSession` 的入参 —— env 与启动这一家时同一份。 */
 export interface AcpSessionPrepareContext {
+  providerSessionId?: string | null;
   cwd: string;
   env: Readonly<Record<string, string>>;
   homeDir: string;
@@ -329,6 +336,10 @@ export interface AcpStorageForkContext {
 }
 
 export interface IAcpBehavior {
+  /** Select a named, host-resolved program for a native store before executable validation. */
+  sessionProgram?(ctx: Pick<AcpSpawnContext, 'env' | 'providerSessionId' | 'authProgram'>): string | undefined;
+  /** Reuse vendor metadata from a real new/load/fork response; failure must not prevent the conversation opening. */
+  observeSessionMetadata?(ctx: Pick<AcpSpawnContext, 'env' | 'cli' | 'providerSessionId'>, response: unknown): Promise<void>;
   explainError?(cause: SerializedError): string | undefined;
   /** Provider-owned record/replay contract; the runtime does not infer it from the provider id. */
   historyRecovery?: {

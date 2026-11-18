@@ -17,7 +17,7 @@ import {
 } from '../../helpers/subscription';
 import { ANTIGRAVITY_CLI_SETTINGS_PATH, ANTIGRAVITY_HOME_ENV, antigravityCliAuthStatus } from './auth';
 import { ANTIGRAVITY_PROBE_LAUNCH_SCRIPT } from './session-bundle';
-import { readAgyAcpTier } from './acp-tier';
+import { readAgyAcpTier, readCachedAgyTier } from './acp-tier';
 
 /**
  * Antigravity 的「订阅」读数(product spec)。读的是终端版 `agy` 那条登录(能力里声明
@@ -50,13 +50,16 @@ export async function readAntigravityPlan(ctx: AgentAuthContext): Promise<Subscr
   const settings = await readJsonObject(ctx, ANTIGRAVITY_CLI_SETTINGS_PATH);
   if (settings?.modelProvider === 'gemini') return { payer: 'api-key' };
 
+  const cachedTier = await readCachedAgyTier(ctx);
+  if (cachedTier?.kind === 'tier') return { payer: 'subscription', plan: cachedTier.name, planAsOf: cachedTier.asOf };
+
   const auth = await antigravityCliAuthStatus(ctx);
   if (auth.kind === 'unauthenticated') return { payer: 'not-signed-in' };
   if (auth.kind === 'unknown') return { payer: 'unknown', ...(auth.message ? { message: auth.message } : {}) };
 
   const tier = await readAgyAcpTier(ctx);
   if (tier?.kind === 'not-signed-in') return { payer: 'not-signed-in' };
-  if (tier?.kind === 'tier') return { payer: 'subscription', plan: tier.name };
+  if (tier?.kind === 'tier') return { payer: 'subscription', plan: tier.name, ...(tier.asOf !== undefined ? { planAsOf: tier.asOf } : {}) };
 
   const cached = await readIdeTier(ctx);
   if (!cached) return { payer: 'subscription', plan: 'Google AI', tierUnknown: true };
@@ -122,6 +125,10 @@ export async function readAntigravityUsage(
   if (plan.payer !== 'subscription') return usageUnavailable('not-reported');
   const geminiHome = ctx.env[ANTIGRAVITY_HOME_ENV]?.trim();
   if (!geminiHome) return usageUnavailable('error', { message: `宿主没给 ${ANTIGRAVITY_HOME_ENV},找不到 agy 的托管根。` });
+  // A cached plan is not proof that credentials are still valid. Guard -p /usage so it cannot start login.
+  const auth = await antigravityCliAuthStatus(ctx);
+  if (auth.kind === 'unauthenticated') return usageUnavailable('not-signed-in');
+  if (auth.kind === 'unknown') return usageUnavailable('error', { message: auth.message ?? 'Antigravity sign-in could not be confirmed.' });
   try {
     // 与登录读数同一个启动器(只换 agy 这一个进程的 HOME,mac 上接好钥匙串软链)。
     const { stdout } = await ctx.exec(

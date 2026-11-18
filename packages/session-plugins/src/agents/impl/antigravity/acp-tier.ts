@@ -1,93 +1,145 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import { execFile } from '@gugu/core/local/childProcess';
+import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createInterface } from 'node:readline';
 import { spawnOwnedChild } from '@gugu/session-core/exec';
+import { AcpProbeRpcClient } from '@gugu/session-core/acp/node';
 import type { AgentAuthContext } from '@gugu/session-core/agents/plugins';
-import { ANTIGRAVITY_PROBE_LAUNCH_SCRIPT } from './session-bundle';
 
 const TIMEOUT_MS = 15_000;
+const CACHE_FILE = '.gugu-cli-tier.json';
+const requests = new Map<string, Promise<AgyAcpTier>>();
 class SignedOutError extends Error {}
-export type AgyAcpTier = { kind: 'tier'; name: string } | { kind: 'not-signed-in' } | null;
+export type AgyAcpTier = { kind: 'tier'; name: string; asOf?: number } | { kind: 'not-signed-in' } | null;
+type TierContext = Pick<AgentAuthContext, 'cli' | 'env' | 'exec'>;
 
-/** Official ACP extension (Antigravity 1.4+). Keep only the vendor's display name, never account or token metadata. */
+/** Keep only the vendor's display name, never account or token metadata. */
 export function tierNameFromAcpResponse(response: unknown): string | null {
   const name = (response as { _meta?: { antigravity?: { tier?: { name?: unknown } } } } | null)?._meta?.antigravity?.tier?.name;
   return typeof name === 'string' && name.trim() && name.length <= 200 && !/[\x00-\x1f\x7f]/.test(name)
     ? name.trim() : null;
 }
 
-/**
- * Ask the signed-in CLI, not another IDE's last account. `session/new._meta.antigravity.tier` is documented in
- * https://antigravity.google/docs/changelog (ACP 1.4.0). No authenticate or prompt is ever sent. The caller first
- * checks `agy models`; the MCP-free probe launcher uses the same managed login and prevents starting global tools.
- * Older CLIs without `acp`/tier metadata keep the existing unavailable-tier fallback.
- */
+/** The account generation includes file-backed credentials and macOS keychain metadata, never its password. */
+async function accountFingerprint(ctx: TierContext): Promise<string> {
+  const root = ctx.env.GEMINI_HOME!;
+  const hash = createHash('sha256').update(root).update(await realpath(ctx.cli).catch(() => ctx.cli));
+  for (const relative of ['antigravity-cli/settings.json', 'antigravity-cli/antigravity-oauth-token']) {
+    const info = await stat(join(root, relative)).catch(() => null);
+    hash.update(relative).update(info ? `${info.ino}:${info.size}:${info.mtimeMs}` : 'absent');
+  }
+  if (process.platform === 'darwin') {
+    const metadata = await ctx.exec('/usr/bin/security', ['find-generic-password', '-s', 'gemini', '-a', 'antigravity'], { timeout: 5_000 })
+      .then(result => result.stdout, () => 'absent');
+    hash.update(metadata);
+  }
+  return hash.digest('hex');
+}
+
+async function cached(ctx: TierContext, fingerprint: string): Promise<AgyAcpTier> {
+  try {
+    const value = JSON.parse(await readFile(join(ctx.env.GEMINI_HOME!, CACHE_FILE), 'utf8'));
+    const name = tierNameFromAcpResponse({ _meta: { antigravity: { tier: { name: value.name } } } });
+    return value.fingerprint === fingerprint && name && Number.isFinite(value.asOf)
+      ? { kind: 'tier', name, asOf: value.asOf } : null;
+  } catch { return null; }
+}
+
+/** Local credential metadata and an account-scoped cache only; no CLI/network query on a warm plan read. */
+export async function readCachedAgyTier(ctx: AgentAuthContext): Promise<AgyAcpTier> {
+  if (!ctx.env.GEMINI_HOME?.trim() || process.platform === 'win32') return null;
+  return cached(ctx, await accountFingerprint(ctx));
+}
+
+async function save(ctx: TierContext, fingerprint: string, name: string): Promise<void> {
+  const target = join(ctx.env.GEMINI_HOME!, CACHE_FILE);
+  const staging = `${target}.${randomUUID()}.tmp`;
+  await writeFile(staging, JSON.stringify({ fingerprint, name, asOf: Date.now() }), { mode: 0o600 });
+  await rename(staging, target);
+}
+
+/** Each real conversation open refreshes its account's tier without starting another process. */
+export async function observeAgyTier(
+  ctx: Pick<AgentAuthContext, 'cli' | 'env'>,
+  response: unknown,
+  execute: AgentAuthContext['exec'] = async (command, args, options) => promisify(execFile)(command, args ?? [], { ...options, encoding: 'utf8' }),
+): Promise<void> {
+  const name = tierNameFromAcpResponse(response);
+  if (!name || !ctx.env.GEMINI_HOME?.trim()) return;
+  const context = { ...ctx, exec: execute };
+  await save(context, await accountFingerprint(context), name);
+}
+
+/** A probe owns its conversation and cache directories; only the vendor's file credential stays shared. */
+export async function createAgyProbeRoot(managed: string, scratch: string): Promise<string> {
+  const root = join(scratch, '.gemini');
+  await mkdir(join(root, 'config'), { recursive: true });
+  await mkdir(join(root, 'antigravity-cli', 'conversations'), { recursive: true });
+  for (const entry of await readdir(managed, { withFileTypes: true })) {
+    if (entry.isFile() && !entry.name.startsWith('.gugu-')) await copyFile(join(managed, entry.name), join(root, entry.name));
+  }
+  const cli = join(managed, 'antigravity-cli');
+  for (const entry of await readdir(cli, { withFileTypes: true }).catch(() => [])) {
+    if (!entry.isFile() && !entry.isSymbolicLink()) continue;
+    const source = join(cli, entry.name); const target = join(root, 'antigravity-cli', entry.name);
+    if (entry.name === 'antigravity-oauth-token') await symlink(source, target);
+    else await copyFile(source, target);
+  }
+  await writeFile(join(root, 'config', 'mcp_config.json'), '{"mcpServers":{}}\n', { mode: 0o600 });
+  return root;
+}
+
+/** One single-flight read per account generation. A settings refresh never creates another ACP session. */
 export async function readAgyAcpTier(ctx: AgentAuthContext): Promise<AgyAcpTier> {
   if (!ctx.env.GEMINI_HOME?.trim() || process.platform === 'win32') return null;
-  const cwd = await mkdtemp(join(tmpdir(), 'gugu-agy-tier-'));
-  const owned = spawnOwnedChild('/bin/sh', ['-c', ANTIGRAVITY_PROBE_LAUNCH_SCRIPT, ctx.cli, 'acp', '--stdio'], {
-    cwd,
-    env: { ...ctx.env, BROWSER: 'true', AGY_CLI_DISABLE_AUTO_UPDATE: 'true' },
-    stdio: ['pipe', 'pipe', 'pipe'],
-    onError: () => {},
-  });
-  const child = owned.child;
-  child.stderr?.resume();
-  child.stdin?.on('error', () => {});
-  const pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
-  const lines = createInterface({ input: child.stdout!, crlfDelay: Infinity });
-  const send = (message: unknown) => child.stdin!.write(`${JSON.stringify(message)}\n`);
-  lines.on('line', line => {
-    let message: { id?: number | string; method?: string; result?: unknown; error?: { code?: unknown } };
-    try { message = JSON.parse(line); } catch { return; }
-    if (message.method && message.id !== undefined) {
-      send({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'Tier probe does not run tools' } });
-      return;
+  const fingerprint = await accountFingerprint(ctx);
+  const existing = await cached(ctx, fingerprint);
+  if (existing) return existing;
+  const pending = requests.get(fingerprint);
+  if (pending) return pending;
+  const request = queryTier(ctx).then(async tier => {
+    if (fingerprint !== await accountFingerprint(ctx)) return null;
+    if (tier?.kind === 'tier') {
+      await save(ctx, fingerprint, tier.name);
     }
-    const waiter = typeof message.id === 'number' ? pending.get(message.id) : undefined;
-    if (!waiter) return;
-    pending.delete(message.id as number);
-    if (message.error) waiter.reject(message.error.code === -32000
-      ? new SignedOutError('Antigravity requires sign-in')
-      : new Error('Antigravity did not report a subscription tier'));
-    else waiter.resolve(message.result);
-  });
-  let nextId = 0;
-  const request = (method: string, params: unknown) => new Promise<unknown>((resolve, reject) => {
-    const id = ++nextId;
-    pending.set(id, { resolve, reject });
-    send({ jsonrpc: '2.0', id, method, params });
-  });
-  const exited = new Promise<never>((_, reject) => {
-    child.once('error', reject);
-    child.once('exit', () => reject(new Error('Antigravity tier probe exited')));
-  });
+    return tier;
+  }).finally(() => requests.delete(fingerprint));
+  requests.set(fingerprint, request);
+  return request;
+}
+
+async function queryTier(ctx: AgentAuthContext): Promise<AgyAcpTier> {
+  const scratch = await mkdtemp(join(tmpdir(), 'gugu-agy-tier-'));
+  let owned: ReturnType<typeof spawnOwnedChild> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error('Antigravity tier probe timed out')), TIMEOUT_MS);
-  });
   try {
+    const root = await createAgyProbeRoot(ctx.env.GEMINI_HOME!, scratch);
+    owned = spawnOwnedChild(ctx.cli, ['acp', '--stdio', '--gemini-dir', root], {
+      cwd: scratch, env: { ...ctx.env, GEMINI_HOME: root, BROWSER: 'true', AGY_CLI_DISABLE_AUTO_UPDATE: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'], onError: () => {},
+    });
+    const rpc = new AcpProbeRpcClient(owned.child as ChildProcessWithoutNullStreams, payload =>
+      (payload as { code?: unknown })?.code === -32000 ? new SignedOutError('Antigravity requires sign-in') : new Error('Antigravity tier unavailable'));
     return await Promise.race([
       (async () => {
-        const initialized = await request('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'gugu', version: '0' } });
-        send({ jsonrpc: '2.0', method: 'initialized', params: {} });
+        const initialized = await rpc.request('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'gugu', version: '0' } });
+        rpc.send({ jsonrpc: '2.0', method: 'initialized', params: {} });
         const advertised = (initialized as { agentCapabilities?: { _meta?: { antigravity?: { tier?: unknown } } } } | null)
           ?.agentCapabilities?._meta?.antigravity?.tier;
         if (advertised !== true) return null;
-        const name = tierNameFromAcpResponse(await request('session/new', { cwd, mcpServers: [] }));
+        const name = tierNameFromAcpResponse(await rpc.request('session/new', { cwd: scratch, mcpServers: [] }));
         return name ? { kind: 'tier' as const, name } : null;
       })(),
-      exited,
-      timeout,
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Antigravity tier probe timed out')), TIMEOUT_MS); }),
     ]);
   } catch (error) {
     return error instanceof SignedOutError ? { kind: 'not-signed-in' } : null;
   } finally {
     clearTimeout(timer);
-    lines.close();
-    exited.catch(() => {});
-    await owned.stop({ graceMs: 500 }).catch(() => {});
-    await rm(cwd, { recursive: true, force: true });
+    try { await owned?.stop({ graceMs: 500 }); }
+    finally { await rm(scratch, { recursive: true, force: true }); }
   }
 }

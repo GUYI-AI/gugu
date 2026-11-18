@@ -472,7 +472,7 @@ describe('AgentConfigRuntime', () => {
     it('起的是与真会话同一条 buildAcpSpawn,发厂商自报的 methodId,不开终端', async () => {
       const t = acpRuntime();
       await expect(t.runtime.startLogin('claude', 'google', SELECTED_CLI)).resolves.toEqual(ok(undefined));
-      expect(t.buildAcpSpawn).toHaveBeenCalledWith('claude', { cwd: '/home/ada', runContext: SELECTED_CLI });
+      expect(t.buildAcpSpawn).toHaveBeenCalledWith('claude', { cwd: '/home/ada', runContext: SELECTED_CLI, authProgram: null });
       expect(t.captured()?.methodId).toBe('oauth-personal');
       expect(t.captured()?.spawn).toEqual(SPAWN);
       expect(t.ptySpawner.processes).toHaveLength(0);

@@ -50,6 +50,8 @@ export const agentRunContextSchema = z.object({
    *    用户改了 PATH / 换了代理之后它还是旧的 —— 那正是「聊天腿连不上、终端腿连得上」的由来。
    */
   env: z.record(z.string(), z.string()),
+  /** Additional host-resolved programs needed to resume a provider's older stores. */
+  programs: z.record(z.string(), z.string()).optional(),
   /**
    * 咕咕给这一家的**独立配置根**(`configRoot`)。
    *
@@ -118,6 +120,7 @@ export function agentRunContextKey(ctx: AgentRunContext): string {
     ctx.extraArgs.join(KEY_ITEM_SEP),
     ctx.runtimeExecutable ?? '',
     ctx.acpAdapterEntry ?? '',
+    envKey(ctx.programs ?? {}),
     ctx.connectionId ?? '',
     ctx.credentialHome ?? '',
     (ctx.unsetEnv ?? []).join(KEY_ITEM_SEP),

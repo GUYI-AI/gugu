@@ -2,6 +2,7 @@ import type { AgentRunContext } from '@gugu/session-core/agents/agent-run-contex
 import { composeAgentSpawnEnv } from '@gugu/session-core/agents/agent-run-context';
 import { harnessPinnedEnv } from '@gugu/session-core/agents/plugins';
 import type { AgentProgramRole } from '@gugu/session-core/deps/runtime';
+import { agentProgramFor } from '@gugu/session-core/deps/runtime';
 import type { BridgeWait } from '@main/core/agents/acp-bridge';
 import { getPlugin } from '@main/core/agents/plugin-registry';
 import { resolveAgentHomeEnv } from '@main/core/agents/agent-home';
@@ -61,6 +62,10 @@ export async function resolveLocalAgentRunContext(
     providerVars: settings?.env ?? {},
   });
   const pinned = pinnedEnv(providerId);
+  // A companion can own new ACP sessions while the primary still resumes its own older store.
+  const needsPrimary = options.role === 'acp'
+    && agentProgramFor(getPlugin(providerId), 'acp').dependencyId !== providerId;
+  const primary = needsPrimary ? await resolveCli(providerId, 'primary') : undefined;
   // 桥接按这份 CLI 的版本配(#6394)。探版本时带上关自更新的那格:别让 `--version` 顺手把它升了。
   const { resolveHostAcpAdapterEntry } = await import('@main/core/agents/acp-bridge');
   const acpAdapterEntry = await resolveHostAcpAdapterEntry(
@@ -85,6 +90,7 @@ export async function resolveLocalAgentRunContext(
     : {};
   return {
     cli,
+    ...(primary?.kind === 'resolved' ? { programs: { [providerId]: primary.path } } : {}),
     env,
     pinnedEnv: pinned,
     // 这一家要不要另一个 node 跑(打包机上的 electron 不带 import attributes 时用它)。

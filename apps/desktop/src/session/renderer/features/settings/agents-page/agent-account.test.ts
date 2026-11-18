@@ -11,8 +11,21 @@ import {
   resolveSignInTarget,
 } from './agent-account';
 import type { AgentPayload, AgentProgramStatus } from '@shared/core/agents/agent-payload';
+import { pluginRegistry } from '@gugu/session-plugins/agents';
+import { agentProgramsOf } from '@gugu/session-core/deps/runtime';
 
 const caps = (auth: AgentCapabilities['auth']): AgentCapabilities => ({ auth }) as AgentCapabilities;
+
+it('selects the actual Antigravity ACP program login while preserving the legacy Windows entry', () => {
+  const provider = pluginRegistry.get('antigravity')!;
+  const agent = {
+    capabilities: caps(provider.capabilities.auth),
+    programs: agentProgramsOf(provider) as AgentPayload['programs'],
+  };
+  const target = resolveSignInTarget(agent, 'acp');
+  expect(target?.program).toBe(process.platform === 'win32' ? undefined : 'antigravity-cli');
+  expect(target?.method.kind).toBe(process.platform === 'win32' ? 'acp-authenticate' : 'cli-login');
+});
 
 const CLI_LOGIN = caps({
   kind: 'supported',

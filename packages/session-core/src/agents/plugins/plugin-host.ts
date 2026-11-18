@@ -690,6 +690,8 @@ export class AgentPluginHost {
        * 设置里选的那份拷贝,❌ 缺席时退回它 —— 那正是「终端跑 A、Chat UI 跑 B」的由来。
        */
       runContext: AgentRunContext;
+      providerSessionId?: string | null;
+      authProgram?: string | null;
       platform?: AcpPlatformInjection;
       capabilitySpawnEnv?: Readonly<Record<string, string>>;
       capabilitySpawnArgs?: readonly string[];
@@ -699,7 +701,16 @@ export class AgentPluginHost {
   ): Promise<Result<AgentHostAcpSpawn, AgentHostError>> {
     const provider = this.resolveAcp(providerId);
     if (!provider) return err({ type: 'capability-unsupported', providerId, capability: 'acp' });
-    const hostCli = this.hostCli(providerId, ctx.runContext);
+    const program = provider.behavior.sessionProgram?.({
+      env: composeAgentSpawnEnv(ctx.runContext), providerSessionId: ctx.providerSessionId, authProgram: ctx.authProgram,
+    });
+    const selectedPath = program ? ctx.runContext.programs?.[program] : undefined;
+    const launchContext: typeof ctx.runContext = program ? {
+      ...ctx.runContext,
+      cli: selectedPath ? { kind: 'resolved', path: selectedPath }
+        : { kind: 'unresolved', message: `Required native-store program '${program}' is not installed` },
+    } : ctx.runContext;
+    const hostCli = this.hostCli(providerId, launchContext);
     if (!hostCli.success) return err(hostCli.error);
     const plugin = this.registry.get(providerId);
     if (!plugin) return err({ type: 'unknown-provider', providerId });
@@ -723,6 +734,9 @@ export class AgentPluginHost {
     }
     const spawn = provider.behavior.buildSpawn({
       cwd: ctx.cwd,
+      providerSessionId: ctx.providerSessionId,
+      authProgram: ctx.authProgram,
+      programs: ctx.runContext.programs,
       env: composeAgentSpawnEnv(ctx.runContext),
       cli,
       platform: ctx.platform,

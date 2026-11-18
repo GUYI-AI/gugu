@@ -101,7 +101,7 @@ function handle(msg) {
 }
 `);
     setAcpSpawnResolver(async () => ({ command: process.execPath, args: [entry], env: {}, modelSource: 'config-options' as const }));
-    const state = await probeHarnessModelCatalog('antigravity-cli-acp', 'acp');
+    const state = await probeHarnessModelCatalog('antigravity', 'acp');
     expect(state).toMatchObject({ kind: 'ready', models: [{ id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5' }] });
   });
   it('binds native Fast to the selected model and drops the fact for an unsupported target', async () => {

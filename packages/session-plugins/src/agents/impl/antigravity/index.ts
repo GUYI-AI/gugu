@@ -27,6 +27,8 @@ import { antigravityMcpAdapter } from './mcp';
 import { antigravitySubscriptionBehavior } from './subscription';
 import { buildAntigravityHookConfig } from './hooks';
 import { icon } from './icon';
+import { antigravityStore, buildAntigravityAcpSpawn } from './acp-routing';
+import { observeAgyTier } from './acp-tier';
 import {
   ANTIGRAVITY_GATEWAY_AUTH,
   antigravityApiKeyConnection,
@@ -39,14 +41,13 @@ import {
   ANTIGRAVITY_SESSION_TUI_ENABLED,
   antigravitySessionBundleDescriptor,
   materializeAntigravitySessionBundle,
-  withLoopbackNoProxy,
 } from './session-bundle';
 
 const sessionBundle = antigravitySessionBundleDescriptor satisfies SessionBundleDescriptor;
 
 /**
- * 终端腿的程序 `agy`(Antigravity CLI)—— 与聊天面板腿的 `agy_acp_server` 是 Google 分开发行的
- * **两个程序**(owner 拍板两条腿都要 ⇒ 两个都装,#6335)。点「安装」一次装两个。
+ * `agy` now owns new ACP chats and the terminal leg. The primary `agy_acp_server` installation remains
+ * available only for conversations already stored in its native store (Windows keeps its existing ACP path).
  *
  * 分发:Google 官方 install.sh 用的同一份按平台版本清单
  * (`/tmp/agy-acp-probe/agy-install.sh`:`$DOWNLOAD_BASE_URL/manifests/$platform.json` → `{version,url,sha512}`),
@@ -61,7 +62,7 @@ const sessionBundle = antigravitySessionBundleDescriptor satisfies SessionBundle
 export const ANTIGRAVITY_CLI_COMPANION = {
   id: ANTIGRAVITY_CLI_PROGRAM,
   name: 'Antigravity CLI',
-  legs: ['tui' as const],
+  legs: ANTIGRAVITY_SESSION_TUI_ENABLED ? ['acp' as const, 'tui' as const] : ['tui' as const],
   dependency: miseDependency({
     id: 'agy',
     backend: 'vendor-manifest',
@@ -161,7 +162,7 @@ export const plugin = definePlugin(
     id: 'antigravity',
     name: 'Antigravity',
     description:
-      'Google Antigravity: the official ACP server (agy_acp_server) for chat, and the agy CLI for terminal sessions.',
+      'Google Antigravity: agy for new chat and terminal sessions, with legacy ACP session resume.',
     // ACP 服务的官方说明页(注册表条目给的同一个出处)。
     websiteUrl: 'https://antigravity.google/docs/ide/extensions',
   },
@@ -215,6 +216,7 @@ export const plugin = definePlugin(
     /** 三档由 `session/new` 的 `mode` 配置项自报,运行期经 `session/set_config_option` 下发 —— 读数与映射见 `ANTIGRAVITY_PERMISSION_MODES`。 */
     autoApprove: {
       kind: 'supported',
+      modesExhaustive: true,
       modes: ANTIGRAVITY_PERMISSION_MODES,
     },
     /**
@@ -390,14 +392,10 @@ export const plugin = definePlugin(
 );
 
 /**
- * 托管装好的 `agy_acp_server` 就是 `ctx.cli`,不带参数。
- * 回环免代理必须在**这里**加而不是在物化器里:模型目录探针也走这条 `buildSpawn`,
- * 不经物化 —— 只在物化器里加,探针那一趟就会在代理机器上起不来(理由见 `withLoopbackNoProxy`)。
+ * New ACP starts use the same host-resolved agy as TUI. Stored conversations choose their original
+ * native store and executable; loopback proxy exclusions apply to both paths and catalog probes.
  */
-const antigravityAcp = createNativeAcpBehavior((ctx) => ({
-  args: [],
-  env: withLoopbackNoProxy(ctx.env),
-}), { interruptAtToolBoundary: true });
+const antigravityAcp = createNativeAcpBehavior(buildAntigravityAcpSpawn, { interruptAtToolBoundary: true });
 
 export const provider = registerPluginBehavior(plugin, {
   // 声明了 `auth` 就必须配 `behavior.auth`(framework 直接抛)。
@@ -418,6 +416,14 @@ export const provider = registerPluginBehavior(plugin, {
   sessions: { forkSessionInStorage: (ctx) => forkAntigravityCliSession(ctx) },
   acp: {
     ...antigravityAcp,
+    sessionProgram: (ctx) => ctx.providerSessionId && antigravityStore(ctx.env, ctx.providerSessionId) === 'antigravity-acp'
+      ? 'antigravity' : undefined,
+    catalogModelSource: 'config-options',
+    observeSessionMetadata: async (ctx, response) => {
+      if (process.platform === 'win32') return;
+      if (ctx.providerSessionId && antigravityStore(ctx.env, ctx.providerSessionId) === 'antigravity-acp') return;
+      await observeAgyTier(ctx, response);
+    },
     // 连接会话(带着网关上线开关起的进程)在开第一条会话前选网关;别的会话原样过(见 ./api-key-connection.ts)。
     connect: (io, toClient) => withGatewayAuthentication(antigravityAcp.connect(io, toClient)),
     // 模型目录探针照同一份声明认证,否则连接会话的目录读成「需要登录」,输入框列不出连接的模型。
@@ -425,13 +431,16 @@ export const provider = registerPluginBehavior(plugin, {
     // 用户 skill 它读进了系统提示却不经 ACP 报 ⇒ 咕咕按它认的四处目录补进「/」面板(见 ./skills.ts)。
     discoverCommands: discoverAntigravitySkills,
     // `session/fork` 回 `{}` ⇒ 复制存档并改写 id,运行时再 `session/load`(见 ./fork.ts)。
-    forkSessionInStorage: (ctx) => forkAntigravitySession(ctx),
+    forkSessionInStorage: (ctx) => antigravityStore(ctx.env, ctx.sourceProviderSessionId) === 'antigravity-acp'
+      ? forkAntigravitySession(ctx) : forkAntigravityCliSession(ctx),
     // 规则文件它一处都不读 ⇒ 咕咕按官方文档的位置读出来,随会话级背景进第一轮(见 ./rules.ts)。
     readRules: readAntigravityRules,
     // `skills.json` 它不读 ⇒ 起进程前把那些 skill 链进托管根的 config/skills/(见 ./skills-json.ts)。
-    prepareSession: linkSkillsJsonRoots,
+    prepareSession: (ctx) => ctx.providerSessionId && antigravityStore(ctx.env, ctx.providerSessionId) === 'antigravity-acp'
+      ? linkSkillsJsonRoots(ctx) : Promise.resolve(),
     // `Stop` 钩子它只在会话结束时跑、且不认 continue ⇒ 咕咕每轮结束代跑(见 ./stop-hooks.ts)。
-    onTurnEnded: runAntigravityStopHooks,
+    onTurnEnded: (ctx) => antigravityStore(ctx.env, ctx.providerSessionId) === 'antigravity-acp'
+      ? runAntigravityStopHooks(ctx) : Promise.resolve(null),
     // 失败的回合它报成 end_turn(错误写成一句回复,或只在 stderr 留一行)⇒ 认出来按失败结算(见 ./turn-failure.ts)。
     turnFailure: {
       fromAgentMessage: antigravityFailureFromAgentMessage,

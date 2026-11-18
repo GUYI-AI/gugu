@@ -253,7 +253,7 @@ describe('pluginRegistry', () => {
     expect(checked).toContain('opencode:plan');
   });
 
-  it('keeps the exact 32-entry registry order', () => {
+  it('keeps the exact 31-entry registry order', () => {
     expect(pluginRegistry.ids()).toEqual([
       'codex',
       'claude',
@@ -262,7 +262,6 @@ describe('pluginRegistry', () => {
       'qwen',
       'droid',
       'antigravity',
-      'antigravity-cli-acp',
       'cursor',
       'copilot',
       'amp',
@@ -307,7 +306,6 @@ describe('pluginRegistry', () => {
       // #6335:两条腿、两个程序 —— 聊天面板 `agy_acp_server` + 终端 `agy`(2026-09-24 第二层接回)。
       // Windows 上终端腿不开(`ANTIGRAVITY_SESSION_TUI_ENABLED`,理由见该家 session-bundle)。
       antigravity: ANTIGRAVITY_SESSION_TUI_ENABLED ? ['acp', 'tui'] : ['acp'],
-      'antigravity-cli-acp': ANTIGRAVITY_SESSION_TUI_ENABLED ? ['acp'] : [],
       cursor: ['acp', 'tui'],
       copilot: ['acp', 'tui'],
       amp: ['tui'],
@@ -431,7 +429,7 @@ describe('pluginRegistry', () => {
     // 见 impl/antigravity/session-bundle.ts 抬头。
     // zcode 自 2026-10-17 起在列(#7385):桥 @gugu-acp/zcode-acp 把 `session/new.mcpServers` 原样交给 ZCode app-server,
     // 注入的 stdio 工具被模型调到(mcp__<server>__<tool>);身份自述走 session-context。见 impl/zcode/session-bundle.ts 抬头。
-    expect(sessionAcpProviders).toEqual(['codex', 'claude', 'grok', 'qwen', 'droid', 'antigravity', ...(ANTIGRAVITY_SESSION_TUI_ENABLED ? ['antigravity-cli-acp'] : []), 'cursor', 'copilot', 'gemini', 'opencode', 'hermes', 'kimi', 'kilocode', 'kiro', 'pi', 'mimocode', 'zcode', 'codebuddy', 'dsh']);
+    expect(sessionAcpProviders).toEqual(['codex', 'claude', 'grok', 'qwen', 'droid', 'antigravity', 'cursor', 'copilot', 'gemini', 'opencode', 'hermes', 'kimi', 'kilocode', 'kiro', 'pi', 'mimocode', 'zcode', 'codebuddy', 'dsh']);
 
     const localSessionTransportProviders = pluginRegistry.getAll()
       .filter((provider) => provider.capabilities.sessionBundle.sessionpage['tui']?.messageTransport === 'local-session')
@@ -809,8 +807,7 @@ describe('pluginRegistry', () => {
     // kilocode 2026-11-08 五维接通(mcp / env / model / autonomy / promptBlocks 都走 `KILO_CONFIG_CONTENT`,
     //   逐格 flat native)⇒ **+5**,92 → **97**(Windows 90 → 95)。
     // kiro 2026-11-08: ACP leg only; mcp, env, autonomy, promptBlocks native, model is vendor-closed ⇒ +4, 97 → 101 (Windows 95 → 99).
-    // Official CLI ACP adds its own MCP, env and prompt delivery cells; the legacy entry is unchanged.
-    expect(checks).toHaveLength(ANTIGRAVITY_SESSION_TUI_ENABLED ? 104 : 99);
+    expect(checks).toHaveLength(ANTIGRAVITY_SESSION_TUI_ENABLED ? 101 : 99);
     for (const check of checks) {
       expect(check.populated, check.label + ': ' + JSON.stringify(check.surfaces)).toBe(true);
     }
@@ -889,7 +886,6 @@ describe('pluginRegistry', () => {
       if (
         // #6335:antigravity 迁出 —— 官方 ACP 服务那条腿五维逐格实测声明(impl/antigravity/session-bundle.ts)。
         provider.metadata.id === 'antigravity' ||
-        provider.metadata.id === 'antigravity-cli-acp' ||
         provider.metadata.id === 'claude' ||
         provider.metadata.id === 'codex' ||
         provider.metadata.id === 'copilot' ||
@@ -1441,7 +1437,6 @@ describe('pluginRegistry', () => {
     expect(withRunnableLogin.map((provider) => provider.metadata.id).sort()).toEqual([
       // #6335:antigravity 没有登录子命令,走协议登录(ACP `authenticate`)。
       'antigravity',
-      'antigravity-cli-acp',
       'claude',
       // #7525:codebuddy 也没有登录子命令,走协议登录(ACP `authenticate`,国际版 / 中国版两条)。
       'codebuddy',
@@ -1505,7 +1500,6 @@ describe('pluginRegistry', () => {
     // backed by an official startup contract and an exact argv test.
     const unverifiedForkAdapters = [
       'amp',
-      'antigravity-cli-acp',
       'auggie',
       'commandcode',
       'continue',
@@ -1674,7 +1668,7 @@ describe('pluginRegistry', () => {
       if (d.capabilities.hostDependency.updates.kind !== 'supported') continue;
       const { releaseSource, update } = d.capabilities.hostDependency.updates;
       // 'acp-registry':#6335 托管装 ACP 注册表登记的 ACP 服务(antigravity 的 agy_acp_server)。
-      expect(['npm', 'github', 'acp-registry', 'vendor-manifest', 'none']).toContain(releaseSource.kind);
+      expect(['npm', 'github', 'acp-registry', 'none']).toContain(releaseSource.kind);
       expect(['package-manager', 'cli', 'auto', 'none']).toContain(update.kind);
     }
   });

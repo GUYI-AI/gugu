@@ -1,3 +1,4 @@
+import type { IAcpBehavior } from '@gugu/session-core/agents/plugins';
 import type { SessionCommandDefinition } from '@gugu/session-core/acp';
 import { isAcpAuthRequired } from '@gugu/session-core/acp';
 import type { AcpPermissionParams } from '@gugu/session-core/agents/plugins';
@@ -627,7 +628,7 @@ export class SessionManager implements InboundRouter {
     await this.attachProviderRules(record, binding.behavior);
     if (binding.behavior.prepareSession) {
       await binding.behavior
-        .prepareSession({ cwd: input.cwd, env: this.providerEnv(input), homeDir: os.homedir() })
+        .prepareSession({ cwd: input.cwd, env: this.providerEnv(input), homeDir: os.homedir(), providerSessionId: input.providerSessionId ?? input.forkFromProviderSessionId })
         .catch((error: unknown) => {
           this.deps.logger.warn('SessionManager: provider session preparation failed', {
             sessionId: input.sessionId,
@@ -646,6 +647,7 @@ export class SessionManager implements InboundRouter {
         cwd: input.cwd,
         behavior: binding.behavior,
         runContext: input.runContext,
+        providerSessionId: input.providerSessionId ?? input.forkFromProviderSessionId,
         platform: input.platform,
         capabilitySpawnEnv: input.capabilitySpawnEnv,
         capabilitySpawnArgs: input.capabilitySpawnArgs,
@@ -848,6 +850,7 @@ export class SessionManager implements InboundRouter {
         record.cell.setAcpSessionId(response.sessionId);
         // 路由必须在**拿到 sessionId 的那一刻**就登记 —— 见下面 newSession 分支的说明。
         this.registerRoute(connection.key, response.sessionId, input.sessionId);
+        await this.observeSessionMetadata(input, binding.behavior, response);
         if (response.availableCommands) record.providerCommands = response.availableCommands;
         record.cell.applySessionMeta({
           modes: response.modes,
@@ -906,6 +909,7 @@ export class SessionManager implements InboundRouter {
             });
             return {};
           });
+          await this.observeSessionMetadata(input, binding.behavior, response);
           if (response.availableCommands) record.providerCommands = response.availableCommands;
           record.cell.applySessionLoaded({
             modes: response.modes,
@@ -1083,6 +1087,7 @@ export class SessionManager implements InboundRouter {
             availableCommands: response.availableCommands,
           },
         });
+        await this.observeSessionMetadata(input, binding.behavior, response);
         if (response.availableCommands) record.providerCommands = response.availableCommands;
         record.cell.applySessionMeta({
           modes: response.modes,
@@ -2496,6 +2501,20 @@ export class SessionManager implements InboundRouter {
     return ok();
   }
 
+
+  private async observeSessionMetadata(input: AcpStartInput, behavior: IAcpBehavior, response: unknown): Promise<void> {
+    if (!behavior.observeSessionMetadata || input.runContext.cli.kind !== 'resolved') return;
+    try {
+      await behavior.observeSessionMetadata({
+        env: this.providerEnv(input), cli: input.runContext.cli.path,
+        providerSessionId: input.providerSessionId ?? input.forkFromProviderSessionId,
+      }, response);
+    } catch (error) {
+      this.deps.logger.warn('SessionManager: provider metadata cache update failed', {
+        providerId: input.providerId, error: toSerializedError(error),
+      });
+    }
+  }
 
   private async applyConfiguredPermissionMode(
     record: SessionRecord,
