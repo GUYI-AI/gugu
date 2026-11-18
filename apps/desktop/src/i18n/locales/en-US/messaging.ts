@@ -280,6 +280,7 @@ export default {
     "deleteChat": "Delete chat",
     "deleteChatConfirm": "Delete this chat with “{{name}}”? Its history is deleted with it.",
     "deleteTopic": "Delete topic",
+    "closeTopic": "Close topic",
     "deleteTopicConfirm": "Delete topic “{{name}}”? It is removed from every member's list.",
     "dissolveGroup": "Dissolve group",
     "leaveGroup": "Leave group",
