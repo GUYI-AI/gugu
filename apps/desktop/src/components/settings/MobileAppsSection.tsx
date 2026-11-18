@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { observer } from 'mobx-react-lite'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { ExtensionAppDetailLink } from '@gugu/core/shared/ui/guguLink'
-import { rendererLogger } from '@/lib/log'
 import { PhoneMarketAction, PhoneMarketFilters, PhoneMarketRow } from '@/mobile/market/PhoneMarketList'
 import { PhoneMarketInstallSheet, PhoneMarketInstallSummary } from '@/mobile/market/PhoneMarketInstallSheet'
 import { usePhoneAppInstallTargets, usePhoneMarketInstalledAppIds } from '@/mobile/market/phoneMarketTargets'
@@ -29,7 +28,6 @@ import { PHONE_MARKET_QUERY_KEY, phoneMarketRows, phoneProductApi, useOfferedVer
 import '@/session/renderer/index.css'
 import './mobile-app-market.css'
 
-const log = rendererLogger('settings/mobile-apps')
 const NO_DEVICES: readonly Device[] = []
 
 type Props = {
@@ -62,21 +60,24 @@ export const MobileAppsSection = observer(function MobileAppsSection({
   const [detail, setDetail] = useState<MarketListItem | null>(null)
   const [error, setError] = useState<string | null>(null)
   const openedLink = useRef<ExtensionAppDetailLink | undefined>(undefined)
-  const [unreadable, setUnreadable] = useState(false)
-  const readInventory = useCallback((read: () => Promise<void>) => {
-    void read().then(() => setUnreadable(phoneApps.unreadable() !== null), (failure: unknown) => {
-      log.error({ error: String(failure) }, 'Phone Apps unreadable')
-      setUnreadable(true)
-    })
-  }, [])
+  const inventory = useQuery({
+    queryKey: ['phone-app-inventory'],
+    queryFn: async () => {
+      await phoneApps.ready()
+      if (phoneApps.unreadable()) throw new Error('Unreadable phone App inventory')
+      return true
+    },
+    retry: false,
+  })
+  const unreadable = inventory.isError
+  const reloadInventory = () => void phoneApps.reload().then(() => inventory.refetch(), () => inventory.refetch())
   useEffect(() => {
-    readInventory(phoneApps.ready)
     const off = phoneApps.market.onRefreshed((result) => {
       if (result.outcome === 'changed') void client.invalidateQueries({ queryKey: PHONE_MARKET_QUERY_KEY })
     })
     void phoneApps.market.refresh()
     return off
-  }, [client, readInventory])
+  }, [client])
 
   useEffect(() => {
     if (!appDetail || openedLink.current === appDetail) return
@@ -108,7 +109,7 @@ export const MobileAppsSection = observer(function MobileAppsSection({
 
   return <>
     {unreadable && mode === 'installed' && <SettingsNote tone="danger" role="alert" data-testid="phone-apps-unreadable">
-      {translate('extensions.loadFailed')} <Button onClick={() => readInventory(phoneApps.reload)}>{translate('extensions.retry')}</Button>
+      {translate('extensions.loadFailed')} <Button onClick={reloadInventory}>{translate('extensions.retry')}</Button>
     </SettingsNote>}
     {mode === 'installed' && (store.isLoaded
       ? <AppsSection updates={offered.updates} gone={offered.gone} known={offered.known} onManage={setManage}

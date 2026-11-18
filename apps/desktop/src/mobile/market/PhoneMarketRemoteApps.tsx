@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { observer } from 'mobx-react-lite'
 import { useTranslation } from 'react-i18next'
 import type { Device } from '@gugu/core/shared/types/chat'
@@ -12,6 +12,7 @@ import { ASSISTANT_APP_ID } from '@shared/extensions/assistant-entry'
 import { localizedManifestText } from '@shared/extensions/catalog'
 import { PhoneMarketRow } from './PhoneMarketList'
 import { marketDeviceHost } from './marketDeviceHost'
+import { usePhoneMarketDeviceApps } from './phoneMarketTargets'
 
 export const PhoneMarketRemoteApps = observer(function PhoneMarketRemoteApps({ device, devices, assistant = false }: {
   device: Device
@@ -23,19 +24,12 @@ export const PhoneMarketRemoteApps = observer(function PhoneMarketRemoteApps({ d
   const host = useMemo(() => marketDeviceHost(device), [device])
   const { store } = host.extensions
   const [selected, setSelected] = useState<string | null>(null)
-  const [attempt, retry] = useState(0)
-  const [failed, setFailed] = useState(false)
-  useEffect(() => {
-    if (!device.is_online) return
-    let active = true
-    void store.load().then(() => { if (active) setFailed(false) }, () => { if (active) setFailed(true) })
-    return () => { active = false }
-  }, [device.is_online, store, attempt])
+  const inventory = usePhoneMarketDeviceApps(device)
   const apps = store.manifests.filter(app => !store.isPreinstalled(app.id) && (app.id === ASSISTANT_APP_ID) === assistant)
   return <>
     {!device.is_online ? <SettingsNote role="status">{t('phoneMarket.deviceOffline')}</SettingsNote>
-      : failed ? <SettingsNote tone="danger" role="alert">{translate('extensions.loadFailed')}
-        <Button size="sm" onClick={() => retry(value => value + 1)}>{translate('extensions.retry')}</Button>
+      : inventory.isError ? <SettingsNote tone="danger" role="alert">{translate('extensions.loadFailed')}
+        <Button size="sm" onClick={() => void inventory.refetch()}>{translate('extensions.retry')}</Button>
       </SettingsNote>
         : !store.isLoaded ? <AppConnectionListPlaceholder /> : null}
     {apps.map(app => {

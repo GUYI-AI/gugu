@@ -1,4 +1,4 @@
-import { useQueries, useQueryClient } from '@tanstack/react-query'
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Device } from '@gugu/core/shared/types/chat'
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store'
 import { askInShell, installConsentPrompt } from '@renderer/features/extensions/install-consent'
@@ -122,8 +122,8 @@ export function usePhoneAgentInstallTargets(id: string, devices: readonly Device
 
 const APP_INVENTORY_KEY = ['market-installed-apps'] as const
 
-export function usePhoneMarketInstalledAppIds(devices: readonly Device[]): Set<string> {
-  const inventory = useQueries({ queries: devices.map(device => ({
+function deviceApplicationInventory(device: Device) {
+  return {
     queryKey: [...APP_INVENTORY_KEY, device.device_id],
     queryFn: async () => {
       const { store } = marketDeviceHost(device).extensions
@@ -133,6 +133,14 @@ export function usePhoneMarketInstalledAppIds(devices: readonly Device[]): Set<s
     staleTime: 30_000,
     enabled: device.is_online,
     retry: false,
-  })) })
+  }
+}
+
+export function usePhoneMarketDeviceApps(device: Device) {
+  return useQuery(deviceApplicationInventory(device))
+}
+
+export function usePhoneMarketInstalledAppIds(devices: readonly Device[]): Set<string> {
+  const inventory = useQueries({ queries: devices.map(deviceApplicationInventory) })
   return new Set([...installedExtensionsStore.manifests.map(app => app.id), ...inventory.flatMap(entry => entry.data ?? [])])
 }
