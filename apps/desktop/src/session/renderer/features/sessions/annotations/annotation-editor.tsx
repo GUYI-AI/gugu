@@ -15,7 +15,7 @@ export function AnnotationEditor({ number, initialValue = '', busy = false, onSa
   const { translate } = useSessionMessages();
   const [text, setText] = useState(initialValue);
   return (
-    <form data-annotation-editor className="flex min-h-10 w-full min-w-0 cursor-auto items-center gap-1.5 rounded-xl border border-border bg-background px-2 py-1 shadow-lift"
+    <form data-annotation-editor className="flex min-h-10 w-full min-w-0 cursor-auto items-center gap-2 rounded-xl border border-border bg-background px-2 py-1 shadow-lift"
       onPointerDown={event => event.stopPropagation()} onPointerUp={event => event.stopPropagation()}
       onKeyDown={event => {
         if (event.nativeEvent.isComposing || event.keyCode === 229) {

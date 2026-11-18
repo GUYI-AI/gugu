@@ -59,7 +59,7 @@ export const AnnotationTray = observer(function AnnotationTray({ sessionId, onSe
                 <div className="flex min-w-0 items-start gap-2 text-xs text-foreground-muted">
                   <AnnotationThumbnail {...item} />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-1.5">
+                    <div className="flex items-baseline gap-2">
                       <span className="shrink-0 tabular-nums">{item.number}</span>
                       <span className="min-w-0 truncate" title={item.url}>{item.url}</span>
                     </div>

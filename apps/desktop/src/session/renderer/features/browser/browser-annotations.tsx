@@ -22,7 +22,7 @@ export function useBrowserAnnotations({ sessionId, browserId, visible, available
   const exit = useCallback(() => setActive(false), []);
   const { translate } = useSessionMessages();
   return {
-    toolbar: sessionId && available ? <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 gap-1.5 px-2 aria-pressed:bg-[color-mix(in_oklab,var(--live-light)_16%,transparent)] aria-pressed:text-[var(--live-light)]"
+    toolbar: sessionId && available ? <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 gap-2 px-2 aria-pressed:bg-[color-mix(in_oklab,var(--live-light)_16%,transparent)] aria-pressed:text-[var(--live-light)]"
       aria-pressed={active} title={active ? `${translate('annotations.hint')}: ${translate('annotations.browse')}` : translate('annotations.annotate')}
       onClick={() => setActive(!active)}><MessageSquare className="size-3.5" />{translate('annotations.mode')}</Button> : null,
     overlay: active && visible && available && sessionId ? <BrowserAnnotationOverlay key={browserId} sessionId={sessionId} browserId={browserId}
