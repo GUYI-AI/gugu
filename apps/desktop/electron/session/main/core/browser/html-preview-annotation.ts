@@ -4,9 +4,9 @@ import { isAnnotationPreviewUrl } from '@shared/preview/html-preview-annotation'
 import { resolveBrowserHostWindow } from './browser-page-views';
 
 /** The named iframe is kept in its opaque sandbox. Only the host reads and captures its visible contents. */
-export async function inspectHtmlPreviewAnnotation(args: HtmlPreviewAnnotationRequest): Promise<BrowserAnnotationInspection> {
+export async function inspectHtmlPreviewAnnotation(args: HtmlPreviewAnnotationRequest, senderId: number): Promise<BrowserAnnotationInspection> {
   const host = resolveBrowserHostWindow(args.windowName);
-  if (!host || host.isDestroyed() || !isAnnotationPreviewUrl(args.url, host.webContents.getURL())) {
+  if (!host || host.isDestroyed() || host.webContents.id !== senderId || !isAnnotationPreviewUrl(args.url)) {
     throw new Error('The HTML preview is unavailable');
   }
   const contents = host.webContents;

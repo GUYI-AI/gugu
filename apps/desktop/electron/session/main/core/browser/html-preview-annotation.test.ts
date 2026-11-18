@@ -4,7 +4,7 @@ import type { HtmlPreviewAnnotationRequest } from '@shared/preview/html-preview-
 
 const native = vi.hoisted(() => {
   const frame = { name: 'preview-id', url: 'gugu-preview://a/index.html', detached: false, executeJavaScript: vi.fn() };
-  const contents = { mainFrame: { frames: [frame] }, getURL: () => 'http://localhost:5173/', getZoomFactor: () => 1,
+  const contents = { id: 25, mainFrame: { frames: [frame] }, getZoomFactor: () => 1,
     capturePage: vi.fn() };
   const host = { isDestroyed: () => false, webContents: contents, getContentSize: () => [800, 600] };
   return { frame, contents, host };
@@ -25,7 +25,7 @@ beforeEach(() => {
 
 describe('HTML preview annotation evidence', () => {
   it('uses the named sandboxed frame and captures only its bounds', async () => {
-    await expect(inspectHtmlPreviewAnnotation(request)).resolves.toMatchObject({
+    await expect(inspectHtmlPreviewAnnotation(request, 25)).resolves.toMatchObject({
       target: { text: 'Preview evidence' }, screenshot: 'data:image/png;base64,fixture',
     });
     expect(native.frame.executeJavaScript).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('elementFromPoint'));
@@ -33,9 +33,10 @@ describe('HTML preview annotation evidence', () => {
   });
 
   it('rejects arbitrary web pages, stale frames, and out-of-window bounds', async () => {
-    await expect(inspectHtmlPreviewAnnotation({ ...request, url: 'https://example.org/' })).rejects.toThrow('unavailable');
-    await expect(inspectHtmlPreviewAnnotation({ ...request, frameName: 'other' })).rejects.toThrow('no longer open');
-    await expect(inspectHtmlPreviewAnnotation({ ...request, bounds: { ...request.bounds, y: -1 } })).rejects.toThrow('outside');
+    await expect(inspectHtmlPreviewAnnotation({ ...request, url: 'https://example.org/' }, 25)).rejects.toThrow('unavailable');
+    await expect(inspectHtmlPreviewAnnotation(request, 26)).rejects.toThrow('unavailable');
+    await expect(inspectHtmlPreviewAnnotation({ ...request, frameName: 'other' }, 25)).rejects.toThrow('no longer open');
+    await expect(inspectHtmlPreviewAnnotation({ ...request, bounds: { ...request.bounds, y: -1 } }, 25)).rejects.toThrow('outside');
     expect(native.contents.capturePage).not.toHaveBeenCalled();
   });
 });
