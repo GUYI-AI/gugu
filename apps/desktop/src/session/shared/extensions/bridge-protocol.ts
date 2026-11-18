@@ -846,6 +846,7 @@ export const BRIDGE_VERBS = {
   /** Generic picture/input resources. Scope comes from the host's task binding, not the argument object. */
   projectionCreate: { needs: 'agents:tools', only: 'program' },
   projectionPublish: { needs: 'agents:tools', only: 'program' },
+  projectionPresent: { needs: 'agents:tools', only: 'program' },
   projectionClose: { needs: 'agents:tools', only: 'program' },
   projectionClosed: { needs: 'agents:tools', only: 'program' },
   projectionInputResult: { needs: 'agents:tools', only: 'program' },

@@ -29,7 +29,7 @@ const BINDING_RESOURCES = ['bindings.resources', 'bindings.resource', 'bindings.
 const VOICE_NOTE = ['voiceNote.start', 'voiceNote.pause', 'voiceNote.resume', 'voiceNote.stop', 'voiceNote.retry', 'voiceNote.openMicSettings', 'voiceNote.status', 'voiceNote.watch', 'onVoiceNote']
 const MODAL = ['modal.open', 'modal.close', 'modal.key', 'onModalFocus']
 const PROJECTION_VIEWER = ['projection.watch', 'projection.unwatch', 'projection.send', 'onProjection']
-const PROJECTION_SOURCE = ['projection.create', 'projection.publish', 'projection.close', 'projection.closed', 'projection.inputResult', 'onProjectionSource']
+const PROJECTION_SOURCE = ['projection.create', 'projection.publish', 'projection.present', 'projection.close', 'projection.closed', 'projection.inputResult', 'onProjectionSource']
 // #1607 shared task resources (API 36): a page mounts a task page, views projection media and posts its surface; a
 // program leases task pages, opens surfaces and shows the task's pages.
 const TASK_PAGE_VIEWER = ['pages.mount', 'pages.unmount', 'projectionMedia.open', 'projectionMedia.answer', 'projectionMedia.sign', 'projectionMedia.close', 'surfaces.post', 'taskMessage']

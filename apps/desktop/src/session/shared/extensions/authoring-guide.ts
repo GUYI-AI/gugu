@@ -1,4 +1,3 @@
-import { PROJECTION_PRESENTATION_GUIDE } from './projection-presentation-guide';
 import { EXTENSION_API_VERSION, EXTENSION_TOOL_CONFINEMENT_API_VERSION } from './bridge-protocol';
 
 /**
@@ -334,7 +333,6 @@ let state = JSON.parse((await gugu.readData('save.json')) ?? 'null') ?? { score:
 const save = () => gugu.writeData('save.json', JSON.stringify(state))
   .catch((e) => gugu.reportError(\`Could not save: \${e.message}\`))
 \`\`\`
-${PROJECTION_PRESENTATION_GUIDE}
 `;
 
 

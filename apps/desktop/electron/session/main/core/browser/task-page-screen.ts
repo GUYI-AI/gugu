@@ -9,8 +9,8 @@ import type { TaskPageScreenTarget } from '../../../../server/server-task-browse
  *
  * The page is gugu's own (on a Gugu server, a page of the account's headless Chromium): on the person's own computer it
  * shows in the built-in browser tab and they click into it directly; from another computer the same tab shows its live
- * picture and their input goes to the page directly too. No App is involved. Pictures are the page's own screencast
- * (JPEG on every paint), paced by the shared projection rules: one picture in flight until the viewer showed it, input
+ * picture and their input goes to the page directly too. No App is involved. Pictures are requested from the existing page
+ * capture API, paced by the shared projection rules: one picture in flight until the viewer showed it, input
  * only against the picture they saw, held keys and buttons released when a viewer leaves.
  */
 const screens = new ExtensionProjections(() => {});

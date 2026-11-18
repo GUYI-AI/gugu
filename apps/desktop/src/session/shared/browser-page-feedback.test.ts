@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BrowserPageFeedback, browserFrameFeedback, browserPageFeedback, browserScreencastFeedback } from './browser-page-feedback';
+import { BrowserPageFeedback, browserFrameFeedback, browserPageFeedback } from './browser-page-feedback';
 
 describe('Browser Use feedback from real page dispatch', () => {
   it('ends operating when the real program call ends, even while pixels continue and another call stays isolated', () => {
@@ -11,16 +11,6 @@ describe('Browser Use feedback from real page dispatch', () => {
     model.invalidate(); expect(model.snapshot().action).toBeUndefined();
   });
 
-  it('matches server frames in browser monotonic time and never guesses missing clocks or scaled points', async () => {
-    const model = new BrowserPageFeedback(); model.useClock(async () => 100);
-    model.dispatched('Input.dispatchMouseEvent', { x: 20, y: 10 }, Promise.resolve());
-    for (let i = 0; i < 12; i++) await Promise.resolve();
-    const snapshot = model.snapshot(); expect(snapshot.at).toBe(100);
-    expect(browserScreencastFeedback(snapshot, 99, 80, 40, 1, 0)).toBeUndefined();
-    expect(browserScreencastFeedback(snapshot, undefined, 80, 40, 1, 0)).toBeUndefined();
-    expect(browserScreencastFeedback(snapshot, 100, 80, 40, 1, 0)).toMatchObject({ cursor: { x: 20, y: 10 } });
-    expect(browserScreencastFeedback(snapshot, 100, 80, 40, 2, 0)).not.toHaveProperty('cursor');
-  });
   it('binds feedback to the actual page object and never to a caller-supplied title', () => {
     const page = {}, other = {};
     expect(browserPageFeedback(page)).toBe(browserPageFeedback(page));
