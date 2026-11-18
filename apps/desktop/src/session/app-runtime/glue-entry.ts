@@ -31,7 +31,7 @@ const say = {
     if (!claims.length) return zh ? '这个页面没有打开文件。' : 'No file is open here.';
     const names = claims.map((c) => (c.startsWith('.') ? (zh ? `一个 ${c} 文件` : `a ${c} file`) : c)).join(zh ? ' 或' : ' or ');
     const place = inChat ? (zh ? '这个对话的文件夹' : "the chat's folder") : zh ? '文件列表' : 'the file list';
-    return zh ? `这个页面没有打开文件：在${place}里点 ${names}，用这个 App 打开。` : `No file is open here: click ${names} in ${place} to open it with this App.`;
+    return zh ? `这个页面没有打开文件：在${place}里点 ${names}，用这个应用打开。` : `No file is open here: click ${names} in ${place} to open it with this App.`;
   },
   failed: zh ? '打不开这个文件：' : 'Could not open the file: ',
   offline: zh ? '离线：你的改动会在回线后补上。' : 'Offline — your changes are sent when you are back.',

@@ -101,7 +101,7 @@ export const NOT_GIVEN = (extensionIds: readonly string[]) =>
 
 /** Said on the row of an App the person switched off: who switches it back on, and where — words the agent can pass on as they are. */
 export const SWITCHED_OFF = (name: string) =>
-  `Switched off on this computer. You cannot switch it on: ask your owner to open 「App」 in 咕咕, open ${name} there and press 「启用」 (Turn on); ` +
+  `Switched off on this computer. You cannot switch it on: ask your owner to open Apps (「市场」 in Chinese) in 咕咕, open ${name} there and press 「启用」 (Turn on); ` +
   'once it is on, app_search finds it on and catalog_list lists what it gives you'
 
 /** An installed App as the catalog reads it (main: the App contributions): what an agent's app_search says about it. */

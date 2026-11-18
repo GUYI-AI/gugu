@@ -42,8 +42,8 @@ export default {
       "body": "常用的提示词都存在这里，随时取用。"
     },
     "apps": {
-      "title": "App：让 Agent 多做一类事",
-      "body": "装上 App，Agent 就能多做一类事，比如替你操作电脑。"
+      "title": "应用：让智能体多做一类事",
+      "body": "装上应用，Agent 就能多做一类事，比如替你操作电脑。"
     },
     "settings": {
       "title": "设置：额度与偏好",
