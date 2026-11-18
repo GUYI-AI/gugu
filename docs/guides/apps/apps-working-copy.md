@@ -23,3 +23,7 @@ A text no live document holds (over 1 MiB, JSON that is no object, on another ma
 
 Free, for a page that edits files:
 - `setTabDirty(tabId, dirty)`: a tab of yours (`ctx.tabId`) holds unsaved edits: a dot, kept mounted, asked before closing. `onCommand` hears `gugu.file.save:<tabId>` / `gugu.file.discard:<tabId>`; do it, then say `setTabDirty` again.
+
+## Session annotation drafts
+
+The preinstalled desktop Files App uses `gugu.files.annotateSelection(file, open)` (API 58) inside a click to open the host's editor at the selection. The editor saves to the session composer draft. `gugu.files.watchAnnotationMarkers(file)` follows one file, with `null` stopping the watch. `gugu.files.onAnnotationMarkers(fn)` receives the numbered source-line anchors. The user's annotation text stays in the host.

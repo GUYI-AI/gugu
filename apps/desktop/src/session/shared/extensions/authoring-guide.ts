@@ -374,7 +374,6 @@ Each call names a file: an entry, \`ctx.file\`, or \`{ chat | workspace, name }\
   \`files.create(place, content, { ifExists: 'use' })\` (API 39): the file already there instead (two at once: both get one).
 - A session's working copy, listing and changing it on its own machine: \`apps-working-copy\` doc.
 - \`gugu.files.onChanged(place, fn)\` → unsubscribe. Chat: \`{ kind: 'entries', entries, gone }\`.
-- API 59, preinstalled Files only: \`gugu.files.annotateSelection(file, open)\` opens task-draft editing on a click. \`gugu.files.watchAnnotationMarkers(file)\` follows one file, or stops with null. \`gugu.files.onAnnotationMarkers(fn)\` receives numbered source anchors.
 - \`gugu.files.openWith(entry)\`: claim or "always use"; \`{ ask: true }\`: pick among all.
   \`intent\`: \`'navigate'\` (default), \`'newTab'\` (double-click), \`'beside'\`.
   \`{ at }\`: opener's \`link\` place. Unclaimed: preview, or details/download. \`{ peek: true }\`: beside this page
