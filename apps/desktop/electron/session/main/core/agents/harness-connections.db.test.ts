@@ -96,6 +96,32 @@ it('restores Codex terminal B once, then retries managed A from its existing vau
   expect(await readFile(join(terminalRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('terminal', 'renewed'));
 });
 
+it('carries the Codex sign-in into an existing installation exactly once and isolates later refreshes', async () => {
+  const terminal = process.env.CODEX_HOME!;
+  const terminalAuth = join(terminal, 'auth.json');
+  const managedAuth = join(state.codexRoot, 'auth.json');
+  const former = chatgptAuth('person', 'old');
+  await writeAuthAt(terminal, former);
+  await expect(migrateOwnedHarnessAccounts('codex', process.env, true)).resolves.toMatchObject({ upgradeSignIn: 'copied' });
+  expect(await readFile(terminalAuth, 'utf8')).toBe(former);
+  expect(await readFile(managedAuth, 'utf8')).toBe(former);
+
+  await writeAuthAt(terminal, chatgptAuth('person', 'terminal-refresh'));
+  expect(await readFile(managedAuth, 'utf8')).toBe(former);
+  await writeAuthAt(state.codexRoot, chatgptAuth('person', 'managed-refresh'));
+  await migrateOwnedHarnessAccounts('codex', process.env, true);
+  expect(await readFile(managedAuth, 'utf8')).toBe(chatgptAuth('person', 'managed-refresh'));
+  expect(await readFile(terminalAuth, 'utf8')).toBe(chatgptAuth('person', 'terminal-refresh'));
+});
+
+it('asks for Codex sign-in when the existing account uses a keyring, without reading it', async () => {
+  const terminal = process.env.CODEX_HOME!;
+  await mkdir(terminal, { recursive: true });
+  await writeFile(join(terminal, 'config.toml'), 'cli_auth_credentials_store = "keyring"');
+  await expect(migrateOwnedHarnessAccounts('codex', process.env, true)).resolves.toMatchObject({ upgradeSignIn: 'relogin' });
+  await expect(stat(join(state.codexRoot, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
 it('saves API metadata without secrets and runs Codex sessions on the managed root with env and -c overrides', async () => {
   const connection = await createHarnessConnection({
     providerId: 'codex',

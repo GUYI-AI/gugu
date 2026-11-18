@@ -286,11 +286,12 @@ export async function restoreCodexTerminalForMigration(paths: CodexAuthSlotPaths
 }
 
 /** A one-time snapshot of the sign-in used before an upgrade. It never changes the source slot. */
-export async function copyCodexUpgradeSignIn(previous: CodexAuthSlotPaths, managed: CodexAuthSlotPaths, connectionId: string): Promise<boolean> {
+export async function copyCodexUpgradeSignIn(previous: CodexAuthSlotPaths, managed: CodexAuthSlotPaths, connectionId: string): Promise<boolean | undefined> {
   await assertCodexFileCredentialStore(previous.nativeRoot);
   await assertCodexFileCredentialStore(managed.nativeRoot);
   const state = await readLiveState(previous.liveStateFile);
   const live = await readAuth(previous.nativeRoot);
+  if (!live && connectionId === 'native') return undefined;
   if (!live?.identity?.startsWith('chatgpt:')) return false;
   if (connectionId !== 'native' && (state?.connectionId !== connectionId || state.identity !== live.identity)) return false;
   const target = await readAuth(managed.nativeRoot);

@@ -613,7 +613,7 @@ export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Rec
   const oldNativeVault = join(stateDir, 'native', requireNativeHome(providerId).userPath);
   const previousVaultRoot = (id: string) => id === 'native' ? oldNativeVault : vaultRoot(providerId, id);
   const liveStateFile = join(stateDir, 'live-account.json');
-  const finish = async (restore: () => Promise<RestoredTerminal>, activate: () => Promise<unknown>, copy: () => Promise<boolean>) => {
+  const finish = async (restore: () => Promise<RestoredTerminal>, activate: () => Promise<unknown>, copy: () => Promise<boolean | undefined>) => {
     let result: RestoredTerminal = { relogin: null, terminalNeedsSignIn: false };
     try {
       const { prepareSubscriptionMigration } = await import('../sessions/subscription-switch');
@@ -629,7 +629,10 @@ export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Rec
     }
     let upgradeSignIn: 'copied' | 'relogin' | undefined;
     if (automatic && (owned || selected === 'native')) {
-      try { upgradeSignIn = await copy() ? 'copied' : 'relogin'; }
+      try {
+        const copied = await copy();
+        upgradeSignIn = copied === undefined ? undefined : copied ? 'copied' : 'relogin';
+      }
       catch {
         log.warn('Could not transfer the previous sign-in during upgrade', { providerId });
         upgradeSignIn = 'relogin';

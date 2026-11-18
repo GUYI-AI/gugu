@@ -458,12 +458,12 @@ export async function restoreClaudeTerminalForMigration(paths: ClaudeAuthSlotPat
 }
 
 /** Copy only the CLI account in use, leaving MCP credentials in their original store. */
-export async function copyClaudeUpgradeSignIn(previous: ClaudeAuthSlotPaths, managed: ClaudeAuthSlotPaths, connectionId: string): Promise<boolean> {
+export async function copyClaudeUpgradeSignIn(previous: ClaudeAuthSlotPaths, managed: ClaudeAuthSlotPaths, connectionId: string): Promise<boolean | undefined> {
   const account = await readAccount(previous.nativeGlobalConfig);
-  if (!account) return false;
+  const oauth = oauthOf(await previous.store.read(native(previous)));
+  if (!account) return connectionId === NATIVE && !oauth ? undefined : false;
   const state = await readLiveState(previous.liveStateFile);
   if (connectionId !== NATIVE && (state?.connectionId !== connectionId || state.identity !== account.identity)) return false;
-  const oauth = oauthOf(await previous.store.read(native(previous)));
   if (!oauth || (await readAccount(previous.nativeGlobalConfig))?.identity !== account.identity) return false;
   const target = await managed.store.read(native(managed));
   const targetOauth = oauthOf(target);
