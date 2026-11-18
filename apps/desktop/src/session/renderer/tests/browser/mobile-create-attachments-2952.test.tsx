@@ -27,11 +27,13 @@ const fixture = vi.hoisted(() => ({
   owner: 'attachment-page-owner',
   device: { device_id: 'attachment-device', label: 'Test device', hostname: 'fixture', platform: 'linux', status: 'online', is_online: true, last_seen_at: '2026-11-17T00:00:00Z', capabilities: { terminals: [], runtimes: ['codex'] } },
   legacyCreate: vi.fn(), created: vi.fn(), skills: vi.fn(), models: vi.fn(),
+  openAgentHomeImport: vi.fn(async () => true),
   ports: { assertAccount: vi.fn(), describe: vi.fn(), create: vi.fn(), place: vi.fn(), admit: vi.fn() },
 }))
 // This fixture exercises attachment admission on a host whose configuration is already ready.
 vi.mock('@renderer/features/settings/subscriptions/ensure-agent-home', () => ({
   ensureAgentHomeImported: async () => undefined,
+  openAgentHomeImport: fixture.openAgentHomeImport,
 }))
 
 vi.mock('@/store/auth', async original => ({ ...(await original<typeof import('@/store/auth')>()), useAuth: () => ({ user: { id: fixture.owner } }) }))
@@ -58,6 +60,7 @@ beforeEach(() => {
   fixture.owner = `attachment-page-owner-${++sequence}`
   for (const mock of [fixture.created, fixture.legacyCreate, fixture.skills, ...Object.values(fixture.ports)]) mock.mockReset()
   fixture.models.mockReset().mockResolvedValue(originalModels)
+  fixture.openAgentHomeImport.mockClear()
   fixture.skills.mockResolvedValue({ ok: false, error: { code: 'unknown_method', message: "No handler registered for 'sessionTimeline.sessionCreateSkills'" } })
   fixture.legacyCreate.mockRejectedValue(new Error('The caption-only creation route must not receive attachments'))
   fixture.ports.assertAccount.mockResolvedValue(undefined)
@@ -163,6 +166,20 @@ function creationLogCapture() {
   const sink = vi.spyOn(console, 'warn').mockImplementation(() => {})
   return { sink, rows: () => sink.mock.calls.filter(args => args[0] === '[mobile/agent-watch] create session failed') }
 }
+
+it('opens configuration repair on the selected host and preserves the original attachment', async () => {
+  await mount('dark')
+  const file = new File(['original bytes'], 'import-repair.txt', { type: 'text/plain' })
+  fixture.ports.create.mockRejectedValueOnce(Object.assign(new Error('Host configuration required'), { code: 'AGENT_HOME_NOT_IMPORTED' }))
+  await choose(file); await send()
+  const failure = page.getByTestId('agent-watch-create-error')
+  await expect.element(failure).toHaveTextContent('Codex')
+  await failure.getByRole('button', { name: '打开配置导入' }).click()
+  await until('repair requested on the selected host', () => fixture.openAgentHomeImport.mock.calls.length === 1)
+  expect(fixture.openAgentHomeImport).toHaveBeenCalledWith('codex', fixture.device.device_id)
+  expect(composerDrafts.forKey(mobileCreationDraftKey(fixture.owner)).pending[0]!.file).toBe(file)
+  expect(fixture.ports.admit).not.toHaveBeenCalled()
+})
 
 it('logs only a fixed code from the actual Page catch and retries the original File and creation identities', async () => {
   const logs = creationLogCapture()
