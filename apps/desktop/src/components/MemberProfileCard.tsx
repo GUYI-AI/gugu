@@ -28,6 +28,7 @@ import type { AgentSession } from '@/session/renderer/features/projects/stores/p
 // @@@float-one-edge (Refs #6104) — 名片是浮层:圆角 xl(12) + 一层 lift,❌ 不再叠描边。
 const profileCardClass = 'gg-pop w-[284px] overflow-hidden rounded-xl bg-[var(--bg-elevated)] text-[var(--text-primary)] shadow-[var(--shadow-lift)]'
 // 放进底部面板(手机,#6836)时铺满宽度,圆角、底色归面板,卡片不再叠第二层外框。
+const agentProfileCardWidth = 'w-[272px]'
 const profileFillClass = 'gg-pop w-full text-[var(--text-primary)]'
 const profileSingleClass = 'gg-pop--single'
 // @@@panel-chrome 名片内一条左边线 16,头与正文之间只留白;只有管理区上方一条线(与全 app 同一个灰)。
@@ -36,22 +37,21 @@ const profileHeaderTextClass = 'gg-pop-ph-text flex min-w-0 flex-col'
 const profileNameClass = 'gg-pop-pn min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-base font-semibold text-[var(--text-primary)]'
 const profileActionsClass = 'gg-pop-pacts flex flex-wrap gap-2 px-4 pb-3 pt-3'
 const profileButtonClass = 'gg-pop-pbtn flex-[1_1_auto] text-[length:var(--font-body)] [&_svg]:shrink-0'
-const agentProfileActionsClass = 'gg-pop-pacts flex gap-2 px-4 pb-3 pt-4'
+const agentProfileActionsClass = 'gg-pop-pacts flex items-start gap-2 px-4 py-4'
 const agentProfileActionsMobileClass = 'flex-wrap'
-const agentPrimaryActionClass = 'min-w-0 flex-1 px-2'
-const agentPrimaryActionMobileClass = 'min-h-[var(--control-h-touch)] basis-full'
+const agentPrimaryActionClass = 'h-[var(--control-h-lg)] min-w-0 flex-1 gap-2 px-2'
+const agentPrimaryActionMobileClass = 'h-[var(--control-h-touch)] min-h-[var(--control-h-touch)] basis-full text-base'
 const agentSecondaryActionClass = 'h-[var(--control-h-lg)] w-[var(--control-h-lg)] shrink-0 bg-[var(--muted)] px-0'
-const agentSecondaryActionMobileClass = 'min-h-16 min-w-0 flex-1 flex-col gap-1.5 bg-[var(--muted)] px-1.5 py-2 text-center text-xs leading-snug whitespace-normal'
+const agentSecondaryActionMobileClass = 'h-16 min-w-0 flex-1 flex-col gap-1 bg-[var(--muted)] px-1 text-center text-xs leading-4 whitespace-normal'
 const profileFieldsClass = 'gg-pop-fields gap-x-2 gap-y-1.5 px-4 pb-3.5'
 const profileFieldRowClass = 'gg-pop-field-row col-span-2 grid grid-cols-subgrid items-start text-[length:var(--font-caption)] leading-[var(--lh-caption)]'
 const profileFieldLabelClass = 'gg-pop-field-label whitespace-nowrap text-[var(--text-tertiary)]'
 const profileFieldValueClass = 'gg-pop-field-value min-w-0 [overflow-wrap:anywhere] text-[var(--text-secondary)]'
-const profileAgentMetaClass = 'mt-[3px] flex flex-wrap gap-x-2.5 gap-y-0.5 text-[length:var(--font-caption)] leading-[var(--lh-caption)] text-[var(--text-tertiary)] [&>*]:max-w-full [&>*]:truncate'
+const profileAgentMetaClass = 'mt-1 flex min-w-0 items-center gap-2 text-xs leading-4 text-[var(--text-tertiary)]'
 const profileListenClass = 'gg-pop-lm mx-4 border-t border-[var(--border-subtle)] pb-4 pt-3'
-const profileListenLabelClass = 'gg-pop-lml flex min-w-0 items-center gap-1.5 text-[length:var(--font-body)] text-[var(--text-secondary)]'
-// @@@1344(b) — 倾听模式分段壳:椭圆/胶囊(rounded-full)→圆角矩形(rounded-lg=8px,对齐 SSOT 基础圆角 `--r`)。
-const profileListenSegmentClass = 'gg-pop-lmseg flex h-[30px] w-32 shrink-0 gap-1 rounded-lg bg-[var(--listen-mode-bg)] p-[3px]'
-const profileListenButtonBaseClass = 'gg-pop-lmseg-btn flex-1 rounded-md border-none px-0 font-[inherit] text-xs font-medium !transition-[background,color] !duration-[var(--dur-fast)] !ease-[var(--ease)]'
+const profileListenLabelClass = 'gg-pop-lml flex min-w-0 items-center gap-2 text-sm leading-5 text-[var(--text-primary)]'
+const profileListenSegmentClass = 'gg-pop-lmseg ml-auto flex h-8 w-32 shrink-0 rounded-[var(--radius-control)] bg-[var(--listen-mode-bg)] p-[2px]'
+const profileListenButtonBaseClass = 'gg-pop-lmseg-btn flex-1 rounded-[var(--radius-document)] border-none px-0 font-[inherit] text-xs font-medium !transition-[background,color] !duration-[var(--dur-fast)] !ease-[var(--ease)]'
 const profileListenButtonActiveClass = 'gg-pop-lmseg-btn--on bg-[var(--listen-mode-active-bg)] text-[var(--listen-mode-active-fg)] shadow-[var(--listen-mode-active-shadow)]'
 const profileListenButtonInactiveClass = 'bg-transparent text-[var(--listen-mode-fg)]'
 
@@ -333,15 +333,15 @@ export function MemberProfileCard({
 
   // Keep the actual avatar at the card's size; badges must remain outside its bounds.
   const avatarSize = isAgent ? (phone ? 64 : 60) : 52
-  const agentNameClass = phone ? 'text-xl font-semibold' : 'text-lg font-semibold'
-  const listenRoomName = listenRoom?.name || t('profile.listenModeDescription')
+  const agentNameClass = phone ? 'text-xl leading-7 font-semibold' : 'text-lg leading-6 font-semibold'
+  const listenHeading = t('profile.listenModeDescription')
   const ListenRoomIcon = listenRoom?.kind === 'topic' ? Hash : Users
 
   return (
     <>
-    <div className={cn(fill ? profileFillClass : profileCardClass, isSingle && profileSingleClass)}>
+    <div className={cn(fill ? profileFillClass : cn(profileCardClass, isAgent && agentProfileCardWidth), isSingle && profileSingleClass)}>
       {/* ── Header: avatar + name + tag (prototype .ph, line 445-446) ── */}
-      <div className={profileHeaderClass}>
+      <div className={cn(profileHeaderClass, isAgent && 'gap-3 pb-0')}>
         <div style={{ width: avatarSize, height: avatarSize, flexShrink: 0, position: 'relative' }}>
           <Avatar
             name={shownName}
@@ -353,12 +353,12 @@ export function MemberProfileCard({
           />
         </div>
         <div className={profileHeaderTextClass} style={{ flex: 1, minWidth: 0 }}>
-          {isAgent ? <OwnedAgentNameEditor key={member.id} agentId={member.id} name={member.displayName} ownerUserId={member.ownerUserId} status={status} membership={member.membership} className={agentNameClass}><span className={cn(profileNameClass, agentNameClass)}>{shownName}</span></OwnedAgentNameEditor> : <div className={profileNameClass}>{member.displayName}</div>}
+          {isAgent ? <OwnedAgentNameEditor key={member.id} agentId={member.id} name={member.displayName} ownerUserId={member.ownerUserId} status={status} membership={member.membership} className={cn(agentNameClass, !phone && '[--control-h-sm:24px]')}><span className={cn(profileNameClass, agentNameClass)}>{shownName}</span></OwnedAgentNameEditor> : <div className={profileNameClass}>{member.displayName}</div>}
           {/* One metadata line, the same cells-with-gap idiom as the agent's row in the member list. */}
           {isAgent ? (
             <div data-profile-agent-meta className={profileAgentMetaClass}>
-              {statusLabel ? <span>{statusLabel}</span> : null}
-              <span data-profile-agent-owner><AgentOwnerLabel ownerUserId={member.ownerUserId} ownerDisplayName={member.ownerDisplayName} /></span>
+              {statusLabel ? <span className="shrink-0">{statusLabel}</span> : null}
+              <span className="min-w-0 truncate" data-profile-agent-owner><AgentOwnerLabel ownerUserId={member.ownerUserId} ownerDisplayName={member.ownerDisplayName} /></span>
             </div>
           ) : null}
         </div>
@@ -462,12 +462,15 @@ export function MemberProfileCard({
           or a current source-group manager. Other viewers retain the read-only projection. ── */}
       {showListenMode ? (
         <div className={profileListenClass}>
-          <div className="flex items-center justify-between gap-2">
-            <div className={profileListenLabelClass}>
-              {listenRoom ? <ListenRoomIcon className="size-4 shrink-0" aria-hidden /> : null}
-              <span className="truncate" title={listenRoomName}>{listenRoomName}</span>
-            </div>
-            <div className={profileListenSegmentClass} role="group" aria-label={listenRoom ? `${t('profile.listenModeDescription')} ${listenRoomName}` : listenRoomName}>
+          <div className="mb-2 text-xs leading-4 text-[var(--text-tertiary)]">{listenHeading}</div>
+          <div className="flex h-8 items-center gap-3">
+            {listenRoom ? (
+              <div className={profileListenLabelClass}>
+                <ListenRoomIcon className="size-4 shrink-0 text-[var(--text-tertiary)]" aria-hidden />
+                <span className="truncate" title={listenRoom.name}>{listenRoom.name}</span>
+              </div>
+            ) : null}
+            <div className={profileListenSegmentClass} role="group" aria-label={listenRoom ? `${listenHeading} ${listenRoom.name}` : listenHeading}>
               {rosterUnknown ? <Unknown /> : LISTEN_MODES.map((mode) => (
                 <button
                   key={mode}
