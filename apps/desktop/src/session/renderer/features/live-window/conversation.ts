@@ -148,6 +148,7 @@ export class LiveWindowConversation {
         picture.viewPainted = false;
         let mounted: Awaited<ReturnType<typeof mountProjection>>;
         try { mounted = await mountProjection(host, next, picture.descriptor.id, {
+          decorations: true,
           interactive: false,
           localTouchViewing: this.model.platform === 'phone' && picture.source.kind === 'computer',
           painted: frame => {
