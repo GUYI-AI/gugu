@@ -97,11 +97,13 @@ it('the two-line group button covers the avatar and lower row, with independent 
   expect([group.width, group.height, getComputedStyle(button()).borderRadius]).toEqual([215, 56, '8px']);
   expect([avatar.left - group.left, avatar.top - group.top, avatar.width, avatar.height]).toEqual([8, 12, 32, 32]);
 
-  const rest = getComputedStyle(button()).backgroundColor;
+  const hoverLayer = () => getComputedStyle(button().parentElement!, '::before');
   const openButton = page.getByRole('button', { name: '产品讨论群', exact: true });
   const bottomOfAvatar = { x: 20, y: 42 };
   await openButton.hover({ position: bottomOfAvatar });
-  await expect.poll(() => getComputedStyle(button()).backgroundColor).not.toBe(rest);
+  expect(getComputedStyle(button()).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+  expect(hoverLayer().backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+  expect([hoverLayer().left, hoverLayer().right, hoverLayer().borderRadius]).toEqual(['8px', '8px', '9999px']);
   await openButton.click({ position: bottomOfAvatar });
   expect(open).toHaveBeenCalledOnce();
 
@@ -113,8 +115,8 @@ it('the two-line group button covers the avatar and lower row, with independent 
   expect(open).toHaveBeenCalledOnce();
 
   await page.elementLocator(harness.container.firstElementChild!).hover({ position: { x: 450, y: 100 } });
-  await expect.poll(() => getComputedStyle(button()).backgroundColor).toBe(rest);
   await harness.render(row(true));
   expect(button()).toHaveAttribute('aria-current', 'page');
-  await expect.poll(() => getComputedStyle(button()).backgroundColor).not.toBe(rest);
+  expect(getComputedStyle(button()).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+  expect(hoverLayer().content).toBe('none');
 });

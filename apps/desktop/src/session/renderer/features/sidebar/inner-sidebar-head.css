@@ -7,9 +7,16 @@
   height: 100%;
   align-items: flex-start;
   border-radius: var(--radius-control);
+  background-color: transparent;
 }
-.gg-inner-head-double [data-inner-head]:hover > [data-inner-head-open]:not([data-active], :active) {
+/* Paint the hover independently of the full two-line button. */
+.gg-inner-head-double [data-inner-head]:hover::before {
+  content: '';
+  position: absolute;
+  inset: 0 8px;
+  border-radius: var(--radius-capsule);
   background-color: var(--hover);
+  pointer-events: none;
 }
 .gg-inner-head-double [data-inner-head-open] > span {
   height: 28px;
