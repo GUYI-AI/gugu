@@ -133,7 +133,7 @@ function forAgentsNote(installed: { manifest: ExtensionManifest; rootDir: string
   if (!given) {
     return {
       for_agents:
-        "Its owner did not give it to you: they choose which agents get an App's tools and skills (its row in 「App」), " +
+        "Its owner did not give it to you: they choose which agents get an App's tools and skills (its row in Apps, 「市场」 in Chinese), " +
         'so you do not have them.',
     };
   }

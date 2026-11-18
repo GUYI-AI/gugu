@@ -97,7 +97,7 @@ export async function appAccess(programs: Pick<ExtensionPrograms, 'agentToolsRef
 /** Said once for all the Apps left out so (A-B 10-06: one sentence per App ran three times over). */
 export const NOT_GIVEN = (extensionIds: readonly string[]) =>
   `${extensionIds.length === 1 ? `App ${extensionIds[0]} is` : `Apps ${extensionIds.join(', ')} are`} not given to this agent: ` +
-  "its owner picks which agents get an App's tools (the App's row in 「App」), and once it is given they are here at the next call"
+  "its owner picks which agents get an App's tools (the App's row in Apps (「市场」 in Chinese)), and once it is given they are here at the next call"
 
 /** Said on the row of an App the person switched off: who switches it back on, and where — words the agent can pass on as they are. */
 export const SWITCHED_OFF = (name: string) =>
@@ -211,7 +211,7 @@ export function createExtensionCatalog(deps: {
     }
     return programs.tools(program).then((list) => {
       if (list.some((tool) => toolVisibleTo(tool, 'model'))) leftOut.delete(key)
-      else leftOut.set(key, { program, reason: `gives agents no tools right now${itSays() || "; its page in 「App」 shows how it is set up"}` })
+      else leftOut.set(key, { program, reason: `gives agents no tools right now${itSays() || "; its page in Apps (「市场」 in Chinese) shows how it is set up"}` })
       return list
     }, (error: unknown) => {
       leftOut.set(key, { program, reason: programFailureReason(program, error) + itSays() })

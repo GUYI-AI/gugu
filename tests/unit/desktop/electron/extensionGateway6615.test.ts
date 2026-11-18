@@ -406,7 +406,7 @@ describe('what the catalog leaves out, and why (#6634 问题 16)', () => {
     const catalog = quietCatalog(() => [notes])
     toolList = [refreshView]
     expect(await catalog.tools('s1', 'conv-1')).toEqual([])
-    expect(await leftOut(catalog)).toEqual(['program agent-notes: gives agents no tools right now; its page in 「App」 shows how it is set up'])
+    expect(await leftOut(catalog)).toEqual(['program agent-notes: gives agents no tools right now; its page in Apps (「市场」 in Chinese) shows how it is set up'])
 
     instructionsNow.set('agent-notes', '未配置搜索服务的 API key，请在全能搜索的设置页填写。')
     await catalog.tools('s1', 'conv-1')
@@ -426,7 +426,7 @@ describe('what the catalog leaves out, and why (#6634 问题 16)', () => {
   // agents nothing was "on", pointing at tools that are not there.
   it("an App's state asks its programs itself: asked before any listing, it already says why", async () => {
     toolList = [refreshView]
-    expect(await leftOut(quietCatalog(() => [notes]))).toEqual(['program agent-notes: gives agents no tools right now; its page in 「App」 shows how it is set up'])
+    expect(await leftOut(quietCatalog(() => [notes]))).toEqual(['program agent-notes: gives agents no tools right now; its page in Apps (「市场」 in Chinese) shows how it is set up'])
     toolList = [addNote, refreshView]
     listFailures.set('agent-notes', 'did not start: exited with code 1')
     expect(await leftOut(quietCatalog(() => [notes]))).toEqual(['program agent-notes: did not start: exited with code 1'])
