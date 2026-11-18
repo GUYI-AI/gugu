@@ -52,10 +52,6 @@ export default {
     }
   },
   "hints": {
-    "phone": {
-      "assistant": "Gugu is your personal assistant. Ask it to track plans and get things done.",
-      "collaboration": "Find projects and friends here. Open one to start collaborating."
-    },
     "desktop": {
       "assistant": "Your personal assistant is here. Tell it your plans and tasks."
     },
