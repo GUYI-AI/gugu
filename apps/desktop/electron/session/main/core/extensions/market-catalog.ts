@@ -5,6 +5,8 @@ import JSZip from 'jszip';
 import type {
   CloudMarketEntry,
   MarketCodeSource,
+  MarketIndexVersion,
+  MarketReleaseProof,
   MarketCompat,
   MarketHost,
   MarketIndexApp,
@@ -27,6 +29,18 @@ import {
   type MarketSnapshotStore,
 } from '@shared/extensions/market-snapshot';
 import { EXTENSION_MANIFEST_FILENAME } from './extensions-service';
+import {
+  firstProblem,
+  MAX_RELEASE_MANIFEST_BYTES,
+  RELEASE_SIGNATURE_BYTES,
+  releaseFileProblems,
+  releaseProof,
+  releaseRequired,
+  SHIPPED_RELEASE_TRUST,
+  verifyMarketRelease,
+  type ReleaseTrustTable,
+  type SignedRelease,
+} from './release/market-release';
 
 /**
  * App 市场(#5410;10-08 起数据源是下载站上的一份 `market/index.json`,见 `marketIndexSchema`)。
@@ -99,6 +113,11 @@ export interface CloudExtensionMarketOptions {
   /** 一趟没取到的原话(进日志)。 */
   onRefreshFailure?: (error: unknown) => void;
   now?: () => number;
+  /**
+   * #1931 Which Apps must arrive as a signed release, and the keys they may be signed with (market-release.ts). None: the
+   * table this build ships. Tests pass their own, with a key made in the test.
+   */
+  releaseTrust?: ReleaseTrustTable;
 }
 
 /** 市场上的一版,下好、核过、解开以后:目录、「代码在哪」、「这版改了什么」,和包的 sha256(留着等人点头时按它认)。 */
@@ -108,7 +127,10 @@ export interface MarketPrepared {
   releaseNotes: string;
   sha256: string;
   bytes: number;
+  /** #1931 Its signed release, verified before it was unpacked and against what it unpacked; only for an App the trust table names. */
+  release?: { release: SignedRelease; proof: MarketReleaseProof };
 }
+
 
 /** 解开的包落在哪儿。dot 前缀,与安装 staging 同一套「扫描永远看不见」的约定。 */
 const STAGING_PREFIX = '.market-';
@@ -122,6 +144,8 @@ export class CloudExtensionMarket {
    * them. Two installs can be under way at once — the first-run set in the background and one the person started.
    */
   private readonly unpacking = new Set<string>();
+  /** The verified releases of the copies held for a consent (`hold`), by package sha256: only this process's held copies count. */
+  private readonly heldReleases = new Map<string, NonNullable<MarketPrepared['release']>>();
 
   constructor(
     private readonly backend: MarketBackend,
@@ -337,6 +361,9 @@ export class CloudExtensionMarket {
       // 界面上这一版的按钮本来就是灰的;安装器只认协议号、不认最低咕咕版本,所以下载之前要挡。
       throw new Error(compatRefusal(extensionId, version, compat));
     }
+    // #1931 An App the trust table names comes only as a signed release, checked before its package is fetched; one listed
+    // without a release is refused (it would be a way round the signature). Every other App is installed as before.
+    const signed = releaseRequired(this.trust, extensionId) ? await this.signedRelease(extensionId, version, row, host.appVersion) : undefined;
 
     const bytes = await this.backend.download(row.bundle, {
       expectedBytes: row.bytes,
@@ -379,7 +406,11 @@ export class CloudExtensionMarket {
           `Bundle contains ${parsed.manifest.id}@${parsed.manifest.version}, not ${extensionId}@${version}`
         );
       }
-      return { sourceDir: target, source: row.source, releaseNotes: row.releaseNotes, sha256: row.sha256, bytes: row.bytes };
+      if (signed) {
+        const problems = releaseFileProblems(target, signed.release);
+        if (problems.length) throw new Error(`Extension ${extensionId}@${version} unpacked to files its signed release does not list (${firstProblem(problems)}). Nothing was installed.`);
+      }
+      return { sourceDir: target, source: row.source, releaseNotes: row.releaseNotes, sha256: row.sha256, bytes: row.bytes, ...(signed ? { release: signed } : {}) };
     } catch (error) {
       this.unpacking.delete(target);
       fs.rmSync(target, { recursive: true, force: true });
@@ -399,6 +430,8 @@ export class CloudExtensionMarket {
     fs.rmSync(target, { recursive: true, force: true });
     fs.renameSync(prepared.sourceDir, target);
     this.unpacking.delete(prepared.sourceDir);
+    if (prepared.release) this.heldReleases.set(prepared.sha256, prepared.release);
+    else this.heldReleases.delete(prepared.sha256);
     return { ...prepared, sourceDir: target };
   }
 
@@ -411,7 +444,11 @@ export class CloudExtensionMarket {
     if (!row) return null;
     const sourceDir = path.join(this.options.heldRoot, row.sha256);
     if (!fs.existsSync(path.join(sourceDir, EXTENSION_MANIFEST_FILENAME))) return null;
-    return { sourceDir, source: row.source, releaseNotes: row.releaseNotes, sha256: row.sha256, bytes: row.bytes };
+    // #1931 A signed App's held copy counts only with the release verified for it in this process, and only while its files
+    // are still the signed ones; otherwise the caller fetches and checks it again.
+    const signed = this.heldReleases.get(row.sha256);
+    if (releaseRequired(this.trust, extensionId) && (!signed || releaseFileProblems(sourceDir, signed.release).length > 0)) return null;
+    return { sourceDir, source: row.source, releaseNotes: row.releaseNotes, sha256: row.sha256, bytes: row.bytes, ...(signed ? { release: signed } : {}) };
   }
 
   /** 用完的一份(装好了、没装上、人说了不装):不管它在 staging 还是留着的地方,都删掉。 */
@@ -426,6 +463,38 @@ export class CloudExtensionMarket {
    */
   sweepHeld(): void {
     fs.rmSync(this.options.heldRoot, { recursive: true, force: true });
+    this.heldReleases.clear();
+  }
+
+  private get trust(): ReleaseTrustTable {
+    return this.options.releaseTrust ?? SHIPPED_RELEASE_TRUST;
+  }
+
+  /**
+   * #1931 The signed release of a version the trust table names, fetched (manifest and signature, each with its size cap) and
+   * verified before the package is: refused when the index lists none, when it does not verify, or when it is for another
+   * package. Said the way every refusal here is: one line, nothing unpacked.
+   */
+  private async signedRelease(
+    extensionId: string,
+    version: string,
+    row: MarketIndexVersion,
+    appVersion: string
+  ): Promise<NonNullable<MarketPrepared['release']>> {
+    if (!row.release) {
+      throw new Error(`Extension ${extensionId}@${version} is listed without the signed release gugu requires for it. Nothing was downloaded.`);
+    }
+    try {
+      const raw = await this.backend.download(row.release.manifest, { expectedBytes: MAX_RELEASE_MANIFEST_BYTES });
+      const signature = await this.backend.download(row.release.signature, { expectedBytes: RELEASE_SIGNATURE_BYTES });
+      const release = verifyMarketRelease(
+        { appId: extensionId, version, keyId: row.release.keyId, raw, signature, appZip: { sha256: row.sha256, bytes: row.bytes }, appVersion },
+        this.trust
+      );
+      return { release, proof: releaseProof(row.release.keyId, raw, signature) };
+    } catch (error) {
+      throw new Error(`Extension ${extensionId}@${version} failed the release check: ${error instanceof Error ? error.message : String(error)}. Nothing was unpacked.`);
+    }
   }
 
   /**

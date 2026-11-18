@@ -1,4 +1,4 @@
-import { hydrateLife, OUTCOME_UNKNOWN, shouldStartOnHydrate, step } from '@gugu/core/local/session-life/step';
+import { hydrateLife, OUTCOME_UNKNOWN, shouldStartAfterOutage, shouldStartOnHydrate, step } from '@gugu/core/local/session-life/step';
 import { STAGES } from '@gugu/core/local/session-life/types';
 import { isSqliteBusy } from '@gugu/core/shared/sqliteBusy';
 import { toSerializedError } from '@gugu/session-shared/result';
@@ -54,6 +54,10 @@ export interface SessionLifePorts {
   now(): number;
 }
 
+export type QueuedDeliveryRecovery =
+  | { state: 'waiting' }
+  | { state: 'needed' | 'started' | 'blocked'; cause: string };
+
 interface Run {
   readonly gen: Gen;
   readonly abort: AbortController;
@@ -108,12 +112,26 @@ export class SessionLife {
   private readonly reconcileAgain = new Set<string>();
   private epoch = 0;
   private account: string | null = null;
+  /** A newly installed owner has not yet resolved its first account transition. */
+  private authSettled = false;
   /** The last queued auth transition; null = idle. The only fact saying whether a transition is in progress. */
   private tail: Promise<void> | null = null;
   /** v3.1 #7: from leave's first interrupt until the epoch advances, nothing may start a run. */
   private leaving = false;
 
   constructor(private readonly ports: SessionLifePorts) {}
+
+  /** A host-owned input keeps its original signed-in epoch across asynchronous preparation and routing. */
+  inputOwnerFence(ownerUserId: string): () => void {
+    const epoch = this.epoch;
+    const assert = () => {
+      if (!ownerUserId || this.account !== ownerUserId || this.epoch !== epoch || this.leaving || this.tail !== null) {
+        throw Object.assign(new Error('The original attachment input owner is no longer active'), { code: 'attachment_creation_unverified' });
+      }
+    };
+    assert();
+    return assert;
+  }
 
   private entry(sessionId: string): Entry {
     const existing = this.entries.get(sessionId);
@@ -161,7 +179,10 @@ export class SessionLife {
   private transition(run: () => Promise<void>): Promise<void> {
     // Idle: run now, so a sign-out's interrupts land before the caller replaces its credentials.
     const next = this.tail ? this.tail.then(run) : run();
-    const tail: Promise<void> = next.catch(() => undefined).then(() => { if (this.tail === tail) this.tail = null; });
+    const tail: Promise<void> = next.catch(() => undefined).then(() => {
+      this.authSettled = true;
+      if (this.tail === tail) this.tail = null;
+    });
     this.tail = tail;
     return next;
   }
@@ -275,6 +296,48 @@ export class SessionLife {
     if (this.account === null) throw new Error('Sign in before starting this session');
     if (this.leaving) throw new Error('Sign-out is in progress; this session cannot start now');
     this.send(sessionId, { k: 'start', origin });
+  }
+
+  /** The backend is back: every session a start failure left holding rows starts again; `before` runs first for each. */
+  startAfterOutage(before: (sessionId: string) => void): readonly string[] {
+    if (this.account === null || this.leaving) return [];
+    const started: string[] = [];
+    for (const [sessionId, entry] of this.entries) {
+      if (!shouldStartAfterOutage(entry.life, this.ports.store(sessionId).pending(sessionId))) continue;
+      before(sessionId);
+      this.send(sessionId, { k: 'start', origin: 'retry' });
+      started.push(sessionId);
+    }
+    return started;
+  }
+
+  /**
+   * A host-owned scheduled delivery may retry its own unadmitted row. Ordinary duplicate enqueues
+   * retain their no-restart contract. The caller owns the retry budget; Life owns whether a start
+   * is safe. Never replay an accepted, dispatching, unknown or rejected input, or cross a stop.
+   */
+  recoverQueuedDelivery(sessionId: string, messageId: string, allowStart: boolean): QueuedDeliveryRecovery {
+    const store = this.ports.store(sessionId);
+    const row = store.unaccepted(sessionId).find(item => item.message.id === messageId);
+    if (row?.state !== 'queued') return { state: 'waiting' };
+    // The scheduler may bootstrap before the host restores its account or finishes hydration.
+    // This is pending initialization, not a terminal sign-out or a recovery reservation.
+    if (!this.authSettled || this.tail !== null) return { state: 'waiting' };
+    const entry = this.entry(sessionId);
+    const life = entry.life;
+    if (life.kind === 'starting' || life.kind === 'stopping' || life.kind === 'ready') return { state: 'waiting' };
+    const cause = life.kind === 'failed' ? life.hold.cause.message
+      : life.kind === 'archived' ? 'The session is archived'
+      : life.hold ? `The session is held: ${life.hold.reason}` : 'The pending session has no active runtime';
+    if (this.account === null || this.leaving) return { state: 'blocked', cause: 'The session is signed out' };
+    const mayRecover = shouldStartAfterOutage(life, store.pending(sessionId))
+      || (life.kind === 'dormant' && life.hold === null && shouldStartOnHydrate(life, store.pending(sessionId)));
+    if (!mayRecover) {
+      return { state: 'blocked', cause };
+    }
+    if (!allowStart) return { state: 'needed', cause };
+    this.send(sessionId, { k: 'start', origin: 'retry' });
+    return { state: 'started', cause };
   }
 
   interrupt(sessionId: string, event: InterruptEvent): Promise<void> {
@@ -531,9 +594,16 @@ export class SessionLife {
         if (run.abort.signal.aborted) return;
         let out: StageResult;
         try {
-          out = await runStage(run, effect);
+          const aborted = await untilAborted(runStage(run, effect), run.abort.signal,
+            late => { void run.adapter.teardown({ [late.at]: late.value }, { gen: run.gen }).catch(error => this.ports.failed(sessionId, error)); });
+          if (aborted === ABORTED) return;
+          out = aborted;
         } catch (error) {
-          if (!run.abort.signal.aborted) this.send(sessionId, { k: 'stage-fail', gen: run.gen, at: effect.at, cause: toSerializedError(error),
+          if (run.abort.signal.aborted) return;
+          // A start that cannot proceed is a failure of this session: say it at the failure level. The transition line
+          // below is info, under the hosts' default level, so without this a rejected stage left no line at all.
+          this.ports.failed(sessionId, new Error(`Start stage '${effect.at}' failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error }));
+          this.send(sessionId, { k: 'stage-fail', gen: run.gen, at: effect.at, cause: toSerializedError(error),
             ...((error as { awaitsPerson?: unknown }).awaitsPerson === true ? { awaitsPerson: true as const } : {}) });
           return;
         }
@@ -639,6 +709,25 @@ function stageOf(entry: Pick<Entry, 'life' | 'since'>): LifeView['stage'] {
 }
 
 function assertNever(value: never): never { throw new Error(`Unhandled lifecycle effect: ${String(value)}`); }
+
+const ABORTED = Symbol('aborted');
+/**
+ * @@@stop-never-waits-on-a-stage — a stop aborts the run at once; a stage still waiting on the network (a model-access
+ * request that never answers) must not hold the session's effect chain, or the stop never settles. The stage's late
+ * result, if it ever comes, is torn down like any result that lands after an abort.
+ */
+function untilAborted(stage: Promise<StageResult>, signal: AbortSignal, teardownLate: (late: StageResult) => void): Promise<StageResult | typeof ABORTED> {
+  if (signal.aborted) return stage;
+  return new Promise((resolve, reject) => {
+    const onAbort = () => resolve(ABORTED);
+    signal.addEventListener('abort', onAbort, { once: true });
+    stage.then(out => {
+      signal.removeEventListener('abort', onAbort);
+      if (signal.aborted) teardownLate(out);
+      resolve(out);
+    }, error => { signal.removeEventListener('abort', onAbort); reject(error); });
+  });
+}
 
 async function runStage(run: Run, effect: RunStageEffect): Promise<StageResult> {
   const ctx = { gen: run.gen, signal: run.abort.signal };

@@ -1276,14 +1276,11 @@ describe('项目→群 映射:并发不丢条目、读失败必出声', () => {
     expect(await readProjectGroupId('proj-alpha', OWNER, env)).toBe('chat-alpha')
     expect(await readProjectGroupId('proj-beta', OWNER, env)).toBe('chat-beta')
   })
-  it('文件坏了 → 报错出声,而不是静默当成「这个项目还没有群」', async () => {
+  it('文件坏了 → 抛错,而不是当成「这个项目还没有群」(那样会重复建群)', async () => {
     const { readProjectGroupId } = await import(MAPPING)
     const env = { GUGU_HOME: home } as NodeJS.ProcessEnv
     await writeFile(join(home, 'taskpage-project-groups.json'), '{ 这不是 JSON', 'utf8')
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    expect(await readProjectGroupId('proj-alpha', OWNER, env)).toBeNull()
-    expect(spy, '坏文件必须响亮地喊出来(否则重复建群这个 bug 会静默复发)').toHaveBeenCalled()
-    spy.mockRestore()
+    await expect(readProjectGroupId('proj-alpha', OWNER, env)).rejects.toThrow(/unreadable/)
   })
   it('首次运行(文件不存在)不吵:那是正常状态', async () => {
     const { readProjectGroupId } = await import(MAPPING)

@@ -22,6 +22,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { until } from '../../../../../../../tests/support/awaitCondition'
+import { appSettingsModel, LOCAL_SETTINGS_HOST_KEY } from '@renderer/features/settings/app-settings-client'
 
 // 搜索行点下去打开 ⌘K 那个面板(弹窗注册表会把整棵 app-state 建起来,那些要 IPC)—— 这条测试只量键帽,给一个不开窗的替身。
 vi.mock('@renderer/lib/modal/modal-provider', () => ({ useShowModal: () => () => {} }))
@@ -44,6 +45,8 @@ let host: HTMLDivElement
 let pointerPark: HTMLElement
 
 beforeEach(async () => {
+  // This device's keyboard settings, read: no custom bindings (the shortcut labels are drawn only once they are read).
+  appSettingsModel.set(['keyboard', LOCAL_SETTINGS_HOST_KEY], { value: {}, defaults: {}, overrides: {} })
   host = document.createElement('div')
   // 主题变量挂在 emlight/emdark 上(lib/theme/host-theme.ts);少了它键帽的边框与底色算不出来。
   // 宽度取侧栏常规宽,行才按产品里的样子排。
@@ -154,7 +157,7 @@ it('#5707 键帽静止不画、只在指针所在的那一行淡入,且两态之
  *
  * 这条**必须实测**,不能按「类名写了就行」放过:Tailwind v4 对生成不出来的变体是**静默丢掉整条
  * utility** 的,而 `:focus-visible` 还叠了引擎自己的启发式(上一次输入是不是键盘)。两处任何一处
- * 不成立,`group-focus-visible/row:opacity-100` 就是一条死类 —— 而死类和生效的类在 DOM 上长得一样。
+ * 不成立,`group-row-kbd-focus:opacity-100` 就是一条死类 —— 而死类和生效的类在 DOM 上长得一样。
  */
 it('#5707 键盘 Tab 停在那一行时键帽同样淡入(不止认指针)', async () => {
   mount()

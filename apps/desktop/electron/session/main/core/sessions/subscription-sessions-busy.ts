@@ -4,10 +4,10 @@
  */
 export class SubscriptionSessionsBusyError extends Error {
   constructor(
-    readonly providerId: 'claude' | 'codex',
+    readonly providerId: string,
     readonly count: number
   ) {
-    const label = providerId === 'claude' ? 'Claude' : 'Codex';
+    const label = providerId === 'claude' ? 'Claude' : providerId === 'codex' ? 'Codex' : providerId;
     super(
       `${count} ${label} session${count === 1 ? ' is' : 's are'} still working. ` +
         `Switch the subscription after they finish; switching restarts every running ${label} session.`

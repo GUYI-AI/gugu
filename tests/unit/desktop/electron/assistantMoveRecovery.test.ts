@@ -1,7 +1,12 @@
 import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, expect, it, vi } from 'vitest';
+import { installAssistantRulesResolver } from '../../../../apps/desktop/electron/assistant-rules-resolver';
+import { fixedAssistantRules } from '../assistantRules/fixtureApp';
+
+// #1931 The words are the assistant App's: the host's mechanics run here on the neutral test rules.
+beforeAll(() => installAssistantRulesResolver(fixedAssistantRules()));
 
 vi.mock('../../../../apps/desktop/electron/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),

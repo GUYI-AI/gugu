@@ -1,4 +1,5 @@
 import { isNotNull, sql } from 'drizzle-orm';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 import {
   index,
   integer,
@@ -62,6 +63,7 @@ export const imMessageChats = sqliteTable('im_message_chats', {
   membershipRevision: text('membership_revision'),
   chatRevision: text('chat_revision'),
   archived: integer('archived').notNull().default(0),
+  historyClearedAt: text('history_cleared_at'),
 }, table => ({
   key: primaryKey({ columns: [table.accountId, table.chatId] }),
   source: index('im_message_chats_source').on(table.accountId, table.sourceChatId, table.ownMember),
@@ -142,7 +144,8 @@ export const projects = sqliteTable(
   {
     id: text('id').primaryKey(),
     name: text('name').notNull(),
-    path: text('path').notNull(),
+    /** In its one spelling on this machine (`@@@canonical-path`): written only as `canonicalPath` made it. */
+    path: text('path').notNull().$type<CanonicalPath>(),
     workspaceProvider: text('workspace_provider').notNull().default('local'), // 'local' | 'ssh'
     baseRef: text('base_ref'),
     // gugu #2358: 非 git 项目标记。base_ref 自 0000 起就 nullable + 读路径 `?? 'main'` 兜底
@@ -232,7 +235,8 @@ export const workspaces = sqliteTable(
       onDelete: 'set null',
     }),
     data: versionedJsonColumn(workspaceProviderData)('data'),
-    path: text('path'),
+    /** In its one spelling on this machine (`@@@canonical-path`): written only as `canonicalPath` made it. */
+    path: text('path').$type<CanonicalPath>(),
     config: versionedJsonColumn(workspaceConfig)('config'),
     branchName: text('branch_name'),
     linesAdded: integer('lines_added'),
@@ -471,6 +475,9 @@ export const sessions = sqliteTable(
     // spec session-page: any conversation can be pinned; pinned rows leave their state group
     // and gather in the sidebar's Pinned section.
     isPinned: integer('is_pinned').notNull().default(0),
+    // #2548 固定到左侧栏: a top-level session whose agent lives in a group or project also gets its own row
+    // in the desktop left list. Independent of isPinned, which only orders a session within its own list.
+    isPinnedToSidebar: integer('is_pinned_to_sidebar').notNull().default(0),
     parentSessionId: text('parent_session_id').references(
       (): AnySQLiteColumn => sessions.id,
       { onDelete: 'set null' }
@@ -617,6 +624,12 @@ export const sessionTurns = sqliteTable(
     createdAt: text('created_at')
       .notNull()
       .default(sql`CURRENT_TIMESTAMP`),
+    /**
+     * How many times `data` was rewritten in place (a late tail, a changed outcome, a record fill). A reader that keeps
+     * turns (the phone) compares it with the one it holds and reads again only the turns that changed. Counted by a
+     * trigger (migration 0050), so no writer can forget it.
+     */
+    revision: integer('revision').notNull().default(0),
   },
   (table) => ({
     sessionSeqIdx: index('idx_session_turns_session_seq').on(

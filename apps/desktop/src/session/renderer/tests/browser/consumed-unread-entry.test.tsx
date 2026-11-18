@@ -94,13 +94,13 @@ async function renderConversation(width: number, naturallySeen = false, surface:
     const pending = useUnreadLocatorNavigation(input)
     const { onAtBottomChange } = useFollowingTail({ resetKey, unreadNavigationPending: pending, hasNewer: window.hasNewer,
       loading: !!window.loading, isPreservingPosition: memory.isPreservingPosition, isAtBottomRef, setFollowingTail })
-    const { pinToBottom, onTotalListHeightChanged } = useTailPinning({ resetKey, messages, enabled: !pending, messageWindow: window, scrollerEl: memory.scrollerEl, scrollerRef: memory.scrollerRef,
+    const { pinToBottom } = useTailPinning({ resetKey, messages, enabled: !pending, messageWindow: window, scrollerRef: memory.scrollerRef,
       listRef, isAtBottomRef, isPreservingPosition: memory.isPreservingPosition, prepareForSavedPosition: memory.prepareForSavedPosition,
       forgetSavedPosition: memory.forgetSavedPosition, returnToLatest, onError: rejected })
     const jump = () => {
       void navigation.jumpToUnreadEntry('long-chat', memory.scrollerRef.current).then(() => confirmed(`m${target}`), rejected)
     }
-    const rowProps: MessageListRowProps = { rows, messages, mobile: width < 720, memberReadSeqs: {}, deliveryWaits: new Map(), memberProfiles: {},
+    const rowProps: MessageListRowProps = { rows, messages, mobile: width < 720, memberReadSeqs: {}, deliveryWaits: new Map(), recipientFacts: { agentIds: new Set(), wakes: new Map() }, memberProfiles: {},
       isGroupChat: true, onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible: noop, selectMode: false,
       selectedIds: new Set(), onToggleSelect: noop, onEnterSelectMode: noop, flashMessageId, threeParty: undefined,
       readReceiptHandle: undefined, memberProfileOpener: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
@@ -111,7 +111,6 @@ async function renderConversation(width: number, naturallySeen = false, surface:
       <div data-window-head={messages[0]?.id} style={{ height: 560, width: '100%', display: hidden ? 'none' : 'flex', flexDirection: 'column' }}>
       {!emptySearch && <MessageList rows={rows} rowProps={rowProps} resetKey={resetKey} listRef={listRef} scrollerRef={memory.setScrollerRef} surface={surface}
         initialTopMostItemIndex={memory.openLocation()} followTail={!pending && !window.hasNewer} onAtBottomChange={onAtBottomChange}
-        onTotalListHeightChanged={onTotalListHeightChanged}
         unreadAbove={entry ? { messageId: entry.locator.message_id, messageSeq: entry.locator.message_seq, label: 'Jump to first unread', onJump: jump, onSeen: entry.onSeen } : null} />}
     </div></>
   }

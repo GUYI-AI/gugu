@@ -43,9 +43,12 @@ article.subscription-service {
 .subscription-connection-quota[data-warning] { color: var(--warn-fg); }
 .subscription-connection-controls { display: flex; align-items: center; gap: 4px; }
 .subscription-connection-form { display: flex; flex-direction: column; gap: 16px; }
-.subscription-connection-form label { display: flex; flex-direction: column; gap: 6px; color: var(--muted-fg); font-size: var(--font-body); }
-.subscription-connection-form label.subscription-checkbox { flex-direction: row; align-items: center; }
-.subscription-connection-form input[type='checkbox'] { accent-color: var(--fg); }
+.subscription-connection-form label,
+.subscription-connection-models { display: flex; flex-direction: column; gap: 6px; color: var(--muted-fg); font-size: var(--font-body); }
+/* 模型清单读不到的那一句紧跟手填格,与格子标题同一个间距。 */
+.subscription-connection-models > .subscription-connection-description { margin-top: 0; }
+/* 表单底部:与「来源 → 自定义路径」那格同一种排法 —— 主按钮、「取消」同一行靠行尾,间距 8。 */
+.subscription-connection-form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 @container gg-settings (max-width: 520px) {
   article.subscription-service { padding: 20px 16px; gap: 16px 12px; }
   .subscription-quota-grid { gap: 20px; }
@@ -68,3 +71,6 @@ article.subscription-service {
 .subscription-credit-summary .subscription-note { margin: 0; }
 .subscription-credit-actions { display: flex; justify-content: flex-start; margin-top: 20px; }
 .subscription-credit-scope { font-size: var(--font-caption); }
+.subscription-status-line { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+/* 「连接」那一块与下面的额度条隔开一档(与资源库详情同一块,#2507)。 */
+.subscription-service-details > .agent-connection-rows { margin-bottom: 16px; }

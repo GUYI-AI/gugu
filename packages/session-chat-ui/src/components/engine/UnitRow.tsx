@@ -153,9 +153,17 @@ export type UnitRowProps = {
   /** 跑完后的最后一条回复(从 ChatRoot 来),只有它量出页脚 —— 见 MeasureCtx.finalReplyId。 */
   finalReplyId?: string | null;
   latestConversationMessageId?: string | null;
+  utteranceHovered?: boolean;
   /** 后台任务挂在哪条回复的过程行上 —— 见 MeasureCtx.background。 */
   background?: MeasureCtx['background'];
 };
+
+/** Whether this row is on screen from behind a fold, or is drawn from an item its page held back (`onHeldShown`). */
+function shownFromFold(unit: RenderUnit, viewState: ViewState): boolean {
+  // A row of an exchange is mounted while the exchange is folded, at no height: it counts once the exchange is open.
+  if (unit.activityFold && unit.kind !== 'agent-activity') return viewState.isCollapsed(unit.activityFold);
+  return unit.kind === 'conversation-process-steps' || (unit.data as { held?: true } | null | undefined)?.held === true;
+}
 
 // ── UnitRow ───────────────────────────────────────────────────────────────────
 
@@ -183,13 +191,19 @@ export function UnitRow(props: UnitRowProps) {
     return unit ? UNIT_REGISTRY[unit.kind] : undefined;
   });
 
+  createEffect(() => {
+    const unit = renderUnit();
+    if (unit && shownFromFold(unit, props.viewState)) commands().onHeldShown?.(unit.itemId);
+  });
+
   const chrome = createMemo(() => props.unit.chrome);
   const insetX = createMemo(() => chrome()?.insetX ?? 0);
   // Only the previous/new latest bubble changes its expansion policy. Publishing
   // another input must not remeasure every historical row's names and labels.
   const latestConversationMessageId = createMemo(() => {
     const id = props.latestConversationMessageId;
-    return id && unitContainsItem(props.unit, id.replace(/:batch-\d+$/, '')) ? id : null;
+    const replyId = props.unit.kind === 'turn-completion' ? (props.unit.data as { reply?: { id: string } }).reply?.id : undefined;
+    return id && (id === replyId || unitContainsItem(props.unit, id.replace(/:batch-\d+$/, ''))) ? id : null;
   });
   const finalReplyId = createMemo(() => {
     const id = props.finalReplyId;
@@ -456,6 +470,8 @@ export function UnitRow(props: UnitRowProps) {
               data-item-id={props.unit.itemId}
               classList={{ 'msg-src-flash': commands().flashMessageId === props.unit.itemId }}
               data-row-inset={insetX()}
+              data-conversation-utterance={props.unit.conversationUtterance}
+              data-utterance-hovered={props.utteranceHovered || undefined}
               style={{
                 'padding-top': `${props.unit.activityFold ? Math.min(props.unit.gapBefore, animatedReserved()) : props.unit.gapBefore}px`,
                 'padding-bottom': '0px',

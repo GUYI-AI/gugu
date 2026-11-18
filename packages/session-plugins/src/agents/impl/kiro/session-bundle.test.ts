@@ -20,17 +20,17 @@ describe('kiro session bundle', () => {
     ['edit', ['edit-workspace', 'dev-shell']],
     ['full-access', ['allow-all']],
   ])('%s opens with its policy presets on session/new', (permissionMode, policyPreset) => {
-    const result = materializeKiroSessionBundle(ctx, bundle({ mode: 'approval-required', permissionMode }));
+    const result = materializeKiroSessionBundle(ctx, bundle({ permissionMode }));
     expect(result.acp?.meta).toEqual({ kiro: { policyPreset } });
   });
 
   it('plan is stricter than every Kiro tier: refuses to start rather than open looser', () => {
-    expect(() => materializeKiroSessionBundle(ctx, bundle({ mode: 'approval-required', permissionMode: 'plan' })))
+    expect(() => materializeKiroSessionBundle(ctx, bundle({ permissionMode: 'plan' })))
       .toThrow("no permission mode for 'plan'");
   });
 
   it('the MCP token leaves the process environment and identity rides the session context', () => {
-    const result = materializeKiroSessionBundle(ctx, bundle({ mode: 'approval-required', permissionMode: 'edit' }));
+    const result = materializeKiroSessionBundle(ctx, bundle({ permissionMode: 'edit' }));
     expect(result.env).toEqual({ KEEP: 'yes' });
     expect(result.acp?.mcpServers).toHaveLength(1);
     expect(result.prompt?.carrier).toBe('session-context');

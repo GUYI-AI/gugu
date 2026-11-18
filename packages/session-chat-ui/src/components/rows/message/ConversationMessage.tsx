@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { PasswordRequestCard, passwordRequest, PASSWORD_CARD_HEIGHT } from './PasswordRequestCard';
+import { PasswordRequestCard, passwordRequest, passwordCardHeight } from './PasswordRequestCard';
 import { conversationSpeaker, messageReplyReference } from '@session-chat/state/conversation-density';
 import { For, Show, createMemo } from 'solid-js';
 import { conversationHeaderLayout } from './conversation-header-layout';
@@ -23,11 +23,12 @@ import { segmentItem } from './DeliveryCard';
 import { isMessageEditing } from './message-editor-metrics';
 import { UserMessageCard } from './UserMessageCard';
 import { ConversationReplyReference } from './ConversationReplyReference';
-import { CONVERSATION_EXPAND_H, CONVERSATION_FOOTER_H, conversationBubbleKey, hasConversationActions } from './conversation-body';
+import { CONVERSATION_EXPAND_H, CONVERSATION_FOOTER_H, conversationBubbleKey, conversationCanCollapse, conversationTailLane } from './conversation-body';
 export { isConversationMessage } from './conversation-body';
 import { ConversationNarration, conversationNarrationHeight } from './ConversationNarration';
 import { measureUserMessage } from './user-message-metrics';
-import { userMessageActionsHeight, type MessageVars } from './metrics';
+import { CONVERSATION_UTTERANCE_GAP } from '@session-chat/core/spacing';
+import { actionGap, conversationGutter, userMessageActionsHeight, type MessageVars } from './metrics';
 import { conversationRoot, conversationHeader, conversationName, conversationTime, conversationProcessButton, conversationProcessChevron, conversationTimeSeparator, conversationReferenceSeparator } from './conversation-message.css';
 
 import { CONVERSATION_PREVIEW_MAX_H, USER_PREVIEW_MAX_H } from '@session-chat/components/engine/row-metrics';
@@ -35,7 +36,7 @@ import { CONVERSATION_PREVIEW_MAX_H, USER_PREVIEW_MAX_H } from '@session-chat/co
 export function conversationContext(ctx: MeasureCtx, item?: ChatMessage): MeasureCtx {
   return { ...ctx,
     ...(item ? { expandedId: ctx.latestConversationMessageId === item.id || ctx.expanded(conversationBubbleKey(item)) ? item.id : null } : {}),
-    theme: { ...ctx.theme, layout: { ...ctx.theme.layout, preset: 'double', userGutter: Math.max(32, Math.round(ctx.width * .14)) } } };
+    theme: { ...ctx.theme, layout: { ...ctx.theme.layout, preset: 'double', userGutter: conversationGutter(ctx.width) } } };
 }
 
 export function conversationVars(item: ChatMessage, vars: MessageVars): MessageVars {
@@ -57,7 +58,7 @@ function segments(item: ChatMessage): ChatMessage[] {
 }
 
 export function conversationMessageHeight(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars): number {
-  return segments(item).reduce((height, segment, index) => height + singleHeight(segment, ctx, vars) + (index ? 12 : 0), 0);
+  return segments(item).reduce((height, segment, index) => height + singleHeight(segment, ctx, vars) + (index ? CONVERSATION_UTTERANCE_GAP : 0), 0);
 }
 
 /** Only an explicit IM reply or persisted timeline source gets a clickable quote. */
@@ -78,10 +79,18 @@ function replySenderLabel(quote: NonNullable<ChatMessage['conversationReply']>, 
   const sender = isSelfAddress(quote.fromId ?? null, self) && self?.displayName?.trim() ? self.displayName.trim() : shownSender(quote.from ?? null, quote.fromId ?? null, self);
   return [quote.chatId ? ctx.chatName?.(quote.chatId) : null,
     quote.self ? ctx.commands?.conversationAgentName?.() ?? null : sender]
-    .filter((part): part is string => Boolean(part?.trim())).join(' · ');
+    .filter((part): part is string => Boolean(part?.trim())).join(rowTranslator(ctx)('metadata.separator'));
 }
 function headerLayout(item: ChatMessage, ctx: MeasureCtx) {
   return conversationHeaderLayout(item, ctx, conversationSenderName(item, ctx));
+}
+
+/**
+ * How far below the top of a conversation message its bubble starts: the header line drawn above it (a delivered
+ * message's sender name). The row's height and the pinned summary's rest position both add it (#2629).
+ */
+export function conversationBubbleTop(item: ChatMessage, ctx: MeasureCtx): number {
+  return item.conversationPart === 'body' ? 0 : headerLayout(item, ctx).height;
 }
 
 function singleHeight(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars): number {
@@ -90,17 +99,17 @@ function singleHeight(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars): nu
     const head = headerLayout(item, ctx);
     return head.height + backgroundHeight(item, ctx) + (head.referenceInFooter ? measureUserMessage(item, conversationContext(ctx, item), conversationVars(item, vars)) : 0);
   }
-  const header = item.conversationPart === 'body' ? 0 : headerLayout(item, ctx).height;
-  if (passwordRequest(item)) return header + PASSWORD_CARD_HEIGHT;
+  const header = conversationBubbleTop(item, ctx);
+  const password = passwordRequest(item);
+  if (password) return header + passwordCardHeight(password);
   const bodyVars = conversationVars(item, vars);
   // 时间、复制、编辑那一行照原气泡画在气泡下面(owner 定稿 0 号图);没有正文就没有气泡,也不留这一行。
   const bodyCtx = conversationContext(ctx, item);
-  const body = passwordRequest(item) ? PASSWORD_CARD_HEIGHT : measureUserMessage(item, bodyCtx, bodyVars);
+  const body = measureUserMessage(item, bodyCtx, bodyVars);
   // 折着 ⇔ 展开量出来比现在高;那时气泡下面多一行「展开全文」。
   const folded = bodyCtx.expandedId !== item.id && !isMessageEditing(item.id, ctx) && measureUserMessage(item, { ...bodyCtx, expandedId: item.id }, bodyVars) > body;
-  const canCollapse = ctx.expanded(conversationBubbleKey(item)) && ctx.latestConversationMessageId !== item.id
-    && measureUserMessage(item, { ...bodyCtx, expandedId: null }, bodyVars) < body;
-  const actions = hasConversationActions(item) || headerLayout(item, ctx).referenceInFooter || isMessageEditing(item.id, ctx) || canCollapse ? 0 : userMessageActionsHeight(bodyVars);
+  const lane = conversationTailLane(item, conversationCanCollapse(item, ctx), headerLayout(item, ctx).referenceInFooter);
+  const actions = lane !== 'none' || isMessageEditing(item.id, ctx) ? 0 : userMessageActionsHeight(bodyVars, actionGap(bodyCtx.theme.layout));
   return header + body - actions + (folded ? CONVERSATION_EXPAND_H : 0) + (item.role === 'assistant' && item.conversationProcess ? backgroundHeight(item, ctx) : 0);
 }
 
@@ -119,7 +128,7 @@ export function ConversationMessage(props: { data: ChatMessage; ctx: RenderCtx; 
     <ConversationNarration data={props.data} ctx={props.ctx} />
   }>
     <Show when={(props.data.guguDelivery?.segments.length ?? 0) > 1} fallback={<SingleConversationMessage {...props} />}>
-      <For each={segments(props.data)}>{(segment, index) => <div style={{ 'margin-top': index() ? '12px' : '0' }}><SingleConversationMessage {...props} data={segment} /></div>}</For>
+      <For each={segments(props.data)}>{(segment, index) => <div style={{ 'margin-top': index() ? `${CONVERSATION_UTTERANCE_GAP}px` : '0' }}><SingleConversationMessage {...props} data={segment} /></div>}</For>
     </Show>
   </Show>;
 }
@@ -149,11 +158,11 @@ function SingleConversationMessage(props: { data: ChatMessage; ctx: RenderCtx; v
       <Show when={head().name}>{label => <SenderName class={conversationName} name={label().text} target={senderTarget()} style={{ width: `${head().nameWidth}px` }} />}</Show>
       {reference()}
       <Show when={messageQuote(props.data) && subject() && props.data.conversationProcess}>
-        <span class={conversationReferenceSeparator} data-slot="conversation-reference-separator" aria-hidden="true">·</span>
+        <span class={conversationReferenceSeparator} data-slot="conversation-reference-separator" aria-hidden="true"> </span>
       </Show>
       <Show when={subject() && props.data.conversationProcess}>{process =>
         <div class={conversationTime} style={{ width: `${head().processWidth}px`, height: `${processRowHeight(props.data.id, process(), head().processCtx)}px` }}>
-          <ConversationProcess measureCtx={() => head().processCtx} process={process()} anchorId={props.data.id} expanded={turnProcessExpanded(process().live, props.ctx.viewState.isCollapsed(process().id))} />
+          <ConversationProcess measureCtx={() => head().processCtx} process={process()} anchorId={props.data.id} expanded={turnProcessExpanded(process().live, props.ctx.viewState.isCollapsed(process().toggleId ?? process().id))} />
           <ProcessBackgroundPill ownerId={props.data.id} ctx={{ ...props.ctx, measureCtx: () => head().processCtx }} />
         </div>
       }</Show>
@@ -182,7 +191,10 @@ export function ProcessBackgroundPill(props: { ownerId: string; ctx: RenderCtx }
       <button type="button" class={conversationProcessButton} data-slot="background-tasks-pill"
         style={{ width: `${backgroundPillLayout(props.ownerId, props.ctx.measureCtx!())!.width}px`, height: `${backgroundPillLayout(props.ownerId, props.ctx.measureCtx!())!.height}px` }}
         data-collapse-id={BACKGROUND_TASKS_TOGGLE} data-collapse-anchor={props.ownerId} aria-expanded={tasks().expanded}>
-        <ShimmerText active multiline style={{ 'white-space': 'pre-wrap', 'line-height': '22px', 'min-width': 0 }}>{backgroundPillLayout(props.ownerId, props.ctx.measureCtx!())!.text}</ShimmerText>
+        {/* The text slot is the measured width and nothing more: it must not shrink below its own content. A rendering a
+            hair wider than the canvas measure (another font, another pixel ratio) would otherwise wrap the last glyph, and
+            the second line spills out of this one-line box over the process header above it. */}
+        <ShimmerText active multiline style={{ 'white-space': 'pre-wrap', 'line-height': '22px', 'flex-shrink': 0 }}>{backgroundPillLayout(props.ownerId, props.ctx.measureCtx!())!.text}</ShimmerText>
         <span class={conversationProcessChevron} aria-hidden="true">›</span>
       </button>
     </span>
@@ -192,6 +204,6 @@ export function ProcessBackgroundPill(props: { ownerId: string; ctx: RenderCtx }
 /** 单子就地展开在过程行下面(高度见 `backgroundHeight`)。 */
 export function ProcessBackgroundList(props: { ownerId: string; ctx: RenderCtx }) {
   return <Show when={attachedBackground(props.ownerId, props.ctx)?.expanded ? attachedBackground(props.ownerId, props.ctx) : null}>{tasks =>
-    <BackgroundTasksList commands={tasks().commands} subagents={tasks().subagents} measureCtx={props.ctx.measureCtx!} />
+    <BackgroundTasksList commands={tasks().commands} subagents={tasks().subagents} measureCtx={props.ctx.measureCtx!} anchorId={props.ownerId} />
   }</Show>;
 }

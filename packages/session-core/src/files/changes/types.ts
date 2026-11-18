@@ -1,4 +1,5 @@
 import type { Result, Unsubscribe } from '@gugu/session-shared';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 import type { FileError } from '../errors';
 import type { FileExclusionPredicate } from '../exclusions';
 
@@ -7,7 +8,8 @@ export type FileChangeKind = 'create' | 'update' | 'delete';
 
 export type FileChange = {
   kind: FileChangeKind;
-  path: string;
+  /** Under the feed's canonical root, as the OS reports it there: canonical too (`@@@canonical-path`). */
+  path: CanonicalPath;
   entryType: FileEntryType;
 };
 

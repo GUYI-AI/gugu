@@ -44,7 +44,7 @@ The transport follows request/grant cancellation and does not replay an uncertai
 
 ## Tool inventory
 
-`permissions/inventory.ts` is the reviewed table of all **85 core tools and 117 device actions** on this implementation baseline. Each name has a risk and effect class. The inventory test connects to the actual product MCP composition in both provision roles and reads both native discovery and the complete paginated catalog, rather than maintaining a second list of registrars. It also constructs the real device families, including generated Computer Use actions and mixed-case names. An addition or removal without a corresponding reviewed classification fails the test.
+`permissions/inventory.ts` is the reviewed table of all **85 core tools and 94 device actions** on this implementation baseline. Each name has a risk and effect class. The inventory test connects to the actual product MCP composition in both provision roles and reads both native discovery and the complete paginated catalog, rather than maintaining a second list of registrars. It also constructs the real device families, including mixed-case names. An addition or removal without a corresponding reviewed classification fails the test.
 
 Installed Apps and connected services are dynamic, so a static market-wide list cannot be complete. Each actual dynamic call receives a high-risk, unclassified operation; MCP read-only hints and similar names cannot downgrade it. Explicit denials still apply; an allow does not suppress its enforced confirmation requirement. New core tools fail closed as unclassified. Browser/Computer actions with opaque business effects are not treated as safe reads because their names resemble clicks or navigation.
 

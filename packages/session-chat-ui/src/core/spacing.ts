@@ -6,6 +6,9 @@
  * seam between siblings resolves to max(prevBottom, curTop).
  */
 
+export const CONVERSATION_BLOCK_GAP = 8;
+export const CONVERSATION_UTTERANCE_GAP = 24;
+
 // ── Margin ────────────────────────────────────────────────────────────────────
 
 /**

@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
-// 手机对话页那排页签(OpenDCAI/gugu#446,原型 v7.12):第一枚「群聊」,后面每个话题一枚;点一枚 = 消息区换成它。
+// #2797 moves phone group topic navigation above the composer; desktop pinned tabs remain.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, type ReactNode } from 'react'
 import { ChatAreaPanel } from '../../../../apps/desktop/src/components/ChatAreaPanel'
 import { chat, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 import { openImRepository, type AccountImRepository } from '../../../../apps/desktop/src/lib/imRepository'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
-import { queryClient } from '../../../../apps/desktop/src/session/renderer/lib/query-client'
+import { queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { requestTopicSplit } from '../../../../apps/desktop/src/lib/topicSplitRequest'
 import { pressBack } from '../../../../apps/desktop/src/components/ui/sheetStack'
 
@@ -88,97 +88,104 @@ async function render(chatId: string, mobile = true, kind: 'group' | 'dm' = 'gro
   await act(async () => { await Promise.resolve() })
 }
 
-const q = (selector: string) => harness.container.querySelector<HTMLElement>(selector)
+const q = (selector: string) => [...harness.container.querySelectorAll<HTMLElement>(selector)].find(node => !node.closest('[data-testid=session-chat-panel].invisible')) ?? null
 const tab = (id: string) => q(`[data-testid="phone-chat-tab-${id}"]`)
 
-describe('shared group topic tabs (#446, #837)', () => {
-  it('phone: Group chat and every topic are on the strip, and there is no topics button', async () => {
+const choice = (id: string) => document.querySelector<HTMLElement>(`[data-testid="phone-room-topic"][data-topic-id="${id}"]`)
+const mainChoice = () => document.querySelector<HTMLElement>('[data-testid="phone-room-main"]')
+async function openTopics() {
+  await vi.waitFor(() => expect(q('[data-testid="phone-room-topics"]')).not.toBeNull())
+  await act(async () => { q('[data-testid="phone-room-topics"]')!.click() })
+  await vi.waitFor(() => expect(mainChoice()).not.toBeNull())
+}
+async function pickTopic(id: string | null) {
+  await openTopics()
+  await act(async () => { (id ? choice(id) : mainChoice())!.click() })
+  await vi.waitFor(() => expect(document.querySelector('[data-testid="phone-room-controls-sheet"]')).toBeNull())
+}
+
+describe('shared group topic navigation (#446, #837, #2797)', () => {
+  it('phone: the composer topic sheet contains Group chat and every topic without pinning', async () => {
     pinPrefs.ids = []
     await render('g1')
-    await vi.waitFor(() => expect(tab('t1')).not.toBeNull())
-    expect(tab('main')?.getAttribute('aria-selected')).toBe('true')
-    expect(tab('t1')?.textContent).toBe('把登录页的报错改成…')
-    expect(tab('t2')).not.toBeNull()
-    expect(q('[data-testid="group-menu-topics"]')).toBeNull()
+    expect(q('[data-testid="phone-chat-tabs"]')).toBeNull()
+    await openTopics()
+    expect(mainChoice()?.getAttribute('aria-checked')).toBe('true')
+    expect(choice('t1')?.textContent).toContain(TOPICS[0]!.name)
+    expect(choice('t2')).not.toBeNull()
     expect(q('[data-testid="topic-split-pane"]')).toBeNull()
   })
 
-  it('phone: a topic calling you shows red @N, comes right after Group chat, and plain unread stays a plain count', async () => {
-    pinPrefs.ids = []
+  it('phone: topics calling you precede ordinary unread topics, marked red with the call count; other unread is a grey dot', async () => {
     const locator = (unread: number, addressed: number) => ({ stream_id: 'main', stream_kind: 'main' as const, thread_root_id: null, message_id: 'm', message_seq: 1, unread_count: unread, addressed_count: addressed, cursor_seq: 0, version: 1, is_marked_unread: false })
     topicRows = { t1: { unread_count: 9, unread_locator: locator(9, 0) }, t2: { unread_count: 27, unread_locator: locator(27, 2) } }
     try {
       await render('g1')
-      await vi.waitFor(() => expect(tab('t2')).not.toBeNull())
-      expect(tab('t2')!.querySelector('[data-tab-call]')?.textContent).toBe('@2')
-      expect(tab('t2')!.getAttribute('aria-label')).toContain('周报')
-      expect(tab('t1')!.querySelector('[data-tab-call]')).toBeNull()
-      expect(tab('t1')!.textContent).toContain('9')
-      const order = [...document.querySelectorAll<HTMLElement>('[data-testid^="phone-chat-tab-"]')].map((node) => node.dataset.testid)
-      expect(order.slice(0, 3)).toEqual(['phone-chat-tab-main', 'phone-chat-tab-t2', 'phone-chat-tab-t1'])
+      await openTopics()
+      expect(choice('t2')?.querySelector('.gg-chip[data-tone="danger"]')?.textContent).toBe('@2')
+      expect(choice('t1')?.querySelector('.gg-chip[data-shape="dot"]')).not.toBeNull()
+      expect(choice('t1')?.textContent).not.toContain('9')
+      expect([...document.querySelectorAll<HTMLElement>('[data-testid="phone-room-topic"]')].map(node => node.dataset.topicId)).toEqual(['t2', 't1'])
     } finally { topicRows = {} }
   })
 
-  it('点话题那一枚:消息区换成它,没有自己的页头;点回「群聊」它就收起', async () => {
+  it('selects a topic in the existing message pane and returns to Group chat from the composer', async () => {
     await render('g1')
-    await vi.waitFor(() => expect(tab('t1')).not.toBeNull())
-    await act(async () => { tab('t1')!.click() })
+    await pickTopic('t1')
     expect(q('[data-testid="topic-split-pane"]')?.dataset.topicId).toBe('t1')
     expect(q('[data-testid="topic-split-back"]')).toBeNull()
-    expect(tab('t1')?.getAttribute('aria-selected')).toBe('true')
-    await act(async () => { tab('main')!.click() })
-    expect(q('[data-testid="topic-split-pane"]')).toBeNull()
-    expect(tab('main')?.getAttribute('aria-selected')).toBe('true')
+    await openTopics()
+    expect(choice('t1')?.getAttribute('aria-checked')).toBe('true')
+    await act(async () => { mainChoice()!.click() })
+    await vi.waitFor(() => expect(q('[data-testid="topic-split-pane"]')).toBeNull())
+    expect(q('[data-testid="phone-room-topics"]')?.textContent).toContain('话题')
   })
 
-  it('phone: back closes the open topic and shows the group', async () => {
+  it('phone: system back closes the open topic and shows the group', async () => {
     await render('g1')
-    await vi.waitFor(() => expect(tab('t2')).not.toBeNull())
-    await act(async () => { requestTopicSplit({ chatId: 't2', name: '周报', sourceChatId: 'g1' }) })
-    await vi.waitFor(() => expect(tab('t2')?.getAttribute('aria-selected')).toBe('true'))
+    await pickTopic('t2')
     await act(async () => { pressBack() })
     expect(q('[data-testid="topic-split-pane"]')).toBeNull()
-    expect(tab('main')?.getAttribute('aria-selected')).toBe('true')
+    await openTopics()
+    expect(mainChoice()?.getAttribute('aria-checked')).toBe('true')
   })
 
-  it('没有话题的对话不露这一排', async () => {
+  it('a group without topics still has the main conversation and Agent controls', async () => {
     await render('g2')
-    expect(q('[data-testid="phone-chat-tabs"]')).toBeNull()
+    expect(q('[data-testid="phone-room-agents"]')).not.toBeNull()
+    await openTopics()
+    expect(document.querySelectorAll('[data-testid="phone-room-topic"]')).toHaveLength(0)
+    expect(mainChoice()?.getAttribute('aria-checked')).toBe('true')
   })
 
-  it('opens the existing right split from the pinned strip on desktop', async () => {
+  it('retains the existing pinned right split on desktop', async () => {
     await render('g1', false)
     await vi.waitFor(() => expect(tab('t1')).not.toBeNull())
     expect(tab('t2')).toBeNull()
+    expect(q('[data-testid="phone-room-composer-controls"]')).toBeNull()
     await act(async () => { tab('t1')!.click() })
     expect(q('[data-testid="topic-split-pane"]')?.dataset.topicId).toBe('t1')
     expect(q('[data-testid="topic-split-close"]')).not.toBeNull()
   })
 
-  it('selects the open topic on the phone strip, with Group still reachable', async () => {
+  it('reflects an externally opened topic in the composer sheet and keeps Group chat reachable', async () => {
     await render('g1')
-    await vi.waitFor(() => expect(tab('t1')).not.toBeNull())
     await act(async () => { requestTopicSplit({ chatId: 't2', name: '周报', sourceChatId: 'g1' }) })
     await vi.waitFor(() => expect(q('[data-testid="topic-split-pane"]')?.dataset.topicId).toBe('t2'))
-    expect(tab('main')?.getAttribute('aria-selected')).toBe('false')
-    expect(tab('t1')?.getAttribute('aria-selected')).toBe('false')
-    expect(tab('t2')?.getAttribute('aria-selected')).toBe('true')
-    await act(async () => { tab('main')!.click() })
-    expect(q('[data-testid="topic-split-pane"]')).toBeNull()
-    expect(tab('main')?.getAttribute('aria-selected')).toBe('true')
+    await openTopics()
+    expect(mainChoice()?.getAttribute('aria-checked')).toBe('false')
+    expect(choice('t2')?.getAttribute('aria-checked')).toBe('true')
   })
 
-  it('desktop: hides the strip without pins even when topics exist', async () => {
+  it('desktop: hides the pinned strip when no topics are pinned', async () => {
     pinPrefs.ids = []
     await render('g1', false)
-    await vi.waitFor(() => expect(queryClient.getQueryData(['chat-pins', 'user-1', 'g1'])).toEqual({ topicIds: [] }))
+    await vi.waitFor(() => expect(queryClient.getQueryData(['chatPins', 'user-1', 'g1'])).toEqual({ topicIds: [] }))
     expect(q('[data-testid="phone-chat-tabs"]')).toBeNull()
   })
 
-  it('retains existing mobile non-group topic navigation', async () => {
+  it('does not add room navigation to a direct message', async () => {
     await render('g1', true, 'dm')
-    await vi.waitFor(() => expect(tab('t2')).not.toBeNull())
-    await act(async () => { tab('t2')!.click() })
-    expect(q('[data-testid="topic-split-pane"]')?.dataset.topicId).toBe('t2')
+    expect(q('[data-testid="phone-room-composer-controls"]')).toBeNull()
   })
 })

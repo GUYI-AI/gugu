@@ -1,5 +1,6 @@
 import { platform } from '../platform'
 import { i18n } from '@/i18n'
+import { replica } from './replica'
 
 /**
  * @@@5301 通知这一格的两个出口:**替用户去开权限**,以及**自己验一遍链路**。
@@ -25,13 +26,50 @@ export type NotificationTestResult =
   | { kind: 'rejected'; error: string }
   | { kind: 'unsupported' }
 
-export async function sendTestNotification(): Promise<NotificationTestResult> {
+export const ANDROID_NOTIFICATION_PROBLEM_COPY = {
+  'app-disabled': 'settings.general.notificationsAndroidAppDisabled',
+  'channel-disabled': 'settings.general.notificationsAndroidChannelDisabled',
+  'below-high': 'settings.general.notificationsAndroidChannelQuiet',
+} as const
+
+export type AndroidNotificationProblem = keyof typeof ANDROID_NOTIFICATION_PROBLEM_COPY
+
+export async function readAndroidNotificationProblem(silent: boolean): Promise<AndroidNotificationProblem | null | undefined> {
+  try {
+    const status = await platform.androidNotificationSettings?.read(silent)
+    if (!status) return undefined
+    if (!status.enabled) return 'app-disabled'
+    if (status.importance === undefined || status.importance < 0) return undefined
+    if (status.importance === 0) return 'channel-disabled'
+    if (status.importance < 4) return 'below-high'
+    return null
+  } catch {
+    return undefined
+  }
+}
+
+export const androidNotificationProblem = replica({
+  name: 'androidNotificationProblem',
+  scope: 'device',
+  read: async (_owner, silent: boolean) => ({ problem: await readAndroidNotificationProblem(silent) }),
+})
+
+export async function openAndroidNotificationSettings(silent: boolean, problem?: AndroidNotificationProblem | null): Promise<void> {
+  try {
+    await platform.androidNotificationSettings?.open(silent, problem === 'app-disabled')
+  } catch {
+    await platform.openSystemPermissionSettings('notifications').catch(() => false)
+  }
+}
+
+export async function sendTestNotification(silent?: boolean): Promise<NotificationTestResult> {
   if (!platform.capabilities.notifications) return { kind: 'unsupported' }
   try {
     const result = await platform.showNotification({
       title: i18n.t('settings.general.notificationsTestTitle', { ns: 'main' }),
       body: i18n.t('settings.general.notificationsTestBody', { ns: 'main' }),
       chatId: null,
+      ...(silent === undefined ? {} : { silent }),
     }) as { displayed?: unknown; unsupported?: unknown; error?: unknown } | null
     if (result?.unsupported === true) return { kind: 'unsupported' }
     if (typeof result?.error === 'string' && result.error.length > 0) {

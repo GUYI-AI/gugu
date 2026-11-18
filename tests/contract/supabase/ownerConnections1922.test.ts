@@ -44,14 +44,16 @@ async function fixture(body: (value: {
   db: Database; owner: string; other: string; device: string; foreignDevice: string; instance: string
   client: ReturnType<typeof clientAs>; otherClient: ReturnType<typeof clientAs>
   save(account: string): Promise<Awaited<ReturnType<ReturnType<typeof clientAs>['commit']>>>
+  switchToOwner(): Promise<unknown>
 }) => Promise<void>) {
   await withContractDatabase(async db => {
     await db.query('BEGIN')
     try {
       for (const [name,parameters] of Object.entries(rpc)) {
         const signature = `identity.${name}(${parameters.map(([,type]) => type).join(',')})`
-        // Missing application RPCs are a dependency failure, never a skipped test.
-        expect((await db.query<{ allowed: boolean }>("SELECT has_function_privilege('authenticated',$1,'EXECUTE') AS allowed",[signature])).rows[0]!.allowed).toBe(name === 'connection_authority')
+        // Missing application RPCs are a dependency failure, never a skipped test. Since gugu-supabase #252 every owner
+        // RPC is granted to authenticated in the same release; each refuses accounts without owner authority itself.
+        expect((await db.query<{ allowed: boolean }>("SELECT has_function_privilege('authenticated',$1,'EXECUTE') AS allowed",[signature])).rows[0]!.allowed).toBe(true)
         if (name !== 'connection_authority') await db.query(`GRANT EXECUTE ON FUNCTION ${signature} TO authenticated`)
       }
       const owner = randomUUID(),other = randomUUID(),device = randomUUID(),foreignDevice = randomUUID(),instance = randomUUID()
@@ -66,15 +68,31 @@ async function fixture(body: (value: {
       const save = (account: string) => client.commit({ operationId: randomUUID(),scopeKey: `device:${device}`,resourceKey: JSON.stringify(['github',account]),
         expectedRevision: '0',operation: 'save',data: { providerId: 'github',accountId: account,configured: true },
         document: JSON.stringify({ version: 1,providerId: 'github',accountId: account,login: account }),deviceId: device,runtimeInstanceId: instance })
-      await body({ db,owner,other,device,foreignDevice,instance,client,otherClient,save })
+      // Since gugu-supabase #252 only the maintenance cutover makes an account owner: owner writes no longer initialize
+      // one, and a new or legacy account reads not-ready and is refused. The real writer (native path), under the bounded
+      // timeouts it requires; they are lifted again so the rest of this one transaction runs unbounded.
+      const switchToOwner = async () => {
+        await db.query("SET LOCAL statement_timeout='2s'; SET LOCAL lock_timeout='250ms'; SET LOCAL transaction_timeout='2s'")
+        const switched = (await db.query<{ v: unknown }>("SELECT identity.connection_authority_cutover($1,0,'contract-1922') v",[owner])).rows[0]!.v
+        await db.query('SET LOCAL transaction_timeout=0; SET LOCAL statement_timeout TO DEFAULT; SET LOCAL lock_timeout TO DEFAULT')
+        return switched
+      }
+      await body({ db,owner,other,device,foreignDevice,instance,client,otherClient,save,switchToOwner })
     } finally { await db.query('ROLLBACK') }
   })
 }
 
 describe('owner connections #1922 client/database contract', () => {
-  it('retains nullable not-ready, actual UTF-8 bodies and owner/device isolation without an assistant', async () => fixture(async ({ db,owner,device,foreignDevice,client,otherClient,save }) => {
-    expect(await client.authority()).toEqual({ version: 1,mode: 'legacy',epoch: '0',phase: 'stable',acceptingNewOperations: true })
+  it('retains nullable not-ready, actual UTF-8 bodies and owner/device isolation without an assistant', async () => fixture(async ({ db,owner,device,foreignDevice,client,otherClient,save,switchToOwner }) => {
+    const legacy = { version: 1,mode: 'legacy',epoch: '0',phase: 'stable',acceptingNewOperations: true }
+    expect(await client.authority()).toEqual(legacy)
     expect(await client.snapshot()).toEqual({ version: 1,state: 'not-ready',revision: '0',items: null,application: null })
+    // Not switched, an owner write is refused and leaves the account as it was: it no longer initializes it (#252).
+    await expect(save('early')).rejects.toBeTruthy()
+    expect(await client.authority()).toEqual(legacy)
+    const owned = { version: 1,mode: 'owner',epoch: '1',phase: 'stable',acceptingNewOperations: true }
+    expect(await switchToOwner()).toEqual(owned)
+    expect(await client.authority()).toEqual(owned)
     const saved = await save('first')
     const resource = await client.resource(`device:${device}`,saved.resourceKey)
     expect(resource.item?.publicMetadata?.accountId).toBe('first')
@@ -82,7 +100,8 @@ describe('owner connections #1922 client/database contract', () => {
     await expect(client.snapshot(foreignDevice)).rejects.toMatchObject({ code: '42501' })
     expect((await db.query<{ count: string }>("SELECT count(*) FROM identity.users WHERE owner_user_id=$1 AND type='agent'",[owner])).rows[0]!.count).toBe('0')
   }))
-  it('retains original operation identity through pending, admission and idempotent unknown acknowledgement', async () => fixture(async ({ device,instance,client,save }) => {
+  it('retains original operation identity through pending, admission and idempotent unknown acknowledgement', async () => fixture(async ({ device,instance,client,save,switchToOwner }) => {
+    await switchToOwner()
     const saved = await save('remove')
     const change: ConnectionCommit = { operationId: randomUUID(),scopeKey: `device:${device}`,resourceKey: saved.resourceKey,expectedRevision: saved.revision,operation: 'remove',deviceId: device }
     const removed = await client.commit(change)
@@ -98,7 +117,8 @@ describe('owner connections #1922 client/database contract', () => {
     expect(await client.ack(instance,operation.operationId,admission.admissionId!,'CONNECTION_OUTCOME_UNKNOWN',true)).toEqual(unknown)
     expect((await client.pending(instance)).changes.find(row => row.operationId === operation.operationId)).toMatchObject({ status: 'failed',terminal: true })
   }))
-  it('blocks tombstone observations and consumes a provider ticket only for the actual service-resolved account', async () => fixture(async ({ device,instance,client,save }) => {
+  it('blocks tombstone observations and consumes a provider ticket only for the actual service-resolved account', async () => fixture(async ({ device,instance,client,save,switchToOwner }) => {
+    await switchToOwner()
     const saved = await save('revoked')
     const removed = await client.commit({ operationId: randomUUID(),scopeKey: `device:${device}`,resourceKey: saved.resourceKey,
       expectedRevision: saved.revision,operation: 'remove',deviceId: device })
@@ -117,7 +137,8 @@ describe('owner connections #1922 client/database contract', () => {
     expect(await client.commit(complete)).toEqual(receipt)
     expect((await client.resource(`device:${device}`,saved.resourceKey)).item?.deletedAt).toBeNull()
   }))
-  it('submits all imported accounts atomically and returns the same child receipts on a parent retry', async () => fixture(async ({ device,instance,client,save }) => {
+  it('submits all imported accounts atomically and returns the same child receipts on a parent retry', async () => fixture(async ({ device,instance,client,save,switchToOwner }) => {
+    await switchToOwner()
     await save('initial')
     const operationId = randomUUID(),head = await client.snapshot(device)
     const intent = await client.recreateBegin({ operationId,scopeKey: `device:${device}`,resourceKey: null,expectedRevision: null,

@@ -16,14 +16,11 @@ import { useMachineLabel } from './useMachineLabel'
 import { visibleMachines, workspaceDevices } from './machine-list'
 import { DeviceDirectoryRetry } from './DeviceDirectoryRetry'
 import { PhoneHostSetupEntry } from './PhoneHostSetupEntry'
-import { phoneAgentAvailable } from '../local-agent/nativeAgent'
+import { platform } from '@/platform'
 import './task-flow-catalog'
 
 /**
- * 选机器页:新建会话的第一步(「在哪台机器上」)。
- *
- * #7199 起手机底栏那一格(「项目」)按项目列,机器不再是上一层 —— 这张页只剩「新建会话先选机器」这一件事,
- * 由项目页右上角的 + 与联系人页的「新建 Agent」推进来。
+ * 选机器页:群里派任务选「在哪台电脑上」(DispatchMachine)。新建任务不再先选机器(DESIGN 点击路径 4a,机器是新建页上的一行)。
  *
  * 复用 DevicesProvider —— 「这个账号有哪些机器、哪台在线」全 app 只有那一份事实源
  * (#1749);这里再拉一次列表就会出现「设置里显示在线、这里显示离线」的两份真相。
@@ -34,11 +31,9 @@ import './task-flow-catalog'
 export function MachinesPage({
   onBack,
   onOpenDevice,
-  computersOnly = false,
 }: {
   onBack: () => void
   onOpenDevice: (device: Device) => void
-  computersOnly?: boolean
 }) {
   const { t } = useTranslation('main')
   const { t: tFlow } = useTranslation('mobileTaskFlow')
@@ -46,7 +41,7 @@ export function MachinesPage({
   const { isHome, label: machineLabel } = useMachineLabel()
   // #7199 个人助理住的那台不列(规定「它住在哪」):那台不接人开的任务。
   const candidates = [...new Map([...allDevices, ...phones].map((device) => [device.device_id, device])).values()]
-  const devices = visibleMachines(computersOnly ? workspaceDevices(candidates) : candidates, isHome)
+  const devices = visibleMachines(workspaceDevices(candidates), isHome)
 
   return (
     <AgentWatchScreen
@@ -76,7 +71,7 @@ export function MachinesPage({
 
       {devices.length === 0 && !loading && !error ? (
         <div className="gg-aw-placeholder">
-          <div>{phoneAgentAvailable() ? tFlow('noHost') : t('agentWatch.machines.empty')}</div>
+          <div>{platform.capabilities?.phoneAgentHost ? tFlow('noHost') : t('agentWatch.machines.empty')}</div>
           <PhoneHostSetupEntry />
         </div>
       ) : null}
@@ -140,7 +135,6 @@ function MachineCard({
           <span>{online ? t('agentWatch.machines.online') : connectable ? tFlow(waking ? 'connecting' : 'readyToConnect') : t('agentWatch.machines.offline')}</span>
           {!online && !connectable && seen ? (
             <>
-              <span className="gg-aw-item-sep">·</span>
               <span>{seen}</span>
             </>
           ) : null}

@@ -124,10 +124,6 @@ export default defineConfig({
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
-    // #1231: the agent 对外分享 pane only renders the share link + 「开启对外分享」 button when a
-    // public web base is configured (VITE_GUGU_WEB_URL); point it at the test server so the
-    // share link resolves to /join/agent/<id> on this same renderer (visited cross-context).
-    env: { ...process.env, VITE_GUGU_WEB_URL: BASE_URL },
   }),
   projects: [{
     name: 'ci-local',

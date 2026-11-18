@@ -38,8 +38,8 @@ function write(key: string, value: unknown): void {
 const idsOf = (rows: readonly Item[]) => rows.map((row) => row.manifest.id);
 
 /** 这一页画完一份(不带搜索词那一份)就存下:App 各一份,几排只记 id;`extra` 是这一页自己要的那几个小字段。 */
-export function keepShelf<T extends Item, X>(hostKey: string, items: readonly T[], home: MarketHome<Item>, extra: X): void {
-  const ids: Ids = {
+export function keepShelf<T extends Item, X>(hostKey: string, items: readonly T[], home: MarketHome<Item> | null, extra: X): void {
+  const ids: Ids | null = home && {
     featured: idsOf(home.featured),
     remaining: idsOf(home.remaining),
     newest: idsOf(home.newest),
@@ -48,12 +48,18 @@ export function keepShelf<T extends Item, X>(hostKey: string, items: readonly T[
   write(SHELF_KEY + hostKey, { items, ids, extra });
 }
 
-/** 上次存下的那份,几排按 id 接回同一个对象;没有、或者对不上就是 null。 */
-export function keptShelf<T extends Item, X>(hostKey: string): { items: T[]; home: MarketHome<T>; extra: X } | null {
-  const kept = read(SHELF_KEY + hostKey) as { items?: unknown; ids?: Partial<Ids>; extra?: X } | null;
-  if (!kept || !Array.isArray(kept.items) || !kept.ids) return null;
+export function keptShelfItems<T extends Item, X>(hostKey: string): { items: T[]; ids?: Partial<Ids> | null; extra: X } | null {
+  const kept = read(SHELF_KEY + hostKey) as { items?: unknown; ids?: Partial<Ids> | null; extra?: X } | null;
+  if (!kept || !Array.isArray(kept.items)) return null;
   if (!kept.items.every((item) => safeParseExtensionManifest((item as Partial<Item> | null)?.manifest).ok)) return null;
-  const items = kept.items as T[];
+  return { items: kept.items as T[], ids: kept.ids, extra: kept.extra as X };
+}
+
+/** 上次存下的手机市场目录,几排按 id 接回同一个对象。 */
+export function keptShelf<T extends Item, X>(hostKey: string): { items: T[]; home: MarketHome<T>; extra: X } | null {
+  const kept = keptShelfItems<T, X>(hostKey);
+  if (!kept?.ids) return null;
+  const { items } = kept;
   const byId = new Map(items.map((item) => [item.manifest?.id, item]));
   const rows = (ids: unknown): T[] | null => {
     if (!Array.isArray(ids)) return null;
@@ -65,7 +71,7 @@ export function keptShelf<T extends Item, X>(hostKey: string): { items: T[]; hom
   const newest = rows(kept.ids.newest);
   const popular = kept.ids.popular === null ? null : rows(kept.ids.popular);
   if (!featured || !remaining || !newest || (kept.ids.popular !== null && !popular)) return null;
-  return { items, home: { featured, remaining, newest, popular }, extra: kept.extra as X };
+  return { items, home: { featured, remaining, newest, popular }, extra: kept.extra };
 }
 
 /** 一个 App 在这台机器上精选底图的那一版:每个 App 只记最后取到的那一版(新一版取到就顶掉旧的)。 */

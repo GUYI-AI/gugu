@@ -7,6 +7,10 @@ import {
   sessionAgentStatusDetail,
 } from '@renderer/features/sessions/stores/session-selectors';
 import { followLink } from '@/lib/guguLinks';
+import { isAgentHomeImportCode } from '@gugu/session-core/workspace-server/agent-config';
+import { AgentHomeRepair } from '@renderer/features/settings/subscriptions/AgentHomeRepair';
+import { useAgents } from '@renderer/lib/stores/use-agents';
+import { machineRegistry } from '@renderer/lib/machine-routing';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
 import type { AutomationRun } from '@shared/core/automations/automation-run';
@@ -36,6 +40,7 @@ export const AutomationRunRow = observer(function AutomationRunRow({
   const fetchedRun = useAutomationRun(automationId, runId);
   const run = runProp ?? fetchedRun;
   const { projectId } = useAutomationRunActions(automationId);
+  const { data: agents } = useAgents();
 
   const sessionId = run ? (run.sessionId ?? deliveredTo ?? null) : null;
   const sessionPageStore = sessionId && projectId ? getSessionPageStore(projectId, sessionId) : undefined;
@@ -58,6 +63,7 @@ export const AutomationRunRow = observer(function AutomationRunRow({
   }
 
   if (!run) return null;
+  const repairProvider = isAgentHomeImportCode(run.error?.code) ? run.agentConfigSnapshot.provider : null;
 
   return (
     <div
@@ -65,7 +71,7 @@ export const AutomationRunRow = observer(function AutomationRunRow({
         'group relative flex cursor-pointer flex-col px-2 py-2 transition-colors',
         interactive ? 'hover:bg-row-hover' : 'cursor-default opacity-70'
       )}
-      role="button"
+      role={repairProvider ? undefined : 'button'}
       tabIndex={interactive ? 0 : -1}
       onClick={interactive ? handleOpenSession : undefined}
       onKeyDown={
@@ -84,7 +90,7 @@ export const AutomationRunRow = observer(function AutomationRunRow({
             ? translate('automations.openTask', { name: displayName })
             : translate('automations.openRun')
       }
-      aria-disabled={!interactive}
+      aria-disabled={repairProvider ? undefined : !interactive}
     >
       {sessionPageStore ? (
         <SessionDataLine
@@ -103,6 +109,8 @@ export const AutomationRunRow = observer(function AutomationRunRow({
         error={run.error}
         delivery={deliveredTo !== undefined}
       />
+      {repairProvider && <AgentHomeRepair providerId={repairProvider} name={agents?.find((agent) => agent.id === repairProvider)?.name}
+        machine={projectId ? machineRegistry.machineOf(projectId) ?? null : null} />}
     </div>
   );
 });

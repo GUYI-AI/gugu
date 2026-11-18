@@ -5,17 +5,18 @@ import { appContextMenuOf } from '../../session/shared/extensions/app-context-me
 import { fileBlob } from '@gugu/core/shared/fileResolver'
 import { guguLink, guguLinkScheme, linkTargetOf, type OpenTarget } from '@gugu/core/shared/ui/guguLink'
 import { openLinkWith } from '../../session/shared/extensions/open-link'
-import { openLinkTarget } from '../../lib/guguLinks'
+import { openLinkTarget, type LinkSource } from '../../lib/guguLinks'
 import { resourceChatIdOf } from '../../session/shared/extensions/app-files-core'
 import { readCachedDevices } from '../../store/devicesCache'
 import { directoryRows, listedSession, liveDeviceSessions } from '../../session/shared/remote-sessions/session-directory'
 import { rendererLogger } from '../../lib/log'
 import { platform } from '../../platform'
 import { getRendererAccessToken } from '../../lib/sessionPublication'
-import { AppFileError, contentTypeOf, createAppFiles, rosterMoved, tooLargeError, type ChatFileRef, type FileSurface, type MemberChange } from '../../session/shared/extensions/app-files-core'
-import { AppSendError, dispatchFromApp, type AppSendPlatform } from '../../session/shared/extensions/app-send-core'
+import { AppFileError, contentTypeOf, createAppFiles, rosterMoved, tooLargeError, viewedAmongOf, type ChatFileRef, type FileSurface, type MemberChange } from '../../session/shared/extensions/app-files-core'
+import { AppSendError, chatSelectionPills, dispatchFromApp, type AppSendPlatform } from '../../session/shared/extensions/app-send-core'
 import { answerAgentPick, pickAgentAsk } from '../../session/shared/extensions/app-dispatch-core'
 import { pickDispatchTarget } from '../chat/dispatchAsk'
+import { openSelectionSend } from '../chat/selectionSendAsk'
 import { chatOf, createAppMessages } from '../../session/shared/extensions/app-messages-core'
 import { createAppCloud, type CloudChannel } from '../../session/shared/extensions/app-cloud-core'
 import { dataClient } from '../../lib/supabase'
@@ -27,6 +28,10 @@ import {
   APP_FRAME_MARKER,
   SYNC_PORT_WINDOW_MESSAGE,
   fileRefOf,
+  openingNameOf,
+  openingViewOf,
+  boxOnWindow,
+  opensAsLink,
   openWithTabOf,
   openWithIntentOf,
   fileSearchOf,
@@ -74,11 +79,15 @@ import { callOnComputer } from './phoneProgramCall'
 import { isImplicitSessionHomeProjectId } from '../../session/shared/core/projects/session-home-project'
 import { openPhoneWorkingCopyFile, type ReadWorkingCopyChunk } from './phone-working-copy-file'
 import { appDeviceId, folderElsewhereRefusal, followsSessionMachine, notOnSessionMachine } from '../../session/shared/extensions/machine-call'
-import { HOSTED_PROGRAM_ELSEWHERE } from '../../session/shared/extensions/program-place'
 import { rendererFileServiceUrl } from '../../lib/chatFolder'
 import { AppModalSessions, type AppModalFocus } from '../../session/shared/extensions/app-modal'
 import { closeAppModal, focusAppModalClose, showAppModal } from '../appModal/appModal'
 import { APP_FORWARD_FILES_EVENT, APP_SESSION_FRAME_NAME } from '../../session/shared/extensions/app-runtime-protocol'
+import { answerPhoneBinding, createPhoneBindings } from './phoneAppBindings'
+import { phoneBindingPorts } from './phoneBindingPorts'
+import { appToast } from '../../session/shared/extensions/app-toast'
+import { chatSelectionSendOf, requirePreinstalledFiles, selectionSendOf } from '../../session/shared/extensions/selection-send'
+import { toast } from '../../session/renderer/lib/hooks/use-toast'
 
 const log = rendererLogger('app-slot/phone-host')
 
@@ -245,6 +254,12 @@ const files = createAppFiles({
   },
 })
 
+/**
+ * API 49 The conversation binding on this phone (phoneAppBindings.ts): the host's own binding of the assistant App to the
+ * account's private chat with its assistant, answered here as main answers it on a computer.
+ */
+const phoneBindings = createPhoneBindings(phoneBindingPorts(files))
+
 /** A chat document's place and the files its page names beside it, for its preview (chat-folder-preview-registration.ts). */
 export function chatDocumentPlace(itemId: string) {
   return files.documentPlace(itemId)
@@ -329,14 +344,17 @@ function takeOpeningLinks(binding: PhoneAppBinding): ExtensionHostEvent[] {
  * a tap in an App decides it (`openerChoice`; `none`: the panel offers an App that would) — main's `groupFileOpener` on
  * the desktop, this page's on the phone.
  */
-export async function groupFileOpener(args: { chatId: string; itemId: string; at?: Record<string, string> }): Promise<Result<AppOpenWithDetail>> {
+export async function groupFileOpener(args: { chatId?: string; itemId: string; at?: Record<string, string>; among?: string[] }): Promise<Result<AppOpenWithDetail>> {
   try {
+    // API 57: the images an App page showed with it, read while the file is — main's `groupFileOpener` too.
+    const among = viewedAmongOf(files.viewedAmong, args)
     const target = await files.groupFile(args.chatId, args.itemId)
     const choice = openerChoice(target.typedName, appsHereNow(), 'chat', phoneApps.remembered)
     // App 引用 pill: the place, for the page about to open the file — main's `deliverToOpeningPage` on the desktop.
     const place = placeFor(choice, args.at)
     if (place) holdPlaceForOpeningPage(target.chatId, target.itemId, place.candidate, place.at)
-    return { success: true, data: { ...target, choice } }
+    const images = await among(target, choice)
+    return { success: true, data: { ...target, choice, ...(images.length ? { among: images } : {}) } }
   } catch (error) {
     return failure(error)
   }
@@ -533,12 +551,12 @@ export function hostAppFrame(
       const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
       if (!manifest) refused('not-installed', `${hosted.binding.extensionId} is not installed on this phone`)
       if (args.device !== undefined) {
-        const invalid = notOnSessionMachine(manifest, method, args)
+        const invalid = notOnSessionMachine(method, args)
         if (invalid) throw invalid
         const { device, ...callArgs } = args
         return callOnComputer({ extensionId: manifest.id, extensionName: manifest.name, version: manifest.version }, { deviceId: appDeviceId(device), deviceLabel: null }, method, callArgs).then(computerReply)
       }
-      if (session && followsSessionMachine(manifest, method, args)) {
+      if (session && followsSessionMachine(method, args)) {
         return callOnComputer({ extensionId: manifest.id, extensionName: manifest.name, version: manifest.version }, session, method, args).then(computerReply)
       }
     }
@@ -551,7 +569,22 @@ export function hostAppFrame(
       if (!manifest) refused('not-installed', `${hosted.binding.extensionId} is not installed on this phone`)
       return callOnComputer({ extensionId: manifest.id, extensionName: manifest.name, version: manifest.version }, folderMachine(folder.deviceId), method, args).then(computerReply)
     }
+    // API 49 The binding's verbs, and a draft into the binding's conversation: the phone's binding host answers them.
+    const page = { extensionId: hosted.binding.extensionId, tabId: hosted.binding.tabId, pageId }
+    const bound = answerPhoneBinding(phoneBindings, method, page, args, (watchId, heard) => event({ type: 'bindingResources', watchId, event: heard }),
+      (binding) => event({ type: 'schedulesChanged', binding }))
+    if (bound) return bound
+    if (method === 'dispatch' && args.to && typeof args.to === 'object' && Object.hasOwn(args.to, 'binding')) return phoneBindings.draft(hosted.binding.extensionId, args)
     switch (method) {
+      case 'toast':
+        // #1925 (44) The host's own toast, by the desktop's rule (app-toast.ts): a page on a phone is the person's; on screen =
+        // this frame laid out, focused = the app in front.
+        return appToast({
+          extensionId: hosted.binding.extensionId,
+          person: true,
+          onScreen: frame.isConnected && frame.offsetParent !== null && frame.clientWidth > 0,
+          focused: () => document.visibilityState === 'visible' && document.hasFocus(),
+        }, args, async (action) => { if (action.kind === 'toast') toast({ title: action.text }) })
       case 'linkTo': {
         const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
         if (!manifest) refused('not-installed', 'This App is not installed')
@@ -651,6 +684,16 @@ export function hostAppFrame(
       }
       case 'clipboardWriteText':
         return platform.writeClipboardText(pageArgument('clipboardWriteText', args))
+      case 'filesSendSelection': {
+        requirePreinstalledFiles({ id: hosted.binding.extensionId, origin: installedExtensionsStore.origins[hosted.binding.extensionId] })
+        // API 55 A page of a chat's folder sends into that chat, the binding's; the call names none.
+        const chatId = session ? null : hosted.binding.chatId
+        if (!session && !chatId) refused('denied', 'Send needs a session page or a chat\'s folder')
+        const { draft, quote, pills } = session ? selectionSendOf(args, sessionWorkspace(session.id))
+          : await chatSelectionSendOf(args, refs => chatSelectionPills(sendPlatform, chatId!, refs))
+        // A phone's Send is the bar above the keyboard; only the outcome goes back to the page.
+        return await openSelectionSend({ cite: { draft, quote, pills }, to: session ? { session: session.id } : { chat: chatId! }, anchor: 'dock' })
+      }
       case 'listAgents': {
         const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
         if (!manifest) refused('not-installed', 'This App is not installed')
@@ -747,6 +790,20 @@ export function hostAppFrame(
             { id: id!, deviceId: listed.row.deviceId, deviceLabel: device?.label ?? null, online: device?.is_online },
             ref, hooks.openWorkingCopy,
           )
+        }
+        // A plain open of a chat file: a link to it, opened as main has the desktop window open it (its tab waiting meanwhile).
+        if (opensAsLink(ref, { ask: args.ask === true, peek: args.peek === true, tab })) {
+          files.mayName(surface(), ref.id, 'opening')
+          const named = openingNameOf(args)
+          // The clicked picture's box, from the page's to the window's: this host draws the page's frame.
+          const { among, origin } = openingViewOf(ref, args)
+          const onWindow = origin ? boxOnWindow(origin, hosted.frame.getBoundingClientRect()) : undefined
+          const action = { kind: 'openChatFile' as const, ...(among ? { among } : {}), ...(onWindow ? { origin: onWindow } : {}), itemId: ref.id, ...(ref.chat ? { chatId: ref.chat } : {}), ...(intent ? { intent } : {}), ...(named ? { fileName: named } : {}),
+            ...(args.at && typeof args.at === 'object' ? { at: args.at as Record<string, string> } : {}),
+            ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: args.viewState as Record<string, unknown> } : {}) }
+          return import('../../session/renderer/features/extensions/host-action-handlers')
+            .then(({ applyExtensionHostAction }) => applyExtensionHostAction({ origin: { pageId: null, extensionId: hosted.binding.extensionId, sessionId: null, tabId: hosted.binding.tabId }, action }))
+            .then(() => undefined)
         }
         return files.openTarget(surface(), { ref: chatRef(args.ref) }).then((target) => {
           const choice = tab === undefined
@@ -862,8 +919,7 @@ export function hostAppFrame(
       // The App's own data folder and program: in a session they are its computer's (owner 10-16「程序跟着数据」), done
       // THERE; in a chat the data folder is the phone's own, and a phone runs no program.
       case 'callProgram':
-        // In a session only a program gugu hosts gets here: it drives the screen the page is on, and a phone hosts none (161 10-17).
-        return refused('invalid', session ? HOSTED_PROGRAM_ELSEWHERE : 'Not available on the phone: callProgram (a phone runs no program; a page in a session calls its computer\'s)')
+        return refused('invalid', 'Not available on the phone: callProgram (a phone runs no program; a page in a session calls its computer\'s)')
       case 'readData':
         return phoneApps.data.read(hosted.binding.extensionId, typeof args.path === 'string' ? args.path : '')
       case 'listData':
@@ -939,6 +995,8 @@ export function hostAppFrame(
   const snapshot = () => new Map(cachedPhoneAgents(hosted.binding.extensionId, hosted.binding.capabilities).map((agent) => [agent.agentId, JSON.stringify(agent)]))
   let previous = snapshot()
   const stopState = onPhoneAppState(stateChanged)
+  // API 49 Where the assistant's layer shows this page, and the assistant as it knows it: heard while the page is up.
+  const stopBindings = phoneBindings.attach({ extensionId: hosted.binding.extensionId, tabId: hosted.binding.tabId, pageId }, event)
   const stopAgents = subscribeDeviceSessions(() => {
     stateChanged()
     const next = snapshot()
@@ -998,6 +1056,7 @@ export function hostAppFrame(
     dispose() {
       stopState()
       stopAgents()
+      stopBindings()
       void phoneModals.pageGone(pageId)
       for (const { source } of watched.values()) readFiles.forget(source)
       watched = new Map()
@@ -1015,8 +1074,8 @@ declare const __GUGU_TIER__: string
 export const phoneLinkScheme = () => guguLinkScheme({ tier: typeof __GUGU_TIER__ === 'undefined' ? undefined : __GUGU_TIER__, devLaunch: false })
 
 /** Host facts and transports only; target parsing and opening order are shared with main. */
-export async function openPhoneLink(target: string | OpenTarget) {
-  if (platform.kind === 'capacitor') await phoneApps.ready()
+export async function openPhoneLink(target: string | OpenTarget, source?: Pick<LinkSource, 'message'>) {
+  if (platform.capabilities.mobileApps) await phoneApps.ready()
   return openLinkWith({
     installed: () => installedExtensionsStore.manifests.map((manifest) => ({ manifest })),
     isEnabled: (id) => installedExtensionsStore.isEnabled(id),
@@ -1039,7 +1098,7 @@ export async function openPhoneLink(target: string | OpenTarget) {
       if (!opened) throw new Error('The App did not open')
       return opened
     },
-    openResource: (resource) => openLinkTarget(resource),
+    openResource: (resource) => openLinkTarget(resource, source),
     bringUp: async ({ sessionId }) => {
       const listed = listedSession(readCachedDevices(), liveDeviceSessions(), sessionId)
       if (!('row' in listed)) throw new Error('Session is not in your task list')

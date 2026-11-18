@@ -17,9 +17,14 @@ export type AgentConversationViewProps = ChatTranscriptProps & {
   composerContent?: ReactNode;
   shown?: boolean;
   onVisibleItems?: (ids: readonly string[]) => void;
+  /**
+   * The transcript is showing a stretch of older history rather than the conversation's end: the scroll-to-bottom
+   * button stays up at that stretch's own bottom too, and takes the reader back to the newest turn through this.
+   */
+  onReturnToLatest?: () => void;
 };
 
-export function AgentConversationView({ layout, composerContent, shown = true, onVisibleItems, style, className, onReady, ...props }: AgentConversationViewProps) {
+export function AgentConversationView({ layout, composerContent, shown = true, onVisibleItems, style, className, onReady, onReturnToLatest, ...props }: AgentConversationViewProps) {
   useLocale(); // Keep the recovery control in the current UI language.
   const root = useRef<HTMLDivElement>(null);
   const view = useRef<ChatView | null>(null);
@@ -150,9 +155,9 @@ export function AgentConversationView({ layout, composerContent, shown = true, o
       onAtBottomChange={bottom => { setAtBottom(bottom); props.onAtBottomChange?.(bottom); }}
       onDisposed={() => { view.current = null; setSlot(null); setAtBottom(true); props.onDisposed?.(); }}
       layout={{ preset: 'double', userGutter: 0, ...layout, agentConversation: true }} style={{ position: 'absolute', inset: 0 }} />
-    {slot ? createPortal(<>{composerContent}<ThreadScrollToBottom atBottom={atBottom}
+    {slot ? createPortal(<>{composerContent}<ThreadScrollToBottom atBottom={atBottom && !onReturnToLatest}
       label={translateSessionMessage('chat.scrollToBottom')}
-      onScrollToBottom={() => view.current?.scrollToBottom({ behavior: 'smooth' })} /></>, slot) : null}
+      onScrollToBottom={onReturnToLatest ?? (() => view.current?.scrollToBottom({ behavior: 'smooth' }))} /></>, slot) : null}
   </div>;
 }
 

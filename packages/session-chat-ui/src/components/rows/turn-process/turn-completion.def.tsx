@@ -12,7 +12,7 @@ import { useTheme } from '@session-chat/components/contexts/ThemeContext';
 import { defineUnit } from '@session-chat/core/units';
 import type { TurnCompletionItem } from '@session-chat/model';
 import { UserMessageActions } from '../message/UserMessageActions';
-import { CONVERSATION_FOOTER_H } from '../message/conversation-body';
+import { CONVERSATION_FOOTER_H, conversationBubbleKey, conversationCanCollapse } from '../message/conversation-body';
 import { conversationRoot } from '../message/conversation-message.css';
 import { userMessageActionsHeight } from '../message/metrics';
 import { completionActions } from './turn-completion.css';
@@ -25,10 +25,17 @@ export const turnCompletionUnitDef = defineUnit<TurnCompletionItem, { height: nu
   margin: { top: 4, bottom: 4 },
   vars: { height: 24 },
   measure(_data, ctx, vars) {
-    return ctx.theme.layout.agentConversation ? userMessageActionsHeight(CONVERSATION_VARS) : vars.height;
+    return ctx.theme.layout.agentConversation ? userMessageActionsHeight(CONVERSATION_VARS, 0) : vars.height;
   },
   Render(props) {
     const theme = useTheme();
+    const reply = () => props.data.reply;
+    const collapse = () => {
+      const message = reply();
+      const ctx = props.ctx.measureCtx?.();
+      return message && ctx && conversationCanCollapse(message, ctx)
+        ? { bubbleKey: conversationBubbleKey(message), anchorId: message.id } : undefined;
+    };
     return (
       <Show when={theme().layout.agentConversation} fallback={
         <div class={`${completionActions} ${messageGroup}`} data-slot="turn-completion" data-turn-id={props.data.turnId}
@@ -39,7 +46,8 @@ export const turnCompletionUnitDef = defineUnit<TurnCompletionItem, { height: nu
         </div>
       }>
         <div class={conversationRoot} data-side="left" data-slot="turn-completion" data-turn-id={props.data.turnId}>
-          <UserMessageActions itemId={props.data.id} text={props.data.text} generating={false} readOnly vars={CONVERSATION_VARS} />
+          <UserMessageActions itemId={reply()?.id ?? props.data.id} text={props.data.text} at={reply()?.at}
+            gap={0} collapse={collapse()} generating={false} readOnly vars={CONVERSATION_VARS} />
         </div>
       </Show>
     );

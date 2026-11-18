@@ -20,6 +20,10 @@ import type { AgentConfigRuntime } from '../runtime/runtime';
 export function createAgentConfigProcedures(runtime: AgentConfigRuntime) {
   return {
     // The owning host implements these operations; workers never store credentials.
+    listCustomModels: unsupportedConnectionOperation,
+    saveCustomModel: unsupportedConnectionOperation,
+    removeCustomModel: unsupportedConnectionOperation,
+    testCustomModel: unsupportedConnectionOperation,
     listConnections: unsupportedConnectionOperation,
     createConnection: unsupportedConnectionOperation,
     selectConnection: unsupportedConnectionOperation,

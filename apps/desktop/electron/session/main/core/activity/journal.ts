@@ -86,7 +86,8 @@ export class ActivityJournal {
     if (!row) throw new Error('Activity event does not exist on this machine');
     return activityEventSchema.parse(JSON.parse(row.data));
   }
-  list(input: ActivityQuery) {
+  /** `projects`: the local projects `project_id` stands for on this machine (a project id names a group, not one of them); the caller translates it. */
+  list(input: ActivityQuery, projects?: readonly string[]) {
     if (this.fault) throw new Error('Activity capture failed in this process; coverage is incomplete. Check the host log.');
     const q = activityQuerySchema.parse(input);
     const identity = this.sql.prepare('SELECT id FROM activity_coverage ORDER BY rowid LIMIT 1').get() as { id: string } | undefined;
@@ -104,7 +105,8 @@ export class ActivityJournal {
     // Unknown event time is queried by observation time, and remains null in the answer.
     const conditions = ['seq > ?', 'seq <= ?', 'COALESCE(occurred_at, observed_at) >= ?', 'COALESCE(occurred_at, observed_at) < ?'];
     const args: (string | number)[] = [after, high, Date.parse(q.since), Date.parse(q.until)];
-    for (const field of ['session_id', 'project_id'] as const) if (q[field]) { conditions.push(`${field} = ?`); args.push(q[field]); }
+    if (q.session_id) { conditions.push('session_id = ?'); args.push(q.session_id); }
+    if (projects) { conditions.push(`project_id IN (${projects.map(() => '?').join(',') || 'NULL'})`); args.push(...projects); }
     const rows = this.sql.prepare(`SELECT seq, data FROM activity_events WHERE ${conditions.join(' AND ')} ORDER BY seq LIMIT ?`).all(...args, q.limit + 1) as Row[];
     const page = rows.slice(0, q.limit);
     // Current session metadata, not input/reply text and not an event-time title.

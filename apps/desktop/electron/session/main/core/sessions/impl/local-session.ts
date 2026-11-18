@@ -1,3 +1,5 @@
+import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
+import { runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { diskWindowsShimReader } from '@gugu/session-core/exec';
@@ -201,11 +203,12 @@ export class LocalSessionProvider implements SessionProvider {
   async sendMessage(
     session: Session,
     message: SessionMessage,
+    beforeAdmission?: () => void,
   ): Promise<{ status: 'not-ready' } | { status: 'accepted'; messageId: string }> {
     const ptySessionId = makePtySessionId(session.projectId, session.id, session.id);
     const pty = this.ptysBySession.get(ptySessionId);
     if (!pty) return { status: 'not-ready' };
-    return injectSessionMessageWhenReady({ pty, session, message });
+    return injectSessionMessageWhenReady({ pty, session, message, beforeAdmission });
   }
 
   async startSession(
@@ -544,12 +547,26 @@ export class LocalSessionProvider implements SessionProvider {
 
       // #5331 台账:平台模型这一发从前是 sessionpage hook 的**参数表达式**,无法单独计时。
       const platformModelForSpawn = await sessionPlatformModel(session.id);
+      if (platformModelForSpawn === null && !runContext.credentialEnv && !runContext.customModel) {
+        const { assertAgentHomeSignIn } = await import('@main/core/agents/agent-homes');
+        await assertAgentHomeSignIn(session.providerId, runContext.connectionId);
+      }
       mark('platform-model');
       // 推理档旗标与 ACP 那条腿同一条规则:原样是记录里那一档(见 host.ts readSessionInjectionFacts,#6447);
       // 物化进配置文档的那一档在签发之后按模型收窄(platformArmedEffort)。
       const launchEffort = session.effort;
 
       const permissionMode = resolveSessionPermissionMode(session);
+      if (permissionMode === 'ai-review') {
+        const { probeHarnessModelCatalog } = await import('@main/core/agents/harness-model-catalog');
+        const catalog = await probeHarnessModelCatalog(session.providerId, 'tui',
+          !platformModelForSpawn && !runContext.customModel ? runtimeModelId(session.model) : undefined);
+        const available = runContext.autoReviewAllowed !== false && catalogAllowsAutoReview(plugin.capabilities.autoApprove.modes,
+          { ...catalog, cliVersion: runContext.cliVersion },
+          platformModelForSpawn ? 'platform' : platformModelForSpawn === null ? runContext.customModel ? 'custom' : 'own' : 'unknown',
+          platformModelForSpawn?.modelId ?? runtimeModelId(session.model) ?? (catalog.kind === 'ready' ? catalog.selected : null));
+        if (!available) throw new Error('AI review is unavailable for this session executable and model');
+      }
       let agentCommand = plugin.behavior.prompt!.buildCommand({
         cli: executableCli,
         extraArgs: runContext.extraArgs,
@@ -561,8 +578,9 @@ export class LocalSessionProvider implements SessionProvider {
         providerSessionId: session.providerSessionId ?? undefined,
         forkFromProviderSessionId: storageForkedProviderSessionId ? undefined : forkFromProviderSessionId,
         isResuming: commandResuming,
-        model: session.model ?? '',
+        model: runtimeModelId(session.model) ?? '',
         effort: launchEffort ?? '',
+        fastMode: session.fastMode === true,
       });
       agentCommand = applySessionRuntimeCommand(agentCommand, {
         harnessExecutable: compatibleRuntime.executable,
@@ -660,8 +678,10 @@ export class LocalSessionProvider implements SessionProvider {
         isResuming: commandResuming,
         // A diverting host replaces the argv wholesale, so the user's picks have to travel separately —
         // otherwise the composer's model / effort controls silently do nothing on that path.
-        model: session.model ?? undefined,
+        model: runtimeModelId(session.model),
         effort: launchEffort ?? undefined,
+        fastMode: session.fastMode === true,
+        userSettingsProvided: (runContext.extraArgs ?? []).some((arg) => arg === '--settings' || arg.startsWith('--settings=')),
         permissionMode,
         // @@@2503 composer 选的模型来源(平台 / harness),按会话记的那条。存量会话没有记录 →
         // undefined,宿主照旧回退 agent 级配置。
@@ -1130,11 +1150,11 @@ export class LocalSessionProvider implements SessionProvider {
           providerId: session.providerId,
           waitUntilReady: () => admission.waitUntilReady(),
           isTurnInFlight: () => admission.isTurnInFlight(),
-          sendMessage: (message) => this.sendMessage(session, {
+          sendMessage: (message, beforeAdmission) => this.sendMessage(session, {
             id: message.id,
             text: message.text,
             kind: message.kind,
-          }),
+          }, beforeAdmission),
         });
         return;
       }

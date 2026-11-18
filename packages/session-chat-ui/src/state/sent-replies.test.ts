@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TranscriptTurn } from '@session-chat/model';
-import { withSentReplies } from './sent-replies';
+import { withSentReplies, withSettledSentReplies } from './sent-replies';
 import { flattenTier } from './flatten';
 import { unit, type ItemSegmenter, type SegmentCtx } from '@session-chat/core/units';
 import { defaultChatTranslator } from '@session-chat/localization';
@@ -237,4 +237,24 @@ it('does not group files across a failed send, another destination, ordinary tex
 it('treats the raw session error receipt as authoritative over flattened output', () => {
   const call = { ...relay([{ status: 'delivered', message_id: id }]), rawOutput: JSON.stringify({ isError: true, content: [] }) };
   expect(words(withSentReplies(turn(call), { allDestinations: true }))).toHaveLength(0);
+});
+
+// A committed turn is replaced, never edited: the list's committed tier asks about each one on every rebuild.
+describe('withSettledSentReplies projects a committed turn once', () => {
+  it('returns the same projection for the same turn, per destination rule', () => {
+    const record = turn();
+    const projected = withSettledSentReplies(record);
+    expect(projected).toEqual(withSentReplies(record));
+    expect(withSettledSentReplies(record)).toBe(projected);
+    const everywhere = withSettledSentReplies(record, { allDestinations: true });
+    expect(everywhere).toEqual(withSentReplies(record, { allDestinations: true }));
+    expect(withSettledSentReplies(record, { allDestinations: true })).toBe(everywhere);
+  });
+
+  it('projects a replacing turn again', () => {
+    const record = turn();
+    const replaced = { ...record, items: [...record.items, { ...send({ text: '第二句' }), id: 'send-2', toolCallId: 'call-2' }] };
+    expect(withSettledSentReplies(replaced)).toEqual(withSentReplies(replaced));
+    expect(withSettledSentReplies(replaced)).not.toBe(withSettledSentReplies(record));
+  });
 });

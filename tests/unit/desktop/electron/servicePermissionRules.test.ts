@@ -11,7 +11,7 @@ function decide(policy: PermissionPolicy, name = 'message_history', args: unknow
 describe('Gugu service permission order', () => {
   it('defaults to asking for private data and operations, while discovery remains available', () => {
     expect(decide(defaultPermissionPolicy()).effect).toBe('ask')
-    expect(decide(defaultPermissionPolicy(), 'guide_topics').effect).toBe('allow')
+    expect(decide(defaultPermissionPolicy(), 'guide_read').effect).toBe('allow')
   })
   it.each([
     ['allow', 'ask', 'deny'], ['allow', 'deny', 'ask'], ['ask', 'allow', 'deny'],
@@ -56,11 +56,11 @@ describe('Gugu service permission order', () => {
     const policy = defaultPermissionPolicy()
     policy.user = { mode: 'always_ask', rules: [rule('allow')] }
     expect(decide(policy)).toMatchObject({ effect: 'ask', reason: 'always_ask' })
-    expect(decide(policy, 'guide_topics').effect).toBe('allow')
+    expect(decide(policy, 'guide_read').effect).toBe('allow')
     policy.agents['agent-a'] = { mode: 'ask_some', rules: [] }
     expect(decide(policy).effect).toBe('allow')
   })
-  it.each(['message_send_as_owner', 'message_send_file_as_owner', 'contact_friend', 'message_invite', 'group_set_role', 'app_install',
+  it.each(['message_send_as_owner', 'contact_friend', 'message_invite', 'group_set_role', 'app_install',
     'project_get', 'project_add_folder', 'project_add_device', 'session_archive'])('%s always requires person confirmation despite a wildcard allow', name => {
     const policy = defaultPermissionPolicy()
     policy.user.rules = [{ id: 'everything', tool: '*', effect: 'allow' }]
@@ -88,7 +88,7 @@ describe('Gugu service permission order', () => {
       .toMatchObject({ effect: 'ask', reason: 'unclassified_dynamic_tool' })
     policy.user.rules.push({ id: 'deny-dynamic', tool: 'new_app__read', effect: 'deny' })
     expect(decide(policy, 'catalog_call', { tool: 'new_app__read', args: {} }).effect).toBe('deny')
-    expect(decidePermission({ policy: null, agentId: 'agent-a', operation: permissionOperation(caller, 'guide_topics', {}) }).effect).toBe('deny')
+    expect(decidePermission({ policy: null, agentId: 'agent-a', operation: permissionOperation(caller, 'guide_read', {}) }).effect).toBe('deny')
   })
   it('expands catalog and device shells without inheriting permission on their wrapper', () => {
     const policy = defaultPermissionPolicy()
@@ -98,12 +98,12 @@ describe('Gugu service permission order', () => {
       .toMatchObject({ effect: 'deny', ruleIds: ['script'] })
   })
   it('binds the executing identity, recipients, body and attachments, regardless of key ordering', () => {
-    const before = operationDigest(caller, 'message_send_file', { chat_id: 'a', text: 'hello', files: ['a.pdf'] })
-    expect(operationDigest(caller, 'message_send_file', { files: ['a.pdf'], text: 'hello', chat_id: 'a' })).toBe(before)
+    const before = operationDigest(caller, 'message_send', { chat_id: 'a', text: 'hello', files: ['a.pdf'] })
+    expect(operationDigest(caller, 'message_send', { files: ['a.pdf'], text: 'hello', chat_id: 'a' })).toBe(before)
     for (const args of [{ chat_id: 'b', text: 'hello', files: ['a.pdf'] }, { chat_id: 'a', text: 'changed', files: ['a.pdf'] }, { chat_id: 'a', text: 'hello', files: ['b.pdf'] }]) {
-      expect(operationDigest(caller, 'message_send_file', args)).not.toBe(before)
+      expect(operationDigest(caller, 'message_send', args)).not.toBe(before)
     }
-    expect(operationDigest({ ...caller, subjectId: 'agent-b' }, 'message_send_file', {})).not.toBe(operationDigest(caller, 'message_send_file', {}))
+    expect(operationDigest({ ...caller, subjectId: 'agent-b' }, 'message_send', {})).not.toBe(operationDigest(caller, 'message_send', {}))
   })
   it('rejects malformed policy and invalid agent locks rather than repairing them into allows', () => {
     const policy = defaultPermissionPolicy()

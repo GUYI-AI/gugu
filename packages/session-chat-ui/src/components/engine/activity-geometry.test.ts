@@ -21,7 +21,9 @@ it('keeps an offscreen expansion attached to its source rows during history prep
   expect(virt.size(1)).toBeGreaterThan(0);
   const before = row('message', 'earlier');
   const next = [before, ...rows];
-  virt.prepend(1, () => 80);
+  // An older page rebuilds the list: the virtualizer is reseeded by row identity, in-flight heights from the registry.
+  virt.setCount(0, () => 0);
+  virt.setCount(next.length, i => registry.heightOf(next[i]!.id) ?? (i === 0 ? 80 : 0));
   geometry.sync(model, makeUnitsView(next, []), activityLanes(next), () => true, () => 100);
   registry.advance(300);
   expect(virt.size(0)).toBe(80);

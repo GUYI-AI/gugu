@@ -31,7 +31,7 @@ const mocks = vi.hoisted(() => ({
   getTerminalsForSession: vi.fn(),
   terminalRelease: vi.fn(),
   viewModels: [] as MockViewModel[],
-  viewStateGet: vi.fn(),
+  viewStateRead: vi.fn(),
   workspaceActivate: vi.fn(),
   workspaceAcquire: vi.fn(),
   workspaceRelease: vi.fn(),
@@ -76,8 +76,7 @@ vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({
 
 vi.mock('@renderer/lib/stores/view-state-cache', () => ({
   viewStateCache: {
-    get: mocks.viewStateGet,
-    set: vi.fn(),
+    read: mocks.viewStateRead,
   },
 }));
 
@@ -171,7 +170,7 @@ describe('ProjectSessionsStore session lifecycle', () => {
     mocks.createAndProvisionSession.mockResolvedValue({ stage: 'provision', result: {
       success: true, data: { path: '/tmp/workspace-1', workspaceId: 'workspace-1' },
     } });
-    mocks.viewStateGet.mockResolvedValue(undefined);
+    mocks.viewStateRead.mockReturnValue(undefined);
   });
 
   // @@@5173 引擎此刻起不来 ⇒ 这一轮**什么都没落库**(闸在事务之前就返回了)。于是这条失败
@@ -253,7 +252,7 @@ describe('ProjectSessionsStore session lifecycle', () => {
     manager.dispose();
   });
 
-  it('keeps the composer effort on the optimistic conversation used to start ACP', async () => {
+  it('keeps the composer effort and custom model on the optimistic conversation used to start ACP', async () => {
     const manager = makeSessionManager();
 
     await manager.createSession({
@@ -265,6 +264,7 @@ describe('ProjectSessionsStore session lifecycle', () => {
           id: 'conversation-effort',
           provider: 'claude',
           type: 'acp',
+          model: 'custom:012da538-be83-4996-8d26-752cde08a093:family:model',
           effort: 'high',
           initialQueue: [{ text: 'Keep this setting' }],
         },
@@ -273,7 +273,34 @@ describe('ProjectSessionsStore session lifecycle', () => {
     } as never);
 
     const optimistic = mocks.sessionAcquire.mock.calls[0]?.[2]?.[0];
-    expect(optimistic).toEqual(expect.objectContaining({ effort: 'high' }));
+    expect(optimistic).toMatchObject({
+      effort: 'high',
+      model: 'family:model',
+      customModel: { kind: 'custom', connectionId: '012da538-be83-4996-8d26-752cde08a093', modelId: 'family:model' },
+    });
+
+    manager.dispose();
+  });
+
+  // #2599 the optimistic object stays the session's data (the host's later session:created is ignored), so it must
+  // already say where the agent lives — else an agent just created in a group shows in no group until a restart.
+  it('says where an agent created in a group lives before the host answers, and keeps it', async () => {
+    const manager = makeSessionManager();
+    const create = (id: string, extra: object) =>
+      manager.createSession({
+        projectId: 'project-1',
+        sessionConfig: { version: '1', name: id, initialSession: { id, provider: 'claude', type: 'acp', initialQueue: [{ text: 'hi' }] } },
+        workspaceConfig: { workspace: { kind: 'worktree' } },
+        ...extra,
+      } as never);
+
+    await create('born-in-group', { birthGroup: { chatId: 'group-1', asTask: true } });
+    await create('from-nowhere', {});
+
+    expect(manager.sessions.get('born-in-group')?.data.bornInChatId).toBe('group-1');
+    expect(manager.sessions.get('from-nowhere')?.data.bornInChatId).toBeNull();
+    manager.acceptCreatedSession(makeSession({ id: 'born-in-group', projectId: 'project-1', bornInChatId: 'group-1' }));
+    expect(manager.sessions.get('born-in-group')?.data.bornInChatId).toBe('group-1');
 
     manager.dispose();
   });
@@ -354,7 +381,7 @@ describe('ProjectSessionsStore session lifecycle', () => {
     const store = createUnprovisionedSession(session);
     manager.sessions.set(session.id, store);
     const snapshot = { sidebarTab: 'conversations' };
-    mocks.viewStateGet.mockResolvedValue(snapshot);
+    mocks.viewStateRead.mockReturnValue(snapshot);
 
     await manager.provisionSession(session.id);
 
@@ -376,13 +403,12 @@ describe('ProjectSessionsStore session lifecycle', () => {
     const session = makeSession();
     const store = createUnprovisionedSession(session);
     manager.sessions.set(session.id, store);
-    mocks.viewStateGet.mockResolvedValue(undefined);
+    mocks.viewStateRead.mockReturnValue(undefined);
 
     await manager.provisionSession(session.id);
 
     expect(store.state).toBe('provisioned');
-    // 页签布局的键也经主进程取:挂起时它已从渲染侧缓存清掉,hydrate 只同步读缓存。
-    expect(mocks.viewStateGet).toHaveBeenCalledWith('session:session-1:tabs');
+    // 页签布局 session:<id>:tabs 一直在渲染侧缓存里(首帧就有,挂起也不清),由 restoreTabs 同步读。
     const viewModel = mocks.viewModels[0];
     expect(viewModel.restoreTabs).toHaveBeenCalledOnce();
     expect(viewModel.restoreSnapshot).not.toHaveBeenCalled();

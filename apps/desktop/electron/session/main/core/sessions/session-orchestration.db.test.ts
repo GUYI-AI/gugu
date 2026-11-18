@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   /** Creation turns are admitted as pending rows (enqueue); an empty creation queue is an explicit start. */
   lifeEnqueue: vi.fn((_input: { sessionId: string; messageId: string; text: string; kind: string; turn?: unknown }) => ({ seq: 1, state: 'queued' })),
   lifeStart: vi.fn((_sessionId: string, _origin?: string): void => undefined),
+  lifeRecover: vi.fn((_sessionId: string, _messageId: string, _allowStart: boolean): import('./session-life').QueuedDeliveryRecovery => ({ state: 'waiting' })),
   /** A session's LifeView kind (absent = dormant). */
   lifeKinds: {} as Record<string, string>,
   emit: vi.fn(),
@@ -49,7 +50,7 @@ const mocks = vi.hoisted(() => ({
   mounted: new Map<string, { sessionPath: string | undefined; sessions: { startSession: unknown; stopSession: unknown; sendMessage: unknown; ownsSession: (id: string) => boolean } }>(),
   ensureSessionMounted: vi.fn(),
   installedExtensions: [] as Array<{
-    manifest: { id: string; contributes: { tabs: Array<{ name: string; title?: string; opensFiles?: { session?: string[]; chat?: string[] } }> } };
+    manifest: { id: string; contributes: { tabs: Array<{ name: string; title?: string; opensFiles?: { session?: string[]; chat?: string[] }; perSession?: boolean }> } };
   }>,
   sessionpageProjectGroup: { kind: 'none', reason: 'no-project' } as
     | { kind: 'group'; projectId: string; groupChatId: string }
@@ -132,6 +133,7 @@ vi.mock('@main/core/pty/tmux-session-name', () => ({
 vi.mock('@main/lib/events', () => ({ events: { emit: mocks.emit, on: mocks.on } }));
 vi.mock('@main/core/sessions/session-life', () => ({ sessionLife: () => ({
   interrupt: mocks.lifeInterrupt, restore: mocks.lifeRestore, enqueue: mocks.lifeEnqueue, start: mocks.lifeStart,
+  recoverQueuedDelivery: mocks.lifeRecover,
   // The projection an ACP session's status is composed from: at rest unless a case says otherwise.
   status: (sessionId: string) => ({ kind: mocks.lifeKinds[sessionId] ?? 'dormant', stage: null }),
 }) }));
@@ -197,11 +199,15 @@ import { getPlugin } from '../agents/plugin-registry';
 import { appSettingsService } from '@main/core/settings/settings-service';
 import {
   messageSessionFrom,
+  messageSessionDeliveryFrom,
+  assertOutboundProjectIds,
   runRemoteSessionAction,
   runSessionAction,
   sessionCallerFacts,
   spawnSessionForApp,
   setRemotePaneOpener,
+  setRemoteTaskViewers,
+  openTaskPagesOfApp,
   stopExactSessionpageSession,
   type SessionCallerContext,
   stopSessionByPerson,
@@ -246,6 +252,11 @@ describe('session orchestration', () => {
     fixture = await openFixture('empty');
     // These sessions have no social identity: the host reports none to remove.
     setSessionIdentityHost({ archive: async () => null, release: async () => {}, restore: async () => {} });
+    // Projects answer outward with their project group id (project-public-id.ts): project-N is in group-N here.
+    setProjectGroupHost({
+      listBindings: async (ids) => ok(ids.flatMap((projectId) => /^project-\d$/.test(projectId) ? [{ projectId, chatId: projectId.replace('project', 'group') }] : [])),
+      ensureGroup: vi.fn(), bindToGroup: vi.fn(), unbind: vi.fn(),
+    });
     mocks.db = fixture.db;
     mocks.startSession.mockReset();
     mocks.stopSession.mockReset();
@@ -256,6 +267,8 @@ describe('session orchestration', () => {
     // The real durable queue: what a start would deliver, one row per message id.
     mocks.lifeEnqueue.mockImplementation((input) => enqueuePending(input as Parameters<typeof enqueuePending>[0]));
     mocks.lifeStart.mockClear();
+    mocks.lifeRecover.mockReset();
+    mocks.lifeRecover.mockReturnValue({ state: 'waiting' });
     mocks.emit.mockReset();
     mocks.on.mockReset();
     mocks.openFileResultListener = undefined;
@@ -458,6 +471,150 @@ describe('session orchestration', () => {
   // 对照组(父提交 9951620de):App 走聊天(写一条悄悄话),根本不经过这一层。
   describe('from a sender that is not a session (messageSessionFrom)', () => {
     const envelope = (messageId: string, text: string) => `<app-envelope msg="${messageId}">${text}</app-envelope>`;
+
+    it('persists the recovery reservation before requesting a startup', async () => {
+      mocks.sendMessage.mockResolvedValue({ id: 'queued-stable', status: 'queued' });
+      const order: string[] = [];
+      mocks.lifeRecover.mockImplementation((_sessionId, _messageId, allowStart) => {
+        order.push(allowStart ? 'start' : 'inspect');
+        return { state: allowStart ? 'started' : 'needed', cause: 'startup failed' };
+      });
+      const reserve = vi.fn(async () => { order.push('persist'); return true; });
+      await messageSessionDeliveryFrom(envelope, 'caller', 'pending', { keyScope: 'automation:a', recoverPending: reserve });
+      expect(order).toEqual(['inspect', 'persist', 'start']);
+    });
+
+    it('does not request startup when persisting the reservation fails', async () => {
+      mocks.sendMessage.mockResolvedValue({ id: 'queued-stable', status: 'queued' });
+      mocks.lifeRecover.mockReturnValue({ state: 'needed', cause: 'startup failed' });
+      await expect(messageSessionDeliveryFrom(envelope, 'caller', 'pending', {
+        keyScope: 'automation:a', recoverPending: async () => { throw new Error('budget write failed'); },
+      })).rejects.toThrow('budget write failed');
+      expect(mocks.lifeRecover.mock.calls.map(call => call[2])).toEqual([false]);
+    });
+
+    it('host admission keeps queued visible while the App receipt remains compatible', async () => {
+      mocks.sendMessage.mockResolvedValue({ id: 'queued-stable', status: 'queued' });
+      expect(await messageSessionDeliveryFrom(envelope, 'caller', 'pending', { keyScope: 'automation:a', recoverPending: async () => false }))
+        .toEqual({ id: 'queued-stable', status: 'queued', recovery: { state: 'waiting' } });
+      expect(mocks.lifeRecover).toHaveBeenCalledWith('caller', 'queued-stable', false);
+      mocks.lifeRecover.mockClear();
+      expect(await messageSessionFrom(envelope, 'caller', 'pending', { keyScope: 'app:lens' })).toEqual({ id: 'queued-stable' });
+      expect(mocks.lifeRecover).not.toHaveBeenCalled();
+    });
+
+    it('host admission uses the original stable run identity across queued recovery and admission', async () => {
+      const receipt = { id: '022ebf62-18b2-4d78-987e-ddb02dd04c46', at: '2026-10-26T07:00:00.000Z' };
+      mocks.sendMessage.mockImplementation(async params => ({ id: params.clientMessageId, status: 'queued' }));
+      await messageSessionDeliveryFrom(envelope, 'caller', 'pending', { keyScope: 'automation:a', receipt, recoverPending: async () => true });
+      const first = mocks.sendMessage.mock.calls.at(-1)![0];
+      mocks.readAcceptedMessage.mockReturnValueOnce({ id: first.clientMessageId, sessionId: 'caller', content: first.text });
+      mocks.sendMessage.mockImplementation(async params => ({ id: params.clientMessageId, status: 'delivered' }));
+      mocks.lifeRecover.mockClear();
+      expect(await messageSessionDeliveryFrom(() => 'changed', 'caller', 'later text',
+        { keyScope: 'automation:a', receipt, recoverPending: async () => true })).toEqual({ id: first.clientMessageId, status: 'delivered' });
+      expect(mocks.sendMessage.mock.calls.at(-1)![0]).toMatchObject({ clientMessageId: first.clientMessageId, text: first.text });
+      expect(mocks.lifeRecover).not.toHaveBeenCalled();
+    });
+
+    it('host admission never requests recovery after an uncertain delivery', async () => {
+      mocks.sendMessage.mockResolvedValueOnce({ id: 'unknown', status: 'outcome-unknown' });
+      await expect(messageSessionDeliveryFrom(envelope, 'caller', 'pending',
+        { keyScope: 'automation:a', recoverPending: async () => true })).rejects.toMatchObject({ code: 'SESSION_DIRECT_OUTCOME_UNKNOWN' });
+      expect(mocks.lifeRecover).not.toHaveBeenCalled();
+    });
+
+    it('keeps a scheduled prompt pending through the default delivery path and resumes one input after restart', async () => {
+      const { SessionLife } = await vi.importActual<typeof import('./session-life')>('./session-life');
+      const { lifeStore } = await import('./session-pending');
+      const actual = await vi.importActual<typeof import('./sendMessage')>('./sendMessage');
+      const { noopLogger } = await import('@gugu/session-shared/logger');
+      const { AutomationScheduler } = await import('../automations/automation-scheduler');
+      const { createAgentSchedule, getAutomation } = await import('../automations/repo');
+      type Adapter = import('./session-life-adapter').LegAdapter;
+      type Stage = import('@gugu/core/local/session-life/types').StageName;
+      type Out = import('@gugu/core/local/session-life/types').StageOut;
+      const dispatch = vi.fn<Adapter['dispatch']>(async () => ({ result: 'accepted', nativeReceiptId: 'scheduled-input' }));
+      function runtime(platform: () => Promise<void>) {
+        const owner = new SessionLife({ logger: noopLogger, sessions: () => ['caller'], store: () => lifeStore,
+          adapter: () => ({ leg: 'acp', timing: 'next-tool-call',
+            async run<K extends Stage>(at: K, _have: unknown, ctx: { gen: import('@gugu/core/local/session-life/types').Gen }): Promise<Out[K]> {
+              if (at === 'platform') await platform();
+              return (at === 'identity' ? { kind: 'bound', agentUserId: 'agent' } : { at, gen: ctx.gen, timing: 'next-tool-call' }) as Out[K];
+            }, dispatch, teardown: async () => {}, onExit: () => () => {} }),
+          forks: () => [], allForks: () => [], parentOf: () => null, ownedBy: async () => true,
+          markRead: async () => {}, reportFailure: async () => {}, publish: () => {}, removed: () => {}, failed: vi.fn(), now: Date.now });
+        mocks.lifeEnqueue.mockImplementation(input => owner.enqueue(input as Parameters<typeof owner.enqueue>[0]));
+        mocks.lifeRecover.mockImplementation((...args) => owner.recoverQueuedDelivery(...args));
+        return owner;
+      }
+      vi.useFakeTimers({ toFake: ['Date'] });
+      const now = Date.now();
+      let failStartup = true;
+      const before = runtime(async () => {
+        if (failStartup) throw new Error('controlled platform startup failure');
+        await new Promise(() => {}); // A lost process never completes this continuation or signs out.
+      });
+      let after: InstanceType<typeof SessionLife> | undefined;
+      let scheduler = new AutomationScheduler({ onRunStep: () => {}, onScheduledRunChanged: () => {} });
+      mocks.sendMessage.mockImplementation(actual.sendMessage);
+      mocks.readAcceptedMessage.mockImplementation(actual.readAcceptedMessage);
+      try {
+        await before.signIn('owner');
+        const { automation, nextRun } = await createAgentSchedule({ agentSessionId: 'caller', projectId: 'project-1',
+          name: 'Reliable reminder', prompt: 'Resume this task once', provider: 'codex',
+          triggerConfig: { expr: '', tz: 'UTC', at: now + 120_000 } });
+        const runRow = () => fixture.sqlite.prepare('SELECT status, error FROM automation_runs WHERE id=?').get(nextRun!.id) as { status: string; error: string | null };
+        vi.setSystemTime(now + 120_000);
+        scheduler.start();
+        await vi.waitFor(() => expect(runRow(), JSON.stringify(runRow())).toMatchObject({ status: 'queued' }));
+        await before.quiescent('caller');
+        expect(before.read('caller').kind).toBe('failed');
+        expect((await getAutomation(automation.id))?.enabled).toBe(true);
+        expect(dispatch).not.toHaveBeenCalled();
+        failStartup = false;
+        vi.setSystemTime(now + 122_000);
+        await scheduler.drainQueue();
+        await vi.waitFor(() => expect(JSON.parse(runRow().error ?? '{}').deliveryRecoveryAttempts).toBe(1));
+        await vi.waitFor(() => expect(before.read('caller').stage?.at).toBe('platform'));
+        // The old scheduler has returned its queued receipt before reconstructing its owner.
+        await vi.waitFor(() => expect(runRow(), JSON.stringify(runRow())).toMatchObject({ status: 'queued' }));
+        await scheduler.reload();
+        scheduler.stop();
+
+        const ready = Promise.withResolvers<void>();
+        after = runtime(() => ready.promise);
+        scheduler = new AutomationScheduler({ onRunStep: () => {}, onScheduledRunChanged: () => {} });
+        scheduler.start();
+        await scheduler.reload();
+        await vi.waitFor(() => expect(runRow(), JSON.stringify(runRow())).toMatchObject({ status: 'queued' }));
+        expect(JSON.parse(runRow().error!).deliveryRecoveryAttempts).toBe(1);
+        expect((await getAutomation(automation.id))?.enabled).toBe(true);
+        expect(dispatch).not.toHaveBeenCalled();
+        await after.signIn('owner');
+        ready.resolve();
+        await after.quiescent('caller');
+        vi.setSystemTime(now + 124_000);
+        await scheduler.drainQueue();
+        await vi.waitFor(() => expect(runRow()).toEqual({ status: 'done', error: null }));
+        await vi.waitFor(async () => expect((await getAutomation(automation.id))?.enabled).toBe(false));
+        expect(dispatch).toHaveBeenCalledOnce();
+        const sent = mocks.sendMessage.mock.calls.map(([input]) => input as { clientMessageId: string; text: string });
+        expect(sent.length).toBeGreaterThanOrEqual(3);
+        expect(new Set(sent.map(input => input.clientMessageId)).size).toBe(1);
+        expect(new Set(sent.map(input => input.text)).size).toBe(1);
+        expect(sent[0].text).toContain('Resume this task once');
+        expect(dispatch.mock.calls[0][1].message.id).toBe(sent[0].clientMessageId);
+        expect(fixture.sqlite.prepare('SELECT count(*) FROM session_pending').pluck().get()).toBe(1);
+        expect(fixture.sqlite.prepare('SELECT count(*) FROM messages').pluck().get()).toBe(1);
+        expect(fixture.sqlite.prepare('SELECT count(*) FROM sessions').pluck().get()).toBe(1);
+      } finally {
+        scheduler.stop();
+        await after?.signOut();
+        mocks.readAcceptedMessage.mockReset();
+        vi.useRealTimers();
+      }
+    });
 
     it('recovers the same host update twice through real orchestration and persists one accepted notice', async () => {
       const actual = await vi.importActual<typeof import('./sendMessage')>('./sendMessage');
@@ -668,6 +825,9 @@ describe('session orchestration', () => {
       expect(appRow(row.id)).toMatchObject({ provider: 'codex', runtime: 'pty', project_id: 'project-2' });
       // An App's agent is pulled into its chat on purpose: an ordinary seat, not a task seat.
       expect(takeBirthGroup(row.id)).toEqual({ chatId: 'chat-7', asTask: false });
+      // #2599 and the row keeps it: the left sidebar places the agent in the chat it was born in.
+      const config = fixture.sqlite.prepare('SELECT config FROM sessions WHERE id = ?').get(row.id) as { config: string };
+      expect(JSON.parse(config.config)).toMatchObject({ birthChatId: 'chat-7' });
     });
 
     // owner 10-14: started from a page an agent works — spawned by that agent, by session_spawn's rule (its child, whatever
@@ -805,7 +965,7 @@ describe('session orchestration', () => {
       bindings('project-2');
       const result = await runRemoteSessionAction({ ...remoteCaller, groupChatId: 'shared-project-group' }, { action: 'spawn', prompt: 'inspect' }) as { session_id: string; project_id: string; project_note: string };
       expect(mocks.resolveProjectWorkspace).toHaveBeenCalledWith({ projectId: 'project-2', projectPath: '' });
-      expect(result).toMatchObject({ project_id: 'project-2', project_note: expect.stringContaining('Project 2') });
+      expect(result).toMatchObject({ project_id: 'shared-project-group', project_note: expect.stringContaining('Project 2') });
       expect(result.project_note).toContain('matched');
       expect(workspaceOf(result.session_id)).toBe('workspace-p2');
     });
@@ -814,7 +974,7 @@ describe('session orchestration', () => {
       taskWorkspace();
       bindings();
       const result = await runRemoteSessionAction({ ...remoteCaller, groupChatId: 'shared-project-group' }, { action: 'spawn', prompt: 'inspect' }) as { session_id: string; project_note: string };
-      expect(result).toMatchObject({ project_id: IMPLICIT_SESSION_HOME_PROJECT_ID });
+      expect(result).toMatchObject({ project_id: null });
       expect(result.project_note).toContain('Task workspace');
       expect(result.project_note).toContain('no local project associated');
       expect(result.project_note).toContain('project_add_device');
@@ -825,16 +985,43 @@ describe('session orchestration', () => {
     it('keeps task-workspace placement for older callers or callers outside projects', async () => {
       taskWorkspace();
       const result = await runRemoteSessionAction(remoteCaller, { action: 'spawn', prompt: 'inspect' }) as { session_id: string };
-      expect(result).toMatchObject({ project_id: IMPLICIT_SESSION_HOME_PROJECT_ID, project_note: expect.stringContaining('no caller project group supplied') });
+      expect(result).toMatchObject({ project_id: null, project_note: expect.stringContaining('no caller project group supplied') });
       expect(workspaceOf(result.session_id)).toBe('workspace-home');
     });
 
-    it.each([{ project_id: 'project-2' }, { project_path: '/other' }])('keeps explicit project placement ahead of the caller group: %j', async (named) => {
+    // A project id is its project group on every device: it crosses machines as it is; a local id is refused at the exit, naming the right one.
+    it('lets a project id leave this machine as it is, and refuses this machine’s local project id naming the project id', async () => {
+      bindings('project-2');
+      await expect(assertOutboundProjectIds({ project_id: 'shared-project-group' })).resolves.toBeUndefined();
+      // A project with no folder here is still a project: the other device resolves it.
+      await expect(assertOutboundProjectIds({ project_id: 'their-group' })).resolves.toBeUndefined();
+      for (const action of [{ project_id: 'project-2' }, { source_project_id: 'project-2' }]) {
+        await expect(assertOutboundProjectIds(action)).rejects.toThrow('use project:shared-project-group');
+      }
+      bindings();
+      await expect(assertOutboundProjectIds({ project_id: 'project-2' })).rejects.toThrow('which is in no project');
+    });
+
+    it('refuses this machine’s local project id from a remote caller and in a local spawn, naming the project id', async () => {
       project2Root();
-      // No group host: querying the implicit default would fail this explicit request.
+      await expect(runRemoteSessionAction(remoteCaller, { action: 'spawn', prompt: 'x', project_id: 'project-2' })).rejects.toThrow('use project:group-2');
+      await expect(runSessionAction(context, { action: 'spawn', prompt: 'x', project_id: 'project-2' })).rejects.toThrow('use project:group-2');
+      expect(childRows()).toHaveLength(0);
+    });
+
+    it('refuses a named project group this device has no folder for, instead of the task workspace', async () => {
+      taskWorkspace();
+      bindings('project-2');
+      await expect(runRemoteSessionAction({ ...remoteCaller, groupChatId: 'shared-project-group' }, { action: 'spawn', prompt: 'inspect', project_id: 'unknown-group' }))
+        .rejects.toThrow('project_add_device');
+    });
+
+    it.each([{ project_id: 'group-2' }, { project_path: '/other' }])('keeps explicit project placement ahead of the caller group: %j', async (named) => {
+      project2Root();
+      // Named explicitly: the caller's group is never consulted.
       const result = await runRemoteSessionAction({ ...remoteCaller, groupChatId: 'shared-project-group' }, { action: 'spawn', prompt: 'inspect', ...named }) as { session_id: string };
-      expect(mocks.resolveProjectWorkspace).toHaveBeenCalledWith({ projectId: named.project_id, projectPath: named.project_path ?? '' });
-      expect(result).toMatchObject({ project_id: 'project-2' });
+      expect(mocks.resolveProjectWorkspace).toHaveBeenCalledWith({ projectId: named.project_id && 'project-2', projectPath: named.project_path ?? '' });
+      expect(result).toMatchObject({ project_id: 'group-2' });
       expect(result).not.toHaveProperty('project_note');
       expect(workspaceOf(result.session_id)).toBe('workspace-p2');
     });
@@ -860,7 +1047,7 @@ describe('session orchestration', () => {
       project2Root();
       mocks.resolveCreateEffort.mockResolvedValueOnce({ ok: true, value: 'native-level' });
       const result = await runRemoteSessionAction({ ...remoteCaller, model: 'native-model' }, {
-        action: 'spawn', prompt: 'inspect', project_id: 'project-2', thinking: 'native-level',
+        action: 'spawn', prompt: 'inspect', project_id: 'group-2', thinking: 'native-level',
       }) as { session_id: string };
       expect(mocks.resolveCreateEffort).toHaveBeenCalledWith({ harness: 'codex', sessionView: 'general', model: 'native-model', effort: 'native-level' });
       expect(configOf(result.session_id)).toMatchObject({ effort: 'native-level' });
@@ -872,7 +1059,7 @@ describe('session orchestration', () => {
       const stop=installAssistantWorkLedgerHost({context:async()=>({ownerId:'owner',runtimeInstanceId:'runtime',deviceId:'device-b',client:{rpc:async()=>({data:null,error:null})}}),kick:()=>{}});
       const intent={version:1 as const,assistant_id:'10000000-0000-4000-8000-000000000001',work_id:'10000000-0000-4000-8000-000000000002',operation_id:'10000000-0000-4000-8000-000000000003',message_id:'10000000-0000-4000-8000-000000000004',child_session_id:'10000000-0000-4000-8000-000000000005',coordinator:{session_id:'remote-caller',device_id:'device-a'},title:'Task',continuation:false};
       try {
-        const action={action:'spawn' as const,prompt:'Run after account acceptance',project_id:'project-2',assistant_work:intent};
+        const action={action:'spawn' as const,prompt:'Run after account acceptance',project_id:'group-2',assistant_work:intent};
         const first=await runRemoteSessionAction(remoteCaller,action) as {session_id:string;assistant_work_target:unknown};
         expect(first.session_id).toBe(intent.child_session_id);
         expect(first.assistant_work_target).toMatchObject({session_id:intent.child_session_id,device_id:'device-b'});
@@ -890,7 +1077,7 @@ describe('session orchestration', () => {
       const result = (await runRemoteSessionAction(remoteCaller, {
         action: 'spawn',
         prompt: 'Train the model on this box.',
-        project_id: 'project-2',
+        project_id: 'group-2',
       })) as {
         session_id: string;
         parent_session_id: string | null;
@@ -920,7 +1107,7 @@ describe('session orchestration', () => {
       expect(result.message_route).toEqual({ tool: 'session_message', to: [`session:${result.session_id}`] });
       // 首句信封:发信人带机器名,地址是发起方的 session:(跨机器回得来)。
       const envelope = lastAcpDelegationEnvelope();
-      expect(envelope).toContain('from="Claude 7 · mac1"');
+      expect(envelope).toContain('from="Claude 7 (mac1)"');
       expect(envelope).toContain('from_id="session:remote-caller"');
       expect(envelope).toContain('Train the model on this box.');
       // Its start is session-life's: the delegation is admitted as the first pending row; the start reads the
@@ -943,7 +1130,7 @@ describe('session orchestration', () => {
     it('lets a remote spawner choose a parent on the receiving machine without changing provenance', async () => {
       project2Root();
       const child = await runRemoteSessionAction(remoteCaller, {
-        action: 'spawn', prompt: 'x', project_id: 'project-2', parent_session_id: 'caller',
+        action: 'spawn', prompt: 'x', project_id: 'group-2', parent_session_id: 'caller',
       }) as { session_id: string; parent_session_id: string | null; spawned_by_session_id: string };
       expect(child).toMatchObject({ parent_session_id: 'caller', spawned_by_session_id: 'remote-caller' });
       expect(fixture.sqlite.prepare('SELECT parent_session_id, spawned_by_session_id, project_id FROM sessions WHERE id = ?').get(child.session_id))
@@ -968,7 +1155,7 @@ describe('session orchestration', () => {
     // owner 2026-10-30: project and parent are orthogonal — naming a project does not unhook the child from its spawner.
     it('spawns into a named project on this machine at its root — still under the caller unless the parent is null', async () => {
       project2Root();
-      const result = (await runRemoteSessionAction(remoteCaller, { action: 'spawn', prompt: 'x', project_id: 'project-2' })) as {
+      const result = (await runRemoteSessionAction(remoteCaller, { action: 'spawn', prompt: 'x', project_id: 'group-2' })) as {
         session_id: string;
         parent_session_id: string | null;
       };
@@ -976,14 +1163,14 @@ describe('session orchestration', () => {
       expect(result.parent_session_id).toBe('remote-caller');
       expect(configOf(result.session_id).parentRemote).toEqual({ deviceId: 'device-a', sessionId: 'remote-caller' });
       expect(childRows()[0]!.workspace_id).toBe('workspace-p2');
-      const flat = (await runRemoteSessionAction(remoteCaller, { action: 'spawn', prompt: 'x', project_id: 'project-2', parent_session_id: null })) as { session_id: string; parent_session_id: string | null };
+      const flat = (await runRemoteSessionAction(remoteCaller, { action: 'spawn', prompt: 'x', project_id: 'group-2', parent_session_id: null })) as { session_id: string; parent_session_id: string | null };
       expect(flat.parent_session_id).toBeNull();
       expect(configOf(flat.session_id)).not.toHaveProperty('parentRemote');
       expect(configOf(flat.session_id).spawnedByRemote).toEqual(configOf(result.session_id).spawnedByRemote);
       expect(fixture.sqlite.prepare('SELECT project_id, workspace_id FROM sessions WHERE id = ?').get(flat.session_id))
         .toEqual({ project_id: 'project-2', workspace_id: 'workspace-p2' });
       expect(await runRemoteSessionAction(remoteCaller, { action: 'children' })).toEqual([
-        expect.objectContaining({ session_id: result.session_id, parent_session_id: 'remote-caller', project_id: 'project-2' }),
+        expect.objectContaining({ session_id: result.session_id, parent_session_id: 'remote-caller', project_id: 'group-2' }),
       ]);
     });
 
@@ -1055,7 +1242,7 @@ describe('session orchestration', () => {
       const sent = mocks.sendMessage.mock.calls.at(-1)![0] as { sessionId: string; text: string; kind: string };
       expect(sent.sessionId).toBe('caller');
       expect(sent.kind).toBe('session-direct');
-      expect(sent.text).toContain('from="Claude 7 · mac1"');
+      expect(sent.text).toContain('from="Claude 7 (mac1)"');
       expect(sent.text).toContain('from_id="session:remote-caller"');
     });
 
@@ -2047,7 +2234,7 @@ describe('session orchestration', () => {
     expect(fixture.sqlite.prepare('SELECT project_id, parent_session_id, spawned_by_session_id FROM sessions WHERE id = ?').get(flat.session_id))
       .toEqual({ project_id: 'project-2', parent_session_id: null, spawned_by_session_id: 'caller' });
     expect(await runSessionAction(context, { action: 'children' })).toEqual([
-      expect.objectContaining({ session_id: otherProject.session_id, parent_session_id: 'caller', project_id: 'project-2' }),
+      expect.objectContaining({ session_id: otherProject.session_id, parent_session_id: 'caller', project_id: 'group-2' }),
     ]);
   });
 
@@ -2059,7 +2246,7 @@ describe('session orchestration', () => {
     project2Root();
     fixture.sqlite.prepare("INSERT INTO sessions (id, project_id, runtime, config) VALUES ('chosen-parent', 'project-1', 'acp', json_object('version', '1', 'type', 'acp', 'agentDisplayName', 'Parent'))").run();
     const child = await runSessionAction(context, {
-      action: 'spawn', prompt: 'Work elsewhere.', project_id: 'project-2', parent_session_id: 'chosen-parent',
+      action: 'spawn', prompt: 'Work elsewhere.', project_id: 'group-2', parent_session_id: 'chosen-parent',
     }) as { session_id: string; parent_session_id: string | null };
     expect(child.parent_session_id).toBe('chosen-parent');
     expect(fixture.sqlite.prepare('SELECT project_id, parent_session_id, spawned_by_session_id FROM sessions WHERE id = ?').get(child.session_id))
@@ -2087,7 +2274,7 @@ describe('session orchestration', () => {
       }),
       archive: vi.fn(), appMessage: vi.fn(), appCall: vi.fn(), sessionHome: vi.fn(),
     });
-    const action = { action: 'spawn' as const, prompt: 'x', project_id: 'project-2', parent_session_id: 'chosen-remote' };
+    const action = { action: 'spawn' as const, prompt: 'x', project_id: 'group-2', parent_session_id: 'chosen-remote' };
     const child = await (remoteCaller
       ? runRemoteSessionAction({ deviceId: 'device-a', deviceLabel: null, sessionId: 'remote-spawner', agentUserId: null, name: null, harness: 'codex', transport: 'acp', model: null, platformModel: null }, action)
       : runSessionAction(context, action)) as { session_id: string; parent_session_id: string; not_reached: string[]; spawned_by_session_id: string };
@@ -2358,7 +2545,7 @@ describe('session orchestration', () => {
     const child = (await runSessionAction(context, {
       action: 'spawn',
       prompt: 'Work in the other repo.',
-      project_id: 'project-2',
+      project_id: 'group-2',
     })) as { session_id: string };
     fixture.sqlite
       .prepare(
@@ -2370,7 +2557,7 @@ describe('session orchestration', () => {
     await expect(
       runSessionAction(context, { action: 'get', session_id: child.session_id })
     ).resolves.toEqual(
-      expect.objectContaining({ session_id: child.session_id, project_id: 'project-2' })
+      expect.objectContaining({ session_id: child.session_id, project_id: 'group-2' })
     );
     await expect(
       runSessionAction(context, { action: 'stop', session_id: child.session_id })
@@ -2705,6 +2892,41 @@ describe('session_archive', () => {
     ).rejects.toThrow('session not found on this machine');
   });
 });
+
+  // #1607 A task running on this desktop, watched from another computer: an App's task page reaches that computer too.
+  describe('App task pages of a desktop task watched from another computer', () => {
+    const viewers = { open: vi.fn(), watching: vi.fn() };
+    const target = { projectId: 'project-1', sessionId: 'caller' };
+    beforeEach(() => {
+      viewers.open.mockReset(); viewers.watching.mockReset();
+      mocks.installedExtensions = [{ manifest: { id: 'computer-use', contributes: { tabs: [{ name: 'settings' }, { name: 'preview', perSession: true }] } } }];
+      setRemoteTaskViewers(viewers);
+    });
+    afterEach(() => setRemoteTaskViewers(null));
+
+    it('opens the page in this window and on the computer watching the task', async () => {
+      viewers.watching.mockReturnValue(true);
+      viewers.open.mockResolvedValue({ opened: true });
+      await expect(openTaskPagesOfApp(target, 'computer-use')).resolves.toEqual(['computer-use.preview']);
+      expect(viewers.open).toHaveBeenCalledWith('caller', { kind: 'app-tab', tabKind: 'computer-use.preview', ifAbsent: true }, 'pinned');
+      expect(mocks.emit).toHaveBeenCalledWith(sessionOpenExtensionInPaneChannel, expect.objectContaining({ sessionId: 'caller', tabKind: 'computer-use.preview', ifAbsent: true }));
+    });
+
+    it('asks no other computer when nobody elsewhere is watching (nothing queued for later)', async () => {
+      viewers.watching.mockReturnValue(false);
+      await expect(openTaskPagesOfApp(target, 'computer-use')).resolves.toEqual(['computer-use.preview']);
+      expect(viewers.open).not.toHaveBeenCalled();
+    });
+
+    it('counts as opened when either side opened it, and fails only when both failed', async () => {
+      viewers.watching.mockReturnValue(true);
+      mocks.nextOpenFileResult = { success: false, error: 'this window could not' };
+      viewers.open.mockResolvedValue({ opened: true });
+      await expect(openTaskPagesOfApp(target, 'computer-use')).resolves.toEqual(['computer-use.preview']);
+      viewers.open.mockRejectedValue(new Error('the watching window could not'));
+      await expect(openTaskPagesOfApp(target, 'computer-use')).rejects.toThrow('this window could not');
+    });
+  });
 
   // #6264 咕咕 server:没有本机渲染层,open_in_tab 交给正看着这条会话的桌面(remote-pane.ts)。
   describe('on a Gugu server (remote pane route)', () => {

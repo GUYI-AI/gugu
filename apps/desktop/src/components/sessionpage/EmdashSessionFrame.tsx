@@ -10,7 +10,7 @@
 // CSS 之后注入一段桥接 <style>:把会话页的原始色阶/语义原色重定义为 gugu 的语义 token
 // (--bg/--fg/--accent/--border-color… 经 host 继承进 shadow)。桥接规则不进 @layer、且
 // 注入在后 → 稳压会话页的分层/在前规则。gugu 切明暗 → 挂载类翻转 → 会话页整体跟随。
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { platform } from '@/platform'
 import { i18n } from '@/i18n'
@@ -18,6 +18,7 @@ import { useTheme, type Theme } from '@/store/theme'
 import { sessionSkinClassName } from './sessionSkin'
 import { AlertCircle, RefreshCw } from '@/lib/icons'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
+import { hasStartupMotion, retainStartupMotion, subscribeStartupMotion } from '@/lib/startup-motion'
 import {
   createSessionHostWsClient,
   resolveSessionHostEndpoint,
@@ -269,6 +270,20 @@ export function EmdashSessionFrame() {
   // 网页版:无头宿主的连接状态;桌面版恒为 null(桥在 preload 里,没有"连接"这回事)。
   const [hostState, setHostState] = useState<SessionHostConnectionState | null>(null)
   const [hostEndpoint, setHostEndpoint] = useState<string | null>(null)
+  // Cold start keeps one loader (spec loading-state, #2571): while the startup wordmark is up and this frame is the page on
+  // screen, it holds the wordmark until the task page has drawn or cannot (error card, web host not connected), instead of
+  // a second loader after it. Warming up behind another page it lets go at once; a later load shows the ordinary loader.
+  const rootRef = useRef<HTMLDivElement>(null)
+  const startupShown = useSyncExternalStore(subscribeStartupMotion, hasStartupMotion, () => false)
+  const [startedBehind, setStartedBehind] = useState(false)
+  const holdsStartup = startupShown && loadState === 'loading' && hostState !== 'closed' && !startedBehind
+  // Held in the commit that mounts it: the wordmark leaves right after the first commit unless something holds it.
+  useLayoutEffect(() => holdsStartup ? retainStartupMotion() : undefined, [holdsStartup])
+  // MainLayout places the frame over its slot in its own layout effect, after this one; a hidden slot leaves it 0 × 0.
+  useEffect(() => {
+    const box = rootRef.current?.getBoundingClientRect()
+    if (!box || box.width === 0 || box.height === 0) setStartedBehind(true)
+  }, [])
   const { theme } = useTheme()
   // 挂载是异步创建的(fetch embedded.html 之后),用 ref 让创建时能读到最新主题。
   const themeRef = useRef<Theme>(theme)
@@ -359,9 +374,9 @@ export function EmdashSessionFrame() {
   }, [])
 
   return (
-    <div className="gg-session-frame">
+    <div ref={rootRef} className="gg-session-frame">
       <div ref={hostRef} className="gg-session-frame-host" />
-      {loadState === 'loading' && (
+      {loadState === 'loading' && !holdsStartup && (
         <div
           className="gg-session-frame-placeholder gg-session-frame-loading"
         >

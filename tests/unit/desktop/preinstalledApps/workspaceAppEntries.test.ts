@@ -8,6 +8,7 @@ import { resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
 import { listedIn } from './folderList'
 import { until } from '../../../support/awaitCondition'
+import { fakeSharedMenu } from './sharedMenu'
 
 const now = Date.parse('2026-10-25T12:00:00Z')
 const ago = (seconds: number) => new Date(now - seconds * 1000).toISOString()
@@ -36,7 +37,9 @@ const context: Ctx = { chat: { id: 'chat-1', name: 'G', kind: 'group', groupId: 
 let contextChanged: (ctx: Ctx) => void = () => {}
 let filesChanged = (_change: { kind: 'entries'; entries: typeof entries; gone: string[] }) => {}
 
+const menu = fakeSharedMenu()
 const gugu = {
+  showContextMenu: menu.showContextMenu,
   linkTo: vi.fn(async ({ file }: { file: { id: string } }) => `gugu-file://${file.id}`),
   setTabTitle: vi.fn(async () => {}),
   getContext: vi.fn(async () => context),
@@ -73,12 +76,19 @@ const app = () => ({
 })
 const banner = () => ['banner', 'list-banner'].map((id) => $(id)).filter((node) => !node.hidden).map((node) => node.textContent).join('')
 const clickFile = (id: string) => (document.querySelector(`[data-id="${id}"] .file-open`) as HTMLButtonElement).click()
-// A row's ⋯, and the page's one menu it opens: what it says, an item by what it says.
+// A row's ⋯, and the host's shared menu it opens: what it says.
 const rowMore = (id: string) => ({ click: () => document.querySelector(`[data-id="${id}"]`)!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })) })
-const menuItems = () => [...$('menu').querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
-const offered = () => menuItems().map((item) => item.textContent)
-const menuItem = (text: string) => menuItems().find((item) => item.textContent === text)!
-const pressEscape = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+const offered = () => menu.labels()
+// Upload is an item of 「+」 (owner 11-10: no button of its own beside it), there again once the last upload is over.
+const upload = async () => {
+  await vi.waitFor(async () => {
+    $('new-doc').click()
+    if (menu.row('上传').enabled !== false) return
+    await menu.dismiss()
+    throw new Error('an upload still under way')
+  })
+  await menu.pick('上传')
+}
 
 beforeAll(async () => {
   vi.spyOn(Date, 'now').mockReturnValue(now)
@@ -104,10 +114,10 @@ describe('workspace App: what the old workspace panel did', () => {
     const meta = (id: string) => document.querySelector<HTMLElement>(`[data-id="${id}"] .file-meta`)!
     const cells = (id: string) => [...meta(id).children].map((cell) => cell.textContent)
     expect(cells('plan')).toEqual([clock(ago(60)), '10 B'])
-    expect(meta('plan').title).toBe('张三 创建 · 1小时前 · 已编辑 · 1分钟前')
+    expect(meta('plan').title).toBe('张三 于 1小时前 创建，编辑于 1分钟前')
     expect(cells('photo')).toEqual([clock(ago(120)), '100 B'])
     expect(cells('cfg'), 'the system is no one to name on the row').toEqual([clock(ago(7200)), '2 B'])
-    expect(meta('cfg').title).toBe('系统 创建 · 2小时前')
+    expect(meta('cfg').title).toBe('系统 于 2小时前 创建')
     expect(cells('old'), 'no creation metadata: no invented attribution').toEqual([clock(ago(10)), '1 B'])
   })
 
@@ -119,7 +129,7 @@ describe('workspace App: what the old workspace panel did', () => {
     await vi.waitFor(() => expect(app().shown).toBe('large.json'))
     expect($('doc-message').hidden).toBe(false)
     expect($('download').hidden).toBe(false)
-    expect(app().info).toContain('写手 (Agent) 创建 · 2分钟前')
+    expect(app().info).toContain('写手 (Agent) 于 2分钟前 创建')
     const sources = Array.from(document.querySelectorAll<HTMLButtonElement>('#doc-info .source'))
     expect(sources.map((b) => b.textContent)).toEqual(['第 1 条', '第 2 条'])
 
@@ -156,7 +166,7 @@ describe('workspace App: what the old workspace panel did', () => {
     contextChanged({ ...context, locale: 'en', file: { chat: 'chat-1', id: entry.id } })
     await vi.waitFor(() => expect(app().shown).toBe('plan.md'))
     const activity = $('doc-info').querySelector<HTMLElement>('.file-activity')!
-    expect(activity.textContent).toBe('Created by 张三 · 1 hour ago · Edited · 1 minute ago')
+    expect(activity.textContent).toBe('Created by 张三 1 hour ago, Edited 1 minute ago')
     expect(activity.title).toBe(activity.textContent)
     expect($('doc-info').querySelectorAll('.file-activity')).toHaveLength(1)
     contextChanged({ ...context })
@@ -164,9 +174,9 @@ describe('workspace App: what the old workspace panel did', () => {
   })
 
   test.each([
-    { locale: 'zh-CN', name: '李四', kind: 'human', at: ago(60), expected: '李四 编辑 · 1分钟前' },
-    { locale: 'en', name: 'Helper', kind: 'agent', at: ago(60), expected: 'Edited by Helper (agent) · 1 minute ago' },
-    { locale: 'en', name: 'Jane', kind: 'human', at: ago(3600), expected: 'Edited by Jane · 1 hour ago' },
+    { locale: 'zh-CN', name: '李四', kind: 'human', at: ago(60), expected: '李四 于 1分钟前 编辑' },
+    { locale: 'en', name: 'Helper', kind: 'agent', at: ago(60), expected: 'Edited by Helper (agent) 1 minute ago' },
+    { locale: 'en', name: 'Jane', kind: 'human', at: ago(3600), expected: 'Edited by Jane 1 hour ago' },
   ])('a known $kind editor appears in the list and open header ($locale, $at)', async ({ locale, name, kind, at, expected }) => {
     const entry = { ...entries[0], updatedAt: at, updatedBy: { id: 'editor', name, kind } }
     contextChanged({ ...context, locale })
@@ -186,24 +196,27 @@ describe('workspace App: what the old workspace panel did', () => {
   })
 
   test('upload: the host picker; cancel refreshes quietly, too-large and partial failures are said and the list refreshed', async () => {
-    expect($('upload').hidden).toBe(false)
+    expect($('upload'), 'no upload button of its own').toBe(null)
+    $('new-doc').click()
+    expect(menu.labels()).toEqual(['新建文档', '新建文件夹', '上传'])
+    await menu.dismiss()
     $('banner').hidden = true
     const lists = gugu.files.list.mock.calls.length
     const opens = gugu.files.open.mock.calls.length
-    $('upload').click()
+    await upload()
     // The top read again: it and 「附件」, whose files are shown with it.
     await vi.waitFor(() => expect(gugu.files.list.mock.calls.length).toBe(lists + 2))
     expect(gugu.files.upload).toHaveBeenLastCalledWith({ chat: 'chat-1' }) // every call names its chat (真源原则 13)
     expect(banner()).toBe('')
 
     gugu.files.upload.mockRejectedValueOnce(Object.assign(new Error('上限 25 MiB'), { code: 'too-large' }))
-    $('upload').click()
+    await upload()
     await vi.waitFor(() => expect(banner()).toBe('文件太大：上限 25 MiB'))
     expect(gugu.files.list.mock.calls.length).toBe(lists + 4)
 
     // One binary file arrives: it is in the list, the page stays on what it showed.
     gugu.files.upload.mockResolvedValueOnce([entries[1]])
-    $('upload').click()
+    await upload()
     await vi.waitFor(() => expect(gugu.files.list.mock.calls.length).toBe(lists + 6))
     expect(gugu.files.open).toHaveBeenCalledTimes(opens)
   })
@@ -212,27 +225,26 @@ describe('workspace App: what the old workspace panel did', () => {
   test('read-only has no upload and no new file, and still "Open with" on every file', async () => {
     contextChanged({ ...context, capabilities: ['files:read'] })
     await vi.waitFor(() => expect($('new-doc').hidden).toBe(true))
-    expect($('upload').hidden).toBe(true)
     // Opening is reading: a read-only member still gets what reading allows on every file — download, its message, its
     // link, "Open with" — and nothing that changes it.
     for (const li of app().entries) {
       const id = li.getAttribute('data-id')!
       rowMore(id).click()
-      expect(offered()).toEqual(['复制链接', '用别的 App 打开', '下载', '打开', '在新页签打开', '在旁边打开', ...(id === 'photo' ? ['在聊天中定位'] : []), '选择', '详情'])
+      expect(offered()).toEqual(['复制链接', '用其他应用打开', '下载', '打开', '在新页签打开', '在旁边打开', ...(id === 'photo' ? ['在聊天中定位'] : []), '选择', '详情'])
+      await menu.dismiss()
     }
-    pressEscape()
     contextChanged({ ...context })
     await vi.waitFor(() => expect($('new-doc').hidden).toBe(false))
     rowMore('cfg').click()
     // 删除 joins the open menu once the folder answers for this file (asked as the menu opens, never with the list).
-    await vi.waitFor(() => expect(offered()).toEqual(['复制链接', '用别的 App 打开', '下载', '改名', '移动到…', '删除', '打开', '在新页签打开', '在旁边打开', '选择', '详情']))
-    pressEscape()
+    await vi.waitFor(() => expect(offered()).toEqual(['复制链接', '用其他应用打开', '下载', '改名', '移动到…', '删除', '打开', '在新页签打开', '在旁边打开', '选择', '详情']))
+    await menu.dismiss()
     // owner 10-18: delete is offered only where the folder says this person may — for 'old' it says no.
     rowMore('old').click()
     await vi.waitFor(() => expect(gugu.files.canDelete).toHaveBeenCalledWith([expect.objectContaining({ id: 'old' })]))
     await new Promise((settled) => setTimeout(settled, 0))
-    expect(offered()).toEqual(['复制链接', '用别的 App 打开', '下载', '改名', '移动到…', '打开', '在新页签打开', '在旁边打开', '选择', '详情'])
-    pressEscape()
+    expect(offered()).toEqual(['复制链接', '用其他应用打开', '下载', '改名', '移动到…', '打开', '在新页签打开', '在旁边打开', '选择', '详情'])
+    await menu.dismiss()
   })
 })
 
@@ -240,26 +252,26 @@ describe('the document ⋯ is the file actions that lead the list menu', () => {
   test.each([false, true])('both entries keep the same file actions and permissions when readOnly=%s', async (readOnly) => {
     const ctx = { ...context, capabilities: readOnly ? ['files:read'] : context.capabilities }
     contextChanged(ctx)
-    await until('the folder and its permission are ready', () => !!document.querySelector('[data-id="plan"]') && $('upload').hidden === readOnly)
+    await until('the folder and its permission are ready', () => !!document.querySelector('[data-id="plan"]') && $('new-doc').hidden === readOnly)
     try {
       rowMore('plan').click()
       if (!readOnly) await until('delete permission is shown', () => offered().includes('删除'))
       const rowItems = offered()
-      pressEscape()
+      await menu.dismiss()
       gugu.files.open.mockResolvedValueOnce({ type: 'binary', entry: entries[0], close: vi.fn() } as never)
       contextChanged({ ...ctx, file: { chat: 'chat-1', id: 'plan' } })
       await until('the same file is open', () => app().shown === 'plan.md')
       $('more').click()
       const fileItems = rowItems.slice(0, rowItems.indexOf('打开'))
       expect(offered()).toEqual(fileItems)
-      expect(fileItems.slice(0, 3)).toEqual(['复制链接', '用别的 App 打开', '下载'])
+      expect(fileItems.slice(0, 3)).toEqual(['复制链接', '用其他应用打开', '下载'])
       expect(fileItems.includes('删除')).toBe(!readOnly)
       expect(fileItems.includes('改名')).toBe(!readOnly)
       // List-only items stay in the list: the open document is already open and has no list to select in.
       expect(rowItems).toContain('选择')
       expect(offered()).not.toContain('打开')
     } finally {
-      pressEscape()
+      await menu.dismiss()
       contextChanged({ ...context })
       await until('Back closes the file and restores its list', () => app().shown === null && !!document.querySelector('[data-id="plan"]'))
     }
@@ -267,7 +279,7 @@ describe('the document ⋯ is the file actions that lead the list menu', () => {
 })
 
 // 摩擦单 F2(L5,09-29;真源 §2.6 617e20ea):工作区 App 是文件管理器 —— 点文件交给宿主挑 App(Finder 双击),
-// 「用别的 App 打开」是右键那一下;挑中的恰好是这个 App 时,宿主把文件经 context.file 递回来,这里才打开。
+// 「用其他应用打开」是右键那一下;挑中的恰好是这个 App 时,宿主把文件经 context.file 递回来,这里才打开。
 describe('workspace App as a file manager: the host picks the App', () => {
   test('an unclaimed binary click is handed to the host, without a duplicate details page', async () => {
     gugu.files.openWith.mockClear()
@@ -294,14 +306,13 @@ describe('workspace App as a file manager: the host picks the App', () => {
     const more = rowMore('cfg')
     const target = document.querySelector<HTMLButtonElement>('[data-id="cfg"] .file-open')!
     expect(document.querySelector('.row-more')).toBe(null)
+    target.focus()
     more.click()
-    expect($('menu').hidden).toBe(false)
+    expect(menu.isOpen()).toBe(true)
     expect(target.getAttribute('aria-expanded'), 'its ⋯ stays drawn while the menu is open').toBe('true')
-    expect(document.activeElement, 'the keyboard is on the first item').toBe(menuItem('复制链接'))
-    menuItem('用别的 App 打开').click()
-    expect($('menu').hidden).toBe(true)
+    await menu.pick('用其他应用打开')
     expect(target.getAttribute('aria-expanded')).toBe('false')
-    expect(document.activeElement, 'and back on the ⋯').toBe(target)
+    expect(document.activeElement, 'and still on the ⋯').toBe(target)
     await vi.waitFor(() => expect(gugu.files.openWith).toHaveBeenCalledTimes(1))
     expect(gugu.files.openWith.mock.calls[0]).toEqual([expect.objectContaining({ id: 'cfg' }), expect.objectContaining({ ask: true, intent: 'navigate' })])
   })
@@ -316,14 +327,17 @@ describe('workspace App as a file manager: the host picks the App', () => {
     gugu.files.remove.mockClear()
     key('Delete')
     await vi.waitFor(() => expect(offered()).toEqual(['确认删除']))
+    expect(menu.rows()[0]!.danger).toBe(true)
     expect(gugu.files.remove).not.toHaveBeenCalled()
-    pressEscape()
+    await menu.dismiss()
     contextChanged({ ...context, capabilities: ['files:read'] })
     await vi.waitFor(() => expect($('new-doc').hidden).toBe(true))
     key('F2')
+    const asked = menu.showContextMenu.mock.calls.length
     key('Delete')
     expect(document.querySelector('.rename-input')).toBe(null)
-    expect($('menu').hidden).toBe(true)
+    await new Promise((settled) => setTimeout(settled, 0))
+    expect(menu.showContextMenu.mock.calls.length).toBe(asked)
     expect(gugu.files.remove).not.toHaveBeenCalled()
     contextChanged({ ...context })
     await vi.waitFor(() => expect($('new-doc').hidden).toBe(false))
@@ -331,8 +345,7 @@ describe('workspace App as a file manager: the host picks the App', () => {
 
   test('rename from the ⋯ turns the row into its full name to edit; delete asks once more, and closing the menu takes that back', async () => {
     rowMore('cfg').click()
-    menuItem('改名').click()
-    expect($('menu').hidden).toBe(true)
+    await menu.pick('改名')
     const input = document.querySelector('[data-id="cfg"] .rename-input') as HTMLInputElement
     expect(input.value).toBe('cfg.json')
     input.value = 'unfinished.json'
@@ -346,17 +359,18 @@ describe('workspace App as a file manager: the host picks the App', () => {
     await vi.waitFor(() => expect(document.querySelector('[data-id="cfg"] .rename-input')).toBe(null))
 
     rowMore('cfg').click()
-    menuItem('删除').click()
-    expect($('menu').hidden, 'the menu stays open for the question').toBe(false)
-    expect(offered()).toEqual(['复制链接', '用别的 App 打开', '下载', '改名', '移动到…', '确认删除', '打开', '在新页签打开', '在旁边打开', '选择', '详情'])
-    $('filter').dispatchEvent(new Event('pointerdown', { bubbles: true })) // a press elsewhere
-    expect($('menu').hidden).toBe(true)
+    await vi.waitFor(() => expect(offered()).toContain('删除'))
+    expect(menu.row('删除').danger).toBe(true)
+    await menu.pick('删除')
+    // The question is a menu of its own, in red, where the menu was.
+    expect(offered(), 'asked once more').toEqual(['确认删除'])
+    expect(menu.row('确认删除').danger).toBe(true)
+    await menu.dismiss() // a press elsewhere
     expect(gugu.files.remove).not.toHaveBeenCalled()
     rowMore('cfg').click()
-    expect(offered(), 'the question is taken back').toEqual(['复制链接', '用别的 App 打开', '下载', '改名', '移动到…', '删除', '打开', '在新页签打开', '在旁边打开', '选择', '详情'])
-    menuItem('删除').click()
-    menuItem('确认删除').click()
-    expect($('menu').hidden).toBe(true)
+    await vi.waitFor(() => expect(offered(), 'the question is taken back').toEqual(['复制链接', '用其他应用打开', '下载', '改名', '移动到…', '删除', '打开', '在新页签打开', '在旁边打开', '选择', '详情']))
+    await menu.pick('删除')
+    await menu.pick('确认删除')
     await vi.waitFor(() => expect(gugu.files.remove).toHaveBeenCalledWith(expect.objectContaining({ id: 'cfg' })))
   })
 
@@ -411,9 +425,10 @@ describe('workspace App as a file manager: the host picks the App', () => {
     // 对照:没有认领的文件(旧宿主没有这两个字段)照原名显示,画它的后缀,按种类上色(owner 10-28)。
     const plain = document.querySelector('[data-id="plan"] .file-open') as HTMLButtonElement
     expect(plain.querySelector('.file-name')!.textContent).toBe('plan.md')
+    // The host's tile (<gugu-file-mark>, API 56) by the full name: family and word come from the host's table.
     const markOf = (id: string) => document.querySelector<HTMLElement>(`[data-id="${id}"] .file-mark`)!
-    expect([markOf('plan').textContent, markOf('plan').dataset.family]).toEqual(['MD', 'text'])
-    expect([markOf('photo').textContent, markOf('photo').dataset.family]).toEqual(['PNG', 'image'])
+    expect([markOf('plan').localName, markOf('plan').getAttribute('name'), markOf('plan').getAttribute('mime'), markOf('plan').hasAttribute('tile')]).toEqual(['gugu-file-mark', 'plan.md', 'text/markdown', true])
+    expect([markOf('photo').localName, markOf('photo').getAttribute('name')]).toEqual(['gugu-file-mark', 'photo.png'])
   })
 
   // owner 10-17:群文件夹里的 markdown 画成文件夹 App 的图标太怪。认领它的 App 没给这类文件声明图标(icon: null)时,
@@ -422,8 +437,8 @@ describe('workspace App as a file manager: the host picks the App', () => {
     const [, changed] = gugu.files.onChanged.mock.calls.at(-1) as unknown as [unknown, (change: unknown) => void]
     changed({ kind: 'entries', entries: [{ ...entries[2], id: 'bare', claimedBy: { id: 'workspace', name: '文件夹', icon: null } }], gone: [] })
     const mark = document.querySelector('[data-id="bare"] .file-mark') as HTMLElement
-    expect(mark.tagName).toBe('SPAN')
-    expect(mark.textContent).toBe('JSON')
+    expect(mark.localName).toBe('gugu-file-mark')
+    expect(mark.getAttribute('name')).toBe(entries[2]!.name)
     expect(mark.title).toBe('文件夹')
   })
 

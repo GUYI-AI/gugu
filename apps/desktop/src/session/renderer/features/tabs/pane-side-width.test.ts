@@ -1,3 +1,4 @@
+import { runInAction } from 'mobx';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTabProvider, createTabRegistry } from './core/tab-provider-registry';
 import { PaneLayoutStore } from './pane-layout-store';
@@ -22,10 +23,10 @@ function setup() {
     TabContent: () => null,
     ...(sideWidth ? { sideWidth: () => sideWidth } : {}),
   });
-  const registry = createTabRegistry([provider('conversation'), provider('folder'), provider('file'), provider('info', 360)]);
+  const registry = createTabRegistry([provider('conversation'), provider('folder'), provider('file'), provider('info', 360), provider('wide', 480)]);
   const make = () => {
     const layout = new PaneLayoutStore(registry, { viewId: 'side-width' }, undefined, { placementMemory: { read: () => undefined, write() {} } });
-    layout.setPaneSizer(() => ({ width: EXTENT / layout.groups.length, height: 800 }));
+    layout.setDimensions(EXTENT, 800);
     layouts.push(layout);
     return layout;
   };
@@ -144,5 +145,58 @@ describe('every page on the side comes at its own width', () => {
     drag(840);
     close(a);
     expect(layout.snapshot.sideShares).toBeUndefined();
+  });
+});
+
+// A page of the pair in full screen measures the workspace, not its cell: the pair's shares come from the tree as drawn
+// (PaneTreeView), so lighting the pair up again (its tab clicked, `pairWith`) keeps each declared width.
+describe('a page in full screen is no measure of the pair', () => {
+  it('re-pairing while one page covers the workspace keeps the declared widths (480, 360)', () => {
+    const { layout, open, sideWidth } = setup();
+    const wide = open('wide');
+    expect(sideWidth()).toBe(480);
+    const members = open('info');
+    expect(sideWidth()).toBe(360);
+    // The conversation's page in full screen: it (and its pane's own sink) measures the whole workspace.
+    layout.mainGroup.pane.setDimensions(EXTENT + 240, 900);
+    layout.groups.find(({ pane }) => pane.entries.has(wide))!.pane.setActiveTab(wide);
+    expect(sideWidth()).toBe(480);
+    layout.setActiveGroup(layout.mainGroup.paneId);
+    layout.groups.find(({ pane }) => pane.entries.has(members))!.pane.setActiveTab(members);
+    expect(sideWidth()).toBe(360);
+  });
+});
+
+// The pair already on screen: clicking a tab already in front (or the full-screen button, which brings its tab to the
+// front first) is no page arriving — the shares stay as they are, whatever left them there.
+describe('the pair on screen keeps its shares', () => {
+  /** The cut set directly, as a page navigating in place leaves it — not a width recorded for any page. */
+  const leave = (layout: PaneLayoutStore, sidePx: number) => {
+    const cut = layout.layout;
+    if (cut.type !== 'split') throw new Error('not paired');
+    const share = (sidePx / EXTENT) * 100;
+    runInAction(() => { layout.layout = { ...cut, sizes: cut.children.map((child) => (child.type === 'pane' && child.paneId === layout.sidePaneId ? share : 100 - share)) }; });
+  };
+  const front = (layout: PaneLayoutStore, tabId: string) => layout.groups.find(({ pane }) => pane.entries.has(tabId))!.pane.setActiveTab(tabId);
+
+  it('the side tab, or the pinned one, clicked while in front: the shares stay', () => {
+    const { layout, open, sideWidth } = setup();
+    const members = open('info');
+    expect(sideWidth()).toBe(360);
+    leave(layout, 600);
+    front(layout, members);
+    expect(sideWidth(), 'the side page in front clicked again').toBe(600);
+    front(layout, layout.pair!.pinned);
+    expect(sideWidth(), 'the pinned page in front clicked again').toBe(600);
+  });
+
+  it('another tab brought to the side from the strip comes at its own width', () => {
+    const { layout, open, sideWidth } = setup();
+    const members = open('info');
+    open('wide');
+    expect(sideWidth()).toBe(480);
+    leave(layout, 600);
+    front(layout, members);
+    expect(sideWidth()).toBe(360);
   });
 });

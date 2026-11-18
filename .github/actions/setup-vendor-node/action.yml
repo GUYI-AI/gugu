@@ -1,6 +1,10 @@
 name: Set up pinned vendor Node
 description: Install the repository-pinned Node archive from immutable storage with official SHA256 validation
 inputs:
+  save-cache:
+    description: Save a verified shared Node cache only from a dev push; PRs and manual runs restore only.
+    required: false
+    default: 'false'
   node-version-file:
     description: File containing the exact Node version
     required: false
@@ -16,6 +20,28 @@ outputs:
 runs:
   using: composite
   steps:
+    - id: cache-posix
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        VENDOR_NODE_VERSION_FILE: ${{ inputs.node-version-file }}
+        VENDOR_NODE_VERSION: ${{ inputs.node-version }}
+        VENDOR_NODE_CACHE_INFO: '1'
+      run: bash "$GITHUB_ACTION_PATH/install.sh"
+    - id: cache-windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        VENDOR_NODE_VERSION_FILE: ${{ inputs.node-version-file }}
+        VENDOR_NODE_VERSION: ${{ inputs.node-version }}
+        VENDOR_NODE_CACHE_INFO: '1'
+      run: '& "$env:GITHUB_ACTION_PATH/install.ps1"'
+    - id: restore
+      if: runner.environment != 'self-hosted'
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.cache-posix.outputs.cache-path || steps.cache-windows.outputs.cache-path }}
+        key: ${{ steps.cache-posix.outputs.cache-key || steps.cache-windows.outputs.cache-key }}
     - id: posix
       if: runner.os != 'Windows'
       shell: bash
@@ -30,3 +56,8 @@ runs:
         VENDOR_NODE_VERSION_FILE: ${{ inputs.node-version-file }}
         VENDOR_NODE_VERSION: ${{ inputs.node-version }}
       run: '& "$env:GITHUB_ACTION_PATH/install.ps1"'
+    - if: runner.environment != 'self-hosted' && inputs.save-cache == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ steps.cache-posix.outputs.cache-path || steps.cache-windows.outputs.cache-path }}
+        key: ${{ steps.cache-posix.outputs.cache-key || steps.cache-windows.outputs.cache-key }}

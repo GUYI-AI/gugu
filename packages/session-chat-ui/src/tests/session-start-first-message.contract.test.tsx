@@ -6,7 +6,7 @@ import type { TranscriptTurn } from '@session-chat/model'
 import { createChatState } from '@session-chat/state/chat-state'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
-import { until } from '../../../../tests/support/awaitCondition'
+import { until, untilStable } from '../../../../tests/support/awaitCondition'
 
 /**
  * 新建会话带着第一条消息(behavior session-page「打开速度」):那条消息发出那一刻就在屏上,下面就是
@@ -123,7 +123,7 @@ describe('ordinary sending stays in the transcript', () => {
     state.session.setPendingPrompt({ id: 'owned', text: FIRST, held: true,
       delivery: { state: 'waiting', reason: 'Send interrupted', error: 'SSH transport closed', retryable: false } })
     await until('automatic custody status is visible', () => !!host.querySelector('[data-send-state="waiting"]'))
-    expect(host.textContent).toContain('Waiting to send · Send interrupted')
+    expect(host.textContent).toContain('Waiting to send: Send interrupted')
     expect(host.querySelector('[data-send-state="waiting"]')?.getAttribute('title')).toBe('SSH transport closed')
     expect(host.querySelector('[data-send-state="waiting"] button')).toBeNull()
     expect(host.querySelector('[data-live="true"]')).toBeNull()
@@ -267,7 +267,7 @@ describe('session start with a first message', () => {
     const { state, host } = mount('double', { agentConversation: true })
     const sentAt = Date.now() - 3000
     state.session.setPendingPrompt({ id: 'row', text: FIRST, sentAt, starting: 'starting', held: true })
-    await until('the state line says Starting with seconds', () => /Starting · [3-9]s/.test(host.textContent ?? ''))
+    await until('the state line says Starting with seconds', () => /Starting [3-9]s/.test(host.textContent ?? ''))
 
     state.transcript.history.seed([])
     await until('a later render', () => state.session.state.pendingPrompt?.id === 'row')
@@ -393,9 +393,13 @@ describe('incoming deliveries share the transcript layout', () => {
     await until('all native messages replace their unknown markers', () => host.querySelectorAll('[data-user-card]').length === 3 && !host.querySelector('[data-send-state="unknown"]'))
     expect(host.querySelectorAll('[data-user-card]')).toHaveLength(3)
     expect(host.querySelectorAll('[data-send-state="unknown"] button')).toHaveLength(0)
-    expect(host.textContent).toContain('Compacting')
+    // #2587: the compaction continues turn-1's segment, so it sits inside that (collapsed) process line, not as a divider.
+    expect(host.textContent).not.toContain('Compacting')
     expect(host.textContent).toContain('Stopped')
     expect(host.textContent).toContain('Host status remains visible')
+    // Geometry is read once the rows stop moving: the markers are replaced a frame before the rows above them finish
+    // measuring, and a loaded CI runner read two rows overlapping by 3.6px in that frame (#2597 run 43288653984).
+    await untilStable('the rows settle', () => [...host.querySelectorAll<HTMLElement>('[data-user-card]')].map(el => el.getBoundingClientRect().top))
     const rows = [...host.querySelectorAll<HTMLElement>('[data-user-card]')].map(el => el.getBoundingClientRect()).sort((a, b) => a.top - b.top)
     for (let i = 1; i < rows.length; i++) expect(rows[i]!.top).toBeGreaterThan(rows[i-1]!.bottom)
     state.session.setPendingMessages([])

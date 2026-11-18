@@ -256,6 +256,24 @@ describe('createTask', () => {
       expect(takeBirthGroup('conv-1')).toBeNull();
     });
 
+    // #2599 the group is also kept on the row: the left sidebar places the agent there, whatever groups it joins later.
+    it('records the group it was born in on the row; no group, nothing recorded', async () => {
+      const params = {
+        projectId: 'project-1',
+        sessionConfig: { version: '1' as const, name: 'Test Task', initialSession },
+        workspaceConfig: {
+          version: '2' as const,
+          workspace: { kind: 'repository-instance' as const, workspaceId: 'ws-repo-1' },
+        },
+      };
+      const { captured } = setupTransactionMock();
+      await createSession({ ...params, birthGroup: { chatId: 'chat-group-1', asTask: false } });
+      expect((captured[0] as { config: Record<string, unknown> }).config.birthChatId).toBe('chat-group-1');
+      await createSession(params);
+      expect((captured[0] as { config: Record<string, unknown> }).config).not.toHaveProperty('birthChatId');
+      takeBirthGroup('conv-1');
+    });
+
   });
 
   describe('initial conversation agent status', () => {

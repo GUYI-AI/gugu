@@ -2,6 +2,7 @@ import {
   AGENT_CREATE_DEFAULTS_KEY,
   mergeAgentCreateDeviceChoice,
   mergeAgentCreateProjectChoice,
+  mergeAgentCreateRunMachine,
   parseAgentCreateDefaults,
   type AgentCreateDefaults
 } from '../shared/ui/agentCreateDefaultsModels'
@@ -44,5 +45,16 @@ export async function rememberAgentCreateProject(
 ): Promise<AgentCreateDefaults> {
   const saved = await updateUserSettingsKey(client, userId, USER_SCOPE, AGENT_CREATE_DEFAULTS_KEY,
     (value) => mergeAgentCreateProjectChoice({ [AGENT_CREATE_DEFAULTS_KEY]: value }, deviceId, projectId, chatId)[AGENT_CREATE_DEFAULTS_KEY])
+  return parseAgentCreateDefaults(saved.config)
+}
+
+export async function rememberAgentCreateRunMachine(
+  client: SettingsTableClient,
+  userId: string,
+  projectKey: string,
+  deviceId: string
+): Promise<AgentCreateDefaults> {
+  const saved = await updateUserSettingsKey(client, userId, USER_SCOPE, AGENT_CREATE_DEFAULTS_KEY,
+    (value) => mergeAgentCreateRunMachine({ [AGENT_CREATE_DEFAULTS_KEY]: value }, projectKey, deviceId)[AGENT_CREATE_DEFAULTS_KEY])
   return parseAgentCreateDefaults(saved.config)
 }

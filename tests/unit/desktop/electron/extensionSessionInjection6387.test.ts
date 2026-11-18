@@ -221,7 +221,9 @@ describe('where extension skills reach the agent (#6387)', () => {
     expect(block).not.toContain('gugu_app_skills')
     expect(block).toContain('- agent-notes (App agent-notes): Save and search notes the person keeps in 随手记')
     expect(block).toContain(join(root, 'skills', 'agent-notes', 'SKILL.md'))
-    expect(guguAppsBlock([], [])).toBe('')
+    // Nothing installed: where to look is still said, so an App or game named in a message is looked up (S1); off says nothing.
+    expect(guguAppsBlock([], [])).toBe(`<gugu_apps>\n${GUGU_APPS_SEARCH_LINE}\n</gugu_apps>\n`)
+    expect(guguAppsBlock([], [], ['apps'])).toBe('')
     // 10-19 Last, the one line on Apps the opening could not list: where to look for them.
     expect(block.endsWith(`${GUGU_APPS_SEARCH_LINE}\n</gugu_apps>\n`)).toBe(true)
   })
@@ -291,6 +293,20 @@ describe('上下文工程第二批 P3: <gugu_apps> names the Apps that give a se
       { extensionId: 'listed', name: 'App listed', instructions: 'listed line' },
       { extensionId: 'notes', name: 'App notes', instructions: 'notes line' },
     ])
+  })
+
+  it('an outdated version (a program gugu once hosted) gives a program that only says it needs an update, and is not named', () => {
+    const rootDir = extensionFolder({})
+    const contribution = { extensionId: 'browser-use', name: 'Browser Use', instructions: 'browser_* tools.', rootDir, dataDir: '/data/browser-use',
+      digest: 'd1', disclosure: 'progressive' as const, servers: [{ name: 'browser-use', host: 'browser-use' as const }], skillsDir: null }
+    const onProblem = vi.fn()
+    const { programs } = extensionAgentPrograms([contribution], {
+      nodeExecutable: '/node', toolsRuntime: '/gugu-tools.mjs', linkPrefix: 'gugu-dev://ext', onProblem,
+    })
+    expect(programs).toEqual([{ extensionId: 'browser-use', server: 'browser-use', digest: 'd1', outdated: true,
+      command: 'Gugu Browser Use', args: [], env: {}, cwd: rootDir, dataDir: '/data/browser-use' }])
+    expect(agentAppsOf([contribution], programs)).toEqual([])
+    expect(onProblem).not.toHaveBeenCalled()
   })
 
   it('Apps and skills share the one block', () => {

@@ -40,6 +40,7 @@ import { loadSessionpageCanonicalAgentIdentities } from './sessionpage-agent-ide
 import { archiveIdentity } from '@gugu/core/cloud/agentIdentityRemoval'
 import type { SessionIdentityHost } from '../session/main/core/sessions/session-identity-host'
 import { releaseAgentLocalFootprint } from './agent-local-footprint'
+import { createNativePublicationTransport } from './native-publication-transport'
 
 export type SessionpageIdentityAuthSnapshot = { accessToken: string; refreshToken: string; userId: string }
 
@@ -54,7 +55,7 @@ export interface SessionpageSessionFacts {
 }
 
 export interface SessionpageIdentityHostDeps {
-  beforeIdentityRemoval?: (agentUserId: string) => (removed: boolean) => void
+  beforeIdentityRemoval?: (agentUserId: string) => ((removed: boolean) => void) | Promise<(removed: boolean) => void>
   getAuth: () => Promise<SessionpageIdentityAuthSnapshot | null>
   resolveDeviceId: () => Promise<string | null>
   resolveProjectName: (projectId: string) => Promise<string | null>
@@ -80,6 +81,7 @@ export interface SessionpageSessionStartFacts {
 
 export interface SessionpageIdentityHost extends SessionIdentityHost {
   readonly provisionDeps: SessionpageProvisionDeps
+  readonly nativePublication: ReturnType<typeof createNativePublicationTransport>
   /** The default name a new task is created with on this host (task-name.ts `TaskNamer`). */
   defaultTaskName(providerId: string, taken: readonly string[]): Promise<string>
   /** Rename a bound session's identity locally first, then publish it (task-name.ts `TaskNamer`). */
@@ -184,6 +186,16 @@ export function createSessionpageIdentityHost(deps: SessionpageIdentityHostDeps)
 
   return {
     provisionDeps,
+    get nativePublication() {
+      return createNativePublicationTransport({ ...deps, env, ensureAgentAddress: input => this.ensureAgentAddress(input) })
+    },
+    async attachmentCreationContext() {
+      const auth = await deps.getAuth()
+      if (!auth) throw new Error('Attachment creation requires an authenticated owner')
+      const deviceId = await deps.resolveDeviceId()
+      if (!deviceId) throw new Error('Attachment creation requires the actual host device')
+      return { ownerId: auth.userId, deviceId }
+    },
     async archive(sessionId, confirmedRemoval) {
       const auth = await deps.getAuth()
       if (!auth) {
@@ -194,11 +206,12 @@ export function createSessionpageIdentityHost(deps: SessionpageIdentityHostDeps)
       const agent = await localAgentForSession(sessionId, env, auth.userId, Boolean(confirmedRemoval))
       if (confirmedRemoval) {
         if (agent?.gugu_user_id !== confirmedRemoval.userId) throw new Error('Confirmed removal no longer matches the task identity');
-        deps.beforeIdentityRemoval?.(confirmedRemoval.userId)(true)
+        const settle = await deps.beforeIdentityRemoval?.(confirmedRemoval.userId)
+        settle?.(true)
         return confirmedRemoval
       }
       if (!agent?.gugu_user_id) return null
-      const settle = deps.beforeIdentityRemoval?.(agent.gugu_user_id)
+      const settle = await deps.beforeIdentityRemoval?.(agent.gugu_user_id)
       let removed = false
       try {
         const receipt = await archiveIdentity(makeIdentityClient(auth.accessToken), agent.gugu_user_id)

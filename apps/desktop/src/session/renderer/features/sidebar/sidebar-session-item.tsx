@@ -1,10 +1,9 @@
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
-import { platform } from '@/platform';
-import { safeFailureLine } from '../sessions/gugu-reason';
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import { dissolveScreenGroup, isScreenView, showSessionBeside, takeSessionOutOfGroup } from '@renderer/app/screen-layout-actions';
-import { AlertTriangle, Archive, Copy, LayoutGrid, MoreHorizontal, Pencil, Pin, PinOff, Scissors, Sparkles, SquareMinus } from '@/lib/icons'
+import { screenLayout } from '@renderer/app/screen-layout';
+import { AlertTriangle, LayoutGrid, PanelLeft, Scissors, Sparkles, SquareMinus } from '@/lib/icons'
 import { GitFork } from '@/lib/icons'
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
 import { spawnedByExtensionLabel as spawnedByExtensionLabelFor } from '@renderer/features/extensions/spawned-by-extension-label';
@@ -14,21 +13,22 @@ import { useCallback, useRef } from 'react';
 import { requestArchiveSession } from '@renderer/features/sessions/archive-session-flow';
 import { moveSessionUnder } from '@renderer/features/sessions/set-session-parent-flow';
 import { forkTask } from '@renderer/features/sessions/fork-task';
+import { copySessionId } from '@renderer/features/sessions/copy-session-id';
+import { sessionMenu, type SessionMenuAction } from '@/session/shared/session-menu';
+import { MenuTableItems } from '@/components/MenuTableItems';
 import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-session-in-session';
 import { focusedSessionId } from '@renderer/features/sessions/pane-selectors';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import {
   getSessionView,
 } from '@renderer/features/sessions/stores/session-selectors';
-import { toast } from '@renderer/lib/hooks/use-toast';
-import { log } from '@renderer/utils/logger';
 import {
   useNavigate,
   useParams,
   useWorkspaceSlots,
 } from '@renderer/lib/layout/navigation-provider';
 import { useAgents } from '@renderer/lib/stores/use-agents';
-import { MenuFold, MenuItem, MenuSeparator } from '@/components/ui/Menu';
+import { MenuItem, MenuSeparator } from '@/components/ui/Menu';
 import { hasStatusSource } from '@shared/core/sessions/initial-agent-status';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -52,6 +52,9 @@ import type { SessionpageScheduleDigest } from '@gugu/session-core/session-recor
 import { sessionScheduleDigest } from '@shared/core/automations/session-schedule';
 import { agentForksOn } from '@shared/core/agents/agent-payload';
 import { useConversationSessionSummary } from '@/hooks/useConversationSessionSummary';
+import { sidebarPinMenuAction } from './sidebar-pin';
+import { setPinnedToSidebar } from './sidebar-pin-actions';
+import { rowPinOf } from './row-pin';
 
 // @@@sessionpage otty-state — sidebar CONVERSATION row, hanging directly under its project (spec
 // session-page: conversations ARE the sessions; tasks are an invisible workspace container). A
@@ -73,12 +76,33 @@ export type SidebarSessionItemProps = {
   parentProjectId?: string;
   hasChildren?: boolean;
   expanded?: boolean;
-  needsAttention?: boolean;
   treeSummary?: SessionBranchSummary;
   onToggle?: () => void;
   /** 拼在一屏的一组里:这一行是框的哪一段。 */
   join?: SidebarJoin;
+  /** #2548 内层侧栏:这条也固定在左侧栏时,标题前挂那枚小侧栏图标(左侧栏里它自己就是一行,不挂)。 */
+  sidebarPinMark?: boolean;
+  /**
+   * #2548 内层侧栏(开关开着):行首画这个 agent 自己的头像,顶替 harness 标;认不出 agent 身份的会话照旧画 harness 标。
+   * 行尾的状态标不动。
+   */
+  agentAvatar?: boolean;
 };
+
+/** Open a session of the sidebar the way clicking its row does. */
+export function openSidebarSession(projectId: string, sessionId: string, beside = false): void {
+  // behavior session-page「键盘导航」: the highlight is the cursor, so a click moves the cursor too —
+  // pressing ↓ right after clicking must continue from the row you just clicked.
+  sessionKeyboardNav.syncCursorFromPointer({ kind: 'conversation', projectId, sessionId });
+  // ⌘ 点 = 并排放在正看着那块的右边(spec session-page「一屏几块」);只在看这屏的视图上才有「正看着那块」。
+  if (beside && isScreenView(appState.navigation.currentViewId)) {
+    // The block is placed only once the task can open: one that never gets ready leaves nothing behind.
+    openSessionInSessionWhenReady({ projectId, sessionId, onReady: () => showSessionBeside({ projectId, sessionId }) });
+    return;
+  }
+  appState.navigation.navigate('session', { projectId, sessionId });
+  openSessionInSessionWhenReady({ projectId, sessionId });
+}
 
 /** 侧栏里的一条会话(#6264 别的机器上的会话也是这一行:同一张会话表、点开同一个任务视图)。 */
 export const SidebarSessionItem = observer(function SidebarSessionItem({
@@ -89,10 +113,11 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   parentProjectId,
   hasChildren = false,
   expanded = false,
-  needsAttention = false,
   treeSummary,
   onToggle,
   join,
+  sidebarPinMark = false,
+  agentAvatar = false,
 }: SidebarSessionItemProps) {
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
@@ -116,7 +141,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   const session = sessionRegistry.get(sessionId)?.sessions.get(sessionId);
   const listed = sidebarStore.remoteSession(projectId, sessionId);
   const machine = machineRegistry.machineOf(projectId);
-  const notificationCount = useConversationSessionSummary(sessionId, machine)?.nativeOwnerNotificationUnreadCount ?? 0;
+  const notificationCount = useConversationSessionSummary(sessionId, machine, (summary) => summary?.nativeOwnerNotificationUnreadCount ?? 0);
   // 它给自己排的定时,一台机器一个来源:本机的问本机(automation:* 事件驱动);别的机器上的(挂没挂着都一样)读那台机器
   // 推来的会话目录里那一格 —— 与置顶、未读同一条腿,❌ 再为挂着的那几条各开一条跨网问答。
   const localSchedules = useSessionSchedules(null, sessionId, machine === null);
@@ -171,56 +196,48 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
     manifestsLoaded: installedExtensionsStore.isLoaded,
   });
 
-  const openSession = ({ beside = false }: { beside?: boolean } = {}) => {
-    // behavior session-page「键盘导航」: the highlight is the cursor, so a click moves the cursor too —
-    // pressing ↓ right after clicking must continue from the row you just clicked.
-    sessionKeyboardNav.syncCursorFromPointer({ kind: 'conversation', projectId, sessionId });
-    // ⌘ 点 = 并排放在正看着那块的右边(spec session-page「一屏几块」);只在看这屏的视图上才有「正看着那块」。
-    if (beside && isScreenView(appState.navigation.currentViewId)) {
-      // The block is placed only once the task can open: one that never gets ready leaves nothing behind.
-      openSessionInSessionWhenReady({ projectId, sessionId, onReady: () => showSessionBeside({ projectId, sessionId }) });
-      return;
-    }
-    navigate('session', { projectId, sessionId: sessionId });
-    openSessionInSessionWhenReady({ projectId, sessionId });
-  };
+  // A row of the inner column (a group's agents) opens inside that group: the screen stays the group's (screen-layout `entry`).
+  const openSession = ({ beside = false }: { beside?: boolean } = {}) =>
+    rowVariant === 'section' ? screenLayout.withinEntry(() => openSidebarSession(projectId, sessionId, beside)) : openSidebarSession(projectId, sessionId, beside);
 
   const cursor = sessionKeyboardNav.cursor;
   const isCursor = cursor?.kind === 'conversation' && cursor.sessionId === sessionId;
   const isPendingArchive = sessionKeyboardNav.pendingArchiveSessionId === sessionId;
 
-  // spec session-graph:标签写「归档任务」——用户心智里会话列表的这一行就是一项任务(owner 2026-09-11)——
-  // 而动的是**这条会话**:行尾 hover 那个按钮与右键那一格是同一个动作、同一条确认、同一条主进程链路。
-  // 带走多少条由确认框里那个勾选说,❌ 不挂在菜单标签上(owner 2026-09-09)。确认、范围与失败处理都在
-  // archive-session-flow 里,与会话页 ⋯ 菜单、命令面板同一条。
+  // 行尾 hover 那个按钮与右键那一格是同一个动作、同一条确认、同一条主进程链路(archive-session-flow)。
   const archiveLabel = translate('task.archiveTaskTitle');
   const requestArchive = () => withMountedSession(projectId, sessionId, () => requestArchiveSession({ projectId, sessionId }));
 
-  const isPinned = row.isPinned;
+  // 置顶 = the row this task shows as in the left list (rowPinOf), the same state the tab and the chat list show.
+  const pin = rowPinOf(projectId, sessionId, {
+    pinned: row.isPinned,
+    setPinned: (pinned) => withMountedSession(projectId, sessionId, (_session, manager) => void manager.setSessionPinned(sessionId, pinned)),
+  });
+  const isPinned = pin.pinned;
+  const setPinned = pin.setPinned;
   // 右键给不给「从这一组拿出来 / 拆开这一组」= 这一行在不在框里。
   const grouped = join !== undefined;
-  const setPinned = (pinned: boolean) => {
-    withMountedSession(projectId, sessionId, (_session, manager) => void manager.setSessionPinned(sessionId, pinned));
+  // #2548 固定到左侧栏 sits next to 置顶, same shape; offered per sidebarPinMenuAction (top-level only).
+  const sidebarPin = pin.row === 'chat' ? null : sidebarPinMenuAction({
+    parentSessionId: row.parentSessionId,
+    isPinnedToSidebar: row.isPinnedToSidebar,
+  });
+
+  // The row's session menu: the one table (session/shared/session-menu.ts) the tab, the chat list and the phone draw from.
+  const menuRun: Partial<Record<SessionMenuAction, () => void>> = {
+    pin: () => setPinned(!isPinned),
+    'sidebar-pin': () => setPinnedToSidebar(projectId, sessionId, sidebarPin === 'pin'),
+    rename: () => commandRegistry.dispatch('session.rename', { projectId, sessionId }),
+    archive: requestArchive,
+    fork: () => forkTask({ projectId, sessionId, navigate, translate }),
+    'copy-id': () => void copySessionId(sessionId),
   };
-
-  // spec session-fork-share:「任意会话可 fork」—— pty 与 ACP 两种 runtime 都摆这个入口,
-  // 各走各的分叉动作,分叉与来源同 runtime ⇒ 问的是**来源那条腿**能不能分叉。
-  const canFork = agentForksOn(harness?.capabilities, row.runtime);
-
-  // #7334 会话 ID 平时不摆出来(身份卡只给名字),要的人从右键主动拿。复制**完整** ID:菜单里没有显示宽度
-  // 的顾虑,截断的 ID 拿去寻址什么也找不到。菜单点完就收,失败原因去敏后显示并记录。
-  const copySessionId = async () => {
-    try {
-      await platform.writeClipboardText(sessionId);
-      toast({ title: translate('sidebar.sessionIdCopied') });
-    } catch (error) {
-      log.error({ error, sessionId }, 'sidebar copy session id failed');
-      toast({ title: translate('task.copyFailed'), description: safeFailureLine(String((error as Error)?.message ?? error)), variant: 'destructive' });
-    }
-  };
-
-  const handleFork = () => forkTask({ projectId, sessionId, navigate, translate });
-
+  const menuItems = sessionMenu('sidebar-row', {
+    pinned: isPinned,
+    sidebarPin,
+    // spec session-fork-share:「任意会话可 fork」—— 问的是**来源那条腿**能不能分叉。
+    canFork: agentForksOn(harness?.capabilities, row.runtime),
+  }, new Set(Object.keys(menuRun) as SessionMenuAction[]));
 
   // 另一条会话拖到这一行上 = 挂到这一条下面(spec session-page「把会话拖成 child」)。挂不上的不给落点:
   // 它自己、已经挂在这里的、以及这一行就在它下面的(挂上去成环)。
@@ -276,6 +293,19 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
           </TooltipContent>
         </Tooltip>
       ) : null}
+      {sidebarPinMark && row.isPinnedToSidebar ? (
+        // 与上面几枚同一个形状:前缀小图标,hover 出「也固定在左侧栏」。
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span className="flex shrink-0 items-center text-foreground-tertiary-passive" data-testid="sidebar-pinned-to-sidebar">
+                <PanelLeft className="size-3" />
+              </span>
+            }
+          />
+          <TooltipContent className="whitespace-nowrap">{translate('sidebar.alsoPinnedToSidebar')}</TooltipContent>
+        </Tooltip>
+      ) : null}
       {launchedByAssistant ? (
         // #7199 个人助理派出来的任务(它自己的会话不在任务区):与上面两条同一个形状,hover 出「助理 X 发起」。
         <Tooltip>
@@ -317,11 +347,11 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
       depth={depth}
       hasChildren={hasChildren}
       expanded={expanded}
-      needsAttention={needsAttention}
       treeSummary={treeSummary}
       onToggle={onToggle}
       title={title}
       harness={harness ? { id: providerId, name: harness.name } : null}
+      agent={agentAvatar && agentUserId ? { userId: agentUserId, name: title, avatarUrl: identity?.avatar ?? null } : null}
       badges={badges}
       presentation={presentation}
       statusUnavailable={statusUnavailable}
@@ -377,47 +407,12 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
         <MenuSeparator />
       </>
     ) : null}
-    {isPinned ? (
-      <MenuItem onClick={() => setPinned(false)} icon={<PinOff />}>
-        {translate('task.unpin')}
+    <MenuTableItems items={menuItems} onAction={(id) => menuRun[id]!()} testIdPrefix="sidebar-session-menu" foldExtra={grouped ? (
+      // 拆开的是这一屏的组,不是这条会话 —— 不在会话动作表里。
+      <MenuItem onClick={() => dissolveScreenGroup(sessionId)} icon={<Scissors />}>
+        {translate('sidebar.dissolveGroup')}
       </MenuItem>
-    ) : (
-      <MenuItem onClick={() => setPinned(true)} icon={<Pin />}>
-        {translate('task.pin')}
-      </MenuItem>
-    )}
-    {/* behavior session-page「键盘导航」: 键盘能做的、菜单也要能做 —— 只给快捷键等于让用鼠标的人
-        看不见重命名。删除是这条规则的例外(owner 2026-09-05 把它从这份菜单里拿掉了):它在
-        会话页 ⋯ 菜单里仍然可见可点,不是只剩快捷键。 */}
-    <MenuItem
-      onClick={() => {
-        commandRegistry.dispatch('session.rename', { projectId, sessionId });
-      }}
-      icon={<Pencil />}
-    >
-      {translate('task.renameSession')}
-    </MenuItem>
-    {/* owner 2026-09-05:会话列表这一行不再提供删除 ——「正常我用 agent 也不删除会话」。
-        右键这一格换成归档,与行尾 hover 浮出的归档按钮是同一个动作、同一条确认路径。
-        删除仍在会话页 ⋯ 菜单与键盘两次删除上,只是不再摆在会话列表的手边。 */}
-    <MenuItem onClick={requestArchive} icon={<Archive />}>
-      {archiveLabel}
-    </MenuItem>
-    <MenuFold icon={<MoreHorizontal />} label={translate('common.more')}>
-      {grouped && (
-        <MenuItem onClick={() => dissolveScreenGroup(sessionId)} icon={<Scissors />}>
-          {translate('sidebar.dissolveGroup')}
-        </MenuItem>
-      )}
-      {canFork && (
-        <MenuItem onClick={handleFork} icon={<GitFork />}>
-          {translate('sidebar.forkSession')}
-        </MenuItem>
-      )}
-      <MenuItem onClick={() => void copySessionId()} icon={<Copy />}>
-        {translate('sidebar.copySessionId')}
-      </MenuItem>
-    </MenuFold>
+    ) : undefined} />
         </>
       }
     />
@@ -436,6 +431,9 @@ type SidebarRowData = {
   seen: boolean;
   runtime: 'acp' | 'pty';
   isPinned: boolean;
+  isPinnedToSidebar: boolean;
+  /** 父会话;有 = 子会话,不进左侧栏(#2548)。 */
+  parentSessionId: string | null;
   lastInteractedAt: string | null | undefined;
   /** fork 来源会话:目录里没有,点开(挂上)之后才显示。 */
   forkedFromSessionId: string | undefined;
@@ -456,6 +454,8 @@ function rowOfStore(session: SessionInRegistry, schedule: SessionpageScheduleDig
     seen: session.seen,
     runtime: session.data.runtime ?? 'pty',
     isPinned: session.data.isPinned === true,
+    isPinnedToSidebar: session.data.isPinnedToSidebar === true,
+    parentSessionId: session.data.parentSessionId ?? null,
     lastInteractedAt: session.data.lastInteractedAt,
     forkedFromSessionId: session.data.forkedFrom?.sessionId,
     spawnedByExtensionId: session.data.spawnedByExtensionId,
@@ -475,6 +475,8 @@ function rowOfListing({ summary }: RemoteSidebarSession): SidebarRowData {
     seen: summary.unseen !== true,
     runtime: summary.runtime === 'acp' ? 'acp' : 'pty',
     isPinned: summary.isPinned === true,
+    isPinnedToSidebar: summary.isPinnedToSidebar === true,
+    parentSessionId: summary.parentConversationId ?? null,
     lastInteractedAt: summary.lastInteractedAt,
     forkedFromSessionId: undefined,
     spawnedByExtensionId: summary.spawnedByExtensionId,

@@ -44,6 +44,7 @@ function buildMetadata(provider: CLIAgentPluginProvider): AgentMetadata {
     id: metadata.id,
     name: metadata.name,
     description: metadata.description,
+    ...(metadata.publisher ? { publisher: metadata.publisher } : {}),
     websiteUrl: metadata.websiteUrl,
     icon: assets.icon,
     capabilities: {
@@ -52,6 +53,9 @@ function buildMetadata(provider: CLIAgentPluginProvider): AgentMetadata {
       // 只服务显式声明 supported 的家，❌ 不给没声明的家伪造通用 cli-login
       // （spec: harness-auth-surface，owner 2026-09-19「sign in to use PI models 那套删了」）。
       auth: capabilities.auth,
+      customModel: capabilities.sessionBundle.customModel && { modelOptional: capabilities.sessionBundle.customModel.modelOptional },
+      modelProtocols: metadata.id === 'antigravity' ? ['gemini-generate-content'] : capabilities.sessionBundle.platform.kind === 'supported'
+        ? [...new Set([capabilities.sessionBundle.platform.wireProtocol, ...(capabilities.sessionBundle.platform.protocols ?? [])])] : [],
       hostDependency: capabilities.hostDependency,
       models: capabilities.models,
       effort: capabilities.effort,

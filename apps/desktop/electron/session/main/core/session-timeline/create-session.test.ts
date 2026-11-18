@@ -1,3 +1,4 @@
+vi.mock('@main/core/agents/custom-models', () => ({ listCustomModels: async () => [] }));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /*
@@ -9,15 +10,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
   agentStatus: 'missing' as string,
+  commitCount: 0, finalizeCount: 0,
   calls: [] as string[],
   createParams: [] as Array<{ projectId: string; sessionType?: string }>,
   acpStart: { success: true } as { success: boolean; error?: unknown },
   warnings: [] as Array<Record<string, unknown>>,
-  /** 失败原文进日志走一次动态 import(见 create-session.ts logCreateFailure):写进来的那一刻告诉用例。 */
+  warningCalls: [] as unknown[][],
+  /** 固定原因码进日志走一次动态 import(见 create-session.ts logCreateFailure):写进来的那一刻告诉用例。 */
   warned: Promise.withResolvers<void>(),
   failures: new Map<string, string>(),
   startInputs: [] as Array<Record<string, unknown>>,
   hydrateError: null as Error | null,
+  importError: null as Error | null,
   /** session-life (owner of ACP sessions): creation turns become pending rows; an empty creation queue is a start. */
   lifeEnqueued: [] as Array<Record<string, unknown>>,
   lifeEnqueueError: null as Error | null,
@@ -34,6 +38,9 @@ vi.mock('@main/core/sessions/session-life', () => ({
     start: () => { state.calls.push('life.start'); },
   }),
 }));
+vi.mock('@main/core/agents/agent-homes', () => ({
+  assertAgentHomeImportedForSession: async () => { if (state.importError) throw state.importError; },
+}));
 
 vi.mock('./start-failures', () => ({
   recordStartFailure: (id: string, code: string) => state.failures.set(id, code),
@@ -43,8 +50,9 @@ vi.mock('./start-failures', () => ({
 
 vi.mock('@main/lib/logger', () => ({
   log: {
-    warn: (fields: Record<string, unknown>) => {
-      state.warnings.push(fields);
+    warn: (...args: unknown[]) => {
+      state.warnings.push(args[0] as Record<string, unknown>);
+      state.warningCalls.push(args);
       state.warned.resolve();
     },
   },
@@ -78,6 +86,7 @@ vi.mock('@main/core/agents/controller', () => ({
         name: 'Codex',
         status: state.agentStatus,
         capabilities: {
+          acp: { kind: 'supported', liveSettings: { fast: { channel: 'acp-config-option', ack: 'ack-read-back' } } },
           sessionViews: ['general', 'code'],
           permissionModes: ['plan', 'read-only', 'edit', 'full-access'],
         },
@@ -114,8 +123,8 @@ vi.mock('@main/core/sessions/operations/createSession', () => ({
     state.createParams.push(params);
     return { success: true, data: {} };
   },
-  commitCreateSession: () => ({}),
-  finalizeCreateSession: () => ({ session: {} }),
+  commitCreateSession: () => { state.commitCount++; return {}; },
+  finalizeCreateSession: () => { state.finalizeCount++; return { session: {} }; },
 }));
 
 vi.mock('@main/core/sessions/session-service', () => ({
@@ -181,6 +190,7 @@ const probe = vi.hoisted(() => ({
   authThrows: false,
   efforts: [] as string[],
   modelEfforts: {} as Record<string, string[]>,
+  fast: false,
 }));
 vi.mock('@main/core/agents/session-discovery', () => ({
   listLocalModels: async () => ({
@@ -197,7 +207,7 @@ vi.mock('@main/core/agents/session-discovery', () => ({
     harness_catalog: { source: 'live-acp', state: 'ready' },
     gugu_catalog: { available: true },
   }),
-  probeHarnessCatalogState: async (_harness: string, _transport: string, model?: string) => ({ kind: 'ready', models: [], selected: model ?? null, efforts: (model && probe.modelEfforts[model] || probe.efforts).map(id => ({ id, name: id })), selectedEffort: null }),
+  probeHarnessCatalogState: async (_harness: string, _transport: string, model?: string) => ({ kind: 'ready', models: [], selected: model ?? null, efforts: (model && probe.modelEfforts[model] || probe.efforts).map(id => ({ id, name: id })), selectedEffort: null, ...(probe.fast ? { fastMode: { configId: 'fast', selected: 'off', available: [{ id: 'on', name: 'On' }, { id: 'off', name: 'Off' }] } } : {}) }),
 }));
 vi.mock('@main/core/agent-config/runtime-process/host', () => ({
   getAgentConfigRuntimeClient: async () => ({ modelCredential: async () => ({ success: true, data: 'unknown' }) }),
@@ -211,7 +221,7 @@ const readAuth = async () => {
   return result.success ? result.data ?? null : null;
 };
 
-const { createSession, createModels, startSession } = await import('./create-session');
+const { createSession, createModels, startSession, createAttachmentDraft } = await import('./create-session');
 const { AgentInstallFailedError } = await import('@main/core/agents/ensure-agent-installed');
 
 describe('createSession reasoning effort validation', () => {
@@ -261,6 +271,15 @@ describe('createSession:所选 harness 在这台机器上还没装', () => {
     state.warned = Promise.withResolvers<void>();
     state.lifeEnqueued = [];
     state.lifeEnqueueError = null;
+    state.importError = null;
+  });
+
+  it('returns the import repair code before admitting a task on a fresh host', async () => {
+    const message = 'Run gugu-server agent-home import codex.';
+    state.importError = Object.assign(new Error(message), { code: 'AGENT_HOME_IMPORT_REQUIRED' });
+    expect(await createSession({ projectId: 'proj-1', harness: 'codex', prompt: 'hi' }, { ensureAgentInstalled: async () => {} }))
+      .toEqual({ ok: false, error: { code: 'AGENT_HOME_IMPORT_REQUIRED', message } });
+    expect(state.calls).not.toContain('prepareCreateSession');
   });
 
   // #639 后续(owner 10-28):「终端」开关只管终端入口显不显示,新任务没说展示时永远走通用 —— 群里「新任务」卡片交给
@@ -430,7 +449,7 @@ describe('createSession:会话行写下之后 agent 没起来(#6264 会话照样
 
   // Retargeted to the terminal leg (sessionView code → hydrate): an ACP startup failure is now session-life's failed
   // state and never comes back through createSession; the classification still applies where the start is synchronous.
-  it('适配器模块解析不到:照常返回会话(带原因码 harness_runtime_missing),原因码记在这台机器上,原文只进日志', async () => {
+  it('适配器模块解析不到:照常返回会话(带原因码 harness_runtime_missing),原因码记在这台机器上,原文不进日志', async () => {
     const raw = "Cannot find module '@agentclientprotocol/claude-agent-acp/dist/index.js'\nRequire stack:\n- /home/a/.gugu-server/versions/0.2.113/app/dist-electron/registry-x.js";
     state.hydrateError = new Error(raw);
     const result = await createSession(
@@ -442,7 +461,10 @@ describe('createSession:会话行写下之后 agent 没起来(#6264 会话照样
     expect(state.failures.get(currentSessionId())).toBe('harness_runtime_missing');
     await state.warned.promise;
     expect(state.warnings).toHaveLength(1);
-    expect(state.warnings[0]).toMatchObject({ code: 'harness_runtime_missing', detail: expect.stringContaining(raw.split('\n')[0]) });
+    expect(state.warnings[0]).toEqual({ scope: 'session-timeline/create', code: 'harness_runtime_missing', retry: false });
+    expect(JSON.stringify(state.warnings)).not.toMatch(/Cannot find module|Require stack|dist-electron|\/home\//);
+    expect(state.warningCalls.at(-1)).toEqual([state.warnings[0], '在这台机器上建会话/起会话失败']);
+    expect(JSON.stringify(state.warningCalls.at(-1))).not.toMatch(/Cannot find module|Require stack|dist-electron|\/home\//);
   });
 
   it('选了咕咕提供的模型、签平台额度那一趟连不上:原因码 platform_model_unreachable,❌ 把网关那句原文回给发起方', async () => {
@@ -466,14 +488,18 @@ describe('createSession:会话行写下之后 agent 没起来(#6264 会话照样
     expect(result).toMatchObject({ ok: true, value: { startFailure: 'session_start_failed' } });
   });
 
-  it('会话行写下之前的失败仍然留在新建页:原文进日志', async () => {
+  it('会话行写下之前的失败仍然留在新建页:合成邮箱和路径不进实际logger', async () => {
     const result = await createSession(
-      { projectId: 'proj-1', harness: 'nope', prompt: 'hi' },
+      { projectId: 'proj-1', harness: 'synthetic@example.test/Users/private', prompt: 'hi' },
       { ensureAgentInstalled: async () => {} }
     );
     expect(result).toMatchObject({ ok: false, error: { code: 'harness_not_found' } });
     await state.warned.promise;
     expect(state.warnings).toHaveLength(1);
+    expect(state.warnings[0]).toEqual({ scope: 'session-timeline/create', code: 'harness_not_found', retry: false });
+    expect(JSON.stringify(state.warnings)).not.toMatch(/synthetic@example|Users|private/);
+    expect(state.warningCalls.at(-1)).toEqual([state.warnings[0], '在这台机器上建会话/起会话失败']);
+    expect(JSON.stringify(state.warningCalls.at(-1))).not.toMatch(/synthetic@example|Users|private/);
   });
 });
 
@@ -497,6 +523,25 @@ describe('startSession:再试一次', () => {
     state.hydrateError = new Error('Not logged in · Please run /login');
     await expect(startSession('proj-1')).resolves.toMatchObject({ ok: false, error: { code: 'agent_signed_out' } });
     expect(state.failures.get('proj-1')).toBe('agent_signed_out');
+  });
+
+  it('keeps retry diagnostics out of every actual logger argument while preserving the original failure', async () => {
+    const raw = 'Not logged in · Please run /login; /private/edge-log-sentinel/receipt.json; retry.owner@example.invalid';
+    state.warningCalls = [];
+    state.hydrateError = new Error(raw);
+
+    await expect(startSession('proj-1')).resolves.toMatchObject({
+      ok: false, error: { code: 'agent_signed_out', message: raw },
+    });
+    await state.warned.promise;
+
+    expect(state.calls).toContain('hydrateSession');
+    expect(state.failures.get('proj-1')).toBe('agent_signed_out');
+    expect(state.warningCalls).toEqual([[
+      { scope: 'session-timeline/create', code: 'agent_signed_out', retry: true },
+      '在这台机器上建会话/起会话失败',
+    ]]);
+    expect(JSON.stringify(state.warningCalls)).not.toMatch(/edge-log-sentinel|retry\.owner@example\.invalid|receipt\.json|Not logged in/);
   });
 });
 
@@ -531,5 +576,85 @@ describe('createModels:那台机器上这家登没登(#6264 探针漏判)', () =
     expect(await createModels({ harness: 'codex' }, { readAuth })).toMatchObject({ ok: true, value: { harnessAuth: 'unknown' } });
     probe.authThrows = true;
     expect(await createModels({ harness: 'codex' }, { readAuth })).toMatchObject({ ok: true, value: { harnessAuth: 'unknown' } });
+  });
+});
+
+
+describe('mobile creation Fast reaches the shared initial document', () => {
+  beforeEach(() => { state.agentStatus = 'available'; state.calls = []; state.createParams = []; probe.fast = true; });
+  afterEach(() => { probe.fast = false; });
+  it('returns a target-bound native group and retains native reasoning choices', async () => {
+    probe.modelEfforts['gpt-6-astra'] = ['provider-specific-level'];
+    expect(await createModels({ harness: 'codex', model: 'gpt-6-astra' }, { readAuth })).toMatchObject({ ok: true, value: {
+      fast: { model: 'gpt-6-astra', selected: 'off' }, efforts: [{ id: 'provider-specific-level' }],
+    } });
+    delete probe.modelEfforts['gpt-6-astra'];
+  });
+  it.each([true, false])('preserves explicit native Fast intent %s', async fastMode => {
+    expect((await createSession({ projectId: 'proj-1', harness: 'codex', model: 'gpt-6-astra', prompt: 'hi', fastMode })).ok).toBe(true);
+    expect(state.createParams[0]).toMatchObject({ sessionConfig: { initialSession: { fastMode, model: 'gpt-6-astra', platformModel: null } } });
+  });
+  it.each([undefined, 'platform:deep'])('rejects enabled Fast without an explicit native target %s', async model => {
+    expect(await createSession({ projectId: 'proj-1', harness: 'codex', model, prompt: 'hi', fastMode: true })).toMatchObject({ ok: false, error: { code: 'fast_rejected' } });
+    expect(state.createParams).toEqual([]);
+  });
+  it('rejects capability lost between catalog read and creation', async () => {
+    probe.fast = false;
+    expect(await createSession({ projectId: 'proj-1', harness: 'codex', model: 'gpt-6-astra', prompt: 'hi', fastMode: true })).toMatchObject({ ok: false, error: { code: 'fast_rejected' } });
+    expect(state.createParams).toEqual([]);
+  });
+  it('hides Fast on the credit-billed catalog', async () => {
+    const result = await createModels({ harness: 'codex', model: 'platform:deep' }, { readAuth });
+    expect(result.ok && result.value.fast).toBeUndefined();
+  });
+});
+
+
+describe('attachment draft creation preflight and deferred launch', () => {
+  const sessionId = '4f405045-a722-4eef-a2e3-bf9cf8772294';
+  const messageId = 'cd19884e-fbc1-48b4-a9e8-50ef2774fe35';
+  beforeEach(() => {
+    state.agentStatus = 'available'; state.calls = []; state.createParams = []; state.commitCount = 0; state.finalizeCount = 0;
+    state.lifeEnqueued = []; state.lifeEnqueueError = null; state.acpStart = { success: true };
+    probe.fast = true; probe.efforts = []; probe.modelEfforts = {};
+  });
+  afterEach(() => { probe.fast = false; probe.efforts = []; probe.modelEfforts = {}; });
+  it.each(['general', 'code'] as const)('%s: preserves native Fast and stable IDs without queuing a caption or starting', async sessionView => {
+    const beforeCommit = vi.fn(async () => { expect(state.commitCount).toBe(0); });
+    const result = await createAttachmentDraft({ projectId: 'proj-1', harness: 'codex', model: 'gpt-6-astra',
+      prompt: 'caption', sessionView, fastMode: true, initialMessageId: messageId, taskChatId: 'source-group' },
+    { sessionId, attachmentNames: ['photo.png'], beforeCommit });
+    expect(result).toMatchObject({ ok: true, value: { conversationId: sessionId, taskMessageId: messageId } });
+    expect(beforeCommit).toHaveBeenCalledOnce(); expect(state.commitCount).toBe(1); expect(state.finalizeCount).toBe(1);
+    const initial = (state.createParams[0] as unknown as { sessionConfig: { initialSession: Record<string, unknown> } }).sessionConfig.initialSession;
+    expect(initial).toMatchObject({ id: sessionId, initialMessageId: messageId, fastMode: true, platformModel: null, origin: { kind: 'create', firstUtterance: 'caption' } });
+    expect(initial).not.toHaveProperty('initialQueue'); expect(initial).not.toHaveProperty('initialPrompt');
+    expect(state.lifeEnqueued).toEqual([]); expect(state.calls).toEqual(['prepareCreateSession']);
+  });
+  it('uses the real file names for an attachment-only first utterance while keeping it unadmitted', async () => {
+    expect((await createAttachmentDraft({ projectId: 'proj-1', harness: 'codex', prompt: '', initialMessageId: messageId },
+      { sessionId, attachmentNames: ['photo.png', 'notes.txt'], beforeCommit: async () => {} })).ok).toBe(true);
+    expect(state.createParams[0]).toMatchObject({ sessionConfig: { initialSession: { origin: { kind: 'create', firstUtterance: 'photo.png notes.txt' } } } });
+    expect(state.lifeEnqueued).toEqual([]);
+  });
+  it('does not commit or launch if durable registration beforeCommit fails', async () => {
+    const denied = Object.assign(new Error('durable registration denied'), { code: 'EACCES' });
+    await expect(createAttachmentDraft({ projectId: 'proj-1', harness: 'codex', prompt: 'caption' },
+      { sessionId, attachmentNames: ['photo.png'], beforeCommit: async () => { throw denied; } })).rejects.toBe(denied);
+    expect(state.commitCount).toBe(0); expect(state.finalizeCount).toBe(0); expect(state.lifeEnqueued).toEqual([]);
+  });
+  it.each([
+    { model: 'platform:deep', fastMode: true, code: 'fast_rejected' },
+    { model: 'gpt-6-astra', effort: 'not-offered', code: 'effort_rejected' },
+  ])('retains ordinary preflight rejection $code before registration', async ({ code, ...choice }) => {
+    const beforeCommit = vi.fn(async () => {});
+    expect(await createAttachmentDraft({ projectId: 'proj-1', harness: 'codex', prompt: 'caption', ...choice },
+      { sessionId, attachmentNames: ['photo.png'], beforeCommit })).toMatchObject({ ok: false, error: { code } });
+    expect(beforeCommit).not.toHaveBeenCalled(); expect(state.commitCount).toBe(0); expect(state.createParams).toEqual([]);
+  });
+  it('keeps ordinary creation on the existing first-message admission path', async () => {
+    expect((await createSession({ projectId: 'proj-1', harness: 'codex', prompt: 'ordinary' })).ok).toBe(true);
+    expect(state.lifeEnqueued).toHaveLength(1);
+    expect(state.createParams[0]).toMatchObject({ sessionConfig: { initialSession: { initialQueue: [{ text: 'ordinary', origin: 'manual' }] } } });
   });
 });

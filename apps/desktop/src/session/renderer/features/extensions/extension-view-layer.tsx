@@ -11,12 +11,14 @@ import { installedExtensionsStore } from './installed-extensions-store';
 import { AppSettingsPage } from './app-settings-page';
 import { ExtensionGuestBinding, type ExtensionGuestTarget } from './extension-guest-binding';
 import { nativeAppSurfaceMetrics, observeNativeSurfaceOcclusion } from './native-app-surface';
+import { pageCorners } from './page-corners';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
 import { bindAppPageZoom } from '@/components/preview/file-content-zoom';
 import { clippedElementBox, elementBox, type ElementBox as Box } from '@/lib/elementVisibility';
 import { readSelfIdentityBridge } from '@/lib/selfIdentityBridge';
 import { useTheme } from '@/store/theme';
 import { widgetSnapshotWebP, widgetSnapshots } from '@/lib/widgetSnapshots';
+import { PageLoading } from '@/lib/loading/PageLoading';
 
 /**
  * 常驻扩展的页都住在这一层:每个 App 在每个地方(一个群、一个任务)一张,一生不换地方(摩擦单 F48,
@@ -38,10 +40,8 @@ export const ExtensionViewLayer = observer(function ExtensionViewLayer() {
   // Who is signed in, from the shell's bridge: this page is a React root of its own, outside AuthContext.
   const identity = readSelfIdentityBridge();
   const accountId = useSyncExternalStore((listener) => identity?.subscribe(listener) ?? (() => {}), () => identity?.getSnapshot()?.userId ?? null);
-  const previousAccount = useRef(accountId);
+  // Widget pictures belong to the account that saw them (a message's widget page lives in its bubble, not here).
   useLayoutEffect(() => {
-    if (previousAccount.current !== accountId) extensionViewStore.forgetWidgets();
-    previousAccount.current = accountId;
     void widgetSnapshots.setAccount(accountId).catch(error => log.warn('Widget pictures could not be cleared:', error));
   }, [accountId]);
   const layerRef = useRef<HTMLDivElement | null>(null);
@@ -67,7 +67,6 @@ export const ExtensionViewLayer = observer(function ExtensionViewLayer() {
       className="pointer-events-none absolute inset-0"
     >
       {[...extensionViewStore.residentPages.values()].map((page) => {
-        if (page.place.startsWith('widget:') && page.accountId !== accountId) return null;
         const contribution = enabled.get(page.kind);
         return contribution ? (
           <ExtensionPage
@@ -149,6 +148,8 @@ export const ExtensionPage = observer(function ExtensionPage({
   itemId,
   managed = false,
   inline,
+  accountId,
+  onPainted,
 }: {
   kind: string;
   extensionId: string;
@@ -157,8 +158,16 @@ export const ExtensionPage = observer(function ExtensionPage({
   itemId?: string;
   /** Host settings page: no App HTML or webview. */
   managed?: boolean;
-  /** Message pages live in the document flow and are destroyed when outside the viewport. */
+  /**
+   * A message's widget: its page lives in the bubble's own box, in the document flow, so the list scrolls and clips it
+   * with the bubble in the same compositor frame. It is destroyed with that box (its row leaving the list); the bubble's
+   * snapshot covers it until it paints again.
+   */
   inline?: ExtensionGuestTarget;
+  /** The account viewing an inline widget: its pictures are saved under it. */
+  accountId?: string;
+  /** An inline page's first paint (true) and its loss (false, its guest replaced). */
+  onPainted?: (painted: boolean) => void;
 }) {
   const unusedLayerRef = useRef<HTMLDivElement | null>(null);
   const layerRef = residentLayerRef ?? unusedLayerRef;
@@ -188,37 +197,48 @@ export const ExtensionPage = observer(function ExtensionPage({
   const themeRef = useRef(theme);
   themeRef.current = theme;
   const paintedRef = useRef(false);
+  // An inline page's target and viewer, read when its guest binds or a picture is taken: a new target object retargets
+  // the bound page (below), it never re-attaches the guest.
+  const inlineRef = useRef(inline);
+  inlineRef.current = inline;
+  const isInline = inline !== undefined;
+  const accountIdRef = useRef(accountId);
+  accountIdRef.current = accountId;
+  const onPaintedRef = useRef(onPainted);
+  onPaintedRef.current = onPainted;
+  const [inlinePainted, setInlinePainted] = useState(false);
   const lastCaptureRef = useRef(-Infinity);
   const capturingRef = useRef(false);
   const pendingCaptureRef = useRef(false);
   const captureTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const capture = useCallback(function capture() {
     clearTimeout(captureTimerRef.current);
-    const claim = claimOf();
+    const widgetId = inlineRef.current?.widget?.id;
+    const element = boxRef.current;
     const account = widgetSnapshots.capture();
     const webContentsId = guestBinding.boundWebContentsId;
-    if (!claim?.widget?.id || !account || claim.accountId !== account.accountId || webContentsId === null
-      || !paintedRef.current || document.visibilityState === 'hidden' || !claim.element.isConnected) return;
-    const { clip } = clippedElementBox(claim.element, { left: 0, top: 0, width: innerWidth, height: innerHeight });
-    if (clip.width <= 0 || clip.height <= 0 || !claim.element.checkVisibility({ visibilityProperty: true, opacityProperty: true })) return;
+    if (!widgetId || !element || !account || accountIdRef.current !== account.accountId || webContentsId === null
+      || !paintedRef.current || document.visibilityState === 'hidden' || !element.isConnected) return;
+    const { clip } = clippedElementBox(element, { left: 0, top: 0, width: innerWidth, height: innerHeight });
+    if (clip.width <= 0 || clip.height <= 0 || !element.checkVisibility({ visibilityProperty: true, opacityProperty: true })) return;
     if (capturingRef.current) { pendingCaptureRef.current = true; return; }
     const remaining = 2_000 - (performance.now() - lastCaptureRef.current);
     if (remaining > 0) { captureTimerRef.current = setTimeout(capture, remaining); return; }
-    const width = claim.element.clientWidth;
+    const width = element.clientWidth;
     if (width <= 0) return;
     lastCaptureRef.current = performance.now();
     capturingRef.current = true;
     const theme = themeRef.current;
-    void rpc.extensions.captureWidget({ webContentsId, widgetId: claim.widget.id }).then(async reply => {
+    void rpc.extensions.captureWidget({ webContentsId, widgetId }).then(async reply => {
       if (!reply.success || !reply.data) return;
       const blob = await widgetSnapshotWebP(reply.data, width);
-      if (blob) await widgetSnapshots.put(account, claim.widget!.id!, theme, width, blob);
+      if (blob) await widgetSnapshots.put(account, widgetId, theme, width, blob);
     }).catch(error => log.warn('Widget picture could not be saved:', error))
       .finally(() => {
         capturingRef.current = false;
         if (pendingCaptureRef.current) { pendingCaptureRef.current = false; capture(); }
       });
-  }, [claimOf, guestBinding]);
+  }, [guestBinding]);
   useEffect(() => () => { clearTimeout(captureTimerRef.current); pendingCaptureRef.current = false; }, [capture]);
 
   useEffect(() => {
@@ -270,8 +290,9 @@ export const ExtensionPage = observer(function ExtensionPage({
         extensionSurfaceStore.setWebContentsId(previous.sessionId, previous.tabId, null);
         registeredRef.current = null;
       }
-      if (!claim && !inline) return;
-      const target = inline ?? {
+      const inlineTarget = inlineRef.current;
+      if (!claim && !inlineTarget) return;
+      const target = inlineTarget ?? {
         // Where it is (`AppWhere`): a group's side panel works on no working copy, a session's tab is in its agent's chat.
         workspace: claim?.sessionId ? sessionWorkspace(claim.sessionId) : null,
         // A chat's slot is in that chat; a session's slot in the person's private chat with its agent.
@@ -281,7 +302,6 @@ export const ExtensionPage = observer(function ExtensionPage({
         viewState: claim?.viewState,
         navigation: claim?.navigation,
         ...(claim?.itemId ? { itemId: claim.itemId } : {}),
-        ...(claim?.widget ? { widget: claim.widget } : {}),
         ...(claim?.takeOpening ? { opening: claim.takeOpening() } : {}),
       };
       void guestBinding.aim(target)
@@ -292,7 +312,7 @@ export const ExtensionPage = observer(function ExtensionPage({
             return;
           }
           const { webContentsId } = result;
-          if (inline) {
+          if (inlineTarget) {
             const box = boxRef.current;
             if (box) report(document.visibilityState === 'visible', box.clientWidth, box.clientHeight);
             return;
@@ -312,15 +332,26 @@ export const ExtensionPage = observer(function ExtensionPage({
           if (layer) {
             const { full, clip } = boxOf(claim.element, layer);
             report(clip.width > 0 && clip.height > 0 && document.visibilityState === 'visible', full.width, full.height);
-            if (paintedRef.current) capture();
           }
         })
         .catch((error: unknown) => {
           log.warn('Extension surface binding failed:', error);
         });
     },
-    [guestBinding, layerRef, report, managed, inline, capture]
+    [guestBinding, layerRef, report, managed]
   );
+  // A new target for the inline page (its message or data changed): the bound guest is retargeted, never re-attached.
+  useEffect(() => { if (inline) aimAt(undefined); }, [inline, aimAt]);
+
+  /** Whether this page's document has drawn: the resident page notes it in the store, an inline one tells its bubble. */
+  const notePainted = useCallback((painted: boolean) => {
+    paintedRef.current = painted;
+    if (pageKey) extensionViewStore.pagePainted(pageKey, painted);
+    if (isInline) {
+      setInlinePainted(painted);
+      onPaintedRef.current?.(painted);
+    }
+  }, [pageKey, isInline]);
 
   const attachWebview = useCallback(
     (element: BrowserWebviewElement | null) => {
@@ -331,8 +362,7 @@ export const ExtensionPage = observer(function ExtensionPage({
       pendingCaptureRef.current = false;
       guestReadyRef.current = null;
       guestBinding.reset();
-      paintedRef.current = false;
-      if (pageKey) extensionViewStore.widgetPainted(pageKey, false);
+      notePainted(false);
       ++aimSeqRef.current;
       if (!element) return;
       let fallback: ReturnType<typeof setTimeout> | undefined;
@@ -340,10 +370,9 @@ export const ExtensionPage = observer(function ExtensionPage({
       let changed: ReturnType<typeof setTimeout> | undefined;
       let frame = 0;
       const painted = () => {
-        if (webviewRef.current !== element || !claimOf()?.widget) return;
+        if (webviewRef.current !== element) return;
         clearTimeout(fallback);
-        paintedRef.current = true;
-        if (pageKey) extensionViewStore.widgetPainted(pageKey);
+        notePainted(true);
         capture();
       };
       const ready = () => {
@@ -353,15 +382,14 @@ export const ExtensionPage = observer(function ExtensionPage({
         guestBinding.ready(element.getWebContentsId());
         guestReadyRef.current = element;
         aimAt(claimOf());
-        if (claimOf()?.widget) fallback = setTimeout(painted, 3_000);
+        if (isInline) fallback = setTimeout(painted, 3_000);
       };
       // guest 崩了:旧的 webContents id 作废,绑定也作废。重载一次,dom-ready 会再来一遍、重新 bind;
       // ❌ 不能留着一个死 id 等下一次认领去 retarget —— 那只会换来一条 warn 和一格永远的空白。
       const gone = () => {
         if (webviewRef.current !== element) return;
         log.warn('Extension surface render process gone; reloading', { kind });
-        paintedRef.current = false;
-        if (pageKey) extensionViewStore.widgetPainted(pageKey, false);
+        notePainted(false);
         guestReadyRef.current = null;
         guestBinding.reset();
         ++aimSeqRef.current;
@@ -370,57 +398,48 @@ export const ExtensionPage = observer(function ExtensionPage({
       };
       element.addEventListener('dom-ready', ready);
       element.addEventListener('render-process-gone', gone);
-      const load = () => { frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { loaded = setTimeout(painted, 500); }); }); };
+      // Loaded is enough for a widget (its snapshot is waiting); any other page shows at its first contentful paint, or after 3s.
+      const load = () => { if (isInline) frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { loaded = setTimeout(painted, 500); }); }); };
       element.addEventListener('did-finish-load', load);
-      // Electron guests are separate documents: their wheel cannot bubble into the chat's scroller.
-      const wheel = (event: Event) => {
-        const message = event as Event & { channel: string; args: { x: number; y: number }[] };
-        if (message.channel === 'gugu-widget-painted') { painted(); return; }
-        if (message.channel === 'gugu-widget-changed') { clearTimeout(changed); changed = setTimeout(capture, 1_000); return; }
-        if ((!inline && !claimOf()?.widget) || message.channel !== 'gugu-widget-wheel') return;
-        const delta = message.args[0];
-        if (!delta || !Number.isFinite(delta.x) || !Number.isFinite(delta.y)) return;
-        for (let node = inline ? boxRef.current?.parentElement : claimOf()?.element.parentElement; node; node = node.parentElement) {
-          if (node.scrollHeight > node.clientHeight && /auto|scroll/.test(getComputedStyle(node).overflowY)) {
-            node.scrollBy({ left: delta.x, top: delta.y, behavior: 'instant' });
-            break;
-          }
-        }
+      const signal = (event: Event) => {
+        const channel = (event as Event & { channel: string }).channel;
+        if (channel === 'gugu-page-painted') painted();
+        else if (channel === 'gugu-widget-changed') { clearTimeout(changed); changed = setTimeout(capture, 1_000); }
       };
-      element.addEventListener('ipc-message', wheel);
+      element.addEventListener('ipc-message', signal);
       // Same reason for Esc: pressed in the guest, it leaves full screen here (tab-fullscreen).
       const escape = (event: Event) => { if ((event as Event & { channel: string }).channel === 'gugu-guest-escape') tabFullscreen.exit(); };
       element.addEventListener('ipc-message', escape);
       // A tab's page is zoomed by the host, remembered per App (zoom B); a widget in a message keeps the chat's size.
-      const box = inline || claimOf()?.widget ? null : element.closest<HTMLElement>('[data-extension-view]');
+      const box = isInline ? null : element.closest<HTMLElement>('[data-extension-view]');
       const offZoom = box ? bindAppPageZoom(box, element, extensionId) : null;
       guestTeardownRef.current = () => {
         offZoom?.();
         element.removeEventListener('dom-ready', ready);
         element.removeEventListener('render-process-gone', gone);
-        element.removeEventListener('ipc-message', wheel);
+        element.removeEventListener('ipc-message', signal);
         element.removeEventListener('ipc-message', escape);
         element.removeEventListener('did-finish-load', load);
         clearTimeout(fallback); clearTimeout(loaded); clearTimeout(changed);
         if (frame) cancelAnimationFrame(frame);
       };
     },
-    [aimAt, claimOf, guestBinding, kind, inline, extensionId, capture, pageKey]
+    [aimAt, claimOf, guestBinding, kind, isInline, extensionId, capture, notePainted]
   );
 
   // 认领方一换(切会话 / 换 tab / 聊天栏换会话)→ 重新指向 + 重新摆位。
   useLayoutEffect(
-    () => inline ? undefined : reaction(
+    () => isInline ? undefined : reaction(
         () => claimOf(),
         (claim) => aimAt(claim),
         { fireImmediately: true }
       ),
-    [aimAt, claimOf, inline]
+    [aimAt, claimOf, isInline]
   );
 
   // 摆位与尺寸汇报:跟着认领方那一格走;一格都没有就藏起来。
   useLayoutEffect(
-    () => inline ? undefined : reaction(
+    () => isInline ? undefined : reaction(
         () => claimOf(),
         (claim, previous) => {
           teardownRef.current?.();
@@ -436,7 +455,6 @@ export const ExtensionPage = observer(function ExtensionPage({
             report(false, 0, 0);
             return;
           }
-          let previousRatio = 0;
           const place = () => {
             const { full, clip } = boxOf(claim.element, layer);
             const shown =
@@ -445,13 +463,12 @@ export const ExtensionPage = observer(function ExtensionPage({
               claim.element.isConnected &&
               claim.element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
             if (!shown) releaseHiddenFocus(box, claim);
-            const ratio = full.width * full.height > 0 ? clip.width * clip.height / (full.width * full.height) : 0;
-            if (claim.widget && previousRatio >= 0.5 && ratio < 0.5) capture();
-            previousRatio = ratio;
             box.style.left = `${clip.left}px`;
             box.style.top = `${clip.top}px`;
             box.style.width = `${clip.width}px`;
             box.style.height = `${clip.height}px`;
+            // Rounded where the place it is put in is rounded (the assistant panel's card): clipped as that place clips.
+            Object.assign(box.style, pageCorners(getComputedStyle(claim.element), full, clip));
             box.style.visibility = shown ? 'visible' : 'hidden';
             box.style.zIndex = ancestorsOf(claim.element).some((element) => element.hasAttribute('data-tab-fullscreen'))
               ? 'var(--z-pane-fullscreen-resident)'
@@ -511,19 +528,27 @@ export const ExtensionPage = observer(function ExtensionPage({
       ),
     // surface 进依赖:页的框(boxRef)要等激活之后才渲染出来,而那时认领方可能早就在了 ——
     // 不重订这条反应,它就停在「fireImmediately 那次没框可摆」上,直到下一次切会话才醒。
-    [claimOf, layerRef, report, surface, managed, inline, capture]
+    [claimOf, layerRef, report, surface, managed, isInline]
   );
 
   useLayoutEffect(() => {
     const box = boxRef.current;
-    if (!inline || !box) return;
+    if (!isInline || !box) return;
     const layout = () => report(document.visibilityState === 'visible', box.clientWidth, box.clientHeight);
     const resize = new ResizeObserver(layout);
     resize.observe(box);
     document.addEventListener('visibilitychange', layout);
     layout();
-    return () => { resize.disconnect(); document.removeEventListener('visibilitychange', layout); };
-  }, [inline, surface, report]);
+    // Leaving the reader's view (under half shown), the widget's picture is taken: the bubble shows it once the row goes.
+    let seen = false;
+    const leaving = new IntersectionObserver(([entry]) => {
+      const shown = (entry?.intersectionRatio ?? 0) >= 0.5;
+      if (seen && !shown) capture();
+      seen = shown;
+    }, { threshold: 0.5 });
+    leaving.observe(box);
+    return () => { resize.disconnect(); leaving.disconnect(); document.removeEventListener('visibilitychange', layout); };
+  }, [isInline, surface, report, capture]);
 
   useEffect(
     () => () => {
@@ -534,10 +559,19 @@ export const ExtensionPage = observer(function ExtensionPage({
     [pageKey]
   );
 
-  if (!surface && !managed) return null;
+  // A page stays clear until it has painted: a widget's snapshot shows through, any other page has the loading mark over it.
+  const unpainted = !managed && (isInline ? !inlinePainted : !pageKey || !extensionViewStore.paintedPages.has(pageKey));
+  // The mark and its fallback start together, when the page is asked for (not at its guest's dom-ready), and end together:
+  // a page that never says it painted is shown after three seconds (a widget's waits for its guest, above).
+  const marked = unpainted && !!pageKey && !!claimOf();
+  useEffect(() => {
+    if (!marked) return undefined;
+    const fallback = setTimeout(() => extensionViewStore.pagePainted(pageKey!), 3_000);
+    return () => clearTimeout(fallback);
+  }, [marked, pageKey]);
+  // Not started yet, its box is still placed: the loading mark shows from the moment the page is asked for.
+  if (!surface && !managed && inline) return null;
   const manifest = installedExtensionsStore.manifestFor(extensionId);
-  // A widget's page stays clear until it has painted: its slot's snapshot shows through, not a blank box.
-  const unpainted = !inline && !!claimOf()?.widget && (!pageKey || !extensionViewStore.paintedPages.has(pageKey));
   const page = managed && manifest ? <AppSettingsPage key={`${manifest.version}:${JSON.stringify(manifest.settings)}`} manifest={manifest} active={claimOf() !== undefined} /> : surface ? <webview
     key={`${extensionId}:${surface.partition}`}
     ref={attachWebview}
@@ -545,7 +579,7 @@ export const ExtensionPage = observer(function ExtensionPage({
     partition={surface.partition}
     className={`h-full w-full bg-background ${unpainted ? 'opacity-0' : ''}`}
   /> : null;
-  if (inline) return <div ref={boxRef} className="h-full w-full overflow-hidden bg-background" data-extension-view={kind} data-widget-message={inline.widget?.messageId}>{page}</div>;
+  if (inline) return <div ref={boxRef} className={`h-full w-full overflow-hidden ${unpainted ? '' : 'bg-background'}`} data-extension-view={kind} data-widget-message={inline.widget?.messageId}>{page}</div>;
   return (
     <div
       ref={boxRef}
@@ -557,6 +591,7 @@ export const ExtensionPage = observer(function ExtensionPage({
       <div ref={innerRef} className="absolute" style={{ left: 0, top: 0, width: 0, height: 0 }}>
         {page}
       </div>
+      {marked ? <PageLoading /> : null}
     </div>
   );
 });

@@ -7,6 +7,7 @@ import {
 import { setProjectionViewerOpener, type ProjectionViewerClient } from './projection-viewer-provider';
 import { setProjectionRemoteCaller, type ProjectionRemoteCaller } from './projection-remote-viewer';
 import type { DispatchAsk, DispatchPicked } from '@shared/extensions/app-dispatch-core';
+import type { VoiceNoteWindowAnswer, VoiceNoteWindowRequest } from '@shared/extensions/voice-note-session';
 import {
   EXTENSION_HOST_ACTION_METHOD,
   EXTENSION_PICK_DISPATCH_TARGET_METHOD,
@@ -68,6 +69,8 @@ export type ExtensionHostWindowChannel = {
   listedSession: (sessionId: string, hint?: { deviceId?: string; projectId?: string }) => Promise<string | null>;
   /** An action no page asked for (a link's or a banner's click), done by the window that shows chats and Apps. */
   act: (command: ExtensionHostActionCommand) => Promise<ExtensionHostActionResult>;
+  /** #1927 (47) `gugu.voiceNote`, asked of the window that holds the voice-note recorder (app-voice-note-host.ts). */
+  voiceNote?: (request: VoiceNoteWindowRequest) => Promise<VoiceNoteWindowAnswer>;
   isHostWindowFullScreen: () => boolean;
   onHostWindowFullScreenChange: (listener: () => void) => () => void;
   /**
@@ -144,15 +147,20 @@ function requireHostWindow(): ExtensionHostWindowChannel {
   return hostWindow;
 }
 
+/** A page no window draws (an App surface of its own): `unavailable`, which the App words for the person itself. */
+function notEmbedded(): Error {
+  return Object.assign(new Error('This surface is not embedded in a renderer that can act on its behalf'), { code: 'unavailable' });
+}
+
 async function deliver(
   origin: ExtensionHostActionOrigin & { embedderId: number | null },
   action: ExtensionHostAction
 ): Promise<ExtensionHostActionResult> {
   if (origin.embedderId === null) {
-    throw new Error('This surface is not embedded in a renderer that can act on its behalf');
+    throw notEmbedded();
   }
   const command: ExtensionHostActionCommand = {
-    origin: { extensionId: origin.extensionId, sessionId: origin.sessionId, tabId: origin.tabId },
+    origin: { extensionId: origin.extensionId, sessionId: origin.sessionId, tabId: origin.tabId, pageId: origin.pageId },
     action,
   };
   const result = await requireHostWindow().invokeRendererExtensions(
@@ -201,6 +209,15 @@ export function actInWindow(action: ExtensionHostAction): Promise<ExtensionHostA
   return Promise.resolve().then(() => requireHostWindow().act({ origin: null, action }));
 }
 
+/** #1927 (47) The voice-note recorder lives in the main window: what an App asks of it goes there, whoever drew the page. */
+export function askVoiceNoteWindow(request: VoiceNoteWindowRequest): Promise<VoiceNoteWindowAnswer> {
+  return Promise.resolve().then(() => {
+    const ask = requireHostWindow().voiceNote;
+    if (!ask) throw Object.assign(new Error('This host has no voice-note recorder'), { code: 'unavailable' });
+    return ask(request);
+  });
+}
+
 /** Members' faces, asked of the window (`lib/memberFaces.ts`). */
 export function drawMemberFaces(people: readonly { id: string; avatar: string | null }[]): Promise<Record<string, string>> {
   return Promise.resolve().then(() => requireHostWindow().drawMemberFaces(people));
@@ -213,8 +230,14 @@ export function listedSessionProject(sessionId: string, hint?: { deviceId?: stri
 
 /** `gugu.dispatch` naming no target: the window that draws the page lets the person pick one (null: they cancelled). */
 export function pickDispatchTarget(embedderId: number | null, ask: DispatchAsk): Promise<DispatchPicked> {
-  if (embedderId === null) return Promise.reject(new Error('This surface is not embedded in a renderer that can act on its behalf'));
+  if (embedderId === null) return Promise.reject(notEmbedded());
   return Promise.resolve().then(() => requireHostWindow().invokeRendererExtensions(EXTENSION_PICK_DISPATCH_TARGET_METHOD, ask, embedderId) as Promise<DispatchPicked>);
+}
+
+/** #50 One question to the window that draws a page (host-actions.ts), answered by its handler there. */
+export function invokeInEmbedder(embedderId: number | null, method: string, params: unknown): Promise<unknown> {
+  if (embedderId === null) return Promise.reject(notEmbedded());
+  return Promise.resolve().then(() => requireHostWindow().invokeRendererExtensions(method, params, embedderId));
 }
 
 /** How long an install waits for the window to take the new set in before answering anyway (摩擦单 F52). */

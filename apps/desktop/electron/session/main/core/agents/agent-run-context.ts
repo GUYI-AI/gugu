@@ -1,3 +1,4 @@
+import { nativeClaudeReviewEnv } from '@gugu/session-core/models/auto-review-source';
 import type { AgentRunContext } from '@gugu/session-core/agents/agent-run-context';
 import { composeAgentSpawnEnv } from '@gugu/session-core/agents/agent-run-context';
 import { harnessPinnedEnv } from '@gugu/session-core/agents/plugins';
@@ -71,18 +72,32 @@ export async function resolveLocalAgentRunContext(
     options.bridgeWait
   );
 
-  const connection: Partial<AgentRunContext> = providerId === 'claude' || providerId === 'codex'
-    ? await import('./harness-connections').then(({ resolveHarnessConnection }) =>
+  const cliVersion = await import('@main/core/agents/acp-bridge').then(({ resolveHostAcpCliVersion }) =>
+    resolveHostAcpCliVersion(providerId, cli, { ...env, ...configRootEnv, ...pinned })).catch(() => undefined);
+
+  // Account credentials and the session's chosen model have separate owners.
+  const connection: Partial<AgentRunContext> = await import('./harness-connections').then(({ resolveHarnessConnection }) =>
         resolveHarnessConnection(providerId, {
           connectionId: options.connectionId,
           sessionId: options.sessionId,
           sourceSessionId: options.sourceSessionId,
           // 用户在 shell 里导出的 CLAUDE_CONFIG_DIR / CODEX_HOME 就在这份 env 里:「用户自己的配置根」按它算。
           nativeEnv: env,
-        }))
-    : {};
+        }));
+  if (options.sessionId) {
+    const { resolveCustomModelRunContext } = await import('./custom-model-run-context');
+    const custom = await resolveCustomModelRunContext(providerId, options.sessionId, options.sourceSessionId, options.role === 'acp');
+    Object.assign(connection, custom, { unsetEnv: [...(connection.unsetEnv ?? []), ...(custom.unsetEnv ?? [])] });
+  }
+  if (providerId === 'claude' && !connection.customModel) {
+    const credentialFacts = { ...env };
+    for (const key of connection.unsetEnv ?? []) delete credentialFacts[key];
+    const reviewerEnv = nativeClaudeReviewEnv({ ...credentialFacts, ...connection.credentialEnv });
+    if (Object.keys(reviewerEnv).length) connection.credentialEnv = { ...connection.credentialEnv, ...reviewerEnv };
+  }
   return {
     cli,
+    ...(cliVersion ? { cliVersion } : {}),
     env,
     pinnedEnv: pinned,
     // 这一家要不要另一个 node 跑(打包机上的 electron 不带 import attributes 时用它)。
@@ -93,6 +108,8 @@ export async function resolveLocalAgentRunContext(
     // 同一格的另一半:用户填的额外参数,后面接所选连接要的参数(Codex API 连接的 `-c` provider)。
     // 判据见 `composeAgentSpawnEnv` 的叠放顺序说明。
     extraArgs: [...parseExtraArgs(settings?.extraArgs), ...(connection.extraArgs ?? [])],
+    // 聊天(ACP)腿不吃上面那一格,连接的那几个参数单独递过去(见 `AgentRunContext.connectionArgs`)。
+    ...(connection.extraArgs?.length ? { connectionArgs: [...connection.extraArgs] } : {}),
     configRootEnv: { ...configRootEnv, ...connection.configRootEnv },
   };
 }
@@ -105,11 +122,12 @@ export async function resolveLocalAgentRunContext(
  * 依赖管理器,于是体检 → 算环境 → 解析 → 体检,自己咬自己。
  */
 export async function resolveLocalAgentSpawnEnv(
-  providerId: string
+  providerId: string,
+  purpose?: 'version-probe',
 ): Promise<Record<string, string>> {
   const [settings, configRootEnv] = await Promise.all([
     readProviderSettings(providerId),
-    resolveAgentHomeEnv(providerId),
+    resolveAgentHomeEnv(providerId, purpose),
   ]);
   return composeAgentSpawnEnv(
     {

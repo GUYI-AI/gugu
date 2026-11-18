@@ -2,7 +2,12 @@
 // #6264「从桌面用 SSH 一步装好」:设置 → 设备 → 添加一台机器。就地展开的一块:一个输入框 + 配置主机建议,
 // 连上后原地变成进度(只画主进程推来的快照、回答 SSH 的提问);一行命令是另一种同等分量的装法(OneLineInstall)。
 import { act } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
+import { notifyManager as readModelNotify } from '@tanstack/react-query'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
+
+// The replica follows the signed-in account; every case starts from an empty cache.
+beforeEach(() => { readModelNotify.setScheduler((callback) => { callback() }); queryClient.clear(); followRendererSession('SIGNED_IN', 'u-1') })
 import type { Device } from '@gugu/core/shared/types/chat'
 // 远程隧道暂不开放(packages/core/src/cloud/remoteTunnel.ts)。它那套界面留着等开放,下面带「远程隧道」的几条照旧守着它,
 // 所以这里把开关做成可拨的、默认拨到「开」;关着时的样子单独一组(「远程隧道暂不开放」)。
@@ -30,6 +35,7 @@ import {
   SERVER_SSH_INSTALL_CHANNELS,
   type ServerSshInstallState,
 } from '../../../../apps/desktop/src/lib/serverSshInstall'
+import { SERVER_SSH_MACHINES_CHANNELS } from '../../../../apps/desktop/src/lib/serverSshMachines'
 import {
   handOverToSessionpage,
   HOST_OPEN_NEW_SESSION_KEY,
@@ -69,6 +75,8 @@ function installApi(options: { hosts?: unknown[] } = {}) {
   let push: ((value: unknown) => void) | null = null
   const invoke = vi.fn(async (channel: string, ...args: unknown[]) => {
     if (channel === SERVER_SSH_INSTALL_CHANNELS.listHosts) return options.hosts ?? [{ alias: 'gpu', hostname: '10.0.0.9', user: 'alice' }]
+    // No machine added over SSH from this desktop.
+    if (channel === SERVER_SSH_MACHINES_CHANNELS.describe) return []
     if (channel === SERVER_SSH_INSTALL_CHANNELS.info) {
       return { installCommand: 'curl -fsSL https://d/install.sh | sh', installCommandWget: 'wget -qO- https://d/install.sh | sh' }
     }
@@ -286,8 +294,8 @@ describe('AddServerPanel · 连接后原地变成进度', () => {
       machine: { os: 'Linux', arch: 'aarch64', distro: 'Ubuntu 22.04.4 LTS', libc: 'glibc 2.35', hostname: 'box', user: 'alice', installedVersion: null, others: ['colleague@lab.edu'], alreadySignedIn: false },
       log: ['Authenticated to box', '正在下载咕咕 server 0.2.99 …'],
     }))
-    expect(body()).toContain('Ubuntu 22.04.4 LTS · arm64 · glibc 2.35')
-    expect(body()).toContain('版本 0.2.99 · 正在传到那台机器 50.0 MB / 100 MB · 50%')
+    expect(body()).toContain('Ubuntu 22.04.4 LTS，arm64，glibc 2.35')
+    expect(body()).toContain('版本 0.2.99，正在传到那台机器 50.0 MB / 100 MB (50%)')
     expect(body()).toContain('改由这台电脑传过去')
     expect(body()).toContain('添加你的账号（已登录：colleague@lab.edu）')
     expect(document.querySelector('progress')?.getAttribute('value')).toBe('52428800')
@@ -492,7 +500,7 @@ describe('AddServerPanel · 连接后原地变成进度', () => {
     }))
     await act(async () => undefined)
     expect(onAdded).not.toHaveBeenCalled()
-    expect(body()).toContain('已经装过 · 版本 0.2.50')
+    expect(body()).toContain('已经装过，版本 0.2.50')
     expect(body()).toContain('sudo loginctl enable-linger alice')
     expect(body()).toContain('box 已登录 me@x.y')
     expect(body()).toContain('已上线。')
@@ -774,10 +782,10 @@ describe('addServerFormat', () => {
     expect(formatBytes(512)).toBe('512 B')
     expect(formatBytes(1536)).toBe('1.5 KB')
     expect(formatBytes(110443427)).toBe('105 MB')
-    expect(progressText({ phase: 'download', done: 1048576, total: 4194304 })).toBe('1.0 MB / 4.0 MB · 25%')
+    expect(progressText({ phase: 'download', done: 1048576, total: 4194304 })).toBe('1.0 MB / 4.0 MB (25%)')
     expect(progressText({ phase: 'download', done: 1048576, total: null })).toBe('1.0 MB')
-    expect(machineSummary({ os: 'Linux', distro: '', arch: 'x86_64', libc: 'glibc 2.31' })).toBe('Linux · x64 · glibc 2.31')
-    expect(machineSummary({ os: 'Darwin', distro: 'macOS 14.5', arch: 'arm64', libc: '' })).toBe('macOS 14.5 · arm64')
+    expect(machineSummary({ os: 'Linux', distro: '', arch: 'x86_64', libc: 'glibc 2.31' })).toBe('Linux，x64，glibc 2.31')
+    expect(machineSummary({ os: 'Darwin', distro: 'macOS 14.5', arch: 'arm64', libc: '' })).toBe('macOS 14.5，arm64')
   })
 
   it('要复制给别人执行的命令都引好号(zsh 会把 [ ] 当通配)', () => {

@@ -67,11 +67,16 @@ describe('Claude native subagent records', () => {
       expect.objectContaining({ role: 'assistant', text: 'PARENT_RESULT' }),
     ]);
     expect(items.filter((item) => item.kind === 'unknown-tool-call')).toEqual([]);
-    expect(items.find((item) => item.kind === 'spawn-subagent-tool-call')).toMatchObject({
-      status: 'done', agentStatus: 'running', reasoningText: 'CHILD_THOUGHT',
-      children: [expect.objectContaining({ toolCallId: 'child-step', status: 'running' }),
-        expect.objectContaining({ kind: 'spawn-subagent-tool-call', agentStatus: 'completed', outputText: 'NESTED_RESULT' })],
-    });
+    const launchCard = items.find((item) => item.kind === 'spawn-subagent-tool-call');
+    expect(launchCard).toMatchObject({ status: 'done', agentStatus: 'running' });
+    // The worker is still running: its calls and its text so far are beside the turns, not inside the turn that
+    // launched it (#2500). The nested launch is one of its calls.
+    expect(launchCard && 'children' in launchCard ? launchCard.children ?? [] : []).toEqual([]);
+    expect(snapshot.subagents).toEqual([expect.objectContaining({
+      toolCallId: launchCard && 'toolCallId' in launchCard ? launchCard.toolCallId : '', reasoning: 'CHILD_THOUGHT', completedSteps: expect.any(Number),
+      steps: [expect.objectContaining({ toolCallId: 'child-step', status: 'running' }),
+        expect.objectContaining({ kind: 'spawn-subagent-tool-call' })],
+    })]);
     // The nested child's finish is in the worker's record: it completes the nested card and adds no row.
     expect(snapshot.turns).toHaveLength(1);
     expect(JSON.stringify(snapshot.turns)).not.toContain('subagent-done-tool-call');
@@ -87,12 +92,9 @@ describe('Claude native subagent records', () => {
     ].join('\n') + '\n');
     await reopened.catchUp();
     const updated = reopened.getSnapshot().turns.flatMap((turn) => turn.items);
-    expect(updated.find((item) => item.kind === 'spawn-subagent-tool-call')).toMatchObject({
-      agentStatus: 'completed', outputText: 'CHILD_RESULT', children: [
-        expect.objectContaining({ toolCallId: 'child-step', status: 'done', outputText: 'SHELL_RESULT' }),
-        expect.objectContaining({ kind: 'spawn-subagent-tool-call' }),
-      ],
-    });
+    // The child's tail was read from where the archive left it: its end reached the card, and it is no longer running.
+    expect(updated.find((item) => item.kind === 'spawn-subagent-tool-call')).toMatchObject({ agentStatus: 'completed', outputText: 'CHILD_RESULT' });
+    expect(reopened.getSnapshot().subagents).toEqual([]);
     expect(updated.filter((item) => item.kind === 'message')).toEqual(items.filter((item) => item.kind === 'message'));
 
     // Older composite archives could lose child cursors during immediate disposal.
@@ -102,7 +104,7 @@ describe('Claude native subagent records', () => {
     const rebuilt = await createSessionTimeline(createClaudeJsonlSource(locator), { sessionId: 'native-parent', archive: stale });
     disposers.push(() => rebuilt.dispose());
     expect(rebuilt.getSnapshot().turns.flatMap((turn) => turn.items).find((item) => item.kind === 'spawn-subagent-tool-call'))
-      .toMatchObject({ agentStatus: 'completed', children: [expect.objectContaining({ toolCallId: 'child-step', status: 'done' }), expect.anything()] });
+      .toMatchObject({ agentStatus: 'completed', outputText: 'CHILD_RESULT' });
   });
 
   it('says a child finished where the root record notes it, with its reply, and only there', async () => {

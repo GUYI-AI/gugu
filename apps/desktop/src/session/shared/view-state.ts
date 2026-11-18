@@ -77,7 +77,11 @@ export type TabManagerSnapshot = {
   activeTabId: string | undefined;
 };
 
+export type ChatToolLayoutMode = 'empty' | 'split' | 'full' | 'hidden';
+
 export type TabGroupsSnapshot = {
+  /** The owner's chat/tool presentation. An empty tool strip is derived from the saved tabs. */
+  chatToolLayout?: Exclude<ChatToolLayoutMode, 'empty'>;
   groups: Array<{
     groupId: string;
     tabManager: TabManagerSnapshot;
@@ -178,23 +182,17 @@ export type NavigationSnapshot = {
 
 export type SidebarSessionSortBy = 'created-at' | 'updated-at';
 
-/** Persisted sidebar UI state; fields may be absent in older DB blobs. */
+/**
+ * Persisted sidebar UI state; fields may be absent in older DB blobs. Older blobs may also carry fields of the removed
+ * desktop sidebar (section folds, the 项目 | 对话 layout and page, #2548): restore ignores them.
+ */
 export type SidebarSnapshot = {
   expandedProjectIds?: string[];
   expandedSessionIds?: string[];
   idleExpandedProjectIds?: string[];
+  /** What the user folded away (sidebar-folds). */
+  folds?: string[];
   projectOrder?: string[];
   sessionOrderByProject?: Record<string, string[]>;
   sessionSortBy?: SidebarSessionSortBy;
-  /** Section headers (Pinned / Projects / Tasks) folded by the user. */
-  pinnedCollapsed?: boolean;
-  projectsCollapsed?: boolean;
-  sessionsCollapsed?: boolean;
-  chatsCollapsed?: boolean;
-  /** gugu-dev#181 项目和对话分开(两枚页签)还是合在一起(一条列表),以及分开时看的是哪一页。 */
-  listLayout?: SidebarListLayout;
-  listPage?: SidebarListPage;
 };
-
-export type SidebarListLayout = 'split' | 'merged';
-export type SidebarListPage = 'projects' | 'chats';

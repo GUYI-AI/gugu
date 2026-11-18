@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import '../../i18n/registerMessagingCatalog'
@@ -15,11 +16,11 @@ import { Switch } from '../ui/Switch'
 
 /** This computer's two places, each drawn by its icon. */
 
-/** An agent as the chat list draws it (its own face); a group by its picture, else its members' faces. */
+/** An agent as the chat list draws it (its own face); a group by its picture, else the default group face. */
 const placeAvatar = (place: EnablePlace): AvatarProps =>
   place.kind === 'agent'
     ? { name: place.name ?? '', avatarUrl: place.avatar ?? null, seed: place.agentId ?? place.id, isAgent: true }
-    : { name: place.name ?? '', avatarUrl: place.avatar ?? null, seed: place.id, variant: 'group', memberAvatars: place.members ?? [] }
+    : { name: place.name ?? '', avatarUrl: place.avatar ?? null, seed: place.id, variant: 'group' }
 
 const CAPTION = 'flex items-center gap-1 px-1 pt-2 text-[length:var(--font-caption)] text-[var(--text-tertiary)]'
 const BOX = 'flex flex-col gap-px rounded-[var(--radius-document)] border border-[var(--border-color)] bg-[var(--modal-bg)] p-1'
@@ -186,7 +187,7 @@ function AppPlacesPicker({ places, chosen, onDone, onClose }: {
       onQuery={setQuery}
       placeholder={t('chatArea.appEnable.search')}
       empty={t(places.length === 0 ? 'chatArea.appEnable.noPlaces' : 'chatArea.appEnable.noMatch')}
-      top={<SectionLabel>{t('chatArea.appEnable.agents')} · {t('chatArea.appEnable.recent')}</SectionLabel>}
+      top={<SectionLabel>{t('chatArea.appEnable.agents')}  {t('chatArea.appEnable.recent')}</SectionLabel>}
       picked={t('chatArea.appEnable.picked', { count: picked.size })}
       actionLabel={t('chatArea.appEnable.done')}
       onAction={() => onDone(picked)}
@@ -204,7 +205,7 @@ export function AppPlacesSummary({ places, machineName }: { places: readonly Ena
   if (on.length === 0) return <span data-testid="app-places-summary">{t('chatArea.appEnable.none')}</span>
   const all = machineName ? t('chatArea.appEnable.hereAllOn', { machine: machineName }) : t('chatArea.appEnable.hereAll')
   const label = (place: EnablePlace) => (place.id === HERE_ALL ? all : (place.name ?? ''))
-  const names = on.slice(0, 3).map(label).join(' · ')
+  const names = on.slice(0, 3).map(label).join(metadataSeparator())
   return (
     <span data-testid="app-places-summary" className="inline-flex min-w-0 items-center gap-1">
       <span className="inline-flex items-center gap-px">

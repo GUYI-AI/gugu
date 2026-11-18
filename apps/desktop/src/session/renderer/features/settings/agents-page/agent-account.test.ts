@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { AgentCapabilities } from '@shared/core/agents/agent-payload';
 import {
   accountRowOf,
+  agentAccessMethods,
   mergeAccountRows,
   resolveAccountRow,
   resolveAccountTargets,
@@ -324,5 +325,20 @@ describe('mergeAccountRows(资源库一行、一颗按钮,#6335 owner 定)', () 
     expect(merged).toMatchObject({ status: 'signed-out', message: '没有找到凭据', canSignIn: true, pendingLegs: [] });
     expect(merged.steps).toEqual([row]);
     expect(mergeAccountRows([])).toBeNull();
+  });
+});
+
+describe('agentAccessMethods: what the connection panel offers, from the same declarations', () => {
+  const agent = (id: string, capabilities: Partial<AgentCapabilities>) =>
+    ({ id, capabilities, status: 'available' }) as unknown as AgentPayload;
+  it.each([
+    ['gemini', API_KEY_ONLY, []],
+    ['opencode', NO_AUTH, []],
+  ] as const)('%s', (id, capabilities, expected) => {
+    expect(agentAccessMethods(agent(id, capabilities))).toEqual(expected);
+  });
+  it('a vendor account accepts a key but never an address or a model', () => {
+    const keyed = agent('kilocode', { auth: { kind: 'supported', methods: [], vendorKey: { envVars: ['KILO_API_KEY'], unsetEnv: ['KILO_API_KEY'] } } });
+    expect(agentAccessMethods(keyed)).toEqual(['api-key']);
   });
 });

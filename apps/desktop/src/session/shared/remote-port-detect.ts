@@ -8,7 +8,7 @@
 // 终端颜色码 / 光标移动 / OSC(ESC ] … BEL|ST)。
 const ANSI = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g;
 // 端口号后面紧跟省略号(`localhost:87…`)= 被截断的输出(聊天记录里过长的工具输出会截),不是真端口。
-const LOOPBACK_PORT = /(?:^|[^\w.-])(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\])(?::(\d{2,5}))(?![\d]|…|\.\.\.)/gi;
+const LOOPBACK_PORT = /(?:^|[^\w.-])(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\])(?::(\d{1,5}))(?![\d]|…|\.\.\.)/gi;
 const PYTHON_SERVER = /Serving HTTP on (?:127\.0\.0\.1|0\.0\.0\.0|::|\[::\]) port (\d{2,5})/gi;
 
 /**
@@ -19,15 +19,19 @@ const PYTHON_SERVER = /Serving HTTP on (?:127\.0\.0\.1|0\.0\.0\.0|::|\[::\]) por
 export function findLoopbackPorts(text: string, complete = true): number[] {
   const clean = text.replace(ANSI, '');
   const found: number[] = [];
+  const positions = new Map<number, number>();
   for (const pattern of [LOOPBACK_PORT, PYTHON_SERVER]) {
     pattern.lastIndex = 0;
     for (let match = pattern.exec(clean); match; match = pattern.exec(clean)) {
       if (!complete && match.index + match[0].length >= clean.length) continue;
       const port = Number(match[1]);
-      if (Number.isInteger(port) && port > 0 && port < 65536 && !found.includes(port)) found.push(port);
+      if (Number.isInteger(port) && port > 0 && port < 65536) {
+        positions.set(port, Math.min(positions.get(port) ?? Infinity, match.index));
+        if (!found.includes(port)) found.push(port);
+      }
     }
   }
-  return found;
+  return found.sort((a, b) => positions.get(a)! - positions.get(b)!);
 }
 
 /** 输出是一段一段来的:留上一段的尾巴(地址可能被切成两半),只报这条流里第一次出现的端口。 */
@@ -39,9 +43,9 @@ export function createPortDetector(options: { tailChars?: number; maxPorts?: num
   return {
     push(chunk: string): number[] {
       const text = tail + chunk;
-      tail = text.slice(-tailChars);
+      tail = tailChars > 0 ? text.slice(-tailChars) : '';
       if (seen.size >= maxPorts) return [];
-      const fresh = findLoopbackPorts(text, false).filter((port) => !seen.has(port));
+      const fresh = findLoopbackPorts(text, false).filter((port) => !seen.has(port)).slice(0, Math.max(0, maxPorts - seen.size));
       for (const port of fresh) seen.add(port);
       return fresh;
     },

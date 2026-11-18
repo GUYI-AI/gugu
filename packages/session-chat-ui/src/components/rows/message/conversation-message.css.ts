@@ -9,9 +9,9 @@ import { CONVERSATION_FOOTER_H } from './conversation-body';
 export const conversationRoot = style({ position: 'relative', color: vars.fgBody });
 export const conversationHeader = style({ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 6, boxSizing: 'border-box', minWidth: 0, overflow: 'hidden', fontFamily: vars.fontSans, fontSize: vars.typeChromeTinyFontSize, lineHeight: '18px' });
 export const conversationName = style({ fontWeight: 650, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', flexShrink: 0 });
-export const senderNameLink = style({ border: 0, padding: 0, background: 'transparent', color: 'inherit', fontFamily: 'inherit', fontSize: 'inherit', lineHeight: 'inherit', textAlign: 'inherit', cursor: 'pointer', selectors: { '&:hover': { textDecoration: 'underline' }, '&:focus-visible': { textDecoration: 'underline', outlineOffset: 2 } } });
+export const senderNameLink = style({ border: 0, padding: 0, background: 'transparent', color: 'inherit', fontFamily: 'inherit', fontSize: 'inherit', lineHeight: 'inherit', textAlign: 'inherit', cursor: 'pointer', selectors: { '&:hover': { textDecoration: 'underline' }, '&:focus-visible:not([data-pointer-focus])': { textDecoration: 'underline', outlineOffset: 2 } } });
 export const conversationReference = style({ position: 'relative', display: 'inline-flex', width: 18, height: 18, flexShrink: 0, color: vars.fgMuted });
-export const conversationQuote = style({ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, flexShrink: 0, color: 'inherit', background: 'transparent', border: 0, padding: 0, cursor: 'pointer', selectors: { '&:hover:not(:disabled)': { color: vars.fg }, '&:focus-visible': { outline: `1px solid ${vars.fgMuted}`, outlineOffset: 2 }, '&:disabled': { cursor: 'default' } } });
+export const conversationQuote = style({ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, flexShrink: 0, color: 'inherit', background: 'transparent', border: 0, padding: 0, cursor: 'pointer', selectors: { '&:hover:not(:disabled)': { color: vars.fg }, '&:focus-visible:not([data-pointer-focus])': { outline: `1px solid ${vars.fgMuted}`, outlineOffset: 2 }, '&:disabled': { cursor: 'default' } } });
 export const conversationQuotePreview = style({ position: 'absolute', top: '100%', left: 0, zIndex: 10, width: 320, maxWidth: 'calc(100vw - 16px)', overflow: 'hidden', padding: 8, borderRadius: 8, border: `1px solid ${vars.border}`, background: vars.bg, color: vars.fg, fontSize: vars.typeChromeTinyFontSize });
 export const conversationReferenceSeparator = style({ width: 4, flexShrink: 0, color: vars.fgMuted, textAlign: 'center' });
 globalStyle(`${conversationQuote} svg`, { flexShrink: 0, fill: 'none', stroke: 'currentColor', strokeWidth: 1.4 });
@@ -27,12 +27,14 @@ const MINE_FG = 'var(--conversation-bubble-mine-fg, var(--chat-bubble-user-fg))'
 const MINE_SCHEME = 'var(--conversation-bubble-mine-color-scheme, var(--chat-bubble-user-color-scheme))';
 // The pinned summary (PinnedUserSummary) is the same bubble.
 globalStyle(`${conversationRoot} :is([data-user-card], [data-pin-summary])`, { background: MINE_BG, color: vars.fgBody, borderColor: 'transparent' });
-globalStyle(`${conversationRoot}[data-side="right"] :is([data-user-card], [data-pin-summary])`, { colorScheme: MINE_SCHEME, vars: { [vars.fgBody]: MINE_FG, [vars.link]: MINE_FG } });
+globalStyle(`${conversationRoot}[data-side="right"] :is([data-user-card], [data-pin-summary])`, { colorScheme: MINE_SCHEME, vars: { [vars.fgBody]: MINE_FG, [vars.link]: MINE_FG, [vars.mentionChipBg]: `color-mix(in srgb, ${MINE_FG} 16%, transparent)`, [vars.mentionChipFg]: MINE_FG } });
+// A cite in my own bubble is tinted from the bubble's text colour, not a light chip pasted on a dark bubble.
+globalStyle(`${conversationRoot}[data-side="right"] [data-user-card] .gg-md-mention`, { boxShadow: 'none' });
 globalStyle(`${conversationRoot}[data-side="left"] [data-user-card]`, { background: 'var(--bubble-other, var(--chat-bg-2))', colorScheme: 'inherit' });
 
 
 
-export const conversationProcessButton = style({ maxWidth: '100%', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5, height: 22, padding: 0, border: 0, background: 'transparent', color: vars.fgMuted, font: 'inherit', fontVariantNumeric: 'tabular-nums', cursor: 'pointer', whiteSpace: 'nowrap', selectors: { '&:hover:not(:disabled)': { color: vars.fg }, '&:disabled': { cursor: 'default' }, '&:focus-visible': { outline: `1px solid ${vars.fgMuted}`, outlineOffset: 2, borderRadius: 3 } } });
+export const conversationProcessButton = style({ maxWidth: '100%', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5, height: 22, padding: 0, border: 0, background: 'transparent', color: vars.fgMuted, font: 'inherit', fontVariantNumeric: 'tabular-nums', cursor: 'pointer', whiteSpace: 'nowrap', selectors: { '&:hover:not(:disabled)': { color: vars.fg }, '&:disabled': { cursor: 'default' }, '&:focus-visible:not([data-pointer-focus])': { outline: `1px solid ${vars.fgMuted}`, outlineOffset: 2, borderRadius: 3 } } });
 export const conversationProcessChevron = style({ flexShrink: 0, display: 'inline-grid', placeItems: 'center', width: 12, height: 12, fontSize: 10, lineHeight: '10px', transition: 'transform 120ms ease', selectors: { [`${conversationProcessButton}[aria-expanded="true"] &`]: { transform: 'rotate(90deg)' } }, '@media': { '(prefers-reduced-motion: reduce)': { transition: 'none' } } });
 globalStyle(`${conversationProcessButton} svg`, { flexShrink: 0 });
 /** 过程行里「执行中」与「后台 · …」之间那道细竖线。 */
@@ -53,13 +55,18 @@ for (const label of [collapseHeader, toolName, summaryChip]) {
 // 那一行本身常亮(原气泡的 hover 规则会把整行藏起来),藏的是里面的时间、复制、编辑;「发到」常驻(管家 10-28)。
 globalStyle(`${conversationRoot} [data-user-message-actions]`, { opacity: 1, pointerEvents: 'auto' });
 // Exempt persistent controls without making the hidden state outrank hover/focus.
-globalStyle(`${conversationRoot} [data-user-message-actions] > :where(:not([data-slot="sent-to"]):not([data-slot="conversation-reference"]):not([data-collapse-id]))`, { opacity: 0, pointerEvents: 'none', transition: 'opacity 120ms ease' });
+globalStyle(`${conversationRoot} [data-user-message-actions] > :where(:not([data-slot="sent-to"]):not([data-slot="conversation-reference"]):not([data-collapse-id]))`, {
+  '@media': { '(hover: hover)': { opacity: 0, pointerEvents: 'none', transition: 'opacity 120ms ease' } },
+});
 globalStyle(`${conversationRoot} [data-conversation-reference-footer] time`, { order: 2 });
 globalStyle(`${conversationRoot} [data-conversation-reference-footer] ${conversationReference}`, { order: 1, height: CONVERSATION_FOOTER_H });
 globalStyle(`${conversationRoot} [data-user-message-actions] [data-slot="message-copy"]`, { order: 3 });
 globalStyle(`${conversationRoot} [data-user-message-actions] [data-slot="message-edit"]`, { order: 4 });
 globalStyle(`${conversationRoot} [data-conversation-reference-footer] [data-slot="conversation-quote"]`, { height: CONVERSATION_FOOTER_H });
-globalStyle(`${conversationRoot}:hover [data-user-message-actions] > *, ${conversationRoot} [data-user-message-actions]:focus-within > *`, { opacity: 1, pointerEvents: 'auto' });
+globalStyle(`${conversationRoot}:hover [data-user-message-actions] > *, [data-utterance-hovered] ${conversationRoot} [data-user-message-actions] > *, ${conversationRoot} [data-user-message-actions]:focus-within > *`, { opacity: 1, pointerEvents: 'auto' });
+globalStyle(`[data-phone-shell] ${conversationRoot} [data-user-message-actions] > *`, {
+  opacity: 1, pointerEvents: 'auto',
+});
 globalStyle(`${conversationRoot}[data-side="left"] [data-user-message-actions]`, { justifyContent: 'flex-start' });
 globalStyle(`${conversationRoot}[data-side="left"] ${userMessageExpandRow}`, { justifyContent: 'flex-start' });
 globalStyle(`${conversationRoot} [data-user-message-actions] time`, { order: 2, marginLeft: 0, marginRight: 0 });

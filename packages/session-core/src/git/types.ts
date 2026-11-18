@@ -123,7 +123,7 @@ export interface IGitRepository extends IDisposable {
   readonly gitCommonDir: string;
   readonly objectStoreDir: string;
 
-  /** Read models for the repository. */
+  /** Replicas for the repository. */
   getRefs(): Promise<GitRefsModel>;
   getRemotes(): Promise<GitRemotesModel>;
 
@@ -163,7 +163,7 @@ export interface IGitWorktree extends IDisposable {
   readonly worktree: string;
   readonly repository: IGitRepository;
 
-  /** Read models for the worktree. */
+  /** Replicas for the worktree. */
   getStatus(): Promise<GitStatusModel>;
   getHead(): Promise<GitHeadModel>;
 

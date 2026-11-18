@@ -39,6 +39,7 @@ import { HEALTH_SUMMARY_MAX_DAYS, buildNights, buildWorkouts, latestSample, read
 import { localDate, localDayStartMs } from './phoneTime'
 import { localIso, pad, utcOffsetOf } from './phoneTime'
 import { phoneCalendarEventView } from './phoneCalendarView'
+import { normalizePhoneActionArguments } from './phoneActionArguments'
 
 /** 授权分组:设置里一组一个开关(按「连接器」授权的粒度)。 */
 export const PHONE_ACTION_GROUPS = ['calendar', 'contacts', 'location', 'notifications', 'alarm', 'health', 'sms', 'recordings', 'photos'] as const
@@ -193,7 +194,7 @@ const withConfirmed = (properties: Record<string, unknown>) => ({
 
 // ── 清单 ─────────────────────────────────────────────────────────────────────
 
-export const PHONE_ACTIONS: readonly PhoneActionDefinition[] = [
+const PHONE_ACTION_DEFINITIONS: readonly PhoneActionDefinition[] = [
   {
     name: 'calendar.events.list',
     group: 'calendar',
@@ -640,6 +641,20 @@ export const PHONE_ACTIONS: readonly PhoneActionDefinition[] = [
   },
   ...PHONE_DATA_ACTIONS,
 ]
+
+// All provider and local-agent entry points share these handlers. Keep their
+// published schemas intact and normalize only at the invocation boundary.
+const PRESERVE_BLANK_FIELDS: Record<string, readonly string[]> = {
+  // These update fields explicitly clear saved text; omission would mean no change.
+  'calendar.events.update': ['title', 'location', 'description'],
+}
+export const PHONE_ACTIONS: readonly PhoneActionDefinition[] = PHONE_ACTION_DEFINITIONS.map((action) => ({
+  ...action,
+  run: (args: Record<string, unknown>) => action.run(normalizePhoneActionArguments(action.input_schema, args, PRESERVE_BLANK_FIELDS[action.name])),
+  ...(action.confirmQuestion ? {
+    confirmQuestion: (args: Record<string, unknown>) => action.confirmQuestion!(normalizePhoneActionArguments(action.input_schema, args, PRESERVE_BLANK_FIELDS[action.name])),
+  } : {}),
+}))
 
 export function phoneActionByName(name: string): PhoneActionDefinition | undefined {
   return PHONE_ACTIONS.find((action) => action.name === name)

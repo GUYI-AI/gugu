@@ -1,3 +1,4 @@
+import '../../test-support/headless-electron';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -55,6 +56,7 @@ void app.whenReady().then(async () => {
       projection: {
         create: args => call('projectionCreate', args) as Promise<{ id: string }>,
         publish: args => call('projectionPublish', args) as Promise<void>, close: args => call('projectionClose', args) as Promise<void>,
+        present: args => call('projectionPresent', args) as Promise<void>,
         closed: args => call('projectionClosed', args) as Promise<void>, inputResult: args => call('projectionInputResult', args) as Promise<void>,
         watch: async () => {}, unwatch: async () => {}, send: async () => {},
       },
@@ -102,12 +104,15 @@ void app.whenReady().then(async () => {
     await assert.rejects(b.runtime.create(driver(other, async () => {})), /revoked/);
     service.setEnabled('native-projection-b', true);
   });
+  const target = { id: `fixture-window:${source.id}`, revision: 1 };
+  let picture!: { sequence: number; width: number; height: number; target: typeof target };
   const publisher = await a.runtime.create(driver(source, async () => {
     const image = await source.webContents.capturePage();
     assert.equal(image.isEmpty(), false);
     const { width, height } = image.getSize();
     captures++;
-    await publisher.publish({ width, height, mime: 'image/png', data: image.toPNG().toString('base64') });
+    const sequence = await publisher.publish({ width, height, target, mime: 'image/png', data: image.toPNG().toString('base64') });
+    picture = { sequence, width, height, target };
   }));
   const second = await b.runtime.create(driver(other, async () => {}));
   const packets: ProjectionHostPacket[] = [];
@@ -133,6 +138,36 @@ void app.whenReady().then(async () => {
     assert.ok(captures >= 1);
     assert.ok(packets.some(packet => packet.type === 'frame' && packet.frame.data.length > 100));
     assert.equal(await viewer.webContents.executeJavaScript('document.querySelector("img").naturalWidth > 0 && !document.querySelector("textarea").disabled'), true);
+  });
+  await check('native-painted-feedback-and-resize', async () => {
+    await publisher.present({ frame: picture, targetLabel: 'Fixture window', cursor: { x: 64, y: 48, click: 'fixture-click' },
+      action: { id: 'fixture-action', label: 'Fixture action', phase: 'running' } });
+    const visible = () => viewer.webContents.executeJavaScript(`(() => {
+      const layer = document.querySelector('[data-projection-presentation]');
+      const cursor = document.querySelector('[data-projection-cursor]');
+      return !!layer && !layer.hidden && !!cursor && !cursor.hidden;
+    })()`);
+    await until(visible);
+    for (const [width, height] of [[900, 650], [375, 812]]) {
+      viewer.setContentSize(width!, height!);
+      await until(() => viewer.webContents.executeJavaScript(`(() => {
+        const surface = document.querySelector('[data-projection-presentation]').parentElement;
+        const box = surface.getBoundingClientRect();
+        const cursor = document.querySelector('[data-projection-cursor]');
+        const scale = Math.min(box.width / ${picture.width}, box.height / ${picture.height});
+        const x = (box.width - ${picture.width} * scale) / 2 + 64 * scale;
+        const y = (box.height - ${picture.height} * scale) / 2 + 48 * scale;
+        return innerWidth === ${width} && innerHeight === ${height}
+          && Math.abs(parseFloat(cursor.style.left) - x) < 1 && Math.abs(parseFloat(cursor.style.top) - y) < 1
+          && getComputedStyle(cursor.parentElement).pointerEvents === 'none'
+          && document.querySelector('[data-projection-target]').textContent === 'Fixture window'
+          && document.querySelector('[data-projection-action]').dataset.phase === 'running';
+      })()`));
+    }
+    await publisher.present({ frame: picture, cursor: { x: 64, y: 48 } });
+    await until(() => viewer.webContents.executeJavaScript('document.querySelector("[data-projection-action]").hidden'));
+    await publisher.present(null);
+    await until(() => viewer.webContents.executeJavaScript('document.querySelector("[data-projection-presentation]").hidden'));
   });
   await check('native-unicode-once-and-fixture-routing', async () => {
     await viewer.webContents.executeJavaScript(`(() => {

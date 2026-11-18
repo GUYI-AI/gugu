@@ -1,6 +1,11 @@
 /** Unwrap MCP text content without treating an error envelope as a successful receipt. */
 export function sendReceipt(raw: unknown): Record<string, unknown> | null {
-  if (typeof raw === 'string') { try { return sendReceipt(JSON.parse(raw)); } catch { return null; } }
+  if (typeof raw === 'string') {
+    // A receipt names a message or its recipients. Every done tool call is asked whether it is one, on every rebuild
+    // of a transcript: the other tools' outputs are turned away here, unparsed.
+    if (!raw.includes('message_id') && !raw.includes('recipients')) return null;
+    try { return sendReceipt(JSON.parse(raw)); } catch { return null; }
+  }
   if (!raw || typeof raw !== 'object') return null;
   const value = raw as Record<string, unknown>;
   if (value.isError === true || value.ok === false || value.status === 'error' || value.status === 'failed') return null;

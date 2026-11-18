@@ -17,6 +17,25 @@ const frame = { sequence: 1, width: 1, height: 1, mime: 'image/png' as const, da
 const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 
 describe('painted frame and reconnect input routing', () => {
+  it('decorates only the matching painted target and clears on host invalidation or disconnect', async () => {
+    const h = host(), painted = Promise.withResolvers<void>(), presentation = vi.fn();
+    const target = { id: 'window-7', revision: 1 };
+    const picture = { ...frame, target };
+    const value = { frame: { sequence: 1, width: 1, height: 1, target }, targetLabel: 'Editor' };
+    const client = await projectionClient(h, 'watch-alias', { paint: () => painted.promise, presentation });
+    h.emit({ type: 'state', generation: 'a', state: 'connecting', sourceId: 'source' });
+    h.emit({ type: 'frame', generation: 'a', frame: picture });
+    h.emit({ type: 'presentation', sourceId: 'source', generation: 'a', revision: 1, presentation: value });
+    expect(presentation).toHaveBeenLastCalledWith(null);
+    painted.resolve(); await flush(); expect(presentation).toHaveBeenLastCalledWith(value);
+    h.emit({ type: 'presentation', sourceId: 'source', generation: 'a', revision: 2, presentation: null });
+    h.emit({ type: 'presentation', sourceId: 'source', generation: 'a', revision: 1, presentation: value });
+    expect(presentation).toHaveBeenLastCalledWith(null);
+    h.emit({ type: 'state', generation: 'a', state: 'closed' });
+    h.emit({ type: 'presentation', sourceId: 'source', generation: 'a', revision: 3, presentation: value });
+    expect(presentation).toHaveBeenLastCalledWith(null);
+    await client.close();
+  });
   it('bounds a flood of release barriers by resetting the old generation instead of discarding releases', async () => {
     const h = host(); const blocked = Promise.withResolvers<void>();
     vi.mocked(h.projection.send).mockImplementation(async ({ packet }) => {

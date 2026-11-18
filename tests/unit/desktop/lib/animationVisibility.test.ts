@@ -20,6 +20,10 @@ it('shares root window state and viewport observers without reading styles or ob
   first.checkVisibility = () => { throw new Error('Visibility must not force style resolution') }
   first.getBoundingClientRect = () => { throw new Error('Visibility must not force layout') }
   const text = vi.fn(), avatar = vi.fn()
+  // jsdom has no animations: one stand-in that is running, one that is not.
+  const moving = { playState: 'running', playbackRate: 2 }
+  const still = { playState: 'paused', playbackRate: 1 }
+  document.getAnimations = () => [moving, still] as unknown as Animation[]
   const stopText = observeAnimationViewport(first, text)
   const stopAvatar = observeAnimationViewport(second, avatar, '80px')
   const stopThird = observeAnimationViewport(third, vi.fn(), '80px')
@@ -31,7 +35,10 @@ it('shares root window state and viewport observers without reading styles or ob
     expect(avatar).toHaveBeenLastCalledWith(true)
     window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: false }))
     expect(isAnimationWindowVisible()).toBe(false)
-    expect(document.documentElement.style.getPropertyValue('--gugu-animation-window-paused')).toBe('paused')
+    // A hidden window holds what is moving at rate 0 and writes nothing on <html> (that would re-style the document).
+    expect(moving.playbackRate).toBe(0)
+    expect(still.playbackRate).toBe(1)
+    expect(document.documentElement.getAttribute('style')).toBeNull()
     // The one shared policy pauses JavaScript consumers as well as CSS clocks.
     expect(text).toHaveBeenLastCalledWith(false)
     expect(avatar).toHaveBeenLastCalledWith(false)
@@ -44,7 +51,7 @@ it('shares root window state and viewport observers without reading styles or ob
     expect(isAnimationWindowVisible()).toBe(true)
     expect(text).toHaveBeenLastCalledWith(true)
     expect(avatar).toHaveBeenLastCalledWith(true)
-    expect(document.documentElement.style.getPropertyValue('--gugu-animation-window-paused')).toBe('initial')
+    expect(moving.playbackRate).toBe(2)
     observers[0].intersect([{ target: first, isIntersecting: false }])
     expect(text).toHaveBeenLastCalledWith(false)
     expect(avatar).toHaveBeenLastCalledWith(true)
@@ -76,6 +83,9 @@ it('keeps portal window state and viewport observers in the element owner docume
   const first = docs[0].createElement('span'), second = docs[1].createElement('span')
   const firstViewport = vi.fn(), secondViewport = vi.fn()
   const stops = [observeAnimationViewport(first, firstViewport), observeAnimationViewport(second, secondViewport)]
+  // Each document holds its own animations: one running stand-in per document.
+  const rates = [1, 1]
+  docs.forEach((doc, index) => { doc.getAnimations = () => [{ playState: 'running', get playbackRate() { return rates[index]! }, set playbackRate(rate: number) { rates[index] = rate } }] as unknown as Animation[] })
   try {
     expect(observers.map((observer) => observer.doc)).toEqual(docs)
     isAnimationWindowVisible()
@@ -89,8 +99,7 @@ it('keeps portal window state and viewport observers in the element owner docume
     expect(secondViewport).not.toHaveBeenCalled()
     docs[0].defaultView!.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: false }))
     expect(docs.map((doc) => isAnimationWindowVisible(doc))).toEqual([false, true])
-    expect(docs[0].documentElement.style.getPropertyValue('--gugu-animation-window-paused')).toBe('paused')
-    expect(docs[1].documentElement.style.getPropertyValue('--gugu-animation-window-paused')).toBe('initial')
+    expect(rates).toEqual([0, 1])
     expect(firstViewport).toHaveBeenLastCalledWith(false)
     expect(secondViewport).not.toHaveBeenCalled()
     docs[0].defaultView!.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: true }))

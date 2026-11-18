@@ -16,14 +16,22 @@ expected="$(awk -v f="$archive" '{sub(/\r$/,""); if($2==f)print $1}' "$GITHUB_AC
 [ "${#expected}" = 64 ] || { echo "::error::Missing reviewed Node checksum for $archive"; exit 1; }
 cache="${RUNNER_TOOL_CACHE:?}/gugu-vendor-node/$expected"
 executable="$cache/$name/bin/node"
+if [ "${VENDOR_NODE_CACHE_INFO:-}" = 1 ]; then
+  printf 'cache-path=%s\ncache-key=vendor-node-v1-%s-%s\n' "$cache" "$target" "$expected" >> "${GITHUB_OUTPUT:?}"
+  exit 0
+fi
 if [ -x "$executable" ] && [ "$(cat "$cache/.verified-sha256" 2>/dev/null)" = "$expected" ] && [ "$("$executable" --version)" = "v$version" ]; then
   echo "Reusing verified Node v$version ($target)"
 else
   mkdir -p "$(dirname "$cache")"
   stage="$(mktemp -d "$(dirname "$cache")/.vendor-node.XXXXXX")"
   trap 'rm -rf "$stage"' EXIT
-  curl -fsS --connect-timeout 30 --max-time 600 --retry 3 --retry-all-errors \
-    "https://download.gugu.nextmind.space/releases/vendor/node-toolchain/v$version/$archive" -o "$stage/$archive"
+  if ! curl -fsS --connect-timeout 30 --max-time 600 --retry 3 --retry-all-errors \
+    "https://download.gugu.nextmind.space/releases/vendor/node-toolchain/v$version/$archive" -o "$stage/$archive"; then
+    echo '::notice::Node mirror download failed; trying the official archive with the same pinned SHA256'
+    curl -fsS --connect-timeout 30 --max-time 600 --retry 3 --retry-all-errors \
+      "https://nodejs.org/dist/v$version/$archive" -o "$stage/$archive"
+  fi
   if command -v sha256sum >/dev/null; then actual="$(sha256sum "$stage/$archive" | cut -d ' ' -f 1)";
   else actual="$(shasum -a 256 "$stage/$archive" | cut -d ' ' -f 1)"; fi
   [ "$actual" = "$expected" ] || { echo '::error::Node archive SHA256 mismatch; not extracted'; exit 1; }

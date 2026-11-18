@@ -1,5 +1,5 @@
 import { platformModel } from './platform-model';
-import { hermesPromptMeta } from '@gugu/session-core/acp/hermes-prompt';
+import { nativePromptMeta } from '@gugu/session-core/acp/native-prompt';
 import {
   definePlugin,
   registerPluginBehavior,
@@ -17,6 +17,7 @@ import {
   materializeHermesSessionBundle,
 } from './session-bundle';
 import { icon } from './icon';
+import { HERMES_LOGIN_METHOD_ID, hermesAuthStatus } from './auth';
 import { hermesSubscription } from './subscription';
 import { hermesMcpAdapter } from './mcp';
 
@@ -49,6 +50,7 @@ export const plugin = definePlugin(
   {
     id: 'hermes',
     name: 'Hermes Agent',
+    publisher: 'Nous Research',
     description:
       'Nous Research terminal agent with interactive chat, model-provider routing, skills, and session workflows.',
     websiteUrl: 'https://hermes-agent.nousresearch.com/docs/',
@@ -57,6 +59,23 @@ export const plugin = definePlugin(
     sessionBundle: hermesSessionBundleDescriptor,
     // 「订阅」页(product spec):Hermes 本身免费，读它接的是哪家;Nous 余量只有 Hermes 自己报(./subscription.ts)。
     subscription: { kind: 'supported', usageRefresh: 'on-open' },
+    auth: {
+      kind: 'supported',
+      methods: [
+        {
+          kind: 'cli-login',
+          id: HERMES_LOGIN_METHOD_ID,
+          name: 'Nous Portal',
+          // #2507 Hermes 自家账号(Nous Portal)。`hermes login` 已删,登录改走 `hermes auth add <provider>`;
+          // nous 是设备码:打印 portal 链接(码带在链接里)+ 码,轮询到授权完成,不靠本机回跳、不用回填
+          // (2026.9.24 隔离 HERMES_HOME 实跑)。写进的是用户自己的 `$HERMES_HOME/auth.json` —— 与 `hermes serve`
+          // 跑会话用的同一处。本机让它自己开浏览器;别的机器加 `--no-browser`。
+          args: ['auth', 'add', 'nous', '--type', 'oauth'],
+          headlessArgs: ['auth', 'add', 'nous', '--type', 'oauth', '--no-browser'],
+          description: 'Runs `hermes auth add nous` with your Nous Portal account.',
+        },
+      ],
+    },
     vendorAccount: {
       kind: 'not-required',
       evidence:
@@ -172,11 +191,12 @@ export const plugin = definePlugin(
 );
 
 export const provider = registerPluginBehavior(plugin, {
+  auth: { checkStatus: hermesAuthStatus },
   sessionBundle: { materialize: materializeHermesSessionBundle, platformModel },
   subscription: hermesSubscription,
   mcp: hermesMcpAdapter(),
   acp: {
-    historyRecovery: { canonicalReplay: true, promptMeta: hermesPromptMeta },
+    historyRecovery: { canonicalReplay: true, promptMeta: nativePromptMeta },
     // Gugu's own bridge to `hermes serve` (the backend Hermes Desktop uses), built with the app; the host
     // resolves its entry (#6394). It drives the user's own `hermes`: their HERMES_HOME, providers and sessions.
     bridge: { kind: 'app-runtime', file: 'hermes-serve-acp.mjs' },

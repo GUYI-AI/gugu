@@ -66,7 +66,7 @@ describe('#1642 existing account attachment', () => {
   it('names a different account without exposing its email or changing the installation', async () => {
     const f = fixture({ accounts: [{ ...account, userId: 'user-b' }] })
     const final = await f.start()
-    expect(final.failure?.detail).toContain('a… · user-b')
+    expect(final.failure?.detail).toContain('a… user-b')
     expect(final.result).toBeNull()
     expect(f.seen).toHaveLength(1)
     expect(JSON.stringify(final)).not.toContain(account.email)

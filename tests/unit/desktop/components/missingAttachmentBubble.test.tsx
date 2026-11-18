@@ -4,8 +4,9 @@ import { notifyManager } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 import { MediaAttachmentBubble } from '../../../../apps/desktop/src/components/chat/MediaAttachmentBubble'
-import { attachmentQueryClient } from '../../../../apps/desktop/src/lib/attachmentQueryClient'
+import { queryClient as attachmentQueryClient } from '../../../../apps/desktop/src/lib/replica'
 import { MissingFileObjectError } from '@gugu/core/shared/fileResolver'
+import { setAttachmentUploadProgress } from '../../../../apps/desktop/src/lib/attachmentUploadProgress'
 import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 
 const f = vi.hoisted(() => ({ resolve: vi.fn() }))
@@ -61,6 +62,15 @@ describe('missing attachment card shared by desktop and phone', () => {
     expect(harness.container.textContent).not.toContain('重试')
     expect(harness.container.querySelector('button:not(:disabled)')).toBeNull()
     expect(f.resolve).toHaveBeenCalledTimes(1)
+  })
+  it('the sender\'s own pending image says uploading only while this device uploads it', async () => {
+    f.resolve.mockResolvedValue({ status: 'pending', sha256: null })
+    await renderWithAppProviders(harness, createElement(MediaAttachmentBubble, { meta: image, messageId: 'missing', isMine: true }))
+    await vi.waitFor(async () => { await act(async () => {}); expect(harness.container.textContent).toContain('还没传完') })
+    expect(harness.container.textContent).not.toContain('正在上传')
+    await act(async () => { setAttachmentUploadProgress('missing', { loaded: 1, total: 5, attempt: 1 }) })
+    expect(harness.container.textContent).toContain('正在上传')
+    await act(async () => { setAttachmentUploadProgress('missing') })
   })
   it('also shows missing when the server confirms absence after metadata was already ready', async () => {
     f.resolve.mockResolvedValue({ status: 'ready', revision: {}, content: async () => { throw new MissingFileObjectError() }, dispose: vi.fn() })

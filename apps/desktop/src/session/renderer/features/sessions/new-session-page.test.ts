@@ -6,6 +6,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setLocalePreference } from '@/i18n';
 import type { SessionFailure } from '@renderer/features/sessions/stores/session-failure';
+import type { AccountProject } from '@gugu/core/cloud/deviceProjects';
 import { IMPLICIT_SESSION_HOME_PROJECT_ID } from './session-home-project-constants';
 import { homeView } from '@renderer/app/home-view';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
@@ -13,10 +14,10 @@ import { ProjectHome } from '@renderer/features/projects/components/main-panel/p
 import { NewSessionComposer, NewSessionPage } from './new-session-page';
 import { remoteInstallNote } from './remote-install-before-create';
 import { MachinePicker } from '@renderer/features/remote-hosts/machine-picker';
-import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { machineRegistry } from '@renderer/lib/machine-routing';
+import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { installRemoteHostsBridge, type RemoteHostsBridge } from '@shared/remote-hosts';
-import { ComposerProjectPicker, ComposerRemoteProjectPicker } from './composer-context-tray';
+import { ComposerProjectPicker } from './composer-context-tray';
 import { getSessionWorkspaceActionOrder, sessionWorkspaceActionBlocked } from './pane-empty-state';
 import { registerWorkspaceBackend, type WorkspaceBackend } from './workspace-backend/workspace-backend';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
@@ -25,6 +26,7 @@ import { cancelComposerVerb } from './composer-verb-tag';
 import { readComposerVerb, setComposerVerb, takeComposerCarry } from '@/lib/composerVerbBridge';
 
 const mocks = vi.hoisted(() => ({
+  preferredProvider: undefined as string | undefined,
   notify: vi.fn(),
   dismissNotice: vi.fn(),
   showAddProjectModal: vi.fn(),
@@ -45,12 +47,13 @@ const mocks = vi.hoisted(() => ({
   setProjectView: vi.fn(),
   navigate: vi.fn(),
   currentView: 'project' as 'project' | 'task',
-  sessionFieldProps: null as null | { showAutoApproveToggle?: boolean; canSubmit?: boolean },
+  sessionFieldProps: null as null | { showAutoApproveToggle?: boolean; canSubmit?: boolean; onSubmit?: () => void },
   deliveryError: null as SessionFailure | null,
   // null = 输入框里就是挂上时读到的那份(真 hook 的 useState(initialPrompt));字符串 = 用户打进去的。
   prompt: null as string | null,
   initialPrompt: undefined as string | undefined,
-  onCreated: undefined as undefined | ((result: { projectId: string; sessionId: string }) => void)
+  onCreated: undefined as undefined | ((result: { projectId: string; sessionId: string }) => void),
+  handleCreateSession: vi.fn()
 }));
 
 vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
@@ -95,7 +98,7 @@ vi.mock('@renderer/features/sessions/create-session-modal/use-create-session-cal
   }) => {
     mocks.createSessionCallbackProjectId = selectedProjectId;
     mocks.onCreated = onCreated;
-    return { handleCreateSession: vi.fn(), canCreate: true, deliveryError: mocks.deliveryError };
+    return { handleCreateSession: mocks.handleCreateSession, canCreate: true, deliveryError: mocks.deliveryError };
   }
 }));
 
@@ -133,7 +136,7 @@ vi.mock('@renderer/features/sessions/hooks/useSessionSettings', () => ({
 }));
 
 vi.mock('@renderer/features/sessions/session-config/session-field', () => ({
-  SessionField: (props: { showAutoApproveToggle?: boolean; canSubmit?: boolean }) => {
+  SessionField: (props: { showAutoApproveToggle?: boolean; canSubmit?: boolean; onSubmit?: () => void }) => {
     mocks.sessionFieldProps = props;
     return React.createElement('div', { 'data-testid': 'active-task-composer' });
   }
@@ -145,10 +148,12 @@ vi.mock('./implicit-session-home-project', () => ({
 
 vi.mock('@renderer/features/sessions/session-config/initial-session-section', () => ({
   useInitialSessionState: (...args: unknown[]) => {
-    const options = args[3] as { initialPrompt?: string; draft?: ReturnType<typeof composerDrafts.forKey> } | undefined;
+    const options = args[3] as { initialPrompt?: string; preferredProvider?: string; draft?: ReturnType<typeof composerDrafts.forKey> } | undefined;
     if (options?.draft && mocks.prompt !== null) options.draft.setPrompt(mocks.prompt);
     mocks.initialPrompt = options?.draft?.prompt ?? options?.initialPrompt;
+    mocks.preferredProvider = options?.preferredProvider;
     return {
+      provider: options?.preferredProvider ?? 'codex',
       prompt: mocks.prompt ?? mocks.initialPrompt ?? '',
       issueContextEditorOpen: false,
       // 「这一轮带了内容」把待发附件一并算上,所以这份替身也必须有附件。
@@ -174,10 +179,9 @@ vi.mock('@renderer/lib/layout/layout-provider', () => ({
   // 会在 useTransform 里炸,而炸出来的是「读不到 .get()」这种和布局毫不相干的报错。
   useWorkspaceLayoutContext: () => ({
     isLeftOpen: true,
-    isLeftPeeking: false,
     leftAnimatedWidth: motionValue(260),
+    leftLayoutWidth: motionValue(260),
     setCollapsed: vi.fn(),
-    setTriggerHovered: vi.fn()
   })
 }));
 
@@ -196,6 +200,56 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
   }
 }));
 
+// 项目选择器只列账号上的项目(accountProjectsStore):每个 mocks.orderedProjects 是一个项目(名字 = id),
+// 绑在它所在的机器上;`extra` 是另给的(没有文件夹的等)。
+vi.mock('@renderer/features/projects/stores/account-projects-store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@renderer/features/projects/stores/account-projects-store')>();
+  const { machineRegistry } = await import('@renderer/lib/machine-routing');
+  const { runInAction } = await import('mobx');
+  class TestAccounts extends actual.AccountProjectsStore {
+    extra: AccountProject[] = [];
+    override get projects(): readonly AccountProject[] {
+      return [
+        ...mocks.orderedProjects.map((project) => ({
+          chatId: `chat-${project.id}`, name: project.id, archived: false, activeAt: '2026-01-01T00:00:00.000Z',
+          bindings: [{ deviceId: machineRegistry.machineOf(project.id) ?? 'this-computer', localProjectId: project.id }],
+        })),
+        ...this.extra,
+      ];
+    }
+  }
+  const accountProjectsStore = new TestAccounts();
+  accountProjectsStore.attach({
+    projects: { get: (id: string) => (mocks.orderedProjects.some((project) => project.id === id) ? { createdAt: null } : undefined) } as never,
+    machineOf: (id) => machineRegistry.machineOf(id),
+    connected: () => true,
+  });
+  runInAction(() => {
+    accountProjectsStore.localDeviceId = 'this-computer';
+    accountProjectsStore.status = 'ready';
+  });
+  return { ...actual, accountProjectsStore };
+});
+
+// 项目选择器 › 里列的文件夹来自 useProjectPickerFolders(要问各台机器):这里给每个项目一个它所在设备上的根文件夹,
+// `mocks.folderListFor` 想换成别的(没有文件夹 / 只在离线设备上)时覆盖。
+vi.mock('@renderer/features/projects/components/project-picker-folders', async () => {
+  const { machineRegistry } = await import('@renderer/lib/machine-routing');
+  return {
+    useProjectPickerFolders: (rowId: string) => {
+      const folders = (mocks as unknown as { folderListFor?: (id: string) => unknown[] }).folderListFor?.(rowId)
+        ?? [{ workspaceId: `ws-${rowId}`, projectId: rowId, kind: 'root', path: `/work/${rowId}`, branch: null, sessionIds: [], attachedAt: null,
+          offline: false, deviceId: machineRegistry.machineOf(rowId) ?? null }];
+      return { folders, readFailed: false, reading: false };
+    },
+  };
+});
+
+const runMachineCloud = vi.hoisted(() => ({ remember: vi.fn(async () => ({})) }));
+vi.mock('@/lib/agentCreateDefaults', () => ({
+  readAgentCreateDefaults: async () => ({ deviceId: null, projectByDevice: {}, projectByChat: {}, machineByProject: {} }),
+  rememberAgentCreateRunMachine: runMachineCloud.remember,
+}));
 vi.mock('@renderer/lib/ui/dropdown-menu', () => ({
   DropdownMenuGroup: ({ children }: { children: React.ReactNode }) => children,
   DropdownMenuCheckboxItem: ({ children, checked, disabled, onCheckedChange }: { children: React.ReactNode; checked: boolean; disabled?: boolean; onCheckedChange: (checked: boolean) => void }) => React.createElement('button', { role: 'menuitemcheckbox', 'aria-checked': checked, disabled, onClick: () => onCheckedChange(!checked) }, children),
@@ -221,8 +275,8 @@ vi.mock('@renderer/lib/ui/dropdown-menu', () => ({
     ),
   DropdownMenuSub: ({ children }: { children: React.ReactNode }) => children,
   DropdownMenuSubContent: ({ children }: { children: React.ReactNode }) => children,
-  DropdownMenuSubTrigger: ({ children }: { children: React.ReactNode }) =>
-    React.createElement('button', { type: 'button', role: 'menuitem' }, children),
+  DropdownMenuSubTrigger: ({ children, ...props }: { children: React.ReactNode }) =>
+    React.createElement('button', { type: 'button', role: 'menuitem', ...props }, children),
   DropdownMenuTrigger: ({
     children,
     render,
@@ -255,6 +309,7 @@ describe('NewSessionPage', () => {
     mocks.prompt = null;
     mocks.initialPrompt = undefined;
     mocks.onCreated = undefined;
+    mocks.handleCreateSession.mockReset();
     composerDrafts.set(NEW_SESSION_DRAFT_KEY, '');
     composerDrafts.set(projectDraftKey('project-1'), '');
     dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
@@ -499,6 +554,64 @@ describe('NewSessionPage', () => {
     }
   });
 
+  // #2569 the sample's first message, handed to the project it became: the person already pressed send in the sample.
+  it('sends a handed-over draft once, as soon as the box can; not again, and not after the person edits it', async () => {
+    const key = projectDraftKey('project-1');
+    const draft = composerDrafts.forKey(key);
+    const handoff = {
+      hiddenContext: 'the sample context',
+      picked: { provider: 'codex' as const, model: null, platformModel: null, effort: null, permissionMode: 'full-access' as const, sessionView: 'general' as const },
+      sendWhenReady: true,
+    };
+    try {
+      draft.setPrompt('周六下雨怎么办');
+      draft.setHandoff(handoff);
+      await act(async () => root.render(localized(React.createElement(NewSessionComposer, { projectId: 'project-1', draftKey: key }))));
+      expect(mocks.handleCreateSession).toHaveBeenCalledOnce();
+      expect(draft.handoff).toMatchObject({ hiddenContext: 'the sample context', sendWhenReady: false });
+      await act(async () => root.render(localized(React.createElement(NewSessionComposer, { projectId: 'project-1', draftKey: key, placeholder: 'again' }))));
+      expect(mocks.handleCreateSession).toHaveBeenCalledOnce();
+
+      draft.setHandoff({ ...handoff, sendWhenReady: true });
+      draft.setPrompt('周日下雨怎么办');
+      expect(draft.handoff?.sendWhenReady, 'the person took it over').toBe(false);
+    } finally { composerDrafts.discard(key); }
+  });
+
+  // #2589 review 3: the sample's box can still be mounted for a render after its draft moved to the project; it must not take
+  // the hand-off (it has no project to create the task in) — the project's box sends it.
+  it('a box with no project never auto-sends a handed-over draft: the project box it was handed to does', async () => {
+    const send = vi.fn();
+    const draft = composerDrafts.forKey('sample-test');
+    try {
+      draft.setPrompt('周六下雨怎么办');
+      draft.setHandoff({
+        hiddenContext: 'the sample context',
+        picked: { provider: 'codex', model: null, platformModel: null, effort: null, permissionMode: 'full-access', sessionView: 'general' },
+        sendWhenReady: true,
+      });
+      await act(async () => root.render(localized(React.createElement(NewSessionComposer, { projectId: undefined, draftKey: 'sample-test', sendWithoutProject: send }))));
+      expect(mocks.sessionFieldProps?.canSubmit).toBe(true);
+      expect(mocks.handleCreateSession).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+      expect(draft.handoff?.sendWhenReady, 'left for the project box').toBe(true);
+    } finally { composerDrafts.discard('sample-test'); }
+  });
+
+  it('with no project yet, sending goes to sendWithoutProject (an agent picked, words written); blocked holds it', async () => {
+    const send = vi.fn();
+    mocks.prompt = '周六下雨怎么办';
+    try {
+      await act(async () => root.render(localized(React.createElement(NewSessionComposer, { projectId: undefined, draftKey: 'sample-test', sendWithoutProject: send }))));
+      expect(mocks.sessionFieldProps?.canSubmit).toBe(true);
+      act(() => mocks.sessionFieldProps?.onSubmit?.());
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ provider: 'codex', prompt: '周六下雨怎么办' }));
+      expect(mocks.handleCreateSession).not.toHaveBeenCalled();
+      await act(async () => root.render(localized(React.createElement(NewSessionComposer, { projectId: undefined, draftKey: 'sample-test', sendWithoutProject: send, blocked: true }))));
+      expect(mocks.sessionFieldProps?.canSubmit).toBe(false);
+    } finally { composerDrafts.discard('sample-test'); }
+  });
+
   it('keeps an editable, projectless composer when no project exists', async () => {
     await renderPage();
 
@@ -612,9 +725,9 @@ describe('NewSessionPage', () => {
     mocks.orderedProjects = [{ id: 'project-1', state: 'mounted' }];
     await renderPage();
 
-    const projectItem = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === 'project-1'
-    );
+    // 点 › 里这个项目的文件夹 = 选了项目(设备 · 文件夹)。
+    const projectItem = container.querySelector<HTMLButtonElement>('[data-workspace-id="ws-project-1"]');
+    expect(projectItem).not.toBeNull();
     await act(async () => projectItem?.click());
 
     expect(mocks.createSessionStateProjectId).toBe('project-1');
@@ -626,11 +739,9 @@ describe('NewSessionPage', () => {
     mocks.orderedProjects = [{ id: 'project-1', state: 'mounted' }];
     mocks.prompt = '继续实现这一段';
     await renderPage();
-    const projectItem = Array.from(container.querySelectorAll('[role="menuitem"]')).find(
-      (item) => item.textContent?.trim() === 'project-1'
-    ) as HTMLButtonElement;
-    expect(projectItem).toBeDefined();
-    await act(async () => projectItem.click());
+    const projectItem = container.querySelector<HTMLButtonElement>('[data-workspace-id="ws-project-1"]');
+    expect(projectItem).not.toBeNull();
+    await act(async () => projectItem!.click());
     expect(mocks.navigate).toHaveBeenCalledWith('project', { projectId: 'project-1' });
     await act(async () => root.render(localized()));
     mocks.prompt = null;
@@ -639,14 +750,112 @@ describe('NewSessionPage', () => {
     expect(container.querySelector('[data-testid="project-folder-card"]')).not.toBeNull();
   });
 
+  // #2412 review ①: picking a folder on a machine without one selects that machine only once the folder is attached.
+  it('keeps the current machine when attaching a folder on another machine fails', async () => {
+    const pickable = vi.spyOn(remoteHostsStore, 'pickableMachineIds').mockReturnValue(['device-9']);
+    const pickFolder = vi.spyOn(remoteHostsStore, 'pickFolder').mockResolvedValue('/srv/someone-elses-project');
+    const device = vi.spyOn(remoteHostsStore, 'device').mockImplementation((id) => (id === 'device-9' ? { id, label: 'd9', hostKind: 'server', isOnline: true, lastSeenAt: null } as never : null));
+    const connection = vi.spyOn(remoteHostsStore, 'connectionState').mockImplementation((id) => (id === 'device-9' ? 'connected' : 'offline') as never);
+    mocks.orderedProjects = [{ id: 'project-1', state: 'mounted' }];
+    try {
+      runMachineCloud.remember.mockClear();
+      await renderProjectHome();
+      const picker = () => container.querySelector('[data-testid="composer-device-picker"]');
+      expect(picker()?.getAttribute('data-selected-id')).toBe('local');
+      const elsewhere = container.querySelector('[data-testid="composer-device-picker-elsewhere"] [data-device-id="device-9"]') as HTMLButtonElement;
+      expect(elsewhere).not.toBeNull();
+      // That machine cannot say what the folder is (no connection here): the attach plan fails, nothing is attached.
+      await act(async () => { elsewhere.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+      expect(pickFolder).toHaveBeenCalledWith('device-9', '~');
+      expect(picker()?.getAttribute('data-selected-id')).toBe('local');
+      expect(runMachineCloud.remember).not.toHaveBeenCalled();
+    } finally {
+      pickable.mockRestore();
+      pickFolder.mockRestore();
+      device.mockRestore();
+      connection.mockRestore();
+    }
+  });
+
+  it('uses the agent and device chosen in Apps for the new task composer', async () => {
+    remoteHostsStore.requestNewSession('a-previous-device');
+    await act(async () => {
+      root.render(localized(React.createElement(NewSessionPage, { agentSelection: { agentId: 'claude' } })));
+    });
+    expect(mocks.preferredProvider).toBe('claude');
+  });
+
+  // #2412 review ②: a machine picked on New task goes with the project only when it holds that project's folder.
+  // Architecture review ④: it is handed to the project block that opens next, not written to the account settings —
+  // those are written when a task is actually created on it.
+  it('hands the machine picked first to the project block only for a project that has a folder there, remembering nothing', async () => {
+    machineRegistry.register('device-9', ['project-remote']);
+    mocks.orderedProjects = [{ id: 'project-1', state: 'mounted' }, { id: 'project-remote', state: 'mounted' }];
+    remoteHostsStore.requestNewSession('device-9');
+    const { resetRunMachineMemoryForTest, useProjectRunMachine } = await import('@renderer/features/projects/components/main-panel/project-run-machine');
+    const runMachineOf = async (projectId: string) => {
+      let machine: string | null | undefined;
+      const Probe = () => {
+        machine = useProjectRunMachine(projectId, [{ key: 'local', online: true }, { key: 'device-9', online: true }], `chat-${projectId}`).machine;
+        return null;
+      };
+      await act(async () => root.render(React.createElement(Probe)));
+      return machine;
+    };
+    try {
+      runMachineCloud.remember.mockClear();
+      await renderPage();
+      const pick = (name: string) => container.querySelector<HTMLButtonElement>(`[data-workspace-id="ws-${name}"]`)!;
+      await act(async () => pick('project-1').click());
+      expect(await runMachineOf('project-1')).toBeNull();
+      // The probe replaced the page in this root; the page opens again with the machine picked first.
+      remoteHostsStore.requestNewSession('device-9');
+      await renderPage();
+      await act(async () => pick('project-remote').click());
+      expect(await runMachineOf('project-remote')).toBe('device-9');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(runMachineCloud.remember).not.toHaveBeenCalled();
+    } finally {
+      resetRunMachineMemoryForTest();
+      machineRegistry.forgetMachine('device-9');
+    }
+  });
+
+  // 项目与机器解耦:账号上一个文件夹都没有的项目也列出来(identity.list_my_projects)。每个项目都有 ›:有文件夹的列「设备 · 路径」,
+  // 没有能用文件夹的给「在某台设备上选文件夹」;绑在这一端没加载的设备上的,列成灰的「暂不可用」,而不是当成没有文件夹。
+  it('lists an account project that has no folder on any machine, with a way to give it one', async () => {
+    const { accountProjectsStore } = await import('@renderer/features/projects/stores/account-projects-store');
+    (accountProjectsStore as unknown as { extra: AccountProject[] }).extra = ([
+      { chatId: 'chat-empty', name: 'paper', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [] },
+      { chatId: 'chat-old', name: 'retired', archived: true, activeAt: '2026-01-01T00:00:00.000Z', bindings: [] },
+      { chatId: 'chat-bound', name: 'bound', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'd', localProjectId: 'p' }] },
+    ]);
+    try {
+      mocks.orderedProjects = [{ id: 'project-1', state: 'mounted' }];
+      await renderPage();
+      const rows = Array.from(container.querySelectorAll('[data-testid="project-picker-item"]'));
+      // Archived ones are not listed; every listed project has a ›.
+      expect(rows.map((item) => item.getAttribute('data-chat-id'))).toEqual(['chat-project-1', 'chat-empty', 'chat-bound']);
+      // No binding anywhere says so; a folder only on a device that is not loaded here is not "no folder".
+      expect(rows[1]?.textContent).toContain('还没有文件夹');
+      expect(rows[2]?.textContent).not.toContain('还没有文件夹');
+      const unavailable = container.querySelector('[role="menuitem"][data-device-id="d"][disabled]');
+      expect(unavailable?.textContent).toContain('暂不可用');
+      // Neither has a usable folder, so each offers to pick one on a machine ("pick a folder", not just a machine name).
+      const pickOn = Array.from(container.querySelectorAll('[data-testid="project-pick-folder-on"]'));
+      expect(pickOn.length).toBeGreaterThanOrEqual(2);
+      expect(pickOn[0]?.textContent).toContain('选文件夹');
+    } finally {
+      (accountProjectsStore as unknown as { extra: AccountProject[] }).extra = [];
+    }
+  });
+
   it('项目已有草稿时保留它,全局首句也仍在', async () => {
     composerDrafts.set(projectDraftKey('project-1'), '项目原来的草稿');
     mocks.orderedProjects = [{ id: 'project-1', state: 'mounted' }];
     mocks.prompt = '全局草稿';
     await renderPage();
-    const projectItem = Array.from(container.querySelectorAll('[role="menuitem"]')).find(
-      (item) => item.textContent?.trim() === 'project-1'
-    ) as HTMLButtonElement;
+    const projectItem = container.querySelector<HTMLButtonElement>('[data-workspace-id="ws-project-1"]')!;
     await act(async () => projectItem.click());
     expect(composerDrafts.get(projectDraftKey('project-1'))).toBe('项目原来的草稿');
     expect(composerDrafts.get(NEW_SESSION_DRAFT_KEY)).toBe('全局草稿');
@@ -669,29 +878,26 @@ describe('NewSessionPage', () => {
   });
 
   // owner 2026-10-19:项目跨设备,设备选择圈定范围;具体执行设备跟随所选文件夹。
-  it('项目页共用新建托盘,设备为可选择的项目范围', async () => {
+  it('项目页共用新建托盘,机器是「在哪台跑」的单选,默认本机(有文件夹)', async () => {
     mocks.orderedProjects = [
       { id: 'project-1', state: 'mounted' },
       { id: 'project-2', state: 'mounted' }
     ];
     await renderProjectHome();
-    expect(container.querySelector('[data-testid="project-device-scope"]')?.textContent).toContain('这台电脑');
-    expect(container.querySelector('[data-testid="composer-device-picker"]')).toBeNull();
-    expect(container.querySelector('[role="menuitemcheckbox"]')?.getAttribute('aria-checked')).toBe('true');
+    expect(container.querySelector('[data-testid="composer-device-picker"]')?.getAttribute('data-selected-id')).toBe('local');
+    expect(container.querySelector('[data-testid="composer-device-picker"]')?.textContent).toContain('这台电脑');
     // 项目预选这一个;这一页就是它的,没有「未选择项目」。
     expect(container.textContent).not.toContain('未选择项目');
     expect(mocks.createSessionCallbackProjectId).toBe('project-1');
     expect(container.querySelector('[data-testid="active-task-composer"]')).not.toBeNull();
 
     // 换一个项目 = 去那个项目的页面。
-    const other = Array.from(container.querySelectorAll('[role="menuitem"]')).find(
-      (item) => item.textContent?.trim() === 'project-2'
-    ) as HTMLButtonElement;
+    const other = container.querySelector<HTMLButtonElement>('[data-workspace-id="ws-project-2"]')!;
     await act(async () => other.click());
     expect(mocks.navigate).toHaveBeenCalledWith('project', { projectId: 'project-2' });
   });
 
-  it('项目页可切换只有远端文件夹的项目,设备范围如实标离线', async () => {
+  it('项目页可切换只有远端文件夹的项目,在哪台跑如实标离线', async () => {
     // 产品里别的机器的项目只经远程主机那座桥登记进来;桥在、那台机器连不上(开线一直不回)= 离线。
     const removeBridge = installRemoteHostsBridge({
       openSessionHost: () => () => new Promise(() => {}),
@@ -703,9 +909,9 @@ describe('NewSessionPage', () => {
     mocks.orderedProjects = [{ id: 'project-remote', state: 'mounted' }, { id: 'project-1', state: 'mounted' }];
     try {
       await renderProjectHome();
-      expect(container.querySelector('[data-testid="project-device-scope"]')?.textContent).toContain('device-9');
+      // 项目与机器解耦:托盘上是「在哪台跑」的选择器,默认选有这个项目文件夹的那台(只有 device-9 有)。
+      expect(container.querySelector('[data-testid="composer-device-picker"]')?.getAttribute('data-selected-id')).toBe('device-9');
       expect(container.textContent).toContain('离线');
-      expect(container.querySelector('[data-testid="composer-device-picker"]')).toBeNull();
       // 那台机器用不了:输入框下面没有行内字(它一变输入框就动),原因在统一提示条里说,发送照样挡住。
       expect(container.querySelector('[role="alert"]')).toBeNull();
       expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({ key: 'machine:device-9', tier: 'error', ongoing: true }));
@@ -719,49 +925,6 @@ describe('NewSessionPage', () => {
     }
   });
 
-  // owner 2026-09-25:「我发现新建项目居然不支持远程项目,应该得支持啊」
-  it('选了别的机器时「新建项目 ›」建在那台机器上', async () => {
-    const onSelect = vi.fn();
-    const pickFolder = vi.spyOn(remoteHostsStore, 'pickFolder').mockResolvedValue('/srv/app');
-    const ensureProject = vi.spyOn(remoteHostsStore, 'ensureProject').mockResolvedValue('project-new');
-    try {
-      await act(async () => {
-        root.render(
-          localized(
-            React.createElement(ComposerRemoteProjectPicker, {
-              selectedPath: null,
-              projects: [],
-              loading: false,
-              onSelect,
-              machine: { deviceId: 'device-9', label: 'd22', browseFrom: '/srv' }
-            })
-          )
-        );
-      });
-
-      // 新建空白项目:同一张起名弹窗,带着那台机器。
-      await act(async () =>
-        (container.querySelector('[data-testid="project-create-blank"]') as HTMLButtonElement).click()
-      );
-      expect(mocks.showAddProjectModal).toHaveBeenCalledWith(
-        expect.objectContaining({ machine: { deviceId: 'device-9', label: 'd22' } })
-      );
-
-      // 使用现有文件夹:浏览的是那台机器(❌ 本机 Finder),选中后在那台机器上加成项目并选中它。
-      await act(async () =>
-        (container.querySelector('[data-testid="project-create-existing"]') as HTMLButtonElement).click()
-      );
-      expect(pickFolder).toHaveBeenCalledWith('device-9', '/srv');
-      expect(ensureProject).toHaveBeenCalledWith('device-9', '/srv/app');
-      expect(onSelect).toHaveBeenCalledWith('/tmp/project-new');
-      // 旧的「浏览或输入那台机器上的路径…」并进了「使用现有文件夹」,不再单列一项。
-      expect(container.textContent).not.toContain('浏览或输入');
-    } finally {
-      pickFolder.mockRestore();
-      ensureProject.mockRestore();
-    }
-  });
-
   it('本机的「新建空白项目」照旧建在本机', async () => {
     await act(async () => {
       root.render(localized(React.createElement(ComposerProjectPicker, { selectedId: undefined, onSelect: vi.fn() })));
@@ -772,6 +935,54 @@ describe('NewSessionPage', () => {
     expect(mocks.showAddProjectModal).toHaveBeenCalledWith(expect.objectContaining({ machine: null }));
   });
 
+  // 项目与机器解耦:选择器只列 accountProjectsStore 里的项目 —— 本机有文件夹的、哪台上都没有文件夹的、文件夹只在一台离线机器上的。
+  it('lists exactly the account projects: a folder here, no folder anywhere, a folder only on an offline machine', async () => {
+    const { accountProjectsStore } = await import('@renderer/features/projects/stores/account-projects-store');
+    const onSelect = vi.fn();
+    machineRegistry.register('device-off', ['project-offline']);
+    mocks.orderedProjects = [{ id: 'project-1', state: 'mounted' }, { id: 'project-offline', state: 'mounted' }];
+    (accountProjectsStore as unknown as { extra: AccountProject[] }).extra = [{ chatId: 'chat-empty', name: 'paper', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [] }];
+    try {
+      await act(async () => {
+        root.render(localized(React.createElement(ComposerProjectPicker, { selectedId: undefined, onSelect })));
+      });
+      const listed = Array.from(container.querySelectorAll('[data-chat-id]'));
+      expect(listed.map((item) => [item.getAttribute('data-chat-id'), item.textContent?.trim()])).toEqual([
+        ['chat-project-1', 'project-1'],
+        ['chat-project-offline', 'project-offline'],
+        ['chat-empty', 'paper还没有文件夹'],
+      ]);
+      expect(listed.map((item) => item.getAttribute('data-testid'))).toEqual(['project-picker-item', 'project-picker-item', 'project-picker-item']);
+      // Picking a folder in › selects the project (the folder's device and path are what the row says).
+      const folder = container.querySelector<HTMLButtonElement>('[data-workspace-id="ws-project-offline"]')!;
+      expect(folder.getAttribute('data-device-id')).toBe('device-off');
+      await act(async () => folder.click());
+      expect(onSelect).toHaveBeenCalledWith('project-offline');
+    } finally {
+      act(() => {
+        machineRegistry.forgetMachine('device-off');
+        (accountProjectsStore as unknown as { extra: AccountProject[] }).extra = [];
+      });
+    }
+  });
+
+  it('shows the read error with a retry above the last list when the account projects cannot be read', async () => {
+    const { accountProjectsStore } = await import('@renderer/features/projects/stores/account-projects-store');
+    mocks.orderedProjects = [{ id: 'project-1', state: 'mounted' }];
+    const { runInAction } = await import('mobx');
+    runInAction(() => { accountProjectsStore.status = 'error'; });
+    try {
+      await act(async () => {
+        root.render(localized(React.createElement(ComposerProjectPicker, { selectedId: undefined, onSelect: vi.fn() })));
+      });
+      expect(container.querySelector('[data-testid="account-projects-error"]')).not.toBeNull();
+      // The list is the same source's last read (as in the sidebar), not a local stitch: it stays under the error line.
+      expect([...container.querySelectorAll('[data-chat-id]')].map((row) => row.getAttribute('data-chat-id'))).toEqual(['chat-project-1']);
+    } finally {
+      act(() => runInAction(() => { accountProjectsStore.status = 'ready'; }));
+    }
+  });
+
 
 });
 
@@ -780,7 +991,7 @@ describe('remoteInstallNote(#6264 别的机器上没装的家:建会话时那边
     const table: Record<string, string> = {
       'remoteHost.installOnCreate': '{agent} 还没装在 {device} 上 —— 发送后会先在那台机器上装好,再开会话。',
       'remoteHost.installing': '正在 {device} 上安装 {agent}…',
-      'remoteHost.installingDetail': '正在 {device} 上安装 {agent} · {progress}',
+      'remoteHost.installingDetail': '正在 {device} 上安装 {agent}，{progress}',
       'agentsPage.phaseDownloading': '下载中',
     };
     return (table[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) => String(values?.[name] ?? ''));
@@ -806,7 +1017,7 @@ describe('remoteInstallNote(#6264 别的机器上没装的家:建会话时那边
       { harness: 'gemini', progress: { providerId: 'gemini', phase: 'downloading', bytesDone: 1024 * 1024, bytesTotal: 4 * 1024 * 1024, elapsedMs: 800 } },
       translate
     );
-    expect(note?.text).toContain('正在 d22 上安装 Gemini CLI · 下载中');
+    expect(note?.text).toContain('正在 d22 上安装 Gemini CLI，下载中');
     expect(note?.ratio).toBeCloseTo(0.25);
   });
 });

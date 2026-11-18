@@ -1,8 +1,12 @@
 import { turnFileText } from '../session-timeline/turn-files';
+import { firstTurnPlacement } from '../sessions/first-turn-placement';
+import { anySignal } from '@gugu/core/shared/anySignal';
 import { isHumanDmDelivery } from '@gugu/core/local/agent/deliveryEnvelope';
 import { declaredInjectionTiming } from '@gugu/session-core/agents/plugins';
+import { KeyedMutex } from '@gugu/session-core/lib';
 import { resolveSessionpageSessionIntegration } from '@gugu/session-plugins/agents';
 import type { StartSessionInput } from '@gugu/session-core/acp';
+import { isAgentHomeImportCode } from '@gugu/session-core/workspace-server/agent-config';
 import type {
   AdmittedChannel, BoundIdentity, CapabilityGrant, ExitFact, Gen, Have, PlatformTicket, ProcessLease,
   ResolvedCli, StageName, StageOut, WorkspaceLease,
@@ -63,6 +67,18 @@ type Platform = { command: StartInput; injected: boolean };
 type Cli = { command: Parameters<Worker['client']['startSession']>[0] };
 const lease = <T>(value: T) => value as unknown;
 const read = <T>(value: object): T => value as T;
+const piStartup = new KeyedMutex();
+export const PI_STARTUP_TIMEOUT_MS = 90_000;
+
+function beforeStartupDeadline<T>(work: Promise<T>, deadline: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const expired = () => reject(deadline.reason);
+    if (deadline.aborted) expired();
+    else deadline.addEventListener('abort', expired, { once: true });
+    const detach = () => deadline.removeEventListener('abort', expired);
+    void work.then(value => { detach(); resolve(value); }, error => { detach(); reject(error); });
+  });
+}
 
 function lifecycleOf(row: Row, fork: RuntimeFork | null): Lifecycle {
   if (fork) return 'fork';
@@ -82,6 +98,10 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
   let facts: Facts | null = null;
   let identity: EmdashSessionIdentity | null = null;
   let platformPreparation: Promise<string | null> | null = null;
+  const piDeadline = new AbortController();
+  let releasePiStartup: (() => void) | undefined;
+  let piMaterialization: Promise<void> | undefined;
+  let piTimer: ReturnType<typeof setTimeout> | undefined;
   // The start call while it is out: true once it admitted the channel, false when it failed. A session that closes
   // while the start is out (a resume of a record the engine no longer has closes as it refuses) is that start's
   // failure, reported by the start with its typed reason, never a bare exit that beats it.
@@ -92,6 +112,26 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
   let backlogThrough: number | null = null;
 
   const known = (): Row => { if (!row) throw new Error('ACP stage ran before identity'); return row; };
+
+  async function applyPiStartupConfig(apply: () => Promise<void>, signal: AbortSignal): Promise<void> {
+    const release = await piStartup.acquire('acp', signal);
+    if (signal.aborted) {
+      release();
+      signal.throwIfAborted();
+    }
+    releasePiStartup = release;
+    piTimer = setTimeout(() => piDeadline.abort(new Error('Pi startup timed out')), PI_STARTUP_TIMEOUT_MS);
+    // Teardown waits for any local write already in flight before the next startup rewrites settings.json.
+    piMaterialization = Promise.resolve().then(apply);
+    await piMaterialization;
+  }
+
+  function finishPiStartup(): void {
+    const release = releasePiStartup;
+    releasePiStartup = undefined;
+    if (piTimer) clearTimeout(piTimer);
+    if (release) void Promise.resolve(piMaterialization).then(release, release);
+  }
 
   function preparePlatform(cwd: string): void {
     if (!facts?.platformModel) return;
@@ -154,16 +194,30 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
       if (!workspace) throw new Error(`Session ${sessionId} workspace is not mounted`);
       return lease<Workspace>({ workspaceId: mounted.workspaceId, path: workspace.path }) as WorkspaceLease;
     },
-    async capabilities(have): Promise<CapabilityGrant> {
+    async capabilities(have, signal): Promise<CapabilityGrant> {
       if (!facts) throw new Error('ACP capabilities ran before identity');
-      await platformPreparation;
-      const command = await startInput(read<Workspace>(have.workspace));
-      // The injector lands a still-queued first turn's gugu message; it only needs that row's text.
-      const firstTurn = (fork ? forkStore : lifeStore).unaccepted(sessionId).find(row => row.turn.kind === 'chat-page-first-turn' && row.state === 'queued');
-      const injection = await withEmdashMcpInjection(command, lifecycleOf(known(), fork), facts, identity, firstTurn?.message.text, firstTurn?.message.delivery?.files);
-      return lease<Capabilities>({ injection, facts }) as CapabilityGrant;
+      try {
+        const command = await startInput(read<Workspace>(have.workspace));
+        // Pi reads shared settings.json at startup. The next writer waits until this adapter has read it.
+        const apply = known().providerId === 'pi' ? (write: () => Promise<void>) => applyPiStartupConfig(write, signal) : undefined;
+        // The injector lands a still-queued first turn's gugu message; it only needs that row's text.
+        const firstTurn = (fork ? forkStore : lifeStore).unaccepted(sessionId).find(row => row.turn.kind === 'chat-page-first-turn' && row.state === 'queued');
+        const injection = await withEmdashMcpInjection(command, lifecycleOf(known(), fork), facts, identity,
+          firstTurn?.message.text, firstTurn?.message.delivery?.files, apply);
+        return lease<Capabilities>({ injection, facts }) as CapabilityGrant;
+      } catch (error) {
+        signal.throwIfAborted();
+        // The ticket was asked first: when the backend is down both fail, and the ticket's reason (unreachable,
+        // refused, membership) is the one the page can say and act on. A ticket that never answers keeps this start
+        // waiting, as the platform stage would: visible, and a stop is not held by it (session-life untilAborted).
+        const ticketFailure = platformPreparation ? await platformPreparation.then(() => null, (reason: unknown) => reason) : null;
+        throw ticketFailure ?? error;
+      }
     },
     async platform(have): Promise<PlatformTicket> {
+      // The model-access ticket issued since identity is waited for here, in the stage that is the model service: the
+      // page says「正在连接咕咕模型服务」for exactly this wait, and a stop is not held by it (session-life).
+      await platformPreparation;
       const { injection, facts: f } = read<Capabilities>(have.capabilities);
       const platform = await withEmdashPlatformInjection(
         injection.command, lifecycleOf(known(), fork), f, injection.mcpServers, injection.sessionPrompt, injection.sessionMeta,
@@ -173,24 +227,32 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
       return lease<Platform>({ command: platform.command, injected: platform.injected }) as PlatformTicket;
     },
     async cli(have): Promise<ResolvedCli> {
-      const resolved = await withHostResolvedCli(read<Platform>(have.platform).command);
+      const platform = read<Platform>(have.platform);
+      const resolved = await withHostResolvedCli(platform.command);
+      if (!platform.injected && !resolved.input.runContext.credentialEnv && !resolved.input.runContext.customModel) {
+        const { assertAgentHomeSignIn } = await import('../agents/agent-homes');
+        await assertAgentHomeSignIn(resolved.input.providerId, resolved.input.runContext.connectionId);
+      }
       const history = await resumeHistoryFacts(resolved.input, {});
       return lease<Cli>({ command: { ...resolved, input: { ...resolved.input, ...history } } }) as ResolvedCli;
     },
     async process(): Promise<ProcessLease> {
       return lease<Worker>(await acpWorkerLease()) as ProcessLease;
     },
-    async channel(have, _signal, gen): Promise<AdmittedChannel> {
-      const admitted = admitChannel(have, gen);
+    async channel(have, signal, gen): Promise<AdmittedChannel> {
+      const admitted = admitChannel(have, signal, gen);
       starting = admitted.then(() => true, () => false);
       return admitted;
     },
   };
 
-  async function admitChannel(have: Have<'channel'>, gen: Gen): Promise<AdmittedChannel> {
+  async function admitChannel(have: Have<'channel'>, signal: AbortSignal, gen: Gen): Promise<AdmittedChannel> {
     const worker = read<Worker>(have.process);
     const { command } = read<Cli>(have.cli);
-    const result = await callSessionStart(() => worker.client.startSession(command), sessionId, read<Platform>(have.platform).injected);
+    const platformTicket = read<Platform>(have.platform).injected && !command.input.runContext?.customModel;
+    const result = await callSessionStart(() => worker.client.startSession(command), sessionId, platformTicket);
+    if (known().providerId === 'pi') signal.throwIfAborted();
+    finishPiStartup();
     await persistAcpStartResult(command.input, result, {
       persistReturnedProviderSessionId, persistProviderSessionMissing, recordRuntimeForkOwnership,
     });
@@ -217,9 +279,17 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
 
   async function admit(have: StageOut, pending: PendingRow, signal: AbortSignal): ReturnType<LegAdapter['dispatch']> {
     const delivery = pending.message.delivery;
+    const stopped = { result: 'rejected-before-admission', cause: { name: 'AdmissionCancelled', message: 'The session stopped before dispatch' } } as const;
+    // A new task's first turn is queued before its files have landed in the agent's folder: preparing them starts by
+    // waiting for the page that is placing them (#2558).
+    const placing = delivery?.files?.length ? firstTurnPlacement(sessionId, signal) : null;
+    if (placing) {
+      await placing;
+      if (signal.aborted) return stopped;
+    }
     const turn = delivery?.files?.length ? await turnFileText(sessionId, delivery.files, true, delivery.attachments) : null;
     // A stop during file preparation still precedes every provider byte. Use Life's existing refusal receipt.
-    if (signal.aborted) return { result: 'rejected-before-admission', cause: { name: 'AdmissionCancelled', message: 'The session stopped before dispatch' } };
+    if (signal.aborted) return stopped;
     const images = [...(delivery?.attachments ?? []), ...(turn?.images ?? [])];
     const attachments = { ...(images.length ? { attachments: images } : {}), ...(turn?.files?.length ? { files: turn.files } : {}) };
     let sent: Awaited<ReturnType<typeof injectEmdashPromptDetached>>;
@@ -268,9 +338,20 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
   return {
     leg: 'acp',
     timing: 'next-tool-call',
-    run(at, have, ctx) {
-      ctx.signal.throwIfAborted();
-      return (stages[at] as (have: unknown, signal: AbortSignal, gen: Gen) => Promise<StageOut[typeof at]>)(have, ctx.signal, ctx.gen);
+    async run(at, have, ctx) {
+      const pi = row?.providerId === 'pi' && at !== 'identity' && at !== 'workspace';
+      const signal = pi ? anySignal([ctx.signal, piDeadline.signal]) : ctx.signal;
+      signal.throwIfAborted();
+      try {
+        const stage = (stages[at] as (have: unknown, signal: AbortSignal, gen: Gen) => Promise<StageOut[typeof at]>)(have, signal, ctx.gen);
+        return await (pi ? beforeStartupDeadline(stage, piDeadline.signal) : stage);
+      } catch (error) {
+        if (error instanceof Error && 'code' in error && isAgentHomeImportCode(error.code)) {
+          const cause = { name: error.name, message: error.code, code: error.code };
+          throw Object.assign(new Error(error.code), { name: ACP_START_FAILED, data: JSON.stringify({ type: 'spawn_failed', cause }) });
+        }
+        throw error;
+      }
     },
     async dispatch(have, pending, ctx) {
       const admission = admit(have, pending, ctx.signal);
@@ -279,13 +360,18 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
     },
     async teardown(have) {
       stopping = true;
-      if (have.process || have.channel) {
-        await stopAcpSessionAndSettle((have.process ? read<Worker>(have.process) : await acpWorkerLease()).client, sessionId);
-      } else if (have.platform || have.capabilities) await releaseEmdashPlatformSession(sessionId);
-      else if (platformPreparation) {
-        // The attempt can stop during workspace work. Settle only the generation this early operation owns.
-        void platformPreparation.then(generation => generation ? releaseEmdashPlatformSession(sessionId, generation) : undefined)
-          .catch(error => log.warn('early platform preparation could not settle', { sessionId, error: String(error) }));
+      try {
+        if (have.process || have.channel) {
+          await stopAcpSessionAndSettle((have.process ? read<Worker>(have.process) : await acpWorkerLease()).client, sessionId);
+        } else if (have.platform) await releaseEmdashPlatformSession(sessionId);
+        else if (platformPreparation) {
+          // The attempt can stop before the platform stage took the ticket (its issue may still be out, or never answer):
+          // settle only the generation this early operation owns, without waiting for it.
+          void platformPreparation.then(generation => generation ? releaseEmdashPlatformSession(sessionId, generation) : undefined)
+            .catch(error => log.warn('early platform preparation could not settle', { sessionId, error: String(error) }));
+        } else if (have.capabilities) await releaseEmdashPlatformSession(sessionId); // a session on its own model asks no ticket early
+      } finally {
+        finishPiStartup();
       }
     },
     onExit(have, cb) {

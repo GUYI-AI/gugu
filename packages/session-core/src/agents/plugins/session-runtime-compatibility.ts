@@ -227,7 +227,9 @@ function runtimeSatisfied(version: string, requirement: SessionRuntimeCompatibil
  * 它此前在每条 ACP / PTY 会话启动时都重新 spawn 一回 `node --version`(串在关键路径上,MBP 实测几十到
  * 上百毫秒,机器忙时更久),而同一台宿主上同一个可执行文件一旦兼容,进程存活期间不会变得不兼容。
  * 按执行上下文分格:本地与 SSH 宿主各有各的 `node`,❌ 共用一个答案。
- * 不兼容 / 探不到 / 解析不了都不进缓存 —— 用户就地升级后重试,下一次照旧真探。
+ * 探不到 / 解析不了不进缓存(那可能是一次环境抖动)。**不兼容**的读数只在键里带着文件身份(`fileStamp`)时才记:
+ * 就地升级会改 mtime/size ⇒ 查不中、照旧真探;没有文件身份的(SSH)不记,用户升级后重试下一次照旧真探。
+ * 为什么要记:投递失败会反复唤醒同一条会话,每次都真跑一遍那份太旧的 `--version`(Windows 上它还会拉起登录页)。
  *
  * #5381 ④ 是同一件事的另一面:同一台机器、同一个 opencode 1.18.28,先成功起过一次会话,十几秒后
  * 再起就报「requires 1.18.0 or newer; found unknown」—— 每次都真探,等于把一次环境抖动变成
@@ -240,19 +242,20 @@ function runtimeSatisfied(version: string, requirement: SessionRuntimeCompatibil
  * 已知边界:版本管理器的 shim(mise / asdf / volta)换到**低于下界**的版本时,shim 文件本身不变 ⇒ stamp 不变,
  * 之前判定兼容的读数一直被放行到重启。没观察到过;撞上了先查这里。(升级方向不受影响:不兼容的读数从不进缓存。)
  */
-let compatibleRuntimeVersions = new WeakMap<IExecutionContext, Map<string, string>>();
-function cachedCompatibleVersion(context: IExecutionContext, key: string): string | undefined {
-  return compatibleRuntimeVersions.get(context)?.get(key);
+type RuntimeVersionReading = { installedVersion: string; probe: RuntimeVersionProbeRecord };
+let runtimeVersionReadings = new WeakMap<IExecutionContext, Map<string, RuntimeVersionReading>>();
+function cachedVersionReading(context: IExecutionContext, key: string): RuntimeVersionReading | undefined {
+  return runtimeVersionReadings.get(context)?.get(key);
 }
-function rememberCompatibleVersion(context: IExecutionContext, key: string, version: string): void {
-  const perContext = compatibleRuntimeVersions.get(context) ?? new Map<string, string>();
-  perContext.set(key, version);
-  compatibleRuntimeVersions.set(context, perContext);
+function rememberVersionReading(context: IExecutionContext, key: string, reading: RuntimeVersionReading): void {
+  const perContext = runtimeVersionReadings.get(context) ?? new Map<string, RuntimeVersionReading>();
+  perContext.set(key, reading);
+  runtimeVersionReadings.set(context, perContext);
 }
 
 /** 装新版 / 改了选择 ⇒ 之前判定兼容的版本全部作废(WeakMap 没有 clear,换一张新的)。 */
 export function clearRuntimeVersionProbeCache(): void {
-  compatibleRuntimeVersions = new WeakMap();
+  runtimeVersionReadings = new WeakMap();
 }
 
 /**
@@ -389,14 +392,8 @@ export async function resolveSessionRuntimeCompatible(input: {
   const probeExecutable = requirement.runtime === 'node' ? runtimeExecutable : input.executable;
   const stamp = input.fileStamp?.(probeExecutable) ?? null;
   const probeKey = `${runtimeExecutable} ${requirement.versionArgs.join(' ')}${stamp ? ` @${stamp}` : ''}`;
-  const cachedVersion = cachedCompatibleVersion(input.executionContext, probeKey);
-  if (cachedVersion) {
-    return {
-      executable,
-      ...(requirement.runtime === 'node' ? { runtimeExecutable } : {}),
-      harnessVersion: requirement.runtime === 'node' ? null : cachedVersion,
-    };
-  }
+  const cached = cachedVersionReading(input.executionContext, probeKey);
+  if (cached) return versionGate(cached, requirement, input, executable, runtimeExecutable);
 
   // 探的就是将要跑的那一份 —— **未包壳的**可执行文件本体。
   //
@@ -483,22 +480,34 @@ export async function resolveSessionRuntimeCompatible(input: {
       probe,
     });
   }
-  if (!runtimeSatisfied(installedVersion, requirement)) {
+  // 版本读出来了。兼容的总记;不兼容的只在键里有文件身份时记(见缓存的说明)。
+  if (stamp || runtimeSatisfied(installedVersion, requirement)) {
+    rememberVersionReading(input.executionContext, probeKey, { installedVersion, probe });
+  }
+  return versionGate({ installedVersion, probe }, requirement, input, executable, runtimeExecutable);
+}
+
+function versionGate(
+  reading: RuntimeVersionReading,
+  requirement: SessionRuntimeCompatibility,
+  input: { providerId: string; surface: HarnessSessionSurface },
+  executable: string,
+  runtimeExecutable: string,
+): SessionRuntimeResolution {
+  if (!runtimeSatisfied(reading.installedVersion, requirement)) {
     throw new SessionRuntimeCompatibilityError({
       code: 'runtime-version-unsupported', providerId: input.providerId, surface: input.surface,
-      installedVersion,
+      installedVersion: reading.installedVersion,
       supportedFloor: requirement.kind === 'semver-supported-floor' ? requirement.supportedFloor : null,
       supportedRanges: requirement.kind === 'semver-supported-ranges' ? requirement.supportedRanges : null,
       runtime: requirement.runtime,
-      probe,
+      probe: reading.probe,
     });
   }
-  // 走到这里 = 版本读出来了、也过了闸。记下来,同一执行上下文里下一条会话不必再 spawn 一次。
-  rememberCompatibleVersion(input.executionContext, probeKey, installedVersion);
   return {
     executable,
     ...(requirement.runtime === 'node' ? { runtimeExecutable } : {}),
-    harnessVersion: requirement.runtime === 'node' ? null : installedVersion,
+    harnessVersion: requirement.runtime === 'node' ? null : reading.installedVersion,
   };
 }
 

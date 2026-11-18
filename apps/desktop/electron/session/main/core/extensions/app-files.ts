@@ -1,4 +1,5 @@
 import * as fs from 'node:fs/promises';
+import { canonicalPath, placeUnder, type CanonicalPath } from '@gugu/session-core/files';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { BrowserWindow, dialog, shell, type WebContents } from 'electron';
@@ -12,6 +13,7 @@ import {
   AppFileError,
   contentTypeOf,
   createAppFiles,
+  recordedProjectFolder,
   requireHandedOr,
   sourceMessageIdsOf,
   tooLargeError,
@@ -128,7 +130,7 @@ export interface DesktopFilePage {
   handedVersions?: readonly number[];
   /**
    * A person opened `handed` in this page from the host's UI (`@@@outside-file`): only then may it be read outside its
-   * working copy. Not for a file an agent or an App opened, nor a page an agent works.
+   * working copy. Not for a file an App opened, nor a page an agent works.
    */
   personOpened?: true;
   asAgent?: string | null;
@@ -265,7 +267,12 @@ function chatSurface(page: DesktopFilePage): FileSurface {
  * is `not-found`; whether anything has opened it since this computer started does not matter. The same files, gates and
  * watch either way: a folder is a folder.
  */
-export async function localRootOf(place: WorkspacePlace): Promise<{ workspaceRoot: string; projectId: string; workspaceId: string | null }> {
+/** A working copy's folder on this computer, as its record has it: canonical (`@@@canonical-path`), and there. */
+export async function localRootOf(place: WorkspacePlace): Promise<{ workspaceRoot: CanonicalPath; projectId: string; workspaceId: string | null }> {
+  const there = async (root: CanonicalPath) => {
+    await fs.stat(root).catch(() => { throw new AppFileError('not-found', `${root} is no longer on this computer`); });
+    return root;
+  };
   const target = workspaceTarget(place);
   if ('folder' in target) {
     const { otherMachines } = await import('@main/core/sessions/session-family');
@@ -273,19 +280,18 @@ export async function localRootOf(place: WorkspacePlace): Promise<{ workspaceRoo
     const { projectFolderOfWorkspace } = await import('@main/core/projects/operations/project-folders');
     const folder = await projectFolderOfWorkspace(target.folder.workspaceId);
     if (!folder) throw new AppFileError('not-found', 'This folder is no longer in a project on this computer');
-    const workspaceRoot = await fs.realpath(folder.path).catch(() => { throw new AppFileError('not-found', `${folder.path} is no longer on this computer`); });
-    return { workspaceRoot, projectId: folder.projectId, workspaceId: folder.workspaceId };
+    return { workspaceRoot: await there(folder.path), projectId: folder.projectId, workspaceId: folder.workspaceId };
   }
   if ('project' in target) {
     const { projectRootFolder } = await import('@main/core/projects/operations/project-folders');
     const root = await projectRootFolder(target.project);
     if (!root) throw new AppFileError('not-found', `Project ${target.project} is not a project on this computer`);
-    return { workspaceRoot: await fs.realpath(root.path), projectId: target.project, workspaceId: root.workspaceId };
+    return { workspaceRoot: await there(root.path), projectId: target.project, workspaceId: root.workspaceId };
   }
   const { agentSessionContext } = await import('@main/core/extensions/extension-agent-context');
   const session = await agentSessionContext(target.session);
   if (!session?.workspaceRoot) throw new AppFileError('not-found', 'This task has no working folder on this computer');
-  return { workspaceRoot: await fs.realpath(session.workspaceRoot), projectId: session.projectId, workspaceId: session.workspaceId ?? null };
+  return { workspaceRoot: await there(session.workspaceRoot), projectId: session.projectId, workspaceId: session.workspaceId ?? null };
 }
 
 async function localFolder(page: DesktopFilePage, place: WorkspacePlace): Promise<LocalSurface & { projectId: string; workspaceId: string | null }> {
@@ -559,10 +565,10 @@ export async function appFileDraft(page: DesktopFilePage, args: { ref?: unknown;
 export async function draftHere(ref: WorkspaceFileRef & { id: string }, text: unknown): Promise<string | null | void> {
   const { projectId, workspaceId, workspaceRoot } = await localRootOf({ workspace: ref.workspace });
   const workspace = workspaceId ?? ref.workspace;
-  const inRoot = path.relative(workspaceRoot, ref.id);
-  const filePath = path.isAbsolute(ref.id) && !inRoot.startsWith('..') && !path.isAbsolute(inRoot) ? inRoot.split(path.sep).join('/') : ref.id;
-  // Kept under either spelling of the path: the built-in editor this replaced also wrote absolute ones.
-  const buffers = (await editorBufferService.listBuffers(projectId, workspace)).filter((buffer) => path.resolve(workspaceRoot, buffer.filePath) === path.resolve(workspaceRoot, filePath));
+  const filePath = path.isAbsolute(ref.id) ? placeUnder(workspaceRoot, canonicalPath(ref.id)) ?? ref.id : ref.id;
+  // Kept under either form of the path: the built-in editor this replaced also wrote absolute ones.
+  const placed = (name: string) => path.isAbsolute(name) ? placeUnder(workspaceRoot, canonicalPath(name)) ?? name : name;
+  const buffers = (await editorBufferService.listBuffers(projectId, workspace)).filter((buffer) => placed(buffer.filePath) === filePath);
   if (text === undefined) return buffers[0]?.content ?? null;
   await Promise.all(buffers.map((buffer) => editorBufferService.clearBuffer(projectId, workspace, buffer.filePath)));
   if (text !== null) await editorBufferService.saveBuffer(projectId, workspace, filePath, String(text));
@@ -843,12 +849,24 @@ export async function forwardTargets(page: DesktopFilePage, args: { refs?: unkno
 export const chatMembersOf = files.members;
 /** Host permission UI only; App content access still goes through chat:read. */
 export const unreadBindingChatChoices = () => files.chats();
+/**
+ * #1927 The host's conversation binding only (app-unread-bindings.ts), read as the signed-in person: the chat is the one
+ * the binding names, never an App's argument, and the caller keeps what the App may see of each entry.
+ */
+export const boundConversationFiles = {
+  list: (chatId: string, folder: string | undefined) => files.groupFiles(chatId, folder === undefined ? {} : { folder }),
+  read: (chatId: string, filePath: string, maxBytes: number) => files.readAtPath(chatId, filePath, maxBytes),
+  resourceChat: (chatId: string) => files.resourceChat(chatId),
+};
 export const chatsOf = files.chats;
 export const surfaceChatOf = files.chat;
 export const resourceChatOf = files.resourceChat;
 export const chatOfItem = files.chatOf;
 export const groupFiles = files.groupFiles;
 export const groupFile = files.groupFile;
+export const viewedAmong = files.viewedAmong;
+/** A page naming a chat file to open: refused, as `openWithTarget` would, before anything is read. */
+export const mayOpen = (page: DesktopFilePage, itemId: string): void => files.mayName(chatSurface(page), itemId, 'opening');
 
 /** API 14 `chatFile`: the file an App opened in this chat shows, as that file opened with it (made the first time). */
 export function appChatFile(chatId: string, extensionId: string) {
@@ -887,7 +905,7 @@ export async function openWithTarget(
 ): Promise<
   | { kind: 'chat'; target: { chatId: string; itemId: string; name: string; typedName: string; file: ChatPeekFile; opening?: PreparedChatFile } }
   | { kind: 'session'; target: { sessionId: string; projectId: string | null; deviceId: string | null; path: string; ask: boolean } }
-  | { kind: 'peek'; target: Extract<PeekTarget, { kind: 'local' }> }
+  | { kind: 'peek'; target: Extract<PeekTarget, { kind: 'folder' }> }
 > {
   const ref = fileRefOf(args.ref);
   if (isChat(ref)) return { kind: 'chat', target: await files.openTarget(chatSurface(page), { ref }) };
@@ -899,10 +917,21 @@ export async function openWithTarget(
     mayTouch(page, ref, ['files:read', 'files:write'], 'opening');
     return { kind: 'session', target: { sessionId: elsewhere.sessionId, projectId: elsewhere.projectId, deviceId: elsewhere.deviceId, path: name, ask } };
   }
-  // No session there to open it in, and this computer's previews read its own disk: the page says where it can be opened.
-  if (await folderElsewhere(ref)) {
+  // A project folder on another machine: the window opens it beside the page the way it opens one of this computer's, its
+  // bytes read on that machine (the window routes its project's calls there) — the project and path the account records.
+  const there = await folderElsewhere(ref);
+  if (there) {
     mayTouch(page, ref, ['files:read', 'files:write'], 'opening');
-    throw new AppFileError('elsewhere', 'This file can be opened on its own computer');
+    await elsewhereGated(page, ref);
+    const account = await signedIn();
+    if (!account) throw new AppFileError('denied', 'Nobody is signed in on this computer');
+    const { workspaceId } = workspaceFolder(ref)!;
+    const recorded = await recordedProjectFolder(account.token, account.userId, { deviceId: there.deviceId, workspaceId });
+    if (!recorded) throw new AppFileError('not-found', 'This folder is no longer in a project on that computer');
+    // That machine's own path: a Windows root keeps its separator.
+    const join = /^[A-Za-z]:\\/.test(recorded.path) ? path.win32.join : path.posix.join;
+    const absolutePath = join(recorded.path, name);
+    return { kind: 'peek', target: { kind: 'folder', place: { workspace: ref.workspace }, deviceId: there.deviceId, projectId: recorded.projectId, workspaceId, path: name, absolutePath, name: path.posix.basename(name), ask } };
   }
   await outsideOnlyAsOpened(page, ref);
   const copy = await localFolder(page, ref);
@@ -911,7 +940,7 @@ export async function openWithTarget(
   if (args.peek || !session) {
     if (!copy.workspaceId) throw new AppFileError('not-found', `${found.name} is in no workspace this computer has open`);
     const { place } = found;
-    return { kind: 'peek', target: { kind: 'local', place, projectId: copy.projectId, workspaceId: copy.workspaceId, path: found.path, absolutePath: path.join(copy.workspaceRoot, found.path), name: found.name, ask } };
+    return { kind: 'peek', target: { kind: 'folder', place, projectId: copy.projectId, workspaceId: copy.workspaceId, path: found.path, absolutePath: path.join(copy.workspaceRoot, found.path), name: found.name, ask } };
   }
   return { kind: 'session', target: { sessionId: session, projectId: copy.projectId, deviceId: null, path: found.path, ask } };
 }

@@ -1,6 +1,7 @@
 import { reaction, runInAction } from 'mobx';
 import type { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { sessionRegistry } from './stores/session-registry';
+import { CHAT_TAB_KINDS } from './view/session-pane-policy';
 
 /**
  * Seeds the one automatic default conversation tab for a fresh task.
@@ -10,6 +11,10 @@ import { sessionRegistry } from './stores/session-registry';
  *   cannot race the main-process task provider registration.
  * - Handles both conversations that already exist at start and conversations
  *   that arrive later, then self-disposes after consuming the default.
+ * - Only this task's own conversation tab consumes the default. A page the host
+ *   opened first (a task on another computer pushes its App page before the
+ *   task's conversation is known here) lands beside the conversation instead of
+ *   taking its place.
  */
 export class DefaultSessionSeeder {
   private _consumed = false;
@@ -30,9 +35,9 @@ export class DefaultSessionSeeder {
       }
     );
     this._tabDisposer = reaction(
-      () => this.paneLayout.groups.some(({ pane }) => pane.tabOrder.length > 0),
-      (hasTabs) => {
-        if (hasTabs) this._consumed = true;
+      () => this.conversationTabId() !== undefined,
+      (hasConversation) => {
+        if (hasConversation) this._consumed = true;
       }
     );
   }
@@ -60,18 +65,26 @@ export class DefaultSessionSeeder {
     if (!sessions || sessions.sessions.size === 0) return;
 
     this._consumed = true;
-    if (this.paneLayout.focusedPane.tabOrder.length !== 0) return;
+    if (this.conversationTabId() !== undefined) return;
 
     const store = sessions.sessions.get(this.sessionId);
     if (!store) return;
     const sessionId = this.sessionId;
     runInAction(() => {
-      if (store.data.runtime === 'acp') {
-        this.paneLayout.open('acp-chat', { sessionId }, { from: null, intent: 'newTab' });
-      } else {
-        this.paneLayout.open('session', { sessionId }, { from: null, intent: 'newTab' });
-      }
+      const shown = this.paneLayout.mainGroup.pane.resolvedActiveTabId;
+      const chat = this.paneLayout.open(store.data.runtime === 'acp' ? 'acp-chat' : 'session', { sessionId }, { from: null, intent: 'newTab' });
+      // What was already here (an App page the host opened) stays on screen, beside the conversation.
+      if (chat && shown) this.paneLayout.pairWith(chat, shown);
     });
+  }
+
+  private conversationTabId(): string | undefined {
+    for (const { pane } of this.paneLayout.groups) {
+      for (const entry of pane.entries.values()) {
+        if (CHAT_TAB_KINDS.has(entry.kind) && (entry.state as { sessionId?: string } | undefined)?.sessionId === this.sessionId) return entry.tabId;
+      }
+    }
+    return undefined;
   }
 
   dispose(): void {

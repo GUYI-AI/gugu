@@ -1,4 +1,5 @@
 import type { FileChangesEvent } from '@shared/core/fs/fsEvents';
+import { placeUnder, receivedCanonicalPath, type CanonicalPath } from '@gugu/session-shared/canonical-path';
 import type { ExtensionFileChangeBatch } from '@shared/extensions/bridge-protocol';
 
 /**
@@ -9,7 +10,7 @@ import type { ExtensionFileChangeBatch } from '@shared/extensions/bridge-protoco
  */
 export type AppFileWatchRequest = { key: string; sessionId: string; on: boolean } & ({ file: string } | { folder: string });
 export type AppFileHeard = { key: string; change: ExtensionFileChangeBatch };
-export type WatchedWorkspace = { projectId: string; workspaceId: string; root: string };
+export type WatchedWorkspace = { projectId: string; workspaceId: string; root: CanonicalPath };
 
 export type AppFileWatchDeps = {
   onRequest: (handler: (request: AppFileWatchRequest) => void) => () => void;
@@ -27,10 +28,14 @@ export type AppFileWatchDeps = {
 const isAbsolute = (file: string) => file.startsWith('/') || /^[A-Za-z]:[\\/]/.test(file);
 const directoryOf = (file: string) => file.slice(0, Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\')));
 
-/** What a watch of one file hears, by the name it asked with, and the folder to watch for it (none: outside the working copy). */
-function ofFile(root: string, file: string) {
-  const absolute = isAbsolute(file) ? file : `${root}/${file}`;
-  const inside = absolute.startsWith(`${root}/`) || absolute.startsWith(`${root}\\`);
+/**
+ * What a watch of one file hears, by the name it asked with, and the folder to watch for it (none: outside the working copy).
+ * Paths are that machine's canonical ones (`@@@canonical-path`): its records, its change feed and the file a page names all
+ * come from it in the one spelling, so they are compared as they are.
+ */
+function ofFile(root: CanonicalPath, file: string) {
+  const absolute = receivedCanonicalPath(isAbsolute(file) ? file : `${root}/${file}`);
+  const inside = placeUnder(root, absolute) !== null;
   return {
     nameOf: (path: string) => (path === absolute ? file : null),
     directory: inside ? directoryOf(absolute) : null,
@@ -38,12 +43,13 @@ function ofFile(root: string, file: string) {
 }
 
 /** What a watch of one folder hears: what changes below it, by its path in the working copy, as one on this machine does. */
-function ofFolder(root: string, folder: string) {
-  const base = folder ? `${root}/${folder}` : root;
+function ofFolder(root: CanonicalPath, folder: string) {
+  const base = receivedCanonicalPath(folder ? `${root}/${folder}` : root);
   return {
     nameOf: (path: string) => {
-      if (!path.startsWith(`${base}/`) && !path.startsWith(`${base}\\`)) return null;
-      const name = path.slice(root.length + 1).replaceAll('\\', '/');
+      const below = placeUnder(base, receivedCanonicalPath(path));
+      if (!below) return null;
+      const name = placeUnder(root, receivedCanonicalPath(path))!;
       return /(^|\/)(\.git|node_modules)\//.test(name) ? null : name;
     },
     directory: base,

@@ -75,6 +75,7 @@ export type GroupRole = 'solo' | 'first' | 'middle' | 'last';
  * `chrome`    — optional group chrome carried from the ItemSegmenter, stamped
  *               by flatten(); undefined for solo legacy units.
  */
+
 export type RenderUnit<D = unknown> = {
   id: string;
   itemId: string;
@@ -88,6 +89,8 @@ export type RenderUnit<D = unknown> = {
   groupRole: GroupRole;
   gapBefore: number;
   chrome?: GroupChrome;
+  /** Visible rows of one speaker utterance share this key across transcript tiers. */
+  conversationUtterance?: string;
   /** Agent conversation block ownership; process steps and reply keep one chronological owner. */
   conversationProcessOwner?: string;
   /** Nested measured rows owned by a bounded native viewport. */
@@ -145,11 +148,15 @@ export type SegmentCtx = {
   caches: ChatCaches;
   expanded: (id: string) => boolean;
   active: boolean;
+  /** These turns will not change again (the committed tier): work that depends on one turn alone is kept by turn object. */
+  settled?: boolean;
   /** Latest logical turn across committed and active tiers; its empty acknowledgement remains visible. */
   latestTurnId?: string;
   plan: () => SessionPlans | null;
   translate: ChatTranslator;
   pendingToolCallIds: () => Set<string>;
+  /** A running subagent's text so far, by its launch call; the card itself gets it only when it settles (#2500). */
+  liveSubagent?: (toolCallId: string) => { output?: string; reasoning?: string } | undefined;
   /** 这次调用正在等的那条审批请求（计划审批卡拿它画选项）；没在等 ⇒ undefined。 */
   permissionFor?: (toolCallId: string) => AcpPermissionRequest | undefined;
   terminalSnapshot: (terminalId: string) => TerminalState | null;
@@ -178,6 +185,8 @@ export type SegmentCtx = {
   foldTurnProcess?: boolean;
   /** 某个 `turn-process` 头当前是否展开；缺省一律折叠。 */
   isTurnProcessExpanded?: (processId: string) => boolean;
+  /** 读者展开过的对话气泡(`conversationBubbleKey`);它下面的尾行有「收起全文」,决定下一行的间距。 */
+  isBubbleExpanded?: (bubbleKey: string) => boolean;
   /** Emit everything behind process headers and tool runs as if open (in-conversation find). */
   revealAllFolds?: boolean;
   /**
@@ -207,7 +216,7 @@ export type SegmentCtx = {
  *              cur.top) and assigns the result to the lower unit's `gapBefore`.
  *              Falls back to `density.turnGap` when absent. Turn boundaries
  *              resolve to 8px via the user message's margin (top: 8, bottom: 8).
- * `estimate` — O(1) height heuristic for off-screen units at setCount/prepend.
+ * `estimate` — O(1) height heuristic for off-screen units at setCount.
  *              Falls back to `genericEstimate` when omitted.
  * `measure`  — exact height (px); called only for visible units.
  *              Returns a number — no Measured<L> tree.

@@ -11,8 +11,8 @@ export const ResourceSamplingStatus = observer(function ResourceSamplingStatus()
     {store.snapshot?.processTreeScope === 'electron-and-pty-roots' && <p className="text-xs text-foreground-muted">{t('resourceMonitor.windowsPartial')}</p>}
     {failure && <p role="alert" className="text-xs text-foreground-muted" data-resource-sampling-error={failure.reason}>
     {t(failure.reason === 'process-list-read-failed' ? 'resourceMonitor.processListFailed' : 'resourceMonitor.sampleFailed')}
-    {' · '}{formatClock(failure.timestamp)}
-    {store.snapshot && <>{' · '}{t('resourceMonitor.staleData')}</>}
+    {t('metadata.separator')}{formatClock(failure.timestamp)}
+    {store.snapshot && <>{t('metadata.separator')}{t('resourceMonitor.staleData')}</>}
     </p>}
   </>;
 });

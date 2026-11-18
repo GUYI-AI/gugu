@@ -27,6 +27,7 @@ vi.mock('@renderer/localization/locale-store', () => ({
 }));
 vi.mock('@renderer/utils/logger', () => ({ log: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('./restore-session-flow', () => ({ restoreArchivedSession: mocks.restore }));
+vi.mock('./archived-toast-hint', () => ({ ArchivedToastHint: () => null }));
 
 const sessions = new Map([
   ['root', { data: {} }],
@@ -39,9 +40,10 @@ vi.mock('./stores/session-registry', () => ({
   },
 }));
 
-import { requestArchiveSession } from './archive-session-flow';
+import { confirmArchive, requestArchiveSession } from './archive-session-flow';
+import { ArchivedToastHint } from './archived-toast-hint';
 
-type ToastArg = { title: string; description?: string; action?: { label: string; onClick: () => void } };
+type ToastArg = { title: string; description?: unknown; action?: { label: string; onClick: () => void } };
 
 const ref = (sessionId: string) => ({ projectId: 'p1', sessionId });
 const flush = async () => {
@@ -60,17 +62,26 @@ describe('归档提示与撤销', () => {
     mocks.archiveSession.mockResolvedValue({ archived: [ref('child'), ref('root')], unreached: [] });
   });
 
-  it('defaults to removing social identity when confirmation was disabled', async () => {
+  it('keeps the social identity when confirmation was disabled: a dialog that does not show cannot remove it', async () => {
     requestArchiveSession({ projectId: 'p1', sessionId: 'root' });
     await flush();
-    expect(mocks.archiveSession).toHaveBeenCalledWith('root', { withChildren: false, removeSocialIdentity: true });
+    expect(mocks.archiveSession).toHaveBeenCalledWith('root', { withChildren: false, removeSocialIdentity: false });
+  });
+
+  it('an orphan identity (identity: only) is always asked, its option ticked and fixed', () => {
+    const proceed = vi.fn();
+    confirmArchive({ childCount: 0, identity: 'only', description: 'who', proceed });
+    const [, modal] = mocks.showModal.mock.calls[0];
+    expect(modal).toMatchObject({ description: 'who', option: { defaultChecked: true, disabled: true }, dontAskAgainLabel: undefined });
+    modal.onSuccess({ dontAskAgain: false, scopeChecked: false, optionChecked: true });
+    expect(proceed).toHaveBeenCalledWith(false, true);
   });
 
   it('offers a checked social choice and preserves an explicit unchecked choice independently of children', async () => {
     mocks.settings = { confirmBeforeArchive: true };
     requestArchiveSession({ projectId: 'p1', sessionId: 'root' });
     const [, modal] = mocks.showModal.mock.calls[0];
-    expect(modal.option).toEqual({ label: 'task.archiveRemoveSocialIdentity', defaultChecked: true });
+    expect(modal.option).toEqual({ label: 'task.archiveRemoveSocialIdentity', defaultChecked: true, disabled: false });
     expect(mocks.archiveSession).not.toHaveBeenCalled();
     modal.onSuccess({ dontAskAgain: false, scopeChecked: true, optionChecked: false });
     await flush();
@@ -82,7 +93,8 @@ describe('归档提示与撤销', () => {
     await flush();
 
     const shown = undoToast();
-    expect(shown?.description).toBe('task.archivedToastHint');
+    // The sentence with its 会话历史 link (archived-toast-hint.test.tsx).
+    expect((shown?.description as { type?: unknown } | undefined)?.type).toBe(ArchivedToastHint);
     expect(shown?.action?.label).toBe('task.archiveUndo');
 
     shown!.action!.onClick();

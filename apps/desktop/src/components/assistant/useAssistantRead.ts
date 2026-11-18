@@ -11,6 +11,16 @@ const initialValue = <T,>(read?: () => T | undefined): T | undefined => { try { 
 
 export type PhoneRead<T> = { state: 'loading' } | { state: 'ok'; data: T; refreshError?: unknown } | { state: 'error'; error: unknown }
 
+/**
+ * A collection the cloud has not prepared yet (a new assistant's panel while its setup finishes): not a read that failed, one
+ * to wait for. Its preparation is announced as panel changes, which come in bursts while it is filled: a read waiting for it
+ * reads again once a burst settles, not on each change, and says so once, not as a warning per change (owner 11-12 log: 26
+ * warnings in ~6 s on a fresh account's desktop, two readers re-reading on every change of the panel being prepared).
+ */
+export const assistantReadWaiting = (error: unknown): boolean => (error as { code?: unknown } | null)?.code === 'unprepared'
+/** How long a read waiting for its collection lets a burst of panel changes settle before reading again. */
+export const WAITING_SETTLE_MS = 1_000
+
 /** 同一个工作区(机器、项目、工作区、记忆夹)= 同一个键;重新打开过的工作区换键重读。 */
 export function machineKey(machine: AssistantMachine): string {
   return `${machine.panel?.ownerId ?? ''}|${machine.panel?.assistantId ?? ''}|${machine.deviceId}|${machine.projectId}|${machine.workspaceId}|${machine.paths.memoryDir}`
@@ -44,21 +54,32 @@ export function usePhoneRead<T>(
     let cancelled = false
     let request = 0
     let timer: ReturnType<typeof setTimeout> | undefined
+    let settle: ReturnType<typeof setTimeout> | undefined
+    // The last read found its collection not prepared yet (said once per key).
+    let waiting = false
+    let waitingSaid = false
     // 上一次读到后定的间隔:悄悄重读偶尔失败一次不该让它从此不再刷新(「处理中」就一直停在处理中),按同一个间隔接着排下一次。
     let lastInterval: number | null = null
     const run = async (quiet: boolean, explicit = false): Promise<void> => {
       clearTimeout(timer)
+      clearTimeout(settle)
       const current = ++request
       const active = () => !cancelled && fullRef.current === full && current === request
       try {
         const data = await withAssistantPanelReadDeadline(() => readRef.current())
         if (!active()) return
         lastInterval = pollRef.current?.(data) ?? null
+        waiting = false
         setResult({ key: full, read: { state: 'ok', data } })
         if (lastInterval) timer = setTimeout(() => void run(true), lastInterval)
       } catch (error) {
         if (!active()) return
-        log.warn({ what, quiet, error: error instanceof Error ? error.message : String(error) }, 'assistant phone read failed')
+        waiting = assistantReadWaiting(error)
+        if (!waiting) log.warn({ what, quiet, error: error instanceof Error ? error.message : String(error) }, 'assistant phone read failed')
+        else if (!waitingSaid) {
+          waitingSaid = true
+          log.info({ what }, 'assistant read waiting for its collection to be prepared')
+        }
         setResult(previous => {
           const local = initialValue(initialRef.current)
           const last = previous?.key === full && previous.read.state === 'ok' ? previous.read.data : local
@@ -76,13 +97,19 @@ export function usePhoneRead<T>(
     const changed = () => {
       const local = initialValue(initialRef.current)
       if (local !== undefined) setResult({ key: full,read: { state: 'ok',data: local } })
-      void run(true)
+      if (!waiting) {
+        void run(true)
+        return
+      }
+      clearTimeout(settle)
+      settle = setTimeout(() => void run(true), WAITING_SETTLE_MS)
     }
     window.addEventListener(ASSISTANT_PANEL_CHANGED,changed)
     void run(initialValue(initialRef.current) !== undefined)
     return () => {
       cancelled = true
       clearTimeout(timer)
+      clearTimeout(settle)
       window.removeEventListener(ASSISTANT_PANEL_CHANGED,changed)
       if (refreshRef.current === refresher) refreshRef.current = null
     }

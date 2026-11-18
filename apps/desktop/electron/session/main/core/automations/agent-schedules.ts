@@ -200,7 +200,9 @@ export async function restoreAgentSchedules(
 export type AgentScheduleChange =
   | { kind: 'cancelled'; automation: Automation }
   | { kind: 'paused'; automation: Automation }
-  | { kind: 'rescheduled' | 'resumed'; automation: Automation; nextRunAt: number | null };
+  | { kind: 'rescheduled' | 'resumed'; automation: Automation; nextRunAt: number | null }
+  /** #1928 人授权的 App 替它排了一条(只走 App 那条路;人自己在界面上是让它自己排)。 */
+  | { kind: 'added'; automation: Automation; nextRunAt: number | null };
 
 export type AgentScheduleNotifyDeps = {
   /** 存下来、不叫醒,它下一次开始干活时一起送进去(`session_message` 的 defer 那一档)。 */
@@ -230,6 +232,9 @@ export function agentScheduleChangeText(change: AgentScheduleChange): string {
   const next = change.nextRunAt != null ? describeScheduleTime(change.nextRunAt, tz) : null;
   if (change.kind === 'resumed') {
     return `The person turned your schedule "${automation.name}" (${id}) back on${next ? `; next ${next}` : ''}.`;
+  }
+  if (change.kind === 'added') {
+    return `The person added the schedule "${automation.name}" (${id}) for you from an App${next ? `; next ${next}` : ''}. When it is due you get what it asks you to do.`;
   }
   const when =
     trigger?.at != null

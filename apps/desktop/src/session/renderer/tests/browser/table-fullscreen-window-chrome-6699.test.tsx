@@ -113,7 +113,6 @@ it.each(['win', 'linux', 'other'] as const)('%s: the table fullscreen overlay ke
   mount('', (
     <WindowControls
       activeTab="tasks"
-      mobile={false}
       activeChatId={null}
       sessionHostAvailable
       onSelectTab={() => undefined}

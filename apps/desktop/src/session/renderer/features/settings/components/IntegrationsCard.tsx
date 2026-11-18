@@ -1,7 +1,12 @@
+import { UI_EVENTS } from '@/lib/uiEvents';
 import React, { useMemo } from 'react';
+import { MarketConnectorDetail } from '@renderer/features/extensions/panel/market-detail-connector';
+import { IntegrationIcon } from '@renderer/features/integrations/integration-icon';
 import { integrationErrorText } from '@renderer/features/integrations/integration-display';
 import { keptByPlatform } from '@renderer/features/integrations/integration-setup-model';
 import { integrationSections } from '@renderer/features/integrations/integration-sections';
+import { ConnectorMarketCatalog } from '@renderer/features/extensions/panel/connector-market-catalog';
+import { connectorState } from '@renderer/features/assistant/assistant-connector-status';
 import { useIntegrationsContext } from '@renderer/features/integrations/integrations-provider';
 import { PageLoading } from '@renderer/lib/components/page-layout';
 import type { IntegrationAccountSummary } from '@renderer/features/integrations/use-integration-accounts';
@@ -56,9 +61,11 @@ export type IntegrationItem = {
   onTryPlaybook?: (prompt: string) => void;
 };
 
-const IntegrationsCard: React.FC = () => {
+const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean; initialConnectorId?: string; marketQuery?: string }> = ({ inSettings = false, inlineDetail = false, initialConnectorId, marketQuery }) => {
   const {
     connectionStatus,
+    checkedConnections,
+    hasConfiguredConnections,
     configuredConnections,
     isCheckingConfiguredConnections,
     disconnectIntegration,
@@ -67,6 +74,7 @@ const IntegrationsCard: React.FC = () => {
     listError,
     hasList,
     reloadList,
+    reloadConnections,
   } = useIntegrationsContext();
   // #6264 资源库看的是别的机器:连 / 断的是那台机器上的集成;弹窗带上它(弹窗挂在应用根上,自己拿不到)。
   const host = useLibraryHost();
@@ -76,7 +84,7 @@ const IntegrationsCard: React.FC = () => {
     () => sortGitHubAccountsByDefault(githubAccounts),
     [githubAccounts]
   );
-  const [selectedProvider, setSelectedProvider] = useLibrarySheetSelection();
+  const [selectedProvider, setSelectedProvider] = useLibrarySheetSelection(inSettings, initialConnectorId);
   const showIntegrationSetup = useShowModal('integrationSetupModal');
   const showConnectGitHub = useShowModal('githubConnectModal');
   const showConfirm = useShowModal('confirmActionModal');
@@ -143,7 +151,11 @@ const IntegrationsCard: React.FC = () => {
   // 连在别的机器(助理的云电脑)上的,任务也开在那台:连接只在那台的会话里有,开在本机 agent 用不上。
   const tryPlaybook = (prompt: string) => {
     composerDrafts.set(NEW_SESSION_DRAFT_KEY, prompt);
-    if (host.remote) remoteHostsStore.requestNewSession(host.remote.deviceId, null);
+    if (host.remote) remoteHostsStore.requestNewSession(host.remote.deviceId);
+    if (inSettings) {
+      window.dispatchEvent(new Event(UI_EVENTS.closeSettings));
+      window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal));
+    }
     navigate('new-session');
   };
 
@@ -247,6 +259,42 @@ const IntegrationsCard: React.FC = () => {
     ? (integrations.find((integration) => integration.id === selectedProvider) ?? null)
     : null;
 
+  const market = marketQuery !== undefined;
+  const selectedMetadata = selectedIntegration && integrationMetadata.find(({ id }) => id === selectedIntegration.id);
+  const marketDetail = market && selectedIntegration && (
+    <MarketConnectorDetail
+      key={selectedIntegration.id}
+      id={selectedIntegration.id}
+      name={selectedIntegration.name}
+      description={selectedIntegration.description}
+      icon={<IntegrationIcon provider={selectedIntegration.id} icon={selectedIntegration.icon} size={68} />}
+      connected={connectionStatus[selectedIntegration.id]?.connected === true}
+      readOnly={selectedIntegration.readOnly || selectedIntegration.isMutating}
+      status={selectedIntegration.connectionError}
+      abilities={selectedIntegration.abilities}
+      playbooks={selectedIntegration.playbooks}
+      local={{ host, deviceId: host.remote?.deviceId ?? null }}
+      readDevice={keptByPlatform(selectedMetadata || undefined) ? undefined : async ({ host: target }) =>
+        (await target.integrations.checkConfiguredConnections())[selectedIntegration.id] === true}
+      onConnected={reloadConnections}
+      onDisconnect={selectedIntegration.id === 'github' ? async () => {
+        for (const { accountId } of sortedGithubAccounts) {
+          const result = await host.github.removeAccount(accountId);
+          if (!result.success) throw new Error(result.error);
+        }
+        reloadConnections();
+      } : async () => { await disconnectIntegration(selectedIntegration.id); }}
+      disconnectDescription={
+        selectedMetadata?.disconnectCredentialLabel || keptByPlatform(selectedMetadata || undefined)
+          ? translate('integrations.disconnectLoseAccess', { name: selectedIntegration.name })
+            + credentialNotice(selectedIntegration.name, selectedMetadata?.disconnectCredentialLabel, keptByPlatform(selectedMetadata || undefined))
+          : undefined
+      }
+      onTryPlaybook={selectedIntegration.onTryPlaybook}
+      onClose={closeSheet}
+    />
+  );
+
   function closeSheet() {
     setSelectedProvider(null);
   }
@@ -256,62 +304,81 @@ const IntegrationsCard: React.FC = () => {
   // 清单还在读:画加载态(读到了才知道哪些连着)。
   if (!hasList && !listError) return <PageLoading />;
 
+  const detail = selectedIntegration && <IntegrationDetailSidebar
+    integration={selectedIntegration} githubAccounts={sortedGithubAccounts} onClose={closeSheet}
+  />;
+  if (!market && inlineDetail && detail) return <TooltipProvider delay={150}>{detail}</TooltipProvider>;
+
   return (
     <TooltipProvider delay={150}>
       {notice && <DeviceScopeNoticeLine notice={notice} onRetry={reloadList} />}
-      <div className="space-y-8">
-        {connectedIntegrations.length > 0 && (
-          <IntegrationSection title={translate('integrations.sectionAdded')}>
-            {connectedIntegrations.map((integration) => (
-              <IntegrationGridCard
-                key={integration.id}
-                integration={integration}
-                selected={integration.id === selectedProvider}
-                onSelect={() => setSelectedProvider(integration.id)}
-              />
-            ))}
-          </IntegrationSection>
-        )}
-
-        <IntegrationSection title={translate('integrations.sectionAvailable')}>
-          {availableIntegrations.map((integration) => (
-            <IntegrationGridCard
-              key={integration.id}
-              integration={integration}
-              selected={integration.id === selectedProvider}
-              onSelect={() => setSelectedProvider(integration.id)}
-            />
-          ))}
-        </IntegrationSection>
-
-        {uiOnlyIntegrations.length > 0 && (
-          <IntegrationSection
-            title={translate('integrations.sectionUiOnly')}
-            hint={translate('integrations.sectionUiOnlyHint')}
-          >
-            {uiOnlyIntegrations.map((integration) => (
-              <IntegrationGridCard
-                key={integration.id}
-                integration={integration}
-                selected={integration.id === selectedProvider}
-                onSelect={() => setSelectedProvider(integration.id)}
-              />
-            ))}
-          </IntegrationSection>
-        )}
-      </div>
-
-      <Sheet open={selectedIntegration !== null} onOpenChange={(open) => !open && closeSheet()}>
-        <SheetContent showCloseButton={false}>
-          {selectedIntegration && (
-            <IntegrationDetailSidebar
-              integration={selectedIntegration}
-              githubAccounts={sortedGithubAccounts}
-              onClose={closeSheet}
-            />
+      {marketQuery !== undefined ? (
+        listError && !hasList ? (
+          <div className="mk-status" role="alert">
+            {translate('extensions.connectorDirectoryUnavailable')}
+          </div>
+        ) : (
+          <ConnectorMarketCatalog
+            apps={integrations.map((item) => ({
+              ...item,
+              catalog: integrationMetadata.find(({ id }) => id === item.id)?.catalog,
+              saved: item.isConfigured,
+              state: connectorState(hasConfiguredConnections ? item.isConfigured : undefined, checkedConnections[item.id]),
+            }))}
+            query={marketQuery}
+            isConnectionKnown={() => hasConfiguredConnections}
+            icon={(app, size) => <IntegrationIcon provider={app.id} icon={app.icon} size={size} />}
+            open={setSelectedProvider}
+          />
+        )
+      ) : (
+        <div className="space-y-8">
+          {connectedIntegrations.length > 0 && (
+            <IntegrationSection title={translate('integrations.sectionAdded')}>
+              {connectedIntegrations.map((integration) => (
+                <IntegrationGridCard
+                  key={integration.id}
+                  integration={integration}
+                  selected={integration.id === selectedProvider}
+                  onSelect={() => setSelectedProvider(integration.id)}
+                />
+              ))}
+            </IntegrationSection>
           )}
-        </SheetContent>
-      </Sheet>
+
+          <IntegrationSection title={translate('integrations.sectionAvailable')}>
+            {availableIntegrations.map((integration) => (
+              <IntegrationGridCard
+                key={integration.id}
+                integration={integration}
+                selected={integration.id === selectedProvider}
+                onSelect={() => setSelectedProvider(integration.id)}
+              />
+            ))}
+          </IntegrationSection>
+
+          {uiOnlyIntegrations.length > 0 && (
+            <IntegrationSection
+              title={translate('integrations.sectionUiOnly')}
+              hint={translate('integrations.sectionUiOnlyHint')}
+            >
+              {uiOnlyIntegrations.map((integration) => (
+                <IntegrationGridCard
+                  key={integration.id}
+                  integration={integration}
+                  selected={integration.id === selectedProvider}
+                  onSelect={() => setSelectedProvider(integration.id)}
+                />
+              ))}
+            </IntegrationSection>
+          )}
+        </div>
+      )}
+
+      {marketDetail}
+      {!market && !inlineDetail && <Sheet open={!!detail} onOpenChange={(open) => !open && closeSheet()}>
+        <SheetContent showCloseButton={false}>{detail}</SheetContent>
+      </Sheet>}
     </TooltipProvider>
   );
 };

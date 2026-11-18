@@ -1,4 +1,6 @@
+import { metadataSeparator } from '@/i18n/format'
 import { ExtensionMonogram } from '@/session/renderer/features/extensions/panel/extension-monogram'
+import { Unknown } from '../ui/Unknown'
 import { ResourceMenu } from '../ResourceMenu'
 import { comparer, reaction } from 'mobx'
 import { useEffect, useId, useState } from 'react'
@@ -6,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { ChevronRight } from '@/lib/icons'
 import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
+import { ASSISTANT_APP_ID } from '@shared/extensions/assistant-entry'
 import { localizedManifestText } from '../../session/shared/extensions/catalog'
 import type { ExtensionManifest } from '../../session/shared/extensions/manifest'
 import { phoneApps } from '../appSlot/phoneApps'
@@ -18,31 +21,43 @@ import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './Settin
  * stands; everything about one is on its settings page (`onManage`). The ones gugu ships are not listed. One this build
  * cannot run has no such page: its refusal is said as it is, and it can still be removed, as any App the phone cannot read must be.
  */
-export function AppsSection({ updates, gone, onManage }: { updates: Record<string, string>; gone: readonly string[]; onManage: (id: string) => void }) {
+const installedApps = (assistant: boolean): { manifest: ExtensionManifest; from: string | null; enabled: boolean }[] =>
+  installedExtensionsStore.manifests
+    .filter((manifest) => !installedExtensionsStore.isPreinstalled(manifest.id) && (manifest.id === ASSISTANT_APP_ID) === assistant)
+    .map((manifest) => ({
+      manifest,
+      from: installedExtensionsStore.publishers[manifest.id]?.name ?? null,
+      enabled: installedExtensionsStore.isEnabled(manifest.id),
+    }))
+const unusableApps = (): { id: string; reason: string }[] =>
+  installedExtensionsStore.invalid.map((entry) => ({ id: entry.dirName, reason: entry.reason }))
+
+export function AppsSection({ updates, gone, known, onManage, assistant = false, hideEmpty = false }: {
+  updates: Record<string, string>
+  gone: readonly string[]
+  known: boolean
+  onManage: (id: string) => void
+  assistant?: boolean
+  hideEmpty?: boolean
+}) {
   const { t, i18n } = useTranslation('main')
   const { t: tm } = useTranslation('messaging')
   const titleId = useId()
-  const [apps, setApps] = useState<{ manifest: ExtensionManifest; from: string | null; enabled: boolean }[]>([])
-  const [unusable, setUnusable] = useState<{ id: string; reason: string }[]>([])
+  // The installed list is already in the store: the first frame shows it (❌ one frame of "no Apps installed" first).
+  const [apps, setApps] = useState(() => installedApps(assistant))
+  const [unusable, setUnusable] = useState(() => assistant ? [] : unusableApps())
   const [asking, setAsking] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
 
   useEffect(() => {
     const off = reaction(
-      () => installedExtensionsStore.invalid.map((entry) => ({ id: entry.dirName, reason: entry.reason })),
+      () => assistant ? [] : unusableApps(),
       setUnusable,
       { fireImmediately: true, equals: comparer.structural },
     )
     const offApps = reaction(
-      () =>
-        installedExtensionsStore.manifests
-          .filter((manifest) => !installedExtensionsStore.isPreinstalled(manifest.id))
-          .map((manifest) => ({
-            manifest,
-            from: installedExtensionsStore.publishers[manifest.id]?.name ?? null,
-            enabled: installedExtensionsStore.isEnabled(manifest.id),
-          })),
+      () => installedApps(assistant),
       setApps,
       { fireImmediately: true, equals: comparer.structural },
     )
@@ -50,7 +65,7 @@ export function AppsSection({ updates, gone, onManage }: { updates: Record<strin
       off()
       offApps()
     }
-  }, [])
+  }, [assistant])
 
   const uninstall = async (id: string) => {
     setBusy(true)
@@ -60,9 +75,11 @@ export function AppsSection({ updates, gone, onManage }: { updates: Record<strin
     setFailed(result.success ? null : result.error)
   }
 
+  if (hideEmpty && !apps.length && !unusable.length) return null
+
   return (
     <SettingsPage data-testid="settings-apps">
-      <SettingsGroup note={t('settings.apps.intro')}>
+      <SettingsGroup note={!assistant ? t('settings.apps.intro') : undefined}>
         {apps.length === 0 && unusable.length === 0 ? (
           <SettingsRow description={t('settings.apps.empty')} data-testid="settings-apps-empty" />
         ) : (
@@ -76,7 +93,8 @@ export function AppsSection({ updates, gone, onManage }: { updates: Record<strin
                   onClick={() => onManage(manifest.id)}
                   // 名字跟界面语言走,和电脑上 App 页同一个挑法(manifest 的 localized)。
                   title={localizedManifestText(manifest, i18n.language).name}
-                  description={[
+                  // 市场还没回过话:版本那一句画占位,❌ 先写「来自市场 v1.2」再改成「更新到 v1.3」。
+                  description={!known ? <Unknown className="w-32" /> : [
                     updates[manifest.id]
                       ? t('settings.apps.updateTo', { version: updates[manifest.id] })
                       : phoneApps.originOf(manifest.id) === 'market'
@@ -84,7 +102,7 @@ export function AppsSection({ updates, gone, onManage }: { updates: Record<strin
                         : t('settings.apps.from', { version: manifest.version, name: from ?? '—' }),
                     ...(enabled ? [] : [translateSessionMessage('extensions.switchedOff')]),
                     ...(gone.includes(manifest.id) ? [translateSessionMessage('extensions.rowGone')] : []),
-                  ].join(' · ')}
+                  ].join(metadataSeparator())}
                   control={<ChevronRight className="size-4 text-[var(--text-secondary)]" />}
                 />
               </ResourceMenu>

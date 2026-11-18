@@ -78,7 +78,8 @@ export class LiveModel<T, E = unknown> implements IDisposable {
   async get(): Promise<LiveValue<T>> {
     this.assertNotDisposed();
     if (this.cached && !this.dirty) return this.cached;
-    const result = await this.schedule();
+    // 读取加入正在计算的那一轮;只有失效或显式 refresh 才需要再算。
+    const result = await (this.queued ?? (this.inFlight && !this.dirty ? this.inFlight : this.schedule()));
     if (!result.success) throw result.error;
     return result.data;
   }
@@ -87,7 +88,7 @@ export class LiveModel<T, E = unknown> implements IDisposable {
     this.assertNotDisposed();
     const unsubscribe = this.emitter.subscribe(cb);
     if (this.dirty || !this.cached) {
-      this.scheduleBackground();
+      if (!this.inFlight || this.dirty) this.scheduleBackground();
     } else {
       this.armRevalidate();
     }

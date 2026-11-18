@@ -3,6 +3,7 @@ html, body { height: 100%; }
 :root { --em-icon-xl: 36px; }
 body { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; overflow: hidden; }
 body.no-list .files, body.show-doc .files { display: none; }
+body.reading > * { visibility: hidden; }
 body:not(.show-doc):not(.no-list) .doc { display: none; }
 
 /* One two-line list at every width. */
@@ -22,25 +23,9 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 .file-meta { grid-column: 2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--em-font-caption); line-height: var(--em-lh-caption); color: var(--em-foreground-muted); }
 .file-meta { display: flex; gap: 0; min-width: 0; }
 .file-cell { flex: none; }
-.file-cell + .file-cell::before { content: '·'; margin-inline: 5px; opacity: .6; }
+.file-cell + .file-cell { margin-inline-start: 10px; }
 .file-cell:first-child { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .file-meta > .file-path { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; margin-inline-end: 8px; }
-
-/* A file's mark: its suffix on a square coloured by its family (list.js markOf). */
-.file-badge {
-  display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--em-color-white);
-  font-size: 11px; font-weight: 700; line-height: 1; letter-spacing: .02em; overflow: hidden; background: var(--em-file-generic);
-}
-.file-badge[data-family='pdf'] { background: var(--em-file-pdf); }
-.file-badge[data-family='word'] { background: var(--em-file-word); }
-.file-badge[data-family='sheet'] { background: var(--em-file-sheet); }
-.file-badge[data-family='slides'] { background: var(--em-file-slides); }
-.file-badge[data-family='archive'] { background: var(--em-file-archive); }
-.file-badge[data-family='image'] { background: var(--em-file-image); }
-.file-badge[data-family='video'] { background: var(--em-file-video); }
-.file-badge[data-family='audio'] { background: var(--em-file-audio); }
-.file-badge[data-family='code'] { background: var(--em-file-code); }
-.file-badge[data-family='text'] { background: var(--em-file-text); }
 
 /* The row keeps its time; activity, size and host names stay in hover and Details. */
 .file-list { gap: 2px; }
@@ -48,6 +33,9 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 .file .file-open { padding-block: 0; padding-inline-end: var(--em-spacing-xs); grid-template-columns: var(--em-icon-xl) minmax(0, 1fr); align-content: center; }
 .file .file-mark { width: var(--em-icon-xl); height: var(--em-icon-xl); }
 .file[data-folder] .file-mark { width: 28px; height: 28px; justify-self: center; }
+/* A folder not read yet has no count under its name: one line, not a two-line row's height. `auto`, not 0: the list is a
+   flex column, and a row allowed down to 0 is squeezed under its own line once the rows outgrow the pane. */
+.file[data-folder]:not(:has(.file-cell)) { min-height: auto; }
 .file-cell[data-cell='size'] { display: none; }
 .file[data-folder] .file-cell[data-cell='size'] { display: block; }
 .file-marks { flex: none; display: flex; align-items: center; gap: var(--em-spacing-xs); max-width: 35%; min-width: 0; }
@@ -73,17 +61,20 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 
 /* The filters: a chip per filter, a set one in the accent. */
 
-/* A picture where there is one (an image with a cloud copy): the suffix square becomes it. */
-.file-badge.has-thumb { background-size: cover; background-position: center; color: transparent; }
-.file[data-offline] { opacity: .6; }
+/* A picture where there is one (an image with a cloud copy): the tile becomes it. */
+.file-mark.has-thumb { border-radius: 6px; background-size: cover; background-position: center; }
+.file-mark.has-thumb::part(tile) { visibility: hidden; }
+.file[data-offline], .file[data-expired] { opacity: .6; }
 .file-host[data-online='false']::after { content: ''; flex: none; width: 6px; height: 6px; border-radius: 3px; background: var(--em-foreground-muted); }
 
 /* The grid (images and videos): square pictures, the name under them; sections and folders across the whole width. */
 .file-list.as-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: var(--em-spacing-sm); align-content: start; }
 .file-list.as-grid > .list-section, .file-list.as-grid > .file:not(.cell) { grid-column: 1 / -1; }
-.file.cell { position: relative; display: block; padding: 0; }
+/* `min-height: auto`, not a row's 56px: the grid's rows are `auto`, so once there are more of them than the pane holds
+   each shrinks to its cells' minimum, and a picture taller than that runs over the row below. */
+.file.cell { position: relative; display: block; padding: 0; min-height: auto; }
 .file.cell .file-open { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 0; grid-template-columns: none; }
-.file.cell .cell-picture { position: relative; width: 100%; height: auto; aspect-ratio: 1; border-radius: var(--em-radius-control); font-size: 13px; }
+.file.cell .cell-picture { position: relative; width: 100%; height: auto; aspect-ratio: 1; border-radius: var(--em-radius-control); }
 .file.cell .file-name { flex: none; max-width: 100%; font-size: var(--em-font-caption); font-weight: 400; color: var(--em-foreground-muted); }
 .cell-play { position: absolute; inset: 0; margin: auto; width: 28px; height: 28px; color: var(--em-color-white); opacity: .85; }
 .cell-keep { position: absolute; top: 6px; left: 6px; padding: 1px 6px; border-radius: var(--em-radius-capsule); background: color-mix(in srgb, var(--em-background) 85%, transparent); }
@@ -114,15 +105,16 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 .details-head { display: flex; align-items: center; gap: var(--em-spacing-sm); }
 .details-title { flex: 1; min-width: 0; margin: 0; font-size: var(--em-font-title); line-height: var(--em-lh-title); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .details-close { border: 0; background: none; }
-.details .details-picture { width: 100%; height: 160px; border-radius: var(--em-radius-control); font-size: 18px; }
+.details .details-picture { width: 100%; height: 160px; border-radius: var(--em-radius-control); }
 img.details-picture { object-fit: contain; }
-.details .details-picture.details-badge { width: 56px; height: 56px; font-size: 13px; }
+.details .details-picture.details-badge { width: 56px; height: 56px; }
 .details-actions { display: flex; flex-wrap: wrap; gap: var(--em-spacing-xs); }
 .details-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px var(--em-spacing-md); margin: 0; font-size: var(--em-font-caption); line-height: var(--em-lh-caption); }
 .details-facts dt { color: var(--em-foreground-muted); }
 .details-facts dd { margin: 0; overflow-wrap: anywhere; }
 .details-sub { margin: var(--em-spacing-xs) 0 0; font-size: var(--em-font-caption); color: var(--em-foreground-muted); }
 .details-versions { margin: 0; padding-inline-start: 0; list-style: none; font-size: var(--em-font-caption); }
+.details-versions li[data-expired] { opacity: .6; }
 
 /* Wide (an expanded tab): the rows line up as a table, and the details sit beside the list. */
 .files { container-type: inline-size; }
@@ -136,7 +128,6 @@ img.details-picture { object-fit: contain; }
   .file:not(.cell) .file-open { grid-template-columns: 24px minmax(0, 1fr) 130px 80px; align-items: center; padding-inline-end: 0; }
   .file:not(.cell) .file-name { font-size: var(--em-font-body); line-height: var(--em-lh-body); }
   .file:not(.cell) .file-mark { width: 24px; height: 24px; grid-row: auto; }
-  .file:not(.cell) .file-badge { font-size: 8.5px; }
   .file:not(.cell) .file-meta { display: contents; }
   .file:not(.cell) .file-cell::before { content: none; }
   .file:not(.cell) .file-cell { display: block; grid-row: 1; font-size: var(--em-font-caption); color: var(--em-foreground-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -157,14 +148,6 @@ img.details-picture { object-fit: contain; }
   .file-pick[aria-checked='true']::after { left: 19px; top: 16px; }
   .file-pick::after { pointer-events: none; }
   .file-list.selecting.as-grid .cell { display: grid; grid-template-columns: 44px minmax(0, 1fr); }
-  .menu.file-context { inset: auto 0 0; width: auto; min-width: 0; max-height: 55vh; overflow-y: auto; border-radius: var(--em-radius-xl) var(--em-radius-xl) 0 0; padding: var(--em-spacing-sm) var(--em-spacing-sm) calc(var(--em-spacing-sm) + env(safe-area-inset-bottom, 0px)); }
-  .menu.file-context::before { content: ''; width: 36px; height: 4px; border-radius: 2px; background: var(--em-border); margin: 0 auto var(--em-spacing-sm); }
-  .menu-file { display: flex; align-items: center; gap: var(--em-spacing-sm); padding: var(--em-spacing-sm); border-bottom: 1px solid var(--em-border); }
-  .menu-file .file-mark { width: var(--em-icon-xl); height: var(--em-icon-xl); }
-  .menu-file-words { display: flex; flex-direction: column; min-width: 0; }
-  .menu-file strong, .menu-file small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .menu-file small { color: var(--em-foreground-muted); }
-  .menu.file-context button { min-height: var(--em-control-h-touch); }
   .pick-bar { order: 1; margin: 0; left: 0; right: 0; bottom: 0; transform: none; max-width: none; border-radius: 0; justify-content: center; padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)); }
   .details { padding-top: var(--em-spacing-sm); }
   .details::before { content: ''; align-self: center; width: 36px; height: 4px; border-radius: 2px; background: var(--em-border); }
@@ -185,21 +168,11 @@ img.details-picture { object-fit: contain; }
 .section-toggle gugu-icon { width: 14px; height: 14px; flex: none; }
 .section-count { font-weight: 400; color: var(--em-foreground-subtle, var(--em-foreground-muted)); margin-left: 2px; }
 .list-section-toggle:first-child .section-toggle { padding-top: 0; }
+/* A block (the files placed here, the ones sent in the chat, the expired ones): a hairline above its heading. */
+.list-section[data-block]:not(:first-child, .table-head + *) { margin-top: var(--em-spacing-sm); border-top: 1px solid var(--em-border); }
 /* 「再显示 N 条」: under the section's last row shown, quiet, the width of its words. */
 .section-more { border: 0; background: none; font: inherit; font-weight: 400; color: var(--em-foreground-muted); padding: 4px var(--em-spacing-sm) var(--em-spacing-sm); cursor: pointer; border-radius: var(--em-radius-control); }
 .section-more:hover { color: var(--em-foreground); text-decoration: underline; }
-/* The menu is a .list: its label and separators are not rows (no row padding or height). */
-.menu > .menu-label { min-height: 0; padding: var(--em-spacing-xs) var(--em-spacing-sm) 0; font-size: var(--em-font-caption); color: var(--em-foreground-muted); cursor: default; }
-.menu > .menu-separator { flex: none; width: auto; height: 1px; min-height: 0; padding: 0; margin: var(--em-spacing-xs) var(--em-spacing-sm); border-radius: 0; background: var(--em-border); }
-.menu-choice::before { content: ''; display: inline-block; width: 1.2em; }
-.menu-choice[aria-checked='true']::before { content: '✓'; }
-/* Retention opens beside the existing menu on desktop; mobile uses the same menu's back/More pages. */
-.menu .menu-group { position: relative; padding: 0; min-height: 0; }
-.menu-group > button { padding: var(--em-row-pad); width: 100%; border: 0; background: none; text-align: start; }
-.menu-submenu { position: absolute; left: 100%; top: 0; width: var(--submenu-width); padding: var(--em-spacing-xs); box-shadow: var(--em-shadow-lift); display: none; }
-.menu.submenu-left .menu-submenu { left: auto; right: 100%; }
-.menu-group:hover > .menu-submenu[data-open], .menu-group:focus-within > .menu-submenu[data-open] { display: flex; }
-.menu button:disabled { opacity: .5; cursor: default; }
 .rename-input { flex: 1; min-width: 0; }
 .empty { margin: var(--em-spacing-lg); color: var(--em-foreground-muted); }
 
@@ -261,8 +234,6 @@ img.details-picture { object-fit: contain; }
 .more-toggle:not([hidden]) { display: inline-block; }
 /* Who is here and what state the file is in sit right, beside ⋯; the modes left. */
 .doc-actions > .status { margin-left: auto; }
-.menu { position: fixed; z-index: 10; min-width: 180px; margin: 0; padding: var(--em-spacing-xs); box-shadow: var(--em-shadow-lift); }
-.menu .destructive { color: var(--em-foreground-destructive); }
 .json-actions { display: none; gap: var(--em-spacing-sm); }
 
 /* Selection and citation keep the same editor and preview behavior. */
@@ -270,21 +241,13 @@ img.details-picture { object-fit: contain; }
 body:not(.has-selection) .sel-bar, body:not([data-state='doc']) .sel-bar { display: none; }
 .sel-bar button { border: 0; }
 .sel-bar button + button { border-left: 1px solid var(--em-border); }
-/* The marks a selection in the source can be wrapped in, before Copy · Cite · ＋ (not for the reading page's or a JSON file's). */
+/* The marks a selection in the source can be wrapped in, before Copy · Cite (not for the reading page's or a JSON file's). */
 .fmt-bar { display: flex; border-right: 1px solid var(--em-border); }
 .sel-bar .fmt { min-width: 0; padding-inline: var(--em-spacing-sm); color: var(--em-foreground-muted); }
 .sel-bar .fmt gugu-icon { width: var(--em-icon-sm); height: var(--em-icon-sm); }
 .sel-bar .fmt + .fmt { border-left: 0; }
 body.picks-in-preview .fmt-bar, body[data-kind='json'] .fmt-bar { display: none; }
-body[data-kind='json'] #hold-sel { display: none; }
-.held-bar { position: fixed; z-index: 10; left: 50%; bottom: var(--em-spacing-lg); transform: translateX(-50%); display: flex; align-items: center; gap: var(--em-spacing-xs); padding: var(--em-spacing-xs) var(--em-spacing-xs) var(--em-spacing-xs) var(--em-spacing-md); border-radius: var(--em-radius-capsule); background: var(--em-foreground); color: var(--em-background); box-shadow: var(--em-shadow-lift); }
-body:not([data-state='doc']) .held-bar { display: none; }
-.held-count { font-weight: 600; font-variant-numeric: tabular-nums; }
-.held-cite { background: var(--em-background); color: var(--em-foreground); }
-.held-clear { border: 0; color: inherit; }
-.cm-held { background: color-mix(in srgb, var(--em-accent-11) 10%, transparent); }
 .cm-found { background: color-mix(in srgb, var(--em-accent-11) 16%, transparent); box-shadow: inset 2px 0 var(--em-accent-11); }
-.preview .md-held { background: color-mix(in srgb, var(--em-accent-11) 10%, transparent); }
 .preview .md-found { outline: 2px solid var(--em-accent-11); outline-offset: 3px; border-radius: var(--em-radius-document); }
 .cm-found-text, ::highlight(found) { background-color: color-mix(in srgb, var(--em-accent-11) 36%, transparent); }
 .banner { flex: none; margin: 0; border-radius: 0; }
@@ -332,6 +295,28 @@ body[data-mode='edit'] .panes, body[data-mode='preview'] .panes, body[data-kind=
 body[data-mode='edit'] .preview, body[data-mode='preview'] .editor { display: none; }
 .preview-cut { flex: none; margin: 0; padding: var(--em-spacing-xs) 18px; color: var(--em-foreground-muted); }
 body[data-mode='edit'] .preview-cut, .preview-cut[hidden] { display: none; }
+/* The outline (outline.js; owner 11-14, as Feishu has it): the document's headings in the room left of the reading column,
+   only while reading. That room is (pane − 720) / 2; where it is too narrow, the outline folds to a rail of short lines in
+   the margin, its list drawn over the text while the pointer is on it. A touch screen has no margin to put it in. */
+.panes { position: relative; container: panes / inline-size; }
+.outline { position: absolute; z-index: 2; top: 16px; left: 24px; width: 184px; max-height: calc(100% - 48px); box-sizing: border-box; overflow: auto; scrollbar-width: none; display: flex; flex-direction: column; gap: 2px; }
+.outline[hidden], body:not([data-mode='preview']) .outline, body.empty-doc .outline { display: none; }
+.outline-item { flex: none; display: block; width: 100%; min-height: 0; padding: 4px 8px; border: 0; border-radius: var(--em-radius-control); background: none; color: var(--em-foreground-muted); font-size: var(--em-font-caption); line-height: var(--em-lh-caption); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.outline-item[data-depth='1'] { padding-left: 20px; }
+.outline-item[data-depth='2'] { padding-left: 32px; }
+.outline-item:hover { background: var(--em-hover); color: var(--em-foreground); }
+.outline-item[aria-current] { color: var(--em-foreground); font-weight: 600; }
+.preview > .gg-md > :is(h1, h2, h3) { scroll-margin-top: 16px; }
+@container panes (max-width: 1167px) {
+  .outline { left: 12px; }
+  .outline:not(:hover, :focus-within) { width: 28px; gap: 8px; padding: 6px; }
+  .outline:not(:hover, :focus-within) > .outline-item { width: 16px; height: 2px; padding: 0; border-radius: 1px; font-size: 0; background: var(--em-border-1); }
+  .outline:not(:hover, :focus-within) > .outline-item[data-depth='1'] { width: 12px; }
+  .outline:not(:hover, :focus-within) > .outline-item[data-depth='2'] { width: 8px; }
+  .outline:not(:hover, :focus-within) > .outline-item[aria-current] { background: var(--em-foreground); }
+  .outline:is(:hover, :focus-within) { width: 240px; padding: 6px; border: 1px solid var(--em-border); border-radius: var(--em-radius-control); background: var(--em-background); box-shadow: var(--em-shadow-dialog); }
+}
+@media (hover: none) and (pointer: coarse) { .outline { display: none; } }
 body[data-kind='json']:not(.read-in-host) .modes, body[data-kind='json'] .preview { display: none; }
 body[data-kind='json'] .editor { display: block; }
 body.json-dirty .json-actions { display: flex; }
@@ -374,6 +359,11 @@ body[data-state='doc'] .doc-message, body.gone .modes { display: none; }
 .files-toolbar > #search-toggle gugu-icon { width: 16px; height: 16px; }
 .files-toolbar > .sort { margin-inline-start: 0; }
 .files-toolbar > button { flex: none; min-height: 28px; padding: 2px 5px; }
+/* fitTools (app.js): the place switch by its icons where its words do not fit; then the order's words end in an ellipsis. */
+.files-toolbar.places-icons .place-switch button > span { display: none; }
+.files-toolbar.places-icons .place-switch gugu-icon { margin-inline-end: 0; }
+.files-toolbar > .sort { flex: 0 1 auto; min-width: 0; }
+#sort-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @container (min-width: 720px) {
   .files-toolbar:has(~ .file-list:not(.as-grid)) > .sort { display: none; }
 }

@@ -279,7 +279,13 @@ export const SEGMENTERS: Record<string, ItemSegmenter> = {
   'turn-completion': nativePassthrough<SyntheticItem>('turn-completion', (item) => item, MESSAGE_CHROME),
   'tool-run': nativePassthrough<SyntheticItem>('tool-run', (item) => item, COMPOSITE_CHROME),
   'file-change-summary': nativePassthrough<SyntheticItem>('file-change-summary', (item) => item, MESSAGE_CHROME),
-  'opened-output': nativePassthrough<SyntheticItem>('opened-output', (item) => item, COMPOSITE_CHROME),
+  'opened-output': {
+    kind: 'opened-output',
+    segment: (item, ctx) => [{
+      ...unit('opened-output', item, item, { key: 'self' }),
+      chrome: ctx.agentConversation ? MESSAGE_CHROME : COMPOSITE_CHROME,
+    }],
+  },
   'agent-send': agentSendSegmenter,
 };
 

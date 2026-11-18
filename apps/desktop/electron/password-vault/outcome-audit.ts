@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { AuditInput, AuditReceipt, VaultUseBinding, VaultUseCapability } from './contracts'
 import type { FixedOutcomeAuditPort, PostUseAuditProof, PostUseAuditResult, RecordedPostUseAudit, UseOutcomeContext } from '../session/main/core/browser/credential-settlement-contract'
 
-const outcomes = new Set(['unavailable', 'submitted_unconfirmed', 'login_confirmed', 'person_interaction_required', 'failed', 'uncertain'])
+const outcomes = new Set(['unavailable', 'submitted_unconfirmed', 'login_confirmed', 'person_interaction_required', 'failed', 'uncertain', 'filled'])
 const sameBinding = (left: VaultUseBinding, right: VaultUseBinding) => {
   const keys = Object.keys(left) as (keyof VaultUseBinding)[]
   return keys.length === Object.keys(right).length && keys.every(key => left[key] === right[key])
@@ -39,9 +39,10 @@ export class OutcomeAuditIssuer {
     try {
       if (!this.current(context)) return failure()
       const bound = context.binding, eventId = randomUUID()
-      const event: AuditInput = { id: eventId, action: 'use', source: 'browser', outcome: context.outcome === 'unavailable' ? 'failed' : context.outcome,
+      const event: AuditInput = { id: eventId, action: 'use', source: 'browser', // The audit log already knows a fill that is done as completed.
+        outcome: context.outcome === 'unavailable' ? 'failed' : context.outcome === 'filled' ? 'completed' : context.outcome,
         agentId: bound.agentId, sessionId: bound.sessionId, requestId: bound.requestId, useId: bound.useId, loginSurfaceId: bound.loginSurfaceId,
-        origin: bound.origin, credential: { id: bound.credentialId, version: Number(bound.credentialVersion) } }
+        origin: bound.origin, ...(bound.credentialId.startsWith('typed:') ? {} : { credential: { id: bound.credentialId, version: Number(bound.credentialVersion) } }) }
       const receipt = await this.write(event, context.effectPossible)
       if (receipt.status !== 'recorded' || receipt.recordId !== eventId || !this.current(context)) return failure()
       const proof = Object.freeze({}) as PostUseAuditProof

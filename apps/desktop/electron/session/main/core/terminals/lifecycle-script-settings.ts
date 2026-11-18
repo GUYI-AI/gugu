@@ -16,11 +16,16 @@ export async function resolveLifecycleScriptForWorkspace(
   workspace: Workspace,
   type: LifecycleScriptType
 ): Promise<Result<{ script?: string; shellSetup?: string }, LifecycleScriptSettingsError>> {
-  const settings = await getEffectiveSessionSettings({
-    projectSettings: workspace.settings,
-    sessionFs: workspace.fileSystem,
-    sessionConfigPath: workspace.configPath,
-  });
+  let settings: Awaited<ReturnType<typeof getEffectiveSessionSettings>>;
+  try {
+    settings = await getEffectiveSessionSettings({
+      projectSettings: workspace.settings,
+      sessionFs: workspace.fileSystem,
+      sessionConfigPath: workspace.configPath,
+    });
+  } catch (error) {
+    return err({ type: 'fs_error', message: error instanceof Error ? error.message : String(error) });
+  }
   return ok({
     script: settings.scripts?.[type],
     shellSetup: settings.shellSetup,

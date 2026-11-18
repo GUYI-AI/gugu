@@ -18,6 +18,8 @@ export interface SignalExitDeps<Host> {
   supervisedBy: () => string | undefined
   markStopped: () => void
   noteExitReason: () => void
+  /** Writes what is still held for the disk (view state is written behind): a signal skips the quit cleanup. */
+  flushStorage: () => void
   killEngines: (label: ExitSignal) => void
   exit: (code: number) => void
   host: () => Host | null
@@ -37,6 +39,11 @@ export function createSignalExit<Host>(deps: SignalExitDeps<Host>) {
     // 有人要它停(stop / systemd / 守护进程收账号进程):留一句,开机收残据此说「重启打断了这一轮」(守护进程换版时先写了 update,不改)。
     deps.noteExitReason()
     const finish = (): void => {
+      try {
+        deps.flushStorage()
+      } catch (error) {
+        deps.warn({ label, error: String(error) }, 'storage flush on signal failed')
+      }
       deps.killEngines(label)
       deps.exit(code)
     }

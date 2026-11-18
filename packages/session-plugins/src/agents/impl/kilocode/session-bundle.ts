@@ -166,8 +166,8 @@ function permissionConfig(
   surface: HarnessSessionSurface,
 ): Record<string, unknown> {
   if (!autonomy) return {};
-  const fullAccess = (autonomy.permissionMode ?? autonomy.mode) === 'full-access';
-  const approvalRules = openCodeFamilyPermissionConfig(KILO_PERMISSION_SPEC, { ...autonomy, mode: 'approval-required' })
+  const fullAccess = autonomy.permissionMode === 'full-access';
+  const approvalRules = openCodeFamilyPermissionConfig(KILO_PERMISSION_SPEC, { permissionMode: 'edit' })
     .permission as Record<string, string>;
   // Without this every Gugu tool call, including a chat reply, waits for approval in plan and read-only:
   // `getMcpRules` asks for each server, and only `agent.<name>.permission` merges after that guard
@@ -206,7 +206,7 @@ function permissionConfig(
 }
 
 function sessionCreatePatch(autonomy: SessionCapabilityBundle['autonomy']): Readonly<{ agent?: string }> | undefined {
-  const mode = autonomy?.permissionMode ?? (autonomy?.mode === 'full-access' ? 'full-access' : undefined);
+  const mode = autonomy?.permissionMode;
   return mode === 'plan' || mode === 'read-only' || mode === 'full-access' ? { agent: KILO_MODES[mode].id } : undefined;
 }
 

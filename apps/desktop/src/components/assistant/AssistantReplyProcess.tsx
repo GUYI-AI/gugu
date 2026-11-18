@@ -12,5 +12,5 @@ export function AssistantReplyProcess({ messageId }: { messageId?: string }) {
     ? t('chat.thoughtSeconds', { seconds: Math.max(1, Math.round(process.thinkingMs / 1_000)) })
     : t('chat.thoughtCount', { count: process.thoughts }))
   if (process.tools) parts.push(t('chat.toolCount', { count: process.tools }))
-  return <span className="assistant-reply-process" data-testid="assistant-reply-process">{parts.join(' · ')}</span>
+  return <span className="assistant-reply-process" data-testid="assistant-reply-process">{parts.map((part, index) => <span key={index} className="mr-2 last:mr-0">{index > 0 ? ' ' : ''}{part}</span>)}</span>
 }

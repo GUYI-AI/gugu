@@ -12,20 +12,28 @@ import { toast } from '@renderer/lib/hooks/use-toast';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { AcpChatStore } from './acp-chat-store';
 import { quotedIntoDraft, selectedMessageText, sessionPromptBody } from './session-message-quote';
+import { sessionForwardPieces } from './session-message-forward';
+import { openForward } from '@/components/chat/forwardToChats';
+import type { TranscriptTurn } from '@gugu/session-chat-ui';
 import { bindMessageQuoteTouchMenu } from './message-quote-touch-menu';
 
 type Target = Parameters<NonNullable<ChatCommands['onMessageTextMount']>>[0];
 const log = rendererLogger('session/message-actions');
 
-/** What only a desktop task page can offer on a message. */
+/** What a task page adds to the chat's message menu: the desktop edits and forks; the phone lifts the bubble as the chat's phone menu does. */
 export type SessionMessageActions = {
   canEdit?: (itemId: string) => boolean;
   onEdit?: (itemId: string) => void;
   onForkTask?: () => void;
+  phone?: boolean;
 };
 
+
 /** The chat's own message menu on the timeline's bubbles, and restoration of previously saved prompts. */
-export function useSessionMessageQuotes(store: Pick<AcpChatStore, 'sessionId' | 'setDraftText'> | null | undefined, editor: MutableRefObject<PromptEditorRef | null>, actions?: SessionMessageActions) {
+/** The turns a forwarded answer finds its prompt in. */
+type TranscriptReader = { chatState: { transcript: { state: { committedTurns: readonly TranscriptTurn[]; activeTurnSnapshot?: TranscriptTurn | null } } } };
+
+export function useSessionMessageQuotes(store: (Pick<AcpChatStore, 'sessionId' | 'setDraftText'> & TranscriptReader) | null | undefined, editor: MutableRefObject<PromptEditorRef | null>, actions: SessionMessageActions) {
   const { translate } = useSessionMessages();
   const latest = useRef({ store, translate, actions });
   latest.current = { store, translate, actions };
@@ -62,8 +70,7 @@ export function useSessionMessageQuotes(store: Pick<AcpChatStore, 'sessionId' | 
       if (selection === null) return;
       const clicked = event.target instanceof Element ? event.target : null;
       const { actions: acts } = latest.current;
-      // Only the desktop task page has the message menu; the phone's timeline keeps its copy menu and its link taps.
-      if (selection === undefined && clicked?.closest(acts ? 'input,textarea,[contenteditable]' : 'a,button,input,textarea,[contenteditable],img')) return;
+      if (selection === undefined && clicked?.closest('input,textarea,[contenteditable]')) return;
       const message = target.message();
       const text = selection ?? message.text;
       const sent = message.sentMessages;
@@ -78,7 +85,8 @@ export function useSessionMessageQuotes(store: Pick<AcpChatStore, 'sessionId' | 
         ? target.root.ownerDocument.getSelection()?.getRangeAt(0).cloneRange() : undefined;
       event.preventDefault();
       event.stopPropagation();
-      if (selectionRange || !acts) {
+      // Android's selection handles stay with the system: the copy menu keeps the range they adjust.
+      if (selectionRange) {
         void showRendererContentMenu([{ id: 'copy', label: latest.current.translate(selection === undefined ? 'transcript.copyMessage' : 'transcript.copySelection') }], { x: event.clientX, y: event.clientY }, selectionRange).then(action => {
           if (alive.current && latest.current.store === current && action === 'copy') copy(text, selectionRange ? () => target.root.ownerDocument.getSelection()?.toString() : undefined);
         }).catch(error => log.error({ error }, 'Message copy menu failed'));
@@ -89,8 +97,12 @@ export function useSessionMessageQuotes(store: Pick<AcpChatStore, 'sessionId' | 
       const anchor = clicked?.closest<HTMLAnchorElement>('a[href]');
       const link = anchor?.getAttribute('href');
       const commands = target.commands?.();
+      const transcript = current.chatState.transcript.state;
+      const turns = transcript.activeTurnSnapshot ? [...transcript.committedTurns, transcript.activeTurnSnapshot] : transcript.committedTurns;
+      const pieces = sessionForwardPieces({ itemId: target.itemId, message, text: message.text, sender: target.sender?.() ?? null, carried, turns });
       showRendererMessageMenu({
         x: event.clientX, y: event.clientY, isRetracted: false, content: text, hasSelection: selection !== undefined,
+        ...(acts.phone ? { lift: { bubble: menuRoot, touchY: event.clientY, mine: message.role === 'user' } } : {}),
         onCopy: usable(() => copy(text)),
         onQuoteToComposer: usable(() => {
           const quoted = quotedIntoDraft(editor.current?.getText() ?? '', text);
@@ -106,6 +118,7 @@ export function useSessionMessageQuotes(store: Pick<AcpChatStore, 'sessionId' | 
         ...(file && carried && !unavailable ? { onOpenFile: usable(() => openSentFile(file, carried, commands)) } : {}),
         ...(message.role === 'user' && !message.guguDelivery && acts.canEdit?.(target.itemId) ? { onEditMessage: usable(() => acts.onEdit?.(target.itemId)) } : {}),
         ...(acts.onForkTask ? { onForkTask: usable(acts.onForkTask) } : {}),
+        ...(pieces ? { onForward: usable(() => openForward(pieces)) } : {}),
       });
     };
     const menuRoot = target.menuRoot ?? target.root;

@@ -48,6 +48,8 @@ export interface EmdashSessionStartInfo {
    * 字段名写错不会报错,❌ 只改一端。
    */
   reasoningEffort?: string | null;
+  /** Trusted own-account preference; always false for credits or an undecided route. */
+  fastMode?: boolean;
   /**
    * 这条会话**已解析**的咕咕权限档（四档，从严到松 plan < read-only < edit < full-access）。
    *
@@ -158,9 +160,12 @@ export function getEmdashIdentityProvisioner(): EmdashIdentityProvisioner {
   return provisioner;
 }
 
+export type ApplyAcpMaterialization = (apply: () => Promise<void>) => Promise<void>;
+
 export type EmdashMcpInjector = (
   info: EmdashSessionStartInfo,
   identity: EmdashSessionIdentity | null,
+  applyMaterialization?: ApplyAcpMaterialization,
 ) => Promise<EmdashSessionCapabilityInjection>;
 
 let injector: EmdashMcpInjector | null = null;

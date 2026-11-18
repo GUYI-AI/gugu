@@ -16,7 +16,7 @@ it('keeps the newer authoritative unread tuple when an older projection cannot p
   expect(baseline).toMatchObject({ last_read_seq: 3, read_state_version: 8, unread_count: 2 })
   const pending: Array<() => void> = []
   const [acknowledged] = acknowledgeOnScreenChatRows([fetched], { current: [current], liveRows: () => [current],
-    onScreen: () => true, visibleSeqOf: () => 5, patchChat: vi.fn(), deferPersist: persist => pending.push(persist) })
+    onScreen: () => true, visibleSeqOf: () => 5, deferPersist: persist => pending.push(persist) })
   const [published] = mergeFetchedChatsPreservingActiveLocal([acknowledged!], [current], fetched.id)
   pending.forEach(persist => persist())
   console.log(JSON.stringify({ acknowledged, published, writes: reads.write.mock.calls.length }))
@@ -32,7 +32,7 @@ it('keeps sparse unread seq 6 and 7 when the visible window only reaches seq 5',
     read_state_version: 7, unread_count: 2, is_marked_unread: false,
     unread_locator: { stream_id: 'main:reviewer-sparse', stream_kind: 'main', thread_root_id: null, message_id: 'unread-6', message_seq: 6, unread_count: 2, addressed_count: 1, cursor_seq: 2, version: 7, is_marked_unread: false } })
   const [acknowledged] = acknowledgeOnScreenChatRows([fetched], { onScreen: () => true,
-    visibleSeqOf: () => 5, patchChat: vi.fn() })
+    visibleSeqOf: () => 5 })
   expect(acknowledged).toMatchObject({ last_read_seq: 5, unread_count: 2,
     unread_locator: { message_id: 'unread-6', message_seq: 6, unread_count: 2, addressed_count: 1 } })
   expect(reads.write).toHaveBeenCalledWith({ kind: 'main', chatId: fetched.id, seq: 5 })

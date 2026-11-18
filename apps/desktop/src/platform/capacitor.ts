@@ -1,4 +1,8 @@
-import type { PermissionState } from '@capacitor/core'
+import { nativeAndroidAccountClosure } from './androidAccountClosure'
+import { nativePhoneAgentHostAvailable } from './phoneAgentHostCapability'
+import { schedulePhoneNotification } from './phoneNotificationOutlet'
+import { registerPlugin, type PermissionState } from '@capacitor/core'
+import { nativeTextSelection } from './nativeTextSelection'
 import { BackgroundMode } from '@anuradev/capacitor-background-mode'
 import { BarcodeFormat, BarcodeScanner } from '@capacitor-mlkit/barcode-scanning'
 import { App } from '@capacitor/app'
@@ -14,7 +18,7 @@ import { checkForUpdates, downloadUpdate, installUpdate, updateState } from './c
 import { openInApps, saveToDevice, shareToApps, subscribeIncomingShares } from './capacitorShare'
 import { PlatformError } from './errors'
 import { nativeAudioPermissions } from './capacitorMicrophone'
-import { nativeOpenedLinksReady, subscribeNativeOpenedLinks } from './capacitorOpenedLinks'
+import { nativeOpenedLinksReady, subscribeNativeOpenedLinks, watchNativeOpenedLinks } from './capacitorOpenedLinks'
 import { openBrowser, subscribeBrowserFinished } from './capacitorOAuthBrowser'
 import { googleIdentityLinkUrl } from '../../shared/google-authorization-url'
 import { getSupabaseUrl } from '@gugu/core/cloud/config'
@@ -160,22 +164,21 @@ function setBackgroundWatch(label: string | null, text?: string): Promise<void> 
   return next
 }
 
-/**
- * 两条渠道只差响不响 —— 桌面「提示音」开关的手机那一半。安卓 8+ 的声音挂在渠道上、不挂在单条通知上,
- * 而插件建渠道时不给声音就用系统默认声音,没有「静音」这个选项;所以静音那条只能用「低」重要性:
- * 不响、不弹横幅、只进通知栏。渠道建好之后重要性归用户在系统里改,咕咕不再覆盖。
- */
 const ALERT_CHANNEL_ID = 'gugu-alerts'
-const QUIET_CHANNEL_ID = 'gugu-alerts-quiet'
-let channelsReady: Promise<void> | null = null
+const notificationChannels = registerPlugin<{
+  ensureQuietChannel(options: { name: string }): Promise<{ id: string }>
+  readStatus(options: { alertChannelId: string; silent: boolean }): Promise<{ enabled: boolean; importance?: number }>
+  openSettings(options: { alertChannelId: string; silent: boolean; appWide: boolean }): Promise<void>
+}>('GuguNotificationChannels')
+let channelsReady: Promise<string> | null = null
 
-function ensureNotificationChannels(): Promise<void> {
+function ensureNotificationChannels(): Promise<string> {
   if (!channelsReady) {
     const labels = hostCatalog(resolvedLocale).notificationChannels
     channelsReady = Promise.all([
       LocalNotifications.createChannel({ id: ALERT_CHANNEL_ID, name: labels.alerts, importance: 4, vibration: true }),
-      LocalNotifications.createChannel({ id: QUIET_CHANNEL_ID, name: labels.quiet, importance: 2 }),
-    ]).then(() => undefined, (error: unknown) => {
+      notificationChannels.ensureQuietChannel({ name: labels.quiet }),
+    ]).then(([, quiet]) => quiet.id, (error: unknown) => {
       channelsReady = null
       throw error
     })
@@ -183,11 +186,11 @@ function ensureNotificationChannels(): Promise<void> {
   return channelsReady
 }
 
-// 安卓通知 id 是 32 位 int;每条用一个新的,免得后一条把前一条顶掉。
-let notificationSeq = Math.floor(Date.now() / 1000) % 1_000_000_000
 
 export const capacitorPlatform: AppPlatform = {
   ...base,
+  accountClosure: nativeAndroidAccountClosure,
+  textSelection: nativeTextSelection,
   accountOAuthBrowser: {
     openBrowser,
     openLinkBrowser: async (url) => openBrowser(googleIdentityLinkUrl(url, getSupabaseUrl())),
@@ -198,7 +201,8 @@ export const capacitorPlatform: AppPlatform = {
     ready: nativeOpenedLinksReady,
     subscribe: (listener, onError) => subscribeNativeOpenedLinks('auth', listener, onError),
   },
-  capabilities: { ...base.capabilities, clipboard: true, barcodeScan: true, notifications: true, backgroundWatch: true, appUpdates: true, shareToApps: true, externalFileOpen: true },
+  watchOpenedLinks: watchNativeOpenedLinks,
+  capabilities: { ...base.capabilities, clipboard: true, barcodeScan: true, notifications: true, backgroundWatch: true, appUpdates: true, shareToApps: true, externalFileOpen: true, mobileApps: true, phoneDevice: true, get phoneAgentHost() { return nativePhoneAgentHostAvailable('android') } },
   async writeClipboardText(value) {
     await Clipboard.write({ string: value })
   },
@@ -272,23 +276,17 @@ export const capacitorPlatform: AppPlatform = {
     if (await checkSystemPermission('notifications') !== 'granted') {
       return { success: false, displayed: false, error: 'NOTIFICATIONS_NOT_GRANTED' }
     }
-    await ensureNotificationChannels()
-    notificationSeq = (notificationSeq + 1) % 2_147_483_647
-    await LocalNotifications.schedule({
-      notifications: [{
-        id: notificationSeq,
-        title: payload.title,
-        body: payload.body ?? '',
-        channelId: payload.silent ? QUIET_CHANNEL_ID : ALERT_CHANNEL_ID,
-        // 安卓 8 以下没有渠道,弹不弹横幅看优先级。
-        foreground: !payload.silent,
-        // 立即发的也必须写 false:插件默认按「精确闹钟」处理,安卓 12+ 没有闹钟权限时会先把人甩进
-        // 「闹钟与提醒」设置页 —— 一次没人要的跳转;清单里也已移除这项权限。
-        isExactNotification: false,
-        extra: payload.chatId ? { chatId: payload.chatId } : undefined,
-      }],
+    const quietChannelId = await ensureNotificationChannels()
+    return schedulePhoneNotification(payload, {
+      channelId: payload.silent ? quietChannelId : ALERT_CHANNEL_ID,
+      foreground: true,
+      // Never request exact-alarm permission for an immediate notification.
+      isExactNotification: false,
     })
-    return { success: true, displayed: true }
+  },
+  androidNotificationSettings: {
+    read: (silent) => notificationChannels.readStatus({ alertChannelId: ALERT_CHANNEL_ID, silent }),
+    open: (silent, appWide) => notificationChannels.openSettings({ alertChannelId: ALERT_CHANNEL_ID, silent, appWide }),
   },
   setBackgroundWatch,
   // @@@share-with-apps 系统分享两个方向,见 capacitorShare.ts。
@@ -300,7 +298,9 @@ export const capacitorPlatform: AppPlatform = {
   async requestSystemPermission(permission) {
     if (permission === 'microphone') return toSystemPermissionState((await nativeAudioPermissions.requestPermissions({ permissions: ['microphone'] })).microphone)
     if (permission === 'notifications') {
-      return toSystemPermissionState((await LocalNotifications.requestPermissions()).display)
+      const { display } = await LocalNotifications.requestPermissions()
+      window.dispatchEvent(new Event('gugu:android-notification-permission'))
+      return toSystemPermissionState(display)
     }
     if (permission === 'batteryOptimization') {
       // 系统自己的确认框(「允许咕咕一直在后台运行?」),用户点完才 resolve。

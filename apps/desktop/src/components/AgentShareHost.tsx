@@ -5,9 +5,8 @@ import { AgentSharePopover } from './sessionpage/AgentSharePopover'
 import { useToast } from './toastContext'
 import { SESSIONPAGE_SHARE_ANCHOR_SELECTOR } from '../lib/sessionpageShareAnchor'
 import { UI_EVENTS } from '../lib/uiEvents'
-import { GUGU_ANDROID_DOWNLOAD_URL } from '../lib/appLinks'
 import { useContactsStore } from '../store/contactsContext'
-import { createContactQrPayload, createGuguQrScanUrl } from '@gugu/core/shared/qrPayload'
+import { createContactQrPayload, createGuguQrUrl } from '@gugu/core/shared/qrPayload'
 
 /** 会话页「分享这个 agent」:只有这里读通讯录,外壳不必因通讯录每次更新整棵重渲。 */
 export function AgentShareHost() {
@@ -76,7 +75,7 @@ export function AgentShareHost() {
             anchor={resolveShareAnchor}
             inviteUrl={shareAgentNumber === null
               ? null
-              : createGuguQrScanUrl(createContactQrPayload(shareAgentNumber), { downloadUrl: GUGU_ANDROID_DOWNLOAD_URL })}
+              : createGuguQrUrl(createContactQrPayload(shareAgentNumber))}
             onOpenPoster={() => setShareAgentPoster(true)}
             // 开启公开 = 铸号(set_agent_public 的一部分);通讯录随 putIdentities 更新,号在下一帧就出现在浮层里。
             onMakePublic={() => setAgentPublic(shareAgentCard.agentUserId, true)}
@@ -87,7 +86,7 @@ export function AgentShareHost() {
           <SharePosterDialog
             title={shareAgentName}
             subtitle={t('shell.shareSubtitle', { number: shareAgentNumber })}
-            qrValue={createGuguQrScanUrl(createContactQrPayload(shareAgentNumber), { downloadUrl: GUGU_ANDROID_DOWNLOAD_URL })}
+            qrValue={createGuguQrUrl(createContactQrPayload(shareAgentNumber))}
             onClose={() => { setShareAgentPoster(false); setShareAgentCard(null) }}
           />
         )}

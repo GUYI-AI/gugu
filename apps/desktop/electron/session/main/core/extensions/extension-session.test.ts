@@ -187,7 +187,7 @@ describe('configureExtensionSession', () => {
     expect(verdictFor(ses, 'https://api.example.com/v1')).toBe('allowed');
   });
 
-  it('refuses every web permission but the one that carries no capability', () => {
+  it('grants only the page-local permissions, refusing every device capability', () => {
     configureExtensionSession(bundle([]));
     const ses = fakeSessionFor(EXTENSION_ID);
 
@@ -200,6 +200,9 @@ describe('configureExtensionSession', () => {
     };
 
     expect(decide('clipboard-sanitized-write')).toBe(true);
+    // A video's own fullscreen button; refused, an App's player could never leave its tab.
+    expect(decide('fullscreen')).toBe(true);
+    expect(ses.permissionCheckHandler?.(null, 'fullscreen')).toBe(true);
     for (const permission of ['media', 'geolocation', 'notifications', 'openExternal', 'display-capture']) {
       expect(decide(permission), `${permission} must not be granted`).toBe(false);
       expect(ses.permissionCheckHandler?.(null, permission)).toBe(false);

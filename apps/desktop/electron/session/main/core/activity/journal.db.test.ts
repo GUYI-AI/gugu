@@ -55,7 +55,7 @@ describe('activity journal: real SQLite, no transcript storage or reader', () =>
   it('derives a project operation from its subject without accepting a producer project override', () => {
     journal.append({ event_id: 'detached-folder', kind: 'project.folder_detached', object_id: 'p-deleted',
       related_object_id: 'folder-gone', occurred_at: now, observed_at: now });
-    expect(journal.list({ since, until, project_id: 'p-deleted' }).events).toMatchObject([
+    expect(journal.list({ since, until, project_id: 'p-deleted' }, ['p-deleted']).events).toMatchObject([
       { project_id: 'p-deleted', object_id: 'p-deleted', related_object_id: 'folder-gone' },
     ]);
     expect(() => journal.append({ event_id: 'missing-project', kind: 'project.deleted', occurred_at: now, observed_at: now })).toThrow(/subject project/);
@@ -96,7 +96,7 @@ describe('activity journal: real SQLite, no transcript storage or reader', () =>
       DELETE FROM sessions;`);
     journal.append(event('start', { occurred_at: Date.parse(since) }));
     journal.append(event('end', { occurred_at: Date.parse(until) }));
-    expect(journal.list({ since, until, project_id: 'p1' }).events.map(e => e.event_id)).toEqual(['start']);
+    expect(journal.list({ since, until, project_id: 'p1' }, ['p1']).events.map(e => e.event_id)).toEqual(['start']);
     expect(() => journal.list({ since: until, until: since })).toThrow(/until/);
     expect(() => journal.list({ since, until, cursor: 'garbage' })).toThrow(/cursor/);
   });
@@ -117,7 +117,7 @@ describe('activity journal: the project comes from the subject', () => {
       INSERT INTO automation_runs (id, automation_id, status, trigger_kind) VALUES ('r1', 'a1', 'queued', 'cron');
     `);
   });
-  const ids = (project: string) => journal.list({ since, until, project_id: project }).events.map(e => e.event_id);
+  const ids = (project: string) => journal.list({ since, until, project_id: project }, [project]).events.map(e => e.event_id);
   const about = (id: string, kind: ActivityObservation['kind'], subject: Partial<ActivityObservation> = { session_id: 's1' }): ActivityObservation =>
     ({ event_id: id, kind, occurred_at: now, observed_at: now, ...subject });
 

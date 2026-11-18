@@ -33,7 +33,7 @@ import type { NormalizedEvent } from '../../../acp/reducer/normalized-event';
 import type { SessionPromptReceipt } from '../../../acp/session-protocol';
 import type { PermissionSubject, AcpPermissionOption } from '../../../acp/models/permissions';
 
-export type LiveSettingDimension = 'model' | 'permission' | 'effort';
+export type LiveSettingDimension = 'model' | 'permission' | 'effort' | 'fast';
 export type LiveSettingChannel =
   | 'acp-config-option'
   | 'acp-mode'
@@ -92,6 +92,7 @@ export interface LiveSettingsCapability {
   model?: LiveSettingCapability;
   permission?: LiveSettingCapability;
   effort?: LiveSettingCapability;
+  fast?: LiveSettingCapability;
 }
 
 const unsupportedLiveSetting: LiveSettingCapability = {
@@ -131,6 +132,7 @@ export const liveSettingsCapabilitySchema = z.object({
   model: liveSettingSchema.optional(),
   permission: liveSettingSchema.optional(),
   effort: liveSettingSchema.optional(),
+  fast: liveSettingSchema.optional(),
 });
 
 export type AcpSpawnContext = {
@@ -164,6 +166,11 @@ export type AcpSpawnContext = {
    * entrypoint accepts; providers must not infer capability policy from the ambient environment.
    */
   capabilityArgs?: readonly string[];
+  /**
+   * 选中连接要的启动参数(`AgentRunContext.connectionArgs`,#2507:Codex API Key 连接的 provider `-c`)。
+   * 放不放、放哪由这一家定;跑咕咕平台模型时平台那一份 provider 恒赢,这一格 ❌ 盖过它。
+   */
+  connectionArgs?: readonly string[];
   /**
    * 宿主按这一家的 `IAcpBehavior.bridge` 声明解析好的桥入口(`AgentRunContext.acpAdapterEntry`,#6394)。
    * 声明了 `bridge` 的家,宿主**一定**给;插件 ❌ 自己再 `require.resolve` / 读环境变量找桥。
@@ -465,10 +472,30 @@ export interface IAcpBehavior {
   catalogProbeSessionMeta?: Record<string, unknown>;
 
   /**
+   * Extra argv (and the files it names) for the model catalog probe, given that probe's scratch directory,
+   * which the probe deletes afterwards. For a harness that persists every `session/new`: without it each
+   * probe leaves an empty, untitled session in the user's own history (DeepSeek Harness lists them in its app).
+   */
+  catalogProbeOverlay?(scratchDir: string): { args: string[]; files: Array<{ path: string; content: string }> };
+
+  /**
    * This harness answers `session/new` without a model option and publishes it right after in a
    * `config_option_update` (Kiro V3, measured on 3.0.0). The model catalog probe then waits for that update.
    */
   catalogModelsInConfigUpdate?: boolean;
+
+  /**
+   * Lists its own models signed out, none of them runnable. The catalog probe's own-route read then asks
+   * `auth.checkStatus`: signed out ⇒ `auth-required`, `unknown` keeps the list.
+   */
+  catalogNeedsSignIn?: boolean;
+
+  /**
+   * 进程级认证,「报了才认」(#2507 Antigravity 的网关):`initialize` 时在 `clientCapabilities.auth._meta` 里声明
+   * `clientAuthMeta`;agent 在 `authMethods` 里报了 `methodId`,就在开第一条会话前 `authenticate {methodId}` 一次。
+   * 没报(那条进程不是带着连接起的)就一个请求都不多发。模型目录探针读这一格,与这一家 `connect` 里的会话同一条。
+   */
+  authenticateWhenAdvertised?: { methodId: string; clientAuthMeta: Record<string, unknown> };
 
   /** Model ids (as the catalog names them) whose raw tool-call markers show in replies here: a session opening on one gets one notice. */
   modelsLeakingToolCallMarkers?: readonly string[];
@@ -485,7 +512,8 @@ export interface IAcpBehavior {
    * Wrap an app-owned process's stdio into an ACP client connection.
    * The plugin owns adapter/SDK wiring; the app owns the process lifecycle.
    */
-  connect(io: AcpProcessIo, toClient: AcpClientFactory): AcpAgentApi;
+  filterPermissionConfig?(options: readonly SessionConfigOption[], context: { cliVersion?: string; autoReviewAllowed?: boolean; autoReviewUnavailable?: boolean; autoReviewByHaiku?: boolean }): SessionConfigOption[];
+  connect(io: AcpProcessIo, toClient: AcpClientFactory, context?: { cliVersion?: string; autoReviewAllowed?: boolean; autoReviewUnavailable?: boolean; autoReviewByHaiku?: boolean }): AcpAgentApi;
 
 }
 

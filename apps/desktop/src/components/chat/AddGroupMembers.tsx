@@ -1,19 +1,25 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { GroupCollabSnapshot } from '@gugu/core/shared/types/chat'
+import type { GroupChatSettings, GroupCollabSnapshot } from '@gugu/core/shared/types/chat'
 import { chatService } from '../../lib/chat'
-import { type AgentJoinRequestStatus } from '../../lib/groupAgentJoin'
 import { groupJoinError } from '../../lib/groupAgentJoinService'
+import { myAgentJoinRequests } from '../../lib/agentJoinRequests'
+import { useReplica } from '../../lib/replica'
+import { Unknown } from '../ui/Unknown'
 import { MEMBER_PICKER_SHEET, MemberPicker } from '../member-picker/MemberPicker'
 import { Sheet } from '../ui/Sheet'
+import { GroupInviteActions, GroupInviteCode } from './GroupInviteShare'
+import { groupInviteLinkFor } from '../../lib/groupInviteShareUrl'
 
 const reasonOf = (error: unknown) => String((error as Error)?.message ?? error)
 
 // 群里「添加成员」= 与新建群聊同一个选择器;已在群里的勾着、不能取消。人与 Agent 走同一个 inviteGroupMember:
 // 关系内的直接加入,其余发邀请,需审批的群里 Agent 落一条待审请求。成功的从候选里变成「已在群里」,失败的留在已选里重试。
-export function AddGroupMembers({ chatId, snapshot, canInviteHumans, humanDeniedHint, initialSelectedIds, onClose, onReload }: {
+export function AddGroupMembers({ chatId, snapshot, settings, canInviteHumans, humanDeniedHint, initialSelectedIds, onClose, onReload }: {
   chatId: string
   snapshot: GroupCollabSnapshot
+  /** 有了才画群的邀请链接 / 二维码(groupInviteLinkFor 判定)。 */
+  settings: GroupChatSettings | null
   canInviteHumans: boolean
   /** 不能邀请人类时那一页说的话;不给 = 权限不够那一句(项目群有自己的原因)。 */
   humanDeniedHint?: string
@@ -23,12 +29,12 @@ export function AddGroupMembers({ chatId, snapshot, canInviteHumans, humanDenied
 }) {
   const { t } = useTranslation('messaging')
   const members = useMemo(() => new Set([...snapshot.humans.map((h) => h.id), ...snapshot.agents.map((a) => a.id)]), [snapshot.agents, snapshot.humans])
-  const [requests, setRequests] = useState<Map<string, AgentJoinRequestStatus>>(new Map())
+  const requests = useReplica(myAgentJoinRequests, [chatId])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const reloadRequests = useCallback(async () => { setRequests(await chatService.listMyAgentJoinRequests(chatId)) }, [chatId])
-  useEffect(() => { reloadRequests().catch((err: unknown) => setError(reasonOf(err))) }, [reloadRequests])
+  const inviteLink = useMemo(() => groupInviteLinkFor(chatId, settings), [chatId, settings])
+  const reloadRequests = () => myAgentJoinRequests.refresh(chatId)
 
   const add = async (ids: string[]): Promise<string[] | void> => {
     setBusy(true)
@@ -62,8 +68,12 @@ export function AddGroupMembers({ chatId, snapshot, canInviteHumans, humanDenied
     }
   }
 
-  const agentNote = (id: string) => requests.get(id) === 'pending' ? t('group.picker.agentRequestPending')
-    : requests.get(id) === 'rejected' ? t('group.picker.agentRequestRejected') : undefined
+  // Not read yet: an agent's line is a placeholder, ❌ its usual line that then turns into「审批中」.
+  const agentNote = (id: string) => requests.state === 'unknown' ? <Unknown className="w-16" />
+    : requests.state !== 'value' ? undefined
+    : requests.value.get(id) === 'pending' ? t('group.picker.agentRequestPending')
+    : requests.value.get(id) === 'rejected' ? t('group.picker.agentRequestRejected') : undefined
+  const requestsError = requests.state === 'error' ? reasonOf(requests.error) : null
 
   return (
     <Sheet onClose={onClose} {...MEMBER_PICKER_SHEET} ariaLabel={t('group.picker.title')}>
@@ -76,8 +86,10 @@ export function AddGroupMembers({ chatId, snapshot, canInviteHumans, humanDenied
         initialSelectedIds={initialSelectedIds}
         peopleDenied={canInviteHumans ? undefined : humanDeniedHint ?? t('group.picker.humanPermissionHint')}
         agentNote={agentNote}
-        footer={error || notice ? (
-          <p role={error ? 'alert' : 'status'} className={error ? '!m-0 !px-5 !py-2 text-[length:var(--font-caption)] text-[var(--danger-fg)]' : '!m-0 !px-5 !py-2 text-[length:var(--font-caption)] text-[var(--text-secondary)]'}>{error ?? notice}</p>
+        actions={inviteLink ? <GroupInviteActions inviteLink={inviteLink} groupName={settings?.name} snapshot={snapshot} /> : undefined}
+        empty={inviteLink ? <GroupInviteCode inviteLink={inviteLink} groupName={settings?.name} snapshot={snapshot} /> : undefined}
+        footer={error || notice || requestsError ? (
+          <p role={error || !notice ? 'alert' : 'status'} className={error || !notice ? '!m-0 !px-5 !py-2 text-[length:var(--font-caption)] text-[var(--danger-fg)]' : '!m-0 !px-5 !py-2 text-[length:var(--font-caption)] text-[var(--text-secondary)]'}>{error ?? notice ?? requestsError}</p>
         ) : null}
         onConfirm={add}
         onClose={onClose}

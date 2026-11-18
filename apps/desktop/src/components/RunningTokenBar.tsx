@@ -17,6 +17,7 @@ import type { AgentRunningStateKey } from '../lib/agentRunningVerb'
 import { Popover } from './ui/Popover'
 import { Chip } from './ui/Chip'
 import { MessagePreviewCard } from './MessagePreviewCard'
+import { settleRunningTokenFit } from './runningTokenFit'
 
 export interface RunningToken {
   id: string
@@ -47,7 +48,7 @@ const STYLE = `
 .rtb-tok{display:inline-flex;align-items:center;gap:7px;flex-shrink:0;min-width:0;border:0;padding:0;background:transparent;color:inherit;font:inherit;white-space:nowrap;cursor:default}
 .rtb-tok[data-clickable=true]{cursor:pointer}
 .rtb-pill{height:auto;gap:7px;padding:4px 8px;max-width:168px;min-width:0;background:var(--bg-elevated);box-shadow:var(--shadow-lift);color:inherit;font-weight:inherit}
-.rtb-tok:focus-visible,.rtb-more:focus-visible,.rtb-otok:focus-visible{outline:none}
+.rtb-tok:focus-visible:not([data-pointer-focus]),.rtb-more:focus-visible:not([data-pointer-focus]),.rtb-otok:focus-visible:not([data-pointer-focus]){outline:none}
 .rtb-nm{color:var(--faint-fg);min-width:0;overflow:hidden;text-overflow:ellipsis}
 /* Three static 220%-wide repeats cover the original 160% → -60% sweep.
    Masks move 264% of the label width; glyphs move back by the same distance. */
@@ -223,10 +224,14 @@ export function RunningTokenBar({ tokens, onTokenClick, testId, previewChatId }:
     const el = boxRef.current
     if (!el) return
     const pills = [...el.querySelectorAll<HTMLElement>('.rtb-bar > [data-message-preview-trigger]')]
-    const fit = () => fitCount(el.clientWidth, pills.map(pill => pill.offsetWidth), el.querySelector<HTMLElement>('.rtb-more')?.offsetWidth ?? 0)
+    const fit = (more = el.querySelector<HTMLElement>('.rtb-more')?.offsetWidth ?? 0) => fitCount(el.clientWidth, pills.map(pill => pill.offsetWidth), more)
     const observer = new ResizeObserver(() => {
-      // A wider +N fits fewer pills and more pills make +N narrower, so successive passes move one way and stop.
-      for (let next = fit(), shown = Number.NaN; next !== shown; shown = next, next = fit()) flushSync(() => setFitted(next))
+      // Without the counter, this is an upper bound. Test each smaller prefix
+      // with its real counter; a narrower +11 must not send us back to +10.
+      settleRunningTokenFit(fit(0), (visible) => {
+        flushSync(() => setFitted(visible))
+        return fit()
+      })
     })
     observer.observe(el)
     pills.forEach(pill => observer.observe(pill))

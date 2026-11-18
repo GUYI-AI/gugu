@@ -41,7 +41,7 @@ async function mount(status: AgentStatus | null, schedule: SessionpageScheduleDi
     <SessionLocalizationProvider>
       <SessionRowShell
         sessionId="s-1" rowVariant="tree" depth={0} hasChildren={false} expanded={false}
-        needsAttention={false} title="盯一下 CI" harness={null} presentation={status ? presentAgentStatus({ reading: { status, detail: null } }) : null}
+        title="盯一下 CI" harness={null} presentation={status ? presentAgentStatus({ reading: { status, detail: null } }) : null}
         lastInteractedAt={new Date(Date.now() - 3 * 3600_000).toISOString()} schedule={schedule}
         doneUnread={false} isActive={false} isCursor={false} isPendingArchive={false}
         quickActions={{ isPinned: false, onSetPinned: () => {}, archiveLabel: 'Archive', onArchive: () => {} }}
@@ -85,7 +85,7 @@ it('鼠标:指针进行,钟排进 hover 层置顶 / 归档的左边(不叠),停�
   expect(tip).toContain('检查 CI 结果');
   expect(tip).toMatch(/\d\d:\d\d/);
   // 几条:那一句里的条数(界面语言跟着测试的 locale,两种都认)。
-  expect(tip).toMatch(/2 (个定时|scheduled)/);
+  expect(tip).toMatch(/2 (个定时|tasks scheduled)/);
 });
 
 it('阴控:没有定时就照旧是那个时间', async () => {

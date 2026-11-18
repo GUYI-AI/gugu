@@ -13,4 +13,9 @@ describe('process line words', () => {
     expect(enUSMessages['transcript.restoring']).toBe('Restoring');
     expect(zhCNMessages['transcript.starting']).toBe('启动中');
   });
+
+  it('says the start is waiting on the model service while the model-access ticket is out', () => {
+    expect(zhCNMessages['transcript.connecting']).toBe('正在连接咕咕模型服务');
+    expect(enUSMessages['transcript.connecting']).toBe('Connecting to Gugu model service');
+  });
 });

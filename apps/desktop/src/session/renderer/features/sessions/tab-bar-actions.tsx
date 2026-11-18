@@ -3,6 +3,7 @@ import { useCommandProvider } from '@renderer/lib/commands/use-command-provider'
 import { Cable, Folder, Globe, Plus, SquareTerminal } from '@/lib/icons'
 import { GitFork, GitPullRequest } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
+import type { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { useState } from 'react';
 import { ExtensionMark } from '@renderer/features/extensions/extension-mark';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
@@ -31,7 +32,7 @@ import {
 import { canStartSideSession, startSideSession } from './start-side-session';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useAgents } from '@renderer/lib/stores/use-agents';
-import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
+import { terminalShown, useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
 import { folderItem, WORKSPACE_APP_KIND } from '@renderer/features/chats/chat-tabs/chat-panel-item';
 import { openPanelItem } from '@renderer/features/chats/chat-tabs/chat-layouts';
 import { useChatFolderName } from '@/components/chat/chatFolderName';
@@ -77,7 +78,7 @@ const TaskAddItems = observer(function TaskAddItems() {
   const { projectId, sessionId } = useSessionViewContext();
   const { data: agents } = useAgents();
   const canSideSession = canStartSideSession(projectId, sessionId, agents);
-  const terminalEnabled = useTerminalEnabled();
+  const terminalEnabled = terminalShown(useTerminalEnabled());
   const openTab = (kind: string) => sessionView.paneLayout.openBeside(kind, {});
   const folder = installedExtensionsStore.enabledTabContributions.find((entry) => entry.kind === WORKSPACE_APP_KIND);
   return (
@@ -251,7 +252,7 @@ function renderWorkspaceActionMenuItem(
  * 分屏 ❌ 另设按钮(owner 2026-10-09「能拖拽的话是不是就不需要了」):靠拖到内容区边上、页签右键「向右分 / 向下分」或这个键;
  * 拆开另有两枚页签中间那颗钮。只有聚焦着的那一块接键。
  */
-export const SplitPaneHotkey = observer(function SplitPaneHotkey() {
+export const SplitPaneHotkey = observer(function SplitPaneHotkey({ chatLayout }: { chatLayout?: PaneLayoutStore }) {
   const { pane, isFocusedPane } = usePaneContext();
   const place = useScreenBlock();
   const multiBlock = place.blockId !== null && place.multi;
@@ -259,6 +260,14 @@ export const SplitPaneHotkey = observer(function SplitPaneHotkey() {
     scopeId: 'session-sub',
     getCommands: () => {
       if (!isFocusedPane) return [];
+      const mode = chatLayout?.chatWorkspaceMode;
+      if (mode) {
+        if (mode === 'empty') return [];
+        const split = { id: 'session.splitPane' as const, execute: () => { chatLayout?.toggleChatToolSplit(); } };
+        if (mode === 'hidden') return [split];
+        const full = { id: 'session.fullscreenTab' as const, execute: () => chatLayout?.setChatToolLayout(mode === 'full' ? 'split' : 'full') };
+        return [full, split];
+      }
       // 页签全屏(tab-fullscreen.ts)和拆开是两件事:这个键只盖住 / 放开工作区,❌ 动布局。
       const fullscreen = { id: 'session.fullscreenTab' as const, execute: () => {
         const tabId = pane.resolvedActiveTabId;

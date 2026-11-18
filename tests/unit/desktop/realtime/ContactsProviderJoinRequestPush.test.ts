@@ -4,7 +4,6 @@
 import { act } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness } from '../../../support/testHarness'
-import type { ContactGroupChat } from '@gugu/core/shared/types/contacts'
 import type { ManagedGroupJoinRequest } from '../../../../apps/desktop/src/lib/groupJoinRequests'
 
 // The chat store's functions keep one identity across renders, as the real store's do: the provider's loaders are
@@ -46,7 +45,9 @@ const { authUser, authOverride, contactsServiceMock, revisionHandlers, listManag
 })
 
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: authOverride.current ?? authUser, loading: false }) }))
-vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => chatStore }))
+vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => chatStore, useChatStoreReader: () => () => chatStore, useStoreValueBy: <T>(read: (value: typeof chatStore) => T) => read(chatStore) }))
+// The contacts replicas publish identities through the account's IM library.
+vi.mock('../../../../apps/desktop/src/lib/imRepository', async (original) => ({ ...(await original<object>()), openedImRepository: () => chatStore.getImRepository() }))
 vi.mock('../../../../apps/desktop/src/lib/contacts', () => ({ contactsService: contactsServiceMock }))
 vi.mock('../../../../apps/desktop/src/lib/groupInvitations', () => ({ listGroupInvitations: async () => [] }))
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({ readRequiredDisplayIdentities: async () => [] }))
@@ -55,6 +56,7 @@ vi.mock('../../../../apps/desktop/src/lib/groupJoinRequests', async (importOrigi
   listManagedGroupJoinRequests: listManagedMock,
 }))
 
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { ContactsProvider } from '../../../../apps/desktop/src/store/contacts'
 import { useContactsStore, type ContactsContextValue } from '../../../../apps/desktop/src/store/contactsContext'
 
@@ -66,7 +68,6 @@ function Capture() {
 
 const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve() })
 
-const myGroup: ContactGroupChat = { id: 'g-1', public_id: null, kind: 'group', name: '合作方群', alias: null, avatar_url: null, member_count: 2, is_muted: false, my_role: 'owner', member_user_ids: ['user-1', 'user-2'] }
 const agentAsks: ManagedGroupJoinRequest = {
   id: 'r-1',
   chat_id: 'g-1',
@@ -80,6 +81,8 @@ const agentAsks: ManagedGroupJoinRequest = {
 }
 
 beforeEach(() => {
+  queryClient.clear()
+  followRendererSession('SIGNED_IN', authUser.id)
   store = null
   authOverride.current = null
   revisionHandlers.clear()
@@ -118,6 +121,7 @@ describe('入群申请随 friend_requests_changed 到审批人', () => {
     try {
       await harness.render(createNode(ContactsProvider, null, createNode(Capture)))
       authOverride.current = { ...authUser, id: 'user-2' }
+      followRendererSession('SIGNED_IN', 'user-2')
       await harness.render(createNode(ContactsProvider, null, createNode(Capture)))
       await flush()
       expect(contactsServiceMock.getContacts).toHaveBeenLastCalledWith('user-2')
@@ -141,7 +145,7 @@ describe('入群申请随 friend_requests_changed 到审批人', () => {
     await act(async () => { await revisionHandlers.get('friend_requests_changed')?.() })
     await flush()
 
-    expect(listManagedMock).toHaveBeenLastCalledWith([myGroup])
+    expect(listManagedMock).toHaveBeenLastCalledWith()
     expect(store?.groupJoinRequests.map((request) => request.id)).toEqual(['r-1'])
     expect(store?.pendingRequestCount).toBe(1)
   })

@@ -2,6 +2,8 @@ import path from 'node:path';
 import { tmeetCliRecipe } from './tmeet-cli';
 import { feishuCliRecipe } from './feishu-cli';
 import type { IntegrationCliTool } from '@gugu/session-plugins/integrations';
+import { cliPlatform, cliToolSupportsHost, type CliPlatform } from '@shared/integration-cli-platform';
+export type { CliPlatform } from '@shared/integration-cli-platform';
 
 /**
  * 官方命令行集成(#7210 第二批)里,每一个工具咕咕要知道的事 —— 怎么装、登录要跑什么、登录时它给人看什么、
@@ -11,7 +13,8 @@ import type { IntegrationCliTool } from '@gugu/session-plugins/integrations';
  *  · ❌ 跑厂商的 npm 安装脚本。dws 的 postinstall 会把 skills 写进用户的 ~/.claude/skills、~/.codex/skills 等
  *    七十多个目录 —— 改用户自己的 agent 配置(product spec「不改用户电脑上 Claude Code、Codex
  *    等自己的配置」)。所以只下载发布包、校验、解出程序体与 skills,装进咕咕自己的目录。
- *  · 工具的登录态放在咕咕给它的目录里(`home`),与用户自己装的同一个工具互不相干;断开 = 删掉这个目录。
+ *  · 工具的登录态用咕咕专属存储,与用户自己装的同一工具互不相干。
+ *    Windows dws 的注册表命名空间由 home 派生,断开先 auth reset,再删除目录。
  */
 
 export type CliLoginPrompt =
@@ -20,16 +23,23 @@ export type CliLoginPrompt =
   /** 用手机 App 扫码。`image` 是 data URL;`url` 是二维码同一个去处(扫不了时直接打开)。 */
   | { kind: 'qr-code'; image: string; url?: string };
 
-export type CliPlatform = 'darwin-arm64' | 'darwin-x64' | 'linux-arm64' | 'linux-x64';
-
 export function currentCliPlatform(
   platform: NodeJS.Platform = process.platform,
   arch: string = process.arch
 ): CliPlatform {
-  const key = `${platform}-${arch}`;
-  if (key === 'darwin-arm64' || key === 'darwin-x64' || key === 'linux-arm64' || key === 'linux-x64') return key;
-  // Windows:dws 的登录态在 Windows 上存进注册表(DPAPI),咕咕给不了它一个独立目录;先不支持,响亮地说。
-  throw new Error(`Official CLI integrations are not available on ${platform} ${arch} yet.`);
+  const key = cliPlatform({ platform, arch });
+  if (key) return key;
+  throw new Error(`这台设备（${platform} ${arch}）尚不支持官方命令行集成。`);
+}
+
+export function assertCliToolSupported(tool: IntegrationCliTool): void {
+  if (!cliToolSupportsHost(tool, { platform: process.platform, arch: process.arch })) {
+    throw new Error('这个集成尚未在这台设备上实现，请选择其他设备。');
+  }
+}
+
+export function cliBinaryName(bin: string, platform: string = process.platform): string {
+  return platform === 'win32' ? `${bin}.exe` : bin;
 }
 
 /**
@@ -59,6 +69,7 @@ export type CliToolRecipe = {
 const DWS_VERSION = '1.0.64';
 const WECOM_VERSION = '1.3.4';
 const WECOM_INTEGRITY: Record<CliPlatform, string> = {
+  'win32-x64': 'sha512-FomGDkkDVZpKB9GZjAdMvR7491z9DMiaEzYQyDkA+3Yx6I100gJFnIJ31VZr6oMIRrZCT19GzNP+7c4DzuoPbg==',
   'darwin-arm64': 'sha512-mktTGWYWqwE5exPs/vdiYcwas77G7DPEhAmj1Hl0LqQHUp6tfwplSfJQ/TaESZvmKtoqDglrywtIQeJ0ksFsWA==',
   'darwin-x64': 'sha512-w9TuS95c06uyqbylxNjBCtC3GvR/6Vf6WK1zvsIcif7ivUq6Gu5scssagbD6rBWwhQUJ6o2MQKufpa439mL8bg==',
   'linux-arm64': 'sha512-BUvkJCMiM6aImK1MGjA6TuNslfay9eg/cOrmmvg3RLAlB9xTQUfqdq9YQxFog04wEpnlZSsgNXq6bWQaIvwX9w==',
@@ -81,9 +92,14 @@ const dws: CliToolRecipe = {
     integrity: 'sha512-0ySv3ZezEeMwYY4m3Db7AEON9DceVr/dQaS2lz07gy/fIlNMh50qbnQN7Llqc5B5CjuZoUrBKUaspTbJN0Vyaw==',
   }),
   // 关掉系统钥匙串:登录态落在 `home` 下的加密文件里,咕咕删得掉、也搬得走(dws README「Migrate auth」)。
-  env: (home) => ({ HOME: home, DWS_DISABLE_KEYCHAIN: '1' }),
+  // Preserve existing macOS/Linux paths. Windows v1.0.68 derives a private
+  // DPAPI registry namespace from DWS_KEYCHAIN_DIR; HOME alone has no effect.
+  env: (home) => ({ HOME: home, DWS_DISABLE_KEYCHAIN: '1', ...(process.platform === 'win32' ? {
+    USERPROFILE: home, DWS_CONFIG_DIR: path.join(home, '.dws'), DWS_KEYCHAIN_DIR: path.join(home, 'keychain'),
+    DWS_KEYCHAIN_TEST_NAMESPACE: '',
+  } : {}) }),
   // 设备流:本机、远程 server、云电脑一样走 —— 回调不必落在某台机器的 127.0.0.1。
-  loginArgs: () => ['auth', 'login', '--device'],
+  loginArgs: () => ['auth', 'login', '--device', '--no-browser'],
   loginTimeoutMs: 15 * 60_000,
   statusArgs: ['auth', 'status', '--format', 'json'],
   parseStatus(stdout) {
@@ -103,7 +119,7 @@ const wecom: CliToolRecipe = {
     version: WECOM_VERSION,
     integrity: WECOM_INTEGRITY[platform],
   }),
-  env: (home) => ({ WECOM_CLI_CONFIG_DIR: path.join(home, 'config') }),
+  env: (home) => ({ WECOM_CLI_CONFIG_DIR: path.join(home, 'config'), WECOM_CLI_ACCESS_TOKEN: '' }),
   loginArgs: (work) => ['auth', 'init', '--noninteractive', '--no-browser', '--output-qrcode', wecomQrPath(work)],
   // wecom-cli 自己的扫码等待是 5 分钟。
   loginTimeoutMs: 5 * 60_000 + 15_000,
@@ -122,7 +138,19 @@ export function wecomQrPath(work: string): string {
 
 const RECIPES: Record<IntegrationCliTool, CliToolRecipe> = { dws, 'wecom-cli': wecom, 'lark-cli': feishuCliRecipe, tmeet: tmeetCliRecipe };
 
-export function cliToolRecipe(tool: IntegrationCliTool): CliToolRecipe {
+// Keep existing macOS/Linux installations and managed images usable without
+// forcing a download merely to read a connection or start a session. Windows
+// needs the first published release with directory-scoped registry credentials.
+const dwsWindows: CliToolRecipe = {
+  ...dws,
+  version: '1.0.68',
+  binaryPackage: () => ({ name: 'dingtalk-workspace-cli', version: '1.0.68',
+    integrity: 'sha512-ONgoyNSUGN9o7M/1UR4ZAjXrLiPn5DaTXN8Y2LsmshVExYNtpU0Ko/DcPl2ulutw6Xfw2CPBSsgZhRCfRzoQqA==',
+  }),
+};
+
+export function cliToolRecipe(tool: IntegrationCliTool, platform: NodeJS.Platform = process.platform): CliToolRecipe {
+  if (tool === 'dws' && platform === 'win32') return dwsWindows;
   return RECIPES[tool];
 }
 

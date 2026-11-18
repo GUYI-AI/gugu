@@ -159,7 +159,7 @@ async function probeAnchor(label, req) {
   const resourcesReal = fs.realpathSync(resourcesDir)
   for (const spec of [
     '@agentclientprotocol/claude-agent-acp/dist/index.js',
-    // #7191 浏览器工具:browser-agent-mcp.ts 运行时 require('@playwright/mcp'),再从它的位置 require('playwright-core')。
+    // server 上 App 的后台页:extension-background.ts 运行时 resolve('@playwright/mcp'),再从它的位置 require('playwright-core')。
     '@playwright/mcp',
   ]) {
     let resolved
@@ -201,7 +201,7 @@ async function main() {
   fs.accessSync(mainPath) // 主进程本体在真实 app/ 目录
   // 任务页主进程 chunk、三个 fork worker 与用量页的 token 扫描线程(#6334)必须与 main.js 同目录真实存在
   // (worker 按本 chunk 同目录解析,见 worker-manifest.ts)
-  for (const sibling of ['emdash-main-bridge.js', 'acp-runtime.js', 'agent-config-runtime.js', 'fs-watch-runtime.js', 'usage-token-scan.js']) {
+  for (const sibling of ['emdash-main-bridge.js', 'acp-runtime.js', 'agent-config-runtime.js', 'fs-watch-runtime.js', 'usage-token-scan.js', 'task-turn-search.js']) {
     fs.accessSync(path.join(distElectron, sibling))
   }
   await probeAnchor('app-anchor', createRequire(mainPath))

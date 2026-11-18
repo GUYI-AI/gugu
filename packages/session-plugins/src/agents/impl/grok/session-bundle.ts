@@ -195,7 +195,7 @@ function applyModelEnv(bundle: SessionCapabilityBundle, env: Record<string, stri
  */
 function applyAutonomyEnv(bundle: SessionCapabilityBundle, env: Record<string, string>): void {
   if (!bundle.autonomy) return;
-  if (bundle.autonomy.mode === 'full-access') {
+  if (bundle.autonomy.permissionMode === 'full-access') {
     env.GROK_DEFAULT_PERMISSION_MODE = 'always-approve';
     return;
   }

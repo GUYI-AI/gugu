@@ -1,3 +1,4 @@
+import type { ComposerModelOption } from '@gugu/session-ui/react/components'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -8,9 +9,11 @@ import {
 import { Check, ChevronDown, ChevronLeft, ChevronRight, X } from '@/lib/icons'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
+import { SearchField } from '@/components/ui/SearchField'
 import { Sheet } from '@/components/ui/Sheet'
 import {
   createPillLabel,
+  createPermissionModes,
   harnessBlockReason,
   harnessUsable,
   selectHarness,
@@ -20,18 +23,22 @@ import {
 } from './create-session-form'
 import { createModelOptions } from './session-model-menu'
 import { allGuguHidden, offeredInCreateMenu } from '@/lib/createModelDefault'
+import { PhoneComposerChoice } from '../composer/PhoneComposerChoice'
 import { ModelMenuFooter } from './ModelMenuFooter'
-import { composerTierLabel } from '@renderer/features/sessions/session-config/use-composer-model-options'
+import { phoneModelDescription, phoneModelName } from './phone-model-copy'
+import { composerModelSelection, composerTierLabel } from '@renderer/features/sessions/session-config/use-composer-model-options'
 import { guguReasonText } from '@renderer/features/sessions/gugu-reason'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import './task-flow-catalog'
+import './create-controls-catalog'
+import './agent-watch.css'
 
 /**
- * 新建会话的「项目 · harness」胶囊:摆在输入框那一行、只写值、抽屉下钻(顶层 = 项目,摘要行进 harness)、
- * 填满圆点打勾 —— 「说这句话之前先定个调」。
+ * 新建会话的「harness · 模型」胶囊:摆在输入框那一行、只写值、抽屉下钻(顶层 = 摘要行,点进各维)、
+ * 填满圆点打勾 —— 「说这句话之前先定个调」。项目与机器不在这里:输入框上方那两行(CreateTarget)。
  *
  * 选完**不关**(owner 10-07「调完一个设置后还可以继续调另一个,而不是每次都要重新点开设置」):
- * 在下钻页选 → 回顶层,摘要行上就是刚改的值,接着点下一项;在顶层选(项目)→ 留在顶层、勾移过去。
+ * 在下钻页选 → 回顶层,摘要行上就是刚改的值,接着点下一项。
  * 关只靠 ✕ 和点遮罩。
  *
  * 这里的选择**只在手机上**,发送时才随请求带过去,❌ 不逐项下发到机器 ——
@@ -53,7 +60,7 @@ export function CreateOptionsPill({
   selection: CreateSelection
   /** 模型点选另报，区分“明确不指定”和尚未定默认；改项目/权限不算选过模型。 */
   onChange: (next: CreateSelection, modelPicked?: boolean) => void
-  /** 正在建 —— 发出去之后再改项目,请求已经带着旧值在路上了。 */
+  /** 正在建 —— 发出去之后再改,请求已经带着旧值在路上了。 */
   busy: boolean
   /** 选定 harness 的模型目录;还没到 / 探失败时 null,由 `modelsState` 说明是哪种。 */
   models: SessionpageSessionCreateModels | null
@@ -62,16 +69,19 @@ export function CreateOptionsPill({
 }) {
   const { t } = useTranslation('main')
   const { t: tFlow } = useTranslation('mobileTaskFlow')
-  const [view, setView] = useState<'project' | 'harness' | 'permission' | 'model' | 'effort' | null>(null)
-  const harnessOption = options.harnesses.find((h) => h.id === selection.harness) ?? null
+  const [view, setView] = useState<'root' | 'harness' | 'permission' | 'model' | 'effort' | null>(null)
+  const baseHarnessOption = options.harnesses.find((h) => h.id === selection.harness) ?? null
+  const harnessOption = baseHarnessOption ? { ...baseHarnessOption, permissionModes: createPermissionModes(baseHarnessOption, models, modelsState, selection) } : undefined
   const label = createPillLabel(options, selection, models, phoneHost ? tFlow('phoneAgent') : undefined)
 
-  // 一个值都没有就整个不画(与会话选项胶囊同一条):机器上没项目、也没 harness 的情形,
+  // 一个值都没有就整个不画(与会话选项胶囊同一条):机器上没有 harness 的情形,
   // 页面正文已经在说原因了,这里再摆一个空胶囊只会多一个「这是啥」。
   if (!label) return null
 
-  const atRoot = view === (phoneHost ? 'model' : 'project')
-  const backToRoot = () => setView(phoneHost ? 'model' : 'project')
+  const root = phoneHost ? 'model' : 'root'
+  const atRoot = view === root
+  const backToRoot = () => setView(root)
+  const viewName = view === 'root' || view === null ? t('agentWatch.options.title') : t(`agentWatch.create.${view === 'permission' ? 'permissionLabel' : view}`)
 
   return (
     <>
@@ -83,7 +93,7 @@ export function CreateOptionsPill({
         data-testid="agent-watch-create-options-open"
         aria-haspopup="dialog"
         aria-expanded={view !== null}
-        onClick={() => setView(phoneHost ? 'model' : 'project')}
+        onClick={() => setView(root)}
       >
         <span className="gg-aw-pill-text">{label}</span>
         <ChevronDown />
@@ -94,7 +104,7 @@ export function CreateOptionsPill({
           onClose={() => setView(null)}
           mobileFitContent
           testId="agent-watch-create-options"
-          ariaLabel={t(`agentWatch.create.${view === 'permission' ? 'permissionLabel' : view ?? 'project'}`)}
+          ariaLabel={viewName}
         >
           {view ? <div className="gg-aw gg-aw-sheet">
             <div className="gg-aw-sheet-head">
@@ -108,7 +118,7 @@ export function CreateOptionsPill({
                 {atRoot ? <X /> : <ChevronLeft />}
               </IconButton>
               <div className="gg-aw-sheet-title">
-                {t('agentWatch.options.pick', { name: t(`agentWatch.create.${view === 'permission' ? 'permissionLabel' : view ?? 'project'}`) })}
+                {view === 'root' ? viewName : t('agentWatch.options.pick', { name: viewName })}
               </div>
               <div className="gg-aw-sheet-side" />
             </div>
@@ -120,7 +130,8 @@ export function CreateOptionsPill({
                 choices={(harnessOption?.permissionModes ?? []).map((m) => ({
                   id: m,
                   name: t(`agentWatch.create.permission.${m}.name`),
-                  desc: t(`agentWatch.create.permission.${m}.desc`),
+                  desc: m === 'ai-review' && models?.autoReview?.disabled ? translateSessionMessage('taskConfig.reviewUnavailable') : t(`agentWatch.create.permission.${m}.desc`),
+                  disabled: m === 'ai-review' && models?.autoReview?.disabled,
                 }))}
                 selected={selection.permissionMode}
                 onPick={(id) => {
@@ -144,7 +155,6 @@ export function CreateOptionsPill({
                 models={models}
                 platformOnly={phoneHost || harnessOption?.chatAvailable === true && !harnessOption.watchable}
                 harnessName={phoneHost ? tFlow('phoneAgent') : harnessOption?.name ?? selection.harness ?? ''}
-                defaultHint={phoneHost ? tFlow('phoneModelDefaultHint') : undefined}
                 state={modelsState}
                 selection={selection}
                 onPick={(model) => {
@@ -153,35 +163,7 @@ export function CreateOptionsPill({
                 }}
                 onLeave={() => setView(null)}
               />
-            ) : view === 'project' ? (
-              <div className="gg-aw-choice-group" role="radiogroup" data-dimension="project">
-                {options.projects.map((project) => {
-                  const selected = project.id === selection.projectId
-                  return (
-                    <Button
-                      key={project.id}
-                      variant="ghost"
-                      size="option"
-                      className="gg-aw-choice"
-                      role="radio"
-                      aria-checked={selected}
-                      data-testid="agent-watch-create-choice"
-                      data-dimension="project"
-                      data-option-id={project.id}
-                      onClick={() => onChange({ ...selection, projectId: project.id })}
-                    >
-                      <span className="gg-aw-choice-radio" data-on={selected ? 'true' : undefined}>
-                        {selected ? <Check /> : null}
-                      </span>
-                      <span className="gg-aw-choice-body">
-                        <span className="gg-aw-choice-label">{project.name}</span>
-                        {!harnessOption?.chatAvailable || harnessOption.watchable ? <span className="gg-aw-choice-desc">{project.path}</span> : null}
-                      </span>
-                    </Button>
-                  )
-                })}
-              </div>
-            ) : (
+            ) : view === 'harness' ? (
               <div className="gg-aw-choice-group" role="radiogroup" data-dimension="harness">
                 {options.harnesses.map((harness) => {
                   const selected = harness.id === selection.harness
@@ -221,7 +203,7 @@ export function CreateOptionsPill({
                   )
                 })}
               </div>
-            )}
+            ) : null}
 
             {atRoot ? (
               <div className="gg-aw-summary-group">
@@ -323,12 +305,12 @@ function ChoiceList({
   onPick,
 }: {
   dimension: string
-  choices: Array<{ id: string; name: string; desc?: string }>
+  choices: Array<{ id: string; name: string; desc?: string; disabled?: boolean }>
   selected: string | null
   defaultChoice?: { name: string; desc: string }
   onPick: (id: string | null) => void
 }) {
-  const rows: Array<{ id: string | null; name: string; desc?: string }> = defaultChoice
+  const rows: Array<{ id: string | null; name: string; desc?: string; disabled?: boolean }> = defaultChoice
     ? [{ id: null, ...defaultChoice }, ...choices]
     : choices
   return (
@@ -343,6 +325,7 @@ function ChoiceList({
             className="gg-aw-choice"
             role="radio"
             aria-checked={isSelected}
+            disabled={row.disabled}
             data-testid="agent-watch-create-choice"
             data-dimension={dimension}
             data-option-id={row.id ?? ''}
@@ -363,24 +346,24 @@ function ChoiceList({
 }
 
 /**
- * 模型那一页:第一行永远是「默认(让 harness 自己定)」,然后 harness 自家一组、咕咕平台一组
+ * 模型页顶部搜索，然后 harness 自家一组、咕咕平台一组。
  * (与桌面下拉同序)。哪一组缺席就在组名下写机器报来的原因,❌ 不藏:空列表说不出「为什么空」。
  */
-function ModelChoices({
+export function ModelChoices({
   models,
   platformOnly = false,
   harnessName,
-  defaultHint,
   state,
   selection,
   onPick,
   onLeave,
+  sessionOptions,
 }: {
+  sessionOptions?: Record<string, ComposerModelOption>
   models: SessionpageSessionCreateModels | null
   platformOnly?: boolean
   /** 「你的 X 模型」的 X。 */
   harnessName: string
-  defaultHint?: string
   state: 'idle' | 'loading' | 'ready' | 'failed'
   selection: CreateSelection
   onPick: (model: string | null) => void
@@ -388,8 +371,30 @@ function ModelChoices({
   onLeave: () => void
 }) {
   const { t } = useTranslation('main')
+  const { t: controls } = useTranslation('mobileCreateControls')
+  const [search, setSearch] = useState('')
+  const query = search.trim().toLocaleLowerCase()
+  const matches = (id: string, name: string, description?: string) =>
+    !query || [id, name, description ?? ''].some((value) => value.toLocaleLowerCase().includes(query))
+  const ownModelCopy = (id: string, name: string, description?: string) => ({
+    name: phoneModelName(id, name, controls),
+    description: phoneModelDescription(id, name, description, controls),
+  })
+  const sessionRows = Object.entries(sessionOptions ?? {}).map(([id, option]) => ({
+    id, ...option, ...(composerModelSelection(id).source === 'platform' ? {} : ownModelCopy(id, option.name, option.description)),
+  })).filter(({ id, name, description }) => matches(id, name, description))
   // 组头、倍率与桌面模型菜单同一份装配(session-model-menu)。
   const options = models ? createModelOptions(models, harnessName) : {}
+  const offeredRows = models?.models.filter((model) => (!platformOnly || model.source === 'gugu') && offeredInCreateMenu(model)) ?? []
+  const filteredRows = offeredRows.map((model) => {
+    const name = options[model.id]?.name ?? model.name
+    return model.source === 'harness'
+      ? { ...model, ...ownModelCopy(model.id, name, options[model.id]?.description) }
+      : { ...model, name, description: options[model.id]?.description }
+  }).filter(({ id, name, description }) => matches(id, name, description))
+  const searchField = <div className="gg-aw-model-search"><SearchField value={search}
+    placeholder={controls('searchModels')} onValueChange={setSearch}
+    clearLabel={controls('clearModelSearch')} onClear={() => setSearch('')} /></div>
   // 组空时写什么:harness 那组按探测状态措辞(状态码 ❌ 不给人看),`unavailable` 再附机器原话;
   // 咕咕那组机器报的是原因码,按界面语言说(老版本机器送来的原文认成「暂时用不了」,❌ 原样写)。
   const harnessEmptyText = (m: SessionpageSessionCreateModels): string => {
@@ -404,35 +409,20 @@ function ModelChoices({
     { source: 'harness', reason: models ? harnessEmptyText(models) : null },
     { source: 'gugu', reason: guguEmptyText(models?.guguReason) },
   ]
-  const choice = (id: string | null, name: string, desc?: string, extra?: Record<string, string>) => {
-    const selected = selection.model === id
-    return (
-      <Button
-        key={id ?? '__default__'}
-        variant="ghost"
-        size="option"
-        className="gg-aw-choice"
-        role="radio"
-        aria-checked={selected}
-        data-testid="agent-watch-create-choice"
-        data-dimension="model"
-        data-option-id={id ?? ''}
-        {...extra}
-        onClick={() => onPick(id)}
-      >
-        <span className="gg-aw-choice-radio" data-on={selected ? 'true' : undefined}>
-          {selected ? <Check /> : null}
-        </span>
-        <span className="gg-aw-choice-body">
-          <span className="gg-aw-choice-label">{name}</span>
-          {desc ? <span className="gg-aw-choice-desc">{desc}</span> : null}
-        </span>
-      </Button>
-    )
-  }
+  const choice = (id: string | null, name: string, description?: string, source?: 'harness' | 'gugu', disabled = false) => (
+    <PhoneComposerChoice key={id ?? '__default__'} id={id ?? ''} dimension="model" name={name}
+      description={description} selected={selection.model === id} disabled={disabled}
+      testId="agent-watch-create-choice" source={source} onClick={() => onPick(id)} />
+  )
+  if (sessionOptions) return <div className="gg-aw-model-choices">{searchField}
+    <div className="gg-aw-choice-group" role="radiogroup" data-dimension="model" data-state="ready">
+      {sessionRows.map((option) => choice(option.id, option.name, option.disabledReason ?? option.description, undefined, option.disabled))}
+    </div>
+    {query && !sessionRows.length && <p role="status" className="gg-aw-choice-note">{controls('noMatchingModels')}</p>}
+  </div>
   return (
+    <div className="gg-aw-model-choices">{searchField}
     <div className="gg-aw-choice-group" role="radiogroup" data-dimension="model" data-state={state}>
-      {choice(null, t('agentWatch.create.modelDefault'), defaultHint ?? t('agentWatch.create.modelDefaultHint'))}
       {state === 'loading' ? (
         <div className="gg-aw-choice-desc gg-aw-choice-note" data-testid="agent-watch-create-models-note">
           {t('agentWatch.create.modelLoading')}
@@ -443,16 +433,18 @@ function ModelChoices({
         </div>
       ) : null}
       {models
-        ? groups.filter(({ source }) => !platformOnly || source === 'gugu').map(({ source, reason }) => {
+        ? groups.filter(({ source }) => (!platformOnly || source === 'gugu')
+          && (source !== 'harness' || offeredRows.length === 0 || filteredRows.some((model) => model.source === source))
+          && (!query || filteredRows.some((model) => model.source === source))).map(({ source, reason }) => {
             // 只列点得中、跑得起来的:要会员的、他在设置里关掉的都不列(#7056,与桌面下拉同一个判据)。
-            const rows = models.models.filter((m) => m.source === source && offeredInCreateMenu(m))
+            const rows = filteredRows.filter((m) => m.source === source)
             return (
               <div key={source} className="gg-aw-choice-section" data-source={source}>
                 <div className="gg-aw-choice-section-title">
                   {composerTierLabel(source === 'gugu' ? 'platform' : 'own', harnessName)}
                 </div>
                 {rows.length > 0
-                  ? rows.map((m) => choice(m.id, options[m.id]?.name ?? m.name, options[m.id]?.description, { 'data-source': m.source }))
+                  ? rows.map((m) => choice(m.id, m.name, m.description, m.source))
                   : (
                     <div className="gg-aw-choice-desc gg-aw-choice-note" data-testid="agent-watch-create-models-empty" data-source={source}>
                       {source === 'gugu' && allGuguHidden(models)
@@ -464,12 +456,14 @@ function ModelChoices({
             )
           })
         : null}
-      {models ? (
+      {query && state === 'ready' && !filteredRows.length && <p role="status" className="gg-aw-choice-note">{controls('noMatchingModels')}</p>}
+      {models && !query ? (
         <ModelMenuFooter
           lockedModels={models.models.filter((m) => m.source === 'gugu' && m.requires_membership).map((m) => m.name)}
           onLeave={onLeave}
         />
       ) : null}
+    </div>
     </div>
   )
 }

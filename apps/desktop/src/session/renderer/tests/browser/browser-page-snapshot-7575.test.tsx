@@ -15,7 +15,6 @@ vi.mock('@renderer/lib/ipc', () => ({
   rpc: { browser: api },
 }));
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn() }) }));
-vi.mock('@renderer/features/browser/agent-browser-state', () => ({ agentBrowserState: () => 'idle' }));
 
 const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6zUkAAAAASUVORK5CYII=';
 let harness: ReturnType<typeof createReactHarness>;

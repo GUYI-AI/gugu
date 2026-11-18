@@ -5,7 +5,6 @@ import { isSupportedBrowserNavigationUrl } from './browser-navigation';
 import { pageNetworkEvent } from './page-network-events';
 import { pageNavigationAccess } from './page-navigation-access';
 import { pageProtocolMaintenance, pageTreeHasFrame } from './page-protocol-maintenance';
-import { assertCredentialAgentContents } from './credential-isolation-registry';
 
 type PageEvent = (method: string, params: Record<string, unknown>, sessionId?: string) => void;
 type PageProtocolOptions = {
@@ -14,7 +13,7 @@ type PageProtocolOptions = {
   signal?: AbortSignal;
   capture?: (params: Record<string, unknown>) => Promise<unknown>;
   /** Called only once native dispatch has happened; used for this lease's held-input teardown. */
-  sent?: (method: string, params: Record<string, unknown>, sessionId: string | undefined, native: Promise<unknown>) => void;
+  sent?: (method: string, params: Record<string, unknown>, sessionId: string | undefined, native: Promise<unknown>, signal?: AbortSignal) => void;
 };
 
 // Explicitly page-scoped operations used by the task-page driver. New CDP methods are denied
@@ -55,7 +54,7 @@ export interface PageProtocol {
  * Closing/cancelling a lease releases its debugger, never the person's page or site login.
  */
 export function createPageProtocol(contents: WebContents, options: PageProtocolOptions = {}): PageProtocol {
-  assertCredentialAgentContents(contents);
+  if (contents.isDestroyed()) throw new Error('the browser tab was closed');
   const debuggerApi = contents.debugger;
   const lifetime = new AbortController();
   const messages = new Set<PageEvent>();
@@ -68,7 +67,7 @@ export function createPageProtocol(contents: WebContents, options: PageProtocolO
 
   const assertLive = () => {
     if (closed || contents.isDestroyed()) throw new Error(closed ?? 'the browser tab was closed');
-    assertCredentialAgentContents(contents);
+    if (contents.isDestroyed()) throw new Error('the browser tab was closed');
     options.signal?.throwIfAborted();
     navigation.assertCurrent();
   };
@@ -214,7 +213,7 @@ export function createPageProtocol(contents: WebContents, options: PageProtocolO
       const native = method === 'Page.captureScreenshot' && !sessionId && options.capture
         ? options.capture(params)
         : debuggerApi.sendCommand(method, nativeParams, sessionId);
-      options.sent?.(method, params, sessionId, native);
+      options.sent?.(method, params, sessionId, native, signal);
       return bounded(native, signal);
     },
     onMessage(listener) {

@@ -138,7 +138,7 @@ async function pillsOf(token: string, refs: CheckedRef[]): Promise<{ chatId: str
     if (version != null && row.version != null && version > row.version) {
       throw new AppSendError('invalid', `File ${ref.file.id} is at version ${row.version}: a place cannot be picked on version ${version}`);
     }
-    const words = [oneLine(row.filename), ref.label].filter(Boolean).join(' · ');
+    const words = `${oneLine(row.filename)}${ref.label ? ` (${ref.label})` : ''}`;
     return { chatId: row.chat_id, label: clipped(words), link: groupFileLink(row.id, { version, at: ref.at }) };
   });
   const chats = new Set(pills.map((pill) => pill.chatId));
@@ -150,6 +150,23 @@ async function pillsOf(token: string, refs: CheckedRef[]): Promise<{ chatId: str
 function clipped(words: string): string {
   const chars = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(words)].map((part) => part.segment);
   return chars.length > PILL_LABEL_MAX ? `${chars.slice(0, PILL_LABEL_MAX - 1).join('')}…` : words;
+}
+
+/**
+ * API 55 Send from a chat's folder (selection-send.ts): the pills of `refs` as a message holds them, read as the person, every
+ * file one of `chatId`'s folder — the chat the page is drawn in, from the host's binding, never a chat the call names — and
+ * the person still in that chat. Anything else opens nothing.
+ */
+export async function chatSelectionPills(platform: Pick<AppSendPlatform, 'account'>, chatId: string, refs: unknown): Promise<{ label: string; target: string }[]> {
+  const checked = refsOf(refs);
+  if (checked.some((ref) => ref.file.chat !== undefined && ref.file.chat !== chatId)) throw new AppSendError('denied', 'Send cites only files of this page\'s chat');
+  const { token } = await platform.account();
+  const { data, error } = await client(token, 'chat').from('chats').select('id').eq('id', chatId).maybeSingle();
+  if (error) throw new AppSendError('failed', error.message);
+  if (!data) throw new AppSendError('denied', 'Send needs a chat you are in');
+  const { chatId: filesChat, pills } = await pillsOf(token, checked);
+  if (filesChat !== chatId) throw new AppSendError('denied', 'Send cites only files of this page\'s chat');
+  return pills.map(({ label, link }) => ({ label, target: link }));
 }
 
 /** A pill as a message's text holds it — what the chat bubble and the session page both draw as a pill (commit 2). */
@@ -315,6 +332,9 @@ export async function dispatchFromApp(
   here: DispatchHere,
 ): Promise<{ to: DispatchTarget; id?: string; deferred?: true } | { cancelled: true }> {
   const call = dispatchCallOf(args);
+  // A binding is the host's to resolve against its own grant (#1927, desktop `dispatchForApp`), before this: one reaching
+  // here has no host that resolves it, and is refused rather than read as any other target.
+  if (call.to && 'binding' in call.to) throw new AppSendError('denied', 'This host has no conversation binding to put a draft into');
   let text = call.text;
   let visible = call.visible;
   let to: NonNullable<DispatchPicked>['to'] | null = call.to;

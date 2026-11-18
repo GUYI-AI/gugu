@@ -66,7 +66,7 @@ it.each([false, true])('retains own input while a preceding commit crosses a nat
   const afterCrossing = project()
   expect(record.record?.hasNewer).toBe(true)
   await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
-  expect(reads.at(-1)).toEqual({ conversationId: sid, after: old.seq })
+  expect(reads.at(-1)).toEqual({ conversationId: sid, after: old.seq, lean: 'folded' })
   expect(record.record?.turns.map(turn => turn.seq)).toEqual([old.seq, preceding.seq])
   expect(record.record?.hasNewer).toBe(false)
   for (let second = 0; second < 16; second++) await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
@@ -86,7 +86,7 @@ it.each([false, true])('retains own input while a preceding commit crosses a nat
     expect(record.record?.turns.at(-1)?.seq).toBe(lastSeq)
     expect(project()).toBe(true)
   }
-  expect(reads.slice(-2)).toEqual([{ conversationId: sid, after: 2569 }, { conversationId: sid, after: 2629 }])
+  expect(reads.slice(-2)).toEqual([{ conversationId: sid, after: 2569, lean: 'folded' }, { conversationId: sid, after: 2629, lean: 'folded' }])
   expect(record.record?.hasNewer).toBe(false)
   expect(record.record?.activeTurn).toBeNull()
   expect(record.record?.turns.map(turn => turn.seq)).toEqual(Array.from({ length: 128 }, (_, index) => old.seq + index))

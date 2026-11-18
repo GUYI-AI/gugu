@@ -54,7 +54,7 @@ function sameToken(ctx: AgentAuthContext, name: string): boolean {
 }
 
 /** Copilot 自己 `/login` 存的那一项在不在。判不出(`security` 跑挂了)就说判不出，❌ 当成不在。 */
-async function copilotOwnLogin(ctx: AgentAuthContext): Promise<'present' | 'absent' | 'unknown'> {
+export async function copilotOwnLogin(ctx: AgentAuthContext): Promise<'present' | 'absent' | 'unknown'> {
   if (process.platform !== 'darwin') return 'absent'; // UNVERIFIED:Linux / Windows 上它把 /login 存在哪没有一手读数。
   try {
     await ctx.exec('security', ['find-generic-password', '-s', 'copilot-cli'], { timeout: KEYCHAIN_TIMEOUT_MS });

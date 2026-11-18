@@ -76,7 +76,8 @@
 :where(h2, h3, h4, h5, h6):where(:not(:first-child)) { margin-top: var(--em-spacing-xl); }
 
 :where(p, ul, ol, dl, table, pre, blockquote, figure, form, fieldset, details, progress, meter, .card, .list, .stack, .row) { margin: 0 0 var(--em-spacing-md); }
-:where(body, main, section, article, aside, header, footer, .card, details, dialog, li, td, th, form, fieldset, figure, blockquote) > :where(:last-child) { margin-bottom: 0; }
+/* 对话框除外：平台靠 margin: auto 把它摆在正中，作者样式压过平台样式，这里一写 margin-bottom 它就被钉到底部 */
+:where(body, main, section, article, aside, header, footer, .card, details, dialog, li, td, th, form, fieldset, figure, blockquote) > :where(:last-child:not(dialog)) { margin-bottom: 0; }
 :where(ul, ol):not(.list) { padding-inline-start: 1.25em; }
 :where(li) + :where(li) { margin-top: 2px; }
 :where(strong, b) { font-weight: 600; }
@@ -99,6 +100,8 @@
 :where(gugu-icon[size='md']) { width: var(--em-icon-md); height: var(--em-icon-md); }
 :where(gugu-icon[size='lg']) { width: var(--em-icon-lg); height: var(--em-icon-lg); }
 :where(gugu-icon):not(:defined) { visibility: hidden; }
+:where(gugu-file-mark) { display: inline-block; flex: none; width: var(--em-icon-sm); height: var(--em-icon-sm); vertical-align: -3px; color: inherit; }
+:where(gugu-file-mark):not(:defined) { visibility: hidden; }
 /* ── 按钮 ──────────────────────────────────────────────────────────────────────────────── */
 /* 默认 = 咕咕 Button 的 secondary：强一档的 hairline 框、透明底；悬停叠 --hover，按下叠 --press。
    排版照浏览器自己的按钮（inline-block、文字按 text-align 放；不折行：中文按钮在 App 自己的 flex 条里会被逐字折开），高度由上下内距凑成一行字时的控件高：
@@ -124,7 +127,7 @@
 /* 主按钮 = 墨（暗色下近白、浅色下近黑），反馈走透明度阶梯 .88 / .78，不改底色、不缩放 */
 :where(button, input, a).primary { border-color: transparent; background-color: var(--em-accent-9); color: var(--em-accent-contrast); }
 /* 危险 = 咕咕唯一的那个红；字色与 ui/Button 的 danger 变体相同：红底白字（--em-color-white），明暗两侧一样。
-   ❌ 用 --em-accent-contrast：那是墨色主按钮的反相字，暗色下是表面色 #181818，红底上就成了深灰字（#7333）。 */
+   ❌ 用 --em-accent-contrast：那是墨色主按钮的反相字，暗色下是表面色 #0f0f0f，红底上就成了深灰字（#7333）。 */
 :where(button, input, a).danger { border-color: transparent; background-color: var(--em-danger-solid); color: var(--em-color-white); }
 @media (hover: hover) {
   :where(button, input, a):is(.primary, .danger):hover:not(:disabled) { background-color: var(--em-accent-9); opacity: 0.88; }

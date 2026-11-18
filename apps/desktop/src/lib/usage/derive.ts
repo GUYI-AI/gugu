@@ -16,7 +16,7 @@ export type HeatMetric = 'sessions' | 'tokens'
 // ── 日期:一律用本地日历日字符串,❌ 不经 toISOString(那是 UTC,会在东八区把凌晨算到前一天) ──
 
 export function localDay(date: Date): string {
-  const y = date.getFullYear()
+  const y = String(date.getFullYear()).padStart(4, '0')
   const m = String(date.getMonth() + 1).padStart(2, '0')
   const d = String(date.getDate()).padStart(2, '0')
   return `${y}-${m}-${d}`
@@ -25,12 +25,18 @@ export function localDay(date: Date): string {
 export function addDays(day: string, delta: number): string {
   const [y, m, d] = day.split('-').map(Number)
   // 取正午:夏令时切换那天 ±1 小时不会把日子推到隔壁。
-  return localDay(new Date(y, m - 1, d + delta, 12))
+  const date = new Date(0);
+  date.setFullYear(y, m - 1, d + delta);
+  date.setHours(12, 0, 0, 0);
+  return localDay(date)
 }
 
 export function parseDay(day: string): Date {
   const [y, m, d] = day.split('-').map(Number)
-  return new Date(y, m - 1, d, 12)
+  const date = new Date(0);
+  date.setFullYear(y, m - 1, d);
+  date.setHours(12, 0, 0, 0);
+  return date
 }
 
 export type DayRange = { from: string; to: string; days: number }
@@ -156,7 +162,7 @@ export function busiestDay(days: readonly UsageDay[], range: { from: string; to:
   }
   let best: { day: string; sessions: number } | null = null
   for (const [day, sessions] of byDay) {
-    if (sessions > 0 && (!best || sessions > best.sessions)) best = { day, sessions }
+    if (sessions > 0 && (!best || sessions > best.sessions || sessions === best.sessions && day < best.day)) best = { day, sessions }
   }
   return best
 }

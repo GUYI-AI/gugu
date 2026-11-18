@@ -14,6 +14,7 @@ import * as lezerHighlight from '@lezer/highlight'
 import { basicSetup } from 'codemirror'
 import * as autocomplete from '@codemirror/autocomplete'
 import { beforeAll, describe, expect, test, vi } from 'vitest'
+import { fakeSharedMenu } from './sharedMenu'
 
 const entry = {
   id: 'plan', chat: 'chat-1', name: 'plan.md', displayName: 'plan', contentType: 'text/markdown', type: 'text', size: 9,
@@ -42,7 +43,9 @@ const file = {
 const md = { render: vi.fn((_element: Element, _text: string, _options: unknown) => {}) }
 const context = { chat: { id: 'chat-1', name: 'G', kind: 'group', groupId: 'chat-1' }, file: { chat: 'chat-1', id: 'plan' }, locale: 'en', capabilities: ['files:read', 'files:write'] }
 let contextChanged = (_ctx: typeof context) => {}
+const menu = fakeSharedMenu()
 const gugu = {
+  showContextMenu: menu.showContextMenu,
   linkTo: vi.fn(async ({ file }: { file: { id: string } }) => `gugu-file://${file.id}`),
   setTabTitle: vi.fn(async () => {}),
   getContext: vi.fn(async () => context),
@@ -105,8 +108,8 @@ describe('workspace App: the preview is gugu.markdown()', () => {
     const renamed = { ...pending, name: 'renamed.md', detailsPending: false, createdBy: { ...entry.createdBy, name: 'Current creator' } }
     gugu.files.list.mockResolvedValueOnce([renamed])
     document.getElementById('more')!.click()
-    const rename = [...document.querySelectorAll<HTMLButtonElement>('#menu button')].find((button) => button.textContent === 'Rename')!
-    rename.click()
+    await vi.waitFor(() => expect(menu.labels()).toContain('Rename'))
+    await menu.pick('Rename')
     const input = document.querySelector<HTMLInputElement>('#doc-title .rename-input')!
     input.value = renamed.name
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))

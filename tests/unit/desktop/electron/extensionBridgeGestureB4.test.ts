@@ -34,9 +34,12 @@ type Host = {
   showSession(id: string): Promise<unknown>
   dispatch(text: string, options?: Record<string, unknown>): Promise<unknown>
   clipboard: { writeText(text: string): Promise<unknown> }
-  appFiles: Record<'openWith' | 'upload' | 'download' | 'forward', (args: unknown) => Promise<unknown>>
+  appFiles: Record<'openWith' | 'upload' | 'download' | 'forward' | 'sendSelection', (args: unknown) => Promise<unknown>>
   cloud: Record<'write', (...args: unknown[]) => Promise<unknown>>
   pickAgent(ask: Record<string, unknown>): Promise<unknown>
+  assistant: Record<'open' | 'advanceSetup' | 'rename' | 'connect', (name: string, value: string) => Promise<unknown>>
+  bindings: { openWork(name: string, handle: string): Promise<unknown> }
+  voiceNote: Record<'start' | 'resume' | 'retry' | 'openMicSettings', (name: string, value?: unknown) => Promise<unknown>>
 }
 const host = electron.exposed.__guguHost as Host
 
@@ -47,6 +50,8 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   filesUpload: () => host.appFiles.upload({}),
   filesDownload: () => host.appFiles.download({ ref: { chat: 'chat-1', name: 'a.md' } }),
   filesForward: () => host.appFiles.forward({ refs: [{ chat: 'chat-1', name: 'a.md' }] }),
+  // 54: the host's Send box beside a selection.
+  filesSendSelection: () => host.appFiles.sendSelection({ text: 'x', refs: [{ file: { workspace: 'session:s-1', id: 'a.md' } }], rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } }),
   filesOpenIn: () => (host.appFiles as unknown as Record<string, (args: unknown) => Promise<unknown>>).openIn!({ ref: { workspace: 'session:s-1', id: 'a.md' }, app: 'finder' }),
   showMessage: () => host.showMessage('msg-1'),
   showSession: () => host.showSession('s-1'),
@@ -55,27 +60,44 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   cloudWrite: () => host.cloud.write('radar_save', {}),
   pickAgent: () => host.pickAgent({}),
   openLink: () => host.openLink('gugu://ext/radar/radar'),
+  // #1925 (44): one of the assistant's host screens, and the setup steps an App draws.
+  assistantOpen: () => host.assistant.open('main', 'move'),
+  assistantAdvanceSetup: () => host.assistant.advanceSetup('main', 'ready'),
+  // 50: the host's picker, the question before a delete, the voice-note pipeline, the save dialog.
+  bindingsUpload: () => bound().upload!('main'),
+  bindingsRemoveFolder: () => bound().removeFolder!('main', 'docs'),
+  bindingsTranscribeVoiceNote: () => bound().transcribeVoiceNote!('main', 'n1'),
+  bindingsRemoveVoiceNote: () => bound().removeVoiceNote!('main', 'n1'),
+  bindingsExportVoiceNote: () => bound().exportVoiceNote!('main', 'n1'),
+  assistantRename: () => host.assistant.rename('main', 'Pip'),
+  assistantConnect: () => host.assistant.connect('main', 'feishu'),
+  // #1925 (46): one of the assistant's tasks drawn in the App's panel.
+  bindingsOpenWork: () => host.bindings.openWork('main', 'wAAAAAAAAAAAAAAAAAAAAAA'),
+  // #1927 (47): the host's voice-note recorder, started, resumed, retried, or the microphone settings opened.
+  voiceNoteStart: () => host.voiceNote.start('main'),
+  voiceNoteResume: () => host.voiceNote.resume('main'),
+  voiceNoteRetry: () => host.voiceNote.retry('main', 'job-1'),
+  voiceNoteOpenMicSettings: () => host.voiceNote.openMicSettings('main'),
 }
 
+// The page's `gugu.bindings` (50): its managing members, as the runtime exposes them.
+function bound() {
+  return (host as unknown as { bindings: Record<string, ((...args: unknown[]) => Promise<unknown>) | undefined> }).bindings;
+}
 const sent = () => electron.invoke.mock.calls.map(([, request]) => request as { method: string; gesture: unknown })
 
 describe('a verb that needs a gesture is judged by one rule, on what the preload read (L11 B4)', () => {
-  it('only registers a non-passive wheel listener while the trusted context names a message view', () => {
+  it('never takes the wheel: a message view\'s page lets its list scroll natively', () => {
     const receive = electron.on.mock.calls.find(([channel]) => channel === EXTENSION_BRIDGE_EVENT_CHANNEL)![1] as (event: unknown, payload: unknown) => void
-    const add = vi.spyOn(window, 'addEventListener'), remove = vi.spyOn(window, 'removeEventListener')
+    const add = vi.spyOn(window, 'addEventListener')
     try {
       expect(initialWheelListeners).toBe(0)
       receive(null, { type: 'context', context: {} })
-      expect(add).not.toHaveBeenCalled()
       receive(null, { type: 'context', context: { widget: { messageId: 'message-1' } } })
-      expect(add).toHaveBeenCalledExactlyOnceWith('wheel', expect.any(Function), { capture: true, passive: false })
-      const listener = add.mock.calls[0]![1]
-      receive(null, { type: 'context', context: { widget: { messageId: 'message-1' } } })
-      expect(add).toHaveBeenCalledTimes(1)
       receive(null, { type: 'context', context: { widget: {}, modal: { data: null } } })
-      expect(remove).toHaveBeenCalledExactlyOnceWith('wheel', listener, true)
+      expect(add.mock.calls.filter(([type]) => type === 'wheel')).toEqual([])
     } finally {
-      add.mockRestore(); remove.mockRestore()
+      add.mockRestore()
     }
   })
 

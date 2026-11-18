@@ -5,6 +5,7 @@ import { localLoginNoticeKey } from '../lib/accountLinkingAdapter'
 import { notify } from '../lib/notices'
 import { rendererLogger } from '../lib/log'
 import { supabase } from '../lib/supabase'
+import { sessionCoordinator } from '../lib/sessionCoordinator'
 import '../i18n/registerSettingsCatalog'
 
 const log = rendererLogger('auth/login-method-notice')
@@ -14,7 +15,12 @@ export function LoginMethodChangeNotice({ userId }: { userId: string }) {
   useEffect(() => {
     let alive = true
     void (async () => {
-      const { data, error } = await supabase.auth.getUser()
+      // 只带协调器已发布的通行证读:无参的 getUser() 会让 SDK 读它自己的那份会话、过期就自己刷新,
+      // 成了协调器之外的第二个刷新者,拿同一个 refresh token 再换一次(#6723 单一刷新者)。
+      // Mounted only once a session is accepted (App): no token here is a wiring error, said loudly.
+      const accessToken = sessionCoordinator.getAccessToken()
+      if (!accessToken) throw new Error('login method notice mounted without an accepted session')
+      const { data, error } = await supabase.auth.getUser(accessToken)
       if (error) throw error
       if (!alive || data.user.id !== userId) return
       let notice = loginMethodNotice(data.user)

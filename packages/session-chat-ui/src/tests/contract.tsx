@@ -29,6 +29,7 @@ import type { ThemeVarKey } from '@session-chat/core/config';
 import type { MeasureCtx, Measured, RenderCtx } from '@session-chat/core/define';
 import type { BlockLeafLayout } from '@session-chat/core/layout/layout-types';
 import type { Block } from '@session-chat/core/markdown/document';
+import type { MentionProvider } from '@session-chat/core/markdown/mention-provider';
 import type { ChatTheme } from '@session-chat/core/theme';
 import { DEFAULT_THEME } from '@session-chat/core/theme';
 import type { UnitDef } from '@session-chat/core/units';
@@ -73,16 +74,22 @@ export function makeContractCtx(opts: {
   isCollapsed?: (id: string) => boolean;
   expanded?: (id: string) => boolean;
   expandedId?: string | null;
+  /** What the page says an `@` names; the render's own caches parse with it too. */
+  mentionProvider?: MentionProvider;
 }): ContractCtx {
+  const caches = createChatCaches(undefined, opts.mentionProvider);
+  if (opts.mentionProvider) mentionProviders.set(caches, opts.mentionProvider);
   return {
     theme: opts.theme ?? DEFAULT_THEME,
     width: opts.width ?? 640,
     isCollapsed: opts.isCollapsed ?? (() => false),
     expanded: opts.expanded ?? (() => false),
-    caches: createChatCaches(),
+    caches,
     expandedId: opts.expandedId,
   };
 }
+
+const mentionProviders = new WeakMap<object, MentionProvider>();
 
 /**
  * Mount a native `UnitDef.Render` in a fixed-width container, wait one rAF,
@@ -118,7 +125,7 @@ export async function renderAndMeasureUnit<D, V extends Record<string, number>>(
   };
   const defVars = (def.vars ?? {}) as V;
   const computed = def.measure(data, measureCtx, defVars);
-  const renderCaches = createChatCaches();
+  const renderCaches = createChatCaches(undefined, mentionProviders.get(ctx.caches));
   const renderMeasureCtx: MeasureCtx = { ...measureCtx, caches: renderCaches };
   const renderCtx: RenderCtx = {
     viewState: { isCollapsed: ctx.isCollapsed },

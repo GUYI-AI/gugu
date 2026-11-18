@@ -58,7 +58,7 @@ export interface OpenCodeFamilyPermissionSpec {
 /**
  * 把咕咕的自治档位落成 opencode 系的 `permission` 配置。
  *
- * 咕咕只建模两档（`SessionAutonomyCapability.mode`），映射对齐 **codex 那一家的同名档**
+ * 这里只分两档（`SessionAutonomyCapability.permissionMode` 是否为 full-access），映射对齐 **codex 那一家的同名档**
  * —— 同一个档在不同引擎上得是同一个意思，否则用户选的「需要审批」在这家是每读一个文件都弹窗、
  * 在那家是随便读，那这个档就没有意义了。codex 的对照组是
  * `approval_policy=on-request` + `sandbox_mode=workspace-write`：读自由、工作区内写自由、越界才问。
@@ -109,7 +109,7 @@ export function openCodeFamilyPermissionConfig(
     );
   }
 
-  if (autonomy.mode === 'full-access') return { permission: 'allow' };
+  if (autonomy.permissionMode === 'full-access') return { permission: 'allow' };
 
   const permission: Record<string, OpenCodeFamilyPermissionAction> = {};
   for (const key of spec.approvalGatedKeys) permission[key] = 'ask';

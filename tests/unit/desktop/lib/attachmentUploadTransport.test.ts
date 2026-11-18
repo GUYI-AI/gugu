@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { xhrAttachmentUpload } from '../../../../apps/desktop/src/lib/attachmentUploadTransport'
-import { attachmentSendTiming, AttachmentStageTimeout } from '../../../../apps/desktop/src/lib/attachmentSendTiming'
+import { ATTACHMENT_UPLOAD_IDLE_MS, AttachmentDeadlineError, runAttachmentStage } from '@gugu/core/cloud/attachmentDeadline'
 
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ info: vi.fn(), warn: vi.fn() }) }))
 
@@ -45,11 +45,11 @@ describe('observable browser attachment transport (#1002)', () => {
 
   it('aborts the actual request when it never advances, then rejects the attempt', async () => {
     vi.useFakeTimers(); vi.stubGlobal('XMLHttpRequest', Upload)
-    const done = attachmentSendTiming('m', 'c').stage('upload', 1, signal => xhrAttachmentUpload('https://storage.test/scoped', {
+    const done = runAttachmentStage('upload', signal => xhrAttachmentUpload('https://storage.test/scoped', {
       method: 'POST', body: new FormData(), signal,
-    })).catch(error => error)
-    await vi.advanceTimersByTimeAsync(30_001)
-    expect(await done).toBeInstanceOf(AttachmentStageTimeout)
+    }), undefined, { timeoutMs: null, watchUpload: true }).catch(error => error)
+    await vi.advanceTimersByTimeAsync(ATTACHMENT_UPLOAD_IDLE_MS)
+    expect(await done).toBeInstanceOf(AttachmentDeadlineError)
     expect(Upload.requests[0].aborted).toBe(true)
     expect(Upload.requests[0].upload.onprogress).toBeNull()
   })

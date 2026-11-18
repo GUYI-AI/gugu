@@ -9,6 +9,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { i18n } from '@/i18n';
 import '@/i18n/registerMessagingCatalog';
+import '@/i18n/registerContactsCatalog';
 import '@/i18n/registerMainCatalog';
 import '@/styles/tokens.css';
 import { until, untilStable } from '../../../../../../../tests/support/awaitCondition';
@@ -68,6 +69,20 @@ async function renderList(activeChatId = 'grp-1', onChatSelected = vi.fn(), mobi
   await until('the chat rows rendered', () => harness.container.querySelector('[data-chat-row="dm-1"]') !== null);
   return harness.container;
 }
+
+describe('a failed list read with nothing to show', () => {
+  it('says the read failed and retries through the list refresh instead of claiming there are no conversations', async () => {
+    const refreshChats = vi.fn(async () => undefined);
+    harness = createReactHarness();
+    harness.container.style.cssText = 'width: 320px; height: 640px; display: flex;';
+    await renderWithAppProviders(harness, createNode(ChatListPanel, { activeTab: 'chats', mobile: false, placement: 'page', onChatSelected: vi.fn() }),
+      { chat: { chats: [], activeChatId: null, identitiesById: {}, chatsLoadFailed: true, refreshChats } });
+    await until('the failure rendered', () => harness.container.textContent?.includes('加载失败') === true);
+    expect(harness.container.textContent).not.toContain(i18n.t('chatList.empty', { ns: 'messaging' }));
+    await userEvent.click(page.getByRole('button', { name: '重试' }));
+    expect(refreshChats).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('the IM chat list in the master\'s roles (#7333)', () => {
   it.each(['dm-1', 'grp-1', 't-live'])('drags grouped sidebar row %s with the shared workspace content identity', async (chatId) => {

@@ -569,3 +569,11 @@ describe('@@@6112 session-live 的产地:threadId 到位的那一刻(registry �
     }
   })
 })
+
+
+it('carries the reviewer through both native TUI and app-server configuration without bypass', () => {
+  const threadStart = { approvalPolicy: 'on-request', sandbox: 'workspace-write', approvalsReviewer: 'auto_review' };
+  expect(codexTuiPermissionArgs(threadStart)).toEqual(['-a', 'on-request', '-s', 'workspace-write', '-c', 'approvals_reviewer="auto_review"']);
+  expect(codexThreadConfigProcessArgs({ threadStart })).toContain('approvals_reviewer="auto_review"');
+  expect(codexTuiPermissionArgs(threadStart)).not.toContain('--dangerously-bypass-hook-trust');
+});

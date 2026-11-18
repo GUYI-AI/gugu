@@ -12,7 +12,7 @@ function setup() {
   const commit = vi.fn(async () => ({ operationId: 'operation', revision: '5', status: 'pending' as const }))
   const store = createConnectionMetadataStore({ ownerId: 'owner', accountId: () => owner, read, commit,
     assertCurrent() { if (owner !== 'owner') throw new Error('ACCOUNT_CHANGED') },
-    cache: { peek: () => owner === 'owner' ? cached : undefined, save(value) { cached = value } }, changed: vi.fn() })
+    cache: { peek: () => owner === 'owner' ? cached : undefined, save(value) { cached = value } }, reread: vi.fn(), changed: vi.fn() })
   return { store, read, commit, switchAccount() { owner = 'other' }, cache(value: ConnectionMetadataSnapshot) { cached = value } }
 }
 

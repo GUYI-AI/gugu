@@ -3,7 +3,7 @@ import type { ChatCaches } from '@session-chat/core/caches';
 import { isDoubleColumnLayout } from '@session-chat/core/layout/preset';
 import type { SegmentCtx } from '@session-chat/core/units';
 import type { ChatState } from './chat-state';
-import { BACKGROUND_TASKS_TOGGLE, turnDiscardedId } from './flatten';
+import { backgroundTasksView, turnDiscardedId } from './flatten';
 import { latestVisibleTurnId } from './pending-prompt';
 
 /**
@@ -29,12 +29,15 @@ export function segmentCtxFor(context: ChatContext, state: ChatState, caches: Ch
     // 「工作中」标签 —— 与上游 tool-timeline 的 activeLabel / restingLabel 一致。
     foldTurnProcess: isDoubleColumnLayout(context.theme.layout),
     isTurnProcessExpanded: (id: string) => state.viewState.isCollapsed(id),
+    isBubbleExpanded: (key: string) => state.viewState.isCollapsed(key),
     // 「丢弃」与折叠共用同一套 per-id 开关，只是换一个 id 命名空间 —— 收尾行那颗按钮身上挂的是
     // `data-collapse-id`，于是它走的就是 ChatRoot 既有的那条点击委派，❌ 不新开一条通路。
     isTurnDiscarded: (id: string) => state.viewState.isCollapsed(turnDiscardedId(id)),
     plan: () => state.session.state.plan,
     translate: context.translate,
     pendingToolCallIds: () => state.session.state.pendingToolCallIds,
+    liveSubagent: (toolCallId: string) =>
+      state.session.state.backgroundTasks.subagents.find((entry) => entry.launchToolCallId === toolCallId),
     permissionFor: (toolCallId: string) =>
       state.session.state.permissions.find((request) => request.toolCall?.toolCallId === toolCallId),
     terminalSnapshot: (terminalId: string) => state.session.state.terminalSnapshot(terminalId),
@@ -44,7 +47,7 @@ export function segmentCtxFor(context: ChatContext, state: ChatState, caches: Ch
     backgroundTasks: () => {
       const tasks = state.session.state.backgroundTasks;
       if (tasks.commands.length === 0 && tasks.subagents.length === 0) return null;
-      return { ...tasks, expanded: state.viewState.isCollapsed(BACKGROUND_TASKS_TOGGLE) };
+      return backgroundTasksView(tasks, (id) => state.viewState.isCollapsed(id));
     },
   };
 }

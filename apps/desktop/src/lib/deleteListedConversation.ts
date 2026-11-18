@@ -1,5 +1,6 @@
 import { chatDb } from './supabase';
 import { currentGroupAdmin } from './groupAdmin';
+import { noteGroupArchived } from './archivedGroupsRead';
 
 /** A DM deletion removes only the current owner's durable list entry, never group or identity state. */
 export type PersonalConversationDeletion = { chat_id: string; deleted_at: string };
@@ -14,5 +15,7 @@ export async function deleteListedConversation(chatId: string): Promise<Personal
   }
   if (chat.data.kind !== 'group') throw new Error('conversation_dm_identity_unverified');
   await (await currentGroupAdmin()).archive(chatId);
+  // #2548 the group admin answered: archived. Said before the caller drops the conversation from the list.
+  noteGroupArchived(chatId, true);
   return null;
 }

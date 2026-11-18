@@ -1,6 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import {
   getSessionManagerStore,
@@ -44,7 +44,7 @@ const SessionViewWrapperWithProviders = observer(function SessionViewWrapperWith
   // 两处各判一次,改动一处就会让归档任务又被自动 provision 回来。
   // Only the page on screen provisions: idle reclaim stops a session nobody is looking at, and a retained
   // page that is hidden must not start it again (@@@retained-session-pages); it provisions when shown.
-  const shown = useContext(PageShownContext);
+  const shown = useContext(SurfaceShownContext);
   // 别的机器上的会话还看那台机器的线:线没通不准备(准备了也只会失败);准备失败在线没通的那一下的(开机恢复时线刚通
   // 又断),线**从断变通**的那一下再准备一次 —— 只在那一下,❌ 循环重试。本机会话 machine 为空,照旧。
   const machine = machineRegistry.machineOf(projectId);

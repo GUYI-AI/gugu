@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { zhCNSharedMessages } from '@renderer/localization/messages-shared';
 import { zhCNSubscriptionMessages } from '@renderer/localization/messages-subscriptions';
 import { formatPercent, quotaReading, payerLine, planLabel, planNotes, unavailableText, usedText, windowLabel } from './subscription-view';
 
 /** 用真词表(中文)渲染 —— 断言的就是用户读到的那句话。 */
 const translate = (key: string, values?: Record<string, unknown>) => {
-  const messages = zhCNSubscriptionMessages as Record<string, string>;
+  const messages = { ...zhCNSharedMessages, ...zhCNSubscriptionMessages } as Record<string, string>;
   // 带 count 的键拆成了 `_one` / `_other`(中文两条相同),照 i18next 的取法回落到 `_other`。
   const template = messages[key] ?? (typeof values?.count === 'number' ? messages[`${key}_other`] : undefined);
   if (template === undefined) throw new Error(`missing key ${key}`);
@@ -14,11 +15,11 @@ const t = translate as Parameters<typeof payerLine>[1];
 
 describe('「订阅」页一行里的字', () => {
   it('谁在付钱 + 套餐;档位读取失败就明说', () => {
-    expect(payerLine({ payer: 'subscription', plan: 'Claude Max 20x' }, t, true)).toBe('你的订阅 · Claude Max 20x');
+    expect(payerLine({ payer: 'subscription', plan: 'Claude Max 20x' }, t, true)).toBe('你的订阅: Claude Max 20x');
     expect(payerLine({ payer: 'subscription', plan: 'Google AI Ultra', tierUnknown: true }, t, false)).toBe(
-      '你的订阅 · Google AI Ultra（档位未知）'
+      '你的订阅: Google AI Ultra（档位未知）'
     );
-    expect(payerLine({ payer: 'api-key', plan: 'MiMo 按量付费' }, t, false)).toBe('本地配置 Key · MiMo 按量付费');
+    expect(payerLine({ payer: 'api-key', plan: 'MiMo 按量付费' }, t, false)).toBe('本地配置 Key: MiMo 按量付费');
     expect(payerLine({ payer: 'custom-endpoint', endpoint: '198.51.100.37:9000' }, t, false)).toBe(
       '自定义服务 198.51.100.37:9000'
     );
@@ -33,11 +34,13 @@ describe('「订阅」页一行里的字', () => {
   it('附注:接的是哪几家、套餐多旧、Claude 订阅登 Pi 扣额外用量', () => {
     expect(
       planNotes({ payer: 'subscription', via: ['Claude', 'ChatGPT'], planAsOf: 1, extraUsage: true }, t, () => '10-10 23:51')
-    ).toEqual(['接入：Claude · ChatGPT', '套餐信息更新于 10-10 23:51', '按 Claude 额外用量计费，不占套餐额度']);
+    ).toEqual(['接入：Claude，ChatGPT', '套餐信息更新于 10-10 23:51', '按 Claude 额外用量计费，不占套餐额度']);
   });
 
-  it('没登自己的账号:附注指去哪里登', () => {
-    expect(planNotes({ payer: 'not-signed-in' }, t, () => '')).toEqual(['去「资源库 → 智能体」里登录']);
+  // #2507 owner 2026-11-12:「订阅里面说去资源库智能体里登录，但我去看现在根本没有登录选项……本来这里应该点击直接跳转的」。
+  // ⇒ 没登录时那一行右侧直接是「登录」按钮(SubscriptionsSettingsPage),附注里 ❌ 再指路。
+  it('没登自己的账号:附注不再指路(入口是这一行的「登录」按钮)', () => {
+    expect(planNotes({ payer: 'not-signed-in' }, t, () => '')).toEqual([]);
     expect(planNotes({ payer: 'api-key' }, t, () => '')).toEqual([]);
   });
 
@@ -51,8 +54,8 @@ describe('「订阅」页一行里的字', () => {
 
   it('窗口按长度起名，厂商的分组原样带上', () => {
     expect(windowLabel({ windowMinutes: 300, usedPercent: 1 }, t)).toBe('5 小时');
-    expect(windowLabel({ windowMinutes: 10_080, group: 'Fable', usedPercent: 1 }, t)).toBe('每周 · Fable');
-    expect(windowLabel({ monthly: true, group: 'chat', usedPercent: 1 }, t)).toBe('本月 · chat');
+    expect(windowLabel({ windowMinutes: 10_080, group: 'Fable', usedPercent: 1 }, t)).toBe('每周 (Fable)');
+    expect(windowLabel({ monthly: true, group: 'chat', usedPercent: 1 }, t)).toBe('本月 (chat)');
     expect(windowLabel({ windowMinutes: 1_440, usedPercent: 1 }, t)).toBe('1 天');
     expect(windowLabel({ usedPercent: 1 }, t)).toBe('额度');
   });

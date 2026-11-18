@@ -20,11 +20,11 @@ const viewport = { width: window.innerWidth, height: window.innerHeight };
 afterAll(() => page.viewport(viewport.width, viewport.height));
 afterEach(() => { harness?.cleanup(); layout?.dispose(); });
 
-async function mount() {
+async function mount(minWidth?: number) {
   await page.viewport(1100, 800);
   harness = createReactHarness();
   harness.container.style.cssText = 'position:fixed;left:0;top:0;width:1000px;height:600px';
-  const provider = createTabProvider({ kind: 'page', resourceKey: (state: { id: string }) => state.id, initialize: () => ({ dispose() {} }), dispose() {}, TabContent: () => null, TabBarItem: () => null, TabBarItemDragPreview: () => null });
+  const provider = createTabProvider({ kind: 'page', minWidth, resourceKey: (state: { id: string }) => state.id, initialize: () => ({ dispose() {} }), dispose() {}, TabContent: () => null, TabBarItem: () => null, TabBarItemDragPreview: () => null });
   layout = new PaneLayoutStore(createTabRegistry([provider]), { viewId: 'tree-v3' });
   layout.open('page', { id: 'conversation' }, { from: null, intent: 'newTab' });
   const other = layout.open('page', { id: 'folder' }, { from: null, intent: 'newTab' })!;
@@ -74,6 +74,17 @@ it('narrowing and widening only change visibility, preserving both panes, tabs a
   expect(JSON.stringify(layout.snapshot)).toBe(before);
   harness.container.style.width = '1000px';
   await until('the same tree widens again', () => !harness.container.querySelector('[data-pane-tree-narrow]'));
+  expect(JSON.stringify(layout.snapshot)).toBe(before);
+});
+
+it('pages that ask for a wider pane are put away sooner, and come back at that width', async () => {
+  await mount(360);
+  const before = JSON.stringify(layout.snapshot);
+  const narrow = () => !!harness.container.querySelector('[data-pane-tree-narrow]');
+  harness.container.style.width = '720px';
+  await until('two 360px pages and their divider do not fit in 720px', narrow);
+  harness.container.style.width = '721px';
+  await until('they fit in 721px', () => !narrow());
   expect(JSON.stringify(layout.snapshot)).toBe(before);
 });
 
@@ -141,6 +152,7 @@ it('a page of the pair in full screen keeps the one strip over it, and nothing u
   await until('the strip is drawn', () => strip()?.getBoundingClientRect().width ?? 0, (width) => width === 1000);
   const row = harness.container.querySelector<HTMLElement>('[data-pane-strip]')!.getBoundingClientRect().height;
   const sidePane = layout.groups.find(({ pane }) => pane.entries.has(side))!.pane;
+  expect(strip().querySelector('[data-testid="tab-exit-fullscreen"]')).toBeNull();
   await act(() => sidePane.tabFill(side)!.toggle());
   const cover = harness.container.querySelector<HTMLElement>('[data-tab-fullscreen]')!;
   await until('the page covers the workspace under the strip', () => cover.getBoundingClientRect().width, (width) => width === 1000);
@@ -150,5 +162,11 @@ it('a page of the pair in full screen keeps the one strip over it, and nothing u
   expect(strip().contains(document.elementFromPoint(500, 20))).toBe(true);
   expect(harness.container.querySelectorAll('.session-tab-bar')).toHaveLength(1);
   expect(harness.container.querySelector<HTMLElement>('[data-pane-strip]')!.getBoundingClientRect().height).toBe(row);
-  await act(() => tabFullscreen.exit());
+  // The strip over a full-screen page offers a worded way out; it is the same exit as the tab's own toggle and Esc.
+  const exit = strip().querySelector<HTMLButtonElement>('[data-tabbar-actions] [data-testid="tab-exit-fullscreen"]')!;
+  expect(exit.textContent).not.toBe('');
+  expect(exit.getAttribute('aria-label')).toBe(exit.textContent);
+  await act(() => exit.click());
+  expect(tabFullscreen.isOn(sidePane)).toBe(false);
+  expect(strip().querySelector('[data-testid="tab-exit-fullscreen"]')).toBeNull();
 });

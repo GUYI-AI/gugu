@@ -1,4 +1,6 @@
 import { HOST_CALLS, HOST_EVENTS } from '../../../../apps/desktop/src/session/shared/extensions/host-calls'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createGugu } from '../../../../apps/desktop/src/session/app-runtime/create-gugu'
 import { EXTENSION_GUIDE_TOPICS } from '../../../../apps/desktop/src/session/shared/extensions/authoring-guide'
@@ -19,6 +21,13 @@ interface Truth {
 }
 
 type Guide = { topic: string; text: string }
+
+// The host-integration reference moved out of guide_read into docs/guides/apps (MCP surface review 11-16): the guides
+// served to agents and these docs together cover every verb.
+const DOCS_DIR = join(__dirname, '../../../../docs/guides/apps')
+const REFERENCE_DOCS: Guide[] = readdirSync(DOCS_DIR).filter((name) => name.endsWith('.md')).sort()
+  .map((name) => ({ topic: name.replace(/\.md$/, ''), text: readFileSync(join(DOCS_DIR, name), 'utf8') }))
+const ALL_DOCS: Guide[] = [...EXTENSION_GUIDE_TOPICS, ...REFERENCE_DOCS]
 
 /** 指南与源码对不上的地方;空 = 对得上。几篇合起来判:动词写在哪一篇都行,但要写在那一篇里对的「Needs」下。 */
 function guideProblems(guides: readonly Guide[], truth: Truth): string[] {
@@ -62,7 +71,8 @@ function preloadVerbs(): string[] {
   // Every host's members come from one table (host-calls.ts): a page's own and the background page's own (`VerbFacts.only`) too.
   // `appFiles.*` and `clipboard.*` are host halves internal to the platform runtime: pages call `gugu.files.*` and
   // `gugu.clipboard.writeText`, which the runtime builds on them (checked below); so is `onFilesChanged`.
-  const hostHalves = ['navigationGo', 'navigationClaimBack', 'onBack', 'onDownloadProgress', 'onFilesChanged', 'onCloudHeard', 'onModalFocus', 'onProjection', 'onProjectionSource', 'onTaskPage', 'onSurface']
+  // `onAssistantChanged` is `gugu.assistant.onChanged`'s host half (#1925), checked below as the page reaches it.
+  const hostHalves = ['navigationGo', 'navigationClaimBack', 'onBack', 'onDownloadProgress', 'onFilesChanged', 'onCloudHeard', 'onBindingResources', 'onVoiceNote', 'onSchedulesChanged', 'onModalFocus', 'onProjection', 'onProjectionSource', 'onTaskPage', 'onSurface', 'onAssistantChanged']
   return [...Object.keys(HOST_CALLS), ...Object.keys(HOST_EVENTS)].filter((key) => !key.includes('.') && !hostHalves.includes(key))
 }
 
@@ -85,7 +95,8 @@ describe('扩展指南与源码对得上 (#6614)', () => {
     // 阳控:读出来的真值不能是空的,否则下面每一条都空转成绿。
     expect(truth.verbs).toEqual(expect.arrayContaining(['getContext', 'readAgentHistory', 'callProgram', 'dispatch']))
     expect(truth.tools).toEqual(['app_manage', 'app_create', 'app_pack', 'app_install', 'app_check'])
-    expect(guideProblems(EXTENSION_GUIDE_TOPICS, truth)).toEqual([])
+    expect(REFERENCE_DOCS.length).toBeGreaterThan(10)
+    expect(guideProblems(ALL_DOCS, truth)).toEqual([])
   })
 
   it('gugu.files 的每个动词、gugu.messages、gugu.chats、编辑器绑定和 gugu.codemirror 都写进了指南', () => {
@@ -98,19 +109,22 @@ describe('扩展指南与源码对得上 (#6614)', () => {
     const cloudVerbs = ['cloud.read', 'cloud.write', 'cloud.on']
     const modalVerbs = Object.keys(HOST_CALLS).filter((key) => key.startsWith('modal.') && key !== 'modal.key')
     expect(messageVerbs).toEqual(['messages.history', 'messages.search', 'chats.list', 'chats.members', 'projects.list', 'sessions.index', 'sessions.read'])
-    const all = EXTENSION_GUIDE_TOPICS.map(({ text }) => text).join('\n')
-    const missing = [...verbs.map((verb) => `gugu.files.${verb}(`), ...messageVerbs.map((key) => `gugu.${key}(`), ...cloudVerbs.map((key) => `gugu.${key}(`), ...modalVerbs.map((key) => `gugu.${key}(`), 'gugu.bind.codemirror(', 'gugu.codemirror(', 'gugu.clipboard.writeText(', 'gugu.navigation.go(']
+    const all = ALL_DOCS.map(({ text }) => text).join('\n')
+    // `gugu.assistant.*` (#1925): the host's rows, and `onChanged` built on `onAssistantChanged` (create-gugu.ts).
+    const assistantVerbs = [...Object.keys(HOST_CALLS).filter((key) => key.startsWith('assistant.')), 'assistant.onChanged']
+    expect(assistantVerbs).toEqual(['assistant.status', 'assistant.open', 'assistant.advanceSetup', 'assistant.rename', 'assistant.figure', 'assistant.connect', 'assistant.onChanged'])
+    const missing = [...verbs.map((verb) => `gugu.files.${verb}(`), ...messageVerbs.map((key) => `gugu.${key}(`), ...cloudVerbs.map((key) => `gugu.${key}(`), ...modalVerbs.map((key) => `gugu.${key}(`), ...assistantVerbs.map((key) => `gugu.${key}(`), 'gugu.bind.codemirror(', 'gugu.codemirror(', 'gugu.clipboard.writeText(', 'gugu.navigation.go(']
       .filter((call) => !all.includes(call))
     expect(missing).toEqual([])
   })
 
-  it('每篇都不超过上限,且 guide_topics 列出了每一篇', () => {
+  it('每篇都不超过上限,且 guide_read 的目录列出了每一篇', () => {
     const sizes = EXTENSION_GUIDE_TOPICS.map(({ topic, text }) => ({ topic, bytes: Buffer.byteLength(text, 'utf8') }))
     process.stdout.write(`[guide-topic-bytes] ${JSON.stringify(sizes)}\n`)
     expect(oversized(EXTENSION_GUIDE_TOPICS)).toEqual([])
     expect(GUIDE_TOPICS.map(({ topic }) => topic)).toEqual(expect.arrayContaining(EXTENSION_GUIDE_TOPICS.map(({ topic }) => topic)))
-    // The figures guide (visuals-guide.ts) is the platform's own, read only by a session about to draw: same ceiling.
-    expect(GUIDE_TOPICS.map(({ topic }) => topic)).toContain('visuals')
+    // The six served guides and nothing else (MCP surface review 11-16): visuals and widgets went into the prompt and widget_send.
+    expect(GUIDE_TOPICS.map(({ topic }) => topic)).toEqual(['apps', 'apps-files', 'apps-page', 'apps-ui', 'apps-programs', 'apps-fork'])
     expect(oversized(GUIDE_TOPICS)).toEqual([])
     // 阳控:一篇超上限的必须被点名。
     expect(oversized([{ topic: 'fat', text: 'x'.repeat(GUIDE_TOPIC_BYTE_BUDGET + 1) }]))
@@ -118,7 +132,7 @@ describe('扩展指南与源码对得上 (#6614)', () => {
   })
 
   it('documents public projection members while keeping raw host events private', () => {
-    const topic = EXTENSION_GUIDE_TOPICS.find(({ topic }) => topic === 'apps-projection')!
+    const topic = REFERENCE_DOCS.find(({ topic }) => topic === 'apps-projection')!
     expect(topic).toBeDefined()
     for (const member of ['gugu.projection.create(', 'gugu.projection.mount(', 'resource.publish(', 'resource.close(', 'view.close(', 'view.pendingText(']) {
       expect(topic.text).toContain(member)
@@ -131,16 +145,16 @@ describe('扩展指南与源码对得上 (#6614)', () => {
   })
 
   it('判据会红:桥上多一个动词、动词挪错小节、指南提到已退役的工具、整篇漏掉', () => {
-    expect(guideProblems(EXTENSION_GUIDE_TOPICS, { ...truth, verbs: [...truth.verbs, 'frobnicate'] }))
+    expect(guideProblems(ALL_DOCS, { ...truth, verbs: [...truth.verbs, 'frobnicate'] }))
       .toContain('window.gugu.frobnicate is not in the guide')
-    expect(guideProblems(EXTENSION_GUIDE_TOPICS, { ...truth, verbs: truth.verbs.filter((verb) => verb !== 'onLink') }))
+    expect(guideProblems(ALL_DOCS, { ...truth, verbs: truth.verbs.filter((verb) => verb !== 'onLink') }))
       .toContain('the guide (apps-page) describes onLink(), which window.gugu does not have')
-    expect(guideProblems(EXTENSION_GUIDE_TOPICS, { ...truth, capabilityOf: { ...truth.capabilityOf, readAgentHistory: 'agents:control' } }))
+    expect(guideProblems(ALL_DOCS, { ...truth, capabilityOf: { ...truth.capabilityOf, readAgentHistory: 'agents:control' } }))
       .toContain('readAgentHistory is filed under agents:history, needs agents:control')
-    expect(guideProblems([...EXTENSION_GUIDE_TOPICS, { topic: 'extra', text: 'Call `extension_guide` first.' }], truth))
+    expect(guideProblems([...ALL_DOCS, { topic: 'extra', text: 'Call `extension_guide` first.' }], truth))
       .toContain('the guide names extension_guide, which does not exist')
     // 拆篇特有的一种漏:某篇整篇没挂上,它里面的动词就查不到了。
-    expect(guideProblems(EXTENSION_GUIDE_TOPICS.filter(({ topic }) => topic !== 'apps-agents'), truth))
+    expect(guideProblems(ALL_DOCS.filter(({ topic }) => topic !== 'apps-agents'), truth))
       .toContain('window.gugu.listAgents is not in the guide')
   })
 })

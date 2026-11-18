@@ -45,8 +45,9 @@ export async function resumeHistoryFacts(input: AcpRuntimeStartInput, deps: Deps
   const fill = deps.fillFromRecord
     ?? (async (id: string) => (await import('@main/core/sessions/record-backfill')).syncStoredHistoryFromRecord(id));
   try {
-    // 补库在前:之后的轮从补完的库尾接着数。补不成只是少几轮历史,❌ 挡住这次启动。
-    const filled = await fill(input.sessionId).catch(() => undefined);
+    // 补库在前:之后的轮从补完的库尾接着数,投递 id 也是补库时记下的。补库抛错 = 这两样都定不下来 ⇒ 落到下面的 catch:
+    // 记一笔、照旧重放(不挡启动)。❌ 吞掉后当「补完了」:那几轮既不进库也不重放,还没有任何日志。
+    const filled = await fill(input.sessionId);
     // No record to read: the agent's own replay is the only history left (as when the old whole read failed).
     if (filled?.status === 'unavailable') {
       log.warn('[acp-start] record unreadable; resuming with replay', { sessionId: input.sessionId });

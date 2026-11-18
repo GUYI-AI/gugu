@@ -18,6 +18,7 @@ export type SystemNotice =
   | { kind: 'topic-opened'; topicChatId: string }
   | { kind: 'agent-flood' }
   | { kind: 'member-managed' }
+  | { kind: 'migration-placeholder' }
 
 type NoticeRow = Pick<MessageItem, 'id' | 'content_type' | 'sender_user_id' | 'client_message_id'>
 
@@ -27,6 +28,7 @@ export function turnFailureMarker(messageId: string, reason: AgentFailureReason)
 
 export function parseSystemNotice(msg: NoticeRow): SystemNotice | null {
   if (msg.content_type !== 'system') return null
+  if (msg.client_message_id?.startsWith('migration-placeholder:')) return { kind: 'migration-placeholder' }
   const payload = (kind: string) => {
     const head = `${kind}:${msg.id}:`
     return msg.client_message_id?.startsWith(head) ? msg.client_message_id.slice(head.length) : null
@@ -88,11 +90,6 @@ function waitingOn(messages: readonly WaitLine[], memberReadSeqs: Readonly<Recor
     }
   }
   return waiting
-}
-
-/** What to look up in `chat.message_agent_wakes` before `deliveryWaits` can answer. */
-export function pendingDeliveryMessageIds(messages: readonly WaitLine[], memberReadSeqs: Readonly<Record<string, number>>): string[] {
-  return [...new Set(waitingOn(messages, memberReadSeqs).map((wait) => wait.message.id))].sort()
 }
 
 /**

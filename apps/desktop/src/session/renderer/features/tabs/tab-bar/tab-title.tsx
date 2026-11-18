@@ -11,6 +11,7 @@ export function TabTitle({
   hasError,
   maxWidth = 'max-w-[200px]',
   className,
+  toolTabTitle,
   children,
 }: {
   isActive: boolean;
@@ -18,10 +19,12 @@ export function TabTitle({
   hasError?: boolean;
   maxWidth?: string;
   className?: string;
+  toolTabTitle?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <span
+      data-tool-tab-title={toolTabTitle || undefined}
       className={cn(
         'truncate p-1 text-sm opacity-85 group-hover:opacity-100 transition-opacity',
         maxWidth,

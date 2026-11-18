@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { Unknown } from '@/components/ui/Unknown';
+import { replica, useReplica } from '@/lib/replica';
 import { useTranslation } from 'react-i18next';
 import { publicAssetPath } from '@gugu/core/shared/ui/publicAssets';
 import { ArrowUpRight } from '@/lib/icons';
@@ -7,27 +8,32 @@ import { formatCredits, quotaWindowViews, useSpendingPower } from '@/lib/billing
 import { compareCreditAmounts } from '@gugu/core/billing/creditAmount';
 import { creditRatio } from '@/lib/billing/creditGeometry';
 import { platform } from '@/platform';
-import { GUGU_BILLING_URL, GUGU_TOPUP_URL } from '@/lib/appLinks';
+import { billingLinksAvailable, GUGU_BILLING_URL, GUGU_TOPUP_URL } from '@/lib/appLinks';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { Button } from '@/components/ui/Button';
 import { SubscriptionServiceRow } from './SubscriptionServiceRow';
 import './subscriptions.css';
 
-const APP_ICON_URL = publicAssetPath('/assets/app/gugu-icon-512.png');
+const APP_ICON_URL = publicAssetPath('/assets/app/gugu-icon-small.png');
+
+/** Whether this device already used its free credits for this account (desktop host only). */
+const deviceFreeCredits = replica({
+  name: 'deviceFreeCreditsStatus',
+  scope: 'account',
+  read: async () => (await platform.readDeviceFreeCreditsStatus?.()) ?? null,
+  persist: { maxBytes: 512, maxEntries: 1 },
+});
 
 export function GuguSubscriptionRow() {
   const { translate, locale } = useSessionMessages();
   const { t } = useTranslation('settings');
   const { user } = useAuth();
-  const [deviceFull, setDeviceFull] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    setDeviceFull(false);
-    void platform.readDeviceFreeCreditsStatus?.()
-      .then(status => { if (alive) setDeviceFull(status === 'device_full'); }, () => undefined);
-    return () => { alive = false; };
-  }, [user?.id]);
-  const { power, windows, balanceError, windowsError, membership: plan } = useSpendingPower(user);
+  const freeCredits = useReplica(deviceFreeCredits, user ? [] : null);
+  const deviceFull = freeCredits.state === 'value' && freeCredits.value === 'device_full';
+  const { state, power, windows, balanceError, windowsError, membership: plan } = useSpendingPower(user);
+  const unknown = state === 'unknown';
+  // 读到之前每个数位画同尺寸的占位;只有读到而这一项取不到时才写「—」。
+  const amount = (value: string | null) => (unknown ? <Unknown className="w-12" /> : value ?? '—');
   const accountError = balanceError || windowsError;
   const date = (value: Date) =>
     new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: 'numeric' }).format(value);
@@ -37,8 +43,8 @@ export function GuguSubscriptionRow() {
     ? translate('subscriptions.gugu.signIn')
     : accountError
       ? translate('subscriptions.unavailable.error', { message: accountError })
-      : !plan && !accountError
-        ? translate('subscriptions.checking')
+      : unknown
+        ? <Unknown className="w-32" />
         : plan
           ? plan.expiresAt
             ? translate('subscriptions.gugu.expires', { date: date(plan.expiresAt) })
@@ -52,21 +58,18 @@ export function GuguSubscriptionRow() {
       identity={identity}
       scope={<span className="subscription-credit-scope">{translate('subscriptions.gugu.shared')}</span>}
       testId="subscription-row-gugu"
-      action={
+      action={billingLinksAvailable() ? (
         <Button variant="ghost" size="sm" nativeButton={false} render={<a href={GUGU_BILLING_URL} target="_blank" rel="noreferrer" />}>
           {translate('subscriptions.gugu.manage')}
           <ArrowUpRight className="ml-1 size-3" />
         </Button>
-      }
+      ) : undefined}
     >
       <div className="subscription-credit-summary">
         <span className="subscription-credit-label">{translate('subscriptions.gugu.available')}</span>
         <strong className="subscription-credit-value" data-testid="subscription-credits-balance">
-          {power ? formatCredits(power.spendable) : '—'}
+          {amount(power && formatCredits(power.spendable))}
         </strong>
-        {!power && !balanceError && !windowsError && (
-          <p className="subscription-note" data-testid="subscription-credits-loading">{t('credits.loading')}</p>
-        )}
         {power && compareCreditAmounts(power.held, 0) > 0 && <p className="subscription-note">{translate('subscriptions.gugu.reserved', { credits: formatCredits(power.held) })}</p>}
       </div>
       <div className="subscription-quota-grid">
@@ -74,7 +77,7 @@ export function GuguSubscriptionRow() {
           <div className="subscription-quota-label">
             <span>{translate('subscriptions.gugu.period')}</span>
             <strong>
-              <span data-testid="subscription-period-credits">{period ? formatCredits(period.remaining) : '—'}</span>
+              <span data-testid="subscription-period-credits">{amount(period && formatCredits(period.remaining))}</span>
               {period && <small> / {formatCredits(period.limit)}</small>}
             </strong>
           </div>
@@ -94,11 +97,18 @@ export function GuguSubscriptionRow() {
               <p>{translate('subscriptions.gugu.resets', { date: date(period.freesAt) })}</p>
             </>
           )}
+          {/* Not read yet: the meter's and the reset line's places are kept (❌ inserted later, pushing the row below down). */}
+          {unknown && (
+            <>
+              <Unknown className="mt-2 block h-[3px] w-full" />
+              <p><Unknown className="w-32" /></p>
+            </>
+          )}
         </div>
         <div className="subscription-quota" data-testid="subscription-wallet">
           <div className="subscription-quota-label subscription-wallet-label">
             <span>{translate('subscriptions.gugu.wallet')}</span>
-            <strong data-testid="subscription-wallet-credits">{power ? formatCredits(power.walletCredits) : '—'}</strong>
+            <strong data-testid="subscription-wallet-credits">{amount(power && formatCredits(power.walletCredits))}</strong>
           </div>
         </div>
       </div>
@@ -110,14 +120,14 @@ export function GuguSubscriptionRow() {
       {deviceFull && !accountError && plan?.tier === 'free' && (
         <p className="subscription-note">{t('usage.na.deviceFull')}</p>
       )}
-      <div className="subscription-credit-actions">
+      {billingLinksAvailable() && <div className="subscription-credit-actions">
         <Button variant="secondary" size="sm" nativeButton={false}
           render={<a href={GUGU_TOPUP_URL} target="_blank" rel="noreferrer" />}
           data-testid="membership-open-web">
           {t('usage.na.openWebBilling')}
           <ArrowUpRight className="ml-1 size-3" />
         </Button>
-      </div>
+      </div>}
     </SubscriptionServiceRow>
   );
 }

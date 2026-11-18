@@ -51,9 +51,11 @@ export const emdashAliasEntries = [
 // chunks are flat in dist-electron/, so the sibling lookup holds regardless of chunking.
 export const emdashWorkerEntries = [
   { out: 'turn-text-backfill', src: `${SESSION_MAIN_ROOT}/main/db/turn-text-backfill-worker.ts` },
+  { out: 'task-turn-search', src: `${SESSION_MAIN_ROOT}/main/core/search/task-turn-search-worker.ts` },
   { out: 'acp-runtime', src: `${SESSION_MAIN_ROOT}/main/core/acp/runtime-process/entry.ts` },
   { out: 'agent-config-runtime', src: `${SESSION_MAIN_ROOT}/main/core/agent-config/runtime-process/entry.ts` },
   { out: 'fs-watch-runtime', src: `${SESSION_MAIN_ROOT}/main/core/fs-watch/runtime-process/entry.ts` },
+  { out: 'git-status', src: `${SESSION_MAIN_ROOT}/main/core/git/status/worker.ts` },
   // #6334 用量页 token 扫描 —— worker_threads 线程的入口(不是 fork),同样必须是磁盘上的独立文件。
   { out: 'usage-token-scan', src: `${SESSION_MAIN_ROOT}/main/core/usage/token-scan-worker/entry.ts` },
 ]

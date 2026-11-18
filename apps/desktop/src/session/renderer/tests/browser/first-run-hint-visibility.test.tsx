@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, expect, it } from 'vitest';
-import { useFirstRunHintTargets, type HintTarget } from '@/components/firstRun/firstRunHintTargets';
+import { useFirstRunHintTargets, type HintDevice, type HintTarget } from '@/components/firstRun/firstRunHintTargets';
 import { RETAINED_SURFACE_HIDDEN_STYLE } from '@/lib/retainedSurface';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 
@@ -11,34 +11,32 @@ import { until } from '../../../../../../../tests/support/awaitCondition';
 const cleanup: Array<() => void> = [];
 afterEach(() => cleanup.splice(0).reverse().forEach((stop) => stop()));
 
-function mountProbe(seen: { targets: readonly HintTarget[] }) {
+function mountProbe(seen: { targets: readonly HintTarget[] }, device: HintDevice = 'desktop') {
   const host = document.createElement('div');
   document.body.append(host);
   const root: Root = createRoot(host);
-  function Probe() { seen.targets = useFirstRunHintTargets('desktop', true); return null; }
+  function Probe() { seen.targets = useFirstRunHintTargets(device, true); return null; }
   act(() => root.render(<Probe />));
   cleanup.push(() => { act(() => root.unmount()); host.remove(); });
 }
 
 function addEntry() {
   const surface = document.createElement('section');
+  surface.className = 'gg-sidebar-rail';
   surface.style.position = 'relative';
   const entry = document.createElement('div');
-  entry.dataset.firstRunHint = 'collaboration';
-  entry.dataset.firstRunDevice = 'desktop';
-  entry.textContent = 'Projects';
+  entry.dataset.rail = 'assistant';
+  entry.textContent = 'Assistant';
   entry.style.cssText = 'width: 120px; height: 24px';
-  const space = document.createElement('div');
-  space.dataset.firstRunHintSpace = 'collaboration';
-  surface.append(entry, space);
+  surface.append(entry);
   document.body.append(surface);
   cleanup.push(() => surface.remove());
-  return { surface, entry, space };
+  return { surface, entry };
 }
 
 it('locates an entry only while it is rendered on screen', async () => {
   const seen = { targets: [] as readonly HintTarget[] };
-  const { surface, entry, space } = addEntry();
+  const { surface, entry } = addEntry();
   Object.assign(surface.style, RETAINED_SURFACE_HIDDEN_STYLE);
   mountProbe(seen);
   await new Promise((resolve) => setTimeout(resolve, 100));
@@ -47,7 +45,7 @@ it('locates an entry only while it is rendered on screen', async () => {
   surface.style.contentVisibility = 'visible';
   surface.style.transform = 'none';
   await until('the shown entry is located', () => seen.targets.length === 1);
-  expect(seen.targets[0]).toMatchObject({ id: 'collaboration', anchor: entry, space });
+  expect(seen.targets[0]).toMatchObject({ id: 'assistant', anchor: entry });
 
   surface.style.display = 'none';
   await until('a display:none entry is dropped', () => seen.targets.length === 0);
@@ -64,4 +62,12 @@ it('an entry added after mount is found, and a removed one is dropped', async ()
   await until('the added entry is located', () => seen.targets.length === 1);
   surface.remove();
   await until('the removed entry is dropped', () => seen.targets.length === 0);
+});
+
+it('has no hint targets on the phone when the observer is enabled', async () => {
+  const seen = { targets: [] as readonly HintTarget[] };
+  addEntry();
+  mountProbe(seen, 'phone');
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  expect(seen.targets).toEqual([]);
 });

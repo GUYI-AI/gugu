@@ -12,7 +12,6 @@ vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
 }))
 
 vi.mock('../../../../apps/desktop/src/lib/referral', () => ({
-  clearPendingReferrer: vi.fn(),
   consumePendingReferrer: vi.fn(() => null),
 }))
 

@@ -11,6 +11,8 @@ import { Markdown } from '../markdown/Markdown'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
 import { ComposerCardView } from './ComposerCardView'
 import { MediaAttachmentBubble } from './MediaAttachmentBubble'
+import { MessageAlbumBubble } from './MessageAlbumBubble'
+import { useMessageAlbum } from './MessageAlbumContext'
 import { MessageReferenceContent } from './MessageReferenceContent'
 import { parseQuotedContent, partialQuotedContent } from './messageQuoteContent'
 import { QuestionCardView } from './QuestionCardView'
@@ -40,11 +42,13 @@ export function MessageBody({
   onOpenWorkspaceFile?: (link: Extract<ReturnType<typeof classifyFileLink>, { kind: 'workspace-file' }>) => void
 }) {
   const { t } = useTranslation('messaging')
+  const album = useMessageAlbum(msg.id)
   const card = msg.content_type === 'card' ? parseComposerCard(msg.content) : null
-  if (card?.type === 'question') return <QuestionCardView card={card} chatId={msg.chat_id} messageId={msg.id} agentUserId={msg.sender_user_id ?? ''} time={time} />
+  if (card?.type === 'question') return <QuestionCardView card={card} chatId={msg.chat_id} messageId={msg.id} agentUserId={msg.sender_user_id ?? ''} time={time} mobile={compact} />
   if (card) return <ComposerCardView card={card} isMine={msg.is_mine} isGroup={isGroup} chatId={msg.chat_id} senderName={senderName} time={time} memberProfiles={memberProfiles} onOpenTopic={compact && onOpenTopic && card.type === 'task' ? () => onOpenTopic(msg.id) : undefined} onOpenFile={onOpenFile} />
   if (msg.content_type === 'widget') return <WidgetBubble message={msg} />
   if (msg.content_type === 'attachment') {
+    if (album) return <MessageAlbumBubble members={album} isMine={msg.is_mine} chatId={msg.chat_id} senderName={senderName} onOpenFile={onOpenFile} />
     const voice = parseVoiceAttachmentContent(msg.content)
     if (voice) return <VoiceAttachmentBubble fileName={voice.fileName} durationMs={voice.durationMs} transcript={voice.transcript} isMine={msg.is_mine} />
     const media = parseAttachmentContent(msg.content, msg)
@@ -88,7 +92,7 @@ export function MessageBody({
     // #1515 段内软换行渲成 <br>:人手打的和 agent 发的一样(agent 群消息是给人在手机上看的,换行都是有意分行;与会话 transcript 一致)。
     // @@@2017 群内定向消息:渲染注入 nonce marker 后的正文(mention.content),并把本次 marker 传下 →
     // 只有被 to_user_ids 背书的 @Name 才渲成 mention;非群/whisper → content=undefined 用原始 raw、marker 空。
-    return <MessageReferenceContent content={partial ? raw : mention?.content ?? raw} chatId={msg.chat_id} slotMessageId={msg.id} renderText={content => <Markdown trust="chat" content={content} onAccent={msg.is_mine} hardBreaks mentionMarker={mention?.mentionMarker} onOpenLink={(href) => { const link = classifyFileLink(href); if (link.kind === 'workspace-file' && onOpenWorkspaceFile) { onOpenWorkspaceFile(link); return true } if (link.kind !== 'workspace-file' || !msg.sender_user_id) return false; openSenderFile(msg.sender_user_id, isGroup ? msg.chat_id : undefined, link); return true }} />} />
+    return <MessageReferenceContent content={partial ? raw : mention?.content ?? raw} chatId={msg.chat_id} slotMessageId={msg.id} renderText={content => <Markdown trust="chat" content={content} message={msg} onAccent={msg.is_mine} hardBreaks mentionMarker={mention?.mentionMarker} onOpenLink={(href) => { const link = classifyFileLink(href); if (link.kind === 'workspace-file' && onOpenWorkspaceFile) { onOpenWorkspaceFile(link); return true } if (link.kind !== 'workspace-file' || !msg.sender_user_id) return false; openSenderFile(msg.sender_user_id, isGroup ? msg.chat_id : undefined, link); return true }} />} />
   })()}</div>
 }
 

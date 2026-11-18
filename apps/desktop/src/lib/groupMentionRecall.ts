@@ -1,28 +1,23 @@
-import { useSyncExternalStore } from 'react'
-import { browserStorage } from '@renderer/features/remote-hosts/remote-recent-folders'
+import { viewStateCache } from '../session/renderer/lib/stores/view-state-cache'
+import { useSelect } from './selectStore'
+import { readViewState, takeLegacyLocalStorage, writeViewState, type ViewPanel } from './viewStateTable'
 
-const key = (accountId: string, chatId: string) => `gugu:group-mention:${encodeURIComponent(accountId)}/${encodeURIComponent(chatId)}`
-const listeners = new Set<() => void>()
+// Who was last @mentioned in a group, per account and chat: view state (lib/viewStateTable). Kept in localStorage before
+// (`gugu:group-mention:<account>/<chat>`, both URI-encoded); moved over once.
+const recallOf = (accountId: string, chatId: string): ViewPanel => ({ conversation: chatId, panel: 'mention-recall', account: accountId })
+const LEGACY_PREFIX = 'gugu:group-mention:'
+takeLegacyLocalStorage((key) => key.startsWith(LEGACY_PREFIX), (key, raw) => {
+  const [account, chat] = key.slice(LEGACY_PREFIX.length).split('/').map(decodeURIComponent)
+  if (account && chat && raw && raw.length <= 128) writeViewState(recallOf(account, chat), { id: raw })
+})
+
 function read(accountId: string | null | undefined, chatId: string | null | undefined): string | null {
-  if (!accountId || !chatId) return null
-  try {
-    const id = browserStorage()?.getItem(key(accountId, chatId))
-    return id && id.length <= 128 ? id : null
-  } catch { return null }
-}
-function subscribe(listener: () => void) {
-  listeners.add(listener)
-  window.addEventListener('storage', listener)
-  return () => { listeners.delete(listener); window.removeEventListener('storage', listener) }
+  return accountId && chatId ? readViewState<{ id: string }>(recallOf(accountId, chatId)).id ?? null : null
 }
 export function useGroupMentionRecall(accountId: string | null | undefined, chatId: string | null | undefined): string | null {
-  return useSyncExternalStore(subscribe, () => read(accountId, chatId))
+  return useSelect(viewStateCache.changes, () => read(accountId, chatId))
 }
-/** Advisory, account-local UI preference; a storage failure must never roll back a delivered message. */
+/** Advisory, account-local UI memory: a send never waits on it. */
 export function rememberGroupMention(accountId: string, chatId: string, id: string | null): void {
-  try {
-    if (id) browserStorage()?.setItem(key(accountId, chatId), id)
-    else browserStorage()?.removeItem(key(accountId, chatId))
-  } catch { /* Unavailable local preferences do not affect message delivery. */ }
-  for (const listener of listeners) listener()
+  writeViewState(recallOf(accountId, chatId), { id: id ?? undefined })
 }

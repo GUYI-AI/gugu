@@ -293,9 +293,6 @@ function setup(options: {
     jxa: vi.fn() as unknown as FamilyDeps['jxa'],
     exec: exec as unknown as FamilyDeps['exec'],
     macHelper: () => ({ available: () => ({ ok: true }), call: helperCall as unknown as MacHelperClient['call'], dispose: () => undefined }),
-    cua: () => {
-      throw new Error('files never use cua-driver')
-    },
   }
   const family = createFilesFamily({ findRipgrep: async () => (options.ripgrep === undefined ? '/fake/bin/rg' : options.ripgrep) })
   const actions = createDeviceActionsProvider({ store, families: [family], deps })

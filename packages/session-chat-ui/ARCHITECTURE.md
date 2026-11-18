@@ -270,8 +270,10 @@ flowchart TD
 Streaming appends one message per turn, so `setCount` is tuned for the
 append-at-tail case: growing keeps existing BIT entries valid and builds only the
 new high-index nodes from their children — `O(log n)` per appended row.
-`prepend` (history pagination) shifts sizes and rebuilds the BIT in one `O(n)`
-pass, which is acceptable for user-paced "load older" actions.
+An older history page is not a virtualizer operation: it rebuilds the committed
+tier, which reseeds the virtualizer by row identity (measured heights are kept)
+in one `O(n)` pass and moves the scroll offset with the reader's row. That is
+acceptable for user-paced "load older" actions.
 
 ### Scroll-anchor correction
 

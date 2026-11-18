@@ -1,15 +1,7 @@
 import { style } from '@vanilla-extract/css';
-import { createVariableThemeContract } from '@session-chat/styles/variable-theme-contract.css';
 
-// ── Runtime geometry contract ─────────────────────────────────────────────────
-
-export type ToolGroupStyleVars = {
-  height: number;
-};
-
-export const toolGroupCardVars = createVariableThemeContract<ToolGroupStyleVars>({
-  height: null,
-});
+// The engine height is a plain inline `height` on the root, never a custom property: a custom property inherits, so
+// changing it restyles the whole subtree — per streamed chunk, O(content) (see user-message.css.ts).
 
 /**
  * Root container clipped to the measured composite height.
@@ -17,7 +9,6 @@ export const toolGroupCardVars = createVariableThemeContract<ToolGroupStyleVars>
  * clipping rather than overflowing into the next row.
  */
 export const toolGroupRoot = style({
-  height: toolGroupCardVars.height,
   overflow: 'hidden',
 });
 

@@ -55,10 +55,13 @@ const stdio = (args: string[], command = process.execPath) =>
   ({ name: 'probe', transport: 'stdio' as const, command, args, enabledByDefault: true });
 
 describe('checkLibraryMcp —— 检测连接的四种结果', () => {
-  it('stdio 连上:通过,带工具列表(名字与说明)', async () => {
+  it('stdio 连上:通过,带工具列表(名字、说明与参数)', async () => {
     const result = await checkLibraryMcp(stdio([script]));
     expect(result.status).toBe('ok');
-    expect(result.tools).toEqual([{ name: 'echo', description: 'says it back' }, { name: 'env' }]);
+    expect(result.tools).toEqual([
+      { name: 'echo', description: 'says it back', inputSchema: { type: 'object' } },
+      { name: 'env', inputSchema: { type: 'object' } },
+    ]);
   });
 
   it('命令不存在:失败,原因是「找不到命令」并写出是哪一个', async () => {

@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, rmdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, rmdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { FileSystem } from '@gugu/session-core/files';
@@ -39,7 +39,7 @@ describe('workspace operations after the host process loses its cache', () => {
     vi.clearAllMocks();
     fixture = await openFixture('empty');
     h.db = fixture.db;
-    root = await mkdtemp(path.join(os.tmpdir(), 'gugu-workspace-recovery-'));
+    root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'gugu-workspace-recovery-')));
     await writeFile(path.join(root, 'note.ts'), 'before');
     fixture.sqlite.prepare('INSERT INTO projects (id, name, path, repository_workspace_id, gitless) VALUES (?, ?, ?, ?, 1)').run('p', 'Project', root, 'ws');
     fixture.sqlite.prepare("INSERT INTO workspaces (id, type, kind, location, path) VALUES ('ws', 'local', 'project-root', 'local', ?)").run(root);
@@ -67,7 +67,7 @@ describe('workspace operations after the host process loses its cache', () => {
     await registry.teardownAll('detach');
     fixture.close();
     h.db = undefined;
-    expect(path.dirname(root)).toBe(os.tmpdir());
+    expect(path.dirname(root)).toBe(await realpath(os.tmpdir()));
     expect(path.basename(root)).toMatch(/^gugu-workspace-recovery-/);
     await rm(root, { recursive: true, force: true });
   });

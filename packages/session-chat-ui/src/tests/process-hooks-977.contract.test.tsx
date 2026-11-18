@@ -31,7 +31,9 @@ function mount(items: TranscriptItem[], reply: string | null = 'Fixture done.') 
 }
 
 describe('conversation hooks remain semantic process steps', () => {
-  it.each(['background-command-done-tool-call', 'subagent-done-tool-call'] as const)('keeps %s independent of the reply header', async kind => {
+  // #2587 (owner 2026-11-13):「三类消息之前是会创建新的气泡段落，现在是接续之前气泡段落」—— a completion is a step of the
+  // process above the reply, not an event row of its own between the input and the reply header.
+  it.each(['background-command-done-tool-call', 'subagent-done-tool-call'] as const)('folds %s into the process above the reply', async kind => {
     const command = 'cd fixture-directory && export PATH=fixture-path; echo RAW-WAKE-991';
     const base = { id: 'wake', seq: 1, toolCallId: 'wake', launchToolCallId: 'launch', name: command,
       title: command, summary: command, status: 'done' as const, outcome: 'completed' as const };
@@ -39,24 +41,22 @@ describe('conversation hooks remain semantic process steps', () => {
     const v = mount([source]);
     await until('the reply appears', () => v.host.textContent?.includes('Fixture done.') === true);
     const head = v.host.querySelector<HTMLElement>('[data-conversation-part="head"]')!;
-    expect(head.textContent).toBe('Fixture agent');
+    expect(head.textContent).toContain('Fixture agent');
     expect(head.querySelector('[data-slot="conversation-quote"]')).toBeNull();
-    const completion = v.host.querySelector<HTMLElement>('[data-conversation-step="wake"]')!;
-    expect(completion.textContent).toBe(`${kind === 'background-command-done-tool-call' ? 'background command' : 'subagent'} finished›`);
-    expect(completion.textContent).not.toContain('RAW-WAKE-991');
-    expect(completion.closest('[data-slot="conversation-process-steps"]')).toBeNull();
-    expect(completion.getBoundingClientRect().bottom).toBeLessThanOrEqual(head.getBoundingClientRect().top + 1);
+    expect(v.host.querySelectorAll('[data-conversation-part="head"]')).toHaveLength(1);
+    expect(v.host.querySelector('[data-conversation-step="wake"]')).toBeNull();
+    expect(v.host.textContent).not.toContain('RAW-WAKE-991');
+    // `mount` opens the process (`setCollapsed` stores the reader's toggle); the completion is one phrase in it.
+    const phrase = kind === 'background-command-done-tool-call' ? '1 background command finished' : '1 subagent finished';
+    await until('the process opens on the completion phrase', () => v.host.querySelector('[data-slot="conversation-process-steps"]')?.textContent?.includes(phrase) === true);
+    const steps = v.host.querySelector<HTMLElement>('[data-slot="conversation-process-steps"]')!;
+    const reply = [...v.host.querySelectorAll<HTMLElement>('[data-conversation-part="body"]')].find(el => el.textContent?.includes('Fixture done.'))!;
+    expect(steps.getBoundingClientRect().bottom).toBeLessThanOrEqual(reply.getBoundingClientRect().top + 1);
+    expect(v.host.textContent).not.toContain('RAW-WAKE-991');
     expect(v.host.textContent).not.toContain('Bash');
-    const disclosure = completion.querySelector<HTMLButtonElement>('[data-collapse-id]')!;
-    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
-    disclosure.click();
-    await until('the independent completion original opens', () => completion.textContent?.includes(command) === true);
-    expect(head.textContent).not.toContain('RAW-WAKE-991');
-    disclosure.click();
-    await until('the independent completion original closes', () => !completion.textContent?.includes('RAW-WAKE-991'));
   });
 
-  it('keeps an independent long completion measured through resizing, disclosure and process folding', async () => {
+  it('keeps one process line and one reply when a long completion lands between two thoughts', async () => {
     const summary = 'cd fixture-workspace && echo checking-a-long-command-line '.repeat(18);
     const v = mount([
       { kind: 'thinking', id: 'first', seq: 1, segmentId: 'first', startedAt: 2000, text: '', status: 'done' },
@@ -65,42 +65,16 @@ describe('conversation hooks remain semantic process steps', () => {
       { kind: 'thinking', id: 'second', seq: 3, segmentId: 'second', startedAt: 4000, text: 'The next step.', status: 'done' },
     ]);
     await until('the reply appears', () => v.host.textContent?.includes('Fixture done.') === true);
-    const completion = () => v.host.querySelector<HTMLElement>('[data-conversation-step="completed"]')!;
-    const noOverlap = () => {
-      const row = completion();
-      expect(row.closest('[data-slot="conversation-process-steps"]')).toBeNull();
-      const head = v.host.querySelector<HTMLElement>('[data-conversation-part="head"]')!;
-      expect(row.getBoundingClientRect().bottom).toBeLessThanOrEqual(head.getBoundingClientRect().top + 1);
-      const text = row.lastElementChild!.getBoundingClientRect();
-      const bounds = row.getBoundingClientRect();
-      expect(text.top).toBeGreaterThanOrEqual(bounds.top - 1);
-      expect(text.bottom).toBeLessThanOrEqual(bounds.bottom + 1);
-    };
+    expect(v.host.querySelectorAll('[data-conversation-part="head"]')).toHaveLength(1);
+    expect(v.host.querySelector('[data-conversation-step="completed"]')).toBeNull();
     for (const width of [900, 500, 1200, 900]) {
       v.host.style.width = `${width}px`;
-      await untilStable('resized completion settles', () => completion()?.getBoundingClientRect().width);
-      noOverlap();
-    }
-    completion().querySelector<HTMLButtonElement>('[data-collapse-id]')!.click();
-    await until('the completion opens', () => completion().offsetHeight > 32);
-    await v.settle();
-    expect(completion().textContent).toContain(summary.trim());
-    for (const width of [500, 1200]) {
-      v.host.style.width = `${width}px`;
-      await untilStable('expanded completion remeasures', () => completion()?.getBoundingClientRect().height);
-      noOverlap();
-    }
-    completion().querySelector<HTMLButtonElement>('[data-collapse-id]')!.click();
-    await until('the completion closes', () => completion().offsetHeight === 32);
-    // Folding either adjacent process never hides this event or attaches it to the reply.
-    for (const expanded of [false, true]) {
-      v.state.viewState.setCollapsed('hooks:process', expanded);
-      v.state.viewState.setCollapsed('hooks:process@completed', expanded);
       await v.settle();
-      expect(completion().offsetHeight).toBe(32);
-      expect(v.host.querySelector('[data-slot="conversation-quote"]')).toBeNull();
-      noOverlap();
+      expect(v.host.querySelectorAll('[data-conversation-part="head"]')).toHaveLength(1);
+      expect(v.host.textContent).not.toContain('checking-a-long-command-line');
     }
+    await until('the process shows the completion phrase', () => v.host.querySelector('[data-slot="conversation-process-steps"]')?.textContent?.includes('1 background command finished') === true);
+    expect(v.host.querySelector('[data-slot="conversation-quote"]')).toBeNull();
   });
 
   it.each(['notice', 'legacy'] as const)('keeps the reply before a %s Stop hook in its own bubble and starts a new segment', async mode => {

@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { AgentAvatar } from '../agentAvatar/AgentAvatar'
+import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
+import { useTheme } from '@/store/theme'
 import type { AssistantSetupDraft } from '@/lib/assistantSetup'
 import type { AssistantEngine } from '@/lib/assistantHomeIpc'
 import { AppIcon } from '@renderer/lib/components/app-icon'
@@ -39,6 +41,7 @@ export function AssistantEngineChoice({ engine, onEngineChange, draft, onContinu
   const readings = { claude, codex }
   const selected = readings[engine]
   const connections = useConnectionPanel()
+  const { theme } = useTheme()
   const checking = selected.state === 'checking'
   const action = checking ? t('setup.engineChecking')
     : selected.state === 'failed' ? t('setup.engineRetry')
@@ -76,6 +79,8 @@ export function AssistantEngineChoice({ engine, onEngineChange, draft, onContinu
     <Button variant="ghost" size="lg" className="ta-engine-back" disabled={checking} onClick={onBack}>
       <ArrowLeft size={16} />{t('setup.back')}
     </Button>
-    {connections.panel}
+    {/* The connection menu and its add/login dialog are session-page components drawn by the shell: their popups portal to
+        <body>, where only a themed layer gives them the session page's surface colors (else they paint transparent over the card). */}
+    {connections.panel && <SessionUiTheme theme={theme}>{connections.panel}</SessionUiTheme>}
   </>
 }

@@ -3,7 +3,7 @@ import type { DeviceRpcResponse } from '@gugu/core/cloud/deviceRpcProtocol';
 import { unwrapPayload } from '@gugu/core/cloud/payload';
 import type { ProjectionHostPacket, ProjectionInputOutcome } from '@shared/extensions/projection-protocol';
 import { ProjectionInputFailure } from './extension-projections';
-import type { TaskPageControl, TaskPageState } from '@shared/browser-task-page';
+import type { TaskPageControl, TaskPageControlResult, TaskPageState } from '@shared/browser-task-page';
 import { PROJECTION_REMOTE_PACKET, PROJECTION_REMOTE_PAGE_STATE, PROJECTION_REMOTE_RPC, type ProjectionRemotePacketEvent, type ProjectionRemotePageStateEvent } from './projection-remote-host';
 
 /**
@@ -50,17 +50,23 @@ async function ask(deviceId: string, type: string, payload: unknown, timeoutMs: 
 export async function watchRemoteProjection(
   deviceId: string,
   /** An App's projection in that session, or `{ session, page: true }`: that task's own browser page. */
-  input: { app: string; version: string; session: string; source: string } | { session: string; page: true },
+  input: ({ app: string; version: string; session: string; source: string } | { session: string; page: true }) & { presentation?: 1 },
   deliver: (packet: ProjectionHostPacket) => void,
   /** A task page's toolbar state, as it changes there. */
   state?: (state: TaskPageState) => void,
-): Promise<{ receive(packet: unknown): Promise<void>; control(control: TaskPageControl): Promise<void>; close(): void }> {
+): Promise<{ receive(packet: unknown): Promise<void>; control(control: TaskPageControl): Promise<TaskPageControlResult>; close(): void }> {
   const watch = randomUUID();
   let closed = false;
   // Registered before asking: the first picture can arrive before the answer.
   watches.set(watch, { deviceId, deliver: (packet) => { if (!closed) deliver(packet); }, state: (next) => { if (!closed) state?.(next); } });
   try {
-    await ask(deviceId, PROJECTION_REMOTE_RPC.watch, { watch, ...input }, 30_000);
+    try { await ask(deviceId, PROJECTION_REMOTE_RPC.watch, { watch, ...input }, 30_000); }
+    catch (error) {
+      // API54 hosts reject the unknown opt-in before opening a watch. Keep their original pixel contract.
+      if (input.presentation !== 1 || (error as { code?: string }).code !== 'invalid_payload') throw error;
+      const { presentation: _presentation, ...legacy } = input;
+      await ask(deviceId, PROJECTION_REMOTE_RPC.watch, { watch, ...legacy }, 30_000);
+    }
   } catch (error) {
     watches.delete(watch);
     throw error;
@@ -75,7 +81,8 @@ export async function watchRemoteProjection(
     },
     async control(control) {
       if (closed) throw new Error('Projection viewer is closed');
-      await ask(deviceId, PROJECTION_REMOTE_RPC.control, { watch, control }, 30_000);
+      const result = await ask(deviceId, PROJECTION_REMOTE_RPC.control, { watch, control }, 30_000);
+      return result.inspection as TaskPageControlResult;
     },
     close() {
       if (closed) return;

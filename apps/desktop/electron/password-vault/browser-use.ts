@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { anySignal } from '@gugu/core/shared/anySignal'
 import type { AuditInput, AuditReceipt, CredentialUseResult, VaultBrowserSink, VaultUseBinding, VaultUseCapability, VaultUseControl, VaultSinkControl } from './contracts'
 import { VaultError } from './contracts'
+import { log } from '@main/lib/logger'
 import type { OutcomeAuditIssuer } from './outcome-audit'
 import type { PostUseAuditResult, UseOutcomeContext } from '../session/main/core/browser/credential-settlement-contract'
 
 interface SecretLease {
-  account: Buffer; password: Buffer
+  values: readonly Buffer[]
   signal: AbortSignal
   assertCurrent(): void
   release(): void
@@ -28,7 +29,8 @@ export async function performCredentialUse(
   let status: CredentialUseResult['status'] = 'unavailable', retainIsolatedLogin = true
   const event = (outcome: AuditInput['outcome']): AuditInput => ({ id: randomUUID(), action: 'use', source: 'browser', outcome,
     loginSurfaceId: binding.loginSurfaceId, agentId: binding.agentId, sessionId: binding.sessionId, requestId: binding.requestId, useId: binding.useId,
-    origin: binding.origin, credential: { id: binding.credentialId, version: Number(binding.credentialVersion) } })
+    // Values typed for this use alone (`typed:`) belong to no saved credential.
+    origin: binding.origin, ...(binding.credentialId.startsWith('typed:') ? {} : { credential: { id: binding.credentialId, version: Number(binding.credentialVersion) } }) })
   let claimed = false
   try {
     if (typeof sink.settle !== 'function') throw new VaultError('UNAVAILABLE')
@@ -60,10 +62,15 @@ export async function performCredentialUse(
     possibleEffect = true
     const result = await sink.fillAndSubmit(binding, lease, control)
     assertCurrent()
-    if (!['submitted_unconfirmed', 'login_confirmed', 'person_interaction_required', 'failed', 'uncertain'].includes(result)) throw new VaultError('UNAVAILABLE')
+    if (!['submitted_unconfirmed', 'login_confirmed', 'person_interaction_required', 'failed', 'uncertain', 'filled'].includes(result)) throw new VaultError('UNAVAILABLE')
     if (['submitted_unconfirmed', 'login_confirmed'].includes(result) && !submissionClaimed) throw new VaultError('UNAVAILABLE')
     status = result
-  } catch { status = possibleEffect ? 'uncertain' : 'unavailable' }
+  } catch (error) {
+    status = possibleEffect ? 'uncertain' : 'unavailable'
+    // The step's name and the error's code only; a value never reaches the log.
+    log.warn('Password fill: the browser step failed', { requestId: binding.requestId, filling: possibleEffect, auditFailed,
+      error: error instanceof VaultError ? error.code : error instanceof Error ? error.message.slice(0, 80) : 'unknown' })
+  }
   finally { lease?.release() }
   if (!claimed) return { status: 'unavailable', retry: false, retainIsolatedLogin: true }
   // Cleanup never hands back the isolated surface. The coordinator requires this proof and the post-audit receipt.

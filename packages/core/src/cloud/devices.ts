@@ -240,6 +240,7 @@ export function normalizeSessionDigest(value: unknown): DeviceSessionSummary[] {
        * 那一条缺席时的默认「支持」是安全的(点进去自然会报错),这三条缺席时没有安全默认。
        */
       ...(typeof row.isPinned === 'boolean' ? { isPinned: row.isPinned } : {}),
+      ...(typeof row.isPinnedToSidebar === 'boolean' ? { isPinnedToSidebar: row.isPinnedToSidebar } : {}),
       ...(typeof row.unseen === 'boolean' ? { unseen: row.unseen } : {}),
       ...(typeof row.parentConversationId === 'string'
         ? { parentConversationId: row.parentConversationId }

@@ -12,7 +12,7 @@ import { composerSlotClass, composerSlotInnerClass } from '@gugu/session-chat-ui
 import { act, createElement, useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as attachmentReader from '../../../apps/desktop/src/lib/attachmentBytes'
-import { attachmentQueryClient } from '../../../apps/desktop/src/lib/attachmentQueryClient'
+import { queryClient as attachmentQueryClient } from '../../../apps/desktop/src/lib/replica'
 
 import type { TopicSummary } from '@gugu/core/shared/types/chat'
 import { createNode, createReactHarness, clickElement, deferred, message, renderWithAppProviders } from '../../support/testHarness'
@@ -23,6 +23,12 @@ vi.mock('../../../apps/desktop/src/lib/topics', () => ({
   topicService: {
     listTopicsOfChat: (sourceChatId: string) => listTopicsOfChat(sourceChatId),
   },
+}))
+
+// The server's send-time wakes: the receipt's own message woke its mentioned agent.
+vi.mock('../../../apps/desktop/src/lib/chatMessageRevalidation', async (importOriginal) => ({
+  ...await importOriginal<object>(),
+  loadMessageAgentWakes: async (ids: string[]) => new Map(ids.map((id) => [id, new Set(id === 'topic-own-message' ? ['read'] : [])])),
 }))
 
 const { useTopicsOfChat, topicsSourceChatId } = await import('../../../apps/desktop/src/hooks/useTopics')
@@ -352,6 +358,8 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
   })
 
   it('点击话题已读环显示该消息的已读/未读名单，排除只在来源群里的成员', async () => {
+    // 名单只挂可见那一窗(@@@receipt-window);jsdom 没有布局,给滚动区一个高度,窗口才有行。
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(288)
     await renderWithAppProviders(harness, createNode(TopicSplitPane, receiptProps))
     await clickElement(harness.container.querySelector('[data-testid="message-read-receipt"]') as HTMLElement)
     const panel = document.querySelector('[data-testid="message-read-receipt-panel"]')
@@ -363,7 +371,7 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
     await renderWithAppProviders(harness, createNode(TopicSplitPane, {
       ...receiptProps, memberReadSeqs: { read: 0, unread: 10 },
     }))
-    expect(receiptHeads()).toEqual(['已读2', '未读0'])
+    expect(receiptHeads()).toEqual(['全部已读'])
   })
 
   it('换话题关闭回执名单，切回原话题也不恢复旧弹层', async () => {
@@ -393,7 +401,8 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
         askReveal('topic-1', 't-1', 'topic'); window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked))
       })
       expect(harness.container.querySelector('[data-testid="topic-split-workspace"]'), 'the panel gave the list back').toBeNull()
-      expect(harness.container.querySelector('[data-msg-id="t-1"]')?.className).toContain('msg-src-flash')
+      // The line flashes once the list has settled on it (revealMessage), a few frames later.
+      await vi.waitFor(() => expect(harness.container.querySelector('[data-msg-id="t-1"]')?.className).toContain('msg-src-flash'))
       expect(harness.container.querySelector('[data-msg-id="t-2"]')?.className).not.toContain('msg-src-flash')
     } finally {
       HTMLElement.prototype.checkVisibility = originalCheckVisibility
@@ -822,7 +831,7 @@ describe('useTopicsOfChat', () => {
     const state = useTopicsOfChat(sourceChatId)
     reload = state.reload
     useEffect(() => {
-      observed = { topics: state.topics, loading: state.loading, error: state.error, byMessage: state.bySourceMessageId }
+      observed = { topics: state.topics ?? [], loading: state.loading, error: state.error, byMessage: state.bySourceMessageId }
     })
     return null
   }

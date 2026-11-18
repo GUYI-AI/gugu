@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { classifyDocumentPreview } from '../../../apps/desktop/src/components/chat/documentPreview'
-import { attachmentTypeKey } from '../../../apps/desktop/src/components/chat/attachmentType'
+import { attachmentTypeKey } from '@gugu/core/shared/ui/attachmentType'
 import { isExtensionBundle } from '../../../apps/desktop/src/components/extensionBundle/summarizeExtensionBundle'
 
 const source = readFileSync('apps/mobile/android/app/src/main/AndroidManifest.xml', 'utf8')
@@ -52,7 +52,7 @@ describe('Android Open with registration', () => {
   })
 
   it('keeps every concrete application MIME already named in the preview, file-card and shared type lists', () => {
-    const paths = ['apps/desktop/src/components/chat/documentPreview.ts', 'apps/desktop/src/components/chat/attachmentType.ts', 'packages/core/src/shared/imageMime.mjs']
+    const paths = ['apps/desktop/src/components/chat/documentPreview.ts', 'packages/core/src/shared/ui/attachmentType.ts', 'packages/core/src/shared/imageMime.mjs']
     const known = new Set(paths.flatMap(path => [...readFileSync(path, 'utf8').matchAll(/['"](application\/[a-z0-9.+-]+)['"]/g)].map(match => match[1]!)))
     known.delete('application/octet-stream') // A transport placeholder, not an advertised file format.
     for (const mime of known) expect(matches('VIEW', mime), mime).toBe(true)

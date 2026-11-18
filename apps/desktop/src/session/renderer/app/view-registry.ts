@@ -1,14 +1,11 @@
 import type { ComponentType, ReactNode } from 'react';
 import { homeView } from '@renderer/app/home-view';
 import { appsView, appView } from '@renderer/features/apps/apps-views';
-import { assistantView } from '@renderer/features/assistant/assistant-view';
 import { automationsView } from '@renderer/features/automations/automations-view';
 import { chatView } from '@renderer/features/chats/view';
-import { libraryView } from '@renderer/features/library/library-view';
 import { projectView } from '@renderer/features/projects/view';
 import { sessionHistoryView } from '@renderer/features/session-history/session-history-view';
-import { NewSessionPage } from '@renderer/features/sessions/new-session-page';
-import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
+import { newSessionView } from '@renderer/features/sessions/new-session-page';
 import { sessionView } from '@renderer/features/sessions/view';
 import type { CommandProvider } from '@renderer/lib/commands/types';
 import { appState } from '@renderer/lib/stores/app-state';
@@ -18,16 +15,13 @@ import { registerViews } from '@renderer/lib/layout/registered-views';
 export const views = {
   home: homeView,
   automations: automationsView,
-  library: libraryView,
-  // #7199 个人助理的一页(最左栏「助理」)。
-  assistant: assistantView,
   project: projectView,
   // gugu-dev#181 对话也是一块。
   chat: chatView,
   screen: { MainPanel: () => null },
   'session-history': sessionHistoryView,
   session: sessionView,
-  'new-session': { TitlebarSlot: ShellTitlebar, MainPanel: NewSessionPage },
+  'new-session': newSessionView,
   apps: appsView,
   app: appView,
 } satisfies Record<string, ViewDefinition<any>>;

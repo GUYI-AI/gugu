@@ -1,7 +1,6 @@
 import { useContext, useLayoutEffect, useRef } from 'react';
 import { PaneContext } from '@renderer/features/tabs/pane-context';
-import { TabLayerShownContext } from '@renderer/features/tabs/retained-tab-content';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { AppPeekSlot } from '@/components/appSlot/AppPeekSlot';
 import { ExtensionTabToolbar } from './extension-tab-toolbar';
 import { extensionViewStore } from './extension-view-store';
@@ -44,9 +43,7 @@ export function ExtensionSharedSlot({
   // A retained session page that is hidden keeps this slot mounted, but must not hold the App page: the
   // root layer only re-places it on a claim change, so a hidden claim would leave it drawn over the
   // session now shown. Claim while shown, release when hidden — the page itself stays in the root layer.
-  const pageShown = useContext(PageShownContext);
-  const layerShown = useContext(TabLayerShownContext);
-  const shown = pageShown && layerShown;
+  const shown = useContext(SurfaceShownContext);
   // A session's slot is in the person's private chat with its agent (`AppWhere`); a chat's slot is in its chat.
   const conversation = useTaskConversation(chatId ? null : sessionId) ?? undefined;
   const resourceChat = useTaskProjectChat(!chatId && parseExtensionTabKind(tabKind)?.extensionId === WORKSPACE_APP_ID ? sessionId : null) ?? undefined;
@@ -65,7 +62,8 @@ export function ExtensionSharedSlot({
       <ExtensionTabToolbar tabKind={tabKind} sessionId={sessionId ?? null} tabId={tabId} />
       {/* What the page opens beside it (G1) goes in this slot too: side by side, or over it when narrow. */}
       <AppPeekSlot sessionId={sessionId ?? null} tabId={tabId}>
-        <div ref={slotRef} className="min-h-0 flex-1 bg-background" />
+        {/* The page takes this box's corners too (page-corners.ts): a place that rounds it rounds the page. */}
+        <div ref={slotRef} className="min-h-0 flex-1 bg-background" data-extension-slot="" />
       </AppPeekSlot>
     </div>
   );

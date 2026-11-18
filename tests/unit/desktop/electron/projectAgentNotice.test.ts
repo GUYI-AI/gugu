@@ -14,7 +14,7 @@ describe('project change announcements', () => {
   })
   it('project_get can retry access without repeating a folder or device mutation', async () => {
     const ensureAccess = vi.fn(async () => {})
-    expect(await prepareProjectAgentNotice({ project_id: 'project', name: 'App', chat_id: 'group' }, { agentUserId: async () => 'agent', ensureAccess })).toMatchObject({ group_access: { status: 'ready' } })
+    expect(await prepareProjectAgentNotice({ project_id: 'group', name: 'App' }, { agentUserId: async () => 'agent', ensureAccess })).toMatchObject({ group_access: { chat_id: 'group', status: 'ready' } })
     expect(ensureAccess).toHaveBeenCalledOnce()
   })
 })

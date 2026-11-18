@@ -128,6 +128,7 @@ function injectWhenReady(args: {
   session: Session;
   text: string;
   messageId?: string;
+  beforeAdmission?: () => void;
 }): Promise<'accepted' | 'not-ready'> {
   if (!args.text.trim()) return Promise.resolve('accepted');
 
@@ -147,7 +148,6 @@ function injectWhenReady(args: {
     : undefined;
 
   const payload = buildPromptInjectionPayload({
-    providerId: args.session.providerId,
     text: args.text,
     multilineEncoding: multilineEncodingFor(args.session),
   });
@@ -163,10 +163,12 @@ function injectWhenReady(args: {
       if (quietTimer) clearTimeout(quietTimer);
       clearTimeout(maxWaitTimer);
       try {
+        args.beforeAdmission?.();
         if (promptDelivery.kind === 'keystroke') {
           writeKeystrokes(args.pty, payload);
           const submit = () => {
             try {
+              args.beforeAdmission?.();
               args.pty.write(submitSequence);
               resolve('accepted');
             } catch (error) {
@@ -233,6 +235,7 @@ function injectImmediately(args: {
   session: Session;
   text: string;
   messageId: string;
+  beforeAdmission?: () => void;
 }): Promise<'accepted'> {
   const plugin = getPlugin(args.session.providerId);
   const promptDelivery = plugin.capabilities.prompt;
@@ -249,17 +252,18 @@ function injectImmediately(args: {
     ? promptDelivery.submitDelayMs
     : undefined;
   const payload = buildPromptInjectionPayload({
-    providerId: args.session.providerId,
     text: args.text,
     multilineEncoding: multilineEncodingFor(args.session),
   });
 
   try {
+    args.beforeAdmission?.();
     if (promptDelivery.kind === 'keystroke') {
       writeKeystrokes(args.pty, payload);
       return new Promise<'accepted'>((resolve, reject) => {
         const submit = () => {
           try {
+            args.beforeAdmission?.();
             args.pty.write(submitSequence);
             resolve('accepted');
           } catch (error) {
@@ -287,6 +291,7 @@ export function injectSessionMessageWhenReady(args: {
   pty: Pty;
   session: Session;
   message: { id: string; text: string };
+  beforeAdmission?: () => void;
 }): Promise<{ status: 'not-ready' } | { status: 'accepted'; messageId: string }> {
   return afterStartupGate(
     args.pty,
@@ -299,6 +304,7 @@ function injectSessionMessagePastGate(args: {
   pty: Pty;
   session: Session;
   message: { id: string; text: string };
+  beforeAdmission?: () => void;
 }): Promise<{ status: 'not-ready' } | { status: 'accepted'; messageId: string }> {
   if (hasSettledPastStartup(args.pty)) {
     return injectImmediately({
@@ -306,6 +312,7 @@ function injectSessionMessagePastGate(args: {
       session: args.session,
       text: args.message.text,
       messageId: args.message.id,
+      beforeAdmission: args.beforeAdmission,
     }).then(() => ({ status: 'accepted', messageId: args.message.id }));
   }
   return injectWhenReady({
@@ -313,6 +320,7 @@ function injectSessionMessagePastGate(args: {
     session: args.session,
     text: args.message.text,
     messageId: args.message.id,
+    beforeAdmission: args.beforeAdmission,
   }).then((status) => {
     if (status !== 'accepted') return { status };
     readyPtys.add(args.pty);

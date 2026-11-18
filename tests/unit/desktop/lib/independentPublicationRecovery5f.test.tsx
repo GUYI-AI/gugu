@@ -114,21 +114,21 @@ it('a real adapter commit failure does not poison the repository or stall the ne
   expect(shown[0]).toMatchObject({ read_state_version: 11, unread_count: 1, unread_locator: newer.unread_locator })
 })
 
-it('a hook-owned failed read stays rolled back on the next hidden publication', async () => {
+it('a hook-owned failed read keeps the local read position through the next hidden publication (reconciled on recovery)', async () => {
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
   const read = deferred<void>(); boundary.write.mockReturnValueOnce(read.promise)
   const basis = tuple(8, 3, 2, 6)
   await act(async () => { await publish(basis, 1) })
   expect(shown[0]).toMatchObject({ read_state_version: 9, last_read_seq: 5 })
   await act(async () => { read.reject(new Error('offline')); await Promise.resolve() })
-  expect(shown[0]).toMatchObject(basis)
+  expect(shown[0]).toMatchObject({ read_state_version: 9, last_read_seq: 5 })
   boundary.visible = false
   await act(async () => { await publish(tuple(), 2) })
-  expect(shown[0]).toMatchObject(basis)
+  expect(shown[0]).toMatchObject({ read_state_version: 9, last_read_seq: 5 })
   expect(boundary.write).toHaveBeenCalledTimes(1)
 })
 
-it('a store-owned failed tail read must not be resurrected by the accepted publication mirror', async () => {
+it('a store-owned failed tail read keeps the local read position through the accepted publication mirror', async () => {
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
   const basis = tuple(8, 3, 2, 6), read = deferred<void>()
   boundary.write.mockReturnValueOnce(read.promise)
@@ -140,9 +140,9 @@ it('a store-owned failed tail read must not be resurrected by the accepted publi
   boundary.visible = false
   await act(async () => { await publish(tuple(), 1) })
   await act(async () => { read.reject(new Error('offline')); await Promise.resolve() })
-  expect(shown[0]).toMatchObject(basis)
+  expect(shown[0]).toMatchObject({ last_read_seq: 7, unread_count: 0, read_state_version: 9 })
   await act(async () => { await publish(tuple(), 2) })
-  expect(shown[0]).toMatchObject(basis)
+  expect(shown[0]).toMatchObject({ last_read_seq: 7, unread_count: 0, read_state_version: 9 })
   expect(boundary.write).toHaveBeenCalledTimes(1)
 })
 

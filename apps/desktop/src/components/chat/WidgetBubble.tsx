@@ -11,7 +11,7 @@ import { APP_OPEN_WITH_EVENT } from '../../session/shared/extensions/app-runtime
 import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
 import { isInstallRefused } from '../../session/shared/extensions/attachment-install'
 import { refusedLine } from '../extensionBundle/installedHere'
-import { extensionViewStore, residentPageKey, residentPlace } from '../../session/renderer/features/extensions/extension-view-store'
+import { ExtensionPage } from '../../session/renderer/features/extensions/extension-view-layer'
 import { WidgetLoading, WidgetSnapshot } from './WidgetSnapshot'
 import { useWidgetOriginal } from './useMessageReference'
 import { useWidgetPresence } from './useWidgetPresence'
@@ -74,12 +74,8 @@ const WidgetView = observer(function WidgetView({ message, slotMessageId, resolv
   const target = useMemo(() => ({ workspace: null, conversation: message.chat_id, tabId: widgetTabId(widgetId, inTimeline),
     widget: { id: widgetId, originMessageId: message.id, messageId: slotMessageId, data: widget.data ?? {}, senderId } }), [widgetId, message.id, message.chat_id, slotMessageId, senderId, widget.data, inTimeline])
   const kind = `${widget.app}.${widget.view}`
-  useEffect(() => {
-    if (!active || phone || !ref.current) return
-    const token = extensionViewStore.claim(kind, { chatId: message.chat_id, accountId: user?.id, tabId: target.tabId, widget: target.widget, element: ref.current })
-    return () => extensionViewStore.release(kind, token)
-  }, [active, phone, kind, message.chat_id, user?.id, target, ref])
-  const painted = extensionViewStore.paintedPages.has(residentPageKey(kind, residentPlace({ chatId: message.chat_id, tabId: target.tabId, widget: target.widget })))
+  // The live page is drawn in this frame, in the list's own flow: it scrolls and clips with the bubble in the same frame.
+  const [painted, setPainted] = useState(false)
   return <div className="w-[420px] max-w-full min-w-0" data-widget-bubble={slotMessageId} data-widget-id={widgetId}>
     <WidgetFrame height={height} element={ref}>
       {phone ? null : <WidgetSnapshot widgetId={widgetId} element={ref} text={widget.text} visible={!active || !painted} inactive={!active} />}
@@ -88,7 +84,9 @@ const WidgetView = observer(function WidgetView({ message, slotMessageId, resolv
         placeholder={<WidgetLoading text={widget.text} />}
         onOpenWith={detail => window.dispatchEvent(new CustomEvent(APP_OPEN_WITH_EVENT, { detail }))}
         testId="widget-frame" missingTestId="widget-frame-missing"
-      /> : null : <>
+      /> : <div className="absolute inset-0" data-widget-page>
+        <ExtensionPage key={user?.id} kind={kind} extensionId={widget.app} inline={target} accountId={user?.id} onPainted={setPainted} />
+      </div> : <>
         {phone ? <WidgetLoading text={widget.text} loading={false} /> : null}
         <Button variant="ghost" className="absolute inset-0 h-full min-h-0 cursor-pointer rounded-none p-0" aria-label={t('message.reference.locateActive')} onClick={presence.locate} data-widget-locate>{null}</Button>
       </>}
@@ -96,7 +94,7 @@ const WidgetView = observer(function WidgetView({ message, slotMessageId, resolv
     {/* The link follows the text: an outgoing bubble keeps its time at the right of this line. */}
     <p className="whitespace-pre-wrap break-words text-[length:var(--font-caption)] text-[var(--text-secondary)]">
       <span data-widget-text>{widget.text}</span>
-      {!mounted ? <>{' · '}<Button variant="ghost" className="inline h-auto min-h-0 cursor-pointer border-0 p-0 align-baseline text-[length:inherit] font-normal leading-[inherit] underline underline-offset-2 [&:hover:not([data-disabled])]:bg-transparent hover:text-[var(--text-primary)] max-[719px]:min-h-0" onClick={presence.locate}>{t('message.reference.locateActive')}</Button></> : null}
+      {!mounted ? <>{' '}<Button variant="ghost" className="inline h-auto min-h-0 cursor-pointer border-0 p-0 align-baseline text-[length:inherit] font-normal leading-[inherit] underline underline-offset-2 [&:hover:not([data-disabled])]:bg-transparent hover:text-[var(--text-primary)] max-[719px]:min-h-0" onClick={presence.locate}>{t('message.reference.locateActive')}</Button></> : null}
     </p>
   </div>
 })

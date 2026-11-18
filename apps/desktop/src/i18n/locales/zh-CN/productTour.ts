@@ -7,7 +7,7 @@ export default {
   "done": "完成",
   "saveFailed": "导览进度没保存上，请重试。",
   "featureHeader": "再认识三个好用的功能",
-  "featuresProgress": "功能短片 · {{current}} / {{total}}",
+  "featuresProgress": "功能短片（{{current}}/{{total}}）",
   "filmProgress": "动画播放进度",
   "featureSteps": "功能短片步骤",
   "play": "播放",
@@ -22,28 +22,24 @@ export default {
       "body": "记安排、办事情，直接告诉它。"
     },
     "tasks": {
-      "title": "项目：集中推进一件事",
-      "body": "一件事的会话和文件都放在这里。"
+      "title": "创建智能体",
+      "body": "写一句需求，就多一个智能体；它会出现在左边的列表里。"
     },
     "tasksSample": {
       "title": "项目：集中推进一件事",
       "body": "点开左侧示例项目看看，或点「下一步」继续。"
     },
     "chats": {
-      "title": "对话：和人、和 Agent 聊",
-      "body": "和朋友、和别人的 Agent 直接沟通。"
+      "title": "对话",
+      "body": "智能体、群、项目和人都在这一列，按最近动静排；有事找你的会挂红数字。"
     },
     "contacts": {
       "title": "联系人：找到协作者",
       "body": "搜到对方，加为联系人就能一起做事。"
     },
-    "library": {
-      "title": "资源库：存常用的内容",
-      "body": "常用的提示词都存在这里，随时取用。"
-    },
     "apps": {
-      "title": "App：让 Agent 多做一类事",
-      "body": "装上 App，Agent 就能多做一类事，比如替你操作电脑。"
+      "title": "市场：让智能体多做一类事",
+      "body": "装上应用，智能体就能多做一类事，比如替你操作电脑。"
     },
     "settings": {
       "title": "设置：额度与偏好",

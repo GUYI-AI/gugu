@@ -1,4 +1,10 @@
+import type { CustomModelConnection, ModelProtocol } from '../models/custom-model';
 import type { TurnFileRef } from '../acp/models/turn-files';
+export type {
+  CreationAttachmentManifest, CreationAttachmentTarget, CreationAttachmentDraftReceipt,
+  SessionCreateAttachmentDraftRequest, SessionCreateAttachmentDraftResult, SessionAdmitCreatedAttachmentsRequest,
+  RegisteredCreationAttachments, ResolvedCreationAttachment,
+} from './creation-attachment-protocol';
 import type { TimelineWindowFields, WindowBodyRef, WindowBodyResult, WindowCursor } from './window-cache/types';
 export type { TimelineWindowFields, WindowBodyRef, WindowBodyOwner, WindowBodyResult, WindowCursor, PendingLongRecord, BodyChunkDescriptor, SourceFragment } from './window-cache/types';
 export { BODY_CHUNK_BYTES, BODY_TEXT_BYTES } from './window-cache/types';
@@ -21,6 +27,7 @@ import type { PermissionSubject } from '../acp/models/permissions';
  */
 import type { NormalizedEvent } from '../acp/reducer/normalized-event';
 import type { TranscriptItem, TranscriptTurn } from '../acp/models/turns/turn';
+import type { ToolNode } from '../acp/models/turns/tool-calls';
 import type { QueuedPrompt } from '../acp/models/prompt';
 import type { ToolImageLookup } from '../acp/models/turns/tool-calls';
 import type { SessionLiveReply } from './live-reply';
@@ -32,7 +39,7 @@ export type { SessionLiveReply } from './live-reply';
  * person answers it wherever they follow that session, and the first answer settles it (`respond`). `kind` says how a
  * surface draws it; `payload` is that kind's own.
  */
-export const ASK_SOURCES = ['harness-permission', 'harness-question', 'agent-question', 'app-install'] as const;
+export const ASK_SOURCES = ['harness-permission', 'harness-question', 'agent-question', 'app-install', 'device-capability'] as const;
 export type AskSource = (typeof ASK_SOURCES)[number];
 export type AskOrigin = { source: AskSource; payload?: unknown };
 
@@ -355,6 +362,29 @@ export function remoteSettlementGap(
   return kind === 'question' ? 'no_question_channel' : null;
 }
 
+/**
+ * A running subagent's own calls, as the phone and remote panels show them (#2500). They are kept beside the
+ * turns and not inside the turn that launched the subagent. `toolCallId` is the launch card's.
+ *
+ * In a snapshot `steps` is the newest `TIMELINE_SUBAGENT_STEPS` calls. In a batch it is only the calls that are new
+ * or changed since `from`; the reader replaces those by `toolCallId` and keeps the rest. A subagent that is absent
+ * from the list is no longer running, and the reader drops what it held for it. `completedSteps` counts every
+ * finished call, including the ones not sent.
+ */
+export type TimelineSubagent = {
+  toolCallId: string;
+  completedSteps: number;
+  steps: ToolNode[];
+  /**
+   * What it has written and thought so far, the newest `TIMELINE_SUBAGENT_TEXT` characters. A batch carries them only
+   * when they changed since `from`; absent means unchanged.
+   */
+  output?: string;
+  reasoning?: string;
+};
+export const TIMELINE_SUBAGENT_TEXT = 8192;
+export const TIMELINE_SUBAGENT_STEPS = 200;
+
 /** 整份快照：从最新往回取 `limit` 轮。 */
 export type TimelineSnapshot = TimelineWindowFields & {
   cursor: RecordCursor;
@@ -374,6 +404,8 @@ export type TimelineSnapshot = TimelineWindowFields & {
   liveReply?: SessionLiveReply | null;
   /** Live presentation only; not serialized into the native-record archive. */
   terminals?: readonly TerminalState[];
+  /** Running subagents with their calls; absent on older hosts. See `TimelineSubagent`. */
+  subagents?: TimelineSubagent[];
 };
 
 /**
@@ -418,6 +450,8 @@ export type TimelineBatch = TimelineWindowFields & {
   queuedPrompts?: Pick<QueuedPrompt, 'id' | 'text' | 'queueEdit' | 'clientMessageId'>[];
   /** Actual in-flight reply stage; absent on older hosts, null when no live reply is present. */
   liveReply?: SessionLiveReply | null;
+  /** Running subagents, each with the calls changed since `from`; absent on older hosts. See `TimelineSubagent`. */
+  subagents?: TimelineSubagent[];
   /** Live presentation only; not serialized into the native-record archive. */
   terminals?: readonly TerminalState[];
 };
@@ -462,6 +496,14 @@ export type PendingRequest = {
   askedAt?: number;
   /** D-31 宿主替 agent 问的(不是它的 harness 问的):端上按 `host.kind` 画它自己的卡。 */
   origin?: AskOrigin;
+};
+
+/** An answered `Settlement`, as the session list carries it: which kind of ask, the option taken, who answered and when. */
+export type AnsweredAsk = Pick<Settlement, 'itemId' | 'kind' | 'optionId' | 'resolvedBy' | 'resolvedAt'> & {
+  /** Absent for a harness's own approval, which carries no origin. */
+  source?: AskSource;
+  /** The chosen option as it was offered; null when the answer is not one of them (a question's answers). */
+  option: SettlementOption | null;
 };
 
 export type SettleResult = { ok: true; settlement: Settlement } | { ok: false; existing: Settlement };
@@ -641,7 +683,7 @@ export type UnreachedMachine = { deviceId: string | null; label: string | null; 
  * 界面上**不摆不存在的档**（@@@permission-three-modes 那条规矩）：摆一个按下去必失败的
  * 选择器，比不摆更糟。
  */
-export type SessionOptionChoice = { id: string; name: string; description?: string };
+export type SessionOptionChoice = { id: string; name: string; description?: string; disabled?: boolean; reviewByHaiku?: boolean };
 
 export type SessionOptionGroup = {
   selected: string | null;
@@ -653,9 +695,16 @@ export type SessionpageSessionOptions = {
   mode: SessionOptionGroup | null;
   model: SessionOptionGroup | null;
   effort: SessionOptionGroup | null;
+  fast?: SessionOptionGroup | null;
 };
 
-export const SESSION_OPTION_DIMENSIONS = ['mode', 'model', 'effort'] as const;
+export type SessionpageSessionOptionsRequest = {
+  conversationId: string;
+  /** The model menu opened; include the host catalog for a running BYOK session. */
+  includeOwnModelCatalog?: true;
+};
+
+export const SESSION_OPTION_DIMENSIONS = ['mode', 'model', 'effort', 'fast'] as const;
 export type SessionOptionDimension = (typeof SESSION_OPTION_DIMENSIONS)[number];
 
 export type SessionpageSessionCancelRequest = { conversationId: string };
@@ -741,6 +790,11 @@ export type SessionpageSessionSummary = {
   /** 置顶。置顶的行离开项目分组，聚到列表顶部的「置顶」区（与桌面侧栏同一条口径）。 */
   isPinned?: boolean;
   /**
+   * #2548 固定到左侧栏(桌面):agent 住在群或项目里的顶层会话,在桌面左侧栏里另有一行。与 `isPinned` 互相独立。
+   * 可选,理由同上:缺席 = 宿主版本还不报它,❌ 补 false。手机不读它。
+   */
+  isPinnedToSidebar?: boolean;
+  /**
    * 这条会话的状态**你还没看过**。桌面侧栏据此点亮注意力点、标题加粗。
    * ⚠️ 语义是「未读」不是「有事」：做完了但你没看过，也算未读。
    */
@@ -758,12 +812,22 @@ export type SessionpageSessionSummary = {
   spawnedByConversationId?: string | null;
   /** Original request links persisted by session_spawn / session_message. Absent on older hosts. */
   activitySourceLinks?: readonly string[];
+  /**
+   * The last approval or question a person answered here, kept until the session starts its next turn — the same span an
+   * error stays listed. The notification list shows it as handled below what still waits. Absent on older hosts.
+   */
+  lastAnswered?: AnsweredAsk | null;
   /** 这条会话的 agent(本机名录的绑定,没有身份 = null)。只带 id:显示名只在云端 `identity.users`,看的一端按 id 取。老宿主不带。 */
   agent?: { userId: string } | null;
   /** 宿主提供的真实咕咕私聊；手机 Agent 可通过它继续任务，独立于 workspace 转录支持。 */
   chatId?: string;
   /** 起它的 App(`spawnedByExtensionId`);App 列 agent 时由发起方比对成「是不是我起的」。老宿主不带。 */
   spawnedByExtensionId?: string | null;
+  /**
+   * #2599 它是从哪个对话里建出来的:建时加入的那个群,否则派它的那张任务卡所在的对话(私聊或群)。桌面左侧栏按它定
+   * agent 住在哪(在群里建的住那个群),之后进群退群都不改。null = 不是从对话里建的;缺席 = 老宿主不报(按不知道读)。
+   */
+  bornInChatId?: string | null;
   /**
    * 为什么这条会话没有记录可读(`supported: false` 时):`not-started` = agent 还没真正开出会话
    * (建的时候没起来);`harness-unsupported` = 这一家的记录还没有接。老宿主不带这一格。
@@ -801,7 +865,7 @@ export type SessionpageScheduleDigest = {
  */
 /** 展示(产品词):编程 = 终端腿,通用 = 聊天腿。与桌面 composer 的 SessionView 同一套词。 */
 export type SessionpageSessionView = 'code' | 'general';
-export type SessionpagePermissionMode = 'plan' | 'read-only' | 'edit' | 'full-access';
+export type SessionpagePermissionMode = 'plan' | 'read-only' | 'edit' | 'ai-review' | 'full-access';
 
 export type SessionpageHarnessOption = {
   id: string;
@@ -887,6 +951,11 @@ export type SessionpageSessionCreateModelChoice = {
  * 空列表要说得出为什么：两段 reason 各自解释自己那一组为什么缺席。
  */
 export type SessionpageSessionCreateModels = {
+  /** Verified on this model and selected host executable; absent on old/unknown hosts. */
+  autoReview?: { model: string; disabled?: boolean; reviewByHaiku?: boolean };
+  customModels?: CustomModelConnection[];
+  modelProtocols?: readonly ModelProtocol[];
+  customModel?: { modelOptional: true };
   harness: string;
   transport: 'acp' | 'pty';
   models: SessionpageSessionCreateModelChoice[];
@@ -895,6 +964,8 @@ export type SessionpageSessionCreateModels = {
   /** 推理档（引擎的固有属性，没登录也有）；不声明的家是空数组，界面不摆。 */
   efforts: Array<{ id: string; name: string; description?: string }>;
   selectedEffort: string | null;
+  /** Host-confirmed Fast option for this exact native target; absent on older hosts. */
+  fast?: SessionOptionGroup & { model: string };
   /**
    * harness 自家那一组的探测状态（与桌面目录同一套词）：`ready` 有货；`auth-required` 那台机器上这家没登录；
    * `not-installed` / `unsupported` / `unknown`（还没探完）/ `unavailable`（起不来，原因在 harnessReason）。
@@ -1040,6 +1111,8 @@ export type SessionpageSessionCreateRequest = {
   permissionMode?: SessionpagePermissionMode;
   /** 推理档 id,取自 `sessionCreateModels.efforts`;不给 = 引擎默认。 */
   effort?: string;
+  /** Native Fast intent; the host revalidates the target before creating. */
+  fastMode?: boolean;
   /** 生在哪个群里(群成员里「新建 Agent」):它的身份第一次建出来时进这个群,群规照常生效。老宿主不认这一格。 */
   chatId?: string;
   /**
@@ -1296,6 +1369,13 @@ export type NativeSessionRecord = {
   originTurnIds: string[];
   nextCursor: number | null;
   activeTurn: TranscriptTurn | null;
+  /**
+   * Aligned with `turns`: how many times the host rewrote each one. A reader that keeps turns compares it with what it
+   * holds (`revisions`). Hosts from before it send nothing, and such a reader falls back to reading the pages again.
+   */
+  turnRevisions?: number[];
+  /** Asked for with `revisionsFrom`: every stored row from that sequence on, oldest first, as `[seq, revision]`. */
+  revisions?: Array<[seq: number, revision: number]>;
 };
 
 export * from './attachment-upload-contract';

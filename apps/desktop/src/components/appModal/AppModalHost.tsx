@@ -4,6 +4,7 @@ import { Sheet } from '../ui/Sheet';
 import { Dialog } from '../ui/Dialog';
 import { Button } from '../ui/Button';
 import { createModal, type BaseModalProps } from '../ui/modal-registry';
+import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives';
 import { listenAppModals, type AppModalPresentation } from './appModal';
 import type { BrowserWebviewElement } from '@/session/renderer/features/browser/browser-webview-types';
 import { XIcon } from '@/lib/icons';
@@ -20,12 +21,16 @@ export function AppModalHost() {
     const stop = listenAppModals((event) => {
       if (event.type === 'open') setDialogs((current) => [...current, event.presentation]);
       else if (event.type === 'close') setDialogs((current) => current.filter((modal) => modal.id !== event.id));
-      else [...document.querySelectorAll<HTMLElement>('[data-app-modal-id]')].find((element) => element.dataset.appModalId === event.id)?.querySelector<HTMLButtonElement>('[data-app-modal-close]')?.focus();
+      else {
+        const doc = active.current.find((modal) => modal.id === event.id)?.container?.ownerDocument ?? document;
+        [...doc.querySelectorAll<HTMLElement>('[data-app-modal-id]')].find((element) => element.dataset.appModalId === event.id)?.querySelector<HTMLButtonElement>('[data-app-modal-close]')?.focus();
+      }
     });
     return () => { stop(); for (const modal of active.current) void modal.dismiss(); };
   }, []);
   const Component = appModalRegistry.page.component;
-  return <>{dialogs.map((presentation) => <Component key={presentation.id} presentation={presentation} onClose={() => void presentation.dismiss()} onSuccess={() => void presentation.dismiss()} />)}</>;
+  // Drawn in the window of the page that asked: a page in a window of its own gets it there, not on the main window.
+  return <>{dialogs.map((presentation) => <UiPortalContainerProvider key={presentation.id} value={presentation.container ?? undefined}><Component presentation={presentation} onClose={() => void presentation.dismiss()} onSuccess={() => void presentation.dismiss()} /></UiPortalContainerProvider>)}</>;
 }
 
 function AppModalSheet({ presentation: modal, onClose }: { presentation: AppModalPresentation } & BaseModalProps) {
@@ -42,7 +47,7 @@ function AppModalSheet({ presentation: modal, onClose }: { presentation: AppModa
           <Button type="button" variant="ghost" size="icon" data-app-modal-close aria-label={t('dialog.close')} onClick={onClose} className="shrink-0"><XIcon className="size-4" /></Button>
         </header>
         <span tabIndex={0} className="h-0 overflow-hidden" onFocus={() => focus('first')} />
-        {modal.partition ? <webview ref={attach} src={modal.url} partition={modal.partition} className="min-h-0 w-full flex-1" /> : <iframe ref={attach} name={modal.frameName} title={modal.title} src={modal.url} sandbox="allow-scripts allow-same-origin allow-forms" className="min-h-0 w-full flex-1 border-0" />}
+        {modal.partition ? <webview ref={attach} src={modal.url} partition={modal.partition} className="min-h-0 w-full flex-1" /> : <iframe ref={attach} name={modal.frameName} title={modal.title} src={modal.url} sandbox="allow-scripts allow-same-origin allow-forms" allow="fullscreen" className="min-h-0 w-full flex-1 border-0" />}
         <span tabIndex={0} className="h-0 overflow-hidden" onFocus={() => focus('last')} />
       </div>
     </Sheet>

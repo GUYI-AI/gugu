@@ -132,7 +132,7 @@ describe('task card face is unchanged by the extraction (#709)', () => {
           "用一句话介绍你自己",
           "交给",
           "Codex 1",
-          "· 等群主同意它进群",
+          "等群主同意它进群",
         ],
       }
     `)
@@ -150,7 +150,7 @@ describe('task card face is unchanged by the extraction (#709)', () => {
           "新任务",
           "21:06",
           "用一句话介绍你自己",
-          "Ana 的任务 · 无法查看",
+          "无法查看 Ana 的任务",
         ],
       }
     `)
@@ -168,7 +168,7 @@ describe('task card face is unchanged by the extraction (#709)', () => {
           "新任务",
           "21:06",
           "用一句话介绍你自己",
-          "Ana 的任务 · 无法查看",
+          "无法查看 Ana 的任务",
         ],
       }
     `)
@@ -202,7 +202,7 @@ describe('task card face is unchanged by the extraction (#709)', () => {
           "div data-testid=composer-card data-card-type=schedule",
         ],
         "text": [
-          "已安排 · 每天 9:00",
+          "已安排: 每天 9:00",
           "21:06",
           "每天早上看一眼 CI",
         ],

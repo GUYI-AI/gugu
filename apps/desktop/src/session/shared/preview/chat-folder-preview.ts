@@ -52,7 +52,7 @@ export function chatFolderPreviewCsp(origin: string): string {
 
 /** `bytes=a-b`, `bytes=a-`, `bytes=-n` over a file of `size`; one range only (what media elements ask). */
 export function byteRange(header: string | null | undefined, size: number): { start: number; end: number } | 'unsatisfiable' | null {
-  const match = header ? /^bytes=(\d*)-(\d*)$/.exec(header.trim()) : null;
+  const match = header ? /^bytes=(\d*)-(\d*)$/i.exec(header.trim()) : null;
   if (!match || (match[1] === '' && match[2] === '')) return null;
   if (size === 0) return 'unsatisfiable';
   if (match[1] === '') {
@@ -141,7 +141,7 @@ export async function answerBesideDocument(
   const body = new Uint8Array(end - start + 1);
   for (let offset = start; offset <= end; ) {
     const piece = await file.read(offset, Math.min(READ_BYTES, end - offset + 1));
-    if (piece.byteLength === 0) break;
+    if (piece.byteLength === 0) throw new Error('Preview file ended before its declared size');
     body.set(piece, offset - start);
     offset += piece.byteLength;
   }

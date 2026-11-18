@@ -1,7 +1,7 @@
 import { ArrowLeft, ArrowRight, Ellipsis, Globe, Plus, Reload, RotateCcw, Square } from '@/lib/icons'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Minus } from '@/lib/icons'
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import type { ProjectsTranslate } from '@renderer/localization/messages-projects';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -55,6 +55,7 @@ import { panelHeaderBarClass } from '@renderer/lib/ui/panel-header-bar';
 const PROFILE_RADIO_ITEM_CLASS = 'text-foreground data-checked:bg-transparent';
 
 export function BrowserToolbar({
+  className,
   session,
   adapter,
   autoFocusUrl,
@@ -67,7 +68,10 @@ export function BrowserToolbar({
   onFitToWidth,
   onFocusUrl,
   remote = false,
+  annotationAction,
+  workspaceStart,
 }: {
+  className?: string;
   session: BrowserSessionSnapshot;
   adapter: BrowserWebviewAdapter | null;
   autoFocusUrl?: boolean;
@@ -85,20 +89,25 @@ export function BrowserToolbar({
    * here, and none of the actions menu (screenshot, profile, zoom, data) applies to it.
    */
   remote?: boolean;
+  annotationAction?: ReactNode;
+  workspaceStart?: boolean;
 }) {
   const [urlText, setUrlText] = useState(browserUrlInputText(session.currentUrl));
   const [urlError, setUrlError] = useState<string | null>(null);
   const [failedFaviconUrl, setFailedFaviconUrl] = useState<string | null>(null);
   const urlInputRef = useRef<HTMLInputElement | null>(null);
+  const urlErrorId = useId();
   const { translate } = useSessionMessages();
-  const { value: browserSettings } = useAppSettingsKey('browser');
+  const { settings: browserSettingsReading } = useAppSettingsKey('browser');
+  const browserSettings = browserSettingsReading.state === 'value' ? browserSettingsReading.value.value : undefined;
   const profiles = browserSettings?.profiles ?? DEFAULT_BROWSER_PROFILES;
-  const profileLabel = browserProfileLabel(session.profileId, profiles);
+  const profileLabel = browserProfileLabel(session.profileId, profiles, translate('browser.isolatedPerTask'));
   const faviconUrl =
     session.faviconUrl && session.faviconUrl !== failedFaviconUrl ? session.faviconUrl : null;
 
   useEffect(() => {
     setUrlText(browserUrlInputText(session.currentUrl));
+    setUrlError(null);
   }, [session.currentUrl]);
 
   useEffect(() => {
@@ -161,6 +170,7 @@ export function BrowserToolbar({
   const zoomFactor = session.zoomFactor;
 
   return (
+    <div className={cn('shrink-0', className)}>
     <div className={cn(panelHeaderBarClass, 'gap-1')}>
       <ToolbarIconButton
         label={translate('browser.back')}
@@ -182,6 +192,7 @@ export function BrowserToolbar({
       >
         {session.isLoading ? <Square className="size-4" /> : <Reload className="size-4" />}
       </ToolbarIconButton>
+      {annotationAction}
       <form
         className="min-w-0 flex-1"
         onSubmit={(event) => {
@@ -198,7 +209,7 @@ export function BrowserToolbar({
               draggable={false}
               onError={() => setFailedFaviconUrl(faviconUrl)}
             />
-          ) : (
+          ) : workspaceStart ? null : (
             <Globe className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-foreground-muted" />
           )}
           <Input
@@ -209,9 +220,12 @@ export function BrowserToolbar({
               if (urlError) setUrlError(null);
             }}
             onFocus={(event) => event.currentTarget.select()}
-            className="h-7 truncate border-0 pr-8 pl-7 text-sm shadow-none hover:border-0 focus-visible:border-0 focus-visible:ring-0"
+            className={cn('h-7 truncate border-0 pr-8 pl-7 text-sm shadow-none hover:border-0 focus-visible:border-0 focus-visible:ring-0',
+              workspaceStart && 'rounded-full bg-background-3 text-center')}
             aria-label={translate('browser.urlLabel')}
-            placeholder={translate('browser.urlPlaceholder')}
+            aria-invalid={urlError ? true : undefined}
+            aria-describedby={urlError ? urlErrorId : undefined}
+            placeholder={translate(workspaceStart ? 'browser.workspaceUrlPlaceholder' : 'browser.urlPlaceholder')}
             spellCheck={false}
             autoCapitalize="none"
           />
@@ -221,11 +235,6 @@ export function BrowserToolbar({
             </span>
           )}
         </div>
-        {urlError && (
-          <div className="sr-only" role="alert">
-            {urlError}
-          </div>
-        )}
       </form>
       {!remote && (
         <DropdownMenu>
@@ -362,6 +371,8 @@ export function BrowserToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
+    </div>
+    {urlError && <div id={urlErrorId} role="alert" className="border-b border-border bg-background-secondary-1 px-2 py-2 text-sm text-foreground-destructive break-words">{urlError}</div>}
     </div>
   );
 }

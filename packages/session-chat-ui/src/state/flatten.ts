@@ -1,9 +1,10 @@
 import { decorateConversationDensity } from './conversation-density';
+import { toolActivationNames } from '../lib/tool-activation';
 import { conversationOutput } from './conversation-process';
 import { conversationMessages } from './conversation-messages';
-import { sentMessagesOf, withSentReplies } from './sent-replies';
+import { sentMessagesOf, withSentReplies, withSettledSentReplies } from './sent-replies';
 import { activityArtifacts } from './activity-artifacts';
-import { planConversationSegments } from './conversation-segments';
+import { joinContinuedTurns, planConversationSegments } from './conversation-segments';
 import { continuedActivityHeader, foldActivityUnits, hasUnconfirmedSend, incomingActivity, outgoingActivity, pendingActivity,
   type AgentActivityEvent, type AgentActivityGroup } from './agent-activity';
 /**
@@ -64,8 +65,9 @@ import { continuedActivityHeader, foldActivityUnits, hasUnconfirmedSend, incomin
 
 import { isDeliveryEnvelope, readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { agentSendOf, replyItems } from '@gugu/session-core/session-record/reply-process';
-import { resolveSeamGap } from '@session-chat/core/spacing';
+import { CONVERSATION_BLOCK_GAP, CONVERSATION_UTTERANCE_GAP, resolveSeamGap } from '@session-chat/core/spacing';
 import type { FoldGate, ItemSegmenter, Margin, RenderUnit, SegmentCtx } from '@session-chat/core/units';
+import { hasConversationActions } from '@session-chat/components/rows/message/conversation-body';
 import { stampGroupRoles } from '@session-chat/core/units';
 import { localDayKey } from '@session-chat/lib/day-boundary';
 import type { ChatItem, ChatMessage, FileChangeSummaryItem, SyntheticItem, ToolRunItem, TranscriptItem, TranscriptTurn } from '@session-chat/model';
@@ -75,6 +77,7 @@ import { hasToolPictures, tallyToolRun, toolRunCategory, toolRunLabel, toolRunNo
 import { completedTurnResult, itemIsUser, pendingTurnHeader, placeholderTurnHeader, planTurnFoldRuns, turnFoldView, turnProcessExpanded } from '@session-chat/state/turn-fold';
 import { isEmptyAgentTurn } from './turn-visibility';
 import { processHookNotice } from '@session-chat/lib/hook-notice';
+import { messagePresentation } from './message-presentation';
 
 export { lastConversationMessage } from './conversation-density';
 export { planTurnFold, turnProcessId } from '@session-chat/state/turn-fold';
@@ -194,9 +197,12 @@ export function flattenTier(
   prevDayKey?: string,
   previousConversation?: ChatMessage,
   previousActivity?: AgentActivityGroup,
+  previousRow?: RenderUnit,
 ): RenderUnit[] {
-  turns = turns.map(turn => withSentReplies(turn, { allDestinations: ctx.agentConversation }));
-  if (ctx.agentConversation) turns = conversationMessages(turns);
+  const sentReplies = ctx.settled ? withSettledSentReplies : withSentReplies;
+  turns = turns.map(turn => sentReplies(turn, { allDestinations: ctx.agentConversation }));
+  // A turn the agent opened because one of its own tasks finished continues the turn before it (#2587).
+  if (ctx.agentConversation) turns = joinContinuedTurns(conversationMessages(turns));
   // One send, drawn once. On the session page the call itself is drawn as the agent's words (agent-send, below), so the
   // reply copied out of it goes. In the agent conversation the copy is the reply bubble that carries the turn's process
   // footer and the quote anchor, so there the call stays an ordinary tool call (`sentReplyCalls`).
@@ -219,7 +225,8 @@ export function flattenTier(
   let lastDayKey = prevDayKey;
   let conversationOwner: string | undefined;
   let activityEvent: AgentActivityEvent | undefined;
-  let lastConversationPart: 'input' | 'head' | 'step' | 'body' | undefined = previousConversation ? (previousConversation.role === 'user' ? 'input' : 'body') : undefined;
+  // Incremental flattening carries the last utterance through the committed/live seam.
+  let lastUtterance = previousRow?.conversationUtterance;
 
   const processItem = (item: ChatItem | SyntheticItem, folds?: readonly FoldGate[], owner = conversationOwner): void => {
     if (isSubagentChild(item)) return;
@@ -253,16 +260,13 @@ export function flattenTier(
       group[0].gapBefore = resolveSeamGap(lastKind, group[0].kind, marginOf);
     }
     if (ctx.agentConversation) {
-      const part = item.kind === 'message' && (item as ChatMessage).conversationPart === 'head' || item.kind === 'turn-process' ? 'head'
-        : item.kind === 'message' && (item as ChatMessage).conversationPart === 'body' ? 'body'
-        : conversationOwner ? 'step' : item.kind === 'message' && item.role === 'user' ? 'input' : undefined;
-      if (lastConversationPart && part) {
-        // Keep the normal segment gap below the hover action lane (#1062).
-        group[0].gapBefore = part === 'step' ? (lastConversationPart === 'head' ? 4 : 0)
-          : part === 'body' ? (lastConversationPart === 'step' ? 8 : 4)
-          : part === 'head' && lastConversationPart === 'body' ? 20 : lastConversationPart === 'body' || lastConversationPart === 'input' ? 0 : 20;
+      const startsUtterance = item.kind === 'turn-process' || (item.kind === 'message' && item.role === 'user');
+      const utterance = owner ?? (startsUtterance ? item.id : undefined);
+      if (utterance && lastUtterance) {
+        group[0].gapBefore = lastUtterance === utterance ? CONVERSATION_BLOCK_GAP : CONVERSATION_UTTERANCE_GAP;
       }
-      lastConversationPart = part;
+      if (utterance) for (const u of group) u.conversationUtterance = utterance;
+      lastUtterance = utterance;
     }
 
     lastKind = group[group.length - 1].kind;
@@ -276,7 +280,8 @@ export function flattenTier(
    * 对话布局里一轮的回复(owner 0 号图):名字 + 过程行一行,过程展开的步骤在它下面,气泡在最下面 ——
    * ❌ 气泡先画、步骤挂在气泡底下。这一轮每条输出(message_send 发出去的也是)各自一个气泡,同一个名字下面排着。
    */
-  const emitConversationReply = (reply: ChatMessage, sent: readonly ChatMessage[], steps: () => void, bodyActivity = activityEvent): void => {
+  const emitConversationReply = (reply: ChatMessage, sent: readonly ChatMessage[], steps: () => void, bodyActivity = activityEvent,
+    folded?: { output: ChatMessage; activity: AgentActivityEvent | undefined }): RenderUnit | undefined => {
     const processActivity = activityEvent;
     const head = `${reply.conversationProcess?.id ?? reply.id}:head`;
     // 头不带正文:话只在气泡里画一次(找、复制、计数都只见一份)。
@@ -285,10 +290,18 @@ export function flattenTier(
     // 时间、复制那一行只给收了口那一轮的最后一句(设计稿 0 号「轮次结束且有正文才出 tail」);中途的气泡不带(owner 10-28)。
     const tail = !reply.conversationProcess?.live;
     activityEvent = bodyActivity;
+    let tailRow: RenderUnit | undefined;
     for (const output of [...sent, reply]) {
+      const start = out.length;
       processItem({ ...output, conversationProcess: undefined, conversationPart: 'body', conversationHead: head, ...(tail && output === reply ? { conversationTail: true } : {}) });
+      if (tail && output === reply && out.length > start) tailRow = out.at(-1);
+    }
+    if (folded) {
+      activityEvent = folded.activity;
+      processItem({ ...folded.output, conversationProcess: undefined, conversationPart: 'body', conversationHead: head });
     }
     activityEvent = processActivity;
+    return tailRow;
   };
 
   /**
@@ -348,12 +361,14 @@ export function flattenTier(
       // Folded, a step's pictures would be out of sight: the line carries the last ones (tool-images.ts — seen unopened).
       // Open, each step below draws its own.
       const pictureStep = expanded ? undefined : op.rows.findLast(hasToolPictures) as ToolRunItem['pictureStep'];
+      const toolNames = op.rows.flatMap(row => 'toolCallId' in row || row.kind === 'tool-group' ? toolActivationNames(row) : row.kind === 'tool' ? [...(row.toolNames ?? [])] : []);
       processItem({
         kind: 'tool-run',
         id: runId,
         turnId,
         label: toolRunLabel(tallyToolRun(op.rows, ctx.agentConversation), ctx.translate),
         stepCount: op.rows.length,
+        ...(toolNames.length ? { toolNames } : {}),
         ...(live ? { live: true as const } : {}),
         ...(now ? { now } : {}),
         ...(pictureStep ? { pictureStep } : {}),
@@ -443,6 +458,20 @@ export function flattenTier(
     let inlineCompletion = false;
     const fold = foldPlans[turnIndex];
     let resultOwner: string | undefined;
+    let replyRow: RenderUnit | undefined;
+    let hasArtifacts = false;
+    const closeReply = () => {
+      const reply = replyRow?.data as ChatMessage | undefined;
+      if (hasArtifacts && replyRow && reply && hasConversationActions(reply)) {
+        replyRow.data = { ...reply, conversationActionsMoved: true };
+        activityEvent = replyRow.activityEvent;
+        processItem({ kind: 'turn-completion', id: `${reply.id}:actions`, turnId: turn.id, text: reply.text, reply },
+          undefined, resultOwner);
+        activityEvent = undefined;
+      }
+      replyRow = undefined;
+      hasArtifacts = false;
+    };
     const artifactItems = new Set<string>(), turnOutputs = outputsOfRun(opened, turnIndex, absorbed);
     if (ctx.agentConversation) {
       const live = ctx.active && turnIndex === turns.length - 1;
@@ -450,6 +479,7 @@ export function flattenTier(
       let inputActivity: AgentActivityEvent | undefined;
       let sentActivity: AgentActivityEvent | undefined;
       for (const block of blocks) {
+        closeReply();
         if (block.kind === 'input') {
           inputActivity = block.item.kind === 'message' ? incomingActivity(block.item as ChatMessage, ctx) ?? undefined : undefined;
           sentActivity = undefined;
@@ -457,7 +487,7 @@ export function flattenTier(
           resultOwner = undefined; processItem(block.item); activityEvent = undefined; continue;
         }
         const output = conversationOutput(block.items, block.live);
-        const ops = planRows(outsideProcess(output.rest));
+        let ops = planRows(outsideProcess(output.rest));
         activityEvent = output.reply
           ? outgoingActivity(output.reply.id.replace(/:sent:[^:]+$/, ''), output.reply.sentAddresses, ctx,
             output.reply.sentAttachments?.length ? new Set(output.reply.sentAttachments.map(file => file.messageId)).size : 1,
@@ -472,21 +502,28 @@ export function flattenTier(
         // Failure and permission rows must remain discoverable without opening a historical A2A fold.
         if (hasUnconfirmedSend(block.items as TranscriptItem[], turn) || block.items.some(item => 'status' in item && item.status === 'error'
           || 'toolCallId' in item && ctx.pendingToolCallIds().has(item.toolCallId))) activityEvent = undefined;
+        // The line stays outside the fold but its send folds into it: under that line the agent's own last words are
+        // the bubble, ❌ a line with nothing under it (owner 2026-11-13, #2593). The send stays in the A2A row.
+        const standIn = output.said && replyActivity && !activityEvent ? output.said : undefined;
+        if (standIn) ops = planRows(outsideProcess(output.rest.filter(item => item.id !== standIn.id)));
         const silentCopyText = output.silent && block === blocks.at(-1) && completionResult !== null ? completionResult : undefined;
         if (silentCopyText !== undefined) inlineCompletion = true;
         const artifacts = activityEvent && !ctx.active ? activityArtifacts(block.items, turnOutputs, turn.id, block.id) : [];
         const emitArtifacts = () => {
           if (activityEvent && !ctx.active) for (const item of block.items) artifactItems.add(item.id);
+          hasArtifacts = artifacts.length > 0;
           for (const artifact of artifacts) processItem(artifact, undefined, output.reply ? `${block.id}:head` : block.id);
         };
         if (!output.reply && activityEvent && ops.length === 0) { emitArtifacts(); activityEvent = undefined; inlineCompletion = true; continue; }
-        const process = { id: block.id, ...(block.live ? { live: true } : {}),
-          startedAt: block.startedAt, endedAt: block.endedAt, ...(block.idleMs && !block.live ? { idleMs: block.idleMs } : {}), ...(block.live && ctx.pendingStarting?.() ? { starting: ctx.pendingStarting?.() } : {}), steps: output.steps.length,
+        const idleMs = (block.live ? 0 : block.idleMs) + block.resumedIdleMs;
+        const process = { id: block.id, ...(block.live ? { live: true } : {}), ...(block.toggleId ? { toggleId: block.toggleId } : {}),
+          startedAt: block.startedAt, endedAt: block.endedAt, ...(idleMs ? { idleMs } : {}), ...(block.live && ctx.pendingStarting?.() ? { starting: ctx.pendingStarting?.() } : {}), steps: output.steps.length,
           ...(ops.length ? {} : { empty: true }) };
-        const expanded = ctx.revealAllFolds || turnProcessExpanded(block.live, ctx.isTurnProcessExpanded?.(block.id) ?? false);
+        const toggle = block.toggleId ?? block.id;
+        const expanded = ctx.revealAllFolds || turnProcessExpanded(block.live, ctx.isTurnProcessExpanded?.(toggle) ?? false);
         const steps = () => {
           if (!expanded) return;
-          const folds = [{ id: block.id, stored: !block.live }];
+          const folds = [{ id: toggle, stored: !block.live }];
           const start = out.length;
           emitOps(ops, turn.id, folds);
           if (!ctx.revealAllFolds && out.length > start) {
@@ -498,16 +535,18 @@ export function flattenTier(
             const id = `${block.id}:steps`;
             out.push({ id, itemId: id, groupId: id, groupRole: 'solo', gapBefore,
               kind: 'conversation-process-steps', data: { id, live: block.live, units },
-              children: units, conversationProcessOwner: conversationOwner });
+              children: units, conversationProcessOwner: conversationOwner, conversationUtterance: conversationOwner });
             lastKind = 'conversation-process-steps';
           }
         };
         conversationOwner = output.reply ? `${block.id}:head` : block.id;
         resultOwner = conversationOwner;
         if (output.reply) {
-          const reply = { ...output.reply, conversationProcess: process,
+          const reply = { ...(standIn ?? output.reply), conversationProcess: process,
             ...(block.fullReply ? { conversationFull: true } : {}) };
-          emitConversationReply(reply, [], steps, replyActivity);
+          replyRow = standIn
+            ? emitConversationReply(reply, [], steps, undefined, { output: output.reply, activity: replyActivity })
+            : emitConversationReply(reply, [], steps, replyActivity);
         } else {
           processItem({ kind: 'turn-process', ...process, turnId: turn.id,
             ...(output.silent ? { silent: true } : {}),
@@ -605,8 +644,11 @@ export function flattenTier(
       }, undefined, resultOwner);
     });
 
+    hasArtifacts ||= summary !== null || outputs.length > 0;
+    closeReply();
+
     if (completionResult !== null && !inlineCompletion) {
-      processItem({ kind: 'turn-completion', id: `${turn.id}:completion`, turnId: turn.id, text: completionResult });
+      processItem({ kind: 'turn-completion', id: `${turn.id}:completion`, turnId: turn.id, text: completionResult }, undefined, resultOwner);
     }
 
     if (!ctx.active && turn.outcome && turn.outcome.kind !== 'done') {
@@ -671,6 +713,24 @@ export function toolRunId(turnId: string, firstItemId: string): string {
 export const BACKGROUND_TASKS_ID = 'background-tasks';
 /** 那一行单子展开 / 收起的开关 id(走 ChatRoot 既有的 `data-collapse-id` 点击委派)。 */
 export const BACKGROUND_TASKS_TOGGLE = `${BACKGROUND_TASKS_ID}:open`;
+
+/** 单子里一条后台命令点开看整条命令的开关 id —— 同一套 per-id 开关,同一条 `data-collapse-id` 点击委派。 */
+export function backgroundCommandToggleId(entryId: string): string {
+  return `${BACKGROUND_TASKS_ID}:command:${entryId}`;
+}
+
+/** 给点开着的那几条命令标上 `open`(量高与画都读这一格);收着的原样不动。 */
+export function markOpenCommands<T extends { id: string }>(commands: readonly T[], isOpen: (toggleId: string) => boolean): T[] {
+  return commands.map((entry) => (isOpen(backgroundCommandToggleId(entry.id)) ? { ...entry, open: true } : entry));
+}
+
+/**
+ * 后台单子此刻画成什么样:单子开着没有、哪几条命令点开着。单独成行(segment-ctx)与挂在回复上(ChatRoot)读这同一份,
+ * ❌ 各算各的 —— 两边一旦差一格,同一张单子换个地方挂就量出不同的高。
+ */
+export function backgroundTasksView<T extends { commands: readonly { id: string }[] }>(tasks: T, isOpen: (toggleId: string) => boolean) {
+  return { ...tasks, commands: markOpenCommands(tasks.commands, isOpen), expanded: isOpen(BACKGROUND_TASKS_TOGGLE) };
+}
 
 export function turnDiscardedId(turnId: string): string {
   return `${turnId}:discarded`;
@@ -768,7 +828,8 @@ export function collectUserTurnUnits(
   const seen = new Set<string>();
   for (let i = 0; i < units.length; i++) {
     const u = units.at(i);
-    if (u && userItemIds.has(u.itemId) && !seen.has(u.itemId)) {
+    if (u && userItemIds.has(u.itemId) && !seen.has(u.itemId)
+      && (u.kind !== 'message' || messagePresentation(u.data as ChatMessage).pinSummary)) {
       seen.add(u.itemId);
       result.push(i);
     }

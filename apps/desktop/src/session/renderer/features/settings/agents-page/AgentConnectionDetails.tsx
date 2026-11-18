@@ -1,35 +1,29 @@
 import type { AgentPayload } from '@shared/core/agents/agent-payload'
-import { offeredInModelPicker } from '@shared/core/agents/platform-model'
-import { usePlatformModelCatalog } from '@renderer/features/sessions/session-config/platform-model-catalog'
 import { SubscriptionConnections } from '../subscriptions/SubscriptionConnections'
-import { useConnectionAvailability } from '../subscriptions/use-connection-availability'
-import { useSessionMessages } from '@renderer/localization/use-session-messages'
+import { ConnectionStatusLine, useConnectionStatus } from '../subscriptions/connection-status'
 
+/**
+ * 一家的「连接」那一块:状态那一行、当前连接、添加连接。资源库详情与设置「订阅」页那一行渲染的都是它
+ * (owner 2026-11-12:「统一成『添加连接』和『当前连接』，在这儿都能管」)—— ❌ 两处各写一套判断。
+ * `embedded`:嵌在订阅页那一行里,不另起「连接」组头。
+ */
 export function AgentConnectionDetails({
   agent,
-  machine
+  machine,
+  embedded = false
 }: {
   agent: AgentPayload
   machine: string | null
+  embedded?: boolean
 }) {
-  const { translate } = useSessionMessages()
-  const { auth, state } = useConnectionAvailability(agent.id, machine, false, true)
-  const platform = usePlatformModelCatalog(agent.id, 'acp')
-  const hasGuguModels = platform.models.some(offeredInModelPicker)
-  const description =
-    auth?.kind === 'authenticated'
-      ? (auth.account ?? translate('agentsPage.accountSignedIn'))
-      : hasGuguModels
-        ? translate('agentsPage.canUseGuguModels')
-        : state === 'unusable' && platform.settled && !platform.catalogError
-          ? translate('subscriptions.connections.signedOut')
-          : translate('subscriptions.checking')
+  const { identity, badge } = useConnectionStatus(machine, agent)
   return (
     <SubscriptionConnections
       agent={agent}
       machine={machine}
       settingsRows
-      description={description}
+      embedded={embedded}
+      description={<ConnectionStatusLine agentId={agent.id} identity={identity} badge={badge} />}
     />
   )
 }

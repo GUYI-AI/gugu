@@ -6,7 +6,7 @@ import { makeAcpHarness, makeStartInput } from '../acp-test-support';
 import { AcpRuntime } from './runtime';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
 import { mergeDeliveryEnvelopes, readDeliveryEnvelope, recoverDeliveryEnvelopes } from '../../../../core/src/local/agent/deliveryEnvelope';
-import { hermesPromptMeta, indexHermesPrompts, originalHermesPrompt } from '@gugu/session-core/acp/hermes-prompt';
+import { nativePromptMeta, indexNativePrompts, originalNativePrompt } from '@gugu/session-core/acp/native-prompt';
 
 const recoveryHarness = (options: Parameters<typeof makeAcpHarness>[0] = {}) => makeAcpHarness({
   historyRecovery: pluginRegistry.get(options.providerId ?? 'claude')?.behavior.acp?.historyRecovery,
@@ -59,6 +59,36 @@ describe('a stopped native delivery already in provider history', () => {
       .map(([, request]) => requestText(request as PromptRequest));
     const prompts = h.agent.prompt.mock.calls.map(([request]) => requestText(request as PromptRequest));
     expect([...steers, ...prompts].filter((text) => text.includes('msg="msg:accepted-1"'))).toHaveLength(1);
+  });
+
+  it.each(['claude', 'codex', 'hermes'])('%s declares its replay as canonical delivery evidence (the runtime never infers it from the id)', (providerId) => {
+    expect(pluginRegistry.get(providerId)?.behavior.acp?.historyRecovery?.canonicalReplay).toBe(true);
+  });
+
+  it('a provider named claude without the declaration gets no replay dedup: the name alone decides nothing', async () => {
+    const h = makeAcpHarness({ providerId: 'claude', recoverDelivery: recoverDeliveryEnvelopes });
+    h.agent.initialize.mockResolvedValue({ protocolVersion: 1, agentCapabilities: { loadSession: true }, _meta: { steering: { supported: true } } });
+    h.agent.extMethod.mockResolvedValue({ outcome: 'injected' });
+    h.agent.prompt.mockImplementationOnce(() => new Promise(() => {}));
+    const rt = new AcpRuntime(h.deps);
+    const start = makeStartInput({ providerId: 'claude', sessionId: 'undeclared' });
+    expect(isOk(await rt.startSession(start))).toBe(true);
+    rt.promptDetached(start.sessionId, { text: 'long task', origin: 'manual' });
+    await h.agent.called('prompt');
+    await rt.sendPrompt(start.sessionId, { text: DELIVERY, origin: 'communication' }, { steerIfBusy: true });
+    await rt.stopSession(start.sessionId);
+    h.agent.loadSession.mockImplementation(async () => {
+      await h.client().sessionEvent({ sessionId: 'session-1', event: decodeSessionUpdate({
+        sessionUpdate: 'user_message_chunk', messageId: 'native-persisted-user', content: { type: 'text', text: DELIVERY },
+      }) });
+      return {};
+    });
+    expect(isOk(await rt.startSession({ ...start, providerSessionId: 'session-1' }))).toBe(true);
+    await vi.waitFor(() => expect(rt.getSessionState(start.sessionId).lifecycle).toBe('ready'));
+    await rt.sendPrompt(start.sessionId, { text: 'next explicit input', origin: 'manual' });
+    const sent = [...h.agent.extMethod.mock.calls.filter(([method]) => method === '_session/steering').map(([, r]) => requestText(r as PromptRequest)),
+      ...h.agent.prompt.mock.calls.map(([r]) => requestText(r as PromptRequest))];
+    expect(sent.filter((text) => text.includes('msg="msg:accepted-1"'))).toHaveLength(2);
   });
 
   it.each(['claude', 'codex', 'hermes'])('%s sends an unsent delivery behind the owner; an assistant quote is not a receipt', async (providerId) => {
@@ -145,8 +175,8 @@ describe('a stopped native delivery already in provider history', () => {
     const rt = new AcpRuntime(h.deps);
     const unsent = DELIVERY.replace('msg:accepted-1', 'msg:unsent-2');
     const native = `<resource_changes>飞书已连接</resource_changes>\n<gugu_profile_review>Review profile</gugu_profile_review>\n${DELIVERY}`;
-    const originals = indexHermesPrompts([{ kind: 'message', role: 'user', text: DELIVERY, _meta: hermesPromptMeta([{ type: 'text', text: native }]) }]);
-    const received = readDeliveryEnvelope(originalHermesPrompt(native, originals)!)?.segments.flatMap((segment) => segment.facts?.messageId ? [segment.facts.messageId] : []) ?? [];
+    const originals = indexNativePrompts([{ kind: 'message', role: 'user', text: DELIVERY, _meta: nativePromptMeta([{ type: 'text', text: native }]) }]);
+    const received = readDeliveryEnvelope(originalNativePrompt(native, originals)!)?.segments.flatMap((segment) => segment.facts?.messageId ? [segment.facts.messageId] : []) ?? [];
     expect(received).toEqual(['msg:accepted-1']);
     expect(isOk(await rt.startSession(makeStartInput({
       providerId: 'hermes', sessionId: 'hermes-partial-recovery', providerSessionId: 'native-old',

@@ -75,7 +75,8 @@ export function widgetIdOf(message: { id: string; content: string | null | undef
 export function serializeWidgetMessage(widget: WidgetMessage): string {
   const error = widgetMessageError(widget)
   if (error) throw new Error(error)
-  const content = JSON.stringify(widget)
+  const { v, text, ...rest } = widget
+  const content = JSON.stringify({ v, text, ...rest })
   const size = bytes(content)
   if (size > WIDGET_CONTENT_MAX_BYTES) throw new Error(`content is ${size} UTF-8 bytes; maximum is ${WIDGET_CONTENT_MAX_BYTES}`)
   return content
@@ -86,5 +87,5 @@ const PREVIEW_HEAD = /^\{"v":2,"text":"((?:[^"\\]|\\u[0-9a-fA-F]{4}|\\[^u])*)/
 export function widgetMessagePreview(preview: string | null | undefined): string | null {
   const head = preview ? PREVIEW_HEAD.exec(preview) : null
   if (!head) return null
-  try { return JSON.parse(`"${head[1]}"`) as string } catch { return null }
+  try { return (JSON.parse(`"${head[1]}"`) as string).replace(/[\ud800-\udbff]$/, '') } catch { return null }
 }

@@ -9,7 +9,7 @@ import { createSessionChatContext } from '@renderer/lib/chat/shared-chat-context
 import { applyTranscriptSnapshot, planHistorySync, splitActiveTurn } from './transcript-sync'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { batch } from 'solid-js'
-import { queryClient } from '@renderer/lib/query-client'
+import { queryClient } from '@/lib/replica'
 import { useMobileShell } from '@/hooks/useMobileShell'
 
 export type SessionBackgroundTasks = Parameters<ChatState['session']['setBackgroundTasks']>[0]
@@ -47,6 +47,7 @@ function SessionTranscriptContent({
   pendingMessages,
   backgroundTasks,
   onReachStart,
+  contentOverlay = false,
   mobile = false,
   className,
   style,
@@ -58,6 +59,8 @@ function SessionTranscriptContent({
   sourceWindow?: TimelineWindowFields
   commands?: ChatCommands
   composerContent?: ReactNode
+  /** A layer over the messages, under the composer (`onReady`'s `contentOverlay`): loading draws its skeleton there. */
+  contentOverlay?: boolean
   shown?: boolean
   activeTurnId?: string | null
   pendingPrompt?: import('@gugu/session-chat-ui').PendingPrompt | null
@@ -68,13 +71,17 @@ function SessionTranscriptContent({
   /** 此刻还在跑的后台任务(宿主算好的两份名单);不给 = 没有。 */
   backgroundTasks?: SessionBackgroundTasks
   /** 滚到顶了:往前翻更早的轮。 */
-  onReachStart?: () => void
+  onReachStart?: () => void | Promise<unknown>
   mobile?: boolean
   className?: string
   style?: CSSProperties
 }): ReactElement | null {
   const defaultLayout = useSessionChatLayout()
   const mobileShell = useMobileShell()
+  // On the phone a tool call's pictures are not drawn or fetched (#2594); the desktop keeps them, however narrow.
+  // Gated on the shell, not on `mobile`: desktop windows (the assistant's task window, a peek) draw this same page.
+  const baseLayout = layout ?? defaultLayout
+  const shownLayout = useMemo(() => mobileShell ? { ...baseLayout, hideToolPictures: true } : baseLayout, [baseLayout, mobileShell])
   const [model, setModel] = useState<Model | null>(null)
   const written = useRef<readonly TranscriptTurn[]>([])
   const viewCommands = useMemo(() => ({ ...commands, sourceWindow }), [commands, sourceWindow])
@@ -139,8 +146,9 @@ function SessionTranscriptContent({
       onReady={onReady}
       composer="none"
       stickToBottom
-      layout={layout ?? defaultLayout}
+      layout={shownLayout}
       onReachStart={onReachStart}
+      contentOverlay={contentOverlay}
       className={[mobile ? 'gg-session-transcript gg-session-transcript--mobile' : 'gg-session-transcript', className].filter(Boolean).join(' ')}
       style={style}
     />

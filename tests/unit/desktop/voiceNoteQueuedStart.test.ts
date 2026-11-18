@@ -3,7 +3,7 @@
 // 桌面零改动:这里用 voice-note-jobs 现有的可注入点(上下文、IPC、那台机器的线)跑真的 retryVoiceNote,
 // 只把「解码成 WAV」(WebView 的 OfflineAudioContext)换成直通 —— 手机写的就是 16k 单声道 WAV。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { parseVoiceNoteMeta, renderTranscript, serializeVoiceNoteMeta, voiceNoteView, type VoiceNoteMeta } from '@gugu/core/shared/voiceNotes'
+import { parseVoiceNoteMeta, renderTranscript, serializeVoiceNoteMeta, type VoiceNoteMeta } from '@gugu/core/shared/voiceNotes'
 import { assistantPaths } from '../../../apps/desktop/src/session/renderer/features/assistant/assistant-files'
 import type { AssistantMachine, MachineRpc } from '../../../apps/desktop/src/session/renderer/features/assistant/assistant-machine-core'
 
@@ -130,8 +130,7 @@ describe('桌面「开始转写」= retryVoiceNote:手机传上来的 uploaded �
     const home = fakeHome()
     const meta = phoneNote()
     // 读回来的就是手机写的那份。
-    const view = voiceNoteView(parseVoiceNoteMeta(serializeVoiceNoteMeta(meta))!, undefined, Date.parse(meta.updatedAt) + 6 * 3_600_000)
-    expect(view).toEqual({ kind: 'queued' })
+    expect(parseVoiceNoteMeta(serializeVoiceNoteMeta(meta))?.status).toBe('uploaded')
 
     home.text.set(`${DIR}/note.json`, serializeVoiceNoteMeta(meta))
     mocks.invokeOnMachine.mockResolvedValue({ ok: true, text: REPLY })
@@ -144,9 +143,8 @@ describe('桌面「开始转写」= retryVoiceNote:手机传上来的 uploaded �
     const stop = voiceJobs.subscribe(() => phases.push(voiceJobs.get(ID)?.phase ?? 'none'))
 
     await retryVoiceNote(ID)
-    const item = { id: ID, meta, view, title: null, createdAt: meta.createdAt }
-    // 本窗口有它的进度了:列表 / 详情以它为准(处理中),❌ 还说「等转写」。
-    expect(dataModule.effectiveView(item, voiceJobs.getSnapshot())).toMatchObject({ kind: 'processing' })
+    // 本窗口有它的进度了:处理中,❌ 还说「等转写」。
+    expect(dataModule.jobView(voiceJobs.get(ID)!)).toMatchObject({ kind: 'processing' })
 
     await vi.waitFor(() => expect(voiceJobs.get(ID)?.phase).toBe('ready'), { timeout: 3_000, interval: 5 })
     stop()

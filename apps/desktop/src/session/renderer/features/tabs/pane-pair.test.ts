@@ -56,9 +56,9 @@ describe('real pane navigation and placement', () => {
     layout.splitPane(layout.activePaneId, 'right', folder);
     layout.setViewActive(true);
     const before = JSON.stringify(layout.snapshot);
-    layout.setNarrow(true);
+    layout.setSinglePaneHost(true);
     expect(layout.groups.filter(({ pane }) => pane.isVisible)).toHaveLength(1);
-    layout.setNarrow(false);
+    layout.setSinglePaneHost(false);
     expect(layout.groups.every(({ pane }) => pane.isVisible)).toBe(true);
     expect(JSON.stringify(layout.snapshot)).toBe(before);
   });

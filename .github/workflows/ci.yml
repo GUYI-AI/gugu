@@ -174,7 +174,7 @@ jobs:
         uses: ./.github/actions/setup-community
       - name: Install real ripgrep for native file-boundary regressions
         if: needs.changes.outputs.tests == 'true'
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ripgrep
+        run: bash "$GITHUB_WORKSPACE/scripts/ci/apt-install.sh" --no-install-recommends ripgrep
       # Each shard restores its compatible dev module snapshot without writing a PR cache.
       - if: needs.changes.outputs.tests == 'true'
         uses: actions/cache/restore@v4
@@ -216,7 +216,7 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=6144
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y tmux libnss3 libgtk-3-0t64 libgbm1 libasound2t64
+      - run: bash "$GITHUB_WORKSPACE/scripts/ci/apt-install.sh" tmux libnss3 libgtk-3-0t64 libgbm1 libasound2t64
       - uses: ./.github/actions/setup-community
       - run: pnpm build:app:ci
       - run: pnpm rebuild:native
@@ -254,7 +254,7 @@ jobs:
           java-version: ${{ steps.java.outputs.version }}
       - uses: ./.github/actions/setup-community
       # The embedded runtime's ICU data is trimmed with ICU's tools and relinked with LLVM (apps/mobile/runtime/README.md).
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends icu-devtools llvm clang lld
+      - run: bash "$GITHUB_WORKSPACE/scripts/ci/apt-install.sh" --no-install-recommends icu-devtools llvm clang lld
       - run: pnpm android:build
       - name: Run Android JVM unit tests
         run: bash scripts/build/android-gradle-build.sh testDebugUnitTest
@@ -304,7 +304,7 @@ jobs:
           go-version: '1.26.0'
           cache-dependency-path: apps/desktop/native/projection-media/go.sum
       - name: Install the encoder, decoder and race detector toolchain
-        run: apt-get update && apt-get install --no-install-recommends -y ffmpeg gcc libc6-dev
+        run: bash "$GITHUB_WORKSPACE/scripts/ci/apt-install.sh" --no-install-recommends ffmpeg gcc libc6-dev
       - name: Test native IPC, direct media and actual Chromium decoding
         shell: bash
         run: |

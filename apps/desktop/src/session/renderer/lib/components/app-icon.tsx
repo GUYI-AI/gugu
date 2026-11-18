@@ -1,4 +1,5 @@
 import { cn } from '@renderer/utils/utils';
+import type { AgentIconAsset } from '@shared/core/agents/agent-payload';
 import { useAgentIcon } from '../stores/use-agents';
 import { PluginIcon } from './plugin-icon';
 
@@ -20,15 +21,18 @@ const FALLBACK_PLATE = { color: 'var(--app-icon-fallback-plate)', mark: 'white' 
 export function AppIcon({
   id,
   size = 56,
+  asset,
   dimmed = false,
   className,
 }: {
   id: string;
   size?: number;
+  asset?: AgentIconAsset | null;
   dimmed?: boolean;
   className?: string;
 }) {
-  const icon = useAgentIcon(id);
+  const registered = useAgentIcon(id, !asset);
+  const icon = asset ?? registered;
   const plate = icon?.plate ?? FALLBACK_PLATE;
   // The mark takes a little over half the plate, the proportion of a macOS app icon glyph.
   const markSize = Math.round(size * 0.58);

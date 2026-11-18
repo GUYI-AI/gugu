@@ -1,3 +1,4 @@
+import { historyTime } from '../conversationHistoryTime'
 import type { ChatItem, ChatKind } from '../types/chat'
 
 /**
@@ -29,8 +30,63 @@ export type ChatAttention = {
   unread: number
   /** 列表里算到你头上的:话题只算叫到你的(点名你、@all、回复你说的),其余会话算全部未读。 */
   forYou: number
-  /** 出窗口的徽标与横幅:免打扰为 0;群与话题只算叫到你的,私聊算全部未读。 */
+  /** 叫到你的:群与话题只算叫到你的,私聊每一条都算;免打扰照算(桌面一个列表的红数字,#2548)。 */
+  callsYou: number
+  /** 出窗口的徽标与横幅:免打扰为 0,其余同 callsYou。 */
   askingYou: number
+}
+
+/** Personal list visibility. Hidden rows remain addressable in the full chat directory. */
+export type ConversationVisibility = Pick<ChatItem,
+  'conversation_cleared_at' | 'conversation_hidden_at' | 'source_conversation_hidden_at' |
+  'conversation_visibility_revision' | 'source_conversation_visibility_revision'>
+
+export function isConversationHidden(chat: ConversationVisibility): boolean {
+  return !!(chat.conversation_hidden_at || chat.source_conversation_hidden_at)
+}
+
+function visibilityRevision(value: string | undefined): bigint {
+  if (value === undefined) return 0n
+  if (typeof value !== 'string' || !/^(0|[1-9][0-9]*)$/.test(value)) throw new Error('Invalid conversation visibility revision')
+  return BigInt(value)
+}
+
+/** Account revisions are decimal strings, never JS numbers. Source and own seats advance independently. */
+export function mergeConversationVisibility<T extends ConversationVisibility>(fetched: T, local?: ConversationVisibility): T {
+  const own = visibilityRevision(fetched.conversation_visibility_revision)
+  const source = visibilityRevision(fetched.source_conversation_visibility_revision)
+  if (!local) return fetched
+  let merged = fetched
+  if (visibilityRevision(local.conversation_visibility_revision) > own) {
+    merged = { ...merged, conversation_hidden_at: local.conversation_hidden_at,
+      conversation_visibility_revision: local.conversation_visibility_revision }
+  }
+  if (visibilityRevision(local.source_conversation_visibility_revision) > source) {
+    merged = { ...merged, source_conversation_hidden_at: local.source_conversation_hidden_at,
+      source_conversation_visibility_revision: local.source_conversation_visibility_revision }
+  }
+  if (local.conversation_cleared_at && (!fetched.conversation_cleared_at || historyTime(local.conversation_cleared_at) > historyTime(fetched.conversation_cleared_at)))
+    merged = { ...merged, conversation_cleared_at: local.conversation_cleared_at }
+  return merged
+}
+
+/** List/badge scope only. Missing source rows are not evidence of a personal hide (#1892). */
+export function visibleConversationRows<T extends ConversationVisibility & Pick<ChatItem, 'id' | 'kind' | 'source_chat_id'>>(chats: readonly T[]): T[] {
+  const byId = new Map(chats.map((chat) => [chat.id, chat]))
+  const hidden = new Map<string, boolean>()
+  const visiting = new Set<string>()
+  const isHidden = (chat: T): boolean => {
+    const known = hidden.get(chat.id)
+    if (known !== undefined) return known
+    if (visiting.has(chat.id)) throw new Error('Conversation source cycle')
+    visiting.add(chat.id)
+    const source = chat.kind === 'topic' && chat.source_chat_id ? byId.get(chat.source_chat_id) : undefined
+    const result = isConversationHidden(chat) || !!(source && isHidden(source))
+    visiting.delete(chat.id)
+    hidden.set(chat.id, result)
+    return result
+  }
+  return chats.filter((chat) => !isHidden(chat))
 }
 
 /**
@@ -38,12 +94,15 @@ export type ChatAttention = {
  * 「叫到你」= 服务端 list_unread_locators.addressed_count(手动标未读算 1),与 agent 被叫醒同一判据。
  * 没有 locator = 没有未读(0),或本机刚手动标未读、还没刷新(1,与服务端「手动标记算 1」一致):照 unread_count。
  */
-export function chatAttention(chat: Pick<ChatItem, 'kind' | 'unread_count' | 'unread_locator' | 'is_muted'>): ChatAttention {
+export function chatAttention(chat: Pick<ChatItem, 'kind' | 'unread_count' | 'unread_locator' | 'is_muted' | 'conversation_hidden_at' | 'source_conversation_hidden_at'>): ChatAttention {
   const addressed = chat.unread_locator ? chat.unread_locator.addressed_count : chat.unread_count
+  const hidden = isConversationHidden(chat)
+  const callsYou = hidden ? 0 : isRoomChat(chat.kind) ? addressed : chat.unread_count
   return {
     unread: chat.unread_count,
-    forYou: chat.kind === 'topic' ? addressed : chat.unread_count,
-    askingYou: chat.is_muted ? 0 : isRoomChat(chat.kind) ? addressed : chat.unread_count,
+    forYou: hidden ? 0 : chat.kind === 'topic' ? addressed : chat.unread_count,
+    callsYou,
+    askingYou: chat.is_muted ? 0 : callsYou,
   }
 }
 
@@ -214,7 +273,7 @@ export function mergeFetchedChatsPreservingActiveLocal(
   const merged = fetchedChats.map((fetched) => {
     const local = localById.get(fetched.id)
     if (local === fetched) return fetched
-    let next = fetched
+    let next = mergeConversationVisibility(fetched, local)
     if ((fetched.kind === 'dm' || fetched.kind === 'ai') && !fetched.peer_user_id && local?.peer_user_id) {
       next = {
         ...next,

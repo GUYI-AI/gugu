@@ -17,6 +17,7 @@ import {
 import type { OutboxRecord } from '../../../../apps/desktop/src/lib/imRepository'
 import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import { chat } from '../../../support/testHarness'
+import { bindBackendProbe, noteBackendAnswer } from '../../../../packages/core/src/cloud/backendReachability'
 const logError = vi.hoisted(() => vi.fn())
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: logError }) }))
 vi.mock('../../../../apps/desktop/src/lib/loading/LoadingIndicator', () => ({ LoadingIndicator: () => null }))
@@ -86,7 +87,7 @@ function wiringHarness(messageId: string, overrides: Partial<OutboxWiringIo> = {
     user: () => ({ id: 'owner-1', nickname: 'Owner', avatarUrl: null }),
     identity: () => undefined,
     chats: () => [],
-    activeChatId: () => 'chat-1',
+    chatShown: (id) => id === 'chat-1',
     activeThreadRootId: () => null,
     setMessagesAndCache: (updater) => { messages = updater(messages) },
     setThreadMessages: (updater) => {
@@ -145,7 +146,7 @@ describe('message-owned send failure notices', () => {
     vi.useFakeTimers()
     const row = persistedMessage(`retry-${recipient}`)
     const send = vi.spyOn(chatService, 'sendMessage').mockRejectedValue(new Error('offline'))
-    const h = wiringHarness(row.id, { activeChatId: () => 'other-chat' })
+    const h = wiringHarness(row.id, { chatShown: () => false })
     await h.wiring.enqueue({ ...enqueueInput(row.id), toUserIds: [recipient] })
     await vi.advanceTimersByTimeAsync(20_000)
     expect(h.messages()[0]).toMatchObject({ id: row.id, local_send_state: 'failed' })
@@ -158,10 +159,37 @@ describe('message-owned send failure notices', () => {
     h.wiring.dispose()
   })
 
+  // #2565: a chat block on the task page shows its conversation without selecting it; the row is in front of the user.
+  it('a failure in a conversation that is shown stays on its own row, with no notice to go back there', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(chatService, 'sendMessage').mockRejectedValue(new Error('offline'))
+    const h = wiringHarness('shown', { chatShown: (id) => id === 'chat-1' })
+    await h.wiring.enqueue(enqueueInput('shown'))
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(h.messages()[0]).toMatchObject({ id: 'shown', local_send_state: 'failed' })
+    expect(notices.visible.size).toBe(0)
+    h.wiring.dispose()
+  })
+
+  it('a thread reply counts as shown only while its thread is open in the shown conversation', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(chatService, 'sendMessage').mockRejectedValue(new Error('offline'))
+    let openThread: string | null = 'root-other'
+    const h = wiringHarness('reply', { chatShown: () => true, activeThreadRootId: (chatId) => chatId === 'chat-1' ? openThread : null })
+    await h.wiring.enqueue({ ...enqueueInput('reply'), threadRootId: 'root-1' })
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(notices.visible.size, 'another thread is open: the failed reply is out of sight').toBe(1)
+    openThread = 'root-1'
+    await h.wiring.enqueue({ ...enqueueInput('reply-2'), threadRootId: 'root-1' })
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(notices.visible.size, 'its thread is open: the row says it').toBe(1)
+    h.wiring.dispose()
+  })
+
   it('updates a failed retry without duplicating the notice or clearing another message failure', async () => {
     vi.useFakeTimers()
     const send = vi.spyOn(chatService, 'sendMessage').mockRejectedValue(new Error('offline'))
-    const h = wiringHarness('first', { activeChatId: () => 'other-chat' })
+    const h = wiringHarness('first', { chatShown: () => false })
     await h.wiring.enqueue(enqueueInput('first'))
     await h.wiring.enqueue(enqueueInput('second'))
     await vi.advanceTimersByTimeAsync(40_000)
@@ -208,7 +236,7 @@ describe('committed outbound reconciliation', () => {
       getImRepository,
       user: () => ({ id: 'owner-1', nickname: 'Owner', avatarUrl: null }),
       identity: () => undefined,
-      chats: () => [], activeChatId: () => null, activeThreadRootId: () => null,
+      chats: () => [], chatShown: () => false, activeThreadRootId: () => null,
       setMessagesAndCache: () => {}, setThreadMessages: () => {}, patchChat: () => {},
       toast: () => {},
       appendMessage: () => {},
@@ -232,7 +260,7 @@ describe('committed outbound reconciliation', () => {
       getImRepository: () => repositoryReady.promise,
       user: () => ({ id: 'owner-1', nickname: 'Owner', avatarUrl: null }),
       identity: () => undefined,
-      chats: () => [], activeChatId: () => null, activeThreadRootId: () => null,
+      chats: () => [], chatShown: () => false, activeThreadRootId: () => null,
       setMessagesAndCache: () => {}, setThreadMessages: () => {}, patchChat: () => {},
       toast: () => {},
       appendMessage: () => {},
@@ -274,7 +302,8 @@ describe('committed outbound reconciliation', () => {
 
     await harness.wiring.enqueue(enqueueInput(row.id))
     await vi.waitFor(() => {
-      expect(harness.appendMessage).toHaveBeenCalledWith(row)
+      expect(harness.appendMessage).toHaveBeenCalledWith({ ...row,
+        local_timeline: { afterSeq: 0, createdAt: expect.any(String) } })
     })
     expect(harness.appendMessage).toHaveBeenCalledTimes(1)
     // #1884 — 水位推进不等重验证:appendMessage(同步返回)之后同一 tick 就推进。
@@ -359,7 +388,7 @@ describe('投递前置:乐观行先上屏,就绪/对端解析在投递阶段 (C1
     setLocalePreference(locale)
     vi.useFakeTimers()
     const harness = wiringHarness('offscreen', {
-      activeChatId: () => 'other-chat',
+      chatShown: () => false,
       chats: () => [chat({ id: 'chat-1', kind: 'group', name: 'Research files', alias: '论文附件' })],
     })
     await harness.wiring.enqueue({ ...enqueueInput('offscreen'), beforeDeliver: async () => { throw new Error('private transport error') } })
@@ -379,7 +408,7 @@ describe('投递前置:乐观行先上屏,就绪/对端解析在投递阶段 (C1
     setLocalePreference('zh-CN')
     vi.useFakeTimers()
     const harness = wiringHarness('target-name', {
-      activeChatId: () => null,
+      chatShown: () => false,
       chats: () => row ? [row] : [],
       identity: () => ({ type: 'human', display_name: 'Lin', avatar: null }),
     })
@@ -464,5 +493,105 @@ it('does not publish a native reply discarded while waiting for its source', asy
   await committing
   expect(publish).not.toHaveBeenCalled()
   expect((await f.repository).snapshot().outbox).toEqual([])
+  f.wiring.dispose()
+})
+
+it('re-sends a failed row when the sync beat recovers from a failed pull, not on window online or while the backend kept answering', async () => {
+  const f = wiringHarness('outage-row')
+  const now = new Date().toISOString()
+  await putOutboxRecord(await f.repository, { clientMessageId: 'outage-row', chatId: 'chat-1', senderUserId: 'owner-1',
+    payload: { content: 'hello', contentType: 'text', toUserIds: ['agent-1'], replyToMessageId: null, threadRootId: null, isThreadRoot: false, isWhisper: false },
+    state: 'failed', attempts: 3, lastError: 'Failed to fetch', enqueuedAt: now, updatedAt: now })
+  const send = vi.spyOn(chatService, 'sendMessage').mockImplementation(async (_chat, _sender, _content, id) => persistedMessage(id!))
+  const unbind = bindBackendProbe(() => {})
+  const stop = f.wiring.restoreAndWatch()
+  await vi.waitFor(() => expect(f.messages().some(row => row.id === 'outage-row')).toBe(true))
+  window.dispatchEvent(new Event('online'))
+  noteBackendAnswer(true) // the backend kept answering: a row that failed for another reason is not re-sent in a loop
+  await flushMicrotasks()
+  expect(send).not.toHaveBeenCalled()
+  noteBackendAnswer(false)
+  noteBackendAnswer(true)
+  await vi.waitFor(() => expect(send).toHaveBeenCalledOnce())
+  await vi.waitFor(async () => expect((await f.repository).snapshot().outbox).toEqual([]))
+  stop()
+  unbind()
+  f.wiring.dispose()
+})
+
+it('a send that fails asks the beat to pull now, so an outage shorter than one beat is still seen', async () => {
+  const pull = vi.fn()
+  const unbind = bindBackendProbe(pull)
+  const f = wiringHarness('probe-row')
+  vi.spyOn(chatService, 'sendMessage').mockRejectedValue(new Error('Failed to fetch'))
+  vi.useFakeTimers()
+  try {
+    await f.wiring.enqueue(enqueueInput('probe-row'))
+    await vi.runAllTimersAsync()
+  } finally { vi.useRealTimers() }
+  await vi.waitFor(() => expect(pull).toHaveBeenCalledOnce())
+  unbind()
+  f.wiring.dispose()
+})
+it('a failed upload whose bytes this run holds is resent from its own row; after a reload the file must be selected again', async () => {
+  const f = wiringHarness('upload-1')
+  const row = { ...optimisticMessage('upload-1'), content_type: 'attachment' as const }
+  await f.wiring.stageAttachment(row)
+  const retry = vi.fn()
+  await f.wiring.failAttachmentUpload('upload-1', new Error('network lost'), '发送未完成，请稍后重新发送', retry)
+  expect(f.messages().find(m => m.id === 'upload-1')).toMatchObject({ local_send_state: 'failed', local_send_error: '发送未完成，请稍后重新发送', local_send_retryable: true })
+  f.wiring.retrySend('upload-1')
+  await vi.waitFor(() => expect(retry).toHaveBeenCalledOnce())
+  expect(f.messages().find(m => m.id === 'upload-1')?.local_send_state).toBe('sending')
+  expect((await f.repository).snapshot().outbox.map(r => r.value)).toEqual([expect.objectContaining({ clientMessageId: 'upload-1', state: 'uploading', lastError: null })])
+  f.wiring.retrySend('upload-1')
+  await flushMicrotasks(30)
+  expect(retry, 'an upload already going again is not started twice').toHaveBeenCalledOnce()
+  await f.wiring.failAttachmentUpload('upload-1', new Error('network lost'), '发送未完成，请稍后重新发送', retry)
+  f.wiring.dispose()
+  let restored: MessageItem[] = []
+  const g = createOutboxWiring({ getImRepository: () => f.repository, user: () => ({ id: 'owner-1', nickname: 'Owner', avatarUrl: null }), identity: () => undefined, chats: () => [],
+    chatShown: (id) => id === 'chat-1', activeThreadRootId: () => null, setMessagesAndCache: (updater) => { restored = updater(restored) }, setThreadMessages: () => {},
+    patchChat: f.patchChat, toast: f.toast, appendMessage: f.appendMessage })
+  g.restoreAndWatch()
+  await vi.waitFor(() => expect(restored.find(m => m.id === 'upload-1')).toMatchObject({ local_send_state: 'failed', local_send_retryable: false, local_send_error: '上传已中断，请重新选择文件。' }))
+  g.dispose()
+})
+it('text sent with a file is delivered after that file, never before it', async () => {
+  const f = wiringHarness('file-1')
+  const publication = deferred<MessageItem | null>()
+  vi.spyOn(attachmentRecovery, 'settleAttachmentSend').mockReturnValue(publication.promise)
+  vi.spyOn(attachmentEndpoint, 'attachmentsEndpoint').mockResolvedValue({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 'token' })
+  const send = vi.spyOn(chatService, 'sendMessage').mockImplementation(async (_chat, _sender, _content, id) => persistedMessage(id!))
+  const file = { ...optimisticMessage('file-1'), content_type: 'attachment' as const }
+  await f.wiring.stageAttachment(file)
+  await f.wiring.enqueue({ ...enqueueInput('caption-text'), dependsOn: 'file-1' })
+  expect((await f.repository).snapshot().outbox.map(r => r.value)).toContainEqual(expect.objectContaining({ clientMessageId: 'caption-text', dependsOn: 'file-1' }))
+  await flushMicrotasks(30)
+  expect(send).not.toHaveBeenCalled()
+  const committing = f.wiring.commitAttachment(file, { local: new File(['bytes'], 'notes.txt') }, {
+    message_id: file.id, chat_id: file.chat_id, sender_user_id: 'owner-1', file_name: 'notes.txt', to_user_ids: [] })
+  await flushMicrotasks(30)
+  expect(send, 'the text waits while its file is still being published').not.toHaveBeenCalled()
+  publication.resolve({ ...persistedMessage(file.id), content_type: 'attachment' })
+  await committing
+  await vi.waitFor(() => expect(send).toHaveBeenCalledOnce())
+  expect(send.mock.calls[0][3]).toBe('caption-text')
+  f.wiring.dispose()
+})
+it('a refused native publication is resent from its row like an upload', async () => {
+  const f = wiringHarness('native-refused')
+  vi.spyOn(attachmentRecovery, 'settleAttachmentSend').mockResolvedValue(null)
+  vi.spyOn(attachmentEndpoint, 'attachmentsEndpoint').mockResolvedValue({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 'token' })
+  const native = { ...optimisticMessage('native-refused'), content_type: 'attachment' as const }
+  await f.wiring.stageAttachment(native)
+  const failure = await f.wiring.commitAttachment(native, { local: new File(['bytes'], 'plan.txt') }, {
+    message_id: native.id, chat_id: native.chat_id, sender_user_id: 'owner-1', file_name: 'plan.txt', to_user_ids: [] }).catch((error: unknown) => error)
+  const retry = vi.fn()
+  await f.wiring.failAttachmentUpload(native.id, failure, '发送未完成，请稍后重新发送', retry)
+  expect(f.messages().find(m => m.id === native.id)).toMatchObject({ local_send_state: 'failed', local_send_retryable: true })
+  f.wiring.retrySend(native.id)
+  await vi.waitFor(() => expect(retry).toHaveBeenCalledOnce())
+  expect((await f.repository).snapshot().outbox.map(r => r.value)).toEqual([expect.objectContaining({ clientMessageId: native.id, state: 'uploading', operation: { kind: 'upload' } })])
   f.wiring.dispose()
 })

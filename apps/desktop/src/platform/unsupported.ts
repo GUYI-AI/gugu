@@ -1,3 +1,4 @@
+import { unsupportedAccountClosure } from './accountClosure'
 import type { AppPlatform } from './types'
 import { unavailableCapability } from './errors'
 
@@ -8,6 +9,7 @@ export function createUnsupportedPlatform(
   const unsupported = (capability: string): Error => unavailableCapability(capability, label)
 
   return {
+    accountClosure: unsupportedAccountClosure,
     kind,
     documentTitle: '咕咕',
     systemPermissions: [],
@@ -28,6 +30,10 @@ export function createUnsupportedPlatform(
     logTail: false,
       backgroundWatch: false,
       shareToApps: false,
+      mobileApps: false,
+      phoneDevice: false,
+      phoneAgentHost: false,
+      readingZoomMemory: false,
     },
     syncResolvedLocale: async () => {},
     subscribeAppForeground: () => () => {},

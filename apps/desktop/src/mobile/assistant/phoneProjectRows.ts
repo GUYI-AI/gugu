@@ -1,27 +1,19 @@
 import type { Device } from '@gugu/core/shared/types/chat'
-import type { DeviceProject } from '@gugu/core/shared/types/deviceProject'
-import { isAssistantHome } from '@/lib/assistantHome'
-import { EMPTY_MACHINE_HOME_LAYOUT } from '@/session/renderer/features/remote-hosts/machine-home'
-import { projectGroupLayout, foldProjectGroups } from '@/session/renderer/features/projects/stores/project-group-layout'
-import { isImplicitSessionHomeProjectId } from '@/session/shared/core/projects/session-home-project'
+import type { AccountProject } from '@gugu/core/cloud/deviceProjects'
+import type { DeviceProjectFolder } from '@gugu/core/shared/types/deviceProject'
+import type { AssistantHomeRow } from '@/lib/assistantHome'
+import { hasStaleMember, phoneAccountProjects } from '../phoneAccountProjects'
 
-export type PhoneProjectEntry = DeviceProject & { id: string; deviceId: string; label: string }
+/** `stale` = 那台(文件夹上)/ 有一台(项目上)的文件夹这一端没读到,列着的是上次那份。 */
+export type PhoneProjectEntry = { id: string; label: string; rootPath: string | null; folders: (DeviceProjectFolder & { stale: boolean })[]; stale: boolean }
 
 /**
- * The same project-chat grouping as the sidebar, using already published account metadata.
- * #1629 parity: projects that live on the personal assistant's own host are the assistant's home, not the
- * person's projects, so the list leaves them out. Host identity is the device row (same rule as the desktop
- * sidebar), never the project name. Presentation only: device_projects rows are not changed or deleted.
+ * 手机「助理 → 工作区」的项目列表:项目与合并只走 phoneAccountProjects(accountProjectsStore 那一份);文件夹路径照
+ * 设备 store 里各台机器发布的 device_projects(❌ 这一页自己再读一份)。
  */
-export function phoneProjectRows(records: Record<string, DeviceProject[]>, devices: readonly Device[], cloudDeviceId: string | null): PhoneProjectEntry[] {
-  const byDevice = new Map(devices.map(device => [device.device_id,device]))
-  const assistantHost = (deviceId: string) => { const device = byDevice.get(deviceId); return device ? isAssistantHome(device,cloudDeviceId) : deviceId === cloudDeviceId }
-  const rows = Object.entries(records).filter(([deviceId]) => !assistantHost(deviceId)).flatMap(([deviceId,projects]) => projects.filter(project => !isImplicitSessionHomeProjectId(project.localProjectId)).map(project => ({ ...project,deviceId,id: `${deviceId}/${project.localProjectId}` })))
-  const byId = new Map(rows.map(row => [row.id,row]))
-  const groups = projectGroupLayout(rows.map(row => { const device = byDevice.get(row.deviceId); return { id: row.id,machine: device?.is_current_device ? null : row.deviceId,online: device?.is_online === true,createdAt: row.createdAt } }),id => byId.get(id)?.chatId ?? undefined)
-  const layout = foldProjectGroups(EMPTY_MACHINE_HOME_LAYOUT,groups)
-  return rows.filter(row => !layout.rowOf.has(row.id)).map(row => ({ ...row,
-    label: row.name,
-    folders: [row,...rows.filter(other => layout.rowOf.get(other.id) === row.id)].flatMap(member => member.folders),
-  }))
+export function phoneProjectRows(projects: readonly AccountProject[], devices: readonly Device[], isHome: (device: AssistantHomeRow) => boolean): PhoneProjectEntry[] {
+  return phoneAccountProjects(projects, devices, isHome).map(({ project, members }) => {
+    const folders = members.flatMap((member) => (member.record?.folders ?? []).map((folder) => ({ ...folder, stale: !!member.device.projects_error })))
+    return { id: project.chatId, label: project.name, rootPath: folders[0]?.path ?? null, folders, stale: hasStaleMember(members) }
+  })
 }

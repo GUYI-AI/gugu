@@ -57,7 +57,7 @@ function listProps(onVisible: (msg: MessageItem) => void) {
   const messages = [message({ id: 'long-reply', chat_id: 'dm-1', seq: 7, content: 'fifteen balcony tips' })]
   const rows: ChatListRowItem[] = messages.map((msg) => ({ type: 'message', message: msg }))
   const rowProps: MessageListRowProps = {
-    rows, messages, mobile: true, memberReadSeqs: {}, deliveryWaits: new Map(), isGroupChat: false, memberProfiles: {},
+    rows, messages, mobile: true, memberReadSeqs: {}, deliveryWaits: new Map(), recipientFacts: { agentIds: new Set(), wakes: new Map() }, isGroupChat: false, memberProfiles: {},
     onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible, memberProfileOpener: undefined, onMentionMember: undefined,
     flashMessageId: undefined, threeParty: undefined, readReceiptHandle: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
     agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined,

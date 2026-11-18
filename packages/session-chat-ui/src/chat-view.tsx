@@ -78,7 +78,7 @@ export type ChatViewOptions = {
   embedded?: boolean;
   /** Initial command callbacks. Update later via `view.setCommands`. */
   commands?: ChatCommands;
-  onReachStart?: () => void;
+  onReachStart?: () => void | Promise<unknown>;
   onAtBottomChange?: (atBottom: boolean) => void;
   /**
    * Fired when the latest user message's viewport visibility changes.

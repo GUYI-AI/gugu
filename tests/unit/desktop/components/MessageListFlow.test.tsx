@@ -19,7 +19,7 @@ function listProps(chatId: string, count: number) {
   const messages = Array.from({ length: count }, (_, i) => message({ id: `${chatId}-m${i}`, chat_id: chatId, seq: i + 1, content: `${chatId} line ${i}` }))
   const rows: ChatListRowItem[] = messages.map((msg) => ({ type: 'message', message: msg }))
   const rowProps: MessageListRowProps = {
-    rows, messages, mobile: false, memberReadSeqs: {}, deliveryWaits: new Map(), isGroupChat: true, memberProfiles: {},
+    rows, messages, mobile: false, memberReadSeqs: {}, deliveryWaits: new Map(), recipientFacts: { agentIds: new Set(), wakes: new Map() }, isGroupChat: true, memberProfiles: {},
     onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible: noop, memberProfileOpener: undefined, onMentionMember: undefined,
     flashMessageId: undefined, threeParty: undefined, readReceiptHandle: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
     agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined,
@@ -52,8 +52,9 @@ describe('MessageList 文档流', () => {
       expect(row.hasAttribute('data-own')).toBe(isMine)
       expect(row.textContent).toContain('请检查本周报告')
       expect(row.querySelector('button')).toBeNull()
-      expect(onVisible).toHaveBeenCalledTimes(1)
-      expect(onVisible.mock.calls[0]![0].id).toBe('chat-1-m0')
+      // The message row is reported (again once the window is known to be active); the task exchange never is.
+      expect(onVisible).toHaveBeenCalled()
+      expect(new Set(onVisible.mock.calls.map(([msg]) => msg.id))).toEqual(new Set(['chat-1-m0']))
     } finally {
       vi.unstubAllGlobals()
     }

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { ConnectionError, type ConnectionClient, type ConnectionSnapshot } from '@gugu/core/cloud/connections'
+import { sameStoredJson } from './stored-json'
 
 export type ConnectionObservation = { scopeKey: string; resourceKey?: string; deviceId: string | null; data: Record<string,unknown>; document: string }
 
@@ -16,7 +17,7 @@ export async function publishConnectionObservations(input: {
     const previous = matching[0]
     if (previous?.deletedAt) continue
     const hash = createHash('sha256').update(observed.document,'utf8').digest('hex')
-    if (previous && previous.bodySha256 === hash && sameData(previous.data,observed.data)) continue
+    if (previous && previous.bodySha256 === hash && sameStoredJson(previous.data,observed.data)) continue
     // Imported identities always retain the service-returned key. This format
     // is used only for a first observation with expectedRevision=0.
     const resourceKey = previous?.resourceKey ?? observed.resourceKey ?? JSON.stringify([observed.data.providerId,observed.data.accountId])
@@ -24,5 +25,3 @@ export async function publishConnectionObservations(input: {
       operation: 'save',data: observed.data,document: observed.document,deviceId: observed.deviceId,runtimeInstanceId: input.runtimeInstanceId })
   }
 }
-const sameData = (a: Record<string,unknown>,b: Record<string,unknown>) => JSON.stringify(Object.entries(a).sort(([x],[y]) => x.localeCompare(y)))
-  === JSON.stringify(Object.entries(b).sort(([x],[y]) => x.localeCompare(y)))

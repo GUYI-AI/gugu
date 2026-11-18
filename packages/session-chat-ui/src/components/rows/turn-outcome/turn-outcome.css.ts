@@ -77,6 +77,8 @@ export const outcomeSpacer = style({
   minWidth: 0,
 });
 
+export const OUTCOME_BADGE_GAP_PX = 6;
+
 export const outcomeBadge = style({
   display: 'inline-flex',
   alignItems: 'center',
@@ -92,7 +94,7 @@ export const outcomeBadge = style({
   //   · rounded-full —— shape 表里 `--radius-capsule` 只发给「switch, avatar, status dot」,
   //     而这是一枚**带文字的标记**,走控件那一档 `radiusMd`(8px)。
   // 层级仍然成立:它有 `bg2` 的底 + 标注档的字号,不靠一张字脸和一个药丸形状。
-  gap: '6px',
+  gap: `${OUTCOME_BADGE_GAP_PX}px`,
   height: '24px',
   paddingInline: '10px',
   borderRadius: vars.radiusMd,
@@ -140,21 +142,10 @@ globalStyle(`${outcomeBadgeGlyph} svg`, {
   height: '10px',
 });
 
-/**
- * 徽章里「说辞 · 原因」之间那个间隔点。
- *
- * 盒子宽度写死,点在里面居中:离屏测量只能按常量给它留位置。「·」是中西文共用的字符,DOM 按页面语言
- * 选字体(zh-CN 的手机上落到中文字体,6px 宽),离屏测量的 canvas 不看语言(落到西文字体,约 3px)——
- * 两边量出来的宽度天生对不上,徽章就会比内容窄,原因被挤到第二行。点是装饰(aria-hidden),溢出盒子的
- * 那点字形空白落在两侧 6px 的间距里,看不出来。
- */
-export const BADGE_SEPARATOR_PX = 4;
+/** The empty separator keeps two badge gaps between the label and reason. */
 export const outcomeBadgeSeparator = style({
   flex: 'none',
-  display: 'flex',
-  justifyContent: 'center',
-  width: `${BADGE_SEPARATOR_PX}px`,
-  opacity: 0.5,
+  width: 0,
 });
 
 /**
@@ -188,7 +179,7 @@ export const outcomeAction = style({
   selectors: {
     // @@@state-ladder-mix 同上:走状态档而不是表面阶梯的某一级。
     '&:hover': { color: vars.fg, background: vars.bgHover },
-    '&:focus-visible': { color: vars.fg, background: vars.bgHover },
+    '&:focus-visible:not([data-pointer-focus])': { color: vars.fg, background: vars.bgHover },
     // 上游的 `active:scale-[0.96]`;按下再补上底色那一档(spec:桌面也要有按压)。
     '&:active': { transform: 'scale(0.96)', background: vars.bgPress },
   },
@@ -352,7 +343,7 @@ export const outcomeBadgeDisclosing = style({
   transition: 'background-color 150ms ease',
   selectors: {
     '&:hover': { background: vars.bgHover },
-    '&:focus-visible': { background: vars.bgHover },
+    '&:focus-visible:not([data-pointer-focus])': { background: vars.bgHover },
   },
   '@media': {
     '(prefers-reduced-motion: reduce)': { transition: 'none' },

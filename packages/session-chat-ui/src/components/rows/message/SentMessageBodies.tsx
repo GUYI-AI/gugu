@@ -7,6 +7,7 @@
  */
 import type { MessageItem } from '@gugu/core/shared/types/chat';
 import { parseWidgetMessage } from '@gugu/core/shared/ui/widgetModels';
+import { FILE_ROW } from '@gugu/session-shared/file-row';
 import { useCommands } from '@session-chat/components/contexts/CommandsContext';
 import type { MeasureCtx } from '@session-chat/core/define';
 import { layoutBlockStack } from '@session-chat/core/layout/block-stack';
@@ -14,8 +15,6 @@ import { Index, createEffect, createMemo, createSignal, onCleanup, untrack } fro
 
 /** Between two sent messages in one bubble (a group of files). */
 export const SENT_BODY_GAP = 8;
-/** A file card before the host has drawn it (FileAttachmentCard's height). */
-const FILE_CARD_H = 60;
 /** A picture before the host has drawn it. */
 const IMAGE_H = 200;
 /** A widget before the host has drawn it: WidgetBubble's width, and a height for when its App declares it (not the message). */
@@ -25,7 +24,7 @@ const WIDGET_H = 240;
 function estimate(message: MessageItem, ctx: MeasureCtx, width: number): { width: number; height: number } {
   if (message.content_type === 'widget') return { width: Math.min(width, WIDGET_W), height: parseWidgetMessage(message.content)?.height ?? WIDGET_H };
   if (message.content_type === 'attachment') return /\((image\/[^)]+)\)/.test(message.content?.split('\n')[0] ?? '')
-    ? { width, height: IMAGE_H } : { width: Math.min(width, 260), height: FILE_CARD_H };
+    ? { width, height: IMAGE_H } : { width: Math.min(width, FILE_ROW.width), height: FILE_ROW.height }; // the host draws a file row
   const stack = layoutBlockStack(ctx.caches.parseBlocks(`sent:${message.id}`, message.content ?? ''), { ...ctx, width }, { isCollapsed: ctx.isCollapsed });
   return { width: stack.width, height: stack.height };
 }
@@ -54,10 +53,12 @@ function SentMessageSlot(props: { message: MessageItem; ctx: () => MeasureCtx | 
   const commands = useCommands();
   const [root, setRoot] = createSignal<HTMLDivElement>();
   const mount = createMemo(() => commands().onMessageBodyMount);
-  // What a sent message says never changes: the slot is offered once per message id, and again only for another message.
-  const id = createMemo(() => props.message.id);
+  // The slot is offered once per message id and what it says, and again only for another message — or for the same one
+  // saying more: a folded page (transport-trim `folded-form`) holds a send to an agent back cut, until its turn is read again.
+  const id = createMemo(() => props.message.id), said = createMemo(() => props.message.content);
   createEffect(() => {
     const element = root(), offer = mount(), messageId = id();
+    said();
     if (!element || !offer || !messageId) return;
     const cleanup = untrack(() => offer({ root: element, message: props.message }));
     if (cleanup) onCleanup(cleanup);

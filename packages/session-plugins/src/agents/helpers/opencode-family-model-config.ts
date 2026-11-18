@@ -104,6 +104,26 @@ export function openCodeFamilyReasoningEntry(
   return { ...declared, options: { ...payload } };
 }
 
+/**
+ * 一把 API Key 连接(#2507)写进来的 provider 块的 id。
+ *
+ * opencode 系自己的界面(模型选单的分组、底栏)显示 provider 的 `name` —— 那一格是连接的名字;id 不上屏,
+ * 只用来寻址(`<id>/<model>`)。所以 id 取一个固定值,❌ 拿连接名当 id:用户把连接叫成 `openai` / `deepseek`
+ * 这类 models.dev 里有的 id 时,同名块会与内置那家**合并**,内置模型也跟着被送到这把连接的地址。
+ */
+export const OPENCODE_FAMILY_CONNECTION_PROVIDER_ID = 'api-key-connection';
+
+/**
+ * 这份声明的 provider 块叫什么:连接 ⇒ 固定 id + 连接的名字;平台 ⇒ 调用方那组平台 id / 名字,原样(逐字节不变)。
+ * 两个写法(这里的物化、`opencode-family-platform-model.ts` 的进程配置)共用它,写出的块才同形。
+ */
+export function openCodeFamilyProvider(
+  model: SessionModelCapability,
+  platform: { id: string; name: string },
+): { id: string; name: string } {
+  return model.providerName ? { id: OPENCODE_FAMILY_CONNECTION_PROVIDER_ID, name: model.providerName } : platform;
+}
+
 export function openCodeFamilyModelConfig(
   spec: OpenCodeFamilyModelSpec,
   model: SessionModelCapability | null,
@@ -132,11 +152,12 @@ export function openCodeFamilyModelConfig(
   };
   // 模型的寻址方式是 `provider/model`，所以平台模型只有在同一份文档里连 provider 一起声明
   // 之后才选得中。两半都是会话级的，随进程消亡。
+  const provider = openCodeFamilyProvider(model, { id: spec.platformProviderId, name: spec.platformProviderName });
   return {
     provider: {
-      [spec.platformProviderId]: {
+      [provider.id]: {
         npm: '@ai-sdk/openai-compatible',
-        name: spec.platformProviderName,
+        name: provider.name,
         options: {
           baseURL: model.platformProvider.baseUrl,
           apiKey: model.platformProvider.apiKey,
@@ -144,6 +165,6 @@ export function openCodeFamilyModelConfig(
         models: { [selectedModel]: modelEntry },
       },
     },
-    model: `${spec.platformProviderId}/${selectedModel}`,
+    model: `${provider.id}/${selectedModel}`,
   };
 }

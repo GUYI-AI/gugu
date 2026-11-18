@@ -8,6 +8,7 @@ import type { SessionTranslate } from '../extension-consent';
  */
 export function programFailureText(failure: ExtensionProgramFailure, translate: SessionTranslate): string {
   if (failure.kind === 'tool') return translate('appSettings.lastCallFailed');
+  if (failure.kind === 'outdated') return translate('extensions.agentProgramOutdated');
   const what = failure.notStarted
     ? translate('extensions.agentProgramNotFound', { command: failure.command })
     : translate(failure.said ? 'extensions.agentProgramExitedSaid' : 'extensions.agentProgramExited', {
@@ -64,7 +65,7 @@ export function InstalledRowNoticeLine({
       <span className="xp-note">
         <span>
           {translate('extensions.rowHasUpdate', { version: notice.version })}
-          {summary && ` · ${summary}`}
+          {summary && ` ${summary}`}
         </span>
         {onInstallVersion && (
           <button type="button" className="xp-link" onClick={() => onInstallVersion(notice.version)}>

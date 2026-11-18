@@ -10,7 +10,7 @@ import {
   managedAgentAvatarPath,
   validateAgentAvatarFile,
 } from './agentAvatar'
-import type { GroupAvatarMember, GroupMemberRole } from '@gugu/core/shared/types/chat'
+import type { GroupMemberRole } from '@gugu/core/shared/types/chat'
 import { i18n } from '@/i18n'
 import { buildLookUrl, lookObjectPath, type AgentLook } from '@/components/agentAvatar/look'
 
@@ -151,25 +151,6 @@ type DiscoverableGroupRpcRow = {
   join_token: string | null
   invite_link_enabled: boolean | null
   creator_name: string | null
-  member_avatars: unknown
-}
-
-// @@@group-avatar-tile — 广场行的群头像走产品统一链路（显式群头像 > 成员组合 > 空态），组合格由
-// search_discoverable_groups 以 jsonb 带出（非成员读不到 chat_members，客户端补不了这段）。
-// 严格解析：形状不对就报错停，❌ 不静默丢格——丢格会让组合的格数与 member_count 对不上 = 用视觉撒谎。
-function parseGroupAvatarMembers(raw: unknown): GroupAvatarMember[] {
-  if (raw == null) return []
-  if (!Array.isArray(raw)) throw new Error('search_discoverable_groups returned a non-array member_avatars')
-  return raw.map((tile) => {
-    const row = tile as { id?: unknown; name?: unknown; avatar?: unknown } | null
-    const id = typeof row?.id === 'string' ? row.id.trim() : ''
-    if (!id) throw new Error('search_discoverable_groups returned a member_avatars tile without a stable id')
-    return {
-      id,
-      name: typeof row?.name === 'string' ? row.name : '',
-      avatar: typeof row?.avatar === 'string' ? row.avatar : null,
-    }
-  })
 }
 
 async function normalizeAcceptFriendRequestResult(data: AcceptFriendRequestRow | AcceptFriendRequestRow[] | null): Promise<AcceptFriendRequestResult> {
@@ -423,7 +404,6 @@ export const contactsService = {
       // @@@1874 — 缺列（迁移未 apply 前的旧 RPC）默认 true = 沿用旧「显示加入」行为，迁移后按真值置灰。
       invite_link_enabled: row.invite_link_enabled ?? true,
       creator_name: row.creator_name ?? null,
-      member_avatars: parseGroupAvatarMembers(row.member_avatars),
     }))
   },
 

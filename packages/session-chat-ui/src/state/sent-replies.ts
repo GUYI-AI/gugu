@@ -19,6 +19,20 @@ function sentFileMessages(items: readonly TranscriptItem[], messageIds: readonly
   return messages.every(Boolean) ? { sentMessages: messages as MessageItem[] } : {};
 }
 
+const settledReplies = [new WeakMap<TranscriptTurn, TranscriptTurn>(), new WeakMap<TranscriptTurn, TranscriptTurn>()] as const;
+
+/**
+ * `withSentReplies` for a turn that will not change again. A committed turn is replaced, never edited, so its
+ * projection is worked out once per turn object: a rebuild of a long transcript reads every send receipt of every
+ * loaded turn otherwise, each time a page lands.
+ */
+export function withSettledSentReplies(turn: TranscriptTurn, options: { allDestinations?: boolean } = {}): TranscriptTurn {
+  const cache = settledReplies[options.allDestinations ? 1 : 0];
+  let projected = cache.get(turn);
+  if (!projected) cache.set(turn, projected = withSentReplies(turn, options));
+  return projected;
+}
+
 /** Keep successfully delivered replies readable when their tool process is folded. */
 export function withSentReplies(turn: TranscriptTurn, options: { allDestinations?: boolean } = {}): TranscriptTurn {
   const source = replySource(turn, undefined, { includeThreads: true });
@@ -48,7 +62,9 @@ export function withSentReplies(turn: TranscriptTurn, options: { allDestinations
     const reply = { kind: 'message' as const, id: `${item.id}:sent:${id}`, seq: item.seq, role: 'assistant' as const, text: send.text, ...(attachment ? { sentAttachment: attachment, sentAttachments: fileGroup!.attachments } : {}),
       ...(fileGroup ? sentFileMessages(items, fileGroup.attachments.map(file => file.messageId)) : sentMessagesOf(item)),
       ...(item.completedAt !== undefined ? { at: item.completedAt } : {}),
-      ...(replyTo ? { sentReplyTo: replyTo } : {}), ...(chat ? { sentChat: chat } : {}) };
+      ...(replyTo ? { sentReplyTo: replyTo } : {}), ...(chat ? { sentChat: chat } : {}),
+      // A send its page held back (transport-trim `folded-form`): the bubble says so too, so that showing it reads the turn again.
+      ...(item.held ? { held: true as const } : {}) };
     // 对话布局:气泡下面常驻一小段「发到 群名」(管家 10-28),去向与会话页那一行同一个读法。
     const to = fileGroup?.to ?? (options.allDestinations ? agentSendOf(item, turn)?.to : undefined);
     if (to) Object.assign(reply, { sentTo: to });

@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { APP_FORWARD_FILES_EVENT, type AppForwardFilesDetail } from '../../session/shared/extensions/app-runtime-protocol'
 import { useAuth } from '../../store/auth'
-import { useChatStore } from '../../store/chatContext'
-import { ForwardMessageDialog } from './ForwardMessageDialog'
+import { LiveForwardMessageDialog } from './ForwardMessageDialog'
+import { useForwardToChats, type ForwardPiece } from './forwardToChats'
 
 /**
  * The folder's 「转发」 (`files.forward`, desktop and phone): the chat's own forward page. Each chat picked gets one file card
@@ -12,7 +12,7 @@ import { ForwardMessageDialog } from './ForwardMessageDialog'
  */
 export function ChatFileForwardHost() {
   const { t } = useTranslation('messaging')
-  const { chats, forwardMessage, sendAttachmentsToChat } = useChatStore('chats', 'forwardMessage', 'sendAttachmentsToChat')
+  const forwardTo = useForwardToChats()
   const { user } = useAuth()
   const [request, setRequest] = useState<Extract<AppForwardFilesDetail, { files: unknown }> | { copies: File[] } | null>(null)
   useEffect(() => {
@@ -25,21 +25,17 @@ export function ChatFileForwardHost() {
     return () => window.removeEventListener(APP_FORWARD_FILES_EVENT, open)
   }, [])
   if (!request || !user) return null
-  const forward = async (targetChatIds: string[]) => {
-    if ('copies' in request) {
-      for (const chatId of targetChatIds) await sendAttachmentsToChat(chatId, request.copies)
-      return
-    }
-    for (const file of request.files) for (const chatId of targetChatIds) await forwardMessage(file, chatId)
-  }
+  // The note follows the files, as a forward's note follows what has no words to quote.
   const named = 'copies' in request ? request.copies : request.files
+  const pieces: ForwardPiece[] = 'copies' in request
+    ? [{ kind: 'files', files: async () => request.copies }]
+    : request.files.map((file) => ({ kind: 'folder', file }))
   const [only] = named
   return (
-    <ForwardMessageDialog
-      chats={chats}
+    <LiveForwardMessageDialog
       sourceChatId={'copies' in request ? '' : request.chatId}
       preview={named.length === 1 && only ? only.name : t('forward.filesPreview', { count: named.length })}
-      onForward={forward}
+      onForward={(targetChatIds, note, sent) => forwardTo(pieces, targetChatIds, note, sent)}
       onClose={() => setRequest(null)}
     />
   )

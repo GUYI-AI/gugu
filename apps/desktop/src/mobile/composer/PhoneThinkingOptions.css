@@ -1,0 +1,20 @@
+.gg-phone-thinking-levels { display: flex; flex-direction: column; }
+.gg-phone-thinking-levels .gg-phone-thinking-choice {
+  display: flex; align-items: center; gap: var(--spacing-sm); width: 100%;
+  min-height: var(--control-h-touch); padding: var(--spacing-sm); border: 0;
+  border-bottom: 1px solid var(--border); border-radius: 0; background: transparent;
+  text-align: left; white-space: normal; overflow-wrap: anywhere;
+}
+.gg-phone-thinking-levels .gg-phone-thinking-choice:last-child { border-bottom: 0; }
+.gg-phone-thinking-levels .gg-aw-choice-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.gg-phone-thinking-levels .gg-aw-choice-label { font-size: var(--font-body); font-weight: 600; color: var(--fg); }
+.gg-phone-thinking-levels .gg-aw-choice-desc { font-size: var(--font-caption); color: var(--text-secondary); }
+.gg-phone-thinking-levels .gg-aw-choice-radio {
+  flex: none; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--text-muted); border-radius: var(--radius-circle); color: var(--primary-fg);
+}
+.gg-phone-thinking-levels .gg-aw-choice-radio[data-on] { border-color: var(--live); background: var(--live); }
+.gg-phone-thinking-levels .gg-aw-choice-radio svg { width: 12px; height: 12px; }
+
+.gg-phone-thinking-fast { color: var(--text-secondary); font-weight: 500; }
+.gg-phone-thinking-fast-status { display: inline-flex; align-items: center; gap: var(--spacing-xs); font-size: var(--font-caption); white-space: nowrap; }

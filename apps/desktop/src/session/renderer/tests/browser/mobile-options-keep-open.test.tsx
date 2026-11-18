@@ -8,10 +8,11 @@
  */
 import { createRoot, type Root } from 'react-dom/client';
 import { useState, type ReactNode } from 'react';
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { until } from '../../../../../../../tests/support/awaitCondition';
-import { CreateOptionsPill } from '@/mobile/agent-watch/CreateOptionsPill';
+import { CreateOptionsPill, ModelChoices } from '@/mobile/agent-watch/CreateOptionsPill';
+import { setLocalePreference } from '@/i18n';
 import type { CreateSelection } from '@/mobile/agent-watch/create-session-form';
 import '@/i18n';
 import '@/styles/tokens.css';
@@ -50,11 +51,11 @@ const MODELS = {
 
 /** 新建页那一层:选择留在页面状态里,胶囊只回报。 */
 function CreatePage() {
-  const [selection, setSelection] = useState<CreateSelection>({ projectId: 'p1', harness: 'codex', model: null, permissionMode: null, effort: null });
+  const [selection, setSelection] = useState<CreateSelection>({ harness: 'codex', model: null, permissionMode: null, effort: null });
   return <CreateOptionsPill options={OPTIONS} selection={selection} onChange={setSelection} busy={false} models={MODELS} modelsState="ready" />;
 }
 
-it('create options: picking a model, then a thinking level, then a project keeps the sheet open; the summary shows each new value', async () => {
+it('create options: picking a model, then a thinking level keeps the sheet open; the summary shows each new value', async () => {
   mount(<CreatePage />);
   await click('[data-testid="agent-watch-create-options-open"]');
   const sheet = '[data-testid="agent-watch-create-options"]';
@@ -78,11 +79,6 @@ it('create options: picking a model, then a thinking level, then a project keeps
   expect(summary('effort')).toBe('High');
   expect(summary('model'), 'the model picked before is kept').toBe('Model 2');
 
-  // 顶层那一档(项目):留在顶层,勾移过去。
-  await click(`${sheet} [data-testid="agent-watch-create-choice"][data-dimension="project"][data-option-id="p2"]`);
-  await until('the tick moves to project-2', () => q(`${sheet} [data-dimension="project"][data-option-id="p2"]`)?.getAttribute('aria-checked') === 'true');
-  expect(atRoot(), 'still on the root page').toBe(true);
-
   // 换 harness 会把模型、推理档重置成那一家的:回顶层后摘要读到的是重置后的值。
   await click(`${sheet} [data-testid="agent-watch-create-options-drill"][data-dimension="harness"]`);
   await click(`${sheet} [data-testid="agent-watch-create-choice"][data-dimension="harness"][data-option-id="claude"]`);
@@ -92,4 +88,29 @@ it('create options: picking a model, then a thinking level, then a project keeps
 
   await click('[data-testid="agent-watch-create-options-nav"]');
   await until('✕ closes the sheet', () => q(sheet) == null);
+});
+
+
+it('localizes the phone model list while preserving the native selection ID', async () => {
+  setLocalePreference('zh-CN');
+  try {
+    const onPick = vi.fn();
+    const models = {
+      ...MODELS!,
+      models: [
+        { id: 'default', name: 'Default (recommended)', source: 'harness', description: 'Sonnet 5.5' },
+        { id: 'haiku', name: 'Haiku 5.5', source: 'harness', description: 'Fastest for quick answers' },
+        { id: 'new-model', name: 'New model', source: 'harness', description: 'Description from the host' },
+      ],
+    } satisfies NonNullable<typeof MODELS>;
+    mount(<ModelChoices models={models} state="ready" harnessName="Claude Code"
+      selection={{ harness: 'claude', model: 'default', permissionMode: null, effort: null }}
+      onPick={onPick} onLeave={() => {}} />);
+    await expect.element(page.getByRole('radio', { name: '默认（推荐） Sonnet 5.5', exact: true })).toHaveAttribute('aria-checked', 'true');
+    await expect.element(page.getByRole('radio', { name: 'New model', exact: true })).toBeVisible();
+    await page.getByRole('radio', { name: 'Haiku 5.5 响应速度快，适合简短问答' }).click();
+    expect(onPick).toHaveBeenCalledExactlyOnceWith('haiku');
+  } finally {
+    setLocalePreference('system');
+  }
 });

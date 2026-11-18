@@ -33,7 +33,9 @@ const DIR_CONCURRENCY = 16;
 type Child = { id: string; name: string; callId: string; task?: string; model?: string };
 type Ordinals = { turn: number; item: number; userSeen: boolean; calls: Record<string, Record<string, unknown>>; children: Record<string, Child> };
 
-export function createCodexJsonlSource(locator: SessionRecordLocator, options?: SessionRecordSourceOptions, nativeChild = false): SessionRecordSource {
+export function createCodexJsonlSource(locator: SessionRecordLocator, options?: SessionRecordSourceOptions, nativeChild = false, ancestors: ReadonlySet<string> = new Set()): SessionRecordSource {
+  const lineage = new Set(ancestors);
+  lineage.add(locator.providerSessionId);
   const root = createJsonlTailSource<Ordinals>(locator, options, {
     name: 'codex',
     resumeVersion: 6,
@@ -63,6 +65,8 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
       }
       if (item?.kind === 'tool_result' && ordinals.calls[item.callId]) return [];
       if (item?.kind === 'subagent') {
+        // Native peer activity may point back to this record or one of its ancestors.
+        if (lineage.has(item.threadId)) return [];
         const input = ordinals.calls[item.id] ?? {};
         const child = ordinals.children[item.threadId] ?? {
           id: item.threadId, name: item.name, callId: item.id,
@@ -106,8 +110,8 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
   return withSubagentSources(
     root,
     // A child's pictures are in its own file: a place kept for them would point into the root record.
-    (id) => createCodexJsonlSource({ ...locator, providerSessionId: id }, options && { ...options, fill: undefined }, true),
-    () => createCodexJsonlSource(locator, options, nativeChild),
+    (id) => createCodexJsonlSource({ ...locator, providerSessionId: id }, options && { ...options, fill: undefined }, true, lineage),
+    () => createCodexJsonlSource(locator, options, nativeChild, ancestors),
     options,
   );
 }

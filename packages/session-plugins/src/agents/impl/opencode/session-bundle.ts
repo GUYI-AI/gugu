@@ -313,42 +313,35 @@ function permissionConfig(autonomy: SessionCapabilityBundle['autonomy']): Record
 
   // `permissionMode` is transported unchanged until this provider boundary. OpenCode has two
   // native control channels: `session/new.agent` selects `plan` or `build`, while the config
-  // document's `permission` rules control per-tool approval. An omitted field stays on the
-  // legacy coarse mode (`edit` for the old false boolean), so old callers retain their behavior.
-  if (autonomy.permissionMode !== undefined) {
-    // `OPENCODE_PERMISSION_MODES.plan` is a native session mode (`agent: 'plan'`), not a
-    // permission-rule alias. The session-create patch below is the only place that selects it.
-    if (autonomy.permissionMode === 'plan') return {};
-    const config = openCodeFamilyPermissionConfig(OPENCODE_FAMILY_PERMISSION_SPEC, {
-      mode: autonomy.permissionMode === 'full-access' ? 'full-access' : 'approval-required',
-    });
-    if (autonomy.permissionMode === 'read-only') {
-      // This branch is currently unreachable from the product because `OPENCODE_PERMISSION_MODES`
-      // declares only `plan` and `edit` (OpenCode has no advertised read-only tier). Keep the
-      // complete mapping so it becomes reachable without silently falling back to edit if that
-      // declaration later adds `read-only`; its product reachability then requires a declaration
-      // change, not a second materializer rule.
-      // OpenCode has no separate read-only mode in serve/attach. Deny `edit` explicitly and keep
-      // `bash: ask`: the latter is required because the provider has no OS sandbox, so a shell
-      // write must be blocked or ask instead of executing. The helper's approval-required rule
-      // set is `bash/webfetch/websearch/external_directory/doom_loop: ask`; all other tools,
-      // including `read/glob/grep/list/lsp`, remain on the provider's default allow rule. This
-      // is also the edit tier's contract, except edit does not add `edit: deny`.
-      // Cross-provider guarantee is intentionally different: Codex's `sandbox_mode=read-only`
-      // makes a write impossible (the command exits with an error, without asking), while
-      // OpenCode's tool-granular model cannot deny `bash` without also denying `ls/cat/grep`.
-      // Here a write may proceed only after the user approves the bash request; keep this ask
-      // shape instead of copying Codex's hard sandbox semantics into OpenCode.
-      const permission = config.permission;
-      if (typeof permission !== 'object' || permission === null) {
-        throw new Error('OpenCode read-only permission materialization did not produce a rule map');
-      }
-      return { permission: { ...permission, edit: 'deny' } };
+  // document's `permission` rules control per-tool approval.
+  // `OPENCODE_PERMISSION_MODES.plan` is a native session mode (`agent: 'plan'`), not a
+  // permission-rule alias. The session-create patch below is the only place that selects it.
+  if (autonomy.permissionMode === 'plan') return {};
+  const config = openCodeFamilyPermissionConfig(OPENCODE_FAMILY_PERMISSION_SPEC, autonomy);
+  if (autonomy.permissionMode === 'read-only') {
+    // This branch is currently unreachable from the product because `OPENCODE_PERMISSION_MODES`
+    // declares only `plan` and `edit` (OpenCode has no advertised read-only tier). Keep the
+    // complete mapping so it becomes reachable without silently falling back to edit if that
+    // declaration later adds `read-only`; its product reachability then requires a declaration
+    // change, not a second materializer rule.
+    // OpenCode has no separate read-only mode in serve/attach. Deny `edit` explicitly and keep
+    // `bash: ask`: the latter is required because the provider has no OS sandbox, so a shell
+    // write must be blocked or ask instead of executing. The helper's approval-required rule
+    // set is `bash/webfetch/websearch/external_directory/doom_loop: ask`; all other tools,
+    // including `read/glob/grep/list/lsp`, remain on the provider's default allow rule. This
+    // is also the edit tier's contract, except edit does not add `edit: deny`.
+    // Cross-provider guarantee is intentionally different: Codex's `sandbox_mode=read-only`
+    // makes a write impossible (the command exits with an error, without asking), while
+    // OpenCode's tool-granular model cannot deny `bash` without also denying `ls/cat/grep`.
+    // Here a write may proceed only after the user approves the bash request; keep this ask
+    // shape instead of copying Codex's hard sandbox semantics into OpenCode.
+    const permission = config.permission;
+    if (typeof permission !== 'object' || permission === null) {
+      throw new Error('OpenCode read-only permission materialization did not produce a rule map');
     }
-    return config;
+    return { permission: { ...permission, edit: 'deny' } };
   }
-
-  return openCodeFamilyPermissionConfig(OPENCODE_FAMILY_PERMISSION_SPEC, autonomy);
+  return config;
 }
 
 function sessionCreatePatch(

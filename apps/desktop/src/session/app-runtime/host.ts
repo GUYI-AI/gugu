@@ -15,7 +15,61 @@ import type { AppSurfaceHost } from '@shared/extensions/app-surface';
  * `window.gugu` verbatim (`gugu-entry.ts`), so the v1 verbs keep their preload-side types.
  */
 export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
-  readonly bindings?: { get(name: string): Promise<import('@shared/extensions/unread-binding').AppUnreadBinding> };
+  readonly bindings?: {
+    get(name: string): Promise<import('@shared/extensions/unread-binding').AppUnreadBinding>;
+    list?(name: string, options?: { folder?: string }): Promise<import('@shared/extensions/unread-binding').AppBoundList>;
+    read?(name: string, path: string): Promise<import('@shared/extensions/unread-binding').AppBoundRead>;
+    surface?(name: string): Promise<import('@shared/extensions/unread-binding').AppBindingSurface>;
+    setPanel?(name: string, options: { collapsed: boolean }): Promise<import('@shared/extensions/unread-binding').AppBindingSurface>;
+    onSurface?(listener: (surface: import('@shared/extensions/unread-binding').AppBindingSurface) => void): () => void;
+    /** #1927 (42): the bound conversation's agent's resources (agent-resources.ts). */
+    resources?(name: string, domain: string): Promise<import('@shared/extensions/agent-resources').AppResourceList>;
+    resource?(name: string, domain: string, key: string): Promise<import('@shared/extensions/agent-resources').AppResourceRead>;
+    watch?(watchId: string, name: string, on: boolean): Promise<unknown>;
+    save?(name: string, change: Record<string, unknown>): Promise<import('@shared/extensions/agent-resources').AppResourceWrite>;
+    remove?(name: string, change: Record<string, unknown>): Promise<import('@shared/extensions/agent-resources').AppResourceWrite>;
+    /** 50: 给助理的资料 and voice notes as the assistant's own pages manage them (resources-management.ts). */
+    upload?(name: string, options?: { folder?: string }): Promise<import('@shared/extensions/resources-management').AppUploadAnswer>;
+    createFolder?(name: string, key: string): Promise<import('@shared/extensions/resources-management').AppFolderAnswer>;
+    rename?(name: string, key: string, to: string): Promise<import('@shared/extensions/resources-management').AppRenameAnswer>;
+    removeFolder?(name: string, key: string): Promise<import('@shared/extensions/resources-management').AppRemoveAllAnswer>;
+    transcribeVoiceNote?(name: string, key: string): Promise<import('@shared/extensions/resources-management').AppTranscribeAnswer>;
+    removeVoiceNote?(name: string, key: string): Promise<import('@shared/extensions/resources-management').AppRemoveAllAnswer>;
+    exportVoiceNote?(name: string, key: string): Promise<import('@shared/extensions/resources-management').AppExportAnswer>;
+    /** #1928 (43): the bound agent's schedules; `onSchedulesChanged` is composed of `watchSchedules` and the event. */
+    schedules?(name: string): Promise<import('@shared/extensions/bound-schedules').AppBoundSchedules>;
+    watchSchedules?(name: string, on: boolean): Promise<unknown>;
+    controlSchedule?(name: string, change: Record<string, unknown>): Promise<import('@shared/extensions/bound-schedules').AppScheduleReceipt>;
+    /** #1925 (46): the assistant's work; `onWorkChanged` is composed of `onWork` and the binding's name. */
+    work?(name: string): Promise<import('@shared/extensions/work-binding').AppBindingWork>;
+    openWork?(name: string, handle: string): Promise<void>;
+    closeWork?(name: string): Promise<void>;
+    onWork?(listener: (work: import('@shared/extensions/work-binding').AppBindingWork) => void): () => void;
+  };
+  /** #1925 (44) The bound conversation's assistant, when it is the person's own (`assistant-binding.ts`): a page's. */
+  readonly assistant?: {
+    status(name: string): Promise<import('@shared/extensions/assistant-binding').AppAssistantRead>;
+    open(name: string, screen: string): Promise<void>;
+    advanceSetup(name: string, next: string): Promise<void>;
+    rename(name: string, text: string): Promise<import('@shared/extensions/assistant-binding').AssistantRenameResult>;
+    figure(name: string, figure: import('@shared/extensions/assistant-binding').AssistantFigure | null): Promise<void>;
+    connect(name: string, id: string): Promise<void>;
+  };
+  onAssistantChanged?(handler: (read: import('@shared/extensions/assistant-binding').AppAssistantHeard) => void): () => void;
+  onBindingResources?(handler: (watchId: string, event: import('@shared/extensions/agent-resources').AppResourceEvent) => void): () => void;
+  /** #1927 (47): the host's voice-note recorder for the bound conversation's personal assistant (voice-note-session.ts). */
+  readonly voiceNote?: {
+    start(name: string, options?: Record<string, unknown>): Promise<import('@shared/extensions/voice-note-session').AppVoiceNoteStart>;
+    pause(name: string): Promise<import('@shared/extensions/voice-note-session').AppVoiceNoteStatus>;
+    resume(name: string): Promise<import('@shared/extensions/voice-note-session').AppVoiceNoteStatus>;
+    stop(name: string): Promise<import('@shared/extensions/voice-note-session').AppVoiceNoteStatus>;
+    retry(name: string, job: string): Promise<import('@shared/extensions/voice-note-session').AppVoiceNoteStatus>;
+    openMicSettings(name: string): Promise<void>;
+    status(name: string): Promise<import('@shared/extensions/voice-note-session').AppVoiceNoteStatus>;
+    watch(watchId: string, name: string, on: boolean): Promise<unknown>;
+  };
+  onVoiceNote?(handler: (watchId: string, event: import('@shared/extensions/voice-note-session').AppVoiceNoteEvent) => void): () => void;
+  onSchedulesChanged?(handler: (binding: string) => void): () => void;
   taskMessage?(args: { intent: 'pause' | 'continue' }): Promise<void>;
   readonly sessions?: {
     index(options?: AppSessionIndexOptions): Promise<AppSessionIndex>;
@@ -80,6 +134,8 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     watch(args: { watchId: string; place: AppPlace & { folder?: string; id?: string }; on: boolean }): Promise<void>;
     replace(args: { ref: AppFileRef; file: AppFileUpload; expectedVersion?: number | null }): Promise<AppFileEntry>;
     readText(args: { ref: AppFileRef; maxBytes?: number; transferId?: string }): Promise<AppFileText>;
+    /** API 54, the preinstalled Files App's page only (selection-send.ts): the host's Send box; only the outcome comes back. */
+    sendSelection?(args: Record<string, unknown>): Promise<import('@shared/extensions/selection-send').SelectionSendResult>;
     exists(args: { ref: AppFileRef }): Promise<boolean>;
     draft(args: { ref: AppFileRef; text?: string | null }): Promise<string | null>;
     writeText(args: { ref: AppFileRef; text: string }): Promise<{ entry: AppFileEntry }>;
@@ -90,7 +146,7 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     /** Bytes the caller has, or (no `files`) the person's picker — which only a page has, inside a gesture. */
     upload(args: { place: AppPlace; files?: AppFileUpload[]; sourceMessageIds?: string[]; folder?: string; keep?: string }): Promise<AppFileEntry[]>;
     /** The gesture halves: a page's only (`VerbFacts.only`) — a background page and a program have none. */
-    openWith?(args: { ref: AppFileRef; ask?: boolean; at?: Record<string, string>; peek?: boolean; tab?: string; intent?: TabOpenIntent; viewState?: Record<string, unknown> }): Promise<void>;
+    openWith?(args: { ref: AppFileRef; fileName?: string; ask?: boolean; at?: Record<string, string>; peek?: boolean; tab?: string; intent?: TabOpenIntent; viewState?: Record<string, unknown>; among?: { id: string; chat?: string; workspace?: string }[]; origin?: { x: number; y: number; width: number; height: number } }): Promise<void>;
     /** One file (`true` saved), or several (API 20: how many were saved; `0` when the person cancelled). */
     download?(args: { ref: AppFileRef; folder?: boolean; transferId?: string } | { refs: AppFileRef[] }): Promise<boolean | number>;
     downloadStop?(args: { transferId: string }): Promise<void>;

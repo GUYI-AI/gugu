@@ -15,7 +15,7 @@ import { sessionPaneReady } from '../session-pane-ready';
 import { rpc } from '@renderer/lib/ipc';
 import type { OpenedOutput } from '@gugu/session-chat-ui/opened-outputs';
 import { rendererLogger } from '../../../../../lib/log';
-import { isAbsolutePath, isPathInsideWorkspace, resolveWorkspacePath } from './workspace-path';
+import { fileBaseName, isAbsolutePath, isPathInsideWorkspace, resolveWorkspacePath } from './workspace-path';
 import { workspaceRegistry } from './workspace-registry';
 import type { WorkspaceViewModel } from '@renderer/features/sessions/stores/workspace-view-model';
 import { pickSessionOpener } from '@renderer/features/extensions/open-with';
@@ -24,6 +24,9 @@ import { fileTabTarget, hostFileTabTarget } from '../file-view/file-view-kinds';
 import { workspaceRpc } from '@renderer/features/sessions/workspace-backend/workspace-backend';
 import type { BrowserTabResource } from '@renderer/features/browser/browser-tab-resource';
 import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
+import { prepareBackgroundBrowserPage } from '../../live-window/background-browser-page';
+import { opensInImageViewer } from '@/lib/imageViewer';
+import type { ViewBox } from '@shared/extensions/app-runtime-protocol';
 
 const sessionLog = rendererLogger('gugu-session');
 
@@ -114,11 +117,16 @@ type FileOpenTarget = 'active' | 'beside';
 async function openResolvedFileInPane(
   viewModel: WorkspaceViewModel,
   resolvedPath: string,
-  options: { from: string | null; intent?: TabOpenIntent; activate?: boolean; ask?: boolean; place?: { sessionId: string; at: FilePlace } }
+  options: { from: string | null; intent?: TabOpenIntent; activate?: boolean; ask?: boolean; place?: { sessionId: string; at: FilePlace }; view?: ImageView }
 ): Promise<string | null | undefined> {
   const opener = await pickSessionOpener(resolvedPath, options.ask === true);
   if ('cancelled' in opener) return undefined;
   const claim = 'tabKind' in opener ? opener : null;
+  // The person's (or an App's) open of an image nothing claims: over the session in the image viewer, not a tab.
+  if (!claim && options.view && opensInImageViewer(resolvedPath, null, options.intent)) {
+    await viewImages(resolvedPath, options.view);
+    return null;
+  }
   // A link's place (`path#k=v&…`): the App that opens it is told, as a chat file's pill tells its App — before the tab
   // opens, so a page still opening finds it waiting. The file preview takes no place. Only plain ids cross: the
   // candidate holds the App's manifest.
@@ -143,6 +151,25 @@ async function openResolvedFileInPane(
   return null;
 }
 
+/**
+ * Asked by the person or an App, never by an agent (`open_in_tab` opens beside the conversation, not over what the
+ * person looks at): what an image opens in. `asked`: the path as asked, its place among the images an App page showed
+ * (`among`, paths of this working copy, spelled as `asked` is); `origin`: the clicked picture on the window.
+ */
+type ImageView = { projectId: string; workspaceId: string; asked: string; among?: string[]; origin?: ViewBox };
+
+async function viewImages(resolvedPath: string, view: ImageView): Promise<void> {
+  const [{ readWorkspaceFileBytes }, { workingCopyImageItem, openViewerFromClick }] = await Promise.all([
+    import('../workspace-backend/read-workspace-bytes'), import('@/lib/attachmentBytes'),
+  ]);
+  const at = view.among?.indexOf(view.asked) ?? -1;
+  const paths = at >= 0 ? view.among!.filter((path) => opensInImageViewer(path, null, undefined)) : [];
+  const index = at >= 0 ? paths.indexOf(view.asked) : -1;
+  const shown = index >= 0 ? paths.map((path, i) => (i === index ? resolvedPath : path)) : [resolvedPath];
+  const items = shown.map((path) => workingCopyImageItem(fileBaseName(path), () => readWorkspaceFileBytes(view.projectId, view.workspaceId, path, true)));
+  await openViewerFromClick(items, Math.max(0, index), view.origin);
+}
+
 async function openSessionFile(
   projectId: string,
   sessionId: string,
@@ -150,7 +177,7 @@ async function openSessionFile(
   target: FileOpenTarget,
   at?: FilePlace,
   ask = false,
-  options?: { intent?: TabOpenIntent; from?: string | null; byHost?: boolean }
+  options?: { intent?: TabOpenIntent; from?: string | null; byHost?: boolean; among?: string[]; origin?: ViewBox }
 ): Promise<string | null | undefined> {
   const provisioned = asProvisioned(getSessionPageStore(projectId, sessionId));
   if (!provisioned) throw new Error('This session has no prepared workspace');
@@ -160,23 +187,27 @@ async function openSessionFile(
   const from = options?.from !== undefined ? options.from : target === 'beside' && viewModel ? sessionConversationTabId(viewModel.paneLayout, sessionId) : viewModel?.activePane.resolvedActiveTabId ?? null;
   const intent = options?.intent ?? 'navigate';
   const filePath = await expandHomeTildePath(rawFilePath);
-  const resolvedPath = resolveEditorFilePath(workspace.path, filePath);
-  if (resolvedPath === null) {
-    await openExternalFilePath(projectId, sessionId, filePath, { from, intent, byHost: options?.byHost });
-    return null;
-  }
-
-  // Agent output often points at paths that don't exist in the worktree
-  // (subdirectory-relative, deleted, etc.) — precheck so we can toast a
-  // useful error instead of opening an empty tab.
+  const namedInside = resolveEditorFilePath(workspace.path, filePath);
+  // The machine says whether the file is in this working copy and in which spelling (`@@@canonical-path`): an absolute
+  // path written through an alias (an old transcript's `accounts/<id>/…`) is inside although its letters are not, and
+  // the tab is keyed on the machine's spelling, never on the one this link happened to carry.
   const exists = await workspaceRpc(projectId).files.fileExists(
     projectId,
     provisioned.workspaceId,
-    resolvedPath
+    namedInside ?? filePath
   );
+  if (!exists.success && namedInside === null) {
+    await openExternalFilePath(projectId, sessionId, filePath, { from, intent, byHost: options?.byHost });
+    return null;
+  }
+  // Agent output often points at paths that don't exist in the worktree
+  // (subdirectory-relative, deleted, etc.) — precheck so we can toast a
+  // useful error instead of opening an empty tab.
   if (!exists.success || !exists.data.exists) {
     throw new Error(translateSessionMessage('taskError.fileNotFound', { path: filePath }));
   }
+  // A machine from before it said the spelling answers without it: the path as named, as that machine always took it.
+  const resolvedPath = exists.data.path ?? namedInside ?? filePath;
   // 目录交给系统文件管理器开它自己的窗口 —— 塞进编辑器只会开出永远 Loading 的页签。
   if (exists.data.isDirectory) {
     await openDirectoryInFileManager(resolvedPath);
@@ -189,6 +220,13 @@ async function openSessionFile(
     from, intent,
     ...(at ? { place: { sessionId, at } } : {}),
     ...(ask ? { ask } : {}),
+    // The App's paths spelled as this one is (its place among them found by that spelling). One outside the copy is
+    // dropped here when absolute; a relative `../` one is refused by the machine's read (`readWorkspaceChunk`).
+    view: {
+      projectId, workspaceId: provisioned.workspaceId, asked: namedInside ?? resolvedPath,
+      ...(options?.among ? { among: options.among.flatMap((path) => resolveEditorFilePath(workspace.path, path) ?? []) } : {}),
+      ...(options?.origin ? { origin: options.origin } : {}),
+    },
   });
 }
 
@@ -197,7 +235,7 @@ export async function openFileInSessionEditor(
   sessionId: string,
   filePath: string,
   /** `byHost`: an App asked for it (`files.openWith`), not the person's click (`@@@outside-file`). */
-  opts?: { beside?: boolean; at?: FilePlace; ask?: boolean; intent?: TabOpenIntent; from?: string | null; byHost?: boolean }
+  opts?: { beside?: boolean; at?: FilePlace; ask?: boolean; intent?: TabOpenIntent; from?: string | null; byHost?: boolean; among?: string[]; origin?: ViewBox }
 ): Promise<string | null | undefined> {
   return openSessionFile(projectId, sessionId, filePath, opts?.beside ? 'beside' : 'active', opts?.at, opts?.ask === true, opts);
 }
@@ -247,6 +285,15 @@ export async function openExternalFilePath(
   }
   // owner 2026-09-10:「文件我点击可以是 tab 打开吧」——默认开在会话页的一个 tab 里,
   // 画不出来的那几种才交给系统(见 `attachmentOpenTarget`)。
+  // An image the person opens from outside the working copy: in the image viewer too, its bytes read as its tab would.
+  if (provisioned?.workspaceId && opensInImageViewer(filePath, null, intent)) {
+    const { workspaceId } = provisioned;
+    const [{ readWorkspaceFileBytes }, { workingCopyImageItem, openViewerFromClick }] = await Promise.all([
+      import('../workspace-backend/read-workspace-bytes'), import('@/lib/attachmentBytes'),
+    ]);
+    await openViewerFromClick([workingCopyImageItem(fileBaseName(filePath), () => readWorkspaceFileBytes(projectId, workspaceId, filePath, false))], 0);
+    return;
+  }
   const target = attachmentOpenTarget(filePath);
   if (target !== 'system') {
     // 没有可用的面板就退到系统默认程序 —— ❌ 不许在这里静默 return。
@@ -351,7 +398,9 @@ export function openHostRequestedFileInSessionWhenReady({
         // click path draws the line.
         // 宿主替 agent(或 App)打开的:开在对话右边并排,❌ 盖住对话;用户正看着别的也 ❌ 切走(spec gugu-plugin「在工作区打开文件」)。
         if (external) {
-          const tab = hostFileTabTarget(path, true);
+          // The tab a person's click opens an outside file in (`openExternalFilePath`), with the same reading rights: the
+          // agent's own access to it was checked on its machine (`requireAgentFileAccess`). Never handed to a program here.
+          const tab = fileTabTarget(path, true);
           session.viewModel.paneLayout.open(
             tab.kind,
             tab.args,
@@ -360,7 +409,7 @@ export function openHostRequestedFileInSessionWhenReady({
           onResult({ success: true, openedWith: null });
         } else if (tabKind) {
           // 摩擦单 F122 «Open with X», named by the caller (main checked X claims it): what「用哪个打开」does once picked.
-          session.viewModel.paneLayout.open(tabKind, { filePath: path, byHost: true }, { from: sessionConversationTabId(session.viewModel.paneLayout, sessionId), intent: 'beside', activate: false });
+          session.viewModel.paneLayout.open(tabKind, { filePath: path }, { from: sessionConversationTabId(session.viewModel.paneLayout, sessionId), intent: 'beside', activate: false });
           onResult({ success: true, openedWith: tabKind });
         } else {
           // Reported, not predicted: the host says what actually opened because the
@@ -434,6 +483,11 @@ export function openHostRequestedExtensionInSessionWhenReady({
         const session = asProvisioned(getSessionPageStore(projectId, sessionId));
         try {
           if (!session?.viewModel) throw new Error('target session pane is unavailable');
+          if (ifAbsent && tabKind === 'computer-use.preview') {
+            const { revealLiveWindow } = await import('../../live-window/reveal-live-window');
+            await revealLiveWindow(projectId, sessionId, 'computer');
+            onResult({ success: true }); return;
+          }
           // 刚装上的扩展,渲染层得先登记过它的页签,`kind` 才认得出来。设置页那条路装完自己
           // 会补一次登记(ExtensionsSettingsCard),而 agent 那条路整个装在主进程里,渲染层
           // 压根没听说过这次安装 —— 不补这一下,「装上、马上打开」必然打不开。补登记是幂等的。
@@ -528,7 +582,7 @@ export function openHostRequestedBrowserInSessionWhenReady({
   intent: TabOpenIntent;
   onResult: (result: { success: boolean; error?: string; browserId?: string; created?: boolean }) => void;
   timeout?: number;
-  acquire?: { browserId?: string; createIfMissing: boolean; deadline: number };
+  acquire?: { browserId?: string; createIfMissing: boolean; deadline: number; mapped?: true };
 }): () => void {
   const lifetime = new AbortController();
   const dispose = when(
@@ -576,7 +630,7 @@ export function openHostRequestedBrowserInSessionWhenReady({
 async function acquireBrowserPage(
   view: WorkspaceViewModel,
   url: string,
-  request: { browserId?: string; createIfMissing: boolean; deadline: number },
+  request: { browserId?: string; createIfMissing: boolean; deadline: number; mapped?: true },
   signal: AbortSignal,
 ): Promise<{ browserId: string; created: boolean }> {
   const checkDeadline = () => {
@@ -592,6 +646,7 @@ async function acquireBrowserPage(
     ?? existing.find(({ tab }) => tab.isActive)
     ?? existing[0];
   const created = !chosen;
+  if (!chosen && request.mapped) return prepareBackgroundBrowserPage(view, url, request, signal);
   if (!chosen) {
     if (!request.createIfMissing) throw new Error('This session has no browser tab. Use browser_navigate with a URL first.');
     view.showPage(url, { reload: false, beside: true, activate: false });

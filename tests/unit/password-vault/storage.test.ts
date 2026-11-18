@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readFile, readdir, realpath, rm, unlink, writeFile, link } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, realpath, rm, writeFile, link } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
@@ -34,11 +34,8 @@ async function fixture(overrides: Partial<VaultDependencies> = {}) {
   const vault = new LocalPasswordVault(dependencies); vaults.push(vault)
   return { root, dependencies, vault, keys }
 }
-async function setup(vault: LocalPasswordVault) {
-  const material = await vault.beginSetup(person)
-  await vault.confirmRecovery(person, material.setupId, material.recoveryMaterial)
-  return material.recoveryMaterial
-}
+/** The vault opens (creating on first use) without any person setup step. */
+async function setup(vault: LocalPasswordVault) { await vault.list(person) }
 const canaryInput = () => ({ origin: 'https://login.example.test:8443', account: randomBytes(24).toString('hex'), password: randomBytes(48).toString('base64url') })
 const event = () => ({ id: randomUUID(), action: 'request', source: 'policy', outcome: 'pending', agentId: randomUUID(), sessionId: randomUUID(), requestId: randomUUID() }) as const
 async function bytesUnder(root: string): Promise<Buffer[]> {
@@ -48,19 +45,17 @@ async function bytesUnder(root: string): Promise<Buffer[]> {
 }
 
 describe('local encrypted vault: storage and lifecycle', () => {
-  it('confirms recovery before setup, writes encrypted canaries, restarts locked and restores summaries', async () => {
-    const { vault, dependencies, root } = await fixture(), input = canaryInput()
-    const pending = await vault.beginSetup(person)
-    await expect(vault.confirmRecovery(person, pending.setupId, 'wrong')).rejects.toMatchObject({ code: 'RECOVERY_INVALID' })
-    await expect(vault.list(person)).rejects.toMatchObject({ code: 'LOCKED' })
-    await vault.confirmRecovery(person, pending.setupId, pending.recoveryMaterial)
+  it('opens on first use without person verification, writes encrypted canaries, reopens after restart and restores summaries', async () => {
+    const { vault, dependencies, root, keys } = await fixture(), input = canaryInput()
+    expect(await vault.list(person)).toEqual([])
+    expect(keys.verifyPerson).not.toHaveBeenCalled()
     const summary = await vault.save(person, randomUUID(), input)
     await writeFile(join(root, 'detector-control.txt'), 'known-nonempty-detector-control')
     const files = await bytesUnder(root)
     expect(files.some(bytes => bytes.includes('known-nonempty-detector-control'))).toBe(true)
     // The detector has an independent positive control; failures print booleans, never the canary.
     expect(Buffer.from('known-control').includes('known-control')).toBe(true)
-    for (const secret of [input.password, input.account, pending.recoveryMaterial, pending.recoveryMaterial.split('.')[2]]) {
+    for (const secret of [input.password, input.account]) {
       for (const encoded of [secret, Buffer.from(secret).toString('base64'), Buffer.from(secret).toString('hex'), encodeURIComponent(secret)]) expect(files.some(bytes => bytes.includes(encoded))).toBe(false)
     }
     expect(JSON.stringify(summary).includes(input.password)).toBe(false)
@@ -68,8 +63,8 @@ describe('local encrypted vault: storage and lifecycle', () => {
     await vault.dispose()
     const restarted = new LocalPasswordVault(dependencies); vaults.push(restarted)
     expect(restarted.state().status).toBe('locked')
-    await restarted.unlock(person)
     const saved = await restarted.list(person)
+    expect(keys.verifyPerson).not.toHaveBeenCalled()
     expect(saved[0].maskedAccount === summary.maskedAccount).toBe(true)
     expect(saved[0].reference.id).toBe(summary.reference.id)
     expect(saved[0].reference.epoch === summary.reference.epoch).toBe(false)
@@ -94,7 +89,7 @@ describe('local encrypted vault: storage and lifecycle', () => {
   it('rejects malformed operation ids before writing an unreadable encrypted ledger', async () => {
     const { vault } = await fixture(); await setup(vault)
     await expect(vault.save(person, 'a'.repeat(36), canaryInput())).rejects.toMatchObject({ code: 'INVALID_INPUT' })
-    await vault.lock(); await vault.unlock(person)
+    await vault.lock(); await vault.list(person)
     expect((await vault.list(person)).length).toBe(0)
   })
   it.each([
@@ -112,7 +107,7 @@ describe('local encrypted vault: storage and lifecycle', () => {
     await expect(attempt).rejects.toMatchObject({ code: 'AUDIT_FAILED' })
     vi.restoreAllMocks()
     if (restart) { await vault.dispose(); vault = new LocalPasswordVault(fixtureData.dependencies); vaults.push(vault) }
-    await vault.unlock(person)
+    await vault.list(person)
     const fresh = (await vault.list(person))[0].reference
     expect(fresh.epoch === first.reference.epoch).toBe(false)
     // The original approval/reference stays invalid; only the stable operation plus a fresh reference can continue.
@@ -139,7 +134,7 @@ describe('local encrypted vault: storage and lifecycle', () => {
       return original.call(this, path, bytes)
     })
     await expect(vault.save(person, operationId, input)).rejects.toMatchObject({ code: 'AUDIT_FAILED' })
-    vi.restoreAllMocks(); await vault.unlock(person)
+    vi.restoreAllMocks(); await vault.list(person)
     const retained = await vault.list(person); expect(retained.length).toBe(1)
     const repeated = await vault.save(person, operationId, input)
     expect(repeated.reference.id).toBe(retained[0].reference.id)
@@ -154,7 +149,7 @@ describe('local encrypted vault: storage and lifecycle', () => {
       return original.call(this, path, bytes)
     })
     await expect(vault.save(person, operationId, input)).rejects.toMatchObject({ code: 'AUDIT_FAILED' })
-    vi.restoreAllMocks(); await vault.unlock(person)
+    vi.restoreAllMocks(); await vault.list(person)
     expect((await vault.list(person)).length).toBe(0)
     await expect(vault.save(person, operationId, canaryInput())).rejects.toMatchObject({ code: 'INVALID_INPUT' })
     await vault.save(person, operationId, input)
@@ -163,53 +158,34 @@ describe('local encrypted vault: storage and lifecycle', () => {
   it('requires private-file protection and full readiness before first saving', async () => {
     const { vault, root, dependencies } = await fixture()
     vi.mocked(dependencies.assertPrivateStorageReady).mockRejectedValue(new Error('boundary unavailable'))
-    await expect(vault.beginSetup(person)).rejects.toMatchObject({ code: 'UNAVAILABLE' })
+    await expect(vault.list(person)).rejects.toMatchObject({ code: 'UNAVAILABLE' })
     expect((await readdir(root)).length).toBe(0)
     vi.mocked(dependencies.assertPrivateStorageReady).mockResolvedValue()
     vi.mocked(dependencies.acquireFeatureGuard!).mockRejectedValue(new Error('observe only'))
-    await expect(vault.beginSetup(person)).rejects.toMatchObject({ code: 'UNAVAILABLE' })
+    await expect(vault.list(person)).rejects.toMatchObject({ code: 'UNAVAILABLE' })
     expect((await readdir(root)).length).toBe(0)
   })
   it('does not treat a claimed person/account as a trusted local principal', async () => {
     const { vault } = await fixture()
-    expect(() => vault.beginSetup(stranger)).toThrow(VaultError)
+    expect(() => vault.list(stranger)).toThrow(VaultError)
     await setup(vault)
     expect(() => vault.readAudit({ kind: 'person', ownerId: owner })).toThrow(VaultError)
     expect(() => vault.clearAudit(stranger)).toThrow(VaultError)
-  })
-  it('recovers retained data after OS wrapping-key loss, and refuses wrong material without replacement', async () => {
-    const { vault, dependencies, keys } = await fixture(), input = canaryInput()
-    const recovery = await setup(vault); const saved = await vault.save(person, randomUUID(), input); await vault.lock()
-    vi.mocked(keys.unwrap).mockRejectedValue(new Error('keychain gone'))
-    await expect(vault.unlock(person)).rejects.toMatchObject({ code: 'STORAGE_FAILED' })
-    const path = join(dependencies.root, hash(owner), 'vault.json'), before = await readFile(path)
-    await expect(vault.recover(person, 'wrong')).rejects.toMatchObject({ code: 'RECOVERY_INVALID' })
-    expect((await readFile(path)).equals(before)).toBe(true)
-    await vault.recover(person, recovery)
-    expect((await vault.list(person))[0].reference.id).toBe(saved.reference.id)
-  })
-  it('reports missing data and cannot manufacture an empty replacement from recovery material', async () => {
-    const { vault, dependencies } = await fixture(); const recovery = await setup(vault); await vault.lock()
-    await unlink(join(dependencies.root, hash(owner), 'vault.json'))
-    await expect(vault.unlock(person)).rejects.toMatchObject({ code: 'DATA_MISSING' })
-    await expect(vault.recover(person, recovery)).rejects.toMatchObject({ code: 'DATA_MISSING' })
-    await expect(vault.beginSetup(person)).rejects.toMatchObject({ code: 'DATA_MISSING' })
   })
   it('refuses authenticated-ciphertext corruption and does not overwrite it', async () => {
     const { vault, dependencies } = await fixture(); await setup(vault); await vault.lock()
     const path = join(dependencies.root, hash(owner), 'vault.json'), document = JSON.parse((await readFile(path)).toString())
     const bytes = Buffer.from(document.payload.ciphertext, 'base64'); bytes[0] ^= 1; document.payload.ciphertext = bytes.toString('base64')
     await writeFile(path, JSON.stringify(document), { mode: 0o600 }); const before = await readFile(path)
-    await expect(vault.unlock(person)).rejects.toMatchObject({ code: 'DATA_DAMAGED' })
+    await expect(vault.list(person)).rejects.toMatchObject({ code: 'DATA_DAMAGED' })
     expect((await readFile(path)).equals(before)).toBe(true)
   })
   it('isolates accounts and refuses an installation binding mismatch', async () => {
     const { vault, dependencies } = await fixture(); await setup(vault); await vault.save(person, randomUUID(), canaryInput()); await vault.dispose()
     const otherAccount = new LocalPasswordVault({ ...dependencies, accountId: randomUUID() }); vaults.push(otherAccount)
-    await expect(otherAccount.unlock(person)).rejects.toMatchObject({ code: 'NOT_INITIALIZED' })
-    await setup(otherAccount); expect((await otherAccount.list(person)).length).toBe(0); await otherAccount.dispose()
+    expect((await otherAccount.list(person)).length).toBe(0); await otherAccount.dispose()
     const wrongInstallation = new LocalPasswordVault({ ...dependencies, installationBinding: randomUUID() }); vaults.push(wrongInstallation)
-    await expect(wrongInstallation.unlock(person)).rejects.toMatchObject({ code: 'WRONG_INSTALLATION' })
+    await expect(wrongInstallation.list(person)).rejects.toMatchObject({ code: 'WRONG_INSTALLATION' })
   })
   it('invalidates old versions on edit/delete and waits for revocation/cleanup', async () => {
     const { vault, dependencies } = await fixture(); await setup(vault)
@@ -219,29 +195,19 @@ describe('local encrypted vault: storage and lifecycle', () => {
     await vault.delete(person, randomUUID(), second.reference); expect((await vault.list(person)).length).toBe(0)
     expect(vi.mocked(dependencies.invalidate).mock.calls.map(call => call[0].reason)).toEqual(['edit', 'delete', 'delete'])
   })
-  it('revokes synchronously during system verification and cannot unlock after lock races', async () => {
-    const { vault, keys } = await fixture(); await setup(vault); await vault.lock()
-    let release!: () => void
-    vi.mocked(keys.verifyPerson).mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
-    const unlocking = vault.unlock(person)
-    await vi.waitFor(() => expect(typeof release).toBe('function'))
-    const locked = vault.lock('os-lock'); expect(vault.state().status).toBe('locked'); release()
-    await expect(unlocking).rejects.toMatchObject({ code: 'CANCELLED' }); await locked
-    expect(vault.state().status).toBe('locked')
-  })
   it('binds OS lock, suspend, logout/account-switch and app quit without auto-unlock', async () => {
     const { vault } = await fixture(); await setup(vault)
     const power = new EventEmitter(), app = Object.assign(new EventEmitter(), { quit: vi.fn() }), attention = vi.fn()
     const lifecycle = installVaultLifecycle(vault, power, app, attention)
     power.emit('lock-screen'); expect(vault.state().status).toBe('locked')
-    await vault.unlock(person); power.emit('suspend'); expect(vault.state().status).toBe('locked')
+    await vault.list(person); power.emit('suspend'); expect(vault.state().status).toBe('locked')
     const preventDefault = vi.fn(); app.emit('before-quit', { preventDefault }); expect(preventDefault).toHaveBeenCalled()
     await vi.waitFor(() => expect(app.quit).toHaveBeenCalledOnce()); lifecycle.remove()
   })
   it('refuses a hard-linked ciphertext even for the trusted owner path', async () => {
     const { vault, dependencies, root } = await fixture(); await setup(vault); await vault.lock()
     await link(join(dependencies.root, hash(owner), 'vault.json'), join(root, 'alias'))
-    await expect(vault.unlock(person)).rejects.toMatchObject({ code: 'STORAGE_FAILED' })
+    await expect(vault.list(person)).rejects.toMatchObject({ code: 'STORAGE_FAILED' })
   })
 })
 
@@ -252,7 +218,8 @@ describe('private encrypted audit and failure receipts', () => {
     const records = await vault.readAudit(person); expect(records.some(record => record.action === 'request')).toBe(true)
     expect((await bytesUnder(root)).some(bytes => bytes.includes('"action":"request"'))).toBe(false)
     await vault.clearAudit(person); expect((await vault.readAudit(person)).map(record => record.action)).toEqual(['clear'])
-    await vault.lock(); await expect(vault.readAudit(person)).rejects.toMatchObject({ code: 'LOCKED' })
+    // Lock drops in-memory keys only; the owner's next read reopens without a person step.
+    await vault.lock(); expect((await vault.readAudit(person)).map(record => record.action)).toEqual(['clear', 'lock'])
   })
   it('makes repeated audit event ids idempotent and rejects changed-event reuse', async () => {
     const { vault } = await fixture(); await setup(vault)
@@ -261,15 +228,14 @@ describe('private encrypted audit and failure receipts', () => {
     expect((await vault.readAudit(person)).filter(item => item.id === input.id).length).toBe(1)
     expect((await vault.appendAudit({ ...input, outcome: 'cancelled' }, { effectPossible: false })).status).toBe('unavailable')
   })
-  it('lets a freshly verified owner clear damaged encrypted audit without bypassing vault authentication', async () => {
+  it('lets only the local owner clear damaged encrypted audit', async () => {
     const { vault, dependencies } = await fixture(); await setup(vault); await vault.lock()
     const directory = join(dependencies.root, hash(owner), 'audit'), files = await readdir(directory)
     await writeFile(join(directory, files[0]), '{broken', { mode: 0o600 })
-    await expect(vault.unlock(person)).rejects.toMatchObject({ code: 'AUDIT_FAILED' })
+    await expect(vault.readAudit(person)).rejects.toBeInstanceOf(VaultError)
     expect(() => vault.clearAudit(stranger)).toThrow(VaultError)
-    await vault.clearAudit(person); expect(vault.state().status).toBe('locked')
-    await vault.unlock(person)
-    expect((await vault.readAudit(person)).map(record => record.action)).toEqual(['clear', 'unlock'])
+    await vault.clearAudit(person)
+    expect((await vault.readAudit(person)).map(record => record.action)).toEqual(['clear'])
   })
   it('prunes the exact 90-day window and preserves new encrypted records', async () => {
     let time = 1_800_000_000_000
@@ -310,7 +276,7 @@ describe('private encrypted audit and failure receipts', () => {
     await expect(vault.save(person, randomUUID(), canaryInput())).rejects.toMatchObject({ code: 'AUDIT_FAILED' })
     expect(vault.state().status).toBe('unavailable')
     expect((await readFile(path)).equals(before)).toBe(false)
-    vi.restoreAllMocks(); await vault.unlock(person)
+    vi.restoreAllMocks(); await vault.list(person)
     expect((await vault.list(person)).length).toBe(0)
   })
 })

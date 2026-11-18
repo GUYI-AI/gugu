@@ -85,7 +85,6 @@ it.each(['win', 'other'] as const)('%s: an open Sheet lies below the title bar r
     <>
       <WindowControls
         activeTab="chats"
-        mobile={false}
         activeChatId={null}
         sessionHostAvailable
         onSelectTab={() => undefined}

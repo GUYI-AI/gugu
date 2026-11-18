@@ -1,43 +1,8 @@
 import { connectorOrder } from '@/session/renderer/features/assistant/assistant-connector-order'
 import { assistantAccountDisplayName } from '@/components/assistant/assistant-app-connections'
-import type { PersonaPreset } from '@/session/renderer/features/assistant/assistant-files'
 
-// #7199 手机 <它的名字> 那一格的纯判断(与桌面 assistant-profile / assistant-personality / assistant-capabilities 同一套说法),单测在
-// tests/unit/mobile/phoneProfileModel.test.ts。读写在 usePhoneProfileData.ts,画法在 PhoneProfile / PhoneCustomize / PhoneConnectors。
-
-export type Persona = { preset: PersonaPreset | null; rest: string }
-
-/**
- * 资料页性格胶囊上的字:读到了照桌面(预设名 / 自定义性格 / 设置性格);还没读到(在休息、正在醒、读失败)只说「性格」——
- * ❌ 说「设置性格」(它可能早就有性格,只是此刻读不到)。
- */
-export function personaChipKey(persona: Persona | null): string {
-  if (!persona) return 'customize.character'
-  if (persona.preset) return `customize.preset.${persona.preset}`
-  return persona.rest ? 'customize.custom' : 'customize.setCharacter'
-}
-
-/**
- * 「自定义」那一个「保存」要做的事:名字变了才改名(空名不许存);性格动过、且读到过原文才写(没读到就写 = 拿空白盖掉它原来的性格)。
- */
-export function customizePlan({
-  draftName,
-  currentName,
-  personaTouched,
-  personaReadable,
-}: {
-  draftName: string
-  currentName: string
-  personaTouched: boolean
-  personaReadable: boolean
-}): { rename: string | null; writePersona: boolean; canSave: boolean } {
-  const trimmed = draftName.trim()
-  return {
-    rename: trimmed && trimmed !== currentName ? trimmed : null,
-    writePersona: personaTouched && personaReadable,
-    canSave: !!trimmed,
-  }
-}
+// #7199 手机「资料」下连接应用那几页的纯判断(与桌面 assistant-capabilities 同一套说法),单测在
+// tests/unit/mobile/phoneProfileModel.test.ts。读写在 usePhoneProfileData.ts,画法在 PhoneConnectors / PhoneConnectorSetup。
 
 export type ConnectorItem = { id: string; description: string }
 export type ConnectorStatus = { displayName?: string }

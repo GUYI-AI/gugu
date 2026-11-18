@@ -3,6 +3,8 @@ import type { NativeSessionRecord, RecordCursor, Settlement } from '@gugu/sessio
 import type { AgentWatchTimeline } from './agent-watch-store'
 import { emptyAgentWatchTimeline } from './agent-watch-store'
 import { getAgentWatchStore, type AgentWatchLocalStore, type LocalRow } from '@/session/shared/remote-sessions/local-store'
+import { isDeepEqual } from '@gugu/session-shared'
+import { mergeNativeRecordPage } from './native-record-state'
 
 /**
  * 手机上「上次看到哪儿了」的本地留存。
@@ -206,11 +208,29 @@ function sizeOf(value: TranscriptTurn): number {
 }
 
 /**
- * An ACP task's record (useNativeSessionRecord) kept the same way: the last page this phone read, so the page is not
- * blank while that machine is away. Same store, index and limits as the timelines; only the shape differs.
+ * An ACP task's record (useNativeSessionRecord): every turn this phone has read of it, kept so the next opening draws
+ * them at once and asks the machine only for what is new or was rewritten since (owner 2026-11-12 「做存盘」). Stored
+ * on this phone only, in chunks of consecutive turns: a change rewrites the chunks it touched, not the conversation,
+ * and a long conversation is not refused for its size. What a conversation holds past its cap is its oldest chunks:
+ * they are left out of the store (the record says so), and scrolling up reads them from the machine again.
  */
 const nativeMemory = new Map<string, NativeSessionRecord>()
 const nativeKeyOf = (key: TimelineCacheKey) => `native:${keyOf(key)}`
+/** Turns per stored chunk, by sequence (`seq / NATIVE_CHUNK`). */
+const NATIVE_CHUNK = 50
+/** One conversation's stored turns at most; past it the oldest chunks stay out of the store. */
+const MAX_NATIVE_BYTES = 16 * 1024 * 1024
+
+type NativeChunk = { turns: TranscriptTurn[]; originTurnIds: string[]; turnRevisions?: number[] }
+type StoredChunk = NativeChunk & { bytes: number }
+type NativeHead = Omit<NativeSessionRecord, 'turns' | 'originTurnIds' | 'turnRevisions' | 'revisions'>
+/** The stored row naming a conversation's chunks. Rows written before chunks hold the whole `record` instead. */
+type NativeMeta = { key: string; savedAt: number; bytes: number; head: NativeHead; chunks: Array<[no: number, bytes: number]>; trimmed: boolean }
+/** What each stored chunk holds, as last written or read: a write compares with it and puts only the chunks that differ. */
+const nativeStored = new Map<string, Map<number, StoredChunk>>()
+/** One conversation's writes in order: a meta row must never name chunks a later, overlapping write has removed. */
+const nativeWrites = new Map<string, Promise<void>>()
+const chunkKey = (id: string, no: number) => `${id}#${no}`
 
 export function readCachedNativeRecord(key: TimelineCacheKey): NativeSessionRecord | null {
   return nativeMemory.get(nativeKeyOf(key)) ?? null
@@ -221,13 +241,33 @@ export async function hydrateCachedNativeRecord(key: TimelineCacheKey): Promise<
   const known = nativeMemory.get(id)
   if (known) return known
   try {
-    const row = await (await getAgentWatchStore()).read('timeline', id)
+    const store = await getAgentWatchStore()
+    await nativeWrites.get(id)
+    const row = await store.read('timeline', id)
+    let record: NativeSessionRecord | null = null, stored: Map<number, StoredChunk> | null = null
+    if (row && Array.isArray((row.record as NativeSessionRecord | undefined)?.turns)) record = row.record as NativeSessionRecord
+    else if (row && Array.isArray(row.chunks) && row.head) {
+      const meta = row as unknown as NativeMeta
+      const rows = await Promise.all(meta.chunks.map(([no]) => store.read('timeline', chunkKey(id, no))))
+      // A chunk gone missing leaves a hole no cursor describes: start over from the machine.
+      if (rows.some(chunk => !chunk || !Array.isArray(chunk.turns))) return null
+      stored = new Map(meta.chunks.map(([no, bytes], index) => {
+        const { key: _key, savedAt: _savedAt, ...chunk } = rows[index] as unknown as NativeChunk & { key: string; savedAt: number }
+        return [no, { ...chunk, bytes }]
+      }))
+      const chunks = [...stored.values()]
+      const turns = chunks.flatMap(chunk => chunk.turns)
+      const revisions = chunks.length && chunks.every(chunk => chunk.turnRevisions) ? chunks.flatMap(chunk => chunk.turnRevisions!) : undefined
+      record = { ...meta.head, turns, originTurnIds: chunks.flatMap(chunk => chunk.originTurnIds), ...(revisions ? { turnRevisions: revisions } : {}),
+        // Chunks left out of the store: the next page back starts before the oldest one kept.
+        ...(meta.trimmed && turns.length ? { nextCursor: turns[0]!.seq } : {}) }
+    }
     // A live read can already have replaced this persisted snapshot, including with an empty reverted record.
     const current = nativeMemory.get(id)
     if (current) return current
-    const record = row?.record as NativeSessionRecord | undefined
     if (!record || !Array.isArray(record.turns)) return null
     nativeMemory.set(id, record)
+    if (stored) nativeStored.set(id, stored)
     return record
   } catch {
     return null
@@ -236,14 +276,71 @@ export async function hydrateCachedNativeRecord(key: TimelineCacheKey): Promise<
 
 export function writeCachedNativeRecord(key: TimelineCacheKey, record: NativeSessionRecord): void {
   const id = nativeKeyOf(key)
-  let bytes: number
-  try { bytes = JSON.stringify(record).length } catch { return }
-  if (bytes > MAX_ENTRY_BYTES) return
+  const { turns, originTurnIds, turnRevisions, revisions: _revisions, ...head } = record
+  const groups = new Map<number, NativeChunk>()
+  turns.forEach((turn, index) => {
+    // A turn without a stored sequence (none comes over the wire; a fixture may) goes with the first chunk.
+    const no = Number.isFinite(turn.seq) ? Math.floor(turn.seq / NATIVE_CHUNK) : 0
+    const chunk = groups.get(no) ?? { turns: [], originTurnIds: [], ...(turnRevisions ? { turnRevisions: [] } : {}) }
+    chunk.turns.push(turn); chunk.originTurnIds.push(originTurnIds[index] ?? turn.id); chunk.turnRevisions?.push(turnRevisions![index]!)
+    groups.set(no, chunk)
+  })
+  const before = nativeStored.get(id) ?? new Map<number, StoredChunk>()
+  const after = new Map<number, StoredChunk>(), changed: number[] = []
+  // Newest first, so a cap leaves out the oldest.
+  let total = 0, trimmed = false
+  for (const no of [...groups.keys()].sort((a, b) => b - a)) {
+    const chunk = groups.get(no)!, held = before.get(no)
+    let bytes: number
+    if (held && sameChunk(held, chunk)) bytes = held.bytes
+    else { try { bytes = JSON.stringify(chunk).length } catch { return } changed.push(no) }
+    if (total + bytes > MAX_NATIVE_BYTES && after.size > 0) { trimmed = true; break }
+    total += bytes
+    after.set(no, { ...chunk, bytes })
+  }
   nativeMemory.set(id, record)
-  void persist({ key: id, savedAt: Date.now(), record, bytes })
+  nativeStored.set(id, after)
+  const removed = [...before.keys()].filter(no => !after.has(no))
+  const meta: NativeMeta = { key: id, savedAt: Date.now(), bytes: total, head, trimmed,
+    chunks: [...after.entries()].sort((a, b) => a[0] - b[0]).map(([no, chunk]) => [no, chunk.bytes]) }
+  const puts = changed.filter(no => after.has(no)).map(no => {
+    const { bytes: _bytes, ...chunk } = after.get(no)!
+    return { key: chunkKey(id, no), savedAt: meta.savedAt, ...chunk }
+  })
+  const write = (nativeWrites.get(id) ?? Promise.resolve()).then(async () => {
+    try {
+      const store = await getAgentWatchStore()
+      for (const row of puts) await store.put('timeline', row as unknown as LocalRow)
+      await store.put('timeline', meta as unknown as LocalRow)
+      for (const no of removed) await store.delete('timeline', chunkKey(id, no))
+      await noteInIndex(store, meta)
+      await pruneIfDue(store)
+    } catch {
+      /* 写不进去(配额满/被禁)不影响正在看的这一份。 */
+    }
+  })
+  nativeWrites.set(id, write)
+  void write.then(() => { if (nativeWrites.get(id) === write) nativeWrites.delete(id) })
 }
 
-async function persist(entry: CachedEntry | { key: string; savedAt: number; record: NativeSessionRecord; bytes: number }): Promise<void> {
+function sameChunk(held: NativeChunk, chunk: NativeChunk): boolean {
+  return held.turns.length === chunk.turns.length
+    && held.turns.every((turn, index) => turn === chunk.turns[index] || isDeepEqual(turn, chunk.turns[index]))
+    && held.originTurnIds.every((origin, index) => origin === chunk.originTurnIds[index])
+    && (held.turnRevisions === undefined) === (chunk.turnRevisions === undefined)
+    && (held.turnRevisions ?? []).every((revision, index) => revision === chunk.turnRevisions![index])
+}
+
+/**
+ * A machine's newest page, remembered without a reader open (a desktop keeps it for when that machine is away): merged
+ * into what is kept, so it never takes the earlier turns out of the store.
+ */
+export async function rememberNativeTailPage(key: TimelineCacheKey, page: NativeSessionRecord): Promise<void> {
+  const held = await hydrateCachedNativeRecord(key)
+  writeCachedNativeRecord(key, held ? mergeNativeRecordPage(held, page, 'poll', 'resume') : page)
+}
+
+async function persist(entry: CachedEntry): Promise<void> {
   try {
     const store = await getAgentWatchStore()
     await store.put('timeline', entry as unknown as LocalRow)
@@ -300,6 +397,9 @@ async function pruneIfDue(store: AgentWatchLocalStore): Promise<void> {
     }
     memory.delete(row.key)
     nativeMemory.delete(row.key)
+    nativeStored.delete(row.key)
+    const meta = row.key.startsWith('native:') ? await store.read('timeline', row.key) : null
+    for (const [no] of Array.isArray(meta?.chunks) ? (meta.chunks as NativeMeta['chunks']) : []) await store.delete('timeline', chunkKey(row.key, no))
     await store.delete('timeline', row.key)
   }
   if (kept.length !== rows.length) {
@@ -311,6 +411,7 @@ async function pruneIfDue(store: AgentWatchLocalStore): Promise<void> {
 export async function clearTimelineCache(): Promise<void> {
   memory.clear()
   nativeMemory.clear()
+  nativeStored.clear()
   lastPruneAt = 0
   try {
     await (await getAgentWatchStore()).clear()
@@ -328,4 +429,5 @@ export async function clearTimelineCache(): Promise<void> {
 export function forgetInMemoryTimelines(): void {
   memory.clear()
   nativeMemory.clear()
+  nativeStored.clear()
 }

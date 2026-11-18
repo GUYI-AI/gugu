@@ -8,25 +8,30 @@ import { Pane, PaneHeader } from '@/components/ui/Pane'
 import { ChevronRight, Folder, FolderPlus, Monitor } from '@/lib/icons'
 import { rendererLogger } from '@/lib/log'
 import { navigateMobile } from '@/mobile/navigateMobile'
+import { PhoneComposerSheet } from '@/mobile/composer/PhoneComposerControls'
 import { useMachineLabel } from '@/mobile/agent-watch/useMachineLabel'
 import { visibleMachines, workspaceDevices } from '@/mobile/agent-watch/machine-list'
 import { shortHome } from '@/session/shared/path-name'
 import { useDevicesStore } from '@/store/devicesContext'
 import { newProjectPath, projectNameProblem } from './partnersModel'
-import { ProjectFolderAvatar } from './ProjectFolderAvatar'
+import { Avatar } from '@/components/Avatar'
 import { projectRpcOn } from './projectRpc'
+import { readInterface, takeLegacyInterface, writeInterface } from '@/lib/viewStateTable'
 
 export type CreatedProject = { chatId: string | null; deviceId: string; localProjectId: string; name: string; createdAt: string }
 
 const LAST_MACHINE_KEY = 'gugu.partners.newProjectMachine'
 const log = rendererLogger('partners/new-project')
 
+// 上次选的那台是本机的视图状态(lib/viewStateTable);以前存在 localStorage 里的搬一次。
+takeLegacyInterface(LAST_MACHINE_KEY, LAST_MACHINE_KEY, (raw) => raw || undefined)
+
 function readLastMachine(): string | null {
-  try { return globalThis.localStorage?.getItem(LAST_MACHINE_KEY) ?? null } catch { return null }
+  return readInterface<string>(LAST_MACHINE_KEY) ?? null
 }
 
 function writeLastMachine(deviceId: string): void {
-  try { globalThis.localStorage?.setItem(LAST_MACHINE_KEY, deviceId) } catch { /* 记不住上次那台只影响下次的默认 */ }
+  writeInterface(LAST_MACHINE_KEY, deviceId)
 }
 
 type Directory = { deviceId: string; path: string | null; failed: boolean }
@@ -52,6 +57,7 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
   const [existingFolder, setExistingFolder] = useState<{ deviceId: string; path: string } | null>(null)
   const [directory, setDirectory] = useState<Directory | null>(null)
   const [picking, setPicking] = useState(false)
+  const [folderMenu, setFolderMenu] = useState(false)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const nameInput = useRef<HTMLInputElement>(null)
@@ -157,7 +163,7 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
       />
       <div className="gg-partners-scroll">
         <div className="gg-partners-new-hero">
-          <ProjectFolderAvatar coverId={projectId} size={64} />
+          <Avatar variant="group" name={trimmed} seed={projectId} size={64} />
           <input
             ref={nameInput}
             className="gg-partners-name-input"
@@ -189,20 +195,22 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
               ))}
             </DropdownMenu.Content>
           </DropdownMenu.Root>
-          <DropdownMenu.Root modal={false}>
-            <DropdownMenu.Trigger render={
-              <Button variant="ghost" size="option" className="gg-partners-navrow" disabled={!device} data-testid="phone-new-project-folder-row">
-                <span className="gg-partners-navrow-icon">{folderPath ? <Folder size={20} /> : <FolderPlus size={20} />}</span>
-                <span className="gg-partners-navrow-label">{t('partners.newProject.folder')}</span>
-                <span className="gg-partners-row-value" title={folderPath ?? undefined}>{folderValue}</span>
-                <ChevronRight size={16} aria-hidden className="gg-partners-navrow-chevron" />
-              </Button>
-            } />
-            <DropdownMenu.Content className="min-w-[160px]">
-              <MenuItem icon={<FolderPlus size={15} />} onClick={() => { setExistingFolder(null); setError(null) }}>{t('partners.newProject.newFolder')}</MenuItem>
-              <MenuItem icon={<Folder size={15} />} onClick={() => navigateMobile(() => setPicking(true), 'push')}>{t('partners.newProject.existingFolder')}</MenuItem>
-            </DropdownMenu.Content>
-          </DropdownMenu.Root>
+          <Button variant="ghost" size="option" className="gg-partners-navrow" disabled={!device} data-testid="phone-new-project-folder-row"
+            aria-haspopup="dialog" aria-expanded={folderMenu && !!device} onClick={() => setFolderMenu(true)}>
+            <span className="gg-partners-navrow-icon">{folderPath ? <Folder size={20} /> : <FolderPlus size={20} />}</span>
+            <span className="gg-partners-navrow-label">{t('partners.newProject.folder')}</span>
+            <span className="gg-partners-row-value" title={folderPath ?? undefined}>{folderValue}</span>
+            <ChevronRight size={16} aria-hidden className="gg-partners-navrow-chevron" />
+          </Button>
+          <PhoneComposerSheet open={folderMenu && !!device} onClose={() => setFolderMenu(false)}
+            title={t('partners.newProject.folder')} testId="phone-new-project-folder-sheet">
+            <Button variant="ghost" size="option" className="gg-phone-composer-choice" onClick={() => {
+              setFolderMenu(false); setExistingFolder(null); setError(null)
+            }}><FolderPlus aria-hidden />{t('partners.newProject.newFolder')}</Button>
+            <Button variant="ghost" size="option" className="gg-phone-composer-choice" onClick={() => {
+              navigateMobile(() => { setFolderMenu(false); setPicking(true) }, 'push')
+            }}><Folder aria-hidden />{t('partners.newProject.existingFolder')}</Button>
+          </PhoneComposerSheet>
         </div>
         {error ? <p className="gg-partners-error" role="alert">{error}</p> : null}
       </div>

@@ -10,13 +10,13 @@ const env = vi.hoisted(() => ({
   unavailable: null as string | null,
   read: vi.fn(), write: vi.fn(), warn: vi.fn(),
 }));
-vi.mock('@/hooks/useConversationSessionSummary', () => ({ useConversationSessionSummary: () => ({ nativeInputVersion: env.version }) }));
+vi.mock('@/hooks/useConversationSessionSummary', () => ({ useConversationSessionSummary: (_id: unknown, _device: unknown, pick: (summary: { nativeInputVersion: unknown }) => unknown) => pick({ nativeInputVersion: env.version }) }));
 vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => env.deviceId } }));
 vi.mock('../machine-unavailable-label', () => ({ machineUnavailableLabel: () => env.unavailable }));
 vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: (deviceId: string) => ({
   sessionTimeline: { sessionNativeRecord: (input: unknown) => env.read(deviceId, input) },
 }) }));
-vi.mock('@/mobile/agent-watch/timeline-cache', () => ({ writeCachedNativeRecord: env.write }));
+vi.mock('@/mobile/agent-watch/timeline-cache', () => ({ rememberNativeTailPage: env.write }));
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn: env.warn }) }));
 import { rememberNativeTail, useRememberNativeTail } from './use-remember-native-tail';
 
@@ -45,7 +45,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it('writes the host tail once on open, replaces it with the next page, and never polls an idle page', async () => {
+it('hands the host tail to the store once on open, then the next page, and never polls an idle page', async () => {
   await render();
   expect(env.read.mock.calls).toEqual([['host', { conversationId: 's', tail: true }]]);
   expect(env.write).toHaveBeenCalledWith({ deviceId: 'host', sessionId: 's' }, page());

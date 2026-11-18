@@ -43,6 +43,7 @@ import {
   AcpTranscriptParser,
   acpErr,
   classifyProviderPermissionMode,
+  permissionModeSupportsBillingRoute,
   createToolCallItem,
   makeToolId,
   permissionWaitKind,
@@ -82,13 +83,15 @@ export interface AcpChatHistory {
   active: TranscriptTurn | null;
 }
 
-type ConfigDimension = 'model' | 'effort';
+type ConfigDimension = 'model' | 'effort' | 'fast';
 
 export class SessionCell {
   private readonly promptEchoes = new PromptEchoes();
   readonly machine: SessionMachine;
   readonly transcript: AcpTranscriptParser;
   readonly rawLog: RawAcpLog;
+  /** Kept with the settled outcome so the host can distinguish repeated provider failures. */
+  lastTurnError: string | null = null;
   private readonly permissions = new PermissionBroker();
   /**
    * 这条会话此刻是不是完全访问档 —— `session/request_permission` 该不该由咕咕当场作答的**唯一**判据。
@@ -189,6 +192,7 @@ export class SessionCell {
    */
   private lastFailureProvisional = false;
   /** 宿主要求关掉这条会话(stop / 删除 / 换运行时)。之后线断了是我们断的,在飞的那一轮是被停下,不是失败。 */
+  private retrying: SessionState['retrying'] = null;
   private closeRequested = false;
   private preparationRetryTimer: ReturnType<typeof setTimeout> | undefined;
   private preparationRetryDelay = 1500;
@@ -203,6 +207,8 @@ export class SessionCell {
   private readonly requests = new Map<string, PromptRequest>();
   /** 发出去的句数(含回放):转录行 id 与回合信封的序号用它,❌ 不是状态。 */
   private promptSequence = 0;
+  /** #3005 When the last live model cycle settled: the prompt cache is as warm as this, not as the last user input. */
+  private lastWorkEndedAt: number | null = null;
   private dequeueAfterFailure = true;
   private requeuedAfterTokenBoundary = false;
   private resolveActiveTurnCompletion: ((result: Result<SessionPromptResult, AcpSendPromptError>) => void) | null = null;
@@ -288,7 +294,7 @@ export class SessionCell {
   }
 
   get sessionState(): SessionState {
-    const state = this.machine.sessionState(this.transcript.activeTurn?.id ?? null);
+    const state = { ...this.machine.sessionState(this.transcript.activeTurn?.id ?? null), retrying: this.retrying ? { ...this.retrying } : null };
     return this.reverting ? { ...state, canSubmit: false } : state;
   }
 
@@ -298,7 +304,15 @@ export class SessionCell {
 
   get config(): SessionConfigState {
     // 转录里推不出「这家收不收图」——那是连接期 initialize 报的,所以在这里合进去。
-    return { ...this.transcript.config, acceptsImagePrompts: this.acceptsImagePrompts };
+    const config = this.transcript.config;
+    return {
+      ...config,
+      modeOptions: config.modeOptions ? {
+        ...config.modeOptions,
+        available: config.modeOptions.available.filter(mode => this.canUsePermissionMode(mode.id)),
+      } : null,
+      acceptsImagePrompts: this.acceptsImagePrompts,
+    };
   }
 
   get usage(): SessionUsage | null {
@@ -307,7 +321,7 @@ export class SessionCell {
 
   get isCompacting(): boolean { return this.compacting; }
 
-  get idleCompactionState(): { idle: boolean; contextTokens: number | null; revision: number } {
+  get idleCompactionState(): { idle: boolean; contextTokens: number | null; revision: number; lastWorkEndedAt: number | null } {
     return {
       idle: !this.compacting && !this.reverting && !this.closeRequested && !this.promptEchoes.admissionClosed
         && this.machine.phase.kind === 'ready' && !this.activeTurnCompletion
@@ -317,6 +331,7 @@ export class SessionCell {
         && this.config.availableCommands.some(command => command.name.replace(/^\//, '') === 'compact'),
       contextTokens: this.usage?.contextUsed ?? null,
       revision: this.promptSequence,
+      lastWorkEndedAt: this.lastWorkEndedAt,
     };
   }
 
@@ -405,6 +420,7 @@ export class SessionCell {
   }
 
   endReplay(at = Date.now(), outcome?: TranscriptTurnOutcome): void {
+    this.lastTurnError = outcome?.kind === 'error' ? outcome.detail ?? outcome.said ?? outcome.reason ?? null : null;
     this.replayingHistory = false;
     // 历史里最近一次送过的会话级背景与这次要送的一字不差 ⇒ agent 手上已经有了,❌ 不再追加一份
     // (每次重开都追加会让同一段 ~20KB 在历史里越堆越多)。内容变了(规则改过、平台块升级)才送新的。
@@ -442,8 +458,7 @@ export class SessionCell {
 
   private reconcileReplayedQueue(): void {
     const queued = this.machine.queuedPrompts.filter((prompt) => prompt.origin === 'communication');
-    const hasCanonicalReplay = this.deps.providerId === 'claude'
-      || this.deps.providerId === 'codex' || this.deps.historyRecovery?.canonicalReplay === true;
+    const hasCanonicalReplay = this.deps.historyRecovery?.canonicalReplay === true;
     const recorded = this.recordedDeliveryIds;
     const historyUnknown = this.replayHistoryUnknown || recorded === null;
     if (!queued.length || (!hasCanonicalReplay && !historyUnknown)) return;
@@ -591,6 +606,8 @@ export class SessionCell {
       }
       return;
     }
+    // #3005 A compaction inside our own idle `/compact` cycle is not the person's `/compact`: say it ran while they were away.
+    if (!this.replayingHistory && this.compacting && event.kind === 'compaction') event = { ...event, trigger: 'idle' };
     if (!this.replayingHistory && event.kind === 'message' && event.role === 'user') {
       const resolved = submitted ? event : this.promptEchoes.receive(event, this.transcript, !!this.transcript.activeTurn && !!this.activeTurnCompletion);
       if (!resolved) return;
@@ -1090,6 +1107,9 @@ export class SessionCell {
     modeId: string,
     opts?: { startupOnly?: boolean },
   ): Promise<Result<LiveSettingApplyResult, AcpSetModeOptionError>> {
+    if (!this.canUsePermissionMode(modeId)) {
+      return acpErr.setModeFailed({ name: 'PermissionModeUnavailable', message: 'This permission tier is unavailable for the session billing route' });
+    }
     const configId = this.transcript.config.modeOptions?.configId ?? null;
     return this.enqueueSetting(
       'permission',
@@ -1130,6 +1150,9 @@ export class SessionCell {
         message: `Provider '${this.deps.providerId}' did not declare a live ${dimension} setting`,
       }));
     }
+    if (dimension === 'fast' && !configId) {
+      return Promise.resolve(fail({ name: 'FastModeUnavailable', message: 'The current model does not expose Fast' }));
+    }
     const turnToWait = this.activeTurnCompletion;
     if (turnToWait && !startupOnly && capability.busy === 'reject') {
       return Promise.resolve(fail({
@@ -1162,8 +1185,23 @@ export class SessionCell {
             );
         if (!validation.success) return validation as unknown as Result<LiveSettingApplyResult, E>;
       }
-      const result = await this.applyLiveSetting(dimension, value, configId, capability, startupOnly, fail);
+      let dispatched = false;
+      const onDispatch = () => { dispatched = true; };
+      const result = await this.applyLiveSetting(dimension, value, configId, capability, startupOnly, fail, onDispatch);
       if (!result.success) {
+        // Local rejection cannot change provider state. Preserve any earlier uncertainty,
+        // but only a dispatched mutation can introduce a new prompt-admission block.
+        if (!dispatched) return result;
+        // A rejected enable has no toggle path back to an already displayed Off value.
+        // Confirm Off once through the same native authority so a failed optional speed
+        // choice cannot strand the next user turn or leave an unconfirmed premium tier.
+        if (dimension === 'fast' && value === 'on') {
+          const off = await this.applyLiveSetting(dimension, 'off', configId, capability, startupOnly, fail, onDispatch);
+          if (off.success && off.data.status === 'applied') {
+            this.settingsBlockedReasons.delete(dimension);
+            return result;
+          }
+        }
         // The provider's own sentence (`data.details`), not the JSON-RPC envelope's "Internal error".
         const causeMessage = 'cause' in result.error ? errorDetail(result.error.cause)?.split('\n')[0] : undefined;
         this.settingsBlockedReasons.set(dimension, causeMessage ?? result.error.message ?? `Unable to apply ${dimension}`);
@@ -1218,6 +1256,7 @@ export class SessionCell {
     capability: LiveSettingCapability,
     startupOnly: boolean,
     fail: (cause: ReturnType<typeof toSerializedError>) => Result<never, E>,
+    onDispatch: () => void,
   ): Promise<Result<LiveSettingApplyResult, E>> {
     const channel = startupOnly
       ? this.startupChannel(dimension, configId)
@@ -1237,6 +1276,7 @@ export class SessionCell {
     const agent = this.agent;
     try {
       if (agent.applyLiveSetting && !startupOnly) {
+        onDispatch();
         const response = await agent.applyLiveSetting({
           providerSessionId: this.acpSessionId,
           dimension,
@@ -1262,6 +1302,7 @@ export class SessionCell {
           // the stable mode RPC when the unstable config setter is absent. Explicit provider
           // contracts use `ack-read-back` and must fail instead of silently changing channels.
           if (dimension === 'permission' && (capability.ack === 'ack' || startupOnly) && agent.setSessionMode) {
+            onDispatch();
             await agent.setSessionMode({
               sessionId: this.acpSessionId,
               modeId: value,
@@ -1279,6 +1320,7 @@ export class SessionCell {
           value,
         } satisfies SetSessionConfigOptionRequest;
         this.rawLog.record({ kind: 'session_config_option_request', sessionId: this.acpSessionId, request });
+        onDispatch();
         const response = await agent.setSessionConfigOption(request);
         this.rawLog.record({
           kind: 'session_config_option_response',
@@ -1290,6 +1332,7 @@ export class SessionCell {
       if (channel !== 'acp-mode' || !agent.setSessionMode) {
         return fail({ name: 'LiveSettingExecutorMissing', message: `No executor for ${dimension}` });
       }
+      onDispatch();
       await agent.setSessionMode({ sessionId: this.acpSessionId, modeId: value } satisfies SetSessionModeRequest);
       // `ack`: the success response is the confirmation. A provider that sends no current_mode_update after it
       // (hermes) would otherwise leave the picker on the mode the session started in.
@@ -1422,6 +1465,7 @@ export class SessionCell {
   }
 
   private closeTurnCompletion(result: Result<SessionPromptResult, AcpSendPromptError> = ok({ queued: false })): void {
+    this.retrying = null;
     this.interruptedForMessage = false;
     this.yieldingRepliedAssistant = null;
     this.nativeInputAfterStart = false;
@@ -1489,6 +1533,8 @@ export class SessionCell {
     this.lastFailureProvisional = false;
     const previousRunningAgentCount = this.lastRunningAgentCount;
     this.transcript.settleTurn(outcome, Date.now(), opts?.foreground);
+    this.lastWorkEndedAt = Date.now();
+    this.lastTurnError = outcome.kind === 'error' ? outcome.detail ?? outcome.said ?? outcome.reason ?? null : null;
     this.settleRequests();
     this.dispatchAgentsChangedIfNeeded(previousRunningAgentCount);
     this.emitTranscriptChanged();
@@ -1527,6 +1573,10 @@ export class SessionCell {
       return;
     }
     if (event.state === 'unknown') return;
+    if (event.retrying !== undefined) {
+      this.retrying = event.retrying ? { ...event.retrying } : null;
+      this.deps.callbacks?.onSessionStateChanged?.();
+    }
     if (event.state !== 'idle') {
       if (this.machine.phase.kind === 'ready') {
         // 没有一句在飞,agent 自己开了工(后台跑完的通知、子任务回来):不是人开的。
@@ -2466,9 +2516,11 @@ export class SessionCell {
       ? this.transcript.config.modelOptions
       : dimension === 'effort'
         ? this.transcript.config.efforts
-        : this.transcript.config.modeOptions;
+        : dimension === 'fast'
+          ? this.transcript.config.fastMode
+          : this.transcript.config.modeOptions;
     if (!group) return;
-    const category = dimension === 'model' ? 'model' : dimension === 'effort' ? 'thought_level' : 'mode';
+    const category = dimension === 'model' ? 'model' : dimension === 'effort' ? 'thought_level' : dimension === 'fast' ? 'model_config' : 'mode';
     const options = group.available.map((option) => ({ value: option.id, name: option.name }));
     this.seedTranscriptMeta({
       configOptions: [{
@@ -2497,7 +2549,8 @@ export class SessionCell {
    * 只有本进程看着起、还没等到终态的才在这里,上一个进程的(重放里、库里)都不在。
    */
   private dispatchBackgroundCommandsChangedIfNeeded(): void {
-    const next = runningBackgroundCommands(this.transcript.history, this.transcript.activeTurn)
+    const next = runningBackgroundCommands(this.transcript.history, this.transcript.activeTurn,
+      this.transcript.agents.flatMap((agent) => agent.steps ?? []))
       .map((command) => command.backgroundTaskId);
     const previous = this.lastRunningCommandTaskIds;
     if (next.length === previous.length && next.every((id, index) => id === previous[index])) return;
@@ -2589,9 +2642,9 @@ export class SessionCell {
       // command that goes straight to idle). A receipt must not drain ordinary queued inputs.
       dispatchPending: this.promptEchoes.admissionClosed || this.activeTurnCompletion !== null
         || [...this.requests.values()].some(request => !request.steered && !request.accepted && !request.dispatched),
-      modeIds: this.transcript.config.modeOptions?.available.map((mode) => mode.id) ?? [],
+      modeIds: this.config.modeOptions?.available.map((mode) => mode.id) ?? [],
       configOptionIds: [
-        ...(['model', 'effort'] as const)
+        ...(['model', 'effort', 'fast'] as const)
           .map((dimension) => this.configIdForDimension(dimension))
           .filter((configId): configId is string => configId !== null),
       ],
@@ -2606,11 +2659,21 @@ export class SessionCell {
     return this.configIdForDimension(dimension) !== null;
   }
 
+  private canUsePermissionMode(modeId: string): boolean {
+    return permissionModeSupportsBillingRoute(
+      classifyProviderPermissionMode(modeId, this.deps.permissionModeMap),
+      this.deps.permissionModeMap,
+      this.deps.billingRoute ?? 'unknown',
+    );
+  }
+
   /**
    * 活会话自报的那一组优先;provider 收却不报的那一维(`LiveSettingCapability.configId`)用声明补上 ——
    * 两处取值共用这一个函数,状态机的「这个 configId 认不认得」与真正发出去的那个 id 因此不会分叉。
    */
   private configIdForDimension(dimension: ConfigDimension): string | null {
+    // Fast eligibility is live and model-specific; a static declaration cannot supply it.
+    if (dimension === 'fast') return this.transcript.config.fastMode?.configId ?? null;
     const advertised = dimension === 'model'
       ? this.transcript.config.modelOptions?.configId
       : this.transcript.config.efforts?.configId;

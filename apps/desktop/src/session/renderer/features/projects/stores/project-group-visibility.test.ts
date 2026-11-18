@@ -5,6 +5,8 @@ import { readProjectGroupChats, readProjectGroupMembers } from '@/lib/projectGro
 import { SidebarStore } from '@renderer/features/sidebar/sidebar-store';
 import { groupInviteAccess } from '@/lib/groupMemberPermissions';
 import { ProjectGroupsStore, projectGroupsStore } from './project-groups-store';
+import { AccountProjectsStore } from './account-projects-store';
+import type { AccountProject } from '@gugu/core/cloud/deviceProjects';
 
 vi.mock('@renderer/lib/ipc', () => ({
   events: { on: () => () => {} },
@@ -21,6 +23,20 @@ const project = (id: string, kind?: string) => ({
   id, name: id, createdAt: '2026-01-01T00:00:00.000Z', data: { kind }, mountedProject: null,
 });
 
+/** 侧栏的项目行来自账号上的项目;这里给定那份,项目表照用例改。 */
+function sidebarWith(projects: ProjectManager['projects'], list: AccountProject[]): SidebarStore {
+  const accounts = new AccountProjectsStore();
+  const sidebar = new SidebarStore({ projects } as unknown as ProjectManager, accounts);
+  accounts.attach({ projects, machineOf: (id) => sidebar.machines?.machineOf(id) ?? null, connected: () => false });
+  runInAction(() => {
+    accounts.list = list;
+    accounts.localDeviceId = 'this-computer';
+    accounts.status = 'ready';
+  });
+  return sidebar;
+}
+const local = (localProjectId: string) => ({ deviceId: 'this-computer', localProjectId });
+
 describe('project group visibility across Projects and Chats', () => {
   it('only hides groups with a project row, including when rows arrive or disappear after bindings', async () => {
     const projects = observable.map([
@@ -28,19 +44,22 @@ describe('project group visibility across Projects and Chats', () => {
       ['workspace-project', project('workspace-project', 'workspace')],
     ]);
     const groups = new ProjectGroupsStore();
-    const sidebar = new SidebarStore({ projects } as unknown as ProjectManager);
-    sidebar.machines = { machineOf: () => null, label: () => null, homeDir: () => null, projectGroupOf: (id) => groups.chatIdOf(id) };
+    const sidebar = sidebarWith(projects as never, [
+      { chatId: 'visible-group', name: 'visible', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [local('visible-project')] },
+      { chatId: 'hidden-group', name: 'hidden', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [local('hidden-project')] },
+    ]);
+    sidebar.machines = { machineOf: () => null, label: () => null, homeDir: () => null };
     groups.start(() => [], () => [], () => sidebar.sidebarProjects.map(({ id }) => id));
-    await vi.waitFor(() => expect(groups.bindingKnown('visible-project')).toBe(true));
+    await groups.refresh(null);
     groups.applyBindings(null, [
       { projectId: 'visible-project', chatId: 'visible-group' },
       { projectId: 'hidden-project', chatId: 'hidden-group' },
       { projectId: 'workspace-project', chatId: 'workspace-group' },
     ]);
 
-    expect(sidebar.sidebarProjects.map(({ id }) => id)).toEqual(['visible-project']);
+    // hidden-group has no local project here: its row is the group itself, which is not a project row of any binding.
+    expect(sidebar.sidebarProjects.map(({ id }) => id)).toEqual(['visible-project', 'hidden-group']);
     expect([...readProjectGroupChats()]).toEqual(['visible-group']);
-    expect(groups.chatIdOf('hidden-project')).toBe('hidden-group');
     expect(groups.projectOfChat('hidden-group')).toBe('hidden-project');
     expect(groups.rowProjectOfChat('visible-group')).toBe('visible-project');
     expect(groups.rowProjectOfChat('hidden-group')).toBeUndefined();
@@ -60,15 +79,17 @@ describe('project group visibility across Projects and Chats', () => {
       ['remote-project', project('remote-project')],
     ]);
     const groups = new ProjectGroupsStore();
-    const sidebar = new SidebarStore({ projects } as unknown as ProjectManager);
+    const sidebar = sidebarWith(projects as never, [{
+      chatId: 'shared-group', name: 'shared', archived: false, activeAt: '2026-01-01T00:00:00.000Z',
+      bindings: [local('local-project'), { deviceId: 'other-device', localProjectId: 'remote-project' }, local('hidden-project')],
+    }]);
     sidebar.machines = {
       machineOf: (id) => id === 'remote-project' ? 'other-device' : null,
       label: () => null, homeDir: () => null, connected: () => false,
-      projectGroupOf: (id) => groups.chatIdOf(id),
     };
     const sessions = () => [{ projectId: 'hidden-project', sessionId: 'session-agent', agentUserId: 'agent' }];
     groups.start(() => [], sessions, () => sidebar.sidebarProjects.map(({ id }) => id));
-    await vi.waitFor(() => expect(groups.bindingKnown('local-project')).toBe(true));
+    await groups.refresh(null);
     groups.applyBindings(null, ['local-project', 'remote-project', 'hidden-project'].map((projectId) => ({ projectId, chatId: 'shared-group' })));
 
     expect(sidebar.sidebarProjects.map(({ id }) => id)).toEqual(['local-project']);

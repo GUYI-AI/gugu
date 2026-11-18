@@ -117,6 +117,8 @@ export type ChatMessage = {
   conversationFull?: boolean;
   /** View-only: the closing reply of a finished turn — the only agent bubble with the time / copy row (design 0 `tail`). */
   conversationTail?: boolean;
+  /** View-only: the closing actions are rendered after this reply’s artifacts. */
+  conversationActionsMoved?: true;
   /**
    * View-only: the chat messages this bubble is (what the agent sent to people — a send into a chat, or a note to its
    * owner). The host draws them with the chat's own MessageBody into a slot (`onMessageBodyMount`); this row keeps only
@@ -130,7 +132,9 @@ export type ChatMessage = {
   /** The `chat_id` that message_send went to — names the group when this row is itself quoted later. */
   sentChat?: string;
   /** View-only disclosure of the completed thinking/execution segment. */
-  conversationProcess?: { live?: boolean; starting?: 'starting' | 'restoring'; id: string; startedAt?: number; endedAt?: number; idleMs?: number; steps?: number; empty?: boolean };
+  conversationProcess?: { live?: boolean; starting?: 'starting' | 'restoring' | 'connecting'; id: string; startedAt?: number; endedAt?: number; idleMs?: number; steps?: number; empty?: boolean;
+    /** Opens and closes the line instead of `id` once a woken run has continued it (#2587): a key while it runs, a fresh one after. */
+    toggleId?: string };
   /**
    * View-only split of one agent-conversation reply (owner 0 号图): `head` draws the name and the
    * process line, each `body` only a bubble. The process steps go between them, so they never land
@@ -155,6 +159,7 @@ export type ChatToolCall = {
   kind: 'tool';
   id: string;
   name: string;
+  toolNames?: readonly string[];
   status: ToolStatus;
   awaitingPermission?: boolean;
   /**
@@ -522,6 +527,8 @@ export type TurnProcessItem = {
   conversationPreviousSpeaker?: string;
   kind: 'turn-process';
   id: string;
+  /** Opens and closes the line instead of `id` once a woken run has continued it (#2587): a key while it runs, a fresh one after. */
+  toggleId?: string;
   turnId: string;
   /** This segment explicitly chose silence; a status label, never an assistant reply. */
   silent?: boolean;
@@ -547,8 +554,8 @@ export type TurnProcessItem = {
    * 下面没有可展开的东西,点了没反应的箭头比没有箭头更糟;过程一到,同一个 id 的头接手。
    */
   placeholder?: boolean;
-  /** The session is still starting (`PendingPrompt.starting`): the live label says that. */
-  starting?: 'starting' | 'restoring';
+  /** The session is still starting (`PendingPrompt.starting`): the live label says that, and says when it waits on the model service. */
+  starting?: 'starting' | 'restoring' | 'connecting';
   /**
    * 这一轮什么时候开始的（`TranscriptTurn.startedAt`）。缺席 = 不知道（回放来的），
    * 那就不写时间 —— 一个会少报的计时器比没有计时器更糟（`turn-process.def.tsx` 头注）。
@@ -565,6 +572,7 @@ export type TurnCompletionItem = {
   id: string;
   turnId: string;
   text: string;
+  reply?: ChatMessage;
 };
 
 /**
@@ -589,6 +597,7 @@ export type ToolRunItem = {
   label: string;
   /** 折进去的行数。 */
   stepCount: number;
+  toolNames?: readonly string[];
   /** 这一段里还有在跑的调用（活动层）⇒ 头上微光。 */
   live?: boolean;
   /** 跑着的这一段此刻在做什么(`toolRunNow`):在跑的命令或在思考;只在活动层、只在有的时候写。 */
@@ -661,7 +670,12 @@ export type SessionConditionCode =
    */
   | 'membership-required'
   /** 上一轮被宿主的退出打断了(更新 / 重启 / 没正常退出):开机收残记下的,下一轮开工就没了。宿主总是给 label。 */
-  | 'turn-interrupted';
+  | 'turn-interrupted'
+  /**
+   * This session's agent was started from a group chat and could not join it (the database refused or kept failing).
+   * `detail` is the database's answer; the action retries the join. Gone once the agent is in the group.
+   */
+  | 'group-join-failed';
 
 export type SessionCondition = Omit<SessionConditionItem, 'kind' | 'id' | 'hasVisibleHistory'>;
 

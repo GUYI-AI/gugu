@@ -3,6 +3,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { collectBackgroundCommandRoster, runningBackgroundTaskIds } from './background-command-roster';
+import { backgroundCommandToggleId, markOpenCommands } from '../state/flatten';
 
 const FALLBACK = '后台命令';
 
@@ -131,5 +132,64 @@ describe('#6582 runningBackgroundTaskIds', () => {
     expect(runningBackgroundTaskIds({ lifecycle: 'lost', backgroundCommandTaskIds: ['a'] })).toEqual([]);
     expect(runningBackgroundTaskIds({ lifecycle: 'closed', backgroundCommandTaskIds: ['a'] })).toEqual([]);
     expect(runningBackgroundTaskIds({ lifecycle: 'lost' })).toEqual([]);
+  });
+});
+
+/**
+ * owner 2026-11-12:「这个命令行怎么是全部内容展示,不渐进披露吗」。单子里一行默认写那句短说明,
+ * 说明从哪来钉在这里;怎么画、点开怎么写全钉在 background-tasks.contract.test.tsx。
+ */
+describe('后台命令的短说明(收着时那一行写它)', () => {
+  const longCommand = 'cd ~/gugu && GUGU_DATA_DIR=/tmp/iso \\\n  pnpm dev:desktop > /tmp/iso.log 2>&1';
+  const run = (node: Record<string, unknown>) =>
+    collectBackgroundCommandRoster([turn([bash(node)])] as never, null, FALLBACK, null)[0];
+
+  it('claude 的 Bash 只在入参里带 description:取它,名字仍是整条命令', () => {
+    const entry = run({ title: longCommand, rawInput: JSON.stringify({ command: longCommand, description: 'Relaunch isolated dev app', run_in_background: true }) });
+    expect(entry.summary).toBe('Relaunch isolated dev app');
+    expect(entry.name).toBe(longCommand);
+  });
+
+  it('供应商自己在 inputSummary 里说了的优先', () => {
+    const entry = run({ inputSummary: 'Installing dependencies', rawInput: JSON.stringify({ command: 'pnpm i', description: 'other words' }) });
+    expect(entry.summary).toBe('Installing dependencies');
+  });
+
+  it('PowerShell 那种 command_description 也认', () => {
+    expect(run({ rawInput: JSON.stringify({ command: 'Get-Process', command_description: 'List processes' }) }).summary).toBe('List processes');
+  });
+
+  it('阴控:没给说明 / 说明为空 / 入参不是 JSON ⇒ 没有这一格,❌ 编一句', () => {
+    expect(run({}).summary).toBeUndefined();
+    expect(run({ rawInput: JSON.stringify({ command: 'sleep 3000', description: '   ' }) }).summary).toBeUndefined();
+    expect(run({ rawInput: '{"command": "sleep 3000", "descr' }).summary).toBeUndefined();
+    expect(Object.keys(run({}))).not.toContain('summary');
+  });
+
+  it('标题空着、说明给了 ⇒ 名字就是说明,不再另给一份', () => {
+    const entry = run({ title: '  ', rawInput: JSON.stringify({ description: 'Relaunch isolated dev app' }) });
+    expect(entry.name).toBe('Relaunch isolated dev app');
+    expect(entry.summary).toBeUndefined();
+  });
+
+  it('说明与命令一字不差 ⇒ 不给(点开只会重复一遍)', () => {
+    expect(run({ rawInput: JSON.stringify({ command: 'sleep 3000', description: 'sleep 3000' }) }).summary).toBeUndefined();
+  });
+});
+
+describe('markOpenCommands:按开关给点开着的命令标上 open', () => {
+  const a = { id: 'a', name: 'x' };
+  const b = { id: 'b', name: 'y' };
+
+  it('只标点开的那条;收着的原样(同一个对象)', () => {
+    const open = new Set([backgroundCommandToggleId('b')]);
+    const [left, right] = markOpenCommands([a, b], (id) => open.has(id));
+    expect(left).toBe(a);
+    expect(right).toEqual({ ...b, open: true });
+  });
+
+  it('开关 id 与「后台 · …」那一句的开关、与别的命令都不撞', () => {
+    expect(backgroundCommandToggleId('a')).not.toBe(backgroundCommandToggleId('b'));
+    expect(backgroundCommandToggleId('open')).not.toBe('background-tasks:open');
   });
 });

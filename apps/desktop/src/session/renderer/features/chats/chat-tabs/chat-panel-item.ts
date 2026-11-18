@@ -28,9 +28,14 @@ export interface PanelItem {
   message?: MessageItem;
   /** The topic it was opened from when no message says so: a group file's link clicked in that topic. */
   topicChatId?: string;
+  /** A file's page waiting on its host: the open it waits for (`beginWait`). */
+  waitId?: string;
 }
 
 export const folderItem = (): PanelItem => ({ kind: WORKSPACE_APP_KIND, title: '' });
+/** A file asked for before its host answered: its tab up at once, the page waiting. Never kept (`kind` null). */
+export const waitingItem = (itemId: string, title: string, waitId: string, message?: MessageItem): PanelItem => ({ kind: null, itemId, title, waitId, ...(message ? { message } : {}) });
+export const isWaitingItem = (item: PanelItem | null | undefined): boolean => !!item?.waitId;
 export const isFolderItem = (item: PanelItem | null | undefined): boolean => item?.kind === WORKSPACE_APP_KIND && !item.itemId;
 
 const appOf = (kind: string | null) => (kind === null ? null : (parseExtensionTabKind(kind)?.extensionId ?? kind));

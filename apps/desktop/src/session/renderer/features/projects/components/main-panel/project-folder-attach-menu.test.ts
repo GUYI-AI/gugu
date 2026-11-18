@@ -8,6 +8,7 @@ import { setLocalePreference } from '@/i18n';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { ProjectFolderCard, type AttachMachine } from './project-folder-card';
 import type { ProjectFoldersState, ShownFolder } from './project-folders';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 vi.mock('@renderer/lib/stores/app-state', () => ({
   sidebarStore: { placement: { entries: new Map() } },
@@ -25,7 +26,7 @@ const ROOT: ShownFolder = {
   workspaceId: 'ws-root',
   projectId: 'p1',
   kind: 'root',
-  path: '/www/gugu',
+  path: '/www/gugu' as CanonicalPath,
   branch: null,
   sessionIds: [],
   attachedAt: null,

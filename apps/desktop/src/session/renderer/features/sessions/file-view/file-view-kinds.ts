@@ -16,7 +16,7 @@ export function fileTabTarget(path: string, external?: boolean): { kind: string;
 }
 
 /**
- * The same tab, opened by the host for an agent or an App rather than by the person: an App tab is marked `byHost`, so
+ * The same tab, opened by the host for an App (`files.openWith`) rather than by the person or an agent of theirs: an App tab is marked `byHost`, so
  * the page in it reads nothing outside the working copy (`@@@outside-file`).
  */
 export function hostFileTabTarget(path: string, external?: boolean): { kind: string; args: Record<string, unknown> } {

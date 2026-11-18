@@ -1,3 +1,4 @@
+import { customModelRefFromOption, customModelRuntimeOption, runtimeModelId } from '@gugu/session-core/models/custom-model'
 import { sessionBootTasks } from './core/boot-tasks'
 import { hasAgentInstallsInProgress } from './core/agents/install-progress-ledger'
 // @@@sessionpage — the session backend's EMBEDDED-MODULE entry. The session backend is a cohesive
@@ -18,6 +19,7 @@ import { hasAgentInstallsInProgress } from './core/agents/install-progress-ledge
 // emdash-main-bridge.cjs with electron + native addons (better-sqlite3, node-pty, @parcel/watcher)
 // externalized (required at runtime).
 import { takeLastExit } from '../../lib/exit-reason'
+import { setGuguToolsOffReader } from '../../acp-engine-utils'
 import { resumeHostUpdate } from './core/agent-status/resume-host-update'
 import type { BirthGroup } from '@shared/core/sessions/create-session';
 export { readCurrentActivityInput,readCurrentAssistantWorkInput } from './core/sessions/session-activity-source'
@@ -30,6 +32,8 @@ import { appSourcesRoot, extensionDataRoot, extensionsService } from './core/ext
 import { appKey } from '@shared/extensions/app-identity'
 import { ensurePreinstalledApps } from './core/extensions/preinstalled-apps'
 import { firstRunAtBoot } from './core/extensions/first-run-apps'
+import { captureAgentHomeUpgradeProfile } from './core/extensions/first-run-record'
+import { initializeAgentHomeUpgrade } from './core/agents/agent-homes'
 import { autoUpdateAtBoot } from './core/extensions/auto-update-apps'
 import { EXTENSION_DATA_DIR_NAME } from './core/extensions/extension-data'
 import { extensionPrograms, stopAllExtensionPrograms, type ExtensionPrograms } from './core/extensions/extension-programs'
@@ -105,9 +109,13 @@ import {
 } from '@main/core/extensions/extension-background'
 import { rpcRouter } from '@main/rpc' // ← the complete router, every controller
 import { initializeDatabase } from '@main/db/initialize'
+import { stopTaskTurnSearch } from '@main/core/search/task-turn-search'
 import { startTurnTextBackfillWorker, stopTurnTextBackfillWorker, type SearchBackfillLogger } from '@main/db/turn-text-backfill-runner'
 import { migrateProjectKind } from '@main/core/projects/operations/migrate-project-kind'
+import { copyClaudeHistoryForMovedFolders, migrateCanonicalPaths, migrateSessionOutputPaths } from '@main/core/projects/operations/migrate-canonical-paths'
+import { loadHarnessConfigRoots } from '@main/core/agent-hooks/harness-config-roots'
 import { closeDatabase, db, sqlite } from '@main/db/client'
+import { flushViewState } from '@main/core/view-state/view-state-service'
 import { resolveDatabasePath } from '@main/db/path'
 import { backupBeforeTaskToSession, runTaskToSessionOnce } from '../../migrations/task-to-session'
 import { backupBeforeSessionNaming, runSessionNamingOnce } from '../../migrations/session-naming'
@@ -143,6 +151,7 @@ import {
 } from '@main/core/browser/browser-partition-cleanup'
 import { projectSettingsService } from '@main/core/projects/settings/project-settings-service'
 import { getProjectById, getProjects } from '@main/core/projects/operations/getProjects'
+import { machineLocalProjectsOf } from '@main/core/projects/project-public-id'
 import { resolveAgentSessionProject } from '@main/core/projects/operations/resolve-agent-session-project'
 import { resolveAssistantSessionWorkspace } from '@main/core/projects/operations/task-directory-workspace'
 import { runPendingAssistantProjectCleanup } from '@main/core/projects/operations/assistant-project-cleanup'
@@ -186,17 +195,20 @@ import { providerConsumesStartupPrompt } from '@gugu/session-core/agents/plugins
 import { pluginRegistry, type AgentProviderId } from '@gugu/session-plugins/agents'
 import {
   localSessionIds,
+  assertOutboundProjectIds,
   resolveCreateModelChoice,
   runRemoteSessionAction,
   runSessionAction,
   sessionCallerFacts,
   setRemotePaneOpener,
+  setRemoteTaskViewers,
   stopExactSessionpageSession,
   type SessionAction,
   type SessionCallerContext,
 } from '@main/core/sessions/session-orchestration'
 import { sharedRemotePaneRoute } from '@main/core/session-timeline/remote-pane'
 import { releaseSubscriptionsOf } from '@main/core/session-timeline/controller'
+import { releasePlacementsOf } from '@main/core/sessions/first-turn-placement'
 import { setSessionAcpSessionStopper, sessionWorkspaceManager } from '@main/core/sessions/session-workspace-manager'
 import { prSyncScheduler } from '@main/core/pull-requests/pr-sync-scheduler'
 import { disposeLocalPtySessions } from '@main/core/pty/local-pty'
@@ -206,6 +218,7 @@ import { automationsService } from '@main/core/automations/automations-service'
 import { appService } from '@main/core/app/service'
 import { appSettingsService } from '@main/core/settings/settings-service'
 import { settleTerminalEnabled } from '@main/core/settings/terminal-visibility'
+import { upgradeProjectPinsToSidebarOnce } from '@main/core/sessions/sidebar-pin-upgrade'
 import { browserWebContentsRegistry } from '@main/core/browser/browser-webcontents-registry'
 import { setBrowserCorsRelaxationSettings } from '@main/core/browser/browser-profile-session'
 import { promptLibraryService } from '@main/core/prompt-library/service'
@@ -227,7 +240,7 @@ import {
   setConnectionConfigRootResolver,
   setSessionStatusFeed,
 } from '@main/core/session-timeline/service'
-import { connectionConfigRoot } from '@main/core/agents/harness-connections'
+import { connectionConfigRoot, managedConfigRoot } from '@main/core/agents/harness-connections'
 import { setSessionCancel, setSessionWake } from '@main/core/session-timeline/write-bridge'
 import { setOtherMachines } from '@main/core/sessions/session-family'
 import { loadAcpForkHandshakes } from '@main/core/agents/fork-legs'
@@ -244,7 +257,6 @@ import { setSessionMessageOutboxReady } from '@main/core/sessions/session-messag
 import { sessionProcess } from '@main/core/sessions/session-process'
 import { ptyRecordResumeSet, startPtyRecordSync } from '@main/core/sessions/pty-record-sync'
 export { sessionProcess }
-export { setUserLibraryOwner } from '@main/core/app/user-library'
 // #7341 第二步 项目跨设备:`projects.*` 的项目群四件事由宿主接上实现(对照 / 登录态 / 云端都在宿主那边);
 // 宿主那份对照的唯一写口每写一次就经这里让渲染层重读。
 export {
@@ -262,6 +274,7 @@ export {
   adoptLegacyTaskNames,
   runRemoteSessionAction,
   runSessionAction,
+  assertOutboundProjectIds,
   sessionCallerFacts,
   type SessionAction,
   type SessionCallerContext,
@@ -321,6 +334,7 @@ export {
   type EmdashPtyChatStartupEnvelope,
   type EmdashPtyChatStartupRequest,
 } from '@main/core/sessions/impl/emdash-pty-sessionpage-hook'
+export { getRuntimeUpgradeRequirement } from '@main/core/sessions/spawn-failure'
 export {
   setSessionMessageRouter,
   setSessionMessageOutboxReady,
@@ -430,6 +444,8 @@ const HEADLESS_SERVER = process.env.GUGU_SERVER_MODE === '1'
 export async function bootEmdashModule(ipcMain: IpcMain, discovery?: Pick<SessionHostBootOptions, 'scheduleDiscovery'>): Promise<void> {
   // #6264 没有窗口:会话里的 open_in_tab 送到正看着这条会话的桌面,❌ 问一个不存在的渲染层干等超时(remote-pane.ts)。
   if (HEADLESS_SERVER) setRemotePaneOpener(sharedRemotePaneRoute())
+  // #1607 桌面:别的电脑正看着这台机器上的任务时,App 的任务页签也推给它们(本机面板照开)。
+  else setRemoteTaskViewers(sharedRemotePaneRoute())
   const electronIpc = createElectronHostIpc({ ipcMain, BrowserWindow, MessageChannelMain })
   // @@@task-web-host 方案 A:桌面 app 额外对浏览器开一个 WebSocket 口。owner 09-03 硬约束——这个口等于
   // 「操纵本机 agent 与 shell」,**对安装用户必须不可用**:打包版永远不起;dev 也要显式开关。
@@ -481,8 +497,11 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   setHostIpc(options.hostIpc)
   // 经网络连进来的线(别的电脑、手机)开的时间线 / 会话列表订阅,线断了一并拆:寿命跟着连接走,❌ 另设保活。
   options.hostIpc.onConnectionClosed?.(releaseSubscriptionsOf)
+  // #2558 一条线断了,它正在放的首轮附件不会再放完:那几句照已放好的发出,❌ 一直等。
+  options.hostIpc.onConnectionClosed?.(releasePlacementsOf)
   const { ipcMain } = options.hostIpc
   const { browserFeatures } = options
+  const priorProfile = browserFeatures && captureAgentHomeUpgradeProfile(app.getPath('userData'))
   // 首启默认组(161 10-15):这个 profile 是不是第一次启动,只有在任何东西建出 App 的记录目录之前才看得出来 —— 所以最先。
   // 只归桌面和咕咕 server(first-run-apps.ts `firstRunAtBoot`):网页版的无头宿主不记、不装。
   const firstRun = firstRunAtBoot(browserFeatures)
@@ -546,6 +565,8 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   await backupBeforeTaskToSession(sqlite, resolveDatabasePath())
   await backupBeforeSessionNaming(sqlite, resolveDatabasePath())
   await initializeDatabase()
+  const { migrateCustomModelConnections } = await import('./core/agents/custom-models')
+  migrateCustomModelConnections()
   await runPendingAssistantProjectCleanup(true)
   // #609 已有的、登记在 ~ / task-home / GUGU_HOME 底下的项目改成 workspace(会话随之列进「任务」);幂等,失败不拦启动。
   try {
@@ -553,6 +574,18 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
     if (demoted.length > 0) log.info('project-kind: app-kept directories are workspaces now', { demoted })
   } catch (error) {
     log.error('project-kind: migration failed; retrying next start', { error: String(error) })
+  }
+  // @@@canonical-path 记录里的路径只留一种写法(别名 `accounts/<id>` → `account` 等);幂等,失败不拦启动、下次重试。
+  try {
+    const { moved, conflicts } = migrateCanonicalPaths(path.join(app.getPath('userData'), 'canonical-path-migration.json'))
+    if (moved.length > 0 || conflicts.length > 0) {
+      const outputs = await migrateSessionOutputPaths(moved)
+      await loadHarnessConfigRoots()
+      const claude = await copyClaudeHistoryForMovedFolders([managedConfigRoot('claude')], moved)
+      log.info('canonical paths: records now in their one spelling', { moved: moved.length, conflicts: conflicts.length, outputs, claude })
+    }
+  } catch (error) {
+    log.error('canonical paths: migration failed; retrying next start', { error: String(error) })
   }
   await tmuxBackendStartupSweepSettled()
   await runTaskToSessionOnce({ db: sqlite, userData: app.getPath('userData') }).then(
@@ -588,6 +621,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
     logger: log,
     now: Date.now,
   })
+  if (browserFeatures) initializeAgentHomeUpgrade(priorProfile)
   // Task names: a bound task is named by its roster identity (task-name.ts). The roster keys were just
   // renamed above, and every reader of a name below (search backfill first) needs the projection.
   await loadTaskNames()
@@ -704,14 +738,6 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   // owner:「他是个美国人的服务吗?感觉我很多软件用户是国内的,这种数据外流可能不安全」。
   // 那条管子默认是开的,只差构建时传一个 key 就会往美国发;所以是拆,不是藏开关。
 
-  // #26 订阅连接的开机对齐:趁还没有任何会话、自动化也还没起,把默认账号的凭据放到会话要读的地方(见 harness-connections)。
-  try {
-    const { alignHarnessConnectionsAtStartup } = await import('@main/core/agents/harness-connections')
-    await alignHarnessConnectionsAtStartup()
-  } catch (e: unknown) {
-    log.warn('harness connections: startup alignment failed; sessions keep the credentials already in place', { error: e })
-  }
-
   // --- Eager service .initialize()/.start() block (index.ts:146-156). ---
   projectSettingsService.initialize()
   prSyncScheduler.initialize()
@@ -721,6 +747,12 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   await appSettingsService.initialize()
   // 「终端」开关还没定值(升级上来的第一次启动)就按老用户迁移规则算一次写回,渲染层与新会话都读这一份。
   await settleTerminalEnabled().catch((e) => log.warn('terminal setting: migration failed; it stays off until set', { error: e }))
+  // #2548 一张表侧栏的第一次启动:项目里置顶的会话一并固定到左侧栏(标记守着,只一次)。失败不拦启动:标记没写,下次启动重来。
+  try {
+    upgradeProjectPinsToSidebarOnce()
+  } catch (e) {
+    log.error('sidebar pin upgrade failed; it runs again on the next start', { error: e })
+  }
   if (browserFeatures) {
     browserWebContentsRegistry.setKeyboardSettings(await appSettingsService.get('keyboard'))
   }
@@ -780,6 +812,8 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   setSessionWake(ensureEmdashSession)
   // 手机端的「停止」= 桌面端删忙 agent 用的同一条取消口(ACP cancel / 终端腿中断键),❌ 不另写一份。
   setSessionCancel(cancelEmdashTurn)
+  // 资源库 → MCP 关掉的内置工具组:咕咕那台 server 每次有客户端连上都现读这一份。
+  setGuguToolsOffReader(() => mcpLibraryService.guguToolsOff())
 
   // 这里原先是旧账号体系的会话恢复 + 「OAuth 拿到的 GitHub token 落库」那条登记。
   // 整条链只有那套账号自己的登录服务能触发,咕咕里进不去 —— 2026-09-10 连同子系统一起拆。
@@ -824,6 +858,7 @@ let stopPtyRecordSync: () => void = () => {}
 
 async function disposeEmdashModuleOnce(): Promise<void> {
   stopTurnTextBackfillWorker()
+  stopTaskTurnSearch()
   const failures: unknown[] = []
   const runPhase = async (phase: string, action: () => void | Promise<void>): Promise<void> => {
     const startedAt = performance.now()
@@ -856,6 +891,7 @@ async function disposeEmdashModuleOnce(): Promise<void> {
   await runPhase('module-scope', () => appScope.dispose())
   await runPhase('local-pty', disposeLocalPtySessions)
   await runPhase('activity', () => { stopActivityCollector?.(); stopActivityCollector = null })
+  await runPhase('view-state', flushViewState)
   await runPhase('database', closeDatabase)
   await runPhase('logging', flushLogWrites)
   await flushLogWrites()
@@ -1688,7 +1724,7 @@ async function recordReportedDefaultModel(
  * 会话不在跑时读不到清单 —— 那时 `setModelOption` 本身也不会成,调用方照旧走重开。
  */
 async function liveWireValue(sessionId: string, modelId: string, source: 'platform' | 'own'): Promise<string> {
-  if (source !== 'platform') return modelId
+  if (source !== 'platform') return runtimeModelId(modelId) ?? ''
   const options = await readSessionOptions(sessionId).catch((error: unknown) => {
     if (error instanceof SessionOptionsError && error.code === 'session_not_live') return null
     throw error
@@ -1734,13 +1770,19 @@ export async function applyEmdashSessionModelSelection(input: {
     return reloadOutcome(await reloadEmdashSession({ sessionId, reason, resetModel: true }))
   }
   const target: 'platform' | 'own' = selection.source === 'platform' ? 'platform' : 'own'
-  if (target === input.runningOn) {
+  const row = (await db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)))[0]
+  const runningCustom = customModelRefFromOption(row?.config?.model)
+  const requestedCustom = customModelRefFromOption(selection.modelId)
+  const sameConnection = runningCustom?.connectionId === requestedCustom?.connectionId
+  if (target === input.runningOn && sameConnection) {
     const client = await peekAcpRuntimeClient()
     const hot = client
       ? await client.setModelOption({
           sessionId,
           dimension: 'model',
-          value: await liveWireValue(sessionId, selection.modelId, target),
+          value: requestedCustom && runningCustom
+            ? customModelRuntimeOption(runningCustom, requestedCustom.modelId ?? '', (await readSessionOptions(sessionId)).model?.selected, (await readSessionOptions(sessionId)).model?.available.map((choice) => choice.id) ?? []) ?? runtimeModelId(selection.modelId) ?? ''
+            : await liveWireValue(sessionId, selection.modelId, target),
         })
       : null
     // 只有活会话**确认生效**才算热切:`restart_required` / `pending_next_turn` 也是 success,
@@ -1855,7 +1897,7 @@ export async function openAllEmdashProjects(): Promise<void> {
       sessionBootTasks.record('project-open', project.id, result.reason)
     } else if (!result.value.success) {
       sessionBootTasks.record('project-open', project.id, result.value.error)
-    } else sessionBootTasks.clear('project-open', project.id)
+    }
   })
 }
 
@@ -2006,7 +2048,7 @@ async function startSessionpageAgentSessionClaimed(
     // Its creation turn (the first task / first message) is admitted here once, under the session's stable
     // `<id>:creation:0`: a replayed create of the same bound session finds it queued and admits nothing twice.
     if (session.providerSessionId) sessionLife().start(session.id, 'user-open')
-    else admitCreationTurns({ ...session, initialQueue: input.initialPrompt ? [{ text: input.initialPrompt, origin: 'communication' }] : undefined })
+    else await admitCreationTurns({ ...session, initialQueue: input.initialPrompt ? [{ text: input.initialPrompt, origin: 'communication' }] : undefined })
     mark('life-admitted')
     return { ...provisioned, sessionId: session.id, projectId: project.id }
   } catch (error) {
@@ -2062,6 +2104,8 @@ export async function emdashProjectName(projectId: string): Promise<string | nul
   return project?.name ?? null
 }
 export async function emdashProjectRoot(projectId: string): Promise<string | null> { return (await getProjectById(projectId))?.path ?? null }
+/** This device's project for a chat, as the account records it (device_projects): the same pick an agent's project:<chat> gets. */
+export async function emdashProjectOfGroup(chatId: string): Promise<string | undefined> { return (await machineLocalProjectsOf(chatId))[0] }
 /** The chat a conversation's agent was born in, taken at its first mint (birth-groups.ts). */
 export async function emdashTakeBirthGroup(sessionId: string): Promise<BirthGroup | null> {
   return (await import('@main/core/sessions/birth-groups')).takeBirthGroup(sessionId)
@@ -2466,6 +2510,7 @@ export function sessionpageSessionDigest(): Array<{
   lastInteractedAt: string | null
   supported: boolean
   isPinned: boolean
+  isPinnedToSidebar: boolean
   unseen: boolean
   parentConversationId: string | null
   agentUserId?: string | null
@@ -2496,6 +2541,7 @@ export function sessionpageSessionDigest(): Array<{
       // 这里三项都读得到(本地库就在手边),所以给确定值;❌ 不写 `?? false` 之类的兜底,
       // 缺席的语义在读侧(normalizeSessionDigest)是「老宿主不报」,与这里给不出值不是一回事。
       isPinned: session.isPinned === true,
+      isPinnedToSidebar: session.isPinnedToSidebar === true,
       unseen: session.unseen === true,
       parentConversationId: session.parentConversationId ?? null,
       // #7199 花名册是异步读的、这里是同步的:用上一轮读到的(心跳每轮都来,晚一拍);一次都没读到就不带这一格。

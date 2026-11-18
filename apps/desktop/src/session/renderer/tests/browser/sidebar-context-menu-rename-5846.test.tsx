@@ -46,9 +46,6 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
   },
   sidebarStore: {
     remoteSession: () => undefined,
-    navChain: [
-      { kind: 'conversation', projectId: 'proj-1', sessionId: 'conv-other' },
-    ],
     agentNameOnHoverEnabled: false,
     expandedProjectIds: new Set<string>(),
     // #7199 行上「助理发起」的标记问 store;这里的会话都不是个人助理派的。

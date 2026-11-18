@@ -2,17 +2,27 @@ import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
-import { OPEN_LINK_TARGET, type LinkNavigation } from '../lib/guguLinks'
-import type { AppDetailLink, GuguLinkTarget } from '@gugu/core/shared/ui/guguLink'
+import { OPEN_LINK_TARGET, OpenSuperseded, type LinkNavigation } from '../lib/guguLinks'
+import { askedSince, asksSoFar, beginWait, endWait, revealChatWorkspaceMessage } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
+import type { ExtensionAppDetailLink, GuguLinkTarget } from '@gugu/core/shared/ui/guguLink'
+import type { AppOpenWithDetail } from '../session/shared/extensions/app-runtime-protocol'
 import { readMobileShell } from './useMobileShell'
+import { opensInImageViewer } from '../lib/imageViewer'
 import { SERVER_LOGIN_APPROVE_EVENT } from '../lib/inAppLinks'
 import { readAssistantShellBridge } from '../lib/assistantShellBridge'
+import { assistantAppUsable } from '../lib/assistantEntry'
 import { OPEN_ASSISTANT_TASK_CHAT, readAssistantTaskChat, type AssistantTaskChat } from '../lib/assistantTaskChat'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { chatService } from '../lib/chat'
 import { askReveal } from './useSourceMessageReveal'
 import { readIdentityDirectoryBridge } from '../lib/identityDirectoryBridge'
 import { openOwnedAgentFile } from '../lib/ownedAgentConversation'
+
+/**
+ * Whether the assistant's tasks have their place here: the phone's own layer, or on a computer the assistant App (the one
+ * decision, lib/assistantEntry.ts). Not: the task is an ordinary one, opened as any chat or session is.
+ */
+const assistantTasksHavePlace = () => readMobileShell() || assistantAppUsable()
 
 /** The navigation belongs to the chat shell, not a Markdown renderer or an agent. */
 export function useLinkNavigation(input: {
@@ -22,10 +32,10 @@ export function useLinkNavigation(input: {
   contacts: () => readonly ContactUser[]
   openChat: (chatId: string) => string | void
   openSender?: (sender: ContactUser, sourceChatId?: string) => Promise<void> | void
-  openFile: (chatId: string, target: Extract<GuguLinkTarget, { kind: 'file' }>, source: Pick<LinkNavigation, 'message' | 'restore'>) => void | Promise<void>
+  openFile: (chatId: string, target: Extract<GuguLinkTarget, { kind: 'file' }>, source: Pick<LinkNavigation, 'message' | 'restore'>, opener: AppOpenWithDetail) => void | Promise<void>
   openApp: (chatId: string, extensionId: string, tab: string) => void
   openProject: (projectId: string) => void
-  openAppDetail?: (target: AppDetailLink) => void | Promise<void>
+  openAppDetail?: (target: ExtensionAppDetailLink) => void | Promise<void>
   openOwnApp: (extensionId: string, tab: string) => void
   openAssistant: (tasks: boolean) => string | void
 }) {
@@ -59,22 +69,44 @@ export function useLinkNavigation(input: {
         return 'own' as const
       }
       if (target.kind === 'file') {
-        const { localFileRevision } = await import('../lib/fileAccess')
-        const local = await localFileRevision(target.itemId)
-        let groupId = local?.chat_id
-        if (!local) {
-          const { chatDb } = await import('../lib/supabase')
-          const { data, error } = await chatDb.from('workspace_items').select('chat_id').eq('id', target.itemId).maybeSingle()
-          if (error) throw new Error(error.message)
-          groupId = data?.chat_id
+        // The chat whose panel shows a chat's files (a topic's: its source's).
+        const rowOf = (id: string | null | undefined) => id ? state.chats().find((chat) => chat.id === id) : undefined
+        const panelChat = (id: string | null | undefined) => {
+          const row = rowOf(id)
+          return row ? (row.kind === 'topic' ? row.source_chat_id ?? null : row.id) : null
         }
-        if (asked !== generation || current.current.ownerId !== state.ownerId) throw new Error('The file opening was superseded')
-        const fileChat = state.chats().find((row) => row.id === groupId)
-        if (!fileChat) throw new Error('File reference is unavailable')
-        const chatId = fileChat.kind === 'topic' ? fileChat.source_chat_id! : fileChat.id
-        await state.openFile(chatId, target, request)
-        window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }))
-        return
+        const desktopTopic = (id: string | null | undefined) => !readMobileShell() && rowOf(id)?.kind === 'topic' ? id : undefined
+        // Asked in a chat (a message's, or an App page's beside it): the file's waiting page there at once — not an image's,
+        // which opens over the chat in the image viewer (useChatOpener), the page left as it is.
+        const { from, intent } = request
+        const messageChat = request.message?.chat_id
+        const here = from?.chatId ?? desktopTopic(messageChat) ?? panelChat(messageChat)
+        const wait = here && !(request.fileName && opensInImageViewer(request.fileName, null, intent)) ? beginWait(here, { itemId: target.itemId, ...(request.fileName ? { fileName: request.fileName } : {}), ...(request.message ? { message: request.message } : {}), ...(from ? { from: from.tabId } : {}), ...(intent ? { intent } : {}) }) : null
+        const mark = asksSoFar()
+        try {
+          // One answer from the host: the file's chat, what it is and who opens it. The chat opens what was answered.
+          const { appsHere } = await import('../components/appSlot/appsHere')
+          if (!appsHere) throw new Error('The file opener is unavailable')
+          const found = await appsHere.groupFileOpener({ itemId: target.itemId, ...(request.chatId ? { chatId: request.chatId } : {}), ...(target.at ? { at: target.at } : {}), ...(request.among ? { among: request.among } : {}) })
+          if (asked !== generation || current.current.ownerId !== state.ownerId) throw new OpenSuperseded()
+          if (!found.success || !found.data) throw Object.assign(new Error(found.error || 'File reference is unavailable'), 'code' in found && found.code ? { code: found.code } : {})
+          const resourceChat = panelChat(found.data.chatId)
+          if (!resourceChat) throw new Error('File reference is unavailable')
+          // Resolve access against the file's own chat. An open from its desktop topic can show it in that topic's tool group.
+          const topic = desktopTopic(here)
+          const chatId = topic && panelChat(topic) === resourceChat ? topic : resourceChat
+          // Something else was asked of that chat while the host answered (a file from an App's list, another link): it is
+          // the one the chat opens.
+          if (askedSince(chatId, mark)) throw new OpenSuperseded()
+          // Another chat's file (a forwarded one): nothing waits here; that chat comes up with it.
+          if (wait && chatId !== here) endWait(here!, wait)
+          await state.openFile(chatId, target, request, { ...found.data, ...(chatId !== resourceChat ? { chatId } : {}), ...(wait && chatId === here ? { wait } : {}), ...(intent ? { intent } : {}), ...(from?.chatId === chatId ? { from: from.tabId } : {}), ...(request.origin ? { origin: request.origin } : {}) })
+          window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }))
+          return
+        } finally {
+          // Not turned into the file (failed, superseded, picked, another chat's): its waiting page goes.
+          if (wait) endWait(here!, wait)
+        }
       }
       if (target.kind === 'app' && !target.place) { state.openOwnApp(target.extensionId, target.tab); return 'own' as const }
       if (target.kind === 'app' && target.place && 'chat' in target.place) {
@@ -84,9 +116,9 @@ export function useLinkNavigation(input: {
         window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }))
         return { chat: chatId }
       }
-      if (target.kind === 'app-detail') {
+      if (target.kind === 'app-detail' || target.kind === 'agent-app-detail') {
         if (readMobileShell()) {
-          if (!state.openAppDetail) {
+          if (target.kind === 'agent-app-detail' || !state.openAppDetail) {
             const { translateSessionMessage } = await import('../session/renderer/localization/locale-store')
             throw new Error(translateSessionMessage('extensions.appLinkOnPhone'))
           }
@@ -99,7 +131,8 @@ export function useLinkNavigation(input: {
       }
       if (target.kind === 'session') {
         const assistant=readAssistantShellBridge()?.getSnapshot()
-        if(assistant?.assistant){
+        // A task of the assistant's has its place over the App's panel; without one, it is an ordinary task, brought up as any session is.
+        if(assistant?.assistant&&assistantTasksHavePlace()){
           const {resolveAssistantWorkTarget}=await import('../lib/assistantWorkTarget')
           const task=await resolveAssistantWorkTarget(assistant.assistant.id,{sessionId:target.sessionId})
           if(asked!==generation||current.current.ownerId!==state.ownerId)return
@@ -135,7 +168,7 @@ export function useLinkNavigation(input: {
       let task: AssistantTaskChat | null = null
       const contact = state.contacts().find((row) => row.id === chat.peer_user_id)
       if (assistant?.assistant && contact?.type === 'agent' && contact.owner_user_id === state.ownerId
-        && contact.id !== assistant.assistant.id) {
+        && contact.id !== assistant.assistant.id && assistantTasksHavePlace()) {
         // Choosing the known task viewport must not wait for its cloud reader to be ready.
         const known=readAssistantTaskChat(state.ownerId,contact.id)
         if(known?.assistantId===assistant.assistant.id)task=known
@@ -151,20 +184,29 @@ export function useLinkNavigation(input: {
         viewportKey = state.openAssistant(true)
         window.dispatchEvent(new CustomEvent(OPEN_ASSISTANT_TASK_CHAT, { detail: task }))
       } else viewportKey = state.openChat(chat.id)
-      if (target.messageId) askReveal(chat.id, target.messageId, viewportKey || undefined)
+      if (target.messageId) {
+        revealChatWorkspaceMessage(chat.id)
+        askReveal(chat.id, target.messageId, viewportKey || undefined)
+      }
       window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId: chat.id } }))
     }
+    // The file being opened now: asked for again before it is up (a second click), the ask joins it — one open, one answer.
+    let opening: { file: string; done: ReturnType<typeof open> } | null = null
     const receive = (event: Event) => {
       const request = (event as CustomEvent<LinkNavigation>).detail
       if (!request) return
       event.preventDefault()
+      const file = request.target.kind === 'file' ? JSON.stringify(request.target) : null
+      if (file && opening?.file === file) { void opening.done.then(request.resolve, request.reject); return }
       ++generation
       const asked = generation
       const owner = current.current.ownerId
-      void open(request).then(request.resolve, (error: unknown) => {
-        if ((asked !== generation || owner !== current.current.ownerId) && request.target.kind !== 'file') { request.resolve(); return }
-        request.reject(targetError(request.target, error, messages.current.t('links.unavailable')))
-      })
+      const done: ReturnType<typeof open> = open(request).catch((error: unknown) => {
+        if ((asked !== generation || owner !== current.current.ownerId) && request.target.kind !== 'file') return undefined
+        throw error instanceof OpenSuperseded ? error : targetError(request.target, error, messages.current.t('links.unavailable'))
+      }).finally(() => { if (opening?.done === done) opening = null })
+      if (file) opening = { file, done }
+      void done.then(request.resolve, request.reject)
     }
     const receiveTask = () => { generation++; current.current.openAssistant(true) }
     window.addEventListener(OPEN_ASSISTANT_TASK_CHAT, receiveTask)
@@ -174,5 +216,5 @@ export function useLinkNavigation(input: {
 }
 
 function targetError(target: LinkNavigation['target'], error: unknown, fallback: string) {
-  return new Error((target.kind === 'app-detail' || (target.kind === 'sender' && target.file)) && error instanceof Error ? error.message : fallback, { cause: error })
+  return new Error((target.kind === 'app-detail' || target.kind === 'agent-app-detail' || (target.kind === 'sender' && target.file)) && error instanceof Error ? error.message : fallback, { cause: error })
 }

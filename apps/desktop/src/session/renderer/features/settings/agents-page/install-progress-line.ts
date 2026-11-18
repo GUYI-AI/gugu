@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import type { AgentInstallProgress } from '@gugu/session-core/workspace-server'
 import { formatBytes } from '@renderer/utils/formatBytes'
 import type { useSessionMessages } from '@renderer/localization/use-session-messages'
@@ -62,7 +63,7 @@ export function installProgressLine(
     parts.unshift(`${progress.part.name} ${progress.part.index}/${progress.part.count}`)
   }
 
-  const heading = parts.join(' · ')
+  const heading = parts.join(metadataSeparator())
   const detailStart = parts.length
   const done = progress.bytesDone ?? 0
   if (done > 0) {
@@ -84,9 +85,9 @@ export function installProgressLine(
   }
 
   return {
-    text: parts.join(' · '),
+    text: parts.join(metadataSeparator()),
     heading,
-    detail: parts.slice(detailStart).join(' · ') || null,
+    detail: parts.slice(detailStart).join(metadataSeparator()) || null,
     ratio: installProgressRatio(progress)
   }
 }

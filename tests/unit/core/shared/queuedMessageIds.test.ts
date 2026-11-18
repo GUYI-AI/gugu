@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
-import { deliveryWaits, pendingDeliveryMessageIds, visibleDeliveryMessages } from '@gugu/core/shared/ui/systemNotice'
+import { deliveryWaits, visibleDeliveryMessages } from '@gugu/core/shared/ui/systemNotice'
 
 const A = 'agent-a'
 const B = 'agent-b'
@@ -17,7 +17,6 @@ const wakes = (entries: Record<string, string[]>) => new Map(Object.entries(entr
 describe('a message no running instance can take says so on its own bubble', () => {
   it('says nothing on the bubble while the host merely retains it for a busy agent (notAdmitted)', () => {
     const messages = [mine('m1', 1), pending('row', 2, A, 'notAdmitted'), mine('m2', 3)]
-    expect(pendingDeliveryMessageIds(messages, {})).toEqual([])
     expect(deliveryWaits(messages, {}, wakes({ m1: [A], m2: [A] })).size).toBe(0)
     expect(visibleDeliveryMessages(messages).map(message => message.id)).toEqual(['m1', 'm2'])
   })
@@ -25,7 +24,6 @@ describe('a message no running instance can take says so on its own bubble', () 
   it('holds the waiting messages, and ones sent after the notice while the agent is still stuck', () => {
     const messages = [mine('m1', 1), mine('m2', 2), pending('row', 3, A), mine('m3', 4)]
     const all = wakes({ m1: [A], m2: [A], m3: [A] })
-    expect(pendingDeliveryMessageIds(messages, {})).toEqual(['m1', 'm2', 'm3'])
     expect([...undelivered(messages, {}, all)].sort()).toEqual(['m1', 'm2', 'm3'])
   })
 
@@ -82,7 +80,6 @@ describe('a message no running instance can take says so on its own bubble', () 
     const failure = pending('failed', 4, A, 'deliveryRejected')
     const messages = [mine('m1', 1), pending('held', 2, A), mine('m2', 3), failure]
     expect(deliveryWaits(messages, {}, wakes({ m1: [A], m2: [A] })).size).toBe(0)
-    expect(pendingDeliveryMessageIds(messages, {})).toEqual([])
     expect(visibleDeliveryMessages(messages).map(message => message.id)).toEqual(['m1', 'm2', 'failed'])
   })
 
@@ -99,9 +96,5 @@ describe('a message no running instance can take says so on its own bubble', () 
   it('keeps threads apart', () => {
     const messages = [mine('main', 1), mine('in-thread', 2, { thread_root_id: 't' }), pending('row', 3, A, 'undelivered', { thread_root_id: 't' })]
     expect([...undelivered(messages, {}, wakes({ main: [A], 'in-thread': [A] }))]).toEqual(['in-thread'])
-  })
-
-  it('looks nothing up when no agent has a pending row', () => {
-    expect(pendingDeliveryMessageIds([mine('m1', 1), pending('row', 2, A, 'generic')], {})).toEqual([])
   })
 })

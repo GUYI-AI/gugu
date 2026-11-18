@@ -8,7 +8,7 @@ import { useMessageFilePreview } from '../../../../apps/desktop/src/components/c
 import { useChatOpener } from '../../../../apps/desktop/src/components/appSlot/useChatOpener'
 import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNavigation'
 import { appsHere } from '../../../../apps/desktop/src/components/appSlot/appsHere'
-import { askChat, chatLayoutOf, openTopicTab, panelTabsOf, topicTabOf } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askChat, chatLayoutOf, openTopicTab, panelTabsOf, topicTabOf, showChatTab } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { kind: 'electron', capabilities: {} } }))
 vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({ localFileRevision: async () => ({ chat_id: 'topic-file-entry' }) }))
@@ -19,7 +19,7 @@ const harness = createReactHarness()
 afterEach(() => harness.cleanup())
 function Entry({ topic }: { topic: string }) {
   useLinkNavigation({ ownerId: 'owner', chats: () => [{ id: group, kind: 'group' }] as never, contacts: () => [],
-    openChat() {}, openFile: (chatId, target, source) => askChat(chatId, { itemId: target.itemId, ...source }),
+    openChat() {}, openFile: (chatId, target, source, opener) => askChat(chatId, { itemId: target.itemId, opener, ...source }),
     openApp() {}, openOwnApp() {}, openProject() {}, openAssistant() {},
   })
   useChatOpener(group)
@@ -33,14 +33,15 @@ it('carries the actual attachment click through file resolution into the convers
     choice: { kind: 'one', candidate: { tabKind: 'workspace.file', suffix: '.md' } },
   } }) as never)
   openTopicTab(group, { topicChatId: 'topic-a', name: 'A' })
+  showChatTab(group, topicTabOf(group)!.tabId)
   await harness.render(createElement(Entry, { topic: 'topic-a' }))
   await act(async () => harness.container.querySelector('button')!.click())
   await until('the actual opener resolved the attachment', () => panelTabsOf(group).length === 1)
   const layout = chatLayoutOf(group)
   const file = panelTabsOf(group)[0]!.tabId
   const topic = topicTabOf(group)!.tabId
-  // owner 11-05 §6.7: a file from the topic goes beside the topic — [topic | file], the group drops back into the strip.
-  expect(layout.pair).toEqual({ pinned: topic, side: file })
+  // The current topic stays in its physical side pane; the file replaces the group in main.
+  expect(layout.pair).toEqual({ pinned: file, side: topic })
   expect(panelTabsOf(group)[0]!.item.message?.chat_id).toBe('topic-a')
   act(() => openTopicTab(group, { topicChatId: 'topic-b', name: 'B' }))
   await harness.render(createElement(Entry, { topic: 'topic-b' }))
@@ -48,5 +49,5 @@ it('carries the actual attachment click through file resolution into the convers
   await until('the latest message replaced the source', () => panelTabsOf(group)[0]?.item.message?.chat_id === 'topic-b')
   expect(panelTabsOf(group)).toHaveLength(1)
   expect(panelTabsOf(group)[0]!.tabId).toBe(file)
-  expect(layout.pair).toEqual({ pinned: topic, side: file })
+  expect(layout.pair).toEqual({ pinned: file, side: topic })
 })

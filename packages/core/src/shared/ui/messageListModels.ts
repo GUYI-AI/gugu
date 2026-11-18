@@ -1,5 +1,7 @@
 import { mergeMessageState } from './messageState'
+import { orderMessages } from './messageTimeline'
 import type { MessageItem, ReactionGroup } from '../types/chat'
+import type { FileMetadata, FileRevision } from '../fileResolver'
 
 function sameReactions(a: ReactionGroup[] = [], b: ReactionGroup[] = []): boolean {
   if (a === b) return true
@@ -23,6 +25,44 @@ function sameRecipientIds(a: MessageItem['to_user_ids'], b: MessageItem['to_user
 function sameDeliveryBlocks(a: MessageItem['delivery_blocks'] = [], b: MessageItem['delivery_blocks'] = []): boolean {
   return a.length === b.length && a.every((block, index) => block.agent_user_id === b[index].agent_user_id
     && block.reason === b[index].reason)
+}
+
+function sameSessionFile(a: MessageItem['session_file'], b: MessageItem['session_file']): boolean {
+  if (a === b) return true
+  return !!a && !!b && a.path === b.path && a.sha256 === b.sha256 && a.session_id === b.session_id
+}
+
+function sameImageDimensions(a: MessageItem['image_dimensions'], b: MessageItem['image_dimensions']): boolean {
+  if (a === b) return true
+  return !!a && !!b && a.width === b.width && a.height === b.height
+}
+
+function sameWorkspace(a: FileRevision['workspace'], b: FileRevision['workspace']): boolean {
+  if (a === b) return true
+  return !!a && !!b && a.path === b.path && a.parent_id === b.parent_id && a.created_at === b.created_at
+    && a.updated_at === b.updated_at && a.created_by === b.created_by && sameRecipientIds(a.source_message_ids, b.source_message_ids)
+}
+
+function sameLegacyObject(a: FileRevision['legacy_object'], b: FileRevision['legacy_object']): boolean {
+  if (a === b) return true
+  return !!a && !!b && a.bucket_id === b.bucket_id && a.object_name === b.object_name && a.message_id === b.message_id
+}
+
+function sameFileRevision(a: FileRevision, b: FileRevision): boolean {
+  if (a === b) return true
+  return a.source === b.source && a.item_id === b.item_id && a.version === b.version && a.chat_id === b.chat_id
+    && a.file_name === b.file_name && a.content_type === b.content_type && a.size_bytes === b.size_bytes && a.sha256 === b.sha256
+    && a.width === b.width && a.height === b.height && a.host_device_id === b.host_device_id && a.host_project_id === b.host_project_id
+    && a.host_account_id === b.host_account_id && a.host_label === b.host_label && a.host_online === b.host_online
+    && a.relative_path === b.relative_path && a.temporary_transfer === b.temporary_transfer
+    && sameWorkspace(a.workspace, b.workspace) && sameLegacyObject(a.legacy_object, b.legacy_object)
+}
+
+function sameFileMetadata(a: FileMetadata | null | undefined, b: FileMetadata | null | undefined): boolean {
+  if (a === b) return true
+  if (!a || !b || a.status !== b.status) return false
+  if (a.status === 'ready') return b.status === 'ready' && sameFileRevision(a.revision, b.revision)
+  return b.status !== 'ready' && a.sha256 === b.sha256
 }
 
 // @@@2051 注销用户:气泡分组以「同一发送者」为条件,但注销者 sender_user_id 全是 null → 裸 `===` 让
@@ -52,14 +92,23 @@ export function computeGroupedWithPrev(params: {
 export function shallowEqualMessage(a: MessageItem, b: MessageItem): boolean {
   return (
     a.id === b.id &&
+    a.chat_id === b.chat_id &&
+    a.file_item_id === b.file_item_id && a.file_version === b.file_version && a.file_blob_id === b.file_blob_id &&
+    sameSessionFile(a.session_file, b.session_file) && sameFileMetadata(a.file_metadata, b.file_metadata)
+    && sameImageDimensions(a.image_dimensions, b.image_dimensions) &&
+    a.send_group_id === b.send_group_id && a.send_group_size === b.send_group_size &&
     a.seq === b.seq &&
     a.content === b.content &&
     a.content_type === b.content_type &&
+    a.thread_root_id === b.thread_root_id && a.is_thread_root === b.is_thread_root && a.edited_at === b.edited_at &&
     a.retracted_at === b.retracted_at &&
     a.created_at === b.created_at &&
     a.reply_to_message_id === b.reply_to_message_id &&
     a.reply_to_sender_user_id === b.reply_to_sender_user_id && a.reply_to_content === b.reply_to_content &&
     a.sender_user_id === b.sender_user_id &&
+    a.via_app === b.via_app && a.sent_by_agent === b.sent_by_agent &&
+    (a.agent_sender === b.agent_sender || !!a.agent_sender && !!b.agent_sender && a.agent_sender.id === b.agent_sender.id && a.agent_sender.name === b.agent_sender.name) &&
+    a.forwarded_from_message_id === b.forwarded_from_message_id &&
     sameRecipientIds(a.to_user_ids, b.to_user_ids) &&
     sameRecipientIds(a.readers ?? null, b.readers ?? null) &&
     a.is_mine === b.is_mine &&
@@ -67,31 +116,21 @@ export function shallowEqualMessage(a: MessageItem, b: MessageItem): boolean {
     a.delivery_status === b.delivery_status &&
     sameDeliveryBlocks(a.delivery_blocks, b.delivery_blocks) &&
     a.local_send_state === b.local_send_state &&
+    a.local_timeline?.afterSeq === b.local_timeline?.afterSeq && a.local_timeline?.createdAt === b.local_timeline?.createdAt &&
     sameReactions(a.reactions, b.reactions)
   )
 }
 
-// @@@message-order-invariant - a chat's canonical order is the server-assigned `seq` (monotonic per
-function compareMessageOrder(a: MessageItem, b: MessageItem): number {
-  const aPending = a.seq < 1
-  const bPending = b.seq < 1
-  if (aPending !== bPending) return aPending ? 1 : -1
-  if (!aPending) return a.seq - b.seq
-  if (a.created_at !== b.created_at) return a.created_at < b.created_at ? -1 : 1
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
-}
-
 export function mergeMessagesById(prev: MessageItem[], fresh: MessageItem[], chatId: string): MessageItem[] {
   const prevById = new Map<string, MessageItem>()
-  for (const p of prev) prevById.set(p.id, p)
+  for (const p of prev) if (p.chat_id === chatId) prevById.set(p.id, p)
 
   const out: MessageItem[] = []
   const seen = new Set<string>()
-  for (const f of fresh) {
-    // @@@chat-bleed (critical): never merge a message whose chat_id doesn't match this list's chat.
-    // A poisoned cache (another chat's messages written here via a cross-chat prev-bleed) must not
-    // survive a merge — drop foreign entries from `fresh` just as `prev` is filtered below.
-    if (f.chat_id !== chatId) continue
+  const freshById = new Map<string, MessageItem>()
+  // @@@chat-bleed：只合并当前聊天的行，阻止其他聊天的缓存或新数据进入列表。
+  for (const f of fresh) if (f.chat_id === chatId) freshById.set(f.id, mergeMessageState(freshById.get(f.id), f))
+  for (const f of freshById.values()) {
     seen.add(f.id)
     const existing = prevById.get(f.id)
     const merged = mergeMessageState(existing, f)
@@ -100,8 +139,7 @@ export function mergeMessagesById(prev: MessageItem[], fresh: MessageItem[], cha
   for (const p of prev) {
     if (!seen.has(p.id) && p.chat_id === chatId) out.push(p)
   }
-  out.sort(compareMessageOrder)
-  return out
+  return orderMessages(out)
 }
 
 // @@@2015 — 乐观回复必须带全引用预览(user_id/content):只带 reply_to_message_id 时,
@@ -114,7 +152,7 @@ export function optimisticReplyFields(
   replyToMessageId: string | null,
 ): Pick<MessageItem, 'reply_to_message_id' | 'reply_to_sender_user_id' | 'reply_to_content'> {
   const target = replyToMessageId ? window.find((m) => m.id === replyToMessageId) : undefined
-  if (!target || target.is_whisper) {
+  if (!target || target.is_whisper || target.retracted_at) {
     return { reply_to_message_id: replyToMessageId, reply_to_sender_user_id: null, reply_to_content: null }
   }
   return {
@@ -133,6 +171,5 @@ export function upsertMessageById(list: MessageItem[], msg: MessageItem): Messag
     return shallowEqualMessage(existing, merged) ? existing : merged
   })
   const result = replaced ? next : [...next, msg]
-  result.sort(compareMessageOrder)
-  return result
+  return orderMessages(result)
 }

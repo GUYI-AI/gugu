@@ -1,7 +1,7 @@
 /**
  * #857 Listen Mode 引擎 — 纯函数核心层
  *
- * 职责：NO_REPLY 解析 / default 解析。「这条消息唤醒谁」不在这里 —— 那是云端 chat.message_wakes_agent 一处的事。
+ * 职责：default 解析。「这条消息唤醒谁」不在这里 —— 那是云端 chat.message_wakes_agent 一处的事。
  * 约束：无 IO、无 import electron/supabase、纯 TS 函数
  */
 

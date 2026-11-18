@@ -38,9 +38,6 @@ export const ContextBar = observer(function ContextBar({
   const session = getRegisteredSessionData(projectId, pageSessionId);
   const { value: promptLibrary, isSaving: isSavingPromptLibrary } = usePromptLibrary();
   const activeSession = sessionId ? sessions.ptySessions.get(sessionId) : undefined;
-  const activeSessionStore = sessionId
-    ? sessions.sessions.get(sessionId)
-    : undefined;
   const activeSessionId = activeSession?.ptySessionId;
   const canApplyContext = Boolean(activeSessionId);
   const hasSession = sessions.sessions.size > 0;
@@ -63,7 +60,6 @@ export const ContextBar = observer(function ContextBar({
     if (!activeSessionId || !text) return;
 
     await pastePromptInjection({
-      providerId: activeSessionStore?.data.providerId,
       text,
       forceBracketedPaste: true,
       sendInput: (data) => rpc.pty.sendInput(activeSessionId, data),

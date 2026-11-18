@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, readFile, mkdir, writeFile, appendFile, rename } from 'node:fs/promises'
+import { mkdtemp, rm, readFile, mkdir, writeFile, appendFile, rename, utimes, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -94,6 +94,8 @@ function fakeCloud() {
     },
     rpc: async (schema, name, args) => {
       calls.push([name, args])
+      if (name === 'list_conversation_memberships') return args.p_chat_ids.map(chat_id => ({ chat_id, user_id: ownerId, conversation_cleared_at: null }))
+      if (name === 'publish_native_conversation_message') return { chat_id: args.p_chat_id, already: false, account_revision: '9007199254740993' }
       if (name === 'start_agent_provision_operation') {
         provision ??= { ...args.p_blueprint.members[0], id: args.p_blueprint.members[0].provision_id, operation_id: args.p_operation_id, member_key: 'single', device_id: deviceId, phase: 'queued', project_path: null, avatar: null, special_focus: null }
         return { id: args.p_operation_id }
@@ -162,6 +164,21 @@ const untilNetworkQueued = (fx) => until(async () => {
   return !fx.host.state().execution && Object.values(journal.jobs).some(job => job.status === 'queued' && job.networkWait)
 }, fx.events)
 
+test('host start drops file-cache chunks older than an hour and keeps fresh ones', async () => {
+  const cache = (root) => join(root, 'hosts', ownerId, 'file-cache')
+  const fx = await fixture(async () => ({ status: 'done', text: '[NO_REPLY]' }), { prepare: async ({ root }) => {
+    const stale = join(cache(root), `open-${'a'.repeat(64)}`), fresh = join(cache(root), `open-${'b'.repeat(64)}`)
+    await mkdir(stale, { recursive: true }); await writeFile(join(stale, '0'), 'x')
+    await mkdir(fresh, { recursive: true }); await writeFile(join(fresh, '0'), 'x')
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    await utimes(stale, old, old)
+  } })
+  try {
+    await until(async () => !(await readdir(cache(fx.root))).includes(`open-${'a'.repeat(64)}`), fx.events)
+    assert.deepEqual(await readdir(cache(fx.root)), [`open-${'b'.repeat(64)}`])
+  } finally { await fx.close() }
+})
+
 test('a read phone failure stays an error and the next real failed turn becomes unseen again', async () => {
   const fx = await fixture(async () => ({ status: 'failed', text: '', error: 'controlled turn failure' }))
   try {
@@ -209,7 +226,7 @@ test('phone presence budget closing an already idle host withdraws capability wi
     const status = device.status
     await fx.host.close()
     assert.equal(fx.host.state().status, 'stopped')
-    assert.equal(device.capabilities.host_runtime_capability, 0)
+    assert.equal(device.capabilities.host_runtime_capability, 1)
     assert.deepEqual(device.capabilities.runtimes, [])
     assert.equal(device.status, status)
     for (const [, args] of reports()) assert.equal(Object.hasOwn(args, 'p_runtime_status'), false)
@@ -513,6 +530,68 @@ async function recordTurn(command, hooks, text) {
   hooks.emit({ type: 'pi_live', kind: 'committed', id: `phone-input:${command.jobId}`, recordId: userId })
 }
 
+test('the real host journals every personal reply before publication and transcript reads do not publish again', async () => {
+  const durable = []
+  const fx = await fixture(async (command, hooks) => {
+    await recordTurn(command, hooks, '任务最终回复')
+    for (const [id, text] of [['first', '个人过程回复'], ['second', '任务最终回复']]) {
+      const event = { type: 'pi_live', kind: 'complete', id: `${command.jobId}:${id}`, at: 1730000000123, content: [{ type: 'text', text }] }
+      hooks.emit(event); hooks.emit(event)
+      hooks.emit({ type: 'pi_live', kind: 'committed', id: event.id, recordId: `provider-${id}` })
+    }
+    return { status: 'done', text: '任务最终回复' }
+  }, { prepare: async ({ root, cloud }) => {
+    const rpc = cloud.rpc
+    cloud.rpc = async (schema, name, args) => {
+      if (name === 'publish_native_conversation_message') {
+        const saved = JSON.parse(await readFile(join(root, 'hosts', ownerId, 'host.json'), 'utf8'))
+        const outbox = saved.conversationOutbox[args.p_message_id]
+        assert.ok(outbox)
+        const message = Object.values(saved.jobs[outbox.jobId].personalMessages).find(item => item.publicationId === args.p_message_id)
+        assert.ok(message)
+        assert.equal(message.occurredAt, args.p_occurred_at)
+        durable.push(args.p_message_id)
+      }
+      return rpc(schema, name, args)
+    }
+  } })
+  try {
+    const created = await fx.host.invoke('sessionTimeline.sessionCreate', [{ harness: 'pi', prompt: '真实个人输入' }], randomUUID())
+    await until(() => durable.length === 3 && fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events)
+    assert.equal(new Set(durable).size, 3)
+    await fx.host.invoke('sessionTimeline.sessionSnapshot', [{ conversationId: created.conversationId }])
+    await fx.host.invoke('sessionTimeline.sessionsList', [])
+    assert.equal(durable.length, 3)
+    const saved = JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8'))
+    assert.ok(Object.values(saved.conversationOutbox).every(item => item.status === 'published' && item.receipt.account_revision === '9007199254740993'))
+  } finally { await fx.close() }
+})
+
+test('host authentication recovery publishes an already journaled reply with its original UUID', async () => {
+  let release, started
+  const pending = new Promise(resolve => { release = resolve })
+  const entered = new Promise(resolve => { started = resolve })
+  const fx = await fixture(async (_command, hooks) => {
+    started(); await pending
+    hooks.emit({ type: 'pi_live', kind: 'complete', id: 'personal-reply', at: 1730000000123, content: [{ type: 'text', text: '鉴权恢复前已接纳的回复' }] })
+    return { status: 'done', text: '鉴权恢复前已接纳的回复' }
+  })
+  try {
+    await fx.host.invoke('sessionTimeline.sessionCreate', [{ harness: 'pi', prompt: '真实个人输入' }], randomUUID())
+    await entered
+    await fx.authChanged(null, new Error('temporary auth outage'))
+    release()
+    await until(() => fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events)
+    const saved = JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8'))
+    const reply = Object.values(saved.conversationOutbox).find(item => item.role === 'assistant')
+    assert.equal(reply.status, 'pending')
+    assert.equal(fx.calls.some(([name, args]) => name === 'publish_native_conversation_message' && args.p_message_id === reply.id), false)
+    await fx.authChanged({ access_token: 'refreshed', refresh_token: 'rotated', expires_at: 2000000000 })
+    await until(() => fx.calls.some(([name, args]) => name === 'publish_native_conversation_message' && args.p_message_id === reply.id), fx.events)
+    await until(async () => JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8')).conversationOutbox[reply.id].status === 'published', fx.events)
+  } finally { release(); await fx.close() }
+})
+
 test('a local create runs its first input directly and reads the actual Pi result without any DM messages', async () => {
   const fx = await fixture(async (command, hooks) => {
     assert.equal(command.prompt, '直接在任务页查日程')
@@ -729,7 +808,8 @@ test('real phone device IDs register honestly, and remote spawn completes the ca
     assert.equal(fx.sessionReplies.length, 1)
     const registrations = fx.calls.filter(([name]) => name === 'upsert_device').map(([, row]) => row)
     assert.equal(registrations[0].device_id, deviceId)
-    assert.equal(registrations[0].capabilities.host_runtime_capability, 0)
+    assert.equal(registrations[0].capabilities.host_runtime_capability, 1)
+    assert.deepEqual(registrations[0].capabilities.runtimes, [])
     assert.equal(registrations.at(-1).capabilities.host_runtime_capability, 1)
     assert.equal(fx.host.state().lastHeartbeatAt > 0, true)
     assert.deepEqual(await fx.host.invoke('agentSession.locate', [caller, { action: 'locate', session_ids: [result.session_id, randomUUID()] }], randomUUID()), { session_ids: [result.session_id] })
@@ -744,7 +824,9 @@ test('a local initial message enters the shared inbox envelope and replies with 
     const tool = hooks.extraTools.find((item) => item.name === 'message_send')
     const args = { chat_id: chatId, text: '日历结果', to_user_ids: [`user:${ownerId}`], reply_to_message_id: command.prompt.match(/msg="(msg:[^"]+)/)[1] }
     await tool.execute('call-one', args)
-    await tool.execute('call-retry-with-different-tool-id', args)
+    // A transport replay retains its admitted tool-call identity. Identical text
+    // in a new tool call is a new message, not evidence of a retry.
+    await tool.execute('call-one', args)
     return { status: 'done', text: '已回复' }
   })
   const messageId = randomUUID()
@@ -759,6 +841,27 @@ test('a local initial message enters the shared inbox envelope and replies with 
     const journal = JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8'))
     assert.equal(inboxJob(journal, messageId).prompt.includes('gugu_delivery'), true)
     assert.equal(JSON.stringify(journal).includes('private-turn-token'), false)
+  } finally { await fx.close() }
+})
+
+test('two separately admitted owner notices retain distinct IDs even when their text is identical', async () => {
+  const fx = await fixture(async (command, hooks) => {
+    if (!command.prompt.includes('gugu_delivery')) return { status: 'done', text: '[NO_REPLY]' }
+    const tool = hooks.extraTools.find(item => item.name === 'message_send')
+    const args = { chat_id: chatId, text: '相同文字的新消息', to_user_ids: [`user:${ownerId}`] }
+    await tool.execute('first-notice', args)
+    await tool.execute('second-notice', args)
+    await tool.execute('first-notice', args)
+    return { status: 'done', text: '[NO_REPLY]' }
+  })
+  const messageId = randomUUID()
+  fx.inboxRows.push({ chat_id: chatId, chat_kind: 'dm', chat_public_id: null, id: messageId, seq: 1, sender_user_id: ownerId, sender_type: 'human', sender_display_name: '主人', content: '通知我两次', content_type: 'text', to_user_ids: [agentId], is_whisper: false, file_item_id: null, file_version: null, file_blob_id: null, group_rules: null, named_identities: {}, created_at: new Date().toISOString() })
+  try {
+    await fx.host.invoke('sessionTimeline.sessionCreate', [{ harness: 'pi', model: 'platform:free', prompt: '通知我两次' }], 'two-owner-notices')
+    await until(async () => inboxJob(JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8')), messageId)?.status === 'done', fx.events)
+    const replies = fx.messages.filter(message => message.p_sender_user_id === agentId)
+    assert.equal(replies.length, 2)
+    assert.notEqual(replies[0].p_message_id, replies[1].p_message_id)
   } finally { await fx.close() }
 })
 
@@ -843,14 +946,14 @@ test('a failed turn on a whispered message posts no public notice: it would tell
   } finally { await fx.close() }
 })
 
-test('an image attachment is durably admitted as safe metadata and acknowledged without fetching bytes during inbox delivery', async () => {
+test('an image attachment is durably admitted as the desktop reads it, a reference to fetch, without fetching bytes during inbox delivery', async () => {
   let prompt
   const fx = await fixture(async (command, hooks) => {
     if (!command.prompt.includes('gugu_delivery')) return { status: 'done', text: '[NO_REPLY]' }
     prompt = command.prompt
     assert.match(prompt, /message_download_file/)
     assert.match(prompt, /calendar\.png/)
-    assert.equal(prompt.includes('https://unreachable.invalid'), false)
+    assert.ok(prompt.includes('[Not on this computer. To read or change it: message_download_file {source_message_id: "msg:'), prompt)
     assert.equal(prompt.includes('[Image attached at local path:'), false)
     await hooks.extraTools.find((item) => item.name === 'message_send').execute('ack-image', { chat_id: chatId, text: '已收到附件消息', to_user_ids: [`user:${ownerId}`] })
     return { status: 'done', text: '已回复' }
@@ -1297,7 +1400,9 @@ test('RPC connectivity cannot publish ready before the initial heartbeat and sta
       onConnectivity(true)
       assert.equal(events.some((event) => event.type === 'host_state' && event.ready), false)
       assert.equal(calls.some(([name]) => name === 'runtime_instance_heartbeat'), true)
-      assert.equal(calls.filter(([name]) => name === 'upsert_device').at(-1)[1].capabilities.host_runtime_capability, 0)
+      const capability = calls.filter(([name]) => name === 'upsert_device').at(-1)[1].capabilities
+      assert.equal(capability.host_runtime_capability, 1)
+      assert.deepEqual(capability.runtimes, [])
     },
   })
   try { assert.equal(fx.host.state().ready, true) } finally { await fx.close() }
@@ -1535,7 +1640,7 @@ test('a failed heartbeat changes admission state and other healthy signals canno
   } finally { await fx.close() }
 })
 
-test('closing the task host withdraws only runtime capability on its owner-scoped device row', async () => {
+test('closing the task host withdraws runtimes and preserves its owner-scoped device version', async () => {
   const fx = await fixture(async () => ({ status: 'done', text: '[NO_REPLY]' }))
   try {
     const device = fx.devices.find((row) => row.device_id === deviceId)
@@ -1547,9 +1652,21 @@ test('closing the task host withdraws only runtime capability on its owner-scope
     assert.equal(device.last_seen_at, before.last_seen_at)
     assert.deepEqual(device.capabilities.actions, before.capabilities.actions)
     assert.equal(device.capabilities.futureCapability, 'preserve')
-    assert.equal(device.capabilities.host_runtime_capability, 0)
+    assert.equal(device.capabilities.host_runtime_capability, before.capabilities.host_runtime_capability)
     assert.deepEqual(device.capabilities.runtimes, [])
     assert.deepEqual(fx.calls.find(([name]) => name === 'update_device')[1].filters, [['device_id', deviceId], ['user_id', ownerId]])
+  } finally { await fx.close() }
+})
+
+for (const capability of [3, null, undefined]) test(`closing preserves an existing runtime version value (${capability})`, async () => {
+  const fx = await fixture(async () => ({ status: 'done', text: '[NO_REPLY]' }))
+  try {
+    const device = fx.devices.find((row) => row.device_id === deviceId)
+    if (capability === undefined) delete device.capabilities.host_runtime_capability
+    else device.capabilities.host_runtime_capability = capability
+    const before = structuredClone(device.capabilities)
+    await fx.host.close()
+    assert.deepEqual(device.capabilities, { ...before, runtimes: [] })
   } finally { await fx.close() }
 })
 
@@ -1927,7 +2044,7 @@ test('resolves files at run time, warns without blocking later text, and persist
     await fx.host.invoke('sessionTimeline.sessionSend', [{ conversationId: created.conversationId, text: 'original caption', files: [ref], clientRequestId: randomUUID() }], randomUUID());
     await until(() => prompts.length === 2 && fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events);
     assert.match(prompts[1], /^original caption\n\n/);
-    assert.match(prompts[1], /File not saved/);
+    assert.ok(prompts[1].includes(`[Not on this computer. To read or change it: message_download_file {file: "gugu-file://${ref.itemId}?v=${ref.version}"}]`), prompts[1]);
     assert.ok(fx.events.some(event => event.type === 'host_log' && event.level === 'warn' && event.message.includes(ref.itemId) && event.message.includes(created.conversationId)));
     await fx.host.invoke('sessionTimeline.sessionSend', [{ conversationId: created.conversationId, text: 'following text', clientRequestId: randomUUID() }], randomUUID());
     await until(() => prompts.length === 3 && fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events);

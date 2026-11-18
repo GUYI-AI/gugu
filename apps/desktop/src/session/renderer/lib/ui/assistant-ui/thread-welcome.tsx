@@ -22,6 +22,8 @@ export type ThreadSuggestion = {
 
 export type ThreadWelcomeProps = {
   title: ReactNode;
+  /** 标题下一行弱化的说明(页头 PageHeader 的 description 同一个字样);没有就不画。 */
+  description?: ReactNode;
   suggestions?: ThreadSuggestion[];
   /** 点击建议芯片。宿主负责真的把它提交出去 —— 这里不做占位按钮。 */
   onSelectSuggestion?: (suggestion: ThreadSuggestion) => void;
@@ -32,6 +34,7 @@ export type ThreadWelcomeProps = {
 
 export const ThreadWelcome: FC<ThreadWelcomeProps> = ({
   title,
+  description,
   suggestions,
   onSelectSuggestion,
   suggestionsLabel,
@@ -44,6 +47,7 @@ export const ThreadWelcome: FC<ThreadWelcomeProps> = ({
     <h1 className="gg-type-page-title animate-in text-foreground duration-[var(--dur-med,180ms)] fade-in slide-in-from-bottom-1 fill-mode-both">
       {title}
     </h1>
+    {description ? <p className="text-sm text-foreground-muted">{description}</p> : null}
     {suggestions && suggestions.length > 0 && onSelectSuggestion ? (
       <div
         data-slot="aui-thread-welcome-suggestions"

@@ -3,6 +3,18 @@ import { buildIntegrationListPayload } from './integration-payload-builder';
 import { builtinConnectionCatalog } from '@/components/connections/builtin-connection-catalog';
 import { integrationListCopy } from '@/components/assistant/assistant-panel-integrations';
 
+it('uses the execution host to hide unsupported CLI entries while retaining working applications', () => {
+  const catalog = (platform: string, arch: string) => buildIntegrationListPayload('zh-CN', undefined, undefined, { platform, arch });
+  const cliIds = (entries: ReturnType<typeof catalog>) => entries.filter(item => item.auth.methods.some(method => method.kind === 'cli')).map(item => item.id).sort();
+  expect(cliIds(catalog('win32', 'x64'))).toEqual(['dingtalk', 'wecom']);
+  expect(cliIds(catalog('win32', 'arm64'))).toEqual([]);
+  for (const platform of ['darwin', 'linux']) for (const arch of ['x64', 'arm64']) {
+    expect(cliIds(catalog(platform, arch))).toEqual(['dingtalk', 'feishu', 'tencent-meeting', 'wecom']);
+  }
+  expect(catalog('win32', 'x64').some(item => item.id === 'github')).toBe(true);
+  expect(buildIntegrationListPayload('zh-CN', undefined, undefined, null)).toHaveLength(23);
+});
+
 it('publishes one public category and maintained aliases for every built-in integration', () => {
   const entries = buildIntegrationListPayload('en-US');
   expect(entries).toHaveLength(23);

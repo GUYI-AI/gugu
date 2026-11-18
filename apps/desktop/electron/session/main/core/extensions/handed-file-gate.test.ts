@@ -115,6 +115,20 @@ function handedCases() {
     expect(text(await read(pageOn(null), 'in.txt'))).toBe('inside');
   });
 
+  it('a file named through a link to its working copy (a server account link) is that working copy\'s, however its page was opened', async () => {
+    // A server's task folder was once recorded through `accounts/<id>` → `account`; the record is canonical now, and an agent
+    // that still names its files the old way names the same files.
+    const linked = path.join(home, 'linked-root');
+    fs.symlinkSync(f.root, linked);
+    const named = path.join(linked, 'in.txt');
+    expect(text(await read(pageOn(named, 'host'), named))).toBe('inside');
+    expect(text(await read(pageOn(null), named))).toBe('inside');
+    expect(text(await read(pageOn(null), path.join(f.root, 'in.txt')))).toBe('inside');
+    // A link in it to a file outside is still not followed, whoever opened it.
+    fs.symlinkSync(path.join(outside, 'id_ed25519'), path.join(f.root, 'key'));
+    await expect(read(pageOn(path.join(linked, 'key')), path.join(linked, 'key'))).rejects.toThrow(/outside this workspace/);
+  });
+
   it('a file a person opened is never written, even by an App that may write files: it stays as it was', async () => {
     f.capabilities.add('files:write');
     await expect(writeAppFileText(pageOn(file), { ref: { workspace, id: file }, text: 'overwritten' })).rejects.toThrow(/read-only/);

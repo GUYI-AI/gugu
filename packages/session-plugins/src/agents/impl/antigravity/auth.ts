@@ -1,5 +1,5 @@
 import type { AgentAuthContext, AgentAuthStatus } from '@gugu/session-core/agents/plugins';
-import { ANTIGRAVITY_LAUNCH_SCRIPT } from './session-bundle';
+import { ANTIGRAVITY_PROBE_LAUNCH_SCRIPT } from './session-bundle';
 
 /**
  * Antigravity(官方 ACP 服务 `agy_acp_server`)的登录 —— **协议登录**,没有登录子命令(#6335)。
@@ -217,7 +217,7 @@ async function agyModelsAuthStatus(ctx: AgentAuthContext): Promise<AgentAuthStat
   try {
     await ctx.exec(
       '/usr/bin/env',
-      [`${ANTIGRAVITY_HOME_ENV}=${geminiHome}`, '/bin/sh', '-c', ANTIGRAVITY_LAUNCH_SCRIPT, ctx.cli, 'models'],
+      [`${ANTIGRAVITY_HOME_ENV}=${geminiHome}`, '/bin/sh', '-c', ANTIGRAVITY_PROBE_LAUNCH_SCRIPT, ctx.cli, 'models'],
       { timeout: AGY_MODELS_TIMEOUT_MS }
     );
     return { kind: 'authenticated' };

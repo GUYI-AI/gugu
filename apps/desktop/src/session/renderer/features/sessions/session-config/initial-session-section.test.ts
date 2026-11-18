@@ -38,7 +38,10 @@ import { buildInitialSession } from '../create-session-modal/build-create-sessio
 import { LibraryHostProvider, machineLibraryHost } from '@renderer/features/library/library-host';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { runInAction } from 'mobx';
-import { queryClient } from '@renderer/lib/query-client';
+import { queryClient } from '@/lib/replica';
+import { notifyManager } from '@tanstack/react-query';
+// Deliver query results in the same task they resolve in, so a test's flush sees them.
+notifyManager.setScheduler((callback) => callback());
 import {
   InitialSessionField,
   resolvePlatformModel,
@@ -121,6 +124,7 @@ vi.mock('@renderer/lib/electron-api', () => ({
 
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
   getAgentConfigRuntimeClient: async () => ({
+    listCustomModels: async () => ({ success: true, data: [] }),
     listConnections: async () => ({ success: true, data: [{ id: 'native', kind: 'native', name: 'CLI', current: true }] }),
     refreshAuthStatus: async () => ({ success: true, data: { kind: 'unauthenticated' } }),
   }),
@@ -220,6 +224,12 @@ const harnessCatalogRef = vi.hoisted(() => ({ current: null as unknown }));
 function harnessCatalog(state: HarnessCatalogState) {
   harnessCatalogRef.current = state;
 }
+
+// Target capability queries have their own QueryClient-backed race tests.
+// These creation tests supply the default catalog directly.
+vi.mock('@renderer/lib/stores/use-target-model-catalog', () => ({
+  useTargetModelCatalog: () => undefined,
+}));
 
 vi.mock('@renderer/lib/stores/use-harness-model-catalog', () => ({
   HARNESS_MODEL_CATALOG_QUERY_KEY: ['agents', 'modelCatalog'],
@@ -523,7 +533,8 @@ vi.mock('@renderer/features/settings/use-app-settings-key', async () => {
   const { useSyncExternalStore } = await import('react');
   return {
     useAppSettingsKey: (key: string) => ({
-      value: useSyncExternalStore(settingsStore.subscribe, () => settingsStore.get(key)),
+      settings: ((value: unknown) => value === undefined ? { state: 'unknown' } : { state: 'value', value: { value, defaults: value, overrides: {} }, stale: false, error: null })(
+        useSyncExternalStore(settingsStore.subscribe, () => settingsStore.get(key))),
       update: (partial: Record<string, unknown>) => settingsStore.set(key, { ...((settingsStore.get(key) as object | undefined) ?? {}), ...partial }),
       updateAsync: async (partial: Record<string, unknown>) => {
         if (settingsStore.failure) throw settingsStore.failure;
@@ -533,11 +544,12 @@ vi.mock('@renderer/features/settings/use-app-settings-key', async () => {
   };
 });
 // 新任务框给不给「终端 | 通用」跟本机开关(应用设置 terminal.enabled)走:同一份内存设置里的 `terminal`。
-vi.mock('@renderer/features/settings/use-terminal-enabled', async () => {
+vi.mock('@renderer/features/settings/use-terminal-enabled', async (original) => {
   const { useSyncExternalStore } = await import('react');
   return {
-    useTerminalEnabled: () =>
-      useSyncExternalStore(settingsStore.subscribe, () => (settingsStore.get('terminal') as { enabled?: boolean | null } | undefined)?.enabled === true),
+    ...await original<object>(),
+    useTerminalEnabled: () => ({ state: 'value', stale: false, error: null,
+      value: useSyncExternalStore(settingsStore.subscribe, () => (settingsStore.get('terminal') as { enabled?: boolean | null } | undefined)?.enabled === true) }),
   };
 });
 const EMPTY_MEMORY = { lastPicked: null, lastStarted: null, sessionView: 'code' as const };
@@ -800,6 +812,7 @@ describe('useInitialSessionState', () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    queryClient.clear();
     latestState = undefined;
     mocks.droppedPath = '';
     harnessCatalog(READY_CATALOG);
@@ -1576,6 +1589,7 @@ describe('InitialSessionField', () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    queryClient.clear();
     latestState = undefined;
     // ⚠️ 这一句原来**没有**,于是本 describe 的每个用例都继承上一个用例留下的目录状态 ——
     // 一直没出事,只因为在此之前没人在这里改过它,值恒是上一个 describe 的 beforeEach 留下的
@@ -1620,9 +1634,20 @@ describe('InitialSessionField', () => {
 
   async function renderField(props: React.ComponentProps<typeof FieldProbe> = {}) {
     await act(async () => {
-      root.render(React.createElement(FieldProbe, props));
+      // 「去登录」打开的连接面板读连接列表(react-query)。
+      root.render(React.createElement(QueryClientProvider, { client: queryClient }, React.createElement(FieldProbe, props)));
     });
-    await act(async () => {});
+    // The shared catalog query notifies on the next macrotask.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  }
+
+  /**
+   * The Gugu catalog's answer is the second one after an empty first (auth race retry), so an
+   * empty or failing fixture answers after the retry delay. The harness notice waits for it: the
+   * catalog decides whether the session goes through the harness login at all.
+   */
+  async function guguCatalogAnswers() {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
   }
 
   it('lets task creation consume the draft after success instead of clearing on Enter', async () => {
@@ -1685,7 +1710,7 @@ describe('InitialSessionField', () => {
     ]);
   });
 
-  it('routes an uninstalled agent action to its agent detail in the library', async () => {
+  it('routes an uninstalled agent action to the agent product page', async () => {
     await renderField();
     (window as typeof window & {
       __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void
@@ -1695,9 +1720,8 @@ describe('InitialSessionField', () => {
       props.onAgentAction?.('claude');
     });
     expect(mocks.hostInstallNavigation).toHaveBeenCalledWith('claude');
-    expect(mocks.navigate).toHaveBeenCalledWith('library', {
-      tab: 'agents',
-      agentId: 'claude',
+    expect(mocks.navigate).toHaveBeenCalledWith('apps', {
+      agentDetail: { kind: 'agent-app-detail', agentId: 'claude' },
     });
   });
 
@@ -2025,6 +2049,7 @@ describe('InitialSessionField', () => {
     platformCatalog({ models: [], agentDefault: null, catalogError: 'gugu-models:runtime-not-connected' });
 
     await renderField();
+    await guguCatalogAnswers();
 
     expect(latestState?.platformNotice).toBe('guguCatalog.reason.runtime-not-connected');
     expect(toolbarText()).not.toContain('guguCatalog.reason.runtime-not-connected');
@@ -2040,6 +2065,7 @@ describe('InitialSessionField', () => {
     platformCatalog({ models: [], agentDefault: null, catalogError: 'gugu-models:unreachable' });
 
     await renderField();
+    await guguCatalogAnswers();
 
     expect(latestState?.platformNotice).toBe('guguCatalog.reason.unreachable');
     const text = toolbarText();
@@ -2066,6 +2092,7 @@ describe('InitialSessionField', () => {
       await act(async () => {});
     };
     await renderOn(true);
+    await guguCatalogAnswers();
     expect(latestState?.platformNotice).toBe('guguCatalog.reason.host-not-ready');
     // 这边知道它没连上了:那句是机器离线的结果,不再说
     await renderOn(false);
@@ -2082,6 +2109,7 @@ describe('InitialSessionField', () => {
     platformCatalog({ models: [], agentDefault: null, catalogError: 'model access server is not configured' });
 
     await renderField();
+    await guguCatalogAnswers();
 
     expect(latestState?.platformNotice).toBe('guguCatalog.reason.unknown');
     expect(toolbarText()).not.toContain('not configured');
@@ -2125,6 +2153,7 @@ describe('InitialSessionField', () => {
     harnessCatalog({ kind: 'not-installed' });
 
     await renderField();
+    await guguCatalogAnswers();
 
     expect(chatComposerProps().modelOptions ?? {}).toEqual({});
     // 断的是「取了哪条 key、插了哪个 agent 名」—— 文案本体在词表里，两语由 messages 元测试守。
@@ -2145,6 +2174,25 @@ describe('InitialSessionField', () => {
     expect(toolbarText()).not.toContain('harnessCatalog.loading');
   });
 
+  it('does not judge the harness login before the Gugu catalog says which route the session takes', async () => {
+    // Each New task mount starts from an empty Gugu catalog. Judging the harness then raised
+    // "Claude Code requires sign-in" and retracted it once the Gugu model arrived (owner 11-10).
+    harnessCatalog({
+      kind: 'auth-required',
+      authMethods: [{ id: 'oauth', name: 'OAuth', kind: 'agent' }],
+      efforts: [],
+      selectedEffort: null,
+    });
+    let answer: (response: PlatformModelCatalogResponse) => void = () => {};
+    mocks.invoke.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+
+    await renderField();
+    expect(mocks.notify).not.toHaveBeenCalled();
+
+    await act(async () => answer({ models: [GLM], agentDefault: null }));
+    expect(mocks.notify).not.toHaveBeenCalled();
+  });
+
   it('tells apart not-installed from needs-login', async () => {
     // ⚠️ 下面这些 authMethods fixture 只喂给 notice / 弹窗那一层，而那一层只读 `id` / `name`。
     // `kind` 取的是 schema 的**缺省值** `agent`（「无 `type` 即 agent」），
@@ -2159,10 +2207,23 @@ describe('InitialSessionField', () => {
     });
 
     await renderField();
+    await guguCatalogAnswers();
 
     expect(latestState?.harnessNotice).toBe('harnessCatalog.authRequiredWith|Claude Code|OAuth');
     expect(noticeText()).toContain('harnessCatalog.authRequiredWith');
   });
+
+  /** 「去登录」打开的是这一家的连接面板(#2507,与订阅页、资源库详情同一块),留在原草稿 —— ❌ 跳资源库、❌ 自己弹登录终端。 */
+  function expectConnectionPanel(provider: string, machine: string | null) {
+    const panel = latestState?.connectionPanel;
+    expect(React.isValidElement(panel)).toBe(true);
+    expect((panel as React.ReactElement).type).toBe(SubscriptionConnections);
+    expect((panel as React.ReactElement<{ agent: { id: string }; machine: string | null }>).props)
+      .toMatchObject({ agent: { id: provider }, machine });
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.hostInstallNavigation).not.toHaveBeenCalled();
+    expect(modalStore.activeModalId).not.toBe('agentSignInModal');
+  }
 
   it('hands a needs-login harness a way to actually sign in, not just the news', async () => {
     // owner 2026-08-26 实测的缺口:咕咕说了「需要先登录(Login with Kimi account)」,
@@ -2188,6 +2249,8 @@ describe('InitialSessionField', () => {
     // 组头与「登录之后」那一档共用同一个键 —— 同一档换内容不换标题。
     expect(unlock?.groupLabel).toBe('harnessCatalog.ownModelsGroup|Kimi');
     expect(unlock?.label).toBe('harnessCatalog.unlockModels|Kimi');
+    // Second line: what the panel it opens offers. Kimi declares only its CLI's own sign-in.
+    expect(unlock?.detail).toBe('harnessCatalog.access.account');
 
     // 反例对照:那条 toast 必须**真的没了** —— 只删渲染、判据仍绿的话这里会红。
     expect(
@@ -2200,19 +2263,16 @@ describe('InitialSessionField', () => {
     (window as typeof window & {
       __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void
     }).__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__ = mocks.hostInstallNavigation;
-    act(() => latestState?.harnessSignIn?.());
+    mocks.navigate.mockClear(); mocks.hostInstallNavigation.mockClear();
+    await act(async () => { latestState?.harnessSignIn?.(); });
 
     /**
-     * 真的走到了那条路 —— 现在的落点是**抽屉的「账号」行**(#6100),不再是这里自己弹的登录终端。
+     * 真的走到了那条路 —— 现在的落点是**这一家的连接面板**(#2507:与 Claude / Codex 同一个,「添加连接 → 账号」
+     * 就是它 CLI 自己那份登录),留在原草稿;❌ 跳资源库、❌ 这里自己弹登录终端。
      * 入口的判据没变:这一条只对**自己声明了命令行登录方式**的家出现(kimi 声明了 kimi-login),
      * 那道闸在 `resolveSignInMethod`,阴控在下面那条「没声明 CLI 登录的家没有这条出路」。
-     *
-     * 两半缺一不可:外壳管顶层 tab,会话页管自己的资源库路由。
      */
-    expect(mocks.hostInstallNavigation).toHaveBeenCalledWith('kimi');
-    expect(mocks.navigate).toHaveBeenCalledWith('library', { tab: 'agents', agentId: 'kimi' });
-    // 阴控:composer ❌ 不再自己开登录终端。
-    expect(modalStore.activeModalId).not.toBe('agentSignInModal');
+    expectConnectionPanel('kimi', null);
   });
 
   it.each([{ provider: 'claude', declared: false }, { provider: 'claude', declared: true }, { provider: 'codex', declared: false }, { provider: 'codex', declared: true }])('$provider declared=$declared opens the shared connection menu over the original task draft', async ({ provider, declared }) => {
@@ -2233,14 +2293,22 @@ describe('InitialSessionField', () => {
       const trigger = document.createElement('button');
       trigger.textContent = 'Go sign in'; container.append(trigger);
       expect(latestState?.harnessSignIn).toBeTypeOf('function');
+      // The row inside the model menu that a signed-out catalog (`auth-required`) turns into.
+      expect(latestState?.harnessModelUnlock).toMatchObject({
+        groupLabel: `harnessCatalog.ownModelsGroup|${provider}`,
+        label: `harnessCatalog.unlockModels|${provider}`,
+        detail: 'harnessCatalog.access.account',
+      });
       await act(async () => { latestState?.harnessSignIn?.(trigger); });
       // Base UI portals are browser-only. This node suite checks the real state
       // request; agent-connection-panel.test.tsx exercises its actual menu/form.
       const panel = latestState?.connectionPanel;
       expect(React.isValidElement(panel)).toBe(true);
       expect((panel as React.ReactElement).type).toBe(SubscriptionConnections);
-      expect((panel as React.ReactElement<{ open: boolean; agent: { id: string }; machine: string | null }>).props)
-        .toMatchObject({ open: true, agent: { id: provider }, machine: null });
+      // 一个连接都没有(「现有 CLI 配置」没登上就不列,owner 2026-11-12):面板请求打开后自己换成「添加连接」表单,
+      // 菜单那一格随即收起(表单在 agent-connection-panel.test.tsx 里真画出来看)。
+      expect((panel as React.ReactElement<{ agent: { id: string }; machine: string | null }>).props)
+        .toMatchObject({ agent: { id: provider }, machine: null });
       expect(latestState?.prompt).toBe('Keep the original task draft');
       expect(latestState?.attachments).toEqual(before?.attachments);
       expect(latestState?.provider).toBe(provider);
@@ -2270,9 +2338,13 @@ describe('InitialSessionField', () => {
     await act(async () => {
       root.render(
         React.createElement(
-          LibraryHostProvider,
-          { value: machineLibraryHost({ deviceId: 'dev-walk', deviceLabel: '走查机', online: true, lastSeenAt: null }) },
-          React.createElement(FieldProbe, { provider: 'kimi' })
+          QueryClientProvider,
+          { client: queryClient },
+          React.createElement(
+            LibraryHostProvider,
+            { value: machineLibraryHost({ deviceId: 'dev-walk', deviceLabel: '走查机', online: true, lastSeenAt: null }) },
+            React.createElement(FieldProbe, { provider: 'kimi' })
+          )
         )
       );
     });
@@ -2282,26 +2354,12 @@ describe('InitialSessionField', () => {
     (window as typeof window & {
       __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void
     }).__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__ = mocks.hostInstallNavigation;
-    act(() => latestState?.harnessSignIn?.());
+    await act(async () => { latestState?.harnessSignIn?.(); });
 
-    expect(modalStore.activeModalId).toBe('agentSignInModal');
-    const args = modalStore.activeModalArgs as {
-      providerId: string;
-      remote?: { deviceId: string; deviceLabel: string; headless: boolean; command: string };
-      onClose: () => void;
-    };
-    expect(args.providerId).toBe('kimi');
-    expect(args.remote).toMatchObject({ deviceId: 'dev-walk', deviceLabel: '走查机', command: 'kimi login' });
-    // 本机那条路一步都没走。
-    expect(mocks.navigate).not.toHaveBeenCalled();
-    expect(mocks.hostInstallNavigation).not.toHaveBeenCalled();
+    // 连接面板开在**那台机器**上(读、登都在那台机器上;登录窗口的远端参数见 agent-connection-panel.test.tsx)。
+    expectConnectionPanel('kimi', 'dev-walk');
     // 「去装」同理:远端没有跳本机资源库这一步。
     expect(chatComposerProps().onAgentAction).toBeUndefined();
-    // 关窗(登没登成只有那台机器知道)⇒ 这一家的目录重问(那台机器那一份在同一前缀下)。
-    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
-    act(() => args.onClose());
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['agents', 'modelCatalog', 'kimi'] });
-    act(() => modalStore.closeModal());
   });
 
   it('tells a forced-login harness how to sign in, and does not claim Gugu models work', async () => {
@@ -2341,12 +2399,11 @@ describe('InitialSessionField', () => {
     (window as typeof window & {
       __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void
     }).__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__ = mocks.hostInstallNavigation;
-    act(() => args.onSuccess({ action: 'sign-in' }));
+    mocks.navigate.mockClear(); mocks.hostInstallNavigation.mockClear();
+    await act(async () => { args.onSuccess({ action: 'sign-in' }); });
 
-    // #6100:「去登录」把人送到抽屉的「账号」那一行,❌ 不在这里再弹一个登录终端。
-    expect(mocks.hostInstallNavigation).toHaveBeenCalledWith('qoder');
-    expect(mocks.navigate).toHaveBeenCalledWith('library', { tab: 'agents', agentId: 'qoder' });
-    expect(modalStore.activeModalId).not.toBe('agentSignInModal');
+    // #2507:「去登录」打开这一家的连接面板(「添加连接 → 账号」),❌ 跳资源库、❌ 这里再弹一个登录终端。
+    expectConnectionPanel('qoder', null);
   });
 
   it('offers no sign-in exit when the harness declares no CLI login', async () => {
@@ -2381,6 +2438,7 @@ describe('InitialSessionField', () => {
     });
 
     await renderField({ provider: 'kimi' });
+    await guguCatalogAnswers();
 
     // 阳性对照：那句状态确实还在这一排里 —— 否则下面「这一排点不出登录」平凡为真。
     expect(noticeText()).toContain('harnessCatalog.authRequiredWith');
@@ -2391,12 +2449,10 @@ describe('InitialSessionField', () => {
     (window as typeof window & {
       __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void
     }).__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__ = mocks.hostInstallNavigation;
-    act(() => latestState?.harnessSignIn?.());
-    // #6100:落点从「这里自己弹一个登录终端」改成抽屉的「账号」行 —— 登录终端只有一个主人。
-    // ⚠️ 阴控在下面那行:composer ❌ 不再开任何弹窗。
-    expect(mocks.hostInstallNavigation).toHaveBeenCalledWith('kimi');
-    expect(mocks.navigate).toHaveBeenCalledWith('library', { tab: 'agents', agentId: 'kimi' });
-    expect(modalStore.activeModalId).not.toBe('agentSignInModal');
+    mocks.navigate.mockClear(); mocks.hostInstallNavigation.mockClear();
+    await act(async () => { latestState?.harnessSignIn?.(); });
+    // #2507:落点是这一家的连接面板 —— 登录终端只有一个主人(面板里「添加连接 → 账号」)。
+    expectConnectionPanel('kimi', null);
   });
 
   it('puts no sign-in row in the model list when it has no login to offer', async () => {
@@ -2410,6 +2466,7 @@ describe('InitialSessionField', () => {
     });
 
     await renderField({ provider: 'nologin' });
+    await guguCatalogAnswers();
 
     // 阳性对照：那句状态照说 —— 「没有下一步」不等于「什么都不说」。
     expect(noticeText()).toContain('harnessCatalog.authRequiredWith');
@@ -2432,6 +2489,7 @@ describe('InitialSessionField', () => {
     const raw = 'local Codex app-server exited (code=1 signal=null)';
     harnessCatalog({ kind: 'unavailable', reason: raw });
     await renderField({ provider: 'codex' });
+    await guguCatalogAnswers();
     expect(container.querySelector('[data-testid="harness-catalog-failure-detail"]')).toBeNull();
     expect(container.textContent).not.toContain(raw);
     expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({

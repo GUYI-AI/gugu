@@ -1,3 +1,5 @@
+import { normalizeMimeType } from '../imageMime.mjs'
+
 export const VOICE_ATTACHMENT_LINE_PREFIX = '[语音] durationMs='
 export const VOICE_TRANSCRIPT_LINE_PREFIX = '[转写] '
 
@@ -20,8 +22,8 @@ export function formatVoiceAttachmentMetadata(durationMs: number, transcript: st
 export function parseVoiceAttachmentContent(content: string | null): VoiceAttachmentMeta | null {
   if (!content) return null
 
-  const lines = content.split('\n')
-  if (lines.length !== 3) {
+  const lines = content.replace(/\r\n/g, '\n').split('\n')
+  if (lines.length < 3) {
     return null
   }
 
@@ -50,12 +52,12 @@ export function parseVoiceAttachmentContent(content: string | null): VoiceAttach
   }
 
   const fileName = headerMatch[1]?.trim() ?? ''
-  const mimeType = headerMatch[2]?.trim() ?? null
+  const mimeType = normalizeMimeType(headerMatch[2]) || null
   if (!fileName || !mimeType?.startsWith('audio/')) {
     return null
   }
 
-  const transcript = transcriptLine.slice(VOICE_TRANSCRIPT_LINE_PREFIX.length).trim()
+  const transcript = [transcriptLine.slice(VOICE_TRANSCRIPT_LINE_PREFIX.length), ...lines.slice(3)].join('\n').trim()
   if (!transcript) {
     return null
   }

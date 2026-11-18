@@ -14,11 +14,16 @@ export interface SessionViewRequestBridge {
    * 摆不摆、摆在哪由这一页定。`beside` = ⌘ 点,并排放在正看着那块右边。
    */
   /** Resource requests follow the same conversation destination and are hosted beside the owned session. */
-  openChat(chatId: string, beside: boolean, purpose?: 'resource'): void;
+  /** `within`: opened from inside the screen (a profile card's 「发消息」), so it stays that screen's entry's. */
+  openChat(chatId: string, beside: boolean, purpose?: 'resource', within?: boolean): void;
   openChatResource?(target: { projectId: string; sessionId: string; chatId: string; sourceTabId: string }): Promise<void>;
   /** Desktop group-name entry: preserve the group and let the session page own the single auxiliary pane. */
   openGroupChat?(sourceChatId: string, chatId: string): void;
   prepareGroupSession?(sourceChatId: string, target: { projectId: string; sessionId: string }): import('@renderer/features/chats/group-participant-requests').GroupParticipantRequest;
+  /** #2548 取消固定到左侧栏 from a pinned agent's row in the one list: the session is this page's to write. */
+  unpinFromSidebar?(sessionId: string): void;
+  /** #2548 a pinned agent's row in the one list: open the group / project it lives in, the agent selected in its column. */
+  openSidebarPin?(sessionId: string, homeChatId: string): void;
 }
 
 /** 装到宿主文档的 window 上,让 gugu 那棵树读得到。幂等。打开对话那一下由入口接到这屏上(这里不认这屏)。 */

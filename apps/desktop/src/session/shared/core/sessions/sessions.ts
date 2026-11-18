@@ -1,3 +1,4 @@
+import type { CustomModelRef } from '@gugu/session-core/models/custom-model';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import type { ProviderSessionState } from '@gugu/session-core/acp/client';
 import type { GuguPermissionMode, PromptInput } from '@gugu/session-core/acp';
@@ -44,6 +45,17 @@ export const SESSION_VIEWS: readonly SessionView[] = ['code', 'general'];
 
 export function isSessionView(value: unknown): value is SessionView {
   return value === 'code' || value === 'general';
+}
+
+/**
+ * #2599 The conversation this session's agent was created from: the group it joined at birth, else the chat whose
+ * composer dispatched it (its task card's chat, kept since gugu-dev#181, so agents created before #2599 still read it).
+ * null = not created from a conversation. The left sidebar places the agent by it, never by the groups it joins later.
+ * One rule for the stored row and the renderer's optimistic session, so a just-created agent shows where it lives
+ * before the host's copy arrives (the renderer keeps its optimistic object and ignores the later `session:created`).
+ */
+export function sessionBornInChatId(config: { birthChatId?: string; taskChatId?: string } | null | undefined): string | null {
+  return config?.birthChatId ?? config?.taskChatId ?? null;
 }
 
 /**
@@ -183,6 +195,8 @@ export type Session = {
   pendingRestart?: PendingRestart;
   /** Model to pass to the agent CLI. Absent or empty string means use the CLI default. */
   model?: string;
+  /** Read-only projection of the session’s stored custom provider reference. */
+  customModel?: CustomModelRef;
   /**
    * spec `mcp-session-toggle`:用户为这条会话关掉的那几台 MCP server(harness 的配置键)。
    * ⚠️ `[]` 与缺席**不同**:`[]` = 决定过、一台没关;缺席 = 从没碰过。
@@ -203,6 +217,8 @@ export type Session = {
   mcpSessionLibrary?: SessionLibraryMcpFact;
   /** Reasoning-effort level for that model. Absent means the CLI's own default for it. */
   effort?: string;
+  /** Per-session Fast intent; current native eligibility still applies. */
+  fastMode?: boolean;
   /** #7342 引擎最后一次报的上下文读数,进程停了也留着(通用模式才有)。缺席 = 还没报过。 */
   contextUsage?: SessionContextUsage;
   /** Initial queued prompts to deliver on first ACP spawn. Only present before sessionId is set. */
@@ -226,6 +242,11 @@ export type Session = {
   runtime?: SessionRuntime;
   /** spec session-page: pinned conversations gather in the sidebar Pinned section. */
   isPinned?: boolean;
+  /**
+   * #2548 固定到左侧栏: a top-level session whose agent lives in a group or project keeps its own row at the top
+   * of the desktop left list. Independent of `isPinned`.
+   */
+  isPinnedToSidebar?: boolean;
   /** Parent conversation for a locally spawned child session; null/absent means a root session. */
   parentSessionId?: string | null;
   /** Conversation that created this session through the session-management MCP. */
@@ -244,6 +265,8 @@ export type Session = {
    * 「已卸载的那个扩展」is a better answer than silence (behavior tab-extensions).
    */
   spawnedByExtensionId?: string | null;
+  /** #2599 the conversation its agent was created from (SessionpageSessionSummary.bornInChatId): where it lives. */
+  bornInChatId?: string | null;
   /**
    * spec session-graph:归档的归属键是这条会话自己。null = 在会话列表里,时间戳 = 已归档。
    * 用户看见的入口写的是「归档任务」(他心智里一个 tab 就是一项任务),动的是这一行。

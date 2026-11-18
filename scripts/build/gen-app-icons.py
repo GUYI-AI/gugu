@@ -7,14 +7,25 @@
 管的是**咕咕这个应用自己的图标**(Dock / 任务栏 / 桌面 / 启动器上那一个),不是界面里的图标库
 (那是 Solar,见 scripts/build/gen-icons.mjs),也不是菜单栏托盘图(那是 scripts/build/gen-tray-icons.py)。
 
-源图 build-resources/icon-sources/app-icon-source-1024.png:owner 2026-09-18 选定的大头特写(候选原图
-留在同目录 app-icon-original-d1.png)。产物:
+图形是「网点鸽」(owner 2026-11-11 定):墨底上一只向右飞的鸽子,头、身子、近翅是实心白,
+远翅和尾巴散成 16 颗点(翅膀 6、尾巴 10,点径 55/43/30 三档,往翼尖、尾尖渐小),和登录页鸟群同一种网点画法。
+只有这一只鸟、这一个画法(owner 2026-11-11:❌ 为小尺寸另造一个形状):
+  · build-resources/icon-sources/app-icon-source-1024.png   由同目录矢量母版渲染:
+    `rsvg-convert -w 1024 -h 1024 app-icon-dots.svg -o app-icon-source-1024.png`。要改图形就改母版再重渲,❌ 直接改 PNG。
+  · tray-mark-source.png 是同一张画面换成白底黑形(托盘 / 菜单栏 / 安卓状态栏与主题图标用)。
+  · build-resources/icon-sources/small/app-{16,20,24,32,40,48,64}.png   64 像素及以下逐档画好的同一只鸟:
+    从 1024 缩下来点会糊成灰,所以这几档按像素格重排了点(格距取整像素、放不下就按同一个排法减颗数),
+    由 scripts/build/draw-small-app-icons.py 画出。下面凡是边长正好有这张图的产物都直接用它,没有的才从 1024 缩。
+
+产物:
 
   · macOS  build-resources/AppIcon.icon/      —— Icon Composer 三态包(浅色/深色/着色)。底色走
            icon.json 的 fill-specializations,图层只留主体、背景必须透明,否则深色态会被糊死。
            ⚠ `X-specializations` 数组不能与同名基础键 `X` 并存,并存时 actool **静默忽略**
            覆盖,包照样编得过、三态却没了 —— 所以这里只写 fill-specializations,不写 fill。
            ⚠ 出 mac 包的机器要 Xcode 26+(electron-builder 会先跑 `actool --version` 卡版本)。
+           ⚠ 这个格式只认一张图,系统把它缩到所有尺寸 —— macOS 26 上本来就只能是同一张画面缩小。实测过(macOS 26.5):包里有 Assets.car 时系统
+           完全不看 icon.icns。想让 macOS 26 也按尺寸换图,只能不用这个格式,同时丢掉玻璃质感和着色态(现在不需要换图)。
   · macOS  build-resources/icon.icns          —— 传统格式 10 档。满幅自带圆角,❌ 别用经典的 824/1024
            安全区:线上那份就是满幅,缩到 80% 会在 Dock 里比邻居小一圈。
            ⚠ 这份必须靠 electron-builder.cjs 的 afterPack 手动盖进包里:`mac.icon` 指向
@@ -23,11 +34,14 @@
   · Windows build-resources/icon.ico          —— 9 档 16/20/24/32/40/48/64/128/256。
   · Linux   public/assets/app/gugu-icon-512.png —— AppImage 主图;同一张也是设置页/关于页
            显示的应用图标与默认头像(有 supabase 迁移与 e2e 钉着路径,❌ 别改文件名)。
+  · 界面   public/assets/app/gugu-icon-small.png —— 同一张画面 128 像素,给界面里显示边长 ≤ 32 的地方
+           (标签页图标、订阅行、出错页)用。这张是浏览器按显示尺寸现缩的,用不上逐档画好的那几张。
   · Android apps/mobile/android/app/src/main/res/ —— 自适应图标三层 × 五档密度:
            ic_launcher_foreground(彩色)、**ic_launcher_monochrome(Android 13+ 主题图标,
            系统只取 alpha 自己着色)**、以及 Android 7 及更早认的 ic_launcher / _round 方圆图。
-           几何按规范:画布 108dp,遮罩后可见 72dp,保证安全区 66dp —— 素材一律落进 66/108,
-           ❌ 别按可见区 72/108 放:圆形遮罩还要再吃掉四角,实测 0.82 会切掉一只眼睛和腮红。
+           几何按规范:画布 108dp,遮罩后可见 72dp,保证安全区 66dp。前景层只有鸟(透明底),
+           底色在背景层,所以整张 1024 画面铺 ADAPTIVE_FG_DP=68dp(不是 72)—— 最远的翼尖离画面中心 481px,
+           铺 72dp 时 33.8dp 压出安全区半径 33dp,铺 68dp 时 31.9dp,圆形遮罩切不到。换图形后要重新算这个数。
            主题层复用单色标 build-resources/icon-sources/tray-mark-source.png,与托盘图同源。
 """
 from __future__ import annotations
@@ -35,21 +49,23 @@ import hashlib, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageOps
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / 'build-resources' / 'icon-sources' / 'app-icon-source-1024.png'
+SMALL = ROOT / 'build-resources' / 'icon-sources' / 'small'
 MONO_SRC = ROOT / 'build-resources' / 'icon-sources' / 'tray-mark-source.png'
 PACKAGING = ROOT / 'build-resources'
 PUBLIC = ROOT / 'public'
 ANDROID_RES = ROOT / 'apps' / 'mobile' / 'android' / 'app' / 'src' / 'main' / 'res'
 
-MINT = (143, 212, 180)          # 浅色底,取自源图
-MINT_DARK = (45, 76, 64)        # 深色底:同色相压暗,❌ 别换色相
+INK = (26, 28, 31)              # 底色 = 界面品牌色 --primary(tokens.css 浅色主题的墨 #1a1c1f)
 ICNS_SIZES = [16, 32, 128, 256, 512]
 ICO_SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
 # mdpi 1× / hdpi 1.5× / xhdpi 2× / xxhdpi 3× / xxxhdpi 4×
 DENSITIES = {'mdpi': 1, 'hdpi': 1.5, 'xhdpi': 2, 'xxhdpi': 3, 'xxxhdpi': 4}
 ADAPTIVE_CANVAS_DP = 108
 ADAPTIVE_SAFE_DP = 66           # 保证安全区,所有遮罩形状下都完整
+ADAPTIVE_VISIBLE_DP = 72        # 遮罩后可见的范围
+ADAPTIVE_FG_DP = 68             # 前景层鸟那一张铺多大:整张 1024 铺满 72dp 时翼尖离中心 33.8dp,压出安全区(33dp)0.8dp,缩到 68dp 后 31.9dp
 LEGACY_DP = 48
 
 CHECK = '--check' in sys.argv
@@ -82,8 +98,22 @@ def circle(size: int, ss: int = 8) -> Image.Image:
     return m.resize((size, size), Image.LANCZOS)
 
 
-def rounded(src: Image.Image, size: int) -> Image.Image:
-    im = src.convert('RGB').resize((size, size), Image.LANCZOS).convert('RGBA')
+_art: dict[str, Image.Image] = {}
+
+
+def art(size: int) -> Image.Image:
+    """size 像素的满幅画面:有逐档画好的就用那张,没有才从 1024 缩。"""
+    drawn = SMALL / f'app-{size}.png'
+    if drawn.exists():
+        im = Image.open(drawn).convert('RGB')
+        if im.size != (size, size):
+            raise SystemExit(f'{drawn} 应该是 {size}×{size},实际 {im.size}')
+        return im
+    return _art['full'].resize((size, size), Image.LANCZOS)
+
+
+def rounded(size: int) -> Image.Image:
+    im = art(size).convert('RGBA')
     im.putalpha(squircle(size))
     return im
 
@@ -120,19 +150,22 @@ def build() -> None:
     full = Image.open(SRC).convert('RGB')
     if full.size != (1024, 1024):
         raise SystemExit(f'源图必须是 1024×1024,实际 {full.size}')
+    _art.update(full=full)
 
     # --- macOS 三态包 ---
     import numpy as np
-    a = np.asarray(full).astype(int)
-    dist = np.abs(a - np.array(MINT)).sum(axis=2)
-    # 软 alpha:距离 24 以内算纯底色,64 以外算纯主体,中间线性过渡,保住描边的抗锯齿
-    alpha = np.clip((dist - 24) / 40, 0, 1)
-    layer = Image.fromarray(np.dstack([a.astype(np.uint8), (alpha * 255).astype(np.uint8)]), 'RGBA')
+    lum = np.asarray(full.convert('L')).astype(float)
+    # 图层只留鸟:白色 + 透明度。透明度按亮度从底色线性拉到纯白,保住点边缘的抗锯齿
+    base = sum(INK) / 3
+    alpha = np.clip((lum - base) / (255 - base), 0, 1)
+    rgba = np.dstack([np.full(lum.shape + (3,), 255, np.uint8), (alpha * 255).round().astype(np.uint8)])
+    layer = Image.fromarray(rgba, 'RGBA')
     emit_image(PACKAGING / 'AppIcon.icon' / 'Assets' / 'gugu.png', layer)
     emit(PACKAGING / 'AppIcon.icon' / 'icon.json', (json.dumps({
+        # 图标本身就是深色,浅色态和深色态用同一个底色;两条都留着是因为这个写法实测编得过
         'fill-specializations': [
-            {'value': {'solid': srgb(MINT)}},
-            {'appearance': 'dark', 'value': {'solid': srgb(MINT_DARK)}},
+            {'value': {'solid': srgb(INK)}},
+            {'appearance': 'dark', 'value': {'solid': srgb(INK)}},
         ],
         'groups': [{
             'layers': [{'image-name': 'gugu.png', 'name': 'gugu'}],
@@ -145,9 +178,9 @@ def build() -> None:
     with tempfile.TemporaryDirectory() as td:
         iconset = Path(td) / 'gugu.iconset'
         iconset.mkdir()
-        for base in ICNS_SIZES:
-            rounded(full, base).save(iconset / f'icon_{base}x{base}.png')
-            rounded(full, base * 2).save(iconset / f'icon_{base}x{base}@2x.png')
+        for base_px in ICNS_SIZES:
+            rounded(base_px).save(iconset / f'icon_{base_px}x{base_px}.png')
+            rounded(base_px * 2).save(iconset / f'icon_{base_px}x{base_px}@2x.png')
         out = Path(td) / 'icon.icns'
         subprocess.run(['iconutil', '-c', 'icns', str(iconset), '-o', str(out)], check=True)
         emit(PACKAGING / 'icon.icns', out.read_bytes())
@@ -155,28 +188,40 @@ def build() -> None:
     # --- Windows ico ---
     with tempfile.TemporaryDirectory() as td:
         p = Path(td) / 'icon.ico'
-        rounded(full, max(ICO_SIZES)).save(p, format='ICO', sizes=[(s, s) for s in ICO_SIZES])
-        got = sorted(Image.open(p).info.get('sizes', []))
+        # 每一档自己出图,不能让 Pillow 拿最大那张往下缩
+        frames = [rounded(s_) for s_ in ICO_SIZES]
+        frames[-1].save(p, format='ICO', sizes=[(s_, s_) for s_ in ICO_SIZES], append_images=frames[:-1])
+        ico = Image.open(p)
+        got = sorted(ico.info.get('sizes', []))
         # Pillow 的 sizes= 会静默降级 —— 曾经出过「只有一个 16×16、828 字节」的 ico,必须当场断言
-        if got != sorted([(s, s) for s in ICO_SIZES]):
-            raise SystemExit(f'ico 尺寸不全: {[s[0] for s in got]}')
+        if got != sorted([(s_, s_) for s_ in ICO_SIZES]):
+            raise SystemExit(f'ico 尺寸不全: {[s_[0] for s_ in got]}')
+        # 同样要当场断言每一档真是我们给的那张,而不是 Pillow 自己缩出来的
+        for s_, want in zip(ICO_SIZES, frames):
+            ico.size = (s_, s_)
+            ico.load()
+            if ico.convert('RGBA').tobytes() != want.tobytes():
+                raise SystemExit(f'ico 的 {s_} 像素档不是指定的那张图')
         emit(PACKAGING / 'icon.ico', p.read_bytes())
 
-    # --- Linux / 设置页 / 默认头像 ---
-    emit_image(PUBLIC / 'assets' / 'app' / 'gugu-icon-512.png', rounded(full, 512))
+    # --- Linux / 设置页 / 默认头像,以及界面里的小尺寸用图 ---
+    emit_image(PUBLIC / 'assets' / 'app' / 'gugu-icon-512.png', rounded(512))
+    small_128 = full.resize((128, 128), Image.LANCZOS).convert('RGBA')
+    small_128.putalpha(squircle(128))
+    emit_image(PUBLIC / 'assets' / 'app' / 'gugu-icon-small.png', small_128)
 
     # --- Android ---
-    fg = full.convert('RGBA')
+    fg = layer
     mono_sq = load_mono_alpha()
     mono = Image.new('RGBA', mono_sq.size, (0, 0, 0, 0))
     mono.putalpha(mono_sq)
     for name, mult in DENSITIES.items():
         d = ANDROID_RES / f'mipmap-{name}'
         canvas = int(round(ADAPTIVE_CANVAS_DP * mult))
-        emit_image(d / 'ic_launcher_foreground.png', adaptive_layer(fg, canvas, ADAPTIVE_SAFE_DP))
+        emit_image(d / 'ic_launcher_foreground.png', adaptive_layer(fg, canvas, ADAPTIVE_FG_DP))
         emit_image(d / 'ic_launcher_monochrome.png', adaptive_layer(mono, canvas, ADAPTIVE_SAFE_DP))
         px = int(round(LEGACY_DP * mult))
-        base = full.resize((px, px), Image.LANCZOS).convert('RGBA')
+        base = art(px).convert('RGBA')
         sq = base.copy(); sq.putalpha(squircle(px))
         emit_image(d / 'ic_launcher.png', sq)
         ci = base.copy(); ci.putalpha(circle(px))
@@ -194,7 +239,7 @@ def build() -> None:
         emit(ANDROID_RES / 'mipmap-anydpi-v26' / f, adaptive_xml.encode())
     emit(ANDROID_RES / 'values' / 'ic_launcher_background.xml',
          ('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
-          f'    <color name="ic_launcher_background">#{MINT[0]:02X}{MINT[1]:02X}{MINT[2]:02X}</color>\n'
+          f'    <color name="ic_launcher_background">#{INK[0]:02X}{INK[1]:02X}{INK[2]:02X}</color>\n'
           '</resources>\n').encode())
 
 

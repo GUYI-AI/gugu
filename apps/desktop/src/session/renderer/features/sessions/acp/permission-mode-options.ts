@@ -1,5 +1,6 @@
 import {
   classifyProviderPermissionMode,
+  permissionModeSupportsBillingRoute,
   GUGU_PERMISSION_MODES,
   type GuguPermissionMode,
   isDestructivePermissionMode,
@@ -9,6 +10,7 @@ import type { LiveSettingCapability } from '@gugu/session-core/agents/plugins';
 import type { ComposerPermissionModeOption } from '@gugu/session-ui/react/components';
 import type { SessionMessageLookupKey } from '@renderer/localization/messages';
 import type { SessionMessageValues } from '@renderer/localization/locale-store';
+import { liveSettingOptions } from '../session-config/live-setting-options';
 
 type Translate = (key: SessionMessageLookupKey, values?: SessionMessageValues) => string;
 
@@ -23,10 +25,14 @@ export function sessionPermissionModeOptions(
   options: Options | null,
   liveSetting?: Pick<LiveSettingCapability, 'channel'> | null,
   sessionModes?: 'permission' | 'none',
+  billing?: { route: 'own' | 'platform' | 'unknown'; modeMap?: ProviderPermissionModeMap },
 ): Options | null {
   if (sessionModes === 'none') return null;
-  if (liveSetting?.channel === 'unsupported') return null;
-  return options;
+  const available = liveSettingOptions(options, liveSetting);
+  if (!available || !billing) return available;
+  return Object.fromEntries(Object.entries(available).filter(([id]) => permissionModeSupportsBillingRoute(
+    classifyProviderPermissionMode(id, billing.modeMap), billing.modeMap, billing.route,
+  )));
 }
 
 /**
@@ -39,11 +45,12 @@ export function detachedPermissionModeOptions(
   tier: GuguPermissionMode | null,
   modeMap: ProviderPermissionModeMap | undefined
 ): { options: Options; selected: string } | null {
-  if (!tier || !modeMap) return null;
+  if (!tier || tier === 'ai-review' || !modeMap) return null;
   const selected = modeMap[tier]?.id;
   if (!selected) return null;
   const options: Options = {};
   for (const rung of GUGU_PERMISSION_MODES) {
+    if (rung === 'ai-review') continue;
     const id = modeMap[rung]?.id;
     if (id) options[id] = { name: id, destructive: isDestructivePermissionMode(id) };
   }
@@ -76,13 +83,14 @@ function reportedIdFor(
  * 所以:**声明了映射表就只摆它声明过的那几档**(id 仍是原生 id,发下去照样认);
  * **没声明表就一个字都不动** —— 猜着改一半正是混杂的来源。
  *
- * ⚠️ 收敛的代价:同归一档的其余原生档(claude 的 `auto` / `dontAsk`)不再单列。
+ * Native dontAsk remains a read-only alias. Eligible auto is a separate AI-review row, filtered by the host first.
  */
 /** 咕咕四档的显示名(下拉、确认框共用这一份)。 */
 export const PERMISSION_TIER_LABEL_KEYS = {
   plan: 'taskConfig.permissionPlan',
   'read-only': 'taskConfig.permissionReadOnly',
   edit: 'taskConfig.permissionEdit',
+  'ai-review': 'taskConfig.permissionAiReview',
   'full-access': 'taskConfig.permissionFullAccess',
 } as const satisfies Record<GuguPermissionMode, SessionMessageLookupKey>;
 
@@ -90,7 +98,8 @@ export function localizePermissionModeOptions(
   options: Options | null,
   translate: Translate,
   agentName: string,
-  modeMap?: ProviderPermissionModeMap
+  modeMap?: ProviderPermissionModeMap,
+  nameForTier?: (tier: GuguPermissionMode) => string
 ): Options | null {
   if (!options) return null;
   if (!modeMap) return options;
@@ -108,6 +117,10 @@ export function localizePermissionModeOptions(
       name: translate(PERMISSION_TIER_LABEL_KEYS.edit),
       description: translate('taskConfig.permissionEditHint'),
     },
+    'ai-review': {
+      name: translate('taskConfig.permissionAiReview'),
+      description: translate('taskConfig.permissionAiReviewHint'),
+    },
     'full-access': {
       name: translate(PERMISSION_TIER_LABEL_KEYS['full-access']),
       description: translate('taskConfig.permissionFullAccessHint'),
@@ -118,7 +131,7 @@ export function localizePermissionModeOptions(
   for (const rung of GUGU_PERMISSION_MODES) {
     const id = reportedIdFor(rung, options, modeMap);
     if (!id) continue;
-    collapsed[id] = { ...options[id], ...labels[rung] };
+    collapsed[id] = { ...options[id], ...labels[rung], name: nameForTier?.(rung) ?? labels[rung].name };
   }
 
   // 表声明的档一个都没上报 = 这张表对不上这个 agent。别摆一个空下拉,原样交出去。

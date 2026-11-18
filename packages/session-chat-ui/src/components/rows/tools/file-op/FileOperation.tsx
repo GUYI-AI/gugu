@@ -50,6 +50,7 @@ function FileRowItem(props: {
   return (
     <div
       class={fileRow({ clickable: !!props.onClick })}
+      data-pane-opener=""
       style={{ height: `${props.lineH}px` }}
       role={props.onClick ? 'button' : undefined}
       onClick={props.onClick}

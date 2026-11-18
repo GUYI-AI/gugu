@@ -10,6 +10,7 @@ import { useDevicesStore } from '../../store/devicesContext'
 import { rpc } from '../../session/renderer/lib/ipc'
 import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
 import { openFileIds, updateFileNames } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { useAgentResourceRevisions } from './useAgentResourceRevisions'
 
 const log = rendererLogger('chat/extension-workspace-revisions')
 
@@ -24,6 +25,8 @@ const log = rendererLogger('chat/extension-workspace-revisions')
  * files are awaited here, so an older revision cannot overwrite a later rename in the tab strip.
  */
 export function useExtensionWorkspaceRevisions(): void {
+  // #1927 (42): and that the agent resources of their bindings changed (its own note).
+  useAgentResourceRevisions()
   const { subscribeAccountRevision } = useChatStore('subscribeAccountRevision')
   useEffect(() => {
     const workspace = subscribeAccountRevision('workspace_changed', async (operations) => {

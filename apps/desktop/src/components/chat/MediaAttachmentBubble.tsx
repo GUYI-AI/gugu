@@ -1,18 +1,23 @@
-import { useContext, useEffect, useRef, useState, type RefObject, type CSSProperties } from 'react'
+import { useContext, useEffect, useRef, type RefObject, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQuery } from '@tanstack/react-query'
 import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { holderOfflineText, useHolderBack } from '../../lib/fileHost'
-import { attachmentBytes, attachmentMetadata, sourceKeyOf, useAttachmentObjectUrl } from '../../lib/attachmentBytes'
+import { attachmentBytes, sourceKeyOf, useAttachmentObjectUrl } from '../../lib/attachmentBytes'
+import { attachmentState } from '../../lib/attachmentState'
+import { useReplica } from '../../lib/replica'
+import { sentFileCopy } from '../../lib/sentFileCopies'
 import { useAuth } from '../../store/auth'
-import { attachmentQuery, attachmentQueryClient } from '../../lib/attachmentQueryClient'
 import { ExtensionBundleCard } from '../extensionBundle/ExtensionBundleCard'; import { isExtensionBundle } from '../extensionBundle/summarizeExtensionBundle'
 import { openImageFromThumb, registerFullImage } from '../../lib/imageViewer'
 import { Button } from '../ui/Button'
 import { FileAttachmentCard } from './FileAttachmentCard'
+import { AttachmentUploadOverlay } from './AttachmentUploadOverlay'
+import { useAttachmentUploadProgress, type AttachmentUploadProgress } from '../../lib/attachmentUploadProgress'
+import { useAttachmentChange } from '../../lib/attachmentChanges'
 import { SentMessageSurface } from './sentMessageSurface'
+import { useNearViewport } from './useNearViewport'
 import { ExpiredAttachmentCard } from './ExpiredAttachmentCard'
 import { Markdown } from '../markdown/Markdown'
 import './mediaAttachmentBubble.css'
@@ -21,9 +26,6 @@ import './mediaAttachmentBubble.css'
 // 而气泡被封顶在列宽 → 窄栏下卡片从气泡右侧冒出。max-width:100% 在布局阶段按气泡内容区截回来(卡片里的文件名随之省略)。
 const FIT_BUBBLE = 'max-w-full'
 
-/** Whether an attachment is still there (missing / expired / gone cards). Key: account, source key, source. */
-const attachmentStateQuery = attachmentQuery('attachment-state',
-  (_accountId: string | undefined, _sourceKey: string, source: ParsedAttachment['source']) => attachmentMetadata(source))
 
 /** 与 .chat-inline-image 的上限一致:按宽高先留出画出来的那么大。 */
 const INLINE_MAX = 280
@@ -38,17 +40,28 @@ export function MediaAttachmentBubble({ meta, messageId, isMine, onOpenFile, sen
   const box = useRef<HTMLDivElement>(null)
   const managedFile = (meta.source.kind === 'item' || meta.source.kind === 'message' || meta.source.kind === 'attachment') && !isRenderableImage(meta.fileName, meta.mimeType)
   const near = useNearViewport(box, managedFile)
-  const metadata = useQuery({ ...attachmentStateQuery(user?.id, sourceKeyOf(meta.source), meta.source),
-    enabled: near && !!user && managedFile,
-  }, attachmentQueryClient)
+  const reading = useReplica(attachmentState, user && managedFile ? [sourceKeyOf(meta.source), meta.source] : null, { read: near })
+  const metadata = { data: reading.state === 'value' ? reading.value : undefined, isError: reading.state === 'error' }
+  const sourceKey = sourceKeyOf(meta.source)
+  // Its sender's bytes arrived or were refused (pushed, never polled): the file is read again.
+  const changed = useAttachmentChange(messageId)
+  useEffect(() => { if (changed) void attachmentState.refresh(sourceKey) }, [changed, sourceKey])
+  const upload = useAttachmentUploadProgress(messageId)
   const caption = meta.caption ? <Markdown trust="chat" content={meta.caption} onAccent={isMine} /> : null
+  if (metadata.data?.status === 'pending' || metadata.data?.status === 'failed') return <div ref={box} className={FIT_BUBBLE} data-attachment-pending={metadata.data.status === 'pending' || undefined}>
+    <FileAttachmentCard file={meta} isMine={isMine} onOpen={upload?.failed ? upload.retry : undefined}
+      details={t(upload?.failed && upload.retry ? 'attachmentView.uploadFailed' : metadata.data.status === 'failed' ? 'attachmentView.senderUploadFailed' : pendingLabel(isMine, upload))} />{caption}</div>
   if (metadata.data?.status === 'missing') return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileMissing')} />{caption}</div>
   if (metadata.data?.status === 'expired') return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><ExpiredAttachmentCard meta={meta} messageId={messageId} isMine={isMine} />{caption}</div>
   if (metadata.data?.status === 'gone' || metadata.isError) return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine}
     details={t(metadata.isError ? 'attachmentView.fileUnavailable' : 'attachmentView.fileGone')} />{caption}</div>
   const renderable = isRenderableImage(meta.fileName, meta.mimeType)
-  // A sending row owns an ephemeral blob preview, not a committed download capability.
-  if (meta.source.kind === 'url' && meta.source.url.startsWith('blob:') && !renderable) return <div ref={box} className={FIT_BUBBLE}><FileAttachmentCard file={meta} isMine={isMine} onOpen={() => undefined} />{caption}</div>
+  // A row not delivered yet reads the file this device sent, while it uploads and if it failed. A preview this run did not
+  // make (a row restored after a restart) has no bytes behind it any more.
+  if (meta.source.kind === 'url' && meta.source.url.startsWith('blob:')) {
+    if (!sentFileCopy(meta.source)) return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileUnavailable')} />{caption}</div>
+    if (!renderable) return <div ref={box} className={FIT_BUBBLE}><FileAttachmentCard file={meta} isMine={isMine} onOpen={() => onOpenFile?.(meta)} />{caption}</div>
+  }
   // App 包:按这条消息装(发布者就是发送者,装的时候由宿主读这条消息)。
   if (isExtensionBundle(meta) && meta.source.kind !== 'gone' && meta.source.kind !== 'attachment' && meta.source.kind !== 'session-file') return <div ref={box} className={FIT_BUBBLE}><ExtensionBundleCard meta={meta} card={{ source: meta.source, messageId }} isMine={isMine} senderName={senderName} chatId={chatId} />{caption}</div>
   if (meta.source.kind === 'gone') {
@@ -67,11 +80,14 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
   const box = useRef<HTMLElement>(null)
   const onMount = useContext(SentMessageSurface)
   const near = useNearViewport(box, !onMount) || onMount
-  const view = useAttachmentObjectUrl(meta.source, 'thumb', near, meta.fileMetadata)
+  const view = useAttachmentObjectUrl(meta.source, 'thumb', near, meta.fileMetadata, messageId)
   const img = useRef<HTMLImageElement>(null)
+  const upload = useAttachmentUploadProgress(messageId)
   const holder = view.status === 'failed' ? view.holder : null
   useHolderBack(holder, view.retry)
-  const dimensions = meta.fileMetadata?.status === 'ready' ? meta.fileMetadata.revision : meta.imageDimensions ?? ('link' in view ? view.link : undefined)
+  // Bytes still on their way: the size their sender declared (owner 11-15), so the bubble does not jump when they arrive.
+  const declared = meta.fileMetadata?.status === 'pending' && meta.fileMetadata.width ? meta.fileMetadata : undefined
+  const dimensions = meta.fileMetadata?.status === 'ready' ? meta.fileMetadata.revision : declared ?? meta.imageDimensions ?? ('link' in view ? view.link : undefined)
   const size = originalSize(dimensions)
   const imageStyle = inlineImageStyle(size)
   const ready = view.status === 'ready'
@@ -94,6 +110,7 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
   if (view.status === 'gone') return <span className="contents" data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileGone')} onOpen={() => undefined} /></span>
   if (view.status === 'missing') return <FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileMissing')} />
   if (view.status === 'expired') return <span className="contents" data-attachment-unavailable><ExpiredAttachmentCard meta={meta} messageId={messageId} isMine={isMine} /></span>
+  if (view.status === 'unsent') return <FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.senderUploadFailed')} />
   if (view.status === 'failed') {
     return (
       <FileAttachmentCard
@@ -105,20 +122,23 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
   }
   if (view.status === 'ready') {
     return (
-      <Button ref={box as RefObject<HTMLButtonElement>} variant="ghost" size="icon" onClick={(e) => openImageFromThumb(e.currentTarget.querySelector('img') as HTMLImageElement)} style={{ display: 'block', width: 'auto', minHeight: 0, padding: 0, border: 'none', background: 'none', cursor: 'zoom-in', ...imageStyle, ...(imageStyle ? { position: 'relative' } : {}) }}>
+      <Button ref={box as RefObject<HTMLButtonElement>} variant="ghost" size="icon" onClick={(e) => openImageFromThumb(e.currentTarget.querySelector('img') as HTMLImageElement)} style={{ display: 'block', width: 'auto', minHeight: 0, padding: 0, border: 'none', background: view.arrived ? 'var(--muted)' : 'none', cursor: 'zoom-in', position: 'relative', ...imageStyle }}>
         <img
           ref={img}
           data-testid={AUTOMATION_TEST_IDS.messageAttachmentImage} data-image-viewer-src={view.objectUrl}
           src={view.objectUrl}
           alt={meta.fileName}
-          className="chat-inline-image"
+          className={view.arrived ? 'chat-inline-image chat-inline-image--arrived' : 'chat-inline-image'}
           style={imageStyle ? { position: 'absolute', inset: 0, width: '100%', height: '100%' } : undefined}
           // The sending row's own preview paints with its bubble (as before); fetched thumbnails decode off the main thread.
           decoding={view.link ? 'async' : 'sync'}
         />
+        {isMine && <AttachmentUploadOverlay messageId={messageId} />}
       </Button>
     )
   }
+  if (view.status === 'pending') return <div ref={box as RefObject<HTMLDivElement>} aria-label={meta.fileName} data-attachment-pending
+    className="chat-inline-image chat-inline-image--pending chat-inline-image--awaiting" style={imageStyle}><span>{t(pendingLabel(isMine, upload))}</span></div>
   return <div ref={box as RefObject<HTMLDivElement>} aria-label={meta.fileName} className="chat-inline-image chat-inline-image--pending" style={imageStyle} />
 }
 
@@ -141,17 +161,6 @@ function inlineImageStyle(size?: { width: number; height: number }): CSSProperti
   return { width: fitted.width, height: 'auto', aspectRatio: `${fitted.width} / ${fitted.height}`, maxWidth: 'min(100%, calc(100cqw - 24px))' }
 }
 
-/** 滚到眼前(含上下 400px)才去取:一屏一批,往回翻历史时不把整段都下了。 */
-function useNearViewport(ref: RefObject<Element | null>, enabled = true): boolean {
-  const [near, setNear] = useState(false)
-  useEffect(() => {
-    const el = ref.current
-    if (!enabled || near || !el) return
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) setNear(true)
-    }, { rootMargin: '400px 0px' })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [ref, near, enabled])
-  return near
-}
+/** Bytes still to come: the sender reads "uploading" only while this device is uploading them, else that they are not up yet. */
+const pendingLabel = (isMine: boolean, upload: AttachmentUploadProgress | undefined) =>
+  !isMine ? 'attachmentView.senderUploading' : upload && !upload.failed ? 'attachmentView.uploading' : 'attachmentView.notUploaded'

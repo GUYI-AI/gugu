@@ -3,7 +3,7 @@
 //
 // 状态机: pending →(领取)→ sending →(prepare 前置 → writer 返回送达)→ sent(删行,onSent)
 //                                   →(错误/15s 超时)→ 退避重试(2s/8s,共 3 次尝试)→ failed(可见,onState)
-//         failed →(手动重试 | window online)→ pending
+//         failed →(手动重试 | 后端恢复 backendReachability)→ pending
 //
 // 设计要点(#1762 评论拍板):
 // * 持久化经注入的 persistence(localSyncDb outbox store):enqueue 先落盘再投,reload/崩溃不丢;
@@ -26,8 +26,16 @@ const outboxLog = rendererLogger('chat/outbox')
 
 export const OUTBOX_DELIVER_TIMEOUT_MS = 15_000
 // 3 次尝试(拍板 a):真实故障是分钟级网关中断,更长退避只会推迟 fail-loud 暴露;
-// 快退避(~10s 总预算)兜秒级瞬断,之后立刻亮 failed 交手动 + online kick。
+// 快退避(~10s 总预算)兜秒级瞬断,之后立刻亮 failed 交手动 + 后端恢复 kick。
 export const OUTBOX_RETRY_BACKOFF_MS = [2_000, 8_000] as const
+/**
+ * Thrown by `deliver` when the row's uploaded bytes can no longer be sent (their upload permit lapsed): retrying the same
+ * request cannot help, so the row fails at once as one whose file must be uploaded again.
+ */
+export class UploadAgainError extends Error {
+  /** `held`: this run still holds the file, so the person can resend it; otherwise it must be selected again. */
+  constructor(readonly held: boolean) { super('The upload permit lapsed; the file must be uploaded again') }
+}
 
 export interface OutboxDeps {
   load(): Promise<OutboxRecord[]>
@@ -67,10 +75,13 @@ export interface ChatOutbox {
   commitUpload(record: OutboxRecord): Promise<boolean>
   has(clientMessageId: string): boolean
   confirm(clientMessageId: string, delivered: unknown): Promise<void>
-  failUpload(clientMessageId: string, error: unknown): Promise<void>
+  /** `reason`: what the failed row says; absent, the bytes are gone and the file must be selected again. */
+  failUpload(clientMessageId: string, error: unknown, reason?: string): Promise<void>
+  /** A failed upload whose bytes this run still holds goes back to uploading; false when it is no longer a failed upload. */
+  resumeUpload(clientMessageId: string): Promise<boolean>
   /** 显式丢弃:删行 + onDiscarded(调用方负责移除乐观行)。 */
   discard(clientMessageId: string): Promise<void>
-  /** 网络恢复 kick:全部 failed → pending 自动重投(验收②的自动路径)。 */
+  /** 后端恢复 kick:全部 failed → pending 自动重投(验收②的自动路径)。 */
   retryAllFailed(): Promise<void>
   /** 启动恢复:载入持久化行('sending'→'pending'),返回记录供 UI 重建乐观行,并开始投递。 */
   restore(): Promise<OutboxRecord[]>
@@ -186,8 +197,10 @@ export function createChatOutbox(deps: OutboxDeps): ChatOutbox {
     drainingLanes.add(chatId)
     try {
       for (;;) {
-        const next = [...records.values()].find((r) => r.chatId === chatId && r.state === 'pending')
-        if (!next || !isActive(operationEpoch)) return
+        // A file still being declared (hashed, planned: its bytes go up after its message) keeps its place: what was sent
+        // after it waits for its commit, which kicks the lane again.
+        const next = [...records.values()].find((r) => r.chatId === chatId && (r.state === 'pending' || r.state === 'uploading' && r.operation?.kind === 'upload'))
+        if (!next || next.state !== 'pending' || !isActive(operationEpoch)) return
         // Keep creation order. Uploading sources are skipped, but a dependency
         // waiting on one must not claim the lane: its earlier source may become
         // ready there. Source settlement kicks the same drainer again.
@@ -200,7 +213,7 @@ export function createChatOutbox(deps: OutboxDeps): ChatOutbox {
         let delivered = false
         if (record.dependencyDiscarded || source?.state === 'failed') {
           record = await persist(record, 'failed', {
-            lastError: i18n.t(record.dependencyDiscarded ? 'outbox.sourceDiscarded' : 'outbox.sourceNotSent', { ns: 'messaging' }),
+            lastError: i18n.t(record.dependencyDiscarded ? 'outbox.sourceDiscarded' : record.operation?.kind === 'forward' ? 'outbox.sourceNotSent' : 'outbox.followedNotSent', { ns: 'messaging' }),
           }, operationEpoch)
           if (!isActive(operationEpoch)) return
           deps.onState(record)
@@ -227,6 +240,12 @@ export function createChatOutbox(deps: OutboxDeps): ChatOutbox {
             if (!isActive(operationEpoch)) return
             // 投递在途期间被手动丢弃 → 不得 persist 复活(discard 已删行删库);直接停
             if (!records.has(record.clientMessageId)) break
+            if (err instanceof UploadAgainError) {
+              record = await persist(record, 'sending', { operation: { kind: 'upload' }, attempts: record.attempts + 1,
+                lastError: err.held ? i18n.t('composer.failureReason.timeout', { ns: 'messaging' }) : i18n.t('outbox.selectFileAgain', { ns: 'messaging' }) }, operationEpoch)
+              if (!isActive(operationEpoch)) return
+              break
+            }
             record = await persist(record, 'sending', {
               attempts: record.attempts + 1,
               lastError: err instanceof Error ? err.message : String(err),
@@ -325,18 +344,29 @@ export function createChatOutbox(deps: OutboxDeps): ChatOutbox {
       kick()
       return true
     },
-    async failUpload(id, error) {
+    async failUpload(id, error, reason) {
       const record = records.get(id)
       if (!record || disposed) return
       const operationEpoch = epoch
       outboxLog.error({ error, messageId: id }, 'attachment upload failed')
       const failed = await persist(record, 'failed', {
-        lastError: i18n.t('outbox.selectFileAgain', { ns: 'messaging' }),
+        lastError: reason ?? i18n.t('outbox.selectFileAgain', { ns: 'messaging' }),
       }, operationEpoch)
       if (!isActive(operationEpoch)) return
       deps.onState(failed)
       rejectWaiter(id, failed.lastError!)
       kick()
+    },
+    async resumeUpload(id) {
+      const record = records.get(id)
+      const kind = record?.operation?.kind
+      if (!record || disposed || record.state !== 'failed' || record.dependencyDiscarded || (kind !== 'upload' && kind !== 'nativeAttachment')) return false
+      const operationEpoch = epoch
+      // A native publication that failed starts over from its bytes, like an upload.
+      const next = await persist(record, 'uploading', { operation: { kind: 'upload' }, attempts: 0, lastError: null }, operationEpoch)
+      if (!isActive(operationEpoch) || records.get(id) !== next) return false
+      deps.onState(next)
+      return true
     },
     async retry(clientMessageId) {
       if (disposed) return
@@ -399,8 +429,10 @@ export function createChatOutbox(deps: OutboxDeps): ChatOutbox {
         // 死在投递中的 'sending' 行视同 pending 重投(幂等键兜底,双发机制性不可能)
         const interrupted = row.state === 'uploading' && row.operation?.kind !== 'nativeAttachment'
         const state = interrupted ? 'failed' : row.operation?.kind === 'nativeAttachment' && row.state !== 'failed' ? 'uploading' : row.state === 'sending' ? 'pending' : row.state
-        const record: OutboxRecord = { ...row, state, ...(interrupted ? { operation: { kind: 'upload' }, lastError: i18n.t('outbox.selectFileAgain', { ns: 'messaging' }) } : {}) }
-        if (state !== row.state) await deps.save(record)
+        // An upload's bytes lived only in the run that sent it: whatever it failed with then, now the file must be selected again.
+        const selectAgain = interrupted || row.operation?.kind === 'upload' ? i18n.t('outbox.selectFileAgain', { ns: 'messaging' }) : null
+        const record: OutboxRecord = { ...row, state, ...(selectAgain ? { operation: { kind: 'upload' }, lastError: selectAgain } : {}) }
+        if (state !== row.state || record.lastError !== row.lastError) await deps.save(record)
         if (!isActive(operationEpoch)) return []
         records.set(record.clientMessageId, record)
         restored.push(record)

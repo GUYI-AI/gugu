@@ -37,7 +37,7 @@ const {
 } = await import('@/session/shared/remote-sessions/session-directory')
 
 const shell = vi.hoisted(() => ({ mobile: false }))
-vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
+vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile, readMobileShell: () => shell.mobile }))
 
 let harness: ReturnType<typeof createReactHarness>
 let remove: (() => void) | undefined

@@ -66,6 +66,9 @@ describe('desktop native payloads follow the package target', () => {
         'node-pty/build/Release/conpty/conpty.dll',
         'node-pty/build/Release/conpty/OpenConsole.exe',
         'better-sqlite3/build/Release/better_sqlite3.node',
+        'better-sqlite3/lib/index.js',
+        'better-sqlite3/lib/binding.js',
+        'better-sqlite3/lib/database.js',
         '@parcel/watcher/index.js',
         'playwright/lib/mcp/test/test.js',
         'playwright/lib/mcp/browser/README.md',
@@ -75,6 +78,9 @@ describe('desktop native payloads follow the package target', () => {
         expect(includes(`${depth}node_modules/${file}`), `${target}: ${file}`).toBe(true)
       }
       expect(includes(`${depth}node_modules/better-sqlite3/build/Release/test_extension.node`)).toBe(false)
+      for (const candidate of nativeTargets) {
+        expect(includes(`${depth}node_modules/better-sqlite3/prebuilds/${candidate}.node`)).toBe(false)
+      }
     }
   })
 })

@@ -3,7 +3,7 @@ import { sessionpageLegOfView } from '@shared/core/sessions/sessions';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useRef, useState } from 'react';
-import { getSessionPageStore, asProvisioned, getSessionManagerStore } from '@renderer/features/sessions/stores/session-selectors';
+import { getSessionPageStore, asProvisioned, getSessionManagerStore, sessionViewKind } from '@renderer/features/sessions/stores/session-selectors';
 import {
   SessionCreationFailedError,
   type SessionFailure,
@@ -190,6 +190,7 @@ export function useCreateSessionCallback({
         () => {
           setPendingMessage(null);
           input.setPrompt((current) => retainNewerInput(retry.prompt, current));
+          draft?.completeHandoff();
           onCreated?.({ projectId: retry.projectId, sessionId: retry.sessionId });
           navigate('session', { projectId: retry.projectId, sessionId: retry.sessionId });
           onClose();
@@ -223,11 +224,16 @@ export function useCreateSessionCallback({
       ? { ...ref, path: undefined, workspacePath: taskAttachmentWorkspacePath(ref.itemId, ref.name) } : ref);
     // ACP keeps the person's words: Life prepares file context only after placement. PTY retains its text-only leg.
     const text = baseSession.type === 'acp' ? input.prompt.trim() : [input.prompt.trim(),
-      ...named.map(ref => turnAttachmentText(ref, deviceId || !ref.path || taskChatId
-        ? { failure: 'kept on the computer it was attached from — open the folder file above' }
-        : { localPath: ref.path })),
+      ...named.map(ref => turnAttachmentText(ref, deviceId || !ref.path || taskChatId ? null : { localPath: ref.path })),
     ].filter(Boolean).join('\n');
     const transport = firstTurnTransport;
+    // #2569 Context handed over with this draft rides beside the words where the first turn has room for host context (an
+    // ACP startup queue), as mention context does. Every other first turn carries the person's words only: the context is
+    // left out, ❌ appended to what the person sees as their message (#2589). The sample's files are in the project folder.
+    const handedContext = draft?.handoff?.hiddenContext;
+    const contextBeside = transport === 'startup' && baseSession.type === 'acp';
+    if (handedContext && !contextBeside) log.warn('a handed-over first turn has no channel for its hidden context; sending the words only', { transport });
+    const hiddenContext = [input.mentionContext, contextBeside ? handedContext : undefined].filter(Boolean).join('\n\n');
     const initialMessageId = transport === 'startup' && taskChatId && text ? crypto.randomUUID() : undefined;
     const startupSession = transport === 'startup'
       ? (() => {
@@ -242,9 +248,7 @@ export function useCreateSessionCallback({
                   ? [{
                       text,
                       ...(files.length ? { files } : {}),
-                      ...(input.mentionContext
-                        ? { hiddenContext: input.mentionContext }
-                        : {}),
+                      ...(hiddenContext ? { hiddenContext } : {}),
                       origin: 'manual' as const,
                     }]
                   : undefined,
@@ -286,11 +290,13 @@ export function useCreateSessionCallback({
       ...(birthChatId ? { birthGroup: { chatId: birthChatId, asTask: Boolean(taskChatId) } } : {}),
     };
 
-    const deferFirstTurn = baseSession.type === 'acp' && files.length > 0;
+    // #2558 The first turn is queued at creation with its files named; while this page places them the host holds its
+    // dispatch (not the turn itself), so the agent starts at once and the page draws the message from the queue.
+    const placingFiles = baseSession.type === 'acp' && files.length > 0;
     // #6264 别的机器上还没装所选的家:先在那台机器上装好再建(装不上就不建,原因说出来)。
     let openedOptimistically = false;
     void (beforeCreate ? beforeCreate() : Promise.resolve()).then(() => sessionManager.createSession(createInput, {
-      ...(deferFirstTurn ? { deferFirstTurn: true } : {}),
+      ...(placingFiles ? { placingFiles: true } : {}),
       onOptimistic: () => {
         if (!openAfterCreate) return;
         openedOptimistically = true;
@@ -307,7 +313,7 @@ export function useCreateSessionCallback({
         log.error('remember the started configuration failed', { error: error instanceof Error ? error.message : String(error) });
         toast({ title: translateSessionMessage('task.newSessionMemoryNotSaved'), description: messageForUser(error), tier: 'warning' });
       });
-      // The first ACP turn stays deferred until DM placement (including SSH upload) has finished.
+      // The first ACP turn is already queued; its dispatch waits until DM placement (including SSH upload) has finished.
       try {
         if (named.length > 0) {
           const placed = await input.placeAttachments(async () => {
@@ -328,10 +334,11 @@ export function useCreateSessionCallback({
         log.warn('new task attachment placement failed', { sessionId, error: String(error) });
         toast({ title: translateSessionMessage('composer.attachmentUploadFailed'), tier: 'warning' });
       } finally {
-        // Placement errors still admit the caption; the host gives the agent a not-saved line for each missing file.
-        if (deferFirstTurn) {
+        // Placement errors still send the caption; the host gives the agent a not-saved line for each missing file. If
+        // this call is lost, the host lets the turn go when this page's window or connection goes away.
+        if (placingFiles) {
           try { await rpcOn(deviceId ?? null).sessionCreate.admitFirstMessages(sessionId); }
-          catch (error) { log.warn('admit the first task turn failed', { sessionId, error: String(error) }); }
+          catch (error) { log.warn('release the first task turn failed', { sessionId, error: String(error) }); }
         }
       }
       if (message) {
@@ -343,8 +350,14 @@ export function useCreateSessionCallback({
       if (!submission) input.setPrompt((current) => retainNewerInput(submittedPrompt, current));
       finishSubmission(submission);
       setDeliveryError(null);
+      draft?.completeHandoff();
       onCreated?.({ projectId: selectedProjectId, sessionId });
-      if (!openAfterCreate) {
+      // @@@start-failure-exit - A task dispatched from a chat stays in the chat because its card lands there; a task
+      // whose workspace could not be prepared never lands one. Staying would leave the person with no card, no task and
+      // no reason, so it opens like any other new task: the session's own failure screen says why and retries.
+      if (!openAfterCreate && sessionViewKind(getSessionPageStore(selectedProjectId, sessionId), selectedProjectId) === 'provision-error') {
+        navigate('session', { projectId: selectedProjectId, sessionId });
+      } else if (!openAfterCreate) {
         void rpcOn(machineRegistry.machineOf(selectedProjectId) ?? null).sessionTimeline.sessionStart({ conversationId: sessionId }).then((started) => {
           if (!started.ok) log.warn('start a session nobody opens failed', { sessionId, error: started.error });
         });

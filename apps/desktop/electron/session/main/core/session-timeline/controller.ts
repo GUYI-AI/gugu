@@ -6,6 +6,7 @@ import type {
   SessionpageSessionCreateRequest,
   SessionpageOpenedFileReadRequest,
   SessionpageSessionOlderRequest,
+  SessionpageSessionOptionsRequest,
   SessionpageSessionReloadModelRequest,
   SessionpageSessionRespondRequest,
   SessionpageSessionSendRequest,
@@ -29,6 +30,8 @@ import {
 } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { createRPCController, withSender } from '@shared/lib/ipc/rpc';
 import * as create from './create-session';
+import type { SessionCreateAttachmentDraftRequest, SessionAdmitCreatedAttachmentsRequest } from '@gugu/session-core/session-record/creation-attachment-protocol';
+import { createSkills } from '../agents/create-skills';
 import * as service from './service';
 import { prefetchFiles } from './turn-files';
 import { markNativeConversationVisible, nativeConversationUnread, nativeOwnerNotificationUnread } from '../sessions/session-conversation-read';
@@ -117,6 +120,11 @@ function trimmed<T>(result: service.SessionTimelineResult<T>, trim: boolean | un
 }
 
 export const sessionTimelineController = createRPCController({
+  // Attachment identity/resolver dependencies are needed only by these two verbs, not every timeline read.
+  sessionCreateAttachmentDraft: async (input: SessionCreateAttachmentDraftRequest) =>
+    (await import('./creation-attachment-production')).createAttachmentDraft(input),
+  sessionAdmitCreatedAttachments: async (input: SessionAdmitCreatedAttachmentsRequest) =>
+    (await import('./creation-attachment-production')).admitCreatedAttachments(input),
   prefetchFiles,
   taskExchanges: (input: TaskExchangeRequest) => readTaskExchanges(input),
   taskExchangesSubscribe: withSender(async (sender: number, input: TaskExchangeRequest & { subscriptionId: string }) => {
@@ -203,13 +211,15 @@ export const sessionTimelineController = createRPCController({
   sessionRespond: (input: SessionpageSessionRespondRequest) => service.respond(input),
   sessionCancel: (input: SessionpageSessionCancelRequest) => service.cancel(input.conversationId),
   sessionUpdate: (input: SessionpageSessionUpdateRequest) => service.updateSession(input),
-  sessionOptions: (input: { conversationId: string }) => service.sessionOptions(input),
+  sessionOptions: (input: SessionpageSessionOptionsRequest) => service.sessionOptions(input),
   sessionSetOption: (input: SessionpageSessionSetOptionRequest) => service.setSessionOptionValue(input),
   sessionReloadModel: (input: SessionpageSessionReloadModelRequest) => service.reloadSessionModel(input),
   /** 新建前问:这台机器上有哪些项目、装了哪几家 harness。 */
   sessionCreateOptions: () => create.createOptions(),
   /** 选定的 harness 在这台机器上能跑哪些模型。 */
   sessionCreateModels: (input: SessionpageSessionCreateModelsRequest) => create.createModels(input),
+  /** Native skills of the selected harness, before an agent is created. */
+  sessionCreateSkills: (input: { harness: string; projectId?: string }) => createSkills(input),
   /**
    * 起一条建好了、还没开起来的会话(「再试一次」那一步;第一句话随之投递)。gugu-dev#181:建完不打开的创建
    * (项目里、聊天里派任务)没有会话页去起它,建完就调这一句。已经起过的什么都不做。

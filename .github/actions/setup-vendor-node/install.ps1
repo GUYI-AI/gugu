@@ -18,6 +18,11 @@ $cacheRoot = Join-Path $env:RUNNER_TOOL_CACHE 'gugu-vendor-node'
 $cache = Join-Path $cacheRoot $expected
 $executable = Join-Path $cache "$name/node.exe"
 $marker = Join-Path $cache '.verified-sha256'
+if ($env:VENDOR_NODE_CACHE_INFO -eq '1') {
+  Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "cache-path=$cache"
+  Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "cache-key=vendor-node-v1-win-$arch-$expected"
+  exit 0
+}
 function Test-VerifiedCache {
   if (-not (Test-Path -LiteralPath $executable) -or -not (Test-Path -LiteralPath $marker)) { return $false }
   if ((Get-Content -LiteralPath $marker -Raw).Trim() -cne $expected) { return $false }
@@ -30,7 +35,12 @@ if (-not (Test-VerifiedCache)) {
   New-Item -ItemType Directory -Path $stage | Out-Null
   try {
     $download = Join-Path $stage $archive
-    Invoke-WebRequest -Uri "https://download.gugu.nextmind.space/releases/vendor/node-toolchain/v$version/$archive" -OutFile $download -MaximumRedirection 0 -TimeoutSec 600
+    try {
+      Invoke-WebRequest -Uri "https://download.gugu.nextmind.space/releases/vendor/node-toolchain/v$version/$archive" -OutFile $download -MaximumRedirection 0 -TimeoutSec 600
+    } catch {
+      Write-Output '::notice::Node mirror download failed; trying the official archive with the same pinned SHA256'
+      Invoke-WebRequest -Uri "https://nodejs.org/dist/v$version/$archive" -OutFile $download -MaximumRedirection 0 -TimeoutSec 600
+    }
     if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw 'Node archive SHA256 mismatch; not extracted.' }
     Expand-Archive -LiteralPath $download -DestinationPath $stage
     $candidate = Join-Path $stage "$name/node.exe"

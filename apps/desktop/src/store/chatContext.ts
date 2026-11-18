@@ -1,9 +1,12 @@
+import type { PersonalConversationHiding } from '../lib/hideListedConversation'
+import type { PersonalConversationUndo } from '../lib/undoListedConversation'
 import type { AppForwardFilesDetail } from '../session/shared/extensions/app-runtime-protocol'
 import type { CreateTopicInput, CreatedTopic } from '../lib/topics'
 import type { UnreadLocatorCommit } from '../lib/chatUnreadLocatorWindow'
 import type { ChatConversationAccess } from './useChatConversation'
 import type { HistoryWindow } from './chatHistoryWindow'
-import { createContext, createElement, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import type { ShellChatList } from '../lib/shellTab'
+import { createContext, createElement, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import type { ChatItem, MessageItem, NotificationLevel } from '@gugu/core/shared/types/chat'
 import type { AttachmentKind } from '@gugu/core/shared/ui/attachmentModels'
 import type { ThreadScope } from './threadScope'
@@ -12,9 +15,12 @@ import type { DisplayIdentity } from '../lib/displayIdentity'
 import type { CapturedUnreadEntry } from '../lib/chatUnreadLocator'
 import type { AccountRevisionEvent, AccountRevisionListener } from '../lib/accountRevisionCoordinator'
 import { createDraftWriter } from './chatDraftWrites'
-import { readChatDrafts, removeChatDraft, writeChatDraft } from './chatDraftStorage'
+import { readChatDrafts, writeChatDraft } from './chatDraftStorage'
+import { forgetConversation } from '../lib/viewStateTable'
 import type { ChatMessageComposerProps } from '../components/chat/chatComposerModels'
 export { appendToDraft } from './chatDraftWrites'
+import { isDeepEqual } from '@gugu/session-shared'
+import { createSelectStore, sameShallow, useSelect, type SelectStore } from '../lib/selectStore'
 
 export type RefreshChatsOptions = {
   acceptEmpty?: boolean
@@ -50,6 +56,8 @@ export type SendMessageOptions = {
   clientMessageId?: string
   /** 投递前置(agent 私聊的会话页会话就绪):outbox 在投递前 await,不挡乐观行上屏(C1)。 */
   beforeDeliver?: () => Promise<void>
+  /** A message delivered before this one (the files it was sent with). */
+  dependsOn?: string
 }
 
 export type SendAttachmentOptions = {
@@ -59,7 +67,6 @@ export type SendAttachmentOptions = {
   caption?: string
   threadRootId?: string | null
   isThreadRoot?: boolean
-  onSent?: (file: File, index: number) => void
 }
 
 export interface ChatContextValue {
@@ -120,8 +127,10 @@ export interface ChatContextValue {
   // 返回成功落库的消息 id（「新建话题」首条发完后用它 openThread 进入话题）；未发送返回 undefined。
   // @@@threads (#1531) — isThreadRoot：新建话题首条 INSERT 即标 root，触发器据此把 agent 回复路由进本条 thread。
   sendMessage: (content: string, opts?: SendMessageOptions) => Promise<string | undefined>
-  forwardMessage: (source: MessageItem | Extract<AppForwardFilesDetail, { files: unknown }>['files'][number], targetChatId: string) => Promise<void>
+  /** `toUserIds`: who the copy addresses in its new chat (a forward's @), as a sent message's `to_user_ids`. */
+  forwardMessage: (source: MessageItem | Extract<AppForwardFilesDetail, { files: unknown }>['files'][number], targetChatId: string, opts?: { toUserIds?: string[]; sendGroup?: { id: string; size: number } }) => Promise<void>
   createTopic: (input: CreateTopicInput) => Promise<CreatedTopic | null>
+  /** Resolves with the last file's message once the files are on screen; their bytes upload afterwards, failing on their own rows. */
   sendAttachmentsToChat: (chatId: string, files: File[], opts?: SendAttachmentOptions) => Promise<string | undefined>
   sendAttachments: (files: File[], opts?: SendAttachmentOptions) => Promise<string | undefined>
   sendMessageToChat: (chatId: string, content: string, opts?: SendMessageOptions) => Promise<string | undefined>
@@ -143,6 +152,9 @@ export interface ChatContextValue {
   upsertChat: (chat: ChatItem) => void
   pinChat: (chatId: string, pinned: boolean) => Promise<void>
   deleteChat: (chatId: string, persist?: boolean) => Promise<void>
+  hideConversation: (chatId: string) => Promise<PersonalConversationHiding | undefined>
+  undoConversationHide: (chatId: string, hideOperationId: string) => Promise<PersonalConversationUndo | undefined>
+  clearConversation: (chatId: string) => Promise<void>
   // #901 退出群聊（成员自删 chat_members 行 + 本地移除）；区别于 deleteChat(owner 归档解散)。
   leaveGroup: (chatId: string) => Promise<void>
   markUnread: (chatId: string) => Promise<void>
@@ -150,6 +162,8 @@ export interface ChatContextValue {
   patchChat: (chatId: string, partial: Partial<ChatItem>) => void
   /** Editor persistence sink; programmatic changes go through writeDraft. */
   setDraft: (chatId: string, content: SetStateAction<string>) => void
+  /** The editor's words and @ picks to the disk at every edit, ahead of setDraft's debounced store copy: a quit right after keeps them. */
+  keepDraft: (chatId: string, draft: { text?: string; mentions?: DraftMention[] }) => void
   // @@@at-mention-draft (#4304/#951)
   setDraftMentions: (chatId: string, mentions: DraftMention[]) => void
   // @@@draft-attachment (#1872)
@@ -214,11 +228,15 @@ const EMPTY_CHAT_STORE: ChatContextValue = {
   upsertChat: () => {},
   pinChat: async () => {},
   deleteChat: async () => {},
+  hideConversation: async () => undefined,
+  undoConversationHide: async () => undefined,
+  clearConversation: async () => {},
   leaveGroup: async () => {},
   markUnread: async () => {},
   setChatNotificationLevel: async () => {},
   patchChat: () => {},
   setDraft: () => {},
+  keepDraft: () => {},
   setDraftMentions: () => {},
   setDraftAttachments: () => {},
 }
@@ -228,63 +246,60 @@ const EMPTY_CHAT_STORE: ChatContextValue = {
 // 其中包括每条气泡里的元指示行。现在 context 里只放一个身份稳定的句柄,消费者按**自己读的那几格**订阅:
 // `useChatStore('chats', 'identitiesById')` 只在这两格换身份时重渲。不传键 = 订阅整份(与从前等价)。
 type ChatStoreValue = ChatContextValue & ReturnType<typeof createDraftWriter>
-type ChatStoreHandle = { get: () => ChatStoreValue; subscribe: (listener: () => void) => () => void; value: ChatStoreValue; writer: ReturnType<typeof createDraftWriter>; listeners: Set<() => void> }
+type ChatStoreHandle = { store: SelectStore<ChatStoreValue>; writer: ReturnType<typeof createDraftWriter> }
 
 function createChatStoreHandle(value: ChatContextValue, inheritedWriter?: ReturnType<typeof createDraftWriter>): ChatStoreHandle {
-  const { writeDraft, registerDraftEditor } = inheritedWriter ?? createDraftWriter(() => handle.value)
+  const { writeDraft, registerDraftEditor } = inheritedWriter ?? createDraftWriter(() => handle.store.get())
   const writer = { writeDraft, registerDraftEditor }
-  const handle: ChatStoreHandle = {
-    value: { ...value, ...writer }, writer, listeners: new Set(),
-    get: () => handle.value,
-    subscribe: (listener) => { handle.listeners.add(listener); return () => { handle.listeners.delete(listener) } },
-  }
+  const handle: ChatStoreHandle = { store: createSelectStore<ChatStoreValue>({ ...value, ...writer }), writer }
   return handle
 }
 
 const ChatContext = createContext<ChatStoreHandle>(createChatStoreHandle(EMPTY_CHAT_STORE))
 
-/** 把 provider 这一轮算出的整份 value 交给句柄。渲染期写入:同一轮里往下渲染的消费者读到的就是这一份,
+/** 把 provider 这一轮算出的整份 value 交给句柄(@@@select-store):同一轮里往下渲染的消费者读到的就是这一份,
  * 不会出现「父组件已是新值、子组件还是旧 store」的混合帧;没在这一轮渲染的订阅者在 layout 阶段收到通知。 */
 export function ChatStoreProvider({ value, draftWriter, children }: { value: ChatContextValue; draftWriter?: ReturnType<typeof createDraftWriter>; children?: ReactNode }) {
   const [handle] = useState(() => createChatStoreHandle(value, draftWriter))
-  handle.value = { ...value, ...handle.writer }
-  useLayoutEffect(() => { for (const listener of [...handle.listeners]) listener() }, [handle, value])
+  handle.store.publish({ ...value, ...handle.writer })
+  useLayoutEffect(() => { handle.store.notify() }, [handle, value])
   return createElement(ChatContext.Provider, { value: handle }, children)
 }
 
 export function useChatStore(): ChatStoreValue
 export function useChatStore<K extends keyof ChatStoreValue>(...keys: K[]): Pick<ChatStoreValue, K>
 export function useChatStore(...keys: (keyof ChatStoreValue)[]): Partial<ChatStoreValue> {
-  const handle = useContext(ChatContext)
-  const picked = useRef<Partial<ChatStoreValue> | null>(null)
-  const getSnapshot = () => {
-    const value = handle.get()
-    if (keys.length === 0) return value
-    const previous = picked.current
-    if (previous && keys.every((key) => Object.is(previous[key], value[key]))) return previous
-    return (picked.current = Object.fromEntries(keys.map((key) => [key, value[key]])) as Partial<ChatStoreValue>)
-  }
-  return useSyncExternalStore(handle.subscribe, getSnapshot)
+  const { store } = useContext(ChatContext)
+  return useSelect(store, (value) => keys.length === 0 ? value : Object.fromEntries(keys.map((key) => [key, value[key]])) as Partial<ChatStoreValue>, keys.length === 0 ? Object.is : sameShallow)
 }
 
 /** 只在回调里读、不订阅(读的那一刻的整份值):外壳和点开时才要会话列表的 hook 用它,每条消息就不必把整棵壳重渲一遍。 */
 export function useChatStoreReader(): () => ChatStoreValue {
-  return useContext(ChatContext).get
+  return useContext(ChatContext).store.get
 }
 
-/** 只订阅从 store 里算出来的一个值(select 要返回原始值或稳定引用):值不变,别的会话来消息也不重渲。 */
+/** 当前会话(还在会话列表里时)与某条会话在不在列表里,给外壳的手机会话层直接读(lib/shellTab @@@phone-chat-layer / -trail),不经谁转手。 */
+export function useActiveChatListedSource(): ShellChatList {
+  const { store } = useContext(ChatContext)
+  return useMemo(() => ({
+    activeId: () => store.get().activeChat?.id ?? null,
+    listed: (chatId: string) => store.get().chats.some((chat) => chat.id === chatId),
+    subscribe: store.subscribe,
+  }), [store])
+}
+
+/** 只订阅从 store 里算出来的一个值:值不变(浅比较),别的会话来消息也不重渲。 */
 export function useChatStoreSelect<T>(select: (store: ChatStoreValue) => T): T {
-  const handle = useContext(ChatContext)
-  return useSyncExternalStore(handle.subscribe, () => select(handle.get()))
+  return useSelect(useContext(ChatContext).store, select)
 }
 
 /**
- * 从 store 读一个值,只有 signature 变了才换一份。一条消息会把会话列表换好几次,多数订阅者只读其中几个字段:
+ * 从 store 读一个值,只有 signature 的内容变了才换一份。一条消息会把会话列表换好几次,多数订阅者只读其中几个字段:
  * 它们写清自己读什么,别的字段变了不重渲。
  */
 export function useStoreValueBy<T>(read: (store: ChatStoreValue) => T, signature: (store: ChatStoreValue) => unknown): T {
   const get = useChatStoreReader()
-  const current = useChatStoreSelect((store) => JSON.stringify(signature(store)))
+  const current = useSelect(useContext(ChatContext).store, signature, isDeepEqual)
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the signature is the dependency
   return useMemo(() => read(get()), [current])
 }
@@ -361,6 +376,7 @@ export function useTextDraftStore(accountId: string | null = null): {
   drafts: Record<string, string>
   setDraft: (chatId: string, content: SetStateAction<string>) => void
   dropTextDraft: (chatId: string) => void
+  keepDraft: (chatId: string, draft: { text?: string; mentions?: DraftMention[] }) => void
 } {
   const { value: drafts, ref, replace } = useAccountDrafts(accountId, (account) => readChatDrafts(account).texts)
   const setDraft = useCallback((chatId: string, content: SetStateAction<string>) => {
@@ -368,14 +384,18 @@ export function useTextDraftStore(accountId: string | null = null): {
     replace({ ...ref.current.value, [chatId]: text })
     writeChatDraft(ref.current.accountId, chatId, { text })
   }, [ref, replace])
+  // The chat was left or deleted: its draft goes, and with it everything else kept for it (reading position, tabs, panels).
   const dropTextDraft = useCallback((chatId: string) => {
-    removeChatDraft(ref.current.accountId, chatId)
+    forgetConversation(chatId)
     if (!(chatId in ref.current.value)) return
     const next = { ...ref.current.value }
     delete next[chatId]
     replace(next)
   }, [ref, replace])
-  return { drafts, setDraft, dropTextDraft }
+  const keepDraft = useCallback((chatId: string, { text, mentions }: { text?: string; mentions?: DraftMention[] }) => {
+    writeChatDraft(ref.current.accountId, chatId, { text, mentions: mentions?.map(({ userId, displayName }) => ({ userId, displayName })) })
+  }, [ref])
+  return { drafts, setDraft, dropTextDraft, keepDraft }
 }
 
 export function useDraftMentionsStore(accountId: string | null = null): {

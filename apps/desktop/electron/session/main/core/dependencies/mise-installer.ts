@@ -34,6 +34,10 @@ export function miseEnvironment(root: string, config: string, source: NodeJS.Pro
     MISE_GLOBAL_CONFIG_ROOT: root, MISE_CEILING_PATHS: root, MISE_TRUSTED_CONFIG_PATHS: root,
     MISE_OVERRIDE_CONFIG_FILENAMES: 'gugu.mise.toml',
     MISE_YES: '1', MISE_COLOR: '0', MISE_EXPERIMENTAL: '1', MISE_JOBS: '1',
+    // The bundled mise is pinned and replaced only with Gugu, so its own "newer mise available" check
+    // (`mise --version` fetches mise.jdx.dev/VERSION, 30 s HTTP timeout) is never useful here and only
+    // makes the 15 s version step fail on a slow network (settings.toml `disable_update_warning`, 2026.9.12).
+    MISE_DISABLE_UPDATE_WARNING: '1',
   };
 }
 

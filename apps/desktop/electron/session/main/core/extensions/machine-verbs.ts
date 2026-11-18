@@ -1,9 +1,7 @@
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { MachineVerb, PlaceVerb } from '@shared/extensions/bridge-protocol';
 import { folderOf, isWorkspace, placeOf, fileRefOf } from '@shared/extensions/app-runtime-protocol';
-import { HOSTED_PROGRAM_ELSEWHERE, hostsProgram } from '@shared/extensions/program-place';
 import { listExtensionData, readExtensionData, writeExtensionData } from '@main/core/extensions/extension-data';
-import { extensionDataRoot, extensionsService } from '@main/core/extensions/extensions-root';
+import { extensionDataRoot } from '@main/core/extensions/extensions-root';
 import { extensionPrograms } from '@main/core/extensions/extension-programs';
 import type { HandedFile } from '@main/core/extensions/working-copy-files';
 
@@ -35,20 +33,12 @@ export const machineVerbs = {
     if (typeof args.name !== 'string') throw invalid('name must be a string');
     const server = typeof args.server === 'string' ? args.server : undefined;
     const toolArgs = args.arguments;
-    const hosted = hostsProgram(extensionsService().get(extensionId).manifest, server);
     // Only name, arguments and server are read from the page; the program's `_meta` is the host's.
-    const call = extensionPrograms.callFromPage(extensionId, {
+    return extensionPrograms.callFromPage(extensionId, {
       ...(server !== undefined ? { server } : {}),
       name: args.name,
       ...(toolArgs && typeof toolArgs === 'object' && !Array.isArray(toolArgs) ? { arguments: toolArgs as Record<string, unknown> } : {}),
       from,
-    });
-    // A hosted program whose host this computer does not have (#7293's own words for that one case): refused as a session
-    // elsewhere refuses one (`invalid`). Any other failure of it — the browser did not start, say — is that failure.
-    return await call.catch((error: unknown): CallToolResult => {
-      const message = error instanceof Error ? error.message : String(error);
-      const hostMissing = hosted && !(error as { code?: unknown } | null)?.code && message.startsWith('Host capability is unavailable');
-      throw hostMissing ? invalid(`${HOSTED_PROGRAM_ELSEWHERE} (${message})`) : error;
     });
   },
   // A working copy's files (`machine: 'place'`), for a page whose working copy is on this machine.

@@ -94,7 +94,7 @@ export function SessionPreviewPane({
         <span className="text-xs text-foreground-tertiary-muted">
           {LOCAL_SESSION_ENGINE_LABEL[session.engine]}
           {preview
-            ? ` · ${translate('sessionImport.previewTurnCount', { count: preview.turnCount })}`
+            ? ` ${translate('sessionImport.previewTurnCount', { count: preview.turnCount })}`
             : ''}
         </span>
       </div>

@@ -17,7 +17,6 @@ async function fixture() {
     if (action.action === 'devices') { await gate.promise; return [host] }
     if (action.action === 'device_actions') return { devices: [host] }
     if (action.action === 'project_list') return [{ project_id: 'p', name: 'original-project', path: '/project' }]
-    if (action.action === 'library_read') return { items: [] }
     throw new Error('Unexpected action')
   })
   const deps = { accountId: async () => owner, run, timeoutMs: 15_000 }

@@ -4,7 +4,7 @@ import type { CliPlatform, CliToolRecipe } from './cli-tools';
 export const FEISHU_CLI_VERSION = '1.0.98';
 export const FEISHU_SKILLS_COMMIT = 'ac81f5056ab88f37d581d25916f3dab85abfca76';
 // 官方 v1.0.98 release 的 checksums.txt；下载后只信这些固定摘要。
-export const FEISHU_BINARY_SHA256: Record<CliPlatform, string> = {
+export const FEISHU_BINARY_SHA256: Partial<Record<CliPlatform, string>> = {
   'darwin-arm64': 'ee4a3209bbf8b74ea5c00a07d0da89b79f5e7f6abfd518a8b2d78a7a4f7e3f40',
   'darwin-x64': '44a4ff98e969385fc4bb4d701735ba319307e50560fa6c4c956178d70ccc3525',
   'linux-arm64': 'f798b26ce4b369d70411945e7f66bbe4382c411bc47d81950a662de7b69b41ed',

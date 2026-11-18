@@ -42,7 +42,7 @@ it('publishes a complete Beta tools/list that the MCP SDK and object-only consum
     const parsed = ListToolsResultSchema.safeParse(raw)
     expect(parsed.success ? [] : parsed.error.issues).toEqual([])
     if (!parsed.success) throw new Error('Beta tools/list violates the MCP SDK schema')
-    expect(parsed.data.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['message_send', 'password_credentials', 'password_login']))
+    expect(parsed.data.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['message_send', 'password_credentials', 'password_fill']))
     for (const tool of parsed.data.tools) {
       expect(tool.inputSchema.type, tool.name).toBe('object')
       for (const combinator of ['oneOf', 'anyOf', 'allOf']) expect(tool.inputSchema, `${tool.name}.${combinator}`).not.toHaveProperty(combinator)
@@ -51,37 +51,37 @@ it('publishes a complete Beta tools/list that the MCP SDK and object-only consum
   })
 })
 
-it('validates every password_login action before dispatch and preserves successful replies', async () => {
+it('validates every password_fill action before dispatch and preserves successful replies', async () => {
   await withBetaClient(async client => {
     const requestId = '11111111-1111-4111-8111-111111111111'
     const credentialId = '22222222-2222-4222-8222-222222222222'
-    const request = { action: 'request', credentialId, browserId: 'browser', loginUrl: 'https://example.com/login',
-      selection: { form: 'form', account: '#account', password: '#password' } }
+    const request = { action: 'request', credentialId, browserId: 'browser', url: 'https://example.com/login',
+      fill: [{ field: '账号', into: '#account' }, { field: '密码', into: '#password' }] }
     const badArguments = [
       { action: 'request' }, { action: 'start' }, { action: 'status' },
       { ...request, requestId }, { action: 'start', requestId, credentialId },
-      { action: 'status', requestId, selection: request.selection },
-      { ...request, selection: { form: 'form', account: '#account' } },
+      { action: 'status', requestId, fill: request.fill },
+      { ...request, fill: [] }, { ...request, fill: [{ field: '密码' }] }, { ...request, url: undefined },
       { ...request, confidentialValue: 'schema-error-canary' },
       { action: 'start', requestId: 'invalid-id' }, { action: 'approve', requestId },
     ]
     for (const args of badArguments) {
-      const reply = await client.callTool({ name: 'password_login', arguments: args })
+      const reply = await client.callTool({ name: 'password_fill', arguments: args })
       expect(reply.isError, JSON.stringify(args)).toBe(true)
       expect(JSON.stringify(reply)).not.toContain('schema-error-canary')
     }
     expect(ports.request).not.toHaveBeenCalled()
     expect(ports.start).not.toHaveBeenCalled()
     expect(ports.status).not.toHaveBeenCalled()
-    const missing = await client.callTool({ name: 'password_login', arguments: { action: 'request' } })
-    expect(JSON.stringify(missing)).toContain('Invalid password_login arguments')
+    const missing = await client.callTool({ name: 'password_fill', arguments: { action: 'request' } })
+    expect(JSON.stringify(missing)).toContain('Invalid password_fill arguments')
 
     ports.request.mockResolvedValue({ status: 'pending', requestId })
     ports.status.mockResolvedValue({ status: 'approved' })
     ports.start.mockResolvedValue({ status: 'submitted_unconfirmed' })
-    expect(JSON.stringify(await client.callTool({ name: 'password_login', arguments: request }))).toContain('pending')
-    expect(JSON.stringify(await client.callTool({ name: 'password_login', arguments: { action: 'status', requestId } }))).toContain('approved')
-    expect(JSON.stringify(await client.callTool({ name: 'password_login', arguments: { action: 'start', requestId } }))).toContain('submitted_unconfirmed')
+    expect(JSON.stringify(await client.callTool({ name: 'password_fill', arguments: request }))).toContain('pending')
+    expect(JSON.stringify(await client.callTool({ name: 'password_fill', arguments: { action: 'status', requestId } }))).toContain('approved')
+    expect(JSON.stringify(await client.callTool({ name: 'password_fill', arguments: { action: 'start', requestId } }))).toContain('submitted_unconfirmed')
     for (const port of [ports.request, ports.status, ports.start]) expect(port).toHaveBeenCalledOnce()
   })
 })

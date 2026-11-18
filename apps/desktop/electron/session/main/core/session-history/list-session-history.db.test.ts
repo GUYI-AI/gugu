@@ -21,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   repoRoots: {} as Record<string, string>,
   remotes: {} as Record<string, string>,
   release: vi.fn(),
+  /** 这台机器上的项目群绑定:本地项目 id → 项目群 chat id(没写的 = 不在任何项目群里)。 */
+  groups: {} as Record<string, string>,
 }));
 
 vi.mock('@main/db/client', () => ({
@@ -34,6 +36,9 @@ vi.mock('@main/core/session-import/host-source', () => ({
   getLocalSessionSource: () => ({ list: mocks.list }),
 }));
 vi.mock('@main/core/projects/operations/project-folders', () => ({ projectRootFolder: vi.fn() }));
+vi.mock('@main/core/projects/project-public-id', () => ({
+  machineOutwardProjectIds: async () => (localId: string) => mocks.groups[localId] ?? null,
+}));
 vi.mock('@main/core/runtime/runtime-manager', () => ({ runtimeManager: { acquire: async () => ({
   value: { git: { openRepository: async (path: string) => ({
     value: { getRemotes: async () => ({ remotes: mocks.remotes[path] ? [{ name: 'origin', url: mocks.remotes[path] }] : [] }) },
@@ -78,6 +83,7 @@ describe('listSessionHistory', () => {
     mocks.list.mockReset();
     mocks.repoRoots = { '/repo': '/repo' };
     mocks.remotes = {};
+    mocks.groups = {};
     mocks.release.mockClear();
     mocks.list.mockImplementation(async () => ({
       rows: mocks.localRows,
@@ -242,6 +248,44 @@ describe('listSessionHistory', () => {
     expect(repo2.sessionCount).toBe(4);
     const byTitle = await listSessionHistoryDirectories({ sort: 'title', sessionsPerDirectory: 1 });
     expect(keys(byTitle.rows.find((row) => row.key === '/repo')!.sessions)).toEqual(['gugu:b']); // Apple
+  });
+
+  it('节按账号项目给:项目群里的本机项目进 `project:<群>` 一节(同群的几个本机项目并成一节,项目文件夹里的原件也进来);一个目录里两个项目的任务分两节', async () => {
+    const sql = fixture.sqlite;
+    mocks.repoRoots = { '/repo': '/repo', '/web2': '/web2', '/docs': '/docs' };
+    // p1(/repo)与 p4(/web2)是同一个项目群 chat-web 在这台机器上的两个文件夹;p5(/docs)在 chat-docs 里、没有任务;
+    // p2(/other)不在任何项目群里;p6 是任务工作区(#609 workspace)。
+    mocks.groups = { p1: 'chat-web', p4: 'chat-web', p5: 'chat-docs' };
+    sql.prepare(`INSERT INTO projects (id, name, path) VALUES ('p4', 'Web2', '/web2')`).run();
+    sql.prepare(`INSERT INTO projects (id, name, path) VALUES ('p5', 'Docs', '/docs')`).run();
+    sql.prepare(`INSERT INTO projects (id, name, path, kind) VALUES ('p6', 'Scratch', '/scratch-ws', 'workspace')`).run();
+    const insert = sql.prepare(
+      `INSERT INTO sessions (id, project_id, config, runtime, provider, created_at, updated_at) VALUES (?, ?, json_object('version', '1', 'type', 'acp', 'agentDisplayName', ?), 'acp', 'acp-prov', '2026-09-01 00:00:00', '2026-09-01 00:00:00')`
+    );
+    insert.run('e', 'p4', 'Fig');
+    insert.run('w', 'p6', 'Workspace task');
+    // c(项目 p2)跑在 /repo/sub 的工作区里 —— 与 L2(/repo/sub 的原件,归 p1)同一个目录,却是两个项目。
+    sql.prepare(`INSERT INTO workspaces (id, type, kind, path) VALUES ('w2', 'local', 'worktree', '/repo/sub')`).run();
+    sql.prepare(`UPDATE sessions SET workspace_id = 'w2' WHERE id = 'c'`).run();
+    mocks.localRows = [...mocks.localRows, local({ providerSessionId: 'D1', cwd: '/docs/notes' })];
+
+    const page = await listSessionHistoryDirectories({ sessionsPerDirectory: 10 });
+    const sections = Object.fromEntries(page.rows.map((row) => [row.key, keys(row.sessions).sort()]));
+    expect(sections['project:chat-web']).toEqual(
+      ['gugu:a', 'gugu:b', 'gugu:d', 'gugu:e', 'local:/home/me/.claude/projects/x/L2.jsonl'].sort()
+    );
+    expect(sections['project:chat-docs']).toEqual(['local:/home/me/.claude/projects/x/D1.jsonl']);
+    expect(sections['/other']).toEqual(['gugu:c']);
+    expect(sections[SESSION_HOME_SECTION_KEY]).toEqual(['gugu:w']);
+    expect(page.rows.find((row) => row.key === 'project:chat-docs')).toMatchObject({ directory: 'project:chat-docs', projectName: 'Docs' });
+    expect(page.rows.find((row) => row.key === '/other')).toMatchObject({ directory: '/other', projectName: 'Other' });
+    // 展开一节 = 把它的 key 原样传回:计数与节头一致。
+    expect((await listSessionHistory({ directory: 'project:chat-web' })).matched).toBe(5);
+    // 字母序按项目名(Docs < Other < Repo / Web2),不是按 key(按 key 的话 /other 会排在两个 project: 之前)。
+    const byName = (await listSessionHistoryDirectories({ sort: 'title' })).rows.map((row) => row.key);
+    expect(['project:chat-docs', '/other', 'project:chat-web'].map((key) => byName.indexOf(key))).toEqual(
+      [...['project:chat-docs', '/other', 'project:chat-web'].map((key) => byName.indexOf(key))].sort((x, y) => x - y)
+    );
   });
 
   it('一个项目一节:咕咕会话跑在项目路径之外的 worktree 里,也归它自己的项目那一节', async () => {
