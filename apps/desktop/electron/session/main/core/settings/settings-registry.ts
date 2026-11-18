@@ -20,6 +20,7 @@ type SettingsDefaultsMap = {
 }
 
 export const SETTINGS_DEFAULTS = {
+  autoReviewModel: null,
   project: {
     tmuxByDefault: false
   },
