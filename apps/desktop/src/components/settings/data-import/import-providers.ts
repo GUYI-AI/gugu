@@ -13,6 +13,7 @@ export type ImportProvider = {
   id: string
   label: string
   iconId: string
+  supportsAutomaticSync?: boolean
   scan(deviceId: string | null): Promise<{ count: number; pending: boolean; needsSource?: boolean } | null>
   pickSource?(deviceId: string | null): Promise<void>
   openImportedSession?(session: ImportedSession, deviceId: string | null): Promise<void>
@@ -45,6 +46,7 @@ function transcriptProvider(engine: LocalSessionEngine): ImportProvider {
     id: engine,
     label: LOCAL_SESSION_ENGINE_LABEL[engine],
     iconId: LOCAL_SESSION_ENGINE_PROVIDER[engine],
+    supportsAutomaticSync: true,
     async scan(deviceId) {
       const page = await scanTranscripts(deviceId)
       return page.local ? { count: page.countsBySource[engine], pending: page.local.pending > 0 } : null
@@ -82,3 +84,16 @@ function transcriptProvider(engine: LocalSessionEngine): ImportProvider {
 }
 
 export const importProviders = (Object.keys(LOCAL_SESSION_ENGINE_LABEL) as LocalSessionEngine[]).map(transcriptProvider)
+
+const extraProviders = new Map<string, ImportProvider>()
+
+export function locateImportProvider(id: string): ImportProvider | undefined {
+  return extraProviders.get(id) ?? importProviders.find((provider) => provider.id === id)
+}
+
+export function registerExtraImportProviders(providers: readonly ImportProvider[]): () => void {
+  providers.forEach((provider) => extraProviders.set(provider.id, provider))
+  return () => providers.forEach((provider) => {
+    if (extraProviders.get(provider.id) === provider) extraProviders.delete(provider.id)
+  })
+}

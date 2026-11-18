@@ -15,37 +15,16 @@
 .gg-import-toolbar {
   display: flex;
   align-items: start;
-  justify-content: end;
+  justify-content: space-between;
   gap: var(--spacing-sm);
   padding-inline-end: var(--spacing-2xl);
 }
 
-.gg-import-toolbar h2 {
-  font-size: var(--font-body);
-  font-weight: var(--font-weight-semibold);
+.gg-import-toolbar .gg-segtab {
+  transition-duration: 100ms;
+  transition-timing-function: var(--import-ease);
 }
-
-.gg-import-device {
-  display: inline-block;
-  margin-inline-start: var(--spacing-sm);
-  border-radius: var(--radius-capsule);
-  background: var(--hover);
-  padding-inline: var(--spacing-xs);
-  color: var(--text-secondary);
-  font-size: var(--font-caption);
-  font-weight: var(--font-weight-regular);
-}
-
-.gg-import-device[data-remote]::after {
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin-inline-start: var(--spacing-xs);
-  border-radius: var(--radius-circle);
-  background: var(--agent-tone-online);
-  content: '';
-  vertical-align: middle;
-}
+.gg-import-device { font-size: var(--font-caption); color: var(--text-secondary); }
 
 .gg-import-stack {
   display: grid;
@@ -59,17 +38,40 @@
   border-radius: var(--radius-xl);
 }
 
-.gg-import-card,
+.gg-import-card-trigger,
 .gg-import-history-trigger {
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
+  width: 100%;
+  height: auto;
   padding: var(--spacing-md);
 }
 
-.gg-import-card[data-cancellable]:is(:hover, :focus-within) {
+.gg-import-row[data-cancellable]:is(:hover, :focus-within) {
   background: var(--hover);
 }
+
+.gg-import-card-trigger:hover { background: transparent; }
+.gg-import-card-trigger[aria-expanded="true"] .gg-import-chevron { transform: rotate(90deg); }
+.gg-import-collapse [data-slot="collapse-panel"],
+.gg-import-collapse[data-slot="collapse-panel"] { transition-timing-function: var(--import-ease); }
+.gg-import-details {
+  margin-inline: var(--spacing-md);
+  padding-block: var(--spacing-xs);
+  border-top: 1px solid var(--border);
+}
+.gg-import-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  min-height: 36px;
+  padding-inline: var(--spacing-sm);
+  border-radius: var(--radius-control);
+}
+.gg-import-row-label, .gg-import-unavailable { font-size: var(--font-body); }
+.gg-import-unavailable { color: var(--text-secondary); padding: var(--spacing-sm); }
 
 .gg-import-icon {
   display: grid;
@@ -127,8 +129,8 @@
   pointer-events: none;
 }
 
-.gg-import-card[data-cancellable]:is(:hover, :focus-within) .gg-import-progress { opacity: 0; }
-.gg-import-card:is(:hover, :focus-within) .gg-import-cancel { opacity: 1; pointer-events: auto; }
+.gg-import-row[data-cancellable]:is(:hover, :focus-within) .gg-import-progress { opacity: 0; }
+.gg-import-row:is(:hover, :focus-within) .gg-import-cancel { opacity: 1; pointer-events: auto; }
 
 .gg-import-empty {
   padding: var(--spacing-md);
@@ -160,5 +162,35 @@
 .gg-import-history-session { width: 100%; justify-content: start; }
 
 @media (prefers-reduced-motion: reduce) {
-  .gg-import-chevron { transition: none; }
+  .gg-import-chevron, .gg-import-toolbar .gg-segtab { transition: none; }
 }
+
+.gg-import-sync { margin-block-start: var(--spacing-lg); }
+.gg-import-scope { display: grid; gap: var(--spacing-sm); padding: var(--spacing-lg); }
+.gg-import-scope-header,
+.gg-import-checkbox,
+.gg-import-scope-actions { display: flex; gap: var(--spacing-sm); align-items: center; justify-content: space-between; }
+.gg-import-scope-header h3 { font-size: var(--font-body); font-weight: var(--font-weight-semibold); }
+.gg-import-checkbox { padding: var(--spacing-sm); border-radius: var(--radius-control); cursor: pointer; }
+.gg-import-checkbox:hover { background: var(--hover); }
+.gg-import-checkbox [role="checkbox"] {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+}
+.gg-import-checkbox [data-checked] { background: var(--primary); color: var(--primary-fg); }
+.gg-import-scope-actions { justify-content: end; margin-top: var(--spacing-sm); }
+
+.gg-import-remote-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 180px) minmax(0, 1fr);
+  min-height: 220px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+}
+.gg-import-remote-content { padding: var(--spacing-md); }
+.gg-import-remote-content .gg-import-unavailable { text-align: center; }
+.gg-import-row-label { display: flex; align-items: center; gap: var(--spacing-sm); }
