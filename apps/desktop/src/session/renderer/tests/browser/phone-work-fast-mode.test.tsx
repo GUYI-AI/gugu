@@ -43,7 +43,7 @@ vi.mock('@/components/assistant/assistantTimelineClient', async original => ({
       modelMenu: { agentName: 'Codex', conversationSelection: null, platformModels: [], ownCatalog: null, ownAuth: null },
     })
     return { read: async () => read(), set: async (dimension: string, value: string) => {
-      host.set(dimension, value)
+      await host.set(dimension, value)
       if (dimension === 'fast') host.fast = value
       if (dimension === 'effort') host.effort = value
       return read()
@@ -105,7 +105,7 @@ afterEach(() => {
   document.body.className = bodyClass
   if (bodyStyle === null) document.body.removeAttribute('style')
   else document.body.setAttribute('style', bodyStyle)
-  host.set.mockClear(); host.normal = false; host.supported = true; host.fast = 'off'; host.effort = 'medium'
+  host.set.mockReset(); host.normal = false; host.supported = true; host.fast = 'off'; host.effort = 'medium'
 })
 
 // Keep the original controlled native-ID case and assertions; its placeholder
@@ -141,8 +141,22 @@ for (const { normal, width, theme } of scenarios) it(normal
   expect(button.getAttribute('role')).toBe('switch')
   expect(button.getAttribute('aria-label')).toBe('Fast')
   await capture('G-existing-fast-off')
+  const accepted = Promise.withResolvers<void>()
+  if (!normal) host.set.mockReturnValueOnce(accepted.promise)
   await toggle.click()
+  if (!normal) {
+    await expect.element(toggle).toHaveAttribute('aria-busy', 'true')
+    await expect.element(toggle).toHaveAttribute('aria-checked', 'false')
+    await expect.element(toggle).toBeDisabled()
+    await expect.element(panel.getByText('切换中…', { exact: true })).toBeVisible()
+    await closeWork(); await openWork()
+    await expect.element(toggle).toHaveAttribute('aria-busy', 'true')
+    expect(host.set).toHaveBeenCalledExactlyOnceWith('fast', 'on')
+    accepted.resolve()
+  }
   await expect.element(toggle).toHaveAttribute('aria-checked', 'true')
+  await expect.element(toggle).toBeEnabled()
+  expect(panel.getByText('切换中…', { exact: true }).query()).toBeNull()
   expect(host.set).toHaveBeenCalledWith('fast', 'on')
   await capture('G-existing-fast-on')
   await page.elementLocator(document.querySelector<HTMLElement>('[data-dimension="effort"][data-testid="agent-watch-create-options-drill"]')!).click()

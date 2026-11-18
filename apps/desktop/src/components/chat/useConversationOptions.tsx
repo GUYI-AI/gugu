@@ -28,6 +28,9 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
   const [error, setError] = useState<string | null>(null)
   const [pendingScope, setPendingScope] = useState<typeof scope | null>(null)
   const pending = pendingScope === scope
+  const fastWrite = useRef<typeof scope | null>(null)
+  const [pendingFastScope, setPendingFastScope] = useState<typeof scope | null>(null)
+  const fastModePending = pendingFastScope === scope
   const [restart, setRestart] = useState<{ modelId: string; label: string; source: 'platform' | 'own' } | null>(null)
   const options = read?.key === key ? read.options : null
   const readOptions = useCallback((includeOwnModelCatalog?: true) => {
@@ -45,6 +48,11 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
   }, [readOptions, invalidateReads])
   const pick = async (dimension: SessionOptionDimension, value: string) => {
     if (!target || options?.[dimension]?.selected === value) return
+    if (dimension === 'fast') {
+      if (fastWrite.current === scope) return
+      fastWrite.current = scope
+      setPendingFastScope(scope)
+    }
     invalidateReads()
     setPendingScope(scope)
     try {
@@ -52,13 +60,19 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
       if (scopeRef.current === scope) { setRead({ key, options: updated }); setError(null) }
     }
     catch (cause) { if (scopeRef.current === scope) setError(messageForUser(cause)) }
-    finally { setPendingScope(current => current === scope ? null : current) }
+    finally {
+      if (dimension === 'fast' && fastWrite.current === scope) {
+        fastWrite.current = null
+        setPendingFastScope(null)
+      }
+      setPendingScope(current => current === scope ? null : current)
+    }
   }
   const model = options?.modelMenu && options.model ? sessionModelView(options.modelMenu, options.model) : null
   const permissions = options?.mode ? Object.fromEntries(options.mode.available.map(item => [item.id, { name: item.name, description: item.description }])) : null
   const props: Partial<ComponentProps<typeof AgentConversationComposer>> = {
     modelOptions: model ? Object.fromEntries(model.groups.flatMap(group => group.items.map(({ id, ...option }) => [id, option]))) : undefined,
-    onModelMenuOpen: () => { if (!pending) readOptions(true) },
+    onModelMenuOpen: () => { if (!pending && !fastModePending) readOptions(true) },
     selectedModel: model?.selectedId,
     onModelChange: id => {
       const plan = model?.plan(id)
@@ -86,5 +100,5 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
       catch (cause) { setError(messageForUser(cause)) }
       finally { setPendingScope(current => current === scope ? null : current) }
     }} />
-  return { props, confirmation, steers: options?.modelMenu?.steers === true }
+  return { props, confirmation, fastModePending, steers: options?.modelMenu?.steers === true }
 }

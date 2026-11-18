@@ -19,7 +19,7 @@ import { phoneMenuBar } from '../composer/phone-menu-bar'
 import { PhoneThinkingOptions } from '../composer/PhoneThinkingOptions'
 import { creationThinking } from './creation-thinking'
 
-export type ExistingSessionModel = { options?: Record<string, ComposerModelOption> | null; selected?: string; onPick?: (id: string) => void; onOpen?: () => void }
+export type ExistingSessionModel = { options?: Record<string, ComposerModelOption> | null; selected?: string; onPick?: (id: string) => void; onOpen?: () => void; fastModePending?: boolean }
   & Pick<ChatComposerProps, 'effortOptions' | 'selectedEffort' | 'onEffortChange' | 'defaultEffort' | 'fastMode' | 'onFastModeChange'
     | 'permissionModeOptions' | 'selectedPermissionMode' | 'onPermissionModeChange'>
 type View = 'device' | 'harness' | 'model' | 'effort' | 'permission' | 'project' | 'skills'
@@ -109,7 +109,8 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
         {existingSession?.model && <PhoneThinkingOptions
           effortOptions={existingSession.model.effortOptions} selectedEffort={existingSession.model.selectedEffort}
           defaultEffort={existingSession.model.defaultEffort} onEffortChange={existingSession.model.onEffortChange}
-          fastMode={existingSession.model.fastMode} onFastModeChange={existingSession.model.onFastModeChange} disabled={busy} onOpenEffort={() => setView('effort')} />}
+          fastMode={existingSession.model.fastMode} onFastModeChange={existingSession.model.onFastModeChange} fastModePending={existingSession.model.fastModePending}
+          disabled={busy} onOpenEffort={() => setView('effort')} />}
         {!existingSession && configuration && <PhoneThinkingOptions {...creationThinking(configuration.models, configuration.selection)} disabled={busy} onOpenEffort={() => setView('effort')}
           onEffortChange={effort => configuration.onChange({ ...configuration.selection, effort })}
           onFastModeChange={fastMode => configuration.onChange({ ...configuration.selection, fastMode })} />}
