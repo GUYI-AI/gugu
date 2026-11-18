@@ -27,10 +27,10 @@ export function customClaudeReviewSource(input: {
 export function nativeClaudeReviewEnv(env: Readonly<Record<string, string | undefined>>): Record<string, string> {
   if (env.CLAUDE_CODE_OAUTH_TOKEN || (!env.ANTHROPIC_API_KEY && !env.ANTHROPIC_AUTH_TOKEN)) return {};
   const official = new URL(env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').hostname === 'api.anthropic.com';
-  if (official && env.ANTHROPIC_API_KEY) return { CLAUDE_CODE_AUTO_MODE_MODEL: DEFAULT_CLAUDE_REVIEWER };
+  if (official && env.ANTHROPIC_API_KEY) return { CLAUDE_CODE_AUTO_MODE_MODEL: DEFAULT_CLAUDE_REVIEWER, CLAUDE_CODE_AUTO_MODE_SERVER: '0' };
   const model = env.ANTHROPIC_MODEL?.trim();
   if (!official && model && canSpecifyClaudeReviewModel(model) && (env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN)) {
-    return { CLAUDE_CODE_AUTO_MODE_MODEL: model };
+    return { CLAUDE_CODE_AUTO_MODE_MODEL: model, CLAUDE_CODE_AUTO_MODE_SERVER: '0' };
   }
   return {};
 }

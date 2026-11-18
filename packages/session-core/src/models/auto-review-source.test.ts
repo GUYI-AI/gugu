@@ -28,13 +28,13 @@ describe('start-time reviewer source', () => {
     expect(nativeClaudeReviewEnv(env)).toEqual({});
   });
   it('pins Haiku for the official native API key without carrying the key into the result', () => {
-    expect(nativeClaudeReviewEnv({ ANTHROPIC_API_KEY: 'fixture' })).toEqual({ CLAUDE_CODE_AUTO_MODE_MODEL: DEFAULT_CLAUDE_REVIEWER });
+    expect(nativeClaudeReviewEnv({ ANTHROPIC_API_KEY: 'fixture' })).toEqual({ CLAUDE_CODE_AUTO_MODE_MODEL: DEFAULT_CLAUDE_REVIEWER, CLAUDE_CODE_AUTO_MODE_SERVER: '0' });
   });
 });
 
 it.each(['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'])('uses an explicitly selected model on a native compatible API (%s)', credential => {
   expect(nativeClaudeReviewEnv({ [credential]: 'fixture', ANTHROPIC_BASE_URL: 'https://compatible.example/v1', ANTHROPIC_MODEL: 'claude-sonnet-5' }))
-    .toEqual({ CLAUDE_CODE_AUTO_MODE_MODEL: 'claude-sonnet-5' });
+    .toEqual({ CLAUDE_CODE_AUTO_MODE_MODEL: 'claude-sonnet-5', CLAUDE_CODE_AUTO_MODE_SERVER: '0' });
 });
 
 it('uses a listed same-connection Haiku when the main model cannot classify', () => {

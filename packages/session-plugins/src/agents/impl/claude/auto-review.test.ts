@@ -16,8 +16,8 @@ const modes = (version: string | undefined, model: string, description?: string)
 };
 describe('Claude AI review prerequisites', () => {
   it('pins the reviewer over a user settings env while preserving unrelated keys and source', () => {
-    const source = { fastMode: true, env: { CUSTOM: 'kept', CLAUDE_CODE_AUTO_MODE_MODEL: 'user-reviewer' } };
-    expect(claudeReviewSettings(source)).toEqual({ fastMode: true, env: { CUSTOM: 'kept', CLAUDE_CODE_AUTO_MODE_MODEL: CLAUDE_REVIEWER_MODEL } });
+    const source = { fastMode: true, env: { CUSTOM: 'kept', CLAUDE_CODE_AUTO_MODE_MODEL: 'user-reviewer', CLAUDE_CODE_AUTO_MODE_SERVER: '1' } };
+    expect(claudeReviewSettings(source)).toEqual({ fastMode: true, env: { CUSTOM: 'kept', CLAUDE_CODE_AUTO_MODE_MODEL: CLAUDE_REVIEWER_MODEL, CLAUDE_CODE_AUTO_MODE_SERVER: '0' } });
     expect(source.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe('user-reviewer');
   });
   it.each([undefined, '', '2.1.293', '2.1.301', 'unknown', '1.9.999', '2.1.302-beta'])('hides auto for unverified/old actual CLI %s', version => {
@@ -76,7 +76,16 @@ describe('Claude AI review prerequisites', () => {
   it.each(['acp', 'tui'] as const)('keeps the native subscription classifier on %s', surface => {
     const result = materializeClaudeSessionBundle({ surface, lifecycle: 'fresh', cwd: '/fixture' }, { mcpServers: [], env: { GUGU_HOME: '/fixture/gugu' }, model: null, autonomy: { permissionMode: 'ai-review' }, promptBlocks: {}, packages: [] });
     expect(result.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBeUndefined();
+    expect(result.env.CLAUDE_CODE_AUTO_MODE_SERVER).toBeUndefined();
     expect(result.artifacts).toHaveLength(0);
+  });
+  it('keeps TUI reviewer selection on client review even when inherited server review is on', () => {
+    const result = materializeClaudeSessionBundle({ surface: 'tui', lifecycle: 'fresh', cwd: '/fixture' }, {
+      mcpServers: [], env: { CLAUDE_CODE_AUTO_MODE_MODEL: 'claude-haiku-5-5', CLAUDE_CODE_AUTO_MODE_SERVER: '1' },
+      model: null, autonomy: { permissionMode: 'ai-review' }, promptBlocks: {}, packages: [],
+    });
+    expect(result.env.CLAUDE_CODE_AUTO_MODE_SERVER).toBe('0');
+    expect(result.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe('claude-haiku-5-5');
   });
   it('materializes an explicitly selected reviewer in a protected, path-safe ACP file', () => {
     const reviewer = '../../proxy/reviewer';
@@ -86,7 +95,7 @@ describe('Claude AI review prerequisites', () => {
     const artifact = result.artifacts[0]!;
     expect(artifact.path).toMatch(/^\/fixture\/gugu\/capability-packages\/claude\/reviewer-settings\/[a-f0-9]{64}\.json$/);
     expect(artifact.mode).toBe(0o600);
-    expect(JSON.parse(artifact.content)).toEqual({ env: { CLAUDE_CODE_AUTO_MODE_MODEL: reviewer } });
+    expect(JSON.parse(artifact.content)).toEqual({ env: { CLAUDE_CODE_AUTO_MODE_MODEL: reviewer, CLAUDE_CODE_AUTO_MODE_SERVER: '0' } });
     expect(result.acp?.meta).toMatchObject({ claudeCode: { options: { settings: artifact.path } } });
     expect(acpSessionMetaSchema.safeParse(result.acp?.meta).success).toBe(true);
   });

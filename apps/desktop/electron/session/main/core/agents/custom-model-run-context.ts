@@ -20,7 +20,7 @@ async function claudeModelEnv(custom: ResolvedCustomModel, selected?: ClaudeRevi
     ...claudeApiKeyEnv(custom.apiKey, custom.endpoint, custom.models[0]),
     // The cross-connection fallback is reserved, not connected in the first release.
     // With no explicit main model the permission gate hides Auto mode before launch.
-    ...(reviewer.kind === 'own' ? { CLAUDE_CODE_AUTO_MODE_MODEL: reviewer.modelId } : {}),
+    ...(reviewer.kind === 'own' ? { CLAUDE_CODE_AUTO_MODE_MODEL: reviewer.modelId, CLAUDE_CODE_AUTO_MODE_SERVER: '0' } : {}),
     ...(custom.capabilities?.contextWindow ? { CLAUDE_CODE_MAX_CONTEXT_TOKENS: String(custom.capabilities.contextWindow) } : {}),
   };
 }

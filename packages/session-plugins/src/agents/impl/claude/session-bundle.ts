@@ -656,7 +656,7 @@ export function materializeClaudeSessionBundle(
   const plugin = packageEntry ? { entry: packageEntry, root: packageRoot(bundle) } : null;
   const library = libraryPlugin(bundle);
   const reviewer = bundle.env.CLAUDE_CODE_AUTO_MODE_MODEL?.trim();
-  const env: Record<string, string> = reviewer ? { CLAUDE_CODE_AUTO_MODE_MODEL: reviewer } : {};
+  const env: Record<string, string> = reviewer ? { CLAUDE_CODE_AUTO_MODE_MODEL: reviewer, CLAUDE_CODE_AUTO_MODE_SERVER: '0' } : {};
   materializeMcpEnv(bundle, env);
   materializeModel(bundle, env);
   const promptValue = renderPromptBlocks(bundle.promptBlocks);
