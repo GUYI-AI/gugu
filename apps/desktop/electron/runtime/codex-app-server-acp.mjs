@@ -732,7 +732,7 @@ async function loadPermissionModes(cwd, currentProfile, timeoutMs = 45_000) {
     if (safety > 20) throw new Error('local Codex permissionProfile/list pagination did not terminate')
   } while (cursor)
   if (autoReviewSupported && availableModes.some(mode => mode.id === ':workspace')) {
-    availableModes.push({ id: 'auto-review', name: 'AI reviews for me' })
+    availableModes.push({ id: 'auto-review', name: 'Auto mode' })
   }
   if (selected && !availableModes.some((mode) => mode.id === selected)) {
     availableModes.push({

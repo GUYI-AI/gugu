@@ -32,7 +32,7 @@ vi.mock('@/components/assistant/assistantTimelineClient', async original => ({
   ...await original<typeof import('@/components/assistant/assistantTimelineClient')>(),
   conversationOptionClient: () => {
     const read = () => ({
-      mode: host.supported ? { selected: host.selected, available: [{ id: ':workspace', name: '编辑', description: '工作区权限' }, { id: ':danger-full-access', name: '完全访问', description: '保留原生权限含义' }, ...(host.review ? [{ id: 'auto-review', name: 'AI 帮我审', description: '原生审查' }] : [])] } : null,
+      mode: host.supported ? { selected: host.selected, available: [{ id: ':workspace', name: '编辑', description: '工作区权限' }, { id: ':danger-full-access', name: '完全访问', description: '保留原生权限含义' }, ...(host.review ? [{ id: 'auto-review', name: '自动模式', description: '原生审查' }] : [])] } : null,
       modeMap: { edit: { id: ':workspace' }, 'full-access': { id: ':danger-full-access' }, 'ai-review': { id: 'auto-review' } },
       model: { selected: 'native-model', available: [{ id: 'native-model', name: 'Native Codex model' }] },
       effort: { selected: 'xhigh', available: [{ id: 'xhigh', name: 'Xhigh' }, { id: 'adaptive', name: 'Adaptive profile' }] },
@@ -160,8 +160,8 @@ it('carries an admitted native Auto option through Work and reflects only the ac
   host.review = true
   await mount()
   await openPermissions()
-  await page.getByRole('radio', { name: /AI 帮我审/ }).click()
-  await until('accepted Auto mode is shown in Work', () => document.querySelector('[data-dimension="permission"][data-testid="agent-watch-create-options-drill"]')?.textContent?.includes('AI 帮我审') === true)
+  await page.getByRole('radio', { name: /自动模式/ }).click()
+  await until('accepted Auto mode is shown in Work', () => document.querySelector('[data-dimension="permission"][data-testid="agent-watch-create-options-drill"]')?.textContent?.includes('自动模式') === true)
   expect(host.set).toHaveBeenCalledExactlyOnceWith('mode', 'auto-review')
   expect(host.selected).toBe('auto-review')
   expect(document.querySelector('[data-slot="composer-permission-mode"]')).toBeNull()
@@ -170,7 +170,7 @@ it('carries an admitted native Auto option through Work and reflects only the ac
 it('does not offer Auto in Work when the host excludes it', async () => {
   await mount()
   await openPermissions()
-  await expect.element(page.getByRole('radio', { name: /AI 帮我审/ })).not.toBeInTheDocument()
+  await expect.element(page.getByRole('radio', { name: /自动模式/ })).not.toBeInTheDocument()
   expect(host.set).not.toHaveBeenCalled()
 })
 
@@ -179,7 +179,7 @@ it('retains the original mode when the host rejects Auto in Work', async () => {
   host.fail = true
   await mount()
   await openPermissions()
-  await page.getByRole('radio', { name: /AI 帮我审/ }).click()
+  await page.getByRole('radio', { name: /自动模式/ }).click()
   await until('Auto rejection is visible', () => document.body.textContent?.includes('Permission update rejected') === true)
   expect(host.set).toHaveBeenCalledExactlyOnceWith('mode', 'auto-review')
   expect(host.selected).toBe(':danger-full-access')
