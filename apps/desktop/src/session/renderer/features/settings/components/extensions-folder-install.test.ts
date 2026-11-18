@@ -80,7 +80,8 @@ vi.mock('@renderer/features/extensions/panel/market-detail-agent', async () => {
   const { DialogHeader, DialogTitle } = await import('@renderer/lib/ui/dialog');
   return {
     MarketAgentDetail: ({ agentId }: { agentId: string }) =>
-      React.createElement(DialogHeader, null, React.createElement(DialogTitle, { 'data-testid': 'chosen-agent-detail' }, agentId)),
+      React.createElement(DialogHeader, null,
+        React.createElement(DialogTitle, null, React.createElement('span', { 'data-testid': 'chosen-agent-detail' }, agentId))),
   };
 });
 
