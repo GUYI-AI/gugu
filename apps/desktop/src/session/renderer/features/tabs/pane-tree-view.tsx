@@ -115,8 +115,8 @@ const Cut = observer(function Cut({ node, layout, narrow, visiblePaneId, anchorO
       </Fragment>;
     })}
     {chatDivider && divider.preview && <div
-      className={`pointer-events-none absolute inset-y-0 z-20 border-foreground/25 bg-foreground/10 ${divider.preview === 'left' ? 'left-0 border-r' : 'right-0 border-l'}`}
-      style={{ width: `${node.sizes[divider.preview === 'left' ? 0 : 1]}%` }}
+      className={`pointer-events-none absolute inset-y-0 border-foreground/25 bg-foreground/10 ${divider.preview === 'left' ? 'left-0 border-r' : 'right-0 border-l'}`}
+      style={{ zIndex: 'var(--z-pane-divider)', width: `${node.sizes[divider.preview === 'left' ? 0 : 1]}%` }}
       data-occludes-browser-page
       data-chat-tool-collapse-preview={divider.preview}
       data-chat-tool-collapse-ready={divider.ready || undefined}

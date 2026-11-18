@@ -1148,11 +1148,11 @@
 
   [data-chat-workspace-header] [data-tab-density='compact'] [data-tool-tab-title] {
     text-overflow: clip;
-    mask-image: linear-gradient(to right, #000 75%, transparent);
+    mask-image: linear-gradient(to right, currentColor 75%, transparent);
   }
 
   [data-chat-tool-collapse-preview][data-chat-tool-collapse-ready] {
-    background: var(--row-press);
+    background: color-mix(in oklab, var(--foreground) 16%, transparent);
   }
 
   [data-chat-tool-dragging] [data-pane-content-drop-preview] {
