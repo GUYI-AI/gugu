@@ -158,7 +158,7 @@ export interface SessionpagePlatformHooksDeps {
    * 形状与平台启动值相同,于是两条腿的会话包与物化器原样把它写进这一家自己的配置;它没有令牌,所以不复用、
    * 不续期、不结算(见 `connectionModelLaunch`)。缺省(无头宿主)= 不接连接,与从前逐字相同。
    */
-  connectionModel?: (input: { providerId: string; surface: 'cui' | 'tui'; sessionId: string }) => Promise<SessionpagePlatformModel | null>
+  connectionModel?: (input: { providerId: string; surface: 'cui' | 'tui'; sessionId: string; sourceSessionId?: string }) => Promise<SessionpagePlatformModel | null>
   env?: NodeJS.ProcessEnv
 }
 
@@ -304,27 +304,29 @@ export function createSessionpagePlatformHooks(deps: SessionpagePlatformHooksDep
     })
   }
 
-  /** 不上平台 ⇒ 看这一家有没有选中一把走模型注入的 API Key 连接;有就用它,没有原样返回。 */
+  /** Use the custom record bound to a non-platform session, including a runtime-only fork's source. */
   const orConnectionModel = async (
     platform: SessionpagePlatformModel,
     providerId: string,
     surface: 'cui' | 'tui',
     sessionId: string,
+    sourceSessionId?: string,
   ): Promise<SessionpagePlatformModel> => {
     if (!deps.connectionModel || !notOnPlatform(platform)) return platform
     // 会话 id:连接点名了好几个模型时,会话自己选的那个是起步模型(新建任务的模型菜单)。
-    return (await deps.connectionModel({ providerId, surface, sessionId })) ?? platform
+    return (await deps.connectionModel({ providerId, surface, sessionId, ...(sourceSessionId ? { sourceSessionId } : {}) })) ?? platform
   }
 
   const acpPlatformModel = async (info: SessionpagePlatformAcpInfo): Promise<SessionpagePlatformModel> => {
-    const platform = await orConnectionModel(await resolveAcpPlatformModel(info), info.providerId, 'cui', info.sessionId)
-    if (platform.accessSessionId) {
+    const platform = await orConnectionModel(await resolveAcpPlatformModel(info), info.providerId, 'cui', info.sessionId, info.sourceSessionId)
+    {
+      // Keep every process target so the common end path also releases custom credentials.
       sessionTargets.set(info.sessionId, {
         sessionId: info.sessionId,
         projectId: info.projectId,
         providerId: info.providerId,
         surface: 'acp',
-        credentialGeneration: platform.accessSessionId,
+        credentialGeneration: platform.accessSessionId ?? undefined,
         expiresAt: platform.expiresAt ?? undefined,
       })
     }
@@ -360,6 +362,11 @@ export function createSessionpagePlatformHooks(deps: SessionpagePlatformHooksDep
     },
 
     async acpInjector(info) {
+      if (!info.platformModel && info.providerId === 'claude') {
+        const { claudeCustomModelSessionMeta } = await import('../session/main/core/agents/custom-model-run-context')
+        const sessionMeta = await claudeCustomModelSessionMeta(info.sessionId, info.sourceSessionId)
+        if (sessionMeta) return { kind: 'session-meta', sessionMeta }
+      }
       // composer 没做过决定(存量会话、自动化任务、派生子会话)→ 什么都不注入。
       //
       // ❌ 这里**不**回退 agent 级 model_access,pty 路那条回退不适用:那条回退的意义是「保住这些会话
@@ -499,7 +506,7 @@ export function createSessionpagePlatformHooks(deps: SessionpagePlatformHooksDep
           },
           deps.ptyProvisionDeps?.() ?? provisionDeps,
         ))?.guguAgentUserId ?? null,
-      }), info.providerId, 'tui', info.sessionId)
+      }), info.providerId, 'tui', info.sessionId, info.sourceSessionId)
       // Register every PTY target after startup. onHostResume filters this map through
       // active expired platform generations, so non-platform sessions are inert while
       // Claude TUI credentials carried in spawnEnv cannot miss the reopen path.

@@ -1,3 +1,4 @@
+import { nativeAndroidAccountClosure } from './androidAccountClosure'
 import { nativePhoneAgentHostAvailable } from './phoneAgentHostCapability'
 import { schedulePhoneNotification } from './phoneNotificationOutlet'
 import type { PermissionState } from '@capacitor/core'
@@ -189,6 +190,7 @@ function ensureNotificationChannels(): Promise<void> {
 
 export const capacitorPlatform: AppPlatform = {
   ...base,
+  accountClosure: nativeAndroidAccountClosure,
   textSelection: nativeTextSelection,
   accountOAuthBrowser: {
     openBrowser,

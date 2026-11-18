@@ -53,7 +53,10 @@ final class GuguAgentHostStore {
             config.put("expiresAt", previous.optLong("expiresAt"));
             if (previous.has("authSession")) config.put("authSession", previous.getJSONObject("authSession"));
         }
-        save(context, owner, config);
+        synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
+            AccountClosurePreparation.requireOpen(context, owner);
+            save(context, owner, config);
+        }
         return config;
     }
 
@@ -93,6 +96,7 @@ final class GuguAgentHostStore {
                 JSONObject stored = new JSONObject(existing.getString("raw"));
                 if (stored.optJSONObject("user") == null || !owner.equals(stored.getJSONObject("user").optString("id"))) throw new SecurityException("账号已切换，旧宿主不能覆盖新登录会话");
             }
+            AccountClosurePreparation.requireOpen(context, owner);
             config.put("accessToken", session.getString("access_token"));
             config.put("refreshToken", session.getString("refresh_token"));
             config.put("expiresAt", session.optLong("expires_at"));

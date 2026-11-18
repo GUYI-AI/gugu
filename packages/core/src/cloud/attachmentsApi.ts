@@ -7,7 +7,7 @@
 //   place  → only put in the chat's folder (a new file, or a new version of one) — no message;
 //   forward → a new-kind attachment message forwarded (the server makes the target's item);
 //   urls   → signed links for items' versions or whisper messages.
-import { isDownloadConnectionError, retryFileDownload } from './fileDownloadRetry'
+import { FileDownloadFailure, isDownloadConnectionError, isTransientFileReadError, retryFileDownload } from './fileDownloadRetry'
 import { AttachmentDeadlineError, runAttachmentStage, waitForAttachmentRetry } from './attachmentDeadline'
 import type { FileKeep } from '../shared/fileStorage'
 import { getSupabaseAnonKey, getSupabaseUrl } from './config'
@@ -22,6 +22,8 @@ export interface AttachmentsEndpoint {
   supabaseUrl: string
   anonKey: string
   token: string
+  /** An account host rechecks its account and current credentials for every service request. */
+  getAccessToken?(): Promise<string>
   fetch?: typeof fetch
   upload?: AttachmentUploadTransport
   /**
@@ -56,7 +58,7 @@ async function call(endpoint: AttachmentsEndpoint, route: string, body: Record<s
   const request = async () => {
     const response = await (endpoint.fetch ?? fetch)(url, {
       method: 'POST',
-      headers: { apikey: endpoint.anonKey, Authorization: `Bearer ${endpoint.token}`, 'Content-Type': 'application/json' },
+      headers: { apikey: endpoint.anonKey, Authorization: `Bearer ${endpoint.getAccessToken ? await endpoint.getAccessToken() : endpoint.token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal,
     })
@@ -125,6 +127,11 @@ function isTransientStorageError(error: unknown): boolean {
   if (error instanceof AttachmentsError) return retryableStatus(error.status) && !error.code.endsWith('_full')
   const chromium = error instanceof Error && /^net::ERR_(?:CONNECTION_(?:RESET|CLOSED|ABORTED|REFUSED|FAILED|TIMED_OUT)|EMPTY_RESPONSE|TIMED_OUT|INTERNET_DISCONNECTED|NETWORK_CHANGED|CONTENT_LENGTH_MISMATCH)$/.test(error.message)
   return error instanceof AttachmentDeadlineError || chromium || isDownloadConnectionError(error)
+}
+
+/** Retry interrupted transfers and busy services; ordinary authorization refusals stay terminal. */
+export function retryableAttachmentError(error: unknown): boolean {
+  return error instanceof TypeError || isTransientStorageError(error) || error instanceof FileDownloadFailure && isTransientFileReadError(error)
 }
 
 async function retryUploadRequest<T extends { status: number }>(upload: () => Promise<T>, attempts: { used: number }, signal?: AbortSignal) {

@@ -10,7 +10,9 @@ export interface CredentialProxyOptions {
   upstream: () => URL
   localOnlyHeaders: ReadonlySet<string>
   credential: () => Promise<string>
-  refresh: (rejected: string) => Promise<string>
+  refresh?: (rejected: string) => Promise<string>
+  credentialHeaders?: (token: string) => Record<string, string>
+  maxRequestBytes?: number
   warn: (event: { kind: 'connection' | 'stream'; status?: number; code?: string }) => void
   streamTiming?: (timing: PlatformStreamTiming) => void
   httpError?: (diagnostic: PlatformHttpErrorDiagnostic) => void
@@ -38,8 +40,11 @@ function upstreamHeaders(headers: IncomingHttpHeaders, options: CredentialProxyO
     result[name] = value
   }
   result.host = upstream.host
-  result.authorization = `Bearer ${token}`
-  if (headers['x-api-key'] !== undefined) result['x-api-key'] = token
+  if (options.credentialHeaders) Object.assign(result, options.credentialHeaders(token))
+  else {
+    result.authorization = `Bearer ${token}`
+    if (headers['x-api-key'] !== undefined) result['x-api-key'] = token
+  }
   return result
 }
 
@@ -48,7 +53,12 @@ export async function proxyPlatformCredentialRequest(
   request: IncomingMessage, response: ServerResponse, options: CredentialProxyOptions,
 ): Promise<void> {
   const chunks: Buffer[] = []
-  for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  let bytes = 0
+  for await (const chunk of request) {
+    bytes += chunk.length
+    if (options.maxRequestBytes !== undefined && bytes > options.maxRequestBytes) { response.writeHead(413).end(); return }
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  }
   const body = Buffer.concat(chunks)
   let upstreamRequest: ReturnType<typeof httpRequest> | undefined
   let harnessGone = response.destroyed
@@ -68,7 +78,7 @@ export async function proxyPlatformCredentialRequest(
       method: request.method,
       headers: upstreamHeaders(request.headers, options, token, upstream),
     }, (upstreamResponse) => {
-      if (upstreamResponse.statusCode === 401 && !retried) {
+      if (upstreamResponse.statusCode === 401 && !retried && options.refresh) {
         // No inference was accepted and no response headers/bytes have reached the harness.
         upstreamResponse.resume()
         void options.refresh(token).then(next => send(next, true), () => {

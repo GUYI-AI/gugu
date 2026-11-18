@@ -1,4 +1,3 @@
-import { codebuddyApiKeyConnection } from './api-key-connection';
 import { platformModel } from './platform-model';
 import {
   definePlugin,
@@ -46,7 +45,6 @@ export const plugin = definePlugin(
   },
   {
     sessionBundle,
-    apiKeyConnection: codebuddyApiKeyConnection,
     /**
      * 厂商账号不是硬门槛 —— **实测**:只给 `CODEBUDDY_BASE_URL` + `CODEBUDDY_API_KEY` 时
      * `session/new` 照常开、请求打到给定的网关(实测 B);两者都不给才回 `Authentication required`(实测 A)。

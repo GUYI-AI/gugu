@@ -17,7 +17,7 @@ export async function watchRemoteTaskPage(args: { watchId: string; deviceId: str
   if (typeof args.watchId !== 'string' || !args.watchId || args.watchId.length > 128) throw new Error('A task page watch needs an id');
   // The picture's reset asks again with the same id (as for a projection on this computer): start that watch over.
   unwatchRemoteTaskPage(args.watchId);
-  const watching = watchRemoteProjection(args.deviceId, { session: args.sessionId, page: true },
+  const watching = watchRemoteProjection(args.deviceId, { session: args.sessionId, page: true, presentation: 1 },
     (packet) => events.emit(browserTaskPagePacketChannel, { watchId: args.watchId, packet }),
     (state) => events.emit(browserTaskPageStateChannel, { watchId: args.watchId, state }));
   watches.set(args.watchId, watching);

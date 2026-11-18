@@ -6,7 +6,7 @@ import { mountProjection } from '../../../app-runtime/projection-view';
 
 let close: (() => Promise<void>) | undefined;
 afterEach(async () => { await close?.(); close = undefined; vi.restoreAllMocks(); document.body.replaceChildren(); });
-async function setup(interactive = true, localTouchViewing = false) {
+async function setup(interactive = true, localTouchViewing = false, decorations = false) {
   let hear: (watchId: string, packet: ProjectionHostPacket) => void = () => {};
   let watchId = '';
   const packets: ProjectionViewerPacket[] = [];
@@ -32,7 +32,7 @@ async function setup(interactive = true, localTouchViewing = false) {
   document.body.append(root);
   const states: string[] = [];
   const painted: Array<{ sequence: number; width: number; height: number } | null> = [];
-  const view = await mountProjection(host, root, 'source', { interactive, localTouchViewing, state: state => states.push(state), painted: frame => painted.push(frame) });
+  const view = await mountProjection(host, root, 'source', { interactive, localTouchViewing, decorations, state: state => states.push(state), painted: frame => painted.push(frame) });
   close = view.close;
   const canvas = document.createElement('canvas');
   canvas.width = 640; canvas.height = 480;
@@ -52,6 +52,30 @@ async function setup(interactive = true, localTouchViewing = false) {
 }
 
 describe('shared projection surface in Chromium', () => {
+  it('keeps the same picture/input nodes while displaying only matched, passive App feedback', async () => {
+    const s = await setup(false, false, true), image = s.root.querySelector('img'), input = s.input;
+    const canvas = document.createElement('canvas'); canvas.width = 640; canvas.height = 480;
+    const target = { id: 'window-7', revision: 1 };
+    s.emit({ type: 'state', generation: 'a', sourceId: 'canonical-source', state: 'connecting' });
+    s.emit({ type: 'frame', generation: 'a', frame: { sequence: 1, width: 640, height: 480, target,
+      mime: 'image/png', data: canvas.toDataURL().split(',')[1]! } });
+    const value = { frame: { sequence: 1, width: 640, height: 480, target }, targetLabel: 'Owned Editor',
+      cursor: { x: 320, y: 240 }, action: { id: 'call-1', label: '正在点击', phase: 'running' as const } };
+    s.emit({ type: 'presentation', sourceId: 'canonical-source', generation: 'a', revision: 1, presentation: value });
+    await vi.waitFor(() => expect(s.root.querySelector('[data-projection-target]')?.textContent).toBe('Owned Editor'));
+    const layer = s.root.querySelector('[data-projection-presentation]') as HTMLElement;
+    expect(getComputedStyle(layer).pointerEvents).toBe('none');
+    expect(s.root.querySelector('[data-projection-action]')?.textContent).toBe('正在点击');
+    expect(s.root.querySelector('img')).toBe(image); expect(s.root.querySelector('textarea')).toBe(input);
+    expect(s.watches()).toBe(1);
+    s.emit({ type: 'presentation', sourceId: 'canonical-source', generation: 'a', revision: 2,
+      presentation: { ...value, frame: { ...value.frame, target: { id: 'another-window', revision: 1 } } } });
+    expect(layer.hidden).toBe(true);
+    s.emit({ type: 'state', generation: 'a', state: 'closed' }); expect(layer.hidden).toBe(true);
+    const legacy = await setup();
+    expect(legacy.root.querySelector('[data-projection-presentation]')).toBeNull();
+    await legacy.view.close(); await s.view.close();
+  });
   it('keeps real two-finger viewing and moved touches local, and sends a stationary touch only after release', async () => {
     await page.viewport(600, 700);
     const s = await setup(true, true); await s.paint();

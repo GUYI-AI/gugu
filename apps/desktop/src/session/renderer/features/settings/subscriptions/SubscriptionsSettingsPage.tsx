@@ -1,3 +1,4 @@
+import { openShellSettings } from '@renderer/lib/open-shell-settings';
 import { officialServicesEnabled } from '@gugu/core/cloud/optionalServices';
 import { observer } from 'mobx-react-lite';
 import { useMemo, useState } from 'react';
@@ -54,6 +55,7 @@ export const SubscriptionsSettingsPage = observer(function SubscriptionsSettings
         showTitleInSettings
         aside={<SubscriptionRefresh />}
       />
+      <SettingsNote><Button variant="link" onClick={() => openShellSettings('model')}>{translate('customModels.transition')}</Button></SettingsNote>
       <LibraryHostProvider value={host} key={host.key}>
         <SubscriptionList machine={deviceId} />
       </LibraryHostProvider>

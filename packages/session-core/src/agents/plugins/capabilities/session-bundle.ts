@@ -6,6 +6,7 @@ import semver from 'semver';
 import { definePluginCapability } from '@gugu/session-shared/plugins';
 import z from 'zod';
 import type { GuguPermissionMode } from '../../../acp/models/permissions';
+import type { CustomModelEntry, PiCustomModelProvider } from '../../../models/custom-model';
 
 export type HarnessSessionSurface = 'acp' | 'tui' | 'app-server';
 export type SessionpageSessionSurface = Extract<HarnessSessionSurface, 'acp' | 'tui'>;
@@ -767,6 +768,8 @@ export interface SessionBundleDescriptor {
   injectionMode: AgentInjectionMode;
   /** 平台额度怎么送进这一家(见 `HarnessPlatform`)。**必答**:没接的给 `{ kind: 'unsupported' }`。 */
   platform: HarnessPlatform;
+  /** The legacy custom connection can supply credentials while the CLI selects its own model. */
+  customModel?: { modelOptional: true; evidence: string };
   /** Static credential delivery/recovery capability; lease state belongs to the host runtime. */
   credentialLifecycle?: SessionCredentialLifecycleBySurface;
   /** 见 {@link AcpConfigRoot}。 */
@@ -1120,6 +1123,12 @@ export type PlatformCallableRoutes = Readonly<Record<string, readonly string[]>>
 export interface SessionModelCapability {
   dialect: ModelConfigDialect
   model?: string
+  /** Selected custom record, plus the stable provider catalog for Pi's shared configuration. */
+  customModels?: {
+    connectionId: string;
+    entries: readonly CustomModelEntry[];
+    piProviders?: readonly PiCustomModelProvider[];
+  }
   reasoningEffort?: string
   serviceTier?: string
   /** Per-session Fast intent, independently gated by the current native model. */
@@ -1150,9 +1159,7 @@ export interface SessionModelCapability {
   /**
    * The interface the provider block speaks, when it is not the harness's declared platform `wireProtocol`.
    *
-   * Set only for an API key connection (#2507) whose address was probed at creation: many relays speak Chat
-   * Completions but not Responses, and pi (`api`) / opencode (provider package) can write either. Absent = the
-   * harness's platform protocol, byte-for-byte as before.
+   * Custom records select among the writer's declared OpenAI protocols. Absent uses the harness's native platform protocol.
    */
   wireProtocol?: 'openai-responses' | 'openai-chat-completions'
   /**
@@ -1915,6 +1922,7 @@ const harnessPlatformSchema: z.ZodType<HarnessPlatform> = z.discriminatedUnion('
   z.object({
     kind: z.literal('supported'),
     wireProtocol: z.enum(['anthropic-messages', 'openai-responses', 'openai-chat-completions', 'gemini-generate-content']),
+    protocols: z.array(z.enum(['anthropic-messages', 'openai-responses', 'openai-chat-completions', 'gemini-generate-content'])).optional(),
     dialect: z.enum(MODEL_CONFIG_DIALECTS),
     injection: z.object({ tui: platformSurfaceInjectionSchema.optional(), cui: platformSurfaceInjectionSchema.optional() }).strict(),
   }).strict(),
@@ -2015,6 +2023,7 @@ const sessionBundleDescriptorSchema: z.ZodType<SessionBundleDescriptor> = z.obje
     denied: z.array(z.string().regex(/^[A-Z][A-Z0-9_]*$/)).optional(),
   }).strict().optional(),
   /** ⚠️ 同上:少了这一条,`platform` 会被 zod 静默剥掉(而它是必答字段)。 */
+  customModel: z.object({ modelOptional: z.literal(true), evidence: z.string().min(1) }).strict().optional(),
   platform: harnessPlatformSchema,
   /**
    * ⚠️ 同上:少了这一条,`mcpToggle` 会被 zod **静默剥掉** —— 而症状极具迷惑性:

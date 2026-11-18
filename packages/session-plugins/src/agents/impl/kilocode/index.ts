@@ -1,4 +1,3 @@
-import { kilocodeApiKeyConnection, kilocodeApiKeyConnectionBehavior } from './api-key-connection';
 import {
   definePlugin,
   registerPluginBehavior,
@@ -16,7 +15,7 @@ import {
   OPENCODE_REASONING_VARIANTS,
 } from '../../helpers/opencode-family-model-config';
 import { opencodeFamilyListedTitle } from '../../helpers/opencode-family-title';
-import { kilocodeAuthStatus, kilocodeModelCredential } from './auth';
+import { kilocodeAuthStatus, kilocodeModelCredential, kilocodeVendorKeyAccount } from './auth';
 import { icon } from './icon';
 import { kilocodeMcpAdapter } from './mcp';
 import { KILOCODE_PERMISSION_MODES } from './permission-modes';
@@ -50,7 +49,6 @@ export const plugin = definePlugin(
   {
     sessionBundle: kilocodeSessionBundleDescriptor,
     // 「API Key 连接」(#2507):一把 key 怎么进这一家的进程,见 ./api-key-connection.ts。
-    apiKeyConnection: kilocodeApiKeyConnection,
     vendorAccount: {
       kind: 'not-required',
       evidence:
@@ -58,6 +56,7 @@ export const plugin = definePlugin(
     },
     auth: {
       kind: 'supported',
+      vendorKey: kilocodeVendorKeyAccount,
       methods: [
         {
           kind: 'cli-login',
@@ -164,7 +163,6 @@ export const plugin = definePlugin(
 );
 
 export const provider = registerPluginBehavior(plugin, {
-  apiKeyConnection: kilocodeApiKeyConnectionBehavior,
   sessionBundle: { materialize: materializeKilocodeSessionBundle, platformModel },
   auth: {
     checkStatus: kilocodeAuthStatus,

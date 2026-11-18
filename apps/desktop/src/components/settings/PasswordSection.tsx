@@ -2,7 +2,7 @@ import { metadataSeparator } from '@/i18n/format'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
-import { PASSWORD_FILL_EVENT, takePasswordFill, type PasswordBetaUi, type PasswordField, type PasswordGrant, type PasswordItem, type PasswordSaveDraft, type PasswordSecrets, type PasswordSnapshot, type PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
+import { PASSWORD_FILL_EVENT, takePasswordFill, type PasswordBetaUi, type PasswordField, type PasswordGrant, type PasswordItem, type PasswordSaveDraft, type PasswordSecrets, type PasswordSnapshot, type PasswordUiCommand, type PasswordUiReply } from '@gugu/core/shared/passwordBetaProtocol'
 import { ChevronRight, Eye, EyeOff, Lock, LockOpen, Plus, Trash, X } from '@/lib/icons'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
 import { useSettingsDetail } from './SettingsDetailNavigation'
@@ -12,7 +12,9 @@ import { Field } from '../ui/Field'
 import { IconButton } from '../ui/IconButton'
 import { SearchField } from '../ui/SearchField'
 import { RecoveryOffer } from '../password/PasswordRecovery'
-import { passwordErrorText, waitingToJoin } from '../password/passwordModel'
+import { passwordErrorText } from '../password/passwordModel'
+import { PasswordUnlockGate } from '../password/PasswordUnlockGate'
+import { publishPasswordSnapshot } from '@/lib/passwordBetaNotifications'
 
 declare global { interface Window { passwordVaultBeta?: PasswordBetaUi } }
 
@@ -54,12 +56,11 @@ export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLEleme
   const [snapshot, setSnapshot] = useState<PasswordSnapshot>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [view, setView] = useState<View>({ kind: 'list' })
-  const [query, setQuery] = useState('')
+  const clearError = useCallback(() => setError(''), [])
   const invoke = useCallback(async (command: PasswordUiCommand) => {
     const reply = await window.passwordVaultBeta?.invoke(command)
     if (!reply?.ok) { setError(errorText(reply?.code ?? '')); return undefined }
-    setSnapshot(reply.snapshot); setError('')
+    setSnapshot(reply.snapshot); publishPasswordSnapshot(reply.snapshot); setError('')
     return reply
   }, [])
   const run = useCallback(async (command: PasswordUiCommand) => {
@@ -72,6 +73,19 @@ export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLEleme
     void invoke({ type: 'snapshot' })
     return window.passwordVaultBeta?.subscribe(() => { void invoke({ type: 'snapshot' }) })
   }, [invoke])
+  if (!PASSWORD_BETA_ENABLED) return null
+  return <PasswordUnlockGate sync={snapshot?.sync} busy={busy} error={error} run={run} clearError={clearError}>
+    <PasswordContent snapshot={snapshot} busy={busy} error={error} run={run} invoke={invoke} clearError={clearError} actionsHost={actionsHost} />
+  </PasswordUnlockGate>
+}
+
+/** Unmounting the credential screens while locked also clears their navigation and draft inputs. */
+function PasswordContent({ snapshot, busy, error, run, invoke, clearError, actionsHost }: Omit<ScreenProps, 'go'> & {
+  invoke(command: PasswordUiCommand): Promise<Extract<PasswordUiReply, { ok: true }> | undefined>
+  clearError(): void; actionsHost?: () => HTMLElement | null
+}) {
+  const [view, setView] = useState<View>({ kind: 'list' })
+  const [query, setQuery] = useState('')
   // 「去填写」 from an Agent's request in chat: open the same add/edit form, pre-filled with what the Agent proposed.
   // @@@effect-flow - opening the form an Agent's save request asks for, once per request.
   useEffect(() => {
@@ -79,18 +93,17 @@ export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLEleme
     const open = () => {
       const requestId = takePasswordFill()
       if (requestId) void invoke({ type: 'save-draft', requestId }).then(reply => {
-        if (reply?.draft) { setError(''); setView({ kind: 'form', id: reply.draft.credentialId, request: { id: requestId, draft: reply.draft } }) }
+        if (reply?.draft) { clearError(); setView({ kind: 'form', id: reply.draft.credentialId, request: { id: requestId, draft: reply.draft } }) }
       })
     }
     open()
     window.addEventListener(PASSWORD_FILL_EVENT, open)
     return () => window.removeEventListener(PASSWORD_FILL_EVENT, open)
-  }, [invoke])
+  }, [invoke, clearError])
   const item = 'id' in view && view.id ? snapshot?.items.find(value => value.reference.id === view.id) : undefined
   // A credential deleted elsewhere returns to the list instead of showing a stale page.
   useEffect(() => { if ('id' in view && view.id && snapshot && !item) setView({ kind: 'list' }) }, [view, snapshot, item])
-  const go = (next: View) => { setError(''); setView(next) }
-  if (!PASSWORD_BETA_ENABLED) return null
+  const go = (next: View) => { clearError(); setView(next) }
 
   const props = { snapshot, busy, run, go, error }
   // Asked once, right after the first password is kept (the detail page that follows the save, or any page here).
@@ -113,7 +126,7 @@ export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLEleme
         control={<span className="flex items-center gap-1 text-[length:var(--font-caption)] text-[var(--text-secondary)]">{!!value.grants.length && `${value.grants.length} 个智能体`}<ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" /></span>}
         onClick={() => go({ kind: 'detail', id: value.reference.id })} />)}
       {!!snapshot?.items.length && !listed?.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">没有匹配的密码</span>} />}
-      {snapshot && !snapshot.items.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">{waitingToJoin(snapshot.sync) ? '在另一台设备上允许这台电脑后，你的密码会出现在这里' : '还没有保存密码'}</span>} />}
+      {snapshot && !snapshot.items.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">还没有保存密码</span>} />}
     </SettingsGroup>
     {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
     {offer}

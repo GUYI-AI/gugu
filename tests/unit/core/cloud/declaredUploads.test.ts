@@ -47,18 +47,27 @@ beforeEach(() => {
 afterEach(() => queue.dispose())
 
 describe('attachment bytes go up behind their message', () => {
-  it('an exhausted missing declaration stops when the server no longer lists the message', async () => {
+  it('does not report success when an unknown declaration is absent from a pending snapshot', async () => {
     vi.useFakeTimers()
     try {
       server.finish.mockRejectedValue(notFound())
-      const run = beginAttachmentUpload(task(), new Blob(['bytes']), plan('pending/message-1'))
+      const run = beginAttachmentUpload(task(), new Blob(['bytes']), plan('pending/message-1')).catch(error => error)
       await vi.advanceTimersByTimeAsync(121_000)
-      await run
+      expect(await run).toBeInstanceOf(AttachmentsError)
+      expect(progress.fail).toHaveBeenCalledOnce()
+      expect(progress.set).not.toHaveBeenLastCalledWith('message-1')
+      await vi.advanceTimersByTimeAsync(5_100)
       expect(server.pending).toHaveBeenCalledOnce()
-      expect(progress.fail).not.toHaveBeenCalled()
-      expect(progress.set).toHaveBeenLastCalledWith('message-1')
-      await vi.advanceTimersByTimeAsync(60_000)
       expect(server.store).toHaveBeenCalledOnce()
+      copies.set('a'.repeat(64), new Blob(['bytes']))
+      server.pending.mockResolvedValue({ uploads: [pending('message-1', 'a'.repeat(64))] })
+      server.finish.mockResolvedValue({})
+      await queue.resume()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(server.finish).toHaveBeenLastCalledWith(expect.objectContaining({ message_id: 'message-1', staging_key: 'pending/message-1' }))
+      expect(server.plan).not.toHaveBeenCalled()
+      expect(server.store).toHaveBeenCalledOnce()
+      expect(progress.set).toHaveBeenLastCalledWith('message-1')
     } finally { vi.useRealTimers() }
   })
 
@@ -73,8 +82,6 @@ describe('attachment bytes go up behind their message', () => {
       await vi.advanceTimersByTimeAsync(121_000)
       expect(progress.fail).toHaveBeenCalledOnce()
       server.finish.mockReset().mockResolvedValue({})
-      await vi.advanceTimersByTimeAsync(60_000)
-      expect(server.store).toHaveBeenCalledOnce()
       copies.set('a'.repeat(64), new Blob(['bytes']))
       server.pending.mockResolvedValue({ uploads: [pending('message-1', 'a'.repeat(64))] })
       await queue.retry('message-1')
@@ -97,6 +104,79 @@ describe('attachment bytes go up behind their message', () => {
     await vi.waitFor(() => expect(server.finish).toHaveBeenCalledOnce())
     expect(server.pending).toHaveBeenCalledOnce()
     expect(server.store).toHaveBeenCalledOnce()
+  })
+
+  it('retains a reconnect that arrives while an older pending snapshot is still being read', async () => {
+    let first!: (value: unknown) => void
+    server.pending.mockImplementationOnce(() => new Promise(resolve => { first = resolve }))
+      .mockResolvedValue({ uploads: [pending('late', 'a'.repeat(64))] })
+    copies.set('a'.repeat(64), new Blob(['bytes']))
+    server.plan.mockResolvedValue(plan('upload/late'))
+    const earlier = queue.resume()
+    await vi.waitFor(() => expect(server.pending).toHaveBeenCalledOnce())
+    const later = queue.resume()
+    first({ uploads: [] })
+    await Promise.all([earlier, later])
+    await vi.waitFor(() => expect(server.finish).toHaveBeenCalledOnce())
+    expect(server.pending).toHaveBeenCalledTimes(2)
+  })
+
+  it('resumes after refresh when its pending scan raced an older request that later returned 401', async () => {
+    const id = '11111111-1111-4111-8111-111111111111'
+    const key = `staging/owner/${id}`
+    const next = await contentRequestId('attachment-upload-permit', id)
+    const nextKey = `staging/owner/${next}`
+    let rejectOld!: (error: Error) => void
+    let token = 'old'
+    const finishTokens: (string | null)[] = []
+    queue.dispose()
+    queue = createDeclaredUploads({ copyOf: async () => new Blob(['bytes']), progress: (id, value) => progress.set(id, value), endpoint: async () => {
+      const base = await endpoint()
+      return { ...base, getAccessToken: async () => token, fetch: async (input, init) => {
+        if (String(input).endsWith('/finish')) finishTokens.push(new Headers(init?.headers).get('authorization'))
+        return base.fetch(input, init)
+      } }
+    } })
+    server.finish.mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject }))
+    server.pending.mockResolvedValue({ uploads: [{ ...pending('message-1', 'a'.repeat(64)), staging_key: key }] })
+    server.plan.mockRejectedValueOnce(refuse(410, 'expired')).mockResolvedValue(plan(nextKey))
+    const expired = { ...plan(key), expires_at: new Date(0).toISOString() }
+    const old = beginAttachmentUpload({ ...task(), pendingKey: key }, new Blob(['bytes']), expired).catch(error => error)
+    await vi.waitFor(() => expect(server.finish).toHaveBeenCalledOnce())
+    token = 'fresh'
+    await queue.resume() // The host has published refreshed credentials; the older request has not returned yet.
+    expect(server.store).toHaveBeenCalledOnce()
+    rejectOld(refuse(401, 'unauthorized'))
+    expect(await old).toBeInstanceOf(AttachmentsError)
+    await vi.waitFor(() => expect(server.finish).toHaveBeenCalledTimes(2))
+    expect(server.pending).toHaveBeenCalledTimes(2)
+    expect(server.finish.mock.calls.map(([body]) => [body.staging_key, body.upload_key])).toEqual([[key, nextKey], [key, nextKey]])
+    expect(finishTokens).toEqual(['Bearer old', 'Bearer fresh'])
+    expect(server.plan.mock.calls.map(([body]) => body.request_id)).toEqual([id, next])
+    expect(server.store).toHaveBeenCalledOnce()
+    expect(progress.set).toHaveBeenLastCalledWith('message-1', undefined)
+  })
+
+  it('automatically resumes a transient failed upload from the server duty and verified stored original', async () => {
+    vi.useFakeTimers()
+    try {
+      copies.set('a'.repeat(64), new Blob(['bytes']))
+      server.pending.mockResolvedValue({ uploads: [pending('message-1', 'a'.repeat(64))] })
+      server.store.mockRejectedValue(new TypeError('fetch failed'))
+      const failed = beginAttachmentUpload(task(), new Blob(['bytes']), plan('pending/message-1')).catch(error => error)
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(await failed).toBeInstanceOf(TypeError)
+      expect(server.store).toHaveBeenCalledTimes(3)
+      server.store.mockResolvedValue(undefined)
+      server.finish.mockRejectedValueOnce(refuse(409, 'upload_missing'))
+      await vi.advanceTimersByTimeAsync(5_100)
+      expect(server.pending).toHaveBeenCalledOnce()
+      expect(server.finish).toHaveBeenCalledTimes(2)
+      expect(server.finish).toHaveBeenLastCalledWith(expect.objectContaining({ message_id: 'message-1', staging_key: 'pending/message-1' }))
+      expect(server.plan).not.toHaveBeenCalled()
+      expect(server.store).toHaveBeenCalledTimes(4)
+      expect(progress.set).toHaveBeenLastCalledWith('message-1')
+    } finally { vi.useRealTimers() }
   })
 
   it('uploads under the commit\'s plan, waits for the commit\'s declaration, then finishes it', async () => {
@@ -211,8 +291,9 @@ describe('attachment bytes go up behind their message', () => {
     expect(progress.fail).toHaveBeenCalledExactlyOnceWith('message-3', expect.any(Function))
     expect(server.finish).not.toHaveBeenCalled()
     server.store.mockReset().mockResolvedValue(undefined)
+    server.finish.mockRejectedValueOnce(refuse(409, 'upload_missing'))
     ;(progress.fail.mock.calls[0]![1] as () => void)()
-    await vi.waitFor(() => expect(server.finish).toHaveBeenCalled())
+    await vi.waitFor(() => expect(server.finish).toHaveBeenCalledTimes(2))
     expect(server.plan).not.toHaveBeenCalled()
     expect(server.finish).toHaveBeenCalledWith(expect.objectContaining({ staging_key: 'pending/message-3' }))
     expect(server.store).toHaveBeenCalledExactlyOnceWith('https://bucket.test/pending/message-3', expect.any(Blob), expect.any(Function))
@@ -253,7 +334,9 @@ describe('attachment bytes go up behind their message', () => {
     server.pending.mockResolvedValue({ uploads: [pending(message.messageId, message.sha256)] })
     server.plan.mockRejectedValue(refuse(429, 'account_storage_full'))
     await expect(beginAttachmentUpload(message, new Blob(['bytes']), null)).rejects.toMatchObject({ code: 'account_storage_full' })
-    expect(stages).toHaveBeenLastCalledWith(message.messageId, expect.objectContaining({ failed: true, final: false, reason: 'account_storage_full' }))
+    expect(stages).toHaveBeenLastCalledWith(message.messageId, expect.objectContaining({ failed: true, final: true, reason: 'account_storage_full' }))
+    await queue.resume()
+    expect(server.plan).toHaveBeenCalledOnce()
     await queue.retry(message.messageId)
     await vi.waitFor(() => expect(server.plan).toHaveBeenCalledTimes(2))
     expect(server.plan.mock.calls.map(([body]) => body.request_id)).toEqual([message.messageId, message.messageId])
@@ -284,6 +367,16 @@ describe('attachment bytes go up behind their message', () => {
       await vi.advanceTimersByTimeAsync(60_000)
       expect(server.store).toHaveBeenCalledOnce()
     } finally { vi.useRealTimers() }
+  })
+
+  it('an ordinary permission refusal stays terminal across reconnect scans', async () => {
+    copies.set('a'.repeat(64), new Blob(['bytes']))
+    server.pending.mockResolvedValue({ uploads: [pending('message-1', 'a'.repeat(64))] })
+    server.finish.mockRejectedValue(refuse(403, 'denied'))
+    await beginAttachmentUpload(task(), new Blob(['bytes']), plan('pending/message-1')).catch(() => undefined)
+    await queue.resume()
+    expect(server.store).toHaveBeenCalledOnce()
+    expect(progress.fail).toHaveBeenCalledExactlyOnceWith('message-1', undefined)
   })
 
   it('a message discarded unsent stops its upload', async () => {

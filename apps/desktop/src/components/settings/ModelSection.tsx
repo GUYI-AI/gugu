@@ -12,6 +12,7 @@ import { Button } from '../ui/Button'
 import { SearchField } from '../ui/SearchField'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow, Toggle } from './SettingsPrimitives'
 import { RefreshFailed } from '../ui/RefreshFailed'
+import { CustomModelsGroup } from './CustomModelsGroup'
 
 /**
  * 模型 pane(#7056)—— 照 Cursor 的 Settings › Models:列出咕咕提供的全部模型,开关决定**哪些出现在模型下拉里**。
@@ -24,11 +25,11 @@ import { RefreshFailed } from '../ui/RefreshFailed'
  *  - 要会员的一组(免费档才有):不给开关 —— 开了也用不了;一处「升级解锁」去网页面板。
  *
  * 存哪一格由 `model-access` 管(`set_model_hidden`),这里 ❌ 自己写 user_settings。
- * #5111 删掉的 BYO「已配置服务」那一块与这里无关,真要做时另立 issue。
+ * Custom provider records share the model page and each session binds its selected model.
  */
 const paneLog = rendererLogger('settings/model-pane')
 
-export function ModelSection() {
+export function ModelSection({ addRequested, onAddClose }: { addRequested?: boolean; onAddClose?: () => void } = {}) {
   const { t } = useTranslation('settings')
   const catalog = useReplica(platformModels, [])
   const models = catalog.state === 'value' ? catalog.value.filter((model) => model.enabled) : null
@@ -61,6 +62,7 @@ export function ModelSection() {
 
   return (
     <SettingsPage data-testid={AUTOMATION_TEST_IDS.settingsModelPane}>
+      <CustomModelsGroup addRequested={addRequested} onAddClose={onAddClose} />
       <SettingsNote>{t('model.description')}</SettingsNote>
       {loadFailed ? (
         <SettingsGroup title={t('model.provided')}>
