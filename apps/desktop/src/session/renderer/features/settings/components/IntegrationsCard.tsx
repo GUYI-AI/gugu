@@ -377,7 +377,6 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean; marketQuery?: string }>
             <IntegrationDetailSidebar
               integration={selectedIntegration}
               githubAccounts={sortedGithubAccounts}
-              marketConnection={marketQuery === undefined ? undefined : { connected: checkedConnections[selectedIntegration.id]?.connected === true }}
               onClose={closeSheet}
             />
           )}

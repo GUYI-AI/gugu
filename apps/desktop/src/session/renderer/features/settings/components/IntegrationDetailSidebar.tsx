@@ -34,12 +34,10 @@ import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 export function IntegrationDetailSidebar({
   integration,
   githubAccounts,
-  marketConnection,
   onClose,
 }: {
   integration: IntegrationItem;
   githubAccounts: GitHubAccountSummary[];
-  marketConnection?: { connected: boolean };
   onClose: () => void;
 }) {
   const { translate } = useSessionMessages();
@@ -88,11 +86,7 @@ export function IntegrationDetailSidebar({
           <section>
             <MicroLabel>{translate('integrations.connectionSection', { name: integration.name })}</MicroLabel>
             <div className="mt-3">
-              {marketConnection ? (
-                marketConnection.connected ? (
-                  <p className="text-sm text-foreground-muted">{translate('integrations.deviceConnected')}</p>
-                ) : <AddAccountCard integration={integration} />
-              ) : integration.id === 'github' ? (
+              {integration.id === 'github' ? (
                 <div className="space-y-2">
                   {githubAccounts.length > 0 && (
                     <GitHubAccountRows accounts={githubAccounts} readOnly={integration.readOnly} />
@@ -132,7 +126,7 @@ export function IntegrationDetailSidebar({
             </section>
           )}
 
-          {!marketConnection && <DeviceAvailability integration={integration} />}
+          <DeviceAvailability integration={integration} />
 
           {integration.playbooks.length > 0 && (
             <section>
