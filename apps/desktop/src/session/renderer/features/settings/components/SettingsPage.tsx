@@ -34,7 +34,7 @@ import { DeviceScopeProvider } from '@renderer/features/remote-hosts/device-scop
 import { settingsDeviceStore } from '@renderer/features/remote-hosts/device-scope-store';
 import { DeviceSettingsScope } from './DeviceSettingsScope';
 import { SubscriptionsSettingsPage } from '../subscriptions/SubscriptionsSettingsPage';
-import { OwnerConnectorsSettings } from '@/components/connections/OwnerConnectorsSettings';
+import { OwnerConnectorsSettings, type PhoneConnectorPresentation } from '@/components/connections/OwnerConnectorsSettings';
 import { HomeConnectorsSettings,CloudConnectorsSettings } from '../../assistant/assistant-connectors-settings';
 import { DesktopConnectionsSettings } from './DesktopConnectionsSettings';
 import { ConnectionRouteBoundary } from '@/components/connections/ConnectionRouteBoundary';
@@ -122,11 +122,15 @@ export type SessionSettingsContext = {
   panelNavigation?: boolean;
   connectionRoute?: ConnectionRoute;
   initialConnectorId?: string;
+  connectionDeviceId?: string | null;
+  phoneConnectorCatalog?: PhoneConnectorPresentation;
+  connectOnly?: boolean;
   desktopConnections?: boolean;
 };
 
 function RoutedConnectors(context: SessionSettingsContext) {
-  const owner = (route: ConnectionRoute) => <OwnerConnectorsSettings route={route} panelNavigation={context.panelNavigation} initialConnectorId={context.initialConnectorId} />;
+  const owner = (route: ConnectionRoute) => <OwnerConnectorsSettings route={route} panelNavigation={context.panelNavigation} initialConnectorId={context.initialConnectorId}
+    deviceId={context.connectionDeviceId} phoneCatalog={context.phoneConnectorCatalog} connectOnly={context.connectOnly} />;
   if (context.connectionRoute) return owner(context.connectionRoute);
   return <ConnectionRouteBoundary owner={owner} legacy={context.home
     ? <HomeConnectorsSettings home={context.home} assistantName={context.assistantName ?? ''} panelNavigation={context.panelNavigation} />

@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { ChevronRight } from '@/lib/icons'
 import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
+import { ASSISTANT_APP_ID } from '@shared/extensions/assistant-entry'
 import { localizedManifestText } from '../../session/shared/extensions/catalog'
 import type { ExtensionManifest } from '../../session/shared/extensions/manifest'
 import { phoneApps } from '../appSlot/phoneApps'
@@ -20,9 +21,9 @@ import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './Settin
  * stands; everything about one is on its settings page (`onManage`). The ones gugu ships are not listed. One this build
  * cannot run has no such page: its refusal is said as it is, and it can still be removed, as any App the phone cannot read must be.
  */
-const installedApps = (): { manifest: ExtensionManifest; from: string | null; enabled: boolean }[] =>
+const installedApps = (assistant: boolean): { manifest: ExtensionManifest; from: string | null; enabled: boolean }[] =>
   installedExtensionsStore.manifests
-    .filter((manifest) => !installedExtensionsStore.isPreinstalled(manifest.id))
+    .filter((manifest) => !installedExtensionsStore.isPreinstalled(manifest.id) && (manifest.id === ASSISTANT_APP_ID) === assistant)
     .map((manifest) => ({
       manifest,
       from: installedExtensionsStore.publishers[manifest.id]?.name ?? null,
@@ -31,25 +32,32 @@ const installedApps = (): { manifest: ExtensionManifest; from: string | null; en
 const unusableApps = (): { id: string; reason: string }[] =>
   installedExtensionsStore.invalid.map((entry) => ({ id: entry.dirName, reason: entry.reason }))
 
-export function AppsSection({ updates, gone, known, onManage }: { updates: Record<string, string>; gone: readonly string[]; known: boolean; onManage: (id: string) => void }) {
+export function AppsSection({ updates, gone, known, onManage, assistant = false, hideEmpty = false }: {
+  updates: Record<string, string>
+  gone: readonly string[]
+  known: boolean
+  onManage: (id: string) => void
+  assistant?: boolean
+  hideEmpty?: boolean
+}) {
   const { t, i18n } = useTranslation('main')
   const { t: tm } = useTranslation('messaging')
   const titleId = useId()
   // The installed list is already in the store: the first frame shows it (❌ one frame of "no Apps installed" first).
-  const [apps, setApps] = useState(installedApps)
-  const [unusable, setUnusable] = useState(unusableApps)
+  const [apps, setApps] = useState(() => installedApps(assistant))
+  const [unusable, setUnusable] = useState(() => assistant ? [] : unusableApps())
   const [asking, setAsking] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
 
   useEffect(() => {
     const off = reaction(
-      unusableApps,
+      () => assistant ? [] : unusableApps(),
       setUnusable,
       { fireImmediately: true, equals: comparer.structural },
     )
     const offApps = reaction(
-      installedApps,
+      () => installedApps(assistant),
       setApps,
       { fireImmediately: true, equals: comparer.structural },
     )
@@ -57,7 +65,7 @@ export function AppsSection({ updates, gone, known, onManage }: { updates: Recor
       off()
       offApps()
     }
-  }, [])
+  }, [assistant])
 
   const uninstall = async (id: string) => {
     setBusy(true)
@@ -67,9 +75,11 @@ export function AppsSection({ updates, gone, known, onManage }: { updates: Recor
     setFailed(result.success ? null : result.error)
   }
 
+  if (hideEmpty && !apps.length && !unusable.length) return null
+
   return (
     <SettingsPage data-testid="settings-apps">
-      <SettingsGroup note={t('settings.apps.intro')}>
+      <SettingsGroup note={!assistant ? t('settings.apps.intro') : undefined}>
         {apps.length === 0 && unusable.length === 0 ? (
           <SettingsRow description={t('settings.apps.empty')} data-testid="settings-apps-empty" />
         ) : (

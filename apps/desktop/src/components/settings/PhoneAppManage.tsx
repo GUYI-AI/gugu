@@ -1,3 +1,4 @@
+import type { Device } from '@gugu/core/shared/types/chat'
 import { useId, useState } from 'react'
 import { observer } from 'mobx-react-lite'
 import { followLink } from '../../lib/guguLinks'
@@ -6,7 +7,11 @@ import { messageForUser } from '@/lib/userFacingError'
 import { useTheme } from '@/store/theme'
 import { sessionSkinClassName } from '../sessionpage/sessionSkin'
 import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
-import { installedExtensionsStore as store } from '@/session/renderer/features/extensions/installed-extensions-store'
+import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
+import type { ExtensionsHost } from '@renderer/features/extensions/extensions-host'
+import { installedElsewhere } from '@renderer/features/extensions/installed-elsewhere'
+import { setExtensionEnabled } from '@renderer/features/extensions/set-extension-enabled'
+import { rpcOn } from '@renderer/lib/ipc'
 import { AppManagePage } from '@/session/renderer/features/extensions/panel/app-manage-page'
 import { appLifecycle } from '@/session/renderer/features/extensions/panel/app-lifecycle'
 import type { InstalledRowNotice } from '@/session/renderer/features/extensions/panel/installed-extension-row'
@@ -25,12 +30,13 @@ const log = rendererLogger('settings/phone-app-manage')
  * An App's settings page on the phone: the desktop's page, with what this phone can manage. It has no agents and no App
  * background, and permissions are not taken back one by one here, so those hand it no action.
  */
-export const PhoneAppManage = observer(function PhoneAppManage({ extensionId, updateVersion, gone, onClose, onViewInMarket }: {
+export const PhoneAppManage = observer(function PhoneAppManage({ extensionId, updateVersion, gone, onClose, onViewInMarket, remote }: {
   extensionId: string
   updateVersion?: string
   gone: boolean
   onClose: () => void
-  onViewInMarket: () => void
+  onViewInMarket?: () => void
+  remote?: { host: ExtensionsHost; device: Device; devices: readonly Device[] }
 }) {
   const { translate, locale } = useSessionMessages()
   const { theme } = useTheme()
@@ -38,13 +44,15 @@ export const PhoneAppManage = observer(function PhoneAppManage({ extensionId, up
   const [asking, setAsking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState<{ title: string; cause: string } | null>(null)
+  const store = remote?.host.store ?? installedExtensionsStore
   const installed = store.manifests.find((manifest) => manifest.id === extensionId)
   if (!installed) return null
   const name = localizedManifestText(installed, locale).name
   const enabled = store.isEnabled(extensionId)
-  const fromMarket = phoneApps.originOf(extensionId) === 'market'
+  const origin = remote ? store.origins[extensionId] : phoneApps.originOf(extensionId) ?? undefined
+  const fromMarket = origin === 'market'
   const autoUpdate = store.autoUpdates(extensionId)
-  const main = store.mainTabOf(extensionId)
+  const main = remote ? undefined : store.mainTabOf(extensionId)
   const builtIn = store.isPreinstalled(extensionId)
   const notice: InstalledRowNotice | undefined = updateVersion
     ? { kind: 'update', version: updateVersion, releaseNotes: '' }
@@ -69,33 +77,64 @@ export const PhoneAppManage = observer(function PhoneAppManage({ extensionId, up
     }
   }
 
+  const changeEnabled = (on: boolean) => run(translate('extensions.switchFailed'), async () => {
+    if (!remote) return phoneApps.setEnabled(extensionId, on)
+    await setExtensionEnabled(installed, on, remote.host)
+    return { success: true }
+  })
+  const changeAutoUpdate = (on: boolean) => run(translate('extensions.switchFailed'), async () => {
+    if (!remote) return phoneApps.setAutoUpdate(extensionId, on)
+    await store.setAutoUpdate(extensionId, on)
+    return { success: true }
+  })
+  const uninstall = () => run(translate('extensions.uninstallFailed'), async () => {
+    if (!remote) return phoneApps.uninstall(extensionId)
+    const lastAnywhere = !await installedElsewhere(extensionId, remote.device.device_id, {
+      devices: () => remote.devices.map(device => ({ id: device.device_id, isOnline: device.is_online })),
+      installed: async deviceId => {
+        if (!deviceId) {
+          await phoneApps.ready()
+          if (phoneApps.unreadable()) throw new Error('Unreadable phone App inventory')
+          return installedExtensionsStore.manifests.map(app => app.id)
+        }
+        const result = await rpcOn(deviceId).extensions.list()
+        if (!result.success || !result.data) throw new Error(result.error ?? 'Unreadable App inventory')
+        return result.data.extensions.map(app => app.id)
+      },
+    })
+    const result = await remote.host.api.uninstall({ extensionId, lastAnywhere })
+    if (result.success) await store.load()
+    return result
+  })
+
   return (
     <Sheet fullScreenMobile onClose={onClose} testId="phone-app-manage" ariaLabel={name}>
       <div className={`${sessionSkinClassName(theme)} phone-app-product`}>
         <SessionUiTheme theme={theme} skin>
           {failed ? <SettingsNote tone="danger" role="alert" data-testid="settings-apps-failed">{failed.title}: {failed.cause}</SettingsNote> : null}
           <AppManagePage
-            manifest={grantableBy(installed, PHONE_CAPABILITIES)}
+            manifest={remote ? installed : grantableBy(installed, PHONE_CAPABILITIES)}
             iconDataUrl={store.appIcons[extensionId]}
             enabled={enabled}
             switching={busy}
             lifecycle={appLifecycle({ installed, enabled, preinstalled: builtIn, canOpen: Boolean(main) && !builtIn }, translate)}
             locale={locale}
             translate={translate}
-            api={phoneProductApi}
-            readOnly={busy}
+            api={remote?.host.api ?? phoneProductApi}
+            machine={remote?.device.label || remote?.device.hostname}
+            readOnly={busy || remote?.device.is_online === false}
             backLabel={translate('extensions.tabInstalled')}
-            permissionsNote={translate(builtIn ? 'extensions.permissionsNoteBuiltIn' : 'extensions.permissionsNotePhone')}
+            permissionsNote={remote ? undefined : translate(builtIn ? 'extensions.permissionsNoteBuiltIn' : 'extensions.permissionsNotePhone')}
             notice={notice}
-            origin={builtIn ? 'preinstalled' : phoneApps.originOf(extensionId) ?? undefined}
-            autoUpdate={autoUpdate === null ? undefined : { on: autoUpdate, onToggle: (on) => void run(translate('extensions.switchFailed'), () => phoneApps.setAutoUpdate(extensionId, on)) }}
+            origin={builtIn ? 'preinstalled' : origin}
+            autoUpdate={autoUpdate === null ? undefined : { on: autoUpdate, onToggle: (on) => void changeAutoUpdate(on) }}
             onBack={onClose}
             onLifecycle={() => {
-              if (!enabled) void run(translate('extensions.switchFailed'), () => phoneApps.setEnabled(extensionId, true))
+              if (!enabled) void changeEnabled(true)
               else if (main) void followLink({ kind: 'app', extensionId, tab: main.kind.slice(extensionId.length + 1), path: '', query: {}, place: null })
             }}
-            onInstallVersion={fromMarket ? (ref) => void run(translate('extensions.installFailed'), () => phoneApps.installFromMarket({ ref })) : undefined}
-            onToggleEnabled={builtIn ? undefined : (on) => void run(translate('extensions.switchFailed'), () => phoneApps.setEnabled(extensionId, on))}
+            onInstallVersion={fromMarket && !remote ? (ref) => void run(translate('extensions.installFailed'), () => phoneApps.installFromMarket({ ref })) : undefined}
+            onToggleEnabled={builtIn ? undefined : (on) => void changeEnabled(on)}
             onViewInMarket={fromMarket && !gone ? onViewInMarket : undefined}
             onOpenExternal={(url) => { window.open(url, '_blank', 'noopener,noreferrer') }}
             onUninstall={builtIn ? undefined : () => setAsking(true)}
@@ -109,7 +148,7 @@ export const PhoneAppManage = observer(function PhoneAppManage({ extensionId, up
             <div className="text-[length:var(--font-body)] text-[var(--text-secondary)]">{translate('extensions.uninstallConfirmDescription', { name })}</div>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setAsking(false)}>{translate('common.cancel')}</Button>
-              <Button data-testid="settings-apps-uninstall-confirm" disabled={busy} onClick={() => void run(translate('extensions.uninstallFailed'), () => phoneApps.uninstall(extensionId)).then((done) => {
+              <Button data-testid="settings-apps-uninstall-confirm" disabled={busy} onClick={() => void uninstall().then((done) => {
                 setAsking(false)
                 if (done) onClose()
               })}>{translate('extensions.uninstallAction')}</Button>

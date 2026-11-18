@@ -20,16 +20,17 @@ import { connectionReadOptions } from './connection-read-policy'
 import { useConnectionMutationAllowed } from './connection-mutation-context'
 import { AppConnectionListPlaceholder } from '@/components/assistant/AppConnectionHero'
 
-export function OwnerConnectorDetail({ host,app,deviceId,panelNavigation,onBack }: {
-  host: LibraryHost; app: AssistantConnectedApp; deviceId: string | null; panelNavigation: boolean; onBack(): void
+export function OwnerConnectorDetail({ host,app,deviceId,panelNavigation,market = false,onBack }: {
+  host: LibraryHost; app: AssistantConnectedApp; deviceId: string | null; panelNavigation: boolean; market?: boolean; onBack(): void
 }) {
   const { t } = useTranslation('assistant'),copy = useTranslation('connections').t
   const devices = useDevicesStore(),data = useIntegrationsContext()
+  const connected = market && app.state === 'connected'
   const canMutate = useConnectionMutationAllowed()
   const allowed = canMutate && !(app.connectionStatus && app.state === 'checking')
   const [busy,setBusy] = useState<string | null>(null)
   const showSetup = useShowModal('integrationSetupModal'),showGithub = useShowModal('githubConnectModal'),showConfirm = useShowModal('confirmActionModal')
-  const accounts = useQuery({ queryKey: ['owner-connection-accounts',host.key,app.id],enabled: !!host.connectionMetadata,
+  const accounts = useQuery({ queryKey: ['owner-connection-accounts',host.key,app.id],enabled: !market && !!host.connectionMetadata,
     queryFn: async () => (await host.connectionMetadata!.collection('integrations')).filter(row => row.data.providerId === app.id && typeof row.data.accountId === 'string'),
     initialData: () => host.connectionMetadata?.peekSnapshot?.()?.items.filter(row => !row.deleted_at && row.data.providerId === app.id && typeof row.data.accountId === 'string'),
     refetchOnWindowFocus: true,...connectionReadOptions })
@@ -55,11 +56,12 @@ export function OwnerConnectorDetail({ host,app,deviceId,panelNavigation,onBack 
     {!panelNavigation ? <div><Button size="sm" variant="ghost" onClick={onBack}><ChevronLeft size={16} />{t('connectors.title')}</Button></div> : null}
     <PageHead title={app.name} />
     {app.integration ? <AppConnectionHero icon={<IntegrationIcon provider={app.id} icon={app.integration.icon} size={56} />}
-      description={app.description} label={t(app.saved ? 'connectors.reconnect' : 'connectors.connect')} onConnect={connect} disabled={!allowed} /> : null}
-    {app.id === 'wechat' ? <fieldset className="contents" disabled={!allowed}><WechatAppConnection /></fieldset> : null}
+      description={app.description} label={t(connected ? 'connectors.connected' : app.saved ? 'connectors.reconnect' : 'connectors.connect')}
+      onConnect={connect} disabled={!allowed || connected} /> : null}
+    {app.id === 'wechat' ? <fieldset className="contents" disabled={!allowed}><WechatAppConnection connectOnly={market} /></fieldset> : null}
     {app.connectionStatus ? <p role="status">{app.name} : {app.connectionStatus}</p> : null}
-    {!accounts.data ? <AppConnectionListPlaceholder /> : null}
-    {accounts.data?.length ? <SettingsGroup title={copy('accounts')}>
+    {!market && !accounts.data ? <AppConnectionListPlaceholder /> : null}
+    {!market && accounts.data?.length ? <SettingsGroup title={copy('accounts')}>
       {accounts.data.map(row => <SettingsRow key={JSON.stringify([host.connectionMetadata?.ownerId,row.resource_key])}
         title={assistantAccountDisplayName(row.data.displayName) ?? assistantAccountDisplayName((row.data.publicMetadata as { login?: unknown } | undefined)?.login) ?? app.name}
         description={row.source?.scopeKey === 'platform' ? copy('onPlatform') : copy('onDevice',{ device: where(row) })}

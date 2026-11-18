@@ -95,6 +95,7 @@ export function AppProductPage({
   onBack,
   onLifecycle,
   onInstallVersion,
+  targetSummary,
   onManage,
   onForward,
   onAsk,
@@ -124,7 +125,8 @@ export function AppProductPage({
   backLabel?: string;
   onBack: () => void;
   onLifecycle: () => void;
-  onInstallVersion: (ref: MarketSourceRef) => void;
+  onInstallVersion?: (ref: MarketSourceRef) => void;
+  targetSummary?: ReactNode;
   /** Installed only: its settings page, where everything about this copy is managed. */
   onManage?: () => void;
   onForward?: () => void;
@@ -317,7 +319,7 @@ export function AppProductPage({
                 locale={locale}
                 translate={translate}
                 onOpenExternal={onOpenExternal}
-                onInstallVersion={installedVersion ? undefined : (version) => onInstallVersion({ extensionId: manifest.id, version })}
+                onInstallVersion={!installedVersion && onInstallVersion ? (version) => onInstallVersion({ extensionId: manifest.id, version }) : undefined}
               />
             </div>
           </fieldset>
@@ -563,6 +565,7 @@ export function AppProductPage({
                   </Button>
                 ) : null}
               </div>
+              {targetSummary}
             </fieldset>
           </AppProductHeader>
         </header>

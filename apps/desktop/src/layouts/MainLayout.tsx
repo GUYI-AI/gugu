@@ -318,6 +318,7 @@ function InnerLayout({
     return topic ? `${viewportKey ?? 'chats'}:topic` : viewportKey ?? 'chats'
   }, [enterChat, openChatBlock, setActiveChatId, readChats])
   const [appDetail, setAppDetail] = useState<import('@gugu/core/shared/ui/guguLink').ExtensionAppDetailLink>()
+  const clearAppDetail = useCallback(() => setAppDetail(undefined), [])
   useLinkNavigation({ ownerId: user.id, chats: () => readChats().chats, contacts: () => readContacts().contacts,
     openSender: (target, sourceChatId) => handleSwitchToChat(target, undefined, sourceChatId, true),
     openAppDetail: target => {
@@ -535,23 +536,19 @@ function InnerLayout({
 
   // @@@1507 直达指定设置 section(侧栏「额度」→ quota)。移动端无设置弹窗:直达「我的」tab 对应 detail 面。
   const openSettingsSection = useCallback((asked: ActiveSection, ownerConnections = false) => {
-    let section = asked
-    // Nothing of the assistant is in Settings (owner 11-12): an old route to its 资料 / 连接应用 lands in its App. A phone
-    // with no assistant has the person's own connected apps as a row of Settings (SettingsPanel): a route to them goes there.
+    const section = asked
     const ownDesktopConnections = ownerConnections && section === 'connectors' && !mobile && sessionHostAvailable
-    if (isAssistantSettingsSection(section) && !ownDesktopConnections) {
-      if (!mobile) {
-        setSettingsModalOpen(false)
-        openAssistantPageInApp(section === 'assistant' ? 'settings' : 'connected-apps')
-        return
-      }
+    if (!mobile && isAssistantSettingsSection(section) && !ownDesktopConnections) {
+      setSettingsModalOpen(false)
+      openAssistantPageInApp(section === 'assistant' ? 'settings' : 'connected-apps')
+      return
+    }
+    if (mobile && section === 'assistant') {
       if (phoneAssistant.available) {
         setActiveTab('assistant')
-        window.dispatchEvent(new CustomEvent(UI_EVENTS.openAssistantConnectors, { detail: { sub: section === 'assistant' ? 'settings' : 'connectors' } }))
-        return
+        window.dispatchEvent(new CustomEvent(UI_EVENTS.openAssistantConnectors, { detail: { sub: 'settings' } }))
       }
-      if (section === 'assistant') return
-      section = 'connectors'
+      return
     }
     setSettingsSection(section)
     if (mobile) {
@@ -613,11 +610,14 @@ function InnerLayout({
   // 打开它都切到那一格的聊天,❌ 在对话页里另开一屏。在画出来之前换过去,对话页 ❌ 先闪一帧那条私聊。
   useEffect(() => {
     if (!mobile) return
-    // 连接应用 is the assistant's (its profile's page on the phone), never in Settings.
-    const open = () => { if (phoneAssistant.available) setActiveTab('assistant') }
+    const open = (event: Event) => {
+      if ((event as CustomEvent<{ sub?: string }>).detail?.sub === 'settings') {
+        if (phoneAssistant.available) setActiveTab('assistant')
+      } else openSettingsSection('connectors')
+    }
     window.addEventListener(UI_EVENTS.openAssistantConnectors, open)
     return () => window.removeEventListener(UI_EVENTS.openAssistantConnectors, open)
-  }, [mobile,phoneAssistant.available,setActiveTab])
+  }, [mobile, openSettingsSection, phoneAssistant.available, setActiveTab])
   useLayoutEffect(() => {
     if (!assistantOnPhone || activeTab !== 'chats' || !phoneChatShown || !phoneAssistant.available) return
     shellTab.setChatFrom(null)
@@ -1193,6 +1193,8 @@ function InnerLayout({
               <SettingsPanel
                 mobile
                 appDetail={appDetail}
+                onHandledAppDetail={clearAppDetail}
+                marketAssistant={phoneAssistant}
                 addCustomModel={addCustomModel}
                 onCustomModelDialogClose={() => setAddCustomModel(false)}
                 inline
