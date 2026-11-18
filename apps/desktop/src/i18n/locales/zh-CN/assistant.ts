@@ -52,10 +52,6 @@ export default {
     }
   },
   "hints": {
-    "phone": {
-      "assistant": "咕咕是你的个人助理，记安排、办事情都可以找它。",
-      "collaboration": "在这里找项目和朋友，点进去就能开始协作。"
-    },
     "desktop": {
       "assistant": "你的个人助理在这里，记安排、办事情直接告诉它。"
     },
