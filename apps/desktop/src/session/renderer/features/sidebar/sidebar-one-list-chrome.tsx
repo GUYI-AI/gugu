@@ -1,4 +1,4 @@
-import { ChevronsLeft, ChevronsRight, FolderPlus, History, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
+import { ChevronsLeft, ChevronsRight, Clock, FolderPlus, History, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
@@ -27,7 +27,7 @@ import { SidebarSpace } from './sidebar-space';
  * GUYI-AI/gugu#2548 the head and the top of the sidebar as one list.
  * Composition only: every control is an existing one (Button, IconButton, DropdownMenu + MenuItem, Hint, the bell's slot, the
  * search box) running an existing action. Collapsed, the sidebar is a rail of the list's avatars (SIDEBAR_RAIL_PX wide,
- * every avatar where it was): what has text fades, and so do the bell, the search box and 会话历史; the collapse button and
+ * every avatar where it was): what has text fades, as do the bell, 已安排, 会话历史 and search. The collapse button and
  * the 「+」 sit on the avatars' axis.
  */
 
@@ -179,8 +179,8 @@ function importableTools(locale: string): string {
 }
 
 /**
- * The head, the window's top band over the list (proposal v1 ①, owner-approved): the collapse button, the bell, the search
- * box and 会话历史, in that order. The collapse button (chevrons only; its tooltip says what it does and the shortcut, as
+ * The head, the window's top band over the list: the collapse button, the bell, 已安排, 会话历史 and search, in that order.
+ * The collapse button (chevrons only; its tooltip says what it does and the shortcut, as
  * the old header toggle's did) is first, centred on the avatars' axis (20 + 32 / 2 = 36), and never moves: collapsed it is
  * 「»」 in the same place. Everything after it hides with the names on the rail (proposal v1, extra 1), so the rail keeps only
  * 「»」 and the 「+」 under it. There is no foot: the list runs to the window's bottom edge. Over the head, once: C9
@@ -198,6 +198,8 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
   const shortcut = hotkey ? formatHotkeyText(hotkey) : null;
   // #2548: 收起侧栏 / 展开侧栏 and the product's own shortcut (owner: not the mock's ⌘\).
   const foldLabel = translate(isLeftOpen ? 'sidebar.collapseSidebar' : 'sidebar.expandSidebar');
+  const scheduledLabel = translate('sidebar.scheduled');
+  const scheduledShown = isCurrentView(currentView, 'automations');
   const historyLabel = translate('sidebar.sessionHistory');
   const historyShown = isCurrentView(currentView, 'session-history');
   const railed = !isLeftOpen;
@@ -205,6 +207,7 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
   // What the rail hides along with the names: faded with them (followNames), and inert there (out of the pointer's way and
   // the tab order).
   const bellRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
+  const scheduledRef = useSidebarProgressFollow<HTMLButtonElement>(followNames);
   const searchRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
   const historyRef = useSidebarProgressFollow<HTMLButtonElement>(followNames);
   const step = intro.step;
@@ -244,13 +247,25 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
           {isLeftOpen ? <ChevronsLeft /> : <ChevronsRight />}
         </IconButton>
       </Hint>
-      {/* The bell (NeedsYouHost draws it into this slot) and the search box, as they are. */}
+      {/* NeedsYouHost draws the bell into this slot. */}
       <div ref={bellRef} className="flex shrink-0" inert={railed}>
         <NotificationSlot part="toggle" tone="strong" />
       </div>
-      <div ref={searchRef} className="flex min-w-0 flex-1" inert={railed}>
-        <SidebarSearchTrigger />
-      </div>
+      <Hint label={scheduledLabel} side="bottom">
+        <IconButton
+          size="md"
+          ref={scheduledRef}
+          tone="strong"
+          inert={railed}
+          aria-label={scheduledLabel}
+          aria-current={scheduledShown ? 'page' : undefined}
+          on={scheduledShown}
+          onClick={() => navigate('automations')}
+          data-testid="sidebar-scheduled"
+        >
+          <Clock />
+        </IconButton>
+      </Hint>
       <Hint label={historyLabel} side="bottom">
         {/* A toggle: open, 会话历史 is lit; clicked again it goes back to the view before it, by the task page's own back
             (navigateBack: the back button, Mod+[ and the window's ← take the same path), ❌ a second history here. */}
@@ -268,6 +283,9 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
           <History />
         </IconButton>
       </Hint>
+      <div ref={searchRef} className="flex min-w-0 flex-1" inert={railed}>
+        <SidebarSearchTrigger />
+      </div>
       {/* C9 under the step's button, in the feature tour's card without its shade: it is contextual and blocks nothing,
           so it takes no focus, and a click elsewhere neither closes it nor is swallowed by it. Escape ends it and still
           reaches whatever it was meant for. Below the row, so the row's buttons stay in sight, and running on from the

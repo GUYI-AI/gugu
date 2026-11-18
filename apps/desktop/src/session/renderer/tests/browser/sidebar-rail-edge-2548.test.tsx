@@ -31,7 +31,7 @@ vi.mock('@renderer/features/sidebar/inner-sidebar', async () => {
   const { observable } = await import('mobx');
   return { innerSidebarChat: observable.box(null, { deep: false }), innerSidebarShownFor: observable.box(null) };
 });
-vi.mock('@renderer/features/sidebar/sidebar-search-trigger', () => ({ SidebarSearchTrigger: () => null }));
+vi.mock('@renderer/features/global-search/search-session', () => ({ openGlobalSearch: () => {} }));
 vi.mock('@renderer/lib/components/titlebar/shell-titlebar', () => ({ ShellSidebarToggle: () => null }));
 vi.mock('@renderer/lib/components/nav-buttons', () => ({ navigateBack: () => {} }));
 vi.mock('@/hooks/useNativeConversationChat', () => ({ useNativeConversationChat: () => null }));
@@ -90,7 +90,9 @@ for (const material of ['native', 'opaque'] as const) {
     const surface = document.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
     const expandedEdge = surfaceEdge(surface);
     const fold = document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!;
+    const scheduled = document.querySelector<HTMLElement>('[data-testid="sidebar-scheduled"]')!;
     const history = document.querySelector<HTMLElement>('[data-testid="sidebar-session-history"]')!;
+    const search = document.querySelector<HTMLElement>('[data-testid="sidebar-search-trigger"]')!;
     const lights = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--titlebar-traffic-lights-width'));
     expect(lights, 'the mac tokens must be present').toBeGreaterThan(0);
     // 「«」 in the top band, centred on the avatars' axis (x = 36), right of the icon rail and the traffic lights over it.
@@ -107,17 +109,18 @@ for (const material of ['native', 'opaque'] as const) {
       expect(box.left, state).toBeGreaterThan(lights);
     };
     head('expanded');
-    // 会话历史 is at the band's other end; nothing is left at the bottom: the list runs to the window's bottom edge.
-    expect(Math.round(history.getBoundingClientRect().right)).toBe(Math.round(aside.getBoundingClientRect().right) - 12);
+    expect(scheduled.getBoundingClientRect().right).toBeLessThan(history.getBoundingClientRect().left);
+    expect(history.getBoundingClientRect().right).toBeLessThan(search.getBoundingClientRect().left);
+    expect(Math.round(search.getBoundingClientRect().right)).toBe(Math.round(aside.getBoundingClientRect().right) - 12);
     expect(document.querySelector('[data-sidebar-foot]')).toBeNull();
     expect(document.querySelector('[data-region="sidebar-scroll"]')!.getBoundingClientRect().bottom).toBe(aside.getBoundingClientRect().bottom);
 
     fold.click();
     await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBe(72);
     head('collapsed');
-    // The rail keeps 「»」 and the 「+」; the bell, the search box and 会话历史 are hidden with the names.
+    // The rail keeps 「»」 and 「+」. The other controls fade with the names.
     expect(fold.closest('[inert]')).toBeNull();
-    for (const hidden of [history, document.querySelector('[data-notification-slot="toggle"]')!]) {
+    for (const hidden of [scheduled, history, search, document.querySelector('[data-notification-slot="toggle"]')!]) {
       expect(hidden.closest('[inert]')).not.toBeNull();
       expect(Number(getComputedStyle(hidden.closest('[inert]')!).opacity)).toBe(0);
     }
