@@ -2,7 +2,7 @@ import { observer } from 'mobx-react-lite'
 import { Fragment, useEffect, useSyncExternalStore, type ComponentProps, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { chatTabSlotKey, readShellSlots } from '../../lib/shellSlots'
-import { chatLayoutOf, chatPaneOf, focusedChatTab, infoTabOf, panelTabOf, panelTabsOf, topicTabOf, type ChatPanelTab } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { chatLayoutOf, chatPaneOf, chatTabOf, focusedChatTab, infoTabOf, panelTabOf, panelTabsOf, topicTabOf, type ChatPanelTab } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { PaneContext } from '@renderer/features/tabs/pane-context'
 import { makesPaneCurrent } from '@renderer/features/tabs/pane-activation'
 
@@ -13,7 +13,8 @@ export function ChatPaneContent({ chatId, tabId, ...props }: ComponentProps<'div
   const focus = (event: { target: EventTarget }) => {
     if (!makesPaneCurrent(event.target)) return
     const layout = chatLayoutOf(chatId)
-    const id = tabId ?? layout.groups.flatMap(({ pane }) => [...pane.entries.values()]).find(tab => tab.kind === 'chat')?.tabId
+    const id = tabId ?? chatTabOf(layout)
+    if (layout.focusedPane.resolvedActiveTabId === id) return
     if (id) chatPaneOf(chatId, id)?.setActiveTab(id)
   }
   return <div {...props} onPointerDownCapture={focus} onFocusCapture={focus} />

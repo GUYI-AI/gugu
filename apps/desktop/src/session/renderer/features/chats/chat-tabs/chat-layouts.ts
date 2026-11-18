@@ -71,7 +71,7 @@ export function chatLayoutOf(chatId: string): ChatLayout {
 }
 
 const paneOf = (layout: ChatLayout): PaneStore => layout.focusedPane;
-function chatTabOf(layout: ChatLayout): string | undefined {
+export function chatTabOf(layout: ChatLayout): string | undefined {
   return tabsOf(layout).find(({ tab }) => tab.kind === CHAT_TAB_KIND)?.tab.tabId;
 }
 

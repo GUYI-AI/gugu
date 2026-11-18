@@ -975,9 +975,9 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
             return true;
           }
           if (this.sidePaneId !== null) {
-            const pinned = this.focusedPane.resolvedActiveTabId;
-            if (pinned && pinned !== tabId) {
-              this.pairWith(pinned, tabId, { focus: true });
+            const current = this.focusedPane.resolvedActiveTabId;
+            if (current && current !== tabId) {
+              this.pairWith(current, tabId, { focus: true });
               return true;
             }
           }
