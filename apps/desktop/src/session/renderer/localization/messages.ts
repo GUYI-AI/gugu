@@ -1113,6 +1113,7 @@ const enUSCoreMessages = {
   'transcript.compacting': 'Compacting context…',
   'transcript.compacted': 'Context compacted — the agent keeps a summary of everything above',
   'transcript.compactionFailed': 'Context compaction failed',
+  'transcript.compactedWhileIdle': 'Compacted while idle, before the prompt cache expired — the agent keeps a summary of everything above',
   'transcript.contextReset': "The engine started a new session — it doesn't have the earlier messages",
   'transcript.sessionNotice.modelUnavailable':
     'The model this task was created with is unavailable here — running {running} instead',
@@ -2273,6 +2274,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'transcript.compacting': '正在压缩上下文…',
   'transcript.compacted': '上下文已压缩 —— 往上的内容它记得的是摘要',
   'transcript.compactionFailed': '上下文压缩失败',
+  'transcript.compactedWhileIdle': '你离开期间已压缩上下文，赶在提示缓存过期之前 —— 往上的内容它记得的是摘要',
   'transcript.contextReset': '引擎换了一条新会话 —— 往上的内容它没有',
   'transcript.sessionNotice.modelUnavailable': '这个会话原来选的模型这儿用不了 —— 现在跑的是 {running}',
   'transcript.sessionNotice.modelSubstituted': '引擎跑的是 {running}，不是选的那个模型',
