@@ -19,15 +19,16 @@ export function useHarnessModelOptions(
   providerId: string | null | undefined,
   /** 替哪条腿读(#6246):两条腿的配置根可能不同,清单也就可能不同。 */
   leg: SessionpageLeg
-): Record<string, { name: string }> | null {
+) {
   const catalog = useHarnessModelCatalog(providerId, leg);
   const { data: agents } = useAgents();
   const capabilities = providerId
     ? (agents?.find((agent) => agent.id === providerId)?.capabilities ?? null)
     : null;
   // 与 hook 那侧同一口径：只有「不说 ACP」才用插件静态表。
-  return harnessCatalogToOptions(
+  const options = harnessCatalogToOptions(
     catalog.state,
     capabilities?.models.kind === 'selectable' ? capabilities.models.modelOptions : undefined
   );
+  return { ...catalog, options };
 }

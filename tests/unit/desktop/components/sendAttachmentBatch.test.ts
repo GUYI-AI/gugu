@@ -143,6 +143,19 @@ describe('attachment ownership transfers to the durable chat outbox', () => {
     expect([first!.commit.send_group_id, first!.commit.send_group_size]).toEqual([second!.commit.send_group_id, 2])
     expect([first!.row.send_group_id, second!.row.send_group_id]).toEqual([first!.commit.send_group_id, first!.commit.send_group_id])
   })
+  it('more files than one send holds go as consecutive sends of at most ten, the text on the very last file', async () => {
+    const f = fixture()
+    const files = Array.from({ length: 21 }, (_, index) => pdf(`f${index}.pdf`))
+    await sendAttachmentBatch({ ...f.args, files, caption: 'all' })
+    await vi.waitFor(() => expect(f.commitAttachment).toHaveBeenCalledTimes(21))
+    type Group = { send_group_id?: string; send_group_size?: number; caption?: string }
+    const commits = (f.commitAttachment.mock.calls as unknown as Array<[unknown, unknown, Group]>).map(([, , commit]) => commit)
+    const sends = [commits.slice(0, 10), commits.slice(10, 20)]
+    for (const send of sends) expect(send.map(commit => [commit.send_group_id, commit.send_group_size])).toEqual(Array(10).fill([send[0]!.send_group_id, 10]))
+    expect(sends[0]![0]!.send_group_id).not.toBe(sends[1]![0]!.send_group_id)
+    expect(commits[20]).not.toHaveProperty('send_group_id')
+    expect(commits.map(commit => commit.caption)).toEqual([...Array(20).fill(undefined), 'all'])
+  })
   it('#2581 a file sent alone is not a send of several', async () => {
     const f = fixture()
     await sendAttachmentBatch({ ...f.args, caption: 'one' })

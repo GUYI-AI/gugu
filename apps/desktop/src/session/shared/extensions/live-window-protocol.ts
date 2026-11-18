@@ -4,6 +4,8 @@ export type LiveWindowResourceDescriptor = {
   sessionId: string;
   title: string;
   size: { width: number; height: number } | null;
+  /** Order of the host's admitted Agent call, never a viewer/frame timestamp. */
+  activity?: number;
 } & (
   | { type: 'task-page' }
   | { type: 'app-projection'; appId: string; appVersion: string }

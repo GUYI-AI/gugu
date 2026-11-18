@@ -80,6 +80,23 @@ async function isRejectedTokenResponse(input: RequestInfo | URL, response: Respo
   return /jwt|signature|token/i.test(body)
 }
 
+// @@@local-clock-expiry — GoTrue stamps a session's `expires_at` with the server clock, and everything on this machine
+// (auth-js's refresh margin, the coordinator's refresh schedule, the "can't reach the server" banner) compares it with
+// the local clock. On a PC whose clock is off by more than the token lifetime, every freshly issued token already looks
+// expired: the banner shows while sends still succeed, the coordinator re-refreshes every second, and a restart reuses a
+// refresh token and logs the user out. Drop the server stamp at the transport edge so auth-js derives `expires_at`
+// from `expires_in` at receipt (auth-js lib/fetch.ts `_sessionResponse`): one clock, the local one, end to end.
+async function withLocalClockExpiry(response: Response): Promise<Response> {
+  if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) return response
+  const body: unknown = await response.clone().json()
+  if (!body || typeof body !== 'object' || !('access_token' in body) || !('expires_in' in body) || !('expires_at' in body)) return response
+  const { expires_at: _serverClock, ...localized } = body as Record<string, unknown>
+  const headers = new Headers(response.headers)
+  headers.delete('content-length')
+  headers.delete('content-encoding')
+  return new Response(JSON.stringify(localized), { status: response.status, statusText: response.statusText, headers })
+}
+
 export async function authBoundedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const path = requestPath(input)
   if (path.startsWith('/auth/v1/')) {
@@ -88,7 +105,7 @@ export async function authBoundedFetch(input: RequestInfo | URL, init?: RequestI
       fetchWithSignals(input, init, init?.signal ? [init.signal, timeout] : [timeout]).catch((error: unknown) => {
         throw timeout.aborted && !init?.signal?.aborted
           ? Object.assign(new Error('Auth request timed out'), { name: 'TimeoutError' }) : error
-      }))
+      }).then(withLocalClockExpiry))
   }
   const boundary = currentAuthSessionSignal()
   const callerSignal = init?.signal && init.signal !== boundary ? init.signal : null

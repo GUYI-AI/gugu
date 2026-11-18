@@ -1,6 +1,7 @@
 /* Approved phone reference: 136px / 943px single line, 295px / 943px four lines,
    and a 60px / 943px visible send circle. Existing 16/24 typography is retained. */
-[data-slot='composer'][data-phone-capsule] { --phone-composer-empty-gutter: 48px; }
+/* Reserve the 44px action target, a 4px outer allowance and 16px of text clearance. */
+[data-slot='composer'][data-phone-capsule] { --phone-composer-empty-gutter: 16px; --phone-composer-actions-gutter: 64px; }
 [data-slot='composer'][data-phone-capsule]:not(:has([data-phone-attachment])) { --phone-composer-empty-gutter: 16px; }
 [data-slot='composer'][data-phone-capsule] [data-slot='composer-bar'] {
   display: grid;
@@ -20,7 +21,7 @@
   min-width: 0;
   min-height: 56px;
   max-height: 128px;
-  padding: 16px 48px 16px var(--phone-composer-empty-gutter);
+  padding: 16px var(--phone-composer-actions-gutter) 16px var(--phone-composer-empty-gutter);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
@@ -29,8 +30,11 @@
   box-shadow: none;
 }
 [data-slot='composer'][data-phone-capsule][data-phone-has-text] [data-slot='composer-input'] { padding-left: 16px; }
-[data-slot='composer'][data-phone-capsule][data-phone-multiline] [data-slot='composer-input'] { min-height: 128px; border-radius: 20px; }
-[data-slot='composer'][data-phone-capsule][data-phone-has-text]:not([data-phone-multiline]) [data-phone-attachment] { display: none; }
+/* Two 24px text lines plus the existing 16px vertical padding stay compact.
+   The taller minimum belongs to the third-line attachment/control stack. */
+[data-slot='composer'][data-phone-capsule][data-phone-multiline] [data-slot='composer-input'] { min-height: 80px; border-radius: 20px; }
+[data-slot='composer'][data-phone-capsule][data-phone-attachment-row] [data-slot='composer-input'] { min-height: 128px; }
+[data-slot='composer'][data-phone-capsule]:not([data-phone-multiline]):not([data-phone-expanded]) [data-phone-attachment] { display: none; }
 [data-slot='composer'][data-phone-capsule] [data-slot='composer-input'] [contenteditable] { color: var(--text-primary); }
 /* Compact height follows content, not the extra room reserved for the two buttons.
    Keeping flex-grow here would hold an emptied multiline editor at 72px forever. */
@@ -65,6 +69,8 @@
   box-shadow: none;
   position: relative;
   z-index: 1;
+  /* Line-state changes must not interpolate touch-target dimensions or insets. */
+  transition-property: background-color, color, opacity, box-shadow;
 }
 [data-slot='composer'][data-phone-capsule] [data-phone-editor-toggle] {
   align-self: start;
@@ -132,11 +138,31 @@
 [data-slot='composer'][data-phone-capsule][data-phone-multiline] [data-phone-editor-toggle] {
   width: 32px; height: 32px; min-width: 32px; min-height: 32px; margin-right: 8px; margin-top: 8px;
 }
-[data-slot='composer'][data-phone-capsule][data-phone-multiline] button[data-phone-attachment] {
+/* A compact two-line box fits the existing 32px expand and 44px send targets
+   without intersecting their hit areas; expanded editing keeps its own inset. */
+[data-slot='composer'][data-phone-capsule][data-phone-multiline]:not([data-phone-attachment-row]):not([data-phone-expanded]) [data-phone-editor-toggle] { margin-top: 0; }
+/* 32px + 44px targets leave 4px separation inside the 80px two-line box.
+   The old 4px bottom margin spent that entire gap and the real boxes overlapped. */
+[data-slot='composer'][data-phone-capsule][data-phone-multiline]:not([data-phone-attachment-row]):not([data-phone-expanded]) [data-phone-send] { margin-bottom: 0; }
+[data-slot='composer'][data-phone-capsule][data-phone-attachment-row] button[data-phone-attachment] {
   grid-column: 3; justify-self: end; margin-left: 0; margin-right: 8px;
   width: 32px; height: 32px; min-width: 32px; min-height: 32px; margin-bottom: 52px;
 }
+/* Two lines use the former expand slot for attachments; three lines keep both controls. */
+[data-slot='composer'][data-phone-capsule][data-phone-multiline]:not([data-phone-attachment-row]):not([data-phone-expanded]) button[data-phone-attachment] {
+  grid-column: 3; justify-self: end; margin-left: 0; margin-right: 8px;
+  width: 32px; height: 32px; min-width: 32px; min-height: 32px; margin-bottom: 48px;
+}
 [data-slot='composer'][data-phone-capsule][data-phone-multiline] [data-phone-send] { margin-bottom: 4px; }
-[data-slot='composer'][data-phone-capsule][data-phone-expanded][data-phone-has-text] [data-slot='composer-input'] { padding-left: 16px; padding-right: 48px; }
-[data-slot='composer'][data-phone-capsule][data-phone-expanded][data-phone-multiline] button[data-phone-attachment] { margin-bottom: 56px; }
+[data-slot='composer'][data-phone-capsule][data-phone-expanded][data-phone-has-text] [data-slot='composer-input'] { padding-left: 16px; padding-right: var(--phone-composer-actions-gutter); }
+[data-slot='composer'][data-phone-capsule][data-phone-expanded][data-phone-attachment-row] button[data-phone-attachment] { margin-bottom: 56px; }
 [data-slot='composer'][data-phone-capsule][data-phone-expanded] [data-phone-send] { margin-bottom: 8px; }
+
+/* Full-screen editing keeps attachment selection reachable. */
+[data-slot='composer'][data-phone-capsule][data-phone-expanded][data-phone-has-text] [data-phone-attachment] { display: inline-flex; }
+[data-slot='composer'][data-phone-capsule][data-phone-expanded] button[data-phone-attachment] {
+  grid-column: 1; justify-self: start; width: 44px; height: 44px; min-width: 44px; min-height: 44px;
+  margin-left: 2px; margin-right: 0; margin-bottom: 8px;
+}
+
+[data-slot='composer'][data-phone-capsule][data-phone-expanded][data-phone-attachment-row] button[data-phone-attachment] { margin-bottom: 8px; }

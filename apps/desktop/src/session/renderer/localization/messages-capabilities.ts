@@ -967,8 +967,11 @@ export const enUSCapabilityMessages = {
   // ⚠️ ❌ 不写成「自定义模型」:Codex 里那些就是官方 GPT,一点也不自定义 —— 用户自定义的是
   //    账号不是模型,而且那个词要留给将来真跑在本机的模型(Ollama 一类)。
   'harnessCatalog.ownModelsGroup': 'Your {name} models',
-  'harnessCatalog.unlockModels': 'Sign in to use {name} models',
-  'harnessCatalog.unlockModelsHint': 'Sign in to {name} to see your models',
+  'harnessCatalog.unlockModels': 'Add a personal {name} connection',
+  'harnessCatalog.unlockModelsHint': 'Add a {name} connection to see your models here',
+  'harnessCatalog.access.account': 'Account sign-in',
+  'harnessCatalog.access.api-key': 'API Key',
+  'harnessCatalog.access.endpoint': 'Custom API address',
   'harnessCatalog.signInAgain': '{name} sign-in expired; sign in again',
   'harnessCatalog.signInAgainHint': 'Sign in again to see your {name} models.',
 } as const;
@@ -1878,8 +1881,11 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'guguCatalog.namedReason.membership-required-readonly': '当前账号无法使用 {model}，请选择其他可用模型。',
   'guguCatalog.namedReason.model-unavailable': '{model} 现在用不了。换个模型再发一次。',
   'harnessCatalog.ownModelsGroup': '你的 {name} 模型',
-  'harnessCatalog.unlockModels': '登录以使用 {name} 模型',
-  'harnessCatalog.unlockModelsHint': '登录 {name} 后显示你的模型',
+  'harnessCatalog.unlockModels': '添加个人 {name} 连接',
+  'harnessCatalog.unlockModelsHint': '添加 {name} 连接后这里显示你的模型',
+  'harnessCatalog.access.account': '账号登录',
+  'harnessCatalog.access.api-key': 'API Key',
+  'harnessCatalog.access.endpoint': '自定义 API 地址',
   'harnessCatalog.signInAgain': '{name} 登录已失效，重新登录',
   'harnessCatalog.signInAgainHint': '重新登录后显示你的 {name} 模型。',
 };

@@ -2,13 +2,13 @@ import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream, openAsBlob } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { basename } from 'node:path'
-import { uploadAttachmentBytes, type AttachmentsEndpoint } from '../../cloud/attachmentsApi'
+import { contentRequestId, uploadAttachmentBytes, type AttachmentsEndpoint } from '../../cloud/attachmentsApi'
 import { commitSessionAttachment, revokeSessionAttachment, type SessionFileInput } from '../../cloud/sessionAttachments'
 import { resolveAttachmentMimeType } from '../../shared/imageMime.mjs'
 import { requireAgentFileAccess } from '../state/agentFileBoundary'
 
 /** A file's sha256, read from disk in chunks: a large file is never held in memory. */
-async function fileSha256(path: string): Promise<string> {
+export async function fileSha256(path: string): Promise<string> {
   const hash = createHash('sha256')
   for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer)
   return hash.digest('hex')
@@ -30,7 +30,12 @@ export async function uploadSessionFile(endpoint: AttachmentsEndpoint, file: Ses
   // permit is the only size limit.
   const bytes = await openAsBlob(source, { type: contentType })
   if (sender.expectedSha256 && sender.expectedSha256 !== sha) throw new Error('Registered artifact changed before upload')
-  const stagingKey = sender.stagingKey ?? await uploadAttachmentBytes(endpoint, { bytes, name, contentType }, { chat_id: null, as: sender.agentId })
+  // The same file from the same agent session to the same recipients is one upload: sent again, it resumes where it
+  // stopped. Other recipients are another upload, so one file handed to several sessions at once never shares one.
+  const stagingKey = sender.stagingKey ?? await uploadAttachmentBytes(endpoint, { bytes, name, contentType }, {
+    chat_id: null, as: sender.agentId,
+    request_id: await contentRequestId('session', sender.agentId, sender.sessionId, [...sender.recipients].sort().join(','), sha, String(size)),
+  })
   await sender.onStaged?.(stagingKey)
   await sender.beforeCommit?.()
   const args = { staging_key: stagingKey, attachment_id: sender.attachmentId ?? randomUUID(), sender_user_id: sender.agentId,

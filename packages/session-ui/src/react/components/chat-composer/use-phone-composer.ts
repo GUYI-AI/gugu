@@ -5,6 +5,7 @@ import { releasePhoneEditorContainingBlocks } from './phone-editor-viewport';
 export function usePhoneComposer(mobile: boolean, root: RefObject<HTMLDivElement | null>) {
   const [expanded, setExpanded] = useState(false);
   const [multiline, setMultiline] = useState(false);
+  const [attachmentRow, setAttachmentRow] = useState(false);
   const [hasText, setHasText] = useState(false);
   const expandedRef = useRef(false);
 
@@ -28,6 +29,7 @@ export function usePhoneComposer(mobile: boolean, root: RefObject<HTMLDivElement
       const height = boxes.length ? Math.max(...boxes.map((box) => box.bottom)) - Math.min(...boxes.map((box) => box.top)) : editor.getBoundingClientRect().height;
       setHasText(text);
       setMultiline(text && height > line + 1);
+      setAttachmentRow(text && height > line * 2 + 1);
     };
     const start = () => { composing = true; };
     const end = () => { composing = false; queueMicrotask(measure); };
@@ -88,5 +90,5 @@ export function usePhoneComposer(mobile: boolean, root: RefObject<HTMLDivElement
     expandedRef.current = true;
     setExpanded(true);
   };
-  return { expanded: mobile && expanded, multiline: mobile && multiline, hasText: mobile && hasText, toggle, collapse };
+  return { expanded: mobile && expanded, multiline: mobile && multiline, attachmentRow: mobile && attachmentRow, hasText: mobile && hasText, toggle, collapse };
 }

@@ -1167,13 +1167,18 @@ export class SessionCell {
             );
         if (!validation.success) return validation as unknown as Result<LiveSettingApplyResult, E>;
       }
-      const result = await this.applyLiveSetting(dimension, value, configId, capability, startupOnly, fail);
+      let dispatched = false;
+      const onDispatch = () => { dispatched = true; };
+      const result = await this.applyLiveSetting(dimension, value, configId, capability, startupOnly, fail, onDispatch);
       if (!result.success) {
+        // Local rejection cannot change provider state. Preserve any earlier uncertainty,
+        // but only a dispatched mutation can introduce a new prompt-admission block.
+        if (!dispatched) return result;
         // A rejected enable has no toggle path back to an already displayed Off value.
         // Confirm Off once through the same native authority so a failed optional speed
         // choice cannot strand the next user turn or leave an unconfirmed premium tier.
         if (dimension === 'fast' && value === 'on') {
-          const off = await this.applyLiveSetting(dimension, 'off', configId, capability, startupOnly, fail);
+          const off = await this.applyLiveSetting(dimension, 'off', configId, capability, startupOnly, fail, onDispatch);
           if (off.success && off.data.status === 'applied') {
             this.settingsBlockedReasons.delete(dimension);
             return result;
@@ -1233,6 +1238,7 @@ export class SessionCell {
     capability: LiveSettingCapability,
     startupOnly: boolean,
     fail: (cause: ReturnType<typeof toSerializedError>) => Result<never, E>,
+    onDispatch: () => void,
   ): Promise<Result<LiveSettingApplyResult, E>> {
     const channel = startupOnly
       ? this.startupChannel(dimension, configId)
@@ -1252,6 +1258,7 @@ export class SessionCell {
     const agent = this.agent;
     try {
       if (agent.applyLiveSetting && !startupOnly) {
+        onDispatch();
         const response = await agent.applyLiveSetting({
           providerSessionId: this.acpSessionId,
           dimension,
@@ -1277,6 +1284,7 @@ export class SessionCell {
           // the stable mode RPC when the unstable config setter is absent. Explicit provider
           // contracts use `ack-read-back` and must fail instead of silently changing channels.
           if (dimension === 'permission' && (capability.ack === 'ack' || startupOnly) && agent.setSessionMode) {
+            onDispatch();
             await agent.setSessionMode({
               sessionId: this.acpSessionId,
               modeId: value,
@@ -1294,6 +1302,7 @@ export class SessionCell {
           value,
         } satisfies SetSessionConfigOptionRequest;
         this.rawLog.record({ kind: 'session_config_option_request', sessionId: this.acpSessionId, request });
+        onDispatch();
         const response = await agent.setSessionConfigOption(request);
         this.rawLog.record({
           kind: 'session_config_option_response',
@@ -1305,6 +1314,7 @@ export class SessionCell {
       if (channel !== 'acp-mode' || !agent.setSessionMode) {
         return fail({ name: 'LiveSettingExecutorMissing', message: `No executor for ${dimension}` });
       }
+      onDispatch();
       await agent.setSessionMode({ sessionId: this.acpSessionId, modeId: value } satisfies SetSessionModeRequest);
       // `ack`: the success response is the confirmation. A provider that sends no current_mode_update after it
       // (hermes) would otherwise leave the picker on the mode the session started in.

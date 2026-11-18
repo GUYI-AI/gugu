@@ -14,13 +14,13 @@ export function agentOffersFastMode(capabilities: Pick<AgentCapabilities, 'acp'>
   return capabilities?.acp.kind === 'supported' && fast?.channel === 'acp-config-option' && fast.ack !== 'none';
 }
 
-/** Local ACP facts also need the persisted own/vendor route before the UI offers Fast. */
+/** Offer Fast only from this model's actual native settings, on either billing route. */
 export function sessionFastMode(input: {
   capabilities: Pick<AgentCapabilities, 'acp'> | null | undefined;
   route: 'own' | 'platform' | 'unknown';
   group: (SessionOptionGroup & { configId: string }) | null | undefined;
 }): boolean | undefined {
-  if (input.route !== 'own' || !agentOffersFastMode(input.capabilities) || input.group?.configId !== 'fast') return undefined;
+  if (input.route === 'unknown' || !agentOffersFastMode(input.capabilities) || input.group?.configId !== 'fast') return undefined;
   return fastModeValue(input.group);
 }
 

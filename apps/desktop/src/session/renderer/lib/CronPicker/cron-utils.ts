@@ -133,9 +133,9 @@ export function parseCron(expr: string): CronState | null {
       return { ...DEFAULT_CRON_STATE, period: 'day', minute: min, hour };
     }
 
-    // Every week: dow is numeric 0-6
-    if (dow !== null && dow >= 0 && dow <= 6) {
-      return { ...DEFAULT_CRON_STATE, period: 'week', minute: min, hour, weekDay: dow };
+    // 0 和 7 都表示周日；编辑器统一使用 0。
+    if (dow !== null && dow >= 0 && dow <= 7) {
+      return { ...DEFAULT_CRON_STATE, period: 'week', minute: min, hour, weekDay: dow % 7 };
     }
 
     return null;

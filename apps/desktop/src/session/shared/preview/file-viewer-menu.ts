@@ -10,6 +10,8 @@ export { CONTENT_MENU_EVENT as FILE_VIEWER_MENU_EVENT } from '@gugu/session-shar
 export interface FileViewerSelection {
   text: string;
   at?: Record<string, string>;
+  /** Lines of a code (non-Markdown) file: quoted as they are, fenced. */
+  code?: boolean;
 }
 
 export type FileViewerEditAction = 'undo' | 'redo' | 'cut' | 'paste';

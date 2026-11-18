@@ -66,14 +66,14 @@ export default {
   "confirmations": {
     "archiveAgent": "Archive task for Agent “{{name}}”? Its conversation history, files and configuration are kept.",
     "archiveAgentNoTask": "This agent no longer has a task; only removing it from groups and contacts.",
-    "deleteAgent": "Archive task",
+    "deleteAgent": "Archive session",
     "deleteContact": "Delete contact “{{name}}”? This ends the friendship.",
     "dissolveGroup": "Dissolving this group removes every member. Continue?",
     "leaveGroup": "Leave this group chat?"
   },
   "contextMenu": {
     "more": "More",
-    "deleteAgent": "Archive task",
+    "deleteAgent": "Archive session",
     "deleteContact": "Delete contact",
     "disableNotifications": "Mute notifications",
     "dissolveGroup": "Dissolve group chat",
@@ -395,9 +395,9 @@ export default {
     "titleWithCount_other": "Tag ({{count}} entries)"
   },
   "toast": {
-    "deleteAgentFailed": "Could not archive task",
+    "deleteAgentFailed": "Could not archive session",
     "deleteContactFailed": "Could not delete contact",
-    "deletedAgent": "Task archived",
+    "deletedAgent": "Session archived",
     "deletedContact": "Contact deleted",
     "dissolvedGroup": "Group chat dissolved",
     "dissolveFailed": "Could not dissolve group chat",

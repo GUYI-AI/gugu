@@ -10,6 +10,7 @@
  * 只放字符串与纯函数(管家跑在 Deno / Node,客户端主进程与渲染层都会 import),❌ 碰 node / electron。
  */
 import { renderAssistantRule, type AssistantProductRules } from './assistantRulesFormat'
+import { memoryIndexHints, OWNER_PROFILE_MEMORY_FILE } from './assistantMemory'
 
 /** 宿主维护段的头尾:标记外自定义文字照留,标记内每次开通 / 恢复连接(本机:每次启动)整段覆盖。 */
 export const ASSISTANT_GUIDE_BEGIN = '<!-- 咕咕管家维护这一段,改了会被覆盖;写在这段外面的会保留 -->'
@@ -89,7 +90,7 @@ export function withoutAssistantGuide(text: string): string | null {
 }
 
 /** 引导中填写的「称呼和基本信息」保存为记忆(Claude Code frontmatter + 正文),与管家写的同名同格式。 */
-export const OWNER_PROFILE_MEMORY_FILE = 'owner-profile.md'
+export { OWNER_PROFILE_MEMORY_FILE } from './assistantMemory'
 /** MEMORY.md 里指向它的那一行。 */
 export function ownerProfileIndexLine(rules: AssistantProductRules): string {
   return `- [${rules.labels.ownerProfileMemoryName}](${OWNER_PROFILE_MEMORY_FILE}) — ${rules.labels.ownerProfileIndexDescription}`
@@ -124,7 +125,7 @@ export function ownerProfileMemoryFile(markdown: string, rules: AssistantProduct
 /** MEMORY.md 补上那一行(已有就不重复;没有索引就新建)。 */
 export function withOwnerProfileIndex(index: string | null, rules: AssistantProductRules): string {
   const current = index ?? ''
-  if (current.includes(`](${OWNER_PROFILE_MEMORY_FILE})`)) return current
+  if (memoryIndexHints(current).has(OWNER_PROFILE_MEMORY_FILE)) return current
   return (current.trim() ? `${current.replace(/\n+$/, '')}\n` : '') + `${ownerProfileIndexLine(rules)}\n`
 }
 

@@ -100,16 +100,17 @@ globalStyle(':root', {
     [tokenVars.fontWeightBold]: '700',
 
     // Primitive type size scale —— 咕咕字阶(#7333:12/18 · 14/20 · 16/24 · 20/28 · 24/32),与 tokens.css 逐档等值。
-    [tokenVars.textTiny]: '12px',
-    [tokenVars.textTinyLineHeight]: '18px',
-    [tokenVars.textSm]: '14px',
-    [tokenVars.textSmLineHeight]: '20px',
-    [tokenVars.textTitle]: '16px',
-    [tokenVars.textTitleLineHeight]: '24px',
-    [tokenVars.textLg]: '20px',
-    [tokenVars.textLgLineHeight]: '28px',
-    [tokenVars.textXl]: '24px',
-    [tokenVars.textXlLineHeight]: '32px',
+    // 乘上同一对系数(@@@text-scale:手机的系统字号,apps/desktop/src/mobile/textScale.ts 写在 <html> 上;别处是 1)。
+    [tokenVars.textTiny]: 'calc(12px * var(--text-scale, 1))',
+    [tokenVars.textTinyLineHeight]: 'calc(18px * var(--text-scale, 1))',
+    [tokenVars.textSm]: 'calc(14px * var(--text-scale, 1))',
+    [tokenVars.textSmLineHeight]: 'calc(20px * var(--text-scale, 1))',
+    [tokenVars.textTitle]: 'calc(16px * var(--text-scale, 1))',
+    [tokenVars.textTitleLineHeight]: 'calc(24px * var(--text-scale, 1))',
+    [tokenVars.textLg]: 'calc(20px * var(--title-scale, 1))',
+    [tokenVars.textLgLineHeight]: 'calc(28px * var(--title-scale, 1))',
+    [tokenVars.textXl]: 'calc(24px * var(--title-scale, 1))',
+    [tokenVars.textXlLineHeight]: 'calc(32px * var(--title-scale, 1))',
 
     // Radius scale — 与 tokens.css 的圆角表逐字相同(px 而不是 rem:表用 px,两边写法一致才好对拍)
     [tokenVars.radius]: '8px',        // = --radius-control

@@ -46,13 +46,22 @@ function isRootGuguTool(item: ToolCallItem, tool: string): item is McpToolCall {
 const rootSends = new WeakMap<object, { tool: string; input: string | undefined; output: string | undefined; root: boolean }>();
 const sentArgs = new WeakMap<object, { tool: string; input: string | undefined; args: Record<string, unknown> }>();
 
+function carriesFile(rawInput: string | undefined): boolean {
+  try {
+    const args = JSON.parse(rawInput ?? '') as Record<string, unknown> | null;
+    return Boolean(args && (args.file || args.file_path));
+  } catch { return false; }
+}
+
 function isRootSend(item: ToolCallItem): item is McpToolCall {
   if (item.kind !== 'mcp-tool-call' || !isGuguServer(item.server) || item.parentToolCallId) return false;
   const output = item.rawOutput || item.outputText;
   const kept = rootSends.get(item);
   if (kept && kept.tool === item.tool && kept.input === item.rawInput && kept.output === output) return kept.root;
+  // A message_send carrying a file is drawn as its file card, the text as its caption (sentAttachmentOf), never also as a said line.
   const root = sendReceipt(output)?.delivery !== 'owner-native'
-    && ['message_send', 'widget_send'].includes(catalogCall(item.tool, item.rawInput)?.tool ?? item.tool);
+    && ['message_send', 'widget_send'].includes(catalogCall(item.tool, item.rawInput)?.tool ?? item.tool)
+    && !carriesFile(item.rawInput);
   rootSends.set(item, { tool: item.tool, input: item.rawInput, output, root });
   return root;
 }

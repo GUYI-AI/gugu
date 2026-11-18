@@ -14,6 +14,26 @@ repeats live-login cleanup or an unknown submission. Only explicit `retry_wait`
 permits a retry of the same operation with its existing receipt. Another active
 account cannot open that recovery flow.
 
+The iOS adapter records terminal results from both `closeAccount` and `readResult`.
+After protected receipt removal succeeds, only `failed` or `expired` invokes
+`cancelIOSSignOut(ownerId, localOperationId)`. A `deleted` result never cancels,
+even though its final local cleanup also removes the receipt; processing,
+retry-wait and unconfirmed operations retain preparation. No erase-based
+heuristic or shared-controller change is used.
+
+Native receipt capture binds a matching prepared retirement transaction ID to
+that scope. Removal preserves the binding in the protected tombstone, so an old
+scope cannot cancel a later same-owner round, including after restart. Capture
+without preparation remains valid receipt storage but grants no cancellation
+authority. Cancellation never enables an Agent or republishes credentials.
+
+If cancellation rejects after receipt removal, local cleanup remains failed,
+the metadata journal stays saved, and `start`, `retry`, `checkResult` and
+`retryLocal` expose that failure to callers. Restore-time cancellation failure
+rejects flow creation as well. The existing no-receipt restart boundary below
+still applies; a missing receipt never implies cancellation or authorizes a new
+submission.
+
 The common controller retains receipts while local erasure is pending and removes
 them after completion, or without erasure for failed/expired results. If receipt
 removal succeeds but journal removal is interrupted, a restart conservatively

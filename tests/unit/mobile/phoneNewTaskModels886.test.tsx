@@ -51,13 +51,38 @@ async function mount(chooseFolder = true) {
   }
   await renderWithAppProviders(harness, <Host />)
   await act(async () => { startPhoneNewTask('chat'); writeComposer(input(), 'Keep this task draft') })
-  if (chooseFolder) await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="project-folder-paper"]')!)
+  if (chooseFolder) await clickElement(document.querySelector<HTMLElement>('[data-testid="project-folder-paper"]')!)
 }
 it('does not repeat the folder instruction beneath an open folder card', async () => {
   await mount(false)
-  expect(harness.container.querySelector('[data-testid="phone-task-folder-card"]')).not.toBeNull()
+  expect(document.querySelector('[data-testid="phone-task-folder-card"]')).not.toBeNull()
   expect(harness.container.querySelector('[data-testid="phone-task-blocker"]')).toBeNull()
   expect(readComposer(input())).toBe('Keep this task draft')
+})
+
+it('closes the folder picker with its upper-right close action without cancelling the draft', async () => {
+  await mount(false)
+  await clickElement(document.querySelector<HTMLElement>('[data-testid="phone-task-folder-card"] button[aria-label="关闭"]')!)
+  expect(document.querySelector('[data-testid="phone-task-folder-card"]')).toBeNull()
+  expect(harness.container.querySelector('[data-testid="phone-task-tag"]')).not.toBeNull()
+  expect(readComposer(input())).toBe('Keep this task draft')
+  await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="agent-watch-create-folder"]')!)
+  expect(document.querySelector('[data-testid="phone-task-folder-card"]')).not.toBeNull()
+})
+
+it('keeps the selected folder when its picker is dismissed', async () => {
+  await mount()
+  await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="agent-watch-create-folder"]')!)
+  await clickElement(document.querySelector<HTMLElement>('[data-testid="phone-task-folder-card"] button[aria-label="关闭"]')!)
+  await send()
+  expect(tasks.createTaskInGroup).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/project' }))
+})
+
+it('does not report an expanded folder menu when its project directory is unavailable', async () => {
+  await mount(false)
+  await act(async () => { accountProjectsStore.clear() })
+  expect(document.querySelector('[data-testid="phone-task-folder-card"]')).toBeNull()
+  expect(harness.container.querySelector('[data-testid="agent-watch-create-folder"]')?.getAttribute('aria-expanded')).toBe('false')
 })
 async function pickCodex() {
   await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="agent-watch-create-model-device"]')!)

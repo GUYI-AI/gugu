@@ -1,3 +1,4 @@
+import { codeQuote } from './code-quote.js'
 import { lineNumberSelection, previewSelectionLines, previewSelectionText } from './selection-lines.js'
 /* global gugu */ // window.gugu: the platform runtime puts it on the page before this module runs.
 // 文件 (code: workspace) — the built-in App for chat and computer files: the file list, a
@@ -15,7 +16,8 @@ import { lineNumberSelection, previewSelectionLines, previewSelectionText } from
 import { findIn, placeOf, plainWords, relocate, spanOf } from './lines.js'
 import { INSERT_BLOCKS, isFrontmatter, listInsertion, moveBlock, previewBlock, sourceBlocks, turnBlockChanges } from './blocks.js'
 import { HARD_MAX_BYTES, bufferAnchors, firstBytes, sourceFile } from './source-file.js'
-import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, fileUnavailable, keepable, keptAs, kindOf, markOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, unavailableState, wantsThumb } from './list.js'
+import { mountOutline } from './outline.js'
+import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, fileUnavailable, keepable, keptAs, kindOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, unavailableState, wantsThumb } from './list.js'
 
 const $ = (id) => document.getElementById(id)
 
@@ -120,6 +122,7 @@ const STRINGS = {
     edit: '编辑',
     split: '对照',
     preview: '阅读',
+    outline: '提纲',
     bold: '加粗',
     italic: '斜体',
     code: '代码',
@@ -367,6 +370,7 @@ const STRINGS = {
     edit: 'Edit',
     split: 'Side by side',
     preview: 'Read',
+    outline: 'Outline',
     bold: 'Bold',
     italic: 'Italic',
     code: 'Code',
@@ -645,6 +649,8 @@ async function previewKit() {
 
 // A Workspace page starts when its folder or file is opened. Prepare its existing reader while it awaits context.
 const previewReady = previewKit().then((md) => ({ md }), (error) => ({ error }))
+// The headings of the document being read, beside it (outline.js).
+mountOutline($('outline'), $('preview'))
 
 // A leading `---` block is the file's front matter, as the preview reads it: one quiet block, not the setext heading
 // lezer's markdown makes of `key: value` above the closing `---`.
@@ -709,6 +715,8 @@ async function applyContext(ctx) {
   state.t = stringsFor(ctx.locale)
   document.documentElement.lang = isZh(ctx.locale) ? 'zh-CN' : 'en'
   renderChrome()
+  // The list is drawn now; a handed file once it is shown or has failed (`showDoc`, `showDocMessage`).
+  if (!ctx.file) reveal()
   const roots = rootsOf(ctx)
   const inGroup = roots.length > 0
   // A page the host opened for one file (F3: its own page, bound to that file for life) shows that file only.
@@ -766,7 +774,8 @@ function renderChrome() {
   const title = state.ctx?.file?.id && state.ctx.file.id === state.shown?.id ? state.shown.name : t.title
   document.title = title
   // The slot's header says this App's name in the person's language (it would show the manifest's 文件夹 otherwise).
-  if (state.titled !== title) {
+  // Until a handed file is shown, no title: the host's tab keeps the file's name.
+  if (state.titled !== title && (!state.ctx?.file || state.ctx.file.id === state.shown?.id)) {
     state.titled = title
     Promise.resolve(gugu.setTabTitle(title)).catch(() => {})
   }
@@ -803,6 +812,7 @@ function renderChrome() {
     $(`fmt-${fmt}`).title = t[fmt]
   }
   $('block-handle').setAttribute('aria-label', t.blockActions)
+  $('outline').setAttribute('aria-label', t.outline)
   $('doc-empty-title').textContent = t.emptyTitle
   $('preview-cut').textContent = fmt(t.previewCut, { size: sizeOf(LONG_TEXT) })
   $('doc-empty-hint').textContent = t.emptyHint
@@ -1823,8 +1833,8 @@ function shownName(entry) {
 }
 
 // A file's mark: the icon the App that opens it declared for its kind (entry.claimedBy.icon, worked out by the host) —
-// never the App's own icon (owner 10-17: a markdown file drawn as a folder); else its suffix on a square coloured by its
-// family (list.js), so a pdf, a clip and an archive are told apart at a glance. Hovered, it still says which App opens it.
+// never the App's own icon (owner 10-17: a markdown file drawn as a folder); else the host's file tile (<gugu-file-mark>,
+// the same as on its output cards), so a pdf, a clip and an archive are told apart at a glance. Hovered, it still says which App opens it.
 function fileMark(entry) {
   const icon = entry.claimedBy?.icon
   if (icon) {
@@ -1832,12 +1842,11 @@ function fileMark(entry) {
     mark.title = entry.claimedBy.name
     return mark
   }
-  const { label, family } = markOf(entry)
-  const mark = document.createElement('span')
-  mark.className = 'file-mark file-badge'
-  mark.dataset.family = family
-  mark.textContent = label
-  mark.setAttribute('aria-hidden', 'true')
+  // The full name (not displayName): its last suffix says the family.
+  const mark = Object.assign(document.createElement('gugu-file-mark'), { className: 'file-mark' })
+  mark.setAttribute('name', entry.name ?? '')
+  if (entry.contentType) mark.setAttribute('mime', entry.contentType)
+  mark.toggleAttribute('tile', true)
   if (entry.claimedBy) mark.title = entry.claimedBy.name
   // An image with a cloud copy: its picture, once it is on screen (until then, and if it cannot be read, its suffix).
   if (wantsThumb(entry) && !fileUnavailable(entry)) thumbInto(mark, entry)
@@ -1869,7 +1878,6 @@ function thumbInto(el, entry) {
     if (!url) return
     el.style.backgroundImage = `url("${url}")`
     el.classList.add('has-thumb')
-    el.textContent = ''
   }
   el.thumbWanted = () => {
     if (!thumbs.has(key)) thumbs.set(key, new Promise((done) => {
@@ -2445,10 +2453,21 @@ async function openInHost(entry, ask = false, intent = 'navigate') {
   if (fileUnavailable(entry)) return showBanner(unavailableReason(entry), 'info')
   try {
     const viewState = { root: state.root, folder: state.folder, filter: state.filter, kind: state.kind, sort: state.sort, filters: state.filters, picked: [...state.picked], selecting: state.selecting, pickFrom: state.pickFrom, scrollTop: $('file-list').scrollTop }
-    await gugu.files.openWith(entry, { intent, viewState, ...(ask ? { ask: true } : {}) })
+    await gugu.files.openWith(entry, { intent, viewState, ...(ask ? { ask: true } : {}), ...(ask ? {} : viewedWith(entry)) })
   } catch (error) {
     showBanner(failureText(error), 'error')
   }
+}
+
+// An image opens in the host's image viewer (API 57): the images on screen with it, in the order drawn, to page through,
+// and where its picture is, to open from and close back to.
+function viewedWith(entry) {
+  if (!/^image\//i.test(entry.contentType || '')) return {}
+  const byId = new Map(state.entries.map((e) => [e.id, e]))
+  const among = state.order.map((id) => byId.get(id)).filter((e) => e && !isFolder(e) && /^image\//i.test(e.contentType || '') && !fileUnavailable(e))
+  const mark = [...$('file-list').querySelectorAll('li[data-id]')].find((li) => li.dataset.id === entry.id)?.querySelector('.file-mark')
+  const box = mark?.getBoundingClientRect()
+  return { ...(among.length > 1 ? { among } : {}), ...(box && box.width > 0 ? { origin: { x: box.x, y: box.y, width: box.width, height: box.height } } : {}) }
 }
 
 function startRename(li, entry) {
@@ -2865,6 +2884,11 @@ async function openHanded(maxBytes) {
   }
 }
 
+/** Draw the page (index.html starts it `reading`): what it shows is ready. */
+function reveal() {
+  document.body.classList.remove('reading')
+}
+
 // A file that could not be opened (its machine out of reach, say): a way to try again, and again by itself when its machine is back.
 function offerRetry(handed, maxBytes) {
   const again = () => {
@@ -3250,8 +3274,11 @@ function showSelection(picks, end, inPreview = false) {
   picksInPreview = inPreview && picks.length > 0
   document.body.classList.toggle('has-selection', picks.length > 0)
   document.body.classList.toggle('picks-in-preview', picksInPreview)
-  // Send goes into this task's conversation: a session's own working copy only, on a host that has it (API 54).
-  $('send-sel').hidden = !(state.ctx?.workspace && gugu.files.sendSelection && state.current && inCopy(state.current.entry))
+  // Send goes into this page's conversation, on a host that has it: a session's own working copy (API 54), or the chat
+  // whose folder the file is in, its members to @ (55).
+  const entry = state.current?.entry
+  $('send-sel').hidden = !(gugu.files.sendSelection && entry && (inCopy(entry) ? state.ctx?.workspace
+    : !state.ctx?.workspace && entry.chat === state.ctx?.chat?.id && gugu.apiVersion >= 55))
   // After the editor's update and the page's layout: reading positions inside an update is not allowed.
   requestAnimationFrame(placeSelectionBar)
 }
@@ -3313,13 +3340,15 @@ async function cite(current = state.current, picks = state.picks, whole = false)
   if (!cited) return
   try {
     await gugu.dispatch(cited.text, { draft: true, refs: cited.refs })
+    // Words picked go with the selection; a block cited from its menu had none on screen to drop.
+    if (!whole && picks.some((pick) => pick.text)) dropSelection()
   } catch (error) {
     showBanner(failureText(error), 'error')
   }
 }
 
-// Send (a task's working copy, API 54): the same words and pills, in the host's box beside the selection, with a few words
-// of the person's own; the host sends them into this task's conversation and tells the page only whether they went.
+// Send (a task's working copy, API 54; a chat's folder, 55): the same words and pills, in the host's box beside the selection,
+// with a few words of the person's own; the host sends them into this page's conversation and tells the page only whether they went.
 // Called inside the click, as the host requires.
 async function send(current = state.current, picks = state.picks) {
   const cited = citeOf(current, picks)
@@ -3327,13 +3356,16 @@ async function send(current = state.current, picks = state.picks) {
   if (!cited || !at) return
   try {
     const rect = { x: at.left, y: at.top, width: Math.max(0, (at.right ?? at.left) - at.left), height: Math.max(0, at.bottom - at.top) }
-    if (await gugu.files.sendSelection({ text: cited.text, refs: cited.refs, rect, viewport: { width: window.innerWidth, height: window.innerHeight } }) === 'sent') {
-      document.getSelection()?.removeAllRanges()
-      showSelection([], null)
-    }
+    if (await gugu.files.sendSelection({ text: cited.text, refs: cited.refs, rect, viewport: { width: window.innerWidth, height: window.innerHeight } }) === 'sent') dropSelection()
   } catch (error) {
     showBanner(failureText(error), 'error')
   }
+}
+
+// Cited or sent, the words are on their way: the selection and its bar go, as after a copy into somewhere else.
+function dropSelection() {
+  document.getSelection()?.removeAllRanges()
+  showSelection([], null)
 }
 
 // What a cite or a Send carries: the words picked (a document's as a reader sees them, a code file's lines as they are,
@@ -3341,12 +3373,7 @@ async function send(current = state.current, picks = state.picks) {
 function citeOf(current, picks, whole = false) {
   if (!current || (!whole && !picks.length)) return null
   if (whole) return { text: '', refs: [{ file: current.entry }] }
-  const quote = (text) => {
-    if (current.file.type === 'text') return `> ${plainWords(text)}`
-    const body = text.replace(/\s+$/, '')
-    const fence = '`'.repeat(Math.max(3, ...(body.match(/`+/g) ?? []).map((run) => run.length + 1)))
-    return [fence, ...body.split('\n'), fence].map((line) => `> ${line}`).join('\n')
-  }
+  const quote = (text) => (current.file.type === 'text' ? `> ${plainWords(text)}` : codeQuote(text))
   const quoted = ({ text, lines: [first, last] }) =>
     `${fmt(first === last ? state.t.line : state.t.lines, { first, last })}\n${text.replace(/\s+$/, '').split('\n').map((line) => `> ${line}`).join('\n')}`
   if (current.file.type === 'text' || current.file.type === 'source') return { text: picks.flatMap(({ text }) => (text ? [quote(text)] : [])).join('\n\n'), refs: picks.map((pick) => refOf(current, pick)) }
@@ -4040,6 +4067,7 @@ function watchPresence(current) {
 // ─── panes and messages ─────────────────────────────────────────────────────
 
 function showDoc(entry) {
+  reveal()
   document.body.classList.remove('gone', 'json-dirty', 'binary')
   document.body.dataset.state = 'doc'
   $('doc-title').textContent = entry.name
@@ -4090,6 +4118,7 @@ async function showDocPath(entry) {
 }
 
 function showDocMessage(message) {
+  reveal()
   document.body.dataset.state = 'message'
   $('doc-path').hidden = true
   document.body.classList.remove('json-dirty')

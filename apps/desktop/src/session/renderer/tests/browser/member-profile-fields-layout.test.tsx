@@ -56,9 +56,14 @@ function assertFields() {
     expect(values[index].getBoundingClientRect().right).toBeLessThanOrEqual(fields.getBoundingClientRect().right)
   }
   const role = fields.querySelector<HTMLElement>('[data-profile-field="role"]')!
-  const caption = getComputedStyle(fields).getPropertyValue('--font-caption').trim()
-  expect(getComputedStyle(role).fontSize).toBe(caption)
-  expect(getComputedStyle(role).lineHeight).toBe(getComputedStyle(fields).getPropertyValue('--lh-caption').trim())
+  // The tokens are calc()s of the system font size (@@@text-scale): compare what they resolve to.
+  const probe = document.createElement('span')
+  probe.style.fontSize = 'var(--font-caption)'
+  probe.style.lineHeight = 'var(--lh-caption)'
+  fields.append(probe)
+  expect(getComputedStyle(role).fontSize).toBe(getComputedStyle(probe).fontSize)
+  expect(getComputedStyle(role).lineHeight).toBe(getComputedStyle(probe).lineHeight)
+  probe.remove()
   const email = fields.querySelector<HTMLElement>('[data-profile-field="email"]')!
   expect(email.scrollWidth).toBeLessThanOrEqual(email.clientWidth + 1)
   expect(email.getBoundingClientRect().height).toBeGreaterThan(parseFloat(getComputedStyle(email).lineHeight))

@@ -21,12 +21,12 @@ import { innerSidebarTopicRows, topicsOfChat } from './innerSidebarTopicsModel'
 /**
  * #2548 内层侧栏「话题」那一格里的行(会话页留格子,ChatListSlotHost 画进来)。行是侧栏顶上那几行动作行的样子
  * (SidebarMenuButton,对齐分区的内容列,❌ 竖轨与缩进):话题图标 + 名字 + 行尾:叫到你的「@N」(红),其余新消息一个小灰点;
- * 右键是聊天列表话题子行那一份菜单(置顶 / 免打扰 / 删除)。点一行 = 聊天列表里点话题那一下(开源对话,话题开成分栏)。
+ * 右键是聊天列表话题子行那一份菜单(对话动作表;删除话题不在菜单里,在话题的成员页)。点一行 = 聊天列表里点话题那一下(开源对话,话题开成分栏)。
  * 露哪几条、什么次序见 innerSidebarTopicsModel;分区头的「全部 ›」在会话页那一侧。
  */
 export function InnerSidebarTopics({ chatId }: { chatId: string }) {
   const { t } = useTranslation('messaging')
-  const { pinChat, deleteChat, setChatNotificationLevel } = useChatStore('pinChat', 'deleteChat', 'setChatNotificationLevel')
+  const { pinChat, setChatNotificationLevel } = useChatStore('pinChat', 'setChatNotificationLevel')
   // Only this chat's topics: a message elsewhere must not redraw these rows.
   const topics = useStoreValueBy(
     (store) => topicsOfChat(store.chats, chatId),
@@ -57,24 +57,22 @@ export function InnerSidebarTopics({ chatId }: { chatId: string }) {
   })
   const pin = useStableHandler((topic: ChatItem) => pinChat(topic.id, !topic.is_pinned))
   const setLevel = useStableHandler((topicId: string, notificationLevel: NotificationLevel) => setChatNotificationLevel(topicId, notificationLevel))
-  const remove = useStableHandler((topicId: string) => deleteChat(topicId, true))
 
   return (
     <div role="list" aria-label={t('history.tabs.topics')} data-inner-sidebar-topics={chatId}>
       {rows.shown.map((topic) => (
-        <InnerTopicRow key={topic.id} topic={topic} active={topic.id === activeTopicId} onOpen={open} onPin={pin} onSetLevel={setLevel} onRemove={remove} />
+        <InnerTopicRow key={topic.id} topic={topic} active={topic.id === activeTopicId} onOpen={open} onPin={pin} onSetLevel={setLevel} />
       ))}
     </div>
   )
 }
 
-const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin, onSetLevel, onRemove }: {
+const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin, onSetLevel }: {
   topic: ChatItem
   active: boolean
   onOpen: (topic: ChatItem, beside: boolean) => void
   onPin: (topic: ChatItem) => void
   onSetLevel: (topicId: string, level: NotificationLevel) => void
-  onRemove: (topicId: string) => void
 }) {
   const { t } = useTranslation('messaging')
   const menu = useRowContextMenu()
@@ -107,7 +105,6 @@ const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin
           onClose={menu.closeMenu}
           onPin={() => onPin(topic)}
           onSetNotificationLevel={(level) => onSetLevel(topic.id, level)}
-          onDelete={() => onRemove(topic.id)}
         />
       )}
     </div>

@@ -95,8 +95,8 @@ it('follows a retained surface shown or hidden by its inline style, box unchange
   await until('hidden again: back to the ordinary inset', () => window.innerHeight - card().getBoundingClientRect().bottom < 50)
 })
 
-// The sidebar spring writes its progress variables inline on an ancestor of every composer, every frame, and a fold that
-// slides the content writes a transform. Neither shows nor hides a composer: the style record must not read the composers
+// A fold writes inline styles on ancestors of every composer each frame (an opacity, a transform when it slides the
+// content). Neither shows nor hides a composer: the style record must not read the composers
 // again before the next layout.
 it('does not re-read the composers for inline writes that neither show nor hide them', async () => {
   await page.viewport(1200, 800)
@@ -107,7 +107,7 @@ it('does not re-read the composers for inline writes that neither show nor hide 
   const ancestor = composer().parentElement!
   const query = vi.spyOn(document, 'querySelectorAll')
   for (let frame = 0; frame < 10; frame++) {
-    ancestor.style.setProperty('--gg-sidebar-progress', String(frame / 10))
+    ancestor.style.opacity = String(1 - frame / 20)
     ancestor.style.transform = `translateX(${frame}px)`
     await new Promise(requestAnimationFrame)
   }

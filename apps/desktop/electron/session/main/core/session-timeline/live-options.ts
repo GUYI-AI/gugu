@@ -145,7 +145,6 @@ async function readConfig(sessionId: string): Promise<SessionConfigState> {
 const defaultIo: SessionOptionsIo = {
   readConfig,
   canUseFast: async (id) => {
-    if (await sessionPlatformModel(id) !== null) return false;
     const row = (await getSessions()).find((session) => session.id === id);
     return row?.providerId === 'codex' || row?.providerId === 'claude';
   },
@@ -187,7 +186,7 @@ export async function setSessionOption(input: {
   if (input.dimension === 'fast' || options.fast) {
     if (!(await (ops.canUseFast ?? defaultIo.canUseFast!)(input.conversationId))) {
       options.fast = null;
-      if (input.dimension === 'fast') throw new SessionOptionsError('option_unsupported', 'Fast 模式目前只支持使用自己的厂商账号');
+      if (input.dimension === 'fast') throw new SessionOptionsError('option_unsupported', '当前模型不支持 Fast 模式');
     }
   }
   if (input.dimension === 'fast' && input.value === 'off' && !options.fast) {
