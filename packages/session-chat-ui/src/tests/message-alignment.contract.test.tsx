@@ -342,6 +342,12 @@ it.each([390, 1200])('aligns a reply, its artifact and the final actions at %ipx
     expect(getComputedStyle(copy).opacity).toBe('0');
     await userEvent.hover(bubble);
     await until('the reply hover reveals the moved controls', () => getComputedStyle(copy).opacity === '1');
+    if (width === 390) {
+      await userEvent.hover(document.body);
+      await until('desktop controls hide after leaving the utterance', () => getComputedStyle(copy).opacity === '0');
+      host.dataset.phoneShell = '';
+      await until('the phone shell exposes controls with a pointer present', () => getComputedStyle(copy).opacity === '1');
+    }
   }
   copy.click();
   expect(writeClipboardText).toHaveBeenCalledWith('I saved the note.');

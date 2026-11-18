@@ -64,6 +64,9 @@ globalStyle(`${conversationRoot} [data-user-message-actions] [data-slot="message
 globalStyle(`${conversationRoot} [data-user-message-actions] [data-slot="message-edit"]`, { order: 4 });
 globalStyle(`${conversationRoot} [data-conversation-reference-footer] [data-slot="conversation-quote"]`, { height: CONVERSATION_FOOTER_H });
 globalStyle(`${conversationRoot}:hover [data-user-message-actions] > *, [data-utterance-hovered] ${conversationRoot} [data-user-message-actions] > *, ${conversationRoot} [data-user-message-actions]:focus-within > *`, { opacity: 1, pointerEvents: 'auto' });
+globalStyle(`[data-phone-shell] ${conversationRoot} [data-user-message-actions] > *`, {
+  opacity: 1, pointerEvents: 'auto',
+});
 globalStyle(`${conversationRoot}[data-side="left"] [data-user-message-actions]`, { justifyContent: 'flex-start' });
 globalStyle(`${conversationRoot}[data-side="left"] ${userMessageExpandRow}`, { justifyContent: 'flex-start' });
 globalStyle(`${conversationRoot} [data-user-message-actions] time`, { order: 2, marginLeft: 0, marginRight: 0 });
