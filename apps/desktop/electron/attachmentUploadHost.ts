@@ -46,7 +46,7 @@ export function createAttachmentUploadHost(deps: {
     return current
   }
   return {
-    async declare(request: AttachmentDeclareRequest): Promise<DeclaredAttachment> {
+    async declare(request: AttachmentDeclareRequest): Promise<{ declared: DeclaredAttachment; uploaded: Promise<void> }> {
       const host = await runtime()
       if (!host) throw new Error('Attachment uploader is not signed in')
       const { file } = request
@@ -63,9 +63,11 @@ export function createAttachmentUploadHost(deps: {
       // Upload the immutable stored original, never a source path the sender may change after declaring it.
       if (current !== host) throw new Error('Attachment upload account changed')
       if (declared.sha256 !== sha256) throw new Error('Attachment stored bytes changed')
-      void host.queue.begin({ messageId: request.messageId, chatId: request.chatId, as: request.as, pendingKey: declared.staging_key, sha256,
+      const uploaded = host.queue.begin({ messageId: request.messageId, chatId: request.chatId, as: request.as, pendingKey: declared.staging_key, sha256,
         name: file.name, contentType: file.contentType, size: file.size }, copy, declared.plan ?? null)
-      return { staging_key: declared.staging_key, sha256, size_bytes: declared.size_bytes }
+      // A caller may fail its commit before awaiting this attempt; the queue still owns its retries.
+      void uploaded.catch(() => {})
+      return { declared: { staging_key: declared.staging_key, sha256, size_bytes: declared.size_bytes }, uploaded }
     },
     async drop(messageId: string) {
       const host = await runtime(), previous = latest.get(messageId)

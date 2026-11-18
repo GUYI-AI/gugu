@@ -25,7 +25,7 @@ import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
 import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
 import { attachmentFolderLine, SHARED_READ_ONLY_COPY } from '../../../../packages/core/src/shared/attachmentFolderLine'
-import { accountAttachmentsEndpoint, AttachmentsError, commitAttachment, contentRequestId, declareAttachment, finishDeclaredAttachment, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { accountAttachmentsEndpoint, AttachmentsError, commitAttachment, contentRequestId, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
 import { fileSha256 } from '../../../../packages/core/src/local/agent/sessionFileHandoff'
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 import { createGroupAdmin, setGroupAvatar } from '../../../../packages/core/src/cloud/groupAdmin'
@@ -521,6 +521,7 @@ function createDeps(context, injected = {}, state = createSessionState()) {
       return `${base}/storage/v1/object/public/chat-media/${storagePath}`
     },
     attachmentsEndpoint: () => attachmentsEndpoint(context, fetchImpl),
+    attachments: context.attachments,
     resolveFile: (ref, actor = context.agentId) => {
       if (!context.resolveFile) throw new Error('Verified file resolver is not installed')
       return context.resolveFile(ref, actor)
@@ -2490,6 +2491,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
   const meta = { to_user_ids: toUserIds ?? [], thread_root_id: threadRootId, ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {}), ...(said ? { caption: said } : {}) }
   let message
   let fileName
+  let uploadReceipt = {}
   // A text file the shared classifier makes a document goes up through the attachments commit, where the server makes it
   // one (as a person's upload does); only stored bytes are published from a project.
   let documentBytes = null
@@ -2512,10 +2514,12 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
   } else {
     // The message goes with the file's index; its bytes follow it (owner 11-15: one path for every sender).
     const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
-    const bytes = documentBytes ?? await uploadBlob('message_send', args, contentType)
+    const { target, size } = await uploadTarget('message_send', args)
     const endpoint = await deps.attachmentsEndpoint()
-    const declared = await declareAttachment(endpoint, { bytes, contentType }, { chat_id: chatId, as: deps.context.agentId })
     fileName = resolveUploadName(args)
+    if (!deps.attachments) throw new Error('The device attachment upload host is unavailable')
+    const { declared, uploaded } = await deps.attachments.declare({ file: { path: target, name: fileName, size, contentType,
+      ...(documentBytes ? { data: new Uint8Array(documentBytes).buffer } : {}) }, chatId, as: deps.context.agentId, messageId })
     const commit = {
       staging_key: declared.staging_key,
       sha256: declared.sha256,
@@ -2532,13 +2536,24 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
       // 临时 / 保留:这份上传的副本留多久,和人在 ⋯ 里改的是同一个标记。不给就照这个群的规矩。
       ...(args.temporary === true ? { keep: 'temporary' } : {}),
     }
-    message = await commitWithReplay(() => commitAttachment(endpoint, commit)).catch(async (error) => {
-      if (!(error instanceof AttachmentsError && error.code === 'version_conflict')) refused(error)
-      throw new Error(newerVersionRefusal(args.file, folderFile.version))
-    })
-    if (message?.id) await finishDeclaredAttachment(endpoint, declared, { bytes, name: fileName, contentType },
-      { id: message.id, chat_id: chatId, as: deps.context.agentId }).catch((error) => {
-      throw new Error(`message_send: message ${message.id} was sent, but its file did not upload (${error?.message ?? error}); readers see it as unavailable`)
+    try { message = await commitWithReplay(() => commitAttachment(endpoint, commit)) } catch (error) {
+      if (!(error instanceof AttachmentsError && (error.status < 500 || error.code === 'version_conflict'))) {
+        // The message may already exist: keep delivering its bytes, and prevent the outer auth retry from resending it.
+        return JSON.stringify({ status: 'uncertain', message_id: messageId,
+          note: 'Whether the message committed is uncertain; this machine keeps delivering its bytes. Check message_history for this message_id before deciding whether to resend.' })
+      }
+      await deps.attachments.drop(messageId)
+      if (error.code === 'version_conflict') throw new Error(newerVersionRefusal(args.file, folderFile.version))
+      refused(error)
+    }
+    if (message?.id) await uploaded.catch((error) => {
+      const mismatch = error instanceof AttachmentsError && error.code === 'upload_mismatch'
+      const tooLarge = error instanceof AttachmentsError && (error.code === 'too_large' || error.status === 413)
+      uploadReceipt = mismatch || tooLarge
+        ? { upload: 'failed', reason: mismatch ? 'upload_mismatch' : 'too_large', note: mismatch
+          ? 'The message was sent, but the file changed after declaration. Do not resend the same message; send the new file version if needed.'
+          : 'The message was sent, but the file exceeds the storage limit and cannot upload. Do not resend the same message.' }
+        : { upload: 'retrying', note: 'The file keeps uploading from this machine; do not send it again.' }
     })
   }
   if (!message?.id) throw new Error('message_send: the server did not confirm the send')
@@ -2549,7 +2564,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
   // Size and type let the task timeline draw the same file card as the chat (sentMessageOf), without reading the row back.
   const sent = parseAttachmentContent(String(message.content ?? ''), message)
   const card = sent ? { size_bytes: sent.sizeBytes, mime_type: sent.mimeType, ...(typeof message.file_blob_id === 'string' ? { file_blob_id: message.file_blob_id } : {}) } : {}
-  return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...card, ...pinned, ...(blocks.length ? { not_delivered_to: blocks, delivery_note: deliveryRefusalNotes(blocks).join('; ') } : {}),
+  return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...card, ...pinned, ...uploadReceipt, ...(blocks.length ? { not_delivered_to: blocks, delivery_note: deliveryRefusalNotes(blocks).join('; ') } : {}),
     source_link: conversationLink(chatId, String(message.id).replace(/^msg:/, '')) })
 }
 
