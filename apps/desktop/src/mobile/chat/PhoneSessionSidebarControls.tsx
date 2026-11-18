@@ -9,14 +9,14 @@ import { PhoneComposerControl, PhoneComposerSheet } from '../composer/PhoneCompo
 import { preserveComposerFocus } from '../composer/composer-focus'
 import { openPhoneSidebarSession } from './phone-sidebar-navigation'
 import { CreateTarget, type ExistingSessionModel } from '../agent-watch/CreateTarget'
-import type { useCreationSkillDraft } from '../agent-watch/create-skill-draft'
+import type { creationSkillInput } from '../agent-watch/create-skill-draft'
 import { engineLabel } from '@/lib/usage/engineLabel'
 import type { PhoneSessionSidebarModel } from './usePhoneSessionSidebar'
 import './room-composer-catalog'
 import './phone-room-composer.css'
 import { phoneMenuBar } from '../composer/phone-menu-bar'
 
-export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebarControls({ sidebar, model, skillDraft, nativeSkills }: { sidebar: PhoneSessionSidebarModel; modelControl?: ReactNode; model?: ExistingSessionModel; skillDraft?: ReturnType<typeof useCreationSkillDraft>; nativeSkills?: ReactNode }) {
+export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebarControls({ sidebar, model, skillDraft, nativeSkills }: { sidebar: PhoneSessionSidebarModel; modelControl?: ReactNode; model?: ExistingSessionModel; skillDraft?: ReturnType<typeof creationSkillInput>; nativeSkills?: ReactNode }) {
   const { t } = useTranslation('mobileRoomControls')
   const { anchor, listed, directory, devices, identitiesById, families, source, topics, sessionId } = sidebar
   const agentsButton = useRef<HTMLButtonElement>(null)
@@ -34,8 +34,8 @@ export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebar
       configuration={{ options: null, selection: { harness, model: null, effort: null, permissionMode: null }, onChange: () => {}, models: null, modelsState: 'ready', skills: skillDraft?.skills ?? [], onSkills: next => skillDraft?.update(next) }}
       controlsExtra={<>
       {nativeSkills}
-      {menu.includes('topics') && <PhoneComposerControl label={t('topics')} icon={<Hash />} testId="phone-room-topics" buttonRef={topicsButton} onClick={() => setView('topics')} />}
-      {menu.includes('agents') && <PhoneComposerControl label={t('agents')} icon={<Users />} testId="phone-room-agents" buttonRef={agentsButton} onClick={() => setView('agents')} />}
+      {menu.includes('topics') && <PhoneComposerControl label={t('topics')} menuExpanded={view === 'topics'} testId="phone-room-topics" buttonRef={topicsButton} onClick={() => setView('topics')} />}
+      {menu.includes('agents') && <PhoneComposerControl label={t('agents')} icon={<Users />} menuExpanded={view === 'agents'} testId="phone-room-agents" buttonRef={agentsButton} onClick={() => setView('agents')} />}
       </>} />
     <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'agents')} testId="phone-room-controls-sheet" className="gg-phone-room-sheet" anchor={view === 'topics' ? topicsButton : agentsButton}>
       {view === 'agents' ? listed.map(agent => {
@@ -52,7 +52,7 @@ export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebar
         <Button variant="ghost" className="gg-phone-room-choice" onClick={() => { setView(null); if (source) followLink({ kind: 'chat', chatId: source }) }}>{t('main')}</Button>
         {topics.topics === null && !topics.error && <p role="status" className="gg-phone-composer-sheet-status">{t('loadingTopics')}</p>}
         {topics.topics?.map(topic => <Button key={topic.chat_id} variant="ghost" className="gg-phone-room-choice"
-          onClick={() => { setView(null); followLink({ kind: 'chat', chatId: topic.chat_id }) }}><Hash /><span className="gg-phone-room-choice-name">{topic.name}</span></Button>)}
+          onClick={() => { setView(null); followLink({ kind: 'chat', chatId: topic.chat_id }) }}><Hash /><span className="gg-phone-room-choice-name gg-phone-room-topic-name">{topic.name}</span></Button>)}
         {topics.error && <div role="alert">{topics.error}<Button variant="ghost" onClick={topics.reload}>{t('retry')}</Button></div>}
       </> : null}
     </PhoneComposerSheet>

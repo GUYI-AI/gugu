@@ -22,7 +22,7 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({ useChatStore:
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'me' } }) }))
 vi.mock('react-i18next', async (original) => ({ ...(await original<object>()), useTranslation: () => ({ t: (key: string, values?: { count?: number }) => `${key}:${values?.count}` }) }))
 vi.mock('../../../../apps/desktop/src/components/chat/ForwardMessageDialog', () => ({
-  ForwardMessageDialog: (props: NonNullable<typeof dialog.props>) => { dialog.props = props; return null },
+  LiveForwardMessageDialog: (props: NonNullable<typeof dialog.props>) => { dialog.props = props; return null },
 }))
 const { ChatFileForwardHost } = await import('../../../../apps/desktop/src/components/chat/ChatFileForwardHost')
 

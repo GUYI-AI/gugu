@@ -132,8 +132,7 @@ it('the column\'s right edge has a handle like the list\'s: a 4px separator on t
   expect(width(handle)).toBe(4);
   expect(centreX(handle), 'it rides on the column\'s right edge').toBeCloseTo(column.getBoundingClientRect().right);
   expect(getComputedStyle(handle).cursor).toBe('col-resize');
-  // Same look as the list's handle: nothing at rest, the thin line on hover.
-  expect(handle.className).toBe(listHandle.className);
+  // Nothing at rest, the thin line on hover (the one list's own edge draws no line: #2548).
   expect(getComputedStyle(handle).backgroundColor).toBe('rgba(0, 0, 0, 0)');
   await userEvent.hover(handle);
   await expect.poll(() => getComputedStyle(handle).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');

@@ -33,6 +33,26 @@ beforeEach(() => {
 
 describe('turnFileText (P3 task turn attachments)', () => {
 
+  it('a required first-input placement reads complete authorized bytes instead of trusting a local path/cache', async () => {
+    const strict = { ...doc, requiredPlacement: { chatId: 'dm', sha256: 'a'.repeat(64) } };
+    const handle = { ...resolved('local'), revision: { source: 'local', host_device_id: 'this-device',
+      chat_id: 'dm', item_id: doc.itemId, version: doc.version } };
+    mocks.resolveAccountFile.mockResolvedValue(handle);
+    mocks.saveFileHandle.mockResolvedValue({ file_path: '/private/snapshot', read_only: true, size_bytes: 12, sha256: 'a'.repeat(64) });
+    expect((await turnFileText('strict-first-input', [strict], false)).text).toContain('/private/snapshot');
+    expect(mocks.saveFileHandle).toHaveBeenCalledTimes(1);
+    await turnFileText('strict-first-input', [strict], false);
+    expect(mocks.resolveAccountFile).toHaveBeenCalledTimes(2);
+    expect(handle.dispose).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['unavailable', 'wrong-dm', 'changed-bytes'])('a required creation file stops dispatch on %s, never returns a caption-only fallback', async kind => {
+    const handle = { ...resolved('managed-object'), revision: { chat_id: kind === 'wrong-dm' ? 'other-dm' : 'dm', item_id: doc.itemId, version: doc.version } };
+    mocks.resolveAccountFile.mockResolvedValue(kind === 'unavailable' ? { status: 'gone' } : handle);
+    mocks.saveFileHandle.mockResolvedValue({ file_path: '/private/snapshot', size_bytes: 12, sha256: 'b'.repeat(64) });
+    await expect(turnFileText(`strict-${kind}`, [{ ...doc, requiredPlacement: { chatId: 'dm', sha256: 'a'.repeat(64) } }], false)).rejects.toThrow();
+  });
+
 
   it('prefetches as the agent and reuses the saved path for the same session, item and version', async () => {
     mocks.resolveAccountFile.mockResolvedValue(resolved('managed-object'));

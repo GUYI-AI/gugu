@@ -34,7 +34,6 @@ describe('the shared twelve-hue default avatar palette', () => {
     expect(AVATAR_PALETTE.map(({ light: l, dark: d }) => [l.body, l.background, d.body, d.background, d.human])).toEqual(expected)
     for (const { light, dark } of AVATAR_PALETTE) {
       expect(light.human).toBe(light.body)
-      expect(light.groupFill).toBe(light.body)
       for (const color of [...Object.values(light), ...Object.values(dark)]) expect(color).toMatch(/^#[0-9a-f]{6}$/)
     }
   })
@@ -58,23 +57,30 @@ describe('the shared twelve-hue default avatar palette', () => {
     expect(() => avatarColorIndex(' ')).toThrow('stable identity')
   })
 
-  it.each(['light', 'dark'] as const)('meets facial and group-text contrast floors for all twelve %s hues', theme => {
+  // The group face has no fill: its text and outline sit on the page, card and selected-row surfaces of tokens.css
+  // (--bg/--page/--card, and --selected = 7.5% --fg mixed over the page or card).
+  const GROUP_SURFACES = { light: ['#ffffff', '#f9f9f9', '#e8e8e8'], dark: ['#121212', '#181818', '#212121', '#2f2f2f'] }
+  it.each(['light', 'dark'] as const)('meets facial and group-face contrast floors for all twelve %s hues', theme => {
     for (const family of AVATAR_PALETTE) {
       const c = family[theme]
       expect(contrast(AVATAR_FEATURE_COLOR, c.body)).toBeGreaterThanOrEqual(3)
       expect(contrast(AVATAR_FEATURE_COLOR, c.background)).toBeGreaterThanOrEqual(3)
-      expect(contrast(c.groupText, c.groupFill)).toBeGreaterThanOrEqual(4.5)
+      for (const surface of GROUP_SURFACES[theme]) {
+        expect(contrast(c.groupText, surface)).toBeGreaterThanOrEqual(4.5)
+        expect(contrast(c.groupStroke, surface)).toBeGreaterThanOrEqual(3)
+      }
     }
   })
 
   it('uses the same approved shades in live CSS group/project faces', () => {
     const css = readFileSync('apps/desktop/src/styles/tokens.css', 'utf8')
     for (let i = 0; i < 12; i++) {
-      for (const [role, token] of [['groupFill', 'fill'], ['groupStroke', 'stroke'], ['groupText', 'text']] as const) {
+      for (const [role, token] of [['groupStroke', 'stroke'], ['groupText', 'text']] as const) {
         const values = [...css.matchAll(new RegExp(`--avatar-group-${token}-${i + 1}: (#[0-9a-f]{6});`, 'g'))].map(m => m[1])
         expect(values).toEqual([AVATAR_PALETTE[i].dark[role], AVATAR_PALETTE[i].light[role]])
       }
     }
     expect(css).not.toContain('--group-face-')
+    expect(css).not.toContain('--avatar-group-fill-')
   })
 })

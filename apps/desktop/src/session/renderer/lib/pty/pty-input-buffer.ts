@@ -19,7 +19,7 @@ const SKIP_PATTERNS = [
 ];
 
 const MIN_MESSAGE_LENGTH = 2;
-const HAS_ALPHA = /[A-Za-z]/;
+const HAS_ALPHA = /\p{L}/u;
 
 type SanitizerMode = 'normal' | 'escape' | 'csi' | 'osc' | 'osc-escape' | 'ss3';
 type InputAction =
@@ -193,15 +193,15 @@ class LineEditor {
         }
         case 'backspace':
           if (this.cursor > 0) {
-            this.lineBuffer =
-              this.lineBuffer.slice(0, this.cursor - 1) + this.lineBuffer.slice(this.cursor);
-            this.cursor -= 1;
+            const previous = this.previousOffset(this.cursor);
+            this.lineBuffer = this.lineBuffer.slice(0, previous) + this.lineBuffer.slice(this.cursor);
+            this.cursor = previous;
           }
           break;
         case 'delete':
           if (this.cursor < this.lineBuffer.length) {
             this.lineBuffer =
-              this.lineBuffer.slice(0, this.cursor) + this.lineBuffer.slice(this.cursor + 1);
+              this.lineBuffer.slice(0, this.cursor) + this.lineBuffer.slice(this.nextOffset(this.cursor));
           }
           break;
         case 'kill-line':
@@ -214,15 +214,27 @@ class LineEditor {
           this.cursor = this.lineBuffer.length;
           break;
         case 'move-left':
-          this.cursor = Math.max(0, this.cursor - action.count);
+          for (let step = 0; step < action.count && this.cursor > 0; step += 1) this.cursor = this.previousOffset(this.cursor);
           break;
         case 'move-right':
-          this.cursor = Math.min(this.lineBuffer.length, this.cursor + action.count);
+          for (let step = 0; step < action.count && this.cursor < this.lineBuffer.length; step += 1) this.cursor = this.nextOffset(this.cursor);
           break;
       }
     }
 
     return submitted;
+  }
+
+  private nextOffset(offset: number): number {
+    return Math.min(this.lineBuffer.length, offset + ((this.lineBuffer.codePointAt(offset) ?? 0) > 0xffff ? 2 : 1));
+  }
+
+  private previousOffset(offset: number): number {
+    const previous = offset - 1;
+    const code = this.lineBuffer.charCodeAt(previous);
+    return previous > 0 && code >= 0xdc00 && code <= 0xdfff &&
+      this.lineBuffer.charCodeAt(previous - 1) >= 0xd800 && this.lineBuffer.charCodeAt(previous - 1) <= 0xdbff
+      ? previous - 1 : Math.max(0, previous);
   }
 
   clearLine(): void {

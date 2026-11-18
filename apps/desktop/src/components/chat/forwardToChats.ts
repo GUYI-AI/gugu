@@ -5,16 +5,21 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../store/auth'
 import { useChatStore, type ChatContextValue } from '../../store/chatContext'
 import { markdownPlainText } from '../../lib/markdownPlainText'
+import type { AppForwardFilesDetail } from '../../session/shared/extensions/app-runtime-protocol'
 
 /**
  * What a forward carries, in reading order: chat messages, and words that have no chat message behind them
  * (a task's prompt and its agent's answer), under the name they were shown with; `sender: null` is the forwarder. A message's
  * `sender` names a speaker its row does not carry (what an agent sent, seen from its task). `senderId` is who said delivered
- * words: their name as this account knows it wins over the label the delivery wrote.
+ * words: their name as this account knows it wins over the label the delivery wrote. `files` are bytes in no chat (a
+ * working copy's files, an App packed to send): made once, sent as one send into each chat. A `folder` file is one in a
+ * chat's folder, forwarded as that file.
  */
 export type ForwardPiece =
   | { kind: 'message'; message: MessageItem; sender?: string }
   | { kind: 'text'; sender: string | null; text: string; senderId?: string | null }
+  | { kind: 'files'; files: () => Promise<File[]> }
+  | { kind: 'folder'; file: Extract<AppForwardFilesDetail, { files: unknown }>['files'][number] }
 
 /** Opens the app's forward page from a view outside the chat (the task timeline); MessageForwardHost draws it. */
 export const FORWARD_PIECES_OPEN = 'gugu:forward-pieces-open'
@@ -26,7 +31,7 @@ export function openForward(pieces: ForwardPiece[]): void {
 /** The forwarder's note, and who it addresses (its @, resolved against the one chat it goes into). */
 export type ForwardNote = { text: string; toUserIds: string[] }
 
-type Send = Pick<ChatContextValue, 'forwardMessage' | 'sendMessageToChat'>
+type Send = Pick<ChatContextValue, 'forwardMessage' | 'sendMessageToChat' | 'sendAttachmentsToChat'>
 
 /** #2581 Files of one send forwarded together land as one send (a new one in each chat); a file forwarded alone is on its own. */
 function sendsForwardedTogether(own: readonly MessageItem[]): Map<string, number> {
@@ -54,8 +59,8 @@ export function pieceSender(piece: Extract<ForwardPiece, { kind: 'text' }>, name
 /**
  * One forward into each picked chat. Words (text messages and plain text) go as one message: the note, then each piece
  * quoted under who said it, one piece too (a line forwarded alone is the one that most needs its speaker). Files, widgets
- * and cards go as themselves, after the words; with nothing to quote, the note follows them. The message carrying the note
- * addresses whom the note @-ed, the way a message typed in that chat would.
+ * and cards go as themselves, after the words, then files from no chat; with nothing to quote, the note follows them.
+ * The message carrying the note addresses whom the note @-ed, the way a message typed in that chat would.
  *
  * Chats are written to one after another; `sent` hears each one done, so a failure part-way (the outbox refusing a write)
  * can tell which chats already have their copy.
@@ -64,7 +69,10 @@ export async function forwardToChats(pieces: readonly ForwardPiece[], targetChat
   sent: (chatId: string) => void = () => {}): Promise<void> {
   const words: { quote: ForwardQuoteItem; message?: MessageItem }[] = []
   const own: MessageItem[] = []
+  // Made before the first write: a failure to make them (an App that will not pack) sends nothing anywhere.
+  const uploads = (await Promise.all(pieces.flatMap((piece) => piece.kind === 'files' ? [piece.files()] : []))).flat()
   for (const piece of pieces) {
+    if (piece.kind === 'files' || piece.kind === 'folder') continue
     if (piece.kind === 'text') {
       if (piece.text.trim()) words.push({ quote: { sender: pieceSender(piece, io), text: piece.text } })
       continue
@@ -94,17 +102,21 @@ export async function forwardToChats(pieces: readonly ForwardPiece[], targetChat
       const sendGroup = message.send_group_id ? landed.get(message.send_group_id) : undefined
       await (sendGroup ? io.forwardMessage(message, chatId, { sendGroup }) : io.forwardMessage(message, chatId))
     }
-    if (!quoted && note.text.trim()) await io.sendMessageToChat(chatId, note.text.trim(), addressed)
+    for (const piece of pieces) if (piece.kind === 'folder') await io.forwardMessage(piece.file, chatId)
+    // The uploads are a row once this returns; the note after them is delivered after them.
+    const uploaded = uploads.length ? await io.sendAttachmentsToChat(chatId, uploads) : undefined
+    if (!quoted && note.text.trim()) await io.sendMessageToChat(chatId, note.text.trim(), { ...addressed, ...(uploaded ? { dependsOn: uploaded } : {}) })
     sent(chatId)
   }
 }
 
 /** `forwardToChats` with this account's chat store: senders named as the chat names them. */
 export function useForwardToChats() {
-  const { forwardMessage, sendMessageToChat } = useChatStore('forwardMessage', 'sendMessageToChat')
+  const { forwardMessage, sendMessageToChat, sendAttachmentsToChat } = useChatStore('forwardMessage', 'sendMessageToChat', 'sendAttachmentsToChat')
   const names = useForwardNames()
   return useCallback((pieces: readonly ForwardPiece[], targetChatIds: readonly string[], note: ForwardNote, sent?: (chatId: string) => void) =>
-    forwardToChats(pieces, targetChatIds, note, { forwardMessage, sendMessageToChat, ...names }, sent), [forwardMessage, sendMessageToChat, names])
+    forwardToChats(pieces, targetChatIds, note, { forwardMessage, sendMessageToChat, sendAttachmentsToChat, ...names }, sent),
+  [forwardMessage, sendMessageToChat, sendAttachmentsToChat, names])
 }
 
 /** Names as this account's chat store knows them. */

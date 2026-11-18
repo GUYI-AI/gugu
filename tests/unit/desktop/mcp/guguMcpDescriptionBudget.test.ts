@@ -38,7 +38,8 @@ describe('gugu MCP tool descriptions stay within the Claude Code budget', () => 
     // Topic deletion adds one catalog-only command.
     // App resource management adds one catalog-only tool.
     // group_flood_undo is retired: an Agent never has the adjustment id it needs.
-    expect(readings).toHaveLength(61)
+    // MCP surface review 11-16: message_send_file and message_send_file_as_owner merged into message_send / message_send_as_owner.
+    expect(readings).toHaveLength(59)
     const over = readings.filter(({ chars }) => chars > CLAUDE_CODE_MCP_TOOL_DESCRIPTION_BUDGET)
     expect(over, `${readings.length - over.length} of ${readings.length} tools fit ${CLAUDE_CODE_MCP_TOOL_DESCRIPTION_BUDGET} chars`).toEqual([])
   })

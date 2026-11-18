@@ -1,16 +1,25 @@
 import type { ChatItem, TopicSummary } from '@gugu/core/shared/types/chat'
 import { chatAttention } from '@gugu/core/shared/ui/chatModels'
+import { oneListNewsDot } from '@/lib/chatLineUnread'
 import type { MemberProfileCardModel } from '@/components/MemberProfileCard'
 
+/** Each row's mark follows the chat-list rule: calls you (red @N, chatAttention.callsYou), else news (grey dot). */
 export function roomTopicChoices(chatId: string, topics: readonly TopicSummary[], chats: readonly ChatItem[]) {
   const byId = new Map(chats.map(chat => [chat.id, chat]))
-  const unread = (id: string) => Math.max(0, byId.get(id)?.unread_count ?? 0)
-  const calls = (id: string) => { const chat = byId.get(id); return chat ? chatAttention(chat).askingYou : 0 }
+  const asking = (id: string) => { const chat = byId.get(id); return chat ? chatAttention(chat).askingYou : 0 }
+  const mark = (id: string) => {
+    const chat = byId.get(id)
+    const calls = chat ? chatAttention(chat).callsYou : 0
+    return { calls, news: !!chat && oneListNewsDot(chat, calls) }
+  }
+  const main = mark(chatId)
+  const rows = [...topics].sort((a, b) => Number(asking(b.chat_id) > 0) - Number(asking(a.chat_id) > 0))
+    .map(topic => ({ ...topic, ...mark(topic.chat_id) }))
+  const all = [main, ...rows]
   return {
-    mainUnread: unread(chatId),
-    topics: [...topics].sort((a, b) => Number(calls(b.chat_id) > 0) - Number(calls(a.chat_id) > 0))
-      .map(topic => ({ ...topic, unread: unread(topic.chat_id) })),
-    hasUnread: unread(chatId) > 0 || topics.some(topic => unread(topic.chat_id) > 0),
+    main,
+    topics: rows,
+    dot: all.some(row => row.calls > 0) ? 'call' as const : all.some(row => row.news) ? 'news' as const : undefined,
   }
 }
 

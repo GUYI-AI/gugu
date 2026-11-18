@@ -512,7 +512,8 @@ export class OpencodeServeSession {
    * (204 then no busy, no idle: e.g. a mis-routed model that never runs). completion resolves on the
    * next `session.idle`, rejects on `session.error`.
    */
-  async injectPrompt(text: string): Promise<SessionpageTurnReceipt> {
+  async injectPrompt(text: string, beforeAdmission?: () => void): Promise<SessionpageTurnReceipt> {
+    beforeAdmission?.()
     const providerSessionId = this.providerSessionId
     if (!providerSessionId) throw new Error('opencode serve: no session to inject into')
     const turnId = randomUUID()
@@ -523,6 +524,14 @@ export class OpencodeServeSession {
     // this turn's completion with the previous turn's error and leave the genuinely live turn with no
     // waiter at all — the very defect this bound exists to close, taking another route.
     const wasBusy = this.isTurnInFlight()
+    // OpenCode 1.18.x applies the default `build` agent when prompt_async omits `agent`, even
+    // after POST /session created the session with `{ agent: 'plan' }`. Read the engine's current
+    // native agent before every prompt: a live Plan ↔ Edit change must win over the startup value,
+    // regardless of which mode the session had when it was created. This adds one GET per message
+    // by design; if the read fails, throw and do not send this prompt rather than overwrite a live
+    // setting with a stale snapshot.
+    const currentAgent = await this.readCurrentSessionAgent(providerSessionId)
+    beforeAdmission?.()
     // Register the terminal-signal waiter BEFORE the POST so a fast idle/error cannot be missed.
     const completion = new Promise<void>((resolve, reject) => {
       this.turnWaiters.push({ resolve, reject })
@@ -531,13 +540,6 @@ export class OpencodeServeSession {
     completion.catch(() => {})
     const turnStarted = wasBusy ? Promise.resolve() : this.awaitBusy(this.turnStartTimeoutMs)
 
-    // OpenCode 1.18.x applies the default `build` agent when prompt_async omits `agent`, even
-    // after POST /session created the session with `{ agent: 'plan' }`. Read the engine's current
-    // native agent before every prompt: a live Plan ↔ Edit change must win over the startup value,
-    // regardless of which mode the session had when it was created. This adds one GET per message
-    // by design; if the read fails, throw and do not send this prompt rather than overwrite a live
-    // setting with a stale snapshot.
-    const currentAgent = await this.readCurrentSessionAgent(providerSessionId)
     const status = await this.postJson(`/session/${providerSessionId}/prompt_async`, {
       ...(currentAgent ? { agent: currentAgent } : {}),
       parts: [{ type: 'text', text }],

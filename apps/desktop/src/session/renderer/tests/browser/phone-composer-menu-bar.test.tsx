@@ -41,7 +41,9 @@ it.each([true])('group=%s: the input composer menu bar collapses fully without m
   const initialTop = input.getBoundingClientRect().top
   const viewport = harness.container.querySelector<HTMLElement>('[data-testid="message-viewport"]')!
   const dock = harness.container.querySelector<HTMLElement>('[data-chat-bottom-dock]')!
-  expect(viewport.getBoundingClientRect().bottom).toBe(dock.getBoundingClientRect().top)
+  // The dock floats over the messages like desktop: they run under the running row and the menu.
+  expect(getComputedStyle(dock).position).toBe('absolute')
+  expect(viewport.getBoundingClientRect().bottom).toBe(dock.getBoundingClientRect().bottom)
   expect(harness!.container.querySelector('[data-phone-attachment]')).not.toBeNull()
   const blur = vi.fn(), ended = vi.fn(); editor.addEventListener('blur', blur); editor.addEventListener('compositionend', ended)
   editor.focus(); editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: 'zhong' }))
@@ -52,8 +54,8 @@ it.each([true])('group=%s: the input composer menu bar collapses fully without m
   expect(input.getBoundingClientRect().top).toBe(initialTop)
   expect(input.querySelector('[contenteditable]')).toBe(editor)
   expect(document.activeElement).toBe(editor); expect(blur).not.toHaveBeenCalled(); expect(ended).not.toHaveBeenCalled()
-  expect(viewport.getBoundingClientRect().bottom).toBe(dock.getBoundingClientRect().top)
-  if (group) expect(harness.container.querySelector('[data-running-bar-slot]')!.getBoundingClientRect().top).toBeGreaterThanOrEqual(viewport.getBoundingClientRect().bottom)
+  expect(viewport.getBoundingClientRect().bottom).toBe(dock.getBoundingClientRect().bottom)
+  if (group) expect(harness.container.querySelector('[data-running-bar-slot]')!.getBoundingClientRect().bottom).toBeLessThan(viewport.getBoundingClientRect().bottom)
   editor.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '中' })); editor.blur()
   await until('restored menu', () => !row.hasAttribute('data-editing'))
   expect(row.getBoundingClientRect().height).toBeGreaterThan(40)
@@ -70,7 +72,13 @@ it('human direct messages keep the shared paperclip inside the input and open th
   await until('actual direct composer', () => !!harness!.container.querySelector('[contenteditable]'))
   expect(harness.container.querySelector('[data-phone-composer-controls]')).toBeNull()
   const input = harness.container.querySelector<HTMLElement>('[data-slot="composer-input"]')!
-  const clip = harness!.container.querySelector<HTMLElement>('[data-phone-attachment]')!.getBoundingClientRect()
+  const attachment = harness!.container.querySelector<HTMLElement>('[data-phone-attachment]')!
+  expect(getComputedStyle(attachment).display).toBe('none')
+  const editor = input.querySelector<HTMLElement>('[contenteditable]')!
+  ;(editor as HTMLElement & { editor: { commands: { setContent: (html: string) => void } } }).editor.commands.setContent('<p>第一行</p><p>第二行</p>')
+  await until('two lines expose the shared attachment action', () => getComputedStyle(attachment).display !== 'none')
+  expect(harness!.container.querySelector('[data-phone-editor-toggle]')).toBeNull()
+  const clip = attachment.getBoundingClientRect()
   const box = input.getBoundingClientRect()
   expect(clip.left).toBeGreaterThanOrEqual(box.left); expect(clip.right).toBeLessThanOrEqual(box.right)
   expect(clip.top).toBeGreaterThanOrEqual(box.top); expect(clip.bottom).toBeLessThanOrEqual(box.bottom)

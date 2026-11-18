@@ -1,6 +1,6 @@
 /* Phone task conversations share the product's type and color tokens. The
    reading column stays open; containment is reserved for an input or a decision. */
-.gg-aw > .gg-pane-header[data-slot='pane-header'] {
+.gg-aw > .gg-pane-header[data-slot='pane-header']:not([data-centered]) {
   border-bottom: 0;
 }
 

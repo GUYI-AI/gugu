@@ -38,6 +38,9 @@ export function buildBubbleStyle(
       : {}),
     // @@@bubble-style - 无边框的纯灰填充;own 深一档 / other 浅一档(#7333 起都是纯灰)。圆角见上。
     background: isMine ? 'var(--bubble-mine)' : 'var(--bubble-other)',
+    // A fill inside my bubble (a picture still loading, an album tile) is mixed from the bubble's own text, not the
+    // page's --muted: in dark my bubble and --muted are one grey (#2902), so a placeholder would vanish into it.
+    ...(isMine && !isWhisper ? { '--muted': 'color-mix(in oklab, currentColor 10%, transparent)' } : {}),
     borderRadius,
     // @@@whisper (#820) — whisper 气泡: 背景 var(--muted) + 文字 var(--muted-fg)（SSOT `.whisper .bub` L134）。
     // @@@933-mopup 补 color:--muted-fg(SSOT 有、原缺)。虚线边框/opacity 是 gugu 自加(SSOT 无,见 PR flag),本轮暂留。

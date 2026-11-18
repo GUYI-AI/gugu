@@ -156,21 +156,22 @@
     monospace
   );
 
-  /* @@@type-ladder-7333 — 与 tokens.css 同一条字阶(12/18 · 14/20 · 16/24 · 20/28 · 24/32),逐档登记成字面量:
+  /* @@@type-ladder-7333 — 与 tokens.css 同一条字阶(12/18 · 14/20 · 16/24 · 20/28 · 24/32),逐档登记成字面量,
+     乘上同一对系数 --text-scale / --title-scale(@@@text-scale,tokens.css):
      这张表与主 app 那张进同一个 document,不登记就是 Tailwind 默认值(xs 的行高 16、lg 18 …)和主 app 抢同名类。
      Tailwind v4 对表里没有的 key 是**静默丢掉整条 utility** ⇒ 产品源码里用到的 `text-md` 也必须在这里有。 */
-  --text-xs: 12px;
-  --text-xs--line-height: 18px;
-  --text-sm: 14px;
-  --text-sm--line-height: 20px;
-  --text-base: 16px;
-  --text-base--line-height: 24px;
-  --text-md: 16px;
-  --text-md--line-height: 24px;
-  --text-lg: 20px;
-  --text-lg--line-height: 28px;
-  --text-xl: 24px;
-  --text-xl--line-height: 32px;
+  --text-xs: calc(12px * var(--text-scale, 1));
+  --text-xs--line-height: calc(18px * var(--text-scale, 1));
+  --text-sm: calc(14px * var(--text-scale, 1));
+  --text-sm--line-height: calc(20px * var(--text-scale, 1));
+  --text-base: calc(16px * var(--text-scale, 1));
+  --text-base--line-height: calc(24px * var(--text-scale, 1));
+  --text-md: calc(16px * var(--text-scale, 1));
+  --text-md--line-height: calc(24px * var(--text-scale, 1));
+  --text-lg: calc(20px * var(--title-scale, 1));
+  --text-lg--line-height: calc(28px * var(--title-scale, 1));
+  --text-xl: calc(24px * var(--title-scale, 1));
+  --text-xl--line-height: calc(32px * var(--title-scale, 1));
 
   /* @@@three-faces (Refs #6104) — 第三面。与 --font-sans 同脸(#7333 起都是系统字体),
      分的是**角色**不是字体:标题与「页面自己的声音」走 display,正文走 sans。
@@ -187,15 +188,15 @@
   );
 
   /* @@@text-chrome-body (Refs #6104) — 界面自己的正文(紧凑 UI 14/20)的**角色名**,逐字等值于 tokens.css 的那一份。 */
-  --text-chrome-body: 14px;
-  --text-chrome-body--line-height: 20px;   /* = tokens.css 的 --lh-body */
+  --text-chrome-body: calc(14px * var(--text-scale, 1));
+  --text-chrome-body--line-height: calc(20px * var(--text-scale, 1));   /* = tokens.css 的 --lh-body */
 
   /* 等宽:「你会敲进去的东西」(代码、路径、键名)。13 是等宽这一面自己的档,❌ 当通用 13 用。 */
-  --text-code: 13px;
+  --text-code: calc(13px * var(--text-scale, 1));
   --text-code--line-height: 1.2;
   /* #7333 tiny 并入标注档(12)。micro(10)只剩计数徽标这种极小数字,见 #7333 覆盖表。 */
-  --text-tiny: 12px;
-  --text-tiny--line-height: 16px;
+  --text-tiny: calc(12px * var(--text-scale, 1));
+  --text-tiny--line-height: calc(16px * var(--text-scale, 1));
   --text-micro: 10px;
   --text-micro--line-height: 1.2;
 
@@ -888,30 +889,30 @@
   /* type scale → gugu 字阶(#7333:body 14/20、h3 16/24、h2 20/28、h1 24/32,字重钉死)。
      只改 role 级 var,不碰共享的 --em-text-*(那是一堆非 role 组件/工具类的字号来源,
      全局改动爆炸半径太大)。字重钉死同样是因为双层 var 坑,不能全信继承。 */
-  --em-type-body-font-size: 14px;
+  --em-type-body-font-size: calc(14px * var(--text-scale, 1));
   --em-type-body-font-weight: 400;
-  --em-type-body-line-height: 20px;
-  --em-type-body-bold-font-size: 14px;
+  --em-type-body-line-height: calc(20px * var(--text-scale, 1));
+  --em-type-body-bold-font-size: calc(14px * var(--text-scale, 1));
   --em-type-body-bold-font-weight: 600;
-  --em-type-body-bold-line-height: 20px;
-  --em-type-body-italic-font-size: 14px;
+  --em-type-body-bold-line-height: calc(20px * var(--text-scale, 1));
+  --em-type-body-italic-font-size: calc(14px * var(--text-scale, 1));
   --em-type-body-italic-font-weight: 400;
-  --em-type-body-italic-line-height: 20px;
-  --em-type-body-link-font-size: 14px;
+  --em-type-body-italic-line-height: calc(20px * var(--text-scale, 1));
+  --em-type-body-link-font-size: calc(14px * var(--text-scale, 1));
   --em-type-body-link-font-weight: 400;
-  --em-type-body-link-line-height: 20px;
-  --em-type-mention-font-size: 14px;
+  --em-type-body-link-line-height: calc(20px * var(--text-scale, 1));
+  --em-type-mention-font-size: calc(14px * var(--text-scale, 1));
   --em-type-mention-font-weight: 600;
-  --em-type-mention-line-height: 20px;
-  --em-type-h3-font-size: 16px;
+  --em-type-mention-line-height: calc(20px * var(--text-scale, 1));
+  --em-type-h3-font-size: calc(16px * var(--text-scale, 1));
   --em-type-h3-font-weight: 600;
-  --em-type-h3-line-height: 24px;
-  --em-type-h2-font-size: 20px;
+  --em-type-h3-line-height: calc(24px * var(--text-scale, 1));
+  --em-type-h2-font-size: calc(20px * var(--title-scale, 1));
   --em-type-h2-font-weight: 600;
-  --em-type-h2-line-height: 28px;
-  --em-type-h1-font-size: 24px;
+  --em-type-h2-line-height: calc(28px * var(--title-scale, 1));
+  --em-type-h1-font-size: calc(24px * var(--title-scale, 1));
   --em-type-h1-font-weight: 600;
-  --em-type-h1-line-height: 32px;
+  --em-type-h1-line-height: calc(32px * var(--title-scale, 1));
 
   /* @@@shape-table (Refs #6104) — 圆角这一族**整块删掉了**,这里只留这条说明。
      原来这 12 行是第七套刻度:它在 .gugu-skin 里把 --radius-lg 改成 12、--radius-xl 改成 16,
@@ -1113,8 +1114,8 @@
      ❌ 改字号/字重时两份必须一起动。 */
   .gg-type-page-title {
     font-family: var(--font-display);
-    font-size: 20px;
-    line-height: 28px;
+    font-size: calc(20px * var(--title-scale, 1));
+    line-height: calc(28px * var(--title-scale, 1));
     font-weight: 600;
     letter-spacing: -0.02em;
   }
@@ -1384,6 +1385,12 @@ html[data-gugu-dragging] :is(webview, iframe) {
    没有厂商图形的不收,❌ 收成一颗空按钮。 */
 .session-tab-bar[data-strip-narrow] [data-testid="terminal-model-switch"] [data-testid="composer-model-trigger"]:has(> span[aria-hidden="true"])
   :is([data-slot="composer-model-trigger-label"], [data-slot="composer-effort"]) {
+  display: none;
+}
+
+/* 页签全屏时页签条上那颗「退出全屏」(tab-bar.tsx):页签条窄了(同上 data-strip-narrow)只留图标,字给读屏和悬停 ——
+   ❌ 让它把页签挤没。 */
+.session-tab-bar[data-strip-narrow] [data-testid="tab-exit-fullscreen"] [data-slot="tab-exit-fullscreen-label"] {
   display: none;
 }
 

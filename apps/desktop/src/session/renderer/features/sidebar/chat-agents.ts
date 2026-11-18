@@ -128,7 +128,6 @@ export type ChatAgentRow = {
   sessionId: string;
   depth: number;
   hasChildren: boolean;
-  needsAttention: boolean;
   /** 挂在父会话下的行:父会话的项目(行组件据此决定要不要标项目名)。 */
   parentProjectId?: string;
   /** 分支计数那枚药丸(子会话数、其中在跑的)。 */
@@ -175,7 +174,6 @@ export function chatAgentSection(entries: readonly ChatAgentEntry[], disclosure:
   const forest = buildSessionTree(entries);
   const summaries = summarizeSessionBranches(forest);
   const needsYou = (entry: ChatAgentEntry) => sidebarStateGroup(entry.presentation ?? null) === 'needs-you';
-  const needsAttention = (node: SessionTreeNode<ChatAgentEntry>): boolean => needsYou(node.item) || node.children.some(needsAttention);
   const roots = [...forest].sort(
     (a, b) => tierOf(a.item) - tierOf(b.item) || Number(b.item.isPinned) - Number(a.item.isPinned) || b.item.time - a.item.time
   );
@@ -189,7 +187,6 @@ export function chatAgentSection(entries: readonly ChatAgentEntry[], disclosure:
       sessionId: node.item.id,
       depth,
       hasChildren: node.children.length > 0,
-      needsAttention: needsAttention(node),
       parentProjectId,
       summary,
     });

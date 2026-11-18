@@ -36,6 +36,11 @@ export function configuredEndpoint(token: string): AttachmentsEndpoint {
   return { supabaseUrl: getSupabaseUrl(), anonKey: getSupabaseAnonKey(), token }
 }
 
+/** A long-lived account host, including the MCP host, uses the same endpoint and signed-parts capability. */
+export async function accountAttachmentsEndpoint(context: { supabaseUrl: string; anonKey: string; getAccessToken(): Promise<string> }, fetchImpl: typeof fetch = fetch): Promise<AttachmentsEndpoint> {
+  return { supabaseUrl: context.supabaseUrl, anonKey: context.anonKey, token: await context.getAccessToken(), fetch: fetchImpl, signedParts: true }
+}
+
 /** A refusal from the function, with its code (upload_used, version_conflict, too_large, denied, …) — said, never swallowed. */
 export class AttachmentsError extends Error {
   /** `details`: only on recipient_not_member — the refused ids, comma-separated in to_user_ids order (gugu-supabase#242). */
@@ -241,7 +246,6 @@ export async function declareAttachment(endpoint: AttachmentsEndpoint, file: { b
 
 /** How a sender follows its declared bytes up (all optional: an agent just waits for them). */
 export type DeclaredUploadHooks = {
-  keep?: FileKeep
   /** Runs each upload attempt, e.g. inside a timed stage with its own endpoint and signal; by default it just runs. */
   attempt?: (attempt: number, run: (endpoint: AttachmentsEndpoint, signal?: AbortSignal) => Promise<void>) => Promise<void>
   /** The plan an attempt uploads under, once it has one. */
@@ -285,7 +289,7 @@ export async function finishDeclaredAttachment(endpoint: AttachmentsEndpoint, de
     if (hooks.stopped?.()) return false
     try {
       await finishAttachment(endpoint, { staging_key: declared.staging_key, ...(uploadKey !== declared.staging_key ? { upload_key: uploadKey! } : {}),
-        file_name: file.name, content_type: file.contentType, message_id: message.id, ...(hooks.keep ? { keep: hooks.keep } : {}) })
+        file_name: file.name, content_type: file.contentType, message_id: message.id })
       return true
     } catch (error) {
       if (!(error instanceof AttachmentsError && error.code === 'upload_not_found') || Date.now() + wait > until) throw error
@@ -318,12 +322,14 @@ export interface CommitArgs {
   /** The upload is this folder file's next version, from expected_version (a newer one stored since ⇒ refused, version_conflict). */
   item_id?: string
   expected_version?: number
-  /** How long this copy stays (temporary | permanent); not given, the chat's rule. Needs a backend with file_storage_mark_as. */
+  /** How long this copy stays: part of its declaration (temporary | permanent); not given, the chat's rule. */
   keep?: FileKeep
-  /** #2581 Files sent at once: one id for the send and how many files it holds (2–10). Not given, a file sent on its own. */
+  /** #2581 Files sent at once: one id for the send and how many files it holds (2–SEND_GROUP_MAX_FILES). Not given, a file sent on its own. */
   send_group_id?: string
   send_group_size?: number
 }
+/** The most files one send holds (the backend refuses a larger send_group_size); more files at once go as consecutive sends. */
+export const SEND_GROUP_MAX_FILES = 10
 
 /** Sends the upload as an attachment message: the message row as `messages_view` has it. */
 export async function commitAttachment(endpoint: AttachmentsEndpoint, args: CommitArgs): Promise<Record<string, unknown>> {
@@ -358,7 +364,7 @@ export interface OwnerSendArgs {
   caption?: string
 }
 
-/** An agent sends a file to its owner's friend as the owner (message_send_file_as_owner): the send, as the server answers it. */
+/** An agent sends a file to its owner's friend as the owner (message_send_as_owner with file_path): the send, as the server answers it. */
 export async function sendFileAsOwner(endpoint: AttachmentsEndpoint, args: OwnerSendArgs): Promise<{ chat_id: string; message_id: string; sender_user_id: string; sent_by_agent: boolean }> {
   const answer = await call(endpoint, 'commit', { ...args }) as { message: { chat_id: string; message_id: string; sender_user_id: string; sent_by_agent: boolean } | null }
   if (!answer.message) throw new AttachmentsError('commit', 500, 'failed', `no send came back for ${args.request_id}`)
@@ -405,7 +411,10 @@ export interface ShareArgs {
   chat_id: string
   sender_user_id: string
   to_user_ids?: string[]
+  reply_to_message_id?: string | null
   thread_root_id?: string | null
+  /** The message's text under the file card (首尾空白去掉;空的就没有). */
+  caption?: string
 }
 
 /** Sends a file of a chat's folder by reference — no bytes from here; the one way a folder file becomes a file card: the new message row. */

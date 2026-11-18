@@ -116,14 +116,15 @@ describe('shared group topic navigation (#446, #837, #2797)', () => {
     expect(q('[data-testid="topic-split-pane"]')).toBeNull()
   })
 
-  it('phone: topics calling you precede ordinary unread topics and retain their unread counts', async () => {
+  it('phone: topics calling you precede ordinary unread topics, marked red with the call count; other unread is a grey dot', async () => {
     const locator = (unread: number, addressed: number) => ({ stream_id: 'main', stream_kind: 'main' as const, thread_root_id: null, message_id: 'm', message_seq: 1, unread_count: unread, addressed_count: addressed, cursor_seq: 0, version: 1, is_marked_unread: false })
     topicRows = { t1: { unread_count: 9, unread_locator: locator(9, 0) }, t2: { unread_count: 27, unread_locator: locator(27, 2) } }
     try {
       await render('g1')
       await openTopics()
-      expect(choice('t2')?.textContent).toContain('27')
-      expect(choice('t1')?.textContent).toContain('9')
+      expect(choice('t2')?.querySelector('.gg-chip[data-tone="danger"]')?.textContent).toBe('@2')
+      expect(choice('t1')?.querySelector('.gg-chip[data-shape="dot"]')).not.toBeNull()
+      expect(choice('t1')?.textContent).not.toContain('9')
       expect([...document.querySelectorAll<HTMLElement>('[data-testid="phone-room-topic"]')].map(node => node.dataset.topicId)).toEqual(['t2', 't1'])
     } finally { topicRows = {} }
   })

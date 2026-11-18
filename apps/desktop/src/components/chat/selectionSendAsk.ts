@@ -1,9 +1,10 @@
-import type { SelectionSendCite, SelectionSendResult } from '@/session/shared/extensions/selection-send'
+import type { SelectionSendCite, SelectionSendResult, SelectionSendTo } from '@/session/shared/extensions/selection-send'
 
 export interface SelectionSendOptions {
   /** The selection's cite: `draft` is sent before the person's words, `quote` and `pills` are what the box shows of it. */
   cite: SelectionSendCite
-  sessionId: string
+  /** Where it goes: the page's session (the composer's @ and queue), or the chat its folder is in (the chat's members, its outbox). */
+  to: SelectionSendTo
   /** Beside the selection (this window's CSS px), or a bar at the bottom (phone). */
   anchor: DOMRect | 'dock'
   /** The page under the selection: a click or a wheel on it closes Send (it cannot scroll away under the box). */
@@ -20,8 +21,8 @@ let take: ((asked: SelectionSendAsked) => void) | null = null
 
 /**
  * A selection's Send, asked of the shell as `pickDispatchTarget` asks its sheet (dispatchAsk): the box (SelectionSendLayer,
- * beside DispatchSheet in ExtensionConsentSheet) shows what goes, takes a few words with the session composer's @, and
- * sends the way typed words are (`sessionSend`). One at a time: a second ask cancels the first.
+ * beside DispatchSheet in ExtensionConsentSheet) shows what goes, takes a few words with the session composer's @ (a chat's:
+ * its members'), and sends the way typed words are (`sessionSend`, `sendMessageToChat`). One at a time: a second ask cancels the first.
  */
 export function openSelectionSend(options: SelectionSendOptions): Promise<SelectionSendResult> {
   return new Promise((resolve, reject) => {

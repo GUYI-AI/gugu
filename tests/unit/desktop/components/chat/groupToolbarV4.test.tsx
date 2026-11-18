@@ -24,6 +24,7 @@ const onOpenInfo = vi.fn()
 const onCloseInfo = vi.fn()
 const onSearch = vi.fn()
 const onOpenFolder = vi.fn()
+const onCreateAgent = vi.fn()
 let headerWidth: number
 const resizeCallbacks = new Set<ResizeObserverCallback>()
 
@@ -47,7 +48,7 @@ beforeEach(() => {
 })
 afterEach(() => { runInAction(() => { installedExtensionsStore.manifests = []; installedExtensionsStore.disabled = [] }); harness.cleanup(); resizeCallbacks.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
-async function header(kind: 'group' | 'topic' | 'dm', options: { mobile?: boolean; menu?: boolean; infoShown?: boolean; stripNarrow?: boolean; pinned?: boolean; muted?: boolean; topics?: ChatItem[]; status?: 'working' | 'needs_user' } = {}) {
+async function header(kind: 'group' | 'topic' | 'dm', options: { mobile?: boolean; create?: boolean; menu?: boolean; infoShown?: boolean; stripNarrow?: boolean; pinned?: boolean; muted?: boolean; topics?: ChatItem[]; status?: 'working' | 'needs_user' } = {}) {
   if (options.stripNarrow) { harness.container.className = 'session-tab-bar'; harness.container.setAttribute('data-strip-narrow', '') }
   const room = {
     snapshot: { humans: [{ id: 'human' }], agents: [{ id: 'agent-1' }, { id: 'agent-2' }] } as GroupCollabSnapshot,
@@ -60,6 +61,8 @@ async function header(kind: 'group' | 'topic' | 'dm', options: { mobile?: boolea
     isGroupChat: kind === 'group', isRoomChat: kind !== 'dm', mobile: options.mobile,
     infoShown: options.infoShown ?? false, showHeaderMenu: options.menu ?? false,
     room, moreButtonRef: createRef<HTMLButtonElement>(),
+    membersInMenu: options.create,
+    onCreateAgent: options.create ? onCreateAgent : undefined,
     onSearch, onOpenFolder, onOpenInfo, onCloseInfo,
     onToggleHeaderMenu: vi.fn(), onCloseHeaderMenu: vi.fn(),
   }
@@ -202,6 +205,15 @@ describe('final group toolbar v4', () => {
     await header('group', { infoShown: true })
     await clickElement(button('成员列表')!)
     expect(onCloseInfo).toHaveBeenCalledOnce()
+  })
+
+  it('a centered phone group keeps direct creation and members in More', async () => {
+    await header('group', { mobile: true, create: true, menu: true })
+    expect(button('成员列表')).toBeUndefined()
+    await clickElement(button('创建智能体')!)
+    expect(onCreateAgent).toHaveBeenCalledOnce()
+    await clickElement(menuItem('成员列表 (3)')!)
+    expect(onOpenInfo).toHaveBeenCalledWith('members')
   })
 
   it.each(['group', 'topic', 'dm'] as const)('%s: More has no pin or mute switch (both are on the info page); a private chat keeps its folder item', async (kind) => {
