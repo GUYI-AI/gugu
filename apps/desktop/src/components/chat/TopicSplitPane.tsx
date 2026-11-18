@@ -46,7 +46,6 @@ import { ChatTailNotice } from './ChatTailNotice'
 import { MessageLoadFailure } from './MessageLoadFailure'
 import { MessageListSkeleton } from './MessageListSkeleton'
 import { useChatSearch } from './useChatSearch'
-import { SearchTrailBar } from './SearchTrailBar'
 
 /**
  * @@@5856 话题分栏 —— 右侧那条独立收发的话题线(product spec)。
@@ -378,7 +377,6 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
         </div>
         )}
 
-        <SearchTrailBar chatId={topic.chatId} surface={paneRef} enabled={visible !== false} />
         <div
           data-testid="topic-split-messages"
           style={TOPIC_SPLIT_MESSAGES_STYLE}

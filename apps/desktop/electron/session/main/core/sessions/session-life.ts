@@ -115,6 +115,18 @@ export class SessionLife {
 
   constructor(private readonly ports: SessionLifePorts) {}
 
+  /** A host-owned input keeps its original signed-in epoch across asynchronous preparation and routing. */
+  inputOwnerFence(ownerUserId: string): () => void {
+    const epoch = this.epoch;
+    const assert = () => {
+      if (!ownerUserId || this.account !== ownerUserId || this.epoch !== epoch || this.leaving || this.tail !== null) {
+        throw Object.assign(new Error('The original attachment input owner is no longer active'), { code: 'attachment_creation_unverified' });
+      }
+    };
+    assert();
+    return assert;
+  }
+
   private entry(sessionId: string): Entry {
     const existing = this.entries.get(sessionId);
     if (existing) return existing;

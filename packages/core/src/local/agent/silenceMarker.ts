@@ -1,10 +1,10 @@
 /**
- * `[NO_REPLY]` — the silence marker an agent prints to decline a delivered turn.
+ * `[NO_REPLY]` — the silence marker agents used to print to decline a delivered message.
  *
- * `<gugu_silence>` (apps/desktop/electron/product-platform-prompt.ts) teaches every agent this marker from
- * `NO_REPLY_MARKER` below, and promises "nothing is posted, nobody notified". Agent text never reaches a chat (replies go
- * through message_send), but two surfaces draw an agent's raw words back to people: the task panel (#4552) and the
- * group's running-bar preview card (#6357). Both ask this one question, so the promise holds the same on both.
+ * The platform prompt no longer teaches it (2026-11-16 rewrite): staying quiet is sending nothing, and agent text never
+ * reaches a chat anyway (replies go through message_send). It is still recognised because older transcripts hold it and
+ * agents may keep printing it: two surfaces draw an agent's raw words back to people — the task panel (#4552) and the
+ * group's running-bar preview card (#6357) — and both hide a reply made of nothing but this marker.
  */
 
 export const NO_REPLY_MARKER = '[NO_REPLY]';

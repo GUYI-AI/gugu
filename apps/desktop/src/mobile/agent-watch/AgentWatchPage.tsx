@@ -149,7 +149,8 @@ export function AgentWatchPage({
     if (createRequest === seenCreateRequest.current) return
     seenCreateRequest.current = createRequest
     setTaskGroup(taskInGroup)
-    navigate([{ name: 'projects' }, { name: 'create' }], 'push')
+    // A group shortcut pushes directly over the group. The projects list was never visited.
+    navigate(taskInGroup ? [{ name: 'create' }] : [{ name: 'projects' }, { name: 'create' }], 'push')
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 群只在请求变的那一刻读
   }, [createRequest, navigate])
   useEffect(() => {

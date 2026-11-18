@@ -157,7 +157,7 @@ export async function readSessionInjectionFacts(input: {
     // 的路径,codex 按目录逐模型的 catalog 就近落档。#6199 曾在这里按一张全局三档表过滤 —— 那会把用户在
     // GPT/Claude 上选的 xhigh/max 悄悄改回默认。
     effort: session ? session.effort : undefined,
-    fastMode: platformModel === null && session?.fastMode === true,
+    fastMode: session?.fastMode === true,
     model: platformModel ? null : (session?.model ?? null),
     // 缺席(运行时视图没有自己的行,或行刚被删)= 没有可续的 provider 会话 ⇒ `null`,与「新开一条」同义。
     providerSessionId: session?.providerSessionId ?? null,

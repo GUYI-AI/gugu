@@ -1,11 +1,15 @@
+import { DeviceRpcChannelError, DeviceRpcTimeoutError } from '@gugu/core/cloud/deviceRpcRequester'
+import { callOnComputer } from '../../../apps/desktop/src/components/appSlot/phoneProgramCall'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { OpenedFileChangedError, readWholeOpenedFile } from '../../../apps/desktop/src/mobile/agent-watch/opened-output-open'
 
+const rpc = vi.hoisted(() => ({ call: vi.fn() }))
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+  appCallOn: rpc.call,
   SessionpageRpcError: class extends Error { constructor(readonly code: string, message: string) { super(message) } },
 }))
 
-beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0) })
+beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0); rpc.call.mockReset() })
 afterEach(() => { vi.useRealTimers() })
 const input = { conversationId: 'task', path: '/workspace/report.txt', retryTransient: true }
 const transient = () => Object.assign(new Error('temporary read failure'), { status: 503 })
@@ -96,4 +100,25 @@ it('leaves ordinary preview reads on their existing immediate failure path', asy
   const error = transient(), read = vi.fn(async () => { throw error })
   expect(await outcome(readWholeOpenedFile({ ...input, retryTransient: false, read }))).toEqual({ error })
   expect(read).toHaveBeenCalledOnce()
+})
+
+const appRead = (request: { offset: number; length: number }) => callOnComputer(
+  { extensionId: 'workspace', extensionName: 'Files', version: '1.0.0' },
+  { id: 'task', deviceId: 'computer', deviceLabel: 'mac1' }, 'filesRead',
+  { ref: { workspace: 'session:task', name: 'report.txt' }, offset: request.offset, length: request.length },
+) as Promise<ReturnType<typeof chunk>>
+
+it.each([new DeviceRpcChannelError('rpc rejoined', 'rejoined'), new DeviceRpcTimeoutError('request timed out')])('recovers a real App-call wrapped transport error without rereading the first chunk: %s', async error => {
+  rpc.call.mockResolvedValueOnce(chunk('YWJj', 6)).mockRejectedValueOnce(error).mockResolvedValueOnce(chunk('ZGVm', 6))
+  const work = readWholeOpenedFile({ ...input, read: appRead })
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(await work).toEqual(new TextEncoder().encode('abcdef'))
+  expect(rpc.call.mock.calls.map(([, , action]) => action.args.offset)).toEqual([0, 3, 3])
+})
+
+it.each([new DeviceRpcChannelError('sign in required', 'signInRequired'), new DeviceRpcChannelError('client too old', 'outdated'), Object.assign(new Error('unknown method'), { code: 'unknown_method' })])('does not retry an unavailable App call caused by a permanent refusal: %s', async error => {
+  rpc.call.mockRejectedValue(error)
+  expect(await outcome(readWholeOpenedFile({ ...input, read: appRead }))).toMatchObject({ error: { code: 'unavailable' } })
+  expect(rpc.call).toHaveBeenCalledOnce()
+  expect(vi.getTimerCount()).toBe(0)
 })

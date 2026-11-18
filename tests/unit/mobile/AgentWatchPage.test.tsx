@@ -380,6 +380,19 @@ describe('AgentWatchPage native back routing', () => {
     expect(harness.container.querySelector('[data-testid="create"]'), 'a second tap opens it again').toBeTruthy()
   })
 
+  it('Back from the group creation shortcut exits to the calling chat', async () => {
+    const onExit = vi.fn()
+    const taskInGroup = { chatId: 'product-group', name: '产品讨论' }
+    await harness.render(createNode(AgentWatchPage, { active: true, onExit, createRequest: 0 }))
+    await harness.render(createNode(AgentWatchPage, { active: true, onExit, createRequest: 1, taskInGroup }))
+    await act(async () => { await import('../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage') })
+
+    await act(async () => { (harness.container.querySelector('[data-testid="create-back"]') as HTMLButtonElement).click() })
+
+    expect(onExit).toHaveBeenCalledOnce()
+    expect(harness.container.querySelector('[data-testid="projects"]')).toBeNull()
+  })
+
   // gugu.showSession on the phone: the row an App named opens as a tap on it does — even an offline machine's (the row is
   // its digest, as the list shows it). The external entry has no synthetic project parent.
   it("an App's showSession opens the row it named, from another tab too; the same request once, a new one again", async () => {

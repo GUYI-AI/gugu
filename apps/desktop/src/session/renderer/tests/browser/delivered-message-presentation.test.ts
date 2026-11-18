@@ -65,3 +65,27 @@ it('does not replace an unavailable source with transport paths or update a disp
   await Promise.resolve();
   expect(state.session.state.deliveredMessages?.size).toBe(0);
 });
+
+it('reads a queued attachment delivery at once and never draws its stored file lines as words', async () => {
+  const queuedId = '22222222-3333-4444-8555-666666666666';
+  const content = '[附件] 31531f626a2e9c4b8d7f0a1e2b3c4d5e.jpg (image/jpeg)\n[Size] 1352897\n[Kind] image\n[Caption]\n400g to 500ml?';
+  const text = renderDeliveryEnvelope({ route: 'chat', from: 'Sender', fromId: 'user:sender', messageId: `msg:${queuedId}`, at: '', chat: 'chat', chatKind: 'group',
+    content: `${content}\n[Not on this computer. To read or change it: message_download_file {source_message_id: "msg:${queuedId}"}]` });
+  const context = createChatContext({ locale: () => 'en-US', layout: { preset: 'double', userGutter: 0, agentConversation: true } });
+  const state = createChatState(context);
+  const host = document.createElement('div');
+  host.className = nativeChatAppearance;
+  host.style.cssText = 'position:fixed;top:45px;left:0;width:640px;height:500px';
+  document.body.append(host);
+  const load = vi.fn(() => new Promise<MessageItem>(() => {}));
+  const stop = connectDeliveredMessagePresentation(state, load, vi.fn());
+  const view = createChatView({ context, state, parent: host, commands: {} });
+  dispose = () => { stop(); view.dispose(); state.dispose(); context.dispose(); host.remove(); };
+  state.session.setPendingMessages([{ id: queuedId, text, received: true, held: true, delivery: { state: 'receiving' } }]);
+  await expect.poll(() => load.mock.calls.length).toBe(1);
+  expect(load).toHaveBeenCalledWith(queuedId);
+  await expect.poll(() => host.textContent).toContain('400g to 500ml?');
+  expect(host.textContent).not.toContain('[附件]');
+  expect(host.textContent).not.toContain('31531f626a2');
+  expect(host.textContent).not.toContain('[Size]');
+});

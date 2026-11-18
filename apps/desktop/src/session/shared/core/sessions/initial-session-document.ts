@@ -57,7 +57,7 @@ export function buildInitialSessionDocument(
     // conversation config 记录并由共享注入边界读取,创建页与会话内不能各自推导。
     model: input.model ?? undefined,
     effort: input.effort ?? undefined,
-    ...(input.fastMode !== undefined ? { fastMode: input.platformModel === null && input.fastMode } : {}),
+    ...(input.fastMode !== undefined ? { fastMode: input.fastMode } : {}),
     // 三态:决策过就**一定**带上字段 —— 选 harness 也要显式 null。少了这个 null,主进程分不清
     // 「明确要 BYOK」和「这条路径根本没有 composer」。
     ...(input.platformModel !== undefined ? { platformModel: input.platformModel } : {}),

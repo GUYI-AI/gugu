@@ -292,7 +292,6 @@ export const TopicSubRow = memo(function TopicSubRow({ topic, mobile, isActive, 
         onClose={menu.closeMenu}
         onPin={() => actions.pin(topic)}
         onSetNotificationLevel={(level) => actions.setNotificationLevel(topic.id, level)}
-        onDelete={() => actions.remove(topic.id)}
       />
     )}
     </>

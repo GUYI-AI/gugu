@@ -194,8 +194,6 @@ export default {
       "menu": "更多",
       "cancel": "取消",
       "stop": "停止当前任务",
-      "pin": "置顶",
-      "unpin": "取消置顶",
       "pinned": "置顶",
       "expandChildren": "展开 {{count}} 个子会话",
       "collapseChildren": "收起 {{count}} 个子会话",
@@ -209,8 +207,7 @@ export default {
       "rename": "重命名",
       "showMore": "展开显示 ({{count}})",
       "showLess": "收起",
-      "renameSave": "保存",
-      "archive": "归档"
+      "renameSave": "保存"
     },
     "output": {
       "machineOnly": "只能在那台电脑上打开",

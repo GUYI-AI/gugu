@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUpToLine, BookOpen, ChevronLeft, Plus, Trash2 } from '@/lib/icons'
+import { ArrowUpToLine, BookOpen, ChevronLeft, Plus, Trash2, X } from '@/lib/icons'
 import { useAuth } from '@/store/auth'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
@@ -27,7 +27,7 @@ export function PhoneTaskSkills({ deviceId, sessionId, online, busy = false, men
   if (!ownerId || !phoneAgentAvailable() || thisPhoneDeviceId(ownerId) !== deviceId) return null
   return (
     <>
-      {menuBar ? <PhoneComposerControl label={t('skills')} icon={<BookOpen />} disabled={!online} onClick={() => setOpen(true)} testId="phone-task-skills-open" />
+      {menuBar ? <PhoneComposerControl label={t('skills')} icon={<BookOpen />} menuExpanded={open} disabled={!online} onClick={() => setOpen(true)} testId="phone-task-skills-open" />
         : <IconButton size="md" aria-label="配置 Skill" title={online ? '配置 Skill' : '连接这台手机后配置 Skill'} disabled={!online} onClick={() => setOpen(true)} data-testid="phone-task-skills-open"><BookOpen /></IconButton>}
       {open && <PhoneSkillsManager key={`${ownerId}:${deviceId}:${sessionId}`} deviceId={deviceId} sessionId={sessionId} busy={busy || !online} onClose={() => setOpen(false)} />}
     </>
@@ -35,6 +35,7 @@ export function PhoneTaskSkills({ deviceId, sessionId, online, busy = false, men
 }
 
 export function PhoneSkillsManager({ deviceId, sessionId, busy, onClose }: { deviceId: string; sessionId: string; busy: boolean; onClose: () => void }) {
+  const { t } = useTranslation('mobileCreateControls')
   const [loaded, setLoaded] = useState<PhoneTaskSkillsSnapshot | null>(null)
   const [draft, setDraft] = useState<PhoneTaskSkill[]>([])
   const [editId, setEditId] = useState<string | null>(null)
@@ -96,7 +97,10 @@ export function PhoneSkillsManager({ deviceId, sessionId, busy, onClose }: { dev
     <Sheet onClose={close} onEscape={() => { if (selected && !saving) { setEditId(null); return true } return false }} mobileHeight="92dvh" desktopWidth="min(640px, 100%)" desktopHeight="640px" testId="phone-task-skills" ariaLabel="任务 Skill" closeOnBackdrop={!saving}>
       <div className="gg-phone-skills">
         <PhoneSheetHandle onDismiss={close} disabled={saving || importing} />
-        <PaneHeader mobile title={selected ? selected.name || '新 Skill' : '任务 Skill'} titleLevel="page" leading={<IconButton size="md" aria-label={selected ? '返回 Skill 列表' : '返回任务'} disabled={saving} onClick={selected ? () => setEditId(null) : close}><ChevronLeft /></IconButton>} actions={selected ? <IconButton size="md" aria-label="删除这个 Skill" disabled={disabled} onClick={() => { setDraft((items) => items.filter((item) => item.id !== selected.id)); setEditId(null); setError(null) }} data-testid="phone-skill-delete"><Trash2 /></IconButton> : undefined} />
+        <PaneHeader mobile title={selected ? selected.name || '新 Skill' : '任务 Skill'} titleLevel="page" leading={selected ? <IconButton size="md" aria-label="返回 Skill 列表" disabled={saving} onClick={() => setEditId(null)}><ChevronLeft /></IconButton> : undefined} actions={<>
+          {selected && <IconButton size="md" aria-label="删除这个 Skill" disabled={disabled} onClick={() => { setDraft((items) => items.filter((item) => item.id !== selected.id)); setEditId(null); setError(null) }} data-testid="phone-skill-delete"><Trash2 /></IconButton>}
+          <IconButton size="lg" aria-label={t('close')} disabled={saving || importing} onClick={close} data-testid="phone-task-skills-close"><X /></IconButton>
+        </>} />
         <div className="gg-phone-skills-body">
           <SettingsNote>只用于这个手机任务。手机 Agent 按需要读取已启用的说明，手机权限仍以授权设置为准。</SettingsNote>
           {loading ? <SettingsNote role="status">正在读取 Skill…</SettingsNote> : loaded ? (

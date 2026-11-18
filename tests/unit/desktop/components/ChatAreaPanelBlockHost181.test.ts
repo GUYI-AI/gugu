@@ -185,7 +185,7 @@ describe('ChatAreaPanel hosted in a block (gugu-dev#181)', () => {
     expect(title.textContent).toContain('设计评审')
   })
 
-  // owner 10-26:成员、公告、设置合成一枚「群信息」页签。群从成员钮进(落在成员那一页),私聊从 ⋯ 进;每种形态都打得开。
+  // 群信息的成员页由成员入口打开；手机群聊的成员入口在「更多」中。
   for (const layout of ['header', 'block', 'phone'] as const) {
     for (const kind of ['group', 'dm', 'ai'] as const) {
       it(`${layout} ${kind}: this conversation's info opens without installed or pinned Apps`, async () => {
@@ -193,13 +193,20 @@ describe('ChatAreaPanel hosted in a block (gugu-dev#181)', () => {
         try {
           await renderPanel(hosted ? { actions, title, tabs: null } : undefined, kind, layout === 'phone')
           const root = hosted ? actions : harness.container
-          if (kind === 'group') {
-            await clickElement(membersButtonIn(root) as HTMLElement)
+          if (kind === 'group' && layout !== 'phone') {
+            const members = membersButtonIn(root) as HTMLElement | null
+            expect(members).not.toBeNull()
+            await clickElement(members!)
           } else {
             const more = root.querySelector<HTMLElement>(`[data-testid="${AUTOMATION_TEST_IDS.chatHeaderMoreButton}"]`)
-            expect(more, 'a private chat reaches its info from More').not.toBeNull()
+            expect(more, 'conversation info is reachable from More').not.toBeNull()
             await clickElement(more!)
-            await clickElement(document.querySelector<HTMLElement>(`[data-testid="${AUTOMATION_TEST_IDS.groupMenuSettings}"]`)!)
+            const menu = document.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.groupHeaderMenu}"]`)
+            const entry = kind === 'group'
+              ? Array.from(menu?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []).find(item => item.textContent === '成员列表 (2)')
+              : menu?.querySelector<HTMLElement>(`[data-testid="${AUTOMATION_TEST_IDS.groupMenuSettings}"]`)
+            expect(entry).toBeTruthy()
+            await clickElement(entry!)
           }
           expect(infoTabOf('group-1')?.info.page).toBe(kind === 'group' ? 'members' : undefined)
           // Without a strip the tab in front is a page over the chat; in a block it is drawn into its slot (below).

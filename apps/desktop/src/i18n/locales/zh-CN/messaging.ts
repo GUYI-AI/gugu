@@ -276,6 +276,13 @@ export default {
     "delete": "删除",
     "disableNotifications": "关闭通知",
     "deleteFailed": "无法删除这条对话",
+    "deleteChat": "删除聊天",
+    "deleteChatConfirm": "删除和「{{name}}」的这条聊天？聊天记录将一并删除。",
+    "deleteTopic": "删除话题",
+    "deleteTopicConfirm": "删除话题「{{name}}」？它会从所有成员的列表里收起。",
+    "dissolveGroup": "解散群聊",
+    "leaveGroup": "退出群聊",
+    "markTopicsRead": "本群话题全部标为已读",
     "draft": "[草稿]",
     "moreTopics": "更多话题（{{count}}）",
     "moreTopics_one": "更多话题（{{count}}）",
@@ -302,8 +309,7 @@ export default {
     "pin": "置顶",
     "scan": "扫一扫",
     "search": "搜索",
-    "unpin": "取消置顶",
-    "unpinFromSidebar": "取消固定到左侧栏"
+    "unpin": "取消置顶"
   },
   "chatService": {
     "errors": {
@@ -505,6 +511,7 @@ export default {
     "forwarding": "转发中…",
     "noResults": "未找到对话",
     "noTargets": "暂无可转发的对话",
+    "people": "联系人",
     "note": "留言",
     "preview": {
       "attachment": "[附件]",
@@ -686,8 +693,8 @@ export default {
         "inviteOnly": "仅邀请",
         "open": "直接加入"
       },
-      "leave": "离开群组",
-      "leaveConfirm": "确认离开群组？",
+      "leave": "退出群聊",
+      "leaveConfirm": "确认退出该群聊？",
       "loadFailed": "群设置加载失败：{{reason}}",
       "memberCount": "{{count}} 名成员",
       "memberCount_one": "{{count}} 名成员",
@@ -791,6 +798,8 @@ export default {
       "openLink": "打开链接",
       "selectText": "选择文本",
       "delete": "删除",
+      "deleteConfirm": "删除这条消息？删除后无法恢复。",
+      "deleteTitle": "删除消息",
       "forward": "转发",
       "more": "更多",
       "openTopic": "开话题",
@@ -881,7 +890,6 @@ export default {
     "reference": { "loading": "正在读取…", "unreadable": "一条你看不到的消息", "widgetUnreadable": "一个你看不到的 widget", "widgetRetracted": "这个 widget 已撤回", "widgetElsewhere": "这个 widget 在别的会话中", "locate": "定位原消息", "locateActive": "定位活的 widget", "previewQuote": "[引用]", "previewMessage": "[引用消息]" },
     "widgetUnavailable": { "missing": "尚未安装 App。", "disabled": "App 已关闭。", "view": "此 App 视图不可用。", "platform": "此设备无法运行此 App。" }
   },
-  "searchTrail": {"position": "「{{query}}」第 {{index}}/{{total}} 条", "positionNoWords": "第 {{index}}/{{total}} 条", "previous": "上一条", "next": "下一条 (⌘G)", "results": "结果", "close": "退出搜索"},
   "outbox": {
     "selectFileAgain": "上传已中断，请重新选择文件。",
     "sourceNotSent": "原消息尚未送达，请先重试原消息再转发。",

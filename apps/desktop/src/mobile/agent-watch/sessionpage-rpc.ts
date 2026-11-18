@@ -266,9 +266,10 @@ export function subscribeSessionEvents(deviceId: string, subscriptionId: string,
     onResult((event as SessionpageSessionEvent).result))
 }
 
-export function fetchSessionOptions(deviceId: string, sessionId: string, phoneHost = false): Promise<SessionpageSessionOptionsWithMenu> {
-  if (phoneHost) return invokePhoneHost(deviceId, 'sessionTimeline.sessionOptions', [{ conversationId: sessionId }])
-  return value(rpc(deviceId).sessionTimeline.sessionOptions({ conversationId: sessionId }))
+export function fetchSessionOptions(deviceId: string, sessionId: string, phoneHost = false, includeOwnModelCatalog?: true): Promise<SessionpageSessionOptionsWithMenu> {
+  const input = { conversationId: sessionId, ...(includeOwnModelCatalog ? { includeOwnModelCatalog } : {}) }
+  if (phoneHost) return invokePhoneHost(deviceId, 'sessionTimeline.sessionOptions', [input])
+  return value(rpc(deviceId).sessionTimeline.sessionOptions(input))
 }
 
 export function setSessionOption(deviceId: string, input: SessionpageSessionSetOptionRequest, phoneHost = false): Promise<SessionpageSessionOptionsWithMenu> {

@@ -24,6 +24,11 @@ export const pill = style({
   verticalAlign: 'baseline',
 });
 
+export const skillPill = style({
+  border: `1px solid ${vars.border}`,
+  backgroundColor: vars.surfaceBaseEmphasis,
+});
+
 export const pillPlain = style({
   display: 'inline',
   gap: 0,

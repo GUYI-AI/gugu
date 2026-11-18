@@ -22,6 +22,19 @@ Function .onInstFailed
   Call guguRollback
   SetErrorLevel 2
 FunctionEnd
+
+# @@@uac-outer-cwd - Under UAC an install for all users runs as two processes: the user's
+# non-elevated installer waits while the elevated copy it started does the work. The waiting
+# one inherits its working directory from whoever launched it, and the app's updater starts it
+# from the app's own working directory, $INSTDIR. A directory being renamed cannot
+# be anyone's working directory, so commit failed every time with "being used by another
+# process" (measured: the only handle under the tree was the waiting installer's, access
+# SYNCHRONIZE|FILE_TRAVERSE). The elevated copy asks it to step out first.
+# The app now leaves $INSTDIR itself (@@@app-cwd), but an older app's updater or a double-click
+# from inside $INSTDIR still starts this installer there, so the installer keeps its own step.
+Function guguLeaveInstallDirectory
+  SetOutPath "$TEMP"
+FunctionEnd
 !macroend
 
 !macro guguRequireTransactionSuccess
@@ -61,6 +74,10 @@ FunctionEnd
   # .onInit selected INSTDIR as NSIS's current directory. Release that handle
   # before prepare removes an empty target or recovers a previous transaction.
   SetOutPath "$PLUGINSDIR"
+  # ...and the same for the waiting non-elevated installer under UAC (see @@@uac-outer-cwd).
+  ${If} ${UAC_IsInnerInstance}
+    !insertmacro UAC_AsUser_Call Function guguLeaveInstallDirectory 0
+  ${EndIf}
   File /oname=$PLUGINSDIR\install-transaction.ps1 "${BUILD_RESOURCES_DIR}\nsis\install-transaction.ps1"
   # Write a Unicode INI so names and paths never pass through a shell/code page.
   FileOpen $R9 "$PLUGINSDIR\installer-links.ini" w

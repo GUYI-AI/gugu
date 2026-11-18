@@ -197,8 +197,6 @@ export default {
       "menu": "More",
       "cancel": "Cancel",
       "stop": "Stop current task",
-      "pin": "Pin",
-      "unpin": "Unpin",
       "pinned": "Pinned",
       "expandChildren_one": "Show 1 child task",
       "expandChildren_other": "Show {{count}} child tasks",
@@ -215,8 +213,7 @@ export default {
       "showMore_one": "Show 1 more",
       "showMore_other": "Show {{count}} more",
       "showLess": "Collapse",
-      "renameSave": "Save",
-      "archive": "Archive"
+      "renameSave": "Save"
     },
     "output": {
       "machineOnly": "Opens only on that computer",

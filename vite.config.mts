@@ -41,6 +41,7 @@ import {
 import { LAZY_LANG_MODULES } from './packages/session-chat-ui/src/core/highlight/lazy-langs'
 import { appPaletteCss } from './apps/desktop/src/session/app-runtime/ui/app-palette.mjs'
 import { startupFirstFrame } from './scripts/build/startup-first-frame.mts'
+import { pdfjsResources } from './scripts/build/pdfjs-resources.mts'
 
 const require = createRequire(import.meta.url)
 
@@ -691,6 +692,7 @@ export default defineConfig(({ command }) => ({
   },
   plugins: [
     startupFirstFrame(isElectronTarget),
+    pdfjsResources(),
     deterministicModuleSideEffects(),
     guguEntryReachabilityPlugin(reachability, isGuguEntry),
     // @@@task-fusion (#2802) — 会话页的 @gugu/session-ui / session-chat-ui 用 vanilla-extract 写样式。

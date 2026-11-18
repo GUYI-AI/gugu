@@ -193,7 +193,6 @@ export const enUSSessionWorkflowMessages = {
   'task.resizeInnerSidebar': 'Resize inner sidebar',
 
   'task.renameTitle': 'Rename task',
-  'task.renameSession': 'Rename task',
   'task.renameNameLabel': 'Task name',
   'task.rename': 'Rename',
   'task.renaming': 'Renaming…',
@@ -236,10 +235,11 @@ export const enUSSessionWorkflowMessages = {
   'task.unpinFromSidebar': 'Unpin from sidebar',
   'task.pinToSidebarFailed': 'Couldn’t pin to the sidebar',
   'task.unpinFromSidebarFailed': 'Couldn’t unpin from the sidebar',
+  'task.pinFailed': 'Couldn’t change the pin',
   'task.pinnedSessionGone': 'This task is no longer in the list.',
   'task.archive': 'Archive',
-  'task.archiveTaskTitle': 'Archive task',
-  'task.archiveTaskConfirm': 'Archive task',
+  'task.archiveTaskTitle': 'Archive session',
+  'task.archiveTaskConfirm': 'Archive session',
   // 会话那一层的正文:入口说「任务」(用户心智里一个 tab 就是一项任务),动的是这一条。
   // 带走多少条由下面那个勾选说 —— ❌ 在正文里再报一次数。
   'task.archiveSessionDescription':
@@ -251,7 +251,7 @@ export const enUSSessionWorkflowMessages = {
   'task.archiveSessionWithChildrenOne': 'Also archive the child task under it',
   'task.archiveSessionWithChildren': 'Also archive the {count} child tasks under it',
   'task.archiveDontAskAgain': "Don't ask again",
-  'task.archiveTaskFailed': 'Failed to archive task',
+  'task.archiveTaskFailed': 'Failed to archive session',
   'task.archiveDontAskAgainFailed': "Failed to save “Don't ask again”",
   'task.archiveDontAskAgainFailedHint':
     'You can still turn the confirmation off in Settings → Interface.',
@@ -788,7 +788,6 @@ export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflo
   'task.resizeInnerSidebar': '调整内层栏宽度',
 
   'task.renameTitle': '重命名会话',
-  'task.renameSession': '重命名会话',
   'task.renameNameLabel': '会话名称',
   'task.rename': '重命名',
   'task.renaming': '重命名中…',
@@ -830,6 +829,7 @@ export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflo
   'task.unpinFromSidebar': '取消固定到左侧栏',
   'task.pinToSidebarFailed': '没能固定到左侧栏',
   'task.unpinFromSidebarFailed': '没能取消固定到左侧栏',
+  'task.pinFailed': '没能改置顶',
   'task.pinnedSessionGone': '这条会话已经不在列表里了。',
   'task.archive': '归档',
   'task.archiveTaskTitle': '归档会话',

@@ -1,3 +1,6 @@
+import { accountAttachmentsEndpoint } from '@gugu/core/cloud/attachmentsApi'
+import { nativeAttachmentUpload } from './attachmentUploadTransport'
+import { createAttachmentUploadHost } from './attachmentUploadHost'
 import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
 import { PASSWORD_AGENT_RPC } from './password-vault/server-delivery'
 import { createPasswordBetaPolicyReader } from './password-vault/beta-policy-reader'
@@ -110,6 +113,7 @@ import { createProbeConnectionCredentials } from './harness-catalog-probe-connec
 import { runWindowMenuCommand } from './window-menu-commands'
 import { isWindowMenuCommand } from '../shared/window-menu-commands'
 import { purgeStaleUpdaterCache, updaterCacheBaseDir } from './updaterCache'
+import { installerFailureLogPath, reportInstallerFailures } from './installer-failure-log'
 import { detectLocalSigning, downloadDmg, pickMacDmgFile, shouldUseDmgPath } from './macDmgUpdater'
 import type { LocalSigning } from './macDmgUpdater'
 import { createSelectAccountHandler, webAuthnKeychainGroup } from './macWebAuthn'
@@ -310,8 +314,9 @@ import {
 } from './sessionpage/local-session-source'
 import { resolveSessionpageAgentCard } from './sessionpage/sessionpage-agent-card'
 import { loadSessionpageCanonicalAgentIdentities } from './sessionpage/sessionpage-agent-identity'
-import { SESSION_SHELL_CHANNELS, agentNamesFromPeers, type SessionShellAgentName } from '../src/session/shared/lib/ipc/shell-port'
-import { sessionpageAgentProvisionedEvent } from '../src/session/shared/lib/ipc/sessionpage-identity-contract'
+import { SESSION_SHELL_CHANNELS, agentNamesFromPeers } from '../src/session/shared/lib/ipc/shell-port'
+import { sessionpageAgentProvisionedEvent, sessionpageBirthGroupJoinEvent } from '../src/session/shared/lib/ipc/sessionpage-identity-contract'
+import { onSessionpageBirthGroupJoin, retrySessionpageBirthGroupJoin, sessionpageBirthGroupJoin } from './sessionpage/sessionpage-birth-group-join'
 import type { EventDefinition } from '../src/session/shared/lib/ipc/events'
 import { MAIN_UI_EVENTS } from '../src/lib/mainUiEvents'
 import { createSessionpageIdentityHost } from './sessionpage/sessionpage-identity-host'
@@ -586,6 +591,7 @@ function getArgValue(flag: string): string | undefined {
 
 import { writeSharedUserDataPointer } from './session/headless/shared-user-data'
 import { removeLegacyBrowserLogins } from './lib/remove-legacy-browser-logins'
+import { enterUserDataDirectory } from './working-directory'
 
 const IS_TEST_MODE = process.env.GUGU_TEST_MODE === '1'
 // 咕咕 server(product spec):同一份主进程,没有窗口。由 server-entry.ts 置位。
@@ -598,8 +604,11 @@ const deviceLabelOption: { label?: () => string } = SERVER_MODE ? { label: () =>
 
 const userDataDir = getArgValue('--user-data-dir') ?? process.env.GUGU_USER_DATA_DIR
 if (userDataDir) {
-  app.setPath('userData', userDataDir)
+  // Absolute before the working directory moves into it (below): a relative one would mean something else afterwards.
+  app.setPath('userData', resolve(userDataDir))
 }
+// @@@app-cwd - leave the launch directory (on Windows: the install directory) before anything is started.
+if (!SERVER_MODE) enterUserDataDirectory(app.getPath('userData'))
 // @@@5080 把**解析之后**的 userData 真值留给同机的无头宿主,让「桌面版 / 网页版」看同一份会话
 // (owner:「我以为只是换个视窗」)。必须在上面的 setPath 之后取 —— 取早了就写下了被覆盖前的路径。
 // ⚠️ 隔离实例(e2e / 双开)带着自己的 --user-data-dir,❌ 不该把机器级指针改写成它们的临时目录:
@@ -2452,7 +2461,22 @@ const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider()
   deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
 })
 function drainProjectFiles() { void desktopFiles.drain().catch(error => createLogger('files').warn({ error: String(error) }, 'Project transfer reconciliation failed')) }
-const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot,
+const attachmentUploads = createAttachmentUploadHost({
+  account: async () => {
+    const auth = await desktopAuthProvider().getAuth()
+    if (!auth?.userId || !auth.accessToken) return null
+    return { id: auth.userId, home: resolveGuguHome(process.env), endpoint: async () => {
+      const current = await desktopAuthProvider().getAuth()
+      if (current?.userId !== auth.userId || !current.accessToken) throw new Error('Attachment upload account changed')
+      return { ...await accountAttachmentsEndpoint({ supabaseUrl: getSupabaseUrl(), anonKey: getSupabaseAnonKey(), getAccessToken: async () => current.accessToken }, electronFetch), upload: nativeAttachmentUpload }
+    } }
+  },
+  result: result => createLogger('files/attachment-uploads')[result.outcome === 'failed' ? 'warn' : 'info'](result, 'Attachment upload outcome'),
+  progress: event => { for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('attachments:progress', event) },
+  warn: error => createLogger('files/attachment-uploads').warn({ error: String(error) }, 'Attachment upload failed; pending bytes remain on this device'),
+})
+const resumeDeclaredUploads = () => { void attachmentUploads.resume().catch(error => createLogger('files/attachment-uploads').warn({ error: String(error) }, 'Pending attachment uploads not read')) }
+const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments: attachmentUploads,
   owner: async () => (await desktopAuthProvider().getAuth())?.userId ?? null,
   alive: scope => !!webContents.fromId(scope) && !webContents.fromId(scope)!.isDestroyed(),
   local: desktopFiles.providers.local, ssh: desktopFiles.providers.ssh, publish: (chat, file, actor, message, task) => desktopFiles.publish(chat, file, null, actor, undefined, { message, ...(task ? { task: true, itemId: task.itemId } : {}) }),
@@ -2460,7 +2484,7 @@ const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot,
   openPath: path => shell.openPath(path), published: directory => trackRemoteFileDirectory(remoteFileOpenDirectories, directory),
 })
 registerNativeFileIpc(ipcMain, nativeFiles, error => createLogger('files').warn({ error: String(error) }, 'Native file operation failed'))
-app.on('will-quit', () => { void nativeFiles.drop().catch(error => createLogger('files').warn({ error: String(error) }, 'File handle cleanup failed')) })
+app.on('will-quit', () => { attachmentUploads.dispose(); void nativeFiles.drop().catch(error => createLogger('files').warn({ error: String(error) }, 'File handle cleanup failed')) })
 
 // @@@payment-window (#1907) - 支付在专用 BrowserWindow 原生 POST 落地,主窗不再被支付页顶掉。
 // @@@local-runtime-open - Opening a terminal window is strictly local, so it bypasses cloud device commands.
@@ -2636,6 +2660,7 @@ function signedInAccountId(): string | null {
 }
 
 function onHumanAuthSessionChanged(): void {
+  resumeDeclaredUploads()
   projectionDeviceRuntime.invalidate()
   void emdashBridgeModule?.setTaskNameOwner(signedInAccountId())
     .then(() => adoptCloudTaskNames?.())
@@ -2737,36 +2762,6 @@ ipcMain.on('device-runtime:scheduled-tasks-changed', () => {
 // @@@local-device-self - The renderer should not ask the cloud whether its own machine
 ipcMain.handle('device:get-self-snapshot', () => getLocalDeviceSelfSnapshot())
 
-// @@@share-card-rename 改名也有两半,云端与本机。
-// 云端那半是 identity.users.display_name(聊天页 / 通讯录 / 名片海报读它);本机那半是花名册 agents.json
-// 上的 name,会话页读它(分享按钮的提示、分享卡片里那个名字、按名字寻址)。provisioning 复用花名册上的
-// existing.name 且**从不**回读云端,所以只改云端 = 同一个 agent 在两页叫两个名字,而这正是
-// sessionpage-agent-card 注释里写明要避免的那件事。
-// 渲染层在云端改名**成功之后**调它(同 release 的次序:云端认了,才轮得到本机跟上)。
-// 本机没有花名册记录不是失败(那个 agent 是在别的设备上开的户,这台机器上本来就没有它的那一半)→ 回 false。
-ipcMain.handle('owned-agent:rename-local-footprint', async (_e, arg: unknown) => {
-  const input = (arg ?? {}) as { agentUserId?: unknown; name?: unknown }
-  const agentUserId = typeof input.agentUserId === 'string' ? input.agentUserId.trim() : ''
-  const name = typeof input.name === 'string' ? input.name.trim() : ''
-  if (!agentUserId) throw new Error('owned-agent rename 缺 agentUserId')
-  // 空名不是「不改」,是一个会把花名册写坏的值 —— 调用方本就不该发出来,发出来就响亮拒绝。
-  if (!name) throw new Error('owned-agent rename 缺 name')
-  const { listAgents, writeAgentName } = await import('@gugu/core/local/state/agents')
-  // includeGuests:会话页会话的身份可能还挂在 guest 记录上,漏掉它就等于「这台机器上没有」而静默不改。
-  const roster = await listAgents(process.env, { includeGuests: true })
-  const existing = roster.find((agent) => agent.gugu_user_id === agentUserId)
-  if (!existing) return false
-  // The cloud already took this person's rename: it is this device's latest name and it is published.
-  await writeAgentName(agentUserId, name, 'local', process.env)
-  await writeAgentName(agentUserId, name, 'published', process.env)
-  // The roster write renames the bound task (task-name.ts announces it to every surface). Its agent is told
-  // only when it has a session to hear it (no session binding = nothing is running under that name yet).
-  const sessionId = existing.cache?.[SESSION_CACHE_KEY]
-  if (typeof sessionId === 'string' && sessionId && existing.name !== name) tellRenamedAgentsSession({ agentUserId, displayName: name })
-  return true
-})
-
-
 ipcMain.handle('dialog:select-file', async () => {
   const options: OpenDialogOptions = { properties: ['openFile'] }
   const result = mainWindow
@@ -2822,6 +2817,22 @@ function purgeUpdaterCacheOnce(): void {
     })
   } catch (error) {
     updaterLogger.warn({ error: String(error) }, '[updater] 清更新缓存时出错(不影响启动)')
+  }
+}
+
+// @@@install-failure-log — 上一次安装/更新若在 Windows 事务安装器里失败,原因只在 NSIS「显示细节」里一闪而过;
+// 安装器把它追加进 %ProgramData%\gugu\installer\<exe>.log,这里在启动时把还没报过的条目原样记进应用日志。
+function reportInstallerFailuresOnce(): void {
+  if (!app.isPackaged || process.platform !== 'win32' || !process.env.ProgramData) return
+  try {
+    const count = reportInstallerFailures({
+      logPath: installerFailureLogPath(process.env.ProgramData, process.execPath),
+      seenPath: join(app.getPath('userData'), 'installer-failures-reported'),
+      report: (entry) => updaterLogger.error({ entry }, '[updater] 上一次 Windows 安装没有完成(安装器记录)'),
+    })
+    if (count) updaterLogger.warn({ count }, '[updater] 已记下安装器留下的失败记录')
+  } catch (error) {
+    updaterLogger.warn({ error: String(error) }, '[updater] 读安装器失败记录时出错(不影响启动)')
   }
 }
 
@@ -3328,6 +3339,9 @@ app.on('before-quit', createRuntimeBeforeQuitHandler({
     if (value) updateQuit.noteShutdownStarted()
   },
   exit: (code) => {
+    // The hard exit below skips will-quit, so the owned-process reap runs here too: whatever the bounded stop left
+    // running (a worker past its grace, with the agent CLIs under it) goes now instead of outliving the app.
+    killEnginesOnCrash('quit')
     const hardExit = (): never =>
       (process as NodeJS.Process & { reallyExit: (exitCode: number) => never }).reallyExit(code)
     squirrelHandoff.exit(updateQuit.forUpdate, hardExit)
@@ -3974,6 +3988,17 @@ handleShellChannel(SESSION_SHELL_CHANNELS.agentCard, async (_event, sessionId: u
     (agentUserIds) => loadSessionpageCanonicalAgentIdentities(auth, agentUserIds),
   )
 })
+handleShellChannel(SESSION_SHELL_CHANNELS.birthGroupJoin, async (_event, sessionId: unknown) => {
+  const auth = await authProvider?.getAuth()
+  if (!auth?.accessToken || !auth.userId) return null
+  return sessionpageBirthGroupJoin(String(sessionId ?? ''), process.env, auth.userId)
+})
+handleShellChannel(SESSION_SHELL_CHANNELS.retryBirthGroupJoin, async (_event, sessionId: unknown) => {
+  const auth = await authProvider?.getAuth()
+  if (!auth?.accessToken || !auth.userId) throw new Error('Sign in to retry joining the group')
+  return retrySessionpageBirthGroupJoin(String(sessionId ?? ''), process.env,
+    { accessToken: auth.accessToken, userId: auth.userId }, createLogger('sessionpage/provision'))
+})
 // 侧栏逐行 hover 要说「这一行是谁」(#5818):就是本机名册(session_peers)那一份的投影,名字同样取自
 // identity.users.display_name。
 handleShellChannel(SESSION_SHELL_CHANNELS.agentNames, async () => {
@@ -4202,8 +4227,8 @@ function sendUiEvent<T>(event: EventDefinition<T>, ...payload: T extends void ? 
 // 身份是会话启动后**才**到位的(云端 provision + roster 落盘),任务一创建就已渲染 → 分享入口第一次查必然是 null,
 // 所以一落地就播一次(❌ 轮询)。播给本机窗口,也播给经设备连接看着这台机器的别的电脑(#6264:server 上只有后者)。
 // 载荷形状由事件定义钉住(会话页按 conversationId 认领),❌ 原样转主进程自己那份事件(那边叫 sessionId)。
-function sendSessionpageIdentityEvent(event: EventDefinition<SessionShellAgentName>, payload: SessionShellAgentName): void {
-  sendUiEvent(event, payload)
+function sendSessionpageIdentityEvent<T extends object>(event: EventDefinition<T>, payload: T): void {
+  mainWindow?.webContents.send(event.name, payload)
   emdashBridge?.broadcastDeviceSessionHostEvent(event.name, payload)
 }
 // #7337 咕咕给新会话起名:建会话时记下,这条会话拿到 agent 身份(签票要挂在它名下)时以它的名义找设置里的模型要一个短名。
@@ -4237,6 +4262,11 @@ onSessionpageAgentProvisioned((event) => {
   // S2b 读者触发③(身份就绪):可投递 = 身份就绪 + 各腿登记好,两个边界各踢一次,后到的那一次投得出去。
   // 各腿的登记点另踢(ACP:运行时启动成功;PTY:registerLive;codex:threadId;claude:tools/list)。
   onSessionpageSessionLive(event.agentUserId, event.sessionId)
+})
+
+// A born-in-chat join that failed (or a retry that settled it): the session page shows it as a condition with a retry.
+onSessionpageBirthGroupJoin(({ sessionId, join }) => {
+  sendSessionpageIdentityEvent(sessionpageBirthGroupJoinEvent, { conversationId: sessionId, join })
 })
 
 /** #6396 在这条会话的对话里画「名字已被占用」那一行(见 sessionpage-rename-announcement.ts)。递不到只记一笔:名字本身已经换好了。 */
@@ -4589,12 +4619,15 @@ app.whenReady().then(async () => {
   })
   // @@@deeplink-register - Packaged builds declare gugu:// via electron-builder `protocols`
   // #6387 前缀按版本区分(见 GUGU_LINK_SCHEME):同机的正式版、Beta、开发版各认各的链接。
-  if (process.defaultApp) {
-    if (process.argv.length >= 2) {
-      app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME, process.execPath, [resolve(process.argv[1])])
+  if (!IS_TEST_MODE) {
+    if (process.defaultApp) {
+      if (process.argv.length >= 2) {
+        // The app path, not `resolve(argv[1])`: the working directory is userData by now (@@@app-cwd).
+        app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME, process.execPath, [app.getAppPath()])
+      }
+    } else {
+      app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME)
     }
-  } else {
-    app.setAsDefaultProtocolClient(GUGU_LINK_SCHEME)
   }
   setupRendererCommandIpcHandlers()
   // 应用菜单(app-menu.ts):mac「咕咕」那一栏多一项「设置…」;@@@devtools-lock 锁了的包「视图」里没有
@@ -4692,10 +4725,12 @@ app.whenReady().then(async () => {
             : (invokeRendererAuth('getSessionOwner', { waitMs }) as Promise<BootOwnerAnswer>),
         ms,
       )
-    const sessionMessageRouter = async (sessionId: string, message: SessionMessage, signal?: AbortSignal) => {
+    const sessionMessageRouter = async (sessionId: string, message: SessionMessage, signal?: AbortSignal, beforeAdmission?: () => void) => {
       signal?.throwIfAborted()
+      beforeAdmission?.()
       const ready = await sessionpagePlatformRecovery?.ensureReady(sessionId, `session-message:${message.kind ?? 'ordinary'}`)
       signal?.throwIfAborted()
+      beforeAdmission?.()
       if (ready?.status === 'failed') {
         createLogger('session-message').error({ sessionId, messageId: message.id, error: ready.error }, 'platform credential recovery failed; message remains pending')
         return {
@@ -4706,20 +4741,21 @@ app.whenReady().then(async () => {
       }
       const attempt = async () => {
         signal?.throwIfAborted()
-        const result = await localDelivery.tryInjectSessionMessage(sessionId, message)
+        beforeAdmission?.()
+        const result = await localDelivery.tryInjectSessionMessage(sessionId, message, beforeAdmission)
         return result === false ? 'not-live' as const : result
       }
       let accepted: Exclude<Awaited<ReturnType<typeof attempt>>, 'not-live'>
       if (message.kind === 'session-direct') {
         // #6546 冷目标:与收件箱同一个唤醒入口,等准入后再投一次;叫不醒带着原因报回发送方。
         try {
-          accepted = await localDelivery.injectWithWake(sessionId, attempt, signal)
+          accepted = await localDelivery.injectWithWake(sessionId, attempt, signal, beforeAdmission)
         } catch (error) {
           if (!(error instanceof SessionWakeError)) throw error
           return { status: 'not-ready' as const, reason: `target session not live — ${error.message}` }
         }
       } else {
-        const first = await localDelivery.tryInjectOrWake(sessionId, message)
+        const first = await localDelivery.tryInjectOrWake(sessionId, message, beforeAdmission)
         if (first === false) return { status: 'not-ready' as const }
         accepted = first
       }
@@ -6578,9 +6614,11 @@ app.whenReady().then(async () => {
     }).catch((error: unknown) => createLogger('search/backfill').error({ error: String(error) }, 'Search backfill could not start after backend boot'))
   }
   startDeviceRuntimeWhenRendererReady()
+  resumeDeclaredUploads()
   // server 的升级另有一套(后台下好、没有 agent 在跑时切换),❌ 走桌面这套弹界面的更新器。
   if (!SERVER_MODE) {
     purgeUpdaterCacheOnce()
+    reportInstallerFailuresOnce()
     updateChecks.startAutomatic()
   }
 
