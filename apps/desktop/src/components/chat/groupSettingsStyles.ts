@@ -15,6 +15,12 @@ export const settingsDangerRowStyle: CSSProperties = {
   marginTop: 20, textAlign: 'center', color: 'var(--danger-fg)', fontSize: 'var(--font-body)', fontWeight: 500,
   cursor: 'pointer', padding: 11, borderRadius: 'var(--radius-xl)', background: 'var(--danger-tint)',
 }
+export const managementSettingsRowStyle: CSSProperties = {
+  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+  margin: '0 -8px', padding: '13px 8px', borderRadius: 'var(--radius-control)', cursor: 'pointer',
+  fontSize: 'var(--font-body)', fontWeight: 500, color: 'var(--text-primary)',
+}
+export const managementSettingsDangerRowStyle: CSSProperties = { ...managementSettingsRowStyle, color: 'var(--danger-fg)' }
 export const settingsRowStyle: CSSProperties = {
   display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, padding: '15px 0',
 }
