@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   notificationsCheck: vi.fn(),
   notificationsRequest: vi.fn(),
   createChannel: vi.fn(),
+  ensureQuietChannel: vi.fn(),
+  readNotificationStatus: vi.fn(),
+  openNotificationChannel: vi.fn(),
   schedule: vi.fn(),
   cameraCheck: vi.fn(),
   cameraRequest: vi.fn(),
@@ -22,6 +25,18 @@ const mocks = vi.hoisted(() => ({
   bgUpdate: vi.fn(),
   bgDisable: vi.fn(),
 }))
+
+vi.mock('@capacitor/core', async importOriginal => {
+  const actual = await importOriginal<typeof import('@capacitor/core')>()
+  return {
+    ...actual,
+    registerPlugin: (name: string) => name === 'GuguNotificationChannels' ? {
+      ensureQuietChannel: mocks.ensureQuietChannel,
+      readStatus: mocks.readNotificationStatus,
+      openSettings: mocks.openNotificationChannel,
+    } : actual.registerPlugin(name),
+  }
+})
 
 vi.mock('../../../../apps/desktop/src/platform/capacitorMicrophone', () => ({ nativeAudioPermissions: {
   checkPermissions: mocks.microphoneCheck, requestPermissions: mocks.microphoneRequest,
@@ -68,6 +83,7 @@ import { systemPermissionAction } from '../../../../apps/desktop/src/lib/systemP
 beforeEach(() => {
   for (const mock of Object.values(mocks)) mock.mockReset()
   mocks.createChannel.mockResolvedValue(undefined)
+  mocks.ensureQuietChannel.mockResolvedValue({ id: 'gugu-alerts-quiet-v2' })
   mocks.schedule.mockResolvedValue({ notifications: [] })
 })
 
@@ -124,9 +140,9 @@ describe('capacitor showNotification', () => {
       .resolves.toMatchObject({ displayed: true })
     await capacitorPlatform.showNotification({ title: 'new message', silent: true })
 
-    expect(mocks.createChannel).toHaveBeenCalledTimes(2)
+    expect(mocks.createChannel).toHaveBeenCalledTimes(1)
     expect(mocks.createChannel).toHaveBeenCalledWith(expect.objectContaining({ id: 'gugu-alerts', importance: 4 }))
-    expect(mocks.createChannel).toHaveBeenCalledWith(expect.objectContaining({ id: 'gugu-alerts-quiet', importance: 2 }))
+    expect(mocks.ensureQuietChannel).toHaveBeenCalledTimes(1)
 
     const [loud] = mocks.schedule.mock.calls[0][0].notifications
     const [quiet] = mocks.schedule.mock.calls[1][0].notifications
@@ -138,8 +154,16 @@ describe('capacitor showNotification', () => {
       extra: { chatId: 'chat-1' },
     })
     expect(loud.schedule).toBeUndefined()
-    expect(quiet).toMatchObject({ channelId: 'gugu-alerts-quiet', isExactNotification: false, body: '' })
+    expect(quiet).toMatchObject({ channelId: 'gugu-alerts-quiet-v2', foreground: true, isExactNotification: false, body: '' })
     expect(quiet.id).not.toBe(loud.id)
+  })
+
+  it('uses the real alert channel for status and asks Android to open the matching settings', async () => {
+    mocks.readNotificationStatus.mockResolvedValue({ enabled: true, importance: 3 })
+    await expect(capacitorPlatform.androidNotificationSettings!.read(true)).resolves.toEqual({ enabled: true, importance: 3 })
+    expect(mocks.readNotificationStatus).toHaveBeenCalledWith({ alertChannelId: 'gugu-alerts', silent: true })
+    await capacitorPlatform.androidNotificationSettings!.open(false, false)
+    expect(mocks.openNotificationChannel).toHaveBeenCalledWith({ alertChannelId: 'gugu-alerts', silent: false, appWide: false })
   })
 })
 
