@@ -46,8 +46,9 @@ export function AssistantSetupPage() {
 }
 
 /** 助理自己的设置入口；复用全局设置的数据、组件和操作，不另存一份配置。 */
-export function AssistantSettingsPage({ onOpenPage, onOpenSection, panelNavigation = false }: {
+export function AssistantSettingsPage({ onOpenPage, onOpenSection, panelNavigation = false, sections = SECTIONS }: {
   panelNavigation?: boolean
+  sections?: readonly ActiveSection[]
   onOpenPage?: (tab: 'memory' | 'tasks') => void
   onOpenSection?: (section: ActiveSection) => void
 } = {}) {
@@ -77,7 +78,7 @@ export function AssistantSettingsPage({ onOpenPage, onOpenSection, panelNavigati
         : section === 'connectors' ? <ConnectorsSection panelNavigation={panelNavigation} />
         : section === 'devices' ? <AssistantDevicesPage cloudDeviceId={cloudDeviceId} panelNavigation={panelNavigation} />
         : section === 'channels' ? <ConnectorsSection panelNavigation={panelNavigation} />
-        : <AssistantSection available={SECTIONS} onOpenSection={onOpenSection ?? setSection} onOpenModel={() => setSection('aimodel')}
+        : <AssistantSection available={sections} onOpenSection={onOpenSection ?? setSection} onOpenModel={() => setSection('aimodel')}
             onOpenAssistantPage={onOpenPage ?? (() => { openAssistantEntry() })} />}
     </div>
   )

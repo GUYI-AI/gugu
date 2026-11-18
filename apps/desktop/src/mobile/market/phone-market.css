@@ -1,0 +1,224 @@
+.phone-market,
+.phone-market-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.phone-market-tabs [role="tablist"] {
+  justify-content: space-between;
+  background: var(--muted);
+  border-radius: var(--radius-surface);
+  padding: 2px;
+}
+
+.phone-market-tabs [role="tab"] {
+  flex: 1 1 0;
+  justify-content: center;
+  min-height: 36px;
+}
+
+.phone-market-tabs [role="tab"][data-selected] {
+  background: var(--bg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.phone-market-search[data-slot="search-field"] {
+  background: var(--muted);
+  border-color: transparent;
+}
+
+.phone-market-search[data-slot="search-field"]:focus-within {
+  border-color: var(--border-strong);
+}
+
+.phone-market-categories {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.phone-market-categories [role="tab"] {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.phone-market-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  min-height: 60px;
+}
+
+.phone-market-row .phone-market-row-main {
+  display: flex;
+  flex: 1;
+  justify-content: flex-start;
+  gap: 12px;
+  min-width: 0;
+  height: auto;
+  padding: 6px 0;
+  text-align: start;
+}
+
+.phone-market-icon {
+  display: flex;
+  flex: 0 0 44px;
+  height: 44px;
+  justify-content: center;
+  align-items: center;
+}
+
+.phone-market-row-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: var(--font-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.phone-market-row-copy > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-market-description,
+.phone-market-status {
+  color: var(--muted-fg);
+  font-size: var(--font-caption);
+  font-weight: var(--font-weight-regular);
+}
+
+.phone-market-action {
+  min-width: 60px;
+  flex-shrink: 0;
+  border-radius: var(--radius-capsule);
+}
+
+.phone-market-status {
+  flex-shrink: 0;
+}
+
+.phone-market-device {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: var(--font-body);
+}
+
+.phone-market-device select {
+  width: min(100%, 16rem);
+  min-height: 36px;
+  color: var(--text-primary);
+  background: var(--bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-control);
+  padding-inline: 8px;
+}
+
+.phone-market-install-sheet {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px max(16px, env(safe-area-inset-bottom));
+}
+
+.phone-market-install-sheet h2 {
+  margin: 0;
+  font-size: var(--font-title);
+  font-weight: var(--font-weight-semibold);
+}
+
+.phone-market-install-devices {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.phone-market-install-devices .phone-market-install-device {
+  display: flex;
+  width: 100%;
+  min-height: var(--control-h-touch);
+  gap: 10px;
+  padding-inline: 2px;
+  justify-content: flex-start;
+}
+
+.phone-market-install-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: start;
+  text-overflow: ellipsis;
+}
+
+.phone-market-check {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-document);
+}
+
+.phone-market-check[data-checked] {
+  border-color: var(--text-primary);
+  background: var(--text-primary);
+  color: var(--bg);
+}
+
+.phone-market-install-submit {
+  width: 100%;
+  min-height: var(--control-h-touch);
+  border-radius: var(--radius-capsule);
+}
+
+.phone-market-target-summary {
+  margin: 0;
+  color: var(--muted-fg);
+  font-size: var(--font-caption);
+}
+
+.phone-app-product .phone-market-target-summary {
+  grid-column: 1 / -1;
+}
+
+.phone-market-agent-description {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.phone-market-agent-facts {
+  display: flex;
+  align-items: stretch;
+  margin: 0;
+  padding: 12px 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-surface);
+  text-align: center;
+}
+
+.phone-market-agent-facts > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column-reverse;
+  gap: 4px;
+}
+
+.phone-market-agent-facts > div:not(:first-child) {
+  border-inline-start: 1px solid var(--border-color);
+}
+
+.phone-market-agent-facts dt {
+  font-size: var(--font-caption);
+  color: var(--muted-fg);
+}
+
+.phone-market-agent-facts dd {
+  margin: 0;
+  font-weight: var(--font-weight-semibold);
+}
