@@ -37,7 +37,7 @@ function Menus() {
 }
 function Room() {
   const [handle] = useState(() => Popover.createHandle<ActiveMemberProfile>())
-  return <PhoneRoomComposerControls chatId="room" topics={[]} current={null} onPick={() => {}} members={[]}
+  return <PhoneRoomComposerControls chatId="room" topics={[]} topicsReady current={null} onPick={() => {}} members={[]}
     roster={{ ready: true, failed: false, retry: () => {} }} userId="owner" profileOpener={{ handle, openedFrom: 'main' }} />
 }
 function Skills() {
@@ -97,9 +97,11 @@ it.each(['light', 'dark'] as const)('%s: the shared menu reflects open state and
 it('the real room Topics and Agents entries both expose and reset their own expanded state', async () => {
   await mount(<Room />)
   await until('room menu mounted', () => !!harness?.container.querySelector('[data-testid="phone-room-topics"]'))
-  for (const id of ['phone-room-topics', 'phone-room-agents']) {
+  for (const [id, title] of [['phone-room-topics', '话题'], ['phone-room-agents', '智能体']] as const) {
     direction(id, false)
+    await expect.element(page.getByTestId(id)).toHaveTextContent(title)
     await page.getByTestId(id).click(); direction(id, true)
+    await expect.element(page.getByRole('heading', { name: `${title} 0`, exact: true })).toBeVisible()
     await page.getByTestId('phone-room-controls-sheet-close').click()
     await until('room menu closed', () => !document.querySelector('[data-testid="phone-room-controls-sheet"]'))
     direction(id, false)

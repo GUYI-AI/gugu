@@ -28,7 +28,7 @@ function Content({state='ready',selected=null}:{state?:'ready'|'loading'|'failed
  const [handle]=useState(()=>Popover.createHandle<ActiveMemberProfile>())
  const [current,setCurrent]=useState(selected);showTopicExternally=setCurrent
  return <>
-  <PhoneRoomComposerControls chatId="room" topics={topics} current={current?{chatId:current.chat_id,name:current.name}:null} onPick={topic=>{onPick(topic);setCurrent(topic)}} members={state==='ready'?[member]:[]}
+  <PhoneRoomComposerControls chatId="room" topics={state==='ready'?topics:[]} topicsReady={state==='ready'} current={current?{chatId:current.chat_id,name:current.name}:null} onPick={topic=>{onPick(topic);setCurrent(topic)}} members={state==='ready'?[member,{...member,id:'former-agent',membership:'former'},{...member,id:'human',type:'human'}]:[]}
    roster={{ready:state==='ready',failed:state==='failed',retry}} userId="owner" profileOpener={{handle,openedFrom:'main'}} onOpenAgent={onOpen} />
   <ChatComposer mobile editorOptions={{inputTestId:'room-editor'}} onSubmit={vi.fn()} />
   <MemberProfileRoot handle={handle}>{profile=><MemberProfilePopover profile={profile} onClose={()=>handle.close()} />}</MemberProfileRoot>
@@ -50,8 +50,8 @@ it.each(['light','dark'] as const)('%s: topic and Agent sheets dismiss keyboard 
  const before={node:selection.anchorNode,offset:selection.anchorOffset,text:editor.textContent}
  const blur=vi.fn(),end=vi.fn();editor.addEventListener('blur',blur);editor.addEventListener('compositionend',end)
  editor.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'ni'}))
- await page.getByTestId('phone-room-topics').click();await page.getByRole('heading',{name:'话题',exact:true}).click();await page.getByRole('button',{name:'关闭',exact:true}).click()
- await page.getByTestId('phone-room-agents').click();await page.getByRole('heading',{name:'智能体',exact:true}).click();await page.getByRole('button',{name:'关闭',exact:true}).click()
+ await page.getByTestId('phone-room-topics').click();await page.getByRole('heading',{name:'话题 2',exact:true}).click();await page.getByRole('button',{name:'关闭',exact:true}).click()
+ await page.getByTestId('phone-room-agents').click();await page.getByRole('heading',{name:'智能体 1',exact:true}).click();await page.getByRole('button',{name:'关闭',exact:true}).click()
  expect(harness!.container.querySelector('[contenteditable]')).toBe(editor);expect(document.activeElement).not.toBe(editor)
  expect(selection.anchorNode).toBe(before.node);expect(selection.anchorOffset).toBe(before.offset);expect(editor.textContent).toBe(before.text)
  expect(blur).toHaveBeenCalledTimes(1);expect(end).not.toHaveBeenCalled()
@@ -97,6 +97,7 @@ it('keeps a narrow sheet in the viewport and exposes a real failed read with Ret
 
 it('does not present an unread roster as an empty group',async()=>{
  await mount('dark','loading');await page.getByTestId('phone-room-agents').click()
+ await expect.element(page.getByRole('heading',{name:'智能体',exact:true})).toBeVisible()
  await expect.element(page.getByRole('status')).toHaveTextContent('正在读取智能体')
  expect(document.body.textContent).not.toContain('群里还没有智能体')
 })
@@ -104,7 +105,7 @@ it('does not present an unread roster as an empty group',async()=>{
 
 it('closes a retained room sheet when the host switches to another topic',async()=>{
  await mount();await page.getByTestId('phone-room-topics').click()
- await expect.element(page.getByRole('heading',{name:'话题',exact:true})).toBeVisible()
+ await expect.element(page.getByRole('heading',{name:'话题 2',exact:true})).toBeVisible()
  showTopicExternally?.(topics[1]!)
  await until('external topic is active',()=>document.querySelector('[data-testid="phone-room-topics"]')?.getAttribute('data-active')==='true')
  await until('sheet closes',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)

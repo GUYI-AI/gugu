@@ -23,7 +23,7 @@ let harness: ReturnType<typeof createReactHarness> | null = null
 const picked = vi.fn(), opened = vi.fn()
 function Fixture() {
   const [handle] = useState(() => Popover.createHandle<ActiveMemberProfile>())
-  return <><PhoneRoomComposerControls chatId="source-room" topics={topics} current={null} onPick={picked} members={agents}
+  return <><PhoneRoomComposerControls chatId="source-room" topics={topics} topicsReady current={null} onPick={picked} members={agents}
     roster={{ ready: true, failed: false, retry: () => {} }} userId="owner" profileOpener={{ handle, openedFrom: 'main' }} onOpenAgent={opened} />
     <MemberProfileRoot handle={handle}>{profile => <MemberProfilePopover profile={profile} onClose={() => handle.close()} />}</MemberProfileRoot></>
 }
@@ -49,6 +49,7 @@ it('keeps topic search first and pinned while preserving duplicate-name selectio
   const field = page.getByTestId('phone-topics-search')
   await field.fill('没有这个话题')
   await expect.element(page.getByText('没有匹配结果', { exact: true })).toBeVisible()
+  await expect.element(page.getByRole('heading', { name: '话题 35', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '清除搜索' }).click()
   await expect.element(field).toHaveValue('')
   await field.fill('同名')

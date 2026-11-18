@@ -66,7 +66,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
     ? [machine.device.device_id, configuration.selection.harness, machine.localProjectId] : null)
   const skillCount = skillCatalog.state === 'value' ? skillCatalog.value.skills.length : null
   const thinking = existingSession?.model ?? (configuration ? creationThinking(configuration.models, configuration.selection) : null)
-  const title = view === 'project' ? t('project') : view === 'skills' ? skillCount === null ? t('skills') : t('skillsCount', { count: skillCount }) : t(view === 'device' || !view ? 'modelDevice' : view === 'harness' ? 'agent' : view)
+  const title = t(view === 'device' || !view ? 'modelDevice' : view === 'harness' ? 'agent' : view)
   const select = (next: CreateSelection, modelPicked?: boolean) => { configuration?.onChange(next, modelPicked); setView('device') }
   const compact = !!existingSession || view !== 'project'
   return <>
@@ -85,7 +85,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
         testId="agent-watch-create-skills" buttonRef={skillsButton} onClick={() => { setSearch(''); setView('skills') }} />}
       {controlsExtra}
     </PhoneComposerControlRow></div>
-    <PhoneComposerSheet open={view !== null && !(phone && view === 'skills' && !existingSession)} onClose={() => setView(null)} title={title}
+    <PhoneComposerSheet open={view !== null && !(phone && view === 'skills' && !existingSession)} onClose={() => setView(null)} title={title} titleCount={view === 'skills' ? skillCount ?? undefined : undefined}
       onBack={view && compact && view !== 'device' && view !== 'skills' ? () => setView('device') : undefined}
       anchor={compact ? view === 'skills' ? skillsButton : modelButton : undefined} testId="agent-watch-create-controls-sheet"
       footer={view === 'skills' && skillCount !== null && skillCount > 0 ? <CreateSkillSearch search={search} onSearch={setSearch} /> : undefined}>

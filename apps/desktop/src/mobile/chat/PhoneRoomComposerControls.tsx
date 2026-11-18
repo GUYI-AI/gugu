@@ -25,6 +25,7 @@ import { phoneMenuBar } from '../composer/phone-menu-bar'
 export type PhoneRoomComposerControlsProps = {
   chatId: string
   topics: readonly TopicSummary[]
+  topicsReady: boolean
   current: { chatId: string; name: string } | null
   onPick: (topic: TopicSummary | null) => void
   members: readonly MemberProfileCardModel[]
@@ -38,12 +39,13 @@ export function PhoneRoomComposerControls(props: PhoneRoomComposerControlsProps)
   return <RoomComposerControls key={`${props.chatId}:${props.current?.chatId ?? ''}`} {...props} />
 }
 
-function RoomComposerControls({ chatId, topics, current, onPick, members, roster, userId, profileOpener, onOpenAgent }: PhoneRoomComposerControlsProps) {
+function RoomComposerControls({ chatId, topics, topicsReady, current, onPick, members, roster, userId, profileOpener, onOpenAgent }: PhoneRoomComposerControlsProps) {
   const { t } = useTranslation('mobileRoomControls')
   const { chats } = useChatStore('chats')
   const [view, setView] = useState<'topics' | 'agents' | null>(null)
   const choices = roomTopicChoices(chatId, topics, chats)
   const agents = members.filter(member => member.type === 'agent' && member.membership !== 'former')
+  const titleCount = view === 'agents' ? (roster.ready ? agents.length : undefined) : (topicsReady ? choices.topics.length : undefined)
   const menu = phoneMenuBar('room', { topics: true, agents: true })
   const choose = (topic: TopicSummary | null) => {
     setView(null)
@@ -55,7 +57,7 @@ function RoomComposerControls({ chatId, topics, current, onPick, members, roster
         testId="phone-room-topics" onClick={() => setView('topics')} />}
       {menu.includes('agents') && <PhoneComposerControl label={t('agents')} menuExpanded={view === 'agents'} icon={<Users />} testId="phone-room-agents" onClick={() => setView('agents')} />}
     </PhoneComposerControlRow>
-    <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'topics')} testId="phone-room-controls-sheet" className="gg-phone-room-sheet">
+    <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'topics')} titleCount={titleCount} testId="phone-room-controls-sheet" className="gg-phone-room-sheet">
       {view === 'topics' ? <PhoneNavigationPicker key="topics" kind="topics" items={[null, ...choices.topics]} nameOf={topic => topic?.name ?? t('main')}>
         {shown => <div role="radiogroup" aria-label={t('topics')}>
           {shown.map(topic => topic ? <TopicChoice key={topic.chat_id} name={topic.name} calls={topic.calls} news={topic.news}

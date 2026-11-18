@@ -21,6 +21,7 @@
 .gg-phone-composer-sheet-handle { flex: 0 0 4px; width: 34px; margin: 8px auto 0; border-radius: 2px; background: var(--border-strong); }
 .gg-phone-composer-sheet-head { display: flex; align-items: center; justify-content: space-between; min-height: 52px; gap: 8px; padding: 0 12px 0 16px; }
 .gg-phone-composer-sheet-head > h2 { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-body); font-weight: 500; color: var(--text-secondary); }
+.gg-phone-composer-sheet-count { margin-inline-start: 6px; font-weight: 400; color: var(--text-tertiary); }
 .gg-phone-composer-sheet-back { flex: 0 0 auto; }
 .gg-phone-composer-sheet-close { position: relative; border-radius: 50%; }
 .gg-phone-composer-sheet-close::before { content: ''; position: absolute; inset: 9px; border-radius: 50%; background: var(--hover); }

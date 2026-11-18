@@ -27,6 +27,7 @@ export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebar
   const machine = device ? { device, localProjectId: current?.session.projectId ?? '', path: '', available: device.is_online } : undefined
   const harness = current?.session.harness ?? null
   const [view, setView] = useState<'agents' | 'topics' | null>(null)
+  const titleCount = view === 'topics' ? topics.topics?.length : (source ? listed.length : undefined)
   const menu = phoneMenuBar(source ? 'roomAgent' : 'agent', { topics: !!source, agents: listed.length > 0 })
   const nextEntry = !anchor ? null : anchor.kind === 'agent' ? `session:${families.topLevelOf.get(anchor.agentUserId)?.[0]?.id ?? sessionId}` : `chat:${anchor.chatId}`
   const agents = view === 'agents' ? listed.map(agent => {
@@ -43,7 +44,7 @@ export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebar
       {menu.includes('topics') && <PhoneComposerControl label={t('topics')} menuExpanded={view === 'topics'} testId="phone-room-topics" buttonRef={topicsButton} onClick={() => setView('topics')} />}
       {menu.includes('agents') && <PhoneComposerControl label={t('agents')} icon={<Users />} menuExpanded={view === 'agents'} testId="phone-room-agents" buttonRef={agentsButton} onClick={() => setView('agents')} />}
       </>} />
-    <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'agents')} testId="phone-room-controls-sheet" className="gg-phone-room-sheet" anchor={view === 'topics' ? topicsButton : agentsButton}>
+    <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'agents')} titleCount={titleCount} testId="phone-room-controls-sheet" className="gg-phone-room-sheet" anchor={view === 'topics' ? topicsButton : agentsButton}>
       {view === 'agents' ? <PhoneNavigationPicker key={`agents:${sessionId}`} kind="agents" items={agents} nameOf={row => row.name}>
         {shown => shown.map(({ agent, identity, name }) => <Button key={agent.id} variant="ghost" className="gg-phone-room-choice gg-phone-room-agent" data-testid="phone-sidebar-agent" data-session-id={agent.id}
           onPointerDown={preserveComposerFocus} onMouseDown={preserveComposerFocus}
