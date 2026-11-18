@@ -3,6 +3,7 @@ import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { until } from '../../../../../../../../tests/support/awaitCondition';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -50,13 +51,14 @@ const h = vi.hoisted(() => {
   /** What main pushes on `marketRefreshedChannel` for the machine on show. */
   const heard: ((refreshed: unknown) => void)[] = [];
   const host = { key: 'local', local: true };
-  return { item, listing, api, heard, host };
+  const listManagement = vi.fn(async (): Promise<AgentPayload[]> => []);
+  return { item, listing, api, heard, host, listManagement };
 });
 
 vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: async () => ({ data: [], error: null }) } }));
 
 vi.mock('@renderer/lib/ipc', () => ({
-  rpc: { extensions: {}, app: {} },
+  rpc: { extensions: {}, app: {}, agents: { listIcons: async () => ({}) } },
   rpcOn: () => ({ agents: { list: async () => [] } }),
   events: { on: () => () => undefined },
   onMachineEvent: () => () => undefined,
@@ -86,7 +88,7 @@ vi.mock('@renderer/features/library/library-host', async () => {
       };
       return {
         key: h.host.key,
-        agents: { listManagement: async () => [], listAgentInstallationStatus: async () => [] },
+        agents: { listManagement: h.listManagement, listAgentInstallationStatus: async () => [] },
         extensions,
         remote: h.host.local ? undefined : { deviceLabel: 'Studio', online: true, lastSeenAt: null, hostKind: 'desktop' },
       };
@@ -114,6 +116,7 @@ describe('the App page market: the index in hand at once, the download site behi
   /** Every time the market panel showed its skeleton, after the first tiles were drawn. */
   let skeletonsAfterTiles: number;
   let observer: MutationObserver;
+  const queryClients = new Set<QueryClient>();
 
   const doc = () => dom.window.document;
   // One task boundary: the answers already settled, their renders and effects all run — what has not happened by then is not
@@ -125,12 +128,15 @@ describe('the App page market: the index in hand at once, the download site behi
   const stale = () => doc().querySelector('[data-testid="extension-market-stale"]');
 
   async function open() {
+    const client = new QueryClient();
+    queryClients.add(client);
     await act(async () => {
-      root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null, React.createElement(ExtensionsSettingsCard))));
+      root.render(React.createElement(QueryClientProvider, { client }, React.createElement(SessionLocalizationProvider, null, React.createElement(ExtensionsSettingsCard))));
     });
   }
   /** The page as the retained App place draws it (workspace.tsx RetainedPlace): mounted once, then only shown or hidden. */
   async function place(queryClient: QueryClient, shown: boolean) {
+    queryClients.add(queryClient);
     await act(async () => {
       root.render(
         React.createElement(QueryClientProvider, { client: queryClient },
@@ -158,6 +164,8 @@ describe('the App page market: the index in hand at once, the download site behi
     h.host.key = `local-${Math.random()}`;
     h.host.local = true;
     h.heard.length = 0;
+    h.listManagement.mockReset().mockResolvedValue([]);
+    h.api.list.mockReset().mockResolvedValue({ success: true, data: { extensions: [], invalid: [], icons: {}, disabled: [] } });
     h.api.market.mockReset().mockResolvedValue(h.listing(['one', 'two'], T1));
     h.api.marketRefresh.mockReset().mockResolvedValue({ success: true, data: { outcome: 'unchanged', fetchedAt: T1 } });
     root = createRoot(dom.window.document.getElementById('root') as HTMLDivElement);
@@ -170,9 +178,15 @@ describe('the App page market: the index in hand at once, the download site behi
     observer.observe(dom.window.document.body, { subtree: true, childList: true, attributes: true });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     observer.disconnect();
-    act(() => root.unmount());
+    await act(async () => {
+      await Promise.all([...queryClients].map((client) => client.cancelQueries()));
+      root.unmount();
+      for (const client of queryClients) client.clear();
+      queryClients.clear();
+    });
+    await turn();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
     dom.window.close();
@@ -358,5 +372,43 @@ describe('the App page market: the index in hand at once, the download site behi
     await turn();
     expect(h.api.market).toHaveBeenCalledTimes(2);
     expect(h.api.marketUpdates).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts only installed agents and extensions, with the assistant first and no runtime switches', async () => {
+    h.api.list.mockResolvedValue({
+      success: true,
+      data: { extensions: ['notes', 'gugu-assistant'].map((id) => h.item(id).manifest), invalid: [], icons: {}, disabled: [] },
+    });
+    const codex = {
+      id: 'codex',
+      name: 'Codex',
+      description: 'An agent for coding.',
+      reading: 'installed',
+      status: 'available',
+      version: '1.0.0',
+      latestVersion: '2.0.0',
+      updateAvailable: true,
+      installations: [],
+      used: { kind: 'auto' },
+      installOptions: [],
+      capabilities: { hostDependency: { updates: { kind: 'none' } } },
+    } as unknown as AgentPayload;
+    h.listManagement.mockResolvedValue([codex, { ...codex, id: 'pi', name: 'Pi', reading: 'not-detected' }]);
+    await open();
+    const tab = doc().querySelector<HTMLButtonElement>('[data-testid="extensions-tab-installed"]')!;
+    await act(async () => tab.click());
+
+    const testId = (id: string) => doc().querySelector(`[data-testid="${id}"]`);
+    await until('both sections drawn', () => tab.querySelector('.mk-seg-count')?.textContent, (count) => count === '3');
+    const agents = testId('installed-apps-agents')!;
+    const extensions = testId('installed-apps-extensions')!;
+    expect([...agents.querySelectorAll('li')].map((row) => row.dataset.testid)).toEqual([
+      'extension-row-gugu-assistant', 'installed-agent-row-codex',
+    ]);
+    expect([...extensions.querySelectorAll('li')].map((row) => row.dataset.testid)).toEqual(['extension-row-notes']);
+    const agent = testId('installed-agent-row-codex')!;
+    expect(agent.querySelector('.mk-tx > span')?.textContent).toMatch(/v2\.0\.0/);
+    expect(agent.querySelector('[role="switch"]')).toBeNull();
+    expect(testId('installed-agent-open-codex')?.textContent).toMatch(/Open|打开/);
   });
 });

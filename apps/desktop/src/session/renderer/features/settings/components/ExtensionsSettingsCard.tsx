@@ -192,7 +192,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   };
   const [query, setQuery] = useState('');
   const installedAgents = useInstalledAgentRows(query);
-  const [agentDetailId, onOpenAgentDetail] = useState<string | null>(null);
+  const [installedAgentDetailId, setInstalledAgentDetailId] = useState<string | null>(null);
   // 搜索词打到服务端去,所以敲字要缓一拍 —— 每个字符一趟请求是在替用户刷自己的清单接口。
   const debouncedQuery = useDebounce(query.trim(), 250);
   const [shelf, setShelf] = useState<ShelfState>(() => shelfOf(host.key) ?? { status: 'loading' });
@@ -1516,7 +1516,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                   {assistant && renderInstalledApp(assistant)}
                   <InstalledAgentRows
                     inventory={installedAgents}
-                    onOpenAgentDetail={onOpenAgentDetail}
+                    onOpenAgentDetail={setInstalledAgentDetailId}
                     readOnly={!!notice?.readOnly}
                   />
                 </ul>
@@ -1568,8 +1568,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                 </ul>
               </section>
             )}
-            {agentDetailId !== null && (
-              <AgentDetailModal agentId={agentDetailId} onClose={() => onOpenAgentDetail(null)} />
+            {installedAgentDetailId !== null && (
+              <AgentDetailModal agentId={installedAgentDetailId} onClose={() => setInstalledAgentDetailId(null)} />
             )}
 
             {inventory === 'ready' && installedAgents.inventory.isSuccess && installedCount === 0 && (
