@@ -16,7 +16,7 @@ import { enUSThemeMessages, zhCNThemeMessages } from './messages-themes';
 export const zhCNMarketAgentDescriptions: Readonly<Partial<Record<string, string>>> = {
   claude: '在终端里用 Claude 改代码、讲代码、做重构',
   codex: '接 OpenAI 的模型，看着整个项目写代码、跑命令',
-  pi: '极简的终端编程智能体，能接多家模型，工具可以自己加',
+  pi: '极简的终端编程智能体，能接多家模型，也能自行添加功能',
   agy: 'Google 的编程智能体，能聊天，也能在终端里干活',
   dsh: 'DeepSeek 开源的编程智能体，读代码、改文件、跑命令，撑得住长会话',
   mimocode: '小米的终端编程智能体，跨会话记得住事，能接 OpenAI 兼容的模型',
