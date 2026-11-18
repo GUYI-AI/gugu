@@ -83,6 +83,7 @@ function mentionChip(mention: MdastMention): Element {
       dataMentionId: id,
       dataMentionLabel: mention.label,
       dataMentionKind: mention.mentionKind,
+      dataPaneOpener: '',
       dataMentionEngine: mention.engine,
       dataMentionTitle: mention.title,
       dataMentionTone: mention.tone,
@@ -99,7 +100,7 @@ function imageChip(image: Element, slot: boolean): Element {
   return {
     type: 'element',
     tagName: src ? 'a' : 'span',
-    properties: { className: ['gg-md-image'], ...(src ? { href: src } : {}), ...(src && slot ? { dataGgImage: '' } : {}) },
+    properties: { className: ['gg-md-image'], ...(src ? { href: src, dataPaneOpener: '' } : {}), ...(src && slot ? { dataGgImage: '' } : {}) },
     children: [{ type: 'text', value: alt }],
   };
 }
@@ -114,6 +115,7 @@ function rehypeChips(mentions: readonly MdastMention[], imageSlots = false) {
         const mention = mentions[index];
         if (mention) return mentionChip(mention);
         if (child.tagName === 'img') return imageChip(child, imageSlots);
+        if (child.tagName === 'a') child.properties.dataPaneOpener = '';
         visit(child);
         if (child.tagName !== 'table') return child;
         // A table's lines (`sourceLines`) go to its scroll box: the box is the block a page meets at the top.

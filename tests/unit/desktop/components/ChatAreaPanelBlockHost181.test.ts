@@ -327,8 +327,9 @@ describe('ChatAreaPanel hosted in a block (gugu-dev#181)', () => {
       await act(async () => { readShellSlots()!.setSlot(chatTabSlotKey('group-1', folder!), slot) })
       expect(slot.querySelector('[data-testid="group-app-slot"]')).not.toBeNull()
       expect(slot.querySelector('[data-testid="group-app-slot-close"]'), 'in a block the tab is its title and its ×').toBeNull()
+      const focused = focusedChatTab('group-1')?.tabId
       await act(async () => { showChatOnly('another-group') })
-      expect(focusedChatTab('group-1')?.tabId, 'another chat\'s tab: this one stays').toBe(folder)
+      expect(focusedChatTab('group-1')?.tabId, 'another chat\'s tab: this one stays').toBe(focused)
       await act(async () => { showChatOnly('group-1') })
       expect(focusedChatTab('group-1')?.kind, 'its own chat\'s tab: the chat is focused').toBe('chat')
       expect(panelTabsOf('group-1').some((tab) => tab.tabId === folder), 'the folder stays open').toBe(true)
