@@ -64,24 +64,47 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
   useEffect(() => {
     const win = root.current?.ownerDocument.defaultView;
     if (!win) return;
+    let held = false;
+    let browseRequest = 0;
+    const stopBrowsing = () => {
+      held = false; browseRequest++;
+      setBrowsing(false);
+      void rpc.browser.setAnnotationBrowsing({ browserId, browsing: false }).catch(error => {
+        log.error({ error, browserId }, 'Could not release annotation browsing focus');
+      });
+    };
     const down = (event: KeyboardEvent) => {
       if (event.target instanceof Element && event.target.closest('textarea,input,[contenteditable="true"]')) return;
       if (event.code === 'Space' && !editorOpen && !busyRef.current && !(event.target instanceof Element && event.target.closest('button'))) {
-        event.preventDefault(); setBrowsing(true); setHover(null); setPage(null);
+        event.preventDefault();
+        if (held) return;
+        held = true;
+        const own = ++browseRequest;
+        // Arm native click handling before exposing the page. A quick release or
+        // unmount must not let a late RPC response re-enter temporary browsing.
+        void rpc.browser.setAnnotationBrowsing({ browserId, browsing: true }).then(({ success }) => {
+          if (!held || own !== browseRequest) return;
+          if (!success) { stopBrowsing(); setError(true); return; }
+          setBrowsing(true); setHover(null); setPage(null);
+        }, error => {
+          if (!held || own !== browseRequest) return;
+          stopBrowsing(); setError(true);
+          log.error({ error, browserId }, 'Could not retain annotation browsing focus');
+        });
       }
       if (event.key === 'Escape') { if (editorOpen) { setSelection(null); setEditingId(null); } else onExit(); }
     };
-    const up = (event: KeyboardEvent) => { if (event.code === 'Space') setBrowsing(false); };
-    const blur = () => setBrowsing(false);
+    const up = (event: KeyboardEvent) => { if (event.code === 'Space') stopBrowsing(); };
+    const blur = () => stopBrowsing();
     const stop = events.on(browserAnnotationSpaceChannel, event => {
       if (event.browserId !== browserId || event.pressed) return;
-      setBrowsing(false);
+      stopBrowsing();
       void rpc.browser.focusHost(win.name ?? '').then(() => {
         win.requestAnimationFrame(() => root.current?.focus({ preventScroll: true }));
       });
     });
     win.addEventListener('keydown', down); win.addEventListener('keyup', up); win.addEventListener('blur', blur);
-    return () => { request.current++; stop(); win.removeEventListener('keydown', down); win.removeEventListener('keyup', up); win.removeEventListener('blur', blur); };
+    return () => { request.current++; stopBrowsing(); stop(); win.removeEventListener('keydown', down); win.removeEventListener('keyup', up); win.removeEventListener('blur', blur); };
   }, [browserId, editorOpen, onExit]);
 
   // Focusing the annotation surface resolves the visible page before any pointer move.

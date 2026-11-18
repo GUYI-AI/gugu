@@ -40,7 +40,7 @@ type FakeWebContents = WebContents & {
 
 let nextWebContentsId = 1;
 
-const PAGE_WINDOW = { id: 'host-window' };
+const PAGE_WINDOW = { id: 'host-window', isDestroyed: () => false, webContents: { focus: vi.fn() } };
 /** #7274 页签的网页由主进程建好后交给登记表(browser-page-views.ts);网页左上角在窗口内容区 (40, 90)。 */
 function adopt(registry: BrowserWebContentsRegistry, browserId: string, webContents: WebContents): void {
   registry.adoptPageWebContents(browserId, webContents, {
@@ -136,6 +136,7 @@ describe('BrowserWebContentsRegistry', () => {
   beforeEach(() => {
     sessionsByPartition.clear();
     vi.mocked(events.emit).mockClear();
+    PAGE_WINDOW.webContents.focus.mockClear();
   });
 
   // withPlatform 自己在 finally 里还原;这条是兜底 —— 用例中途抛出时,
@@ -166,6 +167,40 @@ describe('BrowserWebContentsRegistry', () => {
     expect(first.openDevTools).toHaveBeenCalled();
     expect(registry.getActiveBrowser()).toBeNull();
     expect(registry.browserIdFor(second.id)).toBe('browser-2');
+  });
+
+  it('retains held annotation Space in the host without cancelling the native page click', () => {
+    const registry = new BrowserWebContentsRegistry();
+    const page = fakeWebContents();
+    const other = fakeWebContents();
+    adopt(registry, 'page', page);
+    adopt(registry, 'other', other);
+    expect(registry.setAnnotationBrowsing('missing', true)).toBe(false);
+    expect(registry.setAnnotationBrowsing('page', true)).toBe(true);
+    const event = { preventDefault: vi.fn() };
+    other.emitEvent('before-mouse-event', event, { type: 'mouseDown' });
+    expect(PAGE_WINDOW.webContents.focus).not.toHaveBeenCalled();
+    page.emitEvent('before-mouse-event', event, { type: 'mouseDown' });
+    expect(PAGE_WINDOW.webContents.focus).toHaveBeenCalledOnce();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(events.emit).toHaveBeenCalledWith(browserFocusedChannel, { browserId: 'page' });
+    registry.setAnnotationBrowsing('page', false);
+    PAGE_WINDOW.webContents.focus.mockClear();
+    page.emitEvent('before-mouse-event', event, { type: 'mouseDown' });
+    expect(PAGE_WINDOW.webContents.focus).not.toHaveBeenCalled();
+  });
+
+  it.each(['unregister', 'destroy'] as const)('clears held annotation focus when the page is removed by %s', removal => {
+    const registry = new BrowserWebContentsRegistry();
+    const page = fakeWebContents();
+    adopt(registry, 'page', page);
+    registry.setAnnotationBrowsing('page', true);
+    if (removal === 'unregister') registry.unregisterSession('page');
+    else page.destroy();
+    const replacement = fakeWebContents();
+    adopt(registry, 'page', replacement);
+    replacement.emitEvent('before-mouse-event', { preventDefault: vi.fn() }, { type: 'mouseDown' });
+    expect(PAGE_WINDOW.webContents.focus).not.toHaveBeenCalled();
   });
 
   it('#7274 右键菜单弹在网页所在的窗口上,坐标换成窗口内容区的(网页自己的坐标 + 网页左上角)', () => {

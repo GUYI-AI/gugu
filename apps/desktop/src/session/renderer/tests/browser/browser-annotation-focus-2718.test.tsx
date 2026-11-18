@@ -16,6 +16,7 @@ import '@/styles/tokens.css';
 const native = vi.hoisted(() => ({
   listeners: new Map<unknown, Set<(event: unknown) => void>>(),
   focusHost: vi.fn(async (_name: string) => ({ success: true })),
+  setAnnotationBrowsing: vi.fn(async (_args: { browserId: string; browsing: boolean }) => ({ success: true })),
 }));
 vi.mock('@renderer/lib/ipc', () => ({
   events: { on: (channel: unknown, listener: (event: unknown) => void) => {
@@ -23,7 +24,7 @@ vi.mock('@renderer/lib/ipc', () => ({
     listeners.add(listener); native.listeners.set(channel, listeners);
     return () => listeners.delete(listener);
   } },
-  rpc: { browser: { focusHost: native.focusHost } },
+  rpc: { browser: { focusHost: native.focusHost, setAnnotationBrowsing: native.setAnnotationBrowsing } },
 }));
 
 let harness: ReturnType<typeof createReactHarness> | null = null;
@@ -31,6 +32,7 @@ afterEach(async () => {
   await act(async () => { await userEvent.keyboard('{/Space}'); });
   harness?.cleanup(); harness = null;
   native.listeners.clear(); native.focusHost.mockReset();
+  native.setAnnotationBrowsing.mockReset().mockResolvedValue({ success: true });
 });
 
 it('saves a selected target without requiring an optional comment', async () => {
@@ -74,6 +76,26 @@ it('keeps the canvas ready for another Space browse after native focus returns, 
   await userEvent.keyboard(' ');
   expect(composer.value).toBe('Draft ');
   expect(canvas()).not.toBeNull();
+});
+
+it.each(['release', 'unmount'] as const)('ignores a late native browse acknowledgement after %s', async cancel => {
+  let armed!: (result: { success: boolean }) => void;
+  native.setAnnotationBrowsing.mockImplementationOnce(() => new Promise(resolve => { armed = resolve; }));
+  harness = createReactHarness();
+  await harness.render(<SessionLocalizationProvider><Fixture /></SessionLocalizationProvider>);
+  await act(async () => { await userEvent.click(harness!.container.querySelector('button')!); });
+  const canvas = () => harness!.container.querySelector<HTMLElement>('[data-browser-annotation-layer]');
+  await until('the annotation canvas owns focus', () => canvas() === document.activeElement);
+  await act(async () => { await userEvent.keyboard('{Space>}'); });
+  expect(canvas()).not.toBeNull();
+  expect(native.setAnnotationBrowsing).toHaveBeenCalledWith({ browserId: 'page', browsing: true });
+  await act(async () => {
+    if (cancel === 'release') await userEvent.keyboard('{/Space}');
+    else { harness!.cleanup(); harness = null; }
+  });
+  expect(native.setAnnotationBrowsing).toHaveBeenCalledWith({ browserId: 'page', browsing: false });
+  await act(async () => { armed({ success: true }); });
+  if (cancel === 'release') expect(canvas()).not.toBeNull();
 });
 
 it('reopens a saved marker at its anchor, preserves its number and deletes from the page', async () => {
