@@ -337,8 +337,8 @@ export async function createModels(
         })),
         selected: catalog.selected,
         ...(catalogAllowsAutoReview(agent.capabilities?.autoApprove?.modes, state,
-          platformModel ? 'platform' : 'own', requestedModel ?? (state.kind === 'ready' ? state.selected : null))
-          ? { autoReview: { model: platformModel ? requestedModel! : state.kind === 'ready' ? state.selected! : '' } } : {}),
+          platformModel ? 'platform' : customRef ? 'custom' : 'own', runtimeModelId(requestedModel) ?? (state.kind === 'ready' ? state.selected : null))
+          ? { autoReview: { model: requestedModel ?? (state.kind === 'ready' ? state.selected! : '') } } : {}),
         efforts: Object.entries(resolvedEfforts?.options ?? {}).map(([id, option]) => ({
           id,
           name: option.name,

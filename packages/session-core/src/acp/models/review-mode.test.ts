@@ -33,3 +33,11 @@ it('binds own-account capability to the exact selected model instead of a stale 
   expect(catalogAllowsAutoReview(claude, { ...ready, cliVersion: undefined }, 'own', ready.selected)).toBe(false);
   expect(catalogAllowsAutoReview(claude, { ...ready, cliVersion: '2.1.301' }, 'own', ready.selected)).toBe(false);
 });
+
+it('qualifies a custom main model independently of the native login, without admitting unknown models', () => {
+  expect(catalogAllowsAutoReview(claude, loggedOut, 'custom', 'claude-haiku-5-5')).toBe(true);
+  for (const model of [undefined, '', 'deepseek-v4']) {
+    expect(catalogAllowsAutoReview(claude, loggedOut, 'custom', model)).toBe(false);
+  }
+  expect(catalogAllowsAutoReview(claude, { ...loggedOut, cliVersion: '2.1.301' }, 'custom', 'claude-haiku-5-5')).toBe(false);
+});

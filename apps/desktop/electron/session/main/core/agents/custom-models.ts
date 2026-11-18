@@ -92,6 +92,8 @@ export type ResolvedCustomModel = {
   protocol: ModelProtocol;
   capabilities?: CustomModelMeta['models'][number];
   entries: CustomModelMeta['models'];
+  upstreamEndpoint: string;
+  removed?: boolean;
 };
 
 async function resolveCustomRoute(connectionId: string, protocol: ModelProtocol) {
@@ -175,6 +177,7 @@ export async function resolveCustomModel(providerId: string, sessionId: string, 
     connectionId: ref.connectionId, name,
     apiKey: local.apiKey, endpoint: customModelRoute(local.endpoint, ref.connectionId, protocol),
     models, protocol, capabilities: model, entries: meta.models,
+    upstreamEndpoint: meta.endpoints.find(entry => entry.protocol === protocol)!.baseUrl, removed: meta.removed,
   };
 }
 

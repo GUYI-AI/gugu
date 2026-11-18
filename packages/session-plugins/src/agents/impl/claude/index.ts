@@ -23,7 +23,7 @@ import {
   resolveNodeInterpreter,
 } from '../../helpers/node-interpreter';
 import { connectClaudeWithReview } from './auto-review-connection';
-import { CLAUDE_REVIEWER_MODEL, claudeReviewConfig, claudeReviewSettings } from './auto-review';
+import { claudeReviewConfig } from './auto-review';
 import { claudeAuthStatus } from './auth';
 import { claudeSubscriptionBehavior } from './subscription';
 import { buildClaudeHookConfig } from './hooks';
@@ -420,7 +420,6 @@ export const provider = registerPluginBehavior(plugin, {
           // Point the adapter's Claude Agent SDK at the host-installed claude
           // binary instead of the SDK's auto-downloaded native binary.
           CLAUDE_CODE_EXECUTABLE: claude.program,
-          CLAUDE_CODE_AUTO_MODE_MODEL: CLAUDE_REVIEWER_MODEL,
           // 以 root 跑咕咕时,桥会把「完全访问」这一档整个不报 —— 取证与 A/B 见 ./root-bypass.ts。
           // 非 root 上返回 {},这一行什么都不加。
           ...claudeAcpRootBypassEnv(),
@@ -439,7 +438,7 @@ export const provider = registerPluginBehavior(plugin, {
     buildCommand: (ctx) => {
       const ultracode = ctx.effort === CLAUDE_ULTRACODE_EFFORT_ID;
       const flags = claudeSessionFlagSettings({ fastMode: ctx.fastMode, reasoningEffort: ctx.effort });
-      const settings = ctx.permissionMode === 'ai-review' ? claudeReviewSettings(flags) : flags;
+      const settings = flags;
       // Claude uses only the last --settings value. A caller-owned document must be
       // composed by its lifetime owner; never overwrite it or copy its credentials to argv.
       const hasSettingsDocument = (ctx.extraArgs ?? []).some((arg) => arg === '--settings' || arg.startsWith('--settings='));

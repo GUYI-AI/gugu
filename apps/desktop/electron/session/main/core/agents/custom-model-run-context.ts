@@ -1,12 +1,22 @@
+import { customClaudeReviewSource } from '@gugu/session-core/models/auto-review-source';
+import { appSettingsService } from '@main/core/settings/settings-service';
 import type { AgentRunContext } from '@gugu/session-core/agents/agent-run-context';
 import { antigravityCustomModelLaunch, claudeAcpPlatformSessionMeta } from '@gugu/session-plugins/agents';
 import { writeSessionSettingsFile } from '../../../../sessionpage/session-settings-file';
 import { resolveCustomModel, type ResolvedCustomModel } from './custom-models';
 import { CLAUDE_CONNECTION_UNSET_ENV, CODEX_CONNECTION_UNSET_ENV, claudeApiKeyEnv, codexApiKeyConnectionArgs } from './harness-connection-launch';
 
-function claudeModelEnv(custom: ResolvedCustomModel): Record<string, string> {
+async function claudeModelEnv(custom: ResolvedCustomModel): Promise<Record<string, string>> {
+  const reviewer = customClaudeReviewSource({
+    connectionId: custom.connectionId, endpoint: custom.upstreamEndpoint,
+    selectedModel: custom.models[0], models: custom.entries, removed: custom.removed,
+    preference: await appSettingsService.get('autoReviewModel'),
+  });
   return {
     ...claudeApiKeyEnv(custom.apiKey, custom.endpoint, custom.models[0]),
+    // The cross-connection fallback is reserved, not connected in the first release.
+    // With no explicit main model the permission gate hides Auto mode before launch.
+    ...(reviewer.kind === 'own' ? { CLAUDE_CODE_AUTO_MODE_MODEL: reviewer.modelId } : {}),
     ...(custom.capabilities?.contextWindow ? { CLAUDE_CODE_MAX_CONTEXT_TOKENS: String(custom.capabilities.contextWindow) } : {}),
   };
 }
@@ -14,10 +24,10 @@ function claudeModelEnv(custom: ResolvedCustomModel): Record<string, string> {
 // Stable loopback credentials let both Claude surfaces reuse this protected file until the host exits.
 const claudeSettingsFiles = new Map<string, Promise<string>>();
 
-function claudeModelSettings(custom: ResolvedCustomModel): Promise<string> {
+async function claudeModelSettings(custom: ResolvedCustomModel): Promise<string> {
   const document = {
     apiKeyHelper: `echo ${custom.apiKey}`,
-    env: { ...claudeModelEnv(custom), ANTHROPIC_API_KEY: '' },
+    env: { ...await claudeModelEnv(custom), ANTHROPIC_API_KEY: '' },
   };
   const key = JSON.stringify(document);
   const existing = claudeSettingsFiles.get(key);
@@ -45,7 +55,7 @@ export async function resolveCustomModelRunContext(providerId: string, sessionId
   if (providerId === 'claude') {
     return {
       ...marker,
-      credentialEnv: claudeModelEnv(custom),
+      credentialEnv: await claudeModelEnv(custom),
       ...(acp ? {} : { extraArgs: ['--settings', await claudeModelSettings(custom)] }),
       unsetEnv: [...CLAUDE_CONNECTION_UNSET_ENV, 'ANTHROPIC_MODEL'],
     };

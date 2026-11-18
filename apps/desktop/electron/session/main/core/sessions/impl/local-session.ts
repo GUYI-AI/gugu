@@ -1,4 +1,4 @@
-import { meetsReviewModeRequirements, permissionModeSupportsBillingRoute } from '@gugu/session-core/acp/client';
+import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
 import { runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
@@ -559,12 +559,12 @@ export class LocalSessionProvider implements SessionProvider {
       const permissionMode = resolveSessionPermissionMode(session);
       if (permissionMode === 'ai-review') {
         const { probeHarnessModelCatalog } = await import('@main/core/agents/harness-model-catalog');
-        const catalog = await probeHarnessModelCatalog(session.providerId, 'tui', session.model ?? undefined);
-        const reviewEntry = plugin.capabilities.autoApprove.modes?.['ai-review'];
-        const available = (catalog.kind === 'ready' || catalog.kind === 'auth-required') && !!reviewEntry
-          && permissionModeSupportsBillingRoute('ai-review', plugin.capabilities.autoApprove.modes, platformModelForSpawn === null ? 'own' : platformModelForSpawn ? 'platform' : 'unknown') && (platformModelForSpawn
-          ? catalog.reviewerAvailable === true && meetsReviewModeRequirements(reviewEntry.reviewRequirements, { cliVersion: runContext.cliVersion, model: platformModelForSpawn.modelId })
-          : catalog.kind === 'ready' && catalog.autoReview === true);
+        const catalog = await probeHarnessModelCatalog(session.providerId, 'tui',
+          !platformModelForSpawn && !runContext.customModel ? runtimeModelId(session.model) : undefined);
+        const available = catalogAllowsAutoReview(plugin.capabilities.autoApprove.modes,
+          { ...catalog, cliVersion: runContext.cliVersion },
+          platformModelForSpawn ? 'platform' : platformModelForSpawn === null ? runContext.customModel ? 'custom' : 'own' : 'unknown',
+          platformModelForSpawn?.modelId ?? runtimeModelId(session.model) ?? (catalog.kind === 'ready' ? catalog.selected : null));
         if (!available) throw new Error('AI review is unavailable for this session executable and model');
       }
       let agentCommand = plugin.behavior.prompt!.buildCommand({

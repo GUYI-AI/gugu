@@ -1,3 +1,4 @@
+import { withAutoReviewHint, type ReviewCostSource } from '../acp/auto-review-permission-hint';
 import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
 import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica } from '@/lib/replica';
@@ -251,6 +252,7 @@ export type InitialSessionState = {
   effort: string | null;
   setEffort: (effort: string | null) => void;
   autoReviewAvailable?: boolean;
+  autoReviewCostSource?: ReviewCostSource;
   fastMode?: boolean;
   setFastMode?: (enabled: boolean) => void;
   /** What the CLI would pick on its own for this model — shown in the 「默认」 row. */
@@ -1142,9 +1144,12 @@ export function useInitialSessionState(
           : undefined))
       : undefined
   );
+  const { auth: reviewAuth } = useAgentAuthStatus(!platformModel && !selectedCustom ? providerId : null, undefined, { machine });
+  const autoReviewCostSource: ReviewCostSource = platformModel ? 'platform' : selectedCustom ? 'api-key'
+    : reviewAuth?.status.kind === 'authenticated' ? reviewAuth.status.credentialKind ?? 'unknown' : 'unknown';
   const reviewCatalog = targetFastCatalog ?? harnessCatalogState;
   const autoReviewAvailable = !unattended && catalogAllowsAutoReview(
-    capabilities?.autoApprove.modes, reviewCatalog, platformModel ? 'platform' : 'own', platformModel ?? model,
+    capabilities?.autoApprove.modes, reviewCatalog, platformModel ? 'platform' : selectedCustom ? 'custom' : 'own', platformModel ?? runtimeModel,
   );
   const autoApproveSupported = agentSupportsAutoApprove(capabilities);
   const grokStructuralFullAccess = providerId === 'grok';
@@ -1280,6 +1285,7 @@ export function useInitialSessionState(
     effortOptions: localizeEffortOptions(modelEfforts?.options ?? null, translate),
     effort,
     autoReviewAvailable,
+    autoReviewCostSource,
     fastMode: unattended || selectedCustom ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
     setFastMode: setFastModeDraft,
     defaultEffort: modelEfforts?.defaultId ?? null,
@@ -1830,7 +1836,7 @@ export function InitialSessionField({
           onFastModeChange={state.setFastMode}
           renderFastModeHint={renderFastModeHint}
           defaultEffort={state.defaultEffort ?? undefined}
-          permissionModeOptions={permissionModeOptions}
+          permissionModeOptions={withAutoReviewHint(permissionModeOptions, state.provider, state.autoReviewCostSource ?? 'unknown')}
           selectedPermissionMode={permissionModeOptions ? state.permissionMode : undefined}
           onPermissionModeChange={(modeId) => {
             if (isGuguPermissionMode(modeId)) state.setPermissionMode(modeId);

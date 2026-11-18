@@ -71,24 +71,23 @@ describe('Claude AI review prerequisites', () => {
     expect(command.args).toContain('auto');
     expect(command.args).not.toContain('--dangerously-skip-permissions');
     expect(command.autoApproved).not.toBe(true);
-    expect(JSON.parse(command.args[command.args.indexOf('--settings') + 1])).toMatchObject({ env: { CLAUDE_CODE_AUTO_MODE_MODEL: CLAUDE_REVIEWER_MODEL } });
+    expect(command.args.join(' ')).not.toContain('CLAUDE_CODE_AUTO_MODE_MODEL');
   });
-  it.each(['acp', 'tui'] as const)('pins Haiku on the %s session materialization, without changing host CLI', surface => {
+  it.each(['acp', 'tui'] as const)('keeps the native subscription classifier on %s', surface => {
     const result = materializeClaudeSessionBundle({ surface, lifecycle: 'fresh', cwd: '/fixture' }, { mcpServers: [], env: { GUGU_HOME: '/fixture/gugu' }, model: null, autonomy: { permissionMode: 'ai-review' }, promptBlocks: {}, packages: [] });
-    expect(result.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe(CLAUDE_REVIEWER_MODEL);
-    if (surface === 'acp') {
-      const artifact = result.artifacts.find(file => file.path.endsWith(`${CLAUDE_REVIEWER_MODEL}.json`));
-      expect(artifact).toMatchObject({ mode: 0o600 });
-      expect(JSON.parse(artifact!.content)).toEqual({ env: { CLAUDE_CODE_AUTO_MODE_MODEL: CLAUDE_REVIEWER_MODEL } });
-      expect(result.acp?.meta).toMatchObject({ claudeCode: { options: { settings: artifact!.path } } });
-    }
+    expect(result.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBeUndefined();
+    expect(result.artifacts).toHaveLength(0);
   });
-});
-
-it('uses a settings-file path on the native ACP wire even when AI review is enabled later', () => {
-  const result = materializeClaudeSessionBundle({ surface: 'acp', lifecycle: 'fresh', cwd: '/fixture' }, {
-    mcpServers: [], env: { GUGU_HOME: '/fixture/gugu' }, model: null, autonomy: { permissionMode: 'edit' }, promptBlocks: {}, packages: [],
+  it('materializes an explicitly selected reviewer in a protected, path-safe ACP file', () => {
+    const reviewer = '../../proxy/reviewer';
+    const result = materializeClaudeSessionBundle({ surface: 'acp', lifecycle: 'fresh', cwd: '/fixture' }, {
+      mcpServers: [], env: { GUGU_HOME: '/fixture/gugu', CLAUDE_CODE_AUTO_MODE_MODEL: reviewer }, model: null, autonomy: { permissionMode: 'edit' }, promptBlocks: {}, packages: [],
+    });
+    const artifact = result.artifacts[0]!;
+    expect(artifact.path).toMatch(/^\/fixture\/gugu\/capability-packages\/claude\/reviewer-settings\/[a-f0-9]{64}\.json$/);
+    expect(artifact.mode).toBe(0o600);
+    expect(JSON.parse(artifact.content)).toEqual({ env: { CLAUDE_CODE_AUTO_MODE_MODEL: reviewer } });
+    expect(result.acp?.meta).toMatchObject({ claudeCode: { options: { settings: artifact.path } } });
+    expect(acpSessionMetaSchema.safeParse(result.acp?.meta).success).toBe(true);
   });
-  expect(acpSessionMetaSchema.safeParse(result.acp?.meta).success).toBe(true);
-  expect(result.acp?.meta).toMatchObject({ claudeCode: { options: { settings: expect.any(String) } } });
 });

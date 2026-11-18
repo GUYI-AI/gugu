@@ -236,6 +236,8 @@ export interface ComposerEffortItem {
 export interface ComposerPermissionModeOption {
   name: string;
   description?: string;
+  detail?: ReactNode;
+  icon?: ReactNode;
   /**
    * Marks a mode that lets the agent act without asking (bypass / full-access / yolo).
    * The trigger then renders in warning color with an alert icon instead of the neutral
@@ -250,6 +252,8 @@ export interface ComposerPermissionModeItem {
   id: string;
   name: string;
   description?: string;
+  detail?: ReactNode;
+  icon?: ReactNode;
   destructive?: boolean;
 }
 

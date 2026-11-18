@@ -425,6 +425,10 @@ export const enUSSessionWorkflowMessages = {
   // 中文侧一直就是「完全访问」,英文只是没跟上。
   'taskConfig.permissionAiReview': 'Auto mode',
   'taskConfig.permissionAiReviewHint': 'Send actions that need approval to an AI reviewer. Repeated denials can require your help.',
+  'taskConfig.reviewCostClaude': 'Uses your Claude subscription allowance',
+  'taskConfig.reviewCostChatGPT': 'Uses your ChatGPT subscription allowance',
+  'taskConfig.reviewCostApiKey': 'Uses your API Key',
+  'taskConfig.reviewCostPlatform': 'Reviewed by Claude Haiku 5.5, charged in Gugu credits',
   'taskConfig.permissionFullAccess': 'Full Access',
   'taskConfig.permissionFullAccessHint': 'Let the agent auto-approve supported actions.',
   // 推理档的词表 —— 与上面的权限四档同一条路(@@@permission-four-rungs)。
@@ -1007,7 +1011,11 @@ export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflo
   'taskConfig.permissionEdit': '编辑',
   'taskConfig.permissionEditHint': 'agent 可以在工作区内改文件、跑命令。',
   'taskConfig.permissionAiReview': '自动模式',
-  'taskConfig.permissionAiReviewHint': '需要授权时交给 AI 审查。连续被拒达到上限时会停下来请你处理。',
+  'taskConfig.permissionAiReviewHint': '需要授权时交给 AI 审查，连续被拒会停下来找你。',
+  'taskConfig.reviewCostClaude': '用你的 Claude 订阅额度审',
+  'taskConfig.reviewCostChatGPT': '用你的 ChatGPT 订阅额度审',
+  'taskConfig.reviewCostApiKey': '用你的 API Key 审',
+  'taskConfig.reviewCostPlatform': '用 Claude Haiku 5.5 审，扣咕咕积分',
   'taskConfig.permissionFullAccess': '完全访问',
   'taskConfig.permissionFullAccessHint': '允许 agent 自动批准支持的操作。',
   'taskConfig.effortNone': '关闭',

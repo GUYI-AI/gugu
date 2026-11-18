@@ -1,6 +1,6 @@
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { claudeReviewSettings, claudeSessionFlagSettings } from '@gugu/session-plugins/agents'
+import { claudeSessionFlagSettings } from '@gugu/session-plugins/agents'
 import { writeSessionSettingsFile } from './session-settings-file'
 import { registerSessionpageSessionRuntime } from './sessionpage-session-runtime-registry'
 
@@ -32,7 +32,7 @@ function splitSettings(args: readonly string[]): { args: string[]; last?: string
 export async function claudeTuiSessionArgs(input: {
   sessionId: string; cwd: string; baseArgs: readonly string[]; extraArgs: readonly string[];
   userSettingsProvided: boolean; platformSettingsPath: string | null;
-  fastMode: boolean; effort?: string;
+  fastMode: boolean; effort?: string; reviewerModel?: string;
 }): Promise<string[]> {
   const base = splitSettings(input.baseArgs)
   const extra = splitSettings(input.extraArgs)
@@ -42,10 +42,11 @@ export async function claudeTuiSessionArgs(input: {
     ? JSON.parse(source.trim().startsWith('{') ? source : await readFile(resolve(input.cwd, source), 'utf8'))
     : { ...CLAUDE_TUI_BASE_SETTINGS }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Claude settings must be an object')
-  const document = claudeReviewSettings({
+  const document = {
     ...parsed,
     ...claudeSessionFlagSettings({ fastMode: input.platformSettingsPath ? false : input.fastMode, reasoningEffort: input.effort }),
-  })
+    ...(input.reviewerModel ? { env: { ...('env' in parsed && parsed.env && typeof parsed.env === 'object' ? parsed.env : {}), CLAUDE_CODE_AUTO_MODE_MODEL: input.reviewerModel } } : {}),
+  }
   let path = input.platformSettingsPath
   if (path) {
     // This is the host's protected session document, never the user's file.

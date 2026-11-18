@@ -143,7 +143,7 @@ it('retains the phone composer permission selector when there is no Work owner',
 it('retains the desktop composer permission selector even when Work ownership is requested', async () => {
   await mount({ width: 1100 })
   await until('desktop permission selector visible', () => !!document.querySelector('[data-slot="composer-permission-mode"]'))
-  expect(document.querySelector('[data-slot="composer-permission-mode"]')?.textContent).toContain('完全访问')
+  expect(document.querySelector('[data-slot="composer-permission-mode"]')?.textContent).toContain('全部放行')
   expect(host.set).not.toHaveBeenCalled()
 })
 
@@ -183,5 +183,5 @@ it('retains the original mode when the host rejects Auto in Work', async () => {
   await until('Auto rejection is visible', () => document.body.textContent?.includes('Permission update rejected') === true)
   expect(host.set).toHaveBeenCalledExactlyOnceWith('mode', 'auto-review')
   expect(host.selected).toBe(':danger-full-access')
-  expect(document.querySelector('[data-dimension="permission"][data-testid="agent-watch-create-options-drill"]')?.textContent).toContain('完全访问')
+  expect(document.querySelector('[data-dimension="permission"][data-testid="agent-watch-create-options-drill"]')?.textContent).toContain('全部放行')
 })

@@ -41,7 +41,7 @@ it('keeps the protected platform document and clamps Fast off without exposing c
   await writeFile(path, JSON.stringify({ model: 'gateway-model', env: { ANTHROPIC_AUTH_TOKEN: 'fixture-only-secret' } }), { mode: 0o600 })
   const args = await claudeTuiSessionArgs({ ...defaults, fastMode: true, platformSettingsPath: path,
     baseArgs: ['--settings', '{"fastMode":true}'], extraArgs: ['--settings', path] })
-  expect((await document(args)).value).toEqual({ model: 'gateway-model', env: { ANTHROPIC_AUTH_TOKEN: 'fixture-only-secret', CLAUDE_CODE_AUTO_MODE_MODEL: 'claude-haiku-5-5' }, fastMode: false })
+  expect((await document(args)).value).toEqual({ model: 'gateway-model', env: { ANTHROPIC_AUTH_TOKEN: 'fixture-only-secret' }, fastMode: false })
   expect(args.join(' ')).not.toContain('fixture-only-secret')
   await releaseClaudeTuiSettings(sessionId)
   expect((await stat(path)).isFile()).toBe(true)
@@ -55,7 +55,7 @@ it.each([false, true])('copies explicit user settings without modifying its sour
     baseArgs: equals ? [`--settings=${path}`] : ['--settings', path] })
   const actual = await document(args)
   expect(actual.path).not.toBe(path)
-  expect(actual.value).toEqual({ custom: 42, fastMode: false, env: { PRIVATE_KEY: 'fixture-secret', CLAUDE_CODE_AUTO_MODE_MODEL: 'claude-haiku-5-5' } })
+  expect(actual.value).toEqual({ custom: 42, fastMode: false, env: { PRIVATE_KEY: 'fixture-secret', CLAUDE_CODE_AUTO_MODE_MODEL: 'user-reviewer' } })
   expect(await readFile(path, 'utf8')).toBe(original)
   expect(args.join(' ')).not.toContain('fixture-secret')
 })

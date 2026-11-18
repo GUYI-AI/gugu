@@ -1,4 +1,4 @@
-import { CLAUDE_REVIEWER_MODEL, claudeReviewSettings } from './auto-review';
+import { claudeReviewSettings } from './auto-review';
 import { harnessPlatform } from './platform';
 import {
   createHash,
@@ -655,7 +655,8 @@ export function materializeClaudeSessionBundle(
   assertPackageDeclaresMcpServers(bundle);
   const plugin = packageEntry ? { entry: packageEntry, root: packageRoot(bundle) } : null;
   const library = libraryPlugin(bundle);
-  const env: Record<string, string> = { CLAUDE_CODE_AUTO_MODE_MODEL: CLAUDE_REVIEWER_MODEL };
+  const reviewer = bundle.env.CLAUDE_CODE_AUTO_MODE_MODEL?.trim();
+  const env: Record<string, string> = reviewer ? { CLAUDE_CODE_AUTO_MODE_MODEL: reviewer } : {};
   materializeMcpEnv(bundle, env);
   materializeModel(bundle, env);
   const promptValue = renderPromptBlocks(bundle.promptBlocks);
@@ -706,12 +707,12 @@ export function materializeClaudeSessionBundle(
   }
 
   const settingsHome = bundle.env.GUGU_HOME?.trim();
-  if (!settingsHome && bundle.autonomy?.permissionMode === 'ai-review') {
+  if (!settingsHome && reviewer) {
     throw new Error('Claude AI review requires a host-owned settings directory');
   }
-  const reviewerSettings = settingsHome ? {
-    path: join(settingsHome, 'capability-packages', 'claude', 'reviewer-settings', `${CLAUDE_REVIEWER_MODEL}.json`),
-    content: `${JSON.stringify(claudeReviewSettings({}))}\n`,
+  const reviewerSettings = settingsHome && reviewer ? {
+    path: join(settingsHome, 'capability-packages', 'claude', 'reviewer-settings', `${createHash('sha256').update(reviewer).digest('hex')}.json`),
+    content: `${JSON.stringify(claudeReviewSettings({}, reviewer))}\n`,
     mode: 0o600 as const,
   } : null;
   const options = {

@@ -1,3 +1,4 @@
+import { nativeClaudeReviewEnv } from '@gugu/session-core/models/auto-review-source';
 import type { AgentRunContext } from '@gugu/session-core/agents/agent-run-context';
 import { composeAgentSpawnEnv } from '@gugu/session-core/agents/agent-run-context';
 import { harnessPinnedEnv } from '@gugu/session-core/agents/plugins';
@@ -87,6 +88,12 @@ export async function resolveLocalAgentRunContext(
     const { resolveCustomModelRunContext } = await import('./custom-model-run-context');
     const custom = await resolveCustomModelRunContext(providerId, options.sessionId, options.sourceSessionId, options.role === 'acp');
     Object.assign(connection, custom, { unsetEnv: [...(connection.unsetEnv ?? []), ...(custom.unsetEnv ?? [])] });
+  }
+  if (providerId === 'claude' && !connection.customModel) {
+    const credentialFacts = { ...env };
+    for (const key of connection.unsetEnv ?? []) delete credentialFacts[key];
+    const reviewerEnv = nativeClaudeReviewEnv({ ...credentialFacts, ...connection.credentialEnv });
+    if (Object.keys(reviewerEnv).length) connection.credentialEnv = { ...connection.credentialEnv, ...reviewerEnv };
   }
   return {
     cli,

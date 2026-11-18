@@ -26,11 +26,11 @@ export function meetsReviewModeRequirements(
 export function catalogAllowsAutoReview(
   map: ProviderPermissionModeMap | undefined,
   catalog: { kind: string; selected?: string | null; autoReview?: boolean; reviewerAvailable?: boolean; cliVersion?: string },
-  route: 'own' | 'platform' | 'unknown',
+  route: 'own' | 'custom' | 'platform' | 'unknown',
   model: string | null | undefined,
 ): boolean {
   const entry = map?.['ai-review'];
-  if (!entry || route === 'unknown' || !permissionModeSupportsBillingRoute('ai-review', map, route)) return false;
+  if (!entry || route === 'unknown' || !permissionModeSupportsBillingRoute('ai-review', map, route === 'custom' ? 'own' : route)) return false;
   if (route === 'own') return catalog.kind === 'ready' && !!model
     && catalog.selected === model && catalog.autoReview === true
     // autoReview is the native filter's verdict for this exact selection, including

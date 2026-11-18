@@ -1,3 +1,4 @@
+import { withAutoReviewHint } from './auto-review-permission-hint';
 import { customModelOptionId, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica } from '@/lib/replica';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
@@ -1502,12 +1503,12 @@ const ComposerForStore = observer(function ComposerForStore({
         fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup })}
         onFastModeChange={(enabled) => { void store.setFastMode(enabled); }}
         renderFastModeHint={renderFastModeHint}
-        permissionModeOptions={localizePermissionModeOptions(
+        permissionModeOptions={withAutoReviewHint(localizePermissionModeOptions(
           sessionPermissionOptions,
           translate,
           agents?.find((agent) => agent.id === providerId)?.name ?? providerId ?? '',
           providerPermissionModeMap
-        )}
+        ), providerId, runningCustomModel ? 'api-key' : costSource, providerPermissionModeMap)}
         selectedPermissionMode={selectedPermissionModeId(
           store.permissionMode ?? detachedPermission?.selected ?? reloadPermission?.selected,
           sessionPermissionOptions,
