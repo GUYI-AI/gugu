@@ -220,7 +220,7 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
           if (resolved.status !== 'ready') {
             if (resolved.status === 'missing') throw new MissingFileObjectError()
             if (resolved.status === 'failed' || resolved.status === 'pending') throw new FileReadError('upload_failed', "The sender's upload did not complete. Ask them to send the file again.")
-            throw new FileReadError(resolved.status, resolved.status === 'expired' ? 'This file expired. Ask the sender to upload it again.' : 'This file was deleted.')
+            throw new FileReadError(resolved.status, resolved.status === 'expired' ? 'This file expired. Ask the sender to upload it again.' : 'This file was deleted or you no longer have access to it.')
           }
           file = resolved
           await file.open!()

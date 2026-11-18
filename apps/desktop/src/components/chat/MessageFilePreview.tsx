@@ -98,7 +98,8 @@ function previewFailure(error: unknown, t: TFunction<'messaging'>): PreviewRead 
   if (error instanceof FileReadError && error.code === 'upload_failed' || error instanceof Error && error.message === 'unsent') {
     return { content: null, errorStatus: 'failed', error: t('attachmentView.senderUploadFailed') }
   }
-  const errorStatus = error instanceof Error && (error.message === 'gone' || error.message === 'expired' || error.message === 'missing') ? error.message : 'failed'
+  const statusOrMessage = error instanceof FileReadError ? error.code : error instanceof Error ? error.message : undefined
+  const errorStatus = statusOrMessage === 'gone' || statusOrMessage === 'expired' || statusOrMessage === 'missing' ? statusOrMessage : 'failed'
   const status = (error as { status?: number } | null)?.status
   const retryable = errorStatus === 'failed' && (error instanceof FileReadError ? error.code === 'interrupted' || error.code === 'integrity_failed' : !(status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 429))
   return { content: null, errorStatus, retryable, error: t(errorStatus === 'gone' ? 'attachmentView.fileGone' : errorStatus === 'expired' ? 'attachmentView.fileExpired' : errorStatus === 'missing' ? 'attachmentView.fileMissing' : 'attachmentView.fileUnavailable') }
