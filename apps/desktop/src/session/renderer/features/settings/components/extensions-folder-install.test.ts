@@ -416,8 +416,8 @@ describe('Desktop marketplace tabs and app details', () => {
     await press('[data-testid="market-detail-dialog"] [data-slot="dialog-close"]');
     await press('[data-testid="extensions-section-market"]');
     await press('[data-testid="extension-card-gugu-assistant"]');
-    expect(document.querySelector('[data-testid="app-product-page"][data-extension-id="gugu-assistant"]')).not.toBeNull();
-    await press('[data-testid="app-product-back"]');
+    expect(document.querySelector('[data-testid="market-detail-dialog"]')?.textContent).toContain('App gugu-assistant');
+    await press('[data-testid="market-detail-dialog"] [data-slot="dialog-close"]');
     await press('[data-testid="extensions-tab-installed"]');
     expect(document.querySelector('[data-testid="extensions-installed-panel"]')).not.toBeNull();
   });
