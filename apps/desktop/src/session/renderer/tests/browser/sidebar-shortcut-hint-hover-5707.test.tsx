@@ -179,3 +179,27 @@ it('#5707 键盘 Tab 停在那一行时键帽同样淡入(不止认指针)', asy
   await until('Tab reaches the settings row', () => document.activeElement === settingsRow)
   await settledOpacity(settingsCap, 1)
 })
+
+it('keeps a centered search icon when the full label would overflow', async () => {
+  mount()
+  await until('search is rendered', () => !!host.querySelector('[data-testid="sidebar-search-trigger"]'))
+  const button = host.querySelector<HTMLButtonElement>('[data-testid="sidebar-search-trigger"]')!
+  const icon = button.querySelector('svg')!
+  const label = button.querySelector<HTMLElement>(':scope > [aria-hidden="true"]')!
+
+  for (const width of [24, 64]) {
+    button.style.width = `${width}px`
+    const control = button.getBoundingClientRect()
+    const glyph = icon.getBoundingClientRect()
+    expect(glyph.left + glyph.width / 2).toBeCloseTo(control.left + control.width / 2)
+    expect(label.getBoundingClientRect().top).toBeGreaterThanOrEqual(control.bottom)
+    expect(button.getAttribute('aria-label')).toBeTruthy()
+  }
+
+  button.style.width = '144px'
+  const control = button.getBoundingClientRect()
+  const text = document.createRange()
+  text.selectNodeContents(label)
+  expect(label.getBoundingClientRect().top).toBe(control.top)
+  expect(text.getBoundingClientRect().right).toBeLessThanOrEqual(control.right)
+})

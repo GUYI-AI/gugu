@@ -20,24 +20,20 @@ function searchScope(): { chips: [{ kind: 'in'; chatId: string }] } | undefined 
 export function SidebarSearchTrigger() {
   const { translate } = useSessionMessages();
   return (
-    // The header owns placement; reuse the existing search surface and content inset.
-    // 底色和别处的搜索框同一个输入面(--em-surface-input,#132):它长得就是一个搜索框。
-    // It shares the head row with the icon buttons, so it can be narrower than its text plus the hover
-    // keycaps: those take their width even while invisible, so below 11rem they are left out (@container) and 「搜索…」
-    // keeps its room (the shortcut itself still works).
+    // Keep one visible line. The full label wraps out of view when its natural width does not fit beside the icon.
+    // The icon centres on its own line, and the shortcut still follows the search field's width.
     <button
       type="button"
       onClick={() => openGlobalSearch(searchScope())}
       aria-label={translate('sidebar.searchConversations')}
       data-testid="sidebar-search-trigger"
-      className={cn(
-        'group/row @container flex h-8 min-w-0 w-full items-center gap-2 overflow-hidden rounded-full bg-[var(--em-surface-input)] text-sm text-foreground-tertiary-muted [-webkit-app-region:no-drag]',
-        sidebarRowContentInsetX
-      )}
+      className="group/row @container flex h-8 min-w-0 w-full flex-wrap content-start items-center justify-center overflow-hidden rounded-full bg-[var(--em-surface-input)] text-sm text-foreground-tertiary-muted [-webkit-app-region:no-drag]"
     >
-      <Search className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
-      <span className="min-w-0 flex-1 truncate text-left">{translate('sidebar.searchPlaceholder')}</span>
-      <BoundShortcut commandId="app.globalSearch" variant="keycaps" className={cn(sidebarRowShortcutClass, '@max-[11rem]:hidden')} />
+      <span className={cn('flex h-8 shrink-0 items-center pr-2 @max-[2rem]:px-0', sidebarRowContentInsetX)}>
+        <Search className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
+      </span>
+      <span aria-hidden="true" className="flex h-8 min-w-max flex-1 items-center whitespace-nowrap">{translate('sidebar.searchPlaceholder')}</span>
+      <BoundShortcut commandId="app.globalSearch" variant="keycaps" className={cn(sidebarRowShortcutClass, 'ml-2 @max-[11.5rem]:hidden')} />
     </button>
   );
 }
