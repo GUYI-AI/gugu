@@ -14,6 +14,7 @@ export type ImportProvider = {
   label: string
   iconId: string
   supportsAutomaticSync?: boolean
+  localOnly?: boolean
   scan(deviceId: string | null): Promise<{ count: number; pending: boolean; needsSource?: boolean } | null>
   pickSource?(deviceId: string | null): Promise<void>
   openImportedSession?(session: ImportedSession, deviceId: string | null): Promise<void>

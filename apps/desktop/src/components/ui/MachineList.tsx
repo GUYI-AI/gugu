@@ -4,17 +4,18 @@ import './machine-list.css'
 
 export type MachineListItem = { id: string; label: string; isLocal?: boolean; isOnline: boolean }
 
-export function MachineList({ label, machines, selected, onlineLabel, offlineLabel, onSelect }: {
+export function MachineList({ label, machines, selected, onlineLabel, offlineLabel, onSelect, compact = false }: {
   label: string
   machines: readonly MachineListItem[]
   selected: string
   onlineLabel: string
   offlineLabel: string
   onSelect: (id: string) => void
+  compact?: boolean
 }) {
   return (
-    <nav className="gg-machine-list" aria-label={label}>
-      <div className="gg-machine-list-title">{label}</div>
+    <nav className="gg-machine-list" data-compact={compact || undefined} aria-label={label}>
+      {!compact && <div className="gg-machine-list-title">{label}</div>}
       {machines.map((machine) => (
         <Button key={machine.id} variant="ghost" className="gg-machine-list-row"
           aria-current={selected === machine.id ? 'true' : undefined} onClick={() => onSelect(machine.id)}>

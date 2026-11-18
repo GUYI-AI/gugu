@@ -136,9 +136,9 @@ function ImportCard({ icon, name, description, open, onToggle, children }: {
   )
 }
 
-function ImportRow({ label, job, children }: { label: ReactNode; job?: ImportJob; children: ReactNode }) {
+function ImportRow({ label, job, children, summary }: { label: ReactNode; job?: ImportJob; children: ReactNode; summary?: boolean }) {
   return (
-    <div className="gg-import-row" data-cancellable={job?.state === 'running' || job?.state === 'queued' || undefined}>
+    <div className="gg-import-row" data-summary={summary || undefined} data-cancellable={job?.state === 'running' || job?.state === 'queued' || undefined}>
       <div className="gg-import-row-label">{label}</div>
       {children}
     </div>
@@ -183,10 +183,10 @@ function RemoteImportDevice({ machine, providers, ownerId, jobs }: RowsProps & {
   const total = targets.reduce((sum, { device }) => sum + device.count, 0)
   const scanning = visible.some(({ reading }) => !reading || reading.state === 'unknown' || (reading.state === 'value' && reading.value?.pending))
   return (
-    <div className="gg-import-remote-content">
+    <div className="gg-import-remote-content" data-offline={!online || undefined}>
       {!online ? <p className="gg-import-unavailable">{t('settings.dataImport.deviceUnavailable')}</p> : (
         <>
-          <ImportRow label={t('settings.dataImport.allCount', { count: total })}>
+          <ImportRow summary label={t('settings.dataImport.allCount', { count: total })}>
             {active.length > 0 ? <span className="gg-import-progress" role="status">{t('settings.dataImport.remoteRunning')}<LoadingIndicator size="inline" /></span> : (
               <Button variant="secondary" size="sm" disabled={scanning || total === 0}
                 onClick={() => targets.forEach(({ provider, device }) => enqueueImport(ownerId, { provider, devices: [device] }, t))}>
@@ -198,7 +198,7 @@ function RemoteImportDevice({ machine, providers, ownerId, jobs }: RowsProps & {
             const count = sourceCount(reading)
             const job = findJob(jobs, provider.id, machine.id)
             return (
-              <ImportRow key={provider.id} job={job} label={<><AgentIcon id={provider.iconId} size={22} />{provider.label} {count === undefined ? sourceDescription(t, reading) : `(${count})`}</>}>
+              <ImportRow key={provider.id} job={job} label={<><span className="gg-import-remote-icon"><AgentIcon id={provider.iconId} size={18} /></span>{provider.label} {count === undefined ? sourceDescription(t, reading) : `(${count})`}</>}>
                 <SourceAction provider={provider} reading={reading} ownerId={ownerId} deviceId={machine.id} deviceName={machine.label} job={job} />
               </ImportRow>
             )
@@ -216,7 +216,7 @@ export function RemoteImportSources({ machines, ...props }: RowsProps & { machin
   if (!machine) return <p className="gg-import-empty">{t('settings.dataImport.noDevices')}</p>
   return (
     <div className="gg-import-remote-panel">
-      <MachineList label={t('settings.dataImport.machineList')} machines={machines} selected={machine.id}
+      <MachineList compact label={t('settings.dataImport.machineList')} machines={machines} selected={machine.id}
         onlineLabel={t('settings.dataImport.onlineStatus')} offlineLabel={t('settings.dataImport.offlineStatus')} onSelect={setSelected} />
       <RemoteImportDevice key={machine.id} {...props} machine={machine} />
     </div>
