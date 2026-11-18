@@ -57,7 +57,7 @@ vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: async () => ({ data: [], error
 
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: { extensions: {}, app: {} },
-  rpcOn: () => ({}),
+  rpcOn: () => ({ agents: { list: async () => [] } }),
   events: { on: () => () => undefined },
   onMachineEvent: () => () => undefined,
 }));
@@ -69,6 +69,7 @@ vi.mock('@renderer/features/library/library-host', async () => {
   const { InstalledExtensionsStore } = await import('@renderer/features/extensions/installed-extensions-store');
   const stores = new Map<string, InstanceType<typeof InstalledExtensionsStore>>();
   return {
+    LOCAL_HOST_KEY: 'local',
     useLibraryHost: () => {
       const store = stores.get(h.host.key) ?? new InstalledExtensionsStore(h.api as never);
       stores.set(h.host.key, store);
@@ -83,7 +84,12 @@ vi.mock('@renderer/features/library/library-host', async () => {
         local: h.host.local,
         pickFolder: vi.fn(),
       };
-      return { extensions, remote: h.host.local ? undefined : { deviceLabel: 'Studio', online: true, lastSeenAt: null, hostKind: 'desktop' } };
+      return {
+        key: h.host.key,
+        agents: { listManagement: async () => [], listAgentInstallationStatus: async () => [] },
+        extensions,
+        remote: h.host.local ? undefined : { deviceLabel: 'Studio', online: true, lastSeenAt: null, hostKind: 'desktop' },
+      };
     },
   };
 });

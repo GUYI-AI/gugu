@@ -1,9 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import type { ReactNode } from 'react';
-import { toast } from 'sonner';
 import { SettingsGroup, SettingsRow } from '@/components/settings/SettingsPrimitives';
-import { rendererLogger } from '@/lib/log';
-import { messageForUser } from '@/lib/userFacingError';
 import { Button } from '@renderer/lib/ui/button';
 import {
   Select,
@@ -23,6 +20,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import type { AgentPayload, Installation } from '@shared/core/agents/agent-payload';
 import { InstallProgressRow } from './InstallProgressRow';
 import { installFailureSummary } from './install-failure-summary';
+import { uninstallAgentWithToast } from './uninstall-agent-with-toast';
 
 export type SourceKind = 'local' | 'managed' | 'custom';
 export type AgentSourceListProps = {
@@ -82,14 +80,7 @@ export const AgentSourceList = observer(function AgentSourceList({
   };
   const uninstall = () => {
     const name = agentPayload?.name ?? translate('agentsPage.agentFallbackName');
-    void toast.promise(vm.uninstall(), {
-      loading: translate('agentsPage.uninstalling', { name }),
-      success: translate('agentsPage.uninstalled', { name }),
-      error: (error) => {
-        rendererLogger('actions/AgentSourceList').error({ error }, 'action failed');
-        return messageForUser(error);
-      }
-    });
+    uninstallAgentWithToast(name, vm.uninstall, translate);
   };
   let description: ReactNode = translate(
     available ? 'agentsPage.installed'

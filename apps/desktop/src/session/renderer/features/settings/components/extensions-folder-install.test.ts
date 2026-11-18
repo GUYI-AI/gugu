@@ -44,7 +44,7 @@ vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: h.ranking } }));
 
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: { extensions: {}, viewState: { save: vi.fn(async () => ({ success: true })) } },
-  rpcOn: () => ({}),
+  rpcOn: () => ({ agents: { list: async () => [] } }),
   events: { on: () => () => undefined },
   onMachineEvent: () => () => undefined,
 }));
@@ -63,7 +63,15 @@ vi.mock('@renderer/features/library/library-host', async () => {
     local: true,
     pickFolder: h.pickFolder,
   };
-  return { useLibraryHost: () => ({ extensions, remote: undefined }) };
+  return {
+    LOCAL_HOST_KEY: 'local',
+    useLibraryHost: () => ({
+      key: 'local',
+      agents: { listManagement: async () => [], listAgentInstallationStatus: async () => [] },
+      extensions,
+      remote: undefined,
+    }),
+  };
 });
 
 const { SessionLocalizationProvider } = await import('@renderer/localization/localization-provider');
