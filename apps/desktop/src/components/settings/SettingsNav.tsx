@@ -19,6 +19,7 @@ import {
   Activity,
   Folder,
   FolderFilled,
+  FileText,
   SquarePen,
   SquarePenFilled,
   SidebarMinimalistic,
@@ -38,8 +39,8 @@ type NavGroupId = SettingsGroupId | 'diagnostics'
 // Desktop organization is independent of the existing mobile Settings order.
 const DESKTOP_NAV_GROUPS: readonly { id: NavGroupId; sections: readonly ActiveSection[] }[] = [
   { id: 'account', sections: ['account', 'subscriptions', 'usage'] },
-  { id: 'preferences', sections: ['general', 'data-import', 'connectors', 'interface', 'model', 'permissions', 'passwords'] },
-  { id: 'work', sections: ['sessions', 'devices', 'browser', 'files'] },
+  { id: 'preferences', sections: ['general', 'data-import', 'interface', 'model', 'permissions', 'passwords'] },
+  { id: 'work', sections: ['sessions', 'prompts', 'devices', 'browser', 'files'] },
   { id: 'diagnostics', sections: ['resource-monitor', 'about'] },
 ]
 
@@ -146,6 +147,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'phone',   labelKey: 'settings.nav.phone', il: <IlPhone />,   ib: <IbPhone />   },
   { key: 'about',   labelKey: 'settings.nav.about', il: <IlAbout />,   ib: <IbAbout />   },
   // 会话页画的那几格(product spec)。同一套 Solar linear / bold,尺寸与上面这些一样。
+  { key: 'prompts', labelKey: 'settings.nav.prompts', il: <FileText size={15} />, ib: <FileText size={15} /> },
   { key: 'sessions', labelKey: 'settings.nav.sessions', il: <SquarePen size={15} />, ib: <SquarePenFilled size={15} /> },
   { key: 'interface', labelKey: 'settings.nav.interface', il: <Palette size={15} />, ib: <PaletteFilled size={15} /> },
   { key: 'resource-monitor', labelKey: 'settings.nav.resource-monitor', il: <Activity size={15} />, ib: <Activity size={15} /> },

@@ -34,7 +34,7 @@ import { AuxiliaryModelsGroup } from '@/components/settings/AuxiliaryModelsGroup
 import { SubscriptionsSettingsPage } from '../subscriptions/SubscriptionsSettingsPage';
 import { OwnerConnectorsSettings, type PhoneConnectorPresentation } from '@/components/connections/OwnerConnectorsSettings';
 import { HomeConnectorsSettings,CloudConnectorsSettings } from '../../assistant/assistant-connectors-settings';
-import { DesktopConnectionsSettings } from './DesktopConnectionsSettings';
+import { PromptLibraryView } from '@renderer/features/library/prompts/prompt-library-view';
 import { ConnectionRouteBoundary } from '@/components/connections/ConnectionRouteBoundary';
 import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting';
 
@@ -108,7 +108,7 @@ function BrowserSettingsPage() {
 // ---------------------------------------------------------------------------
 
 /** 设置弹窗里由本页画的那几格(product spec);键与壳的 ActiveSection 同名。 */
-export type SessionSettingsSection = 'theme-packs' | 'sessions' | 'interface' | 'browser' | 'subscriptions' | 'connectors' | 'resource-monitor' | 'auxiliary-models';
+export type SessionSettingsSection = 'theme-packs' | 'sessions' | 'prompts' | 'interface' | 'browser' | 'subscriptions' | 'connectors' | 'resource-monitor' | 'auxiliary-models';
 
 /** 个别格要壳告诉它的事实(「连接应用」要知道咕咕住的那台云端宿主是谁);其余格不用。 */
 export type SessionSettingsContext = {
@@ -122,7 +122,6 @@ export type SessionSettingsContext = {
   connectionDeviceId?: string | null;
   phoneConnectorCatalog?: PhoneConnectorPresentation;
   connectOnly?: boolean;
-  desktopConnections?: boolean;
 };
 
 function RoutedConnectors(context: SessionSettingsContext) {
@@ -137,12 +136,13 @@ function RoutedConnectors(context: SessionSettingsContext) {
 const SECTION_CONTENT: Record<SessionSettingsSection, (context: SessionSettingsContext) => ReactNode> = {
   'theme-packs': () => <ThemePackSettings />,
   sessions: () => <GeneralSettingsPage />,
+  prompts: () => <PromptLibraryView />,
   interface: () => <InterfaceSettingsPage />,
   'resource-monitor': () => <ResourceMonitorSettingsPage />,
   browser: () => <BrowserSettingsPage />,
   subscriptions: () => <SubscriptionsSettingsPage />,
   'auxiliary-models': () => <AuxiliaryModelsGroup />,
-  connectors: context => context.desktopConnections ? <DesktopConnectionsSettings /> : <RoutedConnectors {...context} />,
+  connectors: context => <RoutedConnectors {...context} />,
 };
 
 /**

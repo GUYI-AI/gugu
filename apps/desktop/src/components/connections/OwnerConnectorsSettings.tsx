@@ -8,6 +8,9 @@ import { assistantConnectedApps, type AssistantConnectedApp } from '@/components
 import { ChannelBrandIcon } from '@/components/settings/channels/ChannelBrandIcon'
 import { useChatChannels } from '@/components/settings/channels/useChatChannels'
 import { SettingsNote, SettingsPage } from '@/components/settings/SettingsPrimitives'
+import { ConnectorMarketCatalog } from '@/session/renderer/features/extensions/panel/connector-market-catalog'
+import { PageLoading } from '@/session/renderer/lib/components/page-layout'
+import { useSessionMessages } from '@/session/renderer/localization/use-session-messages'
 import { IntegrationIcon } from '@/session/renderer/features/integrations/integration-icon'
 import { IntegrationsProvider,useIntegrationsContext } from '@/session/renderer/features/integrations/integrations-provider'
 import { LibraryHostProvider,type LibraryHost } from '@/session/renderer/features/library/library-host'
@@ -40,11 +43,12 @@ export const OwnerConnectorsSettings = observer(function OwnerConnectorsSettings
     : endpoints.find(row => row.device_id === selectedId) ?? null
   const host = useOwnerLibraryHost(device,route)
   return <LibraryHostProvider value={host} key={host.key}><IntegrationsProvider>
-    <OwnerConnectorList host={host} selectedDeviceId={device?.device_id ?? null} panelNavigation={panelNavigation} showDevicePicker={deviceId === undefined} initialConnectorId={initialConnectorId} market={marketQuery !== undefined} route={route} phoneCatalog={phoneCatalog} connectOnly={connectOnly} />
+    <OwnerConnectorList host={host} selectedDeviceId={device?.device_id ?? null} panelNavigation={panelNavigation} showDevicePicker={deviceId === undefined} initialConnectorId={initialConnectorId} marketQuery={marketQuery} route={route} phoneCatalog={phoneCatalog} connectOnly={connectOnly} />
   </IntegrationsProvider></LibraryHostProvider>
 })
 
-function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePicker,initialConnectorId,market,route,phoneCatalog,connectOnly }: { host: LibraryHost; selectedDeviceId: string | null; panelNavigation: boolean; showDevicePicker: boolean; initialConnectorId?: string; market: boolean; route: ConnectionRoute; phoneCatalog?: PhoneConnectorPresentation; connectOnly?: boolean }) {
+function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePicker,initialConnectorId,marketQuery,route,phoneCatalog,connectOnly }: { host: LibraryHost; selectedDeviceId: string | null; panelNavigation: boolean; showDevicePicker: boolean; initialConnectorId?: string; marketQuery?: string; route: ConnectionRoute; phoneCatalog?: PhoneConnectorPresentation; connectOnly?: boolean }) {
+  const { translate } = useSessionMessages()
   const { t,i18n } = useTranslation('assistant'),copy = useTranslation('connections').t,settings = useTranslation('settings').t
   const mobile = useMobileShell(),devices = useDevicesStore(),channels = useChatChannels()
   const data = useIntegrationsContext()
@@ -59,13 +63,14 @@ function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePi
       const status = connectionApplicationStatus(host.connectionMetadata?.peekSnapshot?.(),app.id,data.connectionOperations)
       return status ? { ...app,state: status.confirming ? 'checking' as const : 'needsReauth' as const,connectionStatus: copy(status.key) } : app
     }),[data,host.connectionMetadata,i18n.language,channels.list,settings,t,copy])
+  const icon = (app: typeof apps[number], size: number) => app.integration
+    ? <IntegrationIcon provider={app.id} icon={app.integration.icon} size={size} />
+    : app.id === 'wechat' ? <ChannelBrandIcon kind="wechat" size={size} /> : null
   const selected = openId ? apps.find(app => app.id === openId) : null
+  const market = marketQuery !== undefined
   const detail = selected && <OwnerConnectorDetail host={host} app={selected} deviceId={selectedDeviceId} panelNavigation={panelNavigation}
     market={market} connectOnly={connectOnly} route={route} onBack={() => setOpenId(null)} />
   if (!market && detail) return detail
-  const icon = (app: AssistantConnectedApp, size: number) => app.integration
-    ? <IntegrationIcon provider={app.id} icon={app.integration.icon} size={size} />
-    : app.id === 'wechat' ? <ChannelBrandIcon kind="wechat" size={size} /> : null
   if ((phoneCatalog || initialConnectorId) && !data.hasList) return data.listError
     ? <SettingsPage><SettingsNote tone="danger" role="alert">{t('connectors.loadFailed')}
       <Button size="sm" onClick={data.reloadList}>{t('machine.retry')}</Button>
@@ -79,6 +84,17 @@ function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePi
   }
   if (phoneCatalog) return <PhoneMarketConnectorCatalog mode={phoneCatalog.mode} apps={apps}
     open={phoneCatalog.open} icon={icon} connectionKnown={data.hasConfiguredConnections} />
+  if (market && !data.hasList) {
+    return data.listError ? <div className="mk-status" role="alert">{translate('extensions.connectorDirectoryUnavailable')}</div> : <PageLoading />
+  }
+  if (market) return <>
+    <ConnectorMarketCatalog
+      apps={apps.filter(app => app.id !== 'wechat' || channels.list?.kinds.includes('wechat'))}
+      query={marketQuery} isConnectionKnown={app => app.id === 'wechat' ? !!channels.list : data.hasConfiguredConnections}
+      open={setOpenId} icon={icon}
+    />
+    {detail}
+  </>
   return <SettingsPage data-testid="owner-connectors">
     {showDevicePicker ? <label className="flex items-center justify-between gap-3 text-sm">{copy('device')}
       <select aria-label={copy('device')} value={selectedDeviceId ?? 'connections:all'}
@@ -90,6 +106,5 @@ function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePi
     <ConnectedAppsCatalog apps={apps} scope={host.key} open={setOpenId} mobile={mobile} panelNavigation={panelNavigation}
       connectionRead={data.hasConfiguredConnections ? 'ready' : 'pending'}
       icon={icon} />
-    {market && detail}
   </SettingsPage>
 }

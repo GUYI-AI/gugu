@@ -311,7 +311,7 @@ describe('openAssistantPageInApp', () => {
     expect(appState.navigation.currentViewId).toBe('home')
   })
 
-  it('no assistant and the App not usable: 资料 opens the Apps page on the App; 连接应用 the user\'s Settings; the web build neither', () => {
+  it('no assistant and the App not usable: 资料 opens the Apps page on the App; 连接应用 the user\'s installed connectors; the web build neither', () => {
     installApp(undefined, [ASSISTANT_APP_ID])
     publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null }))
     expect(openAssistantPageInApp('settings')).toBe(true)
@@ -319,8 +319,8 @@ describe('openAssistantPageInApp', () => {
     expect(revealed).toEqual([true])
     opened.length = 0
     expect(openAssistantPageInApp('connected-apps')).toBe(true)
-    expect(settings).toEqual([{ section: 'connectors', ownerConnections: true }])
-    settings.length = 0
+    expect(appState.navigation.currentViewId).toBe('apps')
+    expect(appState.navigation.viewParamsStore.apps).toMatchObject({ marketPage: 'connectors', installedSection: 'connectors' })
     expect(opened).toEqual([])
     expect(layer()).toBeNull()
     appState.navigation.navigate('home')

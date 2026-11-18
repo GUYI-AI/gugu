@@ -238,11 +238,12 @@ describe('Settings has nothing of the assistant', () => {
     if (mobile) expect(q('settings-nav-connectors')).toBeNull()
   })
 
-  it.each(['legacy', 'owner'] as const)('mounts the machine-scoped desktop connections in %s mode', async mode => {
+  it.each(['legacy', 'owner'] as const)('offers saved prompts in desktop settings in %s mode', async mode => {
     authority.mode = mode
-    await render(createNode(SettingsPanel, { initialSection: 'connectors', inline: true }), awake)
-    expect(q('settings-nav-connectors')).not.toBeNull()
-    expect(sessionSection.props).toEqual({ section: 'connectors', context: { desktopConnections: true } })
+    await render(createNode(SettingsPanel, { initialSection: 'prompts', inline: true }), awake)
+    expect(q('settings-nav-connectors')).toBeNull()
+    expect(q('settings-nav-prompts')).not.toBeNull()
+    expect(sessionSection.props).toEqual({ section: 'prompts' })
   })
 })
 

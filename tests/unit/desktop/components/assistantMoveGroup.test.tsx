@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   nativePending: null as unknown,
   recoveryError: null as Error | null,
   previewMove: vi.fn(),
-  openConnectedAppsSettings: vi.fn(),
+  openInstalledConnectors: vi.fn(),
   runAssistantMove: vi.fn(),
   list: vi.fn(async () => [{ id: 'notion', name: 'Notion' }]),
 }))
@@ -34,7 +34,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => ({
   rpcOn: () => ({ integrations: { list: mocks.list } }),
 }))
 vi.mock('../../../../apps/desktop/src/lib/assistantEntry', () => ({
-  openConnectedAppsSettings: mocks.openConnectedAppsSettings,
+  openInstalledConnectors: mocks.openInstalledConnectors,
 }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-home-sessions', () => ({
   homeTarget: () => null,
@@ -57,7 +57,7 @@ beforeEach(() => {
   mocks.recoveryError = null
   mocks.previewMove.mockReset()
   mocks.runAssistantMove.mockReset()
-  mocks.openConnectedAppsSettings.mockClear()
+  mocks.openInstalledConnectors.mockClear()
   resetMoveForTests()
 })
 afterEach(() => harness.cleanup())
@@ -175,7 +175,7 @@ describe('搬家入口', () => {
 })
 
 describe('点了先列清带走什么,确认才搬', () => {
-  it('确认框列带过去的账号与要重新连的,不含密钥;结果页列存不进新家的(名字、配置、没有钥匙串的原因),能直接去资源库', async () => {
+  it('确认框列带过去的账号与要重新连的,不含密钥;结果页列存不进新家的(名字、配置、没有钥匙串的原因),能直接去已安装的连接器', async () => {
     mocks.previewMove.mockResolvedValue({
       bytes: 2048,
       files: 3,
@@ -187,6 +187,7 @@ describe('点了先列清带走什么,确认才搬', () => {
       },
     })
     mocks.runAssistantMove.mockResolvedValue({
+      targetDeviceId: 'cloud-fixture',
       files: 3,
       skippedFiles: [],
       accounts: {
@@ -228,11 +229,11 @@ describe('点了先列清带走什么,确认才搬', () => {
     const done = document.body.querySelector('[data-testid="assistant-move-done-reconnect"]')?.textContent ?? ''
     expect(done).toContain('Notion (a@x.cn)')
     expect(done).toContain('imap.x.cn')
-    expect(done).toContain('机器选「云上」')
+    expect(done).toContain('选择「云上」')
     await act(async () => {
       (document.body.querySelector('[data-testid="assistant-move-reconnect-open"]') as HTMLButtonElement).click()
     })
-    expect(mocks.openConnectedAppsSettings).toHaveBeenCalledOnce()
+    expect(mocks.openInstalledConnectors).toHaveBeenCalledExactlyOnceWith('cloud-fixture')
     expect(document.body.querySelector('[data-testid="assistant-move-dialog"]')).toBeNull()
   })
 

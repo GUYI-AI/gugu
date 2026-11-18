@@ -50,7 +50,7 @@ const sectionsFor = (mobile: boolean): ActiveSection[] =>
       (section !== 'apps' || (mobile && platform.capabilities.mobileApps)) &&
       (section !== 'data-import' || (!mobile && platform.capabilities.sessionHost)) &&
       (section !== 'phone' || platform.capabilities.phoneDevice || platform.capabilities.phoneAgentHost) &&
-      (section !== 'connectors' || (!mobile && platform.capabilities.sessionHost)) &&
+      section !== 'connectors' &&
       (!SESSION_HOST_SETTINGS_SECTIONS.includes(section) || (!mobile && platform.capabilities.sessionHost)),
   )
 const MOBILE_SECTIONS_FOR_PLATFORM = sectionsFor(true)
@@ -100,7 +100,8 @@ export function SettingsPanel({
   const marketConnections = mobile && (requestedSection === 'connectors' || requestedSection === 'channels')
   const destination = marketConnections ? 'apps' : requestedSection
   const unsupportedSection = (destination === 'data-import' && !sections.includes('data-import'))
-    || (destination === 'apps' && !platform.capabilities.mobileApps)
+    || (destination === 'apps' && !sections.includes('apps'))
+    || (destination === 'prompts' && !sections.includes('prompts'))
     || (destination === 'phone' && !platform.capabilities.phoneDevice && !platform.capabilities.phoneAgentHost)
   const activeSection = unsupportedSection || (isAssistantSettingsSection(destination) && !sections.includes(destination))
     ? 'account' : destination
@@ -125,11 +126,7 @@ export function SettingsPanel({
 
   function renderSection() {
     switch (activeSection) {
-      case 'connectors': return (
-        <div>
-          <SessionSettingsSection section="connectors" context={{ desktopConnections: true }} />
-        </div>
-      )
+      case 'prompts': return <div><SessionSettingsSection section="prompts" /></div>
       case 'account':  return <AccountSection user={user} updateUser={updateUser} logout={logout} mobile={mobile} />
       case 'general':  return <GeneralSection onOpenPermissions={() => selectSection('permissions')} showThemePacks={!mobile && !!onClose && platform.capabilities.agentRuntime} />
       case 'data-import': return <Suspense fallback={null}><DataImportSection onClose={() => onClose?.()} /></Suspense>

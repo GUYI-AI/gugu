@@ -195,11 +195,17 @@ function openAssistantAppToInstall(): boolean {
 }
 
 /**
- * Open the user's connected apps from a desktop shell entry, independently of the assistant's App.
+ * Open the user's connector management from the desktop shell.
  */
-export function openConnectedAppsSettings(): boolean {
+export function openInstalledConnectors(deviceId?: string): boolean {
   if (!platform.capabilities.sessionHost) return false
-  window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'connectors', ownerConnections: true } }))
+  window.dispatchEvent(new Event(UI_EVENTS.closeSettings))
+  window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal))
+  appState.navigation.navigate('apps', {
+    marketPage: 'connectors',
+    installedSection: 'connectors',
+    ...(deviceId ? { installedDeviceId: deviceId } : {}),
+  })
   return true
 }
 
@@ -212,7 +218,7 @@ export type AssistantInAppPage = 'settings' | 'connected-apps'
  * layer, as the App's own `gugu.assistant.open` draws it). With no assistant yet, 资料 is setting it up (from the name: the
  * App's intro is its first screen); its connected apps wait for it (the App's page alone). App not usable now: its chat as
  * any chat (D9/D10); with no assistant either, 资料 opens the Apps page on the App (to install or switch it on) and the connected
- * apps the person's own in Settings. Answers whether it went anywhere.
+ * apps the person's own in the marketplace. Answers whether it went anywhere.
  * `section`: a part of the settings page to open at (its model), only when that page is the one drawn.
  */
 export function openAssistantPageInApp(page: AssistantInAppPage, section?: AssistantSettingsSection): boolean {
@@ -222,7 +228,7 @@ export function openAssistantPageInApp(page: AssistantInAppPage, section?: Assis
     return true
   }
   // No assistant and no App: 资料 is 开通, which is the App's to do; the connected apps are the person's own.
-  if (target.kind === 'setup') return page === 'settings' ? openAssistantAppToInstall() : openConnectedAppsSettings()
+  if (target.kind === 'setup') return page === 'settings' ? openAssistantAppToInstall() : openInstalledConnectors()
   if (target.kind !== 'app') return false
   const shell = readAssistantShellBridge()?.getSnapshot()
   const ownerId = shell?.ownerId
