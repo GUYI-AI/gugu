@@ -1,4 +1,5 @@
 import { platform } from '@/platform'
+import type { AgentHomeScan } from '@gugu/session-core/workspace-server/agent-config'
 import { WireError } from '@gugu/session-wire'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import { showAgentHomeUpgradeNotice } from './agent-home-upgrade-notice'
@@ -18,8 +19,25 @@ export async function ensureAgentHomeImported(providerId: string, machine: strin
     if (!initialized.success) throw new Error(errorText(initialized.error))
     return
   }
-  await new Promise<void>((resolve, reject) => showModal('agentHomeImportModal', {
-    home, machine, onSuccess: resolve, onClose: () => reject(new Error('Local configuration import was cancelled')),
+  if (!await chooseAgentHomeImport(home, machine)) throw new Error('Local configuration import was cancelled')
+}
+
+/** Subscriptions and the startup repair action open the same choice on the same host. */
+export async function openAgentHomeImport(providerId: string, machine: string | null): Promise<boolean> {
+  const home = await readAgentHome(providerId, machine)
+  if (!home) return false
+  if (home.needsImport) return chooseAgentHomeImport(home, machine)
+  const client = await getAgentConfigRuntimeClient(machine)
+  const result = await client.diffAgentHome({ providerId })
+  if (!result.success) throw new Error(errorText(result.error))
+  return new Promise((resolve) => showModal('agentHomeReimportModal', {
+    providerId, machine, diff: result.data, onSuccess: () => resolve(true), onClose: () => resolve(false),
+  }))
+}
+
+function chooseAgentHomeImport(home: AgentHomeScan, machine: string | null): Promise<boolean> {
+  return new Promise((resolve) => showModal('agentHomeImportModal', {
+    home, machine, onSuccess: () => resolve(true), onClose: () => resolve(false),
   }))
 }
 

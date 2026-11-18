@@ -1,4 +1,5 @@
 import { AgentHomeImportModal } from '@renderer/features/settings/subscriptions/AgentHomeImportModal'
+import { ReimportDialog } from '@renderer/features/settings/subscriptions/ReimportDialog'
 import { CommandPaletteModal } from '@renderer/features/command-palette/command-palette-modal'
 import { GlobalSearchModal } from '@renderer/features/global-search/global-search-modal'
 import { KeyboardShortcutsCheatSheet } from '@renderer/features/settings/components/keyboard-shortcuts-cheat-sheet'
@@ -24,6 +25,7 @@ export type { ModalSize, ModalPosition, ModalRegistryEntry } from '@/components/
 
 export const modalRegistry = {
   agentHomeImportModal: createModal(AgentHomeImportModal, { size: 'lg' }),
+  agentHomeReimportModal: createModal(ReimportDialog, { size: 'lg' }),
   commandPaletteModal: createModal(CommandPaletteModal, { size: 'md' }),
   globalSearchModal: createModal(GlobalSearchModal, { size: 'lg' }),
   localFolderProjectModal: createModal(LocalFolderProjectModal, { size: 'sm' }),

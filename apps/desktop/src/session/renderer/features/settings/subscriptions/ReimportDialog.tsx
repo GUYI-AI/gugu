@@ -3,12 +3,12 @@ import { useTranslation } from 'react-i18next'
 import type { AgentHomeDiff } from '@gugu/session-core/workspace-server/agent-config'
 import { Button } from '@/components/ui/Button'
 import { messageForUser } from '@/lib/userFacingError'
-import { Dialog, DialogContent, DialogContentArea, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog'
+import { DialogContentArea, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import { errorText } from './subscription-queries'
 
-export function ReimportDialog({ providerId, machine, diff, onClose, onDone }: {
-  providerId: string; machine: string | null; diff: AgentHomeDiff; onClose: () => void; onDone: () => void
+export function ReimportDialog({ providerId, machine, diff, onClose, onSuccess }: {
+  providerId: string; machine: string | null; diff: AgentHomeDiff; onClose: () => void; onSuccess: () => void
 }) {
   const { t } = useTranslation('main')
   const [picked, setPicked] = useState(() => new Set(diff.entries.filter((entry) => ['userChanged', 'userAdded'].includes(entry.state)).map((entry) => entry.id)))
@@ -24,12 +24,11 @@ export function ReimportDialog({ providerId, machine, diff, onClose, onDone }: {
         throw new Error(result.data.issues.filter((issue) => !['sensitive', 'database'].includes(issue.reason))
           .map((issue) => `${issue.path}: ${t(`agentHome.issue.${issue.reason}`)}`).join('\n'))
       }
-      onDone()
+      onSuccess()
     } catch (error) { setError(messageForUser(error)) }
     finally { setBusy(false) }
   }
-  return <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose() }}>
-    <DialogContent data-testid="agent-home-reimport-dialog">
+  return <div data-testid="agent-home-reimport-dialog">
       <DialogHeader><DialogTitle>{t('agentHome.reimportTitle')}</DialogTitle></DialogHeader>
       <DialogContentArea>
         {[...new Set(diff.entries.map((entry) => entry.group))].map((group) => <fieldset key={group} className="mb-4">
@@ -62,6 +61,5 @@ export function ReimportDialog({ providerId, machine, diff, onClose, onDone }: {
           <Button variant="primary" onClick={() => void apply()} disabled={busy} data-testid="agent-home-reimport-apply">{t('agentHome.apply')}</Button>
         </div>
       </DialogContentArea>
-    </DialogContent>
-  </Dialog>
+  </div>
 }

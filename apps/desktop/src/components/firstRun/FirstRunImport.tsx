@@ -70,7 +70,7 @@ export function FirstRunImport({ homes, machine = null, onBack, onDone }: {
         {home.projectMcpCount > 0 && <p className="agent-home-note">{t('agentHome.projectMcp', { count: home.projectMcpCount })}</p>}
         <p className="agent-home-signin">{t('agentHome.signIn')}</p>
         {home.migration && <p className="agent-home-note">{t('agentHome.migration')}</p>}
-        {!!home.unmarkedMcp?.length && <p className="agent-home-note"><input type="checkbox" disabled checked={false} readOnly /> {t('agentHome.unmarkedMcp', { names: home.unmarkedMcp.join(', ') })}</p>}
+        {!!home.unmarkedMcp?.length && <p className="agent-home-note">{t('agentHome.unmarkedMcp', { names: home.unmarkedMcp.join(', ') })}</p>}
         {home.issues.filter((issue) => !['sensitive', 'database'].includes(issue.reason)).map((issue) =>
           <p className="agent-home-note" key={issue.path}>{issue.path} · {t(`agentHome.issue.${issue.reason}`)}</p>)}
       </section>)}
