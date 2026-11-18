@@ -7,6 +7,7 @@ export type BrowserAnnotationSelection = {
   kind: 'browser';
   browserId: string;
   url: string;
+  filePath?: string;
   selector: string | null;
   targetPath: string | null;
   elementTag?: string;
@@ -146,11 +147,12 @@ export function annotationPrompt(prompt: string, items: readonly SessionAnnotati
       ].join('\n'));
       continue;
     }
-    append('annotations.prompt.browserComments', [
-    copy('annotations.prompt.browserComment', { number: item.number }), copy('annotations.prompt.browser'),
+    append(item.filePath ? 'annotations.prompt.allComments' : 'annotations.prompt.browserComments', [
+    copy(item.filePath ? 'annotations.prompt.userComment' : 'annotations.prompt.browserComment', { number: item.number }),
+    copy(item.filePath ? 'annotations.prompt.html' : 'annotations.prompt.browser'),
     copy('annotations.prompt.position', { x: item.rect.x, y: item.rect.y, width: item.viewport.width, height: item.viewport.height }),
     copy('annotations.prompt.untrusted'),
-    `${copy('annotations.prompt.pageUrl')} ${JSON.stringify(item.url)}`, copy('annotations.prompt.frame'), `${copy('annotations.prompt.target')} ${JSON.stringify(item.text)}`,
+    `${copy(item.filePath ? 'annotations.prompt.filePath' : 'annotations.prompt.pageUrl')} ${JSON.stringify(item.filePath ?? item.url)}`, copy('annotations.prompt.frame'), `${copy('annotations.prompt.target')} ${JSON.stringify(item.text)}`,
     `${copy('annotations.prompt.selector')} ${JSON.stringify(item.selector ?? copy('annotations.prompt.regionTarget'))}`, `${copy('annotations.prompt.targetPath')} ${JSON.stringify(item.targetPath ?? copy('annotations.prompt.regionTarget'))}`,
     ...(!item.selector ? [copy('annotations.prompt.region', { ...item.rect, number: item.number })] : []),
     `${copy('annotations.prompt.screenshot')} ${item.screenshot.name}${copy('annotations.prompt.screenshotAttachment', { number: item.number })}`,

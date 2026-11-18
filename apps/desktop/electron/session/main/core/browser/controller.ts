@@ -1,4 +1,5 @@
 import { defaultBrowser, importDefaultBrowserCookies } from '@main/core/browser/browser-cookie-import';
+import { inspectHtmlPreviewAnnotation } from './html-preview-annotation';
 import { inspectBrowserAnnotation } from './browser-annotation';
 import { configureBrowserProfileSession } from '@main/core/browser/browser-profile-session';
 import {
@@ -73,6 +74,7 @@ export const browserController = createRPCController({
   setAnnotationBrowsing: (args: { browserId: string; browsing: boolean }) => ({
     success: browserWebContentsRegistry.setAnnotationBrowsing(args.browserId, args.browsing),
   }),
+  inspectHtmlPreviewAnnotation,
   /**
    * #1607 node 5: a task's page on another of the person's computers, watched here as its live picture. The person's
    * input goes to that page directly, as their click into a page on this computer does; no App is involved.
