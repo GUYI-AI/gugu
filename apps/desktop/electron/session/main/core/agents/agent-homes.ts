@@ -137,7 +137,7 @@ export async function scanAgentHomes(providerIds?: readonly string[], upgradedOn
     const deferred = migrationSpace && (await upgradeProviders())?.has(providerId) && !await readAgentHomeMarker(home);
     if (deferred) {
       rows.push({ providerId, name: plugin.metadata.name, userRoot: home.userConfigRoot,
-        sourceReadable: true, importedAt: null, needsImport: true, sourceUpdated: false, migration: true,
+        sourceReadable: await access(home.userConfigRoot).then(() => true, () => false), importedAt: null, needsImport: true, sourceUpdated: false, migration: true,
         migrationSpace, groups: home.importGroups.map(({ id }) => ({ id, count: 0 })), issues: [], mcpSecrets: [], projectMcpCount: 0 });
       continue;
     }

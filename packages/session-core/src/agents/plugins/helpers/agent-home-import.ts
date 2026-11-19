@@ -360,7 +360,7 @@ async function collect(home: ResolvedAgentHome, options: {
       }
     }
     // Source failures are listed; destination writes and stale choices must fail the operation.
-    // Keep at most one source file in memory even when the root approaches its 2 GiB limit.
+    // Keep at most one bounded source file in memory; large tree assets are streamed.
     if (snapshots.length) await options.consume?.(snapshots);
   };
   const root = options.root ?? (await realSource(home.userConfigRoot));

@@ -100,7 +100,7 @@ export async function importedLinkTarget(
   if (isAbsolute(raw)) return raw
   const rel = relative(sourceRoot, target).split(sep).join('/')
   const copied =
-    inside(sourceRoot, target) &&
+    inside(sourceRoot, source) && inside(sourceRoot, target) &&
     included.some((item) => rel === item || rel.startsWith(item.replace(/\/$/, '') + '/'))
   return copied ? raw : target
 }

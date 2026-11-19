@@ -103,7 +103,7 @@ export default {
   },
   "agentHome": {
   "migrationDeferredTitle": "配置迁移暂缓",
-  "migrationSpaceNotice": "空间不够，腾出 {{size}} GB 后自动迁移；原有会话可以继续使用。",
+  "migrationSpaceNotice": "空间不够，腾出 {{size}} GB 后会在下次启动时自动迁移。原有会话可以继续使用。",
   "migrationNoticeTitle": "配置迁移完成",
   "migrationNoticeCopied": "这次更新把 {{names}} 的配置迁到了咕咕自己管理，你的登录、Skills 和会话记录都已带过来。",
   "migrationNotice": "这次更新把 {{names}} 的配置迁到了咕咕自己管理。",
