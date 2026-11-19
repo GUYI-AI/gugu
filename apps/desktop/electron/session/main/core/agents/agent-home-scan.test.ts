@@ -6,6 +6,8 @@ vi.mock('@gugu/session-plugins/agents', () => ({ pluginRegistry: { getAll: () =>
 }], get: () => ({ capabilities: { sessionBundle: { configRoot: {}, injectionMode: 'managed-config-root' } } }) } }));
 vi.mock('@gugu/session-core/agents/plugins/helpers', () => ({
   AgentHomeMigrationFailure: class extends Error {},
+  AgentHomeSpaceError: class extends Error {},
+  checkAgentHomeImportSpace: async () => {},
   resolveAgentHome: () => ({ configRoot: '/managed', userConfigRoot: '/missing-source', importGroups: [{ id: 'settings' }] }),
   readAgentHomeMarker: async () => null,
   scanAgentHome: async () => ({ marker: null, newestMtime: 0, groups: [{ id: 'settings', count: 1, mcpCount: 0 }], issues: [], mcpSecrets: [], mcpNames: [], projectMcpCount: 0 }),
