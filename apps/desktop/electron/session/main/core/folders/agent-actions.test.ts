@@ -4,7 +4,7 @@ import type { FolderRecord } from '@shared/core/folders/folders';
 import { runGroupFolderAgentAction, type GroupFolderOps } from './agent-actions';
 
 const folder = (over: Partial<FolderRecord> = {}): FolderRecord => ({
-  id: 'w1', path: '/repo', chatId: 'g1', sort: 1, gitless: false, baseRef: null, attachedAt: null, branch: 'main', sessionIds: ['s1'], ...over,
+  id: 'w1', path: '/repo', chatId: 'g1', sort: 1, gitless: false, baseRef: null, attachedAt: null, branch: 'main', sessionIds: ['s1'], taskHome: false, ...over,
 });
 
 function ops(over: Partial<GroupFolderOps> = {}): GroupFolderOps {
