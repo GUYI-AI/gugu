@@ -88,7 +88,8 @@ const fields: Record<ClosureV2Route, readonly string[]> = {
 }
 /** Fixed build target only. No renderer URL, redirects, retries or legacy route. */
 export function createClosureV2Http(input: { baseUrl: string; anonKey: string; fetch?: typeof fetch }) {
-  const base = new URL(input.baseUrl)
+  let base: URL
+  try { base = new URL(input.baseUrl) } catch { throw new ClosureV2HttpFailure('closure_unavailable') }
   if ((base.protocol !== 'https:' && !(base.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname)))
       || base.username || base.password || base.search || base.hash || base.pathname !== '/' || !input.anonKey) throw new ClosureV2HttpFailure('closure_unavailable')
   if (!input.anonKey.startsWith('sb_publishable_')) {
@@ -118,7 +119,8 @@ export function createClosureV2Http(input: { baseUrl: string; anonKey: string; f
       let response: Response
       try { response = await raw('status', { method: 'GET', headers: authHeaders(auth) }) }
       catch { throw new ClosureV2HttpFailure('closure_unavailable') }
-      const body = await jsonBody(response)
+      let body: unknown
+      try { body = await jsonBody(response) } catch { throw new ClosureV2HttpFailure('closure_unavailable') }
       if (!response.ok) throw new ClosureV2HttpFailure(response.status === 401 ? 'unauthorized' : 'closure_unavailable')
       const p = object(body) ? body.policy : null
       if (!object(p) || p.protocol_version !== 2 || typeof p.available !== 'boolean' || p.deletion !== 'immediate'

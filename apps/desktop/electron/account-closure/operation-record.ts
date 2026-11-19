@@ -68,7 +68,7 @@ function valid(value: unknown): value is ClosureOperationRecord {
     && (r.serverState === null || ['open', 'confirming', 'processing', 'deleted', 'closed_before_confirm'].includes(r.serverState))
     && (r.serverRequestState === null || ['sending', 'challenge', 'verifying', 'processing', 'retry_wait', 'deleted', 'failed', 'expired'].includes(r.serverRequestState))
     && (r.serverRequest === null || !!r.serverRequest && uuid.test(r.serverRequest.id)
-      && typeof r.serverRequest.state === 'string' && typeof r.serverRequest.expiresAt === 'string' && Number.isFinite(Date.parse(r.serverRequest.expiresAt))
+      && ['sending', 'challenge', 'verifying', 'processing', 'retry_wait', 'deleted', 'failed', 'expired'].includes(r.serverRequest.state) && typeof r.serverRequest.expiresAt === 'string' && Number.isFinite(Date.parse(r.serverRequest.expiresAt))
       && (r.serverRequest.lastError === null || typeof r.serverRequest.lastError === 'string' && r.serverRequest.lastError.length <= 64)
       && typeof r.serverRequest.canRetry === 'boolean')
     && (r.canReleasePreparation === null || typeof r.canReleasePreparation === 'boolean')

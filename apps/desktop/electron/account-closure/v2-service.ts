@@ -39,7 +39,8 @@ export function createDesktopClosureV2Service(p: Ports): AccountClosureV2Native 
     handle: { localOperationId: r.localOperationId, nativeGeneration: r.nativeGeneration, localRevision: r.revision },
     ownerId: r.ownerId, phase: r.phase,
     serverOperation: r.serverOperationId && r.serverState ? { operationId: r.serverOperationId, state: r.serverState,
-      operationRevision: r.serverRevision, challengeGeneration: r.challengeGeneration, challengeExpiresAt: r.serverRequest?.expiresAt ?? null } : null,
+      operationRevision: r.serverRevision, challengeGeneration: r.challengeGeneration, challengeExpiresAt: r.serverRequest?.id === r.requestId && r.serverRequest.state === 'challenge' && r.serverRequest.lastError === null
+        && (r.pendingChallengeGeneration === null || r.pendingChallengeGeneration === r.challengeGeneration) ? r.serverRequest.expiresAt : null } : null,
     serverPreparationGeneration: r.serverGeneration, recoveryOnly: r.recoveryOnly, pendingEffect: r.pendingEffect,
     agentsPaused: await p.local.isPaused(r.ownerId), retainedUnattributed: [...r.retainedUnattributed],
     })

@@ -186,7 +186,7 @@ describe('native V2 custody and trusted receiver',()=>{
   await expect(f.native.sendCode(cap.handle)).rejects.toThrow()
   f.transform(reply=>({...reply,operation:{...reply.operation,request:{...reply.operation.request!,id:A}}}))
   const bad=await f.native.recover((await f.native.discover())!.handle)
-  expect(bad.pendingEffect).toBe('challenge')
+  expect(bad.pendingEffect).toBe('challenge');expect(bad.serverOperation?.challengeExpiresAt).toBeNull()
   f.transform(null);const good=await f.native.recover(bad.handle)
   expect(good).toMatchObject({pendingEffect:null,phase:'challenge',serverOperation:{challengeExpiresAt:expect.any(String)}})
   expect(f.http.post.mock.calls.filter(c=>c[0]==='challenge')).toHaveLength(1)
