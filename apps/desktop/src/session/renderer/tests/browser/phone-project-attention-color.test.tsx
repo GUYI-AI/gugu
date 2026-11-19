@@ -10,14 +10,12 @@ import '@renderer/index.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/partners/partners.css'
 
-vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [device('host', [], {
-  projects: [{ localProjectId: 'project', chatId: 'project-chat', name: 'Test project', rootPath: '/project', createdAt: '2026-11-08T00:00:00Z', folders: [] }],
-})] }) }))
+vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [device('host', [])] }) }))
 vi.mock('@/hooks/useAgentDisplayStatus', () => ({ useAgentDisplayStatuses: () => ({}) }))
 vi.mock('@/session/shared/remote-sessions/session-directory', async original => ({
   ...await original<typeof import('@/session/shared/remote-sessions/session-directory')>(),
   useLiveDeviceSessions: () => ({ host: { projects: [], cached: false, loading: false, error: null, sessions: [
-    { conversationId: 'waiting', projectId: 'project', title: 'Test agent', status: { status: 'needs_user', detail: 'approval' }, runtime: 'acp', supported: true, unseen: true },
+    { conversationId: 'waiting', groupChatId: 'project-chat', title: 'Test agent', status: { status: 'needs_user', detail: 'approval' }, runtime: 'acp', supported: true, unseen: true },
   ] } }),
 }))
 

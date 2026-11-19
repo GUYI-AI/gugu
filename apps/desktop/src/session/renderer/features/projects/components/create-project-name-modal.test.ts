@@ -8,10 +8,10 @@ import { CreateProjectNameModal } from './create-project-name-modal';
 
 // owner 2026-09-25:「我发现新建项目居然不支持远程项目,应该得支持啊」——
 // 新建空白项目在别的机器上:建在那台机器的默认项目目录下(规则同本机,目录是那台机器自己的设置)。
+// 现在建的是一个群,文件夹建好挂进这个群(createGroupWithFolder)。
 
 const mocks = vi.hoisted(() => ({
-  createProject: vi.fn(),
-  mountProject: vi.fn(),
+  createGroupWithFolder: vi.fn(),
   typeName: null as null | ((value: string) => void),
 }));
 
@@ -23,8 +23,9 @@ vi.mock('@renderer/lib/ui/input', () => ({
   },
 }));
 
-vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
-  getProjectManagerStore: () => ({ createProject: mocks.createProject, mountProject: mocks.mountProject }),
+vi.mock('@renderer/features/folders/create-group-with-folder', () => ({
+  createGroupWithFolder: mocks.createGroupWithFolder,
+  FolderMachineOfflineError: class FolderMachineOfflineError extends Error {},
 }));
 
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
@@ -63,8 +64,7 @@ describe('新建空白项目(#6264 别的机器)', () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
-    mocks.createProject.mockReset().mockResolvedValue('project-new');
-    mocks.mountProject.mockReset().mockResolvedValue(undefined);
+    mocks.createGroupWithFolder.mockReset().mockResolvedValue('chat-new');
     dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', { url: 'http://localhost' });
     vi.stubGlobal('window', dom.window);
     vi.stubGlobal('document', dom.window.document);
@@ -100,23 +100,16 @@ describe('新建空白项目(#6264 别的机器)', () => {
     return onSuccess;
   }
 
-  it('选了别的机器:建在那台机器的默认项目目录下,建好就挂上(侧栏里有它)', async () => {
+  it('选了别的机器:建在那台机器的默认项目目录下,群建好、文件夹挂进去', async () => {
     const onSuccess = await createNamed({ deviceId: 'd22', label: 'd22 服务器' }, 'demo');
-    expect(container.textContent).toContain('在 d22 服务器 上新建项目');
-    expect(mocks.createProject).toHaveBeenCalledWith(
-      { type: 'local', machine: 'd22' },
-      expect.objectContaining({ mode: 'pick', path: '/home/d22/Documents/demo', name: 'demo', createDirectory: true })
-    );
-    expect(mocks.mountProject).toHaveBeenCalledWith('project-new');
-    expect(onSuccess).toHaveBeenCalledWith('project-new');
+    expect(container.textContent).toContain('在 d22 服务器 上新建群');
+    expect(mocks.createGroupWithFolder).toHaveBeenCalledWith({ name: 'demo', machine: 'd22', path: '/home/d22/Documents/demo', create: true });
+    expect(onSuccess).toHaveBeenCalledWith('chat-new');
   });
 
-  it('本机照旧:本机的默认项目目录,项目类型不带机器', async () => {
+  it('本机照旧:本机的默认项目目录,不带机器', async () => {
     const onSuccess = await createNamed(null, 'demo');
-    expect(mocks.createProject).toHaveBeenCalledWith(
-      { type: 'local' },
-      expect.objectContaining({ path: '/Users/me/Documents/demo', createDirectory: true })
-    );
-    expect(onSuccess).toHaveBeenCalledWith('project-new');
+    expect(mocks.createGroupWithFolder).toHaveBeenCalledWith({ name: 'demo', machine: null, path: '/Users/me/Documents/demo', create: true });
+    expect(onSuccess).toHaveBeenCalledWith('chat-new');
   });
 });

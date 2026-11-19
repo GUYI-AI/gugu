@@ -100,7 +100,7 @@ it('shows the context tools, opens recent resources, and removes them only from 
   await act(() => userEvent.click(page.getByRole('button', { name: '从最近打开中移除 行程.md' })));
   await expect.element(page.getByRole('button', { name: '行程.md', exact: true })).not.toBeInTheDocument();
   await render(topic);
-  await expect.element(page.getByText('暂无最近打开的项目')).toBeVisible();
+  await expect.element(page.getByText('暂无最近打开的文件夹')).toBeVisible();
   await render(group);
   await expect.element(page.getByRole('button', { name: '公告', exact: true })).toBeVisible();
 });

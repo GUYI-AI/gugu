@@ -184,11 +184,6 @@ export const enUSProjectMessages = {
   'projects.error.accountList': "Couldn't load your groups.",
 
   // ── projects: pending creation ─────────────────────────────────────────
-  'projects.pending.creatingRepo': 'Creating repository',
-  'projects.pending.cloning': 'Cloning',
-  'projects.pending.registering': 'Registering',
-  'projects.pending.genericError': 'An error occurred',
-  'projects.pending.dismiss': 'Dismiss',
 
   // ── projects: directory browser ────────────────────────────────────────
   'projects.remoteDir.loading': 'Loading directory',
@@ -412,11 +407,6 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'projects.error.accountList': '群列表读取失败。',
 
   // ── projects: pending creation ─────────────────────────────────────────
-  'projects.pending.creatingRepo': '正在创建仓库',
-  'projects.pending.cloning': '正在克隆',
-  'projects.pending.registering': '正在注册',
-  'projects.pending.genericError': '发生错误',
-  'projects.pending.dismiss': '关闭',
 
   // ── projects: directory browser ────────────────────────────────────────
   'projects.remoteDir.loading': '正在读取目录',

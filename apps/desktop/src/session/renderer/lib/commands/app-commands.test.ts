@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   showModal: vi.fn(),
   register: vi.fn(),
+  prepareGroupTask: vi.fn(),
+  groupOfSession: vi.fn((sessionId: string): string | null => (sessionId === 'task-1' ? 'group-1' : null)),
   navigation: {
     currentViewId: 'home',
     viewParamsStore: {} as Record<string, unknown>,
@@ -26,7 +28,9 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
     },
     history: { canGoBack: false, canGoForward: false, back: vi.fn(), forward: vi.fn() },
   },
+  sidebarStore: { groupOfSession: mocks.groupOfSession },
 }));
+vi.mock('@renderer/features/folders/group-home', () => ({ prepareGroupTask: mocks.prepareGroupTask }));
 vi.mock('@renderer/lib/modal/modal-provider', () => ({ showModal: mocks.showModal }));
 vi.mock('./registry', () => ({ commandRegistry: { register: mocks.register } }));
 vi.mock('@renderer/lib/components/nav-buttons', () => ({ applyHistoryEntry: vi.fn() }));
@@ -49,7 +53,7 @@ describe('app.newTask (⌘N / command palette "New Task")', () => {
 
   // #5690: it used to open `taskModal`, the old title + linked-issue dialog that
   // behavior session-resume says must not exist. New tasks start from a first message.
-  it('goes to the project home composer instead of opening the old create dialog', () => {
+  it('goes to the group home composer instead of opening the old create dialog', () => {
     mocks.navigation.currentViewId = 'session';
     mocks.navigation.viewParamsStore = { session: { projectId: 'project-1', sessionId: 'task-1' } };
 
@@ -57,12 +61,13 @@ describe('app.newTask (⌘N / command palette "New Task")', () => {
     expect(newSession).toBeDefined();
     newSession!.execute();
 
-    expect(mocks.navigate).toHaveBeenCalledWith('project', { projectId: 'project-1' });
+    expect(mocks.prepareGroupTask).toHaveBeenCalledWith('group-1');
+    expect(mocks.navigate).toHaveBeenCalledWith('chat', { chatId: 'group-1' });
     expect(mocks.showModal).not.toHaveBeenCalled();
   });
 
-  // gugu-dev#181 ⑯ 哪一页都有(⌘K 面板的建议操作在哪一页都是那几项):不在项目里 = 侧栏「新建会话」那一行,去新建会话页。
-  it('outside a project goes to the new task page', () => {
+  // gugu-dev#181 ⑯ 哪一页都有(⌘K 面板的建议操作在哪一页都是那几项):不在群里 = 侧栏「新建会话」那一行,去新建会话页。
+  it('outside a group goes to the new task page', () => {
     mocks.navigation.currentViewId = 'home';
     mocks.navigation.viewParamsStore = {};
 

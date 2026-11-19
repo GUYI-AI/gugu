@@ -1263,9 +1263,6 @@ const enUSCoreMessages = {
   'sidebar.inProject': 'in group {project}',
   'sidebar.workspaceNotReady': 'The task workspace is not ready yet. Try again in a moment.',
   'sidebar.conversationNotOpenable': 'That task cannot be opened right now',
-  // #6264 侧栏里别的机器上的项目(按 Zed 混排):项目行挨着项目名标机器名,离线时标出来。
-  // 侧边栏「正在创建」那一行转圈图标的 tooltip。进行中的三档复用 `projects.pending.*`
-  // (主面板的阶段清单是同一批语义),这里只补它没有的两档。
   'extensions.actions': 'App actions',
   'extensions.spawnedBy': 'Started by the “{name}” App',
   'extensions.spawnedByUninstalled': 'Started by the uninstalled “{name}” App',

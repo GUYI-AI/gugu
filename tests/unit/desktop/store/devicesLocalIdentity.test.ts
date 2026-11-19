@@ -14,13 +14,14 @@ import { createNode, createReactHarness } from '../../../support/testHarness'
 
 const mocks = vi.hoisted(() => ({
   listDevices: vi.fn(),
-  // The account project list also re-reads on identification (it subscribes itself): every subscriber is kept.
+  // The account's group folders also re-read on identification (the store subscribes itself): every subscriber is kept.
   identified: new Set<() => void>(),
 }))
 
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'account-a' } }) }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { listDevices: mocks.listDevices } }))
-vi.mock('../../../../apps/desktop/src/lib/deviceProjects', () => ({ listMyDeviceProjects: async () => [], listMyAccountProjects: async () => [] }))
+vi.mock('../../../../apps/desktop/src/lib/deviceProjects', () => ({ listMyDeviceProjects: async () => [] }))
+vi.mock('../../../../apps/desktop/src/lib/chatFolders', () => ({ listMyGroupFolders: async () => [] }))
 vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({
   useChatStore: () => ({ subscribeAccountRevision: () => () => undefined }),
 }))

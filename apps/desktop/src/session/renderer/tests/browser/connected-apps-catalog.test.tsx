@@ -226,7 +226,7 @@ it('opens a complete category, restores its query after details, and isolates an
   expect(harness.container.querySelectorAll('.connected-app-row')).toHaveLength(7)
   await act(async () => {
     await userEvent.fill(
-      page.getByRole('searchbox', { name: '搜索应用: 任务与项目', exact: true }),
+      page.getByRole('searchbox', { name: '搜索应用: 任务与群', exact: true }),
       'Linear'
     )
   })

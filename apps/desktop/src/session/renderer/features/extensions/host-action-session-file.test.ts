@@ -24,10 +24,10 @@ beforeEach(() => {
   });
 });
 describe('an App opens a file in a target session that was not prepared', () => {
-  it.each([null, 'remote-device'])('prepares the session in its own home project (device: %s)', async (deviceId) => {
-    const home = '00000000-0000-4000-8000-000000000001';
-    await expect(open(home, deviceId)).resolves.toEqual({ ok: true, opened: undefined });
-    const project = deviceId ? `${home}~${deviceId}` : home;
+  // 文件夹 id 在每台机器上都是同一个工作区 id,不再按机器换名。
+  it.each([null, 'remote-device'])('prepares the session in its own folder (device: %s)', async (deviceId) => {
+    const project = 'folder-workspace-1';
+    await expect(open(project, deviceId)).resolves.toEqual({ ok: true, opened: undefined });
     expect(state.prepare).toHaveBeenCalledWith(project, 'target');
     expect(state.open).toHaveBeenCalledWith(project, 'target', 'a.txt', { ask: true, intent: undefined, byHost: true });
     expect(state.prepare.mock.invocationCallOrder[0]).toBeLessThan(state.open.mock.invocationCallOrder[0]!);

@@ -21,6 +21,7 @@ vi.mock('@/platform', async original => {
 
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@/lib/deviceProjects', async (original) => ({ ...await original<object>(), listMyDeviceProjects: async () => ({}) }));
+vi.mock('@/lib/chatFolders', () => ({ listMyGroupFolders: async () => [] }));
 // File storage is a key of the account's own settings row (lib/ownSettings): an empty row = the defaults.
 vi.mock('@gugu/core/cloud/userSettings', async (original) => ({ ...await original<object>(), readUserSettingsConfig: async () => ({}) }));
 vi.mock('@/lib/fileStorage', async (original) => {
