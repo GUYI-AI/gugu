@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { StringDecoder } from 'node:string_decoder'
 
 // JSONL ends only at LF; CR is removed only immediately before LF or EOF.
-class LfFrames {
+export class JsonlFramer {
   decoder = new StringDecoder('utf8')
   parts = []
   write(chunk) {
@@ -31,7 +31,7 @@ class LfFrames {
 
 /** Callback/event form for protocol pipes. Closing detaches readers without owning the input. */
 export function createJsonlReader({ input, onLine, onClose = () => {}, onError = () => {} }) {
-  const frames = new LfFrames()
+  const frames = new JsonlFramer()
   const reader = new EventEmitter()
   let closed = false
   if (onLine) reader.on('line', onLine)
@@ -63,7 +63,7 @@ export function createJsonlReader({ input, onLine, onClose = () => {}, onError =
 
 /** Backpressured file form; breaking also returns the underlying Readable iterator. */
 export async function* readJsonlLines(input) {
-  const frames = new LfFrames()
+  const frames = new JsonlFramer()
   for await (const chunk of input) yield* frames.write(chunk)
   yield* frames.end()
 }

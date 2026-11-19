@@ -8,10 +8,6 @@
     1
   ],
   [
-    "packages/session-core/src/session-record/sources/claude-jsonl.ts:createReadStream:c538869da00aa6e2ad66865ccbea9dc378587f5d8c088037740a7fe055cb734a",
-    1
-  ],
-  [
     "packages/session-core/src/session-record/sources/jsonl-tail-source.ts:readSnapshot:9f15eb22cce359c72936783b10d8f5adbf95c7e96a820117f152eff47c5f960a",
     1
   ],

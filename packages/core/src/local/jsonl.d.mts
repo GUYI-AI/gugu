@@ -15,3 +15,8 @@ export declare function createJsonlReader(options: {
 }): JsonlReader
 export declare function readJsonlLines(input: Readable): AsyncGenerator<string>
 export declare function jsonlParseError(source: string, line: string): Error
+
+export declare class JsonlFramer {
+  write(chunk: string | Uint8Array): string[]
+  end(): string[]
+}
