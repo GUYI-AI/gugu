@@ -7,6 +7,8 @@ ALTER TABLE `workspaces` ADD `gitless` integer DEFAULT false NOT NULL;--> statem
 ALTER TABLE `workspaces` ADD `base_ref` text;--> statement-breakpoint
 CREATE INDEX `idx_workspaces_chat_id` ON `workspaces` (`chat_id`,`sort`);--> statement-breakpoint
 ALTER TABLE `sessions` ADD `chat_id` text;--> statement-breakpoint
+-- @@@c1-legacy-project The previous release's NOT NULL project_id (sessions, terminals, editor buffers) points here.
+INSERT OR IGNORE INTO `projects` (`id`, `name`, `path`, `kind`) VALUES ('c1-placeholder', '', '/.gugu-c1-placeholder-c1-placeholder', 'workspace');--> statement-breakpoint
 CREATE INDEX `idx_sessions_chat_id` ON `sessions` (`chat_id`);--> statement-breakpoint
 ALTER TABLE `automations` ADD `workspace_id` text;--> statement-breakpoint
 ALTER TABLE `activity_events` ADD `chat_id` text;--> statement-breakpoint
