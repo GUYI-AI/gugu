@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { app, BrowserWindow, nativeImage } from 'electron';
 import { EXTENSION_API_VERSION } from '@shared/extensions/manifest';
@@ -17,6 +18,7 @@ import { projectionSources, type ProjectionHost } from '../../../../../../src/se
 import { openMediaProcess } from '../../../../../../native/projection-media/node/host.mjs';
 import { ProjectionSignals } from '../../../../../../native/projection-media/node/signaling.mjs';
 import { withFixtureCleanup } from '../../test-support/fixture-failure';
+import { captureColorWitness } from './projection-capture-witness';
 
 if (!process.env.GUGU_HOME || !process.env.GUGU_USER_DATA_DIR) throw new Error('Pipeline fixture needs isolated paths');
 app.setPath('userData', process.env.GUGU_USER_DATA_DIR);
@@ -55,6 +57,8 @@ void app.whenReady().then(async () => {
   const paints: Array<{ sequence: number; rtpTimestamp: number; rgb: number[] }> = [];
   const outcomes: unknown[] = [], pixels: Uint8Array[] = [];
   const decoded: number[][] = [];
+  const sourceCaptures: Array<{ sequence: number; pngSha256: string; rgb: number[] }> = [];
+  let sourceWitness: Omit<Awaited<ReturnType<typeof captureColorWitness>>, 'data'> | undefined;
   let disconnected = 0, viewerGeneration = "";
   const encoded = new Map<number, number>();
   await source.loadURL('data:text/html,' + encodeURIComponent('<body style="margin:0;background:rgb(26,96,190)"><textarea style="width:60px;height:20px"></textarea><script>document.querySelector("textarea").focus()</script>'));
@@ -65,10 +69,29 @@ void app.whenReady().then(async () => {
     disconnect: async () => { disconnected++; }, close: () => { stopped = true; },
     refresh: async () => { await capture(); },
   });
-  async function capture() {
+  async function capturePng() {
     const picture = await source.webContents.capturePage();
     assert.deepEqual(picture.getSize(), { width: 128, height: 96 });
-    return publisher.publish({ width: 128, height: 96, mime: 'image/png', data: picture.toPNG().toString('base64') });
+    return picture.toPNG().toString('base64');
+  }
+  async function sourceRgb(data: string): Promise<readonly [number, number, number]> {
+    // Chromium's PNG decode + sRGB canvas are independent of the production
+    // NativeImage decoder, native channel layout and reused media pixel lease.
+    return source.webContents.executeJavaScript(`(async () => {
+      const png = await (await fetch(${JSON.stringify('data:image/png;base64,' + data)})).blob();
+      const image = await createImageBitmap(png);
+      try {
+        const canvas = new OffscreenCanvas(128, 96), ctx = canvas.getContext('2d');
+        ctx.drawImage(image, 0, 0, 128, 96);
+        return Array.from(ctx.getImageData(110, 80, 1, 1).data).slice(0, 3);
+      } finally { image.close(); }
+    })()`);
+  }
+  async function capture(witnessed?: string) {
+    const data = witnessed ?? await capturePng(), rgb = [...await sourceRgb(data)];
+    const sequence = await publisher.publish({ width: 128, height: 96, mime: 'image/png', data });
+    sourceCaptures.push({ sequence, pngSha256: createHash('sha256').update(Buffer.from(data, 'base64')).digest('hex'), rgb });
+    return sequence;
   }
   const feeds = new Map<unknown, ReturnType<typeof bridge.mediaFeed>>();
   const signals = new ProjectionSignals({
@@ -120,9 +143,9 @@ void app.whenReady().then(async () => {
     browser.stderr?.on('data', data => { stderr = (stderr + data).slice(-4096); });
     const chromium = browser;
     browserExit = new Promise<void>(resolve => { chromium.once('error', error => { fault = error; }); chromium.once('close', () => { exited = true; resolve(); }); });
-    const until = async (condition: () => boolean) => {
+    const until = async (condition: () => boolean | Promise<boolean>) => {
       const deadline = Date.now() + 12000;
-      while (!condition()) { if (fault) throw fault; if (exited) throw new Error('Chromium exited: ' + stderr);
+      while (!await condition()) { if (fault) throw fault; if (exited) throw new Error('Chromium exited: ' + stderr);
         if (Date.now() > deadline) throw new Error('Pipeline timed out: ' + stderr); await pause(20); }
     };
     phase = 'first-paint';
@@ -134,13 +157,17 @@ void app.whenReady().then(async () => {
     assert.deepEqual(outcomes[0], { type: 'input-result', generation: viewerGeneration, sequence: 1, status: 'applied' });
     assert.equal(inputCalls, 1);
     assert.equal(await source.webContents.executeJavaScript('document.querySelector("textarea").value'), '整链中文🙂');
-    // JS completion can precede compositor capture; witness the new paint first.
-    await source.webContents.executeJavaScript('document.body.style.background="rgb(190,40,26)"; new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
-    assert.equal(await capture(), 2);
+    // DOM/rAF completion is not proof of the pixels in capturePage's PNG.
+    // The source witness runs before publish, without warming the media decoder.
+    phase = 'source-second-capture';
+    await source.webContents.executeJavaScript('document.body.style.background="rgb(190,40,26)"');
+    const witnessed = await captureColorWitness({ capture: capturePng, rgb: sourceRgb, until, expected: [190, 40, 26] });
+    sourceWitness = { attempts: witnessed.attempts, firstRgb: witnessed.firstRgb, rgb: witnessed.rgb };
+    assert.equal(await capture(witnessed.data), 2);
     phase = 'second-paint';
     await until(() => paints.some(paint => paint.sequence === 2));
     const second = paints.find(paint => paint.sequence === 2)!;
-    for (const [channel, wanted] of [190, 40, 26].entries()) assert.ok(Math.abs(second.rgb[channel]! - wanted) < 12, JSON.stringify({ second, decoded }));
+    for (const [channel, wanted] of [190, 40, 26].entries()) assert.ok(Math.abs(second.rgb[channel]! - wanted) < 12, JSON.stringify({ second, decoded, sourceCaptures, sourceWitness }));
     assert.equal(second.rtpTimestamp, encoded.get(2));
     assert.equal(pixels.length, 2); assert.equal(pixels[0], pixels[1]);
     const ownershipPicture = await source.webContents.capturePage();
@@ -157,7 +184,7 @@ void app.whenReady().then(async () => {
     await until(() => stopped && [...feeds.values()][0]!.lease.signal.aborted);
     await signals.dispose();
     assert.ok(disconnected > 0); assert.equal(inputCalls, 1);
-    process.stdout.write('PROJECTION_PIPELINE_RESULT=' + JSON.stringify({ passed: true, ownership, device, paints, decoded, inputCalls, reused: pixels[0] === pixels[1],
+    process.stdout.write('PROJECTION_PIPELINE_RESULT=' + JSON.stringify({ passed: true, ownership, device, paints, decoded, sourceCaptures, sourceWitness, inputCalls, reused: pixels[0] === pixels[1],
       home: process.env.GUGU_HOME, userData: app.getPath('userData'), electron: process.versions.electron }) + '\n');
   }, async () => {
     try { await signals.dispose(); }
