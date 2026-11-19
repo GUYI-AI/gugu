@@ -9,7 +9,7 @@ const fixture = vi.hoisted(() => ({ data: {} as Record<string,unknown>,rows: [] 
   notify: vi.fn(),showSetup: vi.fn(),showGithub: vi.fn(),showConfirm: vi.fn(),retryOperation: vi.fn(async () => {}) }))
 vi.mock('@/lib/notices',() => ({ notify: fixture.notify }))
 vi.mock('@/lib/useAssistantHome',() => ({ useAssistantHome() { throw new Error('Unexpected assistant initialization') } }))
-vi.mock('@/hooks/useMobileShell',() => ({ useMobileShell: () => true }))
+vi.mock('@/hooks/useMobileShell',() => ({ useMobileShell: () => true, readMobileShell: () => true }))
 vi.mock('@/store/devicesContext',() => ({ useDevicesStore: () => ({ devices: [],loading: false,error: null }) }))
 vi.mock('@/components/settings/channels/useChatChannels',() => ({ useChatChannels: () => ({ list: null }) }))
 vi.mock('@/components/connections/useOwnerLibraryHost',() => ({ useOwnerLibraryHost: () => ({ key: 'owner:scope',remote: null,

@@ -1,3 +1,4 @@
+import { shellAvailability } from '../../sessions/terminals/terminal-shell-availability';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { isMacHost } from '@shared/host-os';
 import { ChevronsUpDownIcon, Plus } from '@/lib/icons'
@@ -92,15 +93,6 @@ const clampFontSize = (size: number) =>
   Math.min(TERMINAL_FONT_SIZE_MAX, Math.max(TERMINAL_FONT_SIZE_MIN, size));
 
 const isMac = isMacHost();
-
-/** The shells this device can start, with why one cannot. */
-const shellAvailability = replica({
-  name: 'terminalShellAvailability',
-  scope: 'device',
-  read: () => rpc.terminals.getTerminalShellAvailability(),
-  fresh: 30_000,
-  persist: { maxBytes: 1024, maxEntries: 1 },
-});
 
 /** Fonts installed on this device. Listed fresh on every open (a font installed meanwhile shows up); the last list shows until then. */
 const installedFonts = replica({

@@ -93,16 +93,17 @@ export const AGENT_ICONS_QUERY_KEY = ['agents', 'icons'] as const;
  * 本机装了但没上架的家(Amp / Grok / Kimi / Qoder…)不在里面,于是资源库的智能体列表、侧栏会话行、
  * 会话标签、MCP 卡片上这些家全都画不出图标(owner 2026-09-15)。图标是查表,不是入口。
  */
-export function useAgentIcons() {
+export function useAgentIcons(enabled = true) {
   return useQuery<Record<string, AgentIconAsset>>({
     queryKey: AGENT_ICONS_QUERY_KEY,
+    enabled,
     queryFn: () => rpc.agents.listIcons() as Promise<Record<string, AgentIconAsset>>,
     staleTime: Infinity,
   });
 }
 
 /** Returns the icon asset for any registered agent, installed and offered or not. */
-export function useAgentIcon(id: string) {
-  const { data: icons } = useAgentIcons();
+export function useAgentIcon(id: string, enabled = true) {
+  const { data: icons } = useAgentIcons(enabled);
   return icons?.[id] ?? null;
 }

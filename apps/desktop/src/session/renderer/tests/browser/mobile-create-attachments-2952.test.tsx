@@ -29,6 +29,8 @@ const fixture = vi.hoisted(() => ({
   legacyCreate: vi.fn(), created: vi.fn(), skills: vi.fn(), models: vi.fn(),
   ports: { assertAccount: vi.fn(), describe: vi.fn(), create: vi.fn(), place: vi.fn(), admit: vi.fn() },
 }))
+// This fixture exercises attachment admission on a host whose configuration is already ready.
+
 vi.mock('@/store/auth', async original => ({ ...(await original<typeof import('@/store/auth')>()), useAuth: () => ({ user: { id: fixture.owner } }) }))
 vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [fixture.device], phones: [] }) }))
 vi.mock('@/mobile/agent-watch/useMachineLabel', () => ({ useMachineLabel: () => ({ label: () => 'Test device', isHome: () => false }) }))
@@ -87,8 +89,8 @@ async function mount(theme: 'light' | 'dark') {
   host.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column;background:var(--ta-panel-bg)'
   root = createRoot(host); render(theme)
   await until('real empty creation input and attachment control', () => !!host?.querySelector('[contenteditable]') && !!host?.querySelector('[data-phone-attachment]'))
-  expect(host!.textContent).toContain('新建任务')
-  expect(host!.querySelector('[contenteditable]')?.getAttribute('aria-label')).toBe('第一句话…')
+  expect(host!.textContent).toContain('创建智能体')
+  expect(host!.querySelector('[contenteditable]')?.getAttribute('aria-label')).toBe('随心输入')
   expect(host!.textContent).not.toContain('agentWatch.')
 }
 async function choose(file: File) {

@@ -25,10 +25,11 @@ final class GuguAgentHostStore {
     static synchronized JSObject configure(Context context, JSObject incoming) throws Exception {
         String owner = GuguAgentHostPolicy.owner(incoming.optString("ownerId"));
         GuguAgentHostPolicy.device(owner, incoming.optString("installId"), incoming.optString("deviceId"));
-        GuguAgentHostPolicy.endpoint(incoming.optString("supabaseUrl"));
+        GuguAgentHostPolicy.endpoint(incoming.optString("supabaseUrl"), BuildConfig.DEBUG && BuildConfig.GUGU_ALLOW_LOCAL_HTTP);
         if (incoming.optString("accessToken").isEmpty() || incoming.optString("refreshToken").isEmpty() || incoming.optString("supabaseAnonKey").isEmpty())
             throw new IllegalArgumentException("缺少手机宿主登录凭据");
         JSObject config = new JSObject(incoming.toString());
+        config.put("allowLocalHttp", BuildConfig.DEBUG && BuildConfig.GUGU_ALLOW_LOCAL_HTTP);
         config.put("ownerId", owner);
         JSObject previous = read(context, owner);
         JSONObject committed;
@@ -53,7 +54,10 @@ final class GuguAgentHostStore {
             config.put("expiresAt", previous.optLong("expiresAt"));
             if (previous.has("authSession")) config.put("authSession", previous.getJSONObject("authSession"));
         }
-        save(context, owner, config);
+        synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
+            AccountClosurePreparation.requireOpen(context, owner);
+            save(context, owner, config);
+        }
         return config;
     }
 
@@ -74,7 +78,12 @@ final class GuguAgentHostStore {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(128, iv));
         cipher.updateAAD(GuguAgentHostPolicy.owner(owner).getBytes(StandardCharsets.UTF_8));
-        try { return new JSObject(new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8)); }
+        try {
+            JSObject config = new JSObject(new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8));
+            config.put("allowLocalHttp", BuildConfig.DEBUG && BuildConfig.GUGU_ALLOW_LOCAL_HTTP);
+            GuguAgentHostPolicy.endpoint(config.optString("supabaseUrl"), BuildConfig.DEBUG && BuildConfig.GUGU_ALLOW_LOCAL_HTTP);
+            return config;
+        }
         catch (AEADBadTagException | JSONException error) { throw new SecurityException(UNREADABLE, error); }
     }
 
@@ -93,6 +102,7 @@ final class GuguAgentHostStore {
                 JSONObject stored = new JSONObject(existing.getString("raw"));
                 if (stored.optJSONObject("user") == null || !owner.equals(stored.getJSONObject("user").optString("id"))) throw new SecurityException("账号已切换，旧宿主不能覆盖新登录会话");
             }
+            AccountClosurePreparation.requireOpen(context, owner);
             config.put("accessToken", session.getString("access_token"));
             config.put("refreshToken", session.getString("refresh_token"));
             config.put("expiresAt", session.optLong("expires_at"));

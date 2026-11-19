@@ -28,7 +28,7 @@ import {
   type TypedTabRegistry,
 } from './core/tab-provider-registry';
 import { PaneLayoutProvider, usePaneLayoutContext } from './pane-layout-context';
-import { PaneLayoutStore } from './pane-layout-store';
+import { PaneLayoutStore, type PaneLayoutStoreOptions } from './pane-layout-store';
 import type { TabPersistenceAdapter } from './persistence';
 
 export interface TabViewFactoryOptions {
@@ -50,7 +50,7 @@ export function createTabView<const P extends readonly AnyTabProvider[]>(
   /** Creates a typed PaneLayoutStore suitable for threading into a MobX state tree. */
   function createPaneLayoutStore(
     ctx: TabViewContext,
-    opts?: { onActiveTabChange?: (tabId: string | undefined) => void }
+    opts?: PaneLayoutStoreOptions
   ): PaneLayoutStore<R> {
     return new PaneLayoutStore<R>(registry, ctx, factoryOpts?.makePersistor?.(ctx), opts);
   }

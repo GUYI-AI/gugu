@@ -65,10 +65,45 @@ describe('approved live-window presentation', () => {
     model.dispatch({ type: 'set-orientation', orientation: 'landscape' });
     expect(model.getSnapshot().presentation?.orientation).toBe('portrait');
   });
-  it('retains the last picture after completion and never creates a takeover state', () => {
+  it('closes the desktop presentation at completion while keeping the picture available to reopen', () => {
     const model = opened(); model.observe(context, [{ ...source(), status: 'finished' }]);
-    expect(model.getSnapshot()).toMatchObject({ visible: true, operating: false, source: { status: 'finished' } });
-    expect(model.getSnapshot().presentation?.mode).toBe('floating');
+    expect(model.getSnapshot()).toMatchObject({ visible: false, operating: false, source: { status: 'finished' },
+      presentation: { mode: 'closed', selectedTab: 'chat' } });
+    model.dispatch({ type: 'toggle-window' });
+    expect(model.getSnapshot().visible).toBe(true);
+    model.observe(context, [{ ...source(), status: 'finished' }]);
+    expect(model.getSnapshot().visible).toBe(true);
+  });
+  it.each(['floating', 'enlarged', 'tabbed'] as const)('closes a completed desktop %s presentation', mode => {
+    const model = opened();
+    if (mode === 'enlarged') model.dispatch({ type: 'enlarge' });
+    if (mode === 'tabbed') model.dispatch({ type: 'show-tab' });
+    model.observe(context, [{ ...source(), status: 'finished' }]);
+    expect(model.getSnapshot()).toMatchObject({ visible: false, operating: false, presentation: { mode: 'closed', selectedTab: 'chat' } });
+  });
+  it('keeps a disconnected picture and an active second source visible', () => {
+    const model = opened();
+    const offline = { ...context, connected: false };
+    model.observe(offline, [{ ...source(), status: 'finished' }]);
+    expect(model.getSnapshot()).toMatchObject({ visible: true, connected: false, operating: false });
+    const computer = { ...source('desktop', 'computer'), activity: 2 };
+    model.observe(context, [source(), computer]);
+    model.observe(context, [{ ...source(), status: 'finished' }, computer]);
+    expect(model.getSnapshot()).toMatchObject({ visible: true, operating: true });
+  });
+  it('closes a run that ended offline once the host confirms completion after reconnect', () => {
+    const model = opened();
+    model.observe({ ...context, connected: false }, [{ ...source(), status: 'finished' }]);
+    expect(model.getSnapshot().visible).toBe(true);
+    model.observe(context, [{ ...source(), status: 'finished' }]);
+    expect(model.getSnapshot()).toMatchObject({ visible: false, operating: false });
+  });
+  it('does not mistake reconnecting a manually reopened completed picture for another completed run', () => {
+    const model = opened(), finished = { ...source(), status: 'finished' as const };
+    model.observe(context, [finished]); model.dispatch({ type: 'toggle-window' });
+    model.observe({ ...context, connected: false }, [finished]);
+    model.observe(context, [finished]);
+    expect(model.getSnapshot()).toMatchObject({ visible: true, operating: false });
   });
   it('selects simultaneous sources without closing the other source', () => {
     const model = opened(); model.observe(context, [source(), source('desktop', 'computer')]);

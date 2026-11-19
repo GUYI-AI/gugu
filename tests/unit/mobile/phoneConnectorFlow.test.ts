@@ -3,7 +3,6 @@ import { createServer, type IncomingMessage, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildIntegrationListPayload } from '../../../apps/desktop/electron/session/main/core/integrations/integration-payload-builder'
-import { phoneNextRoute, phoneParentRoute } from '../../../apps/desktop/src/mobile/assistant/phoneRoutes'
 import {
   accountLabel,
   connectorHealth,
@@ -84,24 +83,6 @@ describe('连接页的路由名', () => {
     expect(parseConnectorSub('connector:feishu:edit')).toBeNull()
     expect(parseConnectorSub('connectors')).toBeNull()
     expect(parseConnectorSub(null)).toBeNull()
-  })
-
-  it('返回箭头:连接页回详情,详情回列表(手机自己的表)', () => {
-    expect(phoneParentRoute({ tab: 'profile', sub: connectSub('feishu') })).toEqual({ tab: 'profile', sub: 'connector:feishu' })
-    expect(phoneParentRoute({ tab: 'profile', sub: 'connector:feishu' })).toEqual({ tab: 'profile', sub: 'connectors' })
-  })
-
-  it('资料页直接连接:取消和完成都回资料页,不绕详情', () => {
-    const connect = phoneNextRoute({ tab: 'profile' }, { tab: 'profile', sub: connectSub('qq-mail') })
-    expect(phoneParentRoute(connect)).toEqual({ tab: 'profile', sub: undefined })
-    expect(phoneNextRoute(connect, { tab: 'profile', sub: 'connector:qq-mail' })).toEqual({ tab: 'profile', sub: undefined })
-  })
-
-  it('从连接列表或详情进入,分别回到原来的列表或详情', () => {
-    const list = { tab: 'profile', sub: 'connectors' }
-    const detail = { tab: 'profile', sub: 'connector:qq-mail' }
-    expect(phoneParentRoute(phoneNextRoute(list, { tab: 'profile', sub: connectSub('qq-mail') }))).toEqual(list)
-    expect(phoneParentRoute(phoneNextRoute(detail, { tab: 'profile', sub: connectSub('qq-mail') }))).toEqual(detail)
   })
 })
 

@@ -48,7 +48,7 @@ export function createPhoneTaskApi({ ownerId, store, models, timelines, actions,
         const agent = findSession(sessionId)
         await verifyAgent(agent.agentUserId)
         // Keep the person's words; resolve files only when this job reaches the model.
-        await admit({ id, agentUserId: agent.agentUserId, clientMessageId: clientId, inputFingerprint: fingerprint, prompt: input.text.trim(), ...(files.length ? { files } : {}), ...(input.requiresCompleteFiles ? { requiresCompleteFiles: true, expectedFileDigests: structuredClone(input.expectedFileDigests) } : {}), route: { kind: 'task', senderUserId: ownerId } })
+        await admit({ id, agentUserId: agent.agentUserId, clientMessageId: clientId, inputFingerprint: fingerprint, prompt: input.text.trim(), ...(files.length ? { files } : {}), ...(input.requiresCompleteFiles ? { requiresCompleteFiles: true, expectedFileDigests: structuredClone(input.expectedFileDigests) } : {}), route: { kind: 'task', senderUserId: ownerId, personalAdmission: 'owner-input' } })
       }
       return { accepted: true, messageId: id, admission: 'accepted' }
     })()

@@ -252,7 +252,7 @@ describe('ProjectSessionsStore session lifecycle', () => {
     manager.dispose();
   });
 
-  it('keeps the composer effort on the optimistic conversation used to start ACP', async () => {
+  it('keeps the composer effort and custom model on the optimistic conversation used to start ACP', async () => {
     const manager = makeSessionManager();
 
     await manager.createSession({
@@ -264,6 +264,7 @@ describe('ProjectSessionsStore session lifecycle', () => {
           id: 'conversation-effort',
           provider: 'claude',
           type: 'acp',
+          model: 'custom:012da538-be83-4996-8d26-752cde08a093:family:model',
           effort: 'high',
           initialQueue: [{ text: 'Keep this setting' }],
         },
@@ -272,7 +273,11 @@ describe('ProjectSessionsStore session lifecycle', () => {
     } as never);
 
     const optimistic = mocks.sessionAcquire.mock.calls[0]?.[2]?.[0];
-    expect(optimistic).toEqual(expect.objectContaining({ effort: 'high' }));
+    expect(optimistic).toMatchObject({
+      effort: 'high',
+      model: 'family:model',
+      customModel: { kind: 'custom', connectionId: '012da538-be83-4996-8d26-752cde08a093', modelId: 'family:model' },
+    });
 
     manager.dispose();
   });

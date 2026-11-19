@@ -1,3 +1,4 @@
+import { customModelRefFromOption, runtimeModelId, matchCustomModel } from '@gugu/session-core/models/custom-model'
 import { metadataSeparator } from '@/i18n/format'
 import { readingFromStatus, type InstallationReading } from '@gugu/session-core/deps/runtime/types'
 import type {
@@ -158,7 +159,10 @@ export function reconcileModel(
   if (!models || models.harness !== selection.harness) return selection
   const explicitDefault = modelTouched || (lastUsed?.harness === selection.harness && lastUsed.model === null && canUseOwnCreateModels(models))
   const chosen = models.models.find((m) => m.id === selection.model && offeredInCreateMenu(m))
-  const keepModel = chosen && (modelTouched || chosen.source === 'gugu' || canUseOwnCreateModels(models))
+  const custom = customModelRefFromOption(selection.model)
+  const connection = models.customModels?.find((record) => record.id === custom?.connectionId)
+  const customAvailable = custom && connection && !matchCustomModel({ connection, nativeProtocol: models.modelProtocols?.[0], protocols: models.modelProtocols, hasModel: !!custom.modelId, allowDefaultModel: models.customModel?.modelOptional }).reason
+  const keepModel = customAvailable || chosen && (modelTouched || chosen.source === 'gugu' || canUseOwnCreateModels(models))
   const model = keepModel || (explicitDefault && selection.model === null) ? selection.model : defaultCreateModel(models)
   const effort =
     selection.effort !== null && !models.efforts.some((e) => e.id === selection.effort) ? null : selection.effort
@@ -169,6 +173,7 @@ export function reconcileModel(
 export function createModelNeedsSignIn(selection: CreateSelection, models: SessionpageSessionCreateModels | null): boolean {
   return models !== null && models.harness === selection.harness
     && (models.harnessAuth === 'signed-out' || models.selectedCredential === 'uncredentialed' || models.harnessState === 'auth-required')
+    && !customModelRefFromOption(selection.model)
     && (selection.model === null || models.models.some((choice) => choice.id === selection.model && choice.source === 'harness'))
 }
 
@@ -188,7 +193,7 @@ export function selectedModelName(
 ): string | null {
   if (selection.model === null) return null
   // 目录没到 / 目录里没有:退回写 id —— 选了就得看得见选了什么,❌ 不留空冒充「默认」。
-  return (models ? createModelName(models, selection.model) : null) ?? selection.model
+  return (models ? createModelName(models, selection.model) : null) ?? runtimeModelId(selection.model) ?? null
 }
 
 /** 胶囊上写**值**(harness 名 · 模型 · 推理档),照会话选项胶囊的口径;一个都没有就 null(不画)。 */
@@ -242,4 +247,20 @@ export function toSessionSummary(
     lastInteractedAt: now,
     supported: true,
   }
+}
+
+
+/** Never infer review support from a harness name or a model list for a previous selection. */
+export function createPermissionModes(
+  harness: { id: string; permissionModes: import('@gugu/session-core/session-record/contract').SessionpagePermissionMode[] },
+  models: SessionpageSessionCreateModels | null,
+  state: string,
+  selection: CreateSelection,
+) {
+  const modes: typeof harness.permissionModes = harness.permissionModes.filter(mode => mode !== 'ai-review');
+  if (state === 'ready' && models?.harness === harness.id && models.autoReview
+    && models.autoReview.model === (selection.model ?? models.selected)) {
+    modes.splice(Math.max(0, modes.indexOf('full-access')), 0, 'ai-review');
+  }
+  return modes;
 }

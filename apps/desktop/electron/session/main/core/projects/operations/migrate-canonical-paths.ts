@@ -144,7 +144,7 @@ async function copyMissing(from: string, to: string): Promise<number> {
 
 /**
  * A folder's Claude history, under its new spelling too: a session started in it before can still be resumed there. Copied,
- * never moved, never over a file already there (as `claude-history-move.ts`). Says each root's folder count before and after.
+ * preserving the original and any copy already present. Reports each root's folder counts and copies.
  */
 export async function copyClaudeHistoryForMovedFolders(roots: readonly string[], moved: readonly { from: string; to: string }[]): Promise<{ root: string; before: number; after: number; copied: number }[]> {
   const report: { root: string; before: number; after: number; copied: number }[] = [];

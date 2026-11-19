@@ -102,7 +102,7 @@ describe('Antigravity subscription comes from the signed-in CLI ACP response', (
     await expect(readFile(transcript)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('revalidates sign-out when account A only changed in the Linux keyring', async () => {
+  it.skipIf(process.platform === 'win32')('revalidates sign-out when account A only changed in the Linux keyring', async () => {
     const { ctx, transcript } = await fixture({ name: 'unused' });
     vi.stubGlobal('process', Object.create(process, { platform: { value: 'linux' } }));
     await observeAgyTier(ctx, { _meta: { antigravity: { tier: { name: 'Google AI Pro' } } } }, ctx.exec);
@@ -112,13 +112,29 @@ describe('Antigravity subscription comes from the signed-in CLI ACP response', (
     await expect(readFile(transcript)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('reads account B when Linux credential files have not changed since account A', async () => {
+  it.skipIf(process.platform === 'win32')('reads account B when Linux credential files have not changed since account A', async () => {
     const { ctx, transcript } = await fixture({ name: 'Google AI Ultra' });
     vi.stubGlobal('process', Object.create(process, { platform: { value: 'linux' } }));
     await observeAgyTier(ctx, { _meta: { antigravity: { tier: { name: 'Google AI Pro' } } } }, ctx.exec);
     await expect(readAntigravityPlan(ctx)).resolves.toMatchObject({ payer: 'subscription', plan: 'Google AI Ultra' });
     expect(vi.mocked(ctx.exec).mock.calls.filter(([, args]) => args?.includes('models'))).toHaveLength(1);
     expect(await readFile(transcript, 'utf8')).toContain('session/new');
+  });
+
+  it.skipIf(process.platform === 'win32')('leaves the tier unknown when only an unrelated Linux IDE cache is available', async () => {
+    const { ctx, root } = await fixture(null);
+    const ide = join(root, '.config', 'Antigravity IDE', 'User', 'globalStorage');
+    await mkdir(ide, { recursive: true });
+    await writeFile(join(ide, 'state.vscdb'), 'old IDE fixture');
+    vi.stubGlobal('process', Object.create(process, { platform: { value: 'linux' } }));
+    vi.mocked(ctx.exec).mockResolvedValue({
+      stdout: Buffer.from('g1-pro-tier\x12\x0dGoogle AI Pro', 'latin1').toString('base64'),
+      stderr: '',
+    });
+    await expect(readAntigravityPlan(ctx)).resolves.toMatchObject({
+      payer: 'subscription', plan: 'Google AI', tierUnknown: true,
+    });
+    expect(vi.mocked(ctx.exec).mock.calls.some(([command]) => command === 'sqlite3')).toBe(false);
   });
 
   it('checks authentication before a usage command even when the caller has a cached subscription plan', async () => {

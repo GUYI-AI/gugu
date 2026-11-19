@@ -6,6 +6,7 @@ import semver from 'semver';
 import { definePluginCapability } from '@gugu/session-shared/plugins';
 import z from 'zod';
 import type { GuguPermissionMode } from '../../../acp/models/permissions';
+import type { CustomModelEntry, PiCustomModelProvider } from '../../../models/custom-model';
 
 export type HarnessSessionSurface = 'acp' | 'tui' | 'app-server';
 export type SessionpageSessionSurface = Extract<HarnessSessionSurface, 'acp' | 'tui'>;
@@ -602,40 +603,37 @@ export interface SessionTuiQuestionAnswer {
   evidence: string;
 }
 
-/**
- * 这家智能体的**配置根** —— 它在用户机器上放登录态、偏好、skills、历史的那个目录。
- *
- * 声明了它,咕咕就为这家持有**自己的一份**(独立 home):首次为它起会话时从用户那份
- * **整份复制**过来,此后两份彻底分家 —— 不同步、不合并、不回读、不写回。
- * 见 behavior `agent-config-boundary`。
- *
- * ## ⚠️ 「独立 home」≠「合成 home」,❌ 别用同一个词指两件事
- *
- *  · **合成 home**(已否决):每条会话临时造一个**空**目录当配置根,会话结束就扔 ——
- *    用户的登录态、skills、历史全看不见,`sessions/` 每次新 uuid ⇒ 没有可续的会话。
- *  · **独立 home**(本字段):**持久**、**整份复制**来的、**每家一份**。第一次在咕咕里
- *    打开它,与用户自己打开它,看到的是同一个东西。
- *
- * ## ❌ 不硬编码任何一家
- *
- * 通用机制只认这里声明的两个事实(变量名 + 用户那份的位置),kimi 只是第一个声明的。
- * 加一家 = 加一条声明,❌ 不是在通用代码里加一个 `if (providerId === 'x')`。
- */
-/**
- * 咕咕把设置递给引擎，只有两条路。哪一家走哪条，见 product spec
- * 的「两条路：运行时注入，与托管配置根」。
- *
- * · `'runtime'` —— **默认**。启动参数 / 环境变量 / 每会话临时文件。性质是**不落地**：
- *   进程退出，用户那侧与咕咕这侧都不留新增产物。
- * · `'managed-config-root'` —— 咕咕在自己目录里为这一家**长期持有**一份配置根。
- *   只给**没有运行时通道**的那几家；这不是残留，是那一类引擎的正常形态。
- *
- * ⚠️ 放进 `'managed-config-root'` 的举证责任在提议方：拿实测证明这一家的运行时通道
- *    递不进这项设置。「没试过」「顺手」「隔壁那家也这么做」都不算。
- */
+/** managed-config-root is the default for every harness that declares configRoot. */
 export type AgentInjectionMode = 'runtime' | 'managed-config-root';
 
+export type AgentHomeGroupId = 'settings' | 'hooks' | 'mcp' | 'rules' | 'skills' | 'agents' | 'models';
+
+/**
+ * Top-level field selection separates hooks from other settings in the same file.
+ * A ../file source is beside the default root. When the person sets envVar, that CLI
+ * reads it inside the relocated root, so the source becomes file (target unchanged).
+ * A harness must verify that relocation behavior before declaring a sibling source.
+ */
+export type AgentHomeImportPath = string | {
+  path: string;
+  keys?: readonly string[];
+  omitKeys?: readonly string[];
+  target?: string;
+  /** Recognize a former Gugu-generated destination that can be replaced during upgrade. */
+  isLegacyGeneratedTarget?: (existing: string) => boolean;
+};
+
+export type AgentHomeImportGroup = {
+  id: AgentHomeGroupId;
+  paths: readonly AgentHomeImportPath[];
+  evidence: string;
+};
+
+/** A persistent per-harness root. Declared groups drive fresh import, upgrade and explicit re-import. */
 export interface AgentConfigRoot {
+  importGroups: readonly AgentHomeImportGroup[];
+  /** Never read, copied, hashed or returned to the renderer. */
+  credentialPaths: readonly { path: string; evidence: string }[];
   /**
    * 把这家的配置根挪走的环境变量名(如 `KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR`)。
    *
@@ -650,22 +648,9 @@ export interface AgentConfigRoot {
   /**
    * 分家时**不带过来**的条目 —— 相对配置根,**必答**,❌ 无默认。
    *
-   * ## 为什么是「排除」不是「挑选」
-   *
-   * 先做的是挑选(白名单),被判否 —— **它的失败方向是错的那一边**:
-   *  · 漏排一个**缓存/程序**目录 ⇒ 多拷点垃圾。可测量、可回收、看得见。
-   *  · 漏挑一个**配置**条目 ⇒ 用户那项设置没跟过来,**不报错、没日志**,
-   *    用户只会觉得咕咕把他的东西弄丢了 —— 而 product spec
-   *    要的是「用户在咕咕外面配好的,在咕咕里就该是同一个」。
-   *
-   * 而引擎的配置面由上游定义、随版本增删 ⇒ 白名单**结构上**跟不上:换个版本多出一个
-   * 配置文件,清单不会自己长出来。实测教训:第一版按 mac1 那台 `~/.kimi-code` 的目录布局
-   * 挑清单,漏了 `skills/`、`AGENTS.md`、`SYSTEM.md`、`agents/` 四条 —— 它们只在用户
-   * **用过那个功能之后**才存在,那台一个都没有。
-   *
-   * ⇒ 默认全带,这里只列**不是用户配置**的那些(引擎自己会重新长出来的,或咕咕自己会写的)。
-   *   这个集合小得多、跨版本也稳定得多(`bin/` `cache/` `logs/` `tmp/` 这类名字不太变),
-   *   而且真漏排一条的代价是多占点盘,**不是丢用户数据**。
+   * Unknown configuration files remain in the settings group so upstream additions
+   * are not silently lost. Declared groups determine what the person chooses;
+   * credentials, links, databases and oversized files are always excluded.
    *
    * ## 语义
    *
@@ -678,6 +663,11 @@ export interface AgentConfigRoot {
    *    与漏挑一条同罪;区别只在于这个方向的错要少得多、也更好发现。
    */
   carryExclusions: readonly AgentConfigRootCarryExclusion[];
+  /** Existing installs only. Each edit removes a known Gugu-generated entry before import snapshots it. */
+  legacyCleanup?: readonly {
+    path: string;
+    update: (fs: Pick<import('../../runtime/fs').PluginFs, 'read' | 'write'>, path: string) => Promise<void>;
+  }[];
   /**
    * 这两条事实的出处 —— 解析式在哪、或官方文档哪一页。
    * ⚠️ 写死一个目录名而不给出处,下个版本它改了名就没人知道。
@@ -725,6 +715,8 @@ export interface ShellEnv {
 }
 
 export interface AgentConfigRootCarryExclusion {
+  /** Stream existing session histories during upgrade. */
+  upgradeHistory?: boolean;
   /** 相对**配置根**的路径(如 `bin`、`cache`、`mcp.json`)。❌ 绝对路径、❌ `..`。 */
   path: string;
   /**
@@ -776,6 +768,8 @@ export interface SessionBundleDescriptor {
   injectionMode: AgentInjectionMode;
   /** 平台额度怎么送进这一家(见 `HarnessPlatform`)。**必答**:没接的给 `{ kind: 'unsupported' }`。 */
   platform: HarnessPlatform;
+  /** The legacy custom connection can supply credentials while the CLI selects its own model. */
+  customModel?: { modelOptional: true; evidence: string };
   /** Static credential delivery/recovery capability; lease state belongs to the host runtime. */
   credentialLifecycle?: SessionCredentialLifecycleBySurface;
   /** 见 {@link AcpConfigRoot}。 */
@@ -811,7 +805,7 @@ export interface SessionBundleDescriptor {
       // 咕咕写进**自己那份配置根**里的配置文件(独立 home)。见下面 `'config-file'` 的说明。
       | 'config-file'
       // 咕咕把会话级 MCP 配置写成 run-scoped 文件,再用**厂商自己的会话参数**把引擎指过去
-      // (终端腿专用)。与 `'user-config'` 的本质区别:❌ 不碰用户的配置文件,payload 随 run
+      // (终端腿专用)。不碰用户的配置文件,payload 随 run
       // 目录消亡,不需要固定名/幂等/占位符那套 writer 纪律。与 `'process-config'` 的区别
       // 镜像 promptBlocks 的 `'prompt-file-argv'`:argv 里只有一个路径指针,正文在 artifact
       // 里 —— 只声明 argv 会让读的人以为配置正文在命令行里(顺带把 Authorization 值暴露进
@@ -1129,6 +1123,12 @@ export type PlatformCallableRoutes = Readonly<Record<string, readonly string[]>>
 export interface SessionModelCapability {
   dialect: ModelConfigDialect
   model?: string
+  /** Selected custom record, plus the stable provider catalog for Pi's shared configuration. */
+  customModels?: {
+    connectionId: string;
+    entries: readonly CustomModelEntry[];
+    piProviders?: readonly PiCustomModelProvider[];
+  }
   reasoningEffort?: string
   serviceTier?: string
   /** Per-session Fast intent, independently gated by the current native model. */
@@ -1159,9 +1159,7 @@ export interface SessionModelCapability {
   /**
    * The interface the provider block speaks, when it is not the harness's declared platform `wireProtocol`.
    *
-   * Set only for an API key connection (#2507) whose address was probed at creation: many relays speak Chat
-   * Completions but not Responses, and pi (`api`) / opencode (provider package) can write either. Absent = the
-   * harness's platform protocol, byte-for-byte as before.
+   * Custom records select among the writer's declared OpenAI protocols. Absent uses the harness's native platform protocol.
    */
   wireProtocol?: 'openai-responses' | 'openai-chat-completions'
   /**
@@ -1687,6 +1685,11 @@ const sessionTuiInterruptSchema = z.object({
  * ⚠️ `envVar` 与 `userPath` 都不许为空:两者缺一,独立 home 要么算不出路径、
  * 要么递不进子进程,而两种失败都是**静默**的(会话照常起,只是读了错的那份配置)。
  */
+const importPathSchema = (sibling: boolean) => z.string().min(1).refine((path) =>
+  !path.startsWith('/') && !/^[A-Za-z]:/.test(path) && !path.includes('\\')
+  && (!path.split('/').includes('..') || sibling && /^\.\.\/[^/]+$/.test(path)),
+{ message: 'Import paths must stay inside the declared root (or name one declared sibling file)' });
+
 const agentConfigRootSchema = z
   .object({
     envVar: z.string().min(1),
@@ -1704,6 +1707,18 @@ const agentConfigRootSchema = z
         { message: 'configRoot.userPath 必须是 home 相对路径,❌ 绝对路径、❌ `..`' }
       ),
     evidence: z.string().min(1),
+    importGroups: z.array(z.object({
+      id: z.enum(['settings', 'hooks', 'mcp', 'rules', 'skills', 'agents', 'models']),
+      paths: z.array(z.union([importPathSchema(true), z.object({
+        path: importPathSchema(true),
+        keys: z.array(z.string().min(1)).optional(),
+        omitKeys: z.array(z.string().min(1)).optional(),
+        target: importPathSchema(false).optional(),
+        isLegacyGeneratedTarget: z.custom<(existing: string) => boolean>((value) => typeof value === 'function').optional(),
+      }).strict()])),
+      evidence: z.string().min(1),
+    }).strict()),
+    credentialPaths: z.array(z.object({ path: z.string().min(1), evidence: z.string().min(1) }).strict()),
     // ⚠️ **必答,但允许为空**:空数组 = 「这一家的配置根里没有派生物,全都要带」,
     //    那是个合法答案;而字段缺省 = 没人看过这一家的配置根里有什么。
     //    ❌ 别再给它 `.min(1)`:那会逼着为了满足 schema 去编一条排除项。
@@ -1722,9 +1737,14 @@ const agentConfigRootSchema = z
               { message: 'configRoot.carryExclusions[].path 必须相对配置根,❌ 绝对路径、❌ `..`' }
             ),
           evidence: z.string().min(1),
+          upgradeHistory: z.boolean().optional(),
         })
         .strict()
     ),
+    legacyCleanup: z.array(z.object({
+      path: importPathSchema(false),
+      update: z.custom<NonNullable<AgentConfigRoot['legacyCleanup']>[number]['update']>((value) => typeof value === 'function'),
+    }).strict()).optional(),
     seedFiles: z
       .array(
         z
@@ -1902,6 +1922,7 @@ const harnessPlatformSchema: z.ZodType<HarnessPlatform> = z.discriminatedUnion('
   z.object({
     kind: z.literal('supported'),
     wireProtocol: z.enum(['anthropic-messages', 'openai-responses', 'openai-chat-completions', 'gemini-generate-content']),
+    protocols: z.array(z.enum(['anthropic-messages', 'openai-responses', 'openai-chat-completions', 'gemini-generate-content'])).optional(),
     dialect: z.enum(MODEL_CONFIG_DIALECTS),
     injection: z.object({ tui: platformSurfaceInjectionSchema.optional(), cui: platformSurfaceInjectionSchema.optional() }).strict(),
   }).strict(),
@@ -2002,6 +2023,7 @@ const sessionBundleDescriptorSchema: z.ZodType<SessionBundleDescriptor> = z.obje
     denied: z.array(z.string().regex(/^[A-Z][A-Z0-9_]*$/)).optional(),
   }).strict().optional(),
   /** ⚠️ 同上:少了这一条,`platform` 会被 zod 静默剥掉(而它是必答字段)。 */
+  customModel: z.object({ modelOptional: z.literal(true), evidence: z.string().min(1) }).strict().optional(),
   platform: harnessPlatformSchema,
   /**
    * ⚠️ 同上:少了这一条,`mcpToggle` 会被 zod **静默剥掉** —— 而症状极具迷惑性:

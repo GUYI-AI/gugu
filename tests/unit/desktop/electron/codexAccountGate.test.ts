@@ -8,7 +8,6 @@ import { cachedFixtureExecutable } from '../../../support/cachedFixtureExecutabl
 import {
   probeHarnessModelCatalog,
   setAcpSpawnResolver,
-  setProbeConnectionModelResolver,
   setProbePlatformEnvResolver,
 } from '../../../../apps/desktop/electron/session/main/core/agents/harness-model-catalog'
 
@@ -80,7 +79,7 @@ describe('codex model catalog probe through the real bridge', () => {
   })
 
   it('signed out: auth-required (no own-model list), efforts still filled by the platform pass', async () => {
-    setProbeConnectionModelResolver(async () => null)
+
     setAcpSpawnResolver(async () => ({ command: process.execPath, args: [BRIDGE], env: bridgeEnv('none') }))
     // The second pass carries placeholder platform credentials; to Codex that is a custom provider.
     setProbePlatformEnvResolver(async () => ({ env: { FAKE_CODEX_ACCOUNT: 'custom' } }))

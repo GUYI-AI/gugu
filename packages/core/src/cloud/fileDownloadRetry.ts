@@ -1,5 +1,6 @@
 import { coreLogger } from '../log'
 import { isTransientNetworkError, transientNetworkErrorCode } from '../shared/networkError'
+import { waitForAttachmentRetry } from './attachmentDeadline'
 
 const log = coreLogger('attachment-download')
 const RETRY_WINDOW_MS = 90_000
@@ -34,14 +35,6 @@ export class FileDownloadFailure extends Error {
     if (typeof status === 'number') this.status = status
   }
 }
-function wait(ms: number, signal?: AbortSignal): Promise<void> {
-  signal?.throwIfAborted()
-  return new Promise((resolve, reject) => {
-    const aborted = () => { clearTimeout(timer); signal?.removeEventListener('abort', aborted); reject(signal?.reason) }
-    const timer = setTimeout(() => { signal?.removeEventListener('abort', aborted); resolve() }, ms)
-    signal?.addEventListener('abort', aborted, { once: true })
-  })
-}
 /** Only authenticated file-read requests and the existing chunk reader use this budget. */
 export async function retryFileDownload<T>(hop: () => Hop, action: () => Promise<T>, signal?: AbortSignal, prepareRetry?: () => Promise<void>): Promise<T> {
   const started = Date.now()
@@ -62,7 +55,7 @@ export async function retryFileDownload<T>(hop: () => Hop, action: () => Promise
       log.warn({ stage: failure.stage, host: failure.host, elapsedMs: failure.elapsedMs, code: failure.code, status: failure.status, attempt: attempt + 1 }, 'attachment request failed')
       const remaining = RETRY_WINDOW_MS - (Date.now() - started)
       if (!retryable || remaining <= 0) throw typeof failure.status === 'number' ? error : failure
-      await wait(Math.min(attempt === 0 ? 500 : 1000 * 2 ** Math.min(attempt, 4), 10_000, remaining), signal)
+      await waitForAttachmentRetry(Math.min(attempt === 0 ? 500 : 1000 * 2 ** Math.min(attempt, 4), 10_000, remaining), signal)
       signal?.throwIfAborted()
       await prepareRetry?.()
     }

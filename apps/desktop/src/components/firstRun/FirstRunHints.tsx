@@ -1,7 +1,6 @@
 import './first-run-hints.css'
 import '../../i18n/registerAssistantCatalog'
 import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useMobileShell } from '@/hooks/useMobileShell'
@@ -84,9 +83,6 @@ export function FirstRunHints({ userId }: { userId: string }) {
     </Button>
   </>
   const testId = `first-run-hint-${target.id}`
-  if (target.space) return createPortal(
-    <aside className="first-run-hint first-run-hint-inline" aria-label={label} data-testid={testId}>{note}</aside>, target.space,
-  )
   if (device !== 'desktop' || target.id !== 'assistant') return null
   return (
     <Popover.Root open modal={false} onOpenChange={(open) => { if (!open) retire(target.id) }}>

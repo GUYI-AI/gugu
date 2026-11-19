@@ -144,6 +144,7 @@ const ENGINE_ENV_ALLOWLIST = [
   'GOOGLE_GEMINI_BASE_URL',
   'GEMINI_MODEL',
   'CLAUDE_CODE_EXECUTABLE',
+  'CLAUDE_CODE_AUTO_MODE_MODEL',
 ] as const
 
 export function providerEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

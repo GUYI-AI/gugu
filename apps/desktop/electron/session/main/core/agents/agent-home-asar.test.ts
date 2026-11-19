@@ -8,14 +8,14 @@ import { promisify } from 'node:util';
 import { build } from 'esbuild';
 import { expect, it } from 'vitest';
 
-it('copies physical ASAR files without changing Electron fs, then retries failed home initialization', async () => {
+it('explicitly imports physical ASAR files without changing Electron fs, then retries gated initialization', async () => {
   const root = await mkdtemp(join(tmpdir(), 'gugu-agent-home-asar-'));
   try {
     const here = dirname(fileURLToPath(import.meta.url));
     const core = resolve('packages/session-core/src/agents/plugins/helpers/index.ts');
     const output = join(root, 'host.cjs');
     await build({
-      entryPoints: [join(here, 'agent-home.ts')], outfile: output,
+      stdin: { contents: `export * from ${JSON.stringify(join(here, 'agent-home.ts'))}; export {importAgentHome,resolveAgentHome} from ${JSON.stringify(core)};`, resolveDir: here }, outfile: output,
       bundle: true, platform: 'node', format: 'cjs', packages: 'external', logLevel: 'silent',
       define: { 'import.meta.url': JSON.stringify(pathToFileURL(output).href) },
       plugins: [{ name: 'synthetic-provider-wiring', setup(builder) {
@@ -24,7 +24,7 @@ it('copies physical ASAR files without changing Electron fs, then retries failed
         builder.onLoad({ filter: /.*/, namespace: 'synthetic' }, () => ({ contents: `
           export const getPlugin = () => ({capabilities:{sessionBundle:{
             injectionMode:'managed-config-root',configRoot:{
-              envVar:'GEMINI_HOME',userPath:'.gemini',carryExclusions:[],seedFiles:[]
+              envVar:'GEMINI_HOME',userPath:'.gemini',carryExclusions:[],seedFiles:[],credentialPaths:[],importGroups:[{id:'settings',paths:['settings.json'],evidence:'Fixture'}]
             }
           }}});` }));
       } }],
@@ -45,24 +45,29 @@ it('copies physical ASAR files without changing Electron fs, then retries failed
       assert(fs.statSync(archive).isDirectory());assert(physical.statSync(archive).isFile());
       physical.symlinkSync(archive,path.join(source,'archive-link'));
       physical.symlinkSync(path.join(source,'absent'),path.join(source,'broken-link'));
-      physical.writeFileSync(path.join(source,'settings.json'),'source');
+      const settings=JSON.stringify({setting:'unchanged'});
+      physical.writeFileSync(path.join(source,'settings.json'),settings);
       const bomb=path.join(source,'oversized-config');
       const fd=physical.openSync(bomb,'w');physical.ftruncateSync(fd,2*1024*1024*1024+1);physical.closeSync(fd);
       process.env.HOME=home;process.env.GEMINI_HOME=source;process.env.GUGU_HOME=path.join(__dirname,'managed');
       const target=path.join(process.env.GUGU_HOME,'agent-homes/antigravity/.gemini');
-      physical.mkdirSync(target,{recursive:true});physical.writeFileSync(path.join(target,'settings.json'),'owned');
+      physical.mkdirSync(target,{recursive:true});physical.writeFileSync(path.join(target,'settings.json'),settings);
       const host=require('./host.cjs');
       (async()=>{
-        const failed=await Promise.allSettled([host.resolveAgentHomeEnv('antigravity'),host.resolveAgentHomeRoot('antigravity')]);
-        assert(failed.every(r=>r.status==='rejected'&&r.reason.message.includes('MiB')));
-        physical.writeFileSync(bomb,'repaired');
+        const fresh=await host.resolveAgentHomeEnv('antigravity');
+        assert.equal(fresh.GEMINI_HOME,target);
+        const resolved=host.resolveAgentHome({providerId:'antigravity',injectionMode:'managed-config-root',
+          configRoot:{envVar:'GEMINI_HOME',userPath:'.gemini',carryExclusions:[],credentialPaths:[],importGroups:[{id:'settings',paths:['settings.json','antigravity/brain/project/scratch/','oversized-config'],evidence:'Fixture'}]},
+          guguHome:process.env.GUGU_HOME,osHomeDir:home,sourceEnv:process.env});
+        const imported=await host.importAgentHome(resolved,{groups:new Set(['settings'])});
+        assert(imported.issues.some(x=>x.path==='oversized-config'&&x.reason==='tooLarge'));
         const [env,shadow]=await Promise.all([host.resolveAgentHomeEnv('antigravity'),host.resolveAgentHomeRoot('antigravity')]);
         assert.equal(env.GEMINI_HOME,target);assert.equal(shadow,path.dirname(target));
-        assert.equal(physical.readFileSync(path.join(target,'settings.json'),'utf8'),'owned');
-        for(const p of [path.join(target,'archive-link'),path.join(target,'antigravity/brain/project/scratch/app.asar')]){
+        assert.equal(physical.readFileSync(path.join(target,'settings.json'),'utf8'),settings);
+        for(const p of [path.join(target,'antigravity/brain/project/scratch/app.asar')]){
           assert(physical.lstatSync(p).isFile());assert.deepEqual(physical.readFileSync(p),original);
         }
-        assert(!physical.existsSync(path.join(target,'broken-link')));
+        assert(!physical.existsSync(path.join(target,'broken-link')));assert(!physical.existsSync(path.join(target,'archive-link')));
         assert(fs.statSync(archive).isDirectory());assert.equal(process.noAsar,noAsar);
         console.log(JSON.stringify({electron:process.versions.electron,copied:true,retried:true,globalAsarUnchanged:true}));
       })().catch(e=>{console.error(e);process.exitCode=1});

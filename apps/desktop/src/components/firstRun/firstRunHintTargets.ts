@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { FirstRunHintId, FirstRunHintsProgress } from '@/lib/firstRunHints'
 
 export type HintDevice = 'phone' | 'desktop'
-export type HintTarget = { id: FirstRunHintId; anchor: HTMLElement; space: Element | null }
+export type HintTarget = { id: FirstRunHintId; anchor: HTMLElement }
 /** `anchor` null: the device has no place to draw this hint, only a way to use what it is about. */
 type HintEntry = { id: FirstRunHintId; anchor: string | null; use: string }
 const marker = (device: HintDevice, id: FirstRunHintId) => `[data-first-run-hint="${id}"][data-first-run-device="${device}"]`
@@ -11,13 +11,13 @@ const marker = (device: HintDevice, id: FirstRunHintId) => `[data-first-run-hint
 // Follow their real entries without introducing another cross-root data/IPC bridge.
 export const HINT_ENTRIES: Record<HintDevice, readonly HintEntry[]> = {
   phone: [
-    { id: 'assistant', anchor: marker('phone', 'assistant'), use: marker('phone', 'assistant') },
-    { id: 'collaboration', anchor: marker('phone', 'collaboration'), use: '[data-testid="phone-partners-project"], [data-testid="phone-partners-friend"], .gg-partners-navrow' },
+    { id: 'assistant', anchor: null, use: marker('phone', 'assistant') },
+    { id: 'collaboration', anchor: null, use: '[data-testid="phone-partners-project"], [data-testid="phone-partners-friend"], .gg-partners-navrow' },
   ],
   desktop: [
     { id: 'assistant', anchor: '.gg-sidebar-rail [data-rail="assistant"]', use: '.gg-sidebar-rail [data-rail="assistant"]' },
     // GUYI-AI/gugu#2548 the one-list sidebar has no 「项目」 header to hang this note under, and its design (v33) draws
-    // none: the desktop never shows it. Opening a project still counts as using it, so the phone does not explain it later.
+    // none. Opening a project still counts towards account hint progress.
     { id: 'collaboration', anchor: null, use: '[data-project-row]' },
   ],
 }
@@ -25,13 +25,6 @@ export const HINT_ENTRIES: Record<HintDevice, readonly HintEntry[]> = {
 /** Every hint this device draws is dismissed: nothing left for its watcher to wait for (a hint it cannot draw never ends it). */
 export function deviceHintsDismissed(device: HintDevice, progress: FirstRunHintsProgress): boolean {
   return HINT_ENTRIES[device].every(({ id, anchor }) => anchor === null || progress.dismissed.includes(id))
-}
-
-function hintSpaceOf(device: HintDevice, id: FirstRunHintId, anchor: HTMLElement): Element | null {
-  const space = device === 'phone' && id === 'collaboration'
-    ? anchor.closest('.gg-partners')?.querySelector('[data-first-run-hint-space="collaboration"]')
-    : anchor.nextElementSibling
-  return space?.getAttribute('data-first-run-hint-space') === id ? space : null
 }
 
 const HIDDEN_BY_ATTRIBUTE = '[hidden], [inert], [aria-hidden="true"]'
@@ -43,20 +36,20 @@ const HIDDEN_BY_ATTRIBUTE = '[hidden], [inert], [aria-hidden="true"]'
 export function useFirstRunHintTargets(device: HintDevice, enabled: boolean): readonly HintTarget[] {
   const [targets, setTargets] = useState<readonly HintTarget[]>([])
   useEffect(() => {
-    if (!enabled) {
+    const entries = enabled ? HINT_ENTRIES[device].flatMap(({ id, anchor }) => anchor === null ? [] : [{ id, anchor }]) : []
+    if (entries.length === 0) {
       setTargets((current) => current.length ? [] : current)
       return
     }
-    const entries = HINT_ENTRIES[device].flatMap(({ id, anchor }) => anchor === null ? [] : [{ id, anchor }])
     const shown = new Map<HTMLElement, boolean>()
     const publish = () => {
       const next = entries.flatMap(({ id, anchor }) => {
         const element = [...shown].filter(([candidate, visible]) => visible && candidate.matches(anchor) && !candidate.closest(HIDDEN_BY_ATTRIBUTE))
           .map(([candidate]) => candidate)
           .sort((a, b) => a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)[0]
-        return element ? [{ id, anchor: element, space: hintSpaceOf(device, id, element) }] : []
+        return element ? [{ id, anchor: element }] : []
       })
-      setTargets((current) => current.length === next.length && current.every((target, i) => target.id === next[i].id && target.anchor === next[i].anchor && target.space === next[i].space) ? current : next)
+      setTargets((current) => current.length === next.length && current.every((target, i) => target.id === next[i].id && target.anchor === next[i].anchor) ? current : next)
     }
     const intersection = new IntersectionObserver((records) => {
       for (const record of records) {

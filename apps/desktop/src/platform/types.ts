@@ -167,6 +167,10 @@ export interface AppPlatform {
   // otherwise paste, or null if cancelled. Only the capacitor adapter implements it (capability gate).
   scanQrCode: () => Promise<string | null>
   showNotification: (payload: { title: string; body?: string; chatId?: string | null; silent?: boolean }) => Promise<unknown>
+  androidNotificationSettings?: {
+    read(silent: boolean): Promise<{ enabled: boolean; importance?: number }>
+    open(silent: boolean, appWide: boolean): Promise<void>
+  }
   /**
    * 手机「权限」页的三个动作(product spec),由 systemPermissions 能力位把门;
    * 没有这个能力的平台抛错,❌ 静默返回一个假状态。

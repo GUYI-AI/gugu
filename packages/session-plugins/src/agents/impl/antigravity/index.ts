@@ -31,8 +31,6 @@ import { antigravitySessionProgram, buildAntigravityAcpSpawn } from './acp-routi
 import { observeAgyTier } from './acp-tier';
 import {
   ANTIGRAVITY_GATEWAY_AUTH,
-  antigravityApiKeyConnection,
-  antigravityApiKeyConnectionBehavior,
   withGatewayAuthentication,
 } from './api-key-connection';
 import {
@@ -161,6 +159,7 @@ export const plugin = definePlugin(
   {
     id: 'antigravity',
     name: 'Antigravity',
+    publisher: 'Google',
     description:
       'Google Antigravity: agy for new chat and terminal sessions, with legacy ACP session resume.',
     // ACP 服务的官方说明页(注册表条目给的同一个出处)。
@@ -169,7 +168,6 @@ export const plugin = definePlugin(
   {
     sessionBundle,
     // API Key 连接:agy 的「自定义 AI API 网关」,按进程选、不写托管根的 settings.json(见 ./api-key-connection.ts)。
-    apiKeyConnection: antigravityApiKeyConnection,
     // 「订阅」页(product spec):用量只有终端版 `agy` 报(官方 /usage,不花额度),打开页面就问。
     subscription: { kind: 'supported', usageRefresh: 'on-open', program: ANTIGRAVITY_CLI_PROGRAM },
     /**
@@ -413,7 +411,6 @@ export const provider = registerPluginBehavior(plugin, {
     },
   },
   subscription: antigravitySubscriptionBehavior(),
-  apiKeyConnection: antigravityApiKeyConnectionBehavior,
   sessionBundle: { materialize: materializeAntigravitySessionBundle },
   // 终端腿的分叉:复制 `antigravity-cli/conversations/<id>.db` 并改写 id,宿主再 `--conversation <新 id>`(见 ./fork.ts)。
   sessions: { forkSessionInStorage: (ctx) => forkAntigravityCliSession(ctx) },

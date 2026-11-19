@@ -723,6 +723,8 @@ export const APP_OPEN_IN_CHAT_EVENT = 'gugu:app-open-in-chat';
 export interface AppOpenInChatDetail {
   chatId: string;
   extensionId: string;
+  /** Host-side launch originating from an open tab. */
+  from?: string;
 }
 
 

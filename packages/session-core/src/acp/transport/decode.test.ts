@@ -102,6 +102,15 @@ for (const sessionUpdate of ['async_task_spawned', '_async_task_spawned']) {
   });
 }
 
+it('keeps provider retry facts structured without classifying ordinary notice text', () => {
+  const retrying = { since: 1234, message: 'Reconnecting: tls handshake eof' };
+  expect(decodeSessionUpdate({ sessionUpdate: 'state_update', state: 'running', _meta: { guguRetrying: retrying } } as never))
+    .toMatchObject({ kind: 'agent_state', state: 'running', retrying });
+  expect(decodeSessionUpdate({ sessionUpdate: 'state_update', state: 'running', _meta: { guguRetrying: null } } as never))
+    .toMatchObject({ retrying: null });
+  expect(decodeSessionUpdate({ sessionUpdate: 'notice', title: retrying.message } as never)).not.toHaveProperty('retrying');
+});
+
 describe('transport boundary decodes domain entities', () => {
   it.each(fixtures)('$name', ({ update, event }) => {
     expect((String((update as { sessionUpdate: string }).sessionUpdate).startsWith('_async_task_') ? decodeV2SessionUpdate : decodeSessionUpdate)(update as SessionUpdate)).toStrictEqual(event);

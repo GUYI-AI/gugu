@@ -35,6 +35,8 @@ void app.whenReady().then(async () => {
   service.installFromDirectory(bundle, service.inspectDirectory(bundle).manifestDigest, 'folder');
   const source = new BrowserWindow({ show: false, frame: false, useContentSize: true, width: 128, height: 96,
     webPreferences: { backgroundThrottling: false } });
+  // loadURL may finish before Chromium has painted a capture surface (Electron 45).
+  const firstPaint = new Promise<void>(resolve => source.once('ready-to-show', () => resolve()));
   const appPage = new BrowserWindow({ show: false });
   let hear: Parameters<NonNullable<ProjectionHost['onProjectionSource']>>[0] = () => {};
   const program = { kind: 'program', extensionId: id, pageId: -91, callingSession: 'fixture-task', binding: null,
@@ -56,6 +58,7 @@ void app.whenReady().then(async () => {
   let disconnected = 0, viewerGeneration = "";
   const encoded = new Map<number, number>();
   await source.loadURL('data:text/html,' + encodeURIComponent('<body style="margin:0;background:rgb(26,96,190)"><textarea style="width:60px;height:20px"></textarea><script>document.querySelector("textarea").focus()</script>'));
+  await firstPaint;
   const publisher = await runtime.create({
     input: async (input, { signal }) => { signal.throwIfAborted(); assert.equal(input.kind, 'text');
       if (input.kind === 'text') { inputCalls++; await source.webContents.insertText(input.text); } },

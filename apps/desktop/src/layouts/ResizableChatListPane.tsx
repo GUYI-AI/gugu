@@ -1,6 +1,5 @@
 import { useTranslation } from 'react-i18next'
 import type { ReactNode } from 'react'
-import { useListColumnCollapse } from '../hooks/useListColumnCollapse'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { ResizablePane } from './ResizablePane'
 import {
@@ -12,10 +11,9 @@ import {
 
 /**
  * 会话列表那一栏。@@@5856 拖拽本身已抽到 ResizablePane —— 这里只剩「这一栏是谁」:
- * 它的夹取范围、它的名字、它的 test id,以及分割线贴在右边。它也是对话页的「列表栏」,可收起(#6753)。
+ * 它的夹取范围、它的名字、它的 test id,以及分割线贴在右边。
  */
 export function ResizableChatListPane({
-  active,
   children,
   hidden,
   mobile,
@@ -23,8 +21,6 @@ export function ResizableChatListPane({
   onWidthCommit,
   width,
 }: {
-  /** 对话页在前台(桌面壳):这时它才接列表栏开关、快捷键与悬停。 */
-  active: boolean
   children: ReactNode
   hidden: boolean
   mobile: boolean
@@ -33,7 +29,6 @@ export function ResizableChatListPane({
   width: number
 }) {
   const { t } = useTranslation('main')
-  const collapse = useListColumnCollapse(active && !mobile, width)
   return (
     <ResizablePane
       edge="right"
@@ -49,7 +44,6 @@ export function ResizableChatListPane({
       resizeLabel={t('shell.resizeChatList')}
       paneTestId={AUTOMATION_TEST_IDS.chatListPane}
       handleTestId={AUTOMATION_TEST_IDS.chatListPaneResizeHandle}
-      collapse={collapse}
     >
       {children}
     </ResizablePane>

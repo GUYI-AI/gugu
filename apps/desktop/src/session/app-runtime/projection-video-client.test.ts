@@ -19,13 +19,31 @@ async function setup() {
   let next = 0;
   const bridge = { open: vi.fn(async () => ({ id: `viewer-${++next}`, offer: { type: 'offer' as const, sdp: 'bytes' } })),
     answer: vi.fn(async () => {}), sign: vi.fn(async () => 'signed'), close: vi.fn(async () => {}) };
-  const changed = vi.fn(), error = vi.fn(), frame = vi.fn();
-  const client = await projectionVideoClient({ projectionMedia: bridge } as ProjectionHost, {} as HTMLVideoElement, 'source', { frame, state: changed, error });
+  const changed = vi.fn(), error = vi.fn(), frame = vi.fn(), presentation = vi.fn();
+  const client = await projectionVideoClient({ projectionMedia: bridge } as ProjectionHost, {} as HTMLVideoElement, 'source', { frame, state: changed, error, presentation });
   clients.push(client);
   const generation = (index = 0, value = 'generation-a') => options[index]!.onControl!(JSON.stringify({ type: 'projection-generation', generation: value }), () => {});
   const paint = async (index = 0) => { options[index]!.onFrame!({ sequence: 4, rtpTimestamp: 100, width: 120, height: 80 }, () => {}); await Promise.resolve(); };
-  return { client, options, channels, bridge, changed, error, frame, generation, paint };
+  return { client, options, channels, bridge, changed, error, frame, presentation, generation, paint };
 }
+it('joins metadata only to the decoded frame, source, generation, dimensions and target', async () => {
+  const test = await setup(); test.generation();
+  const send = (value: unknown) => test.options[0]!.onControl!(JSON.stringify(value), () => {});
+  const target = { id: 'window-7', revision: 2 };
+  const value = { frame: { sequence: 4, width: 120, height: 80, target }, targetLabel: 'Editor',
+    action: { id: 'call-1', label: 'Click', phase: 'done' } };
+  send({ type: 'presentation', sourceId: 'source', generation: 'generation-a', revision: 1, presentation: value });
+  expect(test.presentation).toHaveBeenLastCalledWith(null);
+  send({ type: 'projection-target', generation: 'generation-a', sequence: 4, width: 120, height: 80, target });
+  expect(test.presentation).toHaveBeenLastCalledWith(null);
+  await test.paint(); expect(test.presentation).toHaveBeenLastCalledWith(value);
+  send({ type: 'presentation', sourceId: 'source', generation: 'generation-a', revision: 2, presentation: null });
+  send({ type: 'presentation', sourceId: 'source', generation: 'generation-a', revision: 1, presentation: value });
+  expect(test.presentation).toHaveBeenLastCalledWith(null);
+  test.generation(0, 'generation-b');
+  send({ type: 'presentation', sourceId: 'source', generation: 'generation-a', revision: 3, presentation: value });
+  expect(test.presentation).toHaveBeenLastCalledWith(null);
+});
 it('requires a fresh decoded frame and an execution receipt, not only data-channel admission', async () => {
   const test = await setup();
   await expect(test.client.input({ kind: 'text', text: '中文' })).rejects.toThrow('not ready');

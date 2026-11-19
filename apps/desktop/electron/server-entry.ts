@@ -95,6 +95,9 @@ const USAGE = `用法:
                                  把这台机器从这个账号里移除并注销登录(卸载时自动调用)
   gugu-server link [--adopt-ssh]
                                  把标准输入输出接到这个账号的咕咕 server 上(远程 SSH:桌面经 SSH 自动调用)
+  gugu-server agent-home status
+  gugu-server agent-home import <provider> [--groups settings,mcp,...]
+  gugu-server agent-home skip <provider>
   gugu-server open-url <网址或文件>
                                  在正看着这台机器的咕咕桌面上打开网页(这台机器上的 $BROWSER 就是它)
   gugu-server resume
@@ -388,6 +391,10 @@ async function runCommand(command: string | undefined, args: string[]): Promise<
       fs.mkdirSync(path.join(supervisorDataDir(), 'logs'), { recursive: true })
       startKeeper({ home: serverHome, logFile: path.join(supervisorDataDir(), 'logs', 'service.log') })
       return process.exit(0)
+    }
+    case 'agent-home': {
+      const { runAgentHome } = await import('./server/agent-home-cli')
+      return process.exit(await runAgentHome(args))
     }
     case 'open-url': {
       const { runOpenUrl } = await import('./server/open-url-cli')

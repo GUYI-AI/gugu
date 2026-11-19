@@ -20,6 +20,7 @@ vi.mock('@main/db/client', () => ({ get db() { return state.db; }, get sqlite() 
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
 import { persistCommittedTurn } from '../sessions/session-turn-store';
 
+// Use the project testTimeout (overridable with --testTimeout) for durable filesystem writes.
 describe('complete durable canonical commit publisher', () => {
   let fixture: Awaited<ReturnType<typeof openFixture>>, directory: string, receipt: WindowCommitReceipt;
   const huge = 'real message 中文😀 \\ "\n'.repeat(10000);
@@ -52,7 +53,7 @@ describe('complete durable canonical commit publisher', () => {
     const header = await readCommitHeader({ ...c, target: 'item', range: row.position.range }, row.entityId, createWindowBudget());
     expect(header.values).toMatchObject({ id: row.facts.id, kind: 'message', seq: 4, role: 'assistant' });
     expect(JSON.stringify(header)).not.toContain('real message');
-  }, 30000);
+  });
 
   it('persists only changed outer recovery cursors while inner structural checkpoints progress', async () => {
     const write = frames.writeWindowFrame, heads: Buffer[] = [];
@@ -63,7 +64,7 @@ describe('complete durable canonical commit publisher', () => {
     await createWindowCommitPublisher(directory, context().receipts).publish(receipt);
     expect(heads.length).toBeGreaterThan(2);
     expect(heads.slice(1).every((bytes, index) => !bytes.equals(heads[index]))).toBe(true);
-  }, 30000);
+  });
 
   it('publishes a complete ordered tree and terminal with seekable genuine body/parent positions', async () => {
     const c = context(), io: { indexBytes: number; sourceBytes: number }[] = [], phase = vi.fn();
@@ -86,7 +87,7 @@ describe('complete durable canonical commit publisher', () => {
     }
     expect(await createWindowCommitPublisher(directory, c.receipts).publish(receipt)).toEqual(p);
     await expect(readPublishedCommitEntity(c, p.projectionId, p.count, createWindowBudget())).rejects.toThrow('outside');
-  }, 30000);
+  });
   it('resumes the same ordinal and immutable entity after interruption between locator and checkpoint', async () => {
     const c = context(), original = disk.writeWindowFrame; let interrupted = false;
     await expect(readWindowCommitPublication(c, createWindowBudget())).rejects.toMatchObject({ code: 'needs_location' });
@@ -102,7 +103,7 @@ describe('complete durable canonical commit publisher', () => {
     const first = await readPublishedCommitEntity(c, p.projectionId, 0, createWindowBudget());
     expect(first.facts.id).toBe('c:turn:s0:tool:0');
     const last = await readPublishedCommitEntity(c, p.projectionId, 6, createWindowBudget()); expect(last.facts.id).toBe('terminal');
-  }, 30000);
+  });
   it('keeps an old published version unchanged after canonical revision changes the latest source', async () => {
     const c = context(), publisher = createWindowCommitPublisher(directory, c.receipts), old = await publisher.publish(receipt);
     await persistCommittedTurn({ sessionId: 'c', source: 'revision', turn: { ...turn(), items: [] }, windowCapture: { directory,
@@ -111,7 +112,7 @@ describe('complete durable canonical commit publisher', () => {
     const latest = createWindowCommitReceipts(fixture.sqlite).byReference('c', 'ref')!;
     expect(latest.sourceId).not.toBe(receipt.sourceId); const changed = await publisher.publish(latest); expect(changed.count).toBe(1);
     expect((await readPublishedCommitEntity(c, old.projectionId, 4, createWindowBudget())).facts.kind).toBe('message');
-  }, 30000);
+  });
   it('cancels without waking another build and refuses a successful publication after canonical deletion', async () => {
     const c = context(), abort = new AbortController(); abort.abort();
     await expect(createWindowCommitPublisher(directory, c.receipts).publish(receipt, abort.signal)).rejects.toMatchObject({ name: 'AbortError' });
@@ -119,7 +120,7 @@ describe('complete durable canonical commit publisher', () => {
     const pending = publisher.publish(receipt);
     await expect(publisher.publish(receipt)).rejects.toThrow('occupied');
     await expect(pending).rejects.toThrow('committed receipt');
-  }, 30000);
+  });
   it.each(['latest', 'version'])('point-reads %s only while its receipt survives the final asynchronous source check', async kind => {
     const c = context(), published = await createWindowCommitPublisher(directory, c.receipts).publish(receipt);
     const validate = source.assertWindowCommitSource;
@@ -128,5 +129,5 @@ describe('complete durable canonical commit publisher', () => {
     });
     await expect(kind === 'latest' ? readWindowCommitPublication(c, createWindowBudget())
       : readWindowCommitPublicationVersion(c, published.projectionId, createWindowBudget())).rejects.toThrow('committed receipt');
-  }, 30000);
+  });
 });

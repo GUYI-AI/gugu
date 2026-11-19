@@ -119,7 +119,7 @@
             tools:replace="android:foregroundServiceType">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Keeps the realtime link to the user&apos;s own machines alive while the app is in the background, so an agent finishing or asking a question reaches the phone."
+                android:value="Keeps the realtime connection active in the background to receive enabled chat notifications and events from the user&apos;s own devices."
                 tools:replace="android:value" />
         </service>
 

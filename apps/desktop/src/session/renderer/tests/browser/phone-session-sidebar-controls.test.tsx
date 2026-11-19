@@ -71,9 +71,20 @@ async function mount(sessionId:string,entry:string|null,full=false,width=390,the
  await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme={theme}><>{full ? <Conversation sessionId={sessionId} entry={entry}/> : <><Controls sessionId={sessionId} entry={entry}/><PhoneComposerControlRow><span>输入消息</span></PhoneComposerControlRow></>}</></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats},contacts:{contacts:[]}})
 }
 afterEach(()=>{actions.pickModel.mockClear();actions.send.mockClear();actions.reloadTopics.mockClear();actions.topics=null;actions.topicError=null;harness?.cleanup();dispose?.();removeDeviceSessions('qa-device');publishDirectoryDevices([]);document.documentElement.removeAttribute('data-phone-shell')})
+async function expectNavigationBottomSheet() {
+ const panel=document.querySelector<HTMLElement>('[data-testid="phone-room-controls-sheet"]')!
+ await Promise.all(panel.getAnimations().map(animation=>animation.finished))
+ const viewport=window.visualViewport!
+ const rect=panel.getBoundingClientRect()
+ expect(panel.querySelector('.gg-phone-composer-sheet-handle')).not.toBeNull()
+ expect(rect.left).toBeCloseTo(viewport.offsetLeft+12)
+ expect(rect.right).toBeCloseTo(viewport.offsetLeft+viewport.width-12)
+ expect(rect.bottom).toBeCloseTo(viewport.offsetTop+viewport.height-8)
+}
 it('a group-entered task lists the same resident sessions and preserves the group entry when switching',async()=>{
  await mount('room-task','chat:room');await page.getByTestId('phone-room-agents').click()
  await expect.element(page.getByTestId('phone-sidebar-agent')).toHaveTextContent('群里的验收任务')
+ await expectNavigationBottomSheet()
  expect(document.querySelectorAll('[data-testid="phone-sidebar-agent"]')).toHaveLength(1)
  const opened: unknown[]=[];const capture=(event:Event)=>opened.push((event as CustomEvent).detail);window.addEventListener(APP_SHOW_SESSION_EVENT,capture)
  try { await page.getByTestId('phone-sidebar-agent').click();expect(opened).toEqual([expect.objectContaining({innerSidebarEntry:'chat:room',session:expect.objectContaining({conversationId:'room-task'})})]) } finally {window.removeEventListener(APP_SHOW_SESSION_EVENT,capture)}
@@ -83,7 +94,7 @@ it('a standalone Agent offers only its children and no Topics button',async()=>{
  expect(document.querySelector('[data-testid="phone-room-topics"]')).toBeNull();await page.getByTestId('phone-room-agents').click()
  await expect.element(page.getByTestId('phone-sidebar-agent')).toHaveTextContent('排版子智能体');expect(document.querySelectorAll('[data-testid="phone-sidebar-agent"]')).toHaveLength(1)
 })
-it('an existing room task opens its short Topics menu and dispatches the actual topic id',async()=>{
+it('an existing room task opens the Topics bottom sheet and dispatches the actual topic id',async()=>{
  const topic:TopicSummary={chat_id:'long-room-topic',name:'这是一个必须在菜单里完整显示而不是铺到输入框菜单栏里的话题名称',source_message_id:'topic-anchor',creator_user_id:'owner',last_message_at:null,message_count:3,participant_count:2,is_participant:true}
  actions.topics=[topic]
  await mount('room-task','chat:room',true)
@@ -103,6 +114,7 @@ it('an existing room task opens its short Topics menu and dispatches the actual 
   expect(trigger.getAttribute('aria-expanded')).toBe('true')
   expect(document.querySelector('[data-testid="phone-room-controls-sheet"] .gg-phone-room-topic-name')?.textContent).toBe(topic.name)
  },{timeout:10000})
+ await expectNavigationBottomSheet()
  const panel=document.querySelector<HTMLElement>('[data-testid="phone-room-controls-sheet"]')!
  const name=panel.querySelector<HTMLElement>('.gg-phone-room-topic-name')!
  expect(name.textContent).toBe(topic.name)

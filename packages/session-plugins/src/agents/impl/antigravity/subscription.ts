@@ -76,10 +76,7 @@ type IdeTier = { id: string; name: string; tierUnknown: boolean; asOf?: number }
 async function readIdeTier(ctx: AgentAuthContext): Promise<IdeTier | null> {
   const home = ctx.env.HOME?.trim();
   if (!home) return null;
-  const db =
-    process.platform === 'darwin'
-      ? join(home, 'Library/Application Support/Antigravity IDE/User/globalStorage/state.vscdb')
-      : join(home, '.config/Antigravity IDE/User/globalStorage/state.vscdb');
+  const db = join(home, 'Library/Application Support/Antigravity IDE/User/globalStorage/state.vscdb');
   const modified = await stat(db).then((info) => info.mtimeMs, () => null);
   if (modified === null) return null;
   try {

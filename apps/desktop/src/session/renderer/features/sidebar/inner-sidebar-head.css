@@ -1,17 +1,60 @@
-/* Approved two-line group/project head; standalone agents and samples keep the 40px head. */
+/* Group/project heads span two lines. Standalone agents and samples keep the 40px head. */
 .gg-inner-head-double { height: 72px; }
 .gg-inner-head-double [data-inner-head] { height: 56px; }
-.gg-inner-head-double [data-inner-head] > [data-slot="button"]:not([data-inner-head-create]) {
-  position: absolute; left: 0; top: 0; height: 28px; border-radius: 6px;
+.gg-inner-head-double [data-inner-head-open] {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  align-items: flex-start;
+  border-radius: var(--radius-control);
+  background-color: transparent;
 }
-.gg-inner-head-double [data-inner-head] > [data-slot="button"]:not([data-inner-head-create]) > span { padding-left: 50px; gap: 0; }
-.gg-inner-head-double [data-inner-head] > [data-slot="button"]:not([data-inner-head-create]) > span > span:first-child {
-  position: absolute; left: 8px; top: 12px; width: 32px; height: 32px;
+/* Paint the hover independently of the full two-line button. */
+.gg-inner-head-double [data-inner-head]:hover::before {
+  content: '';
+  position: absolute;
+  inset: 0 8px;
+  border-radius: var(--radius-capsule);
+  background-color: var(--hover);
+  pointer-events: none;
 }
-.gg-inner-head-double [data-inner-head] > span { top: 0; bottom: auto; height: 28px; }
+.gg-inner-head-double [data-inner-head-open] > span {
+  height: 28px;
+  padding-inline-start: 50px;
+  gap: 0;
+  line-height: 20px;
+}
+.gg-inner-head-double [data-inner-head-open] > span > span:first-child {
+  position: absolute;
+  inset-inline-start: 8px;
+  top: 12px;
+  width: 32px;
+  height: 32px;
+}
+.gg-inner-head-double [data-inner-head-actions] {
+  top: 0;
+  bottom: auto;
+  z-index: 1;
+  height: 28px;
+  pointer-events: none;
+}
+.gg-inner-head-double [data-inner-head-actions] button { pointer-events: auto; }
 .gg-inner-head-double .gg-inner-head-create {
-  position: absolute; left: 44px; top: 28px; display: inline-flex; justify-content: flex-start;
-  height: 24px; min-height: 24px; padding: 0 6px; gap: 6px; border: 0; border-radius: 5px;
-  font-size: var(--font-caption); font-weight: 500; line-height: 20px;
+  position: absolute;
+  inset-inline-start: 44px;
+  top: 28px;
+  z-index: 1;
+  display: inline-flex;
+  justify-content: flex-start;
+  min-width: 92px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0 6px;
+  gap: 6px;
+  border: 0;
+  border-radius: 6px;
+  font-size: var(--font-caption);
+  font-weight: 500;
+  line-height: 20px;
 }
 .gg-inner-head-create svg { width: 14px; height: 14px; }

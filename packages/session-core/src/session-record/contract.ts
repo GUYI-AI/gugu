@@ -1,3 +1,4 @@
+import type { CustomModelConnection, ModelProtocol } from '../models/custom-model';
 import type { TurnFileRef } from '../acp/models/turn-files';
 export type {
   CreationAttachmentManifest, CreationAttachmentTarget, CreationAttachmentDraftReceipt,
@@ -682,7 +683,7 @@ export type UnreachedMachine = { deviceId: string | null; label: string | null; 
  * 界面上**不摆不存在的档**（@@@permission-three-modes 那条规矩）：摆一个按下去必失败的
  * 选择器，比不摆更糟。
  */
-export type SessionOptionChoice = { id: string; name: string; description?: string };
+export type SessionOptionChoice = { id: string; name: string; description?: string; disabled?: boolean; reviewByHaiku?: boolean };
 
 export type SessionOptionGroup = {
   selected: string | null;
@@ -864,7 +865,7 @@ export type SessionpageScheduleDigest = {
  */
 /** 展示(产品词):编程 = 终端腿,通用 = 聊天腿。与桌面 composer 的 SessionView 同一套词。 */
 export type SessionpageSessionView = 'code' | 'general';
-export type SessionpagePermissionMode = 'plan' | 'read-only' | 'edit' | 'full-access';
+export type SessionpagePermissionMode = 'plan' | 'read-only' | 'edit' | 'ai-review' | 'full-access';
 
 export type SessionpageHarnessOption = {
   id: string;
@@ -950,6 +951,11 @@ export type SessionpageSessionCreateModelChoice = {
  * 空列表要说得出为什么：两段 reason 各自解释自己那一组为什么缺席。
  */
 export type SessionpageSessionCreateModels = {
+  /** Verified on this model and selected host executable; absent on old/unknown hosts. */
+  autoReview?: { model: string; disabled?: boolean; reviewByHaiku?: boolean };
+  customModels?: CustomModelConnection[];
+  modelProtocols?: readonly ModelProtocol[];
+  customModel?: { modelOptional: true };
   harness: string;
   transport: 'acp' | 'pty';
   models: SessionpageSessionCreateModelChoice[];

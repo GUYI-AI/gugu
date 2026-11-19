@@ -1,5 +1,5 @@
 import { openPhoneSidebarSession } from './phone-sidebar-navigation'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TopicSummary } from '@gugu/core/shared/types/chat'
 import { Avatar } from '@/components/Avatar'
@@ -43,6 +43,7 @@ function RoomComposerControls({ chatId, topics, topicsReady, current, onPick, me
   const { t } = useTranslation('mobileRoomControls')
   const { chats } = useChatStore('chats')
   const [view, setView] = useState<'topics' | 'agents' | null>(null)
+  const topicsButton = useRef<HTMLButtonElement>(null)
   const choices = roomTopicChoices(chatId, topics, chats)
   const agents = members.filter(member => member.type === 'agent' && member.membership !== 'former')
   const titleCount = view === 'agents' ? (roster.ready ? agents.length : undefined) : (topicsReady ? choices.topics.length : undefined)
@@ -54,10 +55,10 @@ function RoomComposerControls({ chatId, topics, topicsReady, current, onPick, me
   return <div className="gg-phone-room-controls" data-testid="phone-room-composer-controls">
     <PhoneComposerControlRow>
       {menu.includes('topics') && <PhoneComposerControl label={t('topics')} menuExpanded={view === 'topics'} active={!!current} dot={choices.dot}
-        testId="phone-room-topics" onClick={() => setView('topics')} />}
+        testId="phone-room-topics" buttonRef={topicsButton} onClick={() => setView('topics')} />}
       {menu.includes('agents') && <PhoneComposerControl label={t('agents')} menuExpanded={view === 'agents'} icon={<Users />} testId="phone-room-agents" onClick={() => setView('agents')} />}
     </PhoneComposerControlRow>
-    <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'topics')} titleCount={titleCount} testId="phone-room-controls-sheet" className="gg-phone-room-sheet">
+    <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'topics')} titleCount={titleCount} testId="phone-room-controls-sheet" className="gg-phone-room-sheet" anchor={view === 'topics' ? topicsButton : undefined}>
       {view === 'topics' ? <PhoneNavigationPicker key="topics" kind="topics" items={[null, ...choices.topics]} nameOf={topic => topic?.name ?? t('main')}>
         {shown => <div role="radiogroup" aria-label={t('topics')}>
           {shown.map(topic => topic ? <TopicChoice key={topic.chat_id} name={topic.name} calls={topic.calls} news={topic.news}

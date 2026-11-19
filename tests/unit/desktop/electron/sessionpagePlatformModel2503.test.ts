@@ -86,6 +86,8 @@ const {
   withPlatformDeclaration,
   reissueExpiredPlatformModelForSession,
   releasePlatformModelForSession,
+  releasePlatformModelForClosure,
+  clearPlatformClosureProofsForTest,
   releasePlatformModelsAtExit,
   classifyCredentialIssueFailure,
   configurePlatformMembershipListener,
@@ -142,7 +144,7 @@ function platformLaunch(
   })
 }
 // 签发退避按会话 id 记、跨过结清(会话重建)活着;用例共用同一个会话 id,别把上一条的窗口带过去。
-beforeEach(() => { resetPlatformIssueBackoffsForTest(); legacyHelper.enabled = false })
+beforeEach(() => { resetPlatformIssueBackoffsForTest(); clearPlatformClosureProofsForTest(); legacyHelper.enabled = false })
 
 describe('#2503 session-page sessions carry the designated model', () => {
   beforeEach(() => {
@@ -1452,6 +1454,72 @@ describe('#2503 平台凭据随会话续期（含存量 helper 兼容）', () =>
     expiresAt: new Date(Date.now() + TTL_MS).toISOString(), contextWindow: null, switchableModels: [], membershipLocked: [],
   })
   const EIGHT_HOURS_MS = 8 * 60 * 60_000
+  it('closure settles the whole completed G1 to G2 rotation using the original generation', async () => {
+    await startClaudeHelperSession()
+    issuePlatformModelAccess.mockResolvedValueOnce(replacementLease('sess-2', 'controlled-replacement'))
+    vi.setSystemTime(Date.now() + TTL_MS + 1)
+    await expect(reissueExpiredPlatformModelForSession(SESSION)).resolves.toBe(true)
+    await releasePlatformModelForSession(SESSION)
+    await expect(releasePlatformModelForClosure(SESSION, 'sess-1')).resolves.toMatchObject({ status: 'settled', generation: 'sess-1' })
+    expect(revokePlatformModelAccess).toHaveBeenCalledWith(authProvider, 'sess-1')
+    expect(revokePlatformModelAccess).toHaveBeenCalledWith(authProvider, 'sess-2')
+  })
+  it('closure waits for late G2 issue and its actual revoke after ordinary stop settled G1', async () => {
+    await startClaudeHelperSession()
+    const issuing = deferred<void>(), replacement = deferred<unknown>(), revoking = deferred<void>(), revoked = deferred<void>()
+    issuePlatformModelAccess.mockImplementationOnce(() => { issuing.resolve(); return replacement.promise })
+    revokePlatformModelAccess.mockImplementation(async (_auth, id) => { if (id === 'sess-2') { revoking.resolve(); await revoked.promise } })
+    vi.setSystemTime(Date.now() + TTL_MS + 1)
+    const rotating = reissueExpiredPlatformModelForSession(SESSION); await issuing.promise
+    await releasePlatformModelForSession(SESSION)
+    let settled = false
+    const closing = releasePlatformModelForClosure(SESSION, 'sess-1').then(() => { settled = true })
+    await Promise.resolve(); expect(settled).toBe(false)
+    replacement.resolve(replacementLease('sess-2', 'controlled-replacement')); await revoking.promise
+    expect(settled).toBe(false); expect(heldPlatformModelForSession(SESSION)).toBeNull()
+    revoked.resolve(); await expect(rotating).resolves.toBe(false); await closing; expect(settled).toBe(true)
+  })
+  it('closure rejects when the logged late G2 revoke failed after ordinary G1 stop', async () => {
+    await startClaudeHelperSession()
+    const issuing = deferred<void>(), replacement = deferred<unknown>()
+    issuePlatformModelAccess.mockImplementationOnce(() => { issuing.resolve(); return replacement.promise })
+    revokePlatformModelAccess.mockImplementation(async (_auth, id) => { if (id === 'sess-2') throw new Error('controlled late revoke refusal') })
+    vi.setSystemTime(Date.now() + TTL_MS + 1)
+    const rotating = reissueExpiredPlatformModelForSession(SESSION); await issuing.promise
+    await releasePlatformModelForSession(SESSION)
+    const closing = releasePlatformModelForClosure(SESSION, 'sess-1').catch(error => error)
+    replacement.resolve(replacementLease('sess-2', 'controlled-replacement'))
+    await expect(rotating).resolves.toBe(false); expect(await closing).toMatchObject({ message: 'Platform release is unconfirmed' })
+  })
+  it('closure retains a swallowed old G1 revoke failure after a completed rotation', async () => {
+    await startClaudeHelperSession()
+    issuePlatformModelAccess.mockResolvedValueOnce(replacementLease('sess-2', 'controlled-replacement'))
+    revokePlatformModelAccess.mockImplementation(async (_auth, id) => { if (id === 'sess-1') throw new Error('controlled previous revoke refusal') })
+    vi.setSystemTime(Date.now() + TTL_MS + 1)
+    await expect(reissueExpiredPlatformModelForSession(SESSION)).resolves.toBe(true)
+    await releasePlatformModelForSession(SESSION)
+    await expect(releasePlatformModelForClosure(SESSION, 'sess-1')).rejects.toThrow('unconfirmed')
+  })
+  it('closure for old G1 cannot release the next native lifetime on the same session', async () => {
+    await startClaudeHelperSession(); await releasePlatformModelForSession(SESSION)
+    platformLaunch('glm-5.2-claude', TTL_MS, undefined, [], 'new-lifetime')
+    await platformModelForSession({ surface: 'tui', sessionId: SESSION, providerId: 'claude', authProvider, env: CLAUDE_TEST_ENV })
+    await expect(releasePlatformModelForClosure(SESSION, 'sess-1')).resolves.toMatchObject({ status: 'settled' })
+    expect(heldPlatformModelForSession(SESSION)?.accessSessionId).toBe('new-lifetime')
+    expect(revokePlatformModelAccess).not.toHaveBeenCalledWith(authProvider, 'new-lifetime')
+  })
+  it('closure keeps an in-flight issue rejection unconfirmed after stopping the original ticket', async () => {
+    await startClaudeHelperSession()
+    const issuing = deferred<void>(), replacement = deferred<unknown>()
+    issuePlatformModelAccess.mockImplementationOnce(() => { issuing.resolve(); return replacement.promise })
+    vi.setSystemTime(Date.now() + TTL_MS + 1)
+    const rotating = reissueExpiredPlatformModelForSession(SESSION).catch(error => error); await issuing.promise
+    await releasePlatformModelForSession(SESSION)
+    const closing = releasePlatformModelForClosure(SESSION, 'sess-1').catch(error => error)
+    replacement.reject(new Error('controlled issue connection lost'))
+    expect(await rotating).toMatchObject({ message: 'controlled issue connection lost' })
+    expect(await closing).toMatchObject({ message: 'Platform release is unconfirmed' })
+  })
   /** 取票脚本失败时 claude 显示的就是它的 stderr(`apiKeyHelper failed: exited 1: <stderr>`)。 */
   async function helperFailure(command: string): Promise<{ code: number; stderr: string; stdout: string }> {
     try {

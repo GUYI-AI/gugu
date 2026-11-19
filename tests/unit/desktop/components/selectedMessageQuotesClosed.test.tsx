@@ -11,7 +11,7 @@ import { clickElement, createReactHarness, fireContextMenu, message, renderWithA
 import { writeComposer } from '../../../support/composerEditor'
 
 const shell = vi.hoisted(() => ({ mobile: true }))
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile, readMobileShell: () => shell.mobile }))
 vi.mock('../../../../apps/desktop/src/hooks/useAgentHarnessIdentity', () => ({ useAgentHarnessIdentity: () => 'codex' }))
 const t = ((key: string) => key) as TFunction<'messaging'>
 let h: ReturnType<typeof createReactHarness>

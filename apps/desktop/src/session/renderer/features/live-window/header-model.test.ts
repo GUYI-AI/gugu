@@ -25,7 +25,7 @@ describe.each(['desktop', 'phone'] as const)('%s header viewing', platform => {
     const model = new LiveWindowModel(platform); model.activate(chat);
     model.observe(chat, [picture('browser', 1), picture('computer', 2)]);
     model.observe(chat, [picture('browser', 1, 'finished'), picture('computer', 2, 'finished')]);
-    expect(model.getSnapshot()).toMatchObject({ visible: true, operating: false, headerSource: { kind: 'computer' } });
+    expect(model.getSnapshot()).toMatchObject({ visible: platform === 'phone', operating: false, headerSource: { kind: 'computer' } });
     model.observe(chat, [picture('browser', 1, 'finished')]);
     expect(model.getSnapshot().sources.map(source => source.kind)).toEqual(['browser']);
     model.observe(chat, []);

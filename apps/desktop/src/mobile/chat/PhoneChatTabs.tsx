@@ -81,7 +81,7 @@ export function PhoneChatTabs({ topics, messages, current, onPick, dense = false
     }),
   ]
   return (
-    <div ref={bar} className="gg-phone-chat-tabs" data-testid="phone-chat-tabs" data-dense={dense || undefined}>
+    <div ref={bar} data-pane-opener="" className="gg-phone-chat-tabs" data-testid="phone-chat-tabs" data-dense={dense || undefined}>
       <SegmentedTabs
         variant="underline"
         ariaLabel={t('topic.phoneTabs.label')}

@@ -18,6 +18,7 @@ export interface ComboboxPopoverProps<T> {
   itemToKey: (item: T) => string;
   /** Extract the primary display label from an item. */
   itemToLabel: (item: T) => string;
+  isItemDisabled?: (item: T) => boolean;
   /**
    * Custom filter predicate. Defaults to a case-insensitive label substring
    * match so items with no matching substring are hidden.
@@ -92,6 +93,7 @@ export function ComboboxPopover<T>({
   onValueChange,
   itemToKey,
   itemToLabel,
+  isItemDisabled,
   filter,
   renderTrigger,
   triggerTitle,
@@ -122,6 +124,8 @@ export function ComboboxPopover<T>({
       ? (items.find((i) => itemToKey(i) === hoverCard.activeKey) ?? null)
       : null;
 
+  const activeDetail = renderItemDetail && activeDetailItem ? renderItemDetail(activeDetailItem) : null;
+
   const defaultFilter = React.useCallback(
     (item: T, query: string) => itemToLabel(item).toLowerCase().includes(query.toLowerCase()),
     [itemToLabel]
@@ -143,7 +147,7 @@ export function ComboboxPopover<T>({
   }
 
   function handleValueChange(item: T | null) {
-    if (!item || disabled) return;
+    if (!item || disabled || isItemDisabled?.(item)) return;
     hoverCard.close();
     onValueChange(itemToKey(item));
     setOpen(false);
@@ -189,6 +193,8 @@ export function ComboboxPopover<T>({
               <Combobox.Item
                 key={key}
                 value={item}
+                disabled={isItemDisabled?.(item)}
+                style={isItemDisabled?.(item) ? { pointerEvents: 'auto' } : undefined}
                 className={itemClassName}
                 {...(renderItemDetail ? hoverCard.getRowHoverProps(key) : {})}
               >
@@ -205,7 +211,7 @@ export function ComboboxPopover<T>({
         )}
       </Combobox.Content>
 
-      {renderItemDetail && activeDetailItem && (
+      {activeDetail != null && activeDetail !== false && (
         <HoverCard
           anchor={anchorEl}
           ownPopup={anchorEl ?? undefined}
@@ -213,7 +219,7 @@ export function ComboboxPopover<T>({
           side={detailSide}
           align={detailAlign}
         >
-          {renderItemDetail(activeDetailItem)}
+          {activeDetail}
         </HoverCard>
       )}
     </Combobox.Root>

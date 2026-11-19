@@ -107,6 +107,7 @@ export default {
     "title": "New group chat"
   },
   "memberPicker": {
+    "sources": "Member sources",
     "selectionUnavailable": "A selected member is unavailable or cannot be invited to this group.",
     "allProjects": "All",
     "allResults": "All results",
@@ -272,7 +273,7 @@ export default {
     "contactCountSummary_other": "{{count}} contacts total",
     "contactDetail": "Contact details",
     "contactSectionTitle": "People",
-    "createAgent": "Create Agent",
+    "createAgent": "Create agent",
     "createGroup": "Create group chat",
     "enterGroup": "Open group chat",
     "groupCount": "{{count}} groups",

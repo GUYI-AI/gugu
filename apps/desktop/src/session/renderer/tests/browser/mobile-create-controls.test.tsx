@@ -64,6 +64,15 @@ it.each(['light', 'dark'] as const)('%s: configure first, then a text draft hide
   await page.getByRole('radio', { name: 'Cloud' }).click()
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await page.getByTestId('agent-watch-create-project').click()
+  const panel = document.querySelector<HTMLElement>('[data-testid="agent-watch-create-controls-sheet"]')!
+  const project = host!.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-project"]')!
+  const work = host!.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-model-device"]')!
+  await Promise.all(panel.getAnimations().map(animation => animation.finished))
+  expect(panel.getBoundingClientRect().width).toBe(320)
+  expect(project.getBoundingClientRect().top - panel.getBoundingClientRect().bottom).toBeCloseTo(8)
+  expect(panel.querySelector('.gg-phone-composer-sheet-handle')).toBeNull()
+  expect(project.getAttribute('aria-expanded')).toBe('true')
+  expect(work.getAttribute('aria-expanded')).toBe('false')
   await page.getByRole('radio', { name: '一个用于窄屏验收的长项目名称' }).click()
   await page.getByTestId('agent-watch-create-skills').click()
   await page.getByRole('checkbox', { name: /会议记录/ }).click()
@@ -158,7 +167,7 @@ it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'li
   expect(host!.querySelector('[data-testid="agent-watch-create-project"]')).toBeNull()
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
   const buttons = [...row.querySelectorAll<HTMLButtonElement>('.gg-phone-composer-control')]
-  expect(buttons.map(button => button.textContent)).toEqual(locale === 'zh-CN' ? ['工作', '文件夹', '技能'] : ['Work', 'Folder', 'Skills'])
+  expect(buttons.map(button => button.textContent)).toEqual(locale === 'zh-CN' ? ['工作', '项目', '技能'] : ['Work', 'Project', 'Skills'])
   expect(host!.querySelector('[data-testid="agent-watch-create-agent"]')).toBeNull()
   expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
   for (const button of buttons) expect(Math.abs(button.getBoundingClientRect().top - buttons[0]!.getBoundingClientRect().top)).toBeLessThan(1)

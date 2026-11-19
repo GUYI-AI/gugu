@@ -249,7 +249,7 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean; submitOnEnter: bool
             {/* 咕咕加的第二个宿主插槽:输入框**正上方**(发送失败)。这一带贴底、没有高度上限,
                 待答的审批/提问卡 ❌ 放这里 —— 一张比视口高的卡会把整个视口盖住,见 ThreadTailExtras。 */}
             <ComposerAboveExtras />
-            <Composer autoFocus={autoFocus} submitOnEnter={submitOnEnter} sendDisabled={sendDisabled} />
+            <ThreadComposer autoFocus={autoFocus} submitOnEnter={submitOnEnter} sendDisabled={sendDisabled} />
             <AuiIf condition={(s) => isNewChatView(s) && s.composer.isEmpty}>
               <ThreadSuggestions />
             </AuiIf>
@@ -359,7 +359,7 @@ const ThreadSuggestionItem: FC = () => {
   );
 };
 
-function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boolean; submitOnEnter: boolean; sendDisabled: boolean }) {
+export function ThreadComposer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boolean; submitOnEnter: boolean; sendDisabled: boolean }) {
   const c = useAuiCopy();
   const { resolvedLocale } = useLocale();
   const { theme } = useTheme();

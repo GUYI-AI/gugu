@@ -28,12 +28,10 @@ const groups = () =>
 
 const captions = () => [...harness.container.querySelectorAll('.gg-settings-nav-caption')].map((el) => el.textContent)
 
-// SettingsPanel excludes apps/phone and the person's own connected apps (a phone row; the Library's 集成 on a computer) on
-// desktop. Permission/session-host capability filters can only remove more entries, so this covers every section a desktop
-// host may supply.
+// SettingsPanel excludes phone-only entries on desktop. This covers every section a desktop host may supply.
 const desktopSections = SETTINGS_SECTIONS.filter((section) => section !== 'apps' && section !== 'phone' && section !== 'connectors')
-// SettingsPanel never supplies the native Beta password destination to the mobile shell.
-const mobileSections = SETTINGS_SECTIONS.filter((section) => section !== 'passwords')
+// SettingsPanel excludes the desktop-only password, data import, and saved prompt destinations from the mobile shell.
+const mobileSections = SETTINGS_SECTIONS.filter((section) => section !== 'passwords' && section !== 'data-import' && section !== 'prompts')
 
 // Desktop order follows the approved sidebar; mobile retains its existing groups.
 describe('the one settings nav', () => {
@@ -41,8 +39,8 @@ describe('the one settings nav', () => {
     await render(desktopSections)
     expect(groups()).toEqual([
       ['account', 'subscriptions', 'usage'],
-      ['general', 'interface', 'model', 'permissions', 'passwords'],
-      ['sessions', 'devices', 'browser', 'files'],
+      ['general', 'data-import', 'interface', 'model', 'permissions', 'passwords'],
+      ['sessions', 'prompts', 'devices', 'browser', 'files'],
       ['resource-monitor', 'about'],
     ])
   })
@@ -112,9 +110,8 @@ describe('the one settings nav', () => {
     expect(harness.container.querySelector('[aria-current="page"]')?.getAttribute('data-testid')).toBe('settings-nav-account')
   })
 
-  // Owner 11-12「设置里面不应该有咕咕设置吧?」: its 资料 and 连接应用 live in its App, on desktop and phone. The phone's 连接应用
-  // under 偏好 is the person's own (they have no Library there), never under a 咕咕 heading.
-  it('has nothing of the assistant: no 咕咕 group, no 资料; 连接应用 only as the phone\'s plain row', async () => {
+  // The phone retains its own Connected Apps entry under Preferences.
+  it('offers Connected Apps in phone settings, and saved prompts in desktop settings', async () => {
     for (const mobile of [false, true]) {
       await render(mobile ? mobileSections : desktopSections, { mobile })
       expect(SETTINGS_SECTIONS).not.toContain('assistant')
@@ -124,9 +121,9 @@ describe('the one settings nav', () => {
       expect(harness.container.querySelector('[data-testid="settings-nav-assistant"]')).toBeNull()
       const connectors = harness.container.querySelector('[data-testid="settings-nav-connectors"]')
       expect(connectors?.closest('[role="group"]')?.getAttribute('data-group') ?? null).toBe(mobile ? 'preferences' : null)
+      expect(Boolean(harness.container.querySelector('[data-testid="settings-nav-prompts"]'))).toBe(!mobile)
       const nav = harness.container.querySelector('.gg-settings-nav-scroll')!
       expect(nav.textContent).not.toMatch(/资料|咕咕/)
-      if (!mobile) expect(nav.textContent).not.toMatch(/连接应用/)
       harness.cleanup()
       harness = createReactHarness()
     }
