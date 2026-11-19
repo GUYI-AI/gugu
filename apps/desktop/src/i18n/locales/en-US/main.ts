@@ -593,7 +593,7 @@ export default {
       "declined": "You cannot use Gugu without agreeing. Your email address will not be sent to us.",
       "saveFailed": "Could not save your consent. Try again.",
       "consentRequired": "Update Gugu before creating an account.",
-      "notRegistered": "This email is not registered yet. New users can choose Create an account."
+      "notRegistered": "This email is not registered yet. Choose Change email, then Create an account."
     },
     "otpLabel": "Verification code",
     "or": "or",
