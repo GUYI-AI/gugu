@@ -7,7 +7,7 @@ import { readAntigravityPlan, readAntigravityUsage } from './subscription';
 import { observeAgyTier, tierNameFromAcpResponse } from './acp-tier';
 
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
+afterEach(async () => { vi.unstubAllGlobals(); await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 
 async function fixture(tier: unknown, authRequired = false) {
   const root = await mkdtemp(join(tmpdir(), 'agy-tier-test-'));
@@ -52,8 +52,15 @@ rl.on('line', line => {
   return { ctx, transcript, home, root };
 }
 
+function useTrackedCachePlatform() {
+  if (process.platform === 'linux') {
+    vi.stubGlobal('process', Object.create(process, { platform: { value: 'darwin' } }));
+  }
+}
+
 describe('Antigravity subscription comes from the signed-in CLI ACP response', () => {
   it('recognizes Ultra without an IDE installation and sends no model prompt or authenticate request', async () => {
+    useTrackedCachePlatform();
     const { ctx, transcript } = await fixture({ id: 'g1-ultra-lite-tier', name: 'Google AI Ultra', upgradeUri: 'https://antigravity.google/g1-upgrade' });
     await expect(readAntigravityPlan(ctx)).resolves.toMatchObject({ payer: 'subscription', plan: 'Google AI Ultra' });
     await expect(readAntigravityPlan(ctx)).resolves.toMatchObject({ payer: 'subscription', plan: 'Google AI Ultra' });
@@ -78,6 +85,7 @@ describe('Antigravity subscription comes from the signed-in CLI ACP response', (
   });
 
   it('invalidates the cached tier when the account credential generation changes', async () => {
+    useTrackedCachePlatform();
     const { ctx, transcript, home } = await fixture({ name: 'Google AI Ultra' });
     await readAntigravityPlan(ctx);
     await writeFile(join(home, 'antigravity-cli', 'antigravity-oauth-token'), 'different-account-fixture');
@@ -87,10 +95,30 @@ describe('Antigravity subscription comes from the signed-in CLI ACP response', (
   });
 
   it('uses tier metadata from a real chat open without starting a plan-only ACP process', async () => {
+    useTrackedCachePlatform();
     const { ctx, transcript } = await fixture({ name: 'unused' });
     await observeAgyTier(ctx, { _meta: { antigravity: { tier: { name: 'Google AI Pro' } } } }, ctx.exec);
     await expect(readAntigravityPlan(ctx)).resolves.toMatchObject({ plan: 'Google AI Pro', planAsOf: expect.any(Number) });
     await expect(readFile(transcript)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('revalidates sign-out when account A only changed in the Linux keyring', async () => {
+    const { ctx, transcript } = await fixture({ name: 'unused' });
+    vi.stubGlobal('process', Object.create(process, { platform: { value: 'linux' } }));
+    await observeAgyTier(ctx, { _meta: { antigravity: { tier: { name: 'Google AI Pro' } } } }, ctx.exec);
+    vi.mocked(ctx.exec).mockRejectedValue({ code: 1, stderr: 'Please sign in to view available models.' });
+    await expect(readAntigravityPlan(ctx)).resolves.toEqual({ payer: 'not-signed-in' });
+    expect(vi.mocked(ctx.exec).mock.calls.filter(([, args]) => args?.includes('models'))).toHaveLength(1);
+    await expect(readFile(transcript)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('reads account B when Linux credential files have not changed since account A', async () => {
+    const { ctx, transcript } = await fixture({ name: 'Google AI Ultra' });
+    vi.stubGlobal('process', Object.create(process, { platform: { value: 'linux' } }));
+    await observeAgyTier(ctx, { _meta: { antigravity: { tier: { name: 'Google AI Pro' } } } }, ctx.exec);
+    await expect(readAntigravityPlan(ctx)).resolves.toMatchObject({ payer: 'subscription', plan: 'Google AI Ultra' });
+    expect(vi.mocked(ctx.exec).mock.calls.filter(([, args]) => args?.includes('models'))).toHaveLength(1);
+    expect(await readFile(transcript, 'utf8')).toContain('session/new');
   });
 
   it('checks authentication before a usage command even when the caller has a cached subscription plan', async () => {

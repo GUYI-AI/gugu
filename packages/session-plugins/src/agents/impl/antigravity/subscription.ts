@@ -59,7 +59,8 @@ export async function readAntigravityPlan(ctx: AgentAuthContext): Promise<Subscr
   if (tier?.kind === 'not-signed-in') return { payer: 'not-signed-in' };
   if (tier?.kind === 'tier') return { payer: 'subscription', plan: tier.name, ...(tier.asOf !== undefined ? { planAsOf: tier.asOf } : {}) };
 
-  const cached = process.platform === 'win32' ? null : await readIdeTier(ctx);
+  // On Linux the IDE cache cannot establish identity with the CLI's current keyring account either.
+  const cached = process.platform === 'darwin' ? await readIdeTier(ctx) : null;
   if (!cached) return { payer: 'subscription', plan: 'Google AI', tierUnknown: true };
   return {
     payer: 'subscription',

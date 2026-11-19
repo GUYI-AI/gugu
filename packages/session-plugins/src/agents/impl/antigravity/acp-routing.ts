@@ -1,7 +1,18 @@
-import { existsSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { join } from 'node:path';
+import { MissingProviderSessionError } from '@gugu/session-core/acp';
 import type { AcpSpawnContext } from '@gugu/session-core/agents/plugins';
 import { withLoopbackNoProxy } from './session-bundle';
+
+function hasConversationDatabase(path: string): boolean {
+  try {
+    if (!statSync(path).isFile()) throw new Error('Antigravity conversation path is not a database file');
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+}
 
 export function antigravityStore(env: Readonly<Record<string, string>>, id: string): 'antigravity-acp' | 'antigravity-cli' {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
@@ -9,11 +20,11 @@ export function antigravityStore(env: Readonly<Record<string, string>>, id: stri
   }
   const root = env.GEMINI_HOME?.trim();
   if (!root) throw new Error('Antigravity stored conversation requires the managed GEMINI_HOME');
-  const legacy = existsSync(join(root, 'antigravity-acp', 'conversations', `${id}.db`));
-  const cli = existsSync(join(root, 'antigravity-cli', 'conversations', `${id}.db`));
-  if (legacy === cli) throw new Error(legacy
-    ? 'Antigravity conversation exists in both stores; refuse an ambiguous resume'
-    : 'Antigravity stored conversation was not found in either store');
+  if (!statSync(root).isDirectory()) throw new Error('Antigravity managed GEMINI_HOME is not a directory');
+  const legacy = hasConversationDatabase(join(root, 'antigravity-acp', 'conversations', `${id}.db`));
+  const cli = hasConversationDatabase(join(root, 'antigravity-cli', 'conversations', `${id}.db`));
+  if (legacy && cli) throw new Error('Antigravity conversation exists in both stores; refuse an ambiguous resume');
+  if (!legacy && !cli) throw new MissingProviderSessionError('Antigravity stored conversation was not found in either store');
   return legacy ? 'antigravity-acp' : 'antigravity-cli';
 }
 

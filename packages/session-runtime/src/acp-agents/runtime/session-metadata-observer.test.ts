@@ -1,6 +1,12 @@
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pluginRegistry } from '@gugu/session-plugins/agents';
 import { expect, it, vi } from 'vitest';
 import { makeAcpHarness, makeStartInput } from '../acp-test-support';
 import { AcpRuntime } from './runtime';
+
+const antigravitySessionProgram = pluginRegistry.get('antigravity')!.behavior.acp!.sessionProgram!;
 
 it('passes native session metadata and the resolved account context to the provider without another connection', async () => {
   const observe = vi.fn().mockResolvedValue(undefined);
@@ -95,4 +101,70 @@ it('selects the native program once and carries it through startup and provider 
     expect(observe).toHaveBeenCalledWith(expect.objectContaining({ sessionProgram: 'legacy' }), expect.anything());
     expect(ended).toHaveBeenCalledWith(expect.objectContaining({ sessionProgram: 'legacy' }));
   } finally { await rt.stopSession('conv-1'); }
+});
+
+
+it.each([
+  ['used conversation', false, 'provider_session_missing'],
+  ['never-run resident agent', true, 'new'],
+])('recovers from Antigravity store lookup: %s', async (_label, fresh, expected) => {
+  const root = await mkdtemp(join(tmpdir(), 'agy-missing-runtime-'));
+  const h = makeAcpHarness({ acpBehavior: {
+    buildSpawn: (ctx) => ({ command: ctx.cli, args: [], env: {} }),
+    connect: (io, client) => h.agent.behavior.connect(io, client),
+    sessionProgram: antigravitySessionProgram,
+  } });
+  h.agent.newSession.mockResolvedValue({ sessionId: 'fresh-native' });
+  const rt = new AcpRuntime(h.deps);
+  const input = makeStartInput({
+    providerSessionId: '11111111-2222-4333-8444-555555555555',
+    freshIfProviderSessionMissing: fresh,
+  });
+  input.runContext.env.GEMINI_HOME = root;
+  try {
+    const result = await rt.resumeSession({ ...input, providerSessionId: input.providerSessionId! });
+    if (expected === 'new') {
+      expect(result).toMatchObject({ success: true, data: { providerSessionId: 'fresh-native' } });
+      expect(h.agent.newSession).toHaveBeenCalledOnce();
+    } else {
+      expect(result).toMatchObject({ success: false, error: { type: expected } });
+      expect(h.agent.newSession).not.toHaveBeenCalled();
+    }
+    expect(h.agent.loadSession).not.toHaveBeenCalled();
+    expect(h.agent.prompt).not.toHaveBeenCalled();
+  } finally {
+    await rt.stopSession(input.sessionId);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it.each(['both stores', 'lookup failure'] as const)('rejects %s even with permission to start fresh', async (condition) => {
+  const root = await mkdtemp(join(tmpdir(), 'agy-unknown-runtime-'));
+  const id = '11111111-2222-4333-8444-555555555555';
+  const h = makeAcpHarness({ acpBehavior: {
+    buildSpawn: (ctx) => ({ command: ctx.cli, args: [], env: {} }),
+    connect: (io, client) => h.agent.behavior.connect(io, client),
+    sessionProgram: antigravitySessionProgram,
+  } });
+  const rt = new AcpRuntime(h.deps);
+  const input = makeStartInput({ providerSessionId: id, freshIfProviderSessionMissing: true });
+  input.runContext.env.GEMINI_HOME = root;
+  try {
+    if (condition === 'both stores') {
+      for (const store of ['antigravity-acp', 'antigravity-cli']) {
+        const dir = join(root, store, 'conversations');
+        await mkdir(dir, { recursive: true });
+        await writeFile(join(dir, `${id}.db`), 'fake SQLite');
+      }
+    } else {
+      await writeFile(join(root, 'antigravity-acp'), 'a file where a directory should be');
+    }
+    expect(await rt.resumeSession({ ...input, providerSessionId: id })).toMatchObject({
+      success: false, error: { type: 'initialize_failed' },
+    });
+    expect(h.agent.newSession).not.toHaveBeenCalled();
+  } finally {
+    await rt.stopSession(input.sessionId);
+    await rm(root, { recursive: true, force: true });
+  }
 });

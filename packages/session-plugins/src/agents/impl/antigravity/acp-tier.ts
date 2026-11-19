@@ -24,7 +24,10 @@ export function tierNameFromAcpResponse(response: unknown): string | null {
 }
 
 /** The account generation includes file-backed credentials and macOS keychain metadata, never its password. */
-async function accountFingerprint(ctx: TierContext): Promise<string> {
+async function accountFingerprint(ctx: TierContext): Promise<string | null> {
+  // Secret Service can switch accounts without touching the managed settings or token file.
+  // Without a reliable identity, even a cached response from an open session may belong to a previous account.
+  if (process.platform === 'linux') return null;
   const root = ctx.env.GEMINI_HOME!;
   const hash = createHash('sha256').update(root).update(await realpath(ctx.cli).catch(() => ctx.cli));
   for (const relative of ['antigravity-cli/settings.json', 'antigravity-cli/antigravity-oauth-token']) {
@@ -51,7 +54,8 @@ async function cached(ctx: TierContext, fingerprint: string): Promise<AgyAcpTier
 /** Local credential metadata and an account-scoped cache only; no CLI/network query on a warm plan read. */
 export async function readCachedAgyTier(ctx: AgentAuthContext): Promise<AgyAcpTier> {
   if (!ctx.env.GEMINI_HOME?.trim()) return null;
-  return cached(ctx, await accountFingerprint(ctx));
+  const fingerprint = await accountFingerprint(ctx);
+  return fingerprint ? cached(ctx, fingerprint) : null;
 }
 
 async function save(ctx: TierContext, fingerprint: string, name: string): Promise<void> {
@@ -70,7 +74,8 @@ export async function observeAgyTier(
   const name = tierNameFromAcpResponse(response);
   if (!name || !ctx.env.GEMINI_HOME?.trim()) return;
   const context = { ...ctx, exec: execute };
-  await save(context, await accountFingerprint(context), name);
+  const fingerprint = await accountFingerprint(context);
+  if (fingerprint) await save(context, fingerprint, name);
 }
 
 /** A probe owns its conversation and cache directories. On POSIX, link the file credential to preserve refresh. */
@@ -92,10 +97,11 @@ export async function createAgyProbeRoot(managed: string, scratch: string): Prom
   return root;
 }
 
-/** One single-flight read per account generation. A settings refresh never creates another ACP session. */
+/** Reuse or coalesce reads only while their credential identity is detectable. */
 export async function readAgyAcpTier(ctx: AgentAuthContext): Promise<AgyAcpTier> {
   if (!ctx.env.GEMINI_HOME?.trim()) return null;
   const fingerprint = await accountFingerprint(ctx);
+  if (!fingerprint) return queryTier(ctx);
   const existing = await cached(ctx, fingerprint);
   if (existing) return existing;
   const pending = requests.get(fingerprint);
