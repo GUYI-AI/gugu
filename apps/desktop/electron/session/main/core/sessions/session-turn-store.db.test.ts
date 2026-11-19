@@ -210,6 +210,16 @@ describe('conversation-turn-store', () => {
       .toMatchObject([{ code: 'history-reverted', effectiveValue: '2' }]);
   });
 
+  it('a later reading of the kept turn (revision or record backfill) keeps the rewound notice', async () => {
+    for (let seq = 0; seq < 2; seq += 1) await persistCommittedTurn({ sessionId: 'c1', source: 'live', turn: turn(`runtime:turn:${seq}`, `message-${seq}`, seq) });
+    await truncateStoredHistory('c1', 1);
+    // The harness's own record never has the notice: a restart that re-reads the kept turn from it must not drop it.
+    await persistCommittedTurn({ sessionId: 'c1', source: 'backfill', turn: turn('runtime:turn:0', 'message-0 as the record has it', 0) });
+    const [kept] = (await readStoredTurns('c1')).turns;
+    expect(kept!.items[0]).toMatchObject({ text: 'message-0 as the record has it' });
+    expect(kept!.items.filter((item) => item.kind === 'session-notice')).toMatchObject([{ code: 'history-reverted', effectiveValue: '1' }]);
+  });
+
   it('找不到回退点时保留已落盘历史,不会按位置猜测 (#7304)', async () => {
     await persistCommittedTurn({ sessionId: 'c1', source: 'live', turn: turn('original', 'keep') });
     await expect(storedRevertBoundary('c1', 'missing')).rejects.toThrow('no longer contains');

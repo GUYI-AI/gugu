@@ -16,3 +16,14 @@ export function markHistoryReverted(turn: TranscriptTurn, removed: number, at: n
   };
   return { ...turn, items: previous ? turn.items.map(item => item === previous ? notice : item) : [...turn.items, notice] };
 }
+
+/**
+ * A stored turn being replaced by a newer reading of it (a revision, a record backfill) keeps its rewound notice: the
+ * notice exists only in the stored history, never in the harness's record or the runtime's replay of it.
+ */
+export function keepHistoryReverted(stored: TranscriptTurn, next: TranscriptTurn): TranscriptTurn {
+  const notice = stored.items.find((item): item is TranscriptSessionNotice => item.kind === 'session-notice' && item.code === 'history-reverted');
+  if (!notice || next.items.some((item) => item.kind === 'session-notice' && item.code === 'history-reverted')) return next;
+  const seq = next.items.reduce((max, item) => Math.max(max, item.seq), -1) + 1;
+  return { ...next, items: [...next.items, { ...notice, id: `${next.id}:history-reverted`, seq }] };
+}
