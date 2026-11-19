@@ -27,15 +27,23 @@ describe('shared V2 execution sequence', () => {
     expect(f.native.capture).not.toHaveBeenCalled(); expect(f.native.confirm).not.toHaveBeenCalled()
     await expect(f.flow.sendCode()).rejects.toMatchObject({ code: 'closure_unavailable' })
   })
-  it('does not confirm or cancel after a lost preparation response or invent its server generation', async () => {
+  it('does not confirm or invent a generation after lost preparation; native alone decides cancellation', async () => {
     const f = fixture(); await f.flow.refresh()
     vi.mocked(f.native.prepare).mockImplementation(async () => { f.set({ ...f.get(), phase: 'local-prepared', recoveryOnly: true, pendingEffect: 'prepare_device', agentsPaused: true }); return f.get() })
     await expect(f.flow.confirm({ code: '123456', acknowledgeForfeit: true })).rejects.toMatchObject({ code: 'closure_not_prepared' })
     expect(f.native.confirm).not.toHaveBeenCalled()
-    await expect(f.flow.cancel()).rejects.toMatchObject({ code: 'closure_recovery_required' })
-    expect(f.native.cancel).not.toHaveBeenCalled()
+    await f.flow.cancel()
+    expect(f.native.cancel).toHaveBeenCalledWith(f.get().handle)
+    expect(f.flow.getState().operation?.phase).toBe('local-prepared')
     expect(f.flow.getState().operation?.serverPreparationGeneration).toBeNull()
     expect(f.flow.getState().operation?.agentsPaused).toBe(true)
+  })
+  it('allows explicit native tombstone cancellation of uncertain registration without re-registering', async () => {
+    const f = fixture('captured'); f.set({ ...f.get(), serverOperation: null, recoveryOnly: true, pendingEffect: 'register' }); await f.flow.refresh()
+    await f.flow.cancel()
+    expect(f.native.cancel).toHaveBeenCalledWith(f.get().handle)
+    expect(f.native.capture).not.toHaveBeenCalled(); expect(f.native.sendCode).not.toHaveBeenCalled()
+    expect(f.flow.getState().operation?.phase).toBe('captured')
   })
   it('refuses parallel confirmation rather than queueing a second destructive command', async () => {
     const f = fixture('prepared'); await f.flow.refresh()
