@@ -4,22 +4,15 @@ import { events } from '@main/lib/events';
 import { HookCore, type Hookable } from '@main/lib/hookable';
 import { log } from '@main/lib/logger';
 import {
-  type MigrateProjectConfigRequest,
-  type MigrateProjectConfigResult,
   type ProjectSettingsPatch,
   type ProjectSettings,
   type ProjectSettingsPage,
   type WriteProjectConfigRequest,
 } from '@shared/core/project-settings/project-settings';
-import { hasConfiguredShareableProjectSettings } from '@shared/core/project-settings/project-settings-fields';
 import { folderSettingsChangedChannel } from '@shared/core/folders/folder-events';
 import type { UpdateProjectSettingsError } from '@shared/projects';
 import type { FolderRuntime } from '../folder-runtime';
 import { openFolder } from '../folder-runtimes';
-import {
-  inspectProjectConfigMigrations,
-  migrateProjectConfigFromProvider,
-} from './sharing/config-migration';
 import { computeProjectSettingsOverrideState } from './sharing/project-settings-override-state';
 import {
   getProjectSettingsWriteTargets,
@@ -105,29 +98,6 @@ export class FolderSettingsService implements Hookable<FolderSettingsHooks>, IIn
     return ok(page);
   }
 
-  async migrateConfig(
-    folderId: string,
-    request: MigrateProjectConfigRequest
-  ): Promise<Result<MigrateProjectConfigResult, UpdateProjectSettingsError>> {
-    const folder = await this.requireFolder(folderId);
-    if (!folder.success) return folder;
-
-    const settings = await folder.data.settings.get();
-    if (hasConfiguredShareableProjectSettings(settings)) {
-      return err({
-        type: 'write-config-failed',
-        message: 'Shareable project settings are already configured.',
-      });
-    }
-
-    const result = await migrateProjectConfigFromProvider(folder.data, request);
-    if (!result.success) return result;
-
-    const page = await this.pageFor(folder.data);
-    this.emitSettingsChanged(folderId, page.settings);
-    return ok({ page, migration: result.data });
-  }
-
   private async requireFolder(folderId: string): Promise<Result<FolderRuntime, UpdateProjectSettingsError>> {
     const opened = await openFolder(folderId);
     return opened.success ? ok(opened.data) : err({ type: 'project-not-found' });
@@ -140,16 +110,7 @@ export class FolderSettingsService implements Hookable<FolderSettingsHooks>, IIn
     const resolvedTargets = await resolveAllProjectSettingsTargets(folder);
     const writeTargets = getProjectSettingsWriteTargets(resolvedTargets);
     const overrideState = await computeProjectSettingsOverrideState(resolvedTargets);
-    const configMigrations = hasConfiguredShareableProjectSettings(settings)
-      ? []
-      : await inspectProjectConfigMigrations(folder);
-    return {
-      settings,
-      writeTargets,
-      overrideState,
-      configMigrations,
-      shouldPromptConfigMigration: configMigrations.length > 0,
-    };
+    return { settings, writeTargets, overrideState };
   }
 
   private emitSettingsChanged(folderId: string, settings: ProjectSettings): void {

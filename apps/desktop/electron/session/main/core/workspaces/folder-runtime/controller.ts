@@ -26,7 +26,5 @@ export const folderSettingsController = createRPCController({
     folderSettingsService.patchSettings(folderId, patch),
   shareSettingsToConfig: (folderId: string, request: Parameters<typeof folderSettingsService.shareSettingsToConfig>[1]) =>
     folderSettingsService.shareSettingsToConfig(folderId, request),
-  migrateConfig: (folderId: string, request: Parameters<typeof folderSettingsService.migrateConfig>[1]) =>
-    folderSettingsService.migrateConfig(folderId, request),
   countFoldersUsingGithubAccount,
 });
