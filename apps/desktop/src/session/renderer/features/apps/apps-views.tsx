@@ -14,6 +14,7 @@ import { AppHostLayerFrame } from './app-host-layer';
 import { useAssistantPageNotHere } from './assistant-page-not-here';
 import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { reloadAppPage } from '@renderer/features/extensions/app-page-unsaved';
 import { ExtensionsLibraryPage } from '@renderer/features/library/extensions-library-page';
 import { LibraryHostProvider, LOCAL_LIBRARY_HOST, machineLibraryHost } from '@renderer/features/library/library-host';
 import type { MarketplaceTab } from '@renderer/features/settings/components/ExtensionsSettingsCard';
@@ -258,7 +259,7 @@ const AppMainPanel = observer(function AppMainPanel() {
         <p className="text-sm text-foreground-muted" style={{ padding: 24 }}>{translate(assistantNotHere ? 'extensions.assistantPreparing' : 'extensions.turnOnInSettings')}</p>
       ) : (
         <>
-          {error && errorDetailsShown.has(main.kind) ? <AppErrorDetails error={error} testId="app-page-error-details" /> : null}
+          {error && errorDetailsShown.has(main.kind) ? <AppErrorDetails error={error} testId="app-page-error-details" onReload={() => void reloadAppPage(null, 'dock')} /> : null}
           {/* #1925 Its main page placed beside its bound conversation: the conversation's frame, while the host may draw it. */}
           {/* #1925 (44, 46) Elsewhere its page stands alone; a host page over it (a task, the assistant's own pages) in its place. */}
           {placedBesideConversation(main) ? <AppConversationFrame extensionId={main.extensionId} tabKind={main.kind} windowHandle={assistantPage} /> : <AppHostLayerFrame extensionId={main.extensionId} tabKind={main.kind} />}
