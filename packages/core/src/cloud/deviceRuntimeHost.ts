@@ -596,6 +596,26 @@ export function createDeviceRuntimeHostLoop(
   let deviceRemovedNotified = false
   let machineLimitWarned = false
 
+  function noteDeviceRegistrationFailure(error: unknown): void {
+    // #6264 这台机器已被账号主人在「设置 → 设备」里移除:库拒收它的心跳(DEVICE_REMOVED)。
+    // 只通知一次,由宿主决定怎么收场(server 退出这个账号的登录)。错误照旧抛出,心跳本身按失败处理。
+    if (!deviceRemovedNotified && isDeviceRemovedError(error)) {
+      deviceRemovedNotified = true
+      try {
+        options.onDeviceRemoved?.((error as Error).message)
+      } catch (callbackError) {
+        options.warn?.(`[device-runtime] onDeviceRemoved threw: ${(callbackError as Error).message}`)
+      }
+    }
+    // #6264 这个账号的咕咕 server 数到上限了(库拒收这台的第一次心跳,DEVICE_LIMIT_REACHED)。
+    // 说成人话打一次,❌ 每 30 秒刷一遍同一句;心跳照旧按失败处理,移除一台 / 升级后下一拍自然接上。
+    const refusal = machineLimitRefusalFromError(error)
+    if (refusal && !machineLimitWarned) {
+      machineLimitWarned = true
+      options.warn?.(`[device-runtime] 这台机器没能加入账号:${machineLimitMessage(refusal)}${MACHINE_LIMIT_NEXT_STEP}`)
+    }
+  }
+
   function noteHeartbeatLanded(): void {
     const at = nowMs()
     if (lastHeartbeatLandedAt !== null && at - lastHeartbeatLandedAt > HEARTBEAT_LANDED_GAP_WARN_MS) {
@@ -614,23 +634,7 @@ export function createDeviceRuntimeHostLoop(
     const active = heartbeatFlights.get(heartbeatOptions.userId)
     if (active) return active
     const flight = syncDeviceHeartbeat(client, heartbeatOptions, heartbeatEnv, publishedCapabilities).then(noteHeartbeatLanded).catch((error: unknown) => {
-      // #6264 这台机器已被账号主人在「设置 → 设备」里移除:库拒收它的心跳(DEVICE_REMOVED)。
-      // 只通知一次,由宿主决定怎么收场(server 退出这个账号的登录)。错误照旧抛出,心跳本身按失败处理。
-      if (!deviceRemovedNotified && isDeviceRemovedError(error)) {
-        deviceRemovedNotified = true
-        try {
-          options.onDeviceRemoved?.((error as Error).message)
-        } catch (callbackError) {
-          options.warn?.(`[device-runtime] onDeviceRemoved threw: ${(callbackError as Error).message}`)
-        }
-      }
-      // #6264 这个账号的咕咕 server 数到上限了(库拒收这台的第一次心跳,DEVICE_LIMIT_REACHED)。
-      // 说成人话打一次,❌ 每 30 秒刷一遍同一句;心跳照旧按失败处理,移除一台 / 升级后下一拍自然接上。
-      const refusal = machineLimitRefusalFromError(error)
-      if (refusal && !machineLimitWarned) {
-        machineLimitWarned = true
-        options.warn?.(`[device-runtime] 这台机器没能加入账号:${machineLimitMessage(refusal)}${MACHINE_LIMIT_NEXT_STEP}`)
-      }
+      noteDeviceRegistrationFailure(error)
       throw error
     }).finally(() => {
       if (heartbeatFlights.get(heartbeatOptions.userId) === flight) {
@@ -933,6 +937,7 @@ export function createDeviceRuntimeHostLoop(
       if (signal.aborted && generation !== lifecycleGeneration) {
         return { skipped: true }
       }
+      noteDeviceRegistrationFailure(err)
       // PERMANENT auth loss: drop subscriptions, raise the distinct one-time signal, and end the tick
       // cleanly (skipped) instead of re-throwing a spin-y error every interval.
       if (handleAuthExpired(err)) {
