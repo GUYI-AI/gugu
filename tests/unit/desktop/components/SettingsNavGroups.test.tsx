@@ -13,14 +13,16 @@ let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { harness = createReactHarness(); setLocalePreference('zh-CN') })
 afterEach(() => { harness.cleanup(); setLocalePreference('zh-CN') })
 
-const render = (sections: readonly string[], extra: { mobile?: boolean; onSelect?: (section: string) => void } = {}) =>
-  renderWithAppProviders(harness, createNode(SettingsNav, {
+const render = (sections: readonly string[], extra: { mobile?: boolean; onSelect?: (section: string) => void; accountKind?: 'personal' | 'team_member' } = {}) => {
+  const { accountKind, ...options } = extra
+  return renderWithAppProviders(harness, createNode(SettingsNav, {
     activeSection: 'account',
     sections,
-    user: { id: 'u-1', nickname: 'Tester', avatarUrl: null },
+    user: { id: 'u-1', nickname: 'Tester', avatarUrl: null, accountKind },
     onSelect: () => {},
-    ...extra,
-  }), { auth: { id: 'u-1', email: 'owner@example.com', nickname: 'Tester' } })
+    ...options,
+  }), { auth: { id: 'u-1', email: 'owner@example.com', nickname: 'Tester', accountKind } })
+}
 
 const groups = () =>
   [...harness.container.querySelectorAll('[role="group"]')].map((group) =>
@@ -45,9 +47,18 @@ describe('the one settings nav', () => {
     ])
   })
 
-  it('includes every desktop-eligible section exactly once', async () => {
+  it('includes every personal desktop section exactly once without the team destination', async () => {
     await render(desktopSections)
-    expect(groups().flat().sort()).toEqual([...desktopSections].sort())
+    expect(groups().flat().sort()).toEqual(desktopSections.filter(section => section !== 'team').sort())
+    expect(harness.container.querySelector('[data-testid="settings-nav-team"]')).toBeNull()
+  })
+
+  it('replaces Subscriptions with Team exactly once for a team account', async () => {
+    await render(desktopSections, { accountKind: 'team_member' })
+    expect(groups()[0]).toEqual(['account', 'team', 'usage'])
+    expect(groups().flat()).toHaveLength(desktopSections.length - 1)
+    expect(harness.container.querySelectorAll('[data-testid="settings-nav-team"]')).toHaveLength(1)
+    expect(harness.container.querySelector('[data-testid="settings-nav-subscriptions"]')).toBeNull()
   })
 
   it('reports a desktop section without a group in development', async () => {
