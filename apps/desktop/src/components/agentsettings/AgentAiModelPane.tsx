@@ -191,6 +191,8 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
               ? 'settings.model.appliedReloadPreserved'
               : outcome.nativeSession === 'replaced'
                 ? 'settings.model.appliedReloadReplaced'
+                : outcome.nativeSession === 'route-switched'
+                  ? 'settings.model.appliedReloadRouteSwitched'
                 : 'settings.model.appliedReload'
             : 'settings.model.appliedNextSession',
       )}${outcome.warning ? ` ${outcome.warning}` : ''}`

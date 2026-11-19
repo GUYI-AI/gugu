@@ -16,6 +16,7 @@
 // 经 WS 投递(闲时排进 codex 队列 `thread/queue/add` 再 `thread/queue/start`,忙时 `turn/steer`;本模块从不
 // `turn/start`,见 deliver)。接进 delivery-bridge 与 provisioning 是上层接线,另见那两处。
 
+import { routeSwitchHistory } from '../runtime/codex-route-history.mjs'
 import crypto from 'node:crypto'
 import WebSocket from 'ws'
 import { pluginRegistry, resolveSessionTuiDeliveryToolNames } from '@gugu/session-plugins/agents'
@@ -2306,6 +2307,18 @@ export class CodexAppServerSession {
     const client = this.client
     if (!client || !this.threadId) throw new Error('codex app-server 会话未建立(fail-loud)')
     await client.rpc('thread/inject_items', { threadId: this.threadId, items })
+  }
+
+  /**
+   * 换计费路:把源线程的对话(去掉旧路账号封存的推理与服务端 id,见 @@@route-switch-history)注入本会话这条新线程。
+   * 与 ACP 桥换路时同一个 helper。
+   */
+  async inheritRouteSwitchHistory(sourceThreadId: string): Promise<{ sealedSummaryDropped: boolean }> {
+    const client = this.client
+    if (!client || !this.threadId) throw new Error('codex app-server 会话未建立(fail-loud)')
+    const history = await routeSwitchHistory((method, params) => client.rpc(method, params), sourceThreadId)
+    if (history.items.length) await client.rpc('thread/inject_items', { threadId: this.threadId, items: history.items })
+    return { sealedSummaryDropped: history.sealedSummaryDropped }
   }
 
   /** 往**正在跑的** turn 中途插入(owner #85 的 steer);expectedTurnId 不匹配活跃 turn 则 codex 报错。 */

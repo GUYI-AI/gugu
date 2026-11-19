@@ -355,7 +355,7 @@ export type AgentModelSelectionApplied = 'hot' | 'reload' | 'next-session'
  * `preserved` = 同一条接回来了(harness 的上下文在);`replaced` = 插件声明 `sourceChangeSession=replace`、
  * 换计费路时起了新的原生会话(咕咕的对话记录仍在)。可选:旧设备不带这一格,读者给中性文案,❌ 猜。
  */
-export type AgentModelSelectionNativeSession = 'preserved' | 'replaced'
+export type AgentModelSelectionNativeSession = 'preserved' | 'replaced' | 'route-switched'
 
 export interface HandleAgentSetModelDeviceCommandOptions {
   /** Local session-page runtime bridge；缺 `applyAgentModelSelection` 即 fail loud（没有谁能把选择变成事实）。 */

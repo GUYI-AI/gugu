@@ -200,7 +200,11 @@ export const codexSessionBundleDescriptor = {
       recovery: 'reopen',
       inferenceOwner: 'app-server-process-thread',
       reopenEntry: 'host-session-reload',
-      sourceChangeSession: 'preserve',
+      // A Codex thread keeps the model provider it was created on: since codex 0.166 app-server refuses
+      // `thread/resume` under another one (openai/codex#57840, tightened in #59503). A cross-route reload
+      // therefore continues on a new thread of the new route that is given the conversation so far, without
+      // the old route's encrypted reasoning (the bridge's @@@route-switch-history), and the agent keeps its context.
+      sourceChangeSession: 'fork',
     },
     'app-server': {
       delivery: 'credential-proxy',
@@ -208,7 +212,8 @@ export const codexSessionBundleDescriptor = {
       recovery: 'reopen',
       inferenceOwner: 'app-server-process-thread',
       reopenEntry: 'host-session-reload',
-      sourceChangeSession: 'preserve',
+      // The same thread rule as the ACP leg.
+      sourceChangeSession: 'fork',
     },
   },
   /**

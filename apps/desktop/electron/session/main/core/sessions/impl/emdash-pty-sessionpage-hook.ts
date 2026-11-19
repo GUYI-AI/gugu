@@ -36,6 +36,9 @@ export interface EmdashPtySessionpageStartInfo {
   forkFromProviderSessionId?: string;
   /** Provider-native session to resume when this conversation is hydrated after a restart. */
   resumeProviderSessionId?: string;
+  /** A billing-route switch left `resumeProviderSessionId` to be forked onto this start's route as the same agent
+   *  (descriptor `sourceChangeSession: 'fork'`) instead of resumed: the harness refuses that resume on another route. */
+  forkKeepsAgent?: boolean;
   /** Whether the session backend built `baseArgs` as a RESUME argv — i.e. those args already carry the provider's
    *  resume flag. ⚠️ Not the same question as `resumeProviderSessionId`: for providers that do not declare
    *  `sessions.resumeNeedsProviderId`, the session backend still resumes (with a flagless `--continue`-style
