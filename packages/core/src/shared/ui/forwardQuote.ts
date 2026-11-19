@@ -1,3 +1,5 @@
+import { markdownLiteral } from '../markdownLiteral'
+
 /** One thing said, as a forward carries it: who said it, what, and the line it answered if it answered one. */
 export type ForwardQuoteItem = { sender: string; text: string; replyTo?: { sender: string; text: string } | null }
 
@@ -28,5 +30,5 @@ export function excerpt(text: string, max: number): string {
 }
 
 function escapeInline(text: string): string {
-  return text.replace(/[\r\n]+/g, ' ').replace(/([\\`*_[\]<>#|~])/g, '\\$1')
+  return markdownLiteral(text.replace(/[\r\n]+/g, ' '))
 }

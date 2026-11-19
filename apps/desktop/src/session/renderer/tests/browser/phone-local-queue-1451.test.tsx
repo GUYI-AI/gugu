@@ -1,8 +1,8 @@
 import { act, useCallback, useLayoutEffect, useState } from 'react'
 import { afterEach, expect, it, onTestFailed, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
-import { SessionConversation } from '@/mobile/agent-watch/SessionConversation'
-import { emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store'
+import { SessionConversation } from '@/components/session-watch/SessionConversation'
+import { emptyAgentWatchTimeline } from '@/components/session-watch/agent-watch-store'
 import { state, changed, EMPTY } from '@/lib/sessionInputOutboxBridge'
 import { chatStore, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
@@ -45,11 +45,11 @@ vi.mock('@/lib/sessionInputOutboxBridge', async original => ({ ...(await origina
 
 vi.mock('@gugu/core/cloud/config', async original => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }))
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } })
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', async original => ({
+vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({
   ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})),
   machineRpc: vi.fn(() => ({})), fetchBackgroundTasks: vi.fn(async () => []),
 }))
-vi.mock('@/mobile/agent-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: life.view, error: null, current: () => life.view }) }))
+vi.mock('@/components/session-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: life.view, error: null, current: () => life.view }) }))
 
 let harness: ReturnType<typeof createReactHarness>
 afterEach(() => {

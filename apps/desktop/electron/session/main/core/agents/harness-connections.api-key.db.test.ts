@@ -9,7 +9,7 @@ vi.mock('@main/db/client', () => ({ get db() { return state.fixture!.db; } }));
 vi.mock('@main/core/provider-accounts/provider-account-registry-instance', () => ({ get providerAccountRegistry() { return state.fixture!.registry; } }));
 vi.mock('electron', () => ({ app: { getPath: () => state.home } }));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn() } }));
-const { createHarnessConnection, harnessHasConnections, listHarnessConnections, resolveHarnessConnection, selectHarnessConnection } = await import('./harness-connections');
+const { createHarnessConnection, renameHarnessConnection, harnessHasConnections, listHarnessConnections, resolveHarnessConnection, selectHarnessConnection } = await import('./harness-connections');
 const { listCustomModels } = await import('./custom-models');
 beforeEach(async () => { state.home = await mkdtemp(join(tmpdir(), 'gugu-vendor-account-')); state.fixture = await openRegistryFixture('empty'); });
 afterEach(async () => { state.fixture?.close(); state.fixture = null; await rm(state.home, { recursive: true, force: true }); });
@@ -38,4 +38,24 @@ it('existing vendor rows migrate their semantics without copying their credentia
   expect(row?.credentialRef).toBe(old!.credentialRef);
   expect(row?.meta).toMatchObject({ credentialSource: 'vendor-key', harnessConnection: { kind: 'api-key' } });
   expect(await listHarnessConnections('kilocode')).toContainEqual(expect.objectContaining({ id: 'old', kind: 'account' }));
+});
+
+it('renames only device-owned metadata without changing a key, its reference or the selected account', async () => {
+  const saved = await createHarnessConnection({ providerId: 'kilocode', kind: 'account', apiKey: 'fixture-secret', name: 'Before' });
+  await selectHarnessConnection('kilocode', saved.id);
+  const before = await state.fixture!.registry.getAccount('harness:kilocode', saved.id);
+  expect(await renameHarnessConnection({ providerId: 'kilocode', connectionId: saved.id, name: '  After  ' }))
+    .toEqual({ ...saved, name: 'After', current: true });
+  const after = await state.fixture!.registry.getAccount('harness:kilocode', saved.id);
+  expect(after?.credentialRef).toBe(before?.credentialRef);
+  expect(after?.meta).toEqual({ ...before?.meta, displayName: 'After' });
+  expect(after?.isDefault).toBe(before?.isDefault);
+  expect(await state.fixture!.registry.resolveSecret('harness:kilocode', saved.id)).toBe('fixture-secret');
+  await expect(renameHarnessConnection({ providerId: 'mimocode', connectionId: saved.id, name: 'Other provider' })).rejects.toThrow('no longer exists');
+  await expect(renameHarnessConnection({ providerId: 'kilocode', connectionId: saved.id, name: ' ' })).rejects.toThrow('1–80');
+});
+it('does not recreate deleted connections when renaming', async () => {
+  await state.fixture!.registry.upsertAccount({ providerId: 'harness:kilocode', accountId: 'removed', secret: 'fixture-secret', meta: { harnessConnection: { kind: 'api-key', removed: true } } });
+  await expect(renameHarnessConnection({ providerId: 'kilocode', connectionId: 'removed', name: 'Recreated' })).rejects.toThrow('no longer exists');
+  expect((await state.fixture!.registry.getAccount('harness:kilocode', 'removed'))?.meta?.harnessConnection?.removed).toBe(true);
 });

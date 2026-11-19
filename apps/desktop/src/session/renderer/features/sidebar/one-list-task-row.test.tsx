@@ -17,7 +17,7 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
   sidebarStore: { placement: { nodeById: state.nodeById } },
 }));
 vi.mock('./sidebar-session-item', () => ({ openSidebarSession: state.open }));
-vi.mock('@/mobile/agent-watch/StatusGlyph', () => ({
+vi.mock('@/components/session-watch/StatusGlyph', () => ({
   SessionAvatar: ({ sessionId, presentation }: { sessionId: string; presentation: { tone: string } | null }) => (
     <span data-avatar={sessionId} data-tone={presentation?.tone} />
   ),

@@ -4,15 +4,15 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { NativeSessionRecord } from '@gugu/session-core/session-record/contract'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import { createReactHarness } from '../../support/testHarness'
-import { useNativeSessionRecord } from '../../../apps/desktop/src/mobile/agent-watch/useNativeSessionRecord'
-import { clearTimelineCache, forgetInMemoryTimelines, hydrateCachedNativeRecord, writeCachedNativeRecord } from '../../../apps/desktop/src/mobile/agent-watch/timeline-cache'
-import { checkNativeRevisions, replaceNativeRecordTurns } from '../../../apps/desktop/src/mobile/agent-watch/native-record-state'
+import { useNativeSessionRecord } from '../../../apps/desktop/src/components/session-watch/useNativeSessionRecord'
+import { clearTimelineCache, forgetInMemoryTimelines, hydrateCachedNativeRecord, writeCachedNativeRecord } from '../../../apps/desktop/src/components/session-watch/timeline-cache'
+import { checkNativeRevisions, replaceNativeRecordTurns } from '../../../apps/desktop/src/components/session-watch/native-record-state'
 import { getAgentWatchStore } from '../../../apps/desktop/src/session/shared/remote-sessions/local-store'
 
 // owner 2026-11-12 「读过的历史存进手机、下次打开不用再请求」: what the phone read is kept on it, and opening asks
 // only for the turns after it and for the revision of each held turn; only a turn the host rewrote is read again.
 const scope = vi.hoisted(() => ({ read: vi.fn() }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ sessionTimeline: { sessionNativeRecord: scope.read } }),
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ sessionTimeline: { sessionNativeRecord: scope.read } }),
   onLinkChange: () => () => {} }))
 
 const turn = (seq: number, text = `turn ${seq}`): TranscriptTurn => ({ id: `s:turn:s${seq}`, seq, initiator: 'user',

@@ -11,10 +11,10 @@ import {
   type AgentWatchAlert,
   type AgentWatchStatusMap,
 } from '@/lib/agent-wait/agent-watch-alerts'
-import * as sessionpageRpc from './sessionpage-rpc'
+import * as sessionpageRpc from '../../components/session-watch/sessionpage-rpc'
 import { startSessionListSync } from '@/session/shared/remote-sessions/session-list-sync'
 import { registerDeviceSessionsRetry, retainDeviceSessions, updateDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
-import { workspaceDevices } from './machine-list'
+import { workspaceDevices } from '../../components/session-watch/machine-list'
 import { announceAgentWait } from '@/lib/agent-wait/agent-wait-banner'
 
 /**

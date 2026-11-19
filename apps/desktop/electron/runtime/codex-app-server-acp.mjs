@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { tagCodexStartupFailure } from '../../../../packages/core/src/local/codex-startup-failure.mjs'
 import { isUserFacingModelId } from '../../../../packages/session-core/src/acp/models/model-visibility.ts'
 import { codexTerminalUpdate } from './codex-terminals.mjs'
 import { codexFastConfigOptions, codexFastTier, codexTierForTurn } from './codex-fast-mode.mjs'
@@ -8,6 +9,7 @@ import { codexFastConfigOptions, codexFastTier, codexTierForTurn } from './codex
 //   Gugu ACP runtime <-> this bridge (started with process.execPath by session-plugins impl/codex) <-> `codex app-server --stdio`.
 import { execFile } from '../../../../packages/core/src/local/childProcess.ts'
 import { randomUUID } from 'node:crypto'
+import { codexSpawnDiagnostic, codexVersionFromUserAgent } from '../../../../packages/core/src/local/codex-spawn-diagnostic.mjs'
 import { appendFileSync, readFileSync, statSync } from 'node:fs'
 import { createJsonlReader, jsonlParseError } from './jsonl-reader.mjs'
 import { CODEX_PREPARATION_PREFIX, retryCodexPreparation, codexBackfillWaiting } from '../../../../packages/core/src/local/codex-initialize.mjs'
@@ -209,7 +211,7 @@ function appRequest(method, params, timeoutMs = 45_000) {
   return new Promise((resolve, reject) => {
     const timer = timeoutMs === null ? null : setTimeout(() => {
       appPending.delete(id)
-      const error = new Error(`local Codex app-server ${method} timed out after ${timeoutMs}ms`)
+      const error = tagCodexStartupFailure(new Error(`local Codex app-server ${method} timed out after ${timeoutMs}ms`), 'timeout')
       reject(error)
     }, timeoutMs)
     timer?.unref?.()
@@ -881,6 +883,9 @@ async function startAppAttempt(servers) {
       + 'codex sizes them with its unknown-model window\n',
     )
   }
+  process.stderr.write('[gugu-codex-runtime] ' + JSON.stringify(codexSpawnDiagnostic({
+    executable: codexBin, appVersion: process.env.GUGU_APP_VERSION, mode: 'acp-stdio', phase: 'spawn',
+  })) + '\n')
   appServer = spawnOwnedChild(codexBin, [
     'app-server',
     '--stdio',
@@ -895,7 +900,7 @@ async function startAppAttempt(servers) {
   let startupStderr = ''
   app.stderr.on('data', (chunk) => { startupStderr = (startupStderr + chunk.toString()).slice(-8192); process.stderr.write(chunk) })
   app.on('exit', (code, signal) => {
-    const error = new Error(`local Codex app-server exited (code=${code} signal=${signal})`)
+    const error = tagCodexStartupFailure(new Error(`local Codex app-server exited (code=${code} signal=${signal})`), 'exited')
     rejectAppPending(error)
     appReady = false
     if (established && !shuttingDown) process.exit(code && code !== 0 ? code : 1)
@@ -906,15 +911,17 @@ async function startAppAttempt(servers) {
       clientInfo: { name: 'gugu', title: 'Gugu', version: '0' },
       capabilities: { experimentalApi: true },
     }, null)
+    process.stderr.write('[gugu-codex-runtime] ' + JSON.stringify(codexSpawnDiagnostic({
+      executable: codexBin, nativeVersion: codexVersionFromUserAgent(initialized?.userAgent),
+      appVersion: process.env.GUGU_APP_VERSION, mode: 'acp-stdio', phase: 'initialized', versionSource: 'initialize',
+    })) + '\n')
     const version = String(initialized?.userAgent ?? '').match(/^[^/]+\/(\d+)\.(\d+)\.(\d+)(?:[\s(/]|$)/)
     autoReviewSupported = !!version && (Number(version[1]) > 0 || Number(version[2]) > 156 || (Number(version[2]) === 156 && Number(version[3]) >= 1))
   } catch (error) {
     if (app && (app.exitCode !== null || app.signalCode !== null) && !(app.stdout.readableEnded && app.stderr.readableEnded)) await new Promise(resolve => app.once('close', resolve))
     error.stderrTail = startupStderr
     if (codexBackfillWaiting(error)) throw error
-    throw new Error(
-      `本机 Codex 无法启动 app-server；请升级 Codex 后重试。原始错误：${error.message || String(error)}`,
-    )
+    throw tagCodexStartupFailure(error, error.code === -32601 ? 'protocol' : undefined)
   }
   appNotify('initialized', {})
   // #6387 Installed Apps' skills: the materializer's skill root, registered before any thread so codex lists them as its
@@ -2781,6 +2788,7 @@ const reader = createJsonlReader({ input: process.stdin, onClose: shutdown, onEr
 
 let shutdownExitCode = 0
 function failProtocol(error) {
+  tagCodexStartupFailure(error, 'protocol')
   process.stderr.write(`[codex-app-server-acp] ERROR: ${error.message}\n`)
   shutdownExitCode = 1
   rejectAppPending(error)

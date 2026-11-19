@@ -9,7 +9,7 @@ import { createNode, createReactHarness, deferred, device, renderWithAppProvider
 
 const mocks = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), fetch: vi.fn(), native: vi.fn(), available: false, deviceId: 'phone' }))
 vi.mock('../../../apps/desktop/src/store/contactsContext', () => ({ useContactsStore: () => ({ contacts: [] }) }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ fetchPhoneSessions: mocks.fetch }))
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ fetchPhoneSessions: mocks.fetch }))
 vi.mock('../../../apps/desktop/src/session/shared/remote-sessions/session-list-cache', () => ({ readCachedSessionList: mocks.read, writeCachedSessionList: mocks.write }))
 vi.mock('../../../apps/desktop/src/lib/supabase', () => ({ getCurrentAuthUserId: async () => 'owner' }))
 vi.mock('../../../apps/desktop/src/mobile/local-agent/nativeAgent', () => ({ phoneAgentAvailable: () => mocks.available, nativeAgent: { hostState: mocks.native } }))

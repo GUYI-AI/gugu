@@ -6,6 +6,7 @@ import { blockDropPreview, resolveBlockDrop, setBlockDropPreview } from '@render
 import { clearDraggedScreenContent, hasDraggedScreenContent, setDraggedScreenContent } from '@renderer/lib/drag-screen-content';
 import { shieldNativeDrags } from '@renderer/lib/drag-shield';
 import { screenLayout } from '@renderer/app/screen-layout';
+import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
 import { drainTopicSplitRequest } from '@/lib/topicSplitRequest';
@@ -203,6 +204,37 @@ describe('一屏几块的骨架 (#7052)', () => {
     expect(slot(), '2 → 1').toBe(original);
     expect(blockWidths()).toEqual([1000]);
     expect(JSON.stringify(screenLayout.snapshot), '1 → 2 → 1 存下来的一个字节不差').toBe(saved);
+  });
+
+  // 只有一块时是「一格的组」,不重挂:从群里点 agent 的名字,参与者在右边分出一块,同一组从 1 格变 2 格。库要到下一次渲染才把
+  // 新的那格收进组里,这一次提交里的 effect 给 2 格的布局,库会抛「Invalid 1 panel layout」—— 整窗崩到 Something went wrong。
+  it('从单块打开群参与者:不抛错,右边那块按记住的宽度;收回又占满', async () => {
+    const thrown: string[] = [];
+    const onError = (event: ErrorEvent) => thrown.push(event.message);
+    window.addEventListener('error', onError);
+    try {
+      groupParticipantPanes.useAccount('participant-from-sole');
+      const source = { kind: 'chat', chatId: 'group-sole' } as const;
+      screenLayout.show(source);
+      root!.render(<WorkspaceLayoutContextProvider><ScreenFrame /></WorkspaceLayoutContextProvider>);
+      await until('one block', () => blockWidths().length === 1);
+      const extent = host!.querySelector<HTMLElement>('[data-screen-block]')!.getBoundingClientRect().width;
+      expect(groupParticipantPanes.show('group-sole', source, { kind: 'session', ...s('agent') }, extent)).toBe(true);
+      await until('two blocks, or the throw', () => thrown.length > 0 || blockWidths().length === 2);
+      expect(thrown).toEqual([]);
+      await nextFrames(5);
+      expect(thrown).toEqual([]);
+      const right = Math.round(document.querySelector<HTMLElement>(`[data-screen-block="${screenLayout.blockOfSession('agent')}"]`)!.getBoundingClientRect().width);
+      expect(Math.abs(right - groupParticipantPanes.rightWidth), JSON.stringify(blockWidths())).toBeLessThan(3);
+      groupParticipantPanes.hide('group-sole');
+      await until('one block again', () => blockWidths().length === 1);
+      await nextFrames(5);
+      expect(thrown).toEqual([]);
+      expect(blockWidths()).toEqual([1000]);
+    } finally {
+      window.removeEventListener('error', onError);
+      groupParticipantPanes.useAccount(null);
+    }
   });
 
   // 一块也走分块那一套(一格的组):看上去、Tab 起来和直接摆一块一样 —— 占满、没有线、不多出一个能聚焦的东西。

@@ -11,7 +11,7 @@ import { usePhoneAgentDirectory } from '@/mobile/local-agent/usePhoneAgentDirect
 import { isPhoneDevice } from '@gugu/core/cloud/devices'
 import { mostUrgentAttention, type AgentAttention } from '@gugu/core/shared/agentStatus'
 import { isNeedsYou, presentationAttention } from '@gugu/core/shared/agentStatusPresentation'
-import { machineRpc } from '@/mobile/agent-watch/sessionpage-rpc'
+import { machineRpc } from '@/components/session-watch/sessionpage-rpc'
 import { invokePhoneHost } from '@/mobile/local-agent/phoneHostRpc'
 
 export type NeedsYouTask = {

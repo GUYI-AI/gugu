@@ -26,7 +26,7 @@ describe('claudeAuthStatus', () => {
 
     await expect(
       claudeAuthStatus(ctx({ env: { ANTHROPIC_API_KEY: 'test-key' }, exec }))
-    ).resolves.toEqual({ kind: 'authenticated', credentialKind: 'api-key' });
+    ).resolves.toEqual({ kind: 'authenticated', credentialKind: 'api-key', credentialSource: 'environment' });
     expect(exec).not.toHaveBeenCalled();
   });
 
@@ -152,14 +152,14 @@ describe('claudeAuthStatus', () => {
           }),
         })
       )
-    ).resolves.toEqual({ kind: 'authenticated', credentialKind: 'api-key' });
+    ).resolves.toEqual({ kind: 'authenticated', credentialKind: 'api-key', credentialSource: 'config-file' });
     expect(exec).not.toHaveBeenCalled();
   });
 
   it('reads an API key from the settings env the same way', async () => {
     await expect(
       claudeAuthStatus(ctx({ fs: settingsFs({ env: { ANTHROPIC_API_KEY: 'sk-ant-test' } }) }))
-    ).resolves.toEqual({ kind: 'authenticated', credentialKind: 'api-key' });
+    ).resolves.toEqual({ kind: 'authenticated', credentialKind: 'api-key', credentialSource: 'config-file' });
   });
 
   it('still asks the CLI when the settings env holds no credential of its own (#1163)', async () => {
@@ -197,7 +197,7 @@ describe('claudeAuthStatus', () => {
           fs: settingsFs({ env: { ANTHROPIC_AUTH_TOKEN: 'vault-token' } }),
         })
       )
-    ).resolves.toEqual({ kind: 'authenticated', credentialKind: 'api-key' });
+    ).resolves.toEqual({ kind: 'authenticated', credentialKind: 'api-key', credentialSource: 'config-file' });
   });
 
   it('falls back to the CLI when the settings file cannot be read (#1163)', async () => {
@@ -210,4 +210,11 @@ describe('claudeAuthStatus', () => {
       credentialKind: 'subscription',
     });
   });
+});
+
+it('reports the configuration file origin when its token overrides inherited environment credentials', async () => {
+  const context = ctx({ env: { ANTHROPIC_AUTH_TOKEN: 'fixture-environment' } });
+  context.fs.read = vi.fn(async path => path === '.claude/settings.json'
+    ? JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: 'fixture-config' } }) : null);
+  await expect(claudeAuthStatus(context)).resolves.toMatchObject({ kind: 'authenticated', credentialSource: 'config-file' });
 });

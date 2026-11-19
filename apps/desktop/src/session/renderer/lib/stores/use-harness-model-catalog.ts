@@ -149,6 +149,7 @@ export function useHarnessModelCatalog(
   return {
     /** 还没探完时是 `unknown` —— 界面据此显示「读取中」，❌ 不显示「没有模型」。 */
     state,
+    preparation: query.data?.refreshing ? query.data.preparation : undefined,
     refresh: () => { if (enabled) void query.refetch({ cancelRefetch: false }); },
     /** The person asked again after a failed read: past the main process's cache, on this list's machine and leg. */
     retry: () => { if (enabled) void forceRefreshHarnessModelCatalog(client, providerId as string, leg, machine); },

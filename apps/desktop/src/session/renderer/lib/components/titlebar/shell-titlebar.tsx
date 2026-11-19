@@ -71,12 +71,11 @@ export const ShellTitlebar = observer(function ShellTitlebar({
    */
   dragRegion?: boolean
 }) {
-  const { leftLayoutWidth } = useWorkspaceLayoutContext()
+  const { leftAnimatedWidth } = useWorkspaceLayoutContext()
 
   // leftSlot 只需要让开**压在主区上的那一截**开关车道:侧栏越宽,按钮越多地压在侧栏上,
-  // 主区这边要让的就越少。读主区左缘所在的那个宽(侧栏在布局里的占位宽,@@@overlay-collapse):收展动画里它只在
-  // 侧栏盖住这一截时跳一次。
-  const leftSlotOffset = useTransform(leftLayoutWidth, (width) =>
+  // 主区这边要让的就越少。读主区左缘所在的那个宽(侧栏画出来的边,收展时逐帧跟着走)。
+  const leftSlotOffset = useTransform(leftAnimatedWidth, (width) =>
     Math.max(TITLEBAR_LEFT_EDGE_GAP_PX, shellRestoreLane(readRendererPlatform()) - width)
   )
 

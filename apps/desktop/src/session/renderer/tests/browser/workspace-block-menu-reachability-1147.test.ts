@@ -307,7 +307,7 @@ it('inserts a 3×3 table after the paragraph, focuses its first cell in the sour
 
 it('uses the existing picker/upload into this document’s folder and renders the uploaded image and file link', async () => {
   await insertAtFirst('Image…');
-  const imageSource = `![image \\[one\\].svg](gugu-file://${pictureId})`;
+  const imageSource = `![image &#91;one&#93;.svg](gugu-file://${pictureId})`;
   await until('the uploaded image is written through the bound source', () => file.text.includes(imageSource));
   expect(upload).toHaveBeenCalledExactlyOnceWith({ chat: 'group', folder: 'notes' });
   const at = text.indexOf('\n\nSecond paragraph');
@@ -324,7 +324,7 @@ it('uses the existing picker/upload into this document’s folder and renders th
 it('inserts a file as a folder link, including an image chosen through File', async () => {
   await insertAtFirst('File…');
   await until('the returned folder entries reach the source', () => file.text.includes(`gugu-file://${attachment.id}`));
-  expect(file.text).toContain(`[image \\[one\\].svg](gugu-file://${pictureId})`);
+  expect(file.text).toContain(`[image &#91;one&#93;.svg](gugu-file://${pictureId})`);
   expect(file.text).not.toContain('![');
   await until('both file links are in the preview', () => !!byId('preview').querySelector(`a[href="gugu-file://${attachment.id}"]`));
   expect(byId('preview').querySelector('img.gg-md-img')).toBeNull();
@@ -622,7 +622,7 @@ it('keeps an insertion attached to its paragraph while another editor changes Y.
   ydoc.transact(() => ytext.insert(0, 'Remote paragraph.\n\n'));
   finish([picture]);
   await until('the picker inserts after the shifted block', () => file.text.includes(`gugu-file://${pictureId}`));
-  expect(file.text).toContain('Remote paragraph.\n\n# Reading\n\nFirst paragraph keeps its own actions.\n\n![image \\[one\\].svg]');
+  expect(file.text).toContain('Remote paragraph.\n\n# Reading\n\nFirst paragraph keeps its own actions.\n\n![image &#91;one&#93;.svg]');
   expect(editor().state.doc.toString()).toBe(ytext.toString());
   await until('the collaborative insertion also reaches the preview', () => !!byId('preview').querySelector('img.gg-md-img'));
 });
