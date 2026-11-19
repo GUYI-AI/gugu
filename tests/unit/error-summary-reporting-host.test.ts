@@ -104,7 +104,7 @@ describe('native summary reporting boundary', () => {
   })
 
   it('reports a handled migration failure with only the Beta version, type and declared path category', async () => {
-    const version = '0.3.8-beta.44440413539'
+    const version = '0.3.8-beta.44440414639.1'
     vi.spyOn(app, 'getVersion').mockReturnValue(version)
     registerErrorSummaryReporting({ eligible: true, owner: () => null })
     const error = new TypeError('/private/profile/auth.json contains private-token')

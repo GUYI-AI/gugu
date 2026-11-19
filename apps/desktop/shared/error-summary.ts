@@ -50,6 +50,10 @@ export function sanitizeErrorSummary(input: unknown): ErrorSummary | null {
   if (typeof time !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(time) || !Number.isFinite(Date.parse(time))) return null
   const rawType = redactErrorSummaryValue(own(input, 'type'))
   const rawVersion = own(input, 'version')
+  // Published Beta uses a GitHub run ID followed by the attempt. Keep the
+  // existing short-version allowlist and redact everything outside this shape.
+  const publishedBeta = typeof rawVersion === 'string' && /^\d{1,4}\.\d{1,4}\.\d{1,4}-beta\.[1-9]\d{9,11}\.[1-9]\d{0,2}$/.test(rawVersion) ? rawVersion : null
+  const shortVersion = redactErrorSummaryValue(rawVersion)
   const rawSystem = redactErrorSummaryValue(own(input, 'system'))
   const rawLocations = own(input, 'locations')
   const locations: string[] = []
@@ -62,7 +66,7 @@ export function sanitizeErrorSummary(input: unknown): ErrorSummary | null {
   return {
     type: rawType && ERROR_TYPES.has(rawType) ? rawType : 'Error',
     locations,
-    version: typeof rawVersion === 'string' && /^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-(?:beta|alpha|rc)[.-]?\d{1,12}(?:\.\d{1,3})?)?$/.test(rawVersion) ? rawVersion : 'unknown',
+    version: publishedBeta ?? (shortVersion && /^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-(?:beta|alpha|rc)[.-]?\d{1,5}(?:\.\d{1,3})?)?$/.test(shortVersion) ? shortVersion : 'unknown'),
     system: rawSystem && SYSTEMS.has(rawSystem) ? rawSystem : 'unknown',
     time,
   }
