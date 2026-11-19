@@ -277,6 +277,8 @@ export function originalImage(source: AttachmentSource, options: { signal?: Abor
       }),
     }
     current.verified.catch(() => { if (read === current) { read = undefined; last = undefined } })
+    // Only a display asks for `shown`: a read that fails with no display open must not reject unheard.
+    current.shown.catch(() => undefined)
     return current
   }
   const full = (listener?: (state: FileReadState) => void, display?: true): Promise<string> => {
