@@ -2,8 +2,10 @@ import type Database from 'better-sqlite3';
 import { opendirSync, type Dir } from 'node:fs';
 import { join } from 'node:path';
 import { TurnPayloadFiles, type TurnPayloadRef } from './session-turn-payloads';
+import { coreLogger } from '@gugu/core/log';
 
 type State = { files: TurnPayloadFiles; writers: number; timer?: NodeJS.Timeout; shard: number; scan?: Dir };
+const log = coreLogger('session-turn-payloads');
 const states = new WeakMap<Database.Database, State>();
 function state(connection: Database.Database): State {
   let value = states.get(connection);
@@ -117,7 +119,7 @@ function schedule(connection: Database.Database, value: State, delay: number): v
       const collected = collectTurnPayloads(connection), scanning = collectCrashOrphans(connection, value);
       schedule(connection, value, collected || scanning ? 10 : 60_000);
     } catch (error) {
-      console.error('Session turn payload collection failed', error);
+      log.error({ err: error }, 'Session turn payload collection failed');
       schedule(connection, value, 60_000);
     }
   }, delay);

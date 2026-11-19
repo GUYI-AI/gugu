@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { appendFile, mkdtemp, open, readdir, rm, writeFile, type FileHandle } from 'node:fs/promises';
+import { appendFile, mkdtemp, open, readdir, rm, stat, writeFile, type FileHandle } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { encodeWindowFrame, windowFrameName } from '@gugu/session-core/session-record/window-cache/frame';
@@ -30,6 +30,17 @@ async function prototype(path: string) {
 }
 
 describe('immutable write-ahead commit source', () => {
+  it('binds a shared source after removing its temporary hard link and can read it immediately', async () => {
+    const path = await directory(), files = new TurnPayloadFiles(join(path, 'test.db.turn-payloads'));
+    const value = { items: [{ kind: 'message', text: 'whole cold turn' }] };
+    const { manifest: source } = await writeSharedWindowCommitSource(path, binding, { files, value: encodeTurnValue(value, files) });
+    const current = await stat(windowCommitSourcePath(path, binding), { bigint: true });
+    expect(current.nlink).toBe(1n);
+    expect(source.physical.ctimeNs).toBe(String(current.ctimeNs));
+    expect(Buffer.from(await read(path, binding, source, 0, createWindowBudget())).toString()).toBe(JSON.stringify(value));
+    expect((await readdir(path)).some(name => name.endsWith('.tmp'))).toBe(false);
+  });
+
   it('durably encodes bounded frames without breaking CJK, emoji or escapes and can reopen without an in-memory offset table', async () => {
     const f = await fixture(), loaded = await manifest(f.path, binding, createWindowBudget());
     expect(loaded).toEqual({ kind: 'hit', source: f.source });

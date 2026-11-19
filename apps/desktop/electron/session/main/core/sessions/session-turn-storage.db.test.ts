@@ -8,6 +8,7 @@ import { backfillTurnText } from '@main/db/initialize';
 import { cpSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import type { StoredTurnValue } from './session-turn-codec';
 
 type Fixture = Awaited<ReturnType<typeof openFixture>>;
 let fixture: Fixture;
@@ -59,7 +60,7 @@ describe('versioned session turn storage', () => {
     expect(descriptors.every(part => Buffer.byteLength(part.value) <= 8192)).toBe(true);
     expect(row.data).not.toContain('picture');
     expect(readSessionTurn(fixture.sqlite, row)).toEqual(value);
-    // Two shared image blocks + one branch, and three text chunks + one branch. No base64 or second output copy.
+    // Image and text chunks are shared even when a repeated chunk occurs inside one output.
     expect(files.counters.writtenBytes).toBeLessThan(100000);
     expect(fixture.sqlite.prepare('SELECT max(length(CAST(value AS BLOB))) n FROM session_turn_fields').get()).toMatchObject({ n: expect.any(Number) });
   });
@@ -117,11 +118,16 @@ describe('versioned session turn storage', () => {
     original.items.push({ ...original.items[2], id: 'shared-picture', seq: 3 });
     const row = await withTurnPayloadWrite(fixture.sqlite, () => insert(original, false));
     const initialBytes = (fixture.sqlite.prepare('SELECT sum(bytes) n FROM session_turn_payload_objects').get() as { n: number }).n;
+    const storedOutput = fixture.sqlite.prepare("SELECT value FROM session_turn_fields WHERE row_id=? AND field='outputText'").get(row.id) as { value: string };
+    const retired = JSON.parse(storedOutput.value) as StoredTurnValue;
+    if (retired.t !== 'text') throw new Error('Expected an external output body');
     const removed = { ...original, items: [original.items[0], original.items[3]] };
     await withTurnPayloadWrite(fixture.sqlite, () => fixture.sqlite.transaction(() => prepareSessionTurn(fixture.sqlite, row, removed, false).commit())());
     while (collectTurnPayloads(fixture.sqlite)) { /* Each production batch has a fixed object/time budget. */ }
     expect(readSessionTurn(fixture.sqlite, row)).toEqual(removed);
-    expect((fixture.sqlite.prepare('SELECT sum(bytes) n FROM session_turn_payload_objects').get() as { n: number }).n).toBeLessThan(initialBytes - 20000);
+    // The 20 KB logical output contains equal chunks, so its physical size is smaller.
+    expect((fixture.sqlite.prepare('SELECT sum(bytes) n FROM session_turn_payload_objects').get() as { n: number }).n).toBeLessThan(initialBytes);
+    expect(() => turnPayloadFiles(fixture.sqlite).readText(retired.ref)).toThrow(/ENOENT/);
     const before = fixture.sqlite.prepare('SELECT hash FROM session_turn_payload_objects ORDER BY hash').all();
     await expect(withTurnPayloadWrite(fixture.sqlite, () => {
       const failed = prepareSessionTurn(fixture.sqlite, row, { ...removed, outcome: { kind: 'error', message: 'failed'.repeat(10000) } } as TranscriptTurn, false);

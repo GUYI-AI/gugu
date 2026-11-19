@@ -128,7 +128,8 @@ export async function writeSharedWindowCommitSource(directory: string, binding: 
   try {
     const file = await open(temporary, 'wx', 0o600);
     try { await file.writeFile(bytes); await file.sync(); } finally { await file.close(); }
-    await link(temporary, path); await syncWindowDirectory(directory);
+    // Unlinking the temporary hard link changes ctime. Bind the final inode only after that change.
+    await link(temporary, path); await rm(temporary); await syncWindowDirectory(directory);
     const current = await stat(path, { bigint: true });
     return { root, manifest: { version: 2, bytes: root.bytes, chunks: Math.ceil(root.bytes / CHUNK), stride: stride(binding), storedBytes: bytes.length,
       sha256: createHash('sha256').update(bytes).digest('hex'), physical: physical(current) } };

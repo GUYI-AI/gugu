@@ -9,7 +9,7 @@ import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
 import { resolveWorkspace } from '../projects/utils';
 import { createAttachmentUploads } from '../files/attachment-uploads';
 import { ATTACHMENT_UPLOAD_CHUNK_BYTES } from '@gugu/session-core/session-record/contract';
-import type { TranscriptMessage, TranscriptTurn } from '@gugu/session-core/acp/client';
+import type { TranscriptMessage } from '@gugu/session-core/acp/client';
 import { noteNativeConversationReplies } from './session-conversation-read';
 import { renumberStoredTurn, withStoredTurns } from './session-turn-store';
 import { readCurrentTurnIdentity } from './session-activity-source';
