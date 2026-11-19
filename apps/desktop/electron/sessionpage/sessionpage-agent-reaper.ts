@@ -8,17 +8,14 @@ import {
   GROUP_CACHE_KEY,
   OWNER_CACHE_KEY,
   PARKED_SESSION_CACHE_KEY,
-  PROJECT_CACHE_KEY,
   cacheString,
 } from './emdash-agent-provisioning'
 import { emdashAgentRegistry } from './emdash-agent-registry'
 import { createLogger } from '../lib/logger'
-import { listProjectGroupIds } from './sessionpage-project-groups'
 
 /** The existence inventory includes archived conversations and their retained identities. */
 export interface SessionpageInventory {
   sessionIds: string[]
-  projectIds: string[]
 }
 
 export interface SessionpageReapDeps {
@@ -139,7 +136,6 @@ async function reconcileLocked(deps: SessionpageReapDeps): Promise<SessionpageRe
   const env = deps.env ?? process.env
   const inventory = await deps.getInventory()
   const liveSessions = new Set(inventory.sessionIds)
-  const liveProjects = new Set(inventory.projectIds)
 
   const roster = await listAgents(env, { includeGuests: true })
   // Only records this module provisioned (they carry the conversation binding) are ours to reap. A gugu
@@ -152,7 +148,6 @@ async function reconcileLocked(deps: SessionpageReapDeps): Promise<SessionpageRe
       sessionId: cacheString(agent.cache, SESSION_CACHE_KEY)
         || cacheString(agent.cache, PARKED_SESSION_CACHE_KEY),
       chatId: cacheString(agent.cache, GROUP_CACHE_KEY),
-      projectId: cacheString(agent.cache, PROJECT_CACHE_KEY),
       ownerUserId: cacheString(agent.cache, OWNER_CACHE_KEY),
     }))
     .filter((a) => a.sessionId)
@@ -183,22 +178,6 @@ async function reconcileLocked(deps: SessionpageReapDeps): Promise<SessionpageRe
   // 开机那一刻 authProvider 往往还没建好(#5025):这一轮读不到令牌,归档留给 main.ts 在归属定下来之后那一轮。
   const auth = await deps.getAuth()
 
-  // Local absence is not a deletion receipt: another profile, a reinstall or a
-  // repaired database can all retain a group mapping without its project row.
-  // Preserve that mapping and the cloud group; recovery must be an explicit user action.
-  const mappings = auth?.userId ? await listProjectGroupIds(auth.userId, env) : []
-  const liveProjectChats = new Set(mappings.filter(row => liveProjects.has(row.projectId)).map(row => row.chatId))
-  const missingProjects = new Map(mappings.filter(row => !liveProjects.has(row.projectId)).map(row => [row.projectId, row.chatId]))
-  for (const agent of bound) {
-    if (agent.projectId && agent.chatId && liveProjects.has(agent.projectId)) liveProjectChats.add(agent.chatId)
-    if (agent.projectId && agent.chatId && !liveProjects.has(agent.projectId)
-      && (!agent.ownerUserId || agent.ownerUserId === auth?.userId)) missingProjects.set(agent.projectId, agent.chatId)
-  }
-  for (const [projectId, chatId] of missingProjects) {
-    if (liveProjectChats.has(chatId)) continue
-    const message = `本机缺少项目 ${projectId} 的记录；保留群、历史和原绑定，不按缺席归档。`
-    reapLogger().warn({ projectId, chatId }, message)
-  }
   if (!stale.length) return { reapedAgents: 0, archivedGroups: 0 }
   if (!auth?.accessToken) {
     throw new Error(`session-page reap: owner not authenticated — ${stale.length} stale agent(s) left in place (retried on next trigger)`)

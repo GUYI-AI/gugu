@@ -88,7 +88,6 @@ export function agentNamesFromPeers(peers: readonly Pick<SessionShellPeer, 'sess
 }
 
 export interface SessionShellAgentAddressInput {
-  projectId: string
   sessionId: string
 }
 

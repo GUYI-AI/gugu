@@ -11,7 +11,6 @@
 // (`sessionLife` / `emdashSessionSummaries`), injected here via setBridge — never a deep-import of
 // the session backend's ACP runtime internals from gugu main.
 
-import { isImplicitSessionHomeProjectId } from '@gugu/core/shared/sessionProject'
 import type { AgentStatusView } from '@gugu/core/shared/agentStatus'
 import { DisclosedFailure, type AgentInboxSource } from '@gugu/core/local/agent/agentInboxReader'
 
@@ -61,9 +60,9 @@ export interface LocalSessionPeerIdentity {
 /** What the user's task sidebar shows for the same conversation (this machine's task DB). */
 export interface LocalSessionFacts {
   sessionId: string
-  projectId?: string
   title: string
-  projectName: string
+  /** The name of the folder the session works in; '' in the task home. */
+  folder: string
   status: AgentStatusView | null
   isPinned: boolean
   lastInteractedAt: string | null
@@ -75,8 +74,8 @@ export interface LocalSessionPeer {
   sessionId: string
   /** The exact session-page sidebar title for this session, separate from the contact display name. */
   title: string
-  /** The session-page project the session sits in. */
-  project: string
+  /** The name of the folder the session works in; '' in the task home. */
+  folder: string
   /** This machine's own status reading (core agent-status vocabulary); null = no status source yet. */
   status: AgentStatusView['status'] | null
   detail: AgentStatusView['detail']
@@ -155,7 +154,7 @@ export function resolveLocalSessionPeers(
         ...(row.session_archived_at != null ? { session_archived_at: row.session_archived_at } : {}) } },
       sessionId: binding.sessionId,
       title: session.title,
-      project: isImplicitSessionHomeProjectId(session.projectId) ? '' : session.projectName,
+      folder: session.folder,
       status: session.status?.status ?? null,
       detail: session.status?.detail ?? null,
       pinned: session.isPinned,

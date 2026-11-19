@@ -7,7 +7,7 @@ import type { NativePublication, NativePublicationContext } from '../session/mai
 export function createNativePublicationTransport(deps: {
   getAuth(): Promise<SessionpageIdentityAuthSnapshot | null>;
   resolveDeviceId(): Promise<string | null>;
-  ensureAgentAddress(input: { sessionId: string; projectId: string }): Promise<{ chatId: string; agentUserId: string }>;
+  ensureAgentAddress(input: { sessionId: string }): Promise<{ chatId: string; agentUserId: string }>;
   env: NodeJS.ProcessEnv;
 }) {
   const context = async (sessionId: string): Promise<NativePublicationContext | null> => {

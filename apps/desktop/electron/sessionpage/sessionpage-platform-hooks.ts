@@ -36,7 +36,6 @@ import { emdashPlatformReleaseIntent } from '../session/main/core/acp/emdash-pla
 export interface SessionpagePlatformAcpInfo {
   sessionId: string
   sourceSessionId?: string
-  projectId: string
   providerId: string
   cwd: string
   platformModel?: { modelId: string } | null
@@ -139,7 +138,6 @@ export interface SessionpagePlatformHooksDeps {
   /** Mark a session expired; the host recovery coordinator reopens it on actual use. */
   onPlatformCredentialExpired?: (target: {
     sessionId: string
-    projectId: string
     providerId: string
     surface: SessionpageSessionSurface
     expiresAt: string
@@ -192,7 +190,6 @@ export interface SessionpagePlatformHooks {
   checkpoint(sessionId: string): Promise<void>
   targetForSession(sessionId: string): {
     sessionId: string
-    projectId: string
     providerId: string
     surface: SessionpageSessionSurface
     expiresAt?: string
@@ -207,7 +204,6 @@ export function createSessionpagePlatformHooks(deps: SessionpagePlatformHooksDep
   const { provisionDeps } = deps
   const sessionTargets = new Map<string, {
     sessionId: string
-    projectId: string
     providerId: string
     surface: SessionpageSessionSurface
     credentialGeneration?: string
@@ -298,7 +294,6 @@ export function createSessionpagePlatformHooks(deps: SessionpagePlatformHooksDep
           providerId: info.providerId,
           surface: 'acp',
           cwd: info.cwd,
-          projectId: info.projectId,
           displayName: info.agentDisplayName,
         },
         provisionDeps,
@@ -325,7 +320,6 @@ export function createSessionpagePlatformHooks(deps: SessionpagePlatformHooksDep
       // Keep every process target so the common end path also releases custom credentials.
       sessionTargets.set(info.sessionId, {
         sessionId: info.sessionId,
-        projectId: info.projectId,
         providerId: info.providerId,
         surface: 'acp',
         credentialGeneration: platform.accessSessionId ?? undefined,
@@ -503,7 +497,6 @@ export function createSessionpagePlatformHooks(deps: SessionpagePlatformHooksDep
             providerId: info.providerId,
             surface: 'tui',
             cwd: info.cwd,
-            projectId: info.projectId,
             displayName: info.agentDisplayName,
           },
           deps.ptyProvisionDeps?.() ?? provisionDeps,
@@ -514,7 +507,6 @@ export function createSessionpagePlatformHooks(deps: SessionpagePlatformHooksDep
       // Claude TUI credentials carried in spawnEnv cannot miss the reopen path.
       sessionTargets.set(info.sessionId, {
         sessionId: info.sessionId,
-        projectId: info.projectId,
         providerId: info.providerId,
         surface: 'tui',
         credentialGeneration: platform.accessSessionId ?? undefined,

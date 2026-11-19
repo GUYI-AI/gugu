@@ -21,7 +21,6 @@ export function edgeEndsTurn(edge: TurnLifecycleEdge): boolean {
 export interface TurnLifecycleTarget {
   sessionId: string
   providerId: string
-  projectId: string
 }
 
 /** 宿主那一侧的唯一翻法:一条边 → 一条 `AgentEvent`(`source:'hook'`、无 `sourceId`:它不是 CLI hook 送来的)。 */
@@ -41,7 +40,6 @@ export function relayTurnLifecycleEvent(
   return {
     type: edge.type,
     providerId: target.providerId,
-    projectId: target.projectId,
     sessionId: target.sessionId,
     timestamp,
     payload,

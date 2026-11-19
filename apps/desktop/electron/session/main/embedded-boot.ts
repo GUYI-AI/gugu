@@ -109,8 +109,13 @@ import { rpcRouter } from '@main/rpc' // ← the complete router, every controll
 import { initializeDatabase } from '@main/db/initialize'
 import { stopTaskTurnSearch } from '@main/core/search/task-turn-search'
 import { startTurnTextBackfillWorker, stopTurnTextBackfillWorker, type SearchBackfillLogger } from '@main/db/turn-text-backfill-runner'
-import { migrateProjectKind } from '@main/core/projects/operations/migrate-project-kind'
-import { copyClaudeHistoryForMovedFolders, migrateCanonicalPaths, migrateSessionOutputPaths } from '@main/core/projects/operations/migrate-canonical-paths'
+import { migrateProjectKind } from '../../migrations/legacy-projects/migrate-project-kind'
+import { copyClaudeHistoryForMovedFolders, migrateCanonicalPaths, migrateSessionOutputPaths } from '../../migrations/legacy-projects/migrate-canonical-paths'
+import { existsSync, statSync } from 'node:fs'
+import { ensureTaskHomeFolder, isTaskHomeFolder, listFolders, listUnboundFolders, rootFolderOf } from '@main/core/folders/folders'
+import { workspaceAtDirectory } from '@main/core/workspaces/workspace-at-directory'
+import { folderRuntimes, openFolder } from '@main/core/workspaces/folder-runtime/folder-runtimes'
+import { folderSettingsService } from '@main/core/workspaces/folder-runtime/settings/folder-settings-service'
 import { loadHarnessConfigRoots } from '@main/core/agent-hooks/harness-config-roots'
 import { closeDatabase, db, sqlite } from '@main/db/client'
 import { flushViewState } from '@main/core/view-state/view-state-service'
@@ -144,13 +149,8 @@ import { platformModelIdFromRuntimeOption, runtimeOptionForPlatformModelId } fro
 import { searchService } from '@main/core/search/search-service'
 import { workspaceFileIndexService } from '@main/core/search/workspace-file-index-service'
 import { migrateLegacyBrowserPartitionDirs } from '@main/core/browser/browser-partition-cleanup'
-import { projectSettingsService } from '@main/core/projects/settings/project-settings-service'
-import { getProjects } from '@main/core/projects/operations/getProjects'
-import { resolveAgentSessionProject } from '@main/core/projects/operations/resolve-agent-session-project'
-import { resolveAssistantSessionWorkspace } from '@main/core/projects/operations/task-directory-workspace'
-import { runPendingAssistantProjectCleanup } from '@main/core/projects/operations/assistant-project-cleanup'
-export { setAssistantProjectCleanupOwner, runPendingAssistantProjectCleanup } from '@main/core/projects/operations/assistant-project-cleanup'
-import { persistedWorkspacePath, resolveSession, resolveWorkspace } from '@main/core/projects/utils'
+import { persistedWorkspacePath, resolveWorkspace } from '@main/core/workspaces/resolve-workspace'
+import { resolveSession } from '@main/core/sessions/session-workspace-manager'
 import { RETIRED_REMOTE_WORKSPACE_MESSAGE } from '@main/core/workspaces/resolve-workspace-kind'
 import { archiveSession } from '@main/core/sessions/archiveSession'
 import { getSessions } from '@main/core/sessions/getSessions'
@@ -170,7 +170,6 @@ import {
   recordSessionPlatformModel,
 } from '@main/core/sessions/platform-model-selection'
 import { recordUnstartedSessionChoice } from '@main/core/sessions/record-unstarted-session-choice'
-import { projectEvents } from '@main/core/projects/project-events'
 import { installClearDataPolyfill } from '@main/app/session-clear-data-polyfill'
 import { sessionService } from '@main/core/sessions/session-service'
 import { attachAgentToSession } from '@main/core/sessions/attach-agent-to-session'
@@ -250,14 +249,6 @@ import { setSessionMessageOutboxReady } from '@main/core/sessions/session-messag
 import { sessionProcess } from '@main/core/sessions/session-process'
 import { ptyRecordResumeSet, startPtyRecordSync } from '@main/core/sessions/pty-record-sync'
 export { sessionProcess }
-// #7341 第二步 项目跨设备:`projects.*` 的项目群四件事由宿主接上实现(对照 / 登录态 / 云端都在宿主那边);
-// 宿主那份对照的唯一写口每写一次就经这里让渲染层重读。
-export {
-  notifyProjectGroupBindingChanged,
-  setProjectGroupHost,
-  type ProjectGroupHost,
-  type ProjectGroupSubject,
-} from '@main/core/projects/project-group-host'
 export {
   localSessionIds,
   setOtherMachines,
@@ -364,7 +355,6 @@ export {
 import { reconcileResourceSampler, stopResourceSampler } from '@main/core/resource-monitor/resource-sampler'
 import { ensureAgentDependenciesProbed, localDependencyManager } from '@main/core/dependencies/dependency-managers'
 import { ensureAgentInstalled } from '@main/core/agents/ensure-agent-installed'
-import { projectManager } from '@main/core/projects/project-manager'
 import { runtimeManager } from '@main/core/runtime/runtime-manager'
 import { appScope } from '@main/app/app-scope'
 import { sessionEvents } from '@main/core/sessions/session-events'
@@ -390,7 +380,6 @@ import { sessionChangedChannel, sessionLifeViewChannel } from '@shared/core/sess
 import type { LifeStatus, LifeView } from '@shared/core/sessions/session-life'
 import { guguNodeTarget, installGuguNode } from './core/pty/gugu-node'
 import { createStageLedger, type StageLedger } from '@main/lib/stage-ledger'
-import { openProject } from '@main/core/projects/operations/openProject'
 import { withRpcLogging } from '@main/lib/rpc-logging'
 import { pluginIdForAgentType } from '@gugu/core/agentTypes'
 
@@ -555,7 +544,6 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   await initializeDatabase()
   const { migrateCustomModelConnections } = await import('./core/agents/custom-models')
   migrateCustomModelConnections()
-  await runPendingAssistantProjectCleanup(true)
   // #609 已有的、登记在 ~ / task-home / GUGU_HOME 底下的项目改成 workspace(会话随之列进「任务」);幂等,失败不拦启动。
   try {
     const demoted = migrateProjectKind(path.join(app.getPath('userData'), 'project-kind-migration.json'))
@@ -711,7 +699,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   // 那条管子默认是开的,只差构建时传一个 key 就会往美国发;所以是拆,不是藏开关。
 
   // --- Eager service .initialize()/.start() block (index.ts:146-156). ---
-  projectSettingsService.initialize()
+  folderSettingsService.initialize()
   prSyncScheduler.initialize()
   stopActivityCollector = installActivityCollector()
   automationsService.start()
@@ -855,8 +843,8 @@ async function disposeEmdashModuleOnce(): Promise<void> {
   await runPhase('resource-sampler', stopResourceSampler)
   await runPhase('pr-sync', () => prSyncScheduler.dispose())
   await runPhase('acp-agent-status', () => acpAgentStatusBridge.dispose())
-  await runPhase('project-release', () => projectManager.release())
-  await runPhase('project-dispose', () => projectManager.dispose())
+  await runPhase('folder-release', () => folderRuntimes.release())
+  await runPhase('folder-dispose', () => folderRuntimes.dispose())
   await runPhase('runtime-manager', () => runtimeManager.dispose())
   await runPhase('acp-runtime', disposeAcpRuntimeProcess)
   await runPhase('agent-config-runtime', disposeAgentConfigRuntimeProcess)
@@ -1269,7 +1257,7 @@ export async function reloadEmdashSession(input: {
   }
   if (!session.workspaceId) throw new Error(`session ${sessionId} workspace is not ready`)
   const mounted = await sessionService.ensureSessionMounted(sessionId)
-  const workspace = await resolveWorkspace(session.projectId, mounted.workspaceId)
+  const workspace = await resolveWorkspace(mounted.workspaceId)
   if (!workspace) throw new Error(`session ${sessionId} workspace is not mounted`)
   const reloadSurface = session.runtime === 'acp' ? 'acp' : 'tui'
   // The leg's declaration as the registry resolves it: a terminal leg carried by a native surface (Codex's TUI rides
@@ -1355,7 +1343,7 @@ export async function reloadEmdashSession(input: {
         .set({ config: { ...current, forkOnStartProviderSessionId: providerSessionId } })
         .where(eq(sessions.id, sessionId))
     }
-    const sessionMount = resolveSession(session.projectId, sessionId)
+    const sessionMount = resolveSession(sessionId)
     if (!sessionMount) throw new Error(`session ${sessionId} session runtime is not mounted`)
     try {
       await sessionMount.sessions.stopSession(sessionId)
@@ -1851,7 +1839,6 @@ export interface SessionpageAgentSessionProvisioned {
   chatId: string
   created: boolean
   sessionId: string
-  projectId: string
 }
 
 export interface SessionpageAgentSessionProvisioner {
@@ -1863,7 +1850,6 @@ export interface SessionpageAgentSessionProvisioner {
     projectPath: string
     chatId: string
     sessionId: string
-    projectId: string
   }): Promise<{ guguAgentUserId: string; chatId: string; created: boolean }>
 }
 
@@ -1879,20 +1865,18 @@ const agentSessionLog = {
 }
 
 /**
- * 把登记过的项目全部打开 —— 渲染层启动时做的那件事(project-manager.ts 的 `_doLoad` → 每个项目 mountProject)。
- * 主进程里二十多处「取项目」都假定项目已被打开;桌面上渲染层一启动就替它们打开了,
- * 没有渲染层的咕咕 server(#6264)没人开,重启后第一条消息就报 `Project … not found`。
- * 各项目各自兜错(打不开的只记日志),与渲染层 allSettled 同一语义。
+ * 把这台机器的文件夹全部打开 —— 渲染层启动时做的那件事。没有渲染层的咕咕 server(#6264)没人开,而 PR 同步等只看已打开的
+ * 文件夹。各文件夹各自兜错(打不开的记进启动任务),与渲染层 allSettled 同一语义。
  */
-export async function openAllEmdashProjects(): Promise<void> {
-  const projects = await getProjects()
-  const results = await Promise.allSettled(projects.map((project) => openProject(project.id)))
+export async function openAllEmdashFolders(): Promise<void> {
+  const folders = [...listFolders(), ...listUnboundFolders()]
+  const results = await Promise.allSettled(folders.map((folder) => openFolder(folder.id)))
   results.forEach((result, index) => {
-    const project = projects[index]!
+    const folder = folders[index]!
     if (result.status === 'rejected') {
-      sessionBootTasks.record('project-open', project.id, result.reason)
+      sessionBootTasks.record('project-open', folder.id, result.reason)
     } else if (!result.value.success) {
-      sessionBootTasks.record('project-open', project.id, result.value.error)
+      sessionBootTasks.record('project-open', folder.id, result.value.error)
     }
   })
 }
@@ -1904,6 +1888,17 @@ export async function openAllEmdashProjects(): Promise<void> {
  */
 export async function ensureSessionpageAgentInstalled(agentType: string, signal?: AbortSignal): Promise<void> {
   await ensureAgentInstalled(toAgentProviderId(pluginIdForAgentType(agentType)), signal)
+}
+
+/**
+ * The workspace a cloud `agent.create` runs in: the directory named (missing → said which), else this machine's task
+ * home (a server without a renderer has none until here, #6264).
+ */
+function agentCreateWorkspace(requestedPath: string): string {
+  const path = requestedPath.trim()
+  if (!path) return ensureTaskHomeFolder().id
+  if (!existsSync(path) || !statSync(path).isDirectory()) throw new Error(`这台机器上没有目录 ${path},没法在那儿创建 agent`)
+  return workspaceAtDirectory(path)
 }
 
 export async function startSessionpageAgentSession(
@@ -1931,30 +1926,21 @@ async function startSessionpageAgentSessionClaimed(
   const mark = (stage: string) =>
     agentSessionLog.info({ agentUserId: input.agentUserId, stage, elapsedMs: Date.now() - startedAt }, 'agent session start stage — #4181')
   agentSessionLog.info({ agentUserId: input.agentUserId, agentType: input.agentType, displayName: input.displayName }, 'agent session start begin — #4181')
-  // 目录还没登记 / 隐式任务工作区还没建(没有渲染层的咕咕 server)时当场补齐,见 resolve-agent-session-project.ts。
-  const assistantWorkspace = input.assistant ? await resolveAssistantSessionWorkspace(input.projectPath, {
-    sessionId: input.existingSessionId, assistantId: input.agentUserId, deviceId: input.assistant.deviceId, ownerId: input.assistant.ownerId,
-  }) : null
-  const project = assistantWorkspace?.project ?? await resolveAgentSessionProject(input.projectPath)
+  // @@@group-folders — where it works: the directory named (its workspace; a folder of its own outside every folder,
+  // bound to no group) or the task home; it lives in that folder's group, if any — the agent joins it at its first mint.
+  const workspaceId = agentCreateWorkspace(input.projectPath)
+  const groupChatId = rootFolderOf(workspaceId)?.chatId ?? null
   throwIfAborted()
-  mark('projects-loaded')
-  const opened = projectManager.getProject(project.id)
-    ? { repositoryWorkspaceId: project.repositoryWorkspaceId }
-    : await openProject(project.id).then((result) => {
-      if (!result.success) throw new Error(`session-page project ${project.id} failed to open: ${result.error.type}`)
-      return result.data
-    })
-  mark('project-opened')
-  const repositoryWorkspaceId = assistantWorkspace?.workspaceId ?? opened.repositoryWorkspaceId ?? project.repositoryWorkspaceId
-  if (!repositoryWorkspaceId)
-    throw new Error(`session-page project ${project.id} has no repository workspace to run in`)
+  mark('workspace-resolved')
   const provider = toAgentProviderId(pluginIdForAgentType(input.agentType))
   const existing = input.existingSessionId
     ? (await getSessions()).find((session) => session.id === input.existingSessionId)
     : undefined
-  if (input.existingSessionId && (!existing || existing.projectId !== project.id || existing.providerId !== provider || existing.runtime !== 'acp')) {
+  if (input.existingSessionId && (!existing || existing.providerId !== provider || existing.runtime !== 'acp')) {
     throw new Error(`agent.create cannot resume its bound task ${input.existingSessionId}`)
   }
+  // An assistant's execution directory is its task's: a replayed create naming another directory is refused.
+  if (existing && input.assistant && existing.workspaceId !== workspaceId) throw new Error('Assistant execution directory changed')
   const sessionId = existing?.id ?? randomUUID()
   // 在建会话之前解释模型:选了一个这台机器给不了的模型就当场拒,❌ 不静默落成自家模型(那会去烧用户自己的 Key,
   // 在一台没登录过这家 agent 的服务器上就是 401)。
@@ -1985,9 +1971,7 @@ async function startSessionpageAgentSessionClaimed(
       `agent.create ${provider} received an initial prompt but does not declare an argv/stdin startup channel`,
     )
   }
-  const cleanup = () => rollbackAgentSessionStartup({
-    projectId: project.id, sessionId, created: !existing, started: false,
-  })
+  const cleanup = () => rollbackAgentSessionStartup({ sessionId, created: !existing, started: false })
   try {
     throwIfAborted()
     // 落行并挂载(挂不上就撤掉这一行再抛,见 attachAgentToSession);ACP 会话的引擎在下面显式起。
@@ -2002,25 +1986,24 @@ async function startSessionpageAgentSessionClaimed(
         projectPath,
         chatId: input.chatId,
         sessionId,
-        projectId: project.id,
       })
     }
     let session: Awaited<ReturnType<typeof attachAgentToSession>>
     if (existing) {
       session = existing
       await sessionService.ensureSessionMounted(session.id)
-      const mounted = resolveSession(project.id, session.id)
+      const mounted = resolveSession(session.id)
       if (!mounted) throw new Error(`session-page agent session ${session.id} is not mounted`)
       await bindIdentity(mounted.sessionPath)
     } else {
       // From the workspace's persisted record (the path mounting it uses): nothing has mounted a new session yet, and
       // the in-memory registry holds a workspace only once something mounts or leases it (a new account has neither).
-      const projectPath = persistedWorkspacePath(repositoryWorkspaceId)
+      const projectPath = persistedWorkspacePath(workspaceId)
       if (!projectPath) throw new Error(RETIRED_REMOTE_WORKSPACE_MESSAGE)
       session = await bindIdentityThenCreate(() => bindIdentity(projectPath), () => attachAgentToSession({
       id: sessionId,
-      projectId: project.id,
-      workspaceId: repositoryWorkspaceId,
+      groupChatId,
+      workspaceId,
       provider,
       // 这条会话就是这个 agent 的运行时:它的名字就是这个 agent 在通讯录里的名字。
       agentDisplayName: input.displayName,
@@ -2046,7 +2029,7 @@ async function startSessionpageAgentSessionClaimed(
     if (session.providerSessionId) sessionLife().start(session.id, 'user-open')
     else await admitCreationTurns({ ...session, initialQueue: input.initialPrompt ? [{ text: input.initialPrompt, origin: 'communication' }] : undefined })
     mark('life-admitted')
-    return { ...provisioned, sessionId: session.id, projectId: project.id }
+    return { ...provisioned, sessionId: session.id }
   } catch (error) {
     agentSessionLog.error(
       { agentUserId: input.agentUserId, elapsedMs: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error) },
@@ -2059,12 +2042,9 @@ async function startSessionpageAgentSessionClaimed(
   }
 }
 
-export async function disposeSessionpageAgentSession(input: {
-  projectId: string
-  sessionId: string
-}): Promise<void> {
+export async function disposeSessionpageAgentSession(input: { sessionId: string }): Promise<void> {
   await stopExactSessionpageSession(input).catch(() => false)
-  await archiveSession(input.projectId, input.sessionId, { skipTransportStop: true, removeSocialIdentity: false })
+  await archiveSession(input.sessionId, { skipTransportStop: true, removeSocialIdentity: false })
     .catch(() => undefined)
 }
 
@@ -2222,24 +2202,16 @@ export async function emdashOpenSessionFile(
 /**
  * @@@sessionpage TASKPAGE-FUSION — the authoritative inventory the gugu host reconciles its social-side
  * projection against (session-page spec ⑨: the session page is the single source of truth; gugu's contacts and
- * groups are a projection of it). `sessionIds` = conversations that still EXIST, including archived;
- * `projectIds` = projects that still exist. The host reaps any session-page agent whose conversation is absent
- * here. Missing project inventory never archives its cloud group. Visibility and existence are separate:
- * an archived conversation keeps its identity, name, relationships and group seat.
+ * groups are a projection of it). `sessionIds` = conversations that still EXIST, including archived. The host reaps
+ * any session-page agent whose conversation is absent here. Visibility and existence are separate: an archived
+ * conversation keeps its identity, name, relationships and group seat.
  */
 export async function emdashSessionpageInventory(): Promise<{
   sessionIds: string[]
-  projectIds: string[]
   archival: NonNullable<ReturnType<typeof sessionArchivalState>>[]
 }> {
   const archival = sessionArchivalInventory()
-  // Detaching folders only hides a project. Its historical group must survive reaping.
-  const projectRows = await getProjects({ includeHidden: true })
-  return {
-    sessionIds: archival.map((state) => state.sessionId),
-    projectIds: projectRows.map((p) => p.id),
-    archival,
-  }
+  return { sessionIds: archival.map((state) => state.sessionId), archival }
 }
 
 /** Reconcile retained task/roster projections when archival, project visibility or runtime mounts change. */
@@ -2269,7 +2241,6 @@ export function onEmdashSessionpageReapTrigger(
       cb('session:archived'))
   )
   sub('session:created', () => sessionEvents.on('session:created', () => cb('session:created')))
-  sub('project:deleted', () => projectEvents.on('project:deleted', () => cb('project:deleted')))
   // App shutdown tears down runtimes while task rows remain; the inventory still decides eligibility.
   sub('session:torn-down', () =>
     sessionWorkspaceManager.hooks.on('session:torn-down', () => cb('session:torn-down'))
@@ -2384,9 +2355,6 @@ function installSessionsGoneFeed(): void {
   sub('session:archived', () =>
     sessionEvents.on('session:archived', (sessionId) => announceSessionsGone({ sessionId }))
   )
-  sub('project:deleted', () =>
-    projectEvents.on('project:deleted', (projectId) => announceSessionsGone({ projectId }))
-  )
 }
 
 /**
@@ -2416,7 +2384,7 @@ export async function emdashSessionSummaries(): Promise<SessionSummary[]> {
 }
 
 /**
- * The task sidebar's facts for each existing session, including archived tasks: its title, project, status,
+ * The task sidebar's facts for each existing session, including archived tasks: its title, folder, status,
  * whether it is pinned, and when it was last active. `session_peers` rows are these facts joined to identity.
  * This is deliberately a separate bridge from ACP runtime summaries: PTY sessions have no ACP summary, and a
  * runtime summary is not the source of the user's sidebar label. Status is the session-page status writer's
@@ -2424,21 +2392,21 @@ export async function emdashSessionSummaries(): Promise<SessionSummary[]> {
  */
 export async function emdashSessionpageSessionFacts(): Promise<Array<{
   sessionId: string
-  projectId: string
   title: string
-  projectName: string
+  folder: string
   status: AgentStatusView | null
   isPinned: boolean
   lastInteractedAt: string | null
 }>> {
-  const [rows, projectRows] = await Promise.all([getSessions({ includeArchived: true }), getProjects()])
-  // #609 workspace 不是项目,不带名字(与心跳摘要同一条,见 sessionpageSessionDigest)。
-  const projectName = new Map(projectRows.filter((project) => project.kind !== 'workspace').map((project) => [project.id, project.name]))
+  const rows = await getSessions({ includeArchived: true })
+  const folderName = (workspaceId: string | undefined): string => {
+    const folder = workspaceId ? rootFolderOf(workspaceId) : undefined
+    return !folder || isTaskHomeFolder(folder.id) ? '' : path.basename(folder.path)
+  }
   return rows.map((session) => ({
     sessionId: session.id,
-    projectId: session.projectId,
     title: session.title,
-    projectName: projectName.get(session.projectId) ?? '',
+    folder: folderName(session.workspaceId),
     // 行 → Conversation 的映射器总是写这两格(`mapSessionRowToSession`);类型上可选只因渲染侧的乐观对象。
     status: session.agentStatus
       ? { status: session.agentStatus, detail: session.agentStatusDetail ?? null }

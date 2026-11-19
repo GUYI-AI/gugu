@@ -84,9 +84,6 @@ export interface CodexPtyStartInfo {
   sessionId: string
   providerId: string
   cwd: string
-  /** 该会话所属的会话页项目 / 任务(spec ⑨:项目 = 群)。provisioning 据此把 agent 放进对应项目群,
-   *  并记在 roster 上供项目/任务级联删除时回收;无项目 → 该 agent 就是私聊身份,不进群。 */
-  projectId?: string | null
   /** The task's name, written at creation (task-name.ts); the identity this leg mints carries it. */
   agentDisplayName?: string
   /** Product conversation owning this runtime-only fork; absent for ordinary PTY sessions. */
@@ -279,7 +276,6 @@ async function provisionAndOverrideOnce(
       providerId: info.providerId,
       surface: 'tui',
       cwd: info.cwd,
-      projectId: info.projectId,
       displayName: info.agentDisplayName,
       deferProvisionedEvent: true,
     },

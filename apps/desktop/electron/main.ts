@@ -287,7 +287,6 @@ import {
   cacheString,
   SESSION_CACHE_KEY,
   PARKED_SESSION_CACHE_KEY,
-  PROJECT_CACHE_KEY,
   provisionSessionpageAgentForSession,
   sessionpageAgentSessionForStart,
   registerExistingSessionpageAgents,
@@ -326,8 +325,6 @@ import { onSessionpageBirthGroupJoin, retrySessionpageBirthGroupJoin, sessionpag
 import type { EventDefinition } from '../src/session/shared/lib/ipc/events'
 import { MAIN_UI_EVENTS } from '../src/lib/mainUiEvents'
 import { createSessionpageIdentityHost } from './sessionpage/sessionpage-identity-host'
-import { createSessionpageProjectGroupHost } from './sessionpage/sessionpage-project-group-binding'
-import { forgetProjectGroupId, onProjectGroupMappingChanged } from './sessionpage/sessionpage-project-groups'
 import { readSessionpageOpenTarget } from './sessionpage/sessionpage-agent-mapping'
 import {
   clearLocalSessionDeliveryFailuresForTest,
@@ -429,7 +426,7 @@ import { applySessionMaterialization } from './session-materialization'
 import { assistantHomeTaskContext, preparePersonalAssistantContext } from './sessionpage/assistant-context'
 import { startupDiscovery } from './sessionpage/startup-discovery'
 import { createPanelConnectionRuntime } from './sessionpage/panel-connection-runtime'
-import { isPersonalAssistantAgent, personalAssistantSessionBindings } from './sessionpage/assistant-agent-role'
+import { isPersonalAssistantAgent } from './sessionpage/assistant-agent-role'
 import { assistantWorkBinding, assistantWorkForAgent } from './sessionpage/assistant-work'
 import { createStableMcpPersistence, persistedMcpGrantCount, sessionpageSessionOfGrantKey } from './stable-mcp-persistence'
 import type { GuguMcpHostPersistence } from './gugu-mcp-host'
@@ -1043,7 +1040,6 @@ function createDeviceSessionpageBridge() {
           providerId: session.providerId,
           surface: 'acp',
           cwd: session.projectPath,
-          projectId: session.projectId,
           agentUserId: session.agentUserId,
           displayName: session.displayName,
           chatId: session.chatId,
@@ -1179,12 +1175,11 @@ async function disposeSessionpageAgentFromRoster(agent: {
   cache?: Record<string, unknown> | null
 }): Promise<void> {
   if (!agent.gugu_user_id) return
-  const projectId = cacheString(agent.cache, PROJECT_CACHE_KEY)
   const sessionId = cacheString(agent.cache, SESSION_CACHE_KEY)
-  if (!projectId || !sessionId) return
+  if (!sessionId) return
   const emdash = loadEmdashBridge()
   if (!emdash) return
-  await emdash.disposeSessionpageAgentSession({ projectId, sessionId })
+  await emdash.disposeSessionpageAgentSession({ sessionId })
 }
 
 /**
@@ -1219,7 +1214,7 @@ async function onLocalAgentRosterRemoved(
         const emdash = loadEmdashBridge()
         if (!emdash) throw new Error('Task runtime is unavailable for confirmed identity removal')
         const task = (await emdash.emdashSessionpageSessionFacts()).find(row => row.sessionId === sessionId)
-        if (task) await emdash.archiveSession(task.projectId, sessionId, { removeSocialIdentity: true }, receipt)
+        if (task) await emdash.archiveSession(sessionId, { removeSocialIdentity: true }, receipt)
       }
     }
     return
@@ -3970,7 +3965,7 @@ function runLocalSessionAction(
 function ptySessionCallerContext(info: EmdashPtySessionpageStartInfo): EmdashSessionStartInfo {
   return {
     sessionId: info.sessionId,
-    projectId: info.projectId,
+    groupChatId: info.groupChatId,
     workspaceId: info.workspaceId,
     providerId: info.providerId,
     cwd: info.cwd,
@@ -4202,7 +4197,7 @@ async function retireSessionpageAgent(agentUserId: string): Promise<{ found: boo
   const schedulesRemoved = emdash && sessionId ? await emdash.removeSessionSchedules(sessionId) : 0
   // 拆之前记一笔:花名册里它有没有会话 / 项目的记载,决定下面能不能真的拆掉会话与已安排(没有 = 只摘名册,会话与已安排留在原处)。
   assistantRetireLogger.info(
-    { agentUserId, hasEmdash: !!emdash, sessionId: sessionId ?? null, projectId: cacheString(agent.cache, PROJECT_CACHE_KEY) ?? null, schedulesRemoved },
+    { agentUserId, hasEmdash: !!emdash, sessionId: sessionId ?? null, schedulesRemoved },
     'agent.retire: tearing down the assistant on this machine'
   )
   // 等它写完(它是 async):不等的话下面拆会话时登记表里这个 agent 还在,投递可能又落到刚要停的会话上。
@@ -4473,7 +4468,7 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
       },
       listedSession: (sessionId, hint) => {
         if (!mainWindow || mainWindow.isDestroyed()) return Promise.reject(new Error('Renderer not ready'))
-        return invokeRendererExtensions(EXTENSION_LISTED_SESSION_METHOD, { sessionId, ...hint }, mainWindow.webContents.id) as Promise<string | null>
+        return invokeRendererExtensions(EXTENSION_LISTED_SESSION_METHOD, { sessionId, ...hint }, mainWindow.webContents.id) as Promise<boolean>
       },
       // #1927 (47) `gugu.voiceNote`: the recorder lives in this window, whichever window drew the App's page.
       voiceNote: (request) => {
@@ -5027,7 +5022,7 @@ app.whenReady().then(async () => {
       // gugu-dev#181 ⑨ 问自群里的那一句,问题卡也进那个群(question-card.ts)。
       if (record.action === 'ask_user') {
         const asked = await emdash.runSessionAction(context, record as SessionAction, signal)
-        return withQuestionCard({ auth, caller: await remoteCaller(auth, context), projectId: context.projectId, asked, questions: record.questions })
+        return withQuestionCard({ auth, caller: await remoteCaller(auth, context), workspaceId: context.workspaceId, asked, questions: record.questions })
       }
       // #7199 第二步:列我的设备与它们的动作 / 调某台设备的某个动作(`device` 是目标,❌ 当成「在那台机器上做」转发)。
       if (record.action === 'device_actions') {
@@ -5329,17 +5324,6 @@ app.whenReady().then(async () => {
       }
       return assistantPanel.prepare(sessionId,text)
     })
-    emdash.setProjectGroupHost(createSessionpageProjectGroupHost({ getAuth: getSessionpageAuth, env: process.env }))
-    emdash.setAssistantProjectCleanupOwner(async () => (await getSessionpageAuth())?.userId ?? null, localDeviceId, async () => {
-      const auth = await getSessionpageAuth()
-      if (!auth) return []
-      const bindings = await personalAssistantSessionBindings(auth, await listAgents(process.env, { includeGuests: true }))
-      if ((await getSessionpageAuth())?.userId !== auth.userId) throw new Error('Assistant cleanup account changed')
-      return bindings
-    })
-    onElectronCloudAnswer(() => { void emdash.runPendingAssistantProjectCleanup().catch(error =>
-      createLogger('assistant-project-cleanup').error({ error: String(error) }, 'Project cleanup remains pending')) })
-    onProjectGroupMappingChanged(({ projectId }) => emdash.notifyProjectGroupBindingChanged(projectId))
     setSessionpageAgentCardRevoker(revokeAgentCards)
     // @@@task-shell-port (#5057) 「咕咕自营模型」那五个钩子的实现与网页版无头宿主共用一份
     // (sessionpage-platform-hooks.ts)。❌ 别把实现搬回这里:网页版就是因为实现只住在这个文件里,
@@ -5490,7 +5474,7 @@ app.whenReady().then(async () => {
       files?: import('@gugu/session-core/session-record/contract').TurnFileRef[]
       /** gugu-dev#181 派任务:首句落成这个对话里的一张任务卡(task-card-first-turn.ts),❌ 进 agent 私聊。 */
       taskChatId?: string
-      projectId: string
+      workspaceId: string
     }): Promise<{ chatId: string; render: FirstTurnRender }> => {
       const content = input.text.trim()
       if (!content) {
@@ -5504,7 +5488,7 @@ app.whenReady().then(async () => {
         return landTaskCardFirstTurn({
           auth,
           sessionId: input.sessionId,
-          projectId: input.projectId,
+          workspaceId: input.workspaceId,
           agentUserId: input.guguAgentUserId,
           chatId: input.taskChatId,
           messageId: input.messageId,
@@ -5851,7 +5835,7 @@ app.whenReady().then(async () => {
           text: chatPageFirstTurnText,
           taskChatId: info.taskChatId,
           files: info.initialMessageFiles,
-          projectId: info.projectId,
+          workspaceId: info.workspaceId,
         })
         provisionedChatId = delivered.chatId
         firstTurn = delivered.render
@@ -6075,23 +6059,12 @@ app.whenReady().then(async () => {
         info: {
           sessionId: string
           providerId: string
-          projectId?: string | null
         },
         edge: TurnLifecycleEdge,
       ) => {
-        if (!info.projectId) {
-          console.error(
-            `[sessionpage] cannot relay ${info.providerId} turn lifecycle without a project id: ${info.sessionId}`,
-          )
-          return
-        }
         emdash.emitSessionpageAgentEvent(relayTurnLifecycleEvent(
           edge,
-          {
-            sessionId: info.sessionId,
-            providerId: info.providerId,
-            projectId: info.projectId,
-          },
+          { sessionId: info.sessionId, providerId: info.providerId },
           Date.now(),
         ))
       },
@@ -6247,7 +6220,7 @@ app.whenReady().then(async () => {
           providerId: request.providerId,
           surface: 'tui',
           cwd: request.cwd,
-          projectId: request.projectId,
+          groupChatId: request.groupChatId,
           // spec agent-provisioning:显式命名过就用那个名字开户(与 pty hook 同一口径)。
           displayName: request.agentDisplayName,
         },
@@ -6265,7 +6238,7 @@ app.whenReady().then(async () => {
         messageId: request.messageId,
         text: request.text,
         taskChatId: request.taskChatId,
-        projectId: request.projectId,
+        workspaceId: request.workspaceId,
       })
       // The terminal leg is not in session-life yet (⑤): its first turn is rendered here, once.
       return renderFirstTurn(request.text.trim(), delivered.render).text
@@ -6463,7 +6436,7 @@ app.whenReady().then(async () => {
         // (local-session-delivery.ts registerOfflineInLocalMap),得赶在任何会话转 live 之前。失败照旧不拦启动。
         await sessionpageAgentRehydration.catch(() => undefined)
         // server 没有渲染层替它打开项目:先打开,再开始收发(否则重启后第一条消息 `Project … not found`)。
-        if (SERVER_MODE) await emdash.openAllEmdashProjects()
+        if (SERVER_MODE) await emdash.openAllEmdashFolders()
         // #6264 桌面与 server 都是别的电脑的会话宿主(behavior gugu-server.md 第 8 条),见 handleShellChannel。
         emdash.setDeviceSessionHostShellHandlers(
           (channel) => remoteShellHandlers.get(channel) as ((...args: unknown[]) => unknown) | undefined,

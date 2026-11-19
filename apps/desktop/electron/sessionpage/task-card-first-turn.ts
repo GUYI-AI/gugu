@@ -20,7 +20,8 @@ import { awaitSessionpageCloudIdentity } from './emdash-agent-provisioning'
 export interface TaskCardFirstTurnInput {
   auth: { accessToken: string; userId: string }
   sessionId: string
-  projectId: string
+  /** The card's session's workspace. The card's `projectId` field keeps its released name (released clients require it); S2 renames it. */
+  workspaceId: string
   agentUserId: string
   chatId: string
   messageId: string
@@ -77,7 +78,7 @@ export async function landTaskCardFirstTurn(input: TaskCardFirstTurnInput): Prom
       agentType: agent.agent_type,
       agentAvatar: (face as { avatar?: string | null } | null)?.avatar ?? null,
       sessionId: input.sessionId,
-      projectId: input.projectId,
+      projectId: input.workspaceId,
       deviceId: input.deviceId,
       machineLabel: input.machineLabel,
     }),

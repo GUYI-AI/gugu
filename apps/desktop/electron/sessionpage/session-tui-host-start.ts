@@ -29,7 +29,6 @@ import { droidDaemonSessionDelivery } from './droid-daemon-session-delivery'
 import {
   assertSessionpageIdentityForReattach,
   emitSessionpageAgentProvisioned,
-  isImplicitSessionHomeProjectId,
   provisionSessionpageAgentForSession,
   resolveSessionpageDeliveryOwnerKind,
   type SessionpageProvisionDeps,
@@ -55,14 +54,14 @@ import { wireHarnessModelCatalog } from '@main/core/agents/harness-model-catalog
 // the module boundary; the host returns a command override to run `codex --remote … resume <tid>`).
 // @@@2503 platformModel:composer 记在这个会话上的模型来源({modelId} = 平台;null = harness 自家模型;
 // 字段缺失 = 本决定出现之前建的存量会话 → 回退 agent 级配置)。
-export type SessionTuiStartInfo = { sessionId: string; start: 'fresh' | 'reattach'; providerId: string; cwd: string; projectId: string; workspaceId: string; sourceSessionId?: string; initialPrompt?: string; forkFromProviderSessionId?: string; resumeProviderSessionId?: string; forkKeepsAgent?: boolean; isResuming?: boolean; onProviderSessionId?: (providerSessionId: string) => Promise<void>; onProviderSessionEndpoint?: (endpoint: string) => Promise<void>; onHarnessTitle?: (title: string) => void; baseCommand: string; baseArgs: string[]; model?: string; effort?: string; fastMode?: boolean; userSettingsProvided?: boolean; permissionMode?: GuguPermissionMode; platformModel?: { modelId: string } | null; agentDisplayName?: string; mcpDisabledServers?: readonly string[]; tmuxSessionName?: string }
+export type SessionTuiStartInfo = { sessionId: string; start: 'fresh' | 'reattach'; providerId: string; cwd: string; groupChatId: string | null; taskHome: boolean; workspaceId: string; sourceSessionId?: string; initialPrompt?: string; forkFromProviderSessionId?: string; resumeProviderSessionId?: string; forkKeepsAgent?: boolean; isResuming?: boolean; onProviderSessionId?: (providerSessionId: string) => Promise<void>; onProviderSessionEndpoint?: (endpoint: string) => Promise<void>; onHarnessTitle?: (title: string) => void; baseCommand: string; baseArgs: string[]; model?: string; effort?: string; fastMode?: boolean; userSettingsProvided?: boolean; permissionMode?: GuguPermissionMode; platformModel?: { modelId: string } | null; agentDisplayName?: string; mcpDisabledServers?: readonly string[]; tmuxSessionName?: string }
 
 export type SessionTuiHostOverride = CodexPtyOverride & { startupGate?: ReturnType<typeof guguMcpToolsListedGate> }
 
 /** 宿主自己持有、各条腿都要的东西(主进程里的可变状态只经这里取,取的那一刻才读)。 */
 export interface SessionTuiHostContext {
   readonly provisionDeps: SessionpageProvisionDeps & {
-    onTurnLifecycle: (info: { sessionId: string; providerId: string; projectId?: string | null }, edge: TurnLifecycleEdge) => void
+    onTurnLifecycle: (info: { sessionId: string; providerId: string }, edge: TurnLifecycleEdge) => void
   }
   /** 没就绪就抛,`what` 是哪条腿在要。 */
   runtime(what: string): AcpEngineRuntimeContext
@@ -71,7 +70,7 @@ export interface SessionTuiHostContext {
   socialBridge(info: SessionTuiStartInfo, host: DesktopGuguMcpHost): BuildSocialBridgeDeps
   platformRecovery(): SessionpagePlatformRecoveryCoordinator | null
   recordFailedSessionDirectMessage(
-    params: { projectId: string; sessionId: string },
+    params: { sessionId: string },
     message: { id: string; text: string },
     error: unknown,
   ): void
@@ -97,7 +96,7 @@ function provisionTuiAgent(ctx: SessionTuiHostContext, info: SessionTuiStartInfo
       providerId: info.providerId,
       surface: 'tui',
       cwd: info.cwd,
-      projectId: info.projectId,
+      groupChatId: info.groupChatId,
       // spec agent-provisioning:显式命名过的会话用那个名字开户;缺席才落到「<引擎 label> <序号>」。
       displayName: info.agentDisplayName,
       ...(deferProvisionedEvent ? { deferProvisionedEvent: true } : {}),
@@ -253,7 +252,7 @@ const startDroidDaemon: HostStart = async (ctx, info, platformPromise) => {
       providerId: info.providerId,
       surface: 'tui',
       cwd: info.cwd,
-      projectId: info.projectId,
+      groupChatId: info.groupChatId,
       displayName: info.agentDisplayName,
     },
     ctx.provisionDeps,
@@ -343,7 +342,7 @@ const startOpencodeServeAttach: HostStart = async (ctx, info, platformPromise, {
   // 回合末恢复只跟结束回合的边走,等人不算。
   const relayServeTurnLifecycle = (turnLifecycle: TurnLifecycleEdge) => {
     ctx.provisionDeps.onTurnLifecycle(
-      { sessionId: info.sessionId, providerId: info.providerId, projectId: info.projectId },
+      { sessionId: info.sessionId, providerId: info.providerId },
       turnLifecycle,
     )
     if (edgeEndsTurn(turnLifecycle)) {
@@ -365,7 +364,7 @@ const startOpencodeServeAttach: HostStart = async (ctx, info, platformPromise, {
   // 任何 `.opencode/plugins/*.js` 同步跑一次 `@opencode-ai/plugin` 冷装,慢过就绪预算就是那条间歇
   // `request timed out: POST /session`。serve 是 gugu 的推理进程,它的配置本就该只来自
   // `OPENCODE_CONFIG_CONTENT` + 用户全局配置,不该被这个共享 cwd 的内容拖住会话创建。
-  // ⚠️ 只在 task-home 设:开在用户真 repo 里的 agent(projectId 非 sentinel)照旧读它自己的 repo
+  // ⚠️ 只在 task-home 设:开在用户真 repo 里的 agent(不在 task-home)照旧读它自己的 repo
   // `.opencode` —— 那是承诺给用户的、且不走 task-home,不吃这条。判据抽成纯函数便于单测判红。
   const descriptor = getPlugin(info.providerId).capabilities.sessionBundle
   // serve and attach do not go through the run context, so the descriptor's pinned env is applied here.
@@ -373,7 +372,7 @@ const startOpencodeServeAttach: HostStart = async (ctx, info, platformPromise, {
   const serveEnv = buildOpencodeServeEnv({
     processEnv: process.env,
     spawnEnv: { ...capabilities.spawnEnv, ...pinnedEnv },
-    projectConfigDisableEnv: isImplicitSessionHomeProjectId(info.projectId) ? descriptor.projectConfigDisableEnv : undefined,
+    projectConfigDisableEnv: info.taskHome ? descriptor.projectConfigDisableEnv : undefined,
   })
   step('bundle+materialized')
   const handle = await opencodeServeAttachSessionDelivery.startSession(
@@ -433,7 +432,7 @@ const startOpencodeServeAttach: HostStart = async (ctx, info, platformPromise, {
   if (!info.resumeProviderSessionId && initialPrompt?.trim()) {
     const startupMessageId = randomUUID()
     const reportStartupFailure = (error: unknown) => ctx.recordFailedSessionDirectMessage(
-      { projectId: info.projectId, sessionId: info.sessionId },
+      { sessionId: info.sessionId },
       { id: startupMessageId, text: initialPrompt },
       error,
     )

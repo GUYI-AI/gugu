@@ -15,6 +15,8 @@ export interface EmdashPtySessionpageStartInfo {
   cwd: string;
   /** The group this conversation lives in (sessions.chat_id; null = none): the agent the host provisions joins it. */
   groupChatId: string | null;
+  /** The session works in the task home (the shared directory of sessions without a folder of their own). */
+  taskHome: boolean;
   sourceSessionId?: string;
   /** spec session-graph: the workspace this session is bound to. Carried because the host's session tools verify that the caller's bound workspace is still the
    *  session's current one, and `cwd` is a path, not an id. The ACP injector already receives it; a PTY start

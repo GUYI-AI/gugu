@@ -50,7 +50,6 @@ export interface SessionpageSessionFacts {
   providerId: string
   surface: 'acp' | 'tui'
   cwd: string
-  projectId: string
   displayName?: string
 }
 
@@ -73,7 +72,6 @@ export interface SessionpageSessionStartFacts {
   providerId: string
   surface: 'acp' | 'tui'
   cwd: string
-  projectId: string
   displayName?: string
   lifecycle?: 'fresh' | 'fork' | 'resume'
 }
@@ -101,10 +99,8 @@ export interface SessionpageIdentityHost extends SessionIdentityHost {
 
 function requireAddressInput(input: unknown): SessionShellAgentAddressInput {
   const target = input as Partial<SessionShellAgentAddressInput> | null
-  if (!target?.projectId || !target.sessionId) {
-    throw new Error('Session-page session address requires projectId and sessionId')
-  }
-  return { projectId: target.projectId, sessionId: target.sessionId }
+  if (!target?.sessionId) throw new Error('Session-page session address requires sessionId')
+  return { sessionId: target.sessionId }
 }
 
 export function createSessionpageIdentityHost(deps: SessionpageIdentityHostDeps): SessionpageIdentityHost {
@@ -306,7 +302,6 @@ export function createSessionpageIdentityHost(deps: SessionpageIdentityHostDeps)
         providerId: facts.providerId,
         surface: facts.surface,
         cwd: facts.cwd,
-        projectId: facts.projectId,
         // spec agent-provisioning:显式命名过的会话用那个名字开户;缺席才落到「<引擎 label> <序号>」。
         displayName: facts.displayName,
         lifecycle: facts.lifecycle,

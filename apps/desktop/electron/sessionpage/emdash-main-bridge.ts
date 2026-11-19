@@ -61,7 +61,7 @@ export {
   emdashSessionProvisionInput,
   startSessionpageAgentSession,
   ensureSessionpageAgentInstalled,
-  openAllEmdashProjects,
+  openAllEmdashFolders,
   disposeSessionpageAgentSession,
   // #7199 个人助理搬走:它在那条会话上排的已安排一并撤掉(retireSessionpageAgent 用;漏在这张清单外只会在真搬家时才炸)。
   removeSessionSchedules,
@@ -94,13 +94,6 @@ export {
   adoptLegacyTaskNames,
   // 打开会话那一条路上只有宿主知道的两件事(agent 的会话在哪、本机会话的平台恢复)。
   setSessionOpening,
-  // #7341 第二步 项目跨设备:`projects.*` 的项目群四件事由宿主实现(sessionpage-project-group-binding.ts),
-  // 对照变了经 notify 让渲染层重读。漏在这张清单外只会在有人「并进来」时才炸。
-  setProjectGroupHost,
-  setAssistantProjectCleanupOwner,
-  runPendingAssistantProjectCleanup,
-  notifyProjectGroupBindingChanged,
-  type ProjectGroupHost,
   // agent 的 session_* 跨机器:别的机器问 `agentSession.*` 时由宿主答;别的机器上的 App 发来的消息由这台的 App 发信答。
   setAgentSessionHost,
   answerAppMessage,

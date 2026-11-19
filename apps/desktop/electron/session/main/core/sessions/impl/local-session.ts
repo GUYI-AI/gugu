@@ -13,6 +13,7 @@ import { startPresenceInterrupt } from '@main/core/agent-hooks/presence-interrup
 import { getPlugin } from '@main/core/agents/plugin-registry';
 import { setSessionAutoApproved } from '@main/core/agent-hooks/turn-autonomy';
 import { localAgentForSession } from '@main/core/sessionpage/sessionpage-session-agent';
+import { isTaskHomeFolder } from '@main/core/folders/folders';
 import {
   applySessionRuntimeCommand,
   assertSessionSurfaceDeclared,
@@ -624,6 +625,7 @@ export class LocalSessionProvider implements SessionProvider {
         providerId: session.providerId,
         cwd: this.sessionPath,
         groupChatId: session.groupChatId ?? null,
+        taskHome: isTaskHomeFolder(this.workspaceId),
         workspaceId: this.workspaceId,
         initialPrompt: agentSession.isResuming ? undefined : effectiveInitialPrompt,
         sourceSessionId: session.forkedFrom?.sessionId,

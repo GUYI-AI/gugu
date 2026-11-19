@@ -14,7 +14,8 @@ export interface QuestionCardInput {
   auth: { accessToken: string; userId: string }
   /** The asking session, as the host knows it (its agent, this machine). */
   caller: Pick<RemoteSessionCaller, 'agentUserId' | 'deviceId' | 'deviceLabel' | 'sessionId'>
-  projectId: string
+  /** The asking session's workspace. The card's `projectId` field keeps its released name (released clients require it); S2 renames it. */
+  workspaceId: string
   /** What `session_ask_user` returned: `question_id` and the `source_link` it was asked from. */
   asked: unknown
   /** The tool call's `questions`, as the agent passed them (already checked by the ask). */
@@ -34,7 +35,7 @@ export async function withQuestionCard(input: QuestionCardInput): Promise<unknow
   }
 }
 
-async function postQuestionCard({ auth, caller, projectId, asked, questions }: QuestionCardInput): Promise<void> {
+async function postQuestionCard({ auth, caller, workspaceId, asked, questions }: QuestionCardInput): Promise<void> {
   const result = asked as { question_id?: unknown; source_link?: unknown } | null
   const questionId = typeof result?.question_id === 'string' ? result.question_id : null
   const source = typeof result?.source_link === 'string' ? parseConversationLink(result.source_link) : null
@@ -61,7 +62,7 @@ async function postQuestionCard({ auth, caller, projectId, asked, questions }: Q
       ownerUserId: auth.userId,
       questionId,
       sessionId: caller.sessionId,
-      projectId,
+      projectId: workspaceId,
       deviceId: caller.deviceId,
       machineLabel: caller.deviceLabel ?? '',
     }),

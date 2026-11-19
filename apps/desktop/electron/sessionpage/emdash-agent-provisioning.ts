@@ -1,5 +1,4 @@
 import type { SessionBootTasks } from '@gugu/core/shared/sessionBootTasks'
-import { isImplicitSessionHomeProjectId } from '@gugu/core/shared/sessionProject'
 import { createGroupAdmin } from '@gugu/core/cloud/groupAdmin'
 import { joinBirthGroup, sessionpageBirthGroupJoin } from './sessionpage-birth-group-join'
 // @@@sessionpage TASKPAGE-FUSION — AUTO-PROVISIONING (Part C, the real thing). Turns a session-page session
@@ -116,7 +115,6 @@ export { IMPLICIT_SESSION_HOME_PROJECT_ID } from '@gugu/core/shared/sessionProje
  * never from that shared workspace — whereas an agent opened in a real user repo keeps reading its repo
  * `.opencode`. So the boundary is directory ownership, keyed off this sentinel id.
  */
-export { isImplicitSessionHomeProjectId } from '@gugu/core/shared/sessionProject'
 
 
 /**

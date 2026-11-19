@@ -30,12 +30,6 @@ import { setEmdashIdentityProvisioner, setEmdashMcpInjector } from '../session/m
 import { setSessionIdentityHost } from '../session/main/core/sessions/session-identity-host'
 import { setPlatformModelCatalogResolver } from '../session/main/core/agents/platform-model-catalog-hook'
 import {
-  notifyProjectGroupBindingChanged,
-  setProjectGroupHost,
-} from '../session/main/core/projects/project-group-host'
-import { createSessionpageProjectGroupHost } from './sessionpage-project-group-binding'
-import { onProjectGroupMappingChanged } from './sessionpage-project-groups'
-import {
   setEmdashPlatformCheckpoint,
   setEmdashPlatformInjector,
   setEmdashPlatformRelease,
@@ -119,7 +113,6 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
       providerId: info.providerId,
       surface: 'tui',
       cwd: info.cwd,
-      projectId: info.projectId,
       displayName: info.agentDisplayName,
       lifecycle: info.isResuming ? 'resume' : info.forkFromProviderSessionId ? 'fork' : 'fresh',
     })
@@ -154,9 +147,6 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
   const broadcast = <T>(definition: EventDefinition<T>, data: T): void => {
     hostIpc.broadcast(definition.name, data)
   }
-  // #7341 第二步 项目跨设备:`projects.*` 的项目群四件事与桌面主进程同一份实现,只喂它这个宿主的登录态。
-  setProjectGroupHost(createSessionpageProjectGroupHost({ getAuth: auth.get }))
-  const unsubscribeGroupMapping = onProjectGroupMappingChanged(({ projectId }) => notifyProjectGroupBindingChanged(projectId))
   const unsubscribeProvisioned = onSessionpageAgentProvisioned((event) => {
     // 浏览器那头按事件定义认领(键叫 conversationId),❌ 原样转主进程这份事件(它叫 sessionId)。
     broadcast(sessionpageAgentProvisionedEvent, {
@@ -222,8 +212,6 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
       setTaskNamer(null)
       unsubscribeProvisioned()
       unsubscribeBirthGroupJoin()
-      unsubscribeGroupMapping()
-      setProjectGroupHost(null)
       setSessionIdentityHost(null)
       setEmdashMcpInjector(null)
       setEmdashIdentityProvisioner(null)
