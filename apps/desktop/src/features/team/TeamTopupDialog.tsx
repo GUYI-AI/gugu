@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { skipToken, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import { serverNow } from '@gugu/core/shared/serverClock'
 import { useAuth } from '@/store/auth'
 import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
@@ -36,12 +37,12 @@ export function TeamTopupDialog({ onClose, onSettled, openPayment = openTeamPaym
   const quote = useQuery({ queryKey: ['team-topup', actorId, teamId, session.context?.membership_revision, amount, couponCode],
     enabled: admin && initialized && !intent && amount !== null, retry: false,
     queryFn: amount !== null ? ({ signal }) => api.topupQuote({ teamId, credits: amount, couponCode: couponCode || undefined }, signal) : skipToken })
-  const offered = quote.data, expired = offered ? offered.expiresAt <= Date.now() : false
+  const offered = quote.data, expired = offered ? offered.expiresAt <= serverNow() : false
   const current = offered && offered.teamId === teamId && offered.credits === amount && !expired && !quote.isFetching && !quote.isError
     && (offered.couponCode ?? '') === couponCode && couponText.trim().toUpperCase() === couponCode ? offered : null
   useEffect(() => {
     if (!offered || expired) return
-    const timer = setTimeout(() => tick(value => value + 1), Math.max(0, offered.expiresAt - Date.now() + 1))
+    const timer = setTimeout(() => tick(value => value + 1), Math.max(0, offered.expiresAt - serverNow() + 1))
     return () => clearTimeout(timer)
   }, [offered, expired])
   const order = useQuery({ queryKey: ['team-topup-order', actorId, teamId, intent?.orderId], enabled: admin && Boolean(intent?.orderId), retry: false,
