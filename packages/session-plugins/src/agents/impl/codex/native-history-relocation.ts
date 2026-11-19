@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { constants, createReadStream, promises as fs } from 'node:fs';
+import { constants, promises as fs } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createZstdDecompress } from 'node:zlib';
 import type { AgentAuthContext, ResolvedAgentHome } from '@gugu/session-core/agents/plugins';
@@ -42,8 +42,9 @@ function inside(root: string, path: string) {
 function parent(meta: Meta) {
   return typeof meta.source === 'object' ? meta.source?.subagent?.thread_spawn?.parent_thread_id : undefined;
 }
-function logicalStream(path: string) {
-  const input = createReadStream(path, { flags: constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) });
+async function logicalStream(path: string) {
+  const handle = await fs.open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  const input = handle.createReadStream({ autoClose: true });
   if (!path.endsWith('.zst')) return input;
   const output = createZstdDecompress();
   input.on('error', error => output.destroy(error));
@@ -61,7 +62,7 @@ async function safePath(root: string, path: string) {
 }
 /** Only the first logical line is inflated; no complete rollout is buffered. */
 export async function readNativeRolloutMeta(path: string): Promise<Meta> {
-  const stream = logicalStream(path), parts: Buffer[] = [];
+  const stream = await logicalStream(path), parts: Buffer[] = [];
   try {
     for await (const raw of stream) {
       const chunk = Buffer.from(raw), end = chunk.indexOf(10);
@@ -144,9 +145,12 @@ function retention(root: string, members: ReadonlySet<string>, inventory: readon
 export async function verifyNativeHistoryPrefix(source: string, destination: string, signal?: AbortSignal) {
   const before = await fs.lstat(source), targetBefore = await fs.lstat(destination);
   const sourceHash = createHash('sha256'), targetHash = createHash('sha256');
-  const input = logicalStream(source), output = logicalStream(destination), iterator = output[Symbol.asyncIterator]();
+  const input = await logicalStream(source);
+  let output: Awaited<ReturnType<typeof logicalStream>> | undefined;
   let remaining = Buffer.alloc(0), bytes = 0;
   try {
+    output = await logicalStream(destination);
+    const iterator = output[Symbol.asyncIterator]();
     for await (const raw of input) {
       signal?.throwIfAborted();
       const chunk = Buffer.from(raw); sourceHash.update(chunk); bytes += chunk.length;
@@ -169,7 +173,7 @@ export async function verifyNativeHistoryPrefix(source: string, destination: str
     const sha256 = sourceHash.digest('hex');
     if (sha256 !== targetHash.digest('hex')) throw new ManagedDiverged();
     return { sha256, bytes };
-  } finally { input.destroy(); output.destroy(); }
+  } finally { input.destroy(); output?.destroy(); }
 }
 class ManagedDiverged extends Error { constructor() { super('Managed history differs from its original'); } }
 export function nativeHistoryCounts(ledger: Pick<NativeHistoryLedger, 'entries' | 'unowned'>): NativeHistoryCounts {
