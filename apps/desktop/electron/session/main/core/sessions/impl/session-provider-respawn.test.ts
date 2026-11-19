@@ -246,6 +246,8 @@ vi.mock('./keystroke-injection', () => ({
   },
 }));
 
+// The task home is the app's directory (electron), which this test has none of.
+vi.mock('@main/core/folders/folders', () => ({ isTaskHomeFolder: () => false }));
 vi.mock('@main/core/sessionpage/sessionpage-session-agent', () => ({
   localAgentForSession: localAgentForSessionMock,
 }));
