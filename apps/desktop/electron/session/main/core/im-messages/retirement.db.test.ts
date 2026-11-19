@@ -63,6 +63,26 @@ describe('permanent native IM retirement', () => {
     try { expect(() => createImMessageStore(reopened).ingest(A, late)).toThrow('im_account_retired') }
     finally { reopened.close() }
   })
+  it('blocks legacy prepared/direct SQL writers which bypass the new ingest method', async () => {
+    fixture = await openFixture('empty')
+    const sql = fixture.sqlite, store = createImMessageStore(sql)
+    const legacyInsert = sql.prepare("INSERT INTO im_messages(account_id,id,chat_id,seq,created_at,content_type,content,is_whisper,to_user_ids,rest) VALUES(?,?,?,1,'2026-11-02T00:00:00Z','text','legacy',0,'[]','{}')")
+    legacyInsert.run(A,'before','chat')
+    store.ingest(B, batch('b', B))
+    store.retireAccount(A)
+    expect(() => legacyInsert.run(A,'late','chat')).toThrow('im_account_retired')
+    for (const statement of [
+      "INSERT INTO im_message_accounts VALUES('account-a','99')",
+      "INSERT INTO im_message_chats(account_id,chat_id) VALUES('account-a','late')",
+      "INSERT INTO im_message_ranges VALUES('account-a','chat','',1,1)",
+      "INSERT INTO im_message_tombstones VALUES('account-a','chat','late')",
+      "UPDATE im_messages SET account_id='account-a' WHERE account_id='account-b'",
+      "UPDATE im_message_accounts SET account_id='account-a' WHERE account_id='account-b'",
+    ]) expect(() => sql.exec(statement)).toThrow('im_account_retired')
+    expect(store.windows(B, ['chat'], 10).map(row => row.id)).toEqual(['b'])
+    expect(store.throughRevision(B)).toBe('7')
+    expect(rows('im_messages')).toEqual([])
+  })
   it('rolls back both retirement and cache/index changes when the purge cannot commit, then retries safely', async () => {
     fixture = await openFixture('empty')
     const store = createImMessageStore(fixture.sqlite)
