@@ -6,7 +6,7 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'rea
 import { queryClient } from '../../lib/replica'
 import { bindFileViewerMenu } from '../preview/file-viewer-menu'
 import { quoteChatFile, selectedTextQuote } from '../preview/quote-preview-file'
-import { attachmentFileRef, formatAttachmentSize, isMpegTsVideo, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
+import { attachmentFileRef, isMpegTsVideo, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { FileReadError, type FileReadState } from '@gugu/core/shared/fileReads'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'

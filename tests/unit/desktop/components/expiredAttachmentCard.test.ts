@@ -14,7 +14,7 @@ import { holdSentFile } from '../../../../apps/desktop/src/lib/sentFileCopies'
 const f = vi.hoisted(() => ({ message: vi.fn(), metadata: vi.fn(), cached: vi.fn(), send: vi.fn(), forget: vi.fn(), signed: vi.fn(), view: vi.fn() }))
 vi.mock('@/lib/chat', () => ({ chatService: { getMessageById: f.message } }))
 vi.mock('@/lib/attachmentBytes', () => ({ attachmentMetadata: f.metadata, cachedAttachmentCopy: f.cached,
-  sourceKeyOf: () => 'file@1', attachmentBytes: f.signed, useAttachmentObjectUrl: f.view,
+  sourceKeyOf: () => 'file@1', attachmentBytes: f.signed, useAttachmentObjectUrl: f.view, originalImage: () => ({ full: vi.fn(), release: vi.fn() }),
 }))
 vi.mock('@/components/extensionBundle/ExtensionBundleCard', () => ({ ExtensionBundleCard: () => null }))
 vi.mock('@/components/markdown/Markdown', () => ({ Markdown: () => null }))
