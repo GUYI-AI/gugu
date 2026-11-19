@@ -118,3 +118,20 @@ export function listUnboundFolders(runner: Runner = db): Folder[] {
   return runner.select(COLUMNS).from(workspaces)
     .where(and(eq(workspaces.kind, 'project-root'), isNull(workspaces.chatId))).all().map(toFolder);
 }
+
+/**
+ * The folder a workspace belongs to: a folder is its own root; a worktree or any other workspace of an earlier release
+ * belongs to the recorded folder whose path contains it (the longest such path). Undefined = none recorded here.
+ */
+export function rootFolderOf(workspaceId: string, runner: Runner = db): Folder | undefined {
+  const [row] = runner.select({ kind: workspaces.kind, path: workspaces.path }).from(workspaces)
+    .where(eq(workspaces.id, workspaceId)).limit(1).all();
+  if (!row) return undefined;
+  if (row.kind === 'project-root') return getFolder(workspaceId, runner);
+  if (!row.path) return undefined;
+  const path = row.path as string;
+  return runner.select(COLUMNS).from(workspaces).where(eq(workspaces.kind, 'project-root')).all()
+    .filter((folder) => folder.path && (path === folder.path || path.startsWith(`${folder.path}/`)))
+    .sort((a, b) => (b.path?.length ?? 0) - (a.path?.length ?? 0))
+    .map(toFolder)[0];
+}
