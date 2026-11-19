@@ -10,7 +10,7 @@ export async function readAgentHomeUpgradeResults(): Promise<AgentHomeScan[]> {
   const client = await getAgentConfigRuntimeClient()
   const result = await client.scanAgentHomes({ upgradedOnly: true })
   if (!result.success) throw new Error('Could not read configuration migration results')
-  return result.data.filter(({ upgraded, migrationSpace }) => upgraded || migrationSpace)
+  return result.data.filter(({ upgraded, migrationSpace, migrationPreparation }) => upgraded || migrationSpace || migrationPreparation)
 }
 
 export function showAgentHomeUpgradeNotice(homes: readonly AgentHomeScan[]): void {

@@ -663,6 +663,8 @@ export interface AgentConfigRoot {
    *    与漏挑一条同罪;区别只在于这个方向的错要少得多、也更好发现。
    */
   carryExclusions: readonly AgentConfigRootCarryExclusion[];
+  /** Pure path classifier: primary transcripts define sessions; associated files share their ID. Null is non-session data. */
+  historySession?: (path: string) => { id: string; primary: boolean } | null;
   /** Existing installs only. Each edit removes a known Gugu-generated entry before import snapshots it. */
   legacyCleanup?: readonly {
     path: string;
@@ -1741,6 +1743,7 @@ const agentConfigRootSchema = z
         })
         .strict()
     ),
+    historySession: z.custom<NonNullable<AgentConfigRoot['historySession']>>((value) => typeof value === 'function').optional(),
     legacyCleanup: z.array(z.object({
       path: importPathSchema(false),
       update: z.custom<NonNullable<AgentConfigRoot['legacyCleanup']>[number]['update']>((value) => typeof value === 'function'),

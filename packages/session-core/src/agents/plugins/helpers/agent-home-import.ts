@@ -14,12 +14,14 @@ import {
   streamImportFile
 } from './agent-home-migration';
 export * from './agent-home-migration';
+export * from './agent-home-history';
 import {
   AGENT_HOME_NOT_IMPORTED, AGENT_HOME_IMPORT_REQUIRED } from '../../../workspace-server/agent-config/homes';
 
 const disk: typeof fs = process.versions.electron
   ? (createRequire(import.meta.url)('original-fs') as typeof import('node:fs')).promises : fs;
 export const AGENT_HOME_MARKER = '.gugu-agent-home.json';
+export const AGENT_HOME_PENDING = '.gugu-agent-home.pending.json';
 const FILE_LIMIT = 50 * 1024 * 1024;
 
 export class AgentHomeNotImported extends Error {
@@ -43,9 +45,11 @@ export type AgentHomeImportIssue = {
   path: string;
   reason:
     | 'symlink' | 'sensitive' | 'database' | 'tooLarge' | 'sourceChanged' | 'unreadable'
-    | 'excluded';
+    | 'excluded' | 'historyLimit';
 };
+export type AgentHistoryImportSummary = { imported: number; skipped: number; sessionBytes: number; limitBytes: number };
 export type AgentHomeMarker = {
+  historyImport?: AgentHistoryImportSummary;
   importedAt: string;
   sourceRoot: string;
   groups: AgentHomeGroupId[];
@@ -384,15 +388,15 @@ async function collect(home: ResolvedAgentHome, options: {
   return { items, issues, newestMtime, mcpSecrets: [...mcpSecrets], mcpNames: [...mcpNames], projectMcpCount };
 }
 
-export async function readAgentHomeMarker(home: ResolvedAgentHome): Promise<AgentHomeMarker | null> {
+export async function readAgentHomeMarker(home: ResolvedAgentHome, filename = AGENT_HOME_MARKER): Promise<AgentHomeMarker | null> {
   try {
-    const markerPath = join(home.shadowHome, AGENT_HOME_MARKER);
+    const markerPath = join(home.shadowHome, filename);
     if (!(await disk.lstat(markerPath)).isFile()) throw new Error('Managed configuration import record is not a file');
     const bytes = await snapshot(home.shadowHome, markerPath);
     if (!bytes) return null;
     await makeDirectory(home, home.configRoot);
     const value: unknown = JSON.parse(bytes.toString('utf8'));
-    if (object(value) && value.seed === 'copied' && !value.importedAt) {
+    if (filename === AGENT_HOME_MARKER && object(value) && value.seed === 'copied' && !value.importedAt) {
       const legacy: AgentHomeMarker = {
         importedAt: new Date((await disk.stat(join(home.shadowHome, AGENT_HOME_MARKER))).mtimeMs).toISOString(),
         sourceRoot: home.userConfigRoot, groups: home.importGroups.map((group) => group.id),
@@ -407,8 +411,11 @@ export async function readAgentHomeMarker(home: ResolvedAgentHome): Promise<Agen
     return value as AgentHomeMarker;
   } catch (error) { if (missing(error)) return null; throw error; }
 }
-async function writeMarker(home: ResolvedAgentHome, marker: AgentHomeMarker): Promise<void> {
-  const destination = join(home.shadowHome, AGENT_HOME_MARKER), temporary = `${destination}.${randomUUID()}`;
+export function readAgentHomePending(home: ResolvedAgentHome): Promise<AgentHomeMarker | null> {
+  return readAgentHomeMarker(home, AGENT_HOME_PENDING);
+}
+async function writeMarker(home: ResolvedAgentHome, marker: AgentHomeMarker, filename = AGENT_HOME_MARKER): Promise<void> {
+  const destination = join(home.shadowHome, filename), temporary = `${destination}.${randomUUID()}`;
   await disk.writeFile(temporary, `${JSON.stringify(marker, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
   try { await disk.rename(temporary, destination); }
   finally { await disk.rm(temporary, { force: true }); }
@@ -543,8 +550,10 @@ export async function scanAgentHome(home: ResolvedAgentHome) {
 type AgentHomeImportOptions = {
   groups: ReadonlySet<AgentHomeGroupId>; now?: Date; migratedFrom?: 'shared';
   historyPaths?: readonly string[];
+  historyIssues?: readonly AgentHomeImportIssue[];
   skip?: boolean;
-  upgradeSummary?: (issues: readonly AgentHomeImportIssue[]) => Pick<AgentHomeMarker, 'oldSessionsSkipped' | 'upgradeIssues'>;
+  upgradeSummary?: (issues: readonly AgentHomeImportIssue[]) => Pick<AgentHomeMarker, 'oldSessionsSkipped' | 'upgradeIssues' | 'historyImport'>;
+  prepareAfterPublish?: () => Promise<void>;
   afterCommit?: () => Promise<Pick<AgentHomeMarker, 'upgradeSignIn' | 'terminalNeedsSignIn'> | void>;
 };
 
@@ -590,7 +599,8 @@ export async function importAgentHome(home: ResolvedAgentHome, options: AgentHom
   try {
     const originalMarker = await readAgentHomeMarker(home);
     if (originalMarker && (!originalMarker.skipped || !options.groups.size)) return { marker: originalMarker, issues: [] };
-    if (options.migratedFrom)
+    const pendingMarker = options.prepareAfterPublish ? await readAgentHomePending(home) : null;
+    if (options.migratedFrom && !pendingMarker)
       await checkAgentHomeImportSpace([
         { home, groups: options.groups, historyPaths: options.historyPaths }
       ]);
@@ -616,6 +626,7 @@ export async function importAgentHome(home: ResolvedAgentHome, options: AgentHom
           }) : { items: [] as Item[], issues: [] as AgentHomeImportIssue[] };
       stage = 'history';
       if (options.historyPaths?.length) issues.push(...(await copyAgentHomeHistory(target, options.historyPaths, root)));
+      issues.push(...options.historyIssues ?? []);
       const marker: AgentHomeMarker = {
         importedAt: (options.now ?? new Date()).toISOString(), sourceRoot: home.userConfigRoot,
         groups: [...options.groups], files: Object.fromEntries(items.map((item) => [item.id, item.hash])),
@@ -624,17 +635,25 @@ export async function importAgentHome(home: ResolvedAgentHome, options: AgentHom
         ...options.upgradeSummary?.(issues)
       };
       stage = 'marker';
-      await writeMarker(target, marker);
+      if (options.prepareAfterPublish) {
+        await writeMarker(target, marker, AGENT_HOME_PENDING);
+        if (existing?.skipped) await disk.rm(join(target.shadowHome, AGENT_HOME_MARKER), { force: true });
+      } else await writeMarker(target, marker);
       return { marker, issues };
     };
-    const result = options.migratedFrom ? await stageAgentHomeUpgrade(home, apply) : await apply(home);
+    const result = pendingMarker ? { marker: pendingMarker, issues: pendingMarker.upgradeIssues ?? [] }
+      : options.migratedFrom ? await stageAgentHomeUpgrade(home, apply) : await apply(home);
+    stage = 'history';
+    // Native indexes contain absolute paths, so initialize only after publication at the final root.
+    await options.prepareAfterPublish?.();
     stage = 'sign-in';
     // Path-scoped credentials (for example Keychain) must use the final managed home.
     const upgrade = await options.afterCommit?.();
-    if (!upgrade) return result;
+    if (!upgrade && !options.prepareAfterPublish) return result;
     stage = 'marker';
     const marker = { ...result.marker, ...upgrade };
     await writeMarker(home, marker);
+    if (options.prepareAfterPublish) await disk.rm(join(home.shadowHome, AGENT_HOME_PENDING), { force: true });
     return { ...result, marker };
   } catch (error) {
     if (options.migratedFrom) throw new AgentHomeMigrationFailure(stage, error);
