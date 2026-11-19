@@ -9,7 +9,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
-vi.mock('@renderer/lib/ui/shortcut', () => ({ BoundShortcut: () => null }));
+vi.mock('@renderer/lib/hooks/useKeyboardShortcuts', () => ({ useShortcutOverrides: () => null, getEffectiveHotkey: () => null }));
 
 const { commandRegistry } = await import('@renderer/lib/commands/registry');
 const { useSearchSession } = await import('@renderer/features/global-search/search-session');
