@@ -1,15 +1,19 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { createRequire } from 'node:module';
+import { runInNewContext } from 'node:vm';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import {
   bundleContentDigest,
   ensureSessionSnapshot,
-  pruneExtensionData,
   pruneSessionSnapshots,
   removeUninstalledLeftovers,
   sessionSnapshotDir,
 } from './extension-session-snapshot';
+import * as snapshots from './extension-session-snapshot';
+import { ExtensionsService } from './extensions-service';
 
 /**
  * #6387 owner「时机和状态，你有理清吗」: an extension upgraded or uninstalled while a session
@@ -100,10 +104,41 @@ describe('an uninstalled App’s files: gone once its programs have exited (10-0
     expect([other, path.join(root, 'other', 'notes.json')].every((dir) => fs.existsSync(dir))).toBe(true);
   });
 
-  it('at gugu’s start, a data folder of an App not installed goes (a quit mid-uninstall); an installed one stays', () => {
-    const root = dataRoot(tmp());
-    pruneExtensionData(root, new Set(['other']));
-    expect(fs.existsSync(path.join(root, 'agent-notes'))).toBe(false);
-    expect(fs.readFileSync(path.join(root, 'other', 'notes.json'), 'utf8')).toBe('[1]');
+  it('startup keeps App data when its installation directory is missing, while pruning obsolete bundle copies', () => {
+    const userData = tmp();
+    try {
+      const root = dataRoot(userData);
+      const installed = bundle(userData, 'v1');
+      const frozen = ensureSessionSnapshot(installed, sessionSnapshotDir(userData, 'agent-notes', 'a'.repeat(64)));
+      fs.rmSync(path.join(userData, 'installed'), { recursive: true });
+      const service = new ExtensionsService(path.join(userData, 'installed'));
+      const entry = path.resolve(__dirname, '../../embedded-boot.ts');
+      const compiled = ts.transpileModule(fs.readFileSync(entry, 'utf8'), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+      });
+      const inert: unknown = new Proxy(function () { return inert; }, {
+        get: (_target, key) => key === 'then' ? undefined : key === Symbol.iterator ? function* () {} : inert,
+      });
+      const imports: Record<string, Record<string, unknown>> = {
+        electron: { app: { getPath: () => userData } },
+        './core/extensions/extensions-root': { extensionsService: () => service },
+        './core/extensions/extension-data': { EXTENSION_DATA_DIR_NAME: 'extension-data' },
+        './core/extensions/extension-session-snapshot': snapshots,
+      };
+      const requireBuiltin = createRequire(import.meta.url);
+      const load = (id: string) => id.startsWith('node:') ? requireBuiltin(id)
+        : new Proxy(imports[id] ?? {}, { get: (target, key) => key in target ? target[key as string] : inert });
+      const module = { exports: {} as { sweep: () => void } };
+      runInNewContext(compiled.outputText + '\nmodule.exports.sweep = sweepExtensionSessionLeftovers;', {
+        require: load, module, exports: module.exports, process, console, Buffer,
+        setTimeout, clearTimeout, setInterval, clearInterval, __dirname: path.dirname(entry),
+      });
+      module.exports.sweep();
+
+      expect(service.list()).toEqual({ extensions: [], invalid: [] });
+      expect(fs.readFileSync(path.join(root, 'agent-notes', 'notes.json'), 'utf8')).toBe('[1]');
+      expect(fs.readFileSync(path.join(root, 'other', 'notes.json'), 'utf8')).toBe('[1]');
+      expect(fs.existsSync(frozen)).toBe(false);
+    } finally { fs.rmSync(userData, { recursive: true, force: true }); }
   });
 });
