@@ -229,8 +229,12 @@ export function syncSessionTurnText(connection: Database.Database, rowId: string
     const text = (connection.prepare('SELECT search_text(?) AS text').get(item.text) as { text: string | null }).text;
     return text ? [{ item_id: messageReferenceId(turn, item.id) ?? item.id, role: item.role, text }] : [];
   });
-  for (const old of prior) if (!desired.some(value => value.item_id === old.item_id && value.role === old.role && value.text === old.text))
-    connection.prepare('DELETE FROM turn_text_rows WHERE id=?').run(old.id);
-  for (const value of desired) if (!prior.some(old => value.item_id === old.item_id && value.role === old.role && value.text === old.text))
+  const key = (value: { item_id: string; role: string; text: string }) => JSON.stringify([value.item_id, value.role, value.text]);
+  const remaining = new Map<string, typeof prior>();
+  for (const old of prior) { const matches = remaining.get(key(old)) ?? []; matches.push(old); remaining.set(key(old), matches); }
+  for (const value of desired) {
+    if (remaining.get(key(value))?.pop()) continue;
     connection.prepare('INSERT INTO turn_text_rows(session_id,seq,item_id,role,text) VALUES (?,?,?,?,?)').run(owner.session_id, owner.seq, value.item_id, value.role, value.text);
+  }
+  for (const matches of remaining.values()) for (const old of matches) connection.prepare('DELETE FROM turn_text_rows WHERE id=?').run(old.id);
 }

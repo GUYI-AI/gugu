@@ -170,4 +170,13 @@ describe('versioned session turn storage', () => {
       finally { restored.close(); }
     } finally { rmSync(directory, { recursive: true, force: true }); }
   });
+
+  it('preserves message multiplicity in search when only one duplicate identity is revised', () => {
+    const original = turn(); original.items.push({ ...original.items[0], seq: 3 });
+    const row = insert(original, false);
+    const revised = { ...original, items: original.items.map((item, index) => index === 3 && item.kind === 'message' ? { ...item, text: 'revised one' } : item) };
+    fixture.sqlite.transaction(() => prepareSessionTurn(fixture.sqlite, row, revised, false).commit())();
+    expect(readSessionTurn(fixture.sqlite, row)).toEqual(revised);
+    expect(fixture.sqlite.prepare('SELECT text FROM turn_text_rows ORDER BY text').all()).toEqual([{ text: 'revised one' }, { text: 'searchable question' }]);
+  });
 });
