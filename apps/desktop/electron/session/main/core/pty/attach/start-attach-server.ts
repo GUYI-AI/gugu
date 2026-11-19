@@ -6,7 +6,7 @@ import { log } from '@main/lib/logger';
 import { installServerBrowserHelpers } from '../server-browser-env';
 import { startPtyAttachServer, type AttachDeps } from './attach-server';
 import { SERVER_UPDATE_CONTROL_RPCS } from '@gugu/core/cloud/serverMachineHealth';
-import { HOST_RESUME_CALL, OPEN_EXTERNAL_CALL } from './attach-protocol';
+import { AGENT_HOME_CALL, HOST_RESUME_CALL, OPEN_EXTERNAL_CALL } from './attach-protocol';
 
 /**
  * #6264 这台机器上的程序要「打开网页」:装上助手脚本(`$BROWSER` / xdg-open),之后起的 agent 与终端都带上;
@@ -55,6 +55,10 @@ export function startSessionPtyAttachServer(dataDir: string, options: { link?: A
         }
         options.resume(since as number | undefined);
         return { result: { resumed: true, pid: process.pid } };
+      }
+      if (type === AGENT_HOME_CALL) {
+        const { answerAgentHomeCall } = await import('../../agents/agent-homes');
+        return answerAgentHomeCall(payload);
       }
       if (type === OPEN_EXTERNAL_CALL) {
         const { answerOpenExternalCall } = await import('../../session-timeline/remote-open-external-wiring');

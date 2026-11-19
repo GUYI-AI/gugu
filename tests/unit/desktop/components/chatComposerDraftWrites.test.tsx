@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { requestGroupAgentCreation } from '@/lib/uiEvents'
 import { act, useLayoutEffect, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatMessageComposer } from '../../../../apps/desktop/src/components/chat/ChatMessageComposer'
@@ -13,13 +14,15 @@ import { ShareIntakeContent } from '../../../../apps/desktop/src/mobile/share-in
 import { landPendingStarters } from '../../../../apps/desktop/src/lib/starterContinuation'
 import { MobileAssistantApp } from '../../../../apps/desktop/src/mobile/assistant/MobileAssistantApp'
 import { i18n } from '../../../../apps/desktop/src/i18n'
-import { InChatSlot } from '../../../../apps/desktop/src/lib/shellSlots'
 import { DevicesContext, useDevicesStore } from '../../../../apps/desktop/src/store/devicesContext'
-import { startPhoneNewTask } from '../../../../apps/desktop/src/mobile/chat/PhoneNewTask'
-import * as taskDispatch from '../../../../apps/desktop/src/mobile/agent-watch/createTaskInGroup'
+import { PhoneGroupAgentCreation } from '../../../../apps/desktop/src/mobile/chat/PhoneNewTask'
 import * as sessionRpc from '../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc'
 import { runInAction } from 'mobx'
 import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+
+vi.mock('@renderer/features/settings/subscriptions/ensure-agent-home', () => ({
+  ensureAgentHomeImported: async () => undefined,
+}))
 
 // The task folder card's project is the account project of this group (accountProjectsStore); 'machine' has its folder.
 beforeEach(() => runInAction(() => {
@@ -99,19 +102,10 @@ describe('chat editor draft writes', () => {
     expect(readComposer(input())).toBe('returned task text')
   })
 
-  it('carries the current document into a new task and clears it through the shared writer', async () => {
-    await renderWithAppProviders(harness, <InChatSlot.Provider value={{ projectName: null }}><ChatMessageComposer chatId="chat" isGroupChat onSend={async () => {}} /></InChatSlot.Provider>)
-    await act(async () => { writeComposer(input(), 'React snapshot') })
-    await act(async () => { editor().commands.setContent(plainTextDoc('current document'), { emitUpdate: false }) })
-    await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="composer-verb-task"]')!)
-    expect(takeComposerCarry('chat')).toBe('current document')
-    expect(readComposer(input())).toBe('')
-  })
-
-  it('clears the same live editor after a phone task is accepted', async () => {
+  it('keeps the live group message draft when the separate creation sheet sends a task', async () => {
     const width = Object.getOwnPropertyDescriptor(window, 'innerWidth')!
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 412 })
-    const created = vi.spyOn(taskDispatch, 'createTaskInGroup').mockResolvedValue({ sessionId: 'session' })
+    const created = vi.spyOn(sessionRpc, 'createSession').mockResolvedValue({ conversationId: 'session', projectId: 'project', title: 'Task', taskMessageId: 'card' })
     vi.spyOn(sessionRpc, 'fetchCreateOptions').mockResolvedValue({ projects: [], lastUsed: null, harnesses: [
       { id: 'codex', name: 'Codex', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: ['full-access'] },
     ] })
@@ -121,16 +115,22 @@ describe('chat editor draft writes', () => {
       return <DevicesContext.Provider value={{ ...base, devices: [device('machine', [], { projects: [{
         localProjectId: 'project', name: 'Project', rootPath: '/project', createdAt: '2026-10-26T00:00:00Z', chatId: 'chat',
         folders: [{ workspaceId: 'workspace', kind: 'root', path: '/project', attachedAt: null }],
-      }] })] }}><ChatMessageComposer chatId="chat" isGroupChat onSend={async () => {}} /></DevicesContext.Provider>
+      }] })] }}><ChatMessageComposer chatId="chat" isGroupChat onSend={async () => {}} /><PhoneGroupAgentCreation chatId="chat" name="Project group" /></DevicesContext.Provider>
     }
     try {
+      await import('@/mobile/agent-watch/CreateSessionPage')
       await renderWithAppProviders(harness, <Host />)
-      await act(async () => { writeComposer(input(), 'phone task draft'); startPhoneNewTask('chat') })
+      const chatInput = input()
+      await act(async () => { writeComposer(chatInput, 'group message draft'); requestGroupAgentCreation('chat') })
+      const sheet = document.querySelector<HTMLElement>('[data-testid="phone-group-agent-sheet"]')!
+      await clickElement(sheet.querySelector<HTMLElement>('[data-testid="agent-watch-create-folder"]')!)
       await clickElement(document.querySelector<HTMLElement>('[data-testid="phone-task-folder-card"] [data-testid="project-folder-paper"]')!)
-      await send()
-      expect(created).toHaveBeenCalledWith(expect.objectContaining({ chatId: 'chat', prompt: 'phone task draft' }))
-      expect(readComposer(input())).toBe('')
-      expect(harness.container.querySelector('[data-testid="phone-task-tag"]')).toBeNull()
+      await act(async () => { writeComposer(sheet.querySelector<HTMLElement>('[contenteditable="true"]')!, 'phone task draft') })
+      await clickElement(sheet.querySelector<HTMLButtonElement>('button[aria-label="发送消息"]')!)
+      expect(created).toHaveBeenCalledWith('machine', expect.objectContaining({ chatId: 'chat', taskChatId: 'chat', prompt: 'phone task draft' }))
+      expect(document.querySelector('[data-testid="phone-group-agent-sheet"]')).toBeNull()
+      expect(input()).toBe(chatInput)
+      expect(readComposer(chatInput)).toBe('group message draft')
     } finally { Object.defineProperty(window, 'innerWidth', width) }
   })
 

@@ -1,4 +1,3 @@
-import { qwenApiKeyConnection, qwenApiKeyConnectionBehavior } from './api-key-connection';
 import { platformModel } from './platform-model';
 import {
   definePlugin,
@@ -30,6 +29,7 @@ export const plugin = definePlugin(
   {
     id: 'qwen',
     name: 'Qwen Code',
+    publisher: '通义千问',
     description:
       "Command-line interface to Alibaba's Qwen Code models for coding assistance and code completion.",
     websiteUrl: 'https://github.com/QwenLM/qwen-code',
@@ -41,7 +41,6 @@ export const plugin = definePlugin(
      * 这一格是**实测**出来的，❌ 不收「文档写着」。
      */
     // 「API Key 连接」(#2507):一把 key 怎么进这一家的进程,见 ./api-key-connection.ts。
-    apiKeyConnection: qwenApiKeyConnection,
     vendorAccount: {
       kind: 'not-required',
       evidence:
@@ -177,7 +176,6 @@ export const plugin = definePlugin(
 );
 
 export const provider = registerPluginBehavior(plugin, {
-  apiKeyConnection: qwenApiKeyConnectionBehavior,
   sessionBundle: {
     platformModel,
     materialize: materializeQwenSessionBundle,

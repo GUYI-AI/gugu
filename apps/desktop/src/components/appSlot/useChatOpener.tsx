@@ -14,7 +14,7 @@ import { installedExtensionsStore, WORKSPACE_APP_ID } from '../../session/render
 import { APP_OPEN_WITH_EVENT, type AppOpenWithDetail } from '../../session/shared/extensions/app-runtime-protocol'
 import { displayNameOf } from '../../session/shared/extensions/file-openers'
 import { folderItem, isWaitingItem, waitingItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
-import { openPanelItem, showChatTab, panelTabsOf, chatPaneOf, chatLayoutOf, takeChatAsk, noteAsk, type ChatFileOpenReceipt } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { openPanelItem, panelTabsOf, chatPaneOf, takeChatAsk, noteAsk, type ChatFileOpenReceipt } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
@@ -47,7 +47,7 @@ function noteOpened(itemId: string): void {
  * claims the file, the one kept for its kind (「始终用它」), or the person picks — and it opens as a tab beside the chat
  * (`openPanelItem`). The pick, an App's several files and a file that cannot open are said over the chat (`overlay`).
  */
-export function useChatOpener(chatId: string | null, onShow?: (chatId: string, tabId: string) => void | Promise<void>, canTake?: () => boolean): { overlay: ReactNode; openWith: (detail: AppOpenWithDetail, from?: string) => void } {
+export function useChatOpener(chatId: string | null, onShow?: (chatId: string, tabId: string) => void | Promise<void>, canTake?: () => boolean, resourceChatId = chatId): { overlay: ReactNode; openWith: (detail: AppOpenWithDetail, from?: string) => void } {
   const { t } = useTranslation('messaging')
   const mobile = useMobileShell()
   const asking = useRef(0)
@@ -56,7 +56,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
   canTakeRef.current = canTake
   const [prompt, setPrompt] = useState<(AppOpenWithDetail & OpenFrom) | null>(null)
   /** 摩擦单 F51: the files of the App whose card was opened, when there are several. */
-  const [appFiles, setAppFiles] = useState<{ chatId: string; appName: string; files: { itemId: string; displayName: string }[] } | null>(null)
+  const [appFiles, setAppFiles] = useState<{ chatId: string; appName: string; from: OpenFrom; files: { itemId: string; displayName: string }[] } | null>(null)
   /** Why a file asked for could not be opened (gone, or not this group's): said here, not a click that does nothing. */
   const [unopened, setUnopened] = useState<string | null>(null)
   useEffect(() => {
@@ -69,20 +69,19 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
     const shown = { ...item, ...(from.message ? { message: from.message } : {}) }
     // A pending message is not tab state: neither JSON nor structured-clone snapshots carry it.
     if (item.takeOpening) Object.defineProperty(shown, 'takeOpening', { get: () => item.takeOpening, enumerable: false })
-    if (mobile) chatLayoutOf(target).setNarrow(true)
     const tabId = openPanelItem(target, shown, { intent: from.intent ?? 'navigate', ...(from.from ? { from: from.from } : {}), ...(from.restore ? { restore: from.restore } : {}), ...(from.wait ? { wait: from.wait } : {}) })
     if (!tabId) throw new Error('The file panel could not be opened')
     await onShow?.(target, tabId)
     if (item.itemId && !isWaitingItem(item)) noteOpened(item.itemId)
-  }, [onShow, mobile])
+  }, [onShow])
 
   // The file asked last is the one opened: a pill clicked, then another (or a file in an App's list), before the first's
   // answer is back — whichever answer comes last, the chat ends on the later ask (#7257). Each ask takes the next number.
   const openResolved = useCallback(
     async (detail: AppOpenWithDetail, from: OpenFrom = {}) => {
-      if (detail.chatId !== chatId) throw new Error('The file belongs to a different conversation')
+      if (!chatId || (detail.chatId !== chatId && detail.chatId !== resourceChatId)) throw new Error('The file belongs to a different conversation')
       from = { ...from, from: detail.from ?? from.from, intent: detail.intent ?? from.intent, ...(detail.wait ? { wait: detail.wait } : {}) }
-      if (from.from && detail.viewState) chatPaneOf(detail.chatId, from.from)?.setPageViewState(from.from, detail.viewState)
+      if (from.from && detail.viewState) chatPaneOf(chatId, from.from)?.setPageViewState(from.from, detail.viewState)
       if (detail.choice.kind === 'none') {
         // An image opens over the chat in the shared viewer, whoever asked — a link, a card, an App's page (whose images
         // it pages through, `among`); the page under it stays as it was. A tab only when one was asked for.
@@ -94,18 +93,18 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
           return
         }
         if (from.at) tellFilePlace(detail.itemId, from.at)
-        return show(detail.chatId, { kind: null, file: detail.file, itemId: detail.itemId, title: detail.name, typedName: detail.typedName }, from)
+        return show(chatId, { kind: null, file: detail.file, itemId: detail.itemId, title: detail.name, typedName: detail.typedName }, from)
       }
       if (detail.choice.kind === 'one') {
         const { candidate } = detail.choice
         let opening = detail.opening
         delete detail.opening
         const takeOpening = () => { const taken = opening; opening = undefined; return taken }
-        return show(detail.chatId, { kind: candidate.tabKind, itemId: detail.itemId, title: displayNameOf(detail.name, candidate.suffix), fileName: detail.name, typedName: detail.typedName, takeOpening }, from)
+        return show(chatId, { kind: candidate.tabKind, itemId: detail.itemId, title: displayNameOf(detail.name, candidate.suffix), fileName: detail.name, typedName: detail.typedName, takeOpening }, from)
       }
-      setPrompt({ ...detail, ...from })
+      setPrompt({ ...detail, ...from, chatId })
     },
-    [chatId, show],
+    [chatId, resourceChatId, show],
   )
   /**
    * An App asked for a file (its list's click, `files.openWith`), resolved by its host. A file of another chat goes to
@@ -126,22 +125,22 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
   )
   const openGroupFile = useCallback(
     // One of an App's files in this chat, picked from its list: a failure is said here, over the chat.
-    async (itemId: string) => {
+    async (itemId: string, from: OpenFrom = {}) => {
       if (!appsHere || !chatId) return
       noteAsk(chatId)
       const asked = ++asking.current
       setUnopened(null)
       try {
-        const result = await appsHere.groupFileOpener({ chatId, itemId })
+        const result = await appsHere.groupFileOpener({ chatId: resourceChatId ?? chatId, itemId })
         if (asked !== asking.current) return
         if (!result.success || !result.data) throw new Error(result.error || 'no answer')
         setAppFiles(null)
-        await openResolved(result.data)
+        await openResolved(result.data, from)
       } catch (error) {
         if (asked === asking.current) setUnopened(String(error) || 'no answer')
       }
     },
-    [chatId, openResolved],
+    [chatId, resourceChatId, openResolved],
   )
 
   useEffect(() => {
@@ -161,7 +160,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
         const { waitId, itemId, fileName, message, from, intent } = ask.waiting
         const open = panelTabsOf(chatId).find((tab) => tab.item.itemId === itemId)
         if (open) {
-          showChatTab(chatId, open.tabId)
+          openPanelItem(chatId, open.item, { ...(from ? { from } : {}), intent: 'navigate' })
           void Promise.resolve(onShow?.(chatId, open.tabId)).catch(error => log.warn({ error: String(error) }, 'the open file could not be shown'))
         } else void show(chatId, waitingItem(itemId, fileName || translateSessionMessage('task.loading'), waitId, message), { ...(message ? { message } : {}), ...(from ? { from } : {}), ...(intent ? { intent } : {}) })
           .catch(error => log.warn({ error: String(error) }, 'the waiting page could not be shown'))
@@ -186,11 +185,12 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
       // 「在本群打开」(app-redesign §5), the folder too: what the App opens here is found first, so that one already open is
       // the tab shown (owner 10-24) — the file it names in this chat (`chatFile`), its own page, or where its files are.
       const asked = ++asking.current
+      const from: OpenFrom = ask.from ? { from: ask.from } : {}
       setPrompt(null)
       setUnopened(null)
       setAppFiles(null)
       if (ask.app === WORKSPACE_APP_ID) {
-        void Promise.resolve(show(chatId, folderItem(), {})).catch(error => setUnopened(String(error)))
+        void Promise.resolve(show(chatId, folderItem(), from)).catch(error => setUnopened(String(error)))
         return
       }
       const page = ask.tab ? installedExtensionsStore.allTabContributions.find((entry) => entry.kind === `${ask.app}.${ask.tab}`) : installedExtensionsStore.mainTabOf(ask.app)
@@ -202,17 +202,17 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
       const main = installedExtensionsStore.mainTabOf(ask.app)
       const namesFile = (!ask.tab || page?.kind === main?.kind) && installedExtensionsStore.isEnabled(ask.app) && installedExtensionsStore.manifestFor(ask.app)?.contributes.tabs.some((tab) => tab.chatFile)
       if (page?.enabled && !namesFile) {
-        void Promise.resolve(show(chatId, { kind: page.kind, title: page.title }, {})).catch(error => setUnopened(String(error)))
+        void Promise.resolve(show(chatId, { kind: page.kind, title: page.title }, from)).catch(error => setUnopened(String(error)))
         return
       }
       if (namesFile) {
-        void appsHere!.appChatFile({ chatId, extensionId: ask.app }).then((result) => {
+        void appsHere!.appChatFile({ chatId: resourceChatId ?? chatId, extensionId: ask.app }).then((result) => {
           if (!live || asked !== asking.current) return
           if (!result.success || !result.data) setUnopened(result.error || 'no answer')
-          else void Promise.resolve(openResolved(result.data)).catch(error => setUnopened(String(error)))
+          else void Promise.resolve(openResolved(result.data, from)).catch(error => setUnopened(String(error)))
         })
       } else {
-        void appsHere!.groupFilesOpenedBy({ chatId, extensionId: ask.app }).then((result) => {
+        void appsHere!.groupFilesOpenedBy({ chatId: resourceChatId ?? chatId, extensionId: ask.app }).then((result) => {
           if (!live || asked !== asking.current) return
           if (!result.success || !result.data) {
             setUnopened(result.error || 'no answer')
@@ -220,8 +220,8 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
           }
           const files = result.data
           // One opens; several, or none yet, are said in the same sheet — a click never comes to nothing.
-          if (files.length === 1) void openGroupFile(files[0]!.itemId)
-          else setAppFiles({ chatId, appName: installedExtensionsStore.appName(ask.app) ?? ask.app, files })
+          if (files.length === 1) void openGroupFile(files[0]!.itemId, from)
+          else setAppFiles({ chatId, from, appName: installedExtensionsStore.appName(ask.app) ?? ask.app, files })
         })
       }
     }
@@ -234,7 +234,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
       pendingReceipts.clear()
       window.removeEventListener(UI_EVENTS.chatAsked, take)
     }
-  }, [chatId, onShow, openGroupFile, openResolved, show])
+  }, [chatId, resourceChatId, onShow, openGroupFile, openResolved, show])
 
   const content = chatId && (prompt?.choice.kind === 'choose' || unopened || (appFiles && appFiles.chatId === chatId)) ? (
     <div className="flex flex-col gap-3 !p-4" data-testid="group-app-open-with-sheet">
@@ -249,7 +249,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
         <div className="flex flex-col items-stretch gap-1" data-testid="group-app-slot-app-files">
           <div className="text-[length:var(--font-caption)] text-[var(--text-secondary)]">{t(appFiles.files.length > 0 ? 'chatArea.openWith.appFiles' : 'chatArea.openWith.noAppFiles', { name: appFiles.appName })}</div>
           {appFiles.files.map((file) => (
-            <Button key={file.itemId} size="sm" variant="ghost" className="justify-start" data-app-file={file.itemId} onClick={() => void openGroupFile(file.itemId)}>
+            <Button key={file.itemId} size="sm" variant="ghost" className="justify-start" data-app-file={file.itemId} onClick={() => void openGroupFile(file.itemId, appFiles.from)}>
               {file.displayName}
             </Button>
           ))}

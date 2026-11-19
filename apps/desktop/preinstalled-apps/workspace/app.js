@@ -1,3 +1,4 @@
+import { requestAt } from './annotation-selection.js'
 import { codeQuote } from './code-quote.js'
 import { lineNumberSelection, previewSelectionLines, previewSelectionText } from './selection-lines.js'
 /* global gugu */ // window.gugu: the platform runtime puts it on the page before this module runs.
@@ -31,8 +32,8 @@ const STRINGS = {
     new: '新建',
     newDoc: '新建文档',
     newName: '新文档.md',
-    showAppData: '显示 App 数据',
-    hideAppData: '隐藏 App 数据',
+    showAppData: '显示应用数据',
+    hideAppData: '隐藏应用数据',
     newFolder: '新建文件夹',
     newFolderName: '新建文件夹',
     newFile: '新建文件',
@@ -88,8 +89,8 @@ const STRINGS = {
     taskHomeEmptyDetail: '没选项目的任务都在这个文件夹工作，agent 写的文件会出现在这里。',
     listing: '正在读取…',
     noMatch: '没有文件名含「{q}」的文件。',
-    denied: '这个 App 没有读取{folder}的权限。',
-    openWith: '用别的 App 打开',
+    denied: '这个应用没有读取{folder}的权限。',
+    openWith: '用其他应用打开',
     openNewTab: '在新页签打开',
     back: '文件',
     backToConversation: '返回对话',
@@ -159,6 +160,7 @@ const STRINGS = {
     copied: '已复制',
     cite: '引用',
     send: '发送',
+    annotate: '批注',
     line: '第 {first} 行',
     lines: '第 {first}–{last} 行',
     placeMoved: '引用的那几行挪到了{lines}',
@@ -407,6 +409,7 @@ const STRINGS = {
     copied: 'Copied',
     cite: 'Cite',
     send: 'Send',
+    annotate: 'Annotate',
     line: 'Line {first}',
     lines: 'Lines {first}–{last}',
     placeMoved: 'The cited lines moved: {lines}',
@@ -822,7 +825,7 @@ function renderChrome() {
   $('json-discard').textContent = t.discard
   $('copy-sel').textContent = t.copy
   $('cite-sel').textContent = t.cite
-  $('send-sel').textContent = t.send
+  $('send-sel').textContent = annotationEntry() ? t.annotate : t.send
 }
 
 // ─── list ───────────────────────────────────────────────────────────────────
@@ -3268,7 +3271,12 @@ async function mountPlain(current) {
 let selectionEnd = null // () => the selection's end on screen, read again as the page scrolls
 let picksInPreview = false
 
-function showSelection(picks, end, inPreview = false) {
+let annotationStart = null
+const annotationEntry = () => !touchPane?.matches && gugu.apiVersion >= 58 && gugu.files.annotateSelection &&
+  state.current?.entry.workspace === state.ctx?.workspace?.id && state.ctx?.workspace && state.current?.entry
+
+function showSelection(picks, end, inPreview = false, start = end) {
+  annotationStart = picks.length ? start : null
   state.picks = picks
   selectionEnd = picks.length ? end : null
   picksInPreview = inPreview && picks.length > 0
@@ -3276,8 +3284,9 @@ function showSelection(picks, end, inPreview = false) {
   document.body.classList.toggle('picks-in-preview', picksInPreview)
   // Send goes into this page's conversation, on a host that has it: a session's own working copy (API 54), or the chat
   // whose folder the file is in, its members to @ (55).
-  const entry = state.current?.entry
-  $('send-sel').hidden = !(gugu.files.sendSelection && entry && (inCopy(entry) ? state.ctx?.workspace
+  const entry = state.current?.entry, annotation = annotationEntry()
+  $('send-sel').textContent = annotation ? state.t.annotate : state.t.send
+  $('send-sel').hidden = annotation ? !picks.some(pick => pick.lines && pick.text) : !(gugu.files.sendSelection && entry && (inCopy(entry) ? state.ctx?.workspace
     : !state.ctx?.workspace && entry.chat === state.ctx?.chat?.id && gugu.apiVersion >= 55))
   // After the editor's update and the page's layout: reading positions inside an update is not allowed.
   requestAnimationFrame(placeSelectionBar)
@@ -3305,7 +3314,8 @@ function selectionWatch(cm) {
       text: doc.sliceString(from, to),
       lines: [doc.lineAt(from).number, doc.lineAt(doc.lineAt(to).from === to ? to - 1 : to).number],
     }))
-    showSelection(picks, () => (view.dom.isConnected ? view.coordsAtPos(selection.main.head) : null))
+    showSelection(picks, () => (view.dom.isConnected ? view.coordsAtPos(selection.main.head) : null), false,
+      () => (view.dom.isConnected ? view.coordsAtPos(selection.main.from) : null))
   })
 }
 
@@ -3316,12 +3326,12 @@ document.addEventListener('selectionchange', () => {
   if (picked && !picked.isCollapsed && $('preview').contains(picked.anchorNode)) {
     const range = picked.getRangeAt(picked.rangeCount - 1)
     const pick = { text: previewSelectionText(range), lines: previewSelectionLines(range) }
-    showSelection([pick], () => (range.endContainer.isConnected ? ([...range.getClientRects()].at(-1) ?? range.getBoundingClientRect()) : null), true)
+    showSelection([pick], () => (range.endContainer.isConnected ? ([...range.getClientRects()].at(-1) ?? range.getBoundingClientRect()) : null), true, () => range.startContainer.isConnected ? range.getClientRects()[0] ?? range.getBoundingClientRect() : null)
   } else if (picksInPreview) {
     showSelection([], null)
   }
 })
-document.addEventListener('scroll', () => placeSelectionBar(), true)
+document.addEventListener('scroll', placeSelectionBar, true)
 
 // A place as the pill a cite makes (#7238): its lines (`at`: `{ lines, h }` — h finds them again once the file changes),
 // named by them; the file's name before them is gugu's. A preview block without lines names none: it points at the file.
@@ -3351,6 +3361,17 @@ async function cite(current = state.current, picks = state.picks, whole = false)
 // with a few words of the person's own; the host sends them into this page's conversation and tells the page only whether they went.
 // Called inside the click, as the host requires.
 async function send(current = state.current, picks = state.picks) {
+  const annotated = annotationEntry()
+  if (annotated) {
+    const selected = picks.filter(pick => pick.lines && pick.text), at = annotationStart?.()
+    if (!selected.length || !at) return
+    try {
+      const selection = { startLine: Math.min(...selected.map(pick => pick.lines[0])), endLine: Math.max(...selected.map(pick => pick.lines[1])),
+        text: selected.map(pick => pick.text).join('\n') }
+      if (await gugu.files.annotateSelection(annotated, requestAt(at, { selection }))) dropSelection()
+    } catch (error) { showBanner(failureText(error), 'error') }
+    return
+  }
   const cited = citeOf(current, picks)
   const at = selectionEnd?.()
   if (!cited || !at) return

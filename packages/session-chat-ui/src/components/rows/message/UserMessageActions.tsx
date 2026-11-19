@@ -5,7 +5,7 @@ import { IconCheck, IconCopy, IconEdit } from '@session-chat/components/primitiv
 import { createClipboard } from '@session-chat/components/primitives/use-clipboard';
 import { formatClock } from '@gugu/session-shared/format';
 import { useChatLocale, useChatTranslator } from '@session-chat/localization';
-import { userMessageActionsHeight, type MessageVars } from './metrics';
+import { USER_MESSAGE_ACTION_GAP, userMessageActionsHeight, type MessageVars } from './metrics';
 import { userMessageActionButton, userMessageActions, userMessageExpand, userMessageTime } from './user-message.css';
 
 export function UserMessageActions(props: {
@@ -15,6 +15,7 @@ export function UserMessageActions(props: {
   generating: boolean;
   readOnly?: boolean;
   vars: Pick<MessageVars, 'footerH'>;
+  gap?: number;
   collapse?: { bubbleKey: string; anchorId: string };
   reference?: () => JSX.Element;
 }) {
@@ -29,7 +30,7 @@ export function UserMessageActions(props: {
 
   return (
     <div data-user-message-actions={props.itemId} data-conversation-reference-footer={props.reference ? 'true' : undefined} class={userMessageActions}
-      style={{ height: `${userMessageActionsHeight(props.vars)}px` }}>
+      style={{ height: `${userMessageActionsHeight(props.vars, props.gap)}px`, 'padding-top': `${props.gap ?? USER_MESSAGE_ACTION_GAP}px` }}>
       <Show when={props.collapse}>{target => <button type="button" class={userMessageExpand}
         title={translate('transcript.collapseFullText')} data-collapse-id={target().bubbleKey}
         data-collapse-anchor={target().anchorId}>{translate('transcript.collapseFullText')}</button>}</Show>

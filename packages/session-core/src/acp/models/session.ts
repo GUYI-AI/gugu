@@ -97,7 +97,13 @@ export const sessionFailureSchema = z.discriminatedUnion('kind', [
 ]);
 export type SessionFailure = z.infer<typeof sessionFailureSchema>;
 
+/** A provider-reported retry in the current foreground cycle; independent of the four activity states. */
+export const sessionRetryingSchema = z.object({ since: z.number().int().nonnegative(), message: z.string() });
+export type SessionRetrying = z.infer<typeof sessionRetryingSchema>;
+
 export const sessionStateSchema = z.object({
+  /** Missing on older hosts; null means no retry has been reported for the current cycle. */
+  retrying: sessionRetryingSchema.nullable().optional(),
   lifecycle: sessionLifecycleSchema,
   /** The transcript's open group (display grouping), or null. Not the agent's state: see `lifecycle`. */
   activeTurnId: z.string().nullable(),
@@ -169,6 +175,7 @@ export const pendingPermissionWaitSchema = z.object({
 export type PendingPermissionWait = z.infer<typeof pendingPermissionWaitSchema>;
 
 export const sessionSummarySchema = z.object({
+  retrying: sessionRetryingSchema.nullable().optional(),
   sessionId: z.string(),
   projectId: z.string(),
   providerId: z.string(),

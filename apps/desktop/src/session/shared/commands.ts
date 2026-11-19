@@ -33,10 +33,11 @@ export const COMMANDS = defineCommands({
     defaultHotkey: 'Mod+,',
     category: 'Navigation',
   },
+  // Preserve existing custom bindings for the shortcut to this area.
   'app.library': {
-    label: 'Open Library',
-    labelKey: 'sidebar.library',
-    description: 'Open the Library',
+    label: 'Open Marketplace',
+    labelKey: 'extensions.tabMarket',
+    description: 'Open the Marketplace',
     iconKey: 'library',
     defaultHotkey: 'Mod+L',
     category: 'Navigation',

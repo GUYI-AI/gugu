@@ -385,7 +385,7 @@ describe('MessageBubble touch menu', () => {
     expect(harness.container.querySelector('[data-message-agent-owner="true"]')?.textContent).toBe('主人信息不可用')
 
     await renderMessage(undefined, false, vi.fn(), { memberProfile: agentProfile({ ownerUserId: 'user-1', ownerDisplayName: 'User' }) })
-    expect(harness.container.querySelector('[data-message-agent-owner="true"]')?.textContent).toBe('我的 agent')
+    expect(harness.container.querySelector('[data-message-agent-owner="true"]')?.textContent).toBe('我的智能体')
   })
   it('#6791/#1062 keeps sender and ownership metadata in a capped line', async () => {
     await renderMessage(undefined, true, vi.fn(), { memberProfile: agentProfile({ ownerUserId: 'user-1', ownerDisplayName: 'User' }) })

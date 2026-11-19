@@ -10,7 +10,7 @@ import { createNode, createReactHarness } from '../../support/testHarness'
 
 const m = vi.hoisted(() => ({ ledger: vi.fn(), workingCopy: vi.fn(), call: vi.fn(), toast: vi.fn() }))
 vi.mock('../../../apps/desktop/src/platform', () => ({ platform: { kind: 'capacitor', saveFile: vi.fn() } }))
-vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => true }))
+vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => true, readMobileShell: () => true }))
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
   readOpenedFileChunk: m.ledger,
   SessionpageRpcError: class extends Error { constructor(readonly code: string, message: string) { super(message) } },

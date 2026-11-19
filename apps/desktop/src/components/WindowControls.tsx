@@ -16,7 +16,6 @@ import {
 } from '../../shared/host-localization'
 import type { ShellLocation } from '../lib/shellNavigationHistory'
 import { useShellNavigation } from '../hooks/useShellNavigation'
-import { ListColumnToggle } from './PanelToggleButtons'
 import { WindowTitleBar } from './WindowTitleBar'
 import { useChatStoreReader } from '../store/chatContext'
 
@@ -127,7 +126,6 @@ function WindowControlButtons({ chrome, height }: { chrome: WindowChromeState & 
 
 export interface WindowControlsProps {
   activeTab: SidebarTab
-  mobile: boolean
   activeChatId: string | null
   sessionHostAvailable: boolean
   onSelectTab: (tab: SidebarTab) => void
@@ -145,7 +143,6 @@ export interface WindowControlsProps {
  */
 export function WindowControls({
   activeTab,
-  mobile,
   activeChatId,
   sessionHostAvailable,
   onSelectTab,
@@ -177,20 +174,7 @@ export function WindowControls({
   const chrome = useWindowChromeState()
   const { dw } = chrome
 
-  if (!titlebarRow) {
-    return (
-      <>
-        {/* 对话页的列表栏开关(#6753):与会话页根部那颗是同一个组件、同一个坐标(rail 宽 + 8, 6),挂在壳这里;
-            会话页那颗由会话页自己挂,通讯录没有列表栏就不挂。挂在壳的最后,no-drag 才压得住列表头的拖拽带。 */}
-        {!mobile && activeTab === 'chats' ? (
-          <div className="gg-list-toggle-float">
-            <ListColumnToggle slot="list:chats" />
-          </div>
-        ) : null}
-        <FloatingWindowControls chrome={chrome} />
-      </>
-    )
-  }
+  if (!titlebarRow) return <FloatingWindowControls chrome={chrome} />
   if (!dw) return null
   return (
     <WindowTitleBar

@@ -56,7 +56,7 @@ hear:callback=>{const handler=(_event,watch,packet)=>callback(watch,packet);ipcR
     cases = JSON.parse(line!.slice('PROJECTION_RESULT='.length)).cases;
   }, 35_000);
   afterAll(() => { if (temporary) fs.rmSync(temporary, { recursive: true, force: true }); });
-  it.each(['native-installed-app-grants', 'native-capture-and-render', 'native-unicode-once-and-fixture-routing', 'native-app-revocation'])('%s', name => {
+  it.each(['native-installed-app-grants', 'native-capture-and-render', 'native-painted-feedback-and-resize', 'native-unicode-once-and-fixture-routing', 'native-app-revocation'])('%s', name => {
     expect(cases[name], JSON.stringify(cases[name])).toEqual({ passed: true });
   });
 });

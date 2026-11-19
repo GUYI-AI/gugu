@@ -15,6 +15,7 @@ vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
   syncSchemaClientSession: vi.fn(async () => undefined),
 }))
 
+import { pendingPersonalReferral } from '../../../../apps/desktop/src/lib/referralPending'
 import { authService } from '../../../../apps/desktop/src/lib/auth'
 import { consumePendingReferrer, watchReferralLinks } from '../../../../apps/desktop/src/lib/referral'
 
@@ -33,6 +34,17 @@ const signIn = (session: unknown) => { mocks.session = session; for (const liste
 // billing.claim_device_free_credits reads to grant the referral reward.
 describe('referral from a link the OS opened', () => {
   beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); mocks.session = null; mocks.sessionListeners.clear() })
+
+  it('keeps personal referral hints after login without writing legacy reward metadata', async () => {
+    const stop = watch()
+    opened('https://gugu.nextmind.space/j/?r=ABCDEF123456')
+    await authService.requestLoginOtp('new@example.test')
+    expect(otpData()).not.toHaveProperty('referrer_gugu_number')
+    signIn({ access_token: 'x' })
+    expect(pendingPersonalReferral('new-user')).toBe('ABCDEF123456')
+    expect(pendingPersonalReferral('later-user')).toBe('')
+    stop()
+  })
 
   it('a contact short link opened while signed out becomes the sign-up referrer, and signing in clears it', async () => {
     const stop = watch()

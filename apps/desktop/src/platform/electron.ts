@@ -1,4 +1,4 @@
-import { unsupportedAccountClosure } from './accountClosure'
+import { nativeDesktopAccountClosure } from './desktopAccountClosure'
 import { stageFileHandle } from '@gugu/core/shared/fileResolver'
 import type { LocalUsageRequest, LocalUsageSnapshot } from '@gugu/core/shared/usage/dailyUsage'
 import type { Device } from '@gugu/core/shared/types/chat'
@@ -50,7 +50,7 @@ function unavailable(feature: string): Error {
  */
 
 export const electronPlatform: AppPlatform = {
-  accountClosure: unsupportedAccountClosure,
+  accountClosure: nativeDesktopAccountClosure,
   kind: 'electron',
   documentTitle: '咕咕 Desktop',
   authCallbacks: electronAuthCallbacks,

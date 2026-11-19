@@ -1,3 +1,4 @@
+import { isUserFacingModelId } from '@gugu/session-core/acp/client';
 import type { ComposerModelOption } from '@gugu/session-ui/react/components';
 import { log } from '@renderer/utils/logger';
 import { offeredInModelPicker, type PlatformModelOption } from '@shared/core/agents/platform-model';
@@ -119,6 +120,8 @@ export function sanitizeHarnessModelOptions(
   options?: { fromStaticTable?: boolean }
 ): Record<string, ComposerModelOption> | null {
   if (!harnessOptions) return null;
+  harnessOptions = Object.fromEntries(Object.entries(harnessOptions).filter(([id]) => isUserFacingModelId(id)));
+  if (Object.keys(harnessOptions).length === 0) return null;
   // 判定住在 `@/session/shared/platform-model-id`,两条用户面共用同一处 —— 这里只决定**怎么报**。
   const offending = platformNamespaceCollisions(Object.keys(harnessOptions));
   if (offending.length === 0) return harnessOptions;
@@ -202,7 +205,7 @@ export function composerModelOptions(
   const harness = sanitizeHarnessModelOptions(harnessOptions);
   // 只列点得中、跑得起来的(#7056):要会员的、他在设置「模型」页关掉的都不进下拉 —— 见 `offeredInModelPicker`。
   const platformModels = catalogModels.filter(
-    (model) => offeredInModelPicker(model) || model.id === currentPlatformModelId
+    (model) => isUserFacingModelId(model.id) && (offeredInModelPicker(model) || model.id === currentPlatformModelId)
   );
   if (!harness && platformModels.length === 0) return null;
 

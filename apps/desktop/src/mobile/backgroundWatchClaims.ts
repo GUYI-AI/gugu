@@ -1,6 +1,5 @@
 /**
- * 「后台守着」那条常驻通知(product spec)现在有两个要它的人:看管机器(useAgentWatchAlerts)
- * 与 #7199 手机当设备(云端的助理随时可能调这台手机)。宿主那一层(platform.setBackgroundWatch)只认一句话或 null,
+ * 看管机器、手机当设备和聊天消息共用一条安卓常驻通知。宿主只认一条通知或 null,
  * 两处各自开关会互相关掉对方 —— 看管的机器全离线时一句 null,手机当设备就聋了。
  *
  * 所以各自登记一句「我要它,通知上写这句」,最后一个放手才关;两句都在时并排写。
@@ -11,10 +10,10 @@ import { rendererLogger } from '../lib/log'
 
 const log = rendererLogger('mobile/background-watch')
 
-export type BackgroundWatchOwner = 'agentWatch' | 'phoneDevice'
+export type BackgroundWatchOwner = 'agentWatch' | 'phoneDevice' | 'chatNotifications'
 
 /** 并排时的先后:看管机器在前(它是这条通知原本的用途),手机当设备在后。 */
-const ORDER: readonly BackgroundWatchOwner[] = ['agentWatch', 'phoneDevice']
+const ORDER: readonly BackgroundWatchOwner[] = ['agentWatch', 'phoneDevice', 'chatNotifications']
 
 /** 一家登记的那句:标题,以及(可选)它自己的正文。 */
 export interface BackgroundWatchClaim {
@@ -45,7 +44,7 @@ function apply(): void {
 
 /** 登记(或改字);返回放手。同一个 owner 再登记一次 = 改通知上的字,不会闪。 */
 export function claimBackgroundWatch(owner: BackgroundWatchOwner, label: string, text?: string): () => void {
-  const claim: BackgroundWatchClaim = { label, ...(text ? { text } : {}) }
+  const claim: BackgroundWatchClaim = { label, text }
   claims.set(owner, claim)
   apply()
   return () => {

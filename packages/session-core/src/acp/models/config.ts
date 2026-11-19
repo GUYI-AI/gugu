@@ -58,7 +58,10 @@ export type ModelChoice = ModelOption;
 export const effortOptionSchema = configOptionBaseSchema;
 export type EffortOption = z.infer<typeof effortOptionSchema>;
 
-export const modeOptionSchema = configOptionBaseSchema;
+export const modeOptionSchema = configOptionBaseSchema.extend({
+  disabled: z.boolean().optional(),
+  reviewByHaiku: z.boolean().optional(),
+});
 export type ModeOption = z.infer<typeof modeOptionSchema>;
 
 export const sessionCommandSchema = z.object({

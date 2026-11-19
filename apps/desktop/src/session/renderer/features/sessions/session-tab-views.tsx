@@ -19,6 +19,7 @@ const loaders: Record<string, () => Promise<TabViewModule>> = {
   'chat-resource': () => import('./chat-resource-tab-view'),
   review: () => import('./diff-view/review-tab-view'),
   diff: () => import('./diff-view/diff-tab-view'),
+  'recorded-diff': () => import('./diff-view/recorded-diff-tab-view'),
   browser: () => import('../browser/browser-tab-view'),
   terminal: () => import('./terminals/terminal-tab-view'),
   'remote-ports': () => import('../remote-hosts/workspace/remote-ports-tab-view'),

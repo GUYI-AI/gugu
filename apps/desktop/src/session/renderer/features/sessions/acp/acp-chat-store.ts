@@ -538,6 +538,8 @@ export class AcpChatStore {
         {
           name: option.name,
           description: option.description,
+          disabled: option.disabled,
+          reviewByHaiku: option.reviewByHaiku,
           destructive: isDestructivePermissionMode(option.id),
         },
       ])

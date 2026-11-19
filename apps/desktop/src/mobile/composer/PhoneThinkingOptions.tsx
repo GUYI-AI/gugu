@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { Switch } from '@/components/ui/Switch'
 import { Check, ChevronRight } from '@/lib/icons'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
+import { translateSessionMessage } from '@renderer/localization/locale-store'
 import './PhoneThinkingOptions.css'
 
 type Props = Pick<ChatComposerProps, 'effortOptions' | 'selectedEffort' | 'defaultEffort' | 'onEffortChange' | 'fastMode' | 'onFastModeChange'> & { disabled?: boolean; fastModePending?: boolean; onOpenEffort?: () => void; onDefaultEffort?: () => void }
@@ -17,6 +18,7 @@ export function PhoneThinkingOptions({ effortOptions, selectedEffort, defaultEff
   const effective = items.some(([id]) => id === selectedEffort) ? selectedEffort
     : items.some(([id]) => id === defaultEffort) ? defaultEffort : undefined
   if (!items.length && fastMode === undefined) return null
+  const fastLabel = fastMode === undefined ? undefined : translateSessionMessage('composer.fastModeLabel')
   return <div data-testid="phone-thinking-options">
     {items.length > 0 && onOpenEffort ? <Button variant="ghost" className="gg-phone-composer-choice"
       data-testid="agent-watch-create-options-drill" data-dimension="effort" disabled={disabled} onClick={onOpenEffort}>
@@ -40,11 +42,11 @@ export function PhoneThinkingOptions({ effortOptions, selectedEffort, defaultEff
       </Button>)}
     </div>}
     {fastMode !== undefined && <div className="gg-phone-composer-choice gg-phone-thinking-fast" data-testid="phone-fast-option">
-      <span className="gg-phone-composer-choice-body">Fast</span>
+      <span className="gg-phone-composer-choice-body">{fastLabel}</span>
       {fastModePending && <span className="gg-phone-thinking-fast-status" role="status">
         <LoadingIndicator size="inline" />{t('switchingFast')}
       </span>}
-      <Switch aria-label="Fast" aria-busy={fastModePending || undefined} data-phone-fast="" checked={fastMode}
+      <Switch aria-label={fastLabel} aria-busy={fastModePending || undefined} data-phone-fast="" checked={fastMode}
         disabled={disabled || fastModePending || !onFastModeChange}
         onCheckedChange={value => onFastModeChange?.(value)} />
     </div>}

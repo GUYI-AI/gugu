@@ -23,7 +23,7 @@ vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages'
 }))
 const { useSlotMakesWay } = await import('../../../../apps/desktop/src/components/appSlot/useSlotMakesWay')
 const { chatTabs } = await import('./chatTabsHarness')
-const { focusedChatTab, openPanelItem, panelFull, setPanelFull } = await import('../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts')
+const { focusedChatTab, openPanelItem, panelFull, setPanelFull, showChatTab } = await import('../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts')
 
 function Probe({ chatId, makeWay }: { chatId: string; makeWay: () => void }) {
   useSlotMakesWay(chatId, makeWay)
@@ -54,7 +54,8 @@ describe('the tab makes way for an App compose', () => {
   })
 
   it('phone: the tab over the chat gives the chat the front', async () => {
-    openPanelItem('way-phone', board)
+    const opened = openPanelItem('way-phone', board)!
+    showChatTab('way-phone', opened)
     await harness.render(chatTabs({ chatId: 'way-phone', mobile: true }))
     expect(focusedChatTab('way-phone')?.kind).toBe('panel')
     show('way-phone')
@@ -70,6 +71,7 @@ describe('the tab makes way for an App compose', () => {
     expect(focusedChatTab('way-full')?.kind).toBe('panel')
 
     const side = openPanelItem('way-side', board)!
+    showChatTab('way-side', side)
     await harness.render(chatTabs({ chatId: 'way-side', tabbed: true }))
     show('way-side')
     expect(panelFull('way-side', side)).toBe(false)
@@ -77,7 +79,8 @@ describe('the tab makes way for an App compose', () => {
   })
 
   it('control: a message of another chat leaves this tab where it is', async () => {
-    openPanelItem('way-other', board)
+    const opened = openPanelItem('way-other', board)!
+    showChatTab('way-other', opened)
     await harness.render(chatTabs({ chatId: 'way-other', mobile: true }))
     show('chat-2')
     expect(focusedChatTab('way-other')?.kind).toBe('panel')

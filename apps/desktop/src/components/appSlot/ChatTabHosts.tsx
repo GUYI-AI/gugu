@@ -1,11 +1,25 @@
 import { observer } from 'mobx-react-lite'
-import { Fragment, useSyncExternalStore, type ReactNode } from 'react'
+import { Fragment, useEffect, useSyncExternalStore, type ComponentProps, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { chatTabSlotKey, readShellSlots } from '../../lib/shellSlots'
-import { chatLayoutOf, focusedChatTab, infoTabOf, panelTabOf, panelTabsOf, topicTabOf, type ChatPanelTab } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { chatLayoutOf, chatPaneOf, chatTabOf, focusedChatTab, infoTabOf, panelTabOf, panelTabsOf, topicTabOf, type ChatPanelTab } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { PaneContext } from '@renderer/features/tabs/pane-context'
+import { makesPaneCurrent } from '@renderer/features/tabs/pane-activation'
 
 const EMPTY: ReadonlyMap<string, HTMLElement> = new Map()
+
+/** Input belongs to the React tree that draws it, including content portaled into a pane's empty DOM slot. */
+export function ChatPaneContent({ chatId, tabId, ...props }: ComponentProps<'div'> & { chatId: string; tabId?: string }) {
+  const focus = (event: { target: EventTarget }) => {
+    if (!makesPaneCurrent(event.target)) return
+    const layout = chatLayoutOf(chatId)
+    const id = tabId ?? chatTabOf(layout)
+    if (layout.focusedPane.resolvedActiveTabId === id) return
+    if (id) chatPaneOf(chatId, id)?.setActiveTab(id)
+  }
+  return <div {...props} onPointerDownCapture={focus} onFocusCapture={focus} />
+}
+
 
 /**
  * In a block, each tab of the chat that is on screen has a slot the session page's engine left for it (chat-tab-providers'
@@ -33,10 +47,10 @@ export const ChatTabPortals = observer(function ChatTabPortals({ chatId, panel, 
         const layout = chatLayoutOf(chatId)
         const owner = [...layout.groups, ...layout.windowPanes.values()].find(({ pane }) => pane.entries.has(tab.tabId))
         // A portal inherits the shell's React context, not the pane around its DOM slot.
-        return element && owner ? createPortal(<PaneContext.Provider value={{ pane: owner.pane, paneId: owner.paneId, isFocusedPane: tab.focused && tab.shown }}>{panel(tab)}</PaneContext.Provider>, element, tab.tabId) : null
+        return element && owner ? createPortal(<PaneContext.Provider value={{ pane: owner.pane, paneId: owner.paneId, isFocusedPane: tab.focused && tab.shown }}><ChatPaneContent chatId={chatId} tabId={tab.tabId} className="contents">{panel(tab)}</ChatPaneContent></PaneContext.Provider>, element, tab.tabId) : null
       })}
-      {topicTab && topicSlot ? createPortal(topic(), topicSlot, topicTab.tabId) : null}
-      {infoTab && infoSlot ? createPortal(info(), infoSlot, infoTab.tabId) : null}
+      {topicTab && topicSlot ? createPortal(<ChatPaneContent chatId={chatId} tabId={topicTab.tabId} className="contents">{topic()}</ChatPaneContent>, topicSlot, topicTab.tabId) : null}
+      {infoTab && infoSlot ? createPortal(<ChatPaneContent chatId={chatId} tabId={infoTab.tabId} className="contents">{info()}</ChatPaneContent>, infoSlot, infoTab.tabId) : null}
     </>
   )
 })
@@ -52,6 +66,11 @@ export const ChatTabPage = observer(function ChatTabPage({ chatId, panel, topic,
   topic: () => ReactNode
   info: () => ReactNode
 }) {
+  useEffect(() => {
+    const layout = chatLayoutOf(chatId)
+    layout.setSinglePaneHost(true)
+    return () => layout.setSinglePaneHost(false)
+  }, [chatId])
   const focused = focusedChatTab(chatId)
   if (focused?.kind === 'topic') return <>{topic()}</>
   if (focused?.kind === 'info') return <>{info()}</>

@@ -124,6 +124,7 @@ vi.mock('@renderer/lib/electron-api', () => ({
 
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
   getAgentConfigRuntimeClient: async () => ({
+    listCustomModels: async () => ({ success: true, data: [] }),
     listConnections: async () => ({ success: true, data: [{ id: 'native', kind: 'native', name: 'CLI', current: true }] }),
     refreshAuthStatus: async () => ({ success: true, data: { kind: 'unauthenticated' } }),
   }),
@@ -1709,7 +1710,7 @@ describe('InitialSessionField', () => {
     ]);
   });
 
-  it('routes an uninstalled agent action to its agent detail in the library', async () => {
+  it('routes an uninstalled agent action to the agent product page', async () => {
     await renderField();
     (window as typeof window & {
       __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void
@@ -1719,9 +1720,8 @@ describe('InitialSessionField', () => {
       props.onAgentAction?.('claude');
     });
     expect(mocks.hostInstallNavigation).toHaveBeenCalledWith('claude');
-    expect(mocks.navigate).toHaveBeenCalledWith('library', {
-      tab: 'agents',
-      agentId: 'claude',
+    expect(mocks.navigate).toHaveBeenCalledWith('apps', {
+      agentDetail: { kind: 'agent-app-detail', agentId: 'claude' },
     });
   });
 
@@ -2297,7 +2297,7 @@ describe('InitialSessionField', () => {
       expect(latestState?.harnessModelUnlock).toMatchObject({
         groupLabel: `harnessCatalog.ownModelsGroup|${provider}`,
         label: `harnessCatalog.unlockModels|${provider}`,
-        detail: 'harnessCatalog.access.account / harnessCatalog.access.api-key / harnessCatalog.access.endpoint',
+        detail: 'harnessCatalog.access.account',
       });
       await act(async () => { latestState?.harnessSignIn?.(trigger); });
       // Base UI portals are browser-only. This node suite checks the real state

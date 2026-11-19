@@ -121,60 +121,104 @@ export function InstalledAppRow({
   };
 }) {
   return (
-    <ResourceMenu resource={menu.resource ?? { kind: 'app', target: { kind: 'app-detail', extensionId: id } }}><li
-      className={cn('mk-row', !enabled && 'is-off', pending && 'is-busy')}
-      data-testid={`extension-row-${id}`}
-      aria-busy={pending || switching ? 'true' : undefined}
+    <ResourceMenu resource={menu.resource ?? { kind: 'app', target: { kind: 'app-detail', extensionId: id } }}>
+      <InstalledAppRowLayout
+        name={name}
+        version={version}
+        line={line}
+        icon={<ExtensionMonogram name={name} iconDataUrl={iconUrl} />}
+        dimmed={!enabled}
+        busy={pending !== undefined || switching}
+        working={pending !== undefined}
+        translate={translate}
+        onOpen={onOpen}
+        testId={`extension-row-${id}`}
+      >
+        {enabled ? (
+          <AppLifecycleButton
+            state={lifecycle}
+            pending={pending}
+            percent={pendingPercent}
+            translate={translate}
+            onClick={onAction}
+            testId={`extension-row-action-${id}`}
+          />
+        ) : pending ? (
+          <AppLifecycleButton state={null} pending={pending} percent={pendingPercent} translate={translate} onClick={onAction} />
+        ) : null}
+        {/* 开关自己一格:点它只开关,❌ 顺带开产品页;预装的没有开关,格子照样占着。 */}
+        <span className="mk-switch-slot" onClick={(event) => event.stopPropagation()}>
+          {onToggleEnabled ? (
+            <Switch
+              size="sm"
+              checked={enabled}
+              disabled={switching || pending !== undefined}
+              aria-busy={switching ? 'true' : undefined}
+              aria-label={translate('extensions.switchLabel', { name })}
+              title={translate(enabled ? 'extensions.switchedOn' : 'extensions.switchedOff')}
+              onCheckedChange={onToggleEnabled}
+            />
+          ) : null}
+        </span>
+        <AppMoreMenu
+          name={name}
+          enabled={enabled}
+          docked={docked}
+          disabled={pending !== undefined}
+          translate={translate}
+          {...menu}
+          onToggleEnabled={onToggleEnabled}
+          testId={`extension-row-more-${id}`}
+        />
+      </InstalledAppRowLayout>
+    </ResourceMenu>
+  );
+}
+
+/** Installed extensions and agent runtimes use the same row geometry. */
+export function InstalledAppRowLayout({
+  name,
+  version,
+  line,
+  icon,
+  dimmed,
+  busy,
+  working = busy,
+  translate,
+  onOpen,
+  testId,
+  children,
+}: {
+  name: string;
+  version: string | null;
+  line: ReactNode;
+  icon: ReactNode;
+  dimmed?: boolean;
+  busy: boolean;
+  working?: boolean;
+  translate: SessionTranslate;
+  onOpen: (() => void) | undefined;
+  testId: string;
+  children: ReactNode;
+}) {
+  return (
+    <li
+      className={cn('mk-row', dimmed && 'is-off', working && 'is-busy')}
+      data-testid={testId}
+      aria-busy={busy || undefined}
       onClick={onOpen}
     >
-      <span className="mk-icon">
-        <ExtensionMonogram name={name} iconDataUrl={iconUrl} />
-      </span>
+      <span className="mk-icon">{icon}</span>
       <div className="mk-tx">
         <b>
-          <button type="button" className="mk-name text-left" aria-label={translate('extensions.detailsOf', { name })}>
+          <button type="button" disabled={!onOpen} className="mk-name text-left" aria-label={translate('extensions.detailsOf', { name })}>
             {name}
           </button>
-          <em>v{version}</em>
+          {version && <em>v{version}</em>}
         </b>
         {line}
       </div>
-      {enabled ? (
-        <AppLifecycleButton
-          state={lifecycle}
-          pending={pending}
-          percent={pendingPercent}
-          translate={translate}
-          onClick={onAction}
-          testId={`extension-row-action-${id}`}
-        />
-      ) : pending ? (
-        <AppLifecycleButton state={null} pending={pending} percent={pendingPercent} translate={translate} onClick={onAction} />
-      ) : null}
-      {/* 开关自己一格:点它只开关,❌ 顺带开产品页;预装的没有开关,格子照样占着。 */}
-      <span className="mk-switch-slot" onClick={(event) => event.stopPropagation()}>
-        {onToggleEnabled ? (
-          <Switch
-            size="sm"
-            checked={enabled}
-            disabled={switching || pending !== undefined}
-            aria-busy={switching ? 'true' : undefined}
-            aria-label={translate('extensions.switchLabel', { name })}
-            title={translate(enabled ? 'extensions.switchedOn' : 'extensions.switchedOff')}
-            onCheckedChange={onToggleEnabled}
-          />
-        ) : null}
-      </span>
-      <AppMoreMenu
-        name={name}
-        enabled={enabled}
-        docked={docked}
-        disabled={pending !== undefined}
-        translate={translate}
-        {...menu}
-        onToggleEnabled={onToggleEnabled}
-        testId={`extension-row-more-${id}`}
-      />
-    </li></ResourceMenu>
+      {children}
+    </li>
   );
 }

@@ -141,7 +141,7 @@ export default {
       "broadUseAnyway": "仍然使用",
       "broadPickAnother": "换一个"
     },
-    "title": "新建 Agent",
+    "title": "创建智能体",
     "unfinishedSweep": {
       "cancelledWithWarning": "上次有一个 Agent 没建完，已取消，但{{steps}}没有做干净。请重新创建。",
       "pending": "上次有一个 Agent 没建完，取消还没做完（{{steps}}没有做干净），下次启动会再试。",

@@ -92,7 +92,7 @@ export const localDependencyManager = new HostDependencyManager(localExecutionCo
   // 伴随程序(#6335)跑起来就是属主那一家的某条腿 ⇒ 环境按属主算(`getPlugin('antigravity-cli')` 会抛)。
   resolveProbeEnv: (descriptor) =>
     descriptor.category === 'agent'
-      ? resolveLocalAgentSpawnEnv(descriptor.ownerId ?? descriptor.id)
+      ? resolveLocalAgentSpawnEnv(descriptor.ownerId ?? descriptor.id, 'version-probe')
       : Promise.resolve(undefined),
   // 不能执行的家(ACP 注册表那一形态,#6335):咕咕装的那份,版本读启动器上的发行标记。
   readManagedVersion: readManagedLauncherRelease,

@@ -1,4 +1,5 @@
 import { reaction } from 'mobx'
+import { useQuery } from '@tanstack/react-query'
 import { replica, useReplica } from '../../lib/replica'
 import { useEffect } from 'react'
 import { chatDb } from '@/lib/supabase'
@@ -10,12 +11,25 @@ import { keepShelf, keptShelf } from '@/session/renderer/features/extensions/pan
 import { searchApps } from '@/session/shared/extensions/app-search'
 import { marketCategoryOf, marketCategoryRank } from '@/session/shared/extensions/catalog'
 import type { ProductPageApi } from '@/session/renderer/features/extensions/panel/app-product-page'
+import type { AppPlatform } from '@shared/extensions/app-platforms'
 import { phoneApps } from '../appSlot/phoneApps'
 
 const log = rendererLogger('app-slot/phone-market-page')
 
+export const PHONE_MARKET_QUERY_KEY = ['phone-app-market']
+
+export function usePhoneMarketPage(platform: AppPlatform = 'phone') {
+  return useQuery({
+    initialData: () => keptPhoneMarketPage(platform),
+    initialDataUpdatedAt: 0,
+    queryKey: [...PHONE_MARKET_QUERY_KEY, platform],
+    queryFn: () => readPhoneMarketPage(platform),
+    gcTime: Infinity,
+  })
+}
+
 /** Only transport differs: the same catalog and home/search rules as the desktop. */
-export async function readPhoneMarketPage() {
+export async function readPhoneMarketPage(platform: AppPlatform = 'phone') {
   const ranking = Promise.resolve(chatDb.rpc('market_install_ranking')).then(({ data, error }) => {
     if (error) throw error
     return new Map(((data ?? []) as { app_id: string; score: number }[]).map((row) => [row.app_id, row.score]))
@@ -23,9 +37,9 @@ export async function readPhoneMarketPage() {
     log.warn({ error: String(error) }, 'App market install ranking unreadable')
     return null
   })
-  const [entries, scores] = await Promise.all([phoneApps.market.entries(), ranking])
+  const [entries, scores] = await Promise.all([platform === 'phone' ? phoneApps.market.entries() : phoneApps.market.entries(false, platform), ranking])
   const home = marketHome(entries, scores)
-  keepShelf(PHONE_HOST, entries, home, null)
+  keepShelf(shelfKey(platform), entries, home, null)
   return pageOf(entries, home)
 }
 
@@ -33,8 +47,10 @@ export async function readPhoneMarketPage() {
 export const PHONE_HOST = 'phone'
 
 /** 上次画出来的那一页(kept-shelf.ts):重启后第一帧先画它,❌ 等排名那一趟网络。 */
-export function keptPhoneMarketPage() {
-  const kept = keptShelf<CloudMarketEntry, null>(PHONE_HOST)
+const shelfKey = (platform: AppPlatform) => platform === 'phone' ? PHONE_HOST : 'phone-desktop-market'
+
+export function keptPhoneMarketPage(platform: AppPlatform = 'phone') {
+  const kept = keptShelf<CloudMarketEntry, null>(shelfKey(platform))
   return kept ? pageOf(kept.items, kept.home) : undefined
 }
 

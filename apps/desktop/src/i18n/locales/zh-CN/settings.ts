@@ -1,4 +1,13 @@
 export default {
+  "externalHistory": {
+    "readOnly": "只读历史",
+    "user": "你",
+    "assistant": "助手",
+    "loadMore": "加载更多",
+    "loading": "正在读取…",
+    "readFailed": "未能读取更多消息。",
+    "close": "关闭",
+  },
   "iosCalendar": {
     "groupTitle": "这台手机上的任务 Agent 能用",
     "calendar": "日历",
@@ -54,7 +63,7 @@ export default {
     "checking": "检查中...",
     "checkUpdates": "检查更新",
     "currentVersion": "当前版本",
-    "iconAlt": "咕咕 App 图标",
+    "iconAlt": "咕咕应用图标",
     "iconAttribution": "图标来自 <iconSet>Solar Icon Set</iconSet>，作者 480 Design，许可 CC BY 4.0",
     "releaseNotes": "更新说明",
     "restartToInstall": "有新版本，重启安装",
@@ -314,7 +323,7 @@ export default {
       "setupDone": "完成",
       "configure": "设置",
       "thisNote": "权限仅供这台手机的任务使用。",
-      "dataOldApp": "这个版本的咕咕还不能读取这些数据，请更新手机 App",
+      "dataOldApp": "这个版本的咕咕还不能读取这些数据，请更新手机端",
       "photosSelected": "系统只允许读取选定的照片和视频",
       "photosManage": "修改照片与视频授权",
       "groupDescription": {
@@ -339,14 +348,14 @@ export default {
         "location": "定位权限",
         "notification_listener": "通知使用权",
         "dnd_access": "勿扰权限",
-        "alarm_app": "时钟 App",
+        "alarm_app": "时钟应用",
         "health_connect": "Health Connect 授权"
       },
       "locationServicesOff": "手机的定位总开关没开",
       "openLocationSettings": "去打开",
       "backgroundLocationHint": "咕咕在后台时也要取位置：把定位权限改成「始终允许」",
       "openAppSettings": "去设置",
-      "noClockApp": "这台手机上没有能设闹钟的时钟 App",
+      "noClockApp": "这台手机上没有能设闹钟的时钟应用",
       "healthUnsupported": "这台手机没有 Health Connect（安卓 14 起系统自带），读不了健康数据",
       "healthOldApp": "这个版本的咕咕还读不了健康数据，更新后再试",
       "healthPartial": "已给 {{granted}}/{{total}} 类",
@@ -748,7 +757,7 @@ export default {
     },
     "connectors": {
       "back": "连接应用",
-      "thisUnsupported": "本机的数据（日历、提醒、文件…）要在咕咕电脑 App 里连接。",
+      "thisUnsupported": "本机的数据（日历、提醒、文件…）要在咕咕桌面端连接。",
       "otherNote": "授权存在那台设备上，那台在线才能用；要开关得在那台设备上的咕咕里改。",
       "otherEmpty": "其他设备上还没有能用的。在那台设备上打开咕咕连接后，这里就会出现。",
       "through": "{{name}} 通过 {{device}} 访问，请保持该设备在线",

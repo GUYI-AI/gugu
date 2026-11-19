@@ -6,7 +6,7 @@ import { AppModalHost } from '../../../../apps/desktop/src/components/appModal/A
 import { closeAppModal, focusAppModalClose, showAppModal, type AppModalPresentation } from '../../../../apps/desktop/src/components/appModal/appModal';
 
 const mobile = vi.hoisted(() => ({ value: false }));
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => mobile.value }));
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => mobile.value, readMobileShell: () => mobile.value }));
 
 let harness: ReturnType<typeof createReactHarness>;
 let opener: HTMLButtonElement;

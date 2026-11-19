@@ -41,7 +41,6 @@ function progress(messageId: string, value?: DeclaredUploadProgress) {
 const local = native ? null : createDeclaredUploads({
   endpoint: async () => ({ ...await (await import('./attachmentsEndpoint')).attachmentsEndpoint(), upload: xhrAttachmentUpload }),
   copyOf: async sha => (await import('./attachmentBytes')).cachedAttachmentCopy(sha), progress, warn,
-  attempt: (task, attempt, run) => timings.get(task.messageId)!.stage('upload', attempt, run, undefined, { timeoutMs: null }),
 })
 native?.eventOn('attachments:progress', value => {
   const event = value as AttachmentProgressEvent

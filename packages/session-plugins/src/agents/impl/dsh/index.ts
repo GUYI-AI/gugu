@@ -1,4 +1,3 @@
-import { dshApiKeyConnection, dshApiKeyConnectionBehavior } from './api-key-connection';
 import { platformModel } from './platform-model';
 import {
   definePlugin,
@@ -27,6 +26,7 @@ export const plugin = definePlugin(
   {
     id: 'dsh',
     name: 'DeepSeek Harness',
+    publisher: 'DeepSeek',
     description: "DeepSeek's open-source coding agent: reads the codebase, edits files, runs commands, and keeps long sessions.",
     websiteUrl: 'https://www.deepseek.com/en/harness/',
   },
@@ -34,7 +34,6 @@ export const plugin = definePlugin(
     sessionBundle,
     /** 自带 key 填 `DEEPSEEK_API_KEY`(或在 dsh 自己的凭据库里存);平台会话由咕咕给令牌。`initialize` 报 `authMethods: []`。 */
     // 「API Key 连接」(#2507):一把 key 怎么进这一家的进程,见 ./api-key-connection.ts。
-    apiKeyConnection: dshApiKeyConnection,
     vendorAccount: {
       kind: 'not-required',
       evidence:
@@ -119,7 +118,6 @@ export const plugin = definePlugin(
 );
 
 export const provider = registerPluginBehavior(plugin, {
-  apiKeyConnection: dshApiKeyConnectionBehavior,
   mcp: dshMcpBehavior(),
   sessionBundle: { materialize: materializeDshSessionBundle, platformModel },
   // 会话级 argv(`--patch <文档>`)由物化器产出,经 `capabilityArgs` 挂在 `dsh --profile acp` 上。

@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { queryClient } from '@/lib/replica';
 import { Button } from '@/components/ui/Button';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
+import type { HtmlPreviewAnnotationContext } from './use-html-preview-annotations';
 import { HtmlPreviewSurface } from './HtmlPreviewSurface';
 import { previewReloadQueue } from './preview-reload';
 import { rendererLogger } from '@/lib/log';
@@ -33,13 +34,14 @@ interface HtmlPreviewFrameProps {
   scrollPosition?: { x: number; y: number };
   /** The element a link named (`#id`): scrolled to instead of the kept position; a new object scrolls again. */
   anchor?: { id: string };
+  annotation?: HtmlPreviewAnnotationContext;
 }
 
 /**
  * 预览本体:本机与 #6264 别的机器上的「文件」页签共用 —— 两边只差「登记走哪条」「链接开到哪」,
  * 这两样由调用方注入;地址、沙箱、改字即见、链接拦截只写这一份。
  */
-export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloadKey, subscribeChanges, scrollPosition, anchor }: HtmlPreviewFrameProps) {
+export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloadKey, subscribeChanges, scrollPosition, anchor, annotation }: HtmlPreviewFrameProps) {
   const reader = useId();
   const [preview, setPreview] = useState<Extract<HtmlPreviewRegistration, { ok: true }> | null>(null);
   const [url, setUrl] = useState<string>();
@@ -150,7 +152,7 @@ export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloa
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--bg-elevated)]">
       {preview && url ? (
-        <HtmlPreviewSurface fileName={fileName} url={url} onLink={onLink} scrollPosition={scrollPosition} anchor={anchor} />
+        <HtmlPreviewSurface fileName={fileName} url={url} onLink={onLink} scrollPosition={scrollPosition} anchor={anchor} annotation={annotation} />
       ) : (
         <div className="flex h-full items-center justify-center">
           <LoadingIndicator ariaLabel={translateSessionMessage('task.loading')} />

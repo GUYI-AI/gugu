@@ -308,6 +308,8 @@ export const antigravitySessionBundleDescriptor = {
   // 不透传,咕咕算出的托管路径就递不到子进程,登录写一处、会话读另一处(#6335)。
   shellEnv: { passThrough: ['GEMINI_HOME'] },
   configRoot: {
+    importGroups: [{ id: 'settings', paths: ['antigravity-cli/settings.json', 'antigravity-acp/settings.json'], evidence: 'CLI and ACP settings reside in their respective product directories.' }, { id: 'skills', paths: ['config/skills/', 'antigravity-cli/skills/'], evidence: 'Shared and CLI skills directories.' }, { id: 'hooks', paths: ['config/hooks.json'], evidence: 'Antigravity user hooks file.' }, { id: 'mcp', paths: ['config/mcp_config.json'], evidence: 'Antigravity user MCP file.' }],
+    credentialPaths: [{ path: 'antigravity-cli/antigravity-oauth-token', evidence: 'CLI OAuth credentials.' }, { path: 'antigravity-acp/acp_token.json', evidence: 'ACP credentials.' }],
     envVar: 'GEMINI_HOME',
     userPath: '.gemini',
     evidence:
@@ -316,12 +318,10 @@ export const antigravitySessionBundleDescriptor = {
       + '<root>/config/skills 与 <root>/antigravity-cli/skills,hook 读 <root>/config/hooks.json,MCP 读 '
       + '<root>/config/mcp_config.json,会话落 <root>/antigravity-acp/{brain,conversations});'
       + '官方 Zed 接入页 https://antigravity.google/docs/ide/extensions/zed 只写了 settings.json 的 auth/gcp',
-    // ⚠️ `.gemini` 是几个产品共用的根(2.0 桌面 `antigravity/`、CLI `antigravity-cli/`、IDE
-    //    `antigravity-ide/`、ACP `antigravity-acp/`、共享的 `config/`)。照托管规矩**默认全带**
-    //    (owner 2026-09-03「托管但不复制 = 合成目录」),这里只减去各家引擎自己会重新放的东西。
-    //    布局实测:owner MBP 2026-09-24,`~/.gemini` 67 MB,解引用软链后 212 MB(config/skills 165 条里
-    //    157 条是软链,复制时按 copyTree 纪律解引用成实体)。
+    // The shared root contains several products; derived IDE artifacts and conversations are not configuration.
     carryExclusions: [
+      { path: 'antigravity-acp/brain', evidence: 'ACP native conversation state (agy_acp_server 1.2.1).' },
+      { path: 'antigravity-acp/conversations', evidence: 'ACP native conversation transcripts (agy_acp_server 1.2.1).' },
       {
         path: 'antigravity/brain',
         evidence: 'Antigravity IDE project artifacts/scratch are workspace data, not CLI/ACP configuration (#1853). '

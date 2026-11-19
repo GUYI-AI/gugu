@@ -52,7 +52,7 @@ export function DesktopLiveWindow({ source, sources = [source], state, connected
       x: (start.left + dx - 16) / Math.max(1, bounds.width - width - 32),
       y: (start.top + dy - 16) / Math.max(1, bounds.composerTop - height - footerHeight - 32) } });
   };
-  return <div ref={root} className="pointer-events-none absolute inset-0" data-live-window-layer>
+  return <div ref={root} className="pointer-events-none absolute inset-0 z-10" data-live-window-layer>
     {children}
     {fit && <section data-live-window={state.mode} data-source-kind={source.kind}
       className="group pointer-events-auto absolute overflow-hidden rounded-xl border border-border bg-background-1 shadow-lg"

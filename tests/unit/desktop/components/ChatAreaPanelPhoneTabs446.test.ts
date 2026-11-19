@@ -88,7 +88,7 @@ async function render(chatId: string, mobile = true, kind: 'group' | 'dm' = 'gro
   await act(async () => { await Promise.resolve() })
 }
 
-const q = (selector: string) => harness.container.querySelector<HTMLElement>(selector)
+const q = (selector: string) => [...harness.container.querySelectorAll<HTMLElement>(selector)].find(node => !node.closest('[data-testid=session-chat-panel].invisible')) ?? null
 const tab = (id: string) => q(`[data-testid="phone-chat-tab-${id}"]`)
 
 const choice = (id: string) => document.querySelector<HTMLElement>(`[data-testid="phone-room-topic"][data-topic-id="${id}"]`)

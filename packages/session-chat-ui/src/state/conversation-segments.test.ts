@@ -249,13 +249,13 @@ describe('replay conversation segment boundaries', () => {
     expect(quote).toMatchObject({ itemId: source === 'native' ? messageQuoteLink({ kind: 'session', sessionId: 's', itemId: 'original' }) : 'original', text: 'original words', from: 'Peer' });
   });
 
-  it('does not add the generic message margin between process parts or after an action lane', () => {
+  it('keeps process parts together and separates a new user utterance', () => {
     const record = turn([message('u', 'user', 1000), call('work'), message('first', 'assistant', 2000), call('more'), message('latest', 'assistant', 3000), message('steer', 'user', 4000)]);
     const rows = flattenTier([record], context(true, ['t:process']), segmenters);
-    expect(rows.find(row => row.itemId === 'first')?.gapBefore).toBe(0);
+    expect(rows.find(row => row.itemId === 'first')?.gapBefore).toBe(8);
     expect(rows.find(row => row.itemId === 'latest')?.gapBefore).toBe(8);
-    expect(rows.find(row => row.itemId === 'steer')?.gapBefore).toBe(0);
-    expect(rows.at(-1)?.gapBefore).toBe(0);
+    expect(rows.find(row => row.itemId === 'steer')?.gapBefore).toBe(24);
+    expect(rows.at(-1)?.gapBefore).toBe(24);
   });
 
   it('uses the real turn completion after a zero-tool reply whose first chunk arrived at wake-up', () => {

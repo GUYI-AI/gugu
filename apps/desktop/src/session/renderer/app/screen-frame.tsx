@@ -220,17 +220,17 @@ const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: st
   const { translate } = useSessionMessages();
   const corners = screenLayout.corners(blockId);
   const focused = screenLayout.focusedBlockId === blockId;
+  const actions = <>
+    <ChatPartSlot chatId={chatId} part="actions" className="flex items-center" />
+    {screenLayout.order.length > 1 ? <CloseBlockButton blockId={blockId} /> : null}
+  </>;
   return (
     <ChatPanes
       chatId={chatId}
       blockId={blockId}
       reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
-      actionsSlot={
-        <TabBarActionRow atWindowEdge={corners.topRight}>
-          <ChatPartSlot chatId={chatId} part="actions" className="flex items-center" />
-          {screenLayout.order.length > 1 ? <CloseBlockButton blockId={blockId} /> : null}
-        </TabBarActionRow>
-      }
+      actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight}>{actions}</TabBarActionRow>}
+      chromeActionsSlot={<TabBarActionRow atWindowEdge={false}>{actions}</TabBarActionRow>}
       chip={({ tab, host }) => (
         <ChatTabChip
           tab={tab}

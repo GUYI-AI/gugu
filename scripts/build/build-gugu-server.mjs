@@ -38,7 +38,7 @@ import {
 import { defaultMiseCacheDir, obtainMiseArchive } from './mise-archive-cache.mts'
 import { assistantRulesSeedToCarry } from '../gugu-server/assistant-rules-seed.mts'
 import { serverLauncher } from '../gugu-server/launcher.mjs'
-import { installVendorNodeDependencies } from './install-vendor-node-deps.mjs'
+import { installServerNodeDependencies } from './install-vendor-node-deps.mjs'
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const rootPackage = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
@@ -126,7 +126,7 @@ writeFileSync(
   JSON.stringify({ name: 'gugu-server', version, private: true, dependencies: externalVersions }, null, 2),
 )
 // 按 Node ABI 装原生模块:在包目录里对着上面那份 package.json 装一次,预编译件由各包自己的 install 脚本按本机平台取。
-installVendorNodeDependencies(join(stage, 'app'), ['--omit=dev', '--no-audit', '--no-fund', '--no-package-lock'])
+installServerNodeDependencies(join(stage, 'app'), ['--omit=dev', '--no-audit', '--no-fund', '--no-package-lock'])
 
 // 桌面包里这些包由 pnpm 装、pnpm-workspace.yaml 的 patchedDependencies 自动打上补丁;npm 不认那一段,
 // 这里照同一份补丁文件打一遍 —— 同一个版本号,桌面和 server 跑的必须是同一份代码。

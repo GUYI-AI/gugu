@@ -871,6 +871,9 @@ export function ChatRoot(props: ChatRootProps) {
   const activityLaneRanges = createMemo(() => joinedActivityLanes(committedActivityLanes(), activeUnits(), committedUnits().length));
   const activityLaneByIndex = createMemo(() => new Map(activityLaneRanges().filter(lane => viewState().isCollapsed(lane.id)).map(lane => [lane.index, lane])));
 
+  const [hoveredUtterance, setHoveredUtterance] = createSignal<string>();
+  const utteranceAt = (target: EventTarget | null) => target instanceof Element && outerEl?.contains(target)
+    ? target.closest<HTMLElement>('[data-conversation-utterance]')?.dataset.conversationUtterance : undefined;
   const latestConversationMessageId = createMemo(() => latestConversationBubbleId(units(), { theme: theme() }));
   const pendingBubbleMeasures = new Set<string>();
 
@@ -2443,6 +2446,8 @@ export function ChatRoot(props: ChatRootProps) {
                 data-chat-root
                 data-chat-layout={theme().layout.preset}
                 data-agent-conversation={theme().layout.agentConversation ? 'true' : undefined}
+                onMouseOver={event => setHoveredUtterance(utteranceAt(event.target))}
+                onMouseOut={event => setHoveredUtterance(utteranceAt(event.relatedTarget))}
                 class={outerClip}
                 style={scrollElStyle}
               >
@@ -2529,7 +2534,7 @@ export function ChatRoot(props: ChatRootProps) {
                                 style={isActivityPin() ? { top: `${userTopGap + activityPinOffset(unitIndex) - (u()?.gapBefore ?? 0)}px` } : { 'pointer-events': 'auto' }}
                               >
                               <Show when={isActivityPin()}><div class={`${pinBackdrop} ${activityPinBackdrop}`}
-                                style={{ top: `${-userTopGap}px`, left: `${pinFrame().left}px`, width: `${pinFrame().width}px` }}
+                                style={{ top: `${(u()?.gapBefore ?? 0) - userTopGap}px`, left: `${pinFrame().left}px`, width: `${pinFrame().width}px` }}
                                 data-chat-pin-backdrop="" aria-hidden="true" /></Show>
                               <UnitRow
                                 unit={u()!}
@@ -2549,6 +2554,8 @@ export function ChatRoot(props: ChatRootProps) {
                                 bodySize={bodySizeOf}
                                 finalReplyId={finalReplyId()}
                                 latestConversationMessageId={latestConversationMessageId()}
+                                utteranceHovered={u()?.kind === 'turn-completion' && !!u()?.conversationUtterance
+                                  && hoveredUtterance() === u()?.conversationUtterance}
                                 background={backgroundAttachment()}
                               />
                               </div>

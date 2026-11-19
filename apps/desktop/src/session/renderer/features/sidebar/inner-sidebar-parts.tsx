@@ -1,10 +1,10 @@
 import './inner-sidebar-head.css';
 import { Button } from '@/components/ui/Button';
-import { PanelLeftClose, SquarePen } from '@/lib/icons';
+import { PanelLeft, SquarePen } from '@/lib/icons';
 import type { CSSProperties, ReactNode } from 'react';
 import { Chip } from '@/components/ui/Chip';
-import { IconButton } from '@/components/ui/IconButton';
 import { TITLEBAR_ACTION_SLOT_GAP_PX, TITLEBAR_ACTION_SLOT_WIDTH_PX } from '@/lib/window-chrome';
+import { Button as TabStripButton } from '@renderer/lib/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
@@ -26,10 +26,10 @@ export const innerSectionEmptyClass = 'px-5 pb-2 text-xs text-foreground-muted';
 
 /**
  * 头一行:这个群 / 项目自己 —— 头像 + 名字(+ 标签,示例的「示例」),点它做什么由调用方给(群 / 项目 = 回到它的主群聊)。
- * 它是这一列的标题,不是列表里的一行:看着它时 ❌ 选中底色(刘威提议稿 v1 的 .ihead:24px 头像、粗体名字、底下没有底;
- * 字号取面板标题那一档 --font-title,稿子的 15px 不在字号阶梯上)。
- * 行尾的钮(新智能体、收起这一列)由调用方给,摆在行的右端,是左边列表顶上那一行(«、会话历史)那一种;
- * 名字给它们让出 `trailingButtons` 枚 28px 钮、钮间 4px、右边 8px。`hoverButton`(群的「+」)静止时不占地方,
+ * 群 / 项目的两行头部共用一块悬停底，创建按钮和行尾按钮是独立入口。标题用 aria-current 表示当前页。
+ * 标题用面板的粗体字号 --font-title。
+ * 行尾的钮(群菜单、收起这一列)由调用方给,摆在行的右端,是左边列表顶上那一行(«、会话历史)那一种;
+ * 名字给它们让出 `trailingButtons` 枚 28px 钮、钮间 4px、右边 8px。`hoverButton`(群的「⋯」)静止时不占地方,
  * 指针落到这一行、键盘停在里面或它的菜单开着时才展开,名字再让出它那一格。
  * 没有创建入口时是这一列顶上那条 40px 的带(#2548 提议稿:和左边列表顶上那一行、正文的页签条平齐),❌ 再在上面垫一条空带;
  * 带里空着的地方照样拖得动窗口(同页签条,按钮自己退订,index.css @@@titlebar-no-drag)。
@@ -75,6 +75,7 @@ export function InnerHeadRowLayout({
         <SidebarMenuButton
           aria-label={name}
           aria-current={active ? 'page' : undefined}
+          data-inner-head-open=""
           className="w-full"
           style={{ paddingInlineEnd: 'var(--head-reserve)' }}
           onClick={onOpen}
@@ -86,7 +87,7 @@ export function InnerHeadRowLayout({
           </span>
         </SidebarMenuButton>
         {createAction ? <Button variant="ghost" size="sm" className="gg-inner-head-create window-no-drag-region" data-inner-head-create="" onClick={createAction.onClick}><SquarePen size={14} /><span>{createAction.label}</span></Button> : null}
-        <span className="absolute inset-y-0 right-2 flex items-center gap-1">
+        <span className="absolute inset-y-0 right-2 flex items-center gap-1" data-inner-head-actions="">
           {hoverButton ? (
             <span data-inner-head-hover="" className="-me-1 flex w-0 overflow-hidden opacity-0 transition-[width,margin,opacity] group-focus-within/head:me-0 group-focus-within/head:w-7 group-focus-within/head:opacity-100 group-hover/head:me-0 group-hover/head:w-7 group-hover/head:opacity-100 has-[[aria-expanded=true]]:me-0 has-[[aria-expanded=true]]:w-7 has-[[aria-expanded=true]]:opacity-100">
               {hoverButton}
@@ -99,7 +100,7 @@ export function InnerHeadRowLayout({
   );
 }
 
-/** 头一行最右那枚:收起这一列(#2548 ⑤)。收起是全局的(inner-sidebar-fold);钮是笔那一种。 */
+/** 头一行最右那枚，收起这一列（#2548 ⑤）。 */
 export function InnerSidebarFoldButton() {
   const { translate } = useSessionMessages();
   const label = translate('sidebar.collapseInner');
@@ -107,9 +108,9 @@ export function InnerSidebarFoldButton() {
     <Tooltip>
       <TooltipTrigger
         render={
-          <IconButton size="sm" tone="strong" aria-label={label} data-inner-head-fold="" onClick={() => setInnerSidebarFolded(true)}>
-            <PanelLeftClose />
-          </IconButton>
+          <TabStripButton size="icon-sm" variant="ghost" className="window-no-drag-region" aria-label={label} data-inner-head-fold="" onClick={() => setInnerSidebarFolded(true)}>
+            <PanelLeft />
+          </TabStripButton>
         }
       />
       <TooltipContent>{label}</TooltipContent>

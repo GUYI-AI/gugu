@@ -1,4 +1,6 @@
 import nodePath from 'node:path';
+import { Worker } from 'node:worker_threads';
+import { createGitStatusClient } from '@gugu/session-core/git/status-worker';
 import {
   createBoundExec,
   type BoundExec,
@@ -95,7 +97,13 @@ class LocalMachineRuntime implements MachineRuntime {
     }),
     { path: nativeRuntimePath }
   );
+  private readonly gitStatus = createGitStatusClient(() =>
+    new Worker(desktopWorkerPath('git-status'), { name: 'git-status' })
+  );
   readonly git = new GitRuntime({
+    statusReader: (worktree, exec) => this.gitStatus.read({
+      worktree, file: getGitExecutable(), env: exec.env,
+    }),
     exec: new DynamicGitExec(process.cwd()),
     watcher: this.watcher,
     onError: (context, error) =>
@@ -106,6 +114,7 @@ class LocalMachineRuntime implements MachineRuntime {
   async dispose(): Promise<void> {
     await this.files.dispose();
     await this.git.dispose();
+    await this.gitStatus.dispose();
     await this.watcher.dispose();
     await this.scope.dispose();
   }

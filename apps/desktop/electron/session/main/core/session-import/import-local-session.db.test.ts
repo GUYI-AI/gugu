@@ -4,6 +4,7 @@ import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppDb } from '@main/db/client';
 import type { CreateSessionParams } from '@shared/core/sessions/create-session';
+import type { ImportLocalSessionParams } from '@shared/core/session-import/session-import';
 
 const mocks = vi.hoisted(() => ({
   db: undefined as AppDb | undefined,
@@ -309,6 +310,110 @@ describe('importLocalSession', () => {
         projectId: 'project-1',
       });
       expect(mocks.createSession).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('宿主原子认领', () => {
+    const engines = [
+      { engine: 'codex' as const, provider: 'codex', nativeId: CODEX_SESSION },
+      { engine: 'claude-code' as const, provider: 'claude', nativeId: CLAUDE_SESSION },
+    ];
+
+    function persistImportedSession(params: CreateSessionParams) {
+      const session = params.sessionConfig.initialSession!;
+      fixture.sqlite.prepare(
+        'INSERT INTO sessions (id, project_id, provider, runtime, provider_session_id) VALUES (?, ?, ?, ?, ?)'
+      ).run(session.id, params.projectId, session.provider, session.type, importedProviderSessionId(params));
+      return { success: true, data: {} };
+    }
+
+    function importRequest(engine: 'codex' | 'claude-code'): ImportLocalSessionParams {
+      return { engine, providerSessionId: engine === 'codex' ? CODEX_SESSION : CLAUDE_SESSION,
+        filePath: '/f.jsonl', title: 'import race', cwd: '/work/webapp' };
+    }
+
+    beforeEach(() => {
+      fixture.sqlite.exec("INSERT INTO projects (id, name, path) VALUES ('project-race', 'race', '/work/webapp')");
+      mocks.createSession.mockImplementation(async (params: CreateSessionParams) => persistImportedSession(params));
+    });
+
+    it.each(engines)('concurrent $engine imports return one persisted task', async ({ engine, provider, nativeId }) => {
+      let previews = 0;
+      let release!: () => void;
+      const bothPreviews = new Promise<void>((resolve) => { release = resolve; });
+      mocks.preview.mockImplementation(async () => {
+        if (++previews === 2) release();
+        await bothPreviews;
+        return previewOf({ providerSessionId: nativeId });
+      });
+
+      const results = await Promise.all([
+        importLocalSession(importRequest(engine)),
+        importLocalSession(importRequest(engine)),
+      ]);
+
+      expect(previews).toBe(2);
+      expect(results[0].sessionId).toBe(results[1].sessionId);
+      expect(results.map(result => result.projectId)).toEqual(['project-race', 'project-race']);
+      expect(results.map(result => result.alreadyImported).sort()).toEqual([false, true]);
+      expect(mocks.createSession).toHaveBeenCalledTimes(1);
+      expect(fixture.sqlite.prepare(
+        'SELECT id, project_id FROM sessions WHERE provider = ? AND provider_session_id = ?'
+      ).all(provider, nativeId)).toEqual([{ id: results[0].sessionId, project_id: 'project-race' }]);
+    });
+
+    it.each(engines)('sequential $engine imports still reuse the original task', async ({ engine, nativeId }) => {
+      mocks.preview.mockResolvedValue(previewOf({ providerSessionId: nativeId }));
+      const first = await importLocalSession(importRequest(engine));
+      const second = await importLocalSession(importRequest(engine));
+      expect(first.alreadyImported).toBe(false);
+      expect(second).toEqual({ ...first, alreadyImported: true });
+      expect(mocks.createSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('the same native ID in different engines belongs to different tasks', async () => {
+      mocks.preview.mockResolvedValue(previewOf({ providerSessionId: CLAUDE_SESSION }));
+      const claude = await importLocalSession(importRequest('claude-code'));
+      const codex = await importLocalSession(importRequest('codex'));
+      expect(codex.alreadyImported).toBe(false);
+      expect(codex.sessionId).not.toBe(claude.sessionId);
+      expect((await importLocalSession(importRequest('claude-code'))).sessionId).toBe(claude.sessionId);
+      expect((await importLocalSession(importRequest('codex'))).sessionId).toBe(codex.sessionId);
+      expect(mocks.createSession).toHaveBeenCalledTimes(2);
+    });
+
+    it('different native IDs can be created concurrently', async () => {
+      let arrived = 0;
+      let release!: () => void;
+      const bothCreates = new Promise<void>((resolve) => { release = resolve; });
+      mocks.preview.mockImplementation(async ({ filePath }: { filePath: string }) =>
+        previewOf({ providerSessionId: filePath === '/first.jsonl' ? CODEX_SESSION : CLAUDE_SESSION }));
+      mocks.createSession.mockImplementation(async (params: CreateSessionParams) => {
+        if (++arrived === 2) release();
+        await bothCreates;
+        return persistImportedSession(params);
+      });
+
+      const results = await Promise.all([
+        importLocalSession({ ...importRequest('codex'), filePath: '/first.jsonl' }),
+        importLocalSession({ ...importRequest('codex'), filePath: '/second.jsonl' }),
+      ]);
+      expect(new Set(results.map(result => result.sessionId)).size).toBe(2);
+      expect(results.every(result => !result.alreadyImported)).toBe(true);
+    });
+
+    it('a failed create releases the claim for the next request', async () => {
+      mocks.preview.mockResolvedValue(previewOf({ providerSessionId: CODEX_SESSION }));
+      mocks.createSession.mockRejectedValueOnce(new Error('create failed'));
+      const results = await Promise.allSettled([
+        importLocalSession(importRequest('codex')),
+        importLocalSession(importRequest('codex')),
+      ]);
+      expect(results[0]).toMatchObject({ status: 'rejected', reason: new Error('create failed') });
+      expect(results[1]).toMatchObject({ status: 'fulfilled', value: { alreadyImported: false } });
+      const existing = await importLocalSession(importRequest('codex'));
+      expect(existing.alreadyImported).toBe(true);
+      expect(mocks.createSession).toHaveBeenCalledTimes(2);
     });
   });
 

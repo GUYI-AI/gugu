@@ -170,6 +170,7 @@ export default {
     "unreadAbove_one": "↑ {{count}} new message",
     "unreadAbove_other": "↑ {{count}} new messages",
     "noMessages": "No messages yet. Send one to start chatting.",
+    "mobileEmpty": { "title": "No messages yet", "hint": "Messages will appear here after they are sent" },
     "notificationLevel": {
       "all": "All",
       "important": "Important only",
@@ -266,6 +267,25 @@ export default {
     }
   },
   "chatList": {
+    "undoHideRetry": "Retry",
+    "undoHideChanged": "The conversation changed; this action can no longer be undone",
+    "clearHistory": "Clear chat history",
+    "clearHistoryTitle": "Clear the chat history of “{{name}}”?",
+    "clearHistoryConfirm": "Clear",
+    "hiddenNotice": "“{{name}}” is hidden",
+    "undoHide": "Undo",
+    "undoHideFailed": "Could not undo hiding",
+    "unpinFromSidebar": "Unpin from sidebar",
+    "hiddenRefreshFailed": "Removed from list, but the list could not refresh. Please retry.",
+    "agentDeleted": "Agent deleted",
+    "retryAgentDelete": "Retry deleting Agent",
+    "hiddenAgentDeleteFailed": "Conversation history deleted, but could not delete the Agent",
+    "alsoRemoveAgent": "Also delete this Agent",
+    "hideAgentDescription": "This conversation will leave your list and return when a new message arrives.",
+    "removeFromList": "Remove from list",
+    "hideFailed": "Could not remove this conversation from the list",
+    "deleteHistoryDescription": "Clear your chat history. Other members are not affected.",
+    "hide": "Hide",
     "createAgent": "Create agent",
     "addContact": "Add contact",
     "clearSearch": "Clear search",
@@ -280,6 +300,7 @@ export default {
     "deleteChat": "Delete chat",
     "deleteChatConfirm": "Delete this chat with “{{name}}”? Its history is deleted with it.",
     "deleteTopic": "Delete topic",
+    "closeTopic": "Close topic",
     "deleteTopicConfirm": "Delete topic “{{name}}”? It is removed from every member's list.",
     "dissolveGroup": "Dissolve group",
     "leaveGroup": "Leave group",
@@ -289,8 +310,8 @@ export default {
     "moreTopics_one": "More topics ({{count}})",
     "moreTopics_other": "More topics ({{count}})",
     "empty": "No chats yet",
-    "emptyHint": "Use “New Agent” above to start your first conversation",
-    "emptyHintMobile": "Create an agent from the Projects tab to start your first conversation",
+    "emptyHint": "Use “Create agent” above to start your first conversation",
+    "emptyHintMobile": "Use “Create agent” in Projects to start your first conversation",
     "enableNotifications": "Enable notifications",
     "markRead": "Mark as read",
     "removeProject": "Remove Project",
@@ -462,7 +483,7 @@ export default {
     "mentionMembers": "Mention a member",
     "mentionNoMatch": "No matching members",
     "placeholder": "Write a message…",
-    "mobilePlaceholder": "Message",
+    "mobilePlaceholder": "Write anything…",
     "projectGroupPlaceholder": "Message {{name}}… @ an agent to call it",
     "removeAttachment": "Remove {{fileName}}",
     "sendFailed": "Message was not sent: {{guidance}}",
@@ -479,10 +500,6 @@ export default {
       "chatUnavailable": "The conversation is unavailable. Return to the message list to check it.",
       "timeout": "The send timed out. Try sending again later.",
       "unavailable": "The send did not finish. Try sending again later."
-    },
-    "verb": {
-      "task": "New task",
-      "agent": "New agent"
     },
     "whisperBanner": "Whisper to {{name}}, visible only to you both.",
     "whisperPlaceholder": "Whisper to {{name}}…"
@@ -567,7 +584,7 @@ export default {
       "clearSearch": "Clear search",
       "add": "Add",
       "addMembers": "Add members",
-      "newAgent": "New agent",
+      "newAgent": "Create agent",
       "makeAdmin": "Make admin",
       "manage": "Manage {{name}}",
       "noMatches": "No members match \"{{query}}\"",
@@ -721,7 +738,6 @@ export default {
       "rules": "Collaboration rules",
       "rulesPlaceholder": "Core principles, direction, and collaboration agreements…",
       "rulesUnset": "No collaboration rules",
-      "title": "Group settings",
       "unavailable": "Unavailable",
       "uploading": "Uploading"
     }
@@ -959,7 +975,7 @@ export default {
       "members": "Members",
       "collapseSplit": "Collapse split view",
       "collapseSplitHint": "Collapse the split view; the topic stays open",
-      "composerPlaceholder": "Say something in this topic…",
+      "composerPlaceholder": "Write anything…",
       "empty": "No one has spoken in this topic yet",
       "resize": "Drag to resize the topic pane"
     }

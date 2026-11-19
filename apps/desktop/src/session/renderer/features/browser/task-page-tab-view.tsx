@@ -65,6 +65,7 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
       if (id === current) resource.setPage(page);
     });
     void mountProjection(host, root.current, `${resource.deviceId}:${resource.sessionId}`, {
+      decorations: true,
       state: (next) => { if (!gone) setState(next); },
       painted: (next) => { if (!gone) setFrame(next); },
       error: () => setState('closed'),

@@ -17,7 +17,7 @@ import { publishChatSummaries } from '../../../../apps/desktop/src/lib/chatSumma
 
 const { getImRepositoryMock } = vi.hoisted(() => ({ getImRepositoryMock: vi.fn() }))
 const shell = vi.hoisted(() => ({ mobile: false }))
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile, readMobileShell: () => shell.mobile }))
 
 // Solid's DOM renderer runs in the Chromium project; keep the React host/providers real here.
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/chat/chat-transcript', async importOriginal => ({
@@ -327,8 +327,9 @@ describe('ChatAreaPanel hosted in a block (gugu-dev#181)', () => {
       await act(async () => { readShellSlots()!.setSlot(chatTabSlotKey('group-1', folder!), slot) })
       expect(slot.querySelector('[data-testid="group-app-slot"]')).not.toBeNull()
       expect(slot.querySelector('[data-testid="group-app-slot-close"]'), 'in a block the tab is its title and its ×').toBeNull()
+      const focused = focusedChatTab('group-1')?.tabId
       await act(async () => { showChatOnly('another-group') })
-      expect(focusedChatTab('group-1')?.tabId, 'another chat\'s tab: this one stays').toBe(folder)
+      expect(focusedChatTab('group-1')?.tabId, 'another chat\'s tab: this one stays').toBe(focused)
       await act(async () => { showChatOnly('group-1') })
       expect(focusedChatTab('group-1')?.kind, 'its own chat\'s tab: the chat is focused').toBe('chat')
       expect(panelTabsOf('group-1').some((tab) => tab.tabId === folder), 'the folder stays open').toBe(true)
