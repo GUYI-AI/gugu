@@ -60,7 +60,13 @@ describe('versioned session turn storage', () => {
     expect(descriptors.every(part => Buffer.byteLength(part.value) <= 8192)).toBe(true);
     expect(row.data).not.toContain('picture');
     expect(readSessionTurn(fixture.sqlite, row)).toEqual(value);
-    // Image and text chunks are shared even when a repeated chunk occurs inside one output.
+    // The image is one file; both execute spellings share one SQLite payload object.
+    expect(files.counters.writtenFiles).toBe(1);
+    const output = JSON.parse(descriptors.find(part => (JSON.parse(part.value) as StoredTurnValue).t === 'text')!.value) as StoredTurnValue;
+    if (output.t !== 'text') throw new Error('Expected shared text payload');
+    expect(descriptors.some(part => (JSON.parse(part.value) as StoredTurnValue).t === 'json' && part.value.includes(output.ref.hash))).toBe(true);
+    expect(fixture.sqlite.prepare('SELECT bytes,kind,length(inline_data) n FROM session_turn_payload_objects WHERE hash=?').get(output.ref.hash))
+      .toEqual({ bytes: 20003, kind: 2, n: 20003 });
     expect(files.counters.writtenBytes).toBeLessThan(100000);
     expect(fixture.sqlite.prepare('SELECT max(length(CAST(value AS BLOB))) n FROM session_turn_fields').get()).toMatchObject({ n: expect.any(Number) });
   });
@@ -84,6 +90,21 @@ describe('versioned session turn storage', () => {
     expect(sessionTurnRevision(fixture.sqlite, row)).toBe(1);
     fixture.sqlite.transaction(() => prepareSessionTurn(fixture.sqlite, row, revised, false).commit())();
     expect(sessionTurnRevision(fixture.sqlite, row)).toBe(1);
+  });
+
+  it('does not publish canonical rows when the batch directory synchronization fails', async () => {
+    const fs = await import('node:fs'), { syncBuiltinESMExports } = await import('node:module');
+    const { vi } = await import('vitest'), original = fs.default.fsyncSync;
+    const sync = vi.spyOn(fs.default, 'fsyncSync').mockImplementation(fd => {
+      if (fs.default.fstatSync(fd).isDirectory()) throw Object.assign(new Error('directory sync failed'), { code: 'EIO' });
+      original(fd);
+    });
+    syncBuiltinESMExports();
+    try {
+      expect(() => insert(turn(), false)).toThrow('directory sync failed');
+      expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 0 });
+      expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turn_payload_objects').get()).toEqual({ n: 0 });
+    } finally { sync.mockRestore(); syncBuiltinESMExports(); }
   });
 
   it('preserves unknown fields, cleared fields, child order, empty terminals and exact noncanonical JSON', () => {
@@ -125,9 +146,9 @@ describe('versioned session turn storage', () => {
     await withTurnPayloadWrite(fixture.sqlite, () => fixture.sqlite.transaction(() => prepareSessionTurn(fixture.sqlite, row, removed, false).commit())());
     while (collectTurnPayloads(fixture.sqlite)) { /* Each production batch has a fixed object/time budget. */ }
     expect(readSessionTurn(fixture.sqlite, row)).toEqual(removed);
-    // The 20 KB logical output contains equal chunks, so its physical size is smaller.
+    // The shared image survives; the unowned output object is removed from SQLite.
     expect((fixture.sqlite.prepare('SELECT sum(bytes) n FROM session_turn_payload_objects').get() as { n: number }).n).toBeLessThan(initialBytes);
-    expect(() => turnPayloadFiles(fixture.sqlite).readText(retired.ref)).toThrow(/ENOENT/);
+    expect(() => turnPayloadFiles(fixture.sqlite).readText(retired.ref)).toThrow('Missing canonical payload object');
     const before = fixture.sqlite.prepare('SELECT hash FROM session_turn_payload_objects ORDER BY hash').all();
     await expect(withTurnPayloadWrite(fixture.sqlite, () => {
       const failed = prepareSessionTurn(fixture.sqlite, row, { ...removed, outcome: { kind: 'error', message: 'failed'.repeat(10000) } } as TranscriptTurn, false);

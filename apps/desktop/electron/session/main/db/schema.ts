@@ -1,6 +1,7 @@
 import { isNotNull, sql } from 'drizzle-orm';
 import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 import {
+  blob,
   index,
   check,
   foreignKey,
@@ -668,9 +669,18 @@ export const sessionTurnFields = sqliteTable('session_turn_fields', {
   bytes: check('session_turn_fields_bytes', sql`${table.value} IS NULL OR length(CAST(${table.value} AS BLOB)) <= 8192`) }));
 export const { sessionWindowCommitReceipts, sessionWindowCommitPositions } = windowCommitTables({ sessionId: sessions.id, rowId: sessionTurns.id });
 export const sessionTurnPayloadObjects = sqliteTable('session_turn_payload_objects', {
-  hash: text('hash').primaryKey().notNull(), bytes: integer('bytes').notNull(), refs: integer('refs').notNull().default(0),
+  hash: text('hash').primaryKey().notNull(), bytes: integer('bytes').notNull(), kind: integer('kind').notNull(),
+  inlineData: blob('inline_data', { mode: 'buffer' }), refs: integer('refs').notNull().default(0),
 }, table => ({ unowned: index('idx_session_turn_payload_unowned').on(table.refs, table.hash),
+  kind: check('session_turn_payload_kind', sql`${table.kind} IN (0,2,3)`),
+  storage: check('session_turn_payload_storage', sql`(${table.bytes} BETWEEN 1 AND 65536 AND ${table.inlineData} IS NOT NULL AND length(${table.inlineData})=${table.bytes}) OR (${table.bytes}>65536 AND ${table.inlineData} IS NULL)`),
   refs: check('session_turn_payload_refs', sql`${table.refs} >= 0`) }));
+export const sessionTurnPayloadChunks = sqliteTable('session_turn_payload_chunks', {
+  hash: text('hash').notNull().references(() => sessionTurnPayloadObjects.hash, { onDelete: 'cascade' }),
+  ordinal: integer('ordinal').notNull(), digest: text('digest').notNull(),
+}, table => ({ key: primaryKey({ columns: [table.hash, table.ordinal] }),
+  ordinal: check('session_turn_payload_chunk_ordinal', sql`${table.ordinal} >= 0`),
+  digest: check('session_turn_payload_chunk_digest', sql`length(${table.digest})=64`) }));
 export const sessionTurnPayloadEdges = sqliteTable('session_turn_payload_edges', {
   parentHash: text('parent_hash').notNull().references(() => sessionTurnPayloadObjects.hash, { onDelete: 'cascade' }),
   childHash: text('child_hash').notNull().references(() => sessionTurnPayloadObjects.hash),

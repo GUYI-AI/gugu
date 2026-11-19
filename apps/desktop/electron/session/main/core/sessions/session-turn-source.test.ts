@@ -4,12 +4,12 @@ import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 import { encodeTurnValue } from './session-turn-codec';
-import { TurnPayloadFiles } from './session-turn-payloads';
+import { TurnPayloadFiles, unbindTurnPayloadDirectory } from './session-turn-payloads';
 import { createTurnJsonSource, readTurnJsonRange } from './session-turn-source';
 
 let root: string;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'turn-source-')); });
-afterEach(() => rmSync(root, { recursive: true, force: true }));
+afterEach(() => { unbindTurnPayloadDirectory(root); rmSync(root, { recursive: true, force: true }); });
 
 it('projects canonical text, JSON-escaped raw output and binary images without storing another body copy', () => {
   const text = '中文🙂"line"\n'.repeat(5000), image = Buffer.alloc(45000, 72).toString('base64');

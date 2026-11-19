@@ -1,19 +1,37 @@
 import type Database from 'better-sqlite3';
 import { opendirSync, type Dir } from 'node:fs';
-import { join } from 'node:path';
-import { TurnPayloadFiles, type TurnPayloadRef } from './session-turn-payloads';
+import { INLINE_PAYLOAD_BYTES, TurnPayloadFiles, unbindTurnPayloadDirectory, type TurnPayloadRef } from './session-turn-payloads';
 import { coreLogger } from '@gugu/core/log';
 
-type State = { files: TurnPayloadFiles; writers: number; timer?: NodeJS.Timeout; shard: number; scan?: Dir };
+type State = { files: TurnPayloadFiles; writers: number; timer?: NodeJS.Timeout; scanDone: boolean; scan?: Dir };
 const log = coreLogger('session-turn-payloads');
 const states = new WeakMap<Database.Database, State>();
 function state(connection: Database.Database): State {
   let value = states.get(connection);
   if (!value) {
     if (!connection.name || connection.name === ':memory:') throw new Error('Durable turn payloads need a file-backed database');
-    value = { files: new TurnPayloadFiles(`${connection.name}.turn-payloads`), writers: 0, shard: 0 };
+    const metadata = connection.prepare('SELECT bytes,kind,inline_data IS NOT NULL AS inlined,length(inline_data) AS inline_bytes FROM session_turn_payload_objects WHERE hash=?');
+    const inline = connection.prepare('SELECT substr(inline_data,1,65536) AS data FROM session_turn_payload_objects WHERE hash=? AND inline_data IS NOT NULL');
+    const chunks = connection.prepare('SELECT digest FROM session_turn_payload_chunks WHERE hash=? AND ordinal>=? AND ordinal<? ORDER BY ordinal');
+    const files = new TurnPayloadFiles(`${connection.name}.turn-payloads`, undefined, {
+      alive: () => connection.open,
+      metadata(hash) {
+        const row = metadata.get(hash) as { bytes: number; kind: number; inlined: number; inline_bytes: number | null } | undefined;
+        if (row?.inlined && (row.inline_bytes !== row.bytes || row.bytes > INLINE_PAYLOAD_BYTES)) throw new Error('Invalid bounded SQLite payload');
+        return row ? { bytes: row.bytes, kind: row.kind, inline: Boolean(row.inlined) } : undefined;
+      },
+      inline(hash) {
+        const row = inline.get(hash) as { data: Buffer } | undefined;
+        if (!row || !Buffer.isBuffer(row.data)) throw new Error('Missing canonical inline payload');
+        return row.data;
+      },
+      chunks(hash, first, count) { return (chunks.all(hash, first, first + count) as { digest: string }[]).map(row => row.digest); },
+    });
+    files.bind(connection.readonly);
+    value = { files, writers: 0, scanDone: false };
     states.set(connection, value);
   }
+  value.files.bind(connection.readonly);
   return value;
 }
 export const turnPayloadFiles = (connection: Database.Database): TurnPayloadFiles => state(connection).files;
@@ -22,12 +40,17 @@ export const turnPayloadFiles = (connection: Database.Database): TurnPayloadFile
 export function registerTurnPayloads(connection: Database.Database): void {
   if (!connection.inTransaction) throw new Error('Payload objects need a registry transaction');
   const files = state(connection).files;
-  const put = connection.prepare('INSERT OR IGNORE INTO session_turn_payload_objects(hash,bytes) VALUES (?,?)');
-  const size = connection.prepare('SELECT bytes FROM session_turn_payload_objects WHERE hash=?');
+  files.durable();
+  const put = connection.prepare('INSERT OR IGNORE INTO session_turn_payload_objects(hash,bytes,kind,inline_data) VALUES (?,?,?,?)');
+  const size = connection.prepare('SELECT bytes,kind,inline_data IS NOT NULL AS inlined FROM session_turn_payload_objects WHERE hash=?');
+  const chunk = connection.prepare('INSERT OR IGNORE INTO session_turn_payload_chunks(hash,ordinal,digest) VALUES (?,?,?)');
   const edge = connection.prepare('INSERT OR IGNORE INTO session_turn_payload_edges(parent_hash,child_hash) VALUES (?,?)');
   for (const [hash, object] of files.staged) {
-    put.run(hash, object.bytes);
-    if ((size.get(hash) as { bytes: number }).bytes !== object.bytes) throw new Error('Payload registry size mismatch');
+    put.run(hash, object.bytes, object.kind, object.bytes <= INLINE_PAYLOAD_BYTES ? object.data : null);
+    const stored = size.get(hash) as { bytes: number; kind: number; inlined: number };
+    if (stored.bytes !== object.bytes || stored.kind !== object.kind || Boolean(stored.inlined) !== (object.bytes <= INLINE_PAYLOAD_BYTES))
+      throw new Error('Payload registry size or storage mismatch');
+    for (let ordinal = 0; ordinal < object.chunks.length; ordinal++) chunk.run(hash, ordinal, object.chunks[ordinal]);
   }
   for (const [hash, object] of files.staged) for (const child of object.children.values()) edge.run(hash, child.hash);
 }
@@ -40,7 +63,7 @@ export function ownTurnFieldPayloads(connection: Database.Database, rowId: strin
 
 export function ownTurnSourcePayload(connection: Database.Database, sourceId: string, root: TurnPayloadRef): void {
   if (!connection.inTransaction) throw new Error('Payload source ownership must share its receipt transaction');
-  registerTurnPayloads(connection);
+  // The normalized commit registered all prepared objects in this same transaction.
   connection.prepare('INSERT INTO session_turn_payload_sources(source_id,hash) VALUES (?,?)').run(sourceId, root.hash);
 }
 
@@ -53,9 +76,10 @@ export async function withTurnPayloadWrite<T>(connection: Database.Database, wri
     try {
       if (connection.open && value.files.staged.size) {
         connection.transaction(() => registerTurnPayloads(connection))();
-        value.files.staged.clear();
       }
     } finally {
+      // A failed durability/registry attempt must not leave an unregistered object adoptable from staging.
+      value.files.clear();
       value.writers--;
       schedule(connection, value, 0);
     }
@@ -91,22 +115,21 @@ export function collectTurnPayloads(connection: Database.Database, maxObjects = 
 function collectCrashOrphans(connection: Database.Database, value: State): boolean {
   if (value.writers || connection.inTransaction) return true;
   const started = performance.now();
-  for (let count = 0; count < 32 && performance.now() - started < 5 && value.shard < 256; count++) {
-    const shard = value.shard.toString(16).padStart(2, '0');
+  for (let count = 0; count < 32 && performance.now() - started < 5 && !value.scanDone; count++) {
     if (!value.scan) {
-      try { value.scan = opendirSync(join(value.files.directory, shard), { bufferSize: 1 }); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; value.shard++; continue; }
+      try { value.scan = opendirSync(value.files.directory, { bufferSize: 1 }); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; value.scanDone = true; continue; }
     }
     const entry = value.scan.readSync();
-    if (!entry) { value.scan.closeSync(); value.scan = undefined; value.shard++; continue; }
+    if (!entry) { value.scan.closeSync(); value.scan = undefined; value.scanDone = true; continue; }
     if (!entry.isFile()) continue;
-    const match = /^([a-f0-9]{62})\.payload(?:\.([a-f0-9-]{36})\.tmp)?$/.exec(entry.name);
+    const match = /^([a-f0-9]{64})\.payload(?:\.([a-f0-9-]{36})\.tmp)?$/.exec(entry.name);
     if (!match) continue;
-    const hash = shard + match[1];
+    const hash = match[1];
     if (match[2]) value.files.removeTemporary(hash, match[2]);
     else if (!connection.prepare('SELECT 1 FROM session_turn_payload_objects WHERE hash=?').get(hash)) value.files.remove(hash);
   }
-  return value.shard < 256;
+  return !value.scanDone;
 }
 
 function schedule(connection: Database.Database, value: State, delay: number): void {
@@ -133,5 +156,6 @@ export function stopTurnPayloadMaintenance(connection: Database.Database): void 
   if (!value) return;
   clearTimeout(value.timer);
   value.scan?.closeSync();
+  unbindTurnPayloadDirectory(value.files.directory, value.files.access);
   states.delete(connection);
 }

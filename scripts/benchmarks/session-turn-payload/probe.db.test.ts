@@ -75,6 +75,8 @@ describe('isolated real session writer benchmark', () => {
       assert(walBytes >= 0 && captured);
       assert.deepEqual(phases.map(phase => phase.name), ['source_durable', 'canonical_committed']);
       samples.push({ sequence, source, turn: turn.referenceId, elapsedMs, phases, walBytes, nodeIo, totalWrittenBytes: walBytes + nodeIo.writtenBytes });
+      // Outside the stopped measurement: retain completed timings even if a later assertion or guard stops the process.
+      writeFileSync(join(root, 'samples.json'), JSON.stringify({ sourceSha, mode, fixture, samples }, null, 2));
       receipts.push({ receipt: captured, digest: sha(turn) });
     }
     try {

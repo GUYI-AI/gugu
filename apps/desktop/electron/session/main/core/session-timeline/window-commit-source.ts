@@ -121,6 +121,7 @@ type SharedSource = { version: 2; directory: string; root: TurnJsonRef; scope: s
 export async function writeSharedWindowCommitSource(directory: string, binding: Binding,
   normalized: { files: TurnPayloadFiles; value: StoredTurnValue }, temporaryId = randomUUID()): Promise<{ manifest: WindowCommitSourceManifest; root: TurnJsonRef }> {
   const root = createTurnJsonSource(normalized.files, normalized.value);
+  normalized.files.durable();
   const value: SharedSource = { version: 2, directory: normalized.files.directory, root, scope: binding.scope, lineage: binding.sourceLineage };
   const bytes = Buffer.from(JSON.stringify(value));
   if (bytes.length > 3500) throw new Error('Shared source descriptor exceeds its bound');

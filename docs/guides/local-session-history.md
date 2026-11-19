@@ -4,6 +4,13 @@ descriptors and content-addressed body files. A revision to an older turn adds
 normalized fields; it does not rewrite that turn's original JSON. The history
 reader combines the explicitly stored versions at one entry point.
 
+Payloads up to 64 KiB, including small tool output and window index pieces,
+share content-addressed SQLite objects. Larger payloads each occupy one whole
+content-addressed file. The writer synchronizes every new file, then its batch
+directory once, before registering references in the canonical transaction.
+Range checksums in SQLite permit bounded reads without re-reading an entire
+large file. Tool output shared by multiple fields is still stored only once.
+
 The database and the adjacent `<database filename>.turn-payloads` directory
 form one durable store. For example, a database named `history.db` has a
 `history.db.turn-payloads` directory. A complete offline backup or move must

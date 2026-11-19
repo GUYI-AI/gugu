@@ -21,8 +21,10 @@ const writeFile = fs.writeFileSync.bind(fs), read = fs.readSync.bind(fs), sync =
 const writeSync = fs.writeSync.bind(fs);
 fs.writeSync = (...args) => { const count = writeSync(...args); if (active && tracked(args[0])) { counters.writtenBytes += count; counters.writeCalls++; } return count; };
 fs.writeFileSync = (file, data, options) => {
+  const before = counters.writeCalls;
   const result = writeFile(file, data, options);
-  if (active && tracked(file)) { counters.writtenBytes += size(data, typeof options === 'string' ? options : options?.encoding); counters.writeCalls++; }
+  // Node may route this call through the already measured writeSync hook.
+  if (active && tracked(file) && counters.writeCalls === before) { counters.writtenBytes += size(data, typeof options === 'string' ? options : options?.encoding); counters.writeCalls++; }
   return result;
 };
 fs.readSync = (...args) => { const count = read(...args); if (active && tracked(args[0])) { counters.readBytes += count; counters.readCalls++; } return count; };

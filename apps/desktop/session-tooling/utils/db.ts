@@ -18,6 +18,7 @@ import type Database from 'better-sqlite3';
 import { openPhysicalDatabase } from '@main/db/physical-connection';
 import { createAppDatabase, type ConnectedAppDb } from '@main/db/database';
 import { applyMigrations, bundledMigrations, initializeDatabase } from '@main/db/initialize';
+import { stopTurnPayloadMaintenance } from '@main/core/sessions/session-turn-payload-owners';
 
 const fixturesDir = fileURLToPath(new URL('../fixtures/', import.meta.url));
 
@@ -66,6 +67,7 @@ export async function openFixture(
       db: createAppDatabase(sqlite),
       sqlite,
       close: () => {
+        stopTurnPayloadMaintenance(sqlite);
         sqlite.close();
         for (const suffix of ['', '-wal', '-shm']) {
           fs.rmSync(`${tmpPath}${suffix}`, { force: true });
@@ -91,6 +93,7 @@ export async function openFixture(
     db: createAppDatabase(sqlite),
     sqlite,
     close: () => {
+      stopTurnPayloadMaintenance(sqlite);
       sqlite.close();
       for (const suffix of ['', '-wal', '-shm']) {
         fs.rmSync(`${tmpPath}${suffix}`, { force: true });

@@ -34,10 +34,20 @@ CREATE TABLE session_turn_fields (
 CREATE TABLE session_turn_payload_objects (
   hash TEXT PRIMARY KEY NOT NULL,
   bytes INTEGER NOT NULL,
-  refs INTEGER NOT NULL DEFAULT 0 CONSTRAINT session_turn_payload_refs CHECK (refs >= 0)
+  kind INTEGER NOT NULL CONSTRAINT session_turn_payload_kind CHECK (kind IN (0,2,3)),
+  inline_data BLOB,
+  refs INTEGER NOT NULL DEFAULT 0 CONSTRAINT session_turn_payload_refs CHECK (refs >= 0),
+  CONSTRAINT session_turn_payload_storage CHECK ((bytes BETWEEN 1 AND 65536 AND inline_data IS NOT NULL AND length(inline_data)=bytes) OR (bytes>65536 AND inline_data IS NULL))
 );
 --> statement-breakpoint
 CREATE INDEX idx_session_turn_payload_unowned ON session_turn_payload_objects(refs,hash);
+--> statement-breakpoint
+CREATE TABLE session_turn_payload_chunks (
+  hash TEXT NOT NULL REFERENCES session_turn_payload_objects(hash) ON DELETE CASCADE,
+  ordinal INTEGER NOT NULL CONSTRAINT session_turn_payload_chunk_ordinal CHECK (ordinal>=0),
+  digest TEXT NOT NULL CONSTRAINT session_turn_payload_chunk_digest CHECK (length(digest)=64),
+  PRIMARY KEY(hash,ordinal)
+);
 --> statement-breakpoint
 CREATE TABLE session_turn_payload_edges (
   parent_hash TEXT NOT NULL REFERENCES session_turn_payload_objects(hash) ON DELETE CASCADE,

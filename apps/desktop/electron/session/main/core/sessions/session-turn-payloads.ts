@@ -3,217 +3,242 @@ import { closeSync, constants, fstatSync, fsyncSync, linkSync, mkdirSync, openSy
 import { dirname, join } from 'node:path';
 import { directorySyncOpenMode } from '@gugu/session-core/session-record/window-cache/disk-frame';
 
-/** Durable history, not an evictable window cache. Every reference owns immutable, verified bytes. */
 export type TurnPayloadRef = { hash: string; bytes: number };
-export type TurnPayloadObject = { bytes: number; children: Map<string, TurnPayloadRef> };
-type Branch = { version: 1; kind: 'branch'; children: TurnPayloadRef[] };
-// Divisible by three: a binary image block projects to exactly 16 KiB of base64 for bounded window readers.
-const BLOCK_BYTES = 12 * 1024;
-const FANOUT = 64;
+export type TurnPayloadObject = { bytes: number; kind: number; data: Buffer; chunks: string[]; children: Map<string, TurnPayloadRef> };
+export type TurnPayloadMetadata = { bytes: number; kind: number; inline: boolean };
+/** Supplied by the existing canonical SQLite gateway; readers never open a second database. */
+export type TurnPayloadAccess = {
+  alive(): boolean;
+  metadata(hash: string): TurnPayloadMetadata | undefined;
+  inline(hash: string): Buffer;
+  chunks(hash: string, first: number, count: number): string[];
+};
+type Meter = (requested: number, operation: () => number, metadata?: boolean) => number;
+export const INLINE_PAYLOAD_BYTES = 64 * 1024;
+export const PAYLOAD_READ_BYTES = 64 * 1024;
 const HASH = /^[a-f0-9]{64}$/;
 const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+const directories = new Map<string, TurnPayloadAccess>();
 
+export function unbindTurnPayloadDirectory(directory: string, access?: TurnPayloadAccess): void {
+  if (!access || directories.get(directory) === access) directories.delete(directory);
+}
+
+/** Whole content-addressed files above 64 KiB; small objects share the canonical SQLite transaction. */
 export class TurnPayloadFiles {
   readonly counters = { writtenBytes: 0, writtenFiles: 0, readBytes: 0 };
   readonly staged = new Map<string, TurnPayloadObject>();
-  private readonly syncedDirectories = new Set<string>();
-  constructor(readonly directory: string, private readonly meterRead?: (requested: number, operation: () => number) => number) {}
+  readonly access: TurnPayloadAccess;
+  private readonly index?: TurnPayloadAccess;
+  private readonly dirtyDirectories = new Set<string>();
+  private directoryReady = false;
+  private readonly inlineCache = new Map<string, Buffer>();
+  private readonly chunkCache = new Map<string, Buffer>();
+
+  constructor(readonly directory: string, private readonly meterRead?: Meter, index?: TurnPayloadAccess) {
+    this.index = index ?? directories.get(directory);
+    this.access = {
+      alive: () => this.index?.alive() ?? true,
+      metadata: hash => {
+        const staged = this.staged.get(hash);
+        return staged ? { bytes: staged.bytes, kind: staged.kind, inline: staged.bytes <= INLINE_PAYLOAD_BYTES } : this.index?.metadata(hash);
+      },
+      inline: hash => {
+        const staged = this.staged.get(hash);
+        if (staged) return staged.data;
+        if (!this.index) throw new Error('Payload has no canonical SQLite access');
+        return this.index.inline(hash);
+      },
+      chunks: (hash, first, count) => {
+        const staged = this.staged.get(hash);
+        if (staged) return staged.chunks.slice(first, first + count);
+        if (!this.index) throw new Error('Payload has no canonical SQLite access');
+        return this.index.chunks(hash, first, count);
+      },
+    };
+  }
+
+  bind(readonly = false): void {
+    const current = directories.get(this.directory);
+    if (!readonly || !current || !current.alive()) directories.set(this.directory, this.access);
+  }
 
   private path(hash: string): string {
     if (!HASH.test(hash)) throw new Error('Invalid turn payload hash');
-    return join(this.directory, hash.slice(0, 2), `${hash.slice(2)}.payload`);
+    return join(this.directory, `${hash}.payload`);
   }
 
-  private readBlock(ref: TurnPayloadRef): Buffer {
-    if (!Number.isSafeInteger(ref.bytes) || ref.bytes < 0) throw new Error('Invalid turn payload length');
+  private ensureDirectory(): void {
+    if (this.directoryReady) return;
+    const created = mkdirSync(this.directory, { recursive: true, mode: 0o700 });
+    if (created) { this.dirtyDirectories.add(dirname(created)); this.dirtyDirectories.add(this.directory); }
+    this.directoryReady = true;
+  }
+
+  private metadata(ref: TurnPayloadRef): TurnPayloadMetadata {
+    if (!HASH.test(ref.hash) || !Number.isSafeInteger(ref.bytes) || ref.bytes < 0) throw new Error('Invalid turn payload reference');
+    const result: { value?: TurnPayloadMetadata } = {};
+    if (!this.access.alive()) throw new Error('Canonical payload connection is closed');
+    const read = () => { result.value = this.access.metadata(ref.hash); return result.value ? 24 : 0; };
+    if (this.meterRead) this.meterRead(24, read, true); else read();
+    const value = result.value;
+    if (!value) throw Object.assign(new Error('Missing canonical payload object'), { code: 'ENOENT' });
+    if (!Number.isSafeInteger(value.bytes) || value.bytes !== ref.bytes + 1 || ![0, 2, 3].includes(value.kind)
+      || value.inline !== (value.bytes <= INLINE_PAYLOAD_BYTES)) throw new Error('Missing or invalid canonical payload metadata');
+    return value;
+  }
+
+  private fileRange(ref: TurnPayloadRef, meta: TurnPayloadMetadata, start: number, end: number): Buffer {
     const fd = openSync(this.path(ref.hash), constants.O_RDONLY | constants.O_NOFOLLOW);
-    let bytes: Buffer = Buffer.alloc(0);
     try {
-      const before = fstatSync(fd);
-      if (!before.isFile() || before.size > BLOCK_BYTES + 1) throw new Error('Invalid turn payload block size');
-      let failed = false, failure: unknown;
-      const read = () => {
-        bytes = Buffer.alloc(before.size);
-        let offset = 0;
-        try {
-          while (offset < bytes.length) {
-            const count = readSync(fd, bytes, offset, bytes.length - offset, offset);
-            if (!count) throw new Error('Turn payload changed while reading');
-            offset += count;
-          }
-        } catch (error) { failed = true; failure = error; }
-        return offset;
-      };
-      if (this.meterRead) this.meterRead(before.size, read); else read();
-      if (failed) throw failure;
-      const after = fstatSync(fd);
-      if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) throw new Error('Turn payload changed while reading');
+      const before = fstatSync(fd, { bigint: true });
+      if (!before.isFile() || before.size !== BigInt(meta.bytes)) throw new Error('Turn payload file length mismatch');
+      const parts: Buffer[] = [];
+      for (let ordinal = Math.floor(start / PAYLOAD_READ_BYTES); ordinal * PAYLOAD_READ_BYTES < end; ordinal++) {
+        const key = `${ref.hash}:${before.mtimeNs}:${before.ctimeNs}:${ordinal}`, offset = ordinal * PAYLOAD_READ_BYTES;
+        let bytes = this.chunkCache.get(key);
+        if (!bytes) {
+          let expected: string[] = [];
+          const hashes = () => { expected = this.access.chunks(ref.hash, ordinal, 1); return expected.length * 64; };
+          if (this.meterRead) this.meterRead(64, hashes, true); else hashes();
+          if (expected.length !== 1 || !HASH.test(expected[0])) throw new Error('Missing payload range checksum');
+          const length = Math.min(PAYLOAD_READ_BYTES, meta.bytes - offset);
+          let received = 0, failed = false, failure: unknown;
+          const result: { bytes?: Buffer } = {};
+          const read = () => {
+            const buffer = result.bytes = Buffer.alloc(length);
+            try {
+              while (received < length) {
+                const count = readSync(fd, buffer, received, length - received, offset + received);
+                if (!count) throw new Error('Turn payload changed while reading');
+                received += count;
+              }
+            } catch (error) { failed = true; failure = error; }
+            return received;
+          };
+          if (this.meterRead) this.meterRead(length, read); else read();
+          this.counters.readBytes += received;
+          if (failed) throw failure;
+          bytes = result.bytes;
+          if (!bytes) throw new Error('Admitted payload read did not execute');
+          if (digest(bytes) !== expected[0]) throw new Error('Turn payload range integrity check failed');
+          if (this.chunkCache.size === 2) this.chunkCache.delete(this.chunkCache.keys().next().value!);
+          this.chunkCache.set(key, bytes);
+        }
+        parts.push(bytes.subarray(Math.max(0, start - offset), Math.min(bytes.length, end - offset)));
+      }
+      const after = fstatSync(fd, { bigint: true });
+      if (before.size !== after.size || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs)
+        throw new Error('Turn payload changed while reading');
+      return Buffer.concat(parts, end - start);
     } finally { closeSync(fd); }
-    this.counters.readBytes += bytes.length;
-    if (bytes.length > BLOCK_BYTES + 1 || digest(bytes) !== ref.hash) throw new Error('Turn payload integrity check failed');
-    return bytes;
   }
 
-  /** Only the owner registry may unlink an object, after proving it has no owners. */
-  remove(hash: string): void { rmSync(this.path(hash), { force: true }); }
+  private range(ref: TurnPayloadRef, start: number, end: number, kind: number): Buffer {
+    if (![start, end].every(Number.isSafeInteger) || start < 0 || end < start || end > ref.bytes) throw new Error('Invalid payload range');
+    const meta = this.metadata(ref);
+    if (meta.kind !== kind) throw new Error('Turn payload kind mismatch');
+    if (!meta.inline) return this.fileRange(ref, meta, start + 1, end + 1);
+    let bytes = this.inlineCache.get(ref.hash);
+    if (!bytes) {
+      const result: { bytes?: Buffer } = {};
+      const read = () => { result.bytes = this.access.inline(ref.hash); return result.bytes.length; };
+      if (this.meterRead) this.meterRead(meta.bytes, read); else read();
+      bytes = result.bytes;
+      if (!bytes) throw new Error('Admitted inline payload read did not execute');
+      if (bytes.length !== meta.bytes || digest(bytes) !== ref.hash || bytes[0] !== kind) throw new Error('Inline payload integrity check failed');
+      this.counters.readBytes += bytes.length;
+      if (this.inlineCache.size < 64) this.inlineCache.set(ref.hash, bytes);
+    }
+    return Buffer.from(bytes.subarray(start + 1, end + 1));
+  }
 
+  private verifyExisting(ref: TurnPayloadRef, meta: TurnPayloadMetadata): void {
+    this.chunkCache.clear();
+    const bytes = meta.inline ? this.index!.inline(ref.hash) : this.fileRange(ref, meta, 0, meta.bytes);
+    if (bytes.length !== meta.bytes || digest(bytes) !== ref.hash) throw new Error('Existing payload integrity check failed');
+  }
+
+  private put(kind: number, value: Uint8Array): TurnPayloadRef {
+    const data = Buffer.concat([Buffer.from([kind]), value]), ref = { hash: digest(data), bytes: value.byteLength };
+    if (this.staged.has(ref.hash)) return ref;
+    const chunks: string[] = [];
+    if (data.length > INLINE_PAYLOAD_BYTES) for (let at = 0; at < data.length; at += PAYLOAD_READ_BYTES) chunks.push(digest(data.subarray(at, at + PAYLOAD_READ_BYTES)));
+    const object: TurnPayloadObject = { bytes: data.length, kind, data, chunks, children: new Map() };
+    const prior = this.index?.metadata(ref.hash);
+    if (prior) {
+      if (prior.bytes !== data.length || prior.kind !== kind || prior.inline !== (data.length <= INLINE_PAYLOAD_BYTES)) throw new Error('Payload registry mismatch');
+      this.verifyExisting(ref, prior);
+    } else if (data.length > INLINE_PAYLOAD_BYTES) {
+      const path = this.path(ref.hash), temporary = `${path}.${randomUUID()}.tmp`;
+      this.ensureDirectory();
+      try {
+        const fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+        try { writeFileSync(fd, data); fsyncSync(fd); } finally { closeSync(fd); }
+        try { linkSync(temporary, path); this.counters.writtenBytes += data.length; this.counters.writtenFiles++; }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+          const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+          try {
+            const observed = fstatSync(fd);
+            if (!observed.isFile() || observed.size !== data.length) throw new Error('Orphan payload size mismatch');
+            const actual = createHash('sha256'), buffer = Buffer.alloc(PAYLOAD_READ_BYTES);
+            for (let at = 0; at < data.length;) {
+              const count = readSync(fd, buffer, 0, Math.min(buffer.length, data.length - at), at);
+              if (!count) throw new Error('Orphan payload changed');
+              actual.update(buffer.subarray(0, count)); at += count;
+            }
+            if (actual.digest('hex') !== ref.hash) throw new Error('Orphan payload integrity check failed');
+          } finally { closeSync(fd); }
+        }
+        this.dirtyDirectories.add(this.directory);
+      } finally { rmSync(temporary, { force: true }); }
+    }
+    this.staged.set(ref.hash, object); this.bind();
+    return ref;
+  }
+
+  /** Files are fsynced individually; publish the batch only after one directory synchronization. */
+  durable(): void {
+    // Even an all-inline database has its paired, possibly empty, backup directory.
+    this.ensureDirectory();
+    for (const path of this.dirtyDirectories) {
+      const directory = openSync(path, directorySyncOpenMode());
+      try { fsyncSync(directory); } finally { closeSync(directory); }
+    }
+    this.dirtyDirectories.clear();
+  }
+
+  clear(): void { this.staged.clear(); this.inlineCache.clear(); this.chunkCache.clear(); }
+  remove(hash: string): void { if (!this.access.metadata(hash)?.inline) rmSync(this.path(hash), { force: true }); }
   removeTemporary(hash: string, id: string): void {
     if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error('Invalid payload temporary identity');
     rmSync(`${this.path(hash)}.${id}.tmp`, { force: true });
   }
 
-  private putBlock(bytes: Buffer, logicalBytes: number): TurnPayloadRef {
-    if (bytes.length > BLOCK_BYTES + 1) throw new Error('Turn payload block exceeds its encoding bound');
-    const ref = { hash: digest(bytes), bytes: logicalBytes }, path = this.path(ref.hash);
-    const object = this.staged.get(ref.hash) ?? { bytes: bytes.length, children: new Map<string, TurnPayloadRef>() };
-    if (bytes[0] === 1) for (const child of (JSON.parse(bytes.subarray(1).toString('utf8')) as Branch).children) object.children.set(child.hash, child);
-    this.staged.set(ref.hash, object);
-    // Verify an existing object. A corrupt or missing object must never be adopted by its name alone.
-    try { this.readBlock(ref); return ref; }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-    const parent = join(this.directory, ref.hash.slice(0, 2));
-    mkdirSync(parent, { recursive: true, mode: 0o700 });
-    for (const path of [this.directory, dirname(this.directory)]) if (!this.syncedDirectories.has(path)) {
-      const directory = openSync(path, directorySyncOpenMode());
-      try { fsyncSync(directory); } finally { closeSync(directory); }
-      this.syncedDirectories.add(path);
-    }
-    const temporary = `${path}.${randomUUID()}.tmp`;
-    try {
-      const fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-      try { writeFileSync(fd, bytes); fsyncSync(fd); } finally { closeSync(fd); }
-      try { linkSync(temporary, path); this.counters.writtenBytes += bytes.length; this.counters.writtenFiles++; }
-      catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        this.readBlock(ref);
-      }
-      const directory = openSync(parent, directorySyncOpenMode());
-      try { fsyncSync(directory); } finally { closeSync(directory); }
-    } finally { rmSync(temporary, { force: true }); }
-    return ref;
-  }
-
-  private branch(children: TurnPayloadRef[]): TurnPayloadRef {
-    const value: Branch = { version: 1, kind: 'branch', children };
-    return this.putBlock(Buffer.concat([Buffer.from([1]), Buffer.from(JSON.stringify(value))]), children.reduce((n, r) => n + r.bytes, 0));
-  }
-
-  /** A bounded fanout tree; a long body never makes a long reference array in a database row. */
-  private root(leaves: TurnPayloadRef[]): TurnPayloadRef {
-    if (!leaves.length) return this.putBlock(Buffer.from([0]), 0);
-    let level = leaves;
-    while (level.length > 1) {
+  putBytes(bytes: Uint8Array): TurnPayloadRef { return this.put(0, bytes); }
+  putText(text: string, references: readonly TurnPayloadRef[] = []): TurnPayloadRef {
+    const root = this.put(2, Buffer.from(JSON.stringify(text)));
+    let level = [...new Map(references.map(ref => [ref.hash, ref])).values()];
+    while (level.length > 64) {
       const next: TurnPayloadRef[] = [];
-      for (let at = 0; at < level.length; at += FANOUT) next.push(this.branch(level.slice(at, at + FANOUT)));
+      for (let at = 0; at < level.length; at += 64) {
+        const children = level.slice(at, at + 64), ref = this.put(3, Buffer.from(JSON.stringify(children)));
+        for (const child of children) this.staged.get(ref.hash)!.children.set(child.hash, child);
+        next.push(ref);
+      }
       level = next;
     }
-    return level[0]!;
-  }
-
-  putBytes(bytes: Uint8Array): TurnPayloadRef {
-    const leaves: TurnPayloadRef[] = [];
-    for (let at = 0; at < bytes.byteLength; at += BLOCK_BYTES) {
-      const part = bytes.subarray(at, at + BLOCK_BYTES);
-      leaves.push(this.putBlock(Buffer.concat([Buffer.from([0]), part]), part.byteLength));
-    }
-    return this.root(leaves);
-  }
-
-  /** JSON strings preserve even lone UTF-16 surrogates; no whole-output stringify is allocated. */
-  putText(text: string, references: readonly TurnPayloadRef[] = []): TurnPayloadRef {
-    const leaves: TurnPayloadRef[] = [];
-    for (let at = 0; at < text.length;) {
-      let end = Math.min(at + 8192, text.length), part: Buffer;
-      for (;;) {
-        const last = text.charCodeAt(end - 1), next = text.charCodeAt(end);
-        if (last >= 0xd800 && last <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) end--;
-        part = Buffer.from(JSON.stringify(text.slice(at, end)));
-        if (part.length <= BLOCK_BYTES) break;
-        end = at + Math.max(1, Math.floor((end - at) / 2));
-      }
-      leaves.push(this.putBlock(Buffer.concat([Buffer.from([2]), part]), part.length));
-      at = end;
-    }
-    const root = this.root(leaves);
-    const unique = [...new Map(references.map(ref => [ref.hash, ref])).values()];
-    // A large descriptor must not create an unbounded cascade when its last owner goes away.
-    for (const ref of unique.length > FANOUT ? [this.root(unique)] : unique) this.staged.get(root.hash)!.children.set(ref.hash, ref);
+    for (const ref of level) this.staged.get(root.hash)!.children.set(ref.hash, ref);
     return root;
   }
 
-  private *leaves(ref: TurnPayloadRef, parents = new Set<string>()): Generator<Buffer> {
-    if (parents.has(ref.hash)) throw new Error('Cyclic turn payload reference');
-    const bytes = this.readBlock(ref);
-    if (bytes[0] === 0 || bytes[0] === 2) {
-      if (bytes.length - 1 !== ref.bytes) throw new Error('Turn payload length mismatch');
-      yield bytes; return;
-    }
-    if (bytes[0] !== 1) throw new Error('Unknown turn payload block version');
-    const branch = JSON.parse(bytes.subarray(1).toString('utf8')) as Branch;
-    if (branch.version !== 1 || branch.kind !== 'branch' || !Array.isArray(branch.children)
-      || branch.children.length < 1 || branch.children.length > FANOUT
-      || branch.children.some(child => !child || !HASH.test(child.hash) || !Number.isSafeInteger(child.bytes) || child.bytes < 0)
-      || branch.children.reduce((n, r) => n + r.bytes, 0) !== ref.bytes) throw new Error('Invalid turn payload branch');
-    const lineage = new Set(parents).add(ref.hash);
-    for (const child of branch.children) yield* this.leaves(child, lineage);
-  }
-
-  readBytes(ref: TurnPayloadRef): Buffer {
-    const parts: Buffer[] = [];
-    for (const leaf of this.leaves(ref)) {
-      if (leaf[0] !== 0) throw new Error('Expected binary turn payload');
-      parts.push(leaf.subarray(1));
-    }
-    return Buffer.concat(parts, ref.bytes);
-  }
-
+  readBytes(ref: TurnPayloadRef): Buffer { return this.range(ref, 0, ref.bytes, 0); }
   readText(ref: TurnPayloadRef): string {
-    if (ref.bytes === 0) { this.readBytes(ref); return ''; }
-    const parts: string[] = [];
-    for (const leaf of this.leaves(ref)) {
-      if (leaf[0] !== 2) throw new Error('Expected text turn payload');
-      const value: unknown = JSON.parse(leaf.subarray(1).toString('utf8'));
-      if (typeof value !== 'string') throw new Error('Invalid turn text payload');
-      parts.push(value);
-    }
-    return parts.join('');
+    const value: unknown = JSON.parse(this.range(ref, 0, ref.bytes, 2).toString('utf8'));
+    if (typeof value !== 'string') throw new Error('Invalid turn text payload');
+    return value;
   }
-
-  /** Structural references only. Callers never have to read preceding body blocks to reach one page. */
-  *leafReferences(ref: TurnPayloadRef): Generator<TurnPayloadRef> {
-    const bytes = this.readBlock(ref);
-    if (bytes[0] === 0 || bytes[0] === 2) { yield ref; return; }
-    if (bytes[0] !== 1) throw new Error('Unknown turn payload block version');
-    const branch = JSON.parse(bytes.subarray(1).toString('utf8')) as Branch;
-    if (branch.version !== 1 || branch.kind !== 'branch' || !Array.isArray(branch.children)
-      || branch.children.length < 1 || branch.children.length > FANOUT
-      || branch.children.reduce((n, r) => n + r.bytes, 0) !== ref.bytes) throw new Error('Invalid turn payload branch');
-    for (const child of branch.children) yield* this.leafReferences(child);
-  }
-
-  encodedTextLeaf(ref: TurnPayloadRef): string {
-    const bytes = this.readBlock(ref);
-    if (bytes[0] !== 2 || bytes.length - 1 !== ref.bytes) throw new Error('Expected encoded text leaf');
-    return bytes.subarray(1).toString('utf8');
-  }
-
-  readBytesRange(ref: TurnPayloadRef, start: number, end: number): Buffer {
-    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end > ref.bytes) throw new Error('Invalid payload range');
-    const bytes = this.readBlock(ref);
-    if (bytes[0] === 0) {
-      if (bytes.length - 1 !== ref.bytes) throw new Error('Binary payload length mismatch');
-      return bytes.subarray(1 + start, 1 + end);
-    }
-    if (bytes[0] !== 1) throw new Error('Expected binary payload');
-    const branch = JSON.parse(bytes.subarray(1).toString('utf8')) as Branch;
-    if (branch.version !== 1 || branch.kind !== 'branch' || !Array.isArray(branch.children) || branch.children.length > FANOUT
-      || branch.children.reduce((n, r) => n + r.bytes, 0) !== ref.bytes) throw new Error('Invalid binary payload branch');
-    let at = 0; const parts: Buffer[] = [];
-    for (const child of branch.children) {
-      const next = at + child.bytes;
-      if (next > start && at < end) parts.push(this.readBytesRange(child, Math.max(0, start - at), Math.min(child.bytes, end - at)));
-      at = next;
-    }
-    return Buffer.concat(parts, end - start);
-  }
+  readBytesRange(ref: TurnPayloadRef, start: number, end: number): Buffer { return this.range(ref, start, end, 0); }
+  readEncodedTextRange(ref: TurnPayloadRef, start: number, end: number): Buffer { return this.range(ref, start, end, 2); }
 }

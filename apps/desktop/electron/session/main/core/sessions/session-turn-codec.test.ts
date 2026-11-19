@@ -2,12 +2,12 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'n
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import { TurnPayloadFiles } from './session-turn-payloads';
+import { TurnPayloadFiles, unbindTurnPayloadDirectory } from './session-turn-payloads';
 import { encodeTurnValue, decodeTurnValue } from './session-turn-codec';
 
 let root: string, files: TurnPayloadFiles;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'turn-codec-')); files = new TurnPayloadFiles(root); });
-afterEach(() => rmSync(root, { recursive: true, force: true }));
+afterEach(() => { unbindTurnPayloadDirectory(root); rmSync(root, { recursive: true, force: true }); });
 
 it('preserves every JSON value and a large tree without an oversized inline descriptor', () => {
   const value = { long: 'abc🙂\ud800'.repeat(20000), array: Array.from({ length: 2000 }, (_, i) => ({ [String(i)]: i })), empty: '', zero: 0, no: false, nil: null };
@@ -26,8 +26,8 @@ it('shares rawOutput aggregatedOutput with outputText while preserving raw JSON 
 });
 
 it('rejects damaged payload bytes instead of returning another version or empty history', () => {
-  const ref = files.putText('hello'.repeat(3000));
-  const sub = readdirSync(root)[0], path = join(root, sub, readdirSync(join(root, sub))[0]);
+  const ref = files.putText('hello'.repeat(20000));
+  const path = join(root, readdirSync(root)[0]);
   const body = readFileSync(path); body[body.length - 1] ^= 1; writeFileSync(path, body);
   expect(() => files.readText(ref)).toThrow();
 });

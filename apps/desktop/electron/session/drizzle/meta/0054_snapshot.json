@@ -2448,6 +2448,58 @@
       },
       "uniqueConstraints": {}
     },
+    "session_turn_payload_chunks": {
+      "name": "session_turn_payload_chunks",
+      "columns": {
+        "hash": {
+          "name": "hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ordinal": {
+          "name": "ordinal",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "digest": {
+          "name": "digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "session_turn_payload_chunks_hash_session_turn_payload_objects_hash_fk": {
+          "name": "session_turn_payload_chunks_hash_session_turn_payload_objects_hash_fk",
+          "tableFrom": "session_turn_payload_chunks",
+          "tableTo": "session_turn_payload_objects",
+          "columnsFrom": [
+            "hash"
+          ],
+          "columnsTo": [
+            "hash"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "session_turn_payload_chunks_hash_ordinal_pk": {
+          "columns": [
+            "hash",
+            "ordinal"
+          ],
+          "name": "session_turn_payload_chunks_hash_ordinal_pk"
+        }
+      },
+      "uniqueConstraints": {}
+    },
     "session_turn_payload_edges": {
       "name": "session_turn_payload_edges",
       "columns": {
@@ -2615,6 +2667,20 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "inline_data": {
+          "name": "inline_data",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "refs": {

@@ -5,7 +5,7 @@ import type { StoredTurnValue } from './session-turn-codec';
 /** A virtual JSON byte stream. Bodies are the canonical payload objects, never copied into a window source. */
 export type TurnJsonRef = { ref: TurnPayloadRef; bytes: number };
 type Piece = { kind: 'literal'; ref: TurnPayloadRef }
-  | { kind: 'text'; ref: TurnPayloadRef; escape: number }
+  | { kind: 'text'; ref: TurnPayloadRef; start: number; end: number; escape: number }
   | { kind: 'image'; ref: TurnPayloadRef; start: number; end: number }
   | { kind: 'concat'; parts: TurnJsonRef[] };
 type Fragment = string | Exclude<Piece, { kind: 'literal' | 'concat' }>;
@@ -15,10 +15,10 @@ const escape = (text: string, layers: number) => {
 };
 
 /** The leaf is already JSON encoded: further layers expand only quotes and backslashes. */
-function escapedLeaf(encoded: string, layers: number, range?: { start: number; end: number }): { bytes: number; value?: Buffer } {
+function escapedText(input: Uint8Array, layers: number, range?: { start: number; end: number }): { bytes: number; value?: Buffer } {
   const expansion = 2 ** layers;
   if (!Number.isSafeInteger(layers) || layers < 0 || !Number.isSafeInteger(expansion)) throw new Error('Invalid canonical JSON escape');
-  const input = Buffer.from(encoded.slice(1, -1)), output = range ? Buffer.alloc(range.end - range.start) : undefined;
+  const output = range ? Buffer.alloc(range.end - range.start) : undefined;
   let offset = 0, written = 0;
   for (const byte of input) {
     const special = byte === 34 || byte === 92, width = special ? expansion : 1;
@@ -47,7 +47,10 @@ export function createTurnJsonSource(files: TurnPayloadFiles, value: StoredTurnV
       case 'node': yield* render(JSON.parse(files.readText(input.ref)) as StoredTurnValue, indent, depth, layers); return;
       case 'text':
         yield literal('"');
-        if (input.ref.bytes) for (const ref of files.leafReferences(input.ref)) yield { kind: 'text', ref, escape: layers };
+        // These are virtual ranges in one payload, not independent physical files.
+        for (let at = 1; at < input.ref.bytes - 1; at += 12 * 1024) yield {
+          kind: 'text', ref: input.ref, start: at, end: Math.min(input.ref.bytes - 1, at + 12 * 1024), escape: layers,
+        };
         yield literal('"'); return;
       case 'base64':
         yield literal('"');
@@ -86,7 +89,7 @@ export function createTurnJsonSource(files: TurnPayloadFiles, value: StoredTurnV
     } else {
       flush();
       const bytes = fragment.kind === 'image' ? 4 * Math.ceil((fragment.end - fragment.start) / 3)
-        : escapedLeaf(files.encodedTextLeaf(fragment.ref), fragment.escape).bytes;
+        : escapedText(files.readEncodedTextRange(fragment.ref, fragment.start, fragment.end), fragment.escape).bytes;
       parts.push(node(fragment, bytes));
     }
   }
@@ -107,7 +110,7 @@ export function createTurnJsonSource(files: TurnPayloadFiles, value: StoredTurnV
 /** Same exact stream for old and new window readers; only its physical storage has changed. */
 export function readTurnJsonRange(directory: string, root: TurnJsonRef, start: number, end: number, budget: WindowBudget): Uint8Array {
   let io: 'sourceBytes' | 'indexBytes' = 'indexBytes';
-  const files = new TurnPayloadFiles(directory, (requested, read) => budget.readSync(io, requested, read));
+  const files = new TurnPayloadFiles(directory, (requested, read, metadata) => budget.readSync(metadata ? 'indexBytes' : io, requested, read));
   const cache = new Map<string, Piece>();
   // CAS bodies are canonical source I/O; descriptors remain index I/O. Keep both existing ceilings.
   const withBody = <T>(read: () => T): T => { const before = io; io = 'sourceBytes'; try { return read(); } finally { io = before; } };
@@ -134,7 +137,9 @@ export function readTurnJsonRange(directory: string, root: TurnJsonRef, start: n
       return withBody(() => files.readBytesRange(piece.ref, from, to));
     }
     else if (piece.kind === 'text') {
-      const result = withBody(() => escapedLeaf(files.encodedTextLeaf(piece.ref), piece.escape, { start: from, end: to }));
+      if (!Number.isSafeInteger(piece.start) || !Number.isSafeInteger(piece.end) || piece.start < 1
+        || piece.end < piece.start || piece.end - piece.start > 12 * 1024 || piece.end >= piece.ref.bytes) throw new Error('Invalid canonical text range');
+      const result = withBody(() => escapedText(files.readEncodedTextRange(piece.ref, piece.start, piece.end), piece.escape, { start: from, end: to }));
       if (result.bytes !== ref.bytes) throw new Error('Canonical JSON text length mismatch');
       return result.value!;
     } else if (piece.kind === 'image') {
