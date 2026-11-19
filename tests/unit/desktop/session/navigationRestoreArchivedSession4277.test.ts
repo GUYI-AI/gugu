@@ -4,23 +4,23 @@ import { sanitizeNavigationSnapshotForRestore } from '../../../../apps/desktop/e
 // #4277 开机默认视图不能落到已归档 / 已删除的会话上。真机:归档「何丽丽」→ 换号重启 → 首屏就是它,
 // 「无法加载对话」。恢复那一刻渲染层的会话 store 还没加载,守卫判不出来;主进程读快照时有 DB,这里判。
 
-const snapshot = (sessionId: string, projectId = 'proj-1') => ({
+const snapshot = (sessionId: string, workspaceId = 'ws-1') => ({
   currentViewId: 'session',
-  viewParams: { session: { projectId, sessionId }, project: { projectId: 'proj-other' } },
+  viewParams: { session: { workspaceId, sessionId }, group: { chatId: 'chat-other' } },
 })
 
 describe('#4277 恢复上次视图前校验会话还活着', () => {
-  it('会话已归档 ⇒ 退回它所属项目的视图,session 参数清掉', () => {
+  it('会话已归档 ⇒ 退回 home,session 参数清掉,别的参数留着', () => {
     const out = sanitizeNavigationSnapshotForRestore(snapshot('t-archived'), () => 'archived')
-    expect(out).toEqual({ currentViewId: 'project', viewParams: { project: { projectId: 'proj-1' } } })
+    expect(out).toEqual({ currentViewId: 'home', viewParams: { group: { chatId: 'chat-other' } } })
   })
 
-  it('会话已删除 ⇒ 同样退回项目', () => {
+  it('会话已删除 ⇒ 同样退回 home', () => {
     const out = sanitizeNavigationSnapshotForRestore(snapshot('t-gone'), () => 'deleted') as { currentViewId: string }
-    expect(out.currentViewId).toBe('project')
+    expect(out.currentViewId).toBe('home')
   })
 
-  it('会话连项目都不知道 ⇒ home', () => {
+  it('快照里只有会话 id ⇒ home', () => {
     const out = sanitizeNavigationSnapshotForRestore(
       { currentViewId: 'session', viewParams: { session: { sessionId: 't-gone' } } },
       () => 'deleted',
@@ -39,7 +39,7 @@ describe('#4277 恢复上次视图前校验会话还活着', () => {
   })
 
   it('对照:上次不在会话视图 ⇒ 不碰,也不查会话', () => {
-    const snap = { currentViewId: 'project', viewParams: { project: { projectId: 'p' } } }
+    const snap = { currentViewId: 'home', viewParams: {} }
     let asked = 0
     expect(sanitizeNavigationSnapshotForRestore(snap, () => { asked++; return 'deleted' })).toBe(snap)
     expect(asked).toBe(0)
