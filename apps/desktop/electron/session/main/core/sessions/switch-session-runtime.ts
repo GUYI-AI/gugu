@@ -1,5 +1,5 @@
 import { sessionLife } from './session-life';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getPlugin } from '@main/core/agents/plugin-registry';
 import { assertSessionSurfaceDeclared } from '@main/core/agents/session-runtime-compatibility';
 import { db } from '@main/db/client';

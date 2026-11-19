@@ -1,5 +1,5 @@
 import { sessionBootTasks } from '../boot-tasks';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { resolveSessionpageSessionIntegration } from '@gugu/session-plugins/agents';
 import { recordLocalSessionDeliveryFailureForTest } from '@main/core/sessionpage/local-session-delivery';
 import { resolveSession } from '@main/core/sessions/session-workspace-manager';

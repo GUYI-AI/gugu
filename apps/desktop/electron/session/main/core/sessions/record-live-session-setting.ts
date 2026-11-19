@@ -104,10 +104,10 @@ export async function recordLiveSessionSetting(
       .set({ config: next as typeof current })
       .where(eq(sessions.id, sessionId))
       .run();
-    return { row, changes };
+    return { changes };
   });
   if (!written) return;
-  const { row, changes } = written;
+  const { changes } = written;
 
   events.emit(sessionChangedChannel, {
     sessionId,
