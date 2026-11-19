@@ -166,6 +166,33 @@ describe('approved A2A activity', () => {
     expect(row.top).toBeGreaterThanOrEqual(viewport.top);
     expect(row.top).toBeLessThan(viewport.bottom);
   });
+  it.each(['answered', 'withdrawn'] as const)('preserves an opened activity when a question is %s in the active and committed transcript', async state => {
+    const records = [turn('own', [ordinary('Owner question', 'user')]), turn('report', [delivery('incoming')])];
+    const t = await mount(800, records);
+    t.button().click();
+    await until('report opened', () => t.head()?.dataset.expanded === 'true');
+    const receipt = turn('receipt', [{ ...ordinary('receipt', 'user'), text: '<gugu_question_answer>\n'
+      + JSON.stringify({ question_id: 'question', state, answers: [{ selected: ['Keep it'] }] }) + '\n</gugu_question_answer>' }]);
+    t.state.transcript.activeTurn.set(receipt, 'generating');
+    await until('answer status row mounted', () => !!t.host.querySelector('[data-slot="question-answer"]'));
+    expect(t.head()?.dataset.expanded).toBe('true');
+    expect(t.host.querySelector('[data-user-card="incoming"]')).not.toBeNull();
+    batch(() => { t.state.transcript.history.seed([...records, receipt]); t.state.transcript.activeTurn.set(null); });
+    await untilStable('answer reconciled', () => t.scroll().scrollHeight);
+    expect(t.head()?.dataset.expanded).toBe('true');
+    expect(t.host.querySelector('[data-user-card="incoming"]')).not.toBeNull();
+    expect(t.host.textContent).not.toContain('<gugu_question_answer>');
+  });
+  it('preserves an opened activity when another report arrives', async () => {
+    const records = [turn('own', [ordinary('Owner question', 'user')]), turn('report', [delivery('incoming')])];
+    const t = await mount(800, records);
+    t.button().click();
+    await until('report opened', () => t.head()?.dataset.expanded === 'true');
+    t.state.transcript.history.seed([...records, turn('second', [delivery('second')])]);
+    await until('second report visible inside the activity', () => !!t.host.querySelector('[data-user-card="second"]'));
+    expect(t.head()?.dataset.expanded).toBe('true');
+    expect(t.host.querySelectorAll('[data-agent-activity]')).toHaveLength(1);
+  });
   it('preserves manual reading across remount and collapses old A2A while following a new owner input to bottom', async () => {
     const t = await mount(800, [turn('a', [delivery('incoming', 'Long agent content '.repeat(500))]), turn('p', [ordinary('Panel answer')])]);
     t.button().click();
@@ -275,6 +302,29 @@ describe('approved A2A activity', () => {
     await untilStable('collapse anchor settled', () => [t.scroll().scrollTop, t.scroll().scrollHeight]);
     const conclusion = t.host.querySelector('[data-user-card="Following conclusion"]')!.getBoundingClientRect();
     expect(conclusion.top).toBeGreaterThanOrEqual(t.scroll().getBoundingClientRect().top - 1);
+    expect(conclusion.top).toBeLessThan(t.scroll().getBoundingClientRect().bottom);
+  });
+  it.each([390, 1280])('keeps the clicked line where it is when the following message is off screen (%i)', async width => {
+    // Owner 2026-11-12: opened an exchange in the text, closed it again, and the view went from the 11:51 message to
+    // the 11:53 one. With the conclusion below the screen, the line the reader clicked is what stays put.
+    const t = await mount(width, [...Array.from({ length: 6 }, (_, i) => turn(`before${i}`, [ordinary(`Before ${i}. `.repeat(20))])),
+      ...Array.from({ length: 24 }, (_, i) => turn(`a${i}`, [delivery(`a${i}`, `Update ${i}. `.repeat(45))])),
+      turn('panel', [ordinary('Following conclusion')]), ...Array.from({ length: 6 }, (_, i) => turn(`tail${i}`, [ordinary(`Tail ${i}. `.repeat(20))]))]);
+    const top = () => t.head()!.getBoundingClientRect().top - t.scroll().getBoundingClientRect().top;
+    t.scroll().scrollTop += top() - 200;
+    await untilStable('header placed in the text', () => top());
+    t.button().click();
+    await untilStable('open exchange settled', () => [t.scroll().scrollTop, t.scroll().scrollHeight]);
+    const clicked = top();
+    expect(Math.abs(clicked - 200), 'opening keeps the header where it was').toBeLessThan(2);
+    expect(t.host.querySelector('[data-user-card="Following conclusion"]'), 'the conclusion is below the screen').toBeNull();
+    t.button().click();
+    await until('following conclusion mounted', () => !!t.host.querySelector('[data-user-card="Following conclusion"]'));
+    await untilStable('collapse settled', () => [t.scroll().scrollTop, t.scroll().scrollHeight]);
+    expect(t.button().getAttribute('aria-expanded')).toBe('false');
+    expect(Math.abs(top() - clicked), 'the clicked line stays where it was').toBeLessThan(2);
+    const conclusion = t.host.querySelector('[data-user-card="Following conclusion"]')!.getBoundingClientRect();
+    expect(conclusion.top, 'the conclusion follows it').toBeGreaterThan(t.head()!.getBoundingClientRect().bottom - 1);
     expect(conclusion.top).toBeLessThan(t.scroll().getBoundingClientRect().bottom);
   });
   it('returns offscreen rows to zero after collapse and a mid-animation history prepend', async () => {

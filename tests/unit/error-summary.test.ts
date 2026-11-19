@@ -7,6 +7,17 @@ const time = '2026-11-06T15:00:00.000Z'
 const summary = { type: 'TypeError', locations: ['apps/desktop/src/App.tsx:12:3'], version: '0.3.2-beta.1', system: 'darwin', time }
 
 describe('outgoing error-summary allowlist', () => {
+  it('preserves the published Beta run/attempt version through the transport boundary', () => {
+    for (const version of ['0.3.3-beta.2001.1', '0.3.8-beta.44440414639.1']) {
+      const published = { ...summary, version }
+      expect(sanitizeErrorSummary(published)).toEqual(published)
+      expect(JSON.parse(errorSummaryRequest(published)!)).toEqual({ schemaVersion: 1, summary: published })
+    }
+    for (const version of ['0.3.3-beta.2001.1.private', '0.3.3-beta.2001.1000', '0.3.3-beta.100000.1', '0.3.8-beta.44440414639', '0.3.8-beta.44440414639.1000']) {
+      expect(errorSummaryRequest({ ...summary, version })).toBeNull()
+    }
+  })
+
   it('drops every field outside the allowlist, including nested user content and logs', () => {
     expect(sanitizeErrorSummary({ ...summary, message: 'private chat', user: { email: 'someone@example.test' }, token: 'private', screenshot: 'data:image/png', memory: new Uint8Array([1]), breadcrumbs: ['private'], request: { body: 'private' }, extra: { token: 'private' } })).toEqual(summary)
   })

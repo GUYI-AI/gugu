@@ -82,9 +82,9 @@ export function assessNativeWork(work: NativeWork, parent: readonly NativeCall[]
     check(`parent-read:${path}`, reads.length === 0 ? false : writes.length
       ? reads.some(read => writes.some(write => !!read.timestamp && !!write.timestamp && read.timestamp > write.timestamp)) : null, reads)
   }
-  const deliveries = parent.filter(call => call.outcome === 'succeeded' && named(call, 'message_send_file') && call.input.file_path === work.delivery)
+  const deliveries = parent.filter(call => call.outcome === 'succeeded' && named(call, 'message_send') && call.input.file_path === work.delivery)
   check('delivery', deliveries.length > 0, deliveries)
-  const prohibited = [...parent, ...executors].filter(call => ['message_send_as_owner', 'message_send_file_as_owner', 'contact_friend', 'schedule_create', 'payment']
+  const prohibited = [...parent, ...executors].filter(call => ['message_send_as_owner', 'contact_friend', 'schedule_create', 'payment']
     .some(name => named(call, name)))
   check('authority', prohibited.length === 0, prohibited)
   return { status: checks.some(item => item.passed === false) ? 'FAIL' as const

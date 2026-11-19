@@ -47,7 +47,7 @@ export const backgroundTasksUnitDef = defineUnit<BackgroundTasksItem, { extraH: 
           {layout().text}
         </CollapseHeader>
         <Show when={props.data.expanded}>
-          <BackgroundTasksList commands={props.data.commands} subagents={props.data.subagents} measureCtx={props.ctx.measureCtx!} />
+          <BackgroundTasksList commands={props.data.commands} subagents={props.data.subagents} measureCtx={props.ctx.measureCtx!} anchorId={props.data.id} />
         </Show>
       </div>
     );

@@ -31,8 +31,8 @@ export function paneLeaf(paneId: string): PaneLayoutNode {
  * 一棵格子树最少要多宽(`width`)/ 多高(`height`):一格至少 `unit`;顺着这一向排开的几格加起来(外加中间的分界线),
  * 横着那一向叠着的取最宽的那一格。
  */
-export function minExtent(node: PaneLayoutNode, axis: 'width' | 'height', unit: number, gap = 1): number {
-  if (node.type === 'pane') return unit;
+export function minExtent(node: PaneLayoutNode, axis: 'width' | 'height', unit: number | ((paneId: string) => number), gap = 1): number {
+  if (node.type === 'pane') return typeof unit === 'number' ? unit : unit(node.paneId);
   const inner = node.children.map((child) => minExtent(child, axis, unit, gap));
   const along = (node.orientation === 'horizontal') === (axis === 'width');
   return along ? inner.reduce((sum, value) => sum + value, 0) + gap * (inner.length - 1) : Math.max(...inner);

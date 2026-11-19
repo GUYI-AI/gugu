@@ -58,5 +58,10 @@ export function ReadView<T>({ read, failedTitle, children }: { read: PhoneRead<T
   // entire attempt key, hiding each error behind another initial spinner.
   if (error) return <AssistantEmpty title={failedTitle}><span role={(error as { code?: string })?.code === 'unprepared' ? 'status' : 'alert'}>{assistantPanelFailure(error,t)}</span></AssistantEmpty>
   if (read.state !== 'ok') return <ReadingNow />
+  // 重读没成:列着的是上一次读到的,上面一句说这一次没读到(❌ 只留旧的、不说)。
+  if (read.refreshError) return <>
+    <p role={(read.refreshError as { code?: string })?.code === 'unprepared' ? 'status' : 'alert'} className="ta-page-sub text-foreground-error" data-testid="assistant-read-refresh-failed">{assistantPanelFailure(read.refreshError,t)}</p>
+    {children(read.data)}
+  </>
   return <>{children(read.data)}</>
 }

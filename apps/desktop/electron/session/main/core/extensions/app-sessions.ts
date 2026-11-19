@@ -1,4 +1,5 @@
 import { isAbsolute, resolve } from 'node:path';
+import { canonicalPath } from '@gugu/session-core/files';
 import { and, eq } from 'drizzle-orm';
 import { TRANSCRIPT_SOURCE_IDS, type TranscriptSource } from '@gugu/core/shared/types/transcripts';
 import { db } from '@main/db/client';
@@ -29,7 +30,7 @@ export async function indexSessionsForApp(args: Record<string, unknown>): Promis
   let cwd: string | undefined;
   if (args.project !== undefined) {
     if (typeof args.project !== 'string' || !args.project) return invalid('project is a project id or an absolute directory');
-    if (isAbsolute(args.project)) cwd = resolve(args.project);
+    if (isAbsolute(args.project)) cwd = canonicalPath(args.project);
     else {
       const root = await projectRootFolder(args.project);
       if (!root) throw Object.assign(new Error('Project has no root folder on this machine'), { code: 'not-found' });
@@ -44,7 +45,7 @@ export async function indexSessionsForApp(args: Record<string, unknown>): Promis
       .leftJoin(projectRemotes, and(eq(projectRemotes.projectId, projects.id), eq(projectRemotes.remoteName, 'origin'))),
   ]);
   const localGroupOf = createLocalGroupOf(sessionProjects);
-  const remotes = new Map(registeredRemotes.map(({ path, url }) => [path, url]));
+  const remotes = new Map<string, string | null>(registeredRemotes.map(({ path, url }) => [path, url]));
   const repositoryUrls = new Map<string | null, Promise<string | undefined>>();
   const groupOf = (directory: string | null): Promise<AppSessionGroup> => {
     const group = localGroupOf(directory);

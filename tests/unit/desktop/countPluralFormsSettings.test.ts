@@ -90,8 +90,8 @@ const ROWS: Row[] = [
   },
   {
     ns: 'settings', key: 'usage.streaks', p: () => ({ current: 3, longest: 5 }),
-    en: ['3-day streak · longest 5 · 0 active days', '3-day streak · longest 5 · 1 active day', '3-day streak · longest 5 · 2 active days'],
-    zh: (n) => `连续 3 天 · 最长 5 天 · 活跃 ${n} 天`,
+    en: ["3-day streak, longest 5, 0 active days", "3-day streak, longest 5, 1 active day", "3-day streak, longest 5, 2 active days"],
+    zh: (n) => `连续 3 天，最长 5 天，共活跃 ${n} 天`,
   },
   {
     ns: 'settings', key: 'usage.tiles.tokensUnknown', p: (n) => ({ value: String(n) }),
@@ -122,8 +122,6 @@ const ROWS: Row[] = [
   { ns: 'assistant', key: 'chat.toolCount', en: ['0 tool calls', '1 tool call', '2 tool calls'], zh: (n) => `调用 ${n} 次工具` },
   { ns: 'assistant', key: 'memory.items', en: ['0 items', '1 item', '2 items'], zh: (n) => `${n} 项` },
   { ns: 'assistant', key: 'health.tileSub', en: ['0 metrics', '1 metric', '2 metrics'], zh: (n) => `${n} 项数据` },
-  { ns: 'assistant', key: 'files.uploaded', en: ['Uploaded 0 files', 'Uploaded 1 file', 'Uploaded 2 files'], zh: (n) => `上传成功：${n} 个文件` },
-  { ns: 'assistant', key: 'connectors.deviceCount', en: ['0 devices', '1 device', '2 devices'], zh: (n) => `${n} 台设备` },
   {
     ns: 'assistant', key: 'closeDialog.deleteStarted',
     en: ['Also delete the sessions it started (0)', 'Also delete the session it started (1)', 'Also delete the sessions it started (2)'],

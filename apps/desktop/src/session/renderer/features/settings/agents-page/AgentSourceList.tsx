@@ -1,9 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import type { ReactNode } from 'react';
-import { toast } from 'sonner';
 import { SettingsGroup, SettingsRow } from '@/components/settings/SettingsPrimitives';
-import { rendererLogger } from '@/lib/log';
-import { messageForUser } from '@/lib/userFacingError';
 import { Button } from '@renderer/lib/ui/button';
 import {
   Select,
@@ -23,6 +20,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import type { AgentPayload, Installation } from '@shared/core/agents/agent-payload';
 import { InstallProgressRow } from './InstallProgressRow';
 import { installFailureSummary } from './install-failure-summary';
+import { uninstallAgentWithToast } from './uninstall-agent-with-toast';
 
 export type SourceKind = 'local' | 'managed' | 'custom';
 export type AgentSourceListProps = {
@@ -33,6 +31,7 @@ export type AgentSourceListProps = {
   managed: Installation | undefined;
   custom: Installation | undefined;
   canInstall: boolean;
+  installInHeader?: boolean;
   canUninstall: boolean;
   installDocs?: string | null;
   onSelect: (kind: SourceKind) => void;
@@ -51,6 +50,7 @@ export const AgentSourceList = observer(function AgentSourceList({
   managed,
   custom,
   canInstall,
+  installInHeader,
   canUninstall,
   installDocs,
   onSelect,
@@ -82,14 +82,7 @@ export const AgentSourceList = observer(function AgentSourceList({
   };
   const uninstall = () => {
     const name = agentPayload?.name ?? translate('agentsPage.agentFallbackName');
-    void toast.promise(vm.uninstall(), {
-      loading: translate('agentsPage.uninstalling', { name }),
-      success: translate('agentsPage.uninstalled', { name }),
-      error: (error) => {
-        rendererLogger('actions/AgentSourceList').error({ error }, 'action failed');
-        return messageForUser(error);
-      }
-    });
+    uninstallAgentWithToast(name, vm.uninstall, translate);
   };
   let description: ReactNode = translate(
     available ? 'agentsPage.installed'
@@ -106,7 +99,7 @@ export const AgentSourceList = observer(function AgentSourceList({
         {needsUpdate && (
           <>
             {' '}
-            · {translate('agentsPage.updateAvailable')}
+             {translate('agentsPage.updateAvailable')}
             {active.latestVersion && ` v${active.latestVersion}`}
           </>
         )}
@@ -125,16 +118,18 @@ export const AgentSourceList = observer(function AgentSourceList({
         {translate(!vm.lastInstallError && vm.lastUpdateError && onUpdate ? 'agentsPage.updateAction' : 'agentsPage.reinstall')}
       </Button>
     ) : (!available && canInstall) || (companionMissing && canInstall) ? (
-      <Button size="sm" variant="outline" onClick={onInstall} disabled={busy}>
-        {installLabel}
-      </Button>
+      installInHeader ? null : (
+        <Button size="sm" variant="outline" onClick={onInstall} disabled={busy}>
+          {installLabel}
+        </Button>
+      )
     ) : needsUpdate && (managedUpdate || canInstall) ? (
       <Button size="sm" variant="outline" onClick={managedUpdate || onInstall} disabled={busy}>
         {managedUpdate
           ? translate('agentsPage.updateAction')
           : translate('agentsPage.installAndSwitch')}
       </Button>
-    ) : !canInstall && !available && installDocs ? (
+    ) : !canInstall && !available && installDocs && !installInHeader ? (
       <a
         href={installDocs}
         target="_blank"
@@ -203,7 +198,7 @@ export const AgentSourceList = observer(function AgentSourceList({
             )}
             {companions.map((p) => (
               <p key={p.dependencyId} className="m-0 text-xs text-foreground-muted">
-                {p.name} ·{' '}
+                {p.name}  {' '}
                 {p.managedVersion ? `v${p.managedVersion}` : translate('agentsPage.notInstalled')}
               </p>
             ))}
@@ -254,7 +249,7 @@ export const AgentSourceList = observer(function AgentSourceList({
                     <SelectItem value="local">
                       <span>{translate('agentsPage.sourceLocal')}</span>
                       <span className="text-xs text-foreground-muted">
-                        {local.provenance.kind} · {local.pathEntry ?? local.realpath}
+                        {local.provenance.kind}  {local.pathEntry ?? local.realpath}
                       </span>
                     </SelectItem>
                   )}

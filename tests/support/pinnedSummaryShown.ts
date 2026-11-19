@@ -1,6 +1,6 @@
 /**
- * Whether any point of a pinned user-message summary is on screen. Resting, the summary is hidden over its own
- * message (@@@pin-cover); hidden elements are not hit, so a hit anywhere on the card means it shows.
+ * Whether any point of a pinned user-message summary is on screen. Resting, the summary lies behind its own
+ * message's bubble (@@@pin-cover), which takes the hit; a hit anywhere on the card means it shows.
  */
 export function pinnedSummaryShown(summary: HTMLElement): boolean {
   const r = summary.getBoundingClientRect();

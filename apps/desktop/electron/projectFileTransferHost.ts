@@ -18,7 +18,7 @@ function failureReason(error: unknown) {
 export function createProjectTransferHost(deps: {
   identity(): Promise<{ accountId: string; deviceId: string }>
   endpoint(): Promise<AttachmentsEndpoint>
-  read: ProjectFileReader; tempRoot: string; env?: NodeJS.ProcessEnv; later?: ProjectFileVersionLookup
+  read: ProjectFileReader; tempRoot: string; env?: NodeJS.ProcessEnv; later: ProjectFileVersionLookup
 }) {
   let running: Promise<void> | undefined, again = false
   const attempted = new Set<string>()

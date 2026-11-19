@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { replica, useReplica } from '../../lib/replica'
+import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import type { ActiveSection } from '@gugu/core/shared/enums/settingsSectionModels'
 import { AssistantStatusGroups, OnboardingSlot } from '../assistant/AssistantShellHost'
@@ -13,12 +15,11 @@ import { ChevronRight, Clock, Database, Monitor, Plug, MessageCircle, SidebarMin
 import { useAssistantHome } from '../../lib/useAssistantHome'
 import { platform } from '../../platform'
 import { useAuth } from '../../store/auth'
-import { meetingReminderEnabled, setMeetingReminderEnabled, subscribeMeetingReminderPref } from '../../lib/meetingReminderPref'
+import { useDevicePreferences, writeDevicePreferences } from '../../lib/devicePreferences'
 import { invokeOnMachine } from '../../session/renderer/lib/ipc'
 import { VOICE_NOTE_MEETINGS_CHANNEL, type VoiceNoteMeetingsResult } from '../../session/shared/core/voice-notes'
 import { useContactsStore } from '../../store/contactsContext'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
-import { useSyncExternalStore } from 'react'
 import '../../i18n/registerAssistantCatalog'
 import '../../i18n/registerVoiceNotesCatalog'
 
@@ -36,7 +37,8 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
   onOpenSection: (section: ActiveSection) => void
   /** 打开助理 App 里的某一页(会先收起设置);手机上助理是底部 tab,不给。 */
   onOpenAssistantPage?: (tab: AssistantPageTab) => void
-  onOpenModel?: () => void
+  /** 它用哪个模型:同一页里的模型那一屏(AssistantSettingsPage)。它的 agent 设置只剩形象,❌ 开那个弹窗。 */
+  onOpenModel: () => void
 }) {
   const { t } = useTranslation('assistant')
   const { updateAgentProfile } = useContactsStore()
@@ -50,7 +52,6 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
       : null
 
   const [lookOpen, setLookOpen] = useState(false)
-  const [modelOpen, setModelOpen] = useState(false)
 
   // 还没有咕咕:一页只画「安家」的流程(会员一键领取、非会员装在这台电脑上)。认它是谁还在读 / 读不到时照实说,❌ 当成没有。
   if (!contact) {
@@ -133,7 +134,7 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
           leading={<SidebarMinimalistic size={16} />}
           description={t('settingsPage.modelNote')}
           control={<ChevronRight size={16} className="gg-settings-row-chevron" aria-hidden="true" />}
-          onClick={onOpenModel ?? (() => setModelOpen(true))}
+          onClick={onOpenModel}
           data-testid="settings-assistant-model"
         />
         {link('connectors', t('connectors.title'), t('connectors.note', { name }))}
@@ -151,33 +152,33 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
       {/* 会议提醒读的是这台电脑的日历、提醒也只在桌面弹:手机上没有这个开关(手机端咕咕页自己的事)。 */}
       {platform.capabilities.agentRuntime ? <MeetingReminderGroup /> : null}
       {lookOpen && contact ? <AgentSettingsModal agent={contact} initialTab="look" zIndex="var(--z-settings-modal)" onClose={() => setLookOpen(false)} /> : null}
-      {modelOpen && contact ? <AgentSettingsModal agent={contact} initialTab="aimodel" zIndex="var(--z-settings-modal)" onClose={() => setModelOpen(false)} /> : null}
     </SettingsPage>
   )
 }
 
-/** 入会提醒开关(语音笔记);日历没连上就照实说要先去连。偏好存在这台电脑上(lib/meetingReminderPref)。 */
+/** Whether this computer can read a calendar for meeting reminders. */
+const meetingCalendar = replica({
+  name: 'meetingCalendar',
+  scope: 'device',
+  read: async () => {
+    const result = await (invokeOnMachine(null, VOICE_NOTE_MEETINGS_CHANNEL) as Promise<VoiceNoteMeetingsResult>)
+    return result.ok ? 'ok' as const : result.code === 'not_granted' || result.code === 'unsupported' || result.code === 'os_permission' ? 'missing' as const : 'ok' as const
+  },
+  persist: { maxBytes: 2048, maxEntries: 1 },
+})
+
+/** 入会提醒开关(语音笔记);日历没连上就照实说要先去连。偏好存在这台电脑上(lib/devicePreferences)。 */
 function MeetingReminderGroup() {
   const { t } = useTranslation('voiceNotes')
-  const enabled = useSyncExternalStore(subscribeMeetingReminderPref, meetingReminderEnabled)
-  const [calendar, setCalendar] = useState<'ok' | 'missing' | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    void (invokeOnMachine(null, VOICE_NOTE_MEETINGS_CHANNEL) as Promise<VoiceNoteMeetingsResult>)
-      .then((result) => {
-        if (!cancelled) setCalendar(result.ok ? 'ok' : result.code === 'not_granted' || result.code === 'unsupported' || result.code === 'os_permission' ? 'missing' : 'ok')
-      })
-      .catch(() => undefined)
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const enabled = useDevicePreferences().meetingReminder
+  const reading = useReplica(meetingCalendar, [])
   return (
     <SettingsGroup title={t('title')} data-testid="settings-assistant-voice">
       <SettingsRow
         title={t('meeting.setting')}
-        description={calendar === 'missing' ? t('meeting.needsCalendar') : t('meeting.settingDescription')}
-        control={<Switch checked={enabled} onCheckedChange={(on) => setMeetingReminderEnabled(on)} aria-label={t('meeting.setting')} data-testid="assistant-meeting-reminder-switch" />}
+        description={reading.state === 'unknown' ? <Unknown className="w-56" />
+          : reading.state === 'value' && reading.value === 'missing' ? t('meeting.needsCalendar') : t('meeting.settingDescription')}
+        control={<Switch checked={enabled} onCheckedChange={(on) => writeDevicePreferences({ meetingReminder: on })} aria-label={t('meeting.setting')} data-testid="assistant-meeting-reminder-switch" />}
       />
     </SettingsGroup>
   )

@@ -3,7 +3,7 @@ import { messageForUser } from '@/lib/userFacingError';
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatChannel, ChatChannelKind, ChatChannelList, ChatChannelsClient } from '@gugu/core/cloud/chatChannels'
-import { Check, ChevronDown } from '@/lib/icons'
+import { ChevronDown } from '@/lib/icons'
 import { Button } from '../../ui/Button'
 import { DropdownMenu, MenuItem } from '../../ui/Menu'
 import { Sheet } from '../../ui/Sheet'
@@ -108,17 +108,14 @@ function DefaultChannelPicker({ channels, onPick }: { channels: ChatChannel[]; o
             <MenuItem
               key={option.kind ?? 'none'}
               data-testid={`channels-default-option-${option.kind ?? 'none'}`}
+              // 「无默认」没有品牌图标,图标格照样留着:几行的字从同一条左边线起。
+              icon={option.kind ? <ChannelBrandIcon kind={option.kind} size={16} /> : <span aria-hidden />}
+              checked={option.kind === (current?.kind ?? null)}
               onClick={() => {
                 setOpen(false)
                 if (option.kind !== (current?.kind ?? null)) onPick(option.kind)
               }}
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                {option.kind ? <ChannelBrandIcon kind={option.kind} size={16} /> : null}
-                <span className="truncate">{option.label}</span>
-                {option.kind === (current?.kind ?? null) ? <Check aria-hidden className="ml-auto size-4 shrink-0 text-[var(--muted-fg)]" /> : null}
-              </span>
-            </MenuItem>
+            >{option.label}</MenuItem>
           ))}
         </DropdownMenu.Content>
       )}

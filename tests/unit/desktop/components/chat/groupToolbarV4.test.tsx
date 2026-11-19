@@ -11,6 +11,7 @@ import type { ChatItem, GroupChatSettings, GroupCollabSnapshot } from '@gugu/cor
 import { chat, clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
 import type { groupAgentStatusIndicatorProps } from '../../../../../apps/desktop/src/lib/groupAgentStatus'
 import { ChatHeaderActions } from '../../../../../apps/desktop/src/components/chat/ChatHeaderActions'
+import { publishInnerSidebarChat } from '../../../../../apps/desktop/src/lib/innerSidebarBridge'
 
 /** Topic chatter: unread, none of it addressed to you. */
 const topicFixture = (patch: Partial<ChatItem>) => chat({ ...patch, unread_locator: { stream_id: 'main', stream_kind: 'main', thread_root_id: null, message_id: 'first', message_seq: 1,
@@ -23,6 +24,7 @@ const onOpenInfo = vi.fn()
 const onCloseInfo = vi.fn()
 const onSearch = vi.fn()
 const onOpenFolder = vi.fn()
+const onCreateAgent = vi.fn()
 let headerWidth: number
 const resizeCallbacks = new Set<ResizeObserverCallback>()
 
@@ -46,7 +48,7 @@ beforeEach(() => {
 })
 afterEach(() => { runInAction(() => { installedExtensionsStore.manifests = []; installedExtensionsStore.disabled = [] }); harness.cleanup(); resizeCallbacks.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
-async function header(kind: 'group' | 'topic' | 'dm', options: { mobile?: boolean; menu?: boolean; infoShown?: boolean; stripNarrow?: boolean; pinned?: boolean; muted?: boolean; topics?: ChatItem[]; status?: 'working' | 'needs_user' } = {}) {
+async function header(kind: 'group' | 'topic' | 'dm', options: { mobile?: boolean; create?: boolean; menu?: boolean; infoShown?: boolean; stripNarrow?: boolean; pinned?: boolean; muted?: boolean; topics?: ChatItem[]; status?: 'working' | 'needs_user' } = {}) {
   if (options.stripNarrow) { harness.container.className = 'session-tab-bar'; harness.container.setAttribute('data-strip-narrow', '') }
   const room = {
     snapshot: { humans: [{ id: 'human' }], agents: [{ id: 'agent-1' }, { id: 'agent-2' }] } as GroupCollabSnapshot,
@@ -59,6 +61,8 @@ async function header(kind: 'group' | 'topic' | 'dm', options: { mobile?: boolea
     isGroupChat: kind === 'group', isRoomChat: kind !== 'dm', mobile: options.mobile,
     infoShown: options.infoShown ?? false, showHeaderMenu: options.menu ?? false,
     room, moreButtonRef: createRef<HTMLButtonElement>(),
+    membersInMenu: options.create,
+    onCreateAgent: options.create ? onCreateAgent : undefined,
     onSearch, onOpenFolder, onOpenInfo, onCloseInfo,
     onToggleHeaderMenu: vi.fn(), onCloseHeaderMenu: vi.fn(),
   }
@@ -109,11 +113,11 @@ describe('final group toolbar v4', () => {
     expect(catalog.header.groupApps).toBe(label)
   })
 
-  it('puts members, topics, invitation, Apps and More on a wide group; search and files live in More', async () => {
+  it('puts members, topics, Apps and More on a wide group (no invitation button: it is the members page\'s first row); search and files live in More', async () => {
     await header('group', { menu: true })
     expect(button('成员列表')?.textContent).toContain('3')
     expect(button('话题')).toBeDefined()
-    expect(button('邀请')).toBeDefined()
+    expect(button('邀请')).toBeUndefined()
     expect(button('应用')).toBeDefined()
     expect(button('在对话中搜索')).toBeUndefined()
     expect(button('文件')).toBeUndefined()
@@ -122,23 +126,35 @@ describe('final group toolbar v4', () => {
     expect(harness.container.querySelector('[data-agent-display-status="working"]')).toBeNull()
   })
 
-  it('mobile: no topics button, invitation and Apps are in More', async () => {
+  it('#2548 with the desktop inner column on this chat: only topics leave the bar (the column lists them); the members button stays', async () => {
+    publishInnerSidebarChat('chat')
+    try {
+      await header('group', { menu: true })
+      expect(button('话题')).toBeUndefined()
+      expect(button('成员列表')).toBeDefined()
+      expect(button('应用')).toBeDefined()
+      expect(button('更多操作')).toBeDefined()
+    } finally {
+      publishInnerSidebarChat(null)
+    }
+  })
+
+  it('mobile: the members button, no topics and no invitation button, Apps are in More', async () => {
     headerWidth = 900
     await header('group', { menu: true, mobile: true })
+    expect(button('成员列表')).toBeDefined()
     expect(button('话题')).toBeUndefined()
     expect(button('邀请')).toBeUndefined()
     expect(button('应用')).toBeUndefined()
-    expect(menuItem('邀请')).toBeDefined()
+    expect(menuItem('邀请')).toBeUndefined()
     expect(menuItem('应用')).toBeDefined()
   })
 
-  it.each(['strip', 'width'] as const)('%s: keeps topics but moves invitation and Apps into More', async (reason) => {
+  it.each(['strip', 'width'] as const)('%s: keeps topics, moves Apps into More', async (reason) => {
     headerWidth = reason === 'width' ? 560 : 900
     await header('group', { menu: true, stripNarrow: reason === 'strip' })
     expect(button('话题')).toBeDefined()
-    expect(button('邀请')).toBeUndefined()
     expect(button('应用')).toBeUndefined()
-    expect(menuItem('邀请')).toBeDefined()
     expect(menuItem('应用')).toBeDefined()
   })
 
@@ -191,17 +207,19 @@ describe('final group toolbar v4', () => {
     expect(onCloseInfo).toHaveBeenCalledOnce()
   })
 
-  it.each(['group', 'topic', 'dm'] as const)('%s: pin and mute use chat writes and leave More open', async (kind) => {
+  it('a centered phone group keeps direct creation and members in More', async () => {
+    await header('group', { mobile: true, create: true, menu: true })
+    expect(button('成员列表')).toBeUndefined()
+    await clickElement(button('创建智能体')!)
+    expect(onCreateAgent).toHaveBeenCalledOnce()
+    await clickElement(menuItem('成员列表 (3)')!)
+    expect(onOpenInfo).toHaveBeenCalledWith('members')
+  })
+
+  it.each(['group', 'topic', 'dm'] as const)('%s: More has no pin or mute switch (both are on the info page); a private chat keeps its folder item', async (kind) => {
     await header(kind, { menu: true })
-    const switches = [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')]
-    expect(switches).toHaveLength(2)
-    expect(switches.every((element) => element.getAttribute('aria-checked') === 'false')).toBe(true)
-    await clickElement(switches[0]!)
-    expect(pinChat).toHaveBeenCalledWith('chat', true)
     expect(document.querySelector('[data-testid="group-header-menu"]')).not.toBeNull()
-    await clickElement(switches[1]!)
-    expect(setChatNotificationLevel).toHaveBeenCalledWith('chat', 'none')
-    expect(document.querySelector('[data-testid="group-header-menu"]')).not.toBeNull()
+    expect(document.querySelectorAll('[role="menuitemcheckbox"]')).toHaveLength(0)
     if (kind === 'dm') {
       expect(button('文件'), 'a private chat has no header folder button, like a group').toBeUndefined()
       await clickElement(menuItem('文件')!)
@@ -216,22 +234,5 @@ describe('final group toolbar v4', () => {
     expect(search.textContent).toContain('⌘F')
     await clickElement(search)
     expect(onSearch).toHaveBeenCalledOnce()
-  })
-
-  it.each(['Enter', ' '])('keyboard %j exposes checked state and toggles existing pin/mute state off', async (key) => {
-    await header('group', { menu: true, pinned: true, muted: true })
-    const switches = [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')]
-    expect(switches).toHaveLength(2)
-    expect(switches.every((element) => element.getAttribute('aria-checked') === 'true')).toBe(true)
-    const activate = async (element: HTMLElement) => act(async () => {
-      element.focus()
-      element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
-      element.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true, cancelable: true }))
-    })
-    await activate(switches[0]!)
-    expect(pinChat).toHaveBeenCalledExactlyOnceWith('chat', false)
-    await activate(switches[1]!)
-    expect(setChatNotificationLevel).toHaveBeenCalledExactlyOnceWith('chat', 'all')
-    expect(document.querySelector('[data-testid="group-header-menu"]')).not.toBeNull()
   })
 })

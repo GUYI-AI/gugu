@@ -53,6 +53,7 @@ import {
   phoneInstallId,
   readPhoneDeviceSettings,
   setPhoneAgentHostEnabled,
+  setPhoneDeviceEnabled,
   subscribePhoneDeviceSettings,
   thisPhoneDeviceId,
 } from './phoneDeviceSettings'
@@ -138,6 +139,7 @@ async function readHealthStatus(): Promise<NativeHealthStatus> {
 }
 
 interface Session {
+  ownerId: string
   stop: () => void
   /** 停下之后:等还在路上的那一拍心跳落地(断开时先等它,再删设备行 —— ❌ 删完又被它写回来)。 */
   drain: () => Promise<void>
@@ -427,6 +429,7 @@ export function startPhoneDevice(options: {
   booting = boot()
 
   const current: Session = {
+    ownerId: userId,
     stop: () => {
       if (!alive) return
       alive = false
@@ -527,7 +530,7 @@ async function retainPhoneAgentDevice(userId: string, deviceId: string): Promise
   const settings = readPhoneDeviceSettings(userId)
   if (settings.enabled || settings.hostEnabled) return true
   if (getRendererSession()?.user.id !== userId) throw new Error('手机宿主的登录状态已改变')
-  const updated = await identityDb.from('gugu_devices').update({ status: 'offline', updated_at: new Date().toISOString(), capabilities: { ...capabilities, runtimes: [], host_runtime_capability: 0 } }).eq('user_id', userId).eq('device_id', deviceId)
+  const updated = await identityDb.from('gugu_devices').update({ status: 'offline', updated_at: new Date().toISOString(), capabilities: { ...capabilities, runtimes: [] } }).eq('user_id', userId).eq('device_id', deviceId)
   if (updated.error) throw new Error(updated.error.message)
   return true
 }
@@ -562,4 +565,31 @@ export async function disconnectPhoneDevice(userId: string): Promise<{ removed: 
     log.warn({ error: errorText(error) }, 'phone device row not removed')
     return { removed: false }
   }
+}
+
+/** Closure needs a strict, owner-scoped drain instead of disconnect's best effort. */
+export async function quiescePhoneForAccountClosure(ownerId: string): Promise<void> {
+  const sameOwner = () => {
+    if (getRendererSession()?.user.id !== ownerId) throw Object.assign(new Error('Local phone owner changed'), { code: 'wrong_local_owner' })
+  }
+  sameOwner()
+  const current = session?.ownerId === ownerId ? session : null
+  setPhoneAgentHostEnabled(ownerId, false)
+  setPhoneDeviceEnabled(ownerId, false)
+  current?.stop()
+  if (current) await current.drain()
+  await previousSessionDrain
+  sameOwner()
+}
+
+export async function withdrawPhoneForAccountClosure(ownerId: string, deviceId: string): Promise<void> {
+  const sameOwner = () => {
+    if (getRendererSession()?.user.id !== ownerId) throw Object.assign(new Error('Local phone owner changed'), { code: 'wrong_local_owner' })
+  }
+  sameOwner()
+  if (!deviceId.startsWith('phone-') || !deviceId.endsWith(`-${ownerId}`)) throw Object.assign(new Error('Phone closure device mismatch'), { code: 'invalid_scope' })
+  await previousSessionDrain
+  sameOwner()
+  await chatService.removeDevice(deviceId)
+  sameOwner()
 }

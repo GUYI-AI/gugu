@@ -2,19 +2,15 @@ import { style } from '@vanilla-extract/css';
 import { recipe } from '@vanilla-extract/recipes';
 import { messageGroup } from '@session-chat/components/primitives/copy-button.css';
 import { vars } from '@session-chat/styles/theme.css';
-import { createVariableThemeContract } from '@session-chat/styles/variable-theme-contract.css';
 
-// ── Runtime geometry contract ─────────────────────────────────────────────────
-
-export type AssistantStyleVars = { height: number };
-
-export const assistantVars = createVariableThemeContract<AssistantStyleVars>({ height: null });
+// The engine height is a plain inline `height` on the root, never a custom property: a custom property inherits, so
+// changing it restyles the whole subtree — per streamed chunk, O(content) (see user-message.css.ts).
 
 // overflow: hidden ensures that any transient measure-vs-render height desync
 // (e.g. a mid-tween frame or a stale virtualizer size) degrades to clipped
 // content rather than painting over the following row — the same guard every
 // other engine-height row root carries.
-export const assistantRoot = style({ height: assistantVars.height, overflow: 'hidden' });
+export const assistantRoot = style({ overflow: 'hidden' });
 
 export const messageText = recipe({
   variants: {

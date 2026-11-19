@@ -1,4 +1,5 @@
 import { remoteWorkspaceDevices } from './remoteWorkspaceDevices'
+import type { Reading } from '../lib/replica'
 import { machineKeyOf } from '@gugu/core/shared/deviceMachines'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { serverMachineNotices } from '@gugu/core/cloud/serverMachineHealth'
@@ -98,6 +99,7 @@ export function useRemoteHostsBridge(
           ...(device.cloud_computer ? { cloudComputer: device.cloud_computer } : {}),
           ...(isAssistantHome(device, homeId) ? { assistantHome: true as const } : {}),
           ...(device.projects ? { projects: device.projects } : {}),
+          ...(device.projects_error ? { projectsError: device.projects_error } : {}),
           ...(device.capabilities?.home_dir ? { homeDir: device.capabilities.home_dir } : {}),
         })),
     [devices, currentMachineKey, sshMachines, signIns, linkProblems, tunnels, homeId, homeName],
@@ -182,8 +184,9 @@ function useSshMachineIds(): ReadonlySet<string> {
 }
 
 /** 登录没了(失效 / 那台机器上登出 / 被移除)的时刻;还登着或问不到 = null。 */
-function signInExpiredAt(state: SshSignInState | undefined): string | null | undefined {
-  if (!state) return undefined
+function signInExpiredAt(reading: Reading<SshSignInState> | undefined): string | null | undefined {
+  if (reading?.state !== 'value') return undefined
+  const state = reading.value
   if (state.state === 'expired' || state.state === 'removed') return state.at
   if (state.state === 'signedOut') return null
   return undefined

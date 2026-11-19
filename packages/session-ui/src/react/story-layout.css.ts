@@ -74,21 +74,23 @@ export const lgCols7 = style({
 });
 
 // ── Child-combinator selectors (cannot be expressed in sprinkles) ─────────────
+// `> :where(:not(:first-child))`, never `> * + *`: a sibling combinator with nothing on its left re-styles whole
+// subtrees on every insertion (check-css-parses.mjs). `:where()` keeps the specificity of the old form.
 
 export const divideX = style({});
-globalStyle(`${divideX} > * + *`, { borderLeftWidth: '1px', borderLeftStyle: 'solid' });
+globalStyle(`${divideX} > :where(:not(:first-child))`, { borderLeftWidth: '1px', borderLeftStyle: 'solid' });
 
 export const divideBorder = style({});
-globalStyle(`${divideBorder} > * + *`, { borderColor: vars.border });
+globalStyle(`${divideBorder} > :where(:not(:first-child))`, { borderColor: vars.border });
 
 export const spaceY15 = style({});
-globalStyle(`${spaceY15} > * + *`, { marginTop: '0.375rem' });
+globalStyle(`${spaceY15} > :where(:not(:first-child))`, { marginTop: '0.375rem' });
 
 export const spaceY4 = style({});
-globalStyle(`${spaceY4} > * + *`, { marginTop: '1rem' });
+globalStyle(`${spaceY4} > :where(:not(:first-child))`, { marginTop: '1rem' });
 
 export const spaceY6 = style({});
-globalStyle(`${spaceY6} > * + *`, { marginTop: '1.5rem' });
+globalStyle(`${spaceY6} > :where(:not(:first-child))`, { marginTop: '1.5rem' });
 
 // ── Effects ───────────────────────────────────────────────────────────────────
 

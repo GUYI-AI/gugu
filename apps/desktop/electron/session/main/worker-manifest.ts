@@ -3,9 +3,18 @@ import { fileURLToPath } from 'node:url';
 import { GUGU_MCP_STDIO_RELAY_ENTRY_ENV } from '@gugu/session-plugins/agents';
 
 export const desktopWorkers = {
+  'cursor-import': { entry: 'main/core/session-import/cursor-worker.ts', file: 'cursor-import.js' },
+  'git-status': {
+    entry: 'main/core/git/status/worker.ts',
+    file: 'git-status.js',
+  },
   'turn-text-backfill': {
     entry: 'main/db/turn-text-backfill-worker.ts',
     file: 'turn-text-backfill.js',
+  },
+  'task-turn-search': {
+    entry: 'main/core/search/task-turn-search-worker.ts',
+    file: 'task-turn-search.js',
   },
   acp: {
     entry: 'src/main/core/acp/runtime-process/entry.ts',

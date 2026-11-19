@@ -313,7 +313,7 @@ export const COPILOT_EFFORT_FLAG = '--effort';
 /**
  * 把咕咕的自治档位落成 copilot 的 argv。**两条腿共用**。
  *
- * 咕咕只建模两档（`SessionAutonomyCapability.mode`），所以这里只映射这两档：
+ * 这里只分两档（`SessionAutonomyCapability.permissionMode` 是否为 full-access），所以这里只映射这两档：
  *  · `full-access`       → `--allow-all-tools`（官方原文「Allow all tools to run
  *    automatically without confirmation; required for non-interactive mode」）
  *  · `approval-required` → **什么都不加**，用 copilot 的默认（逐次询问）。
@@ -329,7 +329,7 @@ export const COPILOT_EFFORT_FLAG = '--effort';
  */
 function autonomyArgs(bundle: SessionCapabilityBundle): string[] {
   if (!bundle.autonomy) return [];
-  return bundle.autonomy.mode === 'full-access' ? ['--allow-all-tools'] : [];
+  return bundle.autonomy.permissionMode === 'full-access' ? ['--allow-all-tools'] : [];
 }
 
 /**

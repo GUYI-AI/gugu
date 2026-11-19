@@ -52,7 +52,7 @@ describe('agent-send: what the agent said through 咕咕 shows as its words', ()
     expect(agentSendLabel({ ...chat, threadRootId: 'msg:root' }, defaultChatTranslator, named)).toBe('Sent to a topic in gugu');
     // The host does not know that group: say so without the number.
     expect(agentSendLabel({ ...chat, threadRootId: 'msg:root' }, defaultChatTranslator, () => null)).toBe('Sent to a topic');
-    expect(agentSendLabel({ ...chat, conversationId: null }, defaultChatTranslator, named)).toBe('Sent · destination name unavailable');
+    expect(agentSendLabel({ ...chat, conversationId: null }, defaultChatTranslator, named)).toBe('Sent; destination name unavailable.');
     expect(agentSendLabel({ ...chat, whisper: true }, defaultChatTranslator, named)).toBe('Whispered in gugu');
     expect(agentSendLabel({ kind: 'session', count: 1 }, defaultChatTranslator, named)).toBe('Sent to another task');
     expect(agentSendLabel({ kind: 'session', count: 3 }, defaultChatTranslator, named)).toBe('Sent to 3 tasks');
@@ -109,7 +109,7 @@ describe('agent-send: a send that went through is drawn once, not again as the r
       const destination = output.kind === 'agent-send' ? output.send.to : (output as ChatMessage).sentTo;
       expect(destination).toBeDefined();
       expect(agentSendLabel(destination!, defaultChatTranslator, id => id === '216012' ? 'Design review' : null)).toBe('Sent to Design review');
-      expect(agentSendLabel(destination!, defaultChatTranslator, () => null)).toBe('Sent · destination name unavailable');
+      expect(agentSendLabel(destination!, defaultChatTranslator, () => null)).toBe('Sent; destination name unavailable.');
       expect(output).not.toHaveProperty('conversationReply');
     });
   }

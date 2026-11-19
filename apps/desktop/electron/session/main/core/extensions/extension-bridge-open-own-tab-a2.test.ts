@@ -64,6 +64,7 @@ vi.mock('@main/core/extensions/app-files', async () => {
         : { kind: 'chat', target: { chatId: CHAT, itemId: 'item-1', name: 'sales.xlsx', typedName: 'sales.xlsx', file } }),
     openerChoice: (typedName: string, ask = false) => openers.openerChoice(typedName, apps, 'chat', (key) => { state.rememberedReads++; return state.defaults[key] ?? null; }, ask),
     ownTabChoice: (typedName: string, extensionId: string, tab: string) => (own ? own(typedName, apps, 'chat', extensionId, tab) : null),
+    mayOpen: vi.fn(),
   };
 });
 
@@ -117,15 +118,11 @@ describe('openWith(file, { tab }): its own tab, no 「打开方式」 (A2 T3/T4)
     expect(state.rememberedReads).toBe(0);
   });
 
-  it('T5 (control, green before and after): without tab, the remembered Office opens it; with none remembered, the person picks', async () => {
+  it('T5: without tab, a link to the file: who opens it (the remembered Office, else the person) is the window\'s', async () => {
     state.defaults = { 'chat:.xlsx': 'office.sheet' };
     expect(await openWith({ ref })).toMatchObject({ ok: true });
-    state.defaults = {};
-    expect(await openWith({ ref })).toMatchObject({ ok: true });
-    expect(chosen()).toEqual([
-      { kind: 'one', candidate: expect.objectContaining({ tabKind: 'office.sheet' }) },
-      expect.objectContaining({ kind: 'choose' }),
-    ]);
+    expect(actions()).toEqual([expect.objectContaining({ kind: 'openChatFile', itemId: 'item-1' })]);
+    expect(chosen()).toEqual([]);
   });
 
   it('{ tab, peek }: its own tab, beside the page', async () => {

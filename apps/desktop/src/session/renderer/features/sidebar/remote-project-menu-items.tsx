@@ -42,7 +42,6 @@ export const RemoteProjectMenuItems = observer(function RemoteProjectMenuItems()
       .then((awake) => (awake ? remoteHostsStore.pickFolder(deviceId, '~') : null))
       .then(async (path) => {
         if (!path) return
-        remoteHostsStore.rememberRecentFolder(deviceId, path)
         const projectId = await remoteHostsStore.ensureProject(deviceId, path)
         navigate('project', { projectId })
       })

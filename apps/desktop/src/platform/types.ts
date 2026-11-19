@@ -1,8 +1,9 @@
+import type { AccountClosureNative } from './accountClosure'
 import type { LocalUsageRequest, LocalUsageSnapshot } from '@gugu/core/shared/usage/dailyUsage'
 import type { RendererCommandDomain } from '../lib/rendererCommandProtocol'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { HumanAuthSession } from '@gugu/core'
-import type { SupportedLocale } from '@/i18n'
+import type { NativeTextSelection } from './nativeTextSelection'
 import type { FileHandle } from '@gugu/core/shared/fileResolver'
 
 interface PlatformCapabilities {
@@ -31,6 +32,19 @@ interface PlatformCapabilities {
    * 附件来不及下载;电脑上没有能把内容直接发进微信的系统分享。
    */
   shareToApps: boolean
+  /** This shell can install and run phone Apps. */
+  mobileApps: boolean
+  /** This shell implements the native phone tools and installation identity. */
+  phoneDevice: boolean
+  /** A registered native phone Agent host; independent of Android phone tools. */
+  phoneAgentHost?: boolean
+  /**
+   * 记住看文件、看图时最后用的阅读缩放,下次打开照它。阅读缩放靠滚轮、缩放键、菜单设定,只有电脑上有;
+   * 手机上的捏合、双击只是看一眼,不留下比例,所以手机壳没有这一位(读写都不发生)。
+   */
+  readingZoomMemory: boolean
+  /** This shell registers an owner-verified native calendar settings surface. */
+  calendarSettings?: boolean
 }
 
 /** 交给系统分享面板的一份内容。附件只给地址,由宿主自己取字节,交出去的是文件本身。 */
@@ -76,8 +90,10 @@ export interface FeedbackLogTail {
 export type DeviceFreeCreditsStatus = 'granted' | 'already_claimed' | 'device_full' | 'not_confirmed' | null
 
 export interface AppPlatform {
+  accountClosure: AccountClosureNative
   kind: 'electron' | 'capacitor' | 'web'
   documentTitle: string
+  textSelection?: NativeTextSelection
   capabilities: PlatformCapabilities
   /** Login callbacks arrive before the authenticated navigation tree exists. */
   authCallbacks?: {
@@ -85,6 +101,8 @@ export interface AppPlatform {
     ready: () => Promise<void>
     subscribe: (listener: (url: string) => void, onError: (error: unknown) => void) => () => void
   }
+  /** Every link the OS hands this app (system link handler, cold launch), as it arrives, before and after sign-in. */
+  watchOpenedLinks?: (listener: (url: string) => void, onError: (error: unknown) => void) => () => void
   oauthBrowser?: {
     openBrowser: (url: string) => Promise<void>
     openLinkBrowser?: (url: string, redirectTo: string) => Promise<void>
@@ -98,7 +116,6 @@ export interface AppPlatform {
    * ❌ 不要在页面或导航里再判断一次平台 —— 谁能列哪几行,只有宿主自己说了算。
    */
   systemPermissions: readonly SystemPermission[]
-  syncResolvedLocale: (locale: SupportedLocale) => Promise<void>
   subscribeAppForeground: (listener: () => void, onError: (error: unknown) => void) => () => void
   /**
    * App 此刻在不在前台 —— 订阅时先用当前值回调一次,之后每次变化再回调。
@@ -143,11 +160,14 @@ export interface AppPlatform {
   saveFile: (blob: Blob, filename: string) => Promise<{ saved: boolean }>
   writeClipboardText: (value: string) => Promise<void>
   setBadge: (count: number) => void
-  setTrayBadgeEnabled: (enabled: boolean) => void
   // @@@scan (#537-A) - native camera QR/barcode scan; resolves the decoded raw string a user would
   // otherwise paste, or null if cancelled. Only the capacitor adapter implements it (capability gate).
   scanQrCode: () => Promise<string | null>
   showNotification: (payload: { title: string; body?: string; chatId?: string | null; silent?: boolean }) => Promise<unknown>
+  androidNotificationSettings?: {
+    read(silent: boolean): Promise<{ enabled: boolean; importance?: number }>
+    open(silent: boolean, appWide: boolean): Promise<void>
+  }
   /**
    * 手机「权限」页的三个动作(product spec),由 systemPermissions 能力位把门;
    * 没有这个能力的平台抛错,❌ 静默返回一个假状态。
@@ -207,9 +227,4 @@ export interface AppPlatform {
   getLocalUsageSnapshot?: (request: LocalUsageRequest) => Promise<LocalUsageSnapshot>
   /** Electron main-process reachable agent creation tools; unavailable on web/mobile. */
   getAgentCreationTools?: () => Promise<unknown>
-  /**
-   * @@@share-card-rename 改名的本机那半:把新名字写回花名册(会话页读它)。云端改名成功后调。
-   * 与上面那条同理,只有拥有本机足迹的宿主实现它;web 上没有这一半,所以是可选的。
-   */
-  renameOwnedAgentLocalFootprint?: (agentUserId: string, name: string) => Promise<void>
 }

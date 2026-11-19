@@ -171,6 +171,9 @@ export interface TabProvider<
   /** Its width beside another page, in px (`side-width.ts`); undefined: a peer, half each. */
   sideWidth?(state: S): number | undefined;
 
+  /** The narrowest a pane showing this page is drawn, in px; undefined: MIN_PANE_WIDTH_PX. */
+  minWidth?: number;
+
 
   /**
    * 格里有这一枚,这一类的内容层就一直挂着(没上屏时照常藏起、不画)。对话那一类:群信息、群文件、话题的页和对话的名字、

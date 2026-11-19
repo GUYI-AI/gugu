@@ -5,6 +5,7 @@ import { createChatContext } from '@session-chat/chat-context';
 import { createChatView } from '@session-chat/chat-view';
 import { createChatState } from '@session-chat/state/chat-state';
 import type { TranscriptItem, TranscriptTurn } from '@session-chat/model';
+import { FILE_ROW } from '@gugu/session-shared/file-row';
 import { until } from '../../../../tests/support/awaitCondition';
 
 const chat = '127ec4f0-30b1-4583-b469-706756153bdd';
@@ -18,6 +19,8 @@ const widget = (): TranscriptItem => ({ kind: 'mcp-tool-call', id: 'send', seq: 
 const file = (): TranscriptItem => ({ kind: 'mcp-tool-call', id: 'send', seq: 1, toolCallId: 'send', title: 'message_send_file', tool: 'message_send_file', server: 'gugu', status: 'done', at: 2000, completedAt: 3000,
   rawInput: JSON.stringify({ file_path: '/work/sales.csv' }), // no address on the call: the bubble has no destination line
   outputText: JSON.stringify({ status: 'sent', message_id: id, source_link: `gugu-chat://${chat}/${id}`, file_name: 'sales.csv', size_bytes: 27, mime_type: 'text/csv' }) });
+const said = (text: string): TranscriptItem => ({ kind: 'mcp-tool-call', id: 'send', seq: 1, toolCallId: 'send', title: 'message_send', tool: 'message_send', server: 'gugu', status: 'done', at: 2000, completedAt: 3000,
+  rawInput: JSON.stringify({ chat_id: chat, text }), outputText: JSON.stringify({ status: 'sent', message_id: id, source_link: `gugu-chat://${chat}/${id}` }) });
 const words = (text: string): TranscriptItem => ({ kind: 'message', id: 'after', seq: 2, role: 'assistant', text });
 const turn = (items: TranscriptItem[]): TranscriptTurn => ({ id: 'turn', seq: 0, initiator: 'user', startedAt: 1000, items });
 
@@ -86,4 +89,26 @@ it('takes the slot back when its message leaves, and offers another message its 
   state.transcript.activeTurn.set(turn([words('only words now')]));
   await until('the slot is gone', () => !slot());
   expect(taken).toHaveBeenCalledTimes(1);
+});
+
+it('offers the slot again when the turn is read again and the same message says more', async () => {
+  // An older page read over a device link holds a send to an agent back cut; opening its fold reads the turn again.
+  const { state, offer, taken } = mount();
+  const read = (text: string) => state.transcript.history.seed([{ ...turn([said(text)]), endedAt: 4000, outcome: { kind: 'done' as const } }]);
+  read('Two items left');
+  await until('the slot is offered', () => offer.mock.calls.length === 1);
+  read('Two items left');
+  await new Promise(requestAnimationFrame);
+  expect(offer).toHaveBeenCalledTimes(1);
+  read('Two items left, both small.');
+  await until('the slot is offered again', () => offer.mock.calls.length === 2);
+  expect(taken).toHaveBeenCalledTimes(1);
+  expect((offer.mock.calls[1]![0].message as { content?: string }).content).toBe('Two items left, both small.');
+});
+
+it('holds a sent file at one file row before the host draws it — the row the host then draws', async () => {
+  const { state, offer, slot } = mount();
+  state.transcript.history.seed([{ ...turn([file()]), endedAt: 4000, outcome: { kind: 'done' as const } }]);
+  await until('the slot is offered', () => offer.mock.calls.length > 0);
+  expect(slot()?.style.height).toBe(`${FILE_ROW.height}px`);
 });

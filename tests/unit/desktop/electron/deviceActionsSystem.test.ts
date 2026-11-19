@@ -56,7 +56,6 @@ function setup(exec: ExecFn, appDirs: string[] = [], jxa: FamilyDeps['jxa'] = vi
     jxa,
     exec,
     macHelper: () => ({ available: () => ({ ok: true as const }), call: vi.fn(async () => ({})) as never, dispose: () => undefined }),
-    cua: () => ({ available: () => ({ ok: true as const }), callTool: vi.fn(async () => ({ content: [] })), stop: () => undefined, dispose: () => undefined }),
   }
   const p = createDeviceActionsProvider({ store, families: [createSystemFamily({ appDirs: () => appDirs })], deps })
   store.setGroup('system', true)
@@ -210,7 +209,7 @@ describe('终端与自动化', () => {
   it('script.shell:screencapture 一律拒(连确认都不问);参数不对开工前就回', async () => {
     const { p } = setup(table({}))
     for (const script of ['screencapture -x ~/a.png', 'sudo /usr/sbin/screencapture a.png', 'echo ok; FOO=1 nice -n 5 screencapture -c', 'x=$(screencapture -x a.png)']) {
-      expect(await p.provider.preflight!('script.shell', { script, confirmed: true })).toMatchObject({ ok: false, code: 'invalid_args', message: expect.stringContaining('computer.get_window_state') })
+      expect(await p.provider.preflight!('script.shell', { script, confirmed: true })).toMatchObject({ ok: false, code: 'invalid_args', message: expect.stringContaining('screen.get') })
     }
     expect(await p.provider.preflight!('script.shell', { script: 'echo screencapture is a word', confirmed: true })).toBeNull()
     expect(await p.provider.preflight!('script.shell', { script: 'ls', shell: 'fish' })).toMatchObject({ code: 'invalid_args' })

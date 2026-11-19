@@ -151,6 +151,48 @@ const NEEDS_ANGLE = /[\s()]/;
 const bracketLabel = (label: string) => label.replace(/[\\[\]]/g, (c) => `\\${c}`);
 
 /**
+ * A draft's words, then its pills: a line apart, or a blank line when the words end in a `> ` quote — a quote's
+ * last line would otherwise run on into the pills and take them in.
+ */
+export function draftWithPills(text: string, pills: string): string {
+  if (!text || !pills) return text || pills;
+  return `${text}${/(^|\n)>[^\n]*$/.test(text) ? '\n\n' : '\n'}${pills}`;
+}
+
+/**
+ * A cite of working-copy files, as an App's draft names them (`refs`): its words (the selection's `> ` quote), then one
+ * @file pill per ref, named by the file and its place (`a.md (Lines 3–4)`). The Files App's cite and the host's file
+ * preview both come here.
+ */
+export function fileCiteDraft(words: string, refs: readonly { file: { id: string }; label?: unknown }[]): string {
+  return fileCite(words, refs).draft;
+}
+
+/** The same cite in its parts too, for a host that shows it before sending: the words, and each pill's label. */
+export function fileCite(words: string, refs: readonly { file: { id: string }; label?: unknown }[]): { draft: string; quote: string; pills: string[] } {
+  return pillCite(words, refs.map(({ file, label }) => {
+    const name = file.id.replace(/\\/g, '/').split('/').pop() ?? file.id;
+    return { label: typeof label === 'string' && label ? `${name} (${label})` : name, target: file.id };
+  }));
+}
+
+/** A cite whose pills are already named and pointed (a chat folder's files: the folder's name, a `gugu-file://` link). */
+export function pillCite(words: string, pills: readonly { label: string; target: string }[]): { draft: string; quote: string; pills: string[] } {
+  const quote = words.trim();
+  return { draft: draftWithPills(quote, pills.map(pill => stringifyMention({ ...pill, kind: 'file' })).join(' ')), quote, pills: pills.map(pill => pill.label) };
+}
+
+/**
+ * A file pill's label read back as `fileCite` wrote it: the name, then its place (` (Lines 3–4)`, or ` · 第 4 行` in older
+ * messages), the place with its leading space. Every pill that draws a file label cuts it here, so a long name gives way
+ * and the place stays whole. A place is the bracket pair that ends the label; a bracket inside a name ends in its extension.
+ */
+export function fileLabelParts(label: string): { name: string; place: string } {
+  const cut = / \([^()]+\)$/.exec(label)?.index ?? label.indexOf(' · ');
+  return cut > 0 ? { name: label.slice(0, cut), place: label.slice(cut) } : { name: label, place: '' };
+}
+
+/**
  * Produce the canonical text form of a mention for use as the serialized
  * submit/clipboard text.
  *

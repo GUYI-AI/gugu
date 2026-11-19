@@ -9,7 +9,7 @@ import { harnessCatalogToOptions } from './harness-model-field';
  * (协议出口只有一个:`session/new` 响应里 `category="model"` 的 `configOptions`)。
  * 它有两个观察点,同一个出口、同一份事实:
  *
- * - **活的 BYOK 会话**:进程就跑在那条凭据路上,它自己报的就是这份事实,而且最新;
+ * - **活的 BYOK 会话**:它上报的是这个进程当前能切换的清单，可能早于宿主最近一次探测；
  * - **主进程的 BYOK 探针目录**(`harness-model-catalog`):没有活 BYOK 会话时唯一看得见它的人。
  *   新建会话页与会话发现工具(`session_list_models`)读的都是它。
  *
@@ -49,7 +49,16 @@ export function ownModelTierOptions(input: {
   /** 主进程那趟 BYOK 探针的状态(六态)。 */
   catalog: HarnessCatalogState;
 }): Record<string, ComposerModelOption> | null {
-  if (input.route === 'own') return input.live;
+  const catalogOptions = harnessCatalogToOptions(input.catalog);
+  if (input.route === 'own') {
+    const live = withConnectionModelName(input.live, input.catalog);
+    if (!live) return catalogOptions;
+    // A selected API-key connection may differ from the connection of the running process.
+    if (!catalogOptions || (input.catalog.kind === 'ready' && input.catalog.connectionModels?.length)) return live;
+    const newlyAvailable = Object.entries(catalogOptions).filter(([id]) => !Object.hasOwn(live, id));
+    // The plan still checks the running process's advertised IDs before attempting a hot switch.
+    return newlyAvailable.length ? { ...live, ...Object.fromEntries(newlyAvailable) } : live;
+  }
   // 六态里只有 `ready` 产出行,其余一律 null —— 与新建页逐字同一条规则
   // (`harnessCatalogToOptions`:读不到清单时**没有模型可选**,❌ 不退回插件静态表:
   //  列一张用户跑不了的模型正是咕咕红线里的 fake)。
@@ -57,5 +66,27 @@ export function ownModelTierOptions(input: {
   //   **空档**,与新建页同口径。新建页还会在清单里摆一条「登录解锁 X」,会话内这条入口还没接
   //   (gugu#5816);少的是入口,不是把一份错的清单顶上来。
   // ⚠️ `unsupported`(不说 ACP 的 agent)在 ACP 会话面上不可达 ⇒ 不喂静态表兜底。
-  return harnessCatalogToOptions(input.catalog);
+  return catalogOptions;
+}
+
+/**
+ * 活会话报的清单里,一把 API Key 连接勾选的每个模型照目录那份名字叫(#2507):只叫模型名(菜单与 chip 同一个名字)。
+ *
+ * pi / opencode 的活清单把它们叫成「提供方/模型」,而提供方就是这把连接;主进程那趟探针照这把连接读过,
+ * 认出了是哪几条(`connectionModels`,这家自己报的 id)并改叫模型名。同一个 id 就是同一条 —— ❌ 按前缀猜。
+ * 目录不是照连接读的、或活清单里没有这几条 ⇒ 活清单原样(同一个对象,其余会话一个字不变)。
+ */
+function withConnectionModelName(
+  live: Record<string, ComposerModelOption> | null,
+  catalog: HarnessCatalogState
+): Record<string, ComposerModelOption> | null {
+  if (!live || catalog.kind !== 'ready' || !catalog.connectionModels?.length) return live;
+  let renamed: Record<string, ComposerModelOption> | null = null;
+  for (const id of catalog.connectionModels) {
+    const option = live[id];
+    const name = catalog.models.find((model) => model.id === id)?.name;
+    if (!option || !name || option.name === name) continue;
+    renamed = { ...(renamed ?? live), [id]: { ...option, name } };
+  }
+  return renamed ?? live;
 }

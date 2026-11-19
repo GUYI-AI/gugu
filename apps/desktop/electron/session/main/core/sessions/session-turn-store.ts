@@ -1,10 +1,13 @@
+import { nativeConversationHistoryFloor, nativePublicationContext } from './native-publication-host';
+import { clearedHistoryResult, clearedHistoryTurns } from '@gugu/session-core/session-record/conversation-history-clear';
+import { prepareNativePublicationTurn } from './native-publication-turn';
 import { beginCanonicalQueueTask } from './canonical-queue-state';
 import { renumberStoredTurn, rewriteTurnId } from './session-turn-identity';
 export { renumberStoredTurn } from './session-turn-identity';
-import { findToolImage, findToolItem, trimCursorPageForTransport, trimTurnsForTransport } from '@gugu/session-core/session-record';
+import { findToolImage, findToolItem, LOCAL_PAYLOAD_BUDGET, REMOTE_OLDER_PAGE_BUDGET, TRANSPORT_PAYLOAD_BUDGET, TRANSPORT_TEXT_LIMIT, transportSizeOf, trimCursorPageForTransport, type LeanPage, trimTurnsForTransport } from '@gugu/session-core/session-record';
 import { and, asc, desc, eq, gte, like, lt, notLike, sql } from 'drizzle-orm';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
-import { hermesNativeDigest } from '@gugu/session-core/acp/hermes-prompt';
+import { nativePromptDigest } from '@gugu/session-core/acp/native-prompt';
 import { db, sqlite } from '@main/db/client';
 import { sessionTurns } from '@main/db/schema';
 import { randomUUID } from 'node:crypto';
@@ -12,7 +15,7 @@ import { activitySignal } from '../activity/signals';
 import { noteNativeConversationReplies, noteNativeConversationHistory, truncateNativeConversationRead } from './session-conversation-read';
 import { nativeConversationActivity } from './session-conversation-activity';
 import { publishNativeConversationInbox, queueNativeConversationInbox } from './native-conversation-inbox';
-import { mayFillReplay, didFillReplay, stopFillingReplay, readableStoredRows } from './session-turn-replay';
+import { mayFillReplay, didFillReplay, stopFillingReplay, readableParsedRows, readableStoredRows } from './session-turn-replay';
 import { ownerNotificationEpoch, rewindOwnerNotificationState, publishOwnerNotificationState } from './owner-notification-state';
 import { persistWithTurnSettlement } from './turn-settlement';
 import { events } from '@main/lib/events';
@@ -92,9 +95,10 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
     try { input.windowCapture?.phase?.('canonical_committed', receipt); }
     catch (error) { observationFailed(error); }
   };
+  const context = input.source === 'live' ? await nativePublicationContext(input.sessionId) : null;
   if (input.source === 'revision' || input.source === 'backfill') {
     const [row] = await db
-      .select({ id: sessionTurns.id, seq: sessionTurns.seq })
+      .select({ id: sessionTurns.id, seq: sessionTurns.seq, data: sessionTurns.data })
       .from(sessionTurns)
       .where(and(
         eq(sessionTurns.sessionId, input.sessionId),
@@ -105,10 +109,14 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
     if (!row) throw new Error(`Cannot revise missing stored turn: sessionId=${input.sessionId} turnId=${input.turn.id} source=${input.source}`);
     // 改口的可能是结局(进程退出改写 prompt_failed),也可能是内容(落定后才到的尾巴,#6191)
     // ⇒ 整轮按库里的序号重编号后替换,❌ 只挑某个字段写。
-    const revised = renumberStoredTurn(input.turn, input.sessionId, row.seq), serialized = JSON.stringify(revised);
+    const previous = JSON.parse(row.data) as TranscriptTurn;
+    const turn = { ...input.turn, referenceId: input.turn.referenceId ?? previous.referenceId };
+    const prepared = prepareNativePublicationTurn({ ...input, turn: renumberStoredTurn(turn, input.sessionId, row.seq), rowId: row.id, source: input.source, context }, db);
+    const revised = prepared.turn, serialized = JSON.stringify(revised);
     const captured = input.windowCapture ? await prepareWindowCommitWrite(sqlite, { sessionId: input.sessionId, referenceId: input.turn.referenceId,
       rowId: row.id, storedSeq: row.seq, insert: false, serialized, capture: input.windowCapture }) : undefined;
     const publish = db.transaction(tx => {
+      prepared.commit(tx);
       tx.update(sessionTurns).set({ data: serialized }).where(eq(sessionTurns.id, row.id)).run();
       if (captured) commitWindowReceipt(sqlite, captured);
       return noteNativeConversationReplies(input.sessionId, revised, input.turn, tx);
@@ -125,7 +133,9 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
   // 到达序由这里分配。❌ 不复用运行时那份回合序号：重开会话后它从 0 重数，而重放只含压缩边界
   // 之后的一段，直接拿来当键必然与库里已有的行撞号。
   const next = await nextSeq(input.sessionId);
-  const turn = renumberStoredTurn(input.turn, input.sessionId, next);
+  const rawTurn = renumberStoredTurn(input.turn, input.sessionId, next);
+  const prepared = input.source === 'live' ? prepareNativePublicationTurn({ ...input, turn: rawTurn, rowId: `${input.sessionId}:${next}`, source: 'live', context }, db) : undefined;
+  const turn = prepared?.turn ?? rawTurn;
   const serialized = JSON.stringify(turn);
   const captured = input.windowCapture ? await prepareWindowCommitWrite(sqlite, { sessionId: input.sessionId, referenceId: input.turn.referenceId,
     rowId: `${input.sessionId}:${next}`, storedSeq: next, insert: true, serialized, capture: input.windowCapture }) : undefined;
@@ -142,7 +152,10 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
     })
     .onConflictDoNothing()
     .returning({ seq: sessionTurns.seq }).all();
-    if (result.length && captured) commitWindowReceipt(sqlite, captured);
+    if (result.length) {
+      prepared?.commit(tx);
+      if (captured) commitWindowReceipt(sqlite, captured);
+    }
     const publish = !result.length ? undefined : input.source === 'live'
       ? noteNativeConversationReplies(input.sessionId, turn, input.turn, tx)
       : noteNativeConversationHistory(input.sessionId, turn, tx);
@@ -215,7 +228,7 @@ const STORED_SEQ_PAGE = 200;
 
 /** The messages of this session's rows that carry the Hermes receipt for `nativeText` (found by SQL, not read in turn). */
 export function storedMessagesWithPromptHash(sessionId: string, nativeText: string): TranscriptTurn['items'] {
-  const digest = hermesNativeDigest(nativeText);
+  const digest = nativePromptDigest(nativeText);
   return db.select({ data: sessionTurns.data }).from(sessionTurns)
     .where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.data, `%${digest}%`))).all()
     .flatMap(row => (JSON.parse(row.data) as TranscriptTurn).items.filter(item => item.kind === 'message'));
@@ -330,7 +343,25 @@ export async function getStoredHistory(params: {
   /** 给了就改成「seq ≥ fromSeq 的全部行」,供界面开场补读用;与 before/limit 互斥。 */
   fromSeq?: number;
   ownerNotificationsOnly?: boolean;
-}): Promise<StoredTurnPage> {
+  /**
+   * The reader's view is the conversation view: it shows no tool output and draws a call as its step line. So output
+   * may arrive as its opening only, with no terminal capture, and a call as what its line shows, without its raw
+   * input (transport-trim `unshown-output`, `step-line`). Honoured over a device link; a window on this machine pays
+   * nothing for the whole turn and gets it.
+   * `'folded'`: the reader also reads a turn again when a row behind one of its folds comes on screen, so a page it
+   * went back for may carry a turn as its folded form (transport-trim `folded-form`). The newest page does not:
+   * it is read again whenever the conversation moves, and would take back what the reader had opened.
+   */
+  lean?: LeanPage;
+}, reader: { local?: boolean; older?: boolean } = {}): Promise<StoredTurnPage> {
+  // @@@page-budget-by-reader — a window on this machine reads its own database over the process channel; every
+  // other reader (another machine, a phone) is paying for a shared device link. Same paging, three page sizes:
+  // over the link the first screen stays small (it opens the conversation), and a page the reader asked for by
+  // going back is larger. `older` says which it is when `before` alone does not (a phone opens at its unread line).
+  const older = reader.older ?? params.before !== undefined;
+  const budget = reader.local ? LOCAL_PAYLOAD_BUDGET : older ? REMOTE_OLDER_PAGE_BUDGET : TRANSPORT_PAYLOAD_BUDGET;
+  const lean: LeanPage = !params.lean || reader.local || params.fromSeq !== undefined ? false
+    : params.lean === 'folded' && older ? 'folded' : true;
   for (;;) {
     const epoch = ownerNotificationEpoch(params.sessionId);
     const page = await readStoredTurns(params.sessionId, {
@@ -338,13 +369,15 @@ export async function getStoredHistory(params: {
       limit: params.limit,
       fromSeq: params.fromSeq,
       ownerNotificationsOnly: params.ownerNotificationsOnly,
+      budget,
+      lean,
     });
     // A revert can reuse every sequence in the page. Its rows and generation must describe the same snapshot.
     if (epoch !== ownerNotificationEpoch(params.sessionId)) continue;
-    const snapshot = { ...page, nativeOwnerNotificationEpoch: epoch };
+    const snapshot = clearedHistoryResult({ ...page, nativeOwnerNotificationEpoch: epoch }, await nativeConversationHistoryFloor(params.sessionId));
     return params.fromSeq === undefined
-      ? trimCursorPageForTransport(snapshot)
-      : { ...snapshot, turns: trimTurnsForTransport(page.turns) };
+      ? trimCursorPageForTransport(snapshot, TRANSPORT_TEXT_LIMIT, budget, lean)
+      : { ...snapshot, turns: trimTurnsForTransport(snapshot.turns) };
   }
 }
 
@@ -357,7 +390,8 @@ export async function getStoredToolImage(params: {
       eq(sessionTurns.sessionId, params.sessionId),
       'seq' in params ? eq(sessionTurns.seq, params.seq) : eq(sessionTurns.turnId, params.originTurnId),
     )).orderBy(desc(sessionTurns.seq)).limit(1);
-  const turn = row ? JSON.parse(row.data) as TranscriptTurn : null;
+  const stored = row ? JSON.parse(row.data) as TranscriptTurn : null;
+  const turn = stored ? clearedHistoryTurns([stored], await nativeConversationHistoryFloor(params.sessionId))[0] ?? null : null;
   const itemId = row && turn && !('seq' in params)
     ? rewriteTurnId(params.itemId, row.turnId, turn.id) : params.itemId;
   const found = findToolImage(turn ? [turn] : [], itemId, params.index, Number.POSITIVE_INFINITY);
@@ -379,9 +413,12 @@ export async function getStoredSettledTurn(params: { sessionId: string; referenc
       sql`json_extract(${sessionTurns.data}, '$.referenceId') = ${params.referenceId}`))
     .orderBy(desc(sessionTurns.seq)).limit(1);
   if (!row) return null;
-  const turn = JSON.parse(row.data) as TranscriptTurn;
-  return turn.outcome ? { originTurnId: row.originTurnId, turn: trimTurnsForTransport([turn])[0]! } : null;
+  const turn = clearedHistoryTurns([JSON.parse(row.data) as TranscriptTurn], await nativeConversationHistoryFloor(params.sessionId))[0];
+  return turn?.outcome ? { originTurnId: row.originTurnId, turn: trimTurnsForTransport([turn])[0]! } : null;
 }
+
+/** How many rows one step of a budgeted page read takes: what a full page overshoots by, at most. */
+const STORED_PAGE_STEP = 8;
 
 export interface StoredTurnPage {
   turns: TranscriptTurn[];
@@ -391,6 +428,8 @@ export interface StoredTurnPage {
   originTurnIds: string[];
   /** 还有更早的一页时给出游标（本页最早那一条的 `seq`）；到头了、或是 `fromSeq` 读法时为 null。 */
   nextCursor: number | null;
+  /** Aligned with `turns`: how many times each row was rewritten (`session_turns.revision`). */
+  turnRevisions?: number[];
 }
 
 /**
@@ -402,7 +441,7 @@ export interface StoredTurnPage {
  */
 export async function readStoredTurns(
   sessionId: string,
-  options: { before?: number; limit?: number; fromSeq?: number; ownerNotificationsOnly?: boolean } = {}
+  options: { before?: number; limit?: number; fromSeq?: number; ownerNotificationsOnly?: boolean; budget?: number; lean?: LeanPage } = {}
 ): Promise<StoredTurnPage> {
   if (options.fromSeq !== undefined) {
     // 「开场那一页之后新落库的行」—— 开场时补读一次用(acp-chat-store `_reloadStoredTail`)。❌ 不分页:这一段只是
@@ -412,6 +451,7 @@ export async function readStoredTurns(
         seq: sessionTurns.seq,
         data: sessionTurns.data,
         turnId: sessionTurns.turnId,
+        revision: sessionTurns.revision,
       })
       .from(sessionTurns)
       .where(
@@ -427,34 +467,45 @@ export async function readStoredTurns(
       turns: readable.map(row => row.turn),
       originTurnIds: readable.map(row => row.turnId),
       nextCursor: null,
+      turnRevisions: readable.map(row => row.revision),
     };
   }
   const limit = options.limit ?? 100;
-  const where =
-    options.before === undefined
-      ? eq(sessionTurns.sessionId, sessionId)
-      : and(
-          eq(sessionTurns.sessionId, sessionId),
-          lt(sessionTurns.seq, options.before)
-        );
+  // @@@read-no-more-than-fits — the page that leaves here is cut to `budget` bytes, and the next call starts from the
+  // oldest turn that was kept. Reading all `limit` rows first meant parsing megabytes to send a few turns, then
+  // reading the same rows again. Rows come in small steps instead, and the reading stops once the page is full.
+  const rows: { seq: number; data: string; turnId: string; revision: number; turn: TranscriptTurn }[] = [];
+  let before = options.before, bytes = 0, exhausted = false;
+  while (rows.length < limit) {
+    const want = Math.min(options.budget === undefined ? limit : STORED_PAGE_STEP, limit - rows.length);
+    const step = await db
+      .select({ seq: sessionTurns.seq, data: sessionTurns.data, turnId: sessionTurns.turnId, revision: sessionTurns.revision })
+      .from(sessionTurns)
+      .where(before === undefined
+        ? eq(sessionTurns.sessionId, sessionId)
+        : and(eq(sessionTurns.sessionId, sessionId), lt(sessionTurns.seq, before)))
+      .orderBy(desc(sessionTurns.seq))
+      .limit(want);
+    for (const row of step) {
+      const turn = JSON.parse(row.data) as TranscriptTurn;
+      rows.push({ ...row, turn });
+      if (options.budget !== undefined) bytes += transportSizeOf(turn, TRANSPORT_TEXT_LIMIT, options.lean) + 1;
+    }
+    if (step.length < want) { exhausted = true; break; }
+    before = step.at(-1)!.seq;
+    if (options.budget !== undefined && bytes >= options.budget) break;
+  }
 
-  const rows = await db
-    .select({ seq: sessionTurns.seq, data: sessionTurns.data, turnId: sessionTurns.turnId })
-    .from(sessionTurns)
-    .where(where)
-    .orderBy(desc(sessionTurns.seq))
-    .limit(limit);
-
-  const ordered = rows.slice().reverse();
-  const readable = await readableStoredRows(sessionId, ordered);
-  if (!readable.length && rows.length === limit && rows.length) {
-    return readStoredTurns(sessionId, { before: rows.at(-1)!.seq, limit });
+  const readable = await readableParsedRows(sessionId, rows.slice().reverse());
+  if (!readable.length && !exhausted && rows.length) {
+    return readStoredTurns(sessionId, { before: rows.at(-1)!.seq, limit, budget: options.budget, lean: options.lean });
   }
 
   return {
     turns: readable.map(row => row.turn),
     originTurnIds: readable.map(row => row.turnId),
-    nextCursor: rows.length < limit ? null : (rows.at(-1)?.seq ?? null),
+    nextCursor: exhausted ? null : (rows.at(-1)?.seq ?? null),
+    turnRevisions: readable.map(row => row.revision),
   };
 }
 
@@ -494,6 +545,16 @@ export async function truncateStoredHistory(sessionId: string, fromSeq: number |
         session_id: sessionId, turn_seq: fromSeq, occurred_at: Date.now() });
     }
   });
+}
+
+/**
+ * Every row from `fromSeq` on, oldest first, with its revision: what a reader holding these turns compares with its own
+ * to find the few it has to read again. Integers only, so even a long conversation's whole list is small.
+ */
+export async function storedTurnRevisions(sessionId: string, fromSeq: number): Promise<Array<[seq: number, revision: number]>> {
+  const rows = await db.select({ seq: sessionTurns.seq, revision: sessionTurns.revision }).from(sessionTurns)
+    .where(and(eq(sessionTurns.sessionId, sessionId), gte(sessionTurns.seq, fromSeq))).orderBy(asc(sessionTurns.seq));
+  return rows.map(row => [row.seq, row.revision]);
 }
 
 /** One stored turn by its sequence, or null when the session's stored history no longer has it. */

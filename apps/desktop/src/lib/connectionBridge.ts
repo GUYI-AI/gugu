@@ -5,6 +5,7 @@ import { rendererLogger } from '@/lib/log'
 import type { ConnectionClient } from '@gugu/core/cloud/connections'
 import { ConnectionError } from '@gugu/core/cloud/connections'
 import type { ConnectionMetadataStore } from '@/components/connections/connection-metadata'
+import { CONNECTIONS_CHANGED } from '@/components/connections/owner-connection-metadata'
 import type { ConnectionRoute,createConnectionRouting } from '@gugu/core/cloud/connectionRouting'
 
 /** Installed by the authenticated shell, before either settings bundle mounts. */
@@ -14,6 +15,10 @@ export interface ConnectionBridge {
   metadata(ownerId: string, deviceId?: string | null,route?: ConnectionRoute): ConnectionMetadataStore
   client: ConnectionClient
   routing: ReturnType<typeof createConnectionRouting>
+  /**
+   * Changes made outside this window (the owner's change bus). Never this window's own announcement
+   * (`CONNECTIONS_CHANGED`): reacting here may announce (`store.invalidate()`), which must not come back here.
+   */
   subscribeChanges(ownerId: string, listener: () => void): () => void
   retryOperation(operationId: string): Promise<void>
 }
@@ -25,6 +30,8 @@ export function connectionBridge(): ConnectionBridge {
   return bridge
 }
 const accountId = () => typeof window === 'undefined' ? null : (window as ConnectionWindow)[KEY]?.accountId() ?? null
+/** The routing layer's last answer for the signed-in owner: a remount draws the right page at once instead of waiting a read. */
+const peekRoute = () => typeof window === 'undefined' ? undefined : (window as ConnectionWindow)[KEY]?.routing.peek()
 const subscribeAccount = (listener: () => void) => typeof window === 'undefined' ? () => {} : (window as ConnectionWindow)[KEY]?.subscribeAccount(listener) ?? (() => {})
 
 export function useConnectionAuthority() {
@@ -45,7 +52,8 @@ export function useConnectionAuthority() {
     }
   },[owner])
   const current = result?.owner === owner ? result : undefined
-  useConnectionReadNotice(`authority:${owner}`,!!current?.route,current?.failures ?? 0)
+  const route = current?.route ?? (owner ? peekRoute() : undefined)
+  useConnectionReadNotice(`authority:${owner}`,!!route,current?.failures ?? 0)
   useEffect(() => {
     if (!owner) return
     let stopped = false,timer: ReturnType<typeof setTimeout> | undefined,failures = 0,running = false
@@ -63,10 +71,16 @@ export function useConnectionAuthority() {
     }
     const stop = connectionBridge().subscribeChanges(owner,() => { void refresh() })
     const focus = () => { void refresh() }
-    window.addEventListener('focus',focus); void refresh()
-    return () => { stopped = true; invalidate(); stop(); clearTimeout(timer); window.removeEventListener('focus',focus) }
+    // A route another reader in this window found changed: taken as the routing layer holds it, not read again — a
+    // read can announce, and this listens to announcements.
+    const announced = () => {
+      const route = peekRoute()
+      if (route && accountId() === owner) setResult(previous => previous?.owner === owner && previous.route === route ? previous : { owner,route })
+    }
+    window.addEventListener('focus',focus); window.addEventListener(CONNECTIONS_CHANGED,announced); void refresh()
+    return () => { stopped = true; invalidate(); stop(); clearTimeout(timer); window.removeEventListener('focus',focus); window.removeEventListener(CONNECTIONS_CHANGED,announced) }
   },[owner,reload,invalidate])
-  return { owner,route: current?.route,error: current?.error,reload,loading: !current }
+  return { owner,route,error: current?.error,reload,loading: !current && !route }
 }
 
 export function useOwnerConnectionStore(deviceId: string | null = null,route?: ConnectionRoute,enabled = true) {

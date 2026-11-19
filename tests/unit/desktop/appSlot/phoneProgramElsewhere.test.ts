@@ -10,7 +10,7 @@ import type { ExtensionCapability } from '../../../../apps/desktop/src/session/s
  */
 const ORIGIN = 'https://spexcode.acct.apps.gugu.invalid'
 const auth = vi.hoisted(() => ({ token: `h.${Buffer.from(JSON.stringify({ sub: '0a000000-0000-4000-8000-0000000000c1' })).toString('base64url')}.s` }))
-vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererAccessToken: () => auth.token }))
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => auth.token }))
 const sent = vi.hoisted(() => ({ calls: [] as unknown[][], answer: { content: [{ type: 'text', text: 'graph' }] } as unknown, refusal: null as null | { code: string; message: string } }))
 vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
   appCallOn: async (...args: unknown[]) => {
@@ -164,12 +164,14 @@ describe('an App page on the phone, in a session on another computer', () => {
     expect(await call('callProgram', { name: 'graph' })).toMatchObject({ ok: false, code: 'unavailable' })
   })
 
-  it('a program gugu hosts (Browser Use) drives the screen the page is on — a phone hosts none: invalid, nothing sent (161 10-17)', async () => {
+  it('an outdated version\'s program (a `host` gugu no longer has) is asked of the session\'s computer like any other', async () => {
     start({ chatId: null, session: SESSION })
     sent.calls.length = 0
+    sent.refusal = null
     phoneMcp.servers = [{ name: 'browser', host: 'browser-use' }]
-    expect(await call('callProgram', { name: 'open' })).toMatchObject({ ok: false, code: 'invalid' })
-    expect(sent.calls).toHaveLength(0)
+    await call('callProgram', { name: 'open' })
+    expect(sent.calls.map(([deviceId, , action]) => [deviceId, action])).toEqual([
+      ['dev-server', expect.objectContaining({ action: 'app_call', session_id: 's-there', method: 'callProgram', args: { name: 'open' } })]])
     phoneMcp.servers = [{ tools: 'tools.js' }]
   })
 

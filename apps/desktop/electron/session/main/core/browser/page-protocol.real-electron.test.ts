@@ -12,16 +12,12 @@ let temporary = '';
 let fixture: ReturnType<typeof startRealElectronFixture> | undefined;
 let result: { cases: Record<string, { passed: boolean; error?: string }> };
 
-describe.skipIf(!electron)('page protocol with real Electron and Playwright MCP', () => {
+describe.skipIf(!electron)('page protocol with real Electron and Playwright', () => {
   beforeAll(async () => {
     temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'gugu-page-protocol-'));
     const logger = 'export const log={info(){},warn(){},error(){},debug(){}};export const createLogger=()=>log';
     const stubs: Record<string, string> = {
-      '@main/lib/events': 'export const events={emit(...args){globalThis.pageProbeEvent?.(...args)}}',
       '@main/lib/logger': logger,
-      '@main/core/extensions/extension-agent-context': 'export async function agentSessionContext(){return null}',
-      '@main/core/sessions/session-orchestration': 'export async function openTaskBrowserPane(){}',
-      './browser-webcontents-registry': 'export const browserWebContentsRegistry={setMouseDownObserver(){},browsersOfSession(){return []}}',
       './lib/logger': logger,
     };
     const entry = path.join(temporary, 'main.cjs');
@@ -43,13 +39,13 @@ describe.skipIf(!electron)('page protocol with real Electron and Playwright MCP'
     fs.mkdirSync(env.GUGU_USER_DATA_DIR!, { recursive: true });
     delete env.ELECTRON_RUN_AS_NODE;
     fixture = startRealElectronFixture({ name: 'native-page', executable: electron!, args: [entry], env,
-      signal: AbortSignal.timeout(30_000), reportDirectory: process.env.GUGU_BROWSER_PROBE_REPORT_DIR });
+      reportDirectory: process.env.GUGU_BROWSER_PROBE_REPORT_DIR });
     const { code, stdout, stderr } = await fixture.result;
     expect(code, stdout + '\n' + stderr).toBe(0);
     const line = stdout.split('\n').find(line => line.startsWith('PAGE_PROTOCOL_RESULT='));
     expect(line, stdout + '\n' + stderr).toBeDefined();
     result = JSON.parse(line!.slice('PAGE_PROTOCOL_RESULT='.length));
-  }, 40_000);
+  });
   afterAll(async () => {
     await fixture?.dispose();
     if (temporary) fs.rmSync(temporary, { recursive: true, force: true });

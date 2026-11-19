@@ -1,9 +1,7 @@
 import { nativeTheme } from 'electron';
 import { appSettingsService } from '@main/core/settings/settings-service';
 import { log } from '@main/lib/logger';
-import type { Theme } from '@shared/core/app-settings';
-
-type EffectiveTheme = 'emlight' | 'emdark';
+import type { ThemePreference } from '../../../../../shared/device-preferences';
 
 /**
  * COLORFGBG 编码的是**终端的**前景/背景(rxvt/konsole 约定,值是 ANSI 调色板下标),
@@ -14,9 +12,10 @@ const COLORFGBG_BY_SCHEME = {
   dark: '15;0',
 } as const;
 
-export function resolveEffectiveTheme(theme: Theme, shouldUseDarkColors: boolean): EffectiveTheme {
-  if (theme === 'emlight' || theme === 'emdark') return theme;
-  return shouldUseDarkColors ? 'emdark' : 'emlight';
+/** The person's theme; `system` follows the system's appearance. */
+export function resolveTerminalScheme(theme: ThemePreference, shouldUseDarkColors: boolean): keyof typeof COLORFGBG_BY_SCHEME {
+  if (theme !== 'system') return theme;
+  return shouldUseDarkColors ? 'dark' : 'light';
 }
 
 /**
@@ -31,11 +30,8 @@ export function resolveEffectiveTheme(theme: Theme, shouldUseDarkColors: boolean
  */
 export async function getTerminalColorEnv(): Promise<Record<string, string>> {
   try {
-    const appTheme = await appSettingsService.get('theme');
-    const effective = resolveEffectiveTheme(appTheme, nativeTheme.shouldUseDarkColors);
-    return {
-      COLORFGBG: effective === 'emlight' ? COLORFGBG_BY_SCHEME.light : COLORFGBG_BY_SCHEME.dark,
-    };
+    const { theme } = await appSettingsService.get('devicePreferences');
+    return { COLORFGBG: COLORFGBG_BY_SCHEME[resolveTerminalScheme(theme, nativeTheme.shouldUseDarkColors)] };
   } catch (error) {
     log.warn('terminal-color-scheme: failed to resolve app theme for COLORFGBG', {
       error: String(error),

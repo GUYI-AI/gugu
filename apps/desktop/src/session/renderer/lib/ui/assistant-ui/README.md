@@ -139,6 +139,7 @@ scrollTop 写者，症状是「偶尔跳一下」，且难以归因。上游自�
 | `ThreadScrollToBottom` | `rounded-full p-4` | Button `icon-md` 自带的 `--radius` 派生圆角 | 视觉规格：圆角走 `--radius`，容器不覆盖它 |
 | `ThreadWelcome` | `text-2xl` | `text-xl` + `gg-type-page-title` | 视觉规格字阶上限：禁 `text-2xl`+，`text-xl` 仅页标题 |
 | `ThreadWelcome` | `duration-200` | `duration-[var(--dur-med,180ms)]` | 时长走 token 档位 |
+| `ThreadWelcome` | 只有标题 | 可选 `description`:标题下一行 `text-sm text-foreground-muted`（同 PageHeader） | #2548 新智能体空态的说明行 |
 | `ThreadSuggestions` | `SuggestionPrimitive.Trigger send` | `items` + `onSelect` props | 无 runtime |
 | `ThreadSuggestions` | `rounded-full` | Button 默认 `--radius` 派生圆角 | 同上 |
 

@@ -20,7 +20,6 @@
   "apps/desktop/src/components/contacts/ShareAgentModal.tsx",
   "apps/desktop/src/components/contactsDetailControls.tsx",
   "apps/desktop/src/components/sessionpage/AgentSharePopover.tsx",
-  "apps/desktop/src/pages/AgentJoinPage.tsx",
   "apps/desktop/src/pages/LoginPage.tsx",
   "apps/desktop/src/components/LowBalanceBanner.tsx",
   "apps/desktop/src/components/MemberProfileAvatarButton.tsx",

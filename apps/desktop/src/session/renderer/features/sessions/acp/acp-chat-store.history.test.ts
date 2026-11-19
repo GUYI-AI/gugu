@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import type { HistoryCursor } from '@gugu/session-core/acp/client';
+import { collectBackgroundCommandRoster } from '@gugu/session-chat-ui';
 import { installAcpChatStoreHost, replica } from './acp-chat-store.test-host';
 
 
@@ -49,28 +50,35 @@ function fakeRuntime(count: number) {
   const revs = committed.map((_, index) => index + 1);
   let rev = count;
   let epoch = 'runtime';
-  const calls: Array<{ before?: number; changedSince?: HistoryCursor }> = [];
+  let oversized = false;
+  let pageSize: number | undefined;
+  const calls: Array<{ before?: number; changedSince?: HistoryCursor; contentFrom?: number }> = [];
   return {
     calls,
     committed,
     restart() { epoch = 'restarted-runtime'; },
+    /** Same epoch, but the changes no longer fit one page: the runtime answers a delta with `reset` (#2493). */
+    oversize() { oversized = true; },
+    clipPages(size: number) { pageSize = size; },
     append(next: TranscriptTurn) { committed.push(next); revs.push(++rev); },
     revise(index: number, next: TranscriptTurn) { committed[index] = next; revs[index] = ++rev; },
     session: {
-      agents: replica([]), config: replica({}), plan: replica(null), terminals: replica([]), draft: replica(null),
+      agents: replica([]), config: replica<Record<string, unknown>>({}), plan: replica(null), terminals: replica([]), draft: replica(null),
       activeTurn: replica(null),
       sessionState: replica({ lifecycle: 'ready', isGenerating: false, queuedPrompts: [], pendingPermissions: [] }),
       dispose() {},
-      getHistory: (before: number | undefined, limit = 50, changedSince?: HistoryCursor) => {
-        calls.push({ before, changedSince });
+      getHistory: (before: number | undefined, limit = 50, changedSince?: HistoryCursor, contentFrom?: number) => {
+        calls.push({ before, changedSince, contentFrom });
         const head = { cursor: { epoch, seq: rev }, reset: false, count: committed.length };
         if (changedSince !== undefined) {
-          if (changedSince.epoch !== epoch) return Promise.resolve({ success: true as const, data: { turns: [], nextCursor: null, ...head, reset: true } });
+          if (changedSince.epoch !== epoch || oversized) return Promise.resolve({ success: true as const, data: { turns: [], nextCursor: null, ...head, reset: true } });
           return Promise.resolve({ success: true as const, data: { turns: committed.filter((_, i) => revs[i]! > changedSince.seq), nextCursor: null, ...head } });
         }
         const filtered = before === undefined ? committed : committed.filter((t) => t.seq < before);
-        const page = filtered.slice(-limit);
-        const nextCursor = page.length === limit ? page[0]!.seq : null;
+        const requested = filtered.slice(-limit);
+        // The RPC can shorten a full page at its transport boundary. Keep an exclusive cursor to omitted turns.
+        const page = pageSize === undefined ? requested : requested.slice(-pageSize);
+        const nextCursor = page.length < requested.length || requested.length === limit ? page[0]!.seq : null;
         return Promise.resolve({ success: true as const, data: { turns: page, nextCursor, ...head } });
       },
     },
@@ -100,9 +108,9 @@ type Internals = {
 };
 
 let n = 0;
-function makeStore() {
+function makeStore(runtimeView?: ConstructorParameters<typeof AcpChatStore>[2]) {
   n += 1;
-  const store = new AcpChatStore(`conv-5381-${n}`, 'proj-1');
+  const store = new AcpChatStore(`conv-5381-${n}`, 'proj-1', runtimeView);
   return { store, internals: store as unknown as Internals };
 }
 
@@ -290,7 +298,7 @@ describe('@@@history-change-cursor:每提交一轮只取改动游标之后的那
     } finally {
       (window as unknown as { electronAPI: { invoke: (c: string) => Promise<unknown> } }).electronAPI.invoke = invoke;
     }
-    expect(runtime.calls).toEqual([{ before: undefined, changedSince: { epoch: 'runtime', seq: 250 } }]);
+    expect(runtime.calls).toEqual([{ before: undefined, changedSince: { epoch: 'runtime', seq: 250 }, contentFrom: 250 }]);
     expect(storedReads).toBe(0);
     expect(committedIds(store)).toEqual(['s0', 'r250']);
     expect(internals._runtimeCursor).toEqual({ epoch: 'runtime', seq: 251 });
@@ -352,6 +360,235 @@ describe('@@@history-change-cursor:每提交一轮只取改动游标之后的那
     expect(committedIds(store)).toEqual(['s0', 'r1', 'r2']);
     expect(internals._runtimeCursor).toEqual({ epoch: 'runtime', seq: 3 });
     store.dispose();
+  });
+});
+
+describe('#2493 a reset change cursor does not take the live session away', () => {
+  /** A live session whose page is drawn from the stored record, with one runtime turn after the boundary. */
+  function live(runtimeView?: ConstructorParameters<typeof AcpChatStore>[2]) {
+    const { store, internals } = makeStore(runtimeView);
+    const runtime = fakeRuntime(5);
+    runtime.session.config.push({
+      modeOptions: { selected: 'full-access', available: [{ id: 'full-access', name: 'Full access', description: null }] },
+    });
+    internals.session = runtime.session;
+    internals._storedHistoryTurns = [turn('s0', 0)];
+    internals._storedOrigins = ['r0'];
+    internals._storedBaseSeq = 0;
+    internals._storedBootstrapMaxSeq = 0;
+    internals._runtimeReplayEndSeq = 5;
+    internals._runtimeCursor = { epoch: 'runtime', seq: 5 };
+    internals._runtimeCount = 5;
+    return { store, internals, runtime };
+  }
+
+  it('an oversized change set re-reads history in place: same session, composer controls stay, no re-attach', async () => {
+    const { store, internals, runtime } = live();
+    runtime.append(turn('r5', 5));
+    runtime.oversize();
+    // The record has the revised older row (the turn a subagent keeps revising) and the turn committed since.
+    storedPage = { turns: [{ ...turn('s0', 0), endedAt: 7 } as TranscriptTurn, turn('s1', 1)], originTurnIds: ['r0', 'r5'], nextCursor: null };
+    const reattach = vi.spyOn(store, 'reattachAfterHostReload');
+
+    await internals._refreshHistory();
+
+    expect(reattach).not.toHaveBeenCalled();
+    expect(internals.session).toBe(runtime.session);
+    expect(store.starting).toBe(false);
+    expect(store.permissionModeOptions).not.toBeNull();
+    expect(committedIds(store)).toEqual(['s0', 's1']);
+    expect(internals._storedHistoryTurns[0]).toMatchObject({ id: 's0', endedAt: 7 });
+    expect(internals._runtimeCursor).toEqual({ epoch: 'runtime', seq: 6 });
+    expect(internals._runtimeReplayEndSeq).toBe(6);
+    store.dispose();
+  });
+
+  function runtimeHistory(source: 'runtime-only' | 'runtimeView' = 'runtime-only') {
+    const { store, internals, runtime } = live(source === 'runtimeView'
+      ? { id: 'side-runtime', forkFromProviderSessionId: 'native-parent' } : undefined);
+    const state = internals as Internals & {
+      _bootstrapped: boolean; _runtimeBackgroundTaskIds: string[]; _runtimeLiveSubagentIds: string[];
+    };
+    state._bootstrapped = true;
+    state._runtimeBackgroundTaskIds = ['background-live'];
+    state._runtimeLiveSubagentIds = ['subagent-live'];
+    internals._storedBaseSeq = null;
+    internals._storedHistoryTurns = [];
+    internals._storedOrigins = [];
+    // A side chat draws its own turns (startedAt), not the inherited replay context.
+    for (let i = 0; i < runtime.committed.length; i++) runtime.committed[i] = { ...runtime.committed[i]!, startedAt: 1000 + i };
+    runtime.committed[1] = { ...runtime.committed[1]!, items: [{
+      kind: 'execute-tool-call', id: 'background-item', seq: 0, toolCallId: 'background-call',
+      title: 'sleep 600', status: 'done', backgroundTaskId: 'background-live',
+    }] } as TranscriptTurn;
+    internals._runtimeWindowStartSeq = 3;
+    internals._runtimeTurns = runtime.committed.slice(3);
+    internals._olderHistoryTurns = runtime.committed.slice(1, 3);
+    internals._olderSource = 'runtime';
+    internals._olderCursor = 1;
+    store.chatState.transcript.history.seed(runtime.committed.slice(1));
+    const rows = () => collectBackgroundCommandRoster(
+      store.chatState.transcript.state.committedTurns, null, 'Command', store.runningBackgroundTaskIds);
+    // Model the host's same-epoch overflow reply and clipped full pages. Transport byte trimming has its own runtime tests.
+    runtime.append({ ...turn('r5', 5), startedAt: 1005, items: Array.from({ length: 100 }, (_, seq) => ({
+      kind: 'message', id: `large-${seq}`, seq, role: 'assistant', text: 'trace-'.repeat(700),
+    })) } as TranscriptTurn);
+    runtime.append({ ...turn('r6', 6), startedAt: 1006 } as TranscriptTurn);
+    runtime.clipPages(1);
+    runtime.oversize();
+    const reattach = vi.spyOn(store, 'reattachAfterHostReload');
+    const bootstrap = vi.spyOn(internals, '_runBootstrap').mockResolvedValue(undefined);
+    return { store, internals, runtime, rows, reattach, bootstrap };
+  }
+
+  it.each(['runtime-only', 'runtimeView'] as const)(
+    '#3167 keeps live controls and the displayed history after a same-epoch overflow (%s)',
+    async (source) => {
+      const { store, internals, runtime, rows, reattach, bootstrap } = runtimeHistory(source);
+      expect(rows()).toHaveLength(1);
+      expect(store.permissionModeOptions).not.toBeNull();
+      const delta = await runtime.session.getHistory(undefined, 100, internals._runtimeCursor!);
+      expect(delta.success && delta.data.reset).toBe(true);
+      await internals._refreshHistory();
+      expect(reattach).not.toHaveBeenCalled();
+      expect(bootstrap).not.toHaveBeenCalled();
+      expect(internals.session).toBe(runtime.session);
+      expect(store.permissionModeOptions).not.toBeNull();
+      expect(store.runningBackgroundTaskIds).toEqual(['background-live']);
+      expect(store.liveSubagentIds).toEqual(['subagent-live']);
+      expect(rows()).toHaveLength(1);
+      expect(committedIds(store)).toEqual(['r1', 'r2', 'r3', 'r4', 'r5', 'r6']);
+      expect(internals._runtimeCursor).toEqual({ epoch: 'runtime', seq: 7 });
+      expect((await internals.loadOlderHistory()).map(next => next.id)).toEqual(['r0']);
+      store.dispose();
+    });
+
+  it('#3167 discards a history page requested before the in-place rebuild', async () => {
+    const { store, internals, runtime } = runtimeHistory();
+    const getHistory = runtime.session.getHistory;
+    const oldPage = await getHistory(1, 100);
+    let release!: (value: typeof oldPage) => void;
+    let blocked = false;
+    runtime.session.getHistory = (...args) => args[0] === 1 && !blocked
+      ? (blocked = true, new Promise(resolve => { release = resolve; })) : getHistory(...args);
+    const prior = internals.loadOlderHistory();
+    await internals._refreshHistory();
+    release(oldPage);
+    expect(await prior).toEqual([]);
+    expect(committedIds(store)).toEqual(['r1', 'r2', 'r3', 'r4', 'r5', 'r6']);
+    expect(internals._runtimeCursor).toEqual({ epoch: 'runtime', seq: 7 });
+    store.dispose();
+  });
+
+  it('#3167 includes a page the person loaded while the runtime window was being rebuilt', async () => {
+    const { store, internals, runtime, rows } = runtimeHistory();
+    const getHistory = runtime.session.getHistory;
+    const held = await getHistory(6, 100);
+    let release!: (value: typeof held) => void;
+    let blocked = false;
+    runtime.session.getHistory = (...args) => args[0] === 6 && !blocked
+      ? (blocked = true, new Promise(resolve => { release = resolve; })) : getHistory(...args);
+    const refresh = internals._refreshHistory();
+    await vi.waitFor(() => expect(release).toBeDefined());
+    expect(committedIds(store)).toEqual(['r1', 'r2', 'r3', 'r4']);
+    expect(store.permissionModeOptions).not.toBeNull();
+    expect(rows()).toHaveLength(1);
+    expect((await internals.loadOlderHistory()).map(next => next.id)).toEqual(['r0']);
+    release(held);
+    await refresh;
+    expect(committedIds(store)).toEqual(['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6']);
+    expect(internals._olderCursor).toBeNull();
+    store.dispose();
+  });
+
+  it('#3167 ignores an older rebuild response after a newer reconciliation won', async () => {
+    const { store, internals, runtime } = runtimeHistory();
+    const getHistory = runtime.session.getHistory;
+    const oldHead = await getHistory(undefined, 100);
+    let release!: (value: typeof oldHead) => void;
+    let blocked = false;
+    runtime.session.getHistory = (...args) => args[0] === undefined && args[2] === undefined && !blocked
+      ? (blocked = true, new Promise(resolve => { release = resolve; })) : getHistory(...args);
+    const older = internals._refreshHistory();
+    await vi.waitFor(() => expect(release).toBeDefined());
+    runtime.append({ ...turn('r7', 7), startedAt: 1007 } as TranscriptTurn);
+    await internals._refreshHistory();
+    release(oldHead);
+    await older;
+    expect(internals.session).toBe(runtime.session);
+    expect(committedIds(store)).toEqual(['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7']);
+    expect(internals._runtimeCursor).toEqual({ epoch: 'runtime', seq: 8 });
+    store.dispose();
+  });
+
+  it('#3167 re-attaches if the runtime changes epoch while the fresh history head is read', async () => {
+    const { store, internals, runtime, reattach } = runtimeHistory();
+    const getHistory = runtime.session.getHistory;
+    runtime.session.getHistory = (...args) => {
+      if (args[2] === undefined && args[0] === undefined) runtime.restart();
+      return getHistory(...args);
+    };
+    await internals._refreshHistory();
+    expect(reattach).toHaveBeenCalledTimes(1);
+    expect(internals.session).toBeNull();
+    store.dispose();
+  });
+
+  it('#3167 reports a failed history read without clearing live controls or retrying it', async () => {
+    const { store, internals, runtime, rows, reattach } = runtimeHistory();
+    const getHistory = runtime.session.getHistory;
+    let reads = 0;
+    runtime.session.getHistory = (...args) => {
+      if (args[2] === undefined) { reads++; return Promise.reject(new Error('history unavailable')); }
+      return getHistory(...args);
+    };
+    await internals._refreshHistory();
+    expect(reads).toBe(1);
+    expect(reattach).not.toHaveBeenCalled();
+    expect(internals.session).toBe(runtime.session);
+    expect(store.permissionModeOptions).not.toBeNull();
+    expect(rows()).toHaveLength(1);
+    expect(committedIds(store)).toEqual(['r1', 'r2', 'r3', 'r4']);
+    store.dispose();
+  });
+
+  it('#3167 reads only the newest page when no runtime history window was displayed', async () => {
+    const { store, internals, runtime } = runtimeHistory();
+    internals._runtimeTurns = [];
+    internals._olderHistoryTurns = [];
+    store.chatState.transcript.history.seed([]);
+    await internals._refreshHistory();
+    expect(runtime.calls).toHaveLength(2);
+    expect(committedIds(store)).toEqual(['r6']);
+    expect(internals._olderCursor).toBe(6);
+    expect(internals.session).toBe(runtime.session);
+    store.dispose();
+  });
+
+  it('a restarted runtime (another epoch) still re-attaches', async () => {
+    const { store, internals, runtime } = live();
+    runtime.restart();
+    const reattach = vi.spyOn(store, 'reattachAfterHostReload').mockImplementation(() => {});
+
+    await internals._refreshHistory();
+
+    expect(reattach).toHaveBeenCalledTimes(1);
+    store.dispose();
+  });
+
+  it('names its content floor when the record draws the older turns, and not when the runtime is the only source', async () => {
+    const stored = live();
+    stored.runtime.append(turn('r5', 5));
+    await stored.internals._refreshHistory();
+    expect(stored.runtime.calls.at(-1)).toMatchObject({ changedSince: { epoch: 'runtime', seq: 5 }, contentFrom: 5 });
+    stored.store.dispose();
+
+    const runtimeOnly = live();
+    runtimeOnly.internals._storedBaseSeq = null;
+    runtimeOnly.runtime.append(turn('r5', 5));
+    await runtimeOnly.internals._refreshHistory();
+    expect(runtimeOnly.runtime.calls.at(-1)?.contentFrom).toBeUndefined();
+    runtimeOnly.store.dispose();
   });
 });
 

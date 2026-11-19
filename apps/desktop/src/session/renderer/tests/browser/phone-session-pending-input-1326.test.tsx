@@ -18,7 +18,7 @@ const hostHistory = vi.hoisted(() => ({ read: vi.fn() }));
 vi.mock('@/mobile/agent-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: hostLife.view, error: null, current: () => hostLife.view }) }));
 vi.mock('@/lib/sessionInputOutboxBridge', async original => ({ ...(await original<object>()), retrySessionInputs: retry }));
 vi.mock('@gugu/core/cloud/config', async original => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: { chatView: 'double' } }) }));
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } });
 vi.mock('@/mobile/agent-watch/sessionpage-rpc', async original => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: { getStoredHistory: hostHistory.read, lifeRetryUnknown: resend, lifeDiscard: discard } }) }));
 
 let harness: ReturnType<typeof createReactHarness>;
@@ -119,7 +119,7 @@ it('uses the ordinary pending projection on the phone, keeping acceptance and au
     expect(harness.container.querySelector('[data-send-state="failed"]')).toBeNull();
   }
   expect(harness.container.querySelector('[data-send-state="waiting"]')?.getAttribute('title')).toBe('connection refused');
-  expect(harness.container.textContent).toContain('Waiting to send · Send interrupted');
+  expect(harness.container.textContent).toContain('Waiting to send: Send interrupted');
   expect(retry).not.toHaveBeenCalled();
   expect(harness.container.querySelectorAll('[data-user-card]')).toHaveLength(1);
 });

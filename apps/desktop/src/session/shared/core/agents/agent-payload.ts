@@ -133,6 +133,8 @@ export type AgentCapabilities = {
     startup?: { noticeKey: string };
   };
   auth: AgentAuthDescriptor;
+  modelProtocols?: readonly import('@gugu/session-core/models/custom-model').ModelProtocol[];
+  customModel?: { modelOptional: true };
   hostDependency: AgentHostDependencyInfo;
   models: AgentModelsCapability;
   effort: AgentEffortCapability;
@@ -169,7 +171,15 @@ export function agentSupportsAcp(capabilities: AgentCapabilities | undefined | n
   return capabilities?.acp.kind === 'supported';
 }
 
-/** Normalize legacy payloads with the adapter's own default before reading this optional capability. */
+/** Subscription forms manage accounts; custom addresses and models live in Settings > Models. */
+export type AgentAccountForm = { accounts: boolean; vendorKey: boolean };
+
+export function agentAccountForm(agent: Pick<AgentPayload, 'id' | 'capabilities'> | undefined | null): AgentAccountForm | null {
+  const auth = agent?.capabilities.auth;
+  if (auth?.kind === 'supported' && auth.vendorKey) return { accounts: false, vendorKey: true };
+  return agentSupportsConnectionManagement(agent) ? { accounts: true, vendorKey: false } : null;
+}
+
 export function agentSupportsConnectionManagement(agent: Pick<AgentPayload, 'id' | 'capabilities'> | undefined | null): boolean {
   const auth = normalizeAgentAuthCapabilities(agent?.id, agent?.capabilities.auth);
   return auth?.kind === 'supported' && auth.connections?.kind === 'managed';
@@ -320,6 +330,7 @@ export type AgentMetadata = {
   id: string;
   name: string;
   description: string;
+  publisher?: string;
   websiteUrl: string;
   icon: AgentIconAsset;
   capabilities: AgentCapabilities;

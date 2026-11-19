@@ -98,6 +98,8 @@ export function unreadAboveCount(locator: ChatUnreadLocator, messages: readonly 
   const firstUnread = locator.message_seq
   const landedAt = locator.first_addressed_seq
   if (firstUnread == null || landedAt == null) return locator.unread_count
-  const above = messages.filter((message) => message.seq >= firstUnread && message.seq < landedAt && !message.is_mine).length
+  // Files sent at once are one message (#2581), as the server counts them.
+  const counted = messages.filter((message) => message.seq >= firstUnread && message.seq < landedAt && !message.is_mine)
+  const above = counted.filter((message) => !message.send_group_id).length + new Set(counted.flatMap((message) => message.send_group_id ? [message.send_group_id] : [])).size
   return messages.some((message) => message.seq > 0 && message.seq <= firstUnread) ? above : `${above}+`
 }

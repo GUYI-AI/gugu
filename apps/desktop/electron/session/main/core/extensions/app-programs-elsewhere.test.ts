@@ -167,10 +167,7 @@ describe('the machine that has the session does the call', () => {
     expect(await refusal(elsewhere.answerAppCall(CALLER, action({ call_id: 'fr', method: 'filesRename' }, { ref: { ...place, id: 'a' }, name: 'b' })))).toMatchObject({ code: 'denied' });
   });
 
-  it('does only a verb whose row follows the session\'s machine — never a program gugu hosts (161 10-17), never any other verb', async () => {
-    installed.servers = [{ name: 'browser', host: 'browser-use' }];
-    expect(await refusal(elsewhere.answerAppCall(CALLER, action({ call_id: 'hosted' }, { name: 'open' })))).toMatchObject({ code: 'invalid' });
-    installed.servers = [{ tools: 'tools.js' }];
+  it('does only a verb whose row follows the session\'s machine, never any other verb', async () => {
     expect(await refusal(elsewhere.answerAppCall(CALLER, action({ call_id: 'other', method: 'notify' }, { title: 'x' })))).toMatchObject({
       code: 'invalid', message: 'notify is done where the page is, not on its session\'s machine',
     });

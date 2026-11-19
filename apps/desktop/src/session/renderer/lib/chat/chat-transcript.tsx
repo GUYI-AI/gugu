@@ -1,3 +1,4 @@
+import { subscribeNativeConversationHistoryClear } from '@/lib/nativeConversationHistoryClear';
 /**
  * chat-transcript.tsx — React adapter for @gugu/session-chat-ui.
  *
@@ -22,7 +23,9 @@
  * callbacks do not go stale after React re-renders.
  */
 
+import { metadataSeparator } from '@/i18n/format'
 import { openCreditSettings } from '@/lib/billing/settingsDestination';
+import { billingLinksAvailable } from '@/lib/appLinks';
 import type {
   ChatCommands,
   ChatContext,
@@ -32,7 +35,7 @@ import type {
   ChatViewOptions,
   TranscriptTurn,
 } from '@gugu/session-chat-ui';
-import { createElement, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { createElement, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Hint } from '@/components/ui/Tooltip';
 import { FailedSendStatus } from '@/components/chat/FailedSendStatus';
@@ -44,9 +47,7 @@ import { toast } from '@renderer/lib/hooks/use-toast';
 import { messageForUser } from '@/lib/userFacingError';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { platform } from '@/platform';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
-import { TabLayerShownContext } from '@renderer/features/tabs/retained-tab-content';
-import { isEmbedVisible, subscribeEmbedVisibility } from '../portal-container';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 
 const onCopyError = (error: unknown) => toast({ title: translateSessionMessage('task.copyFailed'), description: messageForUser(error), tier: 'error' });
 const writeClipboardText = (text: string) => platform.writeClipboardText(text);
@@ -113,10 +114,7 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
   const ref = useRef<HTMLDivElement>(null);
   const propsRef = useRef(props);
   propsRef.current = props;
-  const pageShown = useContext(PageShownContext);
-  const layerShown = useContext(TabLayerShownContext);
-  const embedVisible = useSyncExternalStore(subscribeEmbedVisibility, isEmbedVisible);
-  const shown = pageShown && layerShown && embedVisible;
+  const shown = useContext(SurfaceShownContext);
   const shownRef = useRef(shown);
   shownRef.current = shown;
 
@@ -181,7 +179,8 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
         pinUserMessages: p.pinUserMessages,
         class: p.class,
         contentClass: p.contentClass,
-        commands: { onCopyError, onTooltipMount, onInputSendFailureMount, onMessageBodyMount, onRechargeCredits: openCreditSettings, ...p.commands, writeClipboardText },
+        commands: { onCopyError, onTooltipMount, onInputSendFailureMount, onMessageBodyMount, ...p.commands,
+          onRechargeCredits: billingLinksAvailable() ? p.commands?.onRechargeCredits ?? openCreditSettings : undefined, writeClipboardText },
         padTop: p.padTop,
         embedded: p.embedded,
         // Thread stable wrappers that read from propsRef at call time — never stale.
@@ -219,6 +218,8 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
   }, [shown]);
 
   // Swap the underlying ChatState when props.state identity changes (setModel path).
+  useLayoutEffect(() => subscribeNativeConversationHistoryClear(props.state.uri,
+    floor => props.state.transcript?.setHistoryFloor?.(floor)), [props.state]);
   // The view handle, composer slot, and commands remain stable across swaps.
   useEffect(() => {
     viewRef.current?.setModel(props.state);
@@ -231,7 +232,8 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
 
   // Push command callbacks reactively so inline functions are never stale.
   useEffect(() => {
-    viewRef.current?.setCommands({ onCopyError, onTooltipMount, onInputSendFailureMount, onMessageBodyMount, onRechargeCredits: openCreditSettings, ...props.commands, writeClipboardText });
+    viewRef.current?.setCommands({ onCopyError, onTooltipMount, onInputSendFailureMount, onMessageBodyMount, ...props.commands,
+      onRechargeCredits: billingLinksAvailable() ? props.commands?.onRechargeCredits ?? openCreditSettings : undefined, writeClipboardText });
   }, [props.commands]);
 
   // Layout lives on the process-long context (measurement-coupled), not on the
@@ -252,7 +254,7 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
     createElement('span', { style: { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' } }, entry.text),
   }), entry.root, String(index))), inputFailures.map(entry => createPortal(createElement(FailedSendStatus, {
     reason: entry.error,
-    label: [translateSessionMessage(entry.unknown ? 'transcript.sendUnknown' : 'transcript.sendFailed'), safeFailureLine(entry.reason ?? entry.error ?? '').slice(0, 64)].filter(Boolean).join(' · '),
+    label: [translateSessionMessage(entry.unknown ? 'transcript.sendUnknown' : 'transcript.sendFailed'), safeFailureLine(entry.reason ?? entry.error ?? '').slice(0, 64)].filter(Boolean).join(metadataSeparator()),
     onRetry: entry.retryable ? () => propsRef.current.commands?.onRetrySend?.(entry.itemId) : undefined,
     onDiscard: () => propsRef.current.commands?.onDiscardSend?.(entry.itemId),
   }), entry.root, entry.itemId)));

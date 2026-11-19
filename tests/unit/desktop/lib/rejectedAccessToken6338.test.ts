@@ -2,7 +2,8 @@
 // #6338:服务端不认登录通行证(换签名章 / 提前作废)时,App 要立刻换新证,而不是卡到通行证自然到期。
 import type { Session, User } from '@supabase/supabase-js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { authBoundedFetch, setRejectedAccessTokenRecovery } from '../../../../apps/desktop/src/lib/authBoundedFetch'
+import { authBoundedFetch, isLifecycleCancellation, setRejectedAccessTokenRecovery } from '../../../../apps/desktop/src/lib/authBoundedFetch'
+import { abortAuthSessionBoundary, resetAuthSessionBoundary } from '../../../../apps/desktop/src/lib/authSessionLoss'
 import { SessionCoordinator, type SessionCoordinatorDeps } from '../../../../apps/desktop/src/lib/sessionCoordinator'
 import type { AuthUser } from '../../../../apps/desktop/src/store/auth'
 
@@ -42,6 +43,7 @@ function coordinator(overrides: Partial<SessionCoordinatorDeps> = {}) {
     publishSession: vi.fn(),
     writeMirror: vi.fn(async () => {}),
     clearMirror: vi.fn(async () => {}),
+    loadPersistedSession: async () => {},
     getPersistedSessionState: vi.fn(() => ({ bootCandidate: null, warning: null })),
     commitPersistedSession: vi.fn(async () => {}),
     clearPersistedSession: vi.fn(async () => {}),
@@ -178,6 +180,19 @@ describe('authBoundedFetch rejected-token retry (#6338)', () => {
     expect(response.status).toBe(401)
     expect(await response.json()).toEqual({})
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  // 启动外壳期间那张候选证被拒,恢复却以「会话已不认」收场(转登录页):这条请求属于结束了的那一代,
+  // 按生命周期取消收场,❌ 不把 401 当数据失败交出去、在登录页上报错(#7172)。
+  it('ends a request as a lifecycle cancellation when the session ended during its token recovery', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    resetAuthSessionBoundary()
+    fetchMock.mockResolvedValue(new Response('{}', { status: 401 }))
+    setRejectedAccessTokenRecovery(vi.fn(async () => { abortAuthSessionBoundary(); return null }))
+    const error = await call(oldUser).then(() => null, (reason: unknown) => reason)
+    expect(isLifecycleCancellation(error)).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    resetAuthSessionBoundary()
   })
 
   it('never swaps when the rejected credential is the anon key', async () => {

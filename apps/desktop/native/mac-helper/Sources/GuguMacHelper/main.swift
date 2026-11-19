@@ -12,6 +12,7 @@ registerContacts(router)
 registerLocation(router)
 registerVision(router)
 registerSystem(router)
+registerOwnerAuth(router)
 
 let output = OutputWriter()
 /// 在途的请求:stdin 关了也要等它们回完再退(❌ 读到 EOF 就退,把刚收到的请求丢掉)。

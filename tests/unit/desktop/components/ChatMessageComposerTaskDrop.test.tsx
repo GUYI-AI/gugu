@@ -9,12 +9,14 @@ import type { MentionItem } from '@gugu/session-ui/react/components'
 import type { GroupChatSettings, GroupCollabSnapshot } from '@gugu/core/shared/types/chat'
 import type { ChatMessageComposerProps } from '../../../../apps/desktop/src/components/chat/chatComposerModels'
 import { i18n } from '../../../../apps/desktop/src/i18n'
+import { openImRepository, type AccountImRepository } from '../../../../apps/desktop/src/lib/imRepository'
+import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
 
 const { resolveSession } = vi.hoisted(() => ({ resolveSession: vi.fn() }))
 const service = vi.hoisted(() => ({
   getGroupCollab: vi.fn(), getGroupChatSettings: vi.fn(), inviteGroupMember: vi.fn(), listMyAgentJoinRequests: vi.fn(),
 }))
-vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: service }))
+vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: service, GroupCollabEmptyError: class GroupCollabEmptyError extends Error {} }))
 vi.mock('../../../../apps/desktop/src/hooks/useAgentDisplayStatus', () => import('../../../support/agentDisplayStatusTestDouble'))
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/chat/local-session-mention-provider', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../../../apps/desktop/src/session/renderer/lib/chat/local-session-mention-provider')>(),
@@ -50,8 +52,11 @@ async function drop(content: DraggedScreenContent = { kind: 'session', projectId
 async function send() {
   await act(async () => { harness.container.querySelector<HTMLButtonElement>('[data-slot="composer-bar"] button[aria-label="发送消息"]')!.click() })
 }
-beforeEach(() => {
+// The group picker reads the roster through the account's IM library.
+let repository: AccountImRepository
+beforeEach(async () => {
   harness = createReactHarness()
+  repository = await openImRepository('owner-1', { adapter: createMemoryLocalSyncDb() })
   vi.clearAllMocks()
   resolveSession.mockReset().mockResolvedValue(mention('outside-agent'))
   service.getGroupCollab.mockReset().mockImplementation(async () => ({ snapshot: snapshot(), identities: [] }))
@@ -59,7 +64,7 @@ beforeEach(() => {
   service.inviteGroupMember.mockReset().mockResolvedValue({ status: 'joined', chat_id: 'chat' })
   service.listMyAgentJoinRequests.mockReset().mockResolvedValue(new Map())
 })
-afterEach(() => { harness.cleanup() })
+afterEach(() => { harness.cleanup(); repository.close() })
 
 describe('task references in the shared chat composer', () => {
   it('leaves chat and App drops untouched rather than resolving them as task mentions', async () => {

@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 // #7199
-import { PhoneRoutineRead } from '../../../apps/desktop/src/mobile/assistant/PhoneRoutineRead'
 import '../../../apps/desktop/src/i18n/registerAssistantCatalog'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -69,7 +68,9 @@ describe('usePhoneRead polling', () => {
     await harness.render(createNode(Probe,{ read,pollMs: () => 1000 }))
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
     expect(read).toHaveBeenCalledTimes(1)
-    await act(async () => { window.dispatchEvent(new Event('gugu:assistant-panel-changed')); await vi.advanceTimersByTimeAsync(0) })
+    // Waiting for a collection being prepared, the read follows once a burst of changes settles (the case below).
+    const { WAITING_SETTLE_MS } = await import('../../../apps/desktop/src/components/assistant/useAssistantRead')
+    await act(async () => { window.dispatchEvent(new Event('gugu:assistant-panel-changed')); await vi.advanceTimersByTimeAsync(code === 'unprepared' ? WAITING_SETTLE_MS : 0) })
     expect(latest).toMatchObject({ state: 'ok',data: 'changed' })
   })
 
@@ -96,24 +97,39 @@ describe('usePhoneRead polling', () => {
     await act(async () => { await expect(latest!.refresh()).rejects.toThrow('verification unavailable') })
     expect(latest?.state).toBe('error')
   })
-  it('does not conceal a failed schedule refresh behind a previously empty collection', async () => {
-    const read = vi.fn<() => Promise<string[]>>().mockResolvedValueOnce([]).mockRejectedValueOnce(Object.assign(new Error('raw private diagnosis'),{ code: 'collection-unavailable' })).mockResolvedValueOnce(['recovered'])
-    function Routines() {
-      const result = usePhoneRead('schedules',read,'schedule regression',() => 1000)
-      return <PhoneRoutineRead read={result} directory={null}>{rows => rows.length ? <span>{rows.join(',')}</span> : <span data-testid="false-empty">no schedules</span>}</PhoneRoutineRead>
-    }
-    await harness.render(createNode(Routines,{}))
+
+  // Owner 11-12 log (fresh account, desktop): 26 「assistant phone read failed: This collection has not been prepared yet」 in
+  // ~6 s — two readers re-reading on every change of the panel while the cloud prepared it. A read waiting for its collection
+  // lets a burst of changes settle and reads once, says so once (not a warning per change), and reads again on the next
+  // change once its collection is there.
+  it('a collection not prepared yet: waits for the changes to settle, reads once per burst, warns never', async () => {
+    const { ASSISTANT_PANEL_CHANGED } = await import('../../../apps/desktop/src/components/assistant/assistant-panel-events')
+    const { WAITING_SETTLE_MS } = await import('../../../apps/desktop/src/components/assistant/useAssistantRead')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const unprepared = () => Object.assign(new Error('This collection has not been prepared yet'), { code: 'unprepared' })
+    const read = vi.fn<() => Promise<string>>().mockImplementation(async () => { throw unprepared() })
+    await harness.render(createNode(Probe, { read, pollMs: () => null }))
     await act(async () => { await vi.advanceTimersByTimeAsync(0) })
-    expect(harness.container.querySelector('[data-testid="false-empty"]')).not.toBeNull()
-    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
-    expect(harness.container.querySelector('[role="alert"]')).not.toBeNull()
-    expect(harness.container.querySelector('[data-testid="false-empty"]')).toBeNull()
-    expect(harness.container.textContent).not.toContain('raw private diagnosis')
-    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(read).toHaveBeenCalledTimes(1)
+    expect(latest).toMatchObject({ state: 'error', error: { code: 'unprepared' } })
+    // A burst of panel changes while it is prepared: one read once they settle, not one per change; nothing on a timer.
+    for (let i = 0; i < 10; i += 1) {
+      await act(async () => { window.dispatchEvent(new CustomEvent(ASSISTANT_PANEL_CHANGED)); await vi.advanceTimersByTimeAsync(300) })
+    }
+    expect(read).toHaveBeenCalledTimes(1)
+    await act(async () => { await vi.advanceTimersByTimeAsync(WAITING_SETTLE_MS) })
     expect(read).toHaveBeenCalledTimes(2)
-    await act(async () => { window.dispatchEvent(new Event('gugu:assistant-panel-changed')); await vi.advanceTimersByTimeAsync(0) })
-    expect(harness.container.textContent).toContain('recovered')
-    expect(harness.container.querySelector('[role="alert"]')).toBeNull()
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
+    expect(read).toHaveBeenCalledTimes(2)
+    // Prepared: the next change reads it, and from then on each change reads at once, as before.
+    read.mockResolvedValue('ready')
+    await act(async () => { window.dispatchEvent(new CustomEvent(ASSISTANT_PANEL_CHANGED)); await vi.advanceTimersByTimeAsync(WAITING_SETTLE_MS) })
+    expect(latest).toMatchObject({ state: 'ok', data: 'ready' })
+    const reads = read.mock.calls.length
+    await act(async () => { window.dispatchEvent(new CustomEvent(ASSISTANT_PANEL_CHANGED)); await vi.advanceTimersByTimeAsync(0) })
+    expect(read).toHaveBeenCalledTimes(reads + 1)
+    expect(warn.mock.calls.filter((call) => String(call[0]).includes('assistant phone read failed'))).toEqual([])
   })
 
 })

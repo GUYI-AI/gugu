@@ -3,14 +3,17 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { SessionpageSessionCreateModels, SessionpageSessionCreateOptions } from '@gugu/session-core/session-record/contract'
-import { CreateSessionPage } from '../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage'
+import { CreateSessionPage, CreateSessionSheet } from '../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage'
 import { composerDrafts } from '../../../apps/desktop/src/session/renderer/features/sessions/composer-drafts'
 import { mobileCreationDraftKey } from '../../../apps/desktop/src/mobile/agent-watch/create-session-draft'
-import type { CreateSelection } from '../../../apps/desktop/src/mobile/agent-watch/create-session-form'
 import { createNode, createReactHarness, deferred } from '../../support/testHarness'
 import { readComposer, writeComposer } from '../../support/composerEditor'
 
 const rpc = vi.hoisted(() => ({ options: vi.fn(), models: vi.fn(), create: vi.fn() }))
+vi.mock('@renderer/features/settings/subscriptions/ensure-agent-home', () => ({
+  ensureAgentHomeImported: async () => undefined,
+}))
+
 vi.mock('../../../apps/desktop/src/store/auth', async (original) => ({
   ...(await original<typeof import('../../../apps/desktop/src/store/auth')>()),
   useAuth: () => ({ user: { id: 'create-gate-owner' } }),
@@ -18,20 +21,17 @@ vi.mock('../../../apps/desktop/src/store/auth', async (original) => ({
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/useMachineLabel', () => ({
   useMachineLabel: () => ({ label: () => 'This phone', isHome: () => false }),
 }))
+// 新建页从设备目录里挑机器(DESIGN 4a):每一格把要测的那台放进目录。
+const store = vi.hoisted(() => ({ devices: [] as import('@gugu/core/shared/types/chat').Device[] }))
+vi.mock('../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: store.devices, phones: [] }) }))
 vi.mock('../../../apps/desktop/src/hooks/useWakeCloudComputer', () => ({
   useCloudComputerWake: () => ({ issue: null, dropped: false, retry: vi.fn() }),
 }))
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/CreateOptionsPill', async () => {
   const { createElement } = await import('react')
-  return {
-    CreateOptionsPill: ({ selection, onChange }: {
-      selection: CreateSelection
-      onChange: (next: CreateSelection, modelPicked?: boolean) => void
-    }) => createElement('div', null,
-      createElement('button', { 'data-testid': 'pick-codex', onClick: () => onChange({ ...selection, harness: 'codex', model: null, effort: null }) }, 'Codex'),
-      createElement('button', { 'data-testid': 'pick-own-default', onClick: () => onChange({ ...selection, model: null }, true) }, 'Own default'),
-    ),
-  }
+  return { ModelChoices: ({ onPick }: { onPick: (model: string | null) => void }) => createElement('button', {
+    'data-testid': 'pick-own-default', onClick: () => onPick(null),
+  }, 'Own default') }
 })
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class SessionpageRpcError extends Error { readonly code = 'test' },
@@ -54,11 +54,16 @@ const device: Device = {
   capabilities: { terminals: [], runtimes: ['pi'], host_kind: 'phone', host_runtime_capability: 1 },
 }
 let harness: ReturnType<typeof createReactHarness>
+const pageOn = (on: Device, props: Omit<Parameters<typeof CreateSessionPage>[0], 'onBack'> & { onBack?: () => void }) => {
+  store.devices = [on]
+  return createNode(CreateSessionPage, props)
+}
 const scrollTo = Element.prototype.scrollTo
 beforeEach(() => {
   harness = createReactHarness()
   Element.prototype.scrollTo = () => undefined
   composerDrafts.set(mobileCreationDraftKey('create-gate-owner'), '')
+  composerDrafts.set(mobileCreationDraftKey('create-gate-owner', 'group-1'), '')
   rpc.options.mockReset()
   rpc.models.mockReset().mockResolvedValue({ harness: 'pi', models: [], efforts: [], selected: null, selectedEffort: null })
   rpc.create.mockReset().mockResolvedValue({ conversationId: 'made', projectId: 'phone-project', title: 'Task', session: { conversationId: 'made', supported: true } })
@@ -67,12 +72,22 @@ afterEach(() => {
   harness.cleanup()
   Element.prototype.scrollTo = scrollTo
 })
-const input = () => harness.container.querySelector<HTMLElement>('[data-testid="prompt-editor"]')!
-const send = () => harness.container.querySelector<HTMLButtonElement>('[data-slot="composer-actions-end"] > button')!
+const form = () => document.querySelector('[data-testid="phone-group-agent-sheet"]') ?? harness.container
+const input = () => form().querySelector<HTMLElement>('[data-testid="prompt-editor"]')!
+const send = () => form().querySelector<HTMLButtonElement>('[data-slot="composer-actions-end"] > button')!
 async function write(text: string) {
   await act(async () => { writeComposer(input(), text) })
 }
 
+async function pickCodex() {
+  await act(async () => { form().querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-model-device"]')!.click() })
+  await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="harness"]')!.click() })
+  await act(async () => { document.querySelector<HTMLButtonElement>('[data-dimension="harness"][data-option-id="codex"]')!.click() })
+}
+async function pickOwnDefault() {
+  await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')!.click() })
+  await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="pick-own-default"]')!.click() })
+}
 describe('phone first-send host readiness', () => {
   const remote: Device = { ...device, platform: 'linux', capabilities: { terminals: [], runtimes: ['codex', 'claude'] } }
   const prepareCodex = (signedIn = false, platformModel = 'platform:available-model') => {
@@ -96,7 +111,7 @@ describe('phone first-send host readiness', () => {
     prepareCodex()
     const reading = deferred<SessionpageSessionCreateModels>()
     rpc.models.mockReturnValue(reading.promise)
-    await harness.render(createNode(CreateSessionPage, { device: remote, onCreated: vi.fn() }))
+    await harness.render(pageOn(remote, { onCreated: vi.fn() }))
     await write('Do not silently start an unsigned-in default')
     expect(send().disabled).toBe(true)
     expect(input().getAttribute('contenteditable')).toBe('true')
@@ -115,8 +130,8 @@ describe('phone first-send host readiness', () => {
 
   it('sends the shared available default after switching to an unsigned-in Codex', async () => {
     prepareCodex()
-    await harness.render(createNode(CreateSessionPage, { device: remote, onCreated: vi.fn() }))
-    await act(async () => { (harness.container.querySelector('[data-testid="pick-codex"]') as HTMLButtonElement).click() })
+    await harness.render(pageOn(remote, { onCreated: vi.fn() }))
+    await pickCodex()
     await write('Run with an available model')
     await act(async () => { send().click() })
     expect(rpc.create).toHaveBeenCalledExactlyOnceWith(remote.device_id, expect.objectContaining({ harness: 'codex', model: 'platform:available-model' }))
@@ -125,19 +140,20 @@ describe('phone first-send host readiness', () => {
   it('gives the first prompt one client id: the create request carries it and the new page draws the first bubble under it (#2296)', async () => {
     prepareCodex()
     const onCreated = vi.fn()
-    await harness.render(createNode(CreateSessionPage, { device: remote, onCreated }))
+    await harness.render(pageOn(remote, { onCreated }))
     await write('Keep one bubble')
     await act(async () => { send().click() })
     const request = rpc.create.mock.calls[0]![1] as { initialMessageId?: string }
     expect(request.initialMessageId).toMatch(/^[0-9a-f-]{36}$/)
-    expect(onCreated).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ conversationId: 'made' }),
+    expect(onCreated).toHaveBeenCalledExactlyOnceWith(remote, expect.objectContaining({ conversationId: 'made' }),
       { id: request.initialMessageId, text: 'Keep one bubble', sentAt: expect.any(Number) }, expect.anything())
   })
 
   it('a group New task lands its first sentence in that group as a task card (chatId + taskChatId)', async () => {
     prepareCodex()
-    await harness.render(createNode(CreateSessionPage, { device: remote, taskGroup: { chatId: 'group-1', name: 'Group' }, onCreated: vi.fn() }))
-    await act(async () => { (harness.container.querySelector('[data-testid="pick-codex"]') as HTMLButtonElement).click() })
+    store.devices = [remote]
+    await harness.render(createNode(CreateSessionSheet, { group: { chatId: 'group-1', name: 'Group' }, onClose: vi.fn(), onCreated: vi.fn() }))
+    await pickCodex()
     await write('Look at the build')
     await act(async () => { send().click() })
     expect(rpc.create).toHaveBeenCalledExactlyOnceWith(remote.device_id, expect.objectContaining({ chatId: 'group-1', taskChatId: 'group-1' }))
@@ -145,9 +161,9 @@ describe('phone first-send host readiness', () => {
 
   it('does not replace an explicitly chosen own default when its catalogue returns', async () => {
     prepareCodex(true, 'platform:gpt-6-luna')
-    await harness.render(createNode(CreateSessionPage, { device: remote, onCreated: vi.fn() }))
-    await act(async () => { (harness.container.querySelector('[data-testid="pick-codex"]') as HTMLButtonElement).click() })
-    await act(async () => { (harness.container.querySelector('[data-testid="pick-own-default"]') as HTMLButtonElement).click() })
+    await harness.render(pageOn(remote, { onCreated: vi.fn() }))
+    await pickCodex()
+    await pickOwnDefault()
     await write('Keep my explicit selection')
     await act(async () => { send().click() })
     expect(rpc.create).toHaveBeenCalledOnce()
@@ -156,9 +172,9 @@ describe('phone first-send host readiness', () => {
 
   it('shows the existing sign-in explanation when the chosen own model has no login', async () => {
     prepareCodex()
-    await harness.render(createNode(CreateSessionPage, { device: remote, onCreated: vi.fn() }))
-    await act(async () => { (harness.container.querySelector('[data-testid="pick-codex"]') as HTMLButtonElement).click() })
-    await act(async () => { (harness.container.querySelector('[data-testid="pick-own-default"]') as HTMLButtonElement).click() })
+    await harness.render(pageOn(remote, { onCreated: vi.fn() }))
+    await pickCodex()
+    await pickOwnDefault()
     await write('Keep this draft until sign-in')
     expect(harness.container.querySelector('[data-blocker="model_auth_required"]')?.textContent).toContain('登录')
     expect(send().disabled).toBe(true)
@@ -168,7 +184,7 @@ describe('phone first-send host readiness', () => {
 
   it('retains a signed-in remembered own default even when a factory platform model is offered', async () => {
     prepareCodex(true, 'platform:gpt-6-luna')
-    await harness.render(createNode(CreateSessionPage, { device: remote, onCreated: vi.fn() }))
+    await harness.render(pageOn(remote, { onCreated: vi.fn() }))
     await write('Use the remembered own default')
     await act(async () => { send().click() })
     expect(rpc.create).toHaveBeenCalledOnce()
@@ -179,7 +195,7 @@ describe('phone first-send host readiness', () => {
     const reading = deferred<SessionpageSessionCreateOptions>()
     rpc.options.mockReturnValue(reading.promise)
     const onCreated = vi.fn()
-    await harness.render(createNode(CreateSessionPage, { device, onCreated }))
+    await harness.render(pageOn(device, { onCreated }))
     await write('请检查\n明天的日程')
     expect(input().getAttribute('contenteditable')).toBe('true')
     expect(send().disabled).toBe(true)
@@ -200,7 +216,7 @@ describe('phone first-send host readiness', () => {
     const first = deferred<SessionpageSessionCreateOptions>()
     const retry = deferred<SessionpageSessionCreateOptions>()
     rpc.options.mockReturnValueOnce(first.promise).mockReturnValueOnce(retry.promise)
-    await harness.render(createNode(CreateSessionPage, { device, onCreated: vi.fn() }))
+    await harness.render(pageOn(device, { onCreated: vi.fn() }))
     const field = input()
     await write('保留我的任务')
     await act(async () => { first.reject(new Error('host request timed out')); await Promise.resolve() })
@@ -219,17 +235,17 @@ describe('phone first-send host readiness', () => {
     expect(send().disabled).toBe(false)
   })
 
-  it('blocks a missing host selection and an offline phone without disabling or removing the draft', async () => {
-    rpc.options.mockResolvedValue({ ...options, projects: [] })
+  it('blocks a host without a usable harness and an offline phone without disabling or removing the draft', async () => {
+    rpc.options.mockResolvedValue({ ...options, harnesses: [{ ...options.harnesses[0]!, status: 'missing' }] })
     const props = { device, onCreated: vi.fn() }
-    await harness.render(createNode(CreateSessionPage, props))
+    await harness.render(pageOn(device, props))
     const field = input()
     await write('稍后再发')
     expect(send().disabled).toBe(true)
-    expect(harness.container.querySelector('[data-testid="agent-watch-create-blocker"]')?.getAttribute('data-blocker')).toBe('no_projects')
+    expect(harness.container.querySelector('[data-testid="agent-watch-create-blocker"]')?.getAttribute('data-blocker')).toBe('no_usable_harness')
     await act(async () => { send().click() })
     expect(rpc.create).not.toHaveBeenCalled()
-    await harness.render(createNode(CreateSessionPage, { ...props, device: { ...device, is_online: false } }))
+    await harness.render(pageOn({ ...device, is_online: false }, props))
     expect(input()).toBe(field)
     expect(readComposer(field)).toBe('稍后再发')
     expect(field.getAttribute('contenteditable')).toBe('true')

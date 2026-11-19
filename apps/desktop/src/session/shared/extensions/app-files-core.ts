@@ -4,10 +4,10 @@ import { AttachmentsError, configuredEndpoint, placeAttachment, uploadAttachment
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
 import { coreLogger } from '@gugu/core/log';
 import { isDeviceOnline } from '@gugu/core/shared/enums/deviceModels';
-import { FILE_CHUNK_BYTES, MissingFileObjectError, fileBlob, type FileHandle, type ResolvedFile } from '@gugu/core/shared/fileResolver';
+import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileBlob, type FileHandle, type ResolvedFile } from '@gugu/core/shared/fileResolver';
 import { fetchInChunks } from '@gugu/core/shared/inChunks';
-import { mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
-import { opensAsStoredText, workspaceUploadKind } from '@gugu/core/shared/workspaceUpload.mjs';
+import { isRenderableImage, mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
+import { opensAsStoredText, workspaceFileText, workspaceUploadKind } from '@gugu/core/shared/workspaceUpload.mjs';
 import type { ErrorDetail, ExtensionChat, ExtensionChatFolder } from './bridge-protocol';
 import type { Grant, PageSync } from './file-sync-core';
 import {
@@ -31,6 +31,7 @@ import {
   type AppFileVersionContent,
   type AppForwardFilesDetail,
   type AppOpenWithDetail,
+  type ViewedImage,
   type AppShowMessageDetail,
   type ChatPeekFile,
   type WorkspacePlace,
@@ -63,7 +64,7 @@ import { readUserSettingsConfig, updateUserSettingsConfig, type VersionedSetting
 /** A refusal of `gugu.files`: `code` and `detail` are what an App branches on (bridge-protocol.ts `ErrorDetail`), the message is for people. */
 export class AppFileError extends Error {
   constructor(
-    readonly code: 'denied' | 'invalid' | 'failed' | 'not-found' | 'elsewhere' | 'ambiguous' | 'too-large' | 'content-changed' | 'name-taken' | 'unavailable' | 'stale-version',
+    readonly code: 'denied' | 'invalid' | 'failed' | 'not-found' | 'ambiguous' | 'too-large' | 'content-changed' | 'name-taken' | 'unavailable' | 'stale-version',
     message: string,
     readonly detail?: ErrorDetail,
   ) {
@@ -151,6 +152,10 @@ export type BesideDocument =
   | { kind: 'text'; text: string; contentType: string }
   | { kind: 'offline'; machine: string; deviceId: string };
 
+/** `readAtPath`'s answer (#1927): the file and its text, or which of the three ways it is not there to read. */
+export type PathText = { state: 'missing' | 'unprepared' | 'unavailable' }
+  | { state: 'ready'; entry: AppFileEntry; content: string; truncated: boolean; totalSize: number; binary?: true; exact?: boolean };
+
 /** What a download saves: bytes behind a short-lived signed URL, or a document's text. */
 export type DownloadSource = { name: string; kind: 'file'; file: FileHandle } | { name: string; kind: 'text'; text: string };
 
@@ -182,8 +187,38 @@ interface ItemRow {
    */
   expires_at?: string | null;
   is_mine?: boolean | null;
+  /** `workspace_list_as` only: when the group's cloud copy was cleared at its expiry and no live copy replaced it. */
+  copy_expired_at?: string | null;
+  /** Whole-file availability across authorized sources; omitted by older services. */
+  availability?: AppFileEntry['availability'];
+  expired_at?: string | null;
+  /** `workspace_list_as` only (gugu-supabase 20261112030000): how many items are directly in a folder; null for a file. */
+  child_count?: number | string | null;
   /** `workspace_list_as` only: the device that keeps its current version, when that is not in the cloud. */
   host_device_id?: string | null;
+}
+
+/**
+ * API 57 `among` for a file being opened (`groupFileOpener`, main's and the phone's): the chat's listing read while the
+ * file itself is, when the asker named the chat — read again for the file's own chat when that is another (a topic's
+ * folder is its source's). Only an image nothing claims pages; a listing that fails opens it alone, said in the log.
+ */
+export function viewedAmongOf(
+  viewedAmong: (chatId: string, itemId: string, ids: readonly string[]) => Promise<ViewedImage[]>,
+  args: { chatId?: string; itemId: string; among?: unknown },
+): (target: { chatId: string; itemId: string }, choice: { kind: string }) => Promise<ViewedImage[]> {
+  const ids = Array.isArray(args.among) ? args.among.map(String) : null;
+  const early = ids && args.chatId !== undefined ? viewedAmong(String(args.chatId), String(args.itemId), ids) : null;
+  early?.catch(() => undefined);
+  return async (target, choice) => {
+    if (!ids || choice.kind !== 'none') return [];
+    try {
+      return await (early && String(args.chatId) === target.chatId ? early : viewedAmong(target.chatId, target.itemId, ids));
+    } catch (error) {
+      coreLogger('app-files').warn({ itemId: target.itemId, error: String(error) }, 'The images shown with a file could not be read: it opens alone');
+      return [];
+    }
+  };
 }
 
 /** A row `workspace_search` / `workspace_recent` answers (gugu-supabase 20261017002319): with its chat, and when opened. */
@@ -254,9 +289,17 @@ function storageClient(token: string) {
 
 type Claimant = FilesPlatform['claimant'];
 
+/** Authoritative status clears stale cloud-only expiry; unknown/missing fields retain the old response shape. */
+function availabilityOf(row: { availability?: AppFileEntry['availability']; expired_at?: string | null }): Pick<AppFileEntry, 'availability' | 'expiredAt'> {
+  if (!['available', 'expired', 'deleted', 'unavailable'].includes(row.availability ?? '')) return {};
+  return { availability: row.availability, expiredAt: row.availability === 'expired' ? row.expired_at ?? null : null };
+}
+
 function entryOf(row: ItemRow, claimant: Claimant): AppFileEntry {
   const file = { name: row.filename, contentType: row.content_type };
   const folder = row.kind === 'folder';
+  const availability = availabilityOf(row);
+  const legacyExpiry = !availability.availability && !row.host_device_id ? row.copy_expired_at : null;
   return claimEntry({
     id: row.id,
     chat: row.chat_id,
@@ -284,6 +327,10 @@ function entryOf(row: ItemRow, claimant: Claimant): AppFileEntry {
       : null,
     sourceMessageIds: row.source_message_ids ?? [],
     ...('is_mine' in row ? { keep: typeof row.is_mine === 'boolean' ? { expiresAt: row.expires_at ?? null, mine: row.is_mine } : null } : {}),
+    // A file its machine keeps opens from there (file_resolve_as answers it local), whatever became of a cloud copy.
+    ...availability,
+    ...(!folder && legacyExpiry ? { expiredAt: legacyExpiry } : {}),
+    ...(folder && row.child_count != null ? { childCount: Number(row.child_count) } : {}),
   }, claimant);
 }
 
@@ -398,6 +445,21 @@ async function projectFoldersOfChat(token: string, viewerId: string, chatId: str
       online: !!machine && isDeviceOnline(machine.status as Parameters<typeof isDeviceOnline>[0]),
     }));
   });
+}
+
+/**
+ * One project folder on one of the reader's machines, as the account records it (the same rows as above): the project it
+ * is in there and its path there (that machine's own path). Null when the account no longer records it.
+ */
+export async function recordedProjectFolder(token: string, viewerId: string, folder: { deviceId: string; workspaceId: string }): Promise<{ projectId: string; path: string } | null> {
+  const identity = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
+  const { data, error } = await identity.from('device_projects').select('local_project_id, folders').eq('user_id', viewerId).eq('device_id', folder.deviceId);
+  if (error) throw new AppFileError('failed', error.message);
+  for (const row of (data ?? []) as { local_project_id: string; folders: { workspace_id: string; path: string }[] }[]) {
+    const found = row.folders.find((each) => each.workspace_id === folder.workspaceId);
+    if (found) return { projectId: row.local_project_id, path: found.path };
+  }
+  return null;
 }
 
 export async function extensionChatOf(
@@ -597,13 +659,18 @@ export type ChatFileRef = Exclude<AppFileRef, WorkspacePlace>;
 async function itemById(token: string, itemId: string, actor: string): Promise<ItemRow | null> {
   if (!UUID.test(itemId)) return null;
   // This reader uses metadata only. The live document is read by file sync, never from inline_text.
-  const { data, error } = await chatClient(token).rpc('workspace_get_as', { p_item_id: itemId, p_as_user_id: actor })
-    .select('id,chat_id,kind,filename,content_type,size_bytes,pointer,source_message_ids,created_by,updated_by,version,created_at,updated_at,epoch,parent_id,system_role,path,metadata');
+  const columns = 'id,chat_id,kind,filename,content_type,size_bytes,pointer,source_message_ids,created_by,updated_by,version,created_at,updated_at,epoch,parent_id,system_role,path,metadata';
+  const read = (fields: string) => chatClient(token).rpc('workspace_get_as', { p_item_id: itemId, p_as_user_id: actor }).select(fields);
+  let { data, error } = await read(`${columns},availability,expired_at`);
+  // Rolling deployments: retry metadata only when the older RPC lacks these two new columns. Never retry a denial.
+  if (error && ['42703', 'PGRST204'].includes(error.code) && /availability|expired_at/.test(error.message)) {
+    ({ data, error } = await read(columns));
+  }
   if (error) {
     if (codeOf(error) === 'not-found') return null;
     throw new AppFileError(codeOf(error), error.message);
   }
-  return ((Array.isArray(data) ? data[0] : data) as ItemRow | undefined) ?? null;
+  return ((Array.isArray(data) ? data[0] : data) as unknown as ItemRow | undefined) ?? null;
 }
 
 /**
@@ -617,7 +684,7 @@ async function asListed(token: string, row: ItemRow, actor: string): Promise<Ite
     .catch(() => []);
   const listed = found.find((one) => one.id === row.id);
   // A list that does not say which machine holds it (undefined) leaves that to be resolved, as the row from get does.
-  return listed ? { ...row, expires_at: listed.expires_at ?? null, is_mine: listed.is_mine ?? null, host_device_id: listed.host_device_id } : row;
+  return listed ? { ...row, expires_at: listed.expires_at ?? null, is_mine: listed.is_mine ?? null, copy_expired_at: listed.copy_expired_at ?? null, availability: listed.availability, expired_at: listed.expired_at, host_device_id: listed.host_device_id } : row;
 }
 
 /**
@@ -958,12 +1025,16 @@ export function createAppFiles(platform: FilesPlatform) {
 
   /** A file the page may read: the one handed to it, or any other with `files:read`/`:write`. */
   async function readable(surface: FileSurface, account: { token: string; userId: string }, ref: ChatFileRef, what: 'saving' | 'opening' | 'forwarding'): Promise<ItemRow> {
-    const { row, handedOver } = await resolve(surface, account, ref);
+    const { row } = await resolve(surface, account, ref);
     if (row.kind === 'folder') throw notAFile(row);
-    if (!handedOver && !has(surface.extensionId, 'files:read') && !has(surface.extensionId, 'files:write')) {
+    mayName(surface, row.id, what);
+    return row;
+  }
+  /** The check `readable` makes, before anything is read: a file other than the page's own needs `files:read`/`:write`. */
+  function mayName(surface: FileSurface, itemId: string, what: 'saving' | 'opening' | 'forwarding'): void {
+    if (itemId !== surface.itemId && !has(surface.extensionId, 'files:read') && !has(surface.extensionId, 'files:write')) {
       throw new AppFileError('denied', `Not permitted: ${what} a file other than the one this page was opened for needs "files:read" or "files:write"`);
     }
-    return row;
   }
 
   /**
@@ -1029,6 +1100,7 @@ export function createAppFiles(platform: FilesPlatform) {
     open,
     self,
     read,
+    mayName,
     /** Host-only metadata for a separately authorized, bounded file payload read. */
     async payloadMetadata(surface: FileSurface, args: { ref: ChatFileRef }) {
       surface.signal?.throwIfAborted();
@@ -1128,18 +1200,39 @@ export function createAppFiles(platform: FilesPlatform) {
 
     groupChange,
 
-    /** One of them, as `openTarget` answers for a page: what to open, and what kind of file it is. */
-    async groupFile(chatId: string, itemId: string) {
+    /**
+     * One of them, as `openTarget` answers for a page: what to open, and what kind of file it is. `chatId` omitted (a
+     * link names only the file): the chat is the file's own, in the answer.
+     */
+    async groupFile(chatId: string | undefined, itemId: string) {
       const local = await localRevision(String(itemId));
       if (local) {
-        if (local.chat_id !== chatId) throw new AppFileError('not-found', 'No such file in this chat');
-        return { chatId, itemId: local.item_id!, name: local.file_name, typedName: typedFileName({ name: local.file_name, contentType: local.content_type }), file: { document: false, contentType: local.content_type, version: local.version!, size: local.size_bytes } };
+        if (chatId !== undefined && local.chat_id !== chatId) throw new AppFileError('not-found', 'No such file in this chat');
+        return { chatId: local.chat_id!, itemId: local.item_id!, name: local.file_name, typedName: typedFileName({ name: local.file_name, contentType: local.content_type }), file: { document: false, contentType: local.content_type, version: local.version!, size: local.size_bytes } };
       }
       const { token, userId } = await platform.account();
       const row = await itemById(token, String(itemId), userId);
-      if (row && row.chat_id !== chatId) chatId = await resourceChatIdOf(token, chatId, userId);
-      if (!row || row.chat_id !== chatId) throw new AppFileError('not-found', 'No such file in this chat');
+      if (row && chatId !== undefined && row.chat_id !== chatId) chatId = await resourceChatIdOf(token, chatId, userId);
+      if (!row || (chatId !== undefined && row.chat_id !== chatId)) throw new AppFileError('not-found', 'No such file in this chat');
       return { chatId: row.chat_id, itemId: row.id, name: row.filename, typedName: typedFileName({ name: row.filename, contentType: row.content_type }), file: { document: row.kind === 'document', contentType: row.content_type, version: row.version, size: row.size_bytes ?? 0 }, ...openingOf(row, userId) };
+    },
+
+    /**
+     * API 57 `among`: of the files a page showed with the one it opened, those the image viewer pages to — images of that
+     * file's chat with a cloud copy to read, in the page's order — from one listing of the chat. None when the opened one
+     * is not such an image itself: it opens alone.
+     */
+    async viewedAmong(chatId: string, itemId: string, ids: readonly string[]): Promise<ViewedImage[]> {
+      if (!ids.includes(itemId)) return [];
+      const { token, userId } = await platform.account();
+      const rows = new Map((await rowsOfChat(token, chatId, userId)).map((row) => [row.id, row]));
+      const viewed = ids.flatMap((id) => {
+        const row = rows.get(id);
+        const readable = row && row.kind === 'file' && !row.host_device_id && (row.availability ? row.availability === 'available' : !row.copy_expired_at)
+          && isRenderableImage(row.filename, row.content_type);
+        return readable ? [{ itemId: row.id, version: row.version, name: row.filename, contentType: row.content_type }] : [];
+      });
+      return viewed.some((image) => image.itemId === itemId) && viewed.length > 1 ? viewed : [];
     },
 
     /**
@@ -1285,7 +1378,7 @@ export function createAppFiles(platform: FilesPlatform) {
       const row = await readable(surface, { token, userId }, args.ref, 'opening');
       const { data, error } = await chatClient(token).rpc('workspace_versions_as', { p_item_id: row.id, p_as_user_id: surface.asAgent ?? userId });
       if (error) throw new AppFileError('failed', `${row.filename}: its versions could not be read: ${error.message}`);
-      const kept = (data as { n: number; made_by: string | null; made_at: string; size_bytes: number | null }[] | null) ?? [];
+      const kept = (data as { n: number; made_by: string | null; made_at: string; size_bytes: number | null; availability?: AppFileEntry['availability']; expired_at?: string | null }[] | null) ?? [];
       const ids = [...new Set(kept.flatMap((version) => (version.made_by ? [version.made_by] : [])))];
       const people = new Map((ids.length ? await platform.identities(token, ids) : []).map((who) => [who.id, who]));
       return kept.map((version) => {
@@ -1295,6 +1388,7 @@ export function createAppFiles(platform: FilesPlatform) {
           by: version.made_by ? { id: personId(version.made_by), name: who?.name ?? version.made_by.slice(0, 8), kind: who?.kind ?? 'human' } : null,
           at: version.made_at,
           size: version.size_bytes ?? null,
+          ...availabilityOf(version),
         };
       });
     },
@@ -1488,6 +1582,81 @@ export function createAppFiles(platform: FilesPlatform) {
         return { kind: 'offline', machine: revision.host_label?.trim() ?? '', deviceId: revision.host_device_id ?? '' };
       }
       return { kind: 'file', file, contentType: revision.content_type };
+    },
+
+    /**
+     * #1927 A file by its path from the top of one chat's folder, and its text, as the signed-in person — for the host's
+     * conversation binding only (`gugu.bindings.read`), which named the chat itself. Each outcome is said: no file there
+     * (`missing`), there without bytes yet (`unprepared`), not readable now (`unavailable`); a refusal of the folder's door
+     * (not a member any more) throws as it does. The entry goes out whole; the caller keeps what the App may see.
+     */
+    async readAtPath(chatId: string, filePath: string, maxBytes: number): Promise<PathText> {
+      const { token, userId } = await platform.account();
+      let rows: ItemRow[];
+      try {
+        rows = await itemsByPath(token, chatId, filePath, userId);
+      } catch (error) {
+        if (error instanceof AppFileError && error.code === 'failed') return { state: 'unavailable' };
+        throw error;
+      }
+      const found = rows.filter((row) => row.kind !== 'folder');
+      if (found.length === 0) {
+        if (rows.length > 0) throw notAFile(rows[0]!);
+        return { state: 'missing' };
+      }
+      if (found.length > 1) throw new AppFileError('ambiguous', `More than one file is at ${filePath}`);
+      const row = found[0]!;
+      // The door answers this chat's rows only; one of another chat is not this one's file, whatever answered it.
+      if (row.chat_id !== chatId) return { state: 'missing' };
+      const entry = entryOf(row, undefined);
+      // Over the limit: its size only, as `files.readText` says it (`binary` is not known without reading it).
+      const tooLarge = (size: number): PathText => ({ state: 'ready', entry: { ...entry, size }, content: '', truncated: true, totalSize: size });
+      const ready = (text: { text: string; exact?: boolean } | null, size: number): PathText => size > maxBytes ? tooLarge(size)
+        : { state: 'ready', entry: { ...entry, size }, content: text?.text ?? '', ...(text ? { exact: text.exact ?? true } : { binary: true as const }), truncated: false, totalSize: size };
+      const refused = () => new AppFileError('denied', 'This account may not read this file');
+      if (row.kind !== 'file') {
+        // A live document: its text as the file service has it now, as a download's and an agent's read are.
+        try {
+          const text = await readDocumentText({ filesUrl: platform.filesUrl, fetch }, token, row.id, null);
+          return ready({ text }, new TextEncoder().encode(text).byteLength);
+        } catch (error) {
+          if (error instanceof ChatFolderReadError && error.status === 404) return { state: 'missing' };
+          // The file service refusing this account is a refusal, never a read to try again.
+          if (error instanceof ChatFolderReadError && (error.status === 401 || error.status === 403)) throw refused();
+          return { state: 'unavailable' };
+        }
+      }
+      if ((row.size_bytes ?? 0) > maxBytes) return tooLarge(row.size_bytes ?? 0);
+      let file: ResolvedFile | null | undefined;
+      try {
+        file = await platform.resolveFile?.({ id: row.id }, null, {});
+      } catch (error) {
+        if (error instanceof AppFileError && error.code !== 'failed') throw error;
+        if (error instanceof FileReadRevokedError && error.reason === 'access') throw refused();
+        return { state: 'unavailable' };
+      }
+      if (!file) return { state: 'unavailable' };
+      // No bytes in the store for it yet (an upload not finished); deleted or a temporary copy cleared: no content any more.
+      if (file.status === 'missing') return { state: 'unprepared' };
+      if (file.status !== 'ready') return { state: 'missing' };
+      try {
+        if (file.revision.chat_id && file.revision.chat_id !== chatId) return { state: 'missing' };
+        if (file.revision.source === 'local' && file.revision.host_online === false) return { state: 'unavailable' };
+        // The row may not say its size: the revision does, before a byte is read.
+        if (file.revision.size_bytes > maxBytes) return tooLarge(file.revision.size_bytes);
+        const bytes = new Uint8Array(await (await fileBlob(file)).arrayBuffer());
+        return ready(workspaceFileText(row.filename, bytes), bytes.byteLength);
+      } catch (error) {
+        // Gone between asking and reading: as the metadata would have said. Access withdrawn meanwhile: refused.
+        if (error instanceof MissingFileObjectError) return { state: 'unprepared' };
+        if (error instanceof FileReadRevokedError) {
+          if (error.reason === 'access' || error.reason === 'revision') throw new AppFileError('denied', 'Access to this file changed while it was read');
+          return { state: 'missing' };
+        }
+        return { state: 'unavailable' };
+      } finally {
+        await file.dispose();
+      }
     },
 
     async downloadSource(surface: FileSurface, args: { ref: ChatFileRef }): Promise<DownloadSource> {

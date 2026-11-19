@@ -7,10 +7,11 @@ import { installLocalRendererDiagnostics } from '@/lib/localRendererDiagnostics'
 import '@/lib/insecure-context-shims';
 installLocalRendererDiagnostics();
 import { hasEntryRoot, renderEntryRoot } from '@/lib/renderer-entry-root';
+import { chatListRestored } from '@/lib/chatSummariesBridge';
 import { installRemoteHostSessionpageBridges } from './features/remote-hosts/install-sessionpage-bridges';
 import './lib/install-sessionpage-history-bridge';
 import { setupNavigationGuards } from '@renderer/app/view-registry';
-import { prefetchAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
+import { prefetchAllAppSettings } from '@renderer/features/settings/app-settings-client';
 // @@@task-fusion (#2802) — session-ui 的 CSS 栈按它自己文档的契约显式引一次。
 // 从前这里是一行 `@gugu/session-ui/style.css`,那是 tsdown/vite lib 把下面这些打成的
 // 产物;并入本体后包按源码消费,VE 桶(layers/tokens/surfaces/reset/sprinkles/
@@ -73,6 +74,7 @@ import { openChatOnScreen } from './features/chats/open-chat';
 import { showGroupParticipant } from './features/chats/group-participant-actions';
 import { groupParticipantRequests } from './features/chats/group-participant-requests';
 import { wireGroupParticipantAccount } from './features/chats/group-participant-account';
+import { openSidebarPin, unpinSessionFromSidebar } from './features/sidebar/sidebar-pin-actions';
 import { installSessionTabViews, prewarmSessionTabViews } from './features/sessions/session-tab-views';
 import { appState } from './lib/stores/app-state';
 import { restoreSavedScreenSessionLocations, savedScreenSessionIds } from './features/sessions/restore-session-projects';
@@ -125,6 +127,10 @@ function renderSessionTree(container: HTMLElement, mountEl: HTMLElement | undefi
           <App />
         </ErrorBoundary>
       </SessionLocalizationProvider>
+      {/* @@@root-stays-put: this page's popups portal into the mount element, after the tree above. With this fixed
+          sibling the page is never :last-child of the mount, so opening a popup does not re-style every table cell,
+          list item and paragraph on the page (same reason as the element after #root in index.html). */}
+      <div data-root-sibling hidden />
     </UiPortalContainerProvider>
   );
 }
@@ -159,6 +165,8 @@ async function bootstrap() {
     openChatResource,
     openGroupChat: (sourceChatId, chatId) => showGroupParticipant(sourceChatId, { kind: 'chat', chatId }),
     prepareGroupSession: (sourceChatId, target) => groupParticipantRequests.prepare(sourceChatId, target),
+    unpinFromSidebar: unpinSessionFromSidebar,
+    openSidebarPin,
   });
   installRemoteHostSessionpageBridges(window, () => appState.navigation.navigate('new-session'));
   if (hasEntryRoot(container)) {
@@ -247,21 +255,23 @@ async function bootstrap() {
   // its surface loads must not race the bootstrap's awaits.
   wireExtensionHostActions();
   const results = await Promise.allSettled([
+    // Main checks the saved view against its sessions (an archived one is not reopened); the rest of the view state is
+    // in memory since preload (view-state-cache).
     settleOptional(rpc.viewState.get('navigation') as Promise<NavigationSnapshot> | null),
-    settleOptional(rpc.viewState.get('sidebar')),
     settleOptional(rpcOn(null).viewState.getForRestore(savedScreenSessionIds())),
-    settleOptional(prefetchAppSettingsKey('interface')),
-    settleOptional(prefetchAppSettingsKey('browser')),
+    settleOptional(prefetchAllAppSettings()),
+    // The account's stored conversations (local rows, never the network): the list, the inner head and the open
+    // conversation are in the first frame instead of arriving after it.
+    chatListRestored(),
   ]);
-  const [navState, sidebarState, allViewStateResult] = results;
+  const [navState, restoreResult] = results;
   for (const result of results) {
     if (result.status === 'rejected') log.warn('Renderer bootstrap optional state failed:', result.reason);
   }
   const savedNav = navState.status === 'fulfilled' ? (navState.value as NavigationSnapshot) : null;
-  const sidebarResult = sidebarState.status === 'fulfilled' ? sidebarState.value : null;
-  const restoreState = allViewStateResult.status === 'fulfilled' ? allViewStateResult.value : null;
+  const sidebarResult = viewStateCache.read('sidebar');
+  const restoreState = restoreResult.status === 'fulfilled' ? restoreResult.value : null;
   restoreSavedScreenSessionLocations(restoreState?.locations ?? []);
-  viewStateCache.populate(restoreState?.views ?? {});
 
   setupNavigationGuards();
   if (savedNav) appState.navigation.restoreSnapshot(savedNav);

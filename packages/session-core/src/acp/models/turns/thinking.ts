@@ -3,6 +3,8 @@ import { entityContentSchema } from '../entity-content';
 
 export const transcriptThinkingSchema = z.object({
   kind: z.literal('thinking'),
+  /** Transport trace: sent without its text (transport-trim `folded-form`); the reader reads its turn again when it is shown. Never stored. */
+  held: z.literal(true).optional(),
   id: z.string(),
   /** Stable order within the owning turn, assigned once by the reducer. */
   seq: z.number().int(),

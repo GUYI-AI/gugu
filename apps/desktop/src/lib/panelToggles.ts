@@ -4,14 +4,14 @@ import type { SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
 /**
  * @@@panel-toggles (#6753) — 列表栏开关的唯一控制器。
  *
- *   收放**当前页签**的列表栏(会话页侧栏 / 对话页会话列表)。
+ *   收放会话页的列表栏和内层栏(#2548,打开一个群 / 项目时列表右边那一列)。
  *
  * 面板由各页自己登记进来;按钮(PanelToggleButtons.tsx,各处挂的是同一个组件)、Windows 标题栏的「视图」菜单、
  * 快捷键都只经这里下命令 ⇒ 每颗按钮只有一个坐标,❌ 各页再各长一颗(#5454)。
  * 会话页是同一文档里另一份模块(sessionpageHistoryBridge.ts 同一理由),所以这张表挂在 window 上,两边读写同一份;
  * 文案也由登记方给,按钮本身不碰哪一边的词表。
  */
-export type PanelSlot = 'list:sessions' | 'list:chats'
+export type PanelSlot = 'list:sessions' | 'column:inner'
 
 export interface PanelToggle {
   open: boolean
@@ -31,9 +31,6 @@ const REGISTRY_KEY = '__GUGU_PANEL_TOGGLES__'
 interface Registry {
   slots: Map<PanelSlot, PanelToggle>
   listeners: Set<() => void>
-  /** 列表栏开关的键位:键位设置里 toggleLeftSidebar 的实际绑定(null = 解绑;undefined = 会话页还没来过)。
-   *  会话页写、对话页读;❌ 随会话页视图卸载一起撤 —— 键位是用户设置,不随哪一栏挂卸(开着新建 Agent 草稿时那一栏就卸了)。 */
-  listHotkey?: string | null
 }
 
 function registry(): Registry {
@@ -57,17 +54,6 @@ export function publishPanelToggle(slot: PanelSlot, toggle: PanelToggle): () => 
   }
 }
 
-export function publishListHotkey(hotkey: string | null): void {
-  const r = registry()
-  if (r.listHotkey === hotkey) return
-  r.listHotkey = hotkey
-  notify(r)
-}
-
-export function useListHotkey(): string | null | undefined {
-  return useSyncExternalStore(subscribe, () => registry().listHotkey, () => undefined)
-}
-
 export function readPanelToggle(slot: PanelSlot | null): PanelToggle | null {
   return slot ? registry().slots.get(slot) ?? null : null
 }
@@ -85,6 +71,5 @@ export function usePanelToggle(slot: PanelSlot | null): PanelToggle | null {
 /** 这一页签的列表栏。通讯录的导航列定宽、不可拖,与会话列表不同构 ⇒ 没有(开关画成禁用占位)。 */
 export function listSlotOf(tab: SidebarTab): PanelSlot | null {
   if (tab === 'tasks') return 'list:sessions'
-  if (tab === 'chats') return 'list:chats'
   return null
 }

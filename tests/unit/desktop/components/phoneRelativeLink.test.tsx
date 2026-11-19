@@ -45,7 +45,7 @@ async function tapLinkFrom(sender: string) {
   const messages = [message({ id: 'm-1', seq: 1, sender_user_id: sender, content: 'see [add.ts](src/add.ts)' })]
   const rows: ChatListRowItem[] = messages.map((msg) => ({ type: 'message', message: msg }))
   const rowProps = {
-    rows, messages, mobile: true, memberReadSeqs: {}, deliveryWaits: new Map(), isGroupChat: true, memberProfiles: {},
+    rows, messages, mobile: true, memberReadSeqs: {}, deliveryWaits: new Map(), recipientFacts: { agentIds: new Set(), wakes: new Map() }, isGroupChat: true, memberProfiles: {},
     onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible: noop, selectMode: false, selectedIds: new Set(), onToggleSelect: noop, onEnterSelectMode: noop,
   } as unknown as MessageListRowProps
   await renderWithAppProviders(harness, <><Shell />{createElement(MessageList, { rows, rowProps, resetKey: 'group-1' })}</>)

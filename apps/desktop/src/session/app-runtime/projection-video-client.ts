@@ -2,6 +2,7 @@ import { openProjectionVideo, type DecodedProjectionFrame } from '../../../nativ
 import { projectionInput, projectionInputOutcome, PROJECTION_UNCONFIRMED, type ProjectionInput, type ProjectionInputOutcome } from '@shared/extensions/projection-protocol';
 import { ProjectionInputNotSent, ProjectionInputQueue } from './projection-input-queue';
 import type { ProjectionHost } from './projection-source';
+import { ProjectionPresentationState, projectionPresentationPacket, projectionTarget, type ProjectionPicture, type ProjectionPresentation } from '@shared/extensions/projection-presentation';
 
 type Pending = { resolve(outcome: ProjectionInputOutcome): void; timer: ReturnType<typeof setTimeout> };
 /** Existing media transport plus execution receipts; SCTP admission is never reported as applied input. */
@@ -9,6 +10,7 @@ export async function projectionVideoClient(host: ProjectionHost, video: HTMLVid
   frame(frame: DecodedProjectionFrame | null): void;
   state?(state: 'connecting' | 'live' | 'closed', reason?: string): void;
   error?(error: unknown): void;
+  presentation?(value: ProjectionPresentation | null): void;
 }) {
   const bridge = host.projectionMedia;
   if (!bridge) throw new Error('This host has no direct projection media viewer');
@@ -16,11 +18,19 @@ export async function projectionVideoClient(host: ProjectionHost, video: HTMLVid
   let media: Awaited<ReturnType<typeof openProjectionVideo>> | undefined, viewerId: string | undefined;
   let resetting: Promise<void> | undefined;
   const pending = new Map<number, Pending>();
+  const presentation = new ProjectionPresentationState(sourceId, value => options.presentation?.(value));
+  const targets = new Map<number, ProjectionPicture>();
+  let decoded: DecodedProjectionFrame | null = null;
+  const decorate = () => {
+    const target = decoded && targets.get(decoded.sequence);
+    presentation.painted(decoded && target && target.width === decoded.width && target.height === decoded.height ? target : null);
+  };
   const settle = (sequence: number, outcome: ProjectionInputOutcome) => {
     const entry = pending.get(sequence); if (!entry) return;
     pending.delete(sequence); clearTimeout(entry.timer); entry.resolve(outcome);
   };
   const invalidate = () => {
+    decoded = null; targets.clear(); presentation.close();
     ready = false; painted = 0; paintEpoch++; options.frame(null); inputs.clear();
     for (const sequence of pending.keys()) settle(sequence, { status: 'unknown', reason: PROJECTION_UNCONFIRMED });
   };
@@ -60,13 +70,26 @@ export async function projectionVideoClient(host: ProjectionHost, video: HTMLVid
           const value = JSON.parse(data) as { type?: unknown; generation?: unknown; sequence?: unknown };
           if (value.type === 'projection-generation') {
             if (typeof value.generation !== 'string' || !value.generation || value.generation.length > 128) throw new Error('Invalid projection generation');
-            invalidate(); generation = value.generation; sequence = 0; state('connecting');
+            invalidate(); generation = value.generation; presentation.connect(generation); sequence = 0; state('connecting');
+          } else if (value.type === 'presentation') {
+            try { presentation.receive(projectionPresentationPacket(value)); } catch { presentation.close(); }
+          } else if (value.type === 'projection-target' && value.generation === generation) {
+            const target = value as unknown as { sequence: number; width: number; height: number; target: unknown };
+            try {
+              if (![target.sequence, target.width, target.height].every(n => Number.isSafeInteger(n) && n > 0)
+                || target.width > 8192 || target.height > 8192) throw new Error('Invalid projection target frame');
+              targets.set(target.sequence, { sequence: target.sequence, width: target.width, height: target.height,
+                ...(target.target === null ? {} : { target: projectionTarget(target.target) }) });
+            } catch { presentation.close(); return; }
+            if (targets.size > 64) targets.delete(targets.keys().next().value!);
+            decorate();
           } else if (value.type === 'input-result' && value.generation === generation && Number.isSafeInteger(value.sequence)) {
             settle(value.sequence as number, projectionInputOutcome(value));
           }
         },
         onFrame: (frame, send) => {
           if (current !== epoch || closed) return;
+          decoded = frame; decorate();
           const painting = ++paintEpoch;
           ready = false; painted = frame?.sequence ?? 0; options.frame(frame);
           if (!frame || !generation) { state('connecting'); return; }

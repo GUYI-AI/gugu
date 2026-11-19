@@ -57,7 +57,7 @@ export function createAssistantPanelFiles(input: {
     try { do {
       warmAgain = false
       const missing = (peekSnapshot()?.items ?? []).filter(item => item.body_item_id
-        && (['capabilities','device-notes'].includes(item.domain) || item.domain === 'integrations' && openedIntegrationBodies.has(item.resource_key)) && !peekBody(item))
+        && item.domain === 'integrations' && openedIntegrationBodies.has(item.resource_key) && !peekBody(item))
       let next = 0
       await Promise.all(Array.from({length:Math.min(4,missing.length)},async () => {
         while (next < missing.length) {
@@ -87,7 +87,7 @@ export function createAssistantPanelFiles(input: {
   const collectionStates = new Map<AssistantPanelDomain, 'ready' | 'unprepared' | 'error'>()
   async function collection(domain: AssistantPanelDomain) {
     const current = await snapshot()
-    const result = assistantPanelCollection(current,domain,['tasks','capabilities','device-notes','integrations'].includes(domain) ? input.deviceId : undefined)
+    const result = assistantPanelCollection(current,domain,['tasks','integrations'].includes(domain) ? input.deviceId : undefined)
     collectionStates.set(domain,result.state)
     const failed = current.application.find(row => row.domain === domain && row.status === 'failed')
     if (failed) throw new AssistantPanelError('application-failed','PANEL_APPLICATION_FAILED',failed.resourceKey,domain)

@@ -1,6 +1,6 @@
 import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Maximize2, Minimize2 } from '@/lib/icons';
 import type { TabHost } from '@renderer/features/tabs/core/tab-host';
@@ -9,9 +9,10 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { usePaneContext } from '../pane-context';
 import { DraggableTab } from './draggable-tab';
 import { PairSeparator } from './pair-separator';
-import { TabChip } from './tab-chip';
+import { TabChip, TabSlot } from './tab-chip';
 import type { TabCommand } from './tab-commands';
 import { TabContextMenu } from './tab-context-menu';
+import { ChatWorkspaceTabContext } from '../chat-workspace-context';
 
 /** Props for GenericTabItem — aligns with TabBarItemProps<any> for convenience. */
 export interface GenericTabItemProps {
@@ -26,6 +27,8 @@ export interface GenericTabItemProps {
   preSlot?: ReactNode;
   /** Muted text after the label (a same-named tab's distinguishing path, the diff group). */
   hint?: string;
+  /** A small mark that stays after the title (where a file is kept); unlike statusSlot it never gives way to the close X. */
+  markSlot?: ReactNode;
   /** Content shown under the absolutely-positioned close X (e.g. dirty dot, status icon). */
   statusSlot?: ReactNode;
   /** Renders the title in destructive color. */
@@ -36,6 +39,7 @@ export interface GenericTabItemProps {
   renameValue?: string;
   /** Max character length enforced on the rename input. */
   renameMaxLength?: number;
+  closeDisabled?: boolean;
 }
 
 /**
@@ -56,14 +60,18 @@ export const GenericTabItem = observer(function GenericTabItem({
   tooltip,
   preSlot,
   hint,
+  markSlot,
   statusSlot,
   hasError,
   kindCommands,
   renameValue,
   renameMaxLength,
+  closeDisabled,
 }: GenericTabItemProps) {
   const { translate } = useSessionMessages();
   const { isFocusedPane, pane } = usePaneContext();
+  const workspace = useContext(ChatWorkspaceTabContext);
+  const workspaceRole = workspace?.role;
   const [isEditing, setIsEditing] = useState(false);
   const committedRef = useRef(false);
 
@@ -100,7 +108,7 @@ export const GenericTabItem = observer(function GenericTabItem({
   // 页签全屏:关闭钮前一颗「全屏 / 退出全屏」,双击页签同一件事。
   // 盖住的是整个工作区,所以这屏不止一块时每一枚点着的页签都有;只有一块时只给并排着的那一对(全屏才有区别)。
   const place = useScreenBlock();
-  const fill = tab.isActive ? host.tabFill(tab.tabId, place.blockId !== null && place.multi) : null;
+  const fill = !workspaceRole && tab.isActive ? host.tabFill(tab.tabId, place.blockId !== null && place.multi) : null;
   const fillLabel = fill ? translate(fill.full ? 'tabs.restorePane' : 'tabs.fillPane') : '';
   const fillButton = fill ? (
     <button
@@ -119,6 +127,52 @@ export const GenericTabItem = observer(function GenericTabItem({
       {fill.full ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
     </button>
   ) : null;
+
+  const editableTitle = isEditing ? (
+      <input
+        ref={(el) => {
+          el?.focus();
+          el?.select();
+        }}
+        defaultValue={renameValue ?? label}
+        maxLength={renameMaxLength}
+        className="h-6 max-w-30 min-w-0 rounded bg-background-1 px-1.5 text-sm text-foreground ring-1 ring-foreground/20 outline-none"
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+        onBlur={(e) => commit(e.target.value)}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter') commit(e.currentTarget.value);
+          else if (e.key === 'Escape') {
+            committedRef.current = true;
+            setIsEditing(false);
+          }
+        }}
+      />
+    ) : undefined;
+
+  if (workspaceRole === 'title') {
+    return (
+      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands} titleMenu>
+        <div className="flex h-full min-w-0 flex-1 items-center gap-2 px-1 text-sm font-medium" data-chat-workspace-title="">
+          {preSlot}
+          {editableTitle ?? <span className="truncate" title={tooltip ?? label}>{label}</span>}
+          {statusSlot}
+        </div>
+      </TabContextMenu>
+    );
+  }
+
+  if (workspace?.role === 'conversation') {
+    const select = () => { workspace.layout.showChatWorkspaceConversation(); pane.focusActiveContent(); };
+    return <TabSlot data-chat-workspace-conversation-tab="" data-tabid={tab.tabId}>
+      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands} titleMenu>
+        <TabChip isActive={tab.isActive} isFocusedPane={isFocusedPane} label={label} title={tooltip ?? label}
+          preSlot={preSlot} labelSlot={editableTitle} statusSlot={statusSlot} onClick={select}
+          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(); } }} />
+      </TabContextMenu>
+    </TabSlot>;
+  }
 
   const base = tooltip ?? label;
   const fullTitle = base;
@@ -146,34 +200,12 @@ export const GenericTabItem = observer(function GenericTabItem({
           title={fullTitle}
           hasError={hasError}
           preSlot={preSlot}
-          labelSlot={
-            isEditing ? (
-              <input
-                ref={(el) => {
-                  el?.focus();
-                  el?.select();
-                }}
-                defaultValue={renameValue ?? label}
-                maxLength={renameMaxLength}
-                className="h-6 max-w-30 min-w-0 rounded bg-background-1 px-1.5 text-sm text-foreground ring-1 ring-foreground/20 outline-none"
-                onClick={(e) => e.stopPropagation()}
-                onDoubleClick={(e) => e.stopPropagation()}
-                onBlur={(e) => commit(e.target.value)}
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === 'Enter') commit(e.currentTarget.value);
-                  else if (e.key === 'Escape') {
-                    committedRef.current = true;
-                    setIsEditing(false);
-                  }
-                }}
-              />
-            ) : undefined
-          }
+          labelSlot={editableTitle}
+          markSlot={markSlot}
           statusSlot={statusSlot}
           actionSlot={fillButton}
           closeLabel={translate('task.closeTab', { label })}
-          onClose={() => host.requestCloseTab(tab.tabId)}
+          onClose={closeDisabled ? undefined : () => host.requestCloseTab(tab.tabId)}
           onMouseEnter={() => host.signalActivateIntent(tab.tabId)}
           onClick={handleSelect}
           onDoubleClick={() => fill?.toggle()}

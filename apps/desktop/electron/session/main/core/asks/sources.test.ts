@@ -7,5 +7,6 @@ describe('Ask source registry', () => {
     const complete: Record<AskSource, AskSourceSpec> = ASK_SOURCE_SPEC;
     expect(Object.keys(complete).sort()).toEqual([...ASK_SOURCES].sort());
     expect(complete['app-install'].timeoutMs).toBe(280_000);
+    expect(complete['device-capability']).toEqual({ waitKind: 'approval', raisedBy: 'host', timeoutMs: 280_000 });
   });
 });

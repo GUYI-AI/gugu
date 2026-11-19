@@ -489,6 +489,7 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
                   <span className="gg-folder-paper__top">
                     <span className="gg-folder-paper__name">{basenameFromAnyPath(folder.path) || folder.path}</span>
                     {fresh ? <span className="gg-folder-paper__fresh">{translate('projects.folders.fresh')}</span> : null}
+                    {folder.stale ? <span className="gg-folder-paper__fresh gg-folder-paper__stale" data-testid="project-folder-stale">{translate('projects.folders.stale')}</span> : null}
                     <span className="gg-folder-paper__check">
                       <Check className="size-3.5" />
                     </span>
@@ -538,7 +539,7 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
                   {state.folders ? meta : null}
                   {running > 0 ? (
                     <>
-                      {state.folders ? ' · ' : null}
+                      {state.folders ? ' ' : null}
                       <span className="is-running">{translate('projects.folders.running', { count: running })}</span>
                     </>
                   ) : null}

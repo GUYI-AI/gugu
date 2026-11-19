@@ -2,6 +2,7 @@ import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import type { TranscriptTurn } from '../model';
 import type { ViewState } from './view-state';
 import { nativeMessageKey } from '@gugu/session-core/session-record/native-read';
+import { messageQuestionAnswer } from './message-presentation';
 
 const boundaries = new WeakMap<object, string | null>();
 
@@ -12,6 +13,8 @@ export function latestViewerInput(turns: readonly TranscriptTurn[], viewerId?: s
     for (let i = turn.items.length - 1; i >= 0; i--) {
       const item = turn.items[i];
       if (item.kind !== 'message' || item.role !== 'user') continue;
+      // Answer/withdrawal status rows do not start a new viewer speaking boundary.
+      if (messageQuestionAnswer(item)) continue;
       const delivery = readDeliveryEnvelope(item.text);
       if (!delivery && turn.initiator === 'user') return typeof item._meta?.guguClientMessageId === 'string' ? item._meta.guguClientMessageId : nativeMessageKey(item.id);
       const self = viewerId?.replace(/^user:/, '');

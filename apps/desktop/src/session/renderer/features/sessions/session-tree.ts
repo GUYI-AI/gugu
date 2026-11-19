@@ -104,26 +104,6 @@ export function pinnedSubtreeRoots<T extends SessionTreeItem & { isPinned?: bool
   );
 }
 
-export type FlattenedSessionTree<T extends SessionTreeItem> = {
-  item: T;
-  depth: number;
-  hasChildren: boolean;
-};
-
-export function flattenSessionTree<T extends SessionTreeItem>(
-  roots: readonly SessionTreeNode<T>[],
-  expanded: ReadonlySet<string>
-): FlattenedSessionTree<T>[] {
-  const rows: FlattenedSessionTree<T>[] = [];
-  const visit = (node: SessionTreeNode<T>, depth: number) => {
-    rows.push({ item: node.item, depth, hasChildren: node.children.length > 0 });
-    if (!expanded.has(node.item.id)) return;
-    for (const child of node.children) visit(child, depth + 1);
-  };
-  for (const root of roots) visit(root, 0);
-  return rows;
-}
-
 /** Keep ancestors needed to navigate to a matching descendant. */
 export function filterSessionTree<T extends SessionTreeItem>(
   roots: readonly SessionTreeNode<T>[],

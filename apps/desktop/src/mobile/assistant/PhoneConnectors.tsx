@@ -28,22 +28,20 @@ import { usePhoneConnectorAccounts, type ConnectorAccountRow } from './usePhoneC
 import { usePhoneIntegrationDetail,type PhoneIntegrations,type usePhoneIntegrations } from './usePhoneProfileData'
 import './phone-connector.css'
 import { ReadFailed } from './PhoneMachineView'
-import { ConnectedAppsCatalog } from '@/components/assistant/ConnectedAppsCatalog'
+import { PhoneMarketConnectorCatalog, type PhoneConnectorCatalogMode } from '@/mobile/market/PhoneMarketConnectorCatalog'
+import type { AssistantConnectedApp } from '@/components/assistant/assistant-app-connections'
 import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client'
 import { createLegacyConnectionGuard } from '@/components/connections/legacy-connection-routing'
 
+export type PhoneConnectorScope = Pick<PhonePageProps, 'assistant' | 'home' | 'homeDeviceId' | 'machine' | 'go'>
 type Integrations = ReturnType<typeof usePhoneIntegrations>
 /** Apps open their details before authorization; device access lives in the device section. */
-export function PhoneConnectorsPage({ assistant, homeDeviceId, go, integrations, embedded = false }: PhonePageProps & { integrations: Integrations; embedded?: boolean }) {
-  const { t } = useTranslation('assistant')
-  return (
-    <div className={embedded ? 'ta-phone-connectors-inline' : 'ta-page ta-phone-profile ta-phone-connectors-page'} data-testid="assistant-connectors">
-      {!embedded ? <PageHead title={t('connectors.title')} /> : null}
-      <CloudGate integrations={integrations}>
-        {(data) => <ConnectorLists data={data} scope={`${assistant.id}:${homeDeviceId ?? ''}`} open={(id) => go(`connector:${id}`)} />}
-      </CloudGate>
-    </div>
-  )
+export function PhoneConnectorsPage({ go, integrations, marketMode }: PhoneConnectorScope & { integrations: Integrations; marketMode: PhoneConnectorCatalogMode }) {
+  return <div className="ta-phone-connectors-inline" data-testid="assistant-connectors">
+    <CloudGate integrations={integrations}>
+      {(data) => <ConnectorList data={data} open={(id) => go(`connector:${id}`)} marketMode={marketMode} />}
+    </CloudGate>
+  </div>
 }
 
 /** 云端那一份读到之前说清是哪一步:在休息 / 正在醒 / 连不上 → 读失败(带原因与重试)→ 正在读。❌ 读不到时画一个空列表。 */
@@ -67,15 +65,16 @@ export function ConnectorIcon({ integration, size }: { integration: IntegrationM
   return integration.icon ? <PluginIcon id={integration.id} icon={integration.icon} size={size} /> : null
 }
 
-function ConnectorLists({ data, scope, open }: { data: PhoneIntegrations; scope: string; open: (id: string) => void }) {
+function ConnectorList({ data, open, marketMode }: { data: PhoneIntegrations; open: (id: string) => void; marketMode: PhoneConnectorCatalogMode }) {
   const { t, i18n } = useTranslation('assistant')
   const settings = useTranslation('settings').t
   const chats = useChatChannels()
   const stateFor = (id: string) => connectorState(!!data.configured[id], data.statuses?.[id], data.statusError, true)
   const apps = assistantConnectedApps(connectorOrder(data.items, i18n.language), chats.list, id => settings(`channels.${id}`), t('connectors.wechatDescription'), stateFor, data.configured)
-  return <ConnectedAppsCatalog apps={apps} scope={scope} open={open} mobile panelNavigation
-    icon={(app, size) => app.integration ? <ConnectorIcon integration={app.integration} size={size} />
-      : app.id === 'wechat' ? <ChannelBrandIcon kind="wechat" size={size} /> : null} />
+  const icon = (app: AssistantConnectedApp, size: number) => app.integration
+    ? <ConnectorIcon integration={app.integration} size={size} />
+    : app.id === 'wechat' ? <ChannelBrandIcon kind="wechat" size={size} /> : null
+  return <PhoneMarketConnectorCatalog mode={marketMode} apps={apps} connectionKnown open={app => open(app.id)} icon={icon} />
 }
 
 /**
@@ -84,7 +83,7 @@ function ConnectorLists({ data, scope, open }: { data: PhoneIntegrations; scope:
  * 只有这条路手机上真走不通的才如实说去哪连(phone 网页版的浏览器授权:要 App),❌ 摆一个点了不连的钮。
  * 多账号(邮箱)与 GitHub 逐个列账号、逐个断开;单账号的一家一个「断开连接」。断开都先确认。
  */
-export function PhoneConnectorDetail({ assistant, homeDeviceId, machine, integrations, id, go }: PhonePageProps & { integrations: Integrations; id: string }) {
+export function PhoneConnectorDetail({ assistant, homeDeviceId, machine, integrations, id, go, connectOnly = false }: PhoneConnectorScope & { integrations: Integrations; id: string; connectOnly?: boolean }) {
   const { t } = useTranslation('assistant')
   const name = assistant.display_name
   const settings = useTranslation('settings').t
@@ -92,7 +91,7 @@ export function PhoneConnectorDetail({ assistant, homeDeviceId, machine, integra
   const detail = usePhoneIntegrationDetail(machine,selected)
   const view = integrations.data && detail.data ? connectorDetail([detail.data],integrations.data.configured,integrations.data.statuses,id) : null
   const plan = view ? setupPlanOf(view.item, platform.kind) : null
-  const wantsAccounts = !!view && view.connected && (view.item.id === 'github' || view.item.multiAccount)
+  const wantsAccounts = !connectOnly && !!view && view.connected && (view.item.id === 'github' || view.item.multiAccount)
   const [changes, setChanges] = useState(0)
   const accounts = usePhoneConnectorAccounts({
     machine: machine.state === 'ready' ? machine.machine : null,
@@ -122,7 +121,7 @@ export function PhoneConnectorDetail({ assistant, homeDeviceId, machine, integra
       id: confirm.accountId ? `${view.item.id}:${confirm.accountId}` : view.item.id, deviceId: homeDeviceId ?? undefined })
   }
   const credentialLike = !!view && !!formMethodOf(view.item)
-  if (id === 'wechat') return <div className="ta-page ta-phone-profile" data-testid="assistant-connector-detail"><PageHead title={settings('channels.wechat')} /><WechatAppConnection /></div>
+  if (id === 'wechat') return <div className="ta-page ta-phone-profile" data-testid="assistant-connector-detail"><PageHead title={settings('channels.wechat')} /><WechatAppConnection connectOnly={connectOnly} /></div>
 
   return (
     <div className="ta-page ta-phone-profile" data-testid="assistant-connector-detail">
@@ -135,11 +134,11 @@ export function PhoneConnectorDetail({ assistant, homeDeviceId, machine, integra
       </> : (
             <>
               <AppConnectionHero icon={<ConnectorIcon integration={view.item} size={56} />} description={view.item.description}
-                label={t(state === 'connected' ? 'connectors.manage' : view.connected ? 'connectors.reconnect' : 'connectors.connect')}
+                label={t(state === 'connected' ? (connectOnly ? 'connectors.connected' : 'connectors.manage') : view.connected ? 'connectors.reconnect' : 'connectors.connect')}
                 onConnect={() => go(connectSub(view.item.id))}
                 actionNote={plan?.kind === 'unavailable' ? <span className="ta-phone-connect-note" data-testid="assistant-connector-connect-note">{t(plan.reason === 'needs-app' ? 'connectors.connectInApp' : 'connectors.connectOnDesktop', { name: view.item.name })}</span> : undefined}
-                disabled={state === 'checking'} />
-              {view.connected ? <AssistantSection testId="assistant-connector-connection">
+                disabled={state === 'checking' || (connectOnly && state === 'connected')} />
+              {!connectOnly && view.connected ? <AssistantSection testId="assistant-connector-connection">
                 <AssistantRow
                   title={t('connectors.status')}
                   detail={issueText}

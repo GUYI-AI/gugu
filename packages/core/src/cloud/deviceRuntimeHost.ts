@@ -1,3 +1,4 @@
+import { bindBackendProbe, noteBackendAnswer } from './backendReachability'
 import {
   createAgentRuntimeStateReporter,
   DeviceCapabilityTimeoutError,
@@ -127,6 +128,9 @@ export interface DeviceRuntimeHostOptions {
   safetyIntervalMs?: number
   nowMs?: () => number
   authProvider: RuntimeAuthProvider
+  /** Native account-closure admission. A false value pauses this owner's work
+   * without pretending its auth disappeared or stopping another owner's host. */
+  ownerWorkAllowed?: (ownerId: string) => Promise<boolean>
   makeIdentityClient: (accessToken: string) => DeviceRuntimeIdentityClient
   nowIso?: () => string
   capabilities?: DeviceCapabilitiesSource
@@ -201,6 +205,7 @@ export interface DeviceRuntimeHost {
   readonly instanceId: string
   getRuntimeLease: () => { ownerId: string; deviceId: string; runtimeInstanceId: string } | null
   tickOnce: () => Promise<DeviceRuntimeHostTickResult>
+  beginAgentRemoval: (agentUserId: string) => Promise<(removed: boolean) => void>
   /**
    * 登录态变了(登录 / 换号 / 登出)⇒ 立刻跑一轮,❌ 别让对账节拍去「发现」一个本来就有事件的事实。
    * ⚠️ 调用方要先让 auth provider 忘掉缓存的旧令牌,否则这一轮问到的还是上一个人。
@@ -219,6 +224,8 @@ export interface DeviceRuntimeHost {
   notifyScheduledTasksChanged: () => void
   start: () => void
   stop: () => Promise<void>
+  /** Caller first persists ownerWorkAllowed=false, then drains admitted IO. */
+  quiesceOwnerForClosure?: (ownerId: string) => Promise<void>
   getDebugSnapshot: () => DeviceRuntimeHostDebugSnapshot
 }
 
@@ -299,6 +306,11 @@ export function createDeviceRuntimeHostLoop(
   options: DeviceRuntimeHostOptions
 ): DeviceRuntimeHost {
   const env = options.env ?? process.env
+  const readWorkAuth = async () => {
+    const auth = await options.authProvider.getAuth()
+    if (auth?.userId && options.ownerWorkAllowed && !await options.ownerWorkAllowed(auth.userId)) return null
+    return auth
+  }
   const intervalMs = options.intervalMs ?? DEVICE_COMMAND_DRAIN_RETRY_INTERVAL_MS
   const superviseIntervalMs = options.superviseIntervalMs ?? DEVICE_SUPERVISE_INTERVAL_MS
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEVICE_HEARTBEAT_INTERVAL_MS
@@ -340,6 +352,9 @@ export function createDeviceRuntimeHostLoop(
   // wake 此刻是不是真的订着(由订阅实现的 onSubscribed / onSubscribeFailure 写,❌ 不由「subscribe() 调用返回了」推断)。
   let wakeSubscribed = false
   let wakeSubscribeFailures = 0
+  // 诊断(#1760):这次订上的时刻、最后一次真收到广播的时刻。对账发现没被通知的行时一起报出来。
+  let wakeSubscribedAt: number | null = null
+  let lastWakeEventAt: number | null = null
   // 上一轮取命令取到的是不是空集。对账 tick 据此判「这一轮取到的行有没有被事件通知过」:
   // 上一轮非空 ⇒ 排空跟进本来就在复查它们,取到是预期;上一轮为空 ⇒ 这些行是悄悄出现的。
   let queueBelievedEmpty = false
@@ -349,6 +364,7 @@ export function createDeviceRuntimeHostLoop(
   let blanketAnnouncementDuringTick = false
   let unannouncedVerdict: { pending: Map<string, string>; timer: ReturnType<typeof setTimeout> } | null = null
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  let unbindBackendProbe: (() => void) | null = null
   let activeHeartbeat: Promise<void> | null = null
   let activeLeaseRenewal: Promise<void> | null = null
   // Suppress immediate retry storms after a capability timeout; the next explicit work tick
@@ -442,19 +458,16 @@ export function createDeviceRuntimeHostLoop(
     )
     if (reason !== 'cloud-removed') for (const agent of removed) await options.onAgentRosterRemoved?.(agent, reason)
   }
-  /**
-   * presence 行的唯一写口:每一次写成功都记进「已发布过什么」。建 / 停 / 下线这类说不出读数的写记成没有读数,
-   * 于是下一次边沿发布照常把真实读数补上(❌ 旧的去重表以为它已经发过)。
-   */
+  /** Every caller publishes the session writer's current reading, including create/stop completion. */
   const publishRuntimeState = createAgentRuntimeStatePublisher({ published: publishedActivity, recent: publishedRecentActions, nowMs })
   const makeRuntimeStateReporter = (client: DeviceRuntimeIdentityClient) => {
     const report = createAgentRuntimeStateReporter(client, { onGoneAgent: dropLocalAgentByGuguUserId }, options.operationTimeouts)
     const generation = lifecycleGeneration
     return (state: AgentRuntimeStateWrite) => publishRuntimeState(async () => {
-      if (state.agentStatus === undefined) return state
       const recent = await recentActionsForAgent(state.agentUserId)
       if (generation !== lifecycleGeneration || stopped) throw new Error('device runtime was stopped before state publication')
-      return recent ? { ...state, recentActions: recent.actions, lastActionAt: recent.lastActionAt } : state
+      return { ...state, ...presenceFields(publishedStatusOf(agentStatusOf(state.agentUserId))),
+        ...(recent ? { recentActions: recent.actions, lastActionAt: recent.lastActionAt } : {}) }
     }, report)
   }
 
@@ -639,12 +652,14 @@ export function createDeviceRuntimeHostLoop(
       deviceId,
       onCommand: async (commandId) => {
         if (wakeEpoch !== commandWakeEpoch || generation !== lifecycleGeneration) return
+        if (commandId !== undefined) lastWakeEventAt = nowMs()
         noteCommandAnnouncement(commandId)
         await requestCommandWake()
       },
       onSubscribed: () => {
         if (wakeEpoch !== commandWakeEpoch || generation !== lifecycleGeneration) return
         wakeSubscribed = true
+        wakeSubscribedAt = nowMs()
         wakeSubscribeFailures = 0
       },
       onSubscriptionLost: () => {
@@ -747,7 +762,7 @@ export function createDeviceRuntimeHostLoop(
     blanketAnnouncementDuringTick = false
     const preClaim = startPreClaimTimer(trigger)
     try {
-      const auth = await options.authProvider.getAuth()
+      const auth = await readWorkAuth()
       if (!auth?.accessToken || !auth.userId) {
         unsubscribeCommandWake()
         unsubscribeDeviceRpc()
@@ -905,8 +920,8 @@ export function createDeviceRuntimeHostLoop(
         }
       }
       workFailureStreak = 0
-      // @@@not-mine (#5041) — `held-elsewhere` 的行归那台活着的兄弟实例(它有自己的跟进):本实例不为它续跑(否则兄弟的
-      // 长回合期间本实例每 intervalMs 空取一轮)、不算进「队列非空」、不为它告警(兄弟 hold 回 pending 是 UPDATE,本无广播)。
+      // @@@not-mine (#5041) — `held-elsewhere` 的行归活着的兄弟实例,由它自己跟进:本实例不为它续跑、不算进「队列非空」、
+      // 不为它告警(这行本来就通知过,只是不归本实例)。
       const mine = result.commands.filter((command) => command.reason !== 'held-elsewhere')
       reportUnannouncedCommands(trigger, mine, result.recoveredOrphans, generation)
       queueBelievedEmpty = mine.length === 0
@@ -987,7 +1002,7 @@ export function createDeviceRuntimeHostLoop(
   }
 
   // @@@reconcile-is-an-instrument — 对账取到了行,而上一轮取空、这一轮孤儿恢复也没放回行 ⇒ 这些行没被任何事件通知过
-  // (广播丢了,或别处 UPDATE 放回而没通知本机)。这条告警的频率就是事件通道的丢失率,❌ 不许被对账悄悄抹平。
+  // (广播丢了,或频道看着订着其实收不到)。这条告警的频率就是事件通道的丢失率,❌ 不许被对账悄悄抹平。
   // 不许误报:wake 没订着不判(那是订阅的事);通知按行 id 对,这一轮期间与之后一个 intervalMs 内到场的都算数
   // —— INSERT 刚提交时,对账的取与广播谁先到不一定。
   function reportUnannouncedCommands(
@@ -1008,7 +1023,9 @@ export function createDeviceRuntimeHostLoop(
       unannouncedVerdict = null
       options.warn?.(
         `[device-runtime] reconcile found ${pending.size} pending device command(s) that no wake event announced ` +
-          `(${[...pending.values()].join(', ')}) — a command_created broadcast was lost, or a row was put back to pending without notifying this device`,
+          `(${[...pending.values()].join(', ')}) — a command_created broadcast was lost or the wake channel is silently dead; ` +
+          `wake subscribed since ${wakeSubscribedAt === null ? 'unknown' : new Date(wakeSubscribedAt).toISOString()}, ` +
+          `last wake event ${lastWakeEventAt === null ? 'never' : `${Math.round((nowMs() - lastWakeEventAt) / 1000)} s ago`}`,
       )
     }, intervalMs)
     unannouncedVerdict = { pending, timer }
@@ -1054,7 +1071,7 @@ export function createDeviceRuntimeHostLoop(
 
   async function runScheduledTasksOnce(generation: number): Promise<void> {
     try {
-      const auth = await options.authProvider.getAuth()
+      const auth = await readWorkAuth()
       if (!auth?.accessToken || !auth.userId) return
       if (generation !== lifecycleGeneration || stopped) return
       // 身份边界未确立之前不跑:owner 还没被 tick 认定时,扫到的可能是上一个人的任务。
@@ -1087,7 +1104,7 @@ export function createDeviceRuntimeHostLoop(
     if (stopped || !lastDeviceId) return
     const generation = lifecycleGeneration
     try {
-      const auth = await options.authProvider.getAuth()
+      const auth = await readWorkAuth()
       if (!auth?.accessToken || !auth.userId) return
       if (generation !== lifecycleGeneration || stopped || activeOwnerUserId !== auth.userId || !lastDeviceId) return
       const reading = await reportRuntimeInstanceHeartbeat(
@@ -1132,7 +1149,7 @@ export function createDeviceRuntimeHostLoop(
     if (stopped) return
     const generation = lifecycleGeneration
     try {
-      const auth = await options.authProvider.getAuth()
+      const auth = await readWorkAuth()
       if (!auth?.accessToken || !auth.userId) return
       if (generation !== lifecycleGeneration || stopped) return
       if (activeOwnerUserId !== auth.userId) return
@@ -1155,11 +1172,14 @@ export function createDeviceRuntimeHostLoop(
         env
       )
       lastHeartbeatAt = nowMs()
+      noteBackendAnswer(true) // the host's reading of backendReachability (no window needed)
     } catch (error) {
       // The independent heartbeat is where stale-online would otherwise hide: surface a permanent
       // auth loss here too (once), so the device can't keep heartbeating-then-failing in silence.
       if (handleAuthExpired(error)) return
       if (error instanceof DeviceCapabilityTimeoutError) heartbeatCapabilityTimedOut = true
+      // A local capability read that timed out says nothing about the backend; any other failure is a failed reading.
+      else noteBackendAnswer(false)
       options.warn?.(`[device-runtime] heartbeat: ${(error as Error).message}`)
     }
   }
@@ -1254,6 +1274,7 @@ export function createDeviceRuntimeHostLoop(
   async function maintainLocalAgents(generation: number): Promise<void> {
     const auth = lastAuth
     if (!auth?.accessToken || auth.userId !== activeOwnerUserId) return
+    if (options.ownerWorkAllowed && !await options.ownerWorkAllowed(auth.userId)) return
     // @@@push-fresh-session - owner 的 GoTrue 会话每次续期都轮换,本机 agent 的令牌档跟着换;令牌没变就没有要写的。
     // 有一档没写成就不记账,稍后整批重写。新建的 agent 由 provisioning 自己写它那一档。
     if (auth.accessToken !== runtimeSessionsAccessToken && nowMs() >= runtimeSessionsRetryAt) {
@@ -1271,7 +1292,10 @@ export function createDeviceRuntimeHostLoop(
     if (!gateOpen(lastActivityReconcileAt, reconcileEveryMs, nowMs())) return
     lastActivityReconcileAt = nowMs()
     await pruneStaleGuestRecords({ env })
-    cloudReconciled = await reconcileWithCloud(auth, generation)
+    // lastAuth 是上一轮 tick 拿的:队列空着时 tick 几分钟才一轮,它会过期(#1760)。对账很少跑,现取一份。
+    const current = await readWorkAuth()
+    if (!current?.accessToken || current.userId !== activeOwnerUserId) return
+    cloudReconciled = await reconcileWithCloud(current, generation)
   }
 
   async function publishAgentActivityOnce(generation: number): Promise<void> {
@@ -1298,6 +1322,8 @@ export function createDeviceRuntimeHostLoop(
       )
     }
     stopped = false
+    // A failed backend write elsewhere in this process asks for a heartbeat now: if the backend is down, the edge arms.
+    unbindBackendProbe = bindBackendProbe(scheduleHeartbeat)
     // ⚠️ 先装监督节拍再发首轮:首轮 tick 结尾的排空跟进以「监督节拍已装上」判定宿主在长跑。
     superviseTimer = setInterval(() => {
       // @@@safety-cadence — wake 订着时这一拍只是兜底,每 safetyIntervalMs 一次;没订着照旧每拍。
@@ -1377,7 +1403,7 @@ export function createDeviceRuntimeHostLoop(
   // 但不归本账号;#5331 公网身份还在飞的行云端还没有,❌ 去读也 ❌ 去写。
   async function localPresenceAgentIds(ownerUserId: string | null): Promise<string[]> {
     return agentsForOwner(await listAgents(env), ownerUserId)
-      .filter((agent) => agent.gugu_user_id && agent.agent_type !== CLOUD_AGENT_TYPE && !agentCloudIdentityPending(agent))
+      .filter((agent) => agent.gugu_user_id && agent.agent_type !== CLOUD_AGENT_TYPE && !agentCloudIdentityPending(agent) && publishRuntimeState.canPublish(agent.gugu_user_id))
       .map((agent) => agent.gugu_user_id)
   }
 
@@ -1420,7 +1446,7 @@ export function createDeviceRuntimeHostLoop(
         (id) => !samePublishedStatus(publishedActivity.get(id), publishedStatusOf(agentStatusOf(id))),
       ) || agentUserIds.some(recentActionsChanged) || [...publishedActivity.keys()].some((id) => !agentUserIds.includes(id))
       if (!somethingChanged) return
-      const auth = await options.authProvider.getAuth()
+      const auth = await readWorkAuth()
       if (!auth?.accessToken || !auth.userId) return
       if (generation !== lifecycleGeneration || stopped) return
       if (activeOwnerUserId !== auth.userId) return
@@ -1431,7 +1457,7 @@ export function createDeviceRuntimeHostLoop(
         published: publishedActivity,
         statusOf: agentStatusOf,
         report: async (agentUserId, published) => {
-          await reportRuntimeState({
+          return reportRuntimeState({
             agentUserId,
             ...presenceFields(published),
             runtimeKind: 'gugu',
@@ -1451,11 +1477,30 @@ export function createDeviceRuntimeHostLoop(
     }
   }
 
+  async function quiesceOwnerForClosure(ownerId: string): Promise<void> {
+    if (!options.ownerWorkAllowed || await options.ownerWorkAllowed(ownerId)) throw new Error('Account closure work admission is not paused')
+    const detach = () => {
+      if (activeOwnerUserId !== ownerId) return
+      unsubscribeCommandWake(); unsubscribeDeviceRpc(); unsubscribeOwnedAgentChanges()
+      clearScheduledTasksTimer()
+      lastLeaseRenewAt = null
+      if (lastAuth?.userId === ownerId) lastAuth = null
+    }
+    detach()
+    // Do not stop the shared publisher, rewrite its owner or abort a possible B
+    // generation. New A work is refused by the persisted native admission gate.
+    await Promise.allSettled([activeTick, activeScheduledTasksRun, activeLeaseRenewal,
+      activeActivityPublish, activeHeartbeat, ...heartbeatFlights.values()].filter((flight): flight is Promise<void> | Promise<DeviceRuntimeHostTickResult> => flight !== null))
+    if (await options.ownerWorkAllowed(ownerId)) throw new Error('Account closure work admission changed while draining')
+    detach()
+  }
+
   async function stop(): Promise<void> {
     const runningTick = activeTick
     const ownerAtStop = activeOwnerUserId
     const deviceAtStop = lastDeviceId
     stopped = true
+    unbindBackendProbe?.(); unbindBackendProbe = null
     lifecycleGeneration += 1
     activeTickAbortController?.abort(new Error('device runtime host stopped'))
     if (superviseTimer !== null) clearInterval(superviseTimer)
@@ -1545,6 +1590,7 @@ export function createDeviceRuntimeHostLoop(
       : null,
     // 停了(或正在停)就不再起新的一轮:那一轮会重新订阅、到点写一拍「在线」,把停机时标的离线又翻回去。
     instanceId,
+    beginAgentRemoval: publishRuntimeState.beginRemoval,
     tickOnce: () => (stopped ? Promise.resolve({ skipped: true }) : tickOnce('event')),
     notifyAuthChanged: notifyWork,
     notifyCommandsChanged: () => {
@@ -1562,6 +1608,7 @@ export function createDeviceRuntimeHostLoop(
     },
     start,
     stop,
+    quiesceOwnerForClosure,
     getDebugSnapshot,
   }
 }

@@ -55,7 +55,7 @@ describe('rate-limited refresh stays bounded (#6723)', () => {
 
   async function startCoordinator(session: Session) {
     window.localStorage.setItem('sb-main', JSON.stringify(session))
-    const { supabase, mainAuthSessionStorage } = await import('../../../../apps/desktop/src/lib/supabase')
+    const { supabase, mainAuthSessionStorage, MAIN_AUTH_STORAGE_KEY } = await import('../../../../apps/desktop/src/lib/supabase')
     const { SessionCoordinator } = await import('../../../../apps/desktop/src/lib/sessionCoordinator')
     // 与 sessionCoordinator.ts 末尾的产品装配相同的 auth 面;主进程镜像、资料补全、前台信号这些与刷新无关的腿换成桩。
     const coordinator = new SessionCoordinator({
@@ -69,6 +69,7 @@ describe('rate-limited refresh stays bounded (#6723)', () => {
       publishSession: () => {},
       writeMirror: async () => {},
       clearMirror: async () => {},
+      loadPersistedSession: async () => mainAuthSessionStorage.storage.getItem(MAIN_AUTH_STORAGE_KEY),
       getPersistedSessionState: () => mainAuthSessionStorage.getState(),
       commitPersistedSession: (value, signal) => mainAuthSessionStorage.commit(value, signal),
       clearPersistedSession: (value, signal) => mainAuthSessionStorage.remove(value, signal),

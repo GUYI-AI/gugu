@@ -4,7 +4,7 @@ const io = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), update: vi.fn(), e
 vi.mock('@gugu/core/cloud/userSettings', () => ({ readUserSettingsConfig: io.read, updateUserSettingsConfig: io.update }))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ identityDb: {} }))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ error: io.error }) }))
-const { parseSampleProject, readSampleProjectShown, enrollSampleProject, subscribeSampleProject } = await import('../../../../apps/desktop/src/lib/sampleProject')
+const { parseSampleProject, readSampleProjectShown, enrollSampleProject, subscribeSampleProject, recordSampleProjectConversion, dismissSampleProject } = await import('../../../../apps/desktop/src/lib/sampleProject')
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -33,6 +33,39 @@ describe('account-scoped sample project key', () => {
     }
     io.read.mockResolvedValue({ sampleProject: { version: 2, dismissed: false } })
     await expect(readSampleProjectShown('owner-1')).rejects.toThrow('Invalid sample project state')
+  })
+
+  it('#2569 reads how far turning it into a project got; anything else under version 2 is malformed', async () => {
+    expect(parseSampleProject({ sampleProject: { version: 2, dismissed: false, projectId: 'p1' } })).toEqual({ version: 2, dismissed: false, projectId: 'p1' })
+    expect(parseSampleProject({ sampleProject: { version: 2, dismissed: true, projectId: 'p1', chatId: 'c1' } }))
+      .toEqual({ version: 2, dismissed: true, projectId: 'p1', chatId: 'c1' })
+    for (const sampleProject of [{ version: 2, dismissed: false, projectId: '' }, { version: 2, dismissed: false, projectId: 'p1', chatId: 7 }, { version: 2, projectId: 'p1' }]) {
+      expect(() => parseSampleProject({ sampleProject })).toThrow('Invalid sample project state')
+    }
+    io.read.mockResolvedValueOnce({ sampleProject: { version: 2, dismissed: false, projectId: 'p1', chatId: 'c1' } })
+    await expect(readSampleProjectShown('owner-1')).resolves.toBe(true)
+  })
+
+  it('#2569 records the project, then its group, on the latest row; a dismissal keeps them; tells listeners', async () => {
+    const listener = vi.fn()
+    const stop = subscribeSampleProject(listener)
+    let row: Record<string, unknown> = { keep: 'me', sampleProject: { version: 1, dismissed: false } }
+    io.read.mockImplementation(async () => row)
+    io.write.mockImplementation(async (_client, _userId, _scope, next) => { row = next })
+    await recordSampleProjectConversion('owner-1', { projectId: 'p1' })
+    expect(row).toEqual({ keep: 'me', sampleProject: { version: 2, dismissed: false, projectId: 'p1' } })
+    await recordSampleProjectConversion('owner-1', { projectId: 'p1', chatId: 'c1' })
+    expect(row).toEqual({ keep: 'me', sampleProject: { version: 2, dismissed: false, projectId: 'p1', chatId: 'c1' } })
+    await dismissSampleProject('owner-1')
+    expect(row).toEqual({ keep: 'me', sampleProject: { version: 2, dismissed: true, projectId: 'p1', chatId: 'c1' } })
+    stop()
+    expect(listener).toHaveBeenCalledTimes(3)
+  })
+
+  it('#2569 does not record a conversion onto an account without the sample', async () => {
+    io.read.mockResolvedValue({ keep: 'me' })
+    await expect(recordSampleProjectConversion('owner-1', { projectId: 'p1' })).rejects.toThrow('no sample project')
+    expect(io.write).not.toHaveBeenCalled()
   })
 
   it('enrolls in the same account settings row, preserving everything else, and tells listeners', async () => {

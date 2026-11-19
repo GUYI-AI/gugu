@@ -16,7 +16,7 @@ const summary = z.object({
 /** Committed facts only. Never pass resource bodies, model prompts, tokens or integration configuration here. */
 export const assistantAppChangeSchema = z.object({
   operationId: z.string().uuid(),
-  resource: z.enum(['capabilities', 'device-notes', 'devices', 'projects', 'memory', 'pending-work', 'personality', 'files', 'integrations', 'schedules', 'assistant']),
+  resource: z.enum(['devices', 'projects', 'memory', 'pending-work', 'personality', 'files', 'integrations', 'schedules', 'assistant']),
   operation: z.enum(['created', 'edited', 'removed', 'saved']),
   id: z.string().min(1), deviceId: z.string().optional(),
   section: z.enum(['folders', 'accounts', 'appearance', 'profile', 'permissions']).optional(),

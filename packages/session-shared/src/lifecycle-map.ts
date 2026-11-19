@@ -58,20 +58,20 @@ export class LifecycleMap<T, PE, TE> {
     if (this._active.has(id)) return { status: 'ready' };
     if (this._provisioning.has(id)) return { status: 'bootstrapping' };
     const error = this._errors.get(id);
-    if (error) return { status: 'error', error };
+    if (this._errors.has(id)) return { status: 'error', error: error as PE };
     return { status: 'not-started' };
   }
 
   teardownStatus(id: string): LifecycleStatus<TE> {
     if (this._tearingDown.has(id)) return { status: 'bootstrapping' };
     const error = this._teardownErrors.get(id);
-    if (error) return { status: 'error', error };
+    if (this._teardownErrors.has(id)) return { status: 'error', error: error as TE };
     return { status: 'not-started' };
   }
 
   provision(id: string, run: () => Promise<Result<T, PE>>): Promise<Result<T, PE>> {
     const existing = this._active.get(id);
-    if (existing !== undefined) return Promise.resolve(ok(existing));
+    if (this._active.has(id)) return Promise.resolve(ok(existing as T));
 
     const inFlight = this._provisioning.get(id);
     if (inFlight) return inFlight;
@@ -81,6 +81,7 @@ export class LifecycleMap<T, PE, TE> {
         await this._hooks.preProvision?.(id);
         const result = await run();
         if (result.success) {
+          this._errors.delete(id);
           this._active.set(id, result.data);
           this._teardownErrors.delete(id);
           await this._hooks.postProvision?.(id, result.data);
@@ -105,20 +106,20 @@ export class LifecycleMap<T, PE, TE> {
     if (inFlight) return inFlight;
 
     const value = this._active.get(id);
-    if (value === undefined) return null;
+    if (!this._active.has(id)) return null;
 
     const promise = (async () => {
       try {
-        await this._hooks.preTeardown?.(id, value);
-        const result = await run(value);
+        await this._hooks.preTeardown?.(id, value as T);
+        const result = await run(value as T);
         if (!result.success) {
           this._teardownErrors.set(id, result.error);
         }
         return result.success ? ok<void>() : err(result.error);
       } finally {
         this._active.delete(id);
-        this._tearingDown.delete(id);
-        await this._hooks.postTeardown?.(id, value);
+        try { await this._hooks.postTeardown?.(id, value as T); }
+        finally { this._tearingDown.delete(id); }
       }
     })();
 

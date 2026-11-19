@@ -1,9 +1,12 @@
+import { customModelRefFromOption, runtimeModelId, matchCustomModel } from '@gugu/session-core/models/custom-model'
+import { metadataSeparator } from '@/i18n/format'
 import { readingFromStatus, type InstallationReading } from '@gugu/session-core/deps/runtime/types'
 import type {
   SessionpageHarnessOption,
   SessionpagePermissionMode,
   SessionpageSessionCreateModels,
   SessionpageSessionCreateOptions,
+  SessionpageSessionCreateRequest,
   SessionpageSessionCreateResult,
   SessionpageSessionSummary,
 } from '@gugu/session-core/session-record/contract'
@@ -18,8 +21,8 @@ import { PREFERRED_SESSION_PROVIDERS } from '@/session/shared/core/sessions/new-
  * 这种事只有在能被反复喂合成输入的地方才验得动 —— 组件里做的话判据只剩「屏幕上看着没选错」。
  */
 
+/** 在哪个项目、哪台机器上建由页面的「项目 · 机器」两行定(CreateTarget);这里是那台机器上怎么跑。 */
 export type CreateSelection = {
-  projectId: string | null
   harness: string | null
   /**
    * 选中的模型 id(`sessionCreateModels` 报的那份里的 id,原样带给机器)。
@@ -31,6 +34,13 @@ export type CreateSelection = {
   permissionMode: SessionpagePermissionMode | null
   /** 推理档 id(目录 efforts 里的);null = 引擎默认。换 harness 必清。 */
   effort: string | null
+  fastMode?: boolean
+}
+
+/** An unconfirmed task keeps its submitted options; a new default/catalog cannot rewrite that intent. */
+export function submittedCreationSelection(request: SessionpageSessionCreateRequest): CreateSelection {
+  return { harness: request.harness, model: request.model ?? null, permissionMode: request.permissionMode ?? null,
+    effort: request.effort ?? null, ...(request.fastMode !== undefined ? { fastMode: request.fastMode } : {}) }
 }
 
 /**
@@ -60,18 +70,15 @@ export function harnessBlockReason(
 }
 
 /**
- * 默认选项:第一个项目 + 第一个**能用**的 harness。
+ * 默认选项:第一个**能用**的 harness。
  *
- * 项目取第一个是因为列表就是那台机器自己的顺序,而多数机器只有一两个项目;
  * harness ❌ 不取第一个 —— 第一个可能是没装的那家,默认选中它等于默认选中一个必失败的发送。
  * 一个能用的都没有就留 null,让页面如实说「这台机器上没有能用的 harness」。
  */
 export function defaultSelection(options: SessionpageSessionCreateOptions): CreateSelection {
-  const project = options.projects[0] ?? null
   const usable = options.harnesses.filter(harnessUsable)
   const harness = PREFERRED_SESSION_PROVIDERS.map((id) => usable.find((h) => h.id === id)).find(Boolean) ?? usable[0] ?? null
   return {
-    projectId: project?.id ?? null,
     harness: harness?.id ?? null,
     model: null,
     permissionMode: null,
@@ -80,7 +87,7 @@ export function defaultSelection(options: SessionpageSessionCreateOptions): Crea
 }
 
 /** 上次那一套里可能没沿用上的格,按沿用的先后排。 */
-export type LastUsedItem = 'project' | 'harness' | 'permissionMode' | 'model' | 'effort'
+export type LastUsedItem = 'harness' | 'permissionMode' | 'model' | 'effort'
 
 /**
  * 进页面时的预选(behavior mobile-session-view「新建会话沿用上次的选择」):那台机器报了上次那一套,
@@ -92,11 +99,9 @@ export function initialSelection(options: SessionpageSessionCreateOptions): Crea
   const fallback = defaultSelection(options)
   const last = options.lastUsed
   if (!last) return fallback
-  const projectId = options.projects.some((p) => p.id === last.projectId) ? last.projectId : fallback.projectId
   const harness = options.harnesses.find((h) => h.id === last.harness)
-  if (!harness || !harnessUsable(harness)) return { ...fallback, projectId }
+  if (!harness || !harnessUsable(harness)) return fallback
   return {
-    projectId,
     harness: harness.id,
     permissionMode: last.permissionMode && harness.permissionModes.includes(last.permissionMode) ? last.permissionMode : null,
     model: last.model,
@@ -112,8 +117,8 @@ export function initialSelection(options: SessionpageSessionCreateOptions): Crea
 export function lastUsedDropped(options: SessionpageSessionCreateOptions, selection: CreateSelection): LastUsedItem[] {
   const last = options.lastUsed
   if (!last) return []
-  const dropped: LastUsedItem[] = selection.projectId === last.projectId ? [] : ['project']
-  if (selection.harness !== last.harness) return [...dropped, 'harness']
+  if (selection.harness !== last.harness) return ['harness']
+  const dropped: LastUsedItem[] = []
   if (selection.permissionMode !== last.permissionMode) dropped.push('permissionMode')
   if (selection.model !== last.model) dropped.push('model')
   if (selection.effort !== last.effort) dropped.push('effort')
@@ -137,7 +142,7 @@ export function selectHarness(
     selection.permissionMode && option?.permissionModes.includes(selection.permissionMode)
       ? selection.permissionMode
       : null
-  return { ...selection, harness, permissionMode, model: null, effort: null }
+  return { ...selection, harness, permissionMode, model: null, effort: null, ...(selection.fastMode !== undefined ? { fastMode: false } : {}) }
 }
 
 /**
@@ -154,7 +159,10 @@ export function reconcileModel(
   if (!models || models.harness !== selection.harness) return selection
   const explicitDefault = modelTouched || (lastUsed?.harness === selection.harness && lastUsed.model === null && canUseOwnCreateModels(models))
   const chosen = models.models.find((m) => m.id === selection.model && offeredInCreateMenu(m))
-  const keepModel = chosen && (modelTouched || chosen.source === 'gugu' || canUseOwnCreateModels(models))
+  const custom = customModelRefFromOption(selection.model)
+  const connection = models.customModels?.find((record) => record.id === custom?.connectionId)
+  const customAvailable = custom && connection && !matchCustomModel({ connection, nativeProtocol: models.modelProtocols?.[0], protocols: models.modelProtocols, hasModel: !!custom.modelId, allowDefaultModel: models.customModel?.modelOptional }).reason
+  const keepModel = customAvailable || chosen && (modelTouched || chosen.source === 'gugu' || canUseOwnCreateModels(models))
   const model = keepModel || (explicitDefault && selection.model === null) ? selection.model : defaultCreateModel(models)
   const effort =
     selection.effort !== null && !models.efforts.some((e) => e.id === selection.effort) ? null : selection.effort
@@ -165,6 +173,7 @@ export function reconcileModel(
 export function createModelNeedsSignIn(selection: CreateSelection, models: SessionpageSessionCreateModels | null): boolean {
   return models !== null && models.harness === selection.harness
     && (models.harnessAuth === 'signed-out' || models.selectedCredential === 'uncredentialed' || models.harnessState === 'auth-required')
+    && !customModelRefFromOption(selection.model)
     && (selection.model === null || models.models.some((choice) => choice.id === selection.model && choice.source === 'harness'))
 }
 
@@ -184,38 +193,35 @@ export function selectedModelName(
 ): string | null {
   if (selection.model === null) return null
   // 目录没到 / 目录里没有:退回写 id —— 选了就得看得见选了什么,❌ 不留空冒充「默认」。
-  return (models ? createModelName(models, selection.model) : null) ?? selection.model
+  return (models ? createModelName(models, selection.model) : null) ?? runtimeModelId(selection.model) ?? null
 }
 
-/** 胶囊上写**值**(项目名 · harness 名),照会话选项胶囊的口径;一个都没有就 null(不画)。 */
+/** 胶囊上写**值**(harness 名 · 模型 · 推理档),照会话选项胶囊的口径;一个都没有就 null(不画)。 */
 export function createPillLabel(
   options: SessionpageSessionCreateOptions,
   selection: CreateSelection,
   models: SessionpageSessionCreateModels | null = null,
   phoneAgentLabel?: string,
 ): string | null {
-  const project = options.projects.find((p) => p.id === selection.projectId)
   const harness = options.harnesses.find((h) => h.id === selection.harness)
   // 模型只在**选了**时上胶囊:默认档不写「默认」二字 —— 胶囊只写值,没值就不占位。
   const model = selectedModelName(models, selection)
   const effort = selectedEffortName(models, selection)
-  const parts = (phoneAgentLabel ? [phoneAgentLabel, model, effort] : [project?.name, harness?.name, model, effort]).filter((x): x is string => !!x)
-  return parts.length > 0 ? parts.join(' · ') : null
+  const parts = (phoneAgentLabel ? [phoneAgentLabel, model, effort] : [harness?.name, model, effort]).filter((x): x is string => !!x)
+  return parts.length > 0 ? parts.join(metadataSeparator()) : null
 }
 
-export type CreateBlocker = 'no_projects' | 'no_usable_harness' | 'pick_project' | 'pick_harness'
+export type CreateBlocker = 'no_usable_harness' | 'pick_harness'
 
 /**
  * 为什么现在还不能发。null = 能发。
- * 顺序按「人先要知道的」:机器上根本没项目 / 没能用的 harness,先于「你还没选」。
+ * 顺序按「人先要知道的」:机器上根本没能用的 harness,先于「你还没选」。
  */
 export function createBlocker(
   options: SessionpageSessionCreateOptions,
   selection: CreateSelection,
 ): CreateBlocker | null {
-  if (options.projects.length === 0) return 'no_projects'
   if (!options.harnesses.some(harnessUsable)) return 'no_usable_harness'
-  if (!options.projects.some((p) => p.id === selection.projectId)) return 'pick_project'
   const harness = options.harnesses.find((h) => h.id === selection.harness)
   if (!harness || !harnessUsable(harness)) return 'pick_harness'
   return null
@@ -241,4 +247,20 @@ export function toSessionSummary(
     lastInteractedAt: now,
     supported: true,
   }
+}
+
+
+/** Never infer review support from a harness name or a model list for a previous selection. */
+export function createPermissionModes(
+  harness: { id: string; permissionModes: import('@gugu/session-core/session-record/contract').SessionpagePermissionMode[] },
+  models: SessionpageSessionCreateModels | null,
+  state: string,
+  selection: CreateSelection,
+) {
+  const modes: typeof harness.permissionModes = harness.permissionModes.filter(mode => mode !== 'ai-review');
+  if (state === 'ready' && models?.harness === harness.id && models.autoReview
+    && models.autoReview.model === (selection.model ?? models.selected)) {
+    modes.splice(Math.max(0, modes.indexOf('full-access')), 0, 'ai-review');
+  }
+  return modes;
 }

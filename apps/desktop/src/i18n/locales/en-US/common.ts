@@ -1,4 +1,15 @@
 export default {
+  "startup": {
+    "slogan": "Don't do it yourself. Let AI."
+  },
+  "staleRead": {
+    "failed": "Couldn't read the latest; showing what was read last.",
+    "retry": "Retry"
+  },
+  "menu": {
+    "search": "Search",
+    "noResults": "No results"
+  },
   "agentName": {
     "naming": "Naming the agent…"
   },

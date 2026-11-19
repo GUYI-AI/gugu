@@ -4,17 +4,19 @@ import { resolve } from 'node:path'
 import { setImmediate } from 'node:timers/promises'
 import { beforeAll, expect, it, vi } from 'vitest'
 import { until } from '../../../support/awaitCondition'
+import { fakeSharedMenu } from './sharedMenu'
 
 const file = { id: 'readme', chat: 'chat', name: 'README.md', displayName: 'README.md', type: 'text', contentType: 'text/markdown', parentId: null, path: 'README.md', systemRole: null, version: 1, createdAt: '2026-11-03T08:00:00Z', updatedAt: null, sourceMessageIds: [], size: 1 }
 const folder = { ...file, id: 'docs', name: 'docs', displayName: 'docs', type: 'folder', path: 'docs' }
 const entries = [file, folder]
 const context = { tabId: 'file-context', file: { chat: 'chat', id: file.id }, chat: { id: 'chat', kind: 'group', name: 'Files', groupId: null }, workspace: { id: 'working-copy', sessionId: 'task' }, locale: 'en-US', capabilities: ['files:read', 'files:write'] }
 let changed: (ctx: Record<string, unknown>) => Promise<void>
+const menu = fakeSharedMenu()
 const gugu = {
   linkTo: async () => 'gugu-file://readme',
   getContext: async () => context, markdown: async () => ({ render: () => document.createDocumentFragment() }),
   setTabTitle: vi.fn(async () => {}), onContextChanged: (fn: typeof changed) => { changed = fn; return () => {} },
-  onLink: () => () => {}, showContextMenu: vi.fn(async () => null),
+  onLink: () => () => {}, showContextMenu: menu.showContextMenu,
   files: {
     list: vi.fn(async () => entries), canDelete: vi.fn(async () => [false]),
     move: vi.fn(async () => {}), viewPreferences: async () => ({ showAppData: false }),
@@ -24,9 +26,8 @@ const gugu = {
 const el = (id: string) => document.getElementById(id)!
 async function moveFromToolbar() {
   el('more').click()
-  const move = [...el('menu').children].find((item) => item.textContent === 'Move to…') as HTMLButtonElement | undefined
-  expect(move, 'the actual file toolbar offers Move').toBeDefined()
-  move!.click()
+  expect(menu.labels(), 'the actual file toolbar offers Move').toContain('Move to…')
+  await menu.pick('Move to…')
 }
 beforeAll(async () => {
   document.body.innerHTML = new DOMParser().parseFromString(readFileSync(resolve('apps/desktop/preinstalled-apps/workspace/index.html'), 'utf8'), 'text/html').body.innerHTML

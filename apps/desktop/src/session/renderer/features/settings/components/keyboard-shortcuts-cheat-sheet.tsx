@@ -1,10 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import {
   COMMANDS,
   getEffectiveHotkey,
-  type CommandId,
-} from '@renderer/lib/hooks/useKeyboardShortcuts';
+  type CommandId, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { type BaseModalProps } from '@renderer/lib/modal/modal-provider';
 import { Shortcut } from '@renderer/lib/ui/shortcut';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -352,7 +350,7 @@ interface CategorySectionProps {
   category: string;
   categoryLabel: string;
   entries: ShortcutEntry[];
-  keyboard: Record<string, string | null> | undefined;
+  keyboard: Record<string, string | null> | null;
   activeShortcut: CommandId | null;
   onActivate: (key: CommandId | null) => void;
 }
@@ -403,7 +401,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
 
 interface TabNavSectionProps {
   entries: ShortcutEntry[];
-  keyboard: Record<string, string | null> | undefined;
+  keyboard: Record<string, string | null> | null;
   activeShortcut: CommandId | null;
   onActivate: (key: CommandId | null) => void;
 }
@@ -449,7 +447,7 @@ const TabNavSection: React.FC<TabNavSectionProps> = ({
 // ---------------------------------------------------------------------------
 
 export const KeyboardShortcutsCheatSheet: React.FC<BaseModalProps> = ({ onClose }) => {
-  const { value: keyboard } = useAppSettingsKey('keyboard');
+  const keyboard = useShortcutOverrides();
   const [activeShortcut, setActiveShortcut] = useState<CommandId | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const { translate } = useSessionMessages();

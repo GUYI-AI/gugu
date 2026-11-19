@@ -1,3 +1,4 @@
+import { browserAnnotationScript, type BrowserAnnotationTarget } from '@shared/browser-annotation';
 import { type ChildProcess } from 'node:child_process';
 import { spawn, execFile } from '@gugu/core/local/childProcess';
 import { EventEmitter } from 'node:events';
@@ -5,7 +6,10 @@ import { onErrorEvents } from '@gugu/session-shared';
 import { mkdir } from 'node:fs/promises';
 import type { Readable, Writable } from 'node:stream';
 import { promisify } from 'node:util';
-import type { TaskPageControl, TaskPageState } from '@shared/browser-task-page';
+import type { TaskPageControl, TaskPageControlResult, TaskPageState } from '@shared/browser-task-page';
+import { runPrivateLogin, type PrivateLoginInput, type PrivateLoginStatus } from './server-private-login';
+import { browserPageFeedback } from '@shared/browser-page-feedback';
+import { TaskPageCapture } from './server-task-page-capture';
 
 /**
  * #1607 node 4b — a Gugu server's task pages (owner decision 11-08): one headless Chromium ("new" headless) per
@@ -21,7 +25,8 @@ import type { TaskPageControl, TaskPageState } from '@shared/browser-task-page';
 type CdpMessage = { id?: number; method?: string; params?: Record<string, unknown>; result?: unknown; error?: { message: string }; sessionId?: string };
 
 /** One painted picture of a task page: JPEG, and the page's CSS pixel size it maps input to. */
-export type TaskPageScreenFrame = { data: string; width: number; height: number };
+export type TaskPageScreenFrame = { data: string; width: number; height: number;
+  feedback?: ReturnType<typeof import('@shared/browser-page-feedback').browserFrameFeedback> };
 
 /** The subset of Electron's `WebContents` / `Debugger` that `createPageProtocol` uses. */
 export interface TaskPageContents {
@@ -97,6 +102,7 @@ class PipeConnection extends EventEmitter {
 
 /** One task's page as a WebContents-shaped object; each `attach` is one flattened CDP session on its target. */
 class PageTarget extends EventEmitter implements TaskPageContents {
+  readonly feedback = browserPageFeedback(this);
   private session: string | null = null;
   private readonly children = new Set<string>();
   private readonly native = new EventEmitter();
@@ -108,6 +114,11 @@ class PageTarget extends EventEmitter implements TaskPageContents {
   private history: { entries: { url: string }[]; ids: number[]; index: number } = { entries: [], ids: [], index: -1 };
   title = '';
   url = 'about:blank';
+  private readonly capture = new TaskPageCapture((method, params) => {
+    if (!this.watchSession || this.destroyed) throw new Error('the task page was closed');
+    return this.connection.send(method, params, this.watchSession);
+  }, this.feedback, () => !this.destroyed && !!this.watchSession,
+  error => this.emit('screen-error', error));
 
   constructor(private readonly connection: PipeConnection, readonly targetId: string) {
     super();
@@ -186,6 +197,7 @@ class PageTarget extends EventEmitter implements TaskPageContents {
         const frame = params.frame as { id?: string; parentId?: string; url?: string; urlFragment?: string } | undefined;
         if (!frame || frame.parentId || !main(frame.id)) break;
         this.url = `${frame.url ?? ''}${frame.urlFragment ?? ''}`;
+        this.feedback.invalidate();
         this.emit('did-navigate', {}, this.url);
         void this.readHistory();
         break;
@@ -193,34 +205,20 @@ class PageTarget extends EventEmitter implements TaskPageContents {
       case 'Page.navigatedWithinDocument':
         if (main(params.frameId)) { this.url = String(params.url); void this.readHistory(); }
         break;
-      case 'Page.screencastFrame': {
-        // Paced by acknowledging: the next frame comes once this one was taken.
-        void this.connection.send('Page.screencastFrameAck', { sessionId: params.sessionId }, this.watchSession!).catch(() => {});
-        const metadata = params.metadata as { deviceWidth?: number; deviceHeight?: number } | undefined;
-        if (typeof params.data === 'string' && metadata?.deviceWidth && metadata.deviceHeight) {
-          this.screen?.({ data: params.data, width: Math.round(metadata.deviceWidth), height: Math.round(metadata.deviceHeight) });
-        }
-        break;
-      }
     }
   }
 
-  private screen: ((frame: TaskPageScreenFrame) => void) | null = null;
-
   /**
-   * The page as the person on another computer sees it (#1607 node 5): JPEG frames whenever it paints, in the page's CSS
-   * pixel space. Started again, it sends the current picture at once. On the host's own session, never a lease's.
+   * The page as the person on another computer sees it (#1607 node 5): requested JPEG frames in its CSS pixel space.
+   * The same capture cadence as native task pages also refreshes feedback on static pages. On the host's own session.
    */
   async startScreen(onFrame: (frame: TaskPageScreenFrame) => void): Promise<void> {
     if (!this.watchSession || this.destroyed) throw new Error('the task page was closed');
-    this.screen = onFrame;
-    await this.connection.send('Page.stopScreencast', {}, this.watchSession).catch(() => {});
-    await this.connection.send('Page.startScreencast', { format: 'jpeg', quality: 70, maxWidth: 1600, maxHeight: 1600, everyNthFrame: 1 }, this.watchSession);
+    await this.capture.start(onFrame);
   }
 
   async stopScreen(): Promise<void> {
-    this.screen = null;
-    if (this.watchSession && !this.destroyed) await this.connection.send('Page.stopScreencast', {}, this.watchSession).catch(() => {});
+    this.capture.stop();
   }
 
   /** The person's own input on this page: they act on it directly, as on a page in their own window. */
@@ -270,10 +268,19 @@ class PageTarget extends EventEmitter implements TaskPageContents {
    * The person's toolbar on another computer: what the same toolbar does to a page on their own (go to an address, back,
    * forward, reload, stop), and the size of the tab it fills there.
    */
-  async control(control: TaskPageControl): Promise<void> {
+  async control(control: TaskPageControl): Promise<TaskPageControlResult> {
     const session = this.watchSession;
     if (!session || this.destroyed) throw new Error('the task page was closed');
     switch (control.action) {
+      case 'annotate': {
+        const read = await this.connection.send('Runtime.evaluate', { expression: browserAnnotationScript(control.query), returnByValue: true }, session) as { result?: { value?: BrowserAnnotationTarget }; exceptionDetails?: unknown };
+        const target = read.result?.value;
+        if (read.exceptionDetails || !target) throw new Error('The selected page could not be read');
+        if (!control.capture) return { target };
+        const capture = await this.connection.send('Page.captureScreenshot', { format: 'png' }, session) as { data?: string };
+        if (!capture.data || this.url !== target.url) throw new Error('The page changed during selection');
+        return { target, screenshot: `data:image/png;base64,${capture.data}` };
+      }
       case 'navigate': {
         // The same pages the agent's lease may load: web pages, not this machine's own documents.
         const protocol = (() => { try { return new URL(control.url).protocol; } catch { return ''; } })();
@@ -311,6 +318,7 @@ class PageTarget extends EventEmitter implements TaskPageContents {
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.capture.stop();
     this.connection.off('event', this.onEvent);
     this.emit('destroyed');
   }
@@ -336,11 +344,12 @@ export function taskBrowserArguments(profile: string, userAgent: string, root: b
 
 /** A task page as another computer watches and drives it. */
 export interface TaskPageScreenTarget {
+  feedback?: import('@shared/browser-page-feedback').BrowserPageFeedback;
   startScreen(onFrame: (frame: TaskPageScreenFrame) => void): Promise<void>;
   stopScreen(): Promise<void>;
   input(method: 'Input.dispatchMouseEvent' | 'Input.dispatchKeyEvent' | 'Input.insertText', params: Record<string, unknown>): Promise<unknown>;
   state(): TaskPageState;
-  control(control: TaskPageControl): Promise<void>;
+  control(control: TaskPageControl): Promise<TaskPageControlResult>;
   isDestroyed(): boolean;
   once(event: 'destroyed', listener: () => void): unknown;
   on(event: 'state', listener: () => void): unknown;
@@ -354,6 +363,8 @@ export interface ServerTaskBrowser {
   existingPage(sessionId: string): Promise<TaskPageScreenTarget | null>;
   /** The task ended: close its page. */
   closeTask(sessionId: string): Promise<void>;
+  /** A password login in a private context (server-private-login.ts); on success the task's page opens the site. */
+  privateLogin(sessionId: string, input: Omit<PrivateLoginInput, 'website'>): Promise<{ status: PrivateLoginStatus; cookies: number }>;
   dispose(): Promise<void>;
 }
 
@@ -405,6 +416,7 @@ export function createServerTaskBrowser(options: {
     const { connection } = await browser();
     const { targetId } = await connection.send('Target.createTarget', { url: url ?? 'about:blank' }) as { targetId: string };
     const target = new PageTarget(connection, targetId);
+    target.on('screen-error', error => options.log.warn('Could not capture the task browser page', { error: String(error) }));
     target.url = url ?? 'about:blank';
     await target.watch();
     target.once('destroyed', () => {
@@ -442,6 +454,15 @@ export function createServerTaskBrowser(options: {
       const running = await starting?.catch(() => null);
       await running?.connection.send('Target.closeTarget', { targetId: target.targetId }).catch(() => {});
       target.destroy();
+    },
+    async privateLogin(sessionId, input) {
+      const { connection } = await browser();
+      const outcome = await runPrivateLogin((method, params, session) => connection.send(method, params, session), connection, input);
+      if (outcome.status === 'submitted_unconfirmed') {
+        const page = await this.existingPage(sessionId) as PageTarget | null;
+        await page?.control({ action: 'navigate', url: input.origin }).catch(() => {});
+      }
+      return outcome;
     },
     async dispose() {
       const running = await starting?.catch(() => null);

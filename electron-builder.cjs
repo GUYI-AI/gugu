@@ -93,6 +93,7 @@ if (!t) {
 const fs = require('node:fs')
 const path = require('node:path')
 const { packNpmBundledDependencies, packedAppDir } = require('./scripts/build/pack-npm-bundled-deps.cjs')
+const { archivePackedNpm } = require('./scripts/build/archive-packed-npm.cjs')
 const { resolveElectronFuses } = require('./scripts/build/electron-fuses.cjs')
 const { verifyPackedClaudePayload } = require('./scripts/checks/verify-packed-claude-payload.cjs')
 const PACKED_APP_ENTRIES = new Set(['apps', 'build-resources', 'dist', 'node_modules', 'package.json'])
@@ -110,6 +111,11 @@ if (!isWindowsOnlyBuild && fs.existsSync(path.join(__dirname, 'tmux-bundle', 'tm
 }
 if (isWindowsOnlyBuild && fs.existsSync(path.join(__dirname, 'psmux-bundle', 'tmux.exe'))) {
   extraResources.push({ from: 'psmux-bundle', to: 'psmux-bundle', filter: ['**/*'] })
+}
+// #1931 The assistant App's rules at the version pinned in scripts/assistant-rules-seed.json (scripts/build/assistant-rules-seed.ts):
+// a person upgrading offline starts with them (electron/assistant-rules-root.ts). Absent while no version is pinned.
+if (fs.existsSync(path.join(__dirname, 'assistant-rules-seed', 'seed.json'))) {
+  extraResources.push({ from: 'assistant-rules-seed', to: 'assistant-rules-seed', filter: ['**/*'] })
 }
 // L3 preinstalled Apps (工作区 first): apps/desktop/preinstalled-apps/<id>/ ships as Resources/preinstalled-apps/,
 // and gugu installs it from there at every start (electron/session/main/core/extensions/preinstalled-apps.ts).
@@ -243,6 +249,8 @@ module.exports = {
   extraMetadata: {
     name: t.artifactPrefix,
     productName: t.productName,
+    // @@@linux-window-identity - Electron's app_id / WM_CLASS must match the packaged desktop filename.
+    desktopName: `${t.artifactPrefix}.desktop`,
     guguBuildDistribution: buildDistribution,
     ...(buildVersion ? { version: buildVersion } : {}),
   },
@@ -309,15 +317,10 @@ module.exports = {
     const { execSync, execFileSync } = require('node:child_process')
     execFileSync(process.execPath, [path.join(__dirname, 'scripts/build/build-mise-bundle.mjs'), '--platform', context.electronPlatformName, '--arch', arch], { stdio: 'inherit' })
     execFileSync(process.execPath, [path.join(__dirname, 'scripts/build/build-frpc-bundle.mjs'), '--platform', context.electronPlatformName, '--arch', arch], { stdio: 'inherit' })
-    // #7199 这台电脑能做的事:Mac 包要带原生助手(日历 / 提醒 / 通讯录 / 定位 / 文字识别 / 系统授权,从源码编)与
-    // cua-driver(电脑控制,下载钉住的发布包),按架构放进 mac-native/<arch>,再由下面 mac.extraResources 拷进 Resources/mac-native;
-    // Windows 包同样带 cua-driver.exe,放进 win-native/<arch>,由 win.extraResources 拷进 resources/win-native。
-    // 缺了它们,用户点「连接」才发现。
+    // #7199 这台电脑能做的事:Mac 包要带原生助手(日历 / 提醒 / 通讯录 / 定位 / 文字识别 / 系统授权,从源码编),
+    // 按架构放进 mac-native/<arch>,再由下面 mac.extraResources 拷进 Resources/mac-native。缺了它,用户点「连接」才发现。
     if (context.electronPlatformName === 'darwin') {
       execFileSync(process.execPath, [path.join(__dirname, 'scripts/build/build-mac-native.mjs'), '--arch', arch], { stdio: 'inherit' })
-    }
-    if (context.electronPlatformName === 'win32') {
-      execFileSync(process.execPath, [path.join(__dirname, 'scripts/build/build-win-native.mjs'), '--arch', arch], { stdio: 'inherit' })
     }
     const { createNativeAddonBuildEnv } = require('./scripts/build/native-addon-build-policy.cjs')
     // --build-from-source:@electron/rebuild 默认先走 prebuild 下载/缓存路径——run 29914453877 实证
@@ -371,6 +374,9 @@ module.exports = {
     // 三个平台都要,所以在图标那段(只对 darwin)之前。
     const npmDeps = packNpmBundledDependencies({ appDir: packedAppDir(context), repoRoot: __dirname })
     console.log(`[npm-bundled-deps] npm 的 ${npmDeps} 个 bundled 依赖已进包`)
+    if (context.electronPlatformName === 'win32') {
+      await archivePackedNpm({ appDir: packedAppDir(context) })
+    }
     // @@@packed-app-allowlist - resources/app holds the build output and its runtime dependencies, nothing else.
     // The checkout around it is not product: in CD it also carries the private operations overlay.
     const appDir = packedAppDir(context)
@@ -461,6 +467,8 @@ module.exports = {
     // ❌ Never as a mac/win/linux `files` list: a platform list of only `!` patterns makes electron-builder
     // add `**/*` and pack the whole checkout (0.3.1 betas shipped the repo and the CD overlay that way).
     '!**/node_modules/node-pty/prebuilds/!(${platform}-${arch})/**',
+    // SQLite 13 prefers our verified per-arch Release build; do not ship eight unused npm prebuilds.
+    '!**/node_modules/better-sqlite3/prebuilds/**',
     '!**/node_modules/@parcel/watcher-!(${platform}-${arch}*)/**',
   ],
   // @@@kill-asar (#2299 / 0.2.26 闪退治本) — asar 关闭:整个 app 落地为 Contents/Resources/app/ 一棵
@@ -530,11 +538,13 @@ module.exports = {
     // @@@windows-ascii-exe - keep the visible productName localized, but make the actual .exe name
     // ASCII so process.execPath is safe to pass through PowerShell/CMD agent launchers.
     executableName: t.artifactPrefix,
-    // #7199 cua-driver.exe 与它的工具清单(beforePack 放好的那一份),与顶层 extraResources 合并。
-    extraResources: [{ from: 'win-native/${arch}', to: 'win-native', filter: ['**/*'] }],
     target: [{ target: 'nsis', arch: ['x64'] }]
   },
   nsis: {
+    // ZIP extracts once onto the destination volume; our NSIS transaction publishes
+    // whole directories. Differential packaging forces the slower 7z/copy path.
+    useZip: true,
+    differentialPackage: false,
     // #2489: assisted mode exposes the directory page; one-click installers intentionally
     // ignore allowToChangeInstallationDirectory and install directly to the default path.
     oneClick: false,
@@ -546,6 +556,7 @@ module.exports = {
   // would bundle the macOS tmux into the Linux artifact. Linux needs a PNG icon (icns is rejected).
   linux: {
     icon: 'public/assets/app/gugu-icon-512.png',
+    syncDesktopName: true,
     category: 'Network',
     target: [{ target: 'AppImage', arch: ['x64'] }]
   },

@@ -16,11 +16,6 @@ function before(args: { installedVersion: string | null; cardVersion: string; ne
   return installed ? 'open' : newer ? 'install-newer' : 'install';
 }
 
-/** The card's and the bar's decision before E-05 was read (app-card-state.ts at 6cdb28be80): by version alone. */
-function versionAlone(args: { installedVersion: string; cardVersion: string }): 'update' | 'open' {
-  return compareExtensionVersions(args.installedVersion, args.cardVersion) < 0 ? 'update' : 'open';
-}
-
 describe('what a card offers here (摩擦单 F66)', () => {
   it('0.1.0 installed, a 0.2.0 card: update to 0.2.0 — control: it said «Install»', () => {
     expect(cardOffer({ installedOrigin: 'attachment', installedVersion: '0.1.0', cardVersion: '0.2.0' })).toEqual({ action: 'update', version: '0.2.0' });
@@ -43,13 +38,14 @@ describe('what a card offers here (摩擦单 F66)', () => {
   });
 
   // 10-17 (群文件夹图标车道,mac1): the market's office 0.1.1 here, a 0.1.2 card said 「更新到 0.1.2」 and the install
-  // refused it (E-05). It now says what is here instead. Control: the decision before (by version alone) said update.
-  it('E-05: an older App here that did not come from a chat is said, not offered an update — control: it said update', () => {
-    for (const origin of ['market', 'preinstalled', 'folder', undefined] as const) {
-      expect(cardOffer({ installedVersion: '0.1.1', installedOrigin: origin, cardVersion: '0.1.2' })).toEqual({ action: 'elsewhere', installedVersion: '0.1.1', from: origin });
-      expect(cardOffer({ installedVersion: '0.1.1', installedOrigin: origin, cardVersion: '0.1.1', newestVersion: '0.1.2' })).toEqual({ action: 'elsewhere', installedVersion: '0.1.1', from: origin });
-      expect(versionAlone({ installedVersion: '0.1.1', cardVersion: '0.1.2' })).toBe('update');
+  // refused it (E-05). 11-12: refused, the person could only uninstall first. The install now asks in full, saying what it
+  // replaces, so the card offers the update; only an App gugu ships is said, not offered one.
+  it('E-05: an older App here from the market or a folder is offered the update; one gugu ships is said', () => {
+    for (const origin of ['market', 'folder', undefined] as const) {
+      expect(cardOffer({ installedVersion: '0.1.1', installedOrigin: origin, cardVersion: '0.1.2' })).toEqual({ action: 'update', version: '0.1.2' });
     }
+    expect(cardOffer({ installedVersion: '0.1.1', installedOrigin: 'preinstalled', cardVersion: '0.1.2' })).toEqual({ action: 'elsewhere', installedVersion: '0.1.1', from: 'preinstalled' });
+    expect(cardOffer({ installedVersion: '0.1.1', installedOrigin: 'preinstalled', cardVersion: '0.1.1', newestVersion: '0.1.2' })).toEqual({ action: 'elsewhere', installedVersion: '0.1.1', from: 'preinstalled' });
     // Not older: it opens, whatever its origin — nothing is replaced.
     expect(cardOffer({ installedVersion: '0.1.2', installedOrigin: 'market', cardVersion: '0.1.2' })).toEqual({ action: 'open', installedNewer: null });
     expect(cardOffer({ installedVersion: '0.1.3', installedOrigin: 'market', cardVersion: '0.1.2' })).toEqual({ action: 'open', installedNewer: '0.1.3' });
@@ -80,13 +76,11 @@ describe("the group's newest package (F15 / F21 / F66: one function)", () => {
     expect(groupUpdateFor(fromChat('0.1.0'), undefined)).toBeNull();
   });
 
-  // 10-17 (群文件夹图标车道,mac1):the market's office 0.1.1 here, a 0.1.2 package in the group — the bar offered 「更新」
-  // and the install refused it (E-05). Control: by version alone (the bar's decision before) it was offered for every origin.
-  it('E-05: no update bar over an App that did not come from a chat — control: by version alone it was offered', () => {
+  // 10-17: the bar offered 「更新」 over the market's office and the install refused it (E-05); 11-12: the install asks
+  // instead, so the bar offers it — over anything but an App gugu ships.
+  it('E-05: an update bar over a market or folder App; none over one gugu ships', () => {
     const newest = pkg('office', '0.1.2', 'b');
-    for (const origin of ['market', 'preinstalled', 'folder', undefined] as const) {
-      expect(groupUpdateFor({ version: '0.1.1', origin }, newest)).toBeNull();
-      expect(versionAlone({ installedVersion: '0.1.1', cardVersion: newest.manifest.version })).toBe('update');
-    }
+    for (const origin of ['market', 'folder', undefined] as const) expect(groupUpdateFor({ version: '0.1.1', origin }, newest)?.url).toBe('b');
+    expect(groupUpdateFor({ version: '0.1.1', origin: 'preinstalled' }, newest)).toBeNull();
   });
 });

@@ -51,7 +51,6 @@ const visibleTo = new Map<string, Map<string, string>>()
 const memberOf = new Map<string, Set<string>>()
 const publicIds = new Map<string, string>()
 const programs: ExtensionPrograms = {
-  registerNative: () => undefined,
   agentToolsRefusal: () => refusal,
   tools: async (program) => {
     const failure = listFailures.get(program.server)
@@ -407,7 +406,7 @@ describe('what the catalog leaves out, and why (#6634 问题 16)', () => {
     const catalog = quietCatalog(() => [notes])
     toolList = [refreshView]
     expect(await catalog.tools('s1', 'conv-1')).toEqual([])
-    expect(await leftOut(catalog)).toEqual(['program agent-notes: gives agents no tools right now; its page in 「App」 shows how it is set up'])
+    expect(await leftOut(catalog)).toEqual(['program agent-notes: gives agents no tools right now; its page in Apps (「市场」 in Chinese) shows how it is set up'])
 
     instructionsNow.set('agent-notes', '未配置搜索服务的 API key，请在全能搜索的设置页填写。')
     await catalog.tools('s1', 'conv-1')
@@ -427,7 +426,7 @@ describe('what the catalog leaves out, and why (#6634 问题 16)', () => {
   // agents nothing was "on", pointing at tools that are not there.
   it("an App's state asks its programs itself: asked before any listing, it already says why", async () => {
     toolList = [refreshView]
-    expect(await leftOut(quietCatalog(() => [notes]))).toEqual(['program agent-notes: gives agents no tools right now; its page in 「App」 shows how it is set up'])
+    expect(await leftOut(quietCatalog(() => [notes]))).toEqual(['program agent-notes: gives agents no tools right now; its page in Apps (「市场」 in Chinese) shows how it is set up'])
     toolList = [addNote, refreshView]
     listFailures.set('agent-notes', 'did not start: exited with code 1')
     expect(await leftOut(quietCatalog(() => [notes]))).toEqual(['program agent-notes: did not start: exited with code 1'])
@@ -754,7 +753,7 @@ describe('the Apps as app_search reads them (10-19)', () => {
     ])
     // The tab_kind handed out is what session_open_in_tab / app_check parse back (it replaced app_list's): never parts to assemble.
     expect(parseExtensionTabKind(apps[0]!.tabs![0]!)).toEqual({ extensionId: 'agent-notes', tabName: 'board' })
-    expect(SWITCHED_OFF('雷达')).toMatch(/^Switched off on this computer\. You cannot switch it on: ask your owner to open 「App」 in 咕咕, open 雷达 there and press 「启用」 \(Turn on\); /)
+    expect(SWITCHED_OFF('雷达')).toMatch(/^Switched off on this computer\. You cannot switch it on: ask your owner to open Apps \(「市场」 in Chinese\) in 咕咕, open 雷达 there and press 「启用」 \(Turn on\); /)
   })
 
   // 5-minute game rounds 2-3 (10-29): a group App made in another chat read as 「on」 was taken for 「in this chat」.

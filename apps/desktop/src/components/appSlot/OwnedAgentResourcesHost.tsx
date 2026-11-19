@@ -10,6 +10,8 @@ import { panelTabsOf, panelTabOf, openPanelItem, closeChatTab, type ChatPanelTab
 import { installOwnedAgentResourceTabs } from '@/lib/ownedAgentResources'
 import { readSessionpageViewRequestBridge } from '@/lib/sessionpageViewRequestBridge'
 import { GroupTabContent } from './GroupTabContent'
+import { ChatTabPage } from './ChatTabHosts'
+import { RightPanel } from '../chat/RightPanel'
 import { useChatOpener } from './useChatOpener'
 import { PaneContext } from '@renderer/features/tabs/pane-context'
 import { getSessionView } from '@/session/renderer/features/sessions/stores/session-selectors'
@@ -17,7 +19,7 @@ import { getSessionView } from '@/session/renderer/features/sessions/stores/sess
 installOwnedAgentResourceTabs({ read: panelTabOf, open: openPanelItem, close: closeChatTab })
 
 /** Resource hosts live independently of the retired owned-agent IM message list. */
-export function OwnedAgentResourcesHost({ ownerId }: { ownerId: string }) {
+export function OwnedAgentResourcesHost({ ownerId, mobile = false }: { ownerId: string; mobile?: boolean }) {
   const hosts = useOwnedAgentResourceHosts()
   useEffect(() => {
     const restore = (event: Event) => {
@@ -27,17 +29,24 @@ export function OwnedAgentResourcesHost({ ownerId }: { ownerId: string }) {
     window.addEventListener(OWNED_AGENT_RESOURCE_HOST_REQUEST, restore)
     return () => { window.removeEventListener(OWNED_AGENT_RESOURCE_HOST_REQUEST, restore); clearOwnedAgentResources(ownerId) }
   }, [ownerId])
-  return <>{hosts.filter(host => host.ownerId === ownerId).map(host => <ResourceHost key={host.chatId} {...host} />)}</>
+  return <>{hosts.filter(host => host.ownerId === ownerId).map(host => <ResourceHost key={host.chatId} {...host} mobile={mobile} />)}</>
 }
 
-function ResourceHost({ ownerId, chatId, projectId, sessionId }: OwnedAgentResourceHost) {
+function ResourceHost({ ownerId, chatId, projectId, sessionId, mobile }: OwnedAgentResourceHost & { mobile: boolean }) {
   const show = useCallback((chatId: string, tabId: string) => {
     const target = ownedAgentResourceHost(ownerId, chatId)
     const open = readSessionpageViewRequestBridge()?.openChatResource
     if (!open || !target) throw new Error(i18n.t('shell.errors.taskBridgeUnavailable', { ns: 'main' }))
     return open({ projectId: target.projectId, sessionId: target.sessionId, chatId, sourceTabId: tabId })
   }, [ownerId])
-  const opener = useChatOpener(chatId, show, () => canTakeOwnedAgentResource(ownerId, chatId))
+  // The phone's task page has no panes: the file is a page over it, as over a chat (ChatAreaPanel).
+  const opener = useChatOpener(chatId, mobile ? undefined : show, () => canTakeOwnedAgentResource(ownerId, chatId))
+  if (mobile) return <>
+    {opener.overlay}
+    <ChatTabPage chatId={chatId} topic={() => null} info={() => null} panel={tab =>
+      <RightPanel><GroupTabContent chatId={chatId} tabId={tab.tabId} item={tab.item} tabbed={false} mobile visible onOpenWith={opener.openWith} /></RightPanel>
+    } />
+  </>
   return <>
     {opener.overlay}
     <ResourcePortals chatId={chatId} projectId={projectId} sessionId={sessionId} panel={tab =>

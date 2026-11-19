@@ -32,7 +32,9 @@ describe('session quote navigation', () => {
       host.querySelector('button')!.click();
       await until('loaded source receives the flash', () => actions.flashMessageId === 'source');
       expect(loadOlderHistory).toHaveBeenCalledTimes(2);
-      expect(loadOlder).toHaveBeenCalledTimes(2);
+      // The pages on the way to the source are prepended together: each prepend rebuilds the list.
+      expect(loadOlder).toHaveBeenCalledTimes(1);
+      expect(state.committedTurns.map(one => one.items[0]!.id)).toEqual(['source', 'middle', 'latest']);
       expect(scrollToItem).toHaveBeenLastCalledWith('source', { align: 'center' });
       expect(actions.flashMessageId).toBe('source');
       expect(missing).not.toHaveBeenCalled();

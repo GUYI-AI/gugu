@@ -8,10 +8,11 @@
 // 而新版本起来之后,缓存里那份「待装的包」已经是过去式,判据也最硬 —— 它不比正在跑的这一版新。
 //
 // @@@diff-base 清 pending 和弃用的 staged 子目录,保留整个缓存的顶层。那一份是**下一次差分下载的底**:
-//   - Windows NSIS:`installer.exe`,由新版安装器在安装时把自己拷过来(app-builder-lib
+//   - 旧 Windows NSIS:`installer.exe`,由旧版安装器在安装时把自己拷过来(app-builder-lib
 //     templates/nsis/include/installer.nsh 的 `copyFile "$EXEPATH" …\installer.exe`);
 //   - mac zip:`update.zip`,由 MacUpdater 在下载完成时拷过来;
-//   - 两边都还有一份 `current.blockmap`(这一版的块表,省一次下载)。
+//   - 两边原有缓存还可能有 `current.blockmap`(这一版的块表,省一次下载)。
+// #2734 Windows ZIP 安装器与客户端已关闭差分,不再写差分底;这里仍保留历史文件,供旧版/回退兼容。
 // 原先整目录 rmSync,底每次都被删 —— owner 的 Windows 上 61.1/62.1/63.1 三次更新全是
 // `Cannot download differentially … ENOENT installer.exe`,198MB 整包重下(10-08 实测)。
 // 代价:装完之后常驻一份底(Windows ≈200MB、mac ≈172MB);下好待装那段时间是底 + pending 两份,

@@ -81,8 +81,9 @@ export function formatLegacyAttachmentContent(fileName: string, mimeType: string
 }
 
 /** The body of a new attachment message, as the server writes it (`chat.attachment_envelope`): a task turn's attachment reads the same. */
-export function attachmentEnvelope(fileName: string, sizeBytes: number, mimeType: string): string {
-  return `${HEADER_PREFIX}${fileName}${mimeType ? ` (${mimeType})` : ''}\n${SIZE_PREFIX}${sizeBytes}\n${KIND_PREFIX}${mimeType.startsWith('image/') ? 'image' : 'file'}`
+export function attachmentEnvelope(fileName: string, sizeBytes: number, mimeType: string, caption?: string): string {
+  const said = caption?.trim()
+  return `${HEADER_PREFIX}${fileName}${mimeType ? ` (${mimeType})` : ''}\n${SIZE_PREFIX}${sizeBytes}\n${KIND_PREFIX}${mimeType.startsWith('image/') ? 'image' : 'file'}${said ? `\n${CAPTION_MARKER}\n${said}` : ''}`
 }
 
 // @@@attachment-line-count - Voice attachment content is exactly 3 lines; media attachment content stays 4 lines so parsers can disambiguate the shared `[附件]` header.
@@ -111,7 +112,7 @@ export function formatAttachmentMetadata(meta: AttachmentMeta): string {
  */
 export function parseAttachmentContent(content: string | null, ref?: MessageFileRef | null): ParsedAttachment | null {
   if (!content) return null
-  const lines = content.split('\n')
+  const lines = content.replace(/\r\n/g, '\n').split('\n')
   if (!lines[0]?.startsWith(HEADER_PREFIX)) return null
   const legacy = lines[1]?.startsWith(URL_PREFIX) ?? false
   const body = legacy ? lines : [lines[0], '', ...lines.slice(1)]
@@ -127,7 +128,8 @@ export function parseAttachmentContent(content: string | null, ref?: MessageFile
   if (legacy) {
     const url = urlLine.slice(URL_PREFIX.length).trim()
     if (!url) return null
-    source = ref?.id && !(ref.local_send_state === 'sending' && url.startsWith('blob:')) ? { kind: 'message', messageId: ref.id } : { kind: 'url', url }
+    // A row this device has not delivered yet (sending, or failed with its file still here) reads its own preview.
+    source = ref?.id && !((ref.local_send_state === 'sending' || ref.local_send_state === 'failed') && url.startsWith('blob:')) ? { kind: 'message', messageId: ref.id } : { kind: 'url', url }
   } else if (ref?.file_item_id && Number.isInteger(ref.file_version) && (ref.file_version as number) >= 1) {
     source = { kind: 'item', itemId: ref.file_item_id, version: ref.file_version as number }
   } else if (ref?.file_blob_id && ref.id) {
@@ -166,7 +168,7 @@ export function parseAttachmentContent(content: string | null, ref?: MessageFile
 function parseHeader(headerLine: string): { fileName: string; mimeType: string } | null {
   const rawHeader = headerLine.slice(HEADER_PREFIX.length).trim()
   if (!rawHeader) return null
-  const headerMatch = rawHeader.match(/^(.*?)(?: \(([^()]+)\))?$/)
+  const headerMatch = rawHeader.match(/^(.*?)(?: \(([a-z\d!#$&^_.+-]+\/[a-z\d!#$&^_.+-]+(?:;[^()]*)?)\))?$/i)
   const fileName = headerMatch?.[1]?.trim() ?? ''
   return fileName ? { fileName, mimeType: headerMatch?.[2]?.trim() ?? '' } : null
 }

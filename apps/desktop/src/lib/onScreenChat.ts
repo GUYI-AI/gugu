@@ -42,6 +42,10 @@ export function isChatOnScreen(chatId: string): boolean {
   return appActive && [...shownByReporter.values()].includes(chatId)
 }
 
+/** 这条会话此刻摆没摆在界面上,不论 App 在不在前台:人一回来就看得见它(比如那里一条发送失败的行)。 */
+export function isChatShown(chatId: string): boolean {
+  return [...shownByReporter.values()].includes(chatId)
+}
 /** 与会话是否上报无关的同一份宿主前后台真值,供会话页的项目格子复用。 */
 export function isAppActive(): boolean { return appActive }
 
@@ -58,14 +62,19 @@ export function useAppActive(): boolean {
   return useSyncExternalStore(subscribe, isAppActive)
 }
 
-/** 壳报此刻摆在屏幕上的会话;返回值按入参同步算,切会话那一帧不会先变成「没在看」。 */
-export function useReportChatOnScreen(shown: string | null): string | null {
-  const active = useAppActive()
+/** Keep the host's answer coming for isAppActive / chatOnScreen readers, without re-rendering on it. */
+export function useWatchAppActive(): void {
+  useEffect(() => subscribe(() => {}), [])
+}
+
+/** 壳报此刻摆在屏幕上的会话。只报,不订前后台:要「人此刻在看吗」的组件自己 useAppActive —— 壳根一订,
+ * 窗口每回一次前台整个壳连同藏着的通讯录、消息列表都重渲一遍。 */
+export function useReportChatOnScreen(shown: string | null): void {
   const [reporter] = useState(() => ({}))
+  useWatchAppActive()
   useEffect(() => {
     if (!shown) return
     shownByReporter.set(reporter, shown)
     return () => { shownByReporter.delete(reporter) }
   }, [reporter, shown])
-  return active ? shown : null
 }

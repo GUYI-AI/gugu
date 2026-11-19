@@ -54,11 +54,11 @@ export function connectionMetadataSnapshot(ownerId: string, snapshot: Connection
 }
 
 export function createOwnerConnectionStore(input: {
-  ownerId: string; deviceId?: string | null; accountId(): string | null; client: ConnectionClient; cache: ConnectionMetadataCache; changed(): void
+  ownerId: string; deviceId?: string | null; accountId(): string | null; client: ConnectionClient; cache: ConnectionMetadataCache; reread(): void; changed(): void
   executePlatformOperation?(operationId: string): Promise<void>
 }) {
   const assertCurrent = () => { if (input.accountId() !== input.ownerId) throw new ConnectionError('account-changed','CONNECTION_ACCOUNT_CHANGED') }
-  const store = createConnectionMetadataStore({ ownerId: input.ownerId,accountId: input.accountId,cache: input.cache,changed: input.changed,assertCurrent,
+  const store = createConnectionMetadataStore({ ownerId: input.ownerId,accountId: input.accountId,cache: input.cache,reread: input.reread,changed: input.changed,assertCurrent,
     read: async () => connectionMetadataSnapshot(input.ownerId,await input.client.snapshot(input.deviceId ?? null)),
     commit: async change => {
       const source = JSON.parse(change.key) as unknown
@@ -84,15 +84,16 @@ export function createOwnerConnectionStore(input: {
   }
   return { ...store,...(input.deviceId ? { deviceId: input.deviceId } : {}),async change(item: ConnectionMetadataItem,operation: Parameters<typeof store.change>[1]) {
     await assertAvailable(item)
+    // The commit itself told the others (the base store's `changed`); executing a platform removal changes it again.
     const receipt = await store.change(item,operation)
-    try {
-      if (item.source?.scopeKey === 'platform' && operation === 'remove' && receipt.status === 'pending') {
+    if (item.source?.scopeKey === 'platform' && operation === 'remove' && receipt.status === 'pending') {
+      try {
         if (!input.executePlatformOperation) throw new ConnectionError('platform-unavailable','CONNECTION_PLATFORM_UNAVAILABLE')
         await input.executePlatformOperation(receipt.operationId)
         assertCurrent()
-      }
-      return receipt
-    } finally { input.changed() }
+      } finally { input.changed() }
+    }
+    return receipt
   },async save(item: ConnectionMetadataItem,data: Record<string,unknown>) {
     await assertAvailable(item)
     return store.save(item,data)

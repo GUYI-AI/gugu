@@ -3,6 +3,8 @@
 //   · 叫什么:会话里「来自 X」那一句 —— 投递信封里只有群号(给 agent 寻址),人读群名。
 //   · 是群还是私聊:块页签的右键菜单(私聊没有群公告)。
 //   · 最后一句、话题从哪个对话开出来:⌘K 那个面板在会话页一次搜对话和话题(名字、最后一句),打开话题要先开它的源对话。
+//   · 成员:内层侧栏(#2548)列一个群 / 项目里我的智能体 —— 我的会话里 agent 是这个对话成员的那些。
+//   · 头像:内层侧栏头一行画这个群自己(群头像,没设就是成员拼图,同聊天列表那一行)。
 //
 // 壳那棵树知道每个对话(聊天列表那一份),会话页不知道:壳写、会话页读,同一个 window 对象 +
 // 一个 window 事件(谁先起来都接得上)。两边都只 import 这一个文件,❌ 各写一份键名。
@@ -11,42 +13,54 @@ import { replaceEqualDeep } from '@tanstack/react-query'
 import { memoizeByReference } from './memoizeByReference'
 
 export type ChatSummary = {
+  readonly historyClearedAt?: string
   readonly peerUserId?: string | null
   readonly firstUnreadMessageId?: string | null
   readonly alias?: string | null
   readonly publicId?: number
   readonly unreadCount: number
   readonly isMarkedUnread: boolean
+  /** 置顶 in the chat list (chat.is_pinned). */
+  readonly pinned?: boolean
   readonly hasMessages: boolean
   readonly name: string | null
   readonly kind: string | null
   readonly lastMessagePreview: string | null
   /** 话题从哪个对话开出来;别的 = null。 */
   readonly sourceChatId: string | null
+  /** 成员(chat.member_user_ids);列表行没带成员的对话 = 空。 */
+  readonly memberUserIds: readonly string[]
+  /** 群自己设的头像(chat.avatar);没设 = null。 */
+  readonly avatar: string | null
 }
 
 const KEY = '__GUGU_CHAT_SUMMARIES__'
 const EVENT = 'gugu:chat-summaries'
 const NAMES_EVENT = 'gugu:chat-names'
 const NAMES_VERSION_KEY = '__GUGU_CHAT_NAMES_VERSION__'
+const RESTORED_KEY = '__GUGU_CHAT_LIST_RESTORED__'
 
 type Summaries = ReadonlyMap<string, ChatSummary>
 type SummarySource = {
-  peer_user_id?: string | null; unread_locator?: { message_id: string | null } | null; id: string; kind: string; unread_count: number; is_marked_unread?: boolean; name?: string | null; alias?: string | null; public_id?: number | null; last_message_at?: string | null; last_message_preview?: string | null; source_chat_id?: string | null
+  conversation_cleared_at?: string | null; peer_user_id?: string | null; unread_locator?: { message_id: string | null } | null; id: string; kind: string; unread_count: number; is_marked_unread?: boolean; is_pinned?: boolean; name?: string | null; alias?: string | null; public_id?: number | null; last_message_at?: string | null; last_message_preview?: string | null; source_chat_id?: string | null; member_user_ids?: readonly string[] | null; avatar?: string | null
 }
 const summaryOf = memoizeByReference((chat: SummarySource, name: string | null | undefined): ChatSummary =>
   replaceEqualDeep(read()?.get(chat.id), {
+    ...(chat.conversation_cleared_at ? { historyClearedAt: chat.conversation_cleared_at } : {}),
     ...(chat.alias ? { alias: chat.alias } : {}),
     ...(typeof chat.public_id === 'number' && Number.isSafeInteger(chat.public_id) && chat.public_id > 0 ? { publicId: chat.public_id } : {}),
     peerUserId: chat.peer_user_id ?? null,
     firstUnreadMessageId: chat.unread_locator?.message_id ?? null,
     unreadCount: chat.unread_count,
     isMarkedUnread: chat.is_marked_unread === true,
+    pinned: chat.is_pinned === true,
     hasMessages: Boolean(chat.last_message_at),
     name: name || null,
     kind: chat.kind,
     lastMessagePreview: chat.last_message_preview || null,
     sourceChatId: chat.source_chat_id || null,
+    memberUserIds: chat.member_user_ids ?? [],
+    avatar: chat.avatar || null,
   }))
 
 /** 壳:聊天列表那一份(整份替换;没变不通知)。 */
@@ -66,6 +80,20 @@ export function publishChatSummaries<T extends SummarySource>(chats: readonly T[
     window.dispatchEvent(new Event(NAMES_EVENT))
   }
 }
+
+/**
+ * The account's stored list has been read: painted from local rows, found empty, or failed. The session tree's first
+ * draw waits for this (local only, like the view state it restores), so it never draws "no conversations" for a list
+ * that was simply not read yet. On window, as the summaries are.
+ */
+function listRestored(): { promise: Promise<void>; settle: () => void } {
+  const host = window as unknown as Record<string, { promise: Promise<void>; settle: () => void } | undefined>
+  return host[RESTORED_KEY] ??= (() => { let settle!: () => void; return { promise: new Promise<void>((resolve) => { settle = resolve }), settle } })()
+}
+/** 壳:存着的那份列表读过了(先发布摘要,再调这个)。 */
+export const markChatListRestored = (): void => listRestored().settle()
+/** 会话页:启动时等它。 */
+export const chatListRestored = (): Promise<void> => listRestored().promise
 
 /** Changes with what `subscribeChatNames` announces, for a render that reads names as it draws. On window, as the summaries are. */
 export function chatNamesVersion(): number {
@@ -95,6 +123,27 @@ export function resolveChatId(address: string): string | null {
   return null
 }
 
+const PIN_KEY = '__GUGU_CHAT_PIN__'
+type PinChat = (chatId: string, pinned: boolean) => Promise<void>
+
+/** 壳:登记聊天列表的「置顶」(同聊天列表那一行的那一个),会话页的页签按 agent 那一行置顶时调它。 */
+export function registerChatPin(pin: PinChat | null): void {
+  (window as unknown as Record<string, unknown>)[PIN_KEY] = pin
+}
+
+/** 会话页:置顶 / 取消置顶聊天列表里的这一行;壳还没登记 = 响亮失败。 */
+export function pinChatRow(chatId: string, pinned: boolean): Promise<void> {
+  const pin = (window as unknown as Record<string, PinChat | null | undefined>)[PIN_KEY]
+  if (!pin) return Promise.reject(new Error('The chat list is not ready to pin this conversation'))
+  return pin(chatId, pinned)
+}
+
+/** 会话页:我的这个 agent 在聊天列表里那一行(和它的私聊)。 */
+export function agentChatOf(agentUserId: string): { chatId: string; summary: ChatSummary } | null {
+  for (const [chatId, summary] of read() ?? []) if ((summary.kind === 'dm' || summary.kind === 'ai') && summary.peerUserId === agentUserId) return { chatId, summary }
+  return null
+}
+
 /** 会话页:壳那边的对话变了(有了消息、改了名)。 */
 export function subscribeChatSummaries(listener: () => void): () => void {
   window.addEventListener(EVENT, listener)
@@ -110,7 +159,7 @@ export function subscribeChatNames(listener: () => void): () => void {
 /** 会话页(不在渲染里):这个对话的摘要;壳还没告诉过 = null,壳的列表里没有它 = 没有过消息、不知道名字。 */
 export function readChatSummary(chatId: string): ChatSummary | null {
   const summaries = read()
-  return summaries ? (summaries.get(chatId) ?? { unreadCount: 0, isMarkedUnread: false, hasMessages: false, name: null, kind: null, lastMessagePreview: null, sourceChatId: null }) : null
+  return summaries ? (summaries.get(chatId) ?? { unreadCount: 0, isMarkedUnread: false, hasMessages: false, name: null, kind: null, lastMessagePreview: null, sourceChatId: null, memberUserIds: [], avatar: null }) : null
 }
 
 /** 会话页:这个对话有没有过消息;壳还没告诉过 = null(还不知道,❌ 当成没有)。 */

@@ -254,7 +254,39 @@ export function hasResourceMonitorInternals(): boolean {
 
 export function startResourceSampler(): void {
   if (timer) return;
+  samplingSince = Date.now();
   sampleSoon();
+}
+
+/** How long one external reading keeps the sampler running when the setting is off. */
+export const ON_DEMAND_SAMPLING_MS = 15 * 60_000;
+let demandUntil = 0;
+let demandTimer: NodeJS.Timeout | null = null;
+let samplingSince: number | null = null;
+const recordedWaiters = new Set<{ resolve: (snapshot: ResourceSnapshot) => void; reject: (error: Error) => void }>();
+/** When the sampler last started (it records from then on), or null while it is stopped. */
+export function resourceSamplingSince(): number | null { return timer ? samplingSince : null; }
+
+/**
+ * A reading asked for from outside the monitor page (device actions `perf.*`): the agent was granted it, which is the person's
+ * consent to sample — so it samples, for `ON_DEMAND_SAMPLING_MS` after the last such reading, with the setting on or off (the
+ * setting is only whether it samples all the time). Resolves with the last recorded sample, the first one when it just started.
+ */
+export function sampleOnDemand(): Promise<ResourceSnapshot> {
+  demandUntil = Date.now() + ON_DEMAND_SAMPLING_MS;
+  if (demandTimer) clearTimeout(demandTimer);
+  demandTimer = setTimeout(() => { demandTimer = null; void reconcileResourceSampler(); }, ON_DEMAND_SAMPLING_MS + 1_000);
+  demandTimer.unref?.();
+  startResourceSampler();
+  if (latest) return Promise.resolve(latest);
+  return new Promise((resolve, reject) => { recordedWaiters.add({ resolve, reject }); });
+}
+function settleRecordedWaiters(outcome: { snapshot: ResourceSnapshot } | { error: Error }): void {
+  for (const waiter of recordedWaiters) {
+    if ('snapshot' in outcome) waiter.resolve(outcome.snapshot);
+    else waiter.reject(outcome.error);
+  }
+  recordedWaiters.clear();
 }
 
 function sampleSoon(delay = 0): void {
@@ -275,6 +307,7 @@ async function tick(): Promise<void> {
     samplingError = { timestamp: Date.now(), reason: err instanceof ProcessListReadError ? 'process-list-read-failed' : 'sample-failed' };
   }
   sampling = false;
+  if (!snap) settleRecordedWaiters({ error: new Error('The resource monitor could not take a sample on this computer (see its log)') });
   if (!timer) return;
   if (timer !== current) return sampleSoon(openSubscriptions.size ? 0 : BACKGROUND_SAMPLE_INTERVAL_MS);
   if (snap) {
@@ -283,6 +316,7 @@ async function tick(): Promise<void> {
     const totals = pageTotalsOf.get(snap);
     if (totals) commitPageTotals(totals);
     latest = snap;
+    settleRecordedWaiters({ snapshot: snap });
   }
   if (openSubscriptions.size) events.emit(resourceSnapshotChannel, samplingError ? { samplingError } : snap);
   // Keep the same complete process-tree metric in history, at a lower cost without a viewer.
@@ -296,6 +330,8 @@ export function stopResourceSampler(): void {
     timer = null;
     cpuBaseline = null;
     latest = null;
+    samplingSince = null;
+    settleRecordedWaiters({ error: new Error('The resource monitor stopped before its first sample') });
     stopPageCounters();
     try {
       pidusage.clear();
@@ -328,7 +364,7 @@ export function setResourceMonitorOpen(
 export async function reconcileResourceSampler(): Promise<void> {
   try {
     const { enabled } = await appSettingsService.get('resourceMonitor');
-    if (enabled) startResourceSampler();
+    if (enabled || Date.now() < demandUntil) startResourceSampler();
     else stopResourceSampler();
   } catch (err) {
     log.warn('resource-sampler: failed to read settings', err);

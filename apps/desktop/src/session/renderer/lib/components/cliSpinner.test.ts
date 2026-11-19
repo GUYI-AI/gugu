@@ -9,7 +9,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CLISpinner } from './cliSpinner';
 import { ANIMATION_WINDOW_SEEN_EVENT } from '@gugu/session-shared/animation-visibility';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -75,7 +75,7 @@ describe('CLISpinner', () => {
   });
 
   it('uses the retained page visibility and resumes on return', () => {
-    const page = (shown: boolean) => createElement(PageShownContext.Provider, { value: shown }, createElement(CLISpinner));
+    const page = (shown: boolean) => createElement(SurfaceShownContext.Provider, { value: shown }, createElement(CLISpinner));
     act(() => root.render(page(true)));
     expect(paused()).toBe(false);
     act(() => root.render(page(false)));

@@ -13,7 +13,11 @@ export function projectSubagentProgress(state: ParserState): ParserState {
       if (item.kind === 'spawn-subagent-tool-call') {
         const agent = owners.get(item.toolCallId);
         if (agent && differs(item, agent)) result = { ...item, agentStatus: agent.status, canCancel: agent.canCancel === true,
-          agentStartedAt: agent.startedAt, outputText: agent.output, reasoningText: agent.reasoning,
+          agentStartedAt: agent.startedAt,
+          // What it wrote lands on the card once, when it settles (#2500). While it runs the text grows with every
+          // chunk; writing each chunk onto the card rewrote the whole launching turn in storage every time. The
+          // running text is read from the registry.
+          ...(agent.status === 'running' ? {} : { outputText: agent.output, reasoningText: agent.reasoning }),
           ...(agent.model ? { model: agent.model } : {}),
         };
       }
@@ -40,6 +44,6 @@ export function projectSubagentProgress(state: ParserState): ParserState {
 
 function differs(item: Extract<ToolNode, { kind: 'spawn-subagent-tool-call' }>, agent: AgentState): boolean {
   return item.agentStatus !== agent.status || item.canCancel !== (agent.canCancel === true) || item.agentStartedAt !== agent.startedAt ||
-    item.outputText !== agent.output || item.reasoningText !== agent.reasoning ||
+    (agent.status !== 'running' && (item.outputText !== agent.output || item.reasoningText !== agent.reasoning)) ||
     (agent.model !== undefined && item.model !== agent.model);
 }

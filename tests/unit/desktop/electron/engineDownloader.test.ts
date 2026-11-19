@@ -25,8 +25,8 @@ afterEach(() => {
   for (const d of createdDirs.splice(0)) rmSync(d, { recursive: true, force: true })
 })
 describe('bundled npm invocation (#2459)', () => {
-  test('uses the app-shipped npm CLI through the embedded Node runtime', () => {
-    const invocation = resolveBundledNpmInvocation({ HTTPS_PROXY: 'http://proxy.invalid' })
+  test('uses the app-shipped npm CLI through the embedded Node runtime', async () => {
+    const invocation = await resolveBundledNpmInvocation({ HTTPS_PROXY: 'http://proxy.invalid' })
     expect(invocation.command).toBe(process.execPath)
     expect(invocation.args).toHaveLength(1)
     expect(invocation.args[0]).toMatch(/node_modules[/\\]npm[/\\]bin[/\\]npm-cli\.js$/)
@@ -36,9 +36,9 @@ describe('bundled npm invocation (#2459)', () => {
       HTTPS_PROXY: 'http://proxy.invalid',
     })
   })
-  test('fails loud when the packaged npm asset is absent', () => {
-    expect(() => resolveBundledNpmInvocation({}, freshDir('missing-npm'), '/app/gugu.exe'))
-      .toThrow(/随 App 交付的 npm CLI 缺失/)
+  test('fails loud when the packaged npm asset is absent', async () => {
+    await expect(resolveBundledNpmInvocation({}, freshDir('missing-npm'), '/app/gugu.exe'))
+      .rejects.toThrow(/随 App 交付的 npm CLI 缺失/)
   })
 })
 /**

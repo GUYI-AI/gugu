@@ -1,6 +1,6 @@
 import { useLayoutEffect, useState, type RefObject } from 'react'
 import { clippedElementBox } from '../../lib/elementVisibility'
-import { widgetPresenceOf } from './widgetPresence'
+import { widgetPresenceOf, type WidgetPresence } from './widgetPresence'
 
 /** The list a slot scrolls in: on a phone its page is mounted half of that list's height ahead (contract r13). */
 function scrollerOf(element: HTMLElement): HTMLElement | null {
@@ -11,13 +11,14 @@ function scrollerOf(element: HTMLElement): HTMLElement | null {
 }
 
 export function useWidgetPresence(chatId: string, widgetId: string, ref: RefObject<HTMLDivElement | null>, shown: boolean, preload: boolean) {
-  const presence = widgetPresenceOf(chatId)
-  const [token, setToken] = useState<number | null>(null)
+  const [slot, setSlot] = useState<{ presence: WidgetPresence; token: number } | null>(null)
   useLayoutEffect(() => {
     const element = ref.current
     if (!element) return
+    // Taken when the slot registers: a chat's presence is dropped once its last slot is released (`emptied`).
+    const presence = widgetPresenceOf(chatId)
     const id = presence.register(widgetId, element)
-    setToken(id)
+    setSlot({ presence, token: id })
     const scroller = preload ? scrollerOf(element) : null
     const measure = () => {
       const { full, clip } = clippedElementBox(element, { left: 0, top: 0, width: innerWidth, height: innerHeight })
@@ -40,8 +41,8 @@ export function useWidgetPresence(chatId: string, widgetId: string, ref: RefObje
       window.removeEventListener('resize', measure)
       document.removeEventListener('visibilitychange', measure)
     }
-  }, [presence, widgetId, ref, shown, preload])
-  return { active: shown && token !== null && presence.owners.get(widgetId) === token,
-    preload: preload && token !== null && presence.preloads.get(widgetId) === token,
-    locate: () => presence.locate(widgetId) }
+  }, [chatId, widgetId, ref, shown, preload])
+  return { active: shown && !!slot && slot.presence.owners.get(widgetId) === slot.token,
+    preload: preload && !!slot && slot.presence.preloads.get(widgetId) === slot.token,
+    locate: () => slot?.presence.locate(widgetId) }
 }

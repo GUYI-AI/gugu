@@ -1,4 +1,6 @@
 import { useChatListState } from './chatListState'
+import { publishChatRemoved } from '../lib/chatRemovalBridge'
+import { useConversationHiding } from './useConversationHiding'
 import { useChatCatchupPriority, useChatCatchupResume } from './chatCatchupPriority'
 import { useChatListRefresh } from './chatListRefresh'
 import { observeAttachmentMessage } from '../lib/attachmentSendRecovery'
@@ -14,7 +16,7 @@ import { chatAttention, upsertChatRow } from '@gugu/core/shared/ui/chatModels'
 import { writeRead } from '../lib/readWriter'
 import { useGroupCreation } from './useGroupCreation'
 import { mergeMessagesById, optimisticReplyFields, upsertMessageById } from '@gugu/core/shared/ui/messageListModels'
-import { useNotificationSettings } from '../lib/notificationSettings'
+import { useDevicePreferences } from '../lib/devicePreferences'
 import {
   openImRepository,
   imSelectors,
@@ -34,7 +36,7 @@ import { bindOutboxActions, createOutboxWiring, forwardingDeviceFiles, type Outb
 import { markLatestThreadRead, markManualUnreadAndRefresh } from '../lib/chatUnreadLocator'
 import { useChatUnreadStreamNavigation } from '../lib/chatUnreadStreamNavigation'
 import { ChatStoreProvider, type SendMessageOptions, type SendAttachmentOptions, useDraftAttachmentsStore, useDraftMentionsStore, useTextDraftStore, useDraftQuotesStore, useDraftWhispersStore } from './chatContext'
-import { advanceReadWatermark, advanceSeenReadWatermark, chatReadsWhole, wholeReadSeq, applyThreadSnapshot, fetchOpenThreadSnapshot, patchChatRows, reconcileMemberReadSeqs, type PatchChat } from './chatRealtimeMutations'; import { subscribeChatLineRevisions } from '../lib/accountRevisionListeners'; import { chatOnScreen, isChatOnScreen, isAppActive, useAppActive } from '../lib/onScreenChat'
+import { advanceReadWatermark, advanceSeenReadWatermark, chatReadsWhole, wholeReadSeq, applyThreadSnapshot, fetchOpenThreadSnapshot, patchChatRows, reconcileMemberReadSeqs, type PatchChat } from './chatRealtimeMutations'; import { subscribeChatLineRevisions } from '../lib/accountRevisionListeners'; import { chatOnScreen, isChatOnScreen, isChatShown, isAppActive, useWatchAppActive } from '../lib/onScreenChat'
 import { useMessageReadFailures, useMessageSnapshotEpochs } from './chatMessageReads'
 import { useChatConversation, type ChatConversationAccess } from './useChatConversation'
 import { useActiveChatTransitionState } from './activeChatTransition'; import { fetchChatHistoryPage, restoreChatHistoryAnchor, fetchThreadMessages, openCachedChatWindow, useChatWindowCache, type WindowObserver } from './chatWindowPublication'
@@ -66,7 +68,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   const { toast } = useToast()
   const userId = user?.id ?? null
   const catchupPriority = useChatCatchupPriority(userId)
-  const notificationSettings = useNotificationSettings(), appActive = useAppActive()
+  const devicePreferences = useDevicePreferences(); useWatchAppActive() // reads are taken only while the app is active
   const [chats, setChats, chatsRef] = useChatListState()
   const [identitiesById, setIdentitiesById] = useState<ReturnType<typeof imSelectors.identitiesById>>({})
   const [activeChatId, setActiveChatIdState] = useActiveChatTransitionState()
@@ -242,7 +244,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     toast: (message: string, type?: ToastType) => void
     appendMessage: (message: MessageItem) => void
   } | null>(null)
-  // 启动恢复(reload/崩溃后未送达的行重建 + 续投)+ window online kick;换用户重跑(db 句柄按 user 隔离)。
+  // 启动恢复(reload/崩溃后未送达的行重建 + 续投)+ 后端恢复 kick;换用户重跑(db 句柄按 user 隔离)。
   useEffect(() => {
     if (!userId) return
     const wiring = createOutboxWiring({
@@ -251,7 +253,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
       user: () => userRef.current ? { id: userRef.current.id, nickname: userRef.current.nickname, avatarUrl: userRef.current.avatarUrl ?? null } : null,
       chats: () => chatsRef.current,
       identity: (id) => imRepositoryRef.current?.snapshot().identity.find((row) => row.id === id)?.value,
-      activeChatId: () => activeChatIdRef.current,
+      chatShown: isChatShown,
       activeThreadRootId: (chatId) => chatId ? cache.view(chatId).activeThreadRootId : activeThreadRootIdRef.current,
       setMessagesAndCache: (updater, chatId) => outboxDepsRef.current?.setMessagesAndCache(updater, chatId),
       setThreadMessages: (updater, chatId) => outboxDepsRef.current?.setThreadMessages(updater, chatId),
@@ -289,7 +291,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   const chatProjection = useChatProjectionBinding({
     ledger: projectionRef.current, repositoryRef: imRepositoryRef, getRepository: getImRepository, conversations: cache,
     chatsRef, activeChatIdRef, requestSeqRef: listRequestSeqRef, setChats, onActiveRevoked, canAcknowledge: canAcknowledgeOpenChat, visibleSeqOf: visibleSeqOfChat,
-    notifications: { chatMessages: notificationSettings.chatMessages, sound: notificationSettings.sound },
+    notifications: { chatMessages: devicePreferences.chatMessages, sound: devicePreferences.chatSound },
   })
 
   const loadChats = useChatListRefresh(userId, chatProjection, chatsRef, listRequestSeqRef, setChatsLoad, catchupPriority)
@@ -304,7 +306,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     }
     if (!chat || imRepositoryScope.disposed || repository.accountId !== userId) return
     await notifyForIngestedMessage(userId, chat, message, { onScreen: isChatOnScreen,
-      notificationsEnabled: notificationSettings.chatMessages, soundEnabled: notificationSettings.sound })
+      notificationsEnabled: devicePreferences.chatMessages, soundEnabled: devicePreferences.chatSound })
   }
 
   const patchChat: PatchChat = useCallback((chatId, partial, expectedReadStateVersion) => {
@@ -467,7 +469,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   }, [userId, cache, persistWindowToLocalSync, revalidateWindowOverlays])
   const markMessageVisible = useCallback((message: MessageItem) => {
     const chatId = message.chat_id
-    if (!userId || !appActive || !isAppActive() || !cache.isObserved(chatId)) return
+    if (!userId || !isAppActive() || !cache.isObserved(chatId)) return
     const receipts = cache.readReceipts(chatId)
     if (message.seq > 0 && !message.is_mine && !message.thread_root_id && !unreadNavigationRef.current?.ownsChat(chatId)
       && cache.rows(chatId).some((row) => row.id === message.id)) advanceSeenReadWatermark(chatsRef.current, chatId, message.seq, patchChat)
@@ -478,7 +480,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
       receipts.delete(message.id)
       revisionLog.warn({ error, chatId }, 'message read receipt failed')
     })
-  }, [appActive, cache, chatsRef, patchChat, userId]) // Activity changes remeasure the current visible rows; never replay cached history.
+  }, [cache, chatsRef, patchChat, userId]) // Coming back to the window re-reports the seen rows (MessageList); never replay cached history.
 
   useAccountStartBeat(userId, {
     getImRepository, getRevisionCoordinator, coordinatorRef: revisionCoordinatorRef, registrationsRef: revisionRegistrationsRef,
@@ -684,7 +686,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
           id, chatId: targetChatId, senderUserId: userId, content: content.trim(),
           toUserIds, replyToMessageId: opts.replyToMessageId ?? null,
           threadRootId, isThreadRoot: !!opts.isThreadRoot, isWhisper: !!opts.isWhisper,
-          resolveDmPeer, beforeDeliver: opts.beforeDeliver, submittedAt: opts.submittedAt,
+          resolveDmPeer, beforeDeliver: opts.beforeDeliver, submittedAt: opts.submittedAt, dependsOn: opts.dependsOn,
         })
       } catch (error) {
         if (threadRootId) {
@@ -784,29 +786,27 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     }
   }, [chatsRef, setChats, userId])
 
-  const deleteChat = useCallback(async (chatId: string, persist = false) => {
-    if (persist) { const receipt = await (chatsRef.current.find((chat) => chat.id === chatId)?.kind === 'topic' ? topicService.archiveTopic(chatId) : chatService.archiveChat(chatId)); if (imRepositoryScope.disposed || receipt && !await chatProjection.confirmPersonalDeletion(userId!, receipt)) return }
-    projectionRef.current.forgetChat(chatId) // 显式删除是权威动作:乐观行与投影水位一起出列 (#4314)
+  const { hideConversation, clearConversation, undoConversationHide } = useConversationHiding(userId, chatProjection)
+  const removeLocalChat = useCallback((chatId: string) => {
+    projectionRef.current.forgetChat(chatId)
+    if (userId) publishChatRemoved(userId, chatId)
     setChats((prev) => prev.filter((c) => c.id !== chatId))
     dropTextDraft(chatId)
     dropDraftAttachments(chatId) // @@@draft-attachment (#1872) - drop queued attachments alongside the draft
     cache.delete(chatId)
     if (activeChatIdRef.current === chatId) setActiveChatId(null)
-  }, [setChats, dropTextDraft, dropDraftAttachments, cache, setActiveChatId, chatsRef, imRepositoryScope.disposed, chatProjection, userId])
+  }, [setChats, dropTextDraft, dropDraftAttachments, cache, setActiveChatId, userId])
+  const deleteChat = useCallback(async (chatId: string, persist = false) => {
+    if (persist) { await (chatsRef.current.find((chat) => chat.id === chatId)?.kind === 'topic' ? topicService.archiveTopic(chatId) : chatService.archiveChat(chatId)); if (imRepositoryScope.disposed) return }
+    removeLocalChat(chatId)
+  }, [chatsRef, imRepositoryScope.disposed, removeLocalChat])
   // #901 退出群聊：共同 RPC 确认移除本人席位后，再本地清理。
   const leaveGroup = useCallback(async (chatId: string) => {
     if (!userId) throw new Error('Not authenticated')
     await chatService.removeGroupMember(chatId, userId)
-    projectionRef.current.forgetChat(chatId) // 同 deleteChat:退出是权威动作 (#4314)
-    setChats((prev) => prev.filter((c) => c.id !== chatId))
-    dropTextDraft(chatId)
-    dropDraftAttachments(chatId) // @@@draft-attachment (#1872) - drop queued attachments alongside the draft
-    cache.delete(chatId)
-    if (activeChatIdRef.current === chatId) setActiveChatId(null)
-  }, [userId, setChats, dropTextDraft, dropDraftAttachments, cache, setActiveChatId])
-
+    removeLocalChat(chatId)
+  }, [userId, removeLocalChat])
   const markUnread = useCallback((chatId: string) => markManualUnreadAndRefresh(chatId, { chats: chatsRef.current, patchChat, toast, refresh: loadChats }), [chatsRef, loadChats, patchChat, toast])
-
   const setChatNotificationLevel = useCallback(async (chatId: string, level: NotificationLevel) => {
     if (!userId) throw new Error('Not authenticated')
     const previousChat = chatsRef.current.find((chat) => chat.id === chatId)
@@ -824,7 +824,6 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
       throw err
     }
   }, [chatsRef, setChats, userId])
-
   // ── Dock / 托盘角标:与通知同一把尺 —— 群与话题只算叫到你的；列表内仍安静显示全部未读 ──────
   useEffect(() => {
     if (!platform.capabilities.badge) return
@@ -889,6 +888,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
         upsertChat,
         pinChat,
         deleteChat,
+        hideConversation, clearConversation, undoConversationHide,
         leaveGroup,
         markUnread,
         setChatNotificationLevel,

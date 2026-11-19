@@ -9,10 +9,11 @@ import { createMemo } from 'solid-js';
 import { toolCallLabel, toolImageUrl } from '@gugu/session-core/acp/client';
 import type { ChatToolCall, ToolNode } from '@session-chat/model';
 import { hasToolPictures } from '@session-chat/state/tool-run';
-import { deriveToolInputSummary } from '../tool-input-summary';
+import { deriveToolInputSummary } from '@gugu/session-core/session-record/tool-input-summary';
 import { Tool } from './Tool';
 import { toolRoot, toolVars, type ToolStyleVars } from './tool.css';
 import { toolThumbStrip, type ToolThumbStrip } from './tool-images';
+import { toolActivationNames } from '@session-chat/lib/tool-activation';
 import {
   hasToolPayload,
   layoutToolPayload,
@@ -113,11 +114,13 @@ export function toolFromItem(item: ToolNode, ctx: SegmentCtx): ChatToolCall {
   // the failure section when the status says the call failed; that is the only
   // reason a red row has anything to show.
   const result = base ? (base.outputText ?? base.rawOutput) : undefined;
+  const toolNames = toolActivationNames(item);
   return {
     kind: 'tool',
     id: item.id,
     ...(base?.trimmedChars ? { transportNote: ctx.translate('transcript.outputTrimmed', { chars: base?.trimmedChars }) } : {}),
     name,
+    ...(toolNames.length ? { toolNames } : {}),
     status: 'status' in item ? item.status : 'done',
     awaitingPermission: base ? ctx.pendingToolCallIds().has(base.toolCallId) : false,
     inputSummary: resolvedSummary,
@@ -162,13 +165,22 @@ export function toolPayloadFor(
   return toolPayloadGeometry(sections, ctx.theme.fonts.code.lineHeight, vars);
 }
 
-/** The picture strip under the header (tool-images.ts): there whenever the call handed pictures back, open or closed. */
-export function toolThumbsFor(item: Pick<ChatToolCall, 'images' | 'imageCount'>, width: number): ToolThumbStrip | null {
+/**
+ * The picture strip under the header (tool-images.ts): there whenever the call handed pictures back, open or closed —
+ * unless the host hides them (`ChatLayout.hideToolPictures`, the phone): then no strip, no height, no fetch. Every
+ * strip (tool row, conversation step, folded line) is sized here, so this is the one place that decides.
+ */
+export function toolThumbsFor(
+  item: Pick<ChatToolCall, 'images' | 'imageCount'>,
+  ctx: Pick<MeasureCtx, 'theme' | 'width'>,
+  width = ctx.width
+): ToolThumbStrip | null {
+  if (ctx.theme.layout?.hideToolPictures) return null;
   return toolThumbStrip(item.imageCount ?? item.images?.length ?? 0, width);
 }
 
 function toolUnitH(item: ChatToolCall, ctx: MeasureCtx, vars: ToolVars): number {
-  return vars.rowH + (toolThumbsFor(item, ctx.width)?.stripH ?? 0) + (toolPayloadFor(item, ctx, vars)?.panelH ?? 0);
+  return vars.rowH + (toolThumbsFor(item, ctx)?.stripH ?? 0) + (toolPayloadFor(item, ctx, vars)?.panelH ?? 0);
 }
 
 function ToolUnitRender(props: { data: ChatToolCall; ctx: RenderCtx; vars: ToolVars }) {
@@ -187,7 +199,7 @@ function ToolUnitRender(props: { data: ChatToolCall; ctx: RenderCtx; vars: ToolV
   // `toolRoot { overflow: hidden }` exists to survive.
   const thumbs = createMemo<ToolThumbStrip | null>(() => {
     const ctx = mCtx();
-    return ctx ? toolThumbsFor(props.data, ctx.width) : null;
+    return ctx ? toolThumbsFor(props.data, ctx) : null;
   });
   const totalH = () => props.vars.rowH + (thumbs()?.stripH ?? 0) + (payload()?.panelH ?? 0);
   const codeLineH = () => mCtx()?.theme.fonts.code.lineHeight ?? 0;
@@ -237,7 +249,7 @@ export const toolUnitDef = defineUnit<ChatToolCall, ToolVars>({
       (sum, [text, cap]) => (text ? sum + Math.min(text.split('\n').length, cap) : sum),
       0
     );
-    return vars.rowH + (toolThumbsFor(item, ctx.width)?.stripH ?? 0) + sourceLines * ctx.theme.fonts.code.lineHeight;
+    return vars.rowH + (toolThumbsFor(item, ctx)?.stripH ?? 0) + sourceLines * ctx.theme.fonts.code.lineHeight;
   },
 
   measure(item, ctx, vars): number {

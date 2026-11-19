@@ -307,7 +307,12 @@ describe('LaTeX reaches the document model as math, not as text', () => {
     const blocks = parseMarkdownToBlocks('t', 'Energy is $E = mc^2$ here.', nullProvider);
     const root = rendered('Energy is $E = mc^2$ here.', nullProvider);
     expect(root.querySelectorAll('.katex')).toHaveLength(1);
-    expect(root.querySelector('annotation')?.textContent).toBe('E = mc^2');
+    // The source stays for a reader, as the formula's accessible name and as hidden text for a copied selection,
+    // without a MathML element (@@@no-mathml in session-shared markdown/dialect.ts).
+    expect(root.querySelector('.katex')?.getAttribute('role')).toBe('math');
+    expect(root.querySelector('.katex')?.getAttribute('aria-label')).toBe('E = mc^2');
+    expect(root.querySelector('.katex-mathml')?.textContent).toBe('E = mc^2');
+    expect(root.querySelector('math, annotation')).toBeNull();
     expect(blocks.map(blockPlainText)).toEqual(['Energy is E = mc^2 here.']);
     // The state this replaced: a mention chip labelled '∑ math'. Reading for it
     // by name is what makes this a regression test rather than a smoke test.

@@ -7,7 +7,6 @@ const state = vi.hoisted(() => ({
   tmux: new Set<string>(),
   listTmux: vi.fn(),
   rows: new Map<string, { projectId: string; archivedAt?: string }>(),
-  closeBrowser: vi.fn(),
 }));
 
 vi.mock('./idle-reclaim', async (original) => {
@@ -38,7 +37,6 @@ vi.mock('./session-orchestration', () => ({ stopExactSessionpageSession: vi.fn(a
 vi.mock('./sessions-on-screen', () => ({ sessionOnScreen: () => false }));
 vi.mock('./tui-resume-exactness', () => ({ tuiResumesExactly: () => true }));
 vi.mock('./utils', () => ({ mapSessionRowToSession: (row: unknown) => row }));
-vi.mock('../../../../browser-agent-mcp', () => ({ closeSessionBrowserTools: (...args: unknown[]) => state.closeBrowser(...args) }));
 
 import { makeTmuxSessionName } from '@main/core/pty/tmux-session-name';
 import { installIdleReclaim } from './install-idle-reclaim';
@@ -51,7 +49,6 @@ describe('idle reclaim resource enumeration', () => {
     state.tmux = new Set();
     state.listTmux.mockReset().mockImplementation(async () => state.tmux);
     state.rows.clear();
-    state.closeBrowser.mockReset();
     dispose = installIdleReclaim({ agentStatus: { on: vi.fn() } });
   });
   afterEach(() => dispose?.());
@@ -70,12 +67,11 @@ describe('idle reclaim resource enumeration', () => {
     expect(state.deps!.sessionsWithLiveTerminals()).toEqual(new Set(['agent']));
   });
 
-  it('rechecks native idleness before stopping and closes its local browser tools', async () => {
+  it('rechecks native idleness before stopping', async () => {
     const target = { projectId: 'p', sessionId: 'idle' };
     vi.mocked(stopExactSessionpageSession).mockClear();
     await state.deps!.stop(target, 'acp');
     expect(stopExactSessionpageSession).toHaveBeenCalledWith({ ...target, reason: 'idle-reap' });
-    expect(state.closeBrowser).toHaveBeenCalledWith('idle');
   });
 
   it('does not turn a failed tmux read into a false empty-process reading', async () => {

@@ -4,7 +4,8 @@ import type { GroupChatSettings, GroupJoinMode, UpdateGroupChatSettingsInput } f
 import { GroupAgentFloodSettings } from './GroupAgentFloodSettings'
 import { joinModeDescription } from './chatPresentation'
 import { isProjectGroupChat } from '../../lib/groupMemberPermissions'
-import { GroupInviteLinkBlock, SettingsToggleRow } from './groupSettingsUi'
+import { SettingsToggleRow } from './groupSettingsUi'
+import { Unknown } from '../ui/Unknown'
 import {
   settingsCenteredRowStyle,
   settingsInputStyle,
@@ -25,13 +26,12 @@ const limitStyle: CSSProperties = { ...settingsMutedTextStyle, display: 'flex', 
  * 原来这些开关对普通成员以禁用态铺在一级页上;现在整页只对管理者存在。
  * 所有项即时落库(useGroupChatSettings.update);成员上限是数字,回车或失焦才写。
  */
-export function GroupSettingsManagePage({ chatId, settings, totalMembers, inviteLink, onUpdate, onOpenPoster }: {
+export function GroupSettingsManagePage({ chatId, settings, totalMembers, onUpdate }: {
   chatId: string
   settings: GroupChatSettings
-  totalMembers: number
-  inviteLink: string | null
+  /** null until the roster is read. */
+  totalMembers: number | null
   onUpdate: (input: UpdateGroupChatSettingsInput) => Promise<boolean>
-  onOpenPoster: () => void
 }) {
   const { t } = useTranslation('messaging')
   const [maxMembersDraft, setMaxMembersDraft] = useState(String(settings.max_members))
@@ -99,8 +99,6 @@ export function GroupSettingsManagePage({ chatId, settings, totalMembers, invite
         checked={settings.invite_link_enabled}
         onChange={(next) => { void onUpdate({ invite_link_enabled: next }) }}
       />
-      {/* 开关关掉时链接对加入无效(DB RPC 拒 token join),所以连链接带海报一起收起(#1164-G2 / #445)。 */}
-      {settings.invite_link_enabled && inviteLink ? <GroupInviteLinkBlock inviteLink={inviteLink} onOpenPoster={onOpenPoster} /> : null}
 
         </>
       )}
@@ -113,7 +111,7 @@ export function GroupSettingsManagePage({ chatId, settings, totalMembers, invite
       <div style={settingsCenteredRowStyle}>
         <div style={settingsRowTitleStyle}>{t('group.settings.memberLimit')}</div>
         <div style={limitStyle}>
-          <span>{totalMembers} /</span>
+          <span>{totalMembers ?? <Unknown className="w-[2ch]" />} /</span>
           <input
             type="number"
             min={1}

@@ -141,7 +141,7 @@ export default {
       "broadUseAnyway": "仍然使用",
       "broadPickAnother": "换一个"
     },
-    "title": "新建 Agent",
+    "title": "创建智能体",
     "unfinishedSweep": {
       "cancelledWithWarning": "上次有一个 Agent 没建完，已取消，但{{steps}}没有做干净。请重新创建。",
       "pending": "上次有一个 Agent 没建完，取消还没做完（{{steps}}没有做干净），下次启动会再试。",
@@ -177,16 +177,6 @@ export default {
     "title": "Agent 模板库",
     "use": "使用"
   },
-  "public": {
-    "capabilities": "能力",
-    "disclaimer": "此 agent 由其所有者授权公开，请理性交流",
-    "loadFailed": "加载失败",
-    "loginToChat": "登录后对话",
-    "ownerCreatedPrefix": "由",
-    "ownerCreatedSuffix": "创建",
-    "startChat": "开始对话",
-    "unavailable": "该 Agent 不存在或未公开分享"
-  },
   "runtime": {
     "groupMine": "我的",
     "groupOthers": "其他人的",
@@ -195,6 +185,9 @@ export default {
       "connecting": "正在连接…",
       "done": "已完成",
       "empty": "最近没有做事",
+      "hostMachine": "它所在的电脑",
+      "hostOffline": "{{machine}} 离线，读不到它的近况",
+      "hostSilent": "{{machine}} 没有应答，读不到它的近况",
       "promptElsewhere": "来自别处的一条消息",
       "recordNotFound": "这台机器读不到这条任务的记录",
       "toolCount": "{{state}} ×{{count}}",
@@ -323,7 +316,7 @@ export default {
       "saveFailed": "形象没保存上，请稍后再试",
       "saving": "保存中…",
       "stageLabel": "{{name}} 的形象预览",
-      "summary": "{{color}} · {{face}}",
+      "summary": "{{color}} {{face}}",
       "tabColor": "颜色",
       "tabFace": "表情",
       "takenBy": "{{names}} 在用这个颜色",
@@ -375,8 +368,8 @@ export default {
       "avatar": "头像",
       "bio": "简介",
       "bioPlaceholder": "描述这个 Agent 的能力（可选）",
-      "deleteAgent": "归档任务",
-      "deleteFailed": "归档任务失败，请重试。",
+      "deleteAgent": "归档会话",
+      "deleteFailed": "归档会话失败，请重试。",
       "deleting": "归档中…",
       "emptyFile": "头像文件不能为空",
       "idLabel": "Agent ID",
@@ -451,6 +444,7 @@ export default {
       "presetHour": "每小时",
       "presetWeek": "每周",
       "soon": "即将触发",
+      "titleLabel": "定时任务",
       "title": "定时任务（{{count}}）",
       "title_one": "定时任务（{{count}}）",
       "title_other": "定时任务（{{count}}）",

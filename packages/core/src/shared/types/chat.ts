@@ -19,15 +19,6 @@ export type MessageDeliveryStatus = 'delivered' | 'read'
 export type GroupMemberType = 'human' | 'agent'
 export type NotificationLevel = 'all' | 'important' | 'none'
 
-// @@@group-avatar-tile — 群头像组合的一格。产品对「群的脸」只有一个定义：显式群头像原样投影，
-// 从未设过则由成员组合表达（presets 不变量）。每格必须带**稳定 id**——它既是 key 也是该成员没上传
-// 头像时生成默认脸的 seed；姓名永不当 seed。所有渲染群头像的 surface 都喂这一种结构。
-export type GroupAvatarMember = {
-  id: string
-  name: string
-  avatar: string | null
-}
-
 export type ChatUnreadLocator = {
   stream_id: string
   stream_kind: 'main' | 'thread'
@@ -50,6 +41,15 @@ export type ChatUnreadLocator = {
 
 export interface ChatItem {
   id: string
+  /** Personal server list state; neither timestamp revokes history or membership. */
+  conversation_cleared_at?: string | null
+  native_personal_activity_at?: string | null
+  native_personal_activity_revision?: string
+  personal_state_observed_revision?: string
+  conversation_hidden_at?: string | null
+  source_conversation_hidden_at?: string | null
+  conversation_visibility_revision?: string
+  source_conversation_visibility_revision?: string
   public_id?: number | null
   kind: ChatKind
   status: ChatStatus
@@ -134,6 +134,10 @@ export interface MessageItem {
   file_metadata?: FileMetadata | null
   /** Local sending preview only; committed dimensions come from the verified file metadata. */
   image_dimensions?: { width: number; height: number }
+  /** #2581 Files sent at once: the rows of one send share this id and are one message on screen. */
+  send_group_id?: string | null
+  /** #2581 How many files that send holds (2–10), so a reader knows when it has them all. */
+  send_group_size?: number | null
   seq: number
   content: string | null
   content_type: MessageContentType
@@ -154,6 +158,8 @@ export interface MessageItem {
   local_send_state?: 'sending' | 'failed' | 'unknown' | null
   local_send_error?: string | null
   local_send_retryable?: boolean
+  /** Sender-device timeline position, retained locally after a resend; seq stays authoritative for delivery and reads. */
+  local_timeline?: { afterSeq: number; createdAt: string }
   forwarded_from_message_id?: string | null
   // @@@threads (#957) — 非空 = 此消息是某话题(thread_root_id 指向的 root)下的回复；
   // 主时间线过滤掉这些(不刷屏主线)、thread 视图按 root 聚合。root 消息本身 thread_root_id 为 null。
@@ -166,8 +172,8 @@ export interface MessageItem {
   edited_at?: string | null
 }
 
-/** undelivered = persisted, but no running instance holds an agent it wakes (shared/ui/systemNotice.ts deliveryWaits). */
-export type MessageSendState = 'sending' | 'undelivered' | 'sent' | 'delivered' | 'read' | 'failed' | 'unknown'
+/** The whole message's state. That no running instance holds one agent it wakes is that agent's own fact (shared/ui/systemNotice.ts deliveryWaits), said beside the bubble and in the read list. */
+export type MessageSendState = 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | 'unknown'
 
 export interface ReactionGroup {
   emoji: string
@@ -327,6 +333,11 @@ export interface Device {
    */
   projects?: DeviceProject[]
   /**
+   * 这一端上一次读这台机器的 `projects` 没读到(原因)。`projects` 仍是更早读到的那份,画它的地方标「上次的」;
+   * 读到了 = 缺席。由设备 store 记(withProjectsRead),库里没有这一列。
+   */
+  projects_error?: string
+  /**
    * #7199 这一行是这个账号的云电脑时,它此刻的样子(休眠中 / 正在唤醒 / 运行中)。库里没有这一列:客户端按云电脑管家
    * 的 /state 补上(管家给的 deviceId 认是哪一行)。睡着时 `is_online` 照实为 false,但 ❌ 按离线处理 —— 见
    * `deviceAcceptsWork`。不是云电脑 = 缺席。
@@ -358,6 +369,8 @@ export interface DeviceSessionSummary {
    * 手机端见到 undefined 画中性态，❌ 不补默认值冒充事实。
    */
   isPinned?: boolean
+  /** #2548 固定到左侧栏(桌面左侧栏另有一行);同上,缺席 = 老宿主不报。 */
+  isPinnedToSidebar?: boolean
   unseen?: boolean
   parentConversationId?: string | null
   /**

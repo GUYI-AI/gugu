@@ -3,17 +3,17 @@
  *
  * The ACP SDK passes config options as a flat array, each tagged with a `category`
  * string and a `type`. This module maps the known categories to first-class typed
- * groups in SessionConfigState. Unknown categories (e.g. Claude's `model_config`
- * fast-mode toggle) are silently ignored — they remain extension points.
+ * groups in SessionConfigState. Other provider-specific categories remain extension points.
  *
  * Stateless and side-effect-free; safe to call on every config_option_update.
  */
 
 import type { SessionConfigOption } from '@agentclientprotocol/sdk';
 import type { EffortOption, ModeOption, ModelChoice, SessionConfigState } from '../models/config';
+import { flattenSelectOptions } from '../models/select-options';
 
 /** Shape of a single ACP option entry within a select-type config option. */
-type RawOption = { value: string; name: string; description?: string | null };
+type RawOption = { value: string; name: string; description?: string | null; _meta?: Record<string, unknown> | null };
 
 function toEffortOption(raw: RawOption): EffortOption {
   const opt: EffortOption = { id: raw.value, name: raw.name };
@@ -23,6 +23,8 @@ function toEffortOption(raw: RawOption): EffortOption {
 
 function toModeOption(raw: RawOption): ModeOption {
   const opt: ModeOption = { id: raw.value, name: raw.name };
+  if (raw._meta?.['gugu:auto-review-disabled'] === true) opt.disabled = true;
+  if (raw._meta?.['gugu:auto-review-haiku'] === true) opt.reviewByHaiku = true;
   if (raw.description) opt.description = raw.description;
   return opt;
 }
@@ -35,21 +37,8 @@ function toModelChoice(raw: RawOption): ModelChoice {
 }
 
 /**
- * A select's choices, flat. ACP lets a select carry either options or groups of options
- * (`{ group, name, options }`, e.g. DeepSeek Harness groups models by provider); a group is
- * presentation only, so its options are listed in order. The runtime cell reads the same shape
- * when it checks a read-back value.
- */
-function selectOptions(opt: SessionConfigOption): RawOption[] {
-  if (opt.type !== 'select') return [];
-  const raw = opt as unknown as { options?: Array<RawOption | { options?: RawOption[] }> };
-  if (!Array.isArray(raw.options)) return [];
-  return raw.options.flatMap((entry) => 'options' in entry && Array.isArray(entry.options) ? entry.options : [entry as RawOption]);
-}
-
-/**
- * Map a raw `SessionConfigOption[]` to the three typed groups of
- * SessionConfigState: modelOptions, efforts, modeOptions.
+ * Map a raw `SessionConfigOption[]` to the typed groups of
+ * SessionConfigState: modelOptions, efforts, modeOptions, fastMode.
  *
  * Category mapping:
  *   'model'         → modelOptions   (model selector)
@@ -63,17 +52,25 @@ function selectOptions(opt: SessionConfigOption): RawOption[] {
  */
 export function deriveConfigGroups(
   options: ReadonlyArray<SessionConfigOption>
-): Pick<SessionConfigState, 'modelOptions' | 'efforts' | 'modeOptions'> {
+): Pick<SessionConfigState, 'modelOptions' | 'efforts' | 'modeOptions' | 'fastMode'> {
   let modelOptions: SessionConfigState['modelOptions'] = null;
   let efforts: SessionConfigState['efforts'] = null;
+  let fastMode: SessionConfigState['fastMode'] = null;
   let modeOptions: SessionConfigState['modeOptions'] = null;
 
   for (const opt of options) {
     if (opt.type !== 'select') continue;
     const rawSelected = (opt as unknown as { currentValue?: string }).currentValue ?? null;
-    const rawOptions = selectOptions(opt);
+    const rawOptions = flattenSelectOptions(opt.options);
 
     switch (opt.category) {
+      case 'model_config':
+        // Both verified bridges expose this exact native id, using on/off select values.
+        if (opt.id === 'fast' && rawOptions.some((item) => item.value === 'on')
+          && rawOptions.some((item) => item.value === 'off')) {
+          fastMode = { configId: opt.id, selected: rawSelected, available: rawOptions.map(toEffortOption) };
+        }
+        break;
       case 'model':
         modelOptions = {
           configId: opt.id,
@@ -95,9 +92,9 @@ export function deriveConfigGroups(
           available: rawOptions.map(toModeOption),
         };
         break;
-      // Unknown categories (e.g. 'model_config') are ignored — extension point.
+      // Other categories are provider extension points.
     }
   }
 
-  return { modelOptions, efforts, modeOptions };
+  return { modelOptions, efforts, modeOptions, fastMode };
 }

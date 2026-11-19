@@ -42,11 +42,12 @@ export const FILE_LINK_IN_TEXT = /gugu-file:\/\/[^\s()[\]<>"'`]+/gi
 export function parseGroupFileLink(href: string): GroupFileLink | null {
   const match = GROUP_FILE_LINK.exec(href.trim())
   if (!match) return null
-  const version = /(?:^|&)v=(\d+)(?:&|$)/.exec(match[2] ?? '')?.[1]
+  const versionText = /(?:^|&)v=(\d+)(?:&|$)/.exec(match[2] ?? '')?.[1]
+  const version = versionText === undefined ? undefined : Number(versionText)
   const at = match[3] === undefined ? null : placeOf(match[3])
   return {
     itemId: match[1]!.toLowerCase(),
-    ...(version === undefined ? {} : { version: Number(version) }),
+    ...(Number.isSafeInteger(version) && version! > 0 ? { version } : {}),
     ...(at && Object.keys(at).length > 0 ? { at } : {}),
   }
 }
@@ -85,7 +86,7 @@ function decoded(part: string): string {
 const NOT_BARE = /[&=%;#+\s<>\\()[\]{}"`|\u0000-\u001f\u007f]/g
 /** As `%XX`: encodeURIComponent leaves `(` and `)` as they are, and a bare one ends a markdown link. */
 const escaped = (c: string) => (c === '(' || c === ')' ? `%${c.charCodeAt(0).toString(16).toUpperCase()}` : encodeURIComponent(c))
-const part = (text: string) => text.replace(NOT_BARE, escaped)
+const part = (text: string) => text.replace(NOT_BARE, escaped).replace(/'/g, '%27')
 
 /**
  * The one way gugu writes such a link — the place's keys and values escaped one by one, in the App's order, so whatever
@@ -136,12 +137,12 @@ export function classifyFileLink(href: string): FileLinkClassification {
   const groupFile = parseGroupFileLink(candidate)
   if (groupFile) return { kind: 'group-file', ...groupFile }
 
-  const { path: raw, at } = workspacePlace(href)
+  const { path: raw, at } = workspacePlace(candidate)
   const placed = at && Object.keys(at).length > 0 ? { at } : {}
   let path = raw
   try {
-    // decodeURI keeps `%23` as it is: the one escape a name's own `#` needs, read back here.
-    path = decodeURI(raw).replace(/%23/gi, '#')
+    // 先还原原文里的 %23，再解码一次，保留 %25 解码后产生的字面 %23。
+    path = decodeURI(raw.replace(/%23/gi, '#'))
   } catch {
     // A literal '%' is valid in a filesystem name; preserve malformed URI text as a path.
   }
@@ -237,7 +238,7 @@ function buildAppLink(input: ParsedExtensionLink, scheme: string): string {
     const [kind, id] = 'chat' in input.place ? (['chat', input.place.chat] as const) : (['session', input.place.session] as const);
     search.append(PLACE_KEYS[kind], id);
   }
-  const tail = segments.map(encodeURIComponent).join('/');
+  const tail = segments.map(segment => encodeURIComponent(segment).replace(/[()]/g, escaped)).join('/');
   const query = search.toString();
   const link = `${scheme}://ext/${input.extensionId}/${tab}${tail ? `/${tail}` : ''}${query ? `?${query}` : ''}`;
   if (link.length > MAX_EXTENSION_LINK_LENGTH) {
@@ -248,10 +249,21 @@ function buildAppLink(input: ParsedExtensionLink, scheme: string): string {
 
 /** Stored chat/file links are independent of the build that writes or reads the message. */
 export const APP_VARIANT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/
-export type AppDetailLink = { kind: 'app-detail'; extensionId: string; deviceId?: string; variant?: string; /** Asked from inside the App: back returns there. Never in the URL. */ fromApp?: boolean }
-function validAppDetail(target: AppDetailLink): boolean {
+export type ExtensionAppDetailLink = { kind: 'app-detail'; extensionId: string; deviceId?: string; variant?: string; /** Asked from inside the App: back returns there. Never in the URL. */ fromApp?: boolean }
+export type AgentAppDetailLink = { kind: 'agent-app-detail'; agentId: string; deviceId?: string }
+export type AppDetailLink = ExtensionAppDetailLink | AgentAppDetailLink
+
+function validAgentAppDetail(target: AgentAppDetailLink): boolean {
+  return /^[a-z0-9][a-z0-9-]{1,63}$/.test(target.agentId) && validDevice(target.deviceId)
+}
+
+function validDevice(deviceId: string | undefined): boolean {
+  return deviceId === undefined || (!!deviceId && !/\s/.test(deviceId))
+}
+
+function validAppDetail(target: ExtensionAppDetailLink): boolean {
   return /^[a-z0-9][a-z0-9-]{1,63}$/.test(target.extensionId)
-    && (target.deviceId === undefined || (!!target.deviceId && target.deviceId.trim() === target.deviceId && !/\s/.test(target.deviceId)))
+    && validDevice(target.deviceId)
     && (target.variant === undefined || (target.deviceId !== undefined && APP_VARIANT_NAME_PATTERN.test(target.variant)))
 }
 export type GuguLinkTarget =
@@ -321,10 +333,17 @@ export function parseGuguLink(raw: string, options: { supabaseUrl?: string } = {
   if (host === 'app') {
     if (url.username || url.password || port || url.hash || !/^\/[^/]+$/.test(url.pathname)
       || [...url.searchParams.keys()].some((key) => !['device', 'variant'].includes(key) || url.searchParams.getAll(key).length !== 1)) return null
-    const target: AppDetailLink = { kind: 'app-detail', extensionId: url.pathname.slice(1),
+    const target: ExtensionAppDetailLink = { kind: 'app-detail', extensionId: url.pathname.slice(1),
       ...(url.searchParams.has('device') ? { deviceId: url.searchParams.get('device')! } : {}),
       ...(url.searchParams.has('variant') ? { variant: url.searchParams.get('variant')! } : {}) }
     return validAppDetail(target) ? target : null
+  }
+  if (host === 'agent-app') {
+    if (url.username || url.password || port || url.hash || !/^\/[^/]+$/.test(url.pathname)
+      || [...url.searchParams.keys()].some((key) => key !== 'device' || url.searchParams.getAll(key).length !== 1)) return null
+    const target: AgentAppDetailLink = { kind: 'agent-app-detail', agentId: url.pathname.slice(1),
+      ...(url.searchParams.has('device') ? { deviceId: url.searchParams.get('device')! } : {}) }
+    return validAgentAppDetail(target) ? target : null
   }
   if (host === 'ext') {
     if (raw.length > MAX_EXTENSION_LINK_LENGTH) return null
@@ -334,7 +353,7 @@ export function parseGuguLink(raw: string, options: { supabaseUrl?: string } = {
     try { path = rest.map(decodeURIComponent).join('/') } catch { return null }
     const chat = url.searchParams.get(PLACE_KEYS.chat)
     const session = url.searchParams.get(PLACE_KEYS.session)
-    const query: Record<string, string> = {}
+    const query: Record<string, string> = Object.create(null) as Record<string, string>
     for (const [key, value] of url.searchParams) if (!key.startsWith('gugu.')) query[key] = value
     return { kind: 'app', extensionId, tab, path, query, place: session ? { session } : chat ? { chat } : null }
   }
@@ -375,10 +394,15 @@ export function guguLink(target: Exclude<GuguLinkTarget, { kind: 'server-login' 
       const query = new URLSearchParams({ ...(target.deviceId ? { device: target.deviceId } : {}), ...(target.variant ? { variant: target.variant } : {}) })
       return `${scheme}://app/${target.extensionId}${query.size ? `?${query}` : ''}`
     }
+    case 'agent-app-detail': {
+      if (!scheme || !validAgentAppDetail(target)) throw new Error('An agent detail link needs an agent id and the build scheme')
+      const query = new URLSearchParams(target.deviceId ? { device: target.deviceId } : {})
+      return `${scheme}://agent-app/${target.agentId}${query.size ? `?${query}` : ''}`
+    }
     case 'session':
     case 'project':
       if (!scheme) throw new Error('An external resource link needs the build scheme')
-      return `${scheme}://${target.kind}/${encodeURIComponent(target.kind === 'session' ? target.sessionId : target.projectId)}`
+      return `${scheme}://${target.kind}/${encodeURIComponent(target.kind === 'session' ? target.sessionId : target.projectId).replace(/[()]/g, escaped)}`
   }
 }
 
@@ -390,7 +414,7 @@ export function linkTargetOf(args: Record<string, unknown>, own: { id: string; c
   }
   switch (args.kind ?? 'app') {
     case 'app-detail': {
-      const target: AppDetailLink = { kind: 'app-detail', extensionId: args.app === undefined ? own.id : text(args.app, 'app'),
+      const target: ExtensionAppDetailLink = { kind: 'app-detail', extensionId: args.app === undefined ? own.id : text(args.app, 'app'),
         ...(args.device === undefined ? {} : { deviceId: text(args.device, 'device') }),
         ...(args.variant === undefined ? {} : { variant: text(args.variant, 'variant') }) }
       if (!validAppDetail(target)) throw new Error('Invalid App detail reference: a variant needs a device and an ASCII slug')
@@ -400,7 +424,7 @@ export function linkTargetOf(args: Record<string, unknown>, own: { id: string; c
     case 'file': {
       const file = typeof args.file === 'object' && args.file ? (args.file as { id?: unknown }).id : args.file
       if (typeof file === 'string' && !MESSAGE_UUID.test(file)) throw new Error("file is a chat file's entry or id: a working copy's file has no link, it goes by its path")
-      if (args.version !== undefined && (!Number.isInteger(args.version) || Number(args.version) < 1)) throw new Error('version must be a positive whole number')
+      if (args.version !== undefined && (!Number.isSafeInteger(args.version) || Number(args.version) < 1)) throw new Error('version must be a positive whole number')
       const at = args.at == null ? undefined : Object.fromEntries(Object.entries(args.at as object).map(([key, value]) => {
         if (typeof value !== 'string' && typeof value !== 'number') throw new Error('A file place has string or number values')
         return [key, String(value)]

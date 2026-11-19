@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
 import { setLocalAgentStatus } from '@/lib/agentPresenceStore';
 import { SidebarStore } from './sidebar-store';
+import { sidebarOf } from './mirror-account-projects.testing';
 
 vi.mock('@renderer/lib/ipc', () => {
   const ipc = { events: { on: vi.fn() }, rpc: {} };
@@ -24,7 +25,7 @@ describe('a presence push re-derives only the rows of the agent it is about', ()
       lastInteractedAt: `2026-01-01T00:${String(i).padStart(2, '0')}:00.000Z`, agent: { userId: `agent-${i}` },
       agentStatus: 'idle', status: { status: 'idle', detail: null },
     }) as unknown as SessionpageSessionSummary);
-    const store = new SidebarStore({
+    const store = sidebarOf({
       projects: new Map([[projectId, { id: projectId, name: 'Remote', createdAt: '2026-01-01T00:00:00.000Z' }]]),
     } as unknown as ConstructorParameters<typeof SidebarStore>[0]);
     store.machines = {
@@ -59,7 +60,7 @@ describe('a presence push re-derives only the rows of the agent it is about', ()
       conversationId: `s-${i}`, projectId, title: `s-${i}`, runtime: 'acp', harness: 'codex', supported: true, unseen: false,
       lastInteractedAt: null, agent: { userId: `agent-${i}` }, agentStatus: 'idle', status: { status: 'idle', detail: null },
     }) as unknown as SessionpageSessionSummary);
-    const store = new SidebarStore({
+    const store = sidebarOf({
       projects: new Map([[projectId, { id: projectId, name: 'Remote', createdAt: '2026-01-01T00:00:00.000Z' }]]),
     } as unknown as ConstructorParameters<typeof SidebarStore>[0]);
     const machinesFor = (listed: readonly SessionpageSessionSummary[]) => ({

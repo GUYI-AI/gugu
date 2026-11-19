@@ -41,13 +41,13 @@ export function InputSendStatus(props: { item: ChatMessage; right: number; top: 
     <Show when={props.item.sendStatus?.state === 'waiting'}>
       <div data-send-state="waiting" role="status" title={props.item.sendStatus?.error}
         style={{ height: `${INPUT_SEND_FAILURE_HEIGHT}px`, display: 'flex', 'align-items': 'center', 'justify-content': 'flex-end', 'font-size': '12px', color: vars.fgMuted }}>
-        <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>{t('transcript.waitingToSend')}{props.item.sendStatus?.reason ? ` · ${props.item.sendStatus?.reason}` : ''}</span>
+        <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>{t('transcript.waitingToSend')}{props.item.sendStatus?.reason ? `: ${props.item.sendStatus?.reason}` : ''}</span>
       </div>
     </Show>
     <Show when={props.item.sendStatus?.state === 'failed' || props.item.sendStatus?.state === 'unknown'}>
       <div data-send-state={props.item.sendStatus?.state} role="alert" title={props.item.sendStatus?.error}
         style={{ height: `${INPUT_SEND_FAILURE_HEIGHT}px`, display: 'flex', 'align-items': 'center', 'justify-content': 'flex-end', gap: '8px', 'font-size': '12px', color: vars.fgError }}>
-        <Show when={manual()} fallback={<Show when={props.item.sendStatus?.state !== 'unknown' || !canRetry()}><span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>{t(props.item.sendStatus?.state === 'unknown' ? 'transcript.sendUnknown' : 'transcript.sendFailed')}{props.item.sendStatus?.reason ? ` · ${props.item.sendStatus?.reason}` : ''}</span></Show>}>
+        <Show when={manual()} fallback={<Show when={props.item.sendStatus?.state !== 'unknown' || !canRetry()}><span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>{t(props.item.sendStatus?.state === 'unknown' ? 'transcript.sendUnknown' : 'transcript.sendFailed')}{props.item.sendStatus?.reason ? `: ${props.item.sendStatus?.reason}` : ''}</span></Show>}>
           <span ref={setFailureRoot} style={{ 'max-width': '100%' }} />
         </Show>
         <Show when={!manual() && canRetry()}>

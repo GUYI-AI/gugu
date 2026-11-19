@@ -15,7 +15,6 @@ import {
   type PullError,
   type PushError,
 } from './errors';
-import { countFileLines } from './file-line-count';
 import type { GitOnError, GitRepository } from './git-repository';
 import type { ImageReadResult } from './models/diff';
 import { toRangeString, toRefString, type DiffTarget } from './models/diff-target';
@@ -28,12 +27,8 @@ import type {
   GitStatusUntrackedMode,
 } from './models/status';
 import { mapGitChangeStatus } from './parsers/diff-parser';
-import {
-  MAX_STATUS_FILES,
-  StatusParser,
-  TooManyFilesChangedError,
-  type FileStatus,
-} from './parsers/status-parser';
+import { parseNumstat } from './parsers/numstat-parser';
+import { readGitStatus, type GitStatusReader } from './status-reader';
 import type {
   GitLogOptions,
   GitSequences,
@@ -44,7 +39,6 @@ import type {
 } from './types';
 import { classifyGitWatchEvents } from './watch/classifier';
 
-const MAX_DIFF_CONTENT_BYTES = 512 * 1024;
 const MAX_IMAGE_BLOB_BYTES = 10 * 1024 * 1024;
 const WATCH_DEBOUNCE_MS = 100;
 const REVALIDATE_INTERVAL_MS = 5 * 60_000;
@@ -64,7 +58,6 @@ const IMAGE_MIME_BY_EXT: Record<string, string> = {
   svg: 'image/svg+xml',
 };
 
-type Numstat = Map<string, { additions: number; deletions: number }>;
 
 export type GitWorktreeOptions = {
   worktree: string;
@@ -73,6 +66,7 @@ export type GitWorktreeOptions = {
   exec: BoundExec;
   watcher: IWatchService;
   onError?: GitOnError;
+  statusReader?: GitStatusReader;
 };
 
 export class GitWorktree implements IGitWorktree {
@@ -80,6 +74,7 @@ export class GitWorktree implements IGitWorktree {
   readonly gitDir: string;
   readonly repository: GitRepository;
   private readonly exec: BoundExec;
+  private readonly statusReader: GitStatusReader;
   private readonly statusModel: LiveModel<GitStatusModel>;
   private readonly headModel: LiveModel<GitHeadModel>;
   private readonly watcher: IWatchService;
@@ -99,6 +94,7 @@ export class GitWorktree implements IGitWorktree {
     this.gitDir = options.gitDir;
     this.repository = options.repository;
     this.exec = options.exec;
+    this.statusReader = options.statusReader ?? readGitStatus;
     this.watcher = options.watcher;
     const onError = options.onError ?? (() => {});
     this.onError = onError;
@@ -273,11 +269,11 @@ export class GitWorktree implements IGitWorktree {
   async getChangedFiles(base: DiffTarget): Promise<GitChange[]> {
     const resolved = resolveDiffTarget(base);
     const diffArgs = resolved.cached
-      ? ['diff', '--numstat', '--cached']
-      : ['diff', '--numstat', resolved.ref];
+      ? ['diff', '--numstat', '-z', '--cached']
+      : ['diff', '--numstat', '-z', resolved.ref];
     const nameArgs = resolved.cached
-      ? ['diff', '--name-status', '--cached']
-      : ['diff', '--name-status', resolved.ref];
+      ? ['diff', '--name-status', '-z', '--cached']
+      : ['diff', '--name-status', '-z', resolved.ref];
 
     const [numstatResult, nameStatusResult] = await Promise.all([
       this.exec.exec(diffArgs).catch(() => ({ stdout: '' })),
@@ -286,9 +282,11 @@ export class GitWorktree implements IGitWorktree {
     const numstat = parseNumstat(numstatResult.stdout);
     const changes: GitChange[] = [];
 
-    for (const line of nameStatusResult.stdout.trim().split('\n').filter(Boolean)) {
-      const [code = '', ...parts] = line.split('\t');
-      const filePath = parts[parts.length - 1]?.trim();
+    const entries = nameStatusResult.stdout.split('\0');
+    for (let i = 0; i < entries.length - 1;) {
+      const code = entries[i++];
+      const original = entries[i++];
+      const filePath = /^[RC]/.test(code) ? entries[i++] : original;
       if (!filePath) continue;
       const stat = numstat.get(filePath);
       changes.push({
@@ -355,14 +353,16 @@ export class GitWorktree implements IGitWorktree {
 
   async getCommitFiles(hash: string): Promise<CommitFile[]> {
     const [numstatRes, nameStatusRes] = await Promise.all([
-      this.exec.exec(['diff-tree', '--root', '--no-commit-id', '--numstat', '-r', hash]),
-      this.exec.exec(['diff-tree', '--root', '--no-commit-id', '--name-status', '-r', hash]),
+      this.exec.exec(['diff-tree', '--root', '--no-commit-id', '--numstat', '-z', '-r', hash]),
+      this.exec.exec(['diff-tree', '--root', '--no-commit-id', '--name-status', '-z', '-r', hash]),
     ]);
     const numstat = parseNumstat(numstatRes.stdout);
     const statusByPath = new Map<string, ReturnType<typeof mapGitChangeStatus>>();
-    for (const line of nameStatusRes.stdout.trim().split('\n').filter(Boolean)) {
-      const [code = '', ...parts] = line.split('\t');
-      const filePath = parts[parts.length - 1];
+    const entries = nameStatusRes.stdout.split('\0');
+    for (let i = 0; i < entries.length - 1;) {
+      const code = entries[i++];
+      const original = entries[i++];
+      const filePath = /^[RC]/.test(code) ? entries[i++] : original;
       if (filePath) statusByPath.set(filePath, mapGitChangeStatus(code));
     }
     return [...numstat.entries()].map(([filePath, stat]) => ({
@@ -528,28 +528,9 @@ export class GitWorktree implements IGitWorktree {
   /** Status never throws: failures are encoded in the model so subscribers see them. */
   private async computeStatus(): Promise<GitStatusModel> {
     try {
-      const parser = new StatusParser();
-      const [, stagedRes, unstagedRes] = await Promise.all([
-        this.runStatusZ(parser),
-        this.exec.exec(['diff', '--numstat', '--cached']).catch(() => ({ stdout: '' })),
-        this.exec.exec(['diff', '--numstat']).catch(() => ({ stdout: '' })),
-      ]);
-
-      if (parser.status.length > MAX_STATUS_FILES || parser.tooManyFiles) {
-        return { kind: 'too-many-files' };
-      }
-
-      return await this.buildStatus(
-        parser.status,
-        parseNumstat(stagedRes.stdout),
-        parseNumstat(unstagedRes.stdout)
-      );
+      return await this.statusReader(this.worktree, this.exec);
     } catch (error) {
-      if (error instanceof TooManyFilesChangedError) return { kind: 'too-many-files' };
-      return {
-        kind: 'error',
-        message: gitErrorMessage(error),
-      };
+      return { kind: 'error', message: gitErrorMessage(error) };
     }
   }
 
@@ -586,17 +567,6 @@ export class GitWorktree implements IGitWorktree {
     return { status: status.sequence, head: head.sequence, refs };
   }
 
-  private async runStatusZ(parser: StatusParser): Promise<void> {
-    await this.exec.execStreaming(
-      ['--no-optional-locks', 'status', '--porcelain=v2', '-z', '-uall'],
-      (chunk) => {
-        parser.update(chunk);
-        return !parser.tooManyFiles;
-      }
-    );
-    if (parser.tooManyFiles) throw new TooManyFilesChangedError();
-  }
-
   private async getIndexedPaths(paths: string[]): Promise<string[]> {
     const { stdout } = await this.exec.exec(['ls-files', '-z', '--', ...paths]);
     return [...new Set(stdout.split('\0').filter(Boolean))];
@@ -616,59 +586,6 @@ export class GitWorktree implements IGitWorktree {
     } catch {
       return [];
     }
-  }
-
-  private async buildStatus(
-    entries: FileStatus[],
-    stagedNumstat: Numstat,
-    unstagedNumstat: Numstat
-  ): Promise<GitStatusModel> {
-    const staged: GitChange[] = [];
-    const unstaged: GitChange[] = [];
-
-    for (const entry of entries) {
-      const code = `${entry.x}${entry.y}`;
-      const filePath = entry.rename ?? entry.path;
-      const status = mapGitChangeStatus(code);
-
-      if (entry.x !== ' ' && entry.x !== '?') {
-        const stat = stagedNumstat.get(filePath);
-        staged.push({
-          path: this.toAbsolutePath(filePath),
-          status,
-          additions: stat?.additions ?? 0,
-          deletions: stat?.deletions ?? 0,
-          indexOid: entry.indexOid,
-        });
-      }
-
-      const isUntracked = code === '??';
-      const hasUnstaged = entry.y !== ' ' && entry.y !== '?';
-      if (!isUntracked && !hasUnstaged) continue;
-
-      let additions = unstagedNumstat.get(filePath)?.additions ?? 0;
-      const deletions = unstagedNumstat.get(filePath)?.deletions ?? 0;
-      if (additions === 0 && deletions === 0 && isUntracked) {
-        try {
-          const result = await countFileLines(this.toAbsolutePath(filePath), {
-            maxBytes: MAX_DIFF_CONTENT_BYTES,
-          });
-          if (!result.truncated) additions = result.lines;
-        } catch {}
-      }
-
-      unstaged.push({ path: this.toAbsolutePath(filePath), status, additions, deletions });
-    }
-
-    const stagedAdded = staged.reduce((sum, change) => sum + change.additions, 0);
-    const stagedDeleted = staged.reduce((sum, change) => sum + change.deletions, 0);
-    return {
-      kind: 'ok',
-      staged,
-      unstaged,
-      stagedAdded,
-      stagedDeleted,
-    };
   }
 
   private async getImageBlob(filePath: string, spec: string): Promise<ImageReadResult> {
@@ -767,20 +684,6 @@ export class GitWorktree implements IGitWorktree {
   }
 }
 
-function parseNumstat(stdout: string): Numstat {
-  const map: Numstat = new Map();
-  for (const line of stdout.trim().split('\n').filter(Boolean)) {
-    const [addStr, delStr, ...pathParts] = line.split('\t');
-    const filePath = pathParts.join('\t');
-    if (!filePath) continue;
-    const current = map.get(filePath) ?? { additions: 0, deletions: 0 };
-    current.additions += addStr === '-' ? 0 : Number.parseInt(addStr ?? '0', 10) || 0;
-    current.deletions += delStr === '-' ? 0 : Number.parseInt(delStr ?? '0', 10) || 0;
-    map.set(filePath, current);
-  }
-  return map;
-}
-
 function resolveDiffTarget(base: DiffTarget): { cached: boolean; ref: string } {
   if ('base' in base) return { cached: false, ref: toRangeString(base) };
   if (base.kind === 'staged') return { cached: true, ref: '--cached' };
@@ -799,7 +702,7 @@ function parseDecoratedTags(decorations: string): string[] {
 
 function imageMimeForPath(filePath: string): string | null {
   const ext = filePath.split('.').pop()?.toLowerCase();
-  return ext ? (IMAGE_MIME_BY_EXT[ext] ?? null) : null;
+  return ext && Object.hasOwn(IMAGE_MIME_BY_EXT, ext) ? IMAGE_MIME_BY_EXT[ext] : null;
 }
 
 function looksLikeLfsPointer(buffer: Buffer): boolean {

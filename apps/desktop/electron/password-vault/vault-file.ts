@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { VaultError, type VaultDependencies } from './contracts'
-import { decode, openedJson, sealedJson, serialize, unseal } from './crypto'
+import { openedJson, sealedJson, serialize } from './crypto'
 import { VaultDisk } from './disk'
 import { binding, documentSchema, hash, installationSchema, parse, payloadSchema, type Installation, type VaultDocument, type VaultPayload } from './schema'
 
@@ -77,30 +77,14 @@ export class VaultFile {
     await this.persist(document)
   }
   async persist(document: VaultDocument): Promise<void> { await this.disk.write(this.path, serialize(document)) }
-  async make(key: Buffer, recovery: Buffer, vaultId: string, payload: VaultPayload): Promise<VaultDocument> {
+  async make(key: Buffer, vaultId: string, payload: VaultPayload): Promise<VaultDocument> {
     const installation = await this.installation(true)
     this.disk.feature?.assertCurrent()
     const document: VaultDocument = { schema: 1, owner: this.owner, installationId: installation.id, vaultId,
-      localKey: '', recoveryKey: { nonce: '', tag: '', ciphertext: '' }, payload: { nonce: '', tag: '', ciphertext: '' } }
+      localKey: '', payload: { nonce: '', tag: '', ciphertext: '' } }
     document.localKey = await this.dependencies.keys.wrap(key, binding(document, 'local'))
     this.disk.feature?.assertCurrent()
-    document.recoveryKey = sealedJson(recovery, { key: key.toString('base64') }, binding(document, 'recovery'))
     document.payload = sealedJson(key, payload, binding(document, 'data'))
     return document
-  }
-  recover(document: VaultDocument, material: string): Buffer {
-    const match = /^gugu-vault-v1\.([a-f0-9-]{36})\.([A-Za-z0-9_-]{43})$/.exec(material)
-    if (!match || match[1] !== document.vaultId) throw new VaultError('RECOVERY_INVALID')
-    const recovery = Buffer.from(match[2], 'base64url')
-    let plain: Buffer | undefined
-    try {
-      plain = unseal(recovery, document.recoveryKey, binding(document, 'recovery'))
-      const value = readJson(Buffer.from(plain)) as { key?: unknown }
-      if (!value || typeof value.key !== 'string') throw new VaultError('RECOVERY_INVALID')
-      const key = decode(value.key)
-      if (key.length !== 32) { key.fill(0); throw new VaultError('RECOVERY_INVALID') }
-      return key
-    } catch { throw new VaultError('RECOVERY_INVALID') }
-    finally { recovery.fill(0); plain?.fill(0) }
   }
 }

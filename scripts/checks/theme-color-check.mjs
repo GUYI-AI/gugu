@@ -18,7 +18,7 @@ import { readTreeBlobs, repoRoot, treeFiles } from './git-tree-blobs.mts'
  *                     尺寸的 `var(--x, var(--y))` 是「调用方可以设」的插槽,放行。定义处:.css/.ts/.tsx/.mjs 里的 `--x:`、字符串 '--x'、session-ui 的
  *                     nsName('x')(= --em-x);模板里的前缀 `var(--usage-heat-${n})` 有任一 --usage-heat-* 定义就算。
  *   svg-single-color  单色的 svg 图标把颜色写死(fill="#a1a1aa"):不跟主题走。填 currentColor,由用它的地方给色;
- *                     <img> 里的 currentColor 不认外面的字色,要用遮罩画(见 open-in-menu 的 OpenInAppIcon)。
+ *                     <img> 里的 currentColor 不认外面的字色,要用遮罩画(见 open-in-app-icon 的 OpenInAppIcon)。
  *                     品牌色的单色标(Claude 橙)进 ALLOWED_SVGS 并写理由。多色的 svg(品牌 logo)不管。
  *
  * 扫 .css / .ts / .tsx(含 vanilla-extract 的 .css.ts),跳过测试与 stories,注释先去掉 —— issue 号 `#7333` 不算颜色:
@@ -50,7 +50,6 @@ export const ALLOWED_FILES = [
   { re: /\/ChannelBrandIcon\.tsx$/, why: '微信 / 飞书 / 钉钉的品牌色' },
   { re: /apps\/desktop\/src\/pages\/login\/GoogleMark\.tsx$/, why: 'Google 官方四色标识；品牌色不随宿主明暗主题改变' },
   { re: /apps\/desktop\/src\/platform\/androidStartupHandoff\.ts$/, why: 'Android 原生启动层冻结 tone 的 palette 映射，颜色值须与 StartupTheme.java 一致；不能提前使用已保存的相反 Web 主题' },
-  { re: /\/lib\/vendor\/cua-cursor-motion\//, why: '@trycua/cursor-motion 原样拷贝(见其 README,改动会让升级失真);Cua 蓝是它的光标品牌色,画在 canvas 上、盖在被控页面的截图上,不跟宿主主题' },
 ]
 
 /** 单色但颜色就是品牌本身的 svg。每条写理由。 */

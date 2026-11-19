@@ -1,3 +1,4 @@
+import { runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { join } from 'node:path';
 import {
   acpApiContract,
@@ -58,6 +59,7 @@ import {
 import { events } from '@main/lib/events';
 import { recordAcpForkHandshake } from '@main/core/agents/fork-legs';
 import { log } from '@main/lib/logger';
+import { pushIdleCompactionSetting } from '../idle-compaction-setting';
 import { sessionStartStageChannel } from '@shared/core/sessions/sessionEvents';
 import { desktopWorkerPath } from '@main/worker-manifest';
 import { stripUntrustedSessionAuthority, trustedPlatformInputPatch } from './session-meta';
@@ -94,6 +96,7 @@ type SessionInjectionFacts = {
    * runtime views inherit it from their source.
    */
   effort: string | null | undefined;
+  fastMode: boolean;
   /**
    * 会话记录里**自己的模型**那一半(`config.model`,harness 自家 id)—— 启动时 runtime 断言的就是它(#6196)。
    *
@@ -156,7 +159,8 @@ export async function readSessionInjectionFacts(input: {
     // 的路径,codex 按目录逐模型的 catalog 就近落档。#6199 曾在这里按一张全局三档表过滤 —— 那会把用户在
     // GPT/Claude 上选的 xhigh/max 悄悄改回默认。
     effort: session ? session.effort : undefined,
-    model: platformModel ? null : (session?.model ?? null),
+    fastMode: session?.fastMode === true,
+    model: platformModel ? null : (runtimeModelId(session?.model) ?? null),
     // 缺席(运行时视图没有自己的行,或行刚被删)= 没有可续的 provider 会话 ⇒ `null`,与「新开一条」同义。
     providerSessionId: session?.providerSessionId ?? null,
     // ⚠️ 原样带上,`[]` 也带 —— `[]` = 用户决定过、一台没关;缺席 = 从没碰过。
@@ -202,6 +206,8 @@ export type AcpRuntimeClient = ContractClient<AcpApiContract> & {
    * 这条会话正在起 ⇒ 等它起完再送(宿主这一侧的事实往往就是在它起的那一秒里得出的)。
    */
   announceSession(input: AcpAnnounceSessionInput): Promise<{ delivered: boolean }>;
+  /** #3005 Gugu's idle-compaction switch (see idle-compaction-setting.ts). */
+  setIdleCompaction(input: { enabled: boolean }): Promise<Record<string, never>>;
 };
 type AcpRuntimeProcessClient = ContractClient<AcpRuntimeApiContract> & {
   adapterProvenance(input: {
@@ -218,6 +224,8 @@ type AcpRuntimeProcessClient = ContractClient<AcpRuntimeApiContract> & {
    * 这条会话正在起 ⇒ 等它起完再送(宿主这一侧的事实往往就是在它起的那一秒里得出的)。
    */
   announceSession(input: AcpAnnounceSessionInput): Promise<{ delivered: boolean }>;
+  /** #3005 Gugu's idle-compaction switch (see idle-compaction-setting.ts). */
+  setIdleCompaction(input: { enabled: boolean }): Promise<Record<string, never>>;
 };
 type AcpRuntimeProcessHandle = WorkerHandle<AcpRuntimeApiContract>;
 type AcpRuntimeHandle = Omit<AcpRuntimeProcessHandle, 'client'> & {
@@ -286,8 +294,11 @@ const acpWorker = lazyWorker(
       }));
       // #881 The assistant panel's per-turn notice is prepared here, in the host, for the runtime's provider requests.
       handle.scope.add(await connectNativePromptPreparation(handle.client, log));
+      // #3005 The worker starts with idle compaction on; tell it the person's setting before any timer can fire.
+      void pushIdleCompactionSetting(handle.client as AcpRuntimeProcessClient);
       handle.scope.add(
         handle.onRestarted(() => {
+          void pushIdleCompactionSetting(handle.client as AcpRuntimeProcessClient);
           committed.invalidate();
           conversationPreviews.reset();
           // A restarted worker has no surviving adapter processes or session records.
@@ -399,6 +410,7 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
   identity: EmdashSessionIdentity | null,
   firstTurnText?: string,
   firstTurnFiles?: import('@gugu/session-core/session-record/contract').TurnFileRef[],
+  applyMaterialization?: import('../emdash-mcp-injector').ApplyAcpMaterialization,
 ): Promise<{
   command: T;
   mcpServers?: EmdashSessionCapabilityInjection['mcpServers'];
@@ -443,6 +455,7 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
     // 消费方按各家方言落成 spawn 参数(kimi:`KIMI_MODEL_THINKING_EFFORT`)。
     // 与下面 trustedInput 同一份:会话记录(经计费路过滤)为准,渲染进程那份只在没有记录时用。
     reasoningEffort: (facts.effort !== undefined ? facts.effort : input.input.effort) ?? null,
+    fastMode: facts.fastMode,
     startupOrigin: input.input.startupOrigin,
     initialMessageId: input.input.initialMessageId,
     taskChatId: input.input.taskChatId,
@@ -457,7 +470,7 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
     // 要不要再投一次 ⇒ 读错的后果是**开场白重投**或**启动被误拒**,而两者都不会指向真因。
     // 同一次 start 的两级注入必须看同一个值,❌ 不许一级读记录、另一级读渲染端。
     providerSessionId: facts.providerSessionId,
-  }, identity);
+  }, identity, applyMaterialization);
   if (process.env.GUGU_DEBUG_AUTONOMY === '1') {
     log.warn('autonomy-debug: ACP start input', {
       sessionId: input.input.sessionId,
@@ -538,10 +551,12 @@ export async function withEmdashPlatformInjection<T extends { input: { sessionId
   const stripped = { ...input, input: stripUntrustedSessionAuthority(input.input) };
   const trustedInput = {
     ...stripped.input,
+    billingRoute: facts.platformModel === null ? 'own' : facts.platformModel ? 'platform' : 'unknown',
     // Renderer start payloads can be an older snapshot than the row created by the composer.
     // The conversation facts read above are the shared persisted source for every ACP injection
     // leg, so the provider receives the same effort that platformModelForSession materializes.
     ...(facts.effort !== undefined ? { effort: facts.effort } : {}),
+    fastMode: facts.fastMode,
     // 同一条理由(#6196):要断言的「自己的模型」只由会话记录说了算,见 `SessionInjectionFacts.model`。
     model: facts.model,
     // 同一条理由,更硬的一格(#5869):要续哪个 provider 会话**只由会话记录说了算**。
@@ -605,7 +620,9 @@ export async function withEmdashPlatformInjection<T extends { input: { sessionId
       }),
     },
   };
-  return { command: reportUnpinnedPlatformModel(command) as T, injected: true };
+  return injection.platformAccessSessionId
+    ? { command: reportUnpinnedPlatformModel(command) as T, injected: true }
+    : { command: command as T, injected: false };
 }
 
 /**
@@ -622,21 +639,9 @@ function reportUnpinnedPlatformModel<C extends { input: { sessionId: string; pro
   return command;
 }
 
-async function closeAcpBrowserToolsBestEffort(sessionId: string): Promise<void> {
+async function stopAcpHumanToolWaits(sessionId: string): Promise<void> {
   const { stopHumanToolWaits } = await import('../../asks/human-tool-wait');
   stopHumanToolWaits(sessionId);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let active = true;
-  try {
-    await Promise.race([
-      import('../../../../../browser-agent-mcp').then(module => active ? module.closeSessionBrowserTools(sessionId) : undefined),
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('Browser tool cleanup timed out after 1000ms')), 1_000);
-      }),
-    ]);
-  } catch (error) {
-    log.warn('acp stop: browser tool cleanup failed', { sessionId, error: String(error) });
-  } finally { active = false; if (timer) clearTimeout(timer); }
 }
 
 /** The worker's stop has its own deadline: a stop that does not answer in 12 s is a failed stop. */
@@ -660,12 +665,12 @@ async function stopAcpWorkerSession(
 }
 
 /**
- * The one ACP session stop: worker stop (with its deadline) and browser tools, then — only once the worker no longer
+ * The one ACP session stop: worker stop (with its deadline) and the tool waits on a person, then — only once the worker no longer
  * owns the process — fork ownership and the platform ticket. Throws while the worker still owns the process.
  */
 export async function stopAcpSessionAndSettle(client: ContractClient<AcpRuntimeApiContract>, sessionId: string): Promise<void> {
   cancelExtensionSessionCalls(sessionId);
-  const [result] = await Promise.all([stopAcpWorkerSession(client, { sessionId }), closeAcpBrowserToolsBestEffort(sessionId)]);
+  const [result] = await Promise.all([stopAcpWorkerSession(client, { sessionId }), stopAcpHumanToolWaits(sessionId)]);
   if (!result.success && await (client as AcpRuntimeProcessClient).adapterProvenance({ sessionId }) !== null) {
     throw new Error(`ACP session ${sessionId} did not stop: ${result.error.message ?? result.error.type}`);
   }
@@ -699,12 +704,7 @@ function decorateRuntimeClient(client: ContractClient<AcpRuntimeApiContract>): A
       cancelExtensionSessionCalls(input.sessionId);
       const { stopHumanToolWaits } = await import('../../asks/human-tool-wait');
       stopHumanToolWaits(input.sessionId);
-      // Harnesses do not all cancel their outstanding MCP requests when interrupted.
-      // Stop this turn's browser work at the owning host as well; the person's page stays open.
-      const { closeSessionBrowserTools } = await import('../../../../../browser-agent-mcp');
-      const closingBrowser = closeSessionBrowserTools(input.sessionId);
-      const [result] = await Promise.all([client.cancelTurn(input, meta), closingBrowser]);
-      return result;
+      return client.cancelTurn(input, meta);
     },
     revertSession: createHistoryReverter({
       boundary: storedRevertBoundary,
@@ -716,6 +716,7 @@ function decorateRuntimeClient(client: ContractClient<AcpRuntimeApiContract>): A
     promptDetached: (input) => detachedClient.promptDetached(input),
     waitPromptDetached: (input) => detachedClient.waitPromptDetached(input),
     announceSession: (input) => detachedClient.announceSession(input),
+    setIdleCompaction: (input) => detachedClient.setIdleCompaction(input),
   };
 }
 
@@ -758,16 +759,16 @@ export async function withHostResolvedCli<T extends { input: { providerId: strin
 export async function callSessionStart<T extends { success: boolean }>(
   start: () => Promise<T>,
   sessionId: string,
-  platformInjected: boolean
+  credentialInjected: boolean
 ): Promise<T> {
   try {
     const result = await start();
-    if (platformInjected && !result.success) {
+    if (credentialInjected && !result.success) {
       await releaseEmdashPlatformSession(sessionId);
     }
     return result;
   } catch (error) {
-    if (platformInjected) await releaseEmdashPlatformSession(sessionId);
+    if (credentialInjected) await releaseEmdashPlatformSession(sessionId);
     throw error;
   }
 }

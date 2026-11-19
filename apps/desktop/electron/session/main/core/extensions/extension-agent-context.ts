@@ -1,4 +1,6 @@
+import { customModelRefFromOption } from '@gugu/session-core/models/custom-model';
 import fs from 'node:fs/promises';
+import type { CanonicalPath } from '@gugu/session-core/files';
 import { eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
@@ -25,7 +27,7 @@ export interface AgentSessionContext {
   projectId: string;
   /** The workspace it runs in (`sessions.workspaceId`): what the window reads its files through. */
   workspaceId: string | null;
-  workspaceRoot: string | null;
+  workspaceRoot: CanonicalPath | null;
   /**
    * The model gugu runs this session on, as `listAgents()` gives it (`spawn_model_id`: a Gugu model's `platform:<id>`,
    * else the harness's own id). Null when the session never chose one — not guessed. One switched inside the agent's
@@ -57,7 +59,8 @@ export async function agentSessionContext(agentId: string): Promise<AgentSession
   const workspaceRoot = recorded && (await isFolder(recorded)) ? recorded : null;
   const decision = await sessionPlatformModel(agentId);
   const model = sessionModelFromDecision(decision, session.config?.model ?? null).spawn_model_id ?? null;
-  const modelLabel = await sessionModelLabel(agentId, decision, session.provider, session.runtime);
+  const custom = customModelRefFromOption(model);
+  const modelLabel = custom ? custom.modelId ?? 'CLI default model' : await sessionModelLabel(agentId, decision, session.provider, session.runtime);
   const agentName = knownTaskName({ id: agentId, config: session.config });
   return { sessionId: agentId, projectId: session.projectId, workspaceId: session.workspaceId ?? null, workspaceRoot, model, modelLabel,
     ...(agentName ? { agentName, taskTitle: agentName } : {}) };

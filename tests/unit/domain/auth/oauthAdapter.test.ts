@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createGuguSupabaseClient } from '../../../../packages/core/src/cloud/supabase'
 import { isOAuthCallback, parseOAuthCallback } from '../../../../apps/desktop/shared/oauth-callback'
 import { OpenedLinkInbox } from '../../../../apps/desktop/shared/opened-link-inbox'
-import { OAuthCallbackInbox } from '../../../../apps/desktop/electron/oauth-callback-inbox'
+import { OpenedLinkMailbox } from '../../../../apps/desktop/electron/opened-link-mailbox'
 
 const redirectTo = 'gugu-beta://auth/callback'
 const verifierKey = 'sb-main-code-verifier'
@@ -67,7 +67,7 @@ describe('OAuth callback boundary', () => {
     expect(navigation).toHaveBeenCalledExactlyOnceWith('gugu-beta://ext/notes/main')
   })
   it('retains desktop callbacks until the renderer takes them, across cold/window reload boundaries', () => {
-    const notify = vi.fn(), inbox = new OAuthCallbackInbox(notify)
+    const notify = vi.fn(), inbox = new OpenedLinkMailbox(notify)
     inbox.push(`${redirectTo}?code=cold`)
     expect(notify).toHaveBeenCalledOnce()
     expect(inbox.take()).toEqual([`${redirectTo}?code=cold`])

@@ -1,7 +1,6 @@
 import type { ILifecycle } from '@gugu/session-shared';
 import type { GitRepositoryStore } from '@renderer/features/projects/stores/git-repository-store';
 import { GitWorktreeStore } from './git-worktree-store';
-import { LifecycleScriptsStore } from './lifecycle-scripts';
 import { wireWorkspaceNudges } from './workspace-nudges';
 
 export class WorkspaceStore implements ILifecycle {
@@ -9,7 +8,6 @@ export class WorkspaceStore implements ILifecycle {
   readonly path: string;
   readonly gitRepository: GitRepositoryStore;
   readonly gitWorktree: GitWorktreeStore;
-  readonly lifecycleScripts: LifecycleScriptsStore;
   private readonly projectId: string;
   private stopNudges: () => void = () => {};
 
@@ -24,7 +22,6 @@ export class WorkspaceStore implements ILifecycle {
     this.path = path;
     this.gitRepository = gitRepository;
     this.gitWorktree = new GitWorktreeStore(projectId, workspaceId, this.gitRepository);
-    this.lifecycleScripts = new LifecycleScriptsStore(projectId, workspaceId);
   }
 
   activate(): void {
@@ -40,6 +37,5 @@ export class WorkspaceStore implements ILifecycle {
   dispose(): void {
     this.stopNudges();
     this.gitWorktree.dispose();
-    this.lifecycleScripts.dispose();
   }
 }

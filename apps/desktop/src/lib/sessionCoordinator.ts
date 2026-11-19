@@ -24,6 +24,8 @@ export interface SessionCoordinatorDeps {
   publishSession: (event: string, session: Session | null) => void
   writeMirror: (session: Session) => Promise<void>
   clearMirror: (reason: 'signed-out' | 'lost') => Promise<void>
+  /** Reads the persisted session into getPersistedSessionState (native storage is async). Local only, no network. */
+  loadPersistedSession: () => Promise<unknown>
   getPersistedSessionState: () => { bootCandidate: Session | null; warning: Error | null }
   commitPersistedSession: (session: Session, signal: AbortSignal) => Promise<void>
   clearPersistedSession: (session: Session, signal: AbortSignal) => Promise<void>
@@ -45,10 +47,6 @@ const PROFILE_TIMEOUT_MS = 15_000
 //     #3916 的未捕获异常随之消失。
 // 也就是说:**每个持锁方都被我们自己的预算兜住,所以「取锁不设超时」是由构造保证安全的,不是靠运气。**
 const AUTH_CALL_TIMEOUT_MS = 15_000
-// 启动是**另一件事**,不该跟一般 auth 调用共用一个数:此刻我们手上已经有 boot candidate 可以渲染,
-// 多等一秒买不到任何东西,只会让用户多盯一秒转圈。所以启动的预算显著更短,且理由写在这里 ——
-// ❌ 它不是「随手挑的 5 秒」,是「等下去没有收益」这句话的数值形式。
-const BOOT_RESTORE_TIMEOUT_MS = 5_000
 
 class AuthCallTimeoutError extends Error {
   override name = 'AuthCallTimeoutError'
@@ -113,7 +111,9 @@ export class SessionCoordinator {
   private refreshFlight: Promise<void> | null = null
   private validationFlight: { kind: 'automatic' | 'automatic-with-trailing-foreground' | 'foreground'; work: Work; promise: Promise<void> } | null = null
   private recoveryFlight: Promise<void> | null = null
-  private restoring = false
+  /** The restore in flight; `accessToken` is the candidate it shows, once one is shown. Cleared with the generation. */
+  private restoreFlight: { accessToken: string | null; settled: Promise<void> } | null = null
+  private get restoring(): boolean { return this.restoreFlight !== null }
   private terminalFlight: Promise<boolean> | null = null
   private generationAbort = new AbortController()
   private generation = 0
@@ -255,9 +255,9 @@ export class SessionCoordinator {
     if (current.access_token !== rejected) return current.access_token
     // 刚换来的证又被拒:再换也不会好(比如服务端时钟/签名配置本身错了),交回常规的降级重试,别换证风暴。
     if (this.recoveredAccessTokens.has(rejected)) return null
-    // 上一次刷新失败、重试已经排上(退避中):被拒的请求不另起一次 —— 刷新吃 429 时那会变成每个数据请求刷一次,
+    // 上一次刷新(或启动恢复)失败、重试已经排上(退避中):被拒的请求不另起一次 —— 刷新吃 429 时那会变成每个数据请求刷一次,
     // 绕过 1/2/5/10/30 s 的退避(#6723 的风暴)。交回原响应,等协调器自己的重试。
-    if (this.retries.get('refresh')?.timer) return null
+    if (this.retries.get('refresh')?.timer || this.retries.get('restore')?.timer) return null
     await this.refresh()
     const next = this.snapshot.session
     if (!next || next.user.id !== owner || next.access_token === rejected) return null
@@ -270,6 +270,10 @@ export class SessionCoordinator {
     if (this.refreshFlight) return this.refreshFlight
     const session = this.snapshot.session
     if (!session) return Promise.resolve()
+    // @@@boot-candidate-first 启动外壳那张候选证的恢复还在飞:getSession 正在换新它。前台对账、被拒的请求
+    // 再起一次 refresh 会拿同一个旧 refresh token 再换一次(实测:恢复落地的同一刻又发一次),撞上服务端的复用检测。
+    // 等恢复落地;落地后的会话由调用方重新读。
+    if (this.restoreFlight?.accessToken === session.access_token) return this.restoreFlight.settled
     const release = this.beginAuthHandoff()
     const work = sessionWork(this.generation, session)
     const flight = withAuthBudget('refreshSession', this.deps.refreshSession({ refresh_token: session.refresh_token })).then(async ({ data, error }) => {
@@ -288,12 +292,40 @@ export class SessionCoordinator {
     return flight
   }
 
+  /**
+   * @@@boot-candidate-first 启动先画「上一次是谁」,网络在后面跑。
+   *
+   * boot candidate 是本地持久化里同步可读的上一份会话。本地 IM 仓库、本地列表只需要它的 userId,
+   * 不需要一张有效的通行证。所以先把它作为降级的已登录外壳发布出去,再去 getSession(令牌过期时它要联网刷新)。
+   * ❌ 不再给启动单设一个更短的预算:有外壳可画之后,等待不再挡住任何人,刷新只受一般 auth 预算约束;
+   * 短预算只会把一次慢但成功的刷新丢掉、拿同一个旧 refresh token 再刷(T2:连发 5 次,次次 200)。
+   * 外壳期间的数据请求带着候选的通行证:过期就被服务端 401,由 recoverRejectedAccessToken 等这次恢复落地再重发,
+   * 恢复失败就原样失败 —— ❌ 不会用 anon 身份打出去。永久错误照旧转 expired、落登录页(#7172)。
+   */
   private async restore(generation = this.nextGeneration()): Promise<void> {
-    const release = this.beginAuthHandoff()
-    this.restoring = true
+    const handoff = this.beginAuthHandoff()
+    let settle!: () => void
+    const settled = new Promise<void>((resolve) => { settle = resolve })
+    const flight: { accessToken: string | null; settled: Promise<void> } = { accessToken: null, settled }
+    this.restoreFlight = flight
+    // 恢复的结果一落地(发布了新会话,或失败转入重试/过期)就放行等它的请求;❌ 不跟 generation 走,
+    // 因为发布新会话本身就会换代,而换代之前那一小段请求仍然拿着候选证。
+    const release = () => {
+      if (this.restoreFlight === flight) this.restoreFlight = null
+      settle(); handoff()
+    }
     try {
-      const { data, error } = await withAuthBudget('getSession', this.deps.getSession(), BOOT_RESTORE_TIMEOUT_MS)
-        .finally(() => { this.restoring = false })
+      await this.deps.loadPersistedSession()
+      if (!this.generationIsCurrent(generation)) return
+      const candidate = this.deps.getPersistedSessionState().bootCandidate
+      if (candidate && this.snapshot.session?.user.id !== candidate.user.id) {
+        resetAuthSessionBoundary()
+        this.deps.publishSession('BOOT_CANDIDATE', candidate)
+        this.setSnapshot({ status: 'degraded', session: candidate, user: userFromSession(candidate), error: null })
+      }
+      const shown = this.snapshot.session
+      if (shown) flight.accessToken = shown.access_token
+      const { data, error } = await withAuthBudget('getSession', this.deps.getSession())
       if (!this.generationIsCurrent(generation)) return
       if (error) { await this.restoreFailed(error, generation); return }
       if (data.session) await this.acceptSession('INITIAL_SESSION', data.session, true, { generation }, release)
@@ -306,9 +338,6 @@ export class SessionCoordinator {
   }
   private restoreFailed(error: unknown, generation: number): Promise<void> {
     const session = this.deps.getPersistedSessionState().bootCandidate
-    // 候选只在要重试时才当已登录外壳亮出来。永久错误先亮一下再登出,已登录界面会挂上一瞬,
-    // 它刚发出的请求被登出中断,在登录页上报「Could not restore the opening task」(#7172 A/B 实测)。
-    if (session && !isPermanentAuthError(error)) this.snapshot = { ...this.snapshot, session, user: userFromSession(session) }
     return this.authCallFailed(error, 'Session restore failed', session, 'RESTORE_EXPIRED', 'restore', { generation }, () => this.restore(generation))
   }
   /**
@@ -539,7 +568,7 @@ export class SessionCoordinator {
   }
   private nextGeneration(): number {
     this.generationAbort.abort(); this.generationAbort = new AbortController()
-    this.generation += 1; this.terminalFlight = null; this.recoveryFlight = null; this.refreshFlight = null; this.validationFlight = null; this.restoring = false
+    this.generation += 1; this.terminalFlight = null; this.recoveryFlight = null; this.refreshFlight = null; this.validationFlight = null; this.restoreFlight = null
     this.retries.forEach(({ timer }) => { if (timer) clearTimeout(timer) }); this.retries.clear()
     if (this.refreshTimer) clearTimeout(this.refreshTimer); this.refreshTimer = null
     return this.generation
@@ -580,12 +609,9 @@ async function clearHostMirror(reason: 'signed-out' | 'lost'): Promise<void> {
   await refreshSshMachines().catch(() => undefined)
 }
 export const sessionCoordinator = new SessionCoordinator({
-  getSession: async () => {
-    // A live background host may need network renewal. Load its persisted boot candidate first,
-    // so a slow renewal keeps the known owner's degraded shell instead of losing their identity.
-    if (phoneHostAuthAvailable()) await mainAuthSessionStorage.storage.getItem(MAIN_AUTH_STORAGE_KEY)
-    return phoneHostGetSession(() => supabase.auth.getSession())
-  },
+  // The coordinator's own refresh: the one place a bare getSession is the point (@@@single-refresher, .eslintrc.cjs).
+  // eslint-disable-next-line no-restricted-syntax
+  getSession: () => phoneHostGetSession(() => supabase.auth.getSession()),
   getUser: (accessToken) => supabase.auth.getUser(accessToken),
   refreshSession: (session) => phoneHostRefreshSession(session.refresh_token, async () => {
     if (!phoneHostAuthAvailable()) return supabase.auth.refreshSession(session)
@@ -604,6 +630,7 @@ export const sessionCoordinator = new SessionCoordinator({
   publishSession: publishRendererSession,
   writeMirror: writeHostMirror,
   clearMirror: clearHostMirror,
+  loadPersistedSession: () => Promise.resolve(mainAuthSessionStorage.storage.getItem(MAIN_AUTH_STORAGE_KEY)),
   getPersistedSessionState: () => mainAuthSessionStorage.getState(),
   commitPersistedSession: (session, signal) => mainAuthSessionStorage.commit(session, signal),
   clearPersistedSession: (session, signal) => mainAuthSessionStorage.remove(session, signal),

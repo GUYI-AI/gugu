@@ -26,7 +26,7 @@
  */
 /**
  * #7333 视觉规范:正文是系统字体(与 tokens.css `--font-family-system` 逐字一致,BlinkMacSystemFont 补在
- * -apple-system 后面)。会话页 transcript 的测量与绘制都读这一条(shared-chat-context 的 SESSION_CHAT_CONFIG),
+ * -apple-system 后面)。会话页 transcript 的测量与绘制都读这一条(shared-chat-context 的 sessionChatConfig()),
  * 宿主外观(native-chat-appearance)也只引用它,❌ 再另写一条「原生」栈。
  */
 export const SESSION_CHAT_FONT_STACK = {

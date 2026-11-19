@@ -5,6 +5,8 @@ import { rpcOn } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { useSessionHostAsk } from './use-session-host-ask';
 
+const AGENT_QUESTION = ['agent-question'] as const;
+
 /**
  * An agent's question (`session_ask_user`) on its own session page — the card its private chat shows, answered through the
  * same `respond` on the machine the session runs on; whoever answers first (here, the chat, the phone) settles it. Above a
@@ -17,7 +19,7 @@ export function SessionHostQuestion({
   sessionId: string | null;
   session: { status: string | null; detail: string | null } | null | undefined;
 }) {
-  const ask = useSessionHostAsk(session?.status === 'needs_user' && session.detail === 'question' ? sessionId : null, 'agent-question');
+  const ask = useSessionHostAsk(session?.status === 'needs_user' && session.detail === 'question' ? sessionId : null, AGENT_QUESTION);
   const respond = useCallback(
     async (answers: readonly QuestionAnswer[]) => {
       if (!sessionId || !ask) throw new Error('No question is asked here');

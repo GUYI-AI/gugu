@@ -19,6 +19,9 @@ const h = vi.hoisted(() => ({
   registered: true,
   identityCwd: null as string | null,
   startSession: vi.fn(),
+  provider: 'claude',
+  piPrepared: vi.fn(),
+  piWrites: vi.fn(async (_id: string) => {}),
   /** The session's queue as the channel stage reads it when it is admitted. */
   pending: { queued: [] as number[], dispatching: [] as number[] },
 }));
@@ -35,22 +38,34 @@ vi.mock('./runtime-process/host', () => ({
   stopAcpSessionAndSettle: h.stopAndSettle,
   readSessionInjectionFacts: async () => ({ agentDisplayName: undefined, platformModel: h.platformModel }),
   provisionStartIdentity: async (input: { cwd: string }) => { h.identityCwd = input.cwd; return h.identity; },
+  withEmdashMcpInjection: async (command: { input: { sessionId: string } }, _lifecycle: unknown, _facts: unknown, _identity: unknown, _text: unknown, _files: unknown, apply?: (write: () => Promise<void>) => Promise<void>) => {
+    if (apply) {
+      h.piPrepared(command.input.sessionId);
+      await apply(() => h.piWrites(command.input.sessionId));
+    }
+    return { command };
+  },
 }));
 vi.mock('../session-timeline/turn-files', () => ({ turnFileText: h.turnFiles }));
 vi.mock('./inject-prompt', () => ({ injectEmdashPromptDetached: h.inject }));
 vi.mock('@main/lib/logger', () => ({ log: { error: h.logError } }));
-vi.mock('./emdash-platform-injector', () => ({ releaseEmdashPlatformSession: h.release, prepareEmdashPlatformSession: h.preparePlatform }));
+vi.mock('./emdash-platform-injector', async original => ({
+  ...await original<typeof import('./emdash-platform-injector')>(), prepareEmdashPlatformSession: h.preparePlatform,
+}));
 vi.mock('@main/core/sessions/runtime-fork-ownership', () => ({ recordRuntimeForkOwnership: vi.fn() }));
 vi.mock('@main/core/sessionpage/sessionpage-session-agent', () => ({ localAgentForSession: async () => h.parentAgent }));
 vi.mock('@main/core/projects/utils', () => ({ resolveWorkspace: () => (h.registered ? { path: '/repo' } : null), persistedWorkspacePath: () => '/repo' }));
-vi.mock('@main/core/sessions/getSessions', () => ({ getSessions: async () => [{ id: 's', runtime: 'acp', providerId: 'claude', projectId: 'p', workspaceId: 'w', providerSessionId: null }] }));
+vi.mock('@main/core/sessions/getSessions', () => ({ getSessions: async () => ['s', 'first', 'queued', 'next'].map(id => ({ id, runtime: 'acp', providerId: h.provider, projectId: 'p', workspaceId: 'w', providerSessionId: null })) }));
+vi.mock('@main/embedded-boot', () => ({ acpStartInputFor: (row: { id: string; providerId: string; projectId: string }, _workspace: string, cwd: string) => ({ sessionId: row.id, providerId: row.providerId, projectId: row.projectId, cwd }) }));
 vi.mock('@main/core/sessions/session-service', () => ({ sessionService: {} }));
 vi.mock('./runtime-process/resume-history', () => ({ resumeHistoryFacts: vi.fn() }));
 vi.mock('../sessions/session-pending', () => ({ lifeStore: { pending: () => h.pending, unaccepted: () => [] } }));
 vi.mock('./runtime-process/session-persistence-policy', () => ({ persistAcpStartResult: vi.fn() }));
 
 import { acpWorkerLease } from './runtime-process/host';
-import { createAcpLegAdapter } from './session-life-acp';
+import { createAcpLegAdapter, PI_STARTUP_TIMEOUT_MS } from './session-life-acp';
+import { firstTurnFilesPlaced, holdFirstTurnForPlacement } from '../sessions/first-turn-placement';
+import { setEmdashPlatformRelease } from './emdash-platform-injector';
 
 const gen = { auth: 1, attempt: 1 } as unknown as Gen;
 const ctx = () => ({ gen, signal: new AbortController().signal });
@@ -64,7 +79,113 @@ async function boundAdapter() {
   return adapter;
 }
 
-beforeEach(() => { h.watchers.clear(); h.gone = null; h.identity = null; h.parentAgent = null; h.platformModel = null; vi.clearAllMocks(); });
+beforeEach(() => {
+  h.watchers.clear(); h.gone = null; h.identity = null; h.parentAgent = null; h.platformModel = null; h.provider = 'claude'; vi.clearAllMocks();
+  const proofs = new Map<string, Promise<void>>();
+  const actualRelease = (id: string, generation?: string) => {
+    const pending = generation === undefined ? h.release(id) : h.release(id, generation); proofs.set(JSON.stringify([id, generation]), pending); return pending;
+  };
+  setEmdashPlatformRelease((id, generation) => {
+    if (id === null) throw new Error('Unexpected fixture bulk release');
+    return actualRelease(id, generation);
+  }, async (id, generation) => {
+    await (proofs.get(JSON.stringify([id, generation])) ?? actualRelease(id, generation));
+    return { status: 'settled', sessionId: id, generation };
+  });
+});
+
+async function piAttempt(id: string) {
+  h.provider = 'pi';
+  h.identity = { guguAgentUserId: 'pi-agent', chatId: 'dm' };
+  const controller = new AbortController();
+  const context = { gen, signal: controller.signal };
+  const adapter = createAcpLegAdapter(id, null);
+  await adapter.run('identity', {}, context);
+  const capabilities = () => adapter.run('capabilities', { workspace: { workspaceId: 'w', path: '/repo' } } as never, context);
+  return { adapter, controller, context, capabilities };
+}
+
+function piChannel(attempt: Awaited<ReturnType<typeof piAttempt>>) {
+  return attempt.adapter.run('channel', {
+    process: { client: { startSession: h.startSession } },
+    cli: { command: { input: { providerId: 'pi', projectId: 'p', cwd: '/repo' } } },
+    capabilities: { injection: {}, facts: {} },
+    platform: { injected: false },
+  } as never, attempt.context);
+}
+
+describe('Pi ACP shared startup settings', () => {
+  it.each([true, false])('lets the next writer proceed after a start result with success=%s', async (success) => {
+    const first = await piAttempt('first');
+    const next = await piAttempt('next');
+    await first.capabilities();
+    const subsequent = next.capabilities();
+    await vi.waitFor(() => expect(h.piPrepared).toHaveBeenCalledWith('next'));
+    const handshake = Promise.withResolvers<unknown>();
+    h.startSession.mockReturnValueOnce(handshake.promise);
+    const admission = piChannel(first);
+    expect(h.piWrites.mock.calls).toEqual([['first']]);
+    if (success) {
+      handshake.resolve({ success: true, data: { providerSessionId: 'native' } });
+      await expect(admission).resolves.toMatchObject({ gen });
+    } else {
+      const failure = expect(admission).rejects.toThrow('adapter rejected');
+      handshake.resolve({ success: false, error: { type: 'initialize_failed', message: 'adapter rejected' } });
+      await failure;
+    }
+    await subsequent;
+    await next.adapter.teardown({} as StageOut, { gen });
+    expect(h.piWrites.mock.calls).toEqual([['first'], ['next']]);
+  });
+
+  it('cancels a queued writer and releases the holder on teardown before channel', async () => {
+    const first = await piAttempt('first');
+    const queued = await piAttempt('queued');
+    const next = await piAttempt('next');
+    await first.capabilities();
+    const reason = new Error('owner cancelled');
+    const cancelled = queued.capabilities().catch((error: unknown) => error);
+    try {
+      await vi.waitFor(() => expect(h.piPrepared).toHaveBeenCalledWith('queued'));
+      const subsequent = next.capabilities();
+      await vi.waitFor(() => expect(h.piPrepared).toHaveBeenCalledWith('next'));
+      queued.controller.abort(reason);
+      expect(await cancelled).toBe(reason);
+      expect(h.piWrites.mock.calls).toEqual([['first']]);
+      await first.adapter.teardown({} as StageOut, { gen });
+      await subsequent;
+      expect(h.piWrites.mock.calls).toEqual([['first'], ['next']]);
+    } finally {
+      queued.controller.abort(reason);
+      next.controller.abort(reason);
+      await first.adapter.teardown({} as StageOut, { gen });
+      await next.adapter.teardown({} as StageOut, { gen });
+    }
+  });
+
+  it('fails a hung handshake at the deadline and lets the next write proceed after teardown', async () => {
+    vi.useFakeTimers();
+    try {
+      const first = await piAttempt('first');
+      const next = await piAttempt('next');
+      await first.capabilities();
+      const subsequent = next.capabilities();
+      await vi.waitFor(() => expect(h.piPrepared).toHaveBeenCalledWith('next'));
+      h.startSession.mockReturnValueOnce(new Promise(() => {}));
+      const failed = expect(piChannel(first)).rejects.toThrow('Pi startup timed out');
+      await vi.advanceTimersByTimeAsync(PI_STARTUP_TIMEOUT_MS);
+      await failed;
+      expect(h.piWrites.mock.calls).toEqual([['first']]);
+      await first.adapter.teardown({ process: await processLease() } as StageOut, { gen });
+      expect(h.stopAndSettle).toHaveBeenCalledWith(h.client, 'first');
+      await subsequent;
+      await next.adapter.teardown({} as StageOut, { gen });
+      expect(h.piWrites.mock.calls).toEqual([['first'], ['next']]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 
 describe('session-life ACP leg', () => {
   it('starts platform preparation once identity is bound, before waiting for workspace or capability work', async () => {
@@ -80,7 +201,14 @@ describe('session-life ACP leg', () => {
     h.platformModel = { modelId: 'platform-model' };
     h.preparePlatform.mockRejectedValueOnce(new Error('Platform access was refused'));
     const adapter = await boundAdapter();
-    await expect(adapter.run('capabilities', {} as never, ctx())).rejects.toThrow('Platform access was refused');
+    await expect(adapter.run('platform', {} as never, ctx())).rejects.toThrow('Platform access was refused');
+  });
+
+  it('when capability work and the ticket both fail, the ticket\'s reason is the start failure', async () => {
+    h.platformModel = { modelId: 'platform-model' };
+    h.preparePlatform.mockRejectedValueOnce(new Error('gugu-models:unreachable'));
+    const adapter = await boundAdapter();
+    await expect(adapter.run('capabilities', {} as never, ctx())).rejects.toThrow('gugu-models:unreachable');
   });
 
   it('settles a late platform preparation when the attempt stopped before capabilities', async () => {
@@ -91,6 +219,56 @@ describe('session-life ACP leg', () => {
     await adapter.teardown({}, ctx());
     finish('prepared-generation');
     await vi.waitFor(() => expect(h.release).toHaveBeenCalledWith('s', 'prepared-generation'));
+  });
+
+  it('a stop during capability work does not wait for a ticket that never answers, and settles it by generation if it does', async () => {
+    h.platformModel = { modelId: 'platform-model' };
+    let finish!: (generation: string) => void;
+    h.preparePlatform.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const adapter = await boundAdapter();
+    await adapter.teardown({ capabilities: {} } as never, ctx());
+    expect(h.release).not.toHaveBeenCalled();
+    finish('prepared-generation');
+    await vi.waitFor(() => expect(h.release).toHaveBeenCalledWith('s', 'prepared-generation'));
+  });
+  it('account closure waits for the detached ticket release while an ordinary stop still returns', async () => {
+    h.platformModel = { modelId: 'platform-model' };
+    const issue = Promise.withResolvers<string>(), released = Promise.withResolvers<void>();
+    h.preparePlatform.mockReturnValueOnce(issue.promise);
+    h.release.mockImplementationOnce(async () => { await released.promise; return undefined; });
+    const adapter = await boundAdapter();
+    await adapter.teardown({}, ctx());
+    let drained = false;
+    const closing = adapter.closureDrain!().then(() => { drained = true; });
+    issue.resolve('prepared-generation');
+    await vi.waitFor(() => expect(h.release).toHaveBeenCalledWith('s', 'prepared-generation'));
+    expect(drained).toBe(false);
+    released.resolve(); await closing;
+    expect(drained).toBe(true);
+  });
+  it.each(['normal', 'late'] as const)('retains a rejected actual release outcome on the %s closure branch', async branch => {
+    h.platformModel = { modelId: 'platform-model' };
+    const issue = Promise.withResolvers<string>();
+    h.preparePlatform.mockReturnValueOnce(issue.promise);
+    h.release.mockRejectedValueOnce(new Error('controlled settlement refused'));
+    const adapter = await boundAdapter();
+    if (branch === 'normal') {
+      issue.resolve('normal-generation');
+      await adapter.teardown({ process: await processLease() } as StageOut, ctx());
+    } else {
+      await adapter.teardown({}, ctx()); issue.resolve('late-generation');
+    }
+    await expect(adapter.closureDrain!()).rejects.toThrow('controlled settlement refused');
+  });
+  it('never substitutes an unconfigured or missing generation release for closure proof', async () => {
+    h.platformModel = { modelId: 'platform-model' };
+    h.preparePlatform.mockResolvedValueOnce('required-generation');
+    setEmdashPlatformRelease(async () => {});
+    const adapter = await boundAdapter(); await adapter.teardown({}, ctx());
+    await expect(adapter.closureDrain!()).rejects.toThrow('unconfirmed');
+    h.preparePlatform.mockResolvedValueOnce(null);
+    const missing = await boundAdapter(); await missing.teardown({}, ctx());
+    await expect(missing.closureDrain!()).rejects.toThrow('unconfirmed');
   });
 
   it.each(['CANCELLED', 'HANDLER_ERROR', 'DISCONNECTED'])('owns a completed %s request without another admission', async code => {
@@ -173,6 +351,33 @@ describe('session-life ACP leg', () => {
     await adapter.dispatch({ capabilities: { injection: { firstTurn: { kind: 'plain' } } } } as never, first, ctx());
     expect(h.inject).toHaveBeenLastCalledWith('s', 'hi', { clientMessageId: 'm', origin: 'manual' });
     await expect(adapter.dispatch({ capabilities: { injection: {} } } as never, first, ctx())).rejects.toThrow(/did not land/);
+  });
+
+  it('#2558 a turn whose files are still being placed waits for them before preparing them; a stop while it waits refuses it', async () => {
+    const adapter = await boundAdapter();
+    h.inject.mockResolvedValue({ outcome: 'started', completion: Promise.resolve({ success: true, data: undefined }), turnId: 't' });
+    h.turnFiles.mockResolvedValue({ text: '', images: [], files: [] });
+    const files = [{ itemId: 'f', version: 1, name: 'a.png', mimeType: 'image/png', sizeBytes: 1 }];
+    const first = { ...(row as object), message: { id: 'm', text: 'hi', delivery: { queue: true, files } } } as never;
+    const PAGE = 1_000_007;
+
+    holdFirstTurnForPlacement('s', PAGE);
+    const sent = adapter.dispatch({} as StageOut, first, ctx());
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(h.turnFiles, 'nothing prepared, nothing sent while the page is still placing').not.toHaveBeenCalled();
+    expect(h.inject).not.toHaveBeenCalled();
+    firstTurnFilesPlaced('s');
+    await expect(sent).resolves.toEqual({ result: 'accepted', nativeReceiptId: 't' });
+    expect(h.turnFiles).toHaveBeenCalledOnce();
+
+    holdFirstTurnForPlacement('s', PAGE);
+    const stop = new AbortController();
+    const stopped = adapter.dispatch({} as StageOut, first, { gen, signal: stop.signal });
+    stop.abort();
+    await expect(stopped).resolves.toMatchObject({ result: 'rejected-before-admission' });
+    expect(h.turnFiles).toHaveBeenCalledOnce();
+    expect(h.inject).toHaveBeenCalledOnce();
+    firstTurnFilesPlaced('s');
   });
 
   it('#552: only the runtime\'s typed refusal (missing) is a lost channel; a thrown refusal is the owner\'s exit', async () => {

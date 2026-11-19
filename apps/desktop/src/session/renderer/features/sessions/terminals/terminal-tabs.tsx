@@ -1,6 +1,6 @@
 import { CircleFadingArrowUp, CirclePlayIcon } from '@/lib/icons'
 import React from 'react';
-import { type ScriptType } from '@renderer/features/sessions/stores/lifecycle-scripts';
+import { type LifecycleScriptType as ScriptType } from '@shared/core/sessions/provisionEvents';
 
 export function nextTerminalName(names: string[]): string {
   const taken = new Set(

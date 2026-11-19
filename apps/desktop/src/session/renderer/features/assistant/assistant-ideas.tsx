@@ -1,36 +1,30 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { setIdeasEntryHidden, subscribeIdeasRequest, useIdeasEntryHidden } from '@/lib/assistantIdeas';
+import { setIdeasEntryHidden, useIdeasEntryHidden } from '@/lib/assistantIdeas';
 import { Eye, EyeOff, Lightbulb, Sparkles, X } from '@/lib/icons';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
-import { ideaGroups, type TodayIdea } from './assistant-today-file';
-import type { TodayFeedView } from './assistant-today-feed';
+import { ideaGroups, type TodayFeedView, type TodayIdea } from './assistant-today-file';
 import { AssistantEmpty } from './assistant-ui-parts';
 
 /**
  * #7199 「灵感」:输入框右上方一颗「灵感」胶囊,点开一块面板,一张卡 = 一件它现在就能替你做的事,
  * 点一张 = 把那句话接进输入框(只填不发)。内容是它按对你的了解写在 today.json 的 ideas 里的(❌ 写死一份):
  * 没写 = 空态 +「让它想几个」;读不到 / 这一块读不懂如实说。
- * 胶囊能隐藏(面板左上那颗开关,隐藏先确认),隐藏后「+」里的「获取灵感」照样在(lib/assistantIdeas.ts)。
- * 桌面包一层对话框、手机盖一层整页,里面这一份共用;胶囊与自定义入口在两边共用输入框上方的一行。
+ * 胶囊能隐藏(面板左上那颗开关,隐藏先确认;lib/assistantIdeas.ts)。手机盖一层整页;胶囊与自定义入口在输入框上方的一行。
  */
 
-/** 「+」里点了「获取灵感」:面板那一侧打开。 */
-export function useIdeasOpen(): [boolean, (open: boolean) => void] {
-  const [open, setOpen] = useState(false);
-  useEffect(() => subscribeIdeasRequest(() => setOpen(true)), []);
-  return [open, setOpen];
-}
-
-/** Composer-row entry; hidden and recording states consume no space. */
-export function IdeasEntry({ assistantId, busy, onOpen }: { assistantId: string; busy: boolean; onOpen: () => void }) {
+/**
+ * Composer-row entry; hidden and recording states consume no space. Beside the assistant's App the same capsule carries the
+ * App's entry (its `chip` label and icon, AppComposerRow); the host's 「灵感」 otherwise.
+ */
+export function IdeasEntry({ assistantId, busy, onOpen, label, icon }: { assistantId: string; busy: boolean; onOpen: () => void; label?: string; icon?: ReactNode }) {
   const { t } = useTranslation('assistant');
   const hidden = useIdeasEntryHidden(assistantId);
   if (hidden || busy) return null;
   return (
     <button type="button" className="ta-ideas-pill" onClick={onOpen} data-testid="assistant-ideas-entry">
-      <Sparkles />
-      {t('ideas.title')}
+      {icon ?? <Sparkles />}
+      {label ?? t('ideas.title')}
     </button>
   );
 }

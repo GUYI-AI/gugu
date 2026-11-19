@@ -5,6 +5,7 @@ import { createChatView } from '@session-chat/chat-view';
 import { createChatState } from '@session-chat/state/chat-state';
 import type { TranscriptTurn } from '@session-chat/model';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
+import { paintedFrames } from './painted-frames';
 
 const long = 'A complete detail that the reader should be able to keep open.\n\n'.repeat(45);
 const disposers: (() => void)[] = [];
@@ -42,10 +43,71 @@ describe('persistent conversation message disclosure', () => {
     await v.show('last');
     expect(v.card('last')!.offsetHeight).toBeGreaterThan(252);
     expect(v.host.querySelector('[data-expand-user-card="last"]')).toBeNull();
-    v.state.transcript.history.append([turn(1)]);
+    v.state.transcript.history.append(Array.from({ length: 40 }, (_, index) => turn(index + 1)));
+    await v.show('answer-40');
+    expect(v.card('last')).toBeNull();
     await v.show('last');
     expect(v.card('last')!.offsetHeight).toBeLessThanOrEqual(252);
     expect(v.host.querySelector('[data-expand-user-card="last"]')).not.toBeNull();
+  });
+
+  it('does not fold the reply the reader is on when a message is sent under it; it folds once out of view', async () => {
+    const v = mount();
+    v.host.style.height = '800px';
+    v.state.transcript.history.seed([...Array.from({ length: 4 }, (_, i) => turn(i)), turn(4, long)]);
+    const scroller = v.host.querySelector<HTMLElement>('[data-chat-scroll]')!;
+    const gap = () => scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
+    await until('the long reply is on screen at the tail', () => v.card('answer-4') !== null && gap() < 1);
+    await v.settle();
+    const view = () => scroller.getBoundingClientRect();
+    expect(v.card('answer-4')!.getBoundingClientRect().top).toBeLessThan(view().top);
+    // Every painted frame from the send on: the reply keeps its height, and what is drawn only moves up (the new
+    // message enters below). A fold here swapped the lines the reader was on for the reply's head: a jump down.
+    const card = () => { const element = v.card('answer-4'); return element ? { height: element.offsetHeight, top: element.getBoundingClientRect().top } : undefined; };
+    const before = card()!;
+    const painted = paintedFrames(card);
+    const frames = painted.frames;
+    v.state.transcript.activeTurn.set({ id: 'sent', seq: 5, initiator: 'user', items: [{ kind: 'message', id: 'input-5', seq: 0, role: 'user', text: 'Thanks.' }] });
+    await until('the sent message renders', () => v.card('input-5') !== null);
+    await v.settle();
+    painted.stop();
+    expect(gap()).toBeLessThan(1);
+    expect(frames.map(frame => frame.height)).toEqual(frames.map(() => before.height));
+    expect(frames.filter((frame, i) => frame.top > (i ? frames[i - 1]! : before).top + 0.5)).toEqual([]);
+    // The answer pushes it out of view: it folds there, and the reader stays at the tail.
+    v.state.transcript.activeTurn.set({ ...turn(5, long), id: 'sent', outcome: undefined });
+    await until('the reply left the view', () => { const card = v.card('answer-4'); return !card || card.getBoundingClientRect().bottom <= view().top; });
+    await v.settle();
+    expect(gap()).toBeLessThan(1);
+    await v.show('answer-4');
+    expect(v.card('answer-4')!.offsetHeight).toBeLessThanOrEqual(252);
+    expect(v.host.querySelector('[data-expand-user-card="answer-4"]')).not.toBeNull();
+  });
+
+  it('holds open only the bubble that last lost newest: the next long one to lose it folds the held one', async () => {
+    const v = mount();
+    v.host.style.height = '2400px';
+    const medium = 'A reply long enough to fold, short enough that two fit on screen.\n\n'.repeat(12);
+    v.state.transcript.history.seed([turn(0), turn(1, medium)]);
+    await until('the first long reply is drawn', () => v.card('answer-1') !== null);
+    await v.settle();
+    const say = (items: TranscriptTurn['items']) => v.state.transcript.activeTurn.set({ id: 'live', seq: 2, initiator: 'user', items });
+    const input2 = { kind: 'message', id: 'input-2', seq: 0, role: 'user', text: 'Thanks.' } as const;
+    const answer2 = { kind: 'message', id: 'answer-2', seq: 1, role: 'assistant', text: medium } as const;
+    say([input2]);
+    await until('the send is drawn', () => v.card('input-2') !== null);
+    await v.settle();
+    expect(v.card('answer-1')!.offsetHeight).toBeGreaterThan(252);
+    // A short bubble losing newest (the sent line, when the answer arrives) holds nothing and releases nothing.
+    say([input2, answer2]);
+    await until('the second long reply is drawn', () => v.card('answer-2') !== null);
+    await v.settle();
+    expect(v.card('answer-1')!.offsetHeight).toBeGreaterThan(252);
+    say([input2, answer2, { kind: 'message', id: 'input-3', seq: 2, role: 'user', text: 'And one more.' }]);
+    await until('the second send is drawn', () => v.card('input-3') !== null);
+    await v.settle();
+    expect(v.card('answer-1')!.offsetHeight).toBeLessThanOrEqual(252);
+    expect(v.card('answer-2')!.offsetHeight).toBeGreaterThan(252);
   });
 
   it('keeps a manually expanded historical reply open across outside clicks, appends, scrolling and remount', async () => {

@@ -12,6 +12,7 @@ import {
   createRemoteExtensionsHost,
   LOCAL_EXTENSIONS_HOST,
   type ExtensionsHost,
+  type RemoteLibraryTransport,
 } from '@renderer/features/extensions/extensions-host';
 import { agentInstallProgressChannel } from '@shared/events/appEvents';
 import type {
@@ -99,6 +100,8 @@ export type LibraryRemoteDevice = {
 };
 
 export type LibraryHost = {
+  /** Selected execution device, independent of the viewing client's OS. */
+  executionHost?: import('@shared/integration-cli-platform').CliExecutionHost;
   connectionMetadata?: ConnectionMetadataStore;
   connectionMetadataExpected?: boolean;
   connectionMetadataError?: unknown;
@@ -192,10 +195,12 @@ export const LOCAL_LIBRARY_HOST: LibraryHost = {
 export function createRemoteLibraryHost(
   device: LibraryRemoteDevice,
   /** 「从文件夹安装扩展」时在那台机器上挑文件夹(与新建框的「浏览」同一个)。 */
-  pickFolder: (deviceId: string, initialPath: string) => Promise<string | null> = async () => null
+  pickFolder: (deviceId: string, initialPath: string) => Promise<string | null> = async () => null,
+  transport?: RemoteLibraryTransport
 ): LibraryHost {
   const { deviceId } = device;
-  const there = rpcOn(deviceId);
+  const there = transport?.rpc ?? rpcOn(deviceId);
+  const subscribe: RemoteLibraryTransport['onEvent'] = transport?.onEvent ?? ((event, listener) => onMachineEvent(deviceId, event, listener));
   const agents: LibraryAgentsRpc = {
     listManagement: () => there.agents.listManagement() as Promise<AgentPayload[]>,
     getManagement: (id) => there.agents.getManagement(id) as Promise<AgentPayload | null>,
@@ -212,7 +217,7 @@ export function createRemoteLibraryHost(
     getSettings: (id) => there.agents.getSettings(id) as Promise<AgentSettings | null>,
     getDefaultSettings: (id) => there.agents.getDefaultSettings(id) as Promise<ProviderCustomConfig | null>,
     updateSettings: (id, config) => there.agents.updateSettings(id, config) as Promise<void>,
-    onInstallProgress: (listener) => onMachineEvent(deviceId, agentInstallProgressChannel, listener),
+    onInstallProgress: (listener) => subscribe(agentInstallProgressChannel, listener),
   };
   const integrations: LibraryIntegrationsRpc = {
     ownerAccounts: (...args) => there.integrations.ownerAccounts(...args),
@@ -264,9 +269,9 @@ export function createRemoteLibraryHost(
       removeAccount: (id) => there.github.removeAccount(id),
       auth: (...args) => there.github.auth(...args),
       authCancel: () => there.github.authCancel(),
-      onEvent: (event, listener) => onMachineEvent(deviceId, event, listener),
+      onEvent: subscribe,
     },
-    extensions: createRemoteExtensionsHost(deviceId, pickFolder),
+    extensions: createRemoteExtensionsHost(deviceId, pickFolder, transport),
     remote: device,
   };
 }
@@ -277,14 +282,14 @@ const machineHosts = new Map<string, LibraryHost>();
  * #6264 一台机器的那份宿主(按机器缓存):会话页、新建框里「这台机器上有哪些 agent、能用哪些模型」问它。
  * null = 本机。
  */
-export function machineLibraryHost(device: LibraryRemoteDevice | null): LibraryHost {
+export function machineLibraryHost(device: LibraryRemoteDevice | null, transport?: RemoteLibraryTransport): LibraryHost {
   if (!device) return LOCAL_LIBRARY_HOST;
   // 名字 / 在线变了就换一份(取数钩子按 `remote.online` 决定问不问),同一份读数时认同一个对象。
-  const key = `${device.deviceId}|${device.deviceLabel}|${device.online}|${device.lastSeenAt ?? ''}|${device.hostKind ?? ''}`;
+  const key = `${device.deviceId}|${device.deviceLabel}|${device.online}|${device.lastSeenAt ?? ''}|${device.hostKind ?? ''}|${transport ? 'transport' : 'desktop'}`;
   let host = machineHosts.get(key);
   if (!host) {
     for (const [existing, value] of machineHosts) if (value.remote?.deviceId === device.deviceId) machineHosts.delete(existing);
-    machineHosts.set(key, (host = createRemoteLibraryHost(device)));
+    machineHosts.set(key, (host = createRemoteLibraryHost(device, undefined, transport)));
   }
   return host;
 }

@@ -11,7 +11,6 @@
  * 第一次用到某个端口时起一条 SSH 转发(之后复用)。
  */
 import type { Session } from 'electron';
-import { markVaultLoginNetworkInstalled, vaultLoginRequestBlocked } from './vault-browser-login-network';
 
 export type RemoteBrowserBinding = { deviceId: string; sessionId: string };
 
@@ -112,10 +111,8 @@ export function installRemoteLoopbackRequests(
   browserIdFor: (webContentsId: number) => string | null,
   warn: (message: string, fields: Record<string, unknown>) => void
 ): void {
-  // Electron keeps only the last listener. Compose the private-login guard BEFORE remote forwarding.
+  // Electron keeps only the last listener: anything else that must see these requests goes into this one.
   ses.webRequest.onBeforeRequest((details, callback) => {
-    try { if (vaultLoginRequestBlocked(ses, details)) { callback({ cancel: true }); return; } }
-    catch { callback({ cancel: true }); return; }
     if (!forwarding || bindings.size === 0 || loopbackPortOf(details.url) === null) {
       callback({});
       return;
@@ -132,5 +129,4 @@ export function installRemoteLoopbackRequests(
       () => callback({})
     );
   });
-  markVaultLoginNetworkInstalled(ses, 'requests');
 }

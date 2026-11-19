@@ -1,3 +1,4 @@
+import { PhoneMessagesEmpty } from '@/mobile/chat/PhoneMessagesEmpty'
 import { useUnreadLocatorNavigation } from '@/hooks/useUnreadLocatorNavigation'
 import { useMessageQuote } from '@/hooks/useMessageQuote'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -8,7 +9,6 @@ import { X } from '@/lib/icons'
 import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
 import { visibleDeliveryMessages } from '@gugu/core/shared/ui/systemNotice'
 import { projectTurnFailureMessages } from '../../lib/projectTurnFailureMessages'
-import { useDeliveryWaits } from '../../hooks/useDeliveryWaits'
 import type { GroupRosterCandidate } from '@/lib/mention'
 import type { AgentStatusById } from './agentMentionStatusModels'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
@@ -19,6 +19,7 @@ import { useBackLayer } from '../ui/sheetStack'
 import { ChatMessageComposer } from './ChatMessageComposer'
 import { RunningBarSlot, RunningTokenBar, type RunningToken } from '../RunningTokenBar'
 import { TopicBreadcrumb } from './TopicBreadcrumb'
+import { TopicToolWorkspace } from './TopicToolWorkspace'
 import { MessageList, type ChatListRowItem, type MessageListRowProps } from './MessageList'
 import { useToast } from '../toastContext'
 import { useSourceMessageReveal } from '@/hooks/useSourceMessageReveal'
@@ -35,6 +36,7 @@ import {
 import { ResizablePane } from '@/layouts/ResizablePane'
 import { prioritizeTopicParticipants } from './topicMentionModels'
 import { useReadReceiptPanel } from '@/hooks/useReadReceiptPanel'
+import { useMessageDelivery } from '@/hooks/useMessageDelivery'
 import { ReadReceiptPopover } from '../ReadReceiptPopover'
 import { ChatBottomDock } from './ChatBottomDock'
 import type { ChatConversation } from '@/store/useChatConversation'
@@ -46,10 +48,6 @@ import { ChatTailNotice } from './ChatTailNotice'
 import { MessageLoadFailure } from './MessageLoadFailure'
 import { MessageListSkeleton } from './MessageListSkeleton'
 import { useChatSearch } from './useChatSearch'
-import { SearchTrailBar } from './SearchTrailBar'
-import { useChatStore } from '../../store/chatContext'
-import { topicClashNames, NO_CLASH_NAMES } from '../../lib/chatClashNames'
-import { ChatClashNames } from './ChatClashNames'
 
 /**
  * @@@5856 话题分栏 —— 右侧那条独立收发的话题线(product spec)。
@@ -88,9 +86,9 @@ export type TopicSplitPaneProps = {
    * ⚠️ ❌ 不许拿来源线那份顶上:画出来的是另一条线的读数,而错的环比没有环更坏。
    */
   memberReadSeqs: Record<string, number>
-  onSend: (text: string, toUserIds: readonly string[] | null, replyToMessageId: string | null, isWhisper?: boolean, submittedAt?: number) => Promise<void>
+  onSend: (text: string, toUserIds: readonly string[] | null, replyToMessageId: string | null, isWhisper?: boolean, submittedAt?: number, dependsOn?: string) => Promise<void>
   /** 发附件。回形针在 ChatMessageComposer 里是无条件画的,不接这一口 = 挂得上发不出去。 */
-  onSendAttachments: (files: File[], opts?: { toUserIds?: string[] | null; replyToMessageId?: string | null; isWhisper?: boolean; caption?: string; onSent?: (file: File, index: number) => void }) => Promise<void>
+  onSendAttachments: (files: File[], opts?: { toUserIds?: string[] | null; replyToMessageId?: string | null; isWhisper?: boolean; caption?: string }) => Promise<string | undefined | void>
   /**
    * 能在这一栏里 @ 到的人 = **来源线**的名册。spec:「招 agent 同理——建完之后 @ 它,它就进来了」,
    * 而服务端只放行来源线的成员,所以候选集就取来源线的,❌ 不取话题当前那几个(那样永远拉不进新人)。
@@ -106,6 +104,7 @@ export type TopicSplitPaneProps = {
   runningTokens?: RunningToken[]
   /** 运行条详情卡读哪条会话(来源群)。 */
   runningPreviewChatId?: string | null
+  composerControls?: React.ReactNode
   onClose: () => void
   /** 发言人的 id —— ChatMessageComposer 的 @ 候选与自指要用它。 */
   currentUserId: string | null
@@ -136,7 +135,7 @@ export type TopicSplitPaneProps = {
   /** 气泡里的文件卡点开 —— 与主线同一个处理器。不接 = 分栏里的文件卡点了什么都不发生(#6375)。 */
   onOpenAttachment?: (meta: ParsedAttachment, message?: MessageItem) => void
   onReaction?: (messageId: string, emoji: string) => void
-  onForward?: (msg: MessageItem) => void
+  onForward?: (msg: MessageItem | readonly MessageItem[]) => void
   onDelete?: (messageId: string) => void
 }
 
@@ -210,6 +209,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   agentStatuses,
   runningTokens,
   runningPreviewChatId = null,
+  composerControls,
   history,
   onClose,
   currentUserId,
@@ -225,15 +225,14 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   // #6004: the projection owns membership and chat_members_changed refreshes. Read this topic's
   // IDs on every projection update; do not cache a second roster or infer participation from messages.
   const participantIds = visibleChats.find((chat) => chat.id === topic.chatId)?.member_user_ids
-  const { identitiesById } = useChatStore('identitiesById')
-  const nameScope = useMemo(() => ({ chatId: topic.chatId, names: mobile || !participantIds ? NO_CLASH_NAMES : topicClashNames(participantIds, identitiesById) }), [topic.chatId, mobile, participantIds, identitiesById])
   const rankedMentionMembers = useMemo(
     () => prioritizeTopicParticipants(mentionMembers, participantIds),
     [mentionMembers, participantIds],
   )
   const [mentionToInsert, setMentionToInsert] = useState<{ id: string; name: string } | null>(null)
+  const { recipientFacts, deliveryWaits } = useMessageDelivery(messages, memberReadSeqs, memberProfiles)
   const { readReceiptHandle, receiptOf } = useReadReceiptPanel({
-    chatId: topic.chatId, messages, memberReadSeqs, memberProfiles,
+    chatId: topic.chatId, messages, memberReadSeqs, memberProfiles, recipientFacts, deliveryWaits,
   })
   // 宽度记在本机:拖过一次之后下次打开还是那个宽度(与会话列表同口径)。
   const [width, setWidth] = useState(() => readStoredTopicSplitWidth())
@@ -261,7 +260,6 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   // 列表行与主线共用历史窗口和分页;分栏没有多选。
   // 已读环有 —— 水位由 useChatConversation 按**这条话题**自己拉,拉不到时是空表(空表就不出环)。
   useChatSearch(topic.chatId, visible !== false, paneRef)
-  const deliveryWaits = useDeliveryWaits(messages, memberReadSeqs)
   const rows = useMemo<ChatListRowItem[]>(
     () => projectTurnFailureMessages(visibleDeliveryMessages(messages)).map((message) => ({ type: 'message' as const, message })),
     [messages],
@@ -296,13 +294,13 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
     hasNewer: messageWindow.hasNewer, loading: !!messageWindow.loading, isPreservingPosition, isAtBottomRef, setFollowingTail })
   useChatHistoryPagination({ resetKey: chatResetKey, messages, enabled: visible !== false && !unreadNavigationPending,
     scroller: scrollerEl, atBottom: viewportAtBottom, loadOlder: history.loadOlderMessages, loadNewer: history.loadNewerMessages, window: messageWindow, onError: onHistoryError })
-  const { pinToBottom, onTotalListHeightChanged } = useTailPinning({ resetKey: chatResetKey, messages,
-    enabled: visible !== false && !unreadNavigationPending, messageWindow, scrollerEl, scrollerRef, listRef, isAtBottomRef,
+  const { pinToBottom } = useTailPinning({ resetKey: chatResetKey, messages,
+    enabled: visible !== false && !unreadNavigationPending, messageWindow, scrollerRef, listRef, isAtBottomRef,
     isPreservingPosition, prepareForSavedPosition, forgetSavedPosition, returnToLatest: history.returnToLatestMessages, onError: onHistoryError })
   const showMessage = useSourceMessageReveal({
     viewportKey, navigationTarget, enabled: visible !== false,
     activeChatId: topic.chatId,
-    rows, listRef, isAtBottomRef, setFollowingTail, setFlashMessageId, flashTimerRef, revealMessage,
+    setFlashMessageId, flashTimerRef, revealMessage,
     onMissing: () => toast(t('chatArea.source.notVisible'), 'error'),
   })
 
@@ -310,7 +308,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
     rows,
     messages,
     mobile,
-    memberReadSeqs, deliveryWaits,
+    memberReadSeqs, deliveryWaits, recipientFacts,
     // 话题是多人线 ⇒ 与群同口径,收到的气泡上方显发送者名。
     isGroupChat: true,
     memberProfiles,
@@ -336,9 +334,9 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
     onToggleSelect: noop,
     onEnterSelectMode: undefined,
     flashMessageId,
-  }), [showMessage, rows, messages, mobile, memberReadSeqs, deliveryWaits, memberProfiles, memberProfileOpener, onOpenAttachment, readReceiptHandle, onReaction, onForward, onDelete, onQuote, flashMessageId, history, visible])
+  }), [showMessage, rows, messages, mobile, memberReadSeqs, deliveryWaits, recipientFacts, memberProfiles, memberProfileOpener, onOpenAttachment, readReceiptHandle, onReaction, onForward, onDelete, onQuote, flashMessageId, history, visible])
 
-  // 手机上话题是来源页的一枚页签:在前面时,返回先回到来源那一枚。
+  // Phone topic navigation stays in its source room; Back first returns to the main conversation.
   useBackLayer(onClose, mobile && visible !== false)
   const headerTitle = <TopicBreadcrumb topicName={topic.name} sourceMessagePreview={sourceMessagePreview} />
   const page = (
@@ -361,11 +359,10 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
         {/* 这一条**常驻**:面板开着时它也在。曾经开面板就把它收起来,代价是
             ①「收起分栏」与另一颗切换键一起消失,②这一栏里再没有一个字说明你在哪条话题上
             (找茬第十轮)。嵌进来的那两个面板自带的头由 tokens.css 收掉,所以不会两条头叠着摆。 */}
-        {mobile ? null : (
+        {mobile || embedded ? null : (
         <div style={TOPIC_SPLIT_HEADER_STYLE}>
           {headerTitle}
           <div style={TOPIC_SPLIT_HEADER_ACTIONS_STYLE}>
-            {embedded ? null : (
               <IconButton
                 size="sm"
                 data-testid="topic-split-close"
@@ -376,12 +373,10 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
               >
                 <X size={16} />
               </IconButton>
-            )}
           </div>
         </div>
         )}
 
-        <SearchTrailBar chatId={topic.chatId} surface={paneRef} enabled={visible !== false} />
         <div
           data-testid="topic-split-messages"
           style={TOPIC_SPLIT_MESSAGES_STYLE}
@@ -389,8 +384,8 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
           {loading && messages.length === 0 && <MessageListSkeleton />}
           {history.messagesError && !(loading && messages.length === 0) && <MessageLoadFailure error={history.messagesError}
             inline={messages.length > 0} onRetry={() => history.refreshMessages()} />}
-          {!loading && !history.messagesError && rows.length === 0 && <div data-testid="topic-split-empty" style={TOPIC_SPLIT_EMPTY_STYLE}>
-            {t('topic.pane.empty')}
+          {!loading && !history.messagesError && rows.length === 0 && <div data-testid="topic-split-empty" style={mobile ? { flex: 1, display: 'grid', placeItems: 'center', padding: 16 } : TOPIC_SPLIT_EMPTY_STYLE}>
+            {mobile ? <PhoneMessagesEmpty /> : t('topic.pane.empty')}
           </div>}
           {rows.length > 0 && (
             // @@@5856 用主线那一份消息列表,❌ 不再自己 map + 手写贴底。
@@ -408,7 +403,6 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
               unreadAbove={history.unreadEntry ? { messageId: history.unreadEntry.locator.message_id, messageSeq: history.unreadEntry.locator.message_seq,
                 label: t('chatArea.unreadAbove', { count: unreadAboveCount(history.unreadEntry.locator, messages) }), onSeen: history.unreadEntry.onSeen, onJump: () => void history.jumpToUnreadEntry(scrollerRef.current).catch(onHistoryError) } : null}
               onAtBottomChange={onAtBottomChange}
-              onTotalListHeightChanged={onTotalListHeightChanged}
               style={MESSAGE_LIST_STYLE}
               surface="aside"
             />
@@ -421,7 +415,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
             重写一份等于把它们统统退回未解决态,而且不报任何错(owner 2026-09-19 实测点破)。
             话题是一间屋子 ⇒ isGroupChat,寻址规则与群一致。 */}
         {/* 话题里运行条那一行同样是固定高的一行;只在传了 runningTokens 时才有(手机整页话题),桌面分栏旁边群里那一条一直看得见。 */}
-        <ChatBottomDock reserve={messages.length === 0} above={runningTokens &&
+        <ChatBottomDock reserve={messages.length === 0} running={!!runningTokens?.length} above={runningTokens &&
         <RunningBarSlot>
         {runningTokens.length > 0 ? (
           <RunningTokenBar
@@ -437,15 +431,14 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
         </RunningBarSlot>
         }>
         <div data-topic-split-composer="" style={mobile ? TOPIC_SPLIT_COMPOSER_MOBILE_STYLE : TOPIC_SPLIT_COMPOSER_STYLE}>
+        {composerControls}
         <ChatMessageComposer
           mentionToInsert={mentionToInsert}
           onMentionInserted={() => setMentionToInsert(null)}
           onSend={async (content, opts) => {
-            await onSend(content, opts?.toUserIds ?? null, opts?.replyToMessageId ?? null, opts?.isWhisper, opts?.submittedAt)
+            await onSend(content, opts?.toUserIds ?? null, opts?.replyToMessageId ?? null, opts?.isWhisper, opts?.submittedAt, opts?.dependsOn)
           }}
-          onSendAttachments={async (files, opts) => {
-            await onSendAttachments(files, opts)
-          }}
+          onSendAttachments={onSendAttachments}
           placeholder={t('topic.pane.composerPlaceholder')}
           quoteContent={activeQuote}
           onQuoteConsumed={() => setQuoted(null)}
@@ -467,9 +460,12 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
       </div>
     </motion.div>
   )
-  if (mobile || embedded) return <ChatClashNames.Provider value={nameScope}>{page}</ChatClashNames.Provider>
+  if (mobile) return page
+  if (embedded) {
+    return <TopicToolWorkspace chatId={topic.chatId} name={topic.name} memberCount={participantIds?.length} title={headerTitle} visible={visible !== false} onForward={onForward}>{page}</TopicToolWorkspace>
+  }
   return (
-    <ChatClashNames.Provider value={nameScope}>
+    <>
     {/* @@@5856 宽度归 ResizablePane —— owner 拿掉了「全宽打开」那颗键之后,
         「想看大一点」这件事只剩这条分割线,所以它必须真能拖(拖拽那一套复用会话列表那一份,
         见 ResizablePane 的注释:边界情形全在那儿踩过了)。 */}
@@ -490,6 +486,6 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
     >
       {page}
     </ResizablePane>
-    </ChatClashNames.Provider>
+    </>
   )
 }

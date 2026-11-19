@@ -125,7 +125,7 @@ describe('App 的产品页 (#7059)', () => {
       const page = await render(subject({ source: { ...source, path } }), async (document) => {
         const button = document.querySelector('[data-testid="app-product-review"] button')!;
         expect(button.textContent).toBe('extensions.viewSource');
-        expect(button.getAttribute('title')).toBe(`shuxueshuxue/promo-skills @ 6f46446${path === '.' ? '' : ' · app'}`);
+        expect(button.getAttribute('title')).toBe(`shuxueshuxue/promo-skills @ 6f46446${path === '.' ? '' : ': app'}`);
         expect(button.classList.contains('mk-mono')).toBe(false);
       });
       expect(page.text).not.toContain('shuxueshuxue/promo-skills');
@@ -266,5 +266,13 @@ describe('产品页的语言与去重', () => {
     // 技能说明只出现那一句(从前还单起一行,名目 extensions.addsSkills)。
     expect(text.split('extensions.addsSkills').length - 1).toBe(1);
     expect(text).toContain('extensions.addsSkillsText');
+  });
+
+  it('宿主自己画的页(纯工具 App 默认的那一格)不算「装上后多了什么」里的页签', async () => {
+    const toolOnly = { ...(pomodoro as object), contributes: { ...(pomodoro as { contributes: object }).contributes, tabs: [{ name: 'settings', title: 'Settings', hostPage: 'settings' }] } } as never;
+    const { text } = await render(subject(toolOnly));
+    expect(text).not.toContain('extensions.addsTabTitle');
+    expect(text).not.toContain('extensions.addsTabPlain');
+    expect(text).toContain('extensions.addsTools');
   });
 });

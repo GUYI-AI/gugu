@@ -1,4 +1,5 @@
 import { useMemo, useSyncExternalStore, type CSSProperties } from 'react';
+import { SectionLabel } from '@/components/ui/SectionLabel';
 import { Plus, Trash2 } from '@/lib/icons';
 import { PageHeader } from '@renderer/lib/components/page-header';
 import { toast } from '@renderer/lib/hooks/use-toast';
@@ -58,7 +59,7 @@ function ThemeThumb({ colors, translate }: { colors: ThemeSwatch; translate: Tra
       <div className="flex min-w-0 flex-1 flex-col gap-2 bg-[var(--t-bg)] p-2 text-[9px] leading-3">
         <div className="max-w-[85%] self-start rounded-md bg-[color-mix(in_oklab,var(--t-bg),var(--t-fg)_6%)] px-2 py-1 text-[var(--t-fg)]">
           {translate('themes.preview.sample')}
-          <span className="block text-[var(--t-muted-fg)]">Kip · 13:05</span>
+          <span className="block text-[var(--t-muted-fg)]">'Kip 13:05'</span>
         </div>
         <div className="self-end rounded-md bg-[color-mix(in_oklab,var(--t-bg),var(--t-fg)_11%)] px-2 py-1 text-[var(--t-live)]">
           {translate('themes.preview.reply')}
@@ -106,7 +107,7 @@ function ThemeCard({
           <Badge variant="secondary">{translate(`themes.mode.${kind}`)}</Badge>
         </div>
         <div className="truncate px-1 pb-1 text-xs text-foreground-muted">
-          {pack ? `${pack.source.author} · ${pack.source.license || '—'}` : 'Gugu'}
+          {pack ? `${pack.source.author} (${pack.source.license || '—'})` : 'Gugu'}
         </div>
       </button>
       {onRemove && (
@@ -128,13 +129,12 @@ function ThemeCard({
  * 资源库「主题」(owner 2026-11-07)。点卡片 = 立即换,底下一条可撤销的提示。导入的主题卡片上有删除。
  * 这一格只作用于这台电脑(别的格分机器,这一格不分):页头不挂机器范围。
  */
-export function ThemesLibraryPage() {
+function ThemePackPicker({ embedded = false }: { embedded?: boolean }) {
   const { translate } = useSessionMessages();
   const { packs, slots } = useThemePacks();
   const effective = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme, readEffectiveHostTheme);
   const showImport = useShowModal('themeImportModal');
   const resolved = useMemo(() => new Map(packs.map((pack) => [pack.id, resolvedModes(pack)])), [packs]);
-  const nameOf = (id?: string) => packs.find((pack) => pack.id === id)?.name ?? translate('themes.default');
 
   const offerUndo = (title: string, before: ThemePackChoice) =>
     toast({
@@ -162,23 +162,36 @@ export function ThemesLibraryPage() {
 
   return (
     <div className="flex flex-col text-foreground">
-      <PageHeader
-        sticky
-        scope={null}
-        title={translate('themes.title')}
-        description={translate('themes.description')}
-        aside={(
-          <Button onClick={() => showImport({})}>
-            <Plus className="size-4" />
-            <span>{translate('themes.import')}</span>
-          </Button>
-        )}
-      >
-        <span className="text-sm text-foreground-muted">
-          {translate('themes.current', { dark: nameOf(slots.dark), light: nameOf(slots.light) })}
-        </span>
-      </PageHeader>
-      <div className="grid gap-4 py-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+      {embedded ? (
+        <SectionLabel
+          role="heading"
+          aria-level={2}
+          trailing={
+            <Button variant="ghost" size="xs" className="text-foreground-muted" onClick={() => showImport({})}>
+              <Plus className="size-3" />
+              {translate('themes.import')}
+            </Button>
+          }
+        >
+          {translate('themes.title')}
+        </SectionLabel>
+      ) : (
+        <PageHeader
+          sticky
+          scope={null}
+          title={translate('themes.title')}
+          aside={(
+            <Button onClick={() => showImport({})}>
+              <Plus className="size-4" />
+              <span>{translate('themes.import')}</span>
+            </Button>
+          )}
+        />
+      )}
+      <div className={cn(
+        'grid gap-4 py-4',
+        embedded ? 'grid-cols-3' : 'grid-cols-[repeat(auto-fill,minmax(220px,1fr))]'
+      )}>
         <ThemeCard
           pack={null}
           resolved={{}}
@@ -205,4 +218,12 @@ export function ThemesLibraryPage() {
       </div>
     </div>
   );
+}
+
+export function ThemesLibraryPage() {
+  return <ThemePackPicker />;
+}
+
+export function ThemePackSettings() {
+  return <ThemePackPicker embedded />;
 }

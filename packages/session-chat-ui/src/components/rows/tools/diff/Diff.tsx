@@ -4,13 +4,16 @@ import { useChatTranslator } from '@session-chat/localization';
 import { ShimmerText } from '@session-chat/components/primitives/ShimmerText';
 import { useCaches } from '@session-chat/components/contexts/CachesContext';
 import { useCommands } from '@session-chat/components/contexts/CommandsContext';
-import { GenericFileIcon, IconError, IconShieldAlert } from '@session-chat/components/primitives/icons';
+import { FileMark, IconError, IconShieldAlert } from '@session-chat/components/primitives/icons';
+import { genericFileIcon } from '@session-chat/components/primitives/icons.css';
 import { applyTokensToElement } from '@session-chat/core/highlight/apply-tokens';
+import type { SharedCaches } from '@session-chat/core/caches';
 import { basename } from '@session-chat/lib/path';
 import { For, Show, createEffect, onCleanup } from 'solid-js';
 import { changedFilePath } from '@gugu/session-core/acp';
 import type { ChatDiff } from '@session-chat/model';
 import type { DiffLayout, PatchLayout } from './diff.def';
+import type { DiffRow } from './diff-lines';
 import { diffBodyVisible } from './diff-visibility';
 import * as css from './diff.css';
 
@@ -21,11 +24,11 @@ export function DiffHeader(props: DiffHeaderProps) {
   const running = () => props.item.status === 'running' && !props.item.awaitingPermission;
   const stats = () => props.hasBody && !props.item.awaitingPermission && props.section?.adds !== null && props.section?.dels !== null && ((props.section?.adds ?? 0) > 0 || (props.section?.dels ?? 0) > 0);
   return <div class={css.diffHeader({ hasBody: props.hasBody })} style={{ height: `${props.headerH}px` }} data-patch-scope={props.section?.patch.scope}>
-    <GenericFileIcon />
+    <FileMark name="" size={12} class={genericFileIcon} />
     <For each={props.section?.patch.changes ?? []}>{change => {
       const path = () => changedFilePath(change);
       const label = () => ('oldPath' in change && typeof change.oldPath === 'string' ? `${basename(change.oldPath)} → ` : '') + (path() ? basename(path()!) : change.operation);
-      return <button type="button" class={css.diffFileName} title={path()} data-patch-path={path()} disabled={!path() || !commands().onOpenFile} onClick={() => {
+      return <button type="button" data-pane-opener="" class={css.diffFileName} title={path()} data-patch-path={path()} disabled={!path() || !commands().onOpenFile} onClick={() => {
         const target = path(); if (target) commands().onOpenFile?.({ path: target, itemId: props.item.id, source: 'diff' });
       }}><ShimmerText active={running()}>{label()}</ShimmerText></button>;
     }}</For>
@@ -37,12 +40,22 @@ export function DiffHeader(props: DiffHeaderProps) {
   </div>;
 }
 
-export type DiffLinesProps = { item: ChatDiff; layout: PatchLayout; codeLineHeight: () => number };
+export type DiffLinesProps = {
+  running?: boolean;
+  layout: Pick<PatchLayout, 'previewRows' | 'lang' | 'truncated'>;
+  codeLineHeight: () => number;
+  caches?: Pick<SharedCaches, 'highlightWhenReady'>;
+  showMarkers?: boolean;
+  /** Full recorded diffs use natural height; transcript previews retain measured rows. */
+  wrapLines?: boolean;
+  annotationSlots?: (row: DiffRow, index: number, control: HTMLElement, editor: HTMLElement) => void;
+};
 export function DiffLines(props: DiffLinesProps) {
-  const caches = useCaches();
+  const contextCaches = useCaches();
   const elements = new Map<number, HTMLElement>();
   createEffect(() => {
-    if (props.item.status === 'running' || !props.layout.lang) return;
+    if (props.running || !props.layout.lang) return;
+    const caches = props.caches ?? contextCaches;
     let cancelled = false;
     for (const [index, row] of props.layout.previewRows.entries()) {
       if (row.type === 'meta' || row.type === 'hunk') continue;
@@ -53,10 +66,19 @@ export function DiffLines(props: DiffLinesProps) {
     }
     onCleanup(() => { cancelled = true; });
   });
-  return <div class={css.diffBodyCard}><div class={css.pdiffBody}>
-    <For each={props.layout.previewRows}>{(row, index) => <div class={css.diffRowClasses[row.type]} style={{ height: `${props.codeLineHeight()}px` }} data-patch-row={row.type} data-old-line={row.oldIdx === undefined ? undefined : row.oldIdx + 1} data-new-line={row.newIdx === undefined ? undefined : row.newIdx + 1}>
-      <span class={`${css.pdiffLine} ${css.diffLineContent}`} style={{ 'line-height': `${props.codeLineHeight()}px` }} ref={el => { elements.set(index(), el); onCleanup(() => elements.delete(index())); }}>{row.text}</span>
-    </div>}</For>
+  return <div class={css.diffBodyCard} classList={{ [css.wrappedDiffBody]: props.wrapLines }}><div class={css.pdiffBody}>
+    <For each={props.layout.previewRows}>{(row, index) => {
+      let control: HTMLElement | undefined;
+      const annotate = props.annotationSlots && (row.oldIdx !== undefined || row.newIdx !== undefined);
+      return <>
+        <div class={css.diffRowClasses[row.type]} style={props.wrapLines ? { 'min-height': `${props.codeLineHeight()}px` } : { height: `${props.codeLineHeight()}px` }} data-patch-row={row.type} data-old-line={row.oldIdx === undefined ? undefined : row.oldIdx + 1} data-new-line={row.newIdx === undefined ? undefined : row.newIdx + 1}>
+          <Show when={annotate}><span class={css.annotationControl} style={{ height: `${props.codeLineHeight()}px` }} ref={el => { control = el; }} /></Show>
+          <Show when={props.showMarkers}><span class={`${css.pdiffLine} ${css.diffMarker}`} style={{ 'line-height': `${props.codeLineHeight()}px` }}>{row.type === 'add' ? '+' : row.type === 'remove' ? '−' : ' '}</span></Show>
+          <span class={`${css.pdiffLine} ${css.diffLineContent}`} style={{ 'line-height': `${props.codeLineHeight()}px` }} ref={el => { elements.set(index(), el); onCleanup(() => elements.delete(index())); }}>{row.text}</span>
+        </div>
+        <Show when={annotate}><div ref={editor => { if (control) props.annotationSlots?.(row, index(), control, editor); }} /></Show>
+      </>;
+    }}</For>
     <Show when={props.layout.truncated}><div style={{ height: `${props.codeLineHeight()}px`, 'line-height': `${props.codeLineHeight()}px` }}>…</div></Show>
   </div></div>;
 }
@@ -67,7 +89,7 @@ export function Diff(props: DiffProps) {
   return <Show when={props.layout.sections.length} fallback={<DiffHeader item={props.item} headerH={props.headerH} hasBody={false} />}>
     <For each={props.layout.sections}>{section => <>
       <DiffHeader item={props.item} section={section} headerH={props.headerH} hasBody={diffBodyVisible(props.item) && section.previewRows.length > 0} />
-      <Show when={diffBodyVisible(props.item)}><DiffLines item={props.item} layout={section} codeLineHeight={props.codeLineHeight} /></Show>
+      <Show when={diffBodyVisible(props.item)}><DiffLines running={props.item.status === 'running'} layout={section} codeLineHeight={props.codeLineHeight} /></Show>
     </>}</For>
   </Show>;
 }

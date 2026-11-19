@@ -3,10 +3,12 @@
     "图标清单。改这里再跑 `node scripts/build/gen-icons.mjs`,❌ 别改生成物 icons.tsx。",
     "solar   = 从 @iconify-json/solar 取 body。加图标只需在这里加一行。",
     "literal = 保留既有字形及有上游出处的原图;新图不能手绘。Lucide 0.564.0 的完整 ISC/Feather MIT 见 THIRD_PARTY_NOTICES.md。",
+    "shared  = 文件族的字形,生成到 packages/session-shared/src/file-glyphs.ts(Solid 的 session-chat-ui 也读)。",
     "alias   = 同形别名(*Icon 后缀、lucide 历史改名),复用已有导出,❌ 不重复一份 body。",
     "",
     "Pin 保留既有填充字形;PinOff 使用 Lucide 0.564.0 pin-off 原图,两态必须可分辨。",
-    "PinOff 来源: https://github.com/lucide-icons/lucide/blob/0.564.0/icons/pin-off.svg"
+    "PinOff 来源: https://github.com/lucide-icons/lucide/blob/0.564.0/icons/pin-off.svg",
+    "FastZap 来源: https://github.com/lucide-icons/lucide/blob/0.564.0/icons/zap.svg；owner 2026-11-16 指定 Fast 使用 Lucide Zap，其余 Zap 保持 Solar。"
   ],
   "solar": {
     "Activity": "pulse-linear",
@@ -72,6 +74,7 @@
     "FileSearch": "file-check-linear",
     "FileText": "document-text-linear",
     "FileVideo": "clapperboard-play-linear",
+    "ImageOff": "gallery-remove-linear",
     "FileX": "file-remove-linear",
     "Files": "documents-linear",
     "FlaskConical": "test-tube-linear",
@@ -106,6 +109,7 @@
     "ListFilter": "filter-linear",
     "ListTree": "list-linear",
     "Lock": "lock-keyhole-minimalistic-linear",
+    "LockOpen": "lock-keyhole-minimalistic-unlocked-linear",
     "LogIn": "login-3-linear",
     "LogOut": "logout-3-linear",
     "Mail": "letter-linear",
@@ -116,6 +120,7 @@
     "MessageSquarePlus": "chat-square-arrow-linear",
     "MessageSquareShare": "square-share-line-linear",
     "Mic": "microphone-2-linear",
+    "Minimize": "minimize-linear",
     "Minimize2": "minimize-square-linear",
     "MinusCircle": "minus-circle-linear",
     "Monitor": "monitor-linear",
@@ -145,6 +150,7 @@
     "ShieldAlert": "shield-warning-linear",
     "ShieldCheck": "shield-check-linear",
     "Smile": "smile-circle-linear",
+    "Smartphone": "smartphone-linear",
     "Sparkles": "magic-wand-3-linear",
     "SparklesFilled": "magic-wand-3-bold",
     "Square": "stop-linear",
@@ -217,8 +223,10 @@
     "PanelRight": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/><path d=\"M15 3v18\"/>",
     "PanelRightClose": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/><path d=\"M15 3v18\"/><path d=\"m8 9 3 3-3 3\"/>",
     "PanelRightOpen": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/><path d=\"M15 3v18\"/><path d=\"m10 15-3-3 3-3\"/>",
-    "LucidePlug": "<path d=\"M12 22v-5\"/><path d=\"M15 8V2\"/><path d=\"M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z\"/><path d=\"M9 8V2\"/>"
+    "LucidePlug": "<path d=\"M12 22v-5\"/><path d=\"M15 8V2\"/><path d=\"M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z\"/><path d=\"M9 8V2\"/>",
+    "FastZap": "<path d=\"M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z\" />"
   },
+  "shared": ["File", "FileArchive", "FileAudio", "FileCode", "FileImage", "FilePdf", "FileSheet", "FileSlides", "FileText", "FileVideo", "ImageOff"],
   "alias": {
     "AlertCircleIcon": "AlertCircle",
     "AlertTriangleIcon": "AlertTriangle",
@@ -439,6 +447,14 @@
       "strokeLinecap": "round",
       "strokeLinejoin": "round",
       "className": "lucide lucide-pin-off"
+    },
+    "FastZap": {
+      "fill": "none",
+      "stroke": "currentColor",
+      "strokeWidth": 2,
+      "strokeLinecap": "round",
+      "strokeLinejoin": "round",
+      "className": "lucide lucide-zap"
     }
   }
 }

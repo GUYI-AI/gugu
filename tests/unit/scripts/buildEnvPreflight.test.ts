@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { generateKeyPairSync } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -22,6 +23,7 @@ import {
   selectTargetEnv,
   verifyDistBake,
 } from '../../../scripts/build/build-env-preflight.mts'
+import { RELEASE_TRUST_TABLE } from '../../../scripts/build/release-trust-keys.mts'
 
 const tempDirs: string[] = []
 function tempEnvDir(files: Record<string, string>): string {
@@ -555,14 +557,39 @@ describe('verifyDistBake', () => {
 describe('CLI（与 build:app 同路径调用）', () => {
   const anon = jwt({ role: 'anon' })
 
+  // #1931 正式版带的编译版发布信任表要有能用的钥匙：测试里现做一把 Ed25519，❌ 用仓里任何钥匙。
+  function withTrustTable(dir: string, publicKey: string | null): string {
+    const file = path.join(dir, RELEASE_TRUST_TABLE)
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 1, keys: [{ id: 'gugu-assistant-release-1', appId: 'gugu-assistant', sourceRepo: 'GUYI-AI/gugu-assistant', publicKey }] }))
+    return dir
+  }
+  const testPublicKey = () => generateKeyPairSync('ed25519').publicKey.export({ type: 'spki', format: 'pem' }).toString()
+  const cdShape = { GUGU_DB_TARGET: 'prod', VITE_SUPABASE_URL: `https://${PRODUCTION_DB_HOST}`, VITE_SUPABASE_ANON_KEY: anon }
+
   test('CD 形状（shell 注入 VITE_* + 声明 prod）放行', () => {
-    const dir = tempEnvDir({})
-    const run = runCli([], dir, {
-      GUGU_DB_TARGET: 'prod',
-      VITE_SUPABASE_URL: `https://${PRODUCTION_DB_HOST}`,
-      VITE_SUPABASE_ANON_KEY: anon,
-    })
+    const run = runCli([], withTrustTable(tempEnvDir({}), testPublicKey()), cdShape)
     expect(run.status).toBe(0)
+  })
+
+  test('CD 形状但发布信任表只有空钥匙位 / 没有表 → 中止（正式版不许带着空表发出去）', () => {
+    const slot = runCli([], withTrustTable(tempEnvDir({}), null), cdShape)
+    expect(slot.status).toBe(1)
+    expect(slot.out).toContain('gugu-assistant: key slot gugu-assistant-release-1 is still empty')
+    const missing = runCli([], tempEnvDir({}), cdShape)
+    expect(missing.status).toBe(1)
+    expect(missing.out).toContain(`release trust table ${RELEASE_TRUST_TABLE} is missing`)
+    // 对照：仓里现在发的那份表（钥匙位还空着）在生产构建里同样中止。
+    const shipped = tempEnvDir({})
+    fs.mkdirSync(path.dirname(path.join(shipped, RELEASE_TRUST_TABLE)), { recursive: true })
+    fs.copyFileSync(path.join(repoRoot, RELEASE_TRUST_TABLE), path.join(shipped, RELEASE_TRUST_TABLE))
+    const shippedTable = JSON.parse(fs.readFileSync(path.join(repoRoot, RELEASE_TRUST_TABLE), 'utf8')) as { keys: Array<{ publicKey: string | null }> }
+    expect(runCli([], shipped, cdShape).status).toBe(shippedTable.keys.every((key) => key.publicKey === null) ? 1 : 0)
+  })
+
+  test('不是生产库的构建（Beta / 本地）不看发布信任表', () => {
+    const run = runCli([], tempEnvDir({}), { VITE_SUPABASE_URL: 'https://devdb.example:55433', VITE_SUPABASE_ANON_KEY: anon })
+    expect(run.out).not.toContain('release trust table')
   })
 
   test('通路分裂（shell 的 GUGU_ 与 .env.local 的 VITE_ 指向不同库）中止构建', () => {

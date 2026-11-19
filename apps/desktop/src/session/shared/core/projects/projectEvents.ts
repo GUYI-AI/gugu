@@ -35,3 +35,9 @@ export const projectVisibilityChangedChannel = defineEvent<{
 export const projectGroupBindingChangedChannel = defineEvent<{
   projectId: string;
 }>('project:group-binding-changed');
+
+/**
+ * 这台机器的项目刚记上账号(identity.publish_device_projects_v2 成了):账号上的项目(list_my_projects)此刻才有它们,
+ * 这台电脑的窗口就在这时重读。❌ 在项目建好那一刻读 —— 那时还没记上(断网时更要等重连后那次记上)。
+ */
+export const deviceProjectsPublishedChannel = defineEvent<Record<string, never>>('project:device-projects-published');

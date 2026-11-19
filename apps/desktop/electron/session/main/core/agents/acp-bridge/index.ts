@@ -34,7 +34,7 @@ const realDeps: BridgeResolveDeps = {
 
 /**
  * 这一家、这条腿该起哪座桥;`undefined` = 这一家没有桥(CLI 自己讲 ACP)或这条腿不起桥(终端腿)。
- * `wait` 只由真会话启动传(见 `BridgeWait`):配对的那一版还在下载就等它;模型目录探针等调用不等。
+ * 所有配对调用都等所需版本;`wait` 只由真会话启动传,用于显示下载进度(见 `BridgeWait`)。
  */
 export async function resolveHostAcpAdapterEntry(
   providerId: string,
@@ -52,4 +52,12 @@ export async function resolveHostAcpAdapterEntry(
   }
   if (!bridge) return undefined;
   return resolveAcpBridgeEntry(bridge, { role, cli, env, ...(wait ? { wait } : {}) }, realDeps);
+}
+
+
+/** Version of the selected executable used by a version-paired bridge. Missing stays unknown. */
+export async function resolveHostAcpCliVersion(providerId: string, cli: AgentRunContext['cli'], env: Record<string, string>): Promise<string | undefined> {
+  const bridge = getPlugin(providerId).behavior.acp?.bridge;
+  if (cli.kind !== 'resolved' || bridge?.kind !== 'package' || bridge.pairWith !== 'claude') return undefined;
+  return await realClaudeBridgeDeps.probeCliVersion(cli.path, env).catch(() => undefined) ?? undefined;
 }

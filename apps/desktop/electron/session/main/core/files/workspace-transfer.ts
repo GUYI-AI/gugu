@@ -1,4 +1,5 @@
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary';
+import { canonicalPath, inWorkingCopy } from '@gugu/session-core/files';
 /**
  * #6264 一套工作台:别的电脑打开这台机器上的会话时,工作区里那几件「字节要过线」的事 ——
  * 预览 / 下载按块读、上传按块写(带版本号防覆盖)。文件树、编辑器、git 走的是与本机同一套 `workspace.*` 动词;
@@ -8,7 +9,7 @@ import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary
  * 写回按「打开时那一版」核对,agent 正在改同一个文件时拒绝,❌ 静默盖掉它的改动。
  */
 import { createReadStream, createWriteStream } from 'node:fs';
-import { appendFile, open, realpath, rename, rm, stat } from 'node:fs/promises';
+import { appendFile, open, rename, rm, stat } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
@@ -70,22 +71,15 @@ export function etagOf(info: { mtimeNs: bigint; size: bigint }): string {
   return `${info.mtimeNs.toString()}-${info.size.toString()}`;
 }
 
-/** 相对路径按工作区解析;字面在里面还不够,指向外面的符号链接也要挡住(目标还不存在就核它的父目录)。 */
+/** 相对路径按工作区解析,只认工作副本里的(`@@@working-copy-containment`:字面在里面,指向外面的链接也挡住)。 */
 export async function inWorkspace(root: string, target: string, canonical = false): Promise<string> {
-  const resolved = path.resolve(root, target);
-  if (!isInside(root, resolved)) {
+  const base = canonicalPath(path.resolve(root));
+  const file = canonicalPath(path.resolve(base, target));
+  if (inWorkingCopy(base, file) === null) {
     throw new WorkspaceTransferError('outside_workspace', `path is outside this workspace: ${target}`);
   }
-  const realRoot = await realpath(root).catch(() => root);
-  const real = await realpath(resolved).catch(async () => {
-    const parent = await realpath(path.dirname(resolved)).catch(() => path.dirname(resolved));
-    return path.join(parent, path.basename(resolved));
-  });
-  if (!isInside(realRoot, real)) {
-    throw new WorkspaceTransferError('outside_workspace', `path leads outside this workspace: ${target}`);
-  }
-  const checked = await requireAgentFileAccess(resolved);
-  return canonical ? checked : resolved;
+  const checked = await requireAgentFileAccess(file);
+  return canonical ? checked : file;
 }
 
 async function currentEtag(file: string): Promise<string | null> {

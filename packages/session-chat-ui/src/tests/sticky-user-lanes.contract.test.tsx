@@ -12,10 +12,13 @@ import { createChatContext } from '@session-chat/chat-context';
 import { createChatView } from '@session-chat/chat-view';
 import { UNIT_REGISTRY } from '@session-chat/components/engine/unit-registry';
 import { DEFAULT_THEME } from '@session-chat/core/theme';
+import { PIN_SUMMARY_GAP } from '@session-chat/layout-geometry';
 import { DEFAULT_CONFIG, buildChatTheme } from '@session-chat/core/config';
 import type { ChatItem, TranscriptTurn } from '@session-chat/model';
 import { createChatState } from '@session-chat/state/chat-state';
-import { afterEach, describe, expect, it } from 'vitest';
+import type { SelfIdentity } from '@session-chat/lib/self-identity';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { cdp, page } from 'vitest/browser';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
 import { pinnedSummaryShown } from '../../../../tests/support/pinnedSummaryShown';
 
@@ -23,8 +26,15 @@ import { pinnedSummaryShown } from '../../../../tests/support/pinnedSummaryShown
 const PIN_LINE = UNIT_REGISTRY.message!.margin!.top!;
 
 const teardown: Array<() => void> = [];
-afterEach(() => {
-  while (teardown.length) teardown.pop()?.();
+// Geometry and front-layer sweeps below exercise the ordinary reversible push-out.
+// The host's accessibility preference must not silently select the other paint contract.
+beforeEach(async () => {
+  await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  expect(matchMedia('(prefers-reduced-motion: reduce)').matches).toBe(false);
+});
+afterEach(async () => {
+  try { while (teardown.length) teardown.pop()?.(); }
+  finally { await cdp().send('Emulation.setEmulatedMedia', { features: [] }); }
 });
 
 /** A user message and enough replies that its row leaves the virtualizer's overscan while they fill the screen. */
@@ -45,9 +55,12 @@ function longTurn(id: string, seq: number, replies: number, inserted: string[] =
 async function mount(
   committed: TranscriptTurn[] = [longTurn('a', 0, 150), longTurn('b', 1, 150)],
   active?: TranscriptTurn,
-  theme = DEFAULT_THEME
+  theme = DEFAULT_THEME,
+  self?: SelfIdentity
 ) {
-  const context = createChatContext({ locale: () => 'en-US', theme });
+  // The host is 800 px wide; hit-testing a right-aligned card needs the whole host inside the viewport.
+  await page.viewport(800, 600);
+  const context = createChatContext({ locale: () => 'en-US', theme, ...(self ? { selfIdentity: () => self } : {}) });
   const state = createChatState(context);
   state.transcript.history.seed(committed);
   if (active) state.transcript.activeTurn.set(active, 'generating');
@@ -82,12 +95,77 @@ async function mount(
     scrollEl.scrollTop = st;
     await untilStable('transcript geometry settles', () => [scrollEl.scrollHeight, scrollEl.scrollTop]);
   };
-  await until('transcript mounted', () => card('a-user') != null);
+  await until('transcript mounted', () => mounted('a-user'));
   await scrollTo(0);
   return { host, scrollEl, card, cardTop, summary, pinTop, pinBottom, mounted, scrollTo, view };
 }
 
 describe('sticky user lanes', () => {
+  it.each(['no-preference', 'reduce'] as const)('honors %s while a pinned summary leaves and returns', async motion => {
+    await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: motion }] });
+    expect(matchMedia('(prefers-reduced-motion: reduce)').matches).toBe(motion === 'reduce');
+    const t = await mount([longTurn('a', 0, 4), longTurn('b', 1, 20)]);
+    const lane = t.card('a-user')!.closest<HTMLElement>('[data-index]')!;
+    const summary = t.summary('a-user')!;
+    const laneEnd = t.scrollEl.scrollTop + lane.getBoundingClientRect().bottom - t.scrollEl.getBoundingClientRect().top;
+    const leavingAt = laneEnd - summary.getBoundingClientRect().height - PIN_SUMMARY_GAP - PIN_LINE;
+    await t.scrollTo(leavingAt - 8);
+    expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 1);
+    expect(lane.dataset.pinLeaving).toBe('false');
+    expect(pinnedSummaryShown(summary), 'both modes keep a fully stuck summary readable').toBe(true);
+    await t.scrollTo(leavingAt + 5);
+    expect(t.pinTop('a-user'), 'the browser still computes the same partial push-out').toBeCloseTo(PIN_LINE - 5, 1);
+    expect(lane.dataset.pinLeaving).toBe('true');
+    expect(getComputedStyle(summary).visibility).toBe(motion === 'reduce' ? 'hidden' : 'visible');
+    expect(pinnedSummaryShown(summary), 'reduced motion hides at push-out; ordinary motion stays in front').toBe(motion !== 'reduce');
+    await t.scrollTo(leavingAt - 8);
+    expect(lane.dataset.pinLeaving).toBe('false');
+    expect(pinnedSummaryShown(summary), 'scrolling back restores the summary in both modes').toBe(true);
+  });
+
+  it('preserves the attachment-name summary when a pure attachment row has no text bubble', async () => {
+    const committed = longTurn('a', 0, 1);
+    committed.items = [{ kind: 'message', id: 'a-user', seq: 0, role: 'user', text: '',
+      attachments: [{ id: 'file', name: 'report.pdf', kind: 'file' }] },
+      { kind: 'message', id: 'a-r0', seq: 1, role: 'assistant', text: Array.from({ length: 40 }, (_, i) => `Paragraph ${i}. Lorem ipsum dolor sit amet.`).join('\n\n') },
+    ] as TranscriptTurn['items'];
+    const t = await mount([committed], undefined, buildChatTheme(DEFAULT_CONFIG, { preset: 'double', userGutter: 72, agentConversation: true }));
+    await until('attachment summary mounted', () => t.summary('a-user'), summary => summary != null);
+    expect(t.card('a-user')).toBeNull();
+    expect(t.summary('a-user')!.hasAttribute('data-pin-bare')).toBe(true);
+    expect(t.summary('a-user')!.textContent).toBe('report.pdf');
+    await t.scrollTo(900);
+    expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 0);
+  });
+
+  it('keeps active and committed answer rows out of pin lanes while ordinary user text still sticks', async () => {
+    const answered = (id: string): ChatItem => ({ kind: 'message', id, seq: 1, role: 'user',
+      text: '<gugu_question_answer>\n' + JSON.stringify({ question_id: id, state: 'answered', answers: [{ selected: ['Keep it'] }] })
+        + '\n</gugu_question_answer>' });
+    const committed = longTurn('a', 0, 1);
+    committed.items = [committed.items[0], answered('answer-done'),
+      { kind: 'message', id: 'a-r0', seq: 2, role: 'assistant', text: Array.from({ length: 40 }, (_, i) => `Paragraph ${i}. Lorem ipsum dolor sit amet.`).join('\n\n') },
+    ] as TranscriptTurn['items'];
+    const active = { id: 'active', seq: 1, initiator: 'user', items: [answered('answer-live'),
+      { kind: 'message', id: 'active-reply', seq: 2, role: 'assistant', text: 'Reply after the answer.' }] } as TranscriptTurn;
+    const t = await mount([committed], active, buildChatTheme(DEFAULT_CONFIG, { preset: 'double', userGutter: 72, agentConversation: true }));
+    await until('long committed reply can expand', () => t.host.querySelector<HTMLButtonElement>('[data-expand-user-card]'), button => button != null);
+    t.host.querySelector<HTMLButtonElement>('[data-expand-user-card]')!.click();
+    await untilStable('expanded reply measured', () => t.scrollEl.scrollHeight);
+    for (const id of ['answer-done', 'answer-live']) {
+      await t.view.scrollToItem(id, { align: 'center' });
+      await until(`${id} visible`, () => t.host.querySelector(`[data-item-id="${id}"] [data-slot="question-answer"]`), row => row != null);
+      expect(t.summary(id), `${id} is a status line, not a sticky text bubble`).toBeNull();
+      expect(t.card(id)).toBeNull();
+      expect(t.host.textContent).not.toContain('<gugu_question_answer>');
+    }
+    t.view.scrollToTop();
+    await untilStable('owner position restored after answer navigation', () => [t.scrollEl.scrollTop, t.scrollEl.scrollHeight]);
+    await until('ordinary user summary exists', () => t.summary('a-user'), summary => summary != null);
+    await t.scrollTo(900);
+    expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 0);
+  });
+
   it('never shows the lines its summary repeats, in the same frame as any scroll write', async () => {
     const t = await mount();
     const lane = t.card('a-user')!.closest<HTMLElement>('[data-index]')!;
@@ -124,6 +202,85 @@ describe('sticky user lanes', () => {
     expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 0);
     expect(t.cardTop('a-user')!, 'the message itself scrolled away').toBeLessThan(0);
   });
+  it('places the summary by one function of the scroll position, whatever the message\'s height and the scroll path', async () => {
+    // One line and two (the summary is the bubble), five (cut to two but not folded), six (folded), then unfolded.
+    const lines = (n: number) => Array.from({ length: n }, (_, i) => `line ${i + 1}`).join('\n');
+    const turn = (id: string, seq: number, text: string): TranscriptTurn => ({ id, seq, initiator: 'user', items: [
+      { kind: 'message', id: `${id}-user`, seq: 0, role: 'user', text },
+      { kind: 'message', id: `${id}-final`, seq: 1, role: 'assistant',
+        text: Array.from({ length: 12 }, (_, i) => `${id} reply ${i}. Lorem ipsum dolor sit amet.`).join('\n\n') },
+    ] as TranscriptTurn['items'] });
+    const ids = ['a', 'b', 'c', 'd'];
+    const theme = buildChatTheme(DEFAULT_CONFIG, { preset: 'double', userGutter: 72, agentConversation: true });
+    const t = await mount([...[1, 2, 5, 6].map((n, i) => turn(ids[i]!, i, lines(n))), longTurn('z', 4, 150)], undefined, theme);
+    const edge = () => t.scrollEl.getBoundingClientRect().top;
+    const frames = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const scrollAndSettle = async (st: number) => {
+      let dispatched = false;
+      const onScroll = () => { dispatched = true; };
+      t.scrollEl.addEventListener('scroll', onScroll);
+      try {
+        const before = t.scrollEl.scrollTop;
+        t.scrollEl.scrollTop = st;
+        // The pin paint scheduler is armed by scroll, not by the test's rAFs.
+        if (t.scrollEl.scrollTop !== before) await until('jump scroll event dispatched', () => dispatched);
+        await frames();
+      } finally { t.scrollEl.removeEventListener('scroll', onScroll); }
+    };
+    const sweep = async (id: string) => {
+      await t.view.scrollToItem(`${id}-user`);
+      await until(`${id} on screen`, () => t.card(`${id}-user`), el => el != null);
+      await untilStable(`${id} settled`, () => t.cardTop(`${id}-user`));
+      const lane = t.card(`${id}-user`)!.closest<HTMLElement>('[data-index]')!, summary = t.summary(`${id}-user`)!;
+      const h = summary.getBoundingClientRect().height;
+      const from = Math.round(t.scrollEl.scrollTop + t.cardTop(`${id}-user`)! - 40);
+      const to = Math.round(t.scrollEl.scrollTop + lane.getBoundingClientRect().bottom - edge() + 20);
+      const read = (st: number) => {
+        const card = t.card(`${id}-user`)!.getBoundingClientRect(), pin = summary.getBoundingClientRect();
+        const b = card.bottom - edge(), e = lane.getBoundingClientRect().bottom - edge();
+        // T = min(max(P, b - h), e - h - gap), read from the layout alone.
+        expect(pin.top - edge(), `${id} scrollTop=${st}: where the summary is`).toBeCloseTo(Math.min(Math.max(PIN_LINE, b - h), e - h - PIN_SUMMARY_GAP), 1);
+        expect([pin.left, pin.right], `${id} scrollTop=${st}: as wide as the bubble`).toEqual([card.left, card.right]);
+        // Whatever is left of the message below the pin line lies inside the summary's box: nothing shows beside it.
+        expect(card.bottom, `${id} scrollTop=${st}: the summary reaches the bubble's end`).toBeLessThanOrEqual(pin.bottom + 0.01);
+        return { top: pin.top - edge(), stuck: PIN_LINE > b - h + 0.5, shown: pinnedSummaryShown(summary) };
+      };
+      const seen = new Map<number, number>();
+      const down = Array.from({ length: to - from + 1 }, (_, i) => from + i);
+      // Every pixel down and back with no frame in between, then every 21st in an order no drag makes, a frame each.
+      // The jumps are the part paced by frames (two per jump); every 21st still lands each regime (below the pin line,
+      // stuck, pushed off: each tens of pixels wide) several times, while every pixel is checked without frames above.
+      for (const st of [...down, ...[...down].reverse()]) {
+        t.scrollEl.scrollTop = st;
+        const now = read(st);
+        expect(seen.get(st) ?? now.top, `${id} scrollTop=${st}: the same place both ways`).toBe(now.top);
+        seen.set(st, now.top);
+      }
+      for (const st of down.filter(st => st % 21 === 0).sort((x, y) => (x * 7919) % 101 - (y * 7919) % 101)) {
+        await scrollAndSettle(st);
+        const now = read(st);
+        expect(now.top, `${id} scrollTop=${st}: the same place after a jump`).toBe(seen.get(st));
+        // Pushed above the scroller, there is nothing left to hit.
+        if (now.top >= 0) {
+          let detail = '';
+          if (now.shown !== now.stuck) {
+            const pin = summary.getBoundingClientRect(), card = t.card(`${id}-user`)!.getBoundingClientRect();
+            const hit = document.elementFromPoint(pin.left + pin.width / 2, Math.max(edge() + 1, pin.top + 1));
+            detail = JSON.stringify({ scrollTop: t.scrollEl.scrollTop, sampledHeight: h, connected: summary.isConnected,
+              pin: pin.toJSON(), card: card.toJSON(), lane: lane.getBoundingClientRect().toJSON(),
+              stuckAttribute: lane.dataset.pinStuck, leavingAttribute: lane.dataset.pinLeaving,
+              layerHeight: lane.style.getPropertyValue('--pin-layer-h'), hit: hit?.outerHTML.slice(0, 700) });
+          }
+          expect(now.shown, `${id} scrollTop=${st}: in front exactly while stuck ${detail}`).toBe(now.stuck);
+        }
+      }
+    };
+    for (const id of ids) await sweep(id);
+    t.card('d-user')!.click();
+    await until('d unfolded', () => t.card('d-user')!.getBoundingClientRect().height, height => height > 150);
+    await sweep('d');
+  });
+
   it('sticks the user row in the same frame as the scroll, deep inside a long turn', async () => {
     const t = await mount();
     for (const st of [200, 900, 1700, 2600]) {
@@ -224,6 +381,50 @@ describe('sticky user lanes', () => {
       t.scrollEl.scrollTop = st + i * 6;
       const a = t.pinBottom('a-user');
       if (a !== null) expect(a, `step ${i}`).toBeLessThanOrEqual(deliveredRow()!.getBoundingClientRect().top + 1);
+    }
+  });
+
+  // #2629: the reader's own message that came in as a delivery (a task started from a chat message) is drawn below its
+  // sender's name (agent conversation) or the delivery card's padding (classic). Its summary rested as if neither were
+  // there: over the attached file's name and above the bubble's top edge, a clipped second copy of its words.
+  it.each([
+    ['agent conversation', { preset: 'double', userGutter: 72, agentConversation: true }],
+    ['classic', { preset: 'double', userGutter: 72 }],
+  ] as const)('rests behind its own bubble, below the sender and the attachment of a delivered message (%s)', async (_, layout) => {
+    const file = { itemId: 'pasted', version: 1, name: 'pasted-text.txt', mimeType: 'text/plain', sizeBytes: 18407 };
+    const turn = (id: string, seq: number, text: string): TranscriptTurn => ({ id, seq, initiator: 'user', items: [
+      { kind: 'message', id: `${id}-user`, seq: 0, role: 'user', text, files: [file] },
+      { kind: 'message', id: `${id}-final`, seq: 1, role: 'assistant',
+        text: Array.from({ length: 12 }, (_, i) => `${id} reply ${i}. Lorem ipsum dolor sit amet.`).join('\n\n') },
+    ] as TranscriptTurn['items'] });
+    const t = await mount([
+      turn('a', 0, '<gugu_delivery route="chat" msg="msg:a" from="Me" from_id="user:me" from_type="human" chat="1" chat_kind="group"><![CDATA[Are the results out?]]></gugu_delivery>'),
+      // Positive control: the same words and file sent from this session's composer.
+      turn('b', 1, 'Are the results out?'),
+    ], undefined, buildChatTheme(DEFAULT_CONFIG, layout), { userId: 'me', displayName: 'Me', guguNumber: 1 });
+    for (const id of ['a-user', 'b-user']) {
+      await t.view.scrollToItem(id, { align: 'start', offset: -100 });
+      await until(`${id} on screen`, () => t.card(id), el => el != null);
+      await untilStable(`${id} settled`, () => t.cardTop(id));
+      expect(t.cardTop(id)!, `${id} rests below the pin line`).toBeGreaterThan(PIN_LINE);
+      const card = t.card(id)!.getBoundingClientRect(), pin = t.summary(id)!.getBoundingClientRect();
+      const label = t.card(id)!.closest('[data-index]')!.querySelector('[data-attachment-chip] > span:last-child')!.getBoundingClientRect();
+      expect(pin.bottom, `${id}: the summary ends where its bubble ends`).toBeCloseTo(card.bottom, 1);
+      expect(pin.top, `${id}: no part of the summary is above its bubble`).toBeGreaterThanOrEqual(card.top - 0.5);
+      expect(pin.top, `${id}: the summary leaves the attachment's name uncovered`).toBeGreaterThanOrEqual(label.bottom - 0.5);
+    }
+    // Scrolled through, the delivered message is placed by the same rule as any other: T = min(max(P, b - h), e - h - gap).
+    await t.view.scrollToItem('a-user', { align: 'start', offset: -100 });
+    await untilStable('a settled', () => t.cardTop('a-user'));
+    const edge = () => t.scrollEl.getBoundingClientRect().top;
+    const lane = t.card('a-user')!.closest<HTMLElement>('[data-index]')!, summary = t.summary('a-user')!;
+    const h = summary.getBoundingClientRect().height, from = Math.round(t.scrollEl.scrollTop);
+    for (let st = from; st <= from + Math.round(lane.getBoundingClientRect().bottom - edge()); st += 3) {
+      t.scrollEl.scrollTop = st;
+      const card = t.card('a-user')!.getBoundingClientRect(), pin = summary.getBoundingClientRect();
+      const b = card.bottom - edge(), e = lane.getBoundingClientRect().bottom - edge();
+      expect(pin.top - edge(), `scrollTop=${st}`).toBeCloseTo(Math.min(Math.max(PIN_LINE, b - h), e - h - PIN_SUMMARY_GAP), 1);
+      expect(card.bottom, `scrollTop=${st}: nothing of the bubble shows below its summary`).toBeLessThanOrEqual(pin.bottom + 0.01);
     }
   });
 

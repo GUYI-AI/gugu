@@ -30,12 +30,10 @@ import { withWidth, withWidthCtx } from '@session-chat/core/layout/box';
 import type { UnitDef } from '@session-chat/core/units';
 import { defineUnit } from '@session-chat/core/units';
 import type { ItemNode } from '@session-chat/state/flatten';
-import { pxTokens } from '@session-chat/styles/px-tokens';
-import { assignInlineVars } from '@vanilla-extract/dynamic';
 import type { JSX } from 'solid-js';
 import { For, Show, createMemo } from 'solid-js';
 import type { ChatItem, ChatSubagentToolCall, ChatToolCall } from '@session-chat/model';
-import { toolGroupCardVars, toolGroupChildStack, toolGroupRoot } from './tool-group.css';
+import { toolGroupChildStack, toolGroupRoot } from './tool-group.css';
 import {
   SUBAGENT_HEADER_GAP,
   SUBAGENT_INDICATOR_W,
@@ -250,7 +248,7 @@ function ToolGroupRender(props: { data: ItemNode; ctx: RenderCtx; vars: ToolGrou
   return (
     <div
       class={toolGroupRoot}
-      style={assignInlineVars(toolGroupCardVars, pxTokens({ height: totalH() }))}
+      style={{ height: `${totalH()}px` }}
     >
       <Show
         when={isSubagent()}

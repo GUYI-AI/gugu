@@ -1,4 +1,5 @@
 import { beforeEach, vi } from 'vitest'
+import { layOutScrollers } from './scrollerLayout'
 import { installJsdomCanvasStub } from './jsdom-canvas-stub'
 
 // 真 lottie 播放器不进单测进程 —— 它模块顶层那条轮询关不掉,会活过 jsdom 拆除再把无关的 job 判红。
@@ -38,6 +39,8 @@ if (typeof window !== 'undefined') {
   Range.prototype.getBoundingClientRect = () => new DOMRect(0, 0, 0, 20)
   Range.prototype.getClientRects = () => [] as unknown as DOMRectList
   document.elementFromPoint = () => null
+  // A growing list that scrolls itself mounts the lines that fit (@@@growing-list): give its scroller a window's size.
+  layOutScrollers('[data-growing-list]')
 
   const storage = new Map<string, string>()
 
@@ -70,11 +73,11 @@ if (typeof window !== 'undefined') {
 }
 
 beforeEach(async () => {
-  const { setLocalePreference } = await import('../../apps/desktop/src/i18n')
+  const { applyLocalePreference } = await import('../../apps/desktop/src/i18n/runtime')
   await import('../../apps/desktop/src/i18n/registerMainCatalog')
   await import('../../apps/desktop/src/i18n/registerSettingsCatalog')
   await import('../../apps/desktop/src/i18n/registerMessagingCatalog')
   await import('../../apps/desktop/src/i18n/registerContactsCatalog')
   await import('../../apps/desktop/src/i18n/registerAgentsCatalog')
-  setLocalePreference('zh-CN')
+  applyLocalePreference('zh-CN', false)
 })

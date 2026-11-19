@@ -3,7 +3,7 @@ import { useCommands } from '@session-chat/components/contexts/CommandsContext';
 import { useTurnState } from '@session-chat/components/contexts/TurnStateContext';
 import { BlockStackView } from '@session-chat/components/primitives/BlockStackView';
 import { clipTrackedHeight, isCardAnimating } from '@session-chat/components/primitives/card-clip';
-import { GenericFileIcon, IconStop, ImageOffIcon } from '@session-chat/components/primitives/icons';
+import { FileMark, IconStop } from '@session-chat/components/primitives/icons';
 import type { StackLayout } from '@session-chat/core/compose';
 import type { Measured, MeasureCtx, RenderCtx } from '@session-chat/core/define';
 import { layoutBlockStack } from '@session-chat/core/layout/block-stack';
@@ -11,13 +11,13 @@ import { blockPlainText } from '@session-chat/core/markdown/plain-text';
 import { pxTokens } from '@session-chat/styles/px-tokens';
 import { vars as themeVars } from '@session-chat/styles/theme.css';
 import { assignInlineVars } from '@vanilla-extract/dynamic';
+import { fileRowStyle } from '@gugu/session-shared/file-row';
+import '@gugu/session-shared/file-row.css';
 import { For, Show, createEffect, createMemo, createResource, createSignal, onCleanup, type JSX } from 'solid-js';
 import type { ChatAttachment, ChatMessage } from '@session-chat/model';
 import {
-  attachChipHeight,
-  attachChipWidth,
-  attachStripHeight,
-  effectiveMessageVars,
+  actionGap, attachStripHeight,
+  effectiveMessageVars, messageAttachmentGap,
   type MessageVars,
   userAvailableWidth,
   userInnerWidth,
@@ -29,21 +29,16 @@ import { useChatTranslator } from '@session-chat/localization';
 import { conversationDestinationLayout } from './conversation-destination';
 import { ConversationDestination } from './ConversationDestination';
 import { UserMessageActions } from './UserMessageActions';
-import { CONVERSATION_EXPAND_H, conversationBubbleKey, hasConversationActions } from './conversation-body';
+import { CONVERSATION_EXPAND_H, conversationBubbleKey, conversationCanCollapse, conversationTailLane } from './conversation-body';
 import { UserMessageEditor } from './UserMessageEditor';
 import { SentMessageBodies, sentBodiesLayout } from './SentMessageBodies';
 import { InputSendStatus } from './InputSendStatus';
 import { messageEditorMetrics } from './message-editor-metrics';
 import {
-  attachChip,
-  attachChipName,
-  attachChipThumb,
-  attachChipTile,
   attachmentStrip,
   userMessageRoot,
   card,
   cardFadeOverlay,
-  cardRoot,
   cardVars,
   stopButtonOverlay,
   userCardGroup,
@@ -97,11 +92,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
     userCardPadX: vars().userCardPadX,
     userCardPadY: vars().userCardPadY,
     cardBorder: vars().cardBorder,
-    attachThumb: vars().attachThumb,
-    attachGap: vars().attachGap,
-    // 卡片的宽高由 metrics 给,css 只是照着画 —— 两处对不上就是测量契约破。
-    attachChipH: attachChipHeight(),
-    attachChipW: attachChipWidth(availableWidth()),
+    attachGap: attachmentGap(),
   });
 
   const innerWidth = () => (mCtx() ? userInnerWidth(availableWidth(), vars()) : 0);
@@ -142,12 +133,19 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
     return s.height + 2 * v.userCardPadY + 2 * v.cardBorder;
   });
 
+  const edit = () => {
+    if (props.data.guguDelivery) return undefined;
+    const current = commands().editingMessage;
+    return current?.itemId === props.data.id ? current : undefined;
+  };
+  const attachmentGap = () => messageAttachmentGap(vars(), layout(), fullContentH() > 0 || !!edit());
+
   /**
    * 附件条的高度 —— 与 measure 调的是同一个函数(`message.def`),❌ 不各算一遍。
    * 它挂在卡片**外面**,所以宽度按卡片外宽算,不吃卡片的内距。
    */
   const attachStripH = createMemo(() =>
-    attachStripHeight(props.data.attachments?.length ?? 0, availableWidth(), vars())
+    attachStripHeight(props.data.attachments, availableWidth(), { attachGap: attachmentGap() })
   );
 
   /**
@@ -169,8 +167,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
   const maxH = () => (isExpanded() ? vars().expandedMaxH : vars().collapsedMaxH);
   const clampedH = () => Math.min(fullContentH(), maxH());
   const isOverflowing = () => fullContentH() > maxH();
-  const canCollapse = () => props.conversation && mCtx()?.expanded(conversationBubbleKey(props.data))
-    && mCtx()?.latestConversationMessageId !== props.data.id && fullContentH() > vars().collapsedMaxH;
+  const canCollapse = () => Boolean(props.conversation && mCtx() && conversationCanCollapse(props.data, mCtx()!));
 
   // Track the animated clip edge during expand/collapse tween so the bottom
   // border and rounded corners are never hidden by the UnitRow overflow clip.
@@ -180,11 +177,6 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
     const ctx = mCtx();
     if (!ctx) return props.data.text;
     return parse(ctx).map(blockPlainText).join('\n\n');
-  };
-  const edit = () => {
-    if (props.data.guguDelivery) return undefined;
-    const current = commands().editingMessage;
-    return current?.itemId === props.data.id ? current : undefined;
   };
   const editorMetrics = () => {
     const ctx = mCtx();
@@ -197,7 +189,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
       class={userMessageRoot}
       style={{
         position: 'relative',
-        ...assignInlineVars(cardVars, pxTokens({ ...styleVars(), height: 0 })),
+        ...assignInlineVars(cardVars, pxTokens(styleVars())),
         // `base`:整条右对齐到与气泡同一条边(owner 给的参考是 Kimi 那个形状)。
         ...(isDoubleColumnLayout(layout())
           ? { width: `${availableWidth()}px`, 'margin-left': props.conversation && props.data.role === 'assistant' ? '0' : 'auto' }
@@ -208,8 +200,9 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
         {/* 附件**贴在消息上面**,不在气泡里(#5269,owner 2026-09-10 给的参考是 Kimi 那个形状:
             附件卡浮在气泡外、上方,气泡只包文字)——从前它长在卡片里,于是卡片被撑成一大块灰。 */}
         <div
-          class={attachmentStrip}
+          class={`${attachmentStrip} gg-file-rows`}
           style={{
+            ...fileRowStyle(),
             height: `${attachStripH()}px`,
             // `base`:整条右对齐到与气泡同一条边。
             ...(isDoubleColumnLayout(layout()) ? { 'justify-content': props.conversation && props.data.role === 'assistant' ? 'flex-start' : 'flex-end' } : {}),
@@ -228,9 +221,10 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
       data-user-card={props.data.id}
       data-conversation-bubble-key={props.conversation ? conversationBubbleKey(props.data) : undefined}
       data-user-card-expandable={props.conversation && !isExpanded() && isOverflowing() ? 'true' : undefined}
-      class={`${card({ state: isOverflowing() && !isExpanded() ? 'overflowing' : 'static', current: isGenerating() })} ${cardRoot} ${userCardGroup}`}
+      class={`${card({ state: isOverflowing() && !isExpanded() ? 'overflowing' : 'static', current: isGenerating() })} ${userCardGroup}`}
       style={{
-        ...assignInlineVars(cardVars, pxTokens({ ...styleVars(), height: cardH() + (destination()?.height ?? 0) })),
+        ...assignInlineVars(cardVars, pxTokens(styleVars())),
+        height: `${cardH() + (destination()?.height ?? 0)}px`,
         // 对话布局里人那一侧的字色由 conversation-message.css 给(跟着气泡底色反色),这里只管 agent 那一侧。
         ...(props.conversation && props.data.role !== 'assistant' ? {} : assignInlineVars({ [themeVars.fgBody]: props.conversation ? themeVars.fg : themeVars.bubbleUserFg, [themeVars.link]: props.conversation ? themeVars.fg : themeVars.bubbleUserFg })),
         // `base` pill: explicit hug width + right alignment. Left as-is in
@@ -283,9 +277,9 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
           data-conversation-bubble-key={conversationBubbleKey(props.data)}>{translate('transcript.showFullText')}</button>
       </div>
     </Show>
-    <Show when={!props.conversation || hasConversationActions(props.data) || props.footerReference || canCollapse()}>
+    <Show when={!props.conversation || conversationTailLane(props.data, canCollapse(), Boolean(props.footerReference)) !== 'none'}>
     <UserMessageActions itemId={props.data.id} text={props.data.text} at={props.data.at}
-      reference={props.footerReference}
+      reference={props.footerReference} gap={actionGap(layout())}
       collapse={canCollapse() ? { bubbleKey: conversationBubbleKey(props.data), anchorId: props.data.id } : undefined}
       generating={isGenerating()} readOnly={Boolean(props.data.guguDelivery) || (props.conversation && props.data.role === 'assistant')} vars={props.vars} />
     </Show>
@@ -300,12 +294,8 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
 
 
 /**
- * 一枚附件卡 —— **图片和文件同一件外壳**(#5269),差别只在图块里装什么:图片铺缩略图,
- * 文件放字形。owner:「按我预想不同附件,用同一个附件 ui 组件,视觉差异不会太大」。
- *
- * 名字在图块**下方、方框之外**;这一处与上游的出入(以及为什么)写在 `metrics.ts`。
- *
- * 点开也是同一个回调,宿主按 kind 分岔(图 → 看图、文件 → 用它该用的方式打开)。
+ * 一枚附件 = 一条文件行(`@gugu/session-shared/file-row`):文件是图标 + 名字 + 扩展名,图片是同高的缩略图。
+ * 点开是同一个回调,宿主按 kind 分岔(图 → 看图、文件 → 用它该用的方式打开)。
  */
 function AttachmentChip(props: { attachment: ChatAttachment; itemId: string }) {
   const commands = useCommands();
@@ -316,13 +306,15 @@ function AttachmentChip(props: { attachment: ChatAttachment; itemId: string }) {
     async () => commands().resolveAttachment?.(props.attachment) ?? null
   );
   const dataUrl = () => props.attachment.dataUrl ?? resolvedDataUrl() ?? undefined;
+  // 第二行只写扩展名(CSV、MD),没有扩展名就不画;类型文案归群聊卡片那套,❌ 这里再抄一份。
+  const extension = () => /\.([^./]+)$/.exec(props.attachment.name)?.[1].toUpperCase();
 
   return (
     <button
       type="button"
       data-attachment-chip
       data-kind={isImage() ? 'image' : 'file'}
-      class={attachChip}
+      class="gg-file-row"
       // 名字长了会截断,全名放这儿。
       title={props.attachment.name}
       // 附件名是原始数据(用户自己的文件名),只被这句话包住,❌ 不进 catalog。
@@ -341,21 +333,24 @@ function AttachmentChip(props: { attachment: ChatAttachment; itemId: string }) {
         });
       }}
     >
-      <span class={attachChipTile}>
-        <Show
-          when={isImage() && dataUrl()}
-          fallback={
-            /* 图片读不回来时给「图裂了」那个字形,❌ 不要跟文件用同一个 —— 那会把
-               「这张图没读到」说成「这是个文件」。 */
-            <Show when={isImage()} fallback={<GenericFileIcon />}>
-              <ImageOffIcon />
-            </Show>
-          }
-        >
-          {(src) => <img src={src()} alt="" class={attachChipThumb} />}
-        </Show>
-      </span>
-      <span class={attachChipName}>{props.attachment.name}</span>
+      <Show
+        when={isImage() && dataUrl()}
+        fallback={<>
+          {/* 图片读不回来时给「图裂了」那个字形,❌ 不要跟文件用同一个 —— 那会把
+              「这张图没读到」说成「这是个文件」。 */}
+          <span class="gg-file-row-icon">
+            <FileMark name={props.attachment.name} off={isImage()} />
+          </span>
+          <Show when={!isImage()}>
+            <span class="gg-file-row-text">
+              <span class="gg-file-row-name">{props.attachment.name}</span>
+              <Show when={extension()}>{extension => <span class="gg-file-row-detail">{extension()}</span>}</Show>
+            </span>
+          </Show>
+        </>}
+      >
+        {(src) => <img src={src()} alt="" />}
+      </Show>
     </button>
   );
 }

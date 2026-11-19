@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { readChatFolderText } from '@/lib/chatFolder'
 import { ChatFolderReadError } from '@/session/shared/extensions/chat-folder-text'
-import type { TodayFeedView } from '@/session/renderer/features/assistant/assistant-today-feed'
-import { TODAY_FILE_NAME, TODAY_REFRESH_MS, TodayReadError, todayReadOf } from '@/session/renderer/features/assistant/assistant-today-file'
+import { TODAY_FILE_NAME, TODAY_REFRESH_MS, TodayReadError, todayReadOf, type TodayFeedView } from '@/session/renderer/features/assistant/assistant-today-file'
 
 /**
  * 手机上读私聊文件夹里的 today.json:窗口里 fetch(lib/chatFolder.ts;文件服务要答跨域预检,gugu-supabase #119)。

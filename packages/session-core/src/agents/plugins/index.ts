@@ -56,6 +56,7 @@ const metadataSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
+  publisher: z.string().optional(),
   websiteUrl: z.string(),
   compatibleVersions: z.string().optional(),
 });
@@ -147,6 +148,8 @@ export type {
   IAgentAuthBehavior,
   IAgentProgramAuthBehavior,
 } from './capabilities/auth';
+
+export { apiKeyConnectionEndpoint } from './capabilities/api-key-connection';
 export type { HarnessPresence, HarnessPresenceFile, HarnessPresenceStatus, HooksDescriptor, IHooksBehavior } from './capabilities/hooks';
 export type {
   ISubscriptionBehavior,
@@ -201,6 +204,9 @@ export { PLATFORM_PROVIDER_NAME, positiveWindow, trimmedValue } from './capabili
 export type { IPlugins } from './capabilities/plugins';
 export type {
   AgentConfigRoot,
+  AgentHomeGroupId,
+  AgentHomeImportPath,
+  AgentHomeImportGroup,
   NativeHome,
   ShellEnv,
   AgentFirstRunState,

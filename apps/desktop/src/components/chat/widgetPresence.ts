@@ -10,7 +10,8 @@ export class WidgetPresence {
   private slots = new Map<number, Slot>()
   private nextToken = 0
 
-  constructor() { makeObservable(this, { register: action, update: action, release: action }) }
+  /** `emptied` runs when the last slot is released: nothing of this chat is shown, so nothing is kept for it. */
+  constructor(private readonly emptied?: () => void) { makeObservable(this, { register: action, update: action, release: action }) }
 
   register(widgetId: string, element: HTMLElement): number {
     const token = ++this.nextToken
@@ -30,6 +31,7 @@ export class WidgetPresence {
     if (!slot) return
     this.slots.delete(token)
     this.choose(slot.widgetId)
+    if (!this.slots.size) this.emptied?.()
   }
 
   locate(widgetId: string): void { this.slots.get(this.owners.get(widgetId) ?? -1)?.element.scrollIntoView({ block: 'center', behavior: 'smooth' }) }
@@ -56,6 +58,9 @@ const presences = new Map<string, WidgetPresence>()
 /** The chat's one presence: a resident page is one per chat and widget, so is the choice of its slot. */
 export function widgetPresenceOf(chatId: string): WidgetPresence {
   let presence = presences.get(chatId)
-  if (!presence) presences.set(chatId, presence = new WidgetPresence())
+  if (!presence) {
+    const made: WidgetPresence = new WidgetPresence(() => { if (presences.get(chatId) === made) presences.delete(chatId) })
+    presences.set(chatId, presence = made)
+  }
   return presence
 }

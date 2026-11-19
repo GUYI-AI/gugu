@@ -16,7 +16,7 @@ function setup(row: ConnectionMetadataItem) {
     revision:'4',status:'pending',scopeKey:args.p_scope_key,resourceKey:args.p_resource_key},error:null})
   const execute=vi.fn(async (_operationId: string)=>{})
   const store=createOwnerConnectionStore({ownerId:'owner',deviceId:'selected-desktop',accountId:()=> 'owner',
-    client:createConnectionClient(transport,()=> 'owner'),cache:{peek:()=>cached,save:value=>{cached=value}},changed:vi.fn(),executePlatformOperation:execute})
+    client:createConnectionClient(transport,()=> 'owner'),cache:{peek:()=>cached,save:value=>{cached=value}},reread:vi.fn(),changed:vi.fn(),executePlatformOperation:execute})
   return {store,transport,execute,snapshot,commit:()=>transport.mock.calls.find(call=>call[0]==='connection_commit')!,cache:()=>cached}
 }
 describe('owner metadata mutation scope',()=>{

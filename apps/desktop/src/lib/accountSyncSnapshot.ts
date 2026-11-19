@@ -13,6 +13,8 @@ import { alignMessageStore } from './messageStoreRecovery'
 import { ingestMessages, prefetchMessages } from './messageIngest'
 import { messageAccessWrites } from './messageRevisionWrites'
 import { createSupabaseAccountRevisionSource } from './supabaseAccountRevisionSource'
+import { noteBackendAnswer } from '@gugu/core/cloud/backendReachability'
+import { sendGroupPreview } from './sendGroupPreview'
 
 const log = rendererLogger('im/snapshot')
 const row = z.record(z.string(), z.unknown())
@@ -42,7 +44,7 @@ export function decodeAccountSnapshot(value: unknown, accountId: string) {
   for (const identity of snapshot.identities) put('identity', identity.id, displayIdentityFromRow(identity))
   for (const preview of snapshot.previews) put('preview', preview.chat_id, {
     chat_id: preview.chat_id, created_at: preview.created_at,
-    preview: typeof preview.preview === 'string' ? composerCardLine(preview.preview) : null,
+    preview: sendGroupPreview(preview.send_group_size) ?? (typeof preview.preview === 'string' ? composerCardLine(preview.preview) : null),
     notice: parseSystemNotice(preview as Parameters<typeof parseSystemNotice>[0]),
   })
   const unread = mergeUnreadRows(snapshot.unread as Array<Record<string, unknown> & { chat_id: string }>)
@@ -64,7 +66,11 @@ export async function initializeAccountSync(repository: AccountImRepository): Pr
     return
   }
   const startedAt = performance.now()
-  const { data, error } = await chatDb.rpc('sync_snapshot').abortSignal(currentAuthSessionSignal())
+  // Before the account has a cursor, this is the beat's pull, so it is the reading of backendReachability too.
+  const signal = currentAuthSessionSignal()
+  const { data, error } = await chatDb.rpc('sync_snapshot').abortSignal(signal)
+    .then(answer => answer, (thrown: unknown) => ({ data: null, error: thrown }))
+  if (!signal.aborted) noteBackendAnswer(!error)
   if (error) throw error
   const snapshot = decodeAccountSnapshot(data, repository.accountId)
   const chats = assemble(snapshot.cells, repository.accountId)

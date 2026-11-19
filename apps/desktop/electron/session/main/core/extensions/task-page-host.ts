@@ -76,7 +76,22 @@ let serverBrowser: ServerTaskBrowser | null = null;
 
 /** A task's page on this Gugu server, for another computer to watch and take over; null when it has none. */
 export async function taskPageForScreen(sessionId: string): Promise<TaskPageScreenTarget | null> {
-  return serverBrowser ? serverBrowser.existingPage(sessionId) : null;
+  return serverBrowser ? serverBrowser.existingPage(sessionId) : (await import('../browser/native-task-page-screen')).nativeTaskPageForScreen(sessionId);
+}
+
+/** 「本机送」: a password login for a task on this Gugu server, in a private context of the account's browser. */
+export async function serverTaskPrivateLogin(sessionId: string, input: Parameters<ServerTaskBrowser['privateLogin']>[1]) {
+  return (await accountTaskBrowser()).privateLogin(sessionId, input);
+}
+
+async function accountTaskBrowser(): Promise<ServerTaskBrowser> {
+  if (!serverBrowser) {
+    const { createServerTaskBrowser } = await import('../../../../server/server-task-browser');
+    const { findAppBrowser } = await import('../../../../server/app-browser');
+    serverBrowser ??= createServerTaskBrowser({ binary: () => findAppBrowser(process.env), log,
+      profile: path.join(app.getPath('userData'), 'TaskBrowser') });
+  }
+  return serverBrowser;
 }
 
 /**
@@ -89,13 +104,7 @@ async function serverTaskPage(sessionId: string, url: string | undefined, signal
   const context = await agentSessionContext(sessionId);
   signal.throwIfAborted();
   if (!context) throw new Error('The task has no page on this computer');
-  if (!serverBrowser) {
-    const { createServerTaskBrowser } = await import('../../../../server/server-task-browser');
-    const { findAppBrowser } = await import('../../../../server/app-browser');
-    serverBrowser = createServerTaskBrowser({ binary: () => findAppBrowser(process.env), log,
-      profile: path.join(app.getPath('userData'), 'TaskBrowser') });
-  }
-  const contents = await serverBrowser.pageFor(sessionId, url, signal) as unknown as WebContents;
+  const contents = await (await accountTaskBrowser()).pageFor(sessionId, url, signal) as unknown as WebContents;
   signal.throwIfAborted();
   // The person sees it where they look at this task, and can take it over there.
   const { showTaskPageOnDesktop } = await import('../sessions/session-orchestration');

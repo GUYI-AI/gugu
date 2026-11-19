@@ -1,13 +1,6 @@
-import { createVar, globalStyle, style } from '@vanilla-extract/css';
+import { createVar, style } from '@vanilla-extract/css';
 import { recipe } from '@vanilla-extract/recipes';
-import {
-  ATTACH_LABEL_GAP,
-  ATTACH_LABEL_LINE,
-  ATTACH_TILE,
-  ATTACH_TILE_GLYPH,
-  USER_MESSAGE_ACTION_GAP,
-  type MessageStyleVars,
-} from './metrics';
+import { USER_MESSAGE_ACTION_GAP, type MessageStyleVars } from './metrics';
 import { vars } from '@session-chat/styles/theme.css';
 import { createVariableThemeContract } from '@session-chat/styles/variable-theme-contract.css';
 
@@ -25,18 +18,18 @@ export const userCardGroup = style({});
 // ── Runtime geometry contract ─────────────────────────────────────────────────
 // Set per-instance via assignInlineVars in message.def.tsx.
 
-export const cardVars = createVariableThemeContract<MessageStyleVars & { height: number }>({
-  height: null,
+export const cardVars = createVariableThemeContract<MessageStyleVars>({
   userCardPadX: null,
   userCardPadY: null,
   cardBorder: null,
-  attachThumb: null,
   attachGap: null,
-  attachChipH: null,
-  attachChipW: null,
 });
 
-// No class-level `overflow` here, deliberately — unlike every sibling row root
+// The card's engine height is a plain inline `height` (UserMessageCard), never one of these custom properties: a custom
+// property inherits, so changing it restyles every node of the body — per streamed chunk, O(reply). Measured
+// 2026-11-12 on a 15k-char LaTeX reply: style recalc grew 5.6 → 63 ms per chunk along the reply.
+//
+// No class-level `overflow` on the card, deliberately — unlike every sibling row root
 // that is handed an engine height. `UserMessageCard` writes `overflow-y` inline
 // on every render (`hidden` while collapsed or animating, `auto` when expanded
 // at rest, so long messages stay scrollable), and a non-visible `overflow-y`
@@ -44,7 +37,6 @@ export const cardVars = createVariableThemeContract<MessageStyleVars & { height:
 // therefore contain a height surplus; measured, not assumed — see the
 // "user card contains a transient surplus" contract, which also keeps the
 // inline style from being dropped silently.
-export const cardRoot = style({ height: cardVars.height });
 
 // ── UserMessageCard ───────────────────────────────────────────────────────────
 
@@ -140,7 +132,7 @@ export const stopButtonOverlay = style({
   transition: 'opacity 150ms ease',
   selectors: {
     [`${userCardGroup}:hover &`]: { opacity: 1 },
-    '&:focus-visible': { opacity: 1 },
+    '&:focus-visible:not([data-pointer-focus])': { opacity: 1 },
     '&:hover': { color: vars.fg },
   },
 });
@@ -152,13 +144,18 @@ export const stopButtonOverlay = style({
  * ⚠️ 高度由 `attachStripHeight` 算出来后写在行内 —— 这条与卡片是兄弟,行的总高是
  * 「条 + 卡片」,两边各自的数必须对得上(`measure() === offsetHeight`)。
  */
-/** 附件条:同宽的卡片并排,排不下换行。 */
+/**
+ * 附件条:定宽的文件行并排,排不下换行(排法和尺寸是 `.gg-file-rows`,在 session-shared)。
+ * 这里只给文件行配色,外加它与气泡之间那道间距。
+ */
 export const attachmentStrip = style({
-  boxSizing: 'border-box',
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: cardVars.attachGap,
   paddingBottom: cardVars.attachGap,
+  vars: {
+    '--gg-file-row-fg': vars.fg,
+    '--gg-file-row-muted': vars.fgMuted,
+    '--gg-file-row-ring': vars.border,
+    '--gg-file-row-fill': vars.bgHover,
+  },
 });
 
 /** 一条用户消息的根:附件条、气泡、消息操作。 */
@@ -207,7 +204,7 @@ export const userMessageActionButton = style({
   cursor: 'pointer',
   selectors: {
     '&:hover': { color: vars.fg, background: vars.bgHover },
-    '&:focus-visible': { outline: `2px solid ${vars.fgMuted}`, outlineOffset: '1px' },
+    '&:focus-visible:not([data-pointer-focus])': { outline: `2px solid ${vars.fgMuted}`, outlineOffset: '1px' },
   },
 });
 
@@ -220,7 +217,7 @@ export const userMessageExpand = style({
   padding: 0, border: 0, background: 'transparent', cursor: 'pointer',
   minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1, lineHeight: '16px',
   color: vars.fgMuted, fontFamily: vars.fontSans, fontSize: vars.typeChromeTinyFontSize, whiteSpace: 'nowrap',
-  selectors: { '&:hover': { color: vars.fg }, '&:focus-visible': { outline: `1px solid ${vars.fgMuted}`, outlineOffset: 2, borderRadius: 3 } },
+  selectors: { '&:hover': { color: vars.fg }, '&:focus-visible:not([data-pointer-focus])': { outline: `1px solid ${vars.fgMuted}`, outlineOffset: 2, borderRadius: 3 } },
 });
 
 export const userMessageTime = style({
@@ -229,93 +226,6 @@ export const userMessageTime = style({
   fontFamily: vars.fontSans, fontSize: vars.typeChromeTinyFontSize,
   whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums',
 });
-
-/**
- * 一枚附件卡 —— 一个有厚度的图块,名字在**图块之外的下方**(owner 2026-09-10 定的形状,
- * 推导见 `metrics.ts`)。卡片本身不画底、不画框:名字不占那个方框,方框才立得起来。
- */
-export const attachChip = style({
-  boxSizing: 'border-box',
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  gap: `${ATTACH_LABEL_GAP}px`,
-  width: cardVars.attachChipW,
-  height: cardVars.attachChipH,
-  padding: 0,
-  margin: 0,
-  border: 'none',
-  background: 'transparent',
-  color: vars.fg,
-  font: 'inherit',
-  cursor: 'pointer',
-});
-
-/**
- * 图块。浅底 + 圆角。❌ 不加描边(owner 否过两次)。
- *
- * ⚠️ 2026-09-22 按 design.md 统一:投影删掉。原裁决:「投影是『别这么扁平』那句话要的那一格:
- * 它让方块看着是浮起来的一件东西,而不是一片色块。」
- * 被推翻的理由:「**Shadows are zeroed globally. Only a floating surface may lift.**」
- * 加上 Reject 列表的「**ornamental shadows**」。这枚图块住在转录里、**跟着内容滚**,
- * 它不是浮层,也不盖住任何东西 —— 那层柔光是纯装饰,理由本身就写着「别这么扁平」。
- *
- * 「别这么扁平」这件事没有丢:静止 `bgHover` → hover/focus `bgPress` 是同一条底色阶梯
- * (它本来就在,下面两条 globalStyle 里),深浅一变就读得出「这块是可点的一件东西」。
- * ⇒ 层级换了表达方式,不是被删掉了。
- */
-export const attachChipTile = style({
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  flex: '0 0 auto',
-  width: `${ATTACH_TILE}px`,
-  height: `${ATTACH_TILE}px`,
-  borderRadius: vars.radiusXl,
-  background: vars.bgHover,
-  color: vars.fgMuted,
-  overflow: 'hidden',
-  transition: 'background 120ms ease',
-});
-
-globalStyle(`${attachChipTile} svg`, {
-  width: `${ATTACH_TILE_GLYPH}px`,
-  height: `${ATTACH_TILE_GLYPH}px`,
-});
-
-globalStyle(`${attachChip}:hover ${attachChipTile}`, {
-  background: vars.bgPress,
-});
-
-globalStyle(`${attachChip}:focus-visible ${attachChipTile}`, {
-  background: vars.bgPress,
-});
-
-/** 图片型:缩略图铺满图块本身,圆角由图块切。 */
-export const attachChipThumb = style({
-  width: '100%',
-  height: '100%',
-  display: 'block',
-  objectFit: 'cover',
-});
-
-/**
- * 名字 —— 在方框外面,一行,放不下就省略号。
- * owner:「没必要有这么长的文件名吧,文件名点击不就知道了吗」⇒ 截断是有意的,全名在 title 里。
- */
-export const attachChipName = style({
-  width: '100%',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-  textAlign: 'center',
-  // @@@type-chrome (Refs #6104) — 文件名在这里是**标记**不是正文(真要看全名点开就知道,见上面那段 owner 原话)
-  // ⇒ 标记档(#7333:标注 12/18),不是正文档。
-  fontSize: vars.typeChromeTinyFontSize,
-  lineHeight: `${ATTACH_LABEL_LINE}px`,
-  color: vars.fgMuted,
-});
-
 
 export const cardFadeOverlay = style({
   background: `linear-gradient(to top, ${cardSurface} 0%, color-mix(in oklab, ${cardSurface}, transparent 50%) 40%, transparent 100%)`,

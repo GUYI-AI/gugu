@@ -31,8 +31,10 @@ vi.mock('../../../../apps/desktop/src/session/renderer/utils/logger', () => ({ l
 
 import { useSessionHostAsk } from '../../../../apps/desktop/src/session/renderer/features/extensions/use-session-host-ask'
 
+const APP_INSTALL = ['app-install'] as const
+
 function Probe() {
-  const ask = useSessionHostAsk('task-1', 'app-install')
+  const ask = useSessionHostAsk('task-1', APP_INSTALL)
   return createNode('span', { 'data-ask': ask?.itemId ?? 'none' })
 }
 

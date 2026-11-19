@@ -14,9 +14,8 @@ const outlets: Record<string, string> = {
   'apps/desktop/src/mobile/agent-watch/useAgentWatchAlerts.ts': 'Phone agent waits, decided by the sibling agent-watch-alerts model.',
   'apps/desktop/src/components/assistant/MeetingReminder.tsx': 'Exception: time-bound calendar reminder.',
   'apps/desktop/src/lib/notificationDiagnostics.ts': 'Exception: person pressed the test-notification button.',
-  'apps/desktop/src/lib/notificationSettings.ts': 'Documents the existing chat-banner sound setting; no output of its own.',
   'apps/desktop/src/platform/electron.ts': 'Platform bridge implementation.',
-  'apps/desktop/src/platform/capacitor.ts': 'Platform implementation, including quiet notification channel.',
+  'apps/desktop/src/platform/phoneNotificationOutlet.ts': 'Shared Android/iOS OS outlet; existing decisions retain platform permission and sound policy.',
   'apps/desktop/src/mobile/assistant/phoneVoiceRecorder.ts': 'Audio input capture, not a notification sound.',
   'apps/desktop/src/session/renderer/features/assistant/voice-notes/voice-recorder.ts': 'Audio input capture, not a notification sound.',
 };

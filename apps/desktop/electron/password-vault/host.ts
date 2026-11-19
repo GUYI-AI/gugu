@@ -28,6 +28,7 @@ export function createVaultStorage(dependencies: VaultStorageDependencies, brows
     assertOwnedLocalAgent: dependencies.assertOwnedLocalAgent?.bind(dependencies),
     assertPrivateStorageReady: dependencies.assertPrivateStorageReady.bind(dependencies),
     invalidate: dependencies.invalidate.bind(dependencies), now: dependencies.now?.bind(dependencies),
+    sync: dependencies.sync ? Object.freeze({ publish: dependencies.sync.publish.bind(dependencies.sync) }) : undefined,
     keys: Object.freeze({ verifyPerson: keys.verifyPerson.bind(keys), wrap: keys.wrap.bind(keys), unwrap: keys.unwrap.bind(keys) }),
     browser: sink, acquireFeatureGuard,
   })

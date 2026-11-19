@@ -1,23 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 
-// #7199 手机助理 App 的「记忆」「健康」:删一条记忆连同 MEMORY.md 索引、资料夹里往下钻(文件 / 文件夹 / 不在了)、
-// 从手机上传、语音笔记只读、健康读不到时分哪一种。全用一台假的机器(内存里的文件),❌ 碰真数据。
+// #7199 手机助理那一层自己的几页:删一条记忆连同 MEMORY.md 索引、录音条失败那一句、健康读不到时分哪一种。
+// 全用一台假的机器(内存里的文件),❌ 碰真数据。
 
 vi.mock('@capacitor/core', () => ({ registerPlugin: () => ({}) }))
 
 import { assistantPaths } from '../../../apps/desktop/src/session/renderer/features/assistant/assistant-files'
 import type { AssistantMachine, MachineRpc } from '../../../apps/desktop/src/session/renderer/features/assistant/assistant-machine-core'
-import { phoneParentRoute } from '../../../apps/desktop/src/mobile/assistant/phoneRoutes'
-import {
-  deleteMemoryNote,
-  filesSub,
-  filesTrail,
-  readResourceView,
-  resourceDisplayPath,
-  uploadResources,
-  VIEW_MAX_BYTES,
-} from '../../../apps/desktop/src/mobile/assistant/phoneMemoryData'
-import { createdFromId, readVoiceNote, readVoiceNotes, voiceFailureText } from '../../../apps/desktop/src/mobile/assistant/phoneVoiceNotesData'
+import { deleteMemoryNote } from '../../../apps/desktop/src/mobile/assistant/phoneMemoryData'
+import { voiceFailureText } from '../../../apps/desktop/src/mobile/assistant/phoneVoiceNotesData'
 import { readPhoneHealthView } from '../../../apps/desktop/src/mobile/assistant/phoneHealthView'
 import type { NativeHealthStatus } from '../../../apps/desktop/src/mobile/phone-device/nativePhoneActions'
 import type { HealthSummary } from '@gugu/core/shared/healthSummary'
@@ -112,7 +103,6 @@ function fakeMachine(initial: Record<string, string | Node>) {
 
 const paths = assistantPaths(HOME, WORKDIR)
 const memory = (name: string) => `${paths.memoryDir}/${name}`
-const resources = (name = '') => (name ? `${paths.resourcesDir}/${name}` : paths.resourcesDir)
 
 describe('deleteMemoryNote', () => {
   it('删掉那条记忆,并且只拿掉 MEMORY.md 里指向它的那一行', async () => {
@@ -142,136 +132,7 @@ describe('deleteMemoryNote', () => {
   })
 })
 
-describe('资料夹路由与读法', () => {
-  it('files / files:<路径> 与手机自己的 phoneParentRoute 同一套名字', () => {
-    expect(filesTrail('files')).toEqual([])
-    expect(filesTrail('files:报告/2026')).toEqual(['报告', '2026'])
-    expect(filesSub([])).toBe('files')
-    expect(filesSub(['报告', 'a.md'])).toBe('files:报告/a.md')
-    expect(phoneParentRoute({ tab: 'memory', sub: filesSub(['报告', 'a.md']) })).toEqual({ tab: 'memory', sub: 'files:报告' })
-    expect(phoneParentRoute({ tab: 'memory', sub: filesSub(['a.md']) })).toEqual({ tab: 'memory', sub: 'files' })
-  })
-
-  it('根:资料夹还没建 = 空文件夹(第一次上传才建),❌ 读失败', async () => {
-    const { machine } = fakeMachine({})
-    await expect(readResourceView(machine, [])).resolves.toEqual({ kind: 'folder', entries: [] })
-  })
-
-  it('往下钻:文件夹列出来、文本文件读出来、不在了说不在了', async () => {
-    const { machine } = fakeMachine({ [resources('报告/体检.md')]: '# 体检\n都好', [resources('notes.txt')]: 'hello' })
-    const folder = await readResourceView(machine, ['报告'])
-    expect(folder.kind).toBe('folder')
-    expect(folder.kind === 'folder' && folder.entries.map((entry) => entry.name)).toEqual(['体检.md'])
-    const file = await readResourceView(machine, ['notes.txt'])
-    expect(file).toMatchObject({ kind: 'file', entry: { name: 'notes.txt' }, content: { kind: 'text', text: 'hello' } })
-    await expect(readResourceView(machine, ['报告', '没有.md'])).resolves.toEqual({ kind: 'gone' })
-  })
-
-  it('不是文本、太大:如实说,❌ 当成空文件', async () => {
-    const { machine } = fakeMachine({
-      [resources('scan.pdf')]: { kind: 'file', content: '', binary: true, size: 2048 },
-      [resources('big.log')]: { kind: 'file', content: '', size: VIEW_MAX_BYTES + 1 },
-    })
-    await expect(readResourceView(machine, ['scan.pdf'])).resolves.toMatchObject({ kind: 'file', content: { kind: 'binary' } })
-    await expect(readResourceView(machine, ['big.log'])).resolves.toMatchObject({ kind: 'file', content: { kind: 'too-large', size: VIEW_MAX_BYTES + 1 } })
-  })
-
-  it('上层读不到:抛出来(页面说资料没读到 + 重试),❌ 当成不在了', async () => {
-    const { machine } = fakeMachine({})
-    const broken = { ...machine, rpc: { ...machine.rpc, files: { browseDirectory: async () => ({ success: false, error: { type: 'filesystem-error', path: '', message: 'EACCES' } }) } } } as AssistantMachine
-    await expect(readResourceView(broken, ['a.md'])).rejects.toThrow('EACCES')
-  })
-})
-
-describe('uploadResources', () => {
-  it('住电脑时首次建夹、上传与分析路径都使用该助理的工作目录', async () => {
-    const { machine, fs } = fakeMachine({})
-    machine.paths = assistantPaths(HOME, WORKDIR, 'computer')
-    const create = vi.spyOn(machine.rpc!.workspace.files, 'createEntry')
-    await uploadResources(machine, [], [new File(['你好'], 'a.txt')])
-    expect(create).toHaveBeenCalledWith(expect.any(String), expect.any(String), WORKDIR, '给助理的资料', 'folder')
-    expect(fs.has(`${HOME}/给助理的资料`), 'must not create the cloud layout for a computer assistant').toBe(false)
-    expect(fs.get(`${machine.paths.resourcesDir}/a.txt`)).toEqual({ kind: 'file', content: '你好' })
-    expect(resourceDisplayPath(machine, ['报告'])).toBe('~/assistant/给助理的资料/报告')
-    expect(resourceDisplayPath({ ...machine, paths: assistantPaths(HOME, '/home/user-else/project', 'computer') }, [])).toBe('/home/user-else/project/给助理的资料')
-  })
-
-  it('传到根上先建资料夹;音视频 / 超 50MB 的不传、说原因;一个没传上不拦后面的', async () => {
-    const { machine, fs } = fakeMachine({})
-    const big = new File(['x'], 'huge.pdf')
-    Object.defineProperty(big, 'size', { value: 51 * 1024 * 1024 })
-    const outcome = await uploadResources(machine, [], [new File(['你好'], 'a.txt'), new File(['x'], 'talk.mp4'), big])
-    expect(outcome.done).toEqual(['a.txt'])
-    expect(outcome.rejected).toEqual([
-      { name: 'talk.mp4', reason: 'unsupported' },
-      { name: 'huge.pdf', reason: 'too_large' },
-    ])
-    expect(fs.get(paths.resourcesDir)).toEqual({ kind: 'dir' })
-    expect(fs.get(resources('a.txt'))).toEqual({ kind: 'file', content: '你好' })
-  })
-
-  it('某一个写失败:记在 failed 里,其余照传', async () => {
-    const { machine, fs } = fakeMachine({ [resources('报告/.keep')]: '' })
-    const files = machine.rpc!.workspace.files as unknown as { writeChunk: (...args: unknown[]) => Promise<unknown> }
-    const original = files.writeChunk
-    files.writeChunk = async (...args: unknown[]) => {
-      const chunk = args[2] as { path: string }
-      if (chunk.path.endsWith('bad.txt')) return { success: false, error: { type: 'fs_error', message: 'ENOSPC' } }
-      return original(...args)
-    }
-    const outcome = await uploadResources(machine, ['报告'], [new File(['1'], 'bad.txt'), new File(['2'], 'good.txt')])
-    expect(outcome.failed).toEqual([{ name: 'bad.txt', message: 'ENOSPC' }])
-    expect(outcome.done).toEqual(['good.txt'])
-    expect(fs.has(resources('报告/good.txt'))).toBe(true)
-  })
-})
-
-describe('语音笔记(只读)', () => {
-  const meta = (over: Record<string, unknown>) =>
-    JSON.stringify({
-      version: 1,
-      id: '20261016-080000-ab',
-      createdAt: '2026-10-16T08:00:00.000Z',
-      updatedAt: new Date().toISOString(),
-      status: 'ready',
-      title: '周会',
-      durationMs: 120_000,
-      source: 'desktop',
-      segments: [],
-      failure: null,
-      ...over,
-    })
-  const dir = (id: string, name: string) => memory(`voice-notes/${id}/${name}`)
-
-  it('列表:好了的带标题;总结已写好而 note.json 还没标好 = 好了(标题取总结);note.json 读不懂仍列出来', async () => {
-    const { machine, writes } = fakeMachine({
-      [dir('20261016-080000-ab', 'note.json')]: meta({}),
-      [dir('20261016-090000-cd', 'note.json')]: meta({ id: '20261016-090000-cd', status: 'summarizing', title: null, summaryRequestedAt: new Date().toISOString() }),
-      [dir('20261016-090000-cd', 'summary.md')]: '# 客户回访\n要点……',
-      [dir('20261016-100000-ef', 'note.json')]: 'not json',
-    })
-    const items = await readVoiceNotes(machine)
-    const byId = new Map(items.map((item) => [item.id, item]))
-    expect(byId.get('20261016-080000-ab')).toMatchObject({ view: { kind: 'ready' }, title: '周会' })
-    expect(byId.get('20261016-090000-cd')).toMatchObject({ view: { kind: 'ready', title: '客户回访' }, title: '客户回访' })
-    expect(byId.get('20261016-100000-ef')).toMatchObject({ meta: null, view: { kind: 'failed', message: 'unreadable' }, createdAt: createdFromId('20261016-100000-ef') })
-    // 手机只读:❌ 回写 note.json。
-    expect(writes).toEqual([])
-  })
-
-  it('一条:不在了 = null;在 = 总结 + 转写各读各的', async () => {
-    const { machine } = fakeMachine({
-      [dir('20261016-080000-ab', 'note.json')]: meta({}),
-      [dir('20261016-080000-ab', 'summary.md')]: '# 周会\n- 定了排期',
-      [dir('20261016-080000-ab', 'transcript.md')]: '[00:00] 说话人1：大家好\n[00:05] 说话人2：开始吧\n',
-    })
-    await expect(readVoiceNote(machine, 'nope')).resolves.toBeNull()
-    const detail = await readVoiceNote(machine, '20261016-080000-ab')
-    expect(detail?.summary).toContain('定了排期')
-    expect(detail?.item.view.kind).toBe('ready')
-    expect(detail?.lines.map((line) => line.speaker)).toEqual(['说话人1', '说话人2'])
-  })
-
+describe('录音条失败那一句', () => {
   it('失败那一句:原话 > 原因码 > 读不懂 > 按环节', () => {
     const t = (key: string, values?: Record<string, string>) => (values?.name ? `${key}(${values.name})` : key)
     expect(voiceFailureText(t, { stage: 'transcribe', notice: '额度用完了', code: 'membership-required', message: '' }, '小咕')).toBe('额度用完了')

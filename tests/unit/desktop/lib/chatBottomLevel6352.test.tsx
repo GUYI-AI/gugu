@@ -338,16 +338,13 @@ describe('a window at the tail stays small', () => {
 
 describe('shared conversation tail pinning', () => {
   async function setup() {
-    let resized = () => {}
-    vi.stubGlobal('ResizeObserver', class {
-      constructor(callback: () => void) { resized = callback }
-      observe() {}
-      disconnect() {}
-    })
+    // Size changes are the list's (lib/flowList.ts); this hook must not watch sizes or read layout in frames of its own.
+    const observers = vi.fn()
+    vi.stubGlobal('ResizeObserver', class { constructor() { observers() } observe() {} disconnect() {} })
+    const frames = vi.spyOn(globalThis, 'requestAnimationFrame')
     const scroller = document.createElement('div')
-    let height = 600
     Object.defineProperties(scroller, {
-      scrollHeight: { get: () => 12_000 }, clientHeight: { get: () => height },
+      scrollHeight: { get: () => 12_000 }, clientHeight: { get: () => 600 },
     })
     const isAtBottomRef = { current: true }
     const autoscrollToBottom = vi.fn(() => { scroller.scrollTop = scroller.scrollHeight })
@@ -358,14 +355,13 @@ describe('shared conversation tail pinning', () => {
     const listRef: { current: FlowListHandle | null } = { current: { autoscrollToBottom, scrollToIndex: vi.fn() } }
     const refs = { scrollerRef: { current: scroller }, listRef, isAtBottomRef }
     let actions: ReturnType<typeof useTailPinning>
-    function Probe() { actions = useTailPinning({ ...input, ...callbacks, ...refs, scrollerEl: scroller }); return null }
+    function Probe() { actions = useTailPinning({ ...input, ...callbacks, ...refs }); return null }
     const render = () => harness.render(createNode(Probe))
     await render()
     autoscrollToBottom.mockClear()
-    return { input, callbacks, scroller, listRef, isAtBottomRef, autoscrollToBottom, render,
-      resize: (next: number) => { height = next; resized() }, pin: () => actions.pinToBottom() }
+    return { input, callbacks, scroller, listRef, isAtBottomRef, autoscrollToBottom, render, observers, frames, pin: () => actions.pinToBottom() }
   }
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
   it('lets a mounted list place the viewport once for an explicit pin', async () => {
     const view = await setup()
@@ -384,13 +380,6 @@ describe('shared conversation tail pinning', () => {
     view.pin()
     expect(view.scroller.scrollTop).toBe(12_000)
     expect(view.autoscrollToBottom).not.toHaveBeenCalled()
-
-    view.callbacks.isPreservingPosition = () => true
-    await view.render()
-    view.scroller.scrollTop = 500
-    view.resize(400)
-    view.pin()
-    expect(view.scroller.scrollTop).toBe(500)
   })
 
   it('pins every received tail row while a full window slides without changing height', async () => {
@@ -447,13 +436,16 @@ describe('shared conversation tail pinning', () => {
     expect(view.autoscrollToBottom).not.toHaveBeenCalled()
   })
 
-  it('retains the main window resize rule and returns to latest through the history controller', async () => {
+  it('pins in one place: it watches no sizes and reads no layout in frames; the list pins size changes', async () => {
     const view = await setup()
-    view.resize(400)
-    expect(view.autoscrollToBottom).toHaveBeenCalledOnce()
-    view.isAtBottomRef.current = false
-    view.resize(300)
-    expect(view.autoscrollToBottom).toHaveBeenCalledOnce()
+    view.input.messages = [...view.input.messages.slice(1), { id: 'received', is_mine: false }]
+    await view.render()
+    expect(view.observers).not.toHaveBeenCalled()
+    expect(view.frames).not.toHaveBeenCalled()
+  })
+
+  it('returns to latest through the history controller', async () => {
+    const view = await setup()
     view.input.messageWindow = { ...view.input.messageWindow, hasNewer: true }
     await view.render()
     view.pin()

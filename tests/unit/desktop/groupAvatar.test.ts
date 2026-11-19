@@ -11,6 +11,7 @@ vi.mock('../../../apps/desktop/src/lib/supabase', () => ({
   getCurrentAuthUserId: vi.fn(async () => 'uploader-1'),
 }))
 const { chatService } = await import('../../../apps/desktop/src/lib/chat')
+const { clearCanonicalGroupAvatar } = await import('../../../apps/desktop/src/lib/chatCanonicalStorage')
 const url = 'https://media/chat-media/uploader-1/group-avatar/g1.png'
 function fakeFile(over: Partial<{ type: string; size: number; name: string }> = {}): File {
   return { type: 'image/png', size: 1024, name: 'logo.png', ...over } as unknown as File
@@ -52,6 +53,20 @@ describe('shared group avatar transport', () => {
   it('does not report success if the database rejects or does not confirm the avatar', async () => {
     mockRpc.mockResolvedValueOnce({ data: settingsRow(), error: null })
     await expect(chatService.uploadGroupAvatar('g1', fakeFile())).rejects.toThrow('avatar was not confirmed')
+  })
+})
+describe('restore the default group avatar', () => {
+  it('clears the URL and both storage references in one write', async () => {
+    mockRpc.mockResolvedValueOnce({ data: settingsRow({ avatar_url: null }), error: null })
+    await clearCanonicalGroupAvatar('g1')
+    expect(mockRpc).toHaveBeenCalledWith('update_group_as', { p_chat_id: 'g1', p_as_user_id: 'uploader-1', p_changes: {
+      avatar_url: null, avatar_storage_bucket_id: null, avatar_storage_object_name: null,
+    } })
+    expect(mockUpload).not.toHaveBeenCalled()
+  })
+  it('does not report success while the picture is still there', async () => {
+    mockRpc.mockResolvedValueOnce({ data: settingsRow({ avatar_url: url }), error: null })
+    await expect(clearCanonicalGroupAvatar('g1')).rejects.toThrow('avatar was not cleared')
   })
 })
 describe('group settings avatar projection through group_info_as', () => {

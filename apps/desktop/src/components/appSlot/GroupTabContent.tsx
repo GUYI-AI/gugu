@@ -17,13 +17,14 @@ import type { ExtensionOrigin } from '../../session/shared/extensions/upgrade'
 import { availableInstallOffers, type AppInstallOffer, type MarketOffer } from '../extensionBundle/installOffers'
 import { groupUpdateFor } from '../../session/shared/extensions/app-card-state'
 import { isInstallRefused } from '../../session/shared/extensions/attachment-install'
-import { groupPageSlot, isFolderItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
+import { groupPageSlot, isFolderItem, isWaitingItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
+import { PageLoading } from '../../lib/loading/PageLoading'
 import { closeChatTab, panelFull, replacePanelItem, chatPaneOf, setPanelFull, showChatOnly } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { refusedLine } from '../extensionBundle/installedHere'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { IconButton } from '../ui/IconButton'
-import { DropdownMenu, menuRowClassName } from '../ui/Menu'
+import { DropdownMenu, MenuItem } from '../ui/Menu'
 import { PaneHeader } from '../ui/Pane'
 import { useBackLayer } from '../ui/sheetStack'
 import { RightPanelBackButton } from '../chat/RightPanel'
@@ -347,11 +348,9 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
           </DropdownMenu.Trigger>
           <DropdownMenu.Content align="end">
             {folded.map((command) => (
-              <DropdownMenu.Item key={command.id} className={menuRowClassName} data-command={command.id} onClick={() => runCommand(command.id)}>
-                {command.title}
-              </DropdownMenu.Item>
+              <MenuItem key={command.id} onClick={() => runCommand(command.id)}>{command.title}</MenuItem>
             ))}
-            {fileHost ? <DropdownMenu.Item className={menuRowClassName} onClick={openFileStorageSettings}>{t('fileStoredOn.settings')}</DropdownMenu.Item> : null}
+            {fileHost ? <MenuItem onClick={openFileStorageSettings}>{t('fileStoredOn.settings')}</MenuItem> : null}
           </DropdownMenu.Content>
         </DropdownMenu.Root>
       ) : null}
@@ -434,6 +433,8 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
       ) : null}
       {/* What the page on screen opens beside it (G1): over it here, the page kept for the way back. */}
       <AppPeekSlot sessionId={null} tabId={slot} narrow={mobile}>
+        {/* A file asked for, its host not answered yet: the page waits. */}
+        {isWaitingItem(item) ? <div className="relative min-h-0 flex-1" data-testid="group-app-slot-opening"><PageLoading /></div> : null}
         {item.file && (!mobile || visible !== false) ? <MessageFilePreview fill tabbed={tabbed} mobile={mobile} message={item.message} onForward={onForward} file={{ kind: 'file', document: item.file.document, fileName: item.fileName ?? item.title, mimeType: item.file.contentType, sizeBytes: item.file.size, source: { kind: 'item', itemId: item.itemId!, version: item.file.version } }} onBack={mobile || backIsPanel ? back : undefined} onClose={close} /> : null}
         {desktop ? item.file || !kind ? null : (
           offerUnknown || offerFolds ? (

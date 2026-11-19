@@ -29,13 +29,9 @@ describe.skipIf(!electron)('browser UA during native-to-CDP navigation handoff',
       name: 'gugu-beta', productName: '咕咕 Beta', version: '0.2.58', main: 'main.cjs',
     }));
     // Only unrelated application services are stubbed. Electron, Chromium,
-    // the application bootstrap, pane transport and Playwright are real.
+    // the application bootstrap, page protocol and Playwright are real.
     const stubs: Record<string, string> = {
-      '@main/lib/events': 'export const events = { emit() {} }',
       '@main/lib/logger': 'export const log = { info() {}, warn() {}, error() {}, debug() {} }',
-      '@main/core/extensions/extension-agent-context': 'export async function agentSessionContext() { return null }',
-      '@main/core/sessions/session-orchestration': 'export async function openTaskBrowserPane() {}',
-      './browser-webcontents-registry': 'export const browserWebContentsRegistry = { setMouseDownObserver() {}, browsersOfSession() { return [] } }',
     };
     await build({
       entryPoints: [path.join(repo, 'apps/desktop/electron/session/main/core/browser/test-support/user-agent-race.ts')],
@@ -66,7 +62,7 @@ describe.skipIf(!electron)('browser UA during native-to-CDP navigation handoff',
       GUGU_SERVER_MODE: '0', UA_PROBE_REPO: repo, UA_PROBE_BOOTSTRAP: bootstrap ? '1' : '0',
     };
     delete env.ELECTRON_RUN_AS_NODE;
-    const child = spawn(electron!, [temporary], { env, signal: AbortSignal.timeout(35_000), stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(electron!, [temporary], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
@@ -92,7 +88,7 @@ describe.skipIf(!electron)('browser UA during native-to-CDP navigation handoff',
     expect(control.requests.map((request) => request.url)).toEqual(['/landing', '/form']);
     // Node decodes HTTP header bytes as Latin-1; compare the original UTF-8 bytes.
     expect(control.requests.every((request) => request.userAgent.includes(Buffer.from('咕咕Beta').toString('latin1')))).toBe(true);
-  }, 45_000);
+  });
 
   it('keeps the initial document, navigated page and iframe clean with the bootstrap', async () => {
     const fixed = await probe(true);
@@ -103,5 +99,5 @@ describe.skipIf(!electron)('browser UA during native-to-CDP navigation handoff',
       { url: '/landing', userAgent: fixed.clean },
       { url: '/form', userAgent: fixed.clean },
     ]);
-  }, 45_000);
+  });
 });

@@ -15,7 +15,7 @@ import {
   OPENCODE_REASONING_VARIANTS,
 } from '../../helpers/opencode-family-model-config';
 import { opencodeFamilyListedTitle } from '../../helpers/opencode-family-title';
-import { kilocodeAuthStatus, kilocodeModelCredential } from './auth';
+import { kilocodeAuthStatus, kilocodeModelCredential, kilocodeVendorKeyAccount } from './auth';
 import { icon } from './icon';
 import { kilocodeMcpAdapter } from './mcp';
 import { KILOCODE_PERMISSION_MODES } from './permission-modes';
@@ -41,12 +41,14 @@ export const plugin = definePlugin(
   {
     id: 'kilocode',
     name: 'Kilo',
+    publisher: '开源',
     description:
       'Kilo AI coding assistant with multiple modes, broad model support, and checkpoint-based workflows.',
     websiteUrl: 'https://kilo.ai/docs/cli',
   },
   {
     sessionBundle: kilocodeSessionBundleDescriptor,
+    // 「API Key 连接」(#2507):一把 key 怎么进这一家的进程,见 ./api-key-connection.ts。
     vendorAccount: {
       kind: 'not-required',
       evidence:
@@ -54,12 +56,17 @@ export const plugin = definePlugin(
     },
     auth: {
       kind: 'supported',
+      vendorKey: kilocodeVendorKeyAccount,
       methods: [
         {
           kind: 'cli-login',
           id: 'kilo-login',
           name: 'Sign in with Kilo',
-          args: ['auth', 'login'],
+          // #2507 不带 `-p` 先弹「选供应商」菜单,没有终端选不了。`kilo` 是 Kilo 自家网关的供应商 id
+          // (Kilo-Org/kilocode `packages/opencode/src/cli/cmd/providers.ts`:先按 id 精确匹配),它只有一种登录
+          // (设备码,PR #15064),所以也不弹方法菜单:打印链接 + 码、轮询到授权完成,不靠本机回跳 ⇒ 别的机器上同一条。
+          args: ['auth', 'login', '-p', 'kilo'],
+          headlessArgs: ['auth', 'login', '-p', 'kilo'],
           description: 'Open the Kilo CLI sign-in flow in a terminal.',
         },
       ],

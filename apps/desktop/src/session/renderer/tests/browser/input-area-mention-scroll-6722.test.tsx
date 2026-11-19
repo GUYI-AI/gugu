@@ -74,7 +74,7 @@ describe('#6722 @ mention keyboard scroll', () => {
     await userEvent.keyboard('@')
     await until('mention picker contains every candidate', () => options().length === 13)
 
-    const list = picker()!.querySelector('ul')!
+    const list = picker()!.querySelector<HTMLElement>('[data-growing-list]')!
     const rows = options()
     expect(list.scrollHeight).toBeGreaterThan(list.clientHeight)
     expect(isInsidePicker(rows.at(-1)!, list), 'last row must start outside the first popup viewport').toBe(false)

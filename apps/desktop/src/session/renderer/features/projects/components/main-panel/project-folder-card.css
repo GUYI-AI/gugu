@@ -36,7 +36,7 @@
   background: transparent;
   color: inherit;
 }
-.gg-folder-card__toggle:focus-visible {
+.gg-folder-card__toggle:focus-visible:not([data-pointer-focus]) {
   outline: 2px solid var(--live);
   outline-offset: 2px;
   border-radius: 6px;
@@ -189,6 +189,10 @@
   font-size: var(--font-size-xs);
   line-height: 16px;
   font-weight: 600;
+}
+/* 那台机器的项目这一端没读到:列的是上次的。 */
+.gg-folder-paper__stale {
+  color: var(--danger-fg);
 }
 .gg-folder-paper__check {
   display: inline-flex;

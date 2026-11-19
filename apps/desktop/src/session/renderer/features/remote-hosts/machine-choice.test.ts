@@ -11,11 +11,12 @@ import {
 } from './machine-choice';
 
 const zh: Record<string, string> = {
+  'metadata.separator': '，',
   'machinePicker.offline': '离线',
   'machinePicker.needsSignIn': '要先登录',
   'machinePicker.updating': '正在更新…',
   'machinePicker.tooOld': '版本太旧',
-  'machinePicker.offlineSince': '离线 · {time}',
+  'machinePicker.offlineSince': '离线（{time}）',
   'machinePicker.notResponding': '没有应答',
   'machinePicker.linkSsh': '远程 SSH',
   'machinePicker.linkTunnel': '远程隧道',
@@ -85,13 +86,13 @@ describe('机器选择器的一行(#6264,各处同一份)', () => {
   it('名字后面那段字:触发器只写系统,菜单再带连法;离线写「离线 · X 前」,问不通写「没有应答」', () => {
     const d22 = machine({ id: 'd22', platform: 'linux', link: 'ssh' });
     expect(machineMeta(d22, translate)).toBe('Linux');
-    expect(machineMeta(d22, translate, { withLink: true })).toBe('Linux · 远程 SSH');
+    expect(machineMeta(d22, translate, { withLink: true })).toBe('Linux，远程 SSH');
     expect(machineMeta(machine({ id: 't', platform: 'linux', link: 'tunnel' }), translate, { withLink: true })).toBe(
-      'Linux · 远程隧道'
+      'Linux，远程隧道'
     );
     expect(machineMeta(machine({ id: 'x', notResponding: true, platform: 'linux' }), translate)).toBe('没有应答');
     const off = machine({ id: 'off', isOnline: false, lastSeenAt: '2026-09-24T08:00:00Z' });
-    expect(machineMeta(off, translate, { nowMs: Date.parse('2026-09-24T08:05:00Z') })).toMatch(/^离线 · .+/);
+    expect(machineMeta(off, translate, { nowMs: Date.parse('2026-09-24T08:05:00Z') })).toMatch(/^离线（.+）$/);
     expect(machineMeta(machine({ id: 'never', isOnline: false }), translate)).toBe('离线');
     // 系统认不出、也没有连法:不写字,❌ 留一个空的分隔点。
     expect(machineMeta(machine({ id: 'bsd', platform: 'freebsd' }), translate, { withLink: true })).toBeNull();

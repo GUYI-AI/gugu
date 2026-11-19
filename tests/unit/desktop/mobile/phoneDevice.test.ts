@@ -307,7 +307,8 @@ describe('设备行', () => {
     const actions = buildPhoneActionsCapability(ALL_ON, osState())
     const row = phoneDeviceRow({ deviceId: 'phone-i-u', userId: 'u', installId: 'i', info, actions, nowIso: '2026-10-15T04:00:00.000Z' })
     expect(row).toMatchObject({ device_id: 'phone-i-u', platform: 'android', tier: 'cloudtest', status: 'online', machine_id: 'i' })
-    expect(row.capabilities).toMatchObject({ host_kind: 'phone', os_name: 'Android 15 · HyperOS OS2.0', app_version: '0.2.55', actions })
+    expect(row.capabilities).toMatchObject({ host_kind: 'phone', os_name: 'Android 15 (HyperOS OS2.0)', app_version: '0.2.55', actions })
+    expect(row.capabilities).not.toHaveProperty('host_runtime_capability')
   })
 
   it('「在哪跑」读的设备列表默认不含手机;要手机的显式带 includePhones', async () => {
@@ -379,7 +380,7 @@ describe('「后台守着」常驻通知两家共用', () => {
   beforeEach(() => platformMock.setBackgroundWatch.mockClear())
 
   it('两句都在时并排写,看管机器在前', () => {
-    expect(backgroundWatchLabel(new Map([['phoneDevice', { label: 'B' }], ['agentWatch', { label: 'A' }]]))).toBe('A · B')
+    expect(backgroundWatchLabel(new Map([['phoneDevice', { label: 'B' }], ['agentWatch', { label: 'A' }]]))).toBe('A，B')
     expect(backgroundWatchLabel(new Map())).toBeNull()
   })
 
@@ -387,6 +388,16 @@ describe('「后台守着」常驻通知两家共用', () => {
     const releaseWatch = claimBackgroundWatch('agentWatch', '咕咕正在看管 1 台机器')
     const releasePhone = claimBackgroundWatch('phoneDevice', '助理可以用这台手机')
     releaseWatch()
+    expect(platformMock.setBackgroundWatch).toHaveBeenLastCalledWith('助理可以用这台手机', undefined)
+    releasePhone()
+    expect(platformMock.setBackgroundWatch).toHaveBeenLastCalledWith(null, undefined)
+  })
+
+  it('uses one quiet line for chat notifications and keeps the device claim when chat is turned off', () => {
+    const releaseChat = claimBackgroundWatch('chatNotifications', '咕咕正在接收新消息', '')
+    expect(platformMock.setBackgroundWatch).toHaveBeenLastCalledWith('咕咕正在接收新消息', '')
+    const releasePhone = claimBackgroundWatch('phoneDevice', '助理可以用这台手机')
+    releaseChat()
     expect(platformMock.setBackgroundWatch).toHaveBeenLastCalledWith('助理可以用这台手机', undefined)
     releasePhone()
     expect(platformMock.setBackgroundWatch).toHaveBeenLastCalledWith(null, undefined)

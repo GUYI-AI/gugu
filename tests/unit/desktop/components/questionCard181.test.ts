@@ -7,11 +7,16 @@ import type { QuestionCard } from '../../../../packages/core/src/shared/ui/taskC
 import { createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 
 const send = vi.fn(async () => 'reply-1')
+const respond = vi.fn(async (answer: Record<string, unknown>) => {
+  if (!settlement) throw new Error('Missing host settlement fixture')
+  return { accepted: true, settlement: { ...settlement, state: 'resolved', optionId: JSON.stringify(answer.answers) } }
+})
 let viewer = 'owner-1'
 let settlement: Record<string, unknown> | null = null
 const reads: Array<{ enabled: boolean; deviceId: string | null }> = []
 
 vi.mock('../../../../apps/desktop/src/hooks/useAgentHarnessIdentity', () => ({ useAgentHarnessIdentity: () => 'claude' }))
+vi.mock('../../../../apps/desktop/src/components/markdown/Markdown', () => ({ Markdown: ({ content }: { content: string }) => createNode('span', {}, content) }))
 vi.mock('../../../../apps/desktop/src/store/auth', async (original) => ({ ...await original<object>(), useAuth: () => ({ user: { id: viewer } }) }))
 vi.mock('../../../../apps/desktop/src/store/devicesContext', async (original) => ({
   ...await original<object>(), useDevicesStore: () => ({ devices: viewer === 'owner-1' ? [{ device_id: 'device-1', is_current_device: true }] : [] }),
@@ -20,7 +25,7 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', async (original) => ({
 vi.mock('../../../../apps/desktop/src/mobile/agent-watch/use-timeline-session', () => ({
   useTimelineSession: (_client: unknown, _by: string, deviceId: string | null, _session: string | null, enabled: boolean) => {
     reads.push({ enabled, deviceId })
-    return { timeline: { settlements: enabled && settlement ? { 'agent-question:q1': settlement } : {} } }
+    return { timeline: { settlements: enabled && settlement ? { 'agent-question:q1': settlement } : {} }, respond, link: 'ok' }
   },
 }))
 
@@ -31,7 +36,7 @@ const CARD: QuestionCard = {
   questionId: 'agent-question:q1', sessionId: 'session-1', projectId: 'project-1', deviceId: 'device-1', machineLabel: 'Mac',
 }
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => { harness = createReactHarness(); viewer = 'owner-1'; settlement = null; reads.length = 0; send.mockClear() })
+beforeEach(() => { harness = createReactHarness(); viewer = 'owner-1'; settlement = null; reads.length = 0; send.mockClear(); respond.mockClear() })
 afterEach(() => { harness.cleanup() })
 
 const render = (card: QuestionCard = CARD) => renderWithAppProviders(harness, createNode(QuestionCardView, { card, chatId: 'group-1', messageId: 'card-msg', agentUserId: 'agent-7', time: '10:21' }))
@@ -75,5 +80,45 @@ describe('question card in a group (gugu-dev#181 ⑨)', () => {
     await render({ ...CARD, options: [] })
     expect(harness.container.textContent).toContain('到任务里回答')
     expect(harness.container.querySelector('[data-testid="composer-card"]')!.tagName).toBe('BUTTON')
+  })
+
+  const fullQuestions = [
+    { question: '选哪种？', multiSelect: false, options: [{ optionId: 'first', name: '第一种' }] },
+    { question: '覆盖哪里？', multiSelect: true, options: [{ optionId: 'group', name: '群聊' }, { optionId: 'topic', name: '话题' }] },
+  ]
+  const click = async (selector: string) => act(async () => { (harness.container.querySelector(selector) as HTMLButtonElement).click() })
+
+  it('uses the complete authoritative question flow inline, with one final host response', async () => {
+    settlement = { itemId: 'agent-question:q1', kind: 'question', state: 'pending', optionId: null, questions: fullQuestions }
+    await render({ ...CARD, options: [] })
+    expect(harness.container.querySelector('[data-testid="agent-question-card"]')).not.toBeNull()
+    await click('.agent-question-card__option')
+    await click('.agent-question-card__submit')
+    await click('.agent-question-card__option:nth-child(1)')
+    await click('.agent-question-card__option:nth-child(2)')
+    await click('.agent-question-card__submit')
+    expect(respond).not.toHaveBeenCalled()
+    await click('.agent-question-card__submit')
+    expect(respond).toHaveBeenCalledWith({ itemId: CARD.questionId, kind: 'question', answers: [{ selected: ['first'] }, { selected: ['group', 'topic'] }] })
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('keeps every confirmed answer in the historical card without active controls', async () => {
+    settlement = { itemId: 'agent-question:q1', state: 'resolved', questions: fullQuestions, optionId: JSON.stringify([{ selected: ['first'] }, { selected: ['group', 'topic'] }]) }
+    await render({ ...CARD, options: [] })
+    expect(harness.container.textContent).toContain('第一种')
+    expect(harness.container.textContent).toContain('群聊、话题')
+    expect(harness.container.querySelector('[data-testid="agent-question-receipt"]')).not.toBeNull()
+    expect(harness.container.querySelector('.agent-question-card__submit')).toBeNull()
+  })
+
+  it('does not expose another owner’s full questions or answer controls', async () => {
+    viewer = 'colleague-1'
+    settlement = { itemId: 'agent-question:q1', state: 'pending', questions: fullQuestions, optionId: null }
+    await render({ ...CARD, options: [] })
+    expect(harness.container.textContent).not.toContain('选哪种？')
+    expect(harness.container.querySelector('[data-testid="agent-question-card"]')).toBeNull()
+    expect(reads.every(read => !read.enabled)).toBe(true)
+    expect(respond).not.toHaveBeenCalled()
   })
 })

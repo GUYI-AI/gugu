@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, renameSync } from 'node:fs';
-import { readdir, rm } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { app } from 'electron';
 import { log } from '@main/lib/logger';
@@ -23,7 +23,7 @@ function isKeptPartition(name: string, dirPrefix: string): boolean {
  * 里登过的站点就会全部掉线,而且界面上不会有任何提示。
  *
  * 所以要在打开任何浏览器会话**之前**(开机时、注册 RPC 之前)同步把目录挪过去:
- * - 只挪具名配置(`-profile…`)和按任务隔离(`-isolated-…`)的目录;按标签页的旧目录本来就该清,交给下面的清理
+ * - 只挪具名配置(`-profile…`)和按任务隔离(`-isolated-…`)的目录;旧标签页分区保留,只由用户明确清除浏览数据
  * - 新名字的目录已经存在就两边都不动 —— 两份都有数据时不替用户挑
  */
 export function migrateLegacyBrowserPartitionDirs(partitionsDir: string = defaultPartitionsDir()): void {
@@ -57,30 +57,23 @@ export function migrateLegacyBrowserPartitionDirs(partitionsDir: string = defaul
 }
 
 /**
- * Browsers used to get one persistent partition per browser tab. Keep named
- * profile and isolated-task partitions, but remove old unused tab partitions so
- * stale cookies and caches do not accumulate in userData/Partitions.
- * 改名前后的两种前缀都认:改名前留下的按标签页分区同样该清。
+ * Existing browser partitions, including retired per-tab ones. Enumerating is
+ * read-only: old partitions can contain unsaved site data. The explicit browsing
+ * data controls may clear them; startup never removes them by their old name.
  */
-export async function cleanupLegacyBrowserPartitions(
+export async function listPersistedBrowserPartitions(
   partitionsDir: string = defaultPartitionsDir()
-): Promise<void> {
+): Promise<string[]> {
   let entries;
   try {
     entries = await readdir(partitionsDir, { withFileTypes: true });
-  } catch {
-    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
   }
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const dirPrefix = [CURRENT_DIR_PREFIX, LEGACY_DIR_PREFIX].find((prefix) =>
+  return entries.filter((entry) => entry.isDirectory() &&
+    [CURRENT_DIR_PREFIX, LEGACY_DIR_PREFIX].some((prefix) =>
       entry.name.startsWith(`${prefix}-`)
-    );
-    if (!dirPrefix || isKeptPartition(entry.name, dirPrefix)) continue;
-    try {
-      await rm(join(partitionsDir, entry.name), { recursive: true, force: true });
-    } catch (error) {
-      log.warn('Failed to remove legacy browser partition', { partition: entry.name, error });
-    }
-  }
+    )
+  ).map((entry) => `${PERSIST_PREFIX}${entry.name}`);
 }

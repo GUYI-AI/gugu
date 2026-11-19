@@ -24,7 +24,7 @@ function isSpoken(item: ChatItem): item is ChatMessage {
  * Called after segmentation: the last spoken text is a bubble even while running.
  * A confirmed send overrides it. Earlier spoken texts remain process narration.
  */
-export function conversationOutput(items: readonly ChatItem[], live = false): { reply: ChatMessage | null; sent: ChatMessage[]; rest: ChatItem[]; steps: ChatItem[]; silent: boolean; stopReason?: ChatMessage } {
+export function conversationOutput(items: readonly ChatItem[], live = false): { reply: ChatMessage | null; said?: ChatMessage; sent: ChatMessage[]; rest: ChatItem[]; steps: ChatItem[]; silent: boolean; stopReason?: ChatMessage } {
   const spoken = items.filter(isSpoken);
   // A group reply can exist only as a confirmed message_send projection,
   // followed by [NO_REPLY]. Bind that delivered bubble to the process too.
@@ -42,8 +42,12 @@ export function conversationOutput(items: readonly ChatItem[], live = false): { 
   const stopReason: ChatMessage | undefined = last && hook?.hookName === 'Stop'
     ? { kind: 'message', id: `${last.id}:reason`, role: 'assistant', text: hook.body, conversationNarration: true, conversationTerminalReason: true }
     : undefined;
+  // The agent's own last words, when a send took the reply slot: they stand in for the reply where the send folds away
+  // into an A2A row the process line is kept out of (flatten, #2593). Otherwise they stay narration in `rest`.
+  const said = reply && reply !== spoken.at(-1) ? spoken.at(-1) : undefined;
   return {
     reply,
+    ...(said ? { said } : {}),
     sent,
     silent: !reply && items.some(item => item.kind === 'message' && isGuguSilence(item.text)),
     ...(stopReason ? { stopReason } : {}),

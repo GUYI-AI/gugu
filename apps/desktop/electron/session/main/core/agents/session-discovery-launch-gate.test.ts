@@ -91,6 +91,26 @@ describe('启动那道闸 = 列表与 spawn 的唯一判据', () => {
     expect(row.blocked?.acp).toMatch(/requires harness runtime 1\.18\.0 or newer; found 1\.17\.0-downgraded/)
   })
 
+  it('判定不兼容的读数同样按文件身份记住:同一份文件不再反复跑 --version;就地升级(文件变了)就重探', async () => {
+    const count = join(dir, 'claude-old.count')
+    const path = join(dir, 'claude-old')
+    const write = (version: string) => {
+      writeFileSync(path, `#!/bin/sh\necho x >> "${count}"\necho "${version}"\n`)
+      chmodSync(path, 0o755)
+    }
+    const probes = () => readFileSync(count, 'utf8').split('\n').filter(Boolean).length
+    write('v1.8.3')
+    engines.claude = { cli: path }
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(assertLocalHarnessLaunchable('claude', 'pty')).rejects.toThrow(/requires harness runtime 2\.1\.69 or newer; found 1\.8\.3/)
+    }
+    expect(probes()).toBe(1)
+
+    write('2.1.69 (Claude Code)')
+    await expect(assertLocalHarnessLaunchable('claude', 'pty')).resolves.toBeUndefined()
+    expect(probes()).toBe(2)
+  })
+
   it('tui 腿(claude 2.1.0 < 2.1.69):只挡终端腿,聊天腿照样能起', async () => {
     engines.claude = { cli: engine('claude', '2.1.0 (Claude Code)') }
     const [row] = await listOf(['claude'])

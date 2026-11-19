@@ -67,7 +67,7 @@ describe('deviceFileCopy', () => {
   })
 
   it('sends the copy instead of forwarding by reference, and anything else by reference', async () => {
-    const forwardMessage = vi.fn(async (_source: unknown, _targetChatId: string) => undefined), send = vi.fn(async (_chatId: string, _files: File[]) => undefined)
+    const forwardMessage = vi.fn(async (_source: unknown, _targetChatId: string, _opts?: { toUserIds?: string[] }) => undefined), send = vi.fn(async (_chatId: string, _files: File[]) => undefined)
     const { forwardMessage: forward } = forwardingDeviceFiles({ forwardMessage }, send)
     metadata.mockResolvedValue(local())
     bytes.mockResolvedValue({ status: 'ready', blob: new Blob(['abc']) })
@@ -75,13 +75,13 @@ describe('deviceFileCopy', () => {
     expect(send).toHaveBeenCalledWith('target', [expect.objectContaining({ name: 'a.png' })], undefined)
     expect(forwardMessage).not.toHaveBeenCalled()
     metadata.mockResolvedValue({ status: 'ready', revision: { source: 'managed-object' } })
-    await forward(file, 'target')
-    expect(forwardMessage).toHaveBeenCalledWith(file, 'target')
+    await forward(file, 'target', { toUserIds: ['bot'] })
+    expect(forwardMessage).toHaveBeenCalledWith(file, 'target', { toUserIds: ['bot'] })
     expect(send).toHaveBeenCalledOnce()
   })
 
   it('sends a captioned message as its file with the same caption, and each message of a batch as its own file', async () => {
-    const forwardMessage = vi.fn(async (_source: unknown, _targetChatId: string) => undefined), send = vi.fn(async (_chatId: string, _files: File[], _opts?: { caption?: string }) => undefined)
+    const forwardMessage = vi.fn(async (_source: unknown, _targetChatId: string, _opts?: { toUserIds?: string[] }) => undefined), send = vi.fn(async (_chatId: string, _files: File[], _opts?: { caption?: string }) => undefined)
     const { forwardMessage: forward } = forwardingDeviceFiles({ forwardMessage }, send)
     const message = (id: string, name: string, caption?: string) => ({ id, content_type: 'attachment', file_item_id: id, file_version: 1,
       content: `${attachmentEnvelope(name, 3, 'image/png')}${caption ? `\n[Caption]\n${caption}` : ''}` }) as never

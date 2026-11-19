@@ -29,10 +29,13 @@ import {
 } from '../state/live-models';
 import { AgentAuthManager } from './auth';
 import { authExpiryKey } from './auth';
-import { applyCredentialExpiry } from './auth-expiry';
+import { applyAuthExpiry, applyCredentialExpiry } from './auth-expiry';
 import { AgentInstallManager } from './install';
 import { AgentMcpConfigManager } from './mcp';
 import type { AgentConfigRuntimeDeps } from './types';
+
+/** 自动查的用量,同一连接在这么久里再打开就答上一次的(#2438)。厂商的额度窗口以小时计,5 分钟的旧读数不误事。 */
+export const USAGE_REUSE_MS = 5 * 60_000;
 
 type InstallStrategy = { kind: 'package-manager'; method?: string };
 type UninstallStrategy = { kind: 'package-manager'; method?: string };
@@ -188,6 +191,13 @@ export class AgentConfigRuntime {
     if (onDemand && !force) {
       return ok(mark(this.lastUsage.get(usageKey) ?? { kind: 'unavailable', reason: 'not-read-yet', readAt: Date.now() }));
     }
+    // 打开面板就查的家:同一连接 5 分钟内再打开,答上一次成功读到的那份,不再问厂商(#2438)。
+    // 计时按这个进程问到它的时刻,不按厂商给的 readAt;到期本身不触发查询,下次打开才查。
+    const fresh = this.lastUsage.get(usageKey);
+    const fetchedAt = this.usageFetchedAt.get(usageKey);
+    if (!force && fresh?.kind === 'windows' && fetchedAt !== undefined && Date.now() - fetchedAt < USAGE_REUSE_MS) {
+      return ok(mark(fresh));
+    }
     const pendingKey = `${usageKey}\u0000${revision}`;
     let request = this.usageRequests.get(pendingKey);
     if (!request) {
@@ -211,10 +221,14 @@ export class AgentConfigRuntime {
       return ok(mark({ ...previous, refreshError: reading.message ?? '额度刷新失败。' }));
     }
     this.lastUsage.set(usageKey, reading);
+    if (reading.kind === 'windows') this.usageFetchedAt.set(usageKey, Date.now());
+    else this.usageFetchedAt.delete(usageKey);
     return ok(mark(reading));
   }
 
   private readonly lastUsage = new Map<string, SubscriptionUsageReading>();
+  /** lastUsage 里那份成功读数是这个进程什么时候问到的;只记成功的,失败与「没读过」不复用。 */
+  private readonly usageFetchedAt = new Map<string, number>();
   private readonly usageRevisions = new Map<string, number>();
   private readonly usageRequests = new Map<string, ReturnType<AgentConfigRuntimeDeps['agentHost']['readSubscriptionUsage']>>();
 
@@ -244,12 +258,15 @@ export class AgentConfigRuntime {
       }
       const status = await this.deps.agentHost.checkAuthStatus(providerId, runContext, program);
       if (!status.success) return err({ type: 'invalid-state', message: hostErrorMessage(status.error) });
-      if (status.data.kind === 'authenticated') {
+      // CLI 只照盘上的凭据答「已登录」;被标着「登录已失效」的连接正是要重新登录的那一个,❌ 拿这句读数把它挡回去。
+      const current = applyAuthExpiry(status.data, await this.auth.isMarkedExpired(providerId, targetConnection));
+      if (current.kind === 'authenticated') {
         return err({ type: 'invalid-state', message: '这个连接已经登录。请添加独立账号连接，原登录会保留。' });
       }
     }
     const usageKey = `${providerId}\u0000${agentRunContextKey(runContext)}`;
     this.lastUsage.delete(usageKey);
+    this.usageFetchedAt.delete(usageKey);
     this.usageRevisions.set(usageKey, (this.usageRevisions.get(usageKey) ?? 0) + 1);
     return this.auth.startLogin(providerId, methodId, runContext, program, options, connectionId);
   }

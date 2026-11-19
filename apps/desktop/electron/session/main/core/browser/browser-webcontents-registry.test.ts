@@ -4,7 +4,6 @@ import { events } from '@main/lib/events';
 import { browserAppShortcutChannel, tabNavigationShortcutChannel } from '@shared/events/appEvents';
 import { browserFocusedChannel } from '@shared/events/browserEvents';
 import { BrowserWebContentsRegistry, isSamePreviewNavigation } from './browser-webcontents-registry';
-import { markCredentialHandoffCandidate, publishCredentialHandoffCandidate, restrictCredentialPartition } from './credential-isolation-registry';
 
 const sessionsByPartition = new Map<string, object>();
 
@@ -41,7 +40,7 @@ type FakeWebContents = WebContents & {
 
 let nextWebContentsId = 1;
 
-const PAGE_WINDOW = { id: 'host-window' };
+const PAGE_WINDOW = { id: 'host-window', isDestroyed: () => false, webContents: { focus: vi.fn() } };
 /** #7274 页签的网页由主进程建好后交给登记表(browser-page-views.ts);网页左上角在窗口内容区 (40, 90)。 */
 function adopt(registry: BrowserWebContentsRegistry, browserId: string, webContents: WebContents): void {
   registry.adoptPageWebContents(browserId, webContents, {
@@ -137,6 +136,7 @@ describe('BrowserWebContentsRegistry', () => {
   beforeEach(() => {
     sessionsByPartition.clear();
     vi.mocked(events.emit).mockClear();
+    PAGE_WINDOW.webContents.focus.mockClear();
   });
 
   // withPlatform 自己在 finally 里还原;这条是兜底 —— 用例中途抛出时,
@@ -153,39 +153,6 @@ describe('BrowserWebContentsRegistry', () => {
     expect(registry.isRegistered('missing', PROFILE_PARTITION)).toBe(false);
   });
 
-  it('does not revive a credential destination identity when the same registration object is reused', () => {
-    const registry = new BrowserWebContentsRegistry();
-    const input = { browserId: 'browser-1', partition: PROFILE_PARTITION, sessionId: 'owner' };
-    registry.registerSession(input);
-    const original = registry.registrationIdentity(input.browserId);
-    input.sessionId = 'mutated';
-    expect(registry.isRegisteredForSession(input.browserId, 'owner', PROFILE_PARTITION)).toBe(true);
-    registry.unregisterSession(input.browserId);
-    input.sessionId = 'owner'; registry.registerSession(input);
-    expect(registry.registrationIdentity(input.browserId)).not.toBe(original);
-  });
-
-  it('permits native pending adoption while refusing Agent lists, DevTools, clipboard capture and popup events', async () => {
-    const registry = new BrowserWebContentsRegistry(), partition = 'persist:gugu-browser-pending-admission';
-    const contents = fakeWebContents(partition), capture = vi.fn();
-    Object.assign(contents, { capturePage: capture });
-    registry.registerSession({ browserId: 'pending', partition, sessionId: 'owner' });
-    const release = restrictCredentialPartition(partition, contents.session, { allowsPublication: candidate => candidate === contents });
-    markCredentialHandoffCandidate(contents);
-    try {
-      adopt(registry, 'pending', contents);
-      expect(registry.browsersOfSession('owner')).toEqual([]);
-      expect(registry.openDevTools('pending')).toBe(false);
-      await expect(registry.captureScreenshotToClipboard('pending')).rejects.toThrow();
-      expect(capture).not.toHaveBeenCalled();
-      expect(contents.openDevTools).not.toHaveBeenCalled();
-      expect(contents.windowOpenHandler!({ url: 'https://example.com/private', disposition: 'foreground-tab' } as never).action).toBe('deny');
-      expect(events.emit).not.toHaveBeenCalled();
-    } finally { publishCredentialHandoffCandidate(contents); release(); }
-    expect(registry.browsersOfSession('owner')).toHaveLength(1);
-    expect(registry.openDevTools('pending')).toBe(true);
-  });
-
   it('#7274 同一份配置上的几张网页各归各的页签', () => {
     const registry = new BrowserWebContentsRegistry();
     registry.registerSession({ browserId: 'browser-1', partition: PROFILE_PARTITION });
@@ -200,6 +167,40 @@ describe('BrowserWebContentsRegistry', () => {
     expect(first.openDevTools).toHaveBeenCalled();
     expect(registry.getActiveBrowser()).toBeNull();
     expect(registry.browserIdFor(second.id)).toBe('browser-2');
+  });
+
+  it('retains held annotation Space in the host without cancelling the native page click', () => {
+    const registry = new BrowserWebContentsRegistry();
+    const page = fakeWebContents();
+    const other = fakeWebContents();
+    adopt(registry, 'page', page);
+    adopt(registry, 'other', other);
+    expect(registry.setAnnotationBrowsing('missing', true)).toBe(false);
+    expect(registry.setAnnotationBrowsing('page', true)).toBe(true);
+    const event = { preventDefault: vi.fn() };
+    other.emitEvent('before-mouse-event', event, { type: 'mouseDown' });
+    expect(PAGE_WINDOW.webContents.focus).not.toHaveBeenCalled();
+    page.emitEvent('before-mouse-event', event, { type: 'mouseDown' });
+    expect(PAGE_WINDOW.webContents.focus).toHaveBeenCalledOnce();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(events.emit).toHaveBeenCalledWith(browserFocusedChannel, { browserId: 'page' });
+    registry.setAnnotationBrowsing('page', false);
+    PAGE_WINDOW.webContents.focus.mockClear();
+    page.emitEvent('before-mouse-event', event, { type: 'mouseDown' });
+    expect(PAGE_WINDOW.webContents.focus).not.toHaveBeenCalled();
+  });
+
+  it.each(['unregister', 'destroy'] as const)('clears held annotation focus when the page is removed by %s', removal => {
+    const registry = new BrowserWebContentsRegistry();
+    const page = fakeWebContents();
+    adopt(registry, 'page', page);
+    registry.setAnnotationBrowsing('page', true);
+    if (removal === 'unregister') registry.unregisterSession('page');
+    else page.destroy();
+    const replacement = fakeWebContents();
+    adopt(registry, 'page', replacement);
+    replacement.emitEvent('before-mouse-event', { preventDefault: vi.fn() }, { type: 'mouseDown' });
+    expect(PAGE_WINDOW.webContents.focus).not.toHaveBeenCalled();
   });
 
   it('#7274 右键菜单弹在网页所在的窗口上,坐标换成窗口内容区的(网页自己的坐标 + 网页左上角)', () => {
@@ -333,25 +334,6 @@ describe('BrowserWebContentsRegistry', () => {
     expect(events.emit).not.toHaveBeenCalledWith(browserFocusedChannel, expect.anything());
     webContents.emitEvent('before-mouse-event', {}, { type: 'mouseDown', x: 1, y: 1 });
     expect(events.emit).toHaveBeenCalledWith(browserFocusedChannel, { browserId: 'browser-1' });
-  });
-
-  it('#7274 agent 自己合成的点击不让页签焦点跟过去(❌ 把人正看着的页签换掉)', () => {
-    const registry = new BrowserWebContentsRegistry();
-    registry.registerSession({ browserId: 'browser-1', partition: PROFILE_PARTITION });
-    const webContents = fakeWebContents();
-    adopt(registry, 'browser-1', webContents);
-    let agentsOwn = true;
-    const observer = vi.fn(() => agentsOwn);
-    registry.setMouseDownObserver(observer);
-
-    webContents.emitEvent('before-mouse-event', {}, { type: 'mouseDown', x: 1, y: 1 });
-    expect(observer).toHaveBeenCalledWith('browser-1', webContents);
-    expect(events.emit).not.toHaveBeenCalledWith(browserFocusedChannel, expect.anything());
-
-    agentsOwn = false;
-    webContents.emitEvent('before-mouse-event', {}, { type: 'mouseDown', x: 1, y: 1 });
-    expect(events.emit).toHaveBeenCalledWith(browserFocusedChannel, { browserId: 'browser-1' });
-    registry.setMouseDownObserver(null);
   });
 
   it('emits tab navigation shortcuts from focused browser webContents', () => {

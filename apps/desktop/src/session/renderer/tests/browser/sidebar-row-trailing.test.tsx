@@ -4,49 +4,16 @@
  * 行内没有空着的预留区。真 Chromium、真 CSS —— 要判的是 flex 最终排出来的几何。
  */
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { until } from '../../../../../../../tests/support/awaitCondition';
-import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation';
+import { presentAgentStatus, type AgentStatusPresentation } from '@gugu/core/shared/agentStatusPresentation';
+import { chatAgentSection } from '@renderer/features/sidebar/chat-agents';
 import { SessionRowShell } from '@renderer/features/sidebar/sidebar-session-row';
 import type { SessionBranchSummary } from '@renderer/features/sidebar/sidebar-session-branch';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
-
-// 项目行周围的宿主依赖(store 树、导航、远端机器)换成同形替身,与 features/sidebar/project-item.test.tsx 同一套;
-// 行本身、行尾那一格、未读数都是真的。
-const unread = vi.hoisted(() => ({ count: 0 }));
-vi.mock('@renderer/features/projects/hooks/use-confirm-delete-project', () => ({ useConfirmDeleteProject: () => vi.fn() }));
-vi.mock('@renderer/features/projects/stores/project', () => ({ isUnregisteredProject: () => false }));
-vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
-  getProjectStore: () => ({ id: 'proj', name: '一个名字很长很长、长到会被截断的项目', state: 'unmounted', data: { path: '/proj' } }),
-  getGitRepositoryStore: () => null, projectViewKind: () => 'idle_unmounted',
-}));
-vi.mock('@renderer/lib/layout/navigation-provider', () => ({
-  useNavigate: () => ({ navigate: vi.fn() }), useParams: () => ({ params: {} }), useWorkspaceSlots: () => ({ currentView: 'new-session' }),
-}));
-vi.mock('@renderer/lib/stores/app-state', () => ({
-  appState: { navigation: { currentViewId: 'new-session' } },
-  sidebarStore: { expandedProjectIds: new Set(), homeLayout: { homeRows: new Set(), standIns: new Map() },
-    needsYouCountForProject: () => 0, projectMembersOf: () => ['proj'], hasNameTwin: () => false, rowProjectIdOf: (id: string) => id,
-    ensureProjectExpanded: vi.fn(), toggleProjectExpanded: vi.fn() },
-}));
-vi.mock('@renderer/app/screen-layout-actions', () => ({ isScreenView: () => false, showBesideOnScreen: vi.fn(), showOnScreen: vi.fn() }));
-vi.mock('@/lib/composerVerbBridge', () => ({ readComposerVerb: () => null, setComposerVerb: vi.fn() }));
-vi.mock('@renderer/features/projects/project-task-entry', () => ({ prepareProjectTask: vi.fn() }));
-vi.mock('@renderer/features/sessions/composer-drafts', () => ({ composerDrafts: { get: () => '' }, projectDraftKey: () => '' }));
-vi.mock('@/components/chat/ProjectRowContextMenu', () => ({ ProjectRowContextMenu: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
-vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
-  remoteHostsStore: { machineOfProject: () => undefined, connectionState: () => 'connected', device: () => undefined },
-}));
-vi.mock('@renderer/features/sidebar/session-keyboard-nav', () => ({ sessionKeyboardNav: { cursor: null, syncCursorFromPointer: vi.fn() } }));
-vi.mock('@/lib/sidebarChatsBridge', () => ({ useSidebarChatSignals: () => ({ groupUnread: new Map([['proj-group', unread.count]]), groupCallingTopic: new Map() }) }));
-vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({ projectGroupsStore: { chatIdOf: () => 'proj-group' } }));
-vi.mock('@renderer/features/sidebar/use-session-drop-target', () => ({ useSessionDropTarget: () => ({ bind: () => ({}) }) }));
-vi.mock('@renderer/features/sessions/set-session-parent-flow', () => ({ moveSessionUnder: vi.fn() }));
-
-const { SidebarProjectItem } = await import('@renderer/features/sidebar/project-item');
 
 const LONG_TITLE = '总管（juma3）把这一车道的进度、证据和交接件整理好再汇报';
 let root: Root;
@@ -69,23 +36,27 @@ beforeEach(async () => {
 afterEach(() => { root.unmount(); host.remove(); park.remove(); });
 
 const running = presentAgentStatus({ reading: { status: 'working', detail: null } });
+const asking = presentAgentStatus({ reading: { status: 'needs_user', detail: null } });
 const tree = (total: number, active: number): SessionBranchSummary => ({
-  total, remainingDepth: 0, active: active > 0 ? [{ count: active, presentation: running }] : [],
+  total, active: active > 0 ? [{ count: active, presentation: running }] : [],
 });
 
-async function mount(rows: { id: string; tree?: SessionBranchSummary; expanded?: boolean; needsAttention?: boolean }[]) {
+type Row = { id: string; tree?: SessionBranchSummary; expanded?: boolean; presentation?: AgentStatusPresentation };
+
+async function mount(rows: Row[], extra: (row: Row) => object = () => ({})) {
   root.render(
     <SessionLocalizationProvider>
       {rows.map((row) => (
         <SessionRowShell
           key={row.id}
           sessionId={row.id} rowVariant="tree" depth={0} hasChildren={row.tree !== undefined} expanded={row.expanded ?? false}
-          needsAttention={row.needsAttention ?? false} treeSummary={row.tree} title={LONG_TITLE} harness={null}
-          presentation={presentAgentStatus({ reading: { status: 'idle', detail: null } })}
+          treeSummary={row.tree} title={LONG_TITLE} harness={null}
+          presentation={row.presentation ?? presentAgentStatus({ reading: { status: 'idle', detail: null } })}
           lastInteractedAt={new Date(Date.now() - 3 * 3600_000).toISOString()}
           doneUnread={false} isActive={false} isCursor={false} isPendingArchive={false}
           quickActions={{ isPinned: false, onSetPinned: () => {}, archiveLabel: 'Archive', onArchive: () => {} }}
           onOpen={() => {}}
+          {...extra(row)}
         />
       ))}
     </SessionLocalizationProvider>,
@@ -112,10 +83,10 @@ function trailing(id: string) {
 
 it('keeps the count and the status side by side against the right edge, leaving the rest to the title', async () => {
   const cases = [
-    { id: 'none-dot', needsAttention: true },
+    { id: 'none-dot', presentation: asking },
     { id: 'zero', tree: tree(0, 0) },
-    { id: 'one-digit-dot', tree: tree(7, 0), needsAttention: true },
-    { id: 'two-digit-dot-expanded', tree: tree(38, 2), expanded: true, needsAttention: true },
+    { id: 'one-digit-dot', tree: tree(7, 0), presentation: asking },
+    { id: 'two-digit-dot-expanded', tree: tree(38, 2), expanded: true, presentation: asking },
     { id: 'two-digit-time', tree: tree(38, 0) },
     { id: 'two-digit-running', tree: tree(38, 12) },
   ];
@@ -138,26 +109,15 @@ it('keeps the count and the status side by side against the right edge, leaving 
   expect([...gaps]).toEqual([12]);
 });
 
-it('gives a project row the same trailing slot: the unread count rests on the right edge, the new-session button only replaces it on hover', async () => {
-  for (const count of [3, 0]) {
-    unread.count = count;
-    root.render(<SessionLocalizationProvider><SidebarProjectItem key={count} projectId="proj" /></SessionLocalizationProvider>);
-    await until('project row rendered', () => host.querySelector('[data-project-row="proj"]') != null);
-    await userEvent.hover(park);
-    const row = host.querySelector<HTMLElement>('[data-project-row="proj"]')!;
-    const contentRight = row.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(row).paddingRight);
-    const newSession = row.querySelector<HTMLElement>('[data-row-hover-actions] > :first-child')!;
-    // 静止时「新建会话」既不可见,也不占宽(等它从上一轮 hover 淡出完)。
-    await until('new-session button hidden at rest', () => Number.parseFloat(getComputedStyle(newSession).opacity) === 0);
-    const badge = row.querySelector<HTMLElement>('[data-row-hover-actions] > :last-child > *');
-    if (count > 0) {
-      expect(badge?.getBoundingClientRect().right, 'the unread count sits on the right edge').toBeCloseTo(contentRight, 0);
-    } else {
-      expect(badge).toBeNull();
-      expect(row.querySelector('[data-row-hover-actions]')!.getBoundingClientRect().width).toBe(0);
-    }
-    await userEvent.hover(row);
-    await until('new-session button shown on hover', () => Number.parseFloat(getComputedStyle(newSession).opacity) === 1);
-    expect(newSession.getBoundingClientRect().right).toBeCloseTo(contentRight, 0);
-  }
+it('a child in error leaves the running parent showing its own running state', async () => {
+  const failed = presentAgentStatus({ reading: { status: 'error', detail: null } });
+  const entry = (id: string, presentation: AgentStatusPresentation, parentSessionId?: string) =>
+    ({ id, projectId: 'p', isPinned: false, time: 1, presentation, parentSessionId });
+  // The agents section's own rows, rendered as the inner sidebar renders them.
+  const { rows } = chatAgentSection([entry('parent', running), entry('child', failed, 'parent')], { expanded: new Set(), showAll: false });
+  await mount([{ id: 'alone', presentation: running }, { id: 'parent', presentation: running, tree: rows[0]!.summary }], (row) =>
+    row.id === 'parent' ? rows[0]! : {});
+  const labels = (id: string) => Array.from(host.querySelectorAll(`[data-session-id="${id}"] [data-row-hover-actions] > :last-child [aria-label]`), (el) => el.getAttribute('aria-label'));
+  expect(labels('alone')).toHaveLength(1);
+  expect(labels('parent')).toEqual(labels('alone'));
 });

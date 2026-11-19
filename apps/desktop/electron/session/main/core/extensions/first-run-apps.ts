@@ -5,6 +5,7 @@ import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 import { extensionsService } from './extensions-root';
 import { noteFirstRunProfile, readFirstRunRecord, writeFirstRunRecord } from './first-run-record';
+import { ASSISTANT_RULES_PROVIDER_ID } from '../../../../assistant-rules-trust';
 
 /**
  * 首启默认组在这台电脑上(规矩在 @shared/extensions/first-run.ts):main 一起来就开始(embedded-boot.ts),❌ 等登录、
@@ -37,6 +38,7 @@ function deviceDeps(): FirstRunDeps {
         .filter((id) => origins[id] !== undefined);
     },
     usable: () => true,
+    required: [ASSISTANT_RULES_PROVIDER_ID],
     install: async (id, version) => {
       const { installExtensionFromMarket } = await import('./extension-market-install');
       const outcome = await installExtensionFromMarket({ ref: { extensionId: id, version }, consent: { kind: 'gugu' } });
@@ -70,7 +72,11 @@ export const firstRunArriving = (): FirstRunState => state;
  */
 export function firstRunAtBoot(
   browserFeatures: boolean,
-  steps: { note: (userData: string) => unknown; start: () => Promise<void> } = { note: noteFirstRunProfile, start: runFirstRunApps }
+  steps: { note: (userData: string) => unknown; start: () => Promise<void>; ensure?: () => Promise<unknown> } = {
+    note: noteFirstRunProfile,
+    start: runFirstRunApps,
+    ensure: async () => (await import('../../../../assistant-rules-root')).ensureAssistantApp('start'),
+  }
 ) {
   return {
     /** The very first thing in a boot, before anything makes the Apps' folder: whether this profile is a new one. */
@@ -82,10 +88,17 @@ export function firstRunAtBoot(
         log.warn('first-run: could not note whether this profile is new; no first-run Apps this start', { error: String(error) });
       }
     },
-    /** Once this start's Apps are up: the set's go, in the background (the boot does not wait for it). */
+    /**
+     * Once this start's Apps are up: the set's go, in the background (the boot does not wait for it). Then, for a profile
+     * the set no longer runs for, the assistant App where its assistant needs it (#1931, assistant-app-ensure.ts).
+     */
     start(): void {
       if (!browserFeatures) return;
-      void steps.start().catch((error: unknown) => log.warn('first-run: could not start', { error: String(error) }));
+      void steps
+        .start()
+        .catch((error: unknown) => log.warn('first-run: could not start', { error: String(error) }))
+        .then(() => steps.ensure?.())
+        .catch((error: unknown) => log.warn('first-run: the assistant App check could not run', { error: String(error) }));
     },
   };
 }

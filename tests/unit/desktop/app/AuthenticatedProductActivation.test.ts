@@ -67,10 +67,12 @@ vi.mock('../../../../apps/desktop/src/lib/firstRun', () => ({
   readFirstRunProgress: vi.fn(async () => ({ stage: 'done', occupation: null })),
   writeOccupation: vi.fn(),
   finishFirstRun: vi.fn(),
-  requestAssistantSetupHandoff: vi.fn(),
-  takeAssistantOpenRequest: vi.fn(() => false),
   takeAssistantStartAtHome: vi.fn(() => false),
   readOccupation: vi.fn(async () => null),
+}))
+
+vi.mock('../../../../apps/desktop/src/session/renderer/lib/agent-config/runtime-client', () => ({
+  getAgentConfigRuntimeClient: vi.fn(async () => ({ scanAgentHomes: async () => ({ success: true, data: [] }) })),
 }))
 
 vi.mock('../../../../apps/desktop/src/store/theme', async () => {
@@ -186,7 +188,6 @@ vi.mock('../../../../apps/desktop/src/components/UnfinishedAgentCreateSweeper', 
 
 vi.mock('../../../../apps/desktop/src/components/UpdateBanner', () => ({ UpdateBanner: () => null }))
 vi.mock('../../../../apps/desktop/src/pages/LoginPage', () => ({ LoginPage: () => createNode('div', null, 'login') }))
-vi.mock('../../../../apps/desktop/src/pages/AgentJoinRoute', () => ({ AgentJoinRoute: () => null }))
 
 vi.mock('../../../../apps/desktop/src/lib/contacts', () => ({
   contactsService: {
@@ -228,8 +229,9 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({
     upsertChat: vi.fn(),
   }),
 }))
-vi.mock('../../../../apps/desktop/src/lib/notificationSettings', () => ({
-  useNotificationSettings: () => ({ messages: false, requests: false }),
+vi.mock('../../../../apps/desktop/src/lib/devicePreferences', async (importOriginal) => ({
+  ...await importOriginal<object>(),
+  useDevicePreferences: () => ({ chatMessages: false, chatSound: false }),
 }))
 
 function setSessionUser(user: SessionUser | null) {

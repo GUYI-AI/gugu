@@ -1,15 +1,16 @@
 import { detectPlatform, type Hotkey } from '@tanstack/react-hotkeys';
 import { observer } from 'mobx-react-lite';
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, useContext, type ReactNode } from 'react';
 import type { TabHost } from '@renderer/features/tabs/core/tab-host';
 import type { ResolvedTab, TabViewContext } from '@renderer/features/tabs/core/tab-provider';
-import { MoreHorizontal } from '@/lib/icons';
-import { ContextMenu, MenuFold, MenuItem, MenuSeparator } from '@/components/ui/Menu';
+import { ExternalLink, MoreHorizontal } from '@/lib/icons';
+import { ContextMenu, DropdownMenu, MenuFold, MenuItem, MenuSeparator } from '@/components/ui/Menu';
+import { Button } from '@renderer/lib/ui/button';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format';
-import { getEffectiveHotkey } from '@renderer/lib/hooks/useKeyboardShortcuts';
-import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
+import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { ChatWorkspaceTabContext } from '../chat-workspace-context';
 import type { TabCommand } from './tab-commands';
 
 const _PLATFORM = detectPlatform();
@@ -33,16 +34,20 @@ export const TabContextMenu = observer(function TabContextMenu({
   host,
   ctx: _ctx,
   kindCommands = [],
+  titleMenu = false,
   children,
 }: {
   tab: ResolvedTab;
   host: TabHost;
   ctx: TabViewContext;
   kindCommands?: TabCommand[];
+  titleMenu?: boolean;
   children: ReactNode;
 }) {
   const { translate } = useSessionMessages();
-  const { value: keyboard } = useAppSettingsKey('keyboard');
+  const keyboard = useShortcutOverrides();
+  const workspace = useContext(ChatWorkspaceTabContext);
+  const toolLayout = workspace?.role === 'tool' ? workspace.layout : undefined;
   const index = host.resolvedTabs.findIndex((t) => t.tabId === tab.tabId);
   const count = host.resolvedTabs.length;
   const engineCommands: TabCommand[] = [
@@ -91,22 +96,35 @@ export const TabContextMenu = observer(function TabContextMenu({
     ...(tab.pairRole
       ? [{ id: 'engine:separate-pair', label: translate('tabs.separatePair'), group: 'split' as const, shortcut: 'session.splitPane' as const, run: () => host.separatePair() }]
       : []),
-    {
+    ...(!toolLayout || count > 1 ? [{
       id: 'engine:split-right',
       label: translate('tabs.splitRight'),
       group: 'split' as const,
       ...(tab.pairRole ? {} : { shortcut: 'session.splitPane' as const }),
       isEnabled: () => host.inSplitLayout,
       run: split,
-    },
+    }] : []),
   ];
+  if (toolLayout) {
+    const side = toolLayout.chatToolSide === 'left' ? 'right' : 'left';
+    splitCommands.push({
+      id: 'engine:move-tool-group',
+      label: translate(side === 'left' ? 'tabs.moveToolGroupLeft' : 'tabs.moveToolGroupRight'),
+      group: 'split',
+      isEnabled: () => toolLayout.canDropChatToolGroup(tab.tabId),
+      run: () => toolLayout.moveChatToolGroup(tab.tabId, side),
+    });
+  }
   // 分隔线下面:拆开 / 向右分 / 在新窗口打开(spec session-page「页签右键」)。
   const openInWindow = host.tabWindowOpener(tab.tabId);
   if (openInWindow) {
     splitCommands.push({ id: 'engine:open-in-window', label: translate('tabs.openInWindow'), group: 'split' as const, run: openInWindow });
   }
 
-  const groups = [engineCommands, splitCommands, kindCommands]
+  const conversationWindow: TabCommand[] = titleMenu && openInWindow
+    ? [{ id: 'engine:open-conversation-in-window', label: translate('tabs.openConversationInWindow'), icon: ExternalLink, group: 'split', run: openInWindow }]
+    : [];
+  const groups = (titleMenu ? [conversationWindow, kindCommands, engineCommands.slice(0, 1)] : [engineCommands, splitCommands, kindCommands])
     .map((commands) => commands.filter((c) => c.isAvailable?.() !== false))
     .filter((commands) => commands.length > 0);
 
@@ -116,21 +134,41 @@ export const TabContextMenu = observer(function TabContextMenu({
     </MenuItem>
   );
 
+  const rows = (
+    <>
+      {groups.map((commands, groupIndex) => (
+        <Fragment key={commands[0].id}>
+          {groupIndex > 0 && <MenuSeparator />}
+          {commands.filter((cmd) => !cmd.fold).map(row)}
+          <MenuFold {...(commands[0].group === 'close' ? { label: translate('tabs.closeMany') } : { icon: <MoreHorizontal />, label: translate('common.more') })}>{commands.filter((cmd) => cmd.fold).map(row)}</MenuFold>
+        </Fragment>
+      ))}
+    </>
+  );
+  const onOpenChange = (open: boolean) => { if (open) kindCommands.forEach((cmd) => cmd.onMenuOpen?.()); };
+  if (titleMenu) {
+    const more = translate('common.more');
+    return (
+      <div className="flex h-full min-w-0 flex-1 items-center gap-1">
+        {children}
+        <DropdownMenu.Root onOpenChange={onOpenChange}>
+          <DropdownMenu.Trigger render={<Button size="icon-sm" variant="ghost" aria-label={more} />}>
+            <MoreHorizontal className="size-3.5" />
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Content>{rows}</DropdownMenu.Content>
+        </DropdownMenu.Root>
+      </div>
+    );
+  }
   return (
-    <ContextMenu.Root onOpenChange={(open) => { if (open) kindCommands.forEach((cmd) => cmd.onMenuOpen?.()); }}>
+    <ContextMenu.Root onOpenChange={onOpenChange}>
       {/* 这层 trigger 长在 .session-tab-slot **里面**(见 generic-tab-item.tsx 的说明),所以它必须
           把 slot 填满并允许自己被压缩:`w-full` 撑满分到的宽度,`min-w-0` 解除 flex 的自动最小尺寸
           —— 少了 min-w-0,页签标题的 min-content 会变成一道压不下去的地板,slot 缩了它也不缩,
           于是标题溢出到邻居身上。 */}
       <ContextMenu.Trigger className="flex h-full w-full min-w-0">{children}</ContextMenu.Trigger>
       <ContextMenu.Content finalFocus={false}>
-        {groups.map((commands, groupIndex) => (
-          <Fragment key={commands[0].id}>
-            {groupIndex > 0 && <MenuSeparator />}
-            {commands.filter((cmd) => !cmd.fold).map(row)}
-            <MenuFold {...(commands[0].group === 'close' ? { label: translate('tabs.closeMany') } : { icon: <MoreHorizontal />, label: translate('common.more') })}>{commands.filter((cmd) => cmd.fold).map(row)}</MenuFold>
-          </Fragment>
-        ))}
+        {rows}
       </ContextMenu.Content>
     </ContextMenu.Root>
   );

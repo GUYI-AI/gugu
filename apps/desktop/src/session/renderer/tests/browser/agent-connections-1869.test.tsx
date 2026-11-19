@@ -1,4 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
+import { queryClient } from '@/lib/replica'
 import { createRoot, type Root } from 'react-dom/client'
 import { beforeEach, afterEach, it, expect, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
@@ -17,13 +18,24 @@ const mocks = vi.hoisted(() => ({
   login: vi.fn(),
   catalog: vi.fn()
 }))
-vi.mock('@renderer/lib/ipc', () => ({
+vi.mock('@renderer/lib/ipc', async (original) => ({
+  ...(await original<typeof import('@renderer/lib/ipc')>()),
   rpc: { agents: {} },
   rpcOn: () => ({ agents: {} }),
   events: { on: () => () => {} },
   onMachineEvent: () => () => {}
 }))
-vi.mock('@renderer/lib/modal/modal-provider', () => ({ useShowModal: () => mocks.login }))
+vi.mock('@renderer/lib/modal/modal-provider', async (original) => ({
+  ...(await original<typeof import('@renderer/lib/modal/modal-provider')>()),
+  useShowModal: () => mocks.login
+}))
+// The CLI's own sign-in, read: not signed in (the status line waits for this reading before it is written).
+const notSignedIn = vi.hoisted(() => ({ status: { kind: 'unauthenticated' }, login: null }));
+vi.mock('@renderer/lib/stores/use-agent-auth-status', () => ({
+  useAgentAuthStatus: () => ({ auth: notSignedIn, refresh: async () => {} }),
+  useAgentAuthStatuses: (_: string, programs: unknown[]) => ({ auths: programs.map(() => notSignedIn), refresh: async () => {} }),
+  useExpiredAgentIds: () => new Set()
+}))
 vi.mock('@renderer/features/sessions/session-config/platform-model-catalog', () => ({
   usePlatformModelCatalog: () => ({ models: [{ id: 'test-model' }], settled: true })
 }))
@@ -87,7 +99,8 @@ beforeEach(() => {
   host.style.width = '528px'
   document.body.appendChild(host)
   root = createRoot(host)
-  client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  // The connection readings are replicas: they live in the one client (lib/replica), cleared after each case.
+  client = queryClient
   root.render(
     <QueryClientProvider client={client}>
       <SessionLocalizationProvider>
@@ -105,14 +118,18 @@ afterEach(() => {
 async function open() {
   await userEvent.click(page.getByRole('combobox', { name: 'Current connection', exact: true }))
 }
-it('keeps native configuration neutral and switches through the real select', async () => {
+// owner 2026-11-12:没登上的「现有 CLI 配置」不列;状态那一行与订阅页同一种写法(谁在付钱)。
+it('does not list an unsigned native configuration and switches through the real select', async () => {
   await until(
-    'native connection loads',
-    () => host.textContent?.includes('Existing CLI configuration') === true
+    'the status line is read',
+    () => host.querySelector('[data-testid="connection-status-codex"]')?.textContent === 'Not signed in'
   )
-  expect(host.textContent).toContain('Gugu models are available')
-  expect(host.textContent).not.toContain('Not signed in')
+  const select = page.getByRole('combobox', { name: 'Current connection', exact: true })
+  await expect.element(select).toBeEnabled()
+  expect(select.element().textContent).toBe('None')
+  expect(host.textContent).not.toContain('Existing CLI configuration')
   await open()
+  expect(document.querySelector('[data-testid="connection-native"]')).toBeNull()
   await userEvent.click(page.getByRole('option', { name: /Other account/ }))
   await until('switch commits', () => mocks.select.mock.calls.length === 1)
   expect(mocks.select).toHaveBeenCalledWith({ providerId: 'codex', connectionId: 'other' })
@@ -126,10 +143,7 @@ it('keeps native configuration neutral and switches through the real select', as
   )
 })
 it('retains removal of an inactive account inside its existing options menu', async () => {
-  await until(
-    'native connection loads',
-    () => host.textContent?.includes('Existing CLI configuration') === true
-  )
+  await expect.element(page.getByRole('combobox', { name: 'Current connection', exact: true })).toBeEnabled()
   await open()
   await userEvent.click(
     page.getByRole('button', { name: 'Options for Other account', exact: true })
@@ -150,23 +164,22 @@ it('adds an account from the inline form and only then opens the existing login 
     providerId: 'codex',
     connectionId: 'new-account'
   })
+  // 当前是「没有」(没登上的「现有 CLI 配置」不列,另一个号没在用):登上那一刻这一条直接成为当前连接。
+  mocks.login.mock.calls[0][0].onSuccess()
+  await until('the new account becomes current', () => mocks.select.mock.calls.length === 1)
+  expect(mocks.select).toHaveBeenCalledWith({ providerId: 'codex', connectionId: 'new-account' })
 })
 
-it('saves an API connection without starting account authentication', async () => {
+it('a new account signed in while another account is current leaves the current one alone', async () => {
+  mocks.connections = mocks.connections.map((c) => ({ ...c, current: c.id === 'other' }))
+  await until('the current account is read', () =>
+    page.getByRole('combobox', { name: 'Current connection', exact: true }).query()?.textContent?.includes('Other account') === true)
   await userEvent.click(page.getByRole('button', { name: 'Add', exact: true }))
-  await userEvent.click(page.getByRole('button', { name: 'API Key', exact: true }))
-  await userEvent.fill(
-    page.getByRole('textbox', { name: 'API Key', exact: true }),
-    'test-key-not-a-credential'
-  )
-  await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }))
-  await until('API creation commits', () => mocks.create.mock.calls.length === 1)
-  expect(mocks.create.mock.calls[0][0]).toMatchObject({
-    providerId: 'codex',
-    kind: 'api-key',
-    apiKey: 'test-key-not-a-credential'
-  })
-  expect(mocks.login).not.toHaveBeenCalled()
+  await userEvent.click(page.getByRole('button', { name: 'Add and sign in', exact: true }))
+  await until('existing sign-in opens', () => mocks.login.mock.calls.length === 1)
+  mocks.login.mock.calls[0][0].onSuccess()
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  expect(mocks.select).not.toHaveBeenCalled()
 })
 
 it('aligns the connection group heading with the card edge', async () => {

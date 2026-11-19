@@ -3,5 +3,5 @@
  * 判据只在这两个文件里各一份,桌面消息列表末尾那一行读的也是它们。
  */
 export { collectBackgroundCommandRoster, runningBackgroundTaskIds, type BackgroundCommandEntry } from './background-command-roster';
-export { collectSubagentRoster, type SubagentRosterEntry } from './subagent-roster';
+export { collectSubagentRoster, type SubagentRegistryEntry, type SubagentRosterEntry } from './subagent-roster';
 export { formatElapsed } from './format-elapsed';

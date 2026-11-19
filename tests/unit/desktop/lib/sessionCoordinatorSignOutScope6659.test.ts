@@ -13,7 +13,9 @@ const host = vi.hoisted(() => {
 })
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
   supabase: { auth: host },
+  MAIN_AUTH_STORAGE_KEY: 'gugu-auth',
   mainAuthSessionStorage: {
+    storage: { getItem: () => null },
     getState: () => ({ bootCandidate: null, warning: null }),
     commit: async () => {},
     remove: async () => {},
@@ -22,7 +24,7 @@ vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
 vi.mock('../../../../apps/desktop/src/lib/auth', () => ({
   hydrateIdentityAuthUser: async (user: { id: string }) => ({ id: user.id, email: '', nickname: 'A' }),
 }))
-vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ publishRendererSession: () => {} }))
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, publishRendererSession: () => {} }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: {
     capabilities: { localHumanAuthSession: false },

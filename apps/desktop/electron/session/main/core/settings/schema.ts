@@ -1,6 +1,7 @@
 import { DEFAULT_SESSION_VIEW } from '@shared/core/sessions/new-session-defaults';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import z from 'zod';
+import { autoReviewModelSchema } from '@gugu/session-core/models/auto-review-model';
 import { BROWSER_ISOLATED_PROFILE_ID } from '@shared/browser';
 import {
   TERMINAL_FONT_SIZE_MAX,
@@ -10,6 +11,7 @@ import {
 import { openInAppIdSchema } from '@shared/openInApps';
 import { SESSION_TITLE_INSTRUCTIONS_MAX } from '@shared/core/sessions/session-title-namer';
 import { COMMANDS } from '@shared/commands';
+import type { DevicePreferences } from '../../../../../shared/device-preferences';
 import { isValidProviderId } from '../agents/plugin-registry';
 import { isGuguPermissionMode, type GuguPermissionMode } from '@gugu/session-core/acp/client';
 
@@ -32,6 +34,11 @@ export const sessionSettingsSchema = z.object({
   autoApproveByDefault: z.boolean(),
   autoTrustWorktrees: z.boolean(),
   preserveNameCapitalization: z.boolean(),
+  /**
+   * #3005 离开时压缩长对话(Claude Code 会话,赶在一小时提示缓存过期前)。关掉对已经在跑的会话立刻生效;
+   * 与 Claude Code 自己的 `idleCompaction` 是「任一关了就不压」。推到运行时见 acp/idle-compaction-setting.ts。
+   */
+  idleCompaction: z.boolean(),
   includeIssueContextByDefault: z.boolean(),
   /**
    * #7337 咕咕给会话起名用的平台模型(按积分计费,记在这条会话的 agent 名下);null = 不用模型起名,
@@ -56,12 +63,16 @@ export const terminalSettingsSchema = z.object({
   defaultShell: z.enum(TERMINAL_SHELL_IDS),
 });
 
-export const themeSchema = z
-  .enum(['emlight', 'emdark'])
-  .nullable()
-  .catch(null)
-  .optional()
-  .default(null);
+/** @@@device-preferences — this device's own preferences (shared/device-preferences.ts); main applies theme, language and tray badge. */
+export const devicePreferencesSchema = z.object({
+  theme: z.enum(['light', 'dark', 'system']),
+  locale: z.enum(['system', 'zh-CN', 'en-US']),
+  sidebarTint: z.boolean(),
+  trayBadge: z.boolean(),
+  chatMessages: z.boolean(),
+  chatSound: z.boolean(),
+  meetingReminder: z.boolean(),
+}) satisfies z.ZodType<DevicePreferences>;
 
 /**
  * 出厂**不预选任何 agent**。
@@ -135,6 +146,8 @@ export const interfaceSettingsSchema = z.object({
    * 三样元数据要么没了、要么成了常驻 —— 开关**一处消费者都没有**,拨了没反应(#5829,owner:
    * 「如果没人读,那你把这三个给关了吧」)。2026-09-18 连同设置页那三行一起删掉。
    * 第四格 `taskHoverAction`(悬停删除还是归档)同样没有消费者,2026-10-05 随 PR-2 删掉。
+   * 第五格是 #2548 一张表侧栏的内部开关:新侧栏成了唯一的桌面侧栏,开关连同旧侧栏一起删掉
+   * (interface-legacy-keys.db.test.ts 守着存量库里留下的这一格)。
    *
    * 存量用户库里可能还留着这几个键:读的时候只是 mergeDeep 里一格没人问的多余字段,
    * 下一次写这组设置时被 zod 剥掉(`z.object` 默认丢弃未知键),所以不需要迁移。
@@ -186,6 +199,15 @@ export const interfaceSettingsSchema = z.object({
    * 设置页这一行是反悔的地方(owner 2026-09-23)。
    */
   confirmBeforeCancelAndSend: z.boolean(),
+
+  /**
+   * GUYI-AI/gugu#2548 C9: where the one-list sidebar's two-step intro is (renderer `sidebar-intro.ts`). `collapse` = step 1
+   * (侧栏可以收起来, on the collapse button) is next; `history` = step 1 is done with (下一步, or the sidebar was collapsed
+   * once by any route) and step 2 (会话历史) is next; `ended` = 跳过 / 完成 / 打开看看 / Escape, it never comes up again.
+   * Internal, no settings UI. Coming up is not stored: an unfinished intro comes up again, at this step, the first time a
+   * group or project opens while the sidebar is expanded.
+   */
+  sidebarIntro: z.enum(['collapse', 'history', 'ended']),
 });
 
 export const changesViewModeSchema = z.object({
@@ -235,15 +257,24 @@ export const openInSettingsSchema = z.object({
   hidden: z.array(openInAppIdSchema),
 });
 
+const dataImportSettingsSchema = z.object({
+  owners: z.record(z.string(), z.object({
+    automatic: z.boolean(),
+    sources: z.array(z.string()),
+  })),
+});
+
 export const APP_SETTINGS_SCHEMA_MAP = {
+  autoReviewModel: autoReviewModelSchema,
   localProject: localProjectSettingsSchema,
   project: projectSettingsSchema,
   sessions: sessionSettingsSchema,
   defaultAgent: defaultAgentSchema,
   newSessionMemory: newSessionMemorySchema,
+  dataImport: dataImportSettingsSchema,
   keyboard: keyboardSettingsSchema,
   notifications: notificationSettingsSchema,
-  theme: themeSchema,
+  devicePreferences: devicePreferencesSchema,
   openIn: openInSettingsSchema,
   interface: interfaceSettingsSchema,
   terminal: terminalSettingsSchema,
@@ -254,14 +285,16 @@ export const APP_SETTINGS_SCHEMA_MAP = {
 } as const;
 
 export const appSettingsSchema = z.object({
+  autoReviewModel: autoReviewModelSchema,
   localProject: localProjectSettingsSchema,
   project: projectSettingsSchema,
   sessions: sessionSettingsSchema,
   defaultAgent: defaultAgentSchema,
   newSessionMemory: newSessionMemorySchema,
+  dataImport: dataImportSettingsSchema,
   keyboard: keyboardSettingsSchema,
   notifications: notificationSettingsSchema,
-  theme: themeSchema,
+  devicePreferences: devicePreferencesSchema,
   openIn: openInSettingsSchema,
   interface: interfaceSettingsSchema,
   terminal: terminalSettingsSchema,

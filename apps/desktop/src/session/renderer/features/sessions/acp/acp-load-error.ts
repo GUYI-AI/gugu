@@ -1,6 +1,8 @@
 import { AcpStartError } from '@renderer/lib/acp/acp-live-session';
+import { isAgentHomeImportCode } from '@gugu/session-core/workspace-server/agent-config';
 
 export type AcpLoadError =
+  | { kind: 'agent_home_import'; message: string }
   | { kind: 'auth_required'; message: string }
   | { kind: 'adapter_lost'; message: string }
   | { kind: 'history_unavailable'; message: string }
@@ -110,6 +112,9 @@ export function toLoadError(error: unknown, machine: string | null = null): AcpL
     return { kind: 'model_unavailable', message };
   }
   const cause = error instanceof AcpStartError ? error.runtimeError.cause : undefined;
+  if (cause && typeof cause === 'object' && 'code' in cause && isAgentHomeImportCode(cause.code)) {
+    return { kind: 'agent_home_import', message };
+  }
   const upgrade = cause && typeof cause === 'object' && (cause as { code?: unknown }).code === 'runtime-version-unsupported'
     ? (cause as { data?: { installedVersion?: unknown; supportedFloor?: unknown } }).data
     : undefined;

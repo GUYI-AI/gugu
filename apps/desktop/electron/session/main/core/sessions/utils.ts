@@ -1,3 +1,4 @@
+import { runtimeModelId, customModelRefFromOption } from '@gugu/session-core/models/custom-model';
 import { knownTaskName, taskName } from './task-name';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import { type SessionRow } from '@main/db/schema';
@@ -9,6 +10,7 @@ import {
   type SessionRuntime,
   type InitialQueuePrompt,
   type InterruptedBy,
+  sessionBornInChatId,
 } from '@shared/core/sessions/sessions';
 
 // #6823 Stored startup text without an origin (payloads from before #6823 — 2026-09-30: 246 rows on the Windows Beta
@@ -110,8 +112,10 @@ export function mapSessionRowToSession(
     providerSessionId: row.providerSessionId ?? undefined,
     providerSessionState: config?.providerSessionState,
     pendingRestart: config?.pendingRestart,
-    model: config?.model,
+    model: runtimeModelId(config?.model),
+    customModel: customModelRefFromOption(config?.model) ?? undefined,
     effort: config?.effort,
+    fastMode: config?.fastMode,
     // MCP 会话级开关**只在 ACP 那一支上有**:pty 会话不经 ACP 拿 MCP,
     // 所以那两个键没有加到 pty 配置里 —— 这里按 `type` 收窄,而不是给 pty 也补两个恒空的字段。
     // ⚠️ 原样摊出来,❌ 不在这里把 `[]` 归一成 undefined:
@@ -133,10 +137,12 @@ export function mapSessionRowToSession(
     ...(row.agentStatus === 'idle' || row.agentStatus === 'error' ? interruptedBy(row.id) : {}),
     runtime: (row.runtime as SessionRuntime | null) ?? 'pty',
     isPinned: row.isPinned === 1,
+    isPinnedToSidebar: row.isPinnedToSidebar === 1,
     archivedAt: row.archivedAt ?? null,
     parentSessionId: sessionParentId(row),
     spawnedBySessionId: sessionSpawnerId(row),
     spawnedByExtensionId: row.spawnedByExtensionId,
+    bornInChatId: sessionBornInChatId(config),
     // 谱系两种 runtime 都有(spec session-fork-share「任意会话可 fork」),
     // ❌ 别再只读 pty 那一支:ACP 分叉会因此在侧栏丢掉「fork 自 ×」。
     forkedFrom: config?.forkedFrom,

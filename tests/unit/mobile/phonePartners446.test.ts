@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import type { DeviceProject } from '@gugu/core/shared/types/deviceProject'
+import type { AccountProject } from '@gugu/core/cloud/deviceProjects'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
-import { deviceSessionsOf } from '../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 import {
   newProjectPath,
   partnerFriends,
@@ -13,16 +13,29 @@ import {
   projectAgentTarget,
   projectNameProblem,
   projectSessions,
-  runningCount,
 } from '../../../apps/desktop/src/mobile/partners/partnersModel'
 
 function project(localProjectId: string, name: string, createdAt: string, chatId: string | null): DeviceProject {
   return { localProjectId, name, rootPath: `/work/${name}`, createdAt, chatId, folders: [] }
 }
 
-function device(deviceId: string, projects: DeviceProject[], is_online?: boolean): Pick<Device, 'device_id' | 'projects'> & Partial<Pick<Device, 'is_online'>> {
-  return { device_id: deviceId, projects, is_online }
+function device(deviceId: string, projects: DeviceProject[], is_online?: boolean, extra: Partial<Device> = {}): Device {
+  return { device_id: deviceId, projects, is_online: is_online === true, capabilities: {}, ...extra } as unknown as Device
 }
+
+/** The account project list (accountProjectsStore): a group project per chat id, bound to the records that name it. */
+function accountOf(devices: readonly Device[]): AccountProject[] {
+  const byChat = new Map<string, AccountProject>()
+  for (const row of devices) for (const record of row.projects ?? []) {
+    if (!record.chatId) continue
+    const entry = byChat.get(record.chatId) ?? { chatId: record.chatId, name: `group ${record.chatId}`, archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [] }
+    entry.bindings.push({ deviceId: row.device_id, localProjectId: record.localProjectId })
+    byChat.set(record.chatId, entry)
+  }
+  return [...byChat.values()]
+}
+const noHome = () => false
+const partners = (devices: Device[], list = accountOf(devices), isHome: (row: { device_id: string }) => boolean = noHome) => partnerProjects(list, devices, isHome)
 
 function contact(id: string, fields: Partial<ContactUser> = {}): ContactUser {
   return { id, display_name: id, avatar: null, bio: null, type: 'human', ...fields }
@@ -34,40 +47,51 @@ function session(conversationId: string, projectId: string, fields: Partial<Sess
 
 // 手机「伙伴」(OpenDCAI/gugu#446):项目记在账号上、不归哪台机器;朋友只列人,群里的 Agent 单独列。
 describe('partnerProjects', () => {
-  it('merges the local projects bound to one group across machines into one project', () => {
-    const projects = partnerProjects([
+  it('merges the local projects bound to one account project across machines into one project, named by the project', () => {
+    const projects = partners([
       device('mac', [project('p-mac', 'gugu', '2026-10-02T00:00:00.000Z', 'chat-gugu')], true),
       device('server', [project('p-server', 'gugu-server', '2026-10-01T00:00:00.000Z', 'chat-gugu')], false),
     ])
     expect(projects).toHaveLength(1)
-    // 名字与封面跟桌面侧栏合并那一行的同一个(groupRowOrder:连着的那台先于离线的);建的时间取最早那台。
-    expect(projects[0]).toMatchObject({ key: 'chat-gugu', chatId: 'chat-gugu', name: 'gugu', coverId: 'p-mac', createdAt: '2026-10-01T00:00:00.000Z' })
+    // 封面跟桌面侧栏合并那一行的同一个(groupRowOrder:连着的那台先于离线的);建的时间取最早那台;名字是项目(群)的。
+    expect(projects[0]).toMatchObject({ key: 'chat-gugu', chatId: 'chat-gugu', name: 'group chat-gugu', coverId: 'p-mac', createdAt: '2026-10-01T00:00:00.000Z' })
     expect(projects[0].members).toEqual([{ deviceId: 'mac', localProjectId: 'p-mac' }, { deviceId: 'server', localProjectId: 'p-server' }])
   })
 
-  it('keeps a project without a group as its own row, keyed by machine and local id', () => {
-    const projects = partnerProjects([device('mac', [project('p1', 'notes', '2026-10-01T00:00:00.000Z', null)])])
+  it('keeps a local project that is in no account project as its own row, keyed by machine and local id', () => {
+    const projects = partners([device('mac', [project('p1', 'notes', '2026-10-01T00:00:00.000Z', null)])])
     expect(projects.map((row) => row.key)).toEqual(['mac:p1'])
     expect(projects[0].chatId).toBeNull()
   })
 
-  it('lists projects in creation order, not by activity', () => {
-    const projects = partnerProjects([
+  it('lists projects in creation order, not by activity; a project with no folder yet goes last', () => {
+    const devices = [
       device('mac', [
         project('late', 'late', '2026-10-20T00:00:00.000Z', 'c-late'),
         project('early', 'early', '2026-09-01T00:00:00.000Z', 'c-early'),
       ]),
       device('server', [project('mid', 'mid', '2026-10-05T00:00:00.000Z', null)]),
-    ])
-    expect(projects.map((row) => row.name)).toEqual(['early', 'mid', 'late'])
+    ]
+    const list = [...accountOf(devices), { chatId: 'c-empty', name: 'empty', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [] }]
+    expect(partners(devices, list).map((row) => row.key)).toEqual(['c-early', 'server:mid', 'c-late', 'c-empty'])
   })
 
-  it('takes the earliest project for name and cover when the machines are equally reachable', () => {
-    const [merged] = partnerProjects([
+  it('takes the earliest project for the cover when the machines are equally reachable', () => {
+    const [merged] = partners([
       device('a', [project('pa', 'second', '2026-10-02T00:00:00.000Z', 'c')]),
       device('b', [project('pb', 'first', '2026-10-01T00:00:00.000Z', 'c')]),
     ])
-    expect(merged).toMatchObject({ name: 'first', coverId: 'pb' })
+    expect(merged).toMatchObject({ coverId: 'pb' })
+  })
+
+  it('leaves out the assistant host: neither its copy nor a project bound only there, nor an archived project', () => {
+    const devices = [
+      device('mac', [project('p-mac', 'gugu', '2026-10-02T00:00:00.000Z', 'chat-gugu')], true),
+      device('cloud', [project('p-cloud', 'gugu', '2026-10-01T00:00:00.000Z', 'chat-gugu'), project('home', 'home', '2026-10-01T00:00:00.000Z', 'chat-home'), project('loose', 'loose', '2026-10-01T00:00:00.000Z', null)], true, { capabilities: { assistant_home: true } as Device['capabilities'] }),
+    ]
+    const list = [...accountOf(devices), { chatId: 'chat-old', name: 'old', archived: true, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'mac', localProjectId: 'gone' }] }]
+    const rows = partnerProjects(list, devices, (row) => row.device_id === 'cloud')
+    expect(rows.map((row) => [row.key, row.members.map((member) => member.deviceId)])).toEqual([['chat-gugu', ['mac']]])
   })
 })
 
@@ -143,26 +167,8 @@ describe('project address book', () => {
         : [session('c', 'p-server')],
     )
     expect(sessions.map(({ session: row }) => row.conversationId)).toEqual(['a', 'c'])
-    expect(runningCount(sessions)).toBe(1)
   })
 
-  it.each([false, true])('counts a cached working digest only while its host is online: %s', hostOnline => {
-    const host = {
-      device_id: 'host', is_online: hostOnline, projects: [],
-      capabilities: { runtimes: [], terminals: [] },
-      session_digest: [{ ...session('working', 'p', { status: { status: 'working', detail: 'running' } }) }],
-    } as unknown as Device
-    const listed = deviceSessionsOf(host, {})
-    const sessions = projectSessions({ members: [{ deviceId: 'host', localProjectId: 'p' }] }, () => listed.sessions, () => hostOnline)
-    expect(runningCount(sessions)).toBe(hostOnline ? 1 : 0)
-    expect(listed.sessions[0]?.status).toEqual({ status: 'working', detail: 'running' })
-  })
-
-  it('preserves online and local parked counts', () => {
-    const working = session('parked', 'p', { status: { status: 'working', detail: 'parked' } })
-    expect(runningCount([{ session: working }, { session: working, hostOnline: true }])).toBe(2)
-    expect(runningCount([{ session: working, hostOnline: false }])).toBe(0)
-  })
 
 })
 

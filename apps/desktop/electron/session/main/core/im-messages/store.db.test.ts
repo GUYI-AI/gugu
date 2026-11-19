@@ -28,6 +28,15 @@ describe('durable local IM messages', () => {
   beforeEach(async () => { fixture = await openFixture('empty') })
   afterEach(() => { vi.restoreAllMocks(); fixture.close() })
 
+  it('retains a sender-device resend position when full server overlays replace the body', () => {
+    const store = createImMessageStore(fixture.sqlite)
+    const local_timeline = { afterSeq: 4, createdAt: '2026-11-02T00:00:00Z' }
+    store.ingest(account, batch(message('resent', 'first', 8, { local_timeline })))
+    store.ingest(account, batch(message('resent', 'refreshed', 8, { reactions: [], delivery_blocks: [] })))
+    const [restored] = store.windows(account, ['chat-a'], 10)
+    expect(restored).toMatchObject({ id: 'resent', seq: 8, content: 'refreshed', local_timeline })
+  })
+
   it('searches stored history outside a display window, using projected short and trigram terms in the requested account and chat', async () => {
     const store = createImMessageStore(fixture.sqlite)
     store.ingest(account, batch(message('older', 'orchid 登录', 1),
@@ -279,4 +288,21 @@ describe('durable local IM messages', () => {
     expect(store.windows(account, ['chat-a'], 10)).toHaveLength(5)
     expect([...compiled].filter(([, times]) => times > 1)).toEqual([])
   })
+})
+
+it('clears one account history and FTS durably without admitting an older in-flight page', async () => {
+  fixture = await openFixture('empty')
+  try {
+    const store = createImMessageStore(fixture.sqlite)
+    store.ingest(account, batch(message('old', 'orchid old', 1), message('new', 'orchid new', 2, { created_at: '2026-11-14T00:00:01Z' })))
+    store.ingest('peer', batch(message('peer-old', 'orchid old', 1)))
+    store.ingest(account, { writes: [{ type: 'chatAccess', access: { chatId: 'chat-a', clearedAt: '2026-11-14T00:00:00Z', revision: '9007199254740993' } }], revisions: [] })
+    expect(store.page(account, { chatId: 'chat-a', limit: 20 }).rows.map(row => row.id)).toEqual(['new'])
+    expect(hits('old')).toEqual([])
+    expect(store.page('peer', { chatId: 'chat-a', limit: 20 }).rows.map(row => row.id)).toEqual(['peer-old'])
+    const reopened = createImMessageStore(fixture.sqlite)
+    reopened.ingest(account, batch(message('late-old', 'orchid resurrected', 3)))
+    expect(reopened.windows(account, ['chat-a'], 20).map(row => row.id)).toEqual(['new'])
+    integrity()
+  } finally { fixture.close() }
 })

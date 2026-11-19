@@ -7,6 +7,7 @@ import type { InitialSessionState } from '@renderer/features/sessions/session-co
 import type { NavigateFnTyped } from '@renderer/lib/layout/navigation-provider';
 import type { CreateSessionState } from './use-create-session-state';
 import { machineRegistry } from '@renderer/lib/machine-routing';
+import { ComposerDraft } from '../composer-drafts';
 
 const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   assertProtocol: vi.fn(),
   installAgent: vi.fn(),
   stopInstallProgress: vi.fn(),
+  viewKind: vi.fn(),
 }));
 const devices = vi.hoisted(() => [] as Array<{ device_id: string; capabilities: { remote_protocol?: number } }>);
 
@@ -29,6 +31,7 @@ vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({
   getSessionManagerStore: () => ({ createSession: mocks.createSession }),
   getSessionPageStore: () => ({ workspaceId: 'workspace' }),
   asProvisioned: (value: unknown) => value,
+  sessionViewKind: mocks.viewKind,
 }));
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: { sessions: { sendMessage: mocks.localSendMessage } },
@@ -140,6 +143,7 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     mocks.createSession.mockImplementation(async (_params: unknown, options?: { onOptimistic?: () => void }) => { options?.onOptimistic?.(); });
     mocks.localSendMessage.mockResolvedValue({ id: 'local-id', status: 'queued' });
     mocks.start.mockResolvedValue({ ok: true });
+    mocks.viewKind.mockReturnValue('ready');
     mocks.installAgent.mockResolvedValue({ success: true });
     devices.length = 0;
     initialSession.attachments = [];
@@ -292,7 +296,7 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     expect(mocks.navigate).toHaveBeenCalled();
   });
 
-  it('still navigates to the created task when the first-turn admission RPC fails', async () => {
+  it('still navigates to the created task when telling the host that placement settled fails', async () => {
     attachFirstFile();
     mocks.admit.mockRejectedValueOnce(new Error('[machine] internal-device runs an older host without sessionCreate.admitFirstMessages'));
     await act(async () => root.render(React.createElement(Probe)));
@@ -300,7 +304,7 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     expect(mocks.createSession).toHaveBeenCalledOnce();
     expect(mocks.admit).toHaveBeenCalledOnce();
     expect(latest?.deliveryError).toBeNull();
-    expect(mocks.logWarn).toHaveBeenCalledWith('admit the first task turn failed', expect.objectContaining({ error: expect.stringContaining('admitFirstMessages') }));
+    expect(mocks.logWarn).toHaveBeenCalledWith('release the first task turn failed', expect.objectContaining({ error: expect.stringContaining('admitFirstMessages') }));
     expect(mocks.logError).not.toHaveBeenCalled();
     expect(mocks.navigate).toHaveBeenCalledWith('session', expect.objectContaining({ projectId: 'project-1' }));
     expect(mocks.onClose).toHaveBeenCalled();
@@ -400,7 +404,7 @@ describe('useCreateSessionCallback ordinary messaging', () => {
       expect(prompt).toContain('gugu-file://brief?v=1');
       if (taskChatId) {
         expect(prompt).not.toContain(ref.path);
-        expect(prompt).toContain('not saved');
+        expect(prompt).toContain('message_download_file {file: "gugu-file://brief?v=1"}');
       } else expect(prompt).toContain(ref.path);
     } finally {
       initialSession.attachments = [];
@@ -527,7 +531,7 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     // 留在会话页:导航到这条会话,它的 id 就是附件落盘时预留的那个。
     expect(mocks.navigate).toHaveBeenCalledWith('session', { projectId: 'project-1', sessionId: mocks.createSession.mock.calls[0]![0].sessionConfig.initialSession.id });
   });
-  it.each([true, false])('keeps the first turn deferred until attachment placement finishes (placed=%s)', async placed => {
+  it.each([true, false])('#2558 queues the first turn at creation and tells the host when placement settles (placed=%s)', async placed => {
     const ref = { itemId: 'brief', version: 1, name: 'brief.txt', mimeType: 'text/plain', sizeBytes: 3 };
     let finish!: (value: typeof ref[] | null) => void;
     initialSession.promptCapability = { kind: 'none', startupDelivery: 'startup-prompt' };
@@ -538,7 +542,8 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     await act(async () => root.render(React.createElement(Probe)));
     try {
       await act(async () => latest?.handleCreateSession());
-      expect(mocks.createSession.mock.calls.at(-1)?.[1]).toEqual(expect.objectContaining({ deferFirstTurn: true, onOptimistic: expect.any(Function) }));
+      expect(mocks.createSession.mock.calls.at(-1)?.[1]).toEqual(expect.objectContaining({ placingFiles: true, onOptimistic: expect.any(Function) }));
+      expect(mocks.createSession.mock.calls.at(-1)?.[1]).not.toHaveProperty('deferFirstTurn');
       const initial = mocks.createSession.mock.calls.at(-1)?.[0].sessionConfig.initialSession;
       expect(initial.initialQueue[0]).toMatchObject({ text: 'make one task', files: [ref] });
       expect(mocks.admit).not.toHaveBeenCalled();
@@ -582,6 +587,15 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     expect(mocks.start).toHaveBeenCalledOnce();
   });
 
+  it('a dispatched task whose workspace could not be prepared opens, instead of vanishing from the chat', async () => {
+    mocks.viewKind.mockReturnValue('provision-error');
+    await act(async () => root.render(React.createElement(Probe, { taskChatId: 'chat-1', openAfterCreate: false })));
+    await act(async () => latest?.handleCreateSession());
+    expect(mocks.navigate).toHaveBeenCalledWith('session', { projectId: 'project-1', sessionId: expect.any(String) });
+    // Its life would only fail the same way; the session page's retry prepares it again.
+    expect(mocks.start).not.toHaveBeenCalled();
+  });
+
   it('a successful PTY attachment delivery consumes the raw caption rather than the expanded prompt', async () => {
     attachFirstFile();
     initialSession.prompt = '  original caption  ';
@@ -621,4 +635,49 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     expect(initialSession.prompt).toBe('newer draft');
   });
 
+  // #2569 the sample's first message is handed to the project's new-task box with context the person does not see.
+  const handedOver = () => {
+    const draft = new ComposerDraft();
+    draft.setHandoff({
+      hiddenContext: 'the sample context',
+      picked: { provider: 'codex', model: null, platformModel: null, effort: null, permissionMode: 'full-access', sessionView: 'general' },
+      sendWhenReady: false,
+    });
+    initialSession.draft = draft;
+    return draft;
+  };
+
+  it('a handed-over first turn: its context rides beside the words in the ACP startup queue; the task made completes it', async () => {
+    const draft = handedOver();
+    try {
+      initialSession.promptCapability = { kind: 'none', startupDelivery: 'startup-prompt' };
+      await act(async () => root.render(React.createElement(Probe, { taskChatId: 'chat-1', openAfterCreate: false })));
+      await act(async () => latest?.handleCreateSession());
+      expect(mocks.createSession.mock.calls[0]?.[0].sessionConfig.initialSession.initialQueue).toEqual([
+        { text: 'make one task', hiddenContext: 'the sample context', origin: 'manual' },
+      ]);
+      expect(draft.handoff).toBeNull();
+    } finally { initialSession.draft = undefined; }
+  });
+
+  // #2589 review 4: a first turn with no channel for host context (a terminal leg, a local-session send) sends the person's
+  // words only — the hidden context is never put into the visible message. The sample's files are in the project folder.
+  it('a handed-over first turn on a terminal leg sends only the words; a failed create keeps the hand-off for the retry', async () => {
+    const draft = handedOver();
+    try {
+      initialSession.sessionView = 'code';
+      initialSession.sessionpage = { tui: { identity: 'addressable', messageTransport: 'local-session' } };
+      initialSession.promptCapability = { kind: 'argv', startupDelivery: 'startup-prompt' };
+      mocks.createSession.mockRejectedValueOnce(new Error('credits exhausted'));
+      await act(async () => root.render(React.createElement(Probe, { taskChatId: 'chat-1', openAfterCreate: false })));
+      await act(async () => latest?.handleCreateSession());
+      expect(mocks.createSession.mock.calls[0]?.[0].sessionConfig.initialSession.initialPrompt).toBe('make one task');
+      expect(mocks.logWarn).toHaveBeenCalledWith(expect.stringContaining('no channel for its hidden context'), expect.anything());
+      expect(draft.handoff?.hiddenContext).toBe('the sample context');
+      expect(draft.deliveryError).toMatchObject({ kind: 'raw', detail: 'credits exhausted' });
+      await act(async () => latest?.handleCreateSession());
+      expect(mocks.createSession).toHaveBeenCalledTimes(2);
+      expect(draft.handoff).toBeNull();
+    } finally { initialSession.draft = undefined; }
+  });
 });

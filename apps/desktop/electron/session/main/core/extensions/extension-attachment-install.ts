@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { app } from 'electron';
-import { attachmentInstallPlan, couldUpdateUnasked, packageBytes, resolveAttachmentPackage, type AttachmentPackage, type InstalledApp } from '@shared/extensions/attachment-install';
+import { attachmentInstallPlan, attachmentSheetSource, couldUpdateUnasked, packageBytes, resolveAttachmentPackage, type AttachmentPackage, type InstalledApp } from '@shared/extensions/attachment-install';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
 import { unpackExtensionArchive } from './extension-archive';
 import { windowNoteOf } from './extension-bridge-relay';
@@ -85,10 +85,10 @@ export async function installExtensionFromAttachment(
       publisher,
       asks: plan.kind === 'ask',
       sheet: {
-        // Another publisher's under the same id is asked in full (摩擦单 F66): the plan says it replaces nothing it knows.
+        // Another publisher's under the same id — or another source's — is asked in full (摩擦单 F66): the plan says it replaces nothing it knows.
         installed: plan.kind === 'ask' ? plan.installed : installed?.manifest,
         revokedPermissions: [...(plan.kind === 'ask' ? plan.revokedPermissions : service.revokedPermissions(manifest.id))],
-        attachment: { from: publisher.name ?? '', ...(plan.kind === 'ask' && plan.replaces !== undefined ? { replaces: plan.replaces } : {}) },
+        attachment: attachmentSheetSource(publisher.name, plan),
       },
       places: { chatId: attachment.unasked ? undefined : attachment.chatId, identity: appIdentityOf({ manifest, origin: 'attachment', publisher }) },
     }, attachment.consent ?? { kind: 'here' }, dependencies);

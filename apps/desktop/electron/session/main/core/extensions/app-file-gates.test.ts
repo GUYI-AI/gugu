@@ -14,6 +14,8 @@ const f = vi.hoisted(() => ({
   dialogFile: '',
   openIn: vi.fn(async () => undefined),
   windowsNames: false,
+  recorded: vi.fn(async () => null as { projectId: string; path: string } | null),
+  token: vi.fn(async () => null as string | null),
 }));
 // `windowsNames`: one case names saved files as Windows does (`:` saved as `_`) on this real disk. Only `entryPath`, the one
 // place a saved name is decided, reads the separator as Windows; the working copy's own path checks keep this machine's.
@@ -37,7 +39,8 @@ vi.mock('@main/lib/events', () => {
 });
 vi.mock('@main/core/app/service', () => ({ appService: { openIn: f.openIn } }));
 vi.mock('@main/core/extensions/extensions-root', () => ({ extensionsService: () => ({ hasCapability: (_app: string, cap: string) => f.capabilities.has(cap), get: () => ({ manifest: { id: 'reader' } }) }) }));
-vi.mock('@main/core/extensions/account-token', () => ({ currentAccountAccessToken: vi.fn(), resolveAccountFile: vi.fn(), publishAccountFile: vi.fn() }));
+vi.mock('@main/core/extensions/account-token', () => ({ currentAccountAccessToken: f.token, resolveAccountFile: vi.fn(), publishAccountFile: vi.fn() }));
+vi.mock('@shared/extensions/app-files-core', async (original) => ({ ...(await original<object>()), recordedProjectFolder: f.recorded }));
 vi.mock('@main/core/extensions/file-sync', () => ({ fileSync: {}, localFileService: { removed() {}, renamed() {} }, fileServiceUrl: vi.fn() }));
 vi.mock('@main/core/extensions/extension-icon', () => ({ renderExtensionIcon: vi.fn() }));
 vi.mock('@main/core/sessions/session-family', () => ({ otherMachines: () => ({ isThisDevice: async (id: string) => id === 'dev-here' }) }));
@@ -54,7 +57,6 @@ vi.mock('@main/core/workspaces/workspace-runtime', () => ({
   },
 }));
 
-const { BRIDGE_ERROR_CODES } = await import('@shared/extensions/bridge-protocol');
 const { removeAppFile, forwardTargets, downloadAppFile, entryPath, revealAppFile, listAppFiles, writeAppFileChunk, readAppFileText, openAppFileIn, openWithTarget, watchAppFile, watchAppFolder, FORWARD_MAX_BYTES } = await import('./app-files');
 const { events } = await import('@main/lib/events');
 const { appFileWatchElsewhereChannel, workingCopyMovedChannel } = await import('@shared/events/appEvents');
@@ -381,10 +383,26 @@ describe('a project folder on another machine', () => {
     await expect(writeAppFileChunk(page(), { place, path: 'a.txt', offset: 0, data: '', done: true } as never)).rejects.toThrow(/read-only/);
     expect(f.remote).not.toHaveBeenCalled();
   });
-  it('opening one of its files says it is elsewhere, in a code the bridge keeps', async () => {
+  it('opening one of its files opens it beside the page, in its project on that machine as the account records it', async () => {
     f.capabilities.add('files:read').add('files:read:all-machines');
-    await expect(openWithTarget(page(), { ref: { workspace: place.workspace, id: 'x.txt' } })).rejects.toMatchObject({ code: 'elsewhere' });
-    expect(BRIDGE_ERROR_CODES).toContain('elsewhere');
+    f.token.mockResolvedValue(`x.${Buffer.from(JSON.stringify({ sub: '22222222-2222-4222-8222-222222222222' })).toString('base64url')}.x`);
+    f.recorded.mockResolvedValueOnce({ projectId: 'p-b', path: '/home/b/repo' });
+    await expect(openWithTarget(page(), { ref: { workspace: place.workspace, id: 'docs/x.pdf' } })).resolves.toEqual({
+      kind: 'peek',
+      target: { kind: 'folder', place, deviceId: 'dev-b', projectId: 'p-b', workspaceId: 'w1', path: 'docs/x.pdf', absolutePath: '/home/b/repo/docs/x.pdf', name: 'x.pdf', ask: false },
+    });
+    expect(f.recorded).toHaveBeenLastCalledWith(expect.any(String), '22222222-2222-4222-8222-222222222222', { deviceId: 'dev-b', workspaceId: 'w1' });
+    // A Windows machine's path keeps its own separator.
+    f.recorded.mockResolvedValueOnce({ projectId: 'p-b', path: 'C:\\repo' });
+    await expect(openWithTarget(page(), { ref: { workspace: place.workspace, id: 'docs/x.pdf' } })).resolves.toMatchObject({ target: { absolutePath: 'C:\\repo\\docs\\x.pdf' } });
+  });
+  it('opening one of its files asks for all-machines, and says so when the account no longer has the folder', async () => {
+    f.capabilities.add('files:read');
+    await expect(openWithTarget(page(), { ref: { workspace: place.workspace, id: 'x.txt' } })).rejects.toThrow(/files:read:all-machines/);
+    f.capabilities.add('files:read:all-machines');
+    f.token.mockResolvedValue(`x.${Buffer.from(JSON.stringify({ sub: '22222222-2222-4222-8222-222222222222' })).toString('base64url')}.x`);
+    f.recorded.mockResolvedValueOnce(null);
+    await expect(openWithTarget(page(), { ref: { workspace: place.workspace, id: 'x.txt' } })).rejects.toMatchObject({ code: 'not-found' });
   });
   it('watching one of its files hears nothing, and fails nothing', async () => {
     f.capabilities.add('files:read').add('files:read:all-machines');
@@ -489,6 +507,14 @@ describe('reveal and Open in, to a program of this computer', () => {
     await openAppFileIn(page(), { ref: { workspace, id: 'alias' }, app: 'vscode' });
     expect(f.openIn).toHaveBeenCalledWith({ app: 'vscode', path: path.join(f.root, 'a.txt') });
     await expect(openAppFileIn(page(), { ref: { workspace, id: 'a.txt' }, app: 'nope' })).rejects.toMatchObject({ code: 'invalid' });
+  });
+
+  it("Open in takes `.` as the working copy's own folder; there is no folder above to reveal it in", async () => {
+    f.capabilities.add('files:read');
+    await openAppFileIn(page(), { ref: { workspace, id: '.' }, app: 'vscode' });
+    expect(f.openIn).toHaveBeenCalledWith({ app: 'vscode', path: f.root });
+    await expect(revealAppFile(page(), { ref: { workspace, id: '.' } })).rejects.toThrow(/No file/);
+    expect(f.shown).toEqual([]);
   });
 });
 

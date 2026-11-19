@@ -1,12 +1,16 @@
 import { openFolderInTab } from '@renderer/features/sessions/file-view/file-view-kinds';
 import { findSessionAnywhere } from '@renderer/features/sessions/stores/session-selectors';
 import { composeChatDraft } from '@/lib/composeDraft';
-import { followLink, openLinkTarget } from '@/lib/guguLinks';
+import { followLink, openLinkTarget, OpenSuperseded } from '@/lib/guguLinks';
+import { readChatSummary } from '@/lib/chatSummariesBridge';
+import { readAppHostLayerBridge } from '@/lib/appHostLayerBridge';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { rpc } from '@renderer/lib/ipc';
+import { machineRegistry } from '@renderer/lib/machine-routing';
 import { desktopIpc } from '@/platform/desktopIpc';
 import { EXTENSION_BRIDGE_CHANNEL, type ExtensionBridgeResponse } from '@shared/extensions/bridge-protocol';
+import { EXTENSION_FILE_ANNOTATION_METHOD, type FileAnnotationAsk } from '@shared/extensions/file-annotation-draft';
 import type { AppModalHostAction } from '@shared/extensions/app-modal';
 import type { BrowserWebviewElement } from '@renderer/features/browser/browser-webview-types';
 
@@ -21,7 +25,16 @@ import {
   EXTENSION_LISTED_SESSION_METHOD,
   EXTENSION_MEMBER_FACES_METHOD,
   EXTENSION_PICK_DISPATCH_TARGET_METHOD,
+  EXTENSION_SELECTION_SEND_METHOD,
+  EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD,
+  EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD,
+  EXTENSION_EXPORT_VOICE_NOTE_METHOD,
+  EXTENSION_VOICE_NOTE_METHOD,
   INSTALL_CONSENT_HUMAN_WINDOW_MS,
+  type ResourceRemovalAsk,
+  type SelectionSendAsk,
+  type VoiceNoteExportAsk,
+  type VoiceNoteTranscribeAsk,
   type ExtensionHostAction,
   type ExtensionHostActionResult,
   type ExtensionHostActionCommand,
@@ -31,14 +44,18 @@ import {
 import {
   APP_FORWARD_FILES_EVENT,
   APP_OPEN_WITH_EVENT,
+  boxOnWindow,
+  type ViewBox,
 } from '@shared/extensions/app-runtime-protocol';
 import type { DispatchAsk } from '@shared/extensions/app-dispatch-core';
 import { openApp } from './app-dock';
 import { installedExtensionsStore } from './installed-extensions-store';
 import { safeParseExtensionManifest } from '@shared/extensions/manifest';
+import { isAssistantLayerScreen } from '@shared/extensions/assistant-binding';
 import { extensionSurfaceStore } from './extension-surface-store';
 import { peekStore } from './peek-store';
 import { screenLayout } from '@renderer/app/screen-layout';
+import { auxWindows } from '@renderer/app/aux-windows';
 import { focusScreenBlock } from '@renderer/app/screen-layout-actions';
 import { appState } from '@renderer/lib/stores/app-state';
 import { isEmbedVisible } from '@renderer/lib/portal-container';
@@ -72,6 +89,34 @@ function findSessionView(sessionId: string): WorkspaceViewModel | undefined {
 }
 
 
+/** A page's <webview> (by webContents id), in the main window or a window of its own (aux-window-host.tsx); null if none. */
+function pageElement(webContentsId: number | null): BrowserWebviewElement | null {
+  if (webContentsId === null) return null;
+  for (const doc of auxWindows.documents()) {
+    for (const view of doc.querySelectorAll<BrowserWebviewElement>('webview')) {
+      try {
+        if (view.getWebContentsId() === webContentsId) return view;
+      } catch {
+        // Not attached yet: not the page asked about.
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * A box a page gave in its own coordinates (`openingViewOf`), on the window its <webview> is in; a page with no webview
+ * here (the phone's frame, whose host placed it already) gives it on the window. A page not in this window: none.
+ */
+function boxOnPage(box: ViewBox, webContentsId: number | null): ViewBox | undefined {
+  if (webContentsId === null) return box;
+  const view = pageElement(webContentsId);
+  return view?.ownerDocument === document ? boxOnWindow(box, view.getBoundingClientRect()) : undefined;
+}
+
+/** The document a page is drawn in: what the host draws for it goes there. */
+const pageDocument = (webContentsId: number | null): Document => pageElement(webContentsId)?.ownerDocument ?? document;
+
 function requireSessionView(sessionId: string | null): WorkspaceViewModel {
   const view = sessionId === null ? null : findSessionView(sessionId);
   if (!view) throw new Error('This session is no longer open');
@@ -88,7 +133,7 @@ export function applyExtensionHostAction(command: ExtensionHostActionCommand): E
   const { origin, action } = command;
   // A link's or a banner's click has no page behind it: only what names its own target is done for it.
   if (!origin) return runInAction(() => openForClick(action));
-  return runInAction(() => perform(origin.sessionId, origin.tabId, action, origin.extensionId));
+  return runInAction(() => perform(origin.sessionId, origin.tabId, action, origin.extensionId, origin.pageId));
 }
 
 function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionHostActionResult | Promise<ExtensionHostActionResult> {
@@ -97,7 +142,7 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
       if (action.chatId) return openLinkTarget({ kind: 'app', extensionId: action.extensionId, tab: action.tab ?? installedExtensionsStore.mainTabOf(action.extensionId)?.kind.slice(action.extensionId.length + 1) ?? '', path: '', query: {}, place: { chat: action.chatId } });
       { const opened = openApp(action.extensionId, action.tab); revealSessionpage(); return opened; }
     case 'openChatFile':
-      if (action.onlyIfOpen) return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ panelTabsOf, showChatTab }) => {
+      if ('onlyIfOpen' in action) return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ panelTabsOf, showChatTab }) => {
         const tabs = panelTabsOf(action.chatId);
         if (!tabs.some((entry) => entry.shown && !entry.inWindow && groupPageSlot(action.chatId, entry.tabId) === fromTab)) return;
         if (action.intent && action.intent !== 'navigate') return;
@@ -107,9 +152,19 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
         // The body is already there. The original metadata validation starts after presenting it.
         return new Promise<{ chat: string }>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve({ chat: action.chatId }))));
       });
-      return openLinkTarget({ kind: 'file', itemId: action.itemId });
+      // A page's own open (`fromTab`): its tab waits beside that page, the page's state kept on it for the way back.
+      return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ chatPageOrigin, chatPaneOf }) => {
+        const origin = fromTab ? chatPageOrigin(fromTab) : null;
+        if (origin && action.viewState) chatPaneOf(origin.chatId, origin.tabId)?.setPageViewState(origin.tabId, action.viewState);
+        return openLinkTarget({ kind: 'file', itemId: action.itemId, ...(action.at ? { at: action.at } : {}) }, {
+          ...(action.chatId ? { chatId: action.chatId } : {}), ...(action.fileName ? { fileName: action.fileName } : {}),
+          ...(action.among ? { among: action.among } : {}), ...(action.origin ? { origin: action.origin } : {}),
+          ...(origin ? { from: { chatId: origin.chatId, tabId: origin.tabId } } : {}), ...(action.intent ? { intent: action.intent } : {}),
+        // Superseded (the person moved on) is no failure; one is told as the host said it (its code, its words).
+        }).catch((error: unknown) => { if (!(error instanceof OpenSuperseded)) throw (error as { cause?: unknown }).cause ?? error; });
+      });
     case 'openLinkTarget':
-      return openLinkTarget(action.target);
+      return openLinkTarget(action.target, action.source);
     case 'notGivenAt': {
       // The App's page in 「App」 is where a chat is added, one at a time (`changeAppPlaces`).
       const app = installedExtensionsStore.manifests.find((manifest) => manifest.id === action.extensionId)?.name ?? action.extensionId;
@@ -126,7 +181,7 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
   }
 }
 
-function perform(sessionId: string | null, tabId: string, action: ExtensionHostAction, extensionId: string): ExtensionHostActionResult | Promise<ExtensionHostActionResult> {
+function perform(sessionId: string | null, tabId: string, action: ExtensionHostAction, extensionId: string, pageId: number | null): ExtensionHostActionResult | Promise<ExtensionHostActionResult> {
   // What a page says about itself: a task's tab or a group's slot (sessionId null), kept by page (extensionSurfaceStore.say).
   switch (action.kind) {
     case 'taskMessage': {
@@ -156,7 +211,9 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       })();
     case 'openAppModal': {
       let guest: BrowserWebviewElement | null = null;
-      let previous = document.activeElement;
+      // The window the asking page is drawn in: the main window, or a window of its own (aux-window-host.tsx).
+      const at = pageDocument(pageId);
+      let previous = at.activeElement;
       while (previous?.shadowRoot?.activeElement) previous = previous.shadowRoot.activeElement;
       const control = async (action: AppModalHostAction) => {
         const response = await desktopIpc()!.invoke(EXTENSION_BRIDGE_CHANNEL, { method: 'modalHost', args: action }) as ExtensionBridgeResponse;
@@ -171,7 +228,8 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       showAppModal({
         id: action.page.id, title: action.page.title, appName: action.page.appName, size: action.page.size,
         url: action.page.entryUrl, partition: action.page.partition,
-        opener: previous instanceof HTMLElement ? previous : document.body,
+        opener: previous instanceof at.defaultView!.HTMLElement ? previous as HTMLElement : at.body,
+        container: auxWindows.layerOf(at),
         focus, dismiss,
         attach(element) {
           guest = element as BrowserWebviewElement;
@@ -228,6 +286,8 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
     case 'newDocument':
       extensionSurfaceStore.say(sessionId, tabId, { title: null, badge: null, error: null });
       extensionSurfaceStore.clearDirtyOfPage(sessionId);
+      // #1925 A host page or the assistant's figure that page asked for over its panel goes with the old document.
+      void import('../apps/app-host-layer').then(({ appPageNewDocument, pageKey }) => appPageNewDocument(extensionId, pageKey(sessionId, tabId)), () => undefined);
       return;
     case 'openBrowserTab': {
       const view = requireSessionView(sessionId);
@@ -246,6 +306,24 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       const target = action.sessionId;
       return import('./compose-in-session').then(({ composeWhenOpen }) => composeWhenOpen(() => findSessionView(target), action.text));
     }
+    // #1925 main checked the page is drawn beside its bound conversation: its own panel there, collapsed or expanded.
+    case 'conversationPanel':
+      return import('@renderer/features/apps/app-conversation-panel').then(({ setAppConversationPanelCollapsed }) => {
+        // #1927 (48) An intent is about to be told to the App's page: nothing of the host's stays over it (as the row's profile).
+        if (action.uncover) readAppHostLayerBridge()?.close(extensionId);
+        setAppConversationPanelCollapsed(extensionId, action.collapsed);
+      });
+    // #1925 (46) Main checked the account, the grant, the assistant's chat and the row: the shell draws that task in the App's
+    // panel, or takes it away. The shell's bridge refuses an account or a row it does not have now.
+    case 'openWork':
+    case 'closeWork': {
+      // #1925 (46) The host page over the App's panel (lib/appHostLayerBridge.ts): opening a task replaces any page there;
+      // closing takes away a task only, never another host page the person opened.
+      const bridge = readAppHostLayerBridge();
+      if (!bridge) throw new Error('This window draws no host pages over an App');
+      if (action.kind === 'closeWork') return bridge.close(extensionId, 'work');
+      return bridge.open(extensionId, { kind: 'work', ownerId: action.ownerId, workId: action.workId, sessionId: action.sessionId });
+    }
     // The chat shell takes them (MainLayout: another chat comes up first), as the phone's page gives them.
     case 'showMessage':
       return openLinkTarget({ kind: 'chat', chatId: action.detail.chatId, messageId: action.detail.messageId });
@@ -254,10 +332,15 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
         const detail = action.detail;
         updateFileNames([{ id: detail.itemId, filename: detail.name, content_type: detail.file.contentType }], installedExtensionsStore.manifests);
       });
-      return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ panelTabsOf, chatPaneOf }) => {
-        const from = panelTabsOf(action.detail.chatId).find((tab) => groupPageSlot(action.detail.chatId, tab.tabId) === tabId)?.tabId;
-        if (from && action.detail.viewState) chatPaneOf(action.detail.chatId, from)?.setPageViewState(from, action.detail.viewState);
-        window.dispatchEvent(new CustomEvent(APP_OPEN_WITH_EVENT, { detail: { ...action.detail, from } }));
+      return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ chatPageOrigin }) => {
+        const origin = chatPageOrigin(tabId);
+        const detail = action.detail;
+        const source = origin && readChatSummary(origin.chatId);
+        // The authorized result can stay in the topic of the asking page when it belongs to that topic's source.
+        const chatId = origin && source?.kind === 'topic' && source.sourceChatId === detail.chatId ? origin.chatId : detail.chatId;
+        const from = origin?.chatId === chatId ? origin.tabId : undefined;
+        if (from && detail.viewState) origin?.pane.setPageViewState(from, detail.viewState);
+        window.dispatchEvent(new CustomEvent(APP_OPEN_WITH_EVENT, { detail: { ...detail, chatId, from } }));
       });
     // An App's 「用 X 打开」 on a session's working-copy file: in that session's pane, by the resolver a click there goes
     // through (`openFileInSessionEditor`) — the same for a session on this computer and one on another.
@@ -275,7 +358,8 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
           pane?.setPageViewState(tabId, action.viewState);
         }
         // The person cancelled 「用哪个打开」: nothing opens, and nothing went wrong.
-        await openFileInSessionEditor(projectId, action.sessionId, action.path, { ask: action.ask, intent: action.intent, byHost: true, ...(sessionId === action.sessionId ? { from: tabId } : {}) });
+        const origin = action.origin ? boxOnPage(action.origin, pageId) : undefined;
+        await openFileInSessionEditor(projectId, action.sessionId, action.path, { ask: action.ask, intent: action.intent, byHost: true, ...(sessionId === action.sessionId ? { from: tabId } : {}), ...(action.among ? { among: action.among } : {}), ...(origin ? { origin } : {}) });
       })();
     }
     case 'openSessionFolder': {
@@ -292,13 +376,39 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
     case 'peek': {
       const block = action.target.kind === 'session' ? blockOnScreen(action.target.sessionId) : null;
       if (block) return focusScreenBlock(block);
+      // A folder on another machine, as the account names it: its project's calls go there even before that machine's
+      // own project list has come in (machine-routing).
+      if (action.target.kind === 'folder' && action.target.deviceId) machineRegistry.register(action.target.deviceId, [action.target.projectId, action.target.workspaceId]);
       peekStore.open(sessionId, tabId, action.target);
       return;
     }
-    case 'openApp':
     case 'openChatFile':
+      return openForClick('origin' in action && action.origin ? { ...action, origin: boxOnPage(action.origin, pageId) } : action, tabId);
+    case 'openApp':
     case 'openLinkTarget':
       return openForClick(action, tabId);
+    // #1925 The assistant's own screens, each by its existing entry; and the setup steps an App draws, moved on.
+    case 'openAssistantScreen':
+      // The panel's own pages go over this App's panel (its host layer); the rest are the shell's screens.
+      if (isAssistantLayerScreen(action.screen)) {
+        const screen = action.screen;
+        return import('../apps/app-host-layer').then(({ openAssistantLayer, pageKey }) => openAssistantLayer(extensionId, screen, action.ownerId, pageKey(sessionId, tabId)));
+      }
+      return import('@/lib/assistantAppHost').then(({ openAssistantScreen }) => openAssistantScreen(action.screen, action.ownerId));
+    case 'advanceAssistantSetup':
+      return import('@/lib/assistantAppHost').then(({ advanceAssistantSetup }) => advanceAssistantSetup(action.next, action.ownerId));
+    case 'renameAssistant':
+      return import('@/lib/assistantAppHost').then(({ renameAssistantFor }) => renameAssistantFor(action.text, action.ownerId));
+    case 'assistantFigure': {
+      const { figure, ownerId, who } = action;
+      return import('../apps/app-host-layer').then(({ setAssistantFigure, pageKey }) => setAssistantFigure(extensionId, figure && ownerId ? { figure, ownerId, who, from: pageKey(sessionId, tabId) } : null));
+    }
+    case 'openAssistantConnector':
+      return import('../apps/assistant-app-counts').then(({ openAssistantConnector }) => openAssistantConnector(action.id, action.ownerId));
+    case 'toast':
+      // The host's own toast, as the built-in 「更改已保存」: the text alone.
+      toast({ title: action.text });
+      return;
   }
 }
 
@@ -341,9 +451,54 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
     return remoteHostsStore.reachProject(sessionId, deviceId, typeof projectId === 'string' ? projectId : undefined);
   },
   /** `gugu.dispatch` naming no target: the person picks one in the shell's sheet (DispatchSheet). */
+  /**
+   * #1927 (47) `gugu.voiceNote`: main has checked the App's grant; the recorder here checks its own account and assistant
+   * (app-voice-note-host.ts). Imported when asked, as above: until an App asks, the recorder's App half is not loaded.
+   */
+  [EXTENSION_VOICE_NOTE_METHOD]: async (params: unknown) => {
+    const request = params as import('@shared/extensions/voice-note-session').VoiceNoteWindowRequest | null;
+    if (!request || typeof request !== 'object' || typeof request.op !== 'string') throw new Error('Invalid voice note request');
+    const { appVoiceNoteRequest } = await import('@renderer/features/assistant/voice-notes/app-voice-note-host');
+    return appVoiceNoteRequest(request);
+  },
   [EXTENSION_PICK_DISPATCH_TARGET_METHOD]: async (params: unknown) => {
     const { pickDispatchTarget } = await import('@/components/chat/dispatchAsk');
     return pickDispatchTarget(params as DispatchAsk);
+  },
+  /**
+   * API 54/55 Send, over the page that asked, at its selection (into its session, or its chat): the page's CSS px scaled to its guest's box here (its zoom
+   * and the window's included). A selection off the page opens nothing; left alone, it closes as dispatch's picker does.
+   */
+  [EXTENSION_FILE_ANNOTATION_METHOD]: async (params: unknown) => {
+    const ask = params as FileAnnotationAsk;
+    const guest = pageElement(ask.webContentsId);
+    if (!guest) return false;
+    const { openGuestFileAnnotation } = await import('../sessions/annotations/guest-file-annotation');
+    return openGuestFileAnnotation(guest, auxWindows.layerOf(guest.ownerDocument), ask, INSTALL_CONSENT_HUMAN_WINDOW_MS);
+  },
+  [EXTENSION_SELECTION_SEND_METHOD]: async (params: unknown) => {
+    const { to, webContentsId, open } = params as SelectionSendAsk;
+    const guest = pageElement(webContentsId);
+    if (!guest) return 'cancelled';
+    const box = guest.getBoundingClientRect(), { rect, viewport } = open, scale = box.width / viewport.width;
+    const anchor = new DOMRect(box.x + rect.x * scale, box.y + rect.y * scale, rect.width * scale, rect.height * scale);
+    if (anchor.right < box.left || anchor.left > box.right || anchor.bottom < box.top || anchor.top > box.bottom) return 'cancelled';
+    const { openSelectionSend } = await import('@/components/chat/selectionSendAsk');
+    const { draft, quote, pills } = open;
+    return openSelectionSend({ cite: { draft, quote, pills }, to, anchor, cover: box, container: auxWindows.layerOf(guest.ownerDocument), closeAfterMs: INSTALL_CONSENT_HUMAN_WINDOW_MS }).finally(() => guest.focus());
+  },
+  /** #50 An App's managing calls: the assistant page's own question, 开始转写 and 导出 Markdown, in this window. */
+  [EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD]: async (params: unknown) => {
+    const { resourceWindow } = await import('@renderer/features/assistant/voice-notes/app-resource-window');
+    return resourceWindow().confirmRemoval(params as ResourceRemovalAsk);
+  },
+  [EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD]: async (params: unknown) => {
+    const { resourceWindow } = await import('@renderer/features/assistant/voice-notes/app-resource-window');
+    return resourceWindow().transcribe(params as VoiceNoteTranscribeAsk);
+  },
+  [EXTENSION_EXPORT_VOICE_NOTE_METHOD]: async (params: unknown) => {
+    const { resourceWindow } = await import('@renderer/features/assistant/voice-notes/app-resource-window');
+    return resourceWindow().exportNote(params as VoiceNoteExportAsk);
   },
   [EXTENSION_INSTALL_CONSENT_METHOD]: (params: unknown): Promise<ExtensionInstallConsentResult> => {
     if (!params || typeof params !== 'object') throw new Error('Invalid extension consent request');

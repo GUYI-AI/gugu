@@ -1,5 +1,6 @@
 import { extensionIdFromPartition, extensionIdFromUrl } from '@shared/extensions/partition';
 import type { WebviewAttachParams, WebviewPreferences } from '@main/core/browser/webview-security';
+import { PAGE_FULLSCREEN_PREFERENCES } from '../../../../page-fullscreen';
 
 /**
  * Admission gate for extension <webview> attachments. Deliberately separate
@@ -81,6 +82,7 @@ export function hardenExtensionWebviewPreferences(webPreferences: WebviewPrefere
     .filter(Boolean)
     .join(',');
   delete webPreferences.preload;
+  Object.assign(webPreferences, PAGE_FULLSCREEN_PREFERENCES);
 }
 
 /**

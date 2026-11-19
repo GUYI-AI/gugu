@@ -26,6 +26,8 @@ export interface PreparedInstall {
   origin: ExtensionOrigin;
   /** Who published these bytes (app-identity.ts); the market's is gugu's. */
   publisher?: ExtensionPublisher;
+  /** A market install's record of these bytes: the index row's source and, for a compiled release, its verified proof (#1931). */
+  marketRecord?: import('@shared/extensions/market').MarketInstallRecord;
   /** Whether installing this asks the person by itself: what it newly declares, or another source replacing one here. */
   asks: boolean;
   /** What the sheet shows of it beyond the manifest: the App it replaces, the grants taken back, where it came from. */
@@ -58,7 +60,7 @@ export type PreparedOutcome =
 export function notGivenNoteOf(done: { notGivenAt?: { id: string; name: string } }): { notGivenAt: { id: string; name: string }; notGivenNote: string } | null {
   return done.notGivenAt ? {
     notGivenAt: done.notGivenAt,
-    notGivenNote: `Installed, but "${done.notGivenAt.name}" was not given it (its row could not be written). The person can add that chat on the App's page in 「App」.`,
+    notGivenNote: `Installed, but "${done.notGivenAt.name}" was not given it (its row could not be written). The person can add that chat on the App's page in Apps (「市场」 in Chinese).`,
   } : null;
 }
 
@@ -78,7 +80,8 @@ export async function installPrepared(prepared: PreparedInstall, consent: Instal
   const asks = prepared.asks || grant !== null;
   let notGivenAt: { id: string; name: string } | null = null;
   const done = await agreeThenInstall(ask, asks, consent, () => (dependencies.requestInstallConsent ?? requestExtensionInstallConsent)({ sourceDir: prepared.dir, ...ask }), async () => {
-    const installed = extensionsService().installFromDirectory(prepared.dir, manifestDigest, prepared.origin, prepared.publisher, prepared.variant);
+    // A market install keeps where its code is (`marketSource`): the sheet's first line names it.
+    const installed = extensionsService().installFromDirectory(prepared.dir, manifestDigest, prepared.origin, prepared.publisher, prepared.variant, prepared.marketRecord ?? prepared.sheet.market?.source);
     notGivenAt = await given.recordInstallGrant(installed.manifest.id, grant);
     (dependencies.afterInstall ?? applyInstalledExtension)(installed);
     return installed;

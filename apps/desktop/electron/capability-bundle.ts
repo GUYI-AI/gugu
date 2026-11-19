@@ -25,6 +25,7 @@ import { platformProtocolForEngine } from './engine-injection-contract'
 import { pluginRegistry, PRODUCT_CAPABILITY_PACKAGES } from '@gugu/session-plugins/agents'
 import {
   buildSocialBridge,
+  guguToolsOff,
   providerEnv,
   type AcpMcpServer,
   type AcpEngineRuntimeContext,
@@ -69,6 +70,8 @@ export interface SessionCapabilityBundle {
   extensionSkills: readonly ExtensionSkill[]
   /** 上下文工程第二批 P3: the Apps whose tools this session reaches through the catalog (`<gugu_apps>` names them). Required, same reason. */
   extensionApps: readonly ExtensionAgentApp[]
+  /** The built-in tool groups switched off in the library: `<gugu_apps>` leaves out the lines that name their tools. */
+  guguToolsOff?: readonly string[]
   /** #6387 Which extension each extension program in `mcpServers` came from (for the `/mcp` panel). */
   extensionServerOrigins: readonly { name: string; extensionId: string }[]
   /** #7199 这台机器上 Browser Use App 装着、开着、许给 agent 工具(buildSessionBundle 读一次;交给各家物化器,见 core 那一格)。 */
@@ -148,12 +151,8 @@ export type { ModelConfigDialect }
 export type { SessionModelCapability }
 
 export interface SessionAutonomyCapability {
-  mode: 'approval-required' | 'full-access'
-  /**
-   * Exact product tier, authoritative when present. `mode` is the legacy coarse channel derived from
-   * this value; old boolean-only callers omit it and retain their historical behavior.
-   */
-  permissionMode?: GuguPermissionMode
+  /** The exact product tier: the one channel every materializer reads (full access = `full-access`). */
+  permissionMode: GuguPermissionMode
 }
 
 export interface SessionPromptBlocks {
@@ -444,6 +443,18 @@ export function setBrowserUseApp(probe: { installed: () => boolean; server: bool
   browserUseApp = probe
 }
 
+/** The Browser Use App's id in the App market. */
+export const BROWSER_USE_APP_ID = 'browser-use'
+
+/**
+ * Whether this machine has the Browser Use App: installed, switched on and still allowed to give agents tools, whatever
+ * kind of program it runs. An outdated version (a program gugu itself once hosted) does not count: it runs nothing.
+ */
+export function browserUseAppInstalled(programs: { installed(): readonly { extensionId: string; outdated?: true }[]; agentToolsRefusal(extensionId: string): string | null }): boolean {
+  return programs.installed().some((program) => program.extensionId === BROWSER_USE_APP_ID && !program.outdated
+    && !programs.agentToolsRefusal(program.extensionId))
+}
+
 /**
  * #1607 / #2401 The same on a Gugu server as on a desktop: the installed Browser Use App is this machine's browser (on a
  * server it drives the server's own headless Chromium). A server never offers the agent's built-in browser plugin — it
@@ -547,6 +558,7 @@ export async function buildSessionBundle(
     env: { ...bootstrap.env, ...library.env },
     extensionSkills: [...extensions.skills, ...integrationSkills],
     extensionApps: extensions.apps,
+    guguToolsOff: await guguToolsOff(),
     extensionServerOrigins: extensions.origins,
     ...browserUseOf(),
     mcpServers,
@@ -616,11 +628,12 @@ export function buildAcpModelCapability(input: {
    * 「没选」和「选了某一档」必须是两件事,否则引擎自己的默认档永远没机会生效。
    */
   reasoningEffort?: string | null
+  fastMode?: boolean
 }): SessionModelCapability | null {
   if (input.dialect === null) return null
   const platformModel = platformModelForDialect(input.dialect, input.engineId)
   const { platformAccess } = input
-  return platformModel.declare({
+  const declaration = platformModel.declare({
     explicitModel: input.model?.trim() || undefined,
     // composer 为这条会话选的起始档;没选 = undefined(各家自己决定要不要叠调试开关)。
     requestedEffort: input.reasoningEffort?.trim() || undefined,
@@ -643,6 +656,9 @@ export function buildAcpModelCapability(input: {
       return platformModelAccessEnv(protocol, relayUrl, platformAccess.token, contextWindow)
     },
   })
+  return input.engineId === 'claude'
+    ? { ...declaration, fastMode: input.platformAccess ? false : input.fastMode === true }
+    : declaration
 }
 
 /** 声明了这个方言的那一家。方言是引擎级属性,一家一个、一个只属于一家(声明在各家 `platform.ts`)。 */
@@ -1018,8 +1034,7 @@ export function providerUsesSessionAcpSessionAdapter(providerId: string): boolea
 // distinction matters because several harnesses expose their own Task/Agent worker and the generic
 // platform routing rule otherwise classifies "start an agent" as ordinary work.
 const SESSION_SPAWN_ROUTING_RULE = `For a persistent Gugu agent/session/child (「起一个 agent」「创建一个小弟」), use \`session_spawn\`. Only use a harness-internal worker when explicitly requested; it is not a session agent and cannot receive Gugu messages. Never substitute one for a requested Gugu session; report inability to start it and why.
-On a turn a person typed straight into this panel, when you create or materially change a file for them to
-inspect, call \`session_open_in_tab\` immediately after writing it instead of only reporting its path.`
+When a person typing straight into this panel will inspect a file you create or materially change, call \`session_open_in_tab\` immediately after writing it instead of only reporting its path.`
 
 function guguSessionSurfaceBody(surface: HarnessSessionSurface): string {
   switch (surface) {
@@ -1113,15 +1128,12 @@ function withSurfaceSelfDescription(
   // 这一次物化不投平台块（resume：session-open 时已经投过），就同样不投它，否则 resume 会重复一段自述。
   if (!platform) return bundle
   const nativeSkills = mountsExtensionSkillsNatively(pluginRegistry.get(providerId)?.capabilities.sessionBundle?.extension)
-  const apps = guguAppsBlock(bundle.extensionApps, nativeSkills ? [] : bundle.extensionSkills)
+  const apps = guguAppsBlock(bundle.extensionApps, nativeSkills ? [] : bundle.extensionSkills, bundle.guguToolsOff)
   return {
     ...bundle,
     promptBlocks: { ...bundle.promptBlocks, platform: `${platform}${guguSessionSurfaceBlock(surface, providerId, bundle.mcpServers.some((server) => server.owner === 'gugu'))}${apps}` },
   }
 }
-
-/** #7317 What `<gugu_apps>` says while Computer Use is on (off: nothing, no token). */
-export const COMPUTER_USE_LINE = 'Computer Use is on: use browser_* tools for webpages in this session\'s own browser tabs. Use device_actions with group computer, then device_call, only for the person\'s other desktop apps.'
 
 /**
  * 上下文工程第二批 P3 (D-27, owner 10-07 chose (c); owner 10-31 raised it from 300): the App lines together are at most
@@ -1176,20 +1188,17 @@ export const GUGU_APPS_SEARCH_LINE = [
  * 集体记忆对账第 13 条：写给 agent 的散文叫 App（#6874 把「扩展」改名 App，guide 和工具说明早就这么叫）；
  * 存储层的标识（gugu-ext://、.guguext、信封的 route="extension"）不在改名范围里。
  */
-export function guguAppsBlock(apps: readonly ExtensionAgentApp[], skills: readonly ExtensionSkill[]): string {
-  if (apps.length === 0 && skills.length === 0) return ''
+export function guguAppsBlock(apps: readonly ExtensionAgentApp[], skills: readonly ExtensionSkill[], off: readonly string[] = []): string {
   const parts: string[] = []
-  // Computer Use stays on the device API path, independently of App tool disclosure.
-  if (apps.some((app) => app.computerUse)) parts.push(COMPUTER_USE_LINE)
-  const catalogApps = apps.filter((app) => !app.computerUse)
-  if (catalogApps.length > 0) {
-    parts.push(['Apps available in this session:', ...appLines(catalogApps)].join('\n'))
+  if (apps.length > 0) {
+    parts.push(['Apps available in this session:', ...appLines(apps)].join('\n'))
   }
   if (skills.length > 0) {
     const lines = skills.map(skillLine)
     parts.push(['Skills from Apps installed in 咕咕. When a task matches one, read its SKILL.md first and follow it.', ...lines].join('\n'))
   }
-  parts.push(GUGU_APPS_SEARCH_LINE)
+  if (!off.includes('apps')) parts.push(GUGU_APPS_SEARCH_LINE)
+  if (parts.length === 0) return ''
   return `<gugu_apps>
 ${parts.join('\n')}
 </gugu_apps>

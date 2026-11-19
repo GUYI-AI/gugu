@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { FileChangesEvent } from '@shared/core/fs/fsEvents';
 import { answerAppFileWatches, type AppFileHeard, type AppFileWatchRequest } from './app-file-watches-elsewhere';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 const flush = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
 
@@ -15,14 +16,14 @@ function rig(located = true) {
   answerAppFileWatches({
     onRequest: (handler) => { request = handler; return () => {}; },
     reply: (one) => heard.push(one),
-    locate: () => (located ? { projectId: 'remote:d', workspaceId: 'w', root: '/srv/a' } : null),
+    locate: () => (located ? { projectId: 'remote:d', workspaceId: 'w', root: '/srv/a' as CanonicalPath } : null),
     onFileChanges: (handler) => { feeds.add(handler); return () => feeds.delete(handler); },
     watchDirectory,
     onMachineBack: (_workspace, handler) => { back = handler; return () => { back = () => {}; }; },
     warn,
   });
   const fire = (update: FileChangesEvent['update'], workspaceId = 'w') => feeds.forEach((feed) => feed({ projectId: 'remote:d', workspaceId, update }));
-  const change = (kind: 'create' | 'update' | 'delete', path: string) => ({ kind: 'changes' as const, changes: [{ kind, path, entryType: 'file' as const }] });
+  const change = (kind: 'create' | 'update' | 'delete', path: string) => ({ kind: 'changes' as const, changes: [{ kind, path: path as CanonicalPath, entryType: 'file' as const }] });
   return { machineBack: () => back(), request: (r: AppFileWatchRequest) => request(r), heard, fire, change, letGo, watchDirectory, feeds, warn };
 }
 

@@ -2,7 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { createContext, useCallback, useContext, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Folder, MessageSquare, Users } from '@/lib/icons';
-import { FileIcon } from '@renderer/lib/editor/file-icon';
+import { AppFileMark } from '@renderer/features/extensions/app-file-mark';
 import { chatTabSlotKey, readShellSlots } from '@/lib/shellSlots';
 import { useChatFolderName } from '@/components/chat/chatFolderName';
 import { RailAppIcon } from '@/components/RailAppIcon';
@@ -35,6 +35,9 @@ export const CHAT_TOPIC_TAB_KIND = 'chat-topic';
  * folder's, one a chat; `page` is where it was opened at (the members' button: their list), `at` tells two opens apart.
  */
 export const CHAT_INFO_TAB_KIND = 'chat-info';
+
+/** The narrowest a conversation (the chat, a topic beside it) is drawn: under it, messages are not readable. */
+export const CHAT_MIN_WIDTH_PX = 360;
 
 export type ChatTabState = { chatId: string };
 export type ChatTopicState = { topicChatId: string; name: string };
@@ -82,6 +85,7 @@ export const chatTabProvider = createTabProvider<typeof CHAT_TAB_KIND, ChatTabSt
   conversation: true,
 
   resourceKey: () => 'chat',
+  minWidth: CHAT_MIN_WIDTH_PX,
   // 别的页签的页、对话的名字和右端按钮都由对话画:它一直挂着(没上屏就藏着)。
   keepMounted: true,
   initialize: stateResource,
@@ -93,21 +97,25 @@ export const chatTabProvider = createTabProvider<typeof CHAT_TAB_KIND, ChatTabSt
   TabContent: ChatTabContent,
 });
 
-/** A panel tab's name as its strip says it: what its page called itself, else the App's tab title or the file's name. */
+/** A chat file the person opened (not an App's own chat file): its tab is named and marked by the file, whichever App shows it. */
+const showsFile = (item: PanelItem) => !!item.itemId && !installedExtensionsStore.isChatFile(item.kind, item.fileName);
+
+/** A panel tab's name as its strip says it: what its page called itself, else the file's name, else the App's tab title. */
 function usePanelPresentation(chatId: string, tabId: string, item: PanelItem) {
   const folderName = useChatFolderName();
+  const file = showsFile(item) ? { name: item.title, path: item.fileName ?? item.title } : undefined;
   return extensionTabTitle(
     extensionSurfaceStore.said(null, groupPageSlot(chatId, tabId)),
-    isFolderItem(item) ? folderName : item.kind ? (installedExtensionsStore.tabTitle(item.kind) ?? item.title) : item.title,
-    item.itemId && !installedExtensionsStore.isChatFile(item.kind, item.fileName) ? { name: item.title, path: item.fileName ?? item.title } : undefined,
+    isFolderItem(item) ? folderName : item.kind && !file ? (installedExtensionsStore.tabTitle(item.kind) ?? item.title) : item.title,
+    file,
   );
 }
 
 const PanelIcon = observer(function PanelIcon({ item }: { item: PanelItem }) {
   if (isFolderItem(item)) return <Folder size={14} />;
-  const extensionId = item.kind ? parseExtensionTabKind(item.kind)?.extensionId : undefined;
+  const extensionId = item.kind && !showsFile(item) ? parseExtensionTabKind(item.kind)?.extensionId : undefined;
   const app = extensionId ? installedExtensionsStore.openableApps.find((candidate) => candidate.extensionId === extensionId) : undefined;
-  return app ? <RailAppIcon app={app} className="size-4" /> : <FileIcon filename={item.fileName ?? item.title} size={14} className="shrink-0 text-foreground-muted" />;
+  return app ? <RailAppIcon app={app} className="size-4" /> : <AppFileMark kind={item.kind} fileName={item.fileName ?? item.title} context="chat" size={14} />;
 });
 
 const PanelTabItem = observer(function PanelTabItem({ tab, host, ctx }: TabBarItemProps<TabResource>) {
@@ -117,7 +125,7 @@ const PanelTabItem = observer(function PanelTabItem({ tab, host, ctx }: TabBarIt
   const surface = extensionSurfaceStore.said(null, groupPageSlot(chatId, tab.tabId));
   const ownBlock = useContext(ChatTabHostContext)?.ownBlock;
   const { t } = useTranslation('messaging');
-  // A project chat's file kept on its machine: the machine mark before the name, as a task row's, its setting one ⋯ away (owner 10-27).
+  // A project chat's file kept on its machine: the machine mark after the name, as its folder row and its page header put it; its setting one ⋯ away (owner 10-27).
   const fileHost = useFileHost(item.itemId && !isFolderItem(item) ? item.itemId : null);
   // 「单独一块」(spec session-page「一屏几块」,同任务里 App 那一枚):这张页自己占一块,贴在这一块右边;这个对话里就不留它了。
   // App 声明的菜单命令跟在后面,同任务里的 App 页签(工具栏那一行去掉了,owner 10-26 选 A)。
@@ -132,7 +140,7 @@ const PanelTabItem = observer(function PanelTabItem({ tab, host, ctx }: TabBarIt
   if (fileHost) kindCommands.push({ id: `${tab.tabId}:file-storage`, label: t('fileStoredOn.settings'), group: 'file', run: openFileStorageSettings });
   return (
     <div className="contents" data-panel-tab={isFolderItem(item) ? 'folder' : (item.kind ?? 'preview')}>
-      <GenericTabItem tab={tab} host={host} ctx={ctx} label={label} hint={hint} tooltip={tooltip} hasError={surface.error !== null} preSlot={<><PanelIcon item={item} />{fileHost ? <FileHostMark host={fileHost} /> : null}</>} statusSlot={<ExtensionTabBadge badge={surface.badge} />} kindCommands={kindCommands} />
+      <GenericTabItem tab={tab} host={host} ctx={ctx} label={label} hint={hint} tooltip={tooltip} hasError={surface.error !== null} preSlot={<PanelIcon item={item} />} markSlot={fileHost ? <FileHostMark host={fileHost} /> : null} statusSlot={<ExtensionTabBadge badge={surface.badge} />} kindCommands={kindCommands} />
     </div>
   );
 });
@@ -155,17 +163,16 @@ const ShellTabSlots = observer(function ShellTabSlots({ host, ctx, kind }: TabCo
   return (
     <>
       {tabs.filter((tab) => tab.kind === kind && retained.has(tab.tabId)).map((tab) => (
-        <ShellTabSlot key={tab.tabId} chatId={chatId} tab={tab} host={host} />
+        <ShellTabSlot key={tab.tabId} chatId={chatId} tab={tab} />
       ))}
     </>
   );
 });
 
-function ShellTabSlot({ chatId, tab, host, style }: { chatId: string; tab: ResolvedTab; host: TabHost; style?: CSSProperties }) {
+function ShellTabSlot({ chatId, tab, style }: { chatId: string; tab: ResolvedTab; style?: CSSProperties }) {
   const { tabId } = tab;
   const ref = useCallback((element: HTMLDivElement | null) => readShellSlots()?.setSlot(chatTabSlotKey(chatId, tabId), element), [chatId, tabId]);
-  const focus = tab.isFocused ? undefined : () => host.setActiveTab(tabId);
-  return <RetainedTabContent ref={ref} visible={tab.isActive} style={style} className="absolute inset-0 flex min-h-0 min-w-0 flex-col" data-chat-tab-slot={tabId} data-pane-tab={tabId} onPointerDownCapture={focus} onFocusCapture={focus} />;
+  return <RetainedTabContent ref={ref} visible={tab.isActive} style={style} className="absolute inset-0 flex min-h-0 min-w-0 flex-col" data-chat-tab-slot={tabId} data-pane-tab={tabId} />;
 }
 
 function PanelTabContent(props: TabContentProps) {
@@ -214,6 +221,7 @@ export const chatTopicTabProvider = createTabProvider<typeof CHAT_TOPIC_TAB_KIND
   // A topic is a conversation of its source group (owner 11-05 §6.6): what is opened from it goes beside it.
   conversation: true,
   resourceKey: (state) => state.topicChatId,
+  minWidth: CHAT_MIN_WIDTH_PX,
   // As before: the topic beside a group is this window's; a restart opens the group alone.
   isPersistent: () => false,
   initialize: stateResource,

@@ -37,8 +37,9 @@ export type EffortOptionDescriptor = z.infer<typeof effortOptionSchema>;
  *    e.g., high, max, minimal", and `opencode models` only lists whatever providers the user
  *    has authenticated. Declaring a fixed catalog would be inventing data; opencode therefore
  *    declares no effort and relies on ACP advertising the levels for the live session.
- * 3. **Baked into the model id** — no separate axis, and none is needed. `antigravity`'s ACP
- *    catalog reports `gemini-3.7-flash-(low|medium|high)` (agy_acp_server 1.1.1, #6335); `amp`'s entire model list *is* `Low/Medium/High/
+ * 3. **Baked into the model id** — no separate axis, and none is needed. Older `antigravity` ACP
+ *    servers report `gemini-3.7-flash-(low|medium|high)` (1.1.1, #6335); 1.5.0 instead reports
+ *    a live `thought_level` axis, like the dynamic catalog in (2). `amp`'s entire model list *is* `Low/Medium/High/
  *    Ultra`. These are ordinary models with no `effortIds`, and the picker correctly hides
  *    the row.
  * 4. **No control at all** — `gemini` 0.47.0 exposes only `-m` (its thinking budget lives in

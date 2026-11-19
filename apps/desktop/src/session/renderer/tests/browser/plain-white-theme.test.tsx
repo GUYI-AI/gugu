@@ -4,9 +4,10 @@ import { page, userEvent } from 'vitest/browser'
 import { createReactHarness } from '../../../../../../../tests/support/testHarness'
 import { GeneralSection } from '@/components/settings/GeneralSection'
 import { buildBubbleStyle } from '@/components/chat/messageBubbleStyle'
-import { i18n, LocalizationProvider } from '@/i18n'
+import { i18n, LocalizationProvider, setLocalePreference } from '@/i18n'
+import { getLocaleSnapshot } from '@/i18n/runtime'
 import { ThemeProvider } from '@/store/theme'
-import { hydrateHostTheme, writeThemePreference } from '@/session/renderer/lib/theme/host-theme'
+import { hydrateHostTheme, readThemePreference, writeThemePreference } from '@/session/renderer/lib/theme/host-theme'
 import '@/i18n/registerMainCatalog'
 import '@/styles/tokens.css'
 import '@/session/renderer/features/assistant/assistant-today.css'
@@ -44,16 +45,41 @@ it.each([
   await page.viewport(width, 844)
   await i18n.changeLanguage(locale)
   await harness.render(<LocalizationProvider><ThemeProvider><GeneralSection onOpenPermissions={() => {}} /></ThemeProvider></LocalizationProvider>)
-  const group = harness.container.querySelector(`[role="radiogroup"][aria-label="${label}"]`)!
-  const options = [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+  const mobile = width === 390
+  const group = harness.container.querySelector(`[role="${mobile ? 'tablist' : 'radiogroup'}"][aria-label="${label}"]`)!
+  const options = [...group.querySelectorAll<HTMLButtonElement>(`[role="${mobile ? 'tab' : 'radio'}"]`)]
+  const selected = mobile ? 'aria-selected' : 'aria-checked'
+  expect(group.classList.contains('gg-segtabs-pill')).toBe(mobile)
   const preferences = ['light', 'dark', 'system'] as const
   const labels = locale === 'zh-CN' ? ['浅色', '深色', '跟随系统'] : ['Light', 'Dark', 'System']
   expect(options.map(button => button.textContent)).toEqual(labels)
   for (const [index, preference] of preferences.entries()) {
     await act(async () => { await userEvent.click(options[index]!) })
-    expect(options[index]!.getAttribute('aria-checked')).toBe('true')
-    expect(options.filter(button => button.getAttribute('aria-checked') === 'true')).toHaveLength(1)
-    expect(localStorage.getItem('app-theme')).toBe(preference)
+    expect(options[index]!.getAttribute(selected)).toBe('true')
+    expect(options.filter(button => button.getAttribute(selected) === 'true')).toHaveLength(1)
+    expect(readThemePreference()).toBe(preference)
+  }
+})
+
+it('sets and reads back the phone language through the bottom sheet', async () => {
+  const previous = getLocaleSnapshot().preference
+  setLocalePreference('zh-CN')
+  try {
+    await harness.render(<LocalizationProvider><ThemeProvider><GeneralSection onOpenPermissions={() => {}} /></ThemeProvider></LocalizationProvider>)
+    const trigger = page.getByTestId('settings-language')
+    const sheet = page.getByTestId('settings-language-sheet')
+    await trigger.click()
+    await expect.element(sheet).toBeVisible()
+    const popup = document.querySelector('[data-testid="settings-language-sheet"]')!
+    expect(popup.querySelector('.gg-phone-composer-sheet-handle')).not.toBeNull()
+    expect(popup.querySelector('[data-option-value="zh-CN"]')?.getAttribute('aria-checked')).toBe('true')
+    await page.elementLocator(popup.querySelector('[data-option-value="en-US"]')!).click()
+    await vi.waitFor(() => expect(getLocaleSnapshot().preference).toBe('en-US'))
+    await expect.element(sheet).not.toBeInTheDocument()
+    await trigger.click()
+    await expect.element(sheet.getByRole('radio', { name: 'English', exact: true })).toHaveAttribute('aria-checked', 'true')
+  } finally {
+    setLocalePreference(previous)
   }
 })
 

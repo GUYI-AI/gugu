@@ -4,10 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 import { until } from '../../../support/awaitCondition'
 import { HtmlPreviewFrame, type HtmlPreviewRegistration } from '@/components/preview/HtmlPreviewFrame'
+import { queryClient } from '@/lib/replica'
 
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => { harness = createReactHarness() })
-afterEach(() => harness.cleanup())
+const queryOptions = queryClient.getDefaultOptions()
+beforeEach(() => { queryClient.setDefaultOptions({ ...queryOptions, queries: { ...queryOptions.queries, retryDelay: 0 } }); harness = createReactHarness() })
+afterEach(() => { harness.cleanup(); queryClient.setDefaultOptions(queryOptions) })
 
 describe('shared HTML frame lifecycle', () => {
   it('keeps the old frame painted until the replacement restores scroll, then releases one registration', async () => {
@@ -88,12 +90,13 @@ describe('shared HTML frame lifecycle', () => {
 
   it('shows registration failures and retries when the caller asks to reload', async () => {
     const register = vi.fn<(...args: string[]) => Promise<HtmlPreviewRegistration>>()
-      .mockResolvedValueOnce({ ok: false, message: 'Host unavailable' })
-      .mockResolvedValue({ ok: true, url: 'blob:recovered', update: vi.fn(), release: vi.fn() })
+      .mockResolvedValue({ ok: false, message: 'Host unavailable' })
     const draw = (reloadKey: number) => harness.render(createElement(HtmlPreviewFrame, { fileName: 'report.html', rawContent: 'body', register, reloadKey, onLink: vi.fn() }))
     await draw(0)
-    expect(harness.container.textContent).toContain('Host unavailable')
+    await until('bounded automatic recovery is exhausted', () => harness.container.textContent!.includes('Host unavailable'))
+    expect(register).toHaveBeenCalledTimes(4)
     expect(harness.container.querySelector('iframe')).toBeNull()
+    register.mockResolvedValue({ ok: true, url: 'blob:recovered', update: vi.fn(), release: vi.fn() })
     await draw(1)
     await until('host recovery is displayed', () => harness.container.querySelector('iframe')?.getAttribute('src') === 'blob:recovered')
   })
@@ -102,12 +105,13 @@ describe('shared HTML frame lifecycle', () => {
     let changed!: (paths?: readonly string[]) => void
     const subscribeChanges = (listener: typeof changed) => { changed = listener; return vi.fn() }
     const register = vi.fn<(...args: string[]) => Promise<HtmlPreviewRegistration>>()
-      .mockResolvedValueOnce({ ok: false, message: 'Host unavailable' })
-      .mockResolvedValue({ ok: true, url: 'blob:recovered', update: vi.fn(), release: vi.fn() })
+      .mockResolvedValue({ ok: false, message: 'Host unavailable' })
     await harness.render(createElement(HtmlPreviewFrame, { fileName: 'report.html', rawContent: 'body', register, subscribeChanges, onLink: vi.fn() }))
-    expect(harness.container.textContent).toContain('Host unavailable')
+    await until('bounded automatic recovery is exhausted', () => harness.container.textContent!.includes('Host unavailable'))
+    expect(register).toHaveBeenCalledTimes(4)
+    register.mockResolvedValue({ ok: true, url: 'blob:recovered', update: vi.fn(), release: vi.fn() })
     await act(async () => { changed(); await new Promise(resolve => setTimeout(resolve, 220)) })
-    expect(register).toHaveBeenCalledTimes(2)
+    expect(register).toHaveBeenCalledTimes(5)
     expect(harness.container.querySelector('iframe')?.getAttribute('src')).toBe('blob:recovered')
   })
 })

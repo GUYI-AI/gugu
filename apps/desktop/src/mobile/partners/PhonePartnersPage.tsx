@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
 import { AddFriendSearch } from '@/components/AddFriendSearch'
@@ -12,7 +12,6 @@ import { GroupInviteJoinModal } from '@/components/contacts/GroupInvite'
 import { rowKeyActivate } from '@/components/contacts/contactsPanelStyles'
 import { Button } from '@/components/ui/Button'
 import { Chip } from '@/components/ui/Chip'
-import { HeaderSearch } from '@/components/ui/HeaderSearch'
 import { ListRow } from '@/components/ui/ListRow'
 import { Pane, PaneHeader } from '@/components/ui/Pane'
 import { SectionLabel } from '@/components/ui/SectionLabel'
@@ -28,13 +27,14 @@ import { deviceSessionsOf, useLiveDeviceSessions } from '@/session/shared/remote
 import type { AuthUser } from '@/store/auth'
 import { useContactsStore } from '@/store/contactsContext'
 import { useDevicesStore } from '@/store/devicesContext'
+import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
 import { useToast } from '@/components/toastContext'
 import { messageForUser } from '@/lib/userFacingError'
 import { projectRpcOn } from './projectRpc'
-import { matchesQuery, partnerFriends, partnerGroupAgents, partnerProjects, projectSessions, runningCount, type PartnerProject } from './partnersModel'
+import { partnerFriends, partnerGroupAgents, partnerProjects, projectSessions, type PartnerProject } from './partnersModel'
 import { PhoneNewProjectPage, type CreatedProject } from './PhoneNewProjectPage'
 import { PhoneProjectContacts } from './PhoneProjectContacts'
-import { ProjectFolderAvatar } from './ProjectFolderAvatar'
+import { ChatGroupAvatar } from '@/components/chat/ChatGroupAvatar'
 import './partners.css'
 
 /** 推在「伙伴」首页上的一页:整屏、没有底栏,返回一步回到下面那一页。 */
@@ -94,13 +94,12 @@ export function PhonePartnersPage({
 }) {
   const { t } = useTranslation('main')
   const { t: ct } = useTranslation('contacts')
-  const { contacts, sharedGroupAgents, groupChats, pendingRequestCount, sentRequests, sendRequest, setAgentPublic, setAgentDesiredStatus, getCommonGroupChats } = useContactsStore()
+  const { contacts, sharedGroupAgents, groupChats, pendingRequestCount, sentRequests, sendRequest, setAgentPublic, setAgentDesiredStatus } = useContactsStore()
   const { devices } = useDevicesStore()
   const { isHome } = useMachineLabel()
   const liveSessions = useLiveDeviceSessions()
   const { toast } = useToast()
   const [stack, setStack] = useState<PartnersPage[]>([])
-  const [query, setQuery] = useState('')
   const [requestingAgentId, setRequestingAgentId] = useState<string | null>(null)
   const [groupInviteJoin, setGroupInviteJoin] = useState<{ publicId: number; joinToken?: string; token: number } | null>(null)
   const top = stack.at(-1) ?? null
@@ -128,7 +127,8 @@ export function PhonePartnersPage({
   }, [newProjectRequest])
 
   const machines = useMemo(() => directoryMachines(devices, isHome), [devices, isHome])
-  const projects = useMemo(() => partnerProjects(machines), [machines])
+  const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
+  const projects = useMemo(() => partnerProjects(accountList, machines, isHome), [accountList, machines, isHome])
   const sessionsOf = useCallback((deviceId: string) => {
     const device = machines.find((row) => row.device_id === deviceId)
     return device ? deviceSessionsOf(device, liveSessions) : { sessions: [], hostOnline: false }
@@ -168,11 +168,7 @@ export function PhonePartnersPage({
     }
   }
 
-  const shownProjects = projects.filter((project) => matchesQuery(project.name, query))
-  const shownFriends = friends.filter((friend) => matchesQuery(displayName(friend), query))
-  const shownGroupAgents = groupAgents.filter(agent => matchesQuery(displayName(agent), query))
   const groupAgentActions = useAgentRowActions({ onSelect: (agent) => push({ kind: 'friend', contactId: agent.id }) })
-  const searching = query.trim() !== ''
 
   const projectPage = (page: Extract<PartnersPage, { kind: 'project' }>) => {
     const created = page.created
@@ -184,7 +180,6 @@ export function PhonePartnersPage({
     return (
       <PhoneProjectContacts
         project={project}
-        running={runningCount(sessions)}
         sessions={sessions}
         active={active}
         onBack={pop}
@@ -216,7 +211,6 @@ export function PhonePartnersPage({
             onRequestAgent={requestAgent}
             onSetAgentPublic={setAgentPublic}
             onSetAgentDesiredStatus={setAgentDesiredStatus}
-            getCommonGroupChats={getCommonGroupChats}
           />
         )
       }
@@ -238,31 +232,24 @@ export function PhonePartnersPage({
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden" data-testid="phone-partners">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col" style={top ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
         <Pane paneRole="nav" mobile className="gg-partners" data-phone-root-list="contacts">
-          <HeaderSearch mobile active={active && !top} value={query} onChange={setQuery} placeholder={t('partners.search')} testId="phone-partners-search">
-            {(searchButton) => (
-              <PaneHeader mobile titleLevel="page" title={<span data-first-run-hint="collaboration" data-first-run-device="phone">{t('shell.partnersMobile')}</span>} leading={<PhoneMeButton user={user} onOpen={onOpenMe} />} actions={searchButton} />
-            )}
-          </HeaderSearch>
-          <div data-first-run-hint-space="collaboration" />
+          <PaneHeader mobile titleLevel="page" title={t('shell.partnersMobile')} leading={<PhoneMeButton user={user} onOpen={onOpenMe} />} />
           <div className="gg-partners-scroll">
-            {!searching ? (
-              <div className="gg-partners-navrows">
-                <NavRow icon={<UserPlus size={20} />} label={ct('panel.newRequests')} badge={pendingRequestCount} testId="phone-partners-requests" onClick={() => push({ kind: 'requests' })} />
-                <NavRow icon={<Search size={20} />} label={ct('panel.addContact')} testId="phone-partners-add" onClick={() => push({ kind: 'add', seed: null })} />
-              </div>
-            ) : null}
+            <div className="gg-partners-navrows">
+              <NavRow icon={<UserPlus size={20} />} label={ct('panel.newRequests')} badge={pendingRequestCount} testId="phone-partners-requests" onClick={() => push({ kind: 'requests' })} />
+              <NavRow icon={<Search size={20} />} label={ct('panel.addContact')} testId="phone-partners-add" onClick={() => push({ kind: 'add', seed: null })} />
+            </div>
             <div className="gg-partners-list">
-              {shownProjects.length ? <SectionLabel>{t('partners.projects', { count: shownProjects.length })}</SectionLabel> : null}
-              {shownProjects.map((project) => {
+              {projects.length ? <SectionLabel>{t('partners.projects', { count: projects.length })}</SectionLabel> : null}
+              {projects.map((project) => {
                 const open = () => push({ kind: 'project', key: project.key })
                 return (
                   <ListRow key={project.key} mobile role="button" tabIndex={0} data-testid="phone-partners-project"
-                    leading={<ProjectFolderAvatar coverId={project.coverId} running={runningCount(projectSessions(project, id => sessionsOf(id).sessions, id => sessionsOf(id).hostOnline))} />}
+                    leading={<ChatGroupAvatar chatId={project.chatId ?? project.coverId} name={project.name} size={40} />}
                     title={project.name} onClick={open} onKeyDown={rowKeyActivate(open)} />
                 )
               })}
-              {shownFriends.length ? <SectionLabel>{t('partners.friends', { count: shownFriends.length })}</SectionLabel> : null}
-              {shownFriends.map((friend) => {
+              {friends.length ? <SectionLabel>{t('partners.friends', { count: friends.length })}</SectionLabel> : null}
+              {friends.map((friend) => {
                 const open = () => push({ kind: 'friend', contactId: friend.id })
                 return (
                   <ListRow key={friend.id} mobile role="button" tabIndex={0} data-testid="phone-partners-friend"
@@ -270,11 +257,10 @@ export function PhonePartnersPage({
                     title={displayName(friend)} onClick={open} onKeyDown={rowKeyActivate(open)} />
                 )
               })}
-              {shownGroupAgents.length ? <SectionLabel>{t('partners.groupAgents', { count: shownGroupAgents.length })}</SectionLabel> : null}
-              {shownGroupAgents.map(agent => (
+              {groupAgents.length ? <SectionLabel>{t('partners.groupAgents', { count: groupAgents.length })}</SectionLabel> : null}
+              {groupAgents.map(agent => (
                 <AgentContactRow key={agent.id} contact={agent} mobile selected={false} testId="phone-partners-group-agent" actions={groupAgentActions} />
               ))}
-              {searching && !shownProjects.length && !shownFriends.length && !shownGroupAgents.length ? <div className="gg-partners-empty">{t('partners.noResults')}</div> : null}
             </div>
           </div>
         </Pane>

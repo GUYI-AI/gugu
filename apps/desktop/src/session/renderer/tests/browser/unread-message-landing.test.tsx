@@ -73,7 +73,7 @@ async function renderConversation(target: number, width: number, portal = false)
     const pending = useUnreadLocatorNavigation(input)
     const { onAtBottomChange } = useFollowingTail({ resetKey, unreadNavigationPending: pending, hasNewer: window.hasNewer,
       loading: !!window.loading, isPreservingPosition: memory.isPreservingPosition, isAtBottomRef, setFollowingTail })
-    const { pinToBottom, onTotalListHeightChanged } = useTailPinning({ resetKey, messages, enabled: !pending, messageWindow: window, scrollerEl: memory.scrollerEl, scrollerRef: memory.scrollerRef,
+    const { pinToBottom } = useTailPinning({ resetKey, messages, enabled: !pending, messageWindow: window, scrollerRef: memory.scrollerRef,
       listRef, isAtBottomRef, isPreservingPosition: memory.isPreservingPosition, prepareForSavedPosition: memory.prepareForSavedPosition,
       forgetSavedPosition: memory.forgetSavedPosition, returnToLatest, onError: rejected })
     const jump = () => {
@@ -82,7 +82,7 @@ async function renderConversation(target: number, width: number, portal = false)
         threadRootId: null, messageId: `m${target}`, messageSeq: target, commit, confirm: confirmed, reject: rejected, isCurrent: () => true }
       globalThis.window.dispatchEvent(new CustomEvent(UI_EVENTS.openUnreadMessage, { detail: request }))
     }
-    const rowProps: MessageListRowProps = { rows, messages, mobile: width < 720, memberReadSeqs: {}, deliveryWaits: new Map(), memberProfiles: {},
+    const rowProps: MessageListRowProps = { rows, messages, mobile: width < 720, memberReadSeqs: {}, deliveryWaits: new Map(), recipientFacts: { agentIds: new Set(), wakes: new Map() }, memberProfiles: {},
       isGroupChat: true, onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible: noop, selectMode: false,
       selectedIds: new Set(), onToggleSelect: noop, onEnterSelectMode: noop, flashMessageId, threeParty: undefined,
       readReceiptHandle: undefined, memberProfileOpener: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
@@ -90,7 +90,6 @@ async function renderConversation(target: number, width: number, portal = false)
     return <><button onClick={pinToBottom}>Return to latest</button><div data-window-head={messages[0]?.id} style={{ height: 560, width: '100%', display: 'flex', flexDirection: 'column' }}>
       <MessageList rows={rows} rowProps={rowProps} resetKey={resetKey} listRef={listRef} scrollerRef={memory.setScrollerRef}
         initialTopMostItemIndex={memory.openLocation()} followTail={!pending && !window.hasNewer} onAtBottomChange={onAtBottomChange}
-        onTotalListHeightChanged={onTotalListHeightChanged}
         unreadAbove={{ messageId: `m${target}`, messageSeq: target, label: 'Jump to first unread', onJump: jump }} />
     </div></>
   }

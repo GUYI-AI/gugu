@@ -228,6 +228,9 @@ export function parseTodayFile(text: string): TodayParse {
 /** 页面读到的那一份:还没有这个文件(第一天)/ 读懂了 / 有但读不懂(如实说是哪一格,❌ 当成空)。 */
 export type TodayRead = { state: 'none' } | { state: 'ok'; file: TodayFile; updatedAt: string } | { state: 'invalid'; problem: string };
 
+/** 页面此刻读到哪一步:还在读 / 读不到(带重试)/ 读到了(第一天、有简报、读不懂)。 */
+export type TodayFeedView = { state: 'loading' } | { state: 'error'; error: unknown; retry: () => void } | { state: 'read'; read: TodayRead };
+
 /** 它早晚改这一份;没有「文件夹变了」的推送到页面这边,每分钟再问一次(与「动态」页刷新信息流同一个节奏)。 */
 export const TODAY_REFRESH_MS = 60_000;
 
@@ -247,64 +250,6 @@ export function todayReadOf(file: { text: string; updatedAt: string } | null): T
   if (!file) return { state: 'none' };
   const parsed = parseTodayFile(file.text);
   return parsed.ok ? { state: 'ok', file: parsed.file, updatedAt: file.updatedAt } : { state: 'invalid', problem: parsed.problem };
-}
-
-/** 信息流的顺序:新的一天在上;同一天里晚的在上(日记 > 晚报 > 早报,有 pushedAt 的按它)。 */
-export function feedOrder(batches: readonly TodayBatch[]): TodayBatch[] {
-  const rank: Record<BatchKind, number> = { morning: 0, evening: 1, diary: 2 };
-  return [...batches].sort(
-    (a, b) =>
-      b.localDate.localeCompare(a.localDate) ||
-      (b.pushedAt ?? '').localeCompare(a.pushedAt ?? '') ||
-      rank[b.kind] - rank[a.kind]
-  );
-}
-
-/** 段头的日期:今天 / 昨天 / 别的日子(按主人这台电脑的日历日比)。 */
-export function dayOf(localDate: string, now: Date): 'today' | 'yesterday' | 'other' {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  if (localDate === iso(now)) return 'today';
-  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  return localDate === iso(yesterday) ? 'yesterday' : 'other';
-}
-
-/** 日记:today.json 里 kind = diary 的那几批,新的在上(与信息流同一个先后)。 */
-export function diaryBatches(file: TodayFile): TodayBatch[] {
-  return feedOrder(file.batches.filter((batch) => batch.kind === 'diary'));
-}
-
-export type DiaryMonth = { key: string; year: number; month: number; batches: TodayBatch[] };
-
-/** 按月分组(「日记」页:2026年10月 / 2026年9月……),组内保持传进来的先后。 */
-export function diaryMonths(batches: readonly TodayBatch[]): DiaryMonth[] {
-  const months: DiaryMonth[] = [];
-  for (const batch of batches) {
-    const key = batch.localDate.slice(0, 7);
-    let group = months.find((month) => month.key === key);
-    if (!group) {
-      group = { key, year: Number(key.slice(0, 4)), month: Number(key.slice(5, 7)), batches: [] };
-      months.push(group);
-    }
-    group.batches.push(batch);
-  }
-  return months;
-}
-
-/**
- * 卡片上那几行预览:一篇日记的正文(各段 markdown 接起来)去掉标记,只留字。没有正文(正文在聊天里)= ''。
- * 只为预览:标题井号、粗斜体、行内代码、链接只留文字、列表 / 引用的行首记号、多余空白。
- */
-export function diaryPreview(batch: Pick<TodayBatch, 'cards'>): string {
-  return batch.cards
-    .map((card) => card.markdown)
-    .join('\n')
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/^\s{0,3}(#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)/gm, '')
-    .replace(/(\*\*|__|\*|_|~~|`)/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
 }
 
 export type IdeaGroup = { label: string | null; items: TodayIdea[] };

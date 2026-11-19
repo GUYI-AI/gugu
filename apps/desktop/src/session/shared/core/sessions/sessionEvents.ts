@@ -10,6 +10,7 @@ export type TurnSettlement = { sessionId: string; referenceId: string } & (
 );
 /** A real terminal turn crossed the durable writer, or that write failed. Never inferred from lifecycle. */
 export const sessionTurnSettledChannel = defineEvent<TurnSettlement>('session:turn-settled');
+export const nativePersonalPublicationChannel = defineEvent<{ accountId: string; revision: string }>('session:native-personal-publication');
 
 export type ProviderReviewGate = 'mcp';
 /** 阻塞的种类;它归哪一个活动态由 provider-review-gate.ts 的 PROVIDER_BLOCKER_STATUS 那张表决定。 */
@@ -31,6 +32,8 @@ export const sessionChangedChannel = defineEvent<{
     /** A proactive owner message committed to this session's native record. */
     nativeOwnerNotificationSeq?: true;
     nativeOwnerNotificationEpoch?: true;
+    /** The session's answered-Ask record was written or cleared; list subscribers reread the summary. */
+    lastAnswered?: true;
     /**
      * 这条会话的 provider 会话 id。**`null` = 清空**(这条会话现在没有可续的 provider 会话)。
      *
@@ -79,6 +82,7 @@ export const sessionChangedChannel = defineEvent<{
       // spec session-graph:归档/恢复只改这一行的这一个字段,渲染端据此收起或放回这一行。
       | 'archivedAt'
       | 'isPinned'
+      | 'isPinnedToSidebar'
     >
   >;
 }>('session:changed');

@@ -51,9 +51,22 @@ const PHONE: ReadonlySet<HostMember> = new Set<HostMember>([
   'cloud.read', 'cloud.write', 'cloud.subscribe', 'cloud.unsubscribe', 'onCloudHeard', 'pickAgent',
   'setTabTitle', 'setTabBadge', 'setTabDirty', 'onCommand', 'onLink', 'showMessage', 'showSession', 'clipboard.writeText',
   'readData', 'writeData', 'listData',
+  // API 49 The conversation binding, as the phone's binding host answers it (phoneAppBindings.ts).
+  'bindings.get', 'bindings.list', 'bindings.read', 'bindings.surface', 'bindings.setPanel', 'bindings.onSurface',
+  'bindings.resources', 'bindings.resource', 'bindings.watch', 'bindings.save', 'bindings.remove', 'onBindingResources',
+  'bindings.schedules', 'bindings.watchSchedules', 'bindings.controlSchedule', 'onSchedulesChanged',
+  'bindings.work', 'bindings.openWork', 'bindings.closeWork', 'bindings.onWork',
+  'assistant.status', 'assistant.open', 'assistant.advanceSetup', 'assistant.rename', 'assistant.figure', 'assistant.connect', 'onAssistantChanged', 'toast',
+  // 47 on a phone: answered `unsupported` (the phone's own 聊天 records), so an App hides its recorder there.
+  'voiceNote.start', 'voiceNote.pause', 'voiceNote.resume', 'voiceNote.stop', 'voiceNote.retry', 'voiceNote.openMicSettings',
+  'voiceNote.status', 'voiceNote.watch', 'onVoiceNote',
+  // 50 on a phone: answered `unsupported` (not managed from an App's page there).
+  'bindings.upload', 'bindings.createFolder', 'bindings.rename', 'bindings.removeFolder',
+  'bindings.transcribeVoiceNote', 'bindings.removeVoiceNote', 'bindings.exportVoiceNote',
   'appFiles.open', 'appFiles.reopen', 'appFiles.close', 'appFiles.list', 'appFiles.read', 'appFiles.readText', 'appFiles.exists', 'appFiles.draft', 'appFiles.writeText', 'appFiles.search', 'appFiles.recent', 'appFiles.create', 'appFiles.viewPreferences',
   'appFiles.keep', 'appFiles.remove', 'appFiles.canDelete', 'appFiles.rename', 'appFiles.mkdir', 'appFiles.move', 'appFiles.watch', 'appFiles.replace',
   'appFiles.versions', 'appFiles.readVersion', 'appFiles.upload', 'appFiles.writeChunk', 'appFiles.openWith', 'appFiles.download', 'appFiles.forward',
+  'appFiles.sendSelection',
 ]);
 const IN_SESSION: ReadonlySet<HostMember> = new Set<HostMember>(['callProgram', 'onProgramNotification']);
 /** What main answers an App's MCP program (F16): its files and messages, an agent's word — no page, no data folder of a page. */
@@ -63,7 +76,7 @@ const PROGRAM: ReadonlySet<HostMember> = new Set<HostMember>([
   'showTaskPages',
   'surfaces.open', 'surfaces.screen', 'surfaces.update', 'surfaces.close', 'onSurface',
   'pages.acquire', 'pages.send', 'pages.maintain', 'pages.release', 'onTaskPage',
-  'projection.create', 'projection.publish', 'projection.close', 'projection.closed', 'projection.inputResult', 'onProjectionSource',
+  'projection.create', 'projection.publish', 'projection.present', 'projection.close', 'projection.closed', 'projection.inputResult', 'onProjectionSource',
   'getContext', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', 'messages.history', 'messages.search',
   'chats.list', 'chats.members', 'projects.list', 'linkTo',
   'sessions.index', 'sessions.read', 'cloud.read', 'cloud.programWrite', 'prompts.list', 'prompts.save', 'prompts.delete',

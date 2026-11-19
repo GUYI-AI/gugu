@@ -57,47 +57,29 @@ describe('getEffectiveSessionSettings', () => {
     expect(settings).not.toHaveProperty('baseRemote');
   });
 
-  it('falls back to defaults plus project settings when the task config is invalid', async () => {
-    const settings = await getEffectiveSessionSettings({
+  it.each([
+    ['broken JSON', ok({ content: '{', truncated: false, totalSize: 1 }), /Invalid session config \/worktree\/\.emdash\.json: .*JSON/],
+    ['a wrong field type', ok({ content: '{"shellSetup":3}', truncated: false, totalSize: 16 }), /shellSetup/],
+    ['a truncated read', ok({ content: '{"scripts":', truncated: true, totalSize: 204_801 }), /204801 bytes/],
+    ['a failed read', { success: false, error: { type: 'fs-error', path: sessionConfigPath, message: 'EACCES' } }, /cannot read it \(EACCES\)/],
+  ] as const)('reports %s in the task config instead of running without it', async (_label, read, message) => {
+    await expect(getEffectiveSessionSettings({
       projectSettings: makeProjectSettings({ shellSetup: 'nvm use' }),
       sessionFs: {
         exists: vi.fn(async () => ok(true)),
-        readText: vi.fn(async () => ok({ content: '{', truncated: false, totalSize: 1 })),
+        readText: vi.fn(async () => read as never),
       },
       sessionConfigPath,
-    });
-
-    expect(settings.preservePatterns).toContain('.env');
-    expect(settings.preservePatterns).not.toContain('.emdash.json');
-    expect(settings.shellSetup).toBe('nvm use');
+    })).rejects.toThrow(message);
   });
 
-  it('falls back to project settings when the task config read is truncated', async () => {
+  it('uses defaults plus project settings when the task has no config file', async () => {
     const settings = await getEffectiveSessionSettings({
-      projectSettings: makeProjectSettings({
-        scripts: { run: 'pnpm dev' },
-      }),
-      sessionFs: {
-        exists: vi.fn(async () => ok(true)),
-        readText: vi.fn(async () =>
-          ok({ content: '{"scripts":', truncated: true, totalSize: 204_801 })
-        ),
-      },
-      sessionConfigPath,
-    });
-
-    expect(settings.scripts?.run).toBe('pnpm dev');
-  });
-
-  it('falls back to defaults when project settings are invalid', async () => {
-    const settings = await getEffectiveSessionSettings({
-      projectSettings: makeProjectSettings({
-        preservePatterns: 'not-an-array',
-      } as never),
+      projectSettings: makeProjectSettings({ shellSetup: 'nvm use' }),
       sessionFs: makeSessionFs(null),
       sessionConfigPath,
     });
-
     expect(settings.preservePatterns).toContain('.env');
+    expect(settings.shellSetup).toBe('nvm use');
   });
 });

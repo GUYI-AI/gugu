@@ -56,17 +56,21 @@ vi.mock('@renderer/features/sessions/stores/session-registry', () => ({
 }))
 /**
  * 键盘光标那套是**真的**(session-keyboard-nav 没被替),它只从这一格取世界:
- *  · `navChain` 要包含这一行 —— 显式光标只在它还在链上时才作数(见 `get cursor`);
- *  · `navigation` 要说得出「主区在哪」,否则 `viewNode` 取不到值;点一行走的 `navigate` 把它挪到那一行,
- *    与真的一样 —— 光标就是主区所在(❌ 不摆一个假的光标)。
+ *  · `navigation` 要说得出「主区在哪」,否则 `viewNode` 取不到值;点一行走的 `navigation.navigate`(useNavigate 也只是
+ *    它的壳)把它挪到那一行,与真的一样 —— 光标就是主区所在(❌ 不摆一个假的光标)。
  * 项目树给空的:行按「项目没挂载」渲,与真实的早期状态同形。
  */
-const shown = vi.hoisted(() => ({ navigation: null as { currentViewId: string; viewParamsStore: Record<string, unknown> } | null }))
+type Shown = { currentViewId: string; viewParamsStore: Record<string, unknown>; navigate: (view: string, params: unknown) => void }
+const shown = vi.hoisted(() => ({ navigation: null as Shown | null }))
 vi.mock('@renderer/lib/stores/app-state', async () => {
   const { observable } = await import('mobx')
   shown.navigation = observable({
     currentViewId: 'session',
     viewParamsStore: { session: { projectId: 'proj-1', sessionId: 'task-1' } } as Record<string, unknown>,
+    navigate(view: string, params: unknown) {
+      this.currentViewId = view
+      this.viewParamsStore[view] = params
+    },
   })
   return { appState: {
     projects: { projects: new Map() },
@@ -74,7 +78,8 @@ vi.mock('@renderer/lib/stores/app-state', async () => {
   },
   sidebarStore: {
     remoteSession: () => undefined,
-    navChain: [{ kind: 'conversation', projectId: 'proj-1', sessionId: 'conv-1' }],
+    // 这些行都在项目行下:置顶是会话自己的(row-pin.ts)。
+    rowOfSession: () => 'proj-1',
     // 设置 `interface.showLeftSidebarAgentNameOnHover` 的镜像(现在开的是身份卡,#6092)。这里是**开**的那一档;
     // 关掉那一档由下面单独一条用例把它翻过去判。
     agentNameOnHoverEnabled: true,
@@ -96,10 +101,7 @@ vi.mock('@renderer/features/sessions/open-session-in-session', () => ({
   openSessionInSessionWhenReady: () => undefined,
 }))
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({
-  useNavigate: () => ({ navigate: (view: string, params: unknown) => runInAction(() => {
-    shown.navigation!.currentViewId = view
-    shown.navigation!.viewParamsStore[view] = params
-  }) }),
+  useNavigate: () => ({ navigate: (view: string, params: unknown) => shown.navigation!.navigate(view, params) }),
   useParams: () => ({ params: {} }),
   useWorkspaceSlots: () => ({ currentView: 'task' }),
 }))
@@ -430,6 +432,17 @@ it('#7334 指针停在行上,右侧弹出身份卡:Agent 名 / 设备 / 文件�
   await until('identity card is gone', () => identityCard() === null)
 })
 
+/** 复制会话 ID is a tool row: it sits in 更多 (session/shared/menu-table.ts @@@menu-order). Open 更多, then find it. */
+async function copySessionIdItem(): Promise<HTMLElement | undefined> {
+  const find = () => Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((el) => /复制会话 ID|Copy session ID/.test(el.textContent ?? ''))
+  if (!find()) {
+    const more = document.querySelector<HTMLElement>('[data-testid="sidebar-session-menu-more"]')
+    if (more) { await userEvent.hover(more); await userEvent.click(more) }
+    await until('更多 opens with 复制会话 ID', () => find() !== undefined)
+  }
+  return find()
+}
+
 it('#7334 右键「复制会话 ID」:复制完整的会话 ID', async () => {
   sessionAgentBindings.note('conv-1', AGENT_USER_ID)
   const clipboard = stubClipboard()
@@ -438,9 +451,8 @@ it('#7334 右键「复制会话 ID」:复制完整的会话 ID', async () => {
   const row = host.querySelector<HTMLElement>('[data-session-id="conv-1"]')!
   row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 40 }))
   await until('context menu items render', () => document.querySelectorAll('[role="menuitem"]').length > 0)
-  const items = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
-  const item = items.find((el) => /复制会话 ID|Copy session ID/.test(el.textContent ?? ''))
-  expect(item, `菜单里该有「复制会话 ID」这一格,实际:${items.map((i) => i.textContent).join(' | ')}`).toBeDefined()
+  const item = await copySessionIdItem()
+  expect(item, `菜单里该有「复制会话 ID」这一格,实际:${Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).map((i) => i.textContent).join(' | ')}`).toBeDefined()
   await userEvent.click(item!)
   await until('session id copied', () => clipboard.mock.calls.length > 0)
   expect(clipboard).toHaveBeenCalledWith('conv-1')
@@ -532,7 +544,7 @@ it('shows the sanitized clipboard refusal when copying the session ID', async ()
   const row = host.querySelector<HTMLElement>('[data-session-id="conv-1"]')!
   row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, button: 2 }))
   await until('context menu opens', () => document.querySelector('[role="menuitem"]') !== null)
-  const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(el => /复制会话 ID|Copy session ID/.test(el.textContent ?? ''))!
+  const item = (await copySessionIdItem())!
   await userEvent.click(item)
   await until('session id copy was attempted', () => clipboard.mock.calls.length > 0)
   expect(notice).toHaveBeenCalledWith({ title: expect.stringMatching(/复制失败|Copy failed/), description: 'Clipboard denied [path] [redacted token]', variant: 'destructive' })

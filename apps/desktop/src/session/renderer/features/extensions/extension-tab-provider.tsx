@@ -32,7 +32,7 @@ import { fileBaseName, filePathKey } from '@renderer/features/sessions/stores/wo
 import { showModal } from '@renderer/lib/modal/modal-provider';
 import { rpc } from '@renderer/lib/ipc';
 import { Folder } from '@/lib/icons';
-import { FileIcon } from '@renderer/lib/editor/file-icon';
+import { AppFileMark } from './app-file-mark';
 
 /**
  * What the host knows about one open extension tab, stored per tab entry.
@@ -49,7 +49,7 @@ import { FileIcon } from '@renderer/lib/editor/file-icon';
 export type ExtensionTabState = {
   filePath?: string;
   /**
-   * The host opened `filePath` for an agent or an App (`open_in_tab`, `files.openWith`), not the person: a file outside the
+   * The host opened `filePath` for an App (`files.openWith`), not the person or an agent of theirs (`open_in_tab`): a file outside the
    * working copy is not read through it (`@@@outside-file`). Its own tab: the person opening the same file gets one of their own.
    */
   byHost?: true;
@@ -72,7 +72,7 @@ export class ExtensionTabResource implements TabResource {
     readonly filePath: string | undefined = undefined,
     private readonly readTitle?: () => string,
     private readonly readHoldsUnsaved?: () => boolean,
-    /** The host opened `filePath` for an agent or an App (`ExtensionTabState.byHost`). */
+    /** The host opened `filePath` for an App (`ExtensionTabState.byHost`). */
     readonly byHost = false,
   ) {}
 
@@ -155,12 +155,13 @@ function createExtensionTabContent(extensionId: string, kind: string) {
   });
 }
 
-/** The extension's own mark on its tab, read live so an upgrade swaps it in place. */
+/**
+ * A tab's mark says what it shows, as its title does: a file as the folder list draws it (`AppFileMark`), the folder
+ * App's list a folder; only an App's own page carries the App's mark, read live so an upgrade swaps it in place.
+ */
 const ExtensionTabIcon = observer(function ExtensionTabIcon({ kind, file }: { kind: string; file?: string }) {
-  // The folder App's tabs say what they show: the list a folder, a file its type. Its own mark stays in the App lists.
-  if (parseExtensionTabKind(kind)?.extensionId === WORKSPACE_APP_ID) {
-    return file ? <span className="flex shrink-0 text-foreground-muted"><FileIcon filename={fileBaseName(file)} className="shrink-0" /></span> : <Folder className="size-3 text-foreground-muted" />;
-  }
+  if (file) return <span className="flex shrink-0"><AppFileMark kind={kind} fileName={fileBaseName(file)} context="session" size={12} /></span>;
+  if (parseExtensionTabKind(kind)?.extensionId === WORKSPACE_APP_ID) return <Folder className="size-3 text-foreground-muted" />;
   const iconDataUrl = installedExtensionsStore.allTabContributions.find(
     (entry) => entry.kind === kind
   )?.iconDataUrl;

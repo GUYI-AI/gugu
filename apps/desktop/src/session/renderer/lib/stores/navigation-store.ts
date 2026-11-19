@@ -7,18 +7,15 @@ import type { Snapshottable } from './snapshottable';
 
 type ViewParamsStore = Partial<{ [K in ViewId]: WrapParams<K> }>;
 
-type LibraryViewId = 'library';
-type NonLibraryViewId = Exclude<ViewId, LibraryViewId>;
-
-function isLibraryView(viewId: ViewId): viewId is LibraryViewId {
-  return viewId === 'library';
-}
-
 export class NavigationStore implements Snapshottable<NavigationSnapshot> {
   currentViewId: ViewId = 'home';
   viewParamsStore: ViewParamsStore = {};
+  /**
+   * What the restored snapshot held for views this build no longer has (not restored, not saved again): read once by what
+   * replaced them — the built-in assistant page's last tab, handed to the assistant App (AssistantAppEntryHost).
+   */
+  retiredViewParams: Readonly<Record<string, unknown>> = {};
   isNavigating: boolean = false;
-  lastNonLibraryView: NonLibraryViewId = 'home';
 
   private readonly _guards = new Map<ViewId, (params: unknown) => GuardResult>();
   private readonly _registeredViewIds = new Set<ViewId>();
@@ -125,9 +122,6 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
         this.viewParamsStore = this._viewParamsWithoutTransient(owner, this.viewParamsStore);
       }
       this.currentViewId = viewId;
-      if (!isLibraryView(viewId)) {
-        this.lastNonLibraryView = viewId;
-      }
       this.isNavigating = true;
     }
     if (params !== undefined) {
@@ -157,15 +151,14 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
     // 一样不还原,留在首页(isRegisteredViewId)。
     if (this.isRegisteredViewId(snapshot.currentViewId)) {
       this.currentViewId = snapshot.currentViewId;
-      if (!isLibraryView(snapshot.currentViewId)) {
-        this.lastNonLibraryView = snapshot.currentViewId;
-      }
     }
     if (snapshot.viewParams) {
       const filtered: ViewParamsStore = {};
       for (const [key, value] of Object.entries(snapshot.viewParams)) {
         if (this.isRegisteredViewId(key)) {
           (filtered as Record<ViewId, unknown>)[key] = value;
+        } else {
+          this.retiredViewParams = { ...this.retiredViewParams, [key]: value };
         }
       }
       // 一次到访不跨重启:快照里残留的转瞬参数不恢复,否则上次没关的抽屉会跟着开机弹出来
@@ -181,9 +174,6 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
     const guard = this._runGuard(this.currentViewId, this.viewParamsStore[this.currentViewId]);
     if (!guard.ok) {
       this.currentViewId = guard.redirect;
-      if (!isLibraryView(guard.redirect)) {
-        this.lastNonLibraryView = guard.redirect;
-      }
       if (guard.params !== undefined) {
         this.viewParamsStore = { ...this.viewParamsStore, [guard.redirect]: guard.params };
       }

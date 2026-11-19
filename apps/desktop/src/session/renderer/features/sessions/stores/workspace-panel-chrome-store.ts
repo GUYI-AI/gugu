@@ -1,4 +1,5 @@
 import { action, makeObservable, observable } from 'mobx';
+import { readInterface, takeLegacyInterface, writeInterface } from '@/lib/viewStateTable';
 
 /**
  * 还没建任务的页面(新建会话的草稿页、项目首页)右边那块面板的开合:整个 app 一份,重启也记得。
@@ -9,6 +10,12 @@ import { action, makeObservable, observable } from 'mobx';
  * 第一次装好默认收起(先把注意力留给输入框),之后以用户上一次的操作为准。
  */
 const STORAGE_KEY = 'gugu.workspace-panel-chrome.v1';
+// View state of the device (lib/viewStateTable). Kept in localStorage before as `{ collapsed }` (older ones also stored a
+// maximized state the session page no longer has: not carried).
+takeLegacyInterface(STORAGE_KEY, STORAGE_KEY, (raw) => {
+  const collapsed = (JSON.parse(raw) as { collapsed?: unknown }).collapsed;
+  return typeof collapsed === 'boolean' ? collapsed : undefined;
+});
 
 class WorkspacePanelChromeStore {
   collapsed = true;
@@ -27,29 +34,16 @@ class WorkspacePanelChromeStore {
   }
 
   private load(): void {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      // 旧版还存着全屏(`maximized` / `maximizedSessionIds`):会话页没有面板了,不认。
-      const parsed = JSON.parse(raw) as { collapsed?: unknown };
-      if (typeof parsed.collapsed === 'boolean') this.collapsed = parsed.collapsed;
-    } catch {
-      // 读不出来就当第一次:默认收起。❌ 不让一条坏掉的偏好把页面拖垮。
-    }
+    const stored = readInterface<boolean>(STORAGE_KEY);
+    if (typeof stored === 'boolean') this.collapsed = stored;
   }
 
   private save(): void {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ collapsed: this.collapsed }));
-    } catch {
-      // 存不进去(隐私模式 / 配额)只是下次重启忘了,本次照常。
-    }
+    writeInterface(STORAGE_KEY, this.collapsed);
   }
 }
 
-/** 只给判据用:每个用例一份新的,读同一个 localStorage 键。 */
+/** 只给判据用:每个用例一份新的,读同一个视图状态条目。 */
 export function createWorkspacePanelChromeStoreForTests(): WorkspacePanelChromeStore {
   return new WorkspacePanelChromeStore();
 }

@@ -12,9 +12,11 @@ import {
 } from '../../../../apps/desktop/src/components/chat/useConversationScrollMemory'
 import { publishActiveChatWillChange } from '../../../../apps/desktop/src/store/activeChatTransition'
 import { resetAuthSessionBoundary } from '../../../../apps/desktop/src/lib/authSessionLoss'
+import { viewStateCache } from '../../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
+import { publishRendererSession } from '../../../../apps/desktop/src/lib/sessionPublication'
 
 const listRef = { current: null as import('../../../../apps/desktop/src/lib/flowList').FlowListHandle | null }
-beforeEach(() => resetAuthSessionBoundary())
+beforeEach(() => { resetAuthSessionBoundary(); publishRendererSession('SIGNED_OUT', null); viewStateCache.forget('view:'); localStorage.clear() })
 
 describe('conversation scroll memory', () => {
   it('keeps the live anchor when another React root removes the slot before the portal ref exits', async () => {
@@ -61,6 +63,47 @@ describe('conversation scroll memory', () => {
       carrier.remove(); host.remove(); vi.restoreAllMocks()
     }
   })
+  it('a viewport hidden and shown again (a topic tab pushed aside, then back) keeps the saved position', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    let memory: ReturnType<typeof useConversationScrollMemory> | null = null
+    let shown = true
+    function Harness({ enabled }: { enabled: boolean }) {
+      memory = useConversationScrollMemory({ listRef, viewportKey: 'topic-split', chatId: 'topic-1', activationKey: 'topic-1', enabled,
+        messageIds: ['older', 'anchor', 'newer'], isAtBottomRef: { current: true }, setFollowingTail: vi.fn() })
+      return createElement('div', { ref: memory.setScrollerRef, id: 'scroller' }, createElement('div', { 'data-msg-id': 'anchor' }))
+    }
+    try {
+      await act(async () => { root.render(createElement(Harness, { enabled: true })) })
+      const scroller = host.querySelector('#scroller') as HTMLElement
+      const row = scroller.firstElementChild as HTMLElement
+      // Hidden (display:none in a retained tab) = no geometry.
+      Object.defineProperties(scroller, {
+        scrollHeight: { configurable: true, get: () => shown ? 2_000 : 0 },
+        clientHeight: { configurable: true, get: () => shown ? 800 : 0 },
+        scrollTop: { configurable: true, writable: true, value: 700 },
+      })
+      vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue({ top: 100, bottom: 900 } as DOMRect)
+      vi.spyOn(row, 'getBoundingClientRect').mockReturnValue({ top: 84, bottom: 160 } as DOMRect)
+      await act(async () => { scroller.dispatchEvent(new Event('scroll')); await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))) })
+      expect(memory!.hasSavedOffBottomPosition()).toBe(true)
+      // The list re-renders (leaving the tail does) and the restore settles on it, long before anyone hides the tab.
+      await act(async () => { root.render(createElement(Harness, { enabled: true })) })
+      for (let frame = 0; frame < 6; frame++) await act(async () => { await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))) })
+      expect(memory!.isPreservingPosition(), 'settled').toBe(false)
+      shown = false
+      await act(async () => { root.render(createElement(Harness, { enabled: false })) })
+      expect(memory!.hasSavedOffBottomPosition(), 'hidden: nothing to read, nothing forgotten').toBe(true)
+      shown = true
+      await act(async () => { root.render(createElement(Harness, { enabled: true })) })
+      expect(memory!.hasSavedOffBottomPosition(), 'shown again: the position is still there to come back to').toBe(true)
+    } finally {
+      await act(async () => { root.unmount() })
+      host.remove(); vi.restoreAllMocks()
+    }
+  })
+
   it('reads bottom state from the current viewport geometry', () => {
     expect(isConversationViewportAtBottom(
       { scrollHeight: 2_000, scrollTop: 1_120, clientHeight: 800 },
@@ -188,9 +231,11 @@ describe('conversation scroll memory', () => {
       document.body.appendChild(container)
       const root = createRoot(container)
       const view = { memory: null as ReturnType<typeof useConversationScrollMemory> | null, rowTop: 84, scrollTop: 700, renders: 0 }
+      // As in the chat panel: the ref and the callback keep their identity across renders, the id array does not.
+      const isAtBottomRef = { current: true }, setFollowingTail = vi.fn()
       function Harness({ chatId, messageIds, rows }: { chatId: string; messageIds: string[]; rows: string[] }) {
         view.renders += 1
-        view.memory = useConversationScrollMemory({ listRef, viewportKey, chatId, activationKey: chatId, enabled: true, messageIds, isAtBottomRef: { current: true }, setFollowingTail: vi.fn() })
+        view.memory = useConversationScrollMemory({ listRef, viewportKey, chatId, activationKey: chatId, enabled: true, messageIds, isAtBottomRef, setFollowingTail })
         return createElement('div', { ref: view.memory.setScrollerRef },
           createElement('div', null, ...rows.map((id) => createElement('div', { key: id, 'data-msg-id': id }))))
       }
@@ -224,6 +269,39 @@ describe('conversation scroll memory', () => {
       rig.geometry()
     }
 
+    // A split opened or closed beside the conversation is not a new opening: the conversation stays (no switch), so where the
+    // reader is stays too and nothing is restored again, whether the panel re-renders or not.
+    it('a split toggled beside the same conversation keeps the reader where they are and does not restore again', async () => {
+      const rig = mount()
+      try {
+        await leaveAndReturn(rig, ['first', 'anchor', 'last'])
+        rig.view.scrollTop = 700
+        await frames(5)
+        expect(rig.view.memory!.isPreservingPosition(), 'the opening restored and completed').toBe(false)
+        rig.view.scrollTop = 1_200 // the reader moves on
+        const ids = ['first', 'anchor', 'last']
+        await rig.render({ chatId: 'chat-a', messageIds: [...ids], rows: ids }) // the split toggles: same conversation, new props
+        await frames(5)
+        expect(rig.view.scrollTop, 'not pulled back to the saved row').toBe(1_200)
+        expect(rig.view.memory!.isPreservingPosition()).toBe(false)
+      } finally {
+        await rig.cleanup()
+      }
+    })
+
+    // A7: where the conversation was read to is stored (the view-state table; this page keeps it in localStorage), so a
+    // restart starts from it — the cache hands stored entries to the first frame.
+    it('stores the position it leaves at, so a restart comes back to it', async () => {
+      const rig = mount()
+      try {
+        await leaveAndReturn(rig, ['first', 'anchor', 'last'])
+        const stored = JSON.parse(localStorage.getItem('gugu.view-state:view:/chat-a/reading:block-one') ?? 'null')
+        expect(stored?.value).toEqual({ position: { atBottom: false, messageId: 'anchor', offset: -16 } })
+      } finally {
+        await rig.cleanup()
+      }
+    })
+
     it('hands the saved row to the list as its landing, then only verifies it and completes', async () => {
       const rig = mount()
       try {
@@ -236,6 +314,34 @@ describe('conversation scroll memory', () => {
         expect(rig.view.scrollTop).toBe(700)
         expect(rig.view.memory!.isPreservingPosition()).toBe(false)
         expect(rig.view.memory!.openLocation(), '恢复完成后同一次激活里的重挂回到最新处').toEqual({ index: 'LAST', align: 'end' })
+      } finally { await rig.cleanup() }
+    })
+
+    it('completes while the panel re-renders every frame with the same rows', async () => {
+      const rig = mount()
+      try {
+        await leaveAndReturn(rig, ['first', 'anchor', 'last'])
+        rig.view.scrollTop = 700
+        // A busy panel hands over a new array of the same ids on every render.
+        for (let i = 0; i < 8; i += 1) {
+          await rig.render({ chatId: 'chat-a', messageIds: ['first', 'anchor', 'last'], rows: ['first', 'anchor', 'last'] })
+          await frames(1)
+        }
+        expect(rig.view.memory!.isPreservingPosition(), 'the restore is over').toBe(false)
+      } finally { await rig.cleanup() }
+    })
+
+    it('yields to the reader: a wheel during the restore is not undone', async () => {
+      const rig = mount()
+      try {
+        await leaveAndReturn(rig, ['first', 'anchor', 'last'])
+        rig.view.scrollTop = 700
+        const scroller = document.body.lastElementChild!.firstElementChild as HTMLElement
+        act(() => { scroller.dispatchEvent(new Event('wheel')) })
+        rig.view.scrollTop = 600
+        await frames(5)
+        expect(rig.view.scrollTop, 'the reader stays where they scrolled to').toBe(600)
+        expect(rig.view.memory!.isPreservingPosition()).toBe(false)
       } finally { await rig.cleanup() }
     })
 
@@ -303,13 +409,15 @@ describe('conversation scroll memory', () => {
       } finally { await reopened.cleanup() }
     })
 
-    it('does not replay another auth lifetime\'s saved position', async () => {
+    // Positions are kept per account (and across restarts, A7): another account signed in does not land on them.
+    it('does not replay another account\'s saved position', async () => {
       const ids = ['first', 'anchor', 'last']
+      publishRendererSession('SIGNED_IN', { user: { id: 'reader-a' } } as never)
       const original = mount()
       await original.render({ chatId: 'chat-a', messageIds: ids, rows: ids })
       original.geometry()
       await original.cleanup()
-      resetAuthSessionBoundary()
+      publishRendererSession('SIGNED_IN', { user: { id: 'reader-b' } } as never)
       const next = mount()
       try {
         await next.render({ chatId: 'chat-a', messageIds: ids, rows: ids })

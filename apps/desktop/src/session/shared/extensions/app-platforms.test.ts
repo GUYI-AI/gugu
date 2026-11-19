@@ -25,7 +25,8 @@ describe('App platform boundaries', () => {
 
   it('distinguishes phone agent features from an unavailable human capability, using every capability once', () => {
     expect(Object.keys(PHONE_CAPABILITY_SUPPORT).sort()).toEqual([...EXTENSION_CAPABILITIES].sort());
-    expect(PHONE_CAPABILITIES).toEqual(['files:read', 'files:read:all-machines', 'files:write', 'chat:relay', 'chat:read', 'agents:read', 'agents:read:all-machines', 'agents:history:all', 'agents:control', 'agents:control:all-machines']);
+    // API 49: the conversation binding's capabilities are the phone's too (phone-binding.ts).
+    expect(PHONE_CAPABILITIES).toEqual(['files:read', 'files:read:all-machines', 'files:write', 'chat:relay', 'chat:read', 'chat:unread', 'chat:files', 'chat:draft', 'chat:surface', 'chat:resources', 'chat:resources:write', 'chat:voice-notes:manage', 'chat:schedules', 'chat:schedules:control', 'assistant:status', 'assistant:open', 'assistant:rename', 'chat:work', 'chat:voice-notes:record', 'agents:read', 'agents:read:all-machines', 'agents:history:all', 'agents:control', 'agents:control:all-machines']);
     expect(appPlatformProblems({ ...manifest('1.0.0', ['phone']), permissions: { capabilities: ['agents:tools'] } })).toEqual([]);
     expect(appPlatformProblems({ ...manifest('1.0.0', ['phone']), permissions: { capabilities: ['notifications'] } })).toContain('platforms: phone does not support notifications');
     expect(appPlatformProblems({ ...manifest('1.0.0', ['desktop']), permissions: { capabilities: ['notifications'] } })).toEqual([]);

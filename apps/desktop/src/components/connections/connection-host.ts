@@ -11,13 +11,19 @@ import { rendererPlatformIntegrationsClient } from '@/lib/platformIntegrations'
 import { createConnectionRouting,connectionClientForRoute,type ConnectionRoute } from '@gugu/core/cloud/connectionRouting'
 
 const accountId = () => getRendererSession()?.user.id ?? null
+/**
+ * #1922 D8. This account's connections changed — a change made here, a route found changed here, or an outside change
+ * heard here — so this window's readers read again (both React roots, and the phone shell). Only readers listen; nothing
+ * that listens emits. Other windows and devices hear the backend's own change hint (`subscribeChanges`).
+ */
+const announce = (ownerId: string | null) => window.dispatchEvent(new CustomEvent(CONNECTIONS_CHANGED,{ detail: { ownerId } }))
 export const ownerConnectionClient = createConnectionClient(async (name,args) => {
   const { data,error,status } = await identityDb.rpc(name,args).abortSignal(AbortSignal.timeout(10_000))
   return { data,error,status }
 },accountId)
 const stores = new Map<string,ConnectionMetadataStore>()
 const routing = createConnectionRouting({ accountId,read: () => ownerConnectionClient.authority(),
-  changed: ownerId => window.dispatchEvent(new CustomEvent(CONNECTIONS_CHANGED,{ detail: { ownerId } })) })
+  changed: ownerId => announce(ownerId) })
 async function executePlatformOperation(operationId: string,route: ConnectionRoute) {
   await routing.assert(route,true)
   const owner = accountId()
@@ -52,7 +58,7 @@ const bridge: ConnectionBridge = {
         (value): value is ConnectionMetadataSnapshot => isOwnerConnectionMetadataCache(value,ownerId))
       store = createOwnerConnectionStore({ ownerId,deviceId,accountId,client: connectionClientForRoute(ownerConnectionClient,routing,route),cache,
         executePlatformOperation: id => executePlatformOperation(id,route),
-        changed: () => window.dispatchEvent(new CustomEvent(CONNECTIONS_CHANGED,{ detail: { ownerId } })),
+        reread: () => announce(ownerId),changed: () => announce(ownerId),
       })
       store = { ...store,authorityEpoch: route.epoch,assertCurrent: async () => {
         if (accountId() !== ownerId) throw new ConnectionError('account-changed','CONNECTION_ACCOUNT_CHANGED')
@@ -66,15 +72,15 @@ const bridge: ConnectionBridge = {
     const route = await routing.capture()
     if (route.mode !== 'owner') throw new ConnectionError('route-changed','CONNECTION_ROUTE_CHANGED')
     try { await executePlatformOperation(operationId,route) }
-    finally { window.dispatchEvent(new CustomEvent(CONNECTIONS_CHANGED,{ detail: { ownerId: accountId() } })) }
+    finally { announce(accountId()) }
   },
   subscribeChanges(ownerId,listener) {
     if (accountId() !== ownerId) throw new ConnectionError('account-changed','CONNECTION_ACCOUNT_CHANGED')
-    // Best-effort owner hint. Reconnect and explicit refresh repair lost hints.
+    // Outside changes only: the owner's change bus and its (re)subscription. Best effort; reconnect and explicit refresh
+    // repair lost hints. ❌ This window's own announcement: a listener re-reading (`store.invalidate()`) announces, and
+    // hearing that again here was a synchronous cycle that filled the renderer's heap (#1922 D8).
     const handle = subscribePrivateUserEventBus(ownerId,'connection_changed',listener,{ onSubscribed: listener })
-    const changed = (event: Event) => { if ((event as CustomEvent).detail?.ownerId === ownerId) listener() }
-    window.addEventListener(CONNECTIONS_CHANGED,changed)
-    return () => { window.removeEventListener(CONNECTIONS_CHANGED,changed); unsubscribePrivateUserEventBus(handle) }
+    return () => unsubscribePrivateUserEventBus(handle)
   },
 }
 

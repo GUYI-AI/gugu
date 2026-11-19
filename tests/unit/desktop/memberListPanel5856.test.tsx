@@ -22,7 +22,9 @@ import type { ContactUser } from '../../../packages/core/src/shared/types/contac
 import type { AccountRevisionListener } from '../../../apps/desktop/src/lib/accountRevisionCoordinator'
 import type { ChatContextValue } from '../../../apps/desktop/src/store/chatContext'
 import { createNode, createReactHarness, displayIdentity, renderWithAppProviders, typeInto } from '../../support/testHarness'
+import { publishRendererSession } from '../../../apps/desktop/src/lib/sessionPublication'
 import { setAgentDisplayStatusOverride, clearAgentDisplayStatusOverrides } from '../../support/agentDisplayStatusTestDouble'
+import { viewStateCache } from '../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
 
 vi.mock('../../../apps/desktop/src/lib/chat', () => ({
   chatService: {
@@ -32,7 +34,6 @@ vi.mock('../../../apps/desktop/src/lib/chat', () => ({
     getGroupChatSettings: vi.fn(),
     updateGroupChatSettings: vi.fn(),
     // @@@6418 群面板现在也读入群申请(群主/管理员);本文件不关心它,给一个空表。
-    listGroupJoinRequests: vi.fn(async () => []),
   },
   // @@@5856 「名册是空的」不是故障,是「你还不是这条话题的参与者」—— 面板按这个类型分流。
   GroupCollabEmptyError: class GroupCollabEmptyError extends Error {},
@@ -100,7 +101,11 @@ function identitiesFor(snapshot: GroupCollabSnapshot): DisplayIdentity[] {
 }
 
 let harness: ReturnType<typeof createReactHarness>
+let viewAccount = 0
 beforeEach(() => {
+  viewStateCache.forget('view:')
+  // The view-state table (search words, folds) is keyed by the signed-in account: a fresh one per case keeps cases apart.
+  publishRendererSession('SIGNED_IN', { user: { id: `view-${viewAccount++}` } } as never)
   harness = createReactHarness()
   clearAgentDisplayStatusOverrides()
   // Member controls project the authoritative management capabilities.

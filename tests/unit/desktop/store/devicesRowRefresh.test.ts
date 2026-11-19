@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
+import { notifyManager as readModelNotify } from '@tanstack/react-query'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
+import { writeCachedDevices } from '../../../../apps/desktop/src/store/devicesCache'
 import { DevicesProvider } from '../../../../apps/desktop/src/store/devices'
 import { useDevicesStore } from '../../../../apps/desktop/src/store/devicesContext'
 import { createNode, createReactHarness } from '../../../support/testHarness'
@@ -32,7 +35,9 @@ function Probe() {
 }
 
 beforeEach(() => {
+  readModelNotify.setScheduler((callback) => { callback() })
   window.localStorage.clear()
+  queryClient.clear(); followRendererSession('SIGNED_IN', 'owner')
   mocks.seen = []
   mocks.listDevices.mockReset().mockResolvedValue([device('a', 'A'), device('b', 'B')])
   mocks.listProjects.mockReset().mockResolvedValue({ a: [{ local_project_id: 'p' }] })
@@ -41,7 +46,8 @@ beforeEach(() => {
 async function mount() {
   const harness = createReactHarness()
   await harness.render(createNode(DevicesProvider, {}, createNode(Probe)))
-  await act(async () => { await Promise.resolve() })
+  // The first full read lands (the devices replica's reader is loaded on demand).
+  await vi.waitFor(() => expect(mocks.seen.at(-1)?.length).toBe(2))
   mocks.listDevices.mockClear(); mocks.listProjects.mockClear()
   return harness
 }
@@ -84,5 +90,42 @@ it('a removed device leaves the list without any read', async () => {
   expect(mocks.listDevices).not.toHaveBeenCalled()
   expect(mocks.listProjects).not.toHaveBeenCalled()
   expect(mocks.seen.at(-1)).toEqual(['b:B:0'])
+  harness.cleanup()
+})
+
+// Audit item 8: a failed project read kept the previous projects silently. Each read now records on the device row
+// whether that machine's projects were read (`projects_error`); readers mark the kept projects as stale.
+function ErrorProbe() {
+  const { devices } = useDevicesStore()
+  mocks.seen.push(devices.map((d) => `${d.device_id}:${(d.projects ?? []).length}:${d.projects_error ?? 'read'}`))
+  return null
+}
+
+it('a failed project read keeps the last projects and marks every machine unread; the next good read clears it', async () => {
+  const harness = createReactHarness()
+  await harness.render(createNode(DevicesProvider, {}, createNode(ErrorProbe)))
+  await act(async () => { await Promise.resolve() })
+  expect(mocks.seen.at(-1)?.sort()).toEqual(['a:1:read', 'b:0:read'])
+
+  // A revision for b's projects fails: b is marked, a keeps its own state, the error still reaches the cursor.
+  mocks.listProjects.mockRejectedValueOnce(new Error('permission denied for table device_projects'))
+  await act(async () => { await Promise.resolve(mocks.listener!([op({ device_id: 'b', kind: 'projects' })])).catch(() => undefined) })
+  expect(mocks.seen.at(-1)?.sort()).toEqual(['a:1:read', 'b:0:permission denied for table device_projects'])
+
+  // The retry reads b: cleared.
+  mocks.listProjects.mockResolvedValueOnce({ b: [{ local_project_id: 'q' }] })
+  await act(async () => { await mocks.listener!([op({ device_id: 'b', kind: 'projects' })]) })
+  expect(mocks.seen.at(-1)?.sort()).toEqual(['a:1:read', 'b:1:read'])
+  harness.cleanup()
+})
+
+it('a full read whose project list fails keeps each machine\'s cached projects, marked unread', async () => {
+  // The first frame is the cached list (with the projects read last time); this start's project read fails.
+  writeCachedDevices([{ ...device('a', 'A'), projects: [{ local_project_id: 'p' }] }, device('b', 'B')] as never)
+  mocks.listProjects.mockRejectedValueOnce(new Error('column folders does not exist'))
+  const harness = createReactHarness()
+  await harness.render(createNode(DevicesProvider, {}, createNode(ErrorProbe)))
+  await act(async () => { await Promise.resolve() })
+  expect(mocks.seen.at(-1)?.sort()).toEqual(['a:1:column folders does not exist', 'b:0:column folders does not exist'])
   harness.cleanup()
 })

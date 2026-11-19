@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentProvision, AgentProvisionOperation } from '@gugu/core/shared/types/agentProvision'
 
 const db = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), owner: 'owner', readError: false }))
+// The rules main answers the window with (#1931): the built-in copy here.
+vi.mock('../../../../apps/desktop/src/lib/assistantSetupRules', async () => {
+  const { NEUTRAL_ASSISTANT_RULES } = await import('../assistantRules/neutralRules')
+  return { assistantSetupRules: async () => NEUTRAL_ASSISTANT_RULES }
+})
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {} }))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ identityDb: db, getCurrentAuthUserId: async () => db.owner }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: {

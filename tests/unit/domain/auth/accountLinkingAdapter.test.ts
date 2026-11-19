@@ -18,7 +18,7 @@ vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ supabase: { auth: 
   unlinkIdentity: async () => { m.user = { ...m.user!, identities: m.user!.identities?.filter(identity => identity.provider !== 'google') }; return { error: null } },
 } } }))
 vi.mock('../../../../apps/desktop/src/lib/sessionCoordinator', () => ({ sessionCoordinator: {
-  getSnapshot: () => ({ session: m.session }), refresh: async () => {}, beginInteractiveLogin: () => 1,
+  getSnapshot: () => ({ session: m.session }), getAccessToken: () => m.session?.access_token ?? null, refresh: async () => {}, beginInteractiveLogin: () => 1,
   acceptInteractiveSession: (...args: unknown[]) => m.accept(...args), logout: () => m.logout(),
 } }))
 vi.mock('../../../../apps/desktop/src/lib/authLogout', () => ({ logoutAndRelaunch: async (onSignedOut?: () => void) => {

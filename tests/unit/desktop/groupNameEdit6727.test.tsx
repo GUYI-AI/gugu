@@ -11,7 +11,6 @@ vi.mock('../../../apps/desktop/src/lib/chat', () => ({
   chatService: {
     getGroupChatSettings: vi.fn(),
     updateGroupChatSettings: vi.fn(),
-    listGroupJoinRequests: vi.fn(async () => []),
     decideGroupJoin: vi.fn(async () => {}),
     getGroupCollab: vi.fn(async () => ({ snapshot: { humans: [], agents: [] }, identities: [] })),
     uploadGroupAvatar: vi.fn(),
@@ -63,7 +62,6 @@ async function renderSettings(viewerId: string) {
     currentUserId: viewerId,
     onReload: vi.fn(async () => {}),
     onClose: vi.fn(),
-    onOpenSearch: vi.fn(),
     onSetNotificationLevel: vi.fn(async () => {}),
     onTogglePinned: vi.fn(async () => {}),
     onClearMessages: vi.fn(async () => {}),

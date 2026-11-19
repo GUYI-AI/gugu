@@ -6,35 +6,45 @@
          page (incl. the chat message area), which users can't recover from. Disable it so pinch never
          shrinks the message list. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <link rel="icon" href="/assets/app/gugu-icon-512.png" />
+    <link rel="icon" href="/assets/app/gugu-icon-small.png" />
     <title>咕咕</title>
     <style>
       html, body { margin: 0; }
-      [data-gugu-boot] { position: fixed; inset: 0; z-index: 100; display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; overflow: hidden; pointer-events: none; background: #fff; color: #1a1c1f; }
-      [data-theme="dark"] [data-gugu-boot] { background: #181818; color: #f0f0f2; }
+      [data-gugu-boot] { position: fixed; inset: 0; z-index: 100; display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; overflow: hidden; pointer-events: none; background: #fff; color: #0a0a0a; }
+      [data-theme="dark"] [data-gugu-boot] { background: #0f0f0f; color: #f0f0f2; }
       [data-gugu-boot] > svg { position: absolute; width: min(355.2px, calc(100vw - 48px)); height: auto; }
       [data-gugu-boot] [data-startup-poster-settled] { display: none; }
       [data-gugu-boot] > iframe { width: 640px; max-width: none; height: 100vh; border: 0; transform: scale(.6); opacity: 0; }
+      [data-startup-slogan] { position: absolute; inset-inline: 24px; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); margin: 0; color: var(--muted-fg, #68696b); font-family: var(--font-family-system, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif); font-size: 12px; line-height: 18px; text-align: center; text-wrap: balance; }
+      [data-theme="dark"] [data-startup-slogan] { color: var(--muted-fg, #a1a1a1); }
       @media (prefers-reduced-motion: reduce) {
         [data-gugu-boot] [data-startup-poster-enter] { display: none; }
         [data-gugu-boot] [data-startup-poster-settled] { display: inline; }
       }
     </style>
-    <!-- @@@5293 首帧之前把偏好解析成真值,避免闪一下再改。规则必须与
-         `src/session/renderer/lib/theme/host-theme.ts` 里那份逐字一致:
-         存的是**偏好**(light / dark / system),明暗真值仍是 light / dark;
-         旧 plain-white 按浅色处理,data-theme-preference 同步归一。
-         认不出来的值退回浅色(@@@1424 的默认),❌ 不猜、也❌ 不在这里跟随系统——
-         「跟随系统」只有在用户显式选了 system 时才成立。 -->
+    <!-- @@@5293 首帧之前把偏好解析成真值,避免闪一下再改。偏好从这个壳自己的那一份读(@@@device-preferences,
+         shared/device-preferences.ts):桌面 = preload 交来的主进程首帧答复(guguFirstFrame;主进程没答上来就是出厂值),
+         web / 手机 = localStorage。❌ 桌面读不到再去读 localStorage。规则与 `host-theme.ts` 逐字一致:
+         存的是**偏好**(light / dark / system),明暗真值仍是 light / dark;旧 plain-white 按浅色处理。
+         认不出来的值退回浅色(@@@1424 的默认),❌ 不猜 —— 「跟随系统」只有在用户显式选了 system 时才成立。
+         侧栏渐进底色(@@@sidebar-tint)同理:开着时首帧之前就落上属性,否则会先闪一下未染色的侧栏;
+         只有存下来的字面量是 'true' 才算开。 -->
     <script>
       (function() {
-        var pref = localStorage.getItem('app-theme');
+        var desktop = window.guguFirstFrame;
+        var stored = desktop ? null : localStorage;
+        var prefs = desktop ? desktop.devicePreferences : null;
+        var pref = prefs ? prefs.theme : stored ? stored.getItem('app-theme') : 'light';
+        if (pref === 'plain-white') pref = 'light';
         if (pref !== 'light' && pref !== 'dark' && pref !== 'system') pref = 'light';
         var resolved = pref === 'system'
           ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
           : pref;
         document.documentElement.setAttribute('data-theme', resolved);
         document.documentElement.setAttribute('data-theme-preference', pref);
+        if (prefs ? prefs.sidebarTint : stored && stored.getItem('gugu.sidebar-tint') === 'true') {
+          document.documentElement.setAttribute('data-sidebar-tint', 'on');
+        }
       })();
     </script>
     <!-- @@@theme-pack-slots 资源库「主题」选过的配色:首帧之前插上,❌ 先闪咕咕默认色再换。
@@ -48,16 +58,6 @@
         style.id = 'gugu-theme-pack';
         style.textContent = css;
         document.head.appendChild(style);
-      })();
-    </script>
-    <!-- @@@sidebar-tint 同理:侧栏渐进底色开着时,首帧之前就要落上属性,否则会先闪一下
-         未染色的侧栏。规则必须与 `src/lib/sidebarTint.ts` 逐字一致:只有存下来的字面量是
-         'true' 才算开,其余(缺失/旧值/被改过)一律算关。 -->
-    <script>
-      (function() {
-        if (localStorage.getItem('gugu.sidebar-tint') === 'true') {
-          document.documentElement.setAttribute('data-sidebar-tint', 'on');
-        }
       })();
     </script>
   </head>

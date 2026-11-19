@@ -1,9 +1,13 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { Check, ChevronDown, Ellipsis, Eraser, Pencil, Plus, Trash2, X } from '@/lib/icons'
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import { Unknown } from '@/components/ui/Unknown';
+import { replica, useReplica } from '@/lib/replica';
+import type { AppSettings } from '@shared/core/app-settings';
 import { browserControlsRegistry } from '@renderer/features/browser/browser-controls-registry';
 import { browserSessionStore } from '@renderer/features/browser/browser-session-store';
-import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
+import { useAppSettingsKey, type AppSettingsKeyApi } from '@renderer/features/settings/use-app-settings-key';
+import { SettingValue } from './SettingControls';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { rpc } from '@renderer/lib/ipc';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
@@ -30,7 +34,6 @@ import { PRODUCT_NAME } from '@shared/app-identity';
 import {
   BROWSER_ISOLATED_PROFILE_ID,
   DEFAULT_BROWSER_PROFILE_ID,
-  DEFAULT_BROWSER_PROFILES,
   browserProfileLabel,
   isNamedBrowserProfileId,
   normalizeBrowserProfileSelection,
@@ -42,13 +45,17 @@ import { SettingsGroup, SettingsRow } from '@/components/settings/SettingsPrimit
 type Translate = ReturnType<typeof useSessionMessages>['translate'];
 
 export function BrowserSettingsCard() {
-  const {
-    value: browserSettings,
-    update,
-    updateAsync,
-    isLoading,
-    isSaving,
-  } = useAppSettingsKey('browser');
+  const api = useAppSettingsKey('browser');
+  return (
+    <SettingValue reading={api.settings} placeholder="h-64 w-full" onReadAgain={() => void api.refresh()}
+      errorText={api.settings.state === 'error' ? messageForUser(api.settings.error) : undefined}>
+      {({ value }) => <BrowserSettingsForm browserSettings={value} api={api} />}
+    </SettingValue>
+  );
+}
+
+function BrowserSettingsForm({ browserSettings, api }: { browserSettings: AppSettings['browser']; api: AppSettingsKeyApi<'browser'> }) {
+  const { update, updateAsync, isSaving } = api;
   const showConfirm = useShowModal('confirmActionModal');
   const { translate } = useSessionMessages();
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
@@ -58,12 +65,12 @@ export function BrowserSettingsCard() {
   const addInputRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
-  const profiles = browserSettings?.profiles ?? DEFAULT_BROWSER_PROFILES;
+  const profiles = browserSettings.profiles;
   const selectedDefault = normalizeBrowserProfileSelection(
-    browserSettings?.defaultProfileId,
+    browserSettings.defaultProfileId,
     profiles
   );
-  const disabled = isLoading || isSaving;
+  const disabled = isSaving;
   const browsingDataCategories = browsingDataCategoryList(translate);
 
   const addProfile = (name: string) => {
@@ -171,7 +178,7 @@ export function BrowserSettingsCard() {
             disabled={disabled}
           >
             <SelectTrigger className="w-[190px] shrink-0 gap-2">
-              <SelectValue>{browserProfileLabel(selectedDefault, profiles)}</SelectValue>
+              <SelectValue>{browserProfileLabel(selectedDefault, profiles, translate('browserSettings.isolatedPerTask'))}</SelectValue>
             </SelectTrigger>
             <SelectContent align="end">
               {/* @@@raw profile name — 浏览器配置名是用户数据,原样显示。 */}
@@ -190,7 +197,7 @@ export function BrowserSettingsCard() {
 
       <ImportLoginsRow
         profileId={isNamedBrowserProfileId(selectedDefault) ? selectedDefault : null}
-        profileName={browserProfileLabel(selectedDefault, profiles)}
+        profileName={browserProfileLabel(selectedDefault, profiles, translate('browserSettings.isolatedPerTask'))}
         disabled={disabled}
       />
 
@@ -495,6 +502,14 @@ function browsingDataConfirmation(
  * #7191「从默认浏览器导入登录」:一个按钮、一次全量(owner 2026-10-15「懒人式,一次性导入」,❌ 列站点让人勾)。
  * 导进**默认配置**;要登另一个账号就把默认配置换成另一份再导一次。导完刷新开着的页签,登录态立刻生效。
  */
+/** This device's default browser and whether its logins can be imported. */
+const defaultBrowser = replica({
+  name: 'defaultBrowser',
+  scope: 'device',
+  read: () => rpc.browser.defaultBrowser() as Promise<{ name: string; supported: boolean }>,
+  persist: { maxBytes: 512, maxEntries: 1 },
+});
+
 function ImportLoginsRow({
   profileId,
   profileName,
@@ -506,20 +521,13 @@ function ImportLoginsRow({
   disabled: boolean;
 }) {
   const { translate } = useSessionMessages();
-  const [browser, setBrowser] = useState<{ name: string; supported: boolean } | null>(null);
+  const reading = useReplica(defaultBrowser, []);
   const [importing, setImporting] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    void rpc.browser.defaultBrowser().then((found) => {
-      if (!cancelled) setBrowser(found);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const name = browser?.name || translate('browserSettings.importLoginsUnknownBrowser');
+  if (reading.state !== 'value') {
+    return <SettingsRow title={translate('browserSettings.importLogins')} control={<Unknown className="h-8 w-32" />} />;
+  }
+  const browser = reading.value;
+  const name = browser.name || translate('browserSettings.importLoginsUnknownBrowser');
   const runImport = async () => {
     if (!profileId) return;
     setImporting(true);
@@ -551,14 +559,14 @@ function ImportLoginsRow({
     }
   };
 
-  const unavailable = !browser || !browser.supported || !profileId;
+  const unavailable = !browser.supported || !profileId;
   return (
     <SettingsRow
       title={translate('browserSettings.importLogins')}
       description={
         !profileId
           ? translate('browserSettings.importLoginsNeedsProfile')
-          : browser && !browser.supported
+          : !browser.supported
             ? translate(browser.name ? 'browserSettings.importLoginsUnsupported' : 'browserSettings.importLoginsNoBrowser', { browser: browser.name })
             : translate('browserSettings.importLoginsDescription', { browser: name, profile: profileName })
       }

@@ -3,19 +3,19 @@ import { Menu, MenuItem } from '@/components/ui/Menu';
 import { useRowContextMenu } from '@/hooks/useRowContextMenu';
 import { Trash } from '@/lib/icons';
 import { dismissSampleProject } from '@/lib/sampleProject';
+import { confirmDanger } from '@/lib/confirmDanger';
 import { messageForUser } from '@/lib/userFacingError';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
-/** Same row gesture as ordinary projects; removing bundled content only saves its account key. */
-export function SampleProjectRowMenu({ userId, children }: { userId: string; children: ReactNode }) {
+/** Removing bundled content only saves its account key; a failed save says so and keeps the sample. */
+function useRemoveSampleProject(userId: string): { busy: boolean; remove: () => Promise<void> } {
   const { translate } = useSessionMessages();
-  const menu = useRowContextMenu();
-  const row = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
   const remove = async () => {
-    menu.closeMenu();
     if (busy) return;
+    const title = translate('projects.sample.remove');
+    if (!(await confirmDanger({ title, description: translate('projects.sample.removeConfirm'), confirmLabel: title }))) return;
     setBusy(true);
     try {
       await dismissSampleProject(userId);
@@ -25,12 +25,31 @@ export function SampleProjectRowMenu({ userId, children }: { userId: string; chi
       setBusy(false);
     }
   };
+  return { busy, remove };
+}
+
+/** The sample's one menu item: remove it. */
+function SampleProjectRemoveItem({ busy, onRemove }: { busy: boolean; onRemove: () => void }) {
+  const { translate } = useSessionMessages();
+  return (
+    <MenuItem icon={<Trash size={15} aria-hidden />} danger disabled={busy} onClick={onRemove}>
+      {translate('projects.sample.remove')}
+    </MenuItem>
+  );
+}
+
+/** Same row gesture as ordinary projects. */
+export function SampleProjectRowMenu({ userId, children }: { userId: string; children: ReactNode }) {
+  const menu = useRowContextMenu();
+  const row = useRef<HTMLDivElement>(null);
+  const { busy, remove } = useRemoveSampleProject(userId);
   return <div ref={row} onContextMenu={menu.onContextMenu} aria-busy={busy || undefined}>
     {children}
     {menu.menuPos && <Menu anchor={row} onClose={menu.closeMenu}>
-      <MenuItem icon={<Trash size={15} aria-hidden />} danger disabled={busy} onClick={() => void remove()}>
-        {translate('projects.sample.remove')}
-      </MenuItem>
+      <SampleProjectRemoveItem busy={busy} onRemove={() => {
+        menu.closeMenu();
+        void remove();
+      }} />
     </Menu>}
   </div>;
 }

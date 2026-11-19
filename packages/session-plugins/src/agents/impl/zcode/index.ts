@@ -60,13 +60,15 @@ export const plugin = definePlugin(
   {
     id: 'zcode',
     name: 'ZCode',
+    publisher: '智谱',
     description: 'Zhipu ZCode coding agent, driven through its own app-server protocol by an ACP bridge.',
     websiteUrl: 'https://zcode.z.ai',
   },
   {
     sessionBundle: zcodeSessionBundleDescriptor,
+    // 「API Key 连接」(#2507):一把 key 怎么进这一家的进程,见 ./api-key-connection.ts。
     /**
-     * 思考档 = 桥报的 configOption `thought`(category `thought_level`)的取值,逐字:low / high / max
+     * 思考档 =桥报的 configOption `thought`(category `thought_level`)的取值,逐字:low / high / max
      * (`session/new` 实测;GLM-5.3 的推理档就是这三档,不能关)。
      */
     effort: {

@@ -8,7 +8,6 @@ import {
   sessionStateSchema,
   terminalStateSchema,
   transcriptTurnSchema,
-  type AttachmentRef,
   type AcpRuntimeError,
   type HistoryPage,
   type PromptDraftUpdate,
@@ -151,9 +150,21 @@ export class AcpLiveSession {
     return session;
   }
 
-  /** `changedSince`:只要这个改动游标之后新增或改过的回合(@@@history-change-cursor),忽略 before / limit。 */
-  getHistory(before?: number, limit = 50, changedSince?: HistoryCursor): Promise<Result<HistoryPage, unknown>> {
-    return this.client.getHistory({ sessionId: this.sessionId, before, limit, ...(changedSince === undefined ? {} : { changedSince }) });
+  /**
+   * `changedSince`:只要这个改动游标之后新增或改过的回合(@@@history-change-cursor),忽略 before / limit。
+   * `contentFrom`:那之前的改动轮只要身份(读者自己回库里重读,#2493)。
+   */
+  getHistory(before?: number, limit = 50, changedSince?: HistoryCursor, contentFrom?: number): Promise<Result<HistoryPage, unknown>> {
+    return this.client.getHistory({
+      sessionId: this.sessionId, before, limit,
+      ...(changedSince === undefined ? {} : { changedSince }),
+      ...(changedSince === undefined || contentFrom === undefined ? {} : { contentFrom }),
+    });
+  }
+
+  /** 这条会话所在的那条线此刻通着就当场 resolve,断着就等它重连上。 */
+  whenConnected(signal: AbortSignal): Promise<number> {
+    return this.client.connection.whenConnected(signal);
   }
 
   getToolImage(itemId: string, index: number) {
@@ -166,21 +177,6 @@ export class AcpLiveSession {
 
   exportRawAcpLog(): Promise<Result<string, unknown>> {
     return this.client.exportRawAcpLog({ sessionId: this.sessionId });
-  }
-
-  downloadAttachment(
-    id: string
-  ): Promise<Result<{ ref: AttachmentRef; data: Uint8Array }, unknown>> {
-    return this.client.downloadAttachment({ id }).then(async (result) => {
-      if (!result.success) return result;
-      return {
-        success: true,
-        data: {
-          ref: result.data.meta,
-          data: await result.data.bytes(),
-        },
-      };
-    });
   }
 
   revertSession(anchor: string) {
@@ -216,7 +212,7 @@ export class AcpLiveSession {
     return this.client.setPromptDraft({ sessionId: this.sessionId, draft });
   }
 
-  setModelOption(dimension: 'model' | 'effort', value: string): Promise<Result<LiveSettingResult, unknown>> {
+  setModelOption(dimension: 'model' | 'effort' | 'fast', value: string): Promise<Result<LiveSettingResult, unknown>> {
     return this.client.setModelOption({ sessionId: this.sessionId, dimension, value });
   }
 

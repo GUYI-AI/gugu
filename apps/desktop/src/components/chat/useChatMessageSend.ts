@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useRef, useState, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
-import { inferAttachmentKind } from '@gugu/core/shared/ui/attachmentModels'
 import { buildRosterNameIndex, resolveOpeningAgentCall } from '@gugu/core/shared/rosterNameMatching.mjs'
 import { firstMentionedUserId, resolveMentionUserIds, type MentionCandidate } from '@/lib/mention'
 import { rememberGroupMention } from '@/lib/groupMentionRecall'
@@ -33,7 +32,6 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
     const submittedAt = performance.now()
     const typed = (value ?? text).trim()
     const pendingFiles = attachments.map((a) => a.file)
-    const multimodalImage = pendingFiles.some((file) => inferAttachmentKind(file) === 'image')
     if (disabled) {
       toast(disabledReason || t('composer.disabled'), 'info')
       return
@@ -82,10 +80,11 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
 
     // Snapshot current attachments so we can roll back on failure
     const snapshotAttachments = attachments
-    // 按批内序号认领已提交件(同一个 File 对象可能被排进队两次,按对象认领会把两件都算成已发)。
-    const committed = new Set<number>()
-    // 带引用回复时文字单独走 onSend(它带 replyToMessageId),不挂成图片说明——否则引用关系丢失。
-    const captionOnImage = multimodalImage && !replyToMessageId
+    // Once the files are rows in the conversation they belong to those rows (uploading, failing, resending there):
+    // a later failure in this send never puts them back in the composer.
+    let filesOwned = false
+    // #2581 文字和文件是一次发出的一条:文字挂在最后一个文件上(什么类型都一样),带引用回复时引用也跟着文件走。
+    const captionOnFiles = pendingFiles.length > 0 && !!onSendAttachments
     sendingRef.current = true
     setSending(true)
     try {
@@ -98,10 +97,11 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       scheduleComposerFocus('message-sent', { target: () => inputRef.current, mobileShell: mobile })
       if (pendingFiles.length > 0 && onSendAttachments) await beforeSend?.()
 
-      if (pendingFiles.length > 0 && onSendAttachments) {
-        await onSendAttachments(pendingFiles, { toUserIds: sendOptions.toUserIds, replyToMessageId: !typed && replyToMessageId ? replyToMessageId : undefined, isWhisper: !!whisperTarget, caption: captionOnImage ? content || undefined : undefined, onSent: (_file, index) => { committed.add(index) } })
-      }
-      if (typed && (!captionOnImage || !onSendAttachments)) {
+      // Resolves once the files are on screen; their bytes upload after the composer is free again. The text goes with them.
+      if (captionOnFiles && onSendAttachments) {
+        await onSendAttachments(pendingFiles, { toUserIds: sendOptions.toUserIds, replyToMessageId: replyToMessageId ?? undefined, isWhisper: !!whisperTarget, caption: content || undefined })
+        filesOwned = true
+      } else if (typed) {
         await onSend(content, { ...sendOptions, clientMessageId: submission.id, beforeDeliver: beforeSend, submittedAt })
       }
       if (attempt.succeeded() && submissions.current.get(scope) === submission) submissions.current.delete(scope)
@@ -117,10 +117,9 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       const unchanged = draft.revisionOf(chatId ?? null) === clearedRevision
       const reason = String((err as Error)?.message ?? err)
       rendererLogger('chat/send').error({ chatId, error: reason }, 'message send failed')
-      // Rollback restores only UNSENT intent. @@@2188 - the send is phased (attachments commit one by
-      // one, reported via onSent; text last): units already in the conversation must NOT return to the
-      // draft, or a retry re-sends them (duplicate attachment). The uncommitted remainder stays recoverable.
-      const unsentAttachments = snapshotAttachments.filter((_a, index) => !committed.has(index))
+      // Rollback restores only UNSENT intent. @@@2188 - units already in the conversation must NOT return to the
+      // draft, or a retry re-sends them (duplicate attachment). Files become rows all together or not at all.
+      const unsentAttachments = filesOwned ? [] : snapshotAttachments
       // @@@draft-attachment (#1872) - restore WITHOUT contaminating the wrong chat: send is async, so the
       // user may have switched away mid-flight (composer stays mounted, chatId differs). Restore into the
       // LIVE composer only when still on the sending chat; otherwise re-persist into the ORIGINAL chat's

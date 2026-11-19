@@ -117,7 +117,7 @@ export function plainTextDoc(text: string, resolve?: ContextMentionProvider['res
   const normalized = text.replace(/\r\n/g, '\n');
   const lines = normalized.length > 0 ? normalized.split('\n') : [''];
   let offset = 0;
-  const references = resolve ? markdownMentionReferences(normalized) : [];
+  const references = markdownMentionReferences(normalized);
   return {
     type: 'doc',
     content: lines.map((line) => {
@@ -125,7 +125,8 @@ export function plainTextDoc(text: string, resolve?: ContextMentionProvider['res
       let cursor = 0;
       for (const ref of references) {
         if (ref.start < offset || ref.end > offset + line.length) continue;
-        const item = resolve?.(ref.target, ref.label);
+        const item = resolve?.(ref.target, ref.label) ?? (/^(?:\/|[A-Za-z]:[\\/]).*[\\/]SKILL\.md$/.test(ref.target)
+          ? { id: ref.target, label: ref.target, name: ref.label, kind: 'file' as const } : null);
         if (!item) continue;
         if (ref.start > offset + cursor) content.push({ type: 'text', text: line.slice(cursor, ref.start - offset) });
         // Restoring enriches presentation, while preserving the serialized bracket label.

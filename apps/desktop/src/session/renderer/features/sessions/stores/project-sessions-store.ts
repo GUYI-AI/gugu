@@ -1,4 +1,5 @@
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
+import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { makeObservable, observable, reaction, runInAction, toJS } from 'mobx';
 import { toast } from 'sonner';
 import { match } from 'ts-pattern';
@@ -17,7 +18,7 @@ import {
   sessionChangedChannel,
   sessionCreatedChannel,
 } from '@shared/core/sessions/sessionEvents';
-import type { Session } from '@shared/core/sessions/sessions';
+import { sessionBornInChatId, type Session } from '@shared/core/sessions/sessions';
 import { firstUtteranceOf, initialAgentStatus } from '@shared/core/sessions/initial-agent-status';
 import { gitWorktreeUpdateChannel } from '@shared/core/git/events';
 import { prSyncProgressChannel, prUpdatedChannel } from '@shared/core/pull-requests/prEvents';
@@ -49,7 +50,7 @@ import { terminalRegistry } from './terminal-registry';
 import { workspaceRegistry } from './workspace-registry';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { rendererLogger } from '../../../../../lib/log';
-import { queryClient } from '@renderer/lib/query-client';
+import { queryClient } from '@/lib/replica';
 import { AGENTS_METADATA_QUERY_KEY } from '@renderer/lib/stores/use-agents';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { rememberTask } from '@renderer/features/command-palette/recent-tasks';
@@ -105,17 +106,9 @@ export function provisionWorkspaceFailure(error: ProvisionWorkspaceError): Sessi
 
 const sessionLog = rendererLogger('session-manager');
 
-/**
- * provision 时要恢复的视图状态:聚合快照 `session:<id>` 与页签布局 `session:<id>:tabs` 都经主进程取(#6799)。
- * 挂起时两个键都从渲染侧缓存里清掉了,而 paneLayout.hydrate 只同步读缓存 —— 只取聚合键,同一场里
- * 再打开的会话(闲置回收后)页签就没人读。
- */
-async function loadSavedSessionView(sessionId: string): Promise<SessionViewSnapshot | undefined> {
-  const [snapshot] = await Promise.all([
-    viewStateCache.get(`session:${sessionId}`),
-    viewStateCache.get(`session:${sessionId}:tabs`),
-  ]);
-  return snapshot as SessionViewSnapshot | undefined;
+/** provision 时要恢复的视图状态(聚合快照 `session:<id>`);页签布局 `session:<id>:tabs` 由 paneLayout.hydrate 同步读同一份缓存。 */
+function loadSavedSessionView(sessionId: string): SessionViewSnapshot | undefined {
+  return viewStateCache.read(`session:${sessionId}`) as SessionViewSnapshot | undefined;
 }
 
 function formatErrorMessage(error: unknown): string {
@@ -348,7 +341,7 @@ export class ProjectSessionsStore {
     return this._loadPromise;
   }
 
-  async createSession(params: CreateSessionParams, options?: { deferFirstTurn?: boolean; onOptimistic?: () => void }) {
+  async createSession(params: CreateSessionParams, options?: { placingFiles?: boolean; onOptimistic?: () => void }) {
     const ic = params.sessionConfig.initialSession;
     if (!ic) throw new Error('createSession: a session is created together with its initial agent config');
     const id = ic.id;
@@ -367,12 +360,17 @@ export class ProjectSessionsStore {
       title: ic.title ?? '',
       lastInteractedAt: new Date().toISOString(),
       ...(ic.permissionMode !== undefined && { permissionMode: ic.permissionMode }),
-      model: ic.model,
+      model: runtimeModelId(ic.model),
+      customModel: customModelRefFromOption(ic.model) ?? undefined,
       effort: ic.effort,
       initialQueue: ic.initialQueue,
       startupOrigin: ic.startupOrigin,
       initialMessageId: ic.initialMessageId,
       taskChatId: ic.taskChatId,
+      // #2599 where this agent lives, by the row's own rule: this object stays the session's data after the host's
+      // `session:created` arrives (acceptCreatedSession keeps the one it holds), so leaving it out would show a just-created
+      // agent nowhere until the next restart.
+      bornInChatId: sessionBornInChatId({ birthChatId: params.birthGroup?.chatId, taskChatId: ic.taskChatId }),
       // spec session-resume：创建 = 带着第一句话开一件活，那句话此刻就在手上。漏掉它，面板会在
       // 首轮落进 transcript 之前把这条会话读成「空白会话」，于是「今天我们做点什么？」这块占位页
       // 闪一下再消失，输入框也跟着从「随心输入」切成「要求后续变更」—— 一次纯粹的假状态。
@@ -402,10 +400,10 @@ export class ProjectSessionsStore {
     }
   }
 
-  private async _completeCreateSession(params: CreateSessionParams, optimistic: Session, options?: { deferFirstTurn?: boolean }) {
+  private async _completeCreateSession(params: CreateSessionParams, optimistic: Session, options?: { placingFiles?: boolean }) {
     const id = optimistic.id;
     const outcome = await rpc.sessionCreate
-      .createAndProvisionSession(JSON.parse(JSON.stringify(toJS(params))) as typeof params, options?.deferFirstTurn ? { deferFirstTurn: true } : undefined)
+      .createAndProvisionSession(JSON.parse(JSON.stringify(toJS(params))) as typeof params, options?.placingFiles ? { placingFiles: true } : undefined)
       .catch((e: unknown) => {
         // 抛出来的是未知错误：原文逐字存进 store，渲染时原样呈现、永不翻译。
         const message = e instanceof Error ? e.message : String(e);
@@ -458,13 +456,13 @@ export class ProjectSessionsStore {
     this._settingsStore.pageData.invalidate();
 
     // The host already prepared the workspace in the same call; its answer goes through the one provision path.
-    await this._doProvision(id, options, async () => {
+    await this._doProvision(id, async () => {
       if (outcome.stage === 'provision-error') throw new Error(outcome.message);
       return outcome.result;
     });
   }
 
-  async provisionSession(sessionId: string, options?: { deferFirstTurn?: boolean }): Promise<void> {
+  async provisionSession(sessionId: string): Promise<void> {
     // An open of a task still being created or prepared joins that one host operation before any device read.
     const inFlight = this._provisionPromises.get(sessionId);
     if (inFlight) return inFlight;
@@ -484,7 +482,7 @@ export class ProjectSessionsStore {
       session.phase = 'provision';
     });
 
-    const promise = this._doProvision(sessionId, options).finally(() => {
+    const promise = this._doProvision(sessionId).finally(() => {
       this._provisionPromises.delete(sessionId);
     });
 
@@ -492,8 +490,8 @@ export class ProjectSessionsStore {
     return promise;
   }
 
-  private async _doProvision(sessionId: string, options?: { deferFirstTurn?: boolean },
-    provision = () => rpc.sessionCreate.provisionWorkspace(sessionId, options)): Promise<void> {
+  private async _doProvision(sessionId: string,
+    provision = () => rpc.sessionCreate.provisionWorkspace(sessionId)): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session || !isUnprovisioned(session)) return;
 
@@ -547,7 +545,7 @@ export class ProjectSessionsStore {
     path: string,
     workspaceId: string
   ): Promise<void> {
-    const savedSnapshot = await loadSavedSessionView(sessionId);
+    const savedSnapshot = loadSavedSessionView(sessionId);
     runInAction(() => {
       const current = this.sessions.get(sessionId);
       if (current && isUnprovisioned(current)) {

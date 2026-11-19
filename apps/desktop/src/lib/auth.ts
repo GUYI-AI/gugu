@@ -1,7 +1,7 @@
 import { dbPayload } from '@gugu/core/cloud/supabase'
 import type { Session, User } from '@supabase/supabase-js'
 import { dataClient, identityDb, supabase } from './supabase'
-import { clearPendingReferrer, consumePendingReferrer } from './referral'
+import { consumePendingReferrer } from './referral'
 import { userVisibleAuthError } from './authErrors'
 import { rendererLogger } from './log'
 import { i18n } from '@/i18n'
@@ -100,7 +100,6 @@ export const authService = {
     try {
       const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' })
       if (error) return { success: false, error: userVisibleAuthError(error) }
-      clearPendingReferrer()  // @@@1511 登录/注册成功,清掉已用的邀请码(防误带给后续本机登录者)。
       if (!data.session) return { success: false, error: i18n.t('auth.verifyFailed', { ns: 'main' }) }
       return { success: true, userId: data.user?.id, session: data.session }
     } catch (error) {

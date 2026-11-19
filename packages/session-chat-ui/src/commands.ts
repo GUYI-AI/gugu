@@ -7,8 +7,16 @@
  */
 
 import type { TimelineWindowFields } from '@gugu/session-core/session-record/contract';
+import type { SessionPatch } from '@gugu/session-core/acp';
 import type { ViewportProtection } from './core/viewport-protection';
 import type { ChatAttachment, ChatMessage, OpenedOutput } from './model';
+
+/** Recorded patch operations for one file on one completed turn's Edited card. */
+export type RecordedFileChange = {
+  turnId: string;
+  path: string;
+  patches: readonly SessionPatch[];
+};
 
 export type ChatViewCommandId = 'chat.scrollToTop' | 'chat.scrollToBottom';
 
@@ -102,6 +110,7 @@ export type ChatCommands = {
     /** The place in it a prose link names (`path#k=v&…`, `#L10`), as a group file's pill carries it (`classifyLink`). */
     at?: Record<string, string>;
   }) => void;
+  onOpenFileChange?: (change: RecordedFileChange) => void;
 
   /**
    * Called when the user clicks an attachment inside a user message bubble ——
@@ -139,6 +148,13 @@ export type ChatCommands = {
 
   /** Fetch one tool picture from its original history source when its thumbnail is shown. */
   resolveToolImage?: (itemId: string, index: number) => Promise<string | null>;
+  /**
+   * A row has come on screen from behind a fold (an opened process, an opened exchange), or is drawn from an item
+   * its page held back (`held`). A host whose pages carry turns as their folded form reads that row's turn again,
+   * whole, and puts it in place; the row shows what it has until then. `itemId` is the row's; it starts with its
+   * turn's id.
+   */
+  onHeldShown?: (itemId: string) => void;
 
   /**
    * Called when the user clicks the stop button on the current user message
@@ -200,6 +216,11 @@ export type ChatCommands = {
    */
   onContinueTurn?: (arg: { itemId: string; source: 'turn-outcome' }) => void;
 
+  /** Explicit native-phone retry starts one new attempt and preserves the old
+   * ledger. This is not provider rewind or retry of an unaccepted message. */
+  onRetryPhoneTask?: (arg: { itemId: string; jobId: string }) => Promise<boolean>;
+  canRetryPhoneTask?: (jobId: string) => boolean;
+
   /** The person pressed 「丢弃」 on a stopped turn; the view hides it either way, the host may have more to take back. */
   onDiscardTurn?: (arg: { turnId: string }) => void;
   /** False: this stopped turn offers no 「丢弃」. Absent: it does. */
@@ -251,7 +272,7 @@ export type ChatCommands = {
    * 默认是打开在侧边栏」)。不接 = 没有这枚下拉。
    */
   outputOpenMode?: (output: OpenedOutput) => string | null;
-  onOutputMenu?: (arg: { output: OpenedOutput; itemId: string; anchor: HTMLElement }) => void;
+  onOutputMenu?: (arg: { output: OpenedOutput; itemId: string; anchor: HTMLElement; fromFileChange?: boolean }) => void;
 
   /**
    * Called when the user clicks a Mermaid diagram block preview.

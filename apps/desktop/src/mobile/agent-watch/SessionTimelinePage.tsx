@@ -1,3 +1,9 @@
+import { PhoneSessionSidebarControls } from '../chat/PhoneSessionSidebarControls'
+import { usePhoneSessionSidebar } from '../chat/usePhoneSessionSidebar'
+import { PhoneTaskBrowser, PHONE_TASK_BROWSER } from './PhoneTaskBrowser'
+import { PhoneLiveWindowConversation, PhoneLiveWindowSurface } from './PhoneLiveWindowConversation'
+import { PhoneLiveWindowTitle } from './PhoneLiveWindowTitle'
+import { useChatSummaries } from '@/lib/chatSummariesBridge'
 import type { FirstPrompt } from './use-timeline-session'
 import { observer } from 'mobx-react-lite'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
@@ -6,14 +12,14 @@ import { boundedWindowReady } from './desktop-window-history'
 import { useSessionHistorySource } from './use-session-history-source'
 import { useSessionRestart } from './useSessionRestart'
 import { useTimelineFailureNotice } from './useTimelineFailureNotice'
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { showPhoneAppView } from '@/components/appSlot/phoneAppState'
 import { reaction } from 'mobx'
 import { useTranslation } from 'react-i18next'
 import { PhoneTaskSkills } from '../local-agent/PhoneTaskSkillsButton'
 import type { Device } from '@gugu/core/shared/types/chat'
 import { isAgentHostDevice, isPhoneDevice } from '@gugu/core/cloud/devices'
-import { remoteFailureKind, type SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
+import { remoteFailureKind, type SessionpageSessionSummary, type TurnFileRef } from '@gugu/session-core/session-record/contract'
 import { AgentFailureSlot } from '@/components/AgentFailureSlot'
 import { Button } from '@/components/ui/Button'
 import { useBackLayer } from '@/components/ui/sheetStack'
@@ -21,6 +27,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { RefreshCw } from '@/lib/icons'
 import { AgentWatchScreen } from './AgentWatchChrome'
 import { SessionConversation } from './SessionConversation'
+import { offerSessionSend } from '@renderer/features/sessions/session-send'
 import { enqueueSessionInput, releaseQueuedSessionInput, queuedSessionInputs, useQueuedSessionInputs } from '@/lib/sessionInputOutboxBridge'
 import { sessionInputBaseline } from '@/lib/pendingSessionInput'
 import { SessionInputQueue } from '@/components/chat/SessionInputQueue'
@@ -36,7 +43,7 @@ import { agentStatusColorVar, presentAgentStatus } from '@gugu/core/shared/agent
 import { useAgentWatchSession } from './useAgentWatchSession'
 import { DropdownMenu } from '@/components/ui/Menu'
 import { type SessionMenuTarget, SessionActions, SessionMenuButton } from './SessionsPage'
-import { SessionAppMenu } from './SessionAppMenu'
+import { SessionAppMenu, SessionAppMenuItems } from './SessionAppMenu'
 import { useMachineLabel } from './useMachineLabel'
 import { SessionAppFrame } from '@/components/appSlot/SessionAppFrame'
 import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
@@ -46,6 +53,7 @@ import { useMobileShell } from '@/hooks/useMobileShell'
 import { hostedInputIds } from './local-queued-inputs'
 import { canResumePhoneInput, phoneInputQueueIntent } from './phone-input-queue'
 import { runNativeInputAction } from '@/lib/nativeInputFailureNotice'
+import { SessionChatLoading } from '@renderer/features/sessions/acp/session-chat-loading'
 
 /**
  * owner 10-16 The App tabs a session offers on the phone: installed, switched on, opening no file — the session page's 「+」
@@ -70,7 +78,10 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   firstPrompt,
   draft,
   initialAppKind,
+  innerSidebarEntry,
   local = false,
+  cleanedRecord = false,
+  appPanel = false,
   onBack,
 }: {
   device: Device
@@ -79,13 +90,23 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   firstPrompt?: FirstPrompt
   draft?: { text: string }
   initialAppKind?: string
+  innerSidebarEntry?: string
   /** The session is on this computer (desktop assistant task pane): read it over IPC, also without a network. */
   local?: boolean
+  /** Read what the left column reads, never the bounded source window (useSessionHistorySource): the assistant/App layer. */
+  cleanedRecord?: boolean
+  /**
+   * owner 11-12 Over an App's panel (AssistantTaskChatWindow): the panel's top row and the assistant chat's composer. The
+   * view switcher is not offered there — the panel is the task's conversation, nothing else.
+   */
+  appPanel?: boolean
   onBack: () => void
 }) {
   const { t } = useTranslation('main')
   const { t: tc } = useTranslation('common')
+  const chatSummaries = useChatSummaries()
   const mobile = useMobileShell()
+  const sidebar = usePhoneSessionSidebar({ sessionId: session.conversationId, entry: innerSidebarEntry ?? null })
   const { label: machineLabel } = useMachineLabel()
   const phoneHost = isPhoneDevice(device)
   const networkOnline = useNetworkOnline()
@@ -107,11 +128,13 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   }), [session.conversationId, session.projectId, appKind])
   // Its back key goes back to the timeline, as its header's back does — not past it to the list (the App is a layer here).
   useBackLayer(() => setAppKind(null), appKind !== null)
+  // A draft brought to this session (a cite from its Files App) is the person's next words here: its conversation comes up.
+  useEffect(() => { if (draft) setAppKind(null) }, [draft])
   const apps = useSessionApps()
   const native = !phoneHost && session.runtime === 'acp' && (session.nativeInputVersion === 1 || session.nativeInputVersion === 2)
   const { boundedHistory, nativeHistory, nativeRecord } = useSessionHistorySource({
     deviceId: device.device_id, sessionId: session.conversationId, mobile, phoneHost,
-    sourceFormat: session.harness, native, online, local,
+    sourceFormat: session.harness, native, online, local, cleanedRecord,
   })
   const {
     timeline, phase, error, actionError, dismissActionError, waitingForRecord,
@@ -155,6 +178,23 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       throw new Error(t('settings:devices.notice.serverTooOldHint'))
     }
   }
+  const send = async (text: string, files?: TurnFileRef[]) => {
+    beforeSend()
+    const request = { deviceId: device.device_id, sessionId: session.conversationId, text, composer: true as const,
+      ...phoneInputQueueIntent(foregroundWorking, queuedInputs), ...sessionInputBaseline(conversation.turns), ...(files?.length ? { files } : {}) }
+    await enqueueSessionInput(request)
+    if (canResumePhoneInput(queueReady, foregroundWorking, conversation.turns)) {
+      const head = [...queuedSessionInputs(session.conversationId)].filter(input => input.sendQueue).sort((a, b) => a.sendQueue!.order - b.sendQueue!.order)[0]
+      if (head) {
+        await runNativeInputAction(session.conversationId, head.id, head.deviceId, () => releaseQueuedSessionInput(session.conversationId, conversation.turns, head.id))
+      }
+    }
+    if (nativeHistory) nativeRecord.followTail()
+  }
+  const sendNow = useRef(send)
+  sendNow.current = send
+  // A selection's Send goes the way the composer's words go, also while an App (the Files App) covers the conversation.
+  useEffect(() => offerSessionSend(session.conversationId, { send: text => sendNow.current(text) }), [session.conversationId])
   // Identified agents share the group/avatar reading; transport only governs timeline access.
   const shownStatus = useShownAgentStatus()
   const agentUserId = session.agent?.userId
@@ -167,6 +207,9 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   const statusColor = presentation ? agentStatusColorVar(presentation.tone) : null
   const statusStyle: CSSProperties | undefined = statusColor ? { color: statusColor } : undefined
   // The task's one name is its agent's name: the header says it once.
+  const entryGroupId = innerSidebarEntry?.startsWith('chat:') ? innerSidebarEntry.slice(5) : null
+  const sourceGroup = chatSummaries.get(entryGroupId ?? sidebar.source ?? session.bornInChatId ?? '')
+  const sourceGroupName = sourceGroup?.kind === 'group' ? sourceGroup.name : null
   const taskHeader = {
     title: shownName,
     titleLeading: (
@@ -190,6 +233,10 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
     ) : undefined,
     headerTestId: 'agent-watch-hero',
   }
+  const headerSubtitle = mobile && sourceGroupName ? <span className="gg-aw-header-context flex min-w-0 items-center gap-2">
+    <span data-phone-header-source="" className="truncate">{sourceGroupName}</span>
+    {taskHeader.subtitle}
+  </span> : taskHeader.subtitle
   // Keep the same task composer even before a cold offline phone has any timeline.
   // Its durable input queue waits for the host's stable acknowledgement contract.
   // 动作失败贴着**动作发生的地方**显示(输入框正上方),❌ 不跑到页顶去冒充「打不开时间线」——
@@ -219,7 +266,16 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
     </div>
   ) : null
 
-  // 会话的管理动作与列表行尾「…」同一个面板;都要那台机器执行,离线不给。
+  const centeredHeader = mobile && !appPanel && appKind === null
+  const appNavigation = !phoneHost && !appPanel ? {
+    appKind,
+    onConversation: () => setAppKind(null),
+    apps: [{ kind: PHONE_TASK_BROWSER, name: translateSessionMessage('workspace.browser') }, ...apps],
+    onOpenApp: setAppKind,
+  } : null
+  const canManage = reachable && !hostSilent
+  const appItems = centeredHeader && appNavigation ? <SessionAppMenuItems {...appNavigation} /> : undefined
+  // The centered phone header puts App navigation in the same overflow as session actions.
   const headerActions = (
     <>
       {cloudAsleep && (wakeIssue || wakeDropped) ? (
@@ -227,34 +283,37 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           <RefreshCw />
         </IconButton>
       ) : null}
-      {phoneHost ? <PhoneTaskSkills deviceId={device.device_id} sessionId={session.conversationId} online={online} busy={attention === 'running' || attention === 'waiting' || sending || pendingSends.length > 0 || cancelling} /> : null}
-      {!phoneHost ? <SessionAppMenu
-        appKind={appKind}
-        onConversation={() => setAppKind(null)}
-        apps={apps}
-        onOpenApp={setAppKind}
-      /> : null}
-      {reachable && !hostSilent ? (
+      {appNavigation && !centeredHeader ? <SessionAppMenu {...appNavigation} /> : null}
+      {canManage || appItems ? (
         <SessionMenuButton menu={sessionMenu} target={{ deviceId: device.device_id, session, phoneHost }} size="md" testId="agent-watch-session-page-menu" />
       ) : null}
     </>
   )
 
-  if (appKind) {
+  if (appKind && appKind !== PHONE_TASK_BROWSER) {
     return (
-      <AgentWatchScreen {...taskHeader} onBack={() => setAppKind(null)} testId="agent-watch-session-app" actions={headerActions} bodyFill>
+      <AgentWatchScreen {...taskHeader} subtitle={headerSubtitle} onBack={() => setAppKind(null)} testId="agent-watch-session-app" actions={headerActions} bodyFill>
         <SessionAppFrame kind={appKind} device={device} session={{ id: session.conversationId, ...(session.projectId ? { projectId: session.projectId } : {}) }} />
       </AgentWatchScreen>
     )
   }
 
   return (
+    <PhoneLiveWindowConversation enabled={mobile && !phoneHost && appKind === null} deviceId={device.device_id}
+      sessionId={session.conversationId} conversationId={session.chatId} agentId={agentUserId}
+      connected={connection === 'online'} operating={online && (attention === 'running' || attention === 'waiting')}>
+    {live => (
     <AgentWatchScreen
       {...taskHeader}
-      onBack={onBack}
+      centeredHeader={centeredHeader}
+      titleLeading={centeredHeader ? undefined : taskHeader.titleLeading}
+      title={<PhoneLiveWindowTitle name={shownName} live={live} />}
+      subtitle={headerSubtitle}
+      onBack={appKind === PHONE_TASK_BROWSER ? () => setAppKind(null) : onBack}
       testId="agent-watch-timeline-page"
       actions={headerActions}
       bodyFill
+      panelLayer={appPanel}
     >
       {recovery.canStartFresh ? <Button variant="secondary" onClick={() => { void recovery.startFresh() }} disabled={recovery.busy}>
         {translateSessionMessage('transcript.condition.startFresh')}
@@ -262,8 +321,12 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
 
       {/* ⚠️ 此前是 `phase !== 'error'`:首次拉取失败就把时间线**和输入框**一起藏掉。
           缓存里有东西时那是白藏；重试耗尽走统一出口，内容照常给。 */}
+      <PhoneLiveWindowSurface live={live}>
+      <div className={appKind === PHONE_TASK_BROWSER ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}>
       {(
         <SessionConversation
+          permissionsInWork={mobile && !appPanel}
+          composerControls={mobile && !appPanel ? (modelControl, model, skillDraft) => <PhoneSessionSidebarControls key={`${session.conversationId}:${innerSidebarEntry ?? ""}`} sidebar={sidebar} modelControl={modelControl} model={model} skillDraft={skillDraft} nativeSkills={phoneHost ? <PhoneTaskSkills menuBar deviceId={device.device_id} sessionId={session.conversationId} online={online} busy={attention === 'running' || attention === 'waiting' || sending || pendingSends.length > 0 || cancelling} /> : undefined} /> : undefined}
           agentName={shownName}
           agentUserId={agentUserId}
           harness={session.harness}
@@ -272,7 +335,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           sessionId={session.conversationId}
           draft={draft === appliedDraft ? undefined : draft}
           onDraftApplied={() => setAppliedDraft(draft)}
-          phoneHost={phoneHost} local={local} nativeRecord={native} hostReachable={answering}
+          phoneHost={phoneHost} local={local} nativeRecord={native} hostReachable={answering} appPanel={appPanel}
           unseen={session.unseen === true}
           queueReady={queueReady}
           machineLabel={machineLabel(device)}
@@ -280,19 +343,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           respondingItemId={respondingItemId}
           onRespond={respond}
           onBeforeSend={beforeSend}
-          onSend={async (text, files) => {
-            beforeSend()
-            const request = { deviceId: device.device_id, sessionId: session.conversationId, text, composer: true as const,
-              ...phoneInputQueueIntent(foregroundWorking, queuedInputs), ...sessionInputBaseline(conversation.turns), ...(files?.length ? { files } : {}) }
-            await enqueueSessionInput(request)
-            if (canResumePhoneInput(queueReady, foregroundWorking, conversation.turns)) {
-              const head = [...queuedSessionInputs(session.conversationId)].filter(input => input.sendQueue).sort((a, b) => a.sendQueue!.order - b.sendQueue!.order)[0]
-              if (head) {
-                await runNativeInputAction(session.conversationId, head.id, head.deviceId, () => releaseQueuedSessionInput(session.conversationId, conversation.turns, head.id))
-              }
-            }
-            if (nativeHistory) nativeRecord.followTail()
-          }}
+          onSend={send}
           pendingSends={pendingSends}
           startupPrompt={recovery.pendingPrompt}
           sending={sending}
@@ -304,21 +355,30 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           onAtBottom={nativeHistory ? nativeRecord.loadNewer : undefined}
           historyReady={boundedHistory ? windowReady : !nativeHistory || nativeRecord.record !== null} historyCursor={nativeHistory ? nativeRecord.record?.nextCursor : undefined}
           onLoadOlder={nativeHistory ? nativeRecord.loadOlder : loadOlder}
+          onHeldShown={nativeHistory ? nativeRecord.fillHeldTurn : undefined}
           onLoadToolImage={loadToolImage}
           emptyNote={answering && (phase === 'loading' || timeline.turns.length > 0) ? (
             /* 刚建的会话:记录要等 agent 写下第一行才有。那时说「正在等它开口」,❌ 不说「正在读取」——
                读取早就成功了,是对面还没写。线上已画着刚发的那句时不说(线程有内容就不画空态):那句本身就是「发出去了」。
                画在线程自己的空态位上,❌ 在线程上方另起一行:那样空着的线程还会再说一句「Nothing in this task yet」
                (对一条有历史的任务是错话),撤掉上方那一行时整条线程跟着上移(owner 10-12「进去就颤两下」)。
-               时间线已经到手、线程还没画出来的那一两帧(运行时下一拍才收到)也是这一句,❌ 退回官方空态闪一下。 */
-            <div className="gg-aw-placeholder" data-testid={waitingForRecord ? 'agent-watch-waiting-record' : undefined}>
-              {t(waitingForRecord ? 'agentWatch.timeline.waitingRecord' : 'agentWatch.timeline.loading')}
-            </div>
+               时间线已经到手、线程还没画出来的那一两帧(运行时下一拍才收到)也是这一句,❌ 退回官方空态闪一下。
+               读取中画骨架屏,和桌面会话页一样画在消息区上、输入框下(owner 11-12:❌ 输入框下面多一行「正在读取时间线…」)。 */
+            waitingForRecord ? (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div className="gg-aw-placeholder" data-testid="agent-watch-waiting-record">{t('agentWatch.timeline.waitingRecord')}</div>
+              </div>
+            ) : <SessionChatLoading label={t('agentWatch.timeline.loading')} />
           ) : null}
         />
       )}
 
-      <SessionActions menu={sessionMenu} onArchived={onBack} />
+      </div>
+      </PhoneLiveWindowSurface>
+      {appKind === PHONE_TASK_BROWSER && <PhoneTaskBrowser key={`${device.device_id}:${session.conversationId}`} deviceId={device.device_id} sessionId={session.conversationId} onSent={() => setAppKind(null)} />}
+      <SessionActions menu={sessionMenu} onArchived={onBack} appItems={appItems} canManage={canManage} />
     </AgentWatchScreen>
+    )}
+    </PhoneLiveWindowConversation>
   )
 })

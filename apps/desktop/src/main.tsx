@@ -7,12 +7,12 @@ import './lib/errorCaptureBootstrap'
 import './lib/insecure-context-shims'
 // 没更新过的老 Android WebView(Chrome 91)没有 structuredClone,首屏渲染即抛;同样 import 即装。
 import './lib/legacy-webview-shims'
+import './lib/passwordSaveCards'
 import React from 'react'
 import App from './App'
 import { notifyHostTheme } from '@renderer/lib/theme/host-theme'
 import { renderEntryRoot } from './lib/renderer-entry-root'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
-import { captureReferralFromUrl } from './lib/referral'
 import { installScrollbarAutoHide } from './lib/scrollbarAutoHide'
 import { installWindowMaterialAttribute } from './lib/windowMaterial'
 import {
@@ -22,10 +22,9 @@ import {
   windowControlsWidth,
   windowTitlebarHeight,
 } from './lib/window-chrome'
-import { getLocaleSnapshot, LocalizationProvider, subscribeLocale } from './i18n'
-import { platform } from './platform'
-import { installPlatformLocaleSync } from './platform/locale-sync'
+import { LocalizationProvider } from './i18n'
 import { startShellChromeTone } from './platform/capacitorShellChrome'
+import { installTextScale } from './mobile/textScale'
 import { BuildTagBadge } from './components/BuildTagBadge'
 import { startFirstRunApps } from './components/appSlot/firstRunApps'
 import './i18n/registerMainCatalog'
@@ -43,27 +42,22 @@ import { isAnimationWindowVisible } from '@gugu/session-shared/animation-visibil
 import { installPerfCounterResponder } from './lib/perfCounterResponder'
 import { installErrorSummaryConsent } from './lib/errorSummaryConsent'
 
+// Before the first render: the phone's system font size decides how large text is drawn (textScale.ts).
+installTextScale()
 installPerfCounterResponder(window.electronAPI)
 installErrorSummaryConsent()
 // The shared getter also installs this document's native/DOM visibility listeners.
 isAnimationWindowVisible()
 
-installPlatformLocaleSync(platform, {
-  getSnapshot: getLocaleSnapshot,
-  subscribe: subscribeLocale,
-})
-
 // 首启默认组(owner 10-16「为什么会有安装这一步,而不是一启动就装好了」):一启动就开始,和登录并行 —— 桌面听 main 装到哪了,
 // 手机在这一页里自己装(firstRunApps.ts)。
 startFirstRunApps()
+
 
 // @@@scrollbar-autohide (#7641) 滚动条平时透明、滚动时浮出 —— 这里只负责在滚动的元素上打
 // `data-scrolling`,显隐规则在 styles/tokens.css。装在这里而不是某个组件的 effect 里:
 // 它是一条进程级的 DOM 监听,与任何一棵 React 子树的生死无关。
 installScrollbarAutoHide()
-
-// @@@1511 启动即捕获邀请链接 ?ref=<gugu_number>,暂存待注册时塞进 signup metadata(给双方发返利积分)。
-captureReferralFromUrl()
 
 // @@@1238-platform-attr / @@@822 — surface the OS to CSS so the frameless title bar can reserve the
 // right window-control inset only where it actually draws controls. Mac keeps native traffic lights

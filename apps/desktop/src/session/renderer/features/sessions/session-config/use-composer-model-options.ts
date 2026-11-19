@@ -1,3 +1,8 @@
+import { useReplica } from '@/lib/replica';
+import { useLibraryHost } from '@renderer/features/library/library-host';
+import { customModels } from './custom-models';
+import { customComposerOptions } from './custom-model-options';
+import { customModelOptionId, type CustomModelRef } from '@gugu/session-core/models/custom-model';
 import { useMemo } from 'react';
 import type { ComposerModelOption } from '@gugu/session-ui/react/components';
 import type { PlatformModelOption } from '@shared/core/agents/platform-model';
@@ -9,7 +14,7 @@ import { platformModelIdFromOption, platformOptionId } from '@/session/shared/pl
 import { PLATFORM_GROUP_HEADING_KEY } from '@/session/shared/platform-model-labels';
 import { composerModelOptions, type PlatformModelRow } from './platform-model-options';
 import { modelProviderIcon } from './model-provider-icon';
-import { openBillingPage } from '@/lib/appLinks';
+import { billingLinksAvailable, openBillingPage } from '@/lib/appLinks';
 import type { ComposerModelUpgrade } from '@gugu/session-ui/react/components';
 import { openShellSettings } from '@renderer/lib/open-shell-settings';
 
@@ -46,10 +51,28 @@ export function useComposerModelOptions(
   const { translate } = useSessionMessages();
   const { data: agents } = useAgents();
   const agentName = composerOwnTierAgentName(agents, providerId);
+  const remote = useLibraryHost().remote;
+  const custom = useReplica(customModels, [remote?.deviceId ?? null]);
+  const records = custom.state === 'value' ? custom.value : undefined;
+  const error = custom.state === 'unknown' ? null : custom.error;
+  const agent = agents?.find((entry) => entry.id === providerId);
 
   return useMemo(
-    () => assembleComposerModelOptions(harnessOptions, platformModels, agentName, translate, currentPlatformModelId),
-    [harnessOptions, platformModels, translate, agentName, currentPlatformModelId]
+    () => {
+      const base = assembleComposerModelOptions(harnessOptions, platformModels, agentName, translate, currentPlatformModelId);
+      if (!providerId) return base;
+      const options = records && customComposerOptions(records, agent, remote?.deviceLabel ?? translate('customModels.device'), translate);
+      if (!records || error) {
+        return { ...base, ...options, 'custom-models-status': {
+          name: translate(error ? 'customModels.listFailed' : 'customModels.loading'),
+          groupLabel: translate('customModels.title'),
+          disabled: true,
+          disabledReason: error ? translate('customModels.retryInSettings') : undefined,
+        } };
+      }
+      return base || Object.keys(options ?? {}).length ? { ...base, ...options } : null;
+    },
+    [harnessOptions, platformModels, translate, agentName, currentPlatformModelId, records, error, agent, providerId, remote?.deviceLabel]
   );
 }
 
@@ -111,7 +134,7 @@ export function openMembershipPage(): void {
 
 /**
  * 模型面板底部的两条去路(#7056,对齐 Cursor):三个模型菜单(新建页、Chat UI 会话、终端会话)共用这一份。
- *  - 「管理模型」开设置里的「模型」页 —— 哪些出现在这张清单里由那一页的开关定;
+ *  - 「配置自定义模型」直达添加模型对话框;
  *  - 「升级解锁更多模型」只给这一档有用不了的模型的人(免费档),悬停列出是哪几个,点了去网页面板。
  * 这一档用不了的模型**不进清单**:列出来点了才说要会员「像是埋雷」(owner 2026-10-10)。
  */
@@ -121,8 +144,8 @@ export function composerModelFooter(
 ): { onManageModels: () => void; modelUpgrade: ComposerModelUpgrade | null; onModelUpgrade: () => void } {
   const locked = platformModels.filter((model) => model.requiresMembership).map((model) => model.displayName);
   return {
-    onManageModels: () => openShellSettings('model'),
-    modelUpgrade: locked.length
+    onManageModels: () => openShellSettings('model', 'add-custom-model'),
+    modelUpgrade: locked.length && billingLinksAvailable()
       ? {
           label: translate('composer.platformModelUpgrade'),
           title: translate('composer.platformModelUpgradeTitle'),
@@ -164,7 +187,8 @@ export function composerModelSelection(optionId: string): ComposerModelSelection
 export function composerSelectedOptionId(selection: {
   platformModel?: string | null;
   model?: string | null;
+  customModel?: CustomModelRef | null;
 }): string | undefined {
   if (selection.platformModel) return platformOptionId(selection.platformModel);
-  return selection.model ?? undefined;
+  return selection.customModel ? customModelOptionId(selection.customModel) : selection.model ?? undefined;
 }

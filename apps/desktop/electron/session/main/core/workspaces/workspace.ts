@@ -1,4 +1,5 @@
 import type { FileError, IFileSystem, IFileTree } from '@gugu/session-core/files';
+import type { CanonicalPath } from '@gugu/session-core/files';
 import type { Result } from '@gugu/session-shared';
 import type { IGitWorktree } from '@gugu/session-core/git';
 import type { GitRepositoryFetchService } from '@main/core/git/repository/fetch-service';
@@ -8,7 +9,8 @@ import type { LifecycleScriptService } from './workspace-lifecycle-service';
 
 export interface Workspace {
   readonly id: string;
-  readonly path: string;
+  /** The working copy, in its one spelling on this machine (`@@@canonical-path`). */
+  readonly path: CanonicalPath;
   readonly configPath: string;
   readonly fileSystem: IFileSystem;
   readonly fileTree: IFileTree;

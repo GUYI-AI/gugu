@@ -57,6 +57,14 @@ function awaitsPerson(hold: Hold | null): boolean {
   return hold?.reason === 'start-failed' && hold.awaitsPerson === true
 }
 
+/**
+ * The backend answered again after an outage: a session a start failure left holding rows starts once more, the same
+ * `start` a person's retry sends (a start that is already running is unchanged). Never a failure only the person resolves.
+ */
+export function shouldStartAfterOutage(state: Life, q: PendingView): boolean {
+  return state.kind === 'failed' && state.hold.reason === 'start-failed' && !awaitsPerson(state.hold) && q.queued.length > 0
+}
+
 /** The same durable predicate is used after teardown and after a crash before deliver was stepped. */
 export function shouldStartOnHydrate(state: Life, q: PendingView): boolean {
   switch (state.kind) {

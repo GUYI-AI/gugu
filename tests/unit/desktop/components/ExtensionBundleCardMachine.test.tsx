@@ -273,7 +273,7 @@ describe("an App card's permissions", () => {
     const fold = q('[data-testid="extension-bundle-card-permissions"]') as HTMLDetailsElement
     const summary = () => q('[data-testid="extension-bundle-card-permissions-toggle"]')!.textContent
     expect(fold.open).toBe(false)
-    expect(summary()).toBe('extensions.bundleCardPermissions:3 · Read the filesextensions.expand')
+    expect(summary()).toBe('extensions.bundleCardPermissions:3: Read the filesextensions.expand')
     await act(async () => q('[data-testid="extension-bundle-card-permissions-toggle"]')!.click())
     await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
     expect(fold.open).toBe(true)

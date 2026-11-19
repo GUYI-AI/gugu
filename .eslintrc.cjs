@@ -35,10 +35,43 @@ const noSyncSpawnInput = {
     "同步 spawn 的 `input` 在 macOS 上会间歇性挂死到超时(#3766，详见 .eslintrc.cjs 顶部 @@@spawnsync-input)。改成:参数传值 / 从文件喂 stdin(stdio:[fd,…]) / 空 stdin 用 stdio:['ignore',…] / 需要管道语义的改异步 spawn。"
 }
 
+// @@@single-refresher (#6723) —— 会话协调器是唯一的刷新者。无参的 auth.getUser() / auth.getSession() 会让 SDK 读它自己
+// 存的那份会话、过期就自己刷新,拿同一个 refresh token 和协调器各换一次(撞上复用检测就被登出)。读用户带协调器的
+// 令牌(auth.getUser(token));协调器自己的那一处 getSession 依赖逐行豁免并写明。
+const noBareAuthRefresher = {
+  selector: "CallExpression[arguments.length=0]:matches([callee.property.name='getUser'],[callee.property.name='getSession'])[callee.object.property.name='auth']",
+  message: 'The session coordinator is the only refresher: call auth.getUser(sessionCoordinator.getAccessToken()) — a bare auth.getUser()/getSession() lets the SDK refresh the same refresh token on its own.'
+}
+
+// @@@canonical-path —— 工作副本路径只有一种写法,只由 canonicalPath(session-core files/paths)产出;从那台机器经线路收到的
+// 走 receivedCanonicalPath(session-shared canonical-path)。别处 `as CanonicalPath` 就是绕过这道门:一个没规范过的路径
+// 带着「规范」的类型混进去,比较照样会对不上(#2580、#2622 撞的就是这个)。测试里的字面量路径除外(下面的 override)。
+const noMintCanonicalPath = {
+  selector: ":matches(TSAsExpression, TSTypeAssertion)[typeAnnotation.typeName.name='CanonicalPath']",
+  message: 'A CanonicalPath is made only by canonicalPath() (@gugu/session-core/files), or taken as received from its machine by receivedCanonicalPath(). Never cast a string to it.'
+}
+
+// @@@electron-dynamic-import —— `electron` 只能静态 import。server 与无头宿主是真 Node,靠 CJS 的 Module._load 钩子
+// 把 `electron` 换成替身(server-entry.ts / session-host-entry.ts);静态 import 打出来是 require,走钩子。
+// `import('electron')` 在 cjs 产物里原样保留成原生 import(),走 ESM 解析、绕过钩子 ⇒
+// 「Cannot find package 'electron' imported from …」(远端会话打开只剩骨架屏)。
+const noDynamicElectronImport = {
+  selector: "ImportExpression[source.value='electron']",
+  message: "Import electron statically (import { app } from 'electron'): the server and headless host swap it through require; a dynamic import('electron') bypasses that and fails there with \"Cannot find package 'electron'\"."
+}
+
 const radixImportGate = {
   group: ['radix-ui', 'radix-ui/*', '@radix-ui/*'],
   message:
     'radix-ui 只允许出现在 apps/desktop/src/session/renderer/lib/ui/assistant-ui/(vendored assistant-ui Elements，#3334 记的有界例外)。产品代码的原语一律用 Base UI —— 见 design-system spec 的「组件模板只有一套」。'
+}
+
+// @@@growing-list - a list whose length grows with the user's data mounts only its visible window, through the one
+// primitive (session-ui react/growing-list). Six lists each wired their own virtualizer before; the member page, @
+// candidates, search results and contacts had none and mounted every row.
+const growingListGate = {
+  group: ['@tanstack/react-virtual'],
+  message: '可增长的列表一律用 @gugu/session-ui/react/growing-list(useGrowingList / <GrowingList>),❌ 直接用 @tanstack/react-virtual。'
 }
 
 // Windows 上 GUI 进程起控制台子进程不带 windowsHide 就弹一个黑框;逐个调用点记着写总有漏的。
@@ -78,9 +111,6 @@ module.exports = {
     'storybook-static',
     'storybook-static-chat',
     '.eslintrc.cjs',
-    // #7191 agent 鼠标的轨迹与画法:trycua/cua 的 @trycua/cursor-motion(MIT,不发 npm,官方用法就是拷 src/),原样拷进来;
-    // 上游改了重拷一遍,所以不按咕咕的规矩改它。出处与版本见该目录 README.md。
-    'apps/desktop/src/session/renderer/lib/vendor/cua-cursor-motion/**',
   ],
   parser: '@typescript-eslint/parser',
   plugins: ['react-refresh'],
@@ -188,6 +218,13 @@ module.exports = {
       files: ['**/*.{ts,tsx,js,jsx,cjs,mjs}'],
       excludedFiles: ['apps/desktop/src/session/renderer/lib/ui/assistant-ui/**'],
       rules: {
+        'no-restricted-imports': ['error', { patterns: [radixImportGate, growingListGate], paths: childProcessImportGate }]
+      }
+    },
+    {
+      // The primitive itself is where the virtualizer lives (same rule, minus that one gate: overrides replace it whole).
+      files: ['packages/session-ui/src/react/primitives/growing-list/growing-list.tsx'],
+      rules: {
         'no-restricted-imports': ['error', { patterns: [radixImportGate], paths: childProcessImportGate }]
       }
     },
@@ -207,7 +244,7 @@ module.exports = {
         'playwright.config.mts'
       ],
       rules: {
-        'no-restricted-imports': ['error', { patterns: [radixImportGate] }]
+        'no-restricted-imports': ['error', { patterns: [radixImportGate, growingListGate] }]
       }
     },
     {
@@ -233,7 +270,10 @@ module.exports = {
             message: '裸 <button style={...}> 已停止新增(#2987)——改用 components/ui/Button.tsx(variant/size 已覆盖多数场景);缺的 variant 先去补组件，别再手搓。'
           },
           // 顶层那条在这里是被整条替换掉的,不重新列一遍就等于给这批文件开了后门。
-          noSyncSpawnInput
+          noSyncSpawnInput,
+          noBareAuthRefresher,
+          noMintCanonicalPath,
+          noDynamicElectronImport
         ]
       }
     },
@@ -266,10 +306,22 @@ module.exports = {
       rules: {
         '@typescript-eslint/no-explicit-any': 'off'
       }
+    },
+    {
+      // Tests drive the auth SDK directly on purpose (what a bare call does is what they prove); the single-refresher
+      // rule guards product code only.
+      files: ['tests/**'],
+      rules: { 'no-restricted-syntax': ['error', noSyncSpawnInput] }
+    },
+    {
+      // @@@canonical-path: the one producer, the one wire boundary and the feed's decoder make the type; a test names its fixture
+      // paths as literals.
+      files: ['**/*.test.ts', '**/*.test.tsx', 'packages/session-core/src/files/paths.ts', 'packages/session-shared/src/canonical-path.ts', 'packages/session-core/src/files/changes/changes.ts'],
+      rules: { 'no-restricted-syntax': ['error', noSyncSpawnInput] }
     }
   ],
   rules: {
-    'no-restricted-syntax': ['error', noSyncSpawnInput],
+    'no-restricted-syntax': ['error', noSyncSpawnInput, noBareAuthRefresher, noMintCanonicalPath, noDynamicElectronImport],
     // Android System WebView before 116 has no AbortSignal.any: calling it threw before the request was sent (images
     // could not load). One function owns the native call and its fallback; everything else combines signals through it.
     'no-restricted-properties': ['error', {

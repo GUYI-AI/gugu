@@ -14,6 +14,7 @@ import { toolRunUnitDef } from '@session-chat/components/rows/tool-run/tool-run.
 import { sessionNoticeUnitDef } from '@session-chat/components/rows/boundary/session-notice.def';
 import { backgroundTasksUnitDef } from '@session-chat/components/rows/background-tasks/background-tasks.def';
 import { makeContractCtx, renderAndMeasureUnit } from './contract';
+import { defaultChatTranslator } from '@session-chat/localization';
 
 /** Text must fit its painted box, not merely survive in textContent/title. */
 function textBounds(host: HTMLElement) {
@@ -40,6 +41,27 @@ function textBounds(host: HTMLElement) {
 }
 
 describe('readable process rows at real split-column widths (#1036)', () => {
+  it('keeps the translated process summary within its offscreen measurement without a middle-dot join', async () => {
+    for (const width of [198, 430]) for (const chinese of [false, true]) for (const live of [false, true]) {
+      const ctx = makeContractCtx({ width, theme: { ...DEFAULT_THEME, layout: { ...DEFAULT_THEME.layout, agentConversation: true } } });
+      ctx.translate = (key, args) => key === 'metadata.separator' ? chinese ? '，' : ', ' : key === 'transcript.processSteps'
+        ? chinese ? `${args?.count} 步` : `${args?.count} steps`
+        : defaultChatTranslator(key, args);
+      const startedAt = 1000;
+      const result = await renderAndMeasureUnit(turnProcessUnitDef, {
+        kind: 'turn-process', id: 'copy-summary', turnId: 't', live, steps: 9, startedAt, endedAt: startedAt + 39000,
+      }, ctx, host => ({ ...textBounds(host),
+        hasSummary: host.textContent?.includes(chinese ? '39s，9 步' : '39s, 9 steps') ? 1 : 0,
+        hasSeparator: host.textContent?.includes('\u00b7') ? 1 : 0,
+      }), { conversationClock: () => startedAt + 39000 });
+      expect(result.inspected.hasSummary).toBe(1);
+      expect(result.inspected.hasSeparator).toBe(0);
+      expect(result.inspected.hidden).toBeLessThanOrEqual(1);
+      expect(result.dom).toBe(result.computed);
+      expect(result.spill).toBeLessThanOrEqual(1);
+    }
+  });
+
   for (const width of [198, 430, 724]) {
     it(`shows the complete process summary at ${width}px`, async () => {
       const result = await renderAndMeasureUnit(toolRunUnitDef, {
@@ -74,15 +96,26 @@ describe('readable process rows at real split-column widths (#1036)', () => {
     expect(result.dom).toBe(result.computed);
   });
 
-  it('shows a long background command and reserves its wrapped height', async () => {
-    const result = await renderAndMeasureUnit(backgroundTasksUnitDef, {
-      kind: 'background-tasks', id: 'background', expanded: true,
-      commands: [{ id: 'c', launchToolCallId: 'c', taskId: 'task', name: "sleep 150; printf '%s\\n' 'T1036-BACKGROUND-WITH-A-LONG-OBSERVABLE-COMMAND-END'" }],
+  // owner 2026-11-12 改了这一条:长后台命令收着时只一行、省略号收尾(「不渐进披露吗,这样也太长了」);
+  // 「字不能只活在 title 里」照旧成立 —— 收着的那一行必须是能就地点开的开关,点开后一个字都不裁、高度照量。
+  it('folds a long background command to one line that opens in place to the whole command', async () => {
+    const name = "sleep 150; printf '%s\\n' 'T1036-BACKGROUND-WITH-A-LONG-OBSERVABLE-COMMAND-END'";
+    const data = (open: boolean) => ({
+      kind: 'background-tasks' as const, id: 'background', expanded: true,
+      commands: [{ id: 'c', launchToolCallId: 'c', taskId: 'task', name, ...(open ? { open: true } : {}) }],
       subagents: [],
-    }, makeContractCtx({ width: 198 }), textBounds);
-    expect(result.inspected.hidden).toBeLessThanOrEqual(1);
-    expect(result.dom).toBe(result.computed);
-    expect(result.spill).toBeLessThanOrEqual(1);
+    });
+    const folded = await renderAndMeasureUnit(backgroundTasksUnitDef, data(false), makeContractCtx({ width: 198 }), (host) => {
+      const toggle = host.querySelector<HTMLElement>('[data-slot="background-task-toggle"]');
+      return { toggles: toggle?.getAttribute('aria-expanded') === 'false' ? 1 : 0, lines: toggle ? Math.round(toggle.offsetHeight / 20) : 0 };
+    });
+    expect(folded.inspected).toEqual({ toggles: 1, lines: 1 });
+    expect(folded.dom).toBe(folded.computed);
+
+    const open = await renderAndMeasureUnit(backgroundTasksUnitDef, data(true), makeContractCtx({ width: 198 }), textBounds);
+    expect(open.inspected.hidden).toBeLessThanOrEqual(1);
+    expect(open.dom).toBe(open.computed);
+    expect(open.spill).toBeLessThanOrEqual(1);
   });
 
   it('wraps a static output title and unavailable explanation', async () => {

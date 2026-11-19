@@ -11,15 +11,11 @@ import type { Block } from '@session-chat/core/markdown/document';
 import { flattenBlockHeadings } from '@session-chat/core/markdown/parse';
 import { defineUnit } from '@session-chat/core/units';
 import { useChatTranslator } from '@session-chat/localization';
-import { pxTokens } from '@session-chat/styles/px-tokens';
-import { assignInlineVars } from '@vanilla-extract/dynamic';
 import { Show, createMemo } from 'solid-js';
 import type { ChatThinking } from '@session-chat/model';
 import {
-  thinkingCardVars,
   thinkingRoot,
   thinkingSummaryText,
-  type ThinkingStyleVars,
 } from './thinking.css';
 import { thinkingSummary } from './thinking-summary';
 import { sx } from '@session-chat/styles/sprinkles.css';
@@ -185,12 +181,10 @@ function ThinkingUnitRender(props: { data: ChatThinking; ctx: RenderCtx; vars: T
   const showBody = () => isExpanded() || props.data.status === 'thinking';
   const bodyH = () => body()?.height ?? 0;
 
-  const styleVars = (): ThinkingStyleVars => ({ height: totalH() });
-
   return (
     <div
       class={`${sx({ color: 'fgPassive' })} ${thinkingRoot}`}
-      style={assignInlineVars(thinkingCardVars, pxTokens(styleVars()))}
+      style={{ height: `${totalH()}px` }}
     >
       <ThinkingHeader
         item={props.data}

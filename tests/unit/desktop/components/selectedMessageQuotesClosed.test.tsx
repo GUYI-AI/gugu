@@ -11,7 +11,7 @@ import { clickElement, createReactHarness, fireContextMenu, message, renderWithA
 import { writeComposer } from '../../../support/composerEditor'
 
 const shell = vi.hoisted(() => ({ mobile: true }))
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile, readMobileShell: () => shell.mobile }))
 vi.mock('../../../../apps/desktop/src/hooks/useAgentHarnessIdentity', () => ({ useAgentHarnessIdentity: () => 'codex' }))
 const t = ((key: string) => key) as TFunction<'messaging'>
 let h: ReturnType<typeof createReactHarness>
@@ -74,5 +74,6 @@ it.each([
   const editor = h.container.querySelector<HTMLElement>('[data-topic-split-composer] [contenteditable]')!
   await act(async () => writeComposer(editor, 'Answer'))
   await clickElement(h.container.querySelector('button[aria-label="发送消息"]')!)
-  expect(onSend).toHaveBeenCalledWith('Answer', [], 'source', undefined, expect.any(Number))
+  // The last argument is the files this text follows; a text sent alone follows nothing.
+  expect(onSend).toHaveBeenCalledWith('Answer', [], 'source', undefined, expect.any(Number), undefined)
 })

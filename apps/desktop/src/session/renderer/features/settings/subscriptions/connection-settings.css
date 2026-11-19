@@ -2,3 +2,8 @@
 .gg-settings-group.agent-connection-settings > .gg-section-label {
   padding-inline: 0;
 }
+
+/* 订阅页那一行里嵌着同一块:贴齐那一行的正文列(资源库详情里由组卡片给边距)。 */
+.agent-connection-rows > div.gg-settings-row {
+  padding-inline: 0;
+}

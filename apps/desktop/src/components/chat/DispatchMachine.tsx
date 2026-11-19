@@ -16,11 +16,11 @@ export function DispatchMachine({ deviceId, onPick }: { deviceId: string | null;
   return (
     <>
       <Button variant="secondary" size="sm" onClick={() => setChoosing(true)} data-testid="dispatch-machine">
-        {t('agentWatch.create.pickMachine')}{device ? ` · ${label(device)}` : ''}
+        {t('agentWatch.create.pickMachine')}{device ? ` ${label(device)}` : ''}
       </Button>
       {choosing && (
         <Sheet onClose={() => setChoosing(false)} fullScreenMobile testId="dispatch-machine-picker" ariaLabel={t('agentWatch.create.pickMachine')}>
-          <MachinesPage computersOnly onBack={() => setChoosing(false)} onOpenDevice={(picked) => { onPick(picked.device_id); setChoosing(false) }} />
+          <MachinesPage onBack={() => setChoosing(false)} onOpenDevice={(picked) => { onPick(picked.device_id); setChoosing(false) }} />
         </Sheet>
       )}
     </>

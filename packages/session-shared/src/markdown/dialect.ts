@@ -1,4 +1,4 @@
-import { FILE_LINK_IN_TEXT, guguLinkScheme, parseGuguLink, parseGroupFileLink } from '@gugu/core/shared/ui/guguLink';
+import { guguLinkScheme, parseGuguLink } from '@gugu/core/shared/ui/guguLink';
 /**
  * The one markdown dialect of Gugu.
  *
@@ -58,7 +58,14 @@ export function normalizeMarkdownSourceWithLines(text: string): { text: string; 
 
 // CJK sentence punctuation ends a bare URL: GFM autolinks would otherwise swallow `。` / `，` into the link.
 const CJK_URL_STOPS = new Set('。．，、？！：；（）【】「」『』〈〉《》');
-const BARE_URL = /^(https?:\/\/|mailto:|www\.|gugu-file:\/\/)/i;
+/**
+ * Any gugu scheme as written in text — gugu-file / gugu-chat / gugu-widget, and a build's own (`gugu://session/<id>`, …).
+ * Which of them is a link is parseGuguLink's call alone; no list of kinds is kept here.
+ */
+const GUGU_SCHEME = String.raw`gugu(?:-[a-z0-9-]+)?:\/\/`;
+const BARE_URL = new RegExp(String.raw`^(https?:\/\/|mailto:|www\.|${GUGU_SCHEME})`, 'i');
+/** gugu's own links as an agent writes them bare. */
+const GUGU_LINK_IN_TEXT = new RegExp(String.raw`${GUGU_SCHEME}[^\s()[\]<>"'\x60]+`, 'gi');
 
 function remarkCjkAutolinkBoundary() {
   return (tree: Root) => {
@@ -84,16 +91,17 @@ function remarkCjkAutolinkBoundary() {
 }
 
 /**
- * A bare group file link in prose is a link, the same node `[…](gugu-file://…)` parses to: the tools hand agents the
- * link bare, and GFM autolinks only `http(s)://`, `www.` and mail. Trailing sentence punctuation stays prose, as GFM
+ * A bare gugu link in prose (a group's file, a conversation or message, a widget, a session) is a link, the same node `[…](gugu…)`
+ * parses to: the tools hand agents these links bare, and GFM autolinks only `http(s)://`, `www.` and mail. Alone in its
+ * paragraph a message or widget link is still a reference block (messageReferenceBlocks). Trailing sentence punctuation stays prose, as GFM
  * leaves it out of an autolink; CJK punctuation is cut by the autolink boundary that runs next.
  */
-function remarkBareFileLinks() {
+function remarkBareGuguLinks() {
   return (tree: Root) => {
     const visit = (parent: Parent) => {
       parent.children = parent.children.flatMap((child) => {
         const node = child as Nodes;
-        if (node.type === 'text') return bareFileLinks(node) as RootContent[];
+        if (node.type === 'text') return bareGuguLinks(node) as RootContent[];
         if ('children' in node && node.type !== 'link' && node.type !== 'linkReference') visit(node as Parent);
         return [child];
       });
@@ -102,12 +110,14 @@ function remarkBareFileLinks() {
   };
 }
 
-function bareFileLinks(node: Text): Array<Text | Link> {
+function bareGuguLinks(node: Text): Array<Text | Link> {
   const out: Array<Text | Link> = [];
   let at = 0;
-  for (const match of node.value.matchAll(FILE_LINK_IN_TEXT)) {
-    const url = match[0].replace(/[.,:;!?]+$/, '');
-    if (!parseGroupFileLink(url)) continue;
+  for (const match of node.value.matchAll(GUGU_LINK_IN_TEXT)) {
+    const chars = [...match[0]];
+    const stop = chars.findIndex((ch) => CJK_URL_STOPS.has(ch));
+    const url = (stop < 0 ? match[0] : chars.slice(0, stop).join('')).replace(/[.,:;!?]+$/, '');
+    if (!parseGuguLink(url)) continue;
     if (match.index > at) out.push({ type: 'text', value: node.value.slice(at, match.index) });
     out.push({ type: 'link', url, children: [{ type: 'text', value: url }] });
     at = match.index + url.length;
@@ -132,7 +142,7 @@ const GRAMMAR: PluggableList = [
   remarkCjkFriendly,
   [remarkGfm, { singleTilde: false }],
   [remarkCjkFriendlyGfmStrikethrough, { singleTilde: false }],
-  remarkBareFileLinks,
+  remarkBareGuguLinks,
   remarkCjkAutolinkBoundary,
   [remarkMath, { singleDollarTextMath: true }],
   remarkPandocDollarMath,
@@ -168,7 +178,7 @@ export function messageReferenceBlocks(source: string): { content: string; block
     const raw = content.slice(start, end).trim();
     const only = node.children[0];
     const href = only?.type === 'text' && only.value === raw ? raw
-      : only?.type === 'link' && raw === `<${only.url}>` ? only.url : null;
+      : only?.type === 'link' && (raw === `<${only.url}>` || raw === only.url) ? only.url : null;
     if (!href || (!href.toLowerCase().startsWith('gugu-chat://') && !href.toLowerCase().startsWith('gugu-widget://'))) continue;
     const parsed = parseGuguLink(href);
     const target: MessageReferenceTarget | null = parsed?.kind === 'widget' ? parsed
@@ -255,14 +265,15 @@ function remarkLiteralizeUntrusted(options: { keepImages?: boolean } = {}) {
 
 /** A `\n` inside a text node becomes a `break` (a typed Shift+Enter is an intended line break). */
 function remarkHardBreaks() {
-  return (tree: Root) => {
+  return (tree: Root, file: { value: unknown }) => {
     const visit = (parent: Parent) => {
       parent.children = parent.children.flatMap((child) => {
         const node = child as Nodes;
         if (node.type === 'text' && node.value.includes('\n')) {
-          return node.value.split('\n').flatMap((part, i) => {
+          const positions = hardBreakPositions(node, String(file.value));
+          return node.value.split(/\r?\n/).flatMap((part, i) => {
             const out: RootContent[] = i > 0 ? [{ type: 'break' }] : [];
-            if (part) out.push({ type: 'text', value: part });
+            if (part) out.push({ type: 'text', value: part, ...(positions?.[i] ? { position: positions[i] } : {}) });
             return out;
           });
         }
@@ -272,6 +283,31 @@ function remarkHardBreaks() {
     };
     visit(tree);
   };
+}
+
+/** A decoded newline entity adds a display break but stays on its original source line. */
+function hardBreakPositions(node: Text, source: string): Text['position'][] | undefined {
+  const start = node.position?.start, end = node.position?.end;
+  if (start?.offset === undefined || end?.offset === undefined) return undefined;
+  const raw = source.slice(start.offset, end.offset);
+  const positions: Text['position'][] = [];
+  let point = start, previous = 0;
+  for (const match of raw.matchAll(/\r\n|\r|\n|&(?:NewLine|#0*10|#[xX]0*[aA]);/g)) {
+    if (match[0].startsWith('&')) {
+      let slashes = 0;
+      for (let i = match.index - 1; i >= 0 && raw[i] === '\\'; i--) slashes++;
+      if (slashes % 2) continue;
+    }
+    const at = { line: point.line, column: point.column + match.index - previous, offset: start.offset + match.index };
+    positions.push({ start: point, end: at });
+    const next = match.index + match[0].length;
+    point = match[0].startsWith('&')
+      ? { line: at.line, column: at.column + match[0].length, offset: start.offset + next }
+      : { line: at.line + 1, column: 1, offset: start.offset + next };
+    previous = next;
+  }
+  positions.push({ start: point, end });
+  return positions.length === node.value.split(/\r?\n/).length ? positions : undefined;
 }
 
 /** Frontmatter is shown as a yaml code block — never as a setext heading (#5375). */
@@ -361,6 +397,45 @@ function rehypeHeadingIds() {
   };
 }
 
+const classesOf = (node: HastNode): unknown[] => (Array.isArray(node.properties?.className) ? (node.properties.className as unknown[]) : []);
+
+/**
+ * @@@no-mathml — a formula keeps its meaning for a reader without a single MathML element reaching the page.
+ *
+ * KaTeX adds a visually hidden `<math>` copy of every formula. Chromium loads its MathML stylesheet for the whole
+ * renderer process the first time one MathML element is styled, wherever it sits, and a rule in it
+ * (`mmultiscripts > mprescripts ~ :nth-child(…)`) then makes every element insertion or removal anywhere re-style the
+ * full subtree of each following sibling: one formula on screen and from then on a new message re-styles the whole
+ * chat (measured: the same insertion re-styles 1 element before the first `<math>` exists, 5005 after).
+ *
+ * What that copy was for stays, as plain HTML: the formula is `role="math"` named by its TeX source (assistive
+ * technology reads the source), and the hidden span holds the source as text, so a copied selection still carries it.
+ */
+function rehypeMathWithoutMathml() {
+  return (tree: HastNode) => {
+    const visit = (node: HastNode): void => {
+      const copy = classesOf(node).includes('katex') ? node.children?.find((child) => classesOf(child).includes('katex-mathml')) : undefined;
+      if (copy) {
+        const source = (function find(inside: HastNode): HastNode | undefined {
+          if (inside.tagName === 'annotation') return inside;
+          for (const child of inside.children ?? []) { const found = find(child); if (found) return found; }
+          return undefined;
+        })(copy);
+        if (!source) throw new Error('KaTeX output carries no TeX annotation to keep as the formula\'s accessible name');
+        const tex = hastText(source);
+        node.properties = { ...node.properties, role: 'math', ariaLabel: tex };
+        // Zero-size text: selected and copied with the formula, but it draws no line boxes of its own (in KaTeX's
+        // one-pixel hidden box the source would otherwise wrap into a column of them).
+        copy.properties = { ...copy.properties, style: 'font-size:0' };
+        copy.children = [{ type: 'text', value: tex }];
+        return;
+      }
+      node.children?.forEach(visit);
+    };
+    visit(tree);
+  };
+}
+
 /**
  * `afterSanitize` is where a surface projects its own interactive pieces (the transcript's mention and image
  * chips) — after the one sanitize pass, so they never need an exception in the shared schema.
@@ -375,5 +450,6 @@ export function markdownRehypePlugins(
     [rehypeSanitize, MARKDOWN_SANITIZE_SCHEMA],
     ...afterSanitize,
     [rehypeKatex, KATEX_OPTIONS],
+    rehypeMathWithoutMathml,
   ];
 }

@@ -9,6 +9,9 @@
 //   ⑤ Agent owners and source-group managers may edit listen mode; role/removal protection stays separate.
 import { act, Fragment, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// Destructive actions ask first (lib/confirmDanger); here the person confirms.
+const confirmDangerMock = vi.hoisted(() => vi.fn(async (_args: unknown) => true))
+vi.mock('../../../apps/desktop/src/lib/confirmDanger', () => ({ confirmDanger: confirmDangerMock, confirmConversationAction: vi.fn(async () => true) }))
 import type { GroupChatSettings, GroupAgentItem, GroupCollabSnapshot, GroupMemberItem } from '../../../packages/core/src/shared/types/chat'
 import type { DisplayIdentity } from '../../../apps/desktop/src/lib/displayIdentity'
 import { createNode, createReactHarness, device, displayIdentity, renderWithAppProviders, typeInto, waitForCondition } from '../../support/testHarness'
@@ -17,15 +20,18 @@ import { publishProjectGroupChats } from '../../../apps/desktop/src/session/rend
 import type { MemberProfileChatTarget } from '../../../apps/desktop/src/components/MemberProfileCard'
 import { DevicesContext } from '../../../apps/desktop/src/store/devicesContext'
 import { removeDeviceSessions, updateDeviceSessions } from '../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
+import { publishRendererSession } from '../../../apps/desktop/src/lib/sessionPublication'
+import { readViewState } from '../../../apps/desktop/src/lib/viewStateTable'
+import { viewStateCache } from '../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
 
 const shell = vi.hoisted(() => ({ mobile: false }))
-vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
+vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile, readMobileShell: () => shell.mobile }))
 
 vi.mock('../../../apps/desktop/src/lib/chat', () => ({
   chatService: {
     getGroupCollab: vi.fn(),
     getGroupChatSettings: vi.fn(),
-    listGroupJoinRequests: vi.fn(),
+    listManagedGroupJoinRequests: vi.fn(),
     decideGroupJoin: vi.fn(async () => {}),
     setAgentListenMode: vi.fn(async () => {}),
     setGroupMemberRole: vi.fn(async () => {}),
@@ -43,7 +49,7 @@ const { MemberListPanelFixture: MemberListPanel } = await import('../../support/
 const { MemberListPanel: ControlledMemberListPanel } = await import('../../../apps/desktop/src/components/chat/MemberListPanel')
 
 const getGroupCollab = vi.mocked(chatService.getGroupCollab)
-const listJoinRequests = vi.mocked(chatService.listGroupJoinRequests)
+const listJoinRequests = vi.mocked(chatService.listManagedGroupJoinRequests)
 const removeMember = vi.mocked(chatService.removeGroupMember)
 const setListenMode = vi.mocked(chatService.setAgentListenMode)
 const getSettings = vi.mocked(chatService.getGroupChatSettings)
@@ -80,8 +86,12 @@ const IDENTITIES: DisplayIdentity[] = [
 ]
 
 let harness: ReturnType<typeof createReactHarness>
+let viewAccount = 0
 beforeEach(() => {
+  viewStateCache.forget('view:')
   harness = createReactHarness()
+  // The view-state table is keyed by the signed-in account: a fresh one per case keeps one case's search words out of the next.
+  publishRendererSession('SIGNED_IN', { user: { id: `view-${viewAccount++}` } } as never)
   getSettings.mockResolvedValue(authority())
   getGroupCollab.mockResolvedValue({ snapshot: SNAPSHOT, identities: IDENTITIES })
   listJoinRequests.mockResolvedValue([])
@@ -235,6 +245,25 @@ describe('gugu-dev#181 我的 agent 收成一组', () => {
 })
 
 describe('#6418 群成员面板 —— 搜索', () => {
+  it('fe-continuity A5: each chat keeps its search words across a remount, a new key and switching chats', async () => {
+    await renderPanel()
+    const search = () => q('[data-testid="member-list-search"] input, input[data-testid="member-list-search"]') as HTMLInputElement
+    await typeInto(search(), '成员乙')
+    expect(rowIds()).toEqual(['member-1', 'codex'])
+    harness.cleanup(); harness = createReactHarness()
+    await renderPanel()
+    expect(search().value, 'remounted (closing the panel, the info tab key): the words are still there').toBe('成员乙')
+    expect(rowIds()).toEqual(['member-1', 'codex'])
+    harness.cleanup(); harness = createReactHarness()
+    await renderPanel('owner-1', 'chat-2')
+    expect(search().value, 'another chat has its own words').toBe('')
+    harness.cleanup(); harness = createReactHarness()
+    await renderPanel()
+    expect(search().value).toBe('成员乙')
+    await typeInto(search(), '')
+    expect(readViewState({ conversation: 'chat-1', panel: 'members' }), 'back to how it started: no entry is kept').toEqual({})
+  })
+
   it('按名字、主人、引擎匹配,并真的滤掉不匹配的行', async () => {
     await renderPanel()
     expect(rowIds()).toEqual(['owner-1', 'member-1', 'member-2', 'claude', 'codex'])
@@ -342,7 +371,8 @@ describe('Agent owner and source-group listen-mode controls', () => {
   it('includes listen-mode editing in a group owner’s menu for another agent', async () => {
     await renderPanel('owner-1')
     await click(q('[data-member-row="codex"] button[aria-label^="管理"]'))
-    expect(menuItems()).toEqual(['设为管理员', '改为主动', '移出群聊'])
+    // menu-table.ts @@@menu-order: listen mode (weekly) before admin (once, if ever); removing is last.
+    expect(menuItems()).toEqual(['改为主动', '设为管理员', '移出群聊'])
   })
 
   it('普通成员只在自己的 agent 上有 ⋯:改档位、让它退出群聊', async () => {
@@ -431,7 +461,7 @@ describe('topic participant controls project server authority', () => {
   it('lets a source-group manager change a topic agent’s mode without a topic seat', async () => {
     await renderTopic('owner-1', true, { ...SNAPSHOT, humans: SNAPSHOT.humans.filter((human) => human.id !== 'owner-1') })
     expect(q('[data-testid="topic-name-edit"] [data-testid="group-name-edit"]')).not.toBeNull()
-    expect(q('[data-testid="member-list-invite"]')).toBeNull()
+    expect(q('[data-group-add-menu]')).toBeNull()
     await click(q('[data-member-row="codex"]'))
     expect(q('[data-profile-remove-button="codex"]')).not.toBeNull()
     expect(q('[data-profile-role-select="codex"]')).toBeNull()

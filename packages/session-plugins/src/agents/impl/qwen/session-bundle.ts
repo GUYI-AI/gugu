@@ -33,9 +33,50 @@ const noPromptBlocks: Degradation = {
   reason: 'No prompt blocks were declared.',
 };
 
+const QWEN_NATIVE_HOME = {
+  envVar: 'QWEN_HOME',
+  userPath: '.qwen',
+  evidence: 'Qwen Code v0.24.4 Storage.getGlobalQwenDir honors QWEN_HOME and defaults to ~/.qwen.',
+} as const satisfies NativeHome;
+
 export const qwenSessionBundleDescriptor = {
-  injectionMode: 'runtime',
-  nativeHome: { envVar: 'QWEN_HOME', userPath: '.qwen', evidence: 'qwen-code:QWEN_HOME 挪走用户层配置,默认 ~/.qwen(订阅读数同一条,见 ./subscription.ts)' } satisfies NativeHome,
+  injectionMode: 'managed-config-root',
+  nativeHome: QWEN_NATIVE_HOME,
+  configRoot: {
+    ...QWEN_NATIVE_HOME,
+    importGroups: [
+      { id: 'settings', paths: [{
+        path: 'settings.json',
+        keys: [
+          'general', 'output', 'ui', 'ide', 'privacy', 'model', 'modelProviders', 'providerProtocol',
+          'context', 'memory', 'skills', 'permissions', 'tools', 'policy', 'mcp',
+        ],
+      }], evidence: 'Qwen Code v0.24.4 packages/cli/src/config/settingsSchema.ts defines user settings.' },
+      { id: 'hooks', paths: [{ path: 'settings.json', keys: ['hooks'] }],
+        evidence: 'Qwen user hooks share settings.json and are selected only during manual import.' },
+      { id: 'mcp', paths: [{ path: 'settings.json', keys: ['mcpServers'] }],
+        evidence: 'Qwen reads user MCP servers from settings.json.' },
+      { id: 'rules', paths: ['QWEN.md', 'memory.md'],
+        evidence: 'Qwen reads the global QWEN.md and stores user memory in Storage.getGlobalMemoryFilePath.' },
+      { id: 'skills', paths: ['skills/'],
+        evidence: 'Qwen Storage.getUserSkillsDirs includes the skills directory under QWEN_HOME.' },
+    ],
+    credentialPaths: [
+      { path: 'oauth_creds.json', evidence: 'Qwen OAuth credentials rotate under a per-home lock and require a separate sign-in.' },
+      { path: 'mcp-oauth-tokens.json', evidence: 'Storage.getMcpOAuthTokensPath stores private MCP login state.' },
+      { path: '.env', evidence: 'Qwen uses home dotenv files for provider credentials and runtime overrides.' },
+    ],
+    historySession: (path: string) => {
+      const match = /^projects\/([^/]+)\/chats\/(?:archive\/)?([0-9a-fA-F-]{32,36})\.(jsonl|ledger\.jsonl|worktree\.json|pr\.json)$/.exec(path);
+      if (!match) return null;
+      const [, project, sessionId, suffix] = match;
+      return { id: `${project}/${sessionId!.toLowerCase()}`, primary: suffix === 'jsonl' };
+    },
+    carryExclusions: [{
+      path: 'projects', upgradeHistory: true,
+      evidence: 'Qwen SessionService keeps native and archived transcripts under projects/<workspace>/chats and chats/archive.',
+    }],
+  },
   platform: harnessPlatform,
   shellEnv: {
     passThrough: [
@@ -581,7 +622,7 @@ function baseReport(
  */
 function autonomyArgs(bundle: SessionCapabilityBundle): string[] {
   if (!bundle.autonomy) return [];
-  const mode = bundle.autonomy.mode === 'full-access' ? 'yolo' : 'default';
+  const mode = bundle.autonomy.permissionMode === 'full-access' ? 'yolo' : 'default';
   return ['--approval-mode', mode];
 }
 

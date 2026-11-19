@@ -14,6 +14,7 @@ import { CollapseHeader } from '@session-chat/components/primitives/CollapseHead
 import { ToolThumbs } from '../tools/tool/Tool';
 import { toolPictures, toolThumbsFor } from '../tools/tool/tool.def';
 import { STEP_STRIP_INSET } from '../tools/tool/tool-images';
+import { activateToolRow, toolActivationNames } from '@session-chat/lib/tool-activation';
 
 type Step = Exclude<ToolNode, { kind: 'tool-group' }>;
 type ConversationStepData = Step & { actionLabel: string; stateLabel: string | null; pictures: ReturnType<typeof toolPictures> };
@@ -49,7 +50,7 @@ function canExpand(item: ConversationStepData, ctx: MeasureCtx): boolean {
   return conversationTextOverflow(text, ctx, width, 12);
 }
 function pictureStrip(item: ConversationStepData, ctx: MeasureCtx) {
-  return toolThumbsFor(item.pictures, ctx.width - STEP_STRIP_INSET);
+  return toolThumbsFor(item.pictures, ctx, ctx.width - STEP_STRIP_INSET);
 }
 
 /** Prototype toolRow(): an action stays whole; only clipped details have a disclosure. */
@@ -64,10 +65,11 @@ export const conversationStepUnitDef = defineUnit<ConversationStepData, Record<s
     const expandable = () => !!props.ctx.measureCtx && canExpand(props.data, props.ctx.measureCtx());
     const expanded = () => props.ctx.viewState.isCollapsed(conversationTextKey(props.data.id));
     const strip = () => { const ctx = props.ctx.measureCtx?.(); return ctx ? pictureStrip(props.data, ctx) : null; };
-    return <div class={styles.row} data-conversation-step={props.data.id}>
+    const targets = () => toolActivationNames(props.data);
+    return <div class={styles.row} data-conversation-step={props.data.id} onClick={event => activateToolRow(event, targets())}>
       <Show when={notice()} fallback={
       <button type="button" class={styles.step} data-collapse-id={expandable() ? conversationTextKey(props.data.id) : undefined}
-        data-collapse-anchor={props.data.id} aria-expanded={expandable() ? expanded() : undefined} disabled={!expandable()}>
+        data-collapse-anchor={props.data.id} aria-expanded={expandable() ? expanded() : undefined} disabled={!expandable() && targets().length === 0}>
       <span class={styles.slot} aria-hidden="true"><Show when={notice() || failed()}><Show when={!failed()} fallback={<IconX />}><IconCheck /></Show></Show></span>
         <span class={styles.name}>{props.data.actionLabel}</span><Show when={detail()}>{value => <code class={styles.detail} title={value()}>{value()}</code>}</Show>
         <Show when={props.data.stateLabel}>{value => <span class={styles.status}>{value()}</span>}</Show>

@@ -1,10 +1,9 @@
 /**
- * Pure helpers for mention pill display — icon resolution and display-name
+ * Pure helpers for mention pill display — display-name and path
  * extraction. Kept in a standalone module so they can be unit-tested without
  * a DOM environment.
  */
 
-import { resolveFileIconClass } from '@gugu/session-chat-ui/file-icons';
 import type { MentionKind } from './types';
 
 // ── Basename ──────────────────────────────────────────────────────────────────
@@ -35,17 +34,6 @@ export function compactMentionPath(path: string): string {
   if (parts.length <= 1) return '';
   const tail = parts.slice(Math.max(0, parts.length - 3), -1);
   return `${parts.length > 3 ? '…/' : ''}${tail.join('/')}/`;
-}
-
-// ── File-icon class ───────────────────────────────────────────────────────────
-
-/**
- * Return a devicon CSS class for a file label, or null when no icon is
- * registered. Delegates to `resolveFileIconClass` which checks full-filename
- * overrides and then the file extension.
- */
-export function fileIconClass(label: string): string | null {
-  return resolveFileIconClass(basename(label));
 }
 
 // ── Lucide icon name by kind ──────────────────────────────────────────────────

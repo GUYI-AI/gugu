@@ -42,13 +42,17 @@ describe('resuming without replay (#980)', () => {
     expect(recordedDeliveryIds).not.toHaveBeenCalled();
   });
 
-  it('starts anyway when filling from the record fails', async () => {
+  it('starts with replay and logs it when filling from the record fails: the missing turns are neither stored nor skipped silently', async () => {
+    const { log } = await import('@main/lib/logger');
+    vi.mocked(log.warn).mockClear();
     const facts = await resumeHistoryFacts(input(), {
       recordedDeliveryIds: async () => [],
       fillFromRecord: async () => { throw new Error('record unreadable'); },
       turnIndexBase: async () => 4,
     });
-    expect(facts).toEqual({ replayHistory: false, recordedDeliveryIds: [], turnIndexBase: 4 });
+    expect(facts).toEqual({ replayHistory: undefined, recordedDeliveryIds: undefined, turnIndexBase: undefined });
+    expect(log.warn).toHaveBeenCalledWith('[acp-start] resume facts unavailable; resuming with replay',
+      { sessionId: 's1', error: 'Error: record unreadable' });
   });
 
   it('always reads the record for deliveries: a reconnecting runtime redelivers from a queue the host cannot see', async () => {

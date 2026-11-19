@@ -25,7 +25,7 @@ const noop = () => {}
 const messages = ['m1', 'm2', 'm3'].map((id, i) => message({ id, chat_id: 'g', seq: i + 1, sender_user_id: 'u1', content: id }))
 const rows: ChatListRowItem[] = messages.map((msg) => ({ type: 'message', message: msg }))
 const base: MessageListRowProps = {
-  rows, messages, mobile: false, memberReadSeqs: {}, deliveryWaits: new Map(), isGroupChat: true, memberProfiles: {},
+  rows, messages, mobile: false, memberReadSeqs: {}, deliveryWaits: new Map(), recipientFacts: { agentIds: new Set(), wakes: new Map() }, isGroupChat: true, memberProfiles: {},
   onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible: noop, memberProfileOpener: undefined, onMentionMember: undefined,
   flashMessageId: undefined, threeParty: undefined, readReceiptHandle: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
   agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined,

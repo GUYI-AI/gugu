@@ -5,16 +5,13 @@ import { openShellSettings } from '@renderer/lib/open-shell-settings';
 import { appState } from '@renderer/lib/stores/app-state';
 import { toggleHostTheme } from '@renderer/lib/theme/host-theme';
 import { COMMANDS, type CommandId } from '@shared/commands';
-import { openShellChatAction } from '@renderer/features/sidebar/sidebar-chats-section';
+import { revealSessionpage } from '@/hooks/useSessionpageReveal';
+import { requestShellChatAction } from '@/lib/sidebarChatsBridge';
 import { commandRegistry } from './registry';
 import type { AppCommand, CommandProvider } from './types';
 
 function appDef<T extends CommandId>(id: T): (typeof COMMANDS)[T] {
   return COMMANDS[id];
-}
-
-function isLibraryView(viewId: string): boolean {
-  return viewId === 'library';
 }
 
 function createAppCommandProvider(): CommandProvider {
@@ -31,7 +28,7 @@ function createAppCommandProvider(): CommandProvider {
       const projectId = params?.projectId;
 
       const settingsDef = appDef('app.settings');
-      const libraryDef = appDef('app.library');
+      const marketplaceDef = appDef('app.library');
       const newProjectDef = appDef('app.newProject');
       const giveFeedbackDef = appDef('app.giveFeedback');
       const toggleThemeDef = appDef('app.toggleTheme');
@@ -47,14 +44,10 @@ function createAppCommandProvider(): CommandProvider {
           },
         },
         {
-          ...libraryDef,
+          ...marketplaceDef,
           execute() {
-            if (isLibraryView(appState.navigation.currentViewId)) {
-              appState.navigation.navigate(appState.navigation.lastNonLibraryView);
-              return;
-            }
-
-            appState.navigation.navigate('library');
+            revealSessionpage();
+            appState.navigation.navigate('apps');
           },
         },
         {
@@ -89,13 +82,13 @@ function createAppCommandProvider(): CommandProvider {
         {
           ...newGroupChatDef,
           execute() {
-            openShellChatAction('create-group');
+            requestShellChatAction('create-group');
           },
         },
         {
           ...addContactDef,
           execute() {
-            openShellChatAction('add-contact');
+            requestShellChatAction('add-contact');
           },
         },
       );

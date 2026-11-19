@@ -1,5 +1,5 @@
-import { forgetAgentBrowser, agentBrowserStateOf, agentCursorArrived } from '@main/core/browser/agent-browser';
 import { defaultBrowser, importDefaultBrowserCookies } from '@main/core/browser/browser-cookie-import';
+import { inspectBrowserAnnotation } from './browser-annotation';
 import { configureBrowserProfileSession } from '@main/core/browser/browser-profile-session';
 import {
   destroyBrowserPage,
@@ -11,14 +11,12 @@ import {
   navigateBrowserPage,
   releaseBrowserPage,
   runBrowserPageCommand,
-  closeAgentOverlayLayers,
-  setAgentCursorShown,
-  forwardAgentCursorInput,
   setBrowserPageZoom,
   snapshotBrowserPage,
   type BrowserPageCommand,
 } from '@main/core/browser/browser-page-views';
 import { browserWebContentsRegistry } from '@main/core/browser/browser-webcontents-registry';
+import { listPersistedBrowserPartitions } from './browser-partition-cleanup';
 import { controlRemoteTaskPage, sendRemoteTaskPage, unwatchRemoteTaskPage, watchRemoteTaskPage } from '@main/core/browser/remote-task-page';
 import type { TaskPageControl } from '@shared/browser-task-page';
 import { isBrowserPartition } from '@main/core/browser/webview-security';
@@ -30,7 +28,6 @@ import {
   isBrowsingDataKind,
   type BrowserDataClearKind,
 } from '@shared/browser';
-import type { BrowserCursorInput } from '@shared/browser-cursor-input';
 import { createRPCController } from '@shared/lib/ipc/rpc';
 
 export const browserController = createRPCController({
@@ -50,7 +47,6 @@ export const browserController = createRPCController({
 
   unregisterSession: (browserId: string) => {
     // 页签关了:它的网页当场关掉(❌ 留一块没主的网页 view 在窗口里)。
-    forgetAgentBrowser(browserId);
     destroyBrowserPage(browserId);
     browserWebContentsRegistry.unregisterSession(browserId);
     return { success: true as const };
@@ -74,6 +70,10 @@ export const browserController = createRPCController({
   setPageZoom: (args: { browserId: string; factor: number }) => ({ success: setBrowserPageZoom(args.browserId, args.factor) }),
   measurePage: async (browserId: string) => ({ layout: await measureBrowserPage(browserId) }),
   snapshotPage: async (browserId: string) => ({ dataUrl: await snapshotBrowserPage(browserId) }),
+  inspectAnnotation: inspectBrowserAnnotation,
+  setAnnotationBrowsing: (args: { browserId: string; browsing: boolean }) => ({
+    success: browserWebContentsRegistry.setAnnotationBrowsing(args.browserId, args.browsing),
+  }),
   /**
    * #1607 node 5: a task's page on another of the person's computers, watched here as its live picture. The person's
    * input goes to that page directly, as their click into a page on this computer does; no App is involved.
@@ -84,19 +84,6 @@ export const browserController = createRPCController({
   unwatchTaskPage: (watchId: string) => ({ success: unwatchRemoteTaskPage(watchId) }),
   /** 界面要把焦点拿回自己身上(网页这个独立 view 拿着窗口焦点时,界面 JS 的 focus() 挪不动)。 */
   focusHost: (windowName: string) => ({ success: focusBrowserHost(windowName) }),
-  /** 页签那边画不画 agent 的鼠标:画的时候盖在网页上的那层鼠标露出来,不画就收起(它盖着网页,人的点击会落在它上面)。 */
-  setAgentCursorShown: (args: { browserId: string; shown: boolean }) => {
-    setAgentCursorShown(args.browserId, args.shown);
-    return { success: true as const };
-  },
-  forwardAgentCursorInput: (args: { browserId: string; input: BrowserCursorInput }) => ({
-    success: forwardAgentCursorInput(args.browserId, args.input),
-  }),
-  /** 页签那边不要盖在网页上的那几层了:按 window.open 的名字关(界面 ❌ 自己 window.close,那会关掉整扇窗)。 */
-  closeAgentOverlayLayers: (frameNames: string[]) => {
-    closeAgentOverlayLayers(frameNames);
-    return { success: true as const };
-  },
 
   setActiveBrowser: (browserId: string | null) => {
     browserWebContentsRegistry.setActiveBrowser(browserId);
@@ -115,15 +102,6 @@ export const browserController = createRPCController({
     } catch (error) {
       return { ok: false as const, browser: defaultBrowser().name, reason: 'other' as const, detail: error instanceof Error ? error.message : String(error) };
     }
-  },
-
-  /** OpenDCAI/gugu#56 界面挂上来 / 重新露出来时补问:这个页签上 agent 现在是什么状态(事件只在变化时发一次)。 */
-  agentState: (browserId: string) => ({ state: agentBrowserStateOf(browserId) }),
-
-  /** #7191 页签上 agent 的鼠标到位了:主进程这才把那一下交给网页。 */
-  agentCursorArrived: (moveId: number) => {
-    agentCursorArrived(moveId);
-    return { success: true as const };
   },
 
   openDevTools: (browserId: string) => ({
@@ -154,8 +132,8 @@ export const browserController = createRPCController({
   },
 });
 
-// Every persistent profile partition (default + named) plus any partitions with
-// live sessions, so clearing browsing data covers isolated-per-session tabs too.
+// Explicit browsing-data controls include legacy on-disk partitions too. Their
+// retirement never authorizes startup deletion of cookies or unsaved site data.
 async function collectBrowserPartitions(): Promise<string[]> {
   const browserSettings = await appSettingsService.get('browser');
   const partitions = new Set<string>([browserProfilePartition(DEFAULT_BROWSER_PROFILE_ID)]);
@@ -165,5 +143,6 @@ async function collectBrowserPartitions(): Promise<string[]> {
   for (const partition of browserWebContentsRegistry.registeredPartitions) {
     partitions.add(partition);
   }
+  for (const partition of await listPersistedBrowserPartitions()) partitions.add(partition);
   return [...partitions];
 }
