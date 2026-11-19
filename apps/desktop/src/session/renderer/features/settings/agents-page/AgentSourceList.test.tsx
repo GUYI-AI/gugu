@@ -1,4 +1,4 @@
-import { JSDOM } from 'jsdom';
+// @vitest-environment jsdom
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -7,30 +7,17 @@ import type { HostDependencyInstallation } from '@renderer/lib/stores/use-agent-
 import type { Installation } from '@shared/core/agents/agent-payload';
 import { AgentSourceList } from './AgentSourceList';
 
-let dom: JSDOM, root: Root, container: HTMLDivElement;
+let root: Root, container: HTMLDivElement;
 beforeEach(() => {
-  dom = new JSDOM('<div id="root"></div>');
-  for (const key of [
-    'window',
-    'document',
-    'HTMLElement',
-    'Element',
-    'Node',
-    'Event',
-    'CustomEvent',
-    'MutationObserver'
-  ] as const)
-    vi.stubGlobal(key, dom.window[key]);
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(cb, 0));
-  vi.stubGlobal('cancelAnimationFrame', clearTimeout);
-  container = document.getElementById('root') as HTMLDivElement;
+  container = document.createElement('div');
+  document.body.appendChild(container);
   root = createRoot(container);
 });
 afterEach(() => {
   act(() => root.unmount());
+  container.remove();
   vi.unstubAllGlobals();
-  dom.window.close();
 });
 const program: Installation = {
   id: '/bin/test-engine',
@@ -170,12 +157,11 @@ it('does not label a missing recorded binary as a failed-to-start binary', async
 it('only uninstalls the agent after confirming from the source menu', async () => {
   const model = vm({ status: 'available', installations: [program] });
   await render(model, program, undefined, true);
-  const menu = container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!;
   const confirmation = () => document.querySelector('[data-testid="agent-uninstall-confirmation"]');
+  const menu = container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!;
   const open = async () => {
     await act(async () => menu.click());
-    const uninstall = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
-      .find((item) => item.textContent?.trim() === 'Uninstall')!;
+    const uninstall = document.querySelector<HTMLElement>('[role="menuitem"]')!;
     await act(async () => uninstall.click());
   };
   const choose = async (name: string) => {
