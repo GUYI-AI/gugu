@@ -48,9 +48,8 @@ import {
 } from './memberProfileModels'
 import { ChatMessageComposer, type ChatMessageComposerProps, type ComposerAttachAction } from './chat/ChatMessageComposer'
 // @@@5856 消息列表抽成共享组件(话题分栏也用它)——见 MessageList.tsx 头部注释。
-import { MessageList, type MessageListRowProps } from './chat/MessageList'
+import { ChatMessageList, type MessageListRowProps } from './chat/ChatMessageList'
 import { useTaskChatRows } from './assistant/useTaskChatRows'
-import { HumanDmFriendshipNotice } from './chat/HumanDmFriendshipNotice'
 import { MessageLoadFailure } from './chat/MessageLoadFailure'
 import { MessageListSkeleton } from './chat/MessageListSkeleton'; import { ChatBottomDock } from './chat/ChatBottomDock'; import { PinnedTopicTabs } from './chat/PinnedTopicTabs'; import { PhoneRoomComposerControls } from '../mobile/chat/PhoneRoomComposerControls'; import { PhoneProjectEmpty } from '../mobile/chat/PhoneProjectEmpty'; import { PhoneMessagesEmpty } from '../mobile/chat/PhoneMessagesEmpty'
 import { ChatHeaderActions } from './chat/ChatHeaderActions'
@@ -709,15 +708,12 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       )}
 
       {chatListRows.length > 0 && (
-        <MessageList
+        <ChatMessageList
           resetKey={chatResetKey}
           listRef={listRef}
           scrollerRef={setScrollerRef}
           rows={chatListRows}
-          rowProps={rowProps} footer={<>
-            {chrome?.typing}
-            {!messageWindow?.hasNewer && activeChatId && <HumanDmFriendshipNotice chatId={activeChatId} kind={activeChat?.kind} currentUserId={user?.id ?? null} peer={peerIdentity} />}
-          </>}
+          rowProps={rowProps} footer={chrome?.typing}
           initialTopMostItemIndex={openLocation()}
           followTail={!unreadNavigationPending && !messageWindow?.hasNewer && messageWindow?.change !== 'newer'} unreadAbove={unreadEntry ? { messageId: unreadEntry.locator.message_id, messageSeq: unreadEntry.locator.message_seq, label: t('chatArea.unreadAbove', { count: unreadEntry.locator.unread_count }), onSeen: unreadEntry.consume, onJump: () => void jumpToUnreadEntry(scrollerRef.current).catch(onHistoryError) } : null}
           onAtBottomChange={onAtBottomChange}
