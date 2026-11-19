@@ -81,6 +81,9 @@ export function rendererManualChunk(id: string): string | undefined {
     return undefined
   }
   if (pkg.startsWith('@supabase/')) return 'vendor-supabase'
+  // @@@engine-floor polyfills (src/lib/engine-polyfills.ts, the first module script of every entry) depend on nothing
+  // else. In `vendor` they pulled the shared CommonJS helper there and closed a vendor -> vendor-react -> vendor cycle.
+  if (pkg === 'core-js') return 'vendor-polyfills'
 
   // Keep this chunk dependency-free outside the React core. Grouping react-select, framer-motion,
   // or other React consumers here creates vendor -> vendor-react -> vendor cycles whose evaluation
