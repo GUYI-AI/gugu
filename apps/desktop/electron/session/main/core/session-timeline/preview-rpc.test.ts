@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
 vi.mock('./service', () => ({
   readSessionRow: () => ({ runtime: state.runtime }),
   nativeRecord: (...args: unknown[]) => state.nativeRecord(...args), nativeToolImage: vi.fn(), nativeAttachment: vi.fn(),
+  compactNativeRecord: (...args: unknown[]) => state.nativeRecord(...args),
   subscribe: (...args: unknown[]) => state.subscribe(...args),
   unsubscribe: (...args: unknown[]) => state.unsubscribe(...args),
   snapshot: (...args: unknown[]) => state.snapshot(...args),
@@ -101,7 +102,7 @@ describe('MessagePreview 宿主', () => {
       running: true, now: 'thinking', ended: null,
       entries: [{ kind: 'prompt', messageId: 'msg:1' }, { kind: 'text', text: 'Earlier reply' }, { kind: 'prompt', messageId: 'msg:2' }],
     } });
-    expect(state.nativeRecord).toHaveBeenCalledExactlyOnceWith({ conversationId: 'conv-1', tail: true, limit: 2 });
+    expect(state.nativeRecord).toHaveBeenCalledExactlyOnceWith({ conversationId: 'conv-1', limit: 2 });
     expect(committed.seq).toBe(41);
     expect(activeTurn.seq).toBe(1);
     expect(state.snapshot).not.toHaveBeenCalled();

@@ -83,7 +83,11 @@ export async function readBoundedLocalSessionPreview(request: LocalPreviewReques
       turnCount: complete ? turns.length : null,
       incomplete: !complete, oversizedTail,
       head: headTurns.map(one => one.turn), tail: tailTurns.map(one => one.turn) };
-    budget.charge('outputBytes', Buffer.byteLength(JSON.stringify(result)));
+    // Include the accounting envelope itself; only the bounded response is
+    // encoded, never a full transcript transported out of the worker.
+    const accounted = { ...result, io: { ...budget.counters } };
+    for (let iteration = 0; iteration < 3; iteration++) accounted.io.outputBytes = Buffer.byteLength(JSON.stringify(accounted));
+    budget.charge('outputBytes', accounted.io.outputBytes);
     return { ...result, io: budget.counters };
   } finally { await source.close(); }
 }

@@ -1785,7 +1785,18 @@ export async function changeQueue(input: { conversationId: string; action: impor
   }
 }
 
-const nativeRecordReader = createNativeRecordReader({ readSession: readSessionRow, activeTurn: id => entries.get(id)?.nativeActiveTurn, withTimeline });
+const nativeRecordReader = createNativeRecordReader({ readSession: readSessionRow, activeTurn: id => entries.get(id)?.nativeActiveTurn, withTimeline,
+  async withArchive<T>(conversationId: string, read: () => T | Promise<T>): Promise<SessionTimelineResult<T>> {
+    try {
+      const floor = await nativeConversationHistoryFloor(conversationId);
+      const value = await read();
+      return { ok: true as const, value: clearedHistoryResult(value, floor) };
+    } catch (error) {
+      return fail('code' in Object(error) && (error as { code: unknown }).code === 'history_epoch_unstable' ? 'history_epoch_unstable' : 'timeline_failed', (error as Error)?.message ?? String(error));
+    }
+  },
+});
 export const nativeRecord = nativeRecordReader.snapshot;
+export const compactNativeRecord = nativeRecordReader.preview;
 export const nativeToolImage = nativeRecordReader.image;
 export { nativeAttachment } from './native-attachment';

@@ -11,6 +11,12 @@ export function createLocalSessionPreviewClient(spawn = () => new Worker(desktop
 })) {
   let worker: Worker | null = null, disposed = false, nextId = 0;
   const pending = new Map<number, Pending>();
+  const stopping = new Set<Promise<void>>();
+  let cleanupFailure: unknown;
+  function terminate(own: Worker): Promise<void> {
+    const stopped = own.terminate().then(() => {}, error => { cleanupFailure = error; }).finally(() => stopping.delete(stopped));
+    stopping.add(stopped); return stopped;
+  }
   const fail = (error: Error) => {
     for (const request of pending.values()) { request.clean(); request.reject(error); }
     pending.clear();
@@ -26,7 +32,7 @@ export function createLocalSessionPreviewClient(spawn = () => new Worker(desktop
     });
     own.on('error', error => {
       if (worker !== own) return;
-      worker = null; fail(error); void own.terminate();
+      worker = null; fail(error); void terminate(own);
     });
     own.on('exit', code => {
       if (worker !== own) return;
@@ -52,7 +58,7 @@ export function createLocalSessionPreviewClient(spawn = () => new Worker(desktop
         const timeout = setTimeout(() => {
           if (worker !== own || !pending.has(id)) return;
           worker = null; fail(new Error('Local session preview deadline exceeded'));
-          void own.terminate();
+          void terminate(own);
         }, 10_000);
         const clean = () => { clearTimeout(timeout); signal.removeEventListener('abort', cancel); };
         pending.set(id, { resolve, reject, clean });
@@ -66,7 +72,9 @@ export function createLocalSessionPreviewClient(spawn = () => new Worker(desktop
       disposed = true;
       const own = worker; worker = null;
       fail(new Error('Local session preview is shutting down'));
-      if (own) await own.terminate();
+      if (own) await terminate(own);
+      await Promise.all(stopping);
+      if (cleanupFailure) throw cleanupFailure;
     },
   };
 }

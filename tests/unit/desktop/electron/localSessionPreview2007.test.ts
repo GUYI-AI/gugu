@@ -118,7 +118,7 @@ it('reports cancellation and source truncation rather than a successful empty pr
 });
 
 it('only accepts complete metadata scalars at their actual JSON paths', () => {
-  expect(transcriptPrefixMetadata('{"message":{"content":"\\\"sessionId\\\":\\\"fake\\\""},"sessionId":"real","cwd":"/work","body":"unfinished', 'claude-code'))
+  expect(transcriptPrefixMetadata('{"message":{"content":"\\"sessionId\\":\\"fake\\""},"sessionId":"real","cwd":"/work","body":"unfinished', 'claude-code'))
     .toEqual({ providerSessionId: 'real', cwd: '/work' });
   expect(transcriptPrefixMetadata('{"payload":{"id":"real","cwd":"/w"},"type":"session_meta","body":"unfinished', 'codex'))
     .toEqual({ providerSessionId: 'real', cwd: '/w' });

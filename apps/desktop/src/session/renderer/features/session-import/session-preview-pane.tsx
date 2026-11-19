@@ -10,7 +10,7 @@ import type { SessionImportSource } from './import-source';
 
 // @@@sessionpage 导入本机会话 (spec session-page-import)：选中一条后的确认视图。
 // 列表那一行只有标题（来自文件头部），光看标题分不清「哪一条」——尤其是同一个项目里
-// 反复开的会话。这里真读一次原件，给出真实轮数与首尾几轮，用户按内容确认，不是按猜。
+// 反复开的会话。这里只读有界首尾片段；只有原件完整落在窗口内时才给出总轮数。
 
 function TurnBubble({ role, content }: { role: 'user' | 'assistant'; content: string }) {
   const { translate } = useSessionMessages();

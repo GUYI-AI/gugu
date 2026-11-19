@@ -513,6 +513,30 @@ describe('session timeline service', () => {
     expect(result).toMatchObject({ ok: true, value: { turns, originTurnIds: ['owner-notify:request', 'provider-source'], nativeOwnerNotificationEpoch: 0 } });
   });
 
+  it('#2007 reads a cold native preview without creating or acquiring the complete provider timeline', async () => {
+    state.rows = [row({ runtime: 'acp' })];
+    const factory = vi.fn(async () => { throw new Error('A compact preview must not replay the provider history'); });
+    service.setSessionTimelineFactory(factory);
+    const turn = { id: 'conv-1:turn:s9', seq: 9, initiator: 'user', items: [], outcome: { kind: 'done', reason: 'end_turn' } };
+    state.storedHistory.mockResolvedValue({ turns: [turn], originTurnIds: ['real-origin'], nextCursor: null });
+    expect(await service.compactNativeRecord({ conversationId: 'conv-1', limit: 4 }))
+      .toMatchObject({ ok: true, value: { turns: [turn], activeTurn: null } });
+    expect(factory).not.toHaveBeenCalled();
+    expect(state.pendingWatchCalls).toEqual([]);
+    expect(state.wake).not.toHaveBeenCalled();
+  });
+
+  it('#2007 stops an archive snapshot after three crossed epochs instead of spinning forever', async () => {
+    state.rows = [row({ runtime: 'acp' })];
+    state.storedHistory.mockImplementation(async () => {
+      state.notificationEpoch++;
+      return { turns: [], originTurnIds: [], nextCursor: null };
+    });
+    expect(await service.compactNativeRecord({ conversationId: 'conv-1', limit: 4 }))
+      .toMatchObject({ ok: false, error: { code: 'history_epoch_unstable' } });
+    expect(state.storedHistory).toHaveBeenCalledTimes(6);
+  });
+
   it('retries a native page read crossed by a revert instead of labeling old rows with the new epoch', async () => {
     state.rows = [row({ runtime: 'acp' })];
     service.setSessionTimelineFactory(async () => makeTimeline().timeline);

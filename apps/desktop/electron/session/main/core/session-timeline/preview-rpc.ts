@@ -40,7 +40,7 @@ export async function readSessionPreview(
 ): Promise<service.SessionTimelineResult<MessagePreviewProjection>> {
   if (service.readSessionRow(sessionId)?.runtime === 'acp') {
     // 原生聊天已提交的回合可能尚未进入 harness 文件(如准入期间取消),与聊天正文读同一份库尾。
-    const record = await service.nativeRecord({ conversationId: sessionId, tail: true, limit: turnLimit });
+    const record = await service.compactNativeRecord({ conversationId: sessionId, limit: turnLimit });
     if (!record.ok) return record;
     const turns = [...record.value.turns, ...(record.value.activeTurn ? [record.value.activeTurn] : [])];
     // 库内 seq 与活回合的运行时 seq 各自计数;原生读口给出的顺序才是这里的先后。

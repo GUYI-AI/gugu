@@ -8,13 +8,17 @@ export function createNativeRecordReader(deps: {
   readSession(id: string): { runtime: string | null } | null | undefined;
   activeTurn(id: string): TranscriptTurn | null | undefined;
   withTimeline<T>(id: string, read: (timeline: SessionTimeline) => T | Promise<T>): Promise<SessionTimelineResult<T>>;
+  withArchive<T>(id: string, read: () => T | Promise<T>): Promise<SessionTimelineResult<T>>;
 }) {
 /** ACP phone views share the desktop's committed archive, including provider-generated identities. */
 async function nativeRecord(input: { conversationId: string; before?: number; after?: number; tail?: boolean; limit?: number; lean?: boolean | 'folded'; revisionsFrom?: number }): Promise<SessionTimelineResult<import('@gugu/session-core/session-record/contract').NativeSessionRecord>> {
   const row = deps.readSession(input.conversationId);
   if (!row || row.runtime !== 'acp') return { ok: false, error: { code: 'unsupported_runtime', message: '这条会话没有原生对话记录' } };
-  return deps.withTimeline(input.conversationId, async () => {
-    for (;;) {
+  return deps.withTimeline(input.conversationId, () => readArchive(input));
+}
+
+async function readArchive(input: { conversationId: string; before?: number; after?: number; tail?: boolean; limit?: number; lean?: boolean | 'folded'; revisionsFrom?: number }) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       const epoch = ownerNotificationEpoch(input.conversationId);
       const store = await import('../sessions/session-turn-store'), { getStoredHistory } = store;
       const limit = Math.min(100, Math.max(1, input.limit ?? 60));
@@ -40,7 +44,14 @@ async function nativeRecord(input: { conversationId: string; before?: number; af
         latestStoredSeq, hasNewer, nativeOwnerNotificationEpoch: epoch,
         activeTurn: active && !page.originTurnIds.includes(active.id) ? trimTurnsForTransport([active])[0]! : null };
     }
-  });
+    throw Object.assign(new Error('会话历史正在变化，请稍后重新读取'), { code: 'history_epoch_unstable' });
+}
+
+/** A card/list preview owns no timeline, source watcher, cache fill or full-history factory. */
+async function preview(input: { conversationId: string; limit?: number }) {
+  const row = deps.readSession(input.conversationId);
+  if (!row || row.runtime !== 'acp') return { ok: false as const, error: { code: 'unsupported_runtime', message: '这条会话没有原生对话记录' } };
+  return deps.withArchive(input.conversationId, () => readArchive({ ...input, tail: true }));
 }
 
 async function nativeToolImage(input: { conversationId: string; itemId: string; index: number }): Promise<SessionTimelineResult<import('@gugu/session-core/acp/client').ToolImageLookup>> {
@@ -57,5 +68,5 @@ async function nativeToolImage(input: { conversationId: string; itemId: string; 
   });
 }
 
-return { snapshot: nativeRecord, image: nativeToolImage };
+return { snapshot: nativeRecord, preview, image: nativeToolImage };
 }

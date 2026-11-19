@@ -74,7 +74,7 @@ export type PreviewLocalSessionParams = {
   engine: LocalSessionEngine;
 };
 
-/** 导入前的确认信息：真读了文件，条数与内容都是原件里的。 */
+/** 导入前的确认信息：首尾内容来自原件，未完整读取时总条数未知。 */
 export type LocalSessionPreview = {
   providerSessionId: string;
   title: string;
