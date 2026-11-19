@@ -10,11 +10,11 @@
   background-color: transparent;
 }
 /* Paint the hover independently of the full two-line button. */
-.gg-inner-head-double [data-inner-head]:hover::before {
+.gg-inner-head-double [data-inner-head]:is(:hover, :focus-within, :has([aria-expanded='true']))::before {
   content: '';
   position: absolute;
-  inset: 0 8px;
-  border-radius: var(--radius-capsule);
+  inset: 0;
+  border-radius: var(--radius-control);
   background-color: var(--hover);
   pointer-events: none;
 }

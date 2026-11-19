@@ -81,15 +81,17 @@ export function createPhoneTaskApi({ ownerId, store, models, timelines, actions,
     if (!input || typeof input !== 'object') throw failure('invalid_args', '手机任务请求缺少参数')
     if (method === 'sessionSend') return { value: await send(input, requestId) }
     const agent = findSession(input.conversationId)
+    // The owner-scoped local record remains readable after the live identity moves or is
+    // unavailable. Timeline methods still enforce their phone-data and history-clear proofs.
+    if (method === 'sessionSnapshot') return { value: await timelines.snapshot(agent, input) }
+    if (method === 'sessionAfter') return { value: await timelines.after(agent, input) }
+    if (method === 'sessionOlder') return { value: await timelines.older(agent, input) }
+    if (method === 'sessionToolImage') return { value: await timelines.image(agent, input) }
     await verifyAgent(agent.agentUserId)
     let value
     if (method === 'sessionRetry') value = await retryInterruptedPhoneJob({ ownerId, store, agent, jobId: input.jobId, admit })
     else if (method === 'prefetchFiles') value = await turnFiles.prefetch(agent, input.files, source.signal)
     else if (method === 'sessionQueue') value = await changePhoneConversationQueue({ store, agent, action: input.action, interrupt, publish })
-    else if (method === 'sessionSnapshot') value = await timelines.snapshot(agent, input)
-    else if (method === 'sessionAfter') value = await timelines.after(agent, input)
-    else if (method === 'sessionOlder') value = await timelines.older(agent, input)
-    else if (method === 'sessionToolImage') value = await timelines.image(agent, input)
     else if (method === 'sessionRespond') {
       await actions().reconcile()
       value = await actions().respond(agent, input, source, admit)

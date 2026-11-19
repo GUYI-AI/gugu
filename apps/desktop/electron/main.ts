@@ -6,6 +6,10 @@ import { createAttachmentUploadHost } from './attachmentUploadHost'
 import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
 import { PASSWORD_AGENT_RPC } from './password-vault/server-delivery'
 import { createPasswordBetaPolicyReader } from './password-vault/beta-policy-reader'
+import { isNativeAccountSender, registerDesktopClosureIpc } from './account-closure/ipc'
+import { createClosureAuthChange } from './account-closure/auth-change'
+import { ClosureFailure } from './account-closure/receipts'
+import type { createDesktopClosureService } from './account-closure/service'
 import './browser-user-agent-bootstrap'
 import './page-navigation-bootstrap'
 import { attachTabHistorySwipe } from './tab-history-swipe'
@@ -829,6 +833,7 @@ if (SERVER_MODE) {
 }
 // F33 渲染进程推来的会话(见下面 human-auth-session:write / clear)。桌面模式的 getAuth 平时就用它。
 let pushedHumanAuth: PushedRuntimeAuth = undefined
+let humanAuthRevision = 0
 /**
  * #7290 `app_install { device }` from another machine of the owner's (`fromDevice`), as this machine's App action: a part of
  * their folder's package, sent over the device channel (`package_part`); then that package, installed here as a folder
@@ -2164,6 +2169,7 @@ function startDeviceRuntimeWhenRendererReady(): void {
     // 续上租约 = 这一轮认出了设备 id、写上了心跳:开机时没起成的远程隧道(那时还没有设备 id)在这里起。
     onRuntimeLeaseRenewed: () => { void assistantWorkDeliveryHost().tick(); ensureServerTunnelEndpoint() },
     authProvider: hostAuthProvider,
+    ownerWorkAllowed: async owner => SERVER_MODE || desktopClosureBootReady && !await desktopClosureHost().isPaused(owner),
     makeIdentityClient: (accessToken) =>
       makeIdentityClient(accessToken) as unknown as DeviceRuntimeIdentityClient,
     subscribeCommandWake: createDesktopDeviceCommandWakeSubscription({ supabase }),
@@ -2730,6 +2736,44 @@ function handOffWechatIfAny(): void {
 // session-life runs for exactly one account. Its sign-out tears sessions down with the old credentials, so it is
 // awaited before they are replaced or cleared (contract v3.1 #10); a renewal of the same account changes nothing.
 let sessionLifeBooted = false
+let desktopClosureBootReady = false
+const desktopClosureReady = Promise.withResolvers<void>()
+void desktopClosureReady.promise.catch(() => undefined)
+let desktopClosureService: ReturnType<typeof createDesktopClosureService> | undefined
+function desktopClosureHost() {
+  if (SERVER_MODE || !desktopClosureBootReady) throw new ClosureFailure('closure_storage_unavailable')
+  const bridge = loadEmdashBridge()
+  if (!bridge) throw new ClosureFailure('closure_storage_unavailable')
+  return desktopClosureService ??= bridge.createDesktopAccountClosureHost({
+    profileBinding: JSON.stringify([app.getPath('userData'), resolveGuguHome(process.env)]),
+    currentOwner: async () => pushedHumanAuth === undefined ? undefined : humanAuthUserId(),
+    async stopOwner(ownerId) {
+      if (!sessionLifeBooted) throw new ClosureFailure('closure_not_prepared')
+      const host = deviceRuntimeHost
+      if (host && !host.quiesceOwnerForClosure) throw new ClosureFailure('closure_not_prepared')
+      await Promise.all([bootedSessionLife().stopOwnerForClosure(ownerId), host?.quiesceOwnerForClosure?.(ownerId)])
+    },
+    async detachMainLog(ownerId) {
+      const before = currentLogFile()
+      const path = switchLogFileForOwner(null)
+      const suffix = join('users', ownerId, 'gugu-main.log')
+      if (path?.endsWith(sep + suffix)) throw new ClosureFailure('closure_storage_unavailable')
+      // This path came from the native logger, never from renderer arguments.
+      return before?.endsWith(sep + suffix) ? [dirname(dirname(before))] : []
+    },
+    async clearAuthMirror(ownerId) {
+      const owner = humanAuthUserId()
+      if (owner !== null && owner !== ownerId) throw new ClosureFailure('wrong_local_owner')
+      pushedHumanAuth = null
+      humanAuthRevision += 1
+      errorSummaryConsent.identityChanged()
+      projectionDeviceRuntime.invalidate()
+      await nativeFiles.ownerChanged(null)
+      onHumanAuthSessionChanged()
+    },
+  })
+}
+if (!SERVER_MODE) registerDesktopClosureIpc(ipcMain, () => mainWindow, desktopClosureHost)
 /** Booted ⇒ the bridge is loaded; a missing bridge here is a broken boot, said loudly. */
 function bootedSessionLife() {
   const bridge = loadEmdashBridge()
@@ -2742,7 +2786,7 @@ async function sessionLifeLeaveIfChanging(nextUserId: string | null): Promise<vo
 }
 async function sessionLifeEnter(): Promise<void> {
   const userId = humanAuthUserId()
-  if (sessionLifeBooted && userId) await bootedSessionLife().signIn(userId)
+  if (sessionLifeBooted && userId && (SERVER_MODE || !await desktopClosureHost().isPaused(userId))) await bootedSessionLife().signIn(userId)
 }
 // 「帮助改进咕咕」开关在所有桌面版上都记;真正发送仍只在配好接收地址的已发布 Beta 上(下一段)。
 const errorSummaryConsent = registerErrorSummaryConsent({
@@ -2755,16 +2799,38 @@ registerErrorSummaryReporting({
 })
 const humanAuthSessionIpc = createHumanAuthSessionIpc({
   toAuth: runtimeAuthFromSupabaseTokens,
-  set: (auth) => { pushedHumanAuth = auth; errorSummaryConsent.identityChanged() },
+  set: (auth) => { pushedHumanAuth = auth; humanAuthRevision += 1; errorSummaryConsent.identityChanged() },
   revoke: () => projectionDeviceRuntime.invalidate(),
   persist: (mirror: Parameters<typeof writeHumanAuthSession>[0]) => writeHumanAuthSession(mirror),
   erase: () => clearHumanAuthSession(),
   leaveIfChanging: sessionLifeLeaveIfChanging,
   enter: sessionLifeEnter,
   changed: onHumanAuthSessionChanged,
+  prepareChange: SERVER_MODE ? undefined : createClosureAuthChange({
+    ready: () => desktopClosureReady.promise,
+    fence: desktopClosureHost,
+    source: () => ({ ownerId: humanAuthUserId(), generation: humanAuthRevision }),
+    leave: (source, next, qualify) => sessionLifeBooted
+      ? bootedSessionLife().leaveForAuthChange(source, next, qualify) : qualify(),
+  }),
+  async mutate(nextOwner, operation) {
+    if (SERVER_MODE) return operation()
+    await desktopClosureReady.promise
+    const closure = desktopClosureHost()
+    return closure.underAuth(async () => {
+      if (nextOwner) await closure.requireAuthWrite(nextOwner)
+      return operation()
+    })
+  },
 })
-ipcMain.handle('human-auth-session:write', (_event, session: unknown) => humanAuthSessionIpc.write(session as Parameters<typeof writeHumanAuthSession>[0]))
-ipcMain.handle('human-auth-session:clear', (_event, reason: unknown) => humanAuthSessionIpc.clear(reason))
+ipcMain.handle('human-auth-session:write', (event, session: unknown) => {
+  if (!isNativeAccountSender(event, mainWindow)) throw new ClosureFailure('wrong_local_owner')
+  return humanAuthSessionIpc.write(session as Parameters<typeof writeHumanAuthSession>[0])
+})
+ipcMain.handle('human-auth-session:clear', (event, reason: unknown) => {
+  if (!isNativeAccountSender(event, mainWindow)) throw new ClosureFailure('wrong_local_owner')
+  return humanAuthSessionIpc.clear(reason)
+})
 // #5906 —— 渲染层刚把一条设备命令放回了 pending(失败条的「重试」)。那是 UPDATE,库那侧的 `command_created`
 // 广播只挂在 INSERT 上 ⇒ 没有任何事件会叫醒宿主;由发起方在这里说一声。
 ipcMain.on('device-runtime:commands-changed', () => {
@@ -5162,7 +5228,10 @@ app.whenReady().then(async () => {
         privateLogin: (sessionId, input) => emdash.serverTaskPrivateLogin(sessionId, input),
       }))
     } else {
-    emdash.installPasswordBetaHost({ window: () => mainWindow, account: async () => (await getSessionpageAuth())?.userId ?? null, device: localDeviceId,
+    emdash.installPasswordBetaHost({ window: () => mainWindow, account: async () => {
+      const owner = (await getSessionpageAuth())?.userId ?? null
+      return owner && !SERVER_MODE && desktopClosureBootReady && await desktopClosureHost().isSealed(owner) ? null : owner
+    }, device: localDeviceId,
       deliver: (sessionId, requestId, status) => emdash.deliverPasswordBetaDecision(sessionId, requestId, status),
       deliverSave: (sessionId, requestId, status, credentialId) => emdash.deliverPasswordBetaSaveResult(sessionId, requestId, status, credentialId),
       readPolicy: createPasswordBetaPolicyReader(getSessionpageAuth),
@@ -5255,7 +5324,13 @@ app.whenReady().then(async () => {
       local: emdash.assistantPanelLocal,guguHome: resolveGuguHome(process.env),kind: assistantHomeKind(process.env),env: process.env,
       failed: domain => createLogger('assistant-panel').warn({ domain },'Panel publication will retry during host activity'),
     })
-    emdash.setSessionAdmissionPreparation((sessionId,text) => assistantPanel.prepare(sessionId,text))
+    emdash.setSessionAdmissionPreparation(async (sessionId,text) => {
+      if (!SERVER_MODE) {
+        const owner = humanAuthUserId()
+        if (!owner || !desktopClosureBootReady || await desktopClosureHost().isPaused(owner)) throw new ClosureFailure('closure_not_prepared')
+      }
+      return assistantPanel.prepare(sessionId,text)
+    })
     emdash.setProjectGroupHost(createSessionpageProjectGroupHost({ getAuth: getSessionpageAuth, env: process.env }))
     emdash.setAssistantProjectCleanupOwner(async () => (await getSessionpageAuth())?.userId ?? null, localDeviceId, async () => {
       const auth = await getSessionpageAuth()
@@ -5989,7 +6064,9 @@ app.whenReady().then(async () => {
     // conversationId 为 null = 运行时整个没了,把 Chat UI 这一批全结清(终端会话那批的进程还活着,
     // 一起撤会把它们打成每轮 401)。
     emdash.setEmdashPlatformRelease((sessionId, expectedAccessSessionId, intent) =>
-      sessionpagePlatformHooks.release(sessionId, expectedAccessSessionId, intent))
+      sessionpagePlatformHooks.release(sessionId, expectedAccessSessionId, intent),
+      (sessionId, generation) => sessionpagePlatformHooks.releaseForClosure?.(sessionId, generation)
+        ?? Promise.reject(new Error('Platform closure release unavailable')))
     emdash.setEmdashPlatformCheckpoint((sessionId) => sessionpagePlatformHooks.checkpoint(sessionId))
     // Sidecar-backed session-TUI legs (codex app-server, opencode serve) deliver over their own socket and
     // publish turn boundaries back through this one relay; the host never writes to the PTY for them.
@@ -6304,6 +6381,7 @@ app.whenReady().then(async () => {
       scheduleDiscovery: (work) => startupDiscovery.schedule(work),
     })
     sessionHostBoot = emdashBoot
+    void emdashBoot.then(() => { desktopClosureBootReady = true; desktopClosureReady.resolve(); deviceRuntimeHost?.notifyAuthChanged() }, error => desktopClosureReady.reject(error))
     platformCredentialsBoot = emdashBoot.catch(() => undefined)
     // Task names are projected during boot; adopting names (cloud, then the one-time legacy ones) follows it.
     void emdashBoot
@@ -6314,7 +6392,7 @@ app.whenReady().then(async () => {
     void emdashBoot.then(async () => {
       sessionLifeBooted = true
       const auth = await desktopAuthProvider().getAuth()
-      if (auth?.userId) await bootedSessionLife().signIn(auth.userId)
+      if (auth?.userId && (SERVER_MODE || !await desktopClosureHost().isPaused(auth.userId))) await bootedSessionLife().signIn(auth.userId)
     }).catch((error: unknown) => createLogger('session-life').error({ error: String(error) }, 'session-life could not sign in at boot'))
     void emdashBoot.then(() => {
       emdash.onAgentStatus(change => {
