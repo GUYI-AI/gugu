@@ -8,10 +8,11 @@
  */
 import { createRoot, type Root } from 'react-dom/client';
 import { useState, type ReactNode } from 'react';
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { until } from '../../../../../../../tests/support/awaitCondition';
-import { CreateOptionsPill } from '@/mobile/agent-watch/CreateOptionsPill';
+import { CreateOptionsPill, ModelChoices } from '@/mobile/agent-watch/CreateOptionsPill';
+import { setLocalePreference } from '@/i18n';
 import type { CreateSelection } from '@/mobile/agent-watch/create-session-form';
 import '@/i18n';
 import '@/styles/tokens.css';
@@ -87,4 +88,29 @@ it('create options: picking a model, then a thinking level keeps the sheet open;
 
   await click('[data-testid="agent-watch-create-options-nav"]');
   await until('✕ closes the sheet', () => q(sheet) == null);
+});
+
+
+it('localizes the phone model list while preserving the native selection ID', async () => {
+  setLocalePreference('zh-CN');
+  try {
+    const onPick = vi.fn();
+    const models = {
+      ...MODELS!,
+      models: [
+        { id: 'default', name: 'Default (recommended)', source: 'harness', description: 'Sonnet 5.5' },
+        { id: 'haiku', name: 'Haiku 5.5', source: 'harness', description: 'Fastest for quick answers' },
+        { id: 'new-model', name: 'New model', source: 'harness', description: 'Description from the host' },
+      ],
+    } satisfies NonNullable<typeof MODELS>;
+    mount(<ModelChoices models={models} state="ready" harnessName="Claude Code"
+      selection={{ harness: 'claude', model: 'default', permissionMode: null, effort: null }}
+      onPick={onPick} onLeave={() => {}} />);
+    await expect.element(page.getByRole('radio', { name: '默认（推荐） Sonnet 5.5', exact: true })).toHaveAttribute('aria-checked', 'true');
+    await expect.element(page.getByRole('radio', { name: 'New model', exact: true })).toBeVisible();
+    await page.getByRole('radio', { name: 'Haiku 5.5 响应速度快，适合简短问答' }).click();
+    expect(onPick).toHaveBeenCalledExactlyOnceWith('haiku');
+  } finally {
+    setLocalePreference('system');
+  }
 });

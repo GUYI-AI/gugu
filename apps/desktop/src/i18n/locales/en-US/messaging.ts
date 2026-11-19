@@ -1,5 +1,6 @@
 export default {
-  "fileAnnotation": { "addToChat": "Add to chat", "optionalComment": "Add an optional comment…", "comment": "Comment", "line": "Line {{start}}", "lines": "Lines {{start}}–{{end}}", "selectLine": "Select line {{line}}", "failed": "Could not save the comment. Try again." },
+  "fileCite": { "cite": "Cite", "selectLine": "Select line {{line}}", "line": "Line {{first}}", "lines": "Lines {{first}}–{{last}}" },
+  "selectionSend": { "label": "Send this selection", "send": "Send", "sending": "Sending…", "placeholder": "Add a note, @ to mention (optional)", "failed": "Not sent. Try again.", "sent": "Sent" },
   "agent": {
     "identity": {
       "phone": "Phone Agent",
@@ -128,7 +129,7 @@ export default {
     "backToList": "Back to chats",
     "conversationProfile": "View chat details",
     "downloadFailed": "Could not download the file",
-    "filePreview": { "close": "Close file preview", "download": "Download", "openExternal": "Open externally", "loading": "Reading file…", "rendering": "Rendering preview…", "renderFailed": "Could not render this file", "sheetTruncated": "This spreadsheet is too large, so only the first part is shown. Open it in an Office app to see everything.", "openInOffice": "Open in Office app", "previewLimits": "This document is too large or complex to preview safely.", "unsupported": "This file type cannot be previewed here. Download or open it externally.", "readFailed": "Could not read the file ({{status}})", "pdfControls": "PDF controls", "previousPage": "Previous page", "nextPage": "Next page", "zoomOut": "Zoom out", "zoomIn": "Zoom in", "zoom": "Zoom", "zoomReset": "Reset to 100%", "pageNumber": "Page number", "outline": "Outline", "fitWidth": "Fit width", "fitPage": "Fit page", "find": "Find", "findPrevious": "Previous match", "findNext": "Next match", "closeFind": "Close find" },
+    "filePreview": { "readAgain": "Read again", "close": "Close file preview", "download": "Download", "openExternal": "Open externally", "loading": "Reading file…", "rendering": "Rendering preview…", "renderFailed": "Could not render this file", "sheetTruncated": "This spreadsheet is too large, so only the first part is shown. Open it in an Office app to see everything.", "openInOffice": "Open in Office app", "previewLimits": "This document is too large or complex to preview safely.", "unsupported": "This file type cannot be previewed here. Download or open it externally.", "readFailed": "Could not read the file ({{status}})", "pdfControls": "PDF controls", "previousPage": "Previous page", "nextPage": "Next page", "zoomOut": "Zoom out", "zoomIn": "Zoom in", "zoom": "Zoom", "zoomReset": "Reset to 100%", "pageNumber": "Page number", "outline": "Outline", "fitWidth": "Fit width", "fitPage": "Fit page", "find": "Find", "findPrevious": "Previous match", "findNext": "Next match", "closeFind": "Close find" },
     "empty": {
       "chats": "Select a chat to start chatting",
       "contacts": "Select a contact to view details"
@@ -169,6 +170,7 @@ export default {
     "unreadAbove_one": "↑ {{count}} new message",
     "unreadAbove_other": "↑ {{count}} new messages",
     "noMessages": "No messages yet. Send one to start chatting.",
+    "mobileEmpty": { "title": "No messages yet", "hint": "Messages will appear here after they are sent" },
     "notificationLevel": {
       "all": "All",
       "important": "Important only",
@@ -265,6 +267,26 @@ export default {
     }
   },
   "chatList": {
+    "undoHideRetry": "Retry",
+    "undoHideChanged": "The conversation changed; this action can no longer be undone",
+    "clearHistory": "Clear chat history",
+    "clearHistoryTitle": "Clear the chat history of “{{name}}”?",
+    "clearHistoryConfirm": "Clear",
+    "hiddenNotice": "“{{name}}” is hidden",
+    "undoHide": "Undo",
+    "undoHideFailed": "Could not undo hiding",
+    "unpinFromSidebar": "Unpin from sidebar",
+    "hiddenRefreshFailed": "Removed from list, but the list could not refresh. Please retry.",
+    "agentDeleted": "Agent deleted",
+    "retryAgentDelete": "Retry deleting Agent",
+    "hiddenAgentDeleteFailed": "Conversation history deleted, but could not delete the Agent",
+    "alsoRemoveAgent": "Also delete this Agent",
+    "hideAgentDescription": "This conversation will leave your list and return when a new message arrives.",
+    "removeFromList": "Remove from list",
+    "hideFailed": "Could not remove this conversation from the list",
+    "deleteHistoryDescription": "Clear your chat history. Other members are not affected.",
+    "hide": "Hide",
+    "createAgent": "Create agent",
     "addContact": "Add contact",
     "clearSearch": "Clear search",
     "create": "New",
@@ -275,13 +297,21 @@ export default {
     "delete": "Delete",
     "disableNotifications": "Mute notifications",
     "deleteFailed": "Could not delete this conversation",
+    "deleteChat": "Delete chat",
+    "deleteChatConfirm": "Delete this chat with “{{name}}”? Its history is deleted with it.",
+    "deleteTopic": "Delete topic",
+    "closeTopic": "Close topic",
+    "deleteTopicConfirm": "Delete topic “{{name}}”? It is removed from every member's list.",
+    "dissolveGroup": "Dissolve group",
+    "leaveGroup": "Leave group",
+    "markTopicsRead": "Mark this group's topics read",
     "draft": "[Draft]",
     "moreTopics": "More topics ({{count}})",
     "moreTopics_one": "More topics ({{count}})",
     "moreTopics_other": "More topics ({{count}})",
     "empty": "No chats yet",
-    "emptyHint": "Use “New Agent” above to start your first conversation",
-    "emptyHintMobile": "Create an agent from the Projects tab to start your first conversation",
+    "emptyHint": "Use “Create agent” above to start your first conversation",
+    "emptyHintMobile": "Use “Create agent” in Projects to start your first conversation",
     "enableNotifications": "Enable notifications",
     "markRead": "Mark as read",
     "removeProject": "Remove Project",
@@ -301,8 +331,7 @@ export default {
     "pin": "Pin",
     "scan": "Scan",
     "search": "Search",
-    "unpin": "Unpin",
-    "unpinFromSidebar": "Unpin from sidebar"
+    "unpin": "Unpin"
   },
   "chatService": {
     "errors": {
@@ -376,6 +405,11 @@ export default {
     "besideUnavailable": "This file is not available right now.",
     "besideOutside": "Only files in this document's folder can be shown.",
     "imageUnavailable": "Image unavailable right now",
+    "senderUploading": "The sender is still uploading",
+    "senderUploadFailed": "The sender's upload did not complete",
+    "uploading": "Uploading",
+    "notUploaded": "Not uploaded yet",
+    "uploadFailed": "Upload failed, tap to retry",
     "newerInFolder": "Newer version in the folder",
     "retry": "Retry"
   },
@@ -432,6 +466,7 @@ export default {
     "attachmentSendTimedOut": "Attachment send timed out.",
     "attachmentPersistenceFailed": "Could not save {{fileName}}",
     "attach": "Add",
+    "attachmentsMenu": "Attachments",
     "cancelQuote": "Cancel reply",
     "disabled": "You cannot send messages in this chat",
     "exitWhisper": "Exit whisper mode",
@@ -448,7 +483,7 @@ export default {
     "mentionMembers": "Mention a member",
     "mentionNoMatch": "No matching members",
     "placeholder": "Write a message…",
-    "mobilePlaceholder": "Message",
+    "mobilePlaceholder": "Write anything…",
     "projectGroupPlaceholder": "Message {{name}}… @ an agent to call it",
     "removeAttachment": "Remove {{fileName}}",
     "sendFailed": "Message was not sent: {{guidance}}",
@@ -465,10 +500,6 @@ export default {
       "chatUnavailable": "The conversation is unavailable. Return to the message list to check it.",
       "timeout": "The send timed out. Try sending again later.",
       "unavailable": "The send did not finish. Try sending again later."
-    },
-    "verb": {
-      "task": "New task",
-      "agent": "New agent"
     },
     "whisperBanner": "Whisper to {{name}}, visible only to you both.",
     "whisperPlaceholder": "Whisper to {{name}}…"
@@ -499,6 +530,7 @@ export default {
     "forwarding": "Forwarding…",
     "noResults": "No chats found",
     "noTargets": "No chats available for forwarding",
+    "people": "Contacts",
     "note": "Add a note",
     "preview": {
       "attachment": "[Attachment]",
@@ -552,7 +584,7 @@ export default {
       "clearSearch": "Clear search",
       "add": "Add",
       "addMembers": "Add members",
-      "newAgent": "New agent",
+      "newAgent": "Create agent",
       "makeAdmin": "Make admin",
       "manage": "Manage {{name}}",
       "noMatches": "No members match \"{{query}}\"",
@@ -706,7 +738,6 @@ export default {
       "rules": "Collaboration rules",
       "rulesPlaceholder": "Core principles, direction, and collaboration agreements…",
       "rulesUnset": "No collaboration rules",
-      "title": "Group settings",
       "unavailable": "Unavailable",
       "uploading": "Uploading"
     }
@@ -786,6 +817,8 @@ export default {
       "openLink": "Open link",
       "selectText": "Select text",
       "delete": "Delete",
+      "deleteConfirm": "Delete this message? It cannot be restored.",
+      "deleteTitle": "Delete message",
       "forward": "Forward",
       "more": "More",
       "openTopic": "Open a topic",
@@ -801,6 +834,8 @@ export default {
     },
     "attachment": "[Attachment]",
     "copied": "Copied",
+    "selectTextFailed": "Could not open text selection",
+    "selectionClose": "Back",
     "copyFailed": "Could not copy. Select the text and copy it manually.",
     "forwarded": "↪ Forwarded",
     "forwardedFrom": "↪ From {{line}}",
@@ -876,7 +911,6 @@ export default {
     "reference": { "loading": "Loading…", "unreadable": "A message you cannot see", "widgetUnreadable": "A widget you cannot see", "widgetRetracted": "This widget was retracted", "widgetElsewhere": "This widget is in another conversation", "locate": "Go to original", "locateActive": "Go to active widget", "previewQuote": "[Quote]", "previewMessage": "[Quoted message]" },
     "widgetUnavailable": { "missing": "App is not installed.", "disabled": "App is switched off.", "view": "This App view is unavailable.", "platform": "This App cannot run here." }
   },
-  "searchTrail": {"position": "“{{query}}” {{index}}/{{total}}", "positionNoWords": "{{index}}/{{total}}", "previous": "Previous", "next": "Next (⌘G)", "results": "Results", "close": "Close search"},
   "outbox": {
     "selectFileAgain": "Upload interrupted. Select the file again.",
     "sourceNotSent": "The original message was not sent. Retry it before forwarding again.",
@@ -941,7 +975,7 @@ export default {
       "members": "Members",
       "collapseSplit": "Collapse split view",
       "collapseSplitHint": "Collapse the split view; the topic stays open",
-      "composerPlaceholder": "Say something in this topic…",
+      "composerPlaceholder": "Write anything…",
       "empty": "No one has spoken in this topic yet",
       "resize": "Drag to resize the topic pane"
     }

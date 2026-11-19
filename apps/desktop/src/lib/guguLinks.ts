@@ -1,6 +1,8 @@
 import { getSupabaseUrl } from '@gugu/core/cloud/config'
 import { parseGuguLink, type FilePlace, type GuguLinkTarget, type LinkPlace, type OpenTarget } from '@gugu/core/shared/ui/guguLink'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
+import type { TabOpenIntent } from '@shared/view-state'
+import type { ViewBox } from '@shared/extensions/app-runtime-protocol'
 import { platform } from '../platform'
 import { notify } from './notices'
 import { readMobileShell } from '../hooks/useMobileShell'
@@ -11,13 +13,28 @@ export type SenderFile = { path: string; at?: FilePlace }
 export type SenderChatTarget = { kind: 'sender'; userId: string; sourceChatId?: string; file?: SenderFile }
 export type LinkNavigation = {
   target: GuguLinkTarget | SenderChatTarget
+  /** The message it was clicked in: its chat is where a file's tab waits for the host's answer. */
   message?: MessageItem
   restore?: () => void
+  /** A file's name as the click knew it: its waiting tab's title. */
+  fileName?: string
+  /** An App page that asked (its chat and tab): the file's tab waits beside it, as the page's next page. */
+  from?: { chatId: string; tabId: string }
+  intent?: TabOpenIntent
+  /** The chat the asker named the file in: it must be there. */
+  chatId?: string
+  /** API 57 (`openingViewOf`): the files an App page showed with it, and the clicked picture's box on the window. */
+  among?: string[]
+  origin?: ViewBox
   resolve(opened?: LinkPlace | 'own'): void
   reject(error: unknown): void
 }
 
-export function openLinkTarget(target: GuguLinkTarget | SenderChatTarget, source: Pick<LinkNavigation, 'message' | 'restore'> = {}): Promise<LinkPlace | 'own' | void> {
+/** The person asked for something else before this open arrived: nothing failed, and no notice is owed for it. */
+export class OpenSuperseded extends Error { constructor() { super('The file opening was superseded') } }
+
+export type LinkSource = Pick<LinkNavigation, 'message' | 'restore' | 'fileName' | 'from' | 'intent' | 'chatId' | 'among' | 'origin'>
+export function openLinkTarget(target: GuguLinkTarget | SenderChatTarget, source: LinkSource = {}): Promise<LinkPlace | 'own' | void> {
   return new Promise((resolve, reject) => {
     const detail: LinkNavigation = { target, ...source, resolve, reject }
     if (window.dispatchEvent(new CustomEvent(OPEN_LINK_TARGET, { detail, cancelable: true }))) reject(new Error('The chat shell is not ready to open this link'))
@@ -25,13 +42,13 @@ export function openLinkTarget(target: GuguLinkTarget | SenderChatTarget, source
 }
 
 /** A click is parsed once here; main receives the target, not a URL to parse a second time. */
-export function openLink(raw: string | OpenTarget, groupParticipantRequestId?: string): Promise<boolean> | null {
+export function openLink(raw: string | OpenTarget, groupParticipantRequestId?: string, source?: Pick<LinkSource, 'message'>): Promise<boolean> | null {
   const target = typeof raw === 'string' ? parseGuguLink(raw, { supabaseUrl: readMobileShell() ? getSupabaseUrl() : undefined }) : raw
   if (!target) return null
-  return groupParticipantRequestId ? openTarget(target, groupParticipantRequestId) : openTarget(target)
+  return groupParticipantRequestId || source ? openTarget(target, groupParticipantRequestId, source) : openTarget(target)
 }
 
-export async function openTarget(target: OpenTarget, groupParticipantRequestId?: string): Promise<boolean> {
+export async function openTarget(target: OpenTarget, groupParticipantRequestId?: string, source?: Pick<LinkSource, 'message'>): Promise<boolean> {
   if (target.kind === 'widget') {
     const [{ readMessageReference }, { getCurrentAuthUserId }] = await Promise.all([import('./widgetRegistry'), import('./supabase')])
     const account = await getCurrentAuthUserId()
@@ -43,8 +60,8 @@ export async function openTarget(target: OpenTarget, groupParticipantRequestId?:
   }
   try {
     const outcome = platform.kind === 'electron'
-      ? await (await import('../session/renderer/lib/ipc')).rpc.extensions.openLink({ target, ...(groupParticipantRequestId ? { groupParticipantRequestId } : {}) })
-      : await (await import('../components/appSlot/phoneAppHost')).openPhoneLink(target)
+      ? await (await import('../session/renderer/lib/ipc')).rpc.extensions.openLink({ target, ...(groupParticipantRequestId ? { groupParticipantRequestId } : {}), ...(source ? { source } : {}) })
+      : await (await import('../components/appSlot/phoneAppHost')).openPhoneLink(target, source)
     if (outcome.kind === 'not-gugu-link') return false
     if (outcome.kind === 'failed') throw new Error(`${outcome.name}: ${outcome.detail ?? outcome.reason}`)
     return true
@@ -70,8 +87,8 @@ let followed = 0
  * DOM callers claim synchronously; the one promise reports a failure through the existing notice host. A link followed
  * since took its place (a second tap supersedes the first): only the latest one speaks.
  */
-export function followLink(raw: string | OpenTarget): boolean {
-  const opened = openLink(raw)
+export function followLink(raw: string | OpenTarget, source?: Pick<LinkSource, 'message'>): boolean {
+  const opened = source ? openLink(raw, undefined, source) : openLink(raw)
   if (!opened) return false
   const asked = ++followed
   void opened.catch((error: unknown) => { if (asked === followed) notify({ tier: 'error', title: error instanceof Error ? error.message : String(error) }) })

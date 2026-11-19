@@ -7,7 +7,9 @@ import type { ChatItem } from '@gugu/core/shared/types/chat'
 type Response = { data: unknown; error: { message: string } | null }
 const calls: Array<{ key: string; columns?: string; ids?: readonly string[] }> = []
 const rowsByKey = new Map<string, unknown[]>()
+const errorsByKey = new Map<string, { message: string }>()
 function builder(key: string, args?: { p_chat_ids?: readonly string[] }): unknown {
+  if (key === 'rpc:list_conversation_memberships') key = 'active_members'
   const call: { key: string; columns?: string; ids?: readonly string[] } = { key, ids: args?.p_chat_ids }
   const chain: unknown = new Proxy(function noop() {} as unknown as object, {
     get(_target, prop) {
@@ -20,7 +22,7 @@ function builder(key: string, args?: { p_chat_ids?: readonly string[] }): unknow
           const scoped = call.ids && key === 'chats' ? rows.filter(row => call.ids!.includes(String(row.id)))
             : call.ids && key === 'active_members' ? rows.filter(row => call.ids!.includes(String(row.chat_id)))
               : rows
-          return Promise.resolve({ data: scoped, error: null }).then(onFulfilled, onRejected)
+          return Promise.resolve({ data: scoped, error: errorsByKey.get(key) ?? null }).then(onFulfilled, onRejected)
         }
       }
       return () => chain
@@ -40,7 +42,7 @@ vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({
   },
 }))
 vi.mock('../../../../apps/desktop/src/lib/messageIngest', () => ({ ingestMessages: async () => undefined }))
-const { createChatProjection } = await import('../../../../apps/desktop/src/lib/chatProjection')
+const { createChatProjection, toProjectionOperations } = await import('../../../../apps/desktop/src/lib/chatProjection')
 
 const VIEWER = 'u-viewer'
 const PEER = 'u-peer'
@@ -55,6 +57,7 @@ const chatRow = (id: string, kind: 'group' | 'dm', at: string) => ({
 beforeEach(() => {
   calls.length = 0
   rowsByKey.clear()
+  errorsByKey.clear()
   rowsByKey.set('active_members', [seat('g-1', VIEWER), seat('g-2', VIEWER), seat('d-1', VIEWER), seat('d-1', PEER)])
   rowsByKey.set('chats', [chatRow('g-1', 'group', '2026-11-01T00:00:00Z'), chatRow('g-2', 'group', '2026-11-02T00:00:00Z'), chatRow('d-1', 'dm', '2026-11-03T00:00:00Z')])
   rowsByKey.set('contact_overrides', [{ target_kind: 'user', target_id: PEER, alias: 'Pal' }])
@@ -126,6 +129,70 @@ describe('warm start adopts the stored list', () => {
     await projection.advance([{ revision: '7', event: 'agent_changed', chatId: null, entityId: PEER }], '9', signal())
     expect(calls.filter(call => call.key === 'identity').flatMap(call => call.ids ?? [])).toContain(PEER)
     expect(keysetReads()).toBe(0)
+  })
+
+  it.each(['personal-delete', 'membership-removed'] as const)('replays %s while the app was closed into authoritative removal facts', async (kind) => {
+    const stored = await storedList()
+    const projection = createChatProjection(VIEWER, { rows: () => stored.rows, identity: () => undefined, durable: () => stored })
+    await projection.hydrate('9', signal())
+    expect(projection.isConversationDeleted('g-1')).toBe(false)
+    expect(projection.isMembershipRevoked('g-1')).toBe(false)
+    const members = rowsByKey.get('active_members') as Array<Record<string, unknown>>
+    rowsByKey.set('active_members', kind === 'membership-removed'
+      ? members.filter(row => row.chat_id !== 'g-1' || row.user_id !== VIEWER)
+      : members.map(row => row.chat_id === 'g-1' && row.user_id === VIEWER
+        ? { ...row, conversation_deleted_at: '2026-11-19T00:00:00Z' } : row))
+    const operations = toProjectionOperations([{ revision: '10', event: 'chat_members_changed',
+      payload: { chat_id: 'g-1', entity_id: VIEWER, tombstone: kind === 'membership-removed',
+        kind: kind === 'membership-removed' ? 'roster' : 'own' } }])
+    const rows = await projection.advance(operations, '10', signal())
+    expect(rows!.map(row => row.id)).not.toContain('g-1')
+    expect(projection.isConversationDeleted('g-1')).toBe(kind === 'personal-delete')
+    expect(projection.isMembershipRevoked('g-1')).toBe(kind === 'membership-removed')
+    expect(keysetReads()).toBe(0)
+  })
+
+  it('does not invent a removal fact for a stale layout id absent from the stored snapshot', async () => {
+    const complete = await storedList()
+    const stored = { ...complete, rows: complete.rows.filter(row => row.id !== 'g-1') }
+    const projection = createChatProjection(VIEWER, { rows: () => stored.rows, identity: () => undefined, durable: () => stored })
+    await projection.hydrate('10', signal())
+    expect(projection.isConversationDeleted('g-1')).toBe(false)
+    expect(projection.isMembershipRevoked('g-1')).toBe(false)
+    expect(calls).toEqual([])
+  })
+
+  it.each(['personal-delete', 'membership-removed'] as const)('verifies a stale restored layout id after %s was already committed', async (kind) => {
+    const complete = await storedList()
+    const stored = { ...complete, rows: complete.rows.filter(row => row.id !== 'g-1') }
+    const projection = createChatProjection(VIEWER, { rows: () => stored.rows, identity: () => undefined, durable: () => stored })
+    await projection.hydrate('10', signal())
+    const members = rowsByKey.get('active_members') as Array<Record<string, unknown>>
+    rowsByKey.set('active_members', kind === 'membership-removed'
+      ? members.filter(row => row.chat_id !== 'g-1' || row.user_id !== VIEWER)
+      : members.map(row => row.chat_id === 'g-1' && row.user_id === VIEWER
+        ? { ...row, conversation_deleted_at: '2026-11-19T00:00:00Z' } : row))
+    await projection.readRestoredLayoutMemberships(['g-1', 'g-1'], '10', signal())
+    expect(projection.isConversationDeleted('g-1')).toBe(kind === 'personal-delete')
+    expect(projection.isMembershipRevoked('g-1')).toBe(kind === 'membership-removed')
+    expect(calls).toEqual([{ key: 'active_members', ids: ['g-1'] }])
+    await projection.readRestoredLayoutMemberships(['g-1'], '10', signal())
+    expect(calls).toHaveLength(1)
+  })
+
+  it('a failed restored-id read retains the unknown block and is not retried on publication or unrelated journal work', async () => {
+    const stored = await storedList()
+    const projection = createChatProjection(VIEWER, { rows: () => stored.rows, identity: () => undefined, durable: () => stored })
+    await projection.hydrate('10', signal())
+    errorsByKey.set('active_members', { message: 'offline' })
+    await expect(projection.readRestoredLayoutMemberships(['g-1'], '10', signal())).rejects.toThrow('offline')
+    expect(projection.isConversationDeleted('g-1')).toBe(false)
+    expect(projection.isMembershipRevoked('g-1')).toBe(false)
+    await projection.readRestoredLayoutMemberships(['g-1'], '10', signal())
+    errorsByKey.clear()
+    await projection.advance([{ revision: '11', event: 'message_created', chatId: 'g-2', entityId: 'm-1' }], '11', signal())
+    expect(calls.filter(call => call.key === 'active_members' && call.ids?.includes('g-1'))).toHaveLength(1)
+    expect(projection.current().map(row => row.id)).toContain('g-1')
   })
 
   it('without a whole stored list it takes the keyset read', async () => {

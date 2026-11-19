@@ -1,3 +1,5 @@
+import type { PersonalConversationHiding } from '../lib/hideListedConversation'
+import type { PersonalConversationUndo } from '../lib/undoListedConversation'
 import type { AppForwardFilesDetail } from '../session/shared/extensions/app-runtime-protocol'
 import type { CreateTopicInput, CreatedTopic } from '../lib/topics'
 import type { UnreadLocatorCommit } from '../lib/chatUnreadLocatorWindow'
@@ -13,7 +15,8 @@ import type { DisplayIdentity } from '../lib/displayIdentity'
 import type { CapturedUnreadEntry } from '../lib/chatUnreadLocator'
 import type { AccountRevisionEvent, AccountRevisionListener } from '../lib/accountRevisionCoordinator'
 import { createDraftWriter } from './chatDraftWrites'
-import { readChatDrafts, removeChatDraft, writeChatDraft } from './chatDraftStorage'
+import { readChatDrafts, writeChatDraft } from './chatDraftStorage'
+import { forgetConversation } from '../lib/viewStateTable'
 import type { ChatMessageComposerProps } from '../components/chat/chatComposerModels'
 export { appendToDraft } from './chatDraftWrites'
 import { isDeepEqual } from '@gugu/session-shared'
@@ -149,6 +152,9 @@ export interface ChatContextValue {
   upsertChat: (chat: ChatItem) => void
   pinChat: (chatId: string, pinned: boolean) => Promise<void>
   deleteChat: (chatId: string, persist?: boolean) => Promise<void>
+  hideConversation: (chatId: string) => Promise<PersonalConversationHiding | undefined>
+  undoConversationHide: (chatId: string, hideOperationId: string) => Promise<PersonalConversationUndo | undefined>
+  clearConversation: (chatId: string) => Promise<void>
   // #901 退出群聊（成员自删 chat_members 行 + 本地移除）；区别于 deleteChat(owner 归档解散)。
   leaveGroup: (chatId: string) => Promise<void>
   markUnread: (chatId: string) => Promise<void>
@@ -156,6 +162,8 @@ export interface ChatContextValue {
   patchChat: (chatId: string, partial: Partial<ChatItem>) => void
   /** Editor persistence sink; programmatic changes go through writeDraft. */
   setDraft: (chatId: string, content: SetStateAction<string>) => void
+  /** The editor's words and @ picks to the disk at every edit, ahead of setDraft's debounced store copy: a quit right after keeps them. */
+  keepDraft: (chatId: string, draft: { text?: string; mentions?: DraftMention[] }) => void
   // @@@at-mention-draft (#4304/#951)
   setDraftMentions: (chatId: string, mentions: DraftMention[]) => void
   // @@@draft-attachment (#1872)
@@ -220,11 +228,15 @@ const EMPTY_CHAT_STORE: ChatContextValue = {
   upsertChat: () => {},
   pinChat: async () => {},
   deleteChat: async () => {},
+  hideConversation: async () => undefined,
+  undoConversationHide: async () => undefined,
+  clearConversation: async () => {},
   leaveGroup: async () => {},
   markUnread: async () => {},
   setChatNotificationLevel: async () => {},
   patchChat: () => {},
   setDraft: () => {},
+  keepDraft: () => {},
   setDraftMentions: () => {},
   setDraftAttachments: () => {},
 }
@@ -364,6 +376,7 @@ export function useTextDraftStore(accountId: string | null = null): {
   drafts: Record<string, string>
   setDraft: (chatId: string, content: SetStateAction<string>) => void
   dropTextDraft: (chatId: string) => void
+  keepDraft: (chatId: string, draft: { text?: string; mentions?: DraftMention[] }) => void
 } {
   const { value: drafts, ref, replace } = useAccountDrafts(accountId, (account) => readChatDrafts(account).texts)
   const setDraft = useCallback((chatId: string, content: SetStateAction<string>) => {
@@ -371,14 +384,18 @@ export function useTextDraftStore(accountId: string | null = null): {
     replace({ ...ref.current.value, [chatId]: text })
     writeChatDraft(ref.current.accountId, chatId, { text })
   }, [ref, replace])
+  // The chat was left or deleted: its draft goes, and with it everything else kept for it (reading position, tabs, panels).
   const dropTextDraft = useCallback((chatId: string) => {
-    removeChatDraft(ref.current.accountId, chatId)
+    forgetConversation(chatId)
     if (!(chatId in ref.current.value)) return
     const next = { ...ref.current.value }
     delete next[chatId]
     replace(next)
   }, [ref, replace])
-  return { drafts, setDraft, dropTextDraft }
+  const keepDraft = useCallback((chatId: string, { text, mentions }: { text?: string; mentions?: DraftMention[] }) => {
+    writeChatDraft(ref.current.accountId, chatId, { text, mentions: mentions?.map(({ userId, displayName }) => ({ userId, displayName })) })
+  }, [ref])
+  return { drafts, setDraft, dropTextDraft, keepDraft }
 }
 
 export function useDraftMentionsStore(accountId: string | null = null): {

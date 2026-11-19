@@ -215,8 +215,8 @@ afterEach(() => {
   terminalRegistryEntries().delete('conversation-1');
   workspaceRegistry.release('project-1', 'workspace-1');
   // Clear cache keys written by SessionTabViewPersistor so tests don't pollute each other.
-  viewStateCache.delete('session:conversation-1:tabs');
-  viewStateCache.delete('session:session-persistor:tabs');
+  viewStateCache.write('session:conversation-1:tabs', undefined);
+  viewStateCache.write('session:session-persistor:tabs', undefined);
 });
 
 describe('WorkspaceViewModel terminal drawer snapshot', () => {
@@ -427,7 +427,7 @@ describe('WorkspaceViewModel default conversation tab', () => {
     sessionRegistry.acquire('conversation-1', 'project-1', [
       makeSession({ id: 'conversation-1' }),
     ]);
-    viewStateCache.set('session:conversation-1:tabs', {
+    viewStateCache.write('session:conversation-1:tabs', {
       groups: [
         {
           groupId: 'chat',
@@ -486,6 +486,36 @@ describe('WorkspaceViewModel default conversation tab', () => {
     expect(viewModel.activePane.resolvedTabs).toHaveLength(0);
 
     viewModel.dispose();
+  });
+});
+
+describe('WorkspaceViewModel chat tool layout', () => {
+  it('anchors the layout to the owned Agent conversation even when another conversation has focus', () => {
+    const viewModel = makeViewModel();
+    const sessions = sessionRegistry.acquire('conversation-1', 'project-1', [
+      makeSession(),
+      makeSession({ id: 'conversation-2' }),
+    ]);
+    vi.spyOn(sessions, 'hydrateSession').mockResolvedValue();
+    vi.spyOn(sessions, 'dehydrateSession').mockResolvedValue();
+    try {
+      const layout = viewModel.paneLayout;
+      const opts = { intent: 'newTab', from: null } as const;
+      const owner = layout.open('session', { sessionId: 'conversation-1' }, opts)!;
+      expect(layout.primaryChatTabId).toBe(owner);
+      expect(layout.chatToolLayout).toBe('empty');
+      const other = layout.open('session', { sessionId: 'conversation-2' }, opts)!;
+      expect(layout.focusedPane.resolvedActiveTabId).toBe(other);
+      expect(layout.primaryChatTabId).toBe(owner);
+      expect(layout.chatToolLayout).toBe('split');
+
+      layout.setChatToolLayout('hidden');
+      layout.focusedPane.closeTab(owner);
+      expect(layout.chatToolLayout).toBeUndefined();
+      expect(layout.stripTabIds).toEqual([other]);
+    } finally {
+      viewModel.dispose();
+    }
   });
 });
 

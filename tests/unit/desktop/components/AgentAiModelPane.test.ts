@@ -59,7 +59,7 @@ vi.mock('../../../../apps/desktop/src/lib/chat', async () => {
 })
 
 import { AgentAiModelPane } from '../../../../apps/desktop/src/components/agentsettings/AgentAiModelPane'
-import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 
 let harness: ReturnType<typeof createReactHarness>
 

@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   nativePending: null as unknown,
   recoveryError: null as Error | null,
   previewMove: vi.fn(),
-  navigate: vi.fn(),
+  openInstalledConnectors: vi.fn(),
   runAssistantMove: vi.fn(),
   list: vi.fn(async () => [{ id: 'notion', name: 'Notion' }]),
 }))
@@ -33,8 +33,8 @@ vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => ({
   rpc: {},
   rpcOn: () => ({ integrations: { list: mocks.list } }),
 }))
-vi.mock('../../../../apps/desktop/src/session/renderer/lib/stores/app-state', () => ({
-  appState: { navigation: { navigate: (...args: unknown[]) => mocks.navigate(...args) } },
+vi.mock('../../../../apps/desktop/src/lib/assistantEntry', () => ({
+  openInstalledConnectors: mocks.openInstalledConnectors,
 }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-home-sessions', () => ({
   homeTarget: () => null,
@@ -44,7 +44,7 @@ import { AssistantMoveGroup } from '../../../../apps/desktop/src/components/assi
 import { AssistantMoveDialog } from '../../../../apps/desktop/src/components/assistant/AssistantMoveDialog'
 import { resetMoveForTests, startMove } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move-controller'
 import { MoveError } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move'
-import { queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { MoveCopyError } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move-copy'
 import type { AssistantHomePlace } from '../../../../apps/desktop/src/lib/assistantHome'
 
@@ -57,6 +57,7 @@ beforeEach(() => {
   mocks.recoveryError = null
   mocks.previewMove.mockReset()
   mocks.runAssistantMove.mockReset()
+  mocks.openInstalledConnectors.mockClear()
   resetMoveForTests()
 })
 afterEach(() => harness.cleanup())
@@ -174,7 +175,7 @@ describe('搬家入口', () => {
 })
 
 describe('点了先列清带走什么,确认才搬', () => {
-  it('确认框列带过去的账号与要重新连的,不含密钥;结果页列存不进新家的(名字、配置、没有钥匙串的原因),能直接去资源库', async () => {
+  it('确认框列带过去的账号与要重新连的,不含密钥;结果页列存不进新家的(名字、配置、没有钥匙串的原因),能直接去已安装的连接器', async () => {
     mocks.previewMove.mockResolvedValue({
       bytes: 2048,
       files: 3,
@@ -186,6 +187,7 @@ describe('点了先列清带走什么,确认才搬', () => {
       },
     })
     mocks.runAssistantMove.mockResolvedValue({
+      targetDeviceId: 'cloud-fixture',
       files: 3,
       skippedFiles: [],
       accounts: {
@@ -227,19 +229,11 @@ describe('点了先列清带走什么,确认才搬', () => {
     const done = document.body.querySelector('[data-testid="assistant-move-done-reconnect"]')?.textContent ?? ''
     expect(done).toContain('Notion (a@x.cn)')
     expect(done).toContain('imap.x.cn')
-    expect(done).toContain('机器选「云上」')
-    const shellEvents: string[] = []
-    const record = (event: Event) => shellEvents.push(event.type)
-    window.addEventListener('__close_settings', record)
-    window.addEventListener('__sessionpage_reveal', record)
+    expect(done).toContain('选择「云上」')
     await act(async () => {
       (document.body.querySelector('[data-testid="assistant-move-reconnect-open"]') as HTMLButtonElement).click()
     })
-    window.removeEventListener('__close_settings', record)
-    window.removeEventListener('__sessionpage_reveal', record)
-    // 搬家是从设置弹窗里开的:先收起设置、回到会话页,再去资源库(真机上设置弹窗曾盖在资源库上面)。
-    expect(shellEvents).toEqual(['__close_settings', '__sessionpage_reveal'])
-    expect(mocks.navigate).toHaveBeenCalledWith('library', { tab: 'integrations' })
+    expect(mocks.openInstalledConnectors).toHaveBeenCalledExactlyOnceWith('cloud-fixture')
     expect(document.body.querySelector('[data-testid="assistant-move-dialog"]')).toBeNull()
   })
 

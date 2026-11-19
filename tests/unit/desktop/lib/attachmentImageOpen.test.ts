@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { queryClient as attachmentQueryClient } from '@/lib/readModel'
-import { openAttachmentImage } from '@/lib/attachmentBytes'
+import { queryClient as attachmentQueryClient } from '@/lib/replica'
+import { openAttachmentImage, openAttachmentImages } from '@/lib/attachmentBytes'
 import { registerImageViewerHost, type ImageViewerRequest } from '@/lib/imageViewer'
-// The read model reads for the signed-in account, as the product publishes it.
-;(await import('../../../../apps/desktop/src/lib/readModel')).followRendererSession('SIGNED_IN', 'owner')
+// The replica reads for the signed-in account, as the product publishes it.
+;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'owner')
 
 const io = vi.hoisted(() => ({ resolve: vi.fn(), original: vi.fn(), put: vi.fn(), url: vi.fn(), revoke: vi.fn() }))
 vi.mock('@/lib/fileAccess', () => ({ fileMetadata: async () => ({ status: 'gone' }),
@@ -56,4 +56,26 @@ it('releases a thumbnail that arrives after closing without fetching the origina
   await expect(thumbnail).resolves.toBe('blob:thumb')
   expect(io.revoke).toHaveBeenCalledWith('blob:thumb')
   expect(io.original).not.toHaveBeenCalled()
+})
+
+it('opens an App page\'s images from the clicked one\'s picture, with its thumbnail and size, paging through the rest', async () => {
+  io.resolve.mockImplementation(async (ref, _reader, options) => options?.purpose === 'preview'
+    ? { status: 'ready', revision: { ...revision, item_id: ref.itemId, width: 1600, height: 900 }, content: async () => new Blob(['thumb']), dispose: vi.fn() }
+    : { status: 'ready', revision, reader: { accountId: 'account' } })
+  const images = [{ itemId: 'a', version: 1, name: 'a.png', contentType: 'image/png' }, { itemId: 'b', version: 4, name: 'b.png', contentType: 'image/png' }]
+  const box = { x: 40, y: 60, width: 120, height: 120 }
+  await openAttachmentImages(images, 1, { chatId: 'chat' }, box)
+  expect(request.index).toBe(1)
+  expect(request.items.map((item) => item.alt)).toEqual(['a.png', 'b.png'])
+  expect(request.items[1]).toMatchObject({ url: 'blob:thumb', thumbRect: box, size: { width: 1600, height: 900 }, resource: { target: { itemId: 'b', version: 4 } } })
+  // The others are read when paged to; only the clicked one opens from its picture.
+  expect(request.items[0]).toMatchObject({ url: '' })
+  expect(request.items[0].thumbRect).toBeUndefined()
+  expect(io.resolve).toHaveBeenCalledTimes(1)
+})
+
+it('does not hold the viewer back for a thumbnail that is slow to come', async () => {
+  io.resolve.mockReturnValue(new Promise(() => {}))
+  await openAttachmentImages([{ itemId: 'a', version: 1, name: 'a.png', contentType: 'image/png' }], 0, undefined, { x: 0, y: 0, width: 10, height: 10 })
+  expect(request.items[0]).toMatchObject({ url: '', thumbRect: { width: 10 } })
 })

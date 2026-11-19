@@ -27,7 +27,8 @@ import { CONVERSATION_EXPAND_H, CONVERSATION_FOOTER_H, conversationBubbleKey, co
 export { isConversationMessage } from './conversation-body';
 import { ConversationNarration, conversationNarrationHeight } from './ConversationNarration';
 import { measureUserMessage } from './user-message-metrics';
-import { userMessageActionsHeight, type MessageVars } from './metrics';
+import { CONVERSATION_UTTERANCE_GAP } from '@session-chat/core/spacing';
+import { actionGap, conversationGutter, userMessageActionsHeight, type MessageVars } from './metrics';
 import { conversationRoot, conversationHeader, conversationName, conversationTime, conversationProcessButton, conversationProcessChevron, conversationTimeSeparator, conversationReferenceSeparator } from './conversation-message.css';
 
 import { CONVERSATION_PREVIEW_MAX_H, USER_PREVIEW_MAX_H } from '@session-chat/components/engine/row-metrics';
@@ -35,7 +36,7 @@ import { CONVERSATION_PREVIEW_MAX_H, USER_PREVIEW_MAX_H } from '@session-chat/co
 export function conversationContext(ctx: MeasureCtx, item?: ChatMessage): MeasureCtx {
   return { ...ctx,
     ...(item ? { expandedId: ctx.latestConversationMessageId === item.id || ctx.expanded(conversationBubbleKey(item)) ? item.id : null } : {}),
-    theme: { ...ctx.theme, layout: { ...ctx.theme.layout, preset: 'double', userGutter: Math.max(32, Math.round(ctx.width * .14)) } } };
+    theme: { ...ctx.theme, layout: { ...ctx.theme.layout, preset: 'double', userGutter: conversationGutter(ctx.width) } } };
 }
 
 export function conversationVars(item: ChatMessage, vars: MessageVars): MessageVars {
@@ -57,7 +58,7 @@ function segments(item: ChatMessage): ChatMessage[] {
 }
 
 export function conversationMessageHeight(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars): number {
-  return segments(item).reduce((height, segment, index) => height + singleHeight(segment, ctx, vars) + (index ? 12 : 0), 0);
+  return segments(item).reduce((height, segment, index) => height + singleHeight(segment, ctx, vars) + (index ? CONVERSATION_UTTERANCE_GAP : 0), 0);
 }
 
 /** Only an explicit IM reply or persisted timeline source gets a clickable quote. */
@@ -108,7 +109,7 @@ function singleHeight(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars): nu
   // 折着 ⇔ 展开量出来比现在高;那时气泡下面多一行「展开全文」。
   const folded = bodyCtx.expandedId !== item.id && !isMessageEditing(item.id, ctx) && measureUserMessage(item, { ...bodyCtx, expandedId: item.id }, bodyVars) > body;
   const lane = conversationTailLane(item, conversationCanCollapse(item, ctx), headerLayout(item, ctx).referenceInFooter);
-  const actions = lane !== 'none' || isMessageEditing(item.id, ctx) ? 0 : userMessageActionsHeight(bodyVars);
+  const actions = lane !== 'none' || isMessageEditing(item.id, ctx) ? 0 : userMessageActionsHeight(bodyVars, actionGap(bodyCtx.theme.layout));
   return header + body - actions + (folded ? CONVERSATION_EXPAND_H : 0) + (item.role === 'assistant' && item.conversationProcess ? backgroundHeight(item, ctx) : 0);
 }
 
@@ -127,7 +128,7 @@ export function ConversationMessage(props: { data: ChatMessage; ctx: RenderCtx; 
     <ConversationNarration data={props.data} ctx={props.ctx} />
   }>
     <Show when={(props.data.guguDelivery?.segments.length ?? 0) > 1} fallback={<SingleConversationMessage {...props} />}>
-      <For each={segments(props.data)}>{(segment, index) => <div style={{ 'margin-top': index() ? '12px' : '0' }}><SingleConversationMessage {...props} data={segment} /></div>}</For>
+      <For each={segments(props.data)}>{(segment, index) => <div style={{ 'margin-top': index() ? `${CONVERSATION_UTTERANCE_GAP}px` : '0' }}><SingleConversationMessage {...props} data={segment} /></div>}</For>
     </Show>
   </Show>;
 }

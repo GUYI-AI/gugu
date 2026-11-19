@@ -66,14 +66,14 @@ export default {
   "confirmations": {
     "archiveAgent": "归档 Agent「{{name}}」的任务？保留对话历史、文件和配置。",
     "archiveAgentNoTask": "这个 Agent 已没有任务；此次只将它移出群和联系人。",
-    "deleteAgent": "归档任务",
+    "deleteAgent": "归档会话",
     "deleteContact": "删除联系人「{{name}}」？删除后将解除好友关系。",
     "dissolveGroup": "解散后所有成员将退出，确认解散群聊？",
     "leaveGroup": "确认退出该群聊？"
   },
   "contextMenu": {
     "more": "更多",
-    "deleteAgent": "归档任务",
+    "deleteAgent": "归档会话",
     "deleteContact": "删除联系人",
     "disableNotifications": "关闭通知",
     "dissolveGroup": "解散群聊",
@@ -107,6 +107,7 @@ export default {
     "title": "新建群聊"
   },
   "memberPicker": {
+    "sources": "成员来源",
     "selectionUnavailable": "所选成员不可用或无法邀请加入此群。",
     "allProjects": "全部",
     "allResults": "全部结果",
@@ -272,7 +273,7 @@ export default {
     "contactCountSummary_other": "共 {{count}} 位联系人",
     "contactDetail": "联系人详情",
     "contactSectionTitle": "个人",
-    "createAgent": "新建 Agent",
+    "createAgent": "创建智能体",
     "createGroup": "创建群聊",
     "enterGroup": "进入群聊",
     "groupCount": "{{count}} 个群组",
@@ -308,7 +309,7 @@ export default {
     "title": "联系人"
   },
   "profile": {
-    "myAgentLabel": "我的 agent",
+    "myAgentLabel": "我的智能体",
     "agentOwnerUnavailable": "主人信息不可用",
     "agentOwnerLabel": "{{owner}} 的 agent",
     "alias": "备注",
@@ -395,9 +396,9 @@ export default {
     "titleWithCount_other": "标签（{{count}} 个对象）"
   },
   "toast": {
-    "deleteAgentFailed": "归档任务失败",
+    "deleteAgentFailed": "归档会话失败",
     "deleteContactFailed": "删除联系人失败",
-    "deletedAgent": "任务已归档",
+    "deletedAgent": "会话已归档",
     "deletedContact": "已删除联系人",
     "dissolvedGroup": "已解散群聊",
     "dissolveFailed": "解散群聊失败",

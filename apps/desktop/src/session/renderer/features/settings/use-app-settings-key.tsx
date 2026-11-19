@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { queryClient, useReadModel, type Reading } from '@/lib/readModel';
+import { queryClient, useReplica, type Reading } from '@/lib/replica';
 import type { AppSettings, AppSettingsKey } from '@shared/core/app-settings';
 import {
   appSettingsModel,
@@ -19,7 +19,7 @@ export { getAppSettingValueSnapshot };
 export type AppSettingsKeyApi<K extends AppSettingsKey> = ReturnType<typeof useAppSettingsKey<K>>;
 
 /**
- * One settings key as the read model has it. `settings` is unknown only before this device ever read it (startup reads
+ * One settings key as the replica has it. `settings` is unknown only before this device ever read it (startup reads
  * the whole set once); a surface draws `<Unknown/>` then — never the schema default dressed as the stored value.
  */
 export function useAppSettingsKey<K extends AppSettingsKey>(key: K) {
@@ -27,7 +27,7 @@ export function useAppSettingsKey<K extends AppSettingsKey>(key: K) {
   // ❌ 动本机那一份(整个窗口都在读)。那台机器离线就不问(问不到,只会挂满超时)。
   const host = useSettingsHost();
   const remote = host.remote;
-  const settings = useReadModel(appSettingsModel, !remote || remote.online ? [key, host.key] : null) as Reading<SettingsMeta<K>>;
+  const settings = useReplica(appSettingsModel, !remote || remote.online ? [key, host.key] : null, key === 'browser' ? { retry: 3 } : {}) as Reading<SettingsMeta<K>>;
   const current = settings.state === 'value' ? settings.value : undefined;
   const api = (host.key === LOCAL_SETTINGS_HOST_KEY ? rpc : rpcOn(host.key)).appSettings;
 
@@ -62,6 +62,7 @@ export function useAppSettingsKey<K extends AppSettingsKey>(key: K) {
 
   return {
     settings,
+    refresh: () => appSettingsModel.refresh(key, host.key),
     /** Another machine cannot act now: offline, or its read failed (server too old / unreachable). Rows stay, controls grey. */
     unavailable: !!remote && (!remote.online || settings.state === 'error'),
     isSaving: updateMutation.isPending || resetMutation.isPending || resetFieldMutation.isPending,

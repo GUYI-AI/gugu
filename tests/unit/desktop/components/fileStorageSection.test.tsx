@@ -2,7 +2,7 @@
 import { act, createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { notifyManager as readModelNotify } from '@tanstack/react-query'
-import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { createReactHarness } from '../../../support/testHarness'
 import { DEFAULT_FILE_STORAGE, type FileStorage } from '../../../../packages/core/src/shared/fileStorage'
 import { FileStorageSection } from '../../../../apps/desktop/src/components/settings/FileStorageSection'
@@ -29,7 +29,7 @@ describe('the one 「文件存储与读取」: other files are one choice', () =
     harness = createReactHarness(); vi.clearAllMocks(); f.stored = { ...DEFAULT_FILE_STORAGE }
     f.projects.mockResolvedValue({ mac: [{ localProjectId: 'p', chatId: 'group' }] })
   })
-  afterEach(() => harness.cleanup())
+  afterEach(() => { harness.cleanup(); vi.unstubAllGlobals() })
   const $ = (id: string) => harness.container.querySelector<HTMLSelectElement>(`#${id}`)
   async function choose(id: string, value: string) {
     await act(async () => { const el = $(id)!; el.value = value; el.dispatchEvent(new Event('change', { bubbles: true })) })
@@ -71,5 +71,26 @@ describe('the one 「文件存储与读取」: other files are one choice', () =
     // Temporary files hold in ordinary groups too: the one retention control is everyone's.
     expect($('settings-kept-retention')).not.toBeNull()
     expect(harness.container.textContent).toContain('fileStorage.ordinary')
+  })
+
+  it('the three phone sheets keep saved values and the same storage writes', async () => {
+    vi.stubGlobal('innerWidth', 390)
+    await harness.render(createElement(FileStorageSection, { onBack: vi.fn() }))
+    await vi.waitFor(() => expect($('settings-file-mode')).not.toBeNull())
+    const pick = async (id: string, current: string, next: string) => {
+      const trigger = harness.container.querySelector<HTMLButtonElement>(`button#${id}`)!
+      await act(async () => { trigger.click() })
+      const sheet = document.querySelector(`[data-testid="${id}-sheet"]`)!
+      expect(sheet.querySelector('.gg-phone-composer-sheet-handle')).not.toBeNull()
+      expect(sheet.querySelector(`[data-option-value="${current}"]`)?.getAttribute('aria-checked')).toBe('true')
+      await act(async () => { sheet.querySelector<HTMLButtonElement>(`[data-option-value="${next}"]`)!.click() })
+    }
+    await pick('settings-file-retention', '7d', '1d')
+    expect(f.write).toHaveBeenLastCalledWith({ retention: '1d' })
+    await pick('settings-kept-retention', '7d', '30d')
+    expect(f.write).toHaveBeenLastCalledWith({ image_retention: '30d', temporary_retention: '30d' })
+    await pick('settings-file-mode', 'machine', 'cloud')
+    expect(f.write).toHaveBeenLastCalledWith({ proactive_upload: true })
+    await vi.waitFor(() => expect($('settings-file-retention')).toBeNull())
   })
 })

@@ -41,6 +41,7 @@ import {
 import { LAZY_LANG_MODULES } from './packages/session-chat-ui/src/core/highlight/lazy-langs'
 import { appPaletteCss } from './apps/desktop/src/session/app-runtime/ui/app-palette.mjs'
 import { startupFirstFrame } from './scripts/build/startup-first-frame.mts'
+import { pdfjsResources } from './scripts/build/pdfjs-resources.mts'
 
 const require = createRequire(import.meta.url)
 
@@ -166,7 +167,8 @@ const sessionMainVite: ElectronOptions['vite'] = {
       // 绝不内联;清单是 verify-packaged-natives 探针的单一来源。
       // #7191 浏览器工具(@playwright/mcp + 它锁定的 playwright-core)运行时从 app/node_modules 加载:它们靠 __dirname
       // 找自己的文件,打进主进程包会断;根 dependencies 声明两者,electron-builder 原样带进包。
-      external: ['ws', '@playwright/mcp', 'playwright-core', './server-boot.cjs', ...EMDASH_EXTERNAL],
+      // The desktop-only Cursor reader ships as an npm dependency with its license and uses the same native SQLite module.
+      external: ['ws', '@playwright/mcp', 'playwright-core', 'cursor-history', './server-boot.cjs', ...EMDASH_EXTERNAL],
       output: {
         paths: id => id.replaceAll('\\', '/').endsWith('/server-boot.cjs') ? './server-boot.cjs' : id,
         // Electron 28 = Node 18:`globalThis.crypto` 不是全局,会话页 runtime 裸用
@@ -448,7 +450,15 @@ async function buildAppRuntime(outDir: string): Promise<void> {
   await esbuild.build({ ...common, entryPoints: [src('gugu-entry.ts')], outfile: resolve(outDir, 'gugu.js'), format: 'iife' })
   // The host's look, which gugu.js writes into every App page right after itself (app-runtime/ui): ui.js, and ui.css
   // = the palette app-palette.mjs resolves from this build's tokens.css, then ui/ui.css with its fonts beside it.
-  await esbuild.build({ ...common, entryPoints: [src('ui/ui-entry.ts')], outfile: resolve(outDir, 'ui.js'), format: 'iife' })
+  // `?raw` as vite reads it (the tests import ui-entry through vite): the file's text, here the shared file-tile.css.
+  const raw: import('esbuild').Plugin = {
+    name: 'raw',
+    setup(build) {
+      build.onResolve({ filter: /\?raw$/ }, async ({ path, kind, resolveDir }) => ({ path: (await build.resolve(path.slice(0, -4), { kind, resolveDir })).path, namespace: 'raw' }))
+      build.onLoad({ filter: /.*/, namespace: 'raw' }, ({ path }) => ({ contents: readFileSync(path, 'utf-8'), loader: 'text' }))
+    },
+  }
+  await esbuild.build({ ...common, entryPoints: [src('ui/ui-entry.ts')], outfile: resolve(outDir, 'ui.js'), format: 'iife', plugins: [raw] })
   await esbuild.build({
     ...common,
     entryPoints: [src('ui/ui.css')],
@@ -683,6 +693,7 @@ export default defineConfig(({ command }) => ({
   },
   plugins: [
     startupFirstFrame(isElectronTarget),
+    pdfjsResources(),
     deterministicModuleSideEffects(),
     guguEntryReachabilityPlugin(reachability, isGuguEntry),
     // @@@task-fusion (#2802) — 会话页的 @gugu/session-ui / session-chat-ui 用 vanilla-extract 写样式。

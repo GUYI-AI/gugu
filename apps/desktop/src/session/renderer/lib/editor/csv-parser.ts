@@ -38,7 +38,7 @@ export function parseCsv(content: string): CsvParseResult {
 
   for (let index = 0; index < content.length; index += 1) {
     const char = content[index];
-    if (char === '"') {
+    if (char === '"' && (inQuotes || (!quotedCell && cell.length === 0))) {
       quotedCell = true;
       if (inQuotes && content[index + 1] === '"') {
         cell += '"';

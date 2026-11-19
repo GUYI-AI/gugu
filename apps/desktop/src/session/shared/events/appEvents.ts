@@ -98,7 +98,7 @@ export const sessionOpenBrowserInPaneChannel = defineEvent<{
   linkTarget?: GuguLinkTarget;
   intent: 'preview' | 'pinned';
   /** Browser Use resolves a persisted tab before restoring its page; ordinary open_in_tab still opens a URL. */
-  acquire?: { browserId?: string; createIfMissing: boolean; deadline: number };
+  acquire?: { browserId?: string; createIfMissing: boolean; deadline: number; mapped?: true };
 }>('session:open-browser-in-pane');
 
 /** Renderer acknowledgement for a host-requested browser tab. */

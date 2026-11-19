@@ -1,8 +1,17 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { notifyManager as readModelNotify } from '@tanstack/react-query'
-import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { clickElement, createNode, createReactHarness, typeInto, waitForCondition } from '../../../support/testHarness'
+
+vi.mock('../../../../apps/desktop/src/components/sessionpage/SessionSettingsSection', () => ({ SessionSettingsSection: () => null }))
+
+vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgents: () => ({ data: [] }) }))
+vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
+  getAgentConfigRuntimeClient: async () => ({
+    listCustomModels: async () => ({ success: true, data: [] }),
+  }),
+}))
 
 // #7056 设置「模型」页 = Cursor 的 Settings › Models:列出咕咕提供的全部模型,开关决定哪些出现在模型下拉里;
 // 要会员的那些另成一组、不给开关,一处「升级解锁」去网页面板。
@@ -48,9 +57,20 @@ afterEach(() => { harness.cleanup() })
 
 const switchOf = (modelId: string) =>
   harness.container.querySelector<HTMLElement>(`[data-model-id="${modelId}"] [role="switch"]`)
-const loaded = () => waitForCondition(() => switchOf('glm-5.3-flash') !== null, 'model rows did not load')
+const loaded = async () => {
+  const toggle = harness.container.querySelector<HTMLElement>('[data-testid="settings-model-provided-toggle"]')!
+  if (toggle.getAttribute('aria-expanded') === 'false') await clickElement(toggle)
+  await waitForCondition(() => switchOf('glm-5.3-flash') !== null, 'model rows did not load')
+}
 
 describe('设置「模型」页', () => {
+  it('keeps platform models collapsed on each new visit', async () => {
+    await harness.render(createNode(ModelSection))
+    expect(harness.container.querySelector('[data-testid="settings-model-search"]')).toBeNull()
+    expect(switchOf('glm-5.3-flash')).toBeNull()
+    await loaded()
+    expect(switchOf('glm-5.3-flash')).not.toBeNull()
+  })
   it('lists usable models with switches reflecting what he hid, and members-only ones apart without switches', async () => {
     await harness.render(createNode(ModelSection))
     await loaded()

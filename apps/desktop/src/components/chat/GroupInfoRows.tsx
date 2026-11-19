@@ -9,6 +9,7 @@ import { Avatar } from '../Avatar'
 import { useChatFolderName } from './chatFolderName'
 import { GroupAddMenu } from './GroupAddMenu'
 import { SettingsNavRow } from './groupSettingsUi'
+import { Unknown } from '../ui/Unknown'
 
 // 群信息主页上的两行:群成员(头像、「+」、人数)和这个群的文件夹。从 GroupMembersSection 拆出来,各自只做一件事。
 
@@ -20,14 +21,15 @@ const inviteSlotStyle: CSSProperties = { display: 'inline-flex', marginRight: 8 
 const MEMBER_PREVIEW_COUNT = 5
 
 /**
- * 群成员那一行:点这一行进成员页;头像后面的「+」是群的那一个添加菜单(GroupAddMenu,同成员页标题、内栏头一行),
+ * 群成员那一行:点这一行进成员页;头像后面的「+」是群的那一个添加菜单(GroupAddMenu,同成员页标题),
  * 选人页开在这一页上面,关了还在这一页。「+」在这一行里面,所以它(连同传送出去的菜单、选人页)的点击和按键不往上冒。
  */
 export function GroupMembersRow({ chatId, settings, memberIds, total, onOpen }: {
   chatId: string
   settings: GroupChatSettings | null
   memberIds: readonly string[]
-  total: number
+  /** null until the roster is read. */
+  total: number | null
   onOpen: () => void
 }) {
   const { t } = useTranslation('messaging')
@@ -50,11 +52,17 @@ export function GroupMembersRow({ chatId, settings, memberIds, total, onOpen }: 
           <span style={inviteSlotStyle} onClick={contain} onKeyDown={contain}>
             <GroupAddMenu chatId={chatId} canAddMembers={groupInviteAccess(chatId, 'group', settings).showInvite} size="sm" />
           </span>
-          {total}
+          {total ?? <Unknown className="w-[2ch]" />}
         </>
       )}
     />
   )
+}
+
+/** 「N 名成员」:名册还没读到时画占位,❌ 0。 */
+export function GroupMemberCount({ total, style }: { total: number | null; style: CSSProperties }) {
+  const { t } = useTranslation('messaging')
+  return <div style={style}>{total === null ? <Unknown className="w-20" /> : t('group.settings.memberCount', { count: total })}</div>
 }
 
 /** 文件夹那一行:页头「…」里「文件」那一项的同一个动作(开这个群的文件夹页签),名字也是同一个(useChatFolderName)。 */

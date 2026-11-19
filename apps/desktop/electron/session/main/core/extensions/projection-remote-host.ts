@@ -1,4 +1,5 @@
 import type { DeviceRpcHandlerContext, DeviceRpcHandlers } from '@gugu/core/cloud/deviceRpcResponder';
+import { LIVE_WINDOW_SOURCES_CHANGED, type LiveWindowResourceDescriptor } from '@shared/extensions/live-window-protocol';
 import type { ProjectionHostPacket } from '@shared/extensions/projection-protocol';
 import { readTaskPageControl, type TaskPageControl, type TaskPageControlResult, type TaskPageState } from '@shared/browser-task-page';
 import { log } from '@main/lib/logger';
@@ -19,17 +20,19 @@ import { PROJECTION_REMOTE_RPC, PROJECTION_REMOTE_PACKET, PROJECTION_REMOTE_PAGE
 export const PROJECTION_REMOTE_VIEWERS = 32;
 
 /** An App's projection in a session there, or (`page: true`) that task's own browser page, which is gugu's. */
-export type ProjectionRemoteAppWatch = { app: string; version: string; session: string; source: string };
-export type ProjectionRemoteWatch = { watch: string } & (ProjectionRemoteAppWatch | { session: string; page: true });
+export type ProjectionRemoteAppWatch = { app: string; version: string; session: string; source: string; presentation?: 1 };
+export type ProjectionRemoteWatch = { watch: string; presentation?: 1 } & (ProjectionRemoteAppWatch | { session: string; page: true });
 export type ProjectionRemotePacketEvent = { type: typeof PROJECTION_REMOTE_PACKET; watch: string; packet: ProjectionHostPacket };
 export type ProjectionRemotePageStateEvent = { type: typeof PROJECTION_REMOTE_PAGE_STATE; watch: string; state: TaskPageState };
 
 type Viewer = { receive(packet: unknown): Promise<void>; control?(control: TaskPageControl): Promise<TaskPageControlResult>; close(): void };
 export interface ProjectionRemoteSources {
+  list?(sessionId: string): Promise<LiveWindowResourceDescriptor[]>;
+  observe?(sessionId: string, changed: () => void): () => void;
   /** Admit a viewer for this App's projection in this session, on this machine; throws a coded refusal. */
   connect(input: ProjectionRemoteAppWatch, send: (packet: ProjectionHostPacket) => void): Promise<Viewer>;
   /** The task's own browser page on this machine, with its toolbar's state. */
-  page(session: string, send: (packet: ProjectionHostPacket) => void, state: (state: TaskPageState) => void): Promise<Viewer>;
+  page(session: string, send: (packet: ProjectionHostPacket) => void, state: (state: TaskPageState) => void, presentation?: boolean): Promise<Viewer>;
 }
 
 const ID = /^[A-Za-z0-9_-]{8,128}$/;
@@ -37,6 +40,7 @@ const text = (value: unknown, max = 256): value is string => typeof value === 's
 const refuse = (code: string, message: string) => ({ error: { code, message } });
 
 export function createProjectionRemoteHost(sources: () => ProjectionRemoteSources) {
+  const sourceWatches = new Map<string, () => void>();
   const viewers = new Map<string, { viewer: Viewer; stop(): void }>();
   const end = (watch: string) => {
     const entry = viewers.get(watch);
@@ -47,11 +51,51 @@ export function createProjectionRemoteHost(sources: () => ProjectionRemoteSource
   };
 
   const handlers: DeviceRpcHandlers = {
+    [PROJECTION_REMOTE_RPC.sources]: async (payload) => {
+      const body = (payload ?? {}) as { session?: unknown };
+      if (Object.keys(body).some(key => key !== 'session') || !text(body.session)) return refuse('invalid_payload', 'A session is required');
+      const list = sources().list;
+      if (!list) return refuse('unavailable', 'This host cannot describe live picture sources');
+      try { return { result: { sources: await list(body.session) } }; }
+      catch (error) { return refuse('refused', error instanceof Error ? error.message : String(error)); }
+    },
+    [PROJECTION_REMOTE_RPC.observeSources]: async (payload, ctx) => {
+      const body = (payload ?? {}) as { watch?: unknown; session?: unknown };
+      if (Object.keys(body).some(key => !['watch', 'session'].includes(key)) || !text(body.watch) || !ID.test(body.watch) || !text(body.session)) {
+        return refuse('invalid_payload', 'A watch and session are required');
+      }
+      const list = sources().list;
+      if (!list) return refuse('unavailable', 'This host cannot describe live picture sources');
+      try { await list(body.session); } catch (error) { return refuse('refused', error instanceof Error ? error.message : String(error)); }
+      const observe = sources().observe;
+      if (!observe) return refuse('unavailable', 'This host cannot observe live picture sources');
+      sourceWatches.get(body.watch)?.();
+      if (sourceWatches.size >= PROJECTION_REMOTE_VIEWERS) return refuse('busy', 'Too many source lists are observed');
+      const watch = body.watch, session = body.session;
+      let offDetached = () => {};
+      const off = observe(session, () => {
+        void Promise.resolve(ctx.publishEvent({ type: LIVE_WINDOW_SOURCES_CHANGED, watch, session })).catch(() => {
+          sourceWatches.get(watch)?.(); sourceWatches.delete(watch);
+        });
+      });
+      const stop = () => { off(); offDetached(); sourceWatches.delete(watch); };
+      sourceWatches.set(watch, stop);
+      offDetached = ctx.asker?.onDetached(stop) ?? (() => {});
+      return { result: { observing: true } };
+    },
+    [PROJECTION_REMOTE_RPC.unobserveSources]: payload => {
+      const watch = (payload as { watch?: unknown } | null)?.watch;
+      if (!text(watch)) return refuse('invalid_payload', 'A watch is required');
+      sourceWatches.get(watch)?.();
+      return { result: { closed: true } };
+    },
+
     [PROJECTION_REMOTE_RPC.watch]: async (payload, ctx: DeviceRpcHandlerContext) => {
       const body = (payload ?? {}) as Partial<Record<'watch' | 'session' | 'page' | keyof ProjectionRemoteAppWatch, unknown>>;
       const page = body.page === true;
-      const keys = page ? ['watch', 'session', 'page'] : ['watch', 'app', 'version', 'session', 'source'];
-      if (Object.keys(body).some(key => !keys.includes(key)) || !text(body.watch) || !ID.test(body.watch) || !text(body.session)
+      const keys = page ? ['watch', 'session', 'page', 'presentation'] : ['watch', 'app', 'version', 'session', 'source', 'presentation'];
+      if (Object.keys(body).some(key => !keys.includes(key)) || body.presentation !== undefined && body.presentation !== 1
+        || !text(body.watch) || !ID.test(body.watch) || !text(body.session)
         || !page && (!text(body.app) || !text(body.version, 64) || !text(body.source))) {
         return refuse('invalid_payload', 'watch and session are required, with page, or with app, version and source');
       }
@@ -74,8 +118,9 @@ export function createProjectionRemoteHost(sources: () => ProjectionRemoteSource
           void Promise.resolve(ctx.publishEvent({ type: PROJECTION_REMOTE_PAGE_STATE, watch, state } satisfies ProjectionRemotePageStateEvent))
             .catch((error: unknown) => log.warn('[projection-remote] page state push failed', { error: String(error) }));
         };
-        viewer = page ? await sources().page(session, send, state)
-          : await sources().connect({ app: body.app as string, version: body.version as string, session, source: body.source as string }, send);
+        viewer = page ? await sources().page(session, send, state, body.presentation === 1)
+          : await sources().connect({ app: body.app as string, version: body.version as string, session, source: body.source as string,
+            ...(body.presentation === 1 ? { presentation: 1 } : {}) }, send);
       } catch (error) {
         const code = typeof (error as { code?: unknown } | null)?.code === 'string' ? (error as { code: string }).code : 'refused';
         return refuse(code, error instanceof Error ? error.message : String(error));
@@ -125,7 +170,7 @@ export function createProjectionRemoteHost(sources: () => ProjectionRemoteSource
 
   return {
     handlers,
-    dispose: () => { for (const watch of [...viewers.keys()]) end(watch); },
+    dispose: () => { for (const stop of [...sourceWatches.values()]) stop(); for (const watch of [...viewers.keys()]) end(watch); },
     /** Test hook. */
     size: () => viewers.size,
   };

@@ -1,11 +1,16 @@
+import type { CSSProperties } from 'react'
 import { metadataSeparator } from '@/i18n/format'
-import { Download, FileText } from '@/lib/icons'
+import { Download } from '@/lib/icons'
 import { formatAttachmentSize, type AttachmentMeta } from '@gugu/core/shared/ui/attachmentModels'
+import { attachmentTypeKey } from '@gugu/core/shared/ui/attachmentType'
+import { fileRowStyle } from '@gugu/session-shared/file-row'
+import { FileMark } from '@gugu/session-ui/file-mark'
+import '@gugu/session-shared/file-row.css'
 import type { ResourceContext } from '@/session/shared/resource-actions'
 import { ResourceMenu } from '../ResourceMenu'
-import { Button } from '../ui/Button'
+import { IconButton } from '../ui/IconButton'
 import { useTranslation } from 'react-i18next'
-import { attachmentTypeKey } from './attachmentType'
+import './fileAttachmentCard.css'
 
 interface FileAttachmentCardProps {
   resource?: ResourceContext
@@ -19,43 +24,38 @@ interface FileAttachmentCardProps {
   downloadLabel?: string
 }
 
-/** The canonical document attachment surface used by messages and history. */
+/**
+ * A document in a message: the task page's file row (`@gugu/session-shared/file-row`), so a file is one shape everywhere.
+ * Opening is the row's main button; a download sits beside it in the row's end slot, never inside it.
+ */
 export function FileAttachmentCard({ file, isMine = false, details, versionLabel, onOpen, onDownload, downloadLabel, resource }: FileAttachmentCardProps) {
   const { t } = useTranslation('messaging')
   const type = attachmentTypeKey(file)
   const metadata = [versionLabel, formatAttachmentSize(file.sizeBytes), type ? t(`attachmentView.types.${type}`) : null].filter(Boolean).join(metadataSeparator())
-  const accent = isMine ? 'var(--text-on-bubble-strong)' : 'var(--text-link)'
-  const muted = isMine ? 'var(--text-on-bubble-muted)' : 'var(--text-tertiary)'
   const card = (
-    <div className="gg-hcard gg-hfile flex max-w-[260px] items-center gap-[11px] rounded-xl border border-[var(--border)] !p-[11px] !mb-2">
-      <Button
-        variant="ghost"
-        size="option"
-        onClick={onOpen}
-        disabled={!onOpen}
-        aria-label={file.fileName}
-        className="min-w-0 flex-1 justify-start text-left"
-        style={{ minWidth: 0, padding: 0, border: 'none', background: 'none', color: 'inherit' }}
-      >
-        <div aria-hidden="true" className="bg-foreground/[0.06] grid size-8 shrink-0 place-items-center rounded-[var(--radius-document)]">
-          {file.kind === 'image' ? <span aria-hidden="true">🖼️</span> : <FileText size={18} color={accent} strokeWidth={1.7} />}
-        </div>
-        <div className="flex min-w-0 flex-col gap-1">
-          <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[length:var(--font-body)] font-semibold" style={{ color: accent }}>{file.fileName}</span>
-          <span className="text-[length:var(--font-caption)]" style={{ color: muted }}>{details ?? metadata}</span>
-        </div>
-      </Button>
-      {onDownload && (
-        <button
-          type="button"
-          className="gg-hdl grid size-7 shrink-0 cursor-pointer place-items-center rounded-lg border-none bg-transparent text-[var(--faint-fg)] hover:bg-[var(--hover)] hover:text-[var(--fg)]"
-          title={downloadLabel}
-          aria-label={downloadLabel ?? `Download ${file.fileName}`}
-          onClick={(event) => { event.stopPropagation(); onDownload() }}
-        >
-          <Download size={15} aria-hidden="true" />
+    <div className="gg-file-rows gg-hfile" data-mine={isMine || undefined} style={fileRowStyle() as CSSProperties}>
+      <div className="gg-file-row" data-kind="file">
+        <button type="button" data-pane-opener="" className="gg-file-row-main" onClick={onOpen} disabled={!onOpen} aria-label={file.fileName} title={file.fileName}>
+          <span className="gg-file-row-icon">
+            <FileMark name={file.fileName} mime={file.mimeType} off={file.kind === 'image'} />
+          </span>
+          <span className="gg-file-row-text">
+            <span className="gg-file-row-name">{file.fileName}</span>
+            <span className="gg-file-row-detail">{details ?? metadata}</span>
+          </span>
         </button>
-      )}
+        {onDownload && (
+          <IconButton
+            size="sm"
+            className="gg-file-row-end gg-hdl -mr-1.5"
+            title={downloadLabel}
+            aria-label={downloadLabel ?? `Download ${file.fileName}`}
+            onClick={(event) => { event.stopPropagation(); onDownload() }}
+          >
+            <Download size={16} aria-hidden="true" />
+          </IconButton>
+        )}
+      </div>
     </div>
   )
   return resource ? <ResourceMenu resource={resource}>{card}</ResourceMenu> : card

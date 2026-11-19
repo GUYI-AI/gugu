@@ -13,6 +13,7 @@ import {
 import { toExternalUrl } from '@/session/shared/preview/preview-link-script'
 import { HtmlPreviewFrame } from '../preview/HtmlPreviewFrame'
 import { registerHtmlPreview } from '../preview/html-preview-registration'
+import type { HtmlPreviewAnnotationContext } from '../preview/use-html-preview-annotations'
 import type { HtmlPreviewRegistration } from '../preview/HtmlPreviewFrame'
 import { truncateSheetXml } from './xlsxPreviewLimits'
 import './documentPreview.css'
@@ -31,6 +32,7 @@ interface DocumentPreviewContentProps {
   registerHtml?: (documentHtml: string) => Promise<HtmlPreviewRegistration>
   /** The place a link named: a PDF opens at `page=N`, an HTML page at the element a bare `#id` names. */
   at?: FilePlace
+  htmlAnnotation?: HtmlPreviewAnnotationContext
 }
 
 type ZipLimits = { maxEntries: number; maxEntryUncompressedBytes: number; maxTotalUncompressedBytes: number }
@@ -91,10 +93,10 @@ function openHtmlLink(href: string) {
   if (externalUrl) window.open(externalUrl)
 }
 
-export function DocumentPreviewContent({ kind, content, title, onOpenExternally, registerHtml = registerHtmlPreview, at }: DocumentPreviewContentProps) {
+export function DocumentPreviewContent({ kind, content, title, onOpenExternally, registerHtml = registerHtmlPreview, at, htmlAnnotation }: DocumentPreviewContentProps) {
   // A new object per link clicked, so the same anchor clicked again scrolls again.
   const anchor = useMemo(() => { const id = at && Object.keys(at).find((key) => at[key] === ''); return id ? { id } : undefined }, [at])
-  if (kind === 'html' && typeof content === 'string') return <HtmlPreviewFrame fileName={title} rawContent={content} register={registerHtml} onLink={openHtmlLink} anchor={anchor} />
+  if (kind === 'html' && typeof content === 'string') return <HtmlPreviewFrame fileName={title} rawContent={content} register={registerHtml} onLink={openHtmlLink} anchor={anchor} annotation={htmlAnnotation} />
   if (typeof content === 'string') return null
   if (!content) return null
   if (kind === 'docx') return <DocxPreview data={content} onOpenExternally={onOpenExternally} />

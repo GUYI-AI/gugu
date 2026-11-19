@@ -19,7 +19,7 @@ const seq = (value: number) => value as Seq;
 const EXIT: ExitFact = { processExited: true, cause: { name: 'Lost', message: 'adapter exited' }, code: 1, signal: null };
 
 function rig(options: { block?: StageName; delayReceipt?: boolean; dispatchThrowsOnce?: boolean; markReadFailsOnce?: boolean;
-  failAt?: StageName; failAwaitsPerson?: boolean; exitBeforeFail?: boolean; rejectDispatch?: boolean; holdTeardownOf?: { id: string; until: Promise<void> }; channelLostTimes?: number; failOnceAt?: StageName; teardownThrowsOnce?: boolean; reportFailureThrowsOnce?: boolean; commitThrowsOnSignOutHold?: boolean } = {}) {
+  failAt?: StageName; failAwaitsPerson?: boolean; exitBeforeFail?: boolean; rejectDispatch?: boolean; holdTeardownOf?: { id: string; until: Promise<void>; entered?: () => void }; lateStartOf?: { id: string; until: Promise<void> }; channelLostTimes?: number; failOnceAt?: StageName; teardownThrowsOnce?: boolean; reportFailureThrowsOnce?: boolean; commitThrowsOnSignOutHold?: boolean } = {}) {
   const records = new Map<string, { owner: string | null; hold: Hold | null; archived: boolean }>();
   const rows = new Map<Seq, PendingRow>();
   const settled = new Set<Seq>();
@@ -78,6 +78,7 @@ function rig(options: { block?: StageName; delayReceipt?: boolean; dispatchThrow
         async run<K extends StageName>(at: K, _have: unknown, ctx: { gen: Gen; signal: AbortSignal }): Promise<StageOut[K]> {
           ctx.signal.throwIfAborted();
           trace.push(`stage:${ctx.gen.attempt}:${at}`);
+          if (at === 'process' && options.lateStartOf?.id === sessionId) await options.lateStartOf.until;
           if (failOnce === at) { failOnce = undefined; throw new Error(`${at} unavailable`); }
           if (options.failAt === at) {
             if (options.exitBeforeFail) exitCallbacks.at(-1)!(EXIT);
@@ -97,7 +98,7 @@ function rig(options: { block?: StageName; delayReceipt?: boolean; dispatchThrow
           if (throwOnce) { throwOnce = false; throw new Error('worker RPC failed'); }
           if (lostTimes > 0) { lostTimes -= 1; return { result: 'channel-lost', cause: { name: 'AcpSessionMissing', message: 'gone' } }; }
           return options.delayReceipt ? receipt.promise : { result: 'accepted', nativeReceiptId: row.message.id }; },
-        async teardown(have) { trace.push('teardown'); if (options.holdTeardownOf?.id === sessionId) await options.holdTeardownOf.until; if (teardownThrows) { teardownThrows = false; throw new Error('teardown failed'); } for (const lease of Object.values(have)) active.delete(lease); },
+        async teardown(have) { trace.push('teardown'); if (options.holdTeardownOf?.id === sessionId) { options.holdTeardownOf.entered?.(); await options.holdTeardownOf.until; } if (teardownThrows) { teardownThrows = false; throw new Error('teardown failed'); } for (const lease of Object.values(have)) active.delete(lease); },
         onExit(_have, cb) { exitCallbacks.push(cb); return () => { trace.push('unlisten'); }; },
       } satisfies LegAdapter;
     },
@@ -113,6 +114,37 @@ function rig(options: { block?: StageName; delayReceipt?: boolean; dispatchThrow
 }
 
 export const ownerCases: readonly { name: string; run: () => Promise<void> }[] = [
+  { name: 'a late A process keeps closure unconfirmed without blocking a later B identity transition', async run() {
+    const held = deferred<void>();
+    const r = rig({ lateStartOf: { id: 's', until: held.promise } }); r.session(); r.session('b', 'B'); await r.owner.signIn('A');
+    r.owner.start('s');
+    while (!r.trace.includes('stage:1:process')) await new Promise(resolve => setTimeout(resolve, 0));
+    let stopped = false;
+    const closing = r.owner.stopOwnerForClosure('A').then(() => { stopped = true; });
+    await r.owner.signIn('B'); r.owner.start('b'); await r.owner.quiescent('b');
+    assert.equal(stopped, false); assert.equal(r.owner.read('b').kind, 'ready');
+    held.resolve(); await closing;
+    assert.equal(r.owner.read('b').kind, 'ready');
+    await r.owner.signOut(); assert.equal(r.active.size, 0);
+  } },
+  { name: 'account closure refuses a stale A stop after B signed in and leaves B running', async run() {
+    const r = rig(); r.session('b', 'B'); await r.owner.signIn('B'); r.owner.start('b'); await r.owner.quiescent('b');
+    const active = r.active.size;
+    await assert.rejects(r.owner.stopOwnerForClosure('A'), /account changed/);
+    assert.equal(r.owner.read('b').kind, 'ready'); assert.equal(r.active.size, active);
+    await r.owner.signOut();
+  } },
+  { name: 'account closure waits for side-chat teardown before removal and before confirming that the account stopped', async run() {
+    const held = deferred<void>(), entered = deferred<void>();
+    const r = rig({ holdTeardownOf: { id: 'f', until: held.promise, entered: () => entered.resolve() } }); r.session(); r.fork('f'); await r.owner.signIn('A');
+    r.owner.start('f'); await r.owner.quiescent('f');
+    let stopped = false;
+    const closing = r.owner.stopOwnerForClosure('A').then(() => { stopped = true; });
+    await entered.promise;
+    assert.equal(stopped, false); assert.ok(r.active.size > 0); assert.equal(r.removed.includes('f'), false);
+    held.resolve(); await closing;
+    assert.equal(r.active.size, 0); assert.equal(r.removed.includes('f'), true);
+  } },
   { name: 'a thrown dispatch leaves the outcome unknown without inventing a process exit', async run() {
     const r = rig({ dispatchThrowsOnce: true }); r.session(); await r.owner.signIn('A');
     const sent = r.send(); await r.owner.quiescent('s');
@@ -436,7 +468,9 @@ export const ownerCases: readonly { name: string; run: () => Promise<void> }[] =
     const { seq: row } = r.send(); await r.owner.quiescent('s');
     const view = r.owner.read('s'); assert.equal(view.kind, 'failed'); assert.equal(view.failure?.at, null);
     assert.equal(r.rows.get(row)!.state, 'queued'); assert.deepEqual(r.dispatched, []);
-    assert.equal(r.active.size, 0); assert.equal(r.failures.length, 1);
+    // The rejected stage itself is reported first; the throwing report-failure is the second failure.
+    assert.equal(r.active.size, 0); assert.equal(r.failures.length, 2);
+    assert.match(String(r.failures[0]), /Start stage 'platform' failed/);
   } },
   { name: 'a channel failure racing the exit keeps the first fact: the exit cause becomes the failure hold', async run() {
     const r = rig({ failAt: 'channel', exitBeforeFail: true }); r.session(); await r.owner.signIn('A');
@@ -465,3 +499,5 @@ export const ownerCases: readonly { name: string; run: () => Promise<void> }[] =
 ];
 
 export async function verifyOwnerCases(): Promise<void> { for (const c of ownerCases) await c.run(); }
+
+export { rig as sessionLifeOwnerFixture };

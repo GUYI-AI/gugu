@@ -1,18 +1,18 @@
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config'
 import type { SubscriptionPayer } from '@gugu/session-core/agents/plugins'
-import { agentConnectionForm, type AgentPayload } from '@shared/core/agents/agent-payload'
+import { agentAccountForm, type AgentPayload } from '@shared/core/agents/agent-payload'
 import { resolveAccountTargets } from '../agents-page/agent-account'
 import { connectionDetails, harnessConnections, queryView } from './subscription-queries'
-import { useReadModel } from '@/lib/readModel'
+import { useReplica } from '@/lib/replica'
 
-/** 有连接的家:Claude / Codex(账号 + API Key),以及声明了 API Key 连接的家(#2507)。 */
+/** Manages saved accounts for harnesses that declare account vaults or vendor keys. */
 export function useSubscriptionConnections(machine: string | null, agent: Pick<AgentPayload, 'id' | 'capabilities'>) {
-  return queryView(useReadModel(harnessConnections, agentConnectionForm(agent) !== null ? [machine, agent.id] : null))
+  return queryView(useReplica(harnessConnections, agentAccountForm(agent) !== null ? [machine, agent.id] : null))
 }
 
 /** 一个连接的登录读数与套餐。菜单里的行、菜单外的「重新登录」与「现有 CLI 配置」列不列,读的是同一份。 */
 export function useConnectionDetails(machine: string | null, providerId: string, connectionId: string | undefined) {
-  return queryView(useReadModel(connectionDetails, connectionId !== undefined ? [machine, providerId, connectionId] : null))
+  return queryView(useReplica(connectionDetails, connectionId !== undefined ? [machine, providerId, connectionId] : null))
 }
 
 export type ConnectionDetails = NonNullable<ReturnType<typeof useConnectionDetails>['data']>
@@ -26,7 +26,7 @@ const CONFIGURED_PAYERS: ReadonlySet<SubscriptionPayer> = new Set(['subscription
  */
 export function nativeConfigured(details: ConnectionDetails | undefined): boolean {
   if (!details) return false
-  if (details.status.kind === 'authenticated') return true
+  if (details.status.kind === 'authenticated' || details.status.kind === 'unauthenticated' && details.status.reason === 'expired') return true
   return !!details.plan && CONFIGURED_PAYERS.has(details.plan.payer)
 }
 
@@ -47,7 +47,7 @@ export function useListedConnections(
   machine: string | null,
   agent: Pick<AgentPayload, 'id' | 'capabilities' | 'programs' | 'status'>
 ) {
-  const form = agentConnectionForm(agent)
+  const form = agentAccountForm(agent)
   // 账号就是它 CLI 自己那一份(OpenCode、MiMo、Kilo、Copilot、Hermes…):Claude / Codex 的多账号不算在这里。
   const cliSignIn = !form?.accounts && resolveAccountTargets(agent).length > 0
   const offered = form !== null || cliSignIn

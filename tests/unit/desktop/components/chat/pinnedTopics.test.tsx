@@ -22,7 +22,7 @@ vi.mock('@/platform', async (original) => { const actual = await original<typeof
 
 const { ChatHeaderActions } = await import('@/components/chat/ChatHeaderActions')
 const { PinnedTopicTabs } = await import('@/components/chat/PinnedTopicTabs')
-const { queryClient } = await import('@/lib/readModel')
+const { queryClient } = await import('@/lib/replica')
 const { unsubscribePrivateUserEventBus } = await import('@/lib/realtimeChannel')
 const { drainTopicSplitRequest } = await import('@/lib/topicSplitRequest')
 let harness: ReturnType<typeof createReactHarness>
@@ -182,8 +182,8 @@ describe('Topics menu row actions', () => {
   it('marks the right-clicked topic read through the shared row menu', async () => {
     save([])
     await openRowMenu('new')
-    expect([...document.querySelectorAll('[data-testid^="conversation-row-"], [data-testid="chat-row-mark-all-read"]')].map((item) => item.getAttribute('data-testid')))
-      .toEqual(['conversation-row-mark-read', 'chat-row-mark-all-read'])
+    expect([...document.querySelectorAll('[data-testid^="conversation-row-"], [data-testid="conversation-row-mark-topics-read"]')].map((item) => item.getAttribute('data-testid')))
+      .toEqual(['conversation-row-mark-read', 'conversation-row-mark-topics-read'])
     await clickElement(document.querySelector<HTMLElement>('[data-testid="conversation-row-mark-read"]')!)
     await vi.waitFor(() => expect(marked.scopes).toEqual([['new']]))
   })
@@ -191,7 +191,7 @@ describe('Topics menu row actions', () => {
   it('marks every topic of this group read, not the group line or other groups', async () => {
     save([])
     await openRowMenu('new')
-    await clickElement(document.querySelector<HTMLElement>('[data-testid="chat-row-mark-all-read"]')!)
+    await clickElement(document.querySelector<HTMLElement>('[data-testid="conversation-row-mark-topics-read"]')!)
     await vi.waitFor(() => expect(marked.scopes.map((ids) => [...ids].sort())).toEqual([['new', 'old']]))
   })
 })
@@ -222,7 +222,7 @@ describe('pinned topic tabs', () => {
   it('hides the entire strip when no topic is pinned, even when the group has topics', async () => {
     save([])
     await renderWithAppProviders(harness, strip(), options())
-    await vi.waitFor(() => expect(queryClient.getQueryData(['chat-pins', 'u', 'g'])).toEqual({ topicIds: [] }))
+    await vi.waitFor(() => expect(queryClient.getQueryData(['chatPins', 'u', 'g'])).toEqual({ topicIds: [] }))
     expect(document.querySelector('[data-testid="phone-chat-tabs"]')).toBeNull()
   })
 

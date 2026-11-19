@@ -152,6 +152,23 @@ function clipped(words: string): string {
   return chars.length > PILL_LABEL_MAX ? `${chars.slice(0, PILL_LABEL_MAX - 1).join('')}…` : words;
 }
 
+/**
+ * API 55 Send from a chat's folder (selection-send.ts): the pills of `refs` as a message holds them, read as the person, every
+ * file one of `chatId`'s folder — the chat the page is drawn in, from the host's binding, never a chat the call names — and
+ * the person still in that chat. Anything else opens nothing.
+ */
+export async function chatSelectionPills(platform: Pick<AppSendPlatform, 'account'>, chatId: string, refs: unknown): Promise<{ label: string; target: string }[]> {
+  const checked = refsOf(refs);
+  if (checked.some((ref) => ref.file.chat !== undefined && ref.file.chat !== chatId)) throw new AppSendError('denied', 'Send cites only files of this page\'s chat');
+  const { token } = await platform.account();
+  const { data, error } = await client(token, 'chat').from('chats').select('id').eq('id', chatId).maybeSingle();
+  if (error) throw new AppSendError('failed', error.message);
+  if (!data) throw new AppSendError('denied', 'Send needs a chat you are in');
+  const { chatId: filesChat, pills } = await pillsOf(token, checked);
+  if (filesChat !== chatId) throw new AppSendError('denied', 'Send cites only files of this page\'s chat');
+  return pills.map(({ label, link }) => ({ label, target: link }));
+}
+
 /** A pill as a message's text holds it — what the chat bubble and the session page both draw as a pill (commit 2). */
 export function pillText(pill: AppComposeRef): string {
   return stringifyMention({ label: pill.label, target: pill.link, kind: 'file' });

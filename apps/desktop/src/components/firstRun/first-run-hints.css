@@ -10,6 +10,3 @@
 }
 .first-run-hint p { margin: 0; }
 .first-run-hint > button { display: flex; margin-top: 8px; margin-left: auto; min-height: var(--control-h-touch); }
-.first-run-hint-inline { display: flex; width: fit-content; max-width: calc(100% - 32px); align-items: center; gap: 12px; margin: 8px 16px 12px; border: 1px solid var(--border); box-shadow: none; }
-.first-run-hint-inline p { min-width: 0; }
-.first-run-hint-inline > button { flex-shrink: 0; margin: 0; }

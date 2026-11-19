@@ -90,3 +90,16 @@ it('revokes prepared references if a later file fails before delivery', async ()
  await expect(uploadSessionFiles(endpoint, [{ file_path: file }, { file_path: file }], { agentId: 'sender', sessionId: 's', recipients: ['receiver'] })).rejects.toThrow(/permission revoked/)
  expect(prepared).toHaveLength(1); expect(revoked).toEqual(prepared)
 })
+it('a handoff reuses its permit while different recipients or a new handoff get another',async()=>{
+ const root=await directory();const input=join(root,'original.bin');await writeFile(input,original)
+ const ids:string[]=[]
+ const attachmentId=randomUUID()
+ for (const [recipients,id] of [[['b','a'],attachmentId],[['a','b'],attachmentId],[['a','c'],attachmentId],[['a','b'],randomUUID()]] as const) {
+  const fx=fixture()
+  await uploadSessionFile(fx.endpoint,{file_path:input},{agentId:'sender',sessionId:'s',recipients:[...recipients],attachmentId:id})
+  ids.push(JSON.parse(String(fx.fetcher.mock.calls.find(([url])=>String(url).endsWith('/upload'))![1]?.body)).request_id)
+ }
+ expect(ids[0],'the same recipients in any order').toBe(ids[1])
+ expect(ids[2],'other recipients').not.toBe(ids[0])
+ expect(ids[3],'another handoff to the same recipients').not.toBe(ids[0])
+})

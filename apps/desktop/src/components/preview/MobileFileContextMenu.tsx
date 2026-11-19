@@ -55,12 +55,12 @@ export function MobileFileContextMenu() {
   useEffect(() => {
     if (!mobile) return
     const down = (event: PointerEvent) => {
-      // Annotated text keeps the platform's long-press selection handles; its range has its own comment action.
-      if (event.target instanceof Element && event.target.closest('[data-file-annotations]')) { viewer.current = null; return }
+      // Citable text keeps the platform's long-press selection handles; its range has its own Cite action.
+      if (event.target instanceof Element && event.target.closest('[data-file-cite]')) { viewer.current = null; return }
       viewer.current = viewerAt(event.target)
       if (viewer.current) longPress.onPointerDown(event)
     }
-    const contextMenu = (event: Event) => { if (event.target instanceof Element && event.target.closest('[data-file-annotations]')) return; if (viewerAt(event.target)) event.preventDefault() }
+    const contextMenu = (event: Event) => { if (event.target instanceof Element && event.target.closest('[data-file-cite]')) return; if (viewerAt(event.target)) event.preventDefault() }
     document.addEventListener('pointerdown', down, true)
     document.addEventListener('pointermove', longPress.onPointerMove, true)
     document.addEventListener('pointerup', longPress.onPointerUp, true)

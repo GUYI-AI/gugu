@@ -1,3 +1,4 @@
+import { shellAvailability } from '../../sessions/terminals/terminal-shell-availability';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { isMacHost } from '@shared/host-os';
 import { ChevronsUpDownIcon, Plus } from '@/lib/icons'
@@ -6,7 +7,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { cn } from '@renderer/utils/utils';
 import { TerminalShellOptionLabel } from '@renderer/lib/components/terminal-shell-option-label';
-import { readModel, useReadModel } from '@/lib/readModel';
+import { replica, useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 import { rpc } from '@renderer/lib/ipc';
 import type { AppSettings } from '@shared/core/app-settings';
@@ -93,17 +94,8 @@ const clampFontSize = (size: number) =>
 
 const isMac = isMacHost();
 
-/** The shells this device can start, with why one cannot. */
-const shellAvailability = readModel({
-  name: 'terminalShellAvailability',
-  scope: 'device',
-  read: () => rpc.terminals.getTerminalShellAvailability(),
-  fresh: 30_000,
-  persist: true,
-});
-
 /** Fonts installed on this device. Listed fresh on every open (a font installed meanwhile shows up); the last list shows until then. */
-const installedFonts = readModel({
+const installedFonts = replica({
   name: 'installedFonts',
   scope: 'device',
   read: async () => {
@@ -111,7 +103,7 @@ const installedFonts = readModel({
     if (!result?.success || !Array.isArray(result.fonts)) throw new Error('Could not list installed fonts');
     return Array.from(new Set(result.fonts.map((font) => font.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   },
-  persist: true,
+  persist: { maxBytes: 8192, maxEntries: 1 },
 });
 
 const TerminalSettingsCard: React.FC = () => {
@@ -127,11 +119,8 @@ const TerminalSettingsForm: React.FC<{ terminal: AppSettings['terminal']; api: A
   const { update, isSaving: saving } = api;
   const [pickerOpen, setPickerOpen] = useState<boolean>(false);
   const [query, setQuery] = useState<string>('');
-  const fonts = useReadModel(installedFonts, []);
-  const installedFontNames = useMemo(() => (fonts.state === 'value' ? fonts.value : []), [fonts]);
-  const loadingFonts = fonts.state === 'unknown';
-  const shells = useReadModel(shellAvailability, []);
-  const localShellAvailability = shells.state === 'value' ? shells.value : [];
+  const fonts = useReplica(installedFonts, []);
+  const shells = useReplica(shellAvailability, []);
   const { translate } = useSessionMessages();
 
   const defaultFontOption = useMemo<FontOption>(
@@ -146,12 +135,14 @@ const TerminalSettingsForm: React.FC<{ terminal: AppSettings['terminal']; api: A
   const fontFamily = terminal.fontFamily ?? '';
   const fontSize = terminal.fontSize ?? TERMINAL_FONT_SIZE_DEFAULT;
   const { autoCopyOnSelection, macOptionIsMeta, defaultShell } = terminal;
-  const selectedShell = localShellAvailability.find((entry) => entry.id === defaultShell) ?? null;
+  const selectedShell = shells.state === 'value' ? shells.value.find((entry) => entry.id === defaultShell) ?? null : null;
 
   const groups = useMemo<FontGroup[]>(() => {
     const popularSet = new Set(POPULAR_FONTS.map((f) => f.toLowerCase()));
 
-    const installedSet = new Set(installedFontNames.map((font) => font.toLowerCase()));
+    // Installed fonts not read (or the read failed): only the default; the picker says which, below the list.
+    if (fonts.state !== 'value') return [{ value: 'popular', label: translate('terminal.fontGroupPopular'), items: [defaultFontOption] }];
+    const installedSet = new Set(fonts.value.map((font) => font.toLowerCase()));
     const popularItems: FontOption[] = [defaultFontOption];
     for (const font of POPULAR_FONTS) {
       if (installedSet.has(font.toLowerCase())) {
@@ -160,7 +151,7 @@ const TerminalSettingsForm: React.FC<{ terminal: AppSettings['terminal']; api: A
     }
 
     const installedItems: FontOption[] = [];
-    for (const font of installedFontNames) {
+    for (const font of fonts.value) {
       const lower = font.toLowerCase();
       if (popularSet.has(lower)) continue;
       installedItems.push({ value: font, label: font });
@@ -170,7 +161,7 @@ const TerminalSettingsForm: React.FC<{ terminal: AppSettings['terminal']; api: A
       { value: 'popular', label: translate('terminal.fontGroupPopular'), items: popularItems },
       { value: 'installed', label: translate('terminal.fontGroupInstalled'), items: installedItems },
     ];
-  }, [defaultFontOption, installedFontNames, translate]);
+  }, [defaultFontOption, fonts, translate]);
 
   const visibleGroups = useMemo<FontGroup[]>(() => {
     const q = query.trim().toLowerCase();
@@ -266,7 +257,9 @@ const TerminalSettingsForm: React.FC<{ terminal: AppSettings['terminal']; api: A
               </SelectValue>
             </SelectTrigger>
             <SelectContent align="end" className="min-w-max">
-              {localShellAvailability.map((entry) => (
+              {shells.state === 'unknown' ? <Unknown className="m-2 w-24" /> : shells.state === 'error' ? (
+                <div className="p-2 text-sm text-foreground-muted">{translate('terminal.shellsLoadFailed')}</div>
+              ) : shells.value.map((entry) => (
                 <SelectItem
                   key={entry.id}
                   value={entry.id}
@@ -352,7 +345,9 @@ const TerminalSettingsForm: React.FC<{ terminal: AppSettings['terminal']; api: A
                     </ComboboxGroup>
                   )}
                 </ComboboxList>
-                {loadingFonts ? (
+                {fonts.state === 'error' ? (
+                  <div className="px-3 py-2 text-sm text-foreground-muted">{translate('terminal.fontLoadFailed')}</div>
+                ) : fonts.state === 'unknown' ? (
                   <div className="px-1 pb-1">
                     <div className="px-2 py-1.5 text-xs text-foreground-muted">
                       {translate('terminal.fontGroupInstalled')}

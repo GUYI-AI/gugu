@@ -39,6 +39,7 @@ export function GithubConnectModal({
 }: BaseModalProps<void> & {
   /** 资源库看的是别的机器时,连的是那台机器上的 GitHub 账号(#6264):gh 读那台机器的,设备码存到那台机器。 */
   host?: LibraryHost;
+  onDeviceFlow?: () => void;
 }) {
   return (
     <LibraryHostScope host={host}>
@@ -47,7 +48,7 @@ export function GithubConnectModal({
   );
 }
 
-function GithubConnectModalBody({ onSuccess, onClose, host }: BaseModalProps<void> & { host?: LibraryHost }) {
+function GithubConnectModalBody({ onSuccess, onClose, host, onDeviceFlow }: BaseModalProps<void> & { host?: LibraryHost; onDeviceFlow?: () => void }) {
   const { toast } = useToast();
   const deviceFlowMutation = useGitHubDeviceFlowAuth();
   const importCliAccountsMutation = useImportGitHubCliAccounts();
@@ -96,7 +97,8 @@ function GithubConnectModalBody({ onSuccess, onClose, host }: BaseModalProps<voi
 
   const connectDeviceFlow = () => {
     setError(null);
-    showDeviceFlow({ host });
+    if (onDeviceFlow) onDeviceFlow();
+    else showDeviceFlow({ host });
     void deviceFlowMutation.mutateAsync();
   };
 

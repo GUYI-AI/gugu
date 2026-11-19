@@ -1,0 +1,38 @@
+/* The sender's picture while its bytes go up: dimmed under a ring that fills, like every messenger. */
+.attachment-upload-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: var(--bg-overlay-strong);
+  cursor: default;
+}
+.attachment-upload-overlay[role='button'] { cursor: pointer; }
+.attachment-upload-overlay__ring circle:last-child { transition: stroke-dashoffset var(--dur-fast) linear; }
+
+/* Someone else's attachment its sender is still uploading: the place it will take, breathing, and a line saying so. */
+.chat-inline-image--awaiting {
+  display: grid;
+  place-items: end center;
+  overflow: hidden;
+  background: var(--muted) linear-gradient(100deg, transparent 30%, var(--bg) 50%, transparent 70%) 0 0 / 300% 100% no-repeat;
+  animation: attachment-awaiting 1.6s ease-in-out infinite;
+}
+.chat-inline-image--awaiting > span {
+  margin-bottom: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-overlay-modal);
+  color: var(--surface-white);
+  font-size: var(--font-caption);
+}
+@keyframes attachment-awaiting { from { background-position: 100% 0 } to { background-position: 0 0 } }
+
+/* Bytes that arrived while the bubble waited for them fade in over the placeholder's place. */
+.chat-inline-image--arrived { animation: attachment-arrived var(--dur-med) ease-out; }
+@keyframes attachment-arrived { from { opacity: 0 } to { opacity: 1 } }
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-inline-image--awaiting, .chat-inline-image--arrived { animation: none; }
+}

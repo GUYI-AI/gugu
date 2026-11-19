@@ -45,16 +45,20 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', () => {
   })
   return { useChatStore: store, useChatStoreReader: () => store, useStoreValueBy: <T>(read: (value: ReturnType<typeof store>) => T) => read(store()) }
 })
+// The contacts replicas publish identities through the account's IM library.
+vi.mock('../../../../apps/desktop/src/lib/imRepository', async (original) => ({ ...(await original<object>()), openedImRepository: () => getImRepositoryMock() }))
 vi.mock('../../../../apps/desktop/src/lib/contacts', () => ({ contactsService: contactsServiceMock }))
 
-const { renameLocal, notify } = vi.hoisted(() => ({ renameLocal: vi.fn(), notify: vi.fn() }))
-vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { renameOwnedAgentLocalFootprint: renameLocal } }))
+const { renameOnHost, notify } = vi.hoisted(() => ({ renameOnHost: vi.fn(), notify: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {} }))
+vi.mock('../../../../apps/desktop/src/lib/archiveOwnedAgent', () => ({ renameOwnedAgent: renameOnHost }))
 vi.mock('../../../../apps/desktop/src/lib/notices', () => ({ notify }))
 const { readRequiredDisplayIdentitiesMock } = vi.hoisted(() => ({ readRequiredDisplayIdentitiesMock: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({ readRequiredDisplayIdentities: readRequiredDisplayIdentitiesMock }))
 // The private identity_removed channel is not under test here; keep it off the real realtime socket.
 vi.mock('../../../../apps/desktop/src/hooks/useIdentityLifecycle', () => ({ useIdentityLifecycle: vi.fn() }))
 
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { ContactsProvider } from '../../../../apps/desktop/src/store/contacts'
 import { readPerfCounters } from '../../../../apps/desktop/src/lib/perfCounters'
 import { useContactsStore, type ContactsContextValue } from '../../../../apps/desktop/src/store/contactsContext'
@@ -92,7 +96,9 @@ const sharedGroupRow = {
 }
 
 beforeEach(() => {
-  renameLocal.mockReset().mockResolvedValue(undefined)
+  queryClient.clear()
+  followRendererSession('SIGNED_IN', authUser.id)
+  renameOnHost.mockReset().mockResolvedValue({ deviceId: 'device-1' })
   notify.mockReset()
   store = null
   for (const id of Object.keys(identitiesById)) delete identitiesById[id]
@@ -153,40 +159,36 @@ describe('ContactsProvider keeps an unchanged contact the same object across a f
   })
 })
 
-describe('agent rename canonical publication #6021', () => {
-  it('publishes the confirmed identity and normalized name through the existing local persistence bridge', async () => {
-    const updated = { ...sharedGroupAgent, owner_user_id: 'user-1', display_name: '新名字' }
-    contactsServiceMock.updateOwnedAgentProfile.mockResolvedValue(updated)
+// My agent's name is its task's name: a task on this device is renamed on its host (renameOwnedAgent → sessions.renameSession,
+// the same rename the tab and the sidebar make); a task elsewhere or none (renameOwnedAgent → null) is renamed on the identity.
+describe('agent rename has one path #6021', () => {
+  it('renames on the task host and never writes the name to the identity itself', async () => {
     const harness = await renderProvider()
     try {
-      await act(async () => { await store!.renameAgent(updated.id, '  新名字  ') })
-      expect(contactsServiceMock.updateOwnedAgentProfile).toHaveBeenCalledWith(updated.id, { display_name: '  新名字  ' })
-      expect(identitiesById[updated.id]).toEqual(updated)
-      expect(renameLocal).toHaveBeenCalledExactlyOnceWith(updated.id, '新名字')
+      await act(async () => { await store!.renameAgent(sharedGroupAgent.id, '  新名字  ') })
+      expect(renameOnHost).toHaveBeenCalledExactlyOnceWith(sharedGroupAgent.id, '新名字')
+      expect(contactsServiceMock.updateOwnedAgentProfile).not.toHaveBeenCalled()
       expect(refreshChatsMock).toHaveBeenCalledOnce()
     } finally { harness.cleanup() }
   })
-  it('does not publish a rejected owner mutation to either identity or local roster', async () => {
-    contactsServiceMock.updateOwnedAgentProfile.mockRejectedValue(new Error('permission denied'))
+  it('renames an agent whose task is elsewhere, or that has none, on its identity', async () => {
+    const updated = { ...sharedGroupAgent, owner_user_id: 'user-1', display_name: '新名字' }
+    renameOnHost.mockResolvedValue(null)
+    contactsServiceMock.updateOwnedAgentProfile.mockResolvedValue(updated)
     const harness = await renderProvider()
     try {
-      await expect(store!.renameAgent('other-agent', 'New')).rejects.toThrow('permission denied')
-      expect(identitiesById['other-agent']).toBeUndefined()
-      expect(renameLocal).not.toHaveBeenCalled()
-      expect(refreshChatsMock).not.toHaveBeenCalled()
+      await act(async () => { await store!.renameAgent(updated.id, '新名字') })
+      expect(contactsServiceMock.updateOwnedAgentProfile).toHaveBeenCalledWith(updated.id, { display_name: '新名字' })
+      expect(identitiesById[updated.id]).toEqual(updated)
     } finally { harness.cleanup() }
   })
-  it('reports a local persistence failure and permits retry without replacing the identity', async () => {
-    const updated = { ...sharedGroupAgent, owner_user_id: 'user-1', display_name: '新名字' }
-    contactsServiceMock.updateOwnedAgentProfile.mockResolvedValue(updated)
-    renameLocal.mockRejectedValueOnce(new Error('roster unavailable'))
+  it('a host that cannot be reached fails loudly and changes nothing', async () => {
+    renameOnHost.mockRejectedValue(new Error('The task host could not be reached; reconnect and retry.'))
     const harness = await renderProvider()
     try {
-      await expect(store!.renameAgent(updated.id, '新名字')).rejects.toThrow('roster unavailable')
-      expect(identitiesById[updated.id]).toEqual(updated)
-      await act(async () => { await store!.renameAgent(updated.id, '新名字') })
-      expect(renameLocal).toHaveBeenCalledTimes(2)
-      expect(identitiesById[updated.id].id).toBe(sharedGroupAgent.id)
+      await expect(store!.renameAgent('agent-1', 'New')).rejects.toThrow('could not be reached')
+      expect(contactsServiceMock.updateOwnedAgentProfile).not.toHaveBeenCalled()
+      expect(refreshChatsMock).not.toHaveBeenCalled()
     } finally { harness.cleanup() }
   })
 })

@@ -6,6 +6,8 @@ import { GroupInviteQrShare } from '../../../../apps/desktop/src/components/cont
 import { MessageLoadFailure } from '../../../../apps/desktop/src/components/chat/MessageLoadFailure'
 import { platform } from '../../../../apps/desktop/src/platform'
 import { clickElement, contact, createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../../support/testHarness'
+import { openImRepository } from '../../../../apps/desktop/src/lib/imRepository'
+import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
 
 vi.mock('qrcode', () => ({ toDataURL: async () => 'data:image/png;base64,cG5n', default: { toDataURL: async () => 'data:image/png;base64,cG5n' } }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: {
@@ -16,12 +18,15 @@ let harness: ReturnType<typeof createReactHarness>
 const error = new Error('Clipboard denied /Users/test/private sk-synthetic-secret\nstack detail')
 const reason = 'Clipboard denied [path] [redacted token]'
 const writeText = vi.fn()
-beforeEach(() => {
+// The group's roster is read through the account's IM repository, which the chat provider opens in the product.
+let repository: Awaited<ReturnType<typeof openImRepository>>
+beforeEach(async () => {
+  repository = await openImRepository('user-1', { adapter: createMemoryLocalSyncDb() })
   harness = createReactHarness()
   writeText.mockReset().mockRejectedValue(error)
   vi.stubGlobal('navigator', { clipboard: { writeText } })
 })
-afterEach(() => { harness.cleanup(); vi.unstubAllGlobals() })
+afterEach(() => { harness.cleanup(); repository.close(); vi.unstubAllGlobals() })
 
 describe('copy actions preserve the refusal', () => {
   it('shows the cause beside the external agent link', async () => {

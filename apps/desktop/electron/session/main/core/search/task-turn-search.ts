@@ -30,12 +30,12 @@ function start(): Live {
 }
 
 /** Task-turn matches, found on the search thread (started by the first search): the query never holds the main thread. */
-export function searchTaskTurnMatches(query: string, limit?: number): Promise<TaskTurnMatch[]> {
+export function searchTaskTurnMatches(query: string, limit?: number, offset?: number): Promise<TaskTurnMatch[]> {
   const own = live ??= start();
   return new Promise((resolve, reject) => {
     const id = ++lastId;
     own.asked.set(id, { resolve, reject });
-    own.worker.postMessage({ id, query, limit });
+    own.worker.postMessage({ id, query, limit, ...(offset ? { offset } : {}) });
   });
 }
 

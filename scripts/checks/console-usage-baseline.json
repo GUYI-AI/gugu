@@ -57,7 +57,7 @@
   {
     "rule": "console-member",
     "file": "apps/desktop/electron/sessionpage/sessionpage-agent-reaper.ts",
-    "count": 4
+    "count": 1
   },
   {
     "rule": "console-member",
@@ -86,11 +86,6 @@
   },
   {
     "rule": "console-member",
-    "file": "apps/desktop/src/components/ContactsPanel.tsx",
-    "count": 1
-  },
-  {
-    "rule": "console-member",
     "file": "apps/desktop/src/components/SharePosterDialog.tsx",
     "count": 2
   },
@@ -107,7 +102,7 @@
   {
     "rule": "console-member",
     "file": "apps/desktop/src/components/contacts/GroupInvite.tsx",
-    "count": 2
+    "count": 1
   },
   {
     "rule": "console-member",
@@ -118,16 +113,6 @@
     "rule": "console-member",
     "file": "apps/desktop/src/components/sharePosterCanvas.ts",
     "count": 1
-  },
-  {
-    "rule": "console-member",
-    "file": "apps/desktop/src/hooks/useGroupCollabLoader.ts",
-    "count": 1
-  },
-  {
-    "rule": "console-member",
-    "file": "apps/desktop/src/i18n/runtime.ts",
-    "count": 2
   },
   {
     "rule": "console-member",
@@ -237,7 +222,7 @@
   {
     "rule": "console-member",
     "file": "apps/desktop/src/store/contacts.tsx",
-    "count": 3
+    "count": 1
   },
   {
     "rule": "console-member",

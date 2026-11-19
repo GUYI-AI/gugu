@@ -16,6 +16,7 @@ export { createServerPasswordAgent } from '../password-vault/server-agent'
 export { passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
 export { serverTaskPrivateLogin } from '../session/main/core/extensions/task-page-host'
 export { archiveSession } from '../session/main/core/sessions/archiveSession'
+export { createDesktopAccountClosureHost } from '../session/main/core/desktop-account-closure'
 // Session ids written as a prefix are matched against this machine's session list (main.ts localAddressRows).
 export { listSessions as listLocalSessions } from '../session/main/core/session-timeline/service'
 export { appInbox } from '../session/main/core/extensions/app-inbox'
@@ -157,8 +158,6 @@ export {
   withEmdashPlatformSessionRestart,
   // 模型目录第二遍探测的占位凭据注入口(实现在宿主的 harness-catalog-probe-env.ts)。
   setProbePlatformEnvResolver,
-  // #2507 同一个探针看得见选中的模型注入 API Key 连接(实现在宿主的 harness-catalog-probe-connection.ts)。
-  setProbeConnectionModelResolver,
   // @@@4972 会话发现工具的「咕咕提供的模型」读取口 —— 宿主装的就是 composer 那条 IPC 调的
   // 同一个 sessionpagePlatformCatalog,于是 agent 查到的和用户看到的是同一次计算。
   setPlatformModelCatalogResolver,
@@ -227,3 +226,6 @@ export { setDirectTerminalResolver, type DirectTerminalResolver } from '@main/co
 export { deviceProjectsPublished, listDeviceProjectRecords, onDeviceProjectsMaybeChanged } from '@main/core/projects/operations/device-project-records'
 export { projectFoldersPublished } from '@main/core/extensions/extension-bridge'
 export { sessionBootTasks } from '../session/main/core/boot-tasks'
+export { flushViewState, viewStateSnapshot } from '@main/core/view-state/view-state-service'
+// @@@device-preferences — the first-frame answer (with the one-time move of the old keys) and the host's followers.
+export { answerDevicePreferences, devicePreferencesNow, onDevicePreferencesChanged } from '@main/core/settings/device-preferences'

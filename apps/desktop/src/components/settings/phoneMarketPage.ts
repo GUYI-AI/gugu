@@ -1,5 +1,6 @@
 import { reaction } from 'mobx'
-import { readModel, useReadModel } from '../../lib/readModel'
+import { useQuery } from '@tanstack/react-query'
+import { replica, useReplica } from '../../lib/replica'
 import { useEffect } from 'react'
 import { chatDb } from '@/lib/supabase'
 import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
@@ -10,12 +11,25 @@ import { keepShelf, keptShelf } from '@/session/renderer/features/extensions/pan
 import { searchApps } from '@/session/shared/extensions/app-search'
 import { marketCategoryOf, marketCategoryRank } from '@/session/shared/extensions/catalog'
 import type { ProductPageApi } from '@/session/renderer/features/extensions/panel/app-product-page'
+import type { AppPlatform } from '@shared/extensions/app-platforms'
 import { phoneApps } from '../appSlot/phoneApps'
 
 const log = rendererLogger('app-slot/phone-market-page')
 
+export const PHONE_MARKET_QUERY_KEY = ['phone-app-market']
+
+export function usePhoneMarketPage(platform: AppPlatform = 'phone') {
+  return useQuery({
+    initialData: () => keptPhoneMarketPage(platform),
+    initialDataUpdatedAt: 0,
+    queryKey: [...PHONE_MARKET_QUERY_KEY, platform],
+    queryFn: () => readPhoneMarketPage(platform),
+    gcTime: Infinity,
+  })
+}
+
 /** Only transport differs: the same catalog and home/search rules as the desktop. */
-export async function readPhoneMarketPage() {
+export async function readPhoneMarketPage(platform: AppPlatform = 'phone') {
   const ranking = Promise.resolve(chatDb.rpc('market_install_ranking')).then(({ data, error }) => {
     if (error) throw error
     return new Map(((data ?? []) as { app_id: string; score: number }[]).map((row) => [row.app_id, row.score]))
@@ -23,9 +37,9 @@ export async function readPhoneMarketPage() {
     log.warn({ error: String(error) }, 'App market install ranking unreadable')
     return null
   })
-  const [entries, scores] = await Promise.all([phoneApps.market.entries(), ranking])
+  const [entries, scores] = await Promise.all([platform === 'phone' ? phoneApps.market.entries() : phoneApps.market.entries(false, platform), ranking])
   const home = marketHome(entries, scores)
-  keepShelf(PHONE_HOST, entries, home, null)
+  keepShelf(shelfKey(platform), entries, home, null)
   return pageOf(entries, home)
 }
 
@@ -33,8 +47,10 @@ export async function readPhoneMarketPage() {
 export const PHONE_HOST = 'phone'
 
 /** 上次画出来的那一页(kept-shelf.ts):重启后第一帧先画它,❌ 等排名那一趟网络。 */
-export function keptPhoneMarketPage() {
-  const kept = keptShelf<CloudMarketEntry, null>(PHONE_HOST)
+const shelfKey = (platform: AppPlatform) => platform === 'phone' ? PHONE_HOST : 'phone-desktop-market'
+
+export function keptPhoneMarketPage(platform: AppPlatform = 'phone') {
+  const kept = keptShelf<CloudMarketEntry, null>(shelfKey(platform))
   return kept ? pageOf(kept.items, kept.home) : undefined
 }
 
@@ -104,7 +120,7 @@ async function offeredVersions(): Promise<{ updates: Record<string, string>; gon
 }
 
 /** What the market says of the Apps installed here (an update, or delisted). 161 10-15: else their fixes never reach the phone. */
-const offeredVersionsModel = readModel({
+const offeredVersionsModel = replica({
   name: 'offeredVersions',
   scope: 'device',
   read: async () => {
@@ -112,13 +128,13 @@ const offeredVersionsModel = readModel({
     if (!offered) throw new Error('The market could not say which installed Apps have updates')
     return offered
   },
-  persist: true,
+  persist: { maxBytes: 1024, maxEntries: 1 },
 })
 
 /** `known` false until the market was asked once on this device: the rows then say nothing about versions yet. The market
  *  unreachable is an answer too: each row says the version it has, and offers nothing. */
 export function useOfferedVersions(): { updates: Record<string, string>; gone: readonly string[]; known: boolean } {
-  const reading = useReadModel(offeredVersionsModel, [])
+  const reading = useReplica(offeredVersionsModel, [])
   useEffect(() => {
     // 「更新到 vX」 from the index in hand at once; the download site is asked behind it, and when the index it brings is
     // another, the buttons are read again from that one (market-snapshot.ts).

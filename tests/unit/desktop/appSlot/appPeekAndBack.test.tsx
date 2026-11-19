@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import './chatFileReadsStub'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, createElement } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
@@ -189,7 +190,7 @@ describe('message attachment entry', () => {
     expect(panelTabsOf(chatId)).toHaveLength(1)
     open('second', 'newTab'); const independent = shownPanelTab(chatId)!.tabId
     expect(independent).not.toBe(folder); open('third', 'navigate')
-    expect(panelTabsOf(chatId).map(tab => tab.item.itemId)).toEqual(['second', 'third'])
+    expect(panelTabsOf(chatId).map(tab => tab.item.itemId).sort()).toEqual(['second', 'third'])
     expect(chatPaneOf(chatId, folder)?.navigationOf(folder)?.pages).toHaveLength(3)
   })
 

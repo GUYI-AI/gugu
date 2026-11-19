@@ -3,7 +3,7 @@ import { useCommands } from '@session-chat/components/contexts/CommandsContext';
 import { useTurnState } from '@session-chat/components/contexts/TurnStateContext';
 import { BlockStackView } from '@session-chat/components/primitives/BlockStackView';
 import { clipTrackedHeight, isCardAnimating } from '@session-chat/components/primitives/card-clip';
-import { GenericFileIcon, IconStop, ImageOffIcon } from '@session-chat/components/primitives/icons';
+import { FileMark, IconStop } from '@session-chat/components/primitives/icons';
 import type { StackLayout } from '@session-chat/core/compose';
 import type { Measured, MeasureCtx, RenderCtx } from '@session-chat/core/define';
 import { layoutBlockStack } from '@session-chat/core/layout/block-stack';
@@ -16,8 +16,8 @@ import '@gugu/session-shared/file-row.css';
 import { For, Show, createEffect, createMemo, createResource, createSignal, onCleanup, type JSX } from 'solid-js';
 import type { ChatAttachment, ChatMessage } from '@session-chat/model';
 import {
-  attachStripHeight,
-  effectiveMessageVars,
+  actionGap, attachStripHeight,
+  effectiveMessageVars, messageAttachmentGap,
   type MessageVars,
   userAvailableWidth,
   userInnerWidth,
@@ -92,7 +92,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
     userCardPadX: vars().userCardPadX,
     userCardPadY: vars().userCardPadY,
     cardBorder: vars().cardBorder,
-    attachGap: vars().attachGap,
+    attachGap: attachmentGap(),
   });
 
   const innerWidth = () => (mCtx() ? userInnerWidth(availableWidth(), vars()) : 0);
@@ -133,12 +133,19 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
     return s.height + 2 * v.userCardPadY + 2 * v.cardBorder;
   });
 
+  const edit = () => {
+    if (props.data.guguDelivery) return undefined;
+    const current = commands().editingMessage;
+    return current?.itemId === props.data.id ? current : undefined;
+  };
+  const attachmentGap = () => messageAttachmentGap(vars(), layout(), fullContentH() > 0 || !!edit());
+
   /**
    * 附件条的高度 —— 与 measure 调的是同一个函数(`message.def`),❌ 不各算一遍。
    * 它挂在卡片**外面**,所以宽度按卡片外宽算,不吃卡片的内距。
    */
   const attachStripH = createMemo(() =>
-    attachStripHeight(props.data.attachments, availableWidth(), vars())
+    attachStripHeight(props.data.attachments, availableWidth(), { attachGap: attachmentGap() })
   );
 
   /**
@@ -170,11 +177,6 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
     const ctx = mCtx();
     if (!ctx) return props.data.text;
     return parse(ctx).map(blockPlainText).join('\n\n');
-  };
-  const edit = () => {
-    if (props.data.guguDelivery) return undefined;
-    const current = commands().editingMessage;
-    return current?.itemId === props.data.id ? current : undefined;
   };
   const editorMetrics = () => {
     const ctx = mCtx();
@@ -277,7 +279,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
     </Show>
     <Show when={!props.conversation || conversationTailLane(props.data, canCollapse(), Boolean(props.footerReference)) !== 'none'}>
     <UserMessageActions itemId={props.data.id} text={props.data.text} at={props.data.at}
-      reference={props.footerReference}
+      reference={props.footerReference} gap={actionGap(layout())}
       collapse={canCollapse() ? { bubbleKey: conversationBubbleKey(props.data), anchorId: props.data.id } : undefined}
       generating={isGenerating()} readOnly={Boolean(props.data.guguDelivery) || (props.conversation && props.data.role === 'assistant')} vars={props.vars} />
     </Show>
@@ -337,7 +339,7 @@ function AttachmentChip(props: { attachment: ChatAttachment; itemId: string }) {
           {/* 图片读不回来时给「图裂了」那个字形,❌ 不要跟文件用同一个 —— 那会把
               「这张图没读到」说成「这是个文件」。 */}
           <span class="gg-file-row-icon">
-            <Show when={isImage()} fallback={<GenericFileIcon />}><ImageOffIcon /></Show>
+            <FileMark name={props.attachment.name} off={isImage()} />
           </span>
           <Show when={!isImage()}>
             <span class="gg-file-row-text">

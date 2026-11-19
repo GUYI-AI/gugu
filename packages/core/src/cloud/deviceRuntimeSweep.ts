@@ -34,11 +34,13 @@ export function createAgentRuntimeStatePublisher(options: {
 } = {}) {
   const published = options.published ?? new Map<string, PublishedRuntimeState>()
   const recent = options.recent ?? new Map<string, PublishedAgentActions>()
-  const writing = new Map<string, Promise<void>>()
-  const publish = async (read: () => AgentRuntimeStateWrite | null | Promise<AgentRuntimeStateWrite | null>, report: (state: AgentRuntimeStateWrite) => Promise<void>): Promise<void> => {
+  const writing = new Map<string, Promise<boolean>>()
+  const withdrawing = new Map<string, { holders: number; removed: boolean }>()
+  const publish = async (read: () => AgentRuntimeStateWrite | null | Promise<AgentRuntimeStateWrite | null>, report: (state: AgentRuntimeStateWrite) => Promise<void>): Promise<boolean> => {
     const state = await read()
-    if (!state) return
+    if (!state) return false
     const id = state.agentUserId
+    if (withdrawing.has(id)) return false
     const pending = writing.get(id)
     if (pending) { await pending; return publish(read, report) }
     const previous = published.get(id)
@@ -50,25 +52,39 @@ export function createAgentRuntimeStatePublisher(options: {
     const snapshot = state.recentActions == null ? null : { actions: [...state.recentActions], lastActionAt: state.lastActionAt ?? null }
     const before = recent.get(id)
     const publication = recentActionsPublication(before, snapshot, (options.nowMs ?? Date.now)(), edge)
-    if (!edge && !publication) return
-    if (publication) recent.set(id, publication)
+    if (!edge && !publication) return false
     const work = Promise.resolve().then(async () => {
+      if (withdrawing.has(id)) return false
       await report({ ...state, recentActions: publication ? snapshot?.actions ?? null : null,
         lastActionAt: publication ? snapshot?.lastActionAt ?? null : null })
-      published.set(id, next)
+      if (!withdrawing.has(id)) {
+        published.set(id, next)
+        if (publication) recent.set(id, publication)
+      }
+      return true
     })
     writing.set(id, work)
-    try { await work } catch (error) {
-      if (publication && recent.get(id) === publication) {
-        if (before) recent.set(id, before)
-        else recent.delete(id)
-      }
-      throw error
-    } finally {
+    try { return await work } finally {
       if (writing.get(id) === work) writing.delete(id)
     }
   }
-  return publish
+  return Object.assign(publish, {
+    canPublish: (id: string) => !withdrawing.has(id),
+    /** Withdraw before the identity RPC; drain writes already admitted under its old authority. */
+    async beginRemoval(id: string): Promise<(removed: boolean) => void> {
+      const withdrawal = withdrawing.get(id) ?? { holders: 0, removed: false }
+      withdrawal.holders += 1
+      withdrawing.set(id, withdrawal)
+      const pending = writing.get(id)
+      if (pending) await Promise.allSettled([pending])
+      return (removed) => {
+        withdrawal.removed ||= removed
+        withdrawal.holders -= 1
+        if (removed) { published.delete(id); recent.delete(id) }
+        if (!withdrawal.removed && withdrawal.holders === 0) withdrawing.delete(id)
+      }
+    },
+  })
 }
 
 // 本机 agent 状态边沿发布的纯逻辑(可单测,无 closure/IO 依赖)。gone 的写(DB 里已删/非本 owner,
@@ -116,7 +132,7 @@ export interface AgentStatusTransitionDeps {
   published: Map<string, PublishedAgentStatus>
   /** 这个 agent 在本机的读数;null = 本机没有它的状态。 */
   statusOf?: (agentUserId: string) => AgentStatusReading | null
-  report: (agentUserId: string, published: PublishedAgentStatus) => Promise<void>
+  report: (agentUserId: string, published: PublishedAgentStatus) => Promise<boolean | void>
   /** Optional second fact stream that may require a report while the status is unchanged. */
   shouldPublish?: (agentUserId: string) => boolean
   shouldBail: () => boolean
@@ -136,8 +152,8 @@ export async function publishAgentStatusTransitions(deps: AgentStatusTransitionD
     if (samePublishedStatus(published.get(agentUserId), next) && !deps.shouldPublish?.(agentUserId)) continue
     try {
       const previous = published.get(agentUserId)
-      await report(agentUserId, next)
-      if (published.get(agentUserId) === previous) published.set(agentUserId, next)
+      const written = await report(agentUserId, next)
+      if (written !== false && published.get(agentUserId) === previous) published.set(agentUserId, next)
     } catch (error) {
       // 不记入已发布 ⇒ 下一轮 tick 自动重试。gone 的写已在 reporter 层 drop+swallow,到不了这里。
       warn?.(`[device-runtime] activity publish failed for ${agentUserId}: ${errMsg(error)}`)

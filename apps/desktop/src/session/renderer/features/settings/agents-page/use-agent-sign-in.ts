@@ -6,7 +6,7 @@ import { useAgentAuthStatuses } from '@renderer/lib/stores/use-agent-auth-status
 import { forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { harnessModelCredentialKey } from '@renderer/lib/stores/use-harness-model-credential';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
-import { agentConnectionForm, type AgentPayload } from '@shared/core/agents/agent-payload';
+import { agentAccountForm, type AgentPayload } from '@shared/core/agents/agent-payload';
 import { accountRowOf, mergeAccountRows, resolveAccountTargets, type MergedAccountRow } from './agent-account';
 
 /**
@@ -46,7 +46,7 @@ export function useAgentSignIn(
    * 有 API Key 连接、账号是它 CLI 自己那一份的家(#2507):这一趟登的、读的是「现有 CLI 配置」(`native`)。
    * 选着一把 key 时主读数是那把 key(恒「已登录」),拿它判会在登录还没走完时就关窗;登录进程的环境由主进程定成原生。
    */
-  const form = agentConnectionForm(agent);
+  const form = agentAccountForm(agent);
   const loginConnectionId = form && !form.accounts ? 'native' : undefined;
 
   /**

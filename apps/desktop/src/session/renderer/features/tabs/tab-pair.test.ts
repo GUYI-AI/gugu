@@ -137,7 +137,7 @@ describe('every side-by-side entry ends in one strip with one pair', () => {
     memory.set([...memory.keys()][0]!.replace('src', 'other'), 'beside');
     const other = open('other', file, 'navigate', 'folder');
     expect(other).not.toBe(file);
-    expect(layout.pair?.side).toBe(other);
+    expect(layout.pair).toEqual({ pinned: other, side: file });
   });
 
   it('a page opened at a place keeps it, on the page it opened and not the one left', () => {
@@ -154,19 +154,20 @@ describe('every side-by-side entry ends in one strip with one pair', () => {
     open('A.md');
     layout.setViewActive(true);
     const before = JSON.stringify(layout.snapshot);
-    layout.setNarrow(true);
+    layout.setSinglePaneHost(true);
     expect(layout.groups.filter(({ pane }) => pane.isVisible)).toHaveLength(1);
-    layout.setNarrow(false);
+    layout.setSinglePaneHost(false);
     expect(JSON.stringify(layout.snapshot)).toBe(before);
     expectOneStrip(layout);
   });
 
-  it('a topic opens beside its group; a file from the topic pushes the group out: [topic | file]', () => {
+  it('a current topic stays in its pane when a file opens from it: [file | topic]', () => {
     const { layout, conversation, open } = setup();
     const topic = open('topic-1', conversation, 'navigate', 'topic');
     expect(layout.pair).toEqual({ pinned: conversation, side: topic });
+    activate(layout, topic);
     const file = open('A.md', topic);
-    expect(layout.pair).toEqual({ pinned: topic, side: file });
+    expect(layout.pair).toEqual({ pinned: file, side: topic });
     expect(layout.stripTabIds).toContain(conversation);
     expectOneStrip(layout);
   });
@@ -197,6 +198,7 @@ describe('separate wins when anything says so (owner 11-05 §6.3)', () => {
   it('keeps the viewed side of an existing pair when a background request arrives', () => {
     const { layout, conversation, open } = setup();
     const viewed = open('terminal');
+    activate(layout, viewed);
     const side = layout.sideGroup!;
     const tree = layout.layout;
     const output = layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false });
@@ -226,7 +228,7 @@ describe('separate wins when anything says so (owner 11-05 §6.3)', () => {
     layout.mainGroup.pane.splitTab(b);
     expect(layout.pairDeclined).toBe(false);
     open('C.md');
-    expect(paths(layout)).toEqual(['conversation', 'C.md']);
+    expect(paths(layout)).toEqual(['C.md', 'B.md']);
   });
 
   it('new-tab intent is a tab of its own even when beside is remembered', () => {
@@ -267,11 +269,11 @@ describe('recorded pairs have their own identity and lifecycle', () => {
 
   it.each(['pinned', 'side'] as const)('selecting the %s member reveals the pair and focuses that pane', (member) => {
     const { layout, conversation, open } = setup();
-    open('terminal', conversation, 'newTab');
+    const terminal = open('terminal', conversation, 'newTab');
     const output = layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false })!;
     const selected = member === 'pinned' ? conversation : output;
     activate(layout, selected);
-    expect(layout.pair).toEqual({ pinned: conversation, side: output });
+    expect(layout.pair).toEqual({ pinned: terminal, side: selected });
     expect(layout.isPairVisible).toBe(true);
     expect(layout.focusedPane.resolvedActiveTabId).toBe(selected);
     expectOneStrip(layout);
@@ -280,6 +282,7 @@ describe('recorded pairs have their own identity and lifecycle', () => {
   it('replaces the recorded pair without moving the old displayed pages, then reveals the new pair', () => {
     const { layout, conversation, open } = setup();
     const old = open('terminal');
+    activate(layout, old);
     const side = layout.sideGroup!;
     const oldEntry = side.pane.entries.get(old);
     const next = layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false })!;
@@ -297,6 +300,7 @@ describe('recorded pairs have their own identity and lifecycle', () => {
   it('a recorded pair that is not displayed is not on screen: going back to its member is offered', () => {
     const { layout, conversation, open } = setup();
     const old = open('terminal');
+    activate(layout, old);
     const next = layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false })!;
     const child = layout.open('file', { path: 'child.md' }, { from: next, intent: 'newTab', activate: false })!;
     const pane = layout.groups.find((group) => group.pane.entries.has(child))!.pane;
@@ -363,7 +367,9 @@ describe('recorded pairs have their own identity and lifecycle', () => {
     const { layout, conversation, open } = setup();
     const output = open('A.md');
     layout.pairWith(conversation, output, { edge: 'left' });
-    layout.setPaneSizes([35, 65]);
+    activate(layout, output);
+    const cut = layout.layout;
+    if (cut.type === 'split') layout.setSplitSizes(cut.id, [35, 65]);
     const { pair: _pair, ...legacy } = layout.snapshot;
     const { layout: restored } = setup();
     restored.restoreSnapshot(legacy);
@@ -389,6 +395,7 @@ describe('recorded pairs have their own identity and lifecycle', () => {
   it('restores a pending pair while retaining the old split and focused terminal', () => {
     const { layout, conversation, open } = setup();
     const terminal = open('terminal');
+    activate(layout, terminal);
     const output = layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false })!;
     const snapshot = layout.snapshot;
     const { layout: restored } = setup();
@@ -404,6 +411,7 @@ describe('recorded pairs have their own identity and lifecycle', () => {
     const otherChat = open('topic', conversation, 'newTab', 'topic');
     activate(layout, conversation);
     const terminal = open('terminal');
+    activate(layout, terminal);
     layout.open('file', { path: 'output.md' }, { from: otherChat, intent: 'beside', activate: false });
     const tree = layout.layout;
     const active = layout.focusedPane;
@@ -429,6 +437,7 @@ describe('recorded pairs have their own identity and lifecycle', () => {
   it.each([null, { pinnedTabId: 'missing', sideTabId: 'missing-too' }])('never infers a different pair from an explicit cleared or invalid new snapshot', (pair) => {
     const { layout, open } = setup();
     const output = open('A.md');
+    activate(layout, output);
     const { layout: restored } = setup();
     restored.restoreSnapshot({ ...layout.snapshot, pair });
     expect(restored.pair).toBeNull();
@@ -450,6 +459,7 @@ describe('closing one of the pair', () => {
   it('closing the pinned page: the side fills', () => {
     const { layout, open } = setup();
     const folder = open('/', undefined, 'newTab', 'folder');
+    activate(layout, layout.mainGroup.pane.tabOrder[0]);
     const a = open('A.md');
     activate(layout, folder);
     expect(layout.pair?.side).toBe(folder);
@@ -499,11 +509,12 @@ describe('closing what pushed a page out brings it back (§7)', () => {
   it('2. a chain unwinds one step per close: file2 → file1 → the group', () => {
     const { layout, conversation, open } = setup();
     const topic = open('topic', conversation, 'navigate', 'topic');
+    activate(layout, topic);
     const file1 = open('file1.md', topic);
     const file2 = open('file2.md', topic);
-    expect(layout.pair).toEqual({ pinned: topic, side: file2 });
+    expect(layout.pair).toEqual({ pinned: file2, side: topic });
     close(layout, file2);
-    expect(layout.pair).toEqual({ pinned: topic, side: file1 });
+    expect(layout.pair).toEqual({ pinned: file1, side: topic });
     close(layout, file1);
     expect(layout.pair).toEqual({ pinned: conversation, side: topic });
     expectOneStrip(layout);
@@ -512,6 +523,7 @@ describe('closing what pushed a page out brings it back (§7)', () => {
   it('3. closing the one that did not push: no restore, the other fills', () => {
     const { layout, conversation, open } = setup();
     const topic = open('topic', conversation, 'navigate', 'topic');
+    activate(layout, topic);
     const file = open('A.md', topic);
     close(layout, topic);
     expect(layout.pair).toBeNull();
@@ -524,7 +536,7 @@ describe('closing what pushed a page out brings it back (§7)', () => {
     const file = open('A.md');
     // file pushed the topic out; then the topic comes back as the pinned page (it pushes the conversation out).
     layout.pairWith(topic, file);
-    expect(layout.pair).toEqual({ pinned: topic, side: file });
+    expect(layout.pair).toEqual({ pinned: file, side: topic });
     close(layout, file);
     // file's record names the topic, which is on screen: no restore — the topic fills.
     expect(layout.pair).toBeNull();
@@ -580,7 +592,7 @@ describe('closing what pushed a page out brings it back (§7)', () => {
     const { layout, open } = setup();
     open('A.md');
     const b = open('B.md');
-    layout.setNarrow(true);
+    layout.setSinglePaneHost(true);
     close(layout, b);
     expect(paths(layout)).toEqual(['conversation', 'A.md']);
     expectOneStrip(layout);
@@ -622,29 +634,27 @@ it('1000 random steps keep one strip, at most one pair, and never bring back a c
       ({ layout } = setup());
       layout.restoreSnapshot(saved);
       conversation = all().find((id) => layout.mainGroup.pane.entries.get(id)?.kind === 'conversation')!;
-    } else if (op === 8) layout.setNarrow(random(2) === 0);
+    } else if (op === 8) layout.setSinglePaneHost(random(2) === 0);
     expectOneStrip(layout);
     for (const id of all()) expect(closed.has(id)).toBe(false);
     if (layout.pair) expect(layout.pair.pinned).not.toBe(layout.pair.side);
   }
 });
 
-it('persists only the shape, isolates accounts and does no storage work during construction', () => {
-  const values = new Map<string, string>();
-  let account = 'A';
-  let reads = 0;
-  const storage = { getItem: (key: string) => { reads++; return values.get(key) ?? null; }, setItem: (key: string, value: string) => { values.set(key, value); } };
-  const memory = accountTabPlacementMemory(() => account, () => storage);
-  expect(reads).toBe(0);
+it('persists only the shape per account in the view-state table, keeping the most recently placed that fit', () => {
+  let account = 'tab-placement-A';
+  const memory = accountTabPlacementMemory(() => account);
   memory.write('folder:/docs', 'separate');
-  account = 'B';
+  account = 'tab-placement-B';
   expect(memory.read('folder:/docs')).toBeUndefined();
   memory.write('folder:/docs', 'beside');
-  account = 'A';
+  account = 'tab-placement-A';
   expect(memory.read('folder:/docs')).toBe('separate');
-  const restarted = accountTabPlacementMemory(() => account, () => storage);
-  expect(restarted.read('folder:/docs')).toBe('separate');
-  expect([...values.values()].map((value) => JSON.parse(value))).toEqual([{ 'folder:/docs': 'separate' }, { 'folder:/docs': 'beside' }]);
+  expect(accountTabPlacementMemory(() => account).read('folder:/docs'), 'another instance (a restart reads the same table)').toBe('separate');
+  for (let i = 0; i < 300; i++) memory.write(`file:/projects/app/src/${i}.ts`, 'beside');
+  expect(memory.read('folder:/docs'), 'pushed out once newer ones fill the room').toBeUndefined();
+  expect(memory.read('file:/projects/app/src/299.ts')).toBe('beside');
+  expect(accountTabPlacementMemory(() => null).read('file:/projects/app/src/299.ts'), 'signed out: nothing').toBeUndefined();
 });
 
 describe('a resource keeps a working handle when its tab moves', () => {

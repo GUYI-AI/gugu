@@ -16,11 +16,13 @@ import { startNativeConversationInboxHost } from '../session/main/core/sessions/
 import { createRPCController, registerRPCRouter } from '../../src/session/shared/lib/ipc/rpc'
 import type { EventDefinition } from '../../src/session/shared/lib/ipc/events'
 import {
+  sessionpageBirthGroupJoinEvent,
   sessionpageAgentProvisionedEvent,
   type SessionpageIdentityAuth,
   type SessionpageIdentityRpc,
 } from '../../src/session/shared/lib/ipc/sessionpage-identity-contract'
 import { onSessionpageAgentProvisioned } from './emdash-agent-provisioning'
+import { onSessionpageBirthGroupJoin, retrySessionpageBirthGroupJoin, sessionpageBirthGroupJoin } from './sessionpage-birth-group-join'
 import { createSessionpageIdentityHost, type SessionpageIdentityAuthSnapshot } from './sessionpage-identity-host'
 import { createLocalDeviceIdResolver, detectDeviceCapabilities, type DeviceCapabilities, type DeviceHeartbeatTableClient } from '@gugu/core/cloud/deviceRuntime'
 import { makeIdentityClient } from '../supabase'
@@ -53,6 +55,7 @@ import { adoptLegacyTaskNames, announceEmdashSession, emdashSessionProvisionInpu
 import { sessionpageRenameAnnouncement, type SessionpageAgentNameTaken } from './sessionpage-rename-announcement'
 import type { HostIpc } from '../session/main/lib/host-ipc'
 import { log } from '../session/main/lib/logger'
+import { createLogger } from '../lib/logger'
 
 /** 浏览器推送的登录态,最近一份即真相。 */
 export function createSessionpageIdentityAuthStore() {
@@ -93,7 +96,7 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
     renameBound: (sessionId, agentUserId, name) => identity.renameBound(sessionId, agentUserId, name),
   })
   const nativeInbox = startNativeConversationInboxHost({
-    open: async target => (await identity.ensureAgentAddress(target)).chatId,
+    open: async target => (await identity.ensureAgentAddress(target)).chatId, publication: identity.nativePublication,
     failed: error => log.warn('Personal conversation address remains pending', error),
   })
   // 自营模型这一套:与桌面主进程共用的实现,只喂它这个宿主的三样(登录态 / 身份供给 / 文案)。
@@ -134,7 +137,9 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
   setEmdashPlatformInjector((info) => platform.acpInjector(info),
     async (info) => (await platform.acpPlatformModel(info)).accessSessionId)
   setEmdashPlatformRelease((sessionId, expectedAccessSessionId, intent) =>
-    platform.release(sessionId, expectedAccessSessionId, intent))
+    platform.release(sessionId, expectedAccessSessionId, intent),
+    (sessionId, generation) => platform.releaseForClosure?.(sessionId, generation)
+      ?? Promise.reject(new Error('Platform closure release unavailable')))
   setEmdashPlatformCheckpoint((sessionId) => platform.checkpoint(sessionId))
   // @@@4972 agent 自己用 `session_list_models` 查到的那一组。装进去的**就是**下面 composer 那条
   // 通道调的同一份实现 —— 只接下拉不接这一口,会让「用户看得到、agent 查不到」在网页版变成常态。
@@ -163,6 +168,10 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
     if (event.renamedFrom) announceRename({ ...event, previousName: event.renamedFrom })
   })
 
+  const unsubscribeBirthGroupJoin = onSessionpageBirthGroupJoin(({ sessionId, join }) => {
+    broadcast(sessionpageBirthGroupJoinEvent, { conversationId: sessionId, join })
+  })
+
   const controller = createRPCController<SessionpageIdentityRpc>({
     setAuth: async (next) => {
       auth.set(next)
@@ -178,6 +187,15 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
     agentNames: () => identity.agentNames(),
     sessionPeers: (...args) => identity.sessionPeers(...args),
     ensureAgentAddress: (input) => identity.ensureAgentAddress(input),
+    birthGroupJoin: async (sessionId) => {
+      const current = await auth.get()
+      return current ? sessionpageBirthGroupJoin(sessionId, process.env, current.userId) : null
+    },
+    retryBirthGroupJoin: async (sessionId) => {
+      const current = await auth.get()
+      if (!current) throw new Error('Sign in to retry joining the group')
+      return retrySessionpageBirthGroupJoin(sessionId, process.env, current, createLogger('sessionpage/provision'))
+    },
   })
   registerRPCRouter({ sessionpageIdentity: controller }, hostIpc.ipcMain)
   // #7103 人点的重试(经别的设备来也一样):这条会话下一次签咕咕额度真去问一次。
@@ -204,6 +222,7 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
       nativeInbox.dispose()
       setTaskNamer(null)
       unsubscribeProvisioned()
+      unsubscribeBirthGroupJoin()
       unsubscribeGroupMapping()
       setProjectGroupHost(null)
       setSessionIdentityHost(null)

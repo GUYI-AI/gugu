@@ -21,15 +21,9 @@ vi.mock('@renderer/lib/stores/use-agents', async (original) => ({
   useAgentIcon: (id: string) => (id === 'codex' ? codexIcon : null),
 }))
 
-const { SessionComposerVerbs } = await import('@renderer/features/sessions/session-verb-dock')
 const { composerVerbLook } = await import('@renderer/features/sessions/composer-verb-tag')
 
-/**
- * 分屏后会话那一格只剩两百来宽(10-28 实测:窗口 800、两块并排,会话框 213px):
- * 底排的阶梯收到最后一档,模型只剩厂商图形,可宿主塞进来的「新任务」那颗还整段写着字,压在模型图形和发送键上;
- * 输入行最前那枚「新任务 ×」把编辑区挤到 30px。
- * 判据:框窄到底排最后一档时,这两处的字收掉、标还在(composer-foldable-label);底排里谁也不压谁。框宽时字照旧在。
- */
+/** Verify the session toolbar and the task draft tag stay readable in narrow panes. */
 
 const MODELS = () =>
   composerModelOptions(
@@ -91,7 +85,6 @@ async function renderComposer(width: number, { tag }: { tag: boolean }) {
         permissionModeOptions={{ full: { name: '完全访问', destructive: true } }}
         selectedPermissionMode="full"
         leading={tag ? composerVerbLook('task', { label: '新任务', onCancel: () => {}, testId: 'tag' }).tag('codex') : undefined}
-        toolbarExtra={tag ? undefined : <SessionComposerVerbs sessionId="s-1" draft="" onCarried={() => {}} />}
         onAttach={() => {}}
         onSubmit={() => {}}
         onStop={() => {}}
@@ -109,37 +102,29 @@ async function renderComposer(width: number, { tag }: { tag: boolean }) {
   }
 }
 
-describe('窄框里宿主塞进来的「新任务」收成标', () => {
-  it('会话底排 213px:「新智能体」只剩那枚标,不压模型图形和发送键', async () => {
-    await renderComposer(213, { tag: false })
-    const verb = document.querySelector('[data-testid="session-verb-task"]')!
-    expect(verb.getAttribute('aria-label')).toBe(verb.getAttribute('title'))
-    expect(shown(verb.querySelector('svg, img')), '标还在').toBe(true)
-    expect(shown(verb.querySelector('[data-slot="composer-foldable-label"]')), '字收掉').toBe(false)
-    const visible = [...document.querySelectorAll<HTMLElement>(`${TOOLBAR} button`)]
-      .map((el) => el.getBoundingClientRect())
-      .filter((box) => box.width > 0 && box.height > 0)
-      .sort((a, b) => a.left - b.left)
-    const bar = document.querySelector(TOOLBAR)!.getBoundingClientRect()
-    for (let i = 1; i < visible.length; i++) {
-      expect(visible[i].left, `第 ${i} 颗压到前一颗`).toBeGreaterThanOrEqual(visible[i - 1].right - 1)
-    }
-    expect(visible.at(-1)!.right).toBeLessThanOrEqual(bar.right + 0.5)
-  })
-
-  it('会话底排宽:「新智能体」照旧写着字', async () => {
+describe('session composer in a narrow pane', () => {
+  it('narrowed in one step (a fold landing), the row folds before that frame paints: no labels over each other', async () => {
     await renderComposer(640, { tag: false })
-    expect(shown(document.querySelector('[data-testid="session-verb-task"] [data-slot="composer-foldable-label"]'))).toBe(true)
-  })
-
-  it('#2548 它叫「新智能体」(与群里的框同名),标是按钮自己那一枚(创建智能体那支笔),❌ agent / harness 的标(那枚在模型左边)', async () => {
-    await renderComposer(640, { tag: false })
-    const verb = document.querySelector('[data-testid="session-verb-task"]')!
-    expect(verb.getAttribute('aria-label')).toBe('新智能体')
-    expect(verb.textContent).toBe('新智能体')
-    // agent 的标(PluginIcon)是包在一层 span 里的插件 svg;笔是按钮直接带的那枚 svg。
-    expect(verb.querySelectorAll('svg, img')).toHaveLength(1)
-    expect(verb.querySelector(':scope > svg')).not.toBeNull()
+    expect(document.querySelector(TOOLBAR)!.getAttribute('data-disclosure')).toBe('0')
+    // Observers run in creation order, after the composer's own and before paint: what this one sees is what gets painted.
+    const painted = await new Promise<{ level: string | null; overlaps: number }>((resolve) => {
+      const observer = new ResizeObserver(() => {
+        observer.disconnect()
+        const visible = [...document.querySelectorAll<HTMLElement>(`${TOOLBAR} button`)]
+          .map((el) => el.getBoundingClientRect())
+          .filter((box) => box.width > 0 && box.height > 0)
+          .sort((a, b) => a.left - b.left)
+        const bar = document.querySelector(TOOLBAR)!.getBoundingClientRect()
+        let overlaps = visible.at(-1)!.right > bar.right + 0.5 ? 1 : 0
+        for (let i = 1; i < visible.length; i++) if (visible[i].left < visible[i - 1].right - 1) overlaps++
+        resolve({ level: document.querySelector(TOOLBAR)!.getAttribute('data-disclosure'), overlaps })
+      })
+      requestAnimationFrame(() => {
+        container!.style.width = '213px'
+        observer.observe(document.querySelector(TOOLBAR)!)
+      })
+    })
+    expect(painted.overlaps, `buttons over each other in the painted frame (level ${painted.level})`).toBe(0)
   })
 
   it('会话底排宽:锁着的 harness 标在模型左边、不灰,模型那格不再画厂商图形', async () => {

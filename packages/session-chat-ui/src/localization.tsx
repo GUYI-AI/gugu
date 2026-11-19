@@ -39,6 +39,9 @@ const fallbackMessages = {
   'transcript.activityCollapse': "Hide activity: {summary}",
 
   'transcript.failed': 'Failed',
+  'transcript.interrupted': 'Interrupted',
+  'transcript.retryPhoneTask': 'Retry',
+  'transcript.retryPhoneTaskFailed': 'Could not retry the task',
   'transcript.error': 'error',
   'transcript.awaitingPermission': 'Awaiting permission',
   // 计划审批卡（#7139）：头的状态词与 Claude 那几种开始方式。
@@ -286,6 +289,7 @@ const fallbackMessages = {
   'transcript.compacting': 'Compacting context…',
   'transcript.compacted': 'Context compacted — the agent keeps a summary of everything above',
   'transcript.compactionFailed': 'Context compaction failed',
+  'transcript.compactedWhileIdle': 'Compacted while idle, before the prompt cache expired — the agent keeps a summary of everything above',
   'transcript.contextReset': "The engine started a new session — it doesn't have the earlier messages",
   'transcript.sessionNotice.modelUnavailable':
     'The model this task was created with is unavailable here — running {running} instead',
@@ -312,6 +316,7 @@ const fallbackMessages = {
   'transcript.condition.machineUnreachable': "Can't reach the machine this task runs on",
   'transcript.condition.machineAttention': 'The machine this task runs on needs attention',
   'transcript.condition.membershipRequired': 'This Gugu model needs a membership',
+  'transcript.condition.groupJoinFailed': 'This agent could not join the group chat it was started from',
   'transcript.hookNoticeFrom': 'from the {hook} hook',
   'transcript.hookNoticeLevel.notice': 'Notice',
   'transcript.hookNoticeLevel.suggestion': 'Suggestion',

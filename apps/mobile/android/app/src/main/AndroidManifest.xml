@@ -31,7 +31,7 @@
                  与微信对文件的「用其他应用打开」(VIEW content://)。收下之后做什么由页面决定,
                  见 GuguSharePlugin。VIEW 那一条在系统的「打开方式」里叫「发送到咕咕」:它不是查看器,
                  选它 = 把文件发进某条会话,名字要把这件事说清。
-                 VIEW 的 application 类型只列现有 documentPreview.ts / attachmentType.ts 认识的文档、
+                 VIEW 的 application 类型只列现有 documentPreview.ts / core attachmentType.ts 认识的文档、
                  结构化文本和压缩包,以及 imageMime.mjs 的扩展包。application/* 会连 APK 安装请求也接走,
                  */* 还会匹配文件夹与存储根。未知二进制仍可经用户明确的 SEND / SEND_MULTIPLE 分享。 -->
             <intent-filter>
@@ -119,7 +119,7 @@
             tools:replace="android:foregroundServiceType">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Keeps the realtime link to the user&apos;s own machines alive while the app is in the background, so an agent finishing or asking a question reaches the phone."
+                android:value="Keeps the realtime connection active in the background to receive enabled chat notifications and events from the user&apos;s own devices."
                 tools:replace="android:value" />
         </service>
 

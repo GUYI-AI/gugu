@@ -58,7 +58,10 @@ export type ModelChoice = ModelOption;
 export const effortOptionSchema = configOptionBaseSchema;
 export type EffortOption = z.infer<typeof effortOptionSchema>;
 
-export const modeOptionSchema = configOptionBaseSchema;
+export const modeOptionSchema = configOptionBaseSchema.extend({
+  disabled: z.boolean().optional(),
+  reviewByHaiku: z.boolean().optional(),
+});
 export type ModeOption = z.infer<typeof modeOptionSchema>;
 
 export const sessionCommandSchema = z.object({
@@ -94,6 +97,12 @@ export const sessionConfigStateSchema = z.object({
       available: z.array(effortOptionSchema),
     })
     .nullable(),
+  /** Native Fast option for the current model; absent on older hosts, null when unsupported. */
+  fastMode: z.object({
+    configId: z.string(),
+    selected: z.string().nullable(),
+    available: z.array(configOptionBaseSchema),
+  }).nullable().optional(),
   /** Permission/mode selector state; null when unsupported by the provider. */
   modeOptions: z
     .object({
@@ -127,6 +136,7 @@ export type SessionConfigState = z.infer<typeof sessionConfigStateSchema>;
 export const initialSessionConfigState: SessionConfigState = {
   modelOptions: null,
   efforts: null,
+  fastMode: null,
   modeOptions: null,
   availableCommands: [],
   acceptsImagePrompts: false,

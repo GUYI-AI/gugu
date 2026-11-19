@@ -17,7 +17,8 @@ import type { SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
 import { RailAppIcon } from './RailAppIcon'
 import { UpdateBanner } from './UpdateBanner'
 import { AUTOMATION_TEST_IDS, type AutomationTestId } from '../lib/automationDom'
-import { HelpCircle, Library, Settings } from '@/lib/icons'
+import { HelpCircle, MoreHorizontal, Settings } from '@/lib/icons'
+import { SidebarAppDock } from './sidebar/SidebarAppDock'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { resumableStep, TOUR_STEPS, useProductTourState, type ProductTourRequest } from '../lib/productTour'
 import { useAuth } from '../store/auth'
@@ -186,11 +187,10 @@ function HelpOnRail() {
 // 「App」 and the dock are places on the one session page (its `apps` / `app` views, drawn without the task list): the rail
 // shows the session page there. Desktop only — Apps run in the desktop app.
 
-/** Where the session page is, as the rail lights it: its App page, one App from the dock, the library, or the tasks. */
-function sessionPagePlace(): 'tasks' | 'apps' | 'library' | { app: string } {
+/** Views with their own rail entry. */
+function sessionPagePlace(): 'tasks' | 'apps' | { app: string } {
   const view = appState.navigation.currentViewId
   if (view === 'apps') return 'apps'
-  if (view === 'library') return 'library'
   if (view === 'app') return { app: appState.navigation.viewParamsStore.app?.appId ?? '' }
   return 'tasks'
 }
@@ -305,14 +305,17 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
       {(assistantApp || apps.length > 0) && (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={reorder}>
           <SortableContext items={apps.map((app) => app.extensionId)} strategy={verticalListSortingStrategy}>
-            <div className="gg-sidebar-dock" data-testid={AUTOMATION_TEST_IDS.sidebarDock}>
-              {assistantApp && target.kind === 'app' ? (
+            <SidebarAppDock apps={assistantApp ? [assistantApp, ...apps] : apps}
+              moreButton={<RailItem icon={<MoreHorizontal size={22} />} title={t('shell.moreApps')} testId={AUTOMATION_TEST_IDS.sidebarMoreApps} />}
+              onOpen={appId => {
+                if (assistantApp && appId === ASSISTANT_APP_ID) { showSessions(); openAssistantEntry() }
+                else open(appId)
+              }}>
+              {app => assistantApp && app.extensionId === ASSISTANT_APP_ID && target.kind === 'app' ? (
                 <AssistantAppItem app={assistantApp} chatId={target.chatId} active={typeof place === 'object' && place?.app === ASSISTANT_APP_ID}
                   onOpen={() => { showSessions(); openAssistantEntry() }} />
-              ) : null}
-              {apps.map((app) => (
+              ) : (
                 <DockItem
-                  key={app.extensionId}
                   app={app}
                   active={typeof place === 'object' && place?.app === app.extensionId}
                   onOpen={() => open(app.extensionId)}
@@ -320,8 +323,8 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
                   onUnpin={() => void unpinFromDock(app.extensionId).catch(dockFailed)}
                   onQuit={() => void quitApp(app.extensionId).catch((error) => { rendererLogger('actions/Sidebar').error({ error: error }, 'action failed'); return toast(t('shell.appQuitFailed'), 'error', messageForUser(error)); })}
                 />
-              ))}
-            </div>
+              )}
+            </SidebarAppDock>
           </SortableContext>
         </DndContext>
       )}
@@ -376,19 +379,6 @@ export const Sidebar = observer(function Sidebar({ activeTab, onTabChange, setti
             rail="contacts"
             badge={pendingContactsCount}
           />
-          {platform.capabilities.agentRuntime && (
-            <RailItem
-              icon={<Library size={22} />}
-              active={activeTab === 'tasks' && sessionPagePlace() === 'library'}
-              onClick={() => {
-                onTabChange('tasks')
-                appState.navigation.navigate('library')
-              }}
-              title={t('shell.library')}
-              testId={AUTOMATION_TEST_IDS.sidebarLibraryNav}
-              rail="library"
-            />
-          )}
           {platform.capabilities.agentRuntime && (
             <AppsOnRail sessionsShown={activeTab === 'tasks'} showSessions={() => onTabChange('tasks')} />
           )}

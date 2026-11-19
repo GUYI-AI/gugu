@@ -1,4 +1,13 @@
 export default {
+  "externalHistory": {
+    "readOnly": "Read-only history",
+    "user": "You",
+    "assistant": "Assistant",
+    "loadMore": "Load more",
+    "loading": "Loading…",
+    "readFailed": "Could not load more messages.",
+    "close": "Close",
+  },
   "iosCalendar": {
     "groupTitle": "Available to task Agents on this phone",
     "calendar": "Calendar",

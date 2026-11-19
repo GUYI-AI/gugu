@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { QuestionCard } from '@gugu/core/shared/ui/taskCardModels'
 import type { Settlement } from '@gugu/session-core/session-record/contract'
+import { parseQuestionAnswers, questionAnswerError } from '@gugu/session-core/session-record/question-answer'
 import { useTimelineSession } from '@/mobile/agent-watch/use-timeline-session'
 import { useDevicesStore } from '../../store/devicesContext'
 import { useChatStore } from '../../store/chatContext'
@@ -12,27 +13,48 @@ import { assistantTimelineClient } from '../assistant/assistantTimelineClient'
 import { AgentHarnessIcon } from '../AgentHarnessIdentity'
 import { Button } from '../ui/Button'
 import { openTaskCardSession } from './openTaskCardSession'
+import { AgentQuestionCard } from './AgentQuestionCard'
+import { AgentQuestionAnswers } from './AgentQuestionAnswers'
 import '../../i18n/registerAssistantCatalog'
 
 /**
  * gugu-dev#181 ⑨ 问题卡:agent 在群里问它的主人,引用它正回的那一条。与任务卡同一个面:是什么(右上时刻)、问题、选项、一行状态。
  * 等没等、答了什么,只读那条会话的结算(本机或别的机器,与助理进度同一个读口);这条消息发出去以后没人改它。
- * 选项 = 主人引用这张卡回一句、正文就是选项名 —— 与手打的引用回复同一个动作(questionCardAnswer.ts)。
- * 不是问我的(群里的同事),只有问题和选项;问了几道、或能多选的,点卡到会话里答。
+ * 主人的完整题目沿用同一宿主结算口,统一核对后提交；旧宿主没有完整题目时保留原有引用回答路径。
+ * 群里的同事不读取主人的私有会话,仍只展示消息中公开的题目和选项。
  */
-export function QuestionCardView({ card, chatId, messageId, agentUserId, time }: {
+export function QuestionCardView({ card, chatId, messageId, agentUserId, time, mobile = false }: {
   card: QuestionCard
   chatId: string
   messageId: string
   agentUserId: string
   time: ReactNode
+  mobile?: boolean
 }) {
   const { t } = useTranslation('assistant')
   const { user } = useAuth()
   const { devices } = useDevicesStore()
   const device = devices.find((row) => row.device_id === card.deviceId)
   const mine = user?.id === card.ownerUserId && Boolean(device)
-  const settlement = useQuestionSettlement(card, mine ? device?.is_current_device === true : null)
+  const read = useTimelineSession(assistantTimelineClient(device?.is_current_device === true), mobile ? 'mobile' : 'desktop', card.deviceId, card.sessionId, mine)
+  const settlement = read.timeline.settlements[card.questionId] ?? null
+  // The authoritative timeline already carries every question, including cards sent by older hosts.
+  // Only the addressee reads that private timeline. Other members retain the existing read-only card.
+  if (mine && settlement?.questions?.length) {
+    const answers = settlement.state === 'resolved' ? parseQuestionAnswers(settlement.optionId ? safeAnswerJson(settlement.optionId) : null) : null
+    const completeAnswers = answers && !questionAnswerError(settlement.questions, answers) ? answers : null
+    return <div className="question-message-card" data-testid="composer-card" data-card-type="question">
+      <div className="question-message-card__head"><AgentHarnessIcon agentId={agentUserId} size={16} /><span>{t(composerCardCopy.question.head, { ns: 'messaging' })}</span><span>{time}</span></div>
+      {settlement.state === 'pending'
+        ? <AgentQuestionCard scope={`${card.deviceId}:${card.sessionId}`} settlement={settlement} mobile={mobile} embedded unavailable={read.link !== 'ok'}
+            respond={answers => read.respond({ itemId: card.questionId, kind: 'question', answers })} />
+        : <div className="question-message-card__receipt" data-testid="agent-question-receipt">
+            <p className="question-message-card__state">{t(settlement.state === 'resolved' ? 'question.answered' : 'question.withdrawn')}</p>
+            {completeAnswers && <AgentQuestionAnswers questions={settlement.questions} answers={completeAnswers} />}
+            {settlement.state === 'resolved' && !completeAnswers && <p className="question-message-card__state">{t('question.answerUnreadable')}</p>}
+          </div>}
+    </div>
+  }
   const openable = mine && device?.is_current_device === true && card.options.length === 0
   const interactiveTime = typeof time !== 'string'
   const Root = openable && !interactiveTime ? 'button' : 'div'
@@ -99,8 +121,6 @@ function QuestionCardState({ settlement, inSession }: { settlement: Settlement |
   )
 }
 
-/** 这道题在它那条会话里的结算;`local` = null 时不读(不是问我的)。 */
-function useQuestionSettlement(card: QuestionCard, local: boolean | null): Settlement | null {
-  const read = useTimelineSession(assistantTimelineClient(local === true), 'question-card', card.deviceId, card.sessionId, local !== null)
-  return read.timeline.settlements[card.questionId] ?? null
+function safeAnswerJson(value: string): unknown {
+  try { return JSON.parse(value) } catch { return null }
 }

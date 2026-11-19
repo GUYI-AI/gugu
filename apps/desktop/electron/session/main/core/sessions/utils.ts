@@ -1,3 +1,4 @@
+import { runtimeModelId, customModelRefFromOption } from '@gugu/session-core/models/custom-model';
 import { knownTaskName, taskName } from './task-name';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import { type SessionRow } from '@main/db/schema';
@@ -111,8 +112,10 @@ export function mapSessionRowToSession(
     providerSessionId: row.providerSessionId ?? undefined,
     providerSessionState: config?.providerSessionState,
     pendingRestart: config?.pendingRestart,
-    model: config?.model,
+    model: runtimeModelId(config?.model),
+    customModel: customModelRefFromOption(config?.model) ?? undefined,
     effort: config?.effort,
+    fastMode: config?.fastMode,
     // MCP 会话级开关**只在 ACP 那一支上有**:pty 会话不经 ACP 拿 MCP,
     // 所以那两个键没有加到 pty 配置里 —— 这里按 `type` 收窄,而不是给 pty 也补两个恒空的字段。
     // ⚠️ 原样摊出来,❌ 不在这里把 `[]` 归一成 undefined:

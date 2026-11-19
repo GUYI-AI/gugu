@@ -1,4 +1,5 @@
 import { UI_EVENTS } from '@/lib/uiEvents';
+import { OpenSuperseded } from '@/lib/guguLinks';
 import { action, reaction, runInAction } from 'mobx';
 import type { MessageItem } from '@gugu/core/shared/types/chat';
 import type { AppOpenWithDetail } from '@shared/extensions/app-runtime-protocol';
@@ -7,16 +8,16 @@ import type { ExtensionManifest } from '@shared/extensions/manifest';
 import { typedFileName } from '@shared/extensions/app-runtime-protocol';
 import type { ScreenBlockContent } from '@renderer/app/screen-layout';
 import type { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
+import { browserTabProvider } from '@renderer/features/browser/browser-tab-provider';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
 import type { TabOpenIntent } from '@shared/view-state';
 import type { PaneStore } from '@renderer/features/tabs/pane-store';
 import { createTabView } from '@renderer/features/tabs/tab-view-factory';
 import { TabViewPersistor } from '@renderer/features/tabs/tab-view-persistor';
-import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
 import { readChatSummary } from '@/lib/chatSummariesBridge';
 import { groupParticipantPanes } from '../group-participant-panes';
 import { returnToScreen } from '@renderer/app/screen-layout-actions';
-import { groupPageSlot, type PanelItem } from './chat-panel-item';
+import { groupPageSlot, isWaitingItem, type PanelItem } from './chat-panel-item';
 import { keepRestore, takeRestore } from './chat-tab-restores';
 import {
   CHAT_INFO_TAB_KIND,
@@ -35,7 +36,7 @@ import {
  * A chat's strip, on the same engine as a task's (spec session-page「并排」): the chat is its first tab, as a task's
  * conversation is; what opens beside it pairs with it, left or right, above or below; separated, either fills the block.
  */
-export const chatTabView = createTabView([chatTabProvider, chatPanelTabProvider, chatTopicTabProvider, chatInfoTabProvider] as const, {
+export const chatTabView = createTabView([chatTabProvider, chatPanelTabProvider, chatTopicTabProvider, chatInfoTabProvider, browserTabProvider] as const, {
   // Kept as a task's tabs are (`chat:<id>:tabs` in view-state).
   makePersistor: (ctx) => new TabViewPersistor(ctx.viewId),
 });
@@ -51,16 +52,17 @@ const layouts = new Map<string, ChatLayout>();
 export function chatLayoutOf(chatId: string): ChatLayout {
   const existing = layouts.get(chatId);
   if (existing) return existing;
-  const layout = chatTabView.createPaneLayoutStore({ viewId: `chat:${chatId}`, place: { kind: 'chat', chatId } }) as ChatLayout;
+  // A topic's own tools use its chatId as well. The temporary topic page in the source strip is not its owner.
+  const layout = chatTabView.createPaneLayoutStore({ viewId: `chat:${chatId}`, place: { kind: 'chat', chatId } }, {
+    isPrimaryChatTab: (entry) => entry.kind === CHAT_TAB_KIND,
+  });
   layouts.set(chatId, layout);
   runInAction(() => {
-    // Saved state is only in the cache the session page loaded at boot; read before that (the phone has none), the
-    // strip starts empty and is not saved — saving it would write an empty strip over the one kept.
-    const persisted = viewStateCache.populated;
-    if (persisted) layout.hydrate();
+    // The saved strip is in the view state from the first frame, on every shell.
+    layout.hydrate();
     if (!chatTabOf(layout)) layout.open(CHAT_TAB_KIND, { chatId }, { from: null, intent: 'newTab' });
     layout.setViewActive(true);
-    if (persisted) layout.startPersistence();
+    layout.startPersistence();
   });
   // A page asked for (its tab, a topic's row) while the block has no room to draw it beside the chat: the participant
   // beside the group gives its width back. With room for all of them, nothing leaves.
@@ -73,8 +75,8 @@ export function chatLayoutOf(chatId: string): ChatLayout {
 }
 
 const paneOf = (layout: ChatLayout): PaneStore => layout.focusedPane;
-function chatTabOf(layout: ChatLayout): string | undefined {
-  return tabsOf(layout).find(({ tab }) => tab.kind === CHAT_TAB_KIND)?.tab.tabId;
+export function chatTabOf(layout: ChatLayout): string | undefined {
+  return layout.primaryChatTabId;
 }
 
 export interface ChatPanelTab {
@@ -93,11 +95,11 @@ export interface ChatPanelTab {
  * `shown`: on screen — in front of its pane, and that pane drawn (too narrow for all of them, only the focused one is).
  */
 function tabsOf(layout: ChatLayout) {
-  const windows = [...layout.windowPanes.values()].map((windowPane) => windowPane.pane);
-  return [...layout.groups.map((group) => group.pane), ...windows].flatMap((pane) => pane.resolvedTabs.map((tab) => {
-    const inWindow = windows.includes(pane);
-    return { tab, pane, inWindow, shown: tab.isActive && (inWindow || !layout.narrow || pane === layout.focusedPane) };
-  }));
+  return [...layout.groups, ...layout.windowPanes.values()].flatMap(({ pane, paneId }) => {
+    const inWindow = layout.windowPanes.has(paneId);
+    const visible = inWindow || layout.isPaneShown(paneId);
+    return pane.resolvedTabs.map((tab) => ({ tab, pane, inWindow, shown: tab.isActive && visible }));
+  });
 }
 
 /** The chat's panel tabs, in strip order (one in a window of its own is shown there, and listed last). */
@@ -152,21 +154,32 @@ export function chatPaneOf(chatId: string, tabId: string): PaneStore | null {
 export const openPanelItem = action(function openPanelItem(
   chatId: string,
   item: PanelItem,
-  opts?: { from?: string; restore?: () => void; intent?: TabOpenIntent },
+  opts?: { from?: string; restore?: () => void; intent?: TabOpenIntent; wait?: string },
 ): string | undefined {
   const layout = chatLayoutOf(chatId);
   if (opts?.restore) keepRestore(chatId, item, opts.restore);
-  // Opened from a message (or a link) of the topic open here: from that topic, so it goes beside the topic (owner 11-05 §6.7).
-  const topic = topicTabOf(chatId);
-  const fromTopic = topic && (item.message?.chat_id ?? item.topicChatId) === topic.topic.topicChatId ? topic.tabId : undefined;
-  return layout.open(CHAT_PANEL_TAB_KIND, item, { from: opts?.from ?? fromTopic ?? chatTabOf(layout) ?? null, intent: opts?.intent ?? 'navigate' });
+  // A waiting page becomes what was asked, in place: the one this open put up (`wait`); else, for a waiting page asked
+  // again, the chat's waiting page (the later ask takes it over); else the one waiting for this same file.
+  const waiting = panelTabsOf(chatId).find((tab) => isWaitingItem(tab.item)
+    && (opts?.wait ? tab.item.waitId === opts.wait : isWaitingItem(item) || tab.item.itemId === item.itemId));
+  if (waiting) {
+    replacePanelItem(chatId, waiting.tabId, item);
+    return waiting.tabId;
+  }
+  // Its waiting page is behind or ahead in a tab's history: the person went back from it.
+  if (opts?.wait && waitingTabOf(chatId, opts.wait)) throw new OpenSuperseded();
+  return layout.open(CHAT_PANEL_TAB_KIND, item, { from: opts?.from ?? chatTabOf(layout) ?? null, intent: opts?.intent ?? 'navigate' });
 });
 
-/** An App installed while its kind of file is open takes the file over in place: the same tab, now in that App. */
+/** The page on screen in a tab, taken over in place (an App installed for its file, a waiting page answered). */
 export const replacePanelItem = action(function replacePanelItem(chatId: string, tabId: string, item: PanelItem): void {
-  const entry = paneHolding(chatLayoutOf(chatId), tabId)?.entries.get(tabId);
-  if (entry) entry.state = item;
+  paneHolding(chatLayoutOf(chatId), tabId)?.replaceCurrentPage(tabId, item);
 });
+
+/** The tab whose history holds this waiting page. */
+function waitingTabOf(chatId: string, waitId: string): string | undefined {
+  return panelTabsOf(chatId).find((tab) => chatPaneOf(chatId, tab.tabId)?.navigationOf(tab.tabId)?.pages.some((page) => (page.state as PanelItem | undefined)?.waitId === waitId))?.tabId;
+}
 
 /**
  * What an App tab of this chat is as a block of its own (dragged to a block's edge, its menu's 「单独一块」): that chat's
@@ -192,8 +205,6 @@ export const closeChatTab = action(function closeChatTab(chatId: string, tabId: 
 /** A tab clicked or asked for: it is the one shown (beside the chat when the two are a pair). */
 export const showChatTab = action(function showChatTab(chatId: string, tabId: string): void {
   const layout = chatLayoutOf(chatId);
-  const group = layout.groups.find(({ pane }) => pane.entries.has(tabId));
-  if (group) layout.setActiveGroup(group.paneId);
   paneHolding(layout, tabId)?.setActiveTab(tabId);
 });
 
@@ -204,16 +215,33 @@ export const showChatOnly = action(function showChatOnly(chatId: string): void {
   if (chatTab) showChatTab(chatId, chatTab);
 });
 
+/** A message jump makes its conversation visible without discarding the tool group. */
+export const revealChatWorkspaceMessage = action(function revealChatWorkspaceMessage(chatId: string): void {
+  const layout = layouts.get(chatId);
+  if (layout?.chatWorkspaceMode === 'full') showChatOnly(chatId);
+});
+
 /** Fullscreen changes only visibility. It never dismantles the pair or its history. */
 export const setPanelFull = action(function setPanelFull(chatId: string, tabId: string, full: boolean): void {
-  const pane = paneHolding(chatLayoutOf(chatId), tabId);
-  if (!pane || tabFullscreen.isOn(pane, tabId) === full) return;
+  const layout = chatLayoutOf(chatId);
+  const pane = paneHolding(layout, tabId);
+  if (!pane || panelFull(chatId, tabId) === full) return;
+  if (layout.chatWorkspacePanes?.tools?.pane === pane) {
+    if (layout.chatWorkspaceMode === 'hidden') return;
+    if (full) pane.setActiveTab(tabId);
+    layout.setChatToolLayout(full ? 'full' : 'split');
+    return;
+  }
   pane.setActiveTab(tabId);
   tabFullscreen.toggle(pane, tabId);
 });
 
 export function panelFull(chatId: string, tabId: string): boolean {
-  const pane = paneHolding(chatLayoutOf(chatId), tabId);
+  const layout = chatLayoutOf(chatId);
+  const pane = paneHolding(layout, tabId);
+  if (pane && layout.chatWorkspacePanes?.tools?.pane === pane) {
+    return layout.chatWorkspaceMode === 'full' && pane.resolvedActiveTabId === tabId;
+  }
   return !!pane && tabFullscreen.isOn(pane, tabId);
 }
 
@@ -227,6 +255,9 @@ export function topicTabOf(chatId: string): { tabId: string; topic: ChatTopicSta
 export const openTopicTab = action(function openTopicTab(chatId: string, topic: ChatTopicState): void {
   const layout = chatLayoutOf(chatId);
   const open = topicTabOf(chatId);
+  // Choosing a conversation is an explicit reveal, even if the source group's tools were hidden.
+  if (layout.chatWorkspaceMode === 'hidden') layout.setChatToolLayout('split');
+  // @@@topic-slot - choosing another topic navigates the group's one topic slot, even when it is current.
   if (open && open.topic.topicChatId !== topic.topicChatId) paneHolding(layout, open.tabId)?.navigate(open.tabId, CHAT_TOPIC_TAB_KIND, topic);
   if (open?.shown) return;
   layout.open(CHAT_TOPIC_TAB_KIND, topic, { from: chatTabOf(layout) ?? null, intent: 'navigate' });
@@ -339,17 +370,31 @@ export const updateFileNames = action(function updateFileNames(
  */
 export type ChatFileOpenReceipt = { resolve(): void; reject(error: unknown): void };
 export type ChatOpenAsk =
-  | { app: string; tab?: string }
-  | { itemId: string; at?: Record<string, string>; opener?: AppOpenWithDetail; message?: MessageItem; restore?: () => void; from?: string; receipt?: ChatFileOpenReceipt };
+  | { app: string; tab?: string; from?: string }
+  | { itemId: string; at?: Record<string, string>; opener: AppOpenWithDetail; message?: MessageItem; restore?: () => void; from?: string; receipt?: ChatFileOpenReceipt }
+  | { waiting: FileWait & { waitId: string } };
+type FileWait = { itemId: string; fileName?: string; message?: MessageItem; from?: string; intent?: TabOpenIntent };
 
 const asks = new Map<string, ChatOpenAsk>();
+/**
+ * The order the person asked chats for things in (#7257), across every way in: it answers one question — while a link
+ * waited on its host, did the person ask this chat for something else (`askedSince`)? Marked only where a person asks:
+ * `askChat`, and a chat's opener opening a file directly (`openWith`, an App's list). Not a panel's own count: a chat's
+ * opener mounting or going away is no ask, and its own pending results it orders itself (`useChatOpener`'s `asking`).
+ */
+let asksMade = 0;
+const lastAsked = new Map<string, number>();
+export const asksSoFar = (): number => asksMade;
+export function noteAsk(chatId: string): number { lastAsked.set(chatId, ++asksMade); return asksMade; }
+export const askedSince = (chatId: string, mark: number): boolean => (lastAsked.get(chatId) ?? 0) > mark;
 /**
  * Something asked of a chat (a link, a card, an App, a page's `files.openWith`): the chat answers it when it is on
  * screen — what opens it is found by the shell (its Apps, its prompts), asked while the chat may not be drawn yet.
  */
 export function askChat(chatId: string, what: ChatOpenAsk): void {
   const previous = asks.get(chatId);
-  if (previous && 'itemId' in previous) previous.receipt?.reject(new Error('The file opening was superseded'));
+  if (previous && 'itemId' in previous) previous.receipt?.reject(new OpenSuperseded());
+  noteAsk(chatId);
   asks.set(chatId, what);
 }
 /** Links acknowledge the consumer's result, rather than merely putting an item in its mailbox. */
@@ -359,6 +404,22 @@ export function askChatFile(chatId: string, what: Omit<Extract<ChatOpenAsk, { it
     window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }));
   });
 }
+/** A file asked for before its host answered: its waiting page asked of the chat (`waitingItem`); the open's id returned. */
+export function beginWait(chatId: string, file: FileWait): string {
+  const waitId = crypto.randomUUID();
+  askChat(chatId, { waiting: { ...file, waitId } });
+  window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }));
+  return waitId;
+}
+
+/** The open is over: its waiting page, if it did not become the file, goes (from the mailbox, or from its tab's history). */
+export const endWait = action(function endWait(chatId: string, waitId: string): void {
+  const pending = asks.get(chatId);
+  if (pending && 'waiting' in pending && pending.waiting.waitId === waitId) asks.delete(chatId);
+  const tabId = waitingTabOf(chatId, waitId);
+  if (tabId && chatPaneOf(chatId, tabId)?.discardPage(tabId, (state) => (state as PanelItem | undefined)?.waitId === waitId) === 'alone') closeChatTab(chatId, tabId);
+});
+
 /** What was asked of this chat, once: taken by the chat that answers it. */
 export function takeChatAsk(chatId: string | null | undefined): ChatOpenAsk | null {
   if (!chatId) return null;

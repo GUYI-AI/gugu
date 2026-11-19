@@ -3,6 +3,9 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../../support/testHarness'
 
+vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
+  getAgentConfigRuntimeClient: async () => ({ scanAgentHomes: async () => ({ success: true, data: [] }) }),
+}))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { kind: 'electron' } }))
 const io = vi.hoisted(() => ({
   firstRunDoneHere: vi.fn(() => false), rememberFirstRunDone: vi.fn(),
@@ -38,7 +41,7 @@ vi.mock('@renderer/lib/ipc', () => {
 
 import { FirstRunGate } from '../../../../apps/desktop/src/components/firstRun/FirstRunGate'
 import { i18n } from '../../../../apps/desktop/src/i18n/runtime'
-import { queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { queryClient } from '../../../../apps/desktop/src/lib/replica'
 
 const user = { id: 'owner-install', email: 'owner@example.test', nickname: 'Owner' }
 let harness: ReturnType<typeof createReactHarness>

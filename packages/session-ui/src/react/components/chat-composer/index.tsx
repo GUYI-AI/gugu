@@ -275,12 +275,18 @@ export interface ChatComposerProps {
    * unset state still says what will happen, rather than leaving the user to guess.
    */
   defaultEffort?: string;
+  /** Undefined hides Fast; supported hosts own the accepted per-session value. */
+  fastMode?: boolean;
+  onFastModeChange?: (enabled: boolean) => void;
+  renderFastModeHint?: import('./composer-fast-mode').RenderFastModeHint;
 
   permissionModeOptions?: Record<string, ComposerPermissionModeOption> | null;
   selectedPermissionMode?: string;
   onPermissionModeChange?: (modeId: string) => void;
   /** Extra control(s) appended to the toolbar-left row, after the permission selector. */
   toolbarExtra?: React.ReactNode;
+  /** Render the existing model control in a host-owned phone navigation row. */
+  renderPhoneHeader?: (modelControl: React.ReactNode) => React.ReactNode;
 
   onSubmit: (text: string) => void | Promise<void>;
   /** Called whenever the editor serialized plain text changes. */
@@ -408,6 +414,8 @@ export interface ChatComposerProps {
    */
   tone?: 'task';
   leading?: React.ReactNode;
+  /** Host-owned context chips inside the input, without replacing the mounted editor. */
+  inputHeader?: React.ReactNode;
   className?: string;
 }
 
@@ -447,10 +455,14 @@ export function ChatComposer({
   selectedEffort,
   onEffortChange,
   defaultEffort,
+  fastMode,
+  onFastModeChange,
+  renderFastModeHint,
   permissionModeOptions,
   selectedPermissionMode,
   onPermissionModeChange,
   toolbarExtra,
+  renderPhoneHeader,
   onSubmit,
   onInputChange,
   onMentionInsert,
@@ -494,6 +506,7 @@ export function ChatComposer({
   getPromptHistory,
   tone,
   leading,
+  inputHeader,
   className,
 }: ChatComposerProps) {
   const { translate } = useMessages();
@@ -504,6 +517,7 @@ export function ChatComposer({
   const [hasText, setHasText] = useState(false);
   const [phoneSubmitting, setPhoneSubmitting] = useState(false);
   const phoneSubmittingRef = useRef(false);
+  const stopPointer = useRef<number | null>(null);
   // 底排放不下时按档把标签收成图标(渐进披露),见 use-toolbar-disclosure.ts
   const toolbarDisclosure = useToolbarDisclosure();
   const [dragActive, setDragActive] = useState(false);
@@ -762,6 +776,34 @@ export function ChatComposer({
       ? translate('composer.followUpPlaceholder')
       : (placeholder ?? translate('composer.messagePlaceholder'));
 
+  const renderHeader = mobile ? renderPhoneHeader : undefined;
+  const modelControl = (
+              <ComposerModelMenu
+                panel={modelPanel}
+                disabled={disabled}
+                triggerTitle={selectedAgentTitle}
+                modelItems={modelItems}
+                selectedModel={selectedModel}
+                onModelChange={onModelChange}
+                openRequest={modelMenuOpenRequest}
+                settingNotice={modelSettingNotice}
+                menuNotice={modelMenuNotice}
+                onOpen={onModelMenuOpen}
+                modelUnlock={modelUnlock}
+                onModelUnlock={onModelUnlock}
+                onManageModels={onManageModels}
+                modelUpgrade={modelUpgrade}
+                onModelUpgrade={onModelUpgrade}
+                effortItems={effortItems}
+                selectedEffort={selectedEffort}
+                onEffortChange={onEffortChange}
+                defaultEffort={defaultEffort}
+                fastMode={fastMode}
+                onFastModeChange={onFastModeChange}
+                renderFastModeHint={phoneActions ? undefined : renderFastModeHint}
+                phoneActions={phoneActions}
+              />
+  );
   const promptEditor = (
     <PromptEditor
       {...editorOptions}
@@ -784,7 +826,7 @@ export function ChatComposer({
   );
 
   return (
-    <div ref={rootRef} data-slot="composer" data-mobile={mobile || undefined} data-phone-capsule={phoneCapsule || undefined} data-phone-has-text={phoneEditor.hasText || undefined} data-phone-multiline={phoneEditor.multiline || undefined} data-phone-expanded={phoneEditor.expanded || undefined} className={cx(styles.composerRoot, className)} onKeyDown={(event) => {
+    <div ref={rootRef} data-slot="composer" data-mobile={mobile || undefined} data-phone-capsule={phoneCapsule || undefined} data-phone-has-text={phoneEditor.hasText || undefined} data-phone-multiline={phoneEditor.multiline || undefined} data-phone-attachment-row={phoneEditor.attachmentRow || undefined} data-phone-expanded={phoneEditor.expanded || undefined} className={cx(styles.composerRoot, className)} onKeyDown={(event) => {
       if (queueEdit && event.key === 'Escape' && !event.defaultPrevented && !event.nativeEvent.isComposing && event.keyCode !== 229) {
         event.preventDefault(); finishQueueEdit(null);
       }
@@ -827,6 +869,7 @@ export function ChatComposer({
           </div>
         )}
 
+        {renderHeader?.(modelControl)}
         <div
           data-slot="composer-bar"
           data-drag-active={dragActive || undefined}
@@ -857,6 +900,7 @@ export function ChatComposer({
               editorRef.current?.focus();
             }}
           >
+            {inputHeader}
             {leading ? (
               <div className={styles.editorLeadRow}>
                 <span className={styles.editorLead}>{leading}</span>
@@ -865,7 +909,7 @@ export function ChatComposer({
             ) : promptEditor}
           </div>
 
-          {phoneCapsule && (phoneEditor.multiline || phoneEditor.expanded) && <Button variant="ghost" size="base" icon
+          {phoneCapsule && (phoneEditor.attachmentRow || phoneEditor.expanded) && <Button variant="ghost" size="base" icon
             data-phone-editor-toggle="" aria-expanded={phoneEditor.expanded}
             aria-label={translate(phoneEditor.expanded ? 'composer.collapseEditor' : 'composer.expandEditor')}
             onPointerDown={(event) => event.preventDefault()} onMouseDown={(event) => event.preventDefault()}
@@ -906,10 +950,11 @@ export function ChatComposer({
                   onValueChange={(id) => onPermissionModeChange?.(id)}
                   itemToKey={(item) => item.id}
                   itemToLabel={(item) => item.name}
+                  isItemDisabled={(item) => item.disabled === true}
                   disabled={disabled}
                   searchPlaceholder={translate('common.search')}
                   className={permissionModeIsFirst ? styles.permissionModeTrigger : undefined}
-                  contentStyle={{ minWidth: '18rem' }}
+                  contentStyle={{ minWidth: '12rem' }}
                   // 面板自己不留内距 —— 与模型/agent 面板同一族,见 @@@composer-panel-row。
                   contentClassName={styles.composerPanelContent}
                   // 底排不画下拉箭头 —— 见 composer-model-menu.tsx 的 @@@composer-no-chevron。
@@ -939,7 +984,7 @@ export function ChatComposer({
                           ❌ 但不能整枚删掉:档 2 起名字被藏,图标是这颗控件仅剩的身份 ——
                           删了那一档就是个空药丸。形状随危险性换(⚠ / 盾)而不只换色调:
                           余光里形状比色相好认,而这是底排唯一一个能造成破坏的控件。 */}
-                      {selected?.destructive ? (
+                      {selected?.icon ? <span className={styles.permissionModeProvidedIcon}>{selected.icon}</span> : selected?.destructive ? (
                         <CircleAlert
                           className={styles.permissionModeIcon}
                           style={{ width: '0.75rem', height: '0.75rem', flexShrink: 0 }}
@@ -955,15 +1000,18 @@ export function ChatComposer({
                       </span>
                     </span>
                   )}
+                  renderItemDetail={(item) => item.description || item.detail ? (
+                    <div className={styles.permissionModeDetail} data-slot="permission-mode-detail">
+                      {item.description && <div>{item.description}</div>}
+                      {item.detail && <div className={styles.permissionModeCost}>{item.detail}</div>}
+                    </div>
+                  ) : null}
                   renderItem={(item) => (
                     <div
                       className={styles.composerPanelItemText}
                       data-permission-mode-id={item.id}
                     >
                       <span className={styles.composerPanelItemName}>{item.name}</span>
-                      {item.description && (
-                        <span className={styles.composerPanelItemDesc}>{item.description}</span>
-                      )}
                     </div>
                   )}
                 />
@@ -1005,27 +1053,7 @@ export function ChatComposer({
                   「模型」和「推理强度」结构对称,各自显示当前值并向右飞出二级。
                   解剖与那批注释随组件一起搬去了 `composer-model-menu.tsx`(#4981 A1),
                   渲染出来的 DOM 一个字节都没变。 */}
-              <ComposerModelMenu
-                panel={modelPanel}
-                disabled={disabled}
-                triggerTitle={selectedAgentTitle}
-                modelItems={modelItems}
-                selectedModel={selectedModel}
-                onModelChange={onModelChange}
-                openRequest={modelMenuOpenRequest}
-                settingNotice={modelSettingNotice}
-                menuNotice={modelMenuNotice}
-                onOpen={onModelMenuOpen}
-                modelUnlock={modelUnlock}
-                onModelUnlock={onModelUnlock}
-                onManageModels={onManageModels}
-                modelUpgrade={modelUpgrade}
-                onModelUpgrade={onModelUpgrade}
-                effortItems={effortItems}
-                selectedEffort={selectedEffort}
-                onEffortChange={onEffortChange}
-                defaultEffort={defaultEffort}
-              />
+              {!renderHeader && modelControl}
 
               {queueEdit ? (
                 <>
@@ -1048,7 +1076,15 @@ export function ChatComposer({
                     data-phone-send={phoneCapsule || undefined}
                     disabled={disabled || stopDisabled}
                     aria-busy={stopDisabled || undefined}
-                    onClick={onStop}
+                    onPointerDown={phoneActions ? (event) => { stopPointer.current = event.pointerId; } : undefined}
+                    onPointerCancel={phoneActions ? () => { stopPointer.current = null; } : undefined}
+                    onClick={phoneActions ? (event) => {
+                      // A touch begun on pending Send can be retargeted here when the commit ends.
+                      const pointerId = 'pointerId' in event.nativeEvent ? event.nativeEvent.pointerId : undefined;
+                      const startedHere = stopPointer.current !== null && (pointerId === undefined || stopPointer.current === pointerId);
+                      stopPointer.current = null;
+                      if (startedHere || event.detail === 0) onStop?.();
+                    } : onStop}
                     aria-label={translate('composer.stopGeneration')}
                   >
                     <span className={styles.stopIcon} aria-hidden="true" />

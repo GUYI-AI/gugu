@@ -107,12 +107,10 @@ export async function askInstallInSession(
       if (result === 'unavailable') inSession = false;
     });
     // This window's sheet answers through the session too, so who answered is recorded the same way everywhere.
-    const here = dependencies.window
-      ? dependencies.window(ask, { raise })
-      : Promise.reject(new Error('This Gugu server has no window: the install is asked in the agent’s session only'));
-    if (!dependencies.window) here.catch(() => undefined);
+    // A Gugu server has no window: the session's approval is the only ask, and there is no sheet here to wait on.
+    const here = dependencies.window ? dependencies.window(ask, { raise }) : null;
     void here
-      .then(async (answer) => {
+      ?.then(async (answer) => {
         // I8 Closed here (Esc, the scrim) is no answer: the ask stays in the session, for the band or another screen.
         if (answer.outcome === 'timeout' || answer.outcome === 'dismissed' || !inSession) return;
         const confirmed = answer.outcome === 'confirmed';
@@ -129,7 +127,10 @@ export async function askInstallInSession(
       })
       .catch((error: unknown) => log.warn('The install sheet in this window could not answer the session:', error));
     const result = await answered;
-    if (result === 'unavailable') return await here;
+    if (result === 'unavailable') {
+      if (!here) throw new Error('This Gugu server has no window and the agent has no session to ask in');
+      return await here;
+    }
     if (result === 'withdrawn' || result === 'timeout') return { outcome: result === 'timeout' ? 'timeout' : 'dismissed' };
     return { outcome: result.optionId === APP_INSTALL_OPTION ? 'confirmed' : 'declined' };
   } finally {

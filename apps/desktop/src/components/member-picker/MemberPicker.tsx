@@ -30,6 +30,7 @@ import { ListRow } from '../ui/ListRow'
 import { SearchField } from '../ui/SearchField'
 import { SectionLabel } from '../ui/SectionLabel'
 import { pickerModel, projectsOf, type PickerEntry, type PickerSource } from './memberPickerModel'
+import { MemberPickerSources } from './MemberPickerSources'
 
 const log = rendererLogger('chat/member-picker')
 
@@ -50,7 +51,7 @@ export interface MemberPickerProps {
   /** 不能拉人进来时「人」那一页说的话(项目群 / 没有邀请权限);给了就只能选 Agent。 */
   peopleDenied?: string
   /** Agent 行上替换任务那一句的话(添加成员时的审批状态)。 */
-  agentNote?: (id: string) => string | undefined
+  agentNote?: (id: string) => ReactNode | undefined
   busy?: boolean
   busyLabel?: string
   /** 提交后的说明 / 错误,画在确认按钮上方。 */
@@ -59,9 +60,10 @@ export interface MemberPickerProps {
   actions?: ReactNode
   /** 一个可选的人都没有时(通讯录已读到、没在搜、没选人)画的主体;给了它,选人区和确认按钮就收起。 */
   empty?: ReactNode
+  underlineMobileSources?: boolean
 }
 
-export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialSelectedIds = [], lockedIds, peopleDenied, agentNote, busy = false, busyLabel, footer, actions, empty }: MemberPickerProps) {
+export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialSelectedIds = [], lockedIds, peopleDenied, agentNote, busy = false, busyLabel, footer, actions, empty, underlineMobileSources = false }: MemberPickerProps) {
   usePhoneTaskDirectory()
   const { t } = useTranslation('contacts')
   const mobile = useMobileShell()
@@ -188,22 +190,13 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
     if (line >= 0) lineWindowRef.current?.scrollToIndex(line, { align: 'start' })
   }
 
-  // 左栏(手机:横滑分段)的一项;搜索时数的是命中数,另多一项「全部结果」。
-  const sourceButton = (key: string, label: string, count: number) => {
-    const picked = key === 'all' ? 0 : selected.filter((id) => model.sourcesOf(id).includes(key)).length
-    return (
-      <Button key={key} variant="option" size="sm" role="radio" aria-checked={result ? searchScope === key : sourceKey === key} data-picker-source={key} onClick={() => pickSource(key)}
-        className={cn('shrink-0 gap-2', mobile ? '!rounded-[var(--radius-capsule)]' : 'w-full justify-start !border-transparent', result && count === 0 && 'text-[var(--muted-fg)]')}>
-        <span className={cn(!mobile && 'min-w-0 flex-1 truncate text-left')}>{label}</span>
-        {picked > 0 ? <span className="text-[length:var(--font-caption)] text-[var(--primary)]">✓{picked}</span> : null}
-        <span className="text-[length:var(--font-caption)] tabular-nums text-[var(--muted-fg)]">{count}</span>
-      </Button>
-    )
-  }
-  const sourceButtons = [
-    ...(result ? [sourceButton('all', t('memberPicker.allResults'), searchRows.length)] : []),
-    ...sources.map((s) => sourceButton(s.key, labelOf(s), result ? scopeCounts.get(s.key) ?? 0 : s.entries.length)),
-  ]
+  const sourceControls = <MemberPickerSources mobile={mobile} underline={underlineMobileSources} searching={Boolean(result)}
+    value={result ? searchScope : sourceKey} onChange={pickSource} items={[
+      ...(result ? [{ key: 'all', label: t('memberPicker.allResults'), count: searchRows.length, picked: 0 }] : []),
+      ...sources.map(source => ({ key: source.key, label: labelOf(source),
+        count: result ? scopeCounts.get(source.key) ?? 0 : source.entries.length,
+        picked: selected.filter(id => model.sourcesOf(id).includes(source.key)).length })),
+    ]} />
   const confirmButton = (
     <Button variant="primary" size={mobile ? 'sm' : 'md'} disabled={!canConfirm} onClick={() => void confirm()}>
       {busy && busyLabel ? busyLabel : confirmLabel(selected.length)}
@@ -278,9 +271,9 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
           ) })}
         </div>
       ) : null}
-      {mobile ? <div role="radiogroup" className="flex shrink-0 gap-2 overflow-x-auto !px-3 !pb-2">{sourceButtons}</div> : null}
-      <div className="flex min-h-0 flex-1 border-t border-[var(--border-subtle)]">
-        {!mobile ? <nav role="radiogroup" className="flex w-[178px] shrink-0 flex-col gap-1 overflow-y-auto border-r border-[var(--border-subtle)] !p-2">{sourceButtons}</nav> : null}
+      {mobile ? sourceControls : null}
+      <div className={cn('flex min-h-0 flex-1', !(mobile && underlineMobileSources) && 'border-t border-[var(--border-subtle)]')}>
+        {!mobile ? sourceControls : null}
         <div className="relative flex min-w-0 flex-1 flex-col">
           {projects.length > 0 ? (
             <div role="radiogroup" className="flex shrink-0 flex-wrap gap-2 !px-3 !pt-2">
@@ -318,7 +311,7 @@ function PickerOption({ row, index, mobile, active, checked, locked, where, note
   checked: boolean
   locked: boolean
   where: string | null
-  note?: string
+  note?: ReactNode
   onToggle: () => void
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void
 }) {

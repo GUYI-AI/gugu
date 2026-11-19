@@ -1,5 +1,5 @@
 import { act } from 'react';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
@@ -16,18 +16,43 @@ import '@/mobile/phone-shell.css';
 let harness: ReturnType<typeof createReactHarness> | null = null;
 afterEach(() => { harness?.cleanup(); harness = null; });
 
-it('places one annotation attachment above the phone input and offers edit only for browser comments', async () => {
+it('offers deletion without editing for saved file and diff comments', async () => {
   await page.viewport(390, 700);
   const id = crypto.randomUUID();
   const draft = sessionAnnotations.forSession(id);
-  draft.add({ kind: 'file', path: '/project/notes.md', startLine: 1, endLine: 2, text: 'File quote', annotation: 'File note' });
-  draft.add({ kind: 'browser', browserId: 'page', url: 'https://example.org/', selector: '#intro', targetPath: 'p#intro',
+  const file = draft.add({ kind: 'file', path: 'notes.md', startLine: 2, endLine: 3, text: 'Source text', annotation: 'File note' });
+  draft.add({ kind: 'diff', path: 'sample.ts', turnId: 'turn', patchIndex: 0, rowIndex: 1, oldLine: 8, text: 'Old line', annotation: 'Diff note' });
+  harness = createReactHarness();
+  await harness.render(<SessionLocalizationProvider><AnnotationTray sessionId={id} onSend={() => {}} enabled /></SessionLocalizationProvider>);
+  await act(async () => { await userEvent.click(harness!.container.querySelector('[data-composer-annotations] button')!); });
+  const buttons = () => document.querySelectorAll('button[aria-label="Delete annotation"],button[aria-label="删除批注"]');
+  await until('both file and diff comments are listed', () => buttons().length === 2);
+  expect(document.querySelector('button[aria-label="Edit annotation"],button[aria-label="修改批注"]')).toBeNull();
+  expect(document.querySelector('[data-annotation-editor]')).toBeNull();
+  await act(async () => { await userEvent.click(buttons()[0]!); });
+  expect(draft.items.some(item => item.id === file.id)).toBe(false);
+  expect(draft.items).toMatchObject([{ kind: 'diff', number: 2, annotation: 'Diff note' }]);
+});
+
+it('places one annotation attachment above the phone input with edit and delete for each comment', async () => {
+  await page.viewport(390, 700);
+  const id = crypto.randomUUID();
+  const draft = sessionAnnotations.forSession(id);
+  const screenshot = document.createElement('canvas');
+  screenshot.width = 400;
+  screenshot.height = 300;
+  const pixels = screenshot.getContext('2d')!;
+  pixels.fillStyle = '#ff0000';
+  pixels.fillRect(10, 10, 100, 20);
+  const png = await new Promise<Blob>(resolve => screenshot.toBlob(blob => resolve(blob!), 'image/png'));
+  for (const n of [1, 2]) draft.add({ kind: 'browser', browserId: 'page', url: 'https://example.org/', selector: '#intro', targetPath: 'p#intro', elementTag: 'p',
     rect: { x: 10, y: 10, width: 100, height: 20 }, viewport: { width: 400, height: 300, scrollX: 0, scrollY: 0 }, text: 'Page quote',
-    annotation: 'Browser note', screenshot: new File(['image'], 'browser-comment-1.png') });
+    annotation: 'Browser note', screenshot: new File([png], `browser-comment-${n}.png`, { type: 'image/png' }) });
+  const remove = vi.fn();
   harness = createReactHarness();
   await harness.render(<div data-phone-shell className="gugu-skin" style={{ width: 374, margin: 8 }}>
     <SessionLocalizationProvider><ChatComposer mobile canSubmit onSubmit={() => {}}
-      attachmentExtra={<AnnotationTray sessionId={id} onSend={() => {}} enabled />} />
+      attachmentExtra={<AnnotationTray sessionId={id} onSend={() => {}} onRemove={remove} enabled />} />
     </SessionLocalizationProvider>
   </div>);
   const attachment = harness.container.querySelector<HTMLElement>('[data-composer-annotations]')!;
@@ -38,7 +63,18 @@ it('places one annotation attachment above the phone input and offers edit only 
   expect(attachment.textContent).not.toMatch(/[{}]/);
   await act(async () => {
     await userEvent.click(attachment.querySelector('button')!);
-    await until('the annotation list is open', () => document.querySelectorAll('button[aria-label="Edit annotation"],button[aria-label="修改批注"]').length === 1);
+    await until('the annotation list is open', () => document.querySelectorAll('button[aria-label="Edit annotation"],button[aria-label="修改批注"]').length === 2);
   });
+  const thumbnails = document.querySelectorAll('canvas');
+  expect(thumbnails).toHaveLength(2);
+  await until('the screenshot crop is drawn', () => thumbnails[0]!.getContext('2d')!.getImageData(48, 36, 1, 1).data[0] === 255);
+  expect(document.body.textContent).toContain('<p>');
   expect(document.querySelectorAll('button[aria-label="Delete annotation"],button[aria-label="删除批注"]')).toHaveLength(2);
+  const ids = draft.items.map(item => item.id);
+  await act(async () => {
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(attachment.querySelectorAll('button')[1]!);
+  });
+  expect(draft.items).toHaveLength(0);
+  expect(remove.mock.calls.map(([id]) => id)).toEqual(ids);
 });

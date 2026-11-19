@@ -7,7 +7,6 @@ import { screenLayout } from '@renderer/app/screen-layout';
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import { TabStripShell } from '@renderer/features/tabs/tab-bar';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
-import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { shellRestoreLaneTaken } from '@renderer/features/sidebar/inner-sidebar-fold';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { SampleComposer } from './sample-composer';
@@ -25,7 +24,6 @@ import { sampleProjectContent, useSampleProject } from './use-sample-project';
  */
 export const SampleProjectBlock = observer(function SampleProjectBlock({ blockId, blockActions }: { blockId: string; blockActions?: ReactNode }) {
   const { translate, locale } = useSessionMessages();
-  const { isLeftOpen, leftRail } = useWorkspaceLayoutContext();
   const sample = useSampleProject();
   const pane = samplePane();
   const corners = screenLayout.corners(blockId);
@@ -41,7 +39,7 @@ export const SampleProjectBlock = observer(function SampleProjectBlock({ blockId
   return (
     <>
       <TabStripShell
-        reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken(isLeftOpen, leftRail)}
+        reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
         actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight}>{blockActions}</TabBarActionRow>}
       >
         <TabSlot data-sample-project-tab="">

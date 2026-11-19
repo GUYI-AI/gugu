@@ -6,7 +6,7 @@ import type { ChatItem, Device, MessageItem, NotificationLevel } from '@gugu/cor
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { ToastContext, type ToastContextValue } from '../../apps/desktop/src/components/toastContext'
 import { AuthContext, type AuthUser } from '../../apps/desktop/src/store/auth'
-import { followRendererSession } from '../../apps/desktop/src/lib/readModel'
+import { followRendererSession, queryClient } from '../../apps/desktop/src/lib/replica'
 import { ChatStoreProvider, useDraftQuotesStore } from '../../apps/desktop/src/store/chatContext'
 import { createShellTabStore, ShellTabContext } from '../../apps/desktop/src/lib/shellTab'
 import type { SidebarTab } from '../../packages/core/src/shared/enums/sidebarTabModels'
@@ -16,8 +16,11 @@ import { deriveThreadScope } from '../../apps/desktop/src/store/threadScope'
 import { ContactsContext } from '../../apps/desktop/src/store/contactsContext'
 import type { ContactsContextValue } from '../../apps/desktop/src/store/contactsContext'
 import type { DisplayIdentity } from '../../apps/desktop/src/lib/displayIdentity'
+import { notifyManager } from '@tanstack/react-query'
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+// Replicas deliver their readings in the same tick (react-query's default is a timer): a case that awaits its mocks sees them.
+notifyManager.setScheduler((callback) => { callback() })
 
 export function createReactHarness() {
   const container = document.createElement('div')
@@ -31,7 +34,8 @@ export function createReactHarness() {
         root.render(node)
       })
     },
-    cleanup() {
+    /** `keepReads`: unmount only, the app keeps running (a case about what the cache keeps for a later mount). */
+    cleanup({ keepReads = false }: { keepReads?: boolean } = {}) {
       // TipTap defers destruction to the next tick. Finish owned editor teardown
       // while jsdom still exists, before Vitest removes its window global.
       const editors = new Set(Array.from(
@@ -45,6 +49,8 @@ export function createReactHarness() {
         }
       })
       container.remove()
+      // What the app read leaves with the harness, as on a new start: the next case's mocks are read, not this case's cache.
+      if (!keepReads) queryClient.clear()
       vi.restoreAllMocks()
     },
   }
@@ -78,7 +84,7 @@ export async function renderWithAppProviders(
     shellTab?: SidebarTab
   } = {},
 ) {
-  // The read model follows the published session as the product does: the same signed-in user as AuthContext below.
+  // The replica follows the published session as the product does: the same signed-in user as AuthContext below.
   followRendererSession(options.auth === null ? 'SIGNED_OUT' : 'SIGNED_IN', options.auth === null ? null : authUser(options.auth).id)
   let tree = node
   tree = createElement(ShellTabContext.Provider, { value: createShellTabStore(options.shellTab ?? 'chats') }, tree)
@@ -284,12 +290,16 @@ export function chatStore(overrides: Partial<ChatContextValue> = {}): ChatContex
     appendMessage: vi.fn(),
     upsertChat: vi.fn(),
     pinChat: vi.fn(),
+    hideConversation: vi.fn(async () => undefined),
+    undoConversationHide: vi.fn(async () => undefined),
+    clearConversation: vi.fn(async () => {}),
     deleteChat: vi.fn(async () => {}),
     leaveGroup: vi.fn(async () => {}),
     markUnread: vi.fn(),
     setChatNotificationLevel: vi.fn(),
     patchChat: vi.fn(),
     setDraft: vi.fn(),
+    keepDraft: vi.fn(),
     setDraftMentions: vi.fn(),
     setDraftAttachments: vi.fn(),
     ...overrides,
@@ -367,7 +377,6 @@ export function contactsStore(overrides: Partial<ContactsContextValue> = {}): Co
     setAgentLook: vi.fn(async () => {}),
     removeOwnedAgent: vi.fn(async () => {}),
     removeContact: vi.fn(async () => {}),
-    getCommonGroupChats: vi.fn(async () => []),
     ...overrides,
   }
 }

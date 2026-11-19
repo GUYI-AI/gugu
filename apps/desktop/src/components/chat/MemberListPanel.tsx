@@ -9,7 +9,7 @@ import { useShownAgentName } from '@/hooks/useShownAgentName'
 //   · 「每个 agent 一行显示引擎、模型、跑在哪,以及响应档位」→ AgentRow。
 //
 // 数据与 fail-loud(❌ 不写死、❌ 不编占位值):
-//   · 名单由宿主的 useGroupCollabLoader 提供:已有快照先画,权威刷新不清空字段。
+//   · 名单由宿主的 groupRoster 读模型提供(hooks/useRoomCollab):已有快照先画,权威刷新不清空字段。
 //   · 引擎:权威快照的 group_agent_states.client 目前全产品没有写者(永远 null),所以引擎退回**联系人档**
 //     的 agent_type —— 与单聊头栏取引擎的来源是同一个(ChatAreaPanel「单聊 Agent 的联系人档」)。
 //     这条来源**只覆盖主人自己的 agent**:别人的 agent 不在主人通讯录里,那一格就空着。
@@ -35,6 +35,7 @@ import { Popover } from '../ui/Popover'
 import { useGroupMemberPanelControls } from './GroupMemberPanelControls'
 import { groupRoleRevision, useGroupChatSettings, type GroupChatSettingsState } from './useGroupChatSettings'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useViewState } from '../../lib/viewStateTable'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { agentLocationText, resolveAgentLocation } from '../../lib/agentRunningStatusModels'
@@ -63,7 +64,7 @@ import { agentOwnerDisplayName, toAgentProfile } from '../memberProfileModels'
 import { buildUnifiedMembers } from './groupMemberModels'
 import { useListenModeEditControls } from './useListenModeEditControls'
 import { ChevronRight } from '../../lib/icons'
-import type { UseGroupCollabLoaderResult } from '../../hooks/useGroupCollabLoader'
+import type { RoomCollabError } from '../../hooks/useRoomCollab'
 // gugu-dev#181「我的 agent」那一行的折叠箭头:放在计数后面,分区名留在和行、搜索、标题同一条左边线上。
 const myAgentsChevronStyle = (open: boolean): React.CSSProperties => ({
   width: 14, height: 14, flexShrink: 0, transform: open ? 'rotate(90deg)' : undefined,
@@ -205,7 +206,7 @@ export type MemberListPanelProps = {
   /** 页头归宿主画(群设置栈 / 👥 右栏 / 话题分栏各画各的);这里只给标题与标题旁的动作。 */
   head: (title: ReactNode, actions: ReactNode) => ReactNode
   /**
-   * 话题的当前名字。spec 把「名字可改」当成「建立只有一步」的**理由**
+   * 名片显示的群或话题名。话题还用这份名字做就地改名。spec 把「名字可改」当成「建立只有一步」的**理由**
    * (「创建时要决定的每一项都能从上下文推出来,且都可以事后改」),所以改名入口不能缺 ——
    * 缺了之后,系统消息/附件开出来的那条永远叫「话题」,开两次就是两行同名。
    * 群不走这里:群名在设置抽屉里改(GroupMembersSection),❌ 不做第二个入口。
@@ -214,7 +215,7 @@ export type MemberListPanelProps = {
   /** @@@6418 群:名册被这里改动(邀请/移出/改角色/审批)后通知外层重读它自己的那份快照。 */
   settingsState?: GroupChatSettingsState
   snapshot: GroupCollabSnapshot | null
-  error?: UseGroupCollabLoaderResult['error']
+  error?: RoomCollabError
   onReload: () => Promise<void>
   onOpenUserChat?: (target: MemberProfileChatTarget) => void
   onWhisper?: (target: MemberProfileChatTarget) => void
@@ -247,6 +248,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
   const group = useGroupMemberPanelControls({
     chatId,
     chatKind,
+    chatName,
     settings,
     snapshot,
     identities,
@@ -258,11 +260,12 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
   })
 
   // @@@6418 搜索:名字、主人、引擎、模型、设备,与行上看得见的字一致(看不见的字段不参与匹配)。
-  const [query, setQuery] = useState('')
+  // Each chat keeps its own search words and fold (view-state table): switching chats, closing the panel or a remount keeps them.
+  const [view, setView] = useViewState({ conversation: chatId, panel: 'members' }, { query: '', myAgentsExpanded: true })
+  const { query, myAgentsExpanded } = view
+  const setQuery = (next: string) => setView({ query: next })
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
-  const [myAgentsExpanded, setMyAgentsExpanded] = useState(true)
   const mobile = useMobileShell()
-  useEffect(() => { setQuery('') }, [chatId])
 
   // The row and profile use the same owner/source-group permission and mutation hook.
   const resolveEditControls = useListenModeEditControls({
@@ -324,7 +327,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
   const myAgents = shownAgents.filter((member) => identities[member.id]?.owner_user_id === user?.id)
   const otherAgents = shownAgents.filter((member) => identities[member.id]?.owner_user_id !== user?.id)
   const myAgentsOpen = myAgentsExpanded || Boolean(needle)
-  const setMyAgentsOpen = setMyAgentsExpanded
+  const toggleMyAgents = () => setView({ myAgentsExpanded: !myAgentsExpanded })
   const renderAgentRow = (member: (typeof shownAgents)[number]) => {
     const agent = member.raw as GroupAgentItem
     const identity = identities[agent.id]
@@ -396,7 +399,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
               </div>
             </>
           ) : t('group.memberList.title'),
-          // 群的「+」在标题行最右(GroupAddMenu,同群信息页成员行、内栏头一行),❌ 标题下面一条通栏钮。
+          // 群的「+」在标题行最右(GroupAddMenu,同群信息页成员行),❌ 标题下面一条通栏钮。
           chatKind === 'group' ? <>{searchButton}<GroupAddMenu chatId={chatId} canAddMembers={group.showInvite} /></> : searchButton,
         )}</HeaderSearch>
 
@@ -467,8 +470,8 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
                   tabIndex={0}
                   aria-expanded={myAgentsOpen}
                   trailing={<><span aria-hidden="true" style={SECTION_COUNT_STYLE}>{myAgents.length}</span><ChevronRight aria-hidden="true" style={myAgentsChevronStyle(myAgentsOpen)} /></>}
-                  onClick={() => setMyAgentsOpen((open) => !open)}
-                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setMyAgentsOpen((open) => !open) } }}
+                  onClick={toggleMyAgents}
+                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleMyAgents() } }}
                 >
                   {t('group.memberList.myAgents')}
                 </SectionLabel>

@@ -1,6 +1,6 @@
 import { notifyCopied } from '@/lib/copyFeedback'
 import { billingLinksAvailable } from '../../lib/appLinks'
-import type { Reading } from '../../lib/readModel'
+import type { Reading } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'

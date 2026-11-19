@@ -47,4 +47,25 @@ describe('deriveConfigGroups', () => {
     expect(deriveConfigGroups([flat]).modelOptions).toEqual(expected);
     expect(deriveConfigGroups([grouped]).modelOptions).toEqual(expected);
   });
+  it('derives Fast only from the exact native option and clears it when it disappears', () => {
+    const fast = {
+      id: 'fast', name: 'Fast', category: 'model_config', type: 'select', currentValue: 'off',
+      options: [{ value: 'off', name: 'Off' }, { value: 'on', name: 'On' }],
+    } satisfies SessionConfigOption;
+    expect(deriveConfigGroups([fast]).fastMode).toEqual({
+      configId: 'fast', selected: 'off',
+      available: [{ id: 'off', name: 'Off' }, { id: 'on', name: 'On' }],
+    });
+    expect(deriveConfigGroups([]).fastMode).toBeNull();
+    expect(deriveConfigGroups([{ ...fast, id: 'other' }]).fastMode).toBeNull();
+    expect(deriveConfigGroups([{ ...fast, options: [{ value: 'on', name: 'On' }] }]).fastMode).toBeNull();
+  });
+
+});
+
+it('retains host review admission and same-connection Haiku facts through the config snapshot', () => {
+  const groups = deriveConfigGroups([{ id: 'mode', name: 'Mode', category: 'mode', type: 'select', currentValue: 'acceptEdits',
+    options: [{ value: 'auto', name: 'Auto', _meta: { 'gugu:auto-review-disabled': true, 'gugu:auto-review-haiku': true } }],
+  }]);
+  expect(groups.modeOptions?.available).toEqual([{ id: 'auto', name: 'Auto', disabled: true, reviewByHaiku: true }]);
 });

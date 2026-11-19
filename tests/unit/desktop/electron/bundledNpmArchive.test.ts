@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
-import { execFile, execFileSync } from 'node:child_process'
+import { execFile, execFileSync, fork } from 'node:child_process'
 import { promisify } from 'node:util'
 import { build } from 'esbuild'
 import JSZip from 'jszip'
@@ -242,4 +242,94 @@ describe('offline npm archive', () => {
         .bundledDependencies.length
     ).toBeGreaterThan(0)
   }, 60_000)
+
+  test('accepts a complete cache published after its initial absence check', async () => {
+    const f = fixture()
+    await archivePackedNpm({ appDir: f.app })
+    const source = path.resolve(__dirname, '../../../../apps/desktop/electron/bundled-npm/cache.ts')
+    const bundled = await build({
+      stdin: { contents: `export {prepareBundledNpm} from ${JSON.stringify(source)}`, resolveDir: process.cwd(), loader: 'ts' },
+      bundle: true, platform: 'node', format: 'cjs', write: false
+    })
+    fs.writeFileSync(path.join(f.root, 'cache.cjs'), bundled.outputFiles[0].text)
+    const worker = path.join(f.root, 'ordered-worker.cjs')
+    // Hold a real ENOENT, without replacing the filesystem result. The old
+    // implementation first reads the marker; the fixed one first stats the root.
+    fs.writeFileSync(worker, `
+      const io = require('node:fs/promises'), path = require('node:path');
+      if (process.argv[2] === 'reader') {
+        let held = false;
+        for (const method of ['readFile', 'lstat']) {
+          const original = io[method];
+          io[method] = async (...args) => {
+            try { return await original(...args); }
+            catch (error) {
+              const location = String(args[0]);
+              const target = method === 'readFile'
+                ? path.basename(location) === '.gugu-npm-complete.json'
+                : path.basename(path.dirname(location)) === 'bundled-npm';
+              if (!held && target && error.code === 'ENOENT') {
+                held = true;
+                process.send({event: 'absent', method});
+                await new Promise(resolve => process.once('message', resolve));
+              }
+              throw error;
+            }
+          };
+        }
+      }
+      require('./cache.cjs').prepareBundledNpm(process.argv[3], {GUGU_HOME:process.argv[4]})
+        .then(value => {process.stdout.write(value); process.disconnect();})
+        .catch(error => {process.stderr.write(String(error)); process.exitCode = 1; process.disconnect();});
+    `)
+    const start = (role: string) => {
+      const child = fork(worker, [role, f.app, f.home], { silent: true,
+        env: { ...process.env, GUGU_HOME: f.home, GUGU_USER_DATA_DIR: path.join(f.root, 'profile') } })
+      let stdout = '', stderr = ''
+      child.stdout!.on('data', bytes => { stdout += String(bytes) })
+      child.stderr!.on('data', bytes => { stderr += String(bytes) })
+      const done = new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+        child.once('error', reject)
+        child.once('close', code => resolve({ code, stdout, stderr }))
+      })
+      return { child, done }
+    }
+    const reader = start('reader')
+    try {
+      const absent = await Promise.race([
+        new Promise<{ method: string }>(resolve => reader.child.once('message', value => resolve(value as { method: string }))),
+        reader.done.then(result => { throw new Error(`reader exited before barrier: ${result.stderr}`) })
+      ])
+      const publisher = await start('publisher').done
+      expect(publisher.code, publisher.stderr).toBe(0)
+      reader.child.send('published')
+      const result = await reader.done
+      expect(result.code, `${absent.method}: ${result.stderr}`).toBe(0)
+      expect(result.stdout).toBe(publisher.stdout)
+      expect(execFileSync(process.execPath, [result.stdout], { encoding: 'utf8' })).toBe('offline fixture\n')
+      expect(fs.readdirSync(path.join(f.home, 'cache', 'bundled-npm'))).toHaveLength(1)
+    } finally {
+      if (reader.child.connected) reader.child.send('release')
+      await reader.done
+    }
+  })
+
+  test('still rejects a final cache directory without its complete marker', async () => {
+    const f = fixture()
+    await archivePackedNpm({ appDir: f.app })
+    const manifest = JSON.parse(fs.readFileSync(path.join(f.bundle, 'npm.json'), 'utf8'))
+    fs.mkdirSync(path.join(f.home, 'cache', 'bundled-npm', `${manifest.version}-${manifest.sha256}`), { recursive: true })
+    await expect(prepareBundledNpm(f.app, f.env)).rejects.toThrow('Incomplete npm cache')
+  })
+
+  test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('propagates a cache marker permission failure', async () => {
+    const f = fixture()
+    await archivePackedNpm({ appDir: f.app })
+    const cli = (await prepareBundledNpm(f.app, f.env))!
+    const marker = path.join(cli, '..', '..', '.gugu-npm-complete.json')
+    fs.chmodSync(marker, 0)
+    try { await expect(prepareBundledNpm(f.app, f.env)).rejects.toMatchObject({ code: 'EACCES' }) }
+    finally { fs.chmodSync(marker, 0o600) }
+  })
+
 })

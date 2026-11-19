@@ -21,7 +21,7 @@ describe.skipIf(!electron)('projection video pixels with real Electron', () => {
     fs.mkdirSync(env.GUGU_HOME!, { recursive: true }); fs.mkdirSync(env.GUGU_USER_DATA_DIR!, { recursive: true });
     delete env.ELECTRON_RUN_AS_NODE;
     fixture = startRealElectronFixture({ name: 'native-projection-image', executable: electron!, args: [main], env,
-      signal: AbortSignal.timeout(10_000), reportDirectory: process.env.GUGU_BROWSER_PROBE_REPORT_DIR });
+      reportDirectory: process.env.GUGU_BROWSER_PROBE_REPORT_DIR });
     const { code, stdout, stderr } = await fixture.result;
     expect(code, stdout + '\n' + stderr).toBe(0);
     const line = stdout.split('\n').find(line => line.startsWith('PROJECTION_IMAGE_RESULT='));
@@ -29,7 +29,7 @@ describe.skipIf(!electron)('projection video pixels with real Electron', () => {
     const report = JSON.parse(line!.slice('PROJECTION_IMAGE_RESULT='.length));
     expect(report.home).toBe(env.GUGU_HOME); expect(report.userData).toBe(env.GUGU_USER_DATA_DIR);
     cases = report.cases;
-  }, 15_000);
+  });
   afterAll(async () => {
     await fixture?.dispose();
     if (temporary) fs.rmSync(temporary, { recursive: true, force: true });

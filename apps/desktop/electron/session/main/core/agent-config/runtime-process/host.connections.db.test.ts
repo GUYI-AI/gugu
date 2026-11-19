@@ -104,7 +104,7 @@ const worker = {
   // 与 plugin-host 同一条:选中的是 API Key ⇒ 读数就是它;否则看 CLI 自己的目录里登没登上。
   refreshAuthStatus: async (input: { providerId: string; connectionId?: string; runContext: AgentRunContext }) => {
     refreshed.push(input);
-    if (input.runContext.apiKeyConnection) return { success: true, data: { kind: 'authenticated', credentialKind: 'api-key' } };
+    if (input.runContext.vendorKeyAccount) return { success: true, data: { kind: 'authenticated', credentialKind: 'api-key' } };
     const home = composeAgentSpawnEnv(input.runContext).HOME;
     const signedIn = existsSync(join(home, '.fake-cli', 'credentials.json'));
     return { success: true, data: signedIn ? { kind: 'authenticated' } : { kind: 'unauthenticated' } };
@@ -115,6 +115,7 @@ const host = withHostResolvedCli(worker as unknown as ContractClient<AgentConfig
 beforeEach(async () => {
   state.home = await mkdtemp(join(tmpdir(), 'gugu-host-connections-'));
   state.userHome = join(state.home, 'user');
+  vi.stubEnv('GUGU_HOME', join(state.home, 'gugu-home'));
   state.cli = join(state.home, 'fake-cli.cjs');
   await writeFile(state.cli, FAKE_CLI);
   state.busy = false;
@@ -124,13 +125,14 @@ beforeEach(async () => {
   state.fixture = await openRegistryFixture('empty');
 });
 afterEach(async () => {
+  vi.unstubAllEnvs();
   state.fixture?.close();
   state.fixture = null;
   await rm(state.home, { recursive: true, force: true });
 });
 
 async function selectKey(providerId: string, apiKey: string): Promise<string> {
-  const key = await createHarnessConnection({ providerId, kind: 'api-key', apiKey });
+  const key = await createHarnessConnection({ providerId, kind: 'account', apiKey });
   expect(await host.selectConnection({ providerId, connectionId: key.id })).toEqual({ success: true, data: undefined });
   expect((await listHarnessConnections(providerId)).find((connection) => connection.current)?.id).toBe(key.id);
   return key.id;
@@ -151,7 +153,7 @@ it('a CLI sign-in while an API key is selected signs in the CLI’s own configur
     expect(login.input.connectionId).toBe(target.connectionId);
     expect(login.input.runContext.connectionId).toBeUndefined();
     expect(login.input.runContext.credentialEnv).toBeUndefined();
-    expect(login.input.runContext.apiKeyConnection).toBeUndefined();
+    expect(login.input.runContext.vendorKeyAccount).toBeUndefined();
     expect(JSON.stringify(login.input.runContext)).not.toContain('mimo-secret');
     // 子进程自己记下的那份环境与参数:没有这把 key。
     const seen = JSON.parse(readFileSync(join(state.userHome, '.fake-cli', 'login-env.json'), 'utf8')) as { env: Record<string, string>; argv: string[] };
@@ -203,12 +205,12 @@ it('removing the only, current key goes through the switch: refused while a sess
   // 主读数跟着换回原生(没带连接的那一次读数,run context 里没有 key)。
   expect(refreshed.at(-1)).toMatchObject({ providerId: 'mimocode' });
   expect(refreshed.at(-1)?.connectionId).toBeUndefined();
-  expect(refreshed.at(-1)?.runContext.apiKeyConnection).toBeUndefined();
+  expect(refreshed.at(-1)?.runContext.vendorKeyAccount).toBeUndefined();
 });
 
 it('removing a connection that is not current switches nothing', async () => {
   const keyId = await selectKey('mimocode', 'mimo-secret');
-  const other = await createHarnessConnection({ providerId: 'mimocode', kind: 'api-key', apiKey: 'other-secret' });
+  const other = await createHarnessConnection({ providerId: 'mimocode', kind: 'account', apiKey: 'other-secret' });
   state.switches = [];
   state.busy = true;
   expect(await host.removeConnection({ providerId: 'mimocode', connectionId: other.id })).toEqual({ success: true, data: undefined });
@@ -219,30 +221,15 @@ it('removing a connection that is not current switches nothing', async () => {
   expect(state.switches).toEqual([]);
 });
 
-it('the model list is read by the host (the key goes only to the address) and models change in place', async () => {
-  const { createServer } = await import('node:http');
-  const seen: Array<string | undefined> = [];
-  const relay = createServer((req, res) => {
-    seen.push(req.headers.authorization);
-    res.writeHead(req.url === '/v1/models' ? 200 : 404, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(req.url === '/v1/models' ? { data: [{ id: 'm-2' }, { id: 'm-1' }] } : {}));
-  });
-  await new Promise<void>((resolve) => relay.listen(0, '127.0.0.1', resolve));
-  const endpoint = `http://127.0.0.1:${(relay.address() as { port: number }).port}/v1`;
-  try {
-    expect(await host.listConnectionModels({ providerId: 'qwen', apiKey: 'qwen-secret', endpoint })).toEqual({
-      success: true,
-      data: { kind: 'listed', models: ['m-1', 'm-2'] },
-    });
-    expect(seen).toEqual(['Bearer qwen-secret']);
-    const created = await createHarnessConnection({ providerId: 'qwen', kind: 'api-key', apiKey: 'qwen-secret', endpoint, models: ['m-1'] });
-    expect(await host.updateConnectionModels({ providerId: 'qwen', connectionId: created.id, models: ['m-1', 'm-2'] })).toMatchObject({
-      success: true,
-      data: { id: created.id, models: ['m-1', 'm-2'] },
-    });
-    // 不点名模型的家没有这一格:答一条失败,❌ 抛出去。
-    expect(await host.listConnectionModels({ providerId: 'mimocode', apiKey: 'k' })).toMatchObject({ success: false });
-  } finally {
-    await new Promise((resolve) => relay.close(resolve));
-  }
+it('custom providers are saved and tested in the host without exposing the key', async () => {
+  const input = { name: 'Custom', apiKey: 'provider-secret', preset: null, endpoints: [{ protocol: 'openai-responses' as const, baseUrl: 'https://provider.test/v1' }], models: [{ id: 'm1' }] };
+  const created = await host.saveCustomModel(input);
+  expect(created.success).toBe(true);
+  if (!created.success) throw new Error('save failed');
+  expect(created.data).toMatchObject({ name: 'Custom', keySaved: true, models: [{ id: 'm1' }] });
+  expect(JSON.stringify(await host.listCustomModels())).not.toContain('provider-secret');
+  const updated = await host.saveCustomModel({ ...input, apiKey: undefined, id: created.data.id, models: [{ id: 'm2' }] });
+  expect(updated).toMatchObject({ success: true, data: { models: [{ id: 'm2' }] } });
+  expect(await host.removeCustomModel({ connectionId: created.data.id })).toMatchObject({ success: true });
+  expect(await host.listCustomModels()).toMatchObject({ success: true, data: [] });
 });

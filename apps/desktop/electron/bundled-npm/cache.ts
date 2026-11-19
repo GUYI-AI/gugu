@@ -74,19 +74,19 @@ async function verifyFiles(root: string, manifest: NpmBundleManifest): Promise<v
 }
 
 async function verifiedCache(root: string, manifest: NpmBundleManifest): Promise<boolean> {
+  // Check absence before reading the marker: another process may atomically
+  // publish a complete directory between these reads. Existing caches stay strict.
+  try {
+    await lstat(root)
+  } catch (error) {
+    if (isMissing(error)) return false
+    throw error
+  }
   let marker: { sha256?: unknown; version?: unknown }
   try {
     marker = JSON.parse(await readFile(join(root, MARKER), 'utf8')) as typeof marker
   } catch (error) {
-    if (isMissing(error)) {
-      try {
-        await lstat(root)
-      } catch (missing) {
-        if (isMissing(missing)) return false
-        throw missing
-      }
-      throw new Error(`[bundled-npm] Incomplete npm cache: ${root}`)
-    }
+    if (isMissing(error)) throw new Error(`[bundled-npm] Incomplete npm cache: ${root}`)
     throw error
   }
   if (marker.sha256 !== manifest.sha256 || marker.version !== manifest.version) {

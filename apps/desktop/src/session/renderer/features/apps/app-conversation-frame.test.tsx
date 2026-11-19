@@ -2,6 +2,8 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { viewStateCache } from '@renderer/lib/stores/view-state-cache'
+import { readInterface } from '@/lib/viewStateTable';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -41,7 +43,7 @@ const lastReport = () => state.reports.at(-1);
 
 beforeEach(() => {
   state.pages.length = 0; state.reports.length = 0; state.searched.length = 0;
-  localStorage.clear();
+  localStorage.clear(); viewStateCache.forget('view:');
   element = document.createElement('div'); document.body.append(element); root = createRoot(element);
 });
 afterEach(async () => {
@@ -117,18 +119,18 @@ describe('an App\'s main page beside its bound conversation', () => {
     await click('app-conversation-panel-collapse');
     expect(find('app-conversation-panel')).toBeNull();
     expect(find('app-conversation-surface')!.getAttribute('data-panel')).toBe('closed');
-    expect(localStorage.getItem('gugu.app.today.panel')).toBe('closed');
+    expect(readInterface('gugu.app.today.panel')).toBe('closed');
     expect(lastReport()).toMatchObject({ shown: { chatId: CHAT, collapsed: true } });
     await click('app-conversation-panel-expand');
     expect(find('app-conversation-panel')).not.toBeNull();
     expect(find('app-conversation-panel-expand')).toBeNull();
     expect(lastReport()).toMatchObject({ shown: { chatId: CHAT, collapsed: false } });
     // The App's `gugu.bindings.setPanel`, main having checked the page is drawn there: the window's host action.
-    await act(async () => { await applyExtensionHostAction({ origin: { extensionId: 'today', sessionId: null, tabId: 'dock' }, action: { kind: 'conversationPanel', collapsed: true } }); });
+    await act(async () => { await applyExtensionHostAction({ origin: { pageId: null, extensionId: 'today', sessionId: null, tabId: 'dock' }, action: { kind: 'conversationPanel', collapsed: true } }); });
     expect(find('app-conversation-panel')).toBeNull();
     expect(lastReport()).toMatchObject({ shown: { collapsed: true } });
     // Another App's action is that App's panel, not this one's.
-    await act(async () => { await applyExtensionHostAction({ origin: { extensionId: 'other', sessionId: null, tabId: 'dock' }, action: { kind: 'conversationPanel', collapsed: false } }); });
+    await act(async () => { await applyExtensionHostAction({ origin: { pageId: null, extensionId: 'other', sessionId: null, tabId: 'dock' }, action: { kind: 'conversationPanel', collapsed: false } }); });
     expect(find('app-conversation-panel')).toBeNull();
     // Opened again later: as it was left.
     await act(async () => root.unmount());

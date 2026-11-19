@@ -8,7 +8,7 @@ import { createNode, createReactHarness, renderWithAppProviders } from '../../..
 import { pressProfileOpener, profileCardWithOpener } from '../../../support/memberProfileCard'
 
 const shell = vi.hoisted(() => ({ mobile: true }))
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile, readMobileShell: () => shell.mobile }))
 
 const { MemberProfilePopover } = await import('../../../../apps/desktop/src/components/MemberProfilePopover')
 const { RightPanel } = await import('../../../../apps/desktop/src/components/chat/RightPanel')

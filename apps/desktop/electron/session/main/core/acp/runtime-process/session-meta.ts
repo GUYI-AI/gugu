@@ -24,7 +24,7 @@ export function trustedPlatformInputPatch(
   switch (injection.kind) {
     case 'session-meta':
       return {
-        platformAccessSessionId: injection.platformAccessSessionId,
+        ...(injection.platformAccessSessionId ? { platformAccessSessionId: injection.platformAccessSessionId } : {}),
         ...(injection.model ? { platformModel: injection.model } : {}),
         sessionMeta: mergeTrustedSessionMeta(capability.sessionMeta, injection.sessionMeta),
         ...(injection.adapterEnv
@@ -61,6 +61,7 @@ export function stripUntrustedSessionAuthority<T extends Record<string, unknown>
   delete stripped.platform;
   delete stripped.platformAccessSessionId;
   delete stripped.platformModel;
+  delete stripped.billingRoute;
   delete stripped.sessionPrompt;
   delete stripped.mcpServers;
   delete stripped.capabilitySpawnEnv;

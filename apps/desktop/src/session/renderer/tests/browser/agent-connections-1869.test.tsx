@@ -1,5 +1,5 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
-import { queryClient } from '@/lib/readModel'
+import { queryClient } from '@/lib/replica'
 import { createRoot, type Root } from 'react-dom/client'
 import { beforeEach, afterEach, it, expect, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
@@ -99,7 +99,7 @@ beforeEach(() => {
   host.style.width = '528px'
   document.body.appendChild(host)
   root = createRoot(host)
-  // The connection readings are read models: they live in the one client (lib/readModel), cleared after each case.
+  // The connection readings are replicas: they live in the one client (lib/replica), cleared after each case.
   client = queryClient
   root.render(
     <QueryClientProvider client={client}>
@@ -180,23 +180,6 @@ it('a new account signed in while another account is current leaves the current 
   mocks.login.mock.calls[0][0].onSuccess()
   await new Promise((resolve) => setTimeout(resolve, 200))
   expect(mocks.select).not.toHaveBeenCalled()
-})
-
-it('saves an API connection without starting account authentication', async () => {
-  await userEvent.click(page.getByRole('button', { name: 'Add', exact: true }))
-  await userEvent.click(page.getByRole('tab', { name: 'API Key', exact: true }))
-  await userEvent.fill(
-    page.getByRole('textbox', { name: 'API Key', exact: true }),
-    'test-key-not-a-credential'
-  )
-  await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }))
-  await until('API creation commits', () => mocks.create.mock.calls.length === 1)
-  expect(mocks.create.mock.calls[0][0]).toMatchObject({
-    providerId: 'codex',
-    kind: 'api-key',
-    apiKey: 'test-key-not-a-credential'
-  })
-  expect(mocks.login).not.toHaveBeenCalled()
 })
 
 it('aligns the connection group heading with the card edge', async () => {

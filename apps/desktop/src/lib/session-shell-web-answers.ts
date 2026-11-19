@@ -18,6 +18,8 @@ export function createWebSessionShellAnswers(hostInvoke: SessionShellInvoke): Se
     agentNames: () => host.sessionpageIdentity.agentNames(),
     sessionPeers: (...args) => host.sessionpageIdentity.sessionPeers(...args),
     ensureAgentAddress: (input) => host.sessionpageIdentity.ensureAgentAddress(input),
+    birthGroupJoin: (sessionId) => host.sessionpageIdentity.birthGroupJoin(sessionId),
+    retryBirthGroupJoin: (sessionId) => host.sessionpageIdentity.retryBirthGroupJoin(sessionId),
     // 点了必须有反应:有身份 → 与桌面版同一条 UI 事件打开分享名片;没身份 → 同一条「不可分享」toast。
     shareAgent: async (sessionId) => {
       const card = await host.sessionpageIdentity.agentCard(sessionId)

@@ -63,7 +63,7 @@ const { followLink } = vi.hoisted(() => ({ followLink: vi.fn(() => true) }))
 vi.mock('../../../../apps/desktop/src/lib/guguLinks', () => ({ followLink }))
 const { AppsSection } = await import('../../../../apps/desktop/src/components/settings/AppsSection')
 const { useOfferedVersions } = await import('../../../../apps/desktop/src/components/settings/phoneMarketPage')
-const { queryClient } = await import('../../../../apps/desktop/src/lib/readModel')
+const { queryClient } = await import('../../../../apps/desktop/src/lib/replica')
 const { notifyManager } = await import('@tanstack/react-query')
 const { PhoneAppManage } = await import('../../../../apps/desktop/src/components/settings/PhoneAppManage')
 const { installedExtensionsStore: store } = (await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store')) as unknown as {
@@ -72,7 +72,7 @@ const { installedExtensionsStore: store } = (await import('../../../../apps/desk
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
-  // What the market says is a read model: each case starts without an answer, delivered in the act() that brought it.
+  // What the market says is a replica: each case starts without an answer, delivered in the act() that brought it.
   notifyManager.setScheduler((callback) => { callback() })
   queryClient.clear()
   harness = createReactHarness()
@@ -273,7 +273,7 @@ describe('「App」 on the phone: a market App’s versions and its 「自动更
     await marketAnswered(1)
     await open('notes')
     const row = () => page('[data-testid="app-manage-auto-update"]')
-    expect(row()?.textContent).toContain('安装旧版本后，此 App 的自')
+    expect(row()?.textContent).toContain('安装旧版本后，此应用的自动更新将关闭')
     await act(async () => { row()!.querySelector<HTMLElement>('[role="switch"]')!.click() })
     await until('switched off', () => store.autoUpdateOff.includes('notes'))
     expect(phone.setAutoUpdate).toHaveBeenLastCalledWith('notes', false)

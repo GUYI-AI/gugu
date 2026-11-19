@@ -1,4 +1,5 @@
-// @@@read-model ratchet (open-flicker, owner 2026-11-14): data a surface shows lives in a read model (lib/readModel.ts),
+// @@@client-state-model — why this shape is debt and what replaces it: docs/design/client-state-model.md.
+// @@@replica ratchet (open-flicker, owner 2026-11-14): data a surface shows lives in a replica (lib/replica.ts),
 // not in component state filled by an effect. The shape this finds is the old one: a `useEffect` whose callback reads
 // something asynchronously (a `.then` / `.catch` / `.finally` callback or a setter handed to one, an async function, or
 // a call to one of the component's own functions that does either) and puts the answer into a `useState` setter of the
@@ -39,13 +40,13 @@ const calleeName = (call: ts.CallExpression): string | null => {
   return null
 }
 
-/** `const [value, setValue] = useState(...)` setters declared directly in this function body. */
+/** `const [value, setValue] = useState(...)` setters (and `useReducer`'s `dispatch`) declared directly in this function body. */
 function stateSetters(fn: ts.FunctionLikeDeclaration): Set<string> {
   const setters = new Set<string>()
   const walk = (node: ts.Node): void => {
     if (node !== fn && isFunction(node)) return
     if (ts.isVariableDeclaration(node) && ts.isArrayBindingPattern(node.name) && node.initializer
-      && ts.isCallExpression(node.initializer) && calleeName(node.initializer) === 'useState') {
+      && ts.isCallExpression(node.initializer) && ['useState', 'useReducer'].includes(calleeName(node.initializer) ?? '')) {
       const setter = node.name.elements[1]
       if (setter && ts.isBindingElement(setter) && ts.isIdentifier(setter.name)) setters.add(setter.name.text)
     }
@@ -100,6 +101,8 @@ function setsStateAfterRead(callback: ts.Node, setters: Set<string>, readers: Re
       const name = calleeName(node)
       if (deferred && name && setters.has(name) && ts.isIdentifier(node.expression)) { found = true; return }
       if (name && readers.has(name) && ts.isIdentifier(node.expression)) { found = true; return }
+      // A setter handed to any call (`load(setValue)`, `subscribe(setValue)`): whatever it reads lands in this state.
+      if (node.arguments.some((arg) => ts.isIdentifier(arg) && setters.has(arg.text)) && !(name && setters.has(name))) { found = true; return }
       if (name && ASYNC_CONTINUATIONS.has(name) && ts.isPropertyAccessExpression(node.expression)) {
         walk(node.expression, deferred)
         for (const arg of node.arguments) {
@@ -159,6 +162,138 @@ export function scanFile(path: string, text: string): number {
   return effectLines(path, text).length
 }
 
+/**
+ * A reading collapsed to a literal default (@@@client-state-model): the unknown reading then draws like a stored empty
+ * value. Branch on the reading's three states instead. Literal = `[]`, `{}`, a number, a string, `false`, an `EMPTY_*`
+ * constant; `null` is not a default (null is "unknown" in the consumer's type) — until it is folded into one downstream.
+ * Syntactic: a reading is a name bound to `useReplica(…)` / `….peek(…)`, or any `x` whose `x.state` is compared with
+ * `'value'` in the file. Counted:
+ * - a value check whose not-value side is a literal: `r.state === 'value' ? r.value : []`, `r.state !== 'value' ? [] : …`,
+ *   `!(r.state === 'value') ? 0 : …`, `'value' === r.state ? … : ''`;
+ * - `?? literal` / `|| literal` on what a reading holds: `r.value ?? []`, `(r.state === 'value' && r.value) || []`, and
+ *   the two-step fold — a name bound to a value check (`const xs = r.state === 'value' ? r.value : null`) or to `r.value`,
+ *   then `xs ?? []` (also `xs?.length ?? 0`).
+ */
+export function literalDefaultLines(path: string, text: string): number[] {
+  const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+  const lines = new Set<number>()
+  const bare = (node: ts.Expression): ts.Expression => {
+    let n = node
+    while (ts.isParenthesizedExpression(n) || ts.isNonNullExpression(n) || ts.isAsExpression(n) || ts.isSatisfiesExpression(n)) n = n.expression
+    return n
+  }
+  const isLiteralDefault = (node: ts.Expression): boolean => {
+    const n = bare(node)
+    if (ts.isArrayLiteralExpression(n) && n.elements.length === 0) return true
+    if (ts.isObjectLiteralExpression(n) && n.properties.length === 0) return true
+    if (ts.isNumericLiteral(n) || ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) return true
+    if (n.kind === ts.SyntaxKind.FalseKeyword) return true
+    return ts.isIdentifier(n) && /^EMPTY_[A-Z0-9_]+$/.test(n.text)
+  }
+  const EQ = [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.EqualsEqualsToken]
+  const NE = [ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken]
+  const isState = (n: ts.Expression) => ts.isPropertyAccessExpression(bare(n)) && (bare(n) as ts.PropertyAccessExpression).name.text === 'state'
+  const isValueText = (n: ts.Expression) => ts.isStringLiteral(bare(n)) && (bare(n) as ts.StringLiteral).text === 'value'
+  /** `true`: the check holds when the reading has a value; `false`: when it has not; `undefined`: not a value check. */
+  const valueCheck = (node: ts.Expression): boolean | undefined => {
+    const n = bare(node)
+    if (ts.isPrefixUnaryExpression(n) && n.operator === ts.SyntaxKind.ExclamationToken) {
+      const inner = valueCheck(n.operand)
+      return inner === undefined ? undefined : !inner
+    }
+    if (!ts.isBinaryExpression(n)) return undefined
+    const op = n.operatorToken.kind
+    if (!EQ.includes(op) && !NE.includes(op)) return undefined
+    if (!((isState(n.left) && isValueText(n.right)) || (isValueText(n.left) && isState(n.right)))) return undefined
+    return EQ.includes(op)
+  }
+  const hasValueCheck = (node: ts.Node): boolean => {
+    let found = false
+    const walk = (n: ts.Node): void => { if (found) return; if (ts.isExpression(n) && valueCheck(n) !== undefined) found = true; else ts.forEachChild(n, walk) }
+    walk(node)
+    return found
+  }
+  // Readings: names whose `.state` is compared with 'value'; derived: names bound to a value check or to `reading.value`.
+  const readings = new Set<string>()
+  const derived = new Set<string>()
+  const collect = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && ts.isCallExpression(bare(node.initializer))) {
+      const callee = (bare(node.initializer) as ts.CallExpression).expression
+      const name = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : ''
+      if (name === 'useReplica' || name === 'peek') readings.add(node.name.text)
+    }
+    if (ts.isExpression(node) && valueCheck(node) !== undefined) {
+      const b = bare(node)
+      const target = ts.isPrefixUnaryExpression(b) ? b.operand : b
+      if (ts.isBinaryExpression(bare(target))) {
+        const bin = bare(target) as ts.BinaryExpression
+        const state = bare(isState(bin.left) ? bin.left : bin.right) as ts.PropertyAccessExpression
+        if (ts.isIdentifier(state.expression)) readings.add(state.expression.text)
+      }
+    }
+    ts.forEachChild(node, collect)
+  }
+  collect(source)
+  const holdsReading = (node: ts.Expression): boolean => {
+    let n = bare(node)
+    if (hasValueCheck(n)) return true
+    let first: string | undefined
+    while (ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n) || ts.isCallExpression(n) || ts.isNonNullExpression(n) || ts.isParenthesizedExpression(n)) {
+      if (ts.isPropertyAccessExpression(n)) first = n.name.text
+      n = ts.isCallExpression(n) ? n.expression : (n as ts.PropertyAccessExpression).expression
+    }
+    if (!ts.isIdentifier(n)) return false
+    return derived.has(n.text) || (readings.has(n.text) && first === 'value')
+  }
+  const isNothing = (node: ts.Expression) => {
+    const n = bare(node)
+    return n.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(n) && n.text === 'undefined')
+  }
+  // Derived: unknown kept as null (`check ? r.value… : null`, also inside useMemo) or bound straight to `r.value…`.
+  const bind = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      let init = bare(node.initializer)
+      if (ts.isCallExpression(init) && ts.isIdentifier(init.expression) && init.expression.text === 'useMemo' && init.arguments[0]
+        && ts.isArrowFunction(init.arguments[0]) && !ts.isBlock(init.arguments[0].body)) init = bare(init.arguments[0].body as ts.Expression)
+      const check = ts.isConditionalExpression(init) ? valueCheck(init.condition) : undefined
+      const foldsToNothing = ts.isConditionalExpression(init) && check !== undefined && isNothing(check ? init.whenFalse : init.whenTrue)
+      if (foldsToNothing || (!hasValueCheck(init) && holdsReading(init))) derived.add(node.name.text)
+    }
+    ts.forEachChild(node, bind)
+  }
+  bind(source)
+  // A justified exception says why on the line above: `@@@reading-default - <reason>` (a bare marker still counts).
+  const marked = (node: ts.Node) => {
+    let statement: ts.Node = node
+    while (statement.parent && !ts.isBlock(statement.parent) && !ts.isSourceFile(statement.parent)) statement = statement.parent
+    return (ts.getLeadingCommentRanges(text, statement.getFullStart()) ?? []).some((range) => /@@@reading-default\s*-\s*\S/.test(text.slice(range.pos, range.end)))
+  }
+  const hit = (node: ts.Node) => { if (!marked(node)) lines.add(source.getLineAndCharacterOfPosition(node.getStart()).line + 1) }
+  const visit = (node: ts.Node): void => {
+    if (ts.isConditionalExpression(node)) {
+      const check = valueCheck(node.condition)
+      if (check !== undefined && isLiteralDefault(check ? node.whenFalse : node.whenTrue)) hit(node)
+    }
+    if (ts.isBinaryExpression(node) && [ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken].includes(node.operatorToken.kind)
+      && isLiteralDefault(node.right) && holdsReading(node.left)) hit(node)
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return [...lines].sort((a, b) => a - b)
+}
+
+/** `{ relative path: lines }` for every non-test source file with a reading collapsed to a literal default. */
+export function scanLiteralDefaults(root = '.'): Record<string, number[]> {
+  const out: Record<string, number[]> = {}
+  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
+    const rel = relative(root, path).split('\\').join('/')
+    if (isTest(rel)) continue
+    const lines = literalDefaultLines(rel, readFileSync(path, 'utf8'))
+    if (lines.length > 0) out[rel] = lines
+  }
+  return out
+}
+
 /** `{ relative path: count }` for every non-test source file that still has the shape, sorted by path. */
 export function scanEffectFetchState(root = '.'): Record<string, number> {
   const out: Record<string, number> = {}
@@ -173,6 +308,10 @@ export function scanEffectFetchState(root = '.'): Record<string, number> {
 
 if (process.argv[1]?.endsWith('effect-fetch-state.mts')) {
   const hits = scanEffectFetchState()
+  if (process.argv.includes('--defaults')) {
+    for (const [file, lines] of Object.entries(scanLiteralDefaults())) console.log(`${file}: ${lines.join(', ')}`)
+    process.exit(0)
+  }
   if (process.argv.includes('--lines')) {
     for (const file of Object.keys(hits)) console.log(`${file}: ${effectLines(file, readFileSync(file, 'utf8')).join(', ')}`)
   }

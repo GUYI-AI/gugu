@@ -2,8 +2,6 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { SessionConversation } from '@/mobile/agent-watch/SessionConversation'
 import { emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store'
-import { usePhoneNewTask } from '@/mobile/chat/PhoneNewTask'
-import { ComposerAttachButton } from '@/components/chat/ComposerAttachButton'
 import { ChatMessageComposer } from '@/components/chat/ChatMessageComposer'
 import {
   createReactHarness,
@@ -13,7 +11,6 @@ import { until } from '../../../../../../../tests/support/awaitCondition'
 import { composerModelOptions } from '@renderer/features/sessions/session-config/platform-model-options'
 import { modelProviderIcon } from '@renderer/features/sessions/session-config/model-provider-icon'
 import { i18n } from '@/i18n'
-import { Zap } from '@/lib/icons'
 import '@/i18n/registerMessagingCatalog'
 import '@gugu/session-ui/styles/global'
 import '@gugu/session-ui/theme/theme.css'
@@ -60,13 +57,6 @@ vi.mock('@/components/chat/useConversationOptions', () => ({
     }
   }
 }))
-vi.mock('@/mobile/chat/phoneTaskFolders', () => ({
-  taskFoldersOfChat: () => ({ memberIds: [], folders: [], homeOf: () => undefined })
-}))
-vi.mock('@/mobile/chat/usePhoneFolderAttach', () => ({
-  usePhoneFolderAttach: () => ({ added: [], fresh: new Set(), picker: null })
-}))
-
 let harness: ReturnType<typeof createReactHarness>
 afterEach(() => {
   fixture.modelName = '咕咕 GPT-6 Luna'
@@ -116,6 +106,18 @@ it.each([false, true])(
       'button[disabled][aria-label*="Codex"]'
     )!
     const model = harness.container.querySelector('[data-testid="composer-model-trigger"]')!
+    const attachment = harness.container.querySelector<HTMLButtonElement>('[data-phone-attachment]')!
+    const editor = harness.container.querySelector<HTMLElement>('[contenteditable]')!
+    expect(attachment).not.toBeNull()
+    expect(attachment.getBoundingClientRect().width).toBe(44)
+    expect(attachment.getBoundingClientRect().right).toBeLessThanOrEqual(editor.getBoundingClientRect().left)
+    expect(harness.container.querySelector(working ? 'button[aria-label="停止生成"]' : 'button[aria-label="发送消息"]')).not.toBeNull()
+    ;(editor as HTMLElement & { editor: { commands: { setContent: (html: string) => void } } }).editor.commands.setContent('<p>第一行</p><p>第二行</p>')
+    await until('attachment moves to the right of the two-line editor', () => attachment.getBoundingClientRect().left >= editor.getBoundingClientRect().right)
+    expect(attachment.getBoundingClientRect().left).toBeGreaterThanOrEqual(editor.getBoundingClientRect().right)
+    const chooseFile = vi.spyOn(harness.container.querySelector<HTMLInputElement>('input[type="file"]')!, 'click').mockImplementation(() => {})
+    await userEvent.click(attachment)
+    expect(chooseFile).toHaveBeenCalledOnce()
     expect(locked).not.toBeNull()
     expect(locked.getBoundingClientRect().width).toBeGreaterThan(0)
     expect(getComputedStyle(locked).opacity).toBe('1')
@@ -126,7 +128,7 @@ it.each([false, true])(
       Math.abs(locked.getBoundingClientRect().y - model.getBoundingClientRect().y)
     ).toBeLessThan(8)
     const send = harness.container.querySelector<HTMLButtonElement>(
-      working ? 'button[aria-label="停止生成"]' : 'button[aria-label="发送消息"]'
+      'button[aria-label="发送消息"]'
     )!
     expect(send).not.toBeNull()
     expect(
@@ -261,38 +263,38 @@ it.each([false, true])(
   }
 )
 
-it('1292 phone project attachment menu uses the real new-task action lightning', async () => {
+it('keeps the phone group attachment tray for photos, camera and files', async () => {
   await i18n.changeLanguage('zh-CN')
   await page.viewport(390, 844)
   document.documentElement.dataset.theme = 'light'
   harness = createReactHarness()
-  function Fixture() {
-    const task = usePhoneNewTask({ chatId: 'project-group', enabled: true, clear: () => {} })
-    return (
-      <div data-phone-shell="" style={{ padding: 16, marginTop: 600 }}>
-        <span hidden data-zap-control>
-          <Zap size={16} />
-        </span>
-        <ComposerAttachButton
-          actions={task.action ? [task.action] : []}
-          disabled={false}
-          mobile
-          onPickFile={() => {}}
-        />
-      </div>
-    )
-  }
-  await renderWithAppProviders(harness, <Fixture />, { contacts: {} })
+  await renderWithAppProviders(harness, <div data-phone-shell="" style={{ padding: 16, marginTop: 600 }}>
+    <ChatMessageComposer chatId="project-group" isGroupChat onSend={vi.fn()} />
+  </div>, { contacts: {} })
   await userEvent.click(page.getByTestId('chat-composer-attach-menu'))
-  await until(
-    'real phone new-task action',
-    () => !!document.querySelector('[data-testid="chat-composer-attach-phone-new-task"]')
-  )
-  const task = document.querySelector('[data-testid="chat-composer-attach-phone-new-task"]')!
-  expect(task.textContent).toContain('新任务')
-  expect(task.querySelector('svg')).not.toBeNull()
-  expect(task.querySelector('svg')!.innerHTML).toBe(
-    document.querySelector('[data-zap-control] svg')!.innerHTML
-  )
-  await page.screenshot({ path: `${out}/phone-task-menu-component.png` })
+  await until('attachment entries appear', () => !!document.querySelector('[data-testid="chat-composer-attach-file"]'))
+  expect(document.querySelector('[data-testid="chat-composer-attach-photos"]')).not.toBeNull()
+  expect(document.querySelector('[data-testid="chat-composer-attach-camera"]')).not.toBeNull()
+  expect(document.querySelector('[data-testid="chat-composer-attach-phone-new-task"]')).toBeNull()
+  await page.screenshot({ path: `${out}/phone-attachment-tray.png` })
+})
+
+it('keeps the existing model menu in the phone sidebar row and omits the old harness row', async () => {
+  await page.viewport(390, 960)
+  await i18n.changeLanguage('zh-CN')
+  harness = createReactHarness()
+  harness.container.setAttribute('data-phone-shell', '')
+  harness.container.style.cssText = 'height:800px;width:390px;display:flex;flex-direction:column'
+  await renderWithAppProviders(harness, <SessionConversation
+    timeline={emptyAgentWatchTimeline()} deviceId="device" sessionId="single-row" agentName="Pi" harness="pi"
+    nativeRecord sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={vi.fn()}
+    pendingSends={[]} sending={false} agentWorking={false} onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()}
+    composerControls={model => <div data-testid="single-phone-row">智能体{model}</div>}
+  />, { contacts: {} })
+  await until('the same model control moved into the new row', () => !!harness.container.querySelector('[data-testid="single-phone-row"] [data-testid="composer-model-trigger"]'))
+  expect(harness.container.querySelector('[data-composer-locked-agent]')).toBeNull()
+  expect(harness.container.querySelector('[data-slot="composer-actions-end"] [data-slot="composer-model"]')).toBeNull()
+  expect(harness.container.querySelectorAll('[data-testid="composer-model-trigger"]')).toHaveLength(1)
+  await page.getByTestId('composer-model-trigger').click()
+  await until('the original model menu opens', () => harness.container.querySelector('[data-testid="composer-model-trigger"]')?.getAttribute('aria-expanded') === 'true')
 })

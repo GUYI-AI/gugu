@@ -12,6 +12,7 @@ import { extensionsService } from './extensions-root';
 import { revokeExtensionProgramAccess, withExtensionProgramAccess } from './extension-program-access';
 import { programRuntimePath } from './app-runtime-dir';
 import { PROGRAM_CALL_META_KEY } from '@shared/extensions/app-runtime-protocol';
+import { recordLiveWindowActivity } from './live-window-activity';
 import { confinedLaunch, CONFINE_HOSTS_ENV, type ProgramConfinement } from '@shared/extensions/program-confinement';
 import { parseGroupFileLink } from '@gugu/core/shared/ui/guguLink';
 import { firstSentence } from '../../../../mcp/first-sentence';
@@ -571,6 +572,7 @@ async function use<T>(program: ExtensionProgram, signal: AbortSignal, work: (cli
     signal.throwIfAborted();
     if (instance.stopping) throw new Error('App program access was revoked');
     release = call ? instance.transport.surface?.hand(call.id, call.agent ?? null, call.handed, call.handedChats, call.sessionId, call.callerKind ?? 'agent', signal) : undefined;
+    if (call?.agent && call.sessionId && call.callerKind !== 'person') recordLiveWindowActivity(call.sessionId, program.extensionId);
     return await work(instance.client);
   } finally {
     await release?.();

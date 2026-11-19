@@ -19,6 +19,7 @@ const EXPECTED: Record<string, Partial<Record<GuguPermissionMode, readonly strin
     plan: ['--permission-mode', 'plan'],
     'read-only': ['--permission-mode', 'default'],
     edit: ['--permission-mode', 'acceptEdits'],
+    'ai-review': ['--permission-mode', 'auto'],
     'full-access': ['--dangerously-skip-permissions'],
   },
   // codebuddy(#7525):档名与 Claude 同(`codebuddy --help`「--permission-mode … acceptEdits, bypassPermissions, default, plan」)。
@@ -45,6 +46,8 @@ const EXPECTED: Record<string, Partial<Record<GuguPermissionMode, readonly strin
   opencode: { plan: ['--agent', 'plan'] },
   kilocode: { plan: ['--agent', 'plan'], 'read-only': ['--agent', 'ask'], 'full-access': ['--agent', 'full-access'] },
   codex: {
+    edit: ['-s', 'workspace-write', '-a', 'on-request', '-c', 'approvals_reviewer="user"'],
+    'ai-review': ['-s', 'workspace-write', '-a', 'on-request', '-c', 'approvals_reviewer="auto_review"'],
     'read-only': ['-s', 'read-only'],
     'full-access': ['-c', 'approval_policy="never"', '-c', 'sandbox_mode="danger-full-access"'],
   },
@@ -53,7 +56,6 @@ const EXPECTED: Record<string, Partial<Record<GuguPermissionMode, readonly strin
 
 /** 终端腿不在 argv 上兑现的格,每条写明理由。 */
 const NOT_ON_ARGV: Record<string, { modes: readonly GuguPermissionMode[]; reason: string }> = {
-  codex: { modes: ['edit'], reason: '终端腿走 app-server,三档由会话包写成 sandbox + approval(codex/session-bundle.ts)' },
   opencode: { modes: ['edit'], reason: '档位由会话包写进 OPENCODE 配置的 permission 规则' },
   kilocode: { modes: ['edit'], reason: '编辑档就是默认的 code agent,规则在 KILO_CONFIG_CONTENT' },
   kimi: { modes: ['edit'], reason: 'kimi 0.40.1 --help 只有 --yolo/--auto/--plan,没有「每次都问」的旗标' },

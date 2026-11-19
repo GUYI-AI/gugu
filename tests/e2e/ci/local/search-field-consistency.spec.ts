@@ -168,7 +168,7 @@ test('main renderer search fields share one visual contract', async ({ page }, t
   await capture(page, testInfo, 'search-field-add-friend')
 
   // 2026-09-05:原来这里还量第四个读数 —— 发现页的 DiscoverSearchField。发现页与找群同批下架,
-  // 那个搜索框已不可达,读数点随之撤掉。剩下的读数(宽屏两处、手机一处)仍然覆盖「同一份 SearchField 原语」这条契约。
+  // 那个搜索框已不可达。宽屏上的两处普通搜索输入仍共用 SearchField 原语。
 
   for (const reading of metrics) {
     expect(reading, JSON.stringify(reading)).toMatchObject({
@@ -183,26 +183,18 @@ test('main renderer search fields share one visual contract', async ({ page }, t
   expect(new Set(metrics.map(({ backgroundColor }) => backgroundColor)).size).toBe(1)
 
   await page.setViewportSize({ width: 390, height: 844 })
-  // #7333 紧凑界面正文统一14px；手机另外验证44px点击区，不再依靠旧的13→14差值。
-  // ⚠️ 按 testid 找,❌ 别按 placeholder:通讯录那个框在桌面写「搜索联系人」、在移动壳写
-  // 「搜索联系人和 Agent」(ContactsNav 与桌面侧栏各给各的),按文案定位在窄屏必然落空。
-  // The floating phone search button opens the global search panel; a page's own search opens from its header.
   await page.getByTestId('mobile-contacts-nav').click()
-  await page.getByTestId('phone-partners').locator('[data-header-search-open]').click()
-  const mobileSearch = page.getByTestId('phone-partners-search')
-  await expect(mobileSearch, '移动壳伙伴页的搜索框应可见').toBeVisible({ timeout: 30_000 })
-  const mobileReading = await readSearchMetrics('partners-mobile', mobileSearch)
+  const partners = page.getByTestId('phone-partners')
+  await expect(partners).toBeVisible()
+  await expect(partners.locator('[data-header-search-open]')).toHaveCount(0)
+  const phoneSearchButton = page.getByTestId('phone-list-search')
+  await expect(phoneSearchButton).toBeVisible()
+  expect((await phoneSearchButton.boundingBox())?.height).toBeGreaterThanOrEqual(44)
+  await phoneSearchButton.click()
+  const mobileSearch = page.getByTestId('phone-message-search').getByTestId('global-search-input')
+  await expect(mobileSearch).toBeVisible()
   await capture(page, testInfo, 'search-field-partners-mobile')
-  expect(mobileReading, JSON.stringify(mobileReading)).toMatchObject({
-    slot: 'search-field',
-    borderRadius: '8px',
-    borderStyle: 'solid',
-    // 同一份SearchField原语：手机与桌面都必须落14px，回退13px仍判红。
-    fontSize: '14px',
-  })
-  expect(mobileReading.height).toBeGreaterThanOrEqual(44)
 
-  metrics.push(mobileReading)
   const metricsPath = testInfo.outputPath('search-field-metrics.json')
   writeFileSync(metricsPath, `${JSON.stringify(metrics, null, 2)}\n`)
   await testInfo.attach('search-field-metrics.json', { path: metricsPath, contentType: 'application/json' })
