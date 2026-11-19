@@ -57,6 +57,24 @@ describe('submitted annotation language', () => {
 });
 
 describe('the conversation annotation draft', () => {
+  it('shares a chat draft across tab and composer without aliasing any task or other chat', () => {
+    const id = crypto.randomUUID();
+    const chat = sessionAnnotations.forConversation({ kind: 'chat', chatId: id });
+    chat.add(page());
+    expect(sessionAnnotations.forConversation({ kind: 'chat', chatId: id })).toBe(chat);
+    expect(sessionAnnotations.forSession(id).items).toHaveLength(0);
+    expect(sessionAnnotations.forConversation({ kind: 'chat', chatId: `${id}-other` }).items).toHaveLength(0);
+    expect(sessionAnnotations.forConversation({ kind: 'session', sessionId: id })).toBe(sessionAnnotations.forSession(id));
+  });
+
+  it('keeps an unsent group screenshot private when another account opens the same group', () => {
+    const conversation = { kind: 'chat' as const, chatId: crypto.randomUUID() };
+    const owner = sessionAnnotations.forConversation(conversation, 'account-a');
+    owner.add(page());
+    expect(sessionAnnotations.forConversation(conversation, 'account-b').items).toHaveLength(0);
+    expect(sessionAnnotations.forConversation(conversation, 'account-a')).toBe(owner);
+    expect(owner.items).toHaveLength(1);
+  });
   it('keeps comments across tab consumers and isolates conversations', () => {
     sessionAnnotations.forSession('one').add(page());
     expect(sessionAnnotations.forSession('one').items).toHaveLength(1);

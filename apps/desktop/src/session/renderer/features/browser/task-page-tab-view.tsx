@@ -94,7 +94,7 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
     return () => { observer.disconnect(); if (timer) clearTimeout(timer); };
   }, [watchId]);
 
-  const annotations = useBrowserAnnotations({ sessionId: resource.sessionId, browserId: `task-page:${resource.deviceId}:${resource.sessionId}`, visible, available: !!watchId && state === 'live',
+  const annotations = useBrowserAnnotations({ conversation: { kind: 'session', sessionId: resource.sessionId }, browserId: `task-page:${resource.deviceId}:${resource.sessionId}`, visible, available: !!watchId && state === 'live',
     inspect: async (query, capture) => {
       if (!watchId) throw new Error('This page is not watched');
       const result = await rpc.browser.controlTaskPage({ watchId, control: { action: 'annotate', query, capture } });
