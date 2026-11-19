@@ -22,7 +22,7 @@ it('keeps the shell heading alone while preserving the inner page refresh action
 
 it('keeps the page title and refresh action when there is no settings shell', async () => {
   root.render(<PageHeader title="Subscriptions" aside={<button>Refresh</button>} />)
-  await until(() => host.querySelector('h2') !== null)
+  await until('standalone page title is visible', () => host.querySelector('h2') !== null)
   expect(host.querySelector('h2')?.textContent).toBe('Subscriptions')
   expect(host.querySelectorAll('button')).toHaveLength(1)
 })
@@ -31,7 +31,7 @@ it('retains the device scope and status next to header actions inside settings',
   root.render(<InSettingsPanelProvider><PageScopeProvider value={{ control: <button>This device</button>, status: <span>Online</span> }}>
     <PageHeader title="Subscriptions" aside={<button>Refresh</button>} />
   </PageScopeProvider></InSettingsPanelProvider>)
-  await until(() => host.querySelectorAll('button').length === 2)
+  await until('both header actions are available', () => host.querySelectorAll('button').length === 2)
   expect(host.querySelectorAll('h2')).toHaveLength(0)
   expect(host.querySelector('[data-slot="page-scope"]')?.textContent).toContain('This device')
   expect(host.querySelector('[data-slot="page-status"]')?.textContent).toBe('Online')
