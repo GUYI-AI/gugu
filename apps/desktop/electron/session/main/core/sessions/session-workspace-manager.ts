@@ -1,7 +1,8 @@
 import { LifecycleMap } from '@gugu/session-shared';
 import { ok, type Result } from '@gugu/session-shared';
 import type { IExecutionContext } from '@gugu/session-core/exec';
-import { killTmuxSession, makeTmuxSessionName } from '@main/core/pty/tmux-session-name';
+import { killTmuxSession, resolveTmuxSessionName } from '@main/core/pty/tmux-session-name';
+import { rootFolderOf } from '@main/core/folders/folders';
 import { getSessionLeafIds } from '@main/core/sessions/session-targets';
 import type { WorkspaceBootstrapResult } from '@main/core/workspaces/workspace-bootstrap-service';
 import { workspaceRegistry, type TeardownMode } from '@main/core/workspaces/workspace-registry';
@@ -13,8 +14,8 @@ import type { WorkspaceType as SharedWorkspaceType } from '@shared/core/workspac
 import type {
   ProvisionResult,
   SessionMount,
-} from '../projects/project-provider';
-import { withTimeout } from '../projects/utils';
+} from '@main/core/workspaces/folder-runtime/folder-runtime';
+import { withTimeout } from '@main/core/utils/timeout';
 import {
   formatProvisionSessionError,
   formatTeardownSessionError,
@@ -30,18 +31,19 @@ export type WorkspaceHint = {
   path?: string;
 };
 
-type StoredSession = ProvisionResult & { projectId: string; ctx: IExecutionContext };
+/** `folderId`: the root folder the session's workspace belongs to (what a folder's teardown reaches it by). */
+type StoredSession = ProvisionResult & { folderId: string; groupChatId: string | null; ctx: IExecutionContext };
 
 export type SessionManagerHooks = {
   'session:provisioned': (info: {
-    projectId: string;
     sessionId: string;
+    groupChatId: string | null;
     branchName: string | undefined;
     workspaceId: string;
   }) => void | Promise<void>;
   'session:torn-down': (info: {
-    projectId: string;
     sessionId: string;
+    groupChatId: string | null;
     workspaceId: string;
     // @@@sessionpage TASKPAGE-FUSION — which teardown this was: what happened to the RUNTIME, not whether
     // the session still exists. App/project shutdown uses `terminate` too when tmux is off, and that session is
@@ -67,7 +69,7 @@ export type SessionManagerHooks = {
 export type SessionTeardownMode = TeardownMode | 'archive';
 
 /** teardown 要问「这条会话上还有什么在跑」,而 ACP 那半边只有 id 能问。 */
-export type SessionIdentity = { projectId: string; sessionId: string };
+export type SessionIdentity = { sessionId: string };
 
 /**
  * 停掉这个任务在 ACP 运行时里的会话。
@@ -110,7 +112,6 @@ export async function executeTeardown(
       // 没接上 = 宿主组合根漏了接线,不是「这个任务没有 ACP 会话」。响亮记一笔:静默跳过会让
       // 「归档后令牌没结清」以「日志安静」的形态活下去,而这正是 #4467 的病灶形状。
       log.error('SessionManager: no ACP session stopper is wired; session teardown left its ACP arm undone', {
-        projectId: session.projectId,
         sessionId: session.sessionId,
       });
     }
@@ -121,17 +122,22 @@ export async function executeTeardown(
 }
 
 export async function cleanupDetachedSessions(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   ctx: IExecutionContext
 ): Promise<void> {
   const { terminalIds } = await getSessionLeafIds(sessionId);
   const sessionIds = [sessionId, ...terminalIds].map((leafId) =>
-    makePtySessionId(projectId, sessionId, leafId)
+    makePtySessionId(workspaceId, sessionId, leafId)
   );
   await Promise.all(
-    sessionIds.map((ptySessionId) => killTmuxSession(ctx, makeTmuxSessionName(ptySessionId)))
+    sessionIds.map(async (ptySessionId) => killTmuxSession(ctx, await resolveTmuxSessionName(ctx, ptySessionId)))
   );
+}
+
+/** 这条会话挂载出来的运行时;没挂着就是 null。 */
+export function resolveSession(sessionId: string): SessionMount | null {
+  return sessionWorkspaceManager.getSession(sessionId) ?? null;
 }
 
 class SessionWorkspaceManager {
@@ -141,7 +147,7 @@ class SessionWorkspaceManager {
   private readonly _lifecycle = new LifecycleMap<StoredSession, ProvisionSessionError, TeardownSessionError>(
     {
       postTeardown: (sessionId, stored) => {
-        this._sessionsByProject.get(stored.projectId)?.delete(sessionId);
+        this._sessionsByFolder.get(stored.folderId)?.delete(sessionId);
         // LifecycleMap's postTeardown carries no mode, so teardownSession parks it here for the hook.
         // Absent (a teardown routed some other way) → the safe default is the one that really ends the
         // session: subscribers already reconcile against live state, so a spurious "detach" would be the
@@ -149,15 +155,16 @@ class SessionWorkspaceManager {
         const mode = this._teardownModes.get(sessionId) ?? 'terminate';
         this._teardownModes.delete(sessionId);
         this._hooks.callHookBackground('session:torn-down', {
-          projectId: stored.projectId,
           sessionId,
+          groupChatId: stored.groupChatId,
           workspaceId: stored.persistData.workspaceId,
           mode,
         });
       },
     }
   );
-  private readonly _sessionsByProject = new Map<string, Set<string>>();
+  /** root folder id → the sessions mounted in it or in a workspace inside it. */
+  private readonly _sessionsByFolder = new Map<string, Set<string>>();
   /** conversationId → the mode of the teardown currently in flight (read + cleared by postTeardown). */
   private readonly _teardownModes = new Map<string, SessionTeardownMode>();
 
@@ -171,28 +178,31 @@ class SessionWorkspaceManager {
   async registerSession(
     sessionId: string,
     result: WorkspaceBootstrapResult,
-    projectId: string,
+    groupChatId: string | null,
     ctx: IExecutionContext
   ): Promise<void> {
+    const folderId = rootFolderOf(result.workspaceId)?.id;
+    if (!folderId) throw new Error(`session ${sessionId}: workspace ${result.workspaceId} is in no folder recorded here`);
     const stored: StoredSession = {
       sessionMount: result.sessionMount,
       persistData: {
         workspaceId: result.workspaceId,
       },
-      projectId,
+      folderId,
+      groupChatId,
       ctx,
     };
 
     // Use provision() for deduplication: if already active, returns existing immediately.
     await this._lifecycle.provision(sessionId, async () => ok(stored));
 
-    const byProject = this._sessionsByProject.get(projectId) ?? new Set<string>();
-    byProject.add(sessionId);
-    this._sessionsByProject.set(projectId, byProject);
+    const byFolder = this._sessionsByFolder.get(folderId) ?? new Set<string>();
+    byFolder.add(sessionId);
+    this._sessionsByFolder.set(folderId, byFolder);
 
     this._hooks.callHookBackground('session:provisioned', {
-      projectId,
       sessionId,
+      groupChatId,
       branchName: result.sessionMount.sessionBranch,
       workspaceId: result.workspaceId,
     });
@@ -205,16 +215,16 @@ class SessionWorkspaceManager {
     this._teardownModes.set(sessionId, mode);
     const result = this._lifecycle.teardown(
       sessionId,
-      async ({ sessionMount, persistData, projectId, ctx }) => {
+      async ({ sessionMount, persistData, ctx }) => {
         try {
           await withTimeout(
-            executeTeardown(sessionMount, persistData.workspaceId, mode, { projectId, sessionId }),
+            executeTeardown(sessionMount, persistData.workspaceId, mode, { sessionId }),
             SESSION_TIMEOUT_MS
           );
           return ok();
         } catch (e) {
           log.error('SessionManager: failed to teardown session', { sessionId, error: String(e) });
-          await cleanupDetachedSessions(projectId, sessionId, ctx).catch((cleanupError) => {
+          await cleanupDetachedSessions(persistData.workspaceId, sessionId, ctx).catch((cleanupError) => {
             log.warn('SessionManager: fallback cleanup failed', {
               sessionId,
               error: String(cleanupError),
@@ -228,11 +238,12 @@ class SessionWorkspaceManager {
     return result ?? ok();
   }
 
-  async teardownAllForProject(projectId: string, mode: TeardownMode): Promise<void> {
-    const sessionIds = Array.from(this._sessionsByProject.get(projectId) ?? []);
+  /** Tear down every session mounted in this root folder or in a workspace inside it (the folder runtime is closing). */
+  async teardownAllForFolder(folderId: string, mode: TeardownMode): Promise<void> {
+    const sessionIds = Array.from(this._sessionsByFolder.get(folderId) ?? []);
     if (mode === 'detach') {
       // Detach sessions but leave workspaces alive; provider.cleanup() will call
-      // workspaceRegistry.teardownAllForProject to handle workspace teardown.
+      // the workspace registry to handle workspace teardown.
       await Promise.all(
         sessionIds.flatMap((id) => {
           const stored = this._lifecycle.get(id);
@@ -244,12 +255,12 @@ class SessionWorkspaceManager {
         })
       );
       // Remove entries from lifecycle maps without running workspace teardown.
-      this._sessionsByProject.delete(projectId);
+      this._sessionsByFolder.delete(folderId);
       await Promise.all(
         sessionIds.map((id) => this._lifecycle.teardown(id, async () => ok()) ?? Promise.resolve(ok()))
       );
     } else {
-      // teardownSession handles _sessionsByProject cleanup in onFinally.
+      // teardownSession handles _sessionsByFolder cleanup in postTeardown.
       await Promise.all(sessionIds.map((id) => this.teardownSession(id, 'terminate')));
     }
   }

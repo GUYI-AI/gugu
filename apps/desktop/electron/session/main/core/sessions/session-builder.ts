@@ -4,8 +4,8 @@ import type { TerminalProvider } from '@main/core/terminals/terminal-provider';
 import type { Workspace } from '@main/core/workspaces/workspace';
 import { events } from '@main/lib/events';
 import { sessionProvisionProgressChannel, type ProvisionStep } from '@shared/core/sessions/provisionEvents';
-import type { SessionMount } from '../projects/project-provider';
-import type { ProjectSettingsProvider } from '../projects/settings/provider';
+import type { SessionMount } from '@main/core/workspaces/folder-runtime/folder-runtime';
+import type { FolderSettingsProvider } from '@main/core/workspaces/folder-runtime/settings/provider';
 import {
   buildSessionProviders,
   resolveSessionEnv,
@@ -17,7 +17,6 @@ export type MountedSession = { id: string; title: string };
 
 export function emitSessionProvisionProgress(data: {
   sessionId: string;
-  projectId: string;
   step: ProvisionStep;
   message: string;
 }): void {
@@ -44,23 +43,22 @@ export type BuildSessionResult = {
 export async function buildSessionFromWorkspace(
   session: MountedSession,
   workspace: Workspace,
-  projectId: string,
-  projectPath: string,
-  settings: ProjectSettingsProvider,
+  folderId: string,
+  folderPath: string,
+  settings: FolderSettingsProvider,
   workspaceBranchName?: string,
   workspaceSourceBranch?: GitBranchRef
 ): Promise<BuildSessionResult> {
   const { sessionEnvVars, tmuxEnabled, shellSetup } = await resolveSessionEnv(
     session,
     workspace,
-    projectPath,
+    folderPath,
     settings,
-    projectId
+    folderId
   );
 
   const { sessions: sessionProvider, terminals: terminalProvider } =
     await buildSessionProviders({
-      projectId,
       sessionId: session.id,
       workspaceId: workspace.id,
       sessionPath: workspace.path,

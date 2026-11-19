@@ -10,7 +10,6 @@ export type ProvisionStep =
 
 export const sessionProvisionProgressChannel = defineEvent<{
   sessionId: string;
-  projectId: string;
   step: ProvisionStep;
   message: string;
 }>('session:provision-progress');
@@ -41,7 +40,6 @@ export const lifecycleScriptStatusChannel = defineEvent<LifecycleScriptStatusEve
 
 export const sessionProvisionedChannel = defineEvent<{
   sessionId: string;
-  projectId: string;
   path: string;
   workspaceId: string;
 }>('session:provisioned');
@@ -51,6 +49,5 @@ export const sessionProvisionedChannel = defineEvent<{
  * 滚动位置)原样留着,下次显示时照常 provision、按原会话续上(#6950)。
  */
 export const sessionReclaimedChannel = defineEvent<{
-  projectId: string;
   sessionId: string;
 }>('session:session-reclaimed');

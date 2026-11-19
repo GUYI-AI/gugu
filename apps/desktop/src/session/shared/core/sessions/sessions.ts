@@ -167,9 +167,12 @@ export type PendingRestart = {
 
 export type Session = {
   id: string;
+  /** @@@group-folders — released readers only: the session's workspace id since C1 (an opaque key). Removed in S2. */
   projectId: string;
-  /** 这条会话在哪个工作区里干活;多条会话可以共享一个。还没挂过工作区的老行没有。 */
+  /** 这条会话在哪个工作区里干活(它的 cwd);多条会话可以共享一个。乐观期的那一份还没有。 */
   workspaceId?: string;
+  /** The group the session lives in (sessions.chat_id); null = none (the task home). Not where its agent lives: bornInChatId. */
+  groupChatId?: string | null;
   /** 新建会话时挑的 issue。 */
   linkedIssue?: LinkedIssue;
   /** 有值 = 这条会话是这次自动化运行建出来的(非交互)。 */
@@ -302,7 +305,6 @@ export type Session = {
 
 /** 一次归档动作收走了哪些行(点名的那一条 + 勾了范围时连带的 spawn 子树),撤销时按这份清单原样放回。 */
 export type ArchivedSessionRef = {
-  projectId: string;
   sessionId: string;
 };
 

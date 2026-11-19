@@ -13,15 +13,17 @@ export type SessionBootstrapStatus =
  * 不存在「先有一个空壳、再往里放会话」。
  */
 export type CreateSessionParams = {
-  projectId: string;
+  /**
+   * @@@group-folders — the group the session lives in (sessions.chat_id): its agent joins it when first minted, as
+   * `session_spawn`'s `chat_id`. Absent = no group (the task home). Where it works is `workspaceConfig`'s workspace.
+   */
+  groupChatId?: string;
   /** Typed, versioned creation payload (title, issue link, the conversation to start). */
   sessionConfig: NewSessionConfig;
   /** Typed, versioned workspace configuration (git setup + workspace location). */
   workspaceConfig: WorkspaceConfig;
   /** Set when an automation run creates the session; kept on the session row. */
   automationRunId?: string;
-  /** The group it is born in (「在群里新建 Agent」): its identity joins it when first minted, as `session_spawn`'s `chat_id`. */
-  birthGroup?: BirthGroup;
 };
 
 /**
@@ -32,7 +34,8 @@ export type CreateSessionParams = {
 export type BirthGroup = { chatId: string; asTask: boolean };
 
 export type CreateSessionError =
-  | { type: 'project-not-found' }
+  /** The workspace to start in is not a folder recorded on this device (nor inside one). */
+  | { type: 'folder-not-found'; workspaceId: string }
   /**
    * @@@5173 引擎此刻起不来,所以这条任务**没有被创建** —— 库里一行都没写。
    * `reason` 决定指路:`updating` = 正在被替换,自己会好,让用户稍后重试;
