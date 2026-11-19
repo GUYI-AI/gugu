@@ -368,7 +368,8 @@ describe('recorded pairs have their own identity and lifecycle', () => {
     const output = open('A.md');
     layout.pairWith(conversation, output, { edge: 'left' });
     activate(layout, output);
-    layout.setPaneSizes([35, 65]);
+    const cut = layout.layout;
+    if (cut.type === 'split') layout.setSplitSizes(cut.id, [35, 65]);
     const { pair: _pair, ...legacy } = layout.snapshot;
     const { layout: restored } = setup();
     restored.restoreSnapshot(legacy);
