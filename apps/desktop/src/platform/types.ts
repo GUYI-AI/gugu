@@ -163,7 +163,7 @@ export interface AppPlatform {
   // @@@scan (#537-A) - native camera QR/barcode scan; resolves the decoded raw string a user would
   // otherwise paste, or null if cancelled. Only the capacitor adapter implements it (capability gate).
   scanQrCode: () => Promise<string | null>
-  showNotification: (payload: { title: string; body?: string; chatId?: string | null; silent?: boolean }) => Promise<unknown>
+  showNotification: (payload: { title: string; body?: string; chatId?: string | null; silent?: boolean; kind?: 'chat_message' | 'task_attention' }) => Promise<unknown>
   androidNotificationSettings?: {
     read(silent: boolean): Promise<{ enabled: boolean; importance?: number }>
     open(silent: boolean, appWide: boolean): Promise<void>

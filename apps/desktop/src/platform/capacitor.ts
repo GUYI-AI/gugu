@@ -1,3 +1,4 @@
+import { androidPushConfirmed, suppressAndroidLocalPushNotification } from '../mobile/android-push/androidPushState'
 import { nativeAndroidAccountClosure } from './androidAccountClosure'
 import { nativePhoneAgentHostAvailable } from './phoneAgentHostCapability'
 import { schedulePhoneNotification } from './phoneNotificationOutlet'
@@ -270,6 +271,9 @@ export const capacitorPlatform: AppPlatform = {
     }
   },
   async showNotification(payload) {
+    if (androidPushConfirmed() && suppressAndroidLocalPushNotification(true, (await App.getState()).isActive, payload.chatId, payload.kind)) {
+      return { success: false, displayed: false, error: 'APP_NOT_ACTIVE' }
+    }
     // 没权限就回「没弹」,形状同桌面 notifications:show 被系统拒时(electron/main.ts showAppNotification),
     // sendTestNotification 据此给出下一步。❌ 在这里顺手弹授权框 —— 什么时候问由 behavior 定,不由发通知的时机定。
     if (await checkSystemPermission('notifications') !== 'granted') {
