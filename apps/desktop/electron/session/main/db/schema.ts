@@ -92,11 +92,24 @@ export const activityEvents = sqliteTable('activity_events', {
   observedAt: integer('observed_at').notNull(),
   kind: text('kind').notNull(),
   sessionId: text('session_id'),
+  /** @@@c1-legacy-project — read only by the previous release after a rollback. */
   projectId: text('project_id'),
+  /** The group the event happened in (@@@group-folders); null = none. */
+  chatId: text('chat_id'),
   data: text('data').notNull(),
 }, table => ({ time: index('activity_events_time').on(table.occurredAt, table.seq),
   session: index('activity_events_session').on(table.sessionId, table.seq),
-  project: index('activity_events_project').on(table.projectId, table.seq) }));
+  project: index('activity_events_project').on(table.projectId, table.seq),
+  chat: index('activity_events_chat').on(table.chatId, table.seq) }));
+
+/**
+ * The group each session lives in, kept after the session row goes (events like session.deleted are journaled after the
+ * row is gone). Filled by a trigger on sessions; sessions never change group (@@@group-folders).
+ */
+export const activitySessionChats = sqliteTable('activity_session_chats', {
+  sessionId: text('session_id').primaryKey(),
+  chatId: text('chat_id'),
+});
 
 export const activityCoverage = sqliteTable('activity_coverage', {
   id: text('id').primaryKey(),

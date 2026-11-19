@@ -9,6 +9,7 @@
 //   · project_settings / project_remotes / automations.project_id move to the root folder (workspace id);
 //   · legacy_project_aliases records every project (id → root folder, group) for ids written outside this database;
 //   · the mapping's per-account `files` cache moves into file_revision_cache;
+//   · activity events take their project's group (column and JSON);
 //   · a placeholder project row lets new sessions satisfy the previous release's NOT NULL project_id after a rollback.
 // Then the mapping file is renamed `.migrated-c1` (kept for a rollback) and `<userData>/migrations/group-folders-v1.done`
 // is written with a summary. A project bound to different groups by different accounts of this device is left without a
@@ -149,8 +150,19 @@ export async function runGroupFoldersOnce(deps: GroupFoldersDeps): Promise<Group
       db.prepare('INSERT OR REPLACE INTO legacy_project_aliases (project_id, root_workspace_id, chat_id) VALUES (?, ?, ?)')
         .run(project.id, root, group)
     }
+    // The activity journal is grouped by group now: an event of a project takes that project's group, in its column and
+    // in its (strictly parsed) JSON; one with no group just loses the project key.
+    db.prepare(`UPDATE activity_events SET
+        chat_id = (SELECT a.chat_id FROM legacy_project_aliases a WHERE a.project_id = activity_events.project_id),
+        data = CASE WHEN (SELECT a.chat_id FROM legacy_project_aliases a WHERE a.project_id = activity_events.project_id) IS NULL
+          THEN json_remove(data, '$.project_id')
+          ELSE json_set(json_remove(data, '$.project_id'), '$.chat_id',
+            (SELECT a.chat_id FROM legacy_project_aliases a WHERE a.project_id = activity_events.project_id)) END
+      WHERE project_id IS NOT NULL OR json_extract(data, '$.project_id') IS NOT NULL`).run()
     // Ambiguous bindings: no group rather than a guess (listed in the summary).
     for (const projectId of ambiguous.keys()) db.prepare('UPDATE sessions SET chat_id = NULL WHERE project_id = ?').run(projectId)
+    // 0054 recorded every session's group before it was known: record it again now that it is.
+    db.prepare('INSERT OR REPLACE INTO activity_session_chats (session_id, chat_id) SELECT id, chat_id FROM sessions').run()
     if (mapping) {
       const insert = db.prepare('INSERT OR REPLACE INTO file_revision_cache (account_id, item_id, version, revision_json) VALUES (?, ?, ?, ?)')
       for (const [account, entries] of Object.entries(mapping.files)) {
