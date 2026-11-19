@@ -1,3 +1,4 @@
+import { buildSessionPermissionOptions } from '@shared/session-permission-options';
 import { customClaudeReviewSource } from '@gugu/session-core/models/auto-review-source';
 import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { createFailureLogFields } from './create-failure-log-fields';
@@ -322,10 +323,26 @@ export async function createModels(
     const fast = customRef ? null : platformModel
       ? await platformCreationFastGroup(request.harness, requestedModel!)
       : creationFastGroup(agent.capabilities, requestedModel ?? catalog.selected, state);
+    const reviewQualified = (!customRef || request.harness !== 'claude' || customReview !== null) && catalogAllowsAutoReview(agent.capabilities?.autoApprove?.modes, state,
+          platformModel ? 'platform' : customRef ? 'custom' : 'own', runtimeModelId(requestedModel) ?? (state.kind === 'ready' ? state.selected : null));
+    const reviewAllowed = reviewQualified && customReview?.kind !== 'platform-fallback';
+    const cliVersion = state.kind === 'ready' || state.kind === 'auth-required' ? state.cliVersion : undefined;
+    const floor = agent.capabilities?.autoApprove.modes?.['ai-review']?.reviewRequirements?.minimumCliVersion;
+    const versionTooOld = cliVersion && floor && cliVersion.split('.').reduce((n, part) => n * 10000 + Number(part), 0) < floor.split('.').reduce((n, part) => n * 10000 + Number(part), 0);
+    const permissionOptions = buildSessionPermissionOptions({
+      modeMap: agent.capabilities?.autoApprove.modes,
+      native: state.kind === 'ready' || state.kind === 'auth-required' ? state.permissionModes : undefined,
+      structuralFullAccess: request.harness === 'grok',
+      leg: sessionpageLegOfView(view.view),
+      review: { allowed: reviewAllowed, byHaiku: customReview?.kind === 'own' && customReview.byHaiku,
+        reason: !cliVersion ? 'taskConfig.reviewEligibilityUnknown' : versionTooOld ? 'taskConfig.reviewVersionUnsupported'
+          : state.kind !== 'ready' ? 'taskConfig.reviewEligibilityUnknown' : !state.reviewerAvailable ? 'taskConfig.reviewNativeUnavailable' : 'taskConfig.reviewUnavailable' },
+    });
     return {
       ok: true,
       value: {
         ...(fast ? { fast } : {}),
+        permissionOptions,
         customModels: customRecords,
         modelProtocols: agent.capabilities?.modelProtocols,
         customModel: agent.capabilities?.customModel,
@@ -341,12 +358,7 @@ export async function createModels(
           ...(m.hidden ? { hidden: true } : {}),
         })),
         selected: catalog.selected,
-        ...((!customRef || request.harness !== 'claude' || customReview !== null) && catalogAllowsAutoReview(agent.capabilities?.autoApprove?.modes, state,
-          platformModel ? 'platform' : customRef ? 'custom' : 'own', runtimeModelId(requestedModel) ?? (state.kind === 'ready' ? state.selected : null))
-          ? { autoReview: { model: requestedModel ?? (state.kind === 'ready' ? state.selected! : ''),
-            ...(customReview?.kind === 'platform-fallback' ? { disabled: true } : {}),
-            ...(customReview?.kind === 'own' && customReview.byHaiku ? { reviewByHaiku: true } : {}),
-          } } : {}),
+        ...(reviewQualified ? { autoReview: { model: requestedModel ?? (state.kind === 'ready' ? state.selected! : ''), ...(customReview?.kind === 'platform-fallback' ? { disabled: true } : {}), ...(customReview?.kind === 'own' && customReview.byHaiku ? { reviewByHaiku: true } : {}) } } : {}),
         efforts: Object.entries(resolvedEfforts?.options ?? {}).map(([id, option]) => ({
           id,
           name: option.name,

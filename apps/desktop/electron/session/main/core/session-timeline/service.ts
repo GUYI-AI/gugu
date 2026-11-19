@@ -1008,7 +1008,7 @@ export async function sessionOptions(input: SessionpageSessionOptionsRequest): P
   const row = readSessionRow(input.conversationId);
   if (!row) return fail('session_not_found', '这台机器上没有这条会话');
   try {
-    if (await neverStarted(row)) return { ok: true, value: await recordedSessionOptions(row) };
+    if (await neverStarted(row)) return { ok: true, value: await withModelMenu(row, await recordedSessionOptions(row), input.includeOwnModelCatalog) };
     // #980 打开会话不叫醒 agent,手机上也一样(behavior session-page;owner 2026-10-30 取代 09-15「读选项先唤醒」):
     // 手机打开会话就来读这一份,而参数(权限档 / 推理档)住在活运行时里。没在跑就报记录里那一档模型(带模型菜单,换得了),
     // 权限档 / 推理档等它跑起来再报 —— 它们的 id 是各家运行时自己的。改一档是人点的,那一刻再起(`setSessionOptionValue`)。
@@ -1076,7 +1076,15 @@ async function withModelMenu(
   includeOwnModelCatalog?: true
 ): Promise<SessionpageSessionOptionsWithMenu> {
   if (!row.provider) return options;
-  const modeMap = options.mode ? declaredModeMap(row.provider) : undefined;
+  const declared = declaredModeMap(row.provider);
+  if (declared?.['ai-review']) {
+    const platform = await (await import('@main/core/sessions/platform-model-selection')).sessionPlatformModel(row.id);
+    const read = await (await import('./create-session')).createModels({ harness: row.provider, sessionView: 'general',
+      model: platform ? 'platform:' + platform.modelId : row.config?.model });
+    const group = read.ok ? read.value.permissionOptions : null;
+    options = { ...options, mode: group ? { ...group, selected: options.mode?.selected ?? (row.config?.permissionMode ? declared[row.config.permissionMode]?.id ?? null : null) } : null };
+  }
+  const modeMap = options.mode ? declared : undefined;
   const modelMenu = options.model ? await readSessionModelMenu(row.id, row.provider, includeOwnModelCatalog) : undefined;
   const permissionAgentName = options.mode ? modelMenu?.agentName ?? await readSessionPermissionAgentName(row.provider) : undefined;
   return { ...options, ...(modelMenu ? { modelMenu } : {}), ...(modeMap ? { modeMap } : {}), ...(permissionAgentName ? { permissionAgentName } : {}) };
