@@ -161,9 +161,11 @@ export function resolveComposerModelPanel(input: {
   modelCount: number;
   effortCount: number;
   unlock: boolean;
+  /** An actual preparation or setting notice keeps an empty menu reachable. */
+  notice?: boolean;
 }): ComposerModelPanel {
   const modelRow = input.modelCount > 0 || input.unlock ? 'list' : 'none';
-  if (modelRow === 'none' && input.effortCount === 0) return { kind: 'hidden' };
+  if (modelRow === 'none' && input.effortCount === 0 && !input.notice) return { kind: 'hidden' };
   return { kind: 'shown', modelRow };
 }
 

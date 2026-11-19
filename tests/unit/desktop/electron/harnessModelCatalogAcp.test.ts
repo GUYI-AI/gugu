@@ -1440,3 +1440,73 @@ function handle(msg) {
     expect((await methods(seen)).map((call) => call.method)).not.toContain('authenticate')
   })
 })
+
+
+describe('Codex catalog preparation facts', () => {
+  beforeEach(() => {
+    __resetHarnessModelCatalogCache()
+    setCatalogStore(null)
+    setSpawnIdentityResolver(async () => null)
+  })
+  afterEach(async () => {
+    await __drainProbesForTest()
+    __resetHarnessModelCatalogCache()
+  })
+
+  it.each(['ready', 'exit'] as const)('shares native preparation without new probes and clears it on %s', async (outcome) => {
+    const dir = await mkdtemp(join(tmpdir(), 'gugu-catalog-progress-'))
+    const release = join(dir, 'release')
+    const progress = { phase: 'history', startedAt: 123_000, attempt: 2 }
+    // The progress frame crosses chunks; Unicode separators in a diagnostic are not JSONL boundaries.
+    const line = '[gugu-codex-preparing] ' + JSON.stringify(progress) + '\r\n'
+    const entry = await fakeAgent(`
+import { existsSync } from 'node:fs';
+function handle(msg) {
+  if (msg.method === 'initialize') {
+    process.stderr.write('unrelated \u2028 \u2029 diagnostic\\n');
+    process.stderr.write(${JSON.stringify(line.slice(0, 15))});
+    setImmediate(() => process.stderr.write(${JSON.stringify(line.slice(15))}));
+    const timer = setInterval(() => {
+      if (!existsSync(${JSON.stringify(release)})) return;
+      clearInterval(timer);
+      if (${JSON.stringify(outcome)} === 'exit') return process.exit(7);
+      process.stderr.write('[gugu-codex-preparing] null\\n');
+      reply(msg.id, { protocolVersion: 1 });
+    }, 10);
+  }
+  if (msg.method === 'session/new') reply(msg.id, {
+    sessionId: 'prepared', configOptions: [{
+      id: 'model', category: 'model', type: 'select', currentValue: 'native',
+      options: [{ value: 'native', name: 'Native' }]
+    }]
+  });
+}
+`)
+    let spawns = 0
+    setAcpSpawnResolver(async () => {
+      spawns++
+      return { command: process.execPath, args: [entry], env: {} }
+    })
+    const options = { leg: 'acp' as const, harnessVersion: 'progress-fixture' }
+    try {
+      await lookupHarnessModelCatalog('codex', options)
+      const pending = await awaitFact('native catalog preparation reaches the lookup', async () => {
+        const lookup = await lookupHarnessModelCatalog('codex', options)
+        return lookup.preparation ? lookup : undefined
+      })
+      expect(pending).toEqual({ state: { kind: 'unknown' }, refreshing: true, preparation: progress })
+      const [reader1, reader2] = await Promise.all([
+        lookupHarnessModelCatalog('codex', options), lookupHarnessModelCatalog('codex', options),
+      ])
+      expect(reader1.preparation).toEqual(progress)
+      expect(reader2.preparation).toEqual(progress)
+      expect(spawns).toBe(1)
+    } finally { await writeFile(release, 'release') }
+    await __drainProbesForTest()
+    const final = await lookupHarnessModelCatalog('codex', options)
+    expect(final.refreshing).toBe(false)
+    expect(final.preparation).toBeUndefined()
+    expect(final.state.kind).toBe(outcome === 'ready' ? 'ready' : 'unavailable')
+    expect(spawns).toBe(1)
+  })
+})

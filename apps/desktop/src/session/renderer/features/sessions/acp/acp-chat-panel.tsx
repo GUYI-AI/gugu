@@ -200,6 +200,7 @@ import { useSessionHeroCopy } from './use-session-hero-copy';
 import { useLastTurnSignInRequired } from './use-last-turn-sign-in';
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { isAuthExpired } from '@renderer/lib/stores/harness-auth-expiry';
+import { useCodexPreparationNotice } from '@renderer/lib/stores/use-codex-preparation-notice';
 import { useHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { filterSlashCommands } from './slash-command-matching';
 import { startupPlaceholderKey } from './startup-placeholder';
@@ -868,6 +869,7 @@ const ComposerForStore = observer(function ComposerForStore({
   const [catalogMenuSession, setCatalogMenuSession] = useState<string | null>(null);
   const readOwnCatalog = route !== 'own' || !store.session || catalogMenuSession === store.sessionId;
   const harnessCatalog = useHarnessModelCatalog(readOwnCatalog ? providerId : null, 'acp');
+  const modelPreparationNotice = useCodexPreparationNotice(harnessCatalog.preparation);
   const onModelMenuOpen = () => {
     platformCatalog.refresh();
     if (readOwnCatalog) harnessCatalog.refresh();
@@ -1501,7 +1503,7 @@ const ComposerForStore = observer(function ComposerForStore({
         onModelChange={handleModelChange}
         modelMenuOpenRequest={modelMenuRequest}
         modelSettingNotice={modelSettingNotice}
-        modelMenuNotice={lockedForTurn ? translate('composer.modelBusy') : undefined}
+        modelMenuNotice={lockedForTurn ? translate('composer.modelBusy') : modelPreparationNotice}
         onModelMenuOpen={onModelMenuOpen}
         modelUnlock={ownCatalogRetry}
         onModelUnlock={ownCatalogRetry ? harnessCatalog.retry : undefined}
