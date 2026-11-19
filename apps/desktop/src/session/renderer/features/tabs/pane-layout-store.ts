@@ -12,7 +12,7 @@ import type {
 import type { TabPersistenceAdapter } from './persistence';
 import { accountTabPlacementMemory, type TabPlacementMemory } from './tab-placement-memory';
 import { declaredShare } from './side-width';
-import { CHAT_TOOL_DROP_PREFIX, CHAT_TOOL_MIN_VISIBLE_PANE_PX, chatDividerAt, chatToolDropId, type ChatToolSide } from './chat-tool-geometry';
+import { CHAT_TOOL_BUBBLE_MAX_WIDTH_PX, CHAT_TOOL_DROP_PREFIX, CHAT_TOOL_MIN_VISIBLE_PANE_PX, chatDividerAt, chatToolDropId, type ChatToolSide } from './chat-tool-geometry';
 import {
   equalizeSplit,
   evenSizes,
@@ -202,6 +202,8 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       chatWorkspaceMode: computed,
       chatWorkspacePanes: computed,
       chatWorkspaceSinglePaneId: computed,
+      chatWorkspaceConversationPresentation: computed,
+      showChatWorkspaceConversation: action,
       attachChatWorkspace: action,
       moveChatToolGroup: action,
       collapseChatToolSide: action,
@@ -278,6 +280,10 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   setChatToolLayout(mode: PopulatedChatToolLayout): void {
     if (!this.primaryChatTabId || !this._hasToolTabs()) return;
     this._chatToolLayout.set(mode);
+    if (mode === 'full') {
+      const tools = this.chatWorkspacePanes?.tools;
+      if (tools) this.activePaneId = tools.paneId;
+    }
     this._focusChatWorkspacePage();
   }
 
@@ -344,8 +350,21 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   get chatWorkspaceSinglePaneId(): string | undefined {
     const panes = this.chatWorkspacePanes;
     if (this.chatWorkspaceMode === 'hidden') return panes?.chat.paneId;
-    if (this.chatWorkspaceMode === 'full') return panes?.tools?.paneId;
+    if (this.chatWorkspaceMode === 'full') return this.activePaneId === panes?.chat.paneId ? panes.chat.paneId : panes?.tools?.paneId;
     return undefined;
+  }
+
+  get chatWorkspaceConversationPresentation(): 'pane' | 'tab' | 'bubble' {
+    const mode = this.chatWorkspaceMode;
+    const panes = this.chatWorkspacePanes;
+    if (!panes?.tools || (mode !== 'full' && !(mode === 'split' && this.narrow))) return 'pane';
+    return this.dimensions && this.dimensions.width < CHAT_TOOL_BUBBLE_MAX_WIDTH_PX && this.activePaneId !== panes.chat.paneId ? 'bubble' : 'tab';
+  }
+
+  showChatWorkspaceConversation(): void {
+    const panes = this.chatWorkspacePanes;
+    if (!panes) return;
+    this.activePaneId = panes.chat.paneId;
   }
 
   isPaneShown(paneId: string): boolean {
@@ -385,7 +404,6 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     const panes = this.chatWorkspacePanes;
     if (!primary || !panes) return false;
     if (tabId === primary) {
-      if (this.chatWorkspaceMode === 'full') this.setChatToolLayout('split');
       this.activePaneId = panes.chat.paneId;
       panes.chat.pane.activeTabId = primary;
       return true;
@@ -416,6 +434,8 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     chat.pane.activeTabId = primary;
     tools.pane.activeTabId = tabId;
     this._recordChatWorkspacePair();
+    // Explicit selection reveals its destination; passive restoration keeps the chosen visibility.
+    if (focus && this.chatWorkspaceMode === 'hidden') this.setChatToolLayout('split');
     if (focus && this.chatWorkspaceMode !== 'hidden') this.activePaneId = tools.paneId;
     this._focusChatWorkspacePage();
     return true;

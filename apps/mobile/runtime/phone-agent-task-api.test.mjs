@@ -7,6 +7,24 @@ import { join } from 'node:path'
 import { openPhoneAgentStore } from './phone-agent-store.mjs'
 import { createPhoneTaskApi } from './phone-agent-task-api.mjs'
 
+test('local history remains readable without live identity ownership while mutations remain denied', async () => {
+  const agent = { sessionId: randomUUID(), agentUserId: randomUUID(), ownershipError: 'identity moved' }
+  let verified = 0, admitted = 0, reads = 0
+  const api = createPhoneTaskApi({ ownerId: randomUUID(), store: { state: { jobs: {} } }, findSession: () => agent,
+    verifyAgent: async () => { verified++; throw Object.assign(new Error('not owner'), { code: 'not_granted' }) },
+    admit: async () => { admitted++ },
+    timelines: Object.fromEntries(['snapshot', 'after', 'older', 'image'].map(method => [method, async row => { assert.equal(row, agent); reads++; return 'local history' }])),
+  })
+  for (const method of ['sessionSnapshot', 'sessionAfter', 'sessionOlder', 'sessionToolImage']) {
+    assert.equal((await api(`sessionTimeline.${method}`, [{ conversationId: agent.sessionId }])).value, 'local history')
+  }
+  assert.equal(verified, 0)
+  assert.equal(reads, 4)
+  await assert.rejects(api('sessionTimeline.sessionSend', [{ conversationId: agent.sessionId, text: 'new input', clientRequestId: randomUUID() }]), { code: 'not_granted' })
+  assert.equal(verified, 1)
+  assert.equal(admitted, 0)
+})
+
 test('admission retains raw caption and files without resolving bytes, permits replay and following text', async () => {
   const store = { state: { jobs: {} }, save: async () => {} }
   const agent = { sessionId: randomUUID(), agentUserId: randomUUID() }

@@ -1,7 +1,7 @@
 import { useDndContext } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Maximize2, MessageSquare, Minimize2, PanelRight } from '@/lib/icons';
+import { Maximize2, Minimize2, PanelRight } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
 import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
 import { folderItem } from '../chats/chat-tabs/chat-panel-item';
@@ -79,15 +79,23 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const Title = tab && chat.pane.registry.has(tab.kind) ? chat.pane.registry.get(tab.kind).TabBarItem : null;
   const full = mode === 'full';
   const toolsShown = full || mode === 'split';
+  const sharedStrip = full || mode === 'split' && layout.narrow;
+  const conversationPresentation = layout.chatWorkspaceConversationPresentation;
+  const chatActive = layout.activePaneId === chat.paneId;
   const divided = mode === 'split' && !!tools && !layout.narrow;
   const toolsFirst = divided && layout.groups[0] === tools;
   const leadingProps = { leadingSlot: leading, reserveShellRestoreLane, leadingReservePx };
   const splitWidth = divided ? `${layout.paneSizes[0]}%` : undefined;
 
-  const chatTitle = !full && (
+  const conversationTab = tab && Title ? <PaneProvider group={chat} passive isFocusedPane={chatActive}>
+    <ChatWorkspaceTabContext.Provider value={{ role: 'conversation', layout }}>
+      <Title tab={{ ...tab, pairRole: undefined, isActive: sharedStrip ? chatActive : tab.isActive }} host={chat.pane} ctx={chat.pane.ctx} />
+    </ChatWorkspaceTabContext.Provider>
+  </PaneProvider> : null;
+  const chatTitle = !sharedStrip && (
     <div data-chat-workspace-chat-header="" className="min-w-0" style={divided && !toolsFirst ? { flex: `0 0 ${splitWidth}` } : { flex: 1 }}>
       <PaneProvider group={chat} passive isFocusedPane={layout.activePaneId === chat.paneId}>
-        <ChatWorkspaceTabContext.Provider value={{ role: 'title', layout }}>
+        <ChatWorkspaceTabContext.Provider value={{ role: toolsShown ? 'conversation' : 'title', layout }}>
           <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={actions}>
             {tab && Title ? <Title tab={tab} host={chat.pane} ctx={chat.pane.ctx} /> : null}
           </TabStripShell>
@@ -97,9 +105,12 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   );
   const toolTabs = toolsShown && tools && (
     <div className="min-w-0" style={toolsFirst ? { flex: `0 0 ${splitWidth}` } : { flex: 1 }}>
-      <PaneProvider group={tools} passive isFocusedPane>
+      <PaneProvider group={tools} passive isFocusedPane={!sharedStrip || !chatActive}>
         <ChatWorkspaceTabContext.Provider value={{ role: 'tool', layout }}>
-          <TabBar toolsOnly tabTrailingSlot={addTab} {...(toolsFirst ? leadingProps : {})} />
+          <TabBar toolsOnly tabTrailingSlot={addTab}
+            leadingTabsSlot={sharedStrip && conversationPresentation !== 'bubble' ? conversationTab : undefined}
+            selectedTabId={sharedStrip ? chatActive ? tab?.tabId : tools.pane.resolvedActiveTabId : undefined}
+            {...(toolsFirst || sharedStrip ? leadingProps : {})} />
         </ChatWorkspaceTabContext.Provider>
       </PaneProvider>
     </div>
@@ -110,24 +121,14 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const toggleLabel = tabsVisible ? hide : show;
   const exit = translate('tabs.exitToolFullView');
   const maximize = translate('tabs.enterToolFullView');
-  const returnToChat = translate('tabs.returnToChat');
   return (
     <div ref={header} className="flex min-w-0 shrink-0 bg-tab-strip" data-chat-workspace-header={mode}>
-      {full && (
-        <div className="shrink-0">
-          <TabStripShell {...leadingProps} actionsSlot={<div className="flex h-full items-center px-1">
-            <Button size="icon-sm" variant="ghost" aria-label={returnToChat} title={returnToChat} onClick={() => layout.setChatToolLayout('split')}>
-              <MessageSquare className="size-3.5" />
-            </Button>
-          </div>} />
-        </div>
-      )}
       {toolsFirst && toolTabs}
       {chatTitle}
       {!toolsFirst && toolTabs}
       <TabBarActionRow atWindowEdge={!!atWindowEdge}>
         {mode === 'empty' && <PaneProvider group={chat} passive isFocusedPane>{addTab}</PaneProvider>}
-        {tabsVisible && tools && (
+        {tabsVisible && tools && !sharedStrip && (
           <Button size="icon-sm" variant="ghost" title={maximize} aria-label={maximize} onClick={() => layout.setChatToolLayout('full')}>
             <Maximize2 className="size-3.5" />
           </Button>

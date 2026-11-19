@@ -1,6 +1,14 @@
 import { z } from 'zod';
 
 /**
+ * 一次压缩在行上的状态。`failed` 不在 RFD 的枚举里,是我们这侧的收敛:压缩失败对用户是**一件要知道的事**
+ * (上下文没被压掉,下一轮可能直接撞窗口),❌ 不能悄悄当成没发生。线上的 `cancelled` 在解码时就收成
+ * `failed`(见 `decode.ts`),行上只有这三个值。
+ */
+export const compactionStatusSchema = z.enum(['in_progress', 'completed', 'failed']);
+export type CompactionStatus = z.infer<typeof compactionStatusSchema>;
+
+/**
  * 上下文压缩在转录里的那一条痕迹（spec `session-history-replay`）。
  *
  * **为什么必须画出来**：压缩之后，agent 那边记得的是一份摘要而不是原文。界面上如果什么都不标，
@@ -8,9 +16,8 @@ import { z } from 'zod';
  * 合同原话是「截断与失败都要留下可诊断的痕迹」。
  *
  * 形状照 ACP 的 `session-compaction` RFD 定：一次压缩是一个带 `compactionId` 的实体，
- * 先 `in_progress` 再 `completed`，摘要可以分块流式补齐。实际喂进来的是哪条通道见
- * `decode.ts` 的 `decodeCompactionSessionUpdate`——今天走的是适配器挂在 tool call 上的
- * `_meta.contextCompaction`。
+ * 先 `in_progress` 再到终态，摘要可以分块流式补齐。两条来源见 `decode.ts` 的
+ * `decodeCompactionSessionUpdate`。
  *
  * ❌ 别把它做成一条普通工具调用 —— 2026-09-10 实测就是这样：不认那个 `_meta` 键时，
  * 一次压缩在界面上长成一个「不认识的工具调用」，标题 `Compact conversation`，
@@ -24,11 +31,7 @@ export const transcriptCompactionSchema = z.object({
   seq: z.number().int(),
   /** 协议给的那次压缩的 id，续报靠它对上号。 */
   compactionId: z.string(),
-  /**
-   * `failed` 不在 RFD 的枚举里，是我们这侧的收敛：压缩失败对用户是**一件要知道的事**
-   * （上下文没被压掉，下一轮可能直接撞窗口），❌ 不能悄悄当成没发生。
-   */
-  status: z.enum(['in_progress', 'completed', 'failed']),
+  status: compactionStatusSchema,
   /** 摘要正文，流式补齐；没有也正常（agent 可以只报边界不给摘要）。 */
   summary: z.string(),
   /** Epoch ms when the compaction row opened. */

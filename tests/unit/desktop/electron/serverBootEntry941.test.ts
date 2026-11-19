@@ -15,6 +15,7 @@ import { resolveDeviceHostInfo } from '../../../../packages/core/src/cloud/devic
 import { hydrateLife, shouldStartOnHydrate } from '../../../../packages/core/src/local/session-life/step'
 import { busyForVersionSwitch, parseAgentStatusView } from '../../../../packages/core/src/shared/agentStatus'
 import type { Hold } from '../../../../packages/core/src/local/session-life/types'
+import type { EditorBufferService } from '../../../../apps/desktop/electron/session/main/core/editor/editor-buffer-service'
 import * as installs from '../../../../apps/desktop/electron/session/main/core/agents/install-progress-ledger'
 
 vi.mock('../../../../packages/core/src/cloud/remoteTunnel', () => ({ tunnelRelayUp: () => false, tunnelActiveAt: () => null }))
@@ -31,7 +32,7 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
   started?: () => void
   registered?: () => void
   deliveryReady?: () => void
-}, viaModule = false, database?: { initialize: () => Promise<Database.Database>; migrate: () => void }) {
+}, viaModule = false, database?: { initialize: () => Promise<Database.Database>; migrate: () => void; editorBufferService?: EditorBufferService }) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gugu-boot-entry941-'))
   const tasks = sessionBootTasks
   for (const failure of tasks.snapshot()) tasks.clearTask(failure.taskId)
@@ -73,6 +74,7 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
       await database?.initialize()
     } },
     './core/agents/custom-models': { migrateCustomModelConnections: () => database?.migrate() },
+    '@main/core/editor/editor-buffer-service': { editorBufferService: database?.editorBufferService ?? stub },
     '../../migrations/task-to-session': { runTaskToSessionOnce: async () => null },
     '../../migrations/session-naming': { runSessionNamingOnce: async () => null },
     '@main/core/sessions/attachments/session-attachment-store': { sweepOrphanSessionAttachmentDirectories: async () => 0 },
@@ -122,6 +124,47 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
 }
 
 describe('real session host boot entry', () => {
+  it('keeps old unsaved drafts through startup and still lets the person discard one explicitly', async () => {
+    const sqlite = new Database(':memory:')
+    try {
+      sqlite.exec(`CREATE TABLE editor_buffers (
+        id TEXT PRIMARY KEY, project_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
+        file_path TEXT NOT NULL, content TEXT NOT NULL, updated_at INTEGER NOT NULL
+      )`)
+      const db = drizzle(sqlite, { schema })
+      const serviceFile = path.resolve(__dirname, '../../../../apps/desktop/electron/session/main/core/editor/editor-buffer-service.ts')
+      const compiled = ts.transpileModule(fs.readFileSync(serviceFile, 'utf8'), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+      })
+      const serviceModule = { exports: {} as { EditorBufferService: new () => EditorBufferService } }
+      const imports: Record<string, unknown> = {
+        '@main/db/client': { db }, '@main/db/schema': schema,
+        '@main/lib/logger': { log: { error: vi.fn() } },
+      }
+      runInNewContext(compiled.outputText, {
+        module: serviceModule, exports: serviceModule.exports,
+        require: (id: string) => imports[id] ?? requireBuiltin(id),
+      })
+      const editor = new serviceModule.exports.EditorBufferService()
+      await editor.saveBuffer('project', 'workspace', 'old.txt', 'unsaved text absent from disk')
+      await editor.saveBuffer('project', 'workspace', 'recent.txt', 'recent unsaved text')
+      sqlite.prepare('UPDATE editor_buffers SET updated_at = ? WHERE file_path = ?')
+        .run(Date.now() - 8 * 24 * 60 * 60 * 1000, 'old.txt')
+
+      await boot('', false, undefined, false, {
+        initialize: async () => sqlite, migrate: () => {}, editorBufferService: editor,
+      })
+
+      expect(await editor.listBuffers('project', 'workspace')).toEqual(expect.arrayContaining([
+        { filePath: 'old.txt', content: 'unsaved text absent from disk' },
+        { filePath: 'recent.txt', content: 'recent unsaved text' },
+      ]))
+      await editor.clearBuffer('project', 'workspace', 'old.txt')
+      expect(await editor.listBuffers('project', 'workspace')).toEqual([
+        { filePath: 'recent.txt', content: 'recent unsaved text' },
+      ])
+    } finally { sqlite.close() }
+  })
   // A desktop records who on another computer is watching its sessions too: its idle reclaim reads that, and a
   // desktop without the relay answered "No handler" to every subscribe.
   it('a desktop (not server mode) installs the device pane relay', async () => {
