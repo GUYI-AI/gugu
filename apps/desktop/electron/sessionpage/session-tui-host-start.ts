@@ -14,7 +14,7 @@ import {
   loadSessionTuiCapabilities,
 } from '../capability-bundle'
 import { writeCapabilityLoadReport } from '../capability-report-store'
-import { GUGU_PLATFORM_BLOCK, buildSessionpageProjectContextBlock } from '../product-platform-prompt'
+import { GUGU_PLATFORM_BLOCK, buildSessionpageGroupContextBlock } from '../product-platform-prompt'
 import { applySessionMaterialization } from '../session-materialization'
 import {
   claudeRendezvousEnv,
@@ -318,7 +318,7 @@ const startOpencodeServeAttach: HostStart = async (ctx, info, platformPromise, {
       autonomy: { permissionMode: resolveSessionPermissionMode(info) },
       additionalEnv: { ...platform.env, ...platform.spawnEnv },
       promptBlocks: {
-        platform: `${GUGU_PLATFORM_BLOCK}${buildSessionpageProjectContextBlock(provisioned.projectContext)}`,
+        platform: `${GUGU_PLATFORM_BLOCK}${buildSessionpageGroupContextBlock(provisioned.groupContext)}`,
       },
     },
     identity: {
@@ -469,7 +469,7 @@ const startProviderSessionBundle: HostStart = async (ctx, info, platformPromise)
     // (宿主刻意不发),模型声明整份从这里下去 —— 判据与理由见 `sessionBundleModelFor`。
     model: sessionBundleModelFor(info.providerId, 'tui', platformForBundle),
     promptBlocks: {
-      platform: `${GUGU_PLATFORM_BLOCK}${buildSessionpageProjectContextBlock(provisioned?.projectContext)}`,
+      platform: `${GUGU_PLATFORM_BLOCK}${buildSessionpageGroupContextBlock(provisioned?.groupContext)}`,
     },
   }
   let identity: Parameters<typeof buildSessionTuiSessionBundle>[0]['identity'] = null
@@ -563,7 +563,7 @@ const startCodexAppServer: HostStart = async (ctx, info, platformPromise, { step
           additionalEnv: platformForCodex.env,
           promptBlocks: includePromptBlocks
             ? {
-                platform: `${GUGU_PLATFORM_BLOCK}${buildSessionpageProjectContextBlock(projectContext)}`,
+                platform: `${GUGU_PLATFORM_BLOCK}${buildSessionpageGroupContextBlock(projectContext)}`,
                 identity: await buildAgentIdentityBootstrap(runtime, agentUserId, identityFacts),
               }
             : {},
