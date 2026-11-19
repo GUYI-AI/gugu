@@ -117,6 +117,8 @@ export const plugin = definePlugin(
     sessionBundle,
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): rewind makes a new session (`execute_rewind` -> newSessionId, 1.12.1).
+      revert: { kind: 'unsupported', reason: 'fork-only' },
     },
     autoApprove: {
       kind: 'supported',

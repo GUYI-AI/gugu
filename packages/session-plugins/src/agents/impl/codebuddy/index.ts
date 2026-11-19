@@ -13,6 +13,7 @@ import {
   BARE_VERSION_LINE,
 } from '@gugu/session-core/agents/plugins/helpers';
 import { createNativeAcpBehavior } from '../../helpers/acp-stdio';
+import { codebuddyRevert } from './revert';
 import {
   CODEBUDDY_ACP_CHINA,
   CODEBUDDY_ACP_INTERNATIONAL,
@@ -70,6 +71,8 @@ export const plugin = definePlugin(
     },
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): ACP ext `_codebuddy.ai/session/rollback` (2.184.0), conversation only. See `revert.ts`.
+      revert: { kind: 'native', via: 'hook', files: 'none' },
       /**
        * 2026-10-19 mac1 实测(2.169.0,裸 ACP + 本地假网关):`session/new` 报 configOptions `mode` / `model` /
        * `thought_level`;`session/set_config_option` 设 `mode=bypassPermissions` / `mode=default` /
@@ -164,9 +167,12 @@ export const provider = registerPluginBehavior(plugin, {
   auth: { checkStatus: codebuddyAuthStatus },
   sessionBundle: { materialize: materializeCodebuddySessionBundle, platformModel },
   // 会话级 argv(`--settings <文档>`)由物化器产出,经 `capabilityArgs` 挂在 `codebuddy --acp` 上。
-  acp: createNativeAcpBehavior((ctx) => ({
-    args: ['--acp', ...(ctx.capabilityArgs ?? [])],
-  })),
+  acp: {
+    ...createNativeAcpBehavior((ctx) => ({
+      args: ['--acp', ...(ctx.capabilityArgs ?? [])],
+    })),
+    revert: codebuddyRevert,
+  },
   prompt: {
     buildCommand: (ctx) =>
       buildStandardCommand(ctx, {

@@ -139,6 +139,8 @@ export const plugin = definePlugin(
     },
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): SDK `resumeSessionAt` in place + optional `rewindFiles`, through claude-agent-acp's `_session/revert`; measured in Gugu, #2970.
+      revert: { kind: 'native', via: 'bridge', files: 'optional' },
       liveSettings: {
         model: {
           channel: 'acp-config-option',

@@ -102,6 +102,8 @@ export const plugin = definePlugin(
     },
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): `/undo N` exists behind the gateway's command dispatch; its persistence was not readable, not measured.
+      revert: { kind: 'unsupported', reason: 'unmeasured' },
       /**
        * The bridge (`runtime/hermes-serve-acp.ts`) speaks `hermes serve` — Hermes Desktop's own backend — and
        * reports the three settings as standard ACP `configOptions` (`mode` / `model` / `thought_level`). Each

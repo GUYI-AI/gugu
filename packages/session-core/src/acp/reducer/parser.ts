@@ -5,7 +5,7 @@ import { messageEntityId } from './ids';
 import type { AgentState } from '../models/agents';
 import type { SessionConfigState, SessionUsage } from '../models/config';
 import type { SessionPlans } from '../models/plan';
-import type { TranscriptTurn, TranscriptTurnOutcome } from '../models/turns';
+import { markHistoryReverted, type TranscriptTurn, type TranscriptTurnOutcome } from '../models/turns';
 import type { NormalizedEvent } from './normalized-event';
 import { initialState, reduce, type ParserState } from './reducer';
 
@@ -174,14 +174,14 @@ export class AcpTranscriptParser {
   }
 
   /** Attach the native receipt to the exact client-submitted message. */
-  setRevertAnchor(messageId: string, anchor: string): void {
+  setRevertAnchor(messageId: string, anchor: string, files = false): void {
     const update = (turn: TranscriptTurn): TranscriptTurn => {
       let changed = false;
       const items = turn.items.map((item) => {
-        if (item.kind !== 'message' || item.role !== 'user' || item.revertAnchor === anchor
+        if (item.kind !== 'message' || item.role !== 'user' || (item.revertAnchor === anchor && !!item.revertFiles === files)
           || !(item.id === messageId || item.id.endsWith(`:${messageId}`))) return item;
         changed = true;
-        return { ...item, revertAnchor: anchor };
+        return { ...item, revertAnchor: anchor, ...(files ? { revertFiles: true as const } : {}) };
       });
       return changed ? { ...turn, items } : turn;
     };
@@ -192,11 +192,11 @@ export class AcpTranscriptParser {
   }
 
   /** A cycle's native history boundary belongs to its inserted user messages. */
-  setActiveRevertAnchor(anchor: string): void {
+  setActiveRevertAnchor(anchor: string, files = false): void {
     const active = this.state.transcript.active;
     if (!active) return;
     const items = active.items.map(item => item.kind === 'message' && item.role === 'user'
-      ? { ...item, revertAnchor: anchor } : item);
+      ? { ...item, revertAnchor: anchor, ...(files ? { revertFiles: true as const } : {}) } : item);
     this.state = { ...this.state, transcript: { ...this.state.transcript, active: { ...active, items } } };
   }
 
@@ -204,8 +204,13 @@ export class AcpTranscriptParser {
   revertBefore(anchor: string): void {
     const index = this.history.findIndex((turn) => turn.items.some((item) =>
       item.kind === 'message' && item.revertAnchor === anchor));
+    const kept = index < 0 ? [] : this.history.slice(0, index);
+    const removed = this.history.slice(kept.length).filter((turn) => turn.items.some((item) =>
+      item.kind === 'message' && item.role === 'user')).length;
+    const last = kept.at(-1);
+    if (last && removed > 0) kept[kept.length - 1] = markHistoryReverted(last, removed, Date.now());
     this.state = { ...this.state,
-      transcript: { committed: index < 0 ? [] : this.history.slice(0, index), active: null },
+      transcript: { committed: kept, active: null },
       agents: [], plan: null, usage: null,
     };
   }

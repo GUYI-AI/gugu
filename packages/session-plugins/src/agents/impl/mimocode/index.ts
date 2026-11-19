@@ -90,6 +90,8 @@ export const plugin = definePlugin(
     },
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): same `SessionRevert` as opencode, serve HTTP only (0.1.15).
+      revert: { kind: 'unsupported', reason: 'off-acp' },
       // MiMo ACP 0.1.13 exposes model and mode as session config options. The host applies
       // both during startup, so omitting this declaration makes every configured session fail
       // before its first request with LiveSettingUndeclared. Effort remains a process-config

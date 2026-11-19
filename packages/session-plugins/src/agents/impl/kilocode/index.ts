@@ -73,6 +73,8 @@ export const plugin = definePlugin(
     },
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): its client calls the serve route `/session/{id}/revert` (7.8.27); nothing on `kilo acp`.
+      revert: { kind: 'unsupported', reason: 'off-acp' },
       // Measured on one live session (7.8.27): model, effort and mode each read back after
       // set_config_option, and the next request carried the new model and reasoning effort.
       liveSettings: {

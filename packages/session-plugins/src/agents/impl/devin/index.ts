@@ -96,6 +96,8 @@ export const plugin = definePlugin(
     sessionBundle,
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): ACP ext `cognition.ai/revert/*` exists (3000.12.57 strings); not measured in Gugu.
+      revert: { kind: 'unsupported', reason: 'unmeasured' },
     },
     autoApprove: {
       kind: 'supported',

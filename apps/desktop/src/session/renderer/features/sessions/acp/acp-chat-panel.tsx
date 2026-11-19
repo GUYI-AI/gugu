@@ -2119,7 +2119,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       onEditMessage: ({ itemId }) => store?.beginMessageEdit(itemId),
       onRetrySend: (itemId) => store?.retryPendingInput(itemId),
       editingMessage: messageEdit ? {
-        ...messageEdit,
+        itemId: messageEdit.itemId,
+        text: messageEdit.text,
         pending: messageEditPending,
         canSubmit: (historyActionsEnabled || !!store?.isRejectedInput(messageEdit.itemId)) && !messageEditPending && messageEdit.text.trim().length > 0,
         // A rejected input has no reply yet: sending it removes nothing.
@@ -2127,6 +2128,10 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         onChange: (text) => store?.changeMessageEdit(messageEdit.itemId, text),
         onCancel: () => store?.cancelMessageEdit(messageEdit.itemId),
         onSubmit: () => void store?.sendMessageEdit(messageEdit.itemId),
+        ...(store?.canRestoreFiles(messageEdit.itemId) ? { restoreFiles: {
+          checked: messageEdit.restoreFiles === true,
+          onChange: (checked: boolean) => store.changeMessageEditRestoreFiles(messageEdit.itemId, checked),
+        } } : {}),
       } : undefined,
       onStop: () => {
         if (!store) return;

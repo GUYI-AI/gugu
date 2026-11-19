@@ -113,6 +113,8 @@ export const plugin = definePlugin(
     sessionBundle,
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): terminal `/undo` / `session.restore` (3.0.74); ACP has no restore.
+      revert: { kind: 'unsupported', reason: 'tui-only' },
     },
     autoApprove: {
       kind: 'supported',

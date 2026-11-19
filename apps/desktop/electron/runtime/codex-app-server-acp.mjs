@@ -1668,7 +1668,9 @@ function turnOutcome(turn) {
   const _meta = historyCanRevert ? { guguRevert: { before: String(turn.id) } } : undefined
   if (status === 'interrupted') return { stopReason: 'cancelled', ...(_meta ? { _meta } : {}) }
   if (status === 'completed' && !failure) return { stopReason: 'end_turn', ...(_meta ? { _meta } : {}) }
-  return { stopReason: 'error', error: { code: -32603,
+  // A failed turn is the one a person most needs to step back from: a refused turn stays in the context and
+  // every later turn is refused with it. Its receipt carries the revert point like any other.
+  return { stopReason: 'error', ...(_meta ? { _meta } : {}), error: { code: -32603,
     message: status === 'failed' ? String(turn?.error?.message ?? 'local Codex turn failed')
       : failure ? `local Codex turn had a failed Gugu tool call: ${failure.tool} (${failure.itemId}): ${failure.details}`
       : `unexpected local Codex turn status: ${status}`,
@@ -2267,6 +2269,8 @@ async function handleAcpRequest(message) {
       throw new Error('Invalid conversation revert target')
     }
     if (!historyCanRevert) throw new Error('Conversation revert requires persisted paginated Codex history')
+    // `thread/revert` "does not revert local file changes": its anchors never offer files, so a restore is a client bug.
+    if (params.files !== undefined && params.files !== 'keep') throw new Error('Codex cannot restore files on revert')
     if (revertingHistory || activeCycle || runningCommands.size) {
       throw new Error('Wait for current work to finish before reverting')
     }
@@ -2275,7 +2279,7 @@ async function handleAcpRequest(message) {
       const result = await appRequest('thread/revert', { threadId: sessionId, beforeTurnId: params.before })
       if (result?.thread?.id !== sessionId) throw new Error('Codex revert changed the thread ID')
       loadGeneration += 1
-      respond(id, { sessionId })
+      respond(id, { sessionId, files: 'kept' })
     } finally { revertingHistory = false }
     return
   }

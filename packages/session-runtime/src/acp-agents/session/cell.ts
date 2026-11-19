@@ -1,4 +1,4 @@
-import type { AcpPermissionParams } from '@gugu/session-core/agents/plugins';
+import type { AcpPermissionParams, AcpRevertAnchor } from '@gugu/session-core/agents/plugins';
 import type {
   RequestPermissionResponse,
   SessionConfigOption,
@@ -927,7 +927,7 @@ export class SessionCell {
     this.deps.callbacks?.onSessionStateChanged?.();
   }
 
-  async revertSession(anchor: string): Promise<Result<{ providerSessionId: string }, AcpSendPromptError>> {
+  async revertSession(anchor: string, restoreFiles = false): Promise<Result<{ providerSessionId: string }, AcpSendPromptError>> {
     if (this.reverting || this.machine.isWorking || this.activeTurnCompletion
       || this.machine.queuedPrompts.length || this.settingsInFlight
       || this.lastRunningAgentCount || this.lastRunningCommandTaskIds.length) {
@@ -938,8 +938,15 @@ export class SessionCell {
     this.reverting = true;
     this.deps.callbacks?.onSessionStateChanged?.();
     try {
-      const result = await this.agent.extMethod('_session/revert', { sessionId: this.acpSessionId, before: anchor });
-      if (result.sessionId !== this.acpSessionId) throw new Error('Revert changed the provider session ID.');
+      // One request for every harness (#2970): a vendor-native agent through its plugin's hook, a Gugu bridge through
+      // `_session/revert`. Either way the conversation is rewound in place, under the same session id.
+      const input = { sessionId: this.acpSessionId, before: anchor, files: restoreFiles ? 'restore' as const : 'keep' as const };
+      if (this.deps.revert) await this.deps.revert.revert(this.agent, input);
+      else {
+        const result = await this.agent.extMethod('_session/revert', input);
+        if (result.sessionId !== this.acpSessionId) throw new Error('Revert changed the provider session ID.');
+        if (input.files === 'restore' && result.files !== 'restored') throw new Error('The conversation was rewound, but the files were not restored.');
+      }
       this.transcript.revertBefore(anchor);
       this.emitTranscriptChanged();
       return ok({ providerSessionId: this.acpSessionId });
@@ -1587,10 +1594,10 @@ export class SessionCell {
       return;
     }
     const cycle = this.activeTurnCompletion;
-    const finish = () => {
+    const finish = (hooked?: AcpRevertAnchor | null) => {
       if (this.activeTurnCompletion !== cycle) return;
-      const anchor = (event._meta?.guguRevert as { before?: unknown } | undefined)?.before;
-      if (typeof anchor === 'string' && anchor) this.transcript.setActiveRevertAnchor(anchor);
+      const revert = hooked ?? event._meta?.guguRevert as { before?: unknown; files?: unknown } | undefined;
+      if (typeof revert?.before === 'string' && revert.before) this.transcript.setActiveRevertAnchor(revert.before, revert.files === true);
       this.rawLog.record({ kind: 'prompt_result', sessionId: this.acpSessionId,
         stopReason: event.stopReason, ...(event.error ? { error: toSerializedError(Object.assign(new Error(event.error.message), event.error)) } : {}) });
       if (event.error || event.stopReason === 'error') {
@@ -1612,18 +1619,27 @@ export class SessionCell {
           ? this.settledOutcome(reason) : { kind: 'done', reason: 'cycle_end' }, { foreground: event });
       }
     };
+    // A vendor-native agent names this turn's rewind point only when asked (`acp.revert`); the turn settles after the
+    // answer so the point lands on this turn's own user message. A failed lookup only means no rewind entry for it.
+    const hook = this.deps.revert;
+    const settle = hook && this.agent.extMethod
+      ? () => void hook.anchorAfterTurn(this.agent, this.acpSessionId, event as unknown as Readonly<Record<string, unknown>>).then(finish, (error: unknown) => {
+        this.deps.logger.warn('SessionCell: rewind point lookup failed', { sessionId: this.sessionId, providerId: this.deps.providerId, error: toSerializedError(error) });
+        finish();
+      })
+      : () => finish();
     // Some providers report a swallowed failure on stderr, independently of their result pipe.
     if (event.stopReason === 'end_turn' && this.deps.turnFailure?.watchesStderr
       && !this.turnHadAgentOutput && !this.providerTurnFailure && !this.providerStderrFailure) {
-      void new Promise(resolve => setTimeout(resolve, STDERR_FAILURE_GRACE_MS)).then(finish);
-    } else finish();
+      void new Promise(resolve => setTimeout(resolve, STDERR_FAILURE_GRACE_MS)).then(settle);
+    } else settle();
   }
 
   private applyReceiptMetadata(requestId: string, meta: SessionPromptReceipt['_meta']): void {
     const request = this.requests.get(requestId);
-    const anchor = (meta?.guguRevert as { before?: unknown } | undefined)?.before;
-    if (request && typeof anchor === 'string' && anchor) {
-      this.transcript.setRevertAnchor(request.messageId, anchor);
+    const revert = meta?.guguRevert as { before?: unknown; files?: unknown } | undefined;
+    if (request && typeof revert?.before === 'string' && revert.before) {
+      this.transcript.setRevertAnchor(request.messageId, revert.before, revert.files === true);
       this.emitTranscriptChanged();
     }
   }

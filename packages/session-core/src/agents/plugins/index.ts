@@ -123,6 +123,9 @@ export type {
   AcpBridgeSource,
   AcpCommandDiscoveryContext,
   AcpStorageForkContext,
+  AcpRevertAnchor,
+  AcpRevertHook,
+  AcpRevertDeclaration,
   AcpTurnEndContext,
   AcpSessionPrepareContext,
   AcpSpawnContext,
@@ -137,7 +140,7 @@ export type {
   LiveSettingDimension,
   LiveSettingsCapability,
 } from './capabilities/acp';
-export { UNSUPPORTED_LIVE_SETTINGS, liveSettingsCapabilitySchema } from './capabilities/acp';
+export { UNSUPPORTED_LIVE_SETTINGS, liveSettingsCapabilitySchema, acpRevertDeclarationSchema } from './capabilities/acp';
 export type {
   AgentAuthContext,
   AgentAuthDescriptor,

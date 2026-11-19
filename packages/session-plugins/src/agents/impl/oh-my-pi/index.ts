@@ -27,6 +27,8 @@ export const plugin = definePlugin(
     sessionBundle: ohMyPiSessionBundleDescriptor,
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): `/branch` writes a new session file (18.22.0), terminal only.
+      revert: { kind: 'unsupported', reason: 'fork-only' },
     },
     hooks: {
       kind: 'plugin',

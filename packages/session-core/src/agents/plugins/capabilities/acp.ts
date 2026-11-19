@@ -462,6 +462,14 @@ export interface IAcpBehavior {
   forkViaNewSessionMeta?(sourceProviderSessionId: string): Record<string, unknown> | undefined;
 
   /**
+   * @@@revert-hook - rewind on a vendor-native ACP agent (#2970). ACP itself has no rewind; a harness whose own ACP
+   * server has one (an extension method) says here how to drive it. Gugu's own bridges implement `_session/revert`
+   * instead and leave this unset — the cell calls this hook when present, else `_session/revert`; there is no third path.
+   * Declared only together with `capabilities.acp.revert = { kind: 'native', via: 'hook' }`.
+   */
+  revert?: AcpRevertHook;
+
+  /**
    * 模型目录探针那一条 `session/new` 带的 `_meta`:让这一家开一条**不装用户 MCP** 的会话。
    * 不声明 = 照常开(这一家的 `session/new` 会把用户的 MCP 全起一遍 —— 那是探针的副作用,不是它要的)。
    *
@@ -517,6 +525,36 @@ export interface IAcpBehavior {
 
 }
 
+/** The rewind point of one turn: `before` is the harness's own id, opaque to Gugu; `files` = it can also restore files. */
+export type AcpRevertAnchor = { before: string; files: boolean };
+
+export type AcpRevertHook = {
+  /**
+   * After a foreground turn settles: the point that rewinds to before this turn, or null when it has none.
+   * `promptResponse` is that turn's `session/prompt` response as the agent sent it (vendors put their own ids there).
+   */
+  anchorAfterTurn(agent: Pick<AcpAgentApi, 'extMethod'>, sessionId: string, promptResponse: Readonly<Record<string, unknown>>): Promise<AcpRevertAnchor | null>;
+  /** Rewind the conversation to before `before`; `keep` must leave files untouched even where the harness restores by default. Throws on failure. */
+  revert(agent: Pick<AcpAgentApi, 'extMethod'>, input: { sessionId: string; before: string; files: 'keep' | 'restore' }): Promise<void>;
+};
+
+/**
+ * What a harness can do for "rewind to before this message" on the ACP leg (#2970), with its evidence beside it.
+ * The runtime truth is the anchor a turn carries (no anchor ⇒ no rewind entry); this declaration is what the
+ * conformance test holds each plugin to, and what tells a reader why a harness has no entry.
+ * · `native`: rewinds in place, same session id. `via: 'bridge'` = Gugu's bridge answers `_session/revert`;
+ *   `via: 'hook'` = the plugin's `acp.revert` hook drives the vendor's own method.
+ *   `files`: `none` never restores; `optional` restores on request; `default-on` restores unless told to keep.
+ * · `unsupported`: no anchor. `off-acp` = native rewind exists but not on the ACP surface Gugu drives;
+ *   `tui-only` = only in its terminal UI; `fork-only` = only by making a new session; `none` = nothing found;
+ *   `unmeasured` = a native method exists but has not been measured end to end in Gugu.
+ */
+export const acpRevertDeclarationSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('native'), via: z.enum(['bridge', 'hook']), files: z.enum(['none', 'optional', 'default-on']) }),
+  z.object({ kind: z.literal('unsupported'), reason: z.enum(['off-acp', 'tui-only', 'fork-only', 'none', 'unmeasured']) }),
+]);
+export type AcpRevertDeclaration = z.infer<typeof acpRevertDeclarationSchema>;
+
 /**
  * Describes whether a provider supports the Agent Client Protocol (ACP) transport.
  * Defaults to `{ kind: 'none' }` so existing plugins need not declare it.
@@ -542,6 +580,8 @@ export const acpCapability = definePluginCapability<IAcpBehavior>()(
       /** Stable ACP `session/new.modes` defaults to the permission dimension when omitted. */
       sessionModes: z.enum(['permission', 'none']).optional(),
       startup: startupSchema.optional(),
+      /** Rewind to before a message (#2970) — required: every ACP harness says what it can do, with its evidence. */
+      revert: acpRevertDeclarationSchema,
     }),
   ]),
   { kind: 'none' },

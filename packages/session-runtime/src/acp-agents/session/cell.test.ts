@@ -3160,14 +3160,48 @@ describe('native in-place conversation revert', () => {
       .map((item) => item.kind === 'message' && item.revertAnchor)).toEqual(['native-1', 'native-2', 'native-3']);
     agent.extMethod = vi.fn().mockResolvedValue({ sessionId: 'session-1' });
     expect(await cell.revertSession('native-2')).toEqual({ success: true, data: { providerSessionId: 'session-1' } });
-    expect(agent.extMethod).toHaveBeenCalledWith('_session/revert', { sessionId: 'session-1', before: 'native-2' });
+    expect(agent.extMethod).toHaveBeenCalledWith('_session/revert', { sessionId: 'session-1', before: 'native-2', files: 'keep' });
     expect(cell.history().committed).toHaveLength(1);
     expect(cell.history().committed[0].items[0]).toMatchObject({ text: 'keep' });
+    expect(cell.history().committed[0].items.at(-1)).toMatchObject({ kind: 'session-notice', code: 'history-reverted', effectiveValue: '2' });
     expect(await cell.prompt({ text: 'cannot race persistence' })).toMatchObject({ success: false, error: { type: 'session_busy' } });
     cell.finishHistoryRevert();
     expect(await cell.prompt({ text: 'replacement' })).toMatchObject({ success: true });
     expect(cell.acpSessionId).toBe('session-1');
     expect(cell.history().committed).toHaveLength(2);
+  });
+
+  it('fails loudly when a bridge does not confirm a requested file restore', async () => {
+    const { cell, agent } = makeCell();
+    agent.prompt = vi.fn().mockResolvedValue({ stopReason: 'end_turn', _meta: { guguRevert: { before: 'native-1', files: true } } });
+    await cell.prompt({ text: 'wrote a file' });
+    const before = cell.transcript.history;
+    agent.extMethod = vi.fn().mockResolvedValue({ sessionId: 'session-1', files: 'kept' });
+    expect(await cell.revertSession('native-1', true)).toMatchObject({ success: false });
+    expect(agent.extMethod).toHaveBeenCalledWith('_session/revert', { sessionId: 'session-1', before: 'native-1', files: 'restore' });
+    expect(cell.transcript.history).toBe(before);
+  });
+
+  it('a vendor-native agent names its points and rewinds through its plugin hook, never `_session/revert` (#2970)', async () => {
+    const agent = new FakeAcpAgent();
+    const revert = {
+      anchorAfterTurn: vi.fn(async (_agent: unknown, _sessionId: string, response: Readonly<Record<string, unknown>>) =>
+        typeof response.userMessageId === 'string' ? { before: response.userMessageId, files: true } : null),
+      revert: vi.fn(async () => {}),
+    };
+    const { cell } = makeCell(agent, { revert });
+    let n = 0;
+    agent.prompt = vi.fn().mockImplementation(async () => ({ stopReason: 'end_turn', userMessageId: `vendor-${++n}` }));
+    agent.extMethod = vi.fn();
+    for (const text of ['keep', 'discard']) await cell.prompt({ text });
+    await vi.waitFor(() => expect(cell.history().committed).toHaveLength(2));
+    expect(revert.anchorAfterTurn).toHaveBeenLastCalledWith(expect.anything(), 'session-1', expect.objectContaining({ userMessageId: 'vendor-2' }));
+    expect(cell.history().committed.flatMap((turn) => turn.items).filter((item) => item.kind === 'message')
+      .map((item) => item.kind === 'message' && [item.revertAnchor, item.revertFiles])).toEqual([['vendor-1', true], ['vendor-2', true]]);
+    expect(await cell.revertSession('vendor-2')).toMatchObject({ success: true });
+    expect(revert.revert).toHaveBeenCalledWith(expect.anything(), { sessionId: 'session-1', before: 'vendor-2', files: 'keep' });
+    expect(agent.extMethod).not.toHaveBeenCalled();
+    expect(cell.history().committed).toHaveLength(1);
   });
 
   it('leaves the transcript unchanged on native refusal or identity change', async () => {

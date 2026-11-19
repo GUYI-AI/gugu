@@ -11,7 +11,7 @@ export type CommitHeader = {
 const commonTool = 'id seq kind toolCallId title toolKind toolName status at completedAt inputSummary backgroundTaskId backgroundTaskDone parentToolCallId locations contentBlocks images imageRefs';
 const tool = (extra = '') => `${commonTool} ${extra}`;
 export const COMMIT_ITEM_HEADER_FIELDS: Readonly<Record<string, string>> = Object.freeze({
-  message: 'id seq kind role at attachments files ownerNotification revertAnchor content',
+  message: 'id seq kind role at attachments files ownerNotification revertAnchor revertFiles content',
   thinking: 'id seq kind segmentId status startedAt durationMs content',
   compaction: 'id seq kind compactionId status startedAt trigger preTokens postTokens durationMs summary error',
   'context-reset': 'id seq kind reason at',

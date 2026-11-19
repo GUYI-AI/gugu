@@ -109,6 +109,8 @@ export const plugin = definePlugin(
     },
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): app-server `thread/revert` (schema 0.169: "does not revert local file changes"); measured in Gugu, #2970.
+      revert: { kind: 'native', via: 'bridge', files: 'none' },
       // The native app-server bridge owns exactly one Codex thread per adapter process.
       maxSessionsPerProcess: 1,
       liveSettings: {

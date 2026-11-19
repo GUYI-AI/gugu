@@ -21,6 +21,7 @@ import { buildQwenHookConfig } from './hooks';
 import { QWEN_PERMISSION_MODES } from './permission-modes';
 import { icon } from './icon';
 import { qwenSubscription } from './subscription';
+import { qwenRevert } from './revert';
 
 const sessionBundle = qwenSessionBundleDescriptor satisfies SessionBundleDescriptor;
 const qwenMcp = qwenScopedMcpAdapter();
@@ -50,6 +51,8 @@ export const plugin = definePlugin(
     subscription: { kind: 'supported', usageRefresh: 'on-open' },
     acp: {
       kind: 'supported',
+      // Rewind to before a message (#2970): ACP ext `qwen/control/session/rewind` (0.27.4); restores files unless `rewindFiles: false`. See `revert.ts`.
+      revert: { kind: 'native', via: 'hook', files: 'default-on' },
       /**
        * 只声明**量过的那一维**(三维各自声明,见 `LiveSettingsCapability`);effort 没量,缺席。
        *
@@ -181,9 +184,12 @@ export const provider = registerPluginBehavior(plugin, {
     materialize: materializeQwenSessionBundle,
   },
   subscription: qwenSubscription,
-  acp: createNativeAcpBehavior(() => ({
-    args: ['--acp', '--experimental-skills'],
-  })),
+  acp: {
+    ...createNativeAcpBehavior(() => ({
+      args: ['--acp', '--experimental-skills'],
+    })),
+    revert: qwenRevert,
+  },
   prompt: {
     buildCommand: (ctx) =>
       buildStandardCommand(ctx, {
