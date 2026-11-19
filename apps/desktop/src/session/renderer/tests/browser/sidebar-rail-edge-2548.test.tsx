@@ -109,9 +109,9 @@ for (const material of ['native', 'opaque'] as const) {
       expect(box.left, state).toBeGreaterThan(lights);
     };
     head('expanded');
-    expect(scheduled.getBoundingClientRect().right).toBeLessThan(history.getBoundingClientRect().left);
-    expect(history.getBoundingClientRect().right).toBeLessThan(search.getBoundingClientRect().left);
-    expect(Math.round(search.getBoundingClientRect().right)).toBe(Math.round(aside.getBoundingClientRect().right) - 12);
+    expect(scheduled.getBoundingClientRect().left - search.getBoundingClientRect().right).toBe(4);
+    expect(history.getBoundingClientRect().left - scheduled.getBoundingClientRect().right).toBe(4);
+    expect(Math.round(history.getBoundingClientRect().right)).toBe(Math.round(aside.getBoundingClientRect().right) - 12);
     expect(document.querySelector('[data-sidebar-foot]')).toBeNull();
     expect(document.querySelector('[data-region="sidebar-scroll"]')!.getBoundingClientRect().bottom).toBe(aside.getBoundingClientRect().bottom);
 
@@ -187,7 +187,7 @@ it('a fold writes no custom property and swaps no class: the names fade as one m
   expect(masks.length).toBeGreaterThan(2);
   expect(scroll.style.maskImage).toMatch(/^linear-gradient\(to right, black 68px, color-mix\(in srgb, black 0(?:\.0+)?%, transparent\) 68px\)/);
   for (const testId of ['sidebar-create-agent', 'sidebar-session-history']) {
-    expect(document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!.style.opacity).toBe('0');
+    expect(getComputedStyle(document.querySelector(`[data-testid="${testId}"]`)!.closest('[inert]')!).opacity).toBe('0');
   }
   document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!.click();
   await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBeGreaterThan(200);

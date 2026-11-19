@@ -264,7 +264,7 @@ describe('the sidebar head', () => {
     expect(state.toggleLeft).toHaveBeenCalledTimes(1);
   });
 
-  it('puts Scheduled and Task history between the bell and Search', async () => {
+  it('puts the bell, Search, Scheduled and Session history to the right of the fold button', async () => {
     await render(<SidebarOneListHead />);
     const head = document.querySelector<HTMLElement>('[data-sidebar-head]')!;
     // The sidebar's 40px top band (the window's drag handle), 20px in: the 32px 「«」 is centred on x = 36.
@@ -272,7 +272,7 @@ describe('the sidebar head', () => {
     expect(head.className).toMatch(/\bpl-5\b/);
     expect(head.style.paddingLeft).toBe('');
     const bell = head.querySelector('[data-notification-slot="toggle"]')!;
-    const order = [q('sidebar-fold')!, bell, q('sidebar-scheduled')!, q('sidebar-session-history')!, q('sidebar-search-trigger')!];
+    const order = [q('sidebar-fold')!, bell, q('sidebar-search-trigger')!, q('sidebar-scheduled')!, q('sidebar-session-history')!];
     const all = [...head.querySelectorAll('*')];
     const positions = order.map((control) => all.indexOf(control));
     expect(positions.every((position) => position >= 0)).toBe(true);

@@ -5,7 +5,7 @@ import { cn } from '@renderer/utils/utils';
 /**
  * A sidebar's 40px top band, the window's drag handle. `controls={2}` leaves the lane of two fixed shell controls at its
  * start. GUYI-AI/gugu#2548 the sidebar as one list carries its own controls in the band (`controls={0}`, its head:
- * collapse, bell, 已安排, 会话历史, search), so it leaves no lane.
+ * collapse, bell, search, 已安排, 会话历史), so it leaves no lane.
  */
 export function SidebarSpace({
   children,
