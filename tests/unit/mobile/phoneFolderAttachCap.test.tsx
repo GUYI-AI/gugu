@@ -5,8 +5,8 @@ import { createReactHarness } from '../../support/testHarness'
 
 const notify = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/notices', () => ({ notify }))
-vi.mock('@/mobile/agent-watch/useMachineLabel', () => ({ useMachineLabel: () => ({ isHome: () => false }) }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/useMachineLabel', () => ({ useMachineLabel: () => ({ isHome: () => false }) }))
+vi.mock('@/components/session-watch/useMachineLabel', () => ({ useMachineLabel: () => ({ isHome: () => false }) }))
+vi.mock('../../../apps/desktop/src/components/session-watch/useMachineLabel', () => ({ useMachineLabel: () => ({ isHome: () => false }) }))
 
 const { usePhoneFolderAttach } = await import('../../../apps/desktop/src/mobile/chat/usePhoneFolderAttach')
 const { MAX_PROJECT_FOLDERS } = await import('../../../apps/desktop/src/session/renderer/features/projects/components/main-panel/project-folders')

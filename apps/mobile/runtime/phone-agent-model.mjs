@@ -44,7 +44,7 @@ export function createPhoneModelAccess(cloud, store, warn) {
         model = { baseUrl, apiKey, model: required(access.model, 'model'), contextWindow: access.context_window ?? undefined }
         if (new URL(model.baseUrl).protocol !== 'https:') throw new Error('平台模型地址必须使用 HTTPS')
         expiresAt = Date.parse(required(access.expires_at, 'expires_at'))
-        if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error('平台模型票据有效期无效')
+        if (!Number.isFinite(expiresAt) || expiresAt <= serverNow()) throw new Error('平台模型票据有效期无效')
       } catch (error) { await settle(id); throw error }
       let stopped = false
       let timer = null
@@ -52,18 +52,18 @@ export function createPhoneModelAccess(cloud, store, warn) {
       const renew = () => {
         renewal = cloud.modelAccess({ action: 'renew', session_id: id }).then((next) => {
           const nextExpiry = Date.parse(required(next.expires_at, 'expires_at'))
-          if (!Number.isFinite(nextExpiry) || nextExpiry <= Date.now()) throw new Error('平台模型续期有效期无效')
+          if (!Number.isFinite(nextExpiry) || nextExpiry <= serverNow()) throw new Error('平台模型续期有效期无效')
           expiresAt = nextExpiry
           if (!stopped) arm()
         }).catch((error) => {
           warn(`平台模型续期失败: ${error.message}`)
           if (stopped) return
-          const remaining = expiresAt - Date.now()
+          const remaining = expiresAt - serverNow()
           if (remaining <= 0) { onExpired(error); return }
-          timer = setTimeout(() => { if (expiresAt <= Date.now()) onExpired(error); else renew() }, Math.min(15_000, remaining))
+          timer = setTimeout(() => { if (expiresAt <= serverNow()) onExpired(error); else renew() }, Math.min(15_000, remaining))
         })
       }
-      const arm = () => { timer = setTimeout(renew, Math.max(1_000, expiresAt - Date.now() - 120_000)) }
+      const arm = () => { timer = setTimeout(renew, Math.max(1_000, expiresAt - serverNow() - 120_000)) }
       arm()
       return {
         model,
@@ -76,3 +76,5 @@ export function createPhoneModelAccess(cloud, store, warn) {
   }
 }
 import { platformModelAccessEnv } from '../../../packages/core/src/local/agent/modelAccess.ts'
+// Ticket expiries are on the backend's clock (`@@@server-clock`); phone-agent-cloud's answers tune it.
+import { serverNow } from '../../../packages/core/src/shared/serverClock.ts'

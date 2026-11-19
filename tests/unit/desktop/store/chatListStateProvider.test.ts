@@ -27,7 +27,7 @@ const {
   publishGate, readMock, shownBoundary,
 } = vi.hoisted(() => ({
   authUser: { id: 'user-1', email: 'user@example.test', nickname: 'User One' },
-  notificationSettings: { messages: false },
+  notificationSettings: { chatMessages: false, chatSound: false },
   chatServiceMock: {
     getMessages: vi.fn(),
     sendMessage: vi.fn(),
@@ -164,8 +164,9 @@ vi.mock('../../../../apps/desktop/src/lib/chatProjection', () => ({
 vi.mock('../../../../apps/desktop/src/lib/supabaseAccountRevisionSource', () => ({
   createSupabaseAccountRevisionSource: () => ({}),
 }))
-vi.mock('../../../../apps/desktop/src/lib/notificationSettings', () => ({
-  useNotificationSettings: () => notificationSettings,
+vi.mock('../../../../apps/desktop/src/lib/devicePreferences', async (importOriginal) => ({
+  ...await importOriginal<object>(),
+  useDevicePreferences: () => notificationSettings,
 }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: { subscribeAppForeground: () => () => {},

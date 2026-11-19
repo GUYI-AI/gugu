@@ -67,20 +67,30 @@ it('shows the context tools, opens recent resources, and removes them only from 
   const openUrl = vi.fn();
   const openRecent = vi.fn();
   const openFolder = vi.fn();
+  const openApp = vi.fn();
   const render = (ctx: typeof group | typeof topic) => act(() => view.render(
     <BrowserWorkspaceStartContent config={{ ctx, openRecent }}
       actions={[
         { id: 'files', label: '文件', icon: <Folder />, onClick: openFolder },
         { id: 'browser', label: '浏览器', icon: <Globe />, onClick: () => {} },
+        { id: 'browser-app', label: '浏览器', icon: <Globe />, section: 'extensions', onClick: openApp },
       ]}
       onOpenUrl={openUrl} onFocusUrl={focusUrl}
     />
   ));
   await render(group);
-  await expect.element(page.getByRole('heading', { name: '工具' })).toBeVisible();
+  await expect.element(page.getByRole('heading', { name: '内置' })).toBeVisible();
   await expect.element(page.getByRole('heading', { name: '最近' })).toBeVisible();
-  await userEvent.click(page.getByRole('button', { name: '文件', exact: true }));
-  await userEvent.click(page.getByRole('button', { name: '浏览器', exact: true }));
+  const builtins = page.getByRole('region', { name: '内置', exact: true });
+  const apps = page.getByRole('region', { name: '应用', exact: true });
+  await expect.element(apps.getByRole('button', { name: '添加应用', exact: true })).toBeVisible();
+  await expect.element(builtins.getByRole('button', { name: '添加应用', exact: true })).not.toBeInTheDocument();
+  await userEvent.click(builtins.getByRole('button', { name: '文件', exact: true }));
+  await userEvent.click(builtins.getByRole('button', { name: '浏览器', exact: true }));
+  await userEvent.click(apps.getByRole('button', { name: '浏览器', exact: true }));
+  expect(openApp).toHaveBeenCalledOnce();
+  await userEvent.click(apps.getByRole('button', { name: '添加应用', exact: true }));
+  expect(navigate).toHaveBeenCalledWith('apps');
   expect(openFolder).toHaveBeenCalledOnce();
   expect(focusUrl).toHaveBeenCalledOnce();
   await userEvent.click(page.getByRole('button', { name: '行程.md', exact: true }));
@@ -113,7 +123,7 @@ it('opens the actual group tab from the header and reveals explicitly requested 
     await act(() => userEvent.click(page.getByRole('button', { name: '显示标签页' })));
     await expect.poll(() => header('split')).not.toBeNull();
     await expect.element(page.getByPlaceholder('搜索或输入网址')).toBeVisible();
-    await expect.element(page.getByRole('heading', { name: '工具' })).toBeVisible();
+    await expect.element(page.getByRole('heading', { name: '内置' })).toBeVisible();
     await expect.element(page.getByRole('heading', { name: '最近' })).toBeVisible();
     await expect.element(page.getByRole('button', { name: '审阅', exact: true })).not.toBeInTheDocument();
     await userEvent.click(page.getByRole('button', { name: '浏览器', exact: true }));

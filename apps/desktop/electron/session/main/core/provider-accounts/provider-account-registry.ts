@@ -97,6 +97,21 @@ export class ProviderAccountRegistry {
     private readonly secretStore: ProviderAccountSecretStore
   ) {}
 
+  /** Metadata-only rename, merged with the latest row in one transaction. */
+  async renameAccount(providerId: string, accountId: string, displayName: string): Promise<ProviderAccount> {
+    const renamed = this.db.transaction((tx) => {
+      const current = tx.select().from(providerAccounts)
+        .where(and(eq(providerAccounts.providerId, providerId), eq(providerAccounts.accountId, accountId))).get();
+      if (!current) throw new Error('Account no longer exists');
+      const meta: ProviderAccountMeta = { ...current.meta, version: '1', displayName };
+      const updatedAt = nextProviderAccountUpdate(current.updatedAt, Date.now());
+      tx.update(providerAccounts).set({ meta, updatedAt }).where(eq(providerAccounts.id, current.id)).run();
+      return toProviderAccount({ ...current, meta, updatedAt });
+    });
+    this.changed();
+    return renamed;
+  }
+
   async upsertAccount(input: ProviderAccountUpsert): Promise<ProviderAccountUpsertResult> {
     const existing = await this.findRow(input.providerId, input.accountId);
     const credentialRef =

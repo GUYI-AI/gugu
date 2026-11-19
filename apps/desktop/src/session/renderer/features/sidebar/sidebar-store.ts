@@ -17,7 +17,7 @@ import { isAssistantAgent, isAssistantSession, launchedByAssistant } from '@rend
 import { taskPresentation } from '@/lib/taskAgentStatus';
 import type { AgentStatusView } from '@gugu/core/shared/agentStatus';
 import type { AgentStatusPresentation } from '@gugu/core/shared/agentStatusPresentation';
-import { sessionPresentation } from '@/mobile/agent-watch/watch-status';
+import { sessionPresentation } from '@/lib/agent-wait/watch-status';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
 import { accountProjectsStore, type AccountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { sidebarStateGroup, type SidebarStateGroup } from './session-groups';

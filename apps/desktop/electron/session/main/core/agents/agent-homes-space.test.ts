@@ -12,6 +12,9 @@ vi.mock('@gugu/session-plugins/agents', () => ({
 vi.mock('@gugu/session-core/agents/plugins/helpers', () => ({
   AgentHomeSpaceError: state.SpaceError, AgentHomeMigrationFailure: class extends Error {},
   checkAgentHomeImportSpace: state.check,
+  AGENT_HISTORY_LIMIT: 4 * 1024 ** 3,
+  readAgentHomePending: async () => null,
+  planAgentHomeHistory: async () => ({ paths: [], issues: [], skipped: [], sessions: 0, sessionBytes: 0 }),
   resolveAgentHome: ({ providerId }: { providerId: string }) => ({
     providerId, userConfigRoot: '/source/' + providerId, configRoot: '/managed/' + providerId,
     shadowHome: '/managed/' + providerId, importGroups: [{ id: 'skills', paths: ['skills/'] }],
@@ -21,6 +24,7 @@ vi.mock('@gugu/session-core/agents/plugins/helpers', () => ({
   importAgentHome: state.importer, updateAgentHomeSource: state.cleanup,
   scanAgentHome: vi.fn(), diffAgentHome: vi.fn(), reimportAgentHome: vi.fn(),
 }));
+vi.mock('@main/app/app-scope', () => ({ appScope: { add: vi.fn() } }));
 vi.mock('@main/db/client', () => ({ db: {} }));
 vi.mock('@main/db/schema', () => ({ sessions: {} }));
 vi.mock('@main/db/kv', () => ({ KV: class { async get(key: string) { return key === 'providers' ? ['codex', 'claude'] : {}; } } }));

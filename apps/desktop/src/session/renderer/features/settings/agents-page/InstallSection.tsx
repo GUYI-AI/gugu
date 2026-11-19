@@ -25,6 +25,8 @@ import {
 import { AgentAdvancedSection } from './AgentAdvancedSection';
 import { InstallationOverrideCard } from './InstallationOverrideCard';
 import { canUninstallManagedSource, managedInstallOption, resolveManagedSourceUpdate } from './agent-source-actions';
+import { ManagedVersionsRow } from './ManagedVersionsRow';
+import { useLibraryHost } from '@renderer/features/library/library-host';
 
 export type AgentInstallationHeader = {
   version: string | null;
@@ -38,6 +40,8 @@ export type AgentInstallationHeader = {
   update: (() => void) | undefined;
   uninstall: (() => Promise<void>) | undefined;
   install: (() => void) | undefined;
+  /** Existing cleanup UI for the active managed mise copy, reused by the compact details dialog. */
+  managedVersions?: ReactNode;
 };
 
 export type InstallSectionProps = {
@@ -49,6 +53,7 @@ export type InstallSectionProps = {
   /** Link to installation documentation, null if not set. */
   installDocs?: string | null;
   renderPage?: (installation: AgentInstallationHeader, settings: ReactNode) => ReactNode;
+  manageOldVersions?: boolean;
 };
 
 /** Owns the existing install/source mutations; presentation follows the approved settings rows. */
@@ -58,8 +63,10 @@ export const InstallSection = observer(function InstallSection({
   installOptions,
   installDocs,
   renderPage,
+  manageOldVersions = false,
 }: InstallSectionProps) {
   const vm = useAgentInstallationStatus(agentId, agentPayload);
+  const host = useLibraryHost();
   const hasRegistryOptions = installOptions.some((option) => option.registry !== undefined);
   /**
    * 各下载源的「最新版本」。这一趟请求**本来就要发**(高级那一项要把版本列出来),
@@ -269,6 +276,8 @@ export const InstallSection = observer(function InstallSection({
 
   const installed = (vm.data?.reading ?? agentPayload?.reading ?? 'not-detected') !== 'not-detected';
   const canUninstall = canUninstallManagedSource(agentPayload, managedCopy, state);
+  const managedVersions = manageOldVersions && inUse === 'managed' && describedInstall?.provenance.kind === 'mise'
+    ? <ManagedVersionsRow key={`${host.key}:${agentId}`} agentId={agentId} name={agentPayload?.name ?? agentId} disabled={vm.isInstalling || vm.isUpdating || vm.isUninstalling || host.remote?.online === false} /> : undefined;
   const sources = (
     <AgentSourceList
         vm={vm}
@@ -286,6 +295,7 @@ export const InstallSection = observer(function InstallSection({
         onUpdate={onManagedUpdate}
         onOpenCustom={openManual}
         customEditor={manualSlot}
+        managedVersions={managedVersions}
       />
   );
   const runnable = vm.status === 'available' && state !== 'broken';
@@ -311,5 +321,6 @@ export const InstallSection = observer(function InstallSection({
     update: onManagedUpdate,
     uninstall: canUninstall ? vm.uninstall : undefined,
     install: managedInstall ? onInstall : undefined,
+    managedVersions,
   }, settings);
 });

@@ -1,3 +1,3 @@
-import { LOCALE_STORAGE_KEY } from '@/i18n/locale'
+import { STORED_PREFERENCES } from '../../apps/desktop/shared/device-preferences'
 
-localStorage.removeItem(LOCALE_STORAGE_KEY)
+localStorage.removeItem(STORED_PREFERENCES.locale.key)

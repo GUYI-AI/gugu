@@ -50,6 +50,14 @@ describe('acp.bridge → entry: the one place a bridge is resolved (#6394)', () 
       .resolves.toBe('/app/node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js');
   });
 
+  it('propagates pairing failure without resolving or starting a bundled bridge', async () => {
+    const d = deps();
+    d.pairClaude.mockRejectedValueOnce(new Error('paired bridge download failed'));
+    await expect(resolveAcpBridgeEntry(CLAUDE, { role: 'acp', cli: resolved, env: {} }, d))
+      .rejects.toThrow('paired bridge download failed');
+    expect(d.resolveBundled).not.toHaveBeenCalled();
+  });
+
   it('login (primary) and an unresolved CLI never probe or download: bundled bridge', async () => {
     const d = deps('/paired');
     await expect(resolveAcpBridgeEntry(CLAUDE, { role: 'primary', cli: resolved, env: {} }, d))

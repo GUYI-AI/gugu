@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { GUGU_MCP_STDIO_RELAY_ENTRY_ENV } from '@gugu/session-plugins/agents';
 
 export const desktopWorkers = {
+  'cursor-import': { entry: 'main/core/session-import/cursor-worker.ts', file: 'cursor-import.js' },
   'git-status': {
     entry: 'main/core/git/status/worker.ts',
     file: 'git-status.js',

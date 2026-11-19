@@ -7,11 +7,19 @@ function fixture() {
   const rows: Record<string, unknown>[] = []
   const methods: string[] = []
   const client = {
+    rpc: async (_name: string, args: { p_device: Record<string, unknown> }) => {
+      const row: Record<string, unknown> = { ...args.p_device, status: 'online', last_seen_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+      rows.push(row)
+      methods.push('register')
+      const error = failure ? { message: 'write failed' } : null
+      if (!error) stored = { ...(stored ?? { capabilities: {} }), ...row }
+      return { error, data: error ? null : { device_id: row.device_id, created: true } }
+    },
     from: () => ({
       upsert: (payload: never) => {
         const row = payload as Record<string, unknown>
         rows.push(row)
-        methods.push('upsert')
+        methods.push('register')
         const error = failure ? { message: 'write failed' } : null
         if (!error) stored = { ...(stored ?? { capabilities: {} }), ...row }
         return Promise.resolve({ error })
@@ -56,12 +64,12 @@ describe('device heartbeat capability registration', () => {
     await f.beat()
     await f.beat()
     expect(f.rows[0]).toHaveProperty('capabilities')
-    expect(f.methods).toEqual(['upsert', 'update'])
+    expect(f.methods).toEqual(['register', 'update'])
     expect(Object.keys(f.rows[1]).sort()).toEqual(['last_seen_at', 'session_digest', 'status', 'updated_at'])
     f.setActions(['changed'])
     await f.beat()
     expect(f.rows[2].capabilities).toMatchObject({ runtimes: ['changed'] })
-    expect(f.methods[2]).toBe('upsert')
+    expect(f.methods[2]).toBe('register')
   })
 
   test.each<Partial<DeviceHeartbeatOptions>>([
@@ -73,7 +81,7 @@ describe('device heartbeat capability registration', () => {
     const f = fixture()
     await f.beat()
     await f.beat(metadata)
-    expect(f.methods).toEqual(['upsert', 'upsert'])
+    expect(f.methods).toEqual(['register', 'register'])
   })
 
   test('a changing session digest is sent on every steady heartbeat', async () => {
@@ -81,7 +89,7 @@ describe('device heartbeat capability registration', () => {
     await f.beat()
     const session = { conversationId: 'task', projectId: 'project', projectName: 'Project', title: 'Busy task', harness: 'codex', agentStatus: 'running', lastInteractedAt: null, supported: true }
     await f.beat({ sessionDigest: () => [session], nowIso: () => '2026-10-25T12:00:00Z' })
-    expect(f.methods).toEqual(['upsert', 'update'])
+    expect(f.methods).toEqual(['register', 'update'])
     expect(f.stored()).toMatchObject({ session_digest: [session], last_seen_at: '2026-10-25T12:00:00Z', updated_at: '2026-10-25T12:00:00Z', status: 'online' })
   })
 
@@ -89,7 +97,7 @@ describe('device heartbeat capability registration', () => {
     const f = fixture()
     await f.beat()
     await f.beat({}, env)
-    expect(f.methods).toEqual(['upsert', 'upsert'])
+    expect(f.methods).toEqual(['register', 'register'])
   })
 
   test.each([null, { capabilities: {} }])('repairs an externally missing or cleared registration: %j', async (row) => {
@@ -98,7 +106,7 @@ describe('device heartbeat capability registration', () => {
     f.replace(row)
     await f.beat()
     expect(f.rows).toHaveLength(3)
-    expect(f.methods).toEqual(['upsert', 'update', 'upsert'])
+    expect(f.methods).toEqual(['register', 'update', 'register'])
     expect(f.rows[1]).not.toHaveProperty('capabilities')
     expect(f.rows[2]).toHaveProperty('capabilities')
     expect(f.stored()?.capabilities).toMatchObject({ runtimes: [] })
@@ -117,7 +125,7 @@ describe('device heartbeat capability registration', () => {
       f.replace(null)
       await f.beat({ deviceId: 'device-0123456789abcdef' })
       expect(warnings).toEqual([{ fields: { device: '89abcdef', write: 'update' }, msg: 'device heartbeat write affected 0 rows' }])
-      expect(f.methods).toEqual(['upsert', 'update', 'update', 'upsert'])
+      expect(f.methods).toEqual(['register', 'update', 'update', 'register'])
     } finally {
       restore()
     }

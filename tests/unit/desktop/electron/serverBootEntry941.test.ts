@@ -28,10 +28,13 @@ const entry = path.resolve(__dirname, '../../../../apps/desktop/electron/session
 async function boot(fail: string, fatal = false, presenceProbe?: {
   reconciliation: (names: ReadonlySet<string>) => Promise<void>
   tmuxSessionNames?: ReadonlySet<string>
+  tmuxError?: Error
+  settleAfterRestart?: (names: ReadonlySet<string>) => Promise<string[]>
   inspect?: (registered: ReturnType<typeof vi.fn>, delivery: ReturnType<typeof vi.fn>) => Promise<void>
   started?: () => void
   registered?: () => void
   deliveryReady?: () => void
+  globalVersionProcessSweep?: () => Promise<void>
 }, viaModule = false, database?: { initialize: () => Promise<Database.Database>; migrate: () => void; editorBufferService?: EditorBufferService }) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gugu-boot-entry941-'))
   const tasks = sessionBootTasks
@@ -79,14 +82,22 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
     '../../migrations/session-naming': { runSessionNamingOnce: async () => null },
     '@main/core/sessions/attachments/session-attachment-store': { sweepOrphanSessionAttachmentDirectories: async () => 0 },
     '@main/core/data-dir-occupancy': { dataDirHeldByAnotherHost: () => ({ held: false }) },
-    '@main/core/pty/tmux-session-name': { listTmuxSessionNames: async () => presenceProbe?.tmuxSessionNames ?? new Set() },
+    '@main/core/pty/tmux-session-name': { listTmuxSessionNames: async () => {
+      if (presenceProbe?.tmuxError) throw presenceProbe.tmuxError
+      return presenceProbe?.tmuxSessionNames ?? new Set()
+    } },
+    '@main/core/dependencies/probe-orphan-sweep': {
+      createProbeOrphanSweepDeps: () => ({}),
+      sweepProbeOrphans: async () => presenceProbe?.globalVersionProcessSweep?.(),
+    },
+
     '@main/core/projects/operations/migrate-project-kind': { migrateProjectKind: () => [] },
     '@main/core/usage/run-interval-recorder': { closeInterruptedRunIntervals: fault('interval'), installRunIntervalRecorder: noop },
     '@main/core/sessions/sendMessage': { claimInterruptedDispatches: fault('dispatch') },
     '@main/core/sessions/session-deferred-messages': { claimInterruptedDeferredMessages: fault('deferred'), installDeferredMessageDelivery: delivery },
     '@main/core/agent-hooks/presence-interrupt': { reconcileSurvivorsWithPresence: (names: ReadonlySet<string>) => presenceProbe?.reconciliation(names) ?? Promise.resolve() },
     '@main/core/agent-status/agent-status-writer': { agentStatusWriter: {
-      initialize: noop, forget: noop, settleAfterRestart: fault('status'),
+      initialize: noop, forget: noop, settleAfterRestart: presenceProbe?.settleAfterRestart ?? fault('status'),
       on: (_name: string, callback: (event: unknown) => void) => { statusHooks.push(callback); return () => {} },
     } },
     '@main/core/sessions/session-events': { sessionEvents: {
@@ -124,6 +135,29 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
 }
 
 describe('real session host boot entry', () => {
+  it('keeps task state when tmux inspection fails, while completing host registration', async () => {
+    const settle = vi.fn(async (_names: ReadonlySet<string>) => [])
+    const reconciliation = vi.fn(async (_names: ReadonlySet<string>) => {})
+    const result = await boot('', false, { tmuxError: new Error('tmux socket EACCES'), settleAfterRestart: settle, reconciliation })
+    expect(result.registered).toHaveBeenCalledOnce()
+    expect(settle).not.toHaveBeenCalled()
+    expect(reconciliation).not.toHaveBeenCalled()
+  })
+  it('still settles interrupted tasks after a confirmed empty tmux inventory', async () => {
+    const settle = vi.fn(async (_names: ReadonlySet<string>) => [])
+    const reconciliation = vi.fn(async (_names: ReadonlySet<string>) => {})
+    await boot('', false, { tmuxSessionNames: new Set(), settleAfterRestart: settle, reconciliation })
+    expect(settle).toHaveBeenCalledOnce()
+    expect([...settle.mock.calls[0][0]]).toEqual([])
+    expect(reconciliation).toHaveBeenCalledOnce()
+  })
+  it('does not trigger a global version-process sweep during startup', async () => {
+    const sweep = vi.fn(async () => {})
+    const result = await boot('', false, { reconciliation: async () => {}, globalVersionProcessSweep: sweep })
+    expect(result.registered).toHaveBeenCalledOnce()
+    expect(sweep).not.toHaveBeenCalled()
+
+  })
   it('keeps old unsaved drafts through startup and still lets the person discard one explicitly', async () => {
     const sqlite = new Database(':memory:')
     try {

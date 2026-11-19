@@ -27,7 +27,7 @@ vi.mock('@/platform', () => ({
   },
 }))
 // 假宿主:订上那一刻推一份整的(协议 8);`mocks.onList` 再推一份整的(合并时整份就是它)。
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   subscribeSessionsList: async () => { mocks.onList?.({ sessions: mocks.baseline }) },
   unsubscribeSessionsList: async () => undefined,
   onLinkChange: () => () => undefined,
@@ -42,7 +42,7 @@ vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
   },
 }))
 
-const { setNotificationSettings } = await import('../../../apps/desktop/src/lib/notificationSettings')
+const { writeDevicePreferences } = await import('../../../apps/desktop/src/lib/devicePreferences')
 
 const { useAgentWatchAlerts, useAgentWatchFocus } = await import('../../../apps/desktop/src/mobile/agent-watch/useAgentWatchAlerts')
 
@@ -78,7 +78,7 @@ function Probe({ focus, page = true }: { focus: { deviceId: string; sessionId: s
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
   harness = createReactHarness()
-  setNotificationSettings({ sound: true })
+  writeDevicePreferences({ chatSound: true })
   mocks.toast.mockReset()
   mocks.showNotification.mockReset().mockResolvedValue({ success: true, displayed: true })
   mocks.systemPermissions = ['notifications']
@@ -127,7 +127,7 @@ describe('agent watch alert delivery', () => {
 
   it('follows the existing sound switch without suppressing the banner', async () => {
     setVisibility('hidden')
-    setNotificationSettings({ sound: false })
+    writeDevicePreferences({ chatSound: false })
     await mountAndAsk()
     expect(mocks.showNotification).toHaveBeenCalledWith(expect.objectContaining({ silent: true }))
   })

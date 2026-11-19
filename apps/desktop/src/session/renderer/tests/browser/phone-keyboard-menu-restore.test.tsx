@@ -21,7 +21,7 @@ let harness: ReturnType<typeof createReactHarness> | undefined
 afterEach(() => { harness?.cleanup(); document.documentElement.removeAttribute('data-phone-shell') })
 const keyboard = (visible: boolean) => window.dispatchEvent(Object.assign(new Event('gugu:phone-keyboard'), { visible }))
 
-it.each([false, true])('native keyboard dismissal restores disclosure and keeps draft controls collapsed=%s', async hasText => {
+it.each([false, true])('native keyboard dismissal shows the menu only if there is no text draft (draft=%s)', async hasText => {
   const group = true
   await page.viewport(390, 844)
   document.documentElement.setAttribute('data-phone-shell', '')
@@ -53,10 +53,9 @@ it.each([false, true])('native keyboard dismissal restores disclosure and keeps 
   editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: 'zhong' }))
   keyboard(false)
   await page.viewport(390, 844)
-  await until('disclosure restored after native keyboard closes', () => !row.hasAttribute('data-editing') && row.hasAttribute('data-collapsed') === hasText && row.getBoundingClientRect().height > 40)
-  expect(row.querySelector('.gg-phone-composer-controls-items')?.hasAttribute('hidden')).toBe(hasText)
-  expect(row.querySelector('[data-testid="phone-composer-menu-toggle"]')?.getAttribute('aria-expanded')).toBe(String(!hasText))
-  expect(row.inert).toBe(false)
+  await until('keyboard closes without overriding the draft', () => !row.hasAttribute('data-editing') && row.hasAttribute('hidden') === hasText)
+  expect(row.getBoundingClientRect().height > 0).toBe(!hasText)
+  expect(row.querySelectorAll('button')).toHaveLength(1)
   expect(document.activeElement).toBe(editor)
   expect(input.querySelector('[contenteditable]')).toBe(editor)
   expect(blur).not.toHaveBeenCalled(); expect(ended).not.toHaveBeenCalled()
@@ -65,17 +64,17 @@ it.each([false, true])('native keyboard dismissal restores disclosure and keeps 
   keyboard(true)
   await until('native keyboard reopens without a focus change', () => row.hasAttribute('data-editing'))
   keyboard(false)
-  await until('second dismissal retains the draft/disclosure distinction', () => !row.hasAttribute('data-editing') && row.hasAttribute('data-collapsed') === hasText)
+  await until('second dismissal obeys the draft', () => !row.hasAttribute('data-editing') && row.hasAttribute('hidden') === hasText)
   expect(document.activeElement).toBe(editor)
   expect(blur).not.toHaveBeenCalled(); expect(ended).not.toHaveBeenCalled()
   editor.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '中' }))
   const engine = (editor as HTMLElement & { editor: { commands: { clearContent: (emit: boolean) => void } } }).editor
   engine.commands.clearContent(true)
-  await until('clearing the text restores the menu with keyboard closed', () => !editor.textContent?.trim() && !row.hasAttribute('data-editing'))
+  await until('clearing the text restores the menu with keyboard closed', () => !editor.textContent?.trim() && !row.hasAttribute('hidden'))
   expect(document.activeElement).toBe(editor); expect(blur).not.toHaveBeenCalled(); expect(ended).toHaveBeenCalledTimes(1)
 })
 
-it('a keyboard belonging to panel search does not hide the empty composer menu', async () => {
+it('panel search keeps working while the keyboard hides the composer menu', async () => {
   await page.viewport(390, 844)
   document.documentElement.setAttribute('data-phone-shell', '')
   harness = createReactHarness()
@@ -89,7 +88,9 @@ it('a keyboard belonging to panel search does not hide the empty composer menu',
   await page.getByRole('textbox', { name: '技能搜索' }).fill('检查')
   keyboard(true)
   const row = harness.container.querySelector<HTMLElement>('[data-phone-composer-controls]')!
-  await until('panel keyboard leaves the empty menu available', () => !row.hasAttribute('data-editing') && row.getBoundingClientRect().height > 40)
+  await until('keyboard hides the underlying menu', () => row.hasAttribute('hidden'))
+  expect(row.getBoundingClientRect().height).toBe(0)
+  await expect.element(page.getByRole('textbox', { name: '技能搜索' })).toBeVisible()
   expect(document.activeElement?.getAttribute('aria-label')).toBe('技能搜索')
   expect(harness.container.querySelector('[contenteditable]')?.textContent?.trim()).toBe('')
 })

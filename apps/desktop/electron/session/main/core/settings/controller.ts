@@ -4,10 +4,13 @@ import { reconcileResourceSampler } from '@main/core/resource-monitor/resource-s
 import { pushIdleCompactionSetting } from '@main/core/acp/idle-compaction-setting';
 import { peekAcpWorkerClient } from '@main/core/acp/runtime-process/host';
 import { createRPCController } from '@shared/lib/ipc/rpc';
+import { devicePreferencesChanged } from './device-preferences';
 import { AppSettingsKeys, appSettingsService, type AppSettings, type AppSettingsKey } from './settings-service';
 
 async function reconcileSettingsRuntimeState(key: AppSettingsKey): Promise<void> {
   if (key === 'resourceMonitor') await reconcileResourceSampler();
+  // The host applies theme, language and tray badge itself (main.ts @@@device-preferences).
+  if (key === 'devicePreferences') devicePreferencesChanged();
   // #3005 Only a running worker is told; a worker that starts later reads the setting as it comes up (never spawn one for this).
   if (key === 'sessions') await pushIdleCompactionSetting(await peekAcpWorkerClient());
   if (key === 'keyboard') {

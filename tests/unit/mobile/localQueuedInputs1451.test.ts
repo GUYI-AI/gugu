@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { localQueuedInputs } from '../../../apps/desktop/src/mobile/agent-watch/local-queued-inputs'
+import { localQueuedInputs } from '../../../apps/desktop/src/components/session-watch/local-queued-inputs'
 import type { SessionInput } from '../../../apps/desktop/src/lib/sessionInputOutbox'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 

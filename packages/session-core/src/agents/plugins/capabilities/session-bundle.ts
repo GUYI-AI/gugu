@@ -1,4 +1,4 @@
-import type { HarnessPlatform } from './platform';
+import type { HarnessPlatform, HarnessWireProtocol } from './platform';
 import type { IPlatformModelBehavior } from './platform-model';
 import type { McpServerOwner } from '../../../mcp/session-toggle';
 import type { McpServer } from '@agentclientprotocol/sdk';
@@ -29,10 +29,14 @@ export type SessionCredentialLifecycle = {
   inferenceOwner: 'provider-process' | 'app-server-process-thread' | 'serve-process-descendants';
   reopenEntry: 'host-session-reload';
   /**
-   * Whether a cross-billing model reload may replace the native provider session id.
-   * `replace` = 原生会话记着的模型在另一条计费路上断言不掉,只能换一条新的原生会话;历史仍在咕咕的会话记录里。
+   * What a cross-billing model reload does with the native provider session.
+   * `preserve` = 原样续接同一条原生会话。
+   * `replace` = 原生会话记着的模型在另一条计费路上断言不掉,只能换一条新的原生会话;历史仍在咕咕的会话记录里,
+   *   harness 自己的上下文从零开始。
+   * `fork` = 原生会话不能换路续接,但能在新路的进程里分叉出一条带着全部历史的新原生会话(同一个 agent,
+   *   上下文都在);此后这条会话就续接分叉出来的那条。
    */
-  sourceChangeSession: 'preserve' | 'replace';
+  sourceChangeSession: 'preserve' | 'replace' | 'fork';
 };
 
 /**
@@ -663,6 +667,8 @@ export interface AgentConfigRoot {
    *    与漏挑一条同罪;区别只在于这个方向的错要少得多、也更好发现。
    */
   carryExclusions: readonly AgentConfigRootCarryExclusion[];
+  /** Pure path classifier: primary transcripts define sessions; associated files share their ID. Null is non-session data. */
+  historySession?: (path: string) => { id: string; primary: boolean } | null;
   /** Existing installs only. Each edit removes a known Gugu-generated entry before import snapshots it. */
   legacyCleanup?: readonly {
     path: string;
@@ -769,7 +775,12 @@ export interface SessionBundleDescriptor {
   /** 平台额度怎么送进这一家(见 `HarnessPlatform`)。**必答**:没接的给 `{ kind: 'unsupported' }`。 */
   platform: HarnessPlatform;
   /** The legacy custom connection can supply credentials while the CLI selects its own model. */
-  customModel?: { modelOptional: true; evidence: string };
+  customModel?: {
+    modelOptional?: true;
+    /** Upstream protocols the bundled local router (cc-switch-cli) turns into this harness's own wire protocol. */
+    convertFrom?: readonly HarnessWireProtocol[];
+    evidence: string;
+  };
   /** Static credential delivery/recovery capability; lease state belongs to the host runtime. */
   credentialLifecycle?: SessionCredentialLifecycleBySurface;
   /** 见 {@link AcpConfigRoot}。 */
@@ -1741,6 +1752,7 @@ const agentConfigRootSchema = z
         })
         .strict()
     ),
+    historySession: z.custom<NonNullable<AgentConfigRoot['historySession']>>((value) => typeof value === 'function').optional(),
     legacyCleanup: z.array(z.object({
       path: importPathSchema(false),
       update: z.custom<NonNullable<AgentConfigRoot['legacyCleanup']>[number]['update']>((value) => typeof value === 'function'),
@@ -1904,7 +1916,7 @@ const sessionCredentialLifecycleSchema = z.object({
   recovery: z.enum(['reopen', 'none']),
   inferenceOwner: z.enum(['provider-process', 'app-server-process-thread', 'serve-process-descendants']),
   reopenEntry: z.literal('host-session-reload'),
-  sourceChangeSession: z.enum(['preserve', 'replace']),
+  sourceChangeSession: z.enum(['preserve', 'replace', 'fork']),
 }).strict();
 
 const platformSurfaceInjectionSchema = z.object({
@@ -2023,7 +2035,11 @@ const sessionBundleDescriptorSchema: z.ZodType<SessionBundleDescriptor> = z.obje
     denied: z.array(z.string().regex(/^[A-Z][A-Z0-9_]*$/)).optional(),
   }).strict().optional(),
   /** ⚠️ 同上:少了这一条,`platform` 会被 zod 静默剥掉(而它是必答字段)。 */
-  customModel: z.object({ modelOptional: z.literal(true), evidence: z.string().min(1) }).strict().optional(),
+  customModel: z.object({
+    modelOptional: z.literal(true).optional(),
+    convertFrom: z.array(z.enum(['anthropic-messages', 'openai-responses', 'openai-chat-completions', 'gemini-generate-content'])).min(1).optional(),
+    evidence: z.string().min(1),
+  }).strict().optional(),
   platform: harnessPlatformSchema,
   /**
    * ⚠️ 同上:少了这一条,`mcpToggle` 会被 zod **静默剥掉** —— 而症状极具迷惑性:

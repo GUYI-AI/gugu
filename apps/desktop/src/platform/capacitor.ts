@@ -1,3 +1,4 @@
+import { androidPushConfirmed, suppressAndroidLocalPushNotification } from '../mobile/android-push/androidPushState'
 import { nativeAndroidAccountClosure } from './androidAccountClosure'
 import { nativePhoneAgentHostAvailable } from './phoneAgentHostCapability'
 import { schedulePhoneNotification } from './phoneNotificationOutlet'
@@ -11,7 +12,8 @@ import { Clipboard } from '@capacitor/clipboard'
 import { LocalNotifications } from '@capacitor/local-notifications'
 import { AndroidSettings, IOSSettings, NativeSettings } from 'capacitor-native-settings'
 import { hostCatalog } from '../../shared/host-localization'
-import type { SupportedLocale } from '@/i18n'
+import type { SupportedLocale } from '@/i18n/locale'
+import { getLocaleSnapshot } from '@/i18n/runtime'
 import type { AppPlatform, SystemPermission, SystemPermissionState } from './types'
 import { createUnsupportedPlatform } from './unsupported'
 import { checkForUpdates, downloadUpdate, installUpdate, updateState } from './capacitorAppUpdate'
@@ -25,11 +27,12 @@ import { getSupabaseUrl } from '@gugu/core/cloud/config'
 
 const base = createUnsupportedPlatform('capacitor', 'Capacitor')
 declare const __GUGU_TIER__: string
-let resolvedLocale: SupportedLocale = 'zh-CN'
+// The phone's native labels (scan overlay, background watch, notification channels) speak the app's language.
+const resolvedLocale = (): SupportedLocale => getLocaleSnapshot().resolvedLocale
 
 // @@@scan (#537-A) - native QR scan via ML Kit's startScan, which uses the *bundled* barcode model
 function buildCancelOverlay(onCancel: () => void): HTMLElement {
-  const labels = hostCatalog(resolvedLocale).barcodeScan
+  const labels = hostCatalog(resolvedLocale()).barcodeScan
   const overlay = document.createElement('div')
   overlay.className = 'gugu-scan-overlay'
   const frame = document.createElement('div')
@@ -125,7 +128,7 @@ function backgroundWatchSettings({ label, text }: BackgroundWatchNotice) {
     // 一句英文、还讲的是它作者关心的事(2026-09-16 在模拟器通知栏里实际看到)。
     // 这一行回答「它凭什么常驻在我通知栏里」,所以说的是给用户的好处,不是机制。
     // 调用方没给就是看管机器那一句(这条通知原本的用途);#7199 只有「手机当设备」在用时,调用方给它自己的一句。
-    text: text ?? hostCatalog(resolvedLocale).backgroundWatch.text,
+    text: text ?? hostCatalog(resolvedLocale()).backgroundWatch.text,
     // 小图标也自己给:不给就是插件的默认图形,跟咕咕别的通知不是一家。
     icon: 'ic_stat_gugu',
     // 着色同理 —— 插件默认是它自己的绿(157f1f),与咕咕的 colorAccent 差一截,
@@ -174,7 +177,7 @@ let channelsReady: Promise<string> | null = null
 
 function ensureNotificationChannels(): Promise<string> {
   if (!channelsReady) {
-    const labels = hostCatalog(resolvedLocale).notificationChannels
+    const labels = hostCatalog(resolvedLocale()).notificationChannels
     channelsReady = Promise.all([
       LocalNotifications.createChannel({ id: ALERT_CHANNEL_ID, name: labels.alerts, importance: 4, vibration: true }),
       notificationChannels.ensureQuietChannel({ name: labels.quiet }),
@@ -212,9 +215,6 @@ export const capacitorPlatform: AppPlatform = {
   downloadUpdate,
   installUpdate,
   systemPermissions: ['notifications', 'camera', 'batteryOptimization', 'microphone'],
-  async syncResolvedLocale(locale) {
-    resolvedLocale = locale
-  },
   subscribeAppForeground(listener, onError) {
     let active = true
     let handle: { remove: () => Promise<void> } | null = null
@@ -271,6 +271,9 @@ export const capacitorPlatform: AppPlatform = {
     }
   },
   async showNotification(payload) {
+    if (androidPushConfirmed() && suppressAndroidLocalPushNotification(true, (await App.getState()).isActive, payload.chatId, payload.kind)) {
+      return { success: false, displayed: false, error: 'APP_NOT_ACTIVE' }
+    }
     // 没权限就回「没弹」,形状同桌面 notifications:show 被系统拒时(electron/main.ts showAppNotification),
     // sendTestNotification 据此给出下一步。❌ 在这里顺手弹授权框 —— 什么时候问由 behavior 定,不由发通知的时机定。
     if (await checkSystemPermission('notifications') !== 'granted') {

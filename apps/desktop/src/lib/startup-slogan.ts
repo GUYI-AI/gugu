@@ -1,4 +1,5 @@
-import { LOCALE_CHANGED_EVENT, LOCALE_STORAGE_KEY, isSupportedLocale, preferHostLanguages, readLocalePreference, resolveLocale, type LocaleSnapshot } from '../i18n/locale'
+import { LOCALE_CHANGED_EVENT, isSupportedLocale, preferHostLanguages, resolveLocale, type LocaleSnapshot } from '../i18n/locale'
+import { STORED_PREFERENCES, firstDevicePreferences } from '../../shared/device-preferences'
 import enUS from '../i18n/locales/en-US/common'
 import zhCN from '../i18n/locales/zh-CN/common'
 
@@ -15,11 +16,11 @@ export function mountStartupSlogan(host: HTMLElement): () => void {
     const languages = preferHostLanguages(hostLanguages,
       navigator.languages?.length ? navigator.languages : [navigator.language])
     const locale = isSupportedLocale(detail?.resolvedLocale) ? detail.resolvedLocale
-      : resolveLocale(readLocalePreference(window.localStorage), languages)
+      : resolveLocale(firstDevicePreferences(window).locale, languages)
     slogan.lang = locale
     slogan.textContent = { 'zh-CN': zhCN, 'en-US': enUS }[locale].startup.slogan
   }
-  const onStorage = (event: StorageEvent) => { if (event.key === LOCALE_STORAGE_KEY || event.key === null) update() }
+  const onStorage = (event: StorageEvent) => { if (event.key === STORED_PREFERENCES.locale.key || event.key === null) update() }
   update()
   host.append(slogan)
   window.addEventListener(LOCALE_CHANGED_EVENT, update)

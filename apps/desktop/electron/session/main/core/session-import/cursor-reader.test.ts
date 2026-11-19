@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, it, vi } from 'vitest'
-import { readCursorHistory } from '../../../../external-import/cursor'
+import { scanCursorHistory, importCursorHistoryBatch } from '../../../../external-import/cursor'
 
 it.each(['node:sqlite', 'better-sqlite3'] as const)('hydrates a Cursor Composer conversation without changing the source (%s)', async (sqliteDriver) => {
   const root = await mkdtemp(join(tmpdir(), 'cursor-history-'))
@@ -38,7 +38,15 @@ it.each(['node:sqlite', 'better-sqlite3'] as const)('hydrates a Cursor Composer 
       source.close()
     }
     const before = await readFile(path)
-    const { rows } = await readCursorHistory(new AbortController().signal, { dataPath: workspaceStorage, sqliteDriver })
+    const signal = new AbortController().signal
+    const selection = await scanCursorHistory(signal, { dataPath: workspaceStorage, sqliteDriver })
+    expect(selection).toEqual({ rows: [{ sourceId, title: 'A Cursor conversation' }], failed: 0 })
+    const rows: unknown[] = []
+    const result = await importCursorHistoryBatch({ owner: 'owner', selection, offset: 0, size: 10 }, {
+      has: () => false,
+      import: (_owner, _source, row) => { rows.push(row); return { sessionId: row.sourceId, projectId: null, title: row.title, importedAt: 1 } },
+    }, signal, { dataPath: workspaceStorage, sqliteDriver })
+    expect(result).toMatchObject({ done: 1, total: 1, failed: 0 })
     expect(rows).toEqual([{
       sourceId,
       title: 'A Cursor conversation',

@@ -20,6 +20,8 @@ export { createDesktopAccountClosureHost } from '../session/main/core/desktop-ac
 export { createDesktopAccountClosureV2Host } from '../session/main/core/desktop-account-closure-v2'
 // Session ids written as a prefix are matched against this machine's session list (main.ts localAddressRows).
 export { listSessions as listLocalSessions } from '../session/main/core/session-timeline/service'
+// session_message's reply_to_message_id written short is matched against the deliveries the caller was given.
+export { receivedMessageIds } from '../session/main/core/sessions/session-orchestration'
 export { appInbox } from '../session/main/core/extensions/app-inbox'
 // #1607 node 5: pushes from another computer for an App projection watched from here; the host's requester hands them over.
 export { projectionRemoteEvent } from '../session/main/core/extensions/projection-remote-viewer'
@@ -228,3 +230,5 @@ export { deviceProjectsPublished, listDeviceProjectRecords, onDeviceProjectsMayb
 export { projectFoldersPublished } from '@main/core/extensions/extension-bridge'
 export { sessionBootTasks } from '../session/main/core/boot-tasks'
 export { flushViewState, viewStateSnapshot } from '@main/core/view-state/view-state-service'
+// @@@device-preferences — the first-frame answer (with the one-time move of the old keys) and the host's followers.
+export { answerDevicePreferences, devicePreferencesNow, onDevicePreferencesChanged } from '@main/core/settings/device-preferences'

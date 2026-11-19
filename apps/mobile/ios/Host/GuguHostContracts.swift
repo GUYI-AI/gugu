@@ -58,3 +58,33 @@ struct GuguHostFailure: Error {
     let message: String
     var envelope: [String: Any] { ["ok": false, "code": code, "message": message] }
 }
+
+/// @@@server-clock — the native host's reading of the backend's clock: the same rule as
+/// packages/core/src/shared/serverClock.ts (see there). Each backend answer's `Date` (whole
+/// seconds) bounds offset = server − local to [Date − received, Date + 1 s − sent]; keep the
+/// intersection, start again from an answer that misses it. Compare times the backend issued
+/// (model ticket expiries) with `now()`; durations and local stamps stay on `Date()`.
+final class GuguServerClock {
+    static let shared = GuguServerClock()
+    private let lock = NSLock()
+    private var low: TimeInterval = 0, high: TimeInterval = 0, known = false
+    private static let httpDate: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss zzz"
+        return formatter
+    }()
+
+    func now() -> Date {
+        lock.lock(); defer { lock.unlock() }
+        return Date().addingTimeInterval(known ? (low + high) / 2 : 0)
+    }
+
+    func observe(date header: String?, sentAt: Date, receivedAt: Date) {
+        guard let header, let at = Self.httpDate.date(from: header), receivedAt >= sentAt else { return }
+        let from = at.timeIntervalSince(receivedAt), to = at.timeIntervalSince(sentAt) + 1
+        lock.lock(); defer { lock.unlock() }
+        if known && from <= high && to >= low { low = max(low, from); high = min(high, to) }
+        else { low = from; high = to; known = true }
+    }
+}

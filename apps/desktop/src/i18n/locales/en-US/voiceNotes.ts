@@ -25,6 +25,8 @@ export default {
       "signed-out": "Your Gugu sign-in has expired. Sign in again, then retry.",
       "membership-required": "Transcribing voice notes needs a membership.",
       "model-unavailable": "Transcription is unavailable right now. Try again later.",
+      "team-monthly-cap-reached": "You have used your monthly team credit limit. Only your AI use is paused. Ask an administrator to raise your limit.",
+      "team-credits-exhausted": "Team credits have run out. AI use is paused for everyone. Ask an administrator to top up.",
       "unreachable": "Can't reach Gugu's models. Check your connection.",
       "service-unavailable": "Something went wrong on Gugu's side. Try again later."
     }

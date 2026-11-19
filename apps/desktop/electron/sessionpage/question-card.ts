@@ -1,14 +1,12 @@
 // gugu-dev#181 ⑨「需要你」: a question an agent asks while working on a group's message goes into that group too, as a
-// question card the agent posts quoting that message. The owner answers it there by replying to it (a pick on the card
-// is that reply); the session's settlement says whether it still waits, so the card is never edited after it is sent.
+// question card the agent posts quoting that message. Its owner answers through the host, which updates this same card.
 //   · Only a group or its topic: in a direct chat the agent's chat page already shows the question under the conversation.
 //   · The message id is the question's own uuid, so a retried ask converges on the same message.
 import type { RemoteSessionCaller } from '@gugu/session-core/session-record/contract'
 import { parseConversationLink } from '@gugu/core/shared/ui/guguLink'
 import { serializeComposerCard } from '@gugu/core/shared/ui/taskCardModels'
 import { makeChatClient } from '../supabase'
-
-type Question = { question: string; options: ReadonlyArray<{ label: string }>; multi_select?: boolean }
+import { agentSettlementQuestions, type AgentQuestionInput } from '../session/main/core/sessions/agent-question-model'
 
 export interface QuestionCardInput {
   auth: { accessToken: string; userId: string }
@@ -19,6 +17,7 @@ export interface QuestionCardInput {
   asked: unknown
   /** The tool call's `questions`, as the agent passed them (already checked by the ask). */
   questions: unknown
+  onPosting?: (questionId: string, card: { chatId: string; messageId: string; ownerUserId: string }) => void
 }
 
 /**
@@ -34,11 +33,11 @@ export async function withQuestionCard(input: QuestionCardInput): Promise<unknow
   }
 }
 
-async function postQuestionCard({ auth, caller, projectId, asked, questions }: QuestionCardInput): Promise<void> {
+async function postQuestionCard({ auth, caller, projectId, asked, questions, onPosting }: QuestionCardInput): Promise<void> {
   const result = asked as { question_id?: unknown; source_link?: unknown } | null
   const questionId = typeof result?.question_id === 'string' ? result.question_id : null
   const source = typeof result?.source_link === 'string' ? parseConversationLink(result.source_link) : null
-  const all = questions as readonly Question[]
+  const all = questions as readonly AgentQuestionInput[]
   const first = all[0]
   if (!questionId || !source?.messageId || !first) return
   const chat = makeChatClient(auth.accessToken)
@@ -48,6 +47,8 @@ async function postQuestionCard({ auth, caller, projectId, asked, questions }: Q
   if (kind !== 'group' && kind !== 'topic') return
   if (!caller.agentUserId) throw new Error('the agent has no 咕咕 identity yet')
   const onePick = all.length === 1 && first.multi_select !== true
+  // Persist the public destination before the network write: a crash after posting must not lose settlement replay.
+  onPosting?.(questionId, { chatId: source.chatId, messageId: questionId.replace(/^agent-question:/, ''), ownerUserId: auth.userId })
   const { error } = await chat.rpc('send_message_idempotent', {
     p_message_id: questionId.replace(/^agent-question:/, ''),
     p_chat_id: source.chatId,
@@ -58,6 +59,7 @@ async function postQuestionCard({ auth, caller, projectId, asked, questions }: Q
       type: 'question',
       text: first.question,
       options: onePick ? first.options.map((option) => option.label) : [],
+      questions: agentSettlementQuestions(all),
       ownerUserId: auth.userId,
       questionId,
       sessionId: caller.sessionId,

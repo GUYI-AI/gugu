@@ -34,7 +34,7 @@ const realDeps: BridgeResolveDeps = {
 
 /**
  * 这一家、这条腿该起哪座桥;`undefined` = 这一家没有桥(CLI 自己讲 ACP)或这条腿不起桥(终端腿)。
- * `wait` 只由真会话启动传(见 `BridgeWait`):配对的那一版还在下载就等它;模型目录探针等调用不等。
+ * 所有配对调用都等所需版本;`wait` 只由真会话启动传,用于显示下载进度(见 `BridgeWait`)。
  */
 export async function resolveHostAcpAdapterEntry(
   providerId: string,

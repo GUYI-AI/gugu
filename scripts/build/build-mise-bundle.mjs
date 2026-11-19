@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defaultMiseCacheDir, DEFAULT_MISE_DOWNLOAD_BASE, obtainMiseArchive } from './mise-archive-cache.mts'
+import { defaultMiseCacheDir, DEFAULT_MISE_DOWNLOAD_BASE, MISE_UPSTREAM_DOWNLOAD_BASE, obtainMiseArchive } from './mise-archive-cache.mts'
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 
@@ -37,6 +37,7 @@ if (existsSync(executable) && existsSync(join(destination, 'release.json')) && r
     const archive = obtainMiseArchive({
       cacheDir: defaultMiseCacheDir(),
       downloadBase: DEFAULT_MISE_DOWNLOAD_BASE,
+      mirrorBase: MISE_UPSTREAM_DOWNLOAD_BASE,
       version: release.version,
       asset: target.asset,
       sha256: target.sha256,

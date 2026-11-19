@@ -9,17 +9,21 @@ import type { AgentHomeGroupId, AgentHomeImportPath } from '../capabilities/sess
 import type { PluginFs } from '../../runtime/fs';
 import { filterUserHooks } from './hooks';
 import {
+  AgentHomeSensitiveLinkError,
   checkAgentHomeImportSpace,
   importedLinkTarget,
+  resolveAgentHomeImportLink,
   streamImportFile
 } from './agent-home-migration';
 export * from './agent-home-migration';
+export * from './agent-home-history';
 import {
   AGENT_HOME_NOT_IMPORTED, AGENT_HOME_IMPORT_REQUIRED } from '../../../workspace-server/agent-config/homes';
 
 const disk: typeof fs = process.versions.electron
   ? (createRequire(import.meta.url)('original-fs') as typeof import('node:fs')).promises : fs;
 export const AGENT_HOME_MARKER = '.gugu-agent-home.json';
+export const AGENT_HOME_PENDING = '.gugu-agent-home.pending.json';
 const FILE_LIMIT = 50 * 1024 * 1024;
 
 export class AgentHomeNotImported extends Error {
@@ -43,9 +47,11 @@ export type AgentHomeImportIssue = {
   path: string;
   reason:
     | 'symlink' | 'sensitive' | 'database' | 'tooLarge' | 'sourceChanged' | 'unreadable'
-    | 'excluded';
+    | 'excluded' | 'historyLimit';
 };
+export type AgentHistoryImportSummary = { imported: number; skipped: number; sessionBytes: number; limitBytes: number };
 export type AgentHomeMarker = {
+  historyImport?: AgentHistoryImportSummary;
   importedAt: string;
   sourceRoot: string;
   groups: AgentHomeGroupId[];
@@ -186,6 +192,7 @@ async function snapshot(root: string, path: string, limit = FILE_LIMIT): Promise
   } catch (error) { if (missing(error)) return null; throw error; }
 }
 function issue(path: string, error: unknown): AgentHomeImportIssue {
+  if (error instanceof AgentHomeSensitiveLinkError) return { path, reason: 'sensitive' };
   const code = (error as NodeJS.ErrnoException).code;
   return { path, reason: code === 'ELOOP' ? 'symlink' : code === 'EFBIG' ? 'tooLarge' : code === 'ESTALE' ? 'sourceChanged' : 'unreadable' };
 }
@@ -214,6 +221,7 @@ async function collect(home: ResolvedAgentHome, options: {
   let projectMcpCount = 0;
   let newestMtime = 0;
   const declarations = importDeclarations(home, options.groups);
+  const root = options.root ?? (await realSource(home.userConfigRoot));
   const seen = new Set<string>();
   const visit = async (path: string, boundary: string, depth: number): Promise<void> => {
     if (seen.has(path)) return;
@@ -233,8 +241,9 @@ async function collect(home: ResolvedAgentHome, options: {
       return null;
     });
     if (!stat) { if (depth > 0) issues.push({ path, reason: 'sourceChanged' }); return; }
-    newestMtime = Math.max(newestMtime, stat.mtimeMs);
-    if (stat.isSymbolicLink()) {
+    const selected = declarations.filter((entry) => matchesPath(path, entry.path));
+    const projectLink = stat.isSymbolicLink() && selected.some(({ spec }) => spec.keys || spec.omitKeys);
+    if (stat.isSymbolicLink() && !projectLink) {
       let linkSnapshots: SnapshotItem[];
       try {
         const linkTarget = await importedLinkTarget(
@@ -243,27 +252,26 @@ async function collect(home: ResolvedAgentHome, options: {
           declarations.map((entry) => entry.path),
           root
         );
-        linkSnapshots = declarations
-          .filter((entry) => matchesPath(path, entry.path))
-          .map(({ group, spec }) => ({
-            id: itemId(path, spec),
-            path,
-            target: localPath(spec.target ?? path),
-            group,
-            spec,
-            hash: hash('symlink:' + linkTarget),
-            mode: stat.mode & 0o777,
-            count: 1,
-            mcpCount: 0,
-            linkTarget,
-            bytes: Buffer.alloc(0)
-          }));
+        linkSnapshots = selected.map(({ group, spec }) => ({
+          id: itemId(path, spec),
+          path,
+          target: localPath(spec.target ?? path),
+          group,
+          spec,
+          hash: hash('symlink:' + linkTarget),
+          mode: stat.mode & 0o777,
+          count: 1,
+          mcpCount: 0,
+          linkTarget,
+          bytes: Buffer.alloc(0)
+        }));
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOSPC') throw error;
         issues.push(issue(path, error));
         return;
       }
       items.push(...linkSnapshots);
+      if (linkSnapshots.length) newestMtime = Math.max(newestMtime, stat.mtimeMs);
       await options.consume?.(linkSnapshots);
       return;
     }
@@ -277,14 +285,13 @@ async function collect(home: ResolvedAgentHome, options: {
       for (const name of children.sort()) await visit(`${path}/${name}`, boundary, depth + 1);
       return;
     }
-    if (!stat.isFile()) {
+    if (!stat.isFile() && !projectLink) {
       issues.push({ path, reason: 'unreadable' });
       return;
     }
     const snapshots: SnapshotItem[] = [];
-    const selected = declarations.filter((entry) => matchesPath(path, entry.path));
     const declared = selected.some((entry) => entry.path === path);
-    const wholeTree = selected.some(
+    const wholeTree = !projectLink && selected.some(
       (entry) =>
         path.startsWith(entry.path.replace(/\/$/, '') + '/') &&
         !entry.spec.keys &&
@@ -292,7 +299,16 @@ async function collect(home: ResolvedAgentHome, options: {
     );
     const strict = selected.some((entry) => entry.path === path && options.strict?.({ group: entry.group, id: itemId(path, entry.spec) }));
     try {
-      if (!wholeTree && stat.size > FILE_LIMIT) { issues.push({ path, reason: 'tooLarge' }); return; }
+      // Project linked documents into regular files so unselected fields cannot cross the import boundary.
+      const input = projectLink ? (await resolveAgentHomeImportLink(home, full, root)).resolved : full;
+      if (input === null) { issues.push({ path, reason: 'sourceChanged' }); return; }
+      const inputStat = projectLink ? await disk.lstat(input) : stat;
+      if (projectLink) {
+        const targetRel = relative(root, input).split(sep).join('/');
+        if (excluded(targetRel, home.carryExclusions)) { issues.push({ path, reason: 'excluded' }); return; }
+        if (!inputStat.isFile()) { issues.push({ path, reason: 'unreadable' }); return; }
+      }
+      if (!wholeTree && inputStat.size > FILE_LIMIT) { issues.push({ path, reason: 'tooLarge' }); return; }
       if (wholeTree && stat.size > FILE_LIMIT) {
         const digest = await streamImportFile(full, undefined, undefined, boundary);
         for (const { group, spec } of selected) {
@@ -313,7 +329,8 @@ async function collect(home: ResolvedAgentHome, options: {
           snapshots.push(item);
         }
       }
-      const content = snapshots.length ? null : await snapshot(boundary, full);
+      const content = snapshots.length ? null : await snapshot(projectLink ? dirname(input) : boundary, input);
+      if (projectLink && await disk.realpath(full) !== input) { issues.push({ path, reason: 'sourceChanged' }); return; }
       if (!content && !snapshots.length) { issues.push({ path, reason: 'sourceChanged' }); return; }
       if (content) {
         if (/\.(?:json|toml)$/.test(path)) {
@@ -347,11 +364,12 @@ async function collect(home: ResolvedAgentHome, options: {
               ? hooks.reduce<number>((sum, entry: unknown) => sum + (object(entry) && Array.isArray(entry.hooks) ? entry.hooks.length : 1), 0) : 0), 0) : 0;
           } catch { /* Unprojected files may be arbitrary user content. */ }
         }
-        const item: Item = { id: itemId(path, spec), path, target, group, spec, hash: hash(projected), mode: stat.mode & 0o777, count, mcpCount };
+        const item: Item = { id: itemId(path, spec), path, target, group, spec, hash: hash(projected), mode: inputStat.mode & 0o777, count, mcpCount };
         items.push(item);
         snapshots.push({ ...item, bytes: projected });
       }
     }
+    if (snapshots.length) newestMtime = Math.max(newestMtime, inputStat.mtimeMs);
     } catch (error) {
       if (!missing(error)) {
         const rejected = issue(path, error);
@@ -361,24 +379,25 @@ async function collect(home: ResolvedAgentHome, options: {
     }
     // Source failures are listed; destination writes and stale choices must fail the operation.
     // Keep at most one bounded source file in memory; large tree assets are streamed.
-    if (snapshots.length) await options.consume?.(snapshots);
+    if (snapshots.length) {
+      await options.consume?.(snapshots);
+    }
   };
-  const root = options.root ?? (await realSource(home.userConfigRoot));
   const paths = [...new Set(declarations.map((entry) => entry.path))].sort();
   const parent = paths.some((path) => path.startsWith('../')) ? await realSource(dirname(home.userConfigRoot)) : root;
   for (const path of paths) await visit(path, path.startsWith('../') ? parent : root, 0);
   return { items, issues, newestMtime, mcpSecrets: [...mcpSecrets], mcpNames: [...mcpNames], projectMcpCount };
 }
 
-export async function readAgentHomeMarker(home: ResolvedAgentHome): Promise<AgentHomeMarker | null> {
+export async function readAgentHomeMarker(home: ResolvedAgentHome, filename = AGENT_HOME_MARKER): Promise<AgentHomeMarker | null> {
   try {
-    const markerPath = join(home.shadowHome, AGENT_HOME_MARKER);
+    const markerPath = join(home.shadowHome, filename);
     if (!(await disk.lstat(markerPath)).isFile()) throw new Error('Managed configuration import record is not a file');
     const bytes = await snapshot(home.shadowHome, markerPath);
     if (!bytes) return null;
     await makeDirectory(home, home.configRoot);
     const value: unknown = JSON.parse(bytes.toString('utf8'));
-    if (object(value) && value.seed === 'copied' && !value.importedAt) {
+    if (filename === AGENT_HOME_MARKER && object(value) && value.seed === 'copied' && !value.importedAt) {
       const legacy: AgentHomeMarker = {
         importedAt: new Date((await disk.stat(join(home.shadowHome, AGENT_HOME_MARKER))).mtimeMs).toISOString(),
         sourceRoot: home.userConfigRoot, groups: home.importGroups.map((group) => group.id),
@@ -393,8 +412,11 @@ export async function readAgentHomeMarker(home: ResolvedAgentHome): Promise<Agen
     return value as AgentHomeMarker;
   } catch (error) { if (missing(error)) return null; throw error; }
 }
-async function writeMarker(home: ResolvedAgentHome, marker: AgentHomeMarker): Promise<void> {
-  const destination = join(home.shadowHome, AGENT_HOME_MARKER), temporary = `${destination}.${randomUUID()}`;
+export function readAgentHomePending(home: ResolvedAgentHome): Promise<AgentHomeMarker | null> {
+  return readAgentHomeMarker(home, AGENT_HOME_PENDING);
+}
+async function writeMarker(home: ResolvedAgentHome, marker: AgentHomeMarker, filename = AGENT_HOME_MARKER): Promise<void> {
+  const destination = join(home.shadowHome, filename), temporary = `${destination}.${randomUUID()}`;
   await disk.writeFile(temporary, `${JSON.stringify(marker, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
   try { await disk.rename(temporary, destination); }
   finally { await disk.rm(temporary, { force: true }); }
@@ -516,8 +538,17 @@ function groupCount(items: Item[], group: AgentHomeGroupId): number {
 export async function scanAgentHome(home: ResolvedAgentHome) {
   const { items, issues, newestMtime, mcpSecrets, mcpNames, projectMcpCount } = await collect(home);
   const marker = await readAgentHomeMarker(home);
+  // The import records hashes of its selected projections, not CLI runtime activity.
+  // Ignore unticked groups and metadata changes (including sibling-file runtime keys).
+  const imported = marker ? items.filter(item => marker.groups.includes(item.group)) : [];
+  const source = new Map(imported.map(item => [item.id, item.hash]));
+  const sourceUpdated = !!marker && !marker.skipped && (marker.legacyBaseline
+    // Old copied homes have no hashes. Keep their signal, restricted to importable files.
+    ? (await collect(home, { groups: new Set(marker.groups) })).newestMtime > Date.parse(marker.importedAt)
+    : imported.some(item => marker.files[item.id] !== item.hash)
+      || Object.keys(marker.files).some(id => !source.has(id) && !issues.some(issue => matchesPath(id.split('#')[0]!, issue.path))));
   return {
-    providerId: home.providerId, userRoot: home.userConfigRoot, marker, newestMtime,
+    providerId: home.providerId, userRoot: home.userConfigRoot, marker, newestMtime, sourceUpdated,
     groups: home.importGroups.map((group) => {
       const members = items.filter((item) => item.group === group.id);
       return { id: group.id, count: groupCount(members, group.id), mcpCount: members.reduce((count, item) => count + item.mcpCount, 0) };
@@ -529,8 +560,10 @@ export async function scanAgentHome(home: ResolvedAgentHome) {
 type AgentHomeImportOptions = {
   groups: ReadonlySet<AgentHomeGroupId>; now?: Date; migratedFrom?: 'shared';
   historyPaths?: readonly string[];
+  historyIssues?: readonly AgentHomeImportIssue[];
   skip?: boolean;
-  upgradeSummary?: (issues: readonly AgentHomeImportIssue[]) => Pick<AgentHomeMarker, 'oldSessionsSkipped' | 'upgradeIssues'>;
+  upgradeSummary?: (issues: readonly AgentHomeImportIssue[]) => Pick<AgentHomeMarker, 'oldSessionsSkipped' | 'upgradeIssues' | 'historyImport'>;
+  prepareAfterPublish?: () => Promise<void>;
   afterCommit?: () => Promise<Pick<AgentHomeMarker, 'upgradeSignIn' | 'terminalNeedsSignIn'> | void>;
 };
 
@@ -576,7 +609,8 @@ export async function importAgentHome(home: ResolvedAgentHome, options: AgentHom
   try {
     const originalMarker = await readAgentHomeMarker(home);
     if (originalMarker && (!originalMarker.skipped || !options.groups.size)) return { marker: originalMarker, issues: [] };
-    if (options.migratedFrom)
+    const pendingMarker = options.prepareAfterPublish ? await readAgentHomePending(home) : null;
+    if (options.migratedFrom && !pendingMarker)
       await checkAgentHomeImportSpace([
         { home, groups: options.groups, historyPaths: options.historyPaths }
       ]);
@@ -602,6 +636,7 @@ export async function importAgentHome(home: ResolvedAgentHome, options: AgentHom
           }) : { items: [] as Item[], issues: [] as AgentHomeImportIssue[] };
       stage = 'history';
       if (options.historyPaths?.length) issues.push(...(await copyAgentHomeHistory(target, options.historyPaths, root)));
+      issues.push(...options.historyIssues ?? []);
       const marker: AgentHomeMarker = {
         importedAt: (options.now ?? new Date()).toISOString(), sourceRoot: home.userConfigRoot,
         groups: [...options.groups], files: Object.fromEntries(items.map((item) => [item.id, item.hash])),
@@ -610,17 +645,25 @@ export async function importAgentHome(home: ResolvedAgentHome, options: AgentHom
         ...options.upgradeSummary?.(issues)
       };
       stage = 'marker';
-      await writeMarker(target, marker);
+      if (options.prepareAfterPublish) {
+        await writeMarker(target, marker, AGENT_HOME_PENDING);
+        if (existing?.skipped) await disk.rm(join(target.shadowHome, AGENT_HOME_MARKER), { force: true });
+      } else await writeMarker(target, marker);
       return { marker, issues };
     };
-    const result = options.migratedFrom ? await stageAgentHomeUpgrade(home, apply) : await apply(home);
+    const result = pendingMarker ? { marker: pendingMarker, issues: pendingMarker.upgradeIssues ?? [] }
+      : options.migratedFrom ? await stageAgentHomeUpgrade(home, apply) : await apply(home);
+    stage = 'history';
+    // Native indexes contain absolute paths, so initialize only after publication at the final root.
+    await options.prepareAfterPublish?.();
     stage = 'sign-in';
     // Path-scoped credentials (for example Keychain) must use the final managed home.
     const upgrade = await options.afterCommit?.();
-    if (!upgrade) return result;
+    if (!upgrade && !options.prepareAfterPublish) return result;
     stage = 'marker';
     const marker = { ...result.marker, ...upgrade };
     await writeMarker(home, marker);
+    if (options.prepareAfterPublish) await disk.rm(join(home.shadowHome, AGENT_HOME_PENDING), { force: true });
     return { ...result, marker };
   } catch (error) {
     if (options.migratedFrom) throw new AgentHomeMigrationFailure(stage, error);

@@ -1,4 +1,4 @@
-import { Clock, FolderInput } from '@/lib/icons'
+import { FolderInput } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
 import React from 'react';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
@@ -7,10 +7,10 @@ import { useAssistantShell } from '@renderer/features/assistant/assistant-shell'
 import { isAssistantAgent } from '@renderer/features/assistant/assistant-lineage';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { sidebarRailTextOpacity, useLeftRailLayout, useSidebarProgressFollow, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
-import { isCurrentView, useNavigate, useWorkspaceSlots } from '@renderer/lib/layout/navigation-provider';
+import { useNavigate, useWorkspaceSlots } from '@renderer/lib/layout/navigation-provider';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { cn } from '@renderer/utils/utils';
-import { SidebarContainer, SidebarContent, SidebarMenu, SidebarMenuButton, sidebarRowContentInsetX } from './sidebar-primitives';
+import { SidebarContainer, SidebarContent } from './sidebar-primitives';
 import { sessionKeyboardNav } from './session-keyboard-nav';
 import { publishSidebarChatView, setSidebarNotificationsOpen, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge';
 import { NotificationSlot } from '@/components/needsYou/NotificationSlot';
@@ -24,9 +24,10 @@ import { SidebarOneList } from './sidebar-one-list';
 import { innerSidebarChat, innerSidebarShownFor } from './inner-sidebar';
 import { RailRowHint } from './rail-row-hint';
 import { SidebarOneListHead, SidebarOneListTop } from './sidebar-one-list-chrome';
+import { UnfinishedAgentCreates } from './unfinished-agent-creates';
 
-// #2548 the desktop left sidebar, one list: the head (collapse, bell, search, 会话历史), 创建智能体 + 「+」, then ONE list
-// (SidebarOneList) down to the window's bottom edge (sidebar-one-list-chrome); 已安排 in the bell's panel. 资源库 and 设置
+// #2548 the desktop left sidebar, one list: the head (collapse, bell, 已安排, 会话历史, search), 创建智能体 + 「+」, then ONE list
+// (SidebarOneList) down to the window's bottom edge (sidebar-one-list-chrome). 资源库 and 设置
 // are on the far-left rail (product spec, #7046) — they belong to the gugu shell. Collapsed = a rail of the list's avatars:
 // the same content, not moved, with its text hidden. Desktop only: the task renderer never runs in the phone shell.
 /**
@@ -183,6 +184,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
       <SidebarContainer className="min-h-0 w-full flex-1 border-r-0">
         <SidebarContent className="flex flex-col" data-notification-original-list="" style={notificationsOpen ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
           <SidebarOneListTop collapsed={railed} onCreateAgent={handleNewSession} />
+          <UnfinishedAgentCreates collapsed={railed} />
           {/* @@@sidebar-single-scroller — the list's one scroll container, with one content layer in it: the chat list
               (ChatListPanel, @@@sidebar-chat-window) virtualises its lines against these two. It must be a **block**: as a
               flex column the content layer is shrunk to the container's height, scrollHeight collapses with it and the
@@ -200,23 +202,6 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
           </div>
         </SidebarContent>
         <NotificationSlot part="list" active={notificationsOpen} />
-        {/* #2548 已安排 lives in the bell's panel (mock v23 / v33). */}
-        {notificationsOpen && (
-          <SidebarMenu className="shrink-0 pb-2">
-            <SidebarMenuButton
-              isActive={isCurrentView(currentView, 'automations')}
-              onClick={() => navigate('automations')}
-              aria-label={translate('sidebar.scheduled')}
-              className="w-full justify-between"
-              data-testid="sidebar-scheduled"
-            >
-              <span className={cn('flex min-w-0 items-center gap-2', sidebarRowContentInsetX)}>
-                <Clock className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
-                <span className="truncate">{translate('sidebar.scheduled')}</span>
-              </span>
-            </SidebarMenuButton>
-          </SidebarMenu>
-        )}
       </SidebarContainer>
     </div>
   );

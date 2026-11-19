@@ -1,9 +1,11 @@
+import { settingsSectionsForAccount } from './settings/sectionsForAccount'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { PasswordSection } from './settings/PasswordSection'
 import { lazy, Suspense, useRef, useState } from 'react'
 import { useAuth } from '../store/auth'
 import { membershipSettingsSection } from '../lib/billing/settingsDestination'
 import { AboutSection } from './settings/AboutSection'
+import { HelpSection } from './settings/HelpSection'
 import { AccountSection } from './settings/AccountSection'
 import type { PhoneAssistantState } from '../mobile/assistant/usePhoneAssistant'
 import { Button } from './ui/Button'
@@ -12,6 +14,9 @@ import { FileStorageSection } from './settings/FileStorageSection'
 import { GeneralSection } from './settings/GeneralSection'
 import { ModelSection } from './settings/ModelSection'
 import { UsageSection } from './usage/UsageSection'
+import { hasTeamAccountMarker } from '@/features/team/accountKind'
+import { TeamSettingsUsage } from '@/features/team/TeamSettingsUsage'
+import { TeamPage } from '@/features/team/TeamPage'
 import { PermissionsSection } from './settings/PermissionsSection'
 import { SettingsDetailNavigation, type SettingsDetailState } from './settings/SettingsDetailNavigation'
 import { usePanelScroll } from '../session/renderer/features/assistant/use-panel-scroll'
@@ -91,15 +96,18 @@ export function SettingsPanel({
   onPaneChange?: (pane: 'nav' | 'detail') => void
 }) {
   const { user, updateUser, logout } = useAuth()
+  const teamAccount = hasTeamAccountMarker(user)
   const { t } = useTranslation('main')
-  const sections = mobile ? MOBILE_SECTIONS_FOR_PLATFORM : DESKTOP_SECTIONS_FOR_PLATFORM
+  const platformSections = mobile ? MOBILE_SECTIONS_FOR_PLATFORM : DESKTOP_SECTIONS_FOR_PLATFORM
+  const sections = settingsSectionsForAccount(platformSections, user)
 
   // @@@1507 初始 section 可由调用方指定(如侧栏「额度」直接开到 quota);缺省 account。
   const [internalSection, setInternalSection] = useState<ActiveSection>(initialSection)
   const requestedSection = section ?? internalSection
   const marketConnections = mobile && (requestedSection === 'connectors' || requestedSection === 'channels')
-  const destination = marketConnections ? 'apps' : requestedSection
-  const unsupportedSection = (destination === 'data-import' && !sections.includes('data-import'))
+  const destination = teamAccount && requestedSection === 'subscriptions' ? 'team' : marketConnections ? 'apps' : requestedSection
+  const unsupportedSection = (destination === 'team' && !teamAccount)
+    || (destination === 'data-import' && !sections.includes('data-import'))
     || (destination === 'apps' && !sections.includes('apps'))
     || (destination === 'prompts' && !sections.includes('prompts'))
     || (destination === 'phone' && !platform.capabilities.phoneDevice && !platform.capabilities.phoneAgentHost)
@@ -128,14 +136,16 @@ export function SettingsPanel({
     switch (activeSection) {
       case 'prompts': return <div><SessionSettingsSection section="prompts" /></div>
       case 'account':  return <AccountSection user={user} updateUser={updateUser} logout={logout} mobile={mobile} />
+      case 'team': return teamAccount ? <TeamPage /> : null
       case 'general':  return <GeneralSection onOpenPermissions={() => selectSection('permissions')} showThemePacks={!mobile && !!onClose && platform.capabilities.agentRuntime} />
       case 'data-import': return <Suspense fallback={null}><DataImportSection onClose={() => onClose?.()} /></Suspense>
       case 'devices':  return <DevicesSection onUpgrade={() => selectSection(membershipSettingsSection(mobile))} />
       // This is a primary page now; keep its content while opting out of nested-page navigation.
       case 'files':    return <SettingsDetailNavigation.Provider value={null}><FileStorageSection onBack={back} /></SettingsDetailNavigation.Provider>
       case 'model':    return <ModelSection addRequested={addCustomModel} onAddClose={onCustomModelDialogClose} />
-      case 'usage':    return <UsageSection />
+      case 'usage':    return teamAccount ? <TeamSettingsUsage /> : <UsageSection />
       case 'about':    return <AboutSection />
+      case 'help':     return <HelpSection />
       case 'permissions': return <PermissionsSection />
       case 'passwords': return PASSWORD_BETA_ENABLED ? <PasswordSection actionsHost={() => passwordActions.current} /> : null
       case 'apps':     return <Suspense fallback={null}><PhoneMarketplace key={requestedSection}
@@ -158,7 +168,7 @@ export function SettingsPanel({
   }
 
   // 内容区顶部条的标题:与 SettingsNav 里同一个 key 的导航项同一份翻译("账户"/"通用"/…)。
-  const sectionTitle = t(`settings.nav.${activeSection}`)
+  const sectionTitle = t(activeSection === 'help' ? 'productTour:help.label' : `settings.nav.${activeSection}`)
 
   const card = (
       <div
@@ -204,7 +214,7 @@ export function SettingsPanel({
               ) : undefined}
             />}
             {/* @@@6436 内页排版(桌面与手机的内边距差别也在内)全在 settings/settings.css。 */}
-            <div ref={attachBody} className="gg-settings-body window-no-drag-region">
+            <div ref={attachBody} data-team-settings={activeSection === 'team' ? '' : undefined} className="gg-settings-body window-no-drag-region">
               <SettingsDetailNavigation.Provider value={setDetailPage}>{renderSection()}</SettingsDetailNavigation.Provider>
             </div>
           </Pane>

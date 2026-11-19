@@ -7,12 +7,17 @@ import { showModal } from '@renderer/lib/modal/modal-provider'
 export async function openAgentHomeImport(providerId: string, machine: string | null): Promise<boolean> {
   const home = await readAgentHome(providerId, machine)
   if (!home || home.needsImport) return false
+  const diff = await readAgentHomeDiff(providerId, machine)
+  return new Promise((resolve) => showModal('agentHomeReimportModal', {
+    providerId, machine, diff, onSuccess: () => resolve(true), onClose: () => resolve(false),
+  }))
+}
+
+export async function readAgentHomeDiff(providerId: string, machine: string | null) {
   const client = await getAgentConfigRuntimeClient(machine)
   const result = await client.diffAgentHome({ providerId })
   if (!result.success) throw new Error(errorText(result.error))
-  return new Promise((resolve) => showModal('agentHomeReimportModal', {
-    providerId, machine, diff: result.data, onSuccess: () => resolve(true), onClose: () => resolve(false),
-  }))
+  return result.data
 }
 
 export async function readAgentHome(providerId: string, machine: string | null) {

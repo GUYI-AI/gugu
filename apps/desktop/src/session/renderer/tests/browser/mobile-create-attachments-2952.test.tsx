@@ -15,7 +15,7 @@ import type { SessionCreateAttachmentDraftRequest, SessionCreateAttachmentDraftR
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/i18n/registerMessagingCatalog'
 import '@/i18n/registerMainCatalog'
-import '@/mobile/agent-watch/agent-watch.css'
+import '@/components/session-watch/agent-watch.css'
 import '@renderer/index.css'
 import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
@@ -33,10 +33,10 @@ const fixture = vi.hoisted(() => ({
 
 vi.mock('@/store/auth', async original => ({ ...(await original<typeof import('@/store/auth')>()), useAuth: () => ({ user: { id: fixture.owner } }) }))
 vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [fixture.device], phones: [] }) }))
-vi.mock('@/mobile/agent-watch/useMachineLabel', () => ({ useMachineLabel: () => ({ label: () => 'Test device', isHome: () => false }) }))
+vi.mock('@/components/session-watch/useMachineLabel', () => ({ useMachineLabel: () => ({ label: () => 'Test device', isHome: () => false }) }))
 vi.mock('@/hooks/useWakeCloudComputer', () => ({ useCloudComputerWake: () => ({ issue: null, dropped: false, retry: vi.fn() }) }))
 vi.mock('@renderer/features/projects/components/main-panel/project-run-machine', () => ({ rememberRunMachine: vi.fn(), useProjectRunMachine: () => ({ machine: fixture.device.device_id, pick: vi.fn() }) }))
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('@/components/session-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class extends Error { code = 'fixture' },
   machineRpc: (deviceId: string) => ({ sessionTimeline: { sessionCreateSkills: (input: unknown) => fixture.skills(deviceId, input) } }),
   fetchCreateOptions: async () => ({ projects: [], lastUsed: null, harnesses: [{ id: 'codex', name: 'Codex', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: [] }] }),

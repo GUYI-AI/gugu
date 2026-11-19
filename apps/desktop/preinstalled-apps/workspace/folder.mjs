@@ -7,6 +7,7 @@
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, extname, isAbsolute, join } from 'node:path'
+import { markdownLiteral } from './markdown-literal.js'
 
 const CHAT = {
   type: 'string',
@@ -61,7 +62,7 @@ const STORED_MAX_BYTES = 25 * 1024 * 1024
 const bytesOf = (text) => Buffer.byteLength(text, 'utf8')
 
 /** The file as a link, handed over whole: in a message it shows as that file and opens it (never assembled by the agent). */
-const linkOf = async (entry) => `[${entry.name.replace(/[[\]\\]/g, (c) => `\\${c}`)}](${await gugu.linkTo({ kind: 'file', file: entry.id })})`
+const linkOf = async (entry) => `[${markdownLiteral(entry.name)}](${await gugu.linkTo({ kind: 'file', file: entry.id })})`
 /** A file's link — a folder has none: it is listed and entered, never opened (子文件夹). */
 const linked = async (entry) => (entry.type === 'folder' ? {} : { link: await linkOf(entry) })
 const byOf = (entry) => (entry.createdBy?.id ? { id: entry.createdBy.id, name: entry.createdBy.name, kind: entry.createdBy.kind } : null)

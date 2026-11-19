@@ -26,7 +26,7 @@ import { chatService } from './chat'
 import type { SessionpageSessionCreateModels } from '@gugu/session-core/session-record/contract'
 import { rpcOn } from '@/session/renderer/lib/ipc'
 import { platformModelsEnabled } from '@gugu/core/cloud/optionalServices'
-import { fetchCreateModels } from '@/mobile/agent-watch/sessionpage-rpc'
+import { fetchCreateModels } from '@/components/session-watch/sessionpage-rpc'
 
 export interface PlatformCatalogModel {
   id: string
@@ -129,7 +129,7 @@ export type AgentModelSelectionOutcome =
       ok: true
       applied: 'hot' | 'reload' | 'next-session'
       /** #6247 重开后 harness 原生会话的去向;`null` = 设备没说(旧设备不带这一格),界面给中性文案。 */
-      nativeSession: 'preserved' | 'replaced' | null
+      nativeSession: 'preserved' | 'replaced' | 'route-switched' | null
       warning: string | null
     }
   | { ok: false; error: string }
@@ -166,7 +166,7 @@ export async function setAgentModelSelection(
   return {
     ok: true,
     applied,
-    nativeSession: result.nativeSession === 'preserved' || result.nativeSession === 'replaced'
+    nativeSession: result.nativeSession === 'preserved' || result.nativeSession === 'replaced' || result.nativeSession === 'route-switched'
       ? result.nativeSession
       : null,
     warning: typeof result.warning === 'string' && result.warning ? result.warning : null,

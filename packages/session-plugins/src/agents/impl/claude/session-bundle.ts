@@ -93,6 +93,21 @@ export const claudeSessionBundleDescriptor = {
       { id: 'skills', paths: ['skills/'], evidence: 'https://code.claude.com/docs/en/skills' },
       { id: 'agents', paths: ['agents/', 'commands/', 'plugins/'], evidence: 'https://code.claude.com/docs/en/sub-agents and /plugins' },
     ],
+    historySession: (path: string) => {
+      const parts = path.split('/');
+      const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+      if (parts[0] === 'projects') {
+        if (parts[2] === 'memory') return null;
+        if (parts.length === 3 && parts[2]!.endsWith('.jsonl')) return { id: parts[2]!.slice(0, -6).toLowerCase(), primary: true };
+        if (uuid.test(parts[2] ?? '')) return { id: parts[2]!.toLowerCase(), primary: false };
+      }
+      if (parts[0] === 'file-history' && uuid.test(parts[1] ?? '')) return { id: parts[1]!.toLowerCase(), primary: false };
+      if (parts[0] === 'todos') {
+        const id = parts[1]?.slice(0, 36);
+        if (id && uuid.test(id)) return { id: id.toLowerCase(), primary: false };
+      }
+      return null;
+    },
     carryExclusions: [
       ...['projects', 'file-history', 'todos'].map((path) => ({ path, upgradeHistory: true, evidence: 'Claude session records copied when migrating existing Gugu tasks.' })),
       ...['shell-snapshots', 'statsig', 'logs', 'cache', '.cache', 'debug', 'telemetry', 'backups', 'session-env', '.last-cleanup', 'ide',
@@ -102,7 +117,11 @@ export const claudeSessionBundleDescriptor = {
     legacyCleanup: [{ path: 'settings.local.json', update: (fs, path) => stripManagedJsonHooks(fs, path, 'user') }],
   },
   platform: harnessPlatform,
-  customModel: { modelOptional: true, evidence: 'Claude Code can use the configured Anthropic endpoint and key without ANTHROPIC_MODEL.' },
+  customModel: {
+    modelOptional: true,
+    convertFrom: ['openai-chat-completions'],
+    evidence: 'Claude Code can use the configured Anthropic endpoint and key without ANTHROPIC_MODEL. cc-switch-cli v5.11.4 serves Anthropic Messages to Claude Code from an OpenAI Chat provider (api-format openai_chat).',
+  },
   // ❌ `IS_DEMO` / `CLAUDE_CODE_SANDBOXED` 是咕咕给 claude 的工作区信任通道(./trust.ts),必须成对由 WorkspaceTrustService 给出 ——
   // 曾经只透传 IS_DEMO(#2905),用户 shell 里碰巧 export 了它,claude 跳过信任对话框而工作区仍不可信。
   // `CLAUDE_PROJECT_DIR` 是 claude 每次调用按当前项目填给钩子用的,shell 里的残留值会把钩子指到另一个项目。

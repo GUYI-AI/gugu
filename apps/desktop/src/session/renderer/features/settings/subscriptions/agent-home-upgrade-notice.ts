@@ -10,7 +10,7 @@ export async function readAgentHomeUpgradeResults(): Promise<AgentHomeScan[]> {
   const client = await getAgentConfigRuntimeClient()
   const result = await client.scanAgentHomes({ upgradedOnly: true })
   if (!result.success) throw new Error('Could not read configuration migration results')
-  return result.data.filter(({ upgraded, migrationSpace }) => upgraded || migrationSpace)
+  return result.data.filter(({ upgraded, migrationSpace, migrationPreparation }) => upgraded || migrationSpace || migrationPreparation)
 }
 
 export function showAgentHomeUpgradeNotice(homes: readonly AgentHomeScan[]): void {
@@ -37,7 +37,8 @@ export function showAgentHomeUpgradeNotice(homes: readonly AgentHomeScan[]): voi
   } catch { /* The in-memory key still prevents duplicate notices in this window. */ }
   const t = i18n.getFixedT(null, 'main')
   const names = new Intl.ListFormat(i18n.language).format(homes.map(({ name }) => name))
-  const skipped = homes.reduce((total, home) => total + (home.upgradeIssues?.length ?? home.oldSessionsSkipped ?? 0), 0)
+  const skipped = homes.reduce((total, home) =>
+    total + (home.upgradeIssues?.length ?? home.oldSessionsSkipped ?? 0) + Number(home.upgradeSignIn === 'relogin'), 0)
   const copied = !skipped && homes.every(({ upgradeSignIn }) => upgradeSignIn === 'copied')
   notify({
     key, title: t('agentHome.migrationNoticeTitle'), tier: 'info', duration: 12000,

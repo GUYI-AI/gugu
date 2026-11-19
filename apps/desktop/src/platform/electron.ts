@@ -105,11 +105,6 @@ export const electronPlatform: AppPlatform = {
     if (!api?.relaunchApp) throw unavailable('appRelaunch')
     await api.relaunchApp()
   },
-  async syncResolvedLocale(locale) {
-    const api = electronApi()
-    if (!api?.syncResolvedLocale) throw unavailable('resolvedLocaleSync')
-    await api.syncResolvedLocale(locale)
-  },
   subscribeAppForeground(listener) {
     const api = electronApi()
     if (!api?.onAppForeground) throw unavailable('App foreground subscription')
@@ -184,9 +179,6 @@ export const electronPlatform: AppPlatform = {
   },
   setBadge(count) {
     electronApi()?.setBadge(count)
-  },
-  setTrayBadgeEnabled(enabled) {
-    electronApi()?.setTrayBadgeEnabled(enabled)
   },
   async scanQrCode() {
     throw unavailable('QR scan')

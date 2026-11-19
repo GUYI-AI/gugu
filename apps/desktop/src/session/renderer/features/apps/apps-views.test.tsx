@@ -83,11 +83,11 @@ vi.mock('@renderer/features/library/extensions-library-page', () => ({
     return <div data-testid="app-list" />;
   },
 }));
-vi.mock('./agent-app-detail-page', () => ({
-  AgentAppDetailPage: ({ agentId, onBack, onCreate }: { agentId: string; onBack(): void; onCreate(): void }) => {
-    mocks.closeAgent = onBack;
+vi.mock('./agent-app-detail-dialog', () => ({
+  AgentAppDetailDialog: ({ agentId, onClose, onCreate }: { agentId: string; onClose(): void; onCreate(): void }) => {
+    mocks.closeAgent = onClose;
     mocks.createWithAgent = onCreate;
-    return <div data-testid="agent-detail">{agentId}</div>;
+    return <div role="dialog" data-testid="agent-detail">{agentId}</div>;
   },
 }));
 vi.mock('@renderer/features/library/library-host', () => ({
@@ -274,12 +274,23 @@ describe('an App opened from the far-left rail', () => {
 
     mocks.params = { agentDetail, agentDetailFrom: 'apps' };
     const detail = renderToStaticMarkup(<appsView.MainPanel />);
-    expect(detail).toContain('<div hidden=""><div data-testid="app-list"');
+    expect(detail).toContain('<div class="contents"><div data-testid="app-list"');
+    expect(detail).not.toContain('hidden=""');
+    expect(detail).toContain('role="dialog"');
     expect(detail).toContain('data-testid="agent-detail">claude');
     mocks.createWithAgent?.();
     expect(mocks.navigate).toHaveBeenCalledWith('new-session', { agentId: 'claude', deviceId: undefined });
     mocks.closeAgent?.();
     expect(mocks.setParams).toHaveBeenLastCalledWith({ agentDetail: undefined, agentDetailFrom: undefined });
+  });
+
+  it('an agent detail link keeps its device when the dialog creates a session', () => {
+    mocks.params = { agentDetail: { kind: 'agent-app-detail', agentId: 'codex', deviceId: 'studio' }, agentDetailFrom: 'apps' };
+    const detail = renderToStaticMarkup(<appsView.MainPanel />);
+    expect(detail).toContain('role="dialog"');
+    mocks.createWithAgent?.();
+    expect(mocks.setParams).toHaveBeenLastCalledWith({ agentDetail: undefined, agentDetailFrom: undefined });
+    expect(mocks.navigate).toHaveBeenLastCalledWith('new-session', { agentId: 'codex', deviceId: 'studio' });
   });
 
   it('both places of the rail are drawn without the task list beside them', () => {

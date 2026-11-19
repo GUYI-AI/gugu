@@ -15,7 +15,7 @@ export function ConversationCreditNotice({ modelOptionId }: { modelOptionId?: st
 function SpendingCreditNotice() {
   // The desktop task entry has a separate React root; AuthContext cannot cross it.
   const identity = useSyncExternalStore(subscribeIdentity, currentIdentity)
-  return identity ? <AccountCreditNotice userId={identity.userId} /> : null
+  return identity && (!identity.accountKind || identity.accountKind === 'personal') ? <AccountCreditNotice userId={identity.userId} /> : null
 }
 
 const currentIdentity = () => readSelfIdentityBridge()?.getSnapshot() ?? null
