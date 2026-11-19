@@ -20,10 +20,11 @@ const migrationLocations = {
   'sign-in': 'apps/desktop/electron/session/main/core/agents/harness-connections.ts',
 } as const
 
-let reportMigrationFailure: ((error: unknown, location: string) => void) | undefined
+// The native main and session host are separate bundles in the same Electron process.
+const migrationFailureEvent = Symbol.for('gugu.error-summary.agent-home-migration')
 
 export function reportAgentHomeMigrationFailure(error: unknown, area: keyof typeof migrationLocations): void {
-  reportMigrationFailure?.(error, migrationLocations[area])
+  ipcMain.emit(migrationFailureEvent, error, area)
 }
 
 export function registerErrorSummaryReporting(deps: {
@@ -86,10 +87,10 @@ export function registerErrorSummaryReporting(deps: {
     if (captureScope() === undefined) return
     reporter.report(errorSummaryFromError(error, metadata(), type, errorSummaryStackLocations(error)))
   })
-  reportMigrationFailure = (error, location) => safely(() => {
-    if (captureScope() === undefined) return
-    reporter.report(errorSummaryFromError(error, metadata(), undefined, [location]))
-  })
+  ipcMain.on(migrationFailureEvent, (error: unknown, area: keyof typeof migrationLocations) => safely(() => {
+    if (captureScope() === undefined || !Object.hasOwn(migrationLocations, area)) return
+    reporter.report(errorSummaryFromError(error, metadata(), undefined, [migrationLocations[area]]))
+  }))
   let initialized = false
   let previousOwner = deps.owner()
   ipcMain.on('error-summary:consent-changed', () => safely(() => {
