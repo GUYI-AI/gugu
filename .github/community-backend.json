@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
-  "ref": "12e9145b16a81aa784d7181cf81c1eef60395fa8",
-  "status": "Team identities, member directory pages and UUID cursors merged. Isolated contract fixture; staging deployment acceptance remains pending."
+  "ref": "29c051cf3490fc3c146a9f9d356d535327344044",
+  "status": "Backend #364 merged on dev: Android provider channels and FCM. Isolated CI fixture; staging and physical delivery acceptance are pending."
 }
