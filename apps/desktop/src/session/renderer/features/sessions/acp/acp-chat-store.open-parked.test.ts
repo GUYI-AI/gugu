@@ -24,6 +24,7 @@ import type { TranscriptTurn } from '@gugu/session-core/acp';
 import type { Session } from '@shared/core/sessions/sessions';
 import { state as inputState, changed as inputsChanged, EMPTY as NO_INPUTS } from '@/lib/sessionInputOutboxBridge';
 import { installAcpChatStoreHost, replica } from './acp-chat-store.test-host';
+import { sessionLifeView } from '../stores/session-life-views';
 
 const records = vi.hoisted(() => new Map<string, Partial<Session>>());
 const link = vi.hoisted(() => ({
@@ -670,6 +671,23 @@ describe('#2558 新建会话带着第一句', () => {
     await vi.waitFor(() => expect(store.session).not.toBeNull());
     expect(create).toHaveBeenCalledWith(store.sessionId);
     expect(life.start).not.toHaveBeenCalled();
+  });
+});
+
+describe('restoring without a pending input is stoppable', () => {
+  it('keeps the restoring label and stop action until host cancellation, even with no pending message', async () => {
+    const { store } = storeFor({ providerId: 'codex', providerSessionId: 'prov-old' });
+    store.bootstrap();
+    await parked(store);
+    life.pend(store.sessionId, 'starting', []);
+    expect(store.transcriptPendingId).toBeNull();
+    expect(store.startPhaseOf(sessionLifeView(store.runtimeSessionId))).toBe('restoring');
+    expect(store.affordances.isWorking).toBe(true);
+    store.stop();
+    expect(life.stop).toHaveBeenCalledWith(store.runtimeSessionId);
+    life.pend(store.sessionId, 'dormant', [], 'user-stop');
+    expect(store.affordances.isWorking).toBe(false);
+    expect(store.startPhaseOf(sessionLifeView(store.runtimeSessionId))).toBeUndefined();
   });
 });
 

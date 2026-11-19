@@ -1,11 +1,10 @@
 import {
   WINDOW_MATERIAL_CHANGED_CHANNEL,
   WINDOW_MATERIAL_GET_CHANNEL,
-  WINDOW_THEME_PREFERENCE_CHANNEL,
-  isThemePreferenceValue,
   resolveWindowMaterial,
   type WindowMaterial,
 } from '../shared/window-material'
+import type { ThemePreference } from '../shared/device-preferences'
 import { createLogger } from './lib/logger'
 
 const logger = createLogger('window-material')
@@ -98,32 +97,18 @@ export function installWindowMaterial({ platform, nativeTheme, ipcMain, material
   }
 }
 
-/** `electron.nativeTheme` 里同步原生外观要用的两项。 */
+/** `electron.nativeTheme` 里同步原生外观要用的那一项。 */
 export interface NativeAppearanceTheme {
   themeSource: 'system' | 'light' | 'dark'
-  readonly shouldUseDarkColors: boolean
 }
 
 /**
- * @@@native-appearance (#7333) — 只在 mac 上把偏好照抄成 themeSource(原生材质只有 mac 有;Windows/Linux 的托盘图标
- * 读 shouldUseDarkColors 跟任务栏走,不能被咕咕的手选主题带偏)。返回此刻的真实明暗:偏好是 system 时就是系统外观。
- * 认不出的偏好响亮报错,❌ 悄悄当成 system。
+ * @@@native-appearance (#7333) — mac 上原生材质的明暗跟着 `nativeTheme.themeSource` 走,而不是跟着咕咕自己的
+ * `<html data-theme>`:用户手选的主题与系统外观相反时,透出来的就会是「浅材质配浅字」。⇒ 主进程按自己存的主题偏好
+ * (@@@device-preferences)照抄成 themeSource,启动时一次、偏好每次变化时一次。只在 mac 上抄(原生材质只有 mac 有;
+ * Windows/Linux 的托盘图标读 shouldUseDarkColors 跟任务栏走,不能被咕咕的手选主题带偏)。
+ * ❌ 把解析后的明暗写成 themeSource:那会把「跟随系统」变成永久手选,renderer 读系统外观的 matchMedia 也跟着失真。
  */
-export function applyNativeThemePreference(platform: NodeJS.Platform, theme: NativeAppearanceTheme, preference: unknown): 'light' | 'dark' {
-  if (!isThemePreferenceValue(preference)) throw new Error(`theme preference must be light / dark / system, got ${JSON.stringify(preference)}`)
+export function applyNativeThemePreference(platform: NodeJS.Platform, theme: NativeAppearanceTheme, preference: ThemePreference): void {
   if (platform === 'darwin' && theme.themeSource !== preference) theme.themeSource = preference
-  return theme.shouldUseDarkColors ? 'dark' : 'light'
-}
-
-/** 同步询问:renderer 写偏好(启动恢复、手选、切回跟随系统)时发,先恢复 themeSource,再拿真实明暗。 */
-export function installNativeAppearanceSync(deps: { platform: NodeJS.Platform; nativeTheme: NativeAppearanceTheme; ipcMain: WindowMaterialIpc }): void {
-  deps.ipcMain.on(WINDOW_THEME_PREFERENCE_CHANNEL, (event, preference) => {
-    try {
-      event.returnValue = applyNativeThemePreference(deps.platform, deps.nativeTheme, preference)
-    } catch (error) {
-      // 同步 IPC 不能抛给 renderer(它会一直等 returnValue):记下来,答一个明确的空值,renderer 据此不改主题。
-      logger.error({ error: String(error) }, '主题偏好同步失败')
-      event.returnValue = null
-    }
-  })
 }

@@ -74,3 +74,5 @@ API 36 shared task resources (desktop, `agents:tools`):
   Revocation, program exit, task archive or project deletion closes it. Late native results are released.
 
 Use `resource.close()` to release the source and `view.close()` to remove the mounted viewer.
+
+App-owned pointer, target and operation display: [picture feedback (API58)](apps-picture-feedback.md).

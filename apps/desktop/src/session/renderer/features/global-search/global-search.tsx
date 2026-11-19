@@ -127,7 +127,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
   const lines = groups.flatMap((group) => [...(scoped ? [] : [{ kind: 'scope' as const, group }]), ...group.hits.map((hit) => ({ kind: 'hit' as const, hit }))])
   const named = useNameMatches(view.query, NAMED_LIMIT, names && !!view.query && facet === 'all' && chips.length === 0)
   const nameRows = [...named.groups.map(([id, chat]) => ({ id, userId: '', groupAvatar: chat.avatar ?? null, name: chat.name ?? '', open: () => openGroup(id) })),
-      ...named.people.map((person) => ({ id: person.id, userId: person.id, groupAvatar: undefined, name: person.name, open: () => openPerson(person.id) }))]
+      ...named.people.map((person) => ({ id: person.id, userId: person.id, groupAvatar: undefined, name: person.name, open: () => openPerson(person.id, person.chatId) }))]
   const selected = ordered.find((hit) => hit.id === selectedId) ?? ordered[0] ?? null
   // Words, a sender or a kind of message: any of them is a search; with none the panel shows the quick filters.
   const hasQuery = !!text.trim() || chips.some((chip) => chip.kind === 'from' || chip.kind === 'type')
@@ -231,7 +231,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
           <div role="alert" className="px-3 py-3 text-sm text-[var(--em-foreground-destructive)]">{translate('globalSearch.indexingTasksFailed')}</div>
         )}
         {!hasQuery && (
-          <div className="grid grid-cols-3 gap-1 border-t border-foreground/[0.08] px-1 pt-2" data-testid="global-search-quick">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(max(8em,calc((100%_-_0.5rem)/3)),1fr))] gap-1 border-t border-foreground/[0.08] px-1 pt-2 text-[length:var(--font-body)]" data-testid="global-search-quick">
             {quick.filter((item) => !item.scoped || inChat).map((item) => (
               <span key={item.key} className="relative">
                 <button type="button" data-quick={item.key} onClick={(event) => item.run(event.currentTarget)}

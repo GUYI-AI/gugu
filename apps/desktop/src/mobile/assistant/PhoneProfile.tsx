@@ -15,18 +15,12 @@ import { useDeviceRename } from '@/hooks/useDeviceRename'
 import { Pencil } from '@/lib/icons'
 import { PageHead } from '@/session/renderer/features/assistant/assistant-ui-parts'
 import type { PhonePageProps } from './MobileAssistantApp'
-import { ConnectorsSection } from '@/components/settings/ConnectorsSection'
-import { ConnectionRouteBoundary } from '@/components/connections/ConnectionRouteBoundary'
-import { PhoneConnectorDetail,PhoneConnectorsPage } from './PhoneConnectors'
-import { PhoneConnectorSetupPage } from './PhoneConnectorSetup'
-import { parseConnectorSub } from './phoneConnectorFlow'
 import { AssistantProjectsLibrary } from '@/components/assistant/AssistantProjectsLibrary'
-import { usePhoneIntegrations } from './usePhoneProfileData'
 import './phone-profile.css'
 
 /**
  * The phone's own screens under 资料 (the assistant App draws 资料 itself): its settings and their sections, the model and
- * 换形象 pages, devices, connected apps, and the 项目 / 能力 volumes — each opened as `gugu.assistant.open` opens it.
+ * 换形象 pages, devices, and the 项目 / 能力 volumes — each opened as `gugu.assistant.open` opens it.
  */
 export function PhoneProfile(input: PhonePageProps) {
   const props: PhonePageProps = input.sub?.startsWith('settings:') ? { ...input,
@@ -37,13 +31,11 @@ export function PhoneProfile(input: PhonePageProps) {
   const settings = useTranslation('settings').t
   const devices = useDevicesStore()
   const { sub, go, machine, cloudDeviceId } = props
-  const connectors = sub === 'channels' || sub === 'connectors' || !!sub?.startsWith('connector:')
-  const integrations = usePhoneIntegrations(machine, connectors)
   const deviceRename = useDeviceRename()
   if (sub === 'library:workspace') return <AssistantProjectsLibrary machine={machine.state === 'ready' ? machine.machine : null} askInChat={props.askInChat} />
 
   if (sub === 'settings') return <div className="ta-page ta-phone-profile"><PageHead title={t('nav.settings')} /><div className="ta-skin">
-    <AssistantSettingsPage panelNavigation onOpenPage={(tab) => props.open({ tab })} onOpenSection={(section) => go(`settings:${section}`)} />
+    <AssistantSettingsPage panelNavigation sections={['devices']} onOpenPage={(tab) => props.open({ tab })} onOpenSection={(section) => go(`settings:${section}`)} />
   </div></div>
 
   // API 49 `gugu.assistant.open(…, "model" | "look")`: the model page its settings open (AssistantSettingsPage `aimodel`) and the
@@ -51,15 +43,6 @@ export function PhoneProfile(input: PhonePageProps) {
   if (sub === 'aimodel') return <PhoneAssistantPane title={t('settingsPage.model')} testId="assistant-model-page" Pane={AgentAiModelPane} />
   if (sub === 'look') return <PhoneAssistantPane title={t('customize.look')} testId="assistant-look-page" Pane={AgentLookPane} />
 
-  if (sub === 'connectors' || sub === 'channels') return <ConnectionRouteBoundary owner={() => <ConnectorsSection panelNavigation />}
-    legacy={<PhoneConnectorsPage {...props} integrations={integrations} />} />
-  if (sub?.startsWith('connector:')) {
-    // `connector:<id>` 详情,`connector:<id>:connect` 连接页(返回箭头回详情,见 assistant-context.parentRoute)。
-    const route = parseConnectorSub(sub),id = route?.id ?? sub.slice('connector:'.length)
-    return <ConnectionRouteBoundary owner={() => <ConnectorsSection panelNavigation initialConnectorId={id} />}
-      legacy={route?.view === 'connect' ? <PhoneConnectorSetupPage {...props} integrations={integrations} id={id} />
-        : <PhoneConnectorDetail {...props} integrations={integrations} id={id} />} />
-  }
   if (sub === 'devices' || sub?.startsWith('devices:')) {
     const openedDeviceId = sub.startsWith('devices:') ? sub.slice('devices:'.length) : null
     const machine = deviceMachineFor(deviceMachines([...devices.devices, ...(devices.phones ?? [])]), openedDeviceId)

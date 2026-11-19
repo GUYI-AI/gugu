@@ -23,3 +23,5 @@ export function SessionChatLoading({ label, stage }: { label: string; stage?: st
     </div>
   );
 }
+
+export { CodexPreparationStatus } from './codex-preparation-status';

@@ -100,6 +100,8 @@ export interface SessionpageDeliveryTarget {
   tryInjectSessionMessage(
     sessionId: string,
     message: { id: string; text: string; kind?: 'ordinary' | 'session-direct'; delivery?: SessionMessageDelivery; deferredDispatch?: true },
+    /** Host-local owner/epoch assertion, also checked by the adapter at its actual byte admission. */
+    beforeAdmission?: () => void,
   ): Promise<boolean | SessionpageTurnReceipt>
   /**
    * A leg owned by the host's session lifecycle (ACP) never injects from the reader: it takes the unit into its
@@ -297,8 +299,10 @@ export class SessionpageLocalDeliveryRouter {
     sessionId: string,
     attempt: () => Promise<T | 'not-live'>,
     signal?: AbortSignal,
+    beforeAdmission?: () => void,
   ): Promise<T> {
     signal?.throwIfAborted()
+    beforeAdmission?.()
     const first = await attempt()
     if (first !== 'not-live') return first
     const fail = (error: SessionWakeError): never => {
@@ -306,6 +310,7 @@ export class SessionpageLocalDeliveryRouter {
       throw error
     }
     let outcome: 'reopened' | 'already-running'
+    beforeAdmission?.()
     try {
       outcome = await this.wakeSession(sessionId)
     } catch (error) {
@@ -313,15 +318,19 @@ export class SessionpageLocalDeliveryRouter {
       throw error
     }
     signal?.throwIfAborted()
+    beforeAdmission?.()
     const state = outcome === 'already-running' ? 'the engine is running (not reopened)' : 'the session was reopened'
+    const owner = await this.deliveryTargetForSession(sessionId)
+    beforeAdmission?.()
     try {
-      const owner = await this.deliveryTargetForSession(sessionId)
       await owner?.target.waitUntilReady?.(sessionId)
     } catch (error) {
-      // 准入没等到(就绪预算到点、等的时候属主换了)。
+      // Keep owner revocation distinct from a live channel's readiness failure.
+      beforeAdmission?.()
       return fail(new SessionWakeError(sessionId, `${state} but was not admitted: ${error instanceof Error ? error.message : String(error)}`))
     }
     signal?.throwIfAborted()
+    beforeAdmission?.()
     const second = await attempt()
     if (second !== 'not-live') return second
     return fail(new SessionWakeError(sessionId, `${state} but its delivery channel did not accept the message`))
@@ -385,8 +394,9 @@ export class SessionpageLocalDeliveryRouter {
   async tryInjectSessionMessage(
     sessionId: string,
     message: { id: string; text: string; kind?: 'ordinary' | 'session-direct'; delivery?: SessionMessageDelivery; deferredDispatch?: true },
+    beforeAdmission?: () => void,
   ): Promise<boolean | SessionpageTurnReceipt> {
-    return this.injectIntoSession(sessionId, message, { route: 'router.tryInjectSessionMessage' })
+    return this.injectIntoSession(sessionId, message, { route: 'router.tryInjectSessionMessage' }, beforeAdmission)
   }
 
   /**
@@ -396,9 +406,11 @@ export class SessionpageLocalDeliveryRouter {
   async tryInjectOrWake(
     sessionId: string,
     message: { id: string; text: string; kind?: 'ordinary' | 'session-direct' },
+    beforeAdmission?: () => void,
   ): Promise<boolean | SessionpageTurnReceipt> {
-    const accepted = await this.tryInjectSessionMessage(sessionId, message)
+    const accepted = await this.tryInjectSessionMessage(sessionId, message, beforeAdmission)
     if (accepted === false) {
+      beforeAdmission?.()
       void this.wakeSession(sessionId).catch((error: unknown) => {
         if (error instanceof SessionWakeError) this.warnWakeFailureOnce(error, { sessionId, messageId: message.id }, 'session-message wake failed')
         else deliveryLogger().warn({ sessionId, messageId: message.id, error: error instanceof Error ? error.message : String(error) }, 'session-message wake failed')
@@ -416,10 +428,14 @@ export class SessionpageLocalDeliveryRouter {
     sessionId: string,
     message: { id: string; text: string; kind?: 'ordinary' | 'session-direct'; delivery?: SessionMessageDelivery; deferredDispatch?: true },
     log: { route: string; agentUserId?: string },
+    beforeAdmission?: () => void,
   ): Promise<boolean | SessionpageTurnReceipt> {
+    beforeAdmission?.()
     this.assertNotArchived(sessionId)
     const owner = await this.deliveryTargetForSession(sessionId)
+    beforeAdmission?.()
     const capability = owner ? await sessionInjectionCapabilityForSession(owner.target, owner.deliveryKey) : null
+    beforeAdmission?.()
     if (!owner || !capability) {
       // 门里记着这条会话叫不醒:不在册就是那个原因,那一行已经记过了。
       if (this.wakeFailures.has(sessionId)) return false
@@ -442,7 +458,10 @@ export class SessionpageLocalDeliveryRouter {
       'session-page inbox injection route selected',
     )
     this.assertNotArchived(sessionId)
-    const accepted = await owner.target.tryInjectSessionMessage(owner.deliveryKey, message)
+    beforeAdmission?.()
+    const accepted = await (beforeAdmission
+      ? owner.target.tryInjectSessionMessage(owner.deliveryKey, message, beforeAdmission)
+      : owner.target.tryInjectSessionMessage(owner.deliveryKey, message))
     if (typeof accepted === 'object' && accepted.queued && !accepted.turnId) {
       throw new Error(
         `session injection for ${capability.providerId}×${capability.surface} returned queued without an admission identity`,

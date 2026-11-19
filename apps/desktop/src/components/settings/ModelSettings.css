@@ -1,0 +1,86 @@
+/* WorkBuddy model settings. Keep the palette local to this page and its dialog. */
+div.gg-pane.gg-settings-detail:has(.gg-model-page) { background: var(--model-settings-page); }
+.gg-settings-detail div.gg-settings-page.gg-model-page { gap: 16px; }
+.gg-model-page [data-session-settings-section='auxiliary-models'] { background: transparent; }
+.gg-settings-detail .gg-model-page section.gg-settings-group {
+  gap: 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--card);
+  overflow: hidden;
+}
+.gg-settings-detail .gg-model-page .gg-settings-group > .gg-section-label {
+  padding: 16px 20px 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+}
+.gg-settings-detail .gg-model-page .gg-settings-group > .gg-settings-note {
+  padding: 0 20px 16px;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--model-settings-description);
+}
+.gg-settings-detail .gg-model-page section.gg-settings-group > div.gg-settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 16px 20px;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  position: relative;
+}
+.gg-model-page .gg-settings-card::before {
+  content: '';
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  top: -8px;
+  border-top: 1px solid var(--model-settings-separator);
+}
+.gg-model-page .gg-model-rows { display: flex; flex-direction: column; gap: 24px; }
+.gg-settings-detail .gg-model-page div.gg-settings-row,
+.gg-settings-detail .gg-model-page div.gg-settings-row + div.gg-settings-row {
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  column-gap: 12px;
+}
+.gg-model-page .gg-settings-row-body { flex-direction: row; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gg-model-page .gg-settings-row-title { font-size: 14px; font-weight: 500; line-height: 22px; }
+.gg-model-page .gg-settings-row-description { font-size: 14px; line-height: 22px; color: var(--model-settings-source); }
+.gg-model-page .gg-settings-row-leading { width: 20px; height: 20px; }
+.gg-model-page .gg-settings-row-leading > svg,
+.gg-model-page .gg-settings-row-leading > img { width: 20px; height: 20px; }
+.gg-model-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; }
+.gg-model-card-heading [data-testid='settings-model-search'] { width: 200px; height: 32px; }
+.gg-model-page .gg-settings-row-control > div { gap: 12px; }
+.gg-model-page .gg-settings-row-control .gg-model-icon-button { width: 28px; height: 28px; }
+.gg-model-expired { display: inline-flex; align-items: center; height: 20px; border-radius: 4px; padding: 0 6px; background: var(--model-sign-in-expired-bg); color: var(--model-sign-in-expired-fg); font-size: 12px; white-space: nowrap; }
+.gg-auxiliary-models .gg-settings-row-control { max-width: 100%; }
+.gg-model-page .gg-auxiliary-models .gg-settings-row-title { font-weight: 400; }
+.gg-auxiliary-model-select { width: 355px; max-width: 100%; height: 32px; }
+.gg-model-dialog { border-radius: 12px; }
+.gg-model-dialog .gg-model-provider-link { color: var(--model-settings-description); }
+.gg-model-dialog [data-slot='dialog-title'] { font-size: 16px; font-weight: 500; }
+.gg-model-dialog .subscription-connection-form { gap: 20px; }
+.gg-model-dialog label { font-size: 14px; line-height: 24px; color: var(--model-settings-description); gap: 12px; }
+.gg-model-dialog input,
+.gg-model-dialog [data-testid='custom-model-provider'],
+.gg-model-dialog [data-slot='select-trigger'] { min-height: 32px; height: 32px; }
+.gg-model-dialog .subscription-connection-form-actions,
+.gg-model-dialog .subscription-connection-form > .flex:last-child > .flex { gap: 12px; }
+@container gg-settings (max-width: 440px) {
+  .gg-auxiliary-model-select { width: min(355px, 100%); }
+  .gg-model-card-heading { flex-wrap: wrap; }
+}
+
+.gg-settings-detail .gg-model-page [data-platform-models] > .gg-section-label { padding: 0; }
+.gg-provided-model-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; border: 0; border-radius: 0; text-align: left; cursor: pointer; }
+.gg-model-card-title { display: block; color: var(--text-primary); font-size: 14px; font-weight: 500; line-height: 22px; }
+.gg-model-card-description { display: block; font-size: 14px; font-weight: 400; line-height: 22px; color: var(--model-settings-description); }
+.gg-settings-detail .gg-model-page section.gg-settings-group > div.gg-settings-card:empty,
+.gg-settings-detail .gg-model-page section[data-platform-models][data-expanded='false'] > div.gg-settings-card { display: none; }
+
+.gg-model-page .gg-model-icon-button svg { width: 18px; height: 18px; }

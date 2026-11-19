@@ -7,6 +7,7 @@ import { openProject } from '@main/core/projects/operations/openProject';
 import { projectManager } from '@main/core/projects/project-manager';
 import { classifyCreateFailure } from '@main/core/session-timeline/create-failure';
 import { launchCreatedSession } from '@main/core/session-timeline/launch-created-session';
+import { isAgentHomeImportCode } from '@gugu/session-core/workspace-server/agent-config';
 import { recordStartFailure } from '@main/core/session-timeline/start-failures';
 import { generateRandom } from '@main/core/sessions/name-generation/generateSessionName';
 import {
@@ -279,7 +280,7 @@ export async function executeSessionCreate(
         run.id,
         launched.code === 'provision_failed'
           ? { step: 'launch_session', code: 'provision_failed', message: setupFailure }
-          : { step: 'start_agent', code: 'failed', message: launched.detail }
+          : { step: 'start_agent', code: isAgentHomeImportCode(launched.code) ? launched.code : 'failed', message: launched.detail }
       );
       onStepCompleted(failed);
       return err(launched.code === 'provision_failed' ? 'provision_failed' : launched.detail);
@@ -288,9 +289,10 @@ export async function executeSessionCreate(
     return ok({ sessionId });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
+    const code = error instanceof Error && 'code' in error && isAgentHomeImportCode(error.code) ? error.code : 'unknown';
     const failed = await markRunFailed(run.id, {
       step: 'create_session',
-      code: 'unknown',
+      code,
       message: msg,
     });
     onStepCompleted(failed);

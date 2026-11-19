@@ -4,8 +4,8 @@ import { clippedElementBox } from '@/lib/elementVisibility'
 let column: HTMLElement
 afterEach(() => column?.remove())
 
-// The resident layer draws a widget's page above the whole window, so what the composer's cards cover must be cut
-// from its box, as the message list behind them is.
+// What the composer's cards cover is not seen: a widget slot's visible box (the presence that picks its live slot, the
+// resident layer's pages) is cut there, as the message list behind them is.
 it('cuts a slot at the top of its conversation\'s composer card, and only in that column', () => {
   column = document.createElement('div')
   column.setAttribute('data-chat-dock-column', 'c')

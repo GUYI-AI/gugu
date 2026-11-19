@@ -78,6 +78,20 @@ describe('资源库的取数对象(#6264 一套工作台:同一套控制器,rpc 
     expect(host.remote).toMatchObject({ deviceId: 'd22', deviceLabel: 'Linux 1', online: true });
   });
 
+  it('reuses the phone computer transport for catalogs, installation and host events', async () => {
+    d22.calls.length = 0;
+    const subscribe = vi.fn(() => () => undefined);
+    const transport = { rpc: d22.client as NonNullable<Parameters<typeof createRemoteLibraryHost>[2]>['rpc'], onEvent: subscribe };
+    const host = createRemoteLibraryHost({ ...device, deviceId: 'phone-target' }, undefined, transport);
+    await host.agents.listManagement();
+    await host.agents.install('codex', 'mise');
+    await host.extensions.api.list();
+    host.agents.onInstallProgress(() => undefined);
+    host.extensions.onEvent({ name: 'market-progress' }, () => undefined);
+    expect(verbs()).toEqual(['agents.listManagement', 'agents.install', 'extensions.list']);
+    expect(subscribe).toHaveBeenCalledTimes(2);
+  });
+
   it('装 / 升级 / 卸载 / 检测 / 用哪一份,都是那台机器上同名同参的调用', async () => {
     d22.calls.length = 0;
     const host = createRemoteLibraryHost(device);

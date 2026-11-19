@@ -393,6 +393,16 @@ describe('「后台守着」常驻通知两家共用', () => {
     expect(platformMock.setBackgroundWatch).toHaveBeenLastCalledWith(null, undefined)
   })
 
+  it('uses one quiet line for chat notifications and keeps the device claim when chat is turned off', () => {
+    const releaseChat = claimBackgroundWatch('chatNotifications', '咕咕正在接收新消息', '')
+    expect(platformMock.setBackgroundWatch).toHaveBeenLastCalledWith('咕咕正在接收新消息', '')
+    const releasePhone = claimBackgroundWatch('phoneDevice', '助理可以用这台手机')
+    releaseChat()
+    expect(platformMock.setBackgroundWatch).toHaveBeenLastCalledWith('助理可以用这台手机', undefined)
+    releasePhone()
+    expect(platformMock.setBackgroundWatch).toHaveBeenLastCalledWith(null, undefined)
+  })
+
   it('同一家改字:旧的放手是空操作,❌ 把新的关掉', () => {
     const releaseOld = claimBackgroundWatch('phoneDevice', '助理可以用这台手机', '切到后台，助理也能调这台手机')
     const releaseNew = claimBackgroundWatch('phoneDevice', '云端助理正在调用:查日程', '切到后台，助理也能调这台手机')

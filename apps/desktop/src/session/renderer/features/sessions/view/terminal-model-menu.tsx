@@ -1,3 +1,4 @@
+import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ComposerModelMenu,
@@ -12,7 +13,6 @@ import { SessionReloadConfirm } from '@renderer/features/sessions/session-reload
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { findSessionHostBridge } from '@renderer/lib/electron-api';
-import { useHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { localizeEffortOptions } from '../session-config/effort-options';
 import { sessionStartupFailures } from '../stores/session-startup-failures';
@@ -77,8 +77,7 @@ export function TerminalModelMenu({
       if ((value as { sessionId?: unknown } | null)?.sessionId === sessionId) refreshPlatformCatalogRef.current();
     });
   }, [sessionId]);
-  const harnessOptions = useHarnessModelOptions(providerId, 'tui');
-  const harnessCatalog = useHarnessModelCatalog(providerId, 'tui');
+  const harnessCatalog = useHarnessModelOptions(providerId, 'tui');
   const { data: agents } = useAgents();
   const capabilities = agents?.find((agent) => agent.id === providerId)?.capabilities ?? null;
 
@@ -94,11 +93,12 @@ export function TerminalModelMenu({
     sessionSelection: platformCatalog.sessionSelection,
     platformModelIds: platformCatalog.models.map((model) => model.id),
     recordedModel,
+    customModel: sessionRegistry.get(sessionId)?.sessions.get(sessionId)?.data.customModel,
   });
   const selectedOptionId = applied.optionId ?? recordedSelected;
   // 正在用的那个平台模型要会员了、或被他在设置里关掉了,也照列 —— 触发器写的就是它(见 `composerModelOptions`)。
   const options = useComposerModelOptions(
-    harnessOptions,
+    harnessCatalog.options,
     platformCatalog.models,
     providerId,
     selectedOptionId ? platformModelIdFromOption(selectedOptionId) : null
@@ -243,6 +243,7 @@ export function TerminalModelMenu({
         panel={panel}
         disabled={reloading}
         modelItems={modelItems}
+        onOpen={harnessCatalog.refresh}
         selectedModel={selectedOptionId}
         onModelChange={handleModelChange}
         openRequest={menuRequests - menuRequestsAtMount.current}

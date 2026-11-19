@@ -6,6 +6,7 @@ import type {
   SessionpageSessionCreateRequest,
   SessionpageOpenedFileReadRequest,
   SessionpageSessionOlderRequest,
+  SessionpageSessionOptionsRequest,
   SessionpageSessionReloadModelRequest,
   SessionpageSessionRespondRequest,
   SessionpageSessionSendRequest,
@@ -29,6 +30,7 @@ import {
 } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { createRPCController, withSender } from '@shared/lib/ipc/rpc';
 import * as create from './create-session';
+import type { SessionCreateAttachmentDraftRequest, SessionAdmitCreatedAttachmentsRequest } from '@gugu/session-core/session-record/creation-attachment-protocol';
 import { createSkills } from '../agents/create-skills';
 import * as service from './service';
 import { prefetchFiles } from './turn-files';
@@ -118,6 +120,11 @@ function trimmed<T>(result: service.SessionTimelineResult<T>, trim: boolean | un
 }
 
 export const sessionTimelineController = createRPCController({
+  // Attachment identity/resolver dependencies are needed only by these two verbs, not every timeline read.
+  sessionCreateAttachmentDraft: async (input: SessionCreateAttachmentDraftRequest) =>
+    (await import('./creation-attachment-production')).createAttachmentDraft(input),
+  sessionAdmitCreatedAttachments: async (input: SessionAdmitCreatedAttachmentsRequest) =>
+    (await import('./creation-attachment-production')).admitCreatedAttachments(input),
   prefetchFiles,
   taskExchanges: (input: TaskExchangeRequest) => readTaskExchanges(input),
   taskExchangesSubscribe: withSender(async (sender: number, input: TaskExchangeRequest & { subscriptionId: string }) => {
@@ -204,7 +211,7 @@ export const sessionTimelineController = createRPCController({
   sessionRespond: (input: SessionpageSessionRespondRequest) => service.respond(input),
   sessionCancel: (input: SessionpageSessionCancelRequest) => service.cancel(input.conversationId),
   sessionUpdate: (input: SessionpageSessionUpdateRequest) => service.updateSession(input),
-  sessionOptions: (input: { conversationId: string }) => service.sessionOptions(input),
+  sessionOptions: (input: SessionpageSessionOptionsRequest) => service.sessionOptions(input),
   sessionSetOption: (input: SessionpageSessionSetOptionRequest) => service.setSessionOptionValue(input),
   sessionReloadModel: (input: SessionpageSessionReloadModelRequest) => service.reloadSessionModel(input),
   /** 新建前问:这台机器上有哪些项目、装了哪几家 harness。 */

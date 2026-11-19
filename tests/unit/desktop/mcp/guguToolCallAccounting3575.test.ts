@@ -1,3 +1,4 @@
+import { testAttachmentUploads } from '../../../support/attachmentUploadHost'
 import { randomUUID } from 'node:crypto'
 import { createServer, request, type Server } from 'node:http'
 import { AddressInfo } from 'node:net'
@@ -141,7 +142,7 @@ async function wireWithAccounting() {
     agentUserId,
     threadRootId: null,
     autonomy: null,
-    socialBridgeDeps: {
+    socialBridgeDeps: { attachments: testAttachmentUploads(),
       host,
       grantKey: `accounting-${agentUserId}`,
       getSupabaseUrl: () => 'https://supabase.example',

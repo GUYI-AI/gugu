@@ -34,6 +34,7 @@ describe('a page moved between panes while on screen is not activated again', ()
     const { layout, open, step } = setup();
     open('A');
     open('B');
+    layout.setActiveGroup(layout.sidePaneId!);
     layout.unpair({ declined: true });
     expect(layout.mainGroup.pane.shownTabIds.length).toBe(1);
     // Only B on screen (it filled the block); 向右分 moves B to the side and brings C back on screen beside it.

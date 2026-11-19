@@ -10,6 +10,7 @@ export type TurnSettlement = { sessionId: string; referenceId: string } & (
 );
 /** A real terminal turn crossed the durable writer, or that write failed. Never inferred from lifecycle. */
 export const sessionTurnSettledChannel = defineEvent<TurnSettlement>('session:turn-settled');
+export const nativePersonalPublicationChannel = defineEvent<{ accountId: string; revision: string }>('session:native-personal-publication');
 
 export type ProviderReviewGate = 'mcp';
 /** 阻塞的种类;它归哪一个活动态由 provider-review-gate.ts 的 PROVIDER_BLOCKER_STATUS 那张表决定。 */

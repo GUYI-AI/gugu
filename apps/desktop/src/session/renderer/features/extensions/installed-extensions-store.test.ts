@@ -184,3 +184,33 @@ describe('the 「App」 badge (updateCount)', () => {
     expect(store.updateCount).toBe(3);
   });
 });
+
+describe('a file is drawn with the icon its App declared for it, or the host mark (owner 10-17)', () => {
+  const office = {
+    id: 'office', name: 'Office', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html',
+    contributes: { tabs: [{ name: 'main', title: 'Office', opensFiles: { chat: ['.pptx', '.xlsx'] }, fileIcons: { '.pptx': 'pptx.png' } }] },
+  };
+  const board = {
+    id: 'board', name: 'Board', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html',
+    contributes: { tabs: [{ name: 'main', title: 'Board', opensFiles: { chat: ['.board'] } }] },
+  };
+  async function store() {
+    const api = {
+      list: async () => ({ success: true, data: { extensions: [office, board], invalid: [], icons: { 'office.main': 'data:app', 'office.main .pptx': 'data:pptx' }, disabled: [] } }),
+      marketUpdates: async () => ({ success: true, data: null }),
+    } as unknown as Api;
+    const loaded = new InstalledExtensionsStore(api);
+    await loaded.load();
+    return loaded;
+  }
+
+  it('the declared icon for the claim that takes the file', async () => {
+    expect((await store()).fileIcon('office.main', 'Report.PPTX', 'chat')).toBe('data:pptx');
+  });
+
+  it('a claim without one, and an App that declares none: no icon — never the App\'s own', async () => {
+    const loaded = await store();
+    expect(loaded.fileIcon('office.main', 'budget.xlsx', 'chat')).toBeNull();
+    expect(loaded.fileIcon('board.main', 'sprint.board', 'chat')).toBeNull();
+  });
+});

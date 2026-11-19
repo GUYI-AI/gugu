@@ -48,7 +48,7 @@ import { useContactsStore } from '@/store/contactsContext'
 import { PhoneIdeas } from './PhoneIdeas'
 import { PhoneMemory } from './PhoneMemory'
 import { PhoneProfile } from './PhoneProfile'
-import { phoneNextRoute, phoneParentRoute, type PhoneParentRoute } from './phoneRoutes'
+import { phoneParentRoute, type PhoneParentRoute } from './phoneRoutes'
 import { PhoneVoiceBar } from './PhoneVoiceBar'
 import { usePhoneVoiceNotes } from './phoneVoiceRuntime'
 import { usePhoneMachine, type PhoneMachineState } from './phoneMachine'
@@ -131,21 +131,18 @@ function MobileAssistantAppContent({
 } & AssistantChatHandlers) {
   const { t } = useTranslation('assistant')
   const [route, setRoute] = useState<PhoneRoute>({ tab: 'chat' })
-  // Its 连接应用 (or its settings, `detail.sub`), asked from elsewhere: a page of its profile here, never Settings (owner 11-12).
   useEffect(() => {
     const open = (event: Event) => {
-      const sub = (event as CustomEvent<{ sub?: 'settings' | 'connectors' } | null>).detail?.sub === 'settings' ? 'settings' : 'connectors'
-      setRoute({ tab: 'profile', sub })
+      if ((event as CustomEvent<{ sub?: string }>).detail?.sub === 'settings') setRoute({ tab: 'profile', sub: 'settings' })
     }
     window.addEventListener(UI_EVENTS.openAssistantConnectors,open)
     return () => window.removeEventListener(UI_EVENTS.openAssistantConnectors,open)
   },[])
   const open = useCallback((target: PhoneRoute) => {
-    const next = phoneNextRoute(route, target)
     // The assistant already owns one phone layer. Internal routes update its
     // content without snapshotting and cross-fading the persistent header/chat.
-    setRoute(next)
-  }, [route])
+    setRoute(target)
+  }, [])
   const tab = route.tab
   // API 49 The assistant's place (assistant-entry.ts): the product's assistant App fills every section but the conversation.
   const entry = usePhoneAssistantEntry()
@@ -415,7 +412,7 @@ function useLayerForApp(app: Extract<AssistantLayerEntry, { entry: 'app' }> | nu
       move: (next) => { showAssistantTaskChat(null); openRef.current({ tab: next }) },
       open: (screen: PhoneAssistantScreen) => {
         if ('confirm' in screen) requestAssistantClose()
-        else if ('connectors' in screen) openRef.current({ tab: 'profile', sub: 'connectors' })
+        else if ('connectors' in screen) window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'connectors' } }))
         else openRef.current({ tab: screen.section, sub: screen.page })
       },
       openWork: (work) => { phoneWorkChats.open(assistantId, work) },

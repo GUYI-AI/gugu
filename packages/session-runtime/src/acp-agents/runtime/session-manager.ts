@@ -1,3 +1,4 @@
+import { noteCodexPreparation } from './codex-preparation-progress';
 import type { SessionCommandDefinition } from '@gugu/session-core/acp';
 import { isAcpAuthRequired } from '@gugu/session-core/acp';
 import type { AcpPermissionParams } from '@gugu/session-core/agents/plugins';
@@ -57,6 +58,7 @@ import {
   acpErr,
   canRepresentPermissionMode,
   classifyProviderPermissionMode,
+  permissionModeSupportsBillingRoute,
   isAutoApproveIntent,
   isTopPermissionRung,
   resolvePermissionModeFallback,
@@ -116,7 +118,8 @@ import {
   type SessionsListModel,
 } from '../state/live-models';
 import type { AcpRuntimeDeps, AcpStartInput, SendPromptInput } from './types';
-import { IdleCompaction } from './idle-compaction';
+import { ASSISTANT_IDLE_COMPACTION, CLAUDE_CACHE_LAST_REQUEST_MAX_AGE_MS, IdleCompaction, claudeCacheIdleCompaction, type IdleCompactionPolicy } from './idle-compaction';
+import { readPromptCache, resolveClaudeIdleCompaction } from './claude-idle-compaction';
 
 type StartupSettingDimension = 'model' | 'effort' | 'fast';
 
@@ -635,6 +638,11 @@ export class SessionManager implements InboundRouter {
           });
         });
     }
+    // A stop while preparation had not opened the connection has no process to invalidate yet.
+    if (this.abandonedStarts.has(input.sessionId)) {
+      this.removeRecord(input.sessionId, false, false, true);
+      return acpErr.invalidState('Session stopped during startup');
+    }
     this.deps.logger.warn('SessionManager: starting provider process', { sessionId: input.sessionId, providerId: input.providerId, reason: this.reconnectingSessions.get(input.sessionId)?.kind ?? (input.providerSessionId ? 'resume-unspecified' : 'startup'), hostPid: process.pid, model: input.platformModel ?? null });
     const acquire = await acquireAsResult(
       this.connections,
@@ -649,14 +657,11 @@ export class SessionManager implements InboundRouter {
         capabilitySpawnEnv: input.capabilitySpawnEnv,
         capabilitySpawnArgs: input.capabilitySpawnArgs,
         buildClient: (_agent, context) => buildAgentClient(context, this, this.ports),
-        ...(binding.behavior.turnFailure?.fromStderrLine
-          ? {
-              onStderrLine: (line: string) => {
-                const failure = binding.behavior.turnFailure?.fromStderrLine?.(line);
-                if (failure) record.cell.noteProviderStderrFailure(failure);
-              },
-            }
-          : {}),
+        onStderrLine: (line: string) => {
+          noteCodexPreparation(input.providerId, line, this.startProgress, input.sessionId, () => this.syncRecord(record));
+          const failure = binding.behavior.turnFailure?.fromStderrLine?.(line);
+          if (failure) record.cell.noteProviderStderrFailure(failure);
+        },
         onStage: (stage, executable) => this.markStartStage(input, stage, executable),
       },
       isAcpConnectionError
@@ -1431,7 +1436,7 @@ export class SessionManager implements InboundRouter {
    *
    * - `input.model` — a harness-native id (the user's own model), or, with an API key connection
    *   that names its model through the process environment, the connection's model name — which
-   *   that spawn already runs (`runContext.apiKeyConnection.model`), so there is nothing to assert.
+   *   that spawn already runs (`runContext.customModel.model`), so there is nothing to assert.
    * - `input.platformModel` — the Gugu platform model this start pinned (canonical id). Its wire
    *   form is taken from the list the live session itself advertises (`gugu-platform/<id>` on
    *   pi / opencode, the bare id where nothing is advertised — copilot), never spelled here.
@@ -1607,7 +1612,7 @@ export class SessionManager implements InboundRouter {
       // 而这次 spawn 的环境点名的正是它 ⇒ 进程起来就跑它。这一家的 id 是自己的写法(qwen `$runtime|openai|<名>(openai)`),
       // 拿名字去设只会被拒、再报一条「模型不可用」的假警报。❌ 不按前缀拼它的 id —— 各家写法不同,同一条规则对五家都成立的
       // 是「环境已经点名就不设」。续接同理:记录与环境点名同一个模型,这家记着的也是它。
-      if (input.runContext?.apiKeyConnection?.model === input.model) return null;
+      if (input.runContext?.customModel?.model === input.model) return null;
       return { kind: 'assert', requested: input.model, wireValue: input.model };
     }
     // 平台模型:spawn 的注入已经带着它,只有续接一条带会话记忆的 provider 会话时才可能被顶掉。
@@ -2328,6 +2333,7 @@ export class SessionManager implements InboundRouter {
       projectId: input.projectId,
       providerId: input.providerId,
       acpSessionId,
+      billingRoute: input.platformModel ? 'platform' : input.billingRoute ?? 'unknown',
       ...(input.platformAccessSessionId ? { platformCredentials: true } : {}),
       ...(provider?.capabilities.acp.liveSettings
         ? { liveSettings: provider.capabilities.acp.liveSettings }
@@ -2392,22 +2398,79 @@ export class SessionManager implements InboundRouter {
     });
     this.cells.set(input.sessionId, record);
     if (isRecord(assistant) && assistant.idleCompaction === true) {
-      record.idleCompaction = new IdleCompaction(
-        () => ({ ...cell.idleCompactionState, idle: record.phase === 'ready' && cell.idleCompactionState.idle }),
-        async () => {
-          const before = cell.usage?.contextUsed ?? null;
-          const result = await cell.compactIfIdle();
-          if (!result.success) throw new Error(JSON.stringify(result.error));
-          if (result.data.compacted) this.deps.logger.info('SessionManager: compacted idle assistant', {
-            sessionId: input.sessionId, contextTokensBefore: before,
-          });
-        },
-        error => this.deps.logger.warn('SessionManager: idle assistant compaction failed', {
-          sessionId: input.sessionId, error: error instanceof Error ? error.message : String(error),
-        }),
-      );
+      record.idleCompaction = this.idleCompactionFor(record, cell, 'assistant', ASSISTANT_IDLE_COMPACTION);
+    } else if (input.providerId === 'claude') {
+      this.armClaudeIdleCompaction(record, cell);
     }
     return record;
+  }
+
+  private idleCompactionFor(
+    record: SessionRecord,
+    cell: SessionCell,
+    kind: 'assistant' | 'claude',
+    policy: IdleCompactionPolicy,
+    beforeCompact: () => Promise<string | null> = async () => null,
+  ): IdleCompaction {
+    const sessionId = record.input.sessionId;
+    return new IdleCompaction(
+      () => ({ ...cell.idleCompactionState, idle: record.phase === 'ready' && cell.idleCompactionState.idle }),
+      async () => {
+        const skipped = await beforeCompact();
+        if (skipped) {
+          this.deps.logger.info('SessionManager: idle compaction skipped', { sessionId, kind, reason: skipped });
+          return;
+        }
+        const before = cell.usage?.contextUsed ?? null;
+        const result = await cell.compactIfIdle();
+        if (!result.success) throw new Error(JSON.stringify(result.error));
+        if (result.data.compacted) this.deps.logger.info('SessionManager: compacted idle session', {
+          sessionId, kind, contextTokensBefore: before,
+        });
+      },
+      error => this.deps.logger.warn('SessionManager: idle compaction failed', {
+        sessionId, kind, error: error instanceof Error ? error.message : String(error),
+      }),
+      policy,
+    );
+  }
+
+  /**
+   * #3005 Claude Code's own idle compaction does not run under ACP: run it here, before the one-hour prompt
+   * cache expires. Settings are re-read when the timer fires, so turning it off applies to a live session.
+   */
+  /** #3005 Gugu's settings switch; the timer reads it when it fires, so turning it off applies to live sessions. */
+  private idleCompactionEnabled = true;
+
+  setIdleCompaction(enabled: boolean): void {
+    if (this.idleCompactionEnabled !== enabled) this.deps.logger.info('SessionManager: idle compaction setting', { enabled });
+    this.idleCompactionEnabled = enabled;
+  }
+
+  private armClaudeIdleCompaction(record: SessionRecord, cell: SessionCell): void {
+    const input = record.input;
+    const resolve = () => resolveClaudeIdleCompaction({ env: this.providerEnv(input), cwd: input.cwd, homeDir: os.homedir() });
+    void resolve().then((config) => {
+      if (!config.enabled || this.cells.get(input.sessionId) !== record || record.idleCompaction) return;
+      record.idleCompaction = this.idleCompactionFor(record, cell, 'claude', claudeCacheIdleCompaction(config.minTokens), async () => {
+        if (!this.idleCompactionEnabled) return 'gugu-setting-off';
+        const current = await resolve();
+        if (!current.enabled) return current.reason;
+        if ((cell.usage?.contextUsed ?? 0) < current.minTokens) return 'below-threshold';
+        const transcript = cell.transcriptPath;
+        if (!transcript) return 'no-transcript';
+        const cache = await readPromptCache(transcript);
+        if (cache?.ttl !== '1h') return `cache-ttl-${cache?.ttl ?? 'unknown'}`;
+        // Turns that never reached the model (a usage-limit note) end work without refreshing the cache.
+        if (cache.lastRequestAt !== null && Date.now() - cache.lastRequestAt > CLAUDE_CACHE_LAST_REQUEST_MAX_AGE_MS) return 'cache-expired';
+        return null;
+      });
+      record.idleCompaction.update();
+    }, (error: unknown) => {
+      this.deps.logger.warn('SessionManager: idle compaction settings unreadable', {
+        sessionId: input.sessionId, error: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
 
   private disposeLostRecord(record: Extract<SessionRecord, { phase: 'lost' }>): void {
@@ -2444,6 +2507,14 @@ export class SessionManager implements InboundRouter {
     input: AcpStartInput
   ): Promise<void> {
     const provider = this.deps.agentHost.get(input.providerId);
+    if (input.permissionMode === 'ai-review' && !provider?.capabilities.autoApprove.modes?.['ai-review']) {
+      throw new Error('This harness does not support AI review');
+    }
+    if (!permissionModeSupportsBillingRoute(
+      resolveSessionPermissionMode(input),
+      provider?.capabilities.autoApprove.modes,
+      input.platformModel ? 'platform' : input.billingRoute ?? 'unknown',
+    )) throw new Error('This permission tier is unavailable for the session billing route');
     if (provider?.capabilities.acp.sessionModes === 'none') return;
     if (provider?.capabilities.autoApprove.kind !== 'supported') return;
     // 只读**权限那一维**的声明:三维各自声明(见 `LiveSettingsCapability`),量过模型那一维的家
@@ -2773,6 +2844,7 @@ export class SessionManager implements InboundRouter {
       lifecycle: state.lifecycle,
       ...(this.cells.get(input.sessionId)?.closing ? { closing: true } : {}),
       isGenerating: state.isGenerating,
+      retrying: cell?.sessionState.retrying ?? null,
       lastStopReason: cell?.sessionState.lastStopReason ?? null,
       lastTurnOutcome: cell?.sessionState.lastTurnOutcome ?? 'none',
       lastTurnError: cell?.lastTurnError ?? null,
@@ -2793,7 +2865,7 @@ export class SessionManager implements InboundRouter {
       lastActionAt: recent.lastActionAt,
       failure: cell?.sessionState.failure ?? state.failure ?? null,
       ...(cell ? { canReattach: cell.canReattach } : {}),
-      startProgress: state.lifecycle === 'starting'
+      startProgress: state.lifecycle === 'starting' || state.lifecycle === 'replaying'
         ? this.startProgress.get(input.sessionId) ?? null
         : null,
       updatedAt: Date.now(),

@@ -135,37 +135,33 @@ afterEach(() => {
 
 const render = (node: Parameters<typeof createNode>[0], props: Record<string, unknown>) => renderWithAppProviders(harness, createNode(I18nextProvider, { i18n }, createNode(node, props)), { auth: { id: `phone-connectors-test-${accountSequence}` } })
 
-describe('直接展开的连接列表', () => {
-  it('应用行只有一个操作，先打开详情，不重复标记未连接或混入设备授权', async () => {
+describe('市场的连接器目录', () => {
+  it('市场的连接按钮打开详情，不直接启动授权', async () => {
     const page = pageProps('qq-mail')
-    await render(PhoneConnectorsPage, { ...page.props, embedded: true })
+    await render(PhoneConnectorsPage, { ...page.props, marketMode: 'market' })
     expect(q('assistant-connectors')!.querySelector('h1')).toBeNull()
-    expect(q('assistant-connector-qq-mail')!.textContent).not.toContain('未连接')
-    expect(q('assistant-connect-qq-mail')).toBeNull()
-    expect([...q('assistant-connectors')!.querySelectorAll('[role="tab"]')].map(el => el.textContent)).toEqual(['全部应用', '我的连接'])
-    await clickElement(q('assistant-connector-qq-mail')!)
+    const row = q('phone-market-connector-qq-mail')!
+    expect(row.textContent).toContain('连接')
+    expect(q('assistant-connector-connect')).toBeNull()
+    await clickElement(row.querySelectorAll('button')[1]!)
     expect(page.go).toHaveBeenLastCalledWith('connector:qq-mail')
   })
 
-  it('有凭据但尚未检查、授权已过期、检查失败分别显示真实状态', async () => {
+  it('已安装只列实际保存的连接，并把健康状态和已连接区分开', async () => {
     const page = pageProps('qq-mail', { configured: { 'qq-mail': true } })
-    await render(PhoneConnectorsPage, page.props)
-    expect(q('assistant-connector-qq-mail')!.textContent).toContain('尚未验证')
-    expect(q('assistant-connector-qq-mail')!.textContent).not.toContain('已连接')
+    await render(PhoneConnectorsPage, { ...page.props, marketMode: 'installed' })
+    expect(q('phone-market-connector-qq-mail')!.textContent).toContain('尚未验证')
+    expect(q('phone-market-connector-dingtalk')).toBeNull()
     const data = page.props.integrations as { data: PhoneIntegrations }
     data.data.statuses = { 'qq-mail': { connected: true, capabilities: { requiresRepositoryUrl: false, supportsIssueContext: false } } }
-    await render(PhoneConnectorsPage, page.props)
-    await clickElement([...q('assistant-connectors')!.querySelectorAll<HTMLElement>('[role="tab"]')].find(el => el.textContent === '我的连接')!)
-    expect(q('assistant-connectors')!.querySelector('section')).toBe(q('assistant-connectors-connected'))
-    expect(q('assistant-connectors-connected')!.querySelector('h2')!.textContent).toBe('已连接1')
-    expect(q('assistant-connectors-connected')!.contains(q('assistant-connector-qq-mail'))).toBe(true)
+    await render(PhoneConnectorsPage, { ...page.props, marketMode: 'installed' })
+    expect(q('phone-market-connector-qq-mail')!.textContent).toContain('已连接')
     data.data.statuses = { 'qq-mail': { connected: false, errorType: 'authorization_expired', capabilities: { requiresRepositoryUrl: false, supportsIssueContext: false } } }
-    await render(PhoneConnectorsPage, page.props)
-    expect(q('assistant-connector-qq-mail')!.textContent).toContain('需要重新授权')
-    expect(q('assistant-connect-qq-mail')).toBeNull()
+    await render(PhoneConnectorsPage, { ...page.props, marketMode: 'installed' })
+    expect(q('phone-market-connector-qq-mail')!.textContent).toContain('需要重新授权')
     data.data.statusError = new Error('service unreachable')
-    await render(PhoneConnectorsPage, page.props)
-    expect(q('assistant-connector-qq-mail')!.textContent).toContain('检查没通过')
+    await render(PhoneConnectorsPage, { ...page.props, marketMode: 'installed' })
+    expect(q('phone-market-connector-qq-mail')!.textContent).toContain('检查没通过')
   })
 })
 

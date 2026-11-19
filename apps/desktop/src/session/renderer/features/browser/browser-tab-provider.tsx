@@ -17,12 +17,14 @@ export interface BrowserState {
   browserId: string;
   /** Session snapshot — kept current by BrowserTabResource's MobX reaction. */
   session: BrowserSessionSnapshot;
+  workspaceStart?: true;
   /** 转发的端口活不过应用重启(别的机器上的会话):❌ 从快照里复活一个地址栏指着没人监听的本机端口的页签。 */
   ephemeral?: true;
 }
 
 export interface BrowserOpenArgs {
   initialUrl?: string;
+  workspaceStart?: true;
 }
 
 export const browserTabProvider: TabProvider<
@@ -46,20 +48,26 @@ export const browserTabProvider: TabProvider<
    */
   onBeforeOpen(args: BrowserOpenArgs, ctx: TabViewContext): BrowserState | null {
     const sessionCtx = ctx as SessionTabContext;
+    const chatId = ctx.place?.kind === 'chat' ? ctx.place.chatId : undefined;
     const browserSettings = getAppSettingValueSnapshot('browser');
     const profileId = normalizeBrowserProfileSelection(
       browserSettings?.defaultProfileId,
       browserSettings?.profiles
     );
     const session = browserSessionStore.createSession({
-      projectId: sessionCtx.projectId,
-      workspaceId: sessionCtx.workspaceId,
-      sessionId: sessionCtx.sessionId,
+      projectId: chatId ? 'chat' : sessionCtx.projectId,
+      workspaceId: chatId ?? sessionCtx.workspaceId,
+      sessionId: chatId ? '' : sessionCtx.sessionId,
       profileId,
       initialUrl: args.initialUrl,
     });
-    const persistent = workspaceBackend(sessionCtx.projectId).browser.persistent;
-    return persistent ? { browserId: session.browserId, session } : { browserId: session.browserId, session, ephemeral: true };
+    const persistent = !!chatId || workspaceBackend(sessionCtx.projectId).browser.persistent;
+    return {
+      browserId: session.browserId,
+      session,
+      ...(args.workspaceStart && { workspaceStart: true }),
+      ...(!persistent && { ephemeral: true }),
+    };
   },
 
   initialize(
@@ -67,6 +75,7 @@ export const browserTabProvider: TabProvider<
     handle: TabHandle,
     ctx: TabViewContext
   ): BrowserTabResource {
+    if (ctx.place?.kind === 'chat') return new BrowserTabResource(entry, handle);
     const sessionCtx = ctx as SessionTabContext;
     return new BrowserTabResource(entry, handle, (browserId) =>
       workspaceBackend(sessionCtx.projectId).browser.attach(browserId, sessionCtx),

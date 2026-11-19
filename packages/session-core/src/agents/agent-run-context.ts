@@ -26,6 +26,8 @@ import { hostCliKey, hostCliSchema } from './host-cli';
 export const agentRunContextSchema = z.object({
   /** 选中的那一份二进制(解析失败也是一个答案,带着诊断原文)。 */
   cli: hostCliSchema,
+  /** Actual selected host executable, probed with its launch environment. Unknown stays absent. */
+  cliVersion: z.string().optional(),
   /** Host-owned credential selection, pinned on first session launch. */
   connectionId: z.string().optional(),
   /** Home-shaped root for reading the selected connection's credential files. */
@@ -34,14 +36,13 @@ export const agentRunContextSchema = z.object({
   unsetEnv: z.array(z.string()).optional(),
   /** Selected device credentials. Provider/platform overrides remain authoritative. */
   credentialEnv: z.record(z.string(), z.string()).optional(),
-  /**
-   * 选中的是一把「API Key 连接」(#2507,Claude / Codex 以外、声明了 `apiKeyConnection` 的家)。
-   * 有它时这一家的登录态 = 已登录(API Key)、付费方 = 这把 key / 它的地址,由宿主照它答,
-   * ❌ 再去读 CLI 自己的文件 —— 那里没有这把 key,只会答「未登录」。`endpoint` 缺席 = 官方地址。
-   * `model` = 这次启动经进程环境点名的那个模型(key 走环境变量的家):这条进程起来就跑它,
-   * 启动时不必、也没法再用会话记录里的名字去设(这一家的 id 是自己的写法,qwen 是 `$runtime|openai|<名>(openai)`)。
-   */
-  apiKeyConnection: z.object({ endpoint: z.string().optional(), model: z.string().optional() }).optional(),
+  /** The session's chosen custom model, delivered through the host's credential forwarder. */
+  customModel: z.object({ endpoint: z.string().optional(), model: z.string().optional() }).optional(),
+  vendorKeyAccount: z.boolean().optional(),
+  /** Host admission can disable native review for an unresolved custom main model. */
+  autoReviewAllowed: z.boolean().optional(),
+  autoReviewUnavailable: z.boolean().optional(),
+  autoReviewByHaiku: z.boolean().optional(),
   /**
    * 底座 env:白名单透传 + 平台补偿(Windows 八个必备变量 / `SSH_AUTH_SOCK` 探测)
    * + **用户在 Agents 设置里填的 env**。
@@ -111,6 +112,7 @@ const KEY_ITEM_SEP = String.fromCharCode(1);
 export function agentRunContextKey(ctx: AgentRunContext): string {
   return [
     hostCliKey(ctx.cli),
+    ctx.cliVersion ?? '',
     envKey(ctx.env),
     envKey(ctx.configRootEnv),
     envKey(ctx.credentialEnv ?? {}),

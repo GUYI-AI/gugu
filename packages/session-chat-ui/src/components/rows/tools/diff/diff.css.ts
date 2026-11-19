@@ -115,7 +115,7 @@ export const diffErrorIcon = style([
  */
 export const diffBodyCard = style({
   background: 'color-mix(in srgb, currentColor 2.5%, transparent)',
-  // Diff rows are measured one source line tall, so wrapping them would make
+  // Transcript preview rows are measured one source line tall, so wrapping them would make
   // the virtualizer's height contract lie. Keep the source line intact and
   // make the body the scroll container instead of clipping the right side of a
   // long path/command.
@@ -169,10 +169,48 @@ export const pdiffLine = style({
   // so it cannot drift from the measured value via a CSS variable.
 });
 
+export const diffMarker = style({
+  color: vars.fgMuted,
+  paddingInlineStart: '8px',
+});
+
 globalStyle(`${pdiffLine} span`, {
   color: 'var(--shiki-light)',
 });
 
 globalStyle(`.emdark ${pdiffLine} span`, {
   color: 'var(--shiki-dark)',
+});
+
+export const annotationControl = style({
+  display: 'inline-flex',
+  width: '2rem',
+  flexShrink: 0,
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginInlineStart: '2px',
+});
+
+/** Recorded panes are not virtualized: wrap visually without creating patch rows. */
+export const wrappedDiffBody = style({});
+
+globalStyle(`${wrappedDiffBody} ${pdiffBody}`, {
+  width: '100%',
+  minWidth: 0,
+});
+
+globalStyle(`${wrappedDiffBody} ${diffLineContent}`, {
+  flex: '1 1 0%',
+  minWidth: 0,
+  whiteSpace: 'pre-wrap',
+  overflowWrap: 'anywhere',
+});
+
+globalStyle(`${wrappedDiffBody} ${diffMarker}, ${wrappedDiffBody} ${annotationControl}`, {
+  flexShrink: 0,
+  alignSelf: 'flex-start',
+});
+
+globalStyle(`[data-patch-row]:not(:hover) ${annotationControl} [data-diff-add-annotation]:not(:focus-visible)`, {
+  opacity: 0,
 });

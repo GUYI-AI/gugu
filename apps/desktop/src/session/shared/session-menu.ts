@@ -7,8 +7,12 @@
  * Kept free of renderer imports (like conversation-row-menu.ts) so the chat list, the task page and the phone share it.
  */
 
+import { entryItems, type MenuExcludes, type MenuLabel, type MenuTableItem } from './menu-table'
+
 export type SessionMenuAction =
+  | 'open-chat'
   | 'mark-read'
+  | 'mark-unread'
   | 'pin'
   | 'sidebar-pin'
   | 'rename'
@@ -21,20 +25,10 @@ export type SessionMenuAction =
   | 'mark-all-read'
   | 'delete-chat'
 
-export type SessionMenuEntry = 'tab' | 'sidebar-row' | 'chat-row' | 'phone'
+export type SessionMenuEntry = 'tab' | 'sidebar-row' | 'chat-row' | 'phone' | 'contacts'
 
-/** A label in the catalog it lives in: `session` = the task page's messages, `messaging` = the chat namespace. */
-export type SessionMenuLabel = { ns: 'session' | 'messaging'; key: string }
-
-export type SessionMenuItem = {
-  id: SessionMenuAction
-  label: SessionMenuLabel
-  icon: 'read' | 'pin' | 'unpin' | 'sidebar' | 'sidebar-off' | 'rename' | 'bell' | 'archive' | 'fork' | 'copy' | 'reload' | 'history' | 'trash'
-  /** Into 更多: low-frequency, or acts on more than this one row. */
-  fold?: true
-  danger?: true
-  disabled?: boolean
-}
+export type SessionMenuLabel = MenuLabel
+export type SessionMenuItem = MenuTableItem<SessionMenuAction>
 
 export type SessionMenuState = {
   /** 置顶 acts on the row this agent shows as in the left list (see {@link SessionMenuPin}). */
@@ -67,15 +61,19 @@ export type SessionMenuPin = 'session' | 'chat'
  * The actions an entry leaves out, each with its reason. A test pins that every reason is non-empty; an entry with no
  * handler for an action that is not listed here throws when the menu is built — fail loud, ❌ silently missing.
  */
-export const SESSION_MENU_EXCLUDES: Record<SessionMenuEntry, Partial<Record<SessionMenuAction, string>>> = {
+export const SESSION_MENU_EXCLUDES: MenuExcludes<SessionMenuEntry, SessionMenuAction> = {
   tab: {
+    'open-chat': 'The tab is the open chat.',
     'mark-read': 'The tab is open: what it shows is being read.',
+    'mark-unread': 'The tab is open: what it shows is being read.',
     notifications: 'Notifications belong to the conversation; its settings are one click away in the chat page.',
     'mark-all-read': 'Acts on the whole chat list, not on this tab.',
     'delete-chat': 'An open tab is a live task; deleting the conversation is offered only once the agent is archived, from the chat list.',
   },
   'sidebar-row': {
+    'open-chat': 'Clicking the row opens it.',
     'mark-read': 'A project task row has no conversation of its own to mark read.',
+    'mark-unread': 'A project task row has no conversation of its own to mark unread.',
     notifications: 'A project task row has no conversation of its own to mute.',
     reload: 'Restarting asks through the session page confirmation, which lives with the open session.',
     'legacy-history': 'The legacy history dialog lives with the open session page.',
@@ -83,13 +81,16 @@ export const SESSION_MENU_EXCLUDES: Record<SessionMenuEntry, Partial<Record<Sess
     'delete-chat': 'A project task row has no conversation of its own to delete.',
   },
   'chat-row': {
+    'open-chat': 'Clicking the row opens it.',
     fork: 'The row may stand for a task on another machine; forking needs the task on this one.',
     'copy-id': 'The row may stand for a task on another machine; its session id is not known here without opening it.',
     reload: 'Restarting needs the task mounted on this machine.',
     'legacy-history': 'The legacy history dialog lives with the open session page.',
   },
   phone: {
+    'open-chat': 'The phone session menu is on the open session page or on its row, which opens it.',
     'mark-read': 'The phone session list has no conversation unread state.',
+    'mark-unread': 'The phone session list has no conversation unread state.',
     notifications: 'The phone session list has no conversation notification setting.',
     'sidebar-pin': 'The left list is desktop only.',
     fork: 'The phone has no fork call to the task host.',
@@ -99,47 +100,67 @@ export const SESSION_MENU_EXCLUDES: Record<SessionMenuEntry, Partial<Record<Sess
     'mark-all-read': 'The phone session list has no conversation unread state.',
     'delete-chat': 'Deleting a conversation is in the phone chat list.',
   },
+  contacts: {
+    'sidebar-pin': 'Pin to sidebar is offered on the agent\'s own rows in the left list.',
+    fork: 'The contact may stand for a task on another machine; forking needs the task on this one.',
+    'copy-id': 'The contact may stand for a task on another machine; its session id is not known here without opening it.',
+    reload: 'Restarting needs the task mounted on this machine.',
+    'legacy-history': 'The legacy history dialog lives with the open session page.',
+    'mark-all-read': 'Acts on the whole chat list, not on this contact.',
+    'delete-chat': 'An archived agent leaves the contacts list; its conversation is deleted from the chat list.',
+  },
 }
 
-const session = (key: string): SessionMenuLabel => ({ ns: 'session', key })
-const messaging = (key: string): SessionMenuLabel => ({ ns: 'messaging', key })
+const session = (key: string): MenuLabel => ({ ns: 'session', key })
+const messaging = (key: string): MenuLabel => ({ ns: 'messaging', key })
+const contacts = (key: string): MenuLabel => ({ ns: 'contacts', key })
 
-/** The whole table, in order, before any entry leaves anything out. */
+/**
+ * The whole table, in order, before any entry leaves anything out. Ordered by menu-table.ts @@@menu-order; there is no
+ * click data, so each row says why it sits where it does.
+ */
 function allItems(state: SessionMenuState): SessionMenuItem[] {
   const items: SessionMenuItem[] = [
-    { id: 'mark-read', label: messaging('chatList.markRead'), icon: 'read', disabled: !state.hasUnread },
+    // Message: what a contacts row is opened for (excluded wherever clicking the row already opens it).
+    { id: 'open-chat', label: contacts('contextMenu.startChat'), icon: 'chat' },
+    // Read state, one row: mark read while something is unread, mark unread otherwise. Several times a day, triaging.
+    state.hasUnread
+      ? { id: 'mark-read', label: messaging('chatList.markRead'), icon: 'read' }
+      : { id: 'mark-unread', label: contacts('contextMenu.markUnread'), icon: 'unread' },
+    // Pin: a few times a week, keeping the tasks in hand at the top.
     { id: 'pin', label: session(state.pinned ? 'task.unpin' : 'task.pin'), icon: state.pinned ? 'unpin' : 'pin' },
+    // Rename: once for many tasks, soon after they start.
+    { id: 'rename', label: session('task.rename'), icon: 'rename' },
   ]
+  // Archive: how every finished task ends, so as frequent as tasks are started. Undone from its toast or history, so
+  // not destructive: the last top-level row.
+  if (!state.archived) items.push({ id: 'archive', label: session('task.archiveTaskTitle'), icon: 'archive' })
+  // 更多 — pin to the sidebar: set once for an agent that lives in a group or project.
   if (state.sidebarPin) {
     items.push(state.sidebarPin === 'unpin'
-      ? { id: 'sidebar-pin', label: session('task.unpinFromSidebar'), icon: 'sidebar-off' }
-      : { id: 'sidebar-pin', label: session('task.pinToSidebar'), icon: 'sidebar' })
+      ? { id: 'sidebar-pin', label: session('task.unpinFromSidebar'), icon: 'sidebar-off', fold: true }
+      : { id: 'sidebar-pin', label: session('task.pinToSidebar'), icon: 'sidebar', fold: true })
   }
-  items.push(
-    { id: 'rename', label: session('task.rename'), icon: 'rename' },
-    { id: 'notifications', label: messaging(state.notificationsMuted ? 'chatList.enableNotifications' : 'chatList.disableNotifications'), icon: 'bell' },
-  )
-  if (!state.archived) items.push({ id: 'archive', label: session('task.archiveTaskTitle'), icon: 'archive' })
+  // 更多 — notifications: set once per agent, if ever; one's own agents are rarely muted.
+  items.push({ id: 'notifications', label: messaging(state.notificationsMuted ? 'chatList.enableNotifications' : 'chatList.disableNotifications'), icon: 'bell', fold: true })
+  // 更多 — fork: a few times a week at most, to try another direction.
   if (state.canFork) items.push({ id: 'fork', label: session('sidebar.forkSession'), icon: 'fork', fold: true })
-  items.push({ id: 'copy-id', label: session('sidebar.copySessionId'), icon: 'copy', fold: true })
-  if (!state.reloading) items.push({ id: 'reload', label: session('task.manualReload'), icon: 'reload', fold: true })
-  if (state.hasLegacyHistory) items.push({ id: 'legacy-history', label: session('legacyDm.history'), icon: 'history', fold: true })
+  // 更多 — mark all read: acts on the whole chat list, not on this row.
   items.push({ id: 'mark-all-read', label: messaging('chatList.markAllRead'), icon: 'read', fold: true, disabled: !state.hasAnyUnread })
+  // 更多 — restart: only when a task is stuck.
+  if (!state.reloading) items.push({ id: 'reload', label: session('task.manualReload'), icon: 'reload', fold: true })
+  // 更多 — copy the session id: a tool for reporting a problem.
+  items.push({ id: 'copy-id', label: session('sidebar.copySessionId'), icon: 'copy', fold: true })
+  // 更多 — the legacy history: read once, after the move to tasks.
+  if (state.hasLegacyHistory) items.push({ id: 'legacy-history', label: session('legacyDm.history'), icon: 'history', fold: true })
+  // 更多, last — delete an archived agent's conversation: rare and destructive, asks first.
   if (state.archived && state.canDeleteChat) {
     items.push({ id: 'delete-chat', label: messaging('chatList.delete'), icon: 'trash', fold: true, danger: true, disabled: state.canDeleteChat === 'unknown' })
   }
   return items
 }
 
-/**
- * The menu one entry shows: the table minus that entry's documented exclusions. `handled` = the actions the entry can
- * run; an action the table offers, the entry does not exclude and cannot run is a wiring bug, thrown here.
- */
+/** The menu one entry shows: the table minus that entry's documented exclusions (menu-table.ts `entryItems`). */
 export function sessionMenu(entry: SessionMenuEntry, state: SessionMenuState, handled: ReadonlySet<SessionMenuAction>): SessionMenuItem[] {
-  const excluded = SESSION_MENU_EXCLUDES[entry]
-  return allItems(state).filter((item) => {
-    if (excluded[item.id] !== undefined) return false
-    if (!handled.has(item.id)) throw new Error(`Session menu entry '${entry}' offers '${item.id}' but has no handler for it`)
-    return true
-  })
+  return entryItems('Session', entry, allItems(state), SESSION_MENU_EXCLUDES, handled)
 }

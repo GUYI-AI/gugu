@@ -1,3 +1,4 @@
+import { testAttachmentUploads } from '../../../support/attachmentUploadHost'
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createDesktopGuguMcpHost, type DesktopGuguMcpHost } from '../../../../apps/desktop/electron/acp-engine-utils'
@@ -31,7 +32,7 @@ async function bundleFor(grantKey: string, extensionTools?: 'catalog') {
     ...(extensionTools ? { extensionTools } : {}),
     threadRootId: null,
     autonomy: null,
-    socialBridgeDeps: { host, grantKey, getSupabaseUrl: () => 'https://supabase.example', getSupabaseAnonKey: () => 'anon-key' },
+    socialBridgeDeps: { attachments: testAttachmentUploads(), host, grantKey, getSupabaseUrl: () => 'https://supabase.example', getSupabaseAnonKey: () => 'anon-key' },
   })
 }
 

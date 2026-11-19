@@ -65,7 +65,7 @@ it.each(['dark', 'light'] as const)('%s: expand/collapse preserves editor identi
   host!.style.isolation = 'isolate'
   host!.style.zIndex = '1'
   const originalTransform = getComputedStyle(host!).transform
-  await page.getByTestId('chat-composer').fill('第一行\n第二行，继续输入中文')
+  await page.getByTestId('chat-composer').fill('第一行\n第二行\n第三行，继续输入中文')
   await until('expand control appears', () => !!host?.querySelector('[data-phone-editor-toggle]'))
   const selection = window.getSelection()!
   const range = document.createRange()
@@ -122,7 +122,7 @@ it.each(['dark', 'light'] as const)('%s: expand/collapse preserves editor identi
 
 it('sending from the expanded editor collapses it and dismisses keyboard focus', async () => {
   const { editor, send } = await mount()
-  await page.getByTestId('chat-composer').fill('第一行\n第二行')
+  await page.getByTestId('chat-composer').fill('第一行\n第二行\n第三行')
   await until('expand control appears', () => !!host?.querySelector('[data-phone-editor-toggle]'))
   await page.getByRole('button', { name: translateSessionMessage('composer.expandEditor') }).click()
   await page.getByRole('button', { name: translateSessionMessage('composer.sendMessage') }).click()
@@ -134,7 +134,7 @@ it('sending from the expanded editor collapses it and dismisses keyboard focus',
 
 it('leaving the phone layout closes expanded editing without replacing the editor', async () => {
   const { editor } = await mount()
-  await page.getByTestId('chat-composer').fill('第一行\n第二行')
+  await page.getByTestId('chat-composer').fill('第一行\n第二行\n第三行')
   await until('expand control appears', () => !!host?.querySelector('[data-phone-editor-toggle]'))
   await page.getByRole('button', { name: translateSessionMessage('composer.expandEditor') }).click()
   expect(host!.querySelector('[data-phone-expanded]')).not.toBeNull()

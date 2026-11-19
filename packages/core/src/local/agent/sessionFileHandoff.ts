@@ -30,15 +30,15 @@ export async function uploadSessionFile(endpoint: AttachmentsEndpoint, file: Ses
   // permit is the only size limit.
   const bytes = await openAsBlob(source, { type: contentType })
   if (sender.expectedSha256 && sender.expectedSha256 !== sha) throw new Error('Registered artifact changed before upload')
-  // The same file from the same agent session to the same recipients is one upload: sent again, it resumes where it
-  // stopped. Other recipients are another upload, so one file handed to several sessions at once never shares one.
+  const attachmentId = sender.attachmentId ?? randomUUID()
+  // A stored handoff keeps its attachment ID while recovering the same bytes for the same recipients.
   const stagingKey = sender.stagingKey ?? await uploadAttachmentBytes(endpoint, { bytes, name, contentType }, {
     chat_id: null, as: sender.agentId,
-    request_id: await contentRequestId('session', sender.agentId, sender.sessionId, [...sender.recipients].sort().join(','), sha, String(size)),
+    request_id: await contentRequestId('session', attachmentId, sender.agentId, sender.sessionId, [...sender.recipients].sort().join(','), sha, String(size)),
   })
   await sender.onStaged?.(stagingKey)
   await sender.beforeCommit?.()
-  const args = { staging_key: stagingKey, attachment_id: sender.attachmentId ?? randomUUID(), sender_user_id: sender.agentId,
+  const args = { staging_key: stagingKey, attachment_id: attachmentId, sender_user_id: sender.agentId,
     sender_session_id: sender.sessionId, recipient_user_ids: sender.recipients, file_name: name, content_type: contentType }
   // Retry the same upload and id; never create another file to recover a lost receipt.
   let receipt

@@ -33,10 +33,11 @@ vi.mock('@main/core/extensions/app-files', async () => ({
   openWithTarget: vi.fn(async (_page: unknown, args: { ref: { workspace?: string } }) =>
     args.ref.workspace ? { kind: 'peek', target: local } : { kind: 'chat', target: { chatId: CHAT, itemId: 'item-1', name: 'deck.pdf', typedName: 'deck.pdf', file } }),
   openerChoice: () => (chooser.kind === 'none' ? { kind: 'none' } : { kind: 'one', candidate: pdfApp }),
+  mayOpen: vi.fn(),
 }));
 
 const { bindExtensionSurface, unbindExtensionSurface, registerExtensionBridge, setExtensionBridgeHost } = await import('./extension-bridge');
-const { openWithTarget, resourceChatOf, AppFileError } = await import('./app-files');
+const { openWithTarget, resourceChatOf, AppFileError, mayOpen } = await import('./app-files');
 const { fileSync } = await import('./file-sync');
 const { EXTENSION_BRIDGE_CHANNEL } = await import('@shared/extensions/bridge-protocol');
 registerExtensionBridge();
@@ -75,12 +76,11 @@ describe('an already-open live file is shown before metadata validation', () => 
     expect(actions().at(-1)).toMatchObject({ kind: 'openWith', detail: { background: true } });
   });
 
-  it('uses the ordinary opener when the tab was closed but its native page is still idle', async () => {
+  it('opens it as a link when the tab was closed but its native page is still idle', async () => {
     deliver.mockResolvedValueOnce(undefined);
     expect(await openWith({ ref: { chat: CHAT, id: 'item-1' } })).toMatchObject({ ok: true });
-    expect(openWithTarget).toHaveBeenCalledTimes(1);
-    expect(actions().at(-1)).toMatchObject({ kind: 'openWith' });
-    expect((actions().at(-1) as { detail: object }).detail).not.toHaveProperty('background');
+    expect(openWithTarget).not.toHaveBeenCalled();
+    expect(actions().at(-1)).toEqual({ kind: 'openChatFile', chatId: CHAT, itemId: 'item-1', intent: 'navigate' });
   });
 
   it('revokes only that live file when background validation denies it', async () => {
@@ -109,17 +109,34 @@ describe('an already-open live file is shown before metadata validation', () => 
 });
 
 describe('files.openWith(file, { peek: true }): beside the page that asked (G1)', () => {
-  it('uses the page binding without resolving its parameter’s resource scope', async () => {
-    expect(await openWith({ ref: { chat: CHAT, id: 'item-1' } })).toMatchObject({ ok: true });
+  it('a plain open is the window\'s as a link: main resolves nothing, the page\'s name and state go with it', async () => {
+    vi.mocked(openWithTarget).mockClear();
+    expect(await openWith({ ref: { chat: CHAT, id: 'item-1' }, fileName: 'docs/deck.pdf', viewState: { scroll: 4 }, at: { page: '2' } })).toMatchObject({ ok: true });
     expect(resourceChatOf).not.toHaveBeenCalled();
-    expect(openWithTarget).toHaveBeenCalledWith(expect.objectContaining({ pageId: PAGE }), expect.objectContaining({ ref: { chat: CHAT, id: 'item-1' } }));
+    expect(openWithTarget).not.toHaveBeenCalled();
+    expect(mayOpen).toHaveBeenCalledWith(expect.objectContaining({ pageId: PAGE }), 'item-1');
+    expect(actions()).toEqual([{ kind: 'openChatFile', chatId: CHAT, itemId: 'item-1', intent: 'navigate', fileName: 'deck.pdf', at: { page: '2' }, viewState: { scroll: 4 } }]);
   });
 
-  it('still refuses an unreadable file before opening a tab', async () => {
-    vi.mocked(openWithTarget).mockRejectedValueOnce(Object.assign(new Error('No such file in a chat you are in'), { code: 'not-found' }));
-    expect(await openWith({ ref: { chat: CHAT, id: 'item-1' } })).toMatchObject({ ok: false, code: 'not-found' });
+  it('the chat only where the page named it: the file opens in its own chat', async () => {
+    expect(await openWith({ ref: { id: 'item-1' } })).toMatchObject({ ok: true });
+    expect(actions()).toEqual([{ kind: 'openChatFile', itemId: 'item-1', intent: 'navigate' }]);
+  });
+
+  it('the window not answering within the relay\'s time limit (the host slow): the page is told of no failure', async () => {
+    deliver.mockRejectedValueOnce(Object.assign(new Error('IPC timeout: extensions:cmd/extensions.hostAction'), { code: 'timeout' }));
+    expect(await openWith({ ref: { chat: CHAT, id: 'item-1' } })).toEqual({ ok: true, value: undefined });
+  });
+
+  it('the window answering with a failure: the page is told it, its code and its words', async () => {
+    deliver.mockRejectedValueOnce(Object.assign(new Error('No such file in this chat'), { code: 'not-found' }));
+    expect(await openWith({ ref: { chat: CHAT, id: 'item-1' } })).toMatchObject({ ok: false, code: 'not-found', message: 'No such file in this chat' });
+  });
+
+  it('a file the page may not read (no files:read, not its own): refused before the window hears anything', async () => {
+    vi.mocked(mayOpen).mockImplementationOnce(() => { throw new AppFileError('denied', 'Not permitted'); });
+    expect(await openWith({ ref: { chat: CHAT, id: 'item-2' } })).toMatchObject({ ok: false, code: 'denied' });
     expect(deliver).not.toHaveBeenCalled();
-    expect(resourceChatOf).not.toHaveBeenCalled();
   });
 
   it('a chat file nobody here opens: to the page\'s slot, for the host\'s preview — not refused', async () => {
@@ -139,10 +156,5 @@ describe('files.openWith(file, { peek: true }): beside the page that asked (G1)'
   it("a project's file: its workspace and path, beside the page", async () => {
     expect(await openWith({ ref: { workspace: 'project:p-1', id: 'docs/plan.html' } })).toMatchObject({ ok: true });
     expect(actions()).toEqual([{ kind: 'peek', target: local }]);
-  });
-
-  it('without peek: the chat previews the same unclaimed file, without refusing the caller', async () => {
-    expect(await openWith({ ref: { id: 'item-1' } })).toMatchObject({ ok: true });
-    expect(actions()).toEqual([{ kind: 'openWith', detail: { chatId: CHAT, itemId: 'item-1', name: 'deck.pdf', typedName: 'deck.pdf', file, choice: { kind: 'none' }, intent: 'navigate' } }]);
   });
 });

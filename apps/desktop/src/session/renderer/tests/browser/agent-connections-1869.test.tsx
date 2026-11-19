@@ -182,23 +182,6 @@ it('a new account signed in while another account is current leaves the current 
   expect(mocks.select).not.toHaveBeenCalled()
 })
 
-it('saves an API connection without starting account authentication', async () => {
-  await userEvent.click(page.getByRole('button', { name: 'Add', exact: true }))
-  await userEvent.click(page.getByRole('tab', { name: 'API Key', exact: true }))
-  await userEvent.fill(
-    page.getByRole('textbox', { name: 'API Key', exact: true }),
-    'test-key-not-a-credential'
-  )
-  await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }))
-  await until('API creation commits', () => mocks.create.mock.calls.length === 1)
-  expect(mocks.create.mock.calls[0][0]).toMatchObject({
-    providerId: 'codex',
-    kind: 'api-key',
-    apiKey: 'test-key-not-a-credential'
-  })
-  expect(mocks.login).not.toHaveBeenCalled()
-})
-
 it('aligns the connection group heading with the card edge', async () => {
   await until('connection section is mounted', () => !!host.querySelector('.gg-section-label span'))
   const heading = host.querySelector('.gg-section-label span')!

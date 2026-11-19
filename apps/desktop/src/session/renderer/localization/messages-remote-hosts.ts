@@ -329,7 +329,7 @@ export const zhCNRemoteHostMessages: Record<RemoteHostMessageKey, string> = {
   'deviceScope.failed': '未能从「{device}」读取。',
   'deviceScope.retry': '再试一次',
   'deviceScope.readOnlyCache': '只读缓存',
-  'deviceScope.extensionsOnServer': '「{device}」上的咕咕 server 没有窗口：装在它上面的 App 打不开页面，它们的工具和技能给那台上的 agent 用。',
+  'deviceScope.extensionsOnServer': '「{device}」上的咕咕 server 没有窗口：装在它上面的应用打不开页面，它们的工具和技能给那台上的 agent 用。',
   'deviceScope.browserAuthOnDevice': '在这台电脑的浏览器里授权 {name}，连接保存在「{device}」上。',
   'machinePicker.offline': '离线',
   'machinePicker.asleep': '休息中',

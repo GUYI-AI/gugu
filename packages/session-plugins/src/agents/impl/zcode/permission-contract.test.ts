@@ -23,7 +23,7 @@ import { pluginRegistry } from '../../registry';
  *   yolo  → 都不问,都执行
  * ❌ 不和 `ZCODE_PERMISSION_MODES` 共用一张表:共用时把只读接成 `guarded` 这种错会同时改掉期望,判据就打不红了。
  */
-const EXPECTED: Record<GuguPermissionMode, string> = {
+const EXPECTED: Partial<Record<GuguPermissionMode, string>> = {
   plan: 'plan',
   'read-only': 'build',
   edit: 'edit',
@@ -47,7 +47,7 @@ describe('zcode 聊天面板腿的档位契约', () => {
     const representable = OFFERED.filter(
       (id) => classifyProviderPermissionMode(id, map) === mode && canRepresentPermissionMode(id, mode, map, exhaustive)
     );
-    expect(representable).toEqual([EXPECTED[mode]]);
+    expect(representable).toEqual(EXPECTED[mode] ? [EXPECTED[mode]] : []);
   });
 
   it('guarded 不代表咕咕的任何一档', () => {

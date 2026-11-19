@@ -60,7 +60,7 @@ export type PreparedOutcome =
 export function notGivenNoteOf(done: { notGivenAt?: { id: string; name: string } }): { notGivenAt: { id: string; name: string }; notGivenNote: string } | null {
   return done.notGivenAt ? {
     notGivenAt: done.notGivenAt,
-    notGivenNote: `Installed, but "${done.notGivenAt.name}" was not given it (its row could not be written). The person can add that chat on the App's page in 「App」.`,
+    notGivenNote: `Installed, but "${done.notGivenAt.name}" was not given it (its row could not be written). The person can add that chat on the App's page in Apps (「市场」 in Chinese).`,
   } : null;
 }
 

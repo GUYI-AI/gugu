@@ -59,9 +59,9 @@ const LinkShell = observer(function LinkShell(props: ChatTabsProps) {
 export const linkShell = (props: ChatTabsProps, userId = 'user-1') =>
   createElement(AuthContext.Provider, { value: { user: { id: userId } } as never }, createElement(LinkShell, props))
 
-/** A pill (a file link, at a place) clicked: what the shell answers it; a replaced or failed one is caught here. */
-export function pill(itemId: string, at?: Record<string, string>): Promise<unknown> {
-  const opened = openLinkTarget({ kind: 'file', itemId, ...(at ? { at } : {}) })
+/** A pill (a file link, at a place) clicked — in a message (`message`: its waiting tab opens there at once) or not. */
+export function pill(itemId: string, at?: Record<string, string>, message?: MessageItem): Promise<unknown> {
+  const opened = openLinkTarget({ kind: 'file', itemId, ...(at ? { at } : {}) }, message ? { message } : {})
   void opened.catch(() => undefined)
   return opened
 }

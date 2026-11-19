@@ -35,7 +35,7 @@ export function FileAttachmentCard({ file, isMine = false, details, versionLabel
   const card = (
     <div className="gg-file-rows gg-hfile" data-mine={isMine || undefined} style={fileRowStyle() as CSSProperties}>
       <div className="gg-file-row" data-kind="file">
-        <button type="button" className="gg-file-row-main" onClick={onOpen} disabled={!onOpen} aria-label={file.fileName} title={file.fileName}>
+        <button type="button" data-pane-opener="" className="gg-file-row-main" onClick={onOpen} disabled={!onOpen} aria-label={file.fileName} title={file.fileName}>
           <span className="gg-file-row-icon">
             <FileMark name={file.fileName} mime={file.mimeType} off={file.kind === 'image'} />
           </span>

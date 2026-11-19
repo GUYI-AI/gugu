@@ -6,16 +6,18 @@ import type { TaskPageControl, TaskPageControlResult, TaskPageState } from '@sha
 import type { TaskPageScreenTarget, TaskPageScreenFrame } from '../../../../server/server-task-browser';
 import { acquireBrowserPage, type BrowserPageLease } from './browser-page-runtime';
 import { browserWebContentsRegistry } from './browser-webcontents-registry';
+import { browserPageFeedback, browserFrameFeedback, type BrowserPageFeedback } from '@shared/browser-page-feedback';
 
 /** A person's existing desktop tab watched from their phone; its native layout and owner stay in place. */
 class NativeTaskPageScreen extends EventEmitter implements TaskPageScreenTarget {
+  readonly feedback: BrowserPageFeedback;
   private lease: BrowserPageLease | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private generation = 0;
   private readonly changed = () => this.emit('state');
   private readonly destroyed = () => this.emit('destroyed');
 
-  constructor(private readonly page: WebContents) { super(); }
+  constructor(private readonly page: WebContents) { super(); this.feedback = browserPageFeedback(page); }
 
   async startScreen(publish: (frame: TaskPageScreenFrame) => void): Promise<void> {
     await this.stopScreen();
@@ -33,12 +35,14 @@ class NativeTaskPageScreen extends EventEmitter implements TaskPageScreenTarget 
     const capture = async () => {
       if (generation !== this.generation || this.page.isDestroyed()) return;
       try {
+        const before = this.feedback.snapshot();
         const image = await lease.snapshot();
         const viewport = await this.page.executeJavaScript('({width:innerWidth,height:innerHeight})') as { width: number; height: number };
         const dimensions = image.getSize();
         const scale = Math.min(1, 1600 / Math.max(dimensions.width, dimensions.height));
         const frame = scale < 1 ? image.resize({ width: Math.round(dimensions.width * scale), height: Math.round(dimensions.height * scale) }) : image;
-        if (generation === this.generation && !frame.isEmpty()) publish({ data: frame.toJPEG(75).toString('base64'), ...viewport });
+        if (generation === this.generation && !frame.isEmpty()) publish({ data: frame.toJPEG(75).toString('base64'), ...viewport,
+          feedback: browserFrameFeedback(before, this.feedback.snapshot(), viewport.width, viewport.height) });
         captureFailed = false;
       } catch (error) {
         if (generation !== this.generation || this.page.isDestroyed()) return;

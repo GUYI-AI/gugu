@@ -1,5 +1,5 @@
 import { useEffect, type Dispatch, type RefObject, type SetStateAction } from 'react';
-import type { AppDetailLink } from '@gugu/core/shared/ui/guguLink';
+import type { ExtensionAppDetailLink } from '@gugu/core/shared/ui/guguLink';
 import { readCachedDevices } from '@/store/devicesCache';
 import { messageForUser } from '@/lib/userFacingError';
 import type { ExtensionsHost } from '@renderer/features/extensions/extensions-host';
@@ -11,7 +11,7 @@ import { toast } from '@renderer/lib/hooks/use-toast';
  * Background market refreshes do not reopen a page the person left.
  */
 export function useAppDetailRequest({ target, ready, host, setDetail, detail, rootRef }: {
-  target?: AppDetailLink; ready: boolean; host: ExtensionsHost;
+  target?: ExtensionAppDetailLink; ready: boolean; host: ExtensionsHost;
   setDetail: Dispatch<SetStateAction<AppDetail | null>>; detail: AppDetail | null;
   rootRef: RefObject<HTMLDivElement | null>;
 }) {

@@ -17,9 +17,9 @@ function ProjectRowMenuPopup({ chatId, onRemove, ...menu }: {
   const rows = [...summaries].map(([id, chat]) => ({ id, kind: chat.kind, source_chat_id: chat.sourceChatId,
     unread_count: chat.unreadCount, is_marked_unread: chat.isMarkedUnread }))
   const hasUnread = chatId !== undefined && summaries.has(chatId) && hasUnreadInRows(chatsInReadScope(rows, chatId))
-  return <ConversationRowContextMenu {...menu} state={{ kind: 'project', hasUnread }} onAction={(action) => {
-    if (action === 'mark-read' && chatId) requestShellChatAction({ kind: 'mark-read', chatId })
-    else if (action === 'remove-project') onRemove()
+  return <ConversationRowContextMenu {...menu} entry="project-row" state={{ kind: 'project', hasUnread }} run={{
+    ...(chatId ? { 'mark-read': () => requestShellChatAction({ kind: 'mark-read', chatId }) } : {}),
+    'remove-project': onRemove,
   }} />
 }
 

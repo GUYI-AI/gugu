@@ -13,7 +13,6 @@ import {
   type ThemePreference,
 } from '@renderer/lib/theme/host-theme';
 import { subscribeToThemePacks } from '@renderer/lib/theme/theme-pack-store';
-import type { Theme } from '@shared/core/app-settings';
 import { ThemeContext } from './theme-context';
 
 /**
@@ -57,8 +56,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => startHostThemeSystemSync(), []);
 
   // 真值仍是二态 —— 第三态在**偏好**那一层,不在这里。
-  const setTheme = (next: Theme) => {
-    if (next) writeHostTheme(next);
+  const setTheme = (next: EffectiveTheme) => {
+    writeHostTheme(next);
   };
 
   const setPreference = (next: ThemePreference) => {

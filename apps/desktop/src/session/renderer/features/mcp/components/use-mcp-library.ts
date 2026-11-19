@@ -119,6 +119,8 @@ export function useMcpLibrary() {
     isLoading: list.isLoading || agents.isLoading || provided.isLoading,
     error: list.error ?? agents.error ?? provided.error,
     hasData: list.data !== undefined,
+    listLoading: list.isLoading,
+    listError: list.error,
     reload: () => {
       void list.refetch();
       void provided.refetch();

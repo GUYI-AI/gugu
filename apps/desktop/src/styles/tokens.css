@@ -161,28 +161,6 @@
   --titlebar-list-header-inset: max(0px, calc(var(--titlebar-traffic-lights-width) - var(--sidebar-rail-width)));
 }
 
-/* @@@panel-toggles (#6753) — 列表栏开关浮在内容左上角的平台(mac / Linux / 网页)上,最左列表头要让出它那条车道
-   (= window-chrome 的 SHELL_RESTORE_LANE_PX);Windows 的开关在标题栏行,不让。 */
-:root {
-  --list-toggle-lane: 40px;
-}
-:root[data-window-titlebar='row'] {
-  --list-toggle-lane: 0px;
-}
-/* 对话页那颗由壳挂(WindowControls),坐标与会话页根部那颗相同:rail 宽 + 8,28px 在 40px 带里居中。 */
-.gg-list-toggle-float {
-  position: fixed;
-  top: 6px;
-  left: calc(var(--sidebar-rail-width) + 8px);
-  z-index: var(--z-chrome);
-  display: flex;
-  -webkit-app-region: no-drag;
-}
-/* 会话列表收起时,对话头左端同样让出这条车道(与会话页会话头同一条,session-chat-column.tsx)。 */
-[data-list-collapsed] ~ * [data-chat-area-header] {
-  padding-inline-start: max(var(--pane-pad-x), var(--list-toggle-lane));
-}
-
 /* 顶栏右上是「动作车道」:会话内的动作在 40px 顶栏里居中(titlebar-actions.tsx)。
    任何飘在右上的转瞬层(分享浮层等)都从这个 token 起算自己的 top —— 一个数说了算,❌ 各处拍坐标,
    那正是实机看到的「组件堆叠」:浮层正好盖住会话页顶栏那排按钮。(提示条 #137 起在右下角,不走这里。)
@@ -321,11 +299,14 @@
   /* @@@type-ladder-7333 — 视觉规范的字级组合(用户 2026-10-17 批准,角色裁决见 #7333):
      12/18 标注 · 14/20 紧凑界面 · 16/24 消息与长段正文、面板标题 · 20/28 页内标题 · 24/32 页级标题。
      紧凑界面的 14/20 只给导航、菜单、设置行、工具条这类短文本;长段落一律 16/24(行高 ≥1.5)。 */
-  --font-size-xs: 12px;
-  --font-size-sm: 14px;
-  --font-size-md: 16px;
-  --font-size-lg: 20px;
-  --font-size-xl: 24px;
+  /* @@@text-scale — the phone's system font size reaches text only through these two factors (mobile/textScale.ts writes
+     them on <html>; 1 everywhere else). Body sizes take --text-scale, title sizes the smaller --title-scale. Boxes,
+     icons and spacing stay in plain px; a box that holds text sizes itself with min-height from these line heights. */
+  --font-size-xs: calc(12px * var(--text-scale, 1));
+  --font-size-sm: calc(14px * var(--text-scale, 1));
+  --font-size-md: calc(16px * var(--text-scale, 1));
+  --font-size-lg: calc(20px * var(--title-scale, 1));
+  --font-size-xl: calc(24px * var(--title-scale, 1));
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
@@ -334,12 +315,12 @@
      Aliases the raw size scale so components express ROLE (title/body/caption)
      instead of magic px. Apply via these tokens, not hardcoded fontSize. */
   --font-heading: var(--font-size-lg);    /* 20/28 — 页内大标题 */
-  --font-title: var(--font-size-md);       /* 16/24 — 面板头、对话框标题 */
+  --font-title: calc(16px * var(--title-scale, 1)); /* 16/24 — 面板头、对话框标题;标题那一档系数(@@@text-scale) */
   --font-body: var(--font-size-sm);        /* 14/20 — 紧凑界面:导航、菜单、设置行、列表、工具条 */
   --font-caption: var(--font-size-xs);     /* 12/18 — 时间、计数、辅助说明 */
   /* 消息与长段正文(IM 人聊 / IM agent 的气泡正文、文档预览):16/24。与 --font-title 同号不同角色。 */
   --font-prose: var(--font-size-md);
-  --text-code: 13px; /* 等宽诊断与代码；与会话页代码角色13/20一致，冷启动时也可独立消费。 */
+  --text-code: calc(13px * var(--text-scale, 1)); /* 等宽诊断与代码；与会话页代码角色13/20一致，冷启动时也可独立消费。 */
 
   /* Semantic spacing is intentionally outside @theme / theme.extend.spacing: Tailwind v4
      would otherwise resolve max-w-lg against spacing.lg instead of container.lg. */
@@ -1050,7 +1031,7 @@
 
 /* ── 侧栏渐进底色(设置 · 通用,默认关) ───────────────────────────────────────────
    @@@sidebar-tint owner 2026-09-10:「最左边菜单栏是这个色,消息列表是白色,会话列表要介于
-   两者之间」。开关的真值是 `<html data-sidebar-tint="on">`(见 lib/sidebarTint.ts),这里只改写
+   两者之间」。开关的真值是 `<html data-sidebar-tint="on">`(偏好在 lib/devicePreferences.ts),这里只改写
    `--sidebar` 一个 token —— 会话列表/通讯录/设置导航列(.gg-pane[data-role='nav'])与会话页左栏
    (皮肤桥把 .bg-background-tertiary 与 --em-background-secondary 都接在它上面)本来就同吃这一档,
    所以一处改完全都跟上;会话页那棵 Shadow DOM 靠自定义属性继承拿到同一个值。
@@ -1250,6 +1231,14 @@ input {
   ::-webkit-scrollbar-thumb:hover {
     background: var(--text-tertiary);
   }
+}
+
+/* A message's widget page is a guest of its own in the list's scroller. While the list scrolls (the same
+   `data-scrolling` the scrollbar shows on), the pointer passes through it: a guest under a moving pointer
+   takes every wheel and hover first, and the list then drops frames whenever the pointer rests on a widget
+   (mac1 11-18: 26–43 dropped frames a pass against 9–15). The page takes the pointer again once scrolling stops. */
+[data-scrolling] [data-widget-page] {
+  pointer-events: none;
 }
 
 /* The search panel's loading line: a short bar crossing under its filter row. */
@@ -1699,9 +1688,9 @@ body.barcode-scanner-active #root {
    pinned/selected 用 :not() 显式让开，别靠特异度赛跑去猜谁赢。 */
 @media (hover: hover) { .gg-row-host:hover > .gg-row:not([data-selected]):not([data-popup-open]):not([data-pinned]) { background: var(--hover); } }
 /* @@@contacts-offscreen-rows 通讯录分段里的行:屏幕外的跳过布局与绘制(content-visibility),页内查找照样搜得到。
-   auto 记住画过的实际高度,没画过的按 60px(一行头像 + 两行字)占位。paint containment 会裁掉框外的东西:
+   auto 记住画过的实际高度,没画过的按 48px(头像 32 + 上下内距 8,通讯录行一律单行)占位。paint containment 会裁掉框外的东西:
    键盘焦点环画在框外 4px(outline 2 + offset 2),用 overflow-clip-margin 让出来,外观不变。 */
-.gg-c-sec-body .gg-row-host, .gg-c-sec-body > div > .gg-row { content-visibility: auto; contain-intrinsic-size: auto 60px; overflow-clip-margin: 4px; }
+.gg-c-sec-body .gg-row-host, .gg-c-sec-body > div > .gg-row { content-visibility: auto; contain-intrinsic-size: auto 48px; overflow-clip-margin: 4px; }
 
 /* Ghost 图标钮:导航轨/composer 图标/消息工具条/关闭钮。「开」态挂 data-on;菜单 Trigger 菜单开着时 Base UI 挂 data-popup-open,同一个开态。
    图标色只在 faint-fg → muted-fg → fg 三档内移动,不引入色相。 */
@@ -1915,12 +1904,12 @@ body.barcode-scanner-active #root {
   --avatar-lg: 64px;
   --avatar-xl: 96px;
   /* 行高与字号配对——之前 Tailwind 算出来的 14.67/18.57/26.44 都是没人定过的数 */
-  --lh-caption: 18px;
-  --lh-body: 20px;
-  --lh-title: 24px;
-  --lh-heading: 28px;
-  --lh-page: 32px;
-  --lh-prose: 24px; /* --font-prose 的行高:16/24 */
+  --lh-caption: calc(18px * var(--text-scale, 1));
+  --lh-body: calc(20px * var(--text-scale, 1));
+  --lh-title: calc(24px * var(--text-scale, 1));
+  --lh-heading: calc(28px * var(--title-scale, 1));
+  --lh-page: calc(32px * var(--title-scale, 1));
+  --lh-prose: calc(24px * var(--text-scale, 1)); /* --font-prose 的行高:16/24 */
   /* @@@type-12 这里曾有过一个 12px 的「副标题」档 —— 字阶外偷偷长出来的第六档(主 renderer 174 处)。
      owner 2026-09-03 拍板消灭它:11、12、13 相邻各差 1px,人眼分辨不出,三档在干一档的事。
      分流规则(已执行完):要读的内容 → --font-body(13) 配次级色;只是标记(时间戳/计数/徽标/归属小字)
@@ -2254,13 +2243,13 @@ body.barcode-scanner-active #root {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 18px;
+  min-height: var(--lh-caption);
   padding: 0 6px;
   border-radius: var(--radius-capsule);
   background: var(--muted);
   color: var(--muted-fg);
   font-size: var(--font-caption);
-  line-height: 18px;
+  line-height: var(--lh-caption);
   font-weight: var(--font-weight-medium);
   white-space: nowrap;
   max-width: 100%;
@@ -2278,8 +2267,9 @@ body.barcode-scanner-active #root {
 /* 计数徽标:同一 chip 的圆形变体(未读数) */
 .gg-chip[data-shape='count'] { min-width: 18px; padding: 0 5px; justify-content: center; font-variant-numeric: tabular-nums; }
 /* 小灰点:同一 chip 的无数字变体 —— 有新消息、没有叫到你(#2548)。装饰色 --faint-fg:非文字的指示 ≥3:1(WCAG 1.4.11)。
-   四周各让 5px:占一枚一位数计数(18×18)的位置、落在它正中 —— 与上下行的数同一列,收起成头像列时也落在数落的那个角上。 */
-.gg-chip[data-shape='dot'] { flex: none; width: 8px; height: 8px; margin: 5px; padding: 0; background: var(--faint-fg); }
+   四周各让 5px:占一枚一位数计数(18×18)的位置、落在它正中 —— 与上下行的数同一列,收起成头像列时也落在数落的那个角上。
+   它不装字:❌ 吃 .gg-chip 那条按字号长高的 min-height(吃了就被撑成 8×18 的竖长条)。 */
+.gg-chip[data-shape='dot'] { flex: none; width: 8px; height: 8px; min-height: 0; margin: 5px; padding: 0; background: var(--faint-fg); }
 
 /* #5111 设置→账户 头像上传钮的**内容**。钮本身是 ui/Button variant=ghost(hover/press/disabled
    全部由那份变体表出,这里不重复一遍);这三条只管钮里面那块 40px 的头像与上传中的遮罩。 */
@@ -2378,3 +2368,22 @@ body.barcode-scanner-active #root {
 @keyframes gg-unknown-appear { to { opacity: 1; } }
 .gg-unknown { opacity: 0; animation: gg-unknown-appear 0s linear 150ms forwards; }
 @media (prefers-reduced-motion: reduce) { .gg-unknown { animation-duration: 0s; } }
+
+
+/* Model settings: approved light palette, with the existing dark theme surfaces. */
+:root {
+  --model-settings-page: var(--page);
+  --model-settings-description: var(--text-secondary);
+  --model-settings-source: var(--muted-fg);
+  --model-settings-separator: var(--border);
+  --model-sign-in-expired-bg: var(--danger-tint);
+  --model-sign-in-expired-fg: var(--danger-fg);
+}
+[data-theme='light'] {
+  --model-settings-page: #f7f7f7;
+  --model-settings-description: rgba(0, 0, 0, .7);
+  --model-settings-source: rgba(0, 0, 0, .45);
+  --model-settings-separator: #f2f2f2;
+  --model-sign-in-expired-bg: #fbf1f1;
+  --model-sign-in-expired-fg: #b42c3f;
+}
