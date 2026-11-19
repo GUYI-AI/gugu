@@ -76,3 +76,11 @@ it('keeps a declined directory picker and a recovery failure from changing proje
   await page.elementLocator(button(row, '恢复')).click();
   await vi.waitFor(() => expect(row.querySelector('[role=alert]')?.textContent).toBe('恢复记录不完整，请联系维护者核对'));
 });
+it('lets the existing dialog handle Escape without activating its enclosing project row', async () => {
+  const opened = vi.fn(); const row = await mount(true, opened);
+  await page.elementLocator(button(row, '清理')).click();
+  await vi.waitFor(() => expect(document.querySelector('[data-testid=project-cleanup-confirm]')).not.toBeNull());
+  await page.elementLocator(button(document.querySelector('[data-testid=project-cleanup-confirm]')!, '取消')).press('Escape');
+  await vi.waitFor(() => expect(document.querySelector('[data-testid=project-cleanup-confirm]')).toBeNull());
+  expect(opened).not.toHaveBeenCalled(); expect(state.clean).not.toHaveBeenCalled();
+});

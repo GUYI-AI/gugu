@@ -43,13 +43,13 @@ export function ProjectRecoverySubtitle({ project }: { project: UnavailableProje
   }
   return <>
     <span className="gg-project-unavailable-status"><Chip>失效</Chip>{' '}本机找不到文件夹</span>
-    <span className="gg-project-recovery-actions" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
+    <span className="gg-project-recovery-actions" onClick={event => event.stopPropagation()}>
       <Button size="sm" disabled={busy} onClick={() => void recover()}>恢复</Button>
       <Button size="sm" disabled={busy || !project.chatId} onClick={() => void askToClean()}>清理</Button>
     </span>
     {error && !confirmed && <span role="alert" className="gg-project-recovery-error">{error}</span>}
     {confirmed && <Sheet onClose={() => { if (!busy) setConfirmed(null) }} desktopWidth="380px" ariaLabel="清理失效项目" testId="project-cleanup-confirm">
-      <div className="flex flex-col gap-4 p-6" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
+      <div className="flex flex-col gap-4 p-6" onClick={event => event.stopPropagation()}>
         <h2 className="font-semibold text-[length:var(--font-title)]">清理 {confirmed.length} 个失效项目？</h2>
         <ul className="flex max-h-64 flex-col gap-3 overflow-y-auto">
           {confirmed.map(row => <li key={row.id} className="flex items-center gap-3"><Avatar variant="group" name={row.name} seed={row.chatId ?? row.id} size={28} /><span>{row.name}</span></li>)}

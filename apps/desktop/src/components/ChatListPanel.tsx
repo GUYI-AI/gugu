@@ -364,7 +364,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
         tabIndex={tabIndex}
         onClick={(event) => actions.activate(chat, event.metaKey || event.ctrlKey)}
         onFocus={() => actions.focus(chat.id)}
-        onKeyDown={(event) => actions.keyDown(event, chat)}
+        onKeyDown={(event) => { if (event.target === event.currentTarget) actions.keyDown(event, chat) }}
         onContextMenu={menu.onContextMenu} onPointerEnter={chat.kind === 'group' ? () => warmRowAuthority(chat.id) : undefined}
         {...(mobile ? longPress : {})}
         leading={

@@ -30,6 +30,7 @@ export function OneListRow({ leading, name, tag, time, preview, subtitle, select
       selected={selected}
       onClick={(event) => onOpen(event.metaKey || event.ctrlKey)}
       onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
         if (event.key === 'Enter') onOpen(false);
       }}
       leading={leading}
