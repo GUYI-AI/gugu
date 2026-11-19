@@ -5,15 +5,19 @@ import { openAgentHomeImport } from '@renderer/features/settings/subscriptions/e
 import { readAgentHomeUpgradeResults, showAgentHomeUpgradeNotice } from '@renderer/features/settings/subscriptions/agent-home-upgrade-notice'
 import { AgentHomePreparationStatus } from '@/components/settings/data-import/AgentHomePreparationStatus'
 import { AgentHomeSkippedFiles } from '@/components/settings/data-import/AgentHomeSkippedFiles'
+import { QwenConfigImport } from '@/components/settings/data-import/QwenConfigImport'
+import { Sheet } from '@/components/ui/Sheet'
 import type { AgentHomeScan } from '@gugu/session-core/workspace-server/agent-config'
 import { UI_EVENTS } from '@/lib/uiEvents'
 import '@/i18n/registerMainCatalog'
 import '@/styles/tokens.css'
 
-const calls = vi.hoisted(() => ({ scanHomes: vi.fn(), notice: vi.fn() }))
+const calls = vi.hoisted(() => ({ scanHomes: vi.fn(), importHome: vi.fn(), diffHome: vi.fn(), reimportHome: vi.fn(), notice: vi.fn() }))
 vi.mock('@/lib/notices', async (load) => ({ ...await load<typeof import('@/lib/notices')>(), notify: calls.notice }))
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
-  getAgentConfigRuntimeClient: async () => ({ scanAgentHomes: calls.scanHomes }),
+  getAgentConfigRuntimeClient: async () => ({
+    scanAgentHomes: calls.scanHomes, importAgentHome: calls.importHome, diffAgentHome: calls.diffHome, reimportAgentHome: calls.reimportHome,
+  }),
 }))
 const home: AgentHomeScan = {
   providerId: 'codex', name: 'Codex', userRoot: '/fixture/.codex', sourceReadable: true,
@@ -22,6 +26,47 @@ const home: AgentHomeScan = {
 }
 let harness: ReturnType<typeof createReactHarness>
 afterEach(() => { harness?.cleanup(); vi.clearAllMocks() })
+
+it('lets a person choose Qwen configuration groups and keeps hooks unchecked initially', async () => {
+  const qwen = { ...home, providerId: 'qwen', name: 'Qwen Code', groups: [
+    { id: 'settings', count: 1 }, { id: 'hooks', count: 1 }, { id: 'skills', count: 2 },
+  ] } satisfies AgentHomeScan
+  calls.scanHomes.mockResolvedValue({ success: true, data: [qwen] })
+  calls.importHome.mockImplementation(async () => {
+    calls.scanHomes.mockResolvedValue({ success: true, data: [{ ...qwen, needsImport: false }] })
+    return { success: true, data: { issues: [] } }
+  })
+  calls.diffHome.mockResolvedValue({ success: true, data: { entries: [
+    { id: 'hook', path: 'settings.json', group: 'hooks', state: 'userAdded', revision: 'hooks-v2' },
+  ], issues: [] } })
+  calls.reimportHome.mockResolvedValue({ success: true, data: { issues: [] } })
+  harness = createReactHarness()
+  await harness.render(<Sheet ariaLabel="Settings" onClose={() => undefined} zIndex="var(--z-settings)">
+    <QwenConfigImport />
+  </Sheet>)
+  const row = () => document.querySelector('[data-testid="qwen-config-import"]')!
+  await expect.poll(() => row()?.querySelectorAll('input[type="checkbox"]').length).toBe(3)
+  const hooks = row().querySelector<HTMLInputElement>('input[value="hooks"]')!
+  expect(hooks.checked).toBe(false)
+  await clickElement(hooks)
+  await clickElement(row().querySelector<HTMLButtonElement>('button[type="submit"]')!)
+  await expect.poll(() => calls.importHome.mock.calls[0]?.[0]).toEqual({
+    providerId: 'qwen', groups: ['settings', 'hooks', 'skills'],
+  })
+  await expect.poll(() => row().querySelector('fieldset')).toBeNull()
+  await clickElement(row().querySelector<HTMLButtonElement>('button[type="submit"]')!)
+  const dialog = () => document.querySelector('[data-testid="agent-home-reimport-dialog"]')
+  await expect.poll(() => dialog()).not.toBeNull()
+  expect(dialog()?.closest('[role="dialog"]')?.closest<HTMLElement>('[data-sheet-mobile][style*="z-index"]')?.style.zIndex).toBe('var(--z-settings-modal)')
+  const reimportHook = dialog()!.querySelector<HTMLInputElement>('fieldset > label input')!
+  expect(reimportHook.checked).toBe(false)
+  await clickElement(reimportHook)
+  await clickElement(dialog()!.querySelector<HTMLButtonElement>('[data-testid="agent-home-reimport-apply"]')!)
+  await expect.poll(() => calls.reimportHome.mock.calls[0]?.[0]).toEqual({
+    providerId: 'qwen', decisions: [{ id: 'hook', revision: 'hooks-v2' }],
+  })
+  await expect.poll(() => dialog()).toBeNull()
+})
 
 it('never opens the removed configuration import dialog on an unmarked remote host', async () => {
   calls.scanHomes.mockResolvedValue({ success: true, data: [home] })
@@ -43,6 +88,13 @@ it('shows one notice with a link to the import page when an actual migration ski
   expect(notice.action.label).toMatch(/1/)
   notice.action.onClick()
   expect(open).toHaveBeenCalledWith(expect.objectContaining({ detail: { section: 'data-import', action: undefined } }))
+})
+
+it('counts a sign-in that needs to be redone as a skipped migration item', () => {
+  showAgentHomeUpgradeNotice([{ ...home, providerId: 'qwen', name: 'Qwen Code', importedAt: 'future-migration',
+    needsImport: false, upgraded: true, upgradeSignIn: 'relogin', upgradeIssues: [] }])
+  const [notice] = calls.notice.mock.calls[0]!
+  expect(notice.action.label).toMatch(/1/)
 })
 
 it('names every migrated managed home and avoids promising sign-ins for unrelated providers', async () => {

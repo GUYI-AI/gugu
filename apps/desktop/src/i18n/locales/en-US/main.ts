@@ -118,6 +118,8 @@ export default {
   "migrationSkipped_one": "View {{count}} skipped item",
   "migrationSkipped_other": "View {{count}} skipped items",
   "migrationResults": "Configuration migration results",
+  "migrationRelogin": "Sign in to {{name}} again to use your account in Gugu.",
+  "configurationImportFailed": "Could not import the configuration. Try again.",
   "migrationReadFailed": "Could not read the configuration migration results.",
   "oldSessionsSkipped": "{{count}} old session files were too large and were not brought over.",
   "groups": {

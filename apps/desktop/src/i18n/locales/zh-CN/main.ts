@@ -112,6 +112,8 @@ export default {
   "migrationNotice": "这次更新把 {{names}} 的配置迁到了咕咕自己管理。",
   "migrationSkipped_other": "{{count}} 项没迁，查看",
   "migrationResults": "配置迁移结果",
+  "migrationRelogin": "需要重新登录 {{name}}，才能在咕咕里使用该账号。",
+  "configurationImportFailed": "配置导入未完成，请重试。",
   "migrationReadFailed": "暂时读不到配置迁移结果。",
   "oldSessionsSkipped": "{{count}} 个旧会话文件太大，未带过来。",
   "groups": {
