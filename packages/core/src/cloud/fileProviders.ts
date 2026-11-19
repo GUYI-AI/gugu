@@ -248,6 +248,20 @@ export function cloudFileProviders(deps: {
         acknowledged.catch(() => undefined)
         return { ...snapshot, acknowledged }
       }
+      if (!encrypted && !destination) {
+        // The hand-out recheck (a pure file-resolve) follows the verified bytes as their acknowledgement: a show-first
+        // reader displays them meanwhile and takes them down on refusal; every other reader's resolver still awaits it.
+        const acknowledged = (async () => {
+          const current = await metadata({ ...context, ref }) as Download
+          context.signal?.throwIfAborted()
+          changed(current, revision, !!admission)
+        })().catch(async error => {
+          if (!context.signal?.aborted && clearAfterRefusal(error)) await deps.cache.clear(key)
+          throw error
+        })
+        acknowledged.catch(() => undefined)
+        return { ...snapshot, acknowledged }
+      }
       context.signal?.throwIfAborted()
       const current = await metadata({ ...context, ref }) as Download
       context.signal?.throwIfAborted()
@@ -323,11 +337,13 @@ export function cloudFileProviders(deps: {
       const video = revision.content_type.startsWith('video/')
       if (!video && !revision.content_type.startsWith('image/')) throw new Error('File has no media preview')
       if (revision.source === 'managed-object') {
-        const key = revision.sha256 === null ? null : `https://attachments.gugu.invalid/preview/${cacheKey(await backend(context), context.actor, fileRefKey(context.ref), revision.sha256)}`
+        // The viewer's larger preview is its own signed transformation and its own cached image.
+        const view = !video && context.preview === 'view', size = view ? { preview: 'view' } : {}
+        const key = revision.sha256 === null ? null : `https://attachments.gugu.invalid/preview/${view ? 'view/' : ''}${cacheKey(await backend(context), context.actor, fileRefKey(context.ref), revision.sha256)}`
         const hit = key ? await deps.imageCache?.match(key) : null
         if (!video && hit) return hit.blob()
         const ref = 'item_id' in context.ref ? { ...context.ref, version: revision.version } : context.ref
-        let signed = await download(context, { ref, as: context.actor.actorId, request_id: crypto.randomUUID() },
+        let signed = await download(context, { ref, as: context.actor.actorId, request_id: crypto.randomUUID(), ...size },
           revision.legacy_object ? false : video ? 'file' : 'thumbnail')
         const acceptPreview = (lease: Download) => {
           if (missingObject(lease)) throw new MissingFileObjectError()
@@ -345,7 +361,7 @@ export function cloudFileProviders(deps: {
             const origin = route === 'origin'
             if (!renew && (typeof signed.lease.download_id !== 'string' || !signed.lease.download_id)) throw new Error('Invalid thumbnail reservation')
             const next = await download(context, { ref, as: context.actor.actorId,
-              request_id: !renew ? signed.lease.download_id : crypto.randomUUID(), ...(origin ? { origin: true } : {}) }, false)
+              request_id: !renew ? signed.lease.download_id : crypto.randomUUID(), ...(origin ? { origin: true } : {}), ...size }, false)
             acceptPreview(next.lease)
             if (!renew) {
               const expires = Date.parse(next.lease.expires_at ?? ''), previous = Date.parse(signed.lease.expires_at ?? '')

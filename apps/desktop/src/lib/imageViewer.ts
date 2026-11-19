@@ -20,7 +20,7 @@ export interface ImageViewerItem {
   source?: { chatId: string; messageId?: string }
   resource?: ResourceContext
   url: string
-  /** A file can open before its display-only thumbnail arrives. */
+  /** Display-only pixels shown before the original: a file can open before they arrive (a thumbnail, or a chat image's larger viewer preview). */
   preview?: () => Promise<string>
   /** URLs owned by this request, released when the viewer closes. */
   release?: () => void
@@ -37,8 +37,10 @@ export interface ImageViewerItem {
   /**
    * 气泡里画的是缩略图时:取原图(object URL)。查看器先用 url 打开,翻到这一张再换成原图。
    * `onState` follows that read (waiting, bytes, verifying), so the viewer says how far the original is.
+   * `display`: the viewer showing it, which gets the verified bytes before the read's acknowledgement and hears `failed`
+   * if that is refused (it then takes them down); without it (download, copy) only acknowledged bytes are returned.
    */
-  full?: (onState?: (state: FileReadState) => void) => Promise<string>
+  full?: (onState?: (state: FileReadState) => void, display?: true) => Promise<string>
   /** 原图的像素尺寸,取自文件记录。查看器从打开到关闭都按它排版:缩略图、原图只是画进同一个框的像素。 */
   size?: Size
   /** File previews keep their existing citation producer when opening the shared image viewer. */
@@ -46,9 +48,10 @@ export interface ImageViewerItem {
 }
 
 /** 缩略图 <img> → 取它原图的办法(附件进群文件夹 ③:气泡用 CDN 缩略图,原图到看的时候才下)。 */
-const fullImageLoaders = new WeakMap<HTMLImageElement, Pick<ImageViewerItem, 'full' | 'resource' | 'file' | 'source' | 'size'>>()
-export function registerFullImage(thumb: HTMLImageElement, load: NonNullable<ImageViewerItem['full']>, resource?: ResourceContext, file?: ImageViewerItem['file'], source?: ImageViewerItem['source'], size?: Size): () => void {
-  const entry = { full: load, resource, file, ...(source ? { source } : {}), ...(size ? { size } : {}) }
+const fullImageLoaders = new WeakMap<HTMLImageElement, Pick<ImageViewerItem, 'full' | 'preview' | 'resource' | 'file' | 'source' | 'size'>>()
+/** `original`: how to read its original, and the larger preview the viewer shows meanwhile (`originalImage`). */
+export function registerFullImage(thumb: HTMLImageElement, original: Pick<ImageViewerItem, 'full' | 'preview'>, resource?: ResourceContext, file?: ImageViewerItem['file'], source?: ImageViewerItem['source'], size?: Size): () => void {
+  const entry = { full: original.full, preview: original.preview, resource, file, ...(source ? { source } : {}), ...(size ? { size } : {}) }
   fullImageLoaders.set(thumb, entry)
   return () => {
     if (fullImageLoaders.get(thumb) === entry) fullImageLoaders.delete(thumb)

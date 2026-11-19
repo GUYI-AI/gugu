@@ -290,14 +290,15 @@ describe('ImagePreviewProvider', () => {
     expect(pswp.isDestroying).toBe(true)
   })
 
-  it('shows the viewer before thumbnail bytes, then upgrades through the existing original loader', async () => {
+  it('shows the viewer before thumbnail bytes, reads the original from the moment it opens, then upgrades to it', async () => {
     let showThumbnail!: (url: string) => void, showOriginal!: (url: string) => void
     const thumbnail = new Promise<string>(resolve => { showThumbnail = resolve })
     const original = new Promise<string>(resolve => { showOriginal = resolve })
     const full = vi.fn(() => original), release = vi.fn()
     await openViewer({ images: [{ url: '', alt: 'pending', preview: () => thumbnail, full, release }] })
     expect(byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay)).not.toBeNull()
-    expect(full).not.toHaveBeenCalled()
+    await waitForCondition(() => full.mock.calls.length === 1, 'the original did not start as the viewer opened')
+    expect(full.mock.calls[0]).toEqual([expect.any(Function), true])
     await act(async () => showThumbnail('blob:thumbnail'))
     await waitForCondition(() => document.querySelector('img.pswp__img[src="blob:thumbnail"]') !== null, 'thumbnail was not displayed')
     expect(full).toHaveBeenCalledTimes(1)
@@ -315,15 +316,16 @@ describe('ImagePreviewProvider', () => {
     expect(toast).not.toHaveBeenCalled()
   })
 
-  it('does not start the original when the thumbnail fails after closing', async () => {
+  it('a thumbnail that fails after closing says nothing and starts nothing more', async () => {
     let failThumbnail!: (error: Error) => void
     const thumbnail = new Promise<string>((_resolve, reject) => { failThumbnail = reject })
     const full = vi.fn(async () => 'blob:original'), toast = vi.fn()
     await openViewer({ toast, images: [{ url: '', alt: 'closed', preview: () => thumbnail, full }] })
     await clickElement(byTestId(AUTOMATION_TEST_IDS.imagePreviewClose)!)
     await waitForCondition(() => byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay) === null, 'viewer did not close')
+    const started = full.mock.calls.length
     await act(async () => failThumbnail(new Error('File preview HTTP 503')))
-    expect(full).not.toHaveBeenCalled()
+    expect(full).toHaveBeenCalledTimes(started)
     expect(toast).not.toHaveBeenCalled()
     expect(byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay)).toBeNull()
   })
@@ -359,14 +361,15 @@ describe('ImagePreviewProvider', () => {
     expect(document.querySelector('img.pswp__img[src="blob:thumbnail"]')).not.toBeNull()
   })
 
-  it('closing while the thumbnail is pending never loads the original or reopens the viewer', async () => {
+  it('closing while the thumbnail is pending never reads the original again or reopens the viewer', async () => {
     let finish!: (url: string) => void
-    const thumbnail = new Promise<string>(resolve => { finish = resolve }), full = vi.fn()
+    const thumbnail = new Promise<string>(resolve => { finish = resolve }), full = vi.fn(async () => 'blob:original')
     await openViewer({ images: [{ url: '', alt: 'pending', preview: () => thumbnail, full }] })
     await clickElement(byTestId(AUTOMATION_TEST_IDS.imagePreviewClose)!)
     await waitForCondition(() => byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay) === null, 'viewer did not close')
+    const started = full.mock.calls.length
     await act(async () => finish('blob:late-thumbnail'))
-    expect(full).not.toHaveBeenCalled()
+    expect(full).toHaveBeenCalledTimes(started)
     expect(byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay)).toBeNull()
   })
 

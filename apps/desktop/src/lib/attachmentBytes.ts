@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { FileReadError, type FileReadState } from '@gugu/core/shared/fileReads'
+import { FileReadError, readFailure, type FileReadState } from '@gugu/core/shared/fileReads'
 import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, type FileHandle, type FileMetadata, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { attachmentFileRef, type AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
 import { resolveFile, requestFile, fileReader, attachmentCopyKey, cachedDisplayAttachment, forgetAttachmentCopy, putAttachment } from './fileAccess'
@@ -30,9 +30,25 @@ export async function attachmentMetadata(source: AttachmentSource): Promise<File
   return { status: 'ready', revision: file.revision }
 }
 
-export async function attachmentPreview(source: AttachmentSource, metadata?: FileMetadata, signal?: AbortSignal) {
+export async function attachmentPreview(source: AttachmentSource, metadata?: FileMetadata, signal?: AbortSignal, size?: 'view') {
   const ref = attachmentFileRef(source)
-  return ref ? resolveFile(ref, fileReader(), { purpose: 'preview', metadata, signal }) : goneFile
+  return ref ? resolveFile(ref, fileReader(), { purpose: 'preview', ...(size ? { preview: size } : {}), metadata, signal }) : goneFile
+}
+
+/**
+ * A cloud image's preview at the viewer's size (the signer's fixed transformation), for the viewer to show while the
+ * original is read. Null where there is none cheaper than the original itself: an image kept on a device, or one the
+ * signer gives no transformation (SVG, too large to process).
+ */
+export async function viewerPreview(source: AttachmentSource, metadata?: FileMetadata, signal?: AbortSignal): Promise<Blob | null> {
+  const preview = await attachmentPreview(source, metadata, signal, 'view')
+  if (preview.status !== 'ready') return null
+  try {
+    if (preview.revision.source !== 'managed-object' || !preview.revision.content_type.startsWith('image/')) return null
+    const blob = await preview.content()
+    // Without a transformation the preview is the original itself: the original read shows it.
+    return blob instanceof Blob && blob.size < preview.revision.size_bytes ? blob : null
+  } finally { await preview.dispose() }
 }
 async function sessionFileBytes(source: Extract<AttachmentSource, { kind: 'session-file' }>): Promise<AttachmentBytes> {
   const read = sessionFileReader(source.sessionId)
@@ -244,25 +260,59 @@ function decodedImage(url: string): Promise<void> {
 }
 
 /**
- * A chat image's verified original for the shared viewer (`ImageViewerItem.full`), read once for the viewer, its download
- * and copy. Every caller follows the same read's state; a failed read is dropped, so the next look reads again.
+ * A chat image's original for the shared viewer (`ImageViewerItem.full`), read once for the viewer, its download and copy.
+ * The viewer (`display`) shows the verified bytes before the read's acknowledgement and is told `failed` when that is
+ * refused, to take them down; a download or copy gets them only once acknowledged. Every caller follows the same read's
+ * state; a failed read is dropped, so the next look reads again.
  */
-export function originalImage(source: AttachmentSource, options: { signal?: AbortSignal; onLink?: (link: FileRevision) => void } = {}): { full: NonNullable<ImageViewerItem['full']>; release: () => void } {
-  let url: Promise<string> | undefined, shown: string | undefined, last: FileReadState | undefined, released = false
+export function originalImage(source: AttachmentSource, options: { signal?: AbortSignal; onLink?: (link: FileRevision) => void; metadata?: FileMetadata } = {}): { full: NonNullable<ImageViewerItem['full']>; preview: NonNullable<ImageViewerItem['preview']>; release: () => void } {
+  let read: { shown: Promise<string>; verified: Promise<string> } | undefined, url: string | undefined, last: FileReadState | undefined, released = false
+  let view: Promise<string> | undefined, viewUrl: string | undefined
+  // The viewer's first sharp pixels while the original is read (a failed one is read again next time).
+  const preview = () => view ??= viewerPreview(source, options.metadata, options.signal).then((blob) => {
+    if (!blob) throw new Error('This image has no viewer preview')
+    const objectUrl = URL.createObjectURL(blob)
+    if (released) URL.revokeObjectURL(objectUrl); else viewUrl = objectUrl
+    return objectUrl
+  }).catch((error: unknown) => { view = undefined; throw error })
   const listeners = new Set<(state: FileReadState) => void>()
   const onState = (state: FileReadState) => { last = state; listeners.forEach((listener) => listener(state)) }
-  const full = (listener?: (state: FileReadState) => void): Promise<string> => {
-    if (listener) { listeners.add(listener); if (last) listener(last) }
-    const read = url ??= attachmentBytes(source, 'full', options.onLink, undefined, { signal: options.signal, onState }).then((bytes) => {
+  const start = () => {
+    const shown = attachmentBytes(source, 'shown', options.onLink, undefined, { signal: options.signal, onState }).then((bytes) => {
       if (bytes.status !== 'ready') throw new Error(bytes.status)
       const objectUrl = URL.createObjectURL(bytes.blob)
-      if (released) URL.revokeObjectURL(objectUrl); else shown = objectUrl
-      return objectUrl
+      if (released) URL.revokeObjectURL(objectUrl); else url = objectUrl
+      return { objectUrl, acknowledged: bytes.acknowledged ?? Promise.resolve() }
     })
-    read.catch(() => { if (url === read) { url = undefined; last = undefined } })
-    return listener ? read.finally(() => listeners.delete(listener)) : read
+    const current = {
+      shown: shown.then(({ objectUrl }) => objectUrl),
+      verified: shown.then(async ({ objectUrl, acknowledged }) => {
+        try { await acknowledged }
+        catch (error) {
+          // Taken down: whoever shows these pixels hears it (its state listener) and puts the preview back.
+          const failure = readFailure(error)
+          onState({ status: 'failed', code: failure.code, message: failure.message })
+          if (url === objectUrl) { URL.revokeObjectURL(objectUrl); url = undefined }
+          throw error
+        }
+        return objectUrl
+      }),
+    }
+    current.verified.catch(() => { if (read === current) { read = undefined; last = undefined } })
+    return current
   }
-  return { full, release: () => { released = true; if (shown) URL.revokeObjectURL(shown); shown = undefined } }
+  const full = (listener?: (state: FileReadState) => void, display?: true): Promise<string> => {
+    if (listener) { listeners.add(listener); if (last) listener(last) }
+    const current = read ??= start()
+    // A listener hears the acknowledgement too, so a display can be taken down after it got its pixels.
+    if (listener) current.verified.finally(() => listeners.delete(listener)).catch(() => undefined)
+    return display ? current.shown : current.verified
+  }
+  return { full, preview, release: () => {
+    released = true
+    for (const objectUrl of [url, viewUrl]) if (objectUrl) URL.revokeObjectURL(objectUrl)
+    url = viewUrl = undefined
+  } }
 }
 
 /** One file in the shared viewer: the bubble's thumbnail cache first, then the verified original, each read when shown. */

@@ -98,7 +98,8 @@ export type ResolvedPreview = Exclude<FileMetadata, { status: 'ready' }> | {
   content(): Promise<FilePreviewContent>; dispose(): Promise<void>
 }
 /** `progress`: the bytes arrived of the file being read, from the provider that carries them (a slow machine's line shows it). */
-export type FileContext = { ref: FileRef; actor: FileActor; signal?: AbortSignal; download?: true; backend?: string; reads?: FileReadHooks; openedBytes?: () => Promise<FileBytes>; progress?: (done: number, total: number) => void }
+/** `preview`: which image preview a preview read asks for; absent = the chat bubble's thumbnail, 'view' = the viewer's larger one. */
+export type FileContext = { ref: FileRef; actor: FileActor; signal?: AbortSignal; download?: true; preview?: 'view'; backend?: string; reads?: FileReadHooks; openedBytes?: () => Promise<FileBytes>; progress?: (done: number, total: number) => void }
 export interface FileProviders {
   backend?(context: FileContext): Promise<string>
   saveTo?(revision: FileRevision, context: FileContext, directory: string, name: string, store?: boolean): Promise<SavedFile>
@@ -185,13 +186,13 @@ export async function openFileBytes(providers: FileProviders, revision: FileRevi
 
 export function createFileResolver(providers: FileProviders, readHooks?: () => FileReadHooks) {
   function resolveFile(ref: FileRef, actor: FileActor, options: { localOnly: true; purpose?: 'file'; signal?: AbortSignal }): Promise<ResolvedFile | null>
-  function resolveFile(ref: FileRef, actor: FileActor, options: { purpose: 'preview'; metadata?: FileMetadata; signal?: AbortSignal }): Promise<ResolvedPreview>
+  function resolveFile(ref: FileRef, actor: FileActor, options: { purpose: 'preview'; preview?: 'view'; metadata?: FileMetadata; signal?: AbortSignal }): Promise<ResolvedPreview>
   function resolveFile(ref: FileRef, actor: FileActor, options?: { purpose?: 'file'; signal?: AbortSignal; progress?: FileContext['progress']; showFirst?: true }): Promise<ResolvedFile>
-  async function resolveFile(ref: FileRef, actor: FileActor, options: { purpose?: 'file' | 'preview'; metadata?: FileMetadata; localOnly?: boolean; signal?: AbortSignal; progress?: FileContext['progress']; showFirst?: true } = {}): Promise<ResolvedFile | ResolvedPreview | null> {
+  async function resolveFile(ref: FileRef, actor: FileActor, options: { purpose?: 'file' | 'preview'; preview?: 'view'; metadata?: FileMetadata; localOnly?: boolean; signal?: AbortSignal; progress?: FileContext['progress']; showFirst?: true } = {}): Promise<ResolvedFile | ResolvedPreview | null> {
     if (!actor.accountId || !actor.actorId) throw new Error('File reader is not signed in')
     fileRefKey(ref)
     const cancellation = new AbortController()
-    const context: FileContext = { ref: Object.freeze({ ...ref }), actor: Object.freeze({ ...actor }), signal: readHooks ? anySignal([options.signal, cancellation.signal]) : options.signal, reads: readHooks?.(), ...(options.progress ? { progress: options.progress } : {}) }
+    const context: FileContext = { ref: Object.freeze({ ...ref }), actor: Object.freeze({ ...actor }), signal: readHooks ? anySignal([options.signal, cancellation.signal]) : options.signal, reads: readHooks?.(), ...(options.progress ? { progress: options.progress } : {}), ...(options.purpose === 'preview' && options.preview ? { preview: options.preview } : {}) }
     context.signal?.throwIfAborted()
     if (context.reads && providers.backend) context.backend = await providers.backend(context)
     const local = await providers.local(context)

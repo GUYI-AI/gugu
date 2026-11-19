@@ -89,8 +89,8 @@ function AlbumTile({ part: { member, meta }, chatId, style }: { part: Part; chat
   // The viewer opens on the thumbnail and swaps in the original when it reaches this image (same as one image).
   useEffect(() => {
     if (!ready || !img.current || meta.source.kind === 'url') return
-    const original = originalImage(meta.source)
-    const unregister = registerFullImage(img.current, original.full, meta.source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: meta.source.itemId, version: meta.source.version } } : undefined,
+    const original = originalImage(meta.source, { metadata: meta.fileMetadata })
+    const unregister = registerFullImage(img.current, original, meta.source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: meta.source.itemId, version: meta.source.version } } : undefined,
     { name: meta.fileName, contentType: meta.mimeType }, { chatId, messageId: member.id },
     size?.width && size.height ? { width: size.width, height: size.height } : undefined)
     return () => {

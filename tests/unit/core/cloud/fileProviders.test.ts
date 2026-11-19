@@ -413,6 +413,58 @@ describe('one cloud provider and verified raw chunk cache', () => {
     expect(blob.size).toBe(plain.length)
     await expect(acknowledged).rejects.toMatchObject({ reason: 'access' })
   })
+  it('a managed read hands its verified bytes out with the hand-out recheck as their acknowledgement: only showFirst reads before it', async () => {
+    let refuse = false, release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const a = api(), c = cache(), fetcher = vi.fn(async () => new Response(plain))
+    const resolveCalls = () => a.calls.filter(row => row.route === 'file-resolve').length
+    const endpoint = async () => ({ ...(await a.endpoint()), fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('file-resolve') && resolveCalls() >= 1) {
+        a.calls.push({ route: 'file-resolve', body: JSON.parse(init!.body as string) })
+        await gate
+        return refuse ? Response.json({ code: 'file_transfer_denied' }, { status: 403 }) : Response.json({ ...revision, status: 'ready' })
+      }
+      return a.fetcher(input, init)
+    }) as typeof fetch })
+    const cloud = cloudFileProviders({ endpoint, cache: c.store, sink: async () => sink(), fetch: fetcher as typeof fetch })
+    const resolve = createFileResolver({ ...cloud, local: async () => null, ssh: async () => null })
+    // showFirst: the bytes before the recheck answers; a refusal then takes them down and keeps no chunk.
+    refuse = true
+    const shown = await resolve(context.ref, context.actor, { showFirst: true })
+    if (shown.status !== 'ready') throw Error('ready expected')
+    const { blob, acknowledged } = await shownFileBlob(shown)
+    expect(blob.size).toBe(plain.length)
+    expect(a.calls.map(row => row.route)).toEqual(['file-resolve', 'file-download', 'file-resolve'])
+    release()
+    await expect(acknowledged).rejects.toBeInstanceOf(Error)
+    expect(c.chunks.size).toBe(0)
+    // Without showFirst, nothing is read until the recheck has answered.
+    refuse = false
+    const waiting = await resolve(context.ref, context.actor)
+    if (waiting.status !== 'ready') throw Error('ready expected')
+    expect(await waiting.read(0, 1)).toEqual(new Uint8Array([73]))
+    expect(a.calls.filter(row => row.route === 'file-resolve').length).toBe(4)
+    await waiting.dispose()
+  })
+  it('a viewer preview asks the signer for its own transformation and keeps its own cached image', async () => {
+    const view = 'https://objects.invalid/file?auth_key=lease&x-oss-process=image/resize,w_2048/format,webp'
+    const imageRevision = { ...revision, content_type: 'image/png' }
+    const a = api(imageRevision, plain, { thumb_url: view }), images = new Map<string, Response>()
+    const imageCache = { match: vi.fn(async key => images.get(String(key))?.clone()), put: vi.fn(async (key, value) => { images.set(String(key), value.clone()) }) } as Pick<Cache, 'match' | 'put'>
+    const fetcher = vi.fn(async () => new Response('viewer preview', { headers: { 'content-type': 'image/webp' } }))
+    const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: cache().store, sink: async () => sink(), imageCache, fetch: fetcher as typeof fetch })
+    const resolve = createFileResolver({ ...cloud, local: async () => null, ssh: async () => null })
+    const preview = await resolve(context.ref, context.actor, { purpose: 'preview', preview: 'view' })
+    if (preview.status !== 'ready') throw Error('ready expected')
+    expect(await (await preview.content() as Blob).text()).toBe('viewer preview'); await preview.dispose()
+    expect(a.calls.find(row => row.route === 'file-download')!.body).toMatchObject({ preview: 'view', as: 'agent' })
+    expect([...images.keys()]).toEqual([expect.stringContaining('/preview/view/')])
+    const bubble = await resolve(context.ref, context.actor, { purpose: 'preview' })
+    if (bubble.status !== 'ready') throw Error('ready expected')
+    await bubble.content(); await bubble.dispose()
+    expect(a.calls.filter(row => row.route === 'file-download').at(-1)!.body).not.toHaveProperty('preview')
+    expect(images.size).toBe(2)
+  })
   it('a download into a sink still waits for the ACK and commits nothing when it is refused', async () => {
     const { local, cloud, answer } = await combined('revision')
     const commit = vi.fn(async () => bytesFile(new Uint8Array()))

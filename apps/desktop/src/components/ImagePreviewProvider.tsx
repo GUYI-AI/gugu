@@ -22,7 +22,7 @@ import { canWriteImageToClipboard, writeImageBlobToClipboard } from '../lib/imag
 import { rendererLogger } from '../lib/log'
 import { holderOfflineText, offlineHolder } from '../lib/fileHost'
 import { fileReadFailure, fileReadProgress, type ReadProgress } from '../lib/fileReadStatus'
-import type { FileReadState } from '@gugu/core/shared/fileReads'
+import { FileReadError, type FileReadState } from '@gugu/core/shared/fileReads'
 import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
 import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
 import { commandRegistry } from '@renderer/lib/commands/registry'
@@ -87,7 +87,9 @@ async function fetchImageAsPngBlob(url: string): Promise<Blob> {
   })
 }
 
-type ViewerSlide = SlideData & { item: ImageViewerItem; sizeKnown: boolean; warmed?: boolean; upgraded?: boolean; original?: Promise<string> }
+type ViewerSlide = SlideData & { item: ImageViewerItem; sizeKnown: boolean; warmed?: boolean; upgraded?: boolean; original?: Promise<string>
+  /** Set once the original is on screen: its read refused afterwards takes it down. */
+  takeDown?: (state: Extract<FileReadState, { status: 'failed' }>) => void }
 
 function slideFor(item: ImageViewerItem): ViewerSlide {
   // 另有原图可取时,缩略图的 natural 尺寸不是原图的:不拿它排版
@@ -166,10 +168,12 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, reads: OriginalReads,
   // The clicked one's original is asked for as the viewer opens, so its read overlaps the opening animation; it is put in
   // only once the animation has ended — 换图会改掉它飞行的起点和终点。
   const startOriginal = (data: ViewerSlide): Promise<string> | undefined => {
-    if (!data.item.full) return undefined
+    const { item } = data, full = item.full
+    if (!full) return undefined
     if (!data.original) {
-      const item = data.item
-      data.original = item.full(reads.follow(item))
+      const follow = reads.follow(item)
+      // Shown before its read is acknowledged; a refusal that follows takes it down.
+      data.original = full((state) => { follow(state); if (state.status === 'failed') data.takeDown?.(state) }, true)
       void data.original.then(() => reads.end(item), () => reads.end(item))
     }
     return data.original
@@ -193,16 +197,31 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, reads: OriginalReads,
       pswp.contentLoader.getContentByIndex(index)?.loadImage(false)
     }
     void (async () => {
+      const original = current ? startOriginal(data) : undefined
       if (data.item.preview) {
-        try { replace(await data.item.preview()) }
-        catch (error) {
+        // The preview is shown only while the original has not come: an original that wins is never covered by it.
+        const preview = data.item.preview()
+        try {
+          const first = await Promise.race([preview, ...(original ? [original.then(() => null, () => preview)] : [])])
+          if (first) replace(first)
+        } catch (error) {
           if (!data.item.full) throw error
           log.warn({ error: String(error) }, 'image preview unavailable')
         }
         if (pswp.isDestroying || !pswp.isOpen) return
       }
-      const original = current ? startOriginal(data) : undefined
-      if (original) replace(await original)
+      if (!original) return
+      const shownPreview = data.src
+      replace(await original)
+      data.takeDown = (state) => {
+        data.takeDown = undefined
+        if (shownPreview) replace(shownPreview)
+        else {
+          const content = pswp.contentLoader.getContentByIndex(index)
+          if (content) { content.state = 'error'; content.displayError() }
+        }
+        onFileError(data.item, new FileReadError(state.code, state.message))
+      }
     })().catch((error: unknown) => {
       if (!current || pswp.isDestroying || !pswp.isOpen) return
       log.warn({ error: String(error) }, 'image bytes unavailable')
@@ -317,8 +336,8 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, reads: OriginalReads,
     markCurrentImage()
     const slides = pswp.options.dataSource
     const clicked = (Array.isArray(slides) ? slides[pswp.currIndex] : undefined) as ViewerSlide | undefined
-    // A thumbnail-first item reads its preview first; one opened on its thumbnail already reads its original now.
-    if (clicked && !clicked.item.preview) startOriginal(clicked)
+    // The clicked one's original is read from the moment it opens, beside any preview it shows meanwhile.
+    if (clicked) startOriginal(clicked)
   })
 }
 

@@ -85,7 +85,8 @@ export interface FileReadHooks {
   acquire(backend: string, route: FileReadRoute, revision: FileRevision, context: FileContext, open: Transfer, relay?: RelayScope): Promise<FileBytes>
 }
 
-function readFailure(error: unknown, signal?: AbortSignal): FileReadError {
+/** A read's failure in the reader's terms (§2.8), whichever layer raised it. */
+export function readFailure(error: unknown, signal?: AbortSignal): FileReadError {
   const message = error instanceof Error ? error.message : String(error)
   if (signal?.aborted) return new FileReadError('cancelled', message, error)
   if (error instanceof FileIntegrityError) return new FileReadError('integrity_failed', message, error)

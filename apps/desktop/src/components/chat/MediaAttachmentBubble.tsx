@@ -94,8 +94,8 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
   // 查看器:先拿缩略图打开,翻到这一张再取原图(同一份缓存);卸载时收回 object URL。
   useEffect(() => {
     if (!ready || !img.current || meta.source.kind === 'url') return
-    const original = originalImage(meta.source)
-    const unregister = registerFullImage(img.current, original.full, meta.source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: meta.source.itemId, version: meta.source.version } } : undefined, { name: meta.fileName, contentType: meta.mimeType }, chatId ? { chatId, messageId } : undefined, size)
+    const original = originalImage(meta.source, { metadata: meta.fileMetadata })
+    const unregister = registerFullImage(img.current, original, meta.source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: meta.source.itemId, version: meta.source.version } } : undefined, { name: meta.fileName, contentType: meta.mimeType }, chatId ? { chatId, messageId } : undefined, size)
     return () => {
       unregister()
       original.release()

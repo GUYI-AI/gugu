@@ -3,16 +3,19 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { queryClient as attachmentQueryClient } from '@/lib/replica'
 import { openAttachmentImage, openAttachmentImages, originalImage } from '@/lib/attachmentBytes'
 import { FileReadError, type FileReadState } from '@gugu/core/shared/fileReads'
+import type { FileRevision } from '@gugu/core/shared/fileResolver'
 import { registerImageViewerHost, type ImageViewerRequest } from '@/lib/imageViewer'
 // The replica reads for the signed-in account, as the product publishes it.
 ;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'owner')
 
-const io = vi.hoisted(() => ({ resolve: vi.fn(), request: vi.fn(), original: vi.fn(), put: vi.fn(), url: vi.fn(), revoke: vi.fn() }))
+const io = vi.hoisted(() => ({ resolve: vi.fn(), request: vi.fn(), original: vi.fn(), ack: vi.fn(), put: vi.fn(), forget: vi.fn(), url: vi.fn(), revoke: vi.fn() }))
 vi.mock('@/lib/fileAccess', () => ({ fileMetadata: async () => ({ status: 'gone' }),
   resolveFile: io.resolve, requestFile: io.request, fileReader: () => ({ accountId: 'account', actorId: 'account' }),
-  attachmentCopyKey: (account: string, sha: string) => `${account}/${sha}`, putAttachment: io.put,
+  attachmentCopyKey: (account: string, sha: string) => `${account}/${sha}`, putAttachment: io.put, forgetAttachmentCopy: io.forget,
 }))
-vi.mock('@gugu/core/shared/fileResolver', async original => ({ ...await original<typeof import('@gugu/core/shared/fileResolver')>(), fileBlob: io.original }))
+// The viewer's original is a show-first read: its bytes now, its acknowledgement (`io.ack`) after.
+vi.mock('@gugu/core/shared/fileResolver', async original => ({ ...await original<typeof import('@gugu/core/shared/fileResolver')>(), fileBlob: io.original,
+  shownFileBlob: async () => ({ blob: await io.original(), acknowledged: io.ack() }) }))
 
 const source = { kind: 'item' as const, itemId: 'file', version: 2 }
 const revision = { source: 'managed-object', item_id: 'file', version: 2, file_name: 'photo.png', content_type: 'image/png', size_bytes: 8, sha256: '0'.repeat(64) }
@@ -28,6 +31,7 @@ beforeEach(() => {
     ? { status: 'ready', revision, content: async () => new Blob(['thumb']), dispose: vi.fn() }
     : { status: 'ready', revision, reader: { accountId: 'account' } })
   io.original.mockResolvedValue(new Blob(['original']))
+  io.ack.mockResolvedValue(undefined)
   io.request.mockResolvedValue({ status: 'ready', revision, reader: { accountId: 'account' } })
 })
 afterEach(() => { request?.items[0].release?.(); unregister(); attachmentQueryClient.clear(); vi.unstubAllGlobals() })
@@ -104,4 +108,53 @@ it('one original read for every caller, each hearing its states; a failed read i
   expect(io.request).toHaveBeenCalledTimes(2)
   original.release()
   expect(io.revoke).toHaveBeenCalledWith('blob:full')
+})
+
+it('the viewer shows the original before its acknowledgement; a download or copy gets it only once acknowledged', async () => {
+  let acknowledge!: () => void
+  io.ack.mockReturnValueOnce(new Promise<void>(resolve => { acknowledge = resolve }))
+  const original = originalImage(source)
+  await expect(original.full(undefined, true)).resolves.toBe('blob:full')
+  let verified = false
+  const copy = original.full().then(url => { verified = true; return url })
+  await Promise.resolve(); await Promise.resolve()
+  expect(verified).toBe(false)
+  expect(io.put).not.toHaveBeenCalled()
+  acknowledge()
+  await expect(copy).resolves.toBe('blob:full')
+  expect(io.request).toHaveBeenCalledTimes(1)
+  expect(io.request.mock.calls[0]?.[2]).toMatchObject({ purpose: 'show' })
+  original.release()
+})
+
+it('a refused acknowledgement takes the shown original down: the viewer hears failed, nothing is kept, the next look reads again', async () => {
+  const { FileReadRevokedError } = await import('@gugu/core/shared/fileResolver')
+  io.ack.mockReturnValueOnce(Promise.reject(new FileReadRevokedError('access')))
+  const original = originalImage(source)
+  const states: FileReadState[] = []
+  const shown = original.full(state => states.push(state), true), verified = original.full()
+  await expect(shown).resolves.toBe('blob:full')
+  await expect(verified).rejects.toBeInstanceOf(FileReadRevokedError)
+  expect(states.at(-1)).toMatchObject({ status: 'failed', code: 'access_revoked' })
+  expect(io.revoke).toHaveBeenCalledWith('blob:full')
+  expect(io.put).not.toHaveBeenCalled()
+  expect(io.forget).toHaveBeenCalledWith('account', revision.sha256)
+  await expect(original.full(undefined, true)).resolves.toBe('blob:full')
+  expect(io.request).toHaveBeenCalledTimes(2)
+  original.release()
+})
+
+it('reads the viewer-size preview of a cloud image with the message metadata, and offers none for an image kept on a device', async () => {
+  const metadata = { status: 'ready' as const, revision: revision as FileRevision }
+  io.resolve.mockImplementation(async () => ({ status: 'ready', revision,
+    content: async () => new Blob(['view']), dispose: vi.fn() }))
+  const original = originalImage(source, { metadata })
+  await expect(original.preview()).resolves.toBe('blob:full')
+  expect(io.resolve).toHaveBeenCalledWith({ item_id: 'file', version: 2 }, expect.anything(), expect.objectContaining({ purpose: 'preview', preview: 'view', metadata }))
+  original.release()
+  const kept = { ...revision, source: 'local' }
+  io.resolve.mockImplementation(async () => ({ status: 'ready', revision: kept, content: vi.fn(), dispose: vi.fn() }))
+  const device = originalImage(source)
+  await expect(device.preview()).rejects.toThrow('This image has no viewer preview')
+  device.release()
 })
