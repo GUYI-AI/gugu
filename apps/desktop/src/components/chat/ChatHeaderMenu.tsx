@@ -42,7 +42,7 @@ export function ChatHeaderMenu({
   // ⌘F on macOS, Ctrl+F elsewhere. Read when the menu renders; ❌ a literal.
   const findHotkey = getEffectiveHotkey('app.find', getAppSettingValueSnapshot('keyboard'))
   const settings = useReplica(groupSettings, open && isGroupChat && chatId ? [chatId] : null)
-  const canAddMembers = chatId && settings.state === 'value' && groupInviteAccess(chatId, 'group', settings.value).showInvite
+  const canAddMembers = chatId && settings.state === 'value' && groupInviteAccess('group', settings.value).showInvite
 
   return <DropdownMenu.Root open={open} modal={false} onOpenChange={onOpenChange}>
     <DropdownMenu.Trigger ref={buttonRef} data-testid={sidebar ? 'inner-head-more' : AUTOMATION_TEST_IDS.chatHeaderMoreButton}

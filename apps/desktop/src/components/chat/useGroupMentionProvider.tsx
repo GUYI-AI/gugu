@@ -9,7 +9,7 @@ import { useRoomCollab } from '../../hooks/useRoomCollab'
 import { useAgentDisplayStatuses } from '../../hooks/useAgentDisplayStatus'
 import { isMentionQueryActive } from '@/lib/mentionMatch'
 import { rankMentionCandidates } from '@/lib/mentionRanking'
-import { useProjectGroupMembers } from '@/lib/projectGroupChatsBridge'
+import { useGroupAgents } from '@/lib/agentSessionsBridge'
 import { useContactsStore } from '../../store/contactsContext'
 import { useAuth } from '../../store/auth'
 import { useChatStore, useChatStoreSelect } from '../../store/chatContext'
@@ -41,8 +41,8 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
   const { contacts } = useContactsStore()
   const groupAvatarUrl = useChatStoreSelect((store) => store.chats.find((chat) => chat.id === chatId)?.avatar ?? null)
   const sourceChatId = useChatStoreSelect((store) => store.chats.find((chat) => chat.id === chatId)?.source_chat_id ?? null)
-  const projectMembers = useProjectGroupMembers()
-  const projectMemberIds = projectMembers.get(sourceChatId ?? chatId ?? '')
+  const groupAgents = useGroupAgents()
+  const groupAgentIds = groupAgents.get(sourceChatId ?? chatId ?? '')
   const members = useMemo<MentionCandidate[]>(() => isGroupChat ? [
     { id: '__all__', name: t('composer.mentionAll'), type: 'all' },
     ...groupMembers.filter((member) => member.id !== currentUserId).map((member) => ({ ...member, alias: contacts.find((contact) => contact.id === member.id)?.alias })),
@@ -63,7 +63,7 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
     isQueryActive: (query: string) => offered && isMentionQueryActive(query, members),
     async search(query: string) {
       if (!offered || !isMentionQueryActive(query, members)) return []
-      return rankMentionCandidates(members, query, { chatId, currentUserId, messages: messages ?? [], participantIds, projectMemberIds,
+      return rankMentionCandidates(members, query, { chatId, currentUserId, messages: messages ?? [], participantIds, groupAgentIds,
         replyToMessageId, now: Date.now() }).map((member): MentionItem => ({
         id: member.type === 'all' ? MENTION_ALL_USER_ID : member.id,
         label: member.name, name: member.name, kind: 'custom', role: member.type === 'all' ? undefined : member.type,
@@ -81,7 +81,7 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
       const item = await localProvider.resolveSession(id)
       return item ? decorate(item) : null
     },
-  }), [offered, members, agentStatuses, decorate, localProvider, t, chatId, currentUserId, messages, participantIds, projectMemberIds, replyToMessageId])
+  }), [offered, members, agentStatuses, decorate, localProvider, t, chatId, currentUserId, messages, participantIds, groupAgentIds, replyToMessageId])
   /** The pick a chosen suggestion makes, or null when it is not a member. */
   const pickOf = useCallback((item: MentionItem): MentionTarget | null => {
     const member = members.find((candidate) => candidate.id === item.id || `aid:${candidate.id}` === item.label)

@@ -12,7 +12,6 @@ import { sessionRegistry } from '@renderer/features/sessions/stores/session-regi
 import type { SessionPageStore } from '@renderer/features/sessions/stores/session-store';
 import { SidebarStore } from '@renderer/features/sidebar/sidebar-store';
 import { CommandPaletteModal } from './command-palette-modal';
-import { sidebarOf } from '@renderer/features/sidebar/mirror-account-projects.testing';
 
 type ProjectManager = ConstructorParameters<typeof SidebarStore>[0];
 const fixture = vi.hoisted(() => ({
@@ -119,7 +118,7 @@ beforeEach(() => {
       mountedProject: { sessionManager: { sessions: pages, provisionSession: vi.fn(async () => {}) } } }]]),
     mountProject: vi.fn(async () => {}),
   } as unknown as ProjectManager;
-  fixture.sidebar = sidebarOf(fixture.projects);
+  fixture.sidebar = new SidebarStore(fixture.projects);
   fixture.results = freshIds.map(id => ({ kind: 'session', id, projectId: PROJECT, title: id,
     subtitle: '', score: 0, lastInteractedAt: pages.get(id)!.data.lastInteractedAt }));
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
@@ -191,7 +190,7 @@ describe('renderer task opening and empty Recent', () => {
   });
 
   it('keeps the real sidebar ordering and shared interaction timestamps unchanged', async () => {
-    const sidebarIds = () => fixture.sidebar!.placement.entries.get(PROJECT)!.map(row => row.id);
+    const sidebarIds = () => [...fixture.sidebar!.placement.entries.values()].flat().map(row => row.id);
     expect(sidebarIds()).toEqual(allIds);
     const beforeTimes = sharedTimes();
     openOld();

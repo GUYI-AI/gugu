@@ -4,7 +4,6 @@ import { needsYouCount, sidebarStateGroup } from './session-groups';
 import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation';
 import { SidebarStore } from './sidebar-store';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
-import { sidebarOf } from './mirror-account-projects.testing';
 
 type SidebarProjectManager = ConstructorParameters<typeof SidebarStore>[0];
 
@@ -32,6 +31,9 @@ vi.mock('@renderer/features/sessions/acp/acp-chat-store', () => ({
 vi.mock('@renderer/features/sessions/acp/acp-chat-panel', () => ({
   AcpChatPanel: () => null,
 }));
+
+/** Every entry the sidebar placed (these fixtures hold one folder, in no group). */
+const placedEntries = (store: SidebarStore) => [...store.placement.entries.values()].flat();
 
 function sessionFixture(id: string, createdAt: string) {
   return {
@@ -79,7 +81,7 @@ function session(
 }
 
 // The project Needs you count reads the sidebar's placement through the shared rule (needsYouCount).
-const projectNeedsYou = (store: SidebarStore, projectId: string) => needsYouCount(store.placement.entries.get(projectId) ?? []);
+const projectNeedsYou = (store: SidebarStore, _projectId: string) => needsYouCount(placedEntries(store));
 
 describe('sidebar state groups and the Needs you count', () => {
   it('keeps offline wait/error marks without counting them in Needs you', () => {
@@ -90,7 +92,7 @@ describe('sidebar state groups and the Needs you count', () => {
     }
     for (const online of [false, true]) {
       const projectId = 'remote-attention-project';
-      const store = sidebarOf(projectManagerWith(projectId, 'remote-host'));
+      const store = new SidebarStore(projectManagerWith(projectId, 'remote-host'));
       const sessions = (['needs_user', 'error'] as const).map(status => ({
         conversationId: status, projectId, title: status, runtime: 'acp', harness: 'codex',
         agentStatus: status, status: { status, detail: null }, supported: true, lastInteractedAt: null, unseen: true,
@@ -102,7 +104,7 @@ describe('sidebar state groups and the Needs you count', () => {
         session: (_deviceId, id) => sessions.find(session => session.conversationId === id) ?? null,
       };
       expect(projectNeedsYou(store, projectId)).toBe(online ? 2 : 0);
-      expect(store.placement.entries.get(projectId)?.map(entry => entry.group)).toEqual(['needs-you', 'needs-you']);
+      expect(placedEntries(store).map(entry => entry.group)).toEqual(['needs-you', 'needs-you']);
     }
   });
   it('counts failures and waits together in the project Needs you badge (#1165)', () => {
@@ -114,10 +116,10 @@ describe('sidebar state groups and the Needs you count', () => {
       session('attention-running', 'attention-project', 'working', '03'),
       session('attention-idle', 'attention-project', null, '04'),
     ] as never);
-    const store = sidebarOf(projectManagerWith('attention-project', 'attention-task'));
+    const store = new SidebarStore(projectManagerWith('attention-project', 'attention-task'));
     try {
       expect(projectNeedsYou(store, 'attention-project')).toBe(2);
-      expect(store.placement.entries.get('attention-project')?.map((entry) => entry.id)).toContain('attention-error');
+      expect(placedEntries(store).map((entry) => entry.id)).toContain('attention-error');
     } finally { sessionRegistry.release('attention-task'); }
   });
 
@@ -126,10 +128,10 @@ describe('sidebar state groups and the Needs you count', () => {
       ...Array.from({ length: 40 }, (_, i) => session(`old-failure-${i}`, 'read-project', 'error', '01', true)),
       session('fresh-failure', 'read-project', 'error', '02'),
     ] as never);
-    const store = sidebarOf(projectManagerWith('read-project', 'read-task'));
+    const store = new SidebarStore(projectManagerWith('read-project', 'read-task'));
     try {
       expect(projectNeedsYou(store, 'read-project')).toBe(1);
-      expect(store.placement.entries.get('read-project')?.every((entry) => entry.group === 'needs-you')).toBe(true);
+      expect(placedEntries(store).every((entry) => entry.group === 'needs-you')).toBe(true);
     } finally { sessionRegistry.release('read-task'); }
   });
 });

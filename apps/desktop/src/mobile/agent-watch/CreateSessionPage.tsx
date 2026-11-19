@@ -26,15 +26,15 @@ import { useAuth } from '@/store/auth'
 import { useDevicesStore } from '@/store/devicesContext'
 import { rememberRunMachine, useProjectRunMachine } from '@renderer/features/projects/components/main-panel/project-run-machine'
 import { forgetPhoneSessionCreate, readPhoneSessionCreate, rememberPhoneSessionCreate } from '../local-agent/phoneSessionCreate'
-import { AgentWatchScreen } from '../../components/session-watch/AgentWatchChrome'
-import { LiveGlyph } from '../../components/session-watch/StatusGlyph'
-import { creationSkillInput } from '../../components/session-watch/create-skill-draft'
-import { useMachineLabel } from '../../components/session-watch/useMachineLabel'
-import { visibleMachines } from '../../components/session-watch/machine-list'
-import { accountProjects, createMachines, runCandidates } from '../../components/session-watch/create-target'
-import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
-import { CreateTarget, type CreationConfiguration } from '../../components/session-watch/CreateTarget'
-import { PhoneHostSetupEntry } from '../../components/session-watch/PhoneHostSetupEntry'
+import { AgentWatchScreen } from '@/components/session-watch/AgentWatchChrome'
+import { LiveGlyph } from '@/components/session-watch/StatusGlyph'
+import { creationSkillInput } from '@/components/session-watch/create-skill-draft'
+import { useMachineLabel } from '@/components/session-watch/useMachineLabel'
+import { visibleMachines } from '@/components/session-watch/machine-list'
+import { accountProjects, createMachines, runCandidates } from '@/components/session-watch/create-target'
+import { groupFoldersStore } from '@/session/renderer/features/folders/group-folders-store'
+import { CreateTarget, type CreationConfiguration } from '@/components/session-watch/CreateTarget'
+import { PhoneHostSetupEntry } from '@/components/session-watch/PhoneHostSetupEntry'
 import { ConnectionStatus } from '@/components/connection/ConnectionStatus'
 import { connectionStateOf } from '@/components/connection/connectionState'
 import { IconButton } from '@/components/ui/IconButton'
@@ -111,14 +111,14 @@ function CreateSessionForm({ taskGroup = null, onBack, onCreated }: CreateSessio
   const inSheet = taskGroup !== null
   const { t } = useTranslation('main')
   const ownerId = useAuth().user?.id ?? null
-  const { devices: hosts, phones, cloudComputer } = useDevicesStore()
+  const { devices: hosts, phones } = useDevicesStore()
   const { isHome, label: machineLabel } = useMachineLabel()
   const devices = useMemo(() => [...new Map([...hosts, ...(phones ?? [])].map((one) => [one.device_id, one])).values()], [hosts, phones])
   const machines = useMemo(() => visibleMachines(devices, isHome), [devices, isHome])
-  // 账号上的项目(accountProjectsStore,桌面项目选择器同一份)。
-  const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
-  const projects = useMemo(() => accountProjects(accountList, devices, cloudComputer?.snapshot?.deviceId ?? null), [accountList, devices, cloudComputer])
-  // 默认不选项目(桌面 New task 同:`No project · 默认机器`)。
+  // 挂了文件夹的群(groupFoldersStore,桌面群选择器同一份)。
+  const groups = useSyncExternalStore(groupFoldersStore.subscribe, () => groupFoldersStore.groups)
+  const projects = useMemo(() => accountProjects(groups), [groups])
+  // 默认不选群(桌面 New task 同:`没选群 · 默认机器`)。
   const [projectKey, setProjectKey] = useState<string | null>(null)
   const project = projects.find((one) => one.chatId === projectKey) ?? null
   const rows = useMemo(() => createMachines(project, machines), [project, machines])
@@ -154,7 +154,7 @@ function CreateSessionForm({ taskGroup = null, onBack, onCreated }: CreateSessio
     <CreateOnMachine
       key={ownerId ?? 'signed-out'}
       device={editingMachine.device}
-      projectId={machine?.localProjectId ?? null}
+      projectId={machine?.folderId ?? null}
       targetAvailable={!!machine && (!projectTask || machine.available)}
       cwd={projectTask?.machine?.path ?? undefined}
       draftKey={draftKey}

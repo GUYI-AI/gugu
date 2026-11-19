@@ -1,6 +1,6 @@
 import { sessionLeaveDestination } from '@renderer/features/sessions/leave-session-view';
 import { getSessionManagerStore } from '@renderer/features/sessions/stores/session-selectors';
-import { projectPresence } from '@renderer/features/projects/project-presence';
+import { folderPresence } from '@renderer/features/folders/folder-presence';
 import { ASSISTANT_APP_ID, openAssistantEntry, readAssistantEntryTarget } from '@/lib/assistantEntry';
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge';
 import { isAssistantAgent } from '@renderer/features/assistant/assistant-lineage';
@@ -26,8 +26,8 @@ export function sessionViewCanActivate(params: unknown): GuardResult {
   if (typeof projectId !== 'string' || typeof sessionId !== 'string') {
     return { ok: false, redirect: 'home' };
   }
-  // 项目「还不知道」(别的机器上的、那台的清单还没到)先放行:清单到了会再跑一次守卫(project-presence.ts)。
-  if (projectPresence(projectId) === 'deleted') return { ok: false, redirect: 'home' };
+  // 文件夹「还不知道」(别的机器上的、那台的清单还没到)先放行:清单到了会再跑一次守卫(folder-presence.ts)。
+  if (folderPresence(projectId) === 'deleted') return { ok: false, redirect: 'home' };
   // 任务列表还没加载出来时这里只能放行,即使 sessionManager 已经存在 —— 所以项目挂载、
   // 任务加载完之后必须再跑一次 revalidate,由 project-manager 负责补那一次。
   const sessionManager = getSessionManagerStore(projectId);
@@ -37,7 +37,7 @@ export function sessionViewCanActivate(params: unknown): GuardResult {
     // 什么都不画的空白。和「任务不存在」同样处理 —— 退回去,而不是让人对着空白。
     const archived = Boolean(session?.data.archivedAt);
     if (archived || (!session && sessionManager.listState === 'read')) {
-      const destination = sessionLeaveDestination(projectId);
+      const destination = sessionLeaveDestination(sessionId);
       return { ok: false, redirect: destination.viewId, params: destination.params };
     }
   }

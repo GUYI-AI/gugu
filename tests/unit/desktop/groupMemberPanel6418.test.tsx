@@ -16,7 +16,7 @@ import type { GroupChatSettings, GroupAgentItem, GroupCollabSnapshot, GroupMembe
 import type { DisplayIdentity } from '../../../apps/desktop/src/lib/displayIdentity'
 import { createNode, createReactHarness, device, displayIdentity, renderWithAppProviders, typeInto, waitForCondition } from '../../support/testHarness'
 import { closeInfoTab, infoTabOf, openInfoTab } from '../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
-import { publishProjectGroupChats } from '../../../apps/desktop/src/session/renderer/features/projects/stores/project-group-chats-bridge'
+import { publishAgentSessions } from '../../../apps/desktop/src/session/renderer/features/sidebar/agent-sessions-bridge'
 import type { MemberProfileChatTarget } from '../../../apps/desktop/src/components/MemberProfileCard'
 import { DevicesContext } from '../../../apps/desktop/src/store/devicesContext'
 import { removeDeviceSessions, updateDeviceSessions } from '../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
@@ -102,7 +102,7 @@ afterEach(() => {
   shell.mobile = false
   closeInfoTab('group-navigation')
   closeInfoTab('other-group-navigation')
-  publishProjectGroupChats([], new Map(), new Map())
+  publishAgentSessions(new Map(), new Map())
   removeDeviceSessions('navigation-device')
 })
 
@@ -164,7 +164,7 @@ async function click(element: HTMLElement | null) {
 
 describe('#969 leaving the group info page', () => {
   async function renderMembers(onOpenUserChat = vi.fn()) {
-    publishProjectGroupChats([], new Map(), new Map([['claude', { projectId: 'project-1', sessionId: 'session-1' }]]))
+    publishAgentSessions(new Map(), new Map([['claude', { projectId: 'project-1', sessionId: 'session-1' }]]))
     updateDeviceSessions('navigation-device', { sessions: [{
       conversationId: 'session-1', projectId: 'project-1', title: 'Task', harness: 'claude', runtime: 'acp',
       agentStatus: null, lastInteractedAt: null, supported: true, agent: { userId: 'claude' },

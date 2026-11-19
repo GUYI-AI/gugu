@@ -51,8 +51,8 @@ export class GroupParticipantPanes {
       // The screen snapshot is restored later at boot. Retain valid identities, never arbitrary saved content.
       const source = placement?.source;
       const target = placement?.target;
-      const validSource = source?.kind === 'chat' ? typeof source.chatId === 'string'
-        : source?.kind === 'project' && typeof source.projectId === 'string';
+      // A 'project' source (a local project's block, before C1) is not kept: its group opens from the list.
+      const validSource = source?.kind === 'chat' && typeof source.chatId === 'string';
       const validTarget = target?.kind === 'chat' ? typeof target.chatId === 'string'
         : target?.kind === 'session' && typeof target.sessionId === 'string' && typeof target.projectId === 'string';
       if (validSource && validTarget) this.placements.set(id, placement);

@@ -187,12 +187,9 @@ export type SidebarSessionSortBy = 'created-at' | 'updated-at';
  * desktop sidebar (section folds, the 项目 | 对话 layout and page, #2548): restore ignores them.
  */
 export type SidebarSnapshot = {
-  expandedProjectIds?: string[];
   expandedSessionIds?: string[];
   idleExpandedProjectIds?: string[];
   /** What the user folded away (sidebar-folds). */
   folds?: string[];
-  projectOrder?: string[];
-  sessionOrderByProject?: Record<string, string[]>;
   sessionSortBy?: SidebarSessionSortBy;
 };

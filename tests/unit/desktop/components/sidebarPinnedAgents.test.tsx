@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatListPanel } from '../../../../apps/desktop/src/components/ChatListPanel'
 import { publishSidebarChatView, publishSidebarPinnedAgents, type SidebarPinnedAgent } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
 import { installOwnedAgentEntry } from '../../../../apps/desktop/src/lib/ownedAgentConversation'
-import { publishProjectGroupChats } from '../../../../apps/desktop/src/session/renderer/features/projects/stores/project-group-chats-bridge'
 import { publishDirectoryDevices, removeDeviceSessions, updateDeviceSessions } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 import { installSessionViewRequestBridge } from '../../../../apps/desktop/src/session/renderer/features/sessions/stores/session-view-requests'
 import { chat, clickElement, createNode, createReactHarness, device, displayIdentity, fireContextMenu, renderWithAppProviders } from '../../../support/testHarness'
@@ -34,12 +33,11 @@ beforeEach(() => {
   openAgent.mockClear()
   installSessionViewRequestBridge(window, { openChat: vi.fn(), unpinFromSidebar, openSidebarPin })
   release = installOwnedAgentEntry({ owns: (id) => mine.has(id), open: openAgent })
-  publishProjectGroupChats(['project'], new Map(), new Map())
   publishDirectoryDevices([device('mac', [])])
   updateDeviceSessions('mac', {
     projects: [{ id: 'app', name: 'App', path: '/app' }, { id: 'tasks', name: '', path: '/tasks', kind: 'workspace' }],
     sessions: [
-      { conversationId: 's-project', projectId: 'app', title: 'Fix', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, agent: { userId: 'a-project' } },
+      { conversationId: 's-project', projectId: 'app', title: 'Fix', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, agent: { userId: 'a-project' }, bornInChatId: 'project' },
       { conversationId: 's-solo', projectId: 'tasks', title: 'Solo', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, agent: { userId: 'a-solo' } },
       // #2599 a-room was created in Room, so it lives there: only a pin gives it a row of its own.
       { conversationId: 's-room', projectId: 'tasks', title: 'Room task', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, agent: { userId: 'a-room' }, bornInChatId: 'room' },
@@ -52,7 +50,6 @@ afterEach(() => {
   release()
   publishSidebarChatView({ focusedChatId: null, groups: [] })
   publishSidebarPinnedAgents([])
-  publishProjectGroupChats([], new Map(), new Map())
   publishDirectoryDevices([])
   removeDeviceSessions('mac')
 })
@@ -74,7 +71,7 @@ const identitiesById = {
 }
 // Newest interaction first (the task page's order), not the DMs' activity; a-nodm has no DM chat.
 const pins: SidebarPinnedAgent[] = [
-  { agentUserId: 'a-project', sessionId: 's-project', home: { kind: 'project', name: 'App', chatId: 'project' } },
+  { agentUserId: 'a-project', sessionId: 's-project', home: { kind: 'group', name: 'App', chatId: 'project' } },
   { agentUserId: 'a-nodm', sessionId: 's-nodm', home: { kind: 'group', name: 'Room', chatId: 'room' } },
   { agentUserId: 'a-room', sessionId: 's-room', home: { kind: 'group', name: 'Room', chatId: 'room' } },
 ]
@@ -102,7 +99,7 @@ describe('agents pinned to the one list', () => {
     expect(row('dm-solo').querySelector('.gg-list-row-meta svg')).toBeNull()
   })
 
-  it('switch on: clicking a pinned row opens the group / project it lives in (the agent selected there), not its DM', async () => {
+  it('switch on: clicking a pinned row opens the group it lives in (the agent selected there), not its DM', async () => {
     publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
     publishSidebarPinnedAgents(pins)
     await render()
@@ -135,7 +132,7 @@ describe('agents pinned to the one list', () => {
     publishSidebarChatView({ focusedChatId: null, groups: [] })
     publishSidebarPinnedAgents(pins)
     await render()
-    expect(rows()).toEqual(['dm-room-agent', 'room', 'dm-human'])
+    expect(rows()).toEqual(['dm-room-agent', 'room', 'project', 'dm-human'])
     expect(row('dm-room-agent').textContent).not.toContain('Room · ')
     expect(row('dm-room-agent').querySelector('.gg-list-row-meta svg')).toBeNull()
     expect(await unpinItem('dm-room-agent')).toBeNull()

@@ -1,24 +1,21 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { observer } from 'mobx-react-lite'
 import { Folder } from '@/lib/icons'
 import { Button } from '@/components/ui/Button'
-import { useDevicesStore } from '@/store/devicesContext'
 import { AssistantEmpty, AssistantRow, AssistantSection, PageHead } from '@/session/renderer/features/assistant/assistant-ui-parts'
-import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
-import { useMachineLabel } from '../../components/session-watch/useMachineLabel'
+import { groupFoldersStore, type GroupWithFolders } from '@/session/renderer/features/folders/group-folders-store'
 import { ReadView } from './PhoneMachineView'
 import type { PhoneRead } from './usePhoneRead'
-import { phoneProjectRows, type PhoneProjectEntry } from './phoneProjectRows'
 
-/** accountProjectsStore 这一刻的读数,按助理库页的读法说(读不到、但有上次的 = 列着上次的、上面一句读不到)。 */
+/** groupFoldersStore at this moment, as the assistant library reads things (unreadable but read before = the last list, with a line). */
 function storeRead(): PhoneRead<null> & { reload: () => void } {
-  const reload = () => { void accountProjectsStore.refresh() }
-  const { status, error, projects } = accountProjectsStore
+  const reload = () => { void groupFoldersStore.refresh() }
+  const { status, error, groups } = groupFoldersStore
   if (status === 'ready') return { state: 'ok', data: null, reload }
   if (status === 'loading') return { state: 'loading', reload }
-  const failure = new Error(error ?? 'account projects unreadable')
-  return projects.length ? { state: 'ok', data: null, refreshError: failure, reload } : { state: 'error', error: failure, reload }
+  const failure = new Error(error ?? 'group folders unreadable')
+  return groups.length ? { state: 'ok', data: null, refreshError: failure, reload } : { state: 'error', error: failure, reload }
 }
 
 const Stale = () => {
@@ -27,40 +24,40 @@ const Stale = () => {
 }
 
 /**
- * 「助理 → 工作区」:项目只读 accountProjectsStore,文件夹只读设备 store 里各台发布的那份(与伙伴、新建页同一份),
- * ❌ 这一页自己再读、再轮询。
+ * 「助理 → 工作区」: the groups with a folder on my machines (groupFoldersStore, the same list as the group picker), each
+ * with its folders. `onOpenGroup` = open the group (the desktop); absent = the group's folders listed here (the phone).
  */
-export const PhoneProjects = observer(function PhoneProjects({ detail = false,onOpen }: { detail?: boolean; onOpen?: () => void; machine?: unknown }) {
+export const PhoneProjects = observer(function PhoneProjects({ detail = false, onOpen, onOpenGroup }: { detail?: boolean; onOpen?: () => void; machine?: unknown; onOpenGroup?: (chatId: string) => void }) {
   const { t } = useTranslation('assistant')
-  const { devices } = useDevicesStore()
-  // 个人助理宿主与新建页、任务页同一个判据(不是助理住在哪:住在人自己电脑上的助理不能把那台的项目藏掉)。
-  const { isHome } = useMachineLabel()
-  const accountList = accountProjectsStore.projects
-  const projects = useMemo(() => phoneProjectRows(accountList,devices,isHome),[accountList,devices,isHome])
+  const groups = groupFoldersStore.groups
   const read = storeRead()
   const [selected, setSelected] = useState<string | null>(null)
-  const current = selected ? projects.find(project => project.id === selected) : null
+  const current = selected ? groups.find(group => group.chatId === selected) : null
   if (!detail) return <AssistantRow leading={<Folder />} title={t('library.workspace')} testId="assistant-library-workspace" onClick={onOpen}
-    detail={read.state === 'ok' ? t('library.items',{ count: projects.length }) : t(read.state === 'error' ? 'library.failed' : 'library.loading')} />
-  if (current) return <PhoneProjectIndex project={current} onBack={() => setSelected(null)} />
+    detail={read.state === 'ok' ? t('library.items', { count: groups.length }) : t(read.state === 'error' ? 'library.failed' : 'library.loading')} />
+  if (current) return <GroupFolderIndex group={current} stale={groupFoldersStore.status === 'error'} onBack={() => setSelected(null)} />
   return <div className="ta-page" data-testid="assistant-library-page-workspace">
     <PageHead title={t('library.workspace')} />
-    <ReadView read={read} failedTitle={t('library.failed')}>{() => projects.length
-      ? <AssistantSection>{projects.map(project => <AssistantRow key={project.id} leading={<Folder />} title={project.label}
-        detail={project.stale ? <>{project.rootPath ? `${project.rootPath} ` : null}<Stale /></> : project.rootPath ?? undefined}
-        testId={`assistant-project-${project.id}`} onClick={() => setSelected(project.id)} />)}</AssistantSection>
+    <ReadView read={read} failedTitle={t('library.failed')}>{() => groups.length
+      ? <AssistantSection>{groups.map(group => {
+        const first = group.folders[0]?.path
+        const stale = groupFoldersStore.status === 'error' && group.folders.some(folder => folder.offline)
+        return <AssistantRow key={group.chatId} leading={<Folder />} title={group.name}
+          detail={stale ? <>{first ? `${first} ` : null}<Stale /></> : first}
+          testId={`assistant-project-${group.chatId}`} onClick={() => (onOpenGroup ? onOpenGroup(group.chatId) : setSelected(group.chatId))} />
+      })}</AssistantSection>
       : <AssistantEmpty>{t('library.noGuguProjects')}</AssistantEmpty>}</ReadView>
   </div>
 })
 
-/** Folder identity is part of device_projects; opening a project performs no device request. */
-function PhoneProjectIndex({ project,onBack }: { project: PhoneProjectEntry; onBack: () => void }) {
+/** A group's folders on my machines; opening it asks no machine. */
+function GroupFolderIndex({ group, stale, onBack }: { group: GroupWithFolders; stale: boolean; onBack: () => void }) {
   const { t } = useTranslation('assistant')
   return <div className="ta-page" data-testid="assistant-project-cloud-index">
-    <PageHead title={project.label} action={<Button variant="ghost" onClick={onBack}>{t('library.backToIndex')}</Button>} />
-    {project.folders.length ? <AssistantSection>{project.folders.map((folder,index) => <AssistantRow key={`${folder.workspaceId}:${index}`}
+    <PageHead title={group.name} action={<Button variant="ghost" onClick={onBack}>{t('library.backToIndex')}</Button>} />
+    {group.folders.length ? <AssistantSection>{group.folders.map(folder => <AssistantRow key={`${folder.deviceId ?? 'local'}:${folder.id}`}
       leading={<Folder />} title={folder.path.split(/[/\\]/).filter(Boolean).at(-1) ?? folder.path}
-      detail={folder.stale ? <>{`${folder.path} `}<Stale /></> : folder.path} />)}</AssistantSection>
+      detail={stale && folder.offline ? <>{`${folder.path} `}<Stale /></> : folder.path} />)}</AssistantSection>
       : <AssistantEmpty>{t('library.emptyContent')}</AssistantEmpty>}
   </div>
 }

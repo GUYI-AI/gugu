@@ -7,7 +7,6 @@ import {
 import { type ProjectStore } from '@renderer/features/projects/stores/project';
 import type { ProjectManagerStore } from '@renderer/features/projects/stores/project-manager';
 import { pageSessions } from '@renderer/features/sessions/stores/session-selectors';
-import { isWorkspaceProject } from '@renderer/features/sessions/session-home-project-constants';
 import type { Snapshottable } from '@renderer/lib/stores/snapshottable';
 import { sidebarFolds, type SidebarFold } from './sidebar-folds';
 import type { SidebarSnapshot, SidebarSessionSortBy } from '@shared/view-state';
@@ -19,7 +18,6 @@ import type { AgentStatusView } from '@gugu/core/shared/agentStatus';
 import type { AgentStatusPresentation } from '@gugu/core/shared/agentStatusPresentation';
 import { sessionPresentation } from '@/lib/agent-wait/watch-status';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
-import { accountProjectsStore, type AccountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { sidebarStateGroup, type SidebarStateGroup } from './session-groups';
 
 function parseSidebarSessionSortBy(value: unknown): SidebarSessionSortBy | undefined {
@@ -27,16 +25,14 @@ function parseSidebarSessionSortBy(value: unknown): SidebarSessionSortBy | undef
 }
 
 /**
- * behavior session-page「键盘导航」: a station of the keyboard navigation — the New task entry, a project row (= that
- * project's home, where a new session is started) or a conversation. Section titles and state-group titles are not
- * stations.
+ * behavior session-page「键盘导航」: a station of the keyboard navigation — the New task entry or a conversation. Section
+ * titles and state-group titles are not stations.
  */
 export type SidebarNavNode =
   | { kind: 'new-session' }
-  | { kind: 'project'; projectId: string }
   | { kind: 'conversation'; projectId: string; sessionId: string };
 
-/** 「任务」分区在 placement 里的键(项目行用项目 id)。 */
+/** 不在任何群里的会话在 placement 里的键(群里的用群的 chat id)。 */
 const SESSIONS_SECTION = '\u0000sessions';
 
 type SidebarSessionEntry = {
@@ -54,18 +50,11 @@ type SidebarSessionEntry = {
   /** Raw addressing name; components decide how to display it. */
   title: string;
   createdAt?: string;
-  /** #2599 the conversation its agent was created from: the group or project it lives in (chat-agents). */
+  /** #2599 the conversation its agent was created from (chat-agents). */
   bornInChatId?: string | null;
+  /** @@@group-folders the group it lives in (its folder's group); null = none. */
+  groupChatId?: string | null;
 };
-
-/**
- * 「项目」分区里的一项 = 账号上的一个项目(accountProjectsStore)。项目表里有它的本地项目(哪台机器上的都算):
- * 行 id = 代表那一个(groupRowOrder),navigate('project')、项目块照旧认它;一个都没有(哪台上都没有文件夹,
- * 或文件夹只在还没载入的机器上):行 id = 项目群,点开是项目群。
- */
-export type SidebarProjectRef =
-  | { kind: 'local'; id: string; chatId: string; name: string; activeAt: string | null; project: ProjectStore }
-  | { kind: 'group'; id: string; chatId: string; name: string; activeAt: string | null };
 
 /** #6264 侧栏要知道的机器读数(由 remoteHostsStore 注入;不注入 = 全是本机,单测默认如此)。 */
 export type SidebarMachines = {
@@ -97,10 +86,7 @@ export function mountedSessionPresentation(
 }
 
 export class SidebarStore implements Snapshottable<SidebarSnapshot> {
-  projectOrder: string[] = [];
-  sessionOrderByProject: Record<string, string[]> = {};
-  expandedProjectIds = observable.set<string>();
-  /** Persisted manual "Show more" state: project id or the Tasks section key. */
+  /** Persisted manual "Show more" state: a fold key (inner-sidebar sections). */
   idleExpandedProjectIds = observable.set<string>();
   /** Persisted disclosure state for parent/child conversation trees. */
   expandedSessionIds = observable.set<string>();
@@ -123,88 +109,21 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
    * owner:「它不应该生活在任务区」—— 它自己的会话不进这里的任何列表;它派出来的照常在,行上标「助理发起」。
    */
   assistantAgentId: string | null = null;
-  constructor(
-    private readonly projectManager: ProjectManagerStore,
-    /** 账号上的项目:「项目」分区只列它们(❌ 再按项目群拼本地项目)。 */
-    readonly accountProjects: AccountProjectsStore = accountProjectsStore,
-  ) {
-    makeAutoObservable<SidebarStore, 'remoteEntryById' | 'projectManager' | 'accountProjects'>(this, {
+  constructor(private readonly projectManager: ProjectManagerStore) {
+    makeAutoObservable<SidebarStore, 'remoteEntryById' | 'projectManager'>(this, {
       remoteEntryById: false,
       projectManager: false,
-      accountProjects: false,
       machines: observable.ref,
       joinedGroups: observable.ref,
-      expandedProjectIds: false,
       idleExpandedProjectIds: false,
       expandedSessionIds: false,
     });
 
   }
 
-  /** 「项目」分区里画得出本地项目的那些行的代表(本机与别的机器上的,按侧栏次序)。 */
-  get orderedProjects(): ProjectStore[] {
-    return this.sidebarProjects.flatMap((ref) => (ref.kind === 'local' ? [ref.project] : []));
-  }
-
   /**
-   * 「项目」分区的次序:本机项目与别的机器上的项目混排(#6264,按 Zed)。手动拖过之后按 `projectOrder` 排;
-   * 还没进手动次序的新项目排最前(新建即可见)。
-   */
-  get sidebarProjects(): SidebarProjectRef[] {
-    // 一个账号项目一行(归档的不列)。项目表里没有对应项目的本地项目(#609 workspace 等)不成行,会话在「任务」里。
-    const all: SidebarProjectRef[] = this.accountProjects.projects
-      .filter((account) => !account.archived)
-      .map((account): SidebarProjectRef => {
-        const id = this.accountProjects.representativeOf(account.chatId);
-        const project = id ? this.projectManager.projects.get(id) : undefined;
-        return project
-          ? { kind: 'local', id: project.id, chatId: account.chatId, name: account.name || (project.name ?? ''), activeAt: account.activeAt, project }
-          : { kind: 'group', id: account.chatId, chatId: account.chatId, name: account.name, activeAt: account.activeAt };
-      })
-      .sort((a, b) => this.compareSidebarProjects(a, b));
-    if (this.projectOrder.length === 0) return all;
-    const rank = (ref: SidebarProjectRef, index: number): [number, number] => {
-      const manual = this.projectOrder.indexOf(ref.id);
-      return manual !== -1 ? [1, manual] : [0, index];
-    };
-    return all
-      .map((ref, index) => ({ ref, rank: rank(ref, index) }))
-      .sort((a, b) => a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1])
-      .map(({ ref }) => ref);
-  }
-
-  /** 这一行代表的项目在各台机器上的本地项目(代表行在最前);不属于账号上任何项目 = 只有它自己。 */
-  projectMembersOf(rowId: string): readonly string[] {
-    const chatId = this.accountProjects.projectOfLocal(rowId)?.chatId;
-    return chatId ? this.accountProjects.membersOf(chatId) : [rowId];
-  }
-
-  /** 这一行的项目名(账号上的项目名 = 项目群名)。 */
-  projectRowName(rowId: string): string | null {
-    return this.sidebarProjects.find((ref) => ref.id === rowId)?.name ?? null;
-  }
-
-  /** 这个本地项目的会话显示在哪一行下:它所属账号项目的那一行;不属于任何项目 = 它自己。 */
-  rowProjectIdOf(projectId: string): string {
-    const chatId = this.accountProjects.projectOfLocal(projectId)?.chatId;
-    return (chatId && this.accountProjects.representativeOf(chatId)) || projectId;
-  }
-
-  /** 会话所在项目行的名字(侧栏里那一行怎么写,它就怎么写)。 */
-  projectLabel(projectId: string): string | null {
-    // #609 workspace 等不属于账号项目的,没有项目名可标。
-    return this.accountProjects.projectOfLocal(projectId) ? this.projectRowName(this.rowProjectIdOf(projectId)) : null;
-  }
-
-  /** 挂在父会话下的行要标的项目名:与父会话不在同一个项目行时才有(与机器标记同一条「跟上面那一行比」)。 */
-  nestedProjectLabel(projectId: string, parentProjectId: string): string | null {
-    return this.rowProjectIdOf(projectId) === this.rowProjectIdOf(parentProjectId) ? null : this.projectLabel(projectId);
-  }
-
-  /**
-   * 每条会话显示在哪一行下(项目行,或「任务」分区):一家子跟着根会话那一行走。别的机器上的 agent 可以挂在本机的
-   * 会话下面,反过来也一样(owner 2026-10-01),所以各行与「任务」分区的会话合起来建一次树,再按根分回去。
-   * 本机的 child 与父会话同一个工作目录,本来就在同一行。
+   * 每条会话归在哪(它的根会话所在的群,或不在任何群里):一家子跟着根会话走。别的机器上的 agent 可以挂在本机的
+   * 会话下面,反过来也一样(owner 2026-10-01),所以所有会话合起来建一次树,再按根分回去。
    */
   get placement(): {
     entries: ReadonlyMap<string, SidebarSessionEntry[]>;
@@ -217,8 +136,9 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
       for (const entry of entries) home.set(entry.id, rowId);
       all.push(...entries);
     };
-    for (const ref of this.sidebarProjects) collect(ref.id, this.rowOwnEntries(ref.chatId));
-    collect(SESSIONS_SECTION, this.standaloneOwnEntries());
+    for (const entry of [...this.projectManager.projects.values()].flatMap((project) => this.projectSessionEntries(project))) {
+      collect(entry.groupChatId ?? SESSIONS_SECTION, [entry]);
+    }
     const entries = new Map<string, SidebarSessionEntry[]>();
     const rowOfSession = new Map<string, string>();
     const place = (node: SessionTreeNode<SidebarSessionEntry>, rowId: string) => {
@@ -226,6 +146,8 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
       if (list) list.push(node.item);
       else entries.set(rowId, [node.item]);
       if (!rowOfSession.has(node.item.sessionId)) rowOfSession.set(node.item.sessionId, rowId);
+      // A row's own id (a local session's differs from its page's): either names it.
+      if (!rowOfSession.has(node.item.id)) rowOfSession.set(node.item.id, rowId);
       for (const child of node.children) place(child, rowId);
     };
     const forest = buildSessionTree(all);
@@ -260,18 +182,14 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     return false;
   }
 
-  /**
-   * 这项任务的会话显示在哪一行下:项目行 id,「任务」分区为 null。不在列表里的(归档的、还没载入的)按它的项目算。
-   */
-  rowOfSession(projectId: string, sessionId: string): string | null {
+  /** 这条会话所在的群(它的根会话的群);不在任何群里 / 不在列表里 = null。 */
+  groupOfSession(sessionId: string): string | null {
     const placed = this.placement.rowOfSession.get(sessionId);
-    if (placed !== undefined) return placed === SESSIONS_SECTION ? null : placed;
-    const row = this.rowProjectIdOf(projectId);
-    return this.isTasksProject(this.projectManager.projects.get(projectId) ?? { id: projectId }) ? null : row;
+    return placed === undefined || placed === SESSIONS_SECTION ? null : placed;
   }
 
   /**
-   * #2548 top-level tasks outside every project whose session has no 咕咕 identity (never driven, or an engine that cannot be
+   * #2548 top-level tasks in no group whose session has no 咕咕 identity (never driven, or an engine that cannot be
    * addressed), newest first. The one list draws a standalone task as its agent's conversation; these have none, so each
    * is a row of its own (oneListTail). This machine's identities not read yet = none, rather than rows about to move.
    */
@@ -285,15 +203,6 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
           !this.remoteSession(entry.projectId, entry.id)?.summary.agent?.userId
       )
       .map(({ projectId, id }) => ({ projectId, sessionId: id }));
-  }
-
-  /** 一行自己的会话:这个项目在各台机器上的本地项目里的(membersOf)。 */
-  private rowOwnEntries(chatId: string): SidebarSessionEntry[] {
-    const entries = this.accountProjects.membersOf(chatId).flatMap((id) => {
-      const project = this.projectManager.projects.get(id);
-      return project ? this.projectSessionEntries(project) : [];
-    });
-    return entries.sort((a, b) => b.time - a.time);
   }
 
   /** Conversation entries of a project's visible tasks, newest interaction first. */
@@ -325,6 +234,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
           title: session.data.title,
           createdAt: session.data.createdAt,
           bornInChatId: session.data.bornInChatId ?? null,
+          groupChatId: session.data.groupChatId ?? null,
         });
       }
     }
@@ -380,6 +290,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
           hostOnline: this.machines?.connected?.(machine) ?? live,
           title: session.title,
           bornInChatId: session.bornInChatId ?? null,
+          groupChatId: session.groupChatId ?? null,
         };
       });
       const own = derived;
@@ -442,50 +353,20 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     for (const sessionId of sessionIds) this.expandedSessionIds.add(sessionId);
   }
 
-  /** 独立会话及助理家里的执行者。隐藏家目录项目行时,不能连同其中的任务一起摘掉。 */
-  private standaloneOwnEntries(): SidebarSessionEntry[] {
-    return [...this.projectManager.projects.values()]
-      .filter((project) => this.isTasksProject(project))
-      .flatMap((project) => this.projectSessionEntries(project))
-      .sort((a, b) => b.time - a.time);
-  }
-
-  /**
-   * 会话列在「任务」里的本地项目:不属于账号上任何项目的 —— #609 每台机器上的 workspace,以及对着手上那份账号项目
-   * (读到的、上次留下的)仍对不上的(刚建、还没发布)。读失败也照这样列:❌ 让它的会话哪里都不列。只有头一次读、手上还
-   * 一份都没有时只列 workspace(那时谁都对不上,不能把项目的会话全倒进「任务」再搬走)。
-   * 「任务」是一张平铺的表,❌ 按机器分组。
-   */
-  private isTasksProject(project: { id: string; data?: { kind?: string } | null }): boolean {
-    if (this.accountProjects.projectOfLocal(project.id)) return false;
-    const { status, list } = this.accountProjects;
-    return isWorkspaceProject(project) || status !== 'loading' || list.length > 0;
-  }
-
   setAgentNameOnHoverEnabled(enabled: boolean): void {
     this.agentNameOnHoverEnabled = enabled;
   }
 
-  get isEmpty(): boolean {
-    return this.sidebarProjects.length === 0;
-  }
-
   get snapshot(): SidebarSnapshot {
     return {
-      expandedProjectIds: [...this.expandedProjectIds],
       expandedSessionIds: [...this.expandedSessionIds],
       idleExpandedProjectIds: [...this.idleExpandedProjectIds],
       folds: [...sidebarFolds],
-      projectOrder: [...this.projectOrder],
-      sessionOrderByProject: { ...this.sessionOrderByProject },
       sessionSortBy: this.sessionSortBy,
     };
   }
 
   restoreSnapshot(snapshot: Partial<SidebarSnapshot>): void {
-    if (snapshot.expandedProjectIds !== undefined) {
-      this.expandedProjectIds.replace(snapshot.expandedProjectIds);
-    }
     if (snapshot.expandedSessionIds !== undefined) {
       this.expandedSessionIds.replace(snapshot.expandedSessionIds);
     }
@@ -495,34 +376,13 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     if (snapshot.folds !== undefined) {
       sidebarFolds.replace(snapshot.folds as SidebarFold[]);
     }
-    if (snapshot.projectOrder !== undefined) {
-      this.projectOrder = [...snapshot.projectOrder];
-    }
-    if (snapshot.sessionOrderByProject !== undefined) {
-      this.sessionOrderByProject = { ...snapshot.sessionOrderByProject };
-    }
     if (snapshot.sessionSortBy !== undefined) {
       const v = parseSidebarSessionSortBy(snapshot.sessionSortBy);
       if (v !== undefined) this.sessionSortBy = v;
     }
-    // Blobs written by the old desktop sidebar still carry its section folds and 项目 | 对话 layout (pinnedCollapsed,
-    // projectsCollapsed, sessionsCollapsed, chatsCollapsed, listLayout, listPage): nothing reads them any more.
+    // Blobs written by older sidebars still carry their section folds, layout and project rows (pinnedCollapsed,
+    // projectsCollapsed, sessionsCollapsed, chatsCollapsed, listLayout, listPage, expandedProjectIds, projectOrder,
+    // sessionOrderByProject): nothing reads them any more.
   }
 
-  ensureProjectExpanded(projectId: string): void {
-    this.expandedProjectIds.add(this.rowProjectIdOf(projectId));
-  }
-
-  /** behavior session-page「键盘导航」: ← on a project row collapses it, so the keyboard skips it whole. */
-  collapseProject(projectId: string): void {
-    this.expandedProjectIds.delete(projectId);
-  }
-
-  /** 新建的在前;没有本地项目的项目(不知道哪天建的)排在后面。 */
-  private compareSidebarProjects(a: SidebarProjectRef, b: SidebarProjectRef): number {
-    const createdAt = (ref: SidebarProjectRef) => (ref.kind === 'local' ? ref.project.createdAt ?? '' : '');
-    const d = createdAt(b).localeCompare(createdAt(a));
-    if (d !== 0) return d;
-    return a.id.localeCompare(b.id);
-  }
 }

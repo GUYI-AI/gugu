@@ -137,7 +137,7 @@ export function useGroupMemberPanelControls({ chatId, chatKind, chatName, settin
 
 
   // 项目群不拉人类进来:「添加成员」还在(加自己的 agent),人类那一页换成原因(GroupAddMembersSheet)。
-  const { showInvite } = groupInviteAccess(chatId, chatKind, settings)
+  const { showInvite } = groupInviteAccess(chatKind, settings)
   const mobile = useMobileShell()
 
 

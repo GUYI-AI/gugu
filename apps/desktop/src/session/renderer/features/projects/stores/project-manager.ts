@@ -1,6 +1,4 @@
-import { ensureProjectHostReady } from '@renderer/features/remote-hosts/ensure-cloud-host-ready';
-import { forgetProjectOnScreen, revalidateScreenSessions } from '@renderer/app/screen-layout-actions';
-import { err, ok, type Result } from '@gugu/session-shared';
+import { revalidateScreenSessions } from '@renderer/app/screen-layout-actions';
 import { makeObservable, observable, runInAction } from 'mobx';
 import { events, rpc, rpcOn } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
@@ -8,97 +6,42 @@ import { machineLinkState, subscribeMachineLink } from '@renderer/lib/machine-cl
 import { appState } from '@renderer/lib/stores/app-state';
 import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
 import { log } from '@renderer/utils/logger';
-import { projectCreatedChannel, projectDeletedChannel, projectVisibilityChangedChannel } from '@shared/core/projects/projectEvents';
+import { foldersChangedChannel, type FolderRecord } from '@shared/core/folders/folders';
 import { sessionCreatedChannel } from '@shared/core/sessions/sessionEvents';
 import { type LocalProject } from '@shared/projects';
-import { splitNameWithOwner } from '@shared/repository-ref';
 import type { ProjectViewSnapshot } from '@shared/view-state';
-import {
-  createUnmountedProject,
-  createUnregisteredProject,
-  isMountedProject,
-  isUnmountedProject,
-  isUnregisteredProject,
-  type ProjectStore,
-  type UnregisteredProjectPhase,
-} from './project';
-import type {
-  ModeData,
-  ProjectCreationCompletion,
-  ProjectCreationError,
-  ProjectType,
-  StartProjectCreationOptions,
-  StartProjectCreationResult,
-} from './project-creation-types';
-import { ProjectPathConflictError } from './project-creation-error';
-import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client';
-import { cachedDevicesAccount } from '@/store/devicesCache';
-import { libraryDeviceId } from '@/components/assistant/assistant-library-client';
+import { createUnmountedProject, isMountedProject, isUnmountedProject, type ProjectStore } from './project';
 import { reconcileSessionProjectLocations } from '@renderer/features/sessions/restore-session-projects';
 import type { SessionProjectLocation } from '@shared/core/projects/session-project-references';
+import { folderAsProject } from '@renderer/features/folders/folder-project';
 
+/**
+ * @@@group-folders — every folder on this computer and on each connected machine, one store per folder (keyed by its
+ * workspace id: a session's `projectId` names it), mounted when a session page needs its sessions, git state or settings.
+ * The folders come from each machine's own list (rpc.folders.listAllFolders); which group a folder is bound to is read
+ * from the group folders store. Not here: creating a group or binding a folder (the group page, folders/*).
+ */
 export class ProjectManagerStore {
   projects = observable.map<string, ProjectStore>();
-  pendingCreationIds = observable.set<string>();
   private _projectMountPromises = new Map<string, Promise<void>>();
-  /** ensureMounted 在等那台机器连上的项目(同一个项目只等一份)。 */
+  /** ensureMounted 在等那台机器连上的文件夹(同一个只等一份)。 */
   private _awaitingLink = new Map<string, Promise<void>>();
   private _loadPromise: Promise<void> | null = null;
-  private _disposeProjectCreatedEvent: (() => void) | null = null;
-  private _disposeProjectDeletedEvent: (() => void) | null = null;
-  private _disposeProjectVisibilityEvent: (() => void) | null = null;
+  private _disposeFoldersChangedEvent: (() => void) | null = null;
   private _disposeSessionCreatedEvent: (() => void) | null = null;
 
   constructor() {
-    makeObservable(this, { projects: observable, pendingCreationIds: observable });
+    makeObservable(this, { projects: observable });
 
-    // 这条订阅只收这台电脑自己的(别的机器上建的项目由 remote-hosts-store 订那台的):是本机项目,认领不走。
-    this._disposeProjectCreatedEvent = events.on(projectCreatedChannel, ({ project }) => {
-      let added = false;
-      machineRegistry.claimLocal([project.id]);
-      runInAction(() => {
-        const known = this.projects.get(project.id);
-        // #609 已有的 workspace 被人亲手加成了项目:同一个 id,只换 kind。
-        if (known?.data && known.data.kind !== project.kind) known.data = { ...known.data, kind: project.kind };
-        if (known) return;
-        this.projects.set(project.id, createUnmountedProject(project, 'idle'));
-        added = true;
-      });
-      if (added) {
-        void this.mountProject(project.id).catch((error: unknown) => {
-          log.error('Failed to mount externally created project', { projectId: project.id, error });
-        });
-      }
+    // This computer's folders changed (bound, unbound, a new one recorded): read its list again. Another machine's are
+    // followed by remote-hosts-store on that machine.
+    this._disposeFoldersChangedEvent = events.on(foldersChangedChannel, () => {
+      void rpc.folders.listAllFolders()
+        .then((folders) => this.syncLocalFolders(folders))
+        .catch((error: unknown) => log.error('Failed to read this computer\'s folders', { error }));
     });
-    // 项目在它那台机器上没了(那台自己的窗口删的、别的电脑撤销「接进来」时删的,#7341):这边跟着去掉。
-    // 这个窗口自己删的早就乐观地拿掉了,这里找不到就什么都不做。
-    this._disposeProjectDeletedEvent = events.on(projectDeletedChannel, ({ projectId }) => {
-      const store = this.projects.get(projectId);
-      if (!store) return;
-      runInAction(() => {
-        store.mountedProject?.dispose();
-        this.projects.delete(projectId);
-      });
-      appState.navigation.revalidate();
-    });
-    this._disposeProjectVisibilityEvent = events.on(projectVisibilityChangedChannel, ({ projectId, project }) => {
-      if (project) {
-        runInAction(() => {
-          if (!this.projects.has(projectId)) this.projects.set(projectId, createUnmountedProject(project, 'idle'));
-        });
-        void this.mountProject(projectId).catch((error: unknown) => {
-          log.error('Failed to mount restored project', { projectId, error });
-        });
-      } else {
-        const store = this.projects.get(projectId);
-        runInAction(() => {
-          store?.mountedProject?.dispose();
-          this.projects.delete(projectId);
-        });
-        appState.navigation.revalidate();
-      }
-    });
-    // 会话建在一个还没挂载的项目里:先挂载项目(它读回来的列表里就有这一条),再交给项目的 sessionManager。
+    // A session created in a folder that is not mounted yet: mount the folder (its session list then holds it), then
+    // hand the session to its sessionManager.
     this._disposeSessionCreatedEvent = events.on(sessionCreatedChannel, ({ session }) => {
       const project = this.projects.get(session.projectId);
       if (project && isMountedProject(project)) return;
@@ -106,13 +49,13 @@ export class ProjectManagerStore {
         .then(() => {
           const sessionManager = this.projects.get(session.projectId)?.mountedProject?.sessionManager;
           if (!sessionManager) {
-            throw new Error(`Project ${session.projectId} did not mount for session ${session.id}`);
+            throw new Error(`Folder ${session.projectId} did not mount for session ${session.id}`);
           }
           sessionManager.acceptCreatedSession(session);
         })
         .catch((error: unknown) => {
           log.error('Failed to attach externally created session', {
-            projectId: session.projectId,
+            folderId: session.projectId,
             sessionId: session.id,
             error,
           });
@@ -121,12 +64,8 @@ export class ProjectManagerStore {
   }
 
   dispose(): void {
-    this._disposeProjectCreatedEvent?.();
-    this._disposeProjectCreatedEvent = null;
-    this._disposeProjectDeletedEvent?.();
-    this._disposeProjectDeletedEvent = null;
-    this._disposeProjectVisibilityEvent?.();
-    this._disposeProjectVisibilityEvent = null;
+    this._disposeFoldersChangedEvent?.();
+    this._disposeFoldersChangedEvent = null;
     this._disposeSessionCreatedEvent?.();
     this._disposeSessionCreatedEvent = null;
   }
@@ -140,19 +79,56 @@ export class ProjectManagerStore {
 
   async ensureProjectLoaded(projectId: string): Promise<void> {
     if (!this.projects.has(projectId)) {
-      const project = (await rpcOn(machineRegistry.machineOf(projectId)).projects.getProjects()).find((candidate) => candidate.id === projectId);
-      if (!project) throw new Error(`Project ${projectId} was not found after import`);
+      const folder = (await rpcOn(machineRegistry.machineOf(projectId)).folders.listAllFolders()).find((candidate) => candidate.id === projectId);
+      if (!folder) throw new Error(`Folder ${projectId} was not found on its machine`);
       runInAction(() => {
-        if (!this.projects.has(projectId)) {
-          this.projects.set(projectId, createUnmountedProject(project, 'idle'));
-        }
+        if (!this.projects.has(projectId)) this.projects.set(projectId, createUnmountedProject(folderAsProject(folder), 'idle'));
       });
     }
     await this.mountProject(projectId);
   }
 
+  /** The task home folder on that machine (null = this computer), recorded there on first use; its store is mounted. */
+  async ensureTaskHome(machine: string | null = null): Promise<string> {
+    const folder = await rpcOn(machine).folders.ensureTaskHome();
+    if (machine) machineRegistry.register(machine, [folder.id]);
+    else machineRegistry.claimLocal([folder.id]);
+    runInAction(() => {
+      if (!this.projects.has(folder.id)) this.projects.set(folder.id, createUnmountedProject(folderAsProject(folder), 'idle'));
+    });
+    await this.mountProject(folder.id);
+    return folder.id;
+  }
+
+  /** This computer's list as it is now: new folders added (and mounted), changed groups applied, gone ones removed. */
+  private syncLocalFolders(folders: readonly FolderRecord[]): void {
+    const keep = new Set(folders.map((folder) => folder.id));
+    const added: string[] = [];
+    machineRegistry.claimLocal([...keep]);
+    runInAction(() => {
+      for (const folder of folders) {
+        const project = folderAsProject(folder);
+        const known = this.projects.get(folder.id);
+        if (known?.data && known.data.kind !== project.kind) known.data = { ...known.data, kind: project.kind };
+        if (!known) {
+          this.projects.set(folder.id, createUnmountedProject(project, 'idle'));
+          added.push(folder.id);
+        }
+      }
+      for (const [id, store] of [...this.projects]) {
+        if (keep.has(id) || machineRegistry.machineOf(id) !== null) continue;
+        store.mountedProject?.dispose();
+        this.projects.delete(id);
+      }
+    });
+    for (const id of added) {
+      void this.mountProject(id).catch((error: unknown) => log.error('Failed to mount a new folder', { folderId: id, error }));
+    }
+    appState.navigation.revalidate();
+  }
+
   private async _doLoad(): Promise<void> {
-    const rawProjects = await rpc.projects.getProjects();
+    const rawProjects = (await rpc.folders.listAllFolders()).map(folderAsProject);
     const toMount: string[] = [];
     runInAction(() => {
       // #581 本机的清单说了算:别的机器先登记过的同一个 id(它的账号副本 / 应答里写着这台电脑的项目)换成本机这一份,
@@ -173,189 +149,8 @@ export class ProjectManagerStore {
     void Promise.allSettled(toMount.map((id) => this.mountProject(id)));
   }
 
-  async createProject(
-    projectType: ProjectType,
-    data: ModeData,
-    id?: string
-  ): Promise<string | undefined> {
-    const result = await this.startProjectCreation(projectType, data, { id });
-    if (result.kind === 'existing') return result.projectId;
-
-    const completion = await result.completion;
-    return completion.success ? result.projectId : undefined;
-  }
-
-  async startProjectCreation(
-    projectType: ProjectType,
-    data: ModeData,
-    options: StartProjectCreationOptions = {}
-  ): Promise<StartProjectCreationResult> {
-    const projectId = options.id ?? crypto.randomUUID();
-    // #6264 在别的机器上建:先把这个 id 记到那台机器名下,之后的挂载、任务调用才走得对。
-    const machine = projectType.machine ?? null;
-    if (machine) machineRegistry.register(machine, [projectId]);
-    else machineRegistry.claimLocal([projectId]);
-    const targetPath = data.mode === 'pick' ? data.path : `${data.path}/${data.name}`;
-    const inspection = await rpcOn(machine).projects.inspectProjectPath({ type: 'local', path: targetPath });
-    if (inspection.existingProject) {
-      if (machine) machineRegistry.register(machine, [inspection.existingProject.id]);
-      else machineRegistry.claimLocal([inspection.existingProject.id]);
-      // Explicitly adding a known directory claims a workspace or reopens its
-      // archived project through the host, retaining the original project id.
-      if ((inspection.existingProject.kind === 'workspace' || inspection.existingProject.archivedAt)
-        && !(data.mode === 'pick' && data.automatic)) {
-        const claimed = await rpcOn(machine).projects.createProject({ type: 'local', path: targetPath, name: data.name, allowNonGit: true });
-        if (!claimed.success) throw new Error(claimed.error.type);
-        if (inspection.existingProject.archivedAt) await this.ensureProjectLoaded(inspection.existingProject.id);
-      }
-      if (inspection.existingProject.rootFolderDetached && !inspection.existingProject.archivedAt) {
-        const attached = await rpcOn(machine).projects.attachProjectFolder(inspection.existingProject.id, targetPath);
-        if (!attached.success) throw new Error(attached.error.message);
-        await this.ensureProjectLoaded(inspection.existingProject.id);
-      }
-      return { kind: 'existing', projectId: inspection.existingProject.id };
-    }
-    if (inspection.pathConflict) {
-      throw new ProjectPathConflictError(inspection.pathConflict);
-    }
-
-    runInAction(() => {
-      this.pendingCreationIds.add(projectId);
-      this.projects.set(
-        projectId,
-        createUnregisteredProject(projectId, data.name, initialCreationPhase(data.mode), data.mode)
-      );
-    });
-
-    const completion = this._doCreateProject(projectType, data, projectId, targetPath).finally(
-      () => {
-        runInAction(() => this.pendingCreationIds.delete(projectId));
-      }
-    );
-
-    return { kind: 'creating', projectId, completion };
-  }
-
-  private async _doCreateProject(
-    projectType: ProjectType,
-    data: ModeData,
-    projectId: string,
-    targetPath: string
-  ): Promise<ProjectCreationCompletion> {
-    const ownerId = cachedDevicesAccount();
-    const rpc = rpcOn(projectType.machine ?? null);
-
-    let result: ProjectCreationCompletion;
-    try {
-      switch (data.mode) {
-        case 'pick': {
-          const projectResult = await rpc.projects.createProject({
-            type: 'local',
-            id: projectId,
-            path: targetPath,
-            name: data.name,
-            createDirectory: data.createDirectory,
-            initGitRepository: data.initGitRepository,
-            allowNonGit: data.allowNonGit,
-            automatic: data.automatic,
-          });
-          if (!projectResult.success) {
-            result = err(projectResult.error);
-            break;
-          }
-
-          const project = projectResult.data;
-          if (data.initGitRepository) {
-            await this._saveInitialGitHubAccountSetting(project.id, data.githubAccountId);
-          }
-          this._setAndOpenProject(projectId, project);
-          result = ok();
-          break;
-        }
-
-        case 'clone': {
-          const cloneResult = await rpc.projectSetup.cloneRepository(data.repositoryUrl, targetPath);
-          if (!cloneResult.success) {
-            result = err({
-              type: 'clone-failed',
-              message: cloneResult.error?.trim() || 'Clone failed',
-            });
-            break;
-          }
-
-          this._updatePhase(projectId, 'registering');
-          const projectResult = await rpc.projects.createProject({
-            type: 'local',
-            id: projectId,
-            path: targetPath,
-            name: data.name,
-          });
-          if (!projectResult.success) {
-            result = err(projectResult.error);
-            break;
-          }
-
-          this._setAndOpenProject(projectId, projectResult.data);
-          result = ok();
-          break;
-        }
-
-        case 'new': {
-          const repoResult = await rpc.github.createRepository({
-            name: data.repositoryName,
-            owner: data.repositoryOwner,
-            isPrivate: data.repositoryVisibility === 'private',
-            accountId: data.githubAccountId ?? undefined,
-          });
-          if (!repoResult.success) {
-            result = err({
-              type: 'repository-create-failed',
-              message: repoResult.error?.trim() || 'Repository creation failed',
-            });
-            break;
-          }
-          if (!repoResult.nameWithOwner || !repoResult.cloneUrl) {
-            result = err({
-              type: 'repository-response-incomplete',
-              message: 'Repository creation response was incomplete',
-            });
-            break;
-          }
-
-          const projectResult = await this._cloneInitializeAndCreateGitHubProject({
-            projectType,
-            projectId,
-            targetPath,
-            name: data.name,
-            cloneUrl: repoResult.cloneUrl,
-            repositoryNameWithOwner: repoResult.nameWithOwner,
-            githubAccountId: data.githubAccountId,
-          });
-          if (!projectResult.success) {
-            result = err(projectResult.error);
-            break;
-          }
-
-          const project = projectResult.data;
-          await this._saveInitialGitHubAccountSetting(project.id, data.githubAccountId);
-          this._setAndOpenProject(projectId, project);
-          result = ok();
-          break;
-        }
-      }
-    } catch (error) {
-      this._markUnexpectedCreationError(projectId, error);
-      throw error;
-    }
-
-    if (!result.success) this._markCreationError(projectId, result.error);
-    else void reportAssistantAppChange(null, undefined, { resource: 'projects', operation: 'created', id: projectId,
-      deviceId: projectType.machine ?? libraryDeviceId(null), after: { name: data.name, path: targetPath } }, ownerId);
-    return result;
-  }
-
   /**
-   * 要用这个项目的会话了(会话页要画它、在它的一行上动手):挂上它。**挂载的唯一入口** —— 别的机器上的项目列出时
+   * 要用这个文件夹的会话了(会话页要画它、在它的一行上动手):挂上它。**挂载的唯一入口** —— 别的机器上的文件夹列出时
    * 不挂(行来自会话目录,见 sidebar-store),只在这里挂;那台机器此刻没连上就等它连上再挂。
    */
   ensureMounted(projectId: string): Promise<void> {
@@ -392,7 +187,7 @@ export class ProjectManagerStore {
     });
 
     const promise = Promise.all([
-      rpc.projects.openProject(projectId),
+      rpc.folderRuntime.openFolder(projectId),
       viewStateCache.read(`project:${projectId}`),
     ])
       .then(async ([openResult, savedSnapshot]) => {
@@ -501,7 +296,7 @@ export class ProjectManagerStore {
       }
       reconcileSessionProjectLocations(sessions);
       for (const [id, store] of [...this.projects]) {
-        if (keep.has(id) || this.pendingCreationIds.has(id)) continue;
+        if (keep.has(id)) continue;
         if (machineRegistry.machineOf(id) !== deviceId) continue;
         store.mountedProject?.dispose();
         this.projects.delete(id);
@@ -535,184 +330,4 @@ export class ProjectManagerStore {
     });
   }
 
-  async deleteProject(projectId: string): Promise<void> {
-    await ensureProjectHostReady(projectId);
-    const ownerId = cachedDevicesAccount();
-    const deviceId = machineRegistry.machineOf(projectId) ?? libraryDeviceId(null);
-    const snapshot = this.projects.get(projectId);
-    runInAction(() => {
-      this.projects.delete(projectId);
-    });
-    forgetProjectOnScreen(projectId);
-    appState.navigation.revalidate();
-    try {
-      await rpc.projects.deleteProject(projectId);
-      void reportAssistantAppChange(null, undefined, { resource: 'projects', operation: 'removed', id: projectId, deviceId }, ownerId);
-    } catch (err) {
-      runInAction(() => {
-        if (snapshot) this.projects.set(projectId, snapshot);
-      });
-      throw err;
-    }
-  }
-
-  removeUnregisteredProject(projectId: string): void {
-    runInAction(() => {
-      const store = this.projects.get(projectId);
-      if (store && isUnregisteredProject(store)) {
-        this.projects.delete(projectId);
-      }
-    });
-  }
-
-  private _setAndOpenProject(id: string, project: LocalProject): void {
-    runInAction(() => {
-      const current = this.projects.get(id);
-      if (current) {
-        current.transitionToUnmounted(project, 'opening');
-      } else {
-        this.projects.set(id, createUnmountedProject(project, 'opening'));
-      }
-    });
-    void this.mountProject(id);
-  }
-
-  private async _saveInitialGitHubAccountSetting(
-    projectId: string,
-    githubAccountId?: string
-  ): Promise<void> {
-    if (githubAccountId === undefined) return;
-
-    const result = await rpc.projects.patchProjectSettings(projectId, { githubAccountId });
-    if (!result.success) {
-      log.error('Failed to save initial GitHub account for project', {
-        projectId,
-        error: result.error,
-      });
-    }
-  }
-
-  private async _rollbackCreatedGitHubRepository(
-    nameWithOwner: string,
-    githubAccountId?: string
-  ): Promise<void> {
-    try {
-      const { owner, repo } = splitNameWithOwner(nameWithOwner);
-      const result = await rpc.github.deleteRepository({
-        owner,
-        name: repo,
-        accountId: githubAccountId ?? undefined,
-      });
-      if (!result.success) {
-        log.error('Failed to delete GitHub repository after project creation failure', {
-          nameWithOwner,
-          error: result.error,
-        });
-      }
-    } catch (error) {
-      log.error('Failed to delete GitHub repository after project creation failure', {
-        nameWithOwner,
-        error,
-      });
-    }
-  }
-
-  private async _cloneInitializeAndCreateGitHubProject(opts: {
-    projectType: ProjectType;
-    projectId: string;
-    targetPath: string;
-    name: string;
-    cloneUrl: string;
-    repositoryNameWithOwner: string;
-    githubAccountId?: string;
-  }): Promise<Result<LocalProject, ProjectCreationError>> {
-    const rpc = rpcOn(opts.projectType.machine ?? null);
-    let result: Result<LocalProject, ProjectCreationError>;
-    try {
-      this._updatePhase(opts.projectId, 'cloning');
-      const cloneResult = await rpc.projectSetup.cloneRepository(opts.cloneUrl, opts.targetPath);
-      if (!cloneResult.success) {
-        result = err({
-          type: 'clone-failed',
-          message: cloneResult.error?.trim() || 'Clone failed',
-        });
-      } else {
-        const initResult = await rpc.projectSetup.initializeRepository({
-          targetPath: opts.targetPath,
-          name: opts.name,
-        });
-        if (!initResult.success) {
-          result = err({
-            type: 'initialize-failed',
-            message: initResult.error?.trim() || 'Project initialization failed',
-          });
-        } else {
-          this._updatePhase(opts.projectId, 'registering');
-          result = await rpc.projects.createProject({
-            type: 'local',
-            id: opts.projectId,
-            path: opts.targetPath,
-            name: opts.name,
-          });
-        }
-      }
-    } catch (error) {
-      await this._rollbackCreatedGitHubRepository(
-        opts.repositoryNameWithOwner,
-        opts.githubAccountId
-      );
-      throw error;
-    }
-
-    if (!result.success) {
-      await this._rollbackCreatedGitHubRepository(
-        opts.repositoryNameWithOwner,
-        opts.githubAccountId
-      );
-    }
-    return result;
-  }
-
-  private _updatePhase(id: string, phase: UnregisteredProjectPhase): void {
-    runInAction(() => {
-      const store = this.projects.get(id);
-      if (store && isUnregisteredProject(store)) store.phase = phase;
-    });
-  }
-
-  private _markCreationError(id: string, error: ProjectCreationError): void {
-    runInAction(() => {
-      const store = this.projects.get(id);
-      if (store && isUnregisteredProject(store)) {
-        store.phase = 'error';
-        store.error =
-          error.type === 'not-repository'
-            ? 'Directory is not a git repository. Pick a folder that is one, or create a new project instead.'
-            : error.type === 'inspect-failed'
-              ? `Could not inspect directory: ${error.message}`
-              : error.message;
-      }
-    });
-  }
-
-  private _markUnexpectedCreationError(id: string, error: unknown): void {
-    runInAction(() => {
-      const store = this.projects.get(id);
-      if (store && isUnregisteredProject(store)) {
-        store.phase = 'error';
-        store.error = error instanceof Error ? error.message : String(error);
-      }
-    });
-  }
-}
-
-function initialCreationPhase(mode: ModeData['mode']): UnregisteredProjectPhase {
-  switch (mode) {
-    case 'pick':
-      return 'registering';
-    case 'clone':
-      return 'cloning';
-    case 'new':
-      return 'creating-repo';
-  }
 }

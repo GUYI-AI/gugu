@@ -179,7 +179,7 @@ export const SessionContentGate = observer(function SessionContentGate({ childre
         detail={sessionErrorMessage(sessionPageStore, translate)}
         action={{
           label: translate('task.backToProject'),
-          run: () => leaveSessionView(projectId, sessionId),
+          run: () => leaveSessionView(sessionId),
         }}
       />
     );

@@ -76,7 +76,7 @@ const SessionViewWrapperWithProviders = observer(function SessionViewWrapperWith
     if (kind !== 'archived') return;
 
     log.warn('[gugu-session] 停在了已归档的会话视图上,自动退回', { projectId, sessionId });
-    leaveSessionView(projectId, sessionId);
+    leaveSessionView(sessionId);
   }, [kind, projectId, sessionId]);
 
   if (kind !== 'ready') {

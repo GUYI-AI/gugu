@@ -28,8 +28,8 @@ export default {
       "created": "{{name}} 已创建，消息已发送",
       "device": "选择设备",
       "deviceRequired": "请选择一台在线设备",
-      "project": "选择项目",
-      "projectRequired": "请选择 Agent 要工作的项目目录",
+      "project": "选择文件夹",
+      "projectRequired": "请选择 Agent 要工作的文件夹",
       "prompt": "给 Agent 发消息…",
       "provider": "智能体",
       "providerLocked": "创建中已锁定 {{name}}",
@@ -41,7 +41,7 @@ export default {
     },
     "defaults": {
       "devicesFailed": "设备列表加载失败。请重试。",
-      "readFailed": "读不到上次用的设备和项目，请重新选一下。",
+      "readFailed": "读不到上次用的设备和文件夹，请重新选一下。",
       "saveFailed": "这次的选择没能记住，下次可能要重新选。"
     },
     "devices": {
@@ -136,8 +136,8 @@ export default {
         "unsupported": "那台机器上的咕咕版本太旧，暂不能新建文件夹",
         "unknown": "创建失败，请重试"
       },
-      "broadRoot": "这是根目录，agent 将能改动整台机器的文件。建议选具体的项目文件夹。",
-      "broadHome": "这是主目录，agent 将能改动其中所有文件。建议选具体的项目文件夹。",
+      "broadRoot": "这是根目录，agent 将能改动整台机器的文件。建议选具体的工作文件夹。",
+      "broadHome": "这是主目录，agent 将能改动其中所有文件。建议选具体的工作文件夹。",
       "broadUseAnyway": "仍然使用",
       "broadPickAnother": "换一个"
     },

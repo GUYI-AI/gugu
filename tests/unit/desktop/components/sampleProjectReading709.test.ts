@@ -26,17 +26,17 @@ const { useSampleProject } = await import('../../../../apps/desktop/src/session/
 const { screenLayout } = await import('../../../../apps/desktop/src/session/renderer/app/screen-layout')
 const { forgetSampleProjectOnScreen } = await import('../../../../apps/desktop/src/session/renderer/app/screen-layout-actions')
 const { appState } = await import('../../../../apps/desktop/src/session/renderer/lib/stores/app-state')
-const { accountProjectsStore } = await import('../../../../apps/desktop/src/session/renderer/features/projects/stores/account-projects-store')
+const { groupFoldersStore } = await import('../../../../apps/desktop/src/session/renderer/features/folders/group-folders-store')
 const { resetSampleConversion, sampleConversion } = await import('../../../../apps/desktop/src/session/renderer/features/sample-project/sample-conversion')
 const { publishSidebarChatSignals } = await import('../../../../apps/desktop/src/lib/sidebarChatsBridge')
 
 /** What the shell publishes from its chat list: the group chats it draws as rows (null = not loaded yet). */
 const chatList = (listedGroups: string[] | null) => act(async () => {
-  publishSidebarChatSignals({ chatsUnread: 0, groupUnread: new Map(), groupCallingTopic: new Map(), listedGroups: listedGroups && new Set(listedGroups) })
+  publishSidebarChatSignals({ listedGroups: listedGroups && new Set(listedGroups) })
   await Promise.resolve()
 })
 
-// Every caller is an observer (useSampleProject reads the account project list from mobx), so the probe is one too.
+// Every caller is an observer (useSampleProject reads the groups with folders from mobx), so the probe is one too.
 const Probe = observer(function Probe() {
   const sample = useSampleProject()
   return createNode('output', { 'data-shown': String(sample.shown), 'data-settled': String(sample.settled) })
@@ -48,7 +48,7 @@ beforeEach(() => {
   key.readSampleProject.mockReset()
   key.dismissSampleProject.mockReset().mockResolvedValue(undefined)
   resetSampleConversion()
-  publishSidebarChatSignals({ chatsUnread: 0, groupUnread: new Map(), groupCallingTopic: new Map(), listedGroups: new Set() })
+  publishSidebarChatSignals({ listedGroups: new Set() })
   owner.ownerId = `account-${++account}`
 })
 
@@ -127,19 +127,20 @@ describe('reading whether this account has the sample (#709)', () => {
 })
 
 describe('the sample giving way to the project it became (#2569)', () => {
-  afterEach(() => runInAction(() => { accountProjectsStore.list = [] }))
+  afterEach(() => groupFoldersStore.clear())
+  /** A group of the account's record with one folder on a machine of mine. */
+  const withFolder = (chatId: string, name = chatId) => ({ chatId, name, archived: false, activeAt: '2026-01-01T00:00:00.000Z', folders: [
+    { deviceId: 'machine', folderId: `folder-${chatId}`, path: `/${chatId}`, position: 1, attachedAt: null, removalRequestedAt: null },
+  ] })
 
-  it('keeps showing until that project is on the account list, then gives way', async () => {
+  it('keeps showing until the group it became is in the chat list, then gives way', async () => {
     key.readSampleProject.mockResolvedValue({ version: 2, dismissed: false, projectId: 'p1', chatId: 'chat-became' })
     const harness = createReactHarness()
     try {
       await harness.render(createNode(Probe))
       const output = () => harness.container.querySelector('output')!
       expect(output().dataset).toMatchObject({ shown: 'true', settled: 'true' })
-      await act(async () => {
-        runInAction(() => { accountProjectsStore.list = [{ chatId: 'chat-became', name: '周末去杭州', archived: false, bindings: [] }] as never })
-        await Promise.resolve()
-      })
+      await chatList(['chat-became'])
       expect(output().dataset).toMatchObject({ shown: 'false', settled: 'true' })
     } finally { harness.cleanup() }
   })
@@ -168,7 +169,7 @@ describe('the sample giving way to the project it became (#2569)', () => {
       await harness.render(createNode(Probe))
       await listed('chat-became')
       expect(harness.container.querySelector('output')?.dataset.shown).toBe('true')
-      await chatList([])
+      await chatList(['chat-became'])
       expect(harness.container.querySelector('output')?.dataset.shown).toBe('false')
     } finally { harness.cleanup() }
   })
@@ -187,12 +188,12 @@ describe('the sample giving way to the project it became (#2569)', () => {
   })
 
   const listed = (...chatIds: string[]) => act(async () => {
-    runInAction(() => { accountProjectsStore.list = chatIds.map((chatId) => ({ chatId, name: chatId, archived: false, bindings: [] })) as never })
+    runInAction(() => { groupFoldersStore.account = chatIds.map((chatId) => withFolder(chatId)) })
     await Promise.resolve()
   })
 
   // #2589 review 5: the dismissal must not hang on the hand-off alone.
-  it('a key that became a listed project but was never dismissed (failed dismissal, reload) is dismissed here', async () => {
+  it('a key that became a group with a folder but was never dismissed (failed dismissal, reload) is dismissed here', async () => {
     key.readSampleProject.mockResolvedValue({ version: 2, dismissed: false, projectId: 'p1', chatId: 'chat-became' })
     const harness = createReactHarness()
     try {
@@ -217,7 +218,7 @@ describe('the sample giving way to the project it became (#2569)', () => {
   })
 
   // #2589 review 6
-  it('re-reads the key only when the project list gains a project and the key has not recorded one yet', async () => {
+  it('re-reads the key only when a new group with folders appears and the key has not recorded one yet', async () => {
     key.readSampleProject.mockResolvedValue(SHOWN)
     const harness = createReactHarness()
     try {
@@ -226,7 +227,7 @@ describe('the sample giving way to the project it became (#2569)', () => {
       await listed('chat-a')
       expect(key.readSampleProject, 'gained a project').toHaveBeenCalledTimes(2)
       await act(async () => {
-        runInAction(() => { accountProjectsStore.list = [{ chatId: 'chat-a', name: 'renamed', archived: false, bindings: [] }] as never })
+        runInAction(() => { groupFoldersStore.account = [withFolder('chat-a', 'renamed')] })
         await Promise.resolve()
       })
       await listed()

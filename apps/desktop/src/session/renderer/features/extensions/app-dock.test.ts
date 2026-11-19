@@ -86,14 +86,14 @@ describe('左栏「退出」(#7050)', () => {
   // The renderer waits a frame for the places it closed to unmount; node has no frames.
   vi.stubGlobal('requestAnimationFrame', (cb: () => void) => setTimeout(cb, 0));
 
-  it.each(['chat', 'project'] as const)('quitting a whole-page App returns to the shared %s block', async (kind) => {
+  it('quitting a whole-page App returns to the shared chat block', async () => {
     install([app('timer')]);
-    const content = kind === 'chat' ? { kind, chatId: 'c1' } : { kind, projectId: 'p1' };
+    const content = { kind: 'chat' as const, chatId: 'c1' };
     screenLayout.show(content);
     const saved = screenLayout.snapshot;
     appState.navigation.navigate('app', { appId: 'timer' });
     await quitApp('timer');
-    expect(appState.navigation.currentViewId).toBe(kind);
+    expect(appState.navigation.currentViewId).toBe('chat');
     expect(screenLayout.snapshot).toEqual(saved);
     screenLayout.forgetContent(content);
   });

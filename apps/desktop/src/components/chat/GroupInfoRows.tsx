@@ -50,7 +50,7 @@ export function GroupMembersRow({ chatId, settings, memberIds, total, onOpen }: 
             ))}
           </span>
           <span style={inviteSlotStyle} onClick={contain} onKeyDown={contain}>
-            <GroupAddMenu chatId={chatId} canAddMembers={groupInviteAccess(chatId, 'group', settings).showInvite} size="sm" />
+            <GroupAddMenu chatId={chatId} canAddMembers={groupInviteAccess('group', settings).showInvite} size="sm" />
           </span>
           {total ?? <Unknown className="w-[2ch]" />}
         </>

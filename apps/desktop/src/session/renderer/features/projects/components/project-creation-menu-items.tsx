@@ -1,5 +1,5 @@
 import { FolderOpen, Plus } from '@/lib/icons'
-import { createProjectFromLocalFolder } from '@renderer/features/projects/components/create-project-from-local-folder'
+import { createGroupFromFolder } from '@renderer/features/folders/create-group-from-folder'
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store'
 import { rpc } from '@renderer/lib/ipc'
 import { useShowModal } from '@renderer/lib/modal/modal-provider'
@@ -8,7 +8,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { log } from '@renderer/utils/logger'
 import { isWebTarget } from '@/lib/target'
 
-/** #6264 在别的机器上建:空白项目建在那台机器的默认项目目录下,「使用现有文件夹」浏览那台机器(照 VS Code Remote「Open Folder」)。 */
+/** #6264 文件夹在别的机器上:新文件夹建在那台机器的默认位置下,「用现有文件夹」浏览那台机器(照 VS Code Remote「Open Folder」)。 */
 export type ProjectCreationMachine = {
   deviceId: string
   label: string
@@ -21,7 +21,8 @@ export function ProjectCreationMenuItems({
   machine = null,
   disabled = false
 }: {
-  onProjectReady?: (projectId: string) => void
+  /** The new group (chat id), its folder bound. */
+  onProjectReady?: (chatId: string) => void
   /** null = 本机。 */
   machine?: ProjectCreationMachine | null
   disabled?: boolean
@@ -32,16 +33,17 @@ export function ProjectCreationMenuItems({
 
   const handleExistingFolder = async () => {
     if (machine) {
-      // 那台机器上的目录选择器由宿主画(与侧栏、新建框「浏览那台机器」同一个),选中后在那台机器上加成项目。
+      // 那台机器上的目录选择器由宿主画(与侧栏、新建框「浏览那台机器」同一个),选中后建群、把它挂进去。
       const path = await remoteHostsStore.pickFolder(machine.deviceId, machine.browseFrom)
       if (!path) return
-      onProjectReady?.(await remoteHostsStore.ensureProject(machine.deviceId, path))
+      const chatId = await createGroupFromFolder(path, translate, machine.deviceId)
+      if (chatId) onProjectReady?.(chatId)
       return
     }
     // @@@task-web-host — 网页版没有系统文件夹对话框(无头宿主里只会静默取消,owner 实测「点了没反应」)
     // → 开咕咕自己的小弹窗:应用内目录浏览器 + 零命名。❌ 不接旧的 AddProjectModal。
     if (isWebTarget) {
-      showLocalFolderProjectModal({ onSuccess: (projectId) => onProjectReady?.(projectId) })
+      showLocalFolderProjectModal({ onSuccess: (chatId) => onProjectReady?.(chatId) })
       return
     }
     const path = await rpc.app.openSelectDirectoryDialog({
@@ -49,8 +51,8 @@ export function ProjectCreationMenuItems({
       message: translate('projects.create.pickFolderMessage')
     })
     if (!path) return
-    const projectId = await createProjectFromLocalFolder(path, translate)
-    if (projectId) onProjectReady?.(projectId)
+    const chatId = await createGroupFromFolder(path, translate)
+    if (chatId) onProjectReady?.(chatId)
   }
 
   return (
@@ -61,7 +63,7 @@ export function ProjectCreationMenuItems({
         onClick={() =>
           showCreateProjectNameModal({
             machine: machine ? { deviceId: machine.deviceId, label: machine.label } : null,
-            onSuccess: (projectId) => onProjectReady?.(projectId)
+            onSuccess: (chatId) => onProjectReady?.(chatId)
           })
         }
       >
@@ -73,7 +75,7 @@ export function ProjectCreationMenuItems({
         data-testid="project-create-existing"
         onClick={() =>
           void handleExistingFolder().catch((error: unknown) =>
-            log.error('[projects] 用现有文件夹建项目失败', { machine: machine?.deviceId ?? null, error })
+            log.error('[folders] 用现有文件夹建群失败', { machine: machine?.deviceId ?? null, error })
           )
         }
       >

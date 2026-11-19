@@ -7,26 +7,15 @@
 // 两边都只 import 这一个文件,❌ 各写一份键名。
 import { useSyncExternalStore } from 'react'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
-import { chatAttention } from '@gugu/core/shared/ui/chatModels'
-import { isDuplicateAssistantChat } from './assistantChatList'
-import type { AssistantShellSnapshot } from './assistantShellBridge'
 import type { JoinedGroup } from './sidebarJoinedGroups'
 
 /** 会话页侧栏「对话」那一格在 lib/shellSlots 里的键:会话页登记,壳的 components/ChatListSlotHost.tsx 往里画。 */
 export const CHAT_LIST_SLOT_KEY = 'chat-list'
 
 export type SidebarChatSignals = {
-  /** 「对话」那边(人、用户群和它们的话题)的未读总数,免打扰的不算。 */
-  readonly chatsUnread: number
-  /** 每个项目群叫到你的未读:群主线(含回复串)全算,从它开出来的话题只算叫到你的;免打扰的不算;没有的群不在里面。 */
-  readonly groupUnread: ReadonlyMap<string, number>
-  /** 项目群从哪个话题叫到了你:点项目行直接开它,读了 groupUnread 就减。没有叫到你的话题的群不在里面。 */
-  readonly groupCallingTopic: ReadonlyMap<string, SidebarCallingTopic>
-  /** #2569 the group chats the chat list has (project groups included); null = the list has not loaded yet. */
+  /** #2569 the group chats the chat list has; null = the list has not loaded yet. */
   readonly listedGroups: ReadonlySet<string> | null
 }
-
-export type SidebarCallingTopic = { readonly chatId: string; readonly name: string }
 
 export type SidebarChatView = {
   readonly focusedChatId: string | null
@@ -47,8 +36,8 @@ export type SidebarPinnedAgent = {
   readonly agentUserId: string
   /** The pinned session: 取消固定到左侧栏 writes it. */
   readonly sessionId: string
-  /** Where the agent lives (the group, or the project's project group): its row says so, and clicking it opens that. */
-  readonly home: { readonly kind: 'group' | 'project'; readonly name: string; readonly chatId: string }
+  /** Where the agent lives (its group): its row says so, and clicking it opens that. */
+  readonly home: { readonly kind: 'group'; readonly name: string; readonly chatId: string }
 }
 
 const SIGNALS_KEY = '__GUGU_SIDEBAR_CHAT_SIGNALS__'
@@ -62,26 +51,9 @@ const PINNED_AGENTS_EVENT = 'gugu:sidebar-pinned-agents'
 const TOUR_KEY = '__GUGU_PRODUCT_TOUR_ON_SCREEN__'
 const TOUR_EVENT = 'gugu:product-tour-on-screen'
 
-/**
- * 壳:从聊天列表那一份算出两枚页签和项目行上的数。项目群(及从它开出来的话题)的未读记在那个群名下,其余记进「对话」;免打扰的不算(gugu-dev#181:
- * 「对话」页签挂对话那边的未读总数,项目行与「项目」页签挂项目群的未读;owner 10-28:话题只算叫到你的)。只读未读数,真读了它自己会减。
- */
-export function sidebarChatSignals(chats: readonly ChatItem[], projectGroupChats: ReadonlySet<string>, assistant: AssistantShellSnapshot | null = null, loaded = true): SidebarChatSignals {
-  const listedGroups = loaded ? new Set(chats.flatMap((chat) => (chat.kind === 'group' ? [chat.id] : []))) : null
-  let chatsUnread = 0
-  const groupUnread = new Map<string, number>()
-  const groupCallingTopic = new Map<string, SidebarCallingTopic>()
-  for (const chat of chats) {
-    if (chat.unread_count <= 0 || chat.is_muted || isDuplicateAssistantChat(chat, assistant)) continue
-    const line = chat.kind === 'topic' ? (chat.source_chat_id ?? chat.id) : chat.id
-    // 项目群主线(含回复串)全算,话题只算叫到你的那几条(owner 10-28),项目行与「对话」页签同一个数。
-    const count = chatAttention(chat).forYou
-    if (projectGroupChats.has(line)) {
-      if (count > 0) groupUnread.set(line, (groupUnread.get(line) ?? 0) + count)
-      if (count > 0 && chat.kind === 'topic' && !groupCallingTopic.has(line)) groupCallingTopic.set(line, { chatId: chat.id, name: chat.name ?? '' })
-    } else chatsUnread += count
-  }
-  return { chatsUnread, groupUnread, groupCallingTopic, listedGroups }
+/** 壳:从聊天列表那一份算出会话页要知道的(列表里有哪些群)。 */
+export function sidebarChatSignals(chats: readonly ChatItem[], loaded = true): SidebarChatSignals {
+  return { listedGroups: loaded ? new Set(chats.flatMap((chat) => (chat.kind === 'group' ? [chat.id] : []))) : null }
 }
 
 const NO_VIEW: SidebarChatView = { focusedChatId: null, groups: [] }
@@ -136,15 +108,7 @@ function sameIds(current: ReadonlySet<string> | null, next: ReadonlySet<string> 
 /** 壳:整份替换;没变不通知。 */
 export function publishSidebarChatSignals(next: SidebarChatSignals): void {
   const current = read<SidebarChatSignals>(SIGNALS_KEY)
-  if (
-    current &&
-    current.chatsUnread === next.chatsUnread &&
-    current.groupUnread.size === next.groupUnread.size &&
-    [...next.groupUnread].every(([chatId, count]) => current.groupUnread.get(chatId) === count) &&
-    current.groupCallingTopic.size === next.groupCallingTopic.size &&
-    [...next.groupCallingTopic].every(([chatId, topic]) => current.groupCallingTopic.get(chatId)?.chatId === topic.chatId && current.groupCallingTopic.get(chatId)?.name === topic.name) &&
-    sameIds(current.listedGroups, next.listedGroups)
-  ) return
+  if (current && sameIds(current.listedGroups, next.listedGroups)) return
   write(SIGNALS_KEY, SIGNALS_EVENT, next)
 }
 
@@ -191,15 +155,6 @@ export function publishSidebarPinnedAgents(next: readonly SidebarPinnedAgent[]):
 export function useSidebarPinnedAgents(): readonly SidebarPinnedAgent[] {
   return useSyncExternalStore(subscribePinnedAgents, () => read<readonly SidebarPinnedAgent[]>(PINNED_AGENTS_KEY) ?? NO_PINNED_AGENTS, () => NO_PINNED_AGENTS)
 }
-
-/**
- * #2548 壳 → 会话页: an account project with no conversation row yet stands among the conversation rows at its time
- * (lib/sidebarOneList, OneListProjectLine). Where is the chat list's to say, the row is the task page's to draw (it needs
- * the task page's own context): the chat list leaves an empty element there, a shell slot (lib/shellSlots) under this key
- * with the project's group chat id, and the task page draws the project's row into it.
- */
-export const ONE_LIST_PROJECT_SLOT_PREFIX = 'one-list-project:'
-export const oneListProjectSlotKey = (chatId: string) => `${ONE_LIST_PROJECT_SLOT_PREFIX}${chatId}`
 
 const ONE_LIST_NEIGHBOUR_KEY = '__GUGU_SIDEBAR_ONE_LIST_NEIGHBOUR__'
 

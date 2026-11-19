@@ -117,9 +117,9 @@ describe('DevicesSection interaction', () => {
     await act(async () => { root.render(createElement(DevicesContext.Provider, { value }, createElement('div', null,
       createElement(DevicesSection),
       createElement(SessionLocalizationProvider, { children: createElement(ProjectFolderCard, {
-        projectId: 'p1', projectName: 'Project',
-        folders: { folders: [], loadError: false, unanswered: [], chosen: null, fresh: undefined,
-          choose: vi.fn(), reload: vi.fn(), attach: vi.fn(), detach: vi.fn() },
+        chatId: 'g1', groupName: 'Project',
+        folders: { folders: [], loadError: false, stale: false, chosen: null, fresh: undefined,
+          choose: vi.fn(), reload: vi.fn(), bound: vi.fn(), detach: vi.fn() },
         machines: [null], machineOf: () => local,
         attachMachines: [local, { id: versions[1]!.device_id, label: versions[1]!.label, online: true, kind: 'server' }],
         onAttach, onDropFolder: vi.fn(),

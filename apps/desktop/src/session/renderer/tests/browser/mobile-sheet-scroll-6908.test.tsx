@@ -70,7 +70,7 @@ it('any sheet: content with no scroll area of its own still scrolls to its last 
 for (const [w, h] of [[360, 640], [360, 400]] as const) {
   it(`new task project picker, 12 projects at ${w}×${h}: the list keeps its rows, the head stays on top, the last project is reachable`, async () => {
     await page.viewport(w, h);
-    const projects = Array.from({ length: 12 }, (_, i) => ({ chatId: `p${i + 1}`, name: `project-${i + 1}`, homes: new Map<string, string>() }));
+    const projects = Array.from({ length: 12 }, (_, i) => ({ chatId: `p${i + 1}`, name: `project-${i + 1}`, homes: new Map<string, { folderId: string; path: string }>() }));
     mount(<CreateTarget projects={projects} project={null} onProject={() => {}} machines={[]} machine={undefined} onMachine={() => {}} machineLabel={() => ''} busy={false} />);
     await userEvent.click(page.getByTestId('agent-watch-create-project'));
     // 「不选项目」在最前,然后 12 个项目。

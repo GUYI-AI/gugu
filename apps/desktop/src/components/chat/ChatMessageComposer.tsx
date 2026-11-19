@@ -13,7 +13,7 @@ import { UI_EVENTS } from '@/lib/uiEvents'
 import { useChatStore } from '../../store/chatContext'
 import { useTheme } from '../../store/theme'
 import { useMobileShell } from '../../hooks/useMobileShell'
-import { useInChatSlot, useChatSlotProjectName } from '../../lib/shellSlots'
+import { useInChatSlot, useChatSlotGroupName } from '../../lib/shellSlots'
 import { sessionComposerDockedWidthClassName } from '../../session/renderer/features/sessions/session-composer-styles'
 import { useChatTaskDrop } from './useChatTaskDrop'
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
@@ -78,7 +78,7 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
   const [attachOpen, setAttachOpen] = useState(false)
   const isMain = surface === 'main'
   const inChatSlot = useInChatSlot()
-  const projectName = useChatSlotProjectName()
+  const groupName = useChatSlotGroupName()
   const takenOver = useComposerVerbTakeover(chatId)
   const { identitiesById, registerDraftEditor } = useChatStore('identitiesById', 'registerDraftEditor')
   const { members, mentionProvider, renderMentionIcon, pickOf } = useGroupMentionProvider({ chatId, isGroupChat: !!isGroupChat, groupMembers, currentUserId: currentUserId ?? null,
@@ -165,7 +165,7 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
         {invitation}
         <Composer {...props.conversation} key={chatId} editorApiRef={editorApiRef} editorOptions={editorOptions} mobile={mobile}
           disabled={disabled} disabledPlaceholder={placeholder ?? disabledReason} canSubmit={!sending && (!!text.trim() || attachments.length > 0)}
-          placeholder={props.conversation ? undefined : (whisperTarget ? t('composer.whisperPlaceholder', { name: whisperTarget.displayName }) : placeholder ?? (mobile && isGroupChat ? t('composer.mobilePlaceholder') : projectName && !mobile ? t('composer.projectGroupPlaceholder', { name: projectName }) : t('composer.placeholder')))}
+          placeholder={props.conversation ? undefined : (whisperTarget ? t('composer.whisperPlaceholder', { name: whisperTarget.displayName }) : placeholder ?? (mobile && isGroupChat ? t('composer.mobilePlaceholder') : groupName && !mobile ? t('composer.groupPlaceholder', { name: groupName }) : t('composer.placeholder')))}
           onInputChange={setText} onSubmitWhileWorking={props.conversation ? handleSend : undefined} onSubmit={handleSend} onMentionInsert={onMentionInsert}
           mentionProvider={mentionProvider} renderMentionIcon={renderMentionIcon} queryCommands={queryPrompts} dataDropTypes={dataDropTypes} onDataDropped={onDataDropped}
           onFilesDropped={enqueueFiles} onImageFilesDropped={enqueueFiles} onDirectoriesDropped={onDirectoriesDropped}

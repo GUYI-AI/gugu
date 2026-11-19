@@ -30,38 +30,28 @@ const rowIds = (list: ReturnType<typeof chatAgentSection>) => list.rows.map((row
 const disclosure = { expanded: new Set<string>(), showAll: false };
 
 describe('my agents in a chat (#2599: where each was created, not the groups it is a member of)', () => {
-  // `p-shop` / `p-shop-remote` are the shop project's folders; `p-ads` belongs to another listed project; `p-other` is the
-  // task workspace (no project). `group-1` is a group with a topic `topic-1`; `shop-group` is the shop project's group.
-  const listed = new Set(['p-shop', 'p-shop-remote', 'p-ads']);
-  const inProject = (projectId: string) => listed.has(projectId);
+  // `shop-group` is a group with folders on two machines; `ads-group` another group; `group-1` is a group with a topic
+  // `topic-1`. An entry's `groupChatId` is the group its folder is bound to.
   const group = (chatId: string, topics: Record<string, string> = {}) => ({
-    kind: 'group' as const,
-    projectIds: [],
-    bornHere: (id: string) => id === chatId || topics[id] === chatId,
-    inProject,
+    here: (id: string) => id === chatId || topics[id] === chatId,
   });
-  const shop = {
-    kind: 'project' as const,
-    projectIds: ['p-shop', 'p-shop-remote'],
-    bornHere: (id: string) => id === 'shop-group',
-    inProject,
-  };
+  const shop = group('shop-group');
   const mine = [
     entry('born-in-group', { agentUserId: 'agent-a', bornInChatId: 'group-1' }),
     entry('born-in-topic', { agentUserId: 'agent-t', bornInChatId: 'topic-1' }),
     entry('born-in-dm', { agentUserId: 'agent-b', bornInChatId: 'dm-1' }),
     entry('created-with-button', { agentUserId: 'agent-c', bornInChatId: null }),
-    entry('born-in-group-into-ads', { projectId: 'p-ads', agentUserId: 'agent-d', bornInChatId: 'group-1' }),
-    entry('project-session', { projectId: 'p-shop', agentUserId: 'agent-e', bornInChatId: 'group-1' }),
-    entry('project-folder-on-other-machine', { projectId: 'p-shop-remote' }),
+    entry('born-in-group-into-ads', { groupChatId: 'ads-group', agentUserId: 'agent-d', bornInChatId: 'group-1' }),
+    entry('project-session', { groupChatId: 'shop-group', agentUserId: 'agent-e', bornInChatId: 'group-1' }),
+    entry('project-folder-on-other-machine', { groupChatId: 'shop-group' }),
     entry('born-in-shop-group-no-project', { agentUserId: 'agent-f', bornInChatId: 'shop-group' }),
   ];
 
-  it('in a group: my agents created there or in one of its topics, outside every project', () => {
+  it('in a group: my agents created there or in one of its topics, in no group', () => {
     expect(ids(myAgentsInChat(mine, group('group-1', { 'topic-1': 'group-1' })))).toEqual(['born-in-group', 'born-in-topic']);
   });
 
-  it('a project chosen at creation wins over the group it was created in', () => {
+  it('the group of its folder wins over the group it was created in', () => {
     expect(ids(myAgentsInChat(mine, group('group-1')))).not.toContain('born-in-group-into-ads');
     expect(ids(myAgentsInChat(mine, group('group-1')))).not.toContain('project-session');
   });
@@ -73,7 +63,7 @@ describe('my agents in a chat (#2599: where each was created, not the groups it 
     expect(ids(myAgentsInChat(mine, group('group-1')))).not.toContain('born-in-dm');
   });
 
-  it("in a project: the project's sessions on every machine, and agents created in its group with no project", () => {
+  it("in a group with folders: the sessions in its folders on every machine, and agents created there in no group", () => {
     expect(ids(myAgentsInChat(mine, shop))).toEqual(['project-session', 'project-folder-on-other-machine', 'born-in-shop-group-no-project']);
   });
 
@@ -82,10 +72,10 @@ describe('my agents in a chat (#2599: where each was created, not the groups it 
     expect(ids(myAgentsInChat([entry('member-only', { agentUserId: 'agent-b', bornInChatId: 'dm-1' })], group('group-1')))).toEqual([]);
   });
 
-  it('a sub-agent goes where the agent that spawned it lives, whatever its own project or origin', () => {
+  it('a sub-agent goes where the agent that spawned it lives, whatever its own group or origin', () => {
     const family = [
       entry('parent', { agentUserId: 'agent-a', bornInChatId: 'group-1' }),
-      entry('child-in-shop', { projectId: 'p-shop', parentSessionId: 'parent', agentUserId: 'agent-g' }),
+      entry('child-in-shop', { groupChatId: 'shop-group', parentSessionId: 'parent', agentUserId: 'agent-g' }),
       entry('grandchild', { parentSessionId: 'child-in-shop', bornInChatId: 'dm-1' }),
     ];
     expect(ids(myAgentsInChat(family, group('group-1')))).toEqual(['parent', 'child-in-shop', 'grandchild']);
@@ -140,7 +130,7 @@ describe('the agents section', () => {
   it('forks hang under their parent, listed only while the parent is expanded, with the branch pill', () => {
     const agents = [
       entry('parent', { presentation: running, time: 2 }),
-      entry('fork', { parentSessionId: 'parent', presentation: running, projectId: 'p-elsewhere' }),
+      entry('fork', { parentSessionId: 'parent', presentation: running, groupChatId: 'g-elsewhere' }),
       entry('grandchild', { parentSessionId: 'fork', presentation: waiting }),
     ];
     const collapsed = chatAgentSection(agents, disclosure);
@@ -150,10 +140,10 @@ describe('the agents section', () => {
       summary: { total: 2, active: [{ count: 1 }] },
     });
     const open = chatAgentSection(agents, { ...disclosure, expanded: new Set(['parent', 'fork']) });
-    expect(open.rows.map(({ sessionId, depth, parentProjectId }) => [sessionId, depth, parentProjectId])).toEqual([
+    expect(open.rows.map(({ sessionId, depth, parentGroupChatId }) => [sessionId, depth, parentGroupChatId])).toEqual([
       ['parent', 0, undefined],
-      ['fork', 1, 'p-other'],
-      ['grandchild', 2, 'p-elsewhere'],
+      ['fork', 1, null],
+      ['grandchild', 2, 'g-elsewhere'],
     ]);
   });
 

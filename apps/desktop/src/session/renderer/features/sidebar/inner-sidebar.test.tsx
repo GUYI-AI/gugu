@@ -24,12 +24,15 @@ type Item = {
   title: string;
   /** #2599 the conversation it was created from: where it lives (chat-agents). */
   bornInChatId?: string | null;
+  /** The group its folder is bound to (@@@group-folders); null = none. */
+  groupChatId: string | null;
 };
 const item = (id: string, projectId: string, presentation: Item['presentation'] = idle, time = 0, parentSessionId: string | null = null, bornInChatId: string | null = null): Item => ({
   id,
   projectId,
   parentSessionId,
   bornInChatId,
+  groupChatId: state.folderGroups.get(projectId) ?? null,
   isPinned: false,
   time,
   presentation,
@@ -52,7 +55,8 @@ const state = vi.hoisted(() => ({
   live: null as unknown as Live,
   items: [] as Item[],
   agents: new Map<string, string>(),
-  projectChats: new Map<string, string>(),
+  /** Folder → the group it is bound to. */
+  folderGroups: new Map<string, string>(),
   placementReads: 0,
   openChatOnScreen: vi.fn(),
   navigateToGroupRoot: vi.fn(),
@@ -60,7 +64,6 @@ const state = vi.hoisted(() => ({
   closeInfoTab: vi.fn(),
   infoShown: false,
   openSessionWhenReady: vi.fn(),
-  prepareProjectTask: vi.fn(),
   toggleIdleExpanded: vi.fn(),
 }));
 vi.mock('@renderer/lib/layout/layout-provider', () => ({ useInnerSidebarFrame: () => 260 }));
@@ -69,16 +72,6 @@ vi.mock('@renderer/localization/use-session-messages', () => ({
 }));
 vi.mock('@renderer/features/sessions/stores/session-agent-bindings', () => ({
   sessionAgentBindings: { bindingFor: (id: string) => (state.agents.has(id) ? { agentUserId: state.agents.get(id) } : undefined) },
-}));
-// The account project list: each project here has one local project (its row id) and its group (projectChats).
-const localOfChat = (chatId: string) => [...state.projectChats].find(([, chat]) => chat === chatId)?.[0];
-vi.mock('@renderer/features/projects/stores/account-projects-store', () => ({
-  accountProjectsStore: {
-    get projects() { return [...state.projectChats].map(([, chatId]) => ({ chatId, archived: false })); },
-    projectOfLocal: (projectId: string) => (state.projectChats.has(projectId) ? { chatId: state.projectChats.get(projectId) } : undefined),
-    membersOf: (chatId: string) => { const local = localOfChat(chatId); return local ? [local] : []; },
-    representativeOf: (chatId: string) => localOfChat(chatId),
-  },
 }));
 vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen: (...args: unknown[]) => state.openChatOnScreen(...args) }));
 // The group head goes back to the group itself (#2709): whatever was opened from it and parked on its screen goes.
@@ -91,7 +84,6 @@ vi.mock('@renderer/features/chats/chat-tabs/chat-layouts', () => ({
   closeInfoTab: (...args: unknown[]) => state.closeInfoTab(...args),
   infoTabOf: () => (state.infoShown ? { shown: true } : null),
 }));
-vi.mock('@renderer/features/projects/project-task-entry', () => ({ prepareProjectTask: (...args: unknown[]) => state.prepareProjectTask(...args) }));
 // The sample project's column has its own file (sample-inner-sidebar.test.tsx); here no account shows the sample.
 vi.mock('@renderer/features/sample-project/use-sample-project', () => ({ useSampleProject: () => ({ shown: false, settled: true, owner: null }) }));
 vi.mock('./sample-inner-sidebar', () => ({ SampleInnerSidebar: () => null }));
@@ -102,11 +94,6 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
       state.placementReads += 1;
       return { nodeById: new Map(state.items.map((entry) => [entry.id, { item: entry, children: [] }])) };
     },
-    get sidebarProjects() {
-      return [...state.projectChats].map(([id, chatId]) => ({ kind: 'local', id, chatId }));
-    },
-    projectMembersOf: (row: string) => [row],
-    rowProjectIdOf: (id: string) => id,
     remoteSession: () => null,
     expandedSessionIds: new Set<string>(),
     get idleExpandedProjectIds() { return state.live.shownMore; },
@@ -182,9 +169,9 @@ beforeEach(() => {
   state.openInfoTab.mockClear();
   state.closeInfoTab.mockClear();
   state.infoShown = false;
-  state.prepareProjectTask.mockClear();
   // #2599 where each lives: `mine-in-group` was created in Planning; `mine-elsewhere` in a DM; `member-only` in a DM too, though
-  // it is a member of both groups; `shop-chat-agent` in the shop project's group with no project chosen (so in the project).
+  // it is a member of both groups; `shop-chat-agent` was created in the shop group, its folder bound to no group (so it lives there).
+  state.folderGroups = new Map([['p-shop', 'shop-chat']]);
   state.items = [
     item('mine-in-group', 'p-x', running, 0, null, 'group'),
     item('mine-elsewhere', 'p-y', idle, 0, null, 'dm'),
@@ -194,7 +181,7 @@ beforeEach(() => {
     item('shop-chat-agent', 'p-y', idle, 0, null, 'shop-chat'),
   ];
   state.agents = new Map([['mine-in-group', 'agent-a'], ['mine-elsewhere', 'agent-b'], ['member-only', 'agent-m'], ['shop-chat-agent', 'agent-c']]);
-  state.projectChats = new Map([['p-shop', 'shop-chat']]);
+
   publishChatSummaries([
     { id: 'group', kind: 'group', name: 'Planning', unread_count: 0, member_user_ids: ['agent-a', 'agent-m', 'human', 'someone-elses-agent'] },
     { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: ['agent-a', 'agent-m'] },
@@ -216,9 +203,8 @@ afterEach(() => {
 // Navigation puts what it points at on the screen (screen-layout-actions in the app): the screen's entry is what the column hangs on.
 // `fromColumn` = one of the column's rows opened it (sidebar-session-item: inside the screen, which stays the entry's).
 const screenContent = (view: string, params: Record<string, unknown>): ScreenBlockContent | undefined => {
-  const { chat, project, session } = params as { chat?: { chatId: string }; project?: { projectId: string }; session?: { sessionId: string } };
+  const { chat, session } = params as { chat?: { chatId: string }; session?: { sessionId: string } };
   if (view === 'chat' && chat) return { kind: 'chat', chatId: chat.chatId };
-  if (view === 'project' && project) return { kind: 'project', projectId: project.projectId };
   if (view === 'session' && session) return { kind: 'session', projectId: '', sessionId: session.sessionId };
 };
 const go = (currentViewId: string, viewParamsStore: Record<string, unknown>, fromColumn = false) =>
@@ -229,7 +215,6 @@ const go = (currentViewId: string, viewParamsStore: Record<string, unknown>, fro
     Object.assign(state.live, { currentViewId, viewParamsStore });
   }));
 const openChat = (chatId: string) => go('chat', { chat: { chatId } });
-const openProject = (projectId: string) => go('project', { project: { projectId } });
 const openSession = (sessionId: string, fromColumn = false) => go('session', { session: { sessionId } }, fromColumn);
 
 describe('inner sidebar', () => {
@@ -240,7 +225,7 @@ describe('inner sidebar', () => {
     expect(column.dataset.innerSidebarKind).toBe('group');
     expect(host.querySelector('[data-inner-head="group"]')?.textContent).toContain('Planning');
     expect(column.querySelector('[data-sidebar-space]'), 'the head row is the column’s top band (proposal v1)').toBeNull();
-    expect(sections()).toEqual(['topics', 'agents']);
+    expect(sections()).toEqual(['agents', 'topics']);
     // Only my agents are listed in a group too, but the title reads 「智能体」 (owner 11-12).
     expect(host.querySelector('[data-inner-sidebar-section="agents"]')?.textContent).toContain('sidebar.agents');
     expect(sessionRows()).toEqual(['mine-in-group']);
@@ -248,8 +233,8 @@ describe('inner sidebar', () => {
     expect(readShellSlots()!.getSlots().has('inner-topics:group')).toBe(true);
   });
 
-  it('a project: Agents above Topics — its own sessions plus agents created in its group with no project; members living elsewhere are not listed (#2599)', async () => {
-    openProject('p-shop');
+  it('a group with folders: the sessions in its folders plus agents created there in no group; members living elsewhere are not listed (#2599)', async () => {
+    openChat('shop-chat');
     await render();
     expect(sections()).toEqual(['agents', 'topics']);
     expect(host.textContent).toContain('sidebar.agents');
@@ -257,7 +242,7 @@ describe('inner sidebar', () => {
   });
 
   it("agent rows lead with the agent's own avatar: every row asks the session row for it (mock v33)", async () => {
-    openProject('p-shop');
+    openChat('shop-chat');
     await render();
     const rows = [...host.querySelectorAll<HTMLElement>('[data-session-row]')];
     expect(rows).toHaveLength(3);
@@ -327,14 +312,14 @@ describe('inner sidebar', () => {
     // The create flow brings up its composer itself. It must not also fire the heading.
     expect(state.navigateToGroupRoot).toHaveBeenCalledTimes(3);
 
-    openProject('p-shop');
+    openChat('shop-chat');
     await render();
     await act(async () => host.querySelector<HTMLElement>('[data-inner-head="shop-chat"] [data-inner-head-create]')!.click());
-    expect(state.prepareProjectTask).toHaveBeenCalledWith('p-shop');
+    expect(readComposerVerb('shop-chat')).toBe('task');
     expect(state.navigateToGroupRoot).toHaveBeenLastCalledWith('shop-chat');
   });
 
-  it('All › (the only way to every topic: no 「All N topics」 row under them) keeps what sits above Topics and hides what sits below; ‹ Back brings it back', async () => {
+  it('All › (the only way to every topic: no 「All N topics」 row under them) keeps what sits above Topics; ‹ Back brings level one back', async () => {
     topicsView('group', { total: 9, hidden: 6 });
     openChat('group');
     await render();
@@ -342,15 +327,10 @@ describe('inner sidebar', () => {
     expect(drill().dataset.innerTopicsDrill).toBe('all');
     expect(moreRows()).toEqual([]);
     await act(async () => drill().click());
-    expect(sections()).toEqual(['topics']);
+    expect(sections()).toEqual(['agents', 'topics']);
     expect(drill().dataset.innerTopicsDrill).toBe('back');
     await act(async () => drill().click());
-    expect(sections()).toEqual(['topics', 'agents']);
-
-    topicsView('shop-chat', { total: 9, hidden: 6 });
-    openProject('p-shop');
-    await render();
-    await act(async () => drill().click());
+    expect(drill().dataset.innerTopicsDrill).toBe('all');
     expect(sections()).toEqual(['agents', 'topics']);
   });
 
@@ -367,7 +347,7 @@ describe('inner sidebar', () => {
       ...Array.from({ length: 5 }, (_, index) => item(`idle-${index}`, 'p-shop', idle, 100 - index)),
       item('asks', 'p-shop', waiting, 0),
     ];
-    openProject('p-shop');
+    openChat('shop-chat');
     await render();
     expect(host.querySelector('[data-agent-group]'), 'no group headers').toBeNull();
     expect(host.querySelector('[data-inner-sidebar-section="agents"]')?.textContent).not.toContain('sidebar.needsYou');
@@ -385,7 +365,7 @@ describe('inner sidebar', () => {
       item('parent', 'p-shop', idle, 0),
       item('fork', 'p-shop', idle, 0, 'parent'),
     ];
-    openProject('p-shop');
+    openChat('shop-chat');
     await render();
     expect(sessionRows()).toEqual(Array.from({ length: 10 }, (_, index) => `idle-${index}`));
     expect(moreRows()).toEqual(['sidebar.showMore:3']);
@@ -452,7 +432,7 @@ describe('inner sidebar', () => {
     expect(expand.textContent, 'no number on it').toBe('');
 
     // Remembered globally: another group (and a project) opens folded too.
-    openProject('p-shop');
+    openChat('shop-chat');
     await render();
     expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
     expect(restore.querySelector('button')).not.toBeNull();
@@ -500,10 +480,10 @@ describe('inner sidebar', () => {
     const restore = document.body.appendChild(document.createElement('div'));
     const restoreRoot = createRoot(restore);
     await act(async () => restoreRoot.render(<InnerSidebarRestore />));
-    const project = { kind: 'project', chatId: 'shop-chat' };
+    const project = { kind: 'group', chatId: 'shop-chat' };
     const foldButton = () => restore.querySelector('button[aria-label="sidebar.expandInner"]');
     // In the project, one of its agents opened from the column, the column folded.
-    openProject('p-shop');
+    openChat('shop-chat');
     await render();
     openSession('shop-task', true);
     act(() => setInnerSidebarFolded(true));
@@ -520,7 +500,7 @@ describe('inner sidebar', () => {
     // Another group, then the project again: its agent screen comes back (#2709) …
     openChat('group');
     await render();
-    openProject('p-shop');
+    openChat('shop-chat');
     expect(screenLayout.focusedSession?.sessionId, 'the agent screen parked under the project comes back').toBe('shop-task');
     openSession('shop-task');
     await render();
@@ -534,14 +514,14 @@ describe('inner sidebar', () => {
     restore.remove();
   });
 
-  it('publishes my agents per project group and per group for the row badge: only those living there', async () => {
+  it('publishes my agents per group for the row badge: only those living there', async () => {
     openChat('dm');
     await render();
     // shop-task (running), shop-idle, shop-chat-agent: agent-a and agent-m are members there but live elsewhere (#2599).
     // Planning: mine-in-group (running) lives there; member-only is running and a member, but was created in a DM.
     expect([...counts()]).toEqual([
-      ['shop-chat', { total: 3, running: 1 }],
       ['group', { total: 1, running: 1 }],
+      ['shop-chat', { total: 3, running: 1 }],
     ]);
   });
 });

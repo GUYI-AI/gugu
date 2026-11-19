@@ -4,7 +4,6 @@ import { useNativeAgentChats } from '@/hooks/useNativeAgentChats'
 import { createChatMembershipProjection, isArchivedOwnedAgentChat } from '@/lib/chatRowDerivations'
 import { memoizeByReference } from '@/lib/memoizeByReference'
 import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, type KeyboardEventHandler, type ReactNode } from 'react'
-import { flushSync } from 'react-dom'
 import { useStableHandler } from '@/hooks/useStableHandler'
 import { useTranslation } from 'react-i18next'
 import { BellOff, ChevronDown, ChevronRight, FolderClosed, MessageCircle, MessageSquare, PanelLeft, Plus, SquarePen, UserRound, Users, X, Zap } from '@/lib/icons'
@@ -22,7 +21,6 @@ import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { useAssistantShell } from '../session/renderer/features/assistant/assistant-shell'
 import { isDuplicateAssistantChat } from '../lib/assistantChatList'
-import { useProjectGroupChats } from '../lib/projectGroupChatsBridge'
 import { useAssistantWorkrooms } from './assistant/useAssistantWorkrooms'
 import { useChatStore } from '../store/chatContext'
 import { useAuth } from '../store/auth'
@@ -42,11 +40,10 @@ import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestBridge'
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
 import { useHeldOrder, usePointerHold } from '../lib/heldOrder'
-import { isOneListProjectLine, oneListAgentRows, oneListShows, placeProjectLines, sidebarPinnedRows, useAgentHomes, useOneListProjectLines, type OneListProjectLine } from '../lib/sidebarOneList'
+import { oneListAgentRows, oneListShows, sidebarPinnedRows, useAgentHomes } from '../lib/sidebarOneList'
 import { usePublishOneListAgentRows } from '../lib/innerSidebarBridge'
 import { mobileListDiagnostics } from '@/mobile/mobileListDiagnostics'
-import { readShellSlots } from '../lib/shellSlots'
-import { installOneListNeighbour, oneListProjectSlotKey, subscribeShellChatActions, takeShellChatAction, useSidebarChatView, useSidebarNotificationsOpen, useSidebarPinnedAgents, type ShellChatDialog } from '../lib/sidebarChatsBridge'
+import { installOneListNeighbour, subscribeShellChatActions, takeShellChatAction, useSidebarChatView, useSidebarNotificationsOpen, useSidebarPinnedAgents, type ShellChatDialog } from '../lib/sidebarChatsBridge'
 import { NotificationSlot } from './needsYou/NotificationSlot'
 import { RETAINED_SURFACE_HIDDEN_STYLE } from '../lib/retainedSurface'
 import { blockKey, joinRows, type JoinedGroup, type SidebarJoin } from '../lib/sidebarJoinedGroups'
@@ -117,49 +114,14 @@ const NAV_PANE_STYLE: React.CSSProperties = { width: '100%', minWidth: 0, flex: 
 const NAV_HEADER_STYLE: React.CSSProperties = { paddingLeft: 'max(var(--pane-pad-x), var(--titlebar-list-header-inset))' }
 const LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, overflowY: 'auto', padding: '4px 8px 16px' }
 const MOBILE_LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, minHeight: 0, overflowY: 'auto', padding: 'var(--spacing-xs) var(--spacing-sm) var(--phone-nav-clearance)' }
-// 侧栏那一份不自己滚:滚的是会话页侧栏那一个滚动容器(置顶 / 项目 / 对话共用)。左右与侧栏的行同一道留白。
+// 侧栏那一份不自己滚:滚的是会话页侧栏那一个滚动容器(置顶 / 对话共用)。左右与侧栏的行同一道留白。
 const SIDEBAR_LIST_STYLE: React.CSSProperties = { padding: '0 12px 8px' }
 /** First guess for a sidebar conversation line before it is measured (one row without topics). */
 const SIDEBAR_ENTRY_ESTIMATE = 58
 
 /** A mounted sidebar line, placed by the line window. */
 const lineStyle = (top: number): React.CSSProperties => ({ position: 'absolute', top, left: 0, width: '100%' })
-/** The chat a sidebar line stands for: a conversation's own, a project line's group chat (#2548). */
 const chatIdOf = (chat: ChatItem) => chat.id
-const lineChatId = (row: ChatItem | OneListProjectLine) => (isOneListProjectLine(row) ? row.projectChatId : row.id)
-
-/**
- * #2548 where an account project with no conversation row yet stands in the one list: the task page draws the project's
- * row into this element (shell slot oneListProjectSlotKey), as it needs the task page's context. Nothing of the shell's
- * goes in it. Its line is measured once that row is in it (`onDrawn`): measured empty, the rows below would cover it
- * until the next measurement.
- */
-const OneListProjectSlot = memo(function OneListProjectSlot({ chatId, joinPos, joinOnScreen, onDrawn }: {
-  chatId: string
-  /** The joined box's segment it draws, as a conversation row does (ChatRow). */
-  joinPos?: SidebarJoin['pos']
-  joinOnScreen?: boolean
-  onDrawn: (slot: HTMLElement) => void
-}) {
-  const place = useCallback((element: HTMLDivElement) => {
-    const slots = readShellSlots()
-    if (!slots) throw new Error('shell slots are not installed: the one list cannot place a project row')
-    const key = oneListProjectSlotKey(chatId)
-    // The task page draws in its own commit, right after this one and before the frame is painted.
-    const drawn = new MutationObserver(() => {
-      if (!element.firstElementChild) return
-      drawn.disconnect()
-      onDrawn(element)
-    })
-    drawn.observe(element, { childList: true })
-    slots.setSlot(key, element)
-    return () => {
-      drawn.disconnect()
-      slots.setSlot(key, null)
-    }
-  }, [chatId, onDrawn])
-  return <div ref={place} data-one-list-project={chatId} data-join={joinPos} data-join-on={joinOnScreen || undefined} />
-})
 
 /** The element whose scrolling moves this node: in the shell that is the sidebar's one scroller (@@@sidebar-single-scroller). */
 function scrollingAncestor(node: HTMLElement): HTMLElement {
@@ -598,7 +560,6 @@ export function ChatListPanel({
   const listReadFailed = chatsLoadFailed && imChats.length === 0
   const chats = useNativeAgentChats(imChats)
   useOwnedAgentEntries()
-  const projectGroupChats = useProjectGroupChats()
   const membershipProjection = useMemo(createChatMembershipProjection, [])
   const membership = membershipProjection(chats, identitiesById)
   const workrooms = useAssistantWorkrooms(assistantShell, membership.key)
@@ -609,8 +570,6 @@ export function ChatListPanel({
   // An agent's home is a room the list shows: the assistant's hidden workrooms are no home (an agent only there keeps its own row).
   const homeChats = useMemo(() => chats.filter((chat) => !isDuplicateAssistantChat(chat, assistantShell, workrooms)), [chats, assistantShell, workrooms])
   const agentHomes = useAgentHomes(oneList, homeChats, sidebarPins)
-  // An account project whose project group is not in this list yet stands among the conversations at its time (#2548).
-  const projectLines = useOneListProjectLines(oneList, chats)
   // @@@chat-list-agent-status (#437) - one batched presence subscription for the agents the list draws a status for:
   // the peers of the private chats. A group row draws none, so its agent members are not followed here.
   const agentStatuses = useAgentDisplayStatuses(membership.agentIds)
@@ -677,8 +636,7 @@ export function ChatListPanel({
   const hasSearchQuery = listQuery.trim().length > 0
   // @@@empty-dm-not-listed — 没有过消息的单聊不占列表行(判据在 core,见 isChatListed)。搜索是一次明确的
   // 指名道姓,不受此约束:搜得到就打得开,不然会话页开出来的空私聊只剩通讯录一条路。
-  // 桌面项目群归项目块；手机消息列表一段对话一行，话题只从对话页签进入(#446)。
-  const isProjectGroupLine = (chat: ChatItem) => projectGroupChats.has(chat.kind === 'topic' ? (chat.source_chat_id ?? '') : chat.id)
+  // 手机消息列表一段对话一行，话题只从对话页签进入(#446)。
   const shownAsLead = lead ? leadChatId : null
   const listedByActivity = (chat: ChatItem) => hasSearchQuery || isChatListed(chat, { activeChatId: selectedChatId, hasDraft: Boolean(drafts[chat.id]?.trim()) })
   const visibleIds = new Set(visibleConversationRows(chats).map(chat => chat.id))
@@ -688,7 +646,7 @@ export function ChatListPanel({
       && !(inSidebar && !mobile && !hasSearchQuery && isArchivedOwnedAgentChat(chat, user?.id, identitiesById[chat.peer_user_id ?? ''], agentStatuses[chat.peer_user_id ?? '']))
       && chat.id !== shownAsLead
       && (agentHomes ? oneListShows(chat, listedByActivity(chat), agentHomes, isOwnedAgentPeer)
-        : (!mobile || chat.kind !== 'topic') && (mobile || !isProjectGroupLine(chat)) && listedByActivity(chat))
+        : (!mobile || chat.kind !== 'topic') && listedByActivity(chat))
   // @@@5856 沉降:长期无活动的话题落到底部的「更早」。它**只是列表位置**,不是话题的一种状态 ——
   // 话题没有开关(product spec)。任何人发一句,last_message_at 前移,这一条自己就浮回来了。
   // 搜索时不分段:搜索是一次指名道姓,沉下去的照样要搜得到。
@@ -711,7 +669,7 @@ export function ChatListPanel({
     // isListed / matchesSearch 都是每次渲染新建的闭包,进依赖数组等于不缓存;
     // 它们的输入(chats / 搜索词 / 草稿 / 当前会话)已经在下面列全了。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chats, listQuery, selectedChatId, drafts, assistantShell, workrooms, projectGroupChats, shownAsLead, mobile, agentHomes, inSidebar, user?.id, identitiesById, agentStatuses])
+  }, [chats, listQuery, selectedChatId, drafts, assistantShell, workrooms, shownAsLead, mobile, agentHomes, inSidebar, user?.id, identitiesById, agentStatuses])
   const isTopLevel = (c: ChatItem) => isTopLevelChatRow(c, topicNesting, isListed, matchesSearch)
   // #2548 one list: the pinned agents' DM rows sit at the very top, newest interaction first, above the pinned conversations.
   const sidebarPinned = agentHomes ? sidebarPinnedRows(chats, sidebarPins, isTopLevel) : []
@@ -723,14 +681,6 @@ export function ChatListPanel({
   const joinedGroups = inSidebar ? sidebarView.groups : NO_JOINED_GROUPS
   const pinnedRows = joinRows(pinnedChats, (chat) => blockKey.chat(chat.id), joinedGroups)
   const normalLines = joinRows(normalChats, (chat) => blockKey.chat(chat.id), joinedGroups)
-  // #2548 the sidebar draws the project lines among them too; the keyboard walks the conversations (normalLines).
-  // A project line is its group's conversation row-to-be: same key, so a joined box holds it as it will hold that row.
-  const placedLines = useHeldOrder(placeProjectLines(normalChats, activityOf, projectLines), lineChatId, pointer.held)
-  const oneListLines = projectLines.length === 0 ? normalLines : joinRows(
-    placedLines,
-    (row) => blockKey.chat(lineChatId(row)),
-    joinedGroups,
-  )
   // @@@5856 顶层不再有「沉降」这一段:isSunkTopic 只对话题为真,而话题现在永不占顶层 ⇒ 那一段恒空。
   // 沉降下沉到**子行**这一层(每条来源线自己一行「更多」),见 renderChatRow。
   // 键盘上下走的是「看得见的那些行」,所以子行也要在里面 —— ❌ 不能让话题只能用鼠标点。
@@ -761,7 +711,7 @@ export function ChatListPanel({
     } })), loadingChats)
     // Read the exact render predicates; the diagnostic never changes their decisions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mobile, inSidebar, imChats, chats, visibleChatIds, loadingChats, selectedChatId, drafts, listQuery, assistantShell, workrooms, shownAsLead, projectGroupChats])
+  }, [mobile, inSidebar, imChats, chats, visibleChatIds, loadingChats, selectedChatId, drafts, listQuery, assistantShell, workrooms, shownAsLead])
 
   useEffect(() => {
     if (focusedChatId && visibleChatIds.includes(focusedChatId)) return
@@ -841,7 +791,7 @@ export function ChatListPanel({
   // its line to the top; with every line mounted React re-inserted every line above it, so a message to the k-th
   // conversation restyled k whole lines. Now only the mounted window can move. The phone and the conversation page keep
   // their full lists.
-  const sidebarLines: { row: ChatItem | OneListProjectLine; join?: SidebarJoin }[] = inSidebar && !loadingChats ? [...pinnedRows, ...oneListLines] : []
+  const sidebarLines: { row: ChatItem; join?: SidebarJoin }[] = inSidebar && !loadingChats ? [...pinnedRows, ...normalLines] : []
   const hasSidebarLines = sidebarLines.length > 0
   const [sidebarScroller, setSidebarScroller] = useState<HTMLElement | null>(null)
   const windowRef = useRef<HTMLDivElement>(null)
@@ -853,17 +803,13 @@ export function ChatListPanel({
   const lineWindow = useGrowingList({
     count: sidebarLines.length,
     // A project line is keyed by its group chat: when that conversation arrives, its row takes the same line.
-    getKey: (index) => lineChatId(sidebarLines[index]!.row),
+    getKey: (index) => sidebarLines[index]!.row.id,
     scroller: sidebarScroller,
     estimateSize: () => SIDEBAR_ENTRY_ESTIMATE,
     scrollMargin: windowMargin,
     enabled: inSidebar,
   })
   const windowStyle: React.CSSProperties = { height: lineWindow.getTotalSize(), position: 'relative' }
-  // A project line (OneListProjectSlot) is measured once the task page has drawn its row, before that frame is painted.
-  const measureDrawnLine = useStableHandler((slot: HTMLElement) => {
-    flushSync(() => lineWindow.measureElement(slot.parentElement))
-  })
   // Stable: the global shortcut effect calls it and must not re-subscribe on every render.
   const focusChatRow = useStableHandler((chatId: string | null) => {
     if (!chatId) return
@@ -871,7 +817,7 @@ export function ChatListPanel({
     // An off-screen line has no node in the sidebar window: bring its line in by index first (a topic rides its source line).
     if (inSidebar) {
       const target = visibleChats.find((chat) => chat.id === chatId)
-      const line = sidebarLines.findIndex(({ row }) => lineChatId(row) === (target?.kind === 'topic' ? target.source_chat_id : chatId))
+      const line = sidebarLines.findIndex(({ row }) => row.id === (target?.kind === 'topic' ? target.source_chat_id : chatId))
       if (line >= 0) lineWindow.scrollToIndex(line, { align: 'auto' })
     }
     requestAnimationFrame(() => {
@@ -1092,8 +1038,8 @@ export function ChatListPanel({
           {lineWindow.getVirtualItems().map((item) => {
             const { row, join } = sidebarLines[item.index]!
             return (
-              <div key={item.key} data-index={item.index} ref={isOneListProjectLine(row) ? undefined : lineWindow.measureElement} style={lineStyle(item.start - windowMargin)}>
-                {isOneListProjectLine(row) ? <OneListProjectSlot chatId={row.projectChatId} joinPos={join?.pos} joinOnScreen={join?.onScreen} onDrawn={measureDrawnLine} /> : renderChatRow(row, join)}
+              <div key={item.key} data-index={item.index} ref={lineWindow.measureElement} style={lineStyle(item.start - windowMargin)}>
+                {renderChatRow(row, join)}
               </div>
             )
           })}

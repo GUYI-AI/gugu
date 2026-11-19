@@ -121,7 +121,7 @@ function isPrintable(event: KeyboardEvent): boolean {
 function runShortcut(key: SessionNavShortcutKey): boolean {
   switch (key) {
     case 'session.focusComposerFromSidebar':
-      return sessionKeyboardNav.expandProjectOrFocusComposer();
+      return sessionKeyboardNav.focusSessionInterface();
     case 'session.projectHome':
       return sessionKeyboardNav.goToParent();
     case 'session.backToList':

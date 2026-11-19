@@ -6,6 +6,7 @@ import { machineAcceptsWork, machineMeta, orderMachines } from '@renderer/featur
 import { MachineLines, MachineTile } from '@renderer/features/remote-hosts/machine-picker'
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store'
 import { useNavigate } from '@renderer/lib/layout/navigation-provider'
+import { createGroupFromFolder } from '@renderer/features/folders/create-group-from-folder'
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -16,11 +17,11 @@ import {
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { log } from '@renderer/utils/logger'
 
-// #6264 侧栏「添加项目」菜单的第三项「使用远程文件夹 ›」(与「新建空白项目」「使用现有文件夹」三选一;
+// #6264 新建群菜单的第三项「使用远程文件夹 ›」(与「新建群」「用现有文件夹新建群」三选一;
 // owner 2026-09-25:机器直接平铺在菜单里「不好看」)。子菜单里每台机器一行,点它 = 在那台机器上挑文件夹
 // (照 VS Code「Open Remote…」/ Zed 的远端项目),底下「添加一台机器…」。
-// 挑文件夹的窗口里自带「新建文件夹」,所以「新建空白项目」在别的机器上也是这一步。
-// 挑好 → 在那台机器上把它加成项目、打开项目页(与本机「打开文件夹」同一步,一套工作台)。
+// 挑文件夹的窗口里自带「新建文件夹」,所以「新建群（同时新建一个文件夹）」在别的机器上也是这一步。
+// 挑好 → 建群、把那台机器上的这个文件夹挂进去、打开这个群(与本机「用现有文件夹新建群」同一步)。
 // 离线的机器照样列着、灰掉写「离线 · X 前」,❌ 从菜单里消失。
 export const RemoteProjectMenuItems = observer(function RemoteProjectMenuItems() {
   const { translate } = useSessionMessages()
@@ -42,10 +43,10 @@ export const RemoteProjectMenuItems = observer(function RemoteProjectMenuItems()
       .then((awake) => (awake ? remoteHostsStore.pickFolder(deviceId, '~') : null))
       .then(async (path) => {
         if (!path) return
-        const projectId = await remoteHostsStore.ensureProject(deviceId, path)
-        navigate('project', { projectId })
+        const chatId = await createGroupFromFolder(path, translate, deviceId)
+        if (chatId) navigate('chat', { chatId })
       })
-      .catch((error: unknown) => log.error('[sidebar] 在那台机器上加项目失败', error))
+      .catch((error: unknown) => log.error('[sidebar] 在那台机器上用文件夹建群失败', error))
   }
 
   if (machines.length === 0 && !remoteHostsStore.canAddMachine) return null

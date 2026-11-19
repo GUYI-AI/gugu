@@ -1,0 +1,17 @@
+import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
+import { appState } from '@renderer/lib/stores/app-state';
+
+/**
+ * Whether a folder (a session's `projectId`) is there in this desktop's eyes — the same rule as the main process's
+ * restored navigation (core/view-state `restoredSessionState`): only "known gone" is gone, ❌「not in the table now = deleted」.
+ *  · present: in the table (this computer's, or a machine's read through its connection / the account's record).
+ *  · unknown: not in the table, and the other machines' lists are not all here yet (at boot, before the session page and
+ *    the machines are up). Every list that arrives runs the guards again (remote-hosts-store).
+ *  · deleted: otherwise.
+ */
+export type FolderPresence = 'present' | 'unknown' | 'deleted';
+
+export function folderPresence(folderId: string): FolderPresence {
+  if (appState.projects.projects.has(folderId)) return 'present';
+  return remoteHostsStore.awaitsMachineLists() ? 'unknown' : 'deleted';
+}

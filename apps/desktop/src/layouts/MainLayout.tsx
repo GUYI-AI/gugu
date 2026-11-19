@@ -128,6 +128,7 @@ import { createShellTabStore, ShellTabContext, useShellTabOf, useShellTabStore }
 import { useStableHandler } from '../hooks/useStableHandler'
 import { rendererLogger } from '../lib/log'
 import { appState } from '../session/renderer/lib/stores/app-state'
+import { rpc } from '../session/renderer/lib/ipc'
 import { setComposerVerb } from '../lib/composerVerbBridge'
 import { sessionPeek } from '../session/renderer/app/session-peek'
 
@@ -326,7 +327,13 @@ function InnerLayout({
     },
     openApp: (chatId, extensionId, tab) => { openChatTarget(chatId, 'resource'); askChat(chatId, { app: extensionId, ...(tab ? { tab } : {}) }) },
     openOwnApp: (extensionId, tab) => { const page = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === `${extensionId}.${tab}`); if (!page) throw new Error('App tab is unavailable'); setOpenedPhoneApp({ kind: page.kind, name: page.extensionName }) },
-    openProject: (projectId) => { setOpenedPhoneApp(null); setActiveTab('tasks'); appState.navigation.navigate('project', { projectId }) },
+    openProject: (projectId) => {
+      // An old gugu://project/<id> link (a local project before C1, or a folder id): the group it is now (the host's alias table).
+      void rpc.folders.resolveLegacyProject(projectId).then((found) => {
+        if (!found?.chatId) throw new Error('This project link no longer points to a group')
+        setOpenedPhoneApp(null); setActiveTab('tasks'); appState.navigation.navigate('chat', { chatId: found.chatId })
+      }).catch((error: unknown) => openChatLog.error({ error: String(error), projectId }, 'open an old project link failed'))
+    },
     openChat: openChatTarget,
     openAssistant: (tasks) => {
       setOpenedPhoneApp(null); setActiveTab(mobile ? 'assistant' : 'tasks')

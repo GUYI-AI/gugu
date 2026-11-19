@@ -12,12 +12,7 @@ import { deviceMachines } from '@gugu/core/shared/deviceMachines';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
 import type { SessionHostClient } from '@shared/lib/ipc/session-host-client';
 import { onMachineEvent, rpc, rpcOn } from '@renderer/lib/ipc';
-import type { EventDefinition } from '@shared/lib/ipc/events';
-import {
-  projectCreatedChannel,
-  projectDeletedChannel,
-  projectVisibilityChangedChannel,
-} from '@shared/core/projects/projectEvents';
+import { foldersChangedChannel } from '@shared/core/folders/folders';
 import {
   closeMachineClient,
   machineClient,
@@ -27,23 +22,16 @@ import {
   subscribeMachineLink,
   type MachineLinkState,
 } from '@renderer/lib/machine-clients';
-import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
-import { aliasFixedId, machineCodec, machineRegistry } from '@renderer/lib/machine-routing';
+import { groupFoldersStore } from '@renderer/features/folders/group-folders-store';
+import { folderAsProject } from '@renderer/features/folders/folder-project';
+import { startAgentSessionsBridge } from '@renderer/features/sidebar/agent-sessions-bridge';
+import { machineCodec, machineRegistry } from '@renderer/lib/machine-routing';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
 import { pageSessions } from '@renderer/features/sessions/stores/session-selectors';
 import { log } from '@renderer/utils/logger';
 import { hostConnectionState, type HostConnectionState } from './connection-status';
-import { findHomeProject } from './machine-home';
-import {
-  accountBindingsOf,
-  accountCopyKey,
-  accountCopyReplacesLive,
-  accountFoldersOf,
-  accountProjectsOf,
-  forgetRetiredProjectCaches,
-} from './account-projects';
-import type { ProjectFolder } from '@shared/core/projects/project-folders';
+import { forgetRetiredProjectCaches } from './account-projects';
 import { machineSessionListClient } from './machine-session-list';
 import {
   liveDeviceSessions,
@@ -56,11 +44,6 @@ import type { SessionShellPeer } from '@shared/lib/ipc/shell-port';
 import { normalizeAgentType } from '@gugu/core/agentTypes';
 import { readIdentityDirectoryBridge } from '@/lib/identityDirectoryBridge';
 import { sessionListFromDigest, startSessionListSync, type SessionListSync } from '@/session/shared/remote-sessions/session-list-sync';
-import {
-  IMPLICIT_SESSION_HOME_PROJECT_ID,
-  IMPLICIT_SESSION_HOME_PROJECT_NAME,
-  isImplicitSessionHomeProject,
-} from '@renderer/features/sessions/session-home-project-constants';
 import {
   remoteHostReachable,
   cloudComputerWakeFailureOf,
@@ -164,8 +147,6 @@ export class RemoteHostsStore {
   private readonly listSyncs = new Map<string, SessionListSync>();
   private readonly linkOffs = new Map<string, () => void>();
   private readonly projectPromises = new Map<string, Promise<string>>();
-  /** #113 deviceId → 经连接读到它的清单之后、连着期间看到的账号上那份(内容指纹;见 accountCopyReplacesLive)。 */
-  private readonly accountSeenLive = new Map<string, string>();
   /** deviceId → its sessions' last readings, the baseline a new list is diffed against (bannerWaits). */
   private readonly waitReadings = new Map<string, AgentWatchStatusMap>();
   private stopDevices: (() => void) | null = null;
@@ -174,7 +155,7 @@ export class RemoteHostsStore {
   constructor() {
     makeAutoObservable<
       RemoteHostsStore,
-      'bridge' | 'linkOffs' | 'projectPromises' | 'accountSeenLive' | 'waitReadings' | 'stopDevices' | 'started' | 'listSyncs' | 'directorySessions' | 'digestSessions'
+      'bridge' | 'linkOffs' | 'projectPromises' | 'waitReadings' | 'stopDevices' | 'started' | 'listSyncs' | 'directorySessions' | 'digestSessions'
     >(this, {
       bridge: observable.ref,
       directory: observable.ref,
@@ -183,7 +164,6 @@ export class RemoteHostsStore {
       listSyncs: false,
       linkOffs: false,
       projectPromises: false,
-      accountSeenLive: false,
       waitReadings: false,
       stopDevices: false,
       started: false,
@@ -204,21 +184,15 @@ export class RemoteHostsStore {
       isAssistantHome: (deviceId) => this.device(deviceId)?.assistantHome === true,
       connected: (deviceId) => this.connectionState(deviceId) === 'connected',
     };
-    // 各台机器上的本地项目绑的项目群(群操作、任务卡用;❌ 用它定侧栏有哪些项目)。
-    projectGroupsStore.start(
-      () => [...this.hosts.entries()].filter(([, state]) => state.synced).map(([deviceId]) => deviceId),
-      () => [
-        ...[...appState.projects.projects.values()].flatMap((project) => {
-          if (machineRegistry.machineOf(project.id)) return [];
-          return [...(project.mountedProject?.sessionManager.sessions.values() ?? [])].flatMap((page) =>
-            'archivedAt' in page.data && page.data.archivedAt ? [] : pageSessions(page).filter((session) => !session.data.archivedAt).map((session) => ({
-              projectId: project.id, sessionId: session.data.id, agentUserId: sessionAgentBindings.bindingFor(session.data.id)?.agentUserId,
-            })));
-        }),
-        ...this.allListedSessions().map(({ summary }) => ({ projectId: summary.projectId, sessionId: summary.conversationId, agentUserId: summary.agent?.userId })),
-      ],
-      () => sidebarStore.sidebarProjects.map(({ id }) => id)
-    );
+    // Each machine's folders (connected ones answer, offline ones from the account's record), and which of my agents is
+    // which session (the chat page reads it: the profile card's「发消息」, the @ list).
+    groupFoldersStore.watchMachines();
+    startAgentSessionsBridge();
+    // The account's record changed (a machine bound or unbound a folder while this one was not connected to it): the
+    // machines that are not connected list it.
+    reaction(() => groupFoldersStore.account, () => {
+      for (const deviceId of this.hosts.keys()) this.applyAccountFolders(deviceId);
+    });
     subscribeDeviceSessions(() => runInAction(() => (this.directory = liveDeviceSessions())));
     onRemoteHostsBridgeChange(() => this.attach(findRemoteHostsBridge()));
     this.attach(findRemoteHostsBridge());
@@ -530,63 +504,11 @@ export class RemoteHostsStore {
   }
 
   /**
-   * 在这台机器上把这个文件夹加成项目(新建时选了那台机器上还不是项目的文件夹),挂上,返回项目 id。
-   * 与本机「打开文件夹」同一步(projectManager.createProject),只是建在那台机器上。
-   * `automatic` = 替人登记的(主目录、助理的目录,#609),❌ 人在新建框里亲手选的文件夹。
+   * #609 那台机器的任务工作区(没选群时会话落在这里):那台机器上的 task home 文件夹,第一次用时由它登记。
+   * 同一台机器同时只问一次(新建页与对话页创建框可能同时要)。
    */
-  async ensureProject(deviceId: string, path: string, automatic = false): Promise<string> {
-    const name = path.replace(/\/+$/, '').split('/').pop() || path;
-    const projectId = await appState.projects.createProject(
-      { type: 'local', machine: deviceId },
-      { mode: 'pick', path, name, initGitRepository: false, createDirectory: false, allowNonGit: true, automatic }
-    );
-    if (!projectId) throw new Error(`could not add ${path} as a project on ${deviceId}`);
-    await appState.projects.ensureMounted(projectId);
-    return projectId;
-  }
-
-  /**
-   * #609 那台机器的任务工作区(没选项目时会话落在这里,与本机一样列在「任务」):已有就挂上,没有就在那台机器上建。
-   * id 是固定 id 在那台机器上的别名(machine-routing),发过去时换回固定 id,那台机器认它是任务工作区。
-   * 同一台机器同时只建一次(新建页与对话页创建框可能同时要)。
-   */
-  ensureTaskWorkspace(deviceId: string, required = false): Promise<string> {
-    return this.once(`tasks:${deviceId}:${required}`, async () => {
-      const id = aliasFixedId(IMPLICIT_SESSION_HOME_PROJECT_ID, deviceId);
-      if (!appState.projects.projects.has(id)) {
-        // 比这一版旧的咕咕 server 不回这一问(device-session-host 的白名单):照旧落在它的主目录项目里。
-        const path = await rpcOn(deviceId).app.getSessionHomeDir().catch(() => null);
-        if (!path) {
-          if (required) throw new Error('TASK_WORKSPACE_UNAVAILABLE');
-          return this.ensureHomeProject(deviceId);
-        }
-        const created = await appState.projects.createProject(
-          { type: 'local', machine: deviceId },
-          { mode: 'pick', path, name: IMPLICIT_SESSION_HOME_PROJECT_NAME, initGitRepository: false, allowNonGit: true },
-          id
-        );
-        if (!created) throw new Error(`could not open the task workspace on ${deviceId}`);
-      }
-      await appState.projects.ensureMounted(id);
-      return id;
-    });
-  }
-
-  /**
-   * 那台机器的主目录项目(云上个人助理的家,assistant-machine.ts):那台机器上已有同路径项目就复用,没有就建一个。
-   * 返回项目 id。同一台机器同时只建一次。
-   */
-  ensureHomeProject(deviceId: string): Promise<string> {
-    return this.once(`home:${deviceId}`, async () => {
-      const home = await this.ensureHomeDir(deviceId);
-      const onMachine = [...appState.projects.projects.values()]
-        .filter((project) => machineRegistry.machineOf(project.id) === deviceId && !isImplicitSessionHomeProject(project))
-        .map((project) => ({ id: project.id, path: project.data?.path }));
-      const existing = findHomeProject(onMachine, home);
-      if (!existing) return this.ensureProject(deviceId, home, true);
-      await appState.projects.ensureMounted(existing.id);
-      return existing.id;
-    });
+  ensureTaskWorkspace(deviceId: string): Promise<string> {
+    return this.once(`tasks:${deviceId}`, () => appState.projects.ensureTaskHome(deviceId));
   }
 
   private once(key: string, run: () => Promise<string>): Promise<string> {
@@ -610,13 +532,10 @@ export class RemoteHostsStore {
       return;
     }
     const offDevices = bridge.subscribeDevices(() => this.reconcile());
-    // 那台机器上的项目清单变了(新建 / 删掉 / 显隐):在那台机器上订,重读它的清单(只登记,❌ 挂;用到时 ensureMounted)。
-    const offProjects = onEachMachine((deviceId) => {
-      const offs = [projectCreatedChannel, projectDeletedChannel, projectVisibilityChangedChannel].map((event) =>
-        onMachineEvent(deviceId, event as EventDefinition<unknown>, () => void this.syncProjects(deviceId))
-      );
-      return () => offs.forEach((off) => off());
-    });
+    // 那台机器上的文件夹变了(挂上 / 摘下 / 新登记):在那台机器上订,重读它的清单(只登记,❌ 挂;用到时 ensureMounted)。
+    const offProjects = onEachMachine((deviceId) =>
+      onMachineEvent(deviceId, foldersChangedChannel, () => void this.syncProjects(deviceId))
+    );
     this.stopDevices = () => {
       offDevices();
       offProjects();
@@ -643,7 +562,7 @@ export class RemoteHostsStore {
         if (device.cloudComputer === 'awake' && this.wakes.get(device.id)?.status === 'failed') this.wakes.delete(device.id);
       });
       if (!current) this.watch(device.id);
-      else this.applyAccountProjects(device.id);
+      else this.applyAccountFolders(device.id);
       // 心跳说它在(远程 SSH:设备连接没报问题)就连;刚从离线回来的不等退避。
       if (remoteHostReachable(device)) {
         const client = machineClient(device.id);
@@ -654,8 +573,8 @@ export class RemoteHostsStore {
   }
 
   private watch(deviceId: string): void {
-    // 账号上记着的清单先列出来(离线也照样在侧栏里);连上之后以那台机器此刻的为准。
-    this.applyAccountProjects(deviceId);
+    // 账号上记着的文件夹先列出来(离线也照样在);连上之后以那台机器此刻的为准。
+    this.applyAccountFolders(deviceId);
     let wasOpen = false;
     let lastLink: MachineLinkState | null = null;
     const onLink = () => {
@@ -676,18 +595,18 @@ export class RemoteHostsStore {
           wasOpen = true;
         });
       } else {
-        this.applyAccountProjects(deviceId);
+        this.applyAccountFolders(deviceId);
       }
     };
     this.linkOffs.set(deviceId, subscribeMachineLink(deviceId, onLink));
     onLink();
   }
 
-  /** 读那台机器的项目清单并入项目表(连上时 / 那台机器上新建了项目时)。 */
+  /** 读那台机器的文件夹清单并入表里(连上时 / 那台机器上的文件夹变了时)。 */
   async syncProjects(deviceId: string): Promise<void> {
     try {
-      const [projects, home, catalog] = await Promise.all([
-        rpcOn(deviceId).projects.getProjects(),
+      const [folders, home, catalog] = await Promise.all([
+        rpcOn(deviceId).folders.listAllFolders(),
         rpcOn(deviceId).app.getHomeDirectory().catch(() => null),
         Promise.resolve().then(() => rpcOn(deviceId).sessionTimeline.sessionsList()).catch((error: unknown) => {
           log.warn('[machines] 读那台机器的会话列表失败', { deviceId, error: String(error) });
@@ -695,16 +614,16 @@ export class RemoteHostsStore {
         }),
       ]);
       if (home) this.rememberHomeDir(deviceId, home);
+      const projects = folders.map(folderAsProject);
+      void groupFoldersStore.readMachine(deviceId);
       if (catalog?.sessions.length) appState.projects.syncMachineProjects(deviceId, projects, catalog.sessions);
       else appState.projects.syncMachineProjects(deviceId, projects);
       runInAction(() => {
         const state = this.hosts.get(deviceId);
         if (state) state.synced = true;
       });
-      const records = this.hosts.get(deviceId)?.device.projects;
-      if (records) this.accountSeenLive.set(deviceId, accountCopyKey(records));
     } catch (error) {
-      log.warn('[machines] 读那台机器的项目清单失败', { deviceId, error: String(error) });
+      log.warn('[machines] 读那台机器的文件夹清单失败', { deviceId, error: String(error) });
     }
   }
 
@@ -760,7 +679,6 @@ export class RemoteHostsStore {
     removeDeviceSessions(deviceId);
     this.linkOffs.get(deviceId)?.();
     this.linkOffs.delete(deviceId);
-    this.accountSeenLive.delete(deviceId);
     closeMachineClient(deviceId);
     appState.projects.dropMachine(deviceId);
     machineRegistry.forgetMachine(deviceId);
@@ -775,46 +693,17 @@ export class RemoteHostsStore {
   }
 
   /**
-   * #113 没连着那台机器时,它的项目清单与群绑定照账号上记着的那份。这一端还没读到过账号上的那份就不动(❌ 拿空清单把侧栏里
-   * 它的项目清掉);连着时以那台机器此刻的回答为准(syncProjects、projectGroupsStore.refresh),这时看到的账号上那份记下来:
-   * 断开之后它没变,就照旧列着连着时读到的(见 accountCopyReplacesLive)。
+   * #113 没连着那台机器时,它的文件夹照账号上记着的那份(群文件夹,离线的机器也在里面);还没读到账号上那份就不动
+   * (❌ 拿空清单把它的文件夹清掉)。连着时以那台机器此刻的回答为准(syncProjects)。
    */
-  private applyAccountProjects(deviceId: string): void {
-    const state = this.hosts.get(deviceId);
-    const records = state?.device.projects;
-    if (!state || !records) return;
-    if (machineLinkState(deviceId) === 'open') {
-      if (state.synced) this.accountSeenLive.set(deviceId, accountCopyKey(records));
-      return;
-    }
-    if (!this.accountIsNewer(deviceId)) return;
+  private applyAccountFolders(deviceId: string): void {
+    if (!this.hosts.has(deviceId) || machineLinkState(deviceId) === 'open' || groupFoldersStore.status !== 'ready') return;
+    const folders = groupFoldersStore.account.flatMap((group) => group.archived ? [] : group.folders
+      .filter((folder) => folder.deviceId === deviceId && !folder.removalRequestedAt)
+      .map((folder) => folderAsProject({ id: folder.folderId, path: folder.path, chatId: group.chatId, gitless: false, baseRef: null, attachedAt: folder.attachedAt })));
     const sessions = this.sessionsOf(deviceId).sessions;
-    if (sessions.length) appState.projects.syncMachineProjects(deviceId, accountProjectsOf(deviceId, records), sessions);
-    else appState.projects.syncMachineProjects(deviceId, accountProjectsOf(deviceId, records));
-    projectGroupsStore.applyBindings(deviceId, accountBindingsOf(deviceId, records));
-  }
-
-  /** #113 账号上那份比这一端经连接读到的新(或这一端还没经连接读到过它):没连着时以账号上那份为准。 */
-  accountIsNewer(deviceId: string): boolean {
-    const state = this.hosts.get(deviceId);
-    const records = state?.device.projects;
-    if (!state || !records) return false;
-    return accountCopyReplacesLive({
-      answeredLive: state.synced,
-      seenWhileLive: this.accountSeenLive.get(deviceId),
-      current: accountCopyKey(records),
-    });
-  }
-
-  /** 这一端上一次读账号上那台机器的项目没读到:accountFolders 给的是更早读到的那份。 */
-  accountUnread(deviceId: string): boolean {
-    return !!this.device(deviceId)?.projectsError;
-  }
-
-  /** #113 账号上记着的那台机器上这个项目的文件夹;没读到过账号上的那份 / 那里没有这个项目 = null。 */
-  accountFolders(deviceId: string, projectId: string): ProjectFolder[] | null {
-    const records = this.device(deviceId)?.projects;
-    return records ? accountFoldersOf(deviceId, records, projectId) : null;
+    if (sessions.length) appState.projects.syncMachineProjects(deviceId, folders, sessions);
+    else appState.projects.syncMachineProjects(deviceId, folders);
   }
 }
 

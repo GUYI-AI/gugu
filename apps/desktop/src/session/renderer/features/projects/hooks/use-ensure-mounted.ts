@@ -19,7 +19,7 @@ export function useEnsureMounted(projectIds: readonly string[]): void {
     for (const projectId of key.split('\n')) {
       void getProjectManagerStore()
         .ensureMounted(projectId)
-        .catch((error: unknown) => log.warn('[project-page] 挂载项目失败', { projectId, error }));
+        .catch((error: unknown) => log.warn('[folders] 挂载文件夹失败', { projectId, error }));
     }
   }, [key]);
 }

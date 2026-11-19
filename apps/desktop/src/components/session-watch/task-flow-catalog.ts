@@ -20,9 +20,9 @@ registerLocaleNamespace('mobileTaskFlow', {
     attachmentAccountChanged: '账号已切换。附件和任务保留在原账号的草稿中。',
     attachmentOriginalMissing: '原附件已不可用，请在原任务草稿中重新选择。',
     machine: '机器',
-    noProject: '不选项目',
+    noProject: '不选群',
     noMachine: '没有可用的机器',
-    noFolderHere: '这台机器上还没有这个项目的文件夹',
+    noFolderHere: '这台机器上还没有这个群的文件夹',
   },
   'en-US': {
     phoneAgent: 'Phone Agent',
@@ -43,8 +43,8 @@ registerLocaleNamespace('mobileTaskFlow', {
     attachmentAccountChanged: 'The account changed. The files and task remain in the original account’s draft.',
     attachmentOriginalMissing: 'The original file is unavailable. Select it again in the original task draft.',
     machine: 'Machine',
-    noProject: 'No project',
+    noProject: 'No group',
     noMachine: 'No machine available',
-    noFolderHere: 'This project has no folder on this machine yet',
+    noFolderHere: 'This group has no folder on this machine yet',
   },
 })

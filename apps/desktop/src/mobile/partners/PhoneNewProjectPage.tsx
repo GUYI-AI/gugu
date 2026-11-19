@@ -17,8 +17,11 @@ import { newProjectPath, projectNameProblem } from './partnersModel'
 import { Avatar } from '@/components/Avatar'
 import { projectRpcOn } from './projectRpc'
 import { readInterface, takeLegacyInterface, writeInterface } from '@/lib/viewStateTable'
+import { chatService } from '@/lib/chat'
+import { getCurrentAuthUserId } from '@/lib/supabase'
+import { groupFoldersStore } from '@/session/renderer/features/folders/group-folders-store'
 
-export type CreatedProject = { chatId: string | null; deviceId: string; localProjectId: string; name: string; createdAt: string }
+export type CreatedProject = { chatId: string; deviceId: string; localProjectId: string; name: string; createdAt: string }
 
 const LAST_MACHINE_KEY = 'gugu.partners.newProjectMachine'
 const log = rendererLogger('partners/new-project')
@@ -101,29 +104,16 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
     setCreating(true)
     setError(null)
     try {
+      // 先建群(在线),再在那台机器上把这个文件夹(没有就新建)挂进去 —— 同电脑「新建群（同时新建一个文件夹）」。
+      if (!device.is_online) { setError(t('partners.newProject.failed')); setCreating(false); return }
       const rpc = projectRpcOn(device)
-      const inspection = await rpc.projects.inspectProjectPath({ type: 'local', path })
-      let created: { id: string; name: string } = { id: projectId, name: trimmed }
-      if (inspection.existingProject) {
-        // 那个文件夹已经是一个项目:就是它(同电脑「新建项目」)。
-        created = { id: inspection.existingProject.id, name: inspection.existingProject.name }
-        if (inspection.existingProject.rootFolderDetached) {
-          const attached = await rpc.projects.attachProjectFolder(created.id, path)
-          if (!attached.success) throw new Error(attached.error.message)
-        }
-      } else if (inspection.pathConflict) {
-        setError(t('partners.newProject.pathTaken', { name: inspection.pathConflict.name }))
-        setCreating(false)
-        return
-      } else {
-        const result = await rpc.projects.createProject({ type: 'local', id: projectId, path, name: trimmed, createDirectory: !folderPath, allowNonGit: true })
-        if (!result.success) throw new Error('message' in result.error ? result.error.message : result.error.type)
-      }
-      const group = await rpc.projects.ensureProjectGroup(created.id)
-      if (!group.success) throw new Error(group.error.message)
+      const createdGroup = await chatService.createGroupChat(trimmed, await getCurrentAuthUserId(), [])
+      const bound = await rpc.folders.bindFolderAtPath({ path, chatId: createdGroup.chat_id, create: !folderPath })
+      if (!bound.success) throw new Error(bound.error.type)
       writeLastMachine(device.device_id)
       void refresh()
-      onCreated({ chatId: group.data.chatId, deviceId: device.device_id, localProjectId: created.id, name: created.name, createdAt: new Date().toISOString() })
+      void groupFoldersStore.refresh()
+      onCreated({ chatId: createdGroup.chat_id, deviceId: device.device_id, localProjectId: bound.data.id, name: trimmed, createdAt: new Date().toISOString() })
     } catch (cause) {
       // 原因进日志;页面上只说没建成(#4891 同一条)。
       log.warn({ err: String(cause) }, 'create project failed')

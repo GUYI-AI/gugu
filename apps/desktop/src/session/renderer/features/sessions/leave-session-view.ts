@@ -1,6 +1,5 @@
-import { isImplicitSessionHomeProject } from '@renderer/features/sessions/session-home-project-constants';
 import { forgetSessionOnScreen } from '@renderer/app/screen-layout-actions';
-import { appState } from '@renderer/lib/stores/app-state';
+import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 
 /**
  * 一项 task 从会话列表里消失之后(删除 / 归档),不能把人留在它的视图上。删除留下的是一块谁也点不到
@@ -11,31 +10,29 @@ import { appState } from '@renderer/lib/stores/app-state';
  *
  * 只在**当前正看着这项 task** 时才动:侧栏归档的可能是别人那一行,那时把人从手上的任务里踢走才是 bug。
  *
- * 独立任务住在 app 自己的 task-home 项目里,用户从没见过它(spec session-page 任务分区)—— 落到它的项目
- * 主页会把这个隐藏项目变成一个真实目的地,而从那里新建的任务在侧栏里是隐形的。
+ * 群里的任务退回它的群;不在群里的(task-home 里的)退回新建任务页 —— task-home 不是一个目的地。
  */
-export function leaveSessionView(projectId: string, sessionId: string): void {
+export function leaveSessionView(sessionId: string): void {
   // 摆在屏上某一块里(spec session-page「一屏几块」):那块收掉。屏上还有别的块,导航已跟到那块,下面就不用走;
   // 它是唯一一块,才照旧离开会话页。
   forgetSessionOnScreen(sessionId);
   const nav = appState.navigation;
   const current = nav.viewParamsStore['session'] as { sessionId?: string } | undefined;
   if (nav.currentViewId !== 'session' || current?.sessionId !== sessionId) return;
-  const destination = sessionLeaveDestination(projectId);
+  const destination = sessionLeaveDestination(sessionId);
   if (destination.viewId === 'new-session') nav.navigate('new-session');
-  else nav.navigate('project', destination.params);
+  else nav.navigate('chat', destination.params);
 }
 
 /**
  * 「退到哪」只此一处。走人动作(归档 / 删除)和路由守卫都问它 —— 两边各写一份的下场就是其中一边
- * 忘了隐藏的 task-home 项目,把人送进一个用户从没见过的项目主页。
+ * 把人送进一个用户从没见过的地方。
  */
 export function sessionLeaveDestination(
-  projectId: string
+  sessionId: string
 ):
   | { viewId: 'new-session'; params?: undefined }
-  | { viewId: 'project'; params: { projectId: string } } {
-  return isImplicitSessionHomeProject({ id: projectId })
-    ? { viewId: 'new-session' }
-    : { viewId: 'project', params: { projectId } };
+  | { viewId: 'chat'; params: { chatId: string } } {
+  const chatId = sidebarStore.groupOfSession(sessionId);
+  return chatId ? { viewId: 'chat', params: { chatId } } : { viewId: 'new-session' };
 }

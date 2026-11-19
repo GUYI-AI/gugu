@@ -4,7 +4,6 @@ import { useChatSummaries, useContactSummaries } from '@/lib/chatSummariesBridge
 import { followLink } from '@/lib/guguLinks';
 import { UI_EVENTS } from '@/lib/uiEvents';
 import { conversationLink } from '@gugu/core/shared/ui/guguLink';
-import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { PALETTE_ITEM_CLASS } from './palette-item-styles';
 import { rankPaletteMatches } from './palette-rank';
@@ -14,8 +13,8 @@ export function useNameMatches(query: string, limit: number, enabled = true) {
   const summaries = useChatSummaries();
   const contacts = useContactSummaries();
   if (!enabled) return { groups: [], people: [] };
-  const groups = rankPaletteMatches([...summaries].filter(([id, chat]) => chat.kind === 'group'
-    && !!chat.name && !projectGroupsStore.rowProjectOfChat(id)), query, ([, chat]) => [chat.name, chat.alias]).slice(0, limit);
+  const groups = rankPaletteMatches([...summaries].filter(([, chat]) => chat.kind === 'group'
+    && !!chat.name), query, ([, chat]) => [chat.name, chat.alias]).slice(0, limit);
   const named = new Map<string, { id: string; name: string; chatId?: string }>(contacts.map(contact => [contact.id, contact]));
   for (const [chatId, chat] of summaries) {
     const name = chat.alias || chat.name;

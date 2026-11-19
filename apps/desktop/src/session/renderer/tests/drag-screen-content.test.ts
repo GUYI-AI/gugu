@@ -34,7 +34,6 @@ describe('drag-screen-content', () => {
     { kind: 'chat', chatId: 'c', title: 'Chat' },
     { kind: 'chat', chatId: 'c', title: 'Topic', topic: { chatId: 't', name: 'Topic' } },
     { kind: 'app', tabKind: 'app-test', title: 'App' },
-    { kind: 'project', projectId: 'p', title: 'Project' },
   ])('carries $kind through the same-window and serialized paths', (content) => {
     const dataTransfer = makeDataTransfer();
     setDraggedScreenContent(dataTransfer, content);

@@ -1,4 +1,3 @@
-import type { AccountProject } from '@gugu/core/cloud/deviceProjects';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
 import { rowOpens } from '@/session/shared/remote-sessions/session-directory';
 import { LOCAL_IMPORT_DEVICE } from '@renderer/features/session-import/import-source';
@@ -35,8 +34,8 @@ export type HistorySection = SectionRef & {
   offlineMachines: string[];
 };
 
-/** 一个账号项目的那一节:键 = 项目群,名字 = 项目名(各台机器上的本地项目都归这一节)。 */
-export function historyProjectSection(project: Pick<AccountProject, 'chatId' | 'name'>): SectionRef {
+/** 一个群的那一节:键 = 群,名字 = 群名(各台机器上挂在这个群的文件夹都归这一节)。 */
+export function historyProjectSection(project: { chatId: string; name: string }): SectionRef {
   return { key: projectSectionKey(project.chatId), label: project.name, path: null, machine: null };
 }
 

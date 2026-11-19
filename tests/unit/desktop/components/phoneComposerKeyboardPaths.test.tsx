@@ -12,18 +12,20 @@ import { clickElement, createReactHarness, device, renderWithAppProviders } from
 import { writeComposer } from '../../../support/composerEditor'
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
 import { runInAction } from 'mobx'
-import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+import { groupFoldersStore } from '@/session/renderer/features/folders/group-folders-store'
 
 vi.mock('@renderer/features/settings/subscriptions/ensure-agent-home', () => ({
   ensureAgentHomeImported: async () => undefined,
 }))
 
-// The task folder card's project is the account project of this group (accountProjectsStore); 'machine' has its folder.
+// The task folder card lists this group's folders from the account's record (groupFoldersStore); 'machine' has one.
 beforeEach(() => runInAction(() => {
-  accountProjectsStore.list = [{ chatId: 'chat', name: 'Project', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'machine', localProjectId: 'project' }] }]
-  accountProjectsStore.status = 'ready'
+  groupFoldersStore.account = [{ chatId: 'chat', name: 'Project', archived: false, activeAt: '2026-01-01T00:00:00.000Z', folders: [
+    { deviceId: 'machine', folderId: 'workspace', path: '/project', position: 1, attachedAt: null, removalRequestedAt: null },
+  ] }]
+  groupFoldersStore.status = 'ready'
 }))
-afterEach(() => accountProjectsStore.clear())
+afterEach(() => groupFoldersStore.clear())
 
 let harness: ReturnType<typeof createReactHarness>
 let surface: HTMLElement

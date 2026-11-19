@@ -75,19 +75,19 @@ function useHeldWorkspace(target: FolderPeek): 'ready' | string | null {
     let disposed = false;
     let acquired = false;
     void (async () => {
-      const opened = await rpc.projects.openProject(project);
-      const result = opened.success ? await rpc.projects.acquireProjectWorkspace(project, workspaceId) : opened;
+      const opened = await rpc.folderRuntime.openFolder(project);
+      const result = opened.success ? await rpc.folderRuntime.acquireFolderWorkspace(project, workspaceId) : opened;
       if (!result.success) {
         if (!disposed) setHeld('message' in result.error ? result.error.message : result.error.type);
         return;
       }
       acquired = true;
-      if (disposed) void rpc.projects.releaseProjectWorkspace(project, workspaceId);
+      if (disposed) void rpc.folderRuntime.releaseFolderWorkspace(project, workspaceId);
       else setHeld('ready');
     })();
     return () => {
       disposed = true;
-      if (acquired) void rpc.projects.releaseProjectWorkspace(project, workspaceId);
+      if (acquired) void rpc.folderRuntime.releaseFolderWorkspace(project, workspaceId);
     };
   }, [project, workspaceId]);
   return held;

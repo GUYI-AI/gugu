@@ -187,7 +187,7 @@ function sideOf(machine: AssistantMachine, label: string, assistantId: string, b
       importFromMove: (accounts: MovableIntegrationAccount[]) => rpcOn(target).integrations.importFromMove(accounts),
     },
     async release() {
-      const released = await rpcOn(target).projects.releaseProjectWorkspace(machine.projectId, machine.workspaceId).catch((error: unknown) => ({ success: false as const, error }));
+      const released = await rpcOn(target).folderRuntime.releaseFolderWorkspace(machine.projectId, machine.workspaceId).catch((error: unknown) => ({ success: false as const, error }));
       if (!released.success) wireLog.warn({ label, err: released.error }, 'move workspace not released');
     },
     schedules: {

@@ -10,8 +10,6 @@ import { ChatListPanel, TopicSubRow } from '../../../apps/desktop/src/components
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 import { SidebarStore } from '@renderer/features/sidebar/sidebar-store'
 import { needsYouCount } from '@renderer/features/sidebar/session-groups'
-import { AccountProjectsStore } from '@renderer/features/projects/stores/account-projects-store'
-import { runInAction } from 'mobx'
 import { chat, clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../support/testHarness'
 
 const state = vi.hoisted(() => ({ canDissolve: true, sessions: [] as SessionpageSessionSummary[], statuses: {} as Record<string, AgentDisplayStatus>, read: vi.fn(async (_input: { chats: { id: string }[] }) => ({ failedChats: 0 })), select: vi.fn(), open: vi.fn(async () => {}) }))
@@ -22,7 +20,7 @@ vi.mock('../../../apps/desktop/src/hooks/useAgentDisplayStatus', async () => ({
   useAgentDisplayStatuses: () => state.statuses,
 }))
 vi.mock('../../../apps/desktop/src/store/devicesContext', () => ({
-  useDevicesStore: () => ({ devices: [{ device_id: 'mac', is_online: true, projects: [{ localProjectId: 'local', name: 'Planning', createdAt: '2026-10-01', chatId: 'group', folders: [] }] }] }),
+  useDevicesStore: () => ({ devices: [{ device_id: 'mac', is_online: true }] }),
 }))
 vi.mock('../../../apps/desktop/src/session/shared/remote-sessions/session-directory', async original => ({
   ...await original<typeof import('../../../apps/desktop/src/session/shared/remote-sessions/session-directory')>(),
@@ -76,28 +74,24 @@ it('desktop keeps the indented topic and separate unread counts', async () => {
   expect(row().textContent).not.toContain('10')
 })
 
-const task = (id: string, status: 'needs_user' | 'error' | 'working' | 'idle', unseen: boolean, projectId = 'local'): SessionpageSessionSummary => ({
-  conversationId: id, projectId, title: id, harness: 'codex', runtime: 'acp', supported: true, unseen, lastInteractedAt: null,
+const task = (id: string, status: 'needs_user' | 'error' | 'working' | 'idle', unseen: boolean, groupChatId = 'group'): SessionpageSessionSummary => ({
+  conversationId: id, projectId: 'local', groupChatId, title: id, harness: 'codex', runtime: 'acp', supported: true, unseen, lastInteractedAt: null,
   agentStatus: status, status: { status, detail: status === 'needs_user' ? 'approval' : null },
 } as SessionpageSessionSummary)
 /** The desktop count for the same host listing: SidebarStore's remote route, read through the shared rule. */
 function desktopDot(sessions: readonly SessionpageSessionSummary[]): number {
   const project = { id: 'local', createdAt: '2026-10-01T00:00:00.000Z', mountedProject: { sessionManager: { sessions: new Map() } } }
   const projects = new Map([['local', project]])
-  // The project row comes from the account project list: this project is bound on mac.
-  const accounts = new AccountProjectsStore()
-  accounts.attach({ projects, machineOf: () => 'mac', connected: () => true })
-  runInAction(() => { accounts.list = [{ chatId: 'chat-local', name: 'local', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'mac', localProjectId: 'local' }] }] })
-  const store = new SidebarStore({ projects } as unknown as ConstructorParameters<typeof SidebarStore>[0], accounts)
+  const store = new SidebarStore({ projects } as unknown as ConstructorParameters<typeof SidebarStore>[0])
   store.machines = { machineOf: () => 'mac', label: () => 'mac', homeDir: () => '/work', connected: () => true, sessionsOf: () => ({ live: true, sessions }), session: (_deviceId, id) => sessions.find(session => session.conversationId === id) ?? null }
-  return needsYouCount(store.placement.entries.get('local') ?? [])
+  return needsYouCount(store.placement.entries.get('group') ?? [])
 }
 
 it.each([
   ['an unread failure', true, [task('f', 'error', true)]],
   ['a wait', true, [task('w', 'needs_user', false)]],
   ['only read failures, working and idle', false, [...Array.from({ length: 40 }, (_, i) => task(`old-${i}`, 'error', false)), task('run', 'working', true), task('rest', 'idle', true)]],
-  ['attention in another project only', false, [task('elsewhere', 'needs_user', true, 'other')]],
+  ['attention in another group only', false, [task('elsewhere', 'needs_user', true, 'other')]],
 ] as const)('the phone project avatar badge and the desktop project dot agree: %s', async (_name, shown, sessions) => {
   state.sessions = [...sessions]
   // The agent's live status says nothing here: the badge reads the tasks, as the desktop dot does.

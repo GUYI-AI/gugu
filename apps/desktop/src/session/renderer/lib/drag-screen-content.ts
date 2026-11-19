@@ -76,7 +76,6 @@ function isDraggedContent(value: unknown): value is DraggedScreenContent {
   switch (candidate.kind) {
     case 'session': return typeof candidate.sessionId === 'string' && typeof candidate.projectId === 'string';
     case 'app': return typeof candidate.tabKind === 'string';
-    case 'project': return typeof candidate.projectId === 'string';
     case 'chat': return typeof candidate.chatId === 'string';
     default: return false;
   }

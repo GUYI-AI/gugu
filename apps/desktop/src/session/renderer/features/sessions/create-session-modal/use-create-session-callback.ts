@@ -47,8 +47,8 @@ interface UseCreateSessionCallbackParams {
   navigate: NavigateFnTyped;
   onClose: () => void;
   onCreated?: (result: CreatedSession) => void;
-  /** 建出来的 agent 一出生就进这个群(CreateSessionParams.birthChatId)。 */
-  birthChatId?: string;
+  /** @@@group-folders the group the session lives in (its folder's group, or the group it was dispatched in): its agent joins it. Absent = no group. */
+  groupChatId?: string;
   /**
    * gugu-dev#181 派任务:这一轮由哪个对话的输入框派出。首句由宿主落成那里的一张任务卡(task-card-first-turn.ts),
    * 结果回那里。ACP 首句的附件引用由 Life 准备;PTY 卡片只放文件夹引用,不带本机路径。
@@ -76,7 +76,7 @@ export function useCreateSessionCallback({
   navigate,
   onClose,
   onCreated,
-  birthChatId,
+  groupChatId,
   taskChatId,
   openAfterCreate = true,
   beforeCreate,
@@ -284,8 +284,7 @@ export function useCreateSessionCallback({
         initialSession: session,
       },
       workspaceConfig: resolvedWorkspaceConfig,
-      // 对话里派的新任务(taskChatId)进群坐任务座位:不发入群提示;群成员里「新建 Agent」照常提示。
-      ...(birthChatId ? { birthGroup: { chatId: birthChatId, asTask: Boolean(taskChatId) } } : {}),
+      ...(groupChatId ? { groupChatId } : {}),
     };
 
     // #2558 The first turn is queued at creation with its files named; while this page places them the host holds its
@@ -393,7 +392,7 @@ export function useCreateSessionCallback({
     setDeliveryError,
     finishSubmission,
     beforeCreate,
-    birthChatId,
+    groupChatId,
     taskChatId,
     openAfterCreate,
     state,

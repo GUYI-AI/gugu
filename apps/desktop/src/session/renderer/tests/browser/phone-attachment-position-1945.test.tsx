@@ -17,14 +17,16 @@ import '@/i18n/registerMessagingCatalog'
 import { createReactHarness, device, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import { runInAction } from 'mobx'
-import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store'
+import { groupFoldersStore } from '@renderer/features/folders/group-folders-store'
 
-// The task folder card's project is the account project of this group (accountProjectsStore); 'machine' has its folder.
+// The task folder card's folders are this group's folders on the account (groupFoldersStore); 'machine' has one.
 beforeEach(() => runInAction(() => {
-  accountProjectsStore.list = [{ chatId: 'position-task', name: '测试项目', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'machine', localProjectId: 'project' }] }]
-  accountProjectsStore.status = 'ready'
+  groupFoldersStore.account = [{ chatId: 'position-task', name: '测试项目', archived: false, activeAt: '2026-01-01T00:00:00.000Z', folders: [
+    { deviceId: 'machine', folderId: 'workspace', path: '/fixture', position: 1, attachedAt: null, removalRequestedAt: null },
+  ] }]
+  groupFoldersStore.status = 'ready'
 }))
-afterEach(() => accountProjectsStore.clear())
+afterEach(() => groupFoldersStore.clear())
 import '@gugu/session-ui/styles/global'
 import '@gugu/session-ui/theme/theme.css'
 import '@gugu/session-ui/theme/semantic.css'

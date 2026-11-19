@@ -71,7 +71,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
     skills: !!machine && !phone && (!existingSession || !!configuration?.selection.harness),
   })
   const skillCatalog = useReplica(creationSkills, view === 'skills' && machine && !phone && configuration?.selection.harness
-    ? [machine.device.device_id, configuration.selection.harness, machine.localProjectId] : null)
+    ? [machine.device.device_id, configuration.selection.harness, machine.folderId] : null)
   const skillCount = skillCatalog.state === 'value' ? skillCatalog.value.skills.length : null
   const thinking = existingSession?.model ?? (configuration ? creationThinking(configuration.models, configuration.selection) : null)
   const title = t(view === 'device' || !view ? 'modelDevice' : view === 'harness' ? 'agent' : view)
@@ -157,7 +157,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
           disabled={mode === 'ai-review' && configuration.models?.autoReview?.disabled}
           selected={configuration.selection.permissionMode === mode} onClick={() => select({ ...configuration.selection, permissionMode: mode })} />)}
       </div>}
-      {view === 'skills' && <CreateSkillsList deviceId={machine?.device.device_id ?? null} deviceLabel={machine ? label(machine.device) : undefined} deviceVersion={machine?.device.capabilities.app_version} phone={phone} harness={configuration?.selection.harness ?? null} projectId={machine?.localProjectId ?? null} search={search}
+      {view === 'skills' && <CreateSkillsList deviceId={machine?.device.device_id ?? null} deviceLabel={machine ? label(machine.device) : undefined} deviceVersion={machine?.device.capabilities.app_version} phone={phone} harness={configuration?.selection.harness ?? null} projectId={machine?.folderId ?? null} search={search}
         selected={configuration?.skills ?? []} onChange={(skills) => { configuration?.onSkills(skills); setView(null) }} />}
     </PhoneComposerSheet>
   </>

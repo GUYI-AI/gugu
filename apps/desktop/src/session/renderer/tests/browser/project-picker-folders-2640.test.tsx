@@ -5,10 +5,9 @@ import { page, userEvent } from 'vitest/browser'
 import { runInAction } from 'mobx'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import { setLocalePreference } from '@/i18n'
-import type { AccountProject } from '@gugu/core/cloud/deviceProjects'
-import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store'
+import type { FolderRecord } from '@shared/core/folders/folders'
+import { groupFoldersStore } from '@renderer/features/folders/group-folders-store'
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store'
-import { machineRegistry } from '@renderer/lib/machine-routing'
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
 import { ComposerProjectPicker } from '@renderer/features/sessions/composer-context-tray'
 // Same theme layers as the real entry (see composer-model-menu-3249.test.tsx): without them the popup has no surface colours.
@@ -19,37 +18,17 @@ import '@gugu/session-ui/styles/base.css'
 import '@/styles/tokens.css'
 import '@renderer/index.css'
 
-// #2640: every project in the new-task project picker has a › with its folders ("device · path"); a project with no
-// usable folder offers "pick a folder on <machine>…". Real Chromium + real Base UI menu + the real component; only the
-// data seams (account project list, the folder reader, the device list) are fed fixtures.
-
-const fixtures = vi.hoisted(() => ({
-  folders: {} as Record<string, Array<{ workspaceId: string; projectId: string; kind: 'root' | 'attached'; path: string; deviceId: string | null; offline: boolean }>>,
-}))
+// #2640: every group in the new-task group picker has a › with its folders ("device · path"); a group whose folders are
+// all on offline machines offers "pick a folder on <machine>…". Real Chromium + real Base UI menu + the real component; only
+// the data seams (the group folder store, the device list) are fed fixtures.
 
 vi.mock('@renderer/lib/stores/app-state', () => ({
-  sidebarStore: { rowProjectIdOf: (id: string) => id, projectMembersOf: (id: string) => [id], placement: { entries: new Map() } },
+  sidebarStore: { placement: { entries: new Map() } },
   appState: { navigation: { currentViewId: 'home', viewParamsStore: {}, revalidate: () => {} } },
 }))
-vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
-  getGitRepositoryStore: () => undefined,
-  getProjectStore: (projectId: string) => ({ id: projectId, name: projectId, data: { id: projectId, name: projectId, path: fixtures.folders[projectId]?.[0]?.path ?? '' } }),
-  asMounted: () => undefined,
-  mountedProjectData: () => null,
-  projectDisplayName: (store: { name?: string } | undefined) => store?.name,
-  projectViewKind: () => 'ready',
-  getProjectManagerStore: () => ({ projects: new Map() }),
-}))
-vi.mock('@renderer/features/projects/components/project-picker-folders', () => ({
-  useProjectPickerFolders: (rowId: string) => ({
-    folders: (fixtures.folders[rowId] ?? []).map((folder) => ({ ...folder, branch: null, sessionIds: [], attachedAt: null })),
-    readFailed: false,
-    reading: false,
-  }),
-}))
 
-const project = (chatId: string, name: string, bindings: AccountProject['bindings']): AccountProject => ({
-  chatId, name, archived: false, activeAt: '2026-11-13T00:00:00.000Z', bindings,
+const folder = (id: string, chatId: string, path: string, sort = 1): FolderRecord => ({
+  id, path, chatId, sort, gitless: false, baseRef: null, attachedAt: null, branch: null, sessionIds: [], taskHome: false,
 })
 
 describe('project picker › folders (#2640)', () => {
@@ -65,45 +44,40 @@ describe('project picker › folders (#2640)', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    machineRegistry.register('mac1-id', ['p-gugu-mac1'])
     vi.spyOn(remoteHostsStore, 'pickableMachineIds').mockReturnValue(['mac1-id', 'd22-id'])
     vi.spyOn(remoteHostsStore, 'device').mockImplementation((id: string) => ({
       id, label: id === 'mac1-id' ? 'mac1' : 'd22', hostKind: 'server', isOnline: id === 'mac1-id', lastSeenAt: null,
     }) as never)
     vi.spyOn(remoteHostsStore, 'connectionState').mockImplementation((id: string) => (id === 'mac1-id' ? 'connected' : 'offline') as never)
 
-    fixtures.folders = {
-      // The project the person actually has: the same repo on this computer (two folders) and on mac1.
-      'p-gugu': [
-        { workspaceId: 'ws-1', projectId: 'p-gugu', kind: 'root', path: '/Users/apple/Documents/gugu', deviceId: null, offline: false },
-        { workspaceId: 'ws-2', projectId: 'p-gugu', kind: 'attached', path: '/Users/apple/Desktop/projects/gugu-opendcai', deviceId: null, offline: false },
-        { workspaceId: 'ws-3', projectId: 'p-gugu', kind: 'attached', path: '/Users/apple/Documents/gugu-dev', deviceId: 'mac1-id', offline: false },
-      ],
-      'p-memor': [{ workspaceId: 'ws-4', projectId: 'p-memor', kind: 'root', path: '/Users/apple/Desktop/projects/memor', deviceId: null, offline: false }],
-    }
     runInAction(() => {
-      accountProjectsStore.localDeviceId = 'this-computer'
-      accountProjectsStore.status = 'ready'
-      accountProjectsStore.list = [
-        project('chat-gugu', 'gugu', [{ deviceId: 'this-computer', localProjectId: 'p-gugu' }, { deviceId: 'mac1-id', localProjectId: 'p-gugu-mac1' }]),
-        // Same name, no folder anywhere (legacy zero-folder project): must be told apart from the one above.
-        project('chat-gugu-empty', 'gugu', []),
-        // A folder only on a device that is offline right now: not "no folder".
-        project('chat-offline', '两院财务', [{ deviceId: 'd22-id', localProjectId: 'p-offline' }]),
-        project('chat-memor', 'memor', [{ deviceId: 'this-computer', localProjectId: 'p-memor' }]),
+      groupFoldersStore.status = 'ready'
+      // What the machines answered: this computer (two folders of gugu, one of memor) and mac1 (one more of gugu).
+      groupFoldersStore.answers.set('', [
+        folder('ws-1', 'chat-gugu', '/Users/apple/Documents/gugu'),
+        folder('ws-2', 'chat-gugu', '/Users/apple/Desktop/projects/gugu-opendcai', 2),
+        folder('ws-4', 'chat-memor', '/Users/apple/Desktop/projects/memor'),
+      ])
+      groupFoldersStore.answers.set('mac1-id', [folder('ws-3', 'chat-gugu', '/Users/apple/Documents/gugu-dev')])
+      // The account's record: groups' names, and folders on a machine that is offline right now (d22).
+      groupFoldersStore.account = [
+        { chatId: 'chat-gugu', name: 'gugu', archived: false, activeAt: '2026-11-13T00:00:04.000Z', folders: [] },
+        // Same name, its only folder on the offline d22: must be told apart from the one above.
+        { chatId: 'chat-gugu-twin', name: 'gugu', archived: false, activeAt: '2026-11-13T00:00:03.000Z', folders: [
+          { deviceId: 'd22-id', folderId: 'ws-9', path: '/srv/gugu-old', position: 1, attachedAt: null, removalRequestedAt: null },
+        ] },
+        { chatId: 'chat-offline', name: '两院财务', archived: false, activeAt: '2026-11-13T00:00:02.000Z', folders: [
+          { deviceId: 'd22-id', folderId: 'ws-5', path: '/srv/finance', position: 1, attachedAt: null, removalRequestedAt: null },
+        ] },
+        { chatId: 'chat-memor', name: 'memor', archived: false, activeAt: '2026-11-13T00:00:01.000Z', folders: [] },
       ]
-      accountProjectsStore.attach({
-        projects: new Map([['p-gugu', { createdAt: null }], ['p-gugu-mac1', { createdAt: null }], ['p-memor', { createdAt: null }]]) as never,
-        machineOf: (id: string) => machineRegistry.machineOf(id) ?? null,
-        connected: () => true,
-      })
     })
   })
 
   afterEach(() => {
     root.unmount()
     container.remove()
-    machineRegistry.forgetMachine('mac1-id')
+    groupFoldersStore.clear()
     delete document.documentElement.dataset.theme
     vi.restoreAllMocks()
   })
@@ -119,13 +93,13 @@ describe('project picker › folders (#2640)', () => {
       </QueryClientProvider>,
     )
     await until('the picker trigger', () => document.body.querySelector('button') !== null)
-    await userEvent.click(page.getByText('未选择项目'))
-    await until('four project rows', () => document.body.querySelectorAll('[data-testid="project-picker-item"]').length === 4)
+    await userEvent.click(page.getByText('未选择群'))
+    await until('four group rows', () => document.body.querySelectorAll('[data-testid="project-picker-item"]').length === 4)
   }
 
   const row = (chatId: string) => document.body.querySelector<HTMLElement>(`[data-testid="project-picker-item"][data-chat-id="${chatId}"]`)!
 
-  it('a project with folders lists them as device · path; picking one selects the project', async () => {
+  it('a group with folders lists them as device · path; picking one selects the group', async () => {
     const onSelect = vi.fn()
     await mount(onSelect)
     await userEvent.hover(row('chat-gugu'))
@@ -135,25 +109,21 @@ describe('project picker › folders (#2640)', () => {
     expect(labels[0]).toContain('/Documents/gugu')
     expect(labels[2]).toContain('mac1')
     await userEvent.click(document.body.querySelector<HTMLElement>('[data-workspace-id="ws-3"]')!)
-    expect(onSelect).toHaveBeenCalledWith('p-gugu')
+    expect(onSelect).toHaveBeenCalledWith('chat-gugu')
   })
 
-  it('two projects named gugu stay distinguishable, and an empty one says so and offers to pick a folder', async () => {
+  it('two groups named gugu stay distinguishable by their first folder', async () => {
     await mount()
-    // Row text, top level: the empty twin says "还没有文件夹", the other carries its path.
-    expect(row('chat-gugu-empty').textContent).toContain('还没有文件夹')
     expect(row('chat-gugu').textContent).toContain('/Documents/gugu')
-    await userEvent.hover(row('chat-gugu-empty'))
+    expect(row('chat-gugu-twin').textContent).toContain('/srv/gugu-old')
+  })
+
+  it('a group whose folders are only on an offline device lists that device greyed and offers to pick a folder', async () => {
+    await mount()
+    await userEvent.hover(row('chat-offline'))
+    await until('the greyed folder row', () => document.body.querySelector('[data-workspace-id="ws-5"][data-disabled]') !== null)
     await until('pick-a-folder rows', () => document.body.querySelectorAll('[data-testid="project-pick-folder-on"]').length >= 1)
     const offers = [...document.body.querySelectorAll('[data-testid="project-pick-folder-on"]')].map((item) => item.textContent)
     expect(offers[0]).toContain('在这台电脑上选文件夹')
-  })
-
-  it('a project whose folders are only on an offline device lists that device greyed, not "no folder"', async () => {
-    await mount()
-    expect(row('chat-offline').textContent).not.toContain('还没有文件夹')
-    await userEvent.hover(row('chat-offline'))
-    await until('the greyed device row', () => document.body.querySelector('[data-device-id="d22-id"][data-disabled]') !== null)
-    expect(document.body.querySelector('[data-device-id="d22-id"][data-disabled]')?.textContent).toContain('暂不可用')
   })
 })

@@ -333,13 +333,13 @@ export default {
     },
   },
   "agentWatch": {
-    "title": "机器与项目",
+    "title": "机器与任务",
     "backgroundWatch": "咕咕正在看管 {{count}} 台机器",
     "projects": {
-      "title": "项目",
-      "loading": "正在读取项目…",
-      "empty": "还没有项目",
-      "noMachines": "这个账号名下还没有机器。在电脑上装咕咕并登录同一账号，它上面的项目就会出现在这里。"
+      "title": "文件夹",
+      "loading": "正在读取文件夹…",
+      "empty": "还没有文件夹",
+      "noMachines": "这个账号名下还没有机器。在电脑上装咕咕并登录同一账号，它上面挂进群的文件夹就会出现在这里。"
     },
     "machines": {
       "subtitle": "看住在别的机器上跑的 agent",
@@ -403,6 +403,7 @@ export default {
       "outputTrimmed_other": "… 此预览省略了 {{count}} 字",
       "loading": "正在读取时间线…",
       "loadingWindow": "加载中…",
+      "offlineRecord": "{{device}} 离线，这条会话的记录在它上面，它回来后显示。现在发的话会排队，等它回来再送。",
       "waitingRecord": "会话已开，正在等它写下第一行…",
       "empty": "这个会话还没有内容。",
       "loadFailed": "打不开时间线",
@@ -451,7 +452,7 @@ export default {
       "pickMachine": "在哪台机器上",
       "welcome": "在 {{machine}} 上开始新任务",
       "placeholder": "随心输入",
-      "project": "项目",
+      "project": "文件夹",
       "harness": "Harness",
       "model": "模型",
       "permission": {
@@ -488,7 +489,7 @@ export default {
         "unwatchable": "手机端还读不了这家的记录"
       },
       "blocked": {
-        "loading": "还在读取这台机器上的项目…",
+        "loading": "还在读取这台机器上的文件夹…",
         "no_usable_harness": "这台机器上没有能用的 harness。",
         "pick_harness": "先选一家能用的 harness。"
       },
@@ -502,12 +503,12 @@ export default {
         "agent-not-found": "那台机器上没有这个 agent，请换一个。",
         "model-unavailable": "所选模型在那台机器上不可用，请换一个。",
         "option-rejected": "那台机器上的 agent 不支持某项设置，请修改后重试。",
-        "folder-unavailable": "那台机器上打不开项目文件夹。确认它还在，或换一个项目。",
+        "folder-unavailable": "那台机器上打不开这个文件夹。确认它还在，或换一个文件夹。",
         "attachment-missing": "有附件没传到那台机器，请重新添加后发送。",
         "machine-unreachable": "那台机器无响应，确认它在线后重试。",
         "start-failed": "会话启动失败，请重试。"
       },
-      "optionsFailed": "读不到这台机器上的项目"
+      "optionsFailed": "读不到这台机器上的文件夹"
     },
     "composer": {
         "sendFailed": "这条没发出去",
@@ -656,7 +657,7 @@ export default {
     "categories": "分类",
     "clearSearch": "清除搜索",
     "noResults": "没有找到结果",
-    "noInstalled": "还没有已安装的项目",
+    "noInstalled": "还没有已安装的应用",
     "device": "设备",
     "thisPhone": "这台手机",
     "noAgentHost": "没有在线的设备提供智能体目录",
@@ -684,7 +685,7 @@ export default {
       "notificationsChatAria": "开启聊天消息通知",
       "notificationsChatDescription": "私聊的新消息，和群里叫到你的消息",
       "notificationsEmpty": { "title": "还没有通知", "hint": "有人找你、智能体做完事，会在这里提醒你" },
-      "notificationsScope": "这里只管咕咕这边的消息。项目页里智能体的通知在「项目」那一页。",
+      "notificationsScope": "这里只管咕咕这边的消息。任务页里智能体的通知在「任务」那一页。",
       "notificationsBlocked": "系统没放行，咕咕的通知弹不出来。",
       "notificationsBlockedAction": "去「本机控制」里开",
       "notificationsSound": "提示音",
@@ -764,7 +765,7 @@ export default {
       "passwords": "密码",
       "permissions": "本机控制",
       "prompts": "提示词",
-      "sessions": "项目",
+      "sessions": "任务",
       "subscriptions": "订阅",
       "usage": "用量"
     },
@@ -831,7 +832,7 @@ export default {
       "microphonePurpose": "发语音消息",
       "cameraPurpose": "用来扫码加好友、进群",
       "fileAccess": "文件与文件夹访问",
-      "fileAccessPurpose": "用来打开你电脑上的项目目录",
+      "fileAccessPurpose": "用来打开你电脑上的文件夹",
       "on": "已开启",
       "off": "未开启",
       "offPrompt": "未开启，点击开启",
@@ -891,7 +892,7 @@ export default {
       "createInProgress": "Agent 正在创建。请重新打开创建页查看进度。",
       "localAgentOnly": "聊天页只能创建本机 Agent",
       "retryDeviceChanged": "重试 Agent 创建时无法更换设备。",
-      "taskBridgeUnavailable": "当前环境无法打开项目页"
+      "taskBridgeUnavailable": "当前环境无法打开任务页"
     },
     "features": "功能",
     "feedback": "问题反馈",
@@ -928,13 +929,13 @@ export default {
       "hostNotConnected": "会话页宿主未连接",
       "hostConnectionLost": "会话页宿主连接已断开，正在重连。",
       "hostUnreachable": "连不上会话页宿主。请确认宿主已启动，再重新加载。",
-      "hostDisconnectedDescription": "浏览器里的项目页需要本机的会话页宿主。请确认 pnpm dev:web 已把它拉起，或按宿主启动日志里的地址打开。",
+      "hostDisconnectedDescription": "浏览器里的任务页需要本机的会话页宿主。请确认 pnpm dev:web 已把它拉起，或按宿主启动日志里的地址打开。",
       "errorDescription": "重新加载不会影响已保存的会话。",
-      "errorTitle": "项目页没能启动",
-      "loading": "项目页加载中",
+      "errorTitle": "任务页没能启动",
+      "loading": "任务页加载中",
       "reload": "重新加载"
     },
-    "tasks": "项目",
+    "tasks": "任务",
     "sessionView": "会话",
     "apps": "市场",
     "appDockFailed": "左栏没能改动",
@@ -953,7 +954,7 @@ export default {
       "unreachable": "这台手机跳不到系统设置。请到系统「设置 → 应用 → 咕咕 → 权限」里打开相机。"
     },
     "toast": {
-      "agentCreateTimeout": "会话已创建，但 Agent 未能及时启动。请从项目区打开后重试。",
+      "agentCreateTimeout": "会话已创建，但 Agent 未能及时启动。请从任务区打开后重试。",
       "openChatFailed": "打不开会话，请检查网络后重试",
       "qrUnrecognized": "无法识别的二维码",
       "scanCameraPermissionDenied": "相机权限被拒绝",
@@ -995,18 +996,18 @@ export default {
   "partners": {
     "search": "搜索",
     "noResults": "没有找到",
-    "projects": "项目（{{count}}）",
+    "projects": "群（{{count}}）",
     "friends": "朋友（{{count}}）",
     "groupAgents": "群里遇到的 Agent（{{count}}）",
     "rooms": "群（{{count}}）",
     "agents": "Agent（{{count}}）",
     "groupChat": "群聊",
     "assistant": "个人助理",
-    "groupOffline": "项目所在的电脑不在线",
-    "groupUnavailable": "项目群没打开",
+    "groupOffline": "文件夹所在的电脑不在线",
+    "groupUnavailable": "群没打开",
     "newProject": {
-      "title": "新项目",
-      "name": "项目名",
+      "title": "新建群",
+      "name": "群名",
       "create": "创建",
       "machine": "机器",
       "folder": "文件夹",
@@ -1015,11 +1016,11 @@ export default {
       "pickFolder": "选文件夹",
       "offline": "离线",
       "noMachine": "没有在线的电脑",
-      "readingDirectory": "正在读这台电脑的项目目录",
-      "noDefaultDirectory": "这台电脑没设默认项目目录",
-      "invalidName": "项目名里不能有 / \\ : * ? \" < > |",
+      "readingDirectory": "正在读这台电脑上新文件夹的默认位置",
+      "noDefaultDirectory": "这台电脑没设新文件夹的默认位置",
+      "invalidName": "群名里不能有 / \\ : * ? \" < > |",
       "pathTaken": "这个文件夹已被「{{name}}」占着",
-      "failed": "项目没建成"
+      "failed": "没建成，再试一次"
     }
   },
   "widget": {

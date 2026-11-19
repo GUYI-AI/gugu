@@ -34,29 +34,29 @@ describe('contextual mention ranking', () => {
     expect(names(members, history, 'nobody')).toEqual([])
   })
 
-  it('prefers confirmed project agents to even the strongest recent interaction', () => {
+  it('prefers the group\'s own agents to even the strongest recent interaction', () => {
     const members = [candidate('Atlas', 'agent'), candidate('Amy'), candidate('Ada', 'agent'), candidate('Aaron', 'agent')]
     const history = [message('Atlas'), message('me', 0, { to_user_ids: ['Atlas'] }), message('Amy'), message('Ada', DAY)]
-    const projectMemberIds = Object.freeze(['Ada', 'Aaron', 'not-addressable'])
-    expect(names(members, history, '', { projectMemberIds })).toEqual(['Ada', 'Aaron', 'Atlas', 'Amy'])
-    expect(names(members, history, 'a', { projectMemberIds })).toEqual(['Ada', 'Aaron', 'Atlas', 'Amy'])
+    const groupAgentIds = Object.freeze(['Ada', 'Aaron', 'not-addressable'])
+    expect(names(members, history, '', { groupAgentIds })).toEqual(['Ada', 'Aaron', 'Atlas', 'Amy'])
+    expect(names(members, history, 'a', { groupAgentIds })).toEqual(['Ada', 'Aaron', 'Atlas', 'Amy'])
     expect(names(members, history, 'a')).toEqual(['Atlas', 'Amy', 'Ada', 'Aaron'])
   })
 
-  it('keeps text tiers, topic participation and the reply target ahead of the project bonus', () => {
+  it('keeps text tiers, topic participation and the reply target ahead of the group-agent bonus', () => {
     const members = [candidate('Ada', 'agent'), candidate('a', 'agent'), candidate('Atlas', 'agent')]
     const history = [message('Atlas', 0, { id: 'quoted' })]
-    const projectMemberIds = ['Ada']
-    expect(names(members, history, 'a', { projectMemberIds })).toEqual(['a', 'Ada', 'Atlas'])
-    expect(names(members, history, '', { projectMemberIds, participantIds: ['Atlas'] })).toEqual(['Atlas', 'Ada', 'a'])
-    expect(names(members, history, '', { projectMemberIds, replyToMessageId: 'quoted' })).toEqual(['Atlas', 'Ada', 'a'])
+    const groupAgentIds = ['Ada']
+    expect(names(members, history, 'a', { groupAgentIds })).toEqual(['a', 'Ada', 'Atlas'])
+    expect(names(members, history, '', { groupAgentIds, participantIds: ['Atlas'] })).toEqual(['Atlas', 'Ada', 'a'])
+    expect(names(members, history, '', { groupAgentIds, replyToMessageId: 'quoted' })).toEqual(['Atlas', 'Ada', 'a'])
   })
 
-  it('never gives humans or broadcasts a project bonus and keeps neutral ties stable', () => {
+  it('never gives humans or broadcasts a group-agent bonus and keeps neutral ties stable', () => {
     const members = [candidate('所有人', 'all'), candidate('Alice'), candidate('Ada', 'agent'), candidate('Aaron', 'agent')]
-    expect(names(members, [], '', { projectMemberIds: ['Alice', '所有人', 'Aaron', 'Ada'] }))
+    expect(names(members, [], '', { groupAgentIds: ['Alice', '所有人', 'Aaron', 'Ada'] }))
       .toEqual(['Ada', 'Aaron', 'Alice', '所有人'])
-    expect(names(members, [], '', { projectMemberIds: [] })).toEqual(['Alice', 'Ada', 'Aaron', '所有人'])
+    expect(names(members, [], '', { groupAgentIds: [] })).toEqual(['Alice', 'Ada', 'Aaron', '所有人'])
   })
 
   it('keeps an exact broadcast match above a less precise person match', () => {

@@ -1,15 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import type { SessionpageProjectSummary, SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
+import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 import {
   agentHasOwnRow,
   agentsInGroups,
   agentTaskHomes,
-  accountProjectReading,
   oneListAgentRows,
-  oneListProjectLines,
   oneListShows,
   oneListTail,
-  placeProjectLines,
   sampleProjectLastLine,
   type AgentHomes,
 } from '../../../../apps/desktop/src/lib/sidebarOneList'
@@ -19,13 +16,12 @@ import type { SampleProjectContent } from '../../../../apps/desktop/src/session/
 import { chat } from '../../../support/testHarness'
 import { sidebarChatSignals } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
 
-const project = (id: string, kind?: 'workspace'): SessionpageProjectSummary => ({ id, name: id, path: `/${id}`, ...(kind ? { kind } : {}) })
 const session = (conversationId: string, projectId: string, agent: string | null, parent: string | null = null, bornInChatId: string | null = null): SessionpageSessionSummary => ({
   conversationId, projectId, title: conversationId, harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null,
   supported: true, parentConversationId: parent, agent: agent ? { userId: agent } : null, bornInChatId,
 })
 const homes = (parts: Partial<Record<keyof AgentHomes, string[]>> = {}): AgentHomes => ({
-  inGroups: new Set(parts.inGroups), inProjects: new Set(parts.inProjects), withTopLevelTask: new Set(parts.withTopLevelTask), pinned: new Set(parts.pinned),
+  inGroups: new Set(parts.inGroups), withTopLevelTask: new Set(parts.withTopLevelTask), pinned: new Set(parts.pinned),
   onlyForks: new Set(parts.onlyForks),
 })
 const mine = new Set(['a-solo', 'a-room', 'a-project', 'a-idle', 'a-fork'])
@@ -49,7 +45,7 @@ describe('#2599 which agents live in a group: where they were created, not the g
     ['a-left', new Set(['room-i-left'])],
   ])
 
-  it('counts agents created in a group the list holds, project groups and topics (of their group) included', () => {
+  it('counts agents created in a group the list holds, topics (of their group) included', () => {
     expect([...agentsInGroups(chats, bornIn, new Set())].sort()).toEqual(['a-room', 'a-shop', 'a-topic', 'a-two-groups'])
   })
 
@@ -65,112 +61,62 @@ describe('#2599 which agents live in a group: where they were created, not the g
     expect([...agentsInGroups(chats, mixed, new Set())]).toEqual([])
   })
 
-  it('agentTaskHomes records where each top-level task outside every project was created; a project task records none', () => {
-    const { bornIn: born, withTopLevelTask } = agentTaskHomes([{
-      deviceId: 'mac',
-      projects: [project('app'), project('tasks', 'workspace')],
+  it('agentTaskHomes records where each top-level task was created; a fork records none', () => {
+    const { groupsOf: born, withTopLevelTask } = agentTaskHomes([{
       sessions: [
         session('s1', 'tasks', 'a-room', null, 'room'),
-        session('s2', 'app', 'a-into-project', null, 'room'),
         session('s3', 'tasks', 'a-button', null, null),
         session('s4', 'tasks', 'a-child', 's1', 'room'),
       ],
-    }], accountProjectReading([{ bindings: [{ deviceId: 'mac', localProjectId: 'app' }] }], false))
+    }])
     expect(Object.fromEntries([...born].map(([agent, chats]) => [agent, [...chats]]))).toEqual({ 'a-room': ['room'], 'a-button': [null] })
     expect([...withTopLevelTask].sort()).toEqual(['a-button', 'a-room'])
   })
 })
 
-describe('which agents live in a project and which have a top-level task', () => {
-  // The account project list: `app` on mac is a project; nothing else is.
-  const accounts = accountProjectReading([{ bindings: [{ deviceId: 'mac', localProjectId: 'app' }] }], false)
-
-  it('a session in an account project puts its agent in the project; the task workspace is not a project', () => {
-    const { inProjects, withTopLevelTask } = agentTaskHomes([{
-      deviceId: 'mac',
-      projects: [project('app'), project('tasks', 'workspace')],
-      sessions: [session('s1', 'app', 'a-project'), session('s2', 'tasks', 'a-solo'), session('s3', 'tasks', null)],
-    }], accounts)
-    expect([...inProjects]).toEqual(['a-project'])
-    expect([...withTopLevelTask]).toEqual(['a-solo'])
-  })
-
-  it('a local project the account list does not hold is no project: its agent has a top-level task, wherever the machine lists it', () => {
-    const { inProjects, withTopLevelTask } = agentTaskHomes([{
-      deviceId: 'mac',
-      projects: [project('app'), project('fresh')],
-      sessions: [session('s1', 'app', 'a-project'), session('s2', 'fresh', 'a-unpublished')],
-    }], accounts)
-    expect([...inProjects]).toEqual(['a-project'])
-    expect([...withTopLevelTask]).toEqual(['a-unpublished'])
-  })
-
-  it('on the account list\'s first read, with nothing in hand, a machine\'s own projects count; its task workspace does not', () => {
-    const { inProjects, withTopLevelTask } = agentTaskHomes([{
-      deviceId: 'mac',
-      projects: [project('app'), project('tasks', 'workspace')],
-      sessions: [session('s1', 'app', 'a-project'), session('s2', 'tasks', 'a-solo')],
-    }], accountProjectReading([], true))
-    expect([...inProjects]).toEqual(['a-project'])
-    expect([...withTopLevelTask]).toEqual(['a-solo'])
-  })
-
+describe('which agents have a top-level task', () => {
   it('a fork is never a top-level task, also when its parent is on no machine we see', () => {
     const { withTopLevelTask, onlyForks } = agentTaskHomes([{
-      deviceId: 'mac',
-      projects: [project('tasks', 'workspace')],
       sessions: [session('root', 'tasks', 'a-root'), session('fork', 'tasks', 'a-fork', 'root'), session('orphan', 'tasks', 'a-orphan', 'archived')],
-    }], accounts)
+    }])
     expect([...withTopLevelTask]).toEqual(['a-root'])
     expect([...onlyForks].sort()).toEqual(['a-fork', 'a-orphan'])
   })
 
   it('an agent with a top-level task and a fork is not only a fork; one without any session is neither', () => {
     const { onlyForks } = agentTaskHomes([{
-      deviceId: 'mac',
-      projects: [project('tasks', 'workspace')],
       sessions: [session('root', 'tasks', 'a-both'), session('fork', 'tasks', 'a-both', 'root'), session('loose', 'tasks', null, 'root')],
-    }], accounts)
+    }])
     expect([...onlyForks]).toEqual([])
-  })
-
-  it('reads each machine\'s local projects against that machine\'s bindings', () => {
-    const { inProjects, withTopLevelTask } = agentTaskHomes([
-      { deviceId: 'mac', projects: [project('app')], sessions: [session('s1', 'app', 'a-1')] },
-      { deviceId: 'pc', projects: [project('app')], sessions: [session('s2', 'app', 'a-2')] },
-    ], accounts)
-    expect([...inProjects]).toEqual(['a-1'])
-    expect([...withTopLevelTask]).toEqual(['a-2'])
   })
 
   it('a fork on another machine still hangs under its parent', () => {
     const { withTopLevelTask } = agentTaskHomes([
-      { deviceId: 'mac', projects: [project('tasks', 'workspace')], sessions: [session('root', 'tasks', 'a-root')] },
-      { deviceId: 'pc', projects: [project('tasks2', 'workspace')], sessions: [session('fork', 'tasks2', 'a-fork', 'root')] },
-    ], accounts)
+      { sessions: [session('root', 'tasks', 'a-root')] },
+      { sessions: [session('fork', 'tasks2', 'a-fork', 'root')] },
+    ])
     expect([...withTopLevelTask]).toEqual(['a-root'])
   })
 })
 
-describe('an owned agent has its own row only when it lives in no group and no project', () => {
+describe('an owned agent has its own row only when it lives in no group', () => {
   it.each([
     [homes(), true],
     [homes({ inGroups: ['a'] }), false],
-    [homes({ inProjects: ['a'] }), false],
     [homes({ withTopLevelTask: ['a'] }), true],
     [homes({ onlyForks: ['a'] }), false],
   ])('%#', (agentHomes, expected) => expect(agentHasOwnRow('a', agentHomes)).toBe(expected))
 })
 
 describe('what the one list shows', () => {
-  const agentHomes = homes({ inGroups: ['a-room'], inProjects: ['a-project'], withTopLevelTask: ['a-solo', 'a-room'], onlyForks: ['a-fork'] })
+  const agentHomes = homes({ inGroups: ['a-room', 'a-project'], withTopLevelTask: ['a-solo', 'a-room'], onlyForks: ['a-fork'] })
   const show = (overrides: Parameters<typeof chat>[0], listed: boolean) => oneListShows(chat(overrides), listed, agentHomes, owns)
 
   it('never shows a topic as a row, listed or not', () => {
     expect(show({ kind: 'topic', source_chat_id: 'room' }, true)).toBe(false)
   })
 
-  it('shows groups and project groups by the list rule', () => {
+  it('shows groups by the list rule', () => {
     expect(show({ kind: 'group' }, true)).toBe(true)
   })
 
@@ -180,7 +126,7 @@ describe('what the one list shows', () => {
     expect(show({ kind: 'dm', peer_user_id: 'someone-elses-agent' }, true)).toBe(true)
   })
 
-  it('hides my agent that lives in a group or a project, even with messages or a top-level task', () => {
+  it('hides my agent that lives in a group, even with messages or a top-level task', () => {
     expect(show({ kind: 'dm', peer_user_id: 'a-room' }, true)).toBe(false)
     expect(show({ kind: 'ai', peer_user_id: 'a-project' }, true)).toBe(false)
   })
@@ -199,10 +145,8 @@ describe('what the one list shows', () => {
 
   it('#2574 a standalone agent with sub-agents keeps one row; its sub-agents (and theirs) have none, they are in its inner column', () => {
     const tasks = agentTaskHomes([{
-      deviceId: 'mac',
-      projects: [project('tasks', 'workspace')],
       sessions: [session('solo', 'tasks', 'a-boss'), session('sub', 'tasks', 'a-sub', 'solo'), session('grandchild', 'tasks', 'a-grandchild', 'sub')],
-    }], accountProjectReading([], false))
+    }])
     const family = { ...tasks, inGroups: new Set<string>(), pinned: new Set<string>() }
     const mineToo = (id: string) => ['a-boss', 'a-sub', 'a-grandchild'].includes(id)
     expect(oneListShows(chat({ kind: 'dm', peer_user_id: 'a-boss' }), false, family, mineToo)).toBe(true)
@@ -229,57 +173,6 @@ describe('#2574 the agent rows the list draws are what the task page opens an ag
     const rows = oneListAgentRows([chat({ id: 'dm-solo', kind: 'dm', peer_user_id: 'a-solo', peer_alias: 'My Solo' })], new Map(), owns, identities)
     expect(rows.get('a-solo')?.name).toBe('My Solo')
     expect(oneListAgentRows([], new Map(), owns, identities).size).toBe(0)
-  })
-})
-
-describe('an account project without a conversation row stands among the conversations at its time', () => {
-  const at = (minute: number) => `2026-11-13T00:${String(minute).padStart(2, '0')}:00.000Z`
-  const projects = [
-    { chatId: 'chat-listed', archived: false, activeAt: at(9) },
-    { chatId: 'chat-reserved', archived: false, activeAt: at(3) },
-    { chatId: 'chat-new', archived: false, activeAt: at(8) },
-    { chatId: 'chat-dissolved', archived: true, activeAt: at(7) },
-  ]
-  const chats = [chat({ id: 'chat-listed', kind: 'group' }), chat({ id: 'chat-reserved', kind: 'dm' }), chat({ id: 'room', kind: 'group' })]
-
-  it('the account projects (not archived) whose group is not a group of the chat list, with the time its row will have', () => {
-    expect(oneListProjectLines(projects, chats, new Set())).toEqual([
-      { projectChatId: 'chat-reserved', activeAt: at(3) },
-      { projectChatId: 'chat-new', activeAt: at(8) },
-    ])
-  })
-
-  // Dissolving: the chat list reads the group archived and drops it before the account list reads the dissolve.
-  it('a project whose group the chat list has read as archived is no row, whatever the account list still says', () => {
-    expect(oneListProjectLines(projects, chats, new Set(['chat-new']))).toEqual([{ projectChatId: 'chat-reserved', activeAt: at(3) }])
-  })
-
-  const rows = [{ id: 'dm', at: 9 }, { id: 'room', at: 5 }, { id: 'old', at: 1 }]
-  const activityOf = (row: { at: number }) => Date.parse(at(row.at))
-  const order = (placed: readonly object[]) => placed.map((row) => ('projectChatId' in row ? row.projectChatId : (row as { id: string }).id))
-
-  it('goes before the first conversation that is older, newest first; on an equal time after the conversation', () => {
-    expect(order(placeProjectLines(rows, activityOf, [{ projectChatId: 'p3', activeAt: at(3) }, { projectChatId: 'p8', activeAt: at(8) }])))
-      .toEqual(['dm', 'p8', 'room', 'p3', 'old'])
-    expect(order(placeProjectLines(rows, activityOf, [{ projectChatId: 'p5', activeAt: at(5) }]))).toEqual(['dm', 'room', 'p5', 'old'])
-    expect(order(placeProjectLines(rows, activityOf, [{ projectChatId: 'p0', activeAt: at(0) }]))).toEqual(['dm', 'room', 'old', 'p0'])
-    expect(order(placeProjectLines([], activityOf, [{ projectChatId: 'p0', activeAt: at(0) }]))).toEqual(['p0'])
-  })
-
-  // A list the previous client cached has no time for its projects: none is made up, they wait after every row.
-  it('a project whose time is not known yet goes after every row and every timed project, in the account list\'s order', () => {
-    const lines = [{ projectChatId: 'unknown-b', activeAt: null }, { projectChatId: 'p8', activeAt: at(8) }, { projectChatId: 'unknown-a', activeAt: null }, { projectChatId: 'p0', activeAt: at(0) }]
-    expect(order(placeProjectLines(rows, activityOf, lines))).toEqual(['dm', 'p8', 'room', 'old', 'p0', 'unknown-b', 'unknown-a'])
-  })
-
-  // The bug (owner's recording, 11-13): a new project's row was drawn after every conversation, then jumped to the top
-  // when its group reached the chat list. Its group's row sorts by the same time, so it takes the same place.
-  it('a new project stands where its group\'s conversation row lands when the chat list gets it', () => {
-    const created = { id: 'chat-new', at: 10 }
-    const before = order(placeProjectLines(rows, activityOf, [{ projectChatId: 'chat-new', activeAt: at(created.at) }]))
-    const after = order([created, ...rows].sort((a, b) => activityOf(b) - activityOf(a)))
-    expect(before).toEqual(['chat-new', 'dm', 'room', 'old'])
-    expect(after).toEqual(before)
   })
 })
 
@@ -331,10 +224,10 @@ describe('#2569 the chat list tells the task page which groups it has', () => {
   const chats = [chat({ id: 'room', kind: 'group' }), chat({ id: 'project', kind: 'group' }), chat({ id: 'topic', kind: 'topic', source_chat_id: 'room' }), chat({ id: 'dm' })]
 
   it('names every group once the list has loaded', () => {
-    expect([...(sidebarChatSignals(chats, new Set(['project'])).listedGroups ?? [])].sort()).toEqual(['project', 'room'])
+    expect([...(sidebarChatSignals(chats).listedGroups ?? [])].sort()).toEqual(['project', 'room'])
   })
 
   it('names none (null) while it is loading', () => {
-    expect(sidebarChatSignals(chats, new Set(['project']), null, false).listedGroups).toBeNull()
+    expect(sidebarChatSignals(chats, false).listedGroups).toBeNull()
   })
 })

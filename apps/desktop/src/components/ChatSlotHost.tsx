@@ -5,7 +5,6 @@ import { CHAT_SLOT_PREFIX, InChatSlot, chatPartSlotKey, installShellSlots, readS
 import { ChatAreaPanel } from './ChatAreaPanel'
 import { TaskChatScope } from './assistant/TaskChatScope'
 import type { AssistantChatHandlers } from './assistant/AssistantChatSlot'
-import { useProjectGroupChats } from '../lib/projectGroupChatsBridge'
 import { useChatStore, useStoreValueBy } from '../store/chatContext'
 import { useTheme } from '../store/theme'
 import { SessionUiTheme } from './sessionpage/SessionUiTheme'
@@ -25,11 +24,6 @@ const EMPTY: ReadonlyMap<string, HTMLElement> = new Map()
 export const ChatSlotHost = memo(function ChatSlotHost(handlers: AssistantChatHandlers) {
   const entryReady = useOwnedAgentEntries()
   const { identitiesById, chatsRead, chatsLoadFailed } = useChatStore('identitiesById', 'chatsRead', 'chatsLoadFailed')
-  // 会话页据此决定项目块正中摆文件夹卡(群里还没有消息)还是消息流,会话里「来自 X」写群名。列表读成之前那份空列表是
-  // 「还不知道」:不发,❌ 发一份空的让每个项目块先画首页。
-  // 名字与对话列表那一行同一个函数(chatDisplayName):私聊没有自己的名字,写对方(备注优先)——列表、⌘K 面板、
-  // 「来自 X」三处叫法一样。
-  const projectGroupChats = useProjectGroupChats()
   const { theme } = useTheme()
   const sidebarView = useSidebarChatView()
   const slots = readShellSlots()
@@ -61,7 +55,7 @@ export const ChatSlotHost = memo(function ChatSlotHost(handlers: AssistantChatHa
           // A block is session-page content the shell draws, in this React tree: its popups portal out of the mount, so they need
           // the session page's theme layer (the +, a file's ⋯, an App's menus).
           <SessionUiTheme theme={theme}>
-            <InChatSlot.Provider value={{ projectName: projectGroupChats.has(chatId) ? chats.find((chat) => chat.id === chatId)?.name ?? null : null }}>
+            <InChatSlot.Provider value={{ groupName: chat.kind === 'group' ? chat.name ?? '' : null }}>
               <TaskChatScope chatId={chatId}>
                 <ChatAreaPanel
                   viewportKey={key}

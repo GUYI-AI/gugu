@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { sidebarOf } from '@renderer/features/sidebar/mirror-account-projects.testing';
+import { SidebarStore } from '@renderer/features/sidebar/sidebar-store';
 
 vi.mock('@renderer/lib/modal/modal-store', () => ({
   modalStore: { closeModal: vi.fn() },
@@ -18,7 +18,7 @@ const { appState } = await import('./app-state');
 function buildStore() {
   const store = new NavigationStore();
   store.registerView('home');
-  store.registerView('project');
+  store.registerView('chat');
   store.registerView('apps', { transientParams: ['installedSection', 'installedDeviceId'] });
   return store;
 }
@@ -31,18 +31,18 @@ describe('NavigationStore.restoreSnapshot', () => {
   it('restores a snapshot whose view is registered', () => {
     const store = buildStore();
     store.restoreSnapshot({
-      currentViewId: 'project',
-      viewParams: { project: { projectId: 'p1' } },
+      currentViewId: 'chat',
+      viewParams: { chat: { chatId: 'p1' } },
     });
-    expect(store.currentViewId).toBe('project');
-    expect(store.viewParamsStore.project).toEqual({ projectId: 'p1' });
+    expect(store.currentViewId).toBe('chat');
+    expect(store.viewParamsStore.chat).toEqual({ chatId: 'p1' });
   });
 
   it('falls back to home when the persisted view is not in the registry', () => {
     const store = buildStore();
     store.restoreSnapshot({
       currentViewId: 'phantom-view-from-old-build',
-      viewParams: { project: { projectId: 'p1' } },
+      viewParams: { chat: { chatId: 'p1' } },
     });
     expect(store.currentViewId).toBe('home');
   });
@@ -52,11 +52,11 @@ describe('NavigationStore.restoreSnapshot', () => {
     store.restoreSnapshot({
       currentViewId: 'home',
       viewParams: {
-        project: { projectId: 'p1' },
+        chat: { chatId: 'p1' },
         ghostView: { stale: true },
       },
     });
-    expect(store.viewParamsStore.project).toEqual({ projectId: 'p1' });
+    expect(store.viewParamsStore.chat).toEqual({ chatId: 'p1' });
     expect((store.viewParamsStore as Record<string, unknown>).ghostView).toBeUndefined();
   });
 
@@ -70,10 +70,10 @@ describe('NavigationStore.restoreSnapshot', () => {
 
   it('honors a guard redirect after a valid view is restored', () => {
     const store = buildStore();
-    store.registerGuard('project', () => ({ ok: false, redirect: 'home' }));
+    store.registerGuard('chat', () => ({ ok: false, redirect: 'home' }));
     store.restoreSnapshot({
-      currentViewId: 'project',
-      viewParams: { project: { projectId: 'gone' } },
+      currentViewId: 'chat',
+      viewParams: { chat: { chatId: 'gone' } },
     });
     expect(store.currentViewId).toBe('home');
   });
@@ -115,19 +115,19 @@ describe('NavigationStore transient view params', () => {
       currentViewId: 'apps',
       viewParams: {
         apps: { marketPage: 'connectors', installedSection: 'connectors' },
-        project: { projectId: 'p1' },
+        chat: { chatId: 'p1' },
       },
     });
     expect(store.viewParamsStore.apps).toEqual({ marketPage: 'connectors' });
     // 阴控:没声明为转瞬的参数一个都不许被顺手丢掉。
-    expect(store.viewParamsStore.project).toEqual({ projectId: 'p1' });
+    expect(store.viewParamsStore.chat).toEqual({ chatId: 'p1' });
   });
 
   it('leaves views that declared no transient params untouched', () => {
     const store = buildStore();
-    store.navigate('project', { projectId: 'p1' });
+    store.navigate('chat', { chatId: 'p1' });
     store.navigate('home');
-    expect(store.viewParamsStore.project).toEqual({ projectId: 'p1' });
+    expect(store.viewParamsStore.chat).toEqual({ chatId: 'p1' });
   });
 });
 
@@ -161,19 +161,18 @@ describe('NavigationStore transient params vs. history', () => {
 });
 
 describe('NavigationStore preserves manual sidebar disclosure', () => {
-  it('keeps collapsed and expanded choices through session/project navigation and restoration', () => {
+  it('keeps collapsed and expanded choices through session/chat navigation and restoration', () => {
     const original = appState.sidebar;
-    const sidebar = sidebarOf({ projects: new Map() } as never);
+    const sidebar = new SidebarStore({ projects: new Map() } as never);
     Object.assign(appState, { sidebar });
     try {
-      sidebar.ensureProjectExpanded('open-project');
       sidebar.toggleSessionExpanded('open-parent');
       const before = structuredClone(sidebar.snapshot);
       const store = buildStore();
       store.registerView('session');
       for (const projectId of ['folded-project', 'open-project']) {
         store.navigate('session', { projectId, sessionId: 'parent' });
-        store.navigate('project', { projectId });
+        store.navigate('chat', { chatId: projectId });
         store.navigate('home');
         store.restoreSnapshot({ currentViewId: 'session', viewParams: { session: { projectId, sessionId: 'child' } } });
         expect(sidebar.snapshot).toEqual(before);

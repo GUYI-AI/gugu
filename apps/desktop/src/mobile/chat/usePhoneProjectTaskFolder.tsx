@@ -1,70 +1,59 @@
 import { useMemo, useState, useSyncExternalStore, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDevicesStore } from '@/store/devicesContext'
-import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+import { groupFoldersStore, type GroupFolder } from '@/session/renderer/features/folders/group-folders-store'
+import type { GroupFoldersState } from '@/session/renderer/features/folders/group-folders'
 import { ProjectFolderCard } from '@renderer/features/projects/components/main-panel/project-folder-card'
-import type { ProjectFoldersState } from '@renderer/features/projects/components/main-panel/project-folders'
-import type { CreateMachine } from '../../components/session-watch/create-target'
-import { useMachineLabel } from '../../components/session-watch/useMachineLabel'
+import type { CreateMachine } from '@/components/session-watch/create-target'
+import { useMachineLabel } from '@/components/session-watch/useMachineLabel'
 import { PhoneComposerSheet } from '../composer/PhoneComposerControls'
 import { projectRpcOn } from '../partners/projectRpc'
 import { taskFoldersOfChat } from './phoneTaskFolders'
 import { usePhoneFolderAttach } from './usePhoneFolderAttach'
 
-/** The project group's selected folder determines the existing creation form's execution target. */
+/** A group's chosen folder decides where the creation form creates the task (the machine and its folder there). */
 export function usePhoneProjectTaskFolder(chatId: string | undefined) {
   const { t } = useTranslation('mobileCreateControls')
   const { devices, refresh } = useDevicesStore()
-  const { label: machineLabel, isHome } = useMachineLabel()
-  const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
-  const accountProject = useMemo(
-    () => (chatId ? taskFoldersOfChat(accountList.find((one) => one.chatId === chatId), devices, { label: machineLabel, isHome }) : null),
-    [chatId, accountList, devices, machineLabel, isHome],
-  )
-  const attach = usePhoneFolderAttach(accountProject, devices, refresh)
-  const project = useMemo(() => accountProject ? {
-    ...accountProject,
-    memberIds: [...new Set([...accountProject.memberIds, ...attach.added.map((item) => item.folder.projectId)])],
-    folders: [...new Map([...accountProject.folders, ...attach.added.map((item) => item.folder)].map((folder) => [folder.workspaceId, folder])).values()],
-    homeOf: (id: string) => attach.added.find((item) => item.folder.projectId === id)?.home ?? accountProject.homeOf(id),
-  } : null, [accountProject, attach.added])
+  const { label: machineLabel } = useMachineLabel()
+  const groups = useSyncExternalStore(groupFoldersStore.subscribe, () => groupFoldersStore.groups)
+  const group = chatId ? groups.find((one) => one.chatId === chatId) : undefined
+  const listed = useMemo(() => taskFoldersOfChat(group, devices, machineLabel), [group, devices, machineLabel])
+  const attach = usePhoneFolderAttach(listed, devices, refresh)
+  const project = useMemo(() => listed ? {
+    ...listed,
+    folders: [...new Map([...listed.folders, ...attach.added.map((item) => item.folder)].map((folder) => [folder.id, folder])).values()],
+    homeOf: (folder: Pick<GroupFolder, 'deviceId' | 'id'>) => attach.added.find((item) => item.folder.id === folder.id)?.home ?? listed.homeOf(folder),
+  } : null, [listed, attach.added])
   const [chosenId, setChosenId] = useState<string | null>(null)
   const [anchor, setAnchor] = useState<RefObject<HTMLButtonElement | null> | null>(null)
-  const chosen = project?.folders.find(folder => folder.workspaceId === chosenId) ?? null
-  const home = chosen ? project?.homeOf(chosen.projectId) : undefined
+  const chosen = project?.folders.find(folder => folder.id === chosenId) ?? null
+  const home = chosen ? project?.homeOf(chosen) : undefined
   const device = devices.find(row => row.device_id === home?.deviceId)
   const machine: CreateMachine | undefined = device && home && chosen
-    ? { device, localProjectId: home.localProjectId, path: chosen.path, available: home.machine.online }
+    ? { device, folderId: home.folderId, path: chosen.path, available: home.machine.online }
     : undefined
 
-  const folderState: ProjectFoldersState | null = project ? {
+  const folderState: GroupFoldersState | null = project ? {
     folders: project.folders,
     loadError: false,
-    unanswered: [],
+    stale: groupFoldersStore.status === 'error',
     chosen,
     fresh: attach.fresh,
-    choose: (workspaceId) => {
-      const folder = project.folders.find((candidate) => candidate.workspaceId === workspaceId)
-      if (folder) { setChosenId(folder.workspaceId); setAnchor(null) }
+    choose: (folderId) => {
+      const folder = project.folders.find((candidate) => candidate.id === folderId)
+      if (folder) { setChosenId(folder.id); setAnchor(null) }
     },
-    reload: () => undefined,
-    // 挂文件夹由同一张卡的机器菜单进入 RemoteFolderPicker。
-    attach: async (id, path) => {
-      const device = devices.find((row) => row.device_id === project.homeOf(id)?.deviceId)
-      if (!device) return { ok: false, error: { type: 'rpc-failed', message: 'project machine not found' } }
-      const result = await projectRpcOn(device).projects.attachProjectFolder(id, path)
-      if (!result.success) return { ok: false, error: result.error }
-      await refresh()
-      return { ok: true, folder: result.data }
-    },
+    reload: () => { void groupFoldersStore.refresh() },
+    bound: () => undefined,
     detach: async (folder) => {
-      const device = devices.find((row) => row.device_id === project.homeOf(folder.projectId)?.deviceId)
-      if (!device) throw new Error('project machine not found')
-      const result = await projectRpcOn(device).projects.detachProjectFolder(folder.projectId, folder.workspaceId)
-      if (!result.success) throw new Error(result.error.message)
-      attach.remove(folder.workspaceId)
+      const device = devices.find((row) => row.device_id === folder.deviceId)
+      if (!device) throw new Error('folder machine not found')
+      const result = await projectRpcOn(device).folders.unbindFolder(folder.id)
+      if (!result.success) throw new Error(result.error.type)
+      attach.remove(folder.id)
       await refresh()
-      return true
+      void groupFoldersStore.refresh()
     },
   } : null
 
@@ -73,12 +62,11 @@ export function usePhoneProjectTaskFolder(chatId: string | undefined) {
     <PhoneComposerSheet open anchor={anchor ?? undefined} title={t('project')} testId="phone-task-folder-card"
       onClose={() => setAnchor(null)}>
       <ProjectFolderCard
-        projectId={project.rowId}
-        projectName={project.name}
+        chatId={project.chatId}
+        groupName={project.name}
         folders={folderState}
-        memberIds={project.memberIds}
-        machines={[...new Set(project.memberIds.map((id) => project.homeOf(id)?.deviceId ?? null))]}
-        machineOf={(deviceId) => project.memberIds.map((id) => project.homeOf(id)).find((home) => home?.deviceId === deviceId)?.machine ?? { label: '', online: false, kind: 'computer' }}
+        machines={[...new Set(project.folders.map((folder) => folder.deviceId))]}
+        machineOf={(deviceId) => project.folders.map((folder) => project.homeOf(folder)).find((home) => home?.deviceId === deviceId)?.machine ?? { label: '', online: false, kind: 'computer' }}
         attachMachines={attach.attachMachines}
         onAttach={attach.onAttach}
         onDropFolder={() => undefined}

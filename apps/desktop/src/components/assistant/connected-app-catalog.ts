@@ -8,7 +8,7 @@ import type { ApplicationConnectionState } from './assistant-app-connections'
 export const APP_CATEGORIES = {
   work: { en: 'Work & collaboration', 'zh-CN': '办公协作' },
   docs: { en: 'Docs & files', 'zh-CN': '文档与文件' },
-  tasks: { en: 'Tasks & projects', 'zh-CN': '任务与项目' },
+  tasks: { en: 'Tasks & groups', 'zh-CN': '任务与群' },
   dev: { en: 'Developer tools', 'zh-CN': '开发工具' },
   mail: { en: 'Mail & messaging', 'zh-CN': '邮件与消息' },
   support: { en: 'Customer support & feedback', 'zh-CN': '客户与反馈' },

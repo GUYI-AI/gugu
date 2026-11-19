@@ -15,14 +15,13 @@ const reasonOf = (error: unknown) => String((error as Error)?.message ?? error)
 
 // 群里「添加成员」= 与新建群聊同一个选择器;已在群里的勾着、不能取消。人与 Agent 走同一个 inviteGroupMember:
 // 关系内的直接加入,其余发邀请,需审批的群里 Agent 落一条待审请求。成功的从候选里变成「已在群里」,失败的留在已选里重试。
-export function AddGroupMembers({ chatId, snapshot, settings, canInviteHumans, humanDeniedHint, initialSelectedIds, onClose, onReload }: {
+export function AddGroupMembers({ chatId, snapshot, settings, canInviteHumans, initialSelectedIds, onClose, onReload }: {
   chatId: string
   snapshot: GroupCollabSnapshot
   /** 有了才画群的邀请链接 / 二维码(groupInviteLinkFor 判定)。 */
   settings: GroupChatSettings | null
   canInviteHumans: boolean
   /** 不能邀请人类时那一页说的话;不给 = 权限不够那一句(项目群有自己的原因)。 */
-  humanDeniedHint?: string
   initialSelectedIds?: readonly string[]
   onClose: () => void
   onReload: () => Promise<void>
@@ -33,7 +32,7 @@ export function AddGroupMembers({ chatId, snapshot, settings, canInviteHumans, h
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const inviteLink = useMemo(() => groupInviteLinkFor(chatId, settings), [chatId, settings])
+  const inviteLink = useMemo(() => groupInviteLinkFor(settings), [settings])
   const reloadRequests = () => myAgentJoinRequests.refresh(chatId)
 
   const add = async (ids: string[]): Promise<string[] | void> => {
@@ -84,7 +83,7 @@ export function AddGroupMembers({ chatId, snapshot, settings, canInviteHumans, h
         busyLabel={t('group.picker.adding')}
         lockedIds={members}
         initialSelectedIds={initialSelectedIds}
-        peopleDenied={canInviteHumans ? undefined : humanDeniedHint ?? t('group.picker.humanPermissionHint')}
+        peopleDenied={canInviteHumans ? undefined : t('group.picker.humanPermissionHint')}
         agentNote={agentNote}
         actions={inviteLink ? <GroupInviteActions inviteLink={inviteLink} groupName={settings?.name} snapshot={snapshot} /> : undefined}
         empty={inviteLink ? <GroupInviteCode inviteLink={inviteLink} groupName={settings?.name} snapshot={snapshot} /> : undefined}

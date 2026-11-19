@@ -1,17 +1,15 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect } from 'react'
 import { observer } from 'mobx-react-lite'
 import { deviceMachines } from '@gugu/core/shared/deviceMachines'
 import { assistantApplicationCounts } from '@/components/assistant/assistant-app-connections'
 import { phoneAssistantLayer } from '@/components/appSlot/phoneAssistantLayer'
 import { useChatChannels } from '@/components/settings/channels/useChatChannels'
 import { withoutAssistantHome } from '@/lib/assistantHome'
-import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+import { groupFoldersStore } from '@/session/renderer/features/folders/group-folders-store'
 import { appAssistantCountsOf } from '@/session/shared/extensions/assistant-binding'
 import { useDevicesStore } from '@/store/devicesContext'
 import type { PhoneMachineState } from './phoneMachine'
-import { phoneProjectRows } from './phoneProjectRows'
 import { usePhoneIntegrations } from './usePhoneProfileData'
-import { useMachineLabel } from '../../components/session-watch/useMachineLabel'
 
 const LOADING = { state: 'loading' } as const
 const UNREADABLE = { state: 'unreadable' } as const
@@ -31,10 +29,9 @@ export const PhoneAssistantCountsSource = observer(function PhoneAssistantCounts
   const devices = useDevicesStore()
   const integrations = usePhoneIntegrations(machine, true)
   const chats = useChatChannels()
-  // 项目数与「助理 → 工作区」同一份:accountProjectsStore + phoneProjectRows(❌ 这里自己再读、再轮询)。
-  const { isHome } = useMachineLabel()
-  const { status, projects: accountList } = accountProjectsStore
-  const projectCount = useMemo(() => (status === 'ready' ? phoneProjectRows(accountList, devices.devices, isHome).length : null), [status, accountList, devices.devices, isHome])
+  // 与「助理 → 工作区」同一份:挂了文件夹的群(groupFoldersStore,❌ 这里自己再读、再轮询)。
+  const { status } = groupFoldersStore
+  const projectCount = status === 'ready' ? groupFoldersStore.groups.length : null
   const counts = appAssistantCountsOf({
     devices: devices.error ? UNREADABLE : devices.loading ? LOADING
       : ready(deviceMachines(withoutAssistantHome([...devices.devices, ...(devices.phones ?? [])], cloudDeviceId)).length),

@@ -20,7 +20,6 @@ import type {
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { contactsService } from '../../lib/contacts'
 import { groupInviteLinkFor } from '../../lib/groupInviteShareUrl'
-import { isProjectGroupChat } from '../../lib/groupMemberPermissions'
 import { useGroupInviteJoin } from '../../lib/groupInviteJoin'
 import { GroupInviteCard } from '../groups/GroupInviteCard'
 import { Button } from '../ui/Button'
@@ -32,16 +31,8 @@ import { groupSettings } from '../chat/useGroupChatSettings'
 import { groupRoster } from '../../hooks/useRoomCollab'
 import { useReplica } from '../../lib/replica'
 
-/** 群聊详情里扫码加入的码。项目群不拉人(gugu-dev#181):不出码,说一句原因。 */
+/** 群聊详情里扫码加入的码。 */
 export function GroupInviteQrShare({ group }: { group: ContactGroupChat }) {
-  const { t } = useTranslation('messaging')
-  if (isProjectGroupChat(group.id)) {
-    return <div data-testid="project-group-no-invite" className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">{t('group.projectGroupNoInvite')}</div>
-  }
-  return <GroupInviteQr group={group} />
-}
-
-function GroupInviteQr({ group }: { group: ContactGroupChat }) {
   const { t } = useTranslation('contacts')
   // Only groups with a 群号 can be shared (channels and number-less groups never are).
   const hasGroupNumber = group.kind === 'group' && typeof group.public_id === 'number' && Number.isInteger(group.public_id) && group.public_id > 0
@@ -50,7 +41,7 @@ function GroupInviteQr({ group }: { group: ContactGroupChat }) {
   const settings = useReplica(groupSettings, hasGroupNumber ? [group.id] : null)
   const roster = useReplica(groupRoster, hasGroupNumber ? [group.id, 'group'] : null)
   const failure = settings.state === 'error' ? settings.error : roster.state === 'error' ? roster.error : null
-  const link = settings.state === 'value' ? groupInviteLinkFor(group.id, settings.value) : undefined
+  const link = settings.state === 'value' ? groupInviteLinkFor(settings.value) : undefined
 
   // Sharing switched off: nothing to show. A failed read says why instead of hiding the section.
   if (!hasGroupNumber || link === null) return null

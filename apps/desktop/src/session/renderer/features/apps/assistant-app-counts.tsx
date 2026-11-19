@@ -1,11 +1,12 @@
 // #1925 (API 44) 内置「助理」面板资料页那几行的数(设备、连接应用、项目)和开通「连应用」那一步的列表,按同一份读法读出来
 // 交给主进程,给读得到助理的 App 当 `status.counts` / `status.connectors`(assistant-binding.ts)。
 // 每一个数与内置那一行同源、同一个读缓存键:设备 = 壳的 deviceCount;连接应用 = 它家那台的集成 + 聊天渠道
-// (assistantApplicationCounts);项目 = 左栏的项目(appState.sidebar.orderedProjects)。
+// (assistantApplicationCounts);项目 = 挂了文件夹的群(groupFoldersStore.groups)。
 // 每个数是一个读的状态:读到了(ready + 数)/ 还在读(loading)/ 读不到(unreadable,内置那一行说「暂时读不到资源」的时候)。❌ 拿 0 顶。
 // 列表 = 它家那台的集成(与连接应用那一行同一份读),按 connectorOrder 排:名字、图标(宿主自带那一套画成 data: 图)、连没连。
 // ❌ 账号名、❌ 连接里的任何东西。点一家 = `gugu.assistant.connect`,走内置那一步同一个 useOpenConnector(它家那台的连接框)。
 // 挂在 App 面板那一格里(app-host-layer.tsx),只为读助理的 App 挂。
+import { groupFoldersStore } from '@renderer/features/folders/group-folders-store';
 import { observer } from 'mobx-react-lite';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -109,8 +110,8 @@ export const AssistantAppCountsSource = observer(function AssistantAppCountsSour
     connectedApps: machineFailed || appsFailed || chat.status === 'failed' ? UNREADABLE
       : apps.state === 'ok' && (chat.status === 'ready' || chat.status === 'absent')
         ? ready(assistantApplicationCounts(apps.data.items, apps.data.configured, apps.data.statuses, chat.list)) : LOADING,
-    // The desktop's sidebar holds them; a window without the agent runtime has no such list to count.
-    projects: platform.capabilities.agentRuntime ? ready(appState.sidebar.orderedProjects.length) : UNREADABLE,
+    // The groups with folders on my machines (the same list as the assistant's workspace page).
+    projects: groupFoldersStore.status === 'error' ? UNREADABLE : groupFoldersStore.status === 'ready' ? ready(groupFoldersStore.groups.length) : LOADING,
   });
   const connectors = appAssistantConnectorsOf(machineFailed || appsFailed ? UNREADABLE
     : apps.state === 'ok' ? ready(connectorsOf(apps.data.items, apps.data.configured, i18n.language)) : LOADING);

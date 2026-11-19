@@ -9,10 +9,8 @@ import { sessionpageMessageHost } from '@renderer/lib/sessionpage-message-host';
 import { log } from '@renderer/utils/logger';
 import { ComposerBirthGroupChip, ComposerProjectPicker } from './composer-context-tray';
 import { ComposerFolderPicker } from '@renderer/features/projects/components/main-panel/composer-folder-picker';
-import { useProjectFolderStage } from '@renderer/features/projects/components/main-panel/project-folder-stage';
-import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
-import { rememberedTaskRow, taskProjectChoice } from './task-project-memory';
-import { machineRegistry } from '@renderer/lib/machine-routing';
+import { useGroupFolderStage } from '@renderer/features/folders/group-folder-stage';
+import { groupFoldersStore } from '@renderer/features/folders/group-folders-store';
 import { composerDrafts } from './composer-drafts';
 import { ComposerTray } from './composer-tray';
 import { ensureImplicitSessionHomeProjectId } from './implicit-session-home-project';
@@ -29,10 +27,10 @@ export function taskDispatchDraftKey(chatId: string): string {
  * gugu-dev#181「派任务」:对话块的输入框选了「新任务」(composerVerbBridge)时,换上来的就是这个框 —— 与新建会话页
  * 同一个托盘 + NewSessionComposer,❌ 另一条建会话的路。发出去的那句话由宿主落成这个对话里的一张任务卡
  * (taskChatId),结果回这里;建完人留在原处、框还原成发消息。
- * 托盘是 项目 · 机器 · (文件夹)· 群名。选了项目:机器和文件夹与项目块同一套(useProjectFolderStage);没选 = 选哪台机器的任务工作区。
- * 项目按这个对话记(没选过 = 最近一次选的);群和它的话题里派的(`inGroup`)例外:项目一格每次都空着,只认这一次明确选的 ——
- * 选了项目它就住那个项目,没选就住这个群(#2599),沿用上回的选择会让它悄悄住进一个这次没选的项目。`joinChat` = 这个 agent 进群
- * (群里派的;私聊里 agent 进不去,卡留在私聊、结果回它自己的会话)。项目块里的新任务是项目首页那个框(ProjectTaskComposer)。
+ * 托盘是 群 · 机器 · (文件夹)· 群名。选了群:机器和文件夹与群页同一套(useGroupFolderStage),任务就住那个群;没选 = 选哪台
+ * 机器的任务工作区。选的群按这个对话记(没选过 = 最近一次选的);话题里派的(`inGroup`)例外:群一格每次都空着,只认这一次
+ * 明确选的 —— 沿用上回的选择会让它悄悄住进一个这次没选的群。`joinChat` = 这个 agent 进群(群里派的;私聊里 agent 进不去,
+ * 卡留在私聊、结果回它自己的会话)。群主线里的新任务是群首页那个框(GroupTaskComposer)。
  */
 export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   chatId,
@@ -65,17 +63,17 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   });
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const localDeviceId = useLocalDeviceId();
-  const remembered = useChatProjectMemory(chatId, inGroup ? null : localDeviceId);
+  const remembered = useChatGroupMemory(chatId, inGroup ? null : localDeviceId);
   useEffect(() => {
     if (remembered && selectedId === undefined) setSelectedId(remembered);
   }, [remembered, selectedId]);
   const implicitProjectId = useImplicitProjectId(!selectedId);
 
-  const pickProject = (projectId: string | undefined) => {
-    setSelectedId(projectId);
+  const pickProject = (groupChatId: string | undefined) => {
+    setSelectedId(groupChatId);
     if (localDeviceId && !inGroup) {
-      const choice = taskProjectChoice(projectId, localDeviceId, (id) => machineRegistry.machineOf(id));
-      void sessionpageMessageHost().rememberTaskProject(chatId, choice.deviceId, choice.projectId).catch((error: unknown) => {
+      // @@@group-folders the chat remembers the group picked (the stored field still reads `projectId`; it holds the group's chat id).
+      void sessionpageMessageHost().rememberTaskProject(chatId, localDeviceId, groupChatId ?? null).catch((error: unknown) => {
         log.warn('remember the project picked for a chat failed', { chatId, error: error instanceof Error ? error.message : String(error) });
       });
     }
@@ -90,7 +88,8 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
       verb: composerVerbLook('task', { label: translate('taskDispatch.agent'), onCancel: () => cancelComposerVerb(verbKey, draftKey), testId: 'task-dispatch' }),
       taskChatId: chatId,
       openAfterCreate: false,
-      birthChatId: joinChat ? chatId : undefined,
+      // A task dispatched in a group lives in it (its agent joins); a group picked in the tray overrides it (GroupDispatch).
+      groupChatId: joinChat ? chatId : undefined,
       onSessionCreated: (result: { projectId: string; sessionId: string }) => {
         setComposerVerb(verbKey, null);
         onSessionCreated?.(result);
@@ -100,7 +99,7 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   return (
     <div data-testid="task-dispatch-composer" data-chat-id={chatId}>
       {selectedId ? (
-        <ProjectDispatch key={selectedId} projectId={selectedId} projectPicker={projectPicker} {...tray} />
+        <GroupDispatch key={selectedId} groupChatId={selectedId} projectPicker={projectPicker} {...tray} />
       ) : (
         <MachineDispatch projectPicker={projectPicker} implicitProjectId={implicitProjectId} {...tray} />
       )}
@@ -116,10 +115,10 @@ type DispatchTray = {
   composer: Omit<Parameters<typeof NewSessionComposer>[0], 'draftKey' | 'projectId'>;
 };
 
-/** 选了项目:在哪台跑、用哪个文件夹,与项目块的新任务框同一套(项目的文件夹在哪些机器上,没有的机器点了先挂文件夹)。 */
-const ProjectDispatch = observer(function ProjectDispatch({ projectId, draftKey, projectPicker, birthChip, composer }: DispatchTray & { projectId: string }) {
-  const stage = useProjectFolderStage(projectId);
-  const { scopedFolders, targetProjectId, executionDevice, machineContext, machineOf, pickAndAttach } = stage;
+/** 选了群:在哪台跑、用哪个文件夹,与群页的新任务框同一套(群的文件夹在哪些机器上,没有的机器点了先挂文件夹)。 */
+const GroupDispatch = observer(function GroupDispatch({ groupChatId, draftKey, projectPicker, birthChip, composer }: DispatchTray & { groupChatId: string }) {
+  const stage = useGroupFolderStage(groupChatId);
+  const { scopedFolders, targetFolderId, executionDevice, machineContext, machineOf, pickAndAttach } = stage;
   return (
     <ComposerTray
       projectPicker={projectPicker}
@@ -137,21 +136,22 @@ const ProjectDispatch = observer(function ProjectDispatch({ projectId, draftKey,
       host={machineContext?.host ?? machineLibraryHost(null)}
     >
       <NewSessionComposer
-        key={targetProjectId}
+        key={targetFolderId ?? 'none'}
         draftKey={draftKey}
         {...composer}
+        groupChatId={groupChatId}
         onSessionCreated={(result) => {
           stage.runMachine.created();
           composer.onSessionCreated?.(result);
         }}
-        workspaceId={scopedFolders.chosen?.workspaceId ?? null}
-        {...machineComposerProps(machineContext, { projectId: targetProjectId, isContextPending: scopedFolders.folders === null })}
+        workspaceId={targetFolderId}
+        {...machineComposerProps(machineContext, { projectId: targetFolderId ?? undefined, isContextPending: scopedFolders.folders === null })}
       />
     </ComposerTray>
   );
 });
 
-/** 没选项目:选哪台机器,就在那台的任务工作区里跑。 */
+/** 没选群:选哪台机器,就在那台的任务工作区里跑。 */
 const MachineDispatch = observer(function MachineDispatch({ draftKey, projectPicker, birthChip, composer, implicitProjectId }: DispatchTray & { implicitProjectId: string | undefined }) {
   const { remote, machineContext, devicePicker } = useNewSessionMachine();
   return (
@@ -197,23 +197,24 @@ function useLocalDeviceId(): string | null {
   return id;
 }
 
-/** 这个对话记着的项目(哪台机器上的都算,认回账号上的项目);没记过 = 这台电脑上最近一次选的。 */
-function useChatProjectMemory(chatId: string, deviceId: string | null): string | undefined {
-  const [remembered, setRemembered] = useState<{ chatId: string; choice: { deviceId: string; projectId: string } } | null>(null);
+/** The group this chat remembers (a group with folders now; archived / unbound = none); none remembered = the last one picked here. */
+function useChatGroupMemory(chatId: string, deviceId: string | null): string | undefined {
+  const [remembered, setRemembered] = useState<{ chatId: string; groupChatId: string } | null>(null);
   useEffect(() => {
     if (!deviceId) return;
     let live = true;
     void sessionpageMessageHost().rememberedTaskProject(chatId, deviceId).then(
-      (choice) => { if (live && choice) setRemembered({ chatId, choice }); },
-      (error: unknown) => log.warn('read the project remembered for a chat failed', { chatId, error: error instanceof Error ? error.message : String(error) }),
+      (choice) => { if (live && choice) setRemembered({ chatId, groupChatId: choice.projectId }); },
+      (error: unknown) => log.warn('read the group remembered for a chat failed', { chatId, error: error instanceof Error ? error.message : String(error) }),
     );
     return () => { live = false; };
   }, [chatId, deviceId]);
-  // 在 observer 的渲染里认:账号上的项目列表读到 / 变了,跟着重认(❌ 只在读回记忆那一刻认一次)。
-  return remembered?.chatId === chatId ? rememberedTaskRow(remembered.choice, accountProjectsStore) : undefined;
+  // Read in the observer's render: when the group folders change, read again (❌ only once when the memory came back).
+  const groupChatId = remembered?.chatId === chatId ? remembered.groupChatId : undefined;
+  return groupChatId && groupFoldersStore.foldersOf(groupChatId).length > 0 ? groupChatId : undefined;
 }
 
-/** 没选项目:与新建会话页同一个隐式工作目录(「未选择项目」是真状态,不是列表第一个)。 */
+/** 没选群:与新建会话页同一个隐式工作目录(「未选择项目」是真状态,不是列表第一个)。 */
 function useImplicitProjectId(wanted: boolean): string | undefined {
   const [projectId, setProjectId] = useState<string | undefined>(undefined);
   useEffect(() => {

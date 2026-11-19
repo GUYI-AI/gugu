@@ -13,9 +13,8 @@ import {
 import { assistantDescendants, isAssistantSession } from '@/session/renderer/features/assistant/assistant-lineage'
 import { sidebarStateGroup } from '@/session/renderer/features/sidebar/session-groups'
 import { sessionPresentation } from '@/lib/agent-wait/watch-status'
-import { groupRowOrder } from '@/session/renderer/features/projects/stores/project-group-layout'
 import type { SessionDirectoryRow } from '@/session/shared/remote-sessions/session-directory'
-import type { AccountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+import type { GroupFoldersStore } from '@/session/renderer/features/folders/group-folders-store'
 
 export type SessionNode = SessionTreeNode<{
   id: string
@@ -28,9 +27,9 @@ export type SessionNode = SessionTreeNode<{
 /**
  * `pinned` = 顶部的「置顶」分区;`assistant` = 个人助理派出的那一组(组名是它,不按项目 / 机器分);
  * `project` 为 null 的另一格是「任务」:所有机器上不属于项目的会话(workspace 里的、项目没报上来的)平铺一张(#609)。
- * 其余是一个账号项目的分区:绑着同一个项目群的各台机器上的本地项目并成一格(项目是账号上的,机器只是任务跑在哪);
- * 还没绑群的本地项目各是一格。`project` = 这一格的代表(第一台机器上的那个);`projectIds` = 并进来的全部本地项目 id。
- * `deviceId` = 这一格只在一台机器上时是那台;跨机器的项目格、其余几格为 null。
+ * 其余是一个群的分区:挂在同一个群上的各台机器上的文件夹并成一格(机器只是任务跑在哪);
+ * 没挂群的文件夹各是一格。`project` = 这一格的代表(第一台机器上的那个);`projectIds` = 并进来的全部文件夹 id。
+ * `deviceId` = 这一格只在一台机器上时是那台;跨机器的群格、其余几格为 null。
  * `key` = 这一格在本机折叠记录里的键;`folded` = 收进「展开显示」的闲置家族数(置顶分区不折,恒为 0);
  * `count` = 整格的会话数(含收起的),分区折起来时页头标它。
  */
@@ -46,22 +45,27 @@ export type SessionSection = {
   count: number
 }
 
-/** 一台机器报上来的项目,带它属于的账号项目(accountProjectsStore.projectOfLocal 的项目群;不属于 = null / 缺席)。 */
+/** 一台机器报上来的文件夹,带它挂的群(没挂 = null / 缺席)。 */
 export type SectionProject = SessionpageProjectSummary & { chatId?: string | null }
 
 /**
- * 一台机器报上来的项目,认成账号上的项目(accountProjectsStore.projectOfLocal,桌面侧栏同一份):属于同一个项目的
- * 各台机器上的本地项目并成一格,格名 = 项目名。不属于账号上任何项目的照旧是它那台机器上的一格。
+ * 一台机器报上来的文件夹,认出它挂的群(groupFoldersStore,桌面群选择器同一份):挂在同一个群上的各台机器上的文件夹
+ * 并成一格,格名 = 群名。没挂群的照旧是它那台机器上的一格。
  */
 export function sectionProjects(
-  deviceId: string,
   projects: readonly SessionpageProjectSummary[],
-  accounts: Pick<AccountProjectsStore, 'projectOfLocal'>,
+  folders: Pick<GroupFoldersStore, 'chatOfFolder' | 'groups'>,
 ): SectionProject[] {
   return projects.map((project) => {
-    const account = accounts.projectOfLocal(project.id, deviceId)
-    return { ...project, name: account?.name || project.name, chatId: account?.chatId ?? null }
+    const chatId = folders.chatOfFolder(project.id)
+    const group = chatId ? folders.groups.find((one) => one.chatId === chatId) : undefined
+    return { ...project, name: group?.name || project.name, chatId }
   })
+}
+
+/** 同群的几个文件夹并成一格时,由谁代表:此刻连着的那台上的(❌ 指向一台离线的旧机器)→ id。 */
+function sectionOrder(a: { id: string; online: boolean }, b: { id: string; online: boolean }): number {
+  return Number(b.online) - Number(a.online) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 }
 
 /** 页上列出的一台机器与它报上来的项目(次序 = 它们在页上的次序)。 */
@@ -166,14 +170,14 @@ export function sessionSections(
   }
   type Cell = NonNullable<ReturnType<typeof cell>>
   const present = (list: (Cell | null)[]): Cell[] => list.filter((entry): entry is Cell => entry !== null)
-  // 一个项目一格:同一个格键的各台机器上的本地项目并进来,代表与桌面侧栏、手机项目页同一条 groupRowOrder(在线的在前,再按 id)。
+  // 一个群一格:同一个格键的各台机器上的文件夹并进来,代表是在线的在前,再按 id。
   const members = new Map<string, { project: SessionpageProjectSummary; deviceId: string; projectIds: string[]; deviceIds: Set<string> }>()
-  const order = (deviceId: string, id: string) => ({ id, machine: deviceId, online: fold.online(deviceId), createdAt: null })
+  const order = (deviceId: string, id: string) => ({ id, online: fold.online(deviceId) })
   for (const machine of machines) {
     for (const project of projectsOf(machine)) {
       const key = projectSectionKey(machine.deviceId, project.id, project.chatId)
       const member = members.get(key) ?? { project, deviceId: machine.deviceId, projectIds: [], deviceIds: new Set<string>() }
-      if (groupRowOrder(order(machine.deviceId, project.id), order(member.deviceId, member.project.id)) < 0) Object.assign(member, { project, deviceId: machine.deviceId })
+      if (sectionOrder(order(machine.deviceId, project.id), order(member.deviceId, member.project.id)) < 0) Object.assign(member, { project, deviceId: machine.deviceId })
       member.projectIds.push(project.id)
       member.deviceIds.add(machine.deviceId)
       members.set(key, member)

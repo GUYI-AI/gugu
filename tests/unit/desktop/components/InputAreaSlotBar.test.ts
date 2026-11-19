@@ -28,8 +28,8 @@ afterEach(() => {
   shell.mobile = false
 })
 
-async function render(inSlot: boolean, projectName: string | null = null) {
-  await harness.render(createElement(InChatSlot.Provider, { value: inSlot ? { projectName } : null }, createElement(ChatMessageComposer, { onSend: vi.fn(async () => {}) })))
+async function render(inSlot: boolean, groupName: string | null = null) {
+  await harness.render(createElement(InChatSlot.Provider, { value: inSlot ? { groupName } : null }, createElement(ChatMessageComposer, { onSend: vi.fn(async () => {}) })))
   const input = container.querySelector('[contenteditable]') as HTMLElement
   const bar = input.closest('[data-slot="composer-bar"]')!
   return { input, bar, composer: bar.closest('[data-slot="composer"]')!,
@@ -54,7 +54,7 @@ describe('ChatMessageComposer uses the shared composer bar', () => {
     expect((await render(true)).composer.className.includes(sessionComposerDockedWidthClassName)).toBe(true)
     expect((await render(false)).composer.className.includes(sessionComposerDockedWidthClassName)).toBe(false)
   })
-  it('names the project in a project group box', async () => {
+  it('names the group in a group box', async () => {
     expect((await render(true, 'website')).placeholder).toBe('Message website… @ an agent to call it')
     expect((await render(true)).placeholder).toBe('Write a message…')
   })
@@ -67,7 +67,7 @@ function DraftHost({ chatId }: { chatId: string }) {
     ...p, [id]: typeof update === 'function' ? update(p[id] ?? '') : update,
   })), [])
   const value = useMemo(() => ({ ...chatStore(), drafts, setDraft }), [drafts, setDraft])
-  return createElement(ChatStoreProvider, { value }, createElement(InChatSlot.Provider, { value: { projectName: null } },
+  return createElement(ChatStoreProvider, { value }, createElement(InChatSlot.Provider, { value: { groupName: null } },
     createElement(ChatMessageComposer, { onSend: vi.fn(async () => {}), chatId, isGroupChat: true })))
 }
 

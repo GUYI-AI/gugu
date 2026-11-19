@@ -66,7 +66,7 @@ export function archiveSessionNow(args: { projectId: string; sessionId: string; 
   manager.archiveSession(sessionId, { withChildren, removeSocialIdentity }).then(
     ({ archived, unreached }) => {
       // 只在归档**真的成功**之后走 —— ❌ 把人送走再让这条会话在原处活着。
-      leaveSessionView(projectId, sessionId);
+      leaveSessionView(sessionId);
       offerUndo(archived);
       tellChildrenNotReached(unreached);
     },

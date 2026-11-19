@@ -9,7 +9,6 @@
 // 机器级的调用(那台机器的设置、资源库、模型目录……)由调用点经 `rpcOn(machine)` 指明。
 
 import { action, makeObservable, observable } from 'mobx';
-import { IMPLICIT_SESSION_HOME_PROJECT_ID } from '@shared/core/projects/session-home-project';
 
 /** 一次调用里认出的机器:null = 本机。 */
 export type RoutedMachine = string | null;
@@ -173,7 +172,8 @@ export function machineOfChannel(registry: MachineRegistry, channel: string): Ro
   return dot > 0 ? registry.machineOf(channel.slice(dot + 1)) : null;
 }
 
-export const machineRegistry = new MachineRegistry([IMPLICIT_SESSION_HOME_PROJECT_ID]);
+// @@@group-folders no id is fixed across machines any more (each machine's task home folder has its own id): nothing to alias.
+export const machineRegistry = new MachineRegistry([]);
 
 // ── 每台机器都有、id 写死的那几个实体 ─────────────────────────────────────────────
 // 会话页宿主有一个 id 固定的隐藏项目(没选文件夹时会话跑在它里面,session-home-project.ts)。本机有,每台

@@ -2,14 +2,12 @@ import { useNativeAgentChats } from '@/hooks/useNativeAgentChats'
 import { useEffect, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { installShellSlots, readShellSlots } from '../lib/shellSlots'
-import { useProjectGroupChats } from '../lib/projectGroupChatsBridge'
 import { subscribeShellChatActions, takeShellChatAction, type ShellChatAction, CHAT_LIST_SLOT_KEY, publishSidebarChatSignals, sidebarChatSignals } from '../lib/sidebarChatsBridge'
 import { useChatStore } from '../store/chatContext'
 import { ChatListPanel } from './ChatListPanel'
 import { InnerSidebarTopics } from './chat/InnerSidebarTopics'
 import { INNER_SIDEBAR_TOPICS_SLOT_PREFIX } from '../lib/innerSidebarBridge'
 import { useMarkChatsRead } from '../hooks/useMarkChatsRead'
-import { useAssistantShell } from '../session/renderer/features/assistant/assistant-shell'
 
 installShellSlots()
 
@@ -17,7 +15,7 @@ const EMPTY: ReadonlyMap<string, HTMLElement> = new Map()
 
 /**
  * 聊天列表画进会话页侧栏「对话」那一格(gugu-dev#181):行就是聊天列表那一行原样搬过来,所以画它的仍是 ChatListPanel
- * (`placement="sidebar"`),❌ 在会话页里另写一份行。侧栏两枚页签上的未读数也从这里发过去 —— 不管「对话」那一格挂没挂着。
+ * (`placement="sidebar"`),❌ 在会话页里另写一份行。列表里有哪些群也从这里发过去 —— 不管「对话」那一格挂没挂着。
  */
 export function ChatListSlotHost() {
   const { chats: imChats, loadingChats } = useChatStore('chats', 'loadingChats')
@@ -31,11 +29,9 @@ export function ChatListSlotHost() {
     take()
     return subscribeShellChatActions(take)
   }, [markRead])
-  const projectGroupChats = useProjectGroupChats()
-  const assistant = useAssistantShell()
   useEffect(() => {
-    publishSidebarChatSignals(sidebarChatSignals(chats, projectGroupChats, assistant, !loadingChats))
-  }, [chats, projectGroupChats, assistant, loadingChats])
+    publishSidebarChatSignals(sidebarChatSignals(chats, !loadingChats))
+  }, [chats, loadingChats])
   const slots = readShellSlots()
   const targets = useSyncExternalStore(
     (listener) => slots?.subscribeSlots(listener) ?? (() => undefined),

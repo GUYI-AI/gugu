@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Command } from 'cmdk';
-import { FolderOpen, MessageSquare, Search } from '@/lib/icons';
+import { MessageSquare, Search } from '@/lib/icons';
 import { useObserver } from 'mobx-react-lite';
 import { useState } from 'react';
 import { i18n } from '@/i18n';
@@ -9,7 +9,6 @@ import { commandRegistry } from '@renderer/lib/commands/registry';
 import { useDebounce } from '@renderer/lib/hooks/useDebounce';
 import { getEffectiveHotkey, isHostCommandId, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { rpc } from '@renderer/lib/ipc';
-import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import type { BaseModalProps } from '@renderer/lib/modal/modal-provider';
 import { Shortcut } from '@renderer/lib/ui/shortcut';
 import { COMMANDS } from '@shared/commands';
@@ -17,7 +16,6 @@ import type { SessionMessageKey } from '@renderer/localization/messages';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { getCommandIcon } from './command-icons';
 import { PALETTE_ITEM_CLASS } from './palette-item-styles';
-import { PaletteProjectsGroup } from './palette-projects-group';
 import { PaletteChatGroups } from './palette-chats';
 import { openGlobalSearch } from '@renderer/features/global-search/search-session';
 import { PaletteSessionItem } from './palette-session-item';
@@ -50,7 +48,6 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
   const commandsMode = query.startsWith('>');
   const search = commandsMode ? query.slice(1).trim() : query.trim();
   const debouncedQuery = useDebounce(search, 100);
-  const { navigate } = useNavigate();
   const keyboard = useShortcutOverrides();
   const { translate } = useSessionMessages();
   const { data: results = [] } = useQuery({
@@ -91,7 +88,6 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
       ...item, deviceLabel: remoteHostsStore.device(item.deviceId)!.label,
     })), search, sidebarStore.assistantAgentId, recent);
   });
-  const projects = ranked.filter((item) => item.kind === 'project');
 
   return (
     <Command className="flex flex-col overflow-hidden" shouldFilter={false} loop>
@@ -131,16 +127,6 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
                 })}
               </Command.Group>
             )}
-            {search ? projects.length > 0 && (
-              <Command.Group heading={translate('palette.projects')} className={GROUP_CLASS}>
-                {projects.map((item) => (
-                  <Command.Item key={item.id} value={`project:${item.id}`} className={PALETTE_ITEM_CLASS}
-                    onSelect={() => { done(); navigate('project', { projectId: item.id }); }}>
-                    <FolderOpen size={14} /><span className="flex-1 truncate">{item.title}</span>
-                  </Command.Item>
-                ))}
-              </Command.Group>
-            ) : <PaletteProjectsGroup currentProjectId={undefined} limit={5} onDone={done} navigate={navigate} />}
             <PaletteChatGroups query={search} groupClassName={GROUP_CLASS} onDone={done} />
             {/* Switching is by name only; what was said is the search panel's: the last row hands the words over. */}
             {search && (

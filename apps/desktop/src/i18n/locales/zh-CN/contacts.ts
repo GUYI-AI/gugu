@@ -102,7 +102,7 @@ export default {
     "fallbackName": "群聊",
     "noResults": "未找到成员",
     "removeMember": "移除 {{name}}",
-    "searchPlaceholder": "搜索名字、任务、项目或设备",
+    "searchPlaceholder": "搜索名字、任务、群或设备",
     "selectAtLeastOne": "请至少选择一个成员",
     "title": "新建群聊"
   },
@@ -338,7 +338,7 @@ export default {
     "ownedSource": "本账号创建",
     "privateValue": "非公开",
     "profileDialog": "{{name}} 的资料",
-    "projectPath": "项目目录",
+    "projectPath": "文件夹",
     "publicAgent": "公开 Agent",
     "publicStatus": "公开状态",
     "publicValue": "公开，可被申请加入群",

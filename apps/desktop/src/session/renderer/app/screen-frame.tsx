@@ -31,13 +31,14 @@ import {
   blockMinExtent,
   type MentionDrop,
 } from './screen-layout-actions';
-import { ChatPartSlot, ChatSlot } from '@renderer/lib/chat-slot';
+import { ChatEmptyContent, ChatPartSlot, ChatSlot } from '@renderer/lib/chat-slot';
 import { ChatTabMenuItems, chatTabHasActions } from '@renderer/features/chats/chat-tab-menu-items';
 import { ChatPanes, ChatTabChip } from '@renderer/features/chats/chat-tabs/chat-panes';
 import { openPanelItem } from '@renderer/features/chats/chat-tabs/chat-layouts';
 import { requestTopicSplit } from '@/lib/topicSplitRequest';
 import { ComposerVerbDock } from '@renderer/features/sessions/task-dispatch-composer';
-import { ProjectBlock } from './project-block';
+import { GroupHome, GroupTaskDock } from '@renderer/features/folders/group-home';
+import { useComposerVerb, readComposerVerbChat } from '@/lib/composerVerbBridge';
 import { SampleProjectBlock } from '@renderer/features/sample-project/sample-project-block';
 import { screenLayout, type ScreenBlockContent } from './screen-layout';
 import { clearDraggedScreenContent, getDraggedScreenContent, hasDraggedScreenContent, setDraggedScreenContent } from '@renderer/lib/drag-screen-content';
@@ -175,7 +176,7 @@ const BlockCut = observer(function BlockCut({ node }: { node: Extract<PaneLayout
   );
 });
 
-/** 一块的占位。会话块是空的(会话页贴在它上面);App 块、项目块在这里画它那条页签条和它的页。 */
+/** 一块的占位。会话块是空的(会话页贴在它上面);App 块、对话块在这里画它那条页签条和它的页。 */
 const BlockSlot = observer(function BlockSlot({ blockId }: { blockId: string }) {
   const block = screenLayout.blocks.get(blockId);
   return (
@@ -186,13 +187,6 @@ const BlockSlot = observer(function BlockSlot({ blockId }: { blockId: string }) 
       onPointerDownCapture={() => focusScreenBlock(blockId)}
     >
       {block?.kind === 'app' ? <AppBlock blockId={blockId} tabKind={block.tabKind} /> : null}
-      {block?.kind === 'project' ? (
-        <ProjectBlock
-          blockId={blockId}
-          projectId={block.projectId}
-          blockActions={screenLayout.order.length > 1 ? <CloseBlockButton blockId={blockId} /> : null}
-        />
-      ) : null}
       {block?.kind === 'sample-project' ? (
         <SampleProjectBlock blockId={blockId} blockActions={screenLayout.order.length > 1 ? <CloseBlockButton blockId={blockId} /> : null} />
       ) : null}
@@ -203,7 +197,7 @@ const BlockSlot = observer(function BlockSlot({ blockId }: { blockId: string }) 
 });
 
 /**
- * 对话块(gugu-dev#181:对话也是一块,⌘ 点拼到右边):和项目块同一条页签条,第一枚是这个对话(头像 + 名字,关不掉);
+ * 对话块(gugu-dev#181:对话也是一块,⌘ 点拼到右边):第一枚页签是这个对话(头像 + 名字,关不掉);
  * 对话由壳画进格子,头像和名字、右端那排图标(搜索、群文件夹、成员、历史)也由壳画进页签条留的几格。
  * 公告、设置、在本群打开 App 在这枚页签的右键菜单里(右端没有 ⋯)。
  * 屏上不止一块时右端一枚「关闭这一块」。
@@ -235,14 +229,27 @@ const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: st
         />
       )}
       body={
-        <>
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-chat-block={chatId}>
+          {/* The conversation owns the header and right panels even before its first message. */}
           <ChatSlot chatId={chatId} className="flex min-h-0 min-w-0 flex-1 flex-col" />
-          {/* 对话的输入框选了「新任务 / 定时任务」:那个框收起,这里换上对应的框(结果回这个对话)。 */}
-          <ComposerVerbDock chatId={chatId} />
-        </>
+          {/* 群里还没有消息:正中是这个群的首页 —— 文件夹卡 + 新任务的框(每个群都是,一个文件夹都没挂的也是)。 */}
+          <ChatEmptyContent chatId={chatId}><GroupHome chatId={chatId} /></ChatEmptyContent>
+          <ChatVerbDock chatId={chatId} />
+        </div>
       }
     />
   );
+});
+
+/**
+ * 对话的输入框选了「新任务 / 定时任务」:那个框收起,这里换上对应的框(结果回这个对话)。群里的新任务是群首页那个框,
+ * 文件夹卡浮到群聊上面(GroupTaskDock);私聊、话题里的是派任务的框(ComposerVerbDock)。
+ */
+const ChatVerbDock = observer(function ChatVerbDock({ chatId }: { chatId: string }) {
+  const verb = useComposerVerb(chatId);
+  const chat = readComposerVerbChat(chatId);
+  if (verb === 'task' && chat?.joinable && chat.inGroup) return <GroupTaskDock key={chatId} chatId={chatId} />;
+  return <ComposerVerbDock chatId={chatId} />;
 });
 
 /**

@@ -102,7 +102,7 @@ export default {
     "fallbackName": "Group chat",
     "noResults": "No members found",
     "removeMember": "Remove {{name}}",
-    "searchPlaceholder": "Search names, tasks, projects or devices",
+    "searchPlaceholder": "Search names, tasks, groups or devices",
     "selectAtLeastOne": "Select at least one member",
     "title": "New group chat"
   },
@@ -338,7 +338,7 @@ export default {
     "ownedSource": "Created by this account",
     "privateValue": "Private",
     "profileDialog": "{{name}} profile",
-    "projectPath": "Project path",
+    "projectPath": "Folder",
     "publicAgent": "Public Agent",
     "publicStatus": "Public status",
     "publicValue": "Public; people can request to join",

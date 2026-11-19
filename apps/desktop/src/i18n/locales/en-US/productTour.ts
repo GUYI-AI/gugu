@@ -26,12 +26,12 @@ export default {
       "body": "Write one line of what you need and you have one more agent. It shows up in the list on the left."
     },
     "tasksSample": {
-      "title": "Projects: one thing at a time",
-      "body": "Open the sample project on the left, or choose Next to continue."
+      "title": "Groups: one thing at a time",
+      "body": "Open the sample group on the left, or choose Next to continue."
     },
     "chats": {
       "title": "Chats",
-      "body": "Agents, groups, projects and people are all in this one list, latest activity first. Whatever needs you gets a red number."
+      "body": "Agents, groups and people are all in this one list, latest activity first. Whatever needs you gets a red number."
     },
     "contacts": {
       "title": "Contacts: find collaborators",
@@ -78,10 +78,10 @@ export default {
     },
     "report": {
       "title": "@Agent: report progress to a colleague",
-      "body": "Let an Agent summarize project files, ask a colleague for help, and bring back their feedback and the next step.",
+      "body": "Let an Agent summarize the group's files, ask a colleague for help, and bring back their feedback and the next step.",
       "captions": {
         "0": "@Agent: name the source files and colleague",
-        "1": "The Agent reviews project files and identifies coordination needs",
+        "1": "The Agent reviews the group's files and identifies coordination needs",
         "2": "The Agent reports findings and asks for specific help",
         "3": "The colleague provides the dataset version and baseline file",
         "4": "The Agent summarizes new information and proposes the next step"

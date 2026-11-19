@@ -11,10 +11,6 @@ import {
   remoteSessionKey,
 } from './remote-hosts-store';
 
-// 账号上的项目(accountProjectsStore 的来源):各用例给定那一份。
-const accountList = vi.hoisted(() => ({ projects: [] as Array<{ chatId: string; name: string; archived: boolean; bindings: Array<{ deviceId: string; localProjectId: string }> }> }));
-vi.mock('@/lib/deviceProjects', () => ({ listMyAccountProjects: async () => accountList.projects, listMyDeviceProjects: async () => ({}) }));
-
 const device = (overrides: Partial<RemoteHostDevice> = {}): RemoteHostDevice => ({
   id: 'dev-1',
   label: 'Linux 3',
@@ -32,7 +28,7 @@ it('warns with the device when session locations cannot be read, while retaining
   const { log } = await import('@renderer/utils/logger');
   const failure = new Error('session directory unavailable');
   const rpc = vi.spyOn(ipc, 'rpcOn').mockReturnValue({
-    projects: { getProjects: vi.fn(async () => []) },
+    folders: { listAllFolders: vi.fn(async () => []) },
     app: { getHomeDirectory: vi.fn(async () => '/home/test') },
     sessionTimeline: { sessionsList: vi.fn(async () => { throw failure; }) },
   } as unknown as ReturnType<typeof ipc.rpcOn>);
@@ -223,92 +219,42 @@ describe('心跳说那台机器在时,线要不要现在重开', () => {
   });
 });
 
-// #113 没连着的机器:项目清单、群绑定、主目录照账号上记着的那份(设备行上带着),❌ 这台桌面从前问到过才有。
+// #113 没连着的机器:文件夹、群、主目录照账号上记着的那份,❌ 这台桌面从前问到过才有。
 describe('没连着的机器照账号上记着的那份', () => {
-  const record = (overrides: Record<string, unknown> = {}) => ({
-    localProjectId: 'acct-proj-1',
-    name: 'repo',
-    rootPath: '/srv/repo',
-    createdAt: '2026-10-01T08:00:00.000Z',
-    chatId: 'chat-repo',
-    folders: [{ workspaceId: 'ws-acct-root', kind: 'root' as const, path: '/srv/repo', attachedAt: null }],
-    ...overrides,
-  });
-
-  it('projects a legacy assistant host as Tasks by identity, including late identity and detached projects', async () => {
-    const { appState, sidebarStore } = await import('@renderer/lib/stores/app-state');
-    const { isWorkspaceProject } = await import('@renderer/features/sessions/session-home-project-constants');
-    const { accountProjectsStore } = await import('@renderer/features/projects/stores/account-projects-store');
-    const store = new RemoteHostsStore();
-    const legacy = record({ localProjectId: 'legacy-assistant-project', name: 'renamed', folders: [] });
-    const ordinary = record({ localProjectId: 'ordinary-project', name: '助理' });
-    // The assistant host's project is no account project; the ordinary one is.
-    accountList.projects = [{ chatId: 'chat-ordinary', name: '助理', archived: false, bindings: [{ deviceId: 'ordinary-machine', localProjectId: ordinary.localProjectId }] }];
-    store.start();
-    await accountProjectsStore.refresh();
-    await vi.waitFor(() => expect(accountProjectsStore.status).toBe('ready'));
-    const summary = { conversationId: 'legacy-conversation', projectId: legacy.localProjectId, projectName: 'renamed', title: 'existing history', harness: 'codex', runtime: 'acp' as const, agentStatus: null, lastInteractedAt: null, supported: true };
-    let listed = [device({ id: 'legacy-cloud', isOnline: false, directTerminal: false, projects: [legacy], sessionDigest: [summary] }),
-      device({ id: 'ordinary-machine', isOnline: false, directTerminal: false, projects: [ordinary] })];
-    const listeners = new Set<() => void>();
-    const off = installRemoteHostsBridge({ listDevices: () => listed,
-      subscribeDevices: (listener: () => void) => (listeners.add(listener), () => listeners.delete(listener)),
-      pickFolder: async () => null } as never);
-    try {
-      const original = appState.projects.projects.get(legacy.localProjectId)!;
-      expect(isWorkspaceProject(original)).toBe(false);
-      listed = listed.map(row => row.id === 'legacy-cloud' ? { ...row, assistantHome: true as const } : row);
-      listeners.forEach(listener => listener());
-      expect(isWorkspaceProject(original)).toBe(true);
-      expect(appState.projects.projects.get(legacy.localProjectId)).toBe(original);
-      expect(original.data).toMatchObject({ id: legacy.localProjectId, path: '/srv/repo', rootFolderDetached: true });
-      expect(sidebarStore.orderedProjects.map(project => project.id)).not.toContain(legacy.localProjectId);
-      expect(sidebarStore.rowProjectIdOf(legacy.localProjectId)).toBe(legacy.localProjectId);
-      expect(sidebarStore.placement.nodeById.get(summary.conversationId)?.item.projectId).toBe(legacy.localProjectId);
-      expect(sidebarStore.rowOfSession(legacy.localProjectId, summary.conversationId)).toBeNull();
-      expect(store.listedProject(summary.conversationId)).toBe(legacy.localProjectId);
-      expect(isWorkspaceProject(appState.projects.projects.get(ordinary.localProjectId)!)).toBe(false);
-      expect(sidebarStore.orderedProjects.map(project => project.id)).toContain(ordinary.localProjectId);
-    } finally { off(); }
-  });
-
-  it('列出它的项目、并上它的群、认得它的主目录,这台桌面从没连上过它也一样', async () => {
+  it('列出它的文件夹、并上它的群、认得它的主目录,这台桌面从没连上过它也一样', async () => {
     const { appState } = await import('@renderer/lib/stores/app-state');
-    const { projectGroupsStore } = await import('@renderer/features/projects/stores/project-groups-store');
+    const { groupFoldersStore } = await import('@renderer/features/folders/group-folders-store');
     const { machineRegistry } = await import('@renderer/lib/machine-routing');
+    const { runInAction } = await import('mobx');
     const store = new RemoteHostsStore();
     store.start();
-    // Its own group: earlier tests leave their projects bound to the default one in the shared group store.
-    const offline = device({ id: 'dev-acct-1', isOnline: false, projects: [record({ chatId: 'chat-acct-1' })], homeDir: '/home/alice' });
-    let listed = [offline];
-    const listeners = new Set<() => void>();
+    const group = (folderId: string, path: string) => ({
+      chatId: 'chat-acct-1', name: 'repo', archived: false, activeAt: '2026-10-01T08:00:00.000Z',
+      folders: [{ deviceId: 'dev-acct-1', folderId, path, position: 1, attachedAt: '2026-10-01T08:00:00.000Z', removalRequestedAt: null }],
+    });
+    runInAction(() => {
+      groupFoldersStore.account = [group('acct-folder-1', '/srv/repo')];
+      groupFoldersStore.status = 'ready';
+    });
+    const offline = device({ id: 'dev-acct-1', isOnline: false, homeDir: '/home/alice' });
     const off = installRemoteHostsBridge({
-      listDevices: () => listed,
-      subscribeDevices: (listener: () => void) => (listeners.add(listener), () => listeners.delete(listener)),
+      listDevices: () => [offline],
+      subscribeDevices: () => () => {},
       pickFolder: async () => null,
     } as never);
     try {
-      expect(appState.projects.projects.get('acct-proj-1')?.data).toMatchObject({
-        id: 'acct-proj-1', name: 'repo', path: '/srv/repo', repositoryWorkspaceId: 'ws-acct-root', createdAt: '2026-10-01 08:00:00',
+      expect(appState.projects.projects.get('acct-folder-1')?.data).toMatchObject({
+        id: 'acct-folder-1', name: 'repo', path: '/srv/repo', createdAt: '2026-10-01 08:00:00',
       });
-      expect(machineRegistry.machineOf('acct-proj-1')).toBe('dev-acct-1');
-      expect(projectGroupsStore.projectOfChat('chat-acct-1')).toBe('acct-proj-1');
+      expect(machineRegistry.machineOf('acct-folder-1')).toBe('dev-acct-1');
       expect(store.homeDir('dev-acct-1')).toBe('/home/alice');
-      expect(store.accountFolders('dev-acct-1', 'acct-proj-1')?.map((folder) => [folder.workspaceId, folder.kind, folder.branch])).toEqual([
-        ['ws-acct-root', 'root', null],
-      ]);
 
-      // 那台机器离线时在它上面删了这个项目、建了另一个(它记到账号上,设备列表跟着刷新):这一端原地跟上。
-      listed = [{ ...offline, projects: [record({ localProjectId: 'acct-proj-2', name: 'next', chatId: null, })] }];
-      listeners.forEach((listener) => listener());
-      expect(appState.projects.projects.has('acct-proj-1')).toBe(false);
-      expect(appState.projects.projects.get('acct-proj-2')?.data?.name).toBe('next');
-      expect(projectGroupsStore.projectOfChat('chat-acct-1')).toBeUndefined();
-
-      // 账号上那份这一端还没读到(设备行上没带):❌ 拿空清单把侧栏里它的项目清掉。
-      listed = [{ ...offline, projects: undefined }];
-      listeners.forEach((listener) => listener());
-      expect(appState.projects.projects.has('acct-proj-2')).toBe(true);
+      // 那台机器离线时在它上面换了文件夹(它记到账号上):这一端原地跟上。
+      runInAction(() => {
+        groupFoldersStore.account = [group('acct-folder-2', '/srv/next')];
+      });
+      expect(appState.projects.projects.has('acct-folder-1')).toBe(false);
+      expect(appState.projects.projects.get('acct-folder-2')?.data?.name).toBe('next');
     } finally {
       off();
     }
@@ -351,47 +297,6 @@ describe('新建框用到的那几件(#6264)', () => {
     store.openAddMachine();
     expect(openAddMachine).toHaveBeenCalledTimes(1);
     withAdd();
-  });
-});
-
-// #6264 behavior gugu-server(owner 2026-09-25 选 A):新建时选了别的机器、没选项目 ⇒ 落在那台机器的主目录项目里,
-// 那台机器上已有同路径项目就复用,否则建一个。
-describe('没选项目 = 那台机器的主目录项目', () => {
-  it('没有同路径项目:在那台机器上把主目录加成项目', async () => {
-    const { appState } = await import('@renderer/lib/stores/app-state');
-    const store = new RemoteHostsStore();
-    store.homeDirs = { 'dev-home-1': '/home/alice' };
-    const create = vi.spyOn(appState.projects, 'createProject').mockResolvedValue('dev-home-1-project-home');
-    const mount = vi.spyOn(appState.projects, 'ensureMounted').mockResolvedValue(undefined as never);
-
-    await expect(store.ensureHomeProject('dev-home-1')).resolves.toBe('dev-home-1-project-home');
-    expect(create).toHaveBeenCalledWith(
-      { type: 'local', machine: 'dev-home-1' },
-      expect.objectContaining({ mode: 'pick', path: '/home/alice', allowNonGit: true, automatic: true })
-    );
-    create.mockRestore();
-    mount.mockRestore();
-  });
-
-  it('那台机器上已有同路径项目:复用,❌ 另建一个', async () => {
-    const { appState } = await import('@renderer/lib/stores/app-state');
-    const { machineRegistry } = await import('@renderer/lib/machine-routing');
-    const store = new RemoteHostsStore();
-    store.homeDirs = { 'dev-home-2': '/home/bob' };
-    machineRegistry.register('dev-home-2', ['existing-home-project']);
-    appState.projects.projects.set('existing-home-project', {
-      id: 'existing-home-project',
-      data: { path: '/home/bob/' },
-    } as never);
-    const create = vi.spyOn(appState.projects, 'createProject');
-    const mount = vi.spyOn(appState.projects, 'ensureMounted').mockResolvedValue(undefined as never);
-
-    await expect(store.ensureHomeProject('dev-home-2')).resolves.toBe('existing-home-project');
-    expect(create).not.toHaveBeenCalled();
-    appState.projects.projects.delete('existing-home-project');
-    machineRegistry.forgetMachine('dev-home-2');
-    create.mockRestore();
-    mount.mockRestore();
   });
 });
 
@@ -446,34 +351,6 @@ describe('会话目录 → @ 与侧栏身份(directoryPeers)', () => {
 });
 
 describe('#7158 gugu.showSession: the row the task list draws for another machine\'s session (listedProject)', () => {
-  it('opens a home-workspace task from live events or an offline digest with the existing machine alias', async () => {
-    const { sidebarStore } = await import('@renderer/lib/stores/app-state');
-    const { machineRegistry } = await import('@renderer/lib/machine-routing');
-    const { runInAction } = await import('mobx');
-    const store = new RemoteHostsStore();
-    const home = '00000000-0000-4000-8000-000000000001';
-    const row = (conversationId: string) => ({ conversationId, projectId: home, projectName: 'Tasks', title: 'task', harness: 'claude', runtime: 'acp' as const, agentStatus: null, lastInteractedAt: null, supported: true });
-    runInAction(() => {
-      store.hosts.set('home-live', { device: device({ id: 'home-live' }), link: 'open', synced: true });
-      store.hosts.set('home-offline', { device: device({ id: 'home-offline', isOnline: false, sessionDigest: [row('off-task')] }), link: 'closed', synced: false });
-      store.directory = { 'home-live': { projects: [], sessions: [row('live-task')], cached: false, loading: false, error: null } };
-    });
-    const before = sidebarStore.machines;
-    sidebarStore.machines = {
-      machineOf: (id) => machineRegistry.machineOf(id), label: () => null, homeDir: () => null,
-      sessionsOf: (id) => store.sessionsOf(id), session: (id, conversationId) => store.session(id, conversationId),
-    };
-    try {
-      expect(store.listedProject('live-task')).toBe(`${home}~home-live`);
-      expect(store.listedProject('off-task')).toBe(`${home}~home-offline`);
-      // A snapshot already translated at the RPC boundary stays translated once.
-      runInAction(() => { store.directory = { 'home-live': { projects: [], sessions: [{ ...row('live-task'), projectId: `${home}~home-live` }], cached: false, loading: false, error: null } }; });
-      expect(store.listedProject('live-task')).toBe(`${home}~home-live`);
-    } finally {
-      sidebarStore.machines = before;
-    }
-  });
-
   it('a listed row — live, or an offline machine\'s from its heartbeat — gives its project; one the list cannot place, none', async () => {
     const { sidebarStore } = await import('@renderer/lib/stores/app-state');
     const { runInAction } = await import('mobx');

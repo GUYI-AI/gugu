@@ -17,7 +17,7 @@ import {
 } from './session-navigation-focus';
 
 /** 主区是一个站点(新建任务那一屏、项目首页、会话)的那几种页面;`home` 和 `new-session` 是同一屏(app/home-view.tsx)。 */
-const STATION_VIEWS: ReadonlySet<string> = new Set(['home', 'new-session', 'project', 'session']);
+const STATION_VIEWS: ReadonlySet<string> = new Set(['home', 'new-session', 'session']);
 
 /**
  * behavior session-page「键盘导航」 — the controller behind the two focus layers.
@@ -106,11 +106,6 @@ class SessionKeyboardNavStore {
     const nav = appState.navigation;
     const view = nav.currentViewId;
     if (view === 'new-session') return { kind: 'new-session' };
-    if (view === 'project') {
-      const projectId = (nav.viewParamsStore.project as { projectId?: string } | undefined)
-        ?.projectId;
-      return projectId ? { kind: 'project', projectId } : null;
-    }
     if (view === 'session') {
       const params = nav.viewParamsStore.session as
         | { projectId?: string; sessionId?: string }
@@ -157,46 +152,30 @@ class SessionKeyboardNavStore {
   }
 
   /**
-   * ← : jump to the parent station. A conversation's parent is its project row (its project home,
-   * where a new session is started); a standalone conversation's is the New session page. On a project
-   * row ← collapses it, which is also what makes the keyboard skip it afterwards.
+   * ← : jump to the parent station. A conversation's parent is its group (the group's page, where a new task is
+   * started); a conversation in no group's is the New session page.
    */
   goToParent(): boolean {
     const node = this.cursor;
     if (!node || node.kind === 'new-session') return false;
-    if (node.kind === 'project') {
-      if (!sidebarStore.expandedProjectIds.has(node.projectId)) return false;
-      sidebarStore.collapseProject(node.projectId);
-      return true;
-    }
-    // 父站是这条会话显示在下面的那一行(#6264 别的机器上任务工作区里的在那台机器的「~」那一行;别的机器上的 child
-    // 在父会话那一行);「任务」分区里的回「新建任务」。
-    const row = appState.projects.projects.has(node.projectId)
-      ? sidebarStore.rowOfSession(node.projectId, node.sessionId)
-      : null;
-    const parent: Exclude<SidebarNavNode, { kind: 'conversation' }> = row === null ? { kind: 'new-session' } : { kind: 'project', projectId: row };
+    const group = sidebarStore.groupOfSession(node.sessionId);
     this.clearPendingArchive();
-    this._applyNow(parent);
-    // The project home and the New session page exist to be typed into, so ← lands in the composer.
+    if (group) openChatOnScreen(group, false);
+    else this._applyNow({ kind: 'new-session' });
+    // The group page and the New session page exist to be typed into, so ← lands in the composer.
     this.handOffToComposer();
     return true;
   }
 
   /**
-   * → : hand the keyboard to this session's own interface. On a collapsed project row it expands
-   * instead.
+   * → : hand the keyboard to this session's own interface.
    *
    * Which interface depends on the conversation, not on where the keyboard came from: an ACP
    * session is our chat UI, so it means the composer; a pty session *is* a terminal, so it means
    * the terminal. ❌ Remembering "the panel you left from": once ↑↓ walk to another session that
    * panel belongs to a different conversation and the key has no defined target.
    */
-  expandProjectOrFocusComposer(): boolean {
-    const node = this.cursor;
-    if (node?.kind === 'project' && !sidebarStore.expandedProjectIds.has(node.projectId)) {
-      sidebarStore.ensureProjectExpanded(node.projectId);
-      return true;
-    }
+  focusSessionInterface(): boolean {
     return this.handOffToComposer();
   }
 
@@ -339,19 +318,8 @@ class SessionKeyboardNavStore {
   // ---- main-area follow ----
 
   /** Take the main area to a parent station: the New task page or a project's home. */
-  private _applyNow(node: Exclude<SidebarNavNode, { kind: 'conversation' }>): void {
-    const nav = appState.navigation;
-    if (node.kind === 'new-session') {
-      nav.navigateTransient('new-session');
-      return;
-    }
-    // 没有本地项目的项目那一行(行 id = 项目群):它的「主页」是项目群。
-    const ref = sidebarStore.sidebarProjects.find((row) => row.id === node.projectId);
-    if (ref?.kind === 'group') {
-      openChatOnScreen(ref.chatId, false);
-      return;
-    }
-    nav.navigateTransient('project', { projectId: node.projectId });
+  private _applyNow(_node: Exclude<SidebarNavNode, { kind: 'conversation' }>): void {
+    appState.navigation.navigateTransient('new-session');
   }
 }
 

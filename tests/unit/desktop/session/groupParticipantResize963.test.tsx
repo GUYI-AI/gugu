@@ -21,13 +21,12 @@ vi.mock('@renderer/lib/ui/resizable', async (importOriginal) => ({
   ResizablePanel: ({ children, id }: { children: ReactNode; id: string }) => <div data-panel="true" data-panel-id={id}>{children}</div>,
   ResizableHandle: () => <div />,
 }));
-vi.mock('@renderer/app/project-block', () => ({ ProjectBlock: () => null }));
 const { ScreenFrame } = await import('@renderer/app/screen-frame');
 let root: Root;
 let host: HTMLDivElement;
 let sourceId: string;
 let targetId: string;
-const source = { kind: 'project', projectId: 'resize-project' } as const;
+const source = { kind: 'chat', chatId: 'resize-group' } as const;
 const target = { kind: 'session', projectId: 'resize-project', sessionId: 'resize-agent' } as const;
 const actualRightWidth = () => state.extent * state.layout[`block-panel-${targetId}`]! / 100;
 

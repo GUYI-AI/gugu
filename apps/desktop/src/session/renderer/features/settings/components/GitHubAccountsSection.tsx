@@ -123,7 +123,7 @@ export function GitHubAccountRows({
     try {
       // 「有几个项目在用它」数的是本机的项目;账号在别的机器上时(#6264)那台机器的项目这里数不到,不数。
       if (host.remote) throw new Error('remote');
-      const count = await rpc.projects.countProjectsUsingGithubAccount(account.accountId);
+      const count = await rpc.folderSettings.countFoldersUsingGithubAccount(account.accountId);
       if (count > 0) {
         description = translate('github.removeConfirmInUse', {
           projects: translate('github.projectCount', { count }),

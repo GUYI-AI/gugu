@@ -143,7 +143,7 @@ export function useAgentWatchAlerts(devices: readonly Device[]): void {
         onError: (error) => { if (retryScope.current.ownerId === ownerId) updateDeviceSessions(deviceId, { error, ...(error ? { connected: false } : {}) }) },
       })
       if (ownerId) stops.push(registerDeviceSessionsRetry(ownerId, deviceId, () => {
-        if (retryScope.current.ownerId !== ownerId || !retryScope.current.onlineIds.includes(deviceId)) throw new Error('账号或设备连接已改变，请重新打开项目列表。')
+        if (retryScope.current.ownerId !== ownerId || !retryScope.current.onlineIds.includes(deviceId)) throw new Error('账号或设备连接已改变，请重新打开任务列表。')
         sync.reconnect()
       }))
       return sync

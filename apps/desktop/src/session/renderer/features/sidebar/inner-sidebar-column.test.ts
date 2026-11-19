@@ -11,7 +11,7 @@ const agents: ChatAgentEntry[] = [
 ];
 const families=agentFamilies(agents);
 const rows=new Map([['solo-agent',{chatId:'solo-chat',name:'Standalone',avatar:null,createdAt:null}]]);
-const scope=():ChatAgentScope=>({kind:'group',projectIds:[],bornHere:id=>id==='room',inProject:()=>false});
+const scope=():ChatAgentScope=>({here:(id:string)=>id==='room'});
 const summaries=new Map();
 const room={kind:'group' as const,chatId:'room'};
 const agentOf=(id:string)=>standaloneAgentAnchor(id,families,rows);
@@ -19,11 +19,10 @@ const listed=(anchor:InnerSidebarAnchor,id:string)=>columnAgents(anchor,families
 
 describe('phone eligibility uses the desktop inner-sidebar result',()=>{
  it.each([
-  [{kind:'chat',chatId:'room',chatKind:'group',projectGroup:false},true],
-  [{kind:'chat',chatId:'project',chatKind:'group',projectGroup:true},true],
-  [{kind:'chat',chatId:'dm',chatKind:'dm',projectGroup:false},false],
-  [{kind:'chat',chatId:'topic',chatKind:'topic',projectGroup:false},false],
-  [{kind:'chat',chatId:'agent-dm',chatKind:'ai',projectGroup:false},false],
+  [{kind:'chat',chatId:'room',chatKind:'group'},true],
+  [{kind:'chat',chatId:'dm',chatKind:'dm'},false],
+  [{kind:'chat',chatId:'topic',chatKind:'topic'},false],
+  [{kind:'chat',chatId:'agent-dm',chatKind:'ai'},false],
   [{kind:'other'},false],
  ] as const)('chat eligibility is exactly viewAnchor: %j',(view,visible)=>{
   const result=followInnerSidebar(null,view as InnerSidebarView,()=>false,()=>null,()=>false);

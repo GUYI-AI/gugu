@@ -8,7 +8,7 @@ import { CreateSessionPage } from '../../../apps/desktop/src/mobile/agent-watch/
 import { composerDrafts } from '../../../apps/desktop/src/session/renderer/features/sessions/composer-drafts'
 import { mobileCreationDraftKey } from '../../../apps/desktop/src/mobile/agent-watch/create-session-draft'
 import { createNode, createReactHarness, deferred } from '../../support/testHarness'
-import { accountProjectsStore } from '../../../apps/desktop/src/session/renderer/features/projects/stores/account-projects-store'
+import { groupFoldersStore } from '../../../apps/desktop/src/session/renderer/features/folders/group-folders-store'
 import { followRendererSession } from '../../../apps/desktop/src/lib/replica'
 import { runInAction } from 'mobx'
 
@@ -83,7 +83,7 @@ beforeEach(() => {
   rpc.create.mockReset()
   rpc.machine.mockReset()
 })
-afterEach(() => { harness.cleanup(); accountProjectsStore.clear() })
+afterEach(() => { harness.cleanup(); groupFoldersStore.clear() })
 
 async function sendFirst() {
   await act(async () => { state.composer!.setText('原来的任务'); state.composer!.send() })
@@ -162,24 +162,23 @@ describe('creation keeps its navigation and draft ownership', () => {
     expect(composerDrafts.get(mobileCreationDraftKey(state.owner))).toBe('')
   })
 
-  // DESIGN 点击路径 4a:进来就有「不选项目 · 默认机器」;点项目行选 work,机器按默认规则换到有它文件夹的那台,发送带那台上的本地项目。
+  // DESIGN 点击路径 4a:进来就有「不选项目 · 默认机器」;点项目行选 work,机器按默认规则换到有它文件夹的那台,发送带那台上的文件夹。
   it('opens with defaults; picking a project moves to a machine holding its folder and creates there', async () => {
-    const folderOf = (id: string, path: string) => ({ localProjectId: id, name: 'work', rootPath: path, createdAt: '2026-11-01T00:00:00.000Z', chatId: 'chat-work', folders: [{ workspaceId: `ws-${id}`, kind: 'root' as const, path, attachedAt: null }] })
     const mac = { ...device, device_id: 'mac', label: 'mac' }
-    const gpu = { ...device, device_id: 'gpu', label: 'gpu', projects: [folderOf('gpu-work', '/root/work')] }
+    const gpu = { ...device, device_id: 'gpu', label: 'gpu' }
     rpc.create.mockResolvedValue(result)
     const onCreated = vi.fn()
     store.devices = [mac, gpu]
-    // The project list is the account project list (accountProjectsStore); its folder path is gpu's published record.
-    runInAction(() => { accountProjectsStore.list = [{ chatId: 'chat-work', name: 'work', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'gpu', localProjectId: 'gpu-work' }] }] })
+    // The group list is the account's groups with folders (groupFoldersStore); work has a folder on gpu.
+    runInAction(() => { groupFoldersStore.account = [{ chatId: 'chat-work', name: 'work', archived: false, activeAt: '2026-01-01T00:00:00.000Z', folders: [{ deviceId: 'gpu', folderId: 'gpu-work', path: '/root/work', position: 1, attachedAt: null, removalRequestedAt: null }] }] })
     await harness.render(createNode(CreateSessionPage, { onBack: vi.fn(), onCreated }))
     const row = (dimension: string) => harness.container.querySelector<HTMLButtonElement>(`[data-testid="agent-watch-create-${dimension}"]`)!
-    expect(row('project').textContent).toBe('项目')
+    expect(row('project').textContent).toBe('群')
     expect(rpc.options).toHaveBeenLastCalledWith('mac')
     const originalComposer = state.composer
     await act(async () => { row('project').click() })
     await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-target-choice"][data-option-id="chat-work"]')!.click() })
-    expect(row('project').textContent).toBe('项目')
+    expect(row('project').textContent).toBe('群')
     expect(rpc.options).toHaveBeenLastCalledWith('gpu')
     expect(state.composer).toBe(originalComposer)
     await sendFirst()

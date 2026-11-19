@@ -1,7 +1,7 @@
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useRef, useState } from 'react';
-import { getProjectManagerStore } from '@renderer/features/projects/stores/project-selectors';
+import { createGroupWithFolder } from '@renderer/features/folders/create-group-with-folder';
 import { getDraggedFilePaths, hasDraggedFiles } from '@renderer/lib/drag-files';
 import { useToast } from '@renderer/lib/hooks/use-toast';
 import { rpc } from '@renderer/lib/ipc';
@@ -47,15 +47,10 @@ export function useSidebarDrop() {
       const filePaths = getDraggedFilePaths(e.dataTransfer);
       if (filePaths.length === 0) return;
 
-      const projectManager = getProjectManagerStore();
-
       void Promise.allSettled(
         filePaths.map(async (filePath) => {
           try {
-            const status = await rpc.projects.inspectProjectPath({
-              type: 'local',
-              path: filePath,
-            });
+            const status = await rpc.folders.inspectFolderPath(filePath);
             if (status.error) {
               toast({
                 title: translateSessionMessage('sidebar.addProjectFailed'),
@@ -82,17 +77,10 @@ export function useSidebarDrop() {
             }
 
             const name = basenameFromAnyPath(filePath);
-            return await projectManager.createProject(
-              { type: 'local' },
-              {
-                mode: 'pick',
-                name,
-                path: filePath,
-                initGitRepository: false,
-              }
-            );
+            // A folder dropped on the sidebar = 用现有文件夹新建群 (the group is named after it).
+            return await createGroupWithFolder({ name, machine: null, path: filePath });
           } catch (err) {
-            log.error('Failed to add dropped project:', err);
+            log.error('Failed to make a group with a dropped folder:', err);
             toast({
               title: translateSessionMessage('sidebar.addProjectFailed'),
               description: messageForUser(err),
@@ -102,19 +90,19 @@ export function useSidebarDrop() {
           }
         })
       ).then((results) => {
-        const projectIds = results.flatMap((r) =>
+        const chatIds = results.flatMap((r) =>
           r.status === 'fulfilled' && r.value != null ? [r.value] : []
         );
-        const firstProjectId = projectIds[0];
+        const firstChatId = chatIds[0];
 
-        if (firstProjectId) {
-          navigate('project', { projectId: firstProjectId });
+        if (firstChatId) {
+          navigate('chat', { chatId: firstChatId });
         }
 
-        if (projectIds.length > 1) {
+        if (chatIds.length > 1) {
           toast({
-            title: 'Projects added',
-            description: `${projectIds.length} projects added.`,
+            title: 'Groups added',
+            description: `${chatIds.length} groups added.`,
           });
         }
       });

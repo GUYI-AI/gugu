@@ -55,14 +55,14 @@ describe('one participant workspace beside its source group', () => {
     expect(restored.ownerOf(screen.blockOf(agent('b'))!)).toBe('group');
   });
 
-  it('supports an existing human DM and a project group without creating any conversation', () => {
+  it('supports an existing human DM without creating any conversation', () => {
     const screen = new ScreenLayoutStore();
-    const project = { kind: 'project', projectId: 'project-group' } as const;
-    screen.show(project);
+    const group = { kind: 'chat', chatId: 'folder-group' } as const;
+    screen.show(group);
     const panes = new GroupParticipantPanes(screen);
     const dm = { kind: 'chat', chatId: 'existing-dm' } as const;
-    expect(panes.show('project-chat', project, dm)).toBe(true);
-    expect(screen.order.map(key => screen.blocks.get(key))).toEqual([project, dm]);
+    expect(panes.show('folder-group', group, dm)).toBe(true);
+    expect(screen.order.map(key => screen.blocks.get(key))).toEqual([group, dm]);
   });
 
   it('clamps a narrow window without overwriting the width wanted on reopening', () => {

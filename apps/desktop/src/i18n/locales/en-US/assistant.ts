@@ -2,16 +2,16 @@ export default {
   "resourceKinds": {"memory": "Memory", "personality": "Personality", "files": "Files", "skills": "Skills", "schedules": "Scheduled task", "integrations": "Application", "voice-notes": "Voice note", "tasks": "Task"},
   "library": {
     "emptyContent": "No instructions yet.",
-    "memory": "Memory", "workspace": "Projects", "devices": "Devices",
+    "memory": "Memory", "workspace": "Folders", "devices": "Devices",
     "loading": "Reading…", "failed": "Resources could not be read. Please retry.", "items_one": "{{count}} entry", "items_other": "{{count}} entries",
     "notConfigured": "Not configured yet", "setup": "Set up together", "organize": "Organize in chat", "backToIndex": "Back to index",
     "setupNote": "Group entries by purpose, with a separate description and index for each.",
-    "useFolder": "Use this folder as a project", "projectPrompt": "Associate the existing folder {{path}} with a project. Check the actual device, folder and registered projects first; reuse existing files without duplication. Ask me for any decisions or missing information.",
+    "useFolder": "Attach this folder to a group", "projectPrompt": "Attach the existing folder {{path}} to a group. Check the actual device, folder and groups that already have folders first; reuse existing files without duplication. Ask me for any decisions or missing information.",
     "deviceAccess": "Device connections and permissions",
     "onThisComputer": "Stored on this computer", "onAssistantDevice": "Stored on the assistant’s device",
     "missingIndex": "No entry instructions yet", "longTerm": "Long-term knowledge and preferences",
-    "guguProjects": "The same projects as the Gugu projects page.", "noGuguProjects": "No Gugu projects yet.", "stale": "Stale",
-    "projectOrganizePrompt": "Read existing Gugu projects and help organize their documents and indexes. Do not create a separate project registry. Reuse Gugu project and folder attachment operations and check ownership before linking an existing folder.",
+    "guguProjects": "The same folders the groups in Gugu have attached.", "noGuguProjects": "No Gugu group has a folder yet.", "stale": "Stale",
+    "projectOrganizePrompt": "Read the folders attached to Gugu groups and help organize their documents and indexes. Do not create a separate registry. Reuse Gugu's attach-folder-to-group operation and check ownership before linking an existing folder.",
     "projectFolderSessions_one": "{{count}} conversation",
     "projectFolderSessions_other": "{{count}} conversations"
   },
@@ -38,16 +38,16 @@ export default {
     "guguTitle": "Gugu",
     "messagesTitle": "Messages",
     "partnersTitle": "Partners",
-    "projectsTitle": "Projects",
+    "projectsTitle": "Groups",
     "chatsTitle": "Chats",
     "phone": {
       "guguBody": "Your personal assistant for plans and everyday tasks. Find Gugu at the top of Messages.",
-      "messagesBody": "Conversations with friends, groups and projects, including each other’s Agents.",
-      "partnersBody": "Find projects and friends here. Each project is a group."
+      "messagesBody": "Conversations with friends and groups, including each other’s Agents.",
+      "partnersBody": "Find groups and friends here. A group can have folders from your computers."
     },
     "desktop": {
       "guguBody": "Your personal assistant for plans and everyday tasks.",
-      "projectsBody": "Work with Agents in a group for each project. Find them in the Messages list.",
+      "projectsBody": "Work with Agents in groups, which can have folders from your computers. Find them in the Messages list.",
       "chatsBody": "Talk and collaborate with friends and each other’s Agents. Also in the Messages list."
     }
   },
@@ -463,7 +463,7 @@ export default {
       "other": "Other"
     },
     "kind": {
-      "project": "Project",
+      "project": "Group",
       "reference": "Reference"
     },
     "noContent": "Nothing here yet.",

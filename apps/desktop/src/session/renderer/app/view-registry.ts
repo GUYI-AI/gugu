@@ -3,7 +3,6 @@ import { homeView } from '@renderer/app/home-view';
 import { appsView, appView } from '@renderer/features/apps/apps-views';
 import { automationsView } from '@renderer/features/automations/automations-view';
 import { chatView } from '@renderer/features/chats/view';
-import { projectView } from '@renderer/features/projects/view';
 import { sessionHistoryView } from '@renderer/features/session-history/session-history-view';
 import { newSessionView } from '@renderer/features/sessions/new-session-page';
 import { sessionView } from '@renderer/features/sessions/view';
@@ -15,7 +14,6 @@ import { registerViews } from '@renderer/lib/layout/registered-views';
 export const views = {
   home: homeView,
   automations: automationsView,
-  project: projectView,
   // gugu-dev#181 对话也是一块。
   chat: chatView,
   screen: { MainPanel: () => null },

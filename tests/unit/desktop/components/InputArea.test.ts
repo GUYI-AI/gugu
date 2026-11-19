@@ -6,7 +6,7 @@ import { ChatMessageComposer } from '../../../../apps/desktop/src/components/cha
 import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import { ChatStoreProvider, type DraftAttachment, type DraftMention } from '../../../../apps/desktop/src/store/chatContext'
 import { chat, chatStore, contactsStore, createReactHarness, message } from '../../../support/testHarness'
-import { publishProjectGroupChats } from '../../../../apps/desktop/src/session/renderer/features/projects/stores/project-group-chats-bridge'
+import { publishAgentSessions } from '../../../../apps/desktop/src/session/renderer/features/sidebar/agent-sessions-bridge'
 import { ContactsContext } from '../../../../apps/desktop/src/store/contactsContext'
 import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
 import { readComposer, writeComposer, selectComposer } from '../../../support/composerEditor'
@@ -35,7 +35,7 @@ async function flush() {
   })
 }
 beforeEach(() => {
-  publishProjectGroupChats([], new Map(), new Map())
+  publishAgentSessions(new Map(), new Map())
   mobileShellState.enabled = false
   setLocalePreference('zh-CN')
   toastMock.mockClear(); noticeMock.mockClear()
@@ -729,9 +729,9 @@ describe('ChatMessageComposer', () => {
     await clickSend()
     expect(onSend).toHaveBeenCalledWith('@Atlas', expect.objectContaining({ toUserIds: ['atlas'] }))
   })
-  it.each(['project-group', 'project-topic', 'ordinary-group'] as const)('uses project affiliation in %s without changing the selected identity', async (chatId) => {
+  it.each(['project-group', 'project-topic', 'ordinary-group'] as const)('ranks the group\'s own agents first in %s without changing the selected identity', async (chatId) => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 9, 25, 12))
-    publishProjectGroupChats(['project-group'], new Map([['project-group', ['ada']]]), new Map())
+    publishAgentSessions(new Map([['project-group', ['ada']]]), new Map())
     const onSend = vi.fn(async () => {})
     const topic = chatId === 'project-topic'
     await harness.render(createElement(ChatStoreProvider, { value: chatStore({ chats: [chat({
@@ -745,7 +745,7 @@ describe('ChatMessageComposer', () => {
     await flush()
     await typeInComposer('@a')
     const options = Array.from(document.body.querySelectorAll('[role="option"]'))
-    // A project group's main line offers its whole roster, the same as an ordinary group.
+    // The group's main line offers its whole roster.
     expect(options).toHaveLength(2)
     const expectedId = chatId === 'ordinary-group' ? 'atlas' : 'ada'
     const expectedName = chatId === 'ordinary-group' ? 'Atlas' : 'Ada'

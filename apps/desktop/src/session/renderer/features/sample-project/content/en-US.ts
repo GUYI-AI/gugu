@@ -16,7 +16,7 @@ export const enUSSampleProject: SampleProjectContent = {
       "id": "m1",
       "kind": "task",
       "time": "14:50",
-      "text": "We're thinking of a weekend in Hangzhou. Dates aren't set yet, so please leave out specific dates and weather. Two of us, leaving Shanghai on Saturday morning and back on Sunday night, 1,500 yuan each at most. We don't want to rush between sights, just walk a lot and eat well, and on Sunday afternoon we'd like to sit down for tea near Longjing Village. Could you plan the trip, work out the costs and list what to pack? Save them in the project folder as itinerary.md, budget.csv and packing-list.md, then post them in the group."
+      "text": "We're thinking of a weekend in Hangzhou. Dates aren't set yet, so please leave out specific dates and weather. Two of us, leaving Shanghai on Saturday morning and back on Sunday night, 1,500 yuan each at most. We don't want to rush between sights, just walk a lot and eat well, and on Sunday afternoon we'd like to sit down for tea near Longjing Village. Could you plan the trip, work out the costs and list what to pack? Save them in the group's folder as itinerary.md, budget.csv and packing-list.md, then post them in the group."
     },
     {
       "id": "m2",
@@ -53,7 +53,7 @@ export const enUSSampleProject: SampleProjectContent = {
       "kind": "text",
       "from": "agent",
       "time": "14:57",
-      "text": "Saved the three files in the project folder and posted them here:\n\n- [itinerary.md](gugu-file://00000000-0000-4000-8000-000000000001)\n- [budget.csv](gugu-file://00000000-0000-4000-8000-000000000002)\n- [packing-list.md](gugu-file://00000000-0000-4000-8000-000000000003)\n\nThe plan is a relaxed West Lake walk on Saturday, then Jiuxi–Longjing Village and a seated tea stop on Sunday. Budget estimate: ¥1,280 per person, planned cap ¥1,420 per person including a ¥200 contingency; dates and weather are omitted. The rail allowance uses the [official 12306 fare notice](https://www.12306.cn/mormhweb/zxdt/202405/t20240502_41893.html), with the actual train price to be checked once the weekend is chosen.",
+      "text": "Saved the three files in the group's folder and posted them here:\n\n- [itinerary.md](gugu-file://00000000-0000-4000-8000-000000000001)\n- [budget.csv](gugu-file://00000000-0000-4000-8000-000000000002)\n- [packing-list.md](gugu-file://00000000-0000-4000-8000-000000000003)\n\nThe plan is a relaxed West Lake walk on Saturday, then Jiuxi–Longjing Village and a seated tea stop on Sunday. Budget estimate: ¥1,280 per person, planned cap ¥1,420 per person including a ¥200 contingency; dates and weather are omitted. The rail allowance uses the [official 12306 fare notice](https://www.12306.cn/mormhweb/zxdt/202405/t20240502_41893.html), with the actual train price to be checked once the weekend is chosen.",
       "replyTo": "m1",
       "mentionsOwner": true
     }

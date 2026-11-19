@@ -1,42 +1,49 @@
 import { rendererLogger } from '@/lib/log';
 import { messageForUser } from '@/lib/userFacingError';
 import type { ReactElement } from 'react';
-import type { ProjectFolder } from '@shared/core/projects/project-folders';
+import type { GroupFolder } from '@renderer/features/folders/group-folders-store';
+import { groupFoldersStore } from '@renderer/features/folders/group-folders-store';
+import type { GroupFoldersState } from '@renderer/features/folders/group-folders';
 import { toast } from '@renderer/lib/hooks/use-toast';
-import { rpc } from '@renderer/lib/ipc';
+import { rpcOn } from '@renderer/lib/ipc';
 import { ContextMenu, MenuItem } from '@/components/ui/Menu';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import type { ProjectFoldersState, ShownFolder } from './project-folders';
 
-export function ProjectFolderMenu({ folder, projectName, state, disabled, children }: {
-  folder: ShownFolder;
-  projectName: string;
-  state: Pick<ProjectFoldersState, 'detach' | 'folders'>;
+/** A folder paper's right-click menu: unbind it from the group (its files, sessions and history stay; a group may hold none). */
+export function ProjectFolderMenu({ folder, chatId, groupName, state, disabled, children }: {
+  folder: GroupFolder;
+  chatId: string;
+  groupName: string;
+  state: Pick<GroupFoldersState, 'detach'>;
   disabled: boolean;
   children: ReactElement;
 }) {
   const { translate } = useSessionMessages();
-  // 项目至少有一个文件夹(各台机器合计):最后一个摘不掉 —— 要不要这个项目,走「删除项目」。读不到列表时按「只剩一个」算。
-  const isLast = (state.folders?.length ?? 0) <= 1;
+  const log = rendererLogger('actions/group-folder-menu');
   const detach = async () => {
     try {
       await state.detach(folder);
       toast({
-        title: translate('projects.folders.detached', { path: folder.path, projectName }),
+        title: translate('projects.folders.detached', { path: folder.path, projectName: groupName }),
         duration: 8000,
         action: {
           label: translate('projects.folders.undo'),
-          // The last folder can unmount this card. Undo must work independently of its hook state.
-          onClick: () => { void restore(folder); },
+          // Undo is binding it again; it must work after this card's state is gone.
+          onClick: () => { void restore(); },
         },
       });
-    } catch (error) { rendererLogger('actions/project-folder-menu').error({ error: error }, 'action failed'); toast({ tier: 'error', title: translate('projects.folders.errorDetach'), description: messageForUser(error) }); }
+    } catch (error) {
+      log.error({ error }, 'action failed');
+      toast({ tier: 'error', title: translate('projects.folders.errorDetach'), description: messageForUser(error) });
+    }
   };
-  const restore = async (detached: ProjectFolder) => {
+  const restore = async () => {
     try {
-      const result = await rpc.projects.attachProjectFolder(detached.projectId, detached.path);
-      if (!result.success) throw new Error(result.error.message);
-    } catch (error) { rendererLogger('actions/project-folder-menu').error({ error: error }, 'action failed');
+      const result = await rpcOn(folder.deviceId).folders.bindFolderAtPath({ path: folder.path, chatId });
+      if (!result.success) throw new Error(result.error.type, { cause: result.error });
+      void groupFoldersStore.readMachine(folder.deviceId);
+    } catch (error) {
+      log.error({ error }, 'action failed');
       toast({ tier: 'error', title: translate('projects.folders.errorAttach'), description: messageForUser(error) });
     }
   };
@@ -46,11 +53,7 @@ export function ProjectFolderMenu({ folder, projectName, state, disabled, childr
     }}>
       <ContextMenu.Trigger render={children} />
       <ContextMenu.Content onClick={(event) => event.stopPropagation()}>
-        <MenuItem
-          disabled={disabled || folder.offline || isLast}
-          title={isLast ? translate('projects.folders.detachLast') : undefined}
-          onClick={() => { void detach(); }}
-        >
+        <MenuItem disabled={disabled || folder.offline} onClick={() => { void detach(); }}>
           {translate('projects.folders.detach')}
         </MenuItem>
       </ContextMenu.Content>

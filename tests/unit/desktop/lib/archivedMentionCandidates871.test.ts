@@ -25,10 +25,10 @@ const ids = (rows: readonly { id: string }[]) => rows.map((row) => row.id)
 const context = { chatId: 'group', currentUserId: 'me', messages: [], now: 0 }
 
 describe('archived Agent mention candidates #871', () => {
-  it('excludes archived group/project-group Agents from both shared matching paths while retaining people and offline Agents', () => {
+  it('excludes archived group Agents from both shared matching paths while retaining people and offline Agents', () => {
     const roster = buildGroupRosterCandidates(snapshot, identities)
     expect(ids(filterMentionCandidates(roster, ''))).toEqual(['human', 'active', 'offline'])
-    expect(ids(rankMentionCandidates(roster, '', { ...context, projectMemberIds: ['archived'] })))
+    expect(ids(rankMentionCandidates(roster, '', { ...context, groupAgentIds: ['archived'] })))
       .toEqual(['human', 'active', 'offline'])
     expect(filterMentionCandidates(roster, 'Archived Agent')).toEqual([])
     expect(filterMentionCandidates(roster, '87113')).toEqual([])

@@ -8,7 +8,7 @@ import { log } from '@renderer/utils/logger';
 /**
  * 置顶 acts on the row this session shows as in the left list (session/shared/session-menu.ts `SessionMenuPin`): a task
  * with a row in a project's list is pinned in that list (the session's pin); a standalone agent's task shows only as its
- * agent's chat-list row (sidebarStore.rowOfSession = null), so it is pinned among the conversations (the chat's pin).
+ * agent's chat-list row (in no group: sidebarStore.groupOfSession = null), so it is pinned among the conversations (the chat's pin).
  * Every session menu reads it here, so 置顶 in the tab and in the chat list are one state.
  */
 export type RowPin = { pinned: boolean; setPinned: (pinned: boolean) => void };
@@ -18,7 +18,7 @@ export type RowPinned = RowPin & { row: 'session' | 'chat' };
 /** `session` = the session's own pin and how the caller writes it (its store), used when the row is the session's. */
 export function rowPinOf(projectId: string, sessionId: string, session: RowPin): RowPinned {
   const agentUserId = sessionAgentBindings.bindingFor(sessionId)?.agentUserId;
-  const chat = agentUserId && sidebarStore.rowOfSession(projectId, sessionId) === null ? agentChatOf(agentUserId) : null;
+  const chat = agentUserId && sidebarStore.groupOfSession(sessionId) === null ? agentChatOf(agentUserId) : null;
   if (chat) {
     return {
       row: 'chat',

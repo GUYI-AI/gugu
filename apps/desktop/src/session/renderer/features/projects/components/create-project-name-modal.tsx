@@ -1,7 +1,7 @@
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { observer } from 'mobx-react-lite'
 import { useState } from 'react'
-import { getProjectManagerStore } from '@renderer/features/projects/stores/project-selectors'
+import { createGroupWithFolder, FolderMachineOfflineError } from '@renderer/features/folders/create-group-with-folder'
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store'
 import { createMachineSettingsHost, SettingsHostProvider } from '@renderer/features/settings/settings-host'
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key'
@@ -12,20 +12,17 @@ import { DialogContentArea, DialogFooter, DialogHeader, DialogTitle } from '@ren
 import { Field, FieldGroup, FieldLabel } from '@renderer/lib/ui/field'
 import { Input } from '@renderer/lib/ui/input'
 import { safePathSegment } from '@shared/path-name'
-import {
-  isProjectPathConflictError,
-  projectPathConflictMessage,
-} from '../stores/project-creation-error'
+import { log } from '@renderer/utils/logger'
 
 type CreateProjectNameProps = BaseModalProps<string> & {
-  /** #6264 建在别的机器上(那台机器的默认项目目录,规则同本机)。null / 缺省 = 本机。 */
+  /** #6264 文件夹建在别的机器上(那台机器的新文件夹默认位置,规则同本机)。null / 缺省 = 本机。 */
   machine?: { deviceId: string; label: string } | null
 }
 
 export const CreateProjectNameModal = observer(function CreateProjectNameModal(props: CreateProjectNameProps) {
   const { machine } = props
   if (!machine) return <CreateProjectNameForm {...props} machine={null} />
-  // 默认项目目录是那台机器的设置(跟机器走的那组),读那台机器的。
+  // 新文件夹的默认位置是那台机器的设置(跟机器走的那组),读那台机器的。
   const device = remoteHostsStore.device(machine.deviceId)
   return (
     <SettingsHostProvider
@@ -68,28 +65,17 @@ const CreateProjectNameForm = observer(function CreateProjectNameForm({
     setCreating(true)
     setError(null)
     try {
-      const projectId = await getProjectManagerStore().createProject(
-        machine ? { type: 'local', machine: machine.deviceId } : { type: 'local' },
-        {
-          mode: 'pick',
-          path: `${defaultDirectory}/${trimmed}`,
-          name: trimmed,
-          createDirectory: true,
-          allowNonGit: true
-        }
-      )
-      if (!projectId) throw new Error(translate('projects.create.failed'))
-      // 那台机器上的项目:建好就挂上,侧栏里立刻有它(标机器名)。
-      if (machine) await getProjectManagerStore().mountProject(projectId)
-      onSuccess(projectId)
+      // 先建群,再在那台机器上建这个文件夹、挂进群(离线的机器不建群,直接说原因)。
+      const chatId = await createGroupWithFolder({
+        name: trimmed,
+        machine: machine?.deviceId ?? null,
+        path: `${defaultDirectory}/${trimmed}`,
+        create: true,
+      })
+      onSuccess(chatId)
     } catch (cause) {
-      setError(
-        isProjectPathConflictError(cause)
-          ? projectPathConflictMessage(cause, translate)
-          : cause instanceof Error
-            ? cause.message
-            : translate('projects.create.failed')
-      )
+      log.error('[folders] creating a group with a new folder failed', { machine: machine?.deviceId ?? null, cause })
+      setError(translate(cause instanceof FolderMachineOfflineError ? 'projects.create.machineOffline' : 'projects.create.failed'))
       setCreating(false)
     }
   }

@@ -39,7 +39,6 @@ async function clickMessages() {
 describe('Messages returns to the shared screen', () => {
   const contents: Exclude<ScreenBlockContent, { kind: 'chat-app' }>[] = [
     { kind: 'chat', chatId: 'chat-1' },
-    { kind: 'project', projectId: 'project-1' },
     { kind: 'session', projectId: 'project-1', sessionId: 'session-1' },
     { kind: 'app', tabKind: 'notes.main' },
     { kind: 'sample-project' },
@@ -60,7 +59,7 @@ describe('Messages returns to the shared screen', () => {
         expect(screenLayout.snapshot).toEqual(saved)
         if (content.kind !== 'app' && content.kind !== 'sample-project') expect(appState.navigation.viewParamsStore[content.kind]).toMatchObject(content.kind === 'session'
           ? { projectId: content.projectId, sessionId: content.sessionId }
-          : content.kind === 'chat' ? { chatId: content.chatId } : { projectId: content.projectId })
+          : { chatId: content.chatId })
       })
     }
   }

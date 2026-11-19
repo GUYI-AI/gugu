@@ -25,7 +25,7 @@ import '@/mobile/phone-look.css'
 vi.mock('@/components/session-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ sessionTimeline: {
   sessionCreateSkills: async (input: { harness: string }) => ({ ok: true, value: { skills: input.harness === 'pi' ? [] : [{ id: '/native/meeting/SKILL.md', name: '会议记录', description: '整理会议记录与待办事项' }, { id: '/native/code/SKILL.md', name: '代码检查', description: '检查代码中的问题' }] } }),
 } }) }))
-const machines: CreateMachine[] = ['Mac', 'Cloud'].map((name) => ({ device: { device_id: name, label: name, hostname: name, platform: 'darwin', status: 'online', is_online: true, last_seen_at: '2026-11-15T00:00:00Z', capabilities: { terminals: [], runtimes: ['codex'] } }, localProjectId: null, path: null, available: true }))
+const machines: CreateMachine[] = ['Mac', 'Cloud'].map((name) => ({ device: { device_id: name, label: name, hostname: name, platform: 'darwin', status: 'online', is_online: true, last_seen_at: '2026-11-15T00:00:00Z', capabilities: { terminals: [], runtimes: ['codex'] } }, folderId: null, path: null, available: true }))
 machines.push({ ...machines[0]!, device: { ...machines[0]!.device, device_id: 'Phone', label: 'Phone', platform: 'ios', capabilities: { terminals: [], runtimes: ['pi'], host_kind: 'phone', host_runtime_capability: 1 } } })
 const options: SessionpageSessionCreateOptions = { projects: [], lastUsed: null, harnesses: ['codex', 'claude', 'pi'].map((id) => ({ id, name: id === 'codex' ? 'Codex' : id === 'claude' ? 'Claude Code' : 'Pi', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: [] })) }
 let root: Root | null = null, host: HTMLDivElement | null = null
@@ -33,7 +33,7 @@ function Harness({ projectTask = false }: { projectTask?: boolean }) {
   const [machineId, setMachine] = useState('Mac'), [projectId, setProject] = useState<string | null>(null)
   const [selection, setSelection] = useState<CreateSelection>({ harness: 'codex', model: null, effort: null, permissionMode: null })
   const [skills, setSkills] = useState<CreationSkill[]>([])
-  const projects = [{ chatId: 'project', name: '一个用于窄屏验收的长项目名称', homes: new Map<string, string>() }]
+  const projects = [{ chatId: 'project', name: '一个用于窄屏验收的长项目名称', homes: new Map<string, { folderId: string; path: string }>() }]
   return <><CreateTarget machines={machines} machine={machines.find((m) => m.device.device_id === machineId)} machineLabel={(d) => d.label}
     onMachine={setMachine} projects={projects} project={projects.find((p) => p.chatId === projectId) ?? null} onProject={setProject} busy={false}
     projectTask={projectTask ? { open: false, onFolder: () => undefined } : undefined}
@@ -130,7 +130,7 @@ it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'li
   await mount(theme, locale)
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
   const buttons = [...row.querySelectorAll<HTMLButtonElement>('.gg-phone-composer-control')]
-  expect(buttons.map((button) => button.textContent)).toEqual(locale === 'zh-CN' ? ['工作', '项目', '技能'] : ['Work', 'Project', 'Skills'])
+  expect(buttons.map((button) => button.textContent)).toEqual(locale === 'zh-CN' ? ['工作', '群', '技能'] : ['Work', 'Group', 'Skills'])
   expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
   for (const button of buttons) {
     const box = button.getBoundingClientRect(), label = button.querySelector<HTMLElement>('.gg-phone-composer-control-label')!
@@ -167,7 +167,7 @@ it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'li
   expect(host!.querySelector('[data-testid="agent-watch-create-project"]')).toBeNull()
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
   const buttons = [...row.querySelectorAll<HTMLButtonElement>('.gg-phone-composer-control')]
-  expect(buttons.map(button => button.textContent)).toEqual(locale === 'zh-CN' ? ['工作', '项目', '技能'] : ['Work', 'Project', 'Skills'])
+  expect(buttons.map(button => button.textContent)).toEqual(locale === 'zh-CN' ? ['工作', '群', '技能'] : ['Work', 'Group', 'Skills'])
   expect(host!.querySelector('[data-testid="agent-watch-create-agent"]')).toBeNull()
   expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
   for (const button of buttons) expect(Math.abs(button.getBoundingClientRect().top - buttons[0]!.getBoundingClientRect().top)).toBeLessThan(1)

@@ -19,11 +19,11 @@ import { ConnectionStatus } from '@/components/connection/ConnectionStatus'
 import { DropdownMenu } from '@/components/ui/Menu'
 import { type SessionMenuTarget, SessionActions, SessionRow } from '../../components/session-watch/SessionsPage'
 import { assistantGroupIds, locateSession, projectSectionKey, sectionProjects, sessionSections, type SessionNode, type SessionSection } from './session-sections'
-import { useMachineLabel } from '../../components/session-watch/useMachineLabel'
-import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
-import { directoryMachines, visibleMachines } from '../../components/session-watch/machine-list'
-import { DeviceDirectoryRetry } from '../../components/session-watch/DeviceDirectoryRetry'
-import { PhoneHostSetupEntry } from '../../components/session-watch/PhoneHostSetupEntry'
+import { useMachineLabel } from '@/components/session-watch/useMachineLabel'
+import { groupFoldersStore } from '@/session/renderer/features/folders/group-folders-store'
+import { directoryMachines, visibleMachines } from '@/components/session-watch/machine-list'
+import { DeviceDirectoryRetry } from '@/components/session-watch/DeviceDirectoryRetry'
+import { PhoneHostSetupEntry } from '@/components/session-watch/PhoneHostSetupEntry'
 import { platform } from '@/platform'
 import '../../components/session-watch/task-flow-catalog'
 import { takeLegacyInterface, useInterface } from '@/lib/viewStateTable'
@@ -116,15 +116,15 @@ export const ProjectsPage = observer(function ProjectsPage({
   const rows = useMemo(() => directoryRows(devices, live), [devices, live])
   const assistantId = assistant?.id ?? null
   const groupIds = useMemo(() => assistantGroupIds(rows, assistantId, homeIds), [rows, assistantId, homeIds])
-  // 一个本地项目属于账号上哪个项目,只读 accountProjectsStore(桌面侧栏同一份):同一个项目的各台机器并成一格,格名 = 项目名。
-  const accountList = accountProjectsStore.projects
+  // 一个文件夹挂在哪个群,只读 groupFoldersStore(桌面群选择器同一份):同一个群的各台机器并成一格,格名 = 群名。
+  const groups = groupFoldersStore.groups
   const sectionMachines = useMemo(
     () => machines.map((device) => ({
       deviceId: device.device_id,
-      projects: sectionProjects(device.device_id, deviceSessionsOf(device, live).projects, accountProjectsStore),
+      projects: sectionProjects(deviceSessionsOf(device, live).projects, groupFoldersStore),
     })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- projectOfLocal reads accountList (the store's list)
-    [machines, live, accountList],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chatOfFolder reads the store's groups
+    [machines, live, groups],
   )
   const online = useCallback((deviceId: string) => {
     const device = deviceOf.get(deviceId)

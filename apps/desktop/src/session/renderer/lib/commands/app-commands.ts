@@ -1,8 +1,9 @@
+import { prepareGroupTask } from '@renderer/features/folders/group-home';
 import { applyHistoryEntry } from '@renderer/lib/components/nav-buttons';
 import { showModal } from '@renderer/lib/modal/modal-provider';
 import { openShellFeedback } from '@renderer/lib/open-shell-feedback';
 import { openShellSettings } from '@renderer/lib/open-shell-settings';
-import { appState } from '@renderer/lib/stores/app-state';
+import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { toggleHostTheme } from '@renderer/lib/theme/host-theme';
 import { COMMANDS, type CommandId } from '@shared/commands';
 import { revealSessionpage } from '@/hooks/useSessionpageReveal';
@@ -23,9 +24,10 @@ function createAppCommandProvider(): CommandProvider {
       // when navigation changes.
       const viewId = appState.navigation.currentViewId;
       const params = appState.navigation.viewParamsStore[viewId] as
-        | { projectId?: string }
+        | { sessionId?: string; chatId?: string }
         | undefined;
-      const projectId = params?.projectId;
+      // The group being looked at: the chat open, or the group of the session open.
+      const groupChatId = viewId === 'chat' ? params?.chatId : params?.sessionId ? sidebarStore.groupOfSession(params.sessionId) : null;
 
       const settingsDef = appDef('app.settings');
       const marketplaceDef = appDef('app.library');
@@ -114,11 +116,12 @@ function createAppCommandProvider(): CommandProvider {
       commands.push({
         ...newSessionDef,
         execute() {
-          // 在项目里:与项目行的「新建」同一条路,回到这个项目,在那里带着第一句话建(#5690)。
-          // 不在项目里:与侧栏「新建任务」同一条路,去新建任务页。
+          // 在群里:回到这个群,在那里带着第一句话建(#5690)。不在群里:与侧栏「新建任务」同一条路,去新建任务页。
           // ❌ 不开旧的 taskModal —— 那是只填标题 + 关联 issue 的旧残留(behavior session-resume)。
-          if (projectId) appState.navigation.navigate('project', { projectId });
-          else appState.navigation.navigate('new-session');
+          if (groupChatId) {
+            prepareGroupTask(groupChatId);
+            appState.navigation.navigate('chat', { chatId: groupChatId });
+          } else appState.navigation.navigate('new-session');
         },
       });
 

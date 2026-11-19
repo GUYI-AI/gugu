@@ -5,7 +5,7 @@ import {
   asMounted,
   getProjectManagerStore,
 } from '@renderer/features/projects/stores/project-selectors';
-import { isImplicitSessionHomeProject } from '@renderer/features/sessions/session-home-project-constants';
+import { isWorkspaceProject } from '@renderer/features/sessions/session-home-project-constants';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import {
   Combobox,
@@ -49,7 +49,7 @@ export const ProjectSelector = observer(function ProjectSelector({
 
   const options: ProjectOption[] = Array.from(getProjectManagerStore().projects.entries()).flatMap(
     ([id, store]) => {
-      if (isImplicitSessionHomeProject(store)) return [];
+      if (isWorkspaceProject(store)) return [];
       if (machine !== undefined && machineRegistry.machineOf(id) !== machine) return [];
       const mounted = asMounted(store);
       return mounted

@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
 import { setLocalAgentStatus } from '@/lib/agentPresenceStore';
 import { SidebarStore } from './sidebar-store';
-import { sidebarOf } from './mirror-account-projects.testing';
 
 vi.mock('@renderer/lib/ipc', () => {
   const ipc = { events: { on: vi.fn() }, rpc: {} };
@@ -15,6 +14,9 @@ vi.mock('@renderer/features/sessions/acp/acp-chat-panel', () => ({ AcpChatPanel:
 vi.mock('@/lib/supabase', () => ({ dataClient: { schema: () => ({ rpc: () => new Promise(() => {}) }) } }));
 vi.mock('@/platform/desktopIpc', () => ({ desktopIpc: () => null }));
 
+/** Every entry the sidebar placed (these fixtures hold one folder, in no group). */
+const placedEntries = (store: SidebarStore) => [...store.placement.entries.values()].flat();
+
 // One agent's status push used to rebuild every remote row of the sidebar (and deep-copy the machine's whole
 // session list to do it) — per push O(n), O(n²) as agents multiply. A push must touch only the rows of that agent.
 describe('a presence push re-derives only the rows of the agent it is about', () => {
@@ -25,7 +27,7 @@ describe('a presence push re-derives only the rows of the agent it is about', ()
       lastInteractedAt: `2026-01-01T00:${String(i).padStart(2, '0')}:00.000Z`, agent: { userId: `agent-${i}` },
       agentStatus: 'idle', status: { status: 'idle', detail: null },
     }) as unknown as SessionpageSessionSummary);
-    const store = sidebarOf({
+    const store = new SidebarStore({
       projects: new Map([[projectId, { id: projectId, name: 'Remote', createdAt: '2026-01-01T00:00:00.000Z' }]]),
     } as unknown as ConstructorParameters<typeof SidebarStore>[0]);
     store.machines = {
@@ -34,7 +36,7 @@ describe('a presence push re-derives only the rows of the agent it is about', ()
       session: (_deviceId, id) => sessions.find((session) => session.conversationId === id) ?? null,
     };
     let shown: readonly { id: string }[] = [];
-    const stop = autorun(() => { shown = store.placement.entries.get(projectId) ?? []; });
+    const stop = autorun(() => { shown = placedEntries(store); });
     try {
       expect(shown).toHaveLength(40);
       const before = new Map(shown.map((entry) => [entry.id, entry]));
@@ -60,7 +62,7 @@ describe('a presence push re-derives only the rows of the agent it is about', ()
       conversationId: `s-${i}`, projectId, title: `s-${i}`, runtime: 'acp', harness: 'codex', supported: true, unseen: false,
       lastInteractedAt: null, agent: { userId: `agent-${i}` }, agentStatus: 'idle', status: { status: 'idle', detail: null },
     }) as unknown as SessionpageSessionSummary);
-    const store = sidebarOf({
+    const store = new SidebarStore({
       projects: new Map([[projectId, { id: projectId, name: 'Remote', createdAt: '2026-01-01T00:00:00.000Z' }]]),
     } as unknown as ConstructorParameters<typeof SidebarStore>[0]);
     const machinesFor = (listed: readonly SessionpageSessionSummary[]) => ({
@@ -71,11 +73,11 @@ describe('a presence push re-derives only the rows of the agent it is about', ()
     store.machines = machinesFor(sessions);
     const derived = (store as unknown as { remoteEntryById: Map<string, unknown> }).remoteEntryById;
     // An imperative read derives the rows but keeps none of them.
-    expect(store.placement.entries.get(projectId)).toHaveLength(5);
+    expect(placedEntries(store)).toHaveLength(5);
     expect(derived.size).toBe(0);
 
     let shown: readonly { id: string }[] = [];
-    const stop = autorun(() => { shown = store.placement.entries.get(projectId) ?? []; });
+    const stop = autorun(() => { shown = placedEntries(store); });
     expect(derived.size).toBe(5);
     // Two sessions leave the directory: their rows leave the table.
     sessions = sessions.slice(2);

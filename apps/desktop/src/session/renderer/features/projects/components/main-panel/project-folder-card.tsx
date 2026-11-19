@@ -4,7 +4,6 @@ import { sessionAgentBindings } from '@renderer/features/sessions/stores/session
 import { observer } from 'mobx-react-lite';
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent } from 'react';
 import { Check, Monitor, Plus, Server } from '@/lib/icons';
-import type { ProjectFolder } from '@shared/core/projects/project-folders';
 import { basenameFromAnyPath, shortHome } from '@shared/path-name';
 import { senderAvatarUrl, subscribeSenderAvatars } from '@renderer/lib/chat/sender-avatar';
 import { sidebarStore } from '@renderer/lib/stores/app-state';
@@ -20,16 +19,17 @@ import {
   DropdownMenuTrigger,
 } from '@renderer/lib/ui/dropdown-menu';
 import { cn } from '@renderer/utils/utils';
-import type { ProjectFoldersState, ShownFolder } from './project-folders';
+import type { GroupFolder } from '@renderer/features/folders/group-folders-store';
+import { isDefaultFolder, type GroupFoldersState } from '@renderer/features/folders/group-folders';
 import { ProjectFolderMenu } from './project-folder-menu';
 import { ProjectCover } from './project-folder-cover';
 import './project-folder-card.css';
 
 /**
- * 项目首页的文件夹卡(product spec「项目首页」,owner 2026-10-17 从三个方向里选 B,#7341)。
+ * 群的文件夹卡(owner 2026-10-17 从三个方向里选 B,#7341;每个群都是这一张,一个文件夹都没挂的群也是)。
  *
  * 卡片露出最近用的几个文件夹(像从文件夹里探出来的纸);点卡片摊开全部;点其中一张 = 新会话从那儿开工;
- * 「+」或把文件夹拖上来 = 挂文件夹。封面颜色按项目 id 固定,有 agent 在跑时更鲜、没人在跑褪成灰。
+ * 「+」或把文件夹拖上来 = 挂文件夹。封面颜色按群 id 固定,有 agent 在跑时更鲜、没人在跑褪成灰。
  */
 
 /**
@@ -202,10 +202,9 @@ export type FolderCardMachine = { id?: string | null; label: string; online: boo
 export type AttachMachine = FolderCardMachine & { id: string | null };
 
 export const ProjectFolderCard = observer(function ProjectFolderCard({
-  projectId,
-  projectName,
+  chatId,
+  groupName,
   folders: state,
-  memberIds = [projectId],
   machines,
   machineOf,
   attachMachines,
@@ -215,13 +214,10 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
   floating = false,
   touch = false,
 }: {
-  /** 代表这个项目的那一行(侧栏那一行)的本地项目 id。 */
-  projectId: string;
-  projectName: string;
-  folders: ProjectFoldersState;
-  /** 这个项目在各台机器上的本地项目(#7341 第二步:绑在同一个项目群上);没合并 = 只有 projectId。 */
-  memberIds?: readonly string[];
-  /** 这个项目涉及的机器(null = 这台电脑;卡面标它们)。 */
+  chatId: string;
+  groupName: string;
+  folders: GroupFoldersState;
+  /** 这个群的文件夹所在的机器(null = 这台电脑;卡面标它们)。 */
   machines: readonly (string | null)[];
   /** 一台机器的样子(卡面与每页纸标机器用;每页纸读它自己的 folder.deviceId)。 */
   machineOf: (deviceId: string | null) => FolderCardMachine;
@@ -229,9 +225,9 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
   attachMachines: readonly AttachMachine[];
   onAttach: (machine: string | null) => void;
   onAddMachine?: () => void;
-  /** 从 Finder 拖进来的文件夹(一个 File;取路径由调用方决定 —— 别的机器上的项目不能拿这台电脑的路径)。 */
+  /** 从 Finder 拖进来的文件夹(一个 File;取路径由调用方决定)。 */
   onDropFolder: (file: File) => void;
-  /** 浮在群聊上面(项目块里开新任务,gugu-dev#181):一浮出来就摊开,提示换成「按 Esc 收起」;打字不收(owner 10-26)。 */
+  /** 浮在群聊上面(群里开新任务,gugu-dev#181):一浮出来就摊开,提示换成「按 Esc 收起」;打字不收(owner 10-26)。 */
   floating?: boolean;
   /** 触屏(手机):浮着时的提示不说键盘,收起靠任务标签上的 ×。 */
   touch?: boolean;
@@ -258,16 +254,14 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
     if (floating && foldersRead) setOpen(true);
   }, [floating, foldersRead]);
   const droppedRef = useRef<string | undefined>(undefined);
-  const uid = useMemo(() => projectId.replace(/[^a-z0-9]/gi, '').slice(0, 12), [projectId]);
+  const uid = useMemo(() => chatId.replace(/[^a-z0-9]/gi, '').slice(0, 12), [chatId]);
 
-  // 这个项目自己的会话(各台机器上的都算;挂在别的项目会话下的子会话不算)。
-  const members = new Set(memberIds);
-  const sessions = [...new Map((sidebarStore.placement.entries.get(projectId) ?? [])
-    .filter((entry) => members.has(entry.projectId))
+  // 这个群里的会话(各台机器上的都算)。
+  const sessions = [...new Map((sidebarStore.placement.entries.get(chatId) ?? [])
     .map((entry) => [entry.sessionId, entry] as const)).values()];
-  // 卡面列这个项目涉及的机器(同名去重),纸上标各自那一台;那台此刻答不上(只列着上次读到的)就标离线。
+  // 卡面列这个群涉及的机器(同名去重),纸上标各自那一台;那台此刻答不上(只列着上次读到的)就标离线。
   const machinesShown = [...new Map(machines.map((deviceId) => [deviceId ?? 'local', machineOf(deviceId)] as const)).values()];
-  const paperMachine = (folder: ShownFolder): FolderCardMachine => {
+  const paperMachine = (folder: GroupFolder): FolderCardMachine => {
     const m = machineOf(folder.deviceId);
     return folder.offline ? { ...m, online: false } : m;
   };
@@ -286,14 +280,14 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
 
   const folders = state.folders ?? [];
   // 「刚挂上」只在挂上后的两分钟里算数:过后它就是一个普通的文件夹,❌ 一直挂着那个标。
-  const isFresh = (folder: ProjectFolder) =>
-    folder.workspaceId === state.fresh &&
+  const isFresh = (folder: GroupFolder) =>
+    folder.id === state.fresh &&
     folder.attachedAt !== null &&
     Date.now() - Date.parse(folder.attachedAt) < FRESH_MS;
-  // 刚挂上的排最前,然后是选中的,再是根目录和其余的(按挂上的先后)。
+  // 刚挂上的排最前,然后是选中的,再是各台机器上默认开工的那个和其余的(按群里的次序)。
   const ordered = [...folders].sort((x, y) => {
-    const rank = (f: ProjectFolder) =>
-      isFresh(f) ? 0 : f.workspaceId === state.chosen?.workspaceId ? 1 : f.kind === 'root' ? 2 : 3;
+    const rank = (f: GroupFolder) =>
+      isFresh(f) ? 0 : f.id === state.chosen?.id ? 1 : isDefaultFolder(f, folders) ? 2 : 3;
     return rank(x) - rank(y);
   });
 
@@ -334,7 +328,7 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
     setTilt(0, 0, 0, 0);
   };
   const toggleOpen = () => {
-    if (state.folders === null) return;
+    if (!state.folders?.length) return;
     resetTilt();
     setOpen((value) => !value);
   };
@@ -378,7 +372,7 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
    * 收起时不渲染的纸摊开时是新挂上的节点、同样没有过渡 —— 实测四页里只有一页在动,其余是瞬移过去的。
    */
   type Place = { transform: string; rot: number; tx: number; ty: number; top: number; z: number; hidden: boolean };
-  const chosenIndex = ordered.findIndex((folder) => folder.workspaceId === state.chosen?.workspaceId);
+  const chosenIndex = ordered.findIndex((folder) => folder.id === state.chosen?.id);
   const placement = (index: number, count: number): Place => {
     if (!open) {
       const peeking = Math.min(count, 3);
@@ -390,7 +384,7 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
     }
     const folder = ordered[index];
     const slot = index === chosenIndex ? 0 : chosenIndex >= 0 && index < chosenIndex ? index + 1 : index;
-    const fan = fanPlace(slot, count, { column: Number.isFinite(column) ? column : 1200, paperW, paperH: G.paperH, key: folder.workspaceId });
+    const fan = fanPlace(slot, count, { column: Number.isFinite(column) ? column : 1200, paperW, paperH: G.paperH, key: folder.id });
     // 收起位置是纸顶在 base;摊开时前一行的纸底贴在前片上沿(留 4px)。
     const y = G.peek - G.paperH - 4 + fan.y;
     return {
@@ -442,7 +436,7 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
         }}
         onDrop={onDrop}
       >
-        <div className="gg-folder-card__drop-hint">{translate('projects.folders.dropHint', { projectName })}</div>
+        <div className="gg-folder-card__drop-hint">{translate('projects.folders.dropHint', { projectName: groupName })}</div>
         <div className="gg-folder-card__shadow" />
         <div className="gg-folder-card__stage" style={cardSize}>
           <svg className="gg-folder-card__back" width={W} height={G.backH} viewBox={`0 0 ${W} ${G.backH}`} aria-hidden>
@@ -450,7 +444,7 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
               <path d={backD} />
             </clipPath>
             <g className="gg-folder-card__cover" clipPath={`url(#fc-back-${uid})`}>
-              <ProjectCover projectId={projectId} running={running} width={W} height={G.backH} uid={uid} />
+              <ProjectCover projectId={chatId} running={running} width={W} height={G.backH} uid={uid} />
             </g>
             <path d={backD} fill="none" stroke="var(--fc-edge)" strokeWidth={0.6} />
           </svg>
@@ -459,14 +453,14 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
             {ordered.map((folder, index) => {
               const place = placement(index, ordered.length);
               const here = folder.sessionIds.filter((id) => runningIds.has(id)).length;
-              const chosen = folder.workspaceId === state.chosen?.workspaceId;
+              const chosen = folder.id === state.chosen?.id;
               const fresh = isFresh(folder);
               return (
                 // 位置与动画放在外面这一层:按钮原语自带一组带 !important 的过渡(120ms、只认固定几种属性),
                 // 摊开 / 悬停上浮 / 落进来的动画放在按钮身上会被它压掉 —— 分层的 !important 从外面压不回来。
-                <ProjectFolderMenu key={folder.workspaceId} folder={folder} projectName={projectName} state={state} disabled={!open}>
+                <ProjectFolderMenu key={folder.id} folder={folder} groupName={groupName} chatId={chatId} state={state} disabled={!open}>
                 <div
-                  className={cn('gg-folder-paper-slot', folder.workspaceId === dropping && 'is-dropping')}
+                  className={cn('gg-folder-paper-slot', folder.id === dropping && 'is-dropping')}
                   style={paperStyle(place, index)}
                   data-peek={place.hidden ? 'hidden' : 'shown'}
                   aria-hidden={place.hidden || undefined}
@@ -482,14 +476,14 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
                     // 收起时点到探出来的纸 = 点卡片(摊开);摊开后点一张 = 从这儿开工。
                     if (!open) return;
                     event.stopPropagation();
-                    state.choose(folder.workspaceId);
+                    state.choose(folder.id);
                   }}
                 >
                   {/* 名字在左上角:摊开后每张只露出这一角(像牌角的点数),❌ 让机器标签占着它 —— 那一格每张都一样。 */}
                   <span className="gg-folder-paper__top">
                     <span className="gg-folder-paper__name">{basenameFromAnyPath(folder.path) || folder.path}</span>
                     {fresh ? <span className="gg-folder-paper__fresh">{translate('projects.folders.fresh')}</span> : null}
-                    {folder.stale ? <span className="gg-folder-paper__fresh gg-folder-paper__stale" data-testid="project-folder-stale">{translate('projects.folders.stale')}</span> : null}
+                    {folder.offline && state.stale ? <span className="gg-folder-paper__fresh gg-folder-paper__stale" data-testid="project-folder-stale">{translate('projects.folders.stale')}</span> : null}
                     <span className="gg-folder-paper__check">
                       <Check className="size-3.5" />
                     </span>
@@ -505,7 +499,7 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
                       ? translate('projects.folders.runningHere', { count: here })
                       : folder.sessionIds.length > 0
                         ? translate('projects.folders.sessionsHere', { count: folder.sessionIds.length })
-                        : folder.kind === 'root'
+                        : isDefaultFolder(folder, folders)
                           ? translate('projects.folders.root')
                           : translate('projects.folders.idleHere')}
                   </span>
@@ -518,22 +512,22 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
           </div>
 
           <div className="gg-folder-card__front" style={frontStyle}>
-            <FrostedFront projectId={projectId} running={running} count={folders.length} uid={uid} W={W} paperW={paperW} />
+            <FrostedFront projectId={chatId} running={running} count={folders.length} uid={uid} W={W} paperW={paperW} />
             <div className="gg-folder-card__body" style={bodyStyle}>
               <div className="gg-folder-card__title">
                 <Button
                   variant="ghost"
                   className="gg-folder-card__toggle"
                   aria-expanded={open}
-                  disabled={state.folders === null}
-                  aria-label={translate('projects.folders.cardLabel', { projectName })}
+                  disabled={!state.folders?.length}
+                  aria-label={translate('projects.folders.cardLabel', { projectName: groupName })}
                   data-testid="project-folder-card-toggle"
                   onClick={(event) => {
                     event.stopPropagation();
                     toggleOpen();
                   }}
                 >
-                  <span className="gg-folder-card__name">{projectName}</span>
+                  <span className="gg-folder-card__name">{groupName}</span>
                 </Button>
                 <span className="gg-folder-card__meta">
                   {state.folders ? meta : null}
@@ -590,7 +584,8 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
             ? translate('projects.folders.loading')
             : open
               ? translate(floating ? (touch ? 'projects.folders.hintFloatingTouch' : 'projects.folders.hintFloating') : 'projects.folders.hintOpen')
-              : translate('projects.folders.hintClosed', { count: folders.length })}
+              // A group with no folder yet: the card says「0 个文件夹」and its「+」binds the first; no hint about opening it.
+              : folders.length > 0 ? translate('projects.folders.hintClosed', { count: folders.length }) : '\u00a0'}
         </p>
       ) : null}
     </div>

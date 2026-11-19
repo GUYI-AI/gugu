@@ -15,14 +15,8 @@ export function AppKeyboardShortcuts() {
 
   const { currentView } = useWorkspaceSlots();
   const { params: sessionParams } = useParams('session');
-  const { params: projectParams } = useParams('project');
 
-  const currentProjectId =
-    currentView === 'session'
-      ? sessionParams.projectId
-      : currentView === 'project'
-        ? projectParams.projectId
-        : undefined;
+  const currentProjectId = currentView === 'session' ? sessionParams.projectId : undefined;
   const currentSessionId = currentView === 'session' ? sessionParams.sessionId : undefined;
 
   useEffect(() => () => exitZenMode(), [currentProjectId, currentSessionId, currentView, exitZenMode]);

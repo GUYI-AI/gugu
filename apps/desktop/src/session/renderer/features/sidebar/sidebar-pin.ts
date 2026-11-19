@@ -1,7 +1,7 @@
 import { myAgentsInChat, type ChatAgentEntry, type ChatAgentScope } from './chat-agents';
 
 // #2548 固定到左侧栏 (Pin to sidebar). 置顶 only orders a session first within the list it is in; 固定到左侧栏 gives
-// an agent that lives in a group or a project its own row at the top of the desktop left list, saying where it lives.
+// an agent that lives in a group its own row at the top of the desktop left list, saying where it lives.
 
 export type SidebarPinMenuAction = 'pin' | 'unpin';
 
@@ -19,19 +19,17 @@ export function sidebarPinMenuAction(input: {
 }
 
 /** Where an agent lives; the pinned row names it. Callers may carry more (an id to open it). */
-export type SidebarAgentHome = { kind: 'group' | 'project'; name: string };
+export type SidebarAgentHome = { kind: 'group'; name: string };
 
-/** A group or project my agents can live in, with whom it counts as its agents (the inner sidebar's scope). */
+/** A group my agents can live in, with whom it counts as its agents (the inner sidebar's scope). */
 export type SidebarHomeCandidate = SidebarAgentHome & { scope: ChatAgentScope };
 
 /**
- * Where a session's agent lives: the first group or project whose inner-sidebar column lists it (myAgentsInChat, the
- * same reading as 我的智能体 / 智能体), so the pinned row names the column the agent stays in. A project comes before a
- * group: the session's work is in its project. null = it lives in neither (a standalone agent).
+ * Where a session's agent lives: the first group whose inner-sidebar column lists it (myAgentsInChat, the same reading
+ * as 我的智能体 / 智能体), so the pinned row names the column the agent stays in. null = none (a standalone agent).
  */
 export function sidebarAgentHome<H extends SidebarHomeCandidate>(entry: ChatAgentEntry, homes: readonly H[]): H | null {
-  const ordered = [...homes.filter((home) => home.kind === 'project'), ...homes.filter((home) => home.kind === 'group')];
-  return ordered.find((home) => myAgentsInChat([entry], home.scope).length > 0) ?? null;
+  return homes.find((home) => myAgentsInChat([entry], home.scope).length > 0) ?? null;
 }
 
 /** The facts of a session this needs; both a mounted session's data and a listed directory row map onto it. */
@@ -47,8 +45,8 @@ export type PinnedSidebarAgent<T extends SidebarPinCandidate, H extends SidebarA
 
 /**
  * The agents pinned to the top of the left list, in display order (newest interaction first, like the Pinned section).
- * A session counts when it is pinned to the sidebar, top-level, not archived, and its agent lives in a group or a
- * project (`homeOf` returns where; null = a standalone agent, which is a row of the list already). The same session
+ * A session counts when it is pinned to the sidebar, top-level, not archived, and its agent lives in a group
+ * (`homeOf` returns where; null = a standalone agent, which is a row of the list already). The same session
  * listed twice (overlapping snapshots) counts once, the later listing winning.
  */
 export function pinnedSidebarAgents<T extends SidebarPinCandidate, H extends SidebarAgentHome>(

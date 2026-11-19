@@ -9,10 +9,12 @@ import {
 } from '@/lib/sampleProject';
 import { forgetSampleProjectOnScreen } from '@renderer/app/screen-layout-actions';
 import { openChatOnScreen } from '@renderer/features/chats/open-chat';
-import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
-import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
-import { asMounted, getProjectManagerStore, getProjectStore } from '@renderer/features/projects/stores/project-selectors';
-import { composerDrafts, projectDraftKey, type ComposerHandoff } from '@renderer/features/sessions/composer-drafts';
+import { getProjectManagerStore } from '@renderer/features/projects/stores/project-selectors';
+import { createGroupWithFolder } from '@renderer/features/folders/create-group-with-folder';
+import { groupDraftKey, prepareGroupTask } from '@renderer/features/folders/group-home';
+import { groupFoldersStore } from '@renderer/features/folders/group-folders-store';
+import { readChatSummary } from '@/lib/chatSummariesBridge';
+import { composerDrafts, type ComposerHandoff } from '@renderer/features/sessions/composer-drafts';
 import { composerVerbLook } from '@renderer/features/sessions/composer-verb-tag';
 import { NewSessionComposer } from '@renderer/features/sessions/new-session-page';
 import type { InitialSessionState } from '@renderer/features/sessions/session-config/initial-session-section';
@@ -32,7 +34,7 @@ import { whenGroupRowShown } from './sample-group-row';
 
 type Translate = ReturnType<typeof useSessionMessages>['translate'];
 
-/** 示例那一框写了一半的话暂存在这一格;变成项目那一刻整格挪进那个项目的新任务框(prepareProjectTask)。 */
+/** 示例那一框写了一半的话暂存在这一格;变成群那一刻整格挪进那个群的新任务框(prepareGroupTask)。 */
 export const SAMPLE_DRAFT_KEY = 'sample-project';
 
 /** 示例变成项目之后,要等它那一行出现在左侧列表里多久(群进聊天列表、项目表重读)。 */
@@ -141,10 +143,13 @@ export function sampleConversionFailureLine(failure: SampleConversionFailure, tr
 }
 
 /**
- * 变成项目的每一步落到哪:建项目走「新建项目」那一条(CreateProjectNameForm 同一个 createProject,默认项目目录 + 名字),
- * 文件写进项目文件夹,项目群 ensureProjectGroup,这一句经 prepareProjectTask 交给项目的新任务框(和换项目带草稿同一条)。
+ * 变成群的每一步落到哪(@@@group-folders:conversion 里的「项目」= 这个群在这台电脑上的文件夹,id 是文件夹 id):
+ * 建群并新建文件夹走「新建群（同时新建一个文件夹）」那一条(createGroupWithFolder,默认位置 + 名字;群和文件夹一起建出来),
+ * 文件写进那个文件夹,这一句经 prepareGroupTask 交给群的新任务框(和换群带草稿同一条)。
  */
 function sampleConversionHost(userId: string, turn: ComposerHandoff, translate: Translate): SampleConversionDeps {
+  /** The group each folder made here was created with (the folder is bound to it from the start). */
+  const groupOf = new Map<string, string>();
   return {
     owner: userId,
     signedIn: () => readAssistantShellBridge()?.getSnapshot()?.ownerId === userId,
@@ -157,56 +162,54 @@ function sampleConversionHost(userId: string, turn: ComposerHandoff, translate: 
     projectExists: (projectId) => getProjectManagerStore().projects.has(projectId),
     defaultDirectory: async () => (await fetchAppSettingValue('localProject')).defaultProjectsDirectory,
     pathTaken: async (path) => {
-      const inspection = await rpc.projects.inspectProjectPath({ type: 'local', path });
+      const inspection = await rpc.folders.inspectFolderPath(path);
       if (inspection.error) throw new Error(inspection.error.message);
       // 那里是个文件,也建不了文件夹:让给下一个名字(❌ 每次重试都在同一个名字上失败)。
-      return inspection.isDirectory || !!inspection.isFile || !!inspection.existingProject || !!inspection.pathConflict;
+      return inspection.isDirectory || !!inspection.isFile || !!inspection.existing;
     },
     createProject: async (path, name) => {
-      const projectId = await getProjectManagerStore().createProject(
-        { type: 'local' },
-        { mode: 'pick', path, name, createDirectory: true, allowNonGit: true },
-      );
-      if (!projectId) throw new Error(`creating the project at ${path} did not complete`);
-      return projectId;
+      const chatId = await createGroupWithFolder({ name, machine: null, path, create: true });
+      const folder = (await rpc.folders.listGroupFolders(chatId))[0];
+      if (!folder) throw new Error(`the folder at ${path} was not bound to its new group`);
+      groupOf.set(folder.id, chatId);
+      return folder.id;
     },
-    projectFolder: async (projectId) => {
-      await getProjectManagerStore().ensureMounted(projectId);
-      const project = getProjectStore(projectId);
-      const workspaceId = asMounted(project)?.data.repositoryWorkspaceId;
-      if (!workspaceId) throw new Error(project?.error ?? `project ${projectId} did not open`);
-      return workspaceId;
+    projectFolder: async (folderId) => {
+      await getProjectManagerStore().ensureMounted(folderId);
+      return folderId;
     },
-    writeFile: async (projectId, workspaceId, name, text) => {
-      const written = await rpc.workspace.files.writeFile(projectId, workspaceId, name, text);
+    writeFile: async (_folderId, workspaceId, name, text) => {
+      const written = await rpc.workspace.files.writeFile(workspaceId, name, text);
       if (!written.success) throw new Error('message' in written.error ? written.error.message : written.error.type);
     },
-    ensureGroup: async (projectId) => {
-      const group = await rpc.projects.ensureProjectGroup(projectId);
-      if (!group.success) throw new Error(group.error.message);
-      return group.data.chatId;
+    ensureGroup: async (folderId) => {
+      const chatId = groupOf.get(folderId) ?? groupFoldersStore.chatOfFolder(folderId);
+      if (!chatId) throw new Error(`folder ${folderId} is bound to no group`);
+      return chatId;
     },
     whenRowShown: (chatId, nudge, open) => {
-      // 人又按了一次发送(上次停在这一步):这算人按的重试,可以叫项目表再读一次(account-projects-store 抬头)。
-      if (nudge) void accountProjectsStore.refresh();
+      // 人又按了一次发送(上次停在这一步):这算人按的重试,可以叫群文件夹再读一次。
+      if (nudge) void groupFoldersStore.refresh();
       return whenGroupRowShown(chatId, open, ROW_WAIT_MS);
     },
-    handOff: (projectId) => {
+    handOff: (folderId) => {
+      const chatId = groupOf.get(folderId) ?? groupFoldersStore.chatOfFolder(folderId);
+      if (!chatId) throw new Error(`folder ${folderId} is bound to no group`);
       const draft = composerDrafts.forKey(SAMPLE_DRAFT_KEY);
       draft.setHandoff(turn);
-      prepareProjectTask(projectId, SAMPLE_DRAFT_KEY);
-      if (composerDrafts.forKey(projectDraftKey(projectId)) !== draft) {
+      prepareGroupTask(chatId, SAMPLE_DRAFT_KEY);
+      if (composerDrafts.forKey(groupDraftKey(chatId)) !== draft) {
         draft.setHandoff(null);
-        throw new Error(`project ${projectId} already has an unsent first message`);
+        throw new Error(`group ${chatId} already has an unsent first message`);
       }
-      appState.navigation.navigate('project', { projectId });
+      appState.navigation.navigate('chat', { chatId });
       forgetSampleProjectOnScreen();
     },
     // 项目在别的电脑上,这台电脑没有它的文件夹:和点它那一行一样打开它的群,这一句带进群里的新任务框(派到哪台电脑由人在那里选)。
     // 交过去的只有这一句话:示例的说明进不了那一框,示例的文件在那台电脑的项目文件夹里。
     handOffToGroup: (chatId) => {
       const words = composerDrafts.get(SAMPLE_DRAFT_KEY);
-      setComposerVerb(chatId, 'task', words, { name: accountProjectsStore.project(chatId)?.name ?? '', joinable: true, inGroup: true });
+      setComposerVerb(chatId, 'task', words, { name: readChatSummary(chatId)?.name ?? '', joinable: true, inGroup: true });
       openChatOnScreen(chatId, false);
       forgetSampleProjectOnScreen();
       composerDrafts.discard(SAMPLE_DRAFT_KEY);

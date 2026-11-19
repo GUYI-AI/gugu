@@ -4,7 +4,7 @@
 // 见 memberProfileCardAgentSession);悄悄话是群内的,不受影响。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemberProfileCard, type MemberProfileCardModel } from '../../../../apps/desktop/src/components/MemberProfileCard'
-import { publishProjectGroupChats } from '../../../../apps/desktop/src/session/renderer/features/projects/stores/project-group-chats-bridge'
+import { publishAgentSessions } from '../../../../apps/desktop/src/session/renderer/features/sidebar/agent-sessions-bridge'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 
 // 渲染者是 testHarness 的 user-1。
@@ -17,7 +17,7 @@ describe('#6832 profile card offers「发消息」only where a DM can open', () 
   beforeEach(() => { harness = createReactHarness() })
   afterEach(() => {
     harness.cleanup()
-    publishProjectGroupChats([], new Map(), new Map())
+    publishAgentSessions(new Map(), new Map())
   })
 
   async function render(model: MemberProfileCardModel) {
@@ -36,7 +36,7 @@ describe('#6832 profile card offers「发消息」only where a DM can open', () 
   })
 
   it('my own agent: the button is there', async () => {
-    publishProjectGroupChats([], new Map(), new Map([['a-mine', { projectId: 'p-1', sessionId: 's-1' }]]))
+    publishAgentSessions(new Map(), new Map([['a-mine', { projectId: 'p-1', sessionId: 's-1' }]]))
     const { send } = await render(member({ id: 'a-mine', displayName: 'Claude 1', type: 'agent', ownerUserId: 'user-1' }))
     expect(send).not.toBeNull()
   })

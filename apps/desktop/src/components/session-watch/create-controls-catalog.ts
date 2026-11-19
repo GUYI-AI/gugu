@@ -2,7 +2,7 @@ import { registerLocaleNamespace } from '@/i18n/runtime'
 
 registerLocaleNamespace('mobileCreateControls', {
   'zh-CN': {
-    modelDevice: '工作', project: '项目', folder: '文件夹', skills: '技能',
+    modelDevice: '工作', project: '群', folder: '文件夹', skills: '技能',
     close: '关闭', back: '返回', device: '运行设备', agent: '智能体', model: '模型', effort: '思考强度', permission: '权限',
     switchingFast: '切换中…',
     modelRecommended: '默认（推荐）',
@@ -29,7 +29,7 @@ registerLocaleNamespace('mobileCreateControls', {
     useSkills: '请使用以下技能：{{names}}。',
   },
   'en-US': {
-    modelDevice: 'Work', project: 'Project', folder: 'Folder', skills: 'Skills',
+    modelDevice: 'Work', project: 'Group', folder: 'Folder', skills: 'Skills',
     close: 'Close', back: 'Back', device: 'Run on', agent: 'Agent', model: 'Model', effort: 'Reasoning effort', permission: 'Permissions',
     switchingFast: 'Switching…',
     modelRecommended: 'Default (recommended)',

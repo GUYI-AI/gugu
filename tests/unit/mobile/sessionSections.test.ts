@@ -14,8 +14,6 @@ import {
   sessionSections as sectionsOf,
   type SessionNode,
 } from '../../../apps/desktop/src/mobile/agent-watch/session-sections'
-import { runInAction } from 'mobx'
-import { AccountProjectsStore } from '../../../apps/desktop/src/session/renderer/features/projects/stores/account-projects-store'
 
 /** 拆成「置顶分区的树」与「项目分区」两半,并核置顶分区只会出现在第一位。默认全在一台机器上。 */
 const split = (sections: ReturnType<typeof sectionsOf>) => {
@@ -333,30 +331,25 @@ describe('sessionSections — 多台机器与个人助理那一组', () => {
   })
 })
 
-// 项目与机器解耦:「项目」页的格从 accountProjectsStore 认项目(桌面侧栏同一份),❌ 读设备行上的 chat_id。
-describe('sessionSections — 项目来自账号上的项目', () => {
-  it('两台机器上的本地项目属于同一个账号项目:一格,键是项目群,格名是项目名;不属于任何项目的照旧是那台的一格', () => {
-    const accounts = new AccountProjectsStore()
-    runInAction(() => {
-      accounts.list = [{ chatId: 'chat-paper', name: 'Paper', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [
-        { deviceId: 'gpu', localProjectId: 'gpu-paper' }, { deviceId: 'juma', localProjectId: 'juma-paper' },
-      ] }]
-      accounts.status = 'ready'
-    })
-    const gpu = { deviceId: 'gpu', projects: sectionProjects('gpu', [project('gpu-paper'), project('gpu-loose')], accounts) }
-    // Same local id on another machine is not the project: bindings are per machine.
-    const juma = { deviceId: 'juma', projects: sectionProjects('juma', [project('juma-paper'), project('gpu-paper')], accounts) }
+// 项目与机器解耦:「项目」页的格从 groupFoldersStore 认群(桌面同一份),❌ 读设备行上的 chat_id。
+describe('sessionSections — 格来自文件夹所在的群', () => {
+  it('两台机器上的文件夹属于同一个群:一格,键是群,格名是群名;不属于任何群的照旧是那台的一格', () => {
+    const groupOf: Record<string, string> = { 'gpu-paper': 'chat-paper', 'juma-paper': 'chat-paper' }
+    const folders = {
+      chatOfFolder: (folderId: string) => groupOf[folderId] ?? null,
+      groups: [{ chatId: 'chat-paper', name: 'Paper', activeAt: '2026-01-01T00:00:00.000Z', folders: [] }],
+    }
+    const gpu = { deviceId: 'gpu', projects: sectionProjects([project('gpu-paper'), project('gpu-loose')], folders) }
+    const juma = { deviceId: 'juma', projects: sectionProjects([project('juma-paper')], folders) }
     const rows = [
       { deviceId: 'gpu', session: session('g1', 'gpu-paper', 1) },
       { deviceId: 'juma', session: session('j1', 'juma-paper', 2) },
       { deviceId: 'gpu', session: session('l1', 'gpu-loose', 3) },
-      { deviceId: 'juma', session: session('x1', 'gpu-paper', 0) },
     ]
     const sections = sectionsOf([gpu, juma], rows, NO_ASSISTANT, NO_FOLD)
     expect(sections.map((s) => [s.key, s.project?.name, s.projectIds, shape(s.roots)])).toEqual([
       [projectSectionKey('gpu', 'gpu-loose'), 'GPU-LOOSE', ['gpu-loose'], 'l1'],
       ['project|chat-paper', 'Paper', ['gpu-paper', 'juma-paper'], 'j1,g1'],
-      [projectSectionKey('juma', 'gpu-paper'), 'GPU-PAPER', ['gpu-paper'], 'x1'],
     ])
   })
 })

@@ -31,8 +31,6 @@ import { WORKSPACE_APP_ID } from '@renderer/features/extensions/installed-extens
 import { searchInChat } from '@renderer/features/global-search/search-session';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { navigateToGroupRoot } from '@renderer/app/screen-layout-actions';
-import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
-import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-session-in-session';
 import { sampleProjectInView } from '@renderer/features/sample-project/sample-project-view';
 import { useSampleProject } from '@renderer/features/sample-project/use-sample-project';
@@ -58,7 +56,7 @@ import {
   type InnerSidebarView,
 } from './inner-sidebar-anchor';
 import { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarFolded } from './inner-sidebar-fold';
-import { chatScope, isProjectChat, listedProjectIds, roomOfEntry, sidebarFamilies } from './inner-sidebar-scope';
+import { chatScope, roomOfEntry, sidebarFamilies } from './inner-sidebar-scope';
 import { setSidebarFold, sidebarFolds } from './sidebar-folds';
 import {
   InnerHeadRowLayout,
@@ -93,16 +91,7 @@ function currentView(summaries: ReadonlyMap<string, ChatSummary>): InnerSidebarV
   if (currentViewId === 'chat') {
     const chatId = (viewParamsStore.chat as { chatId?: string } | undefined)?.chatId;
     if (!chatId) return { kind: 'other' };
-    return {
-      kind: 'chat',
-      chatId,
-      chatKind: summaries.get(chatId)?.kind ?? null,
-      projectGroup: isProjectChat(chatId),
-    };
-  }
-  if (currentViewId === 'project') {
-    const projectId = (viewParamsStore.project as { projectId?: string } | undefined)?.projectId;
-    return projectId ? { kind: 'project', chatId: accountProjectsStore.projectOfLocal(projectId)?.chatId } : { kind: 'other' };
+    return { kind: 'chat', chatId, chatKind: summaries.get(chatId)?.kind ?? null };
   }
   if (currentViewId === 'session') {
     const sessionId = openSessionId();
@@ -120,7 +109,7 @@ function openSessionId(): string | null {
 
 // 它住在 inner-sidebar-anchor(轻,列表顶上的搜索也读它);从这里照旧拿得到。
 export { innerSidebarChat };
-export { chatScope, isProjectChat, listedProjectIds, mySidebarAgents } from './inner-sidebar-scope';
+export { chatScope, mySidebarAgents } from './inner-sidebar-scope';
 
 /**
  * What the inner sidebar is drawn for: a chat's id, `'sample'` for the sample project, null while it is not drawn (none, or
@@ -159,7 +148,7 @@ export const InnerSidebar = observer(function InnerSidebar() {
   const headActive =
     next?.kind === 'agent'
       ? view.kind === 'session' && ownSessions.some((entry) => entry.id === view.sessionId)
-      : (view.kind === 'chat' || view.kind === 'project') && view.chatId === next?.chatId;
+      : view.kind === 'chat' && view.chatId === next?.chatId;
   // 示例项目(#709)那一块正看着:这一列画示例自己(打包在 app 里的内容,❌ 群、❌ 网络)。它不是哪一个对话,所以 ❌ 进 innerSidebarChat;
   // 账号上的键说它不在了(刚移除),这一列跟那一行同时收。
   const sample = useSampleProject();
@@ -229,7 +218,7 @@ export const InnerSidebarRestore = observer(function InnerSidebarRestore() {
 });
 
 /**
- * 项目行、群行头像角上那个数(#2548;群行 #2599:群也是 agent 住的地方):每个项目群 / 用户群里住着的我的智能体,
+ * 群行头像角上那个数(#2548、#2599:群是 agent 住的地方):每个群里住着的我的智能体,
  * 与这一列「智能体」分区头同一个推导(chatScope),❌ 群里所有是成员的 agent。
  */
 const MyChatAgentCountsPublisher = observer(function MyChatAgentCountsPublisher({
@@ -240,14 +229,8 @@ const MyChatAgentCountsPublisher = observer(function MyChatAgentCountsPublisher(
   summaries: ReadonlyMap<string, ChatSummary>;
 }) {
   const counts = new Map<string, ChatAgentCounts>();
-  const projects = listedProjectIds();
-  const count = (anchor: InnerSidebarRoomAnchor) =>
-    counts.set(anchor.chatId, chatAgentCounts(myAgentsInChat(agents, chatScope(anchor, summaries, projects))));
-  for (const ref of sidebarStore.sidebarProjects) {
-    if (!counts.has(ref.chatId)) count({ kind: 'project', chatId: ref.chatId });
-  }
   for (const [chatId, summary] of summaries) {
-    if (summary.kind === 'group' && !counts.has(chatId) && !isProjectChat(chatId)) count({ kind: 'group', chatId });
+    if (summary.kind === 'group') counts.set(chatId, chatAgentCounts(myAgentsInChat(agents, chatScope({ kind: 'group', chatId }, summaries))));
   }
   // 依赖是序列化后的数:每次渲染新建的 Map 不算变化(publish 自己也只在数变了时才通知)。
   const key = JSON.stringify([...counts]);
@@ -274,18 +257,9 @@ const InnerSidebarColumn = observer(function InnerSidebarColumn({
     <InnerSidebarFrame kind={anchor.kind} chatId={anchor.chatId}>
       <InnerHeadRow anchor={anchor} summary={summary} active={headActive} />
       <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto" data-region="inner-sidebar-scroll">
-        {/* 第二级(全部话题):「话题」上面的分区原样留着,下面的收走 —— 「全部 › / ‹ 返回」因此永远在同一个位置。 */}
-        {anchor.kind === 'project' ? (
-          <>
-            {agentsSection}
-            {topics}
-          </>
-        ) : (
-          <>
-            {topics}
-            {levelTwo ? null : agentsSection}
-          </>
-        )}
+        {/* 每个群都是这一套:智能体在上、话题在下(设计稿 v2 ①)。 */}
+        {agentsSection}
+        {topics}
       </div>
     </InnerSidebarFrame>
   );
@@ -368,15 +342,12 @@ const InnerHeadRow = observer(function InnerHeadRow({
   const { chatId } = anchor;
   const [menuOpen, setMenuOpen] = useState(false);
   const name = summary?.name ?? '';
-  // 项目的代表本地项目(与侧栏那一行同一个);一个文件夹都没有的项目没有 —— 新智能体走群那一条,封面按群取色(同 partnerProjects)。
-  const rowProjectId = anchor.kind === 'project' ? accountProjectsStore.representativeOf(chatId) : undefined;
-  // 同输入框「+」右边那个「新任务」:项目走项目行「+」那一条(prepareProjectTask),群把这个群的框换成新任务;都回到群本身(navigateToGroupRoot)。
+  // 同输入框「+」右边那个「新任务」:把这个群的框换成新任务(群里有文件夹时文件夹卡浮上来),回到群本身(navigateToGroupRoot)。
   const newAgent = () => {
-    if (rowProjectId) prepareProjectTask(rowProjectId);
-    else setComposerVerb(chatId, 'task', '', { name, joinable: true, inGroup: true });
+    setComposerVerb(chatId, 'task', '', { name, joinable: true, inGroup: true });
     navigateToGroupRoot(chatId);
   };
-  // #2600 项目群和别的群一样戴群自己的头像(没设 = 成员拼图),❌ 文件夹封面。
+  // #2600 群戴群自己的头像(没设 = 成员拼图),❌ 文件夹封面。
   const avatar: ReactNode = <GroupHeadAvatar chatId={chatId} summary={summary} />;
   return (
     <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => navigateToGroupRoot(chatId)} trailingButtons={1}
@@ -533,7 +504,8 @@ const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents
               sessionId={row.sessionId}
               rowVariant="section"
               depth={row.depth}
-              parentProjectId={row.parentProjectId}
+              groupChatId={row.groupChatId}
+              parentGroupChatId={row.parentGroupChatId}
               hasChildren={row.hasChildren}
               expanded={sidebarStore.expandedSessionIds.has(row.sessionId)}
               treeSummary={row.summary}

@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, Folder, ListFilter, Monitor } from '@/lib/icons';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import { restoreArchivedSession } from '@renderer/features/sessions/restore-session-flow';
-import { isImplicitSessionHomeProject, isWorkspaceProject } from '@renderer/features/sessions/session-home-project-constants';
+import { isWorkspaceProject } from '@renderer/features/sessions/session-home-project-constants';
 import { getProjectManagerStore } from '@renderer/features/projects/stores/project-selectors';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { useWakeCloudOnce } from '@renderer/features/remote-hosts/use-wake-cloud-once';
@@ -24,7 +24,8 @@ import { PageContent, PageLayout } from '@renderer/lib/components/page-layout';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
-import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
+import { groupFoldersStore } from '@renderer/features/folders/group-folders-store';
+import { readChatSummary } from '@/lib/chatSummariesBridge';
 import { useDebounce } from '@renderer/lib/hooks/useDebounce';
 import { useParams } from '@renderer/lib/layout/navigation-provider';
 import { openLink } from '@/lib/guguLinks';
@@ -122,7 +123,7 @@ const SORT_OPTIONS: readonly SessionHistorySort[] = ['updated', 'added', 'title'
 /** 在小窗里滚出来的那几批(在线那几台的):按节 key 存,换筛选即清。`matched` 是那几台给的这一节总数。 */
 type SectionPage = { rows: HistoryEntry[]; matched: number };
 
-/** rpcOn / onMachineEvent / openLink / accountProjectsStore 里本机写 null。 */
+/** rpcOn / onMachineEvent / openLink 里本机写 null。 */
 function machineArg(machine: string): string | null {
   return machine === LOCAL_IMPORT_DEVICE ? null : machine;
 }
@@ -223,7 +224,7 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
     reachable
   );
 
-  // 一节 = 主进程给的节 key:`project:<群>` 是账号上的一个项目(几台机器上的并成一节,名字照账号上的项目);
+  // 一节 = 主进程给的节 key:`project:<群>` 是一个群(几台机器上的文件夹并成一节,名字照群名);
   // 任务那一节;别的按「机器 · 目录」各一节。
   // @@@old-host-sections - 旧版本的远端主机还按目录给节(没有 `project:` key):它的行照目录各一节、不并进项目那一节,
   // 升级后自然并上。这是跨版本的已知差别,不是兜底 —— 新主机的行都带着它的项目 key。
@@ -231,8 +232,8 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
   const sectionOf = (machine: string, keyed: SectionKeyed): SectionRef => {
     if (keyed.key === SESSION_HOME_SECTION_KEY) return homeRef;
     const chatId = projectSectionChatId(keyed.key);
-    // 节名照账号上的项目(与侧栏同一个名字);账号项目表还没读到时用那台机器上的项目名。
-    if (chatId) return historyProjectSection({ chatId, name: accountProjectsStore.project(chatId)?.name ?? keyed.projectName ?? '' });
+    // 节名照群名(与聊天列表同一个名字);还没读到时用那台机器给的名字。
+    if (chatId) return historyProjectSection({ chatId, name: readChatSummary(chatId)?.name ?? keyed.projectName ?? '' });
     return {
       key: `dir:${machine}:${keyed.directory ?? ''}`,
       label: keyed.directory ? baseName(keyed.directory) : translate('sessionHistory.noDirectory'),
@@ -240,18 +241,18 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
       machine,
     };
   };
-  // 离线机器的摘要行主进程看不到:按它自己的本地项目 → 账号项目,给出与主进程同一口径的节 key。
+  // 离线机器的摘要行主进程看不到:按它的文件夹 → 那个文件夹挂的群,给出与主进程同一口径的节 key。
   const projects = getProjectManagerStore().projects;
   const keyOfEntry = (entry: HistoryEntry): SectionKeyed => {
     const projectId = entry.gugu?.projectId;
     const store = projectId ? projects.get(projectId) : undefined;
-    if (projectId && (isImplicitSessionHomeProject({ id: projectId }) || (store && isWorkspaceProject(store)))) {
-      return { key: SESSION_HOME_SECTION_KEY, directory: SESSION_HOME_SECTION_KEY, projectName: null };
+    const chatId = projectId ? groupFoldersStore.chatOfFolder(projectId) : null;
+    if (chatId) {
+      const key = projectSectionKey(chatId);
+      return { key, directory: key, projectName: readChatSummary(chatId)?.name ?? null };
     }
-    const account = projectId ? accountProjectsStore.projectOfLocal(projectId, machineArg(entry.machine)) : undefined;
-    if (account) {
-      const key = projectSectionKey(account.chatId);
-      return { key, directory: key, projectName: account.name };
+    if (store && isWorkspaceProject(store)) {
+      return { key: SESSION_HOME_SECTION_KEY, directory: SESSION_HOME_SECTION_KEY, projectName: null };
     }
     return { key: entry.directory ?? '', directory: entry.directory, projectName: null };
   };

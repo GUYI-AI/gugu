@@ -5,8 +5,8 @@ import { rendererLogger } from '../../lib/log'
 import { platform } from '../../platform'
 import { useAuth } from '../../store/auth'
 import { onMachineEvent, rpcOn } from '../../session/renderer/lib/ipc'
-import { machineRpc } from '../session-watch/sessionpage-rpc'
-import { projectGroupBindingChangedChannel } from '../../session/shared/core/projects/projectEvents'
+import { machineRpc } from '@/components/session-watch/sessionpage-rpc'
+import { foldersChangedChannel } from '../../session/shared/core/folders/folders'
 import { sessionCreatedChannel } from '../../session/shared/core/sessions/sessionEvents'
 
 const log = rendererLogger('assistant/workrooms')
@@ -29,9 +29,9 @@ export function useAssistantWorkrooms(shell: AssistantShellSnapshot | null, memb
       const turn = ++generation
       try {
         const rpc = platform.capabilities.agentRuntime ? rpcOn(local ? null : deviceId) : machineRpc(deviceId)
-        const [listed, bound] = await Promise.all([rpc.sessionTimeline.sessionsList(), rpc.projects.listProjectGroupBindings()])
-        if (!bound.success) throw new Error(JSON.stringify(bound.error))
-        const rooms = assistantWorkrooms(assistantId, ownerId, listed.sessions, bound.data)
+        const [listed, folders] = await Promise.all([rpc.sessionTimeline.sessionsList(), rpc.folders.listGroupFolders()])
+        const bindings = folders.flatMap((folder) => folder.chatId ? [{ projectId: folder.id, chatId: folder.chatId }] : [])
+        const rooms = assistantWorkrooms(assistantId, ownerId, listed.sessions, bindings)
         if (!cancelled && turn === generation) setRead({ scope, rooms })
       } catch (error) {
         // Keep already verified ownership for this scope; without a reading no group is hidden.
@@ -42,7 +42,7 @@ export function useAssistantWorkrooms(shell: AssistantShellSnapshot | null, memb
     // 推送在助理所在的那台机器上订(本机 = null);手机上没有会话页宿主线,只读不订。
     const machine = local ? null : deviceId
     const listen = platform.capabilities.agentRuntime
-    const offBindings = listen ? onMachineEvent(machine, projectGroupBindingChangedChannel, () => { void refresh() }) : () => {}
+    const offBindings = listen ? onMachineEvent(machine, foldersChangedChannel, () => { void refresh() }) : () => {}
     const offSessions = listen ? onMachineEvent(machine, sessionCreatedChannel, () => { void refresh() }) : () => {}
     return () => { cancelled = true; offBindings(); offSessions() }
   }, [scope, ownerId, assistantId, deviceId, local, membershipKey])

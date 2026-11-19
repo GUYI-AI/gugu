@@ -1,19 +1,13 @@
 // @vitest-environment jsdom
 // GUYI-AI/gugu#2548 the desktop sidebar as one list: the sidebar's chat list with the internal switch on and off.
-import { runInAction } from 'mobx'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatListPanel } from '../../../../apps/desktop/src/components/ChatListPanel'
-import { oneListProjectSlotKey, publishSidebarChatView } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
-import { installShellSlots, readShellSlots } from '../../../../apps/desktop/src/lib/shellSlots'
-import { blockKey } from '../../../../apps/desktop/src/lib/sidebarJoinedGroups'
-import { forgetArchivedGroups, noteGroupArchived } from '../../../../apps/desktop/src/lib/archivedGroupsRead'
+import { publishSidebarChatView } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
 import { installOwnedAgentEntry } from '../../../../apps/desktop/src/lib/ownedAgentConversation'
-import { publishProjectGroupChats } from '../../../../apps/desktop/src/session/renderer/features/projects/stores/project-group-chats-bridge'
 import { publishDirectoryDevices, removeDeviceSessions, updateDeviceSessions } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 import { installSessionViewRequestBridge } from '../../../../apps/desktop/src/session/renderer/features/sessions/stores/session-view-requests'
 import { publishMyChatAgentCounts } from '../../../../apps/desktop/src/lib/innerSidebarBridge'
-import { accountProjectsStore } from '../../../../apps/desktop/src/session/renderer/features/projects/stores/account-projects-store'
 import { chat, clickElement, createNode, createReactHarness, device, displayIdentity, renderWithAppProviders } from '../../../support/testHarness'
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
 
@@ -43,12 +37,11 @@ beforeEach(() => {
   openAgent.mockClear()
   installSessionViewRequestBridge(window, { openChat })
   release = installOwnedAgentEntry({ owns: (id) => mine.has(id), open: openAgent })
-  publishProjectGroupChats(['project'], new Map(), new Map())
   publishDirectoryDevices([device('mac', [])])
   updateDeviceSessions('mac', {
     projects: [{ id: 'app', name: 'App', path: '/app' }, { id: 'tasks', name: '', path: '/tasks', kind: 'workspace' }],
     sessions: [
-      { conversationId: 's-project', projectId: 'app', title: 'Fix', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, agent: { userId: 'a-project' } },
+      { conversationId: 's-project', projectId: 'app', title: 'Fix', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, agent: { userId: 'a-project' }, bornInChatId: 'project' },
       { conversationId: 's-solo', projectId: 'tasks', title: 'Solo', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, agent: { userId: 'a-solo' } },
       { conversationId: 's-fork', projectId: 'tasks', title: 'Fork', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, parentConversationId: 's-solo', agent: { userId: 'a-fork' } },
       // #2599 a-room was created in Room: it lives there (no row of its own). a-solo is a member of Room too, but was
@@ -62,7 +55,6 @@ afterEach(() => {
   harness.cleanup()
   release()
   publishSidebarChatView({ focusedChatId: null, groups: [] })
-  publishProjectGroupChats([], new Map(), new Map())
   publishDirectoryDevices([])
   removeDeviceSessions('mac')
 })
@@ -142,13 +134,13 @@ describe('#2652 archived owned Agents leave the ordinary desktop sidebar', () =>
 })
 
 describe('the sidebar chat list as one list', () => {
-  it('switch off: today\'s Chats tab (project groups out, topics nested, empty DMs out)', async () => {
+  it('switch off: today\'s Chats tab (topics nested, empty DMs out)', async () => {
     publishSidebarChatView({ focusedChatId: null, groups: [] })
     await render()
-    expect(rows()).toEqual(['dm-fork', 'dm-room-agent', 'room', 'room-topic', 'dm-human', 'dm-project-agent'])
+    expect(rows()).toEqual(['dm-fork', 'dm-room-agent', 'room', 'room-topic', 'project', 'dm-human', 'dm-project-agent'])
   })
 
-  it('switch on: standalone agents, groups, project groups and people, by activity; no topics; agents living elsewhere and forks have no row', async () => {
+  it('switch on: standalone agents, groups and people, by activity; no topics; agents living elsewhere and forks have no row', async () => {
     publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
     await render()
     expect(rows()).toEqual(['room', 'project', 'dm-human', 'dm-solo'])
@@ -165,7 +157,7 @@ describe('the sidebar chat list as one list', () => {
     expect(new Set(draggable())).toEqual(new Set(['false']))
   })
 
-  it('switch on: a project row opens through the existing chat route (the task page turns a project group into its project block); an agent row opens its session', async () => {
+  it('switch on: a group row opens through the existing chat route; an agent row opens its session', async () => {
     publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
     await render()
     await clickElement(harness.container.querySelector<HTMLElement>('[data-chat-row="project"]')!)
@@ -175,7 +167,7 @@ describe('the sidebar chat list as one list', () => {
     expect(openChat).toHaveBeenCalledTimes(1)
   })
 
-  it('switch on, collapsed to the rail: a project row\'s running count is on its avatar, the part of the row the rail keeps', async () => {
+  it('switch on, collapsed to the rail: a group row\'s running count is on its avatar, the part of the row the rail keeps', async () => {
     publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
     publishMyChatAgentCounts(new Map([['project', { total: 3, running: 2 }]]))
     try {
@@ -188,95 +180,6 @@ describe('the sidebar chat list as one list', () => {
     } finally {
       await act(async () => publishMyChatAgentCounts(new Map()))
     }
-  })
-})
-
-describe('#2548 an account project whose group is not in the chat list yet stands among the conversation rows at its time', () => {
-  const newProject = (activeAt: string) => ({ chatId: 'new-project', name: 'Blink', archived: false, activeAt, bindings: [] })
-  // The project whose group is listed ('project', mac's 'app'): its agent lives there, as on the first read above.
-  const app = { chatId: 'project', name: 'App', archived: false, activeAt: at(4), bindings: [{ deviceId: 'mac', localProjectId: 'app' }] }
-  /** The lines of the list, top to bottom: a conversation row, or the place left for a project row. */
-  const lines = () => [...harness.container.querySelectorAll<HTMLElement>('[data-chat-row], [data-one-list-project]')]
-    .map((line) => line.dataset.oneListProject ? `place:${line.dataset.oneListProject}` : line.dataset.chatRow)
-  installShellSlots()
-  const slots = () => readShellSlots()!.getSlots()
-  afterEach(() => accountProjectsStore.clear())
-
-  // The owner's recording (11-13): 新建空白项目 drew the new project after every conversation, and ~200 ms later, when its
-  // group reached the chat list, the row jumped to the top. The account project list says when its group was last active
-  // (list_my_projects: last message, else creation), the time its conversation row sorts by.
-  it('a new project stands where its group\'s conversation row then lands, and that row takes the same place', async () => {
-    publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
-    const created = '2099-01-04T12:00:00Z'
-    runInAction(() => {
-      accountProjectsStore.list = [app, newProject(created)]
-      accountProjectsStore.status = 'ready'
-    })
-    await render()
-    expect(lines()).toEqual(['room', 'place:new-project', 'project', 'dm-human', 'dm-solo'])
-    // The task page draws the project's row into that place (sidebar-one-list).
-    expect(slots().get(oneListProjectSlotKey('new-project'))).toBe(harness.container.querySelector('[data-one-list-project="new-project"]'))
-
-    // Its group reaches the chat list: the conversation row is in the same place, and the place for the project row is gone.
-    await renderWithAppProviders(harness, createNode(ChatListPanel, { placement: 'sidebar' }), {
-      chat: { chats: [...chats, chat({ id: 'new-project', kind: 'group', name: 'Blink', member_user_ids: ['me'], created_at: created })], identitiesById },
-      contacts: {},
-    })
-    expect(lines()).toEqual(['room', 'new-project', 'project', 'dm-human', 'dm-solo'])
-    expect(slots().has(oneListProjectSlotKey('new-project'))).toBe(false)
-  })
-
-  // Opened beside another block before its conversation arrives: the box holds the project's place as it will hold the
-  // conversation row (one key), so nothing snaps into the box when the conversation lands.
-  it('a joined box holds the project\'s place as it holds its conversation row once that arrives', async () => {
-    const box = { members: [blockKey.chat('room'), blockKey.chat('new-project')], onScreen: true }
-    publishSidebarChatView({ focusedChatId: null, groups: [box], oneList: true })
-    const created = '2099-01-02T12:00:00Z'
-    runInAction(() => {
-      accountProjectsStore.list = [app, newProject(created)]
-      accountProjectsStore.status = 'ready'
-    })
-    await render()
-    expect(lines()).toEqual(['room', 'place:new-project', 'project', 'dm-human', 'dm-solo'])
-    expect(harness.container.querySelector<HTMLElement>('[data-one-list-project="new-project"]')!.dataset.join).toBe('last')
-
-    await renderWithAppProviders(harness, createNode(ChatListPanel, { placement: 'sidebar' }), {
-      chat: { chats: [...chats, chat({ id: 'new-project', kind: 'group', name: 'Blink', member_user_ids: ['me'], created_at: created })], identitiesById },
-      contacts: {},
-    })
-    expect(lines()).toEqual(['room', 'new-project', 'project', 'dm-human', 'dm-solo'])
-    expect(harness.container.querySelector<HTMLElement>('[data-chat-row="new-project"]')!.dataset.join).toBe('last')
-  })
-
-  // The owner's recording of a dissolve (11-13): the chat list dropped the group, and the project's row stayed until the
-  // account list was read again. The chat list read the group archived (or this account archived it): no row at once.
-  it('a project group the chat list has read as archived leaves no project place behind, before the account list knows', async () => {
-    publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
-    runInAction(() => {
-      accountProjectsStore.list = [app]
-      accountProjectsStore.status = 'ready'
-    })
-    const dissolved = chats.filter((row) => row.id !== 'project')
-    try {
-      noteGroupArchived('project', true)
-      await renderWithAppProviders(harness, createNode(ChatListPanel, { placement: 'sidebar' }), { chat: { chats: dissolved, identitiesById }, contacts: {} })
-      expect(lines()).toEqual(['room', 'dm-human', 'dm-solo'])
-    } finally {
-      forgetArchivedGroups()
-    }
-  })
-
-  it('a project created a moment ago stands at the top; a dissolved one stands nowhere; switch off: no project places', async () => {
-    publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
-    runInAction(() => {
-      accountProjectsStore.list = [app, newProject('2099-02-01T00:00:00Z'), { ...newProject('2099-01-06T00:00:00Z'), chatId: 'dissolved', archived: true }]
-      accountProjectsStore.status = 'ready'
-    })
-    await render()
-    expect(lines()).toEqual(['place:new-project', 'room', 'project', 'dm-human', 'dm-solo'])
-    publishSidebarChatView({ focusedChatId: null, groups: [] })
-    await render()
-    expect(lines().filter((line) => line?.startsWith('place:'))).toEqual([])
   })
 })
 

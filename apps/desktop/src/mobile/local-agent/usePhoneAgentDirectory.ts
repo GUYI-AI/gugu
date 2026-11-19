@@ -111,7 +111,7 @@ export function usePhoneAgentDirectory(devices: readonly Device[], options?: { r
       const sync = startPhoneAgentDirectorySync(device.device_id, device.is_online && isAgentHostDevice(device), fetchPhoneSessions, readLocalPhoneSessions)
       if (!ownerId || !device.is_online || !isAgentHostDevice(device)) return [sync]
       const unregister = registerDeviceSessionsRetry(ownerId, device.device_id, async () => {
-        if (retryScope.current.ownerId !== ownerId || !retryScope.current.active.includes(device.device_id)) throw new Error('账号或手机宿主状态已改变，请重新打开项目列表。')
+        if (retryScope.current.ownerId !== ownerId || !retryScope.current.active.includes(device.device_id)) throw new Error('账号或手机宿主状态已改变，请重新打开任务列表。')
         await sync.refresh()
         if (retryScope.current.ownerId !== ownerId || !retryScope.current.active.includes(device.device_id)) return
         const error = liveDeviceSessions()[device.device_id]?.error

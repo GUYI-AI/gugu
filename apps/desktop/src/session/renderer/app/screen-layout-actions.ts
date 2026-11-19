@@ -16,7 +16,6 @@ import { subscribeChatRemovals } from '@/lib/chatRemovalBridge';
 import { isScreenView } from './screen-views';
 import { MAX_SCREEN_BLOCKS, screenLayout, type ScreenBlockContent, type ScreenLayoutSnapshot, type ScreenSession, type WindowableContent } from './screen-layout';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
-import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
 import { roomListsSession, roomOfEntry } from '@renderer/features/sidebar/inner-sidebar-scope';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
 
@@ -167,14 +166,12 @@ export function ensureScreenLayoutSync(): void {
   });
 }
 
-/** 导航当前明确指向的块;项目的多台机器认左边同一行。 */
+/** 导航当前明确指向的块。 */
 function navigationBlock(): ScreenBlockContent | undefined {
   const { currentViewId, viewParamsStore: params } = appState.navigation;
   switch (currentViewId) {
     case 'session':
       return params.session?.projectId && params.session.sessionId ? { kind: 'session', projectId: params.session.projectId, sessionId: params.session.sessionId } : undefined;
-    case 'project':
-      return params.project?.projectId ? { kind: 'project', projectId: sidebarStore.rowProjectIdOf(params.project.projectId) } : undefined;
     case 'chat':
       return params.chat?.chatId ? { kind: 'chat', chatId: params.chat.chatId } : undefined;
   }
@@ -190,7 +187,7 @@ function showNavigationBlock(content: ScreenBlockContent | undefined): void {
 }
 
 /**
- * 正看着一个群 / 项目的屏,打开住在它里面的一个智能体(它那一列里点的、群里的任务卡、刚在群里建的):仍是这个群的屏(screen-layout `entry`),
+ * 正看着一个群的屏,打开住在它里面的一个智能体(它那一列里点的、群里的任务卡、刚在群里建的):仍是这个群的屏(screen-layout `entry`),
  * 切走再点回这个群就回到它,内层侧栏照旧挂着这个群。
  */
 function livesInEntryRoom(sessionId: string): boolean {
@@ -205,14 +202,7 @@ function livesInEntryRoom(sessionId: string): boolean {
  */
 function followFocus(): void {
   const navigation = appState.navigation;
-  // 正看着项目块:导航到那个项目(左边那一行高亮、新建会话预选它)。
   const focusedBlock = screenLayout.focusedBlockId ? screenLayout.blocks.get(screenLayout.focusedBlockId) : undefined;
-  if (focusedBlock?.kind === 'project') {
-    const current = navigation.viewParamsStore.project as { projectId?: string } | undefined;
-    const here = navigation.currentViewId === 'project' && !!current?.projectId && sidebarStore.rowProjectIdOf(current.projectId) === focusedBlock.projectId;
-    if (!here) navigation.navigate('project', { projectId: focusedBlock.projectId });
-    return;
-  }
   // 正看着示例项目(#709):它不是导航里的哪一样,看的就是这一屏;❌ 跟回最近看过的会话(那会把它换下去)。
   if (focusedBlock?.kind === 'sample-project') {
     if (navigation.currentViewId !== 'screen') navigation.navigate('screen');
@@ -303,7 +293,7 @@ export function showSessionBeside(target: ScreenSession): void {
   followFocus();
 }
 
-/** 把一样东西摆到这屏上(项目、对话;会话走导航):它在哪组就整组回来,否则单独一屏。 */
+/** 把一样东西摆到这屏上(对话、App;会话走导航):它在哪组就整组回来,否则单独一屏。 */
 export function showOnScreen(content: ScreenBlockContent): void {
   tabFullscreen.exit();
   screenLayout.show(content);
@@ -312,16 +302,15 @@ export function showOnScreen(content: ScreenBlockContent): void {
 
 /**
  * 回到群本身(群标题、已经在这个群的屏里再点它那一行):这个群名下记着的那一屏(从群里点开的私聊、智能体)不要了,
- * 群单独一屏。项目群认它的项目块,同 openChatOnScreen。
+ * 群单独一屏。
  */
 export function navigateToGroupRoot(chatId: string): void {
   tabFullscreen.exit();
-  const projectId = projectGroupsStore.rowProjectOfChat(chatId);
-  screenLayout.showRoot(projectId ? { kind: 'project', projectId } : { kind: 'chat', chatId });
+  screenLayout.showRoot({ kind: 'chat', chatId });
   followFocus();
 }
 
-/** ⌘ 点左边一行(项目、对话、会话都一样):并排放在正看着那块右边;满了提示。 */
+/** ⌘ 点左边一行(对话、会话都一样):并排放在正看着那块右边;满了提示。 */
 export function showBesideOnScreen(content: ScreenBlockContent): void {
   tabFullscreen.exit();
   if (content.kind === 'session') {
@@ -361,24 +350,6 @@ function refillScreen(): void {
   const last = appState.navigation.viewParamsStore.session as Partial<ScreenSession> | undefined;
   if (!last?.projectId || !last.sessionId || auxWindows.windowOfSession(last.sessionId)) return;
   screenLayout.show({ projectId: last.projectId, sessionId: last.sessionId });
-}
-
-/** 这个项目删掉了:它那块收掉(收起来的组里也一样);屏上空了就摆回最近看过的会话。 */
-export function forgetProjectOnScreen(projectId: string): void {
-  screenLayout.forgetContent({ kind: 'project', projectId });
-  refillScreen();
-  followFocus();
-}
-
-/**
- * #2548 这个项目的群解散了(读成归档):项目不在了,它那块收掉(同上);屏上没有别的可跟、还正看着它,就回首页(同项目行菜单「移除项目」),
- * ❌ 留在一块空白上 —— 这一块的第一枚页签就是那个群,群已删掉。本地项目照旧在项目表里(解散只动账号上的项目群),项目页的守卫拦不到。
- */
-export function leaveDissolvedProject(projectId: string): void {
-  forgetProjectOnScreen(projectId);
-  const navigation = appState.navigation;
-  const current = navigation.viewParamsStore.project as { projectId?: string } | undefined;
-  if (navigation.currentViewId === 'project' && !!current?.projectId && sidebarStore.rowProjectIdOf(current.projectId) === projectId) navigation.navigate('home');
 }
 
 /** 这个账号没有(或删了)示例项目:屏上那块收掉;屏上空了就摆回最近看过的会话。 */

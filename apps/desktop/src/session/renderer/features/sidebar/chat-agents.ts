@@ -4,8 +4,8 @@ import { buildSessionTree, type SessionTreeNode } from '@renderer/features/sessi
 import { needsYouCount, SIDEBAR_STATE_GROUP_ORDER, sidebarStateGroup } from './session-groups';
 import { summarizeSessionBranches, type SessionBranchSummary } from './sidebar-session-branch';
 
-// #2548 内层侧栏的「智能体」(群里也这么写,owner 11-12):**住在**这个群或项目里的我的会话(这台电脑与连着的机器上的,即侧栏里那些),
-// 别人的智能体 ❌ 列在这里(它们在聊天和成员面板里)。项目行头像角上那个数读的是同一个推导(myAgentsInChat → chatAgentCounts)。
+// #2548 内层侧栏的「智能体」(群里也这么写,owner 11-12):**住在**这个群里的我的会话(这台电脑与连着的机器上的,即侧栏里那些),
+// 别人的智能体 ❌ 列在这里(它们在聊天和成员面板里)。
 // #2599 住在哪按「在哪建的」定,❌ 按它此刻是哪些群的成员:成员关系一对多、随时在变,只在那个群里多一个成员。
 
 /** 侧栏里我的一条会话,外加它背后的那个咕咕身份(会话 → agent 的绑定,sessionAgentBindings)。 */
@@ -21,6 +21,8 @@ export type ChatAgentEntry = {
   agentUserId?: string;
   /** #2599 从哪个对话里建出来的(SessionpageSessionSummary.bornInChatId);null / 缺席 = 不是或不知道。 */
   bornInChatId?: string | null;
+  /** 它所在的群(它的文件夹挂在这个群上,@@@group-folders);null / 缺席 = 不在任何群里。 */
+  groupChatId?: string | null;
   /** 做完了还没看(宿主的已读位);「需要你」的计数也读它(needsYouCount)。 */
   unseen?: boolean;
   hostOnline?: boolean;
@@ -28,28 +30,22 @@ export type ChatAgentEntry = {
 
 /**
  * 一个对话里哪些会话算「我的智能体」(#2599 住在这里的),按顶层会话定:
- *  · 它在这个项目(绑在这个项目群上的各台机器上的本地项目)里;
- *  · 或者它不在任何项目里,是在这里建的(`bornInChatId` 是这个群 / 项目群,或它们的一个话题)。
+ *  · 它所在的群(`groupChatId`,它的文件夹挂在那个群上)是这里;
+ *  · 或者它不在任何群里,是在这里建的(`bornInChatId` 是这个群,或它的一个话题)。
  * 只是这个群成员的 ❌ 算(它住在别处,在这里只是成员)。子会话跟着父会话走(#2548「forks stay under their parent」),
- * ❌ 按它自己的项目或来源另算一处。
+ * ❌ 按它自己的群或来源另算一处。
  */
 export type ChatAgentScope = {
-  kind: 'group' | 'project';
-  /** 项目:它在各台机器上的本地项目;群:[]。 */
-  projectIds: readonly string[];
-  /** 这个对话或它的一个话题(建在这里的 agent 住这里)。 */
-  bornHere: (chatId: string) => boolean;
-  /** 这个本地项目属于侧栏列着的某个项目(住在那个项目里,不在这里)。 */
-  inProject: (projectId: string) => boolean;
+  /** 这个对话或它的一个话题。 */
+  here: (chatId: string) => boolean;
 };
 
-function livesIn(entry: ChatAgentEntry, scope: ChatAgentScope, projects: ReadonlySet<string>): boolean {
-  if (projects.has(entry.projectId)) return true;
-  return !!entry.bornInChatId && scope.bornHere(entry.bornInChatId) && !scope.inProject(entry.projectId);
+function livesIn(entry: ChatAgentEntry, scope: ChatAgentScope): boolean {
+  if (entry.groupChatId) return scope.here(entry.groupChatId);
+  return !!entry.bornInChatId && scope.here(entry.bornInChatId);
 }
 
 export function myAgentsInChat<T extends ChatAgentEntry>(entries: readonly T[], scope: ChatAgentScope): T[] {
-  const projects = new Set(scope.projectIds);
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const decided = new Map<string, boolean>();
   // 按根定:父会话不在这一份里(另一台没连上的机器上)时,它自己就是根。
@@ -58,7 +54,7 @@ export function myAgentsInChat<T extends ChatAgentEntry>(entries: readonly T[], 
     if (known !== undefined) return known;
     decided.set(entry.id, false); // 父子成环(坏数据)时停下,❌ 无限递归
     const parent = entry.parentSessionId ? byId.get(entry.parentSessionId) : undefined;
-    const answer = parent ? lives(parent) : livesIn(entry, scope, projects);
+    const answer = parent ? lives(parent) : livesIn(entry, scope);
     decided.set(entry.id, answer);
     return answer;
   };
@@ -113,7 +109,7 @@ export function subAgentsOf<T extends ChatAgentEntry>(families: AgentFamilies<T>
   return found;
 }
 
-/** 分区头上的数与项目行角上的数:总数,与前台在跑的(同 summarizeSessionBranches:后台 / 定时的 parked 不算在跑)。 */
+/** 分区头上的数:总数,与前台在跑的(同 summarizeSessionBranches:后台 / 定时的 parked 不算在跑)。 */
 export function chatAgentCounts(entries: readonly Pick<ChatAgentEntry, 'presentation'>[]): ChatAgentCounts {
   return { total: entries.length, running: entries.filter((entry) => entry.presentation?.tone === 'running').length };
 }
@@ -128,8 +124,10 @@ export type ChatAgentRow = {
   sessionId: string;
   depth: number;
   hasChildren: boolean;
-  /** 挂在父会话下的行:父会话的项目(行组件据此决定要不要标项目名)。 */
-  parentProjectId?: string;
+  /** 这一行会话所在的群(@@@group-folders);null = 不在任何群里。 */
+  groupChatId: string | null;
+  /** 挂在父会话下的行:父会话所在的群(行组件据此决定要不要标群名);不是子会话 = undefined。 */
+  parentGroupChatId?: string | null;
   /** 分支计数那枚药丸(子会话数、其中在跑的)。 */
   summary: SessionBranchSummary;
 };
@@ -179,7 +177,7 @@ export function chatAgentSection(entries: readonly ChatAgentEntry[], disclosure:
   );
   const limit = Math.max(CHAT_AGENT_LIMIT, roots.filter((root) => needsYou(root.item)).length);
   const rows: ChatAgentRow[] = [];
-  const visit = (node: SessionTreeNode<ChatAgentEntry>, depth: number, parentProjectId?: string) => {
+  const visit = (node: SessionTreeNode<ChatAgentEntry>, depth: number, parentGroupChatId?: string | null) => {
     const summary = summaries.get(node.item.id);
     if (!summary) throw new Error(`Session branch summary missing for ${node.item.id}`);
     rows.push({
@@ -187,11 +185,12 @@ export function chatAgentSection(entries: readonly ChatAgentEntry[], disclosure:
       sessionId: node.item.id,
       depth,
       hasChildren: node.children.length > 0,
-      parentProjectId,
+      groupChatId: node.item.groupChatId ?? null,
+      parentGroupChatId,
       summary,
     });
     if (!disclosure.expanded.has(node.item.id)) return;
-    for (const child of node.children) visit(child, depth + 1, node.item.projectId);
+    for (const child of node.children) visit(child, depth + 1, node.item.groupChatId ?? null);
   };
   const holds = (node: SessionTreeNode<ChatAgentEntry>): boolean => node.item.id === disclosure.open || node.children.some(holds);
   const openRoot = disclosure.open ? roots.find(holds) : undefined;

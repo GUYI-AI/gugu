@@ -142,14 +142,10 @@ export function useLinkNavigation(input: {
         return
       }
       if (target.kind === 'project') {
-        if (!readMobileShell()) state.openProject(target.projectId)
-        else {
-          const [{ deviceSessionsOf, liveDeviceSessions }, { readCachedDevices }, { APP_SHOW_SESSION_EVENT }] = await Promise.all([
-            import('../session/shared/remote-sessions/session-directory'), import('../store/devicesCache'), import('../session/shared/extensions/app-runtime-protocol'),
-          ])
-          if (!readCachedDevices().some((device) => deviceSessionsOf(device, liveDeviceSessions()).projects.some((project) => project.id === target.projectId))) throw new Error('Project is not in your task list')
-          window.dispatchEvent(new CustomEvent(APP_SHOW_SESSION_EVENT, { detail: { projectId: target.projectId } }))
-        }
+        // An old project link (before C1): the host resolves it to its group (the alias table). The phone has no host of its
+        // own here: it says so (❌ guessing a group).
+        if (readMobileShell()) throw new Error('Old project links open on a computer')
+        state.openProject(target.projectId)
         return
       }
       if (target.kind === 'server-login') {

@@ -4,7 +4,7 @@ import type { SupportedLocale } from '@/i18n/locale';
 import { dismissSampleProject, readSampleProject, subscribeSampleProject } from '@/lib/sampleProject';
 import { useSidebarChatSignals } from '@/lib/sidebarChatsBridge';
 import { useAssistantShell } from '@renderer/features/assistant/assistant-shell';
-import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
+import { groupFoldersStore } from '@renderer/features/folders/group-folders-store';
 import { log } from '@renderer/utils/logger';
 import { sampleConversionOf } from './sample-conversion';
 import { groupRowShown } from './sample-group-row';
@@ -58,14 +58,14 @@ function load(userId: string, attempt = 0): void {
 }
 
 /**
- * #2569 示例变成的那个项目已经在项目表里了,键上却还没删(交出去那一下删失败了、交出去之前窗口重载了、别的窗口交出去的):
+ * #2569 示例变成的那个群已经有文件夹了,键上却还没删(交出去那一下删失败了、交出去之前窗口重载了、别的窗口交出去的):
  * 这里补删,❌ 只靠交出去那一下。这个窗口正在变、或变到一半停下了(话还在示例的框里,等他再按):不删,让它自己走完。
  */
 let settling: string | null = null;
 function settleBecome(): void {
   const current = reading;
   if (!current?.shown || !current.became || settling === current.userId) return;
-  if (accountProjectsStore.project(current.became) === undefined) return;
+  if (groupFoldersStore.foldersOf(current.became).length === 0) return;
   const run = sampleConversionOf(current.userId);
   if (run.status === 'working' || run.failure !== null) return;
   const { userId } = current;
@@ -80,10 +80,10 @@ function settleBecome(): void {
 }
 
 subscribeSampleProject((userId) => { if (reading?.userId === userId) load(userId); });
-// 别的窗口、别的电脑上把示例变成了项目:那个项目一进项目表(多出一个群),这里重读键 —— 键上记着它,示例就让给它,❌ 两行都在。
-// 只在项目表多出群、键上还没记着它变成了哪个的时候读;❌ 项目表每变一次(改名、换绑定)都去账号上读一次。
+// 别的窗口、别的电脑上把示例变成了群:那个群一有文件夹(多出一个群),这里重读键 —— 键上记着它,示例就让给它,❌ 两行都在。
+// 只在多出群、键上还没记着它变成了哪个的时候读;❌ 每变一次(改名、换文件夹)都去账号上读一次。
 reaction(
-  () => accountProjectsStore.projects.map((project) => project.chatId),
+  () => groupFoldersStore.groups.map((group) => group.chatId),
   (chatIds, before) => {
     const known = new Set(before);
     if (reading?.shown && reading.became === null && chatIds.some((chatId) => !known.has(chatId))) load(reading.userId);

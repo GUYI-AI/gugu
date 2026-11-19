@@ -39,10 +39,11 @@ const mocks = vi.hoisted(() => ({
 /** 这次进会话历史带的那一部分(useParams('session-history'));默认什么都不带。 */
 const entry = vi.hoisted(() => ({ params: {} as Record<string, unknown> }));
 // #6956 推到渲染层的事件:按机器分(与真 onMachineEvent 同一个判据,null = 本机),用例自己当主进程往里发。
-// 离线机器的心跳摘要(remoteHostsStore.sessionsOf)、账号上的项目(accountProjectsStore,`bound` = 各台上绑着 webapp 的本地项目)与本地项目表:用例自己摆。
+// 离线机器的心跳摘要(remoteHostsStore.sessionsOf)、账号上的群文件夹(groupFoldersStore,`bound` = 各台上绑在 webapp 群上的文件夹)与本地项目表:用例自己摆。
 const world = vi.hoisted(() => ({
   digests: {} as Record<string, unknown[]>,
-  bound: [] as Array<{ deviceId: string; localProjectId: string }>,
+  bound: [] as Array<{ deviceId: string; folderId: string }>,
+  webappFolders: new Set<string>(),
   projects: new Map<string, { id: string; name: string; data: { path: string } }>(),
   projectMachine: {} as Record<string, string>,
 }));
@@ -130,6 +131,10 @@ vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
 vi.mock('@renderer/lib/stores/app-state', () => ({
   sidebarStore: {},
 }));
+// 文件夹归哪个群:只答账号上记着的那几个(真 store 读机器和账号;这里只用它的 chatOfFolder)。
+vi.mock('@renderer/features/folders/group-folders-store', () => ({
+  groupFoldersStore: { chatOfFolder: (folderId: string) => (world.webappFolders.has(folderId) ? 'chat-webapp' : null) },
+}));
 vi.mock('@renderer/lib/machine-routing', () => ({
   machineRegistry: { machineOf: (id: string) => world.projectMachine[id] ?? null },
 }));
@@ -143,16 +148,10 @@ import { setPortalContainer } from '@renderer/lib/portal-container';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { SessionHistoryMainPanel } from '@renderer/features/session-history/session-history-view';
 import { SESSION_HISTORY_IMPORT_PART } from '@renderer/features/session-history/session-history-import-part';
-import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
-import { runInAction } from 'mobx';
 
-/** 账号上的项目:webapp(这台电脑上的 p1,加上用例绑在别的机器上的)。 */
+/** 账号上的群文件夹:webapp 群(这台电脑上的 p1,加上用例绑在别的机器上的)。 */
 function seedAccounts(): void {
-  runInAction(() => {
-    accountProjectsStore.list = [{ chatId: 'chat-webapp', name: 'webapp', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'this-computer', localProjectId: 'p1' }, ...world.bound] }];
-    accountProjectsStore.localDeviceId = 'this-computer';
-    accountProjectsStore.status = 'ready';
-  });
+  world.webappFolders = new Set(['p1', ...world.bound.map((one) => one.folderId)]);
 }
 
 const NOW = Date.now();
@@ -730,7 +729,7 @@ describe('会话历史(按目录分节)核心合同', () => {
 
   it('全部机器一起读:同一个项目在本机与 d22 上的任务进同一节,行上标机器;离线那台不去问', async () => {
     // d22 上的 webapp 是另一台上的本地项目 rp1,与本机 p1 绑在同一个项目群上 ⇒ d22 的主进程也给 project:chat-webapp 这一节。
-    world.bound = [{ deviceId: 'dev-d22', localProjectId: 'rp1' }];
+    world.bound = [{ deviceId: 'dev-d22', folderId: 'rp1' }];
     seedAccounts();
     const remoteRow = gugu({ key: 'gugu:remote-w', title: 'd22 上的 webapp 任务', directory: '/home/alice/webapp', updatedAt: NOW - 5 * 60 * 60 * 1000, gugu: { projectId: 'rp1', sessionId: 'remote-w', runtime: 'acp' } });
     mocks.remoteListDirectories.mockImplementation((machine: string) =>
@@ -775,7 +774,7 @@ describe('会话历史(按目录分节)核心合同', () => {
   });
 
   it('离线的机器:心跳摘要里的任务按项目归节、行标离线,节尾写哪台离线;点得开的照侧栏的判据打开', async () => {
-    world.bound = [{ deviceId: 'dev-off', localProjectId: 'offp' }];
+    world.bound = [{ deviceId: 'dev-off', folderId: 'offp' }];
     seedAccounts();
     const summary = (conversationId: string, title: string, at: string, supported: boolean) => ({
       conversationId, projectId: 'offp', title, harness: 'codex', runtime: 'acp', agentStatus: null,

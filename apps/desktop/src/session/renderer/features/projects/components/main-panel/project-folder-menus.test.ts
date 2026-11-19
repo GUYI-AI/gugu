@@ -5,12 +5,11 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setLocalePreference } from '@/i18n';
-import type { ProjectFolder } from '@shared/core/projects/project-folders';
+import type { GroupFolder } from '@renderer/features/folders/group-folders-store';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { ProjectFolderMenu } from './project-folder-menu';
 import { ComposerFolderPicker } from './composer-folder-picker';
-import type { ProjectFoldersState } from './project-folders';
-import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
+import type { GroupFoldersState } from '@renderer/features/folders/group-folders';
 
 vi.mock('@renderer/lib/stores/app-state', () => ({
   sidebarStore: { placement: { entries: new Map() } },
@@ -19,24 +18,31 @@ vi.mock('@renderer/lib/chat/sender-avatar', () => ({
   senderAvatarUrl: (fromId: string) => `avatar:${fromId}`,
   subscribeSenderAvatars: () => () => {},
 }));
-const feedback = vi.hoisted(() => ({ toast: vi.fn(), attach: vi.fn() }));
+const feedback = vi.hoisted(() => ({ toast: vi.fn(), bind: vi.fn(), readMachine: vi.fn() }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: feedback.toast }));
-vi.mock('@renderer/lib/ipc', () => ({
-  events: { on: () => () => {} },
-  rpc: { projects: { attachProjectFolder: feedback.attach } },
+vi.mock('@renderer/lib/ipc', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@renderer/lib/ipc')>()),
+  rpcOn: () => ({ folders: { bindFolderAtPath: feedback.bind } }),
+}));
+vi.mock('@renderer/features/folders/group-folders-store', () => ({
+  groupFoldersStore: { readMachine: feedback.readMachine },
+  folderName: (path: string) => path.split('/').pop() ?? path,
 }));
 
-const folder = (workspaceId: string, kind: ProjectFolder['kind'], path: string): ProjectFolder => ({
-  workspaceId,
-  projectId: 'p1',
-  kind,
-  path: path as CanonicalPath,
+const folder = (id: string, path: string, sort: number): GroupFolder => ({
+  id,
+  path,
+  chatId: 'g1',
+  deviceId: null,
+  sort,
+  gitless: false,
   branch: null,
   sessionIds: [],
   attachedAt: null,
+  offline: false,
 });
-const ROOT = { ...folder('ws-root', 'root', '/www/gugu'), offline: false, deviceId: null };
-const WT = { ...folder('ws-wt', 'attached', '/www/gugu-wt'), offline: false, deviceId: null };
+const ROOT = folder('ws-root', '/www/gugu', 1);
+const WT = folder('ws-wt', '/www/gugu-wt', 2);
 
 const menuItems = () => [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].map((item) => item.textContent?.trim());
 
@@ -70,12 +76,12 @@ describe('project home menus open for real', () => {
   });
 
   it('removes the initial folder through the menu and undo still works after the card unmounts', async () => {
-    const detach = vi.fn().mockResolvedValue(true);
+    const detach = vi.fn().mockResolvedValue(undefined);
     feedback.toast.mockClear();
-    feedback.attach.mockResolvedValue({ success: true, data: ROOT });
+    feedback.bind.mockResolvedValue({ success: true, data: ROOT });
     await act(async () => root.render(
       React.createElement(SessionLocalizationProvider, null,
-        React.createElement(ProjectFolderMenu, { folder: ROOT, projectName: 'P', state: { detach, folders: [ROOT, WT] }, disabled: false,
+        React.createElement(ProjectFolderMenu, { folder: ROOT, chatId: 'g1', groupName: 'P', state: { detach }, disabled: false,
           children: React.createElement('div', { 'data-testid': 'folder-menu-target' }, 'Folder') }))
     ));
     await act(async () => container.querySelector('[data-testid="folder-menu-target"]')!.dispatchEvent(
@@ -83,43 +89,26 @@ describe('project home menus open for real', () => {
     ));
     await until(() => menuItems().length > 0 || thrown.length > 0, 'detach menu');
     expect(thrown).toEqual([]);
-    expect(menuItems()).toContain('从项目中摘除');
+    expect(menuItems()).toEqual(['从群里摘下']);
     await act(async () => document.querySelector<HTMLElement>('[role="menuitem"]')!.click());
     expect(detach).toHaveBeenCalledWith(ROOT);
     const undo = feedback.toast.mock.calls[0][0].action.onClick;
     await act(async () => root.render(null));
     await act(async () => undo());
-    expect(feedback.attach).toHaveBeenCalledWith('p1', ROOT.path);
-  });
-
-  it('does not offer to remove the last folder of a project', async () => {
-    const detach = vi.fn().mockResolvedValue(true);
-    await act(async () => root.render(
-      React.createElement(SessionLocalizationProvider, null,
-        React.createElement(ProjectFolderMenu, { folder: ROOT, projectName: 'P', state: { detach, folders: [ROOT] }, disabled: false,
-          children: React.createElement('div', { 'data-testid': 'folder-menu-target' }, 'Folder') }))
-    ));
-    await act(async () => container.querySelector('[data-testid="folder-menu-target"]')!.dispatchEvent(
-      new MouseEvent('contextmenu', { bubbles: true, button: 2, clientX: 10, clientY: 10 })
-    ));
-    await until(() => menuItems().length > 0 || thrown.length > 0, 'detach menu');
-    const item = document.querySelector<HTMLElement>('[role="menuitem"]')!;
-    expect(item.getAttribute('aria-disabled')).toBe('true');
-    expect(item.getAttribute('title')).toContain('至少要有一个文件夹');
-    await act(async () => item.click());
-    expect(detach).not.toHaveBeenCalled();
+    expect(feedback.bind).toHaveBeenCalledWith({ path: ROOT.path, chatId: 'g1' });
+    expect(feedback.readMachine).toHaveBeenCalledWith(null);
   });
 
   it('the composer folder picker lists every folder and the attach action', async () => {
-    const state: ProjectFoldersState = {
+    const state: GroupFoldersState = {
       folders: [ROOT, WT],
       loadError: false,
-      unanswered: [],
+      stale: false,
       chosen: ROOT,
       fresh: undefined,
       choose: vi.fn(),
       reload: vi.fn(),
-      attach: vi.fn(),
+      bound: vi.fn(),
       detach: vi.fn(),
     };
     await act(async () => {
@@ -131,7 +120,7 @@ describe('project home menus open for real', () => {
     await until(() => menuItems().length > 0 || thrown.length > 0, 'the folder menu');
     expect(thrown).toEqual([]);
     expect(menuItems()).toEqual([
-      expect.stringContaining('项目根目录'),
+      expect.stringContaining('根文件夹'),
       expect.stringContaining('gugu-wt'),
       expect.stringContaining('挂'),
     ]);

@@ -5,7 +5,7 @@ import { assistantDescendants, isAssistantSession } from '../session/renderer/fe
 
 export type AssistantWorkrooms = { ownerId: string; chatIds: readonly string[]; agentIds: readonly string[] }
 
-/** Only canonical groups belonging exclusively to the assistant's own project. Never match names. */
+/** Only groups whose folders belong exclusively to the assistant's own sessions (`projectId` = folder id). Never match names. */
 export function assistantWorkrooms(
   assistantId: string,
   ownerId: string,

@@ -23,25 +23,23 @@ export const MAX_SCREEN_BLOCKS = 4;
 export type ScreenSession = { projectId: string; sessionId: string };
 
 /**
- * 一块装的东西:一个会话(连同它分好的格子和页签)、一个 App、一个项目(第一枚页签是项目群,gugu-dev#181)
- * 或一个对话(人和用户群)。
+ * 一块装的东西:一个会话(连同它分好的格子和页签)、一个 App,或一个对话(人和群;群的空页是它的文件夹卡,gugu-dev#181)。
  */
 export type ScreenBlockContent =
   | ({ kind: 'session' } & ScreenSession)
   | { kind: 'app'; tabKind: string }
-  | { kind: 'project'; projectId: string }
   | { kind: 'chat'; chatId: string }
   /** 一个对话里的一张 App 页(那个对话的那张,或为它的一个文件开的),从那个对话的页签条上拿出来单独占一块。 */
   | { kind: 'chat-app'; chatId: string; tabKind: string; itemId?: string; title: string }
-  /** 示例项目(#709):打包在 app 里的一个项目的样子,只有一份。 */
+  /** 示例(#709):打包在 app 里的一个群的样子,只有一份。 */
   | { kind: 'sample-project' };
 
-/** 能单独开成一扇窗的:会话、App(项目、对话这一轮只在主窗里)。 */
+/** 能单独开成一扇窗的:会话、App(对话这一轮只在主窗里)。 */
 export type WindowableContent = Extract<ScreenBlockContent, { kind: 'session' | 'app' }>;
 
 /**
- * 一块装的是哪一样(同一样东西只在一组的一块里):会话认会话 id,App 认页签类型,项目认项目 id,对话认对话 id。
- * 左边列表(项目、对话)按同一个键认出一行是组里的哪一块。
+ * 一块装的是哪一样(同一样东西只在一组的一块里):会话认会话 id,App 认页签类型,对话认对话 id。
+ * 左边列表按同一个键认出一行是组里的哪一块。
  */
 export function contentKey(content: ScreenBlockContent): string {
   switch (content.kind) {
@@ -49,8 +47,6 @@ export function contentKey(content: ScreenBlockContent): string {
       return blockKey.session(content.sessionId);
     case 'app':
       return blockKey.app(content.tabKind);
-    case 'project':
-      return blockKey.project(content.projectId);
     case 'chat':
       return blockKey.chat(content.chatId);
     case 'chat-app':
@@ -621,8 +617,7 @@ function isBlockContent(value: unknown): value is ScreenBlockContent {
       return typeof block.projectId === 'string' && typeof block.sessionId === 'string';
     case 'app':
       return typeof block.tabKind === 'string';
-    case 'project':
-      return typeof block.projectId === 'string';
+    // 'project' (a local project's block, before C1): not restored; its group opens from the list.
     case 'chat':
       return typeof block.chatId === 'string';
     case 'chat-app':

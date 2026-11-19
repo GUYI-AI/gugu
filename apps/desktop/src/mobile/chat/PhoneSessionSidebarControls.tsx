@@ -22,7 +22,7 @@ export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebar
   const { anchor, listed, directory, devices, identitiesById, families, source, topics, sessionId } = sidebar
   const current = directory.find(row => row.session.conversationId === sessionId)
   const device = devices.find(one => one.device_id === current?.deviceId)
-  const machine = device ? { device, localProjectId: current?.session.projectId ?? '', path: '', available: device.is_online } : undefined
+  const machine = device ? { device, folderId: current?.session.projectId ?? '', path: '', available: device.is_online } : undefined
   const harness = current?.session.harness ?? null
   const [view, setView] = useState<'agents' | 'topics' | null>(null)
   const titleCount = view === 'topics' ? topics.topics?.length : (source ? listed.length : undefined)

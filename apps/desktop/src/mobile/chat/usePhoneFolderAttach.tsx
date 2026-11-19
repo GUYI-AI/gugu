@@ -13,16 +13,18 @@ import { rendererLogger } from '@/lib/log'
 import { notify } from '@/lib/notices'
 import { shortHome } from '@/session/shared/path-name'
 import { navigateMobile } from '@/mobile/navigateMobile'
-import { visibleMachines, workspaceDevices } from '../../components/session-watch/machine-list'
-import { useMachineLabel } from '../../components/session-watch/useMachineLabel'
-import { attachPhoneProjectFolder } from './attachPhoneProjectFolder'
+import { visibleMachines, workspaceDevices } from '@/components/session-watch/machine-list'
+import { useMachineLabel } from '@/components/session-watch/useMachineLabel'
+import { readChatSummary } from '@/lib/chatSummariesBridge'
+import { projectRpcOn } from '../partners/projectRpc'
 import { folderCardMachine, type ChatTaskFolders, type TaskFolderHome } from './phoneTaskFolders'
-import { MAX_PROJECT_FOLDERS, type ShownFolder } from '@/session/renderer/features/projects/components/main-panel/project-folders'
+import { MAX_GROUP_FOLDERS } from '@/session/renderer/features/folders/group-folders'
+import { groupFoldersStore, type GroupFolder } from '@/session/renderer/features/folders/group-folders-store'
 
 const log = rendererLogger('phone-folder-attach')
-type Added = { folder: ShownFolder; home: TaskFolderHome }
+type Added = { folder: GroupFolder; home: TaskFolderHome }
 
-/** 新项目和挂文件夹共用机器清单、远端目录树;卡片自身提供机器菜单。 */
+/** 挂文件夹:机器清单、那台机器的目录树;卡片自身提供机器菜单。挂在别的群里的,问过才挪到这个群。 */
 export function usePhoneFolderAttach(project: ChatTaskFolders | null, devices: Device[], refresh: () => Promise<void>) {
   const { t } = useTranslation('messaging')
   const { translate: st } = useSessionMessages()
@@ -32,13 +34,13 @@ export function usePhoneFolderAttach(project: ChatTaskFolders | null, devices: D
   const [added, setAdded] = useState<Added[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(false)
-  const [merge, setMerge] = useState<{ name: string; count: number; answer: (yes: boolean) => void } | null>(null)
+  const [merge, setMerge] = useState<{ name: string; answer: (yes: boolean) => void } | null>(null)
   const mergeRef = useRef(merge)
   mergeRef.current = merge
   useEffect(() => {
     setAdded([]); setDeviceId(null)
     return () => { mergeRef.current?.answer(false) }
-  }, [project?.rowId])
+  }, [project?.chatId])
   const close = () => { if (!busy) navigateMobile(() => setDeviceId(null), 'pop') }
   useBackLayer(close, !!deviceId)
   const device = devices.find((row) => row.device_id === deviceId)
@@ -46,28 +48,38 @@ export function usePhoneFolderAttach(project: ChatTaskFolders | null, devices: D
     if (!project || !device || busy) return
     setBusy(true); setError(false)
     try {
-      const result = await attachPhoneProjectFolder({ project, devices, device, path,
-        confirmMerge: (name, count) => new Promise<boolean>((answer) => setMerge({ name, count, answer: (yes) => { setMerge(null); answer(yes) } })),
-      })
-      if (result) {
-        setAdded((current) => [...current.filter((item) => item.folder.workspaceId !== result.folder.workspaceId), {
-          folder: { ...result.folder, attachedAt: result.folder.attachedAt ?? new Date().toISOString(), offline: false, deviceId: device.device_id },
-          home: { deviceId: device.device_id, localProjectId: result.folder.projectId, machine: { ...folderCardMachine(device, label), online: true } },
+      const rpc = projectRpcOn(device)
+      let bound = await rpc.folders.bindFolderAtPath({ path, chatId: project.chatId })
+      if (!bound.success && bound.error.type === 'bound-elsewhere') {
+        const other = readChatSummary(bound.error.chatId)?.name ?? ''
+        const yes = await new Promise<boolean>((answer) => setMerge({ name: other, answer: (agreed) => { setMerge(null); answer(agreed) } }))
+        if (!yes) return
+        bound = await rpc.folders.bindFolderAtPath({ path, chatId: project.chatId, move: true })
+      }
+      if (!bound.success) throw new Error(bound.error.type)
+      const folder = bound.data
+      if (folder) {
+        const shown: GroupFolder = { id: folder.id, path: folder.path, chatId: project.chatId, deviceId: device.device_id, sort: folder.sort ?? 0,
+          gitless: folder.gitless, branch: folder.branch, sessionIds: folder.sessionIds, attachedAt: folder.attachedAt ?? new Date().toISOString(), offline: false }
+        setAdded((current) => [...current.filter((item) => item.folder.id !== folder.id), {
+          folder: shown,
+          home: { deviceId: device.device_id, folderId: folder.id, machine: { ...folderCardMachine(device, label), online: true } },
         }])
-        notify({ title: st('projects.folders.attachedOn', { machine: label(device), path: shortHome(result.folder.path), projectName: project.name }), duration: 8000,
+        notify({ title: st('projects.folders.attachedOn', { machine: label(device), path: shortHome(folder.path), projectName: project.name }), duration: 8000,
           action: { label: st('projects.folders.undo'), onClick: () => {
-            void result.undo().then(async (ok) => {
-              if (!ok) { notify({ tier: 'error', title: t('composer.phoneTask.attachFailed') }); return }
-              setAdded((current) => current.filter((item) => item.folder.workspaceId !== result.folder.workspaceId))
+            void rpc.folders.unbindFolder(folder.id).then(async (undone) => {
+              if (!undone.success) { notify({ tier: 'error', title: t('composer.phoneTask.attachFailed') }); return }
+              setAdded((current) => current.filter((item) => item.folder.id !== folder.id))
               await refresh()
-              notify({ title: st('projects.folders.detached', { path: shortHome(result.folder.path), projectName: project.name }) })
+              notify({ title: st('projects.folders.detached', { path: shortHome(folder.path), projectName: project.name }) })
             }).catch((cause) => { log.warn({ error: String(cause) }, 'undo folder attachment failed'); notify({ tier: 'error', title: t('composer.phoneTask.attachFailed') }) })
           } },
         })
         await refresh()
+        void groupFoldersStore.refresh()
         navigateMobile(() => setDeviceId(null), 'pop')
       }
-    } catch (cause) { log.warn({ error: String(cause), deviceId }, 'attach a project folder failed'); setError(true) }
+    } catch (cause) { log.warn({ error: String(cause), deviceId }, 'binding a folder to the group failed'); setError(true) }
     finally { setBusy(false) }
   }
   const root = document.querySelector('[data-phone-shell]')
@@ -82,24 +94,24 @@ export function usePhoneFolderAttach(project: ChatTaskFolders | null, devices: D
       </Pane>
       <Dialog.Root open={!!merge} onOpenChange={(open) => { if (!open) merge?.answer(false) }}>
         <Dialog.Portal><Dialog.Backdrop /><Dialog.Viewport><Dialog.Popup>
-          <Dialog.Title>{st('projects.folders.mergeTitle', { name: merge?.name ?? '', projectName: project?.name ?? '' })}</Dialog.Title>
-          <Dialog.Description>{st('projects.folders.mergeDescription', { machine: label(device), name: merge?.name ?? '', count: merge?.count ?? 0, projectName: project?.name ?? '' })}</Dialog.Description>
+          <Dialog.Title>{st('projects.folders.errorOtherProject', { projectName: merge?.name ?? '' })}</Dialog.Title>
+          <Dialog.Description>{st('projects.folders.moveDescription', { projectName: project?.name ?? '' })}</Dialog.Description>
           <Button variant="ghost" onClick={() => merge?.answer(false)}>{t('common.cancel')}</Button>
-          <Button onClick={() => merge?.answer(true)}>{st('projects.folders.mergeConfirm')}</Button>
+          <Button onClick={() => merge?.answer(true)}>{st('projects.folders.moveConfirm')}</Button>
         </Dialog.Popup></Dialog.Viewport></Dialog.Portal>
       </Dialog.Root>
     </div>, root,
   ) : null
   return {
     added, picker,
-    remove: (workspaceId: string) => setAdded((current) => current.filter((item) => item.folder.workspaceId !== workspaceId)),
-    fresh: added.at(-1)?.folder.workspaceId,
+    remove: (folderId: string) => setAdded((current) => current.filter((item) => item.folder.id !== folderId)),
+    fresh: added.at(-1)?.folder.id,
     attachMachines: machines.map((row) => folderCardMachine(row, label)),
     onAttach: (id: string | null) => {
       // 挂满了就当场说,❌ 先推目录页、挑完才拒(同电脑 #629;各台机器合计,含这一页刚挂上的)。
-      const count = new Set([...(project?.folders ?? []), ...added.map((item) => item.folder)].map((folder) => folder.workspaceId)).size
-      if (project && count >= MAX_PROJECT_FOLDERS) {
-        notify({ tier: 'error', title: st('projects.folders.errorFull', { projectName: project.name, max: MAX_PROJECT_FOLDERS }) })
+      const count = new Set([...(project?.folders ?? []), ...added.map((item) => item.folder)].map((folder) => folder.id)).size
+      if (project && count >= MAX_GROUP_FOLDERS) {
+        notify({ tier: 'error', title: st('projects.folders.errorFull', { projectName: project.name, max: MAX_GROUP_FOLDERS }) })
         return
       }
       setError(false); navigateMobile(() => setDeviceId(id), 'push')

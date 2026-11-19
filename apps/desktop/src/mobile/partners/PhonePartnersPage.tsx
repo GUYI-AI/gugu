@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
 import { AddFriendSearch } from '@/components/AddFriendSearch'
@@ -21,20 +21,10 @@ import type { QrScanRoute } from '@/lib/qrScanRoute'
 import { RETAINED_SURFACE_HIDDEN_STYLE } from '@/lib/retainedSurface'
 import { navigateMobile } from '@/mobile/navigateMobile'
 import { PhoneMeButton } from '@/mobile/PhoneMeButton'
-import { useMachineLabel } from '@/components/session-watch/useMachineLabel'
-import { directoryMachines } from '@/components/session-watch/machine-list'
-import { deviceSessionsOf, useLiveDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import type { AuthUser } from '@/store/auth'
 import { useContactsStore } from '@/store/contactsContext'
-import { useDevicesStore } from '@/store/devicesContext'
-import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
-import { useToast } from '@/components/toastContext'
-import { messageForUser } from '@/lib/userFacingError'
-import { projectRpcOn } from './projectRpc'
-import { partnerFriends, partnerGroupAgents, partnerProjects, projectSessions, type PartnerProject } from './partnersModel'
-import { PhoneNewProjectPage, type CreatedProject } from './PhoneNewProjectPage'
-import { PhoneProjectContacts } from './PhoneProjectContacts'
-import { ChatGroupAvatar } from '@/components/chat/ChatGroupAvatar'
+import { partnerFriends, partnerGroupAgents } from './partnersModel'
+import { PhoneNewProjectPage } from './PhoneNewProjectPage'
 import './partners.css'
 
 /** 推在「伙伴」首页上的一页:整屏、没有底栏,返回一步回到下面那一页。 */
@@ -42,7 +32,6 @@ type PartnersPage =
   | { kind: 'requests' }
   | { kind: 'add'; seed: { query: string; token: number } | null }
   | { kind: 'friend'; contactId: string }
-  | { kind: 'project'; key: string; created?: CreatedProject }
   | { kind: 'newProject'; fromOutside: boolean }
 
 /** 入口行:ContactsPanel NavButton 的手机几何(44 高、20 图标、16 字、计数、尾部 ›)。 */
@@ -58,9 +47,8 @@ function NavRow({ icon, label, badge, testId, onClick }: { icon: ReactNode; labe
 }
 
 /**
- * 手机「伙伴」一格(OpenDCAI/gugu#446,v7.12 稿;桌面仍是 ContactsPanel):新的请求、添加联系人两行入口,下面是项目(文件夹)
- * 和朋友(只列人),群里遇到的别人的 Agent 单独列,复用桌面 Agent 库的行。项目按建的先后、一行只有名字;
- * 项目和朋友没有状态、没有提醒(那归「消息」),普通群也不在这里。
+ * 手机「伙伴」一格(OpenDCAI/gugu#446,v7.12 稿;桌面仍是 ContactsPanel):新的请求、添加联系人两行入口,下面是朋友(只列人),
+ * 群里遇到的别人的 Agent 单独列,复用桌面 Agent 库的行。朋友没有状态、没有提醒(那归「消息」),群也不在这里(群一律在「消息」)。
  * 点进去的几页整屏推进来(没有底栏),由 onPushedChange 告诉外壳收起底栏。
  */
 export function PhonePartnersPage({
@@ -89,16 +77,12 @@ export function PhonePartnersPage({
   onLeave: () => void
   onSwitchToChat?: (target: ContactUser) => void
   onOpenGroupChat?: (group: ContactGroupChat) => void
-  /** 打开项目群(落在群聊页签)。 */
+  /** 打开一个群(新建的群建好之后落在它的群聊页签)。 */
   onOpenProjectGroup: (chatId: string) => void
 }) {
   const { t } = useTranslation('main')
   const { t: ct } = useTranslation('contacts')
   const { contacts, sharedGroupAgents, groupChats, pendingRequestCount, sentRequests, sendRequest, setAgentPublic, setAgentDesiredStatus } = useContactsStore()
-  const { devices } = useDevicesStore()
-  const { isHome } = useMachineLabel()
-  const liveSessions = useLiveDeviceSessions()
-  const { toast } = useToast()
   const [stack, setStack] = useState<PartnersPage[]>([])
   const [requestingAgentId, setRequestingAgentId] = useState<string | null>(null)
   const [groupInviteJoin, setGroupInviteJoin] = useState<{ publicId: number; joinToken?: string; token: number } | null>(null)
@@ -126,13 +110,6 @@ export function PhonePartnersPage({
     setStack([{ kind: 'newProject', fromOutside: true }])
   }, [newProjectRequest])
 
-  const machines = useMemo(() => directoryMachines(devices, isHome), [devices, isHome])
-  const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
-  const projects = useMemo(() => partnerProjects(accountList, machines, isHome), [accountList, machines, isHome])
-  const sessionsOf = useCallback((deviceId: string) => {
-    const device = machines.find((row) => row.device_id === deviceId)
-    return device ? deviceSessionsOf(device, liveSessions) : { sessions: [], hostOnline: false }
-  }, [machines, liveSessions])
   const friends = useMemo(() => partnerFriends(contacts), [contacts])
   const groupAgents = useMemo(() => partnerGroupAgents(contacts, sharedGroupAgents, user.id), [contacts, sharedGroupAgents, user.id])
   const sentRequestIds = useMemo(() => new Set(sentRequests.map((request) => request.receiver_id)), [sentRequests])
@@ -147,46 +124,7 @@ export function PhonePartnersPage({
     }
   }, [requestingAgentId, sendRequest])
 
-  // 还没绑群的项目(从没开过会话):先让它所在的那台机器把群备好再进(同电脑项目一摆上屏就补上群)。
-  const openProjectGroup = async (project: PartnerProject) => {
-    if (project.chatId) {
-      onOpenProjectGroup(project.chatId)
-      return
-    }
-    const member = project.members.find((candidate) => machines.some((row) => row.device_id === candidate.deviceId && row.is_online))
-    const device = member ? machines.find((row) => row.device_id === member.deviceId) : undefined
-    if (!member || !device) {
-      toast(t('partners.groupOffline'), 'error')
-      return
-    }
-    try {
-      const result = await projectRpcOn(device).projects.ensureProjectGroup(member.localProjectId)
-      if (!result.success) throw new Error(result.error.message)
-      onOpenProjectGroup(result.data.chatId)
-    } catch (error) {
-      toast(t('partners.groupUnavailable'), 'error', messageForUser(error))
-    }
-  }
-
   const groupAgentActions = useAgentRowActions({ onSelect: (agent) => push({ kind: 'friend', contactId: agent.id }) })
-
-  const projectPage = (page: Extract<PartnersPage, { kind: 'project' }>) => {
-    const created = page.created
-    const project: PartnerProject | null = projects.find((candidate) => candidate.key === page.key)
-      // 刚建的项目:账号上那一份还没刷到,先照建的时候知道的画。
-      ?? (created ? { key: page.key, chatId: created.chatId, name: created.name, createdAt: created.createdAt, coverId: created.localProjectId, members: [{ deviceId: created.deviceId, localProjectId: created.localProjectId }] } : null)
-    if (!project) return null
-    const sessions = projectSessions(project, id => sessionsOf(id).sessions, id => sessionsOf(id).hostOnline)
-    return (
-      <PhoneProjectContacts
-        project={project}
-        sessions={sessions}
-        active={active}
-        onBack={pop}
-        onOpenGroup={() => void openProjectGroup(project)}
-      />
-    )
-  }
 
   const pushed = (() => {
     if (!top) return null
@@ -214,15 +152,13 @@ export function PhonePartnersPage({
           />
         )
       }
-      case 'project':
-        return projectPage(top)
       case 'newProject':
         return (
           <PhoneNewProjectPage
             active={active}
             onBack={top.fromOutside && stack.length === 1 ? onLeave : pop}
-            // 建好了:新项目页换成它的通讯录,返回回到「伙伴」首页(新项目就在列表里)。
-            onCreated={(created) => navigateMobile(() => setStack([{ kind: 'project', key: created.chatId ?? `${created.deviceId}:${created.localProjectId}`, created }]), 'replace')}
+            // 建好了:进这个新群(群一律在「消息」)。
+            onCreated={(created) => { setStack([]); onOpenProjectGroup(created.chatId) }}
           />
         )
     }
@@ -239,15 +175,6 @@ export function PhonePartnersPage({
               <NavRow icon={<Search size={20} />} label={ct('panel.addContact')} testId="phone-partners-add" onClick={() => push({ kind: 'add', seed: null })} />
             </div>
             <div className="gg-partners-list">
-              {projects.length ? <SectionLabel>{t('partners.projects', { count: projects.length })}</SectionLabel> : null}
-              {projects.map((project) => {
-                const open = () => push({ kind: 'project', key: project.key })
-                return (
-                  <ListRow key={project.key} mobile role="button" tabIndex={0} data-testid="phone-partners-project"
-                    leading={<ChatGroupAvatar chatId={project.chatId ?? project.coverId} name={project.name} size={40} />}
-                    title={project.name} onClick={open} onKeyDown={rowKeyActivate(open)} />
-                )
-              })}
               {friends.length ? <SectionLabel>{t('partners.friends', { count: friends.length })}</SectionLabel> : null}
               {friends.map((friend) => {
                 const open = () => push({ kind: 'friend', contactId: friend.id })

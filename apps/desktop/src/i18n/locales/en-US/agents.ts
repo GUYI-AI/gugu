@@ -28,8 +28,8 @@ export default {
       "created": "{{name}} was created and received your message",
       "device": "Choose device",
       "deviceRequired": "Choose an online device",
-      "project": "Choose project",
-      "projectRequired": "Choose the project folder where this Agent will work",
+      "project": "Choose folder",
+      "projectRequired": "Choose the folder where this Agent will work",
       "prompt": "Message the Agent…",
       "provider": "Agent",
       "providerLocked": "Creating with {{name}}",
@@ -41,7 +41,7 @@ export default {
     },
     "defaults": {
       "devicesFailed": "Could not load devices. Try again.",
-      "readFailed": "Could not load the device and project you used last time — pick them again.",
+      "readFailed": "Could not load the device and folder you used last time — pick them again.",
       "saveFailed": "This choice was not remembered; you may have to pick it again next time."
     },
     "devices": {
@@ -136,8 +136,8 @@ export default {
         "unsupported": "Gugu on that machine is too old to create folders here",
         "unknown": "Couldn't create it. Try again"
       },
-      "broadRoot": "This is the root folder; the agent could change any file on the machine. Pick a project folder instead.",
-      "broadHome": "This is your home folder; the agent could change everything in it. Pick a project folder instead.",
+      "broadRoot": "This is the root folder; the agent could change any file on the machine. Pick a specific work folder instead.",
+      "broadHome": "This is your home folder; the agent could change everything in it. Pick a specific work folder instead.",
       "broadUseAnyway": "Use it anyway",
       "broadPickAnother": "Pick another"
     },

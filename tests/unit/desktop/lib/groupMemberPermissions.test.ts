@@ -1,28 +1,20 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { canInviteHumansToGroup, groupInviteAccess, isGroupManagerRole } from '../../../../apps/desktop/src/lib/groupMemberPermissions'
-
-vi.mock('@/session/renderer/features/projects/stores/project-groups-store', () => ({
-  projectGroupsStore: { projectOfChat: (chatId: string) => chatId === 'project-group' ? 'project' : undefined },
-}))
 
 describe('shared toolbar and member-panel invitation access', () => {
   it('lets ordinary members add their own Agent even when human invitations are disabled', () => {
-    expect(groupInviteAccess('ordinary-group', 'group', { my_role: 'member', can_manage: false, allow_member_invite: false })).toEqual({ projectGroup: false, showInvite: true, canInviteHumans: false })
-  })
-
-  it.each(['owner', 'admin', 'member'])('project group %s still has the Agent picker but denies humans', (my_role) => {
-    expect(groupInviteAccess('project-group', 'group', { my_role, can_manage: true, allow_member_invite: true })).toEqual({ projectGroup: true, showInvite: true, canInviteHumans: false })
+    expect(groupInviteAccess('group', { my_role: 'member', can_manage: false, allow_member_invite: false })).toEqual({ showInvite: true, canInviteHumans: false })
   })
 
   it('retains authoritative manager/member human invitation rules for ordinary groups', () => {
-    expect(groupInviteAccess('ordinary-group', 'group', { my_role: 'admin', can_manage: true, allow_member_invite: false }).canInviteHumans).toBe(true)
-    expect(groupInviteAccess('ordinary-group', 'group', { my_role: 'member', can_manage: false, allow_member_invite: true }).canInviteHumans).toBe(true)
+    expect(groupInviteAccess('group', { my_role: 'admin', can_manage: true, allow_member_invite: false }).canInviteHumans).toBe(true)
+    expect(groupInviteAccess('group', { my_role: 'member', can_manage: false, allow_member_invite: true }).canInviteHumans).toBe(true)
   })
 
   it('does not expose an invitation on a topic or to a nonmember', () => {
-    expect(groupInviteAccess('ordinary-group', 'topic', { my_role: 'admin', can_manage: true, allow_member_invite: true }).showInvite).toBe(false)
-    expect(groupInviteAccess('ordinary-group', 'topic', { my_role: 'admin', can_manage: true, allow_member_invite: true }).canInviteHumans).toBe(false)
-    expect(groupInviteAccess('ordinary-group', 'group', null).showInvite).toBe(false)
+    expect(groupInviteAccess('topic', { my_role: 'admin', can_manage: true, allow_member_invite: true }).showInvite).toBe(false)
+    expect(groupInviteAccess('topic', { my_role: 'admin', can_manage: true, allow_member_invite: true }).canInviteHumans).toBe(false)
+    expect(groupInviteAccess('group', null).showInvite).toBe(false)
   })
 })
 

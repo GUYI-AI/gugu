@@ -350,10 +350,10 @@ export default {
     "backgroundWatch_one": "Gugu is watching 1 machine",
     "backgroundWatch_other": "Gugu is watching {{count}} machines",
     "projects": {
-      "title": "Projects",
-      "loading": "Loading projects…",
-      "empty": "No projects yet",
-      "noMachines": "No machines under this account yet. Install Gugu on a computer and sign in with the same account — its projects will show up here."
+      "title": "Folders",
+      "loading": "Loading folders…",
+      "empty": "No folders yet",
+      "noMachines": "No machines under this account yet. Install Gugu on a computer and sign in with the same account — its folders attached to groups will show up here."
     },
     "machines": {
       "subtitle": "Watch agents running on your other machines",
@@ -421,6 +421,7 @@ export default {
       "outputTrimmed_one": "… {{count}} char omitted from this preview",
       "outputTrimmed_other": "… {{count}} chars omitted from this preview",
       "loading": "Loading the timeline…",
+      "offlineRecord": "{{device}} is offline. This task's record is on it and shows once it is back. What you send now waits in line until then.",
       "waitingRecord": "Task started — waiting for its first line…",
       "empty": "This task has no content yet.",
       "loadFailed": "Could not open the timeline",
@@ -469,7 +470,7 @@ export default {
       "pickMachine": "On which machine",
       "welcome": "Start a new task on {{machine}}",
       "placeholder": "Write anything…",
-      "project": "Project",
+      "project": "Folder",
       "harness": "Harness",
       "model": "Model",
       "permission": {
@@ -506,7 +507,7 @@ export default {
         "unwatchable": "This phone view cannot read this harness's records yet"
       },
       "blocked": {
-        "loading": "Still reading the projects on this machine…",
+        "loading": "Still reading the folders on this machine…",
         "no_usable_harness": "No usable harness on this machine.",
         "pick_harness": "Pick a usable harness first."
       },
@@ -520,12 +521,12 @@ export default {
         "agent-not-found": "That machine doesn't have this agent. Pick another.",
         "model-unavailable": "That model isn't available on that machine. Pick another.",
         "option-rejected": "The agent there doesn't support one of your options. Change it and retry.",
-        "folder-unavailable": "Can't open the project folder on that machine. Check it exists, or pick another.",
+        "folder-unavailable": "Can't open this folder on that machine. Check it exists, or pick another.",
         "attachment-missing": "An attachment didn't reach that machine. Re-add it and send again.",
         "machine-unreachable": "That machine didn't respond. Check it's online and retry.",
         "start-failed": "Couldn't start the task. Try again."
       },
-      "optionsFailed": "Could not read the projects on this machine"
+      "optionsFailed": "Could not read the folders on this machine"
     },
     "composer": {
         "sendFailed": "This message was not sent",
@@ -851,7 +852,7 @@ export default {
       "microphonePurpose": "Send voice messages",
       "cameraPurpose": "Scans QR codes to add friends and join groups",
       "fileAccess": "Files and folders",
-      "fileAccessPurpose": "Opens project folders on your computer",
+      "fileAccessPurpose": "Opens folders on your computer",
       "on": "On",
       "off": "Off",
       "offPrompt": "Off. Tap to turn on.",
@@ -954,7 +955,7 @@ export default {
       "loading": "Loading task page",
       "reload": "Reload"
     },
-    "tasks": "Projects",
+    "tasks": "Tasks",
     "sessionView": "Session",
     "apps": "Marketplace",
     "appDockFailed": "The left rail could not be changed",
@@ -1015,18 +1016,18 @@ export default {
   "partners": {
     "search": "Search",
     "noResults": "No results",
-    "projects": "Projects ({{count}})",
+    "projects": "Groups ({{count}})",
     "friends": "Friends ({{count}})",
     "groupAgents": "Agents met in groups ({{count}})",
     "rooms": "Chats ({{count}})",
     "agents": "Agents ({{count}})",
     "groupChat": "Group chat",
     "assistant": "Personal assistant",
-    "groupOffline": "The computer with this project is offline",
-    "groupUnavailable": "Couldn't open the project group",
+    "groupOffline": "The computer with this folder is offline",
+    "groupUnavailable": "Couldn't open the group",
     "newProject": {
-      "title": "New project",
-      "name": "Project name",
+      "title": "New group",
+      "name": "Group name",
       "create": "Create",
       "machine": "Computer",
       "folder": "Folder",
@@ -1035,11 +1036,11 @@ export default {
       "pickFolder": "Choose folder",
       "offline": "Offline",
       "noMachine": "No computer is online",
-      "readingDirectory": "Reading this computer's projects folder",
-      "noDefaultDirectory": "This computer has no default projects folder",
-      "invalidName": "A project name can't contain / \\ : * ? \" < > |",
+      "readingDirectory": "Reading this computer's default location for new folders",
+      "noDefaultDirectory": "This computer has no default location for new folders",
+      "invalidName": "A group name can't contain / \\ : * ? \" < > |",
       "pathTaken": "This folder is taken by “{{name}}”",
-      "failed": "Couldn't create the project"
+      "failed": "Didn't work. Try again"
     }
   },
   "widget": {

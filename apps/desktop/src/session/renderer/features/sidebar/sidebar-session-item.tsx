@@ -1,3 +1,4 @@
+import { readChatSummary } from '@/lib/chatSummariesBridge';
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
 import { commandRegistry } from '@renderer/lib/commands/registry';
@@ -72,8 +73,10 @@ export type SidebarSessionItemProps = {
   /** 'tree' nests under a project; 'section' rows (Pinned / Tasks) sit flush left. */
   rowVariant?: 'tree' | 'section';
   depth?: number;
-  /** 父会话所在的项目(挂在父会话下的行才有),用来判断这一行要不要挂机器标记。 */
-  parentProjectId?: string;
+  /** 这一行会话所在的群;缺省 = 不知道 / 不在群里。 */
+  groupChatId?: string | null;
+  /** 父会话所在的群(挂在父会话下的行才有,null = 父会话不在群里),用来判断这一行要不要标群名。 */
+  parentGroupChatId?: string | null;
   hasChildren?: boolean;
   expanded?: boolean;
   treeSummary?: SessionBranchSummary;
@@ -110,7 +113,8 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   sessionId,
   rowVariant = 'tree',
   depth = 0,
-  parentProjectId,
+  groupChatId,
+  parentGroupChatId,
   hasChildren = false,
   expanded = false,
   treeSummary,
@@ -253,10 +257,10 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   // 也只是这一行加粗,❌ 出数字(owner 11-05);数字只在聊天页那一行。
   const doneUnread = (agentUserId ? presentation?.emphasis === true : row.status === 'idle' && !row.seen) || notificationCount > 0;
 
-  // owner 10-28:会话列表里不标机器(机器只在悬停卡里写)。只剩一样:挂在父会话下、与父会话不在同一个项目行的 child 标它的项目。
-  const projectLabel =
-    parentProjectId !== undefined ? sidebarStore.nestedProjectLabel(projectId, parentProjectId) : null;
-  const badge = projectLabel ? <ProjectBadge label={projectLabel} /> : null;
+  // owner 10-28:会话列表里不标机器(机器只在悬停卡里写)。只剩一样:挂在父会话下、与父会话不在同一个群里的 child 标它的群名。
+  const groupLabel =
+    parentGroupChatId !== undefined && groupChatId && groupChatId !== parentGroupChatId ? readChatSummary(groupChatId)?.name ?? null : null;
+  const badge = groupLabel ? <ProjectBadge label={groupLabel} /> : null;
 
   const badges = (
     <>

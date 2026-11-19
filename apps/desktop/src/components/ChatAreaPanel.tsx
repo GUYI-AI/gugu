@@ -1,6 +1,6 @@
 import { PhoneConversationHeading } from '../mobile/chat/PhoneConversationHeading'
 import { PhoneGroupAgentCreation } from '../mobile/chat/PhoneNewTask'
-import { viewAnchor } from '@renderer/features/sidebar/inner-sidebar-anchor'; import { isProjectChat } from '@renderer/features/sidebar/inner-sidebar-scope'; import { useShownAgentName } from '@/hooks/useShownAgentName'
+import { viewAnchor } from '@renderer/features/sidebar/inner-sidebar-anchor'; import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useMessageQuote } from '@/hooks/useMessageQuote'
 import { GroupRenameContext, useChatCommands } from './chat/use-chat-commands'
 import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react'
@@ -76,7 +76,7 @@ import { useChatSearch } from './chat/useChatSearch'
 import { searchInChat } from '@renderer/features/global-search/search-session'
 export { ChatNotificationLevelControl } from './chat/ChatNotificationLevelControl'
 import { ChatSettingsPanel } from './chat/ChatSettingsPanel'
-import { useChatSlotProjectName } from '../lib/shellSlots'
+import { useChatSlotGroupName } from '../lib/shellSlots'
 import { useChatHasMessages } from '../lib/chatSummariesBridge'
 import { ChatPartSlot } from '../session/renderer/lib/chat-slot'
 interface ChatAreaPanelProps {
@@ -161,8 +161,8 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const openFilePreview = filePreview.open
   filePreviewCloseRef.current = filePreview.close
   const handleOpenSettingsDrawer = useCallback(() => { if (activeChatId) openInfoTab(activeChatId) }, [activeChatId])
-  const projectName = useChatSlotProjectName()
-  const emptyProject = useChatHasMessages(projectName !== null ? activeChatId ?? undefined : undefined) === false
+  const groupName = useChatSlotGroupName()
+  const emptyGroup = useChatHasMessages(groupName !== null ? activeChatId ?? undefined : undefined) === false
   const openConversationOrAgentSettings = handleOpenSettingsDrawer
   // #1319 — anchor for the header ⋯ menu. The menu is portalled to document.body and positioned with
   // position:fixed off this button's rect, so an ancestor's overflow:hidden (the header) can't clip it.
@@ -565,7 +565,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     /></GroupRenameContext.Provider>
   ) : null
 
-  const phoneRoomControls = mobile && activeChat && viewAnchor({ kind: 'chat', chatId: activeChat.id, chatKind: activeChat.kind, projectGroup: isProjectChat(activeChat.id) }) && !chrome && !blockHost ? <PhoneRoomComposerControls key={activeChat.id} chatId={activeChat.id} topics={topicSurface.topics} topicsReady={topicSurface.topicsReady} current={topicSurface.splitTopic} onPick={topic => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} members={drawerMemberProfiles} roster={{ ready: groupCollabSnapshot !== null, failed: groupCollabError !== null, retry: () => { void loadGroupCollab() } }} userId={user?.id ?? null} profileOpener={topicSurface.splitTopic ? messageProfile.asideOpener : messageProfile.mainOpener} onOpenAgent={onOpenUserChat} /> : null
+  const phoneRoomControls = mobile && activeChat && viewAnchor({ kind: 'chat', chatId: activeChat.id, chatKind: activeChat.kind }) && !chrome && !blockHost ? <PhoneRoomComposerControls key={activeChat.id} chatId={activeChat.id} topics={topicSurface.topics} topicsReady={topicSurface.topicsReady} current={topicSurface.splitTopic} onPick={topic => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} members={drawerMemberProfiles} roster={{ ready: groupCollabSnapshot !== null, failed: groupCollabError !== null, retry: () => { void loadGroupCollab() } }} userId={user?.id ?? null} profileOpener={topicSurface.splitTopic ? messageProfile.asideOpener : messageProfile.mainOpener} onOpenAgent={onOpenUserChat} /> : null
   const topicPane = topicSurface.topic && (
     <TopicSplitPane
       viewportKey={`${viewportKey}:topic`} navigationTarget={navigationTarget}
@@ -657,7 +657,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       >
         <ChatPaneContent chatId={activeChat.id} data-testid="session-chat-panel" className={`relative isolate flex min-h-0 min-w-0 flex-1 flex-col${mobile && topicSurface.splitTopic ? ' invisible pointer-events-none' : ''}`}>
         {opener.overlay}
-        {emptyProject ? <ChatPartSlot chatId={activeChat.id} part="empty" className="flex min-h-0 min-w-0 flex-1 flex-col" /> : <div
+        {emptyGroup ? <ChatPartSlot chatId={activeChat.id} part="empty" className="flex min-h-0 min-w-0 flex-1 flex-col" /> : <div
           style={{
             flex: 1,
             minHeight: 0,

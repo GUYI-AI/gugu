@@ -2,16 +2,16 @@ export default {
   "resourceKinds": {"memory": "记忆", "personality": "性格约定", "files": "资料", "skills": "技能", "schedules": "定时任务", "integrations": "应用", "voice-notes": "语音笔记", "tasks": "任务"},
   "library": {
     "emptyContent": "还没有补充说明。",
-    "memory": "记忆", "workspace": "项目", "devices": "设备",
+    "memory": "记忆", "workspace": "文件夹", "devices": "设备",
     "loading": "正在读取…", "failed": "暂时读不到资源，系统会自动再读", "items_one": "{{count}} 条记录", "items_other": "{{count}} 条记录",
     "notConfigured": "还没有配置", "setup": "一起设置", "organize": "在对话中整理", "backToIndex": "返回目录",
     "setupNote": "按用途分组整理，每项保留自己的说明与索引。",
-    "useFolder": "关联这个文件夹为项目", "projectPrompt": "请将已有文件夹 {{path}} 关联为项目。先核对实际设备、目录及已有项目，沿用现有文件，不重复创建；需要我选择或补充的信息先问我。",
+    "useFolder": "把这个文件夹挂进群", "projectPrompt": "请将已有文件夹 {{path}} 挂进群。先核对实际设备、目录及已经挂了文件夹的群，沿用现有文件，不重复创建；需要我选择或补充的信息先问我。",
     "deviceAccess": "设备连接与授权",
     "onThisComputer": "资料保存在这台电脑上", "onAssistantDevice": "资料保存在助理所在的设备上",
     "missingIndex": "还没有条目说明", "longTerm": "长期了解与约定",
-    "guguProjects": "与咕咕项目页使用同一份项目。", "noGuguProjects": "还没有咕咕项目。", "stale": "上次的",
-    "projectOrganizePrompt": "请先读取咕咕已有项目，帮我整理项目资料与索引。不要创建第二套项目；需要接入已有文件夹时，沿用咕咕的项目和挂载文件夹操作，先核对归属。",
+    "guguProjects": "与咕咕里群挂的文件夹是同一份。", "noGuguProjects": "咕咕里还没有群挂文件夹。", "stale": "上次的",
+    "projectOrganizePrompt": "请先读取咕咕里群挂的文件夹，帮我整理里面的资料与索引。不要另建一套；需要接入已有文件夹时，沿用咕咕把文件夹挂进群的操作，先核对归属。",
     "projectFolderSessions_one": "{{count}} 个会话",
     "projectFolderSessions_other": "{{count}} 个会话"
   },
@@ -38,16 +38,16 @@ export default {
     "guguTitle": "咕咕",
     "messagesTitle": "消息",
     "partnersTitle": "伙伴",
-    "projectsTitle": "项目",
+    "projectsTitle": "群",
     "chatsTitle": "对话",
     "phone": {
       "guguBody": "你的个人助理，帮你记安排、办事情。打开「消息」，第一行就是咕咕。",
-      "messagesBody": "朋友、群和项目的对话都在这里，也能和彼此的 Agent 协作。",
-      "partnersBody": "在这里找项目和朋友。一个项目就是一个群。"
+      "messagesBody": "朋友和群的对话都在这里，也能和彼此的 Agent 协作。",
+      "partnersBody": "在这里找群和朋友。群可以挂上电脑里的文件夹。"
     },
     "desktop": {
       "guguBody": "你的个人助理，帮你记安排、办事情。",
-      "projectsBody": "和 Agent 一起推进工作，一个项目就是一个群。在「消息」的列表里。",
+      "projectsBody": "和 Agent 一起在群里推进工作，群可以挂上电脑里的文件夹。在「消息」的列表里。",
       "chatsBody": "和朋友及彼此的 Agent 沟通、协作。也在「消息」的列表里。"
     }
   },
@@ -463,7 +463,7 @@ export default {
       "other": "其它"
     },
     "kind": {
-      "project": "项目",
+      "project": "群",
       "reference": "参考"
     },
     "noContent": "暂无内容。",
@@ -784,7 +784,7 @@ export default {
     "appGroup": {
       "account": "账号与会员",
       "look": "外观与通用",
-      "work": "项目与仓库",
+      "work": "文件夹与仓库",
       "about": "关于"
     },
     "appNote": {

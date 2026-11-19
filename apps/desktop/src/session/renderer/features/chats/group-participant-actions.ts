@@ -2,28 +2,19 @@ import type { ScreenBlockContent } from '@renderer/app/screen-layout';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { auxWindows } from '@renderer/app/aux-windows';
 import { returnToScreen } from '@renderer/app/screen-layout-actions';
-import { sidebarStore } from '@renderer/lib/stores/app-state';
-import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
-import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { showChatOnly } from './chat-tabs/chat-layouts';
 import { groupParticipantPanes } from './group-participant-panes';
 
-/** The block a chat is on this screen as: its own, or the project whose group it is. Not on screen = undefined. */
+/** The block a chat is on this screen as. Not on screen = undefined. */
 export function chatBlockOnScreen(chatId: string): ScreenBlockContent | undefined {
   for (const id of screenLayout.order) {
     const content = screenLayout.blocks.get(id);
-    if (content?.kind === 'project' && accountProjectsStore.projectOfLocal(content.projectId)?.chatId === chatId) return content;
     if (content?.kind === 'chat' && content.chatId === chatId) return content;
   }
 }
 
 function sourceContent(chatId: string): ScreenBlockContent {
-  // A shared group may have several project bindings. Its sidebar representative can change while
-  // the previous project is still on screen; placement belongs to that visible group, not the row.
-  const shown = chatBlockOnScreen(chatId);
-  if (shown) return shown;
-  const projectId = projectGroupsStore.projectOfChat(chatId);
-  return projectId ? { kind: 'project', projectId: sidebarStore.rowProjectIdOf(projectId) } : { kind: 'chat', chatId };
+  return chatBlockOnScreen(chatId) ?? { kind: 'chat', chatId };
 }
 
 /** Commit only once a real workspace exists; nothing navigates away from the group while it is loading. */

@@ -20,7 +20,7 @@ import { useReplica } from '../lib/replica'
 import { withDeviceProjects } from '@gugu/core/cloud/deviceProjects'
 import { withProjectsRead } from './deviceProjectsRead'
 import { listMyDeviceProjects } from '../lib/deviceProjects'
-import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+import { groupFoldersStore } from '@/session/renderer/features/folders/group-folders-store'
 import { withSshLinkOnline } from '../lib/sshLinkOnline'
 import { useSshLinkProblems, useSshMachineIds } from '../hooks/useSshLinkProblems'
 import { desktopIpc } from '../platform/desktopIpc'
@@ -89,15 +89,16 @@ export function DevicesProvider({ children, active = true }: { children: React.R
     void refreshCloudComputer().catch(() => undefined)
   }, [userId])
 
-  // 账号上的项目(项目的唯一来源,桌面与手机同一份):登录的人交给它,什么时候再读由它自己订;登出清空。
+  // 账号上各台机器挂进群的文件夹(桌面与手机同一份):登录的人交给它,什么时候再读由它自己订;登出 / 换账号清空。
   const signedOut = !authLoading && !authenticatedUser
   useEffect(() => {
     if (signedOut) {
-      accountProjectsStore.clear()
+      groupFoldersStore.clear()
       return
     }
     if (!userId) return
-    return accountProjectsStore.start(userId, subscribeAccountRevision)
+    groupFoldersStore.clear()
+    return groupFoldersStore.start(subscribeAccountRevision)
   }, [userId, signedOut, subscribeAccountRevision])
 
   // gugu_devices 任何增删改都落账号 revision journal。初始拉取 + durable cursor 覆盖订阅建立前与离线期间的变更。

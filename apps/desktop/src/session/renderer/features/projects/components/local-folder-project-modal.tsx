@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { DirectoryTree } from '@renderer/features/projects/components/add-project-modal/directory-browser/directory-tree';
 import { normalizePath } from '@renderer/features/projects/components/add-project-modal/directory-browser/paths';
-import { createProjectFromLocalFolder } from '@renderer/features/projects/components/create-project-from-local-folder';
+import { createGroupFromFolder } from '@renderer/features/folders/create-group-from-folder';
 import { rpc } from '@renderer/lib/ipc';
 import { type BaseModalProps } from '@renderer/lib/modal/modal-provider';
 import { ConfirmButton } from '@renderer/lib/ui/confirm-button';
@@ -68,11 +68,11 @@ export function LocalFolderProjectModal({ onClose, onSuccess }: LocalFolderProje
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setSubmitState('creating');
-    const projectId = await createProjectFromLocalFolder(path, translate);
+    const chatId = await createGroupFromFolder(path, translate);
     setSubmitState('idle');
-    if (!projectId) return;
+    if (!chatId) return;
     onClose();
-    onSuccess(projectId);
+    onSuccess(chatId);
   };
 
   return (

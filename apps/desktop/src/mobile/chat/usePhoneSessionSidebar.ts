@@ -6,11 +6,9 @@ import { isOwnedAgentPeer, useOwnedAgentEntries } from '@/lib/ownedAgentConversa
 import { useChatStore } from '@/store/chatContext'
 import { useTopicsOfChat } from '@/hooks/useTopics'
 import { directoryRows, useDirectoryDevices, useLiveDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
-import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store'
 import { agentFamilies, type ChatAgentScope } from '@renderer/features/sidebar/chat-agents'
 import { followInnerSidebar, viewAnchor, type InnerSidebarRoomAnchor } from '@renderer/features/sidebar/inner-sidebar-anchor'
 import { columnAgents, standaloneAgentAnchor } from '@renderer/features/sidebar/inner-sidebar-column'
-import { isProjectChat } from '@renderer/features/sidebar/inner-sidebar-scope'
 
 export function usePhoneSessionSidebar({ sessionId, entry }: { sessionId: string; entry: string | null }) {
   const { chats, identitiesById, drafts, subscribeAccountRevision } = useChatStore('chats', 'identitiesById', 'drafts', 'subscribeAccountRevision')
@@ -23,20 +21,15 @@ export function usePhoneSessionSidebar({ sessionId, entry }: { sessionId: string
   const homes = useAgentHomes(true, chats, pins)
   const shown = chats.filter(chat => homes && oneListShows(chat, isChatListed(chat, { hasDraft: !!drafts[chat.id]?.trim() }), homes, isOwnedAgentPeer))
   const rows = oneListAgentRows(shown, new Map(pins.map(pin => [chats.find(chat => chat.peer_user_id === pin.agentUserId)?.id ?? pin.sessionId, pin])), isOwnedAgentPeer, identitiesById)
-  const projectKey = (device: string, project: string) => `${device}\u0000${project}`
   const families = agentFamilies(directory.map(({ deviceId, session }) => ({ id: session.conversationId,
-    projectId: projectKey(deviceId, session.projectId), parentSessionId: session.parentConversationId,
+    projectId: `${deviceId}\u0000${session.projectId}`, parentSessionId: session.parentConversationId,
     isPinned: false, time: Date.parse(session.lastInteractedAt ?? '') || 0, agentUserId: session.agent?.userId,
-    bornInChatId: session.bornInChatId })))
-  const projects = accountProjectsStore.projects.filter(project => !project.archived)
-  const projectIds = new Set(projects.flatMap(project => project.bindings.map(binding => projectKey(binding.deviceId, binding.localProjectId))))
-  const scope = (room: InnerSidebarRoomAnchor): ChatAgentScope => ({ kind: room.kind,
-    projectIds: room.kind === 'project' ? projects.filter(project => project.chatId === room.chatId).flatMap(project => project.bindings.map(binding => projectKey(binding.deviceId, binding.localProjectId))) : [],
-    bornHere: id => id === room.chatId || summaries.get(id)?.sourceChatId === room.chatId,
-    inProject: id => projectIds.has(id) })
+    bornInChatId: session.bornInChatId, groupChatId: session.groupChatId ?? null })))
+  const scope = (room: InnerSidebarRoomAnchor): ChatAgentScope => ({
+    here: id => id === room.chatId || summaries.get(id)?.sourceChatId === room.chatId })
   const agentAnchor = (id: string) => standaloneAgentAnchor(id, families, rows)
   const entryId = entry?.startsWith('chat:') ? entry.slice(5) : null
-  const entryAnchor = entryId ? viewAnchor({ kind: 'chat', chatId: entryId, chatKind: summaries.get(entryId)?.kind ?? null, projectGroup: isProjectChat(entryId) })
+  const entryAnchor = entryId ? viewAnchor({ kind: 'chat', chatId: entryId, chatKind: summaries.get(entryId)?.kind ?? null })
     : entry?.startsWith('session:') ? agentAnchor(entry.slice(8)) : null
   const anchor = followInnerSidebar(entryAnchor, { kind: 'session', sessionId },
     (room, id) => columnAgents(room, families, summaries, rows, scope).some(agent => agent.id === id), agentAnchor, () => false)

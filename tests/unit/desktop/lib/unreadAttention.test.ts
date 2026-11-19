@@ -6,8 +6,6 @@ import { chatAttention, mergeFetchedChatsPreservingActiveLocal } from '@gugu/cor
 import { mergeUnreadRows } from '../../../../apps/desktop/src/lib/chatProjection'
 import { unreadAboveCount } from '../../../../apps/desktop/src/lib/chatUnreadLocatorWindow'
 import { openLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
-import { sidebarChatSignals } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
-import { phoneChatUnread } from '../../../../apps/desktop/src/mobile/chat/phoneChatUnread'
 import { advanceReadWatermark } from '../../../../apps/desktop/src/store/chatRealtimeMutations'
 import { acknowledgeOnScreenChatRows } from '../../../../apps/desktop/src/store/chatListProjection'
 import { chat } from '../../../support/testHarness'
@@ -158,17 +156,6 @@ describe('chatAttention is the one unread formula', () => {
     expect(chatAttention({ ...group, is_muted: true })).toMatchObject({ callsYou: 1, askingYou: 0 })
   })
 
-  it('the desktop sidebar and the phone fold a topic into its row by the same number', () => {
-    const group = chat({ id: 'project', kind: 'group', unread_count: 3 })
-    const other = chat({ id: 'other', kind: 'group', unread_count: 0 })
-    for (const addressed of [0, 2]) {
-      const chats = [group, topic(111, addressed), other, topic(40, addressed, 'other')]
-      const phone = phoneChatUnread(chats)
-      const desktop = sidebarChatSignals(chats, new Set(['project']))
-      expect(desktop.groupUnread.get('project') ?? 0).toBe(phone.get('project'))
-      expect(desktop.chatsUnread).toBe(phone.get('other'))
-    }
-  })
 })
 
 describe('a failed mark-read keeps the local read position', () => {

@@ -6,8 +6,6 @@ import { Resource } from '@renderer/lib/stores/resource';
 import { fileChangesChannel } from '@shared/core/fs/fsEvents';
 import {
   isProjectConfigPath,
-  type MigrateProjectConfigRequest,
-  type MigrateProjectConfigResult,
   type ProjectConfigMigration,
   type ProjectSettings,
   type ProjectSettingsOverrideState,
@@ -25,7 +23,7 @@ export class ProjectSettingsStore {
 
   constructor(private readonly projectId: string) {
     this.pageData = new Resource(async () => {
-      const result = await rpc.projects.getProjectSettingsPage(projectId);
+      const result = await rpc.folderSettings.getSettingsPage(projectId);
       if (!result.success) {
         throw new Error(
           result.error.type === 'project-not-found'
@@ -81,7 +79,7 @@ export class ProjectSettingsStore {
   async save(
     settings: ProjectSettings
   ): Promise<Result<ProjectSettings, UpdateProjectSettingsError>> {
-    const result = await rpc.projects.updateProjectSettings(this.projectId, settings);
+    const result = await rpc.folderSettings.updateSettings(this.projectId, settings);
     if (result.success) {
       const current = this.pageData.data;
       if (current) this.pageData.setValue({ ...current, settings: result.data });
@@ -93,19 +91,9 @@ export class ProjectSettingsStore {
   async writeConfigToRepo(
     request: WriteProjectConfigRequest
   ): Promise<Result<ProjectSettingsPage, UpdateProjectSettingsError>> {
-    const result = await rpc.projects.shareProjectSettingsToConfig(this.projectId, request);
+    const result = await rpc.folderSettings.shareSettingsToConfig(this.projectId, request);
     if (result.success) {
       this.pageData.setValue(result.data);
-    }
-    return result;
-  }
-
-  async migrateProjectConfig(
-    request: MigrateProjectConfigRequest
-  ): Promise<Result<MigrateProjectConfigResult, UpdateProjectSettingsError>> {
-    const result = await rpc.projects.migrateProjectConfig(this.projectId, request);
-    if (result.success) {
-      this.pageData.setValue(result.data.page);
     }
     return result;
   }

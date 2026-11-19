@@ -16,8 +16,6 @@ import { useNavigate, useParams } from '@renderer/lib/layout/navigation-provider
 import { ComposerProjectPicker } from './composer-context-tray';
 import { describeImplicitProjectFailure, machineComposerProps } from './use-machine-create-target';
 import { useNewSessionMachine } from '@renderer/features/remote-hosts/use-new-session-machine';
-import { sidebarStore } from '@renderer/lib/stores/app-state';
-import { machineRegistry } from '@renderer/lib/machine-routing';
 import { useWakeCloudOnInput } from '@renderer/features/remote-hosts/use-wake-cloud-once';
 import { machineLibraryHost } from '@renderer/features/library/library-host';
 import { ComposerTray } from './composer-tray';
@@ -33,7 +31,8 @@ import {
 } from './session-composer-styles';
 import { CreateDeliveryError } from './create-session-modal/create-delivery-error';
 import { NEW_SESSION_DRAFT_KEY, composerDrafts } from './composer-drafts';
-import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
+import { prepareGroupTask } from '@renderer/features/folders/group-home';
+import { groupFoldersStore } from '@renderer/features/folders/group-folders-store';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
 // 新建页与项目首页、会话页共用底部 composer。Project context is optional in the UI.
@@ -49,7 +48,7 @@ export const NewSessionComposer = observer(function NewSessionComposer({
   blockReason,
   blocked = false,
   isContextPending,
-  birthChatId,
+  groupChatId,
   taskChatId,
   openAfterCreate,
   onSessionCreated,
@@ -72,8 +71,8 @@ export const NewSessionComposer = observer(function NewSessionComposer({
   blocked?: boolean;
   // 默认值读取期间只挡住提交，不渲染独立状态行；真实阻塞仍由 blockReason fail loud。
   isContextPending?: boolean;
-  /** 建出来的 agent 一出生就进这个群(对话里派任务、选了「进群」)。 */
-  birthChatId?: string;
+  /** @@@group-folders 会话所在的群(它的文件夹挂在这个群上,或在这个群里派的):agent 进这个群。缺省 = 不在任何群里。 */
+  groupChatId?: string;
   /** gugu-dev#181 派任务:首句落成这个对话里的一张任务卡(见 useCreateSessionCallback)。 */
   taskChatId?: string;
   /** false = 建完人留在原处、当场起它(见 useCreateSessionCallback);缺省 = 导航过去。 */
@@ -152,7 +151,7 @@ export const NewSessionComposer = observer(function NewSessionComposer({
     onCreated: (result) => {
       onSessionCreated?.(result);
     },
-    birthChatId,
+    groupChatId,
     taskChatId,
     openAfterCreate,
     beforeCreate: remoteInstall.beforeCreate,
@@ -265,17 +264,17 @@ export const NewSessionPage = observer(function NewSessionPage({
     ? describeImplicitProjectFailure(implicitProjectFailure, translate)
     : null;
 
-  const effectiveProjectId = selectedId ?? implicitProjectId;
-  const openProject = (projectId: string | undefined) => {
-    setSelectedId(projectId);
-    if (!projectId) return;
-    // 人先选了别的机器再选项目,而那台机器有这个项目的文件夹:进了项目块就在那台上开(在那台上真建了任务才记上账号)。
-    // 机器还是默认的「这台电脑」(没人选过),或那台没有这个项目的文件夹(它不是候选):❌ 拿它盖掉这个项目记着的机器。
-    const machine = remote && sidebarStore.projectMembersOf(projectId).some((id) => machineRegistry.machineOf(id) === remote.deviceId)
+  const effectiveProjectId = implicitProjectId;
+  const openGroup = (chatId: string | undefined) => {
+    setSelectedId(chatId);
+    if (!chatId) return;
+    // 人先选了别的机器再选群,而那台机器有这个群的文件夹:进了群就在那台上开(在那台上真建了任务才记上账号)。
+    // 机器还是默认的「这台电脑」(没人选过),或那台没有这个群的文件夹(它不是候选):❌ 拿它盖掉这个群记着的机器。
+    const machine = remote && groupFoldersStore.foldersOf(chatId).some((folder) => folder.deviceId === remote.deviceId)
       ? remote.deviceId : undefined;
-    // gugu-dev#181 ⑩:选项目 = 去那个项目里开新任务,写好的话跟着进项目块新任务框的草稿。
-    prepareProjectTask(projectId, NEW_SESSION_DRAFT_KEY, machine);
-    navigate('project', { projectId });
+    // gugu-dev#181 ⑩:选群 = 去那个群里开新任务,写好的话跟着进群里新任务框的草稿。
+    prepareGroupTask(chatId, NEW_SESSION_DRAFT_KEY, machine);
+    navigate('chat', { chatId });
   };
 
   // 项目入口。原本是贴在输入框左上角的单项页签,现在收进通栏托盘 —— 托盘还同时承载
@@ -283,7 +282,7 @@ export const NewSessionPage = observer(function NewSessionPage({
   // gugu #2525: 控件本体抽到 composer-context-tray.tsx,与项目页、对话里派任务共用一份。
   // 项目选择器列账号下的全部项目,与机器无关;没选项目时机器选择器定在哪台的任务工作区里跑。
   const { remote, machineContext, devicePicker } = useNewSessionMachine(agentSelection ? agentSelection.deviceId ?? null : undefined);
-  const projectPicker = <ComposerProjectPicker selectedId={selectedId} onSelect={openProject} />;
+  const projectPicker = <ComposerProjectPicker selectedId={selectedId} onSelect={openGroup} />;
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">

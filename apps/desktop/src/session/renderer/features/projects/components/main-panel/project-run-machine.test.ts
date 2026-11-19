@@ -12,16 +12,15 @@ const cloud = vi.hoisted(() => ({
   accounts: { localDeviceId: 'this-desktop' as string | null },
 }));
 vi.mock('@/lib/agentCreateDefaults', () => ({ readAgentCreateDefaults: cloud.read, rememberAgentCreateRunMachine: cloud.remember }));
-vi.mock('@renderer/features/projects/stores/account-projects-store', () => ({ accountProjectsStore: cloud.accounts }));
+vi.mock('@renderer/features/folders/group-folders-store', () => ({ groupFoldersStore: cloud.accounts }));
 const defaults = (machineByProject: Record<string, string>) => ({ deviceId: null, projectByDevice: {}, projectByChat: {}, machineByProject });
-import type { ProjectFoldersState, ShownFolder } from './project-folders';
-import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
+import type { GroupFoldersState } from '@renderer/features/folders/group-folders';
+import type { GroupFolder } from '@renderer/features/folders/group-folders-store';
 
-const folder = (projectId: string): ShownFolder => ({ projectId, workspaceId: projectId, path: '/same/path' as CanonicalPath, kind: 'root', branch: null, attachedAt: null, sessionIds: [], offline: projectId === 'remote', deviceId: projectId === 'remote' ? 'device-b' : null });
+const folder = (id: string): GroupFolder => ({ id, chatId: 'g1', path: '/same/path', sort: 1, gitless: false, branch: null, attachedAt: null, sessionIds: [], offline: id === 'remote', deviceId: id === 'remote' ? 'device-b' : null });
 const local = folder('local');
 const remote = folder('remote');
-const state: ProjectFoldersState = { folders: [local, remote], chosen: local, fresh: undefined, loadError: false, unanswered: [], choose: vi.fn(), reload: vi.fn(), attach: vi.fn(), detach: vi.fn() };
-const deviceOf = (id: string) => id === 'remote' ? 'device-b' : null;
+const state: GroupFoldersState = { folders: [local, remote], chosen: local, fresh: undefined, loadError: false, stale: false, choose: vi.fn(), reload: vi.fn(), bound: vi.fn(), detach: vi.fn() };
 
 describe('remembered run machine (account-wide)', () => {
   // Round-2 A/B R4-b: keys other devices cannot read (a local project id, the phone's no-project key) were stored forever.
@@ -55,8 +54,8 @@ describe('remembered run machine (account-wide)', () => {
     await vi.waitFor(() => expect(runMachineMemory.current()).toEqual({ 'chat-work': 'this-desktop' }));
   });
 
-  // #2412 review ③: "this computer" is the account project list's device id; until it is known nothing is remembered.
-  it('remembers this computer under the account project list\'s device id, and not before it is known', async () => {
+  // #2412 review ③: "this computer" is the group folders' device id; until it is known nothing is remembered.
+  it('remembers this computer under the group folders\' device id, and not before it is known', async () => {
     cloud.accounts.localDeviceId = null;
     rememberRunMachine('chat-site', null);
     expect(runMachineMemory.current()['chat-site']).toBeUndefined();
@@ -127,43 +126,28 @@ describe('project device scope', () => {
     expect(defaultRunMachine([], 'gpu')).toBeNull();
   });
   it('a remote-only scope chooses that remote folder, including when it is offline', () => {
-    const scoped = foldersInScope(state, ['device-b'], deviceOf);
+    const scoped = foldersInScope(state, ['device-b']);
     expect(scoped.folders).toEqual([remote]);
     expect(scoped.chosen).toBe(remote);
     expect(scoped.chosen?.offline).toBe(true);
     expect(state.folders).toEqual([local, remote]);
   });
   it('multiple devices retain the existing choice and each device’s identical path', () => {
-    const scoped = foldersInScope(state, ['local', 'device-b'], deviceOf);
+    const scoped = foldersInScope(state, ['local', 'device-b']);
     expect(scoped.folders).toHaveLength(2);
     expect(scoped.chosen).toBe(local);
   });
-  // PR4:文件夹按自己记着的那台机器分(folder.deviceId),❌ 拿 projectId 反查 —— 同一个本地项目 id 可能先后登记在两条设备行下。
-  it('a folder is in scope by the device it was read from, whatever its project id maps to now', () => {
-    const moved = { ...remote, projectId: 'local' };
-    const scoped = foldersInScope({ ...state, folders: [local, moved] }, ['device-b'], () => null);
-    expect(scoped.folders).toEqual([moved]);
-  });
-  it('a scoped device that has not answered yet is unknown (loading), not a device without folders', () => {
-    const waiting = { ...state, folders: [local], chosen: local, unanswered: ['remote'] };
-    expect(foldersInScope(waiting, ['device-b'], deviceOf).folders).toBeNull();
-    // Another scoped device already has folders: show them, ❌ wait for every device.
-    expect(foldersInScope(waiting, ['local', 'device-b'], deviceOf).folders).toEqual([local]);
-    // Answered (or past the deadline) and still nothing in scope: that is a real empty scope.
-    expect(foldersInScope({ ...waiting, unanswered: [] }, ['device-b'], deviceOf).folders).toEqual([]);
-  });
-
   it('does not call a resting cloud scope unavailable while its folders cannot answer', () => {
-    const unavailable = { ...state, folders: [local], unanswered: [] };
-    const sleeping = foldersInScope(unavailable, ['device-b'], deviceOf, (id) => id === 'device-b');
+    const unavailable = { ...state, folders: [local] };
+    const sleeping = foldersInScope(unavailable, ['device-b'], (id) => id === 'device-b');
     expect(sleeping.folders).toBeNull();
     expect(sleeping.chosen).toBeNull();
     // A real unavailable/empty scope must still block, including after waking.
-    expect(foldersInScope(unavailable, ['device-b'], deviceOf, () => false).folders).toEqual([]);
+    expect(foldersInScope(unavailable, ['device-b'], () => false).folders).toEqual([]);
   });
 
   it('does not hide another scope failure or discard recorded folders because a cloud device rests', () => {
-    expect(foldersInScope({ ...state, folders: [] }, ['local'], deviceOf, (id) => id === 'device-b').folders).toEqual([]);
-    expect(foldersInScope(state, ['device-b'], deviceOf, () => true).folders).toEqual([remote]);
+    expect(foldersInScope({ ...state, folders: [] }, ['local'], (id) => id === 'device-b').folders).toEqual([]);
+    expect(foldersInScope(state, ['device-b'], () => true).folders).toEqual([remote]);
   });
 });
