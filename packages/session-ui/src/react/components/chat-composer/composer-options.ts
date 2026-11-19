@@ -116,7 +116,7 @@ export interface ComposerModelOption {
    */
   providerLabel?: string;
   /**
-   * Small grey tag after the name in the desktop list: which vendor a person's own address belongs to (its registrable
+   * Small grey tag after the name in the desktop list and the trigger: which vendor a person's own address belongs to (its registrable
    * domain without the public suffix, e.g. `deepseek`). Gugu's own models have none.
    */
   tag?: string;

@@ -94,7 +94,8 @@ it('shows the bound provider and model when reopening a migrated Pi task', async
     customModel: { kind: 'custom', connectionId: existing.id, modelId: 'glm-5.3-flash' },
   });
   render(<ChatComposer modelOptions={models} selectedModel={selectedModel} onModelChange={() => {}} onSubmit={() => {}} onStop={() => {}} />);
-  await expect.element(page.getByTestId('composer-model-trigger')).toHaveTextContent('glm-5.3-flash · Existing provider');
+  await until('the trigger names the bound model', () => document.querySelector('[data-slot=composer-model-trigger-label]')?.textContent === 'glm-5.3-flash');
+  expect(document.querySelector('[data-slot=composer-model-trigger-tag]')?.textContent).toBe('provider');
 });
 it('a custom address shows no protocol: the models it lists are all selected and the recognized addresses are saved', async () => {
   state.probe = {
@@ -135,4 +136,6 @@ it('a converted third-party model is selectable and tagged with its vendor; an I
   await userEvent.click(page.getByTestId('composer-model-trigger'));
   await until('the tags render', () => document.querySelectorAll('[data-slot=composer-model-tag]').length === 2);
   expect([...document.querySelectorAll('[data-slot=composer-model-tag]')].map((tag) => tag.textContent)).toEqual(['deepseek', 'bigmodel']);
+  expect(document.querySelector('[data-slot=composer-model-trigger-tag]')?.textContent).toBe('deepseek');
+  expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent).not.toContain('·');
 });

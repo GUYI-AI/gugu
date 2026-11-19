@@ -33,9 +33,9 @@ export function customComposerOptions(
       const name = model.id ? ('label' in model && model.label || model.id) : translate('customModels.cliDefault', { provider: connection.name });
       return [customModelOptionId({ connectionId: connection.id, modelId: model.id }), {
         name,
-        shortName: model.id && name !== connection.name ? `${name} · ${connection.name}` : name,
         // No group heading: the vendor tag already says this one is the person's own (owner 11-19).
-        providerLabel: connection.name,
+        // The filter pill reads like the tag; a record whose address has no vendor keeps its own name.
+        providerLabel: tag ?? connection.name,
         ...(tag ? { tag } : {}),
         icon: modelProviderIcon(preset ? { id: preset.id, name: preset.name, iconKey: preset.icon } : null),
         description: connection.name,
