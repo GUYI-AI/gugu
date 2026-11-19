@@ -3,6 +3,7 @@ const m = vi.hoisted(() => ({ signInWithOtp: vi.fn(), referrer: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ supabase: { auth: { signInWithOtp: m.signInWithOtp } }, identityDb: {} }))
 vi.mock('../../../../apps/desktop/src/lib/referral', () => ({ consumePendingReferrer: m.referrer }))
 import { authService } from '../../../../apps/desktop/src/lib/auth'
+import { i18n } from '../../../../apps/desktop/src/i18n'
 
 const consent = { document_version: 'hk-signup-v1-en', accepted_at: '2026-11-16T04:00:00.000Z' }
 beforeEach(() => { vi.clearAllMocks(); m.signInWithOtp.mockResolvedValue({ error: null }); m.referrer.mockReturnValue(null) })
@@ -38,4 +39,17 @@ it('returns the consent domain reason only for all three backend conditions', as
   expect(result.success).toBe(false)
   expect(result.reason).toBeUndefined()
   expect(m.signInWithOtp).toHaveBeenCalledTimes(2)
+})
+
+it('explains an unregistered address on explicit sign-in instead of showing the raw server text', async () => {
+  const refused = { status: 422, code: 'otp_disabled', message: 'Signups not allowed for otp' }
+  const notRegistered = i18n.t('auth.signup.notRegistered', { ns: 'main' })
+  expect(notRegistered).not.toBe('auth.signup.notRegistered')
+  m.signInWithOtp.mockResolvedValueOnce({ error: refused })
+  await expect(authService.requestLoginOtp('nobody@example.test', { kind: 'login' })).resolves.toMatchObject({ success: false, error: notRegistered, status: 422, code: 'otp_disabled' })
+  // Only an explicit sign-in can be refused for this reason; other intents keep their existing message.
+  m.signInWithOtp.mockResolvedValueOnce({ error: refused })
+  const legacy = await authService.requestLoginOtp('nobody@example.test')
+  expect(legacy.success).toBe(false)
+  expect(legacy.error).not.toBe(notRegistered)
 })

@@ -29,16 +29,22 @@ export interface AuthResult {
 }
 
 export type LoginOtpResult = AuthResult & { status?: number; code?: string; retryAfterSeconds?: number; reason?: 'signup_consent_required' }
-function loginOtpFailure(error: unknown, metadata: LoginOtpMetadata): LoginOtpResult {
+function loginOtpFailure(error: unknown, metadata: LoginOtpMetadata, intent?: LoginOtpIntent): LoginOtpResult {
   const detail = error as { status?: number; code?: string; message?: string } | undefined
   const status = metadata.status ?? detail?.status
+  // An explicit sign-in never creates an account, so GoTrue refuses an unregistered address with
+  // otp_disabled ("Signups not allowed for otp"). Say that in the person's language instead of the raw server text.
+  const notRegistered = intent?.kind === 'login'
+    && (detail?.code === 'otp_disabled' || /signups not allowed for otp/i.test(detail?.message ?? ''))
   const limited = status === 429 || detail?.code === 'over_email_send_rate_limit'
   const bodyWait = detail?.message?.match(/(?:after|in)\s+(\d+)\s+seconds?/i)?.[1]
   const cause = metadata.networkError ?? (status !== undefined && status !== detail?.status
     ? { status, code: detail?.code, message: detail?.message ?? String(error) } : error)
   return {
     success: false,
-    error: signupConsentRequired(error, status) ? i18n.t('auth.signup.consentRequired', { ns: 'main' }) : userVisibleAuthError(cause, 'sendOtp'),
+    error: signupConsentRequired(error, status) ? i18n.t('auth.signup.consentRequired', { ns: 'main' })
+      : notRegistered ? i18n.t('auth.signup.notRegistered', { ns: 'main' })
+      : userVisibleAuthError(cause, 'sendOtp'),
     ...(signupConsentRequired(error, status) ? { reason: 'signup_consent_required' as const } : {}),
     ...(status === undefined ? {} : { status }),
     ...(detail?.code ? { code: detail.code } : {}),
@@ -92,14 +98,14 @@ export const authService = {
           options: { shouldCreateUser: intent?.kind !== 'login', data }
         })
         if (error)
-          return loginOtpFailure(error, metadata)
+          return loginOtpFailure(error, metadata, intent)
         return { success: true }
       } catch (error) {
         authLog.error(
           { error: error instanceof Error ? error.message : String(error) },
           'request login OTP failed',
         )
-        return loginOtpFailure(error, metadata)
+        return loginOtpFailure(error, metadata, intent)
       }
     }, loginOtpRequestKey(email, intent))
   },

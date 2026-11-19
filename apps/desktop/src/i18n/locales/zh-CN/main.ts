@@ -574,7 +574,8 @@ export default {
       "disagree": "不同意",
       "declined": "不同意就没法使用咕咕。你的邮箱不会发给我们。",
       "saveFailed": "未能保存本次同意，请重试。",
-      "consentRequired": "请升级到新版咕咕再注册。"
+      "consentRequired": "请升级到新版咕咕再注册。",
+      "notRegistered": "这个邮箱还没有注册。新用户请点「新用户注册」。"
     },
     "otpLabel": "验证码",
     "or": "或",
