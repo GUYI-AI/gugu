@@ -931,7 +931,7 @@ it('refreshes usage for every saved subscription without selecting an account', 
 });
 it.each([
   ['environment', '环境变量'], ['config-file', '配置文件'], [undefined, undefined],
-] as const)('shows only a proven native credential origin: %s', async (origin, label) => {
+] as const)('keeps the active native connection without a redundant origin label: %s', async (origin) => {
   await setLocalePreference('zh-CN');
   control.origin = origin;
   root.render(<ModelsFixture />);
@@ -939,6 +939,6 @@ it.each([
   const row = host.querySelector('[data-subscription-model="claude:native"]')!;
   expect(row.textContent).toContain('现有 CLI 配置');
   expect(row.textContent).toContain('使用中');
-  if (label) await until('the proven origin is shown', () => row.textContent?.includes(label) === true);
-  else { expect(row.textContent).not.toContain('环境变量'); expect(row.textContent).not.toContain('配置文件'); }
+  expect(row.textContent).not.toContain('环境变量');
+  expect(row.textContent).not.toContain('配置文件');
 });
