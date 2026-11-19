@@ -9,6 +9,8 @@ CREATE INDEX `idx_workspaces_chat_id` ON `workspaces` (`chat_id`,`sort`);--> sta
 ALTER TABLE `sessions` ADD `chat_id` text;--> statement-breakpoint
 CREATE INDEX `idx_sessions_chat_id` ON `sessions` (`chat_id`);--> statement-breakpoint
 ALTER TABLE `automations` ADD `workspace_id` text;--> statement-breakpoint
+ALTER TABLE `activity_events` ADD `chat_id` text;--> statement-breakpoint
+CREATE INDEX `activity_events_chat` ON `activity_events` (`chat_id`,`seq`);--> statement-breakpoint
 CREATE TABLE `workspace_settings` (
 	`workspace_id` text PRIMARY KEY NOT NULL,
 	`base_settings_json` text DEFAULT '{}' NOT NULL,
