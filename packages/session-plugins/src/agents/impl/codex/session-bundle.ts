@@ -168,11 +168,11 @@ export const codexSessionBundleDescriptor = {
     credentialPaths: [{ path: 'auth.json', evidence: 'Codex file credential store; OAuth refresh tokens must not be duplicated.' }],
     importGroups: [
       { id: 'settings', paths: [{ path: 'config.toml', isLegacyGeneratedTarget: isLegacyCodexTrustFile }], evidence: 'https://developers.openai.com/codex/config-basic/; settings and mcp_servers share config.toml.' },
-      { id: 'rules', paths: ['AGENTS.md', 'AGENTS.override.md'], evidence: 'https://developers.openai.com/codex/guides/agents-md/' },
+      { id: 'rules', paths: ['AGENTS.md', 'AGENTS.override.md', 'rules/'], evidence: 'https://developers.openai.com/codex/guides/agents-md/' },
       { id: 'skills', paths: ['skills/'], evidence: 'https://developers.openai.com/codex/skills/' },
     ],
     carryExclusions: [
-      { path: 'sessions', upgradeHistory: true, evidence: 'Native session transcripts imported when upgrading Gugu.' },
+      ...['sessions', 'archived_sessions'].map((path) => ({ path, upgradeHistory: true, evidence: 'Native session transcripts imported when upgrading Gugu.' })),
       ...['log', 'logs', 'tmp', '.tmp', '.cache', 'cache', 'shell_snapshots', 'history.jsonl',
         'thread-writer-locks', 'installation_id', '.sandbox_migration', '.sqlite-maintenance.lock', 'skills/.system'].map((path) => ({ path, evidence: 'Codex regenerates runtime files, caches, locks and installation state in its active root.' })),
     ],
