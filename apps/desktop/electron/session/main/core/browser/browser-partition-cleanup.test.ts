@@ -119,7 +119,9 @@ describe('explicit browsing-data cleanup', () => {
     });
     const requireBuiltin = createRequire(import.meta.url);
     const module = { exports: {} as { browserController: { clearBrowsingData: (kind: string) => Promise<{ success: boolean }> } } };
-    runInNewContext(compiled.outputText, {
+    // Vite supplies import.meta.env in the app; the CommonJS VM receives the same environment explicitly.
+    runInNewContext(compiled.outputText.replaceAll('import.meta.env', 'testImportMetaEnv'), {
+      testImportMetaEnv: { DEV: false },
       require: (id: string) => id.startsWith('node:') ? requireBuiltin(id)
         : new Proxy(imports[id] ?? {}, { get: (target, key) => key in target ? target[key as string] : inert }),
       module, exports: module.exports,
