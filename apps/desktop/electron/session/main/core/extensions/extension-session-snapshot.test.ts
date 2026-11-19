@@ -120,7 +120,7 @@ describe('an uninstalled App’s files: gone once its programs have exited (10-0
         get: (_target, key) => key === 'then' ? undefined : key === Symbol.iterator ? function* () {} : inert,
       });
       const imports: Record<string, Record<string, unknown>> = {
-        electron: { app: { getPath: () => userData } },
+        electron: { app: { getPath: () => userData, getVersion: () => '0.3.8-fixture', isPackaged: true } },
         './core/extensions/extensions-root': { extensionsService: () => service },
         './core/extensions/extension-data': { EXTENSION_DATA_DIR_NAME: 'extension-data' },
         './core/extensions/extension-session-snapshot': snapshots,
