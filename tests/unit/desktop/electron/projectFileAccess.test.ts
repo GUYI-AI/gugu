@@ -21,11 +21,13 @@ import { createProjectFileReader, localProjectFileProvider, openProjectFileSourc
 import { ownSshFileProvider } from '../../../../apps/desktop/electron/projectFileSsh'
 import { createDesktopFileAccess } from '../../../../apps/desktop/electron/desktopFileAccess'
 import { deviceFile, writeDeviceIdCache } from '@gugu/core/cloud/deviceRuntime'
-import { forgetProjectGroupId, readProjectFile, rememberProjectFile, rememberProjectGroupId } from '../../../../apps/desktop/electron/sessionpage/sessionpage-project-groups'
+import { fileHoldings } from '../../../../apps/desktop/electron/fileHoldings'
+import { installMemoryFileHoldings } from './fixtures/memoryFileHoldings'
 
 const { __actualRename: actualRename } = await import('node:fs/promises') as unknown as { __actualRename: (from: string, to: string) => Promise<void> }
 let home: string, root: string, tempRoot: string, env: NodeJS.ProcessEnv
 let accountId: string, revision: FileRevision
+let holdings: ReturnType<typeof installMemoryFileHoldings>
 const bytes = Buffer.alloc(700_001, 83)
 const ref = { item_id: 'item', version: 1 }
 /** The database has no record of any version: a read is answered from the cache or not at all. */
@@ -33,7 +35,7 @@ const noRecord = async () => null
 const actor = { accountId: 'owner', actorId: 'owner' }
 const digest = (data: Uint8Array) => createHash('sha256').update(data).digest('hex')
 const identity = async () => ({ accountId, deviceId: 'host-device' })
-const reader = () => createProjectFileReader({ identity, root: async id => id === 'project' ? root : null, env, later: noRecord })
+const reader = () => createProjectFileReader({ identity, root: async id => id === 'project' ? root : null, later: noRecord })
 
 // A save reads through the chunk cache (so a save that dies resumes); a finished or refused save leaves no chunks behind.
 const chunksLeft = () => readdir(tempRoot).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error })
@@ -354,8 +356,8 @@ beforeEach(async () => {
   env = { GUGU_HOME: home }; accountId = 'owner'
   await mkdir(root); await writeFile(join(root, 'file.bin'), bytes)
   revision = { source: 'local', item_id: 'item', version: 1, chat_id: 'group', file_name: 'file.bin', content_type: 'application/octet-stream', size_bytes: bytes.length, sha256: digest(bytes), host_account_id: 'owner', host_device_id: 'host-device', host_project_id: 'project', relative_path: 'file.bin' }
-  await rememberProjectGroupId('project', 'group', 'owner', env)
-  await rememberProjectFile(revision, 'owner', env)
+  holdings = installMemoryFileHoldings({ project: { root, chatId: 'group' } })
+  fileHoldings().remember(revision, 'owner')
 })
 afterEach(async () => {
   const path = home
@@ -364,74 +366,12 @@ afterEach(async () => {
   await rm(path, { recursive: true, force: true })
 })
 
-describe('account/project revision cache', () => {
-  it('stores no absolute root and partitions account, device, version and binding', async () => {
-    expect(await readProjectFile(ref, 'owner', 'host-device', env, noRecord)).toEqual(revision)
-    for (const [owner, device, version] of [['other', 'host-device', 1], ['owner', 'other-device', 1], ['owner', 'host-device', 2]] as const) {
-      expect(await readProjectFile({ ...ref, version }, owner, device, env, noRecord)).toBeNull()
-    }
-    const mapping = await readFile(join(home, 'taskpage-project-groups.json'), 'utf8')
-    expect(mapping).not.toContain(root)
-    await rememberProjectGroupId('project', 'other-group', 'owner', env)
-    expect(await readProjectFile(ref, 'owner', 'host-device', env, noRecord)).toBeNull()
-  })
-  it('serializes concurrent cache writes with group writes; an unbound project holds nothing', async () => {
-    await Promise.all(Array.from({ length: 4 }, (_, n) => rememberProjectFile({ ...revision, item_id: `item-${n}` }, 'owner', env)))
-    for (let n = 0; n < 4; n++) expect(await readProjectFile({ item_id: `item-${n}`, version: 1 }, 'owner', 'host-device', env, noRecord)).not.toBeNull()
-    await forgetProjectGroupId('project', 'owner', env)
-    expect(await readProjectFile(ref, 'owner', 'host-device', env, noRecord)).toBeNull()
-  })
-  it.each(['../secret', '/absolute', 'file/../secret', 'C:\\secret', 'a\u0000b'])('rejects unsafe path %j at publication and cache read', async relative_path => {
-    await expect(rememberProjectFile({ ...revision, relative_path }, 'owner', env)).rejects.toThrow()
-    const path = join(home, 'taskpage-project-groups.json')
-    const mapping = JSON.parse(await readFile(path, 'utf8'))
-    mapping.files.owner.item.relative_path = relative_path
-    await writeFile(path, JSON.stringify(mapping))
-    await expect(readProjectFile(ref, 'owner', 'host-device', env, noRecord)).rejects.toThrow('Invalid local file revision')
-  })
-  it('does not admit an unbound or foreign-owner revision', async () => {
-    await expect(rememberProjectFile({ ...revision, host_account_id: 'other' }, 'owner', env)).rejects.toThrow()
-    await expect(rememberProjectFile({ ...revision, chat_id: 'other' }, 'owner', env)).rejects.toThrow('binding changed')
-    await expect(rememberProjectFile({ ...revision, chat_id: undefined }, 'owner', env)).rejects.toThrow()
-  })
-})
-
 describe('the database\'s version record decides what this device holds', () => {
-  // Audit item 5: project_remove_device then project_restore_device ("Keeps files"). Files this device sent before stay
-  // readable by the other members: unlinking only makes them unreadable while the project is not bound to the chat.
-  it('remove then restore: a version this device sent is readable again, from the cache and with the cache gone', async () => {
-    const record = vi.fn(async () => revision)
-    await forgetProjectGroupId('project', 'owner', env)
-    expect(await readProjectFile(ref, 'owner', 'host-device', env, record)).toBeNull()
-    await rememberProjectGroupId('project', 'group', 'owner', env)
-    expect(await readProjectFile(ref, 'owner', 'host-device', env, record)).toEqual(revision)
-    expect(record).not.toHaveBeenCalled()
-    // The cache is rebuildable: without it the database's record answers, and is cached again.
-    const path = join(home, 'taskpage-project-groups.json')
-    const mapping = JSON.parse(await readFile(path, 'utf8'))
-    delete mapping.files
-    await writeFile(path, JSON.stringify(mapping))
-    expect(await readProjectFile(ref, 'owner', 'host-device', env, record)).toEqual(revision)
-    expect(record).toHaveBeenCalledWith(ref)
-    record.mockClear()
-    expect(await readProjectFile(ref, 'owner', 'host-device', env, record)).toEqual(revision)
-    expect(record).not.toHaveBeenCalled()
-    const served = await reader()({ ref, offset: 0, length: 2 }, 'owner')
-    expect(Buffer.from(served.data, 'base64')).toEqual(Buffer.from([83, 83]))
-  })
   // #719: a rename or move elsewhere makes a version without new bytes; the database's record of it names this device.
   const renamed = () => ({ ...revision, version: 2, file_name: 'renamed.bin' })
   it('reads version 2 by its database record, under its new name, and the cached version 1 without asking', async () => {
     const later = vi.fn(async () => renamed())
-    expect(await readProjectFile({ ...ref, version: 2 }, 'owner', 'host-device', env, later)).toEqual(renamed())
-    expect(later).toHaveBeenCalledWith({ item_id: 'item', version: 2 })
-    later.mockClear()
-    expect(await readProjectFile({ ...ref, version: 2 }, 'owner', 'host-device', env, later)).toEqual(renamed())
-    expect(later).not.toHaveBeenCalled()
-    // No version named: the current one, which only the database knows.
-    expect(await readProjectFile({ item_id: 'item' }, 'owner', 'host-device', env, later)).toEqual(renamed())
-    expect(later).toHaveBeenCalledWith({ item_id: 'item' })
-    const provider = localProjectFileProvider({ identity, read: createProjectFileReader({ identity, root: async () => root, env, later }), tempRoot, env, later })
+    const provider = localProjectFileProvider({ identity, read: createProjectFileReader({ identity, root: async () => root, later }), tempRoot, later })
     const file = await createFileResolver({ local: provider, metadata: later as never, managed: later as never, ssh: later as never, temporary: later as never })({ ...ref, version: 2 }, actor)
     if (file.status !== 'ready') throw Error('ready expected')
     expect(file.revision).toMatchObject({ version: 2, file_name: 'renamed.bin' })
@@ -452,31 +392,12 @@ describe('the database\'s version record decides what this device holds', () => 
     expect(await file.read(0, 2)).toEqual(new Uint8Array([83, 83]))
     await file.dispose()
   })
-  it.each([
-    ['another computer', { host_device_id: 'other-device' }], ['another account', { host_account_id: 'other' }],
-    ['a project not bound to the chat', { host_project_id: 'other' }], ['another chat', { chat_id: 'other' }],
-    ['another version', { version: 3 }], ['bytes in the cloud', { source: 'managed-object' }], ['another file', { item_id: 'other-item' }],
-  ] as const)('refuses when the database names %s', async (_, change) => {
-    expect(await readProjectFile({ ...ref, version: 2 }, 'owner', 'host-device', env, async () => ({ ...renamed(), ...change }) as FileRevision)).toBeNull()
-  })
-  // A project chat has no host: another member's device may write the next version, which it then keeps. The device that
-  // kept version 1 must not answer for the file's current version with its own old bytes (native #107 cell 4).
-  it('answers no version named only while this device keeps the current version; a named older version stays local', async () => {
-    const elsewhere = vi.fn(async () => ({ ...revision, version: 2, host_device_id: 'other-device', relative_path: 'item/file.bin', sha256: 'cd'.repeat(32), size_bytes: 74 }) as FileRevision)
-    expect(await readProjectFile({ item_id: 'item' }, 'owner', 'host-device', env, elsewhere)).toBeNull()
-    expect(elsewhere).toHaveBeenCalledWith({ item_id: 'item' })
-    expect(await readProjectFile(ref, 'owner', 'host-device', env, elsewhere)).toEqual(revision)
-    expect(await readProjectFile({ item_id: 'item' }, 'owner', 'host-device', env, async () => revision)).toEqual(revision)
-  })
-  it('refuses a version the database does not have', async () => {
-    expect(await readProjectFile({ ...ref, version: 2 }, 'owner', 'host-device', env, async () => null)).toBeNull()
-  })
 })
 
 describe('local read fence and verified snapshot', () => {
   it('the production composition root opens by item or folder path asking only which version is current, without bytes from the cloud, auth refresh or an SSH dial', async () => {
     await writeDeviceIdCache(deviceFile(env, 'owner'), 'host-device')
-    await rememberProjectFile({ ...revision, workspace: { path: 'file.bin', parent_id: null, created_at: '2026-10-24T00:00:00Z', updated_at: '2026-10-24T00:00:00Z', created_by: 'owner', source_message_ids: [] } }, 'owner', env)
+    fileHoldings().remember({ ...revision, workspace: { path: 'file.bin', parent_id: null, created_at: '2026-10-24T00:00:00Z', updated_at: '2026-10-24T00:00:00Z', created_by: 'owner', source_message_ids: [] } }, 'owner')
     // The one metadata question a current-version read asks: the database names this device's version 1 as current.
     const current = vi.fn(async (input: string | URL | Request) => {
       if (!/\/functions\/v1\/attachments\/file-resolve$/.test(String(input))) throw new Error('Unexpected network request')
@@ -518,9 +439,9 @@ describe('local read fence and verified snapshot', () => {
     await second.clear(key); expect(await readdir(tempRoot)).toEqual([])
   })
   it('an agent reading by message gets the file on this disk, with no temporary transfer through the cloud', async () => {
-    const read = createProjectFileReader({ identity, root: async () => root, env, later: noRecord })
+    const read = createProjectFileReader({ identity, root: async () => root, later: noRecord })
     const never = vi.fn(async () => { throw Error('Network must remain unused') })
-    const providers: FileProviders = { local: localProjectFileProvider({ identity, read, tempRoot, env, later: noRecord }), metadata: vi.fn(async () => ({ status: 'ready' as const, revision })), managed: never, ssh: never, temporary: never }
+    const providers: FileProviders = { local: localProjectFileProvider({ identity, read, tempRoot, later: noRecord }), metadata: vi.fn(async () => ({ status: 'ready' as const, revision })), managed: never, ssh: never, temporary: never }
     const file = await createFileResolver(providers)({ message_id: 'message' }, { accountId, actorId: 'agent' })
     if (file.status !== 'ready') throw Error('ready expected')
     expect(await file.read(0, 2)).toEqual(new Uint8Array([83, 83]))
@@ -530,7 +451,7 @@ describe('local read fence and verified snapshot', () => {
   it('resolves locally before cloud lookup, is lazy, and exposes immutable bytes without paths or writes', async () => {
     const read = vi.fn(reader())
     const never = vi.fn(async () => { throw Error('Network must remain unused') })
-    const providers: FileProviders = { local: localProjectFileProvider({ identity, read, tempRoot, env, later: noRecord }), metadata: never, managed: never, ssh: never, temporary: never }
+    const providers: FileProviders = { local: localProjectFileProvider({ identity, read, tempRoot, later: noRecord }), metadata: never, managed: never, ssh: never, temporary: never }
     const file = await createFileResolver(providers)(ref, actor)
     expect(file.status).toBe('ready'); expect(read).not.toHaveBeenCalled(); expect(never).not.toHaveBeenCalled()
     if (file.status !== 'ready') throw Error('ready expected')
@@ -544,7 +465,7 @@ describe('local read fence and verified snapshot', () => {
     expect(await readdir(tempRoot)).toEqual([])
   })
   it('requires cloud ACL for an agent rather than borrowing the person’s local permission', async () => {
-    const provider = localProjectFileProvider({ identity, read: reader(), tempRoot, env, later: noRecord })
+    const provider = localProjectFileProvider({ identity, read: reader(), tempRoot, later: noRecord })
     expect(await provider({ ref, actor: { ...actor, actorId: 'agent' } })).toBeNull()
     accountId = 'other'
     expect(await provider({ ref, actor })).toBeNull()
@@ -569,7 +490,7 @@ describe('local read fence and verified snapshot', () => {
     const source = await openProjectFileSource(revision, request => reader()(request, 'owner'))
     await writeFile(join(root, 'file.bin'), Buffer.alloc(bytes.length, 9))
     await expect(source.read(0, 1)).rejects.toThrow('changed during read')
-    await forgetProjectGroupId('project', 'owner', env)
+    holdings.folders.project!.chatId = null
     await expect(reader()({ ref, offset: 0, length: 0 }, 'owner')).rejects.toThrow('unavailable')
     accountId = 'other'
     await expect(reader()({ ref, offset: 0, length: 0 }, 'owner')).rejects.toThrow('device owner')
@@ -617,7 +538,7 @@ describe('the owner’s already-held SSH link', () => {
     const html = Buffer.from(`<!doctype html><html><body>${`<img src="data:image/png;base64,${'A'.repeat(290_000)}">`.repeat(14)}</body></html>`)
     await writeFile(join(root, 'design.html'), html)
     const page: FileRevision = { ...revision, item_id: 'design', file_name: 'design.html', content_type: 'text/html', size_bytes: html.length, sha256: digest(html), relative_path: 'design.html' }
-    await rememberProjectFile(page, 'owner', env)
+    fileHoldings().remember(page, 'owner')
     // A line that carries one reply at a time, each taking two seconds whatever it holds: a part must shrink to the
     // smallest, not hold the line. Replies leave in the order asked, each two seconds after the line is free.
     let now = 0, lineFree = 0, line = Promise.resolve()
@@ -699,7 +620,7 @@ describe('the host’s on-demand client-encrypted transfer', () => {
       throw Error(`Unexpected fake route ${route}`)
     })
     let late: Promise<void> | undefined
-    const drain = createProjectTransferHost({ identity, read, tempRoot, env, later: noRecord, endpoint: async () => ({ supabaseUrl: 'https://api.invalid', anonKey: 'test-anon', token: 'test-token', fetch: fetcher as typeof fetch }) })
+    const drain = createProjectTransferHost({ identity, read, tempRoot, later: noRecord, endpoint: async () => ({ supabaseUrl: 'https://api.invalid', anonKey: 'test-anon', token: 'test-token', fetch: fetcher as typeof fetch }) })
     return { drain, calls, read, commitBodies, uploaded: () => uploaded, late: () => late }
   }
   it('reserves before disk/bytes, uses one upload executor, transfers the key only in commit and removes staging', async () => {

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_FILE_STORAGE } from '@gugu/core/shared/fileStorage'
 import { createProjectFilePublisher } from '../../../../apps/desktop/electron/projectFilePublication'
 import { signedInFileRpc } from '../../../../apps/desktop/electron/desktopFileAccess'
-import { rememberProjectGroupId } from '../../../../apps/desktop/electron/sessionpage/sessionpage-project-groups'
+import { installMemoryFileHoldings } from './fixtures/memoryFileHoldings'
 import { rpcQuery } from '../../../support/rpcQuery'
 
 const ME = '11111111-1111-4111-8111-111111111111'
@@ -61,11 +61,11 @@ describe('the desktop file RPC boundary', () => {
 })
 
 describe('database refusals reach the App through the real local publisher', () => {
-  let home: string, root: string, env: NodeJS.ProcessEnv
+  let home: string, root: string
   beforeEach(async () => {
-    home = await mkdtemp(join(tmpdir(), 'gugu-file-rpc-864-')); root = join(home, 'project'); env = { GUGU_HOME: home }
+    home = await mkdtemp(join(tmpdir(), 'gugu-file-rpc-864-')); root = join(home, 'project')
     await mkdir(root); await writeFile(join(root, 'report.pdf'), 'original')
-    await rememberProjectGroupId('project', CHAT, ME, env)
+    installMemoryFileHoldings({ project: { root, chatId: CHAT } })
     state.row = { id: ITEM, chat_id: CHAT, filename: 'report.pdf', kind: 'file', content_type: 'application/pdf', size_bytes: 8,
       version: 1, epoch: 0, pointer: null, parent_id: null, system_role: null, path: 'report.pdf', created_by: ME,
       source_message_ids: [], created_at: null, updated_at: null }
@@ -79,7 +79,7 @@ describe('database refusals reach the App through the real local publisher', () 
       return { data: null, error }
     })
     const publish = createProjectFilePublisher({ identity: async () => ({ accountId: ME, deviceId: 'device' }),
-      root: async () => root, project: async () => 'project', rpc: f.rpc, env, storage: async () => DEFAULT_FILE_STORAGE, projectChat: async () => true })
+      root: async () => root, project: async () => 'project', rpc: f.rpc, storage: async () => DEFAULT_FILE_STORAGE, projectChat: async () => true })
     const files = createAppFiles({ publishFile: publish, account: async () => ({ token: 'fixture-token', userId: ME }),
       hasCapability: () => true, sync: {} as never, identities: async () => [], faces: async () => ({}),
       filesUrl: () => 'http://files.invalid', warn: () => undefined })

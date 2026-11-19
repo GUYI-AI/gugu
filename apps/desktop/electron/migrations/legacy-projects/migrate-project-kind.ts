@@ -3,7 +3,7 @@ import { and, eq, isNotNull } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { projects, workspaces } from '@main/db/schema';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
-import { isAppKeptDirectory, type AppKeptDirectories } from '../app-kept-directory';
+import { isAppKeptDirectory, type AppKeptDirectories } from './app-kept-directory';
 import { readProjectRegistration } from './project-registration-origin';
 
 function writeRecord(file: string, record: ProjectKindMigrationRecord): void {

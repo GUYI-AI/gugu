@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createProjectFilePublisher, writeTaskCopy } from '../../../../apps/desktop/electron/projectFilePublication'
 import { DEFAULT_FILE_STORAGE } from '@gugu/core/shared/fileStorage'
-import { readProjectFile, rememberProjectGroupId } from '../../../../apps/desktop/electron/sessionpage/sessionpage-project-groups'
+import { fileHoldings } from '../../../../apps/desktop/electron/fileHoldings'
+import { installMemoryFileHoldings } from './fixtures/memoryFileHoldings'
 import type { FileStorage } from '@gugu/core/shared/fileStorage'
 const logged = vi.hoisted(() => ({ warn: vi.fn() }))
 vi.mock('../../../../apps/desktop/electron/lib/logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: logged.warn, error: vi.fn(), debug: vi.fn() }) }))
@@ -29,7 +30,7 @@ beforeEach(async () => {
   copyFault.mode = ''
   home = await mkdtemp(join(tmpdir(), 'gugu-file-publication-153-')); root = join(home, 'project'); store = join(home, 'project-files'); env = { GUGU_HOME: home }
   await mkdir(root); await mkdir(store); await writeFile(join(root, file.name), data)
-  await rememberProjectGroupId('project', 'group', 'owner', env)
+  installMemoryFileHoldings({ project: { root, chatId: 'group' } })
 })
 
 describe('external selections become durable project-owned copies through the same publisher', () => {
@@ -128,7 +129,7 @@ describe('external selections become durable project-owned copies through the sa
     finally { Object.defineProperty(process, 'platform', platform) }
     expect(await readdir(join(root, '.gugu/attachments'))).toEqual([])
     expect(await readFile(join(root, file.name))).toEqual(Buffer.from(data))
-    expect(publishedPaths(f)).toEqual([]); expect(await readProjectFile({ item_id: 'item', version: 1 }, 'owner', 'device', env, noRecord)).toBeNull()
+    expect(publishedPaths(f)).toEqual([]); expect(await fileHoldings().read({ item_id: 'item', version: 1 }, 'owner', 'device', noRecord)).toBeNull()
   })
   it('retains its complete local copy when publication fails, without inventing an indexed reference', async () => {
     const f = fixture(); await writeFile(selected().path, data)
@@ -137,7 +138,7 @@ describe('external selections become durable project-owned copies through the sa
     const directories = await readdir(join(root, '.gugu/attachments'))
     expect(directories).toHaveLength(1)
     expect(await readFile(join(root, '.gugu/attachments', directories[0], file.name))).toEqual(Buffer.from(data))
-    expect(await readProjectFile({ item_id: 'item', version: 1 }, 'owner', 'device', env, noRecord)).toBeNull()
+    expect(await fileHoldings().read({ item_id: 'item', version: 1 }, 'owner', 'device', noRecord)).toBeNull()
   })
 })
 const publishedPaths = (f: ReturnType<typeof fixture>) => f.rpc.mock.calls.filter(([name]) => name === 'file_device_publish').map(([, args]) => args.p_path as string)
@@ -152,7 +153,7 @@ function fixture(proactive = false, identity = { accountId: 'owner', deviceId: '
   })
   const cloud = vi.fn(async () => row), requestCopy = vi.fn(async (_itemId: string, _version: number): Promise<unknown> => ({ status: 'pending' }))
   const publish = createProjectFilePublisher({ identity: async () => ({ accountId, deviceId: identity.deviceId }),
-    root: async id => id === 'project' ? root : id === 'device-store' ? store : null, project: async chat => chat === 'group' ? 'project' : undefined, rpc, env, requestCopy,
+    root: async id => id === 'project' ? root : id === 'device-store' ? store : null, project: async chat => chat === 'group' ? 'project' : undefined, rpc, requestCopy,
     storage: async () => ({ ...DEFAULT_FILE_STORAGE, proactive_upload: proactive, ...storage }), projectChat: async chat => chat !== 'ordinary' })
   return { publish, rpc, store: cloud, requestCopy, account: (value: string) => { accountId = value } }
 }
@@ -166,14 +167,14 @@ describe('project file publication runs before document conversion or cloud uplo
     expect(publication.p_path).toMatch(/^\.gugu\/attachments\/[0-9a-f-]{36}\/file\.bin$/)
     expect(publication).not.toHaveProperty('p_expected')
     expect(Object.values(publication)).not.toContain(root)
-    expect(await readProjectFile({ item_id: 'item', version: 1 }, 'owner', 'device', env, noRecord)).toMatchObject({ workspace: { path: row.path, created_at: row.created_at, created_by: row.created_by }, sha256: publication.p_sha })
+    expect(await fileHoldings().read({ item_id: 'item', version: 1 }, 'owner', 'device', noRecord)).toMatchObject({ workspace: { path: row.path, created_at: row.created_at, created_by: row.created_by }, sha256: publication.p_sha })
   })
   it('reuses the one ordinary uploader only when proactive upload was explicitly enabled', async () => {
     const f = fixture(true)
     expect(await f.publish('group', file, null, 'owner', f.store)).toEqual(row)
     expect(f.store).toHaveBeenCalledOnce()
     expect(f.rpc).not.toHaveBeenCalled()
-    expect(await readProjectFile({ item_id: 'item', version: 1 }, 'owner', 'device', env, noRecord)).toBeNull()
+    expect(await fileHoldings().read({ item_id: 'item', version: 1 }, 'owner', 'device', noRecord)).toBeNull()
   })
   it('plans without publishing and commits a message in the same existing publication RPC', async () => {
     const f = fixture(), message = { message_id: 'message', chat_id: 'group', sender_user_id: 'owner', file_name: file.name, to_user_ids: ['member'], caption: 'caption' }
@@ -181,7 +182,7 @@ describe('project file publication runs before document conversion or cloud uplo
     await expect(fixture(true).publish.local('group')).resolves.toBe(false)
     await expect(f.publish.local('ordinary')).resolves.toBe(false)
     expect(f.rpc).not.toHaveBeenCalled()
-    expect(await readProjectFile({ item_id: 'item', version: 1 }, 'owner', 'device', env, noRecord)).toBeNull()
+    expect(await fileHoldings().read({ item_id: 'item', version: 1 }, 'owner', 'device', noRecord)).toBeNull()
     await expect(f.publish('group', { name: file.name, path: join(root, file.name), size: data.length, contentType: file.contentType }, null, 'owner', undefined, { message }))
       .resolves.toMatchObject({ ...row, message: { id: 'message', file_item_id: 'item', file_version: 1 } })
     expect(f.rpc.mock.calls.find(([name]) => name === 'file_device_publish')?.[1]).toMatchObject({ p_message: message })
@@ -243,7 +244,7 @@ describe('every device keeps what it sends into a project chat', () => {
     const publication = f.rpc.mock.calls.find(([name]) => name === 'file_device_publish')![1]
     expect(publication).toMatchObject({ p_chat: 'elsewhere', p_device: 'laptop', p_project: 'device-store' })
     expect(await readFile(join(store, String(publication.p_path)))).toEqual(Buffer.from(data))
-    expect(await readProjectFile({ item_id: 'item', version: 1 }, 'owner', 'laptop', env, noRecord)).toMatchObject({ host_device_id: 'laptop', host_project_id: 'device-store', chat_id: 'group' })
+    expect(await fileHoldings().read({ item_id: 'item', version: 1 }, 'owner', 'laptop', noRecord)).toMatchObject({ host_device_id: 'laptop', host_project_id: 'device-store', chat_id: 'group' })
   })
   it('a bound device names its project; a next version is kept by whichever device writes it', async () => {
     const f = fixture()

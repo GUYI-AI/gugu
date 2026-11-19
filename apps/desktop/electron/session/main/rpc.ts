@@ -19,7 +19,6 @@ import { issueController } from './core/issues/controller';
 import { mcpController } from './core/mcp/controller';
 import { mcpLibraryController } from './core/mcp-library/controller';
 import { previewServersController } from './core/preview-servers/controller';
-import { projectController } from './core/projects/controller';
 import { folderController } from './core/folders/controller';
 import { promptLibraryController } from './core/prompt-library/controller';
 import { ptyController } from './core/pty/controller';
@@ -64,7 +63,6 @@ export const rpcRouter = createRPCRouter({
   integrations: integrationsController,
   issues: issueController,
   promptLibrary: promptLibraryController,
-  projects: projectController,
   folders: folderController,
   previewServers: previewServersController,
   sessionCreate: sessionCreateController,

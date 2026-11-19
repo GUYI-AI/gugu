@@ -38,7 +38,7 @@ type Rpc = (name: string, args: Record<string, unknown>) => Promise<unknown>
  */
 export function createProjectFilePublisher(deps: {
   identity(): Promise<{ accountId: string; deviceId: string }>; root(id: string): Promise<string | null>
-  rpc: Rpc; env?: NodeJS.ProcessEnv
+  rpc: Rpc
   /** This account's own file storage setting. */
   storage(): Promise<FileStorage>
   /** This device's first folder bound to the chat: what it sends there is kept in it. */

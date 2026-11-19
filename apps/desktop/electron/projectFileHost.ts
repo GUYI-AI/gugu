@@ -15,7 +15,7 @@ export type ProjectFileReader = (request: ReadRequest) => Promise<ProjectFileChu
 export function createProjectFileReader(deps: {
   identity(): Promise<{ accountId: string; deviceId: string }>
   root(projectId: string): Promise<string | null>
-  env?: NodeJS.ProcessEnv; later: ProjectFileVersionLookup
+  later: ProjectFileVersionLookup
 }) {
   return async (request: ReadRequest, callerId: string): Promise<ProjectFileChunk> => {
     if (!request || Object.keys(request).some(key => !['ref', 'offset', 'length', 'etag'].includes(key))) throw new Error('Invalid file read request')
@@ -99,7 +99,7 @@ export async function snapshotProjectFile(revision: FileRevision, read: ProjectF
 /** The person's own copy, before any metadata lookup; and, once an actor's metadata lookup has authorized it, where its bytes are read (fileResolver `open`). */
 export function localProjectFileProvider(deps: {
   identity(): Promise<{ accountId: string; deviceId: string }>
-  read: ReturnType<typeof createProjectFileReader>; tempRoot: string; env?: NodeJS.ProcessEnv; later: ProjectFileVersionLookup
+  read: ReturnType<typeof createProjectFileReader>; tempRoot: string; later: ProjectFileVersionLookup
 }) {
   return async (context: FileContext) => {
     const identity = await deps.identity()

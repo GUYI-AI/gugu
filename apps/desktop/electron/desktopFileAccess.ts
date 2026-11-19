@@ -73,16 +73,16 @@ export function createDesktopFileAccess(deps: {
     const row = await attachmentRequest(await endpoint(), 'file-resolve', { ref, as: (await identity()).accountId }) as FileRevision & { status?: string }
     return row?.status === 'ready' ? row : null
   }
-  const read = createProjectFileReader({ identity, root, env: deps.env, later })
+  const read = createProjectFileReader({ identity, root, later })
   const metadata = createFileMetadataLoader(async (context, refs) => attachmentRequest(await endpoint(context), 'file-resolve', { refs, as: context.actor.actorId }, context.signal))
   const providers = { ...cloudFileProviders({ endpoint, metadata, cache: createFileChunkCache(deps.tempRoot), sink: size => createFileSink(deps.tempRoot, size) }),
-    local: localProjectFileProvider({ identity, read, tempRoot: deps.tempRoot, env: deps.env, later }),
+    local: localProjectFileProvider({ identity, read, tempRoot: deps.tempRoot, later }),
     ssh: async (...args: Parameters<ReturnType<typeof ownSshFileProvider>>) => {
       const links = deps.links(); return links ? ownSshFileProvider(links, deps.tempRoot)(...args) : null
     },
   }
   const resolve = createFileResolver({ ...providers, saveTo: createFileSaver(providers) })
-  const drain = createProjectTransferHost({ identity, endpoint, read: async request => read(request, (await identity()).accountId), tempRoot: deps.tempRoot, env: deps.env, later })
+  const drain = createProjectTransferHost({ identity, endpoint, read: async request => read(request, (await identity()).accountId), tempRoot: deps.tempRoot, later })
   const resolveAccount: Parameters<typeof setAccountFileResolver>[0] = async (ref, actor, options) => {
     const { accountId, deviceId } = await identity()
     if ('name' in ref) {
@@ -95,7 +95,7 @@ export function createDesktopFileAccess(deps: {
     return resolve(fileRef, reader, { ...(options?.localOnly ? { localOnly: true } : {}), ...(options?.signal ? { signal: options.signal } : {}) })
   }
   const sshHandlers: DeviceRpcHandlers = { [PROJECT_FILE_READ]: async (payload, ctx) => ({ result: await read(payload as Parameters<typeof read>[0], ctx.request.user_id) }) }
-  const publish = createProjectFilePublisher({ identity, root, project: deps.project, rpc: deps.rpc, env: deps.env,
+  const publish = createProjectFilePublisher({ identity, root, project: deps.project, rpc: deps.rpc,
     requestCopy: async (itemId, version) => attachmentRequest(await endpoint(), 'file-request', { ref: { item_id: itemId, version }, as: (await identity()).accountId, request_id: crypto.randomUUID() }),
     async storage() { const { auth, db } = await identityDb(); return parseFileStorage(await readUserSettingsConfig(db as unknown as SettingsTableClient, auth.userId, 'user')) },
     // @@@group-folders Files stay on this account's machines in a chat one of its devices binds a folder to.

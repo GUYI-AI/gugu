@@ -91,7 +91,7 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
       sweepProbeOrphans: async () => presenceProbe?.globalVersionProcessSweep?.(),
     },
 
-    '@main/core/projects/operations/migrate-project-kind': { migrateProjectKind: () => [] },
+    '../../migrations/legacy-projects/migrate-project-kind': { migrateProjectKind: () => [] },
     '@main/core/usage/run-interval-recorder': { closeInterruptedRunIntervals: fault('interval'), installRunIntervalRecorder: noop },
     '@main/core/sessions/sendMessage': { claimInterruptedDispatches: fault('dispatch') },
     '@main/core/sessions/session-deferred-messages': { claimInterruptedDeferredMessages: fault('deferred'), installDeferredMessageDelivery: delivery },
@@ -180,8 +180,8 @@ describe('real session host boot entry', () => {
         require: (id: string) => imports[id] ?? requireBuiltin(id),
       })
       const editor = new serviceModule.exports.EditorBufferService()
-      await editor.saveBuffer('project', 'workspace', 'old.txt', 'unsaved text absent from disk')
-      await editor.saveBuffer('project', 'workspace', 'recent.txt', 'recent unsaved text')
+      await editor.saveBuffer('workspace', 'old.txt', 'unsaved text absent from disk')
+      await editor.saveBuffer('workspace', 'recent.txt', 'recent unsaved text')
       sqlite.prepare('UPDATE editor_buffers SET updated_at = ? WHERE file_path = ?')
         .run(Date.now() - 8 * 24 * 60 * 60 * 1000, 'old.txt')
 
@@ -189,12 +189,12 @@ describe('real session host boot entry', () => {
         initialize: async () => sqlite, migrate: () => {}, editorBufferService: editor,
       })
 
-      expect(await editor.listBuffers('project', 'workspace')).toEqual(expect.arrayContaining([
+      expect(await editor.listBuffers('workspace')).toEqual(expect.arrayContaining([
         { filePath: 'old.txt', content: 'unsaved text absent from disk' },
         { filePath: 'recent.txt', content: 'recent unsaved text' },
       ]))
-      await editor.clearBuffer('project', 'workspace', 'old.txt')
-      expect(await editor.listBuffers('project', 'workspace')).toEqual([
+      await editor.clearBuffer('workspace', 'old.txt')
+      expect(await editor.listBuffers('workspace')).toEqual([
         { filePath: 'recent.txt', content: 'recent unsaved text' },
       ])
     } finally { sqlite.close() }
