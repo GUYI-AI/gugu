@@ -21,10 +21,10 @@ const state = vi.hoisted(() => ({
   failures: new Map<string, string>(),
   startInputs: [] as Array<Record<string, unknown>>,
   hydrateError: null as Error | null,
-  importError: null as Error | null,
   /** session-life (owner of ACP sessions): creation turns become pending rows; an empty creation queue is a start. */
   lifeEnqueued: [] as Array<Record<string, unknown>>,
   lifeEnqueueError: null as Error | null,
+  legacyImportGuard: vi.fn(async () => { throw Object.assign(new Error('Missing configuration marker'), { code: 'AGENT_HOME_IMPORT_REQUIRED' }); }),
 }));
 
 vi.mock('@main/core/sessions/session-life', () => ({
@@ -38,10 +38,6 @@ vi.mock('@main/core/sessions/session-life', () => ({
     start: () => { state.calls.push('life.start'); },
   }),
 }));
-vi.mock('@main/core/agents/agent-homes', () => ({
-  assertAgentHomeImportedForSession: async () => { if (state.importError) throw state.importError; },
-}));
-
 vi.mock('./start-failures', () => ({
   recordStartFailure: (id: string, code: string) => state.failures.set(id, code),
   clearStartFailure: (id: string) => state.failures.delete(id),
@@ -78,20 +74,19 @@ vi.mock('@main/core/settings/settings-service', () => ({
 }));
 vi.mock('../sessions/platform-model-selection', () => ({ sessionPlatformModel: async () => undefined }));
 
+vi.mock('@main/core/agents/agent-homes', () => ({ assertAgentHomeImportedForSession: state.legacyImportGuard }));
 vi.mock('@main/core/agents/controller', () => ({
   agentsController: {
-    list: async () => [
-      {
-        id: 'codex',
-        name: 'Codex',
-        status: state.agentStatus,
-        capabilities: {
-          acp: { kind: 'supported', liveSettings: { fast: { channel: 'acp-config-option', ack: 'ack-read-back' } } },
-          sessionViews: ['general', 'code'],
-          permissionModes: ['plan', 'read-only', 'edit', 'full-access'],
-        },
+    list: async () => ['codex', 'kimi'].map((id) => ({
+      id,
+      name: id === 'codex' ? 'Codex' : 'Kimi',
+      status: state.agentStatus,
+      capabilities: {
+        acp: { kind: 'supported', liveSettings: { fast: { channel: 'acp-config-option', ack: 'ack-read-back' } } },
+        sessionViews: ['general', 'code'],
+        permissionModes: ['plan', 'read-only', 'edit', 'full-access'],
       },
-    ],
+    })),
   },
 }));
 
@@ -271,15 +266,21 @@ describe('createSession:所选 harness 在这台机器上还没装', () => {
     state.warned = Promise.withResolvers<void>();
     state.lifeEnqueued = [];
     state.lifeEnqueueError = null;
-    state.importError = null;
   });
 
-  it('returns the import repair code before admitting a task on a fresh host', async () => {
-    const message = 'Run gugu-server agent-home import codex.';
-    state.importError = Object.assign(new Error(message), { code: 'AGENT_HOME_IMPORT_REQUIRED' });
-    expect(await createSession({ projectId: 'proj-1', harness: 'codex', prompt: 'hi' }, { ensureAgentInstalled: async () => {} }))
-      .toEqual({ ok: false, error: { code: 'AGENT_HOME_IMPORT_REQUIRED', message } });
-    expect(state.calls).not.toContain('prepareCreateSession');
+  it('admits a Codex session on a fresh host without checking for configuration import', async () => {
+    const result = await createSession({ projectId: 'proj-1', harness: 'codex', prompt: 'hi' }, { ensureAgentInstalled: async () => {} });
+    expect(result.ok).toBe(true);
+    expect(state.calls).toContain('prepareCreateSession');
+  });
+
+  it('admits an upgraded Kimi session even when the previous configuration gate would reject it', async () => {
+    state.agentStatus = 'available';
+    state.legacyImportGuard.mockClear();
+    const result = await createSession({ projectId: 'proj-1', harness: 'kimi', prompt: 'hi' });
+    expect(result.ok).toBe(true);
+    expect(state.calls).toContain('prepareCreateSession');
+    expect(state.legacyImportGuard).not.toHaveBeenCalled();
   });
 
   // #639 后续(owner 10-28):「终端」开关只管终端入口显不显示,新任务没说展示时永远走通用 —— 群里「新任务」卡片交给

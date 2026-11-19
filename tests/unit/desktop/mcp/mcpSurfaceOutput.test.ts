@@ -40,12 +40,12 @@ describe('a session as session_get / session_children show it', () => {
     const shown = presentSession({
       session_id: 'session:s1', status: 'working', pinned: false,
       runtime: { sessionId: 's1', lifecycle: 'working', rateLimit: { status: 'allowed' }, recentActions: ['Bash'], pendingPermissionCount: 0,
-        lastTurnError: null, contextTokens: 1200, contextSize: 200000, transcriptPath: '/t.jsonl', updatedAt: 1 },
+        lastTurnError: null, retrying: { since: 1234, message: 'Reconnecting: tls handshake eof' }, contextTokens: 1200, contextSize: 200000, transcriptPath: '/t.jsonl', updatedAt: 1 },
       preview: { activityVersion: 1, entries: [{ kind: 'text', text: 'hi', activityVersion: 1 }] },
     })
     expect(shown).toEqual({
       session_id: 'session:s1', status: 'working',
-      runtime: { lifecycle: 'working', contextTokens: 1200, contextSize: 200000, transcriptPath: '/t.jsonl' },
+      runtime: { lifecycle: 'working', retrying: { since: 1234, message: 'Reconnecting: tls handshake eof' }, contextTokens: 1200, contextSize: 200000, transcriptPath: '/t.jsonl' },
       preview: { entries: [{ kind: 'text', text: 'hi' }] },
     })
     expect(presentSession({ session_id: 'session:s2', pinned: true })).toEqual({ session_id: 'session:s2', pinned: true })

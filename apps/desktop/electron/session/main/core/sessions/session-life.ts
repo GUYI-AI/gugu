@@ -55,6 +55,10 @@ export interface SessionLifePorts {
   now(): number;
 }
 
+export type QueuedDeliveryRecovery =
+  | { state: 'waiting' }
+  | { state: 'needed' | 'started' | 'blocked'; cause: string };
+
 interface Run {
   readonly gen: Gen;
   readonly abort: AbortController;
@@ -110,6 +114,8 @@ export class SessionLife {
   private readonly reconcileAgain = new Set<string>();
   private epoch = 0;
   private account: string | null = null;
+  /** A newly installed owner has not yet resolved its first account transition. */
+  private authSettled = false;
   /** The last queued auth transition; null = idle. The only fact saying whether a transition is in progress. */
   private tail: Promise<void> | null = null;
   /** v3.1 #7: from leave's first interrupt until the epoch advances, nothing may start a run. */
@@ -197,7 +203,10 @@ export class SessionLife {
   private transition(run: () => Promise<void>): Promise<void> {
     // Idle: run now, so a sign-out's interrupts land before the caller replaces its credentials.
     const next = this.tail ? this.tail.then(run) : run();
-    const tail: Promise<void> = next.catch(() => undefined).then(() => { if (this.tail === tail) this.tail = null; });
+    const tail: Promise<void> = next.catch(() => undefined).then(() => {
+      this.authSettled = true;
+      if (this.tail === tail) this.tail = null;
+    });
     this.tail = tail;
     return next;
   }
@@ -324,6 +333,35 @@ export class SessionLife {
       started.push(sessionId);
     }
     return started;
+  }
+
+  /**
+   * A host-owned scheduled delivery may retry its own unadmitted row. Ordinary duplicate enqueues
+   * retain their no-restart contract. The caller owns the retry budget; Life owns whether a start
+   * is safe. Never replay an accepted, dispatching, unknown or rejected input, or cross a stop.
+   */
+  recoverQueuedDelivery(sessionId: string, messageId: string, allowStart: boolean): QueuedDeliveryRecovery {
+    const store = this.ports.store(sessionId);
+    const row = store.unaccepted(sessionId).find(item => item.message.id === messageId);
+    if (row?.state !== 'queued') return { state: 'waiting' };
+    // The scheduler may bootstrap before the host restores its account or finishes hydration.
+    // This is pending initialization, not a terminal sign-out or a recovery reservation.
+    if (!this.authSettled || this.tail !== null) return { state: 'waiting' };
+    const entry = this.entry(sessionId);
+    const life = entry.life;
+    if (life.kind === 'starting' || life.kind === 'stopping' || life.kind === 'ready') return { state: 'waiting' };
+    const cause = life.kind === 'failed' ? life.hold.cause.message
+      : life.kind === 'archived' ? 'The session is archived'
+      : life.hold ? `The session is held: ${life.hold.reason}` : 'The pending session has no active runtime';
+    if (this.account === null || this.leaving) return { state: 'blocked', cause: 'The session is signed out' };
+    const mayRecover = shouldStartAfterOutage(life, store.pending(sessionId))
+      || (life.kind === 'dormant' && life.hold === null && shouldStartOnHydrate(life, store.pending(sessionId)));
+    if (!mayRecover) {
+      return { state: 'blocked', cause };
+    }
+    if (!allowStart) return { state: 'needed', cause };
+    this.send(sessionId, { k: 'start', origin: 'retry' });
+    return { state: 'started', cause };
   }
 
   interrupt(sessionId: string, event: InterruptEvent): Promise<void> {

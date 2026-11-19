@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RendererMetrics } from '@shared/renderer-metrics';
 
@@ -7,13 +8,12 @@ import { commitPageTotals, pageMetricsSince, readPageTotals, stopPageCounters } 
 
 function window(id = 1, pid = 40) {
   let attached = false;
-  const debug = {
+  const debug = Object.assign(new EventEmitter(), {
     isAttached: () => attached,
     attach: vi.fn(() => { attached = true; }),
-    detach: vi.fn(() => { attached = false; }),
-    once: vi.fn(),
+    detach: vi.fn(() => { attached = false; debug.emit('detach', {}, 'test'); }),
     sendCommand: vi.fn(async (method: string) => method === 'Performance.getMetrics' ? { metrics: Object.entries(state.metrics).map(([name, value]) => ({ name, value })) } : {}),
-  };
+  });
   return { id, debugger: debug, isDestroyed: () => false, getType: () => 'window', getURL: () => 'gugu-app://app/index.html', getOSProcessId: () => pid, once: vi.fn() };
 }
 const renderer = (pid: number, longFrames: number, slowInteractions: number, blockingMs = 0) =>

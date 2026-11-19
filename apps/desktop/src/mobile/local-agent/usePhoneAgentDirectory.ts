@@ -10,6 +10,7 @@ import { getCurrentAuthUserId } from '@/lib/supabase'
 import { useAuth } from '@/store/auth'
 import { thisPhoneDeviceId } from '../phone-device/phoneDeviceSettings'
 import { nativeAgent, phoneAgentAvailable } from './nativeAgent'
+import { reportNativePersonalPublication } from '@/lib/nativePersonalPublication'
 
 const REFRESH_MS = 5_000
 
@@ -21,6 +22,7 @@ export async function readLocalPhoneSessions(deviceId: string): Promise<Sessionp
   const host = await nativeAgent.hostState({ ownerId })
   if (!host.sessions.length) return null
   if (host.ownerId !== ownerId || host.deviceId !== deviceId) throw new Error('手机会话与当前账号或设备不一致')
+  reportNativePersonalPublication(ownerId, host.accountRevision)
   const previous = liveDeviceSessions()[deviceId]
   const sessions = host.sessions.map((agent): SessionpageSessionSummary => {
     const existing = previous?.sessions.find((entry) => entry.conversationId === agent.sessionId)

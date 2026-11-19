@@ -1,3 +1,4 @@
+import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
 import { runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
@@ -546,16 +547,22 @@ export class LocalSessionProvider implements SessionProvider {
 
       // #5331 台账:平台模型这一发从前是 sessionpage hook 的**参数表达式**,无法单独计时。
       const platformModelForSpawn = await sessionPlatformModel(session.id);
-      if (platformModelForSpawn === null && !runContext.credentialEnv && !runContext.customModel) {
-        const { assertAgentHomeSignIn } = await import('@main/core/agents/agent-homes');
-        await assertAgentHomeSignIn(session.providerId, runContext.connectionId);
-      }
       mark('platform-model');
       // 推理档旗标与 ACP 那条腿同一条规则:原样是记录里那一档(见 host.ts readSessionInjectionFacts,#6447);
       // 物化进配置文档的那一档在签发之后按模型收窄(platformArmedEffort)。
       const launchEffort = session.effort;
 
       const permissionMode = resolveSessionPermissionMode(session);
+      if (permissionMode === 'ai-review') {
+        const { probeHarnessModelCatalog } = await import('@main/core/agents/harness-model-catalog');
+        const catalog = await probeHarnessModelCatalog(session.providerId, 'tui',
+          !platformModelForSpawn && !runContext.customModel ? runtimeModelId(session.model) : undefined);
+        const available = runContext.autoReviewAllowed !== false && catalogAllowsAutoReview(plugin.capabilities.autoApprove.modes,
+          { ...catalog, cliVersion: runContext.cliVersion },
+          platformModelForSpawn ? 'platform' : platformModelForSpawn === null ? runContext.customModel ? 'custom' : 'own' : 'unknown',
+          platformModelForSpawn?.modelId ?? runtimeModelId(session.model) ?? (catalog.kind === 'ready' ? catalog.selected : null));
+        if (!available) throw new Error('AI review is unavailable for this session executable and model');
+      }
       let agentCommand = plugin.behavior.prompt!.buildCommand({
         cli: executableCli,
         extraArgs: runContext.extraArgs,

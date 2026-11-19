@@ -6,7 +6,7 @@ import type { PluginFs } from '../../runtime/fs';
 import type { AgentHomeProvisioner } from '../plugin-host';
 import { createLocalPluginFs } from './local-plugin-fs';
 import { readJsonConfig, writeJsonConfig, writeTomlOverlay } from './hook-config';
-import { AgentHomeNotImported, readAgentHomeMarker } from './agent-home-import';
+import { initializeManagedAgentHome } from './agent-home-import';
 export * from './agent-home-import';
 
 /**
@@ -129,10 +129,10 @@ export function resolveAgentHome(input: {
   };
 }
 
-/** A managed home must be explicitly imported or skipped before any CLI reads it. */
+/** A managed home works as a fresh installation until migration supplies its configuration. */
 export type AgentHomeSeed = 'already-present';
 export async function ensureAgentHome(home: ResolvedAgentHome): Promise<AgentHomeSeed> {
-  if (!(await readAgentHomeMarker(home))) throw new AgentHomeNotImported(home.providerId);
+  await initializeManagedAgentHome(home);
   await writeSeedFiles(home);
   return 'already-present';
 }
@@ -189,7 +189,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Descriptor-owned onboarding files are filled only when missing, after explicit import. */
+/** Descriptor-owned onboarding files are filled only when missing. */
 async function writeSeedFiles(home: ResolvedAgentHome): Promise<void> {
   for (const seed of home.seedFiles) {
     const target = join(home.configRoot, seed.path);

@@ -40,6 +40,7 @@ import {
 } from './harness-connection-launch';
 import { customModelRefFromOption } from '@gugu/session-core/models/custom-model';
 import { migrateCustomModelConnections } from './custom-models';
+import { reportAgentHomeMigrationFailure } from '../../../../error-summary-reporting-host';
 
 /** Account connections hold sign-ins in Gugu's managed root. Custom models keep their own provider credentials. */
 
@@ -363,6 +364,7 @@ export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Rec
     } catch (error) {
       if (!automatic) throw error;
       log.warn('Could not split the previous account slot during upgrade', { providerId });
+      reportAgentHomeMigrationFailure(error, 'sign-in');
     }
     let upgradeSignIn: 'copied' | 'relogin' | undefined;
     if (automatic && (owned || selected === 'native')) {
@@ -371,8 +373,9 @@ export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Rec
         const copied = await copy(result.moved?.connectionId === selected ? result.moved.identity : undefined);
         upgradeSignIn = copied === 'oauth' ? 'copied' : copied === false ? 'relogin' : undefined;
       }
-      catch {
+      catch (error) {
         log.warn('Could not transfer the previous sign-in during upgrade', { providerId });
+        reportAgentHomeMigrationFailure(error, 'sign-in');
         upgradeSignIn = 'relogin';
       }
     }

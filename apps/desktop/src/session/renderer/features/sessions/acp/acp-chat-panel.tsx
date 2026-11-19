@@ -1,3 +1,4 @@
+import { withAutoReviewHint } from './auto-review-permission-hint';
 import { customModelOptionId, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica } from '@/lib/replica';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
@@ -190,8 +191,6 @@ import {
 import { GUGU_CLIENT_COMMAND_MCP, isGuguClientCommand } from '@gugu/session-core/acp/commands';
 import { classifyProviderPermissionMode } from '@gugu/session-core/acp/client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { useTranslation } from 'react-i18next';
-import { openAgentHomeImport } from '@renderer/features/settings/subscriptions/ensure-agent-home';
 import { sessionFastMode } from '../session-config/fast-mode';
 import { renderFastModeHint } from '../session-config/fast-mode-hint';
 import { useBoundChatView } from './use-bound-chat-view';
@@ -833,12 +832,14 @@ const ComposerForStore = observer(function ComposerForStore({
   const reloadPermission = providerCapabilities?.acp.liveSettings?.permission?.channel === 'reload-session'
     ? detachedPermissionModeOptions(store.recordedPermissionTier, providerPermissionModeMap)
     : null;
+  const platformCatalog = usePlatformModelCatalog(providerId, 'acp', store.sessionId);
+  const route = sessionBillingRoute(platformCatalog.sessionSelection);
   const sessionPermissionOptions = sessionPermissionModeOptions(
     store.permissionModeOptions ?? detachedPermission?.options ?? reloadPermission?.options ?? null,
     providerCapabilities?.acp.liveSettings?.permission,
     providerCapabilities?.acp.sessionModes,
+    { route, modeMap: providerPermissionModeMap },
   );
-  const platformCatalog = usePlatformModelCatalog(providerId, 'acp', store.sessionId);
 
   /**
    * 这条会话的**计费路**,三态 —— 唯一写者是会话自己记下的那个决定
@@ -848,7 +849,6 @@ const ComposerForStore = observer(function ComposerForStore({
    * 并进 `own` 会让菜单在目录到达前(以及目录取不到时的**永远**)照那份被票裁过的活清单画,
    * #5808 原样复发。理由全文在 @@@own-model-tier。
    */
-  const route = sessionBillingRoute(platformCatalog.sessionSelection);
   // #6264 会话在别的机器上:这条登录读数也问那台机器(一套工作台)。
   const { auth: authStatus } = useAgentAuthStatus(route === 'own' ? providerId : null, undefined, {
     machine: machineRegistry.machineOf(store.projectId),
@@ -1501,12 +1501,12 @@ const ComposerForStore = observer(function ComposerForStore({
         fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup })}
         onFastModeChange={(enabled) => { void store.setFastMode(enabled); }}
         renderFastModeHint={renderFastModeHint}
-        permissionModeOptions={localizePermissionModeOptions(
+        permissionModeOptions={withAutoReviewHint(localizePermissionModeOptions(
           sessionPermissionOptions,
           translate,
           agents?.find((agent) => agent.id === providerId)?.name ?? providerId ?? '',
           providerPermissionModeMap
-        )}
+        ), providerId, runningCustomModel ? 'api-key' : costSource, providerPermissionModeMap)}
         selectedPermissionMode={selectedPermissionModeId(
           store.permissionMode ?? detachedPermission?.selected ?? reloadPermission?.selected,
           sessionPermissionOptions,
@@ -1582,7 +1582,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   tabKind?: 'acp-chat' | 'side-chat';
 }) {
   const { translate } = useSessionMessages();
-  const { t: importText } = useTranslation('main');
   const { navigate } = useNavigate();
   const { pane } = usePaneContext();
 
@@ -1761,8 +1760,11 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const signInExpired = lastTurnSignIn && isAuthExpired(harnessAuth);
   // 同一个信号(这一轮因凭据不能用而失败),而这家在这台电脑上压根没登录过(MiMo 没 key 时):说「还没登录」。
   const signInMissing = lastTurnSignIn && !signInExpired && harnessAuth?.status?.kind === 'unauthenticated';
-  /** 与「去登录」同一个面板(见上):登录失效的那一家在这里重新登,或换一个连接。 */
-  const signInAgain = openAgentAccount;
+  // Expired credentials go directly to the existing login flow, scoped to this session's machine.
+  const signInAgain = useCallback((anchor?: HTMLElement) => {
+    if (signInExpired && agent) connections.signIn(agent, machine);
+    else openAgentAccount(anchor);
+  }, [signInExpired, agent, machine, connections.signIn, openAgentAccount]);
 
   // #4900 登录 ❌ 不自动发起。owner 2026-09-04:「我不登录也行啊」——自动弹登录终端会
   // 连带跑起厂商的 `<cli> login`,浏览器随即弹出授权页,这就是「强登」本身。
@@ -1867,23 +1869,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     const retry = { label: translate('transcript.condition.retry'), run: () => store.retry() };
     const condition = ((): PanelCondition => {
       switch (error.kind) {
-        case 'agent_home_import': {
-          const label = agent?.name ? importText('agentHome.repairRequired', { name: agent.name }) : importText('agentHome.repairRequiredGeneric');
-          return {
-            code: 'start-failed',
-            label,
-            detail: label,
-            actions: [
-              ...(providerId ? [{ label: importText('agentHome.repairAction'), run: () => {
-                void openAgentHomeImport(providerId, machine).then((imported) => {
-                  if (imported) void store.retry();
-                }, () => setCondition({ code: 'start-failed', detail: importText('agentHome.repairFailed'), actions: [retry] }));
-              } }] : []),
-              ...(cliAuthMethod ? [{ label: translate('transcript.condition.signIn'), run: openAgentAccount }] : []),
-              retry,
-            ],
-          };
-        }
+        case 'agent_home_import':
+          return { code: 'start-failed', detail: error.message, actions: [retry] };
         case 'harness_not_installed':
           // 引擎不在盘上 —— 重试修不好它,所以这一行 ❌ 不给「再试一次」,给安装入口。
           return {
@@ -2010,7 +1997,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       }
     })();
     setCondition(condition);
-  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, importText, machine, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
+  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, machine, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
 
   /**
    * 还在跑的后台命令与子智能体 → 消息列表末尾那一行(owner 2026-10-27:去掉右上角「摘要」卡,后台任务放进主对话)。

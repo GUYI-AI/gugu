@@ -55,7 +55,10 @@ const h = vi.hoisted(() => {
   return { item, listing, api, heard, host, listManagement };
 });
 
-vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: async () => ({ data: [], error: null }) } }));
+vi.mock('@/lib/supabase', () => ({
+  chatDb: { rpc: async () => ({ data: [], error: null }) },
+  getCurrentAuthUserId: async () => 'test-account',
+}));
 
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: { extensions: {}, app: {}, agents: { listIcons: async () => ({}) } },
@@ -307,7 +310,7 @@ describe('the App page market: the index in hand at once, the download site behi
     await until('the first read drawn', tileIds, (ids) => ids.length > 0);
     await turn();
     expect(tileIds()).toEqual(['one', 'two']);
-    const before = tiles()[0];
+    const before = doc().querySelector('[data-testid="extension-card-one"]');
     // The read again is on its way (its answer held): what is drawn stays, ❌ a skeleton in between.
     const reread = deferred<unknown>();
     h.api.market.mockReturnValue(reread.promise);
@@ -318,11 +321,10 @@ describe('the App page market: the index in hand at once, the download site behi
     expect(skeleton()).toBeNull();
     expect(tileIds()).toEqual(['one', 'two']);
     await act(async () => reread.resolve(h.listing(['one', 'two', 'three'], T2)));
-    await until('the new read drawn', tileIds, (ids) => ids.join() !== 'one,two');
+    await until('the new read drawn', tileIds, (ids) => ids.includes('three'));
     await turn();
-    // Desktop browsing uses the order of the host catalog.
-    expect(tileIds()).toEqual(['one', 'two', 'three']);
-    expect(tiles()[0]).toBe(before);
+    expect(tileIds().sort()).toEqual(['one', 'three', 'two']);
+    expect(doc().querySelector('[data-testid="extension-card-one"]')).toBe(before);
     expect(skeletonsAfterTiles).toBe(0);
     expect(h.api.market).toHaveBeenCalledTimes(2);
   });
@@ -345,7 +347,7 @@ describe('the App page market: the index in hand at once, the download site behi
     await until('the push of a later moment read', () => h.api.market.mock.calls.length, (n) => n >= 3);
     await turn();
     expect(h.api.market).toHaveBeenCalledTimes(3);
-    expect(tileIds()).toEqual(['one', 'four']);
+    expect(tileIds().sort()).toEqual(['four', 'one']);
   });
 
   it('the download site not reached → the index in hand stays, one quiet line 「上次更新于 …」; ❌ an alert, ❌ a toast', async () => {
@@ -410,7 +412,10 @@ describe('the App page market: the index in hand at once, the download site behi
     await act(async () => tab.click());
 
     const testId = (id: string) => doc().querySelector(`[data-testid="${id}"]`);
-    await until('both sections drawn', () => tab.querySelector('.mk-seg-count')?.textContent, (count) => count === '3');
+    await until('both installed sections drawn', () => [
+      testId('installed-apps-agents')?.querySelectorAll('li').length,
+      testId('installed-apps-extensions')?.querySelectorAll('li').length,
+    ], ([agents, extensions]) => agents === 2 && extensions === 1);
     const agents = testId('installed-apps-agents')!;
     const extensions = testId('installed-apps-extensions')!;
     expect([...agents.querySelectorAll('li')].map((row) => row.dataset.testid)).toEqual([

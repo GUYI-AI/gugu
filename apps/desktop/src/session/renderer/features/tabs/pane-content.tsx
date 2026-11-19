@@ -63,6 +63,15 @@ const PaneBody = observer(function PaneBody({
       if (!container) return;
       const kind = pane.activeEntry?.kind;
       const layer = kind ? container.querySelector<HTMLElement>(`[data-pane-layer="${CSS.escape(kind)}"]`) : null;
+      // A delayed pane-focus request must leave annotation input in the host,
+      // rather than handing it back to the native page underneath the canvas.
+      for (const canvas of (layer ?? container).querySelectorAll<HTMLElement>('[data-browser-annotation-layer]')) {
+        if (canvas.closest<HTMLElement>('[data-pane-tab]')?.dataset.paneTab !== pane.resolvedActiveTabId) continue;
+        if (canvas.checkVisibility && !canvas.checkVisibility({ visibilityProperty: true })) continue;
+        if (canvas.contains(canvas.ownerDocument.activeElement)) return;
+        canvas.focus();
+        if (canvas.ownerDocument.activeElement === canvas) return;
+      }
       for (const element of (layer ?? container).querySelectorAll<HTMLElement>(CONTENT_FOCUS_SELECTOR)) {
         if (element.checkVisibility && !element.checkVisibility({ visibilityProperty: true })) continue;
         element.focus();

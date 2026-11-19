@@ -41,6 +41,15 @@ export type ChatUnreadLocator = {
 
 export interface ChatItem {
   id: string
+  /** Personal server list state; neither timestamp revokes history or membership. */
+  conversation_cleared_at?: string | null
+  native_personal_activity_at?: string | null
+  native_personal_activity_revision?: string
+  personal_state_observed_revision?: string
+  conversation_hidden_at?: string | null
+  source_conversation_hidden_at?: string | null
+  conversation_visibility_revision?: string
+  source_conversation_visibility_revision?: string
   public_id?: number | null
   kind: ChatKind
   status: ChatStatus

@@ -21,10 +21,7 @@ import { ProductTour } from '../productTour/ProductTour'
 import { availableTourSteps } from '../productTour/tourTargets'
 import { FeatureFilms } from '../productTour/FeatureFilms'
 import type { ProductTourRequest, TourStepId } from '../../lib/productTour'
-import { FirstRunImport } from './FirstRunImport'
-import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
-import type { AgentHomeScan } from '@gugu/session-core/workspace-server/agent-config'
-import { showAgentHomeUpgradeNotice } from '@renderer/features/settings/subscriptions/agent-home-upgrade-notice'
+import { readAgentHomeUpgradeResults, showAgentHomeUpgradeNotice } from '@renderer/features/settings/subscriptions/agent-home-upgrade-notice'
 import { FirstRunHarness } from './FirstRunHarness'
 import { FirstRunTerminal } from './FirstRunTerminal'
 import { FirstRunInstallProvider } from './FirstRunInstallProvider'
@@ -40,13 +37,13 @@ const log = rendererLogger('first-run')
 
 // 全屏步骤的顺序(规范 4.1):每页顶上写「n / N」,N 只数这台设备真会走的页。
 // 没有「认识咕咕」那一步(owner 11-12):助理是 App,认识它在 App 里;开通也从 App 自己的介绍页开始。
-type StepKind = 'profile' | 'harness' | 'import' | 'terminal' | 'tourChoice'
+type StepKind = 'profile' | 'harness' | 'terminal' | 'tourChoice'
 // 桌面端最后一页问一次要不要看功能栏导览(规范 4.1:由人自己选择开始);导览只有桌面端有。手机只有资料那一页。
-const STEPS: readonly StepKind[] = platform.kind === 'electron' ? ['profile', 'harness', 'import', 'terminal', 'tourChoice'] : ['profile']
-function StepCount({ step, withImport = false }: { step: StepKind; withImport?: boolean }) {
+const STEPS: readonly StepKind[] = platform.kind === 'electron' ? ['profile', 'harness', 'terminal', 'tourChoice'] : ['profile']
+function StepCount({ step }: { step: StepKind }) {
   const { t } = useTranslation('main')
   // 只有一页(手机)就不写「1 / 1」。
-  const steps = withImport ? STEPS : STEPS.filter((entry) => entry !== 'import')
+  const steps = STEPS
   if (steps.length < 2) return null
   return <p className="first-run-step-count" data-testid="first-run-step-count">{t('firstRun.stepCount', { current: steps.indexOf(step) + 1, total: steps.length })}</p>
 }
@@ -56,7 +53,6 @@ type GateState =
   | { kind: 'unreadable'; message: string }
   | { kind: 'profile'; occupation: Occupation | null }
   | { kind: 'harness' }
-  | { kind: 'import' }
   | { kind: 'terminal' }
   | { kind: 'tourChoice' }
   | { kind: 'tour'; steps: readonly TourStepId[]; start: TourStepId }
@@ -86,24 +82,6 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
   const { t } = useTranslation('main')
   const [state, setState] = useState<GateState>({ kind: 'loading' })
   const done = useCallback(() => { rememberFirstRunDone(user.id); setState({ kind: 'done' }) }, [user.id])
-  const [importHomes, setImportHomes] = useState<AgentHomeScan[]>([])
-  const [hasImport, setHasImport] = useState(false)
-  const afterImport = useRef<'terminal' | 'tourChoice'>('terminal')
-  const prepareImport = useCallback(async (ids: readonly string[], next: 'terminal' | 'tourChoice') => {
-    if (platform.kind !== 'electron') { setState({ kind: next }); return }
-    const client = await getAgentConfigRuntimeClient()
-    const result = await client.scanAgentHomes({ providerIds: [...ids] })
-    if (!result.success) throw new Error('Cannot read local harness configuration')
-    for (const home of result.data.filter((home) => home.needsImport && !home.sourceReadable && !home.migration)) {
-      const initialized = await client.importAgentHome({ providerId: home.providerId, groups: [] })
-      if (!initialized.success) throw new Error('Cannot initialize local harness configuration')
-    }
-    const pending = result.data.filter((home) => home.needsImport && (home.sourceReadable || home.migration))
-    setImportHomes(pending)
-    setHasImport(pending.length > 0)
-    afterImport.current = next
-    setState(pending.length ? { kind: 'import' } : { kind: next })
-  }, [])
   // 退回上一页时「已填的内容还在」(规范 7-2):选过的 Agent 记在这里,称呼和身份由 FirstRunProfile 从账号读回。
   const harnessPicked = useRef<readonly string[] | null>(null)
   const backToProfile = useCallback(() => {
@@ -119,14 +97,14 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
     if (firstRunDoneHere(user.id)) { done(); return }
     setState({ kind: 'loading' })
     readFirstRunProgress(user.id)
-      .then(async (progress) => {
+      .then((progress) => {
         if (progress.stage === 'done') done()
         // 资料已填、还没走完(进度里这一段仍叫 `intro`,旧版本在这里停在「认识咕咕」):接着走下一个真有的步骤。
         // 手机只有资料那一页:回到它(已填好),「继续」即走完。
         else if (progress.stage === 'intro' && platform.kind === 'electron') {
           harnessPicked.current = progress.harness
           if (!progress.harness) setState({ kind: 'harness' })
-          else await prepareImport(progress.harness, !progress.terminalSeen ? 'terminal' : 'tourChoice')
+          else setState({ kind: progress.terminalSeen ? 'tourChoice' : 'terminal' })
         }
         else setState({ kind: 'profile', occupation: progress.occupation })
       })
@@ -134,15 +112,15 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
         log.error({ error: String(e) }, 'read first-run progress failed')
         setState({ kind: 'unreadable', message: messageForUser(e) })
       })
-  }, [user.id, done, prepareImport])
+  }, [user.id, done])
 
   useEffect(load, [load])
 
   useEffect(() => {
     if (state.kind !== 'done' || platform.kind !== 'electron') return
     let active = true
-    void getAgentConfigRuntimeClient().then((client) => client.scanAgentHomes({})).then((result) => {
-      if (active && result.success) result.data.forEach((home) => showAgentHomeUpgradeNotice(home, null))
+    void readAgentHomeUpgradeResults().then((homes) => {
+      if (active) showAgentHomeUpgradeNotice(homes)
     }).catch((error: unknown) => log.error({ error: String(error) }, 'read configuration upgrade notices failed'))
     return () => { active = false }
   }, [state.kind])
@@ -173,7 +151,7 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
 
   const wizard = state.kind === 'loading' ? <FullScreenLoader /> : (
     <div className="ta-first-run" data-ta-scope data-testid={`first-run-${state.kind}`}>
-      <div className={`ta-onb${state.kind === 'import' ? ' first-run-import-panel' : state.kind === 'harness' ? ' first-run-harness-panel' : state.kind === 'terminal' ? ' first-run-terminal-panel' : ''}`}>
+      <div className={`ta-onb${state.kind === 'harness' ? ' first-run-harness-panel' : state.kind === 'terminal' ? ' first-run-terminal-panel' : ''}`}>
         {state.kind === 'unreadable' ? (
           <>
             <h1 className="ta-onb-title">{t('firstRun.unreadableTitle')}</h1>
@@ -185,24 +163,19 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
             </div>
           </>
         ) : state.kind === 'profile' ? (
-          <FirstRunProfile step={<StepCount withImport={hasImport} step="profile" />} user={user} initial={state.occupation}
+          <FirstRunProfile step={<StepCount step="profile" />} user={user} initial={state.occupation}
             onDone={platform.kind === 'electron' ? () => setState({ kind: 'harness' }) : async () => { await completeFirstRun(user.id); done() }} />
         ) : state.kind === 'harness' ? (
           <>
-            <StepCount withImport={hasImport} step="harness" />
+            <StepCount step="harness" />
             <FirstRunHarness userId={user.id} initial={harnessPicked.current} onBack={backToProfile}
-              onDone={(selected) => { harnessPicked.current = selected; void prepareImport(selected, 'terminal').catch((error: unknown) => setState({ kind: 'unreadable', message: messageForUser(error) })) }} />
-          </>
-        ) : state.kind === 'import' ? (
-          <>
-            <StepCount withImport={hasImport} step="import" />
-            <FirstRunImport homes={importHomes} onBack={() => setState({ kind: 'harness' })} onDone={() => setState({ kind: afterImport.current })} />
+              onDone={(selected) => { harnessPicked.current = selected; setState({ kind: 'terminal' }) }} />
           </>
         ) : state.kind === 'terminal' ? (
           // 选完 Agent 之后(owner 10-27)。开关即时写本机设置;「继续」记下看过这一页,中途退出再进回到这里。
           <>
-            <StepCount withImport={hasImport} step="terminal" />
-            <FirstRunTerminal userId={user.id} onBack={() => setState({ kind: hasImport ? 'import' : 'harness' })} onDone={() => setState({ kind: 'tourChoice' })} />
+            <StepCount step="terminal" />
+            <FirstRunTerminal userId={user.id} onBack={() => setState({ kind: 'harness' })} onDone={() => setState({ kind: 'tourChoice' })} />
           </>
         ) : null}
       </div>
@@ -215,7 +188,7 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
       <div className="contents" inert={!productVisible || overlay} style={productVisible ? undefined : { display: 'none' }}>{children}</div>
       {!productVisible && wizard}
       {state.kind === 'done' && <FirstRunHints key={user.id} userId={user.id} />}
-      {state.kind === 'tourChoice' && <div className="ta-first-run ta-first-run-overlay" data-ta-scope data-testid="first-run-tour-choice"><div className="ta-onb"><StepCount withImport={hasImport} step="tourChoice" />
+      {state.kind === 'tourChoice' && <div className="ta-first-run ta-first-run-overlay" data-ta-scope data-testid="first-run-tour-choice"><div className="ta-onb"><StepCount step="tourChoice" />
         <FirstRunTourChoice userId={user.id} onBack={() => setState({ kind: 'terminal' })}
           onDone={(tour) => { rememberFirstRunDone(user.id); if (tour) startTour(null); else setState({ kind: 'done' }) }} /></div></div>}
       {state.kind === 'tour' && <ProductTour key={user.id} userId={user.id} steps={state.steps} start={state.start} onDone={done} />}

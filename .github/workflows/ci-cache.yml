@@ -109,7 +109,9 @@ jobs:
         name: Resolve JVM and instrumentation build dependencies without an emulator
         run: |
           bash scripts/build/android-gradle-build.sh testDebugUnitTest
-          bash scripts/build/android-gradle-build.sh assembleDebugAndroidTest
+          # Match the emulator job's app scope. The unqualified task also builds
+          # instrumentation APKs for generated Capacitor plugin modules.
+          bash scripts/build/android-gradle-build.sh :app:assembleDebugAndroidTest
           bash scripts/build/android-gradle-build.sh --stop
       - if: github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.gradle.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4

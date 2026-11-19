@@ -963,13 +963,14 @@ export async function updateRun(
   return run ?? null;
 }
 
-export async function findRunsStuckInCreatingSession(): Promise<Array<{ id: string }>> {
+export async function findRunsStuckInCreatingSession(): Promise<Array<{ id: string; agentSessionId: string | null }>> {
   const rows = await db
-    .select({ id: automationRuns.id, sessionId: sessions.id })
+    .select({ id: automationRuns.id, agentSessionId: automations.agentSessionId })
     .from(automationRuns)
     .leftJoin(sessions, eq(sessions.automationRunId, automationRuns.id))
+    .leftJoin(automations, eq(automations.id, automationRuns.automationId))
     .where(and(eq(automationRuns.status, 'creating_session'), isNull(sessions.id)));
-  return rows.map((r) => ({ id: r.id }));
+  return rows;
 }
 
 export async function findRunsStuckInLaunchingSession(): Promise<

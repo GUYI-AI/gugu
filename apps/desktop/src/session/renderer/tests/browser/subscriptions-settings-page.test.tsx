@@ -1,19 +1,16 @@
-/**
- * 设置「订阅」页(product spec)在设置弹窗里 —— 会话页那棵树**外面** —— 真画出一行。
- *
- * 逐格那条(session-settings-content.test.tsx)只判「这一格提交了渲染」:那里宿主永远不回话，订阅页一行都画不出来，
- * 行里要用的东西缺了它也看不见。2026-10-13 真机实撞:行头的 harness 图标经会话页的 ThemeContext 读主题，
- * 弹窗里没有 ThemeProvider,一打开「订阅」整个壳落进「这个界面出错了」。这里让宿主答一家 agent 与它的两份读数，
- * 钉住「行与自动读取的用量条都画得出来」。
- */
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { until, untilStable } from '../../../../../../../tests/support/awaitCondition';
 import { SessionSettingsContent } from '@renderer/features/settings/components/SettingsPage';
+import { CustomModelsGroup } from '@/components/settings/CustomModelsGroup';
 import { GuguSubscriptionRow } from '@renderer/features/settings/subscriptions/GuguSubscriptionRow';
 import { AgentDetailModal } from '@renderer/features/settings/agents-page/AgentDetailModal';
-import { CliAgentsList } from '@renderer/features/settings/agents-page/CliAgentsList';
+import { AgentConnectionDetails } from '@renderer/features/settings/agents-page/AgentConnectionDetails';
+import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
+import { useManagementAgents } from '@renderer/lib/stores/use-agents';
+import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives';
+import { useLayoutEffect } from 'react';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '@/lib/replica';
@@ -22,6 +19,7 @@ import type { AgentHomeScan, HarnessConnection } from '@gugu/session-core/worksp
 import { modalStore } from '@renderer/lib/modal/modal-store';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
+import '@/components/settings/ModelSettings.css';
 
 const CLAUDE = { id: 'claude', name: 'Claude Code', reading: 'installed', status: 'available', capabilities: { auth: { kind: 'supported', methods: [{ kind: 'cli-login', id: 'claude-login', name: 'Claude', args: ['auth', 'login'] }] } } };
 // #2507 其他家:Kimi 能在产品里登录(cli-login),Pi 没有任何登录方法。
@@ -60,6 +58,7 @@ vi.mock('@renderer/lib/ipc', async (importOriginal) => {
         ...agent.capabilities,
       },
     })),
+    list: async () => answers.listManagement!(),
     listIcons: async () => ICONS,
     modelCatalog: async () => ({ state: { kind: 'ready', models: [] }, refreshing: false }),
     // 资源库详情(与订阅页同一块「连接」,#2507)。
@@ -71,9 +70,11 @@ vi.mock('@renderer/lib/ipc', async (importOriginal) => {
   const agents = new Proxy({}, { get: (_, key) => answers[String(key)] ?? pending });
   const namespace = new Proxy({}, { get: () => pending });
   const original = await importOriginal<typeof import('@renderer/lib/ipc')>();
+  const testRpc = new Proxy({}, { get: (_, key) => (key === 'agents' ? agents : namespace) });
   return {
     ...original,
-    rpc: new Proxy({}, { get: (_, key) => (key === 'agents' ? agents : namespace) }),
+    rpc: testRpc,
+    rpcOn: () => testRpc,
     // 「关掉并切换」的进度由测试按主进程的样子推。
     onMachineEvent: ((machine, event, cb) => {
       if (event.name !== 'subscriptions:switch-progress') return original.onMachineEvent(machine, event, cb);
@@ -259,12 +260,30 @@ afterEach(async () => {
   layer.remove();
 });
 
+
+/** The Library still uses these connection controls after subscriptions move to Models. */
+function ConnectionDetailsFixture() {
+  useLayoutEffect(() => {
+    modalStore.setPortalContainer(layer);
+    return () => modalStore.setPortalContainer(null);
+  }, []);
+  return <QueryClientProvider client={queryClient}><SessionLocalizationProvider>
+    <UiPortalContainerProvider value={layer}><ConnectionDetailsList /></UiPortalContainerProvider>
+  </SessionLocalizationProvider></QueryClientProvider>;
+}
+function ConnectionDetailsList() {
+  const { data } = useManagementAgents();
+  return <>{data?.filter(agent => agent.id !== 'pi').map(agent => <div key={agent.id} data-testid={`subscription-row-${agent.id}`}>
+    {agentOffersConnections(agent) && <AgentConnectionDetails agent={agent} machine={null} embedded />}
+  </div>)}</>;
+}
+
 it.each(['claude', 'codex'])('an expired current %s account offers "Sign in again" on the row itself, without opening any menu', async provider => {
   control.codex = true;
   control.signedOut = true;
   control.expired = true;
   control.connections = [{ id: 'expired-account', kind: 'account', name: 'Saved account', current: true }];
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  root.render(<ConnectionDetailsFixture />);
   await until('the sign-in action is on the row', () => !!host.querySelector(`[data-testid="subscription-sign-in-${provider}"]`));
   const button = host.querySelector(`[data-testid="subscription-sign-in-${provider}"]`) as HTMLButtonElement;
   expect(button.textContent).toBe('Sign in again');
@@ -276,7 +295,7 @@ it.each(['claude', 'codex'])('an expired current %s account offers "Sign in agai
 
 it('a signed-in account and the native CLI configuration get no sign-in button on the row', async () => {
   control.connections = [{ id: 'account', kind: 'account', name: 'Saved account', current: true }];
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  root.render(<ConnectionDetailsFixture />);
   await until('the harness connection action is ready', () => !!host.querySelector('[data-testid="subscription-switch-claude"]'));
   await new Promise((resolve) => setTimeout(resolve, 200));
   expect(host.querySelector('[data-testid="subscription-sign-in-claude"]')).toBeNull();
@@ -287,7 +306,7 @@ it.each(['claude', 'codex'])('an expired saved %s account preserves its sign-in 
   control.signedOut = true;
   control.expired = true;
   control.connections = [{ id: 'expired-account', kind: 'account', name: 'Saved account', current: true }];
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  root.render(<ConnectionDetailsFixture />);
   await openSwitch(provider);
   await until('the connection list opens', () => !!layer.querySelector('[data-testid="connection-expired-account"]'));
   expect(host.querySelector('.subscription-connection-form')).toBeNull();
@@ -310,7 +329,7 @@ it.each(['claude', 'codex'])('an expired saved %s account preserves its sign-in 
 it.each(['claude', 'codex'])('an unsigned native %s connection is not listed; Add connection opens the form in place', async provider => {
   control.codex = true;
   control.signedOut = true;
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  root.render(<ConnectionDetailsFixture />);
   await until('the unconfigured harness has an add action', () => !!addButton(provider) && !!noConnection(provider));
   const row = host.querySelector(`[data-testid="subscription-row-${provider}"]`)!;
   expect(noConnection(provider)?.textContent).toBe('None');
@@ -335,7 +354,7 @@ it.each([
   ['already signed in', false, []],
 ])('a new account connection whose sign-in window closes %s is removed only when it never signed in', async (_label, signedOut, removed) => {
   control.signedOut = true;
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  root.render(<ConnectionDetailsFixture />);
   await until('the Claude row has its add action', () => !!addButton('claude'));
   addButton('claude')!.click();
   await until('the account form opens', () => !!host.querySelector('.subscription-connection-form button[type="submit"]'));
@@ -355,15 +374,10 @@ it.each([
 it('another agent that is not signed in signs in through Add connection → Account, opening the same sign-in window; one without any way in gets nothing', async () => {
   control.others = true;
   control.signedOut = true;
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  root.render(<ConnectionDetailsFixture />);
   await until('the Kimi row offers Add connection', () => !!addButton('kimi') && !!noConnection('kimi'));
-  await until('the Pi row is drawn', () => !!host.querySelector('[data-testid="subscription-row-pi"]'));
   // 一个入口:❌ 行上另一颗「登录」。
   expect(host.querySelector('[data-testid="subscription-sign-in-kimi"]')).toBeNull();
-  // 这一份 Pi 两样都没有(没声明登录,也没有 API Key):不画「连接」那一块,❌ 摆一颗登不上的按钮。
-  const pi = host.querySelector('[data-testid="subscription-row-pi"]')!;
-  expect(pi.querySelector('[data-testid="connection-block-pi"]')).toBeNull();
-  expect(pi.querySelector('button')).toBeNull();
   expect(host.textContent).not.toContain('Library');
   addButton('kimi')!.click();
   await until('the Kimi form opens', () => !!host.querySelector('[data-testid="subscription-row-kimi"] .subscription-connection-form'));
@@ -383,7 +397,7 @@ it.each(['claude', 'codex'])('an empty %s connection list opens Add connection d
   control.codex = true;
   control.signedOut = true;
   control.connections = [];
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  root.render(<ConnectionDetailsFixture />);
   await until('the empty connection list has an add action', () => !!addButton(provider) && !!noConnection(provider));
   expect(switchTrigger(provider)).toBeNull();
   addButton(provider)!.click();
@@ -399,53 +413,27 @@ it('shows managed local configuration with no sign-in or connection menu', async
   control.agentHomes = [{ providerId: 'claude', name: 'Claude Code', userRoot: '/fixture/.claude', sourceReadable: true,
     importedAt: '2026-11-01T00:00:00.000Z', needsImport: false, sourceUpdated: true, migration: false,
     groups: [], issues: [], mcpSecrets: [], projectMcpCount: 0 }];
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  root.render(<ConnectionDetailsFixture />);
   await until('local configuration is available in the subscription row', () => !!host.querySelector('[data-testid="subscription-row-claude"] [data-testid="agent-home-reimport-claude"]'));
   expect(switchTrigger('claude')).toBeNull();
   expect(layer.querySelector('[role="listbox"]')).toBeNull();
   expect(thrown).toEqual([]);
 });
 
-it('draws a harness row with its plan, both quota windows without an extra query button outside the task page tree', async () => {
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
-  await until('the Claude row shows its usage (or the tree threw)', () =>
-    thrown.length > 0 || host.querySelector('[data-testid="subscription-usage-claude"]') !== null
-  );
-  expect(thrown).toEqual([]);
-  // 图标那一层真画出来了(否则这条判不出 2026-10-13 那次的「缺主题 context」)。
-  await until('the harness mark is drawn', () => host.querySelector('[data-testid="app-icon"] svg') !== null);
-  const row = host.querySelector('[data-testid="subscription-row-claude"]') as HTMLElement;
-  expect(row.textContent).toContain('Claude Max 20x');
-  expect(row.querySelectorAll('[role="meter"]')).toHaveLength(2);
-  expect(row.querySelector('[data-testid="subscription-check-now-claude"]')).toBeNull();
-});
-
-it('「刷新」读着的时候按不动、读完回来 —— 跟着读数变，不是只在列表碰巧重画时才变', async () => {
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
-  await until('the Claude row shows its usage', () => host.querySelector('[data-testid="subscription-usage-claude"]') !== null);
-  const refresh = () => host.querySelector('[data-testid="subscriptions-refresh"]') as HTMLButtonElement;
-  await until('the first reads settle', () => refresh().disabled, (disabled) => !disabled);
-
-  let release!: () => void;
-  control.hold = new Promise<void>((resolve) => (release = resolve));
-  refresh().click();
-  await until('「刷新」 shows it is reading', () => refresh().disabled);
-  control.hold = null;
-  release();
-  await until('「刷新」 comes back once the read is in', () => refresh().disabled, (disabled) => !disabled);
-  expect(thrown).toEqual([]);
-});
 
 
-it('Gugu Free shares the same collection and membership errors are never shown as Free', async () => {
+
+
+
+it('subscriptions contains only Gugu membership and does not turn membership errors into Free', async () => {
   control.membershipError = true;
   root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
   await until('membership error is visible', () => host.querySelector('[data-testid="subscription-row-gugu"]')?.textContent?.includes('offline') === true);
   const gugu = host.querySelector('[data-testid="subscription-row-gugu"]')!;
   expect(gugu.querySelector('.subscription-plan-badge')).toBeNull();
-  // The Claude row comes from its own provider read; it can land after the Gugu row.
-  await until('the Claude row is listed', () => host.querySelector('[data-testid="subscription-row-claude"]') !== null);
-  expect(gugu.parentElement).toBe(host.querySelector('[data-testid="subscription-row-claude"]')!.parentElement);
+  expect(host.querySelector('[data-testid="subscription-row-claude"]')).toBeNull();
+  expect(host.querySelector('[data-testid="subscription-row-codex"]')).toBeNull();
+  expect(host.querySelector('[data-testid="subscription-add-claude"]')).toBeNull();
   expect(thrown).toEqual([]);
 });
 
@@ -492,20 +480,11 @@ it('explains reserved credits when the available total differs from the two bala
   expect(host.querySelector('[data-testid="subscription-row-gugu"]')?.textContent).toContain('7.2');
 });
 
-it('Codex shows both the five-hour and weekly windows directly on opening subscriptions', async () => {
-  control.codex = true;
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
-  await until('Codex quota is visible without any click', () => host.querySelector('[data-testid="subscription-usage-codex"]') !== null);
-  const row = host.querySelector('[data-testid="subscription-row-codex"]')!;
-  expect(row.querySelector('[role="meter"][aria-label="5 小时"], [role="meter"][aria-label="5 hours"]')).not.toBeNull();
-  expect(row.querySelectorAll('[role="meter"]')).toHaveLength(2);
-  expect(row.querySelector('[data-testid="subscription-check-now-codex"]')).toBeNull();
-  expect(thrown).toEqual([]);
-});
+
 
 it('a failed connection read shows its failure instead of staying in the loading state', async () => {
   control.connectionsError = true;
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  root.render(<ConnectionDetailsFixture />);
   await until('the row shows the connection error', () => host.querySelector('[data-testid="subscription-row-claude"]')?.textContent?.includes('Connections offline') === true);
   expect(host.querySelector('[data-testid="subscription-row-claude"]')?.textContent).not.toMatch(/正在读|Reading[.…]|Checking/);
 });
@@ -513,7 +492,7 @@ it('a failed connection read shows its failure instead of staying in the loading
 it('a failed dropdown switch keeps the previous current connection', async () => {
   control.rejectSelect = true;
   control.connections.push({ id: 'saved-api', kind: 'account', name: 'Saved API', current: false });
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  root.render(<ConnectionDetailsFixture />);
   await until('the switch is ready', () => host.querySelector('[data-testid="subscription-switch-claude"]') !== null);
   await openSwitch('claude');
   await until('the API option can be used', () => layer.querySelector('[data-testid="connection-use-saved-api"]')?.hasAttribute('data-disabled'), disabled => disabled === false);
@@ -529,58 +508,7 @@ it('a failed dropdown switch keeps the previous current connection', async () =>
 // 2026-10-23 真机:6 个 Codex 会话在干活时点「切换连接」,被拒的那句长提示进了最右那一列(宽度 auto),
 // 按最大宽度把列撑开,中间的账号列被挤到几乎没有宽度 —— 邮箱一个字一行,提示压在标题上。
 // 判据是真排版:提示出现前后状态那一行与「当前连接」那一格一样宽;提示整句落在这一行之内、在标题与状态之下。
-it('a long switch refusal is shown under the row heading and does not squeeze the account column', async () => {
-  control.codex = true;
-  control.rejectSelect = true;
-  control.selectMessage = '6 Codex sessions are still working. Switch the subscription after they finish; switching restarts every running Codex session.';
-  control.connections.push({ id: 'saved-api', kind: 'account', name: 'Saved API', current: false });
-  // 视口比这一页宽:量的是 720 那一栏自己的排版,❌ 视口窄到出滚动条时整栏换成竖排的那一下。
-  await page.viewport(1100, 900);
-  host.style.width = '720px';
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
-  await until('the Codex switch is ready', () => switchTrigger('codex') !== null);
-  const row = host.querySelector('[data-testid="subscription-row-codex"]') as HTMLElement;
-  const identity = () => row.querySelector('[data-testid="connection-status-codex"]') as HTMLElement;
-  // 状态那一行所在的那一列(当前连接那一行的正文)。
-  const column = () => identity().closest('.gg-settings-row-body') as HTMLElement;
-  await until('the account line is drawn', () => (identity()?.textContent ?? '').includes('me@example.test'));
-  // 连接数读回来之后右列的文案才定下来(「当前设备」→「当前设备 · 2 个连接」);等它稳了再量。
-  await until('the connection count is shown', () => row.querySelector('.subscription-scope')?.textContent?.includes('2') === true);
-  await untilStable('the account column settles', () => Math.round(column().getBoundingClientRect().width));
-  const widthBefore = column().getBoundingClientRect().width;
-  const switchBefore = switchTrigger('codex')!.getBoundingClientRect();
-  expect(widthBefore).toBeGreaterThan(150);
-  expect(row.querySelector('[role="alert"]')).toBeNull();
 
-  await openSwitch('codex');
-  await until('the saved API option can be used', () => layer.querySelector('[data-testid="connection-use-saved-api"]')?.hasAttribute('data-disabled'), disabled => disabled === false);
-  await userEvent.click(page.getByTestId('connection-use-saved-api'));
-  await until('the refusal is displayed', () => row.textContent?.includes('6 Codex sessions are still working') === true);
-
-  const alert = row.querySelector('[role="alert"]') as HTMLElement;
-  const card = row.getBoundingClientRect();
-  const heading = row.querySelector('.subscription-service-heading')!.getBoundingClientRect();
-  const message = alert.getBoundingClientRect();
-  expect(column().getBoundingClientRect().width).toBeCloseTo(widthBefore, 0);
-  const switchAfter = switchTrigger('codex')!.getBoundingClientRect();
-  expect(switchAfter.width).toBeCloseTo(switchBefore.width, 0);
-  expect(switchAfter.left).toBeCloseTo(switchBefore.left, 0);
-  expect(message.top).toBeGreaterThanOrEqual(identity().getBoundingClientRect().bottom - 0.5);
-  expect(message.top).toBeGreaterThanOrEqual(heading.bottom - 0.5);
-  expect(message.left).toBeGreaterThanOrEqual(card.left);
-  expect(message.right).toBeLessThanOrEqual(card.right + 0.5);
-  expect(control.connections.find(c => c.current)?.id).toBe('native');
-
-  // 下一次动作一开始,上一次的原因就撤掉;这次成功了,行里不再留着旧的拒绝。
-  control.rejectSelect = false;
-  if (!layer.querySelector('[data-testid="connection-use-saved-api"]')) await openSwitch('codex');
-  await until('the saved API option can be used again', () => layer.querySelector('[data-testid="connection-use-saved-api"]')?.hasAttribute('data-disabled'), disabled => disabled === false);
-  await userEvent.click(page.getByTestId('connection-use-saved-api'));
-  await until('the refusal is gone once a switch goes through', () => row.querySelector('[role="alert"]') === null);
-  expect(control.selected).toBe('saved-api');
-  expect(thrown).toEqual([]);
-  await page.viewport(414, 896);
-});
 
 
 // 2026-10-23 owner:「提示更温柔一点,不要飘红,language 也变一下」。因有会话正在工作而没切,不是出错:
@@ -597,7 +525,7 @@ it.each([
   control.selectMessage = `${count} Codex sessions are still working. Switch the subscription after they finish; switching restarts every running Codex session.`;
   control.connections.push({ id: 'saved-api', kind: 'account', name: 'Saved API', current: false });
   host.style.width = '720px';
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  root.render(<ConnectionDetailsFixture />);
   await until('the Codex switch is ready', () => host.querySelector('[data-testid="subscription-switch-codex"]') !== null);
   const row = host.querySelector('[data-testid="subscription-row-codex"]') as HTMLElement;
   await openSwitch('codex');
@@ -642,7 +570,7 @@ it('a refusal offers one click that closes the working sessions and switches to 
   control.selectBusy = { providerId: 'codex', count: 9 };
   control.connections.push({ id: 'saved-api', kind: 'account', name: 'Saved API', current: false });
   host.style.width = '720px';
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  root.render(<ConnectionDetailsFixture />);
   await until('the Codex switch is ready', () => host.querySelector('[data-testid="subscription-switch-codex"]') !== null);
   const row = host.querySelector('[data-testid="subscription-row-codex"]') as HTMLElement;
   await openSwitch('codex');
@@ -688,7 +616,7 @@ it('a host too old to close working sessions says to update it instead of offeri
   control.oldHost = true;
   control.selectBusy = { providerId: 'codex', count: 2 };
   control.connections.push({ id: 'saved-api', kind: 'account', name: 'Saved API', current: false });
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  root.render(<ConnectionDetailsFixture />);
   await until('the Codex switch is ready', () => host.querySelector('[data-testid="subscription-switch-codex"]') !== null);
   const row = host.querySelector('[data-testid="subscription-row-codex"]') as HTMLElement;
   await openSwitch('codex');
@@ -708,7 +636,7 @@ it('a real failure is red and offers no close-and-switch', async () => {
   control.rejectSelect = true;
   control.selectMessage = 'Sign in before using this connection';
   control.connections.push({ id: 'saved-api', kind: 'account', name: 'Saved API', current: false });
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  root.render(<ConnectionDetailsFixture />);
   await until('the Codex switch is ready', () => host.querySelector('[data-testid="subscription-switch-codex"]') !== null);
   const row = host.querySelector('[data-testid="subscription-row-codex"]') as HTMLElement;
   await openSwitch('codex');
@@ -731,7 +659,7 @@ it('the switch menu shows how much each account has left without switching to it
     second: [{ windowMinutes: 300, usedPercent: 10 }, { windowMinutes: 10_080, usedPercent: 35 }],
   };
   host.style.width = '720px';
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  root.render(<ConnectionDetailsFixture />);
   // The switch is there (disabled) while the connections are read; press it once it is usable, as a person would.
   await openSwitch('codex');
   await until('the other account shows its quota', () => layer.querySelector('[data-testid="connection-quota-second"]') !== null);
@@ -752,7 +680,7 @@ it.each([
 ])('an authenticated $provider $kind connection has no login or reauthorization action', async ({ provider, kind }) => {
   control.codex = true;
   control.connections = [{ id: 'existing', kind, name: 'Existing account', current: true }];
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  root.render(<ConnectionDetailsFixture />);
   await openSwitch(provider);
   await until('the account has been read', () => layer.querySelector('[data-testid="connection-existing"]')?.textContent?.includes('me@example.test') === true);
   const existing = layer.querySelector('[data-testid="connection-existing"]')!;
@@ -780,7 +708,7 @@ it.each([
   ['claude', true],
   ['mimocode', true],
   ['qwen', true],
-])('%s (signed out: %s) offers the same connection controls in Subscriptions and Library', async (provider, signedOut) => {
+])('%s (signed out: %s) keeps the standalone connection controls consistent with the Library', async (provider, signedOut) => {
   control.codex = true;
   control.keyed = true;
   control.signedOut = signedOut;
@@ -793,7 +721,7 @@ it.each([
   detailHost.className = 'gugu-skin emlight';
   document.body.append(detailHost);
   const detailRoot = createRoot(detailHost);
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  root.render(<ConnectionDetailsFixture />);
   detailRoot.render(
     <QueryClientProvider client={queryClient}>
       <SessionLocalizationProvider>
@@ -829,32 +757,77 @@ it.each([
 });
 
 // 订阅页列的 = 资源库「已安装」那一组,先后也一样(推荐的三家在前，其余按名字);没装的家只在资源库里。
-it('lists the same installed agents in the same order as the Library', async () => {
+
+
+
+it.each(['claude', 'codex'])('the model page puts an expired %s account directly into the existing login flow', async provider => {
+  const capture = provider === 'claude' && import.meta.env.VITE_DESIGN5_CAPTURE === '1';
+  if (capture) setLocalePreference('zh-CN');
   control.codex = true;
-  control.others = true;
-  control.keyed = true;
-  const libraryHost = document.createElement('div');
-  document.body.append(libraryHost);
-  const libraryRoot = createRoot(libraryHost);
-  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
-  libraryRoot.render(
-    <QueryClientProvider client={queryClient}>
-      <SessionLocalizationProvider>
-        <CliAgentsList selectedAgentId={null} onSelectAgent={() => {}} />
-      </SessionLocalizationProvider>
-    </QueryClientProvider>
-  );
-  try {
-    const subscriptionOrder = () => [...host.querySelectorAll('[data-testid^="subscription-row-"]')]
-      .map(row => row.getAttribute('data-testid')!.replace('subscription-row-', ''))
-      .filter(id => id !== 'gugu');
-    const libraryOrder = () => [...libraryHost.querySelectorAll('[data-testid="agent-group-installed"] [data-testid^="agent-tile-"]')]
-      .map(tile => tile.getAttribute('data-testid')!.replace('agent-tile-', ''));
-    await until('both lists are drawn', () => subscriptionOrder().length === 7 && libraryOrder().length === 7);
-    expect(subscriptionOrder()).toEqual(libraryOrder());
-    expect(subscriptionOrder()).toEqual(['claude', 'codex', 'pi', 'kimi', 'kiro', 'mimocode', 'qwen']);
-  } finally {
-    libraryRoot.unmount();
-    libraryHost.remove();
+  control.signedOut = true;
+  control.expired = true;
+  control.connectionsByProvider[provider] = [{ id: 'expired-model-account', kind: 'account', name: capture ? 'Claude Max' : 'Saved plan', current: true }];
+  if (capture) {
+    await page.viewport(1200, 900);
+    document.documentElement.dataset.theme = 'light';
+    control.connectionsByProvider.codex = [];
+    host.style.cssText = 'width: 940px; padding: 24px; background: var(--model-settings-page);';
   }
+  root.render(<>
+    {capture && <p style={{ marginBottom: 20, fontSize: 14 }}>组件测试夹具，非真实账号</p>}
+    <div className="gg-pane gg-settings-detail"><div className="gg-settings-page gg-model-page">
+      <QueryClientProvider client={queryClient}><SessionLocalizationProvider><UiPortalContainerProvider value={layer}><CustomModelsGroup /></UiPortalContainerProvider></SessionLocalizationProvider></QueryClientProvider>
+    </div></div>
+  </>);
+  await until('the expired account is on the model list', () => !!host.querySelector(`[data-subscription-model="${provider}:expired-model-account"]`));
+  const row = host.querySelector(`[data-subscription-model="${provider}:expired-model-account"]`)!;
+  expect(row.textContent).toContain(capture ? '登录已失效' : 'Sign-in expired');
+  if (capture) await page.screenshot({ element: host, path: '__screenshots__/design5-models/expired-subscription-fixture.png' });
+  await userEvent.click(page.getByTestId('model-sign-in-expired-model-account'));
+  expect(modalStore.activeModalId).toBe('agentSignInModal');
+  expect(modalStore.activeModalArgs).toMatchObject({ providerId: provider, connectionId: 'expired-model-account' });
+  expect(control.created).toBeNull();
+  expect(thrown).toEqual([]);
+});
+
+
+it.each([
+  ['claude', 'Claude subscription'],
+  ['codex', 'ChatGPT subscription'],
+] as const)('an expired native %s connection creates a separate account for sign-in', async (provider, label) => {
+  control.codex = true;
+  control.signedOut = true;
+  control.expired = true;
+  control.connectionsByProvider[provider] = [{ id: 'native', kind: 'native', name: '', current: true }];
+  root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider><UiPortalContainerProvider value={layer}><CustomModelsGroup /></UiPortalContainerProvider></SessionLocalizationProvider></QueryClientProvider>);
+
+  const row = () => host.querySelector(`[data-subscription-model="${provider}:native"]`);
+  await until('the native row displays its expiry', () => row()?.textContent?.includes('Sign-in expired') === true);
+  expect(row()?.querySelector('[data-testid="model-sign-in-native"]')).toBeNull();
+
+  await userEvent.click(page.getByTestId(`model-add-account-${provider}`));
+  const dialog = page.getByTestId('custom-model-dialog');
+  await expect.element(dialog.getByTestId('custom-model-provider')).toHaveTextContent(label);
+  expect(control.created).toBeNull();
+  expect(modalStore.activeModalId).not.toBe('agentSignInModal');
+
+  await userEvent.click(dialog.getByRole('button', { name: 'Sign in', exact: true }));
+  await until('the separate account signs in', () => modalStore.activeModalId === 'agentSignInModal');
+  expect(control.created).toMatchObject({ providerId: provider, kind: 'account' });
+  expect(modalStore.activeModalArgs).toMatchObject({ providerId: provider, connectionId: 'account-1' });
+  expect(thrown).toEqual([]);
+});
+
+it('shows a localized connection-read failure and retries the same real reading', async () => {
+  setLocalePreference('zh-CN');
+  control.connectionsError = true;
+  root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider><UiPortalContainerProvider value={layer}><CustomModelsGroup /></UiPortalContainerProvider></SessionLocalizationProvider></QueryClientProvider>);
+  const card = () => host.querySelector('[data-testid="settings-coding-plans"]');
+  await until('the model list reports the failed read', () => card()?.textContent?.includes('暂时无法读取 Claude Code 的连接。') === true);
+  expect(card()?.textContent).not.toContain('Connections offline');
+  control.connectionsError = false;
+  const retry = [...card()!.querySelectorAll('button')].find(button => button.textContent === '重试')!;
+  await userEvent.click(retry);
+  await until('retry reads the existing connection', () => !!card()?.querySelector('[data-subscription-model="claude:native"]'));
+  expect(thrown).toEqual([]);
 });

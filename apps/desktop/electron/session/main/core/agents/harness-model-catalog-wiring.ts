@@ -30,7 +30,7 @@ const log = createLogger('harness-model-catalog');
 
 // Old successful catalogs may have silently discarded every grouped choice.
 // Re-probe once instead of keeping those empty results for the ready-cache TTL.
-const STORAGE_KEY = 'harnessModelCatalogs.groupedSelect.v1';
+const STORAGE_KEY = 'harnessModelCatalogs.aiReview.v1';
 
 let wired = false;
 
@@ -131,7 +131,7 @@ export async function resolveHarnessSpawnIdentity(
     // 但目录照它读 ⇒ 换一把连接就得作废。只在选了 API Key 连接时并进来,其余家的身份与改动前逐字相同。
     const connection = runContext.vendorKeyAccount ? { connection: runContext.connectionId ?? null } : {};
     // `host`: gugu's own bridge code runs in the probe, so an update must re-probe.
-    return JSON.stringify({ cli, file: diskFileStamp(cli), host: diskFileStamp(process.execPath), env, ...connection });
+    return JSON.stringify({ cli, cliVersion: runContext.cliVersion, file: diskFileStamp(cli), host: diskFileStamp(process.execPath), env, ...connection });
   } catch {
     return null;
   }
@@ -196,6 +196,9 @@ export async function resolveHarnessModelCatalogSpawn(
     // 那样这一家的独立配置根会被 provider 的同名命令 env 顶掉,探到的清单就是另一个账号的。
     // 声明了自有配置根的家,ACP 腿读的是那份根而不是用户的默认根 ⇒ 探 ACP 腿时指到同一处(#6211),
     // 叠在最上面,与真会话里物化器那份 env 的位置相同;探终端腿时不叠,读用户自己的根(#6246)。
+    ...(plugin.capabilities.autoApprove.modes?.['ai-review'] ? { reviewPermission: {
+      id: plugin.capabilities.autoApprove.modes['ai-review'].id, cliVersion: runContext.cliVersion, filter: acp.filterPermissionConfig,
+    } } : {}),
     env: composeAgentSpawnEnv(runContext, {
       providerEnv: spawn.env,
       hostInjections: [legConfigRootEnv(pluginId, leg)],

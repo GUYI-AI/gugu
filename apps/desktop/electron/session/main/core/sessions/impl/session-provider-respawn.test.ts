@@ -728,7 +728,7 @@ describe('conversation provider respawn state', () => {
       permissionMode: 'read-only',
     }));
     const spawnArgs = spawnLocalPty.mock.calls[0]?.[0]?.args as string[];
-    expect(threadStart).toEqual({ approvalPolicy: 'never', sandbox: 'read-only' });
+    expect(threadStart).toEqual({ approvalPolicy: 'never', sandbox: 'read-only', approvalsReviewer: 'user' });
     expect(spawnArgs.join(' ')).not.toMatch(/default_permissions|approval_policy|sandbox_mode/);
   });
 

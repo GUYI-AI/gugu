@@ -26,6 +26,15 @@ export class AgentHomeNotImported extends Error {
     this.code = options?.choiceRequired ? AGENT_HOME_IMPORT_REQUIRED : AGENT_HOME_NOT_IMPORTED;
   }
 }
+export type AgentHomeImportStage = 'configuration' | 'history' | 'sign-in' | 'marker';
+
+export class AgentHomeMigrationFailure extends Error {
+  constructor(readonly stage: AgentHomeImportStage, cause: unknown) {
+    super(cause instanceof Error ? cause.message : 'Harness configuration migration failed', { cause });
+    this.name = 'AgentHomeMigrationFailure';
+  }
+}
+
 export type AgentHomeImportIssue = {
   path: string;
   reason: 'symlink' | 'sensitive' | 'database' | 'tooLarge' | 'sourceChanged' | 'unreadable';
@@ -39,6 +48,7 @@ export type AgentHomeMarker = {
   skipped?: true;
   terminalNeedsSignIn?: boolean;
   oldSessionsSkipped?: number;
+  upgradeIssues?: AgentHomeImportIssue[];
   upgradeSignIn?: 'copied' | 'relogin';
   legacyBaseline?: boolean;
 };
@@ -132,6 +142,10 @@ async function makeDirectory(home: ResolvedAgentHome, path: string): Promise<voi
   }
 }
 
+export function initializeManagedAgentHome(home: ResolvedAgentHome): Promise<void> {
+  return makeDirectory(home, home.configRoot);
+}
+
 /** One handle and bounded reads; never reopen the source by path to copy it. */
 async function snapshot(root: string, path: string, limit = FILE_LIMIT): Promise<Buffer | null> {
   try {
@@ -166,6 +180,18 @@ function issue(path: string, error: unknown): AgentHomeImportIssue {
   return { path, reason: code === 'ELOOP' ? 'symlink' : code === 'EFBIG' ? 'tooLarge' : code === 'ESTALE' ? 'sourceChanged' : 'unreadable' };
 }
 
+function importDeclarations(home: ResolvedAgentHome, groups?: ReadonlySet<AgentHomeGroupId>) {
+  return home.importGroups.filter((group) => !groups || groups.has(group.id)).flatMap((group) =>
+    group.paths.map((path) => {
+      const spec = normalize(path);
+      return { group: group.id, spec, path: localPath(spec.path, true) };
+    }));
+}
+
+function matchesPath(path: string, declared: string): boolean {
+  return path === declared || path.startsWith(`${declared}/`);
+}
+
 async function collect(home: ResolvedAgentHome, options: {
   root?: string;
   strict?: (item: { group: AgentHomeGroupId; id: string }) => boolean;
@@ -177,7 +203,7 @@ async function collect(home: ResolvedAgentHome, options: {
   const mcpNames = new Set<string>();
   let projectMcpCount = 0;
   let bytesRead = 0, newestMtime = 0;
-  const declarations = home.importGroups.flatMap((group) => group.paths.map((path) => ({ group: group.id, spec: normalize(path) })));
+  const declarations = importDeclarations(home, options.groups);
   const seen = new Set<string>();
   const visit = async (path: string, boundary: string, depth: number): Promise<void> => {
     if (seen.has(path)) return;
@@ -194,7 +220,6 @@ async function collect(home: ResolvedAgentHome, options: {
       return disk.lstat(full);
     })().catch((error: unknown) => {
       if (!missing(error)) {
-        if (!path && options.strict) throw new Error('Cannot read the configuration root; repair the directory and retry the import');
         issues.push(issue(path, error));
       }
       return null;
@@ -204,22 +229,18 @@ async function collect(home: ResolvedAgentHome, options: {
     if (stat.isDirectory()) {
       const children = await disk.readdir(full).catch((error: unknown) => {
         if (!missing(error)) {
-          if (!path && options.strict) throw new Error('Cannot read the configuration root; repair the directory and retry the import');
-          issues.push(issue(path, error));
+            issues.push(issue(path, error));
         }
         return [];
       });
-      for (const name of children.sort()) await visit(path ? `${path}/${name}` : name, boundary, depth + 1);
+      for (const name of children.sort()) await visit(`${path}/${name}`, boundary, depth + 1);
       return;
     }
     if (!stat.isFile()) return;
     const snapshots: SnapshotItem[] = [];
-    const matches = declarations.filter(({ spec }) => path === localPath(spec.path, true) || path.startsWith(`${localPath(spec.path, true)}/`));
-    const selected = (matches.length ? matches : [{ group: 'settings' as const, spec: { path } }])
-      .filter(({ group }) => !options.groups || options.groups.has(group));
-    if (!selected.length) return;
-    const declared = matches.some(({ spec }) => spec.path === path);
-    const strict = declared && selected.some(({ group, spec }) => spec.path === path && options.strict?.({ group, id: itemId(path, spec) }));
+    const selected = declarations.filter((entry) => matchesPath(path, entry.path));
+    const declared = selected.some((entry) => entry.path === path);
+    const strict = selected.some((entry) => entry.path === path && options.strict?.({ group: entry.group, id: itemId(path, entry.spec) }));
     try {
       if (stat.size > FILE_LIMIT || bytesRead + stat.size > ROOT_LIMIT) { issues.push({ path, reason: 'tooLarge' }); return; }
       const content = await snapshot(boundary, full);
@@ -268,17 +289,18 @@ async function collect(home: ResolvedAgentHome, options: {
     // Keep at most one source file in memory even when the root approaches its 2 GiB limit.
     if (snapshots.length) await options.consume?.(snapshots);
   };
-  await visit('', options.root ?? await realSource(home.userConfigRoot), 0);
-  const parent = await realSource(dirname(home.userConfigRoot));
-  for (const { spec } of declarations) {
-    if (spec.path.startsWith('../')) await visit(localPath(spec.path, true), parent, 0);
-  }
-  return { items, issues, newestMtime, mcpSecrets: [...mcpSecrets], mcpNames: [...mcpNames], projectMcpCount, bytesRead };
+  const root = options.root ?? await realSource(home.userConfigRoot);
+  const paths = [...new Set(declarations.map((entry) => entry.path))].sort();
+  const parent = paths.some((path) => path.startsWith('../')) ? await realSource(dirname(home.userConfigRoot)) : root;
+  for (const path of paths) await visit(path, path.startsWith('../') ? parent : root, 0);
+  return { items, issues, newestMtime, mcpSecrets: [...mcpSecrets], mcpNames: [...mcpNames], projectMcpCount };
 }
 
 export async function readAgentHomeMarker(home: ResolvedAgentHome): Promise<AgentHomeMarker | null> {
   try {
-    const bytes = await snapshot(home.shadowHome, join(home.shadowHome, AGENT_HOME_MARKER));
+    const markerPath = join(home.shadowHome, AGENT_HOME_MARKER);
+    if (!(await disk.lstat(markerPath)).isFile()) throw new Error('Managed configuration import record is not a file');
+    const bytes = await snapshot(home.shadowHome, markerPath);
     if (!bytes) return null;
     await makeDirectory(home, home.configRoot);
     const value: unknown = JSON.parse(bytes.toString('utf8'));
@@ -383,47 +405,106 @@ export async function scanAgentHome(home: ResolvedAgentHome) {
     mcpSecrets, mcpNames, projectMcpCount,
   };
 }
-export async function importAgentHome(home: ResolvedAgentHome, options: {
+type AgentHomeImportOptions = {
   groups: ReadonlySet<AgentHomeGroupId>; now?: Date; migratedFrom?: 'shared';
   historyPaths?: readonly string[];
   skip?: boolean;
-  beforeCommit?: (issues: readonly AgentHomeImportIssue[]) => Promise<Pick<AgentHomeMarker, 'upgradeSignIn' | 'terminalNeedsSignIn' | 'oldSessionsSkipped'> | void>;
-}): Promise<{ marker: AgentHomeMarker; issues: AgentHomeImportIssue[] }> {
-  const existing = await readAgentHomeMarker(home);
-  if (existing && (!existing.skipped || !options.groups.size)) return { marker: existing, issues: [] };
-  if (existing?.skipped) {
-    const { entries } = await diffAgentHome(home);
-    const conflict = entries.find((entry) => options.groups.has(entry.group) && entry.state === 'bothChanged');
-    if (conflict) throw new Error(`Managed configuration already differs at ${conflict.path}; review the differences in Settings → Subscriptions before importing`);
+  upgradeSummary?: (issues: readonly AgentHomeImportIssue[]) => Pick<AgentHomeMarker, 'oldSessionsSkipped' | 'upgradeIssues'>;
+  afterCommit?: () => Promise<Pick<AgentHomeMarker, 'upgradeSignIn' | 'terminalNeedsSignIn'> | void>;
+};
+
+async function stageAgentHomeUpgrade<T>(home: ResolvedAgentHome, apply: (target: ResolvedAgentHome) => Promise<T>): Promise<T> {
+  const parent = dirname(home.shadowHome);
+  const backup = `${home.shadowHome}.gugu-upgrade-previous`;
+  const stat = (path: string) => disk.lstat(path).catch((error: unknown) => {
+    if (missing(error)) return null;
+    throw error;
+  });
+  let current = await stat(home.shadowHome);
+  const previous = await stat(backup);
+  if (previous) {
+    if (current || !previous.isDirectory()) throw new Error('Managed configuration has an unresolved upgrade backup');
+    await disk.rename(backup, home.shadowHome);
+    current = previous;
   }
-  await makeDirectory(home, home.configRoot);
-  let copied = 0;
-  const root = options.groups.size || options.historyPaths?.length ? await realSource(home.userConfigRoot) : home.userConfigRoot;
-  const { items, issues } = options.groups.size ? await collect(home, {
-    root, groups: options.groups, strict: () => true,
-    consume: async (snapshots) => {
-      for (const entries of byTarget(snapshots)) {
-        const mode = existing?.skipped ? 'repair' : options.migratedFrom === 'shared' ? 'upgrade' : 'import';
-        await writeItem(home, entries, mode);
-        copied += (await disk.stat(join(home.configRoot, entries[0]!.target))).size;
-      }
-    },
-  }) : { items: [] as Item[], issues: [] as AgentHomeImportIssue[] };
-  if (options.historyPaths?.length) issues.push(...await copyAgentHomeHistory(home, options.historyPaths, copied, root));
-  const upgrade = await options.beforeCommit?.(issues);
-  const marker: AgentHomeMarker = {
-    importedAt: (options.now ?? new Date()).toISOString(), sourceRoot: home.userConfigRoot,
-    groups: [...options.groups], files: Object.fromEntries(items.map((item) => [item.id, item.hash])),
-    ...(options.skip ? { skipped: true as const } : {}),
-    ...(options.migratedFrom ? { migratedFrom: options.migratedFrom } : {}),
-    ...(upgrade ?? {}),
-  };
-  await writeMarker(home, marker);
-  return { marker, issues };
+  if (current && !current.isDirectory()) throw new Error('Managed configuration root is not a directory');
+  await disk.mkdir(parent, { recursive: true, mode: 0o700 });
+  const temporary = await disk.mkdtemp(join(parent, '.gugu-upgrade-'));
+  try {
+    if (current) await disk.cp(home.shadowHome, temporary, {
+      recursive: true, dereference: false, verbatimSymlinks: true, mode: constants.COPYFILE_FICLONE,
+    });
+    const result = await apply({ ...home, shadowHome: temporary, configRoot: join(temporary, relative(home.shadowHome, home.configRoot)) });
+    const latest = await stat(home.shadowHome);
+    if (current?.ino !== latest?.ino || current?.dev !== latest?.dev) throw new Error('Managed configuration root changed during upgrade');
+    if (current) await disk.rename(home.shadowHome, backup);
+    try { await disk.rename(temporary, home.shadowHome); }
+    catch (error) {
+      if (current) await disk.rename(backup, home.shadowHome);
+      throw error;
+    }
+    if (current) await disk.rm(backup, { recursive: true, force: true }).catch(() => undefined);
+    return result;
+  } finally {
+    await disk.rm(temporary, { recursive: true, force: true }).catch(() => undefined);
+  }
 }
 
-/** Existing Gugu transcripts may exceed 50 MiB; stream them under the same 2 GiB root budget. */
-export async function copyAgentHomeHistory(home: ResolvedAgentHome, paths: readonly string[], copied = 0, sourceRoot?: string): Promise<AgentHomeImportIssue[]> {
+export async function importAgentHome(home: ResolvedAgentHome, options: AgentHomeImportOptions): Promise<{ marker: AgentHomeMarker; issues: AgentHomeImportIssue[] }> {
+  let stage: AgentHomeImportStage = 'marker';
+  try {
+    const originalMarker = await readAgentHomeMarker(home);
+    if (originalMarker && (!originalMarker.skipped || !options.groups.size)) return { marker: originalMarker, issues: [] };
+    const apply = async (target: ResolvedAgentHome) => {
+      const existing = target === home ? originalMarker : await readAgentHomeMarker(target);
+      if (existing && (!existing.skipped || !options.groups.size)) return { marker: existing, issues: [] };
+      stage = 'configuration';
+      if (existing?.skipped) {
+        const { entries } = await diffAgentHome(target);
+        const conflict = entries.find((entry) => options.groups.has(entry.group) && entry.state === 'bothChanged');
+        if (conflict) throw new Error(`Managed configuration already differs at ${conflict.path}; review the differences in Settings → Subscriptions before importing`);
+      }
+      await makeDirectory(target, target.configRoot);
+      const root = options.groups.size || options.historyPaths?.length ? await realSource(home.userConfigRoot) : home.userConfigRoot;
+      const { items, issues } = options.groups.size ? await collect(target, {
+        root, groups: options.groups, strict: () => true,
+        consume: async (snapshots) => {
+          for (const entries of byTarget(snapshots)) {
+            const mode = existing?.skipped ? 'repair' : options.migratedFrom === 'shared' ? 'upgrade' : 'import';
+            await writeItem(target, entries, mode);
+          }
+        },
+      }) : { items: [] as Item[], issues: [] as AgentHomeImportIssue[] };
+      stage = 'history';
+      if (options.historyPaths?.length) issues.push(...await copyAgentHomeHistory(target, options.historyPaths, root));
+      const marker: AgentHomeMarker = {
+        importedAt: (options.now ?? new Date()).toISOString(), sourceRoot: home.userConfigRoot,
+        groups: [...options.groups], files: Object.fromEntries(items.map((item) => [item.id, item.hash])),
+        ...(options.skip ? { skipped: true as const } : {}),
+        ...(options.migratedFrom ? { migratedFrom: options.migratedFrom } : {}),
+        ...options.upgradeSummary?.(issues),
+      };
+      stage = 'marker';
+      await writeMarker(target, marker);
+      return { marker, issues };
+    };
+    const result = options.migratedFrom ? await stageAgentHomeUpgrade(home, apply) : await apply(home);
+    stage = 'sign-in';
+    // Path-scoped credentials (for example Keychain) must use the final managed home.
+    const upgrade = await options.afterCommit?.();
+    if (!upgrade) return result;
+    stage = 'marker';
+    const marker = { ...result.marker, ...upgrade };
+    await writeMarker(home, marker);
+    return { ...result, marker };
+  } catch (error) {
+    if (options.migratedFrom) throw new AgentHomeMigrationFailure(stage, error);
+    throw error;
+  }
+}
+
+/** Stream resumable transcripts separately from the configuration-file budget. */
+export async function copyAgentHomeHistory(home: ResolvedAgentHome, paths: readonly string[], sourceRoot?: string): Promise<AgentHomeImportIssue[]> {
   const root = sourceRoot ?? await realSource(home.userConfigRoot);
   const issues: AgentHomeImportIssue[] = [];
   const visit = async (path: string, depth: number): Promise<void> => {
@@ -439,7 +520,6 @@ export async function copyAgentHomeHistory(home: ResolvedAgentHome, paths: reado
         return;
       }
       if (!before.isFile()) return;
-      if (copied + before.size > ROOT_LIMIT) { issues.push({ path, reason: 'tooLarge' }); return; }
       const input = await disk.open(source, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
       try {
         const opened = await input.stat();
@@ -454,7 +534,7 @@ export async function copyAgentHomeHistory(home: ResolvedAgentHome, paths: reado
           for (;;) {
             const result = await input.read(buffer, 0, buffer.length, null);
             if (!result.bytesRead) break;
-            if (copied + read + result.bytesRead > ROOT_LIMIT) throw Object.assign(new Error('Import root exceeds limit'), { code: 'EFBIG' });
+            if (read + result.bytesRead > before.size) throw Object.assign(new Error('Source changed'), { code: 'ESTALE' });
             let written = 0;
             while (written < result.bytesRead) {
               written += (await output.write(buffer, written, result.bytesRead - written, null)).bytesWritten;
@@ -467,7 +547,6 @@ export async function copyAgentHomeHistory(home: ResolvedAgentHome, paths: reado
         const current = await disk.lstat(source);
         if (read !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs
           || current.ino !== before.ino || current.mtimeMs !== before.mtimeMs) throw Object.assign(new Error('Source changed'), { code: 'ESTALE' });
-        copied += read;
       } finally { await input.close(); }
     } catch (error) {
       if (created) await disk.rm(target, { force: true });
@@ -482,11 +561,13 @@ export async function diffAgentHome(home: ResolvedAgentHome): Promise<{ entries:
   if (!marker) throw new AgentHomeNotImported(home.providerId);
   const { items, issues } = await collect(home), source = new Map(items.map((item) => [item.id, item]));
   const entries: AgentHomeDiffEntry[] = [];
+  const declarations = importDeclarations(home);
   for (const id of new Set([...Object.keys(marker.files), ...source.keys()])) {
     const item = source.get(id), path = item?.path ?? id.split('#')[0]!;
-    const declaration = home.importGroups.flatMap((group) => group.paths.map((pathSpec) => ({ group: group.id, spec: normalize(pathSpec) })))
-      .find(({ spec }) => itemId(path, spec) === id && (spec.path === path || path.startsWith(`${spec.path.replace(/\/$/, '')}/`)));
-    const group = item?.group ?? declaration?.group ?? 'settings', spec = item?.spec ?? declaration?.spec ?? { path };
+    const declaration = item ?? declarations.find((entry) => matchesPath(path, entry.path) && itemId(path, entry.spec) === id);
+    // Older markers can reference files which are outside the current import allowlist.
+    if (!declaration) continue;
+    const { group, spec } = declaration;
     const target = localPath(item?.target ?? spec.target ?? path);
     let managedHash: string | undefined;
     try {

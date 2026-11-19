@@ -54,10 +54,10 @@ it('explicitly imports physical ASAR files without changing Electron fs, then re
       physical.mkdirSync(target,{recursive:true});physical.writeFileSync(path.join(target,'settings.json'),settings);
       const host=require('./host.cjs');
       (async()=>{
-        const failed=await Promise.allSettled([host.resolveAgentHomeEnv('antigravity'),host.resolveAgentHomeRoot('antigravity')]);
-        assert(failed.every(r=>r.status==='rejected'&&r.reason.code==='AGENT_HOME_NOT_IMPORTED'));
+        const fresh=await host.resolveAgentHomeEnv('antigravity');
+        assert.equal(fresh.GEMINI_HOME,target);
         const resolved=host.resolveAgentHome({providerId:'antigravity',injectionMode:'managed-config-root',
-          configRoot:{envVar:'GEMINI_HOME',userPath:'.gemini',carryExclusions:[],credentialPaths:[],importGroups:[{id:'settings',paths:['settings.json'],evidence:'Fixture'}]},
+          configRoot:{envVar:'GEMINI_HOME',userPath:'.gemini',carryExclusions:[],credentialPaths:[],importGroups:[{id:'settings',paths:['settings.json','antigravity/brain/project/scratch/','oversized-config'],evidence:'Fixture'}]},
           guguHome:process.env.GUGU_HOME,osHomeDir:home,sourceEnv:process.env});
         const imported=await host.importAgentHome(resolved,{groups:new Set(['settings'])});
         assert(imported.issues.some(x=>x.path==='oversized-config'&&x.reason==='tooLarge'));

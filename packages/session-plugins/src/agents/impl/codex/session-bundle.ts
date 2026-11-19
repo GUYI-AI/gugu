@@ -168,11 +168,11 @@ export const codexSessionBundleDescriptor = {
     credentialPaths: [{ path: 'auth.json', evidence: 'Codex file credential store; OAuth refresh tokens must not be duplicated.' }],
     importGroups: [
       { id: 'settings', paths: [{ path: 'config.toml', isLegacyGeneratedTarget: isLegacyCodexTrustFile }], evidence: 'https://developers.openai.com/codex/config-basic/; settings and mcp_servers share config.toml.' },
-      { id: 'rules', paths: ['AGENTS.md', 'AGENTS.override.md'], evidence: 'https://developers.openai.com/codex/guides/agents-md/' },
+      { id: 'rules', paths: ['AGENTS.md', 'AGENTS.override.md', 'rules/'], evidence: 'https://developers.openai.com/codex/guides/agents-md/' },
       { id: 'skills', paths: ['skills/'], evidence: 'https://developers.openai.com/codex/skills/' },
     ],
     carryExclusions: [
-      { path: 'sessions', upgradeHistory: true, evidence: 'Native session transcripts imported when upgrading Gugu.' },
+      ...['sessions', 'archived_sessions'].map((path) => ({ path, upgradeHistory: true, evidence: 'Native session transcripts imported when upgrading Gugu.' })),
       ...['log', 'logs', 'tmp', '.tmp', '.cache', 'cache', 'shell_snapshots', 'history.jsonl',
         'thread-writer-locks', 'installation_id', '.sandbox_migration', '.sqlite-maintenance.lock', 'skills/.system'].map((path) => ({ path, evidence: 'Codex regenerates runtime files, caches, locks and installation state in its active root.' })),
     ],
@@ -612,7 +612,7 @@ function modelArgs(
 
 function codexPermissionMode(bundle: SessionCapabilityBundle): CodexPermissionMode {
   const explicit = bundle.autonomy?.permissionMode;
-  if (explicit === 'read-only' || explicit === 'edit' || explicit === 'full-access') {
+  if (explicit === 'read-only' || explicit === 'edit' || explicit === 'ai-review' || explicit === 'full-access') {
     return explicit;
   }
   // `plan` is intentionally not interpreted here; its unsupported-provider fallback remains #5623's
@@ -621,7 +621,7 @@ function codexPermissionMode(bundle: SessionCapabilityBundle): CodexPermissionMo
 }
 
 function codexPermissionProfile(mode: CodexPermissionMode): string {
-  const profile = CODEX_PERMISSION_MODES[mode]?.id;
+  const profile = CODEX_PERMISSION_MODES[mode === 'ai-review' ? 'edit' : mode]?.id;
   if (!profile) throw new Error(`Codex permission mode '${mode}' has no declared native profile`);
   return profile;
 }
@@ -639,6 +639,7 @@ function codexThreadPermission(bundle: SessionCapabilityBundle): {
     // here also makes the boundary explicit for the ACP adapter's session metadata.
     threadStart: {
       approvalPolicy: autonomy.approvalPolicy,
+      approvalsReviewer: autonomy.approvalsReviewer,
       sandbox: autonomy.sandboxMode,
     },
   };

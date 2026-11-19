@@ -15,19 +15,35 @@ import { openExternalLinkInBrowser } from '@renderer/lib/open-external-link';
 import { errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { ConnectionModelPicker } from '@renderer/features/settings/subscriptions/ConnectionModelPicker';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
-import { Toggle } from './SettingsPrimitives';
+import { useAgents } from '@renderer/lib/stores/use-agents';
+import { SubscriptionConnections } from '@renderer/features/settings/subscriptions/SubscriptionConnections';
+import { Unknown } from '@/components/ui/Unknown';
+import { AppIcon } from '@renderer/lib/components/app-icon';
+import { ChevronDownIcon } from '@/lib/icons';
+import { SettingsNote, Toggle } from './SettingsPrimitives';
 
-export function CustomModelDialog({ machine, connection, onClose }: { machine: string | null; connection?: CustomModelConnection; onClose: () => void }) {
+export function CustomModelDialog({ machine, connection, group = 'custom', initialAccount, onClose }: {
+  machine: string | null; connection?: CustomModelConnection; group?: 'coding-plan' | 'api' | 'custom';
+  initialAccount?: 'claude' | 'codex'; onClose: () => void;
+}) {
   const { translate } = useSessionMessages();
-  const [presetId, setPresetId] = useState(connection?.preset ?? (connection ? 'custom' : providerPresets[0]!.id));
+  const initialPreset = providerPresets.find(preset => preset.group === group);
+  const accountPreset = initialAccount === 'codex' ? 'chatgpt-subscription' : 'claude-subscription';
+  const [presetId, setPresetId] = useState(connection?.preset ?? (connection ? 'custom' : group === 'coding-plan' ? accountPreset : initialPreset?.id ?? 'custom'));
   const preset = providerPresets.find(({ id }) => id === presetId);
-  const [endpoints, setEndpoints] = useState<CustomModelMeta['endpoints']>(connection?.endpoints ?? providerPresets[0]!.endpoints);
+  const accountProvider = presetId === 'claude-subscription' ? 'claude' : presetId === 'chatgpt-subscription' ? 'codex' : null;
+  const { data: agents, error: agentsError, refetch: refetchAgents } = useAgents();
+  const accountAgent = agents?.find(agent => agent.id === accountProvider);
+  const labelOf = (id: string) => id === 'claude-subscription' ? translate('customModels.claudeAccount') : id === 'chatgpt-subscription' ? translate('customModels.codexAccount') : providerPresets.find(item => item.id === id)?.name ?? translate('customModels.custom');
+  const providerLabel = (id: string) => <span className="flex items-center gap-2">{id === 'claude-subscription' || id === 'chatgpt-subscription' ? <AppIcon id={id === 'claude-subscription' ? 'claude' : 'codex'} size={16} /> : null}{labelOf(id)}</span>;
+  const [endpoints, setEndpoints] = useState<CustomModelMeta['endpoints']>(connection?.endpoints ?? initialPreset?.endpoints ?? [{ protocol: 'openai-chat-completions', baseUrl: '' }]);
   const [apiKey, setApiKey] = useState('');
   const [models, setModels] = useState(connection?.models.map(({ id }) => id) ?? []);
   const [advanced, setAdvanced] = useState(false);
   const [features, setFeatures] = useState<Omit<CustomModelEntry, 'id' | 'label'>>((() => { const model = connection?.models[0]; return { image: model?.image, thinking: model?.thinking, contextWindow: model?.contextWindow, maxOutput: model?.maxOutput }; }));
   const [featuresChanged, setFeaturesChanged] = useState(false);
   const [busy, setBusy] = useState<'save' | 'test' | null>(null);
+  const [accountCreating, setAccountCreating] = useState(false);
   const [failure, setFailure] = useState('');
   const [testResult, setTestResult] = useState('');
   let normalized: CustomModelMeta['endpoints'] | null = null;
@@ -76,37 +92,34 @@ export function CustomModelDialog({ machine, connection, onClose }: { machine: s
     } catch (error) { setFailure(errorText(error)); }
     finally { setBusy(null); }
   };
-  return <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-    <DialogContent className="sm:max-w-xl" data-testid="custom-model-dialog">
-      <DialogHeader><DialogTitle>{translate(connection ? 'customModels.edit' : 'customModels.add')}</DialogTitle></DialogHeader>
+  return <Dialog open onOpenChange={(open) => { if (!open && !busy && !accountCreating) onClose(); }}>
+    <DialogContent className="gg-model-dialog sm:max-w-[640px]" data-testid="custom-model-dialog">
+      <DialogHeader><DialogTitle>{translate(connection ? 'customModels.edit' : group === 'coding-plan' ? 'customModels.addPlan' : group === 'api' ? 'customModels.addApi' : 'customModels.add')}</DialogTitle></DialogHeader>
       <DialogContentArea>
-        <form className="subscription-connection-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-          <label className="flex flex-col gap-2">
-            <span className="flex items-center justify-between">{translate('customModels.provider')}{preset && <Button type="button" size="sm" variant="link" onClick={() => openExternalLinkInBrowser(preset.docsUrl)}>{translate('customModels.docs')} ↗</Button>}</span>
+        <div className="subscription-connection-form">
+          {group !== 'custom' && <label className="flex flex-col gap-2">
+            <span className="flex items-center justify-between">{translate(group === 'coding-plan' ? 'customModels.plan' : 'customModels.platform')}{(preset || accountProvider) && <Button type="button" size="sm" variant="link" className="gg-model-provider-link" onClick={() => openExternalLinkInBrowser(accountProvider === 'claude' ? 'https://claude.ai/upgrade' : accountProvider === 'codex' ? 'https://chatgpt.com/pricing' : preset!.docsUrl)}>{translate(accountProvider ? 'customModels.purchasePlan' : 'customModels.docs')} ↗</Button>}</span>
             <Combobox
               value={presetId}
-              items={[
-                { label: null, items: ['custom'] },
-                ...(['coding-plan', 'api'] as const).map((group) => ({
-                  label: translate(group === 'coding-plan' ? 'customModels.coding' : 'customModels.api'),
-                  items: providerPresets.filter((item) => item.group === group).map((item) => item.id),
-                })),
+              disabled={accountCreating || !!busy}
+              items={group === 'coding-plan' ? [{ label: null, items: ['claude-subscription', 'chatgpt-subscription', ...providerPresets.filter(item => item.group === group).map(item => item.id)] }] : [
+                { label: null, items: providerPresets.filter(item => item.group === 'api').map(item => item.id) },
               ]}
-              itemToStringLabel={(id: string) => providerPresets.find((item) => item.id === id)?.name ?? translate('customModels.custom')}
+              itemToStringLabel={labelOf}
               onValueChange={(id) => {
                 if (!id) return;
                 setPresetId(id); setTestResult('');
                 const next = providerPresets.find((item) => item.id === id);
-                setEndpoints(next?.endpoints ?? [{ protocol: 'openai-chat-completions', baseUrl: '' }]);
+                if (id !== 'claude-subscription' && id !== 'chatgpt-subscription') setEndpoints(next?.endpoints ?? [{ protocol: 'openai-chat-completions', baseUrl: '' }]);
               }}
             >
               <ComboboxTrigger
                 data-testid="custom-model-provider"
-                aria-label={translate('customModels.provider')}
+                aria-label={translate(group === 'coding-plan' ? 'customModels.plan' : 'customModels.platform')}
                 className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left"
               >
-                {preset?.name ?? translate('customModels.custom')}
-                <span aria-hidden="true">⌄</span>
+                {providerLabel(presetId)}
+                <ChevronDownIcon aria-hidden="true" className="pointer-events-none size-4 text-foreground-muted" />
               </ComboboxTrigger>
               <ComboboxContent className="min-w-(--anchor-width)">
                 <ComboboxInput showTrigger={false} placeholder={translate('customModels.searchProviders')} />
@@ -114,15 +127,16 @@ export function CustomModelDialog({ machine, connection, onClose }: { machine: s
                   {(group: { label: string | null; items: string[] }) => <ComboboxGroup key={group.label ?? 'custom'} items={group.items}>
                     {group.label && <ComboboxLabel>{group.label}</ComboboxLabel>}
                     <ComboboxCollection>
-                      {(id: string) => <ComboboxItem key={id} value={id}>{providerPresets.find((item) => item.id === id)?.name ?? translate('customModels.custom')}</ComboboxItem>}
+                      {(id: string) => <ComboboxItem key={id} value={id}>{providerLabel(id)}</ComboboxItem>}
                     </ComboboxCollection>
                   </ComboboxGroup>}
                 </ComboboxList>
                 <ComboboxEmpty>{translate('customModels.noProviders')}</ComboboxEmpty>
               </ComboboxContent>
             </Combobox>
-          </label>
-          {preset ? <p className="subscription-connection-description">{preset.endpoints.map(({ protocol }) => translate(`customModels.${protocol}`)).join(' · ')}</p>
+          </label>}
+          {accountProvider ? accountAgent ? <SubscriptionConnections key={accountProvider} agent={accountAgent} machine={machine} modelAccount={{ onClose, onBusyChange: setAccountCreating }} /> : agentsError ? <SettingsNote tone="danger" role="alert">{errorText(agentsError)} <Button size="sm" variant="outline" onClick={() => { void refetchAgents(); }}>{translate('common.retry')}</Button></SettingsNote> : agents ? <SettingsNote tone="danger">{translate('customModels.accountUnavailable')}</SettingsNote> : <Unknown className="h-9 w-full" /> : <form className="subscription-connection-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+          {preset ? <p className="subscription-connection-description">{preset.endpoints.map(({ protocol }) => translate(`customModels.${protocol}`)).join(' / ')}</p>
             : endpoints.map((endpoint, index) => <div key={index} className="flex flex-col gap-2">
               <label>{translate('customModels.address')}<Input data-testid={`custom-model-address-${index}`} type="url" required value={endpoint.baseUrl} onChange={(event) => updateEndpoint(index, { baseUrl: event.target.value })} /></label>
               <label>{translate('customModels.protocol')}<Select value={endpoint.protocol} onValueChange={(value) => { if (value) updateEndpoint(index, { protocol: value }); }}>
@@ -149,7 +163,8 @@ export function CustomModelDialog({ machine, connection, onClose }: { machine: s
             <Button type="button" variant="outline" size="sm" disabled={!!busy} onClick={onClose}>{translate('common.cancel')}</Button>
             <Button type="submit" size="sm" disabled={!!busy} data-testid="custom-model-save">{translate(busy === 'save' ? 'subscriptions.connections.saving' : 'common.save')}</Button>
           </div></div>
-        </form>
+        </form>}
+        </div>
       </DialogContentArea>
     </DialogContent>
   </Dialog>;

@@ -10,7 +10,7 @@ import { WechatConnectDialog } from './WechatConnectDialog'
 import { ChannelBrandIcon } from './ChannelBrandIcon'
 
 /** WeChat uses its existing authorization transport; the app detail has the same surface as every provider. */
-export function WechatAppConnection() {
+export function WechatAppConnection({ connectOnly = false }: { connectOnly?: boolean } = {}) {
   const { t } = useTranslation('assistant')
   const state = useChatChannels()
   const [connecting, setConnecting] = useState(false)
@@ -18,10 +18,10 @@ export function WechatAppConnection() {
   const available = !!state.client && !!state.list?.kinds.includes('wechat')
   return <>
     <AppConnectionHero icon={<ChannelBrandIcon kind="wechat" size={56} />} description={t('connectors.wechatDescription')}
-      loading={state.status === 'loading'} disabled={!available} label={t(connected ? 'connectors.manage' : 'connectors.connect')}
+      loading={state.status === 'loading'} disabled={!available || (connectOnly && connected)} label={t(connected ? (connectOnly ? 'connectors.connected' : 'connectors.manage') : 'connectors.connect')}
       onConnect={() => setConnecting(true)} />
     {state.status === 'failed' || !!state.error ? <SettingsNote role="alert">{state.error || t('connectors.loadFailed')}<Button variant="ghost" size="sm" onClick={() => void state.refresh()}>{t('machine.retry')}</Button></SettingsNote> : null}
-    {connected && state.client && state.list ? <ConnectedChannels client={state.client} list={state.list} apply={state.apply} /> : null}
+    {!connectOnly && connected && state.client && state.list ? <ConnectedChannels client={state.client} list={state.list} apply={state.apply} /> : null}
     {connecting && state.client && state.list ? <WechatConnectDialog client={state.client} list={state.list} refresh={state.refresh} apply={state.apply} onClose={() => setConnecting(false)} /> : null}
   </>
 }

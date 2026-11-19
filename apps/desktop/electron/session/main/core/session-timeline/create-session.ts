@@ -1,5 +1,7 @@
+import { customClaudeReviewSource } from '@gugu/session-core/models/auto-review-source';
 import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { createFailureLogFields } from './create-failure-log-fields';
+import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
@@ -50,7 +52,6 @@ import { classifyCreateFailure } from './create-failure';
 import { launchCreatedSession } from './launch-created-session';
 import { sessionRecordHarnessForProvider } from './locate';
 import { clearStartFailure, recordStartFailure } from './start-failures';
-import { isAgentHomeImportCode } from '@gugu/session-core/workspace-server/agent-config';
 
 /**
  * 手机在**这台机器上**开一条新会话。
@@ -124,10 +125,10 @@ function offeredSessionViews(agent: AgentPayload): SessionpageSessionView[] {
  */
 function declaredPermissionModes(agent: AgentPayload): GuguPermissionMode[] {
   const legs = offeredSessionViews(agent).map(sessionpageLegOfView);
-  return GUGU_PERMISSION_MODES.filter((mode) =>
+  return GUGU_PERMISSION_MODES.filter((mode) => mode !== 'ai-review' && (
     legs.length === 0
       ? agentSupportsPermissionMode(agent.capabilities, mode)
-      : legs.every((leg) => agentSupportsPermissionMode(agent.capabilities, mode, leg)));
+      : legs.every((leg) => agentSupportsPermissionMode(agent.capabilities, mode, leg))));
 }
 
 /**
@@ -301,6 +302,11 @@ export async function createModels(
     const platformModel = !!requestedModel && requestedModel.startsWith('platform:');
     const customRef = customModelRefFromOption(requestedModel);
     const customRecords = await (await import('@main/core/agents/custom-models')).listCustomModels();
+    const reviewConnection = customRef ? customRecords.find(record => record.id === customRef.connectionId) : undefined;
+    const reviewEndpoint = reviewConnection?.endpoints.find(endpoint => endpoint.protocol === 'anthropic-messages');
+    const customReview = request.harness === 'claude' && customRef && reviewConnection?.keySaved && reviewEndpoint
+      ? customClaudeReviewSource({ connectionId: customRef.connectionId, endpoint: reviewEndpoint.baseUrl, selectedModel: customRef.modelId, models: reviewConnection.models,
+        preference: await (await import('@main/core/settings/settings-service')).appSettingsService.get('autoReviewModel') }) : null;
     const customEntry = customRef && customRecords.find(({ id }) => id === customRef.connectionId)?.models.find(({ id }) => id === customRef.modelId);
     const resolvedEfforts = customRef && customEntry?.thinking !== true ? null : resolveCreateEfforts({
       state,
@@ -335,6 +341,12 @@ export async function createModels(
           ...(m.hidden ? { hidden: true } : {}),
         })),
         selected: catalog.selected,
+        ...((!customRef || request.harness !== 'claude' || customReview !== null) && catalogAllowsAutoReview(agent.capabilities?.autoApprove?.modes, state,
+          platformModel ? 'platform' : customRef ? 'custom' : 'own', runtimeModelId(requestedModel) ?? (state.kind === 'ready' ? state.selected : null))
+          ? { autoReview: { model: requestedModel ?? (state.kind === 'ready' ? state.selected! : ''),
+            ...(customReview?.kind === 'platform-fallback' ? { disabled: true } : {}),
+            ...(customReview?.kind === 'own' && customReview.byHaiku ? { reviewByHaiku: true } : {}),
+          } } : {}),
         efforts: Object.entries(resolvedEfforts?.options ?? {}).map(([id, option]) => ({
           id,
           name: option.name,
@@ -461,14 +473,6 @@ async function createSessionSteps(
         : describeAgentInstallFailure(provider, error instanceof Error ? error : new Error(String(error)));
       return fail('harness_install_failed', message);
     }
-  }
-
-  const { assertAgentHomeImportedForSession } = await import('@main/core/agents/agent-homes');
-  try {
-    await assertAgentHomeImportedForSession(provider);
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && isAgentHomeImportCode(error.code)) return fail(error.code, error.message);
-    throw error;
   }
 
   // 模型按 spawn **同一套**规则解释(`platform:` 前缀 = 咕咕平台模型,须在这条腿的目录里;

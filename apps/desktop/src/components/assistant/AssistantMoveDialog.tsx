@@ -6,7 +6,7 @@ import { Sheet } from '../ui/Sheet'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import type { MoveDirection } from '@renderer/features/assistant/assistant-move'
 import type { MoveSkipped } from '@shared/core/integrations/integration-move'
-import { openConnectedAppsSettings } from '@/lib/assistantEntry'
+import { openInstalledConnectors } from '@/lib/assistantEntry'
 import { dismissMove, getMoveState, startMove, startPreview, subscribeMove } from '@renderer/features/assistant/assistant-move-controller'
 import '../../i18n/registerAssistantCatalog'
 
@@ -184,7 +184,7 @@ export function AssistantMoveDialog() {
                   size="sm"
                   onClick={() => {
                     dismissMove()
-                    openConnectedAppsSettings()
+                    openInstalledConnectors(phase.report.targetDeviceId ?? (phase.direction === 'to-computer' ? env?.localDeviceId : undefined))
                   }}
                   data-testid="assistant-move-reconnect-open"
                 >

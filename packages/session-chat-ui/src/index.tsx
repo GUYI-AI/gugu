@@ -47,7 +47,7 @@ export type {
 } from './state/chat-state';
 
 export { createChatView } from './chat-view';
-export { mountRecordedFileDiff } from './components/rows/tools/diff/recorded-file-diff';
+export { mountRecordedFileDiff, type RecordedDiffAnnotationSlot } from './components/rows/tools/diff/recorded-file-diff';
 export { resolveConversationMessageReference } from './state/conversation-messages';
 export type {
   ChatView,

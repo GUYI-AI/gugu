@@ -69,7 +69,8 @@ export function isDestructivePermissionMode(modeId: string): boolean {
 }
 
 /**
- * 咕咕面向用户的四档权限,**按约束从严到松排列**。这是产品概念,不是任何一家 agent
+ * 咕咕权限选择。AI review changes the reviewer, shares edit's sandbox boundary, and never participates in fallback.
+ * 原有四档权限,**按约束从严到松排列**。这是产品概念,不是任何一家 agent
  * 的原生档位 —— 各 agent 自报的档位由 classifyProviderPermissionMode() 归类到这四档。
  *
  * 为什么需要它:此前这里只有一个 `autoApprove: boolean`,它装不下多档 ——
@@ -86,7 +87,7 @@ export function isDestructivePermissionMode(modeId: string): boolean {
  * 没有 plan 的 harness(codex 只有 :read-only/:workspace/:danger-full-access)不声明这一档,
  * 界面上就不摆 —— 见 @@@permission-three-modes 的「不摆不存在的档」。
  */
-export const GUGU_PERMISSION_MODES = ['plan', 'read-only', 'edit', 'full-access'] as const;
+export const GUGU_PERMISSION_MODES = ['plan', 'read-only', 'edit', 'ai-review', 'full-access'] as const;
 export type GuguPermissionMode = (typeof GUGU_PERMISSION_MODES)[number];
 
 export function isGuguPermissionMode(value: unknown): value is GuguPermissionMode {
@@ -110,8 +111,18 @@ const READ_ONLY_PERMISSION_MODE_PATTERN = /read[-_]?only/i;
  * 用于反查 agent 当前档属于三档里的哪一档。
  */
 export type ProviderPermissionModeMap = {
-  [K in GuguPermissionMode]?: { id: string; aliases?: readonly string[]; legs?: readonly ('acp' | 'tui')[] };
+  [K in GuguPermissionMode]?: { id: string; aliases?: readonly string[]; legs?: readonly ('acp' | 'tui')[]; reviewRequirements?: import('./review-mode').ReviewModeRequirements; billingRoutes?: readonly ('own' | 'platform')[] };
 };
+
+/** A restricted tier needs a confirmed billing route; unknown is never an own-account login. */
+export function permissionModeSupportsBillingRoute(
+  mode: GuguPermissionMode,
+  map: ProviderPermissionModeMap | undefined,
+  route: 'own' | 'platform' | 'unknown',
+): boolean {
+  const routes = map?.[mode]?.billingRoutes;
+  return !routes || (route !== 'unknown' && routes.includes(route));
+}
 
 /**
  * 把 agent 自报的原生档位 id 归类到咕咕三档。
@@ -131,6 +142,7 @@ export function classifyProviderPermissionMode(
       if (entry.id === modeId || entry.aliases?.includes(modeId)) return mode;
     }
   }
+  if (modeId === 'auto-review') return 'ai-review';
   if (isDestructivePermissionMode(modeId)) return 'full-access';
   if (PLAN_PERMISSION_MODE_PATTERN.test(modeId)) return 'plan';
   if (READ_ONLY_PERMISSION_MODE_PATTERN.test(modeId)) return 'read-only';
@@ -189,10 +201,8 @@ export function isAutoApproveIntent(intent: { permissionMode?: GuguPermissionMod
  *
  * 三个真实的家把这条规则的三格各钉死一个,少了任何一格都会坏:
  *
- * · **claude**:四档全声明。它还报一个 `auto`(交给模型分类器判批准/拒绝),咕咕**故意不映射**
- *   ——那不是「能改多少」这条轴上的刻度而是「谁来决定」,会话页下拉也不摆它。但按名字猜会
- *   把它算成 `edit`,而 claude 把它排在档位表**第一个** ⇒ 不挡,用户选「编辑」时启动侧会
- *   选中 `auto`,选中的还是个下拉里不存在的选项。这一侧要求:**edit 已声明 ⇒ 只认 acceptEdits**。
+ * Claude: native auto represents ai-review after executable/model admission, never edit.
+ * Edit's representative remains acceptEdits; a different reviewer must be selected explicitly.
  *
  * · **droid**:只声明有据的一档(`auto-high` = 完全访问,#4482 探针读数),
  *   `normal/spec/auto-low/auto-medium` 在两轴上怎么落没有读数、❌ 不猜,故意留空由启发式填
@@ -218,7 +228,7 @@ export function canRepresentPermissionMode(
 
 /** 档位在阶梯上的位置 —— 数字越大越松(plan 0 < read-only 1 < edit 2 < full-access 3)。 */
 function permissionModeRung(mode: GuguPermissionMode): number {
-  return GUGU_PERMISSION_MODES.indexOf(mode);
+  return ['plan', 'read-only', 'edit', 'full-access'].indexOf(mode === 'ai-review' ? 'edit' : mode);
 }
 
 /**
@@ -233,7 +243,7 @@ function permissionModeRung(mode: GuguPermissionMode): number {
  * 因为那时"照样开"等于把用户放进一个比他选的更大的权限里(见 resolvePermissionModeFallback)。
  */
 export function isTopPermissionRung(mode: GuguPermissionMode): boolean {
-  return permissionModeRung(mode) === GUGU_PERMISSION_MODES.length - 1;
+  return mode === 'full-access';
 }
 
 /**
@@ -258,6 +268,7 @@ export function resolvePermissionModeFallback(
   availableModeIds: readonly string[],
   map?: ProviderPermissionModeMap
 ): { modeId: string; mode: GuguPermissionMode } | undefined {
+  if (wanted === 'ai-review') return undefined; // Reviewer failure never selects a different approval authority.
   const ceiling = permissionModeRung(wanted);
   let best: { modeId: string; mode: GuguPermissionMode } | undefined;
   for (const modeId of availableModeIds) {
@@ -265,6 +276,7 @@ export function resolvePermissionModeFallback(
     // 该家为这一档指名过代表就只认那个 id(claude 的 `auto` 在这里被挡);没指名才许猜着填
     // (droid 的 `normal`)—— 见 canRepresentPermissionMode 抬头。
     if (!canRepresentPermissionMode(modeId, mode, map)) continue;
+    if (mode === 'ai-review') continue;
     const rung = permissionModeRung(mode);
     if (rung > ceiling) continue;
     // 同档并列时保留先出现的那个 —— 与精确匹配那条路的 find() 取法一致(claude 的
@@ -289,7 +301,9 @@ export function resolveDeclaredPermissionMode(
   wanted: GuguPermissionMode,
   modes: ProviderPermissionModeMap | undefined
 ): GuguPermissionMode | undefined {
+  if (wanted === 'ai-review' && !modes?.['ai-review']) return undefined;
   if (!modes || wanted === 'full-access' || modes[wanted]) return wanted;
+  if (wanted === 'ai-review') return undefined;
   for (let rung = permissionModeRung(wanted) - 1; rung >= 0; rung -= 1) {
     const mode = GUGU_PERMISSION_MODES[rung]!;
     if (modes[mode]) return mode;

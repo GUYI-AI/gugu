@@ -501,13 +501,12 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   options.hostIpc.onConnectionClosed?.(releasePlacementsOf)
   const { ipcMain } = options.hostIpc
   const { browserFeatures } = options
-  const priorProfile = browserFeatures && captureAgentHomeUpgradeProfile(app.getPath('userData'))
+  const migrateAgentHomes = browserFeatures || HEADLESS_SERVER
+  const priorProfile = migrateAgentHomes && captureAgentHomeUpgradeProfile(app.getPath('userData'))
   // 首启默认组(161 10-15):这个 profile 是不是第一次启动,只有在任何东西建出 App 的记录目录之前才看得出来 —— 所以最先。
   // 只归桌面和咕咕 server(first-run-apps.ts `firstRunAtBoot`):网页版的无头宿主不记、不装。
   const firstRun = firstRunAtBoot(browserFeatures)
   firstRun.noteProfile(app.getPath('userData'))
-  const { migrateCustomModelConnections } = await import('./core/agents/custom-models')
-  migrateCustomModelConnections()
   // --- Electron-28 API gap shim FIRST — before any code path can touch a Session (index.ts:0). ---
   if (browserFeatures) installSessionClearDataShim()
 
@@ -567,6 +566,8 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   await backupBeforeTaskToSession(sqlite, resolveDatabasePath())
   await backupBeforeSessionNaming(sqlite, resolveDatabasePath())
   await initializeDatabase()
+  const { migrateCustomModelConnections } = await import('./core/agents/custom-models')
+  migrateCustomModelConnections()
   await runPendingAssistantProjectCleanup(true)
   // #609 已有的、登记在 ~ / task-home / GUGU_HOME 底下的项目改成 workspace(会话随之列进「任务」);幂等,失败不拦启动。
   try {
@@ -621,7 +622,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
     logger: log,
     now: Date.now,
   })
-  if (browserFeatures) initializeAgentHomeUpgrade(priorProfile)
+  if (migrateAgentHomes) initializeAgentHomeUpgrade(priorProfile)
   // Task names: a bound task is named by its roster identity (task-name.ts). The roster keys were just
   // renamed above, and every reader of a name below (search backfill first) needs the projection.
   await loadTaskNames()
@@ -2048,7 +2049,7 @@ async function startSessionpageAgentSessionClaimed(
     // Its creation turn (the first task / first message) is admitted here once, under the session's stable
     // `<id>:creation:0`: a replayed create of the same bound session finds it queued and admits nothing twice.
     if (session.providerSessionId) sessionLife().start(session.id, 'user-open')
-    else admitCreationTurns({ ...session, initialQueue: input.initialPrompt ? [{ text: input.initialPrompt, origin: 'communication' }] : undefined })
+    else await admitCreationTurns({ ...session, initialQueue: input.initialPrompt ? [{ text: input.initialPrompt, origin: 'communication' }] : undefined })
     mark('life-admitted')
     return { ...provisioned, sessionId: session.id, projectId: project.id }
   } catch (error) {

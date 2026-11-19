@@ -58,7 +58,7 @@ it.each([false, true])('publishes a new native preview and time without retainin
   expect(projected!.is_marked_unread).toBe(true)
   expect(chats[0]!.last_message_notice).toEqual({ kind: 'turn-failure', reason: 'generic' })
 })
-it('on the phone, keeps the agent row listed from the heartbeat summary while its machine is away; on a computer it stays hidden', async () => {
+it('does not turn an offline heartbeat activity time into a personal message on either phone or desktop', async () => {
   shell.mobile = true
   remove = installOwnedAgentEntry({ open: () => true, owns: id => id === 'own-agent' })
   const digest = [{ conversationId: 'session', title: 'Task', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: '2026-10-31T09:00:00Z', supported: true, nativeInputVersion: 1, agentUserId: 'own-agent' }]
@@ -66,7 +66,7 @@ it('on the phone, keeps the agent row listed from the heartbeat summary while it
   const chats = [{ id: 'dm', kind: 'dm', peer_user_id: 'own-agent', unread_count: 0, last_message_at: null }] as unknown as ChatItem[]
   function Fixture() { return <div>{useNativeAgentChats(chats)[0]!.last_message_at}</div> }
   await harness.render(<Fixture />)
-  expect(harness.container.textContent).toBe('2026-10-31T09:00:00Z')
+  expect(harness.container.textContent).toBe('')
   shell.mobile = false
   await harness.render(<Fixture />)
   expect(harness.container.textContent, 'its session page would wait without a word: the row would do nothing').toBe('')

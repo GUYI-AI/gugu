@@ -106,8 +106,8 @@ async function compute(providerId: string, purpose?: 'version-probe'): Promise<R
     sourceEnv: process.env,
   });
   if (!home) return { env: {}, root: osHomeDir };
-  // Version probes discover installed CLIs before the import screen opens. Keep their environment
-  // pointed at Gugu's root while deferring provisioning until import or skip.
+  // Version probes discover CLIs for the upgrade inventory, so they must not wait
+  // for the migration that consumes that inventory.
   if (!purpose) {
     await prepareUpgrade?.(providerId);
     await ensureAgentHome(home);

@@ -1,4 +1,3 @@
-import { AgentHomeImportModal } from '@renderer/features/settings/subscriptions/AgentHomeImportModal'
 import { ReimportDialog } from '@renderer/features/settings/subscriptions/ReimportDialog'
 import { CommandPaletteModal } from '@renderer/features/command-palette/command-palette-modal'
 import { GlobalSearchModal } from '@renderer/features/global-search/global-search-modal'
@@ -24,7 +23,6 @@ import { createModal, type ModalRegistryEntry } from '@/components/ui/modal-regi
 export type { ModalSize, ModalPosition, ModalRegistryEntry } from '@/components/ui/modal-registry'
 
 export const modalRegistry = {
-  agentHomeImportModal: createModal(AgentHomeImportModal, { size: 'lg' }),
   agentHomeReimportModal: createModal(ReimportDialog, { size: 'lg' }),
   commandPaletteModal: createModal(CommandPaletteModal, { size: 'md' }),
   globalSearchModal: createModal(GlobalSearchModal, { size: 'lg' }),

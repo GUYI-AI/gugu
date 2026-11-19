@@ -1,5 +1,7 @@
 import { releaseCustomModelForwarders } from './session/main/core/agents/custom-model-forwarder'
 import { hostAttachmentsEndpoint } from './attachmentUploadTransport'
+import { inspectHtmlPreviewAnnotation } from './session/main/core/browser/html-preview-annotation'
+import { HTML_PREVIEW_ANNOTATION_CHANNEL, type HtmlPreviewAnnotationRequest } from '../src/session/shared/preview/html-preview-annotation'
 import { createAttachmentUploadHost } from './attachmentUploadHost'
 import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
 import { PASSWORD_AGENT_RPC } from './password-vault/server-delivery'
@@ -25,6 +27,7 @@ import type { AppInboxPort } from '@gugu/core/local/agent/appInbox'
 import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/firstTurnRender'
 import { createDesktopFileAccess, signedInFileRpc } from './desktopFileAccess'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
+import { registerExternalImportIpc } from './external-import/ipc'
 import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
 import { writeTaskCopy } from './projectFilePublication'
 import { resourceMonitorWindow } from './resource-monitor-window'
@@ -2395,6 +2398,10 @@ const typingDiagnostics = createBetaTypingDiagnosticsHandler({
   captureTarget: () => mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null,
 })
 const forwardRendererLog = createRendererLogForwarder({ getMetrics: () => app.getAppMetrics(), typing: typingDiagnostics })
+ipcMain.handle(HTML_PREVIEW_ANNOTATION_CHANNEL, (event, args: HtmlPreviewAnnotationRequest) => {
+  if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) throw new Error('HTML preview requires the host window')
+  return inspectHtmlPreviewAnnotation(args, event.sender.id)
+})
 ipcMain.handle(RENDERER_LOG_CHANNEL, (event, payload: unknown) => forwardRendererLog(event.sender, payload, Boolean(event.senderFrame) && event.senderFrame === event.sender.mainFrame))
 
 // @@@4899 用户在反馈里勾了「附带日志」才走这条。读不到就让它抛到 renderer —— 界面当场取消
@@ -2666,7 +2673,14 @@ function signedInAccountId(): string | null {
   return SERVER_MODE ? serverAuth?.signedInUserId() ?? null : humanAuthUserId()
 }
 
+const externalImport = SERVER_MODE ? null : registerExternalImportIpc({
+  ipc: ipcMain,
+  getWindow: () => mainWindow,
+  getOwner: signedInAccountId,
+})
+
 function onHumanAuthSessionChanged(): void {
+  externalImport?.ownerChanged()
   resumeDeclaredUploads()
   projectionDeviceRuntime.invalidate()
   void emdashBridgeModule?.setTaskNameOwner(signedInAccountId())
@@ -5255,7 +5269,11 @@ app.whenReady().then(async () => {
     // @@@task-shell-port (#5012) 「给会话开账号」的口与网页版无头宿主共用(sessionpage-identity-host.ts);
     // 这里只喂它桌面版的四样:登录态、设备 id、项目名、会话事实。
     const sessionpageIdentityHost = createSessionpageIdentityHost({
-      beforeIdentityRemoval: id => assistantPanelRuntime?.pauseRemoval(id) ?? (() => {}),
+      beforeIdentityRemoval: async id => {
+        const settlePanel = assistantPanelRuntime?.pauseRemoval(id)
+        const settleRuntime = await deviceRuntimeHost?.beginAgentRemoval(id)
+        return removed => { settleRuntime?.(removed); settlePanel?.(removed) }
+      },
       getAuth: getSessionpageAuth,
       // #4320② 锁内解析:localDeviceId 不起 tick,不会派发要同一把锁的设备命令。
       resolveDeviceId: localDeviceId,
@@ -5293,7 +5311,7 @@ app.whenReady().then(async () => {
       failed: (error) => createLogger('sessionpage/task-names').error({ error: String(error) }, 'Adopting cloud task names failed'),
     })
     const nativeInbox = emdash.startNativeConversationInboxHost({
-      open: async target => (await sessionpageIdentityHost.ensureAgentAddress(target)).chatId,
+      open: async target => (await sessionpageIdentityHost.ensureAgentAddress(target)).chatId, publication: sessionpageIdentityHost.nativePublication,
       failed: error => createLogger('sessionpage/personal-inbox').warn({ error: String(error) }, 'Personal conversation address remains pending'),
     })
     app.once('will-quit', () => { nativeInbox.dispose(); assistantPanelRuntime?.dispose() })

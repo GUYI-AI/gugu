@@ -59,7 +59,7 @@ afterEach(() => {
   layer.remove();
 });
 
-const SECTIONS: SessionSettingsSection[] = ['sessions', 'interface', 'browser', 'subscriptions', 'resource-monitor'];
+const SECTIONS: SessionSettingsSection[] = ['sessions', 'interface', 'browser', 'subscriptions', 'resource-monitor', 'auxiliary-models'];
 
 it.each(SECTIONS)('draws the 「%s」 section outside the task page tree', async (section) => {
   root.render(<SessionSettingsContent section={section} portalContainer={layer} />);

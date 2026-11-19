@@ -1852,3 +1852,13 @@ globalStyle(
 
 // Touch targets belong to the shared composer, including its chat hosts.
 globalStyle(`${composerRoot}[data-mobile] [data-slot="composer-toolbar"] button`, { minHeight: 44, minWidth: 44 });
+
+/** Auto mode keeps its selected shield visible alongside its name. */
+export const permissionModeProvidedIcon = style({ display: 'inline-flex', flexShrink: 0 });
+globalStyle(`${permissionModeProvidedIcon} svg`, { width: '0.75rem', height: '0.75rem' });
+export const permissionModeDetail = style({
+  width: '18rem', padding: '0.75rem', fontSize: tokenVars.textSm, lineHeight: 1.5,
+});
+export const permissionModeCost = style({
+  marginTop: '0.375rem', color: vars.foregroundMuted, fontSize: tokenVars.textTiny,
+});

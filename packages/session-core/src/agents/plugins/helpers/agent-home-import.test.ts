@@ -1,26 +1,27 @@
-import { mkdtemp, mkdir, readFile, rename, rm, symlink, truncate, writeFile, chmod, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rename, rm, symlink, truncate, writeFile, chmod, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
 import { ensureAgentHome, resolveAgentHome } from './agent-home';
-import { AgentHomeNotImported, copyAgentHomeHistory, diffAgentHome, importAgentHome, readAgentHomeMarker, reimportAgentHome, scanAgentHome } from './agent-home-import';
+import { AGENT_HOME_MARKER, copyAgentHomeHistory, diffAgentHome, importAgentHome, readAgentHomeMarker, reimportAgentHome, scanAgentHome } from './agent-home-import';
 import type { AgentConfigRoot } from '../capabilities/session-bundle';
 
 const roots: string[] = [];
 afterEach(async () => { vi.restoreAllMocks(); for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
-async function fixture() {
+async function fixture(extraSettings: string[] = [], userPath = '.test') {
   const root = await mkdtemp(join(tmpdir(), 'agent-home-import-'));
   roots.push(root);
   const spec: AgentConfigRoot = {
-    envVar: 'TEST_HOME', userPath: '.test', evidence: 'Fixture CLI configuration root.',
+    envVar: 'TEST_HOME', userPath, evidence: 'Fixture CLI configuration root.',
     carryExclusions: [{ path: 'sessions', evidence: 'Session history is separate.' }],
     credentialPaths: [{ path: 'secret-store', evidence: 'Fixture credential store.' }],
     importGroups: [
-      { id: 'settings', paths: [{ path: 'settings.json', omitKeys: ['hooks'] }, 'config.toml'], evidence: 'Fixture settings.' },
+      { id: 'settings', paths: [{ path: 'settings.json', omitKeys: ['hooks'] }, 'config.toml', ...extraSettings], evidence: 'Fixture settings.' },
       { id: 'hooks', paths: [{ path: 'settings.json', keys: ['hooks'] }], evidence: 'Fixture hooks.' },
       { id: 'mcp', paths: [{ path: '../.global.json', keys: ['mcpServers'], target: '.global.json' }], evidence: 'Fixture sibling MCP source.' },
-      { id: 'rules', paths: ['RULES.md'], evidence: 'Fixture rules.' },
+      { id: 'rules', paths: ['RULES.md', 'AGENTS.md', 'rules/'], evidence: 'Fixture rules.' },
+      { id: 'skills', paths: ['skills/'], evidence: 'Fixture skills.' },
     ],
   };
   const home = resolveAgentHome({ providerId: 'fixture', injectionMode: 'managed-config-root', configRoot: spec,
@@ -34,13 +35,15 @@ async function fixture() {
   return { root, home, source };
 }
 
-it('requires explicit consent, imports projections, excludes credentials and retains source files', async () => {
+it('runs unmarked homes as fresh and imports projections without copying credentials', async () => {
   const { home, source } = await fixture();
   await source('settings.json', '{"theme":"dark","hooks":{"Stop":[{"command":"mine"}]}}');
   await source('../.global.json', '{"mcpServers":{"example":{"command":"echo"}},"oauthAccount":{"id":"private"}}');
   await source('RULES.md', 'rules');
   for (const path of ['auth.json', '.credentials.json', '.env.local', 'cookie-store', 'secret-store/x', 'state.sqlite-wal', 'sessions/old.jsonl']) await source(path, 'never import');
-  await expect(ensureAgentHome(home)).rejects.toBeInstanceOf(AgentHomeNotImported);
+  expect(await ensureAgentHome(home)).toBe('already-present');
+  expect(await readAgentHomeMarker(home)).toBeNull();
+  await expect(readFile(join(home.configRoot, 'settings.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   const result = await importAgentHome(home, { groups: new Set(['settings', 'mcp', 'rules']), now: new Date('2026-11-18T00:00:00Z') });
   expect(JSON.parse(await readFile(join(home.configRoot, 'settings.json'), 'utf8'))).toEqual({ theme: 'dark' });
   expect(JSON.parse(await readFile(join(home.configRoot, '.global.json'), 'utf8'))).toEqual({ mcpServers: { example: { command: 'echo' } } });
@@ -51,6 +54,55 @@ it('requires explicit consent, imports projections, excludes credentials and ret
     expect(await readFile(join(home.userConfigRoot, path), 'utf8')).toBe('never import');
   }
   expect(await ensureAgentHome(home)).toBe('already-present');
+});
+
+it('keeps the old target and writes no sign-in when the staged marker cannot be committed', async () => {
+  const { home, source } = await fixture();
+  await source('config.toml', 'model = "fixture"');
+  await source('auth.json', 'terminal sign-in');
+  await source('sessions/old.jsonl', 'old transcript');
+  await ensureAgentHome(home);
+  const existing = join(home.configRoot, 'local-only');
+  await writeFile(existing, 'managed state');
+  const afterCommit = vi.fn(async () => {
+    await writeFile(join(home.configRoot, 'auth.json'), 'copied sign-in');
+  });
+  const renameFile = fs.rename.bind(fs);
+  const markerFailure = vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+    if (String(to).endsWith(AGENT_HOME_MARKER)) throw Object.assign(new Error('Marker write failed'), { code: 'EACCES' });
+    await renameFile(from, to);
+  });
+
+  await expect(importAgentHome(home, {
+    groups: new Set(['settings']), migratedFrom: 'shared', historyPaths: ['sessions'], afterCommit,
+  })).rejects.toMatchObject({ stage: 'marker', cause: { code: 'EACCES' } });
+  expect(markerFailure.mock.calls.some(([, to]) => String(to).includes('.gugu-upgrade-'))).toBe(true);
+  expect(afterCommit).not.toHaveBeenCalled();
+  expect(await readFile(existing, 'utf8')).toBe('managed state');
+  expect(await readFile(join(home.userConfigRoot, 'auth.json'), 'utf8')).toBe('terminal sign-in');
+  for (const path of ['auth.json', 'config.toml', 'sessions/old.jsonl']) {
+    await expect(readFile(join(home.configRoot, path))).rejects.toMatchObject({ code: 'ENOENT' });
+  }
+  expect(await readAgentHomeMarker(home)).toBeNull();
+  expect(await fs.readdir(dirname(home.shadowHome))).toEqual(['fixture']);
+});
+
+it('publishes the committed managed home before transferring sign-in', async () => {
+  const { home, source } = await fixture();
+  await source('config.toml', 'model = "fixture"');
+  await ensureAgentHome(home);
+  await writeFile(join(home.configRoot, 'local-only'), 'managed state');
+  const afterCommit = vi.fn(async () => {
+    expect(await readAgentHomeMarker(home)).toMatchObject({ migratedFrom: 'shared' });
+    expect(await readFile(join(home.configRoot, 'config.toml'), 'utf8')).toBe('model = "fixture"');
+    await writeFile(join(home.configRoot, 'auth.json'), 'copied sign-in');
+    return { upgradeSignIn: 'copied' as const };
+  });
+  await expect(importAgentHome(home, { groups: new Set(['settings']), migratedFrom: 'shared', afterCommit }))
+    .resolves.toMatchObject({ marker: { upgradeSignIn: 'copied' } });
+  expect(afterCommit).toHaveBeenCalledOnce();
+  expect(await readFile(join(home.configRoot, 'local-only'), 'utf8')).toBe('managed state');
+  expect(await readFile(join(home.configRoot, 'auth.json'), 'utf8')).toBe('copied sign-in');
 });
 
 it('combines first-import settings with unrelated defaults already initialized by the CLI', async () => {
@@ -106,7 +158,7 @@ it('requires a decision for different managed content in a previously unticked g
 });
 
 it('follows the selected source root and its HOME boundary while refusing links inside the root', async () => {
-  const { home, root, source } = await fixture();
+  const { home, root, source } = await fixture(['inner-link']);
   await source('RULES.md', 'local rules');
   await source('sessions/old.jsonl', 'existing task');
   await source('../.global.json', '{"mcpServers":{"local":{"command":"echo"}}}');
@@ -117,7 +169,7 @@ it('follows the selected source root and its HOME boundary while refusing links 
   await rename(home.userConfigRoot, dotfiles);
   await symlink(dotfiles, home.userConfigRoot, 'dir');
   await symlink(join(dotfiles, 'RULES.md'), join(dotfiles, 'inner-link'));
-  const imported = await importAgentHome(home, { groups: new Set(['rules', 'mcp']), historyPaths: ['sessions'] });
+  const imported = await importAgentHome(home, { groups: new Set(['settings', 'rules', 'mcp']), historyPaths: ['sessions'] });
   expect(imported.issues).toContainEqual({ path: 'inner-link', reason: 'symlink' });
   expect(await readFile(join(home.configRoot, 'RULES.md'), 'utf8')).toBe('local rules');
   expect(await readFile(join(home.configRoot, 'sessions/old.jsonl'), 'utf8')).toBe('existing task');
@@ -150,8 +202,8 @@ it('merges separately selected projections and keeps hook-only changes in the ho
   expect(JSON.parse(await readFile(join(home.configRoot, 'settings.json'), 'utf8'))).toEqual({ theme: 'dark', hooks: { Stop: [{ command: 'changed' }] } });
 });
 
-it('skips symlinks and oversized files and reports each skipped source', async () => {
-  const { root, home, source } = await fixture();
+it('skips declared symlinks and oversized files and reports each skipped source', async () => {
+  const { root, home, source } = await fixture(['normal.txt', 'link', 'directory-link', 'large']);
   await source('normal.txt', 'normal');
   await writeFile(join(root, 'outside'), 'private');
   await symlink(join(root, 'outside'), join(home.userConfigRoot, 'link'));
@@ -166,7 +218,7 @@ it('skips symlinks and oversized files and reports each skipped source', async (
 });
 
 it('distinguishes six states and never deletes a managed file or overwrites an unselected conflict', async () => {
-  const { home, source } = await fixture();
+  const { home, source } = await fixture(['unchanged', 'userChanged', 'guguChanged', 'bothChanged', 'userDeleted', 'userAdded']);
   for (const name of ['unchanged', 'userChanged', 'guguChanged', 'bothChanged', 'userDeleted']) await source(name, 'base');
   await importAgentHome(home, { groups: new Set(['settings']) });
   await source('userChanged', 'user');
@@ -208,7 +260,7 @@ it('upgrades legacy markers without asking again and treats unequal unbased cont
 });
 
 it('keeps managed roots private and does not widen source permission bits', async () => {
-  const { home, source } = await fixture();
+  const { home, source } = await fixture(['private-script']);
   await source('private-script', 'fixture');
   await chmod(join(home.userConfigRoot, 'private-script'), 0o750);
   await importAgentHome(home, { groups: new Set(['settings']) });
@@ -231,11 +283,12 @@ it('rejects a stale re-import decision if the managed configuration changed afte
 it('reports a source changed between stat and reading through its open handle', async () => {
   const { home, source } = await fixture();
   await source('RULES.md', 'before');
+  const sourceFile = await realpath(join(home.userConfigRoot, 'RULES.md'));
   const original = fs.open.bind(fs);
   let exercised = false;
   vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
     const handle = await original(...args);
-    if (args[0] === join(home.userConfigRoot, 'RULES.md')) {
+    if (args[0] === sourceFile) {
       exercised = true;
       await writeFile(join(home.userConfigRoot, 'RULES.md'), 'changed while reading');
     }
@@ -247,13 +300,50 @@ it('reports a source changed between stat and reading through its open handle', 
   await expect(stat(join(home.configRoot, 'RULES.md'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
-it('streams old transcripts above the configuration-file cap under the remaining root budget', async () => {
+it('streams old transcripts above the configuration-file cap and keeps copies already present', async () => {
   const { home, source } = await fixture();
   await source('sessions/large.jsonl', '');
   const size = 50 * 1024 * 1024 + 1;
   await truncate(join(home.userConfigRoot, 'sessions/large.jsonl'), size);
   await importAgentHome(home, { groups: new Set(), historyPaths: ['sessions'] });
   expect((await stat(join(home.configRoot, 'sessions/large.jsonl'))).size).toBe(size);
-  expect(await copyAgentHomeHistory(home, ['sessions'], 2 * 1024 * 1024 * 1024 - size + 1))
-    .toContainEqual({ path: 'sessions/large.jsonl', reason: 'tooLarge' });
+  await truncate(join(home.userConfigRoot, 'sessions/large.jsonl'), 2 * 1024 * 1024 * 1024 + 1);
+  expect(await copyAgentHomeHistory(home, ['sessions'])).toEqual([]);
+  expect((await stat(join(home.configRoot, 'sessions/large.jsonl'))).size).toBe(size);
+});
+
+
+it('walks only declared configuration and transcript paths in a populated Codex home over 2 GiB', async () => {
+  const { home, source } = await fixture([], '.codex');
+  await source('config.toml', 'model = "fixture"\n[mcp_servers.example]\ncommand = "echo"\n');
+  await source('AGENTS.md', 'fixture instructions');
+  await source('rules/default.rules', 'fixture rules');
+  await source('skills/example/SKILL.md', 'fixture skill');
+  await source('sessions/2026/11/19/rollout.jsonl', 'current transcript');
+  await source('archived_sessions/rollout-old.jsonl', 'archived transcript');
+  const program = 'plugins/.plugin-appserver/codex-cli/CodexCLI.app/Contents/MacOS/codex';
+  await source(program, '');
+  await truncate(join(home.userConfigRoot, program), 2 * 1024 * 1024 * 1024 + 2);
+  await source('plugins/cache/browser/payload', 'module cache');
+  await source('visualizations/task/desktop.png', 'task output');
+  const sourceRoot = await realpath(home.userConfigRoot);
+  const listing = vi.spyOn(fs, 'readdir');
+  const scanned = await scanAgentHome(home);
+  expect(scanned.issues).toEqual([]);
+  expect(scanned.groups.find((group) => group.id === 'settings')?.count).toBe(1);
+  expect(scanned.mcpNames).toEqual(['example']);
+  const imported = await importAgentHome(home, {
+    groups: new Set(['settings', 'rules', 'skills']), migratedFrom: 'shared',
+    historyPaths: ['sessions', 'archived_sessions'],
+  });
+  expect(imported.issues).toEqual([]);
+  expect(Object.keys(imported.marker.files)).toEqual(['AGENTS.md', 'config.toml', 'rules/default.rules', 'skills/example/SKILL.md']);
+  for (const dir of ['', 'plugins', 'visualizations']) {
+    expect(listing.mock.calls.some(([path]) => String(path) === join(sourceRoot, dir))).toBe(false);
+  }
+  for (const dir of ['plugins', 'visualizations']) {
+    await expect(stat(join(home.configRoot, dir))).rejects.toMatchObject({ code: 'ENOENT' });
+  }
+  expect(await readFile(join(home.configRoot, 'sessions/2026/11/19/rollout.jsonl'), 'utf8')).toBe('current transcript');
+  expect(await readFile(join(home.configRoot, 'archived_sessions/rollout-old.jsonl'), 'utf8')).toBe('archived transcript');
 });
