@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { conversationLink, groupFileLink, parseGroupFileLink } from '@gugu/core/shared/ui/guguLink'
 import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
+import { markdownLiteral } from '@gugu/core/shared/markdownLiteral'
 import { archivedDeliveryReceipt, deliveryRefusalNotes, messageDeliveryBlocks } from './message-delivery-blocks.mjs'
 
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
@@ -733,8 +734,7 @@ async function workspaceRpcItem(deps, name, body, label) {
  * F112 Only the item's id: it is unique, and the host finds its group from it.
  */
 export function workspaceFileLink(item) {
-  const name = String(item.filename ?? '').replace(/[[\]\\]/g, (c) => `\\${c}`)
-  return `[${name}](${groupFileLink(item.id)})`
+  return `[${markdownLiteral(String(item.filename ?? ''))}](${groupFileLink(item.id)})`
 }
 function summarizeWorkspaceItem(item) {
   return {

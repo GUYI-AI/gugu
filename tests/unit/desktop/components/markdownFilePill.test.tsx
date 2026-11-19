@@ -77,6 +77,6 @@ describe('a pill pointing at a group file, in a chat bubble', () => {
   it('copied out of a bubble it is its token again — the href decoded back to what the message wrote', () => {
     const href = encodeURI(`gugu-file://${ITEM}?v=2#range=销售!B2:D4`)
     expect(filePillToken('销售!B2:D4 · 3×3', href)).toBe(`@[销售!B2:D4 · 3×3](gugu-file://${ITEM}?v=2#range=销售!B2:D4)`)
-    expect(filePillToken('图 2]', `gugu-file://${ITEM}`)).toBe(`@[图 2\\]](gugu-file://${ITEM})`)
+    expect(filePillToken('图 2]', `gugu-file://${ITEM}`)).toBe(`@[图 2&#93;](gugu-file://${ITEM})`)
   })
 })
