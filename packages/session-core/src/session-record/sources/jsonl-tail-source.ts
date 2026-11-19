@@ -22,6 +22,8 @@ export type JsonlTailFormat<S> = {
   /** 续读点里这份数据的版本。形状或读法变了就升，老存档一律作废重读。 */
   resumeVersion: number;
   resolve(): Promise<string>;
+  /** Immutable ancestors, each cut at its child's file-local byte boundary; only the resolved file is tail-followed. */
+  prefixes?(path: string): Promise<ReadonlyArray<{ path: string; endByteOffset: number }>>;
   /** 从头读时的状态。文件被换掉、整份重读时回到它。 */
   initial(): S;
   /** 一条记录 → 条目;回 null = 坏行。`state` 可以就地改。 */
@@ -32,7 +34,7 @@ export type JsonlTailFormat<S> = {
   childIds?(state: S): string[];
 };
 
-type ResumeData<S> = { version: number; path: string; tail: TailResume; state: S };
+type ResumeData<S> = { version: number; path: string; tail: TailResume; state: S; prefixBytes?: number };
 
 export function createJsonlTailSource<S>(
   locator: SessionRecordLocator,
@@ -45,13 +47,25 @@ export function createJsonlTailSource<S>(
   let state = format.initial();
   let sink: SessionRecordSourceEvents | null = null;
   let stopped = false;
+  let prefixBytes = 0;
 
-  const emit = (lines: string[], offsets: number[]) => {
+  const emit = (lines: string[], offsets: number[], file = path, seekable = true) => {
     if (stopped || !sink) return;
     const events = sink;
-    const file = path;
     emitJsonLines(lines, format.name, warn, (entries) => events.onEntries(entries), options?.fill ? decodeNoting : (record) => format.decode(record, state),
-      file ? (entries, index) => locateImages(entries, lines[index], offsets[index], file) : undefined, offsets);
+      file ? (entries, index) => locateImages(entries, lines[index], offsets[index], file) : undefined, seekable ? offsets : undefined);
+  };
+
+  const streamPrefixes = async (found: string) => {
+    prefixBytes = 0;
+    for (const prefix of await format.prefixes?.(found) ?? []) {
+      if (stopped) return;
+      // Filled pictures in another file stay inline: a fill's picture locator belongs to the current record only.
+      const prefixReader = new TailReader(prefix.path, pollInterval(options), { onLines: () => {}, onRestart: () => {} }, warn);
+      try { await prefixReader.readPrefix(prefix.endByteOffset, (lines, offsets) => emit(lines, offsets, prefix.path, false)); }
+      finally { prefixReader.stop(); }
+      prefixBytes += prefix.endByteOffset;
+    }
   };
 
   // A fill read: every entry carries the state its line was decoded from, so a later read can start at that line.
@@ -85,6 +99,7 @@ export function createJsonlTailSource<S>(
       if (options?.readMode === 'snapshot') {
         if (resume) events.onReset('source_replaced');
         state = format.initial();
+        if (format.prefixes) await streamPrefixes(found);
         await reader.readSnapshot(emit);
         return;
       }
@@ -93,12 +108,14 @@ export function createJsonlTailSource<S>(
       // 状态必须在 `resumeFrom` **之前**装回去:它当场就把「存档之后、重开之前」写进来的行读出来解码。
       // 先读后装 ⇒ 那一段按初始状态编号，键与存档里前几轮撞车，被上层去重表当成重复整条丢掉(#6357)。
       state = canResume ? structuredClone(data!.state) : format.initial();
+      prefixBytes = canResume ? data!.prefixBytes ?? 0 : 0;
       const resumed = canResume ? await reader.resumeFrom(data!.tail, emit) : false;
       if (!resumed) {
         // 要过存档、却没能续上 ⇒ 必须显式作废上层那份状态:不说的话整份重读会被旧去重表全部吃掉，
         // 留下一份过期且不再更新的历史。
         if (resume) events.onReset('source_replaced');
         state = format.initial();
+        if (format.prefixes) await streamPrefixes(found);
         await reader.readFromStart(emit);
       }
       reader.start();
@@ -127,12 +144,12 @@ export function createJsonlTailSource<S>(
     async resumePoint(budget) {
       if (!reader || !path || options?.readMode === 'snapshot') return null;
       // Debit before yielding/cloning; native children share this counter.
-      const consumedBytes = reader.consumedBytes;
+      const consumedBytes = reader.consumedBytes + prefixBytes;
       if (budget && (budget.remainingBytes -= consumedBytes) < 0) return null;
       const tail = await reader.resumePoint();
       if (!tail) return null;
-      if (budget && (budget.remainingBytes -= Math.max(0, tail.lineOffset - consumedBytes)) < 0) return null;
-      const data: ResumeData<S> = { version: format.resumeVersion, path, tail, state: structuredClone(state) };
+      if (budget && (budget.remainingBytes -= Math.max(0, tail.lineOffset + prefixBytes - consumedBytes)) < 0) return null;
+      const data: ResumeData<S> = { version: format.resumeVersion, path, tail, state: structuredClone(state), ...(prefixBytes ? { prefixBytes } : {}) };
       return { data, fingerprint: `${format.name}:${path}:${tail.ino}:${tail.size}:${tail.mtimeMs}` } satisfies SessionRecordResume;
     },
     stop() {
