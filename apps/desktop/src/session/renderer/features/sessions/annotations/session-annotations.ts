@@ -103,7 +103,7 @@ export class SessionAnnotations {
 
 const drafts = new Map<string, SessionAnnotations>();
 export const sessionAnnotations = {
-  forConversation(conversation: AnnotationConversation, accountId?: string): SessionAnnotations {
+  forConversation(conversation: AnnotationConversation, accountId?: string | null): SessionAnnotations {
     const identity = annotationConversationKey(conversation);
     const key = conversation.kind === 'chat' ? JSON.stringify([accountId ?? null, identity]) : identity;
     let draft = drafts.get(key);
