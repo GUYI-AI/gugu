@@ -11,8 +11,10 @@ import { parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import { chatPreviewText } from '../lib/systemNoticeText'
 import { imSelectors, type AccountImRepository } from '../lib/imRepository'
 import type { PersonalConversationDeletion } from '../lib/deleteListedConversation'
+import type { PersonalConversationStateReceipt } from '../lib/hideListedConversation'
 import { prepareProjectedReadWatermark } from './chatRealtimeMutations'
 import { currentAuthSessionSignal } from '../lib/authSessionLoss'
+import { publishChatRemovalFacts, publishChatRemoved } from '../lib/chatRemovalBridge'
 import {
   createChatProjection, readProjectionCursor,
   type ChatProjection, type ChatProjectionAttachment,
@@ -195,11 +197,11 @@ export function useChatProjectionBinding(deps: {
   }, [chatsRef, repositoryRef])
 
   /** `revokedMembership` 是增量那一路的另一半判据:要**权威的成员行 tombstone**,不是整表缺席(#4314)。 */
-  const publish = useCallback(async (
+  const publish = useCallback(async function publishSnapshot(
     fetched: readonly ChatItem[],
     identities: readonly unknown[],
     options: { requestSeq: number; notify: boolean; preserveMissingActive?: boolean; revokedMembership?: (chatId: string) => boolean },
-  ): Promise<void> => {
+  ): Promise<void> {
     const repository = await getRepository()
     const accountId = repository.accountId
     if (repositoryRef.current?.accountId !== accountId) return
@@ -234,9 +236,20 @@ export function useChatProjectionBinding(deps: {
       deferPersist: (persist) => pendingReads.push(persist),
     })
     acceptRows(accountId, shareRows(current, acknowledged))
+    const binding = ownerRef.current
+    if (binding?.accountId === accountId) publishChatRemovalFacts(accountId, id =>
+      ownerRef.current === binding && repositoryRef.current?.accountId === accountId
+      && (binding.owner.isConversationDeleted(id) || binding.owner.isMembershipRevoked(id)), async ids => {
+        if (ownerRef.current !== binding || repositoryRef.current?.accountId !== accountId) return
+        const rows = await binding.owner.readRestoredLayoutMemberships(ids, readProjectionCursor(repositoryRef.current), currentAuthSessionSignal())
+        if (rows !== null && ownerRef.current === binding && repositoryRef.current?.accountId === accountId) {
+          await publishSnapshot(rows, binding.owner.identities(), { requestSeq: ++requestSeqRef.current, notify: false,
+            preserveMissingActive: false, revokedMembership: binding.owner.isMembershipRevoked })
+        }
+      })
     for (const persist of pendingReads) persist()
     if (revokeMissingActive && activeChatId) onActiveRevoked(activeChatId)
-  }, [ledger, activeChatIdRef, canAcknowledge, visibleSeqOf, chatsRef, getRepository, onActiveRevoked, acceptRows, repositoryRef])
+  }, [ledger, activeChatIdRef, canAcknowledge, visibleSeqOf, chatsRef, getRepository, onActiveRevoked, acceptRows, repositoryRef, requestSeqRef])
 
   /** 冷启快照:一次「哪些会话属于我」的读 + 与增量同一套族读 ⇒ 2 波(spec I7,没有第二条拉取路)。 */
   const hydrate = useCallback((accountId: string) => ownerFor(accountId)
@@ -248,10 +261,20 @@ export function useChatProjectionBinding(deps: {
   const identities = useCallback((accountId: string) => ownerFor(accountId).identities(), [ownerFor])
   deps.conversations.readSeqsOf = (chatId) => ownerRef.current?.owner.memberReadSeqs(chatId)
 
+  const confirmPersonalHiding = useCallback(async (accountId: string, receipt: PersonalConversationStateReceipt) => {
+    const binding = ownerRef.current
+    if (!binding || binding.accountId !== accountId) throw new Error('Conversation projection is not attached')
+    const rows = await binding.owner.confirmPersonalHiding(receipt, currentAuthSessionSignal())
+    if (ownerRef.current !== binding) return
+    await publish(rows, binding.owner.identities(), { requestSeq: ++requestSeqRef.current,
+      notify: false, preserveMissingActive: true })
+  }, [publish, requestSeqRef])
+
   const confirmPersonalDeletion = useCallback(async (accountId: string, receipt: PersonalConversationDeletion): Promise<boolean> => {
     const binding = ownerRef.current
     if (!binding || binding.accountId !== accountId) return false
     binding.owner.confirmPersonalDeletion(receipt) // Synchronous, before any older result can publish.
+    publishChatRemoved(accountId, receipt.chat_id)
     ledger.forgetChat(receipt.chat_id)
     const repository = await getRepository()
     if (ownerRef.current !== binding || repository.accountId !== accountId) return false
@@ -274,5 +297,5 @@ export function useChatProjectionBinding(deps: {
 
   // ⚠️ 必须**稳定**:返回新字面量 ⇒ 依赖它的 effect 与 useCallback 每渲染都重建 ⇒ 订阅/渲染循环
   // (实测:第一版返回字面量,chatSelectionIntent4314 直接跑到 heap OOM)。
-  return useMemo(() => ({ hydrate, identities, publish, attach, hasDeletedConversation, confirmPersonalDeletion }), [hydrate, identities, publish, attach, hasDeletedConversation, confirmPersonalDeletion])
+  return useMemo(() => ({ hydrate, identities, publish, attach, hasDeletedConversation, confirmPersonalHiding, confirmPersonalDeletion }), [hydrate, identities, publish, attach, hasDeletedConversation, confirmPersonalHiding, confirmPersonalDeletion])
 }

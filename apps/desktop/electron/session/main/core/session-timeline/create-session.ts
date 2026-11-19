@@ -1,3 +1,8 @@
+import { buildSessionPermissionOptions } from '@shared/session-permission-options';
+import { customClaudeReviewSource } from '@gugu/session-core/models/auto-review-source';
+import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
+import { createFailureLogFields } from './create-failure-log-fields';
+import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
@@ -29,6 +34,8 @@ import {
   agentSupportsPermissionMode,
   type AgentPayload,
 } from '@shared/core/agents/agent-payload';
+import { creationFastGroup } from '@shared/core/agents/create-fast-mode';
+import { platformCreationFastGroup } from '../agents/platform-fast-mode';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
 import { SESSION_VIEWS, sessionRuntimeOfView, sessionpageLegOfView } from '@shared/core/sessions/sessions';
 import { buildInitialSessionDocument } from '@shared/core/sessions/initial-session-document';
@@ -77,7 +84,7 @@ function fail(code: string, message: string): CreateSessionResult<never> {
 /**
  * 起这家 agent 的路上失败。原文是「模块解析不到」时(这台机器上的咕咕缺适配器,#6264),
  * 发起方拿到的是一句能照做的人话和它自己的错误码,❌ 不是 `Cannot find module …` 加一整段 require 栈;
- * 原文进这台机器的日志。其余原因照旧逐字回传。
+ * 日志仅保留固定原因码。其余原因照旧逐字回传。
  */
 function failStart(code: string, detail: string, provider: string, platformModel = false): CreateSessionResult<never> {
   const classified = classifyCreateFailure(code, detail, { platformModel });
@@ -87,10 +94,10 @@ function failStart(code: string, detail: string, provider: string, platformModel
   return fail(classified, detail);
 }
 
-/** 原文进这台机器的日志(发起方只拿原因码,按它自己的界面语言说人话)。 */
-function logCreateFailure(fields: Record<string, unknown>, detail: string): void {
+/** Keep host prose and request data out of the common creation log boundary. */
+function logCreateFailure(code: string, retry = false): void {
   void import('@main/lib/logger').then(({ log }) =>
-    log.warn({ scope: 'session-timeline/create', ...fields, detail }, '在这台机器上建会话/起会话失败'),
+    log.warn(createFailureLogFields(code, retry), '在这台机器上建会话/起会话失败'),
   );
 }
 
@@ -119,10 +126,10 @@ function offeredSessionViews(agent: AgentPayload): SessionpageSessionView[] {
  */
 function declaredPermissionModes(agent: AgentPayload): GuguPermissionMode[] {
   const legs = offeredSessionViews(agent).map(sessionpageLegOfView);
-  return GUGU_PERMISSION_MODES.filter((mode) =>
+  return GUGU_PERMISSION_MODES.filter((mode) => mode !== 'ai-review' && (
     legs.length === 0
       ? agentSupportsPermissionMode(agent.capabilities, mode)
-      : legs.every((leg) => agentSupportsPermissionMode(agent.capabilities, mode, leg)));
+      : legs.every((leg) => agentSupportsPermissionMode(agent.capabilities, mode, leg))));
 }
 
 /**
@@ -267,12 +274,7 @@ export interface CreateModelsDeps {
 }
 
 const defaultCreateModelsDeps: CreateModelsDeps = {
-  readAuth: async (providerId) => {
-    const { getAgentConfigRuntimeClient } = await import('@main/core/agent-config/runtime-process/host');
-    const runtime = await getAgentConfigRuntimeClient();
-    const result = await runtime.refreshAuthStatus({ providerId });
-    return result.success ? result.data : null;
-  },
+  readAuth: async (providerId) => (await import('@main/core/agent-config/runtime-process/host')).readAgentAuthStatus(providerId),
 };
 
 export async function createModels(
@@ -287,7 +289,8 @@ export async function createModels(
     const { listLocalModels, probeHarnessCatalogState } = await import('@main/core/agents/session-discovery');
     const [catalog, state] = await Promise.all([
       listLocalModels(request.harness, { transport: sessionRuntimeOfView(view.view) }),
-      probeHarnessCatalogState(request.harness, sessionRuntimeOfView(view.view)),
+      probeHarnessCatalogState(request.harness, sessionRuntimeOfView(view.view),
+        request.model?.trim() && !request.model.trim().startsWith('platform:') && !customModelRefFromOption(request.model) ? runtimeModelId(request.model.trim()) : undefined),
     ]);
     // 默认模型在这台机器上有没有凭据(#6264):远端创建框据此决定默认挪不挪到平台模型,与桌面同一个读数。
     const [selectedCredential, harnessAuth] = await Promise.all([
@@ -298,20 +301,51 @@ export async function createModels(
     // 在目录里认的档取交集(#6447)。
     const requestedModel = request.model?.trim() || null;
     const platformModel = !!requestedModel && requestedModel.startsWith('platform:');
-    const resolvedEfforts = resolveCreateEfforts({
+    const customRef = customModelRefFromOption(requestedModel);
+    const customRecords = await (await import('@main/core/agents/custom-models')).listCustomModels();
+    const reviewConnection = customRef ? customRecords.find(record => record.id === customRef.connectionId) : undefined;
+    const reviewEndpoint = reviewConnection?.endpoints.find(endpoint => endpoint.protocol === 'anthropic-messages');
+    const customReview = request.harness === 'claude' && customRef && reviewConnection?.keySaved && reviewEndpoint
+      ? customClaudeReviewSource({ connectionId: customRef.connectionId, endpoint: reviewEndpoint.baseUrl, selectedModel: customRef.modelId, models: reviewConnection.models,
+        preference: await (await import('@main/core/settings/settings-service')).appSettingsService.get('autoReviewModel') }) : null;
+    const customEntry = customRef && customRecords.find(({ id }) => id === customRef.connectionId)?.models.find(({ id }) => id === customRef.modelId);
+    const resolvedEfforts = customRef && customEntry?.thinking !== true ? null : resolveCreateEfforts({
       state,
       effortCapability: agent.capabilities?.effort,
       staticModelsCapability: agent.capabilities?.models,
-      model: platformModel ? null : (requestedModel ?? catalog.selected),
+      model: platformModel ? null : (runtimeModelId(requestedModel) ?? catalog.selected),
       platformModel: platformEffortFacts(
         platformModel ? requestedModel : null,
         catalog.models.map((m) => ({ id: m.id, reasoningEfforts: m.reasoning_efforts ?? null })),
       ),
       leg: sessionpageLegOfView(view.view),
     });
+    const fast = customRef ? null : platformModel
+      ? await platformCreationFastGroup(request.harness, requestedModel!)
+      : creationFastGroup(agent.capabilities, requestedModel ?? catalog.selected, state);
+    const reviewQualified = (!customRef || request.harness !== 'claude' || customReview !== null) && catalogAllowsAutoReview(agent.capabilities?.autoApprove?.modes, state,
+          platformModel ? 'platform' : customRef ? 'custom' : 'own', runtimeModelId(requestedModel) ?? (state.kind === 'ready' ? state.selected : null));
+    const reviewAllowed = reviewQualified && customReview?.kind !== 'platform-fallback';
+    const cliVersion = state.kind === 'ready' || state.kind === 'auth-required' ? state.cliVersion : undefined;
+    const floor = agent.capabilities?.autoApprove?.modes?.['ai-review']?.reviewRequirements?.minimumCliVersion;
+    const versionTooOld = cliVersion && floor && cliVersion.split('.').reduce((n, part) => n * 10000 + Number(part), 0) < floor.split('.').reduce((n, part) => n * 10000 + Number(part), 0);
+    const permissionOptions = buildSessionPermissionOptions({
+      modeMap: agent.capabilities?.autoApprove?.modes,
+      native: state.kind === 'ready' || state.kind === 'auth-required' ? state.permissionModes : undefined,
+      structuralFullAccess: request.harness === 'grok',
+      leg: sessionpageLegOfView(view.view),
+      review: { allowed: reviewAllowed, byHaiku: customReview?.kind === 'own' && customReview.byHaiku,
+        reason: !cliVersion ? 'taskConfig.reviewEligibilityUnknown' : versionTooOld ? 'taskConfig.reviewVersionUnsupported'
+          : state.kind !== 'ready' ? 'taskConfig.reviewEligibilityUnknown' : !state.reviewerAvailable ? 'taskConfig.reviewNativeUnavailable' : 'taskConfig.reviewUnavailable' },
+    });
     return {
       ok: true,
       value: {
+        ...(fast ? { fast } : {}),
+        permissionOptions,
+        customModels: customRecords,
+        modelProtocols: agent.capabilities?.modelProtocols,
+        customModel: agent.capabilities?.customModel,
         harness: catalog.harness_id,
         transport: catalog.transport,
         models: catalog.models.map((m) => ({
@@ -324,6 +358,7 @@ export async function createModels(
           ...(m.hidden ? { hidden: true } : {}),
         })),
         selected: catalog.selected,
+        ...(reviewQualified ? { autoReview: { model: requestedModel ?? (state.kind === 'ready' ? state.selected! : ''), ...(customReview?.kind === 'platform-fallback' ? { disabled: true } : {}), ...(customReview?.kind === 'own' && customReview.byHaiku ? { reviewByHaiku: true } : {}) } } : {}),
         efforts: Object.entries(resolvedEfforts?.options ?? {}).map(([id, option]) => ({
           id,
           name: option.name,
@@ -343,7 +378,13 @@ export async function createModels(
   }
 }
 
+export interface StagedAttachmentCreation {
+  sessionId: string; attachmentNames: readonly string[]; beforeCommit: () => Promise<void>;
+}
+
 export interface CreateSessionDeps {
+  /** Trusted host-only hook; no initial payload or model dispatch before file admission. */
+  stagedAttachmentCreation?: StagedAttachmentCreation;
   /** 这台机器上还没装所选 harness 时先装上;默认是云端 agent.create 用的**同一个** ensureAgentInstalled。 */
   ensureAgentInstalled: (provider: string) => Promise<void>;
 }
@@ -356,7 +397,7 @@ export async function resolveCreateEffort(
   const effort = request.effort.trim();
   if (!effort) return fail('effort_rejected', 'Reasoning effort must not be empty');
   let options: { id: string }[];
-  if (request.model?.trim().startsWith('platform:')) {
+  if (request.model?.trim().startsWith('platform:') || customModelRefFromOption(request.model?.trim())) {
     const catalog = await createModels(request);
     if (!catalog.ok) return catalog;
     options = catalog.value.efforts;
@@ -371,7 +412,7 @@ export async function resolveCreateEffort(
     options = state.efforts;
   }
   if (!options.some((option) => option.id === effort)) {
-    return fail('effort_rejected', `${request.harness} does not offer reasoning effort '${effort}' for ${request.model ?? 'its default model'}; available: ${options.map((option) => option.id).join(', ')}`);
+    return fail('effort_rejected', `${request.harness} does not offer reasoning effort '${effort}' for ${runtimeModelId(request.model?.trim()) ?? 'its default model'}; available: ${options.map((option) => option.id).join(', ')}`);
   }
   return { ok: true, value: effort };
 }
@@ -384,8 +425,13 @@ export async function createSession(
   deps: CreateSessionDeps = defaultCreateSessionDeps
 ): Promise<CreateSessionResult<SessionpageSessionCreateResult>> {
   const result = await createSessionSteps(request, deps);
-  if (!result.ok) logCreateFailure({ provider: request.harness, code: result.error.code }, result.error.message);
+  if (!result.ok) logCreateFailure(result.error.code);
   return result;
+}
+
+/** Separate host verb. The request still passes every ordinary creation preflight. */
+export function createAttachmentDraft(request: SessionpageSessionCreateRequest, staged: StagedAttachmentCreation) {
+  return createSession(request, { ...defaultCreateSessionDeps, stagedAttachmentCreation: staged });
 }
 
 async function createSessionSteps(
@@ -393,8 +439,9 @@ async function createSessionSteps(
   deps: CreateSessionDeps
 ): Promise<CreateSessionResult<SessionpageSessionCreateResult>> {
   const prompt = request.prompt.trim();
-  if (!prompt) return fail('prompt_empty', '要开一条会话,总得先有一句话');
-  const titleSource = prompt;
+  const staged = deps.stagedAttachmentCreation;
+  if (!prompt && !staged?.attachmentNames.length) return fail('prompt_empty', '要开一条会话,总得先有一句话');
+  const titleSource = prompt || staged!.attachmentNames.join(' ');
 
   const resolved = await resolveProjectWorkspace({ projectId: request.projectId, projectPath: request.projectPath });
   if (!resolved.ok) return resolved;
@@ -458,6 +505,16 @@ async function createSessionSteps(
   const resolvedEffort = await resolveCreateEffort({ ...request, sessionView: view.view });
   if (!resolvedEffort.ok) return resolvedEffort;
   const effort = resolvedEffort.value;
+  if (request.fastMode !== undefined && typeof request.fastMode !== 'boolean') {
+    return fail('fast_rejected', 'Fast mode must be a boolean');
+  }
+  if (request.fastMode === true) {
+    if (!request.model?.trim()) return fail('fast_rejected', 'Fast requires an explicit model');
+    const catalog = await createModels({ harness: request.harness, sessionView: view.view, model: request.model });
+    if (!catalog.ok || catalog.value.fast?.model !== request.model.trim()) {
+      return fail('fast_rejected', 'Cannot verify Fast for the selected model');
+    }
+  }
 
   /*
    * ⚠️ 建会话那整条配方**用时再取**,❌ 不在模块顶层 import(理由见 agentPayloads 抬头)。
@@ -473,8 +530,8 @@ async function createSessionSteps(
   // 派任务(gugu-dev#181):第一句是一条真的咕咕消息(那张卡),要稳定 id —— 与桌面 use-create-session-callback 同。
   // 不派任务时首句用发起方铸的 id(#2296):手机画的乐观首句与待发行、原生消息是同一个身份。
   const taskChatId = request.taskChatId?.trim() || undefined;
-  const taskMessageId = taskChatId ? randomUUID() : undefined;
-  const sessionId = randomUUID();
+  const taskMessageId = taskChatId ? (staged ? request.initialMessageId : randomUUID()) : undefined;
+  const sessionId = staged?.sessionId ?? randomUUID();
   // 与桌面 composer 同一个翻译点。首轮内容的投递方式跟着腿走:聊天腿把第一句放进 ACP 启动队列,
   // 终端腿放进 initialPrompt(与 use-create-session-callback 对 startup-capable provider 的做法同)。
   const initialSession = {
@@ -483,13 +540,15 @@ async function createSessionSteps(
       provider,
       sessionView: view.view,
       prompt: request.prompt,
+      ...(staged ? { attachmentNames: staged.attachmentNames } : {}),
       permissionMode,
       model,
       effort,
+      ...(request.fastMode !== undefined ? { fastMode: request.fastMode } : {}),
       ...(platformModel !== undefined ? { platformModel } : {}),
       startupOrigin: 'session-page',
     }),
-    ...(runtime === 'acp' ? { initialQueue: [{ text: prompt, origin: 'manual' as const }] } : { initialPrompt: prompt }),
+    ...(!staged ? (runtime === 'acp' ? { initialQueue: [{ text: prompt, origin: 'manual' as const }] } : { initialPrompt: prompt }) : {}),
     ...(taskChatId ? { taskChatId, initialMessageId: taskMessageId } : request.initialMessageId ? { initialMessageId: request.initialMessageId } : {}),
   };
   const params: CreateSessionParams = {
@@ -508,6 +567,7 @@ async function createSessionSteps(
     return failStart('create_task_failed', JSON.stringify(prepared.error), provider, requestedPlatform);
   }
 
+  await staged?.beforeCommit();
   let convRow!: SessionRow;
   db.transaction((tx) => {
     convRow = commitCreateSession(prepared.data, tx);
@@ -524,7 +584,9 @@ async function createSessionSteps(
   // ── 从这里起会话行已经写下了:再失败也 ❌ 回一个错误让发起方留在新建页 —— 那会留下一条点不开的死行
   //    (#6264 走查实测:侧栏一行灰字、红点,点不动)。改为照常进这条会话:第一句话在转录里,
   //    失败原因是其后的一行、可以再试一次(spec session-always-openable)。原因码记在这台机器上,
-  //    另一台桌面、另一天打开它也看得到;原文进日志。
+  //    另一台桌面、另一天打开它也看得到;日志只记固定原因码。
+  if (staged) return { ok: true, value };
+
   const launched = await launchCreatedSession({
     sessionId,
     projectId,
@@ -533,7 +595,7 @@ async function createSessionSteps(
   });
   if (!launched.ok) {
     const code = classifyCreateFailure(launched.code, launched.detail, { platformModel: requestedPlatform });
-    logCreateFailure({ provider, sessionId, code }, launched.detail);
+    logCreateFailure(code);
     recordStartFailure(sessionId, code);
     return { ok: true, value: { ...value, startFailure: code } };
   }
@@ -574,7 +636,7 @@ export async function startSession(sessionId: string): Promise<CreateSessionResu
   });
   if (!launched.ok) {
     const code = classifyCreateFailure(launched.code, launched.detail, { platformModel });
-    logCreateFailure({ provider: row.provider, sessionId, code, retry: true }, launched.detail);
+    logCreateFailure(code, true);
     recordStartFailure(sessionId, code);
     return fail(code, launched.detail);
   }

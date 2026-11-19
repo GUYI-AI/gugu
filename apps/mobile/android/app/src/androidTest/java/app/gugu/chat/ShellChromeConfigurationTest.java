@@ -33,7 +33,7 @@ public class ShellChromeConfigurationTest {
                 target.getBridge().getWebView().stopLoading();
                 for (String tone : new String[] { "dark", "light", "dark" }) {
                     target.startup().syncTone(null, tone);
-                    assertEquals("tone before configuration callback", "dark".equals(tone) ? Color.rgb(24, 24, 24) : Color.WHITE,
+                    assertEquals("tone before configuration callback", "dark".equals(tone) ? Color.rgb(15, 15, 15) : Color.WHITE,
                             ((ColorDrawable) target.getWindow().getDecorView().getBackground()).getColor());
                     for (int round = 0; round < 3; round++) {
                         for (int orientation : new int[] { Configuration.ORIENTATION_LANDSCAPE, Configuration.ORIENTATION_PORTRAIT }) {
@@ -42,7 +42,7 @@ public class ShellChromeConfigurationTest {
                             target.onConfigurationChanged(changed);
                             boolean dark = "dark".equals(tone);
                             assertTrue(target.getWindow().getDecorView().getBackground() instanceof ColorDrawable);
-                            assertEquals("system-bar background after configuration callback", dark ? Color.rgb(24, 24, 24) : Color.WHITE,
+                            assertEquals("system-bar background after configuration callback", dark ? Color.rgb(15, 15, 15) : Color.WHITE,
                                     ((ColorDrawable) target.getWindow().getDecorView().getBackground()).getColor());
                             WindowInsetsControllerCompat bars = WindowCompat.getInsetsController(target.getWindow(), target.getWindow().getDecorView());
                             assertEquals("status icon contrast", !dark, bars.isAppearanceLightStatusBars());

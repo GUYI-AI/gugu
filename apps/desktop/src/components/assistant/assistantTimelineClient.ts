@@ -91,7 +91,9 @@ export async function changeConversationQueue(local: boolean, deviceId: string, 
 export function conversationOptionClient(target: { deviceId: string; sessionId: string; local: boolean; phoneHost?: boolean }) {
   const { deviceId, sessionId, local, phoneHost } = target
   return {
-    read: () => local ? value(rpcOn(null).sessionTimeline.sessionOptions({ conversationId: sessionId })) : remote.fetchSessionOptions(deviceId, sessionId, phoneHost),
+    read: (includeOwnModelCatalog?: true) => local
+      ? value(rpcOn(null).sessionTimeline.sessionOptions({ conversationId: sessionId, ...(includeOwnModelCatalog ? { includeOwnModelCatalog } : {}) }))
+      : remote.fetchSessionOptions(deviceId, sessionId, phoneHost, includeOwnModelCatalog),
     set: (dimension: import('@gugu/session-core/session-record/contract').SessionOptionDimension, next: string) => {
       const input = { conversationId: sessionId, dimension, value: next }
       return local ? value(rpcOn(null).sessionTimeline.sessionSetOption(input)) : remote.setSessionOption(deviceId, input, phoneHost)

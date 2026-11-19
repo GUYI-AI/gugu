@@ -568,7 +568,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       deps,
     )
     expect(started).toHaveLength(1)
-    expect(started[0]?.threadStart).toEqual({ approvalPolicy: 'never', sandbox: 'danger-full-access' })
+    expect(started[0]?.threadStart).toEqual({ approvalPolicy: 'never', sandbox: 'danger-full-access', approvalsReviewer: 'user' })
     expect(started[0]?.extraArgs).toEqual(expect.arrayContaining([
       'model="gpt-5.6-sol"',
       'model_reasoning_effort="high"',
@@ -590,7 +590,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       deps,
     )
     expect(started).toHaveLength(1)
-    expect(started[0]?.threadStart).toEqual({ approvalPolicy: 'on-request', sandbox: 'workspace-write' })
+    expect(started[0]?.threadStart).toEqual({ approvalPolicy: 'on-request', sandbox: 'workspace-write', approvalsReviewer: 'user' })
   })
   it('没选 model / effort 就不下发这两项,但默认询问权限仍经 thread/start 下发', async () => {
     await provisionAndOverride(
@@ -608,7 +608,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
     const args = started[0]?.extraArgs ?? []
     expect(args.some((a) => a.startsWith('model='))).toBe(false)
     expect(args.some((a) => a.startsWith('model_reasoning_effort='))).toBe(false)
-    expect(started[0]?.threadStart).toEqual({ approvalPolicy: 'on-request', sandbox: 'workspace-write' })
+    expect(started[0]?.threadStart).toEqual({ approvalPolicy: 'on-request', sandbox: 'workspace-write', approvalsReviewer: 'user' })
   })
   it('fork 显式交给 app-server 且不发送 fresh-session 待命 prompt', async () => {
     const onProviderSessionId = vi.fn(async () => {})
@@ -633,7 +633,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
         agentUserId: 'agent-1:fork-scratch',
         developerInstructions: PLATFORM + guguSessionSurfaceBlock('app-server', 'codex', false) + guguAppsBlock([], []) + IDENTITY,
         forkFromThreadId: 'parent-thread-1',
-        threadStart: { approvalPolicy: 'never', sandbox: 'read-only' },
+        threadStart: { approvalPolicy: 'never', sandbox: 'read-only', approvalsReviewer: 'user' },
         extraArgs: expect.arrayContaining(['model="gpt-5.6-sol"', 'model_reasoning_effort="high"']),
         tuiLoads: undefined,
       }),
@@ -702,7 +702,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       expect.objectContaining({
         developerInstructions: undefined,
         resumeThreadId: 'existing-thread-1',
-        threadStart: { approvalPolicy: 'never', sandbox: 'danger-full-access' },
+        threadStart: { approvalPolicy: 'never', sandbox: 'danger-full-access', approvalsReviewer: 'user' },
         extraArgs: expect.arrayContaining(['model="gpt-5.6-sol"', 'model_reasoning_effort="high"']),
         // @@@6112 载入交给 TUI(`resume <tid>`),咕咕等它的载入广播再订阅。
         tuiLoads: 'resume',

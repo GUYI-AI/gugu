@@ -1,7 +1,7 @@
 // @@@5856 话题分栏的纯函数 —— 单独一个文件是 react-refresh 的要求(一个文件只导出组件),
 // 也让引文的取法能被单独判真假。
 import type { MessageItem } from '@gugu/core/shared/types/chat'
-import { readInterface, takeLegacyInterface, writeInterface } from '@/lib/viewStateTable'
+import { clampPaneWidth, definePaneWidth, readPaneWidth, writePaneWidth } from '@/lib/paneWidth'
 
 /** 引用条的文本:与主线同形(一行引文 + 省略)。引用的是话题里的一句话,所以它留在分栏自己的输入框上。 */
 export function quotePrefixOf(message: Pick<MessageItem, 'content'>): string {
@@ -28,7 +28,6 @@ export function canSourceTopic(message: TopicSourceCandidate): boolean {
  * 地板 280:再窄一条消息就折成竖条。天花板由容器算(见 maxTopicSplitWidthForAvailableWidth):
  * 左边主聊天区要留得下自己的最小宽度,❌ 不许把分栏拖到把主线挤没。
  */
-const TOPIC_SPLIT_WIDTH_STORAGE_KEY = 'gugu.topicSplitPane.width'
 export const TOPIC_SPLIT_DEFAULT_WIDTH = 340
 export const TOPIC_SPLIT_MIN_WIDTH = 280
 export const TOPIC_SPLIT_MAX_WIDTH = 720
@@ -43,10 +42,9 @@ export const TOPIC_SPLIT_MAX_WIDTH = 720
  */
 export const TOPIC_SPLIT_HOST_MIN_WIDTH = 380
 
-export function clampTopicSplitWidth(width: number): number {
-  if (!Number.isFinite(width)) return TOPIC_SPLIT_DEFAULT_WIDTH
-  return Math.min(TOPIC_SPLIT_MAX_WIDTH, Math.max(TOPIC_SPLIT_MIN_WIDTH, Math.round(width)))
-}
+const TOPIC_SPLIT_PANE = definePaneWidth({ id: 'gugu.topicSplitPane.width', initial: TOPIC_SPLIT_DEFAULT_WIDTH, min: TOPIC_SPLIT_MIN_WIDTH, max: TOPIC_SPLIT_MAX_WIDTH })
+
+export const clampTopicSplitWidth = (width: number): number => clampPaneWidth(TOPIC_SPLIT_PANE, width)
 
 export function maxTopicSplitWidthForAvailableWidth(availableWidth: number): number {
   if (!Number.isFinite(availableWidth) || availableWidth <= 0) return TOPIC_SPLIT_MAX_WIDTH
@@ -54,15 +52,5 @@ export function maxTopicSplitWidthForAvailableWidth(availableWidth: number): num
   return Math.min(TOPIC_SPLIT_MAX_WIDTH, Math.max(TOPIC_SPLIT_MIN_WIDTH, remaining))
 }
 
-// A view-state setting of the device (lib/viewStateTable); the old localStorage value moves over once.
-takeLegacyInterface(TOPIC_SPLIT_WIDTH_STORAGE_KEY, TOPIC_SPLIT_WIDTH_STORAGE_KEY, Number)
-
-export function readStoredTopicSplitWidth(): number {
-  const value = readInterface<number>(TOPIC_SPLIT_WIDTH_STORAGE_KEY)
-  if (value === undefined || !Number.isFinite(value) || value <= 0) return TOPIC_SPLIT_DEFAULT_WIDTH
-  return clampTopicSplitWidth(value)
-}
-
-export function writeStoredTopicSplitWidth(width: number): void {
-  writeInterface(TOPIC_SPLIT_WIDTH_STORAGE_KEY, clampTopicSplitWidth(width))
-}
+export const readStoredTopicSplitWidth = (): number => readPaneWidth(TOPIC_SPLIT_PANE)
+export const writeStoredTopicSplitWidth = (width: number): void => writePaneWidth(TOPIC_SPLIT_PANE, width)

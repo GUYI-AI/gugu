@@ -2,8 +2,8 @@ import type {
   LiveWindowAction, LiveWindowContext, LiveWindowPresentation, LiveWindowSnapshot, LiveWindowSource,
 } from './types';
 
-type Entry = { context: LiveWindowContext; sources: readonly LiveWindowSource[]; presentation: LiveWindowPresentation };
-const EMPTY: LiveWindowSnapshot = Object.freeze({ context: null, presentation: null, sources: [], source: null, visible: false, operating: false });
+type Entry = { context: LiveWindowContext; sources: readonly LiveWindowSource[]; presentation: LiveWindowPresentation; operating: boolean; opened: boolean };
+const EMPTY: LiveWindowSnapshot = Object.freeze({ context: null, presentation: null, sources: [], source: null, headerSource: null, visible: false, operating: false, connected: true });
 const ratio = (value: number) => Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
 const key = (context: LiveWindowContext) => JSON.stringify([context.conversationId, context.deviceId, context.sessionId, context.agentId]);
 const initial = (): LiveWindowPresentation => ({
@@ -12,7 +12,7 @@ const initial = (): LiveWindowPresentation => ({
 });
 const sameSource = (a: LiveWindowSource, b: LiveWindowSource) => a.id === b.id && a.kind === b.kind
   && a.deviceId === b.deviceId && a.sessionId === b.sessionId && a.agentId === b.agentId && a.title === b.title
-  && a.status === b.status && a.size?.width === b.size?.width && a.size?.height === b.size?.height;
+  && a.status === b.status && a.activity === b.activity && a.size?.width === b.size?.width && a.size?.height === b.size?.height;
 const sameSources = (a: readonly LiveWindowSource[], b: readonly LiveWindowSource[]) =>
   a.length === b.length && a.every((source, index) => sameSource(source, b[index]!));
 const bound = (context: LiveWindowContext, source: LiveWindowSource) => source.deviceId === context.deviceId
@@ -34,7 +34,7 @@ export class LiveWindowModel {
     if (!context) { this.active = null; this.publish(); return; }
     const id = key(context), entry = this.entries.get(id);
     if (entry) entry.context = { ...context };
-    else this.entries.set(id, { context: { ...context }, sources: [], presentation: initial() });
+    else this.entries.set(id, { context: { ...context }, sources: [], presentation: initial(), operating: false, opened: false });
     this.active = id;
     this.publish();
   }
@@ -44,25 +44,36 @@ export class LiveWindowModel {
     const id = key(context);
     let entry = this.entries.get(id);
     if (!entry) {
-      entry = { context: { ...context }, sources: [], presentation: initial() };
+      entry = { context: { ...context }, sources: [], presentation: initial(), operating: false, opened: false };
       this.entries.set(id, entry);
     } else entry.context = { ...context };
     const accepted = context.privateAgentChat ? incoming.filter(source => bound(context, source) && !!source.id) : [];
-    const next = accepted.map(source => ({ ...source, size: source.size && { ...source.size } }));
-    // The last observed picture stays in its conversation when its live resource ends.
-    for (const previous of entry.sources) {
-      if (!next.some(source => source.id === previous.id || source.kind === previous.kind)) next.push({ ...previous, status: 'finished' });
-    }
+    const next = accepted.map(source => ({ ...source, size: source.size && { ...source.size } }))
+      .sort((a, b) => Number(a.kind === 'computer') - Number(b.kind === 'computer'));
+    // Resource lifetime outlives a turn; desktop presentation ends with the turn, not the resource.
+    // Losing the device connection is not evidence that its run ended.
+    const operating = next.some(source => source.status === 'operating');
+    const completed = this.platform === 'desktop' && context.connected !== false && entry.operating && !operating;
+    if (context.connected !== false) entry.operating = operating;
     const newcomers = next.filter(source => source.status === 'operating' && !entry!.presentation.dismissedSourceIds.includes(source.id)
       && !entry!.sources.some(old => old.id === source.id && old.status === 'operating'));
+    const previousActivity = Math.max(0, ...entry.sources.map(source => source.activity ?? 0));
+    const current = [...next].sort((a, b) => (b.activity ?? 0) - (a.activity ?? 0))[0];
     if (!sameSources(entry.sources, next)) entry.sources = next;
-    if (context.privateAgentChat && newcomers.length && entry.presentation.mode === 'closed') {
-      const selected = newcomers[0]!;
+    if (current && (current.activity ?? 0) > previousActivity) {
+      entry.presentation = { ...entry.presentation, selectedSourceId: current.id };
+    }
+    if (context.privateAgentChat && newcomers.length && !entry.opened) {
+      const selected = current ?? newcomers[0]!;
+      entry.opened = true;
       entry.presentation = { ...entry.presentation, mode: 'floating', selectedSourceId: selected.id, controlsRevealed: false,
         dismissedSourceIds: entry.presentation.dismissedSourceIds.filter(sourceId => !newcomers.some(source => source.id === sourceId)) };
     }
     if (!next.some(source => source.id === entry!.presentation.selectedSourceId) && next.length) {
       entry.presentation = { ...entry.presentation, selectedSourceId: next[0]!.id };
+    }
+    if ((completed || !next.length) && entry.presentation.mode !== 'closed') {
+      entry.presentation = { ...entry.presentation, mode: 'closed', selectedSourceId: null, selectedTab: 'chat', controlsRevealed: false };
     }
     if (id === this.active) this.publish();
   }
@@ -74,6 +85,16 @@ export class LiveWindowModel {
     const available = () => entry.sources.filter(source => !state.dismissedSourceIds.includes(source.id));
     const select = (id: string | undefined) => id && available().some(source => source.id === id);
     switch (action.type) {
+      case 'toggle-window': {
+        const open = state.mode !== 'closed' && !(state.mode === 'tabbed' && state.selectedTab === 'chat');
+        state.mode = open ? 'closed' : 'floating'; state.selectedTab = 'chat'; state.controlsRevealed = false;
+        if (!open) {
+          state.dismissedSourceIds = [];
+          state.selectedSourceId = [...entry.sources].sort((a, b) => (b.activity ?? 0) - (a.activity ?? 0))[0]?.id ?? null;
+        }
+        entry.opened = true;
+        break;
+      }
       case 'reveal': state.controlsRevealed = action.shown; break;
       case 'set-orientation': if (this.platform === 'phone') state.orientation = action.orientation; break;
       case 'enlarge': if (state.mode !== 'closed') { state.mode = 'enlarged'; state.controlsRevealed = false; } break;
@@ -106,7 +127,7 @@ export class LiveWindowModel {
         const source = entry.sources.find(source => !action.kind || source.kind === action.kind);
         if (!source) break;
         state.dismissedSourceIds = state.dismissedSourceIds.filter(id => id !== source.id);
-        state.selectedSourceId = source.id; state.mode = 'floating'; state.controlsRevealed = false; break;
+        state.selectedSourceId = source.id; state.mode = 'floating'; state.controlsRevealed = false; entry.opened = true; break;
       }
       case 'select-source': if (select(action.sourceId)) state.selectedSourceId = action.sourceId; break;
       case 'position': state.small = { ...action.small,
@@ -134,11 +155,14 @@ export class LiveWindowModel {
       this.snapshot = EMPTY;
     } else {
       const { context, presentation } = entry;
+      const headerSource = context.shown && context.privateAgentChat
+        ? [...entry.sources].sort((a, b) => (b.activity ?? 0) - (a.activity ?? 0))[0] ?? null : null;
       const sources = entry.sources.filter(source => !presentation.dismissedSourceIds.includes(source.id));
       const source = sources.find(candidate => candidate.id === presentation.selectedSourceId) ?? sources[0] ?? null;
       const visible = context.shown && context.privateAgentChat && !!source && presentation.mode !== 'closed'
         && !(presentation.mode === 'tabbed' && presentation.selectedTab === 'chat');
-      const next: LiveWindowSnapshot = { context, presentation, sources, source, visible, operating: source?.status === 'operating' };
+      const next: LiveWindowSnapshot = { context, presentation, sources, source, visible, headerSource,
+        connected: context.connected !== false, operating: context.connected !== false && headerSource?.status === 'operating' };
       if (JSON.stringify(next) === JSON.stringify(this.snapshot)) return;
       this.snapshot = next;
     }

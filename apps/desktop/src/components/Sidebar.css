@@ -163,14 +163,6 @@
     animation: gg-rail-peek 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both;
   }
 
-  /* 资源库:上面两层掀起来,移开落回。图标是生成的 Solar Library,第一笔是那两层。 */
-  .gg-sidebar-item[data-rail='library'] svg g > path:first-child {
-    transition: translate var(--dur-slow) cubic-bezier(0.3, 1.3, 0.5, 1);
-  }
-  .gg-sidebar-item[data-rail='library']:hover svg g > path:first-child {
-    translate: 0 -1.5px;
-  }
-
   /* App:拎出来的那一块往缺口里插一下再回去(装上一个 App)。 */
   .gg-sidebar-item[data-rail='apps']:hover .gg-rail-piece {
     animation: gg-rail-slot 0.6s ease-in-out;

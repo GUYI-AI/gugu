@@ -230,20 +230,20 @@ describe('workspace App: what the old workspace panel did', () => {
     for (const li of app().entries) {
       const id = li.getAttribute('data-id')!
       rowMore(id).click()
-      expect(offered()).toEqual(['复制链接', '用别的 App 打开', '下载', '打开', '在新页签打开', '在旁边打开', ...(id === 'photo' ? ['在聊天中定位'] : []), '选择', '详情'])
+      expect(offered()).toEqual(['复制链接', '用其他应用打开', '下载', '打开', '在新页签打开', '在旁边打开', ...(id === 'photo' ? ['在聊天中定位'] : []), '选择', '详情'])
       await menu.dismiss()
     }
     contextChanged({ ...context })
     await vi.waitFor(() => expect($('new-doc').hidden).toBe(false))
     rowMore('cfg').click()
     // 删除 joins the open menu once the folder answers for this file (asked as the menu opens, never with the list).
-    await vi.waitFor(() => expect(offered()).toEqual(['复制链接', '用别的 App 打开', '下载', '改名', '移动到…', '删除', '打开', '在新页签打开', '在旁边打开', '选择', '详情']))
+    await vi.waitFor(() => expect(offered()).toEqual(['复制链接', '用其他应用打开', '下载', '改名', '移动到…', '删除', '打开', '在新页签打开', '在旁边打开', '选择', '详情']))
     await menu.dismiss()
     // owner 10-18: delete is offered only where the folder says this person may — for 'old' it says no.
     rowMore('old').click()
     await vi.waitFor(() => expect(gugu.files.canDelete).toHaveBeenCalledWith([expect.objectContaining({ id: 'old' })]))
     await new Promise((settled) => setTimeout(settled, 0))
-    expect(offered()).toEqual(['复制链接', '用别的 App 打开', '下载', '改名', '移动到…', '打开', '在新页签打开', '在旁边打开', '选择', '详情'])
+    expect(offered()).toEqual(['复制链接', '用其他应用打开', '下载', '改名', '移动到…', '打开', '在新页签打开', '在旁边打开', '选择', '详情'])
     await menu.dismiss()
   })
 })
@@ -264,7 +264,7 @@ describe('the document ⋯ is the file actions that lead the list menu', () => {
       $('more').click()
       const fileItems = rowItems.slice(0, rowItems.indexOf('打开'))
       expect(offered()).toEqual(fileItems)
-      expect(fileItems.slice(0, 3)).toEqual(['复制链接', '用别的 App 打开', '下载'])
+      expect(fileItems.slice(0, 3)).toEqual(['复制链接', '用其他应用打开', '下载'])
       expect(fileItems.includes('删除')).toBe(!readOnly)
       expect(fileItems.includes('改名')).toBe(!readOnly)
       // List-only items stay in the list: the open document is already open and has no list to select in.
@@ -279,7 +279,7 @@ describe('the document ⋯ is the file actions that lead the list menu', () => {
 })
 
 // 摩擦单 F2(L5,09-29;真源 §2.6 617e20ea):工作区 App 是文件管理器 —— 点文件交给宿主挑 App(Finder 双击),
-// 「用别的 App 打开」是右键那一下;挑中的恰好是这个 App 时,宿主把文件经 context.file 递回来,这里才打开。
+// 「用其他应用打开」是右键那一下;挑中的恰好是这个 App 时,宿主把文件经 context.file 递回来,这里才打开。
 describe('workspace App as a file manager: the host picks the App', () => {
   test('an unclaimed binary click is handed to the host, without a duplicate details page', async () => {
     gugu.files.openWith.mockClear()
@@ -310,7 +310,7 @@ describe('workspace App as a file manager: the host picks the App', () => {
     more.click()
     expect(menu.isOpen()).toBe(true)
     expect(target.getAttribute('aria-expanded'), 'its ⋯ stays drawn while the menu is open').toBe('true')
-    await menu.pick('用别的 App 打开')
+    await menu.pick('用其他应用打开')
     expect(target.getAttribute('aria-expanded')).toBe('false')
     expect(document.activeElement, 'and still on the ⋯').toBe(target)
     await vi.waitFor(() => expect(gugu.files.openWith).toHaveBeenCalledTimes(1))
@@ -368,7 +368,7 @@ describe('workspace App as a file manager: the host picks the App', () => {
     await menu.dismiss() // a press elsewhere
     expect(gugu.files.remove).not.toHaveBeenCalled()
     rowMore('cfg').click()
-    await vi.waitFor(() => expect(offered(), 'the question is taken back').toEqual(['复制链接', '用别的 App 打开', '下载', '改名', '移动到…', '删除', '打开', '在新页签打开', '在旁边打开', '选择', '详情']))
+    await vi.waitFor(() => expect(offered(), 'the question is taken back').toEqual(['复制链接', '用其他应用打开', '下载', '改名', '移动到…', '删除', '打开', '在新页签打开', '在旁边打开', '选择', '详情']))
     await menu.pick('删除')
     await menu.pick('确认删除')
     await vi.waitFor(() => expect(gugu.files.remove).toHaveBeenCalledWith(expect.objectContaining({ id: 'cfg' })))
@@ -425,9 +425,10 @@ describe('workspace App as a file manager: the host picks the App', () => {
     // 对照:没有认领的文件(旧宿主没有这两个字段)照原名显示,画它的后缀,按种类上色(owner 10-28)。
     const plain = document.querySelector('[data-id="plan"] .file-open') as HTMLButtonElement
     expect(plain.querySelector('.file-name')!.textContent).toBe('plan.md')
+    // The host's tile (<gugu-file-mark>, API 56) by the full name: family and word come from the host's table.
     const markOf = (id: string) => document.querySelector<HTMLElement>(`[data-id="${id}"] .file-mark`)!
-    expect([markOf('plan').textContent, markOf('plan').dataset.family]).toEqual(['MD', 'text'])
-    expect([markOf('photo').textContent, markOf('photo').dataset.family]).toEqual(['PNG', 'image'])
+    expect([markOf('plan').localName, markOf('plan').getAttribute('name'), markOf('plan').getAttribute('mime'), markOf('plan').hasAttribute('tile')]).toEqual(['gugu-file-mark', 'plan.md', 'text/markdown', true])
+    expect([markOf('photo').localName, markOf('photo').getAttribute('name')]).toEqual(['gugu-file-mark', 'photo.png'])
   })
 
   // owner 10-17:群文件夹里的 markdown 画成文件夹 App 的图标太怪。认领它的 App 没给这类文件声明图标(icon: null)时,
@@ -436,8 +437,8 @@ describe('workspace App as a file manager: the host picks the App', () => {
     const [, changed] = gugu.files.onChanged.mock.calls.at(-1) as unknown as [unknown, (change: unknown) => void]
     changed({ kind: 'entries', entries: [{ ...entries[2], id: 'bare', claimedBy: { id: 'workspace', name: '文件夹', icon: null } }], gone: [] })
     const mark = document.querySelector('[data-id="bare"] .file-mark') as HTMLElement
-    expect(mark.tagName).toBe('SPAN')
-    expect(mark.textContent).toBe('JSON')
+    expect(mark.localName).toBe('gugu-file-mark')
+    expect(mark.getAttribute('name')).toBe(entries[2]!.name)
     expect(mark.title).toBe('文件夹')
   })
 

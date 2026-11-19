@@ -9,6 +9,9 @@
 //   ⑤ Agent owners and source-group managers may edit listen mode; role/removal protection stays separate.
 import { act, Fragment, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// Destructive actions ask first (lib/confirmDanger); here the person confirms.
+const confirmDangerMock = vi.hoisted(() => vi.fn(async (_args: unknown) => true))
+vi.mock('../../../apps/desktop/src/lib/confirmDanger', () => ({ confirmDanger: confirmDangerMock, confirmConversationAction: vi.fn(async () => true) }))
 import type { GroupChatSettings, GroupAgentItem, GroupCollabSnapshot, GroupMemberItem } from '../../../packages/core/src/shared/types/chat'
 import type { DisplayIdentity } from '../../../apps/desktop/src/lib/displayIdentity'
 import { createNode, createReactHarness, device, displayIdentity, renderWithAppProviders, typeInto, waitForCondition } from '../../support/testHarness'
@@ -22,7 +25,7 @@ import { readViewState } from '../../../apps/desktop/src/lib/viewStateTable'
 import { viewStateCache } from '../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
 
 const shell = vi.hoisted(() => ({ mobile: false }))
-vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
+vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile, readMobileShell: () => shell.mobile }))
 
 vi.mock('../../../apps/desktop/src/lib/chat', () => ({
   chatService: {
@@ -368,7 +371,8 @@ describe('Agent owner and source-group listen-mode controls', () => {
   it('includes listen-mode editing in a group owner’s menu for another agent', async () => {
     await renderPanel('owner-1')
     await click(q('[data-member-row="codex"] button[aria-label^="管理"]'))
-    expect(menuItems()).toEqual(['设为管理员', '改为主动', '移出群聊'])
+    // menu-table.ts @@@menu-order: listen mode (weekly) before admin (once, if ever); removing is last.
+    expect(menuItems()).toEqual(['改为主动', '设为管理员', '移出群聊'])
   })
 
   it('普通成员只在自己的 agent 上有 ⋯:改档位、让它退出群聊', async () => {

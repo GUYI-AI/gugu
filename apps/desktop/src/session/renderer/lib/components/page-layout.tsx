@@ -99,16 +99,18 @@ export function PageContent({
 
 export function PageLayout({
   sidebar,
+  wide = false,
   children,
 }: {
   /** 省略 = 这一页没有左边那列分栏,内容自己占满(资源库现在只有一项)。 */
   sidebar?: React.ReactNode;
+  wide?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden">
       <div className="h-full scrollbar-gutter-stable overflow-x-hidden overflow-y-auto">
-        <div className="mx-auto w-full max-w-[1060px] px-8">
+        <div className={cn('mx-auto w-full', wide ? 'px-6' : 'max-w-[1060px] px-8')}>
           {/* The menu column takes the width of its longest label (floor 7rem), not a
               fixed 13rem: with two-character Chinese labels a fixed column left a
               ~160px blank band between the menu and the page (#5265 review). */}

@@ -208,13 +208,9 @@ describe('AgentAccountSection', () => {
     expect(container.querySelector('[data-testid="agent-account-sign-in"]')).toBeNull();
   });
 
-  it('只接 API Key 的家(Pi):同一块「连接」,添加连接只写 API Key', async () => {
-    await render({
-      ...agent({ kind: 'none' }),
-      id: 'pi',
-      capabilities: { auth: { kind: 'none' }, apiKeyConnection: { kind: 'supported', endpoint: 'required', model: 'required', evidence: 'test' } },
-    } as unknown as AgentPayload);
-    await connectionBlock('pi');
+  it('vendor-key accounts share the connection section without custom model fields', async () => {
+    await render({ ...agent({ kind: 'supported', methods: [], vendorKey: { envVars: ['KILO_API_KEY'], unsetEnv: ['KILO_API_KEY'] } }), id: 'kilocode' } as unknown as AgentPayload);
+    await connectionBlock('kilocode');
     expect(container.textContent).toContain('agentsPage.connectionAddHintApiKey');
   });
 });

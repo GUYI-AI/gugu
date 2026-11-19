@@ -37,16 +37,18 @@ export function locateFindRange(row: HTMLElement, query: string, expected: numbe
 }
 
 type Highlights = { set(name: string, value: unknown): void; delete(name: string): void };
-const painters = new WeakMap<Document, object>();
-/** One registry per document: only the owner that painted the current match may erase it. */
-export function paintFindHighlight(document: Document, owner: object, range: Range | null): void {
+const painters = new WeakMap<Document, Map<string, object>>();
+/** One registry per document and highlight name: only the owner that painted the current match may erase it. */
+export function paintFindHighlight(document: Document, owner: object, range: Range | null, name = 'gugu-chat-find'): void {
   const view = document.defaultView as unknown as { CSS?: { highlights?: Highlights }; Highlight?: new (r: Range) => unknown } | null;
   if (!view?.CSS?.highlights || !view.Highlight) return;
+  let owners = painters.get(document);
+  if (!owners) painters.set(document, (owners = new Map()));
   if (range) {
-    painters.set(document, owner);
-    view.CSS.highlights.set('gugu-chat-find', new view.Highlight(range));
-  } else if (painters.get(document) === owner) {
-    painters.delete(document);
-    view.CSS.highlights.delete('gugu-chat-find');
+    owners.set(name, owner);
+    view.CSS.highlights.set(name, new view.Highlight(range));
+  } else if (owners.get(name) === owner) {
+    owners.delete(name);
+    view.CSS.highlights.delete(name);
   }
 }

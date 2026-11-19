@@ -1,4 +1,5 @@
 import { useMemo, useSyncExternalStore, type CSSProperties } from 'react';
+import { SectionLabel } from '@/components/ui/SectionLabel';
 import { Plus, Trash2 } from '@/lib/icons';
 import { PageHeader } from '@renderer/lib/components/page-header';
 import { toast } from '@renderer/lib/hooks/use-toast';
@@ -128,7 +129,7 @@ function ThemeCard({
  * 资源库「主题」(owner 2026-11-07)。点卡片 = 立即换,底下一条可撤销的提示。导入的主题卡片上有删除。
  * 这一格只作用于这台电脑(别的格分机器,这一格不分):页头不挂机器范围。
  */
-export function ThemesLibraryPage() {
+function ThemePackPicker({ embedded = false }: { embedded?: boolean }) {
   const { translate } = useSessionMessages();
   const { packs, slots } = useThemePacks();
   const effective = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme, readEffectiveHostTheme);
@@ -161,18 +162,36 @@ export function ThemesLibraryPage() {
 
   return (
     <div className="flex flex-col text-foreground">
-      <PageHeader
-        sticky
-        scope={null}
-        title={translate('themes.title')}
-        aside={(
-          <Button onClick={() => showImport({})}>
-            <Plus className="size-4" />
-            <span>{translate('themes.import')}</span>
-          </Button>
-        )}
-      />
-      <div className="grid gap-4 py-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+      {embedded ? (
+        <SectionLabel
+          role="heading"
+          aria-level={2}
+          trailing={
+            <Button variant="ghost" size="xs" className="text-foreground-muted" onClick={() => showImport({})}>
+              <Plus className="size-3" />
+              {translate('themes.import')}
+            </Button>
+          }
+        >
+          {translate('themes.title')}
+        </SectionLabel>
+      ) : (
+        <PageHeader
+          sticky
+          scope={null}
+          title={translate('themes.title')}
+          aside={(
+            <Button onClick={() => showImport({})}>
+              <Plus className="size-4" />
+              <span>{translate('themes.import')}</span>
+            </Button>
+          )}
+        />
+      )}
+      <div className={cn(
+        'grid gap-4 py-4',
+        embedded ? 'grid-cols-3' : 'grid-cols-[repeat(auto-fill,minmax(220px,1fr))]'
+      )}>
         <ThemeCard
           pack={null}
           resolved={{}}
@@ -199,4 +218,12 @@ export function ThemesLibraryPage() {
       </div>
     </div>
   );
+}
+
+export function ThemesLibraryPage() {
+  return <ThemePackPicker />;
+}
+
+export function ThemePackSettings() {
+  return <ThemePackPicker embedded />;
 }

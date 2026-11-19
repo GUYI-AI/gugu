@@ -1,3 +1,4 @@
+import type { PersonalConversationHiding } from '../lib/hideListedConversation'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useNativeAgentChats } from '@/hooks/useNativeAgentChats'
 import { createChatMembershipProjection, isArchivedOwnedAgentChat } from '@/lib/chatRowDerivations'
@@ -58,6 +59,7 @@ import { useShownAgentStatus, type ShownAgentStatus } from './chat/useAgentsOnCl
 import { AgentHostStaleBadge } from './AgentHostStaleBadge'
 import { chatActivityAt, chatDisplayName, isChatListed, isRoomChat, isSunkTopic, TOPIC_SINK_AFTER_DAYS } from '@gugu/core/shared/ui/chatModels'
 import { platform } from '../platform'
+import { visibleConversationRows } from '@gugu/core/shared/ui/chatModels'
 import type { AgentDisplayStatus, ChatItem, NotificationLevel } from '@gugu/core/shared/types/chat'
 import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
 import { rendererLogger } from '../lib/log'
@@ -101,7 +103,7 @@ interface ChatListPanelProps {
   leadChatId?: string | null
   /** 手机页头左上角(自己的头像 →「我的」)。 */
   headerLeading?: ReactNode
-  /** 手机右上「写」菜单里的「新项目」(#446)。 */
+  /** 手机右上加号菜单里的「新项目」。 */
   onNewProject?: () => void
 }
 
@@ -113,8 +115,6 @@ const COLOR_PLACEHOLDER = 'var(--muted-fg)'
 const NAV_PANE_STYLE: React.CSSProperties = { width: '100%', minWidth: 0, flex: '1 1 auto' }
 // 保留 macOS 交通灯让位逻辑(#1238):列头左内距在「基础内距」与「交通灯安全区」间取大值。
 const NAV_HEADER_STYLE: React.CSSProperties = { paddingLeft: 'max(var(--pane-pad-x), var(--titlebar-list-header-inset))' }
-// #6753 桌面上还要让开浮在左上角的列表栏开关(--list-toggle-lane;Windows 的开关在标题栏行,那里是 0)。
-const NAV_HEADER_STYLE_DESKTOP: React.CSSProperties = { paddingLeft: 'max(var(--pane-pad-x), var(--titlebar-list-header-inset), var(--list-toggle-lane))' }
 const LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, overflowY: 'auto', padding: '4px 8px 16px' }
 const MOBILE_LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, minHeight: 0, overflowY: 'auto', padding: 'var(--spacing-xs) var(--spacing-sm) var(--phone-nav-clearance)' }
 // 侧栏那一份不自己滚:滚的是会话页侧栏那一个滚动容器(置顶 / 项目 / 对话共用)。左右与侧栏的行同一道留白。
@@ -205,7 +205,7 @@ export interface ChatRowActions {
   /** #2548 取消固定到左侧栏: the pinned session of an agent pinned to the one list. */
   unpinFromSidebar: (sessionId: string) => void
   setNotificationLevel: (chatId: string, level: NotificationLevel) => void
-  remove: (chatId: string) => void
+  remove: (chatId: string) => Promise<PersonalConversationHiding | undefined>
   focus: (chatId: string) => void
   keyDown: (event: Parameters<KeyboardEventHandler<HTMLDivElement>>[0], chat: ChatItem) => void
 }
@@ -292,7 +292,7 @@ export const TopicSubRow = memo(function TopicSubRow({ topic, mobile, isActive, 
         onClose={menu.closeMenu}
         onPin={() => actions.pin(topic)}
         onSetNotificationLevel={(level) => actions.setNotificationLevel(topic.id, level)}
-        onDelete={() => actions.remove(topic.id)}
+        onHide={() => actions.remove(topic.id)}
       />
     )}
     </>
@@ -442,7 +442,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
           onPin={() => actions.pin(chat)}
           onUnpinFromSidebar={pinnedSessionId === undefined ? undefined : () => actions.unpinFromSidebar(pinnedSessionId)}
           onSetNotificationLevel={(level) => actions.setNotificationLevel(chat.id, level)}
-          onDelete={() => actions.remove(chat.id)}
+          onHide={() => actions.remove(chat.id)}
         />
       )}
     </>
@@ -480,16 +480,16 @@ interface PlusMenuItemsProps {
   onGroupChat: () => void
   onAddFriend: () => void
   onScan?: () => void
-  /** 手机(v7.12 稿 NewMenu,#446):有它时菜单是 发起群聊 / 新项目 / 添加联系人,新任务在项目群里派。 */
+  /** Phone More contains social/project actions; the separate pen owns Agent creation. */
   onNewProject?: () => void
   mobile?: boolean
 }
 
 function PlusMenuItems({ onSessionCreate, onGroupChat, onAddFriend, onScan, onNewProject, mobile = false }: PlusMenuItemsProps) {
   const { t } = useTranslation('messaging')
-  const phoneItems = onNewProject ? [
+  const phoneItems = mobile ? [
     { testid: 'plus-menu-create-group', icon: <Users size={15} />, label: t('chatList.createGroupMobile'), onClick: onGroupChat },
-    { testid: 'plus-menu-new-project', icon: <FolderClosed size={15} />, label: t('chatList.newProject'), onClick: onNewProject },
+    ...(onNewProject ? [{ testid: 'plus-menu-new-project', icon: <FolderClosed size={15} />, label: t('chatList.newProject'), onClick: onNewProject }] : []),
     { testid: 'plus-menu-add-friend', icon: <UserRound size={15} />, label: t('chatList.addContact'), onClick: onAddFriend },
   ] : null
   // design line 592: 新建群聊 (contacts icon) + 添加联系人 (add-person icon)
@@ -593,7 +593,7 @@ export function ChatListPanel({
   const { t: tMain } = useTranslation('main')
   const assistantShell = useAssistantShell()
   const { user } = useAuth()
-  const { chats: imChats, identitiesById, activeChatId, setActiveChatId, openUnreadChat, loadingChats, chatsLoadFailed, refreshChats, pinChat, deleteChat, setChatNotificationLevel, drafts } = useChatStore('chats', 'identitiesById', 'activeChatId', 'setActiveChatId', 'openUnreadChat', 'loadingChats', 'chatsLoadFailed', 'refreshChats', 'pinChat', 'deleteChat', 'setChatNotificationLevel', 'drafts')
+  const { chats: imChats, identitiesById, activeChatId, setActiveChatId, openUnreadChat, loadingChats, chatsLoadFailed, refreshChats, pinChat, hideConversation, setChatNotificationLevel, drafts } = useChatStore('chats', 'identitiesById', 'activeChatId', 'setActiveChatId', 'openUnreadChat', 'loadingChats', 'chatsLoadFailed', 'refreshChats', 'pinChat', 'hideConversation', 'setChatNotificationLevel', 'drafts')
   // The list read failed with nothing to show: that is a failure, not "no conversations" (same rule as the contacts sections).
   const listReadFailed = chatsLoadFailed && imChats.length === 0
   const chats = useNativeAgentChats(imChats)
@@ -681,7 +681,9 @@ export function ChatListPanel({
   const isProjectGroupLine = (chat: ChatItem) => projectGroupChats.has(chat.kind === 'topic' ? (chat.source_chat_id ?? '') : chat.id)
   const shownAsLead = lead ? leadChatId : null
   const listedByActivity = (chat: ChatItem) => hasSearchQuery || isChatListed(chat, { activeChatId: selectedChatId, hasDraft: Boolean(drafts[chat.id]?.trim()) })
+  const visibleIds = new Set(visibleConversationRows(chats).map(chat => chat.id))
   const isListed = (chat: ChatItem) =>
+    (hasSearchQuery || visibleIds.has(chat.id)) &&
     !isDuplicateAssistantChat(chat, assistantShell, workrooms)
       && !(inSidebar && !mobile && !hasSearchQuery && isArchivedOwnedAgentChat(chat, user?.id, identitiesById[chat.peer_user_id ?? ''], agentStatuses[chat.peer_user_id ?? '']))
       && chat.id !== shownAsLead
@@ -783,7 +785,7 @@ export function ChatListPanel({
     sessionPage.unpinFromSidebar(sessionId)
   })
   const setLevel = useStableHandler((chatId: string, level: NotificationLevel) => setChatNotificationLevel(chatId, level))
-  const remove = useStableHandler((chatId: string) => deleteChat(chatId, true))
+  const remove = useStableHandler((chatId: string) => hideConversation(chatId))
   const keyDown = useStableHandler((event: Parameters<KeyboardEventHandler<HTMLDivElement>>[0], chat: ChatItem) => handleChatKeyDown(event, chat))
   const rowActions = useMemo<ChatRowActions>(() => ({ activate, openTopic, toggleTopics: toggle, pin, unpinFromSidebar, setNotificationLevel: setLevel, remove, focus: setFocusedChatId, keyDown }),
     [activate, openTopic, toggle, pin, unpinFromSidebar, setLevel, remove, keyDown])
@@ -1136,10 +1138,12 @@ export function ChatListPanel({
         leading={headerLeading}
         mobile={mobile}
         titleLevel={mobile ? 'page' : undefined}
-        style={mobile ? NAV_HEADER_STYLE : NAV_HEADER_STYLE_DESKTOP}
+        style={NAV_HEADER_STYLE}
         actions={
           <>
             <NotificationSlot part="toggle" />
+            {mobile && onOpenSessionCreate && <IconButton size="md" data-testid={AUTOMATION_TEST_IDS.mobileSessionCreateAction}
+              aria-label={t('chatList.createAgent')} title={t('chatList.createAgent')} onClick={onOpenSessionCreate}><SquarePen /></IconButton>}
 
             <DropdownMenu.Root
               open={showPlusMenu}
@@ -1155,8 +1159,7 @@ export function ChatListPanel({
                 aria-label={t('chatList.create')}
                 title={t('chatList.create')}
               >
-                {/* 手机上是「写」(方框里一支笔,owner 10-26 改版稿);❌ 加号。 */}
-                {mobile ? <SquarePen /> : <Plus />}
+                <Plus />
               </DropdownMenu.Trigger>
               {showPlusMenu ? (
                 <DropdownMenu.Content

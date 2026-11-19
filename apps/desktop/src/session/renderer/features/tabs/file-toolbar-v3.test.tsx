@@ -20,7 +20,7 @@ function mount(fromConversation: boolean, narrow = true) {
   const provider = (kind: string, conversation = false) => createTabProvider({ kind, conversation, resourceKey: (s: { id: string }) => s.id, initialize: () => ({ dispose() {} }), dispose() {}, TabBarItem: () => null, TabBarItemDragPreview: () => null, TabContent: () => null });
   layout = new PaneLayoutStore(createTabRegistry([provider('conversation', true), provider('file')]), { viewId: 'file-toolbar' });
   layout.focusedPane.setDimensions(390, 620);
-  layout.setNarrow(narrow);
+  layout.setSinglePaneHost(narrow);
   const source = layout.open(fromConversation ? 'conversation' : 'file', { id: 'source' }, { from: null, intent: 'newTab' })!;
   const file = layout.open('file', { id: 'file' }, { from: source, intent: 'navigate' })!;
   // From a conversation the file is the side of a pair (kept even when narrow, owner 11-05); else it is in place.

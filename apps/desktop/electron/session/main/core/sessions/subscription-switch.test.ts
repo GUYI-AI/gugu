@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  models: new Map<string, string>(),
   summaries: new Map<string, Record<string, unknown>>(),
   calls: [] as string[],
   progress: [] as string[],
@@ -29,11 +30,11 @@ vi.mock('@main/db/client', () => ({ db: {
   select: () => ({ from: () => ({ where: (key: string | string[]) => ({
     get: () => {
       const found = mocks.summaries.get(key as string);
-      return found && { projectId: found.projectId, provider: found.providerId };
+      return found && { projectId: found.projectId, provider: found.providerId, config: { model: mocks.models.get(key as string) } };
     },
     // and(runtime = 'acp', provider = p): every ACP session row of that provider (side chats have none).
     all: () => [...[...mocks.summaries].filter(([id, found]) => !mocks.forks.has(id) && found.providerId === (key as string[])[1]).map(([id]) => id),
-      ...((key as string[])[1] === 'codex' ? mocks.resting : [])].map((id) => ({ id })),
+      ...((key as string[])[1] === 'codex' ? mocks.resting : [])].map((id) => ({ id, config: { model: mocks.models.get(id) } })),
   }) }) }),
 } }));
 vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn() } }));
@@ -78,6 +79,7 @@ function summary(sessionId: string, overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   mocks.summaries.clear();
+  mocks.models.clear();
   mocks.calls.length = 0;
   mocks.progress.length = 0;
   mocks.forks.clear();
@@ -208,4 +210,13 @@ it('holds a resting session of that provider through the swap too: a delivery mi
   mocks.resting = ['resting'];
   await switchSubscription('codex', 'work', {});
   expect(mocks.calls).toEqual(['stop:a', 'stop:resting', 'select:codex:work', 'reclaimed:a']);
+});
+
+it('account switches leave busy custom-model sessions and their side chats running', async () => {
+  summary('custom', { providerId: 'codex', isGenerating: true });
+  mocks.models.set('custom', 'custom:481825a8-60b9-4c83-8d1b-f104e3db0269:model');
+  mocks.forks.set('custom-side', 'custom');
+  summary('custom-side', { providerId: 'codex', isGenerating: true });
+  await switchSubscription('codex', 'work', {});
+  expect(mocks.calls).toEqual(['select:codex:work']);
 });

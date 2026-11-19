@@ -6,7 +6,7 @@ import { clearAgentDisplayStatusOverrides } from '../../../support/agentDisplayS
 import { clickElement, contact, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 const rig = vi.hoisted(() => ({ mobile: false }))
 vi.mock('../../../../apps/desktop/src/hooks/useAgentDisplayStatus', () => import('../../../support/agentDisplayStatusTestDouble'))
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => rig.mobile }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => rig.mobile, readMobileShell: () => rig.mobile }))
 vi.mock('../../../../apps/desktop/src/lib/agentScheduledTasks', () => ({ agentScheduledTaskService: { list: async () => [] } }))
 let h: ReturnType<typeof createReactHarness>
 beforeEach(() => { h = createReactHarness(); rig.mobile = false })

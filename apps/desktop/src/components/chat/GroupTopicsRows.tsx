@@ -54,10 +54,10 @@ function TopicMenuRow({ topic, pinned, pins }: { topic: SourceTopic; pinned: boo
   const markRead = useMarkChatsRead()
   const calls = chatAttention(topic).askingYou
   return <div className="gg-topic-menu-row" data-topic-id={topic.id} data-pinned={pinned || undefined} onContextMenu={menu.onContextMenu}>
-    {menu.menuPos && <ConversationRowContextMenu {...menu.menuPos} onClose={menu.closeMenu}
-      state={{ kind: 'topic', hasUnread: hasUnreadInRows([topic]), hasAnyUnread: hasUnreadInRows(pins.topics) }}
-      onAction={(action) => markRead(action === 'mark-all-read' ? pins.topics.map((row) => row.id) : topic.id)} />}
-    <MenuItem data-testid="group-menu-topic" className="gg-topic-menu-open" style={topicRowStyle} render={<div data-emphasis={topic.unread_count > 0 || undefined} />} onClick={() => openPinnedTopic(topic)}>
+    {menu.menuPos && <ConversationRowContextMenu {...menu.menuPos} onClose={menu.closeMenu} entry="topic-popup"
+      state={{ kind: 'topic', hasUnread: hasUnreadInRows([topic]), hasTopicsUnread: hasUnreadInRows(pins.topics) }}
+      run={{ 'mark-read': () => markRead(topic.id), 'mark-topics-read': () => markRead(pins.topics.map((row) => row.id)) }} />}
+    <MenuItem data-testid="group-menu-topic" data-pane-opener="" className="gg-topic-menu-open" style={topicRowStyle} render={<div data-emphasis={topic.unread_count > 0 || undefined} />} onClick={() => openPinnedTopic(topic)}>
       <ListRowContent title={<>{pinned && <Pin size={12} aria-hidden className="gg-topic-pin-mark" />}{topic.name}</>}
         meta={topic.unread_count > 0 ? (calls > 0 ? <TopicCallChip count={calls} at /> : <TopicUnreadChip count={topic.unread_count} muted={topic.is_muted} />) : undefined} />
     </MenuItem>

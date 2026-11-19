@@ -83,6 +83,8 @@ const rows = () => [...harness.container.querySelectorAll<HTMLElement>('[data-ch
 const row = (id: string) => harness.container.querySelector<HTMLElement>(`[data-chat-row="${id}"]`)!
 const unpinItem = async (id: string) => {
   await fireContextMenu(row(id))
+  const more = document.querySelector<HTMLElement>('[data-testid="conversation-row-more"]')
+  if (more) await clickElement(more)
   return document.querySelector<HTMLElement>('[data-testid="conversation-row-unpin-from-sidebar"]')
 }
 

@@ -22,8 +22,8 @@ const TAB_SLOT_STYLE: CSSProperties = {
   position: 'relative',
   flex: '1 1 200px',
   // 下限 44px:窄到这里就只剩图标(tab-density.ts),再多就横向滚动 + 「全部页签」菜单(tab-bar.tsx)。
-  minWidth: '44px',
-  maxWidth: '240px',
+  minWidth: 'var(--tab-slot-min-width, 44px)',
+  maxWidth: 'var(--tab-slot-max-width, 240px)',
 };
 
 /**
@@ -74,6 +74,8 @@ export interface TabChipProps extends Omit<ComponentPropsWithoutRef<'div'>, 'tit
   preSlot?: ReactNode;
   /** 覆盖默认的 `<TabTitle>{label}</TabTitle>`(重命名输入框)。 */
   labelSlot?: ReactNode;
+  /** 标题后面常在的小标记(文件存在哪台机器):不让给关闭钮,窄到只剩图标时与标题一起收起。 */
+  markSlot?: ReactNode;
   /** 压在关闭钮底下的状态(脏点、git 状态图标)。 */
   statusSlot?: ReactNode;
   /** 关不掉的页签(项目块的项目群那一枚)不给这两样:没有关闭钮,状态照画。 */
@@ -104,6 +106,7 @@ export function TabChip({
   hasError,
   preSlot,
   labelSlot,
+  markSlot,
   statusSlot,
   closeLabel,
   onClose,
@@ -177,11 +180,13 @@ export function TabChip({
             maxWidth="max-w-none"
             // 关闭钮浮在标题尾巴上时,标题自己淡出(遮罩),钮下透出页签此刻的真实底色 —— 照 Chrome / VS Code。
             className={cn('min-w-0 flex-1 p-0', closeFloats && TITLE_FADE_UNDER_CLOSE)}
+            toolTabTitle
           >
             {label}
             {hint ? <span className="ml-1 text-xs text-foreground-muted">{hint}</span> : null}
           </TabTitle>
         )}
+        {density.value === 'icon' ? null : markSlot}
         {density.value === 'full' ? actionSlot : null}
         {/* 窄到只剩图标的活动页签:关闭钮也浮起来,图标居中(全名在悬浮提示里)。非活动的那种没有钮,状态照画。 */}
         {noClose || !onClose ? (

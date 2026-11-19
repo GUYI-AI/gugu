@@ -8,6 +8,7 @@ import { Pane, PaneHeader } from '@/components/ui/Pane'
 import { ChevronRight, Folder, FolderPlus, Monitor } from '@/lib/icons'
 import { rendererLogger } from '@/lib/log'
 import { navigateMobile } from '@/mobile/navigateMobile'
+import { PhoneComposerSheet } from '@/mobile/composer/PhoneComposerControls'
 import { useMachineLabel } from '@/mobile/agent-watch/useMachineLabel'
 import { visibleMachines, workspaceDevices } from '@/mobile/agent-watch/machine-list'
 import { shortHome } from '@/session/shared/path-name'
@@ -56,6 +57,7 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
   const [existingFolder, setExistingFolder] = useState<{ deviceId: string; path: string } | null>(null)
   const [directory, setDirectory] = useState<Directory | null>(null)
   const [picking, setPicking] = useState(false)
+  const [folderMenu, setFolderMenu] = useState(false)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const nameInput = useRef<HTMLInputElement>(null)
@@ -193,20 +195,22 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
               ))}
             </DropdownMenu.Content>
           </DropdownMenu.Root>
-          <DropdownMenu.Root modal={false}>
-            <DropdownMenu.Trigger render={
-              <Button variant="ghost" size="option" className="gg-partners-navrow" disabled={!device} data-testid="phone-new-project-folder-row">
-                <span className="gg-partners-navrow-icon">{folderPath ? <Folder size={20} /> : <FolderPlus size={20} />}</span>
-                <span className="gg-partners-navrow-label">{t('partners.newProject.folder')}</span>
-                <span className="gg-partners-row-value" title={folderPath ?? undefined}>{folderValue}</span>
-                <ChevronRight size={16} aria-hidden className="gg-partners-navrow-chevron" />
-              </Button>
-            } />
-            <DropdownMenu.Content className="min-w-[160px]">
-              <MenuItem icon={<FolderPlus size={15} />} onClick={() => { setExistingFolder(null); setError(null) }}>{t('partners.newProject.newFolder')}</MenuItem>
-              <MenuItem icon={<Folder size={15} />} onClick={() => navigateMobile(() => setPicking(true), 'push')}>{t('partners.newProject.existingFolder')}</MenuItem>
-            </DropdownMenu.Content>
-          </DropdownMenu.Root>
+          <Button variant="ghost" size="option" className="gg-partners-navrow" disabled={!device} data-testid="phone-new-project-folder-row"
+            aria-haspopup="dialog" aria-expanded={folderMenu && !!device} onClick={() => setFolderMenu(true)}>
+            <span className="gg-partners-navrow-icon">{folderPath ? <Folder size={20} /> : <FolderPlus size={20} />}</span>
+            <span className="gg-partners-navrow-label">{t('partners.newProject.folder')}</span>
+            <span className="gg-partners-row-value" title={folderPath ?? undefined}>{folderValue}</span>
+            <ChevronRight size={16} aria-hidden className="gg-partners-navrow-chevron" />
+          </Button>
+          <PhoneComposerSheet open={folderMenu && !!device} onClose={() => setFolderMenu(false)}
+            title={t('partners.newProject.folder')} testId="phone-new-project-folder-sheet">
+            <Button variant="ghost" size="option" className="gg-phone-composer-choice" onClick={() => {
+              setFolderMenu(false); setExistingFolder(null); setError(null)
+            }}><FolderPlus aria-hidden />{t('partners.newProject.newFolder')}</Button>
+            <Button variant="ghost" size="option" className="gg-phone-composer-choice" onClick={() => {
+              navigateMobile(() => { setFolderMenu(false); setPicking(true) }, 'push')
+            }}><Folder aria-hidden />{t('partners.newProject.existingFolder')}</Button>
+          </PhoneComposerSheet>
         </div>
         {error ? <p className="gg-partners-error" role="alert">{error}</p> : null}
       </div>

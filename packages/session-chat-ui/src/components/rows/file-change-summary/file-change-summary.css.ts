@@ -4,7 +4,9 @@ import { vars } from '@session-chat/styles/theme.css'
 /** One block, the output card's frame (opened-output.css: the same border, radius and rows). */
 export const card = style({
   boxSizing: 'border-box',
-  border: `1px solid ${vars.border}`,
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: vars.border,
   borderRadius: vars.radiusXl,
   overflow: 'hidden',
   background: vars.bg,

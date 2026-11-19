@@ -36,7 +36,9 @@ export const outcomeShell = style({
   flexDirection: 'column',
   alignItems: 'stretch',
   // 与 lane 同一层 surface:虚拟化重排时,收尾单元整块都不该让底下的流式正文透出来。
-  background: vars.bg1,
+  // 那层 surface 就是 transcript 自己的底(`vars.bg`),不是卡片那一档 `bg1`:宿主的这两档不一定相等
+  // (手机深色页面 #181818、卡片档 #212121),取 bg1 就会在页面上画出一块比底亮的框。
+  background: vars.bg,
 });
 
 export const outcomeRow = style([
@@ -51,7 +53,7 @@ export const outcomeRow = style([
     lineHeight: '20px',
     // Keep a settled outcome on its own transcript surface if a virtualized
     // row is briefly painted over the streaming message during reconciliation.
-    background: vars.bg1,
+    background: vars.bg,
   },
 ]);
 
@@ -75,6 +77,8 @@ export const outcomeSpacer = style({
   minWidth: 0,
 });
 
+export const OUTCOME_BADGE_GAP_PX = 6;
+
 export const outcomeBadge = style({
   display: 'inline-flex',
   alignItems: 'center',
@@ -90,7 +94,7 @@ export const outcomeBadge = style({
   //   · rounded-full —— shape 表里 `--radius-capsule` 只发给「switch, avatar, status dot」,
   //     而这是一枚**带文字的标记**,走控件那一档 `radiusMd`(8px)。
   // 层级仍然成立:它有 `bg2` 的底 + 标注档的字号,不靠一张字脸和一个药丸形状。
-  gap: '6px',
+  gap: `${OUTCOME_BADGE_GAP_PX}px`,
   height: '24px',
   paddingInline: '10px',
   borderRadius: vars.radiusMd,
@@ -138,10 +142,10 @@ globalStyle(`${outcomeBadgeGlyph} svg`, {
   height: '10px',
 });
 
-/** 徽章里「说辞 · 原因」之间那个间隔点。 */
+/** The empty separator keeps two badge gaps between the label and reason. */
 export const outcomeBadgeSeparator = style({
   flex: 'none',
-  opacity: 0.5,
+  width: 0,
 });
 
 /**
@@ -204,7 +208,9 @@ export const outcomeActionPrimary = style([
 export const outcomeReason = style({
   color: vars.fgMuted,
   minWidth: 0,
-  whiteSpace: 'pre-wrap',
+  // 折行只在离屏测量里定一次(`readableLabel` 把断点写成 \n),DOM 照画、❌ 自己再折:测量与排版差的那零点几像素
+  // (字形宽度在 DOM 里按 1/64px 进位)会让 pre-wrap 把原因的最后一个字/词挤到第二行,而行高是按一行量的。
+  whiteSpace: 'pre',
   overflowWrap: 'normal',
 });
 

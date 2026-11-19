@@ -1204,7 +1204,7 @@ describe('pluginRegistry', () => {
     }).args).not.toContain('--model');
   });
 
-  it('keeps all provider command construction bytes unchanged', () => {
+  it('keeps provider command bytes stable with explicit Codex workspace and human review defaults', () => {
     const commands = pluginRegistry.getAll()
       .filter((provider) => provider.behavior.prompt)
       .map((provider) => ({
@@ -1252,9 +1252,10 @@ describe('pluginRegistry', () => {
     // `{"id":"codebuddy","command":{"command":"/bin/provider","args":["--session-id","snapshot-session","--permission-mode","acceptEdits","foundation prompt"],"env":{}}}`;
     // 别家字节一个没变(mac1 量:去掉这一条后长度 4111、哈希仍是 09c624df…fa913)。
     // kiro 2026-11-08 left this snapshot with its terminal leg: the one entry goes, the others keep every byte.
-    expect(bytes).toHaveLength(3304 - 136 + 620 + 237 + 86 + 163 - 114);
+    // #2815: Codex edit now explicitly sets -s workspace-write, -a on-request, and the user reviewer (+76 serialized bytes).
+    expect(bytes).toHaveLength(3304 - 136 + 620 + 237 + 86 + 163 - 114 + 76);
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(
-      '70c059e8de2d3b1804a79164d966088eae0f0a93179a98d77734c6545dc86080'
+      '42a83c4fe36c3141c885186c396fec870b1668b01f2b4d7850d87f0f2894ada8'
     );
   });
 

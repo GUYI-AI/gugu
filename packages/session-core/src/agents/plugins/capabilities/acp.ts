@@ -485,6 +485,12 @@ export interface IAcpBehavior {
   catalogModelsInConfigUpdate?: boolean;
 
   /**
+   * Lists its own models signed out, none of them runnable. The catalog probe's own-route read then asks
+   * `auth.checkStatus`: signed out ⇒ `auth-required`, `unknown` keeps the list.
+   */
+  catalogNeedsSignIn?: boolean;
+
+  /**
    * 进程级认证,「报了才认」(#2507 Antigravity 的网关):`initialize` 时在 `clientCapabilities.auth._meta` 里声明
    * `clientAuthMeta`;agent 在 `authMethods` 里报了 `methodId`,就在开第一条会话前 `authenticate {methodId}` 一次。
    * 没报(那条进程不是带着连接起的)就一个请求都不多发。模型目录探针读这一格,与这一家 `connect` 里的会话同一条。
@@ -506,7 +512,8 @@ export interface IAcpBehavior {
    * Wrap an app-owned process's stdio into an ACP client connection.
    * The plugin owns adapter/SDK wiring; the app owns the process lifecycle.
    */
-  connect(io: AcpProcessIo, toClient: AcpClientFactory): AcpAgentApi;
+  filterPermissionConfig?(options: readonly SessionConfigOption[], context: { cliVersion?: string; autoReviewAllowed?: boolean; autoReviewUnavailable?: boolean; autoReviewByHaiku?: boolean }): SessionConfigOption[];
+  connect(io: AcpProcessIo, toClient: AcpClientFactory, context?: { cliVersion?: string; autoReviewAllowed?: boolean; autoReviewUnavailable?: boolean; autoReviewByHaiku?: boolean }): AcpAgentApi;
 
 }
 

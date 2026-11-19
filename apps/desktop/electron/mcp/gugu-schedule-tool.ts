@@ -7,6 +7,7 @@
 import type { GuguMcpRequestTracker } from '../gugu-mcp-host'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
+import { firstSentence } from './first-sentence'
 import { listWindowShape } from './list-window.mjs'
 import {
   registerSessionpageTools,
@@ -31,13 +32,21 @@ export const SCHEDULE_TOOL_DEFS: readonly SessionpageToolDef[] = [
   },
   {
     name: 'schedule_list',
-    description: 'List the schedules you set with schedule_create, or with session_id those another session of yours set, on whichever of your machines it runs: each one\'s schedule_id, title, prompt, when (at, or cron with tz), whether it is still active, next_run_at and its last run. A one-time schedule turns inactive once it has run; the person may also have paused or deleted one in the 已安排 list.',
+    description: 'List the schedules you set with schedule_create, or with session_id those another session of yours set, on whichever of your machines it runs: each one\'s schedule_id, title, the prompt\'s first sentence, when (at, or cron with tz), whether it is still active, next_run_at and its last run. A one-time schedule turns inactive once it has run; the person may also have paused or deleted one in the 已安排 list.',
     schema: z.object({
       session_id: z.string().min(1).describe(SESSION_ID_DESCRIPTION).optional(),
       ...listWindowShape,
     }).strict(),
     action: 'schedule_list',
     list: { key: 'schedules', namesOf: (row) => [row.title] },
+    // The prompt is a standalone instruction, often long (MCP surface review 11-16: a median schedule_list was 13 KB):
+    // its first sentence tells one from another.
+    present: (result) => {
+      const schedules = (result as { schedules?: unknown })?.schedules
+      if (!Array.isArray(schedules)) return result
+      return { ...(result as Record<string, unknown>), schedules: schedules.map((row) => (row && typeof row === 'object' && typeof (row as { prompt?: unknown }).prompt === 'string'
+        ? { ...row, prompt: firstSentence((row as { prompt: string }).prompt) } : row)) }
+    },
   },
   {
     name: 'schedule_cancel',

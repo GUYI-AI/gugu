@@ -3601,3 +3601,37 @@ describe('recorded platform model on a resumed provider session (#6196)', () => 
     expect(h.agent.setSessionConfigOption).not.toHaveBeenCalled();
   });
 });
+
+
+it('refuses AI review before a queued prompt when the harness has no reviewer authority', async () => {
+  const h = makeAcpHarness({ autoApprove: 'none' });
+  const rt = new AcpRuntime(h.deps);
+  const started = await rt.startSession({ ...makeStartInput({ sessionId: 'no-reviewer', initialQueue: [{ text: 'Do the task', origin: 'manual' }] }), permissionMode: 'ai-review' });
+  expect(isOk(started)).toBe(false);
+  expect(h.agent.prompt).not.toHaveBeenCalled();
+  await rt.dispose();
+});
+
+it.each(['gateway-model', undefined] as const)('refuses an own-only reviewer before queued work on route %s', async platformModel => {
+  const h = makeAcpHarness({ autoApproveModes: { edit: { id: 'agent' }, 'ai-review': { id: 'auto-review', billingRoutes: ['own'] } } });
+  const rt = new AcpRuntime(h.deps);
+  const started = await rt.startSession(makeStartInput({
+    sessionId: 'restricted-reviewer', platformModel, permissionMode: 'ai-review',
+    initialQueue: [{ text: 'Do the task', origin: 'manual' }],
+  }));
+  expect(isOk(started)).toBe(false);
+  expect(h.agent.prompt).not.toHaveBeenCalled();
+  await rt.dispose();
+});
+
+it('starts a confirmed own-account reviewer through the native permission setter', async () => {
+  const h = makeAcpHarness({ autoApproveModes: { edit: { id: 'agent' }, 'ai-review': { id: 'auto-review', billingRoutes: ['own'] } } });
+  h.agent.newSession.mockResolvedValueOnce({ sessionId: 'own-session', modes: {
+    currentModeId: 'agent', availableModes: [{ id: 'agent', name: 'Edit' }, { id: 'auto-review', name: 'AI review' }],
+  } });
+  const rt = new AcpRuntime(h.deps);
+  const started = await rt.startSession(makeStartInput({ sessionId: 'own-reviewer', billingRoute: 'own', permissionMode: 'ai-review' }));
+  expect(isOk(started)).toBe(true);
+  expect(h.agent.setSessionMode).toHaveBeenCalledWith({ sessionId: 'own-session', modeId: 'auto-review' });
+  await rt.dispose();
+});

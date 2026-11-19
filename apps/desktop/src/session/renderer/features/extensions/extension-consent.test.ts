@@ -37,7 +37,7 @@ describe('a capability is one sentence wherever the App works', () => {
   it('the sentences say the whole reach: every chat you are in, this computer\'s sessions; the narrow agents words, its own', () => {
     expect(zhCNMessages['extensions.permissionsFilesRead']).toBe('读你所在的所有对话里的文件，和{computer}上各个会话里的文件');
     expect(enUSMessages['extensions.permissionsChatRelay']).toContain('any chat you are in');
-    expect(zhCNMessages['extensions.permissionsAgentsRead']).toContain('这个 App 自己起的');
+    expect(zhCNMessages['extensions.permissionsAgentsRead']).toContain('这个应用自己起的');
   });
 });
 

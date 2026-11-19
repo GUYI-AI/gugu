@@ -1,71 +1,23 @@
 import { useState } from 'react'
+import { officialServicesEnabled } from '@gugu/core/cloud/optionalServices'
+import { InvitationPanel } from './InvitationPanel'
+import { ReferralClaimField } from './ReferralClaimField'
 import { useTranslation } from 'react-i18next'
-import { createContactQrPayload, createGuguQrUrl } from '@gugu/core/shared/qrPayload'
 import { useAuth } from '../../store/auth'
 import { SharePosterDialog, type SharePosterDialogProps } from '../SharePosterDialog'
 import { Button } from '../ui/Button'
 import { SegmentedTabs } from '../ui/SegmentedTabs'
 import { MenuItem } from '../ui/Menu'
 import { SettingsGroup, SettingsRow } from '../settings/SettingsPrimitives'
-import { Mail } from '@/lib/icons'
+import { Mail, X } from '@/lib/icons'
+import { Sheet } from '../ui/Sheet'
+import { IconButton } from '../ui/IconButton'
+import { useReferral } from './useReferral'
+import { referralOffer } from './referralOffer'
 import '../../i18n/registerMainCatalog'
 import './referralPreview.css'
-import { takeLegacyLocalStorage, useViewState, writeViewState, type ViewPanel } from '../../lib/viewStateTable'
 
-// The code typed here is a draft of the account: view state (lib/viewStateTable). Kept in localStorage before
-// (`gugu:referral-entry-review:<account>`); moved over once.
-const referralDraftOf = (userId: string): ViewPanel => ({ conversation: 'account:referral', panel: 'draft', account: userId })
-takeLegacyLocalStorage((key) => key.startsWith('gugu:referral-entry-review:'), (key, raw) => {
-  if (raw) writeViewState(referralDraftOf(key.slice('gugu:referral-entry-review:'.length)), { text: raw })
-})
-
-// Review-only surfaces. A production build cannot enable this preview.
-const enabled = import.meta.env.DEV && import.meta.env.VITE_REFERRAL_ENTRY_PREVIEW === '1'
-
-export function ReferralProposalLabel() {
-  const { t } = useTranslation('main')
-  return (
-    <span className="text-[length:var(--font-caption)] font-normal text-[var(--muted-fg)]">
-      {t('referralPreview.proposal')}
-    </span>
-  )
-}
-
-function InvitationUnavailable() {
-  const { t } = useTranslation('main')
-  return (
-    <div className="flex flex-col gap-5 p-5" data-testid="referral-preview-unavailable">
-      <div>
-        <h2 className="m-0 text-[length:var(--font-title)] font-semibold">
-          {t('referralPreview.invite')}
-        </h2>
-        <p className="mb-0 mt-2 text-[length:var(--font-body)] text-[var(--muted-fg)]">
-          {t('referralPreview.summary')}
-        </p>
-      </div>
-      <div className="rounded-[var(--radius-surface)] border border-[var(--border-subtle)] p-4">
-        <div className="flex items-center justify-between gap-3 text-[length:var(--font-body)]">
-          <span>{t('referralPreview.code')}</span>
-          <span className="text-[var(--muted-fg)]">{t('referralPreview.disconnected')}</span>
-        </div>
-        <p className="mb-0 mt-3 text-[length:var(--font-caption)] text-[var(--muted-fg)]">
-          {t('referralPreview.backendNote')}
-        </p>
-      </div>
-      <div className="flex gap-2">
-        <Button variant="secondary" className="flex-1" disabled>
-          {t('referralPreview.copyCode')}
-        </Button>
-        <Button variant="primary" className="flex-1" disabled>
-          {t('referralPreview.copyLink')}
-        </Button>
-      </div>
-      <p className="m-0 text-[length:var(--font-caption)] text-[var(--muted-fg)]">
-        {t('referralPreview.socialNote')}
-      </p>
-    </div>
-  )
-}
+const referralEnabled = () => officialServicesEnabled()
 
 /** Both entry points use the existing QR sheet; other people's cards stay unchanged. */
 export function PersonalSharePreview({
@@ -74,7 +26,7 @@ export function PersonalSharePreview({
 }: SharePosterDialogProps & { initialPurpose?: 'invite' | 'contact' }) {
   const { t } = useTranslation('main')
   const [purpose, setPurpose] = useState<'invite' | 'contact'>(initialPurpose)
-  if (!enabled) return <SharePosterDialog {...props} />
+  if (!referralEnabled()) return <SharePosterDialog {...props} />
   return (
     <SharePosterDialog
       {...props}
@@ -85,7 +37,6 @@ export function PersonalSharePreview({
       heading={t('referralPreview.sharePurpose')}
       headerContent={
         <div className="flex flex-col gap-2 px-4 pt-3 pb-1">
-          <ReferralProposalLabel />
           <SegmentedTabs<'invite' | 'contact'>
             ariaLabel={t('referralPreview.sharePurpose')}
             items={[
@@ -99,7 +50,7 @@ export function PersonalSharePreview({
       }
       previewContent={
         purpose === 'invite' ? (
-          <InvitationUnavailable />
+          <InvitationPanel />
         ) : !props.qrValue ? (
           <p className="p-5 text-[var(--muted-fg)]" role="status">
             {t('referralPreview.noNumber')}
@@ -111,32 +62,23 @@ export function PersonalSharePreview({
 }
 
 export function ReferralSharePreview({ onClose, zIndex }: { onClose: () => void; zIndex?: string }) {
-  const { user } = useAuth()
-  const { t } = useTranslation('main')
-  const number = user?.gugu_number
-  // The actual contact QR is optional; never invent an identity for the review.
-  const qrValue =
-    typeof number === 'number' && Number.isInteger(number) && number > 0
-      ? createGuguQrUrl(createContactQrPayload(number))
-      : ''
-  return (
-    <PersonalSharePreview
-      title={user?.nickname ?? t('referralPreview.myCard')}
-      subtitle="咕咕"
-      qrValue={qrValue}
-      initialPurpose="invite"
-      zIndex={zIndex}
-      onClose={onClose}
-    />
-  )
+  const { t } = useTranslation(['main', 'common'])
+  return <Sheet onClose={onClose} zIndex={zIndex} ariaLabel={t('referralPreview.invite')} desktopWidth="440px" desktopHeight="560px" desktopMaxHeight="calc(100dvh - 48px)">
+    <div className="gg-referral-dialog">
+      <div className="gg-referral-dialog-heading"><h2>{t('referralPreview.invite')}</h2>
+        <IconButton aria-label={t('common:dialog.close')} size="sm" onClick={onClose}><X size={18} /></IconButton>
+      </div>
+      <InvitationPanel />
+    </div>
+  </Sheet>
 }
 
 export function InviteFriendsMenuItem({ onSelect }: { onSelect: () => void }) {
   const { t } = useTranslation('main')
-  if (!enabled) return null
+  if (!referralEnabled()) return null
   return (
     <MenuItem data-testid="referral-preview-menu" icon={<Mail size={15} />} onClick={onSelect}>
-      <span className="flex items-center gap-2">{t('referralPreview.invite')}<ReferralProposalLabel /></span>
+      <span className="flex items-center gap-2">{t('referralPreview.invite')}</span>
     </MenuItem>
   )
 }
@@ -144,7 +86,7 @@ export function InviteFriendsMenuItem({ onSelect }: { onSelect: () => void }) {
 export function InviteFriendsPreview() {
   const { t } = useTranslation('main')
   const [open, setOpen] = useState(false)
-  if (!enabled) return null
+  if (!referralEnabled()) return null
   return (
     <>
       <div className="mt-1 flex justify-center">
@@ -164,74 +106,29 @@ export function InviteFriendsPreview() {
 }
 
 export function ReferralAccountPreview() {
+  if (!referralEnabled()) return null
+  return <ReferralAccountEntry />
+}
+function ReferralAccountEntry() {
+  const { user } = useAuth()
   const { t } = useTranslation('main')
+  const { data, failed } = useReferral(user?.id)
   const [open, setOpen] = useState(false)
-  if (!enabled) return null
-  return (
-    <>
-      <SettingsGroup className="gg-referral-account-preview">
-        <SettingsRow
-          title={
-            <span className="flex items-center gap-2">
-              {t('referralPreview.code')}
-            </span>
-          }
-          description={t('referralPreview.disconnected')}
-          control={
-            <Button
-              variant="ghost"
-              size="sm"
-              data-testid="referral-preview-account"
-              onClick={() => setOpen(true)}
-            >
-              {t('referralPreview.view')}
-            </Button>
-          }
-        />
-      </SettingsGroup>
-      {open && <ReferralSharePreview zIndex="var(--z-settings-modal)" onClose={() => setOpen(false)} />}
-    </>
-  )
+  const offer = data ? referralOffer(data) : null
+  return <>
+    <SettingsGroup className="gg-referral-account-preview">
+      <SettingsRow title={t('referralPreview.invite')}
+        description={offer ? t(`referrals.offer.${offer.key}`, offer) : t(failed ? 'referrals.unavailable' : 'referrals.loading')}
+        control={<div className="flex items-center gap-3">
+          {data && <span className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">{t('referrals.accountCount', { count: data.successful_invitations })}</span>}
+          <Button variant="secondary" size="sm" data-testid="referral-preview-account" onClick={() => setOpen(true)}>{t('referrals.invite')}</Button>
+        </div>} />
+    </SettingsGroup>
+    {open && <ReferralSharePreview zIndex="var(--z-settings-modal)" onClose={() => setOpen(false)} />}
+  </>
 }
 
 export function ReferralCodePreview({ userId }: { userId: string }) {
-  if (!enabled) return null
-  return <ReferralDraftField key={userId} userId={userId} />
-}
-
-function ReferralDraftField({ userId }: { userId: string }) {
-  const { t } = useTranslation('main')
-  const [{ text: draft }, setEntry] = useViewState(referralDraftOf(userId), { text: '' })
-  const change = (value: string) => setEntry({ text: value })
-  return (
-    <div className="ta-onb-field" data-testid="referral-preview-onboarding">
-      <label htmlFor="referral-preview-code" className="ta-field-label flex items-center gap-2">
-        {t('referralPreview.optionalCode')}
-        <ReferralProposalLabel />
-      </label>
-      <div className="flex items-center gap-2">
-        <input
-          id="referral-preview-code"
-          className="ta-input min-w-0 flex-1"
-          value={draft}
-          onChange={(event) => change(event.target.value)}
-          placeholder={t('referralPreview.placeholder')}
-          aria-describedby="referral-preview-draft-note"
-          autoComplete="off"
-        />
-        {draft && (
-          <Button variant="ghost" size="sm" onClick={() => change('')}>
-            {t('referralPreview.clear')}
-          </Button>
-        )}
-      </div>
-      <p
-        id="referral-preview-draft-note"
-        className="m-0 text-left text-[length:var(--font-caption)] text-[var(--muted-fg)]"
-
-      >
-        {t('referralPreview.draftNote')}
-      </p>
-    </div>
-  )
+  if (!referralEnabled()) return null
+  return <ReferralClaimField key={userId} userId={userId} />
 }

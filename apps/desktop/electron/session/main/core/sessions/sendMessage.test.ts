@@ -661,6 +661,31 @@ describe('session-direct live-only delivery', () => {
     setRow({ version: '1', type: 'acp' });
   });
 
+  it('carries the original host fence into the real router across its capability lookup', async () => {
+    const { SessionpageLocalDeliveryRouter } = await import('../../../../sessionpage/session-injection');
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+    let current = true;
+    const beforeAdmission = () => { if (!current) throw new Error('original owner revoked'); };
+    const inject = vi.fn(async () => true);
+    const realRouter = new SessionpageLocalDeliveryRouter([{
+      liveSessionIdByAgent: () => target.sessionId,
+      deliveryKeyForSession: () => target.sessionId,
+      sessionProviderSurface: async () => { entered.resolve(); await release.promise; return { providerId: 'codex', surface: 'tui' as const }; },
+      tryInjectSessionMessage: inject,
+    }]);
+    setSessionMessageRouter(async (id, message, _signal, fence) => {
+      const accepted = await realRouter.tryInjectSessionMessage(id, message, fence);
+      return accepted === false ? { status: 'not-ready' } : { status: 'accepted', messageId: message.id };
+    });
+    const refused = expect(sendMessage({ ...target, clientMessageId: 'host-fenced-router', text: 'first input', kind: 'session-direct', beforeAdmission })).rejects.toThrow('original owner revoked');
+    await entered.promise;
+    current = false;
+    release.resolve();
+    await refused;
+    expect(inject).not.toHaveBeenCalled();
+    expect(state.receipts).toEqual([]);
+  });
+
   it('joins a concurrent replay of a session-direct message while the first router is still starting', async () => {
     const gate = Promise.withResolvers<void>();
     const router = vi.fn(async (_id: string, message: { id: string }) => { await gate.promise; return { status: 'accepted' as const, messageId: message.id }; });

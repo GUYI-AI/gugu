@@ -8,6 +8,7 @@ import { ExtensionsService } from './extensions-service';
 import { fixtureBundle, installBundle, OFFICIAL_SOURCE } from '../../../../../../../tests/unit/desktop/assistantRules/fixtureApp';
 import { NEUTRAL_ASSISTANT_RULES } from '../../../../../../../tests/unit/desktop/assistantRules/neutralRules';
 import { signTestRelease } from './test-support/signed-release';
+import { awaitFact } from '../../../../../../../tests/support/awaitFact';
 
 // #1931 R7 With no rules here, what the windows are told: the assistant waits for its rules (its entry shows it preparing)
 // while this machine needs it and has none; that is stuck once getting them truly failed. And the copy a release carries
@@ -63,25 +64,27 @@ async function root() {
   const module = await import('../../../../assistant-rules-root');
   const resolver = await import('../../../../assistant-rules-resolver');
   module.installProcessAssistantRules();
-  const told: Array<{ pending: boolean; stuck: boolean }> = [];
-  module.onAssistantRulesState(next => told.push(next));
-  return { ...module, ...resolver, told };
+  type RulesState = Awaited<ReturnType<typeof module.assistantRulesState>>;
+  let notified: RulesState | undefined;
+  module.onAssistantRulesState(next => { notified = next; });
+  const waitForNotification = (expected: RulesState) => awaitFact(
+    `assistant rules notification (pending=${expected.pending}, stuck=${expected.stuck})`,
+    () => notified?.pending === expected.pending && notified.stuck === expected.stuck ? notified : undefined,
+  );
+  return { ...module, ...resolver, waitForNotification };
 }
-
-const settle = () => new Promise(resolve => setTimeout(resolve, 20));
 
 describe('whether the assistant here waits for its rules', () => {
   it('waits while it lives here with none, and stops waiting — every window told — once the App is in', async () => {
     mkdirSync(path.join(process.env.GUGU_HOME!, 'assistant'), { recursive: true });
-    const { assistantRulesState, assistantRules, told } = await root();
+    const { assistantRulesState, assistantRules, waitForNotification } = await root();
     expect(await assistantRulesState()).toEqual({ pending: true, stuck: false });
     const bundle = await fixtureBundle(path.join(work, 'bundle'), { version: '1.0.0' });
     const { proof } = signTestRelease({ appDir: bundle, appId: 'gugu-assistant', version: '1.0.0', zip: new Uint8Array(), key: releaseKey });
     installBundle(service, bundle, 'market', { ...OFFICIAL_SOURCE('1.0.0'), release: proof });
     expect((await assistantRules().refresh()).source).toBe('app');
-    await settle();
+    await waitForNotification({ pending: false, stuck: false });
     expect(await assistantRulesState()).toEqual({ pending: false, stuck: false });
-    expect(told.at(-1)).toEqual({ pending: false, stuck: false });
   });
 
   it('never waits on a machine the assistant does not live on (and whose setup did not start)', async () => {
@@ -92,16 +95,14 @@ describe('whether the assistant here waits for its rules', () => {
   it('waits, and puts the App in, while the account signed in has an assistant elsewhere: the App is its page here', async () => {
     state.signedIn = 'owner-1';
     state.assistants = { 'owner-1': 'assistant-1' };
-    const { assistantRulesState, ensureAssistantApp, told } = await root();
+    const { assistantRulesState, ensureAssistantApp, waitForNotification } = await root();
     // Not known before main asked: a window found the assistant, the App is not in.
-    const going = ensureAssistantApp('assistant');
-    await settle();
+    void ensureAssistantApp('assistant').catch(() => undefined);
+    await waitForNotification({ pending: true, stuck: false });
     expect(await assistantRulesState()).toEqual({ pending: true, stuck: false });
-    expect(told.at(-1)).toEqual({ pending: true, stuck: false });
     // Another account signed in now: what was read about the first one is not about it.
     state.signedIn = 'owner-2';
     expect(await assistantRulesState()).toEqual({ pending: false, stuck: false });
-    void going.catch(() => undefined);
   });
 
   it('leaves a person with no assistant anywhere alone: nothing to wait for, nothing put in', async () => {
@@ -115,18 +116,16 @@ describe('whether the assistant here waits for its rules', () => {
   it('is stuck at once when an App gugu does not put over holds the id and gives no rules', async () => {
     process.env.GUGU_CLOUD_COMPUTER = '1';
     installBundle(service, await fixtureBundle(path.join(work, 'mine')), 'folder');
-    const { assistantRulesState, ensureAssistantApp, told } = await root();
+    const { assistantRulesState, ensureAssistantApp, waitForNotification } = await root();
     expect(await ensureAssistantApp('start')).toBe('own');
-    await settle();
+    await waitForNotification({ pending: true, stuck: true });
     expect(await assistantRulesState()).toEqual({ pending: true, stuck: true });
-    // The windows are told after a refresh that reads the disk; under a loaded run that can outlast a fixed pause.
-    await vi.waitFor(() => expect(told).toContainEqual({ pending: true, stuck: true }));
     expect(marketInstalls).toEqual([]);
     // The person puts the signed release in themselves: rules, so nothing waits and nothing is stuck — the windows told at
     // once, with no restart and no session start.
     service.uninstall('gugu-assistant');
     installBundle(service, ...await signedBundle('1.0.0'));
-    await vi.waitFor(() => expect(told.at(-1)).toEqual({ pending: false, stuck: false }));
+    await waitForNotification({ pending: false, stuck: false });
   });
 });
 
@@ -147,7 +146,8 @@ describe('gugu\'s untrusted copy of the App here', () => {
     await oldUnsigned();
     const { ensureAssistantApp } = await root();
     void ensureAssistantApp('start');
-    await vi.waitFor(() => expect(marketInstalls).toHaveLength(1));
+    await awaitFact('the signed App installation was requested', () => marketInstalls[0]);
+    expect(marketInstalls).toHaveLength(1);
     expect(marketInstalls[0]).toEqual({ ref: { extensionId: 'gugu-assistant' },
       consent: { kind: 'gugu', over: { version: '0.1.0', manifestDigest: service.get('gugu-assistant').manifestDigest } } });
   });
@@ -157,7 +157,11 @@ describe('gugu\'s untrusted copy of the App here', () => {
     const { assistantRules } = await root();
     expect((await assistantRules().refresh()).source).toBe('none');
     installBundle(service, ...await signedBundle('1.0.0'));
-    await vi.waitFor(async () => expect(await assistantRules().current()).toMatchObject({ source: 'app', appVersion: '1.0.0' }));
+    const answer = await awaitFact('the signed App provides the rules', async () => {
+      const current = await assistantRules().current();
+      return current.source === 'app' ? current : undefined;
+    });
+    expect(answer.appVersion).toBe('1.0.0');
   });
 });
 

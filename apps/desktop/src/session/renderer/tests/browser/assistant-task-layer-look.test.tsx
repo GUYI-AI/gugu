@@ -62,7 +62,10 @@ vi.mock('@/mobile/agent-watch/useAgentWatchSession', async (original) => ({
   }),
 }));
 // The view switcher (对话 ▾ and the session's App tabs), as offered when there are App tabs: the page decides where it goes.
-vi.mock('@/mobile/agent-watch/SessionAppMenu', () => ({ SessionAppMenu: () => <button type="button" data-testid="session-app-menu">对话</button> }));
+vi.mock('@/mobile/agent-watch/SessionAppMenu', async importOriginal => ({
+  ...await importOriginal<typeof import('@/mobile/agent-watch/SessionAppMenu')>(),
+  SessionAppMenu: () => <button type="button" data-testid="session-app-menu">对话</button>,
+}));
 vi.mock('@/session/shared/remote-sessions/session-directory', async (original) => ({
   ...(await original<object>()),
   listedSession: () => ({ row: { deviceId: 'mbp', session: fixture.summary } }),

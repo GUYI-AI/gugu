@@ -1,6 +1,6 @@
 import type { AuthStatusModelState } from '@gugu/session-core/workspace-server/agent-config';
 import {
-  agentConnectionForm,
+  agentAccountForm,
   type AgentCapabilities,
   type AgentPayload,
   type DependencyStatus,
@@ -162,8 +162,19 @@ export function resolveAccountTargets(
 export function agentOffersConnections(
   agent: Pick<AgentPayload, 'id' | 'capabilities' | 'programs' | 'status'> | null | undefined
 ): boolean {
-  if (!agent) return false;
-  return agentConnectionForm(agent) !== null || resolveAccountTargets(agent).length > 0;
+  return agentAccessMethods(agent).length > 0;
+}
+
+/** The ways the connection panel offers, in its order; empty = no panel. */
+export function agentAccessMethods(
+  agent: Pick<AgentPayload, 'id' | 'capabilities' | 'programs' | 'status'> | null | undefined
+): Array<'account' | 'api-key'> {
+  if (!agent) return [];
+  const form = agentAccountForm(agent);
+  const methods: Array<'account' | 'api-key'> = [];
+  if (form?.accounts || resolveAccountTargets(agent).length > 0) methods.push('account');
+  if (form?.vendorKey) methods.push('api-key');
+  return methods;
 }
 
 export function accountRowOf(

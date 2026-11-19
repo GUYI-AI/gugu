@@ -1,3 +1,4 @@
+import { Notification } from 'electron';
 import { fileRefOf, isWorkspace, workspaceSession, type AppFileRef, type AppPlace } from '@shared/extensions/app-runtime-protocol';
 import type { ExtensionHostEvent } from '@shared/extensions/bridge-protocol';
 import { sessionHostLocale } from '@main/core/host-locale';
@@ -78,8 +79,8 @@ export function admitBanner(source: string, now: number): void {
 
 /** The main-process device action and its user-pressed probe share the task preferences. */
 export async function showDeviceNotification(title: string, body: string, options?: { probe: boolean }): Promise<{ shown: boolean }> {
-  const [{ Notification }, { appSettingsService }, { log }, { systemNotificationsUsable }] = await Promise.all([
-    import('electron'), import('@main/core/settings/settings-service'), import('@main/lib/logger'),
+  const [{ appSettingsService }, { log }, { systemNotificationsUsable }] = await Promise.all([
+    import('@main/core/settings/settings-service'), import('@main/lib/logger'),
     import('../agent-hooks/system-notifications'),
   ]);
   const { enabled, sound } = await appSettingsService.get('notifications');
@@ -259,9 +260,8 @@ let notifier: ReturnType<typeof createExtensionNotifier> | null = null;
 /** The live path: the bridge's `notify` verb lands here. */
 export async function showExtensionNotification(input: { extensionId: string; request: Record<string, unknown> }): Promise<{ shown: true }> {
   if (!notifier) {
-    const [electron, { extensionsService }, { appSettingsService }, { focusAppFromNotification }, bridge, orchestration, { log }, { agentSessionContext }, { actInWindow }, files, { systemNotificationsUsable }] =
+    const [{ extensionsService }, { appSettingsService }, { focusAppFromNotification }, bridge, orchestration, { log }, { agentSessionContext }, { actInWindow }, files, { systemNotificationsUsable }] =
       await Promise.all([
-        import('electron'),
         import('./extensions-root'),
         import('@main/core/settings/settings-service'),
         import('@main/core/agent-hooks/notification'),
@@ -286,7 +286,7 @@ export async function showExtensionNotification(input: { extensionId: string; re
         return { enabled, sound };
       },
       systemUsable: systemNotificationsUsable,
-      show: (banner) => showSystemBanner(electron.Notification, log, 'extension', banner),
+      show: (banner) => showSystemBanner(Notification, log, 'extension', banner),
       focusApp: () => {
         focusAppFromNotification();
       },

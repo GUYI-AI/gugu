@@ -30,6 +30,9 @@ public class GuguAgentService extends Service {
     private static final Object LOCK = new Object();
     private static JSObject snapshot = new JSObject();
     private static boolean running;
+    private static String claimedOwner;
+    private static java.util.concurrent.CompletableFuture<Void> exited = java.util.concurrent.CompletableFuture.completedFuture(null);
+    private static volatile GuguAgentService active;
     private String owner;
     private volatile boolean cancelled;
 
@@ -52,9 +55,32 @@ public class GuguAgentService extends Service {
         }
     }
     private static File stateFile(Context context, String ownerId) { return new File(context.getFilesDir(), "phone-agent/" + ownerId + "/state.json"); }
-    static boolean claim() { synchronized (LOCK) { if (running) return false; running = true; return true; } }
+    static boolean claim(String owner) {
+        synchronized (LOCK) { if (running) return false; running = true; claimedOwner = owner; exited = new java.util.concurrent.CompletableFuture<>(); return true; }
+    }
     static boolean isRunning() { synchronized (LOCK) { return running; } }
-    static void release() { synchronized (LOCK) { running = false; } }
+    static void release() { finish(null); }
+    private static void finish(Throwable failure) {
+        java.util.concurrent.CompletableFuture<Void> completion;
+        synchronized (LOCK) {
+            completion = exited;
+            if (failure == null) { running = false; claimedOwner = null; }
+        }
+        if (failure == null) completion.complete(null); else completion.completeExceptionally(failure);
+    }
+    static boolean ownerIsBusy(String owner) { synchronized (LOCK) { return running && owner.equals(claimedOwner); } }
+    static java.util.concurrent.CompletableFuture<Void> stopOwnerAndWait(String owner) {
+        java.util.concurrent.CompletableFuture<Void> completion;
+        synchronized (LOCK) { if (!running || !owner.equals(claimedOwner)) return java.util.concurrent.CompletableFuture.completedFuture(null); completion = exited; }
+        GuguAgentService service = active;
+        if (service != null) {
+            service.cancelled = true; service.send(new JSObject().put("type", "cancel"));
+            Process child = service.node; if (child != null) child.destroy();
+        }
+        return completion;
+    }
+    static void forgetClosedOwner(String owner) { synchronized (LOCK) { if (owner.equals(snapshot.optString("ownerId"))) snapshot = new JSObject(); } }
+    @Override public void onCreate() { super.onCreate(); active = this; }
     static void clearState(Context context, String ownerId) throws Exception {
         synchronized (LOCK) {
             if (running) throw new IllegalStateException("请先取消正在运行的任务");
@@ -74,13 +100,14 @@ public class GuguAgentService extends Service {
         startForeground(7561, new Notification.Builder(this, "phone-agent").setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("咕咕正在这台手机上处理任务").setContentText("点此查看进度或取消").setContentIntent(open).build());
         String body = intent.getStringExtra("command");
-        work.execute(() -> run(body));
+        work.execute(() -> run(body, startId));
         return START_NOT_STICKY;
     }
 
-    private void run(String body) {
+    private void run(String body, int startId) {
         try {
             JSObject command = new JSObject(body);
+            AccountClosurePreparation.requireOpen(this, command.getString("ownerId"));
             owner = command.getString("ownerId");
             synchronized (LOCK) { snapshot = new JSObject().put("ownerId", owner).put("sessionId", command.getString("sessionId"))
                 .put("status", "running").put("text", "").put("events", new JSONArray()); }
@@ -105,16 +132,25 @@ public class GuguAgentService extends Service {
                     if ("done".equals(type) || "failed".equals(type) || "cancelled".equals(type)) break;
                 }
             }
-            synchronized (LOCK) {
-                if ("running".equals(snapshot.optString("status"))) record(new JSObject().put("type", "failed").put("message", "手机运行时意外退出，请检查设备日志"));
-            }
+            recordUnexpectedExit();
         } catch (Exception error) {
             record(new JSObject().put("type", "failed").put("message", error.toString()));
         } finally {
-            if (node != null) { node.destroy(); node = null; }
+            Throwable failure = null;
+            Process child = node;
+            if (child != null) {
+                child.destroy();
+                try {
+                    if (!child.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                        child.destroyForcibly();
+                        if (!child.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) failure = new IllegalStateException("Phone runtime has not exited");
+                    }
+                } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); failure = interrupted; }
+            }
+            if (failure == null) node = null;
             commands = null;
-            release();
-            stopSelf();
+            finish(failure);
+            stopSelf(startId);
         }
     }
 
@@ -149,17 +185,33 @@ public class GuguAgentService extends Service {
         }
     }
     private void record(JSObject event) {
-        synchronized (LOCK) {
-            String type = event.optString("type");
-            if ("text".equals(type)) snapshot.put("text", snapshot.optString("text") + event.optString("text"));
-            else {
-                if (!snapshot.has("events")) snapshot.put("events", new JSONArray());
-                snapshot.optJSONArray("events").put(event);
+        synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
+            synchronized (LOCK) {
+                try { if (owner != null) AccountClosurePreparation.requireWritableState(this, owner); }
+                catch (Exception refused) { return; }
+                String type = event.optString("type");
+                if ("text".equals(type)) snapshot.put("text", snapshot.optString("text") + event.optString("text"));
+                else {
+                    if (!snapshot.has("events")) snapshot.put("events", new JSONArray());
+                    snapshot.optJSONArray("events").put(event);
+                }
+                if ("done".equals(type) || "failed".equals(type) || "cancelled".equals(type)) snapshot.put("status", type);
+                persist();
             }
-            if ("done".equals(type) || "failed".equals(type) || "cancelled".equals(type)) snapshot.put("status", type);
-            persist();
         }
     }
+
+    private void recordUnexpectedExit() {
+        // Admission and record() acquire auth before LOCK. EOF must use that
+        // same order; holding LOCK while entering record() can deadlock claim.
+        synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
+            synchronized (LOCK) {
+                if ("running".equals(snapshot.optString("status")))
+                    record(new JSObject().put("type", "failed").put("message", "手机运行时意外退出，请检查设备日志"));
+            }
+        }
+    }
+
     private void persist() {
         if (owner == null) return;
         try {
@@ -171,7 +223,8 @@ public class GuguAgentService extends Service {
     @Override public void onDestroy() {
         if (node != null) node.destroy();
         work.shutdown();
-        release();
+        if (active == this) active = null;
+        // The worker acknowledges real process exit; onDestroy is not proof.
         super.onDestroy();
     }
 }

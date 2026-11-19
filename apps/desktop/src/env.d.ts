@@ -37,19 +37,14 @@ interface Window {
       domain: import('./lib/rendererCommandProtocol').RendererCommandDomain
     ) => void
     setBadge: (count: number) => void
-    setTrayBadgeEnabled: (enabled: boolean) => void
-    syncResolvedLocale: (locale: 'zh-CN' | 'en-US') => Promise<void>
     /** @@@window-tone 渲染层把主题真值告诉主进程,主进程据此改写无边框窗口的底色。 */
     syncWindowTone?: (tone: 'light' | 'dark', themeColors?: Record<string, string>) => void
-    /** mac 原生外观跟随偏好(主进程照抄成 nativeTheme.themeSource),答回此刻的真实明暗;同步失败为 null。 */
-    syncThemePreference?: (preference: 'light' | 'dark' | 'system') => 'light' | 'dark' | null
     relaunchApp: () => Promise<void>
     onAppForeground: (callback: () => void) => () => void
     subscribeAppActive: (callback: (active: boolean) => void) => () => void
     subscribeLocalDeviceIdentified: (callback: () => void) => () => void
     showNotification: (payload: { title: string; body?: string; chatId?: string | null }) => Promise<unknown>
     getLocalDeviceSelfSnapshot: () => Promise<unknown>
-    renameOwnedAgentLocalFootprint: (agentUserId: string, name: string) => Promise<boolean>
     writeHumanAuthSession: (session: unknown) => Promise<void>
     clearHumanAuthSession: (reason: 'signed-out' | 'lost') => Promise<void>
     notifyDeviceCommandsChanged: () => void

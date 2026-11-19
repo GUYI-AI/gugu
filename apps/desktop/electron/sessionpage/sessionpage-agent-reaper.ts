@@ -1,11 +1,8 @@
 import { releaseAgentLocalFootprint } from './agent-local-footprint'
-import { createGroupAdmin } from '@gugu/core/cloud/groupAdmin'
 // Reconcile missing local tasks by archival. Missing inventory never authorizes
-// deleting cloud identities or group membership. Existing project-group archival
-// still respects other machines and the original inventory trust checks.
+// deleting cloud identities or group membership. Missing projects are logged; group state and mappings stay intact.
 import { listAgents } from '@gugu/core'
 import { agentsForOwner } from '@gugu/core/local/state/agentOwner'
-import { makeChatClient, makeIdentityClient } from '../supabase'
 import {
   SESSION_CACHE_KEY,
   GROUP_CACHE_KEY,
@@ -16,7 +13,7 @@ import {
 } from './emdash-agent-provisioning'
 import { emdashAgentRegistry } from './emdash-agent-registry'
 import { createLogger } from '../lib/logger'
-import { forgetProjectGroupId, listProjectGroupIds } from './sessionpage-project-groups'
+import { listProjectGroupIds } from './sessionpage-project-groups'
 
 /** The existence inventory includes archived conversations and their retained identities. */
 export interface SessionpageInventory {
@@ -89,15 +86,6 @@ export async function listGroupAgentsOnOtherDevices(input: {
     .map((user) => user.id)
 }
 
-const listGroupAgentsElsewhereDefault = (input: { chatId: string; deviceId: string; accessToken: string; ownerUserId: string }): Promise<string[]> =>
-  listGroupAgentsOnOtherDevices({
-    chat: makeChatClient(input.accessToken) as unknown as MembersQuery,
-    identity: () => makeIdentityClient(input.accessToken) as unknown as UsersQuery,
-    chatId: input.chatId,
-    deviceId: input.deviceId,
-    ownerUserId: input.ownerUserId,
-  })
-
 // Serialize: several triggers can fire back-to-back (deleting a project tears down each of its tasks), and
 // concurrent passes would both see the same stale rows and race on removing them.
 let reapChain: Promise<unknown> = Promise.resolve()
@@ -109,8 +97,8 @@ function serialize<T>(fn: () => Promise<T>): Promise<T> {
 
 /**
  * Reconcile gugu's social-side projection with the session page. Reaps every session-page agent whose
- * conversation no longer exists (deleted), and archives the group mirroring any project that
- * no longer exists. Returns what it removed. Throws (aggregated) if any removal failed.
+ * conversation no longer exists (deleted). Missing projects are reported without archiving groups
+ * or forgetting their mappings. Returns what it reconciled. Throws (aggregated) if any removal failed.
  */
 /**
  * #3969 —— 「会话清单读空」能不能授权删除。
@@ -194,127 +182,29 @@ async function reconcileLocked(deps: SessionpageReapDeps): Promise<SessionpageRe
 
   // 开机那一刻 authProvider 往往还没建好(#5025):这一轮读不到令牌,归档留给 main.ts 在归属定下来之后那一轮。
   const auth = await deps.getAuth()
-  const deviceId = auth?.accessToken ? await deps.resolveDeviceId() : null
 
-  // Read project→group mappings before marking stale local bindings; identities and group seats stay intact.
-  // A project group whose project still exists is kept even when a task is missing.
-  //
-  // TRUSTWORTHINESS GUARD: every conversation belongs to a project, so "no projects but some conversations"
-  // is an inconsistent read, not the world state. Treating it as truth would archive live projects' groups —
-  // which is exactly what happened in a live run (a reap fired during task teardown saw an empty project list
-  // and archived the group of a project that still existed). Archiving is owner-visible, so when the read
-  // cannot be trusted we skip group archiving for this round and say so out loud; agent reaping is unaffected
-  // because it keys off conversations, which we did read. Genuinely deleting every project still archives: the
-  // conversations cascade away too, so sessionIds is empty as well and this guard does not trip.
-  const inconsistentInventory = liveProjects.size === 0 && liveSessions.size > 0
-  // chatId → 没了的项目(#7341:一个群可以被这台机器上不止一个本地项目绑着,收的时候每一条映射都要忘)
-  const deadProjectGroups = new Map<string, { projectIds: Set<string>; ownerUserId: string }>()
-  const noteDeadGroup = (chatId: string, projectId: string, ownerUserId: string): void => {
-    const entry = deadProjectGroups.get(chatId)
-    if (entry) entry.projectIds.add(projectId)
-    else deadProjectGroups.set(chatId, { projectIds: new Set([projectId]), ownerUserId })
+  // Local absence is not a deletion receipt: another profile, a reinstall or a
+  // repaired database can all retain a group mapping without its project row.
+  // Preserve that mapping and the cloud group; recovery must be an explicit user action.
+  const mappings = auth?.userId ? await listProjectGroupIds(auth.userId, env) : []
+  const liveProjectChats = new Set(mappings.filter(row => liveProjects.has(row.projectId)).map(row => row.chatId))
+  const missingProjects = new Map(mappings.filter(row => !liveProjects.has(row.projectId)).map(row => [row.projectId, row.chatId]))
+  for (const agent of bound) {
+    if (agent.projectId && agent.chatId && liveProjects.has(agent.projectId)) liveProjectChats.add(agent.chatId)
+    if (agent.projectId && agent.chatId && !liveProjects.has(agent.projectId)
+      && (!agent.ownerUserId || agent.ownerUserId === auth?.userId)) missingProjects.set(agent.projectId, agent.chatId)
   }
-  // #7341 这台机器上**还在的**项目绑着的群:哪怕某个绑着它的项目没了,群照样有人用,❌ 归档。
-  const liveProjectChats = new Set<string>()
-  if (!inconsistentInventory) {
-    for (const agent of bound) {
-      if (agent.projectId && agent.chatId && !liveProjects.has(agent.projectId)) {
-        noteDeadGroup(agent.chatId, agent.projectId, agent.ownerUserId)
-      }
-      if (agent.projectId && agent.chatId && liveProjects.has(agent.projectId)) liveProjectChats.add(agent.chatId)
-    }
-    // 群的投影段:「项目 → 群」映射里记着、项目却没了的群。只从名册行推的话,名册一空这些群就永远收不到。
-    // 与 #3969 同一条定律:本进程从没读出过非空清单时,「项目全没了」不算读数,这一段不动。
-    if (auth?.userId && (liveProjects.size > 0 || everSawNonEmptyInventory)) {
-      for (const { projectId, chatId } of await listProjectGroupIds(auth.userId, env)) {
-        if (!liveProjects.has(projectId)) noteDeadGroup(chatId, projectId, auth.userId)
-        else liveProjectChats.add(chatId)
-      }
-    }
-  } else {
-    console.warn(
-      `[sessionpage-reap] project list came back empty while ${liveSessions.size} session(s) are live — ` +
-        `refusing to archive any group this round (inconsistent read, retried on the next trigger)`,
-    )
+  for (const [projectId, chatId] of missingProjects) {
+    if (liveProjectChats.has(chatId)) continue
+    const message = `本机缺少项目 ${projectId} 的记录；保留群、历史和原绑定，不按缺席归档。`
+    reapLogger().warn({ projectId, chatId }, message)
   }
-
-  // Diagnostics: the inventory sizes are the whole basis for what gets reaped, so record them whenever this
-  // round intends to act. Without this a wrong decision is invisible after the fact (it was — see the guard
-  // above), and a reap that removes owner-visible things must be explainable from the log alone.
-  if (stale.length || deadProjectGroups.size) {
-    console.log(
-      `[sessionpage-reap] inventory: ${liveSessions.size} live session(s), ${liveProjects.size} live project(s); ` +
-        `bound=${bound.length} stale=${stale.length} deadProjectGroups=${deadProjectGroups.size}`,
-    )
-  }
-  if (!stale.length && !deadProjectGroups.size) {
-    return { reapedAgents: 0, archivedGroups: 0 }
-  }
-
+  if (!stale.length) return { reapedAgents: 0, archivedGroups: 0 }
   if (!auth?.accessToken) {
-    throw new Error(
-      `session-page reap: owner not authenticated — ${stale.length} stale agent(s) left in place (retried on next trigger)`,
-    )
+    throw new Error(`session-page reap: owner not authenticated — ${stale.length} stale agent(s) left in place (retried on next trigger)`)
   }
   const failures: string[] = []
-
-  let archivedGroups = 0
-  const reaperUserId = auth.userId
-  const reaperAccessToken = auth.accessToken
-  const forgetDeadProjects = async (projectIds: Set<string>): Promise<void> => {
-    for (const projectId of projectIds) await forgetProjectGroupId(projectId, reaperUserId, env)
-  }
-  for (const [chatId, { projectIds, ownerUserId }] of deadProjectGroups) {
-    // #4277 群归账号:别家的群这个账号动不了(RLS),归档留给它的主人;老行不知道归谁的照旧试。
-    if (ownerUserId && ownerUserId !== auth.userId) continue
-    const projects = [...projectIds].join(', ')
-    try {
-      // #7341 项目群跨设备共用(product spec):这台机器上的项目没了,群未必没人用。
-      //  · 这台机器上还有别的项目绑着它 ⇒ 只忘掉没了的那几条映射。
-      //  · 群里还有家在别的机器上的 agent ⇒ 同上(否则那台机器下次开会话会另建一个群,一个项目裂成几个)。
-      //  · 查不出来(没解析出本机设备 / 云端读失败)⇒ 这一轮不归档、映射也不动,下次触发再判 —— fail closed。
-      if (liveProjectChats.has(chatId)) {
-        await forgetDeadProjects(projectIds)
-        reapLogger().info({ chatId, projects }, 'project is gone but another project on this machine is still bound to its group — forgot the mapping, group kept')
-        continue
-      }
-      if (!deviceId) {
-        reapLogger().info({ chatId, projects }, 'project is gone but this device is not resolved yet — cannot tell whether other machines still use its group; not archiving this round')
-        continue
-      }
-      let elsewhere: string[]
-      try {
-        elsewhere = await (deps.listGroupAgentsElsewhere ?? listGroupAgentsElsewhereDefault)({
-          chatId, deviceId, accessToken: reaperAccessToken, ownerUserId: reaperUserId,
-        })
-      } catch (err) {
-        reapLogger().warn(
-          { chatId, projects, error: (err as Error).message },
-          'could not check whether other machines still use this project group — not archiving it (fail closed)',
-        )
-        throw new Error(`check other machines before archiving: ${(err as Error).message}`)
-      }
-      if (elsewhere.length) {
-        await forgetDeadProjects(projectIds)
-        reapLogger().info(
-          { chatId, projects, agentsElsewhere: elsewhere },
-          'project is gone here but its group still has agents on other machines — forgot the mapping, group kept',
-        )
-        continue
-      }
-      // gugu has no group hard-delete (chat.chats has no DELETE policy — owner/admin may only UPDATE), so
-      // removing a group means archiving it. Honest about the real capability rather than faking a delete.
-      await createGroupAdmin(makeChatClient(reaperAccessToken), reaperUserId).archive(chatId)
-      archivedGroups++
-      // 项目没了、群已归档 → 忘掉「项目 → 群」的映射,否则同 id 项目再出现时会复用一个归档群。
-      await forgetDeadProjects(projectIds)
-      console.log(`[sessionpage-reap] archived group ${chatId} (session-page project ${projects} is gone)`)
-    } catch (err) {
-      deps.onFailure?.('group-reconcile', '', err)
-      failures.push(`archive group ${chatId}: ${(err as Error).message}`)
-    }
-  }
-
+  const archivedGroups = 0
   let reapedAgents = 0
   for (const agent of stale) {
     // Foreign-owner rows stay untouched; their owner reconciles them through the same archival path.

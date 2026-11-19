@@ -1,10 +1,11 @@
 // 渲染层调 attachments 函数(core 的那一份客户端,packages/core/src/cloud/attachmentsApi.ts):这个构建的服务器,登录的人现在的令牌。
-import { commitAttachment, configuredEndpoint, declareAttachment, placeAttachment, uploadAttachmentBytes, type AttachmentsEndpoint, type CommitArgs } from '@gugu/core/cloud/attachmentsApi'
+import { commitAttachment, configuredEndpoint, declareAttachment, placeAttachment, uploadAttachmentBytes, type AttachmentsEndpoint, type CommitArgs, type DeclaredAttachment } from '@gugu/core/cloud/attachmentsApi'
 import { beginAttachmentUpload } from './attachmentUploads'
 import { resolveFileMimeType, sniffFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract'
 import { isHeicLikeFile, mustCopyRatherThanReference } from '@renderer/lib/pty/terminal-image-paths'
 import { getRendererAccessToken } from './sessionPublication'
+import { rendererLogger } from './log'
 import { i18n } from '../i18n'
 import type { AttachmentUploadContext } from './taskAttachmentUpload'
 import { pathOfFile } from './fileOnDisk'
@@ -30,10 +31,24 @@ async function publishNative(args: Record<string, unknown>) {
 }
 async function cloudChatAttachment(endpoint: AttachmentsEndpoint, file: File, scope: { chat_id: string; as: string; message_id: string }, signal?: AbortSignal): Promise<PreparedChatAttachment> {
   const name = file.name || 'file', contentType = resolveFileMimeType(file)
-  const declared = await declareAttachment(endpoint, { bytes: file, contentType }, { chat_id: scope.chat_id, as: scope.as, request_id: scope.message_id }, signal)
-  // Kept by content before the message declares it: a restart uploads it from this copy (attachmentUploads).
-  await (await import('./attachmentBytes')).keepSentAttachment(file, declared.sha256)
-  void beginAttachmentUpload({ messageId: scope.message_id, chatId: scope.chat_id, as: scope.as, pendingKey: declared.staging_key, name, contentType, size: file.size }, file, declared.plan ?? null)
+  const native = globalThis.window?.electronAPI
+  const path = native ? pathOfFile(file) : ''
+  signal?.throwIfAborted()
+  const drop = () => { void native?.invoke('attachments:drop', { messageId: scope.message_id }).catch(error => rendererLogger('chat/attachment-uploads').warn({ error: String(error) }, 'Attachment upload cancellation failed')) }
+  signal?.addEventListener('abort', drop, { once: true })
+  let declared: DeclaredAttachment
+  try {
+    declared = native
+      ? await native.invoke('attachments:declare', { file: { name, path, size: file.size, contentType, ...(!path ? { data: await file.arrayBuffer() } : {}) },
+        chatId: scope.chat_id, as: scope.as, messageId: scope.message_id }) as DeclaredAttachment
+      : await declareAttachment(endpoint, { bytes: file, contentType }, { chat_id: scope.chat_id, as: scope.as, request_id: scope.message_id }, signal)
+    signal?.throwIfAborted()
+  } finally { signal?.removeEventListener('abort', drop) }
+  // Renderer keeps a display copy; the native host owns the durable upload copy on desktop.
+  try { await (await import('./attachmentBytes')).keepSentAttachment(file, declared.sha256) }
+  catch (error) { drop(); throw error }
+  if (signal?.aborted) { drop(); signal.throwIfAborted() }
+  if (!native) void beginAttachmentUpload({ sha256: declared.sha256, messageId: scope.message_id, chatId: scope.chat_id, as: scope.as, pendingKey: declared.staging_key, name, contentType, size: file.size }, file, declared.plan ?? null)
   return { staging_key: declared.staging_key, sha256: declared.sha256, size_bytes: declared.size_bytes }
 }
 export async function prepareChatAttachment(endpoint: AttachmentsEndpoint, file: File, scope: { chat_id: string; as: string; is_whisper?: boolean; message_id: string }, signal?: AbortSignal): Promise<PreparedChatAttachment> {

@@ -42,6 +42,7 @@ import {
   createSignal,
   on,
   onCleanup,
+  mapArray,
   onMount,
   untrack,
   useContext,
@@ -870,6 +871,9 @@ export function ChatRoot(props: ChatRootProps) {
   const activityLaneRanges = createMemo(() => joinedActivityLanes(committedActivityLanes(), activeUnits(), committedUnits().length));
   const activityLaneByIndex = createMemo(() => new Map(activityLaneRanges().filter(lane => viewState().isCollapsed(lane.id)).map(lane => [lane.index, lane])));
 
+  const [hoveredUtterance, setHoveredUtterance] = createSignal<string>();
+  const utteranceAt = (target: EventTarget | null) => target instanceof Element && outerEl?.contains(target)
+    ? target.closest<HTMLElement>('[data-conversation-utterance]')?.dataset.conversationUtterance : undefined;
   const latestConversationMessageId = createMemo(() => latestConversationBubbleId(units(), { theme: theme() }));
   const pendingBubbleMeasures = new Set<string>();
 
@@ -1207,14 +1211,20 @@ export function ChatRoot(props: ChatRootProps) {
    * Each anchor's stuck summary (PinnedUserSummary): its height, one or two lines whatever the message's length, and
    * where it rests below the lane's top: behind the last `height` px of the message's bubble (@@@pin-cover).
    */
-  const pinGeometry = createMemo(() => {
-    const ctx = measureContext();
-    return new Map(pinAnchors().map(index => {
-      const unit = untrack(() => units().at(index)!);
-      const s = pinSummary(unit.data as ChatMessage, ctx, UNIT_REGISTRY.message!.vars as MessageVars);
-      return [index, { height: s.height + PIN_SUMMARY_GAP, rest: (unit.gapBefore ?? 0) + s.rest }];
-    }));
+  // Each anchor follows its own message: when that message changes (its attachments arrive, its text is edited) its summary
+  // moves with the bubble in the same frame, instead of staying where the bubble was and covering what took its place.
+  // A streaming patch rebuilds `units()` but not these messages, so it re-lays out no summary.
+  const pinAnchorGeometry = mapArray(pinAnchors, index => {
+    const message = createMemo(() => units().at(index)?.data);
+    return [index, createMemo<{ height: number; rest: number }>(previous => {
+      // Rows and anchors change in one batch; an anchor about to be dropped keeps its place until it is.
+      const data = message();
+      if (!data) return previous;
+      const s = pinSummary(data as ChatMessage, measureContext(), UNIT_REGISTRY.message!.vars as MessageVars);
+      return { height: s.height + PIN_SUMMARY_GAP, rest: (untrack(() => units().at(index)?.gapBefore) ?? 0) + s.rest };
+    }, { height: 0, rest: 0 }, { equals: (a, b) => a.height === b.height && a.rest === b.rest })] as const;
   });
+  const pinGeometry = createMemo(() => new Map(pinAnchorGeometry().map(([index, geometry]) => [index, geometry()])));
   const pinHeight = (idx: number) => pinGeometry().get(idx)?.height ?? 0;
   const pinRest = (idx: number) => pinGeometry().get(idx)?.rest ?? 0;
 
@@ -2436,6 +2446,8 @@ export function ChatRoot(props: ChatRootProps) {
                 data-chat-root
                 data-chat-layout={theme().layout.preset}
                 data-agent-conversation={theme().layout.agentConversation ? 'true' : undefined}
+                onMouseOver={event => setHoveredUtterance(utteranceAt(event.target))}
+                onMouseOut={event => setHoveredUtterance(utteranceAt(event.relatedTarget))}
                 class={outerClip}
                 style={scrollElStyle}
               >
@@ -2522,7 +2534,7 @@ export function ChatRoot(props: ChatRootProps) {
                                 style={isActivityPin() ? { top: `${userTopGap + activityPinOffset(unitIndex) - (u()?.gapBefore ?? 0)}px` } : { 'pointer-events': 'auto' }}
                               >
                               <Show when={isActivityPin()}><div class={`${pinBackdrop} ${activityPinBackdrop}`}
-                                style={{ top: `${-userTopGap}px`, left: `${pinFrame().left}px`, width: `${pinFrame().width}px` }}
+                                style={{ top: `${(u()?.gapBefore ?? 0) - userTopGap}px`, left: `${pinFrame().left}px`, width: `${pinFrame().width}px` }}
                                 data-chat-pin-backdrop="" aria-hidden="true" /></Show>
                               <UnitRow
                                 unit={u()!}
@@ -2542,6 +2554,8 @@ export function ChatRoot(props: ChatRootProps) {
                                 bodySize={bodySizeOf}
                                 finalReplyId={finalReplyId()}
                                 latestConversationMessageId={latestConversationMessageId()}
+                                utteranceHovered={u()?.kind === 'turn-completion' && !!u()?.conversationUtterance
+                                  && hoveredUtterance() === u()?.conversationUtterance}
                                 background={backgroundAttachment()}
                               />
                               </div>

@@ -1,3 +1,4 @@
+import { customModelRefFromOption } from '@gugu/session-core/models/custom-model';
 import { agentIdsBySession } from '@main/core/sessionpage/sessionpage-session-agent';
 import { readAcpSessionSummaries } from '@main/core/acp/session-summary-reader';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
@@ -113,7 +114,8 @@ export async function listAgentsForExtension(
   const models = new Map(await Promise.all(here.map(async ({ session: { conversationId: id, harness, runtime } }) => {
     const decision = await sessionPlatformModel(id);
     const model = sessionModelFromDecision(decision, harnessModels.get(id) ?? null).spawn_model_id ?? null;
-    return [id, { model, modelLabel: await sessionModelLabel(id, decision, harness, runtime) }] as const;
+    const custom = customModelRefFromOption(model);
+    return [id, { model, modelLabel: custom ? custom.modelId ?? 'CLI default model' : await sessionModelLabel(id, decision, harness, runtime) }] as const;
   })));
   const agents = rows.flatMap((row) => {
     const id = row.session.conversationId;

@@ -1,3 +1,4 @@
+import type { CustomModelRef } from '@gugu/session-core/models/custom-model';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import type { ProviderSessionState } from '@gugu/session-core/acp/client';
 import type { GuguPermissionMode, PromptInput } from '@gugu/session-core/acp';
@@ -194,6 +195,8 @@ export type Session = {
   pendingRestart?: PendingRestart;
   /** Model to pass to the agent CLI. Absent or empty string means use the CLI default. */
   model?: string;
+  /** Read-only projection of the session’s stored custom provider reference. */
+  customModel?: CustomModelRef;
   /**
    * spec `mcp-session-toggle`:用户为这条会话关掉的那几台 MCP server(harness 的配置键)。
    * ⚠️ `[]` 与缺席**不同**:`[]` = 决定过、一台没关;缺席 = 从没碰过。

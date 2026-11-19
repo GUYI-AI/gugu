@@ -10,7 +10,7 @@ import { Button } from '../ui/Button'
 import { AddGroupMembers } from './AddGroupMembers'
 import { groupSettings } from './useGroupChatSettings'
 
-/** The group's 「添加成员」 picker, loading the group itself: the add menu (GroupAddMenu) and a task dropped on a group's composer. */
+/** The group's 「添加成员」 picker, loading the group itself: the group menus and a task dropped on a group's composer. */
 export function GroupAddMembersSheet({ chatId, initialSelectedIds, onClose }: {
   chatId: string; initialSelectedIds?: readonly string[]; onClose: () => void
 }) {
@@ -40,9 +40,8 @@ export function GroupAddMembersSheet({ chatId, initialSelectedIds, onClose }: {
 }
 
 /**
- * 「添加成员」 from any group's 「+」 (GroupAddMenu), drawn here in the shell, under its contacts and devices. The picker's
- * candidates are those two providers; the inner column's 「+」 lives in the task page's own React root, which has neither,
- * so a picker mounted beside that 「+」 had nobody to pick. Mounted once (MainLayout); it sits over whatever page asked.
+ * The shared 「添加成员」 picker is mounted once in MainLayout, where it can read the contacts and devices providers. It
+ * sits over the page that requested it, including the inner sidebar in the task page's separate React root.
  */
 export function GroupAddMembersHost() {
   const [chatId, setChatId] = useState<string | null>(null)

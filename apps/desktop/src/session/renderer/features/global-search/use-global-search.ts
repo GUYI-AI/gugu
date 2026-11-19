@@ -4,7 +4,7 @@ import { chatDisplayName } from '@renderer/lib/chat/chat-name'
 import { readChatSummary, resolveChatId } from '@/lib/chatSummariesBridge'
 import { translateSessionMessage } from '../../localization/locale-store'
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useChatSummaries } from '@/lib/chatSummariesBridge'
 import { readIdentityDirectoryBridge } from '@/lib/identityDirectoryBridge'
 import { chatDb } from '@/lib/supabase'
@@ -121,9 +121,14 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
   // Online, one conversation is searched in the cloud like every other scope. Offline on desktop, the messages
   // stored on this device answer instead. Phase two removes the platform seam when the phone uses SQLite too.
   const localScope = !!inChat && !online && platform.localMessages === 'sqlite'
+  // A clear changes what may be read, including fresh query-cache entries and
+  // responses already in flight. Hiding keeps the same history and cache key.
+  const boundaries = useMemo(() => [...summaries].flatMap(([id, chat]) => chat.historyClearedAt
+    ? [[id, chat.historyClearedAt] as const] : []).sort(([left], [right]) => left.localeCompare(right)), [summaries])
+  const historyKey = [me, ...(boundaries.length ? [boundaries] : [])]
 
   const searchChats = (chatId: string | null) => ({
-    queryKey: ['global-search-messages', query, chatId],
+    queryKey: ['global-search-messages', query, chatId, ...historyKey],
     queryFn: async () => {
       const { data, error } = await chatDb.rpc('message_search_as', { p_chat_id: chatId, p_query: query, p_limit: SEARCH_LIMIT })
       if (error) throw new Error(error.message)
@@ -132,7 +137,7 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
     staleTime: 5_000,
   })
   const searchStored = (chatId: string) => ({
-    queryKey: ['global-search-messages', query, chatId, from?.userId ?? null, me],
+    queryKey: ['global-search-messages', query, chatId, from?.userId ?? null, me, ...historyKey],
     queryFn: async (): Promise<MessageRow[]> => {
       const store = localMessageQueries()
       if (!store || !me) throw new Error('Sign in to search messages stored on this device.')
@@ -155,7 +160,7 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
   const shownRow = (row: MessageRow) => row.content_type !== 'system' && (!from || row.sender_user_id === from.userId)
     && (kinds.length === 0 || kinds.every((kind) => messageKinds(row, me).has(kind)))
   const turns = useQuery({
-    queryKey: ['global-search-task-turns', query],
+    queryKey: ['global-search-task-turns', query, ...historyKey],
     queryFn: async (): Promise<{ hits: TaskTurnHit[]; index: TaskTurnIndexStatus }> => {
       const [index, hits] = await Promise.all([
         rpc.search.taskTurnIndexStatus(),
