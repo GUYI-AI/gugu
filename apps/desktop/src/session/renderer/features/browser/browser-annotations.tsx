@@ -24,22 +24,22 @@ export function useBrowserAnnotations({ conversation, browserId, visible, availa
   const [active, setActive] = useState(false);
   const exit = useCallback(() => setActive(false), []);
   const { translate } = useSessionMessages();
+  const accountId = useAuth().user?.id;
   return {
     toolbar: <Button type="button" variant="ghost" size="sm" disabled={!conversation || !available} className="h-7 shrink-0 gap-2 px-2 aria-pressed:bg-[color-mix(in_oklab,var(--live-light)_16%,transparent)] aria-pressed:text-[var(--live-light)]"
       aria-pressed={active} title={active ? `${translate('annotations.hint')}: ${translate('annotations.browse')}` : translate('annotations.annotate')}
       onClick={() => setActive(!active)}><MessageSquare className="size-3.5" />{translate('annotations.mode')}</Button>,
-    overlay: active && visible && available && conversation ? <BrowserAnnotationOverlay key={`${browserId}:${annotationConversationKey(conversation)}`} conversation={conversation} browserId={browserId}
+    overlay: active && visible && available && conversation ? <BrowserAnnotationOverlay key={`${browserId}:${annotationConversationKey(conversation)}:${accountId ?? ''}`} conversation={conversation} accountId={accountId} browserId={browserId}
       inspect={inspect} onExit={exit} filePath={filePath} subscribeSpaceRelease={subscribeSpaceRelease} /> : null,
   };
 }
 
-const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ conversation, browserId, inspect, onExit, filePath, subscribeSpaceRelease }: {
-  conversation: AnnotationConversation; browserId: string; inspect: InspectAnnotation; onExit: () => void;
+const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ conversation, accountId, browserId, inspect, onExit, filePath, subscribeSpaceRelease }: {
+  conversation: AnnotationConversation; accountId?: string; browserId: string; inspect: InspectAnnotation; onExit: () => void;
   filePath?: string; subscribeSpaceRelease?: SubscribeSpaceRelease;
 }) {
   const { translate } = useSessionMessages();
-  const { user } = useAuth();
-  const draft = sessionAnnotations.forConversation(conversation, user?.id);
+  const draft = sessionAnnotations.forConversation(conversation, accountId);
   const root = useRef<HTMLDivElement>(null);
   const [browsing, setBrowsing] = useState(false);
   const [hover, setHover] = useState<BrowserAnnotationTarget | null>(null);
