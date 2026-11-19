@@ -1,3 +1,4 @@
+import { prepareManagedCodexHistory as prepareCodexHistoryAtHome } from './managed-codex-history';
 import { access } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { eq } from 'drizzle-orm';
@@ -51,15 +52,8 @@ function historyPlan(home: NonNullable<ReturnType<typeof homeFor>>) {
 }
 async function prepareManagedCodexHistory(home: NonNullable<ReturnType<typeof homeFor>>) {
   migrationPreparation.set(home.providerId, { phase: 'history', startedAt: Date.now(), attempt: 1 });
-  const [{ prepareCodexHistory }, { resolveLocalAgentCli }, { resolveLocalAgentSpawnEnv }] = await Promise.all([
-    import('@gugu/session-plugins/agents/codex-history'),
-    import('@main/core/acp/transport/local-acp-process-host'),
-    import('./agent-run-context'),
-  ]);
-  const [cli, env] = await Promise.all([resolveLocalAgentCli('codex', 'primary'), resolveLocalAgentSpawnEnv('codex', 'version-probe')]);
-  await prepareCodexHistory({ cli, env: { ...env, CODEX_HOME: home.configRoot } }, {
-    signal: migrationAbort.signal,
-    onProgress: (progress) => { if (progress) migrationPreparation.set(home.providerId, { phase: 'history', startedAt: progress.startedAt, attempt: progress.attempt }); },
+  await prepareCodexHistoryAtHome(home, migrationAbort.signal, (progress) => {
+    if (progress) migrationPreparation.set(home.providerId, { phase: 'history', startedAt: progress.startedAt, attempt: progress.attempt });
   });
   migrationAbort.signal.throwIfAborted();
 }

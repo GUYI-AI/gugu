@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { GUGU_MCP_STDIO_RELAY_ENTRY_ENV } from '@gugu/session-plugins/agents';
 
 export const desktopWorkers = {
+  'codex-task-scan': { entry: 'main/core/session-import/codex-task-worker.ts', file: 'codex-task-scan.js' },
   'cursor-import': { entry: 'main/core/session-import/cursor-worker.ts', file: 'cursor-import.js' },
   'git-status': {
     entry: 'main/core/git/status/worker.ts',
@@ -74,3 +75,4 @@ export function registerGuguMcpStdioRelayEntry(): void {
   if (process.env[GUGU_MCP_STDIO_RELAY_ENTRY_ENV]?.trim()) return;
   process.env[GUGU_MCP_STDIO_RELAY_ENTRY_ENV] = guguMcpStdioRelayEntryPath();
 }
+
