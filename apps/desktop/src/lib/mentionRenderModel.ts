@@ -11,7 +11,8 @@
 //  fallback = 路由对象 − 存活高亮;excludeIds(reply 被回复者)未高亮时不挂徽标(其表达归引用条)。
 
 import { MENTION_ALL_USER_ID, mentionAllName, mentionAllBadge } from './mention'
-import { displayAgentReferences, escapeMentionText, injectBackedMentions, survivingMarkedNames, MENTION_MARKER_PREFIX } from './mentionMdast'
+import { markdownLiteral } from '@gugu/core/shared/markdownLiteral'
+import { displayAgentReferences, injectBackedMentions, survivingMarkedNames, MENTION_MARKER_PREFIX } from './mentionMdast'
 
 /** 一条消息的渲染模型:注入 nonce marker 后的正文 + 兜底徽标名单。 */
 export interface MentionRenderModel {
@@ -45,7 +46,7 @@ export function buildMentionRender(
   }
 
   const content = displayAgentReferences(injectBackedMentions(body, candidateNames, opts.marker), (id, label) =>
-    ids.includes(id) ? `[${escapeMentionText(`@${nameOfId(id)}`)}](${opts.marker})` : escapeMentionText(`@${label}`))
+    ids.includes(id) ? `[${markdownLiteral(`@${nameOfId(id)}`)}](${opts.marker})` : markdownLiteral(`@${label}`))
   const surviving = candidateNames.length === 0 || (content === body && !body.includes('#'))
     ? new Set<string>()
     : survivingMarkedNames(content, opts.marker)

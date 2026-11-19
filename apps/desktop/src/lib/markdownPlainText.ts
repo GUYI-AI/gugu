@@ -44,8 +44,9 @@ function replaceInlineLinks(text: string): string {
 
 function plainSegment(text: string): string {
   const literals: string[] = [];
-  const escaped = text.replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/g, (_, char: string) => {
-    literals.push(char);
+  // A backslash escape and a numeric character reference (`&#91;`, markdownLiteral) both stand for the bare character.
+  const escaped = text.replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])|&#(\d{1,7}|[xX][0-9a-fA-F]{1,6});/g, (_, char: string | undefined, code: string | undefined) => {
+    literals.push(char ?? String.fromCodePoint(code![0] === 'x' || code![0] === 'X' ? parseInt(code!.slice(1), 16) : Number(code)));
     return `\uE000${literals.length - 1}\uE000`;
   });
   return replaceInlineLinks(escaped)

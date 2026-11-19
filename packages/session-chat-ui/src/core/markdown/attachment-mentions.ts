@@ -20,6 +20,7 @@
  * `@[src/a/b.ts](src/a/b.ts)`、用户 @ 出来的工作区文件）是**正文里的引用**，不是这条消息
  * 的附件 —— 摘走它们会把一句话里提到的文件变成「我附了它」。
  */
+import { readMarkdownLiteral } from '@gugu/core/shared/markdownLiteral';
 import { attachmentKind } from '@gugu/core/shared/ui/attachmentType';
 import type { ChatAttachment } from '../../model';
 
@@ -64,7 +65,7 @@ export function splitAttachmentMentions(text: string): SplitAttachmentMentions {
     attachments.push({
       id: `${PATH_ATTACHMENT_PREFIX}${target}`,
       // 用户读的名字是作者显式写的 label —— ❌ 不从路径反推(盘上那个文件名带着防重名的 id)。
-      name: label,
+      name: readMarkdownLiteral(label),
       kind: attachmentKind({ fileName: target, mimeType: '' }),
     });
     return HOLE;
