@@ -783,6 +783,7 @@ export default {
       "permissions": "Device control",
       "prompts": "Saved prompts",
       "sessions": "Tasks",
+      "team": "Team",
       "subscriptions": "Subscriptions",
       "usage": "Usage"
     },

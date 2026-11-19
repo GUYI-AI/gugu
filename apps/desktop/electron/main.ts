@@ -125,6 +125,8 @@ import { detectLocalSigning, downloadDmg, pickMacDmgFile, shouldUseDmgPath } fro
 import type { LocalSigning } from './macDmgUpdater'
 import { createSelectAccountHandler, webAuthnKeychainGroup } from './macWebAuthn'
 import { isOAuthCallback } from '../shared/oauth-callback'
+import { isTeamInvitationLink } from '../shared/team-invitation-link'
+import { teamAccountTokenHint } from '../shared/team-account-claims'
 import { OpenedLinkMailbox } from './opened-link-mailbox'
 import { googleAuthorizationUrl, googleIdentityLinkUrl } from '../shared/google-authorization-url'
 import { isOAuthAttemptRedirect } from '../shared/oauth-attempt'
@@ -376,6 +378,7 @@ import {
 import { sessionPlatformModel } from './session/main/core/sessions/platform-model-selection'
 import { providerSessionIdForSession } from './session/main/core/sessions/provider-session-id'
 import { SESSIONPAGE_SESSION_RELOAD_CHANNEL } from '../src/session/shared/core/agents/session-reload'
+import { codexStartupKind } from '@gugu/core/local/codex-startup-failure.mjs'
 import { SESSIONPAGE_PLATFORM_RETRY_CHANNEL } from '../src/session/shared/core/agents/platform-model'
 import { subscribeBackendRecovered } from '@gugu/core/cloud/backendReachability'
 import {
@@ -2664,7 +2667,8 @@ handleShellChannel(SESSIONPAGE_SESSION_RELOAD_CHANNEL, async (_event, input: unk
     // 从没起来过的会话只记下了选择(#7092):告诉渲染层接着正常首启,❌ 让它去重挂一条不存在的会话。
     return reloaded.nativeSession === 'not-started' ? { ok: true, notStarted: true } : { ok: true }
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    const startupReason = codexStartupKind(error)
+    return { ok: false, error: error instanceof Error ? error.message : String(error), ...(startupReason ? { startupReason } : {}) }
   }
 })
 
@@ -3569,7 +3573,7 @@ let guguLinksReady = false
 function handleGuguLink(url: string): void {
   if (!url.startsWith(`${GUGU_LINK_SCHEME}://`)) return
   openedLinks.push(url)
-  if (isOAuthCallback(url)) {
+  if (isOAuthCallback(url) || isTeamInvitationLink(url)) {
     focusMainWindow()
     return
   }
@@ -3607,7 +3611,7 @@ function flushPendingGuguLinks(): void {
   guguLinksReady = true
   // Windows / Linux 冷启动:链接是这一次启动的参数。
   const coldStart = process.argv.find((arg) => arg.startsWith(`${GUGU_LINK_SCHEME}://`))
-  if (coldStart && !isOAuthCallback(coldStart)) pendingGuguLinks.push(coldStart)
+  if (coldStart && !isOAuthCallback(coldStart) && !isTeamInvitationLink(coldStart)) pendingGuguLinks.push(coldStart)
   for (const url of pendingGuguLinks.splice(0)) handleGuguLink(url)
 }
 
@@ -3848,11 +3852,14 @@ function crossMachine(): CrossMachineSessions {
 async function cloudComputerClient() {
   const baseUrl = cloudComputerBaseUrl({ enabled: cloudComputerEnabled(), override: process.env.GUGU_CLOUD_COMPUTER_URL ?? null, supabaseUrl: getSupabaseUrl() })
   if (!baseUrl) return null
+  const account = await desktopAuthProvider().getAuth()
+  if (account && teamAccountTokenHint(account.accessToken) !== 'personal') return null
   return createCloudComputerClient({
     baseUrl,
     accessToken: async () => {
       const auth = await desktopAuthProvider().getAuth()
       if (!auth?.accessToken) throw new Error('this machine is not signed in to 咕咕')
+      if (teamAccountTokenHint(auth.accessToken) !== 'personal') throw new Error('Cloud computer spending requires a separate personal account')
       return auth.accessToken
     },
     anonKey: getSupabaseAnonKey(),

@@ -1,6 +1,7 @@
 import type { HumanAuthSession } from '@gugu/core'
 import { isAuthRetryableFetchError, type Session, type User } from '@supabase/supabase-js'
 import { hydrateIdentityAuthUser } from './auth'
+import { accountKindFromMetadata } from '@/features/team/accountKind'
 import { setRejectedAccessTokenRecovery } from './authBoundedFetch'
 import { abortAuthSessionBoundary, keepAuthSessionBoundary, resetAuthSessionBoundary } from './authSessionLoss'
 import { publishRendererSession } from './sessionPublication'
@@ -95,7 +96,7 @@ function isPermanentAuthError(value: unknown): boolean {
 }
 function userFromSession(session: Session): AuthUser {
   const user = session.user
-  return { id: user.id, email: user.email ?? '', nickname: '', identityPending: true }
+  return { id: user.id, email: user.email ?? '', nickname: '', identityPending: true, accountKind: accountKindFromMetadata(user.app_metadata) }
 }
 function sessionWork(generation: number, session: Session): Work {
   return { generation, userId: session.user.id, accessToken: session.access_token, refreshToken: session.refresh_token }

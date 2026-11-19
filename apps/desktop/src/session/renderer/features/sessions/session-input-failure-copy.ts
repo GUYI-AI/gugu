@@ -15,7 +15,10 @@ export function sessionStartupFailureCopy(reason: unknown, translate: SessionTra
   const copy = { version: 'taskError.codexUpgrade', missing: 'taskError.codexMissing',
     permission: 'taskError.codexPermission', configuration: 'taskError.codexConfiguration',
     protocol: 'taskError.codexProtocol', exited: 'taskError.codexExited', timeout: 'taskError.codexTimeout',
-    unknown: 'taskError.codexStartFailed' } as const;
+    unknown: 'taskError.codexStartFailed',
+    'provider-missing': 'taskError.codexProviderMissing',
+    'provider-mismatch': 'taskError.codexProviderMismatch',
+    'provider-policy': 'taskError.codexProviderPolicy' } as const;
   return translate(copy[kind]);
 }
 
