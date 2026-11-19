@@ -1,26 +1,9 @@
-// #6299 — 单 agent 创建不再「重启后续建」。启动时把上次没建完的单 agent 记录收掉,结果如实交给 UI 提示。
-//
-// 为什么在启动时收:旧式创建弹窗(CreateAgentModal + AgentCreateRetryHost)下架后,本机再没有谁会读这些
-// owner-scoped 续建记录 —— 不收,它们就永远躺在 localStorage 里,云端那次开了头的创建也永远停在半截。
-// 新的创建入口(共享 Session Composer)只在自己开着时续建,不跨重启(spec agent-create)。
-//
-// 每条记录的去向以**云端这次创建的事实**为准,❌ 不按本地猜:
-//   · 云端没有这次操作(记录写下、首个 RPC 前就断了)→ 只清本地(连同本机的会话继承预留);
-//   · 云端已 completed → 照常收尾,不当失败:直接用云端这条成员行(Agent / DM 已由云端绑好),清本地记录。
-//     ❌ 不走 resumeSingleAgent —— 它先重读并比对创建时的本机源指纹,源被改过就永远收不掉一个已建好的 Agent;
-//   · 其余 → cancelTeamProvision(取消 + 回收 + settle,全收掉时它自己删记录);没收干净 → 记录保留,
-//     下次启动再收,卡在哪一步如实报。
-// 团队(kind='team')的记录归 team saga,这里不碰。
-
+// #3160: startup may finish an already completed creation; only a person may resume or cancel one.
 import type { AgentProvision, AgentProvisionOperation } from '@gugu/core/shared/types/agentProvision'
 import type { CreateAgentOnDeviceResult } from '@gugu/core/shared/types/chat'
-import {
-  completedSingleProvisionSession,
-  defaultResumeStore,
-  getProvision,
-  getProvisionOperation,
-  type ProvisionResumeStore,
-} from './agentProvision'
+import { assertResumeRecordOwner, completedSingleProvisionSession, defaultResumeStore, getProvision, getProvisionOperation, resumeSingleAgent, type ProvisionResumeRecord, type ProvisionResumeStore } from './agentProvision'
+import { getCurrentAuthUserId } from './supabase'
+import { clearCancelledStarter } from './starterContinuation'
 import { cancelTeamProvision, type CancelTeamProvisionResult } from './teamProvisionSaga'
 import type { CleanupStage } from './cleanupStageCopy'
 
@@ -35,59 +18,83 @@ export interface UnfinishedSingleAgentSweepDeps {
   getOperation?: (operationId: string) => Promise<AgentProvisionOperation | null>
   cancel?: (operationId: string) => Promise<CancelTeamProvisionResult>
   getMember?: (provisionId: string) => Promise<AgentProvision | null>
+  getOwnerUserId?: () => Promise<string>
+  resume?: typeof resumeSingleAgent
+  clearStarter?: typeof clearCancelledStarter
 }
 
-export async function sweepUnfinishedSingleAgents(
-  ownerUserId: string,
-  deps: UnfinishedSingleAgentSweepDeps = {},
-): Promise<UnfinishedSingleAgentOutcome[]> {
-  const store = deps.store ?? defaultResumeStore
-  const getOperation = deps.getOperation ?? getProvisionOperation
-  const cancel = deps.cancel ?? cancelTeamProvision
-  const getMember = deps.getMember ?? getProvision
-  const outcomes: UnfinishedSingleAgentOutcome[] = []
+async function assertOwner(record: ProvisionResumeRecord, deps: UnfinishedSingleAgentSweepDeps) {
+  await assertResumeRecordOwner(record, deps.getOwnerUserId ?? getCurrentAuthUserId, 'single')
+}
 
-  for (const record of store.list(ownerUserId)) {
+async function finish(record: ProvisionResumeRecord, operation: AgentProvisionOperation, deps: UnfinishedSingleAgentSweepDeps): Promise<UnfinishedSingleAgentOutcome> {
+  const member = record.members[0]
+  if (!member) throw new Error(`resume record ${record.operationId} has no member ref`)
+  const row = await (deps.getMember ?? getProvision)(member.provisionId)
+  if (!row) throw new Error(`single provision ${member.provisionId} missing although operation completed`)
+  const session = completedSingleProvisionSession({ operationId: record.operationId, provisionId: member.provisionId, operation, outcome: { member: row } })
+  await assertOwner(record, deps)
+  ;(deps.store ?? defaultResumeStore).forget(record.ownerUserId, record.operationId)
+  return { operationId: record.operationId, kind: 'completed', session }
+}
+
+/** Read once on startup. Absence, errors and unfinished phases preserve the person's intent. */
+export async function sweepUnfinishedSingleAgents(ownerUserId: string, deps: UnfinishedSingleAgentSweepDeps = {}): Promise<UnfinishedSingleAgentOutcome[]> {
+  const outcomes: UnfinishedSingleAgentOutcome[] = []
+  for (const record of (deps.store ?? defaultResumeStore).list(ownerUserId)) {
     if (record.blueprint.kind !== 'single') continue
     const { operationId } = record
-    const member = record.members[0]
-    const finish = async (operation: AgentProvisionOperation): Promise<UnfinishedSingleAgentOutcome> => {
-      if (!member) throw new Error(`resume record ${operationId} has no member ref`)
-      const row = await getMember(member.provisionId)
-      if (!row) throw new Error(`single provision ${member.provisionId} missing although operation ${operationId} completed`)
-      // 成员行缺绑定时 completedSingleProvisionSession 抛错 → pending,记录保留。
-      const session = completedSingleProvisionSession({ operationId, provisionId: member.provisionId, operation, outcome: { member: row } })
-      store.forget(ownerUserId, operationId)
-      return { operationId, kind: 'completed', session }
-    }
     try {
-      const operation = await getOperation(operationId)
-      if (!operation) {
-        store.forget(ownerUserId, operationId)
-        outcomes.push({ operationId, kind: 'discarded' })
-        continue
-      }
-      if (operation.phase === 'completed') {
-        outcomes.push(await finish(operation))
-        continue
-      }
-      const result = await cancel(operationId)
-      if (result.operation.phase === 'completed') {
-        outcomes.push(await finish(result.operation))
-      } else if (result.fullyCancelled) {
-        outcomes.push({ operationId, kind: 'cancelled', warningStages: result.cleanupErrors.map((item) => item.stage) })
-      } else {
-        outcomes.push({ operationId, kind: 'pending', stages: result.cleanupErrors.map((item) => item.stage) })
-      }
+      await assertOwner(record, deps)
+      const operation = await (deps.getOperation ?? getProvisionOperation)(operationId)
+      outcomes.push(operation?.phase === 'completed'
+        ? await finish(record, operation, deps)
+        : { operationId, kind: 'pending', stages: [] })
     } catch (error) {
-      // 一条收不掉不拦其余几条;记录原样保留,下次启动再收。
-      outcomes.push({
-        operationId,
-        kind: 'pending',
-        stages: [],
-        error: error instanceof Error ? error.message : String(error),
-      })
+      outcomes.push({ operationId, kind: 'pending', stages: [], error: error instanceof Error ? error.message : String(error) })
     }
   }
   return outcomes
+}
+
+function singleRecord(ownerUserId: string, operationId: string, deps: UnfinishedSingleAgentSweepDeps): ProvisionResumeRecord {
+  const record = (deps.store ?? defaultResumeStore).list(ownerUserId).find(item => item.operationId === operationId && item.blueprint.kind === 'single')
+  if (!record) throw new Error('Unfinished agent creation is no longer available')
+  return record
+}
+
+/** Visible Continue action: original ids, owner and source verification. */
+export async function continueUnfinishedSingleAgent(ownerUserId: string, operationId: string, deps: UnfinishedSingleAgentSweepDeps = {}): Promise<UnfinishedSingleAgentOutcome> {
+  const record = singleRecord(ownerUserId, operationId, deps)
+  await assertOwner(record, deps)
+  const operation = await (deps.getOperation ?? getProvisionOperation)(operationId)
+  if (operation?.phase === 'completed') return finish(record, operation, deps)
+  const result = await (deps.resume ?? resumeSingleAgent)(record, { resumeStore: deps.store, getOwnerUserId: deps.getOwnerUserId })
+  await assertOwner(record, deps)
+  if (result.operation.phase === 'completed') return finish(record, result.operation, deps)
+  return { operationId, kind: 'pending', stages: [] }
+}
+
+/** Called only after the existing confirmation dialog. Completion wins the cancellation race. */
+export async function deleteUnfinishedSingleAgent(ownerUserId: string, operationId: string, deps: UnfinishedSingleAgentSweepDeps = {}): Promise<UnfinishedSingleAgentOutcome> {
+  const record = singleRecord(ownerUserId, operationId, deps)
+  await assertOwner(record, deps)
+  const operation = await (deps.getOperation ?? getProvisionOperation)(operationId)
+  await assertOwner(record, deps)
+  if (!operation) {
+    await (deps.clearStarter ?? clearCancelledStarter)(operationId, deps.getOwnerUserId)
+    await assertOwner(record, deps)
+    ;(deps.store ?? defaultResumeStore).forget(ownerUserId, operationId)
+    return { operationId, kind: 'discarded' }
+  }
+  if (operation.phase === 'completed') return finish(record, operation, deps)
+  const cancel = deps.cancel ?? ((id: string) => cancelTeamProvision(id, { resumeStore: deps.store, getOwnerUserId: deps.getOwnerUserId }))
+  const result = await cancel(operationId)
+  if (result.operation.phase === 'completed') return finish(record, result.operation, deps)
+  if (result.fullyCancelled) {
+    await assertOwner(record, deps)
+    ;(deps.store ?? defaultResumeStore).forget(ownerUserId, operationId)
+    return { operationId, kind: 'cancelled', warningStages: result.cleanupErrors.map(item => item.stage) }
+  }
+  return { operationId, kind: 'pending', stages: result.cleanupErrors.map(item => item.stage) }
 }

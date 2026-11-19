@@ -21,7 +21,7 @@ vi.mock('@gugu/session-core/agents/plugins/helpers', () => ({
     userConfigRoot: '/missing-source', importGroups: [{ id: 'settings' }],
   }),
   readAgentHomeMarker: async ({ providerId }: { providerId: string }) => state.marked.has(providerId) ? { importedAt: 'earlier' } : null,
-  scanAgentHome: async () => ({ marker: null, newestMtime: 0, groups: [{ id: 'settings', count: 1, mcpCount: 0 }], issues: [], mcpSecrets: [], mcpNames: [], projectMcpCount: 0 }),
+  scanAgentHome: async () => ({ marker: null, newestMtime: 0, sourceUpdated: false, groups: [{ id: 'settings', count: 1, mcpCount: 0 }], issues: [], mcpSecrets: [], mcpNames: [], projectMcpCount: 0 }),
   importAgentHome: state.importHome,
 }));
 vi.mock('@main/db/client', () => ({ db: { select: () => ({ from: () => ({ where: () => ({ limit: () => ({ all: () => [] }) }) }) }) } }));

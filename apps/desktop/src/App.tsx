@@ -84,7 +84,7 @@ function AuthenticatedProduct({ user }: { user: AuthUser }) {
         </ShellErrorBoundary>
         <AgentPresencePrewarm />
         <AgentStatusFeedBridge />
-        {/* 从前挂在已下架的 AgentCreateRetryHost 里,#6299 起直接挂在这里。 */}
+        {/* 续建记录由壳持有；未完成创建的继续/删除入口在任务侧栏。 */}
         <StarterContinuationHost active={effectsActive} />
         <ShareIntakeHost active={effectsActive} />
         <UnfinishedAgentCreateSweeper active={effectsActive} />

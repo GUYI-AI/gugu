@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { atomicWriteText, resolveGuguHome } from '../state/paths'
 import { accessTokenExpirySeconds, refreshSupabaseSession } from '../../cloud/runtimeAuthProvider'
 import { getSupabaseAnonKey, getSupabaseUrl } from '../../cloud/config'
+import { serverNow } from '../../shared/serverClock'
 
 export type HumanAuthRefreshOwner = 'desktop' | 'cli'
 
@@ -68,7 +69,8 @@ export async function readFreshHumanAuthSession(
   if (session.refresh_owner !== 'cli') return session
 
   const skew = deps.skewSeconds ?? 60
-  const nowSeconds = deps.now ?? (() => Date.now() / 1000)
+  // A JWT's `exp` is on the backend's clock (`@@@server-clock`).
+  const nowSeconds = deps.now ?? (() => serverNow() / 1000)
   const exp = accessTokenExpirySeconds(session.access_token)
   if (exp !== null && exp - skew > nowSeconds()) return session
 
