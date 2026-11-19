@@ -595,3 +595,16 @@ it('a refused native publication is resent from its row like an upload', async (
   expect((await f.repository).snapshot().outbox.map(r => r.value)).toEqual([expect.objectContaining({ clientMessageId: native.id, state: 'uploading', operation: { kind: 'upload' } })])
   f.wiring.dispose()
 })
+
+it('keeps a refused nonfriend DM failed and puts its cause in the existing offscreen notice', async () => {
+  setLocalePreference('zh-CN')
+  vi.useFakeTimers()
+  vi.spyOn(chatService, 'sendMessage').mockRejectedValue(new Error('dm_friendship_required'))
+  const h = wiringHarness('not-friends', { chatShown: () => false })
+  await h.wiring.enqueue({ ...enqueueInput('not-friends'), toUserIds: ['human-peer'] })
+  await vi.advanceTimersByTimeAsync(20_000)
+  expect(h.messages()[0]).toMatchObject({ id: 'not-friends', local_send_state: 'failed', local_send_error: 'dm_friendship_required', seq: -1 })
+  expect(notices.visible.size).toBe(1)
+  expect(notices.show).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ description: '请先添加对方为好友，再发送消息。' }))
+  h.wiring.dispose()
+})
