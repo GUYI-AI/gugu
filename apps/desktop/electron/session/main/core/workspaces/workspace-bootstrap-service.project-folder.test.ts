@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@main/db/client', () => ({ db: {} }));
-vi.mock('@main/core/workspaces/folder-runtime/folder-runtimes', () => ({ projectManager: { getProject: () => undefined } }));
+vi.mock('@main/core/workspaces/folder-runtime/folder-runtimes', () => ({ folderRuntime: async () => undefined }));
 vi.mock('@main/core/runtime/runtime-manager', () => ({ runtimeManager: {} }));
 vi.mock('@main/core/sessions/session-builder', () => ({
   buildSessionFromWorkspace: mocks.buildSessionFromWorkspace,
@@ -34,7 +34,7 @@ const { WorkspaceBootstrapService } = await import('./workspace-bootstrap-servic
 const projectGitRepository = { repo: 'root' };
 const projectFetchService = { fetch: 'root' };
 const project = {
-  projectId: 'project-1',
+  folderId: 'folder-1',
   repoPath: '/work/gugu',
   defaultWorkspaceType: { kind: 'local' },
   defaultWorkspaceMachine: { kind: 'local' },
@@ -76,7 +76,7 @@ describe('ensureWorkspaceSetup for a project folder', () => {
     expect(workspaceId).toBe('ws-attached');
     expect(context).toMatchObject({
       workDir: '/work/gugu-7341',
-      projectPath: '/work/gugu',
+      folderPath: '/work/gugu',
       gitless: false,
       gitProbePath: '/work/gugu-7341',
     });
@@ -90,7 +90,7 @@ describe('ensureWorkspaceSetup for a project folder', () => {
     expect(result).toMatchObject({ success: true, data: { path: '/work/gugu', workspaceId: 'ws-root' } });
     expect(context).toMatchObject({
       workDir: '/work/gugu',
-      projectPath: '/work/gugu',
+      folderPath: '/work/gugu',
       gitless: false,
       gitRepository: projectGitRepository,
       gitRepositoryFetchService: projectFetchService,

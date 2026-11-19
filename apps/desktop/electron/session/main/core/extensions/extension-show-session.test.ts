@@ -34,9 +34,9 @@ vi.mock('@main/db/client', () => ({
 const { sessionHere } = await import('./extension-show-session');
 
 describe('sessionHere (#7158): this computer\'s session as the task list shows it', () => {
-  it('a listed session: its project; an archived one and an unknown one: none', async () => {
-    expect(await sessionHere('s-listed')).toBe('p-1');
-    expect(await sessionHere('s-archived')).toBeNull();
-    expect(await sessionHere('s-nobody')).toBeNull();
+  it('a listed session: yes; an archived one and an unknown one: no', async () => {
+    expect(await sessionHere('s-listed')).toBe(true);
+    expect(await sessionHere('s-archived')).toBe(false);
+    expect(await sessionHere('s-nobody')).toBe(false);
   });
 });

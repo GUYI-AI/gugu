@@ -69,7 +69,7 @@ const dispatchForApp = vi.fn(async (_id: string, args: Record<string, unknown>, 
 vi.mock('@main/core/extensions/extension-send', () => ({ dispatchForApp }));
 // The window's sheet (DispatchSheet): what the person picked, or null — asked only when the call named no target.
 const pickDispatchTarget = vi.fn(async (_embedderId: number | null, _ask: unknown): Promise<unknown> => null);
-vi.mock('@main/core/extensions/extension-bridge-relay', () => ({ pickDispatchTarget, actInWindow: async () => undefined, listedSessionProject: async () => null }));
+vi.mock('@main/core/extensions/extension-bridge-relay', () => ({ pickDispatchTarget, actInWindow: async () => undefined, sessionListedByWindow: async () => false }));
 // The session a draft goes to is this computer's (the one way a session is opened finds it here).
 vi.mock('@main/core/extensions/extension-show-session', async (original) => ({
   ...(await original<typeof import('./extension-show-session')>()),

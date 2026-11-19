@@ -27,9 +27,10 @@ vi.mock('@main/db/client', () => ({
   },
 }));
 
-vi.mock('../../utils', () => ({
-  resolveWorkspace: async (_projectId: string, workspaceId: string) => mocks.workspaceGet(workspaceId) ?? null,
+vi.mock('@main/core/workspaces/resolve-workspace', () => ({
+  resolveWorkspace: async (workspaceId: string) => mocks.workspaceGet(workspaceId) ?? null,
 }));
+vi.mock('@main/core/folders/folders', () => ({ rootFolderOf: () => ({ id: 'project-1' }) }));
 
 vi.mock('@main/lib/logger', () => ({
   log: {
@@ -92,7 +93,7 @@ function configPathForDirectory(directoryPath: string): string {
 
 function projectFixture(fileSystem: IFileSystem, overrides: Record<string, unknown> = {}) {
   return {
-    projectId: 'project-1',
+    folderId: 'project-1',
     repoPath,
     fileSystem,
     configPath: configPath,
@@ -111,7 +112,7 @@ function workspaceFixture(workspacePath: string, fileSystem: IFileSystem) {
 }
 
 function projectTarget(fileSystem: IFileSystem) {
-  return { type: 'project' as const, label: 'Repo Name', path: repoPath, fileSystem, configPath };
+  return { type: 'project' as const, label: 'repo', path: repoPath, fileSystem, configPath };
 }
 
 describe('shareProjectSettingsToConfig', () => {
@@ -396,31 +397,21 @@ describe('shareProjectSettingsToConfig', () => {
       }
       return undefined;
     });
-    mocks.select
-      .mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            limit: vi.fn().mockResolvedValue([{ name: 'Repo Name' }]),
-          }),
-        }),
-      })
-      .mockReturnValueOnce({
-        from: () => ({
-          where: vi.fn().mockResolvedValue([
+    mocks.select.mockReturnValueOnce({
+      from: vi.fn().mockResolvedValue([
             { id: 's-root', config: { version: '1', type: 'acp', agentDisplayName: 'Root Session' }, workspaceId: 'root-workspace' },
             { id: 's-two', config: { version: '1', type: 'acp', agentDisplayName: 'Session Two' }, workspaceId: 'worktree-workspace' },
             // 同一个工作区上的第二条会话:目标只列一次。
             { id: 's-two-fork', config: { version: '1', type: 'acp', agentDisplayName: 'Session Two Fork' }, workspaceId: 'worktree-workspace' },
           ]),
-        }),
-      });
+    });
 
     const resolvedTargets = await resolveAllProjectSettingsTargets(project as never);
     const targets = getProjectSettingsWriteTargets(resolvedTargets);
     const overrideState = await computeProjectSettingsOverrideState(resolvedTargets);
 
     expect(targets).toEqual([
-      { type: 'project', label: 'Repo Name', path: '/repo' },
+      { type: 'project', label: 'repo', path: '/repo' },
       {
         type: 'workspace',
         workspaceId: 'worktree-workspace',
@@ -429,7 +420,7 @@ describe('shareProjectSettingsToConfig', () => {
       },
     ]);
     expect(overrideState.shellSetup).toEqual([
-      { label: 'Repo Name', path: '/repo', value: 'root setup' },
+      { label: 'repo', path: '/repo', value: 'root setup' },
       {
         label: 'Session Two',
         path: '/repo/.emdash/worktrees/session-two',
@@ -455,54 +446,44 @@ describe('shareProjectSettingsToConfig', () => {
         findBranchAnywhere: vi.fn(),
       },
     });
-    mocks.select
-      .mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            limit: vi.fn().mockResolvedValue([{ name: 'Repo Name' }]),
-          }),
-        }),
-      })
-      .mockReturnValueOnce({
-        from: () => ({
-          where: vi.fn().mockResolvedValue([]),
-        }),
-      });
+    mocks.select.mockReturnValueOnce({
+      from: vi.fn().mockResolvedValue([]),
+    });
 
     await expect(
       computeProjectSettingsOverrideState(await resolveAllProjectSettingsTargets(project as never))
     ).resolves.toEqual({
       preservePatterns: [
         {
-          label: 'Repo Name',
+          label: 'repo',
           path: '/repo',
           value: '.env\n.env.local',
         },
       ],
       shellSetup: [
         {
-          label: 'Repo Name',
+          label: 'repo',
           path: '/repo',
           value: 'nvm use',
         },
       ],
       'scripts.setup': [
         {
-          label: 'Repo Name',
+          label: 'repo',
           path: '/repo',
           value: 'pnpm install',
         },
       ],
       'scripts.run': [
         {
-          label: 'Repo Name',
+          label: 'repo',
           path: '/repo',
           value: 'pnpm dev',
         },
       ],
       'scripts.teardown': [
         {
-          label: 'Repo Name',
+          label: 'repo',
           path: '/repo',
           value: 'docker compose down',
         },

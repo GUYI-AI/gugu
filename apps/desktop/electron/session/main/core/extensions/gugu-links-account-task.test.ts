@@ -1,10 +1,10 @@
 import {expect,it,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({act:vi.fn(async():Promise<unknown>=>'own'),show:vi.fn(async()=>{}),here:vi.fn(async():Promise<string|null>=>null),bringUp:vi.fn(async()=>{})}));
+const mocks=vi.hoisted(()=>({act:vi.fn(async():Promise<unknown>=>'own'),show:vi.fn(async()=>{}),here:vi.fn(async():Promise<boolean>=>false),bringUp:vi.fn(async()=>{})}));
 vi.mock('./extensions-root',()=>({extensionsService:()=>({list:()=>({extensions:[]}),isEnabled:()=>true})}));
 vi.mock('./extension-bridge',()=>({deliverToExtension:vi.fn(),bringSessionUp:mocks.bringUp}));
 vi.mock('@main/core/sessions/session-orchestration',()=>({revealExtensionTabInSession:vi.fn()}));
 vi.mock('./extension-show-session',()=>({sessionHere:mocks.here,showSession:mocks.show}));
-vi.mock('./extension-bridge-relay',()=>({actInWindow:mocks.act,listedSessionProject:vi.fn(async()=>null)}));
+vi.mock('./extension-bridge-relay',()=>({actInWindow:mocks.act,sessionListedByWindow:vi.fn(async()=>false)}));
 vi.mock('@main/core/host-locale',()=>({sessionHostLocale:()=> 'zh-CN'}));
 vi.mock('@main/lib/events',()=>({events:{emit:vi.fn()}}));
 import {openLink} from './gugu-links';
@@ -18,17 +18,16 @@ it('routes a desktop session link through account navigation before any device d
 it('a session the account shell does not open comes up as gugu.showSession finds it: this computer first',async()=>{
  // Control (the parent commit 2dae2795): the window's phone-only directory was the end of it ⇒ 「not in your task list」.
  mocks.act.mockResolvedValueOnce(undefined);
- mocks.here.mockResolvedValueOnce('project-here');
+ mocks.here.mockResolvedValueOnce(true);
  await expect(openLink('gugu://session/on-this-computer')).resolves.toMatchObject({kind:'opened'});
- expect(mocks.bringUp).toHaveBeenCalledWith({projectId:'project-here',sessionId:'on-this-computer'});
+ expect(mocks.bringUp).toHaveBeenCalledWith({sessionId:'on-this-computer'});
 });
 it.each([
  {kind:'session' as const,sessionId:'assistant-task',projectId:'removed-assistant-project'},
  'gugu-beta://session/assistant-task',
 ])('opens a migrated assistant from a notification target or deep link using its current task project: %j',async target=>{
- const tasks='00000000-0000-4000-8000-000000000001';
  mocks.act.mockResolvedValueOnce(undefined);
- mocks.here.mockResolvedValueOnce(tasks);
+ mocks.here.mockResolvedValueOnce(true);
  await expect(openLink(target)).resolves.toMatchObject({kind:'opened'});
- expect(mocks.bringUp).toHaveBeenLastCalledWith({projectId:tasks,sessionId:'assistant-task'});
+ expect(mocks.bringUp).toHaveBeenLastCalledWith({sessionId:'assistant-task'});
 });

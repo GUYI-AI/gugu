@@ -128,19 +128,19 @@ vi.mock('./app-unread-bindings', () => ({
   },
 }));
 vi.mock('@main/core/extensions/extension-agent-context', () => ({
-  agentSessionContext: async (sessionId: string) => (sessionId === 'conv-agent' ? { sessionId, projectId: 'p-1', workspaceRoot: null } : null),
+  agentSessionContext: async (sessionId: string) => (sessionId === 'conv-agent' ? { sessionId, folderId: 'p-1', workspaceRoot: null } : null),
 }));
 const { dispatchForApp } = await import('./extension-send');
 
 const entry = { id: ITEM, chat: GROUP, name: 'card[17].vote.json', type: 'json' };
 const here = { chat: null, session: null };
 const drafts: unknown[] = [];
-const sessionDrafts: Array<{ session: { id: string; projectId: string }; text: string }> = [];
+const sessionDrafts: Array<{ session: { id: string }; text: string }> = [];
 let picked: unknown = null;
 const effects = (from?: string) => ({
   pick: async () => picked as never,
   draftInChat: async (detail: unknown) => void drafts.push(detail),
-  draftInSession: async (session: { id: string; projectId: string }, text: string) => void sessionDrafts.push({ session, text }),
+  draftInSession: async (session: { id: string }, text: string) => void sessionDrafts.push({ session, text }),
   ...(from ? { from } : {}),
 });
 /** To a member of a chat (the old `send`): the chat named, as every member target names it. */
@@ -183,7 +183,7 @@ describe('to a member of a chat: a whisper in the person\'s name, from this App 
   it('a draft citing a working copy goes into that session as @file mentions: no chat pill points at such a file', async () => {
     const workspace = 'session:conv-agent';
     await draft({ text: '', refs: [{ file: { workspace, id: 'src/a.py' } }, { file: { workspace, id: 'b.md' }, label: 'L3' }] });
-    expect(sessionDrafts.at(-1)).toEqual({ session: { id: 'conv-agent', projectId: 'p-1' }, text: '@[a.py](src/a.py) @[b.md (L3)](b.md)\n' });
+    expect(sessionDrafts.at(-1)).toEqual({ session: { id: 'conv-agent' }, text: '@[a.py](src/a.py) @[b.md (L3)](b.md)\n' });
   });
 
   it('a cited selection is a quote above the pill, a blank line apart: the quote does not take the pill in', async () => {
@@ -401,7 +401,7 @@ describe('a draft: only into a composer — nothing sent, nothing asked', () => 
     }
     // An agent's: its session here, by the agent it is.
     expect(await draft({ text: 'x', to: { agent: `user:${AGENT}` } })).toEqual({ to: { agent: `user:${AGENT}` } });
-    expect(sessionDrafts).toEqual([{ session: { id: 'conv-agent', projectId: 'p-1' }, text: 'x\n' }]);
+    expect(sessionDrafts).toEqual([{ session: { id: 'conv-agent' }, text: 'x\n' }]);
     // Nothing went out.
     expect(rpcs).toEqual([]);
     expect(toldSessions).toEqual([]);

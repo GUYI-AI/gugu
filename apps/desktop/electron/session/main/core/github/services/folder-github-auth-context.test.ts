@@ -62,7 +62,7 @@ describe('FolderGitHubAuthContextResolver', () => {
       err<FolderGitHubAuthContextError>({
         type: 'unconfigured',
         folderId: 'project-1',
-        message: 'No GitHub account is configured for this project.',
+        message: 'No GitHub account is configured for this folder.',
       })
     );
   });
@@ -74,7 +74,7 @@ describe('FolderGitHubAuthContextResolver', () => {
       err<FolderGitHubAuthContextError>({
         type: 'disabled',
         folderId: 'project-1',
-        message: 'GitHub API is disabled for this project.',
+        message: 'GitHub API is disabled for this folder.',
       })
     );
   });
@@ -101,7 +101,7 @@ describe('FolderGitHubAuthContextResolver', () => {
         message: 'settings failed',
       })
     );
-    expect(logger.warn).toHaveBeenCalledWith('Failed to resolve project GitHub account selection', {
+    expect(logger.warn).toHaveBeenCalledWith('Failed to resolve folder GitHub account selection', {
       folderId: 'project-1',
       error: 'settings failed',
     });

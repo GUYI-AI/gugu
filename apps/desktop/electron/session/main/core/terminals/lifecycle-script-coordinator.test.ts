@@ -263,7 +263,7 @@ describe('runLifecycleScriptWithPolicy', () => {
     );
     const coordinatorPromise = runLifecycleScriptWithPolicy(baseArgs(runLifecycleScript));
 
-    const ptySessionId = 'project-1:workspace-1:script-lifecycle-run';
+    const ptySessionId = 'workspace-1:workspace-1:script-lifecycle-run';
     const pty = {
       write: vi.fn(),
       resize: vi.fn(),
@@ -333,7 +333,6 @@ describe('runLifecycleScriptWithPolicy', () => {
 
   it('runs a manual respawn policy script again after the first PTY exits', async () => {
     mockPlatform('win32');
-    const projectId = 'project-rerun';
     const workspaceId = 'workspace-rerun';
     const { provider, spawned } = makeTerminalProvider(workspaceId);
     const service = new LifecycleScriptService({
@@ -372,11 +371,11 @@ describe('runLifecycleScriptWithPolicy', () => {
     await when(() => spawned.length >= 3);
     expect(spawned).toHaveLength(3);
 
-    ptySessionRegistry.unregister('project-rerun:workspace-rerun:script-lifecycle-run');
+    ptySessionRegistry.unregister('workspace-rerun:workspace-rerun:script-lifecycle-run');
   });
 
   it('does not record a stale stopped state when stopping an idle lifecycle prompt', async () => {
-    const ptySessionId = 'project-idle:workspace-idle:script-lifecycle-run';
+    const ptySessionId = 'workspace-idle:workspace-idle:script-lifecycle-run';
     const pty = {
       write: vi.fn(),
       resize: vi.fn(),
