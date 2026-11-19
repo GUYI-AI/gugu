@@ -8,20 +8,19 @@ import { helloProtocol, MIN_CLIENT_PROTOCOL, MIN_SERVER_PROTOCOL, REMOTE_PROTOCO
 import { sessionInputAdmission } from '../../../packages/core/src/shared/sessionInputAdmission'
 import { settlementFromWire, type Settlement } from '../../../packages/session-core/src/session-record/contract'
 
-describe('one protocol notch down still connects; the newer side degrades', () => {
-  it('both lower bounds are one below the current protocol', () => {
-    expect(MIN_CLIENT_PROTOCOL).toBe(REMOTE_PROTOCOL_VERSION - 1)
-    expect(MIN_SERVER_PROTOCOL).toBe(REMOTE_PROTOCOL_VERSION - 1)
-    expect(serverProtocolTooOld(REMOTE_PROTOCOL_VERSION - 1, { unknownIsTooOld: false })).toBe(false)
-    expect(serverProtocolTooOld(REMOTE_PROTOCOL_VERSION - 2, { unknownIsTooOld: false })).toBe(true)
-    expect(desktopProtocolOutsideWindow(REMOTE_PROTOCOL_VERSION - 1)).toBe(false)
+describe('protocol 19 is a clean break: a project id and a folder id cannot share one argument position', () => {
+  it('both lower bounds are the current protocol; an 18 machine on either side is told to update', () => {
+    expect(REMOTE_PROTOCOL_VERSION).toBe(19)
+    expect(MIN_CLIENT_PROTOCOL).toBe(REMOTE_PROTOCOL_VERSION)
+    expect(MIN_SERVER_PROTOCOL).toBe(REMOTE_PROTOCOL_VERSION)
+    expect(serverProtocolTooOld(REMOTE_PROTOCOL_VERSION - 1, { unknownIsTooOld: false })).toBe(true)
+    expect(desktopProtocolOutsideWindow(REMOTE_PROTOCOL_VERSION - 1)).toBe(true)
   })
 
-  it('a desktop says the older machine\'s protocol in its hello, so an old server never asks for a switch on the spot', () => {
+  it('a desktop says its own protocol to an older machine, which refuses it as outside its window', () => {
     const own = REMOTE_PROTOCOL_VERSION
-    expect(helloProtocol(own - 1)).toBe(own - 1)
-    // an old server only accepts up to its own protocol: the hello lands inside its window
-    expect(desktopProtocolOutsideWindow(helloProtocol(own - 1), { min: own - 1, max: own - 1 })).toBe(false)
+    expect(helloProtocol(own - 1)).toBe(own)
+    expect(desktopProtocolOutsideWindow(helloProtocol(own - 1), { min: own - 2, max: own - 1 })).toBe(true)
     expect(helloProtocol(own)).toBe(own)
     expect(helloProtocol(own + 1)).toBe(own)
     expect(helloProtocol(own - 2)).toBe(own)
@@ -38,13 +37,8 @@ describe('one protocol notch down still connects; the newer side degrades', () =
   })
 })
 
-it('keeps task input admission additive in both directions within the protocol window', () => {
-  const previous = REMOTE_PROTOCOL_VERSION - 1
-  // New desktop -> previous server: hello speaks the previous version; absent decisions remain automatic.
-  expect(helloProtocol(previous)).toBe(previous)
+it('reads a task input reply without an admission decision as uncertain', () => {
   expect(sessionInputAdmission({ code: 'session_not_found', message: 'missing' })).toBe('uncertain')
-  // Previous desktop -> new server: its hello remains inside the new server's accepted window.
-  expect(desktopProtocolOutsideWindow(previous)).toBe(false)
   const error = { code: 'session_not_found', message: 'missing', admission: 'rejected' }
   expect(sessionInputAdmission(error)).toBe('rejected')
 })

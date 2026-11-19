@@ -16,9 +16,10 @@ export const SERVER_ACTIVITY_STALE_MS = 60_000
  * 照 VS Code / Zed 的「客户端与 server 版本对不上就明说」(Zed 发了旧客户端不认的消息直接断线:zed#42474),
  * 只是不要求逐版本相等 —— server 自动升级、桌面自动升级,两边总有先后。
  */
-// 18 adds the task input admission decision. A missing decision from 17 remains uncertain;
-// 17 clients ignore the added field and retain their automatic retry behavior.
-export const REMOTE_PROTOCOL_VERSION = 18
+// 19 (groups hold folders; the local project is gone): `taskhost.*` positional arguments that named a local project
+// now name a folder (workspace id). A position cannot say which of the two it carries, so both lower bounds rise to
+// 19 and a mixed pair is refused with the ordinary update path instead of silently misreading an argument.
+export const REMOTE_PROTOCOL_VERSION = 19
 /**
  * server 报给桌面:桌面的协议版本低于它 = 这台电脑上的咕咕太旧。
  *
@@ -78,16 +79,19 @@ export const REMOTE_PROTOCOL_VERSION = 18
  * 16: task inputs carry folder-file references; attachment sends require this version rather than silently losing files.
  * 17: durable task attachment upload/status/commit verbs; editor saves are unchanged.
  * 18: task input replies report accepted/rejected/uncertain independently of diagnostic codes.
+ * 19: groups hold folders. Every `taskhost.*` argument that was a local project id is a folder (workspace id). Not
+ *     one notch compatible: both lower bounds are 19, an 18 machine on either side is told to update.
  *
  * 向下兼容一档(owner 10-28,换版打断 7 条车道之后):两边只差一档时照常连,由**新的一侧**降级 ——
  * 16 ↔ 15 的文字与窗口照常互通;附件输入要求 16，旧宿主明确拒绝。14 的改文件降级在升到 16 时移除。
  * 开窗时按那台机器的协议报 hello(`helloProtocol`):
  * 老宿主见到更高的号会当成版本信号、要求当场换版,有 agent 在跑也照换。差两档以上才说「太旧」。
- * 下一次加一时,两个下沿跟着抬到新号减一,并删掉上一档的降级。
+ * 下一次加一时,两个下沿跟着抬到新号减一,并删掉上一档的降级。19 是例外(见上):两个下沿等于当前号,没有降级档;
+ * 20 起回到一档兼容。
  */
-export const MIN_CLIENT_PROTOCOL = 17
-/** 桌面 / 手机自己的要求:那台机器报的协议版本低于它 = 那台机器上的咕咕太旧(同样向下兼容一档)。 */
-export const MIN_SERVER_PROTOCOL = 17
+export const MIN_CLIENT_PROTOCOL = 19
+/** 桌面 / 手机自己的要求:那台机器报的协议版本低于它 = 那台机器上的咕咕太旧(19 不留兼容档,见上)。 */
+export const MIN_SERVER_PROTOCOL = 19
 
 /** 开窗时报给那台机器的协议:它比这台低、但还在兼容的一档里,就照它的报(见上);说不出 = 报自己的。纯函数。 */
 export function helloProtocol(serverProtocol: number | null | undefined, own = REMOTE_PROTOCOL_VERSION, minServer = MIN_SERVER_PROTOCOL): number {
