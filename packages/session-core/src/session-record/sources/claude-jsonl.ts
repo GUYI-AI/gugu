@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { createInterface } from 'node:readline';
+import { readJsonlLines } from '@gugu/core/local/jsonl.mjs';
 
 import { claudeFilePatch } from '../../acp/transport/claude-file-patch';
 import type { NormalizedEvent } from '../../acp/reducer/normalized-event';
@@ -530,7 +530,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
 
 async function readFirstMessageUuid(path: string): Promise<string | null> {
   const stream = createReadStream(path, { encoding: 'utf8', highWaterMark: 16 * 1024 });
-  const lines = createInterface({ input: stream, crlfDelay: Infinity });
+  const lines = readJsonlLines(stream);
   let seen = 0;
   try {
     for await (const line of lines) {
@@ -542,7 +542,6 @@ async function readFirstMessageUuid(path: string): Promise<string | null> {
   } catch {
     return null;
   } finally {
-    lines.close();
     stream.destroy();
   }
   return null;

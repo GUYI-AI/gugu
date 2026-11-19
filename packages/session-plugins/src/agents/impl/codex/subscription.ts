@@ -1,4 +1,4 @@
-import { createInterface } from 'node:readline';
+import { createJsonlReader } from '@gugu/core/local/jsonl.mjs';
 import { retryCodexPreparation, type CodexPreparation } from '@gugu/core/local/codex-initialize.mjs';
 import type {
   AgentAuthContext,
@@ -167,7 +167,7 @@ async function askAppServerAttempt(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, m
   let stderrTail = '';
   child.stderr?.on('data', (chunk: Buffer) => { stderrTail = (stderrTail + chunk.toString('utf8')).slice(-8192); });
   const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
-  const lines = createInterface({ input: child.stdout!, crlfDelay: Infinity });
+  const lines = createJsonlReader({ input: child.stdout! });
   lines.on('line', line => {
     let message: { id?: number; result?: unknown; error?: { message?: unknown } };
     try { message = JSON.parse(line); } catch { return; }
