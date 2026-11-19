@@ -210,7 +210,7 @@ describe('native V2 custody and trusted receiver',()=>{
   const f=fixture(),ready=await prepared(f);f.before.add('confirm')
   await expect(f.native.confirm(ready.handle,{code:'123456',acknowledgeForfeit:true})).rejects.toThrow()
   const pending=(await f.native.discover())!, before=await f.records.readNative({ownerId:A,localOperationId:pending.handle.localOperationId})
-  f.server().operation.state='confirming'
+  f.server().operation.revision++;f.server().operation.state='confirming'
   f.server().operation.confirmation={id:before.confirmationId!,challengeGeneration:before.confirmationGeneration!,state:'verifying',errorCode:null}
   f.http.post.mockRejectedValueOnce(new ClosureV2HttpFailure('request_active',true,null,409))
   await expect(f.native.cancel(pending.handle)).rejects.toMatchObject({code:'request_active'})

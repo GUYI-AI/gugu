@@ -93,8 +93,8 @@ export type DeviceFreeCreditsStatus = 'granted' | 'already_claimed' | 'device_fu
 
 export interface AppPlatform {
   accountClosure: AccountClosureNative
-  accountClosureV2: AccountClosureV2Native
-  /** Explicit human action only, independent from the nine-method closure flow. */
+  accountClosureV2?: AccountClosureV2Native
+  /** Explicit human action only; never startup/reconciliation. */
   resumeAgentsAfterAccountClosure?: () => Promise<void>
   kind: 'electron' | 'capacitor' | 'web'
   documentTitle: string
