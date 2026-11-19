@@ -989,7 +989,6 @@ const ComposerForStore = observer(function ComposerForStore({
       const recorded = customModelOptionId(runningCustomModel);
       options[recorded] ??= {
         name: runningCustomModel.modelId ?? translate('customModels.noModel'),
-        groupLabel: translate('customModels.title'),
         disabled: true,
         disabledReason: translate('composer.modelNotInCatalog'),
       };

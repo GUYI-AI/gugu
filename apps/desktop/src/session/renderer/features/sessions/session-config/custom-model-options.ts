@@ -34,7 +34,8 @@ export function customComposerOptions(
       return [customModelOptionId({ connectionId: connection.id, modelId: model.id }), {
         name,
         shortName: model.id && name !== connection.name ? `${name} · ${connection.name}` : name,
-        groupLabel: translate('customModels.title'), providerLabel: connection.name,
+        // No group heading: the vendor tag already says this one is the person's own (owner 11-19).
+        providerLabel: connection.name,
         ...(tag ? { tag } : {}),
         icon: modelProviderIcon(preset ? { id: preset.id, name: preset.name, iconKey: preset.icon } : null),
         description: `${connection.name} · ${actual}`,
