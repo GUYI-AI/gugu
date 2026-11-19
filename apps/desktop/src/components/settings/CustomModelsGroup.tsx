@@ -1,3 +1,4 @@
+import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 import { Unknown } from '@/components/ui/Unknown';
 import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme';
@@ -104,7 +105,7 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
       {translate(title)}
       <span className="flex items-center gap-2">
         {group === 'coding-plan' && <Button size="icon" variant="ghost" className="gg-model-icon-button" aria-label={translate('subscriptions.refresh')} title={translate('subscriptions.refresh')}
-          data-testid="coding-plan-refresh" disabled={refreshing} onClick={() => void refreshPlans()}><RefreshCw className={refreshing ? 'size-4 animate-spin' : 'size-4'} /></Button>}
+          data-testid="coding-plan-refresh" disabled={refreshing} onClick={() => void refreshPlans()}>{refreshing ? <LoadingIndicator size="inline" /> : <RefreshCw className="size-4" />}</Button>}
         <Button size="sm" variant="outline" onClick={() => setEditing({ group })} data-testid={addId}>{translate(add)}</Button>
       </span>
     </span>} note={translate(note)} footer={feedback?.group === group ? <SettingsNote role="status">{feedback.text}</SettingsNote> : undefined}>

@@ -1,3 +1,17 @@
+.gg-model-quota-colors[data-usage-provider='claude'] {
+  --quota-fill:var(--usage-brand-claude-fill);
+  --quota-edge-light:var(--usage-brand-claude-edgeLight);
+  --quota-edge-dark:var(--usage-brand-claude-edgeDark);
+  --quota-track-light:var(--usage-brand-claude-trackLight);
+  --quota-track-dark:var(--usage-brand-claude-trackDark);
+}
+.gg-model-quota-colors[data-usage-provider='codex'] {
+  --quota-fill:var(--usage-brand-codex-fill);
+  --quota-edge-light:var(--usage-brand-codex-edgeLight);
+  --quota-edge-dark:var(--usage-brand-codex-edgeDark);
+  --quota-track-light:var(--usage-brand-codex-trackLight);
+  --quota-track-dark:var(--usage-brand-codex-trackDark);
+}
 .gg-model-quota-colors { --quota-edge:var(--quota-edge-light); --quota-track:var(--quota-track-light); }
 [data-theme='dark'] .gg-model-quota-colors { --quota-edge:var(--quota-edge-dark); --quota-track:var(--quota-track-dark); }
 .gg-model-quota { display:flex; align-items:center; flex-wrap:wrap; gap:16px; min-width:0; }
