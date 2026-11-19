@@ -6,8 +6,8 @@ import { createRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
 import { ChatHeaderActions } from '../../../../../apps/desktop/src/components/chat/ChatHeaderActions'
-import { appSettingsMetaQueryKey } from '../../../../../apps/desktop/src/session/renderer/features/settings/app-settings-client'
-import { queryClient } from '../../../../../apps/desktop/src/session/renderer/lib/query-client'
+import { appSettingsModel, LOCAL_SETTINGS_HOST_KEY } from '../../../../../apps/desktop/src/session/renderer/features/settings/app-settings-client'
+import { queryClient } from '../../../../../apps/desktop/src/lib/replica'
 
 const platform = vi.hoisted(() => ({ current: 'windows' as 'mac' | 'windows' | 'linux' }))
 vi.mock('@tanstack/react-hotkeys', async (original) => ({
@@ -18,9 +18,15 @@ vi.mock('@/lib/chatPinSettings', () => ({ readChatPinSettings: async () => ({ to
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { harness = createReactHarness() })
+/** This device's keyboard bindings as read from settings. */
+function keyboard(value: Record<string, string | null>) {
+  appSettingsModel.set(['keyboard', LOCAL_SETTINGS_HOST_KEY], { value, defaults: {}, overrides: value } as never)
+}
+
 afterEach(() => {
   harness.cleanup()
-  queryClient.removeQueries({ queryKey: appSettingsMetaQueryKey('keyboard') })
+  const key = appSettingsModel.key('keyboard', LOCAL_SETTINGS_HOST_KEY)
+  if (key) queryClient.removeQueries({ queryKey: key, exact: true })
 })
 
 async function searchShortcut(isRoomChat: boolean) {
@@ -56,13 +62,13 @@ describe('#2609 搜索聊天记录 的快捷键按平台写', () => {
 
   it('用户把查找改绑成别的键:写改过的那个', async () => {
     platform.current = 'linux'
-    queryClient.setQueryData(appSettingsMetaQueryKey('keyboard'), { value: { 'app.find': 'Mod+Shift+F' } })
+    keyboard({ 'app.find': 'Mod+Shift+F' })
     expect(await searchShortcut(true)).toBe('Ctrl+Shift+F')
   })
 
   it('用户把查找解绑了:不写快捷键', async () => {
     platform.current = 'windows'
-    queryClient.setQueryData(appSettingsMetaQueryKey('keyboard'), { value: { 'app.find': null } })
+    keyboard({ 'app.find': null })
     expect(await searchShortcut(true)).toBeNull()
   })
 

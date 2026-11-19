@@ -16,7 +16,7 @@ const { setAppConversationPanelCollapsed, appConversationPanelCollapsed } = awai
 installAppHostLayerBridge();
 
 const panel = (uncover?: true) => applyExtensionHostAction({
-  origin: { extensionId: 'assistant-app', sessionId: null, tabId: 'dock' },
+  origin: { pageId: null, extensionId: 'assistant-app', sessionId: null, tabId: 'dock' },
   action: { kind: 'conversationPanel', collapsed: false, ...(uncover ? { uncover } : {}) },
 });
 

@@ -15,6 +15,7 @@ const base = {
   claimsFirstSpawn: false,
   provider: 'codex' as never,
   origin: { kind: 'create' as const, firstUtterance: 'hi' },
+  permissionMode: 'edit' as const,
 };
 
 describe('where an agent was created is kept on its row (#2599)', () => {

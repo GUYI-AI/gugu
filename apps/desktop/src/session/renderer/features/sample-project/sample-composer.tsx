@@ -17,7 +17,7 @@ import { composerVerbLook } from '@renderer/features/sessions/composer-verb-tag'
 import { NewSessionComposer } from '@renderer/features/sessions/new-session-page';
 import type { InitialSessionState } from '@renderer/features/sessions/session-config/initial-session-section';
 import { sessionComposerDockBandClassName, sessionComposerDockedWidthClassName } from '@renderer/features/sessions/session-composer-styles';
-import { fetchAppSettingsMeta } from '@renderer/features/settings/app-settings-client';
+import { fetchAppSettingValue } from '@renderer/features/settings/app-settings-client';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { rpc } from '@renderer/lib/ipc';
 import { appState } from '@renderer/lib/stores/app-state';
@@ -155,7 +155,7 @@ function sampleConversionHost(userId: string, turn: ComposerHandoff, translate: 
     // 项目已经交出去了,示例那一块不在了:框下说不了,用一条提示说(下次读键时会再删,见 use-sample-project)。
     dismissFailed: () => toast({ tier: 'error', title: translate('projects.sample.dismissFailed'), description: translate('projects.sample.dismissFailedHint') }),
     projectExists: (projectId) => getProjectManagerStore().projects.has(projectId),
-    defaultDirectory: async () => (await fetchAppSettingsMeta('localProject')).value.defaultProjectsDirectory ?? '',
+    defaultDirectory: async () => (await fetchAppSettingValue('localProject')).defaultProjectsDirectory,
     pathTaken: async (path) => {
       const inspection = await rpc.projects.inspectProjectPath({ type: 'local', path });
       if (inspection.error) throw new Error(inspection.error.message);

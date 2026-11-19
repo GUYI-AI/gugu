@@ -77,7 +77,7 @@ for (const width of [340, 360, 375, 390, 412, 430]) {
   for (const [label, turns] of [['a first turn', () => [working()]], ['a continued conversation', () => [earlier(), working()]]] as const) {
     it(`draws the background pill under the process header, not over it, on ${label} at ${width}px`, async () => {
       await mount(width, turns())
-      expect(read()).toMatchObject({ text: '后台 · 1 个子智能体›', ...sound })
+      expect(read()).toMatchObject({ text: '后台任务（1 个子智能体）›', ...sound })
     })
   }
 

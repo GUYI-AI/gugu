@@ -4,11 +4,13 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
-import { afterEach, describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 // @ts-expect-error — 注入式 MCP server 是无类型 .mjs;运行时 import 可用。
 import { callTool } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
 import { verifiedFileHandle } from '../../../support/verifiedFileHandle'
 import { attachmentDownloadName } from '../../../../packages/core/src/shared/attachmentDownloadName.mjs'
+import { createNodeFileResolver } from '../../../../packages/core/src/local/files/fileSnapshots'
+import type { FileRef } from '../../../../packages/core/src/shared/fileResolver'
 
 const AGENT = '11111111-1111-4111-8111-111111111111'
 const CHAT = '33333333-3333-4333-8333-333333333333'
@@ -18,7 +20,7 @@ const envelope = '[附件] deck.pdf (application/pdf)\n[Size] 5\n[Kind] file'
 const homes: string[] = []
 afterEach(async () => { await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true }))) })
 
-async function setup(message: Record<string, unknown> | null, opts: { agentSees?: boolean; signed?: boolean; bytes?: Buffer } = {}) {
+async function setup(message: Record<string, unknown> | null, opts: { agentSees?: boolean; signed?: boolean; bytes?: Buffer; pending?: number } = {}) {
   const home = await mkdtemp(join(tmpdir(), 'gugu-download-test-'))
   homes.push(home)
   const asked: unknown[] = []
@@ -37,6 +39,7 @@ async function setup(message: Record<string, unknown> | null, opts: { agentSees?
     resolveFile: async (ref: Record<string, unknown>, actorId: string) => {
       asked.push([ref]); expect(actorId).toBe(AGENT)
       if (opts.signed === false) return { status: 'gone', sha256: null }
+      if (opts.pending && asked.length <= opts.pending) return { status: 'pending', sha256: null }
       fetched.push('verified original')
       return verifiedFileHandle(opts.bytes ?? Buffer.from('bytes'), { file_name: 'notes.pdf', content_type: 'application/pdf' })
     },
@@ -61,6 +64,31 @@ describe('message_download_file by source_message_id (#7290)', () => {
     expect(name.endsWith('.html')).toBe(true)
     expect(name).not.toContain('�')
     expect(name).toMatch(/^(?:核对🍵)*(?:核对|核)?\.html$/u)
+  })
+
+  // Owner 11-15: a message is there before its bytes. The agent's read waits a while for the sender's upload, then says so by name.
+  test('a file whose sender is still uploading is waited on, then read once it lands', async () => {
+    const { call, fetched } = await setup({ id: 'm1', chat_id: CHAT, content: legacy, content_type: 'attachment', file_item_id: null, file_version: null }, { pending: 3 })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] })
+    try {
+      const read = call()
+      await vi.advanceTimersByTimeAsync(3_000)
+      vi.useRealTimers()
+      expect(JSON.stringify(await read)).toContain('notes.pdf')
+      expect(fetched).toEqual(['verified original'])
+    } finally { vi.useRealTimers() }
+  })
+
+  test('a file still uploading after the wait names itself and says the sender is still uploading', async () => {
+    const { call, fetched } = await setup({ id: 'm1', chat_id: CHAT, content: legacy, content_type: 'attachment', file_item_id: null, file_version: null }, { pending: 100 })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] })
+    try {
+      const read = call().catch((error: Error) => error)
+      await vi.advanceTimersByTimeAsync(8_100)
+      const error = await read
+      expect(String(error)).toMatch(/notes\.pdf.*发送方仍在上传/)
+      expect(fetched).toEqual([])
+    } finally { vi.useRealTimers() }
   })
 
   test('old message: resolves the message through the same private provider; preserves the original filename', async () => {
@@ -99,7 +127,9 @@ describe('message_download_file by source_message_id (#7290)', () => {
     const home = await mkdtemp(join(tmpdir(), 'gugu-session-tool-receipt-')); homes.push(home)
     const bytes = new Uint8Array([0, 255, 65, 13, 10, 128, 9])
     const ref = { attachment_id: '44444444-4444-4444-8444-444444444444', file_name: '原始文件😀.bin', size_bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), content_type: 'application/octet-stream' }
-    const context = { agentId: AGENT, supabaseUrl: 'https://db.test', anonKey: 'anon', getAccessToken: async () => `x.${Buffer.from(JSON.stringify({ sub: 'owner' })).toString('base64url')}.x`, guguHome: home, threadRootId: null }
+    // The desktop's resolver (desktopFiles.resolve) over the cloud providers: the same one every other source goes through.
+    const resolver = createNodeFileResolver(await mkdtemp(join(tmpdir(), 'gugu-session-tool-cache-')), async () => ({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 'token', fetch: fetch as typeof globalThis.fetch }))
+    const context = { agentId: AGENT, guguHome: home, threadRootId: null, resolveFile: (ref: FileRef, actorId: string) => resolver(ref, { accountId: 'owner', actorId }) }
     const fetch = async (url: string, init?: RequestInit) => {
       if (url.endsWith('/file-resolve')) {
         expect(JSON.parse(String(init?.body))).toEqual({ ref: { attachment_id: ref.attachment_id }, as: AGENT })
@@ -111,7 +141,7 @@ describe('message_download_file by source_message_id (#7290)', () => {
       }
       expect(url).toBe('https://objects.test/original'); return new Response(bytes)
     }
-    const receipt = JSON.parse(await callTool(context, 'message_download_file', { source_attachment_id: ref.attachment_id }, { fetch }))
+    const receipt = JSON.parse(await callTool(context, 'message_download_file', { source_attachment_id: ref.attachment_id }, {}))
     expect(receipt).toMatchObject(ref)
     expect(basename(receipt.file_path)).toBe(ref.file_name)
     expect(basename(dirname(receipt.file_path))).toBe(ref.sha256)
@@ -125,7 +155,7 @@ describe('message_download_file by source_message_id (#7290)', () => {
     expect(asked).toEqual([[{ message_id: 'm1' }]])
     expect(fetched).toEqual(['verified original'])
     expect(receipt).toMatchObject({ file: 'gugu-file://item-1?v=3' })
-    expect(receipt.next).toContain('message_send_file {file: "gugu-file://item-1?v=3", file_path}')
+    expect(receipt.next).toContain('message_send {file: "gugu-file://item-1?v=3", file_path}')
   })
 
   // Preserve X2: the host receives the exact message and agent identity, never the token's owner or a body URL.
@@ -149,6 +179,40 @@ describe('message_download_file by source_message_id (#7290)', () => {
     await call()
     expect(asked).toEqual([[{ message_id: 'm1' }]])
     expect(fetched).toEqual(['verified original'])
+  })
+
+  test('a folder file by its gugu-file link: resolves that version as this agent and names it back', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'gugu-download-file-')); homes.push(home)
+    const calls: unknown[] = []
+    const context = { agentId: AGENT, guguHome: home, resolveFile: async (ref: unknown, actor: string) => {
+      calls.push([ref, actor]); return verifiedFileHandle(Buffer.from('bytes'), { file_name: 'brief.txt', item_id: '99999999-9999-4999-8999-999999999999', version: 2 })
+    } }
+    const receipt = JSON.parse(await callTool(context, 'message_download_file', { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }, {}))
+    expect(calls).toEqual([[{ item_id: '99999999-9999-4999-8999-999999999999', version: 2 }, AGENT]])
+    expect(receipt).toMatchObject({ file_name: 'brief.txt', read_only: true, file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' })
+    // The tool's description stays one line; how to change a shared copy rides in the result that hands it over.
+    expect(receipt.note).toContain('copy it to a file of your own')
+    expect(await readFile(receipt.file_path, 'utf8')).toBe('bytes')
+    await expect(callTool(context, 'message_download_file', { file: 'notes.txt' }, {})).rejects.toThrow('gugu-file://<item_id>?v=<n>')
+  })
+
+  test('a second call for the same file waits on the download in flight instead of fetching again', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'gugu-download-once-')); homes.push(home)
+    let opened = 0
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const context = { agentId: AGENT, guguHome: home, resolveFile: async () => {
+      opened++; await gate; return verifiedFileHandle(Buffer.from('bytes'), { file_name: 'big.bin', item_id: '99999999-9999-4999-8999-999999999999', version: 2 })
+    } }
+    const first = callTool(context, 'message_download_file', { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }, {})
+    const second = callTool(context, 'message_download_file', { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }, {})
+    release()
+    const [a, b] = (await Promise.all([first, second]) as string[]).map(text => JSON.parse(text))
+    expect(opened).toBe(1)
+    expect(a.file_path).toBe(b.file_path)
+    // Settled downloads leave the table: a later call reads again (and finds the stored copy).
+    await callTool(context, 'message_download_file', { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }, {})
+    expect(opened).toBe(2)
   })
 
   test('refuses: a message the agent cannot see, one without an attachment, a deleted file, one it may no longer read', async () => {

@@ -18,7 +18,8 @@ async function authHttpError(response, operation) {
 /** Node is the phone's sole refresh authority; data clients never own a GoTrue session. */
 export function createPhoneAgentCloud(config, onSession, fetcher = fetch, { onRequestFailure = () => undefined } = {}) {
   const url = new URL(config.supabaseUrl)
-  if (url.protocol !== 'https:') throw new Error('Supabase URL must use HTTPS')
+  const local = config.allowLocalHttp === true && url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]', '10.0.2.2'].includes(url.hostname)
+  if (!(url.protocol === 'https:' || local) || url.username || url.password || url.search || url.hash) throw new Error('Supabase URL must use HTTPS')
   const root = url.href.replace(/\/$/, '')
   const ownerId = uuid(config.ownerId, 'ownerId')
   let current = null
@@ -145,7 +146,7 @@ export function createPhoneAgentCloud(config, onSession, fetcher = fetch, { onRe
       catch (error) { throw context.failure ? Object.assign(new Error(`phone preparation request failed: ${context.failure.category}`), context.failure) : error }
       finally { context.active = false }
     },
-    attachmentEndpoint: async () => ({ supabaseUrl: root, anonKey: config.supabaseAnonKey, token: await token(), fetch: timedFetch }),
+    attachmentEndpoint: async () => ({ supabaseUrl: root, anonKey: config.supabaseAnonKey, token: await token(), fetch: timedFetch, signedParts: true }),
     async start() {
       const claims = jwtClaims(config.accessToken)
       if (claims.sub !== ownerId) throw new Error('owner token does not belong to this phone host')

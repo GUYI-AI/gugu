@@ -73,7 +73,7 @@ async function renderConversation(target: number, width: number, portal = false)
     const pending = useUnreadLocatorNavigation(input)
     const { onAtBottomChange } = useFollowingTail({ resetKey, unreadNavigationPending: pending, hasNewer: window.hasNewer,
       loading: !!window.loading, isPreservingPosition: memory.isPreservingPosition, isAtBottomRef, setFollowingTail })
-    const { pinToBottom, onTotalListHeightChanged } = useTailPinning({ resetKey, messages, enabled: !pending, messageWindow: window, scrollerEl: memory.scrollerEl, scrollerRef: memory.scrollerRef,
+    const { pinToBottom } = useTailPinning({ resetKey, messages, enabled: !pending, messageWindow: window, scrollerRef: memory.scrollerRef,
       listRef, isAtBottomRef, isPreservingPosition: memory.isPreservingPosition, prepareForSavedPosition: memory.prepareForSavedPosition,
       forgetSavedPosition: memory.forgetSavedPosition, returnToLatest, onError: rejected })
     const jump = () => {
@@ -90,7 +90,6 @@ async function renderConversation(target: number, width: number, portal = false)
     return <><button onClick={pinToBottom}>Return to latest</button><div data-window-head={messages[0]?.id} style={{ height: 560, width: '100%', display: 'flex', flexDirection: 'column' }}>
       <MessageList rows={rows} rowProps={rowProps} resetKey={resetKey} listRef={listRef} scrollerRef={memory.setScrollerRef}
         initialTopMostItemIndex={memory.openLocation()} followTail={!pending && !window.hasNewer} onAtBottomChange={onAtBottomChange}
-        onTotalListHeightChanged={onTotalListHeightChanged}
         unreadAbove={{ messageId: `m${target}`, messageSeq: target, label: 'Jump to first unread', onJump: jump }} />
     </div></>
   }

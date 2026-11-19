@@ -1,9 +1,10 @@
+import { lstat, mkdir, readdir, rename, rm } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { AssistantFileError } from '@gugu/core/shared/assistantFileError'
 import {
   ASSISTANT_COMPUTER_WORKDIR_NAME, assistantBrief, assistantGuide,
-  assistantHomePaths, upsertAssistantGuide, withDeniedTools, type AssistantHomeKind,
+  assistantHomePaths, upsertAssistantGuide, withoutAssistantGuide, withDeniedTools, type AssistantHomeKind,
 } from '@gugu/core/shared/assistantPolicy'
 import type { AssistantProductRules } from '@gugu/core/shared/assistantRulesFormat'
 import type { AssistantEngine } from '../../src/lib/assistantHomeIpc'
@@ -27,7 +28,10 @@ export async function refreshAssistantContext(cwd: string, guguHome: string, kin
   const gate = Promise.withResolvers<void>()
   refreshes.set(key, gate.promise)
   if (previous) await previous
-  try { await writeAssistantContext(cwd, kind, home, engine, using) }
+  try {
+    if (kind === 'computer' && process.env.GUGU_SERVER_MODE === '1') await reclaimServerLayoutOnce(home, cwd, engine)
+    await writeAssistantContext(cwd, kind, home, engine, using)
+  }
   finally {
     gate.resolve()
     if (refreshes.get(key) === gate.promise) refreshes.delete(key)
@@ -77,4 +81,40 @@ async function localAssistantSettings(path: string, cwd: string, deniedTools: re
     if (dirname(parent) === parent) break
   }
   return `${JSON.stringify({ ...settings, claudeMdExcludes: [...new Set([...existing, ...excluded])] }, null, 2)}\n`
+}
+
+/**
+ * @@@server-home-reclaim One-time migration for a self-hosted Linux gugu-server only. Builds before the cloud-computer
+ * identity decided the layout ran the assistant there with the cloud layout: its guide went into the Linux user's own
+ * `~/.claude/CLAUDE.md` (read by every Claude Code session that user opens), and a Codex assistant's notes into a real
+ * `~/.claude/projects/<dir>/memory` folder. Desktops never did this. Once per assistant home: remove only our section
+ * (current or legacy marks; the person's text stays, an emptied file goes), move the notes home (a Claude assistant's
+ * folder is the link into its home and stays), then record it beside the home's settings.
+ * Delete this, and the record, once the oldest gugu-server allowed to connect carries the identity-based layout.
+ */
+async function reclaimServerLayoutOnce(home: string, cwd: string, engine: AssistantEngine): Promise<void> {
+  const paths = assistantHomePaths(home, cwd, 'computer')
+  const record = join(dirname(paths.settings), 'server-layout-reclaimed')
+  if (await readAssistantFile(record) !== null) return
+  const personal = join(home, '.claude', 'CLAUDE.md')
+  const current = await readAssistantFile(personal)
+  const rest = current === null ? null : withoutAssistantGuide(current)
+  if (rest) await writeAssistantFile(personal, `${rest}\n`)
+  else if (rest === '') await rm(personal)
+  if (engine === 'codex' && (await lstat(paths.claudeMemoryDir).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return null
+    throw error
+  }))?.isDirectory()) await adoptMemoryEntries(paths.claudeMemoryDir, paths.memoryDir)
+  await writeAssistantFile(record, `${new Date().toISOString()}\n`)
+}
+
+/** 把一夹记忆搬进它家里(家里已有同名的保留家里那份),搬完删掉原夹。 */
+export async function adoptMemoryEntries(from: string, memoryDir: string): Promise<void> {
+  await mkdir(memoryDir, { recursive: true })
+  for (const name of await readdir(from)) {
+    const target = join(memoryDir, name)
+    if (await lstat(target).then(() => true, () => false)) continue
+    await rename(join(from, name), target)
+  }
+  await rm(from, { recursive: true })
 }

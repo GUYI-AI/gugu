@@ -18,7 +18,7 @@ import { readTreeBlobs, repoRoot, treeFiles } from './git-tree-blobs.mts'
  *                     尺寸的 `var(--x, var(--y))` 是「调用方可以设」的插槽,放行。定义处:.css/.ts/.tsx/.mjs 里的 `--x:`、字符串 '--x'、session-ui 的
  *                     nsName('x')(= --em-x);模板里的前缀 `var(--usage-heat-${n})` 有任一 --usage-heat-* 定义就算。
  *   svg-single-color  单色的 svg 图标把颜色写死(fill="#a1a1aa"):不跟主题走。填 currentColor,由用它的地方给色;
- *                     <img> 里的 currentColor 不认外面的字色,要用遮罩画(见 open-in-menu 的 OpenInAppIcon)。
+ *                     <img> 里的 currentColor 不认外面的字色,要用遮罩画(见 open-in-app-icon 的 OpenInAppIcon)。
  *                     品牌色的单色标(Claude 橙)进 ALLOWED_SVGS 并写理由。多色的 svg(品牌 logo)不管。
  *
  * 扫 .css / .ts / .tsx(含 vanilla-extract 的 .css.ts),跳过测试与 stories,注释先去掉 —— issue 号 `#7333` 不算颜色:

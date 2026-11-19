@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type RefObject } from 'react'
 import { rendererLogger } from '../../lib/log'
 import { restoreLanding } from '../../lib/listLanding'
 import type { FlowListHandle, ListLanding } from '../../lib/flowList'
-import { currentAuthSessionSignal } from '../../lib/authSessionLoss'
+import { clearViewState, readViewState, showConversation, writeViewState, type ViewPanel } from '../../lib/viewStateTable'
 import type { UnreadLocatorCommit } from '../../lib/chatUnreadLocatorWindow'
 import { afterPaint } from '../../lib/afterPaint'
 
@@ -12,8 +12,21 @@ export type ConversationViewportPosition =
   | { atBottom: true }
   | { atBottom: false; messageId: string; offset: number }
 
-// The same account's blocks remount; keep their existing anchors for that auth lifetime.
-const positionsBySession = new WeakMap<AbortSignal, Map<string, ConversationViewportPosition>>()
+// Where each viewport of a conversation was read to, per account, in the view-state table (panel `reading:<viewport>`): it
+// survives a remount, switching away and a restart. Written on scroll, so an unchanged position is not written again.
+type Reading = { position: ConversationViewportPosition }
+const readingOf = (positionKey: string): ViewPanel => {
+  const [viewportKey, chatId] = JSON.parse(positionKey) as [string, string]
+  return { conversation: chatId, panel: `reading:${viewportKey}` }
+}
+const positions = {
+  get: (positionKey: string) => readViewState<Reading>(readingOf(positionKey)).position,
+  set: (positionKey: string, position: ConversationViewportPosition) => {
+    const panel = readingOf(positionKey)
+    if (JSON.stringify(readViewState<Reading>(panel).position) !== JSON.stringify(position)) writeViewState<Reading>(panel, { position })
+  },
+  delete: (positionKey: string) => clearViewState(readingOf(positionKey)),
+}
 
 export interface ViewportRowGeometry {
   id: string
@@ -50,7 +63,8 @@ interface UseConversationScrollMemoryOptions {
   listRef: RefObject<FlowListHandle | null>
   chatId: string | null
   viewportKey: string
-  // Conversation-scoped on purpose: an openNonce remount reopens at LAST (#461), it does not replay the saved anchor.
+  // One per opening: a phone reopening the same conversation (openNonce) replays the saved anchor like any other opening;
+  // an opening with new unread lands at the latest instead (discardSaved, #6530). Replaces #461's "reopen at LAST".
   activationKey: string
   enabled: boolean
   messageIds: ReadonlyArray<string>
@@ -77,7 +91,7 @@ export function useConversationScrollMemory({
   viewportKey,
   activationKey,
   enabled,
-  messageIds,
+  messageIds: currentMessageIds,
   isAtBottomRef,
   setFollowingTail,
   loadMessageAnchor,
@@ -94,9 +108,11 @@ export function useConversationScrollMemory({
   openLocation: () => ListLanding | null
   revealMessage: (messageId: string, commit?: UnreadLocatorCommit) => Promise<void>
 } {
-  const session = currentAuthSessionSignal()
-  const positions = useMemo(() => positionsBySession.get(session) ?? new Map<string, ConversationViewportPosition>(), [session])
-  positionsBySession.set(session, positions)
+  // Callers hand over a new array on every render. The restore below restarts when the rows change, not when the panel
+  // re-renders: restarted every frame it never counts its stable frames and holds the list for its whole deadline.
+  const messageIdsRef = useRef(currentMessageIds)
+  if (messageIdsRef.current.length !== currentMessageIds.length || messageIdsRef.current.some((id, index) => id !== currentMessageIds[index])) messageIdsRef.current = currentMessageIds
+  const messageIds = messageIdsRef.current
   const positionKey = JSON.stringify([viewportKey, chatId])
   const scrollerOwnerRef = useRef<{
     chatId: string
@@ -161,7 +177,7 @@ export function useConversationScrollMemory({
     const anchor = selectConversationViewportAnchor(viewportRect, rows)
     if (!anchor) return
     positions.set(owner.key, { atBottom: false, ...anchor })
-  }, [positions])
+  }, [])
 
   // Capture before React replaces this viewport's rows; another surface selecting a chat is irrelevant.
   if (scrollerOwnerRef.current && scrollerOwnerRef.current.key !== positionKey) {
@@ -173,7 +189,7 @@ export function useConversationScrollMemory({
     if (!chatId) return false
     const position = positions.get(positionKey)
     return !!position && !position.atBottom
-  }, [chatId, positions, positionKey])
+  }, [chatId, positionKey])
 
   const isPreservingPosition = useCallback(() => (
     completedActivationRef.current !== activationKey && hasSavedOffBottomPosition()
@@ -181,6 +197,7 @@ export function useConversationScrollMemory({
 
   const setScrollerRef = useCallback((value: HTMLElement | Window | null) => {
     const element = value instanceof HTMLElement ? value : null
+    if (element && chatId) showConversation(chatId)
     // A keyed window replacement must keep its requested landing, not capture the departing tail.
     if (!element && scrollerOwnerRef.current && !isPreservingPosition()) capturePosition(scrollerOwnerRef.current)
     scrollerOwnerRef.current = element && chatId
@@ -208,7 +225,7 @@ export function useConversationScrollMemory({
   const openLocation = useCallback(() => {
     const position = chatId && enabled && completedActivationRef.current !== activationKey ? positions.get(positionKey) : undefined
     return restoreLanding(position && !position.atBottom ? position : null, messageIds)
-  }, [activationKey, chatId, enabled, messageIds, positions, positionKey])
+  }, [activationKey, chatId, enabled, messageIds, positionKey])
 
   const prepareForSavedPosition = useCallback(() => {
     if (!hasSavedOffBottomPosition()) return false
@@ -222,7 +239,7 @@ export function useConversationScrollMemory({
     completedActivationRef.current = activationKey
     restoringActivationRef.current = null
     restoreDeadlineRef.current = null
-  }, [activationKey, chatId, positions, positionKey])
+  }, [activationKey, chatId, positionKey])
 
   // Show one message of this conversation, loaded or not: it becomes the position to restore, so a window
   // loaded around it (loadMessageAnchor) remounts the list landing on it, and the settle loop holds it there
@@ -242,7 +259,7 @@ export function useConversationScrollMemory({
     isAtBottomRef.current = false
     setFollowingTail(false)
     setRevealRequest((n) => n + 1)
-  }), [chatId, enabled, isAtBottomRef, setFollowingTail, positions, positionKey])
+  }), [chatId, enabled, isAtBottomRef, setFollowingTail, positionKey])
 
   useLayoutEffect(() => {
     const scroller = scrollerRef.current
@@ -318,12 +335,25 @@ export function useConversationScrollMemory({
       }
       frame = requestAnimationFrame(settle)
     }
+    // The restore holds the row against late layout, never against the reader: their own input ends it where they are
+    // (as in useHistoryPageAnchor). Without this a wheel is undone every frame until the row has been still for three.
+    const yieldToReader = () => {
+      if (restoringActivationRef.current !== activationKey) return
+      cancelAnimationFrame(frame)
+      completedActivationRef.current = activationKey
+      restoringActivationRef.current = null
+      restoreDeadlineRef.current = null
+      settleReveal(position.messageId)
+    }
+    const inputs = ['wheel', 'touchstart', 'pointerdown'] as const
+    for (const type of inputs) scroller.addEventListener(type, yieldToReader, { passive: true })
     // 已加载但尚未挂载的行也沿同一个 FlowList 句柄补挂;不为恢复再维护一份切片或位置。
     if (!mountedRow()) listRef.current?.scrollToIndex({ index: location.index, align: 'start', offset: location.offset })
     // An already loaded target also moves before paint; a window replacement uses openLocation above.
     settle(performance.now())
     return () => {
       cancelAnimationFrame(frame)
+      for (const type of inputs) scroller.removeEventListener(type, yieldToReader)
       if (restoringActivationRef.current === activationKey) restoringActivationRef.current = null
     }
   }, [
@@ -339,7 +369,7 @@ export function useConversationScrollMemory({
     forgetSavedPosition,
     settleReveal,
     revealRequest,
-    positions, positionKey,
+    positionKey,
   ])
 
   return { scrollerEl, scrollerRef, setScrollerRef, hasSavedOffBottomPosition, prepareForSavedPosition, isPreservingPosition, forgetSavedPosition, openLocation, revealMessage }

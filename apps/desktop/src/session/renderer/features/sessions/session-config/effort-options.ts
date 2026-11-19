@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import type { ComposerEffortOption } from '@gugu/session-ui/react/components';
 import type { SessionMessageValues } from '@renderer/localization/locale-store';
 import type { SessionMessageLookupKey } from '@renderer/localization/messages';
@@ -35,8 +36,8 @@ const EFFORT_LABEL_KEYS = {
  * 与下面同一条「全换或全不换」:有一个阶梯外的 id 就整句不给(null),❌ 半中半英。
  */
 export function effortNamesLine(ids: readonly string[], translate: Translate): string | null {
-  if (ids.length === 0 || !ids.every((id) => id in EFFORT_LABEL_KEYS)) return null;
-  return ids.map((id) => translate(EFFORT_LABEL_KEYS[id as keyof typeof EFFORT_LABEL_KEYS][0])).join(' · ');
+  if (ids.length === 0 || !ids.every((id) => Object.hasOwn(EFFORT_LABEL_KEYS, id))) return null;
+  return ids.map((id) => translate(EFFORT_LABEL_KEYS[id as keyof typeof EFFORT_LABEL_KEYS][0])).join(metadataSeparator());
 }
 
 /**
@@ -48,25 +49,29 @@ export function effortNamesLine(ids: readonly string[], translate: Translate): s
  * 界面此前原样摆出来,于是英文壳下「Reasoning effort」的取值是「极高」「最高」,
  * 中文壳下换个 harness 又变回英文 —— **界面语言由数据来源决定**,那不是本地化。
  *
- * ⚠️ **全换或全不换,❌ 不许换一半**:上一次在权限档上按「这一档独一份才改名」做,
+ * Desktop uses an all-or-none catalog. Phone menus use the same words for known rungs
+ * even when a host appends a custom rung. A custom rung retains its host label.
+ *
+ * 桌面历史上在权限档上按「这一档独一份才改名」做,
  * 结果是 5 英 1 中,比全英还糟(见 `permission-mode-options.ts` 抬头)。所以只要这份清单里
- * 出现一个阶梯外的 id(harness 自定义的档、`Thinking Off` 这类开关值),就整份原样交出去 ——
- * 阶梯外的那些咕咕手里根本没有对应的词,硬翻一半就是重蹈覆辙。
+ * 出现一个阶梯外的 id(harness 自定义的档、`Thinking Off` 这类开关值),桌面就整份原样交出去。
  *
  * ❌ 不改插件那份 `effortOptions`:那张表的职责是**这家引擎有哪几档**(每一档都得送得到进程),
  * 不是文案表。id 留在那儿,词归词表。
  */
 export function localizeEffortOptions(
   options: Options | null,
-  translate: Translate
+  translate: Translate,
+  policy: 'all-or-none' | 'known' = 'all-or-none'
 ): Options | null {
   if (!options) return null;
   const ids = Object.keys(options);
   if (ids.length === 0) return options;
-  if (!ids.every((id) => id in EFFORT_LABEL_KEYS)) return options;
+  if (policy === 'all-or-none' && !ids.every((id) => Object.hasOwn(EFFORT_LABEL_KEYS, id))) return options;
 
-  const localized: Options = {};
+  const localized = { ...options };
   for (const id of ids) {
+    if (!Object.hasOwn(EFFORT_LABEL_KEYS, id)) continue;
     const [nameKey, hintKey] = EFFORT_LABEL_KEYS[id as keyof typeof EFFORT_LABEL_KEYS];
     localized[id] = {
       ...options[id],

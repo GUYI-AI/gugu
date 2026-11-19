@@ -15,8 +15,9 @@ vi.mock('@/lib/agentCreateDefaults', () => ({ readAgentCreateDefaults: cloud.rea
 vi.mock('@renderer/features/projects/stores/account-projects-store', () => ({ accountProjectsStore: cloud.accounts }));
 const defaults = (machineByProject: Record<string, string>) => ({ deviceId: null, projectByDevice: {}, projectByChat: {}, machineByProject });
 import type { ProjectFoldersState, ShownFolder } from './project-folders';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
-const folder = (projectId: string): ShownFolder => ({ projectId, workspaceId: projectId, path: '/same/path', kind: 'root', branch: null, attachedAt: null, sessionIds: [], offline: projectId === 'remote', deviceId: projectId === 'remote' ? 'device-b' : null });
+const folder = (projectId: string): ShownFolder => ({ projectId, workspaceId: projectId, path: '/same/path' as CanonicalPath, kind: 'root', branch: null, attachedAt: null, sessionIds: [], offline: projectId === 'remote', deviceId: projectId === 'remote' ? 'device-b' : null });
 const local = folder('local');
 const remote = folder('remote');
 const state: ProjectFoldersState = { folders: [local, remote], chosen: local, fresh: undefined, loadError: false, unanswered: [], choose: vi.fn(), reload: vi.fn(), attach: vi.fn(), detach: vi.fn() };

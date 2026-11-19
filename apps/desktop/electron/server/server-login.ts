@@ -101,16 +101,13 @@ async function exchangeTokenHash(tokenHash: string, type: string): Promise<{ acc
  * tier 与 main.ts 同一个来源(server 入口已设 GUGU_TIER);云端已有这台机器这个人的设备行就沿用它。
  * 解析不出来(网络抖了)⇒ null:装机照旧成功,只是这台机器在这张桌面上暂时只有「通用」。
  */
+/** 读不到(网络、库)就抛:注销要据此分清「这台没有设备行」和「连不上」。 */
 export async function deviceIdForAccount(userId: string, accessToken: string): Promise<string | null> {
-  try {
-    const heartbeatClient = createGuguSupabaseClient({
-      schema: 'identity',
-      headers: { Authorization: `Bearer ${accessToken}` },
-    }) as unknown as DeviceHeartbeatTableClient
-    return await resolveLocalDeviceId({ userId, heartbeatClient, env: process.env })
-  } catch {
-    return null
-  }
+  const heartbeatClient = createGuguSupabaseClient({
+    schema: 'identity',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  }) as unknown as DeviceHeartbeatTableClient
+  return await resolveLocalDeviceId({ userId, heartbeatClient, env: process.env })
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -220,7 +217,8 @@ async function pollUntilDone(
       // #6264 远程 SSH(桌面经 SSH 递来的凭证)/ 远程隧道(一行命令 + 确认页):最近一次登录说了算。
       // 名字随它一起记:账号进程第一次心跳据此报名字(core/cloud/serverConnectVia.ts serverDeviceLabel)。
       writeServerConnectVia(accountDataDir(), fromGrant ? 'ssh' : 'tunnel', { name })
-      const deviceId = fromGrant || name ? await deviceIdForAccount(userId, tokens.accessToken) : null
+      // 设备行只用来改名与回报;读不到不挡登录(回报里 deviceId 为 null,桌面按没有处理)。
+      const deviceId = fromGrant || name ? await deviceIdForAccount(userId, tokens.accessToken).catch(() => null) : null
       // 这一行早就有了(重装 / 重新登录)、名字还是库取的 `Linux 2`:换成人给的名字。改不成不挡登录。
       if (deviceId && name) {
         const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${tokens.accessToken}` } })

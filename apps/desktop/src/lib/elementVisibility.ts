@@ -36,7 +36,12 @@ export function clippedElementBox(element: HTMLElement, bounds: ElementBox): { f
   while (node && clip.width > 0 && clip.height > 0) {
     if (node instanceof Element) {
       const style = getComputedStyle(node)
-      if (style.overflowX !== 'visible' || style.overflowY !== 'visible') clip = belowPins(node, element, intersect(clip, elementBox(node)))
+      if (style.overflowX !== 'visible' || style.overflowY !== 'visible') {
+        clip = intersect(clip, elementBox(node))
+        // Pins only stick inside a transcript's own scroller (ChatRoot marks it data-chat-scroll); every other clipping ancestor
+        // (panes, frames) holds whole conversations, and searching those for pins grew with the mounted messages.
+        if (node.hasAttribute('data-chat-scroll')) clip = belowPins(node, element, clip)
+      }
       // A conversation's composer floats over the end of its message list (ChatBottomDock): behind its cards is not seen.
       const composer = node.hasAttribute('data-chat-dock-column') ? node.querySelector(':scope > [data-chat-bottom-dock]')?.lastElementChild : null
       if (composer) clip = intersect(clip, { left: clip.left, top: clip.top, width: clip.width, height: Math.max(0, composer.getBoundingClientRect().top - clip.top) })

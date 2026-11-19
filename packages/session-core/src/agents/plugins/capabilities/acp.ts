@@ -33,7 +33,7 @@ import type { NormalizedEvent } from '../../../acp/reducer/normalized-event';
 import type { SessionPromptReceipt } from '../../../acp/session-protocol';
 import type { PermissionSubject, AcpPermissionOption } from '../../../acp/models/permissions';
 
-export type LiveSettingDimension = 'model' | 'permission' | 'effort';
+export type LiveSettingDimension = 'model' | 'permission' | 'effort' | 'fast';
 export type LiveSettingChannel =
   | 'acp-config-option'
   | 'acp-mode'
@@ -92,6 +92,7 @@ export interface LiveSettingsCapability {
   model?: LiveSettingCapability;
   permission?: LiveSettingCapability;
   effort?: LiveSettingCapability;
+  fast?: LiveSettingCapability;
 }
 
 const unsupportedLiveSetting: LiveSettingCapability = {
@@ -131,6 +132,7 @@ export const liveSettingsCapabilitySchema = z.object({
   model: liveSettingSchema.optional(),
   permission: liveSettingSchema.optional(),
   effort: liveSettingSchema.optional(),
+  fast: liveSettingSchema.optional(),
 });
 
 export type AcpSpawnContext = {
@@ -470,10 +472,23 @@ export interface IAcpBehavior {
   catalogProbeSessionMeta?: Record<string, unknown>;
 
   /**
+   * Extra argv (and the files it names) for the model catalog probe, given that probe's scratch directory,
+   * which the probe deletes afterwards. For a harness that persists every `session/new`: without it each
+   * probe leaves an empty, untitled session in the user's own history (DeepSeek Harness lists them in its app).
+   */
+  catalogProbeOverlay?(scratchDir: string): { args: string[]; files: Array<{ path: string; content: string }> };
+
+  /**
    * This harness answers `session/new` without a model option and publishes it right after in a
    * `config_option_update` (Kiro V3, measured on 3.0.0). The model catalog probe then waits for that update.
    */
   catalogModelsInConfigUpdate?: boolean;
+
+  /**
+   * Lists its own models signed out, none of them runnable. The catalog probe's own-route read then asks
+   * `auth.checkStatus`: signed out ⇒ `auth-required`, `unknown` keeps the list.
+   */
+  catalogNeedsSignIn?: boolean;
 
   /**
    * 进程级认证,「报了才认」(#2507 Antigravity 的网关):`initialize` 时在 `clientCapabilities.auth._meta` 里声明
@@ -497,7 +512,8 @@ export interface IAcpBehavior {
    * Wrap an app-owned process's stdio into an ACP client connection.
    * The plugin owns adapter/SDK wiring; the app owns the process lifecycle.
    */
-  connect(io: AcpProcessIo, toClient: AcpClientFactory): AcpAgentApi;
+  filterPermissionConfig?(options: readonly SessionConfigOption[], context: { cliVersion?: string; autoReviewAllowed?: boolean; autoReviewUnavailable?: boolean; autoReviewByHaiku?: boolean }): SessionConfigOption[];
+  connect(io: AcpProcessIo, toClient: AcpClientFactory, context?: { cliVersion?: string; autoReviewAllowed?: boolean; autoReviewUnavailable?: boolean; autoReviewByHaiku?: boolean }): AcpAgentApi;
 
 }
 

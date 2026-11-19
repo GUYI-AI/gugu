@@ -24,6 +24,7 @@ export async function probeDeviceProjection(appId: string) {
   const asker = { id: 'isolated-device-fixture', onDetached(fn: () => void) { detached.add(fn); return () => { detached.delete(fn); }; } };
   const source = new BrowserWindow({ show: false, frame: false, useContentSize: true, width: 128, height: 96,
     webPreferences: { backgroundThrottling: false } });
+  const firstPaint = new Promise<void>(resolve => source.once('ready-to-show', () => resolve()));
   const viewer = new BrowserWindow({ show: false });
   let hear: Parameters<NonNullable<ProjectionHost['onProjectionSource']>>[0] = () => {};
   const program = { kind: 'program', extensionId: appId, pageId: -94, callingSession: 'fixture-task', binding: null,
@@ -43,6 +44,7 @@ export async function probeDeviceProjection(appId: string) {
   let server: ReturnType<typeof createServer> | undefined;
   try {
     await source.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<body style="margin:0;background:rgb(26,96,190)"><textarea style="width:60px;height:20px"></textarea><script>document.querySelector("textarea").focus()</script>'));
+    await firstPaint;
     const capture = async () => publisher!.publish({ width: 128, height: 96, mime: 'image/png',
       data: (await source.webContents.capturePage()).toPNG().toString('base64') });
     publisher = await runtime.create({

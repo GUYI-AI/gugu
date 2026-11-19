@@ -221,7 +221,9 @@ describe('where extension skills reach the agent (#6387)', () => {
     expect(block).not.toContain('gugu_app_skills')
     expect(block).toContain('- agent-notes (App agent-notes): Save and search notes the person keeps in 随手记')
     expect(block).toContain(join(root, 'skills', 'agent-notes', 'SKILL.md'))
-    expect(guguAppsBlock([], [])).toBe('')
+    // Nothing installed: where to look is still said, so an App or game named in a message is looked up (S1); off says nothing.
+    expect(guguAppsBlock([], [])).toBe(`<gugu_apps>\n${GUGU_APPS_SEARCH_LINE}\n</gugu_apps>\n`)
+    expect(guguAppsBlock([], [], ['apps'])).toBe('')
     // 10-19 Last, the one line on Apps the opening could not list: where to look for them.
     expect(block.endsWith(`${GUGU_APPS_SEARCH_LINE}\n</gugu_apps>\n`)).toBe(true)
   })

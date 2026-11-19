@@ -5,10 +5,13 @@
  * Missing IDs, replacement/null semantics and opaque content remain intact.
  */
 
+import { z } from 'zod';
 import type { SessionUpdate, SessionConfigOption, ToolCallContent, ToolCallLocation, RequestPermissionRequest } from '@agentclientprotocol/sdk';
 import type { AcpPermissionParams } from '../../agents/plugins/capabilities/acp';
 import type { PermissionSubject } from '../models/permissions';
 import { normalizeToolContent } from './file-patch';
+import { sessionRetryingSchema } from '../models/session';
+import type { CompactionStatus } from '../models/turns/compaction';
 import { serializePayload, projectToolContent } from '../models/tool-payload';
 import { messageContentText, type EntityContent, type EntityMeta } from '../models/entity-content';
 import type { ToolImage } from '../models/turns/tool-calls';
@@ -374,7 +377,16 @@ function contextCompactionMeta(update: SessionUpdate): ContextCompactionMeta | n
  * context-compaction.js 的 `firstTerminal`)。把缺席解成 in_progress,那条补数就会把
  * 已完成的压缩改回「正在压缩」,界面上永远停在那里。
  */
-function compactionStatusFromTool(status: unknown): 'in_progress' | 'completed' | 'failed' | undefined {
+/**
+ * `compaction_update` 线上的状态。RFD 的终态是 `completed` / `cancelled`(回合在压缩报终态之前就收场了:
+ * 暂停、打断),适配器另有 `failed`。`cancelled` 对用户与 `failed` 是同一件事 —— 上下文没被压掉 —— 所以在这里
+ * 收成 `failed`,行上与发往别的设备的历史里都只有三个值(老客户端照样读得懂)。
+ */
+const compactionUpdateStatusSchema = z
+  .enum(['in_progress', 'completed', 'failed', 'cancelled'])
+  .transform((status): CompactionStatus => (status === 'cancelled' ? 'failed' : status));
+
+function compactionStatusFromTool(status: unknown): CompactionStatus | undefined {
   if (status === undefined || status === null) return undefined;
   if (status === 'completed') return 'completed';
   if (status === 'failed') return 'failed';
@@ -384,14 +396,15 @@ function compactionStatusFromTool(status: unknown): 'in_progress' | 'completed' 
 /**
  * 上下文压缩的边界。**两条来源**,认哪条取决于对面适配器:
  *
- * ① `tool_call` / `tool_call_update` 上挂 `_meta.contextCompaction` —— 今天实际在用的那条。
- *    `claude-agent-acp` 0.75.1 把一次压缩发成一个合成 tool call
+ * ① `tool_call` / `tool_call_update` 上挂 `_meta.contextCompaction` —— 客户端不声明
+ *    `session.compaction` 时适配器走的那条。`claude-agent-acp` 0.75.1 把一次压缩发成一个合成 tool call
  *    （title `Compact conversation`、kind `think`、`in_progress` → `completed`/`failed`）,
  *    元数据全在那个 `_meta` 里。❌ 不认这个键的话它会掉进「不认识的工具调用」,
  *    压缩在界面上就长成了一个工具节点 —— 那正是 2026-09-10 实测到的样子。
  * ② `compaction_update` / `compaction_summary_chunk`（ACP `session-compaction` RFD 的草案字段）
- *    —— 至今没有一家发,接着等。草案字段不在已发布的 `@agentclientprotocol/sdk`（0.22.1 实查）
- *    联合里 ⇒ 要 `as unknown as`,也要靠 `acp-stdio.ts` 的信封才进得了 SDK 的门。
+ *    —— 我们声明了 `session.compaction`,钉住的 claude 适配器和 codex 桥今天都走这条。
+ *    回合在压缩报终态之前收场(暂停/打断)时,claude 适配器补发 `cancelled`。
+ *    草案字段不在已发布的 `@agentclientprotocol/sdk` 联合里 ⇒ 要 `as unknown as`。
  *
  * ⚠️ 返回 `null` = 「这条不归我管」,交回主 switch（普通工具调用就是走这条路出去的）。
  */
@@ -420,17 +433,23 @@ function decodeCompactionSessionUpdate(wrapped: SessionUpdate): NormalizedEvent 
     case 'compaction_update': {
       const raw = update as unknown as {
         compactionId?: string;
-        status?: 'in_progress' | 'completed' | 'failed';
+        status?: unknown;
         summary?: unknown;
+        error?: unknown;
       };
       // 没有 id 就对不上号,续报会各自长一行。❌ 别编一个。
-      if (!raw.compactionId || !raw.status) return { kind: 'ignored' };
+      if (!raw.compactionId) return { kind: 'ignored' };
+      // 状态按枚举校验:❌ 把线上的值直接断言进行里 ——
+      // 不认识的值一旦写进行,之后每一次按 schema 读历史都会抛,整条会话就刷新不出来了。
+      const status = compactionUpdateStatusSchema.safeParse(raw.status);
+      if (!status.success) return { kind: 'ignored' };
       const summary = compactionSummaryText(raw.summary);
       return {
         kind: 'compaction',
         compactionId: raw.compactionId,
-        status: raw.status,
+        status: status.data,
         ...(summary ? { summary } : {}),
+        ...(typeof raw.error === 'string' && raw.error ? { error: raw.error } : {}),
       };
     }
 
@@ -472,11 +491,12 @@ function decodeNoticeSessionUpdate(wrapped: SessionUpdate): NormalizedEvent | nu
  * agent 自己报的状态(ACP v2 的 `state_update`)。
  */
 function decodeStateSessionUpdate(wrapped: SessionUpdate): NormalizedEvent | null {
-  const update = wrapped as unknown as { sessionUpdate?: string; state?: unknown; _meta?: { summary?: unknown } };
+  const update = wrapped as unknown as { sessionUpdate?: string; state?: unknown; _meta?: { summary?: unknown; guguRetrying?: unknown } };
   if (update.sessionUpdate !== 'state_update') return null;
   const { sessionUpdate: _, ...fields } = update;
   return update.state === 'running' || update.state === 'requires_action' || update.state === 'idle' || update.state === 'unknown'
     ? { ...fields, kind: 'agent_state', source: 'agent',
+        ...(update._meta?.guguRetrying === undefined ? {} : { retrying: update._meta.guguRetrying === null ? null : sessionRetryingSchema.parse(update._meta.guguRetrying) }),
         ...(typeof update._meta?.summary === 'string' ? { summary: update._meta.summary } : {}) } as NormalizedEvent
     : { kind: 'ignored' };
 }

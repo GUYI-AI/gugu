@@ -102,7 +102,7 @@ export interface FamilyDeps {
   jxa: typeof runJxa
   exec(file: string, args: readonly string[], options?: { signal?: AbortSignal; timeoutMs?: number; input?: string; cwd?: string; env?: Record<string, string>; maxBuffer?: number }): Promise<ExecResult>
   macHelper(): MacHelperClient
-  /** 咕咕自己的资源监视器读数(perf.*):和设置页同一份记录、同一层投影;监视器关着时抛 ResourceMonitorOffError。 */
+  /** 咕咕自己的资源监视器读数(perf.*):和设置页同一份记录、同一层投影;监视器关着时由读数按需拉起采样(reading.ts)。 */
   perf?: PerfReadings
 }
 

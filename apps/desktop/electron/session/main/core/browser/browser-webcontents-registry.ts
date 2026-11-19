@@ -1,3 +1,4 @@
+import { browserAnnotationSpaceChannel } from '@shared/events/browserEvents';
 import { showContentContextMenu } from '../../../../content-context-menu';
 import { showEditableContextMenu } from '../../../../editable-context-menu';
 import type { ContentMenuEntry } from '@shared/content-context-menu';
@@ -70,6 +71,7 @@ export class BrowserWebContentsRegistry {
   private readonly sessionsByBrowserId = new Map<string, RegisteredBrowserSession>();
   private readonly webContentsByBrowserId = new Map<string, WebContents>();
   private readonly browserIdByWebContentsId = new Map<number, string>();
+  private readonly annotationBrowsing = new Set<string>();
   private activeBrowserId: string | null = null;
   /** #7191 每个页签最近一次被看着的时刻:会话有好几个页签时,agent 拿人最近看的那个。 */
   private readonly lastActiveAt = new Map<string, number>();
@@ -80,6 +82,7 @@ export class BrowserWebContentsRegistry {
   }
 
   unregisterSession(browserId: string): void {
+    this.annotationBrowsing.delete(browserId);
     const webContents = this.webContentsByBrowserId.get(browserId);
     if (webContents) {
       this.browserIdByWebContentsId.delete(webContents.id);
@@ -96,9 +99,19 @@ export class BrowserWebContentsRegistry {
     this.browserShortcuts = getBrowserShortcuts(keyboard);
   }
 
+  setAnnotationBrowsing(browserId: string, browsing: boolean): boolean {
+    if (!browsing) { this.annotationBrowsing.delete(browserId); return true; }
+    const contents = this.webContentsByBrowserId.get(browserId);
+    if (!contents || contents.isDestroyed()) return false;
+    this.annotationBrowsing.add(browserId);
+    return true;
+  }
+
   /** The existing native guest shortcut path, shared by browser and App surfaces. */
   bindAppShortcuts(contents: WebContents, onCommand: (id: CommandId) => boolean, onTab?: (direction: 'next' | 'previous') => boolean): void {
     contents.on('before-input-event', (event, input) => {
+      const browserId = this.browserIdByWebContentsId.get(contents.id);
+      if (browserId && (input.code === 'Space' || input.key === ' ') && input.type === 'keyUp') events.emit(browserAnnotationSpaceChannel, { browserId, pressed: false });
       const direction = getElectronTabNavigationDirection(input);
       if (direction && onTab?.(direction)) { event.preventDefault(); return; }
       const command = getBrowserShortcutKey(input, this.browserShortcuts);
@@ -143,6 +156,12 @@ export class BrowserWebContentsRegistry {
       if (mouse.type !== 'mouseDown') return;
       const boundBrowserId = this.browserIdByWebContentsId.get(webContentsId);
       if (!boundBrowserId) return;
+      // macOS drops a keyUp in a native view that never received its keyDown.
+      // Keep the held Space paired with the host while allowing the page's click.
+      if (this.annotationBrowsing.has(boundBrowserId)) {
+        const host = placement.window();
+        if (host && !host.isDestroyed()) host.webContents.focus();
+      }
       events.emit(browserFocusedChannel, { browserId: boundBrowserId });
     });
 
@@ -152,6 +171,7 @@ export class BrowserWebContentsRegistry {
       this.browserIdByWebContentsId.delete(webContentsId);
       if (this.webContentsByBrowserId.get(boundBrowserId) === webContents) {
         this.webContentsByBrowserId.delete(boundBrowserId);
+        this.annotationBrowsing.delete(boundBrowserId);
       }
       if (this.activeBrowserId === boundBrowserId) this.activeBrowserId = null;
     });

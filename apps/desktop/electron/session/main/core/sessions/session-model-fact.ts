@@ -1,3 +1,4 @@
+import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 // @@@4616 快照里那格「这条会话跑在哪个模型上」的事实 —— 与「去哪读那条决策」分开的一小块。
 //
 // 单独成模块只为一件事:**让它可判据**。它的合同里有一条是「平台模型必须报出两个**不同**的
@@ -58,10 +59,10 @@ export function sessionModelFromDecision(
   }
   // 明确选了 harness 自家模型 ⇒ 一个平台变量都不注入,会话行上那个模型就是它跑的模型
   // （harness 自家的模型记在 config 上，`conversations` 表没有 model 列）。
-  if (platform === null) {
+  if (platform === null || customModelRefFromOption(harnessModel)) {
     return {
       source: 'harness',
-      id: harnessModel,
+      id: runtimeModelId(harnessModel) ?? null,
       ...(harnessModel ? { spawn_model_id: harnessModel } : {}),
     };
   }

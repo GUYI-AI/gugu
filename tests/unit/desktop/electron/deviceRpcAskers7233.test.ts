@@ -33,7 +33,7 @@ function fakeHost(limits: Partial<typeof DEVICE_RPC_ASKER_LIMITS> = {}) {
   subs.slowLeave = null
   const channels: FakeChannel[] = []
   const supabase = {
-    realtime: { setAuth: () => undefined },
+    realtime: { isConnected: () => true, connect: () => undefined, setAuth: () => undefined },
     removeChannel: () => undefined,
     channel: (topic: string) => {
       const record: FakeChannel = { topic, sent: [], listeners: [], reply: 'ok', held: [] }

@@ -13,6 +13,8 @@ import {
   type MarkdownDialectOptions,
 } from './dialect';
 
+type HastTree = { tagName?: string; value?: string; properties?: { className?: string[]; role?: string; ariaLabel?: string }; children?: HastTree[] };
+
 function run(text: string, options: MarkdownDialectOptions): Root {
   const processor = unified().use(remarkParse).use(markdownRemarkPlugins(options));
   return processor.runSync(processor.parse(text)) as Root;
@@ -78,6 +80,18 @@ describe('markdown dialect', () => {
     expect(urls(`\`gugu-widget://${message}\` and gugu-chat://`)).toEqual([]);
   });
 
+  // Owner 2026-11-15: a session link pasted bare stayed plain text — only gugu-file / gugu-chat / gugu-widget were read.
+  it('reads a bare session link as a link, beside the file, chat and widget links it read before', () => {
+    const session = 'f531076b-76ad-4186-b6b0-e5f0d8963dba', id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const urls = (text: string) => collect(run(text, { trust: 'chat' }), 'link').map((node) => ('url' in node ? node.url : ''));
+    expect(urls(`设计车道：gugu://session/${session}。下一句`)).toEqual([`gugu://session/${session}`]);
+    expect(urls(`beta: gugu-beta://session/${session}.`)).toEqual([`gugu-beta://session/${session}`]);
+    expect(urls(`gugu-file://${id} gugu-chat://${id} gugu-widget://${id} gugu://session/${session}`))
+      .toEqual([`gugu-file://${id}`, `gugu-chat://${id}`, `gugu-widget://${id}`, `gugu://session/${session}`]);
+    // What parseGuguLink does not read stays text: no session id, or a scheme that is not gugu's.
+    expect(urls('gugu://session/ and guguX://session/x')).toEqual([]);
+  });
+
   it('keeps raw HTML and images literal for chat trust, and parses them for documents', () => {
     const source = 'hi <b>bold</b> ![pic](https://example.com/p.png)';
     const chat = run(source, { trust: 'chat' });
@@ -128,6 +142,8 @@ describe('markdown dialect', () => {
     expect(hrefAfter(groupFile)).toBe(groupFile);
     const conversation = 'gugu-chat://aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/11111111-2222-4333-8444-555555555555';
     expect(hrefAfter(conversation)).toBe(conversation);
+    const session = 'gugu://session/f531076b-76ad-4186-b6b0-e5f0d8963dba';
+    expect(hrefAfter(session)).toBe(session);
     expect(hrefAfter('javascript:alert(1)')).toBeUndefined();
     expect(hrefAfter('ab:x')).toBeUndefined();
     // An image may name a group's file (an App page's markdown draws it); no other new scheme reaches an image.
@@ -177,6 +193,30 @@ describe('markdown dialect', () => {
       'user-content-install-steps-1',
       'user-content-install-steps-2',
       null,
+    ]);
+  });
+
+  it('keeps a formula\'s source for a reader without a MathML element: one costs every later insertion a re-style of whole subtrees', () => {
+    const math = (className: string[], value: string) => ({ type: 'element', tagName: 'code', properties: { className }, children: [{ type: 'text', value }] });
+    const tree = { type: 'root', children: [
+      { type: 'element', tagName: 'p', properties: {}, children: [math(['language-math', 'math-inline'], 'x^2')] },
+      { type: 'element', tagName: 'pre', properties: {}, children: [math(['language-math', 'math-display'], '\\frac{a}{b}')] },
+    ] };
+    const out = unified().use(markdownRehypePlugins({ trust: 'chat' })).runSync(tree as never) as unknown as HastTree;
+    const tags = new Set<string>();
+    const formulas: HastTree[] = [];
+    const walk = (node: HastTree) => {
+      if (node.tagName) tags.add(node.tagName);
+      if (node.properties?.className?.includes('katex')) formulas.push(node);
+      node.children?.forEach(walk);
+    };
+    walk(out);
+    expect([...tags].filter((tag) => ['math', 'semantics', 'annotation', 'mrow', 'mi', 'msup', 'mfrac'].includes(tag))).toEqual([]);
+    // named by its TeX source for assistive technology; the hidden span carries the same text for a copied selection
+    expect(formulas.map((node) => [node.properties?.role, node.properties?.ariaLabel])).toEqual([['math', 'x^2'], ['math', '\\frac{a}{b}']]);
+    expect(formulas.map((node) => node.children?.map((child) => [child.properties?.className?.[0], child.children?.[0]?.value ?? null]))).toEqual([
+      [['katex-mathml', 'x^2'], ['katex-html', null]],
+      [['katex-mathml', '\\frac{a}{b}'], ['katex-html', null]],
     ]);
   });
 

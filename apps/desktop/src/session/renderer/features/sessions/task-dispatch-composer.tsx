@@ -119,7 +119,7 @@ type DispatchTray = {
 /** 选了项目:在哪台跑、用哪个文件夹,与项目块的新任务框同一套(项目的文件夹在哪些机器上,没有的机器点了先挂文件夹)。 */
 const ProjectDispatch = observer(function ProjectDispatch({ projectId, draftKey, projectPicker, birthChip, composer }: DispatchTray & { projectId: string }) {
   const stage = useProjectFolderStage(projectId);
-  const { scopedFolders, targetProjectId, machineContext, machineOf, pickAndAttach } = stage;
+  const { scopedFolders, targetProjectId, executionDevice, machineContext, machineOf, pickAndAttach } = stage;
   return (
     <ComposerTray
       projectPicker={projectPicker}
@@ -129,7 +129,7 @@ const ProjectDispatch = observer(function ProjectDispatch({ projectId, draftKey,
           <ComposerFolderPicker
             folders={scopedFolders}
             machineLabelOf={(deviceId) => machineOf(deviceId).label}
-            onAttach={() => void pickAndAttach(scopedFolders.chosen?.deviceId ?? null)}
+            onAttach={() => void pickAndAttach(executionDevice)}
           />
           {birthChip}
         </>

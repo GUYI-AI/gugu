@@ -16,11 +16,15 @@ import { mathBlockDef } from '@session-chat/components/rows/markdown/math/math.d
 import { mermaidBlockDef } from '@session-chat/components/rows/markdown/mermaid/mermaid.def'
 import { svgBlockDef } from '@session-chat/components/rows/markdown/svg/svg.def'
 import { messageUnitDef } from '@session-chat/components/rows/message/message.def'
+import { pinSummary } from '@session-chat/components/rows/message/PinnedUserSummary'
+import type { MessageVars } from '@session-chat/components/rows/message/metrics'
 import { srOnly } from '@session-chat/components/rows/message/message.css'
 import { resourceLinkUnitDef } from '@session-chat/components/rows/resource-link/resource-link.def'
 import type { Block, HtmlBlock } from '@session-chat/core/markdown/document'
+import type { MentionProvider } from '@session-chat/core/markdown/mention-provider'
 import { parseMarkdownToBlocks } from '@session-chat/core/markdown/parse'
 import type { ChatMessage, ChatResourceLink } from '@session-chat/model'
+import { FILE_MARKS } from '@gugu/session-shared/file-marks'
 import { afterAll, describe, expect, it } from 'vitest'
 import {
   makeContractCtx,
@@ -45,6 +49,37 @@ function expectHeightMatch(layer: string, reading: HeightContractReading): void 
     reading.dom,
     `${layer} height mismatch: engine=${reading.computed}px DOM=${reading.dom}px delta=${delta}px`
   ).toBe(reading.computed)
+}
+
+/**
+ * How far the place starts after the name's visible end, in px: the name's characters that fit before its ellipsis, then
+ * the ellipsis, then whatever lies between it and the place's box (`text-overflow` leaves slack inside the name's box).
+ */
+function gapBeforePlace(name: HTMLElement, place: HTMLElement): number {
+  const text = name.firstChild as Text
+  const ellipsis = document.createElement('span')
+  ellipsis.textContent = '\u2026'
+  name.appendChild(ellipsis)
+  const ellipsisWidth = ellipsis.getBoundingClientRect().width
+  ellipsis.remove()
+  const limit = name.getBoundingClientRect().right - ellipsisWidth
+  const range = document.createRange()
+  let end = name.getBoundingClientRect().left
+  for (let i = 0; i < text.length; i += 1) {
+    range.setStart(text, i)
+    range.setEnd(text, i + 1)
+    const right = range.getBoundingClientRect().right
+    if (right > limit + 0.5) break
+    end = right
+  }
+  return place.getBoundingClientRect().left - (end + ellipsisWidth)
+}
+
+/** The glyph a `FileMark` of this family draws, as the DOM writes it back. */
+function familyGlyph(family: keyof typeof FILE_MARKS): string {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.innerHTML = FILE_MARKS[family].glyph
+  return svg.innerHTML
 }
 
 function rootOf(host: HTMLElement): HTMLElement | null {
@@ -100,10 +135,9 @@ const userMessage: ChatMessage = {
 }
 
 /**
- * 非图片附件是一枚**整行**的 chip(#5269)。这条钉的是它的**盒模型**:chip 声明的高度是
- * `attachThumb`,而 `attachStripHeight` 报的也是这个数 —— 边框或内距只要有一格没算进去,
- * 这里就会红(content-box 下每行会悄悄高 2px)。名字故意取得很长,顺带钉住「宽了要省略号
- * 截断」:撑成两行同样破契约。
+ * 非图片附件是一条定宽的文件行(`@gugu/session-shared/file-row`)。这条钉的是它的**盒模型**:文件行
+ * 画出来的高度是 `FILE_ROW.height`,而 `attachStripHeight` 报的也是这个数 —— 边框或内距只要有一格
+ * 没算进去,这里就会红。名字故意取得很长,顺带钉住「宽了要省略号截断」:撑成两行同样破契约。
  *
  * ⚠️ 只放**一件**。两件就越过折叠阈值,那时卡片本来就该夹住并多渲一层渐隐罩,红的是 clamp
  * 不是测量(实测 scroll 132 / client 118,那 14px 正是罩子)。行数的算术归 `metrics.test.ts`,
@@ -151,6 +185,131 @@ describe('message roots hold the real-rendered content the engine reserved', () 
       occupiedBox,
       `${label}: rendered content and chrome occupy ${occupiedBox}px inside a ${rootBox}px root`
     ).toBe(rootBox)
+  })
+})
+
+/**
+ * A cite is a pill in the words, wherever its file is: a path outside the task's folder (absolute) is not an
+ * attachment of this message. The pill keeps to one line, its name cut and its place (` · Line 8`) whole, so the card stays one line high —
+ * and the stuck summary resting behind it, which reads the whole label, is no taller than it.
+ */
+const userMessageCitingAFile: ChatMessage = {
+  kind: 'message',
+  id: 'inner-message-user-cite',
+  role: 'user',
+  text: `@[${'a-review-sheet-with-a-long-name-'.repeat(3)}notes.md · Line 8](/home/me/notes/review.md)`
+}
+
+describe('a cited file stays a one-line pill in the user message', () => {
+  it('keeps a parenthesized line location visible without changing the file target', async () => {
+    const files: MentionProvider = { resolve: (token) => ({ id: token, label: token, kind: 'file' }) }
+    const reading = await renderAndMeasureUnit(messageUnitDef, {
+      ...userMessageCitingAFile,
+      text: `@[${'a-review-sheet-with-a-long-name-'.repeat(3)}notes.md (L8-12)](/home/me/notes/review.md)`,
+    }, makeContractCtx({ width: WIDTH, mentionProvider: files }), host => {
+      const pill = host.querySelector<HTMLElement>('.gg-md-mention')
+      const place = pill?.querySelector<HTMLElement>('.gg-md-mention-place')
+      return {
+        place: place?.textContent === ' (L8-12)' && place.scrollWidth <= place.clientWidth ? 1 : 0,
+        target: pill?.getAttribute('data-mention-id') === '/home/me/notes/review.md' ? 1 : 0,
+        separator: pill?.textContent?.includes('\u00b7') ? 1 : 0,
+      }
+    })
+    expectHeightMatch('parenthesized file location', reading)
+    expect(reading.inspected).toEqual({ place: 1, target: 1, separator: 0 })
+    expect(reading.spill).toBeLessThanOrEqual(1)
+  })
+
+  it('keeps a place in any wording whole, and does not cut a bracket inside a name', async () => {
+    const files: MentionProvider = { resolve: (token) => ({ id: token, label: token, kind: 'file' }) }
+    const long = 'a-review-sheet-with-a-long-name-'.repeat(3)
+    const cjk = '季度收入与成本明细表-2026年度汇总-'.repeat(3)
+    for (const [label, place] of [[`${long}proof.md (第 10–11 行)`, ' (第 10–11 行)'], [`${long}proof.md (Lines 3–4)`, ' (Lines 3–4)'], [`${cjk}.xlsx (L3–8)`, ' (L3–8)'], [`${long}报告 (终稿).md`, null]] as const) {
+      const reading = await renderAndMeasureUnit(messageUnitDef, { ...userMessageCitingAFile, text: `@[${label}](/home/me/notes/review.md)` },
+        makeContractCtx({ width: WIDTH, mentionProvider: files }), host => {
+          const pill = host.querySelector<HTMLElement>('.gg-md-mention')
+          const name = pill?.querySelector<HTMLElement>('.gg-md-mention-label')
+          const where = pill?.querySelector<HTMLElement>('.gg-md-mention-place')
+          // The place follows the name's ellipsis: no more than one character's width between them.
+          const em = name ? px(getComputedStyle(name).fontSize) : 0
+          return {
+            cut: name && name.scrollWidth > name.clientWidth ? 1 : 0,
+            place: place === null ? (where ? 0 : 1) : where?.textContent === place && where.scrollWidth <= where.clientWidth ? 1 : 0,
+            gap: place === null || !name || !where ? 0 : gapBeforePlace(name, where) / em,
+          }
+        })
+      expectHeightMatch(`file pill ${label}`, reading)
+      const { gap, ...shown } = reading.inspected
+      expect(shown, label).toEqual({ cut: 1, place: 1 })
+      expect(gap, `${label}: em between the ellipsis and the place`).toBeLessThanOrEqual(1)
+    }
+  })
+
+  it('draws the file family glyph, not a devicon', async () => {
+    const files: MentionProvider = { resolve: (token) => ({ id: token, label: token, kind: 'file' }) }
+    const reading = await renderAndMeasureUnit(messageUnitDef, { ...userMessageCitingAFile, text: '@[report.pdf (Lines 3–4)](/home/me/notes/report.pdf)' },
+      makeContractCtx({ width: WIDTH, mentionProvider: files }), host => {
+        const icon = host.querySelector<HTMLElement>('.gg-md-mention .gg-md-mention-icon')
+        return { pdf: icon?.querySelector('svg')?.innerHTML === familyGlyph('pdf') ? 1 : 0, devicon: icon?.querySelectorAll('i').length ?? -1 }
+      })
+    expectHeightMatch('file pill glyph', reading)
+    expect(reading.inspected).toEqual({ pdf: 1, devicon: 0 })
+  })
+
+  it('outside the task folder too', async () => {
+    // What the session page's provider says of a path: a file.
+    const files: MentionProvider = { resolve: (token) => ({ id: token, label: token, kind: 'file' }) }
+    const ctx = makeContractCtx({ width: WIDTH, mentionProvider: files })
+    const reading = await renderAndMeasureUnit(messageUnitDef, userMessageCitingAFile, ctx, (host) => {
+      const pill = host.querySelector<HTMLElement>('.gg-md-mention')
+      const label = pill?.querySelector<HTMLElement>('.gg-md-mention-label')
+      return {
+        chips: host.querySelectorAll('[data-attachment-chip]').length,
+        pills: host.querySelectorAll('.gg-md-mention').length,
+        labelHeight: label?.offsetHeight ?? 0,
+        lineHeight: label ? px(getComputedStyle(label).lineHeight) : -1,
+        cut: label && label.scrollWidth > label.clientWidth ? 1 : 0,
+        place: (() => { const place = pill?.querySelector<HTMLElement>('.gg-md-mention-place'); return place && place.textContent === ' · Line 8' && place.scrollWidth <= place.clientWidth ? 1 : 0 })(),
+        bubble: host.querySelector<HTMLElement>('[data-user-card]')?.offsetHeight ?? 0
+      }
+    })
+    expectHeightMatch('user message citing a file', reading)
+    const { chips, pills, labelHeight, lineHeight, cut, place } = reading.inspected
+    expect({ chips, pills, cut, place }).toEqual({ chips: 0, pills: 1, cut: 1, place: 1 })
+    expect(labelHeight).toBe(Math.round(lineHeight))
+    expect(pinSummary(userMessageCitingAFile, ctx, messageUnitDef.vars as MessageVars).height).toBeLessThanOrEqual(reading.inspected.bubble)
+  })
+
+  it('a short name keeps to its own width beside the place', async () => {
+    const files: MentionProvider = { resolve: (token) => ({ id: token, label: token, kind: 'file' }) }
+    const ctx = makeContractCtx({ width: WIDTH, mentionProvider: files })
+    const short: ChatMessage = { ...userMessageCitingAFile, id: 'inner-message-user-cite-short', text: '@[a.txt · Line 2](/home/me/notes/a.txt)' }
+    const reading = await renderAndMeasureUnit(messageUnitDef, short, ctx, (host) => {
+      const label = host.querySelector<HTMLElement>('.gg-md-mention-label')
+      if (!label) return { slack: -1 }
+      const range = document.createRange()
+      range.selectNodeContents(label)
+      return { slack: Math.round(label.getBoundingClientRect().width - range.getBoundingClientRect().width) }
+    })
+    expectHeightMatch('user message citing a short file name', reading)
+    expect(reading.inspected.slack).toBe(0)
+  })
+
+  it('two cites and a note: each quote above its pill, nothing raw', async () => {
+    const files: MentionProvider = { resolve: (token) => ({ id: token, label: token, kind: 'file' }) }
+    const ctx = makeContractCtx({ width: WIDTH, mentionProvider: files })
+    const message: ChatMessage = { kind: 'message', id: 'inner-message-user-two-cites', role: 'user', text: [
+      '> 设 a 为偶数 则 a² 为偶数', '', '@[proof.md (Lines 3–4)](docs/proof.md)', '',
+      '> 引理一', '', '@[proof.md (Line 6)](docs/proof.md)', '', '怎么证明？',
+    ].join('\n') }
+    const reading = await renderAndMeasureUnit(messageUnitDef, message, ctx, (host) => ({
+      pills: host.querySelectorAll('.gg-md-mention').length,
+      quotes: host.querySelectorAll('blockquote').length,
+      pillsInQuotes: host.querySelectorAll('blockquote .gg-md-mention').length,
+      raw: /@\[|\]\(|[{}]/.test(host.querySelector('[data-user-card]')?.textContent ?? '') ? 1 : 0
+    }))
+    expectHeightMatch('user message with two cites', reading)
+    expect(reading.inspected).toEqual({ pills: 2, quotes: 2, pillsInQuotes: 0, raw: 0 })
   })
 })
 

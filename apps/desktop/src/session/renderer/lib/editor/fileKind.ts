@@ -1,7 +1,7 @@
 import type { ManagedFileKind } from './types';
 
 /** Raster image extensions — rendered with <img>, not the code editor. */
-export const RASTER_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'bmp']);
+export const RASTER_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'bmp']);
 
 /** HTML extensions — rendered with the HTML preview iframe. */
 export const HTML_EXTS = new Set(['html', 'htm']);
@@ -74,7 +74,9 @@ export const OFFICE_KINDS = { docx: 'docx', pptx: 'pptx', xlsx: 'xlsx', xlsm: 'x
  * and checking the `truncated` flag from the FS layer.
  */
 export function getFileKind(filePath: string): Exclude<ManagedFileKind, 'too-large'> {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
+  const name = filePath.split(/[\\/]/).pop() ?? '';
+  const dot = name.lastIndexOf('.');
+  const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
   if (RASTER_EXTS.has(ext)) return 'image';
   // PDF 有自己的渲染器(pdf.js,与主 app 聊天里那份文档预览同一份),❌ 不再和 .exe/.zip
   // 一起归进 binary —— 归错的代价是文件 tab 给它画一张「不支持的文件格式」占位卡(#5269)。
@@ -121,7 +123,7 @@ export function isTextModelKind(kind: ManagedFileKind): boolean {
 /** True for files the diff viewer must not load as text. */
 export function isBinaryForDiff(filePath: string): boolean {
   const kind = getFileKind(filePath);
-  return kind === 'binary' || kind === 'image' || kind === 'svg' || isOfficeKind(kind);
+  return kind === 'binary' || kind === 'image' || kind === 'svg' || isSelfLoadingKind(kind);
 }
 
 /** True for files the diff viewer renders as an `<img>` preview instead of text. */

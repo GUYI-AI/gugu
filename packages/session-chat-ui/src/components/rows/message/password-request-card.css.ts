@@ -5,7 +5,7 @@ import { vars } from '@session-chat/styles/theme.css';
 export const passwordQuietAction = style({
   transition: 'background-color 150ms ease, color 150ms ease',
   selectors: {
-    '&:hover, &:focus-visible:not([data-pointer-focus] *)': { background: `${vars.bgHover} !important`, color: `${vars.fg} !important`, outline: 'none' },
+    '&:hover, &:focus-visible:not([data-pointer-focus])': { background: `${vars.bgHover} !important`, color: `${vars.fg} !important`, outline: 'none' },
     '&:active': { background: `${vars.bgPress} !important` },
   },
 });
@@ -28,8 +28,8 @@ export const passwordTip = style({
     '&::after': { content: 'attr(data-tip)', position: 'absolute', left: 0, right: 0, bottom: 'calc(100% + 6px)', padding: '8px 10px',
       borderRadius: '8px', background: vars.fg, color: vars.bg, fontFamily: vars.fontSans, fontStyle: 'normal', fontWeight: 400, fontSize: '12px',
       lineHeight: '16px', whiteSpace: 'normal', opacity: 0, pointerEvents: 'none', transition: 'opacity 120ms ease', zIndex: 1 },
-    '&:hover::after, &:focus-visible:not([data-pointer-focus] *)::after': { opacity: 1 },
-    '&:hover, &:focus-visible:not([data-pointer-focus] *)': { color: vars.fg },
+    '&:hover::after, &:focus-visible:not([data-pointer-focus])::after': { opacity: 1 },
+    '&:hover, &:focus-visible:not([data-pointer-focus])': { color: vars.fg },
   },
 });
 
@@ -37,7 +37,7 @@ export const passwordTip = style({
 export const passwordSplitPart = style({
   transition: 'background-color 150ms ease',
   selectors: {
-    '&:hover, &:focus-visible:not([data-pointer-focus] *)': { background: `color-mix(in srgb, ${vars.bg} 14%, transparent) !important`, outline: 'none' },
+    '&:hover, &:focus-visible:not([data-pointer-focus])': { background: `color-mix(in srgb, ${vars.bg} 14%, transparent) !important`, outline: 'none' },
     '&:active': { background: `color-mix(in srgb, ${vars.bg} 22%, transparent) !important` },
   },
 });
@@ -52,7 +52,7 @@ export const passwordIconButton = style({
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px', padding: 0, border: 'none',
   borderRadius: '6px', background: 'transparent', color: vars.fgMuted, cursor: 'pointer',
   selectors: {
-    '&:hover, &:focus-visible:not([data-pointer-focus] *)': { background: vars.bgHover, color: vars.fg, outline: 'none' },
+    '&:hover, &:focus-visible:not([data-pointer-focus])': { background: vars.bgHover, color: vars.fg, outline: 'none' },
     '&[aria-pressed="true"]': { color: vars.fg },
   },
 });

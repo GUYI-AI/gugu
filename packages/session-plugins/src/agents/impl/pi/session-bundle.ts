@@ -72,7 +72,8 @@ export const PI_PLATFORM_PROVIDER_ID = 'gugu-platform';
  * **id**,不是 `name`(1.5.2 实测:models.json 的 `name` 写成连接名,`--list-models` 的 provider 列仍是 id;
  * `/model` 选单的 `[provider]`、底栏的 `(provider)` 也都取 id)。`/` 换掉:pi-acp 按第一个 `/` 拆 `provider/model`。
  */
-function piProviderId(model: Pick<SessionModelCapability, 'providerName'>): string {
+function piProviderId(model: Pick<SessionModelCapability, 'providerName' | 'customModels'>): string {
+  if (model.customModels) return `gugu-${model.customModels.connectionId}`;
   return model.providerName ? model.providerName.replaceAll('/', '-') : PI_PLATFORM_PROVIDER_ID;
 }
 
@@ -364,6 +365,35 @@ function modelArtifact(
       contextWindow: entry.contextWindow,
     })),
   ].filter((entry, index, all) => all.findIndex((candidate) => candidate.id === entry.id) === index);
+  const customProviders = model.customModels?.piProviders;
+  if (customProviders) {
+    const providers = Object.fromEntries(customProviders.map((provider) => {
+      const api = piProviderApi(provider.protocol);
+      return [`gugu-${provider.connectionId}`, {
+        name: provider.name,
+        api,
+        baseUrl: provider.baseUrl,
+        apiKey: '${GUGU_PI_API_KEY}',
+        authHeader: true,
+        models: provider.models.map((entry) => ({
+          id: entry.id,
+          name: entry.label || entry.id,
+          api,
+          reasoning: entry.thinking === true,
+          input: entry.image === true ? ['text', 'image'] : ['text'],
+          ...(entry.contextWindow ? { contextWindow: entry.contextWindow } : {}),
+          ...(entry.maxOutput ? { maxTokens: entry.maxOutput } : {}),
+        })),
+      }];
+    }));
+    if (!providers[piProviderId(model)]) throw new Error('The selected custom Pi provider is missing from the catalog');
+    return {
+      path: join(piAgentDir(surface, guguHome), PI_MODELS_RELATIVE),
+      mode: 0o600,
+      target: 'gugu-home',
+      content: `${JSON.stringify({ providers }, null, 2)}\n`,
+    };
+  }
   return {
     path: join(piAgentDir(surface, guguHome), PI_MODELS_RELATIVE),
     mode: 0o600,
@@ -536,7 +566,7 @@ function materializeSessionAcp(
   const modelConfig = materializePiModelConfig('acp', bundle);
   const env = { ...childEnv(bundle, promptValue), ...modelConfig.env };
   const autonomy = bundle.autonomy;
-  if (autonomy) env[GUGU_PI_AUTONOMY_ENV] = autonomy.mode;
+  if (autonomy) env[GUGU_PI_AUTONOMY_ENV] = autonomy.permissionMode === 'full-access' ? 'full-access' : 'approval-required';
   const base = report(ctx, promptValue, bundle);
   return {
     // ❌ 这条腿不发 argv:`buildAcpSpawn` 只从 `behavior.acp.buildSpawn` 造 args,

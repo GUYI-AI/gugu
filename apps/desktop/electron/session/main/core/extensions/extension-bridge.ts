@@ -1,3 +1,4 @@
+import { chatSelectionSendOf, requirePreinstalledFiles, selectionSendOf, type SelectionSendOpen, type SelectionSendTo } from '@shared/extensions/selection-send';
 import type { ExtensionFileChangeBatch } from '@shared/extensions/bridge-protocol';
 import { chatForCapabilities } from '@shared/extensions/bridge-protocol';
 import type { AppSurfaceIntent } from '@shared/extensions/unread-binding';
@@ -18,6 +19,7 @@ import { extensionProjections } from './extension-projection-bridge';
 import { closeAppPageResources, layoutAppPageResources } from './app-page-resources';
 import { sendTaskMessage } from './task-message';
 import { log } from '@main/lib/logger';
+import { rendererDrawingId } from '../../../../window-drawer';
 import { events } from '@main/lib/events';
 import { extensionProgramNotifiedChannel } from '@shared/extensions/marketEvents';
 import { knownSessionMachine, type SessionMachine } from './app-programs-elsewhere';
@@ -50,14 +52,17 @@ import {
   callRefusal,
   type CallRefusalCaller,
 } from '@shared/extensions/bridge-protocol';
-import type {
-  ExtensionHostAction,
-  ExtensionHostActionOrigin,
-  ExtensionHostActionResult,
+import {
+  EXTENSION_SELECTION_SEND_METHOD,
+  type ExtensionHostAction,
+  type ExtensionHostActionOrigin,
+  type ExtensionHostActionResult,
+  type SelectionSendAsk,
 } from '@shared/extensions/host-actions';
+import { annotationFilePath, EXTENSION_FILE_ANNOTATION_METHOD, parseFileAnnotation, type FileAnnotationAsk } from '@shared/extensions/file-annotation-draft';
 import { fileSync } from '@main/core/extensions/file-sync';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
-import { fileRefOf, folderOf, isWorkspace, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
+import { fileRefOf, folderOf, isWorkspace, openingNameOf, openingViewOf, opensAsLink, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
 import { placeFor, placeLink, type FileOpenerCandidate } from '@shared/extensions/file-openers';
 import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
 import { rosterMoved, type MemberChange } from '@shared/extensions/app-files-core';
@@ -114,7 +119,7 @@ interface SurfaceBinding {
   filePath: string | null;
   /**
    * A person opened `filePath`, named absolute, from the host's UI (`@@@outside-file`): its machine lets the page read it,
-   * read-only, even outside its working copy. Not for the host opening it for an agent or an App, nor a page an agent works.
+   * read-only, even outside its working copy. Not for the host opening it for an App, nor a page an agent works.
    */
   personOpened?: true;
   /** The chat file the host handed this surface (`ctx.file`). */
@@ -127,6 +132,8 @@ interface SurfaceBinding {
    * that goes wrong the moment there is more than one.
    */
   embedderId: number | null;
+  /** The page itself (its webContents id): what the host draws for it goes in the window `embedderId` is. */
+  pageId: number;
   /** Who is working this page (`getContext().operator`): the person for every page the host draws; an agent for its `app_check` page. */
   operator: ExtensionOperator;
   metrics: ExtensionSurfaceMetrics;
@@ -587,16 +594,13 @@ async function workspaceRelativeFile(place: WorkspacePlace | null, filePath?: st
   if (!path.isAbsolute(filePath)) return filePath.split(path.sep).join('/');
   if (!place) return null;
   const { localRootOf } = await import('@main/core/extensions/app-files');
-  const root = await localRootOf(place).then((found) => found.workspaceRoot, () => null);
-  if (!root) return filePath;
-  // Gone from the disk: a restored tab still names it, and the page says so when it reads it.
-  const real = await fs.promises.realpath(filePath).catch(() => filePath);
-  const relative = path.relative(root, real);
-  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return filePath;
-  return relative.split(path.sep).join('/');
+  const found = await localRootOf(place).catch(() => null);
+  if (!found) return filePath;
+  const { canonicalPath, inWorkingCopy } = await import('@gugu/session-core/files');
+  return inWorkingCopy(found.workspaceRoot, canonicalPath(filePath)) ?? filePath;
 }
 
-/** @@@outside-file - a page bound to a file named absolute that a person opened, not the host for an agent or an App. */
+/** @@@outside-file - a page bound to a file named absolute that a person opened, not the host for an App. */
 function personOpened(filePath: string | null, byHost: boolean | undefined, operator: ExtensionOperator | undefined): { personOpened?: true } {
   return filePath && path.isAbsolute(filePath) && !byHost && operator?.kind !== 'agent' ? { personOpened: true } : {};
 }
@@ -653,7 +657,7 @@ export async function bindExtensionSurface(input: {
   tabKind: string;
   /** Set only when the tab was opened for a file of its workspace this extension claimed. */
   filePath?: string;
-  /** The host opened `filePath` for an agent or an App (`open_in_tab`, `files.openWith`, an App's link), not a person. */
+  /** The host opened `filePath` for an App (`files.openWith`, an App's link), not a person or an agent of theirs. */
   byHost?: boolean;
   itemId?: string;
   /** Who works it: the person unless main binds it for an agent (`app_check`); never the renderer's to say. */
@@ -722,6 +726,7 @@ export async function bindExtensionSurface(input: {
     filePath,
     ...personOpened(filePath, input.byHost, input.operator),
     itemId: input.itemId ?? null,
+    pageId: input.webContentsId,
     embedderId: contents.hostWebContents?.id ?? null,
     operator: input.operator ?? { kind: 'person' },
     ...(input.modal ? { modal: input.modal } : {}),
@@ -1240,6 +1245,7 @@ function deliver(binding: SurfaceBinding, action: ExtensionHostAction): Promise<
       extensionId: binding.extensionId,
       sessionId: sessionOfBinding(binding),
       tabId: binding.tabId,
+      pageId: binding.pageId,
       embedderId: binding.embedderId,
     },
     action
@@ -1408,7 +1414,7 @@ async function workspaceOf(binding: SurfaceBinding): Promise<ExtensionWorkspace 
     sessionId,
     ...(agentId ? { agentId } : {}),
     ...(facts?.projectId ? { projectId: facts.projectId, ...(isImplicitSessionHomeProjectId(facts.projectId) ? { taskHome: true as const } : {}) } : {}),
-    ...(mayReachWorkspace && facts?.workspaceRoot ? { root: fs.realpathSync(facts.workspaceRoot) } : {}),
+    ...(mayReachWorkspace && facts?.workspaceRoot ? { root: facts.workspaceRoot } : {}),
   };
 }
 
@@ -1943,6 +1949,33 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
   if (isMachineVerb(method)) return await machineCall(caller, method, args);
   const { binding, extensionId } = caller;
   switch (method) {
+    case 'filesAnnotateSelection': {
+      requirePreinstalledFiles({ id: extensionId, origin: extensionsService().origins()[extensionId] });
+      const page = thePage(caller), sessionId = sessionOfBinding(page);
+      if (!sessionId || !page.workspace) throw Object.assign(new Error('File annotations require a task workspace'), { code: 'denied' });
+      const ask: FileAnnotationAsk = {
+        sessionId, webContentsId: caller.pageId,
+        path: annotationFilePath(args.file, page.workspace),
+        open: parseFileAnnotation(args.open),
+      };
+      const { invokeInEmbedder } = await import('@main/core/extensions/extension-bridge-relay');
+      return await invokeInEmbedder(page.embedderId, EXTENSION_FILE_ANNOTATION_METHOD, ask) === true;
+    }
+    case 'filesSendSelection': {
+      requirePreinstalledFiles({ id: caller.extensionId, origin: extensionsService().origins()[caller.extensionId] });
+      const page = thePage(caller), sessionId = sessionOfBinding(page), chatId = page.workspace ? null : page.conversation;
+      let to: SelectionSendTo, open: SelectionSendOpen;
+      if (sessionId) [to, open] = [{ session: sessionId }, selectionSendOf(args, page.workspace)];
+      else if (chatId) {
+        // API 55 A chat's folder: the chat is the page's, as the binding says; the call names none.
+        const { chatSelectionPillsForApp } = await import('@main/core/extensions/extension-send');
+        [to, open] = [{ chat: chatId }, await chatSelectionSendOf(args, refs => chatSelectionPillsForApp(chatId, refs))];
+      } else throw Object.assign(new Error('Send needs a session page or a chat\'s folder'), { code: 'denied' });
+      const ask: SelectionSendAsk = { to, webContentsId: caller.pageId, open };
+      const { invokeInEmbedder } = await import('@main/core/extensions/extension-bridge-relay');
+      // Only the outcome goes back to the page: never the words, a member or a message id.
+      return await invokeInEmbedder(page.embedderId, EXTENSION_SELECTION_SEND_METHOD, ask) === 'sent' ? 'sent' : 'cancelled';
+    }
     case 'taskMessage': {
       const service = extensionsService();
       service.get(extensionId);
@@ -2518,6 +2551,20 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
           onlyIfOpen: `${current[1].extensionId}.${current[1].tabName}`, intent,
         }) : undefined;
         let resumed = tab === undefined ? await present() : undefined;
+        // A person's page opening one of its chat files plainly: a link to it, opened as one (its tab waiting meanwhile),
+        // and named only if the page may read it. The page's own state goes with it, kept on the page.
+        if (shown.operator.kind === 'person' && !resumed && opensAsLink(ref, { ask, peek, tab })) {
+          files.mayOpen(page, ref.id);
+          const named = openingNameOf(args);
+          const at = (args as { at?: unknown }).at;
+          // The window still at it past the relay's time limit (the host slow to answer) has not failed: only logged.
+          return void (await deliver(shown, {
+            kind: 'openChatFile', itemId: ref.id, ...(ref.chat ? { chatId: ref.chat } : {}), ...(intent ? { intent } : {}), ...(named ? { fileName: named } : {}),
+            ...(at && typeof at === 'object' ? { at: at as Record<string, string> } : {}),
+            ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: structuredClone(args.viewState as Record<string, unknown>) } : {}),
+            ...openingViewOf(ref, args as { among?: unknown; origin?: unknown }),
+          }).catch((error: unknown) => { if ((error as { code?: unknown }).code !== 'timeout') throw error; log.warn('The window is still opening a file a page asked for', { itemId: ref.id }); }));
+        }
         let target: Awaited<ReturnType<typeof files.openWithTarget>>;
         try {
           target = await files.openWithTarget(page, { ref, ask, peek });
@@ -2529,7 +2576,7 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
           throw error;
         }
         if (tab !== undefined && target.kind !== 'chat') throw Object.assign(new Error('openWith tab is only available for chat files'), { code: 'invalid' });
-        if (target.kind === 'session') return void (await deliver(shown, { kind: 'openSessionFile', ...target.target, intent, ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: structuredClone(args.viewState as Record<string, unknown>) } : {}) }));
+        if (target.kind === 'session') return void (await deliver(shown, { kind: 'openSessionFile', ...target.target, intent, ...openingViewOf(ref, args as { among?: unknown; origin?: unknown }), ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: structuredClone(args.viewState as Record<string, unknown>) } : {}) }));
         if (target.kind === 'peek') return void (await deliver(shown, { kind: 'peek', target: target.target }));
         const choice = tab === undefined
           ? files.openerChoice(target.target.typedName, ask)
@@ -2633,11 +2680,11 @@ export function registerExtensionBridge(): void {
       const method = typeof request.method === 'string' ? request.method : '';
       const args = (request.args ?? {}) as Record<string, unknown>;
 
-      // Shell controls share the App request channel, restricted to the recorded owning window.
+      // Shell controls share the App request channel, restricted to the renderer drawing the owning window.
       if (method === 'modalHost') {
         try {
           const modal = appModals.get(String(args.id ?? ''));
-          if (event.sender.id !== modal.binding.embedderId) return denied("Only this modal's host window may control it");
+          if (modal.binding.embedderId === null || event.sender.id !== rendererDrawingId(modal.binding.embedderId)) return denied("Only this modal's host window may control it");
           switch (args.type) {
             case 'bind': {
               if (typeof args.webContentsId !== 'number') throw new Error('Missing modal content page');

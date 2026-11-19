@@ -1,11 +1,18 @@
 import { setBrowserCorsRelaxationSettings } from '@main/core/browser/browser-profile-session';
 import { browserWebContentsRegistry } from '@main/core/browser/browser-webcontents-registry';
 import { reconcileResourceSampler } from '@main/core/resource-monitor/resource-sampler';
+import { pushIdleCompactionSetting } from '@main/core/acp/idle-compaction-setting';
+import { peekAcpWorkerClient } from '@main/core/acp/runtime-process/host';
 import { createRPCController } from '@shared/lib/ipc/rpc';
-import { appSettingsService, type AppSettings, type AppSettingsKey } from './settings-service';
+import { devicePreferencesChanged } from './device-preferences';
+import { AppSettingsKeys, appSettingsService, type AppSettings, type AppSettingsKey } from './settings-service';
 
 async function reconcileSettingsRuntimeState(key: AppSettingsKey): Promise<void> {
   if (key === 'resourceMonitor') await reconcileResourceSampler();
+  // The host applies theme, language and tray badge itself (main.ts @@@device-preferences).
+  if (key === 'devicePreferences') devicePreferencesChanged();
+  // #3005 Only a running worker is told; a worker that starts later reads the setting as it comes up (never spawn one for this).
+  if (key === 'sessions') await pushIdleCompactionSetting(await peekAcpWorkerClient());
   if (key === 'keyboard') {
     // Re-read the effective settings so runtime state observes service-side defaults or merges.
     browserWebContentsRegistry.setKeyboardSettings(await appSettingsService.get('keyboard'));
@@ -18,7 +25,11 @@ async function reconcileSettingsRuntimeState(key: AppSettingsKey): Promise<void>
 export const appSettingsController = createRPCController({
   get: <T extends AppSettingsKey>(key: T): Promise<AppSettings[T]> => appSettingsService.get(key),
 
-  getAll: (): Promise<AppSettings> => appSettingsService.getAll(),
+  /** Every key with its defaults and overrides: the renderer's startup read (one call instead of one per key). */
+  getAll: async (): Promise<{ [K in AppSettingsKey]: Awaited<ReturnType<typeof appSettingsService.getWithMeta<K>>> }> =>
+    Object.fromEntries(
+      await Promise.all(AppSettingsKeys.map(async (key) => [key, await appSettingsService.getWithMeta(key)] as const))
+    ) as never,
 
   getWithMeta: <T extends AppSettingsKey>(
     key: T

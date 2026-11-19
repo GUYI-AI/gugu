@@ -8,9 +8,10 @@
  *
  * 从前三个窗口各写各的:主窗 `{x:5,y:14}`、会话页那份(已删)`{x:10,y:10}`、
  * widget 窗 `{x:8,y:14}` —— 而标题栏给它们让位用的是单一常量。三套坐标对一套让位,
- * 哪个对谁都说不清。值取主窗那一份:#822 定的,由 68px rail 给三颗灯右侧留出少量呼吸。
+ * 哪个对谁都说不清。三颗灯共用同一坐标,保持与 68px rail 的中线对齐。
+ * x=4 将原先偏右 1px 的控件组左移,不改按钮大小、间距或纵坐标。
  */
-export const TRAFFIC_LIGHT_POSITION = { x: 5, y: 14 } as const;
+export const TRAFFIC_LIGHT_POSITION = { x: 4, y: 14 } as const;
 
 /**
  * @@@822 无边框统一标题栏:mac 保留原生交通灯(`hiddenInset`),Windows/Linux 完全无边框、

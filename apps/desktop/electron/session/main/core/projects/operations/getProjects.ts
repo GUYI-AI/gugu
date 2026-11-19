@@ -1,9 +1,9 @@
 import { and, asc, desc, eq, exists, isNull, or } from 'drizzle-orm';
+import { canonicalPath } from '@gugu/session-core/files';
 import { db } from '@main/db/client';
 import { projects, sessions, workspaces } from '@main/db/schema';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
 import type { LocalProject, ProjectPathConflict } from '@shared/projects';
-import { projectPathKey } from '../path-utils';
 
 function localProjectBaseRef(row: typeof projects.$inferSelect): string | null {
   // Old task-home rows still say gitless=false. Its execution contract is an
@@ -61,15 +61,14 @@ export async function getProjectById(projectId: string): Promise<LocalProject | 
 export async function getLocalProjectByPath(path: string): Promise<LocalProject | undefined> {
   // 必须按 provider 过滤：库里还留着已下架的 SSH 远程项目行(#6264),路径可能与本机目录重名,
   // 而且那是另一台机器上的路径,不能拿本机的写法去规范化。
-  // 两边都规范化再比:库里还有规范化之前写进来的行(如 `C:\Users\x\Documents/项目`),
-  // 只规范化输入就认不出它们,又会再建一个。同一文件夹有多行时取最早的那行。
-  const key = projectPathKey(path);
-  const rows = await db
+  // 库里的路径都是规范写法(写入时规范、旧行开机迁移过,`@@@canonical-path`),输入规范一次就能按值查。
+  // 同一文件夹有多行时取最早的那行。
+  const [row] = await db
     .select()
     .from(projects)
-    .where(eq(projects.workspaceProvider, 'local'))
-    .orderBy(asc(projects.createdAt));
-  const row = rows.find((candidate) => projectPathKey(candidate.path) === key);
+    .where(and(eq(projects.workspaceProvider, 'local'), eq(projects.path, canonicalPath(path))))
+    .orderBy(asc(projects.createdAt))
+    .limit(1);
   return row ? toLocalProject(row) : undefined;
 }
 
@@ -84,7 +83,7 @@ export async function getProjectPathOccupant(
       name: projects.name,
     })
     .from(projects)
-    .where(eq(projects.path, projectPathKey(path)))
+    .where(eq(projects.path, canonicalPath(path)))
     .limit(1);
   if (!row) return undefined;
   if (row.workspaceProvider !== 'local' && row.workspaceProvider !== 'ssh') {

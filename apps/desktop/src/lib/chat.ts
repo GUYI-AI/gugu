@@ -78,7 +78,7 @@ import { readGroupMemberIdentities } from './chatGroupIdentity'
 import { requireThreadCapableChat } from './chatThreadGate'
 import { addGroupAgent, type GroupAgentJoinOutcome, groupJoinError, listMyAgentJoinRequests } from './groupAgentJoinService'
 import { currentGroupAdmin } from './groupAdmin'
-import { deleteListedConversation } from './deleteListedConversation'
+import { hideListedConversation } from './hideListedConversation'
 export type {
   MessageOverlay,
   MessageMutationPatch,
@@ -605,7 +605,7 @@ export const chatService = {
         ])
 
       // 每一张表读失败都照实抛:附属表(调度 / 任务 / agent 状态)读错不再当成「空」画出来。
-      // 读不到的这一次,界面留着缓存的名册(useGroupCollabLoader);下一条成员 / 修订事件再读。
+      // 读不到的这一次,界面留着已读到的名册(groupRoster 这份 replica 的上一次读数);下一条成员 / 修订事件再读。
       const read = <T>(label: string, result: { data: T; error: { message: string } | null }) => {
         if (result.error) throw new Error(`${label}: ${result.error.message}`)
         return result.data
@@ -848,10 +848,9 @@ export const chatService = {
     return createGroupWithInvitations(chatDb, name, creatorId, await getCurrentAuthUserId(), identities, groupPrompt)
   },
 
-  /** Delete this owner's DM list entry, or archive a group using its management authority. */
-  async archiveChat(chatId: string) {
-    return deleteListedConversation(chatId)
-  },
+  hideConversation: hideListedConversation,
+  /** Archive the group globally; personal list removal uses hideConversation. */
+  async archiveChat(chatId: string) { await (await currentGroupAdmin()).archive(chatId) },
 
   /**
    * Find or create a DM chat between the current user and a target user.

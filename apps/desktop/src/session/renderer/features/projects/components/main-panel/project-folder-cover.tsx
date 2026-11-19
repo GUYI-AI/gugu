@@ -27,12 +27,6 @@ function saturatedColor(hex: string, saturation: number) {
   const luma = rgb[0] * 0.213 + rgb[1] * 0.715 + rgb[2] * 0.072;
   return `rgb(${rgb.map((value) => Math.round(Math.max(0, Math.min(255, luma + saturation * (value - luma))))).join(' ')})`;
 }
-/** Mobile uses the same identity palette and running-state colors, without cover gradients. */
-export function projectFolderAvatarColors(projectId: string, running: number) {
-  const [back, , face] = projectCoverPalette(projectId).map(tokenHex);
-  const saturation = coverSaturation(running);
-  return { back: saturatedColor(back, saturation), face: saturatedColor(face, saturation) };
-}
 function seeded(seed: string) {
   let x = hash32(seed) || 1;
   return () => {

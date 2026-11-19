@@ -115,7 +115,7 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // 44 (#1925): when that conversation is the person's private chat with their own assistant, the binding may also declare
 // `assistant-status` (`assistant:status`: `gugu.assistant.status` / `onChanged`) and `assistant-open` (`assistant:open`:
 // `gugu.assistant.open(name, screen)` — one of the host's own screens for it, a closed list — and `advanceSetup`), and
-// `assistant-rename` (`assistant:rename`: `gugu.assistant.rename`). The panel's own pages (settings, projects, capabilities)
+// `assistant-rename` (`assistant:rename`: `gugu.assistant.rename`). The panel's own pages (settings, projects)
 // open as one host layer over the App's panel (`app-host-layer.ts`). Any page: `gugu.toast(text)`, the host's toast.
 // 45 (#1931): `contributes.assistantRules`, the personal assistant's product rules as text/data files the host reads at its
 // own read points (assistantRulesFormat.ts); never run, and honoured only for the App the host trusts as their provider.
@@ -144,7 +144,23 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // `resources:write` listing `files`; `voice-notes:manage` (`chat:voice-notes:manage`): `transcribeVoiceNote`,
 // `removeVoiceNote` (asked first), `exportVoiceNote` (the host's save dialog); a binding draft's `attach` (files of its
 // folder or the agent's resources, by the path or key the App holds).
-export const EXTENSION_API_VERSION = 50;
+// 51: `showContextMenu` rows say `program` (an id of `files.openInApps`): the row is drawn with that program's icon.
+// Presentation only, as 38's hints: an older host draws the label alone.
+// 52 (host-links.ts): `contributes.hostLinks`, gugu's own pages an App points at (`library:prompts`, …), drawn by the host
+// as entries on the App's host page with the page's own name. Nothing reaches the App and nothing of it runs.
+// 53: withdrawn (selected-text annotations from the Files App; its selections are cited instead). The number stays.
+// 54 (selection-send.ts): `files.sendSelection({ text, refs, rect, viewport })`, the preinstalled Files App only, inside a
+// real click: the host's Send box beside the selection, which sends into the page's session; the answer is 'sent' or 'cancelled'.
+// 55: the same Send on a page of a chat's folder: into that chat (the page's, from the binding), @ its members, every
+// file one of that folder. 'sent' is queued, as a composer's message is, not delivered.
+// 56 (ui-entry.ts): `<gugu-file-mark name mime tile>`, a file's family glyph, or with `tile` the host's file tile. Presentation
+// only, as 51: an older host leaves the element empty, so an App that draws files with it declares 56.
+// 57 (`openingViewOf`): `files.openWith(file, { among, origin })` — an image no App claims opens in the host's image
+// viewer, paging through `among` (the files shown with it, in the page's order) and opening from `origin` (its picture's
+// box in the page). Presentation only, as 51: an older host opens the one image.
+// 58: frame-bound, App-owned projection presentation, without granting input or surface authority.
+// 59 (file-annotation-draft.ts): the preinstalled Files App can save a source selection to the session's annotation draft.
+export const EXTENSION_API_VERSION = 59;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
@@ -831,6 +847,7 @@ export const BRIDGE_VERBS = {
   /** Generic picture/input resources. Scope comes from the host's task binding, not the argument object. */
   projectionCreate: { needs: 'agents:tools', only: 'program' },
   projectionPublish: { needs: 'agents:tools', only: 'program' },
+  projectionPresent: { needs: 'agents:tools', only: 'program' },
   projectionClose: { needs: 'agents:tools', only: 'program' },
   projectionClosed: { needs: 'agents:tools', only: 'program' },
   projectionInputResult: { needs: 'agents:tools', only: 'program' },
@@ -1090,6 +1107,8 @@ export const BRIDGE_VERBS = {
   filesRead: { needs: ({ ref }) => ref !== null && typeof ref === 'object' && 'workspace' in ref ? 'files:read' : null, machine: 'place', reads: true },
   /** A working copy's text whole, and whether it is there, in those pieces: gated as filesOpen, in `app-files.ts`. */
   filesReadText: { needs: null },
+  filesSendSelection: { needs: null, only: 'page', gesture: true },
+  filesAnnotateSelection: { needs: null, only: 'page', gesture: true },
   filesExists: { needs: null },
   /** What survives a crash of a file's unsaved edits, on the file's machine: read, kept (`text`), dropped (`text: null`). */
   filesDraft: { needs: null, machine: 'place' },

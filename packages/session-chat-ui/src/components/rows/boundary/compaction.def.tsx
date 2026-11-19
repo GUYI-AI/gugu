@@ -30,7 +30,7 @@
  *
  * 喂这条行的是适配器挂在合成 tool call 上的 `_meta.contextCompaction`
  * （`claude-agent-acp` 自己的类型注释写明它 provider-neutral），以及 ACP
- * `session-compaction` RFD 的 `compaction_update`（还没有一家发）。
+ * `session-compaction` RFD 的 `compaction_update`（今天 claude 适配器与 codex 桥走这条）。
  * ❌ 别改成去匹配 `"Compact conversation"` 这类标题文案 —— 那是供应商的措辞，改一次就静默失灵。
  */
 import type { MeasureCtx } from '@session-chat/core/define';
@@ -61,7 +61,8 @@ function compactionLabel(data: TranscriptCompaction, translate: import('@session
         case 'failed':
           return translate('transcript.compactionFailed');
         default:
-          return translate('transcript.compacted');
+          // #3005 Claude Code's own wording for the same event, so the row reads the same as in its terminal.
+          return translate(data.trigger === 'idle' ? 'transcript.compactedWhileIdle' : 'transcript.compacted');
       }
     }
 
@@ -87,13 +88,13 @@ export const compactionUnitDef = defineUnit<TranscriptCompaction, { rowH: number
     const detail = (): string | undefined => {
       const d = props.data;
       const parts: string[] = [];
-      if (d.trigger) parts.push(d.trigger === 'manual' ? '/compact' : 'auto');
+      if (d.trigger) parts.push(d.trigger === 'manual' ? '/compact' : d.trigger === 'idle' ? 'idle' : 'auto');
       if (d.preTokens !== undefined && d.postTokens !== undefined) {
         parts.push(`${formatTokens(d.preTokens)} → ${formatTokens(d.postTokens)}`);
       }
       if (d.durationMs !== undefined) parts.push(`${Math.round(d.durationMs / 1000)}s`);
       if (d.error) parts.push(d.error);
-      return parts.length > 0 ? parts.join(' · ') : undefined;
+      return parts.length > 0 ? parts.join(translate('metadata.separator')) : undefined;
     };
 
     return (

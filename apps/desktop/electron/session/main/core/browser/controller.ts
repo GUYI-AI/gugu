@@ -1,4 +1,5 @@
 import { defaultBrowser, importDefaultBrowserCookies } from '@main/core/browser/browser-cookie-import';
+import { inspectBrowserAnnotation } from './browser-annotation';
 import { configureBrowserProfileSession } from '@main/core/browser/browser-profile-session';
 import {
   destroyBrowserPage,
@@ -15,6 +16,7 @@ import {
   type BrowserPageCommand,
 } from '@main/core/browser/browser-page-views';
 import { browserWebContentsRegistry } from '@main/core/browser/browser-webcontents-registry';
+import { listPersistedBrowserPartitions } from './browser-partition-cleanup';
 import { controlRemoteTaskPage, sendRemoteTaskPage, unwatchRemoteTaskPage, watchRemoteTaskPage } from '@main/core/browser/remote-task-page';
 import type { TaskPageControl } from '@shared/browser-task-page';
 import { isBrowserPartition } from '@main/core/browser/webview-security';
@@ -68,6 +70,10 @@ export const browserController = createRPCController({
   setPageZoom: (args: { browserId: string; factor: number }) => ({ success: setBrowserPageZoom(args.browserId, args.factor) }),
   measurePage: async (browserId: string) => ({ layout: await measureBrowserPage(browserId) }),
   snapshotPage: async (browserId: string) => ({ dataUrl: await snapshotBrowserPage(browserId) }),
+  inspectAnnotation: inspectBrowserAnnotation,
+  setAnnotationBrowsing: (args: { browserId: string; browsing: boolean }) => ({
+    success: browserWebContentsRegistry.setAnnotationBrowsing(args.browserId, args.browsing),
+  }),
   /**
    * #1607 node 5: a task's page on another of the person's computers, watched here as its live picture. The person's
    * input goes to that page directly, as their click into a page on this computer does; no App is involved.
@@ -126,8 +132,8 @@ export const browserController = createRPCController({
   },
 });
 
-// Every persistent profile partition (default + named) plus any partitions with
-// live sessions, so clearing browsing data covers isolated-per-session tabs too.
+// Explicit browsing-data controls include legacy on-disk partitions too. Their
+// retirement never authorizes startup deletion of cookies or unsaved site data.
 async function collectBrowserPartitions(): Promise<string[]> {
   const browserSettings = await appSettingsService.get('browser');
   const partitions = new Set<string>([browserProfilePartition(DEFAULT_BROWSER_PROFILE_ID)]);
@@ -137,5 +143,6 @@ async function collectBrowserPartitions(): Promise<string[]> {
   for (const partition of browserWebContentsRegistry.registeredPartitions) {
     partitions.add(partition);
   }
+  for (const partition of await listPersistedBrowserPartitions()) partitions.add(partition);
   return [...partitions];
 }

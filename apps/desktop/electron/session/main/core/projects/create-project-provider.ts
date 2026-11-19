@@ -1,4 +1,5 @@
 import type { IFileSystem } from '@gugu/session-core/files';
+import type { CanonicalPath } from '@gugu/session-core/files';
 import type { IGitRepository, IGitRuntime } from '@gugu/session-core/git';
 import { err, ok, type Lease, type Result } from '@gugu/session-shared';
 import { LocalExecutionContext } from '@main/core/execution-context/local-execution-context';
@@ -89,7 +90,7 @@ function toCreateProviderError(error: unknown): CreateProviderError {
 async function runLegacyProjectSettingsMigration(
   settings: LocalProjectSettingsProvider,
   git: IGitRuntime,
-  repoPath: string,
+  repoPath: CanonicalPath,
   // gugu #2358: 非 git 项目(baseRef=null)必须走无 git 句柄的 ensure —— 见下。
   gitless: boolean
 ): Promise<void> {
@@ -128,7 +129,7 @@ async function backfillGitHubAccount(provider: ProjectProvider): Promise<void> {
 
 function buildProvider(
   projectId: string,
-  repoPath: string,
+  repoPath: CanonicalPath,
   transportMeta: Pick<ProjectProviderTransport, 'kind' | 'ctx'>,
   files: MachineRuntime['files'],
   projectFileSystem: IFileSystem,

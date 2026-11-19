@@ -19,6 +19,7 @@ export type ChatTranslationSubscriber = (listener: () => void) => () => void;
  * 只是把发现时机从运行时提前到编译时。
  */
 const fallbackMessages = {
+  'metadata.separator': ', ',
   'transcript.activityReceivedOne': "Received {count} message from {names}",
   'transcript.activitySentOne': "Sent {count} message to {names}",
   'transcript.activityGroupSentOne': "Sent {count} message in {names}",
@@ -38,6 +39,9 @@ const fallbackMessages = {
   'transcript.activityCollapse': "Hide activity: {summary}",
 
   'transcript.failed': 'Failed',
+  'transcript.interrupted': 'Interrupted',
+  'transcript.retryPhoneTask': 'Retry',
+  'transcript.retryPhoneTaskFailed': 'Could not retry the task',
   'transcript.error': 'error',
   'transcript.awaitingPermission': 'Awaiting permission',
   // 计划审批卡（#7139）：头的状态词与 Claude 那几种开始方式。
@@ -105,7 +109,7 @@ const fallbackMessages = {
   'transcript.backgroundSource': 'Background',
   'transcript.processStepBackground': 'Moved to background ↓',
   'transcript.processStepStopped': 'Stopped',
-  'transcript.backgroundTasks.label': 'Background · {parts}',
+  'transcript.backgroundTasks.label': 'Background tasks ({parts})',
   'transcript.backgroundTasks.commandsOne': '{count} command',
   'transcript.backgroundTasks.commands': '{count} commands',
   'transcript.backgroundTasks.subagentsOne': '{count} subagent',
@@ -194,11 +198,11 @@ const fallbackMessages = {
   'transcript.toolRun.hook': 'triggered {count} hooks',
   'transcript.toolRun.toolOne': 'used {count} tool',
   'transcript.toolRun.tool': 'used {count} tools',
-  'transcript.planProgress': 'Plan · {done} of {total} done',
+  'transcript.planProgress': 'Plan: {done} of {total} complete',
   // agent 经 message_send / session_message 说的话,下面那一行去向(agent-send.def)。
   'transcript.agentSendTo': 'Sent to {chat}',
   'transcript.agentSendToYou': 'Sent to you',
-  'transcript.agentSendToChat': 'Sent · destination name unavailable',
+  'transcript.agentSendToChat': 'Sent; destination name unavailable.',
   'transcript.agentSendToThreadIn': 'Sent to a topic in {chat}',
   'transcript.agentSendToThread': 'Sent to a topic',
   'transcript.agentSendWhisperIn': 'Whispered in {chat}',
@@ -285,6 +289,7 @@ const fallbackMessages = {
   'transcript.compacting': 'Compacting context…',
   'transcript.compacted': 'Context compacted — the agent keeps a summary of everything above',
   'transcript.compactionFailed': 'Context compaction failed',
+  'transcript.compactedWhileIdle': 'Compacted while idle, before the prompt cache expired — the agent keeps a summary of everything above',
   'transcript.contextReset': "The engine started a new session — it doesn't have the earlier messages",
   'transcript.sessionNotice.modelUnavailable':
     'The model this task was created with is unavailable here — running {running} instead',
@@ -311,6 +316,7 @@ const fallbackMessages = {
   'transcript.condition.machineUnreachable': "Can't reach the machine this task runs on",
   'transcript.condition.machineAttention': 'The machine this task runs on needs attention',
   'transcript.condition.membershipRequired': 'This Gugu model needs a membership',
+  'transcript.condition.groupJoinFailed': 'This agent could not join the group chat it was started from',
   'transcript.hookNoticeFrom': 'from the {hook} hook',
   'transcript.hookNoticeLevel.notice': 'Notice',
   'transcript.hookNoticeLevel.suggestion': 'Suggestion',

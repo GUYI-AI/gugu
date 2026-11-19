@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../ui/Button'
@@ -5,9 +6,7 @@ import { Sheet } from '../ui/Sheet'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import type { MoveDirection } from '@renderer/features/assistant/assistant-move'
 import type { MoveSkipped } from '@shared/core/integrations/integration-move'
-import { appState } from '../../session/renderer/lib/stores/app-state'
-import { UI_EVENTS } from '../../lib/uiEvents'
-import { revealSessionpage } from '../../hooks/useSessionpageReveal'
+import { openInstalledConnectors } from '@/lib/assistantEntry'
 import { dismissMove, getMoveState, startMove, startPreview, subscribeMove } from '@renderer/features/assistant/assistant-move-controller'
 import '../../i18n/registerAssistantCatalog'
 
@@ -21,7 +20,7 @@ function formatSize(bytes: number): string {
 function accountLabel(names: Map<string, string>, account: { integrationId: string; accountId?: string; displayName?: string }): string {
   const service = names.get(account.integrationId) ?? account.integrationId
   const who = account.displayName?.trim() || (!account.accountId || account.accountId === 'default' ? '' : account.accountId)
-  return who ? `${service} · ${who}` : service
+  return who ? `${service} (${who})` : service
 }
 
 /** 要在新家手动重连的一列:名字,后面跟着旧家那份不保密的配置(服务器、用户名……),照着填。 */
@@ -29,7 +28,7 @@ function ReconnectList({ names, items, testId }: { names: Map<string, string>; i
   return (
     <ul className="ml-5 list-disc" data-testid={testId}>
       {items.map((item) => {
-        const config = Object.values(item.config ?? {}).filter((value) => value.trim()).join(' · ')
+        const config = Object.values(item.config ?? {}).filter((value) => value.trim()).join(metadataSeparator())
         return (
           <li key={`${item.integrationId}/${item.accountId ?? ''}`}>
             {accountLabel(names, item)}
@@ -123,7 +122,7 @@ export function AssistantMoveDialog() {
               <LoadingIndicator size="inline" />
               {t(`move.step.${phase.progress?.step ?? 'preflight'}`, { name: assistantName })}
               {phase.progress?.bytes && phase.progress.bytes.total > 0
-                ? ` · ${Math.min(100, Math.floor((phase.progress.bytes.done / phase.progress.bytes.total) * 100))}%`
+                ? ` (${Math.min(100, Math.floor((phase.progress.bytes.done / phase.progress.bytes.total) * 100))}%)`
                 : ''}
             </p>
             <p className="text-[var(--muted-fg)]">{t('move.movingNote')}</p>
@@ -185,10 +184,7 @@ export function AssistantMoveDialog() {
                   size="sm"
                   onClick={() => {
                     dismissMove()
-                    // 搬家多半是从设置弹窗里开的:先收起它、回到会话页,资源库才露得出来。
-                    window.dispatchEvent(new Event(UI_EVENTS.closeSettings))
-                    revealSessionpage()
-                    appState.navigation.navigate('library', { tab: 'integrations' })
+                    openInstalledConnectors(phase.report.targetDeviceId ?? (phase.direction === 'to-computer' ? env?.localDeviceId : undefined))
                   }}
                   data-testid="assistant-move-reconnect-open"
                 >

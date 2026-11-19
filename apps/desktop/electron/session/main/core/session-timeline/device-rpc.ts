@@ -3,6 +3,7 @@ import { SUBSCRIPTION_IDLE_MS } from '@gugu/session-core/session-record';
 import { createSessionHostDeviceRpcHandlers } from '../../host-ws/device-session-host';
 import { createMessagePreviewHost, type MessagePreviewHostDeps } from './preview-rpc';
 import { createSessionpageProjectionDeviceHost, type ProjectionDeviceFactoryOptions } from '../extensions/projection-device-factory';
+import { observeLiveWindowSources } from '../extensions/live-window-source-changes';
 import { createProjectionRemoteHost } from '../extensions/projection-remote-host';
 
 /**
@@ -42,11 +43,13 @@ export function createSessionpageSessionDeviceRpcHandlers(options?: {
   const projection = options?.projection ? createSessionpageProjectionDeviceHost(options.projection) : null;
   // #1607 node 5: an App's projection watched from another of the person's computers, on cloud and SSH alike.
   const appProjections = createProjectionRemoteHost(() => ({
+    list: async sessionId => (await import('../extensions/live-window-sources')).readLiveWindowSources(sessionId),
+    observe: (sessionId, changed) => observeLiveWindowSources(sessionId, changed),
     connect: async (input, send) => (await import('../extensions/projection-remote-admit')).admitRemoteProjection(input, send),
-    page: async (session, send, state) => {
+    page: async (session, send, state, presentation) => {
       const [{ connectTaskPageScreen }, { taskPageForScreen }] = await Promise.all([
         import('../browser/task-page-screen'), import('../extensions/task-page-host')]);
-      return connectTaskPageScreen(session, () => taskPageForScreen(session), send, state);
+      return connectTaskPageScreen(session, () => taskPageForScreen(session), send, state, presentation);
     },
   }));
 

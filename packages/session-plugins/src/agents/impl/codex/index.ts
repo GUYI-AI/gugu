@@ -1,4 +1,5 @@
 import { CODEX_AUTH_CONNECTIONS } from '../../connection-capabilities';
+import { nativePromptMeta } from '@gugu/session-core/acp/native-prompt';
 import { platformModel } from './platform-model';
 import {
   definePlugin,
@@ -88,6 +89,7 @@ export const plugin = definePlugin(
   {
     id: 'codex',
     name: 'Codex',
+    publisher: 'OpenAI',
     description:
       'CLI that connects to OpenAI models for project-aware code assistance and terminal workflows.',
     websiteUrl: 'https://github.com/openai/codex',
@@ -110,6 +112,13 @@ export const plugin = definePlugin(
       // The native app-server bridge owns exactly one Codex thread per adapter process.
       maxSessionsPerProcess: 1,
       liveSettings: {
+        fast: {
+          channel: 'acp-config-option',
+          ack: 'ack-read-back',
+          busy: 'queue-next-turn',
+          reloadRequired: false,
+          recovery: 'none',
+        },
         model: {
           channel: 'provider-thread-settings',
           ack: 'ack-read-back',
@@ -322,6 +331,9 @@ export const provider = registerPluginBehavior(plugin, {
     materialize: materializeCodexSessionBundle,
   },
   acp: {
+    // Its session/load replays the user messages it received: canonical evidence of delivered communications.
+    // Its record keeps the native prompt (the person's words plus the host's attachment lines): the receipt ties the two.
+    historyRecovery: { canonicalReplay: true, promptMeta: nativePromptMeta },
     // codex 的 ACP 腿只有一座桥:咕咕自己写的 `runtime/codex-app-server-acp.mjs`(驱动用户自己那份
     // `codex app-server`),随应用一起构建;入口由宿主解析(#6394)。❌ 再回落到上游
     // `@agentclientprotocol/codex-acp` —— 那座桥没有 notify / 平台模型目录 / MCP 关闭集合这些通道,
@@ -445,8 +457,10 @@ export const provider = registerPluginBehavior(plugin, {
         autoApproveFlag:
           '-c approval_policy="never" -c sandbox_mode="danger-full-access" --dangerously-bypass-hook-trust',
         // `codex --help` 0.146.0: `-s, --sandbox <read-only|workspace-write|danger-full-access>`。
-        // 编辑档不给 flag —— codex 自己的默认就是那一档。
-        readOnlyFlag: '-s read-only',
+        // Set both sandbox and reviewer explicitly; vendor-global defaults must not replace the session choice.
+        readOnlyFlag: '-s read-only -c approvals_reviewer="user"',
+        editFlag: '-s workspace-write -a on-request -c approvals_reviewer="user"',
+        aiReviewFlag: '-s workspace-write -a on-request -c approvals_reviewer="auto_review"',
         initialPromptFlag: '',
         resumeFlag: 'resume',
         cliSessionIdFlag: ' ',

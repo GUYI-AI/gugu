@@ -142,11 +142,14 @@ export class OpencodeServeAttachSessionDelivery implements SessionpageDeliveryTa
   async tryInjectSessionMessage(
     sessionId: string,
     message: SessionpageSessionMessage,
+    beforeAdmission?: () => void,
   ): Promise<boolean | SessionpageTurnReceipt> {
+    beforeAdmission?.()
     const binding = this.bindings.get(sessionId)
     if (!binding) return false
     const serve = await this.ensureServe(binding, binding.nativeSessionId ?? null)
-    return serve.injectPrompt(message.text)
+    beforeAdmission?.()
+    return beforeAdmission ? serve.injectPrompt(message.text, beforeAdmission) : serve.injectPrompt(message.text)
   }
 
   async injectMessage(sessionId: string, text: string): Promise<SessionpageTurnReceipt> {

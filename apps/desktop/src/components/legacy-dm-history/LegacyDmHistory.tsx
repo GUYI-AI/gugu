@@ -147,7 +147,7 @@ function LegacyDmTranscript({ scope, chat, mobile }: { scope: LegacyDmScope; cha
         body={legacyMessageBody(message, t('message.retracted'))}
         sender={message.is_mine ? { display_name: owner?.display_name ?? '', avatar: owner?.avatar, type: 'human' }
           : chat.agent && message.sender_user_id === chat.agent.id ? chat.agent : { display_name: translate('legacyDm.unknownSender') }}
-        timestamp={<time dateTime={message.created_at}> · {formatCalendarDate(Date.parse(message.created_at), locale)}</time>}
+        timestamp={<time dateTime={message.created_at}>  {formatCalendarDate(Date.parse(message.created_at), locale)}</time>}
         onOpenFile={file => preview.open(file, message)} />)}
       {loading && <LoadingIndicator size="panel" ariaLabel={translate('sessionImport.previewLoading')} />}
       {error != null && <><PaneEmptyState caption={translate('legacyDm.failed')} hint={messageForUser(error)} /><Button variant="ghost" onClick={() => setRetry(value => value + 1)}>{translate('common.retry')}</Button></>}

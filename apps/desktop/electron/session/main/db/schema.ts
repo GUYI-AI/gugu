@@ -1,4 +1,5 @@
 import { isNotNull, sql } from 'drizzle-orm';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 import {
   index,
   integer,
@@ -62,6 +63,7 @@ export const imMessageChats = sqliteTable('im_message_chats', {
   membershipRevision: text('membership_revision'),
   chatRevision: text('chat_revision'),
   archived: integer('archived').notNull().default(0),
+  historyClearedAt: text('history_cleared_at'),
 }, table => ({
   key: primaryKey({ columns: [table.accountId, table.chatId] }),
   source: index('im_message_chats_source').on(table.accountId, table.sourceChatId, table.ownMember),
@@ -142,7 +144,8 @@ export const projects = sqliteTable(
   {
     id: text('id').primaryKey(),
     name: text('name').notNull(),
-    path: text('path').notNull(),
+    /** In its one spelling on this machine (`@@@canonical-path`): written only as `canonicalPath` made it. */
+    path: text('path').notNull().$type<CanonicalPath>(),
     workspaceProvider: text('workspace_provider').notNull().default('local'), // 'local' | 'ssh'
     baseRef: text('base_ref'),
     // gugu #2358: 非 git 项目标记。base_ref 自 0000 起就 nullable + 读路径 `?? 'main'` 兜底
@@ -232,7 +235,8 @@ export const workspaces = sqliteTable(
       onDelete: 'set null',
     }),
     data: versionedJsonColumn(workspaceProviderData)('data'),
-    path: text('path'),
+    /** In its one spelling on this machine (`@@@canonical-path`): written only as `canonicalPath` made it. */
+    path: text('path').$type<CanonicalPath>(),
     config: versionedJsonColumn(workspaceConfig)('config'),
     branchName: text('branch_name'),
     linesAdded: integer('lines_added'),

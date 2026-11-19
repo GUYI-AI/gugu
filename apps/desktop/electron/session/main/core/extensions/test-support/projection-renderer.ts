@@ -15,6 +15,7 @@ const host: ProjectionHost = {
 const state = { value: '', error: '' };
 Object.assign(window, { projectionState: state });
 void mountProjection(host, document.getElementById('projection')!, new URLSearchParams(location.search).get('id')!, {
+  decorations: true,
   state: value => { state.value = value; },
   error: error => { state.error = String(error); },
 }).catch(error => { state.error = String(error); });

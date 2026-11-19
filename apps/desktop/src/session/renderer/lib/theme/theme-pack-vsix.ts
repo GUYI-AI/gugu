@@ -31,7 +31,7 @@ function normalizePath(base: string, relative: string): string {
 
 async function readJsonc(zip: JSZip, path: string): Promise<Record<string, unknown>> {
   const file = zip.file(path);
-  if (!file) throw new Error(`扩展包里没有 ${path}`);
+  if (!file) throw new Error(`插件包里没有 ${path}`);
   const errors: ParseError[] = [];
   const value = parseJsonc(await file.async('string'), errors, { allowTrailingComma: true });
   if (!value || typeof value !== 'object') throw new Error(`${path} 不是 JSON 对象`);
@@ -91,7 +91,7 @@ export function pickVariants(
   for (const mode of ['dark', 'light'] as const) {
     const usable = themes.filter((t) => t.mode === mode && t.palette);
     const named = prefer[mode] ? usable.find((t) => t.label === prefer[mode]) : undefined;
-    if (prefer[mode] && !named) throw new Error(`扩展里没有名为「${prefer[mode]}」的${mode === 'dark' ? '深色' : '浅色'}主题`);
+    if (prefer[mode] && !named) throw new Error(`插件里没有名为「${prefer[mode]}」的${mode === 'dark' ? '深色' : '浅色'}主题`);
     const chosen = named ?? usable[0];
     if (chosen) picked[mode] = chosen;
   }

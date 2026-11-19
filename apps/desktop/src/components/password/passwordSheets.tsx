@@ -42,19 +42,21 @@ export function RecoveryCodeSheet({ code, fresh, onClose }: { code: string; fres
     </div>
   </Sheet>
 }
-export function RecoverSheet({ busy, error, onSubmit, onClose }: { busy: boolean; error: string; onSubmit(code: string): Promise<void>; onClose(): void }) {
+export function RecoverSheet({ busy, error, onSubmit, onClose, mode = 'recover' }: { busy: boolean; error: string; onSubmit(code: string): Promise<void>; onClose(): void; mode?: 'recover' | 'unlock' }) {
   const [code, setCode] = useState('')
+  const unlocking = mode === 'unlock'
+  const title = unlocking ? '用恢复码解锁' : '用恢复码恢复'
   useEffect(() => () => setCode(''), [])
-  return <Sheet onClose={onClose} desktopWidth="440px" mobileFitContent ariaLabel="用恢复码恢复" testId="password-recover" zIndex="var(--z-settings-modal)">
-    <form className="flex flex-col gap-3 p-[18px]" onSubmit={event => { event.preventDefault(); void onSubmit(code) }}>
-      <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">用恢复码恢复</div>
-      <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">恢复后这台设备就能用你的密码。这个恢复码随即失效，会给你一个新的。</div>
+  return <Sheet onClose={onClose} desktopWidth={unlocking ? '380px' : '440px'} mobileFitContent ariaLabel={title} testId="password-recover" zIndex="var(--z-settings-modal)">
+    <form className={`flex flex-col gap-3 ${unlocking ? 'px-6 py-[22px]' : 'p-[18px]'}`} onSubmit={event => { event.preventDefault(); void onSubmit(code) }}>
+      <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">{title}</div>
+      {!unlocking && <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">恢复后这台设备就能用你的密码。这个恢复码随即失效，会给你一个新的。</div>}
       <Field.Root><Field.Input required aria-label="恢复码" autoComplete="off" spellCheck={false} className="font-mono" value={code}
         placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" onChange={event => setCode(event.target.value)} /></Field.Root>
       {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
       <div className="flex justify-end gap-2">
-        <Button size="sm" onClick={onClose}>取消</Button>
-        <Button size="sm" variant="primary" type="submit" disabled={busy || !code.trim()}>恢复</Button>
+        <Button size={unlocking ? 'md' : 'sm'} onClick={onClose}>取消</Button>
+        <Button size={unlocking ? 'md' : 'sm'} variant="primary" type="submit" disabled={busy || !code.trim()}>{unlocking ? '解锁' : '恢复'}</Button>
       </div>
     </form>
   </Sheet>

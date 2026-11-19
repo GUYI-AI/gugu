@@ -50,7 +50,7 @@ describe('经 catalog_call 跑的工具,各处写它自己的名字', () => {
       options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }],
     });
     expect(pending.origin).toEqual({ source: 'harness-permission' });
-    expect(pending.title).toBe('plugin_gugu-product_gugu · dice__roll');
+    expect(pending.title).toBe('plugin_gugu-product_gugu, dice__roll');
     expect(pending.detail).toBe(catalogRoll);
     const noInput = permissionToPendingRequest({ requestId: 'p3', toolCall: mcpCall('message_send'), options: [] });
     expect(noInput.detail).toBeUndefined();
@@ -68,7 +68,7 @@ describe('经 catalog_call 跑的工具,各处写它自己的名字', () => {
 
 describe('toolCallLabel · 审批时怎么称呼这次调用', () => {
   it('用户自己的 MCP:server · 工具;没有 server 只写工具', () => {
-    expect(toolCallLabel({ ...mcpCall('browser_navigate'), server: 'playwright', title: 'mcp__playwright__browser_navigate' })).toBe('playwright · browser_navigate');
+    expect(toolCallLabel({ ...mcpCall('browser_navigate'), server: 'playwright', title: 'mcp__playwright__browser_navigate' })).toBe('playwright, browser_navigate');
     const serverless = mcpCall('browser_navigate');
     delete serverless.server;
     expect(toolCallLabel(serverless)).toBe('browser_navigate');

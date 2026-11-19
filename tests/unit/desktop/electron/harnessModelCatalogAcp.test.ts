@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as engineTree from '@gugu/session-core/acp/node'
+import { pluginRegistry } from '@gugu/session-plugins/agents'
 import { awaitFact, awaitPending } from '../../../support/awaitFact'
 // 包一层,不替换:spawn 仍是真的(见下面 fakeAgent 的说明),只是让「慢但一直在推进」那条拿得到子进程的输出流。
 vi.mock('node:child_process', async (importOriginal) => {
@@ -22,7 +23,6 @@ const {
   setAcpSpawnResolver,
   setCatalogKeyResolver,
   setCatalogStore,
-  setProbeConnectionModelResolver,
   setProbePlatformEnvResolver,
   setSpawnIdentityResolver,
 } = await import(
@@ -85,9 +85,28 @@ async function useAgent(body: string): Promise<void> {
 beforeEach(() => {
   setAcpSpawnResolver(async () => null)
   setProbePlatformEnvResolver(async () => ({ env: {} }))
-  setProbeConnectionModelResolver(async () => null)
+
 })
 describe('ACP 模型目录探测', () => {
+  it('binds native Fast to the selected model and drops the fact for an unsupported target', async () => {
+    await useAgent(`
+const options = model => [
+  { id: 'model', category: 'model', type: 'select', currentValue: model, options: ['a', 'b'].map(value => ({ value, name: value })) },
+  ...(model === 'a' ? [{ id: 'fast', category: 'model_config', type: 'select', currentValue: 'off', options: ['off', 'on'].map(value => ({ value, name: value })) }] : []),
+];
+function handle(msg) {
+  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1 });
+  if (msg.method === 'session/new') return reply(msg.id, { sessionId: 'probe', configOptions: options('a') });
+  if (msg.method === 'session/set_config_option') return reply(msg.id, { configOptions: options(msg.params.value) });
+}
+`)
+    expect(await probeHarnessModelCatalog('codex', 'acp', 'a')).toMatchObject({
+      kind: 'ready', selected: 'a', fastMode: { configId: 'fast', selected: 'off', available: [{ id: 'off', name: 'off' }, { id: 'on', name: 'on' }] },
+    })
+    const unsupported = await probeHarnessModelCatalog('codex', 'acp', 'b')
+    expect(unsupported).toMatchObject({ kind: 'ready', selected: 'b' })
+    expect('fastMode' in unsupported).toBe(false)
+  })
   it.each(['target-low', 'target-none', 'ignored'])('reads the requested native model axis, refusing an unconfirmed switch (%s)', async (target) => {
     await useAgent(`
 const options = (model, levels) => [
@@ -221,6 +240,38 @@ function handle(msg) {
     expect(state.models[0]).toEqual({ id: 'openai-api:gpt-5.6', name: 'GPT 5.6', description: 'OpenAI' })
     expect(state.selected).toBe('openai-api:gpt-5.6')
   })
+  it.each(['dsh', 'kimi', 'qwen', 'zcode'].flatMap((providerId) =>
+    ['flat', 'grouped'].map((format) => ({ providerId, format }))
+  ))('reads $format SDK options for $providerId without rewriting values', async ({ providerId, format }) => {
+    const selected = JSON.stringify([providerId, 'first'])
+    const other = JSON.stringify([providerId, 'second'])
+    const choices = [
+      { value: selected, name: 'First', description: 'Provider-owned value' },
+      { value: other, name: 'Second' },
+    ]
+    const options = format === 'flat' ? choices : [{ group: 'own', name: 'Own provider', options: choices }]
+    await useAgent(`
+function handle(msg) {
+  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1, agentCapabilities: {} });
+  if (msg.method === 'session/new') return reply(msg.id, {
+    sessionId: 'grouped-select',
+    configOptions: [{ id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: ${JSON.stringify(selected)},
+      options: ${JSON.stringify(options)}
+    }]
+  });
+}
+`)
+    expect(await probeHarnessModelCatalog(providerId, 'acp')).toEqual({
+      kind: 'ready', autoReview: false, reviewerAvailable: false,
+      models: [
+        { id: selected, name: 'First', description: 'Provider-owned value' },
+        { id: other, name: 'Second' },
+      ],
+      selected,
+      efforts: [],
+      selectedEffort: null,
+    })
+  })
   it('两种 ACP 清单同时存在时按 id 去重而不吞另一来源', async () => {
     await useAgent(`
 function handle(msg) {
@@ -286,25 +337,54 @@ function handle(msg) {
       },
     ])
   })
-  it('只对 Claude 解释 auth-status=none，其他 harness 保留模型目录', async () => {
-    await useAgent(`
+  describe('catalogNeedsSignIn: a list printed while signed out is not a runnable list', () => {
+    // Signed out, the agent still opens the session and lists its own models (Claude's adapter does).
+    const LISTS_SIGNED_OUT = `
 function handle(msg) {
-  if (msg.method === 'initialize') {
-    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: '_auth/status_update', params: { authStatus: { kind: 'none' } } }) + '\\n');
-    return reply(msg.id, { protocolVersion: 1 });
-  }
+  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1, authMethods: [{ id: 'claude-login', name: 'Log in' }] });
   if (msg.method === 'initialized') return;
   if (msg.method === 'session/new') return reply(msg.id, { sessionId: 's', configOptions: [
-    { id: 'model', category: 'model', type: 'select', currentValue: 'native-codex', options: [{ value: 'native-codex', name: 'Native Codex' }] },
+    { id: 'model', category: 'model', type: 'select', currentValue: 'own', options: [{ value: 'own', name: 'Own model' }] },
+    { id: 'effort', category: 'thought_level', type: 'select', currentValue: 'high', options: [{ value: 'high', name: 'High' }] },
   ] });
 }
-`)
-    const claudeState = await probeHarnessModelCatalog('claude', 'acp')
-    expect(claudeState.kind).toBe('auth-required')
-    const state = await probeHarnessModelCatalog('codex', 'acp')
-    expect(state.kind).toBe('ready')
-    if (state.kind !== 'ready') return
-    expect(state.models.map((model) => model.id)).toEqual(['native-codex'])
+`
+    async function useHarness(readSignIn: () => Promise<{ kind: 'authenticated' | 'unauthenticated' | 'unknown'; reason?: 'expired' }>): Promise<void> {
+      const entry = await fakeAgent(LISTS_SIGNED_OUT)
+      setAcpSpawnResolver(async () => ({ command: process.execPath, args: [entry], env: {}, readSignIn }))
+    }
+
+    it('signed out ⇒ auth-required with the advertised login and the efforts it read', async () => {
+      const reader = vi.fn(async () => ({ kind: 'unauthenticated' as const }))
+      await useHarness(reader)
+      const state = await probeHarnessModelCatalog('claude', 'acp')
+      expect(state).toMatchObject({
+        kind: 'auth-required',
+        authMethods: [{ id: 'claude-login', name: 'Log in' }],
+        efforts: [{ id: 'high', name: 'High' }],
+        selectedEffort: 'high',
+      })
+      // Asked once: the placeholder second pass runs on credentials that are not this account.
+      expect(reader).toHaveBeenCalledTimes(1)
+    })
+
+    it.each([
+      ['unknown', { kind: 'unknown' as const }],
+      ['authenticated', { kind: 'authenticated' as const }],
+      ['marked expired (the renderer overlay owns it)', { kind: 'unauthenticated' as const, reason: 'expired' as const }],
+    ])('%s ⇒ the list stays', async (_, reading) => {
+      await useHarness(async () => reading)
+      const state = await probeHarnessModelCatalog('claude', 'acp')
+      expect(state.kind).toBe('ready')
+      if (state.kind !== 'ready') return
+      expect(state.models.map((model) => model.id)).toEqual(['own'])
+    })
+
+    it('Claude declares it; every harness that declares it has a sign-in reading', () => {
+      const declaring = pluginRegistry.getAll().filter((plugin) => plugin.behavior.acp?.catalogNeedsSignIn)
+      expect(declaring.map((plugin) => plugin.metadata.id)).toEqual(['claude'])
+      for (const plugin of declaring) expect(typeof plugin.behavior.auth?.checkStatus).toBe('function')
+    })
   })
   /**
    * 「有没有登录方式」这个读数,一半是咕咕自己发出去的。
@@ -680,6 +760,38 @@ describe('模型目录缓存', () => {
     await getHarnessModelCatalog('claude', { leg: 'acp',  harnessVersion: '1', force: true })
     expect(probes).toBe(2)
   })
+  it('an hour-old directory is refreshed on demand, once across simultaneous readers', async () => {
+    const before = await fakeAgent(SESSION_WITH_MODELS)
+    const after = await fakeAgent(SESSION_WITH_MODELS.replace("{ value: 'haiku', name: 'Haiku' }", "{ value: 'new-model', name: 'New Model' }"))
+    let entry = before
+    setAcpSpawnResolver(async () => {
+      probes++
+      return { command: process.execPath, args: [entry], env: {} }
+    })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const startedAt = Date.now()
+      const options = { leg: 'acp', harnessVersion: 'unchanged' } as const
+      const old = await getHarnessModelCatalog('codex', options)
+      entry = after
+      vi.setSystemTime(startedAt + 60 * 60_000 - 1)
+      expect(await lookupHarnessModelCatalog('codex', options)).toEqual({ state: old, refreshing: false })
+      expect(probes).toBe(1)
+
+      vi.setSystemTime(startedAt + 60 * 60_000)
+      expect(probes).toBe(1)
+      const [quickMenu, phoneMenu] = await Promise.all([
+        lookupHarnessModelCatalog('codex', options), getHarnessModelCatalog('codex', options),
+      ])
+      expect(quickMenu).toEqual({ state: old, refreshing: true })
+      expect(phoneMenu).toMatchObject({ kind: 'ready', models: expect.arrayContaining([{ id: 'new-model', name: 'New Model' }]) })
+      expect(await lookupHarnessModelCatalog('codex', options)).toEqual({ state: phoneMenu, refreshing: false })
+      expect(probes).toBe(2)
+    } finally {
+      await __drainProbesForTest()
+      vi.useRealTimers()
+    }
+  })
   it('失败态很快就重探，成功态照旧吃缓存', async () => {
     vi.useFakeTimers()
     try {
@@ -983,6 +1095,29 @@ function handle(msg) {
    * 不设上限就会永远占着 `inFlight`,那家 harness 的目录卡在 `unknown` 直到重启 = 静默失败。
    * 这是停摆守卫存在的**唯一**理由,所以必须有一条断言钉着它真的会咬。
    */
+  it('Codex history preparation is owned by its native initialize budget, not the outer inactivity guard', async () => {
+    const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process')
+    vi.mocked(spawn).mockImplementationOnce(((...args: Parameters<typeof actual.spawn>) => {
+      const child = actual.spawn(...args)
+      queueMicrotask(() => child.stdout?.on('data', () => vi.advanceTimersByTime(1_000)))
+      return child
+    }) as typeof spawn)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      __setInactivityLimitForTest(200)
+      await useAgent(`
+function handle(msg) {
+  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1 });
+  if (msg.method === 'session/new') return reply(msg.id, { sessionId: 's', configOptions: [
+    { id: 'model', category: 'model', type: 'select', currentValue: 'prepared', options: [{ value: 'prepared', name: 'Prepared' }] }
+  ] });
+}
+`)
+      const state = await probeHarnessModelCatalog('codex', 'acp')
+      expect(state.kind).toBe('ready')
+    } finally { vi.useRealTimers() }
+  })
+
   it('起来了但彻底不出声 → 被停摆守卫收掉,报出原因', async () => {
     __setInactivityLimitForTest(200)
     await useAgent(`
@@ -1240,183 +1375,6 @@ function handle(msg) {
     await getHarnessModelCatalog('claude', { leg: 'acp', harnessVersion: '1' })
     await getHarnessModelCatalog('claude', { leg: 'tui', harnessVersion: '1' })
     expect(probes).toEqual([['claude', 'acp']])
-  })
-})
-
-describe('#2507 选中的 API Key 连接:目录照会话真用的那份读', () => {
-  /**
-   * 一个**按进程环境**报模型的假 agent:`CONN_MODEL` 在 ⇒ 当前模型就是它(连接的模型落进了进程);不在 ⇒ 未登录。
-   * 判据是进程真收到的环境,❌ 解析器的入参。
-   */
-  async function useConnectionAwareAgent(): Promise<() => number> {
-    let spawns = 0
-    const entry = await fakeAgent(`
-const model = process.env.CONN_MODEL;
-function handle(msg) {
-  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1, authMethods: [{ id: 'vendor', name: 'Vendor' }] });
-  if (msg.method === 'session/new') {
-    if (!model) return fail(msg.id, { code: -32000, message: 'Authentication required' });
-    return reply(msg.id, { sessionId: 's', configOptions: [
-      { id: 'model', category: 'model', type: 'select', currentValue: model, options: [{ value: model, name: model }] },
-    ] });
-  }
-}
-`)
-    setAcpSpawnResolver(async () => {
-      spawns += 1
-      return { command: process.execPath, args: [entry], env: {} }
-    })
-    return () => spawns
-  }
-
-  it('model-injection connection selected: one probe on the connection, its model listed and selected; no placeholder pass', async () => {
-    const spawns = await useConnectionAwareAgent()
-    let scratch = ''
-    setProbeConnectionModelResolver(async (_id, dir) => {
-      scratch = dir
-      return { env: { CONN_MODEL: 'user-model' } }
-    })
-    const platform = vi.fn(async () => ({ env: { CONN_MODEL: 'placeholder' } }))
-    setProbePlatformEnvResolver(platform)
-    const state = await probeHarnessModelCatalog('pi', 'acp')
-    expect(state).toMatchObject({ kind: 'ready', selected: 'user-model', models: [{ id: 'user-model' }] })
-    expect(spawns()).toBe(1)
-    expect(platform).not.toHaveBeenCalled()
-    // 连接那份配置只写这一趟的临时目录,探完就删。
-    expect(scratch).not.toBe('')
-    expect(existsSync(scratch)).toBe(false)
-  })
-
-  it('no such connection (native, env-delivered or none): exactly the old path — user env first, then the placeholder pass', async () => {
-    const spawns = await useConnectionAwareAgent()
-    const platform = vi.fn(async () => ({ env: {} }))
-    setProbePlatformEnvResolver(platform)
-    const state = await probeHarnessModelCatalog('pi', 'acp')
-    expect(state.kind).toBe('auth-required')
-    expect(spawns()).toBe(2)
-    expect(platform).toHaveBeenCalledTimes(1)
-  })
-
-  it('a harness that lists only its own catalog (CodeBuddy): the session model is listed and selected; `only` keeps just it', async () => {
-    await useConnectionAwareAgent()
-    setProbeConnectionModelResolver(async () => ({ env: { CONN_MODEL: 'vendor-default' }, sessionModel: { id: 'user-model', only: true } }))
-    expect(await probeHarnessModelCatalog('codebuddy', 'acp')).toMatchObject({
-      kind: 'ready', selected: 'user-model', models: [{ id: 'user-model', name: 'user-model' }],
-    })
-    setProbeConnectionModelResolver(async () => ({ env: { CONN_MODEL: 'vendor-default' }, sessionModel: { id: 'user-model', only: false } }))
-    const state = await probeHarnessModelCatalog('codebuddy', 'acp')
-    expect(state).toMatchObject({ kind: 'ready', selected: 'user-model' })
-    expect(state.kind === 'ready' && state.models.map((m) => m.id)).toEqual(['user-model', 'vendor-default'])
-  })
-
-  /** 像 pi / opencode 那样报「提供方/模型」的假 agent:连接那条按构造是当前选中;`NO_CURRENT` 在 ⇒ 不报选中。 */
-  async function useProviderPrefixedAgent(): Promise<void> {
-    const entry = await fakeAgent(`
-function handle(msg) {
-  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1, authMethods: [] });
-  if (msg.method === 'session/new') {
-    return reply(msg.id, { sessionId: 's', configOptions: [
-      { id: 'model', category: 'model', type: 'select',
-        ...(process.env.NO_CURRENT ? {} : { currentValue: 'api-key-connection/user-model' }),
-        options: [
-          { value: 'opencode/big-pickle', name: 'OpenCode Zen/Big Pickle' },
-          { value: 'api-key-connection/user-model', name: '我的 Key/user-model' },
-          ...(process.env.SECOND ? [{ value: 'api-key-connection/second-model', name: '我的 Key/second-model' }] : []),
-        ] },
-    ] });
-  }
-}
-`)
-    setAcpSpawnResolver(async () => ({ command: process.execPath, args: [entry], env: {} }))
-  }
-
-  it('the composer calls the connection model by its model name: the entry this harness starts on, recorded by id', async () => {
-    await useProviderPrefixedAgent()
-    setProbeConnectionModelResolver(async () => ({ env: {}, modelNames: ['user-model'] }))
-    expect(await probeHarnessModelCatalog('opencode', 'acp')).toEqual({
-      kind: 'ready',
-      models: [
-        { id: 'opencode/big-pickle', name: 'OpenCode Zen/Big Pickle' },
-        { id: 'api-key-connection/user-model', name: 'user-model' },
-      ],
-      selected: 'api-key-connection/user-model',
-      efforts: [],
-      selectedEffort: null,
-      connectionModels: ['api-key-connection/user-model'],
-    })
-  })
-
-  // spec subscriptions.md「菜单里只写模型名;这一家自己的界面里,提供方写连接的名字」:连接勾选的**每个**模型都只叫模型名。
-  it('every model the connection names is called by its model name, not only the one it starts on', async () => {
-    await useProviderPrefixedAgent()
-    setProbeConnectionModelResolver(async () => ({ env: { SECOND: '1' }, modelNames: ['user-model', 'second-model'] }))
-    expect(await probeHarnessModelCatalog('opencode', 'acp')).toMatchObject({
-      kind: 'ready',
-      models: [
-        { id: 'opencode/big-pickle', name: 'OpenCode Zen/Big Pickle' },
-        { id: 'api-key-connection/user-model', name: 'user-model' },
-        { id: 'api-key-connection/second-model', name: 'second-model' },
-      ],
-      selected: 'api-key-connection/user-model',
-      connectionModels: ['api-key-connection/user-model', 'api-key-connection/second-model'],
-    })
-  })
-
-  // spec「一家使用中的是 API Key 连接时,新任务里这一家的模型菜单列出这把连接勾选的全部模型,默认选中第一个」:
-  // key 走环境变量的家(Qwen …)自己只报环境变量里那一个,菜单照连接勾选的列。
-  it('a key-through-environment agent lists every model the connection names, the first selected', async () => {
-    await useAgent(`
-function handle(msg) {
-  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1, authMethods: [] });
-  if (msg.method === 'session/new') return reply(msg.id, { sessionId: 's', configOptions: [
-    { id: 'model', category: 'model', type: 'select', currentValue: 'q-1', options: [{ value: 'q-1', name: 'q-1' }] },
-    { id: 'effort', category: 'thought_level', type: 'select', currentValue: 'high', options: [{ value: 'high', name: 'High' }] },
-  ] });
-}
-`)
-    setProbeConnectionModelResolver(async () => ({ env: {}, sessionModel: { id: 'q-1', only: true, others: ['q-2', 'q-3'] }, modelNames: ['q-1', 'q-2', 'q-3'] }))
-    expect(await probeHarnessModelCatalog('qwen', 'acp')).toEqual({
-      kind: 'ready',
-      models: [{ id: 'q-1', name: 'q-1' }, { id: 'q-2', name: 'q-2' }, { id: 'q-3', name: 'q-3' }],
-      selected: 'q-1',
-      efforts: [{ id: 'high', name: 'High' }],
-      selectedEffort: 'high',
-      connectionModels: ['q-1', 'q-2', 'q-3'],
-    })
-    // 这家要它自己的登录才答 session/new:跑会话的是这把 key,菜单照样是这几个(档位说不出就空着)。
-    await useAgent(`
-function handle(msg) {
-  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1, authMethods: [{ id: 'own', name: 'Own sign-in' }] });
-  if (msg.method === 'session/new') return fail(msg.id, { code: -32000, message: 'Authentication required' });
-}
-`)
-    expect(await probeHarnessModelCatalog('qwen', 'acp')).toMatchObject({
-      kind: 'ready',
-      models: [{ id: 'q-1', name: 'q-1' }, { id: 'q-2', name: 'q-2' }, { id: 'q-3', name: 'q-3' }],
-      selected: 'q-1',
-      efforts: [],
-      connectionModels: ['q-1', 'q-2', 'q-3'],
-    })
-  })
-
-  it('no model name, or no entry the harness says it starts on: the catalog exactly as the harness reported it', async () => {
-    await useProviderPrefixedAgent()
-    setProbeConnectionModelResolver(async () => ({ env: {} }))
-    const plain = await probeHarnessModelCatalog('opencode', 'acp')
-    expect(plain).not.toHaveProperty('connectionModels')
-    expect(plain.kind === 'ready' && plain.models.map((m) => m.name)).toEqual(['OpenCode Zen/Big Pickle', '我的 Key/user-model'])
-
-    setProbeConnectionModelResolver(async () => ({ env: { NO_CURRENT: '1' }, modelNames: ['user-model'] }))
-    const unselected = await probeHarnessModelCatalog('opencode', 'acp')
-    expect(unselected).toMatchObject({ kind: 'ready', selected: null })
-    expect(unselected).not.toHaveProperty('connectionModels')
-    expect(unselected.kind === 'ready' && unselected.models.map((m) => m.name)).toEqual(['OpenCode Zen/Big Pickle', '我的 Key/user-model'])
-  })
-
-  it('a connection that cannot be built fails loud instead of reading some other catalog', async () => {
-    await useConnectionAwareAgent()
-    setProbeConnectionModelResolver(async () => { throw new Error('The connection’s API key is unavailable') })
-    await expect(probeHarnessModelCatalog('pi', 'acp')).rejects.toThrow(/API key is unavailable/)
   })
 })
 

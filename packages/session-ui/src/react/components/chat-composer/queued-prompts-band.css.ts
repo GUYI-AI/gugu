@@ -63,7 +63,7 @@ export const dragHandle = style({
   selectors: {
     [`${row}:hover &, ${row}:focus-within &`]: { opacity: 1 },
     [`${row}[data-dragging] &`]: { opacity: 1, cursor: 'grabbing' },
-    '&:focus-visible:not([data-pointer-focus] *)': { opacity: 1, outline: `1px solid ${vars.border1}` },
+    '&:focus-visible:not([data-pointer-focus])': { opacity: 1, outline: `1px solid ${vars.border1}` },
   },
 });
 export const dragHandleIcon = style({ width: '0.875rem', height: '0.875rem' });
@@ -82,7 +82,7 @@ export const promptText = style({
   lineHeight: '1.25rem',
   cursor: 'text',
   selectors: {
-    '&:focus-visible:not([data-pointer-focus] *)': { outline: `1px solid ${vars.border1}`, outlineOffset: 2 },
+    '&:focus-visible:not([data-pointer-focus])': { outline: `1px solid ${vars.border1}`, outlineOffset: 2 },
     '&[data-locked="true"]': { cursor: 'default' },
   },
 });

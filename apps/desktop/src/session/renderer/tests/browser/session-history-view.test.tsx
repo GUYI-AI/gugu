@@ -19,7 +19,7 @@ import { isMacHost } from '@shared/host-os';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
 
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: {} }) }));
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } });
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
@@ -566,7 +566,7 @@ describe('会话历史(按目录分节)核心合同', () => {
     await vi.waitFor(() => expect(directoryParams().some((p) => p.source === 'codex')).toBe(true));
     await pick('session-history-filter', 'session-history-filter-status-archived');
     await vi.waitFor(() => expect(directoryParams().some((p) => p.status === 'archived')).toBe(true));
-    await expect.element(screen.getByTestId('session-history-filter')).toHaveTextContent('Codex · 未导入 · 已归档');
+    await expect.element(screen.getByTestId('session-history-filter')).toHaveTextContent('Codex 会话，尚未导入，已归档');
     await pick('session-history-filter', 'session-history-filter-source-all');
     await vi.waitFor(() => expect(directoryParams().at(-1)?.source).toBeUndefined());
     await pick('session-history-filter', 'session-history-filter-sort-title');
@@ -582,7 +582,7 @@ describe('会话历史(按目录分节)核心合同', () => {
     render();
     await vi.waitFor(() => expect(directoryParams().length).toBeGreaterThan(0));
     expect(directoryParams().every((p) => p.source === undefined && p.status === 'not-imported')).toBe(true);
-    await expect.element(screen.getByTestId('session-history-filter')).toHaveTextContent('全部来源 · 未导入');
+    await expect.element(screen.getByTestId('session-history-filter')).toHaveTextContent('全部来源，未导入');
   });
 
   const scrollToListEnd = () => (screen.getByTestId('session-history-total').element().parentElement as HTMLElement).scrollIntoView();
@@ -603,16 +603,24 @@ describe('会话历史(按目录分节)核心合同', () => {
   });
 
   // A slow machine must not hold back scrolling through what the others brought back (it gated on "any machine reading").
-  it('滚动加载:另一台机器的第一页还没回来(800 ms),滚到底照样把 limit 放大', async () => {
+  it('滚动加载:另一台机器的第一页还没回来,滚到底照样把 limit 放大', async () => {
     const many = Array.from({ length: 50 }, (_, i) => dir({ key: `/d/${i}`, sessionCount: 1, sessions: [gugu({ key: `gugu:c${i}`, title: `c${i}`, directory: `/d/${i}`, gugu: { projectId: `p-${i}`, sessionId: `c${i}`, runtime: 'acp' } })] }));
     mocks.listDirectories.mockResolvedValue(directoryPageOf(many, { matched: 250 }));
-    mocks.remoteListDirectories.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(directoryPageOf([], { directories: [] })), 800)));
-    render();
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-section').all()).toHaveLength(50));
-    await vi.waitFor(() => {
-      scrollToListEnd();
-      expect(directoryParams().some((p) => p.limit === 100)).toBe(true);
-    }, { timeout: 600 });
+    // The other machines answer only when the test lets them: the order of events is asserted, never a time.
+    const held: Array<() => void> = [];
+    mocks.remoteListDirectories.mockImplementation(() => new Promise((resolve) => { held.push(() => resolve(directoryPageOf([], { directories: [] }))); }));
+    try {
+      render();
+      await vi.waitFor(() => expect(screen.getByTestId('session-history-section').all()).toHaveLength(50));
+      // Another machine was asked and has not answered.
+      expect(held.length).toBeGreaterThan(0);
+      await vi.waitFor(() => {
+        scrollToListEnd();
+        expect(directoryParams().some((p) => p.limit === 100)).toBe(true);
+      }, { timeout: 10_000 }); // a ceiling on waiting, not a speed claim: the remote stays unanswered until the finally
+    } finally {
+      for (const answer of held) answer();
+    }
   });
 
   it('点一行展开详情(咕咕行含 session id),再点收起;已归档的行:恢复走唯一路径并刷新', async () => {

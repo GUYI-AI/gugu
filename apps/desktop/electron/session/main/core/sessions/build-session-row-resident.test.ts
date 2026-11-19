@@ -13,6 +13,7 @@ const base = {
   agentDisplayName: '个人助理',
   claimsFirstSpawn: false,
   runtime: 'acp' as const,
+  permissionMode: 'edit' as const,
 };
 
 describe('a resident agent waits for its first message (#7199)', () => {

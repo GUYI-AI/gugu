@@ -91,8 +91,7 @@ export function materializeKiroSessionBundle(
     Object.entries(bundle.env).filter((entry): entry is [string, string] => entry[1] !== undefined)
   );
   // Same resolution as the registry's terminal path: the nearest tier that is not looser, or refuse to start.
-  const wanted = bundle.autonomy?.permissionMode
-    ?? (bundle.autonomy?.mode === 'full-access' ? 'full-access' : bundle.autonomy ? 'edit' : undefined);
+  const wanted = bundle.autonomy?.permissionMode;
   const tier = wanted ? resolveDeclaredPermissionMode(wanted, KIRO_PERMISSION_MODES) : undefined;
   if (wanted && !tier) throw new Error(`Kiro has no permission mode for '${wanted}' or any stricter one`);
   const presets = tier ? KIRO_POLICY_PRESETS[KIRO_PERMISSION_MODES[tier as keyof typeof KIRO_PERMISSION_MODES].id] : undefined;

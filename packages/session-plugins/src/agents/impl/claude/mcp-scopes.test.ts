@@ -39,7 +39,7 @@ const rows = (scoped: { kind: string; dir: string; servers: { name: string; enab
  */
 describe('claudeMcpAdapter.readScopedServers', () => {
   const home = memoryFs({
-    '.claude.json': JSON.stringify({
+    '.claude/.claude.json': JSON.stringify({
       mcpServers: { 'echo-user': echo('user'), 'u-off': echo('uoff') },
       projects: {
         '/work/proj': {
@@ -102,7 +102,7 @@ describe('claudeMcpAdapter — 插件带的 server', () => {
   const installPath = '/Users/me/.claude/plugins/cache/mk/probe/0.0.1';
   const pluginHome = (extra: Record<string, string> = {}) =>
     memoryFs({
-      '.claude.json': JSON.stringify({ mcpServers: { 'echo-user': echo('user') } }),
+      '.claude/.claude.json': JSON.stringify({ mcpServers: { 'echo-user': echo('user') } }),
       '.claude/settings.json': JSON.stringify({ enabledPlugins: { 'probe@mk': true, 'off@mk': false } }),
       '.claude/plugins/installed_plugins.json': JSON.stringify({
         version: 2,
@@ -140,7 +140,7 @@ describe('claudeMcpAdapter — 插件带的 server', () => {
 
   it('在这个目录里 /mcp 关掉的插件 server 也算(disabledMcpServers 覆盖插件 server)', async () => {
     const home = pluginHome({
-      '.claude.json': JSON.stringify({ projects: { '/w': { disabledMcpServers: ['plugin:probe:plug-echo'] } } }),
+      '.claude/.claude.json': JSON.stringify({ projects: { '/w': { disabledMcpServers: ['plugin:probe:plug-echo'] } } }),
     });
     const scoped = await claudeMcpAdapter().readScopedServers!(home, [{ dir: '/w', fs: memoryFs({}) }]);
     expect(rows(scoped)).toEqual([{ kind: 'local', dir: '/w', servers: ['plugin:probe:plug-echo:disabled'] }]);
@@ -157,7 +157,7 @@ describe('claudeUserServerToolPrefix', () => {
 describe('claudeMcpAdapter — 某个插件读不了', () => {
   it('跳过那一个插件,用户级与别的插件照常列(❌ 整家读不出)', async () => {
     const home = memoryFs({
-      '.claude.json': JSON.stringify({ mcpServers: { 'echo-user': echo('user') } }),
+      '.claude/.claude.json': JSON.stringify({ mcpServers: { 'echo-user': echo('user') } }),
       '.claude/settings.json': JSON.stringify({ enabledPlugins: { 'good@mk': true, 'odd@mk': true } }),
       '.claude/plugins/installed_plugins.json': JSON.stringify({
         version: 2,

@@ -12,6 +12,7 @@ import { displayIdentity } from '../../../../../../../tests/support/testHarness'
 import { dicebearAvatarDataUri } from '@/lib/dicebearAvatar'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { until } from '../../../../../../../tests/support/awaitCondition'
+import { FILE_MARKS } from '@gugu/session-shared/file-marks'
 import '@/i18n/registerMessagingCatalog'
 import '@/styles/tokens.css'
 
@@ -54,7 +55,7 @@ describe('participant mention presentation', () => {
     root = createRoot(host)
     root.render(
       <LocalizationProvider>
-        <ChatMessageComposer onSend={vi.fn(async () => {})} isGroupChat groupMembers={members} />
+        <ChatMessageComposer onSend={vi.fn(async () => {})} chatId="group-1" isGroupChat groupMembers={members} />
       </LocalizationProvider>,
     )
   })
@@ -138,26 +139,25 @@ describe('participant mention presentation', () => {
     expect(pill.querySelector('button'), 'participant mentions must not expose a file remove button').toBeNull()
   })
 
-  it('renders a live clash annotation without serializing it into an id mention', async () => {
-    let serialized = ''
-    const render = (suffix?: string) => root!.render(<MessageProvider locale="en-US" translate={translateSessionMessage}>
-      <ChatComposer editorOptions={{ inputTestId: 'clash-mention-editor' }} onSubmit={() => {}}
-        onInputChange={value => { serialized = value }} mentionProvider={{
-          search: async () => [{ id: 'peer', label: 'aid:peer', name: 'Same', kind: 'custom', role: 'agent', annotation: suffix, optionLabel: <span>Same {suffix}</span> }],
-          resolve: () => ({ id: 'peer', label: 'aid:peer', name: 'Same', kind: 'custom', role: 'agent', annotation: suffix }),
-        }} />
+  it('draws a file pill with its family glyph and keeps its place apart from the name', async () => {
+    const provider = {
+      isQueryActive: () => true,
+      search: async () => [{ id: '/w/notes/report.pdf', label: 'report.pdf (Lines 3–4)', name: 'report.pdf (Lines 3–4)', kind: 'file' as const }],
+    }
+    root!.render(<MessageProvider locale="en-US" translate={translateSessionMessage}>
+      <ChatComposer editorOptions={{ inputTestId: 'file-mention-editor' }} mentionProvider={provider} onSubmit={() => {}} />
     </MessageProvider>)
-    render('#93')
-    const input = page.getByTestId('clash-mention-editor')
+    const input = page.getByTestId('file-mention-editor')
     await input.click()
-    await userEvent.keyboard('@Same')
-    const option = page.getByRole('option', { name: /Same #93/ })
-    await until('suffixed peer is available', () => option.elements().length === 1)
+    await userEvent.keyboard('@')
+    const option = page.getByRole('option', { name: /report\.pdf/ })
+    await until('file option is available', () => option.elements().length === 1)
     await option.click()
-    await until('clash annotation is shown', () => input.element().querySelector('[data-mention-id="peer"]')?.textContent === '@Same#93')
-    expect(serialized).toBe('@[Same](aid:peer) ')
-    render()
-    await until('resolved clash annotation disappears', () => input.element().querySelector('[data-mention-id="peer"]')?.textContent === '@Same')
-    expect(serialized).toBe('@[Same](aid:peer) ')
+    await until('file pill is inserted', () => input.element().querySelector('[data-mention-id="/w/notes/report.pdf"]') !== null)
+    const pill = input.element().querySelector('[data-mention-id="/w/notes/report.pdf"]')!
+    const glyph = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    glyph.innerHTML = FILE_MARKS.pdf.glyph
+    expect(pill.querySelector('svg')?.innerHTML).toBe(glyph.innerHTML)
+    expect([...pill.querySelectorAll('span')].map(span => span.textContent)).toContain(' (Lines 3–4)')
   })
 })

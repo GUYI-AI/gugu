@@ -77,7 +77,11 @@ export type TabManagerSnapshot = {
   activeTabId: string | undefined;
 };
 
+export type ChatToolLayoutMode = 'empty' | 'split' | 'full' | 'hidden';
+
 export type TabGroupsSnapshot = {
+  /** The owner's chat/tool presentation. An empty tool strip is derived from the saved tabs. */
+  chatToolLayout?: Exclude<ChatToolLayoutMode, 'empty'>;
   groups: Array<{
     groupId: string;
     tabManager: TabManagerSnapshot;
@@ -186,6 +190,8 @@ export type SidebarSnapshot = {
   expandedProjectIds?: string[];
   expandedSessionIds?: string[];
   idleExpandedProjectIds?: string[];
+  /** What the user folded away (sidebar-folds). */
+  folds?: string[];
   projectOrder?: string[];
   sessionOrderByProject?: Record<string, string[]>;
   sessionSortBy?: SidebarSessionSortBy;

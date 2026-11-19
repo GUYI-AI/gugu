@@ -11,8 +11,8 @@ vi.mock('../../../apps/desktop/src/mobile/assistant/usePhoneProfileData', async 
   ...await original<object>(),
   usePhoneIntegrations: () => ({ data: { items: [{ id: 'amap', name: '高德地图', description: '' }], configured: { amap: true }, statuses: { amap: { connected: true } } }, loading: false, error: null, retry: vi.fn() }),
 }))
-vi.mock('../../../apps/desktop/src/components/assistant/AssistantLibraryVolume', () => ({
-  AssistantLibraryVolume: ({ kind }: { kind: string }) => <div data-testid={`library-page-${kind}`} />,
+vi.mock('../../../apps/desktop/src/components/assistant/AssistantProjectsLibrary', () => ({
+  AssistantProjectsLibrary: () => <div data-testid="library-page-workspace" />,
 }))
 
 let h: ReturnType<typeof createReactHarness>

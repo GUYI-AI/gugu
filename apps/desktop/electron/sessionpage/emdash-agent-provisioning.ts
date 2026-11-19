@@ -1,6 +1,7 @@
 import type { SessionBootTasks } from '@gugu/core/shared/sessionBootTasks'
 import { isImplicitSessionHomeProjectId } from '@gugu/core/shared/sessionProject'
 import { createGroupAdmin } from '@gugu/core/cloud/groupAdmin'
+import { joinBirthGroup } from './sessionpage-birth-group-join'
 // @@@sessionpage TASKPAGE-FUSION — AUTO-PROVISIONING (Part C, the real thing). Turns a session-page session
 // whose exact provider/surface declares addressable identity into a gugu agent at session start, so agents can
 // message each other in the shipped product with NO test hook. Two delivery transports feed the SAME
@@ -418,22 +419,6 @@ export function assertSessionpageIdentityForReattach(sessionId: string): void {
     throw new Error('这个会话的身份失效了(上次开户没成功):要重新开这个会话(不是接回)才能换新身份')
   }
 }
-/**
- * A newly minted agent joins the chat it was born in — `chat.add_group_agent`, as its owner, so the group's rules decide
- * (cap, approval queue). Nothing here fails the identity: what happened is logged, and a pending approval is the
- * group's to settle.
- */
-async function joinBirthGroup(accessToken: string, ownerUserId: string, group: BirthGroup | null | undefined, agentUserId: string, log: ReturnType<typeof createLogger>): Promise<void> {
-  if (!group) return
-  const { chatId, asTask } = group
-  try {
-    const data = await createGroupAdmin(makeChatClient(accessToken), ownerUserId).addAgent(chatId, agentUserId, { asTask })
-    log.info({ agentUserId, chatId, asTask, status: data.status }, 'agent born in a chat: asked to join it, the group answered')
-  } catch (error) {
-    log.warn({ agentUserId, chatId, error: error instanceof Error ? error.message : String(error) }, 'agent born in a chat could not join it')
-  }
-}
-
 /** 测试 / 需要公网身份的调用方(签平台令牌)等这个 agent 的云端那一发落地;失败即抛。 */
 export async function awaitSessionpageCloudIdentity(agentUserId: string): Promise<void> {
   const work = cloudWorkByAgent.get(agentUserId)
@@ -1260,7 +1245,12 @@ function startCloudProvision(job: {
     }
     // Born in a chat — joined now, once, while the identity is new: what reads this agent's groups waits for this
     // work (awaitSessionpageCloudIdentity), so its first session already counts that group.
-    if (job.birthGroup) await joinBirthGroup(job.ownerAuth.accessToken, job.ownerAuth.userId, await job.birthGroup(), job.guguAgentUserId, log)
+    if (job.birthGroup) {
+      await joinBirthGroup({
+        env: job.env, accessToken: job.ownerAuth.accessToken, ownerUserId: job.ownerAuth.userId, sessionId: job.sessionId,
+        agentUserId: job.guguAgentUserId, group: await job.birthGroup(), log,
+      })
+    }
     const current = (await listAgents(job.env, { includeGuests: true })).find((a) => a.gugu_user_id === job.guguAgentUserId)
     await updateAgent({ guguUserId: job.guguAgentUserId }, {
       cache: {

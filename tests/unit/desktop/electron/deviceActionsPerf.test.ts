@@ -1,4 +1,4 @@
-// 性能读数(perf.* 3 个):读的是资源监视器那份记录。验:清单与确认策略、监视器关着说清楚(不回空读数)、参数检查、录制每次问。
+// 性能读数(perf.* 3 个):读的是资源监视器那份记录。验:清单与确认策略(连上这一组就是同意,录制不再另问)、读数失败如实报、参数检查。
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -12,8 +12,6 @@ let dir: string
 beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gugu-perf-')) })
 afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }) })
 
-class ResourceMonitorOffError extends Error { name = 'ResourceMonitorOffError' }
-
 function setup(perf: FamilyDeps['perf']) {
   const store = createDeviceActionGrantsStore(path.join(dir, 'grants.json'))
   const deps = { platform: 'linux', nativeDir: null, now: () => new Date(), homedir: () => dir, perf } as unknown as FamilyDeps
@@ -25,11 +23,9 @@ const ctx = () => ({ callId: 'c', signal: new AbortController().signal, note: ()
 const readings = () => ({ snapshot: vi.fn(() => ({ cpuPercent: 3 })), history: vi.fn(() => ({ points: [], count: 0 })), capture: vi.fn(async () => ({ seconds: 5, mainThreadBusyMs: 0, longTasks: 0, longTaskMs: 0, tasks: [] })) })
 
 describe('性能读数 perf.*', () => {
-  it('登记 3 个工具;读数不问,录制每次问', () => {
+  it('登记 3 个工具;连上就是同意,一个都不再另问', () => {
     const actions = setup(readings()).capability()!.actions
-    expect(Object.fromEntries(actions.map((a) => [a.name, a.confirm]))).toEqual({ 'perf.snapshot': 'never', 'perf.history': 'never', 'perf.capture': 'always' })
-    // An agent that follows the schema must be able to send the confirmation.
-    expect(actions.find((a) => a.name === 'perf.capture')!.input_schema).toMatchObject({ properties: { confirmed: { type: 'boolean' } } })
+    expect(Object.fromEntries(actions.map((a) => [a.name, a.confirm]))).toEqual({ 'perf.snapshot': 'never', 'perf.history': 'never', 'perf.capture': 'never' })
   })
 
   it('读数与历史原样转出;历史默认最近一小时', async () => {
@@ -43,18 +39,17 @@ describe('性能读数 perf.*', () => {
     expect(await da.provider.preflight!('perf.history', { since: 'yesterday' })).toMatchObject({ code: 'invalid_args' })
   })
 
-  it('监视器关着:报错说怎么打开,不回空读数', async () => {
+  it('读不出来:如实报那个错,不回空读数', async () => {
     const perf = readings()
-    perf.snapshot.mockImplementation(() => { throw new ResourceMonitorOffError('off') })
-    expect(await setup(perf).provider.run('perf.snapshot', {}, ctx())).toMatchObject({ ok: false, code: 'execution_failed', message: expect.stringContaining('turn it on') })
+    perf.snapshot.mockImplementation(() => { throw new Error('The resource monitor could not take a sample on this computer (see its log)') })
+    expect(await setup(perf).provider.run('perf.snapshot', {}, ctx())).toMatchObject({ ok: false, code: 'execution_failed', message: expect.stringContaining('could not take a sample') })
   })
 
-  it('录制:先问几秒,确认了才放行;秒数 1–15', async () => {
+  it('录制:直接录;秒数 1–15', async () => {
     const perf = readings()
     const da = setup(perf)
-    expect(await da.provider.preflight!('perf.capture', { seconds: 5 })).toMatchObject({ ok: false, code: 'needs_confirmation', confirm: { question: expect.stringContaining('5 秒') } })
-    expect(await da.provider.preflight!('perf.capture', { seconds: 5, confirmed: true })).toBeNull()
-    expect(await da.provider.run('perf.capture', { seconds: 5, confirmed: true }, ctx())).toMatchObject({ ok: true, data: { seconds: 5 } })
+    expect(await da.provider.preflight!('perf.capture', { seconds: 5 })).toBeNull()
+    expect(await da.provider.run('perf.capture', { seconds: 5 }, ctx())).toMatchObject({ ok: true, data: { seconds: 5 } })
     expect(perf.capture).toHaveBeenCalledWith(5)
     expect(await da.provider.preflight!('perf.capture', { seconds: 60 })).toMatchObject({ code: 'invalid_args' })
   })

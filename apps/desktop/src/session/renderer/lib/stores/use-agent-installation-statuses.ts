@@ -14,7 +14,7 @@ import {
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useLibraryHost, type LibraryAgentsRpc } from '@renderer/features/library/library-host';
-import { subscriptionKey } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { refreshSubscriptionReadings } from '@renderer/features/settings/subscriptions/subscription-queries';
 import type {
   AgentInstallationStatus,
   AgentInstallError,
@@ -126,6 +126,15 @@ export function useBusyInstallAgents(): ReadonlySet<string> {
   return useMemo(() => new Set<string>(key ? key.split(',') : []), [key]);
 }
 
+export function useUninstallingAgents(): ReadonlySet<string> {
+  const host = useLibraryHost();
+  const pending = useMutationState({
+    filters: { mutationKey: opKey('uninstall', host.key), status: 'pending' },
+    select: selectOpVars,
+  });
+  return new Set(pending.flatMap((operation) => operation ? [operation.id] : []));
+}
+
 /**
  * 连结果一起取出来的版本 —— 供「最近一次安装失败」用。
  *
@@ -225,14 +234,12 @@ export function useAgentInstallationStatuses() {
    */
   const invalidateDerived = (opts?: { keepStatus?: boolean; providerId?: string }) => {
     void queryClient.invalidateQueries({
-      // Auth/connection readings share the subscription cache. Re-read them on the host
-      // that completed the operation, including when the library has since switched hosts.
       predicate: (q) =>
-        (matchQuery({ queryKey: AGENT_DERIVED_QUERY_PREFIX }, q) &&
-          (!opts?.keepStatus || q.queryKey[1] !== 'status')) ||
-        (!opts?.keepStatus &&
-          matchQuery({ queryKey: subscriptionKey(host.remote?.deviceId ?? null, opts?.providerId) }, q)),
+        matchQuery({ queryKey: AGENT_DERIVED_QUERY_PREFIX }, q) && (!opts?.keepStatus || q.queryKey[1] !== 'status'),
     });
+    // Auth/connection readings are the subscription replicas: re-read them on the host that completed the
+    // operation, including when the library has since switched hosts.
+    if (!opts?.keepStatus) void refreshSubscriptionReadings(host.remote?.deviceId ?? null, opts?.providerId);
   };
 
   // Live-patch cache from background events — the event is already a full DTO
@@ -417,12 +424,21 @@ export function useAgentInstallationStatuses() {
     onSuccess: () => invalidate(),
   });
 
+  const uninstallAsync = useCallback(async (vars: { id: AgentProviderId; method?: InstallMethod }) => {
+    const result = await uninstallMutation.mutateAsync(vars);
+    if (!result.success) {
+      throw new Error('output' in result.error ? result.error.output : result.error.type);
+    }
+  }, [uninstallMutation.mutateAsync]);
+
   return {
     ...query,
     install: installMutation.mutate,
     installAsync: installMutation.mutateAsync,
     update: updateMutation.mutate,
+    updateAsync: updateMutation.mutateAsync,
     uninstall: uninstallMutation.mutate,
+    uninstallAsync,
     setUsedInstallation: setUsedMutation.mutate,
     refreshLatestVersion: refreshLatestMutation.mutate,
     probeAll: probeAllMutation.mutate,
@@ -507,7 +523,7 @@ export function useAgentInstallationStatus(
     data: statuses,
     install: installMutate,
     update: updateMutate,
-    uninstall: uninstallMutate,
+    uninstallAsync,
     setUsedInstallation,
     refreshLatestVersion,
     probeAll,
@@ -611,16 +627,8 @@ export function useAgentInstallationStatus(
   );
 
   const uninstall = useCallback(
-    (method?: InstallMethod) =>
-      new Promise<void>((resolve, reject) => {
-        uninstallMutate({ id: id as AgentProviderId, method }, {
-          onSuccess: (result) => result.success ? resolve() : reject(new Error(
-            'output' in result.error ? result.error.output : result.error.type,
-          )),
-          onError: reject,
-        });
-      }),
-    [uninstallMutate, id],
+    (method?: InstallMethod) => uninstallAsync({ id: id as AgentProviderId, method }),
+    [uninstallAsync, id],
   );
 
   const setUsed = useCallback(

@@ -106,6 +106,9 @@ INSERT INTO im_messages VALUES ('account', 'retained', '{"content":"retained bod
       expect(sql.prepare(`SELECT * FROM ${table}`).all()).toEqual([])
     }
     const retained = { ...message(1), id: 'old', content: 'orchid retained', created_at: '2026-11-02T00:00:00Z' }
+    // The current store runs only after all migrations; 0046's installation
+    // and idempotence were asserted above on its own historical schema.
+    applyMigrations(sql, all.filter(entry => entry.tag > migration.tag))
     const store = createImMessageStore(sql)
     store.ingest('account', { writes: [{ type: 'put', message: retained }], revisions: [], throughRevision: '12' })
     sql.prepare('INSERT INTO kv(key,value) VALUES(?,?)').run('fts_version', 'obsolete')

@@ -62,7 +62,6 @@ async function renderSettings(viewerId: string) {
     currentUserId: viewerId,
     onReload: vi.fn(async () => {}),
     onClose: vi.fn(),
-    onOpenSearch: vi.fn(),
     onSetNotificationLevel: vi.fn(async () => {}),
     onTogglePinned: vi.fn(async () => {}),
     onClearMessages: vi.fn(async () => {}),

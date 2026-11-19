@@ -43,6 +43,12 @@ export interface DeviceActionsProvider {
   blocked(group: string): { reason: 'unsupported' | 'os_permission'; message: string } | null
   connect(group: string): Promise<ConnectResult>
   disconnect(group: string): void
+  /**
+   * The group a person could connect for this action right now, when that is the only thing missing: not connected, no
+   * "Deny all", not one action turned off on its own (those are the person's own no). Files has four locations to choose
+   * from, so it is not asked for here.
+   */
+  ungrantedGroup(action: string): string | null
 }
 
 /** 把一个错误统一成设备动作的结果(族里抛什么都行,这里收口)。 */
@@ -268,6 +274,12 @@ export function createDeviceActionsProvider(input: {
     },
     disconnect(group) {
       store.setGroup(group, false)
+    },
+    ungrantedGroup(action) {
+      const def = byName.get(action)
+      const grants = store.read()
+      if (!def || def.group === 'files' || grants.denyAll || grants.deniedActions.includes(action)) return null
+      return groupGranted(def.group, grantedOf(grants.groups)) ? null : def.group
     },
   }
 }

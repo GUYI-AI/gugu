@@ -20,7 +20,7 @@ import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useSyncExt
 import { appState } from '@renderer/lib/stores/app-state';
 import { registeredViews } from '@renderer/lib/layout/registered-views';
 import type { ViewDefinition } from './view-registry';
-import { PageShownContext, useRecentSessions, type SessionParams } from './recent-session-pages';
+import { useRecentSessions, type SessionParams } from './recent-session-pages';
 import { ScreenBlockContext } from './screen-block-context';
 import { anchoredToBlock, BlockDropPreviewLayer, ScreenFrame, screenDropHandlers } from './screen-frame';
 import { hasDraggedScreenContent } from '@renderer/lib/drag-screen-content';
@@ -32,7 +32,7 @@ import { followBox, PEEKED_PAGE_STYLE, sessionPeek } from './session-peek';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { RETAINED_SURFACE_HIDDEN_STYLE } from '@/lib/retainedSurface';
+import { RETAINED_SURFACE_HIDDEN_STYLE, SurfaceShown } from '@/lib/retainedSurface';
 import { sessionView } from '@renderer/features/sessions/view';
 import { ensureMachineSessionWiring } from '@renderer/features/remote-hosts/workspace/machine-session-wiring';
 import { ensureMachineWorkspaceBackend } from '@renderer/features/remote-hosts/workspace/machine-workspace-backend';
@@ -134,9 +134,10 @@ const ScreenArea = observer(function ScreenArea({
       {/* @@@retained-screen — the screen stays mounted under Library & the other places: going back flips it visible,
           its chat blocks keep their live message windows (no remount, no refetch, no restyle of the whole list). */}
       <div style={onSessionView ? SHOWN_IN_PLACE : RETAINED_SURFACE_HIDDEN_STYLE}>
-        <PageShownContext.Provider value={onSessionView}>
+        {/* The frame itself hidden (another of gugu's tabs) hides the screen with it. */}
+        <SurfaceShown shown={onSessionView && embedVisible}>
           <ScreenFrame />
-        </PageShownContext.Provider>
+        </SurfaceShown>
       </div>
       {recentSessions.map(({ projectId, sessionId }) => {
         // Beside an App the page is where the App is: on another of gugu's tabs this screen is not drawn, its blocks with it.
@@ -197,7 +198,9 @@ const RetainedSessionPage = memo(function RetainedSessionPage({
   topRight,
   multi,
 }: SessionParams & { blockId: string | null; peekBox: HTMLElement | null; focused: boolean; topLeft: boolean; topRight: boolean; multi: boolean }) {
-  const shown = blockId !== null || peekBox !== null;
+  // A block is drawn only while the frame is; a page peeked beside an App is drawn over the shell even when the frame is hidden.
+  const embedVisible = useSyncExternalStore(subscribeEmbedVisibility, isEmbedVisible);
+  const shown = (blockId !== null && embedVisible) || peekBox !== null;
   const pageRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => (pageRef.current && peekBox ? followBox(pageRef.current, peekBox) : undefined), [peekBox]);
   const place = useMemo(() => ({ blockId, focused, topLeft, topRight, multi }), [blockId, focused, topLeft, topRight, multi]);
@@ -210,13 +213,13 @@ const RetainedSessionPage = memo(function RetainedSessionPage({
       // 在一块里按下 = 看这一块(导航跟到它的会话);已经是正看着的就什么都不做。
       onPointerDownCapture={blockId && !focused ? () => focusScreenBlock(blockId) : undefined}
     >
-      <PageShownContext.Provider value={shown}>
+      <SurfaceShown shown={shown}>
         <ScreenBlockContext.Provider value={place}>
           <sessionView.WrapView projectId={projectId} sessionId={sessionId}>
             <WorkspaceContentLayout titlebarSlot={<sessionView.TitlebarSlot />} mainPanel={<sessionView.MainPanel />} />
           </sessionView.WrapView>
         </ScreenBlockContext.Provider>
-      </PageShownContext.Provider>
+      </SurfaceShown>
     </div>
   );
 });
@@ -259,6 +262,7 @@ const WrapViews = observer(function WrapViews({
 });
 
 const RetainedPlace = observer(function RetainedPlace({ viewId, shown }: { viewId: string; shown: boolean }) {
+  const embedVisible = useSyncExternalStore(subscribeEmbedVisibility, isEmbedVisible);
   const def = (registeredViews() as unknown as Record<string, ViewDefinition<Record<string, unknown>>>)[viewId];
   const params = (appState.navigation.viewParamsStore as Record<string, Record<string, unknown> | undefined>)[viewId] ?? {};
   const Wrap = (def.WrapView ?? Fragment) as ComponentType<{ children: ReactNode } & Record<string, unknown>>;
@@ -266,11 +270,11 @@ const RetainedPlace = observer(function RetainedPlace({ viewId, shown }: { viewI
   const Main = def.MainPanel;
   return (
     <div style={shown ? SHOWN_IN_PLACE : RETAINED_SURFACE_HIDDEN_STYLE} data-retained-place={viewId}>
-      <PageShownContext.Provider value={shown}>
+      <SurfaceShown shown={shown && embedVisible}>
         <Wrap {...params}>
           <WorkspaceContentLayout titlebarSlot={<Titlebar />} mainPanel={<Main />} />
         </Wrap>
-      </PageShownContext.Provider>
+      </SurfaceShown>
     </div>
   );
 });

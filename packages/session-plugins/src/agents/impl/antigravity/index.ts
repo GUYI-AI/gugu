@@ -29,8 +29,6 @@ import { buildAntigravityHookConfig } from './hooks';
 import { icon } from './icon';
 import {
   ANTIGRAVITY_GATEWAY_AUTH,
-  antigravityApiKeyConnection,
-  antigravityApiKeyConnectionBehavior,
   withGatewayAuthentication,
 } from './api-key-connection';
 import {
@@ -160,6 +158,7 @@ export const plugin = definePlugin(
   {
     id: 'antigravity',
     name: 'Antigravity',
+    publisher: 'Google',
     description:
       'Google Antigravity: the official ACP server (agy_acp_server) for chat, and the agy CLI for terminal sessions.',
     // ACP 服务的官方说明页(注册表条目给的同一个出处)。
@@ -168,7 +167,6 @@ export const plugin = definePlugin(
   {
     sessionBundle,
     // API Key 连接:agy 的「自定义 AI API 网关」,按进程选、不写托管根的 settings.json(见 ./api-key-connection.ts)。
-    apiKeyConnection: antigravityApiKeyConnection,
     // 「订阅」页(product spec):用量只有终端版 `agy` 报(官方 /usage,不花额度),打开页面就问。
     subscription: { kind: 'supported', usageRefresh: 'on-open', program: ANTIGRAVITY_CLI_PROGRAM },
     /**
@@ -183,11 +181,10 @@ export const plugin = definePlugin(
       // 400MB 的 par + 本地内核头一次被系统读进来、过一遍扫描;没有自解压缓存可预热。
       // 启动只等事实、不设墙钟(#6183),这里只亮「首次较慢」让等待看得见。
       startup: { noticeKey: 'chat.antigravityPreparing' },
-      // agy_acp_server 1.2.1 在 `session/new` 的 configOptions 里自报 `model` 与 `mode` 两项
-      // (category 同名、type select),`session/set_config_option` 的响应带回整份 configOptions,
-      // currentValue 即新值(2026-09-23 实测两项都读得回)。咕咕启动时就要下发这两维,
-      // 缺这份声明每条会话都在第一句前死于 LiveSettingUndeclared(#6335 首测)。
-      // 思考深浅编在模型 id 里(`-high/-medium/-low`),没有独立的 effort 轴。
+      // 1.5.0 reports a separate thought_level option (id: thinking_level). Its catalog
+      // supplies both the levels and current/default value; set_config_option reads them back.
+      // Older servers encode depth in model ids and report no effort group, so no separate
+      // control is offered. Keep the provider-owned id in the live catalog, not a static table.
       liveSettings: {
         model: {
           channel: 'acp-config-option',
@@ -205,11 +202,11 @@ export const plugin = definePlugin(
           allowStartupDowngrade: true,
         },
         effort: {
-          channel: 'unsupported',
-          ack: 'none',
+          channel: 'acp-config-option',
+          ack: 'ack-read-back',
           busy: 'reject',
           reloadRequired: false,
-          recovery: 'unsupported',
+          recovery: 'none',
         },
       },
     },
@@ -328,10 +325,8 @@ export const plugin = definePlugin(
      * ❌ 不再有静态模型表。旧表钉的是 agy CLI 的显示名(「Gemini 3.5 Flash (Medium)」),agy 1.2.9
      * 实测 `--model 'Gemini 3.5 Flash (Medium)'` 报 `model … is not recognized`。ACP 腿的模型目录
      * 由运行中的进程自报(`session/new` 的 `configOptions[category=model]`,由
-     * `harness-model-catalog.ts` 读),实测 id 形如 `gemini-3.7-flash-high`、名字形如
-     * 「Gemini 3.7 Flash (High)」;推理档**烤在 id 里**(-high/-medium/-low),线上请求去掉档位
-     * (`gemini-3.7-flash-high` → `/v1beta/models/gemini-3.7-flash:…`)。
-     * ⚠️ 目录**随认证方式变**:gemini-api-key 下只有 Gemini 3.7/3.6/3.5 Flash 与 3.1 Pro 共 11 条。
+     * `harness-model-catalog.ts` 读)。旧 ACP 服务把深浅编在模型 id 的 -high/-medium/-low
+     * 后缀里;1.5.0 则报模型家族与独立的 thinking_level。目录和值都以当前进程为准。
      */
     /**
      * 工作区信任 —— 终端腿的 `agy` 首次进一个目录会先问「trust this folder?」。托管配置根的家,信任由
@@ -415,7 +410,6 @@ export const provider = registerPluginBehavior(plugin, {
     },
   },
   subscription: antigravitySubscriptionBehavior(),
-  apiKeyConnection: antigravityApiKeyConnectionBehavior,
   sessionBundle: { materialize: materializeAntigravitySessionBundle },
   // 终端腿的分叉:复制 `antigravity-cli/conversations/<id>.db` 并改写 id,宿主再 `--conversation <新 id>`(见 ./fork.ts)。
   sessions: { forkSessionInStorage: (ctx) => forkAntigravityCliSession(ctx) },

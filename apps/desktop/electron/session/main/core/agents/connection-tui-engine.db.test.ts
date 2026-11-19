@@ -1,3 +1,5 @@
+import { releaseCustomModelForwarders } from './custom-model-forwarder';
+import { customModelOptionId } from '@gugu/session-core/models/custom-model';
 /**
  * #2507 终端(TUI)腿:Codex 的推理跑在一台 `codex app-server` 里,它的 argv = 物化器给的那段(平台额度的会话含
  * 平台的 provider)+ 运行上下文的那段(用户填的额外参数,接着所选连接的 provider)。codex 的 `-c` 按 argv 顺序
@@ -97,7 +99,7 @@ vi.mock('../../../../sessionpage/codex-app-server-delivery', () => {
   };
 });
 
-const { createHarnessConnection, selectHarnessConnection } = await import('./harness-connections');
+const { saveCustomModel } = await import('./custom-models');
 const { provisionAndOverride } = await import('../../../../sessionpage/codex-pty-provisioning');
 const { withPlatformDeclaration } = await import('../../../../sessionpage/sessionpage-platform-model');
 const { loadCodexAppServerCapabilities, PRODUCT_CAPABILITY_PACKAGES } = await import('../../../../capability-bundle');
@@ -114,22 +116,28 @@ beforeEach(async () => {
   await chmod(state.codexCli, 0o755);
   state.fixture = await openRegistryFixture('empty');
   state.settings = undefined;
+  customId = '';
   state.started.length = 0;
 });
 afterEach(async () => {
+  releaseCustomModelForwarders();
   state.fixture?.close();
   state.fixture = null;
   await rm(state.home, { recursive: true, force: true });
 });
 
 let sessionSeq = 0;
+let customId = '';
 /** 开一条 Codex 终端会话,交回它那台 app-server 的启动参数与环境。`platform` = 用户选的是咕咕平台模型。 */
 async function terminalEngine(model: string, platform?: typeof PLATFORM) {
   sessionSeq += 1;
   const sessionId = `tui-${sessionSeq}`;
+  state.fixture!.sqlite.prepare("INSERT OR IGNORE INTO projects (id,name,path) VALUES ('project','Project','/repo')").run();
+  const config = { version: '1', type: 'pty', model: !platform && customId ? customModelOptionId({ connectionId: customId, modelId: model }) : model };
+  state.fixture!.sqlite.prepare('INSERT INTO sessions (id,project_id,provider,runtime,config) VALUES (?,?,?,?,?)').run(sessionId, 'project', 'codex', 'pty', JSON.stringify(config));
   const before = state.started.length;
   const out = await provisionAndOverride(
-    { sessionId, providerId: 'codex', cwd: state.home, baseCommand: state.codexCli, model },
+    { sessionId, providerId: 'codex', cwd: state.home, baseCommand: state.codexCli, model, permissionMode: 'edit' as const },
     {
       getAuth: vi.fn(),
       resolveDeviceId: vi.fn(),
@@ -160,8 +168,8 @@ async function terminalEngine(model: string, platform?: typeof PLATFORM) {
 const providerPins = (args: readonly string[]) => args.filter((arg) => arg.startsWith('model_provider='));
 
 async function selectCodexKey() {
-  const key = await createHarnessConnection({ providerId: 'codex', kind: 'api-key', apiKey: 'codex-secret' });
-  await selectHarnessConnection('codex', key.id);
+  const key = await saveCustomModel({ name: 'Codex key', apiKey: 'codex-secret', preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1' }], models: [{ id: 'gpt-5.5' }] });
+  customId = key.id;
 }
 
 it('a Gugu platform model in the terminal stays on the platform while a Codex API key is current', async () => {
@@ -177,8 +185,8 @@ it('a native model in the terminal runs on the selected key as its own provider'
   await selectCodexKey();
   const engine = await terminalEngine('gpt-5.5');
   expect(providerPins(engine.extraArgs)).toEqual(['model_provider="gugu_connection"']);
-  expect(engine.extraArgs).toContain('model_providers.gugu_connection.base_url="https://api.openai.com/v1"');
-  expect(engine.env.OPENAI_API_KEY).toBe('codex-secret');
+  expect(engine.extraArgs.some((arg) => arg.startsWith('model_providers.gugu_connection.base_url="http://127.0.0.1:'))).toBe(true);
+  expect(engine.env.OPENAI_API_KEY).toMatch(/^sk-gugu-/);
   expect(JSON.stringify(engine.extraArgs)).not.toContain('codex-secret');
 });
 

@@ -7,7 +7,7 @@ export default {
   "done": "完成",
   "saveFailed": "导览进度没保存上，请重试。",
   "featureHeader": "再认识三个好用的功能",
-  "featuresProgress": "功能短片 · {{current}} / {{total}}",
+  "featuresProgress": "功能短片（{{current}}/{{total}}）",
   "filmProgress": "动画播放进度",
   "featureSteps": "功能短片步骤",
   "play": "播放",
@@ -37,13 +37,9 @@ export default {
       "title": "联系人：找到协作者",
       "body": "搜到对方，加为联系人就能一起做事。"
     },
-    "library": {
-      "title": "资源库：存常用的内容",
-      "body": "常用的提示词都存在这里，随时取用。"
-    },
     "apps": {
-      "title": "App：让 Agent 多做一类事",
-      "body": "装上 App，Agent 就能多做一类事，比如替你操作电脑。"
+      "title": "市场：让智能体多做一类事",
+      "body": "装上应用，智能体就能多做一类事，比如替你操作电脑。"
     },
     "settings": {
       "title": "设置：额度与偏好",

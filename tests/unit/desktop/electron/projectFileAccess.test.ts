@@ -8,9 +8,9 @@ vi.mock('node:fs/promises', async importOriginal => {
     rename: (from: string, to: string) => (fsHooks.rename ?? fs.rename)(from, to),
     __actualRename: fs.rename }
 })
-import { chmod, mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createFileResolver, type FileProviders, type FileRevision } from '../../../../packages/core/src/shared/fileResolver'
 import { ciphertextSize, createFileKey, transformFile } from '../../../../packages/core/src/shared/fileCipher'
@@ -35,13 +35,24 @@ const digest = (data: Uint8Array) => createHash('sha256').update(data).digest('h
 const identity = async () => ({ accountId, deviceId: 'host-device' })
 const reader = () => createProjectFileReader({ identity, root: async id => id === 'project' ? root : null, env, later: noRecord })
 
-describe('downloads consume one file without the random-read cache', () => {
+// A save reads through the chunk cache (so a save that dies resumes); a finished or refused save leaves no chunks behind.
+const chunksLeft = () => readdir(tempRoot).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error })
+
+describe('downloads consume one file and leave no cached chunks behind', () => {
   const remote = (content: Uint8Array = bytes) => {
     const stored = { ...revision, source: 'managed-object' as const }
-    const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       if (String(url).endsWith('/file-resolve')) return Response.json({ status: 'ready', ...stored })
       if (String(url).endsWith('/file-download')) return Response.json({ status: 'ready', url: 'https://objects.invalid/file', size_bytes: stored.size_bytes, sha256: stored.sha256, download_id: 'download' })
-      if (String(url) === 'https://objects.invalid/file') return new Response(content as Uint8Array<ArrayBuffer>)
+      if (String(url) === 'https://objects.invalid/file') {
+        const range = new Headers(init?.headers).get('range')
+        const from = range ? Number(/^bytes=(\d+)-$/.exec(range)?.[1]) : 0
+        if (!Number.isSafeInteger(from) || from < 0 || from >= content.length) return new Response(null, { status: 416 })
+        return new Response(content.subarray(from) as Uint8Array<ArrayBuffer>, {
+          status: range ? 206 : 200,
+          headers: range ? { 'content-range': `bytes ${from}-${content.length - 1}/${content.length}` } : {},
+        })
+      }
       throw new Error('Unexpected file request')
     })
     return { resolve: createNodeFileResolver(tempRoot, async () => ({ supabaseUrl: 'https://files.invalid', anonKey: 'public', token: 'test', fetch: fetcher as typeof fetch })), fetcher }
@@ -190,10 +201,83 @@ describe('downloads consume one file without the random-read cache', () => {
     expect(first.file_path).toBe(concurrent.file_path)
     expect(await readFile(first.file_path)).toEqual(bytes)
     expect(await readdir(join(home, 'attachments', revision.sha256!))).toEqual(['file.bin'])
-    expect(await stat(tempRoot).catch(() => null)).toBeNull()
+    expect(await chunksLeft()).toEqual([])
     const gets = fetcher.mock.calls.filter(([url]) => String(url) === 'https://objects.invalid/file').length
     await save()
     expect(fetcher.mock.calls.filter(([url]) => String(url) === 'https://objects.invalid/file')).toHaveLength(gets)
+  })
+  it('a concurrent save reads a cached prefix and requests only the remaining range', async () => {
+    const { resolve, fetcher } = remote()
+    const serve = fetcher.getMockImplementation()!
+    await mkdir(tempRoot, { recursive: true })
+    const cacheRoot = await realpath(tempRoot)
+    const cached = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>()
+    const ranges: string[] = []
+    let resolves = 0, objects = 0
+    // Hold the first stream's tail until the second save has inspected the shared cached prefix.
+    fsHooks.rename = async (from, to) => {
+      await actualRename(from, to)
+      if (dirname(to).startsWith(join(cacheRoot, 'open-')) && basename(to) === '0') cached.resolve()
+    }
+    fetcher.mockImplementation(async (url, init) => {
+      if (String(url).endsWith('/file-resolve') && ++resolves === 2) await cached.promise
+      if (String(url) === 'https://objects.invalid/file') {
+        const range = new Headers(init?.headers).get('range')
+        if (range) ranges.push(range)
+        if (++objects === 1) return new Response(new ReadableStream<Uint8Array>({
+          start(controller) { controller.enqueue(bytes.subarray(0, 512 * 1024)) },
+          async pull(controller) { await resume.promise; controller.enqueue(bytes.subarray(512 * 1024)); controller.close() },
+        }))
+        resume.resolve()
+      }
+      return serve(url, init)
+    })
+    const save = async () => {
+      const file = await resolve(ref, actor)
+      if (file.status !== 'ready') throw new Error('Missing fixture')
+      return saveFileHandle(file, join(home, 'attachments'), 'file.bin')
+    }
+    try {
+      const [first, concurrent] = await Promise.all([save(), save()])
+      expect(ranges).toEqual(['bytes=524288-'])
+      expect(first.file_path).toBe(concurrent.file_path)
+      expect(await readFile(first.file_path)).toEqual(bytes)
+      expect(await chunksLeft()).toEqual([])
+    } finally { resume.resolve() }
+  })
+  it('a save stopped halfway resumes from its cached chunks: the next call asks only for the rest', async () => {
+    const big = Uint8Array.from({ length: 3 * 512 * 1024 + 7 }, (_, i) => i % 251)
+    const stored = { ...revision, source: 'managed-object' as const, size_bytes: big.length, sha256: digest(big) }
+    const ranges: number[] = []
+    const stop = new AbortController()
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url).endsWith('/file-resolve')) return Response.json({ status: 'ready', ...stored })
+      if (String(url).endsWith('/file-download')) return Response.json({ status: 'ready', url: 'https://objects.invalid/big', size_bytes: big.length, sha256: stored.sha256, download_id: 'download' })
+      if (String(url) !== 'https://objects.invalid/big') throw new Error('Unexpected file request')
+      const from = Number(/bytes=(\d+)-/.exec(new Headers(init?.headers).get('range') ?? '')?.[1] ?? 0)
+      ranges.push(from)
+      // One chunk per read. The first save stops when it asks for its third chunk (the process stops): by then the first
+      // two are cached. A later save is served in full.
+      const firstSave = ranges.length === 1
+      let at = from
+      const body = new ReadableStream<Uint8Array>({ pull(controller) {
+        if (at >= big.length) { controller.close(); return }
+        if (firstSave && at >= 2 * 512 * 1024) { stop.abort(); return new Promise<void>(() => {}) }
+        controller.enqueue(big.slice(at, at + 512 * 1024)); at += 512 * 1024
+      } }, { highWaterMark: 0 })
+      return new Response(body, from ? { status: 206, headers: { 'content-range': `bytes ${from}-${big.length - 1}/${big.length}` } } : { status: 200 })
+    })
+    const resolve = createNodeFileResolver(tempRoot, async () => ({ supabaseUrl: 'https://files.invalid', anonKey: 'public', token: 'test', fetch: fetcher as typeof fetch }))
+    const first = await resolve(ref, actor, { signal: stop.signal })
+    if (first.status !== 'ready') throw new Error('Missing fixture')
+    await expect(saveToFileStore(first, home, 'big.bin')).rejects.toThrow()
+    expect((await chunksLeft()).length).toBeGreaterThan(0)
+    const second = await resolve(ref, actor)
+    if (second.status !== 'ready') throw new Error('Missing fixture')
+    const saved = await saveToFileStore(second, home, 'big.bin')
+    expect(digest(await readFile(saved.file_path))).toBe(stored.sha256)
+    expect(ranges).toEqual([0, 2 * 512 * 1024])
+    expect(await chunksLeft()).toEqual([])
   })
   it('removes the partial on a digest mismatch and never publishes corrupted content', async () => {
     const { resolve } = remote(Buffer.alloc(bytes.length, 9))
@@ -201,7 +285,7 @@ describe('downloads consume one file without the random-read cache', () => {
     if (file.status !== 'ready') throw new Error('Missing fixture')
     await expect(saveFileHandle(file, join(home, 'attachments'), 'file.bin')).rejects.toThrow('SHA-256')
     expect(await stat(join(home, 'attachments', revision.sha256!)).catch(() => null)).toBeNull()
-    expect(await stat(tempRoot).catch(() => null)).toBeNull()
+    expect(await chunksLeft()).toEqual([])
   })
 
   it.each([false, true])('authenticates encrypted downloads before publishing, including revoked access=%s', async revoked => {
@@ -245,7 +329,7 @@ describe('downloads consume one file without the random-read cache', () => {
         expect(await readdir(destination)).toEqual(['file.bin'])
         expect(routes).toContain('file-read-complete')
       }
-      expect(await stat(tempRoot).catch(() => null)).toBeNull()
+      expect(await chunksLeft()).toEqual([])
     } finally { key.fill(0) }
   })
 
@@ -361,7 +445,7 @@ describe('the database\'s version record decides what this device holds', () => 
       expect(JSON.parse(String(init?.body))).toEqual({ ref: { item_id: 'item', version: 2 }, as: 'owner' })
       return Response.json({ ...renamed(), status: 'ready' })
     })
-    const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links: () => null, tempRoot, downloads: join(home, 'downloads'), fetch: network as typeof fetch, rpc: network as never, env, deviceStore: join(home, 'project-files'), identityDb: network as never })
+    const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links: () => null, tempRoot, fetch: network as typeof fetch, rpc: network as never, env, deviceStore: join(home, 'project-files'), identityDb: network as never })
     const file = await access.resolveAccount({ id: 'item' }, null, { version: 2, localOnly: true })
     if (file?.status !== 'ready') throw Error('ready expected')
     expect(file.revision.file_name).toBe('renamed.bin')
@@ -400,7 +484,7 @@ describe('local read fence and verified snapshot', () => {
     })
     const network = vi.fn(async () => { throw new Error('Unexpected network request') })
     const links = vi.fn(() => null)
-    const access = createDesktopFileAccess({ auth: async () => ({ userId: accountId, accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links, tempRoot, downloads: join(home, 'downloads'), fetch: current as typeof fetch, rpc: network, env, deviceStore: join(home, 'project-files'), identityDb: network as never })
+    const access = createDesktopFileAccess({ auth: async () => ({ userId: accountId, accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links, tempRoot, fetch: current as typeof fetch, rpc: network, env, deviceStore: join(home, 'project-files'), identityDb: network as never })
     expect(access.handlers('realtime')).toEqual({})
     expect(Object.keys(access.handlers('ssh'))).toEqual(['file.read'])
     for (const named of [{ id: 'item' }, { chat: 'group', name: 'file.bin' }]) {

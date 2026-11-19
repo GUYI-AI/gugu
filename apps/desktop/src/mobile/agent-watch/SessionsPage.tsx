@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
-import { useId, useState } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 import { Button } from '@/components/ui/Button'
@@ -9,14 +9,19 @@ import { ListRowContent } from '@/components/ui/ListRow'
 import { IconButton } from '@/components/ui/IconButton'
 import { ChevronDown, ChevronUp, MoreHorizontal } from '@/lib/icons'
 import { Sheet } from '@/components/ui/Sheet'
-import { DropdownMenu, MenuItem } from '@/components/ui/Menu'
+import { confirmArchive } from '@/session/renderer/features/sessions/archive-session-flow'
+import { sessionMenu, type SessionMenuAction } from '@/session/shared/session-menu'
+import { MenuTableItems } from '@/components/MenuTableItems'
+
+const PHONE_MENU_ACTIONS: ReadonlySet<SessionMenuAction> = new Set(['pin', 'rename', 'archive'])
+import { DropdownMenu, MenuItem, MenuSeparator } from '@/components/ui/Menu'
 import { useToast } from '@/components/toastContext'
 import { Field } from '@/components/ui/Field'
 import { formatRelativeTime } from '@/i18n/format'
 import { SessionAvatar } from './StatusGlyph'
 import { ScheduleMetaPart } from './schedule-meta'
 import { useShownAgentStatus } from '@/components/chat/useAgentsOnCloudComputer'
-import { sessionPresentation } from './watch-status'
+import { sessionPresentation } from '@/lib/agent-wait/watch-status'
 import { cancelPhoneSessionTurn, updateSession } from './sessionpage-rpc'
 import { rowOpens } from '@/session/shared/remote-sessions/session-directory'
 import { useLongPress } from '@/hooks/useLongPress'
@@ -47,10 +52,14 @@ export function SessionMenuButton({ menu, target, id, size, className, testId }:
 
 export function SessionActions({
   menu,
-  onArchived
+  onArchived,
+  appItems,
+  canManage = true,
 }: {
   menu: SessionMenuHandle
   onArchived?: () => void
+  appItems?: ReactNode
+  canManage?: boolean
 }) {
   const { t } = useTranslation('main')
   const { toast } = useToast()
@@ -60,11 +69,20 @@ export function SessionActions({
   const [draftTitle, setDraftTitle] = useState('')
   const reason = (err: unknown): string => err instanceof Error ? err.message : String(err)
   const failed = (err: unknown): void => toast(t('agentWatch.sessions.actionFailed'), 'error', reason(err))
-  const update = (target: { deviceId: string; session: SessionpageSessionSummary }, patch: { pinned?: boolean; archived?: true }): void => {
+  const update = (target: { deviceId: string; session: SessionpageSessionSummary }, patch: { pinned?: boolean; archived?: true; removeSocialIdentity?: boolean }): void => {
     updateSession(target.deviceId, { conversationId: target.session.conversationId, ...patch })
       .then((next) => { if (next.archived) onArchived?.() })
       .catch(failed)
   }
+  // The session menu: the one table (session/shared/session-menu.ts) the desktop tab and rows draw from.
+  const phoneMenuRun = (target: { deviceId: string; session: SessionpageSessionSummary }): Partial<Record<SessionMenuAction, () => void>> => ({
+    pin: () => update(target, { pinned: !target.session.isPinned }),
+    rename: () => { setDraftTitle(target.session.title); setError(null); setRenaming(target) },
+    archive: () => confirmArchive({
+      childCount: 0,
+      proceed: (_withChildren, removeSocialIdentity) => update(target, { archived: true, removeSocialIdentity }),
+    }),
+  })
   const rename = (): void => {
     if (!renaming) return
     setBusy(true)
@@ -79,21 +97,14 @@ export function SessionActions({
       <DropdownMenu.Root handle={menu} modal={false}>
         {({ payload: target }) => target ? (
           <DropdownMenu.Content aria-label={target.session.title} className="min-w-[160px]">
-            {target.phoneHost ? (
+            {appItems}
+            {appItems && canManage ? <MenuSeparator /> : null}
+            {canManage && (target.phoneHost ? (
               <MenuItem data-testid="agent-watch-session-stop" onClick={() => { void cancelPhoneSessionTurn(target.deviceId, target.session.conversationId).catch(failed) }}>
                 {t('agentWatch.sessions.stop')}
               </MenuItem>
-            ) : <>
-              <MenuItem data-testid="agent-watch-session-pin" onClick={() => update(target, { pinned: !target.session.isPinned })}>
-                {t(target.session.isPinned ? 'agentWatch.sessions.unpin' : 'agentWatch.sessions.pin')}
-              </MenuItem>
-              <MenuItem data-testid="agent-watch-session-rename" onClick={() => { setDraftTitle(target.session.title); setError(null); setRenaming(target) }}>
-                {t('agentWatch.sessions.rename')}
-              </MenuItem>
-              <MenuItem data-testid="agent-watch-session-archive" onClick={() => update(target, { archived: true })}>
-                {t('agentWatch.sessions.archive')}
-              </MenuItem>
-            </>}
+            ) : <MenuTableItems testIdPrefix="agent-watch-session" onAction={(id) => phoneMenuRun(target)[id]!()}
+              items={sessionMenu('phone', { pinned: target.session.isPinned === true, sidebarPin: null }, PHONE_MENU_ACTIONS)} />)}
           </DropdownMenu.Content>
         ) : null}
       </DropdownMenu.Root>

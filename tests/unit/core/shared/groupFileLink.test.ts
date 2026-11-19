@@ -78,7 +78,7 @@ describe('a pill’s link: the file, the version it was picked on, the place in 
     expect(groupFileLink(ITEM, { at: { range: 'R&D!A1' } })).toBe(`gugu-file://${ITEM}#range=R%26D!A1`)
     // `+` too: a form decoder (URLSearchParams) would read a bare one as a space (复核 156f72cb0e).
     const plus = groupFileLink(ITEM, { at: { range: "'Q1+Q2'!B3" } })
-    expect(plus).toBe(`gugu-file://${ITEM}#range='Q1%2BQ2'!B3`)
+    expect(plus).toBe(`gugu-file://${ITEM}#range=%27Q1%2BQ2%27!B3`)
     expect(parseGroupFileLink(plus)!.at).toEqual({ range: "'Q1+Q2'!B3" })
     expect(new URLSearchParams(plus.split('#')[1]).get('range')).toBe("'Q1+Q2'!B3")
     const places: Record<string, string>[] = [

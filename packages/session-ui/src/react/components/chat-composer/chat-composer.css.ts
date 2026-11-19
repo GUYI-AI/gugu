@@ -263,7 +263,7 @@ export const attachmentChip = style({
     "&[data-viewable='image']": { cursor: 'zoom-in' },
     '&[data-viewable]:hover': { backgroundColor: vars.surfaceBaseHover },
     '&[data-viewable]:active': { transform: 'scale(0.96)' },
-    '&[data-viewable]:focus-visible:not([data-pointer-focus] *)': { boxShadow: `0 0 0 1px ${vars.border1}` },
+    '&[data-viewable]:focus-visible:not([data-pointer-focus])': { boxShadow: `0 0 0 1px ${vars.border1}` },
   },
 });
 
@@ -360,7 +360,7 @@ export const attachmentRetry = style({
   textDecoration: 'underline',
   textUnderlineOffset: '2px',
   selectors: {
-    '&:focus-visible:not([data-pointer-focus] *)': { outline: `1px solid ${vars.border1}`, outlineOffset: '1px' },
+    '&:focus-visible:not([data-pointer-focus])': { outline: `1px solid ${vars.border1}`, outlineOffset: '1px' },
     '&:disabled': { opacity: 0.5, cursor: 'default' },
   },
 });
@@ -401,7 +401,7 @@ export const attachmentRemove = style({
   selectors: {
     '&:hover': { backgroundColor: vars.surfaceHover, color: vars.foreground },
     '&:active': { scale: '0.96' },
-    '&:focus-visible:not([data-pointer-focus] *)': { boxShadow: `0 0 0 1px ${vars.border1}` },
+    '&:focus-visible:not([data-pointer-focus])': { boxShadow: `0 0 0 1px ${vars.border1}` },
   },
   '@media': {
     '(prefers-reduced-motion: reduce)': { transition: 'none' },
@@ -867,6 +867,11 @@ export const settingRow = style({
  * 又不至于变成一块自创配色的彩片。❌ 不加边框/底色 —— 菜单项自己有 hover 态。
  */
 export const settingRowUnlock = style({
+  // Its own line under the group label: beside a short label (「你的 Codex 模型」) the two-line row read as one sentence.
+  flexBasis: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
   color: vars.surfaceInfoForeground,
   whiteSpace: 'nowrap',
 });
@@ -1058,7 +1063,7 @@ export const modelFilterChip = style({
   transition: `color ${durFast} ${easeStandard}, background-color ${durFast} ${easeStandard}`,
   selectors: {
     '&:hover': { color: vars.foreground },
-    '&:focus-visible:not([data-pointer-focus] *)': { outline: `1px solid ${vars.borderPrimary}`, outlineOffset: '-1px' },
+    '&:focus-visible:not([data-pointer-focus])': { outline: `1px solid ${vars.borderPrimary}`, outlineOffset: '-1px' },
     '&[data-pressed]': {
       backgroundColor: vars.surfaceSelected,
       color: vars.foreground,
@@ -1269,7 +1274,54 @@ export const modelEffortReset = style({
   transition: `color ${durFast} ${easeStandard}, background-color ${durFast} ${easeStandard}`,
   selectors: {
     '&:hover': { color: vars.foreground, backgroundColor: vars.surfaceHover },
-    '&:focus-visible:not([data-pointer-focus] *)': { outline: `1px solid ${vars.borderPrimary}`, outlineOffset: '1px' },
+    '&:focus-visible:not([data-pointer-focus])': { outline: `1px solid ${vars.borderPrimary}`, outlineOffset: '1px' },
+  },
+});
+
+export const modelEffortAxis = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.5rem',
+  boxSizing: 'border-box',
+});
+
+export const modelFastMode = style([modelEffortReset, {
+  flexShrink: 0,
+  width: 'auto',
+  height: '1.5rem',
+  borderRadius: tokenVars.radiusFull,
+  margin: 0,
+  cursor: 'pointer',
+  selectors: {
+    '&[aria-pressed="true"]': { color: 'var(--live)' },
+    '&[data-phone-fast]': { height: '2.75rem' },
+    '&:hover': { backgroundColor: 'transparent' },
+    '&:disabled': { cursor: 'default' },
+  },
+}]);
+
+/** Owner-approved Fast capsule dimensions; its phone hit area stays outside the visible pill. */
+export const modelFastModePill = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: '0.25rem',
+  boxSizing: 'border-box',
+  height: '1.5rem',
+  paddingInline: '0.5rem',
+  border: `1px solid ${vars.borderPrimary}`,
+  borderRadius: tokenVars.radiusFull,
+  color: vars.foregroundMuted,
+  fontSize: '0.75rem',
+  lineHeight: 1,
+  whiteSpace: 'nowrap',
+  selectors: {
+    [`${modelFastMode}[data-phone-fast] &`]: { height: '2rem', paddingInline: '0.75rem', fontSize: '0.8125rem' },
+    [`${modelFastMode}[aria-pressed="true"] &`]: {
+      color: 'var(--live)',
+      backgroundColor: 'color-mix(in srgb, var(--live) 18%, transparent)',
+      borderColor: 'transparent',
+    },
   },
 });
 
@@ -1329,6 +1381,7 @@ const EFFORT_THUMB_PRESS_SCALE = 1.143;
 export const modelEffortSlider = style({
   display: 'block',
   width: '100%',
+  minWidth: 0,
   vars: {
     [EFFORT_THUMB_VAR]: '1rem',
     // 位置过渡默认**关**:Base UI 头两帧还没量出圆钮宽度、位置是 0,
@@ -1509,7 +1562,7 @@ export const modelEffortThumb = style({
     // "按下要有形变"这条原则,不是它那个形状。上游实测静止 28 / 拖动 32。
     '&:active': { transform: `scale(${EFFORT_THUMB_PRESS_SCALE})` },
     [`${modelEffortSlider}[data-dragging] &`]: { transform: `scale(${EFFORT_THUMB_PRESS_SCALE})` },
-    '&:focus-visible:not([data-pointer-focus] *)': { outline: `2px solid ${vars.borderPrimary}`, outlineOffset: '2px' },
+    '&:focus-visible:not([data-pointer-focus])': { outline: `2px solid ${vars.borderPrimary}`, outlineOffset: '2px' },
   },
 });
 
@@ -1642,6 +1695,9 @@ export const modelPanelItemCompact = style({
   alignItems: 'center',
   paddingTop: '0.375rem',
   paddingBottom: '0.375rem',
+  selectors: {
+    '&[data-disabled][role="option"]': { pointerEvents: 'auto' },
+  },
 });
 
 // 单行之后 logo 跟名字同一条中线,`composerPanelItemIcon` 那 3px 下压只属于两段式的行。
@@ -1755,7 +1811,7 @@ export const modelPanelFooterAction = style({
   whiteSpace: 'nowrap',
   cursor: 'pointer',
   selectors: {
-    '&:hover, &:focus-visible:not([data-pointer-focus] *)': { backgroundColor: vars.surfaceHover, color: vars.foreground },
+    '&:hover, &:focus-visible:not([data-pointer-focus])': { backgroundColor: vars.surfaceHover, color: vars.foreground },
   },
 });
 
@@ -1796,3 +1852,13 @@ globalStyle(
 
 // Touch targets belong to the shared composer, including its chat hosts.
 globalStyle(`${composerRoot}[data-mobile] [data-slot="composer-toolbar"] button`, { minHeight: 44, minWidth: 44 });
+
+/** Auto mode keeps its selected shield visible alongside its name. */
+export const permissionModeProvidedIcon = style({ display: 'inline-flex', flexShrink: 0 });
+globalStyle(`${permissionModeProvidedIcon} svg`, { width: '0.75rem', height: '0.75rem' });
+export const permissionModeDetail = style({
+  width: '18rem', padding: '0.75rem', fontSize: tokenVars.textSm, lineHeight: 1.5,
+});
+export const permissionModeCost = style({
+  marginTop: '0.375rem', color: vars.foregroundMuted, fontSize: tokenVars.textTiny,
+});

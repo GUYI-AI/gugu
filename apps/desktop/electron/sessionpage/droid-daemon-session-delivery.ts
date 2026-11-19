@@ -84,7 +84,8 @@ export class DroidDaemonSessionDelivery implements SessionpageDeliveryTarget {
     return binding ? { providerId: binding.providerId, surface: 'tui' } : null
   }
 
-  async tryInjectSessionMessage(sessionId: string, message: SessionpageSessionMessage): Promise<boolean> {
+  async tryInjectSessionMessage(sessionId: string, message: SessionpageSessionMessage, beforeAdmission?: () => void): Promise<boolean> {
+    beforeAdmission?.()
     const binding = this.bindings.get(sessionId)
     if (!binding) return false
     const daemon = await this.ensureDaemon(binding)
@@ -94,7 +95,7 @@ export class DroidDaemonSessionDelivery implements SessionpageDeliveryTarget {
       content: [{ type: 'text', text: message.text }],
       queuePlacement: 'end_of_loop',
       requestId,
-    })
+    }, beforeAdmission)
     if (result && typeof result === 'object' && 'error' in result) {
       throw new Error(`droid daemon rejected message for ${sessionId}`)
     }
@@ -345,9 +346,10 @@ export class DroidDaemonSessionDelivery implements SessionpageDeliveryTarget {
     })
   }
 
-  private async requestAny(socket: WebSocket, methods: string[], params: Record<string, unknown>): Promise<unknown> {
+  private async requestAny(socket: WebSocket, methods: string[], params: Record<string, unknown>, beforeAdmission?: () => void): Promise<unknown> {
     let lastError: unknown
     for (const method of methods) {
+      beforeAdmission?.()
       try { return await this.request(socket, method, params) } catch (error) { lastError = error }
     }
     throw lastError instanceof Error ? lastError : new Error(String(lastError))

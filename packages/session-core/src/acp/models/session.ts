@@ -97,7 +97,13 @@ export const sessionFailureSchema = z.discriminatedUnion('kind', [
 ]);
 export type SessionFailure = z.infer<typeof sessionFailureSchema>;
 
+/** A provider-reported retry in the current foreground cycle; independent of the four activity states. */
+export const sessionRetryingSchema = z.object({ since: z.number().int().nonnegative(), message: z.string() });
+export type SessionRetrying = z.infer<typeof sessionRetryingSchema>;
+
 export const sessionStateSchema = z.object({
+  /** Missing on older hosts; null means no retry has been reported for the current cycle. */
+  retrying: sessionRetryingSchema.nullable().optional(),
   lifecycle: sessionLifecycleSchema,
   /** The transcript's open group (display grouping), or null. Not the agent's state: see `lifecycle`. */
   activeTurnId: z.string().nullable(),
@@ -149,6 +155,7 @@ export const acpStartStageSchema = z.enum([
 export type AcpStartStage = z.infer<typeof acpStartStageSchema>;
 export const acpStartProgressSchema = z.object({
   stage: acpStartStageSchema,
+  preparation: z.object({ phase: z.enum(['preparing', 'history']), startedAt: z.number(), attempt: z.number().int().positive() }).optional(),
   /** 这一步开始的时刻。 */
   since: z.number(),
   /** 整次启动开始的时刻。 */
@@ -169,6 +176,7 @@ export const pendingPermissionWaitSchema = z.object({
 export type PendingPermissionWait = z.infer<typeof pendingPermissionWaitSchema>;
 
 export const sessionSummarySchema = z.object({
+  retrying: sessionRetryingSchema.nullable().optional(),
   sessionId: z.string(),
   projectId: z.string(),
   providerId: z.string(),
@@ -180,6 +188,8 @@ export const sessionSummarySchema = z.object({
   lastStopReason: stopReasonSchema.nullable(),
   /** How the last turn ended. Parallel to `lastStopReason`; see `lastTurnOutcomeSchema`. */
   lastTurnOutcome: lastTurnOutcomeSchema,
+  /** The last failed turn's diagnostic, for host-side notification identity; absent on older runtimes. */
+  lastTurnError: z.string().nullable().optional(),
   pendingPermissionCount: z.number().int(),
   /** The same pending requests as `pendingPermissionCount`, in arrival order, each with what it waits on. */
   pendingPermissionWaits: z.array(pendingPermissionWaitSchema),

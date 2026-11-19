@@ -4,11 +4,13 @@
 //
 // Chromium starts matching :focus-visible on an element focused by a click as soon as any key is pressed, a bare
 // modifier included (screenshot hotkeys), so a plain `:focus-visible` rule draws a keyboard ring after a mouse click.
-// Every rule must be written `:focus-visible:not([data-pointer-focus] *)` (Tailwind arbitrary variants: `_*`).
-// Tailwind's own `focus-visible:` variant is redefined in tailwind.css and needs nothing here.
+// Every rule must be written `:focus-visible:not([data-pointer-focus])`: the mark sits on the focused element itself
+// (on an ancestor it would re-style the whole document on every mouse/keyboard switch).
+// Tailwind's own `focus-visible:` variant is redefined in tailwind.css and needs nothing here; its `group-` / `peer-`
+// compounds are rejected (see below), tailwind.css has spelled-out replacements.
 //
 // Allowed spellings besides the gated one: `:not(:focus-visible)` (the absence of focus) and
-// `[data-pointer-focus] :focus-visible` (the global switch-off itself), and a text field's own focus state
+// `[data-pointer-focus]:focus-visible` (the global switch-off itself), and a text field's own focus state
 // (`[data-slot=input-group-control]:focus-visible`). Comments are ignored.
 // Out of scope: App documents (session/app-runtime/ui, preinstalled-apps) — they never get the modality attribute.
 
@@ -31,9 +33,9 @@ export function ungatedFocusVisible(text, kind) {
   for (let match; (match = pattern.exec(source)); ) {
     const before = source.slice(Math.max(0, match.index - 25), match.index)
     const after = source.slice(match.index + match[0].length, match.index + match[0].length + 30)
-    if (/^:not\(\[data-pointer-focus\][ _]\*\)/.test(after)) continue
+    if (/^:not\(\[data-pointer-focus\]\)/.test(after)) continue
     if (/:not\($/.test(before)) continue
-    if (/\[data-pointer-focus\]\s$/.test(before)) continue
+    if (/\[data-pointer-focus\]$/.test(before)) continue
     // A text field's focus state (input-group's border) is its caret-like indicator: browsers report :focus-visible on
     // a click into a text field anyway, and the field must show it on click (same exemption as the global ring's).
     if (/input-group-control\]$/.test(before)) continue
@@ -41,6 +43,10 @@ export function ungatedFocusVisible(text, kind) {
     if (kind === 'ts' && /matches\(['"`]$/.test(before)) continue
     lines.push(source.slice(0, match.index).split('\n').length)
   }
+  // Tailwind's `group-focus-visible:` / `peer-focus-visible:` compile to `:is(:where(.group):focus-visible… *)`. Blink reads
+  // the `*` inside `:is()` as the whole subtree, so the element carrying the mark re-styles everything below it whenever
+  // the mark changes. Use the spelled-out variants in styles/tailwind.css (`group-row-kbd-focus:` and friends).
+  if (kind === 'ts') for (let match, compound = /(?<![\w-])(?:group|peer)-focus-visible[/:]/g; (match = compound.exec(source)); ) lines.push(source.slice(0, match.index).split('\n').length)
   return lines
 }
 
@@ -66,7 +72,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
   }
   if (failures.length > 0) {
-    console.error(`focus-modality: ${failures.length} :focus-visible rule(s) bypass the input modality — write :focus-visible:not([data-pointer-focus] *) (see apps/desktop/src/lib/focus-modality.ts):`)
+    console.error(`focus-modality: ${failures.length} :focus-visible rule(s) bypass the input modality — write :focus-visible:not([data-pointer-focus]) (see apps/desktop/src/lib/focus-modality.ts):`)
     for (const failure of failures) console.error(`  ${failure}`)
     process.exit(1)
   }

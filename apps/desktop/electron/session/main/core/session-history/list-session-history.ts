@@ -222,7 +222,7 @@ async function collect(params: SessionHistoryParams): Promise<Collected> {
   // (mac1 2026-09-24 读数:一节 3424 条)。
   const localGroupOf = createLocalGroupOf(localProjects);
   // 项目路径在本机唯一(idx_projects_path):原件归到的那个项目路径就认得出是哪个项目。
-  const projectAtPath = new Map(localProjects.map((project) => [project.projectPath, project.projectId]));
+  const projectAtPath = new Map<string, string>(localProjects.map((project) => [project.projectPath, project.projectId]));
   // 一个账号项目一节(设计同事 2026-09-23 参照页:节名是「gugu」,❌ 每个 worktree 目录各一节):项目是账号级的,
   // 本机项目在哪个项目群里,这一行就进那个群的节 —— 同一个群的几个本机项目、几台机器上的这个项目都并成一节。
   // 不在项目群里的本机项目按它的路径一节。

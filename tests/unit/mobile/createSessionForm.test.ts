@@ -5,6 +5,7 @@ import type {
 } from '@gugu/session-core/session-record/contract'
 import {
   createBlocker,
+  createPermissionModes,
   createPillLabel,
   defaultSelection,
   initialSelection,
@@ -12,6 +13,7 @@ import {
   reconcileModel,
   selectHarness,
   selectedModelName,
+  submittedCreationSelection,
 } from '@/mobile/agent-watch/create-session-form'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 
@@ -53,7 +55,7 @@ describe('新建页的模型那一格(#5014 续)', () => {
   it('选了模型:胶囊第三段写它收起时的名字(咕咕的带「咕咕」,与桌面触发器同词);目录还没到时退回写 id,❌ 不留空', () => {
     const selection = { ...defaultSelection(options), model: 'platform:gpt-6' }
     expect(createPillLabel(options, selection, catalog('codex', ['gpt-5', 'platform:gpt-6']))).toBe(
-      `Codex · ${translateSessionMessage('composer.platformModelShortName', { model: 'gpt-6' })}`,
+      `Codex，${translateSessionMessage('composer.platformModelShortName', { model: 'gpt-6' })}`,
     )
     expect(selectedModelName(catalog('codex', ['gpt-5']), { ...selection, model: 'gpt-5' })).toBe('gpt-5')
     expect(selectedModelName(null, selection)).toBe('platform:gpt-6')
@@ -75,7 +77,7 @@ describe('新建页的模型那一格(#5014 续)', () => {
     const picked = { ...defaultSelection(options), effort: 'high' }
     expect(reconcileModel(picked, catalog('codex', ['gpt-5']))).toBe(picked)
     expect(reconcileModel({ ...picked, effort: 'ultra' }, catalog('codex', ['gpt-5'])).effort).toBeNull()
-    expect(createPillLabel(options, picked, catalog('codex', ['gpt-5']))).toBe('Codex · High')
+    expect(createPillLabel(options, picked, catalog('codex', ['gpt-5']))).toBe('Codex，High')
   })
 
   it('新目录到了:选中的模型不在里面就退回默认;目录没到 / 是另一家的不动', () => {
@@ -191,3 +193,22 @@ describe('phone creation in the shared form', () => {
     expect(createBlocker(unreadable, defaultSelection(unreadable))).toBe('no_usable_harness')
   })
 })
+
+it('keeps the submitted native model, permission, reasoning and explicit Fast intent while retrying', () => {
+  expect(submittedCreationSelection({ harness: 'codex', prompt: '', model: 'native-original', permissionMode: 'read-only', effort: 'high', fastMode: true }))
+    .toEqual({ harness: 'codex', model: 'native-original', permissionMode: 'read-only', effort: 'high', fastMode: true })
+  expect(submittedCreationSelection({ harness: 'claude', prompt: '', fastMode: false }))
+    .toEqual({ harness: 'claude', model: null, permissionMode: null, effort: null, fastMode: false })
+  expect(submittedCreationSelection({ harness: 'pi', prompt: '' })).not.toHaveProperty('fastMode')
+})
+
+it('only offers AI review for the verified current host/model, hiding old host and stale results', () => {
+  const harness = options.harnesses[0]!;
+  const selection = { ...defaultSelection(options), harness: 'codex', model: 'gpt-6.1-sol' };
+  const models = { ...catalog('codex', ['gpt-6.1-sol']), autoReview: { model: 'gpt-6.1-sol' } };
+  expect(createPermissionModes(harness, models, 'ready', selection)).toContain('ai-review');
+  expect(createPermissionModes(harness, models, 'loading', selection)).not.toContain('ai-review');
+  expect(createPermissionModes(harness, models, 'ready', { ...selection, model: 'another' })).not.toContain('ai-review');
+  expect(createPermissionModes(harness, { ...models, harness: 'claude' }, 'ready', selection)).not.toContain('ai-review');
+  expect(createPermissionModes(harness, catalog('codex', ['gpt-6.1-sol']), 'ready', selection)).not.toContain('ai-review');
+});

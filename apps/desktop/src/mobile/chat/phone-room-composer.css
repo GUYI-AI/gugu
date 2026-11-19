@@ -1,0 +1,25 @@
+.gg-phone-room-controls { min-width: 0; }
+.gg-phone-room-choice { width: 100%; min-height: 52px; height: auto; padding: 10px 8px; display: flex; align-items: center; gap: 10px; justify-content: flex-start; text-align: left; border: 0; border-radius: 10px; font-size: var(--font-body); }
+.gg-phone-room-choice > svg { flex: 0 0 20px; width: 20px; height: 20px; color: var(--text-secondary); }
+.gg-phone-room-choice-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gg-phone-room-choice-name.gg-phone-room-topic-name { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+.gg-phone-room-choice > .gg-phone-room-check { color: var(--live-light); width: 18px; height: 18px; flex-basis: 18px; }
+.gg-phone-room-agent-text { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; gap: 3px; }
+.gg-phone-room-agent-detail { display: flex; min-width: 0; gap: 6px; color: var(--text-secondary); font-size: var(--font-caption); }
+.gg-phone-room-agent-detail > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gg-phone-room-agent-detail > span:first-child { flex-shrink: 0; }
+.gg-phone-room-agent > svg:last-child { width: 14px; height: 14px; flex-basis: 14px; }
+.gg-phone-room-empty { margin: 12px 8px; color: var(--text-secondary); font-size: var(--font-body); }
+
+/* Keep the editor covered throughout opening and closing, including the first Android frame. */
+.gg-phone-composer-sheet.gg-phone-room-sheet { opacity: 1; animation-name: gg-phone-room-sheet-in; }
+.gg-phone-room-sheet[data-ending-style] { animation-name: gg-phone-room-sheet-out; }
+@keyframes gg-phone-room-sheet-in { from { translate: 0 16px; } to { translate: 0 0; } }
+@keyframes gg-phone-room-sheet-out { from { translate: 0 0; } to { translate: 0 16px; } }
+
+.gg-phone-room-model { margin-left: auto; min-width: 0; flex: 0 1 auto; }
+.gg-phone-room-model [data-slot="composer-model"] > button { max-width: 100%; min-width: 0; }
+
+.gg-phone-existing-model { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 8px; }
+
+.gg-phone-existing-readonly { color: var(--text-secondary); }

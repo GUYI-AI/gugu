@@ -41,10 +41,12 @@ function assertCommittedFullProjection(): void {
   const markdown = container.querySelector<HTMLElement>('.gg-md')
   expect(markdown).not.toBeNull()
   const katex = markdown!.querySelectorAll('.katex')
-  const annotations = markdown!.querySelectorAll('annotation[encoding="application/x-tex"]')
+  // Every formula keeps its TeX source for a reader, without a MathML element (@@@no-mathml in markdown/dialect.ts).
+  const sources = markdown!.querySelectorAll('.katex[role="math"] > .katex-mathml')
   expect(katex).toHaveLength(COMMITTED_RESEARCH_MATH_COUNT)
-  expect(annotations).toHaveLength(COMMITTED_RESEARCH_MATH_COUNT)
-  expect([...annotations].every((node) => (node.textContent ?? '').trim().length > 0)).toBe(true)
+  expect(sources).toHaveLength(COMMITTED_RESEARCH_MATH_COUNT)
+  expect([...sources].every((node) => (node.textContent ?? '').trim().length > 0 && node.textContent === node.parentElement!.getAttribute('aria-label'))).toBe(true)
+  expect(markdown!.querySelector('math, annotation')).toBeNull()
   const residual = markdown!.cloneNode(true) as HTMLElement
   residual.querySelectorAll('.katex, code, pre, script, style, math, annotation, button, svg, [hidden], [aria-hidden="true"], .sr-only')
     .forEach((node) => node.remove())

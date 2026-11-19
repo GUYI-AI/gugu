@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { formatClock } from '../../i18n/format'
@@ -12,7 +13,7 @@ import { UI_EVENTS } from '../../lib/uiEvents'
 import { openAssistantEntry } from '../../lib/assistantEntry'
 import { invokeOnMachine } from '../../session/renderer/lib/ipc'
 import { VOICE_NOTE_MEETINGS_CHANNEL, type VoiceNoteMeetingsResult } from '../../session/shared/core/voice-notes'
-import { meetingReminderEnabled } from '../../lib/meetingReminderPref'
+import { readDevicePreferences } from '../../lib/devicePreferences'
 import '../../i18n/registerVoiceNotesCatalog'
 import { useVoiceNoteHandler } from './useVoiceNoteHandler'
 
@@ -72,7 +73,7 @@ export function MeetingReminder({ enabled }: { enabled: boolean }) {
   const { recording } = useVoiceNoteHandler()
 
   const check = useCallback(async () => {
-    if (!enabled || !meetingReminderEnabled()) return
+    if (!enabled || !readDevicePreferences().meetingReminder) return
     const result = (await invokeOnMachine(null, VOICE_NOTE_MEETINGS_CHANNEL).catch(() => null)) as VoiceNoteMeetingsResult | null
     if (!result?.ok) return
     seen.current ??= readSeen()
@@ -83,7 +84,7 @@ export function MeetingReminder({ enabled }: { enabled: boolean }) {
     setFailed(false)
     setMeeting(next)
     if (!document.hasFocus())
-      void platform?.showNotification({ title: t('meeting.heading'), body: [next.title, `${clock(next.start)} - ${clock(next.end)}`].filter(Boolean).join(' · ') }).catch(() => undefined)
+      void platform?.showNotification({ title: t('meeting.heading'), body: [next.title, `${clock(next.start)} - ${clock(next.end)}`].filter(Boolean).join(metadataSeparator()) }).catch(() => undefined)
   }, [enabled, t])
 
   useEffect(() => {
@@ -129,7 +130,7 @@ export function MeetingReminder({ enabled }: { enabled: boolean }) {
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <strong className="truncate text-[length:var(--font-body)] font-semibold">{meeting.title || t('meeting.heading')}</strong>
         <span className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">
-          {[t('meeting.heading'), [clock(meeting.start), clock(meeting.end)].filter(Boolean).join(' - ')].join(' · ')}
+          {[t('meeting.heading'), [clock(meeting.start), clock(meeting.end)].filter(Boolean).join(' - ')].join(metadataSeparator())}
         </span>
         {failed ? <span className="text-[length:var(--font-caption)] text-[var(--danger-fg)]">{t('meeting.error')}</span> : null}
       </div>

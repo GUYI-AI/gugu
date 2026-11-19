@@ -885,7 +885,7 @@ describe('runSshInstall', () => {
     const { final, seen, states } = await install({ installed: false, grant: false, running: false })
     expect(statuses(final)).toEqual({ connect: 'done', detect: 'done', download: 'done', service: 'done', login: 'done' })
     expect(final.machine).toMatchObject({ distro: 'Ubuntu 22.04.4 LTS', arch: 'x86_64', libc: 'glibc 2.35', others: [], alreadySignedIn: false })
-    expect(final.result).toEqual({ email: 'm… · u1', others: [], hostname: 'box', userId: 'u1', deviceId: null, alreadySignedIn: false })
+    expect(final.result).toEqual({ email: 'm… u1', others: [], hostname: 'box', userId: 'u1', deviceId: null, alreadySignedIn: false })
     expect(final.failure).toBeNull()
     expect(states.some((s) => s.steps[2].status === 'running' && s.steps[2].version === '0.2.99' && s.steps[2].progress?.done === 500 && s.steps[2].progress.total === 1000)).toBe(true)
     // 认证通过那一刻就切到「识别系统」
@@ -910,10 +910,10 @@ describe('runSshInstall', () => {
   it.each(['install', 'upgrade'] as const)('refuses a second account before changing the installation (%s)', async mode => {
     const { final, seen } = await install({ installed: true, grant: true, running: true, accounts: ['u9 colleague@lab.edu'] }, { mode })
     // #1682 A distinct reason, not a sign-in failure: retrying cannot change which account the server holds.
-    expect(final.failure).toMatchObject({ step: 'detect', reason: 'accountMismatch', accountMismatch: { server: 'c… · u9' },
+    expect(final.failure).toMatchObject({ step: 'detect', reason: 'accountMismatch', accountMismatch: { server: 'c… u9' },
       detail: expect.stringContaining('another Gugu account') })
     expect(JSON.stringify(final.failure)).not.toContain('colleague@lab.edu')
-    expect(final.machine?.others).toEqual(['c… · u9'])
+    expect(final.machine?.others).toEqual(['c… u9'])
     expect(seen).toHaveLength(1)
     expect(seen.some(stdin => stdin.includes('service install') || stdin.includes('--no-login') || stdin.includes('login --grant-stdin'))).toBe(false)
   })

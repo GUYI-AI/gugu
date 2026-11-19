@@ -15,3 +15,7 @@ it('rejects ambiguous actions and malformed menu coordinates', () => {
   expect(() => appContextMenuOf({ x: NaN, y: 0, items: [] })).toThrow(/finite/);
   expect(() => appContextMenuOf({ x: 1, y: 2, items: [{ id: 'a', label: 'A' }, { id: 'a', label: 'B' }] })).toThrow(/unique/);
 });
+it('carries a row\'s program for its icon, and drops one of the wrong type without failing the menu', () => {
+  expect(appContextMenuOf({ x: 1, y: 2, items: [{ id: 'a', label: 'VS Code', program: 'vscode' }, { id: 'b', label: 'Terminal', program: 7 }] }))
+    .toEqual({ x: 1, y: 2, items: [{ id: 'a', label: 'VS Code', program: 'vscode' }, { id: 'b', label: 'Terminal' }] });
+});

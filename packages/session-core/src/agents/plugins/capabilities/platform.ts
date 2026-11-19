@@ -129,6 +129,8 @@ export type HarnessPlatform =
       kind: 'supported'
       /** 每一行后面的注释就是它的出处,❌ 不许凭「它读 OPENAI_API_KEY」猜。 */
       wireProtocol: HarnessWireProtocol
+      /** Additional protocols the same model writer can select for a custom provider. */
+      protocols?: readonly HarnessWireProtocol[]
       /** 这一家接受模型指定的方言。方言是引擎级属性,界面只决定投递到哪个进程。 */
       dialect: ModelConfigDialect
       injection: Partial<Record<InjectionSurface, PlatformSurfaceInjection>>

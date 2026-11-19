@@ -13,6 +13,7 @@ import {
 } from '@shared/events/browserEvents';
 import { BROWSER_PINCH_MAX_LEVEL } from '@shared/preview/pinch-zoom';
 import { hardenWebPreferences } from '../../../../devtools-lock';
+import { PAGE_FULLSCREEN_PREFERENCES } from '../../../../page-fullscreen';
 import { raiseWindowLayers } from '../../../../window-layers';
 import { wirePageDialogs, type PageDialogs } from './browser-page-dialogs';
 import { BrowserPageRuntime } from './browser-page-runtime';
@@ -91,7 +92,7 @@ function pageState(webContents: WebContents): BrowserPageState {
   };
 }
 
-function resolveHost(windowName: string): BrowserWindow | null {
+export function resolveBrowserHostWindow(windowName: string): BrowserWindow | null {
   if (!windowName.startsWith(AUX_WINDOW_NAME_PREFIX)) return getMainWindow();
   return (
     BrowserWindow.getAllWindows().find((window) => !window.isDestroyed() && window.webContents.mainFrame.name === windowName) ??
@@ -225,6 +226,7 @@ function createBrowserPage(args: { browserId: string; partition: string; windowN
       webviewTag: false,
       // 网页换页时 ❌ 把焦点拉过去(人可能正在聊天框里打字)。
       focusOnNavigation: false,
+      ...PAGE_FULLSCREEN_PREFERENCES,
     }),
   });
   view.setBackgroundColor('#ffffff');
@@ -266,7 +268,7 @@ function installBrowserPage(page: BrowserPage): void {
 
 function moveToHost(page: BrowserPage, windowName: string): void {
   if (page.presentation) { page.windowName = windowName; return; }
-  const host = resolveHost(windowName);
+  const host = resolveBrowserHostWindow(windowName);
   const moved = page.runtime.host !== host;
   if (moved) {
     page.runtime.moveTo(host);
@@ -381,7 +383,7 @@ export function layoutBrowserPage(args: {
   const page = pages.get(args.browserId);
   if (!page || page.webContents.isDestroyed()) return false;
   if (args.windowName !== page.windowName) moveToHost(page, args.windowName);
-  const host = resolveHost(args.windowName);
+  const host = resolveBrowserHostWindow(args.windowName);
   const zoom = host && !host.isDestroyed() ? host.webContents.getZoomFactor() : 1;
   page.rect = args.rect ? toDip(args.rect, zoom) : null;
   page.mode = args.mode;
@@ -575,7 +577,7 @@ export function visibleHostOfPage(contents: WebContents): BrowserWindow | null |
  * 它自己那棵树里挪,网页这个独立 view 拿着窗口焦点时挪不动 —— 先把窗口焦点交回界面那一层。
  */
 export function focusBrowserHost(windowName: string): boolean {
-  const host = resolveHost(windowName);
+  const host = resolveBrowserHostWindow(windowName);
   if (!host || host.isDestroyed()) return false;
   host.webContents.focus();
   return true;

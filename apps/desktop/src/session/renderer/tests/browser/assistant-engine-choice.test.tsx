@@ -1,4 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
+import { queryClient } from '@/lib/replica';
 import { createRoot, type Root } from 'react-dom/client';
 import { useState } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -7,7 +8,7 @@ import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { AssistantEngineChoice } from '@/components/assistant/AssistantEngineChoice';
 import type { AssistantEngine } from '@/lib/assistantHomeIpc';
 import { DEFAULT_ASSISTANT_LOOK } from '@/components/agentAvatar/look';
-import { subscriptionKey } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { connectionAvailability } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { setLocalePreference } from '@/i18n';
 import '@/i18n/registerAssistantCatalog';
@@ -48,11 +49,11 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
     },
     listConnections: async () => ({ success: true, data: [
       { id: 'native', kind: 'native', name: 'CLI', current: !f.selected },
-      ...(f.saved ? [{ id: 'saved', kind: 'api-key', name: 'Saved API', current: !!f.selected }] : []),
+      ...(f.saved ? [{ id: 'saved', kind: 'account', name: 'Saved account', current: !!f.selected }] : []),
     ] }),
     createConnection: async () => {
       f.saved = true;
-      return { success: true, data: { id: 'saved', kind: 'api-key', name: 'Saved API', current: false } };
+      return { success: true, data: { id: 'saved', kind: 'account', name: 'Saved account', current: false } };
     },
     selectConnection: async ({ providerId }: { providerId: string }) => {
       f.selected = providerId; f.states[providerId] = 'authenticated';
@@ -77,7 +78,8 @@ beforeEach(() => {
   setLocalePreference('en-US');
   f.states = { claude: 'authenticated', codex: 'authenticated' }; f.hold = null; f.missingProgram = false; f.saved = false; f.selected = '';
   f.continued.mockClear(); f.back.mockClear();
-  client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  // The connection readings are replicas: they live in the one client (lib/replica), cleared after each case.
+  client = queryClient;
   host = document.createElement('div'); host.className = 'gugu-skin emlight'; host.style.cssText = 'height:100vh';
   document.body.append(host); root = createRoot(host);
 });
@@ -101,7 +103,7 @@ function boxes() {
   return ['engine-frame', 'assistant-engine-claude', 'assistant-engine-codex', 'assistant-engine-continue']
     .map(id => rect(page.getByTestId(id).element()));
 }
-async function refresh(id: string) { await client.invalidateQueries({ queryKey: [...subscriptionKey(null, id), 'availability'] }); }
+async function refresh(id: string) { await connectionAvailability.refresh(null, id); }
 
 it.each([1440, 390])('keeps both 74px cards, the frame and single action fixed through every state at %ipx', async width => {
   await page.viewport(width, 900); render();
@@ -157,7 +159,7 @@ it.each(['claude', 'codex'])('continues with usable %s API credentials without a
   expect(f.continued).toHaveBeenCalledExactlyOnceWith(id);
 });
 
-it.each(['claude', 'codex'])('opens the existing %s connection panel and accessible API form without leaving setup', async id => {
+it.each(['claude', 'codex'])('opens the %s account form without leaving setup', async id => {
   f.states[id] = 'unauthenticated'; render();
   await expect.element(page.getByTestId('assistant-engine-claude')).toBeVisible();
   await userEvent.click(page.getByTestId(`assistant-engine-${id}`));
@@ -165,8 +167,7 @@ it.each(['claude', 'codex'])('opens the existing %s connection panel and accessi
   await userEvent.click(page.getByRole('button', { name: `Configure ${name}`, exact: true }));
   // #2507 没登上的「现有 CLI 配置」不列 ⇒ 一个连接都没有:直接是「添加连接」表单,❌ 先弹一个只有「添加连接」的菜单。
   await expect.element(page.getByRole('dialog', { name: `Add a ${name} connection`, exact: true })).toBeVisible();
-  await userEvent.click(page.getByRole('tab', { name: 'API Key', exact: true }));
-  await expect.element(page.getByLabelText('API Key', { exact: true })).toBeVisible();
+  await expect.element(page.getByRole('button', { name: 'Add and sign in', exact: true })).toBeVisible();
   const form = document.querySelector('.subscription-connection-form')!;
   expect(form.closest('[aria-hidden="true"], [inert]')).toBeNull();
   expect(f.continued).not.toHaveBeenCalled();
@@ -216,10 +217,10 @@ it.each(['claude', 'codex'])('with a saved %s connection, the menu, its options 
   await userEvent.click(page.getByTestId(`assistant-engine-${id}`));
   const name = id === 'codex' ? 'Codex' : 'Claude';
   await userEvent.click(page.getByRole('button', { name: `Configure ${name}`, exact: true }));
-  await expect.element(page.getByRole('menuitemradio', { name: /Saved API/ })).toBeVisible();
+  await expect.element(page.getByRole('menuitemradio', { name: /Saved account/ })).toBeVisible();
   const menu = page.getByRole('menu').element();
   expectSolidOnTop(menu, 'connection menu');
-  await userEvent.click(page.getByRole('menuitem', { name: 'Options for Saved API', exact: true }));
+  await userEvent.click(page.getByRole('menuitem', { name: 'Options for Saved account', exact: true }));
   await expect.element(page.getByRole('menuitem', { name: 'Remove', exact: true })).toBeVisible();
   const options = page.getByRole('menuitem', { name: 'Remove', exact: true }).element().closest('[role="menu"]')!;
   expect(options).not.toBe(menu);
@@ -245,14 +246,15 @@ it('offers connection configuration before installing a not-detected local engin
   expect(f.continued).not.toHaveBeenCalled();
 });
 
-it('returns from the shared API form and continues with the same selected Codex engine', async () => {
+it('returns from account sign-in and continues with the selected Codex engine', async () => {
   f.states.codex = 'unauthenticated'; render();
   await userEvent.click(page.getByTestId('assistant-engine-codex'));
   await userEvent.click(page.getByRole('button', { name: 'Configure Codex', exact: true }));
-  await userEvent.click(page.getByRole('tab', { name: 'API Key', exact: true }));
-  await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'sk-isolated-test-fixture');
-  await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }));
-  // 当前是「没有」:存好的这一把直接成为当前连接,❌ 再去菜单里选一次。
+  await userEvent.click(page.getByRole('button', { name: 'Add and sign in', exact: true }));
+  await until('the shared sign-in opens', () => modalStore.activeModalId === 'agentSignInModal');
+  f.states.codex = 'authenticated';
+  (modalStore.activeModalArgs as { onSuccess: () => void }).onSuccess();
+  modalStore.closeModal();
   await expect.element(page.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();
   await expect.element(page.getByTestId('assistant-engine-codex')).toHaveAttribute('aria-checked', 'true');
   await userEvent.click(page.getByRole('button', { name: 'Continue', exact: true }));

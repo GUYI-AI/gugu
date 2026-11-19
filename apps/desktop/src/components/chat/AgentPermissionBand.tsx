@@ -8,6 +8,8 @@ import { useToast } from '../toastContext'
 import { rendererLogger } from '../../lib/log'
 import type { SessionpageSessionTimeline } from '../../hooks/useSessionpageSessionTimeline'
 import { appInstallAskOf } from '@/session/shared/extensions/host-actions'
+import { deviceCapabilityAskOf } from '@/session/shared/device-capability-ask'
+import { deviceCapabilityWords } from '@/session/renderer/features/extensions/device-capability-approval'
 import { answerAppInstall, answeredTooLate, appInstallWords } from '@/session/renderer/features/extensions/app-install-approval'
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
 import { machineRegistry } from '@/session/renderer/lib/machine-routing'
@@ -39,7 +41,9 @@ export function AgentPermissionBand({ sessionId, pending, respond }: {
   const install = appInstallAskOf(pending.origin)
   const machineId = sessionId ? machineRegistry.machineOf(sessionId) : null
   const machine = machineId ? remoteHostsStore.device(machineId)?.label ?? machineId : undefined
-  const words = install ? appInstallWords(install, translateSessionMessage, machine) : null
+  const capability = deviceCapabilityAskOf(pending.origin)
+  const words = install ? appInstallWords(install, translateSessionMessage, machine)
+    : capability ? deviceCapabilityWords(capability, translateSessionMessage, machine) : null
   const onResolve = (optionId: string) => void (install
     ? answerAppInstall({ itemId: pending.itemId, ask: install, optionId, machine, respond: (answer) => respond(pending.itemId, answer.optionId, answer).then(answered) })
     : respond(pending.itemId, optionId).then(answered)

@@ -25,6 +25,9 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/insta
   },
 }))
 vi.mock('../../../../apps/desktop/src/store/devicesCache', () => ({ readCachedDevices: () => [] }))
+// A plain open is handed to the window as a link (`openChatFile`, the desktop's own path): what it is handed is read here.
+const linked = vi.hoisted(() => vi.fn())
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/host-action-handlers', () => ({ applyExtensionHostAction: linked }))
 vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ fetchSessionsList: vi.fn() }))
 // Where the file is and whether this page may read it are `openTarget`'s, unchanged by A2 (its own tests): here it
 // answers the chat's sales.xlsx; who opens it is the host's real answer over the Apps on this phone.
@@ -191,15 +194,11 @@ describe('the phone: openWith(file, { tab }) opens its own tab (A2 T9)', () => {
     expect(phoneApps.remembered).not.toHaveBeenCalled()
   })
 
-  it('T9/T5 (control): without tab, the remembered Office; none remembered, the person picks', async () => {
-    remembered = { 'chat:.xlsx': 'office.sheet' }
-    expect(await call('filesOpenWith', { ref })).toMatchObject({ ok: true })
-    remembered = {}
-    expect(await call('filesOpenWith', { ref })).toMatchObject({ ok: true })
-    expect(choices()).toEqual([
-      { kind: 'one', candidate: expect.objectContaining({ tabKind: 'office.sheet' }) },
-      expect.objectContaining({ kind: 'choose' }),
-    ])
+  it('T9/T5: without tab, a link to the file from this page\'s slot: who opens it is the window\'s, as on the desktop', async () => {
+    linked.mockClear()
+    expect(await call('filesOpenWith', { ref, fileName: 'sales.xlsx', viewState: { row: 3 } })).toMatchObject({ ok: true })
+    expect(opened).not.toHaveBeenCalled()
+    expect(linked).toHaveBeenCalledWith({ origin: expect.objectContaining({ tabId: 'card-1' }), action: { kind: 'openChatFile', itemId: SALES, chatId: CHAT, intent: 'navigate', fileName: 'sales.xlsx', viewState: { row: 3 } } })
   })
 
   it.each([

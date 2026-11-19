@@ -10,7 +10,6 @@ import type { AssistantMachine } from '../../session/renderer/features/assistant
 import { rendererLogger } from '../../lib/log';
 import { cachedDevicesAccount } from '../../store/devicesCache';
 import { assistantPanelAccountId, requireAssistantPanelBridge } from '../../lib/assistantPanelBridge';
-import { assistantPanelLibrary } from './assistant-panel-library';
 import { ASSISTANT_PANEL_CHANGED } from './assistant-panel-events';
 
 type ProgramNotification = { server: string; method: string; params?: unknown };
@@ -26,23 +25,19 @@ type PanelAPI = {
 export function assistantAppClient(machine: AssistantAppMachine | null | undefined, expectedOwnerId = machine?.panel?.ownerId ?? assistantPanelAccountId() ?? cachedDevicesAccount(), onHomeDevice = false) {
   if (machine?.panel) {
     const panel = machine.panel;
-    const library = assistantPanelLibrary(panel);
     const result = (result: unknown): CallToolResult => ({ content: [{ type: 'text',text: JSON.stringify(result) }],structuredContent: { result } });
     return {
       async listAgents(): Promise<Awaited<ReturnType<PanelAPI['listAgents']>>> { throw new Error('Use the cloud assistant identity') },
       async dispatch(): Promise<AppMessageReceipt> { throw new Error('Panel saves use the durable cloud change queue') },
-      async callProgram(name: string, args?: Record<string, unknown>): Promise<CallToolResult> {
+      async callProgram(name: string): Promise<CallToolResult> {
         if (expectedOwnerId !== panel.ownerId) throw new Error('Assistant panel account changed');
-        if (name === 'library_read') return result(args?.entry ? await library.entry(args.kind as 'capabilities' | 'devices',String(args.entry))
-          : await library.volume(args?.kind as 'capabilities' | 'devices'));
-        if (name === 'library_write') return result(await library.save(args as Parameters<typeof library.save>[0]));
         const path = `${panel.paths.memoryDir}/pending-work.json`;
         if (name === 'assistant_work_clear') { await panel.write(path,new TextEncoder().encode('{"version":1,"items":[]}'),'application/json'); return result({ version: 1,items: [] }); }
         if (name === 'assistant_work_list') { const text = await panel.text(path); return result(text === null ? { version: 1,items: [] } : JSON.parse(text)); }
         throw new Error('Unknown assistant panel program');
       },
       onProgramNotification(listener: (event: ProgramNotification) => void) {
-        const changed = () => { for (const resource of ['capabilities','devices','pending-work']) listener({ server: 'assistant',method: 'notifications/resources/updated',params: { ownerId: panel.ownerId,resource } }); };
+        const changed = () => listener({ server: 'assistant',method: 'notifications/resources/updated',params: { ownerId: panel.ownerId,resource: 'pending-work' } });
         window.addEventListener(ASSISTANT_PANEL_CHANGED,changed);
         return () => window.removeEventListener(ASSISTANT_PANEL_CHANGED,changed);
       },

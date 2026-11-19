@@ -4,9 +4,11 @@ import {
   type PlatformCallableRoutes,
   type IPlatformModelBehavior,
   type PlatformModelLoad,
+  type SessionModelCapability,
 } from '@gugu/session-core/agents/plugins';
 import { claudePlatformModelOption } from '@gugu/session-core/acp/platform-model-address';
 import { harnessPlatform } from './platform';
+import { claudeReviewSettings } from './auto-review';
 
 /**
  * `--settings` 的**文档内容** —— 把这次会话的中转地址与令牌钉在**高于用户 settings 文件**的那一层。
@@ -75,8 +77,11 @@ function claudeSettingsOverride(
   platformModels?: readonly { id: string; displayName: string; contextWindow?: number | null }[],
   selectedWindow?: number | null,
   callableRoutes?: PlatformCallableRoutes,
+  sessionSettings: Record<string, boolean> = {},
 ): Pick<PlatformModelLoad, 'settingsOverride'> {
-  if (!platformSettingsEnv || Object.keys(platformSettingsEnv).length === 0) return {}
+  if (!platformSettingsEnv || Object.keys(platformSettingsEnv).length === 0) {
+    return Object.keys(sessionSettings).length > 0 ? { settingsOverride: sessionSettings } : {}
+  }
 
   const normalizedModels = (platformModels ?? [])
     .map((entry) => ({ model: entry.id.trim(), label: entry.displayName.trim(), window: entry.contextWindow }))
@@ -100,6 +105,7 @@ function claudeSettingsOverride(
 
   return {
     settingsOverride: {
+      ...sessionSettings,
       // Whole-list safety boundary: adapter/Claude Code applies the user's higher-precedence
       // availableModels restriction on top of this session list; this removes native rows that
       // would send a platform token to an Anthropic model.
@@ -116,7 +122,7 @@ function claudeSettingsOverride(
       ...(platformStandaloneSearchGranted(callableRoutes, selectedModel)
         ? { permissions: { deny: ['WebSearch'] } }
         : {}),
-      env: { ...platformSettingsEnv },
+      env: claudeReviewSettings({ env: platformSettingsEnv }).env,
     },
   }
 }
@@ -141,6 +147,7 @@ export type ClaudeAcpPlatformSessionMeta = {
   claudeCode: {
     options: {
       settings?: string
+      model?: string
       env: Record<string, string>
     }
   }
@@ -149,14 +156,24 @@ export type ClaudeAcpPlatformSessionMeta = {
 export function claudeAcpPlatformSessionMeta(input: {
   settingsDocumentPath: string | null
   env: Record<string, string>
+  model?: string
 }): ClaudeAcpPlatformSessionMeta {
   return {
     claudeCode: {
       options: {
         ...(input.settingsDocumentPath ? { settings: input.settingsDocumentPath } : {}),
+        ...(input.model ? { model: input.model } : {}),
         env: input.env,
       },
     },
+  }
+}
+
+/** Secret-free flags shared by native ACP startup and the host-owned settings file. */
+export function claudeSessionFlagSettings(model: Pick<SessionModelCapability, 'fastMode' | 'reasoningEffort'> | null): Record<string, boolean> {
+  return {
+    ...(typeof model?.fastMode === 'boolean' ? { fastMode: model.fastMode } : {}),
+    ...(model?.reasoningEffort === 'ultracode' ? { ultracode: true } : {}),
   }
 }
 
@@ -164,6 +181,7 @@ export const platformModel: IPlatformModelBehavior = {
   declare: (input) => ({
     dialect: harnessPlatform.dialect,
     model: input.explicitModel ?? input.envOverride('GUGU_ACP_CLAUDE_MODEL'),
+    ...(input.requestedEffort === 'ultracode' ? { reasoningEffort: input.requestedEffort } : {}),
     // Carried even though this dialect emits no provider args: it is the signal that the
     // session is on platform quota at all, which is what decides whether the harness's own
     // model picker has to be repopulated from us.
@@ -184,8 +202,9 @@ export const platformModel: IPlatformModelBehavior = {
       : {}),
   }),
   load: (model) => {
+    const sessionSettings = claudeSessionFlagSettings(model)
     const selectedModel = trimmedValue(model.model)
-    if (!selectedModel) return {}
+    if (!selectedModel) return Object.keys(sessionSettings).length > 0 ? { settingsOverride: sessionSettings } : {}
     // 平台模型交给 Claude Code 的写法(1M 的 `claude-*` 带 `[1m]`,见 claudePlatformModelOption)。
     // 凡是告诉 Claude Code「这是哪个模型」的地方都用它:后台档若用规范 id,result.modelUsage 里就有
     // 两个键,适配器按前缀挑中 200K 那个去显示。
@@ -221,7 +240,8 @@ export const platformModel: IPlatformModelBehavior = {
     // 的话,用户自己 settings 里的 ANTHROPIC_MODEL / ANTHROPIC_SMALL_FAST_MODEL 会赢 ——
     // 界面选着咕咕的模型,请求却带着用户的模型名,而会话令牌的白名单只有那一个模型,于是每个
     // 请求被网关拒。spawnEnv 照旧保留:不写文档的方言(以及没有平台凭据的会话)仍靠它。
-    // ❌ 非平台会话不产出文档 —— 那会把 BYOK 用户自己选的模型也一起顶掉。
+    // Native sessions may carry only the session's explicit Fast preference. They do not
+    // receive model/env overrides, so the user's native model configuration stays in force.
     const settingsEnv = model.platformSettingsEnv
       ? { ...model.platformSettingsEnv, ...spawnEnv }
       : undefined
@@ -233,6 +253,7 @@ export const platformModel: IPlatformModelBehavior = {
         model.platformModels,
         model.contextWindow,
         model.platformCallableRoutes,
+        sessionSettings,
       ),
     }
   },

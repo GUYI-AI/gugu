@@ -14,7 +14,6 @@ import {
 } from '@renderer/features/sessions/session-composer-styles';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
-import { machineRegistry } from '@renderer/lib/machine-routing';
 import { ComposerFolderPicker } from './composer-folder-picker';
 import { useProjectFolderStage, type ProjectFolderStage } from './project-folder-stage';
 import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
@@ -74,7 +73,7 @@ export const ProjectTaskComposer = observer(function ProjectTaskComposer({
 }) {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
-  const { rowId, runMachinePicker, scopedFolders, targetProjectId, machineContext, machineOf, pickAndAttach } = stage;
+  const { rowId, runMachinePicker, scopedFolders, targetProjectId, executionDevice, machineContext, machineOf, pickAndAttach } = stage;
   // gugu #2328: 挂载中页面已上屏,发送由新会话要建进去的那个项目挂上之后解锁;这行小字是
   // 发送暂不可用的唯一提示(安静补齐,❌ 显眼 loading)。
   const isBootstrapping = projectViewKind(getProjectStore(targetProjectId)) === 'bootstrapping';
@@ -106,7 +105,7 @@ export const ProjectTaskComposer = observer(function ProjectTaskComposer({
               <ComposerFolderPicker
                 folders={scopedFolders}
                 machineLabelOf={(deviceId) => machineOf(deviceId).label}
-                onAttach={() => void pickAndAttach(scopedFolders.chosen?.deviceId ?? machineRegistry.machineOf(targetProjectId))}
+                onAttach={() => void pickAndAttach(executionDevice)}
               />
             }
             host={machineContext?.host ?? machineLibraryHost(null)}

@@ -1,4 +1,6 @@
 import { isAbsolute, resolve } from 'node:path';
+import { canonicalPath } from '@gugu/session-core/files';
+import { gitErrorMessage, isNotRepositoryInspectionError } from '@gugu/session-core/git';
 import { and, eq } from 'drizzle-orm';
 import { TRANSCRIPT_SOURCE_IDS, type TranscriptSource } from '@gugu/core/shared/types/transcripts';
 import { db } from '@main/db/client';
@@ -29,7 +31,7 @@ export async function indexSessionsForApp(args: Record<string, unknown>): Promis
   let cwd: string | undefined;
   if (args.project !== undefined) {
     if (typeof args.project !== 'string' || !args.project) return invalid('project is a project id or an absolute directory');
-    if (isAbsolute(args.project)) cwd = resolve(args.project);
+    if (isAbsolute(args.project)) cwd = canonicalPath(args.project);
     else {
       const root = await projectRootFolder(args.project);
       if (!root) throw Object.assign(new Error('Project has no root folder on this machine'), { code: 'not-found' });
@@ -44,24 +46,33 @@ export async function indexSessionsForApp(args: Record<string, unknown>): Promis
       .leftJoin(projectRemotes, and(eq(projectRemotes.projectId, projects.id), eq(projectRemotes.remoteName, 'origin'))),
   ]);
   const localGroupOf = createLocalGroupOf(sessionProjects);
-  const remotes = new Map(registeredRemotes.map(({ path, url }) => [path, url]));
-  const repositoryUrls = new Map<string | null, Promise<string | undefined>>();
-  const groupOf = (directory: string | null): Promise<AppSessionGroup> => {
-    const group = localGroupOf(directory);
-    if (!repositoryUrls.has(group.key)) repositoryUrls.set(group.key, (async () => {
-      let url = group.key ? remotes.get(group.key) : undefined;
-      if (group.key && !remotes.has(group.key) && isAbsolute(group.key) && findRepoRoot(group.key) === group.key) {
-        const { runtimeManager } = await import('@main/core/runtime/runtime-manager');
-        const runtime = await runtimeManager.acquire();
+  const remotes = new Map<string, string | null>(registeredRemotes.map(({ path, url }) => [path, url]));
+  const repositories = new Map<string | null, Promise<Pick<AppSessionGroup, 'repositoryUrl' | 'repositoryError'>>>();
+  // @@@group-repository - `findRepoRoot` only reads the disk (a `.git` there), so git has the last word: a folder git calls
+  // "not a repository" (an empty `.git`) is a plain folder; any other failure is this group's, said on it, never the index's.
+  const repositoryOf = async (key: string): Promise<Pick<AppSessionGroup, 'repositoryUrl' | 'repositoryError'>> => {
+    if (remotes.has(key)) return { repositoryUrl: parseRepositoryRef(remotes.get(key))?.repositoryUrl };
+    if (!isAbsolute(key) || findRepoRoot(key) !== key) return {};
+    try {
+      const { runtimeManager } = await import('@main/core/runtime/runtime-manager');
+      const runtime = await runtimeManager.acquire();
+      try {
+        const repository = await runtime.value.git.openRepository(key);
         try {
-          const repository = await runtime.value.git.openRepository(group.key);
-          try { url = (await repository.value.getRemotes()).remotes.find((remote) => remote.name === 'origin')?.url; }
-          finally { await repository.release(); }
-        } finally { await runtime.release(); }
-      }
-      return parseRepositoryRef(url)?.repositoryUrl;
-    })());
-    return repositoryUrls.get(group.key)!.then((repositoryUrl) => repositoryUrl ? { ...group, repositoryUrl } : group);
+          const url = (await repository.value.getRemotes()).remotes.find((remote) => remote.name === 'origin')?.url;
+          return { repositoryUrl: parseRepositoryRef(url)?.repositoryUrl };
+        } finally { await repository.release(); }
+      } finally { await runtime.release(); }
+    } catch (error) {
+      return isNotRepositoryInspectionError(error) ? {} : { repositoryError: gitErrorMessage(error) };
+    }
+  };
+  const groupOf = async (directory: string | null): Promise<AppSessionGroup> => {
+    const group = localGroupOf(directory);
+    if (!group.key) return group;
+    if (!repositories.has(group.key)) repositories.set(group.key, repositoryOf(group.key));
+    const { repositoryUrl, repositoryError } = await repositories.get(group.key)!;
+    return { ...group, ...(repositoryUrl ? { repositoryUrl } : {}), ...(repositoryError ? { repositoryError } : {}) };
   };
   const next = offset + page.rows.length;
   return {

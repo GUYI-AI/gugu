@@ -41,7 +41,7 @@ export type AgentWatchRoute =
    */
   | { name: 'projects'; reveal?: { deviceId: string; sessionId: string } | { projectId: string } }
   /** `deviceId` = 会话所在的机器(跨机器的子会话在它自己那台上打开)。 */
-  | { name: 'timeline'; deviceId: string; session: SessionpageSessionSummary; firstPrompt?: FirstPrompt; appKind?: string; draft?: { text: string } }
+  | { name: 'timeline'; deviceId: string; session: SessionpageSessionSummary; firstPrompt?: FirstPrompt; appKind?: string; draft?: { text: string }; innerSidebarEntry?: string }
   /** 新建任务(DESIGN 点击路径 4a):根页的 + 直接进来,项目与机器是页上带默认值的两行,❌ 先选机器。 */
   | { name: 'create' }
 
@@ -58,7 +58,7 @@ export function AgentWatchPage({
   onExit,
   onRouteChange,
   createRequest,
-  taskInGroup = null,
+  createFromCurrentRoute = false,
   openRequest,
   onOpenGroupChat,
 }: {
@@ -69,8 +69,8 @@ export function AgentWatchPage({
   onRouteChange?: (name: AgentWatchRoute['name']) => void
   /** 每变一次 = 外面要建 agent(联系人页的「新建 Agent」):直接进新建页,与根页的 + 同一步。 */
   createRequest?: number
-  /** 随 createRequest 一起来:群输入框「新任务」带的群(首句落成群里的任务卡、agent 进群、建完回到群)。null = 不进群。 */
-  taskInGroup?: { chatId: string; name: string } | null
+  /** The create action came from a route already visible in this layer. */
+  createFromCurrentRoute?: boolean
   /** 每来一个新的 = 一个 App 点名了这条会话(`gugu.showSession`,useAppShowSession):进它的时间线,与在列表里点那一行同一步。 */
   openRequest?: AppShowSessionDetail | null
   /** 从群里派的任务建好了:回到那个群。 */
@@ -90,9 +90,9 @@ export function AgentWatchPage({
   if (openRequest && openRequest !== seenOpenRequest) {
     if ('projectId' in openRequest) setNavigation({ request: openRequest, routes: [{ name: 'projects', reveal: openRequest }] })
     else {
-      const { deviceId, session, tabKind, draft } = openRequest
+      const { deviceId, session, tabKind, draft, innerSidebarEntry } = openRequest
       setNavigation({ request: openRequest, routes: [rowOpens(session)
-        ? { name: 'timeline', deviceId, session, ...(tabKind ? { appKind: tabKind } : {}), ...(draft ? { draft } : {}) }
+        ? { name: 'timeline', deviceId, session, innerSidebarEntry, ...(tabKind ? { appKind: tabKind } : {}), ...(draft ? { draft } : {}) }
         : { name: 'projects', reveal: { deviceId, sessionId: session.conversationId } }] })
     }
   }
@@ -144,17 +144,13 @@ export function AgentWatchPage({
   // 只认「变了」:重挂时带着旧计数不能自己跳进去。
   const seenCreateRequest = useRef(createRequest)
   // 这一次新建派到哪个群里:只跟着外面那次请求来,退回项目页就清掉(项目页的 + 是不进群的新建)。
-  const [taskGroup, setTaskGroup] = useState<{ chatId: string; name: string } | null>(null)
   useEffect(() => {
     if (createRequest === seenCreateRequest.current) return
     seenCreateRequest.current = createRequest
-    setTaskGroup(taskInGroup)
-    navigate([{ name: 'projects' }, { name: 'create' }], 'push')
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 群只在请求变的那一刻读
-  }, [createRequest, navigate])
-  useEffect(() => {
-    if (route.name === 'projects') setTaskGroup(null)
-  }, [route.name])
+    // Keep visited pages as the return path. Reopening creation replaces its draft page.
+    const parent = createFromCurrentRoute ? routes.filter((entry) => entry.name !== 'create') : []
+    navigate([...parent, { name: 'create' }], 'push')
+  }, [createRequest, navigate, createFromCurrentRoute, routes])
 
   // 机器在名下消失了(被删 / 换账号)⇒ 退回列表。派生而不是在渲染里 setState:
   // 后者会先画出一帧指向不存在机器的页。
@@ -167,6 +163,7 @@ export function AgentWatchPage({
         key={`${device.device_id}:${route.session.conversationId}:${route.appKind ?? ''}`}
         device={device}
         initialAppKind={route.appKind}
+        innerSidebarEntry={route.innerSidebarEntry}
         session={liveSession ?? route.session}
         firstPrompt={route.firstPrompt}
         draft={route.draft}
@@ -180,9 +177,8 @@ export function AgentWatchPage({
       <Suspense fallback={null}>
         <CreateSessionPage
           key={ownerId}
-          taskGroup={taskGroup}
           onBack={goBack}
-          // 从群里新建的会话回到那个群;其余打开新会话,返回时回到项目页。
+          // Replace the submitted form so the new conversation returns to the same entry.
           onCreated={(device, session, firstPrompt, result) => {
             const phone = isPhoneDevice(device)
             if (phone && result?.birthGroup?.status === 'failed') {
@@ -192,14 +188,14 @@ export function AgentWatchPage({
               if (denial) toast(tWorkspace('groupJoinDenied'), 'error', tMessaging(denial))
               else toast(tWorkspace('groupJoinFailed'), 'error', messageForUser(result.birthGroup.error))
             }
-            const groupId = phone ? result?.birthGroup?.chatId : taskGroup?.chatId
+            const groupId = phone ? result?.birthGroup?.chatId : undefined
             if (groupId && onOpenGroupChat && (!phone || result?.birthGroup?.status === 'joined' || result?.birthGroup?.status === 'pending_approval')) {
               if (phone && result?.birthGroup?.status === 'pending_approval') toast(tWorkspace('groupJoinPending'), 'success')
               navigate([{ name: 'projects' }], 'replace')
               onOpenGroupChat(groupId)
               return
             }
-            navigate([{ name: 'projects' }, { name: 'timeline', deviceId: device.device_id, session, firstPrompt }], 'replace')
+            navigate([...routes.slice(0, -1), { name: 'timeline', deviceId: device.device_id, session, firstPrompt }], 'replace')
           }}
         />
       </Suspense>
@@ -210,7 +206,7 @@ export function AgentWatchPage({
     <ProjectsPage
       scrollMemo={projectsScroll}
       reveal={route.name === 'projects' ? route.reveal : undefined}
-      onCreate={() => { setTaskGroup(null); setRoute({ name: 'create' }) }}
+      onCreate={() => setRoute({ name: 'create' })}
       onOpenSession={(deviceId, session) => {
         // 权限在**用户动作之后**要:点开一条会话 = 他确实要看管它。一进 App 就弹权限框
         // 多数人会直接拒掉,然后这个功能永远用不了。

@@ -6,12 +6,15 @@ import { AttachmentsError, attachmentRequest, type AttachmentsEndpoint } from '.
 import { withBoundedOperation } from './boundedOperation'
 import { anySignal } from '../shared/anySignal'
 import { isTransientFileReadError, retryFileDownload } from './fileDownloadRetry'
+import { createFileDownloadTransport, fileDownloadSession, type FileDownloadSession } from './fileDownloadRouting'
+import { readFileThumbnail } from './fileThumbnailDownload'
 
 /** How long bytes shown before their read acknowledgement may stay up while it is pending. */
 const ACKNOWLEDGEMENT_MS = 15_000
 
 export type { FileChunkCache } from '../shared/fileCache'
 type Download = { status: string; code?: string; url: string; expires_at?: string; origin_available?: boolean; thumb_url?: string | null; download_id: string; key?: string; codec?: string; sha256: string | null; size_bytes: number; ciphertext_bytes?: number; ciphertext_sha256?: string; bucket_id?: string; object_name?: string; message_id?: string }
+type SignedDownload = { lease: Download; direct: boolean }
 const missingObject = (row: { status: string; code?: string }) => row.status === 'missing' && row.code === 'object_not_found'
 const hex = (bytes: Uint8Array) => Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
 const cacheKey = (context: FileContext, digest: string) => hex(sha256(new TextEncoder().encode(JSON.stringify([context.actor, fileRefKey(context.ref), digest]))))
@@ -21,11 +24,12 @@ const sameLegacyObject = (revision: FileRevision, row: { bucket_id?: string; obj
 const uncached: FileChunkCache = { get: async () => null, put: async () => {}, clear: async () => {} }
 
 /** Retain verified chunks; reconnect only the incomplete chunk, with the signer's authorized origin fallback. */
-function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (renew?: boolean, origin?: boolean) => Promise<Download>, fetcher: typeof fetch, signal?: AbortSignal, progress?: FileContext['progress']) {
+function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (renew?: boolean, origin?: boolean) => Promise<SignedDownload>, fetcher: () => Promise<typeof fetch>, session: FileDownloadSession, signal?: AbortSignal, progress?: FileContext['progress']) {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined, buffered: Uint8Array = new Uint8Array(), next = -1, interrupted = false
   let last: { index: number; bytes: Uint8Array } | undefined, lease: Download | undefined, origin = false, renewed = false
   const target = () => ({ stage: origin || lease?.bucket_id === 'temporary' ? 'oss' as const : 'cdn' as const, url: lease!.url })
-  const reset = async () => { await reader?.cancel().catch(() => undefined); reader = undefined; buffered = new Uint8Array() }
+  const transport = createFileDownloadTransport(target, fetcher, session, signal)
+  const reset = async () => { transport.cancel(reader); reader = undefined; buffered = new Uint8Array() }
   const chunk = async (index: number): Promise<Uint8Array> => {
     signal?.throwIfAborted()
     const offset = index * FILE_CHUNK_BYTES, length = Math.min(FILE_CHUNK_BYTES, size - offset)
@@ -33,19 +37,23 @@ function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (r
     const hit = await cache.get(key, index)
     if (hit && hit.length !== length) throw new Error('Invalid cached file chunk')
     if (hit && (!reader || index < next)) return hit
-    try { lease ??= await sign() } catch (error) { interrupted = isTransientFileReadError(error); throw error }
+    try {
+      if (!lease) { const signed = await sign(); lease = signed.lease; origin = signed.direct }
+    } catch (error) { interrupted = isTransientFileReadError(error); throw error }
     return retryFileDownload(target, async () => {
       try {
         if (!reader) {
-          let response = await fetcher(target().url, { signal, headers: offset ? { Range: `bytes=${offset}-` } : {} })
+          let response = await transport.open({ headers: offset ? { Range: `bytes=${offset}-` } : {} })
           const expires = Date.parse(lease!.expires_at ?? '')
           // A valid capability's 403 is a refusal. Only an actually expired lease may be renewed, once per read.
           if (response.status === 403 && !renewed && Number.isFinite(expires) && expires <= Date.now()) {
-            await response.body?.cancel(); renewed = true; lease = await sign(true, origin)
-            response = await fetcher(target().url, { signal, headers: offset ? { Range: `bytes=${offset}-` } : {} })
+            void response.body?.cancel().catch(() => undefined); renewed = true
+            const signed = await sign(true, origin); lease = signed.lease; origin = signed.direct
+            response = await transport.open({ headers: offset ? { Range: `bytes=${offset}-` } : {} })
           }
           if (response.status !== (offset ? 206 : 200) || !response.body || offset && response.headers.get('content-range') !== `bytes ${offset}-${size - 1}/${size}`) {
-            await response.body?.cancel(); throw Object.assign(new Error(`Invalid file range response (HTTP ${response.status})`), { status: response.status })
+            void response.body?.cancel().catch(() => undefined)
+            return transport.refuse(Object.assign(new Error(`Invalid file range response (HTTP ${response.status})`), { status: response.status }))
           }
           reader = response.body.getReader(); next = index
         }
@@ -53,21 +61,21 @@ function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (r
         const bytes = new Uint8Array(length)
         for (let filled = 0; filled < length;) {
           if (!buffered.length) {
-            const received = await reader.read()
+            const received = await transport.read(reader)
             if (received.done) throw new Error('Truncated file response')
             buffered = received.value
           }
           const take = Math.min(buffered.length, length - filled)
           bytes.set(buffered.subarray(0, take), filled); buffered = buffered.subarray(take); filled += take
         }
-        if (offset + length === size && (buffered.length || !(await reader.read()).done)) throw new Error('File response has extra bytes')
+        if (offset + length === size && (buffered.length || !(await transport.read(reader)).done)) throw new Error('File response has extra bytes')
         await cache.put(key, index, bytes); next++; last = { index, bytes }; interrupted = false
         progress?.(offset + length, size)
         return bytes
       } catch (error) { interrupted = isTransientFileReadError(error); throw error }
     }, signal, async () => {
       await reset()
-      if (!origin && lease?.origin_available === true) { lease = await sign(false, true); origin = true }
+      if (!origin && lease?.origin_available === true) { const signed = await sign(false, true); lease = signed.lease; origin = signed.direct }
     })
   }
   return { size, interrupted: () => interrupted, dispose: reset, async read(offset: number, length: number) {
@@ -87,27 +95,42 @@ export function cloudFileProviders(deps: {
   endpoint(context: FileContext): Promise<AttachmentsEndpoint>
   sink(size: number, context: FileContext): Promise<FileSink>
   cache: FileChunkCache; fetch?: typeof fetch
+  downloadSession?: FileDownloadSession
   metadata?(context: FileContext): Promise<unknown>
   image?(file: FileBytes, revision: FileRevision): Promise<Blob>
   imageCache?: Pick<Cache, 'match' | 'put'>
 }): Pick<FileProviders, 'metadata' | 'managed' | 'temporary' | 'preview' | 'download'> {
+  const session = deps.downloadSession ?? fileDownloadSession
   const request = async (context: FileContext, route: string, body: Record<string, unknown>) => {
     context.signal?.throwIfAborted()
     const endpoint = await deps.endpoint(context)
     context.signal?.throwIfAborted()
     return attachmentRequest(endpoint, route, body, context.signal)
   }
-  const objectFetch = async (context: FileContext, url: RequestInfo | URL, init?: RequestInit) => {
+  const download = async (context: FileContext, body: Record<string, unknown>, prefer: false | 'file' | 'thumbnail') => {
+    context.signal?.throwIfAborted()
+    const endpoint = await deps.endpoint(context)
+    context.signal?.throwIfAborted()
+    const direct = body.origin === true || prefer !== false && session.prefersOrigin(endpoint.supabaseUrl, prefer)
+    const lease = await attachmentRequest(endpoint, 'file-download', { ...body, ...(direct ? { origin: true } : {}) }, context.signal) as Download
+    return { lease, direct, scope: endpoint.supabaseUrl }
+  }
+  const advertised = (signed: SignedDownload & { scope: string }) => {
+    if (!signed.direct && signed.lease.origin_available === true && signed.lease.bucket_id !== 'temporary') {
+      session.advertise(signed.scope, signed.lease.url, signed.lease.thumb_url)
+    }
+  }
+  const objectTransport = async (context: FileContext) => {
     context.signal?.throwIfAborted()
     const fetcher = deps.fetch ?? (await deps.endpoint(context)).fetch ?? fetch
     context.signal?.throwIfAborted()
-    return fetcher(url, init)
+    return fetcher
   }
   const read = async (revision: FileRevision, context: FileContext, encrypted: boolean, destination?: FileSink): Promise<FileBytes> => {
     const ref = 'item_id' in context.ref ? { ...context.ref, version: revision.version } : context.ref
     // A server that knows `download_request_id` answers `download` (the lease, once the copy is ready) and checks the
     // version in the read acknowledgement, which a read for display does not wait for. Older servers answer neither.
-    let lease: Download | undefined, combined = false
+    let lease: Download | undefined, combined = false, direct = false
     const downloadRequest = crypto.randomUUID()
     if (encrypted) await withBoundedOperation(600_000, () => new Error('File device is unavailable or its transfer timed out'), async timeout => {
       const waiting = { ...context, signal: anySignal([context.signal, timeout]) }, requestId = crypto.randomUUID()
@@ -133,12 +156,20 @@ export function cloudFileProviders(deps: {
           lease && (row.ciphertext_sha256 !== lease.ciphertext_sha256 || row.key !== lease.key))) throw new Error('File download commitment changed')
       return lease = row
     }
-    const sign = async (renew = false, origin = false) => accept(await request(context, 'file-download', { ref, as: context.actor.actorId,
-      request_id: origin && !renew && lease ? lease.download_id : crypto.randomUUID(), ...(origin ? { origin: true } : {}) }) as Download)
+    const sign = async (renew = false, origin = false): Promise<SignedDownload> => {
+      const signed = await download(context, { ref, as: context.actor.actorId,
+        request_id: origin && !renew && lease ? lease.download_id : crypto.randomUUID(), ...(origin ? { origin: true } : {}) },
+      encrypted || revision.legacy_object ? false : 'file')
+      accept(signed.lease); advertised(signed); direct = signed.direct
+      return { lease: signed.lease, direct }
+    }
     // A key still requires the current download ACL, even if every ciphertext chunk is cached.
     if (encrypted && !lease) await sign()
     const digest = encrypted ? lease!.ciphertext_sha256! : revision.sha256, key = cacheKey(context, digest ?? crypto.randomUUID())
-    const source = remoteSource(encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes, key, destination || revision.legacy_object ? uncached : deps.cache, async (renew, origin) => renew || origin ? sign(renew, origin) : lease ?? await sign(), (url, init) => objectFetch(context, url, init), context.signal, context.progress)
+    const source = remoteSource(encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes, key, revision.legacy_object ? uncached : deps.cache, async (renew, origin) => renew || origin ? sign(renew, origin) : lease ? { lease, direct } : sign(), () => objectTransport(context), session, context.signal, context.progress)
+    // @@@save-through-cache - a save to disk reads through the same chunk cache as a read for display, so a save that dies
+    // halfway (the process stops, the retry window runs out) resumes from the chunks it has; once saved they are dropped.
+    const saved = async (target: FileSink) => { const bytes = await target.commit(); await deps.cache.clear(key); return bytes }
     let dataKey: Uint8Array | undefined
     let sink: FileSink | undefined
     try {
@@ -176,7 +207,7 @@ export function cloudFileProviders(deps: {
         })
         // A saved copy cannot be taken back: a download still waits. Bytes for display are returned now and the
         // acknowledgement follows; whoever shows them takes them down if it fails (`acknowledged`).
-        if (destination) { await acknowledge(); return await sink.commit() }
+        if (destination) { await acknowledge(); return await saved(sink) }
         const acknowledged = acknowledge().catch(async error => {
           if (error instanceof FileReadRevokedError || error instanceof MissingFileObjectError) await deps.cache.clear(key)
           throw error
@@ -190,10 +221,11 @@ export function cloudFileProviders(deps: {
       changed(current)
       if (encrypted) await request(context, 'file-read-complete', { download_id: lease!.download_id, as: context.actor.actorId })
       context.signal?.throwIfAborted()
-      return destination ? await sink.commit() : file
+      return destination ? await saved(sink) : file
     } catch (error) {
       await sink?.abort()
-      if (!destination && !source.interrupted() && !context.signal?.aborted) await deps.cache.clear(key)
+      // An interrupted or abandoned read keeps its chunks, a save included: the next call for the same bytes resumes there.
+      if (!source.interrupted() && !context.signal?.aborted) await deps.cache.clear(key)
       throw error
     } finally { dataKey?.fill(0); if (lease) delete lease.key; await source.dispose() }
   }
@@ -216,25 +248,36 @@ export function cloudFileProviders(deps: {
         const hit = key ? await deps.imageCache?.match(key) : null
         if (!video && hit) return hit.blob()
         const ref = 'item_id' in context.ref ? { ...context.ref, version: revision.version } : context.ref
-        const lease = await request(context, 'file-download', { ref, as: context.actor.actorId, request_id: crypto.randomUUID() }) as Download
-        if (missingObject(lease)) throw new MissingFileObjectError()
-        if (lease.status !== 'ready' || lease.sha256 !== revision.sha256 || lease.size_bytes !== revision.size_bytes || !sameLegacyObject(revision, lease)) throw new Error('File preview commitment changed')
+        let signed = await download(context, { ref, as: context.actor.actorId, request_id: crypto.randomUUID() },
+          revision.legacy_object ? false : video ? 'file' : 'thumbnail')
+        const acceptPreview = (lease: Download) => {
+          if (missingObject(lease)) throw new MissingFileObjectError()
+          if (lease.status !== 'ready' || lease.sha256 !== revision.sha256 || lease.size_bytes !== revision.size_bytes || !sameLegacyObject(revision, lease)) throw new Error('File preview commitment changed')
+        }
+        acceptPreview(signed.lease); advertised(signed)
+        const lease = signed.lease
         if (video) {
           const expiresAt = Date.parse(lease.expires_at ?? '')
           if (typeof lease.url !== 'string' || !lease.url || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error('Invalid video preview lease')
           return { url: lease.url, expiresAt } // Every renewal goes through the same ACL and quota signer.
         }
-        if (lease.thumb_url) {
-          const blob = await retryFileDownload(() => ({ stage: 'cdn', url: lease.thumb_url! }), async () => {
-            const response = await objectFetch(context, lease.thumb_url!, { signal: context.signal })
-            if (!response.ok) {
-              await response.body?.cancel()
-              throw Object.assign(new Error(`File preview HTTP ${response.status}`), { status: response.status })
+        if (signed.direct || lease.thumb_url) {
+          const blob = await readFileThumbnail(signed, async (renew, route) => {
+            const origin = route === 'origin'
+            if (!renew && (typeof signed.lease.download_id !== 'string' || !signed.lease.download_id)) throw new Error('Invalid thumbnail reservation')
+            const next = await download(context, { ref, as: context.actor.actorId,
+              request_id: !renew ? signed.lease.download_id : crypto.randomUUID(), ...(origin ? { origin: true } : {}) }, false)
+            acceptPreview(next.lease)
+            if (!renew) {
+              const expires = Date.parse(next.lease.expires_at ?? ''), previous = Date.parse(signed.lease.expires_at ?? '')
+              if (next.lease.download_id !== signed.lease.download_id || !Number.isFinite(expires) || !Number.isFinite(previous)
+                || origin && expires > previous || expires <= Date.now() || previous <= Date.now()) throw new Error('File thumbnail reservation changed')
+              // CDN expiry may retain subsecond precision omitted by an OSS V4 signature.
+              next.lease.expires_at = new Date(Math.min(expires, previous)).toISOString()
             }
-            const preview = await response.blob()
-            if (!preview.type.startsWith('image/')) throw new Error('Invalid file preview image')
-            return preview
-          }, context.signal)
+            advertised(next); signed = next
+            return next
+          }, () => objectTransport(context), session, context.signal)
           if (key) await deps.imageCache?.put(key, new Response(blob)); return blob
         }
         // The signer owns thumbnail eligibility; formats without one are safe image sources as original blobs.

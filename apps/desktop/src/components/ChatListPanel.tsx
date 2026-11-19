@@ -1,14 +1,15 @@
+import type { PersonalConversationHiding } from '../lib/hideListedConversation'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useNativeAgentChats } from '@/hooks/useNativeAgentChats'
-import { createChatMembershipProjection } from '@/lib/chatRowDerivations'
+import { createChatMembershipProjection, isArchivedOwnedAgentChat } from '@/lib/chatRowDerivations'
 import { memoizeByReference } from '@/lib/memoizeByReference'
 import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, type KeyboardEventHandler, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { useVirtualizer } from '@tanstack/react-virtual'
 import { useStableHandler } from '@/hooks/useStableHandler'
 import { useTranslation } from 'react-i18next'
 import { BellOff, ChevronDown, ChevronRight, FolderClosed, MessageCircle, MessageSquare, PanelLeft, Plus, SquarePen, UserRound, Users, X, Zap } from '@/lib/icons'
 import { Sheet } from './ui/Sheet'
+import { useGrowingList, useOffsetInScroller } from '@gugu/session-ui/react/growing-list'
 import { DropdownMenu, MenuItem } from './ui/Menu'
 import { PaneEmptyState } from './ui/PaneEmptyState'
 import { ContactsSectionState } from './contacts/ContactsSectionState'
@@ -24,7 +25,9 @@ import { isDuplicateAssistantChat } from '../lib/assistantChatList'
 import { useProjectGroupChats } from '../lib/projectGroupChatsBridge'
 import { useAssistantWorkrooms } from './assistant/useAssistantWorkrooms'
 import { useChatStore } from '../store/chatContext'
+import { useAuth } from '../store/auth'
 import { ChatRowContextMenu } from './chat/ChatRowContextMenu'
+import { warmRowAuthority } from './chat/useGroupChatSettings'
 import { chatPreviewText } from '../lib/systemNoticeText'
 import { formatCalendarDay } from '@/i18n/format'
 import { CreateGroupChatForm, MEMBER_PICKER_SHEET } from './CreateGroupChatModal'
@@ -38,6 +41,7 @@ import { UI_EVENTS } from '../lib/uiEvents'
 import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestBridge'
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
+import { useHeldOrder, usePointerHold } from '../lib/heldOrder'
 import { isOneListProjectLine, oneListAgentRows, oneListShows, placeProjectLines, sidebarPinnedRows, useAgentHomes, useOneListProjectLines, type OneListProjectLine } from '../lib/sidebarOneList'
 import { usePublishOneListAgentRows } from '../lib/innerSidebarBridge'
 import { mobileListDiagnostics } from '@/mobile/mobileListDiagnostics'
@@ -53,9 +57,9 @@ import { useAgentDisplayStatuses } from '../hooks/useAgentDisplayStatus'
 import { useShellTabIs } from '../lib/shellTab'
 import { useShownAgentStatus, type ShownAgentStatus } from './chat/useAgentsOnCloudComputer'
 import { AgentHostStaleBadge } from './AgentHostStaleBadge'
-import { aggregateGroupAgentStatus } from '../lib/groupAgentStatus'
 import { chatActivityAt, chatDisplayName, isChatListed, isRoomChat, isSunkTopic, TOPIC_SINK_AFTER_DAYS } from '@gugu/core/shared/ui/chatModels'
 import { platform } from '../platform'
+import { visibleConversationRows } from '@gugu/core/shared/ui/chatModels'
 import type { AgentDisplayStatus, ChatItem, NotificationLevel } from '@gugu/core/shared/types/chat'
 import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
 import { rendererLogger } from '../lib/log'
@@ -68,25 +72,16 @@ function chatIsAgent(chat: ChatItem, identity?: { type: 'human' | 'agent' }): bo
   return chat.kind === 'ai' || identity?.type === 'agent'
 }
 
-// @@@group-agent-status (#33) - aggregate helper lives in its own module (pure, unit-tested) so this
-// component file only exports components (keeps fast-refresh happy). This wrapper stays local.
-// 一行的状态点就是那张 agent 表里那个 agent 的态 —— agent 行取它自己的,群行取成员的聚合(任一成员在跑
-// 即群在跑)。❌ 没有「按本行会话再收口一次」:同一个 agent 的两行不许给出两个答案。
+// 一行头像上的状态点只属于 agent 行:就是那张 agent 表里那个 agent 的态。群和话题的头像不画状态点 ——
+// 头像右上角在群上只说未读(红数字 / 小灰点),群里在跑几个由右下角那枚数说(PhoneProjectChatAvatar)。
 function rowAgentStatus(
   chat: ChatItem,
   identities: Readonly<Record<string, { type: 'human' | 'agent' }>>,
   statuses: Record<string, AgentDisplayStatus>,
   shown: ShownAgentStatus,
-  agentIds: readonly string[],
 ): AgentDisplayStatus | undefined {
-  if (chatIsAgent(chat, identities[chat.peer_user_id ?? ''])) {
-    return shown.status(chat.peer_user_id, statuses[chat.peer_user_id ?? ''] ?? 'pending')
-  }
-  // 场所(群 + 话题)都有成员名单,聚合判据同形 —— ❌ 不是只有群才聚合。
-  if (isRoomChat(chat.kind)) {
-    return aggregateGroupAgentStatus(shown.members(agentIds, statuses), statuses)
-  }
-  return undefined
+  if (!chatIsAgent(chat, identities[chat.peer_user_id ?? ''])) return undefined
+  return shown.status(chat.peer_user_id, statuses[chat.peer_user_id ?? ''] ?? 'pending')
 }
 
 interface ChatListPanelProps {
@@ -108,7 +103,7 @@ interface ChatListPanelProps {
   leadChatId?: string | null
   /** 手机页头左上角(自己的头像 →「我的」)。 */
   headerLeading?: ReactNode
-  /** 手机右上「写」菜单里的「新项目」(#446)。 */
+  /** 手机右上加号菜单里的「新项目」。 */
   onNewProject?: () => void
 }
 
@@ -120,8 +115,6 @@ const COLOR_PLACEHOLDER = 'var(--muted-fg)'
 const NAV_PANE_STYLE: React.CSSProperties = { width: '100%', minWidth: 0, flex: '1 1 auto' }
 // 保留 macOS 交通灯让位逻辑(#1238):列头左内距在「基础内距」与「交通灯安全区」间取大值。
 const NAV_HEADER_STYLE: React.CSSProperties = { paddingLeft: 'max(var(--pane-pad-x), var(--titlebar-list-header-inset))' }
-// #6753 桌面上还要让开浮在左上角的列表栏开关(--list-toggle-lane;Windows 的开关在标题栏行,那里是 0)。
-const NAV_HEADER_STYLE_DESKTOP: React.CSSProperties = { paddingLeft: 'max(var(--pane-pad-x), var(--titlebar-list-header-inset), var(--list-toggle-lane))' }
 const LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, overflowY: 'auto', padding: '4px 8px 16px' }
 const MOBILE_LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, minHeight: 0, overflowY: 'auto', padding: 'var(--spacing-xs) var(--spacing-sm) var(--phone-nav-clearance)' }
 // 侧栏那一份不自己滚:滚的是会话页侧栏那一个滚动容器(置顶 / 项目 / 对话共用)。左右与侧栏的行同一道留白。
@@ -132,6 +125,7 @@ const SIDEBAR_ENTRY_ESTIMATE = 58
 /** A mounted sidebar line, placed by the line window. */
 const lineStyle = (top: number): React.CSSProperties => ({ position: 'absolute', top, left: 0, width: '100%' })
 /** The chat a sidebar line stands for: a conversation's own, a project line's group chat (#2548). */
+const chatIdOf = (chat: ChatItem) => chat.id
 const lineChatId = (row: ChatItem | OneListProjectLine) => (isOneListProjectLine(row) ? row.projectChatId : row.id)
 
 /**
@@ -211,7 +205,7 @@ export interface ChatRowActions {
   /** #2548 取消固定到左侧栏: the pinned session of an agent pinned to the one list. */
   unpinFromSidebar: (sessionId: string) => void
   setNotificationLevel: (chatId: string, level: NotificationLevel) => void
-  remove: (chatId: string) => void
+  remove: (chatId: string) => Promise<PersonalConversationHiding | undefined>
   focus: (chatId: string) => void
   keyDown: (event: Parameters<KeyboardEventHandler<HTMLDivElement>>[0], chat: ChatItem) => void
 }
@@ -283,7 +277,7 @@ export const TopicSubRow = memo(function TopicSubRow({ topic, mobile, isActive, 
       onClick={(event) => actions.openTopic(topic, event.metaKey || event.ctrlKey)}
       onFocus={() => actions.focus(topic.id)}
       onKeyDown={(event) => actions.keyDown(event, topic)}
-      onContextMenu={menu.onContextMenu}
+      onContextMenu={menu.onContextMenu} onPointerEnter={() => warmRowAuthority(topic.id)}
       {...(mobile ? longPress : {})}
       style={TOPIC_SUBROW_STYLE}
       leading={<MessageSquare size={13} style={TOPIC_SUBROW_ICON_STYLE} />}
@@ -298,7 +292,7 @@ export const TopicSubRow = memo(function TopicSubRow({ topic, mobile, isActive, 
         onClose={menu.closeMenu}
         onPin={() => actions.pin(topic)}
         onSetNotificationLevel={(level) => actions.setNotificationLevel(topic.id, level)}
-        onDelete={() => actions.remove(topic.id)}
+        onHide={() => actions.remove(topic.id)}
       />
     )}
     </>
@@ -367,7 +361,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
         onClick={(event) => actions.activate(chat, event.metaKey || event.ctrlKey)}
         onFocus={() => actions.focus(chat.id)}
         onKeyDown={(event) => actions.keyDown(event, chat)}
-        onContextMenu={menu.onContextMenu}
+        onContextMenu={menu.onContextMenu} onPointerEnter={chat.kind === 'group' ? () => warmRowAuthority(chat.id) : undefined}
         {...(mobile ? longPress : {})}
         leading={
           // Avatar — agent status lives in the corner badge (AvatarStatusBadge); the old
@@ -375,13 +369,12 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
           <PhoneProjectChatAvatar chat={chat} mobile={mobile}><Avatar
             name={shownName}
             avatarUrl={isRoom ? chat.avatar : peerIdentity?.avatar}
-            seed={chat.peer_user_id ?? undefined}
+            seed={isRoom ? chat.id : chat.peer_user_id ?? undefined}
             size={mobile ? 48 : 'sm'}
             isAgent={isAgentChat}
             harnessBadge={!mobile}
             agentStatus={agentStatus}
             variant={isRoom ? 'group' : 'default'}
-            memberAvatars={chat.member_user_ids?.flatMap((id) => identitiesById[id] ? [{ id, name: identitiesById[id].display_name, avatar: identitiesById[id].avatar }] : [])}
           /></PhoneProjectChatAvatar>
         }
         title={
@@ -425,7 +418,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
           <>
             {/* owner 10-28:agent 行不再标它在哪台机器上(「本机」/ 设备名);机器只在悬停卡与对话标题栏里说。 */}
             {chat.is_muted && (
-              <span aria-label={t('chatList.muted')} title={t('chatList.muted')} style={{ color: 'var(--text-tertiary)' }}>
+              <span className="gg-chat-row-muted" aria-label={t('chatList.muted')} title={t('chatList.muted')} style={{ color: 'var(--text-tertiary)' }}>
                 <BellOff size={13} strokeWidth={1.8} aria-hidden="true" />
               </span>
             )}
@@ -449,7 +442,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
           onPin={() => actions.pin(chat)}
           onUnpinFromSidebar={pinnedSessionId === undefined ? undefined : () => actions.unpinFromSidebar(pinnedSessionId)}
           onSetNotificationLevel={(level) => actions.setNotificationLevel(chat.id, level)}
-          onDelete={() => actions.remove(chat.id)}
+          onHide={() => actions.remove(chat.id)}
         />
       )}
     </>
@@ -487,16 +480,16 @@ interface PlusMenuItemsProps {
   onGroupChat: () => void
   onAddFriend: () => void
   onScan?: () => void
-  /** 手机(v7.12 稿 NewMenu,#446):有它时菜单是 发起群聊 / 新项目 / 添加联系人,新任务在项目群里派。 */
+  /** Phone More contains social/project actions; the separate pen owns Agent creation. */
   onNewProject?: () => void
   mobile?: boolean
 }
 
 function PlusMenuItems({ onSessionCreate, onGroupChat, onAddFriend, onScan, onNewProject, mobile = false }: PlusMenuItemsProps) {
   const { t } = useTranslation('messaging')
-  const phoneItems = onNewProject ? [
+  const phoneItems = mobile ? [
     { testid: 'plus-menu-create-group', icon: <Users size={15} />, label: t('chatList.createGroupMobile'), onClick: onGroupChat },
-    { testid: 'plus-menu-new-project', icon: <FolderClosed size={15} />, label: t('chatList.newProject'), onClick: onNewProject },
+    ...(onNewProject ? [{ testid: 'plus-menu-new-project', icon: <FolderClosed size={15} />, label: t('chatList.newProject'), onClick: onNewProject }] : []),
     { testid: 'plus-menu-add-friend', icon: <UserRound size={15} />, label: t('chatList.addContact'), onClick: onAddFriend },
   ] : null
   // design line 592: 新建群聊 (contacts icon) + 添加联系人 (add-person icon)
@@ -599,7 +592,8 @@ export function ChatListPanel({
   const { t } = useTranslation('messaging')
   const { t: tMain } = useTranslation('main')
   const assistantShell = useAssistantShell()
-  const { chats: imChats, identitiesById, activeChatId, setActiveChatId, openUnreadChat, loadingChats, chatsLoadFailed, refreshChats, pinChat, deleteChat, setChatNotificationLevel, drafts } = useChatStore('chats', 'identitiesById', 'activeChatId', 'setActiveChatId', 'openUnreadChat', 'loadingChats', 'chatsLoadFailed', 'refreshChats', 'pinChat', 'deleteChat', 'setChatNotificationLevel', 'drafts')
+  const { user } = useAuth()
+  const { chats: imChats, identitiesById, activeChatId, setActiveChatId, openUnreadChat, loadingChats, chatsLoadFailed, refreshChats, pinChat, hideConversation, setChatNotificationLevel, drafts } = useChatStore('chats', 'identitiesById', 'activeChatId', 'setActiveChatId', 'openUnreadChat', 'loadingChats', 'chatsLoadFailed', 'refreshChats', 'pinChat', 'hideConversation', 'setChatNotificationLevel', 'drafts')
   // The list read failed with nothing to show: that is a failure, not "no conversations" (same rule as the contacts sections).
   const listReadFailed = chatsLoadFailed && imChats.length === 0
   const chats = useNativeAgentChats(imChats)
@@ -617,8 +611,8 @@ export function ChatListPanel({
   const agentHomes = useAgentHomes(oneList, homeChats, sidebarPins)
   // An account project whose project group is not in this list yet stands among the conversations at its time (#2548).
   const projectLines = useOneListProjectLines(oneList, chats)
-  // @@@chat-list-agent-status (#437/#33) - one batched presence subscription for every agent shown in
-  // the list: DM-with-agent peers + all group agent members (so the group dot can aggregate).
+  // @@@chat-list-agent-status (#437) - one batched presence subscription for the agents the list draws a status for:
+  // the peers of the private chats. A group row draws none, so its agent members are not followed here.
   const agentStatuses = useAgentDisplayStatuses(membership.agentIds)
   const shownAgent = useShownAgentStatus() // #7199 宿主闲时收回着的自己的 agent:不画睡团 / 「不在线」
   const [showGroupModal, setShowGroupModal] = useState<boolean | string>(false)
@@ -655,6 +649,7 @@ export function ChatListPanel({
   // `.focus()`,原来靠一张 chatId→node 的 Map;既然要不到逐行 ref,改为在滚动容器内按
   // `data-chat-row` 现查——容器本就有这个 ref,行元素也已经带着这个 data 属性,不必新增状态。
   const listboxRef = useRef<HTMLDivElement>(null)
+  const pointer = usePointerHold()
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // @@@2264 排序键 = canonical activity 投影(chatActivityAt:last_message_at ?? created_at)。
@@ -686,8 +681,11 @@ export function ChatListPanel({
   const isProjectGroupLine = (chat: ChatItem) => projectGroupChats.has(chat.kind === 'topic' ? (chat.source_chat_id ?? '') : chat.id)
   const shownAsLead = lead ? leadChatId : null
   const listedByActivity = (chat: ChatItem) => hasSearchQuery || isChatListed(chat, { activeChatId: selectedChatId, hasDraft: Boolean(drafts[chat.id]?.trim()) })
+  const visibleIds = new Set(visibleConversationRows(chats).map(chat => chat.id))
   const isListed = (chat: ChatItem) =>
+    (hasSearchQuery || visibleIds.has(chat.id)) &&
     !isDuplicateAssistantChat(chat, assistantShell, workrooms)
+      && !(inSidebar && !mobile && !hasSearchQuery && isArchivedOwnedAgentChat(chat, user?.id, identitiesById[chat.peer_user_id ?? ''], agentStatuses[chat.peer_user_id ?? '']))
       && chat.id !== shownAsLead
       && (agentHomes ? oneListShows(chat, listedByActivity(chat), agentHomes, isOwnedAgentPeer)
         : (!mobile || chat.kind !== 'topic') && (mobile || !isProjectGroupLine(chat)) && listedByActivity(chat))
@@ -713,21 +711,23 @@ export function ChatListPanel({
     // isListed / matchesSearch 都是每次渲染新建的闭包,进依赖数组等于不缓存;
     // 它们的输入(chats / 搜索词 / 草稿 / 当前会话)已经在下面列全了。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chats, listQuery, selectedChatId, drafts, assistantShell, workrooms, projectGroupChats, shownAsLead, mobile, agentHomes])
+  }, [chats, listQuery, selectedChatId, drafts, assistantShell, workrooms, projectGroupChats, shownAsLead, mobile, agentHomes, inSidebar, user?.id, identitiesById, agentStatuses])
   const isTopLevel = (c: ChatItem) => isTopLevelChatRow(c, topicNesting, isListed, matchesSearch)
   // #2548 one list: the pinned agents' DM rows sit at the very top, newest interaction first, above the pinned conversations.
   const sidebarPinned = agentHomes ? sidebarPinnedRows(chats, sidebarPins, isTopLevel) : []
   const pinOf = new Map(sidebarPinned.map(({ chat, pin }) => [chat.id, pin]))
-  const pinnedChats = sidebarPinned.map(({ chat }) => chat).concat(chats.filter((c) => c.is_pinned && isTopLevel(c) && !pinOf.has(c.id)).sort(byTime))
-  const normalChats = chats.filter((c) => !c.is_pinned && isTopLevel(c) && !pinOf.has(c.id)).sort(byTime)
+  // B3: while the pointer is over the list a row does not move out from under it; the newest-first order returns on leaving.
+  const pinnedChats = useHeldOrder(sidebarPinned.map(({ chat }) => chat).concat(chats.filter((c) => c.is_pinned && isTopLevel(c) && !pinOf.has(c.id)).sort(byTime)), chatIdOf, pointer.held)
+  const normalChats = useHeldOrder(chats.filter((c) => !c.is_pinned && isTopLevel(c) && !pinOf.has(c.id)).sort(byTime), chatIdOf, pointer.held)
   // The Chats tab contains conversations; projectless tasks live in the Projects tab.
   const joinedGroups = inSidebar ? sidebarView.groups : NO_JOINED_GROUPS
   const pinnedRows = joinRows(pinnedChats, (chat) => blockKey.chat(chat.id), joinedGroups)
   const normalLines = joinRows(normalChats, (chat) => blockKey.chat(chat.id), joinedGroups)
   // #2548 the sidebar draws the project lines among them too; the keyboard walks the conversations (normalLines).
   // A project line is its group's conversation row-to-be: same key, so a joined box holds it as it will hold that row.
+  const placedLines = useHeldOrder(placeProjectLines(normalChats, activityOf, projectLines), lineChatId, pointer.held)
   const oneListLines = projectLines.length === 0 ? normalLines : joinRows(
-    placeProjectLines(normalChats, activityOf, projectLines),
+    placedLines,
     (row) => blockKey.chat(lineChatId(row)),
     joinedGroups,
   )
@@ -785,7 +785,7 @@ export function ChatListPanel({
     sessionPage.unpinFromSidebar(sessionId)
   })
   const setLevel = useStableHandler((chatId: string, level: NotificationLevel) => setChatNotificationLevel(chatId, level))
-  const remove = useStableHandler((chatId: string) => deleteChat(chatId, true))
+  const remove = useStableHandler((chatId: string) => hideConversation(chatId))
   const keyDown = useStableHandler((event: Parameters<KeyboardEventHandler<HTMLDivElement>>[0], chat: ChatItem) => handleChatKeyDown(event, chat))
   const rowActions = useMemo<ChatRowActions>(() => ({ activate, openTopic, toggleTopics: toggle, pin, unpinFromSidebar, setNotificationLevel: setLevel, remove, focus: setFocusedChatId, keyDown }),
     [activate, openTopic, toggle, pin, unpinFromSidebar, setLevel, remove, keyDown])
@@ -801,7 +801,7 @@ export function ChatListPanel({
         callsOnly={oneList}
         joinPos={hasTopics ? undefined : join?.pos}
         joinOnScreen={hasTopics ? undefined : join?.onScreen}
-        agentStatus={rowAgentStatus(chat, identitiesById, agentStatuses, shownAgent, membership.parts.get(chat.id)!.agents)}
+        agentStatus={rowAgentStatus(chat, identitiesById, agentStatuses, shownAgent)}
         isActive={chat.id === selectedChatId}
         topicsExpanded={hasTopics ? topicsExpanded : undefined}
         mobile={mobile}
@@ -845,38 +845,20 @@ export function ChatListPanel({
   const hasSidebarLines = sidebarLines.length > 0
   const [sidebarScroller, setSidebarScroller] = useState<HTMLElement | null>(null)
   const windowRef = useRef<HTMLDivElement>(null)
-  const [windowMargin, setWindowMargin] = useState(0)
   useLayoutEffect(() => {
     if (inSidebar && listboxRef.current) setSidebarScroller(scrollingAncestor(listboxRef.current))
   }, [inSidebar])
-  const lineWindow = useVirtualizer({
+  // Where the lines start inside the shared scroller moves with everything above them (sections, the lead row).
+  const windowMargin = useOffsetInScroller(windowRef, sidebarScroller, [hasSidebarLines])
+  const lineWindow = useGrowingList({
     count: sidebarLines.length,
     // A project line is keyed by its group chat: when that conversation arrives, its row takes the same line.
-    getItemKey: (index) => lineChatId(sidebarLines[index]!.row),
-    getScrollElement: () => sidebarScroller,
+    getKey: (index) => lineChatId(sidebarLines[index]!.row),
+    scroller: sidebarScroller,
     estimateSize: () => SIDEBAR_ENTRY_ESTIMATE,
-    // The first frame already shows the lines that fit, before the scroller's size is observed.
-    initialRect: { width: 0, height: sidebarScroller?.clientHeight || window.innerHeight },
-    overscan: 8,
     scrollMargin: windowMargin,
-    enabled: inSidebar && sidebarScroller !== null,
+    enabled: inSidebar,
   })
-  // Where the lines start inside the shared scroller moves with everything above them (sections, the lead row), which
-  // re-render on their own: measure on the scroller's and its content's size changes.
-  useLayoutEffect(() => {
-    const lines = windowRef.current
-    const content = sidebarScroller?.firstElementChild
-    if (!lines || !sidebarScroller) return
-    const measure = () => {
-      const next = lines.getBoundingClientRect().top - sidebarScroller.getBoundingClientRect().top + sidebarScroller.scrollTop
-      setWindowMargin((previous) => (Math.abs(previous - next) < 0.5 ? previous : next))
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(sidebarScroller)
-    if (content) observer.observe(content)
-    return () => observer.disconnect()
-  }, [sidebarScroller, hasSidebarLines])
   const windowStyle: React.CSSProperties = { height: lineWindow.getTotalSize(), position: 'relative' }
   // A project line (OneListProjectSlot) is measured once the task page has drawn its row, before that frame is painted.
   const measureDrawnLine = useStableHandler((slot: HTMLElement) => {
@@ -1074,7 +1056,7 @@ export function ChatListPanel({
     sessionPage.openChat(chatId, false)
   }
   const list = (
-    <div ref={listboxRef} role="listbox" aria-label={t('chatList.listLabel')} style={inSidebar ? SIDEBAR_LIST_STYLE : mobile ? MOBILE_LIST_SCROLL_STYLE : LIST_SCROLL_STYLE}>
+    <div ref={listboxRef} role="listbox" aria-label={t('chatList.listLabel')} onPointerMove={pointer.onPointerMove} onPointerLeave={pointer.onPointerLeave} style={inSidebar ? SIDEBAR_LIST_STYLE : mobile ? MOBILE_LIST_SCROLL_STYLE : LIST_SCROLL_STYLE}>
       {/* #6158 列表行不再按 tab 卸载:聊天面在别的 tab 上由 MainLayout 隐藏而非卸载,行留着滚动位置才在。 */}
       {loadingChats && (
         <div style={LOADING_STATE_STYLE}>
@@ -1156,10 +1138,12 @@ export function ChatListPanel({
         leading={headerLeading}
         mobile={mobile}
         titleLevel={mobile ? 'page' : undefined}
-        style={mobile ? NAV_HEADER_STYLE : NAV_HEADER_STYLE_DESKTOP}
+        style={NAV_HEADER_STYLE}
         actions={
           <>
             <NotificationSlot part="toggle" />
+            {mobile && onOpenSessionCreate && <IconButton size="md" data-testid={AUTOMATION_TEST_IDS.mobileSessionCreateAction}
+              aria-label={t('chatList.createAgent')} title={t('chatList.createAgent')} onClick={onOpenSessionCreate}><SquarePen /></IconButton>}
 
             <DropdownMenu.Root
               open={showPlusMenu}
@@ -1175,8 +1159,7 @@ export function ChatListPanel({
                 aria-label={t('chatList.create')}
                 title={t('chatList.create')}
               >
-                {/* 手机上是「写」(方框里一支笔,owner 10-26 改版稿);❌ 加号。 */}
-                {mobile ? <SquarePen /> : <Plus />}
+                <Plus />
               </DropdownMenu.Trigger>
               {showPlusMenu ? (
                 <DropdownMenu.Content

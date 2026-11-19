@@ -46,6 +46,10 @@ export interface DeviceActionsRuntime {
    * 不经命令频道、不进「最近调用」(那是给人看 agent 动过什么的)。只给只读的动作用。
    */
   readLocal(action: string, args: Record<string, unknown>): Promise<Outcome>
+  /** The group this action still needs connected, and its names, when connecting it is all that is missing (provider.ungrantedGroup). */
+  ungrantedGroup(action: string): { group: string; groupTitle: Record<'zh-CN' | 'en-US', string> } | null
+  /** Connect a group — the settings page's 「连接」 and an agent's approved ask alike (macOS permission included). */
+  connect(group: string): Promise<DeviceActionsConnectResult>
   registerIpc(ipcMain: IpcMain, getWindows: () => Array<{ isDestroyed(): boolean; webContents: { send(channel: string): void } }>): void
   /** 原生助手(只 Mac;没编进来时 null):资源监视器借它读进程 footprint,❌ 另起一个。 */
   macHelper(): MacHelperClient | null
@@ -58,11 +62,15 @@ export interface DeviceActionsRuntime {
  * 拦下调用时告诉调用方的分组名 = 设置页上的那个名字。中英都给:调用方转述给人时,人看哪种语言的界面都对得上。
  * 名字只此一份(settings 文案表),❌ 主进程另写一份。
  */
-function groupTitle(id: string): string {
+function groupTitles(id: string): Record<'zh-CN' | 'en-US', string> {
   const key = id.replace('.', '_')
   const zh = (zhSettings.devices.deviceActions.group as Record<string, string>)[key]
   const en = (enSettings.devices.deviceActions.group as Record<string, string>)[key]
-  return zh && en ? `${zh} / ${en}` : id
+  return { 'zh-CN': zh ?? id, 'en-US': en ?? id }
+}
+function groupTitle(id: string): string {
+  const titles = groupTitles(id)
+  return titles['zh-CN'] === id ? id : `${titles['zh-CN']} / ${titles['en-US']}`
 }
 
 /**
@@ -185,8 +193,28 @@ export function createDeviceActionsRuntime(input: {
     }
   }
 
+  const connect = async (group: string): Promise<DeviceActionsConnectResult> => {
+    const result = await actions.connect(group)
+    input.log.info({ group, ok: result.ok, ...(result.ok ? {} : { code: result.code }) }, 'device action group connect')
+    // spec system-permissions: macOS no longer asks → go straight to 咕咕's page in System Settings, ❌ leave a button
+    // for the person to find it. (Where it can still ask, its own box is already up; this page is behind it.)
+    if (!result.ok && result.code === 'os_permission' && result.settingsUrl) {
+      const opened = await input.openSystemSettings(result.settingsUrl).then(() => true, (error: unknown) => {
+        input.log.warn({ group, err: String(error) }, 'device action group connect: could not open System Settings')
+        return false
+      })
+      return opened ? { ...result, message: `${result.message}(已打开系统设置里对应的那一页)`, openedSettings: true as const } : result
+    }
+    return result
+  }
+
   return {
     capability: () => actions.capability(),
+    ungrantedGroup(action) {
+      const group = actions.ungrantedGroup(action)
+      return group ? { group, groupTitle: groupTitles(group) } : null
+    },
+    connect,
     rpcHandlers: () => ({
       // Remote requests never reach the provider, confirmation or action-result cache.
       [DEVICE_ACTION_RPC_TYPE]: async () => ({ error: deviceScopeError(await input.deviceId()) }),
@@ -218,21 +246,8 @@ export function createDeviceActionsRuntime(input: {
     },
     registerIpc(ipcMain, getWindows) {
       ipcMain.handle(DEVICE_ACTIONS_CHANNELS.state, () => state())
-      ipcMain.handle(DEVICE_ACTIONS_CHANNELS.connect, async (_event, group: unknown): Promise<DeviceActionsConnectResult> => {
-        if (typeof group !== 'string') return { ok: false, code: 'unknown_group', message: 'group must be a string' }
-        const result = await actions.connect(group)
-        input.log.info({ group, ok: result.ok, ...(result.ok ? {} : { code: result.code }) }, 'device action group connect')
-        // spec system-permissions: macOS no longer asks → go straight to 咕咕's page in System Settings, ❌ leave a button
-        // for the person to find it. (Where it can still ask, its own box is already up; this page is behind it.)
-        if (!result.ok && result.code === 'os_permission' && result.settingsUrl) {
-          const opened = await input.openSystemSettings(result.settingsUrl).then(() => true, (error: unknown) => {
-            input.log.warn({ group, err: String(error) }, 'device action group connect: could not open System Settings')
-            return false
-          })
-          return opened ? { ...result, message: `${result.message}(已打开系统设置里对应的那一页)`, openedSettings: true as const } : result
-        }
-        return result
-      })
+      ipcMain.handle(DEVICE_ACTIONS_CHANNELS.connect, async (_event, group: unknown): Promise<DeviceActionsConnectResult> =>
+        typeof group === 'string' ? connect(group) : { ok: false, code: 'unknown_group', message: 'group must be a string' })
       ipcMain.handle(DEVICE_ACTIONS_CHANNELS.disconnect, (_event, group: unknown) => {
         if (typeof group !== 'string') return false
         actions.disconnect(group)

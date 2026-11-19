@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { LoginPage } from './pages/LoginPage'
 import { authCallbacks, startAuthCallbackRouting } from './lib/authCallbacks'
+import { ReferralLinkPrompt } from './components/referralPreview/ReferralLinkPrompt'
 import { watchReferralLinks } from './lib/referral'
 import { googleLogin } from './lib/googleLogin'
 import { LoginMethodChangeNotice } from './components/LoginMethodChangeNotice'
@@ -18,11 +19,13 @@ import { AgentPresencePrewarm } from './components/AgentPresencePrewarm'
 import { AgentStatusFeedBridge } from './components/AgentStatusFeedBridge'
 import { ImagePreviewProvider } from './components/ImagePreviewProvider'
 import { SessionExpiredNotice } from './components/SessionExpiredNotice'
+import { AndroidChatBackgroundWatch } from './mobile/AndroidChatBackgroundWatch'
 import { FullScreenLoader } from './components/FullScreenLoader'
 import { FirstRunGate } from './components/firstRun/FirstRunGate'
 import { ShellErrorBoundary } from './components/ShellErrorBoundary'
 import { ReleaseNotesOpener } from './components/ReleaseNotesOpener'
 import { AppModalHost } from './components/appModal/AppModalHost'
+import { ConversationDeleteConfirmationHost } from './components/chat/ConversationDeleteConfirmationHost'
 import { ContentContextMenuHost } from './components/ContentContextMenuHost'
 import { ThemeProvider } from './store/theme'
 import { rendererCommandEventName } from './lib/rendererCommandProtocol'
@@ -31,6 +34,11 @@ import { publishSelfIdentity } from './lib/selfIdentityBridge'
 import { installAssistantPanelHost } from './components/assistant/assistant-panel-host'
 import { installConnectionHost } from './components/connections/connection-host'
 import { usePhoneImeDismiss } from './mobile/usePhoneImeDismiss'
+import { useAndroidNotificationReminder } from './lib/useAndroidNotificationReminder'
+import { iosOwnerAvailable } from './mobile/ios-runtime/iosOwnerClient'
+import { startIOSPush } from './mobile/ios-push/startIOSPush'
+import { startIOSOwnerPublication } from './mobile/ios-runtime/startIOSOwnerPublication'
+import { IOSHostRoot } from './mobile/ios-host/IOSHostRoot'
 
 import { platform } from './platform'
 import { type RendererRpcHandlers, useRendererRpcHandlers } from './rpc-renderer/rendererRpc'
@@ -39,7 +47,14 @@ if (typeof window !== 'undefined') { installAssistantPanelHost(); installConnect
 
 function AuthenticatedProduct({ user }: { user: AuthUser }) {
   const [effectsActive, setEffectsActive] = useState(false)
+  useAndroidNotificationReminder(effectsActive)
   const onShellCommitted = useCallback(() => setEffectsActive(true), [])
+  useEffect(() => {
+    if (!effectsActive || platform.kind !== 'electron' || !platform.capabilities.sessionHost) return
+    const lifespan = new AbortController()
+    void import('./components/settings/data-import/import-sync').then(({ startImportSync }) => startImportSync(user.id, lifespan.signal))
+    return () => lifespan.abort()
+  }, [effectsActive, user.id])
 
   useEffect(() => {
     // @@@3839 只交代**身份**。presence 缓存是按账号划界的,换人(含登出)时 store 自己清空;
@@ -69,8 +84,10 @@ function AuthenticatedProduct({ user }: { user: AuthUser }) {
         <ShareIntakeHost active={effectsActive} />
         <UnfinishedAgentCreateSweeper active={effectsActive} />
         <SessionExpiredNotice />
+        <AndroidChatBackgroundWatch active={effectsActive} />
         <ReleaseNotesOpener />
         <AppModalHost />
+        <ConversationDeleteConfirmationHost />
       </ImagePreviewProvider>
     </ChatProvider>
   )
@@ -107,6 +124,10 @@ export default function App() {
   useEffect(() => {
     return sessionCoordinator.start()
   }, [])
+  useEffect(() => {
+    if (iosOwnerAvailable()) return startIOSOwnerPublication()
+  }, [])
+  useEffect(startIOSPush, [])
   useEffect(startAuthCallbackRouting, [])
   useEffect(() => watchReferralLinks(platform.watchOpenedLinks, sessionCoordinator), [])
   useEffect(() => { authCallbacks.setAuthenticated(Boolean(session.session)) }, [session.session])
@@ -136,6 +157,7 @@ export default function App() {
           <ToastProvider>
             <ContentContextMenuHost />
             <AuthContext.Provider value={authContextValue}>
+              <ReferralLinkPrompt />
               <LoginPage />
             </AuthContext.Provider>
           </ToastProvider>
@@ -150,6 +172,8 @@ export default function App() {
         <ToastProvider>
           <ContentContextMenuHost />
           <AuthContext.Provider value={authContextValue}>
+            <IOSHostRoot />
+            <ReferralLinkPrompt />
             {/* 新账号先走一遍首次引导(product spec,#7348);老账号 / 走完的直接进主界面 */}
             {/* 启动外壳期间那张候选证可能已过期:等协调器接受了会话再读,不另起刷新 */}
             {session.status === 'authenticated' && <LoginMethodChangeNotice key={`login-notice:${user.id}`} userId={user.id} />}

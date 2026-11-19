@@ -1,5 +1,5 @@
 import { action, makeObservable, observable } from 'mobx';
-import type { AppWidget, PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
+import type { PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
 
 /**
  * Each navigation context owns its App pages: resource container + tab id + optional file id.
@@ -8,8 +8,6 @@ import type { AppWidget, PreparedChatFile } from '@shared/extensions/app-runtime
  * Slots still claim lazily, only while visible. No page is allocated merely by installing an App.
  */
 export interface ExtensionViewClaim {
-  widget?: AppWidget;
-  accountId?: string;
   takeOpening?: () => PreparedChatFile | undefined;
   /** 认领方的身份;释放时核对,免得后来者被先前者的卸载误伤。 */
   token: number;
@@ -41,7 +39,6 @@ export interface ExtensionViewClaim {
 
 /** 一张常驻页:哪个 App 的哪一类 tab,住在哪个地方。 */
 export interface ExtensionResidentPage {
-  accountId?: string;
   key: string;
   kind: string;
   /** 群、每任务一份的任务或 App;文件页再带文件的 id。页的一生不变。 */
@@ -55,9 +52,7 @@ export interface ExtensionResidentPage {
 export const RESIDENT_PAGES_KEPT = 3;
 
 /** Stable page identity within its host-owned resource container and navigation context. */
-export function residentPlace(target: { chatId?: string; sessionId?: string; tabId?: string; perSession?: boolean; itemId?: string; widget?: AppWidget }): string {
-  // One page per widget and surface (its tab: the chat's, or a task timeline's).
-  if (target.chatId && target.widget?.id) return `widget:${target.chatId}:${target.tabId ?? `widget:${target.widget.id}`}`;
+export function residentPlace(target: { chatId?: string; sessionId?: string; tabId?: string; perSession?: boolean; itemId?: string }): string {
   const place = target.chatId ? `chat:${target.chatId}` : target.sessionId ? `session:${target.sessionId}` : 'app';
   const page = target.itemId ? `${place}:file:${target.itemId}` : place;
   return target.tabId ? `${page}:tab:${target.tabId}` : page;
@@ -86,6 +81,7 @@ class ExtensionViewStore {
   private readonly stacks = new Map<string, ExtensionViewClaim[]>();
   /** 已经有人要过、此刻活着的常驻页。根层只给这些建页。 */
   readonly residentPages = observable.map<string, ExtensionResidentPage>({}, { deep: false });
+  /** Resident pages whose document has drawn its first contentful paint (`gugu-page-painted`, sent for every page). */
   readonly paintedPages = observable.set<string>();
   /** 每张常驻页最近一次被认领的先后,销毁最久没用的那张时用。 */
   private readonly usedAt = new Map<string, number>();
@@ -101,10 +97,13 @@ class ExtensionViewStore {
   private readonly surfaces = new Map<number, number>();
   /** Resident pages bound at least once: only these are kept while nobody looks (see `release`). */
   private readonly boundPages = new Set<string>();
-  private readonly idleWidgets = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Resident pages whose document did not load (`did-fail-load`): the next claim builds them afresh (see `claim`). */
+  private readonly failedPages = new Set<string>();
+  /** How many times a resident page was built afresh: part of its key in the layer, so a new number is a new webview. */
+  readonly builds = observable.map<string, number>({}, { deep: false });
 
   constructor() {
-    makeObservable(this, { claim: action, release: action, forgetOpened: action, forgetIdle: action, forgetSlot: action, closeSlot: action, forgetWidgets: action, widgetPainted: action });
+    makeObservable(this, { claim: action, release: action, forgetOpened: action, forgetIdle: action, forgetSlot: action, closeSlot: action, pagePainted: action, reload: action });
   }
 
   /** The page now drawing this claim is bound (the layer says so). A claim already released: nothing to note. */
@@ -134,11 +133,11 @@ class ExtensionViewStore {
     const claim = { ...target, token };
     const place = residentPlace(claim);
     const key = residentPageKey(kind, place);
-    clearTimeout(this.idleWidgets.get(key));
-    this.idleWidgets.delete(key);
     if (!this.residentPages.has(key)) {
-      this.residentPages.set(key, { key, kind, place, slot: slotKey(target.sessionId, target.tabId), ...(claim.accountId ? { accountId: claim.accountId } : {}), ...(claim.itemId ? { itemId: claim.itemId } : {}) });
+      this.residentPages.set(key, { key, kind, place, slot: slotKey(target.sessionId, target.tabId), ...(claim.itemId ? { itemId: claim.itemId } : {}) });
     }
+    // A page whose document never loaded is not kept as it is: whoever comes for it next gets it built again.
+    else if (this.failedPages.has(key)) this.reload(key);
     this.usedAt.set(key, nextUse++);
     const stack = this.stacks.get(key) ?? [];
     stack.push(claim);
@@ -174,7 +173,7 @@ class ExtensionViewStore {
     const stack = key ? this.stacks.get(key) : undefined;
     const at = stack?.findIndex((claim) => claim.token === token) ?? -1;
     if (!key || !stack || at < 0) return;
-    const released = stack.splice(at, 1)[0];
+    stack.splice(at, 1);
     const top = stack[stack.length - 1];
     if (!top) {
       this.stacks.delete(key);
@@ -184,10 +183,6 @@ class ExtensionViewStore {
       // BINDING_WAIT_MS for a binding, then refuses them. Kept, it would stay loaded and unbound until someone came
       // back to it, and come back with that boot behind it. It goes; the next claim builds a page afresh.
       if (!this.boundPages.has(key)) this.drop(key);
-      else if (released?.widget) this.idleWidgets.set(key, setTimeout(action(() => {
-        this.idleWidgets.delete(key);
-        if (!this.claims.has(key)) this.drop(key);
-      }), 10_000));
       this.evict(kind);
     } else if (this.claims.get(key)?.token !== top.token) {
       this.claims.set(key, top);
@@ -212,25 +207,28 @@ class ExtensionViewStore {
     for (const page of [...this.residentPages.values()]) if (page.kind === kind && !this.claims.has(page.key)) this.drop(page.key);
   }
 
-  widgetPainted(key: string, painted = true): void {
+  pagePainted(key: string, painted = true): void {
     if (painted && this.residentPages.has(key)) this.paintedPages.add(key);
     else this.paintedPages.delete(key);
   }
 
-  /** Widget guests and pictures cannot survive the viewing account. */
-  forgetWidgets(): void {
-    for (const page of [...this.residentPages.values()]) if (page.place.startsWith('widget:')) {
-      for (const claim of this.stacks.get(page.key) ?? []) { this.pageOfToken.delete(claim.token); this.surfaces.delete(claim.token); }
-      this.stacks.delete(page.key);
-      this.claims.delete(page.key);
-      for (const [slot, key] of this.slotPages) if (key === page.key) this.slotPages.delete(slot);
-      this.drop(page.key);
-    }
+  /** This page's document did not load. */
+  pageFailed(key: string): void {
+    if (this.residentPages.has(key)) this.failedPages.add(key);
+  }
+
+  /** Build this page afresh (the tab's 重新加载, or a claim of a page that did not load): a new webview, claims kept. */
+  reload(key: string): void {
+    if (!this.residentPages.has(key)) return;
+    this.failedPages.delete(key);
+    this.boundPages.delete(key);
+    this.paintedPages.delete(key);
+    this.builds.set(key, (this.builds.get(key) ?? 0) + 1);
   }
 
   private drop(key: string): void {
-    clearTimeout(this.idleWidgets.get(key));
-    this.idleWidgets.delete(key);
+    this.failedPages.delete(key);
+    this.builds.delete(key);
     this.residentPages.delete(key);
     this.usedAt.delete(key);
     this.boundPages.delete(key);

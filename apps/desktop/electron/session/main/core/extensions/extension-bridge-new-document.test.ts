@@ -72,7 +72,7 @@ const call = (sender: number, method: string, args: Record<string, unknown>) =>
 const CHAT = '0b000000-0000-4000-8000-00000000c019';
 const ELSEWHERE = '0b000000-0000-4000-8000-00000000c020';
 const deliver = vi.fn((_origin: unknown, _action: unknown) => Promise.resolve());
-const slot = { extensionId: 'paper-club', sessionId: null, tabId: 'slot-1', embedderId: 42 };
+const slot = { extensionId: 'paper-club', sessionId: null, tabId: 'slot-1', pageId: READER, embedderId: 42 };
 
 beforeEach(async () => {
   review.resource = async id => id;

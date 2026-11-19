@@ -3,6 +3,7 @@ import { userEvent } from 'vitest/browser';
 import hostCss from '@/styles/tokens.css?inline';
 import sessionCss from '@renderer/index.css?inline';
 import '@/lib/focus-modality';
+import { restyledElements } from '../../../../../../../tests/support/styleRecalc';
 
 // @@@focus-modality — real Chromium input: a mouse click leaves no ring, a bare modifier key afterwards (a screenshot hotkey)
 // leaves none either, keyboard navigation draws it. Both the global rule and the Tailwind `focus-visible:` variant.
@@ -24,7 +25,6 @@ beforeEach(() => {
 });
 afterEach(() => {
   owned.splice(0).forEach((node) => node.remove());
-  document.documentElement.removeAttribute('data-pointer-focus');
 });
 
 const ring = (el: Element) => getComputedStyle(el).outlineStyle;
@@ -57,10 +57,43 @@ it('Enter, Space and arrow keys count as navigation; a Ctrl / Meta shortcut does
   for (const key of ['{Enter}', ' ', '{ArrowDown}']) {
     await userEvent.click(buttons[0]!);
     await userEvent.keyboard(key);
-    expect(document.documentElement.hasAttribute('data-pointer-focus'), key).toBe(false);
+    expect(buttons[0]!.hasAttribute('data-pointer-focus'), key).toBe(false);
   }
   await userEvent.click(buttons[0]!);
   await userEvent.keyboard('{Control>}c{/Control}');
-  expect(document.documentElement.hasAttribute('data-pointer-focus')).toBe(true);
+  expect(buttons[0]!.hasAttribute('data-pointer-focus')).toBe(true);
   expect(ring(buttons[0]!)).toBe('none');
+});
+
+it('the mark follows focus and never sits on an ancestor', async () => {
+  await userEvent.click(buttons[0]!);
+  buttons[1]!.focus();
+  expect(buttons[0]!.hasAttribute('data-pointer-focus')).toBe(false);
+  expect(buttons[1]!.hasAttribute('data-pointer-focus')).toBe(true);
+  expect(ring(buttons[1]!)).toBe('none');
+  expect(document.querySelectorAll('[data-pointer-focus]')).toHaveLength(1);
+});
+
+// @@@mark-on-the-focused-element — the mark used to sit on <html> (`:focus-visible:not([data-pointer-focus] *)`), and
+// every switch between mouse and keyboard re-styled the whole document: 12.7k elements on an 8.8k-node page, growing
+// with the page. Counted in elements re-styled, with 2000 bystanders on the page.
+it('a switch between mouse and keyboard re-styles the focused element, not the page', async () => {
+  const bystanders = document.createElement('div');
+  bystanders.innerHTML = '<p><span><b>bystander</b></span></p>'.repeat(500);
+  document.body.appendChild(bystanders);
+  owned.push(bystanders);
+  expect(bystanders.querySelectorAll('*')).toHaveLength(1500);
+
+  // positive control for the ruler: an inherited property on the root does reach every bystander
+  const all = await restyledElements(() => { document.documentElement.style.setProperty('--ruler-control', '1'); });
+  document.documentElement.style.removeProperty('--ruler-control');
+  expect(all).toBeGreaterThanOrEqual(1500);
+
+  await userEvent.click(buttons[0]!);
+  const toKeyboard = await restyledElements(() => userEvent.keyboard('{ArrowDown}'));
+  expect(ring(buttons[0]!)).toBe('solid');
+  const toPointer = await restyledElements(() => userEvent.click(buttons[1]!));
+  expect(ring(buttons[1]!)).toBe('none');
+  expect(toKeyboard).toBeLessThan(50);
+  expect(toPointer).toBeLessThan(50);
 });

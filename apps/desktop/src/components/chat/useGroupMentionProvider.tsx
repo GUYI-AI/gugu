@@ -1,19 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatComposer, MentionItem } from '@gugu/session-ui/react/components'
 import { parseGroupFileLink } from '@gugu/core/shared/ui/guguLink'
-import { buildGroupRosterCandidates, MENTION_ALL_USER_ID, type MentionCandidate } from '@/lib/mention'
-import type { ChatItem, GroupCollabSnapshot } from '@gugu/core/shared/types/chat'
+import { addressedUserIds, buildGroupRosterCandidates, MENTION_ALL_USER_ID, type MentionCandidate } from '@/lib/mention'
+import type { ChatItem } from '@gugu/core/shared/types/chat'
 import { isRoomChat } from '@gugu/core/shared/ui/chatModels'
-import { EMPTY_GROUP_COLLAB, useGroupCollabLoader } from '../../hooks/useGroupCollabLoader'
+import { useRoomCollab } from '../../hooks/useRoomCollab'
 import { useAgentDisplayStatuses } from '../../hooks/useAgentDisplayStatus'
-import { useMobileShell } from '../../hooks/useMobileShell'
-import { groupClashNames, NO_CLASH_NAMES } from '../../lib/chatClashNames'
-import { useAuth } from '../../store/auth'
 import { isMentionQueryActive } from '@/lib/mentionMatch'
 import { rankMentionCandidates } from '@/lib/mentionRanking'
 import { useProjectGroupMembers } from '@/lib/projectGroupChatsBridge'
 import { useContactsStore } from '../../store/contactsContext'
+import { useAuth } from '../../store/auth'
 import { useChatStore, useChatStoreSelect } from '../../store/chatContext'
 import { Avatar } from '../Avatar'
 import { createLocalSessionMentionProvider } from '../../session/renderer/lib/chat/local-session-mention-provider'
@@ -41,6 +39,7 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
 }) {
   const { t } = useTranslation('messaging')
   const { contacts } = useContactsStore()
+  const groupAvatarUrl = useChatStoreSelect((store) => store.chats.find((chat) => chat.id === chatId)?.avatar ?? null)
   const sourceChatId = useChatStoreSelect((store) => store.chats.find((chat) => chat.id === chatId)?.source_chat_id ?? null)
   const projectMembers = useProjectGroupMembers()
   const projectMemberIds = projectMembers.get(sourceChatId ?? chatId ?? '')
@@ -50,10 +49,9 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
   ] : [], [isGroupChat, groupMembers, currentUserId, contacts, t])
   const { byEngine, renderMentionIcon: renderSessionMentionIcon } = useSessionAgentCreationTools()
   const renderMentionIcon = useCallback<NonNullable<Parameters<typeof ChatComposer>[0]['renderMentionIcon']>>((attrs) => {
-    if (attrs.id === MENTION_ALL_USER_ID) return <Avatar name={attrs.name ?? attrs.label} size={14} variant="group"
-      memberAvatars={members.filter((member) => member.type !== 'all').map((member) => ({ id: member.id, name: member.name, avatar: member.avatar ?? null }))} />
+    if (attrs.id === MENTION_ALL_USER_ID) return <Avatar name={attrs.name ?? attrs.label} size={14} variant="group" seed={chatId ?? undefined} avatarUrl={groupAvatarUrl} />
     return renderSessionMentionIcon(attrs)
-  }, [members, renderSessionMentionIcon])
+  }, [chatId, groupAvatarUrl, renderSessionMentionIcon])
   const localProvider = useMemo(() => createLocalSessionMentionProvider({ creationToolsByEngine: byEngine }), [byEngine])
   const decorate = useCallback((item: MentionItem): MentionItem => ({ ...item,
     annotation: isGroupChat && !members.some((member) => `aid:${member.id}` === item.label) ? t('composer.notInGroup') : item.annotation,
@@ -68,18 +66,16 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
       return rankMentionCandidates(members, query, { chatId, currentUserId, messages: messages ?? [], participantIds, projectMemberIds,
         replyToMessageId, now: Date.now() }).map((member): MentionItem => ({
         id: member.type === 'all' ? MENTION_ALL_USER_ID : member.id,
-        label: member.rawName ? `aid:${member.id}` : member.name, name: member.rawName ?? member.name, kind: 'custom', role: member.type === 'all' ? undefined : member.type,
-        annotation: member.rawName ? member.name.slice(member.rawName.length).trim() : undefined,
+        label: member.name, name: member.name, kind: 'custom', role: member.type === 'all' ? undefined : member.type,
         optionLabel: <span {...mentionOptionStatusProps(member, agentStatuses ?? {})}><AgentMentionOptionLabel member={member} status={agentStatuses?.[member.id]} /></span>,
       }))
     },
     resolve(target: string, label: string): MentionItem | null {
       const file = parseGroupFileLink(target)
       if (file) return { id: target, label: target, name: label, kind: 'file',
-        description: file.version === undefined ? label : `${label} · ${t('filePill.picked', { version: file.version })}` }
+        description: file.version === undefined ? label : `${label} (${t('filePill.picked', { version: file.version })})` }
       if (!target.startsWith('aid:')) return null
-      const member = members.find(candidate => `aid:${candidate.id}` === target)
-      return decorate({ id: target, label: target, name: member?.rawName ?? member?.name ?? label, role: member?.type === 'human' ? 'human' : 'agent', kind: 'custom', annotation: member?.rawName ? member.name.slice(member.rawName.length).trim() : undefined })
+      return decorate({ id: target, label: target, name: label, role: 'agent', kind: 'custom' })
     },
     async resolveSession(id: string) {
       const item = await localProvider.resolveSession(id)
@@ -95,22 +91,23 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
   return { members, mentionProvider, renderMentionIcon, pickOf }
 }
 
-/** Who can be @-ed in a chat that is not the one on screen (a forward's target): its roster, loaded the way the open chat's is. */
-export function useChatMentionRoster(chat: ChatItem | null) {
-  const { getImRepository, identitiesById } = useChatStore('getImRepository', 'identitiesById')
+/**
+ * A note into a chat that is not the one on screen (a forward's, a selection's Send): the group composer's @ over that
+ * chat's members (the same roster replica the open chat reads), and whom its words address. Not a room: no one.
+ */
+export function useChatNote(chat: ChatItem | null) {
+  const { identitiesById } = useChatStore('identitiesById')
   const { user } = useAuth()
-  const mobile = useMobileShell()
-  const [snapshot, setSnapshot] = useState<GroupCollabSnapshot>(EMPTY_GROUP_COLLAB)
-  const cache = useRef(new Map<string, GroupCollabSnapshot>())
+  const [picks, setPicks] = useState<MentionTarget[]>([])
   const room = !!chat && isRoomChat(chat.kind)
-  const { loadGroupCollab } = useGroupCollabLoader({ activeChatId: room ? chat.id : null, isRoomChat: room, chatKind: chat?.kind,
-    userId: user?.id, getImRepository, setGroupCollabSnapshot: setSnapshot, groupRosterMemoryCacheRef: cache })
-  useEffect(() => {
-    setSnapshot(EMPTY_GROUP_COLLAB)
-    void loadGroupCollab()
-  }, [loadGroupCollab])
-  const groupMembers = useMemo(() => buildGroupRosterCandidates(snapshot, identitiesById, mobile ? NO_CLASH_NAMES : groupClashNames(snapshot, identitiesById)),
-    [snapshot, identitiesById, mobile])
-  const agentStatuses = useAgentDisplayStatuses(useMemo(() => snapshot.agents.map((agent) => agent.id), [snapshot.agents]))
-  return { room, groupMembers, agentStatuses }
+  const { snapshot } = useRoomCollab(room ? chat.id : null, chat?.kind === 'topic' ? 'topic' : 'group')
+  const groupMembers = useMemo(() => snapshot ? buildGroupRosterCandidates(snapshot, identitiesById) : [], [snapshot, identitiesById])
+  const agentStatuses = useAgentDisplayStatuses(useMemo(() => snapshot?.agents.map((agent) => agent.id) ?? [], [snapshot?.agents]))
+  const { members, mentionProvider, renderMentionIcon, pickOf } = useGroupMentionProvider({ chatId: room ? chat.id : null, isGroupChat: room, groupMembers, currentUserId: user?.id ?? null, agentStatuses })
+  const onMentionInsert = useCallback((item: MentionItem) => {
+    const pick = pickOf(item)
+    if (pick) setPicks((current) => current.some((existing) => existing.userId === pick.userId) ? current : [...current, pick])
+  }, [pickOf])
+  const addressed = useCallback((text: string) => room ? addressedUserIds(text, picks, members) : [], [room, picks, members])
+  return { mentionProvider, renderMentionIcon, onMentionInsert, addressed }
 }

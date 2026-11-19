@@ -1,5 +1,6 @@
 // Shared agent-facing result boundary for synchronous tools and durable human-tool replies.
 import { encodeTypedId } from '@gugu/core/shared/typedId.mjs'
+import { guguLink } from '@gugu/core/shared/ui/guguLink'
 
 /** 出参里的 id 字段 → 带类型。按字段名认，只认这几个宿主自己定义的键。 */
 const ID_FIELD_KINDS = {
@@ -52,4 +53,15 @@ export function encodeResult(value: unknown): unknown {
     else out[key] = encodeResult(entry)
   }
   return out
+}
+
+/**
+ * Owner 2026-11-15: a session the tool returns (already typed by encodeResult) carries the link an agent pastes in chat to
+ * mention it — it opens on a click, where `session:<id>` (the tools' address) reads as plain text.
+ */
+export function withSessionLink(value: unknown): unknown {
+  const id = (value as { session_id?: unknown } | null)?.session_id
+  return typeof id === 'string' && id.startsWith('session:')
+    ? { ...(value as object), session_link: guguLink({ kind: 'session', sessionId: id.slice('session:'.length) }, 'gugu') }
+    : value
 }

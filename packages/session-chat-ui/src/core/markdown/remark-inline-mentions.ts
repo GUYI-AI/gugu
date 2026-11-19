@@ -74,7 +74,6 @@ export function remarkInlineMentions() {
           mentionKind: meta?.kind ?? 'file',
           title: meta?.title,
           engine: meta?.engine,
-          iconClass: meta?.iconClass,
           iconUrl: meta?.iconUrl,
         };
 
@@ -137,7 +136,6 @@ function splitTextNode(
           mentionKind: meta.kind,
           title: meta.title,
           engine: meta.engine,
-          iconClass: meta.iconClass,
           iconUrl: meta.iconUrl,
         },
       });

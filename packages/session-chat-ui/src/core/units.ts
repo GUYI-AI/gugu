@@ -75,6 +75,7 @@ export type GroupRole = 'solo' | 'first' | 'middle' | 'last';
  * `chrome`    — optional group chrome carried from the ItemSegmenter, stamped
  *               by flatten(); undefined for solo legacy units.
  */
+
 export type RenderUnit<D = unknown> = {
   id: string;
   itemId: string;
@@ -88,6 +89,8 @@ export type RenderUnit<D = unknown> = {
   groupRole: GroupRole;
   gapBefore: number;
   chrome?: GroupChrome;
+  /** Visible rows of one speaker utterance share this key across transcript tiers. */
+  conversationUtterance?: string;
   /** Agent conversation block ownership; process steps and reply keep one chronological owner. */
   conversationProcessOwner?: string;
   /** Nested measured rows owned by a bounded native viewport. */
@@ -182,6 +185,8 @@ export type SegmentCtx = {
   foldTurnProcess?: boolean;
   /** 某个 `turn-process` 头当前是否展开；缺省一律折叠。 */
   isTurnProcessExpanded?: (processId: string) => boolean;
+  /** 读者展开过的对话气泡(`conversationBubbleKey`);它下面的尾行有「收起全文」,决定下一行的间距。 */
+  isBubbleExpanded?: (bubbleKey: string) => boolean;
   /** Emit everything behind process headers and tool runs as if open (in-conversation find). */
   revealAllFolds?: boolean;
   /**

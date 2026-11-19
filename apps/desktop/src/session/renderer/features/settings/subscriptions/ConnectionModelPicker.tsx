@@ -1,3 +1,5 @@
+import type { CustomModelMeta } from '@gugu/session-core/models/custom-model'
+import { metadataSeparator } from '@/i18n/format'
 import { useEffect, useId, useState } from 'react'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import { Input } from '@renderer/lib/ui/input'
@@ -20,7 +22,7 @@ import { errorText } from './subscription-queries'
  * 从哪读模型清单(#2507):表单里还没存的连接给 key 和地址(地址缺席 = 这家的官方地址);已存的连接(「管理模型」)给它的 id,
  * key 由宿主自己解。读一律在宿主进程里做,key 只到那个地址 —— renderer ❌ 自己去 fetch。
  */
-export type ConnectionModelSource = { apiKey: string; endpoint?: string } | { connectionId: string }
+export type ConnectionModelSource = { apiKey: string; endpoints: CustomModelMeta['endpoints'] } | { connectionId: string; endpoints?: CustomModelMeta['endpoints'] }
 
 type ModelList =
   | { kind: 'waiting' }
@@ -37,13 +39,14 @@ export function parseModelNames(text: string): string[] {
 /** key / 地址一变就重读(表单里打字时等 400ms 停下再读);已存的连接立刻读。 */
 function useConnectionModelList(
   machine: string | null,
-  providerId: string,
   source: ConnectionModelSource | null
 ): ModelList {
   const connectionId = source && 'connectionId' in source ? source.connectionId : undefined
   const apiKey = source && 'apiKey' in source ? source.apiKey : undefined
-  const endpoint = source && 'apiKey' in source ? source.endpoint : undefined
+  const endpoints = source?.endpoints
+  const endpointKey = JSON.stringify(endpoints)
   const [list, setList] = useState<ModelList>({ kind: 'waiting' })
+  // @@@effect-flow - probing the key being typed (debounced); the key is never put in a cache.
   useEffect(() => {
     if (!connectionId && !apiKey) {
       setList({ kind: 'waiting' })
@@ -55,10 +58,8 @@ function useConnectionModelList(
       async () => {
         try {
           const client = await getAgentConfigRuntimeClient(machine)
-          const result = await client.listConnectionModels(
-            connectionId
-              ? { providerId, connectionId }
-              : { providerId, apiKey: apiKey!, ...(endpoint ? { endpoint } : {}) }
+          const result = await client.testCustomModel(
+            connectionId ? { connectionId, endpoints: JSON.parse(endpointKey ?? 'null') ?? undefined } : { apiKey: apiKey!, endpoints: JSON.parse(endpointKey!) }
           )
           if (cancelled) return
           if (!result.success) setList({ kind: 'failed', message: errorText(result.error) })
@@ -75,7 +76,7 @@ function useConnectionModelList(
       cancelled = true
       clearTimeout(timer)
     }
-  }, [machine, providerId, connectionId, apiKey, endpoint])
+  }, [machine, connectionId, apiKey, endpointKey])
   return list
 }
 
@@ -85,20 +86,18 @@ function useConnectionModelList(
  */
 export function ConnectionModelPicker({
   machine,
-  providerId,
   source,
   value,
   onChange
 }: {
   machine: string | null
-  providerId: string
   /** null = key / 地址还没填好,先不读。 */
   source: ConnectionModelSource | null
   value: string[]
   onChange: (models: string[]) => void
 }) {
   const { translate } = useSessionMessages()
-  const list = useConnectionModelList(machine, providerId, source)
+  const list = useConnectionModelList(machine, source)
   const anchor = useComboboxAnchor()
   const labelId = useId()
   const [manual, setManual] = useState(() => value.join(', '))
@@ -193,6 +192,6 @@ export function modelsLine(
   translate: ReturnType<typeof useSessionMessages>['translate']
 ): string | undefined {
   if (!models?.length) return undefined
-  if (models.length <= 2) return models.join(', ')
+  if (models.length <= 2) return models.join(metadataSeparator())
   return translate('subscriptions.connections.moreModels', { first: models[0], count: models.length - 1 })
 }

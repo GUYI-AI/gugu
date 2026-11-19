@@ -1,9 +1,10 @@
 import type { ChatMessage } from '@session-chat/model';
 import type { MeasureCtx } from '@session-chat/core/define';
 import type { UnitsView } from '@session-chat/state/flatten';
+import { messageQuestionAnswer } from '@session-chat/state/message-presentation';
 
 export function isConversationMessage(item: ChatMessage, ctx: Pick<MeasureCtx, 'theme'>): boolean {
-  if (!ctx.theme.layout?.agentConversation || item.hookNotice || item.questionAnswer || item.role === 'thought') return false;
+  if (!ctx.theme.layout?.agentConversation || item.hookNotice || messageQuestionAnswer(item) || item.role === 'thought') return false;
   return !item.guguDelivery || item.guguDelivery.segments.every(segment => segment.facts?.route === 'chat' || segment.facts?.route === 'session-direct');
 }
 
@@ -55,6 +56,21 @@ export function hasConversationActions(item: ChatMessage): boolean {
   if (!hasConversationBody(item)) return false;
   // 每条发送气泡保留悬停操作;去处由气泡底部显示。
   return !(item.role === 'assistant' && item.conversationPart === 'body' && !item.conversationTail && !item.sentTo);
+}
+
+/** 「收起全文」:读者展开过、又不是最新那条。展开标记只落在溢出的气泡上(「展开全文」只在溢出时出现,held-open 要求高过预览上限)。 */
+export function conversationCanCollapse(item: ChatMessage, ctx: Pick<MeasureCtx, 'expanded' | 'latestConversationMessageId'>): boolean {
+  return ctx.expanded(conversationBubbleKey(item)) && ctx.latestConversationMessageId !== item.id;
+}
+
+/**
+ * The inline lane can contain hover actions, a collapse control or a quote.
+ * A reply with trailing artifacts draws its controls in the separate last row.
+ */
+export function conversationTailLane(item: ChatMessage, canCollapse: boolean, referenceInFooter: boolean): 'none' | 'blank' | 'ink' {
+  if (item.conversationActionsMoved) return 'none';
+  if (canCollapse || referenceInFooter) return 'ink';
+  return hasConversationActions(item) ? 'blank' : 'none';
 }
 
 /** 对话布局里这条有没有要画的正文或附件:只有过程、一个字没回的那一轮没有气泡,也不留时间那一行。 */

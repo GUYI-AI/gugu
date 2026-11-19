@@ -1,3 +1,5 @@
+import { metadataSeparator } from '@/i18n/format'
+import { UI_EVENTS } from '@/lib/uiEvents';
 import { messageForUser } from '@/lib/userFacingError';
 import { ArrowRight, ChevronRight, Plus } from '@/lib/icons';
 import { appsHere } from '@/components/appSlot/appsHere';
@@ -20,6 +22,7 @@ import type { LibraryMcpProvidedServer, LibraryMcpServer } from '@shared/mcp-lib
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { GuguToolGroups } from './gugu-tool-groups';
 import { McpLibraryRow } from './mcp-library-row';
+import { useAddMcpServer } from './use-add-mcp-server';
 import { useHarnessMcpServers, useMcpLibrary } from './use-mcp-library';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 
@@ -36,7 +39,7 @@ const QUIET = 'py-2 pl-6 text-sm text-foreground-muted';
  * 上面是咕咕自己管的那份列表(加 / 改 / 删 / 默认启用 / 检测),下面按家列各家自己的用户级那几台(只读、可检测)。
  * 新建任务时勾选的只有咕咕的那几台;各家自己的照常由那一家自己带上。
  */
-export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ onOpenIntegrations }) => {
+export const McpLibraryView: React.FC<{ onOpenIntegrations?: () => void; inSettings?: boolean }> = ({ onOpenIntegrations, inSettings }) => {
   const library = useMcpLibrary();
   const { translate } = useSessionMessages();
   const host = useLibraryHost();
@@ -52,12 +55,7 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ o
     toast({ title: translate('mcpLibrary.saveFailed'), description: messageForUser(failure), variant: 'destructive' });
   };
 
-  const openAdd = async () =>
-    showServerModal({
-      existing: library.servers,
-      harnessNames: await library.harnessNames(),
-      onSuccess: (servers) => void library.add(servers.map((server) => ({ ...server, enabledByDefault: true }))).catch(fail),
-    });
+  const openAdd = useAddMcpServer(library);
   const openEdit = async (server: LibraryMcpServer) =>
     showServerModal({
       initial: server,
@@ -76,10 +74,11 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ o
   return (
     <TooltipProvider delay={150}>
       <div data-slot="mcp-library" className="flex flex-col text-foreground">
-        <PageHeader
-          sticky
-          title={translate('mcpLibrary.title')}
-        />
+        {inSettings ? (
+          <SectionLabel role="heading" aria-level={2}>{translate('mcpLibrary.title')}</SectionLabel>
+        ) : (
+          <PageHeader sticky title={translate('mcpLibrary.title')} />
+        )}
         {notice && <DeviceScopeNoticeLine notice={notice} onRetry={library.reload} />}
         {library.isLoading ? (
           <PageLoading />
@@ -90,7 +89,7 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ o
               {library.provided?.builtIn.map((name) => (
                 <BuiltInRow key={name} name={name} library={library} disabled={disabled} onFail={fail} />
               ))}
-              <ProvidedGroup
+              {onOpenIntegrations && <ProvidedGroup
                 slot="mcp-library-integrations"
                 title={translate('mcpLibrary.integrationsGroup')}
                 servers={library.provided?.servers.filter((server) => server.group === 'integrations') ?? []}
@@ -101,7 +100,7 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ o
                 keepEmpty
                 library={library}
                 onFail={fail}
-              />
+              />}
               <ProvidedGroup
                 slot="mcp-library-apps"
                 title={translate('mcpLibrary.appsGroup')}
@@ -110,7 +109,10 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ o
                   ? {
                       action: {
                         label: translate('mcpLibrary.manageApps'),
-                        onClick: () => appsHere!.openAppsPage(),
+                        onClick: () => {
+                          if (inSettings) window.dispatchEvent(new Event(UI_EVENTS.closeSettings));
+                          appsHere!.openAppsPage();
+                        },
                       },
                     }
                   : {})}
@@ -380,7 +382,7 @@ function ProvidedGroup({
           check={library.providedChecks[server.key]}
           checking={library.checking.has(server.key)}
           disabled={false}
-          note={`${server.from.join('、')} · ${translate(`mcpLibrary.reach.${server.reach}`)}`}
+          note={`${server.from.join('、')}${metadataSeparator()}${translate(`mcpLibrary.reach.${server.reach}`)}`}
           {...(server.refusal ? { noteTitle: server.refusal } : {})}
           onCheck={() => void library.checkProvided(server.key).catch(onFail)}
         />

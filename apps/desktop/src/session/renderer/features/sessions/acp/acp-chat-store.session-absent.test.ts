@@ -13,7 +13,6 @@ import { setLocalePreference } from '@/i18n';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { reaction, runInAction } from 'mobx';
 import { WireError } from '@gugu/session-wire';
-import { log } from '@renderer/utils/logger';
 import type { SessionInput } from '@/lib/sessionInputOutbox';
 import { installAcpChatStoreHost } from './acp-chat-store.test-host';
 
@@ -153,24 +152,17 @@ describe('#3507 会话不在时的其余副作用', () => {
     expect(toasts.some((entry) => entry.title === translateSessionMessage('acpFailure.refreshHistory'))).toBe(true);
   });
 
-  it('explains a disconnected history refresh and persists its cause at error level', async () => {
+  // A lost link is not a failed reconciliation: the turn stays on screen, the transcript says the connection
+  // is down (reconcileAwaitingLink), and the same reconciliation runs again on the next connection.
+  it('waits for the connection instead of toasting a disconnected history refresh', async () => {
     const store = makeStore();
-    store.session = { getHistory: async () => { throw new WireError('DISCONNECTED', 'Wire transport disconnected'); } } as never;
-    const logged = vi.spyOn(log, 'error').mockImplementation(() => {});
-    try {
-      await (store as unknown as { _refreshHistory: () => Promise<void> })._refreshHistory();
-      expect(toasts.at(-1)).toMatchObject({
-        title: translateSessionMessage('acpFailure.refreshHistory'),
-        description: translateSessionMessage('taskError.connectionLost'),
-      });
-      expect(logged).toHaveBeenCalledWith('ACP chat action failed', {
-        sessionId: store.sessionId,
-        title: 'acpFailure.refreshHistory',
-        error: 'Wire transport disconnected\ncode=DISCONNECTED',
-      });
-    } finally {
-      logged.mockRestore();
-    }
+    const whenConnected = vi.fn(() => new Promise<number>(() => {}));
+    store.session = { getHistory: async () => { throw new WireError('DISCONNECTED', 'Wire transport disconnected'); }, whenConnected } as never;
+    const before = toasts.length;
+    await (store as unknown as { _refreshHistory: () => Promise<void> })._refreshHistory();
+    expect(toasts.length).toBe(before);
+    expect(whenConnected).toHaveBeenCalledTimes(1);
+    expect(store.reconcileAwaitingLink).toBe(true);
   });
 
   it('history reconciliation does not erase a newer active turn', async () => {

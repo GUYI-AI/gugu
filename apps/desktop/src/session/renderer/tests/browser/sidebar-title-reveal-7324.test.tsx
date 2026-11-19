@@ -43,7 +43,7 @@ async function mount(title = LONG_TITLE) {
     <SessionLocalizationProvider>
       <SessionRowShell
         sessionId="title-reveal" rowVariant="tree" depth={0} hasChildren={false} expanded={false}
-        needsAttention={false} title={title} harness={null} presentation={presentAgentStatus({ reading: { status: 'idle', detail: null } })} lastInteractedAt={new Date().toISOString()}
+        title={title} harness={null} presentation={presentAgentStatus({ reading: { status: 'idle', detail: null } })} lastInteractedAt={new Date().toISOString()}
         doneUnread={false} isActive={false} isCursor={false} isPendingArchive={false}
         quickActions={{ isPinned: false, onSetPinned: () => {}, archiveLabel: 'Archive', onArchive: () => {} }}
         onOpen={onOpen}

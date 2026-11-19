@@ -5,7 +5,7 @@ import { observer } from 'mobx-react-lite'
 import type { AgentAttention } from '@gugu/core/shared/agentStatus'
 import { isNeedsYou } from '@gugu/core/shared/agentStatusPresentation'
 import { useMobileShell } from '@/hooks/useMobileShell'
-import { sessionPresentation } from '@/mobile/agent-watch/watch-status'
+import { sessionPresentation } from '@/lib/agent-wait/watch-status'
 import { followLink } from '@/lib/guguLinks'
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge'
 import { Bell } from '@/lib/icons'
@@ -15,6 +15,8 @@ import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { IconButton } from '../ui/IconButton'
 import { SectionLabel } from '../ui/SectionLabel'
+import { PaneEmptyState } from '../ui/PaneEmptyState'
+import { Hint } from '../ui/Tooltip'
 import { rowKeyActivate } from '../contacts/contactsPanelStyles'
 import { NOTIFICATION_LIST_SLOT_PREFIX, NOTIFICATION_TOGGLE_SLOT_PREFIX } from './NotificationSlot'
 import { NeedsYouTaskRow } from './NeedsYouTaskRow'
@@ -31,7 +33,7 @@ const unread = (task: NeedsYouTask) => isNeedsYou(sessionPresentation(task.sessi
 export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }: { onAttentionChange?: (attention: AgentAttention) => void }) {
   const { t } = useTranslation()
   const mobile = useMobileShell()
-  const { tasks, count, attention, error } = useNeedsYouTasks()
+  const { tasks, count, attention, error, loading } = useNeedsYouTasks()
   const passwords = usePasswordNotifications()
   const sync = usePasswordSnapshot()?.sync
   const devices = promptedRequests(sync), joining = waitingToJoin(sync)
@@ -58,22 +60,27 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
     // the chat list's header beside its 32px 「+」; the phone grows md to the touch size (IconButton).
     if (key.startsWith(NOTIFICATION_TOGGLE_SLOT_PREFIX)) return createPortal(
       <span className="relative inline-flex">
-        <IconButton size="md" tone={element.dataset.tone === 'strong' ? 'strong' : undefined} aria-label={title} title={title} aria-pressed={open} on={open} data-testid="notification-toggle" onClick={() => setSidebarNotificationsOpen(!open)}>
-          <Bell />
-        </IconButton>
+        <Hint label={title} side="bottom">
+          <IconButton size="md" tone={element.dataset.tone === 'strong' ? 'strong' : undefined} aria-label={title} aria-pressed={open} on={open} data-testid="notification-toggle" onClick={() => setSidebarNotificationsOpen(!open)}>
+            <Bell />
+          </IconButton>
+        </Hint>
         {notificationCount > 0 && <Chip tone="danger" shape="count" className="pointer-events-none absolute -right-1 -top-1" data-testid="notification-count">{notificationCount > 99 ? '99+' : notificationCount}</Chip>}
       </span>, element, key)
     if (!key.startsWith(NOTIFICATION_LIST_SLOT_PREFIX) || !open || slots?.getSlotLabel?.(key) !== 'active') return null
+    const showEmpty = mobile && !loading && !error && !readError && tasks.length === 0 && passwords.length === 0 && devices.length === 0 && !joining
     return createPortal(<>
       <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-2">
         <SectionLabel>{title}</SectionLabel>
         {unreadFailures.length > 0 && <Button size="sm" variant="ghost" data-testid="notification-mark-all-read" disabled={marking > 0} onClick={() => { void markRead(unreadFailures) }}>{t('chatList.markAllRead', { ns: 'messaging' })}</Button>}
       </div>
-      <div data-testid="notification-list" data-notification-scroll="" role="listbox" aria-label={title} className="min-h-0 flex-1 overflow-auto px-2 pb-4">
+      {showEmpty ? <div className="grid min-h-0 flex-1 place-items-center px-4 pb-4" data-testid="notification-list">
+        <PaneEmptyState phone icon={<Bell size={24} />} caption={t('settings.general.notificationsEmpty.title', { ns: 'main' })} hint={t('settings.general.notificationsEmpty.hint', { ns: 'main' })} />
+      </div> : <div data-testid="notification-list" data-notification-scroll="" role="listbox" aria-label={title} className="min-h-0 flex-1 overflow-auto px-2 pb-4">
         {error && <p role="alert">{error}</p>}
         {readError && <p role="alert">{readError}</p>}
         {passwords.map(request => <Button key={request.requestId} variant="ghost" className="w-full justify-start" data-password-notification={request.requestId}
-          onClick={() => { openPasswordRequest(request); setSidebarNotificationsOpen(false) }}>{request.kind === 'save' ? '请求保存密码' : '请求使用密码'} · {request.origin}</Button>)}
+          onClick={() => { openPasswordRequest(request); setSidebarNotificationsOpen(false) }}>{request.kind === 'save' ? '请求保存密码' : '请求使用密码'} : {request.origin}</Button>)}
         {devices.map(request => <Button key={request.deviceId} variant="ghost" className="w-full justify-start" data-password-device={request.deviceId}
           onClick={() => { openPasswordDevicePrompt(request.deviceId); setSidebarNotificationsOpen(false) }}>「{request.label || '新设备'}」想用你的密码</Button>)}
         {joining && <Button variant="ghost" className="w-full justify-start" data-password-join=""
@@ -84,14 +91,16 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
           // task view, which has no place for it. The task view's read bit is not set by a chat, so this click sets it.
           // Read at the click: the list does not follow the assistant's snapshot.
           const openTask = () => {
+            const failure = sessionPresentation(task.session, true)?.tone === 'error'
+            if (failure) void markRead([task])
             const assistant = readAssistantShellBridge()?.getSnapshot()
             if (!assistant?.chatId || !isAssistantAgent(task.session.agent?.userId, assistant.assistant?.id)) return followLink({ kind: 'session', sessionId: task.session.conversationId, deviceId: task.deviceId })
-            void markRead([task])
+            if (!failure) void markRead([task])
             return followLink({ kind: 'chat', chatId: assistant.chatId })
           }
           return <NeedsYouTaskRow key={`${task.deviceId}/${task.session.conversationId}`} task={task} mobile={mobile} emphasis={unread(task)} onClick={openTask} onKeyDown={rowKeyActivate(openTask)} />
         })}
-      </div>
+      </div>}
     </>, element, key)
   })}</>
 })

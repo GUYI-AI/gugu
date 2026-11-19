@@ -1,4 +1,5 @@
 import * as fs from 'node:fs/promises';
+import { canonicalPath, placeUnder, type CanonicalPath } from '@gugu/session-core/files';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { BrowserWindow, dialog, shell, type WebContents } from 'electron';
@@ -129,7 +130,7 @@ export interface DesktopFilePage {
   handedVersions?: readonly number[];
   /**
    * A person opened `handed` in this page from the host's UI (`@@@outside-file`): only then may it be read outside its
-   * working copy. Not for a file an agent or an App opened, nor a page an agent works.
+   * working copy. Not for a file an App opened, nor a page an agent works.
    */
   personOpened?: true;
   asAgent?: string | null;
@@ -266,7 +267,12 @@ function chatSurface(page: DesktopFilePage): FileSurface {
  * is `not-found`; whether anything has opened it since this computer started does not matter. The same files, gates and
  * watch either way: a folder is a folder.
  */
-export async function localRootOf(place: WorkspacePlace): Promise<{ workspaceRoot: string; projectId: string; workspaceId: string | null }> {
+/** A working copy's folder on this computer, as its record has it: canonical (`@@@canonical-path`), and there. */
+export async function localRootOf(place: WorkspacePlace): Promise<{ workspaceRoot: CanonicalPath; projectId: string; workspaceId: string | null }> {
+  const there = async (root: CanonicalPath) => {
+    await fs.stat(root).catch(() => { throw new AppFileError('not-found', `${root} is no longer on this computer`); });
+    return root;
+  };
   const target = workspaceTarget(place);
   if ('folder' in target) {
     const { otherMachines } = await import('@main/core/sessions/session-family');
@@ -274,19 +280,18 @@ export async function localRootOf(place: WorkspacePlace): Promise<{ workspaceRoo
     const { projectFolderOfWorkspace } = await import('@main/core/projects/operations/project-folders');
     const folder = await projectFolderOfWorkspace(target.folder.workspaceId);
     if (!folder) throw new AppFileError('not-found', 'This folder is no longer in a project on this computer');
-    const workspaceRoot = await fs.realpath(folder.path).catch(() => { throw new AppFileError('not-found', `${folder.path} is no longer on this computer`); });
-    return { workspaceRoot, projectId: folder.projectId, workspaceId: folder.workspaceId };
+    return { workspaceRoot: await there(folder.path), projectId: folder.projectId, workspaceId: folder.workspaceId };
   }
   if ('project' in target) {
     const { projectRootFolder } = await import('@main/core/projects/operations/project-folders');
     const root = await projectRootFolder(target.project);
     if (!root) throw new AppFileError('not-found', `Project ${target.project} is not a project on this computer`);
-    return { workspaceRoot: await fs.realpath(root.path), projectId: target.project, workspaceId: root.workspaceId };
+    return { workspaceRoot: await there(root.path), projectId: target.project, workspaceId: root.workspaceId };
   }
   const { agentSessionContext } = await import('@main/core/extensions/extension-agent-context');
   const session = await agentSessionContext(target.session);
   if (!session?.workspaceRoot) throw new AppFileError('not-found', 'This task has no working folder on this computer');
-  return { workspaceRoot: await fs.realpath(session.workspaceRoot), projectId: session.projectId, workspaceId: session.workspaceId ?? null };
+  return { workspaceRoot: await there(session.workspaceRoot), projectId: session.projectId, workspaceId: session.workspaceId ?? null };
 }
 
 async function localFolder(page: DesktopFilePage, place: WorkspacePlace): Promise<LocalSurface & { projectId: string; workspaceId: string | null }> {
@@ -560,10 +565,10 @@ export async function appFileDraft(page: DesktopFilePage, args: { ref?: unknown;
 export async function draftHere(ref: WorkspaceFileRef & { id: string }, text: unknown): Promise<string | null | void> {
   const { projectId, workspaceId, workspaceRoot } = await localRootOf({ workspace: ref.workspace });
   const workspace = workspaceId ?? ref.workspace;
-  const inRoot = path.relative(workspaceRoot, ref.id);
-  const filePath = path.isAbsolute(ref.id) && !inRoot.startsWith('..') && !path.isAbsolute(inRoot) ? inRoot.split(path.sep).join('/') : ref.id;
-  // Kept under either spelling of the path: the built-in editor this replaced also wrote absolute ones.
-  const buffers = (await editorBufferService.listBuffers(projectId, workspace)).filter((buffer) => path.resolve(workspaceRoot, buffer.filePath) === path.resolve(workspaceRoot, filePath));
+  const filePath = path.isAbsolute(ref.id) ? placeUnder(workspaceRoot, canonicalPath(ref.id)) ?? ref.id : ref.id;
+  // Kept under either form of the path: the built-in editor this replaced also wrote absolute ones.
+  const placed = (name: string) => path.isAbsolute(name) ? placeUnder(workspaceRoot, canonicalPath(name)) ?? name : name;
+  const buffers = (await editorBufferService.listBuffers(projectId, workspace)).filter((buffer) => placed(buffer.filePath) === filePath);
   if (text === undefined) return buffers[0]?.content ?? null;
   await Promise.all(buffers.map((buffer) => editorBufferService.clearBuffer(projectId, workspace, buffer.filePath)));
   if (text !== null) await editorBufferService.saveBuffer(projectId, workspace, filePath, String(text));
@@ -859,6 +864,9 @@ export const resourceChatOf = files.resourceChat;
 export const chatOfItem = files.chatOf;
 export const groupFiles = files.groupFiles;
 export const groupFile = files.groupFile;
+export const viewedAmong = files.viewedAmong;
+/** A page naming a chat file to open: refused, as `openWithTarget` would, before anything is read. */
+export const mayOpen = (page: DesktopFilePage, itemId: string): void => files.mayName(chatSurface(page), itemId, 'opening');
 
 /** API 14 `chatFile`: the file an App opened in this chat shows, as that file opened with it (made the first time). */
 export function appChatFile(chatId: string, extensionId: string) {

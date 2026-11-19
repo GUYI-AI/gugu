@@ -26,6 +26,7 @@ vi.mock('@main/db/client', () => ({
   },
 }));
 vi.mock('@main/lib/events', () => ({ events: { emit: mocks.emit } }));
+vi.mock('./platform-model-selection', () => ({ sessionPlatformModel: async () => null }));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
 const { recordLiveSessionSetting } = await import('./record-live-session-setting');
@@ -83,11 +84,12 @@ describe('活会话设置落库:改完 → 记录 → 重开读到新值', () =>
     expect((await reopened()).permissionMode).toBe('read-only');
   });
 
-  it('权限:咕咕故意不映射的档(claude `auto`)不写 —— 硬归一档重开时会切到另一个 id', async () => {
+  it('权限:原生 Claude auto 记录为 AI 审查，重开仍是同一档', async () => {
     await recordLiveSessionSetting(CONV, { dimension: 'permission', modeId: 'auto' });
     const session = await reopened();
-    expect(session.permissionMode).toBe('full-access');
-    expect(mocks.emit).not.toHaveBeenCalled();
+    expect(session.permissionMode).toBe('ai-review');
+    expect(session.model).toBe('opus');
+    expect(mocks.emit).toHaveBeenCalledWith(sessionChangedChannel, { sessionId: CONV, projectId: 'project-1', changes: { permissionMode: 'ai-review' } });
   });
 
   it('推理档:原样写回', async () => {
@@ -103,6 +105,16 @@ describe('活会话设置落库:改完 → 记录 → 重开读到新值', () =>
     const session = await reopened();
     expect(session.permissionMode).toBe('read-only');
     expect(session.effort).toBe('low');
+  });
+
+  it('keeps accepted Fast across reopen and preserves another simultaneous setting', async () => {
+    await Promise.all([
+      recordLiveSessionSetting(CONV, { dimension: 'fast', value: true }),
+      recordLiveSessionSetting(CONV, { dimension: 'effort', value: 'low' }),
+    ]);
+    expect(await reopened()).toMatchObject({ fastMode: true, effort: 'low', model: 'opus' });
+    await recordLiveSessionSetting(CONV, { dimension: 'fast', value: false });
+    expect((await reopened()).fastMode).toBe(false);
   });
 
   it('会话不存在 ⇒ 响亮失败', async () => {

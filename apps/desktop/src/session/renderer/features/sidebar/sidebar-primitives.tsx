@@ -87,7 +87,7 @@ export const sidebarHeaderIconButtonClass =
  * ⚠️ 用它的行必须自己声明 `group/row`,与会话行 / 项目行同一个组名,❌ 别另起一个。
  */
 export const sidebarRowShortcutClass =
-  'opacity-0 transition-opacity duration-[var(--dur-fast,120ms)] ease-out group-hover/row:opacity-100 group-focus-visible/row:opacity-100';
+  'opacity-0 transition-opacity duration-[var(--dur-fast,120ms)] ease-out group-hover/row:opacity-100 group-row-kbd-focus:opacity-100';
 
 /**
  * 行尾动作(置顶 / 归档)与它底下那格时间的显隐 —— **两者互为补集**,所以配方写在一起。

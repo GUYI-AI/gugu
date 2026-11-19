@@ -10,6 +10,7 @@
   ],
   "exports": {
     "./content-menu": "./src/content-menu.ts",
+    "./canonical-path": "./src/canonical-path.ts",
     "./animation-visibility.css": "./src/animation-visibility.css",
     "./animation-visibility": "./src/animation-visibility.ts",
     "./logger/context-node": "./src/logger/context-node.ts",
@@ -25,7 +26,12 @@
     "./result": "./src/result/index.ts",
     "./logger": "./src/logger/index.ts",
     ".": "./src/index.ts",
-    "./format": "./src/format.ts"
+    "./format": "./src/format.ts",
+    "./file-glyphs": "./src/file-glyphs.ts",
+    "./file-marks": "./src/file-marks.ts",
+    "./file-tile.css": "./src/file-tile.css",
+    "./file-row": "./src/file-row.ts",
+    "./file-row.css": "./src/file-row.css"
   },
   "scripts": {
     "test": "vitest run"

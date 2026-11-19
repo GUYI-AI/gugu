@@ -3,13 +3,19 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import Database from 'better-sqlite3'
+import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { runInNewContext } from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
+import { initializeDatabase } from '../../../../apps/desktop/electron/session/main/db/initialize'
+import * as schema from '../../../../apps/desktop/electron/session/main/db/schema'
+import { migrateCustomModels } from '../../../../apps/desktop/electron/session/main/core/agents/custom-model-migration'
 import { sessionBootTasks } from '../../../../apps/desktop/electron/session/main/core/boot-tasks'
 import { resolveDeviceHostInfo } from '../../../../packages/core/src/cloud/deviceHostInfo'
 import { hydrateLife, shouldStartOnHydrate } from '../../../../packages/core/src/local/session-life/step'
 import { busyForVersionSwitch, parseAgentStatusView } from '../../../../packages/core/src/shared/agentStatus'
 import type { Hold } from '../../../../packages/core/src/local/session-life/types'
+import type { EditorBufferService } from '../../../../apps/desktop/electron/session/main/core/editor/editor-buffer-service'
 import * as installs from '../../../../apps/desktop/electron/session/main/core/agents/install-progress-ledger'
 
 vi.mock('../../../../packages/core/src/cloud/remoteTunnel', () => ({ tunnelRelayUp: () => false, tunnelActiveAt: () => null }))
@@ -22,11 +28,14 @@ const entry = path.resolve(__dirname, '../../../../apps/desktop/electron/session
 async function boot(fail: string, fatal = false, presenceProbe?: {
   reconciliation: (names: ReadonlySet<string>) => Promise<void>
   tmuxSessionNames?: ReadonlySet<string>
+  tmuxError?: Error
+  settleAfterRestart?: (names: ReadonlySet<string>) => Promise<string[]>
   inspect?: (registered: ReturnType<typeof vi.fn>, delivery: ReturnType<typeof vi.fn>) => Promise<void>
   started?: () => void
   registered?: () => void
   deliveryReady?: () => void
-}, viaModule = false) {
+  globalVersionProcessSweep?: () => Promise<void>
+}, viaModule = false, database?: { initialize: () => Promise<Database.Database>; migrate: () => void; editorBufferService?: EditorBufferService }) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gugu-boot-entry941-'))
   const tasks = sessionBootTasks
   for (const failure of tasks.snapshot()) tasks.clearTask(failure.taskId)
@@ -63,19 +72,32 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
       where: () => ({ all: () => rows[table.name] }),
     }) }) } },
     electron: { app: { getPath: () => home, getVersion: () => '0.3.1-fixture', isPackaged: true }, session: { defaultSession: { resolveProxy: () => 'DIRECT' } } },
-    '@main/db/initialize': { initializeDatabase: async () => { if (fatal) throw new Error('database init failed') } },
+    '@main/db/initialize': { initializeDatabase: async () => {
+      if (fatal) throw new Error('database init failed')
+      await database?.initialize()
+    } },
+    './core/agents/custom-models': { migrateCustomModelConnections: () => database?.migrate() },
+    '@main/core/editor/editor-buffer-service': { editorBufferService: database?.editorBufferService ?? stub },
     '../../migrations/task-to-session': { runTaskToSessionOnce: async () => null },
     '../../migrations/session-naming': { runSessionNamingOnce: async () => null },
     '@main/core/sessions/attachments/session-attachment-store': { sweepOrphanSessionAttachmentDirectories: async () => 0 },
     '@main/core/data-dir-occupancy': { dataDirHeldByAnotherHost: () => ({ held: false }) },
-    '@main/core/pty/tmux-session-name': { listTmuxSessionNames: async () => presenceProbe?.tmuxSessionNames ?? new Set() },
+    '@main/core/pty/tmux-session-name': { listTmuxSessionNames: async () => {
+      if (presenceProbe?.tmuxError) throw presenceProbe.tmuxError
+      return presenceProbe?.tmuxSessionNames ?? new Set()
+    } },
+    '@main/core/dependencies/probe-orphan-sweep': {
+      createProbeOrphanSweepDeps: () => ({}),
+      sweepProbeOrphans: async () => presenceProbe?.globalVersionProcessSweep?.(),
+    },
+
     '@main/core/projects/operations/migrate-project-kind': { migrateProjectKind: () => [] },
     '@main/core/usage/run-interval-recorder': { closeInterruptedRunIntervals: fault('interval'), installRunIntervalRecorder: noop },
     '@main/core/sessions/sendMessage': { claimInterruptedDispatches: fault('dispatch') },
     '@main/core/sessions/session-deferred-messages': { claimInterruptedDeferredMessages: fault('deferred'), installDeferredMessageDelivery: delivery },
     '@main/core/agent-hooks/presence-interrupt': { reconcileSurvivorsWithPresence: (names: ReadonlySet<string>) => presenceProbe?.reconciliation(names) ?? Promise.resolve() },
     '@main/core/agent-status/agent-status-writer': { agentStatusWriter: {
-      initialize: noop, forget: noop, settleAfterRestart: fault('status'),
+      initialize: noop, forget: noop, settleAfterRestart: presenceProbe?.settleAfterRestart ?? fault('status'),
       on: (_name: string, callback: (event: unknown) => void) => { statusHooks.push(callback); return () => {} },
     } },
     '@main/core/sessions/session-events': { sessionEvents: {
@@ -113,6 +135,70 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
 }
 
 describe('real session host boot entry', () => {
+  it('keeps task state when tmux inspection fails, while completing host registration', async () => {
+    const settle = vi.fn(async (_names: ReadonlySet<string>) => [])
+    const reconciliation = vi.fn(async (_names: ReadonlySet<string>) => {})
+    const result = await boot('', false, { tmuxError: new Error('tmux socket EACCES'), settleAfterRestart: settle, reconciliation })
+    expect(result.registered).toHaveBeenCalledOnce()
+    expect(settle).not.toHaveBeenCalled()
+    expect(reconciliation).not.toHaveBeenCalled()
+  })
+  it('still settles interrupted tasks after a confirmed empty tmux inventory', async () => {
+    const settle = vi.fn(async (_names: ReadonlySet<string>) => [])
+    const reconciliation = vi.fn(async (_names: ReadonlySet<string>) => {})
+    await boot('', false, { tmuxSessionNames: new Set(), settleAfterRestart: settle, reconciliation })
+    expect(settle).toHaveBeenCalledOnce()
+    expect([...settle.mock.calls[0][0]]).toEqual([])
+    expect(reconciliation).toHaveBeenCalledOnce()
+  })
+  it('does not trigger a global version-process sweep during startup', async () => {
+    const sweep = vi.fn(async () => {})
+    const result = await boot('', false, { reconciliation: async () => {}, globalVersionProcessSweep: sweep })
+    expect(result.registered).toHaveBeenCalledOnce()
+    expect(sweep).not.toHaveBeenCalled()
+
+  })
+  it('keeps old unsaved drafts through startup and still lets the person discard one explicitly', async () => {
+    const sqlite = new Database(':memory:')
+    try {
+      sqlite.exec(`CREATE TABLE editor_buffers (
+        id TEXT PRIMARY KEY, project_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
+        file_path TEXT NOT NULL, content TEXT NOT NULL, updated_at INTEGER NOT NULL
+      )`)
+      const db = drizzle(sqlite, { schema })
+      const serviceFile = path.resolve(__dirname, '../../../../apps/desktop/electron/session/main/core/editor/editor-buffer-service.ts')
+      const compiled = ts.transpileModule(fs.readFileSync(serviceFile, 'utf8'), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+      })
+      const serviceModule = { exports: {} as { EditorBufferService: new () => EditorBufferService } }
+      const imports: Record<string, unknown> = {
+        '@main/db/client': { db }, '@main/db/schema': schema,
+        '@main/lib/logger': { log: { error: vi.fn() } },
+      }
+      runInNewContext(compiled.outputText, {
+        module: serviceModule, exports: serviceModule.exports,
+        require: (id: string) => imports[id] ?? requireBuiltin(id),
+      })
+      const editor = new serviceModule.exports.EditorBufferService()
+      await editor.saveBuffer('project', 'workspace', 'old.txt', 'unsaved text absent from disk')
+      await editor.saveBuffer('project', 'workspace', 'recent.txt', 'recent unsaved text')
+      sqlite.prepare('UPDATE editor_buffers SET updated_at = ? WHERE file_path = ?')
+        .run(Date.now() - 8 * 24 * 60 * 60 * 1000, 'old.txt')
+
+      await boot('', false, undefined, false, {
+        initialize: async () => sqlite, migrate: () => {}, editorBufferService: editor,
+      })
+
+      expect(await editor.listBuffers('project', 'workspace')).toEqual(expect.arrayContaining([
+        { filePath: 'old.txt', content: 'unsaved text absent from disk' },
+        { filePath: 'recent.txt', content: 'recent unsaved text' },
+      ]))
+      await editor.clearBuffer('project', 'workspace', 'old.txt')
+      expect(await editor.listBuffers('project', 'workspace')).toEqual([
+        { filePath: 'recent.txt', content: 'recent unsaved text' },
+      ])
+    } finally { sqlite.close() }
+  })
   // A desktop records who on another computer is watching its sessions too: its idle reclaim reads that, and a
   // desktop without the relay answered "No handler" to every subscribe.
   it('a desktop (not server mode) installs the device pane relay', async () => {
@@ -189,6 +275,23 @@ describe('real session host boot entry', () => {
       uid: () => 1000,
     })
     expect(info.server_boot_failures).toEqual(result.failures)
+  })
+  it('boots a fresh desktop database before migrating custom model connections', async () => {
+    const sqlite = new Database(':memory:')
+    try {
+      const requiredTables = sqlite.prepare(
+        "SELECT name FROM sqlite_schema WHERE type = 'table' AND name IN ('provider_accounts', 'kv') ORDER BY name"
+      ).pluck()
+      expect(requiredTables.all()).toEqual([])
+      const db = drizzle(sqlite, { schema })
+      const migrate = vi.fn(() => migrateCustomModels(db, new Set()))
+      const result = await boot('', false, undefined, true, { initialize: () => initializeDatabase(sqlite), migrate })
+      expect(requiredTables.all()).toEqual(['kv', 'provider_accounts'])
+      expect(migrate).toHaveBeenCalledOnce()
+      expect(result.registered).toHaveBeenCalledOnce()
+    } finally {
+      sqlite.close()
+    }
   })
   it('retains the fatal boundary for real database initialisation failure', async () => {
     await expect(boot('', true)).rejects.toThrow('database init failed')

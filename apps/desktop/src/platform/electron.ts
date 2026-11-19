@@ -1,3 +1,4 @@
+import { nativeDesktopAccountClosure } from './desktopAccountClosure'
 import { stageFileHandle } from '@gugu/core/shared/fileResolver'
 import type { LocalUsageRequest, LocalUsageSnapshot } from '@gugu/core/shared/usage/dailyUsage'
 import type { Device } from '@gugu/core/shared/types/chat'
@@ -49,6 +50,7 @@ function unavailable(feature: string): Error {
  */
 
 export const electronPlatform: AppPlatform = {
+  accountClosure: nativeDesktopAccountClosure,
   kind: 'electron',
   documentTitle: '咕咕 Desktop',
   authCallbacks: electronAuthCallbacks,
@@ -90,16 +92,15 @@ export const electronPlatform: AppPlatform = {
     logTail: true,
     appRelaunch: true,
     shareToApps: false,
+    mobileApps: false,
+    phoneDevice: false,
+    phoneAgentHost: false,
+    readingZoomMemory: true,
   },
   async relaunchApp() {
     const api = electronApi()
     if (!api?.relaunchApp) throw unavailable('appRelaunch')
     await api.relaunchApp()
-  },
-  async syncResolvedLocale(locale) {
-    const api = electronApi()
-    if (!api?.syncResolvedLocale) throw unavailable('resolvedLocaleSync')
-    await api.syncResolvedLocale(locale)
   },
   subscribeAppForeground(listener) {
     const api = electronApi()
@@ -175,9 +176,6 @@ export const electronPlatform: AppPlatform = {
   },
   setBadge(count) {
     electronApi()?.setBadge(count)
-  },
-  setTrayBadgeEnabled(enabled) {
-    electronApi()?.setTrayBadgeEnabled(enabled)
   },
   async scanQrCode() {
     throw unavailable('QR scan')
@@ -263,12 +261,5 @@ export const electronPlatform: AppPlatform = {
     const api = electronApi()
     if (!api?.getAgentCreationTools) throw unavailable('Agent creation tools')
     return api.getAgentCreationTools()
-  },
-  // @@@share-card-rename 缺桥就是装配错误:静默 return 会让云端改了名、会话页还叫旧名,
-  // 而那个「两页两个名字」正是这一半存在的理由。
-  async renameOwnedAgentLocalFootprint(agentUserId: string, name: string): Promise<void> {
-    const api = electronApi()
-    if (!api?.renameOwnedAgentLocalFootprint) throw unavailable('Owned agent local footprint rename')
-    await api.renameOwnedAgentLocalFootprint(agentUserId, name)
   },
 }

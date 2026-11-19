@@ -29,7 +29,7 @@ const auth = vi.hoisted(() => ({ token: `h.${Buffer.from(JSON.stringify({ sub: '
 const machines = vi.hoisted(() => ({ devices: [] as Device[] }))
 vi.mock('../../../../apps/desktop/src/store/devicesCache', () => ({ readCachedDevices: () => machines.devices }))
 vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ fetchSessionsList: vi.fn() }))
-vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererAccessToken: () => auth.token }))
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => auth.token }))
 vi.mock('@gugu/core/cloud/supabase', () => ({
   createGuguSupabaseClient: () => {
     const query = {
@@ -119,6 +119,8 @@ const gestureCalls: Record<string, Record<string, unknown>> = {
   filesDownload: { ref: { name: 'a.md' } },
   filesForward: { refs: [{ name: 'a.md' }] },
   filesOpenIn: { ref: { name: 'a.md' }, app: 'finder' },
+  filesAnnotateSelection: { file: { workspace: 'session:s-1', id: 'a.md' }, open: { selection: { startLine: 1, endLine: 1, text: 'x' }, rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } } },
+  filesSendSelection: { text: 'x', refs: [{ file: { name: 'a.md' } }], rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } },
   showMessage: { id: 'msg-1' },
   showSession: { id: 's-1' },
   dispatch: { text: 'picked' },
@@ -266,7 +268,7 @@ describe('the phone refuses a verb outside the gesture it needs, in the same sen
     window.removeEventListener(APP_COMPOSE_EVENT, take)
     expect(composed).toEqual([
       { chatId: CHAT, text: '> picked\n' },
-      { chatId: CHAT, text: '', refs: [{ label: 'deck.pptx · 第 2 页', link: `gugu-file://${DECK}?v=3#slide=2` }] },
+      { chatId: CHAT, text: '', refs: [{ label: 'deck.pptx (第 2 页)', link: `gugu-file://${DECK}?v=3#slide=2` }] },
     ])
   })
 })

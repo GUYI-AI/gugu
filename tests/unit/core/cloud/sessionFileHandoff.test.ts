@@ -3,7 +3,9 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, expect, it, vi } from 'vitest'
-import { downloadSessionFile, uploadSessionFile, uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
+import { uploadSessionFile, uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
+import { createNodeFileResolver, saveFileHandle } from '@gugu/core/local/files/fileSnapshots'
+import type { AttachmentsEndpoint } from '@gugu/core/cloud/attachmentsApi'
 import { withSessionAttachments } from '@gugu/core/cloud/sessionAttachments'
 
 const dirs: string[] = []
@@ -11,6 +13,12 @@ afterEach(async () => { for (const dir of dirs.splice(0)) await rm(dir, { recurs
 const directory = async () => { const dir=await mkdtemp(join(tmpdir(),'session-file-test-'));dirs.push(dir);return dir }
 const original = new Uint8Array([0,255,12,45,0,128,17])
 const ref={attachment_id:randomUUID(),file_name:'original.bin',sha256:createHash('sha256').update(original).digest('hex'),size_bytes:original.length,content_type:'application/octet-stream'}
+// A session attachment is read like any file: the resolver as the reader, saved into the reader's directory.
+async function downloadSessionFile(endpoint: AttachmentsEndpoint, id: string, actor: string, target: string) {
+ const file=await createNodeFileResolver(await directory(),async()=>endpoint)({attachment_id:id},{accountId:'owner',actorId:actor})
+ if(file.status!=='ready')throw new Error(file.status)
+ return saveFileHandle(file,target)
+}
 function fixture(options: { denied?: boolean; corrupt?: boolean; revokeAfterDownload?: boolean } = {}) {
  let resolutions=0
  const fetcher=vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
@@ -81,4 +89,17 @@ it('revokes prepared references if a later file fails before delivery', async ()
  } }
  await expect(uploadSessionFiles(endpoint, [{ file_path: file }, { file_path: file }], { agentId: 'sender', sessionId: 's', recipients: ['receiver'] })).rejects.toThrow(/permission revoked/)
  expect(prepared).toHaveLength(1); expect(revoked).toEqual(prepared)
+})
+it('a handoff reuses its permit while different recipients or a new handoff get another',async()=>{
+ const root=await directory();const input=join(root,'original.bin');await writeFile(input,original)
+ const ids:string[]=[]
+ const attachmentId=randomUUID()
+ for (const [recipients,id] of [[['b','a'],attachmentId],[['a','b'],attachmentId],[['a','c'],attachmentId],[['a','b'],randomUUID()]] as const) {
+  const fx=fixture()
+  await uploadSessionFile(fx.endpoint,{file_path:input},{agentId:'sender',sessionId:'s',recipients:[...recipients],attachmentId:id})
+  ids.push(JSON.parse(String(fx.fetcher.mock.calls.find(([url])=>String(url).endsWith('/upload'))![1]?.body)).request_id)
+ }
+ expect(ids[0],'the same recipients in any order').toBe(ids[1])
+ expect(ids[2],'other recipients').not.toBe(ids[0])
+ expect(ids[3],'another handoff to the same recipients').not.toBe(ids[0])
 })

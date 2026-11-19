@@ -6,7 +6,7 @@
 // 分栏里的那条话题**是一条真的 chat**,所以它有自己的一条「线」(useChatConversation:消息窗口 + 已读水位),
 // 与老 thread 面板的根本差别就在这:老面板是同一个 chat 里的一段过滤视图,新分栏是另一条线。
 // 线的实时与主区 activeChat 走同一份 subscribeChatLineRevisions(#6470),❌ 在这里另听线级事件。
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { ChatItem, MessageItem, TopicSummary } from '@gugu/core/shared/types/chat'
 import { parseComposerCard } from '@gugu/core/shared/ui/taskCardModels'
 import type { AccountRevisionEvent, AccountRevisionListener } from '@/lib/accountRevisionCoordinator'
@@ -47,6 +47,7 @@ export type TopicSurface = {
   /** 这条线上长出来的话题,按来源消息分组 —— 锚点卡读它。 */
   anchorsByMessageId: Map<string, TopicSummary[]>
   topics: TopicSummary[]
+  topicsReady: boolean
   reloadTopics: () => void
   /** The open tab's conversation, retained while another tab is shown. */
   topic: OpenTopic | null
@@ -86,10 +87,12 @@ export function useTopicSurface({
   const onCreateFailedRef = useRef(onCreateFailed)
   onCreateFailedRef.current = onCreateFailed
   // 清单只有一个属主:useTopicsOfChat。锚点卡与顶栏话题面板读的是同一份,❌ 不各拉各的。
-  const { topics, bySourceMessageId, reload: reloadTopics } = useTopicsOfChat(
+  const { topics: read, bySourceMessageId, reload: reloadTopics } = useTopicsOfChat(
     topicsSourceChatId(chat),
     subscribeAccountRevision,
   )
+  // The line's topics not read yet: no anchor card, no tab and no count drawn for them (the surface's decision, here).
+  const topics = useMemo(() => read ?? [], [read])
   useEffect(() => { if (chatId) updateTopicNames(chatId, topics) }, [chatId, topics])
   // 分栏是这条线页签条上的一枚(chat-tabs/chat-layouts):开着哪条话题、在不在屏上都由那里说,按来源线各记各的
   // (@@@3922 的 subject-scoped 由此而来:换了来源线读的就是另一条页签条)。
@@ -195,6 +198,7 @@ export function useTopicSurface({
   return {
     anchorsByMessageId: bySourceMessageId,
     topics,
+    topicsReady: read !== null,
     reloadTopics,
     topic,
     splitTopic,

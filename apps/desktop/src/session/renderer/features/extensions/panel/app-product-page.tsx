@@ -3,7 +3,6 @@ import {
   ArrowUp,
   Bell,
   Check,
-  ChevronLeft,
   ExternalLink,
   Eye,
   Globe,
@@ -55,7 +54,8 @@ import { ResourceMenu } from '@/components/ResourceMenu';
 import type { ResourceContext } from '@shared/resource-actions';
 import { AppShelfRow } from './app-shelf';
 import { VersionHistorySection, shortDate, type Loadable } from './app-version-history';
-import type { MarketVersionHistoryEntry } from '@shared/extensions/market';
+import { AppProductBack, AppProductHeader } from './app-product-header';
+import { useVersionHistory } from './use-version-history';
 import { ExtensionMonogram } from './extension-monogram';
 import type { ExtensionPendingAction } from './extension-pending';
 
@@ -95,6 +95,7 @@ export function AppProductPage({
   onBack,
   onLifecycle,
   onInstallVersion,
+  targetSummary,
   onManage,
   onForward,
   onAsk,
@@ -124,7 +125,8 @@ export function AppProductPage({
   backLabel?: string;
   onBack: () => void;
   onLifecycle: () => void;
-  onInstallVersion: (ref: MarketSourceRef) => void;
+  onInstallVersion?: (ref: MarketSourceRef) => void;
+  targetSummary?: ReactNode;
   /** Installed only: its settings page, where everything about this copy is managed. */
   onManage?: () => void;
   onForward?: () => void;
@@ -148,7 +150,7 @@ export function AppProductPage({
   const text = localizedManifestText(manifest, textLocale);
   const { compat, deprecated } = cloud;
   const [listing, setListing] = useState<Loadable<MarketListing> | { status: 'outdated' }>({ status: 'idle' });
-  const [history, setHistory] = useState<Loadable<MarketVersionHistoryEntry[]>>({ status: 'idle' });
+  const { state: history, retry: readHistoryAgain } = useVersionHistory(api, manifest.id);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aboutClamped, setAboutClamped] = useState(false);
@@ -178,25 +180,7 @@ export function AppProductPage({
     };
   }, [api, manifest.id, listedVersion]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setHistory({ status: 'loading' });
-    void api
-      .marketHistory({ extensionId: manifest.id })
-      .then((result) => {
-        if (cancelled) return;
-        if (!result.success || !result.data) throw new Error(result.error ?? 'history unreadable');
-        setHistory({ status: 'ready', data: result.data });
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        log.warn('extension version history unreadable:', error);
-        setHistory({ status: 'error' });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [api, manifest.id]);
+
 
   const publishedAt = cloud.publishedAt;
   const permissions = declaredPermissions(manifest);
@@ -328,13 +312,14 @@ export function AppProductPage({
             <div className="mk-vers">
               <VersionHistorySection
                 state={history}
+                onReadAgain={readHistoryAgain}
                 extensionId={manifest.id}
                 installedVersion={installedVersion}
                 offeredVersion={null}
                 locale={locale}
                 translate={translate}
                 onOpenExternal={onOpenExternal}
-                onInstallVersion={installedVersion ? undefined : (version) => onInstallVersion({ extensionId: manifest.id, version })}
+                onInstallVersion={!installedVersion && onInstallVersion ? (version) => onInstallVersion({ extensionId: manifest.id, version }) : undefined}
               />
             </div>
           </fieldset>
@@ -345,8 +330,9 @@ export function AppProductPage({
 
   // ── 装上后多了什么 ──
   // 同名的几个页签(会话页一个、群里一个)是用的人眼里的同一个页签:一行,各说各的。
+  // 宿主自己画的页(hostPage)不是 App 加的,不列 —— 和管理页「页面」同一个判断。
   const tabsByTitle = new Map<string, string[]>();
-  for (const tab of manifest.contributes.tabs) {
+  for (const tab of manifest.contributes.tabs.filter((tab) => !tab.hostPage)) {
     const text = localizedTabText(manifest, tab, locale);
     const toolbar = text.toolbar.map((command) => command.title);
     const suffixes = [...new Set([...claimedSuffixes(tab, 'session'), ...claimedSuffixes(tab, 'chat')])];
@@ -543,55 +529,47 @@ export function AppProductPage({
   return (
     <div className="mk" data-testid="app-product-page" data-extension-id={manifest.id}>
       {/* 那台机器离线 / server 太旧(#6264):照旧能看(翻截图、看简介、点类似 App),装、卸、收回、装某一版一起灰。 */}
-      <button type="button" className="mk-back" onClick={onBack} data-testid="app-product-back">
-        <ChevronLeft className="size-3.5" />
-        {backLabel ?? translate('extensions.title')}
-      </button>
-      <ResourceMenu resource={resource ?? { kind: 'app', target: { kind: 'app-detail', extensionId: manifest.id } }}><header className="mk-dh">
-        <div className="mk-dh-main">
-          <h2 className={cn('gg-type-display mk-dh-title', deprecated && 'is-deprecated')}>{text.name}</h2>
-          {text.subtitle ? <p className="mk-dh-sub">{text.subtitle}</p> : null}
-          <div className="mk-dh-by">
-            <span>{publisher}</span>
-          </div>
-          <dl className="mk-facts" data-testid="app-product-strip">
-            {facts.map((fact) => (
-              <div key={fact.caption}>
-                <dd>{fact.value}</dd>
-                <dt>{fact.caption}</dt>
+      <AppProductBack label={backLabel ?? translate('extensions.title')} onBack={onBack} testId="app-product-back" />
+      <ResourceMenu resource={resource ?? { kind: 'app', target: { kind: 'app-detail', extensionId: manifest.id } }}>
+        <header className="mk-dh">
+          <AppProductHeader
+            name={text.name}
+            subtitle={text.subtitle}
+            publisher={publisher}
+            deprecated={Boolean(deprecated)}
+            facts={facts}
+            factsTestId="app-product-strip"
+            icon={<span className="mk-icon is-hero"><ExtensionMonogram name={text.name} iconDataUrl={cloud.iconUrl ?? iconDataUrl} /></span>}
+          >
+            <fieldset disabled={readOnly} className="contents" data-testid="extension-detail-actions">
+              <div className="mk-acts" aria-busy={pending ? 'true' : undefined}>
+                <AppLifecycleButton
+                  state={lifecycle}
+                  pending={pending}
+                  percent={pendingPercent}
+                  primary
+                  disabled={readOnly}
+                  translate={translate}
+                  onClick={onLifecycle}
+                  testId="app-product-action"
+                />
+                {onManage ? (
+                  <Button type="button" variant="outline" size="lg" onClick={onManage} data-testid="app-product-manage">
+                    {translate('extensions.appSettings')}
+                  </Button>
+                ) : null}
+                {onForward ? (
+                  <Button type="button" variant="ghost" size="lg" onClick={onForward} data-testid="app-product-forward">
+                    <Share2 className="size-4" />
+                    {translate('extensions.forward')}
+                  </Button>
+                ) : null}
               </div>
-            ))}
-          </dl>
-          <fieldset disabled={readOnly} className="contents" data-testid="extension-detail-actions">
-            <div className="mk-acts" aria-busy={pending ? 'true' : undefined}>
-              <AppLifecycleButton
-                state={lifecycle}
-                pending={pending}
-                percent={pendingPercent}
-                primary
-                disabled={readOnly}
-                translate={translate}
-                onClick={onLifecycle}
-                testId="app-product-action"
-              />
-              {onManage ? (
-                <Button type="button" variant="outline" size="lg" onClick={onManage} data-testid="app-product-manage">
-                  {translate('extensions.appSettings')}
-                </Button>
-              ) : null}
-              {onForward ? (
-                <Button type="button" variant="ghost" size="lg" onClick={onForward} data-testid="app-product-forward">
-                  <Share2 className="size-4" />
-                  {translate('extensions.forward')}
-                </Button>
-              ) : null}
-            </div>
-          </fieldset>
-        </div>
-        <span className="mk-icon is-hero">
-          <ExtensionMonogram name={text.name} iconDataUrl={cloud.iconUrl ?? iconDataUrl} />
-        </span>
-      </header></ResourceMenu>
+              {targetSummary}
+            </fieldset>
+          </AppProductHeader>
+        </header>
+      </ResourceMenu>
 
       {justInstalled ? (
         <div className="mk-banner" role="status" data-testid="app-product-installed">

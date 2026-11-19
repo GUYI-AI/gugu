@@ -16,6 +16,9 @@ export { createServerPasswordAgent } from '../password-vault/server-agent'
 export { passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
 export { serverTaskPrivateLogin } from '../session/main/core/extensions/task-page-host'
 export { archiveSession } from '../session/main/core/sessions/archiveSession'
+export { createDesktopAccountClosureHost } from '../session/main/core/desktop-account-closure'
+// Session ids written as a prefix are matched against this machine's session list (main.ts localAddressRows).
+export { listSessions as listLocalSessions } from '../session/main/core/session-timeline/service'
 export { appInbox } from '../session/main/core/extensions/app-inbox'
 // #1607 node 5: pushes from another computer for an App projection watched from here; the host's requester hands them over.
 export { projectionRemoteEvent } from '../session/main/core/extensions/projection-remote-viewer'
@@ -155,8 +158,6 @@ export {
   withEmdashPlatformSessionRestart,
   // 模型目录第二遍探测的占位凭据注入口(实现在宿主的 harness-catalog-probe-env.ts)。
   setProbePlatformEnvResolver,
-  // #2507 同一个探针看得见选中的模型注入 API Key 连接(实现在宿主的 harness-catalog-probe-connection.ts)。
-  setProbeConnectionModelResolver,
   // @@@4972 会话发现工具的「咕咕提供的模型」读取口 —— 宿主装的就是 composer 那条 IPC 调的
   // 同一个 sessionpagePlatformCatalog,于是 agent 查到的和用户看到的是同一次计算。
   setPlatformModelCatalogResolver,
@@ -169,6 +170,8 @@ export {
   // 的 PTY 会话在对话页首轮就会 fail loud(❌ 不退回裸文本、更 ❌ 不退回 pty 打字)。
   setEmdashPtyChatStartupEnvelope,
   setSessionMessageRouter,
+  // 投递叫不醒时,宿主据此分「等人修」还是「退避再试」(session-injection 的 wake gate)。
+  getRuntimeUpgradeRequirement,
   // 手机看管 agent 的设备 RPC 处理器。经桥拿 ⇒ 与 router / conversation provider 同一份实例;
   // 宿主直接 import 会打出第二份,写侧的运行时状态就都看不见了。
   createSessionpageSessionDeviceRpcHandlers,
@@ -198,7 +201,6 @@ export {
   // 于是 setTabTitle / setTabBadge / openBrowserTab / reportError / compose
   // 五个动词一律「Renderer not ready」(实机实证)。
   setExtensionHostWindowChannel,
-  setUserLibraryOwner,
   setLoginShellPathRehydrator,
   setLoginShellEnvProvider,
   setPlatformCredentialsProbe,
@@ -224,3 +226,6 @@ export { setDirectTerminalResolver, type DirectTerminalResolver } from '@main/co
 export { deviceProjectsPublished, listDeviceProjectRecords, onDeviceProjectsMaybeChanged } from '@main/core/projects/operations/device-project-records'
 export { projectFoldersPublished } from '@main/core/extensions/extension-bridge'
 export { sessionBootTasks } from '../session/main/core/boot-tasks'
+export { flushViewState, viewStateSnapshot } from '@main/core/view-state/view-state-service'
+// @@@device-preferences — the first-frame answer (with the one-time move of the old keys) and the host's followers.
+export { answerDevicePreferences, devicePreferencesNow, onDevicePreferencesChanged } from '@main/core/settings/device-preferences'

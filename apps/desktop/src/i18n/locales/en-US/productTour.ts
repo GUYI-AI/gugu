@@ -7,7 +7,7 @@ export default {
   "done": "Done",
   "saveFailed": "Couldn't save tour progress. Try again.",
   "featureHeader": "Three useful features to revisit",
-  "featuresProgress": "Feature films · {{current}} / {{total}}",
+  "featuresProgress": "Feature films ({{current}}/{{total}})",
   "filmProgress": "Film progress",
   "featureSteps": "Feature film steps",
   "play": "Play",
@@ -37,12 +37,8 @@ export default {
       "title": "Contacts: find collaborators",
       "body": "Add someone as a contact to work together."
     },
-    "library": {
-      "title": "Library: things you reuse",
-      "body": "Keep your go-to prompts here."
-    },
     "apps": {
-      "title": "Apps: one more kind of task",
+      "title": "Marketplace: find tools for your agents",
       "body": "Add an app and your agent can do more, like using your computer."
     },
     "settings": {

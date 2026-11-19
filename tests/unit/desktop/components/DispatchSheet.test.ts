@@ -14,7 +14,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
 const chats: ChatItem[] = [
   { id: 'c-group', kind: 'group', name: 'Reading group' },
-  { id: 'c-dm', kind: 'dm', name: '', peer_user_id: 'u-alpha' },
+  { id: 'c-dm', kind: 'dm', name: '', peer_user_id: 'u-alpha', last_message_at: '2025-12-01T00:00:00.000Z' },
 ].map((overrides) => ({
   status: 'active', created_at: '2026-01-01T00:00:00.000Z', last_message_at: null, last_message_preview: null, unread_count: 0,
   pinned_message_id: null, last_read_seq: 0, next_message_seq: 1, ...overrides,
@@ -180,6 +180,22 @@ describe('DispatchSheet', () => {
     expect(ticked()).toEqual(['agent:user:a-sibling'])
     await click(document.body.querySelector('[data-testid="dispatch-sheet-action"]'))
     await expect(picked).resolves.toEqual({ to: { agent: 'user:a-sibling' }, visible: false, text: '' })
+  })
+
+  it('a pick is taken back by its chip\'s × or by its row again, and Send turns off again', async () => {
+    await act(async () => { void ask({ draft: false, offers: ['my-agent'], text: 'Take card x9zo' }) })
+    await click(document.body.querySelector('[data-pick-row="agent:user:a-other"]'))
+    expect(ticked()).toEqual(['agent:user:a-other'])
+    const chip = [...document.body.querySelectorAll('button')].find((b) => b.textContent === 'Codex 5')
+    await click(chip)
+    expect(ticked()).toEqual([])
+    expect(button('发送')?.disabled).toBe(true)
+    await click(document.body.querySelector('[data-pick-row="agent:user:a-other"]'))
+    await click(document.body.querySelector('[data-pick-row="agent:user:a-other"]'))
+    expect(ticked()).toEqual([])
+    await click(document.body.querySelector('[data-pick-row="agent:user:a-here"]'))
+    await click(document.body.querySelector('[data-pick-row="agent:user:a-other"]'))
+    expect(ticked()).toEqual(['agent:user:a-other'])
   })
 
   it('a new agent: its row picks { new }', async () => {

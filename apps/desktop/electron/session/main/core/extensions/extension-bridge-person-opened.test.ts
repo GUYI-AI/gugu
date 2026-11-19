@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * `@@@outside-file`, where the host marks it: a page bound to a file named absolute that a person opened is `personOpened`,
- * which its calls stamp for the file's machine. A file the host opened for an agent or an App (`byHost`: `open_in_tab`,
+ * which its calls stamp for the file's machine. A file the host opened for an App (`byHost`:
  * `files.openWith`), a page an agent works, or a file of the working copy is not; the page bound again is marked afresh.
  */
 const PAGE = 7;
@@ -27,7 +27,7 @@ vi.mock('@main/core/extensions/app-programs-elsewhere', () => ({ knownSessionMac
 vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock('@main/core/extensions/app-files', () => ({
   resourceChatOf: async (chatId: string) => chatId,
-  localRootOf: async () => ({ workspaceRoot: '/repo' }),
+  localRootOf: async () => ({ workspaceRoot: '/repo', recordedRoot: '/repo' }),
   chatMembersOf: async () => [],
   surfaceChatOf: async () => null,
 }));

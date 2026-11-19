@@ -18,6 +18,9 @@ describe('会话页在设备 RPC 上剩下的动词(一套说法:会话页与 ag
         'appProjection.send',
         'appProjection.unwatch',
         'appProjection.pageControl',
+        'appProjection.sources',
+        'appProjection.observeSources',
+        'appProjection.unobserveSources',
         // Installation update RPCs are composed by main, outside the session host.
       ].sort()
     );

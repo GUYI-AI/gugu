@@ -55,7 +55,7 @@ function ReferenceCard({ block, chatId, slotMessageId }: { block: MessageReferen
       <span className="truncate">{name}</span>
     </Button>
     <p className="text-[length:var(--font-caption)] text-[var(--text-secondary)]">
-      {chatName ? <span>{chatName} · </span> : null}
+      {chatName ? <span>{chatName}  </span> : null}
       <time dateTime={message.created_at}>{formatRelativeTime(message.created_at)}</time>
     </p>
     <p className="line-clamp-3 whitespace-pre-wrap break-words">{widget?.widget.text ?? message.content}</p>

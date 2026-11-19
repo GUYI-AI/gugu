@@ -5,17 +5,23 @@ import { returnToScreen } from '@renderer/app/screen-layout-actions';
 import { sidebarStore } from '@renderer/lib/stores/app-state';
 import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
-import { yieldChatAuxiliary } from './chat-tabs/chat-layouts';
+import { showChatOnly } from './chat-tabs/chat-layouts';
 import { groupParticipantPanes } from './group-participant-panes';
 
-function sourceContent(chatId: string): ScreenBlockContent {
-  // A shared group may have several project bindings. Its sidebar representative can change while
-  // the previous project is still on screen; placement belongs to that visible group, not the row.
+/** The block a chat is on this screen as: its own, or the project whose group it is. Not on screen = undefined. */
+export function chatBlockOnScreen(chatId: string): ScreenBlockContent | undefined {
   for (const id of screenLayout.order) {
     const content = screenLayout.blocks.get(id);
     if (content?.kind === 'project' && accountProjectsStore.projectOfLocal(content.projectId)?.chatId === chatId) return content;
     if (content?.kind === 'chat' && content.chatId === chatId) return content;
   }
+}
+
+function sourceContent(chatId: string): ScreenBlockContent {
+  // A shared group may have several project bindings. Its sidebar representative can change while
+  // the previous project is still on screen; placement belongs to that visible group, not the row.
+  const shown = chatBlockOnScreen(chatId);
+  if (shown) return shown;
   const projectId = projectGroupsStore.projectOfChat(chatId);
   return projectId ? { kind: 'project', projectId: sidebarStore.rowProjectIdOf(projectId) } : { kind: 'chat', chatId };
 }
@@ -36,8 +42,8 @@ export function showGroupParticipant(sourceChatId: string, target: ScreenBlockCo
     ? document.querySelector<HTMLElement>(`[data-screen-block="${id}"]`) : null;
   const extent = (blockElement(sourceId)?.getBoundingClientRect().width ?? 0)
     + (previous ? blockElement(screenLayout.blockOf(previous.target))?.getBoundingClientRect().width ?? 0 : 0);
-  // Preserve topic/file/App tabs, while yielding their visible half to the participant's own workspace.
-  yieldChatAuxiliary(sourceChatId);
   if (!groupParticipantPanes.show(sourceChatId, source, target, extent)) throw new Error('No room to open this conversation beside the group');
+  // The group's own tabs and pairs stay as they are; narrower now, the block draws what fits, the chat first.
+  showChatOnly(sourceChatId);
   returnToScreen();
 }

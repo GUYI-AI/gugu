@@ -2,7 +2,7 @@
 // 云上那一份由管家在那台机器上写(gugu-supabase services/cloud-computer),这里照同一份说明(@gugu/core/shared/assistantPolicy)写本机这份,
 // 只是位置不同:人自己的 ~/.claude 是他自己的 Claude Code 每个会话都读的,❌ 往里写 —— 一切都在它的工作目录里(项目级说明 / 设置 / 记忆),
 // Claude Code 认的那一夹记忆目录链到那里。不依赖 electron,可单测。
-import { lstat, mkdir, readdir, readlink, rename, rm, symlink } from 'node:fs/promises'
+import { lstat, mkdir, readlink, rm, symlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { resolveGuguHome } from '@gugu/core/local/state/paths'
@@ -16,7 +16,7 @@ import {
 import type { PrepareLocalHomeInput, PrepareLocalHomeResult, WipeLocalHomeResult } from '../src/lib/assistantHomeIpc'
 import { createLogger } from './lib/logger'
 import { refreshedAssistantRules } from './assistant-rules-resolver'
-import { refreshAssistantContext } from './sessionpage/assistant-instructions'
+import { adoptMemoryEntries, refreshAssistantContext } from './sessionpage/assistant-instructions'
 import { readAssistantFile, writeAssistantFile } from './sessionpage/assistant-files'
 
 const log = createLogger('assistant-home')
@@ -35,12 +35,7 @@ async function linkClaudeMemory(claudeMemoryDir: string, memoryDir: string): Pro
     if (resolve(dirname(claudeMemoryDir), await readlink(claudeMemoryDir)) === resolve(memoryDir)) return
     await rm(claudeMemoryDir)
   } else if (stat?.isDirectory()) {
-    for (const name of await readdir(claudeMemoryDir)) {
-      const target = join(memoryDir, name)
-      if (await lstat(target).then(() => true, () => false)) continue
-      await rename(join(claudeMemoryDir, name), target)
-    }
-    await rm(claudeMemoryDir, { recursive: true })
+    await adoptMemoryEntries(claudeMemoryDir, memoryDir)
   } else if (stat) {
     throw new Error(`${claudeMemoryDir} exists and is not a directory`)
   }

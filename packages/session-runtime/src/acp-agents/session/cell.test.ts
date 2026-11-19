@@ -65,6 +65,27 @@ async function flushDrains(): Promise<void> {
 }
 
 describe('SessionCell prompts', () => {
+  it('publishes an explicit provider retry without changing work or cancellation, and clears it at its cycle end', () => {
+    const { cell } = makeCell();
+    try {
+      cell.push({ kind: 'agent_state', source: 'agent', state: 'running' });
+      cell.push({ kind: 'message', role: 'user', messageId: 'one', text: 'work' });
+      const active = cell.sessionState.activeTurnId;
+      const retrying = { since: 1234, message: 'Reconnecting: tls handshake eof' };
+      cell.push({ kind: 'agent_state', source: 'agent', state: 'running', retrying });
+      expect(cell.sessionState).toMatchObject({ lifecycle: 'working', isGenerating: true, canCancel: true, activeTurnId: active, retrying });
+      cell.push({ kind: 'message', role: 'user', messageId: 'two', text: 'incoming message', steering: true });
+      cell.push({ kind: 'session_notice', code: 'provider-notice', title: 'Another notice', detail: 'Another notice' });
+      expect(cell.sessionState.retrying).toEqual(retrying);
+      cell.push({ kind: 'agent_state', source: 'agent', state: 'running', retrying: null });
+      expect(cell.sessionState).toMatchObject({ lifecycle: 'working', canCancel: true, retrying: null });
+      cell.push({ kind: 'agent_state', source: 'agent', state: 'running', retrying });
+      cell.push({ kind: 'agent_state', source: 'agent', state: 'idle', stopReason: 'error', error: { message: 'provider failed' } });
+      expect(cell.sessionState).toMatchObject({ lifecycle: 'ready', isGenerating: false, retrying: null });
+      expect(cell.history().committed.at(-1)?.outcome).toMatchObject({ kind: 'error', reason: 'prompt_failed' });
+    } finally { cell.dispose(); }
+  });
+
   it('gives repeated runtime turn IDs distinct durable reference identities across restarts', async () => {
     const first = makeCell().cell, restarted = makeCell().cell;
     try {
@@ -772,12 +793,14 @@ describe('SessionCell prompts', () => {
       success: false,
       error: { type: 'prompt_failed', cause: { message: "You've hit your usage limit. Upgrade or try again later." } },
     });
+    expect(cell.lastTurnError).toContain("You've hit your usage limit");
     // Control: a turn that answered stays a success.
     agent.prompt = vi.fn(async () => {
       cell.push({ kind: 'message', role: 'assistant', messageId: null, text: 'ok' });
       return { stopReason: 'end_turn' };
     });
     expect((await cell.prompt({ text: 'again' })).success).toBe(true);
+    expect(cell.lastTurnError).toBeNull();
   });
 
   it('a stderr failure the provider marks as a credential failure settles with signInRequired (MiMo, 10-07)', async () => {
@@ -1744,6 +1767,71 @@ describe('SessionCell permissions', () => {
 });
 
 describe('SessionCell config options', () => {
+  it.each(['model', 'effort', 'permission'] as const)(
+    'a locally rejected unsupported %s setting does not strand queued or later prompts',
+    async (dimension) => {
+      const { cell, agent } = makeCell(new FakeAcpAgent(), {
+        liveSettings: {
+          [dimension]: { channel: 'unsupported', ack: 'none', busy: 'reject', reloadRequired: false, recovery: 'unsupported' },
+        },
+      });
+      try {
+        const setting = dimension === 'permission'
+          ? cell.setMode('other')
+          : cell.setConfigOption(dimension, 'other');
+        const queued = cell.prompt({ text: 'queued behind local rejection', origin: 'typed' });
+        expect(await setting).toMatchObject({ success: false, error: { cause: { name: 'LiveSettingUnsupported' } } });
+        await queued;
+        await flushDrains();
+        expect(cell.liveSettingBlock).toBeNull();
+        expect(agent.setSessionConfigOption).not.toHaveBeenCalled();
+        expect(agent.setSessionMode).not.toHaveBeenCalled();
+        expect(agent.prompt).toHaveBeenCalledTimes(1);
+        expect((await cell.prompt({ text: 'later send', origin: 'typed' })).success).toBe(true);
+        expect(agent.prompt).toHaveBeenCalledTimes(2);
+      } finally { cell.dispose(); }
+    },
+  );
+
+  it('keeps a dispatched RPC failure blocked even after a later local rejection', async () => {
+    const { cell, agent } = makeCell();
+    cell.applySessionMeta({ configOptions: [{
+      id: 'thinking_level', name: 'Depth', category: 'thought_level', type: 'select', currentValue: 'low',
+      options: [{ value: 'low', name: 'Low' }, { value: 'high', name: 'High' }],
+    }] });
+    agent.setSessionConfigOption.mockRejectedValueOnce(new Error('remote state unknown'));
+    try {
+      expect((await cell.setConfigOption('effort', 'high')).success).toBe(false);
+      expect(cell.liveSettingBlock).toBe('remote state unknown');
+      // The same dimension now has no executor. That local failure cannot confirm the earlier RPC.
+      Reflect.deleteProperty(agent, 'setSessionConfigOption');
+      expect(await cell.setConfigOption('effort', 'low')).toMatchObject({
+        success: false, error: { cause: { name: 'LiveSettingExecutorMissing' } },
+      });
+      expect(cell.liveSettingBlock).toBe('remote state unknown');
+      expect((await cell.prompt({ text: 'must not reach agent', origin: 'typed' })).success).toBe(false);
+      expect(agent.prompt).not.toHaveBeenCalled();
+    } finally { cell.dispose(); }
+  });
+
+  it('does not block prompts when an executor is missing before any RPC', async () => {
+    const agent = new FakeAcpAgent();
+    Reflect.deleteProperty(agent, 'setSessionConfigOption');
+    const { cell } = makeCell(agent);
+    cell.applySessionMeta({ configOptions: [{
+      id: 'thinking_level', name: 'Depth', category: 'thought_level', type: 'select', currentValue: 'low',
+      options: [{ value: 'low', name: 'Low' }, { value: 'high', name: 'High' }],
+    }] });
+    try {
+      expect(await cell.setConfigOption('effort', 'high')).toMatchObject({
+        success: false, error: { cause: { name: 'LiveSettingExecutorMissing' } },
+      });
+      expect(cell.liveSettingBlock).toBeNull();
+      expect((await cell.prompt({ text: 'still usable', origin: 'typed' })).success).toBe(true);
+      expect(agent.prompt).toHaveBeenCalledTimes(1);
+    } finally { cell.dispose(); }
+  });
+
   it('fails loudly when the provider omits the live settings declaration', async () => {
     const { cell } = makeCell(new FakeAcpAgent(), { liveSettings: undefined });
 
@@ -3126,4 +3214,32 @@ describe('task file context stays separate from the person words', () => {
       expect(JSON.stringify(item)).not.toContain('promptText');
     } finally { cell.dispose(); }
   });
+});
+
+it.each(['platform', 'unknown', undefined] as const)('hides and refuses an own-only reviewer on route %s', async billingRoute => {
+  const { cell, agent } = makeCell(new FakeAcpAgent(), {
+    billingRoute,
+    permissionModeMap: { edit: { id: ':workspace' }, 'ai-review': { id: 'auto-review', billingRoutes: ['own'] } },
+  });
+  cell.applySessionMeta({ modes: { currentModeId: ':workspace', availableModes: [
+    { id: ':workspace', name: 'Edit' }, { id: 'auto-review', name: 'AI review' },
+  ] } });
+  expect(cell.config.modeOptions?.available.map(mode => mode.id)).toEqual([':workspace']);
+  expect(isOk(await cell.setMode('auto-review'))).toBe(false);
+  expect(agent.setSessionMode).not.toHaveBeenCalled();
+  expect(agent.setSessionConfigOption).not.toHaveBeenCalled();
+});
+
+it('keeps the own-account reviewer selectable through the native authority', async () => {
+  const { cell, agent } = makeCell(new FakeAcpAgent(), {
+    billingRoute: 'own',
+    permissionModeMap: { edit: { id: ':workspace' }, 'ai-review': { id: 'auto-review', billingRoutes: ['own'] } },
+  });
+  cell.applySessionMeta({ modes: { currentModeId: ':workspace', availableModes: [
+    { id: ':workspace', name: 'Edit' }, { id: 'auto-review', name: 'AI review' },
+  ] } });
+  agent.setSessionMode = vi.fn().mockResolvedValue({});
+  expect(cell.config.modeOptions?.available.map(mode => mode.id)).toContain('auto-review');
+  expect(isOk(await cell.setMode('auto-review'))).toBe(true);
+  expect(agent.setSessionMode).toHaveBeenCalledWith({ sessionId: 'session-1', modeId: 'auto-review' });
 });

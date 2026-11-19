@@ -1,3 +1,4 @@
+import { resolveSessionPermissionMode } from '@gugu/session-core/acp';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { until } from '../../../../../../../../tests/support/awaitCondition';
 import {
@@ -121,7 +122,8 @@ vi.mock('@main/core/sessions/platform-model-selection', () => ({
   // 非平台会话(上面恒 undefined)下,启动档位原样透传 —— 与真实实现在这一格等价。
 }));
 
-// This lifecycle fixture has no persisted sessions; connection binding is covered by the DB suite.
+// This lifecycle fixture has no persisted sessions; account and custom binding are covered by DB launch tests.
+vi.mock('@main/core/agents/custom-model-run-context', () => ({ resolveCustomModelRunContext: vi.fn(async () => ({})) }));
 vi.mock('@main/core/agents/harness-connections', () => ({
   resolveHarnessConnection: vi.fn(async () => ({ connectionId: 'native' })),
 }));
@@ -357,6 +359,7 @@ function session(overrides: Partial<Session> = {}): Session {
     title: 'Conversation 1',
     lastInteractedAt: null,
     providerSessionId: 'provider-session-1',
+    permissionMode: 'edit',
     ...overrides,
   };
 }
@@ -707,10 +710,7 @@ describe('conversation provider respawn state', () => {
           mcpServers: [],
           env: { GUGU_HOME: '/tmp/codex-permission-mode-transport-home' },
           model: null,
-          autonomy: {
-            mode: info.permissionMode === 'full-access' ? 'full-access' : 'approval-required',
-            ...(info.permissionMode ? { permissionMode: info.permissionMode } : {}),
-          },
+          autonomy: { permissionMode: resolveSessionPermissionMode(info) },
           promptBlocks: {},
           packages: [CODEX_GUGU_CAPABILITY_PACKAGE],
         },
@@ -728,7 +728,7 @@ describe('conversation provider respawn state', () => {
       permissionMode: 'read-only',
     }));
     const spawnArgs = spawnLocalPty.mock.calls[0]?.[0]?.args as string[];
-    expect(threadStart).toEqual({ approvalPolicy: 'never', sandbox: 'read-only' });
+    expect(threadStart).toEqual({ approvalPolicy: 'never', sandbox: 'read-only', approvalsReviewer: 'user' });
     expect(spawnArgs.join(' ')).not.toMatch(/default_permissions|approval_policy|sandbox_mode/);
   });
 
@@ -742,10 +742,7 @@ describe('conversation provider respawn state', () => {
           runtime: { authProvider: {} as never, env: {} },
           sessionKey: info.sessionId,
           model: null,
-          autonomy: {
-            mode: info.permissionMode === 'full-access' ? 'full-access' : 'approval-required',
-            ...(info.permissionMode !== undefined ? { permissionMode: info.permissionMode } : {}),
-          },
+          autonomy: { permissionMode: resolveSessionPermissionMode(info) },
           promptBlocks: {},
         },
         identity: null,

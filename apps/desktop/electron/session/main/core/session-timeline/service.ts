@@ -1,3 +1,7 @@
+import { buildSessionPermissionOptions } from '@shared/session-permission-options';
+import { nativeConversationHistoryFloor } from '../sessions/native-publication-host';
+import { clearedHistoryResult, historyClearEpoch } from '@gugu/session-core/session-record/conversation-history-clear';
+import { runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { prepareWindowLivePosition } from './window-live-position';
 import { promptAttachmentSchema, turnFileRefSchema } from '@gugu/session-core/acp/client';
 import { SessionInputAdmissionError, sessionInputAdmission, type SessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission';
@@ -10,6 +14,7 @@ import type { WindowLiveReadRequest, WindowLiveAckRequest, WindowCommitPage, Win
 import { priorInputAdmission, sameInput, type InputAdmissionPayload } from './input-admission';
 import { ask, withdrawAll } from '../asks';
 import { hostAsks, resetAsks, respond as respondAsk, respondQuestion as respondAskQuestion } from '../asks/ask';
+import { answeredAskOf, readAnsweredAsks, recordAnsweredAsk } from '../asks/answered-asks';
 import { askSourceSpec } from '../asks/sources';
 import { readAgentQuestionRecords, rememberAgentQuestion } from '../sessions/agent-question-store';
 import { nativeConversationAliases, nativeConversationUnread, nativeOwnerNotificationUnread } from '../sessions/session-conversation-read';
@@ -42,8 +47,10 @@ import {
   type SessionpageSessionUpdateResult,
   type SessionpageSessionSubscribeRequest,
   type SessionpageSessionSummary,
+  type AnsweredAsk,
   type SessionpageSessionsListResult,
   type SessionpageSessionOptions,
+  type SessionpageSessionOptionsRequest,
   type SessionpageSessionsEvent,
   type SessionpageSessionSetOptionRequest,
   type SessionpageSessionReloadModelRequest,
@@ -67,7 +74,7 @@ import { agentIdsBySession, sessionAgents } from '@main/core/sessionpage/session
 import { db } from '@main/db/client';
 import { sessions, projects, type SessionRow } from '@main/db/schema';
 import { persistedWorkspacePath } from '@main/core/projects/utils';
-import { tapMainEvents } from '@main/lib/events';
+import { events, tapMainEvents } from '@main/lib/events';
 import { listSessionSchedules } from '@main/core/automations/repo';
 import {
   automationChangedChannel,
@@ -79,6 +86,7 @@ import {
   type SessionSchedule,
 } from '@shared/core/automations/session-schedule';
 import { log } from '@main/lib/logger';
+import { app } from 'electron';
 import {
   legacyAgentStatusWord,
   parseAgentStatus,
@@ -645,12 +653,13 @@ function release(entry: TimelineEntry): void {
 
 async function withTimeline<T>(
   conversationId: string,
-  use: (timeline: SessionTimeline) => T | Promise<T>
+  use: (timeline: SessionTimeline, floor: string | null) => T | Promise<T>
 ): Promise<SessionTimelineResult<T>> {
   const acquired = await acquire(conversationId);
   if (!acquired.ok) return acquired;
   try {
-    return { ok: true, value: await use(acquired.value.timeline) };
+    const floor = await nativeConversationHistoryFloor(conversationId);
+    return { ok: true, value: clearedHistoryResult(await use(acquired.value.timeline, floor), floor) };
   } catch (error) {
     return fail('timeline_failed', (error as Error)?.message ?? String(error));
   } finally {
@@ -717,11 +726,12 @@ function sessionList(agents: ReadonlyMap<string, { agentId: string; chatId: stri
   const projectById = new Map<string, SessionpageProjectSummary>();
   const sessions: SessionpageSessionSummary[] = [];
   const schedules = schedulesBySession(listSessionSchedules());
+  const answered = readAnsweredAsks();
 
   for (const { session, project } of rows) {
     if (!visibleIds.has(project.id)) continue;
     projectById.set(project.id, project);
-    sessions.push(summaryOf(session, agents, schedules));
+    sessions.push(summaryOf(session, agents, schedules, answered));
   }
   // 还没开过会话的项目也要列:手机新建会话只能挑这里列出的项目,刚在电脑上打开的项目 ❌ 因为没会话就看不见
   // (#6985:在手机上给一台刚加的机器开第一条会话)。只列本机项目,与侧栏同一个口径:隐式的任务工作区不算
@@ -737,7 +747,7 @@ function sessionList(agents: ReadonlyMap<string, { agentId: string; chatId: stri
 /** 一条会话的摘要,与 `listSessions` 同一个投影;建会话时交回发起方,它就不用自己拼一份「不知道」的。 */
 export async function sessionSummary(conversationId: string): Promise<SessionpageSessionSummary | null> {
   const [row] = db.select().from(sessions).where(eq(sessions.id, conversationId)).limit(1).all();
-  return row ? summaryOf(row, await sessionAgents(process.env), schedulesBySession(listSessionSchedules())) : null;
+  return row ? summaryOf(row, await sessionAgents(process.env), schedulesBySession(listSessionSchedules()), readAnsweredAsks()) : null;
 }
 
 /**
@@ -747,7 +757,8 @@ export async function sessionSummary(conversationId: string): Promise<Sessionpag
 function summaryOf(
   session: SessionRow,
   agents: ReadonlyMap<string, { agentId: string; chatId: string | null }> | null,
-  schedules: ReadonlyMap<string, SessionSchedule[]>
+  schedules: ReadonlyMap<string, SessionSchedule[]>,
+  answered: ReadonlyMap<string, AnsweredAsk>
 ): SessionpageSessionSummary {
   const agent = agents?.get(session.id);
   const location = locateRow(session);
@@ -788,6 +799,7 @@ function summaryOf(
     spawnedByExtensionId: session.spawnedByExtensionId ?? null,
     bornInChatId: sessionBornInChatId(session.config),
     schedule: sessionScheduleDigest(schedules.get(session.id) ?? []),
+    lastAnswered: answered.get(session.id) ?? null,
   };
 }
 
@@ -804,17 +816,20 @@ export function after(input: {
   conversationId: string;
   cursor: RecordCursor;
 }): Promise<SessionTimelineResult<TimelineAfterResult>> {
-  return withTimeline(input.conversationId, (timeline) => timeline.getAfter(input.cursor));
+  return withTimeline(input.conversationId, (timeline, floor) => {
+    if (floor && !input.cursor.epoch.endsWith(historyClearEpoch(floor))) return { ok: false as const, reset: 'epoch_changed' as const, snapshot: timeline.getSnapshot() };
+    return timeline.getAfter(floor ? { ...input.cursor, epoch: input.cursor.epoch.slice(0, -historyClearEpoch(floor).length) } : input.cursor);
+  });
 }
 
 type SourceWindowReader = ReturnType<typeof import('./desktop-source-reader').createDesktopSourceWindowReader>;
 let sourceWindowOpening: Promise<SourceWindowReader> | null = null;
 
-/** Desktop reopening has its own bounded source path, including its subscription. */
+/** Desktop reopening has its own bounded source path, including its subscription. A failed opening is not kept: the next read opens again. */
 function sourceWindowReader(): Promise<SourceWindowReader> {
   return sourceWindowOpening ??= (async () => {
-    const [{ app }, { join }, { createHash }, { createWindowBudget }, { createDesktopSourceWindowReader }, { supportsSourceWindow }] = await Promise.all([
-      import('electron'), import('node:path'), import('node:crypto'),
+    const [{ join }, { createHash }, { createWindowBudget }, { createDesktopSourceWindowReader }, { supportsSourceWindow }] = await Promise.all([
+      import('node:path'), import('node:crypto'),
       import('@gugu/session-core/session-record/window-cache/read-budget'), import('./desktop-source-reader'),
       import('@gugu/session-core/session-record/window-cache/formats'),
     ]);
@@ -827,9 +842,10 @@ function sourceWindowReader(): Promise<SourceWindowReader> {
         const located = locateRow(row);
         if (!located.supported || !supportsSourceWindow(located.locator.harness))
           throw Object.assign(new Error(located.supported ? 'This native format has no window reader' : located.reason), { code: 'unsupported_format' });
-        const conversationScope = hash([cacheDirectory, conversationId]);
-        return { conversationId, locator: located.locator, cacheDirectory, conversationScope,
-          scope: hash([conversationScope, located.locator.harness, located.locator.providerSessionId]),
+        const historyFloor = await nativeConversationHistoryFloor(conversationId);
+        const conversationScope = hash([cacheDirectory, conversationId, historyFloor]);
+        return { conversationId, historyFloor, locator: located.locator, cacheDirectory, conversationScope,
+          scope: hash([conversationScope, located.locator.harness, located.locator.providerSessionId, historyFloor]),
           branchLineage: hash([located.locator.harness, located.locator.providerSessionId]),
           cwd: row.workspaceId ? persistedWorkspacePath(row.workspaceId) ?? undefined
             : readSessionRows(false, conversationId).find(value => value.session.id === conversationId)?.project.path,
@@ -841,12 +857,18 @@ function sourceWindowReader(): Promise<SourceWindowReader> {
       backgroundRead: process.env.GUGU_WINDOW_IO_TRACE === '1'
         ? (jobId, io) => log.info('sessionWindow: read', { jobId, phase: 'reverse', ...io }) : undefined,
     });
-  })();
+  })().catch((error: unknown) => {
+    sourceWindowOpening = null;
+    throw error;
+  });
 }
 async function withSourceWindow<T>(read: (reader: SourceWindowReader) => Promise<T>): Promise<SessionTimelineResult<T>> {
   try { return { ok: true, value: await read(await sourceWindowReader()) }; }
   catch (error) {
-    return fail((error as { code?: string }).code ?? 'record_unreadable', (error as Error).message ?? String(error));
+    const code = (error as { code?: string }).code ?? 'record_unreadable';
+    // The caller only shows this failure; the host keeps a line of it too.
+    log.warn('sessionWindow: read failed', { code, error: String(error) });
+    return fail(code, (error as Error).message ?? String(error));
   }
 }
 export const windowSnapshot = (input: { conversationId: string; limit?: number }) => withSourceWindow(reader => reader.snapshot(input));
@@ -857,6 +879,7 @@ export const body = (input: SessionpageSessionBodyReadRequest): Promise<SessionT
 const windowOpenings = createWindowOpenings({
   reserve: (input, failed) => reserveWindowCommitHost(input.subscriptionId, input.conversationId, failed),
   capture: async conversationId => {
+    if (await nativeConversationHistoryFloor(conversationId)) return null;
     const row = readSessionRow(conversationId);
     if (!row) throw Object.assign(new Error('The session is no longer available'), { code: 'session_not_found' });
     const { supportsSourceWindow } = await import('@gugu/session-core/session-record/window-cache/formats');
@@ -952,67 +975,49 @@ export async function windowSubscribe(input: SessionpageSessionSubscribeRequest,
   return result;
 }
 
-/** 读这条会话此刻可改的选项。 */
 /**
  * 这条聊天腿会话**从没开起来过**:没有 provider 会话 id,运行时里也没有它(正在起的那一刻不算 —— 那时
  * 运行时里有一份 `starting`)。建会话时 agent 没起来的就是这种,不论当时有没有记下原因码
- * (装这版之前建的那些没有)。对它 ❌ 走「唤醒」:唤醒不带第一句话。
+ * (装这版之前建的那些没有)。对它 ❌ 走「唤醒」:唤醒不带第一句话。运行时问不到 = 抛(调用方报错),❌ 猜。
  */
 async function neverStarted(row: SessionRow): Promise<boolean> {
   if (row.providerSessionId?.trim() || row.runtime !== 'acp') return false;
-  try {
-    return !(await acpSessionLive(row.id));
-  } catch {
-    return readStartFailure(row.id) !== null;
-  }
+  return !(await acpSessionLive(row.id));
 }
 
-/** 那台机器上这家的模型目录里的显示名;读不到就空(胶囊上退回模型 id)。 */
+/** 那台机器上这家的模型目录里的显示名。目录读不到 = 抛,❌ 当空(胶囊上冒出引擎自己的模型 id)。 */
 async function modelNames(provider: string | null): Promise<Map<string, string>> {
   if (!provider) return new Map();
-  try {
-    const { listLocalModels } = await import('@main/core/agents/session-discovery');
-    const catalog = await listLocalModels(provider, { transport: 'acp' });
-    return new Map(catalog.models.map((m) => [m.id, m.name]));
-  } catch {
-    return new Map();
-  }
+  const { listLocalModels } = await import('@main/core/agents/session-discovery');
+  const catalog = await listLocalModels(provider, { transport: 'acp' });
+  return new Map(catalog.models.map((m) => [m.id, m.name]));
 }
 
 /** 会话记录里那一档模型(建会话 / 上次换模型时记下的),没有运行时也报得出来。 */
 async function recordedSessionOptions(row: SessionRow) {
   const { sessionPlatformModel } = await import('@main/core/sessions/platform-model-selection');
-  const platform = await sessionPlatformModel(row.id).catch(() => undefined);
+  const platform = await sessionPlatformModel(row.id);
   return notStartedSessionOptions({
-    model: row.config?.model,
+    model: runtimeModelId(row.config?.model),
     platformModelId: platform?.modelId,
     names: await modelNames(row.provider),
   });
 }
 
-/** 聊天腿的 agent 此刻在不在跑;问不到(运行时连不上)按不在跑算 —— 只读,❌ 为了问一句把它拉起来。 */
-async function acpRunning(row: SessionRow): Promise<boolean> {
-  try {
-    return await acpSessionLive(row.id);
-  } catch {
-    return false;
-  }
-}
-
-export async function sessionOptions(input: {
-  conversationId: string;
-}): Promise<SessionTimelineResult<SessionpageSessionOptionsWithMenu>> {
+/** 读这条会话此刻可改的选项。哪一步读不到都报 `options_failed`,❌ 给一份「没在跑」的选项充数。 */
+export async function sessionOptions(input: SessionpageSessionOptionsRequest): Promise<SessionTimelineResult<SessionpageSessionOptionsWithMenu>> {
   const row = readSessionRow(input.conversationId);
   if (!row) return fail('session_not_found', '这台机器上没有这条会话');
-  if (await neverStarted(row)) return { ok: true, value: await recordedSessionOptions(row) };
-  // #980 打开会话不叫醒 agent,手机上也一样(behavior session-page;owner 2026-10-30 取代 09-15「读选项先唤醒」):
-  // 手机打开会话就来读这一份,而参数(权限档 / 推理档)住在活运行时里。没在跑就报记录里那一档模型(带模型菜单,换得了),
-  // 权限档 / 推理档等它跑起来再报 —— 它们的 id 是各家运行时自己的。改一档是人点的,那一刻再起(`setSessionOptionValue`)。
-  if (row.runtime === 'acp' && !(await acpRunning(row))) {
-    return { ok: true, value: await withModelMenu(row, await recordedSessionOptions(row)) };
-  }
   try {
-    return { ok: true, value: await withModelMenu(row, await readSessionOptions(input.conversationId)) };
+    if (await neverStarted(row)) return { ok: true, value: await withModelMenu(row, await recordedSessionOptions(row), input.includeOwnModelCatalog) };
+    // #980 打开会话不叫醒 agent,手机上也一样(behavior session-page;owner 2026-10-30 取代 09-15「读选项先唤醒」):
+    // 手机打开会话就来读这一份,而参数(权限档 / 推理档)住在活运行时里。没在跑就报记录里那一档模型(带模型菜单,换得了),
+    // 权限档 / 推理档等它跑起来再报 —— 它们的 id 是各家运行时自己的。改一档是人点的,那一刻再起(`setSessionOptionValue`)。
+    // 只读,❌ 为了问一句把它拉起来。
+    if (row.runtime === 'acp' && !(await acpSessionLive(row.id))) {
+      return { ok: true, value: await withModelMenu(row, await recordedSessionOptions(row), input.includeOwnModelCatalog) };
+    }
+    return { ok: true, value: await withModelMenu(row, await readSessionOptions(input.conversationId), input.includeOwnModelCatalog) };
   } catch (error) {
     return optionsFailure(error);
   }
@@ -1026,13 +1031,11 @@ export async function setSessionOptionValue(
   if (!row) return fail('session_not_found', '这台机器上没有这条会话');
   // #980 打开时没叫醒它;改一档是人点的,参数又只有活运行时收得下 ⇒ 这一刻按桌面同一条「唤醒」拉起来。
   // 从没开起来的 ❌:唤醒不带第一句话(见 not-started-options),它只报记下的那一档,本来就没有可改的。
-  if (row.runtime === 'acp' && !(await neverStarted(row))) {
-    try {
-      await ensureAcpSessionLive(row.id);
-    } catch (error) {
-      if (error instanceof SessionWriteError) return fail(error.code, error.message);
-      return fail('session_wake_failed', (error as Error)?.message ?? String(error));
-    }
+  try {
+    if (row.runtime === 'acp' && !(await neverStarted(row))) await ensureAcpSessionLive(row.id);
+  } catch (error) {
+    if (error instanceof SessionWriteError) return fail(error.code, error.message);
+    return fail('session_wake_failed', (error as Error)?.message ?? String(error));
   }
   try {
     return { ok: true, value: await withModelMenu(row, await setSessionOption(input)) };
@@ -1070,11 +1073,20 @@ export async function reloadSessionModel(
  */
 async function withModelMenu(
   row: SessionRow,
-  options: SessionpageSessionOptions
+  options: SessionpageSessionOptions,
+  includeOwnModelCatalog?: true
 ): Promise<SessionpageSessionOptionsWithMenu> {
   if (!row.provider) return options;
-  const modeMap = options.mode ? declaredModeMap(row.provider) : undefined;
-  const modelMenu = options.model ? await readSessionModelMenu(row.id, row.provider) : undefined;
+  const declared = declaredModeMap(row.provider);
+  if (declared?.['ai-review']) {
+    const platform = await (await import('@main/core/sessions/platform-model-selection')).sessionPlatformModel(row.id);
+    const read = platform === undefined ? null : await (await import('./create-session')).createModels({ harness: row.provider, sessionView: 'general',
+      model: platform ? 'platform:' + platform.modelId : row.config?.model });
+    const group = (read?.ok ? read.value.permissionOptions : null) ?? buildSessionPermissionOptions({ modeMap: declared });
+    options = { ...options, mode: group ? { ...group, selected: options.mode?.selected ?? (row.config?.permissionMode ? declared[row.config.permissionMode]?.id ?? null : null) } : null };
+  }
+  const modeMap = options.mode ? declared : undefined;
+  const modelMenu = options.model ? await readSessionModelMenu(row.id, row.provider, includeOwnModelCatalog) : undefined;
   const permissionAgentName = options.mode ? modelMenu?.agentName ?? await readSessionPermissionAgentName(row.provider) : undefined;
   return { ...options, ...(modelMenu ? { modelMenu } : {}), ...(modeMap ? { modeMap } : {}), ...(permissionAgentName ? { permissionAgentName } : {}) };
 }
@@ -1117,11 +1129,13 @@ export function older(input: {
  */
 export async function toolImage(input: SessionpageSessionToolImageRequest): Promise<SessionTimelineResult<ToolImage>> {
   // 存档装回来的轮里图只剩位置,要由时间线从记录里读回来(#980);没有这个口的(代读时间线)照旧在快照里找。
-  const found = await withTimeline(input.conversationId, (timeline) =>
-    timeline.toolImage
+  const found = await withTimeline(input.conversationId, (timeline, floor) => {
+    if (floor && !clearedHistoryResult(timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }), floor).turns.some(turn => turn.items.some(item => item.id === input.itemId)))
+      return { ok: false as const, code: 'not_found' as const, message: 'This image was cleared from the conversation' };
+    return timeline.toolImage
       ? timeline.toolImage({ itemId: input.itemId, index: input.index })
-      : findToolImage(timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns, input.itemId, input.index)
-  );
+      : findToolImage(timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns, input.itemId, input.index);
+  });
   if (!found.ok) return found;
   return found.value.ok ? { ok: true, value: found.value.image } : fail(found.value.code, found.value.message);
 }
@@ -1146,16 +1160,17 @@ export async function recordHistoryPage(input: {
   try {
     if (acquired.value.standIn) return { ok: true, value: 'no-record' };
     const timeline = acquired.value.timeline;
+    const floor = await nativeConversationHistoryFloor(input.conversationId);
     // Read the moment a turn ended (radar's 「做完了」): the record as written by now, not as far as the tail got.
     await timeline.catchUp();
     if (input.beforeSeq === undefined) {
       const { turns, hasOlder } = timeline.getSnapshot({ limit: input.limit });
-      return { ok: true, value: { turns, hasOlder } };
+      return { ok: true, value: clearedHistoryResult({ turns, hasOlder }, floor) };
     }
     const at = timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns.find((turn) => turn.seq === input.beforeSeq);
     if (!at) return { ok: true, value: 'no-such-turn' };
     const { turns, hasOlder } = timeline.getOlder({ beforeTurnId: at.id, limit: input.limit });
-    return { ok: true, value: { turns, hasOlder } };
+    return { ok: true, value: clearedHistoryResult({ turns, hasOlder }, floor) };
   } catch (error) {
     return fail('timeline_failed', (error as Error)?.message ?? String(error));
   } finally {
@@ -1343,7 +1358,7 @@ const sessionsSubscriptions = new Map<string, { stop: () => void }>();
 const SESSIONS_PUSH_DEBOUNCE_MS = 200;
 
 /** 列表上看得见、又不经状态写入者的变化:会话增删、这几格元信息,以及会话给自己排的定时。 */
-const LISTED_FIELDS = ['title', 'isPinned', 'isPinnedToSidebar', 'archivedAt', 'parentSessionId', 'nativeUnreadKeys', 'nativeLastMessage', 'nativeOwnerNotificationSeq', 'nativeOwnerNotificationEpoch'];
+const LISTED_FIELDS = ['title', 'isPinned', 'isPinnedToSidebar', 'archivedAt', 'parentSessionId', 'nativeUnreadKeys', 'nativeLastMessage', 'nativeOwnerNotificationSeq', 'nativeOwnerNotificationEpoch', 'lastAnswered'];
 function changesSessionList(channel: string, data: unknown): boolean {
   if (channel === sessionCreatedChannel.name) {
     return true;
@@ -1474,22 +1489,24 @@ export async function send(
   clientMessageId?: string,
   files?: import('@gugu/session-core/session-record/contract').SessionpageSessionSendRequest['files'],
   attachments?: import('@gugu/session-core/acp/client').PromptAttachment[],
-  steerIfBusy?: true
+  steerIfBusy?: true,
+  admissionFence?: () => void
 ): Promise<InputAdmissionResult> {
+  admissionFence?.();
   const input = { conversationId, text, clientMessageId, files, attachments, steerIfBusy };
-  if (!clientMessageId) return sendOnce(input);
+  if (!clientMessageId) return sendOnce(input, admissionFence);
   const key = JSON.stringify([conversationId, clientMessageId]);
   const pending = admittingInputs.get(key);
   if (pending) return sameInput(input, pending.input) ? pending.result : {
     ok: false, error: { code: 'invalid_request', message: '原消息尚在确认，不能更换内容', admission: 'uncertain' },
   };
-  const result = sendOnce(input);
+  const result = sendOnce(input, admissionFence);
   admittingInputs.set(key, { input, result });
   try { return await result; }
   finally { admittingInputs.delete(key); }
 }
 
-async function sendOnce({ conversationId, text, clientMessageId, files, attachments, steerIfBusy }: InputAdmissionPayload): Promise<InputAdmissionResult> {
+async function sendOnce({ conversationId, text, clientMessageId, files, attachments, steerIfBusy }: InputAdmissionPayload, admissionFence?: () => void): Promise<InputAdmissionResult> {
   const rejected = (code: string, message: string): InputAdmissionResult => {
     try {
       const prior = priorInputAdmission({ conversationId, text, clientMessageId, files, attachments, steerIfBusy });
@@ -1516,6 +1533,7 @@ async function sendOnce({ conversationId, text, clientMessageId, files, attachme
   // A side chat has no session row: its custody send lands in its fork entry's queue.
   if (runtimeFork(conversationId)) {
     try {
+      admissionFence?.();
       sessionLife().enqueue({ sessionId: conversationId, messageId: clientMessageId ?? crypto.randomUUID(), text: text.trim(), kind: 'ordinary',
         delivery: { queue: true, origin: 'manual', ...(steerIfBusy ? { steerIfBusy } : {}), ...(files?.length ? { files } : {}), ...(attachments?.length ? { attachments } : {}) } });
       return { ok: true, value: { accepted: 'queued', admission: 'accepted', ...(clientMessageId ? { clientMessageId } : {}) } };
@@ -1534,7 +1552,9 @@ async function sendOnce({ conversationId, text, clientMessageId, files, attachme
   // 再发这一句。❌ 直接唤醒:唤醒不带第一句,agent 会只看到后来这一句。
   // A never-started session is ACP only (neverStarted), and its delivery itself starts it (session-life row 1).
   try {
-    const accepted = await deliverSessionText(writeTargetFrom(row), text, clientMessageId, files, attachments, steerIfBusy);
+    const accepted = admissionFence
+      ? await deliverSessionText(writeTargetFrom(row), text, clientMessageId, files, attachments, steerIfBusy, admissionFence)
+      : await deliverSessionText(writeTargetFrom(row), text, clientMessageId, files, attachments, steerIfBusy);
     return { ok: true, value: { ...accepted, admission: 'accepted', ...(clientMessageId ? { clientMessageId } : {}) } };
   } catch (error) {
     if (sessionInputAdmission(error) === 'rejected') return rejected(error instanceof SessionWriteError || error instanceof SessionInputAdmissionError ? error.code ?? 'send_failed' : 'send_failed', (error as Error)?.message ?? String(error));
@@ -1614,6 +1634,19 @@ export async function respond(
 ): Promise<SessionTimelineResult<SessionpageSessionRespondResult>> {
   const row = readSessionRow(input.conversationId);
   if (!row) return fail('session_not_found', '这台机器上没有这条会话');
+  const result = await respondOn(row, input);
+  // Every surface answers through here, so the list learns of an answer once, whichever device gave it.
+  if (result.ok && result.value.accepted) {
+    recordAnsweredAsk(row.id, answeredAskOf(result.value.settlement));
+    events.emit(sessionChangedChannel, { sessionId: row.id, projectId: row.projectId, changes: { lastAnswered: true } });
+  }
+  return result;
+}
+
+async function respondOn(
+  row: SessionRow,
+  input: SessionpageSessionRespondRequest
+): Promise<SessionTimelineResult<SessionpageSessionRespondResult>> {
   const target = writeTargetFrom(row);
 
   const acquired = await acquire(input.conversationId);
@@ -1754,4 +1787,4 @@ export async function changeQueue(input: { conversationId: string; action: impor
 const nativeRecordReader = createNativeRecordReader({ readSession: readSessionRow, activeTurn: id => entries.get(id)?.nativeActiveTurn, withTimeline });
 export const nativeRecord = nativeRecordReader.snapshot;
 export const nativeToolImage = nativeRecordReader.image;
-export const nativeAttachment = nativeRecordReader.attachment;
+export { nativeAttachment } from './native-attachment';

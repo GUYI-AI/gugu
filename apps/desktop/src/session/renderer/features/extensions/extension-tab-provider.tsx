@@ -1,4 +1,3 @@
-import { when } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useContext, useMemo } from 'react';
 import { PaneContext } from '@renderer/features/tabs/pane-context';
@@ -21,6 +20,7 @@ import { ExtensionMark } from './extension-mark';
 import { ExtensionTabPane } from './extension-tab-pane';
 import { ExtensionSharedSlot } from './extension-shared-slot';
 import { extensionViewStore, residentPageKey, residentPlace } from './extension-view-store';
+import { confirmCloseOfUnsaved, reloadAppPage } from './app-page-unsaved';
 import { extensionSurfaceStore, extensionTabTitle } from './extension-surface-store';
 import { installedExtensionsStore, WORKSPACE_APP_ID } from './installed-extensions-store';
 import { useScreenBlock } from '@renderer/app/screen-block-context';
@@ -29,10 +29,8 @@ import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { followLink } from '@/lib/guguLinks';
 import { fileTabLabels } from '@renderer/features/tabs/file-tab-label';
 import { fileBaseName, filePathKey } from '@renderer/features/sessions/stores/workspace-path';
-import { showModal } from '@renderer/lib/modal/modal-provider';
-import { rpc } from '@renderer/lib/ipc';
 import { Folder } from '@/lib/icons';
-import { FileIcon } from '@renderer/lib/editor/file-icon';
+import { AppFileMark } from './app-file-mark';
 
 /**
  * What the host knows about one open extension tab, stored per tab entry.
@@ -49,7 +47,7 @@ import { FileIcon } from '@renderer/lib/editor/file-icon';
 export type ExtensionTabState = {
   filePath?: string;
   /**
-   * The host opened `filePath` for an agent or an App (`open_in_tab`, `files.openWith`), not the person: a file outside the
+   * The host opened `filePath` for an App (`files.openWith`), not the person or an agent of theirs (`open_in_tab`): a file outside the
    * working copy is not read through it (`@@@outside-file`). Its own tab: the person opening the same file gets one of their own.
    */
   byHost?: true;
@@ -72,7 +70,7 @@ export class ExtensionTabResource implements TabResource {
     readonly filePath: string | undefined = undefined,
     private readonly readTitle?: () => string,
     private readonly readHoldsUnsaved?: () => boolean,
-    /** The host opened `filePath` for an agent or an App (`ExtensionTabState.byHost`). */
+    /** The host opened `filePath` for an App (`ExtensionTabState.byHost`). */
     readonly byHost = false,
   ) {}
 
@@ -94,28 +92,6 @@ export class ExtensionTabResource implements TabResource {
 /** The tab is one per task (manifest `perSession`, #7317): every task keeps its own, none is moved from another. */
 function isPerSession(kind: string): boolean {
   return installedExtensionsStore.allTabContributions.find((entry) => entry.kind === kind)?.perSession === true;
-}
-
-/**
- * A tab with unsaved edits asks before it goes, the same question for any file: save, drop, or stay. Only its page can do
- * either, and it answers by saying again whether anything is unsaved. Not saved (the disk or the machine out of reach): it stays.
- */
-async function confirmCloseOfUnsaved(sessionId: string | null, tabId: string, filePath?: string): Promise<boolean> {
-  const { dirtyIn, dirtyReports } = extensionSurfaceStore.state(sessionId, tabId);
-  if (dirtyIn === null) return true;
-  const choice = await new Promise<'save' | 'discard' | null>((resolve) =>
-    showModal('unsavedChangesModal', {
-      fileName: fileBaseName(filePath ?? ''),
-      onSuccess: (result) => resolve(result === 'save' ? 'save' : 'discard'),
-      onClose: () => resolve(null),
-    })
-  );
-  if (!choice) return false;
-  const told = await rpc.extensions.invokeCommand({ webContentsId: dirtyIn, commandId: `gugu.file.${choice}:${tabId}` });
-  // The page is gone: its edits wait in their draft, and come back when the file opens again.
-  if (!told.success) return true;
-  await when(() => extensionSurfaceStore.state(sessionId, tabId).dirtyReports > dirtyReports);
-  return extensionSurfaceStore.state(sessionId, tabId).dirtyIn === null;
 }
 
 function createExtensionTabContent(extensionId: string, kind: string) {
@@ -155,12 +131,13 @@ function createExtensionTabContent(extensionId: string, kind: string) {
   });
 }
 
-/** The extension's own mark on its tab, read live so an upgrade swaps it in place. */
+/**
+ * A tab's mark says what it shows, as its title does: a file as the folder list draws it (`AppFileMark`), the folder
+ * App's list a folder; only an App's own page carries the App's mark, read live so an upgrade swaps it in place.
+ */
 const ExtensionTabIcon = observer(function ExtensionTabIcon({ kind, file }: { kind: string; file?: string }) {
-  // The folder App's tabs say what they show: the list a folder, a file its type. Its own mark stays in the App lists.
-  if (parseExtensionTabKind(kind)?.extensionId === WORKSPACE_APP_ID) {
-    return file ? <span className="flex shrink-0 text-foreground-muted"><FileIcon filename={fileBaseName(file)} className="shrink-0" /></span> : <Folder className="size-3 text-foreground-muted" />;
-  }
+  if (file) return <span className="flex shrink-0"><AppFileMark kind={kind} fileName={fileBaseName(file)} context="session" size={12} /></span>;
+  if (parseExtensionTabKind(kind)?.extensionId === WORKSPACE_APP_ID) return <Folder className="size-3 text-foreground-muted" />;
   const iconDataUrl = installedExtensionsStore.allTabContributions.find(
     (entry) => entry.kind === kind
   )?.iconDataUrl;
@@ -276,6 +253,13 @@ export function createExtensionTabProvider(
               runExtensionCommand(sessionId, tab.tabId, command.id);
             },
           })),
+          // Whatever state the page is in (it did not load, it threw), the person can have it built again from the start.
+          {
+            id: `${kind}:reload-page`,
+            label: translateSessionMessage('extensions.reloadPage'),
+            group: 'extension',
+            run: () => void reloadAppPage(sessionId, tab.tabId, claimedFile),
+          },
           {
             id: `${kind}:app-settings`,
             label: translateSessionMessage('extensions.appSettings'),

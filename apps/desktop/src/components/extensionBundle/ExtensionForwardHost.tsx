@@ -11,8 +11,8 @@ import { useChatStore } from '../../store/chatContext'
 import { rpc } from '../../session/renderer/lib/ipc'
 import { appsHere } from '../appSlot/appsHere'
 import { updateUnasked } from '../appSlot/updateUnasked'
-import { ForwardMessageDialog } from '../chat/ForwardMessageDialog'
-import type { ForwardNote } from '../chat/forwardToChats'
+import { LiveForwardMessageDialog } from '../chat/ForwardMessageDialog'
+import { useForwardToChats } from '../chat/forwardToChats'
 import { useToast } from '../toastContext'
 import { ListRow } from '../ui/ListRow'
 import { installPackageOf, packageArrived } from './sharedPackages'
@@ -37,7 +37,8 @@ export function ExtensionForwardHost() {
   useExtensionWorkspaceRevisions()
   // #1925 And the person's assistant, as an App bound to it may see it.
   useAssistantAppStatus()
-  const { chats, subscribeAccountRevision, sendAttachmentsToChat, sendMessageToChat } = useChatStore('chats', 'subscribeAccountRevision', 'sendAttachmentsToChat', 'sendMessageToChat')
+  const { subscribeAccountRevision } = useChatStore('subscribeAccountRevision')
+  const forwardTo = useForwardToChats()
   const { user } = useAuth()
   const { toast } = useToast()
   // 摩擦单 F66: an App package sent in any chat here (the account revision bus, whatever is on screen) — that chat's list
@@ -66,19 +67,14 @@ export function ExtensionForwardHost() {
   const t = translateSessionMessage
   const close = () => setRequest(null)
 
-  const forward = async (targetChatIds: string[], note: ForwardNote, sent: (chatId: string) => void) => {
+  // Packed once, before the first chat is written to; each chat gets it as an attachment, the note after it.
+  const pack = async () => {
     const packed = await rpc.extensions.packInstalled({ extensionId: request.extensionId })
     if (!packed.success || !packed.data) {
       log.error({ extensionId: request.extensionId, error: packed.error }, 'packing an extension to forward failed')
       throw new Error(messageForUser(packed.error), { cause: packed.error })
     }
-    const file = new File([packed.data.bytes], packed.data.fileName, { type: packed.data.mimeType })
-    for (const chatId of targetChatIds) {
-      // The package is a row once this returns; its note is delivered after it.
-      const bundle = await sendAttachmentsToChat(chatId, [file])
-      if (note.text.trim()) await sendMessageToChat(chatId, note.text.trim(), { toUserIds: note.toUserIds, ...(bundle ? { dependsOn: bundle } : {}) })
-      sent(chatId)
-    }
+    return [new File([packed.data.bytes], packed.data.fileName, { type: packed.data.mimeType })]
   }
 
   const exportToFile = async () => {
@@ -98,10 +94,9 @@ export function ExtensionForwardHost() {
   }
 
   return (
-    <ForwardMessageDialog
-      chats={chats}
+    <LiveForwardMessageDialog
       sourceChatId=""
-      preview={`${request.name} ${request.version} · .guguext`}
+      preview={`${request.name} ${request.version} (.guguext)`}
       topRow={
         <ListRow
           role="button"
@@ -114,7 +109,7 @@ export function ExtensionForwardHost() {
           title={t('extensions.exportArchive')}
         />
       }
-      onForward={forward}
+      onForward={(targetChatIds, note, sent) => forwardTo([{ kind: 'files', files: pack }], targetChatIds, note, sent)}
       onClose={close}
     />
   )

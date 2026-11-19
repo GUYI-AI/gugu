@@ -251,6 +251,17 @@ describe('调用方(DeviceActionCaller)', () => {
     expect(rpc).not.toHaveBeenCalled()
   })
 
+  it('发出去之前先问人要缺的授权:被拒就在这里结束、❌ 发出去;放行才发', async () => {
+    const rpc = vi.fn()
+    const caller = createDeviceActionCaller({ listDevices: async () => [target()], rpc })
+    const askGrant = vi.fn(async () => ({ code: 'not_granted' as const, message: 'The person declined "Calendar"' }))
+    expect(await caller.call({ deviceId: 'mac', action: 'calendar.events.create', askGrant })).toMatchObject({ ok: false, code: 'not_granted', message: expect.stringContaining('declined') })
+    expect(askGrant).toHaveBeenCalledOnce()
+    expect(rpc).not.toHaveBeenCalled()
+    await caller.call({ deviceId: 'mac', action: 'calendar.events.create', askGrant: async () => null, timeoutMs: 1_000 }).catch(() => undefined)
+    expect(rpc).toHaveBeenCalled()
+  })
+
   it('不在账号下 / 没登记这个动作 / 老版本不登记:各自一个码,都 ❌ 发出去', async () => {
     const rpc = vi.fn()
     const caller = createDeviceActionCaller({ listDevices: async () => [target(), target({ device_id: 'old', actions: undefined })], rpc })

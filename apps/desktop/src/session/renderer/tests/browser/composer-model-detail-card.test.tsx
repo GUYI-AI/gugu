@@ -31,7 +31,7 @@ const MODELS = {
   },
   'platform:glm-5.3-flash': {
     name: 'GLM 5.3 Flash',
-    groupLabel: '咕咕提供的模型 · 按积分计费',
+    groupLabel: '咕咕模型按积分计费',
     providerLabel: '智谱',
     description: '相对倍率 ×0.04',
     facts: [{ label: '思考', value: '低 · 高' }],
@@ -39,13 +39,15 @@ const MODELS = {
   },
   'platform:deepseek-v4-flash': {
     name: 'DeepSeek V4 Flash',
-    groupLabel: '咕咕提供的模型 · 按积分计费',
+    groupLabel: '咕咕模型按积分计费',
     providerLabel: 'DeepSeek',
     description: '相对倍率 ×0.07',
+    disabled: true,
+    disabledReason: 'This provider does not support the required API',
   },
   'platform:gemini-3.8-flash': {
     name: 'Gemini 3.8 Flash',
-    groupLabel: '咕咕提供的模型 · 按积分计费',
+    groupLabel: '咕咕模型按积分计费',
     providerLabel: 'Google',
     description: '相对倍率 ×0.19',
   },
@@ -61,6 +63,7 @@ let root: Root | null = null
 let container: HTMLDivElement | null = null
 const onManageModels = vi.fn()
 const onModelUpgrade = vi.fn()
+const onModelChange = vi.fn()
 
 const panel = () => document.querySelector<HTMLElement>('[data-slot="combobox-content"]')
 const detail = () => document.querySelector<HTMLElement>('[data-slot="composer-model-detail"]')
@@ -74,6 +77,7 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
     await page.viewport(1400, 800)
     onManageModels.mockReset()
     onModelUpgrade.mockReset()
+    onModelChange.mockReset()
     container = document.createElement('div')
     container.className = 'emlight gugu-skin bg-background'
     container.style.cssText = 'position:fixed;right:24px;bottom:24px;width:640px'
@@ -85,7 +89,7 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
         <ChatComposer
           modelOptions={MODELS}
           selectedModel="platform:glm-5.3-flash"
-          onModelChange={() => {}}
+          onModelChange={onModelChange}
           onManageModels={onManageModels}
           modelUpgrade={{ label: '升级解锁更多模型', title: '开通会员后可用', models: ['Claude Opus 5', 'GPT-5.6 Sol'] }}
           onModelUpgrade={onModelUpgrade}
@@ -155,7 +159,7 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
     await page.elementLocator(rowByName('GLM 5.3 Flash')).hover()
     await until('detail card opens on hover', () => detail()?.textContent?.includes('GLM 5.3 Flash') === true)
     const text = detail()!.textContent!
-    expect(text).toContain('咕咕提供的模型 · 按积分计费')
+    expect(text).toContain('咕咕模型按积分计费')
     expect(text).toContain('相对倍率 ×0.04')
     expect(text).toContain('200K tokens')
     expect(text).toContain('低 · 高')
@@ -177,6 +181,15 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
     expect([...detail()!.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Claude Opus 5', 'GPT-5.6 Sol'])
     upgrade.click()
     expect(onModelUpgrade).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens a disabled model’s reason on pointer hover and keeps the selection unchanged', async () => {
+    const row = rowByName('DeepSeek V4 Flash')
+    expect(row.getAttribute('aria-disabled')).toBe('true')
+    await page.elementLocator(row).hover()
+    await until('disabled model detail card opens', () => detail()?.textContent?.includes('This provider does not support the required API') === true)
+    row.click()
+    expect(onModelChange).not.toHaveBeenCalled()
   })
 
   it('closes the panel and hands off to settings from 「管理模型」', async () => {

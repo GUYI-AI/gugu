@@ -10,6 +10,7 @@ import { ProjectFolderCard, shortHome, FAN_MAX_ROWS, FAN_ROW_MAX, fanPlace } fro
 import { UNANSWERED_AFTER_MS, useProjectFolders, type ProjectFoldersState } from './project-folders';
 import { foldersInScope } from './project-run-machine';
 import { machineRegistry } from '@renderer/lib/machine-routing';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 const mocks = vi.hoisted(() => ({
   entries: new Map<string, Array<{ projectId: string; sessionId: string; group: 'working' | 'needs-you' | null; time: number; title: string }>>(),
@@ -69,7 +70,7 @@ const folder = (workspaceId: string, kind: ProjectFolder['kind'], path: string, 
   workspaceId,
   projectId,
   kind,
-  path,
+  path: path as CanonicalPath,
   branch: null,
   sessionIds,
   attachedAt: kind === 'root' ? null : new Date().toISOString(),
@@ -262,7 +263,7 @@ describe('ProjectFolderCard', () => {
     // 摊开不换节点、不挪顺序:同一批 DOM 节点原地变位置,浏览器才有过渡可走(挪动 / 新挂的节点会瞬移)。
     expect(papers().length).toBe(nodesBefore.length);
     expect(papers().every((paper, i) => paper === nodesBefore[i])).toBe(true);
-    expect(container.textContent).toContain('再点卡片收起');
+    expect(container.textContent).toContain('选择新任务的工作目录，再点卡片可收起。');
 
     const extra = papers().find((p) => p.getAttribute('title') === '/www/gugu-web');
     await act(async () => extra?.click());

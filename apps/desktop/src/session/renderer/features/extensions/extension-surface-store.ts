@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { action, computed, makeObservable, observable } from 'mobx';
 import { extensionViewStore } from './extension-view-store';
 
@@ -63,11 +64,11 @@ export function extensionTabTitle(
 ): { label: string; hint?: string; tooltip: string } {
   const title = surface.title ?? appTitle;
   const detail = file && title !== file.name && title !== file.path ? title : undefined;
-  const hint = file ? [file.hint, detail].filter(Boolean).join(' · ') || undefined : undefined;
+  const hint = file ? [file.hint, detail].filter(Boolean).join(metadataSeparator()) || undefined : undefined;
   return {
     label: file?.name ?? title,
     hint,
-    tooltip: surface.error ?? (file ? [file.path, detail].filter(Boolean).join(' · ') : title),
+    tooltip: surface.error ?? (file ? [file.path, detail].filter(Boolean).join(metadataSeparator()) : title),
   };
 }
 
@@ -84,6 +85,7 @@ class ExtensionSurfaceStore {
   constructor() {
     makeObservable(this, {
       say: action,
+      sayOfPage: action,
       setWebContentsId: action,
       reportDirty: action,
       clearDirtyOfPage: action,
@@ -107,6 +109,11 @@ class ExtensionSurfaceStore {
     const page = extensionViewStore.pageOfSlot(sessionId, tabId);
     if (page) this.patchShared(page, patch);
     else this.patch(sessionId, tabId, patch);
+  }
+
+  /** What the host itself says about a resident page (its document did not load, it threw): kept as that page's error. */
+  sayOfPage(page: string, said: Pick<ExtensionSharedPresentation, 'error'>): void {
+    this.patchShared(page, said);
   }
 
   /** What a slot shows: by the same rule as `say`. */

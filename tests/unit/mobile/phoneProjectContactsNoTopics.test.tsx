@@ -46,7 +46,7 @@ describe('phone project contacts', () => {
   ]
 
   it('lists the project group once and no topic rows', async () => {
-    await harness.render(createElement(PhoneProjectContacts, { project, running: 0, sessions, active: true, onBack: vi.fn(), onOpenGroup: vi.fn() }))
+    await harness.render(createElement(PhoneProjectContacts, { project, sessions, active: true, onBack: vi.fn(), onOpenGroup: vi.fn() }))
     const text = harness.container.textContent ?? ''
     expect(text).toContain('partners.groupChat')
     expect(text).not.toContain('topic t1')
@@ -55,7 +55,7 @@ describe('phone project contacts', () => {
 
   it('opens the agent’s latest session in this project when its row is tapped', async () => {
     const onOpenGroup = vi.fn()
-    await harness.render(createElement(PhoneProjectContacts, { project, running: 0, sessions, active: true, onBack: vi.fn(), onOpenGroup }))
+    await harness.render(createElement(PhoneProjectContacts, { project, sessions, active: true, onBack: vi.fn(), onOpenGroup }))
     const row = [...harness.container.querySelectorAll('[role="button"]')].find((node) => node.textContent?.includes('Coder')) as HTMLElement
     expect(row.textContent).toContain('fix login')
     await act(async () => { row.click() })

@@ -1,3 +1,4 @@
+import { shellAvailability } from '../../sessions/terminals/terminal-shell-availability';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { isMacHost } from '@shared/host-os';
 import { ChevronsUpDownIcon, Plus } from '@/lib/icons'
@@ -5,12 +6,13 @@ import { Minus } from '@/lib/icons'
 import React, { useCallback, useMemo, useState } from 'react';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { cn } from '@renderer/utils/utils';
-import { useInstalledFonts } from '@renderer/features/settings/use-installed-fonts';
 import { TerminalShellOptionLabel } from '@renderer/lib/components/terminal-shell-option-label';
-import {
-  DEFAULT_TERMINAL_SHELL_AVAILABILITY,
-  useTerminalShellAvailability,
-} from '@renderer/lib/hooks/use-terminal-shell-availability';
+import { replica, useReplica } from '@/lib/replica';
+import { Unknown } from '@/components/ui/Unknown';
+import { rpc } from '@renderer/lib/ipc';
+import type { AppSettings } from '@shared/core/app-settings';
+import type { AppSettingsKeyApi } from '../use-app-settings-key';
+import { SettingValue } from './SettingControls';
 import { Button } from '@renderer/lib/ui/button';
 import {
   Combobox,
@@ -92,18 +94,33 @@ const clampFontSize = (size: number) =>
 
 const isMac = isMacHost();
 
+/** Fonts installed on this device. Listed fresh on every open (a font installed meanwhile shows up); the last list shows until then. */
+const installedFonts = replica({
+  name: 'installedFonts',
+  scope: 'device',
+  read: async () => {
+    const result = await rpc.app.listInstalledFonts({ refresh: true });
+    if (!result?.success || !Array.isArray(result.fonts)) throw new Error('Could not list installed fonts');
+    return Array.from(new Set(result.fonts.map((font) => font.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  },
+  persist: { maxBytes: 8192, maxEntries: 1 },
+});
+
 const TerminalSettingsCard: React.FC = () => {
-  const {
-    value: terminal,
-    update,
-    isLoading: loading,
-    isSaving: saving,
-  } = useAppSettingsKey('terminal');
+  const api = useAppSettingsKey('terminal');
+  return (
+    <SettingValue reading={api.settings} placeholder="h-56 w-full">
+      {({ value }) => <TerminalSettingsForm terminal={value} api={api} />}
+    </SettingValue>
+  );
+};
+
+const TerminalSettingsForm: React.FC<{ terminal: AppSettings['terminal']; api: AppSettingsKeyApi<'terminal'> }> = ({ terminal, api }) => {
+  const { update, isSaving: saving } = api;
   const [pickerOpen, setPickerOpen] = useState<boolean>(false);
   const [query, setQuery] = useState<string>('');
-  const { fonts: installedFonts, isLoading: loadingFonts } = useInstalledFonts();
-  const { data: localShellAvailability = DEFAULT_TERMINAL_SHELL_AVAILABILITY } =
-    useTerminalShellAvailability(undefined);
+  const fonts = useReplica(installedFonts, []);
+  const shells = useReplica(shellAvailability, []);
   const { translate } = useSessionMessages();
 
   const defaultFontOption = useMemo<FontOption>(
@@ -114,26 +131,18 @@ const TerminalSettingsCard: React.FC = () => {
     [translate]
   );
 
-  const fontFamily = terminal?.fontFamily ?? '';
-  const fontSize = terminal?.fontSize ?? TERMINAL_FONT_SIZE_DEFAULT;
-  const autoCopyOnSelection = terminal?.autoCopyOnSelection ?? false;
-  const macOptionIsMeta = terminal?.macOptionIsMeta ?? false;
-  const defaultShell = terminal?.defaultShell ?? 'system';
-  const selectedShell = useMemo(
-    () =>
-      localShellAvailability.find((entry) => entry.id === defaultShell) ?? {
-        id: defaultShell,
-        label: defaultShell === 'system' ? translate('terminal.shellLoading') : defaultShell,
-        isSystemDefault: false,
-        available: true,
-      },
-    [defaultShell, localShellAvailability, translate]
-  );
+  // 字体与字号可以没存过(schema 可选):那就是内置默认,不是「还没读到」。
+  const fontFamily = terminal.fontFamily ?? '';
+  const fontSize = terminal.fontSize ?? TERMINAL_FONT_SIZE_DEFAULT;
+  const { autoCopyOnSelection, macOptionIsMeta, defaultShell } = terminal;
+  const selectedShell = shells.state === 'value' ? shells.value.find((entry) => entry.id === defaultShell) ?? null : null;
 
   const groups = useMemo<FontGroup[]>(() => {
     const popularSet = new Set(POPULAR_FONTS.map((f) => f.toLowerCase()));
 
-    const installedSet = new Set(installedFonts.map((font) => font.toLowerCase()));
+    // Installed fonts not read (or the read failed): only the default; the picker says which, below the list.
+    if (fonts.state !== 'value') return [{ value: 'popular', label: translate('terminal.fontGroupPopular'), items: [defaultFontOption] }];
+    const installedSet = new Set(fonts.value.map((font) => font.toLowerCase()));
     const popularItems: FontOption[] = [defaultFontOption];
     for (const font of POPULAR_FONTS) {
       if (installedSet.has(font.toLowerCase())) {
@@ -142,7 +151,7 @@ const TerminalSettingsCard: React.FC = () => {
     }
 
     const installedItems: FontOption[] = [];
-    for (const font of installedFonts) {
+    for (const font of fonts.value) {
       const lower = font.toLowerCase();
       if (popularSet.has(lower)) continue;
       installedItems.push({ value: font, label: font });
@@ -152,7 +161,7 @@ const TerminalSettingsCard: React.FC = () => {
       { value: 'popular', label: translate('terminal.fontGroupPopular'), items: popularItems },
       { value: 'installed', label: translate('terminal.fontGroupInstalled'), items: installedItems },
     ];
-  }, [defaultFontOption, installedFonts, translate]);
+  }, [defaultFontOption, fonts, translate]);
 
   const visibleGroups = useMemo<FontGroup[]>(() => {
     const q = query.trim().toLowerCase();
@@ -234,15 +243,23 @@ const TerminalSettingsCard: React.FC = () => {
           <Select
             value={defaultShell}
             onValueChange={(next) => applyDefaultShell(next as TerminalShellId)}
-            disabled={loading || saving}
+            disabled={saving}
           >
             <SelectTrigger className={cn(CONTROL_COLUMN_WIDTH, 'shrink-0 gap-2 [&>span]:line-clamp-none')}>
               <SelectValue>
-                <TerminalShellOptionLabel entry={selectedShell} showSystemBadge={false} />
+                {selectedShell ? (
+                  <TerminalShellOptionLabel entry={selectedShell} showSystemBadge={false} />
+                ) : shells.state === 'unknown' ? (
+                  <Unknown className="w-24" />
+                ) : (
+                  defaultShell
+                )}
               </SelectValue>
             </SelectTrigger>
             <SelectContent align="end" className="min-w-max">
-              {localShellAvailability.map((entry) => (
+              {shells.state === 'unknown' ? <Unknown className="m-2 w-24" /> : shells.state === 'error' ? (
+                <div className="p-2 text-sm text-foreground-muted">{translate('terminal.shellsLoadFailed')}</div>
+              ) : shells.value.map((entry) => (
                 <SelectItem
                   key={entry.id}
                   value={entry.id}
@@ -284,7 +301,7 @@ const TerminalSettingsCard: React.FC = () => {
                 render={
                   <button
                     type="button"
-                    disabled={loading || saving}
+                    disabled={saving}
                     className="flex h-9 w-full items-center justify-between rounded-md border border-border bg-transparent px-2.5 py-1 text-left text-sm font-normal outline-none disabled:opacity-50"
                   >
                     {/* 单行兜底:装着的字体名可以任意长,长了省略号收尾,❌ 不许折行把 36px 的按钮撑破。 */}
@@ -328,7 +345,9 @@ const TerminalSettingsCard: React.FC = () => {
                     </ComboboxGroup>
                   )}
                 </ComboboxList>
-                {loadingFonts ? (
+                {fonts.state === 'error' ? (
+                  <div className="px-3 py-2 text-sm text-foreground-muted">{translate('terminal.fontLoadFailed')}</div>
+                ) : fonts.state === 'unknown' ? (
                   <div className="px-1 pb-1">
                     <div className="px-2 py-1.5 text-xs text-foreground-muted">
                       {translate('terminal.fontGroupInstalled')}
@@ -353,7 +372,7 @@ const TerminalSettingsCard: React.FC = () => {
               type="button"
               variant="ghost"
               size="icon-xs"
-              disabled={loading || saving || fontSize <= TERMINAL_FONT_SIZE_MIN}
+              disabled={saving || fontSize <= TERMINAL_FONT_SIZE_MIN}
               onClick={() => applyFontSize(fontSize - 1)}
               aria-label={translate('terminal.fontSizeDecrease')}
             >
@@ -367,7 +386,7 @@ const TerminalSettingsCard: React.FC = () => {
               type="button"
               variant="ghost"
               size="icon-xs"
-              disabled={loading || saving || fontSize >= TERMINAL_FONT_SIZE_MAX}
+              disabled={saving || fontSize >= TERMINAL_FONT_SIZE_MAX}
               onClick={() => applyFontSize(fontSize + 1)}
               aria-label={translate('terminal.fontSizeIncrease')}
             >
@@ -381,7 +400,7 @@ const TerminalSettingsCard: React.FC = () => {
         control={
           <Switch
             checked={autoCopyOnSelection}
-            disabled={loading || saving}
+            disabled={saving}
             onCheckedChange={toggleAutoCopy}
           />
         }
@@ -392,7 +411,7 @@ const TerminalSettingsCard: React.FC = () => {
           control={
             <Switch
               checked={macOptionIsMeta}
-              disabled={loading || saving}
+              disabled={saving}
               onCheckedChange={toggleMacOptionIsMeta}
             />
           }

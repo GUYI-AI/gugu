@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { canonicalPath, type CanonicalPath } from '@gugu/session-core/files';
 import fs from 'node:fs';
 import { isFileNotFoundCode } from '@gugu/session-core/files';
 import { err, ok, withLease } from '@gugu/session-shared';
@@ -13,7 +14,7 @@ import { log } from '@main/lib/logger';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
 import type { CreateProjectResult, LocalProject, ProjectPathStatus } from '@shared/projects';
 import { isAppKeptDirectory } from '../app-kept-directory';
-import { getDirectoryStatus, projectPathKey } from '../path-utils';
+import { getDirectoryStatus } from '../path-utils';
 import { ensureProjectRepository } from './create-project-utils';
 import { ensureRepositoryWorkspace } from './ensure-repository-workspace';
 import { getLocalProjectByPath } from './getProjects';
@@ -55,7 +56,7 @@ export type CreateLocalProjectParams = {
 export async function createLocalProject(
   input: CreateLocalProjectParams
 ): Promise<CreateProjectResult> {
-  const params = { ...input, path: projectPathKey(input.path) };
+  const params = { ...input, path: canonicalPath(input.path) };
   // #609 人亲手加的目录原来是替人登记的 workspace(~ 上的,或迁移降下来的)⇒ 从此是项目(owner 10-28)。
   if (!params.automatic) {
     const kept = await getLocalProjectByPath(params.path);
@@ -94,7 +95,7 @@ export async function createLocalProject(
     });
   }
 
-  let gitInfo: { rootPath: string; baseRef: string | null };
+  let gitInfo: { rootPath: CanonicalPath; baseRef: string | null };
   // Blank and app-owned task directories keep their exact path and do not
   // inspect, initialize or rewrite Git, including an enclosing repository.
   if (
@@ -113,7 +114,7 @@ export async function createLocalProject(
       )
     );
     if (!repositoryResult.success) return repositoryResult;
-    gitInfo = repositoryResult.data;
+    gitInfo = { ...repositoryResult.data, rootPath: canonicalPath(repositoryResult.data.rootPath) };
   }
 
   // #7341 一个文件夹只属于一个项目:它已经挂在某个项目下 ⇒ 打开的就是那个项目,❌ 再建一个让它同属两个项目。

@@ -4,8 +4,6 @@ import { HEADER_ROW_EXTRA_H } from '@session-chat/components/engine/row-metrics'
 import type { MeasureCtx, RenderCtx } from '@session-chat/core/define';
 import type { SegmentCtx } from '@session-chat/core/units';
 import { defineUnit } from '@session-chat/core/units';
-import { pxTokens } from '@session-chat/styles/px-tokens';
-import { assignInlineVars } from '@vanilla-extract/dynamic';
 import { createMemo, Show } from 'solid-js';
 import type { ChatSubagentToolCall, SubagentPhase, ToolNode } from '@session-chat/model';
 import { ToolPayloadPanel } from '../tool/Tool';
@@ -13,7 +11,7 @@ import { toolPayloadFor } from '../tool/tool.def';
 import { hasToolPayload } from '../tool/tool.layout';
 import { SubagentHeader } from './Subagent';
 import { toolFailureReason } from '../tool-failure-reason';
-import { subagentRoot, subagentVars } from './subagent.css';
+import { subagentRoot } from './subagent.css';
 
 type SpawnSubagentToolNode = Extract<ToolNode, { kind: 'spawn-subagent-tool-call' }>;
 
@@ -105,7 +103,7 @@ function SubagentUnitRender(props: {
   return (
     <div
       class={subagentRoot}
-      style={assignInlineVars(subagentVars, pxTokens({ height: height() + (payload()?.panelH ?? 0) }))}
+      style={{ height: `${height() + (payload()?.panelH ?? 0)}px` }}
     >
       <SubagentHeader
         item={props.data}

@@ -78,7 +78,7 @@ function classifyJsonConfig(content: string): JsonConfigOutcome {
 }
 
 export async function readJsonConfig(
-  fs: PluginFs,
+  fs: Pick<PluginFs, 'read'>,
   path: string,
   ownership: JsonConfigOwnership
 ): Promise<Record<string, unknown>> {
@@ -102,7 +102,7 @@ export async function readJsonConfig(
 // ⇒ writeJsonConfig 仍是「让文件等于这个对象」,但不再整篇重排、不再抹掉用户注释(#4604 / #4593)。
 // ownership='gugu-managed' 且原文畸形 = **自愈**:丢弃坏字节、从 {} 种子整份重建(等价旧码无条件覆盖)。
 export async function writeJsonConfig(
-  fs: PluginFs,
+  fs: Pick<PluginFs, 'read' | 'write'>,
   path: string,
   config: Record<string, unknown>,
   ownership: JsonConfigOwnership
@@ -160,7 +160,7 @@ export async function writeJsonConfig(
  * (判据里带了这条的阳控)。
  */
 export async function stripManagedJsonHooks(
-  fs: PluginFs,
+  fs: Pick<PluginFs, 'read' | 'write'>,
   configPath: string,
   ownership: JsonConfigOwnership
 ): Promise<void> {
@@ -407,6 +407,11 @@ type FlatTomlHookConfigOptions = {
   stringifyEntry?: (entry: Record<string, unknown>) => string;
 };
 
+/** The entries of a flat TOML `hooks` array; none when the file has no array. */
+export function flatTomlHookEntries(config: Record<string, unknown>): Record<string, unknown>[] {
+  return Array.isArray(config.hooks) ? (config.hooks as Record<string, unknown>[]) : [];
+}
+
 /**
  * Build an `IHooksBehavior` for agents that store hooks as a flat TOML array:
  *   `[[hooks]]` / `{ hooks = [{ ... }] }`
@@ -417,10 +422,8 @@ export function buildFlatTomlHookConfig(
   options: FlatTomlHookConfigOptions = {}
 ) {
   const stringifyEntry = options.stringifyEntry ?? JSON.stringify;
-  const getHookEntries = (config: Record<string, unknown>) =>
-    Array.isArray(config.hooks) ? (config.hooks as Record<string, unknown>[]) : [];
   const hasGuguHook = (config: Record<string, unknown>) =>
-    getHookEntries(config).some((entry) => stringifyEntry(entry).includes(GUGU_HOOK_MARKER));
+    flatTomlHookEntries(config).some((entry) => stringifyEntry(entry).includes(GUGU_HOOK_MARKER));
 
   return {
     async readHooks(fs: PluginFs): Promise<HookRegistration[]> {
@@ -430,17 +433,20 @@ export function buildFlatTomlHookConfig(
     async writeHooks(fs: PluginFs, _hooks: HookRegistration[]): Promise<string[]> {
       const config = await readTomlConfig(fs, configPath);
       await options.beforeWrite?.(fs);
-      const userHooks = filterUserHooks(getHookEntries(config), stringifyEntry);
+      const userHooks = filterUserHooks(flatTomlHookEntries(config), stringifyEntry);
       await writeTomlConfig(fs, configPath, { ...config, hooks: [...userHooks, ...entries] });
       const extraPaths = (await options.afterWrite?.(fs)) ?? [];
       return [configPath, ...extraPaths];
     },
     async deleteHooks(fs: PluginFs): Promise<void> {
       const config = await readTomlConfig(fs, configPath);
-      await writeTomlConfig(fs, configPath, {
-        ...config,
-        hooks: filterUserHooks(getHookEntries(config), stringifyEntry),
-      });
+      // 没有 hooks 数组(含文件不在)= 没有我们的条目:❌ 往人的文件里写一个 `hooks = []`(同 JSON 那侧 #4621 ①)。
+      if (Array.isArray(config.hooks)) {
+        await writeTomlConfig(fs, configPath, {
+          ...config,
+          hooks: filterUserHooks(flatTomlHookEntries(config), stringifyEntry),
+        });
+      }
       await options.afterDelete?.(fs);
     },
     async getHooksInstalled(fs: PluginFs): Promise<boolean> {

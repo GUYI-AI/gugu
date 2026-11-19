@@ -1,10 +1,9 @@
 import { motion, useTransform } from 'framer-motion'
 import { observer } from 'mobx-react-lite'
 import { useEffect, type ReactNode } from 'react'
-import { publishListHotkey, publishPanelToggle } from '@/lib/panelToggles'
+import { publishPanelToggle } from '@/lib/panelToggles'
 import { readRendererPlatform, shellRestoreLane, TITLEBAR_LEFT_EDGE_GAP_PX } from '@/lib/window-chrome'
-import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key'
-import { getEffectiveHotkey } from '@renderer/lib/hooks/useKeyboardShortcuts'
+import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts'
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider'
 import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
@@ -15,19 +14,17 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
  */
 export const ShellSidebarToggle = observer(function ShellSidebarToggle() {
   const { translate } = useSessionMessages()
-  const { value: keyboard } = useAppSettingsKey('keyboard')
-  const { isLeftOpen, isLeftPeeking, toggleLeft, setTriggerHovered } = useWorkspaceLayoutContext()
+  const keyboard = useShortcutOverrides()
+  const { isLeftOpen, toggleLeft } = useWorkspaceLayoutContext()
   const hotkey = getEffectiveHotkey('app.toggleLeftSidebar', keyboard)
   const shortcut = hotkey ? formatHotkeyText(hotkey) : undefined
   const label = translate(isLeftOpen ? 'task.collapseSidebar' : 'task.expandSidebar')
 
   useEffect(
     () =>
-      publishPanelToggle('list:sessions', { open: isLeftOpen, label, peeking: isLeftPeeking, toggle: toggleLeft, setTriggerHovered, shortcut }),
-    [isLeftOpen, isLeftPeeking, label, setTriggerHovered, shortcut, toggleLeft]
+      publishPanelToggle('list:sessions', { open: isLeftOpen, label, toggle: toggleLeft, shortcut }),
+    [isLeftOpen, label, shortcut, toggleLeft]
   )
-  // 对话页的列表栏用同一个键(useListColumnCollapse)。
-  useEffect(() => publishListHotkey(hotkey), [hotkey])
 
   return null
 })
@@ -74,11 +71,12 @@ export const ShellTitlebar = observer(function ShellTitlebar({
    */
   dragRegion?: boolean
 }) {
-  const { leftAnimatedWidth } = useWorkspaceLayoutContext()
+  const { leftLayoutWidth } = useWorkspaceLayoutContext()
 
   // leftSlot 只需要让开**压在主区上的那一截**开关车道:侧栏越宽,按钮越多地压在侧栏上,
-  // 主区这边要让的就越少。用同一个动画值算,于是它和侧栏是连续地一起动,❌ 不是随 isLeftOpen 瞬跳。
-  const leftSlotOffset = useTransform(leftAnimatedWidth, (width) =>
+  // 主区这边要让的就越少。读主区左缘所在的那个宽(侧栏在布局里的占位宽,@@@overlay-collapse):收展动画里它只在
+  // 侧栏盖住这一截时跳一次。
+  const leftSlotOffset = useTransform(leftLayoutWidth, (width) =>
     Math.max(TITLEBAR_LEFT_EDGE_GAP_PX, shellRestoreLane(readRendererPlatform()) - width)
   )
 

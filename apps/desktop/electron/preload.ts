@@ -1,3 +1,4 @@
+import type { AttachmentUploadIpc } from './attachmentUploadHost'
 import type { PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { contextBridge, ipcRenderer } from 'electron'
@@ -15,11 +16,11 @@ import {
 import { UI_EVENTS } from '../src/lib/uiEvents'
 import { MAIN_UI_EVENTS } from '../src/lib/mainUiEvents'
 import { HOST_SYSTEM_LANGUAGES_CHANNEL } from '../shared/host-localization'
+import { FIRST_FRAME_CHANNEL, FIRST_FRAME_GLOBAL, type FirstFrameAnswer, type FirstFrameGlobal, type FirstFrameRequest } from '../shared/first-frame'
+import { documentStorage, removeStoredPreferences, storedPreferenceStrings } from '../shared/device-preferences'
 import {
   WINDOW_MATERIAL_CHANGED_CHANNEL,
   WINDOW_MATERIAL_GET_CHANNEL,
-  WINDOW_THEME_PREFERENCE_CHANNEL,
-  type ThemePreferenceValue,
   type WindowMaterial,
 } from '../shared/window-material'
 
@@ -101,7 +102,7 @@ function emdashRequestWirePort(channel: string): Promise<void> {
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // @@@sessionpage — generic RPC/event/wire surface the session-page renderer expects (additive).
-  invoke: (channel: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(channel, ...args),
+  invoke: ((channel: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(channel, ...args)) as AttachmentUploadIpc['invoke'] & ((channel: string, ...args: unknown[]) => Promise<unknown>),
   eventSend: (channel: string, data: unknown): void => ipcRenderer.send(channel, data),
   eventOn: (channel: string, cb: (data: unknown) => void): (() => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, data: unknown): void => cb(data)
@@ -144,22 +145,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setBadge: (count: number): void => {
     ipcRenderer.send('set-badge', count)
   },
-  // @@@5295 托盘数字角标的开关(app 设置 · 通用)。渲染层持有偏好,主进程只被告知。
-  setTrayBadgeEnabled: (enabled: boolean): void => {
-    ipcRenderer.send('set-tray-badge-enabled', enabled)
-  },
-  syncResolvedLocale: async (locale: 'zh-CN' | 'en-US'): Promise<void> => {
-    await ipcRenderer.invoke('locale:sync-resolved', locale)
-  },
   // @@@window-tone — 无边框窗口露出来的那块底色要跟着咕咕的主题走(见 main.ts 同名注释)。
   // 用 send 不用 invoke:它在首帧前就要发一次,不该让渲染阻塞等主进程应答。
   syncWindowTone: (tone: 'light' | 'dark', themeColors?: Record<string, string>): void => {
     ipcRenderer.send('window:sync-tone', tone, themeColors)
   },
-  // @@@native-appearance (#7333) 偏好原样给主进程(mac 上照抄成 nativeTheme.themeSource),同步答回此刻的真实明暗 ——
-  // 切回「跟随系统」时 renderer 用这个答案落主题,不先拿旧的 matchMedia 画错一帧。主进程同步失败答 null。
-  syncThemePreference: (preference: ThemePreferenceValue): 'light' | 'dark' | null =>
-    ipcRenderer.sendSync(WINDOW_THEME_PREFERENCE_CHANNEL, preference),
   relaunchApp: (): Promise<void> => ipcRenderer.invoke('app:relaunch'),
   onAppForeground: (callback: () => void): (() => void) => {
     const listener = () => callback()
@@ -180,9 +170,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('device:self-identified', listener)
   },
   getLocalDeviceSelfSnapshot: (): Promise<unknown> => ipcRenderer.invoke('device:get-self-snapshot'),
-  // @@@share-card-rename 改名的本机那半:花名册上的 name(会话页读它)。云端改完再调,详见 main 侧同名注释。
-  renameOwnedAgentLocalFootprint: (agentUserId: string, name: string): Promise<boolean> =>
-    ipcRenderer.invoke('owned-agent:rename-local-footprint', { agentUserId, name }),
 })
 
 // @@@host-system-languages — 宿主真实系统语言。同步取值:renderer 的 i18n runtime 是模块副作用,在第一帧
@@ -210,6 +197,18 @@ contextBridge.exposeInMainWorld('guguHostLocale', {
   // languagechange 监听在桌面上会退化成一个永远算出同一个值的空动作。
   readSystemLanguages: readHostSystemLanguages,
 })
+
+// @@@first-frame — view state and device preferences are in the first frame: one synchronous read, taken once. It carries
+// what the old preference keys still hold (the one-time move, @@@device-preferences); the keys main settled are deleted.
+function takeFirstFrame(): FirstFrameGlobal {
+  // A document without storage of its own (an error page's opaque origin) has no old keys to move.
+  const storage = documentStorage(globalThis)
+  const request: FirstFrameRequest = { storedPreferences: storage ? storedPreferenceStrings(storage) : {} }
+  const { settled, ...firstFrame } = ipcRenderer.sendSync(FIRST_FRAME_CHANNEL, request) as FirstFrameAnswer
+  if (storage) removeStoredPreferences(storage, settled)
+  return firstFrame
+}
+contextBridge.exposeInMainWorld(FIRST_FRAME_GLOBAL, takeFirstFrame())
 
 // @@@822 frameless 自绘标题栏: Windows/Linux 无原生边框,窗口控制(最小化/最大化/关闭)走这里。
 // Mac 用原生交通灯(titleBarStyle:hiddenInset),不经此桥。通道名与 main 的 ipcMain handlers 对齐。

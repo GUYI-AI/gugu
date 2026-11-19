@@ -24,6 +24,7 @@ import type { TranscriptTurn } from '@gugu/session-core/acp';
 import type { Session } from '@shared/core/sessions/sessions';
 import { state as inputState, changed as inputsChanged, EMPTY as NO_INPUTS } from '@/lib/sessionInputOutboxBridge';
 import { installAcpChatStoreHost, replica } from './acp-chat-store.test-host';
+import { sessionLifeView } from '../stores/session-life-views';
 
 const records = vi.hoisted(() => new Map<string, Partial<Session>>());
 const link = vi.hoisted(() => ({
@@ -673,6 +674,23 @@ describe('#2558 新建会话带着第一句', () => {
   });
 });
 
+describe('restoring without a pending input is stoppable', () => {
+  it('keeps the restoring label and stop action until host cancellation, even with no pending message', async () => {
+    const { store } = storeFor({ providerId: 'codex', providerSessionId: 'prov-old' });
+    store.bootstrap();
+    await parked(store);
+    life.pend(store.sessionId, 'starting', []);
+    expect(store.transcriptPendingId).toBeNull();
+    expect(store.startPhaseOf(sessionLifeView(store.runtimeSessionId))).toBe('restoring');
+    expect(store.affordances.isWorking).toBe(true);
+    store.stop();
+    expect(life.stop).toHaveBeenCalledWith(store.runtimeSessionId);
+    life.pend(store.sessionId, 'dormant', [], 'user-stop');
+    expect(store.affordances.isWorking).toBe(false);
+    expect(store.startPhaseOf(sessionLifeView(store.runtimeSessionId))).toBeUndefined();
+  });
+});
+
 describe('the first message keeps one place while its session starts', () => {
   const row = (state: PendingRow['state']): PendingRow =>
     ({ seq: 1, messageId: 'm-first', preview: '说一句你好', text: '说一句你好', kind: 'ordinary', sentAt: 5000, discardable: true, state, failure: state === 'failed' ? 'boom' : null });
@@ -788,6 +806,22 @@ describe('the first message keeps one place while its session starts', () => {
     runInAction(() => { store.chatState.transcript.history.seed([turn('history', 0)]); store.transcriptRevision += 1; });
     expect(failed().map(t => t.id)).toEqual(['m-first:failed', 'm-second:failed']);
     expect(committedIds(store)).toEqual(['history', 'm-first:failed', 'm-second:failed']);
+    store.dispose();
+  });
+
+  it('re-projecting the same session state (each streamed chunk does) leaves the failed inputs unchanged for readers', async () => {
+    const { store } = storeFor();
+    store.bootstrap();
+    await parked(store);
+    let changes = 0;
+    const stop = reaction(() => store.failedRowIds, () => { changes++; });
+    for (let chunk = 0; chunk < 5; chunk++) life.pend(store.sessionId, 'ready', []);
+    expect(changes, 'no failed input before or after: nothing to re-render').toBe(0);
+    life.pend(store.sessionId, 'failed', [row('queued')], 'start-failed');
+    life.pend(store.sessionId, 'failed', [row('queued')], 'start-failed');
+    expect(store.failedRowIds).toEqual(['m-first']);
+    expect(changes, 'one change when an input fails, none when the same failure is projected again').toBe(1);
+    stop();
     store.dispose();
   });
 

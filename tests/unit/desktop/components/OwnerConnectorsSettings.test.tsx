@@ -9,7 +9,7 @@ const fixture = vi.hoisted(() => ({ data: {} as Record<string,unknown>,rows: [] 
   notify: vi.fn(),showSetup: vi.fn(),showGithub: vi.fn(),showConfirm: vi.fn(),retryOperation: vi.fn(async () => {}) }))
 vi.mock('@/lib/notices',() => ({ notify: fixture.notify }))
 vi.mock('@/lib/useAssistantHome',() => ({ useAssistantHome() { throw new Error('Unexpected assistant initialization') } }))
-vi.mock('@/hooks/useMobileShell',() => ({ useMobileShell: () => true }))
+vi.mock('@/hooks/useMobileShell',() => ({ useMobileShell: () => true, readMobileShell: () => true }))
 vi.mock('@/store/devicesContext',() => ({ useDevicesStore: () => ({ devices: [],loading: false,error: null }) }))
 vi.mock('@/components/settings/channels/useChatChannels',() => ({ useChatChannels: () => ({ list: null }) }))
 vi.mock('@/components/connections/useOwnerLibraryHost',() => ({ useOwnerLibraryHost: () => ({ key: 'owner:scope',remote: null,
@@ -81,7 +81,7 @@ describe('owner connection settings without an assistant or native host', () => 
     await render()
     const mine = [...harness.container.querySelectorAll<HTMLElement>('[role="tab"]')].find(tab => tab.textContent === '我的连接')!
     await clickElement(mine)
-    expect(q('assistant-connector-github').textContent).toContain('GitHub · 状态待确认')
+    expect(q('assistant-connector-github').textContent).toContain('GitHub: 状态待确认')
     expect(harness.container.textContent).not.toMatch(/连接操作|核实|重试/)
     expect(harness.container.querySelectorAll('[role="tab"][aria-selected="true"]')).toHaveLength(1)
     await clickElement(q('assistant-connector-github'))

@@ -103,6 +103,7 @@ export const AutomationRunRow = observer(function AutomationRunRow({
         error={run.error}
         delivery={deliveredTo !== undefined}
       />
+
     </div>
   );
 });

@@ -66,14 +66,14 @@ export default {
   "confirmations": {
     "archiveAgent": "Archive task for Agent “{{name}}”? Its conversation history, files and configuration are kept.",
     "archiveAgentNoTask": "This agent no longer has a task; only removing it from groups and contacts.",
-    "deleteAgent": "Archive task",
+    "deleteAgent": "Archive session",
     "deleteContact": "Delete contact “{{name}}”? This ends the friendship.",
     "dissolveGroup": "Dissolving this group removes every member. Continue?",
     "leaveGroup": "Leave this group chat?"
   },
   "contextMenu": {
     "more": "More",
-    "deleteAgent": "Archive task",
+    "deleteAgent": "Archive session",
     "deleteContact": "Delete contact",
     "disableNotifications": "Mute notifications",
     "dissolveGroup": "Dissolve group chat",
@@ -93,9 +93,9 @@ export default {
     "invitesFailed_one": "Group created, but {{count}} invitation failed. Retry it from the group members panel.",
     "invitesFailed_other": "Group created, but {{count}} invitations failed. Retry them from the group members panel.",
     "create": "Create group chat",
-    "createWithCount": "Create group chat · {{count}} members",
-    "createWithCount_one": "Create group chat · {{count}} member",
-    "createWithCount_other": "Create group chat · {{count}} members",
+    "createWithCount": "Create group ({{count}} members)",
+    "createWithCount_one": "Create group ({{count}} member)",
+    "createWithCount_other": "Create group ({{count}} members)",
     "creating": "Creating…",
     "emptyContacts": "No contacts",
     "failed": "Could not create the group chat",
@@ -107,10 +107,11 @@ export default {
     "title": "New group chat"
   },
   "memberPicker": {
+    "sources": "Member sources",
     "selectionUnavailable": "A selected member is unavailable or cannot be invited to this group.",
     "allProjects": "All",
     "allResults": "All results",
-    "localDevice": "{{name}} · This device",
+    "localDevice": "{{name}} (this device)",
     "recent": "Recent"
   },
   "errors": {
@@ -188,9 +189,9 @@ export default {
     "creator": "Created by {{name}}",
     "groupNumber": "Group ID {{number}}",
     "groupNumberHash": "Group ID #{{number}}",
-    "groupSummary": "Group ID {{number}} · {{count}} members",
-    "groupSummary_one": "Group ID {{number}} · {{count}} member",
-    "groupSummary_other": "Group ID {{number}} · {{count}} members",
+    "groupSummary": "Group ID {{number}}, {{count}} members",
+    "groupSummary_one": "Group ID {{number}}, {{count}} member",
+    "groupSummary_other": "Group ID {{number}}, {{count}} members",
     "inviteOnly": "Invite only",
     "inviteOnlyError": "This group is invite only",
     "inviteLinkClosed": "Invite link closed",
@@ -255,8 +256,8 @@ export default {
     "requestFailedFallback": "Request failed. Try again.",
     "requested": "Request sent \u2014 waiting for the group owner to approve",
     "searchPlaceholder": "Enter group ID",
-    "summary_one": "Group ID {{number}} \u00b7 {{count}} member",
-    "summary_other": "Group ID {{number}} \u00b7 {{count}} members",
+    "summary_one": "Group ID {{number}}, {{count}} member",
+    "summary_other": "Group ID {{number}}, {{count}} members",
     "title": "Join a group"
   },
   "panel": {
@@ -272,7 +273,7 @@ export default {
     "contactCountSummary_other": "{{count}} contacts total",
     "contactDetail": "Contact details",
     "contactSectionTitle": "People",
-    "createAgent": "Create Agent",
+    "createAgent": "Create agent",
     "createGroup": "Create group chat",
     "enterGroup": "Open group chat",
     "groupCount": "{{count}} groups",
@@ -390,14 +391,14 @@ export default {
     "namePlaceholder": "Tag name",
     "rename": "Rename {{name}}",
     "title": "Tags",
-    "titleWithCount": "Tag · {{count}} entries",
-    "titleWithCount_one": "Tag · {{count}} entry",
-    "titleWithCount_other": "Tag · {{count}} entries"
+    "titleWithCount": "Tag ({{count}} entries)",
+    "titleWithCount_one": "Tag ({{count}} entry)",
+    "titleWithCount_other": "Tag ({{count}} entries)"
   },
   "toast": {
-    "deleteAgentFailed": "Could not archive task",
+    "deleteAgentFailed": "Could not archive session",
     "deleteContactFailed": "Could not delete contact",
-    "deletedAgent": "Task archived",
+    "deletedAgent": "Session archived",
     "deletedContact": "Contact deleted",
     "dissolvedGroup": "Group chat dissolved",
     "dissolveFailed": "Could not dissolve group chat",

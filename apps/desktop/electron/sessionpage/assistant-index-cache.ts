@@ -105,7 +105,7 @@ export async function openingAssistantIndex(
   }
   const state = JSON.stringify({ source: 'assistant-opening-snapshot', status: cached ? 'cached' : 'not_loaded',
     observedAt: cached?.observedAt ?? null, refreshing: true,
-    read: { devices: 'session_devices', actions: 'device_actions', projects: 'project_list', library: 'library_read' } })
+    read: { devices: 'session_devices', actions: 'device_actions', projects: 'project_list' } })
   const note = '设备、项目等摘要在后台刷新；缓存不是当前在线或授权证明。使用前按读取入口核实，未载入不表示不存在。'
   const index = boundedAssistantIndex(cached
     ? ['<gugu_resource_index>', note, state, ...cached.index.split('\n').slice(1)]

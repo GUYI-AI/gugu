@@ -142,7 +142,7 @@ async function readInstalledPlugins(fs: PluginFs): Promise<InstalledPlugins> {
 }
 
 export function claudeMcpAdapter(): IMcpBehavior {
-  const passthrough = passthroughMcpAdapter('.claude.json');
+  const passthrough = passthroughMcpAdapter('.claude/.claude.json');
   const userPluginServers = async (fs: PluginFs) =>
     enabledPluginServers(fs, await readInstalledPlugins(fs), enabledPluginsOf(await readJsonObject(fs, '.claude/settings.json')));
   const readServers = async (fs: PluginFs): Promise<McpServerRegistration[]> => {
@@ -154,7 +154,7 @@ export function claudeMcpAdapter(): IMcpBehavior {
     ...passthrough,
     readServers,
     async readScopedServers(fs, dirs) {
-      const claudeJson = await readJsonObject(fs, '.claude.json');
+      const claudeJson = await readJsonObject(fs, '.claude/.claude.json');
       const projects = claudeJson?.projects;
       const byDir = projects && typeof projects === 'object' ? (projects as Record<string, Json>) : {};
       const userSettings = await readJsonObject(fs, '.claude/settings.json');

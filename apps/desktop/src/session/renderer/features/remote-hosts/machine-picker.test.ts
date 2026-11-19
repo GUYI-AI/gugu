@@ -71,9 +71,11 @@ function host(id: string, over: Partial<RemoteHostDevice> = {}): RemoteHostDevic
   };
 }
 
-function memoryStorage() {
-  const map = new Map<string, string>();
-  return { getItem: (k: string) => map.get(k) ?? null, setItem: (k: string, v: string) => void map.set(k, v) };
+/** A module's choice as it starts in a fresh run (the choice is a memory-only view-state entry, shared within one run). */
+function freshScope(key: string): DeviceScopeStore {
+  const store = new DeviceScopeStore(key);
+  store.select(LOCAL_DEVICE_SCOPE);
+  return store;
 }
 
 describe('机器选择器:一个组件、一个位置(#6264)', () => {
@@ -192,7 +194,7 @@ describe('机器选择器:一个组件、一个位置(#6264)', () => {
     expect(trigger.textContent).toContain('Linux 1');
     const row = container.querySelector('[data-device-id="linux1"]') as HTMLButtonElement;
     expect(row.querySelector('[data-slot="machine-dot"]')?.getAttribute('data-state')).toBe('offline');
-    expect(row.textContent).toMatch(/离线 · /);
+    expect(row.textContent).toMatch(/离线（.+）/);
   });
 
   it('菜单:每行图标、(别的机器)点、名字,右边「系统 · 连法」;选中的那行标出来;离线的淡着(能选与否看页面)', async () => {
@@ -201,9 +203,9 @@ describe('机器选择器:一个组件、一个位置(#6264)', () => {
     const row = (id: string) => container.querySelector(`[data-device-id="${id}"]`) as HTMLButtonElement;
     expect(row('d22').getAttribute('data-selected')).toBe('true');
     expect(row('local').getAttribute('data-selected')).toBe('false');
-    expect(row('d22').textContent).toContain('Linux · 远程 SSH');
+    expect(row('d22').textContent).toContain('Linux，远程 SSH');
     expect(row('local').textContent).toContain('macOS');
-    expect(row('linux1').textContent).toMatch(/离线 · /);
+    expect(row('linux1').textContent).toMatch(/离线（.+）/);
     expect(row('linux1').className).toContain('text-foreground-passive');
     expect(row('d22').className).toContain('bg-row-selected');
     expect(row('local').querySelector('[data-slot="machine-dot"]')).toBeNull();
@@ -222,8 +224,8 @@ describe('机器选择器:一个组件、一个位置(#6264)', () => {
 
   it('模块层挂一份:模块里每一页的标题右边都是同一个选择器、同一份选择', async () => {
     mocks.hosts.set('d22', { device: host('d22', { hostKind: 'server', directTerminal: true }) });
-    const library = new DeviceScopeStore('gugu.library.device', memoryStorage());
-    const automations = new DeviceScopeStore('gugu.automations.device', memoryStorage());
+    const library = freshScope('gugu.library.device');
+    const automations = freshScope('gugu.automations.device');
     await render(
       React.createElement(
         DeviceScopeProvider,
@@ -271,7 +273,7 @@ describe('机器选择器:一个组件、一个位置(#6264)', () => {
 
   it('资源库:模块层一个选择器在左栏列头下,子页标题旁不画,切换机器仍然生效', async () => {
     mocks.hosts.set('d22', { device: host('d22') });
-    const library = new DeviceScopeStore('gugu.library.device', memoryStorage());
+    const library = freshScope('gugu.library.device');
     const { PageSidebarMenu } = await import('@renderer/lib/components/page-layout');
     const { DeviceScopePicker } = await import('./device-scope-picker');
     await render(
@@ -307,7 +309,7 @@ describe('机器选择器:一个组件、一个位置(#6264)', () => {
   it('#2301 Q5:离线那句只在标题里说(「只读缓存」),正文不再画;连不上 / 读取失败照旧带「再试一次」', async () => {
     mocks.hosts.set('d22', { device: host('d22', { isOnline: false, lastSeenAt: new Date(Date.now() - 120_000).toISOString() }) });
     mocks.states.set('d22', 'offline');
-    const store = new DeviceScopeStore('gugu.automations.device', memoryStorage());
+    const store = freshScope('gugu.automations.device');
     store.select('d22');
     const { DeviceScopeNoticeLine } = await import('./device-scope-picker');
     const base = { retry: false, readOnly: true, inHeading: true };
@@ -362,12 +364,10 @@ describe('每个按机器的页面都挂在模块层、没有第二个选择器(
     expect(hits).toHaveLength(count);
   });
 
-  // owner:「资源库改了,你设置页也改啊」—— 资源库:左栏列头下一个选择器,整个资源库跟它走,子页标题旁不再各摆一个。
-  it('features/library/library-view.tsx:选择器只在左栏列头,内容区只挂一份不画选择器的 Provider', () => {
-    const source = read('features/library/library-view.tsx');
-    expect(source.match(/<DeviceScopePicker store=\{libraryDeviceStore\} variant="sidebar" \/>/g) ?? []).toHaveLength(1);
-    expect(source.match(/<DeviceScopeProvider store=\{libraryDeviceStore\} inTitle=\{false\}>/g) ?? []).toHaveLength(1);
-    expect(source).not.toMatch(/<DeviceScopeProvider store=\{\w+\}>/);
+  it('keeps market browsing on the local host without a machine picker', () => {
+    const source = read('features/apps/apps-views.tsx');
+    expect(source).toContain(': LOCAL_LIBRARY_HOST');
+    expect(source).not.toMatch(/DeviceScope(Picker|Provider)/);
   });
 
   it('旧的几处样子都删了:左栏列头下、搜索框旁、设置行里不再各摆一个', () => {
@@ -375,13 +375,6 @@ describe('每个按机器的页面都挂在模块层、没有第二个选择器(
     expect(read('features/automations/components/AutomationsHeader.tsx')).not.toContain('devicePicker');
     expect(read('features/settings/components/SessionSettingsRows.tsx')).not.toContain('DeviceScopePicker');
     expect(read('features/sessions/composer-context-tray.tsx')).not.toContain('ComposerDevicePicker');
-  });
-
-  it('资源库只有一个选择器:左栏「资源库」列头下,子页标题旁不画', () => {
-    const source = read('features/library/library-view.tsx');
-    expect(source.match(/<DeviceScopePicker\b/g)).toHaveLength(1);
-    expect(source).toContain('header={<DeviceScopePicker store={libraryDeviceStore} variant="sidebar" />}');
-    expect(source).toContain('<DeviceScopeProvider store={libraryDeviceStore} inTitle={false}>');
   });
 
   it('选机器的地方全用同一个组件:新建框也是它;会话历史不再选机器(全部机器一起列,机器只是筛选)', () => {

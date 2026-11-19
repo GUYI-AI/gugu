@@ -37,7 +37,7 @@ vi.mock('@renderer/features/sessions/pane-empty-state', () => ({
   getSessionWorkspaceActionOrder: () => ['side-session', 'review', 'terminal', 'browser', 'ports'],
   sessionWorkspaceActionBlocked: () => null, workspaceBlockedTitle: () => undefined,
 }));
-vi.mock('@renderer/features/settings/use-terminal-enabled', () => ({ useTerminalEnabled: () => true }));
+vi.mock('@renderer/features/settings/use-terminal-enabled', async (original) => { const { readValue } = await import('../../../../../../../tests/support/appSettingsDouble'); return { ...await original<object>(), useTerminalEnabled: () => readValue(true) } });
 vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgents: () => ({ data: [] }) }));
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: h.navigate }) }));
 vi.mock('@renderer/lib/commands/use-command-provider', () => ({

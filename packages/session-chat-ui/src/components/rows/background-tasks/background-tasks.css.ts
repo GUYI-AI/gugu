@@ -108,7 +108,7 @@ export const backgroundTaskStop = style({
 /** ×(只收起、不停)平时藏着,悬停那一行才露出来 —— 它不是这一行的主动作。 */
 export const backgroundTaskDismiss = style({
   visibility: 'hidden',
-  selectors: { [`${backgroundTaskRow}:hover &, &:focus-visible:not([data-pointer-focus] *)`]: { visibility: 'visible' } },
+  selectors: { [`${backgroundTaskRow}:hover &, &:focus-visible:not([data-pointer-focus])`]: { visibility: 'visible' } },
 });
 
 /**

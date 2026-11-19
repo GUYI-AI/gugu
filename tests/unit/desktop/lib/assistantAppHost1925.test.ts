@@ -51,7 +51,7 @@ beforeEach(() => {
 describe('each screen opens by its existing entry, and nothing else', () => {
   const ENTRY = { close: 'close', look: 'look', model: 'model', devices: 'settings:devices' } as const
 
-  // The assistant's own pages (setup, settings, move, connected apps, projects, capabilities) go over the App's panel, never
+  // The assistant's own pages (setup, settings, move, connected apps, projects) go over the App's panel, never
   // Settings (owner 11-12); `health` (49) is a phone's own page: main answers `unsupported` on a
   // computer and never asks the window.
   const SHELL_SCREENS = ASSISTANT_SCREENS.filter((screen) => !isAssistantLayerScreen(screen) && screen !== 'health')
@@ -63,7 +63,7 @@ describe('each screen opens by its existing entry, and nothing else', () => {
 
   it('the shell\'s screens are exactly these four; the assistant\'s own pages go over the App\'s panel, health is a phone\'s', () => {
     expect([...SHELL_SCREENS].sort()).toEqual(Object.keys(ENTRY).sort())
-    expect(ASSISTANT_SCREENS.filter(isAssistantLayerScreen)).toEqual(['setup', 'move', 'connected-apps', 'settings', 'projects', 'capabilities'])
+    expect(ASSISTANT_SCREENS.filter(isAssistantLayerScreen)).toEqual(['setup', 'move', 'connected-apps', 'settings', 'projects'])
     expect(ASSISTANT_SCREENS).toContain('health')
     expect(() => openAssistantScreen('health', OWNER)).toThrow()
     expect(entries()).toEqual([])

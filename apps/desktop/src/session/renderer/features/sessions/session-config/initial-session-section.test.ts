@@ -38,7 +38,7 @@ import { buildInitialSession } from '../create-session-modal/build-create-sessio
 import { LibraryHostProvider, machineLibraryHost } from '@renderer/features/library/library-host';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { runInAction } from 'mobx';
-import { queryClient } from '@renderer/lib/query-client';
+import { queryClient } from '@/lib/replica';
 import { notifyManager } from '@tanstack/react-query';
 // Deliver query results in the same task they resolve in, so a test's flush sees them.
 notifyManager.setScheduler((callback) => callback());
@@ -124,6 +124,7 @@ vi.mock('@renderer/lib/electron-api', () => ({
 
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
   getAgentConfigRuntimeClient: async () => ({
+    listCustomModels: async () => ({ success: true, data: [] }),
     listConnections: async () => ({ success: true, data: [{ id: 'native', kind: 'native', name: 'CLI', current: true }] }),
     refreshAuthStatus: async () => ({ success: true, data: { kind: 'unauthenticated' } }),
   }),
@@ -223,6 +224,12 @@ const harnessCatalogRef = vi.hoisted(() => ({ current: null as unknown }));
 function harnessCatalog(state: HarnessCatalogState) {
   harnessCatalogRef.current = state;
 }
+
+// Target capability queries have their own QueryClient-backed race tests.
+// These creation tests supply the default catalog directly.
+vi.mock('@renderer/lib/stores/use-target-model-catalog', () => ({
+  useTargetModelCatalog: () => undefined,
+}));
 
 vi.mock('@renderer/lib/stores/use-harness-model-catalog', () => ({
   HARNESS_MODEL_CATALOG_QUERY_KEY: ['agents', 'modelCatalog'],
@@ -526,7 +533,8 @@ vi.mock('@renderer/features/settings/use-app-settings-key', async () => {
   const { useSyncExternalStore } = await import('react');
   return {
     useAppSettingsKey: (key: string) => ({
-      value: useSyncExternalStore(settingsStore.subscribe, () => settingsStore.get(key)),
+      settings: ((value: unknown) => value === undefined ? { state: 'unknown' } : { state: 'value', value: { value, defaults: value, overrides: {} }, stale: false, error: null })(
+        useSyncExternalStore(settingsStore.subscribe, () => settingsStore.get(key))),
       update: (partial: Record<string, unknown>) => settingsStore.set(key, { ...((settingsStore.get(key) as object | undefined) ?? {}), ...partial }),
       updateAsync: async (partial: Record<string, unknown>) => {
         if (settingsStore.failure) throw settingsStore.failure;
@@ -536,11 +544,12 @@ vi.mock('@renderer/features/settings/use-app-settings-key', async () => {
   };
 });
 // 新任务框给不给「终端 | 通用」跟本机开关(应用设置 terminal.enabled)走:同一份内存设置里的 `terminal`。
-vi.mock('@renderer/features/settings/use-terminal-enabled', async () => {
+vi.mock('@renderer/features/settings/use-terminal-enabled', async (original) => {
   const { useSyncExternalStore } = await import('react');
   return {
-    useTerminalEnabled: () =>
-      useSyncExternalStore(settingsStore.subscribe, () => (settingsStore.get('terminal') as { enabled?: boolean | null } | undefined)?.enabled === true),
+    ...await original<object>(),
+    useTerminalEnabled: () => ({ state: 'value', stale: false, error: null,
+      value: useSyncExternalStore(settingsStore.subscribe, () => (settingsStore.get('terminal') as { enabled?: boolean | null } | undefined)?.enabled === true) }),
   };
 });
 const EMPTY_MEMORY = { lastPicked: null, lastStarted: null, sessionView: 'code' as const };
@@ -1701,7 +1710,7 @@ describe('InitialSessionField', () => {
     ]);
   });
 
-  it('routes an uninstalled agent action to its agent detail in the library', async () => {
+  it('routes an uninstalled agent action to the agent product page', async () => {
     await renderField();
     (window as typeof window & {
       __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void
@@ -1711,9 +1720,8 @@ describe('InitialSessionField', () => {
       props.onAgentAction?.('claude');
     });
     expect(mocks.hostInstallNavigation).toHaveBeenCalledWith('claude');
-    expect(mocks.navigate).toHaveBeenCalledWith('library', {
-      tab: 'agents',
-      agentId: 'claude',
+    expect(mocks.navigate).toHaveBeenCalledWith('apps', {
+      agentDetail: { kind: 'agent-app-detail', agentId: 'claude' },
     });
   });
 
@@ -2241,6 +2249,8 @@ describe('InitialSessionField', () => {
     // 组头与「登录之后」那一档共用同一个键 —— 同一档换内容不换标题。
     expect(unlock?.groupLabel).toBe('harnessCatalog.ownModelsGroup|Kimi');
     expect(unlock?.label).toBe('harnessCatalog.unlockModels|Kimi');
+    // Second line: what the panel it opens offers. Kimi declares only its CLI's own sign-in.
+    expect(unlock?.detail).toBe('harnessCatalog.access.account');
 
     // 反例对照:那条 toast 必须**真的没了** —— 只删渲染、判据仍绿的话这里会红。
     expect(
@@ -2283,6 +2293,12 @@ describe('InitialSessionField', () => {
       const trigger = document.createElement('button');
       trigger.textContent = 'Go sign in'; container.append(trigger);
       expect(latestState?.harnessSignIn).toBeTypeOf('function');
+      // The row inside the model menu that a signed-out catalog (`auth-required`) turns into.
+      expect(latestState?.harnessModelUnlock).toMatchObject({
+        groupLabel: `harnessCatalog.ownModelsGroup|${provider}`,
+        label: `harnessCatalog.unlockModels|${provider}`,
+        detail: 'harnessCatalog.access.account',
+      });
       await act(async () => { latestState?.harnessSignIn?.(trigger); });
       // Base UI portals are browser-only. This node suite checks the real state
       // request; agent-connection-panel.test.tsx exercises its actual menu/form.

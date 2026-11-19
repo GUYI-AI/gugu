@@ -6,6 +6,10 @@ const call: McpToolCall = { kind: 'mcp-tool-call', id: 'file', toolCallId: 'file
   server: 'plugin_gugu-product_gugu', status: 'done', rawInput: JSON.stringify({ chat_id: 'dm', file_path: '/private/actual.txt' }),
   outputText: JSON.stringify({ status: 'sent', message_id: id, file_name: 'proof.txt', file: `gugu-file://${id}?v=3` }) };
 describe('confirmed sent attachments', () => {
+  it('reads message_send carrying a file the same way, its text the caption', () => {
+    const send = { ...call, tool: 'message_send', rawInput: JSON.stringify({ chat_id: 'dm', file_path: '/private/actual.txt', text: 'the proof' }) };
+    expect(sentAttachmentOf(send)).toEqual({ messageId: id, name: 'proof.txt', kind: 'file', href: `gugu-message-file://${id}`, caption: 'the proof' });
+  });
   it('uses the receipt identity, filename and pinned file revision', () => {
     expect(sentAttachmentOf(call)).toEqual({ messageId: id, name: 'proof.txt', kind: 'file', href: `gugu-message-file://${id}` });
   });
@@ -14,13 +18,13 @@ describe('confirmed sent attachments', () => {
     expect(sentAttachmentOf({ ...call, rawOutput: JSON.stringify(output), outputText: undefined })).toEqual({ messageId: id, name: 'phone.txt', kind: 'file', href: `gugu-message-file://${id}` });
   });
   it('requires a successful root Gugu file-send receipt', () => {
-    for (const changed of [{ status: 'running' }, { status: 'error' }, { parentToolCallId: 'nested' }, { server: 'unrelated' }, { tool: 'message_send' }, { outputText: 'failed' }]) {
+    for (const changed of [{ status: 'running' }, { status: 'error' }, { parentToolCallId: 'nested' }, { server: 'unrelated' }, { tool: 'message_send', rawInput: JSON.stringify({ chat_id: 'dm', text: 'no file' }) }, { outputText: 'failed' }]) {
       expect(sentAttachmentOf({ ...call, ...changed } as McpToolCall)).toBeNull();
     }
   });
 });
 
-it.each([['image/png', 'proof.bin', 'image'], [undefined, 'PHOTO.JPEG', 'image'], ['application/octet-stream', 'proof.png', 'file'], [undefined, 'report.pdf', 'file']])('uses MIME %s and filename %s to classify %s', (mime_type, file_name, kind) => {
+it.each([['image/png', 'proof.bin', 'image'], [undefined, 'PHOTO.JPEG', 'image'], ['application/octet-stream', 'proof.png', 'image'], [undefined, 'report.pdf', 'file']])('uses MIME %s and filename %s to classify %s', (mime_type, file_name, kind) => {
   const chatId = '127ec4f0-30b1-4583-b469-706756153bdd';
   const result = sentAttachmentOf({ ...call, outputText: JSON.stringify({ message_id: id, mime_type, file_name, source_link: `gugu-chat://${chatId}/${id}` }) });
   expect(result).toMatchObject({ kind, href: `gugu-message-file://${id}?chat=${chatId}` });

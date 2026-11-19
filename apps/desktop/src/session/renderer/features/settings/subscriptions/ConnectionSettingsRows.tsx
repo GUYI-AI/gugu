@@ -1,3 +1,4 @@
+import { Unknown } from '@/components/ui/Unknown';
 import type { ReactNode } from 'react'
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config'
 import { SettingsGroup, SettingsRow } from '@/components/settings/SettingsPrimitives'
@@ -25,7 +26,8 @@ export function ConnectionSettingsRows({
   unreadable = false,
   embedded = false,
   children,
-  form
+  form,
+  localConfiguration
 }: {
   agentId: string
   /** 只列真有东西的连接;undefined = 还在读。 */
@@ -47,6 +49,7 @@ export function ConnectionSettingsRows({
   children: ReactNode
   /** 「添加连接」的就地表单;给了就展开在那一行里。 */
   form: ReactNode
+  localConfiguration: ReactNode
 }) {
   const { translate } = useSessionMessages()
   const current = connections?.find((c) => c.current)
@@ -89,8 +92,7 @@ export function ConnectionSettingsRows({
                   data-testid={`subscription-switch-${agentId}`}
                 >
                   <SelectValue>
-                    {name ??
-                      translate(connections ? 'agentsPage.noConnection' : 'subscriptions.checking')}
+                    {name ?? (connections ? translate('agentsPage.noConnection') : <Unknown className="w-20" />)}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent align="end" className="min-w-[300px]">
@@ -125,6 +127,7 @@ export function ConnectionSettingsRows({
           {form && <div className="agent-connection-form pt-1">{form}</div>}
         </SettingsRow>
       )}
+      {localConfiguration}
     </>
   )
   if (embedded)

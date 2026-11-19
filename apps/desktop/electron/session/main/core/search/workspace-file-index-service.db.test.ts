@@ -1,3 +1,4 @@
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -85,10 +86,10 @@ describe('WorkspaceFileIndexService', () => {
     await service.onWorkspaceFileChange('ws-1', {
       kind: 'changes',
       changes: [
-        { kind: 'create', path: '/repo/src/new.ts', entryType: 'file' },
-        { kind: 'update', path: '/repo/src/changed.ts', entryType: 'file' },
-        { kind: 'update', path: '/repo/src/missing.ts', entryType: 'file' },
-        { kind: 'delete', path: '/repo/src/old.ts', entryType: 'file' },
+        { kind: 'create', path: '/repo/src/new.ts' as CanonicalPath, entryType: 'file' },
+        { kind: 'update', path: '/repo/src/changed.ts' as CanonicalPath, entryType: 'file' },
+        { kind: 'update', path: '/repo/src/missing.ts' as CanonicalPath, entryType: 'file' },
+        { kind: 'delete', path: '/repo/src/old.ts' as CanonicalPath, entryType: 'file' },
       ],
     });
 
@@ -107,7 +108,7 @@ describe('WorkspaceFileIndexService', () => {
 
     await service.onWorkspaceFileChange('ws-1', {
       kind: 'changes',
-      changes: [{ kind: 'delete', path: '/repo/src', entryType: 'unknown' }],
+      changes: [{ kind: 'delete', path: '/repo/src' as CanonicalPath, entryType: 'unknown' }],
     });
 
     expect(indexedPaths(sqlite)).toEqual(['/repo/other.ts']);
@@ -153,7 +154,7 @@ describe('WorkspaceFileIndexService', () => {
 
     await service.onWorkspaceFileChange('ws-1', {
       kind: 'changes',
-      changes: [{ kind: 'create', path: '/repo/d.ts', entryType: 'file' }],
+      changes: [{ kind: 'create', path: '/repo/d.ts' as CanonicalPath, entryType: 'file' }],
     });
 
     expect(indexedPaths(sqlite)).toEqual(['/repo/a.ts', '/repo/b.ts']);
@@ -195,13 +196,13 @@ describe('WorkspaceFileIndexService', () => {
 
     const creates = Array.from({ length: 751 }, (_, index) => ({
       kind: 'create' as const,
-      path: `/repo/${index === 0 ? 'a' : `file-${index}`}.ts`,
+      path: `/repo/${index === 0 ? 'a' : `file-${index}`}.ts` as CanonicalPath,
       entryType: 'file' as const,
     }));
     const first = service.onWorkspaceFileChange('ws-1', { kind: 'changes', changes: creates });
     const second = service.onWorkspaceFileChange('ws-1', {
       kind: 'changes',
-      changes: [{ kind: 'delete', path: '/repo/a.ts', entryType: 'file' }],
+      changes: [{ kind: 'delete', path: '/repo/a.ts' as CanonicalPath, entryType: 'file' }],
     });
     await Promise.all([first, second]);
 
@@ -246,7 +247,7 @@ describe('WorkspaceFileIndexService', () => {
     await started;
     const update = service.onWorkspaceFileChange('ws-1', {
       kind: 'changes',
-      changes: [{ kind: 'create', path: '/repo/after.ts', entryType: 'file' }],
+      changes: [{ kind: 'create', path: '/repo/after.ts' as CanonicalPath, entryType: 'file' }],
     });
     releaseReindex?.();
     await update;
@@ -286,7 +287,7 @@ describe('WorkspaceFileIndexService', () => {
 
     await service.onWorkspaceFileChange('ws-1', {
       kind: 'changes',
-      changes: [{ kind: 'create', path: '/repo/c.ts', entryType: 'file' }],
+      changes: [{ kind: 'create', path: '/repo/c.ts' as CanonicalPath, entryType: 'file' }],
     });
 
     expect(indexedPaths(sqlite)).toEqual(['/repo/a.ts', '/repo/b.ts']);

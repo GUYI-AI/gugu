@@ -1,4 +1,5 @@
 import type { Result } from '@gugu/session-shared';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 export type ProjectPathStatus = {
   isDirectory: boolean;
@@ -12,7 +13,8 @@ export type LocalProject = {
   type: 'local';
   id: string;
   name: string;
-  path: string;
+  /** Its folder in its one spelling on its machine (`@@@canonical-path`). */
+  path: CanonicalPath;
   // gugu #2358: null = 项目目录不是 git 仓库(远程非 git 放行,product spec)。git 项目
   // (含 unborn 仓)永远有非空 baseRef,所以 null 唯一标识非 git —— 不必加数据库列。
   baseRef: string | null;
