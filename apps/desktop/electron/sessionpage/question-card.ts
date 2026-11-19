@@ -7,8 +7,7 @@ import type { RemoteSessionCaller } from '@gugu/session-core/session-record/cont
 import { parseConversationLink } from '@gugu/core/shared/ui/guguLink'
 import { serializeComposerCard } from '@gugu/core/shared/ui/taskCardModels'
 import { makeChatClient } from '../supabase'
-
-type Question = { question: string; options: ReadonlyArray<{ label: string }>; multi_select?: boolean }
+import { agentSettlementQuestions, type AgentQuestionInput } from '../session/main/core/sessions/agent-question-model'
 
 export interface QuestionCardInput {
   auth: { accessToken: string; userId: string }
@@ -38,7 +37,7 @@ async function postQuestionCard({ auth, caller, projectId, asked, questions }: Q
   const result = asked as { question_id?: unknown; source_link?: unknown } | null
   const questionId = typeof result?.question_id === 'string' ? result.question_id : null
   const source = typeof result?.source_link === 'string' ? parseConversationLink(result.source_link) : null
-  const all = questions as readonly Question[]
+  const all = questions as readonly AgentQuestionInput[]
   const first = all[0]
   if (!questionId || !source?.messageId || !first) return
   const chat = makeChatClient(auth.accessToken)
@@ -58,6 +57,7 @@ async function postQuestionCard({ auth, caller, projectId, asked, questions }: Q
       type: 'question',
       text: first.question,
       options: onePick ? first.options.map((option) => option.label) : [],
+      questions: agentSettlementQuestions(all),
       ownerUserId: auth.userId,
       questionId,
       sessionId: caller.sessionId,

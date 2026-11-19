@@ -310,6 +310,10 @@ export type Settlement = {
    * 别的端代答这道题**(终端腿、这家声明了关掉选择器的取消键 —— 宿主开时间线时判一次,只在那里判)。`title` / `options` 仍是第一题,老手机照旧画得出。
    */
   questions?: readonly SettlementQuestion[];
+  /** The host accepts an explicit per-question skip. Absent on older hosts and harness-owned questions. */
+  skippable?: true;
+  /** The host can end this ask so the owner and agent can discuss it in ordinary messages. */
+  canDiscuss?: true;
   /** 记录里问出这道题的时刻(与 `questions` 同在)。选择器只开在问出它的那一代 agent 进程里。 */
   askedAt?: number;
   /** 记录里这道题已经有了结果(答了或拒了)—— 终端里的选择器已经关了。只对带 `questions` 的项记。 */
@@ -337,9 +341,9 @@ export type SettlementQuestion = {
 
 /**
  * 一道题怎么答:选中的 label,外加(可选)自己写的一段话。
- * 单选:恰好一个 label,或者只有 `other`;多选:零到全部 label,外加可选的 `other`。
+ * 单选:恰好一个 label,或者只有 `other`;多选:零到全部 label,外加可选的 `other`。显式跳过时 `selected` 为空且不填 `other`。
  */
-export type QuestionAnswer = { selected: readonly string[]; other?: string };
+export type QuestionAnswer = { selected: readonly string[]; other?: string; skipped?: true };
 
 /**
  * 这一项从另一端(手机)答不答得了;答不了时码与宿主写侧抛的 `SessionWriteError` 同名。
@@ -493,6 +497,8 @@ export type PendingRequest = {
   options: readonly SettlementOption[];
   /** Host-owned structured question, answerable on every harness. */
   questions?: readonly SettlementQuestion[];
+  skippable?: true;
+  canDiscuss?: true;
   askedAt?: number;
   /** D-31 宿主替 agent 问的(不是它的 harness 问的):端上按 `host.kind` 画它自己的卡。 */
   origin?: AskOrigin;
@@ -1290,6 +1296,7 @@ export type SettlementResponse =
   | { itemId: string; kind: 'permission' | 'question'; optionId: string; digest?: string }
   /** 终端选择器(结算带 `questions` 的提问):每题一个答案,题序与 `Settlement.questions` 一致。 */
   | { itemId: string; kind: 'question'; answers: readonly QuestionAnswer[] }
+  | { itemId: string; kind: 'question'; discuss: true }
   | { itemId: string; kind: 'question'; decline: true };
 
 export type SessionpageSessionRespondRequest = SettlementResponse & {

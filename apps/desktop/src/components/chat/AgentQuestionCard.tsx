@@ -23,13 +23,14 @@ type AgentQuestionCardProps = {
   /** The chat message supplies the single outer frame and title. */
   embedded?: boolean
   respond: (answers: readonly QuestionAnswer[]) => Promise<SessionpageSessionRespondResult>
+  onDiscuss?: () => Promise<SessionpageSessionRespondResult>
 }
 
 export function AgentQuestionCard(props: AgentQuestionCardProps) {
   return <QuestionFlow key={agentQuestionDraftKey(props.scope, props.settlement)} {...props} />
 }
 
-function QuestionFlow({ scope, settlement, unavailable = false, mobile = false, embedded = false, respond }: AgentQuestionCardProps) {
+function QuestionFlow({ scope, settlement, unavailable = false, mobile = false, embedded = false, respond, onDiscuss }: AgentQuestionCardProps) {
   const { t } = useTranslation('assistant')
   const { toast } = useToast()
   const questions = settlement.questions ?? []
@@ -44,6 +45,7 @@ function QuestionFlow({ scope, settlement, unavailable = false, mobile = false, 
   const update = (next: Draft) => { drafts.set(key, next); setDraft(next) }
   const current = observed ?? settlement
   useEffect(() => { if (current.state !== 'pending') drafts.delete(key) }, [key, current.state])
+  if (current.state === 'resolved' && current.optionId === 'discuss') return <div className="agent-question-receipt" data-testid="agent-question-discussion">{t('question.discuss')}</div>
   if (current.state !== 'pending' || accepted) return null
   if (questions.length === 0) return null
   if (draft.deferred) return <div className="agent-question-receipt" data-testid="agent-question-deferred">
@@ -56,6 +58,11 @@ function QuestionFlow({ scope, settlement, unavailable = false, mobile = false, 
     custom: draft.custom.map((old, index) => index === draft.step ? custom : old),
   })
   const ready = questionAnswerReady(question, answer, draft.custom[draft.step] ?? false)
+  const skip = () => update({ ...draft,
+    answers: draft.answers.map((old, index) => index === draft.step ? { selected: [], skipped: true } : old),
+    custom: draft.custom.map((old, index) => index === draft.step ? false : old),
+    ...(draft.step < questions.length - 1 ? { step: draft.step + 1 } : { reviewing: true }),
+  })
   const submit = async () => {
     if (submitting.current || unavailable || !draft.reviewing || !questions.every((item, index) => questionAnswerReady(item, draft.answers[index]!, draft.custom[index] ?? false))) return
     submitting.current = true
@@ -65,6 +72,18 @@ function QuestionFlow({ scope, settlement, unavailable = false, mobile = false, 
       if (result.accepted) { setAccepted(true); drafts.delete(key) }
       else { setObserved(result.settlement); toast(t('question.noLongerWaiting'), 'info') }
     } catch (error) { rendererLogger('actions/AgentQuestionCard').error({ error: error }, 'action failed'); toast(t('question.failed'), 'error', messageForUser(error)) }
+    finally { submitting.current = false; setBusy(false) }
+  }
+  const discuss = async () => {
+    if (submitting.current || unavailable || !onDiscuss || settlement.canDiscuss !== true) return
+    submitting.current = true
+    setBusy(true)
+    try {
+      const result = await onDiscuss()
+      setObserved(result.settlement)
+      if (result.accepted) drafts.delete(key)
+      else toast(t('question.noLongerWaiting'), 'info')
+    } catch (error) { rendererLogger('actions/AgentQuestionCard').error({ error }, 'discussion failed'); toast(t('question.failed'), 'error', messageForUser(error)) }
     finally { submitting.current = false; setBusy(false) }
   }
   return <section className="agent-question-card" aria-label={t('question.title')} data-mobile={mobile || undefined} data-embedded={embedded || undefined} data-testid="agent-question-card" aria-busy={busy}>
@@ -99,8 +118,10 @@ function QuestionFlow({ scope, settlement, unavailable = false, mobile = false, 
       onEdit={index => update({ ...draft, step: index, reviewing: false })} />}
     {unavailable && <p className="agent-question-card__unavailable" role="status">{t('question.unavailable')}</p>}
     <div className="agent-question-card__footer">
+      {settlement.canDiscuss === true && onDiscuss && <Button variant="ghost" size="sm" className="agent-question-card__discuss" disabled={busy || unavailable} onClick={() => void discuss()}>{t('question.discuss')}</Button>}
       <Button variant="ghost" size="sm" className="agent-question-card__later" disabled={busy} onClick={() => update({ ...draft, deferred: true })}>{t('question.later')}</Button>
-      {(draft.reviewing || draft.step > 0) && <Button variant="ghost" size="sm" disabled={busy} onClick={() => update({ ...draft, step: draft.reviewing ? draft.step : draft.step - 1, reviewing: false })}>{t(draft.reviewing ? 'question.back' : 'question.previous')}</Button>}
+      {(draft.reviewing || draft.step > 0) && <Button variant="ghost" size="sm" aria-label={t(draft.reviewing ? 'question.back' : 'question.previous')} disabled={busy} onClick={() => update({ ...draft, step: draft.reviewing ? draft.step : draft.step - 1, reviewing: false })}>←</Button>}
+      {!draft.reviewing && settlement.skippable === true && <Button variant="ghost" size="sm" className="agent-question-card__skip" disabled={busy || unavailable} onClick={skip}>{t('question.skip')}</Button>}
       <Button variant="primary" size="sm" className="agent-question-card__submit" disabled={(!draft.reviewing && !ready) || busy || unavailable}
         onClick={() => draft.reviewing ? void submit() : draft.step < questions.length - 1 ? update({ ...draft, step: draft.step + 1 }) : update({ ...draft, reviewing: true })}>
         {t(busy ? 'question.submitting' : draft.reviewing ? 'question.submit' : draft.step < questions.length - 1 ? 'question.next' : 'question.review')}

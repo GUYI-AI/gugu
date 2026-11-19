@@ -1,4 +1,5 @@
 import { transcriptFileRefSchema } from '@gugu/session-core/acp/client'
+import type { SettlementQuestion } from '@gugu/session-core/session-record/contract'
 
 /**
  * The cards a person's composer drops into a chat (gugu-dev#181「派任务」): a `content_type='card'` message whose
@@ -54,6 +55,8 @@ export interface QuestionCard {
   text: string
   /** The choices, when one pick answers it (one question, single choice); otherwise empty and it is answered in the session. */
   options: string[]
+  /** All public questions. Missing on older cards; private answers still come only from the owner's host. */
+  questions?: readonly SettlementQuestion[]
   /** The person asked (the agent's owner): only their reply answers it. */
   ownerUserId: string
   /** The settlement's item id in that session. */
@@ -68,6 +71,17 @@ export interface QuestionCard {
 export type ComposerCard = TaskCard | ScheduleCard | QuestionCard
 
 const isText = (value: unknown): value is string => typeof value === 'string' && value.length > 0
+const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
+
+function isQuestions(value: unknown): value is SettlementQuestion[] {
+  return Array.isArray(value) && value.length > 0 && value.every((question: unknown) => {
+    if (!isObject(question) || !isText(question.question) || typeof question.multiSelect !== 'boolean'
+      || (question.header !== undefined && typeof question.header !== 'string') || !Array.isArray(question.options)) return false
+    return question.options.every((option: unknown) => isObject(option) && isText(option.optionId) && isText(option.name)
+      && (option.description === undefined || typeof option.description === 'string'))
+      && new Set(question.options.map((option: { optionId: string }) => option.optionId)).size === question.options.length
+  })
+}
 
 /** The card in a `content_type='card'` message, or null when it is a card of some other shape. */
 export function parseComposerCard(content: string | null | undefined): ComposerCard | null {
@@ -90,6 +104,10 @@ export function parseComposerCard(content: string | null | undefined): ComposerC
   }
   if (card.type === 'question' && Array.isArray(card.options) && card.options.every(isText) && isText(card.ownerUserId)
     && isText(card.questionId) && isText(card.sessionId) && isText(card.projectId)) {
+    if (card.questions !== undefined && !isQuestions(card.questions)) {
+      const { questions: _invalid, ...legacy } = card
+      return legacy as unknown as QuestionCard
+    }
     return card as unknown as QuestionCard
   }
   return null
