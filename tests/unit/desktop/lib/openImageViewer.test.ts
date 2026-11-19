@@ -50,7 +50,7 @@ describe('galleryAround', () => {
     const first = thumb('https://img/first-thumb.png', 'first.png'), second = thumb('https://img/second.png', 'second.png')
     const gallery = document.createElement('div'); gallery.setAttribute('data-image-gallery', ''); gallery.append(first, second); document.body.append(gallery)
     const full = vi.fn(async () => 'blob:original')
-    const stop = registerFullImage(first, { full }, undefined, undefined, { chatId: 'source-chat', messageId: 'source-message' })
+    const stop = registerFullImage(first, full, undefined, undefined, { chatId: 'source-chat', messageId: 'source-message' })
     expect(galleryAround(second).items[0].source).toEqual({ chatId: 'source-chat', messageId: 'source-message' })
     expect(galleryAround(second).items[1].source).toBeUndefined()
     await expect(galleryAround(first).items[0].full?.()).resolves.toBe('blob:original')
@@ -110,7 +110,7 @@ describe('galleryAround', () => {
     const image = thumb('blob:thumbnail', 'a description')
     const file = { name: '截图.v2', contentType: 'image/png' }
     const load = vi.fn(async () => 'blob:original')
-    const release = registerFullImage(image, { full: load }, undefined, file)
+    const release = registerFullImage(image, load, undefined, file)
     expect(galleryAround(image).items[0]).toMatchObject({ alt: 'a description', file, full: load })
     release()
     expect(galleryAround(image).items[0].file).toBeUndefined()

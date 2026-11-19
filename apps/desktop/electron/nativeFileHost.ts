@@ -15,7 +15,7 @@ export type NativeFileReadCommand =
   | { op: 'nudge' }
   | ReadIdentity & (
     | { op: 'request'; purpose: FileReadOptions['purpose'] }
-    | { op: 'resolve'; purpose?: 'file' | 'preview'; preview?: 'view'; localOnly?: true; showFirst?: true }
+    | { op: 'resolve'; purpose?: 'file' | 'preview'; localOnly?: true; showFirst?: true }
     | { op: 'metadata' }
     | { op: 'cancel' | 'dispose' | 'ack' | 'preview' }
     | { op: 'read'; offset: number; length: number }
@@ -138,7 +138,7 @@ export function createNativeFileHost(deps: {
             return { ...outcome, revision: file.revision }
           }
           const file = command.purpose === 'preview'
-            ? await deps.reads.resolve(ref, actor, { purpose: 'preview', ...(command.preview === 'view' ? { preview: 'view' as const } : {}), signal })
+            ? await deps.reads.resolve(ref, actor, { purpose: 'preview', signal })
             : command.localOnly ? await deps.reads.resolve(ref, actor, { localOnly: true, signal })
               : await deps.reads.resolve(ref, actor, { showFirst: command.showFirst, signal })
           if (file?.status === 'ready') row.file = file

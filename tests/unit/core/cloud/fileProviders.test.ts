@@ -446,25 +446,6 @@ describe('one cloud provider and verified raw chunk cache', () => {
     expect(a.calls.filter(row => row.route === 'file-resolve').length).toBe(4)
     await waiting.dispose()
   })
-  it('a viewer preview asks the signer for its own transformation and keeps its own cached image', async () => {
-    const view = 'https://objects.invalid/file?auth_key=lease&x-oss-process=image/resize,w_2048/format,webp'
-    const imageRevision = { ...revision, content_type: 'image/png' }
-    const a = api(imageRevision, plain, { thumb_url: view }), images = new Map<string, Response>()
-    const imageCache = { match: vi.fn(async key => images.get(String(key))?.clone()), put: vi.fn(async (key, value) => { images.set(String(key), value.clone()) }) } as Pick<Cache, 'match' | 'put'>
-    const fetcher = vi.fn(async () => new Response('viewer preview', { headers: { 'content-type': 'image/webp' } }))
-    const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: cache().store, sink: async () => sink(), imageCache, fetch: fetcher as typeof fetch })
-    const resolve = createFileResolver({ ...cloud, local: async () => null, ssh: async () => null })
-    const preview = await resolve(context.ref, context.actor, { purpose: 'preview', preview: 'view' })
-    if (preview.status !== 'ready') throw Error('ready expected')
-    expect(await (await preview.content() as Blob).text()).toBe('viewer preview'); await preview.dispose()
-    expect(a.calls.find(row => row.route === 'file-download')!.body).toMatchObject({ preview: 'view', as: 'agent' })
-    expect([...images.keys()]).toEqual([expect.stringContaining('/preview/view/')])
-    const bubble = await resolve(context.ref, context.actor, { purpose: 'preview' })
-    if (bubble.status !== 'ready') throw Error('ready expected')
-    await bubble.content(); await bubble.dispose()
-    expect(a.calls.filter(row => row.route === 'file-download').at(-1)!.body).not.toHaveProperty('preview')
-    expect(images.size).toBe(2)
-  })
   it('a download into a sink still waits for the ACK and commits nothing when it is refused', async () => {
     const { local, cloud, answer } = await combined('revision')
     const commit = vi.fn(async () => bytesFile(new Uint8Array()))

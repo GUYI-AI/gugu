@@ -30,25 +30,9 @@ export async function attachmentMetadata(source: AttachmentSource): Promise<File
   return { status: 'ready', revision: file.revision }
 }
 
-export async function attachmentPreview(source: AttachmentSource, metadata?: FileMetadata, signal?: AbortSignal, size?: 'view') {
+export async function attachmentPreview(source: AttachmentSource, metadata?: FileMetadata, signal?: AbortSignal) {
   const ref = attachmentFileRef(source)
-  return ref ? resolveFile(ref, fileReader(), { purpose: 'preview', ...(size ? { preview: size } : {}), metadata, signal }) : goneFile
-}
-
-/**
- * A cloud image's preview at the viewer's size (the signer's fixed transformation), for the viewer to show while the
- * original is read. Null where there is none cheaper than the original itself: an image kept on a device, or one the
- * signer gives no transformation (SVG, too large to process).
- */
-export async function viewerPreview(source: AttachmentSource, metadata?: FileMetadata, signal?: AbortSignal): Promise<Blob | null> {
-  const preview = await attachmentPreview(source, metadata, signal, 'view')
-  if (preview.status !== 'ready') return null
-  try {
-    if (preview.revision.source !== 'managed-object' || !preview.revision.content_type.startsWith('image/')) return null
-    const blob = await preview.content()
-    // Without a transformation the preview is the original itself: the original read shows it.
-    return blob instanceof Blob && blob.size < preview.revision.size_bytes ? blob : null
-  } finally { await preview.dispose() }
+  return ref ? resolveFile(ref, fileReader(), { purpose: 'preview', metadata, signal }) : goneFile
 }
 async function sessionFileBytes(source: Extract<AttachmentSource, { kind: 'session-file' }>): Promise<AttachmentBytes> {
   const read = sessionFileReader(source.sessionId)
@@ -265,16 +249,8 @@ function decodedImage(url: string): Promise<void> {
  * refused, to take them down; a download or copy gets them only once acknowledged. Every caller follows the same read's
  * state; a failed read is dropped, so the next look reads again.
  */
-export function originalImage(source: AttachmentSource, options: { signal?: AbortSignal; onLink?: (link: FileRevision) => void; metadata?: FileMetadata } = {}): { full: NonNullable<ImageViewerItem['full']>; preview: NonNullable<ImageViewerItem['preview']>; release: () => void } {
+export function originalImage(source: AttachmentSource, options: { signal?: AbortSignal; onLink?: (link: FileRevision) => void } = {}): { full: NonNullable<ImageViewerItem['full']>; release: () => void } {
   let read: { shown: Promise<string>; verified: Promise<string> } | undefined, url: string | undefined, last: FileReadState | undefined, released = false
-  let view: Promise<string> | undefined, viewUrl: string | undefined
-  // The viewer's first sharp pixels while the original is read (a failed one is read again next time).
-  const preview = () => view ??= viewerPreview(source, options.metadata, options.signal).then((blob) => {
-    if (!blob) throw new Error('This image has no viewer preview')
-    const objectUrl = URL.createObjectURL(blob)
-    if (released) URL.revokeObjectURL(objectUrl); else viewUrl = objectUrl
-    return objectUrl
-  }).catch((error: unknown) => { view = undefined; throw error })
   const listeners = new Set<(state: FileReadState) => void>()
   const onState = (state: FileReadState) => { last = state; listeners.forEach((listener) => listener(state)) }
   const start = () => {
@@ -308,11 +284,7 @@ export function originalImage(source: AttachmentSource, options: { signal?: Abor
     if (listener) current.verified.finally(() => listeners.delete(listener)).catch(() => undefined)
     return display ? current.shown : current.verified
   }
-  return { full, preview, release: () => {
-    released = true
-    for (const objectUrl of [url, viewUrl]) if (objectUrl) URL.revokeObjectURL(objectUrl)
-    url = viewUrl = undefined
-  } }
+  return { full, release: () => { released = true; if (url) URL.revokeObjectURL(url); url = undefined } }
 }
 
 /** One file in the shared viewer: the bubble's thumbnail cache first, then the verified original, each read when shown. */

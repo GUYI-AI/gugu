@@ -191,14 +191,14 @@ export async function requestFile(ref: FileRef, actor: FileActor, options: FileR
 }
 
 export function resolveFile(ref: FileRef, actor: FileActor, options: { localOnly: true; signal?: AbortSignal }): Promise<ResolvedFile | null>
-export function resolveFile(ref: FileRef, actor: FileActor, options: { purpose: 'preview'; preview?: 'view'; metadata?: FileMetadata; signal?: AbortSignal }): Promise<ResolvedPreview>
+export function resolveFile(ref: FileRef, actor: FileActor, options: { purpose: 'preview'; metadata?: FileMetadata; signal?: AbortSignal }): Promise<ResolvedPreview>
 export function resolveFile(ref: FileRef, actor: FileActor, options?: { signal?: AbortSignal }): Promise<ResolvedFile>
-export async function resolveFile(ref: FileRef, actor: FileActor, options: { purpose?: 'preview'; preview?: 'view'; metadata?: FileMetadata; localOnly?: true; signal?: AbortSignal } = {}): Promise<ResolvedFile | ResolvedPreview | null> {
+export async function resolveFile(ref: FileRef, actor: FileActor, options: { purpose?: 'preview'; metadata?: FileMetadata; localOnly?: true; signal?: AbortSignal } = {}): Promise<ResolvedFile | ResolvedPreview | null> {
   const electron = globalThis.window?.electronAPI
-  const { purpose, preview: size, metadata, localOnly } = options
+  const { purpose, metadata, localOnly } = options
   const signal = anySignal([fileReadSignal(), options.signal])
   if (!electron) {
-    if (purpose === 'preview') return browser().reads.resolve(ref, actor, { purpose, ...(size ? { preview: size } : {}), metadata, signal })
+    if (purpose === 'preview') return browser().reads.resolve(ref, actor, { purpose, metadata, signal })
     return localOnly ? null : browser().reads.resolve(ref, actor, { signal })
   }
   if (purpose === 'preview' && metadata && metadata.status !== 'ready') return metadata
@@ -208,13 +208,13 @@ export async function resolveFile(ref: FileRef, actor: FileActor, options: { pur
   }
   const reader = nativeReader(electron, ref, actor, signal)
   try {
-    const file = await reader.call({ op: 'resolve', purpose, localOnly, ...(purpose === 'preview' && size ? { preview: size } : {}) })
+    const file = await reader.call({ op: 'resolve', purpose, localOnly })
     if (file?.status !== 'ready') { await reader.dispose(); return file }
     if (purpose !== 'preview') return nativeFileHandle(reader, actor, file.revision)
     const { revision } = file
     const image = revision.content_type.startsWith('image/')
     const key = revision.source === 'managed-object' && image && revision.sha256
-      ? `${attachmentCacheOrigin}/preview/${size ? `${size}/` : ''}${encodeURIComponent(JSON.stringify([getSupabaseUrl(), actor, fileRefKey(ref), revision.sha256]))}` : null
+      ? `${attachmentCacheOrigin}/preview/${encodeURIComponent(JSON.stringify([getSupabaseUrl(), actor, fileRefKey(ref), revision.sha256]))}` : null
     const content = async () => {
       if (key) {
         const hit = await (await attachmentCache()).match(key)

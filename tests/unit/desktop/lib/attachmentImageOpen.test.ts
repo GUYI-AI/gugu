@@ -3,7 +3,6 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { queryClient as attachmentQueryClient } from '@/lib/replica'
 import { openAttachmentImage, openAttachmentImages, originalImage } from '@/lib/attachmentBytes'
 import { FileReadError, type FileReadState } from '@gugu/core/shared/fileReads'
-import type { FileRevision } from '@gugu/core/shared/fileResolver'
 import { registerImageViewerHost, type ImageViewerRequest } from '@/lib/imageViewer'
 // The replica reads for the signed-in account, as the product publishes it.
 ;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'owner')
@@ -144,17 +143,3 @@ it('a refused acknowledgement takes the shown original down: the viewer hears fa
   original.release()
 })
 
-it('reads the viewer-size preview of a cloud image with the message metadata, and offers none for an image kept on a device', async () => {
-  const metadata = { status: 'ready' as const, revision: revision as FileRevision }
-  io.resolve.mockImplementation(async () => ({ status: 'ready', revision,
-    content: async () => new Blob(['view']), dispose: vi.fn() }))
-  const original = originalImage(source, { metadata })
-  await expect(original.preview()).resolves.toBe('blob:full')
-  expect(io.resolve).toHaveBeenCalledWith({ item_id: 'file', version: 2 }, expect.anything(), expect.objectContaining({ purpose: 'preview', preview: 'view', metadata }))
-  original.release()
-  const kept = { ...revision, source: 'local' }
-  io.resolve.mockImplementation(async () => ({ status: 'ready', revision: kept, content: vi.fn(), dispose: vi.fn() }))
-  const device = originalImage(source)
-  await expect(device.preview()).rejects.toThrow('This image has no viewer preview')
-  device.release()
-})

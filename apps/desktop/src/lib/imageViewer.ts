@@ -20,7 +20,7 @@ export interface ImageViewerItem {
   source?: { chatId: string; messageId?: string }
   resource?: ResourceContext
   url: string
-  /** Display-only pixels shown before the original: a file can open before they arrive (a thumbnail, or a chat image's larger viewer preview). */
+  /** A file can open before its display-only thumbnail arrives. */
   preview?: () => Promise<string>
   /** URLs owned by this request, released when the viewer closes. */
   release?: () => void
@@ -48,10 +48,9 @@ export interface ImageViewerItem {
 }
 
 /** 缩略图 <img> → 取它原图的办法(附件进群文件夹 ③:气泡用 CDN 缩略图,原图到看的时候才下)。 */
-const fullImageLoaders = new WeakMap<HTMLImageElement, Pick<ImageViewerItem, 'full' | 'preview' | 'resource' | 'file' | 'source' | 'size'>>()
-/** `original`: how to read its original, and the larger preview the viewer shows meanwhile (`originalImage`). */
-export function registerFullImage(thumb: HTMLImageElement, original: Pick<ImageViewerItem, 'full' | 'preview'>, resource?: ResourceContext, file?: ImageViewerItem['file'], source?: ImageViewerItem['source'], size?: Size): () => void {
-  const entry = { full: original.full, preview: original.preview, resource, file, ...(source ? { source } : {}), ...(size ? { size } : {}) }
+const fullImageLoaders = new WeakMap<HTMLImageElement, Pick<ImageViewerItem, 'full' | 'resource' | 'file' | 'source' | 'size'>>()
+export function registerFullImage(thumb: HTMLImageElement, load: NonNullable<ImageViewerItem['full']>, resource?: ResourceContext, file?: ImageViewerItem['file'], source?: ImageViewerItem['source'], size?: Size): () => void {
+  const entry = { full: load, resource, file, ...(source ? { source } : {}), ...(size ? { size } : {}) }
   fullImageLoaders.set(thumb, entry)
   return () => {
     if (fullImageLoaders.get(thumb) === entry) fullImageLoaders.delete(thumb)
