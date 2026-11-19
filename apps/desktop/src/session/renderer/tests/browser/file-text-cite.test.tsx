@@ -58,7 +58,7 @@ it('stores exact source selections and changes a file comment by deleting and se
   root = createRoot(host)
   await act(async () => {
     root.render(<><FileTextContent kind="text" content={'same line\nselected words\nselected words'}
-      onCite={vi.fn()} annotation={{ sessionId, path }} /><AnnotationTray sessionId={sessionId} onSend={() => {}} enabled /></>)
+      onCite={vi.fn()} annotation={{ sessionId, path }} /><AnnotationTray conversation={{ kind: 'session', sessionId }} onSend={() => {}} enabled /></>)
   })
   const range = document.createRange()
   const selected = host.querySelector('[data-file-line="3"]')!.firstChild!

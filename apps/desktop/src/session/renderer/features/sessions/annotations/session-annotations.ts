@@ -1,6 +1,7 @@
 import { action, makeAutoObservable, observable } from 'mobx';
 import type { SupportedLocale } from '@gugu/session-shared/format';
 import { enUSAnnotationMessages, zhCNAnnotationMessages } from '../../../localization/messages-annotations';
+import { annotationConversationKey, type AnnotationConversation } from '@shared/browser-annotation';
 
 export type AnnotationRect = { x: number; y: number; width: number; height: number };
 export type BrowserAnnotationSelection = {
@@ -102,10 +103,14 @@ export class SessionAnnotations {
 
 const drafts = new Map<string, SessionAnnotations>();
 export const sessionAnnotations = {
-  forSession(sessionId: string): SessionAnnotations {
-    let draft = drafts.get(sessionId);
-    if (!draft) { draft = new SessionAnnotations(); drafts.set(sessionId, draft); }
+  forConversation(conversation: AnnotationConversation): SessionAnnotations {
+    const key = annotationConversationKey(conversation);
+    let draft = drafts.get(key);
+    if (!draft) { draft = new SessionAnnotations(); drafts.set(key, draft); }
     return draft;
+  },
+  forSession(sessionId: string): SessionAnnotations {
+    return this.forConversation({ kind: 'session', sessionId });
   },
 };
 

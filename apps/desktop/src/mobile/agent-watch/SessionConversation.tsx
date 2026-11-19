@@ -405,7 +405,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       queuedPromptEdit={quotes.composer.queuedPromptEdit} onChangeQueuedPromptEdit={quotes.composer.changeQueuedPromptEdit} onFinishQueuedPromptEdit={quotes.composer.finishQueuedPromptEdit} renderQueuedPromptText={quotes.composer.renderQueuedPromptText}
       onInputChange={composerDraft.setText} onSubmit={submit} onSubmitWhileWorking={submit}
       attachmentStatus={attachmentWaiting ? translateSessionMessage('composer.attachmentWaiting') : undefined}
-      attachmentExtra={annotationItems.length ? <AnnotationTray sessionId={sessionId} onSend={() => { void submit(editor.current?.getText() ?? composerDraft.text) }} enabled={!sending && !stopping && !attachmentWaiting && !quotes.composer.queuedPromptEdit}
+      attachmentExtra={annotationItems.length ? <AnnotationTray conversation={{ kind: 'session', sessionId }} onSend={() => { void submit(editor.current?.getText() ?? composerDraft.text) }} enabled={!sending && !stopping && !attachmentWaiting && !quotes.composer.queuedPromptEdit}
         onRemove={id => { if (!inFlight.current) { const imageId = annotationImageId(id); uploads.forget(imageId); setAttachments(current => current.filter(file => file.id !== imageId)) } }} /> : null}
       attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')} onAttachmentsChange={changeAttachments}
       onRetryAttachment={uploads.retry} onFilesDropped={addFiles} onImageFilesDropped={addFiles}

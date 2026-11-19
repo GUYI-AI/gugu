@@ -10,6 +10,7 @@ import { AnnotationEditor } from '@renderer/features/sessions/annotations/annota
 import { HtmlPreviewSurface } from '@/components/preview/HtmlPreviewSurface';
 import { previewDocumentHtml } from '@shared/preview/preview-link-script';
 import { sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations';
+import type { AnnotationConversation } from '@shared/browser-annotation';
 import '@gugu/session-ui/styles/global';
 import '@gugu/session-ui/theme/theme.css';
 import '@gugu/session-ui/theme/semantic.css';
@@ -53,16 +54,16 @@ it('saves a selected target without requiring an optional comment', async () => 
   expect(save).toHaveBeenCalledExactlyOnceWith('');
 });
 
-function Fixture() {
-  const annotation = useBrowserAnnotations({ sessionId: 'focus-test', browserId: 'page', visible: true, available: true,
+function Fixture({ conversation = { kind: 'session', sessionId: 'focus-test' } }: { conversation?: AnnotationConversation } = {}) {
+  const annotation = useBrowserAnnotations({ conversation, browserId: 'page', visible: true, available: true,
     inspect: async () => { throw new Error('This keyboard test does not inspect the page'); } });
   return <><input aria-label="Composer draft" defaultValue="Draft" />{annotation.toolbar}<div style={{ position: 'relative', height: 400 }}>{annotation.overlay}</div></>;
 }
 
-it('keeps the canvas ready for another Space browse after native focus returns, while letting the composer accept typing', async () => {
+it.each<AnnotationConversation>([{ kind: 'chat', chatId: 'focus-group' }, { kind: 'session', sessionId: 'focus-test' }])('keeps the $kind canvas ready for another Space browse while letting its composer accept typing', async conversation => {
   await page.viewport(800, 600);
   harness = createReactHarness();
-  await harness.render(<SessionLocalizationProvider><Fixture /></SessionLocalizationProvider>);
+  await harness.render(<SessionLocalizationProvider><Fixture conversation={conversation} /></SessionLocalizationProvider>);
   const composer = harness.container.querySelector<HTMLInputElement>('input')!;
   composer.focus();
   await act(async () => { await userEvent.click(harness!.container.querySelector('button')!); });
@@ -117,7 +118,7 @@ it('reopens a saved marker at its anchor, preserves its number and deletes from 
   };
   const item = draft.add({ ...target, browserId: 'page', kind: 'browser', annotation: 'Original note', screenshot: new File([], 'note.png') }, 7);
   function MarkedPage() {
-    const annotation = useBrowserAnnotations({ sessionId: id, browserId: 'page', visible: true, available: true,
+    const annotation = useBrowserAnnotations({ conversation: { kind: 'session', sessionId: id }, browserId: 'page', visible: true, available: true,
       inspect: async () => ({ target }) });
     return <>{annotation.toolbar}<div className="gugu-skin" style={{ position: 'relative', width: 780, height: 500 }}>{annotation.overlay}</div></>;
   }

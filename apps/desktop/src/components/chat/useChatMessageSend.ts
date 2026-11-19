@@ -12,6 +12,9 @@ import { contentWithQuote } from './messageQuoteContent'
 import type { ChatMessageComposerProps } from './chatComposerModels'
 import { useChatStore } from '../../store/chatContext'
 import { messageFailureNotice } from '@/lib/messageFailureNotice'
+import { useLocale } from '@/i18n'
+import { translateSessionMessage } from '@renderer/localization/locale-store'
+import { annotationPrompt, sessionAnnotations, type SessionAnnotation } from '@renderer/features/sessions/annotations/session-annotations'
 
 /** Chat delivery owns recipients and rollback; the shared editor only submits its document. */
 export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatDraft, members: MentionCandidate[], activeMentionTargets: MentionTarget[], inputRef: RefObject<HTMLElement | null>, mobile = false) {
@@ -19,10 +22,12 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
   const { text, attachments, clear, flush, setMentionTargets, setAttachments, persistTo } = draft
   const { writeDraft } = useChatStore('writeDraft')
   const { t } = useTranslation('messaging')
+  const { resolvedLocale } = useLocale()
+  const annotationDraft = chatId ? sessionAnnotations.forConversation({ kind: 'chat', chatId }) : undefined
   const { toast } = useToast()
   const [sending, setSending] = useState(false)
   const sendingRef = useRef(false)
-  const submissions = useRef(new Map<string, { id: string; revision: object; destination: string; failure: ReturnType<typeof messageFailureNotice> }>())
+  const submissions = useRef(new Map<string, { id: string; revision: object; annotations?: readonly SessionAnnotation[]; destination: string; failure: ReturnType<typeof messageFailureNotice> }>())
   const activeChatIdRef = useRef(chatId ?? null)
   activeChatIdRef.current = chatId ?? null
   const rosterNameIndex = useMemo(() => buildRosterNameIndex(props.groupMembers ?? []), [props.groupMembers])
@@ -31,13 +36,19 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
     if (sendingRef.current) return
     const submittedAt = performance.now()
     const typed = (value ?? text).trim()
-    const pendingFiles = attachments.map((a) => a.file)
+    const annotated = annotationDraft?.items ?? []
+    const images = annotated.flatMap(item => item.kind === 'browser' ? [item.screenshot] : [])
+    const pendingFiles = [...attachments.map((a) => a.file), ...images]
     if (disabled) {
       toast(disabledReason || t('composer.disabled'), 'info')
       return
     }
-    if (!typed && pendingFiles.length === 0) return
-    const content = contentWithQuote(typed, quoteContent)
+    if (!typed && pendingFiles.length === 0 && !annotated.length) return
+    if (images.length && !onSendAttachments) {
+      toast(translateSessionMessage('annotations.sendUnavailable'), 'info')
+      return
+    }
+    const content = contentWithQuote(annotationPrompt(typed, annotated, resolvedLocale), quoteContent)
     // @@@whisper (#820) — 悄悄话模式下覆盖 toUserIds + 附加 isWhisper flag；禁用 @提及。
     const replyToMessageId = quoteContent?.messageId ?? null
     const explicitRecipientIds = resolveMentionUserIds(
@@ -68,11 +79,12 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
 
     const scope = JSON.stringify([currentUserId, chatId])
     const revision = draft.revisionOf(chatId ?? null)
+    const annotationRevision = annotated.length ? annotated : undefined
     const destination = JSON.stringify([!!sendOptions.isWhisper, sendOptions.replyToMessageId, [...sendOptions.toUserIds].sort()])
     let submission = submissions.current.get(scope)
-    if (!submission || submission.revision !== revision || submission.destination !== destination) {
+    if (!submission || submission.revision !== revision || submission.annotations !== annotationRevision || submission.destination !== destination) {
       const id = crypto.randomUUID()
-      submission = { id, revision, destination, failure: messageFailureNotice(['im', currentUserId ?? 'signed-out', chatId ?? 'composer', id]) }
+      submission = { id, revision, annotations: annotationRevision, destination, failure: messageFailureNotice(['im', currentUserId ?? 'signed-out', chatId ?? 'composer', id]) }
       submissions.current.set(scope, submission)
     }
     const attempt = submission.failure.begin()
@@ -101,9 +113,10 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       if (captionOnFiles && onSendAttachments) {
         await onSendAttachments(pendingFiles, { toUserIds: sendOptions.toUserIds, replyToMessageId: replyToMessageId ?? undefined, isWhisper: !!whisperTarget, caption: content || undefined })
         filesOwned = true
-      } else if (typed) {
+      } else if (content) {
         await onSend(content, { ...sendOptions, clientMessageId: submission.id, beforeDeliver: beforeSend, submittedAt })
       }
+      annotationDraft?.submitted(annotated)
       if (attempt.succeeded() && submissions.current.get(scope) === submission) submissions.current.delete(scope)
       // Successful send → object URLs are no longer needed
       revokeAttachmentPreviewUrls(snapshotAttachments)
@@ -144,7 +157,7 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       sendingRef.current = false
       setSending(false)
     }
-  }, [draft, beforeSend, chatId, currentUserId, text, attachments, activeMentionTargets, members, rosterNameIndex, isGroupChat, onSend, onSendAttachments, quoteContent, onQuoteConsumed, t, toast, disabled, disabledReason, whisperTarget, onExitWhisper, writeDraft, setMentionTargets, setAttachments, clear, persistTo, flush, inputRef, mobile])
+  }, [draft, beforeSend, chatId, currentUserId, text, attachments, activeMentionTargets, members, rosterNameIndex, isGroupChat, onSend, onSendAttachments, quoteContent, onQuoteConsumed, t, toast, disabled, disabledReason, whisperTarget, onExitWhisper, writeDraft, setMentionTargets, setAttachments, clear, persistTo, flush, inputRef, mobile, annotationDraft, resolvedLocale])
 
   return { sending, handleSend }
 }
