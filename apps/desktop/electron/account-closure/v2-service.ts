@@ -11,6 +11,7 @@ interface Ports {
   auth(): Promise<ClosureV2Auth | null | undefined>
   deviceId(): Promise<string>
   resumeOwner(ownerId: string): Promise<void>
+  retireMessages(ownerId: string): void | Promise<void>
 }
 const fail = (code: ConstructorParameters<typeof ClosureV2HttpFailure>[0]): never => { throw new ClosureV2HttpFailure(code) }
 const uuid = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value)
@@ -75,6 +76,13 @@ export function createDesktopClosureV2Service(p: Ports): AccountClosureV2Native 
   async function settle(r: ClosureOperationRecord): Promise<ClosureOperationRecord> {
     if (r.serverState === 'deleted') {
       if (!r.localPreparationStarted || !r.serverGeneration || !r.serverPrepared) return fail('closure_not_prepared')
+      await p.local.underAuth(async () => {
+        const current = await p.records.readNative(r)
+        if (current.revision !== r.revision || current.serverState !== 'deleted') return fail('scope_conflict')
+        // Persist retirement and purge on the same canonical SQLite connection,
+        // before the legacy local-cache step or any later renderer finalizer.
+        await p.retireMessages(r.ownerId)
+      })
       const result = await p.local.native.eraseLocal(localScope(r))
       r = await update(r, value => {
         value.retainedUnattributed = [...result.retainedUnattributed]

@@ -29,6 +29,21 @@ export function createImMessageStore(database: MessageSqlDatabase) {
   const progress = connection.prepare('SELECT through_revision FROM im_message_accounts WHERE account_id = ?')
   const writeProgress = connection.prepare(`INSERT INTO im_message_accounts(account_id, through_revision)
     VALUES (?, ?) ON CONFLICT(account_id) DO UPDATE SET through_revision=excluded.through_revision`)
+  const retired = connection.prepare('SELECT 1 FROM im_message_retired_accounts WHERE account_id = ?')
+  const markRetired = connection.prepare('INSERT INTO im_message_retired_accounts(account_id) VALUES (?) ON CONFLICT DO NOTHING')
+  const clearAccount = connection.transaction((accountId: string) => {
+    requireId(accountId)
+    dropMessages(connection, 'account_id = ?', accountId)
+    for (const table of ['im_message_tombstones', 'im_message_accounts', 'im_message_chats', 'im_message_ranges']) {
+      connection.prepare(`DELETE FROM ${table} WHERE account_id = ?`).run(accountId)
+    }
+    // Retirement is deliberately not among the disposable account-cache rows.
+  })
+  const retireAccount = connection.transaction((accountId: string) => {
+    requireId(accountId)
+    markRetired.run(accountId)
+    clearAccount(accountId)
+  })
   const applyAccess = createChatAccess(connection)
 
   const revision = (accountId: string): string | null =>
@@ -108,6 +123,10 @@ export function createImMessageStore(database: MessageSqlDatabase) {
 
   const ingest = connection.transaction((accountId: string, batch: ImMessageBatch) => {
     requireId(accountId)
+    // All renderer windows enter this synchronous transaction on the canonical
+    // connection. A late batch either committed before retirement and is purged,
+    // or observes this durable fence before writing rows, FTS, ranges or cursor.
+    if (retired.get(accountId)) throw Object.assign(new Error('im_account_retired'), { code: 'im_account_retired' })
     const previous = revision(accountId)
     const applied: ImMessageWrite[] = []
     for (const operation of batch.writes) applied.push(...write(accountId, operation))
@@ -179,13 +198,9 @@ export function createImMessageStore(database: MessageSqlDatabase) {
           newer ? top : before - 1) as { from_seq: number; to_seq: number } | undefined
       return { rows, covered: !!range && (rows.length === options.limit || (!newer && range.from_seq === 1)) }
     },
-    clearAccount: connection.transaction((accountId: string) => {
-      requireId(accountId)
-      dropMessages(connection, 'account_id = ?', accountId)
-      for (const table of ['im_message_tombstones', 'im_message_accounts', 'im_message_chats', 'im_message_ranges']) {
-        connection.prepare(`DELETE FROM ${table} WHERE account_id = ?`).run(accountId)
-      }
-    }),
+    clearAccount,
+    /** Native trusted-deletion receiver only; never included in the RPC controller. */
+    retireAccount,
   }
 }
 

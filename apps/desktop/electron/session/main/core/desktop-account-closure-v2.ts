@@ -1,3 +1,4 @@
+import { retireNativeImMessageAccount } from './im-messages/controller'
 import { createClosureOperationRecords } from '../../../account-closure/operation-record'
 import { createDesktopClosureV2Service } from '../../../account-closure/v2-service'
 import { createClosureV2Http, type ClosureV2Auth } from '../../../account-closure/v2-http'
@@ -17,6 +18,6 @@ export function createDesktopAccountClosureV2Host(input: {
     secrets: encryptedAppSecretsStore, profileBinding: input.profileBinding, underAuth: input.local.underAuth,
     identity: async () => { const a = await input.auth(); return a && { ownerId: a.ownerId, sessionId: a.sessionId } },
   })
-  return createDesktopClosureV2Service({ records, local: input.local, auth: input.auth, deviceId: input.deviceId, resumeOwner: input.resumeOwner,
+  return createDesktopClosureV2Service({ records, local: input.local, auth: input.auth, deviceId: input.deviceId, resumeOwner: input.resumeOwner, retireMessages: retireNativeImMessageAccount,
     http: createClosureV2Http({ baseUrl: input.baseUrl, anonKey: input.anonKey }) })
 }

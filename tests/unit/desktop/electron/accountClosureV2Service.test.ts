@@ -9,7 +9,7 @@ const policy={protocol_version:2 as const,available:true,deletion:'immediate' as
 function fixture() {
  const values=new Map<string,string>(), effects:string[]=[]
  let auth:ClosureV2Auth|null|undefined={ownerId:A,sessionId:SID,accessToken:'native-fixture-only'}, failWrite=false, finish=true
- let server:ClosureV2Reply|null=null, reject=false, blocked=false, serverBinding:string|null=null
+ let server:ClosureV2Reply|null=null, reject=false, blocked=false, retirementFails=false, serverBinding:string|null=null
  const lost=new Set<ClosureV2Route>(), before=new Set<ClosureV2Route>()
  let transform:((reply:ClosureV2Reply)=>ClosureV2Reply)|null=null
  let after: (()=>void)|null=null
@@ -49,13 +49,13 @@ function fixture() {
    stopOwner:async()=>{effects.push('stop')},steps:[{name:'first',run:async()=>{effects.push('first');return true}},{name:'second',run:async()=>{effects.push('second');return finish}}],
    retained:async()=>['workspace-files']})
   const records=createClosureOperationRecords({profileBinding:'test-profile',secrets,underAuth:local.underAuth,identity:async()=>auth&&{ownerId:auth.ownerId,sessionId:auth.sessionId}})
-  const native=createDesktopClosureV2Service({local,records,http,auth:async()=>auth,deviceId:async()=>A,resumeOwner:async(owner)=>{if(auth?.ownerId!==owner)throw new ClosureFailure('wrong_local_owner');effects.push('resume')}})
+  const native=createDesktopClosureV2Service({local,records,http,auth:async()=>auth,deviceId:async()=>A,retireMessages:async(owner)=>{if(retirementFails)throw new ClosureFailure('closure_storage_unavailable');expect(owner).toBe(A);effects.push('retire')},resumeOwner:async(owner)=>{if(auth?.ownerId!==owner)throw new ClosureFailure('wrong_local_owner');effects.push('resume')}})
   return {native,local,records}
  }
  const original=restart()
  return {...original, restart, effects, values, http, lost, before,
   auth:(v:typeof auth)=>{auth=v}, failure:(v:boolean)=>{failWrite=v}, finish:(v:boolean)=>{finish=v}, reject:()=>{reject=true},
-  blocked:(v:boolean)=>{blocked=v},transform:(v:typeof transform)=>{transform=v}, after:(fn:()=>void)=>{after=fn}, server:()=>server!,
+  retirementFails:(v:boolean)=>{retirementFails=v},blocked:(v:boolean)=>{blocked=v},transform:(v:typeof transform)=>{transform=v}, after:(fn:()=>void)=>{after=fn}, server:()=>server!,
  }
 }
 async function prepared(f:ReturnType<typeof fixture>){
@@ -251,6 +251,17 @@ describe('native V2 custody and trusted receiver',()=>{
   expect(await f.local.isSealed(A)).toBe(false)
   expect(f.http.post.mock.calls.filter(c=>c[0]==='cancel')).toHaveLength(1)
   expect(f.http.post.mock.calls.at(-1)![0]).toBe('result')
+ })
+ it('retains the trusted deleted capability when permanent message retirement fails, and retries before local cleanup',async()=>{
+  const f=fixture(),ready=await prepared(f);f.retirementFails(true)
+  await expect(f.native.confirm(ready.handle,{code:'123456',acknowledgeForfeit:true})).rejects.toMatchObject({code:'closure_storage_unavailable'})
+  const pending=(await f.native.discover())!
+  expect(pending.phase).toBe('deleted');expect(f.effects).toEqual(['stop'])
+  expect((await f.records.readNative({ownerId:A,localOperationId:pending.handle.localOperationId})).receipt).toMatch(/^[a-f0-9]{64}$/)
+  f.retirementFails(false)
+  expect((await f.native.recover(pending.handle)).phase).toBe('local-complete')
+  expect(f.effects).toEqual(['stop','retire','first','second'])
+  expect(f.http.post.mock.calls.filter(c=>c[0]==='confirm')).toHaveLength(1)
  })
  it('rechecks native runtime exit proof immediately before confirmation, including restored server preparation',async()=>{
   const f=fixture(), ready=await prepared(f), count=f.http.post.mock.calls.length
