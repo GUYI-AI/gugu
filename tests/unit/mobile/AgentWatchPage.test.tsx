@@ -64,7 +64,7 @@ vi.mock('../../../apps/desktop/src/mobile/agent-watch/ProjectsPage', async () =>
     ),
   }
 })
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/SessionTimelinePage', async () => {
+vi.mock('../../../apps/desktop/src/components/session-watch/SessionTimelinePage', async () => {
   const React = await vi.importActual<typeof import('react')>('react')
   return {
     SessionTimelinePage: ({ onBack, session: shown }: { onBack: () => void; session: SessionpageSessionSummary }) => React.createElement(

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { serverNow, withServerClock } from '@gugu/core/shared/serverClock'
 import { conversationLink, groupFileLink, parseGroupFileLink } from '@gugu/core/shared/ui/guguLink'
 import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
 import { archivedDeliveryReceipt, deliveryRefusalNotes, messageDeliveryBlocks } from './message-delivery-blocks.mjs'
@@ -539,7 +540,8 @@ function createSessionState() {
 }
 
 function createDeps(context, injected = {}, state = createSessionState()) {
-  const fetchImpl = injected.fetch ?? fetch
+  // Its answers tune this process's `serverNow()` (`@@@server-clock`): message `created_at` is the database's clock.
+  const fetchImpl = withServerClock(injected.fetch ?? fetch)
   return {
     restGet: (path, profile) => restGet(context, path, profile, fetchImpl),
     restInsert: (table, row, profile) => restInsert(context, table, row, profile, fetchImpl),
@@ -1427,7 +1429,7 @@ const FLOOD_LIMITS = [
 
 async function floodNotice(deps, chatId, kind) {
   try {
-    const now = Date.now()
+    const now = serverNow()
     const since = new Date(now - FLOOD_LIMITS.at(-1).ms).toISOString()
     const rows = await deps.restGet(
       `messages?chat_id=eq.${enc(chatId)}&created_at=gte.${enc(since)}&deleted_at=is.null&select=sender_user_id,created_at&order=seq.desc&limit=200`,

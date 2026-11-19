@@ -5,8 +5,8 @@ import { expect, it } from 'vitest'
 import { createSessionTimeline } from '../../../packages/session-core/src/session-record/timeline'
 import { createClaudeJsonlSource } from '../../../packages/session-core/src/session-record/sources/claude-jsonl'
 import { createCodexJsonlSource } from '../../../packages/session-core/src/session-record/sources/codex-jsonl'
-import { applySnapshot, deriveAttention, emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store'
-import { canReleasePhoneInput } from '@/mobile/agent-watch/phone-input-queue'
+import { applySnapshot, deriveAttention, emptyAgentWatchTimeline } from '@/components/session-watch/agent-watch-store'
+import { canReleasePhoneInput } from '@/components/session-watch/phone-input-queue'
 
 it.each(['claude', 'codex'] as const)('settles the captured %s completion boundary without a running provider', async provider => {
   const root = await mkdtemp(join(tmpdir(), 'provider-completion-1703-'))

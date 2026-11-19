@@ -4,7 +4,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { Check, Search, Sparkles, X } from '@/lib/icons'
 import { useReplica } from '@/lib/replica'
 import { creationSkills } from './create-skills-read'
-import { preserveComposerFocus } from '../composer/composer-focus'
+import { preserveComposerFocus } from '../../mobile/composer/composer-focus'
 import { creationSkillsHostMethodMissing, creationSkillsHostTooOld, filterCreationSkills, type CreationSkill } from './create-skills'
 import './create-controls-catalog'
 

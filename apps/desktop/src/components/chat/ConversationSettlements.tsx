@@ -2,7 +2,7 @@ import type { Settlement, SettlementResponse, SessionpageSessionRespondResult, S
 import { remoteSettlementGap } from '@gugu/session-core/session-record/contract'
 import { AgentQuestionCard } from './AgentQuestionCard'
 import { AgentPermissionBand } from './AgentPermissionBand'
-import { SettlementCard } from '@/mobile/agent-watch/TimelineView'
+import { SettlementCard } from '@/components/session-watch/TimelineView'
 
 /** Same question and permission controls as the project conversation, backed by the host's first-answer-wins result. */
 export function ConversationSettlements({ sessionId, settlements, runtime, mobile, machine, busyItemId, respond }: {

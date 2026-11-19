@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { useTimelineSession, type SessionpageTimelineClient } from '../../../apps/desktop/src/mobile/agent-watch/use-timeline-session'
-import { useSessionHistorySource } from '../../../apps/desktop/src/mobile/agent-watch/use-session-history-source'
-import { boundedWindowReady } from '../../../apps/desktop/src/mobile/agent-watch/desktop-window-history'
-import type { AgentWatchTimeline } from '../../../apps/desktop/src/mobile/agent-watch/agent-watch-store'
+import { useTimelineSession, type SessionpageTimelineClient } from '../../../apps/desktop/src/components/session-watch/use-timeline-session'
+import { useSessionHistorySource } from '../../../apps/desktop/src/components/session-watch/use-session-history-source'
+import { boundedWindowReady } from '../../../apps/desktop/src/components/session-watch/desktop-window-history'
+import type { AgentWatchTimeline } from '../../../apps/desktop/src/components/session-watch/agent-watch-store'
 import { act, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 
@@ -17,11 +17,11 @@ function createReactHarness() {
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
 const f = vi.hoisted(() => ({ cached: vi.fn(), hydrate: vi.fn(), rpc: vi.fn(), timelineRead: vi.fn(), timelineHydrate: vi.fn(), timelineWrite: vi.fn() }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/timeline-cache', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/timeline-cache', () => ({
   readCachedTimeline: f.timelineRead, hydrateCachedTimeline: f.timelineHydrate, writeCachedTimeline: f.timelineWrite,
   readCachedNativeRecord: f.cached, hydrateCachedNativeRecord: f.hydrate, writeCachedNativeRecord: vi.fn(),
 }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   machineRpc: () => ({ sessionTimeline: { sessionNativeRecord: f.rpc } }), onLinkChange: () => () => {},
 }))
 vi.mock('../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ info: vi.fn(), warn: vi.fn() }) }))

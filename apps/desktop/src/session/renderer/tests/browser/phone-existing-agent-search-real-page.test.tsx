@@ -36,8 +36,8 @@ import '@/mobile/phone-look.css'
 vi.mock('@/platform', () => import('../../../../../../../tests/support/capacitorPlatformTestDouble'))
 // Only the host-history transport result is controlled; keep the full page,
 // sidebar scope and picker. Lost transport prevents native/model/window reads.
-vi.mock('@/mobile/agent-watch/useAgentWatchSession', async original => {
-  const { emptyAgentWatchTimeline } = await import('@/mobile/agent-watch/agent-watch-store')
+vi.mock('@/components/session-watch/useAgentWatchSession', async original => {
+  const { emptyAgentWatchTimeline } = await import('@/components/session-watch/agent-watch-store')
   const timeline = emptyAgentWatchTimeline()
   return { ...await original<object>(), useAgentWatchSession: () => ({
     timeline, phase: 'ready', error: null, actionError: null, dismissActionError() {}, waitingForRecord: false, reload() {},

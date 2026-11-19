@@ -9,6 +9,7 @@
 //   urls   → signed links for items' versions or whisper messages.
 import { FileDownloadFailure, isDownloadConnectionError, isTransientFileReadError, retryFileDownload } from './fileDownloadRetry'
 import { AttachmentDeadlineError, runAttachmentStage, waitForAttachmentRetry } from './attachmentDeadline'
+import { serverNow } from '../shared/serverClock'
 import type { FileKeep } from '../shared/fileStorage'
 import { getSupabaseAnonKey, getSupabaseUrl } from './config'
 import { sha256 as sha256Hash } from '@noble/hashes/sha2.js'
@@ -244,7 +245,7 @@ export async function uploadAttachmentPlan(endpoint: AttachmentsEndpoint, form: 
 async function uploadWithPermit(endpoint: AttachmentsEndpoint, form: AttachmentUploadPlan, file: { bytes: Uint8Array | Blob; name: string; contentType: string },
   allowExisting: boolean, attempts: PartAttempts, onProgress?: (progress: AttachmentByteProgress) => void, signal?: AbortSignal): Promise<void> {
   const expired = () => new AttachmentsError('upload', 410, 'expired', 'Upload permit expired')
-  if (form.expires_at && Date.parse(form.expires_at) <= Date.now()) throw expired()
+  if (form.expires_at && Date.parse(form.expires_at) <= serverNow()) throw expired()
   return runAttachmentStage('upload', async (planSignal, capDeadline) => {
     capDeadline(form.expires_at)
     await sendAttachmentPlan(endpoint, form, file, allowExisting, attempts, onProgress, planSignal)

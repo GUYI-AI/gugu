@@ -1,3 +1,4 @@
+import { codexStartupKind, type CodexStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
 import { AcpStartError } from '@renderer/lib/acp/acp-live-session';
 import { isAgentHomeImportCode } from '@gugu/session-core/workspace-server/agent-config';
 
@@ -35,7 +36,7 @@ export type AcpLoadError =
    * 线一通就自己再开一次(acp-chat-store `_watchMachineLink`)。只认别的机器上的会话:本机会话没有这条线。
    */
   | { kind: 'connection_lost'; message: string; deviceId: string }
-  | { kind: 'generic'; message: string };
+  | { kind: 'generic'; message: string; startupReason?: CodexStartupKind };
 
 /**
  * 这些失败重试也没用：装不上的 harness 要用户先装。retry() 与 remount 之类的通用重试调用方
@@ -152,5 +153,5 @@ export function toLoadError(error: unknown, machine: string | null = null): AcpL
   ) {
     return { kind: 'harness_not_installed', message };
   }
-  return { kind: 'generic', message };
+  return { kind: 'generic', message, ...(codexStartupKind(error) ? { startupReason: codexStartupKind(error)! } : {}) };
 }

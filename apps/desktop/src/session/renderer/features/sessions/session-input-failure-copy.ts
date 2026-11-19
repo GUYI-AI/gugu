@@ -1,20 +1,29 @@
+import { codexStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
 import type { SessionTranslate } from './stores/session-failure-message';
 import type { SessionFailure } from './stores/session-failure';
 
 /** Known startup diagnostics have a specific repair; unknown diagnostics stay in the log. */
-export function codexNeedsUpgrade(reason: string): boolean {
-  return /Codex.*(?:app-server|models --bundled)|local Codex app-server/i.test(reason);
+export function codexNeedsUpgrade(reason: unknown): boolean {
+  return codexStartupKind(reason) === 'version';
 }
 
-export function sessionStartupFailureCopy(reason: string, translate: SessionTranslate): string {
-  return translate(codexNeedsUpgrade(reason) ? 'taskError.codexUpgrade' : 'taskError.startFailedRetry');
+export function isCodexStartupFailure(reason: unknown): boolean { return codexStartupKind(reason) !== null; }
+
+export function sessionStartupFailureCopy(reason: unknown, translate: SessionTranslate): string {
+  const kind = codexStartupKind(reason);
+  if (kind === null) return translate('taskError.startFailedRetry');
+  const copy = { version: 'taskError.codexUpgrade', missing: 'taskError.codexMissing',
+    permission: 'taskError.codexPermission', configuration: 'taskError.codexConfiguration',
+    protocol: 'taskError.codexProtocol', exited: 'taskError.codexExited', timeout: 'taskError.codexTimeout',
+    unknown: 'taskError.codexStartFailed' } as const;
+  return translate(copy[kind]);
 }
 
 /** Creation errors are application failures, unlike raw failed-turn contents in the transcript. */
 export function creationFailureCopy(failure: SessionFailure, translate: SessionTranslate): string {
   switch (failure.kind) {
     case 'attachment-host-update-required': return translate('composer.attachmentHostUpdateRequired');
-    case 'raw': return translate(codexNeedsUpgrade(failure.detail) ? 'taskError.codexUpgrade' : 'taskError.createFailedRetry');
+    case 'raw': return isCodexStartupFailure(failure) ? sessionStartupFailureCopy(failure, translate) : translate('taskError.createFailedRetry');
     case 'harness-unavailable': return translate(failure.reason === 'updating' ? 'taskError.harnessUpdating' : 'taskError.harnessMissing', { harnessName: failure.harnessName });
     case 'project-not-found': return translate('taskError.createProjectMissing');
     case 'workspace-no-intent':

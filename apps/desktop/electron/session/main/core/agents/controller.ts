@@ -44,6 +44,7 @@ import { partsToInstall, partsToUpdate } from './agent-programs';
 import type { SessionpageLeg } from '@shared/core/sessions/sessions';
 import { lookupHarnessModelCatalog, probeHarnessModelCatalog } from './harness-model-catalog';
 import { wireHarnessModelCatalog } from './harness-model-catalog-wiring';
+import { managedVersionActions } from './managed-versions-controller';
 
 /** Enrich a manager HostDependency snapshot with latestVersion/updateAvailable from the coordinator. */
 const enrichHostDep = (
@@ -377,6 +378,7 @@ export const agentsController = createRPCController({
     const target = { platform: process.platform as string, arch: process.arch as string };
     return agentUpdateService.fetchInstallSourceVersions(id, mgr.getInstallOptions(id), target);
   },
+  ...managedVersionActions,
 
   probe: async (id: DependencyId) => {
     const mgr = await getDependencyManager();

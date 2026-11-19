@@ -1,3 +1,4 @@
+import { serverNow } from '@gugu/core/shared/serverClock';
 import { createInterface } from 'node:readline';
 import { retryCodexPreparation, type CodexPreparation } from '@gugu/core/local/codex-initialize.mjs';
 import type {
@@ -96,7 +97,8 @@ export async function readCodexUsage(
     if (typeof accessToken !== 'string' || !accessToken) throw new Error('Codex 登录凭据中没有可读取的访问令牌。');
     // Refresh through Codex, the authority for this profile, rather than rotating its token independently.
     const payload = jwtPayload(accessToken);
-    if (typeof payload?.exp === 'number' && payload.exp * 1000 <= Date.now()) {
+    // `exp` is the issuer's clock; `serverNow()` is this runtime's best reading of real time (`@@@server-clock`).
+    if (typeof payload?.exp === 'number' && payload.exp * 1000 <= serverNow()) {
       await askAppServer(ctx, 'account/read', { refreshToken: true });
       credentials = await readCodexCredentials(ctx);
       tokens = objectAt(credentials, 'tokens');

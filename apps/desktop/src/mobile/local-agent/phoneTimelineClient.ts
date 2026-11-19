@@ -1,6 +1,6 @@
 import type { ToolImage } from '@gugu/session-core/acp/client'
 import type { RecordCursor, SessionpageSessionRespondRequest, SessionpageSessionRespondResult, TimelineAfterResult, TimelineOlderResult, TimelineSnapshot } from '@gugu/session-core/session-record/contract'
-import type { SessionpageTimelineClient } from '../agent-watch/use-timeline-session'
+import type { SessionpageTimelineClient } from '../../components/session-watch/use-timeline-session'
 import { invokePhoneHost } from './phoneHostRpc'
 import { sendPhoneTaskText } from './phoneTaskSend'
 import { reconnectDelayMs } from '@/session/shared/remote-reconnect'

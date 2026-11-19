@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createDesktopWindowReader, type DesktopWindowIo } from './desktop-window-reader';
 import { createWindowBudget } from '../../../../../../../packages/session-core/src/session-record/window-cache/read-budget';
 import type { WindowPage } from '../../../../../../../packages/session-core/src/session-record/window-cache/types';
-import { applySnapshot, applyTimelineResult, emptyAgentWatchTimeline } from '../../../../../src/mobile/agent-watch/agent-watch-store';
+import { applySnapshot, applyTimelineResult, emptyAgentWatchTimeline } from '../../../../../src/components/session-watch/agent-watch-store';
 
 function setup() {
   const value: WindowPage = { kind: 'continuation', scope: 'scope', sourceLineage: 'lineage', snapshotRevision: 'rev',

@@ -3,10 +3,10 @@ import { act } from 'react'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import type { NativeSessionRecord } from '@gugu/session-core/session-record/contract'
 import { createReactHarness } from '../../support/testHarness'
-import { useNativeSessionRecord } from '../../../apps/desktop/src/mobile/agent-watch/useNativeSessionRecord'
-import { writeCachedNativeRecord } from '../../../apps/desktop/src/mobile/agent-watch/timeline-cache'
+import { useNativeSessionRecord } from '../../../apps/desktop/src/components/session-watch/useNativeSessionRecord'
+import { writeCachedNativeRecord } from '../../../apps/desktop/src/components/session-watch/timeline-cache'
 const scope = vi.hoisted(() => ({ read: vi.fn(), online: true, link: (_open: boolean) => {} }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ sessionTimeline: { sessionNativeRecord: scope.read } }),
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ sessionTimeline: { sessionNativeRecord: scope.read } }),
   onLinkChange: (_id: string, listener: typeof scope.link) => { scope.link = listener; return () => {} } }))
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { harness = createReactHarness() })

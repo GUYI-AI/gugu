@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { recoverTimelineRead } from '../../../apps/desktop/src/mobile/agent-watch/timeline-read-recovery'
+import { recoverTimelineRead } from '../../../apps/desktop/src/components/session-watch/timeline-read-recovery'
 
 afterEach(() => { vi.useRealTimers() })
 

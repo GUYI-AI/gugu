@@ -12,6 +12,13 @@ import '@/i18n/registerSettingsCatalog';
 import '@/components/settings/settings.css';
 import '@/styles/tokens.css';
 
+const tourFixture = vi.hoisted(() => ({ value: null as null | { step: 'contacts'; status: 'skipped' } }));
+vi.mock('@/lib/productTour', async original => ({ ...await original<object>(), useProductTourState: () => ({ data: tourFixture.value }) }));
+vi.mock('@/platform', async original => {
+  const actual = await original<typeof import('@/platform')>();
+  return { ...actual, platform: { ...actual.platform, kind: 'electron' } };
+});
+
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@/lib/deviceProjects', async (original) => ({ ...await original<object>(), listMyDeviceProjects: async () => ({}) }));
 // File storage is a key of the account's own settings row (lib/ownSettings): an empty row = the defaults.
@@ -45,6 +52,7 @@ const tier = (element: Element) => {
   return [Number.parseFloat(style.fontSize), Number.parseFloat(style.lineHeight), style.fontWeight];
 };
 beforeEach(async () => {
+  tourFixture.value = null;
   await page.viewport(1200, 900);
   await i18n.changeLanguage('zh-CN');
   // Production Vite supplies this build constant; keep the real About section in this test.
@@ -62,6 +70,25 @@ afterEach(() => {
 });
 
 describe('settings navigation hierarchy and interaction (#7333)', () => {
+  it('help in settings preserves resume progress and owns the only settings feedback entry', async () => {
+    tourFixture.value = { step: 'contacts', status: 'skipped' };
+    await renderWithAppProviders(harness, <SettingsPanel initialSection="help" onClose={vi.fn()} />, { auth: user, contacts: {} });
+    const card = document.querySelector<HTMLElement>('[data-settings-modal-card]')!;
+    await until('the help page shows the saved third tour step', () => card.querySelector('[data-testid="help-tour-resume"]')?.textContent?.includes('3 / 6') === true);
+    expect(card.querySelector('[data-testid="settings-nav-help"]')?.getAttribute('aria-current')).toBe('page');
+    expect(card.querySelectorAll('[data-testid="about-feedback"]')).toHaveLength(1);
+    if (import.meta.env.VITE_HELP_SETTINGS_CAPTURE === '1') {
+      const dialog = card.closest<HTMLElement>('[role="dialog"]')!;
+      await until('the help settings renderer is stable', () => dialog.getAnimations({ subtree: true }).every(animation => animation.playState === 'finished'));
+      await page.screenshot({ element: dialog, path: '__screenshots__/help-settings/with-resume-and-feedback.png' });
+    }
+    await userEvent.click(card.querySelector<HTMLElement>('[data-testid="settings-nav-about"]')!);
+    await until('About is selected after moving feedback', () => card.dataset.settingsSection === 'about');
+    expect(card.querySelector('[data-testid="about-feedback"]')).toBeNull();
+    await userEvent.click(card.querySelector<HTMLElement>('[data-testid="settings-nav-help"]')!);
+    await until('returning to help retains the original resume step', () => card.querySelector('[data-testid="help-tour-resume"]')?.textContent?.includes('3 / 6') === true);
+  });
+
   it('subscriptions has one shell heading while its refresh action stays available', async () => {
     await renderWithAppProviders(harness, <SettingsPanel initialSection="subscriptions" onClose={vi.fn()} />, { auth: null, contacts: {} });
     const detail = document.querySelector<HTMLElement>('[data-settings-modal-card] [data-role="detail"]')!;
@@ -83,12 +110,12 @@ describe('settings navigation hierarchy and interaction (#7333)', () => {
     const scroll = pane.querySelector<HTMLElement>('.gg-settings-nav-scroll')!;
     const rows = pane.querySelectorAll<HTMLElement>('[data-testid^="settings-nav-"]');
     expect(pane.getBoundingClientRect().width).toBe(216);
-    expect(rows).toHaveLength(16);
+    expect(rows).toHaveLength(17);
     expect([...rows].map((row) => row.dataset.testid)).toEqual([
       'settings-nav-account', 'settings-nav-subscriptions', 'settings-nav-usage',
       'settings-nav-general', 'settings-nav-data-import', 'settings-nav-interface', 'settings-nav-model', 'settings-nav-permissions', 'settings-nav-passwords',
       'settings-nav-sessions', 'settings-nav-prompts', 'settings-nav-devices', 'settings-nav-browser', 'settings-nav-files',
-      'settings-nav-resource-monitor', 'settings-nav-about',
+      'settings-nav-resource-monitor', 'settings-nav-help', 'settings-nav-about',
     ]);
     expect(pane.querySelector('[data-testid="settings-nav-permissions"]')?.textContent).toBe('本机控制');
     expect(pane.querySelector('[data-testid="settings-nav-passwords"]')?.textContent).toBe('密码');

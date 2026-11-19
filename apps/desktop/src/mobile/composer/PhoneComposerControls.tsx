@@ -7,7 +7,7 @@ import { ChevronDown, ChevronLeft, ChevronUp, X } from '@/lib/icons'
 import { useBackLayer } from '@/components/ui/sheetStack'
 import { preserveComposerFocus, preservePanelComposerFocus } from './composer-focus'
 import { PhoneViewportContext } from '../usePhoneViewport'
-import '../agent-watch/create-controls-catalog'
+import '../../components/session-watch/create-controls-catalog'
 import './phone-composer-controls.css'
 
 export function PhoneComposerControlRow({ children, conversationKey }: { children: ReactNode; conversationKey?: string }) {

@@ -4,7 +4,7 @@ import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import type { NativeSessionRecord, TimelineSnapshot, TimelineAfterResult } from '@gugu/session-core/session-record/contract'
 import { SessionInputOutbox, type SessionInput } from '@/lib/sessionInputOutbox'
 import { changed, state, EMPTY } from '@/lib/sessionInputOutboxBridge'
-import { watchPhoneSessionSendQueues } from '@/mobile/agent-watch/phone-send-queue-host'
+import { watchPhoneSessionSendQueues } from '@/components/session-watch/phone-send-queue-host'
 
 const remote = vi.hoisted(() => ({
   snapshot: vi.fn(), native: vi.fn(), life: vi.fn(), report: vi.fn(),
@@ -13,7 +13,7 @@ const remote = vi.hoisted(() => ({
   directoryChanged: () => {}, runtime: 'acp' as 'acp' | 'pty' | null,
   timeline: (_result: TimelineAfterResult) => {},
 }))
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('@/components/session-watch/sessionpage-rpc', () => ({
   machineRpc: () => ({ sessions: { lifeView: remote.life }, sessionTimeline: { sessionNativeRecord: remote.native } }),
   fetchSnapshot: remote.snapshot,
   subscribeSession: async () => {}, unsubscribeSession: async () => {},

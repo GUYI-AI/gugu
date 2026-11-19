@@ -1,3 +1,4 @@
+import { codexStartupKind, type CodexStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
 /**
  * 每家 harness 能跑哪些模型 —— 问 harness 自己，走 ACP 协议的正式出口。
  *
@@ -41,6 +42,8 @@
  * 界面据此不渲染选择器（owner 拍板）。列一张用户根本跑不了的模型表，正是咕咕红线里的 fake。
  */
 import { createHash } from 'node:crypto';
+import { StringDecoder } from 'node:string_decoder';
+import { parseCodexPreparation, type CodexPreparation } from '@gugu/core/local/codex-initialize.mjs';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -215,7 +218,7 @@ export type HarnessCatalogState =
       expired?: boolean;
     }
   /** 装了、登录了，但这次没读出来（超时/协议异常）。界面给原因与重试。 */
-  | { kind: 'unavailable'; reason: string; reasonCode?: 'probe-failed' };
+  | { kind: 'unavailable'; reason: string; reasonCode?: 'probe-failed'; startupReason?: CodexStartupKind };
 
 /**
  * 起一个 harness 的 ACP 进程。由组合根注入。
@@ -523,6 +526,8 @@ export function setCatalogStore(next: CatalogStore | null): void {
 let memory: Record<string, CachedCatalog> | null = null;
 /** 同一家 harness 正在探时，后来的调用等同一个 promise，❌ 不并发起两个进程。 */
 const inFlight = new Map<string, Promise<HarnessCatalogState>>();
+// Ephemeral facts from this same probe, never persisted as catalog results.
+const preparation = new Map<string, CodexPreparation>();
 
 async function loadAll(): Promise<Record<string, CachedCatalog>> {
   if (memory) return memory;
@@ -570,13 +575,17 @@ async function ensureCatalog(
     // 原因码由界面按当前语言呈现,异常细节只进日志。
     let state: HarnessCatalogState;
     try {
-      state = await probeHarnessModelCatalog(pluginId, leg);
+      state = await probeHarnessModelCatalog(pluginId, leg, undefined, (progress) => {
+        if (progress) preparation.set(key, progress);
+        else preparation.delete(key);
+      });
     } catch (error) {
       log.error({ error }, `${pluginId}: 模型目录探测抛出 → 落为 unavailable(界面给原因与重试)`);
       state = {
         kind: 'unavailable',
         reason: 'Model catalog probe failed',
         reasonCode: 'probe-failed',
+        ...(pluginId === 'codex' ? { startupReason: codexStartupKind(error, true) ?? 'unknown' } : {}),
       };
     }
     const next = { ...(await loadAll()), [key]: { state, inputsHash, probedAt: Date.now() } };
@@ -587,6 +596,7 @@ async function ensureCatalog(
     });
     return state;
   })().finally(() => {
+    preparation.delete(key);
     inFlight.delete(key);
   });
   inFlight.set(key, task);
@@ -642,6 +652,8 @@ export interface HarnessCatalogLookup {
   state: HarnessCatalogState;
   /** 后台正在探(这次调用启动的,或已经在跑的那趟)。 */
   refreshing: boolean;
+  /** Native initialization or backfill-lease preparation, while this probe is active. */
+  preparation?: CodexPreparation;
 }
 
 export async function lookupHarnessModelCatalog(
@@ -656,7 +668,7 @@ export async function lookupHarnessModelCatalog(
   // ❌ 别在这条路上算指纹:渲染层在 refreshing 期间每 700ms 问一次,而算指纹要解析可执行文件
   //(一次 `which`)—— 那会把一条只为说「还在探」的轮询变成每 700ms 一个子进程。
   if (!options.force && inFlight.has(key)) {
-    return { state: cached?.state ?? { kind: 'unknown' }, refreshing: true };
+    return { state: cached?.state ?? { kind: 'unknown' }, refreshing: true, ...(preparation.has(key) ? { preparation: preparation.get(key) } : {}) };
   }
 
   const inputsHash = await resolveInputsHash(pluginId, options.leg, options.harnessVersion ?? null);
@@ -670,13 +682,14 @@ export async function lookupHarnessModelCatalog(
   });
 
   // 有陈的就先给陈的:界面留着上一份清单可用,好过闪回「正在读取」。
-  return { state: cached?.state ?? { kind: 'unknown' }, refreshing: true };
+  return { state: cached?.state ?? { kind: 'unknown' }, refreshing: true, ...(preparation.has(key) ? { preparation: preparation.get(key) } : {}) };
 }
 
 /** 测试用：清空内存镜像与在途探测。 */
 export function __resetHarnessModelCatalogCache(): void {
   memory = null;
   inFlight.clear();
+  preparation.clear();
 }
 
 /**
@@ -782,6 +795,33 @@ async function stopProbeProcess(probe: OwnedChild): Promise<void> {
   }
 }
 
+/** Read the adapter's structured preparation facts; unrelated stderr is only drained. */
+function watchProbePreparation(
+  child: ChildProcessWithoutNullStreams,
+  changed: (progress: CodexPreparation | null) => void
+): () => void {
+  const decoder = new StringDecoder('utf8');
+  let tail = '';
+  let discarding = false;
+  const data = (chunk: Buffer) => {
+    tail += decoder.write(chunk);
+    let end: number;
+    while ((end = tail.indexOf('\n')) >= 0) {
+      const line = tail.slice(0, end).replace(/\r$/, '');
+      tail = tail.slice(end + 1);
+      if (!discarding) {
+        const progress = parseCodexPreparation(line);
+        if (progress !== undefined) changed(progress);
+      }
+      discarding = false;
+    }
+    // Native diagnostics may contain arbitrarily long lines. They are not preparation records.
+    if (tail.length > 16_384) { tail = ''; discarding = true; }
+  };
+  child.stderr.on('data', data);
+  return () => child.stderr.off('data', data);
+}
+
 async function probeOnce(
   pluginId: string,
   leg: SessionpageLeg,
@@ -792,13 +832,15 @@ async function probeOnce(
    * `platform` 交给插件的 `buildSpawn` —— 与真会话 Chat UI 注入的三种信封一一对应。
    */
   probeCredentials: ProbePlatformCredentials | null,
-  model?: string
+  model?: string,
+  onPreparation?: (progress: CodexPreparation | null) => void
 ): Promise<HarnessCatalogState> {
   // 取真实路径:macOS 的 tmpdir 在 /var → /private/var 这条符号链接后面。插件按 cwd 给的「按次信任」
   // (codex 的 `-c projects."<cwd>"…`)必须和 harness 自己看到的目录逐字相同,否则它当成没标过,
   // 又把信任写回用户的配置文件(#6264)。
   const cwd = await realpath(await mkdtemp(join(tmpdir(), `gugu-model-probe-${pluginId}-`)));
   let probe: OwnedChild<ChildProcessWithoutNullStreams> | null = null;
+  let stopPreparation = () => {};
   try {
     try {
       const spec = await resolveAcpSpawn(pluginId, leg, cwd, probeCredentials?.platform);
@@ -826,6 +868,9 @@ async function probeOnce(
         onError: (error) => log.warn({ error }, `${pluginId}: 模型目录探针进程错误`),
       }) as OwnedChild<ChildProcessWithoutNullStreams>;
       const child = probe.child;
+      if (pluginId === 'codex' && onPreparation) {
+        stopPreparation = watchProbePreparation(child, onPreparation);
+      }
 
       // 管道错误走的是 EventEmitter 的抛出路径，`processFailed` 那两个监听（promise 路径）拦不住：
       // adapter 握手前就退时（缺依赖 / 版本不对），往已关闭的 stdin 写 = EPIPE = **崩主进程**。
@@ -873,6 +918,7 @@ async function probeOnce(
         watchdog.stop();
       }
     } finally {
+      stopPreparation();
       if (probe) await stopProbeProcess(probe);
     }
   } catch (error) {
@@ -883,7 +929,7 @@ async function probeOnce(
     const code = (error as NodeJS.ErrnoException | undefined)?.code;
     const state: HarnessCatalogState = code === 'ENOENT'
       ? { kind: 'not-installed' }
-      : { kind: 'unavailable', reason: message };
+      : { kind: 'unavailable', reason: message, ...(pluginId === 'codex' ? { startupReason: error instanceof AcpRpcError ? error.codexStartupReason() : codexStartupKind(error, true) ?? 'unknown' } : {}) };
     // ⚠️ 把**协议错误码**单独带出来:logger 序列化 Error 只留 name/message/stack,
     //    而码住在 AcpRpcError 私有的 payload 里 —— 2026-08-26 查 kimi 为什么被判成
     //    「读取失败」时,日志里一个码都看不到,只能靠猜。判错分类的下一步永远是「它到底回了几」。
@@ -924,9 +970,10 @@ async function probeOnce(
 export async function probeHarnessModelCatalog(
   pluginId: string,
   leg: SessionpageLeg,
-  model?: string
+  model?: string,
+  onPreparation?: (progress: CodexPreparation | null) => void
 ): Promise<HarnessCatalogState> {
-  const first = await probeOnce(pluginId, leg, null, model);
+  const first = await probeOnce(pluginId, leg, null, model, onPreparation);
   if (first.kind !== 'auth-required') return first;
 
   // 占位凭据按这家真会话的 Chat UI 注入信封生成;需要落盘的文档只写进这一趟的临时目录,探完整目录删掉。
@@ -939,7 +986,7 @@ export async function probeHarnessModelCatalog(
   try {
     const probeCredentials = await resolveProbePlatformEnv(pluginId, scratchDir);
     if (probeCredentials.skipReason === 'platform-unsupported') return first;
-    const second = await probeOnce(pluginId, leg, probeCredentials, model);
+    const second = await probeOnce(pluginId, leg, probeCredentials, model, onPreparation);
     if (second.kind === 'ready') {
       log.info(`${pluginId}: 未登录,但占位凭据那趟读到 ${second.efforts.length} 档推理强度`);
       return { ...first, efforts: second.efforts, selectedEffort: second.selectedEffort, permissionModes: second.permissionModes, reviewerAvailable: second.reviewerAvailable, cliVersion: second.cliVersion };
@@ -1398,6 +1445,8 @@ class AcpRpcError extends Error {
   isAuthRequiredCode(): boolean {
     return this.code() === ACP_AUTH_REQUIRED_CODE;
   }
+
+  codexStartupReason(): CodexStartupKind { return codexStartupKind(this.payload, true) ?? 'unknown'; }
 
   /** 对方回的 JSON-RPC 错误码;没有就 undefined。分类判错时这是**第一个**要看的数。 */
   code(): number | undefined {

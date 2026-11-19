@@ -28,7 +28,7 @@ vi.mock('../../../apps/desktop/src/store/devicesContext', () => ({
   useDevicesStore: () => ({ devices: store.devices, phones: store.phones, loading: false, error: null }),
 }))
 
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   listSessions: vi.fn(async () => rpc.list),
   subscribeSessionsList: vi.fn(async () => ({})),
   unsubscribeSessionsList: vi.fn(async () => ({})),
