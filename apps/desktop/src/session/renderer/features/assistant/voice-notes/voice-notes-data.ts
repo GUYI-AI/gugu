@@ -24,7 +24,7 @@ export function useVoiceJobs(): readonly VoiceJobView[] {
 }
 
 /** 失败那一句:网关明说的原话 > 签票原因码的那一句 > 按环节的通用一句。 */
-const FAILURE_CODES = new Set(['signed-out', 'membership-required', 'model-unavailable', 'unreachable', 'service-unavailable']);
+const FAILURE_CODES = new Set(['signed-out', 'membership-required', 'model-unavailable', 'unreachable', 'service-unavailable', 'team-monthly-cap-reached', 'team-credits-exhausted']);
 export function failureText(
   t: (key: string, values?: Record<string, string>) => string,
   view: { stage: string; notice: string | null; code: string | null; message: string },

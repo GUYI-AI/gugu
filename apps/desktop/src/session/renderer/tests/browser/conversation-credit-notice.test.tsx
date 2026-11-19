@@ -73,3 +73,33 @@ it.each([360, 800])('renders the real interrupted turn once as ordinary body tex
   expect(harness.container.querySelector('[data-slot="credit-recharge"]')).not.toBeNull()
   if (import.meta.env.VITE_CREDIT_CAPTURE === '1') await page.screenshot({ element: harness.container, path: `__screenshots__/credit-exhausted-${theme}-${width}.png` })
 })
+
+it.each([
+  { reason: 'team_member_monthly_cap_reached', text: '你本月的团队积分用完了，只影响你，其他人照常用。找管理员调高上限。' },
+  { reason: 'team_credits_exhausted', text: '团队积分用完了，所有成员暂时无法使用 AI。找管理员充值。' },
+])('keeps the typed team refusal $reason in the real conversation without a personal wallet link', async ({ reason, text }) => {
+  await page.viewport(1440, 960)
+  await i18n.changeLanguage('zh-CN')
+  document.documentElement.setAttribute('data-theme', 'light')
+  publishSelfIdentity({ userId: 'team-credit-fixture', displayName: '林晓', guguNumber: null, accountKind: 'team_member' })
+  const turns: TranscriptTurn[] = [{ id: 'team-credit-turn', seq: 1, initiator: 'user', items: [
+    { kind: 'message', id: 'team-credit-prompt', seq: 0, role: 'user', text: '继续' },
+  ], outcome: { kind: 'error', reason: 'prompt_failed', detail: JSON.stringify({ error: { code: 'credits_exhausted', reason_code: reason, message: 'private server diagnostics' } }) } }]
+  harness = createReactHarness()
+  harness.container.style.cssText = 'height:700px;width:960px;padding:24px;display:flex;flex-direction:column;box-sizing:content-box;background:var(--bg)'
+  await renderWithAppProviders(harness, <ThemeProvider theme="light"><SessionLocalizationProvider>
+    <SessionTranscriptView uri={`team-credit-${reason}`} turns={turns} style={{ position: 'relative', minHeight: 0, flex: 1 }}
+      composerContent={<AgentConversationComposer selectedModel="platform:test" onSubmit={() => {}} />} />
+  </SessionLocalizationProvider></ThemeProvider>)
+  await until('the shared team error row and composer mount', () => !!harness.container.querySelector('[data-credit-exhausted]') && !!harness.container.querySelector('[data-slot="composer"]'))
+  const row = harness.container.querySelector<HTMLElement>('[data-credit-exhausted]')!
+  const composer = harness.container.querySelector<HTMLElement>('[data-slot="composer"]')!
+  expect(row.textContent?.replace(/\n/g, '')).toBe(text)
+  expect(row.querySelector('a')).toBeNull()
+  expect(harness.container.querySelector('[data-testid="conversation-credit-notice"]')).toBeNull()
+  expect(harness.container.textContent).not.toMatch(/private server diagnostics|·/)
+  expect(row.getBoundingClientRect().bottom).toBeLessThanOrEqual(composer.getBoundingClientRect().top - 8)
+  expect(row.scrollHeight).toBeLessThanOrEqual(row.clientHeight + 1)
+  expect(composer.getBoundingClientRect().bottom).toBeLessThanOrEqual(harness.container.getBoundingClientRect().bottom)
+  if (import.meta.env.VITE_TEAM_CAPTURE === '1') await page.screenshot({ element: harness.container, path: `__screenshots__/team-desktop-${reason}.png` })
+})

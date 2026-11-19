@@ -17,7 +17,7 @@ export const APP_VOICE_RECORDER_PHASES = ['idle', 'starting', 'recording', 'paus
 export const APP_VOICE_RECORDER_ERRORS = ['mic_denied', 'mic_missing', 'capture_failed', 'interrupted'] as const;
 export const APP_VOICE_JOB_PHASES = ['recording', 'uploading', 'transcribing', 'summarizing', 'ready', 'failed', 'no_speech'] as const;
 /** Why a step failed, said as a reason the App may word itself: never the error's text, a path or a URL. */
-export const APP_VOICE_FAILURE_REASONS = ['refused', 'signed-out', 'membership-required', 'model-unavailable', 'unreachable', 'service-unavailable'] as const;
+export const APP_VOICE_FAILURE_REASONS = ['refused', 'signed-out', 'membership-required', 'model-unavailable', 'unreachable', 'service-unavailable', 'team-monthly-cap-reached', 'team-credits-exhausted'] as const;
 /** What `start` answers besides `started` (voice-note-jobs.ts `StartOutcome`, closed). */
 export const APP_VOICE_START_REFUSALS = ['busy', 'no_assistant', 'cancelled', 'mic_denied', 'mic_missing', 'capture_failed'] as const;
 

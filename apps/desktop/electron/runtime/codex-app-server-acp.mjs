@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { tagCodexStartupFailure } from '../../../../packages/core/src/local/codex-startup-failure.mjs'
 import { isUserFacingModelId } from '../../../../packages/session-core/src/acp/models/model-visibility.ts'
 import { codexTerminalUpdate } from './codex-terminals.mjs'
 import { codexFastConfigOptions, codexFastTier, codexTierForTurn } from './codex-fast-mode.mjs'
@@ -8,6 +9,7 @@ import { codexFastConfigOptions, codexFastTier, codexTierForTurn } from './codex
 //   Gugu ACP runtime <-> this bridge (started with process.execPath by session-plugins impl/codex) <-> `codex app-server --stdio`.
 import { execFile } from '../../../../packages/core/src/local/childProcess.ts'
 import { randomUUID } from 'node:crypto'
+import { codexSpawnDiagnostic, codexVersionFromUserAgent } from '../../../../packages/core/src/local/codex-spawn-diagnostic.mjs'
 import { appendFileSync, readFileSync, statSync } from 'node:fs'
 import { createJsonlReader, jsonlParseError } from './jsonl-reader.mjs'
 import { CODEX_PREPARATION_PREFIX, retryCodexPreparation, codexBackfillWaiting } from '../../../../packages/core/src/local/codex-initialize.mjs'
@@ -16,6 +18,7 @@ import { GUGU_MCP_CONFIG_KEY, normalizeGuguToolName } from '../mcp/gugu-mcp-name
 import { joinPromptText, promptInputItems } from './codex-app-server-prompt.mjs'
 import { historyUnknownError, replayHistoryWithinBudget, resumeReplayRequest } from './codex-app-server-history.mjs'
 import { codexForkHandoffItems } from './codex-fork-handoff.mjs'
+import { ROUTE_SWITCH_SUMMARY_NOTICE, routeSwitchHistory } from './codex-route-history.mjs'
 import { memoizeSuccess, writeCodexModelCatalog } from './codex-model-catalog.mjs'
 // esbuild 把它打进 dist-electron/runtime;单测里 node 直接跑这份源码,所以写 `.ts` 全路径。
 import { spawnOwnedChild } from '../../../../packages/session-core/src/exec/owned-child.ts'
@@ -90,64 +93,8 @@ function configuredContextWindow(argv = process.argv) {
 
 const declaredContextWindow = configuredContextWindow()
 
-/**
- * @@@resume-provider — **这个进程**为一条新线程会用的那个 model provider。
- *
- * ## 为什么 resume 必须显式带上它
- *
- * codex 把线程创建时的 `model_provider` **写进 rollout**,`thread/resume` 又是拿
- * rollout 里那份配置重新 load 的 ⇒ 跨计费路重开(咕咕代付 ↔ 用户自己的订阅)时:
- *  · 新进程没有咕咕那条 provider 的声明 ⇒ `failed to load configuration: Model provider
- *    `gugu_platform` not found`,resume 直接被拒(gugu#5825,owner 真机撞到);
- *  · 就算把声明补上,线程**仍然绑在那条 provider 上** —— 下一轮会拿用户自己的 key 打咕咕的中转。
- *
- * 官方 API 给的正解是 `thread/resume` 的**顶层** `modelProvider` 参数(`thread_resume(…,
- * model_provider=None, …)`,线上 camelCase),它作为 **request override** 参与配置加载
- * (`thread_processor.rs` 的 `thread_resume_inner` → `config_manager.load_for_cwd(request_overrides, …)`)。
- * ⚠️ ❌ 不是 `config.model_provider` —— `config` 那个口是给 `model_reasoning_effort` 这类用的,
- *    塞进去**收下但不生效**(0.147.0 实测:三种字段名 + `config` 里那份全部无效)。
- *
- * ## 取值:问这个进程自己,❌ 不判「平台还是 BYOK」
- *
- * 规则只有一条:**resume 用这个进程的 provider,而不是 rollout 里记的那个** ——
- * 进程握着谁的凭据,这条会话就该走谁的路。所以不需要在这里再分一次平台/BYOK 的岔:
- * `thread/start` 回包**顶层**就有 `modelProvider`,平台进程报 `gugu_platform`、BYOK 进程报它自己的默认。
- * 没有现成的 `thread/start` 可蹭时,起一条 `ephemeral: true` 的线程问一次 —— 实测它**不落 rollout**,
- * 不污染用户的会话库。
- *
- * 值**原样透传**,❌ 不规范化大小写:实测默认那条报的是 `OpenAI`,而 resume 收的就是这个串。
- */
-let processModelProvider = null
-let processModelProviderKnown = false
-/**
- * 在途的那一趟。并发的 `session/load` 共用它 —— ⚠️ ❌ 不能只记一个 boolean:
- * 后来那条会拿到**还没填好的 `null`**,于是它既丢掉 override,又因为少了一个往返而抢在
- * 前一条之前 resume,把「哪一次 load 是第一次」整个打乱(既有的 stale-load 判据当场红)。
- */
-let processModelProviderInFlight = null
-
-function processModelProviderOnce(cwd) {
-  if (processModelProviderKnown) return Promise.resolve(processModelProvider)
-  if (!processModelProviderInFlight) {
-    processModelProviderInFlight = appRequest('thread/start', { cwd, ephemeral: true }, 45_000)
-      .then((probe) => String(probe?.modelProvider ?? '').trim() || null)
-      .catch((error) => {
-        // ❌ 不抛:问不出来只是退回改动前的行为(resume 沿用 rollout 里那条),
-        //    而抛出去会让**每一条**会话都打不开 —— 拿更大的故障盖小故障。
-        process.stderr.write(
-          `[codex-app-server-acp] could not read this process's model provider: ${error?.message ?? error}\n`,
-        )
-        return null
-      })
-      .then((value) => {
-        processModelProvider = value
-        processModelProviderKnown = true
-        processModelProviderInFlight = null
-        return value
-      })
-  }
-  return processModelProviderInFlight
-}
+/** 换计费路时压缩摘要没能带过去的那条新线程:接回它之后要在会话里报一行(见 @@@route-switch-history)。 */
+let routeSwitchNoticeFor = null
 
 async function modelCatalogOnce() {
   if (modelCatalog) return modelCatalog
@@ -264,7 +211,7 @@ function appRequest(method, params, timeoutMs = 45_000) {
   return new Promise((resolve, reject) => {
     const timer = timeoutMs === null ? null : setTimeout(() => {
       appPending.delete(id)
-      const error = new Error(`local Codex app-server ${method} timed out after ${timeoutMs}ms`)
+      const error = tagCodexStartupFailure(new Error(`local Codex app-server ${method} timed out after ${timeoutMs}ms`), 'timeout')
       reject(error)
     }, timeoutMs)
     timer?.unref?.()
@@ -936,6 +883,9 @@ async function startAppAttempt(servers) {
       + 'codex sizes them with its unknown-model window\n',
     )
   }
+  process.stderr.write('[gugu-codex-runtime] ' + JSON.stringify(codexSpawnDiagnostic({
+    executable: codexBin, appVersion: process.env.GUGU_APP_VERSION, mode: 'acp-stdio', phase: 'spawn',
+  })) + '\n')
   appServer = spawnOwnedChild(codexBin, [
     'app-server',
     '--stdio',
@@ -950,7 +900,7 @@ async function startAppAttempt(servers) {
   let startupStderr = ''
   app.stderr.on('data', (chunk) => { startupStderr = (startupStderr + chunk.toString()).slice(-8192); process.stderr.write(chunk) })
   app.on('exit', (code, signal) => {
-    const error = new Error(`local Codex app-server exited (code=${code} signal=${signal})`)
+    const error = tagCodexStartupFailure(new Error(`local Codex app-server exited (code=${code} signal=${signal})`), 'exited')
     rejectAppPending(error)
     appReady = false
     if (established && !shuttingDown) process.exit(code && code !== 0 ? code : 1)
@@ -961,15 +911,17 @@ async function startAppAttempt(servers) {
       clientInfo: { name: 'gugu', title: 'Gugu', version: '0' },
       capabilities: { experimentalApi: true },
     }, null)
+    process.stderr.write('[gugu-codex-runtime] ' + JSON.stringify(codexSpawnDiagnostic({
+      executable: codexBin, nativeVersion: codexVersionFromUserAgent(initialized?.userAgent),
+      appVersion: process.env.GUGU_APP_VERSION, mode: 'acp-stdio', phase: 'initialized', versionSource: 'initialize',
+    })) + '\n')
     const version = String(initialized?.userAgent ?? '').match(/^[^/]+\/(\d+)\.(\d+)\.(\d+)(?:[\s(/]|$)/)
     autoReviewSupported = !!version && (Number(version[1]) > 0 || Number(version[2]) > 156 || (Number(version[2]) === 156 && Number(version[3]) >= 1))
   } catch (error) {
     if (app && (app.exitCode !== null || app.signalCode !== null) && !(app.stdout.readableEnded && app.stderr.readableEnded)) await new Promise(resolve => app.once('close', resolve))
     error.stderrTail = startupStderr
     if (codexBackfillWaiting(error)) throw error
-    throw new Error(
-      `本机 Codex 无法启动 app-server；请升级 Codex 后重试。原始错误：${error.message || String(error)}`,
-    )
+    throw tagCodexStartupFailure(error, error.code === -32601 ? 'protocol' : undefined)
   }
   appNotify('initialized', {})
   // #6387 Installed Apps' skills: the materializer's skill root, registered before any thread so codex lists them as its
@@ -2344,25 +2296,44 @@ async function handleAcpRequest(message) {
     // ❌ 不许把缺省当成「一定是运行时分叉」:那样持久分叉会开出一条重开即消失的会话,
     //    而症状要到用户下次打开它时才出现。
     const ephemeralFork = params?._meta?.gugu?.ephemeralFork !== false
-    const forked = await appRequest('thread/fork', {
-      serviceTier: 'default',
-      threadId: params.sessionId,
-      ephemeral: ephemeralFork,
-      excludeTurns: true,
-      cwd: params.cwd,
-      ...(appServerThreadConfig ? { config: appServerThreadConfig } : {}),
-      ...developerInstructionsFrom(params),
-    })
-    sessionId = String(forked?.thread?.id ?? '')
-    if (!sessionId) throw new Error('local Codex thread/fork returned no thread id')
-    // @@@fork-identity 持久分叉 = 新 agent。codex 不认 thread/fork 带的新指令(openai/codex#19045),
-    // 模型仍读到源会话的身份 ⇒ 在历史末尾补一条只含身份差异与交接说明的开发者消息(见 codex-fork-handoff)。
-    // 运行时分叉(侧边聊天)是同一个 agent,身份没变,❌ 不注入。
-    if (!ephemeralFork) {
-      await appRequest('thread/inject_items', {
-        threadId: sessionId,
-        items: codexForkHandoffItems(developerInstructionsFrom(params).developerInstructions),
+    // 换计费路的分叉(`forkKeepsAgent`):同一个 agent 接着干,只是换了计费路。❌ `thread/fork` —— 它把旧路的加密推理
+    // 原样带过来,另一个账号的上游解不开(见 @@@route-switch-history);在这条路上开新线程,注入去掉封存内容的历史。
+    const keepsAgent = params?._meta?.gugu?.forkKeepsAgent === true
+    let forked
+    if (keepsAgent) {
+      const history = await routeSwitchHistory(appRequest, params.sessionId)
+      forked = await startThread({
+        cwd: params.cwd,
+        ...(appServerThreadConfig ? { config: appServerThreadConfig } : {}),
+        ...(requestedPermission ? requestedPermission.threadStart : {}),
+        ...developerInstructionsFrom(params),
       })
+      sessionId = String(forked?.thread?.id ?? '')
+      if (!sessionId) throw new Error('local Codex thread/start returned no thread id')
+      if (history.items.length) await appRequest('thread/inject_items', { threadId: sessionId, items: history.items })
+      // 压缩摘要带不过去时,人也要知道:等宿主接回这条新线程(session/resume)之后在会话里报一行。
+      routeSwitchNoticeFor = history.sealedSummaryDropped ? sessionId : null
+    } else {
+      forked = await appRequest('thread/fork', {
+        serviceTier: 'default',
+        threadId: params.sessionId,
+        ephemeral: ephemeralFork,
+        excludeTurns: true,
+        cwd: params.cwd,
+        ...(appServerThreadConfig ? { config: appServerThreadConfig } : {}),
+        ...developerInstructionsFrom(params),
+      })
+      sessionId = String(forked?.thread?.id ?? '')
+      if (!sessionId) throw new Error('local Codex thread/fork returned no thread id')
+      // @@@fork-identity 持久分叉 = 新 agent。codex 不认 thread/fork 带的新指令(openai/codex#19045),
+      // 模型仍读到源会话的身份 ⇒ 在历史末尾补一条只含身份差异与交接说明的开发者消息(见 codex-fork-handoff)。
+      // 运行时分叉(侧边聊天)是同一个 agent,身份没变,❌ 不注入。
+      if (!ephemeralFork) {
+        await appRequest('thread/inject_items', {
+          threadId: sessionId,
+          items: codexForkHandoffItems(developerInstructionsFrom(params).developerInstructions),
+        })
+      }
     }
     if (requestedPermission) {
       await appRequest('thread/settings/update', {
@@ -2453,11 +2424,6 @@ async function handleAcpRequest(message) {
     // 那层没有这两项)。⚠️ 读出来叫 `reasoningEffort`,写回去只认 `effort` —— 名字不对称。
     selectedModel = String(started?.model ?? '').trim() || null
     selectedEffort = String(started?.reasoningEffort ?? '').trim() || null
-    // 顺手记下这个进程的 provider(见 @@@resume-provider)—— 有现成的回包就不必再起探针线程。
-    if (!processModelProviderKnown && !processModelProviderInFlight) {
-      processModelProviderKnown = true
-      processModelProvider = String(started?.modelProvider ?? '').trim() || null
-    }
     const models = await modelCatalogOnce()
     respond(id, {
       sessionId,
@@ -2484,14 +2450,22 @@ async function handleAcpRequest(message) {
     await startApp(params.mcpServers)
     await requireCodexAccount()
     const requestedPermission = codexThreadPermissionFrom(params)
-    // 见 @@@resume-provider:resume 要用**这个进程**的 provider,❌ 不是 rollout 里记的那个。
-    const resumeProvider = await processModelProviderOnce(params.cwd)
+    // @@@resume-provider — 一条 codex 线程绑死在**创建它的那个 model provider** 上。
+    //
+    // codex 把线程创建时的 `model_provider` 写进 rollout,`thread/resume` 只肯在同一个 provider 下接回:
+    // 0.166 起(openai/codex#57840,0.168 #59503 收紧)provider 不同就拒,两个方向都拒(用户自己的 `openai` ↔
+    // 咕咕代付的 `gugu_platform`);`thread/resume` 的 `modelProvider` 参数也改不了它(0.169 实测:带不带都拒)。
+    // 这座桥不按报错文字判断 —— 各版本说法不同,而是否换了计费路是宿主早就知道的事。
+    //
+    // ⇒ 换计费路由宿主决定:codex descriptor 声明 `sourceChangeSession: 'fork'`,宿主重开时不 resume 原线程,
+    // 而是让新路的这个进程 `session/fork` 它(`_meta.gugu.forkKeepsAgent`):在新路上开新线程、注入去掉封存内容的
+    // 历史(见 @@@route-switch-history;0.169 实测两个方向都通、新线程里有之前的对话、之后在这条路上 resume 正常)。
+    // 所以到这里的 resume 永远是同一条路,用 rollout 里那个 provider 就对,❌ 不再带 `modelProvider` 覆盖。
     const resumed = await appRequest('thread/resume', {
       excludeTurns: true,
       serviceTier: 'default',
       threadId: params.sessionId,
       cwd: params.cwd,
-      ...(resumeProvider ? { modelProvider: resumeProvider } : {}),
       ...(appServerThreadConfig ? { config: appServerThreadConfig } : {}),
       // 同 session/new:档位由 argv 单一决定。重开一个会话不该把它悄悄提到全权。
       ...developerInstructionsFrom(params),
@@ -2564,6 +2538,10 @@ async function handleAcpRequest(message) {
       notify('session/update', { sessionId, update: { sessionUpdate: 'config_option_update', configOptions: setup.configOptions } })
     }
     respond(id, setup, historyStatus.status === 'unknown' ? historyUnknownError(sessionId, historyStatus.reason) : undefined)
+    if (routeSwitchNoticeFor === sessionId) {
+      routeSwitchNoticeFor = null
+      sessionUpdate({ sessionUpdate: 'notice', severity: 'warning', title: ROUTE_SWITCH_SUMMARY_NOTICE })
+    }
     // 重开的会话同样要报 —— 只在 new 里推的话,回到旧会话面板就是空的
     // (opencode 的 anomalyco#18819 正是这个形状,❌ 别自己再造一个)。
     void publishAvailableCommands(params.cwd, params.additionalDirectories)
@@ -2810,6 +2788,7 @@ const reader = createJsonlReader({ input: process.stdin, onClose: shutdown, onEr
 
 let shutdownExitCode = 0
 function failProtocol(error) {
+  tagCodexStartupFailure(error, 'protocol')
   process.stderr.write(`[codex-app-server-acp] ERROR: ${error.message}\n`)
   shutdownExitCode = 1
   rejectAppPending(error)

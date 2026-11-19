@@ -40,6 +40,10 @@ export function ChatBottomDock({ reserve, above, running = false, children }: { 
     const preview = hasAbove ? el.querySelector<HTMLElement>('[data-running-bar-content]') : null
     column.setAttribute('data-chat-dock-column', columnId)
     const rule = dockRule(columnId)
+    // @@@dock-rule-writes - a write to the rule re-matches it against the whole document (a stylesheet change), even with the
+    // same value. The dock's width changes in every frame of a sidebar fold and its observer fires each time: write only a
+    // changed height, so a fold costs no document-wide pass per frame.
+    let written = ''
     const report = () => {
       let top = input.offsetTop
       for (const pill of el.querySelectorAll<HTMLElement>('[data-chat-dock-obstacle]')) {
@@ -48,6 +52,8 @@ export function ChatBottomDock({ reserve, above, running = false, children }: { 
         top = Math.min(top, offset)
       }
       const height = el.offsetHeight
+      if (written === `${height} ${top}`) return
+      written = `${height} ${top}`
       rule.style.setProperty(CHAT_DOCK_HEIGHT_VAR, `${height}px`)
       rule.style.setProperty(CHAT_DOCK_AVATAR_HEIGHT_VAR, `${height - top}px`)
     }

@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionpageSessionCreateModels, SessionpageSessionCreateOptions } from '@gugu/session-core/session-record/contract'
 import { clickElement, createReactHarness } from '../../support/testHarness'
 vi.mock('../../../apps/desktop/src/components/ui/Sheet', () => ({ Sheet: ({children}: {children: ReactNode}) => createElement('section', {role:'dialog'}, children) }))
-import { CreateOptionsPill } from '../../../apps/desktop/src/mobile/agent-watch/CreateOptionsPill'
-import { defaultSelection } from '../../../apps/desktop/src/mobile/agent-watch/create-session-form'
+import { CreateOptionsPill } from '../../../apps/desktop/src/components/session-watch/CreateOptionsPill'
+import { defaultSelection } from '../../../apps/desktop/src/components/session-watch/create-session-form'
 
 const options: SessionpageSessionCreateOptions = {
   projects:[{id:'private-project',name:'INTERNAL_PHONE_PROJECT',path:'/private'}],

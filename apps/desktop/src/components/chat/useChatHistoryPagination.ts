@@ -41,8 +41,10 @@ export function useChatHistoryPagination({ resetKey, messages, enabled, scroller
     // Decide whether either direction can act before reading layout dimensions.
     if (!canLoadOlder && !canLoadNewer) return
     // 文档流只挂了数据窗口的一段时,本地边缘先由 FlowList 补挂,不能当成数据窗口的翻页边缘。
-    const mounted = scroller.firstElementChild?.querySelectorAll(':scope > [aria-posinset][aria-setsize]')
-    const first = mounted?.[0], last = mounted?.[mounted.length - 1]
+    // The list's own children, ❌ querySelectorAll(':scope > …'): that walks every row's subtree, and this runs on each scroll
+    // event (a sidebar fold re-wraps the transcript and scrolls it in every frame).
+    const rows = [...scroller.firstElementChild?.children ?? []].filter((row) => row.hasAttribute('aria-posinset') && row.hasAttribute('aria-setsize'))
+    const first = rows[0], last = rows.at(-1)
     canLoadOlder &&= first?.getAttribute('aria-posinset') === '1'
     canLoadNewer &&= !!last && last.getAttribute('aria-posinset') === last.getAttribute('aria-setsize')
     if (!canLoadOlder && !canLoadNewer) return

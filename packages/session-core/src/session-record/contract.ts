@@ -21,7 +21,7 @@ import type { PermissionSubject } from '../acp/models/permissions';
  *   SessionRecordSource（一家一个：定位文件/库、尾读、解码成 RecordEntry）
  *     → SessionTimeline（喂 reducer、发游标、按轮增量、审批/提问一次性结算）
  *       → 宿主 RPC / 设备 RPC（apps/desktop/electron/session/main/core/session-timeline）
- *         → 桌面渲染层 / 手机（apps/desktop/src/mobile/agent-watch）
+ *         → 桌面渲染层 / 手机（apps/desktop/src/components/session-watch）
  *
  * 只写 JSON 可序列化的东西：每一个类型都会经 Realtime 广播到手机。
  */
@@ -153,7 +153,7 @@ export type RecordBoundary = { messageId?: string } & (
   /** 被打断（用户 ESC、进程被杀）。 */
   | { kind: 'turn_aborted' }
   /** 没做完：harness 自己记下的报错（claude 的 `isApiErrorMessage` 行）。`detail` = what the failing side recorded it said. */
-  | { kind: 'turn_failed'; creditExhausted?: true; detail?: string });
+  | { kind: 'turn_failed'; creditExhausted?: true; teamCreditReason?: import('./team-credits').TeamCreditStopReason; detail?: string });
 
 /**
  * 一条解码后的记录。`key` 是跨来源身份键：同一件事从两个来源各报一次也只算一次。
@@ -957,7 +957,7 @@ export type SessionpageSessionCreateModels = {
   autoReview?: { model: string; disabled?: boolean; reviewByHaiku?: boolean };
   customModels?: CustomModelConnection[];
   modelProtocols?: readonly ModelProtocol[];
-  customModel?: { modelOptional: true };
+  customModel?: { modelOptional?: true; convertFrom?: readonly ModelProtocol[] };
   harness: string;
   transport: 'acp' | 'pty';
   models: SessionpageSessionCreateModelChoice[];
@@ -1029,6 +1029,8 @@ export type GuguCatalogReason =
   | 'membership-required'
   /** 选的咕咕模型下架了、或网关一条渠道都不卖它(服务端 `model_unavailable`,#7103):换个模型。 */
   | 'model-unavailable'
+  | 'team-monthly-cap-reached'
+  | 'team-credits-exhausted'
   /** 认不出的串(老版本宿主送来的原文):与 `service-unavailable` 同一句,❌ 原样显示。 */
   | 'unknown';
 
@@ -1051,6 +1053,7 @@ const LEGACY_GUGU_CATALOG_REASONS: ReadonlyArray<[string, GuguCatalogReason]> = 
 const GUGU_CATALOG_REASONS = new Set<GuguCatalogReason>([
   'not-routable', 'no-identity-chat', 'no-identity-terminal', 'runtime-not-connected', 'host-not-ready',
   'none-for-agent', 'signed-out', 'service-unavailable', 'unreachable', 'membership-required', 'model-unavailable',
+  'team-monthly-cap-reached', 'team-credits-exhausted',
 ]);
 
 /** 读一格 `catalogError` / `guguReason`:null = 没有要说的;其余一定落在某个码上。 */
@@ -1241,7 +1244,7 @@ export type SessionpageSessionToolImageRequest = { conversationId: string; itemI
 /**
  * 手机取一张工具交回来的图时,宿主答的上限(base64 字数)。超过就回 `too_large`,手机说「在桌面上看」。
  *
- * 依据:这一问走一问一答的设备 RPC(mobile/agent-watch/sessionpage-rpc.ts 的 `once`),回包是**一条**广播、不拆片,
+ * 依据:这一问走一问一答的设备 RPC(components/session-watch/sessionpage-rpc.ts 的 `once`),回包是**一条**广播、不拆片,
  * 手机等 12 秒。一条广播的上限是库的 Realtime 单包上限 3000KB:共享测试库 2026-10-15 实测,单条 2.9M 字到、3.2M 字
  * 被拒。1M 字留出三倍余量;慢网(约 1 Mbps)上约 8 秒到齐,还在 12 秒里。app_check 交回的图最大约 0.5M 字(噪点页
  * 实测 512K/张)。手机手里有每张图的字数(`imageRefs`),超过的不去问。

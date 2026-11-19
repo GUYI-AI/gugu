@@ -21,6 +21,8 @@ import { signupConsentAdapter } from './login/signupConsentRuntime'
 import { validSignupConsent, type SignupConsent } from '@/lib/signupConsent'
 import type { LoginOtpIntent } from '@/lib/loginOtpTransport'
 import './login/login.css'
+import { TeamAuthPane } from '@/features/team/TeamAuthPane'
+import { teamInvitation } from '@/features/team/invitation'
 
 const APP_LOGO_URL = publicAssetPath('/assets/app/gugu-icon-512.png')
 type Step = 'email' | 'otp'
@@ -37,6 +39,9 @@ function PrimaryButton({ disabled, loading, label }: { disabled: boolean; loadin
 
 export function LoginPage() {
   const { t, i18n } = useTranslation('main')
+  const { t: tTeam } = useTranslation('team')
+  const invitation = useSyncExternalStore(teamInvitation.subscribe, teamInvitation.getSnapshot)
+  const [teamMode, setTeamMode] = useState(false)
   const [googleEnabled, setGoogleEnabled] = useState<boolean | null>(null)
   const [step, setStep] = useState<Step>('email')
   const [email, setEmail] = useState('')
@@ -50,7 +55,6 @@ export function LoginPage() {
   const consentLanguage = consent?.document_version.endsWith('-en') ? 'en' : 'zh'
   const confirmedConsent = validSignupConsent(consent)
     && consent.document_version === signupConsentAdapter.documentVersion(consentLanguage) ? consent : undefined
-  const showConsent = signupConsentAdapter.enabled && registering && !confirmedConsent
   const otpIntent: LoginOtpIntent | undefined = !signupConsentAdapter.enabled ? undefined
     : registering && confirmedConsent ? { kind: 'signup', consent: confirmedConsent } : { kind: 'login' }
   const otpSend = useLoginOtpSend()
@@ -58,6 +62,8 @@ export function LoginPage() {
   const verifying = useRef(false)
   const reduceMotion = usePrefersReducedMotion()
   const google = useSyncExternalStore(googleLogin.subscribe, googleLogin.getSnapshot)
+  const showTeam = teamMode || (invitation.pending && !google.busy && !loading && !otpRequestPending)
+  const showConsent = !showTeam && signupConsentAdapter.enabled && registering && !confirmedConsent
   useLayoutEffect(() => googleEnabled === null ? retainStartupMotion() : undefined, [googleEnabled])
 
   useEffect(() => {
@@ -115,7 +121,7 @@ export function LoginPage() {
   }
 
   return <main className="gugu-auth-page">
-    <section className="gugu-auth-shell" aria-labelledby={googleEnabled === null ? undefined : showConsent ? 'gugu-signup-consent-title' : 'gugu-auth-title'} aria-busy={googleEnabled === null}>
+    <section className="gugu-auth-shell" aria-labelledby={!showTeam && googleEnabled === null ? undefined : showConsent ? 'gugu-signup-consent-title' : 'gugu-auth-title'} aria-busy={!showTeam && googleEnabled === null}>
       <aside className="gugu-auth-brand" aria-label={t('brand.name')}>
         <AuthBrandMotion />
         <div className="gugu-auth-brand-copy">
@@ -123,7 +129,9 @@ export function LoginPage() {
           <p className="gugu-auth-brand-sub">{t('auth.brandSubtitle')}</p>
         </div>
       </aside>
-      <div className={`gugu-auth-pane${showConsent ? ' gugu-signup-consent-pane' : ''}`}>{googleEnabled === null ? <div className="gugu-auth-placeholder" role="status" aria-label={t('auth.loadingMethods')} /> : showConsent ? <SignupConsentStep key={language} language={language} adapter={signupConsentAdapter}
+      <div className={`gugu-auth-pane${showConsent ? ' gugu-signup-consent-pane' : ''}`}>{showTeam ? <TeamAuthPane key={invitation.version} googleEnabled={googleEnabled === true}
+        invitationLink={teamInvitation.readLink()} onPersonal={() => { teamInvitation.clear(); setTeamMode(false) }} />
+        : googleEnabled === null ? <div className="gugu-auth-placeholder" role="status" aria-label={t('auth.loadingMethods')} /> : showConsent ? <SignupConsentStep key={language} language={language} adapter={signupConsentAdapter}
         onAccepted={confirmed => { setConsent(confirmed); setStep('email'); setEmail(''); setOtpCode(''); otpSend.reset() }}
         onBack={() => { setRegistering(false); setConsent(undefined); setStep('email'); setEmail(''); setOtpCode(''); setError(''); otpSend.reset() }} /> : <div className="gugu-auth-login">
         <header className="gugu-auth-heading">
@@ -181,6 +189,9 @@ export function LoginPage() {
           terms: <a href="https://gugu.nextmind.space/zh/terms.html" target="_blank" rel="noreferrer" />,
           privacy: <a href="https://gugu.nextmind.space/zh/privacy.html" target="_blank" rel="noreferrer" />,
         }} /></p>
+        {invitation.invalid && <p role="alert" className="gugu-auth-error">{tTeam('invitationInvalid')}</p>}
+        {invitation.pending && (google.busy || loading || otpRequestPending) && <p role="status" className="gugu-auth-status">{tTeam('finishCurrentLogin')}</p>}
+        <div className="gg-team-login-link"><Button variant="ghost" size="sm" disabled={loading || google.busy || otpRequestPending} onClick={() => setTeamMode(true)}>{tTeam('loginEntry')}</Button></div>
       </div>}</div>
     </section>
     <div className="gugu-auth-window-drag" aria-hidden="true" />

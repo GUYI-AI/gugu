@@ -1175,7 +1175,9 @@ function outcomeOf(boundary: RecordBoundary): TranscriptTurnOutcome {
   if (boundary.kind === 'turn_aborted') return { kind: 'cancelled', reason: 'cancelled' };
   if (boundary.kind === 'turn_failed') {
     // A rebuilt transcript says the same as the live one: the recorded words, read by the one shared parser.
-    const detail = boundary.creditExhausted
+    const detail = boundary.teamCreditReason
+      ? JSON.stringify({ error: { code: 'credits_exhausted', reason_code: boundary.teamCreditReason } })
+      : boundary.creditExhausted
       ? '{"error":{"code":"credits_exhausted","message":"Gugu credits"}}'
       : boundary.detail && redactSecrets(boundary.detail);
     const said = boundary.detail ? upstreamSaid(boundary.detail) : undefined;

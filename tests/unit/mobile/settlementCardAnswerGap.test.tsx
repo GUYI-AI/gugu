@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Settlement, SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
-import { SettlementCard } from '../../../apps/desktop/src/mobile/agent-watch/TimelineView'
+import { SettlementCard } from '../../../apps/desktop/src/components/session-watch/TimelineView'
 import { ToastContext } from '../../../apps/desktop/src/components/toastContext'
 import { clickElement, createReactHarness } from '../../support/testHarness'
 

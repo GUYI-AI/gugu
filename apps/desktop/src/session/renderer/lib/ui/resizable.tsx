@@ -2,6 +2,24 @@ import { useRef } from 'react';
 import * as ResizablePrimitive from 'react-resizable-panels';
 import { cn } from '@renderer/utils/utils';
 
+/**
+ * Puts a group's shares (by panel id) into the library — when the group holds exactly those panels.
+ *
+ * The library takes a panel into its group a render after the panel mounts. In the commit that adds or removes one, an
+ * effect (or a resize observer) still finds the group's previous panels there, and a layout for the new set is refused
+ * with a throw ("Invalid 1 panel layout: …"). That is not an error to catch: it is a layout for panels the group does not
+ * have yet, so it waits. When the library takes the new set in, it lays it out from each panel's `defaultSize` (or the
+ * layout it last had for that set) and reports it through `onLayoutChanged`; a caller that owns the shares sets them there.
+ * Shares already within `tolerance` of the group's are left alone, so the two never fight.
+ */
+export function setGroupLayout(handle: ResizablePrimitive.GroupImperativeHandle, wanted: Record<string, number>, tolerance: number): void {
+  const current = handle.getLayout();
+  const ids = Object.keys(wanted);
+  if (Object.keys(current).length !== ids.length || !ids.every((id) => id in current)) return;
+  if (ids.every((id) => Math.abs(current[id]! - wanted[id]!) <= tolerance)) return;
+  handle.setLayout(wanted);
+}
+
 function ResizablePanelGroup({ className, ...props }: ResizablePrimitive.GroupProps) {
   return (
     <ResizablePrimitive.Group

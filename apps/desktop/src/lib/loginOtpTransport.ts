@@ -1,3 +1,4 @@
+import { serverNow } from '@gugu/core/shared/serverClock'
 /** Keep SDK OTP calls serial: they share the PKCE verifier with Google sign-in. */
 import type { SignupConsent } from './signupConsent'
 
@@ -33,7 +34,8 @@ export function runLoginOtpRequest<T>(email: string, work: (metadata: LoginOtpMe
   return result
 }
 
-export function retryAfterSeconds(value: string | null, now = Date.now()): number | undefined {
+/** An HTTP-date is on the backend's clock. */
+export function retryAfterSeconds(value: string | null, now = serverNow()): number | undefined {
   if (!value?.trim()) return undefined
   const seconds = /^\d+(?:\.\d+)?$/.test(value.trim()) ? Number(value) : (Date.parse(value) - now) / 1000
   return Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds) : undefined

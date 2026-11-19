@@ -1,4 +1,5 @@
 import { withBoundedOperation } from './boundedOperation'
+import { serverNow, withServerClock } from '../shared/serverClock'
 
 export interface RuntimeAuth {
   accessToken: string
@@ -90,7 +91,7 @@ export async function refreshSupabaseSession(input: {
   timeoutMs?: number
 }): Promise<{ accessToken: string; refreshToken: string }> {
   const url = `${input.supabaseUrl.replace(/\/$/, '')}/auth/v1/token?grant_type=refresh_token`
-  const doFetch = input.fetchImpl ?? fetch
+  const doFetch = withServerClock(input.fetchImpl ?? fetch)
   const timeoutMs = input.timeoutMs ?? RUNTIME_AUTH_REFRESH_TIMEOUT_MS
   return await withBoundedOperation(
     timeoutMs,
@@ -137,6 +138,7 @@ export interface RefreshingRuntimeAuthProviderInput {
   // @@@auth-expired-hook - fired exactly once when refresh hits PERMANENT loss, so the wiring (desktop
   // main, CLI host) can surface a single loud signal / native notification without polling.
   onAuthExpired?: (error: RuntimeAuthExpiredError) => void
+  /** Seconds on the backend's clock, which a JWT's `exp` is on (`@@@server-clock`). */
   now?: () => number
   fetchImpl?: (url: string, init: RequestInit) => Promise<Response>
   refreshTimeoutMs?: number
@@ -153,7 +155,7 @@ export function createRefreshingRuntimeAuthProvider(
   let accessToken = input.accessToken
   let refreshToken = input.refreshToken
   const skew = input.skewSeconds ?? 60
-  const now = input.now ?? (() => Date.now() / 1000)
+  const now = input.now ?? (() => serverNow() / 1000)
   const doFetch = input.fetchImpl ?? fetch
   const backoffBaseMs = input.backoffBaseMs ?? 5_000
   const backoffMaxMs = input.backoffMaxMs ?? 5 * 60_000

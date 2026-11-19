@@ -3,6 +3,8 @@ import { net } from 'electron'
 import WebSocket from 'ws'
 import { pauseElectronRealtimeChannels, reconnectElectronRealtimeChannels } from './realtime-channel'
 import { createLogger } from './lib/logger'
+import { withIdentityRealtime } from '../shared/team-realtime-client'
+import { createRealtimeIdentityReader, publishTeamRealtimeRpc } from '../shared/team-realtime-http'
 
 // #5331 主进程里所有云往返共用 Chromium 的连接池:已用过的空闲连接保活约 5 分钟,不像 Node 全局 fetch
 // (undici 默认 keepAliveTimeout 4 s)那样在两次新建会话之间断掉、下一发重握 0.95 s 的 TLS。
@@ -97,15 +99,21 @@ export function resumeElectronSupabaseRealtime(): Promise<void> {
 }
 
 let cachedSupabase: ElectronSupabaseClient | null = null
+function teamAwareRealtime(client: ElectronSupabaseClient, accessToken: () => Promise<string | null>) {
+  const identity = createRealtimeIdentityReader(accessToken, electronFetch)
+  return withIdentityRealtime(client, { readContext: identity.read,
+    publishTeam: (token, args) => publishTeamRealtimeRpc(electronFetch, token, args) })
+}
+const currentToken = async () => {
+  if (!currentAccessToken) throw new Error('Electron Supabase account provider is not bound')
+  return currentAccessToken()
+}
 function resolveSupabase(): ElectronSupabaseClient {
-  return (cachedSupabase ??= createGuguSupabaseClient({
-    accessToken: async () => {
-      if (!currentAccessToken) throw new Error('Electron Supabase account provider is not bound')
-      return currentAccessToken()
-    },
+  return (cachedSupabase ??= teamAwareRealtime(createGuguSupabaseClient({
+    accessToken: currentToken,
     fetch: electronFetch,
     realtime: electronRealtime
-  }))
+  }), currentToken))
 }
 
 export const supabase = new Proxy({} as ElectronSupabaseClient, {
@@ -118,7 +126,7 @@ export const supabase = new Proxy({} as ElectronSupabaseClient, {
 
 /** A host-owned short-lived connection, with no stored GoTrue session or shared channel objects. */
 export function createElectronRealtimeClient(accessToken: () => Promise<string | null>) {
-  return createGuguSupabaseClient({ accessToken, fetch: electronFetch, realtime: electronRealtime })
+  return teamAwareRealtime(createGuguSupabaseClient({ accessToken, fetch: electronFetch, realtime: electronRealtime }), accessToken)
 }
 
 // Returns an authenticated identity-schema client using the caller's access token.

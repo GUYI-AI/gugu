@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import { normalizeModelBaseUrl, modelProtocolSchema, type CustomModelConnection, type CustomModelEntry, type CustomModelMeta } from '@gugu/session-core/models/custom-model';
+import { normalizeModelBaseUrl, type CustomModelConnection, type CustomModelEntry, type CustomModelMeta } from '@gugu/session-core/models/custom-model';
 import { providerPresets } from '@gugu/session-core/models/provider-presets';
 import { Button } from '@renderer/lib/ui/button';
 import { Input } from '@renderer/lib/ui/input';
 import { Dialog, DialogContent, DialogContentArea, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@renderer/lib/ui/select';
 import {
   Combobox, ComboboxTrigger, ComboboxContent, ComboboxInput, ComboboxList, ComboboxGroup, ComboboxLabel,
   ComboboxCollection, ComboboxItem, ComboboxEmpty,
@@ -13,7 +12,7 @@ import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { openExternalLinkInBrowser } from '@renderer/lib/open-external-link';
 import { errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
-import { ConnectionModelPicker } from '@renderer/features/settings/subscriptions/ConnectionModelPicker';
+import { ConnectionModelPicker, useConnectionModelList, type ConnectionModelSource } from '@renderer/features/settings/subscriptions/ConnectionModelPicker';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { SubscriptionConnections } from '@renderer/features/settings/subscriptions/SubscriptionConnections';
@@ -38,48 +37,53 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
   const providerLabel = (id: string) => <span className="flex items-center gap-2">{id === 'claude-subscription' || id === 'chatgpt-subscription' ? <AppIcon id={id === 'claude-subscription' ? 'claude' : 'codex'} size={16} /> : null}{labelOf(id)}</span>;
   const [endpoints, setEndpoints] = useState<CustomModelMeta['endpoints']>(connection?.endpoints ?? initialPreset?.endpoints ?? [{ protocol: 'openai-chat-completions', baseUrl: '' }]);
   const [apiKey, setApiKey] = useState('');
-  const [models, setModels] = useState(connection?.models.map(({ id }) => id) ?? []);
+  // null = the person has not chosen: every model the address lists is selected.
+  const [picked, setPicked] = useState<string[] | null>(connection ? connection.models.map(({ id }) => id) : null);
   const [advanced, setAdvanced] = useState(false);
   const [features, setFeatures] = useState<Omit<CustomModelEntry, 'id' | 'label'>>((() => { const model = connection?.models[0]; return { image: model?.image, thinking: model?.thinking, contextWindow: model?.contextWindow, maxOutput: model?.maxOutput }; }));
   const [featuresChanged, setFeaturesChanged] = useState(false);
-  const [busy, setBusy] = useState<'save' | 'test' | null>(null);
+  const [busy, setBusy] = useState<'save' | null>(null);
   const [accountCreating, setAccountCreating] = useState(false);
   const [failure, setFailure] = useState('');
-  const [testResult, setTestResult] = useState('');
   let normalized: CustomModelMeta['endpoints'] | null = null;
   let addressProblem = '';
   try { normalized = endpoints.map((endpoint) => ({ ...endpoint, baseUrl: normalizeModelBaseUrl(endpoint.baseUrl) })); }
   catch (error) { addressProblem = errorText(error); }
-  const source = normalized && (apiKey ? { apiKey, endpoints: normalized }
-    : connection?.keySaved ? { connectionId: connection.id, endpoints: normalized } : null);
-  const updateEndpoint = (index: number, patch: Partial<CustomModelMeta['endpoints'][number]>) => {
-    setEndpoints((current) => current.map((endpoint, i) => i === index ? { ...endpoint, ...patch } : endpoint));
-    setTestResult('');
+  // A typed address with a new key: the host recognizes which protocols it speaks while it reads the models.
+  const typedAddress = !preset && apiKey && normalized?.[0] ? normalized[0].baseUrl : null;
+  const source: ConnectionModelSource | null = typedAddress ? { apiKey, baseUrl: typedAddress }
+    : normalized && apiKey ? { apiKey, endpoints: normalized }
+      : normalized && connection?.keySaved ? { connectionId: connection.id, endpoints: normalized } : null;
+  const list = useConnectionModelList(machine, source);
+  const models = picked ?? (list.kind === 'listed' ? list.models : []);
+  const keyProblem = list.kind === 'unlisted' && list.reason !== 'no-list'
+    ? translate(list.reason === 'unauthorized' ? 'customModels.refused' : 'customModels.unreachable') : '';
+  const setAddress = (baseUrl: string) => {
+    setEndpoints((current) => current.map((endpoint, i) => i === 0 ? { ...endpoint, baseUrl } : endpoint));
   };
   const feature = (patch: Partial<typeof features>) => { setFeatures((current) => ({ ...current, ...patch })); setFeaturesChanged(true); };
-  const test = async () => {
-    if (!source) return;
-    setBusy('test'); setFailure(''); setTestResult('');
-    try {
-      const result = await (await getAgentConfigRuntimeClient(machine)).testCustomModel({ ...source, modelId: models[0] });
-      if (!result.success) throw new Error(errorText(result.error));
-      if (result.data.kind === 'listed') setTestResult(translate('customModels.connected', { count: result.data.models.length }));
-      else if (result.data.kind === 'connected') setTestResult(translate('customModels.connectedNoList'));
-      else if (result.data.reason === 'no-list') setTestResult(translate('customModels.noList'));
-      else setFailure(translate(result.data.reason === 'unauthorized' ? 'customModels.refused' : 'customModels.unreachable'));
-    } catch (error) { setFailure(errorText(error)); }
-    finally { setBusy(null); }
-  };
   const save = async () => {
     setFailure('');
     if (!normalized) { setFailure(addressProblem); return; }
     if (!models.length) { setFailure(translate('subscriptions.connections.modelsRequired')); return; }
     setBusy('save');
     try {
-      const result = await (await getAgentConfigRuntimeClient(machine)).saveCustomModel({
+      const client = await getAgentConfigRuntimeClient(machine);
+      let saved = normalized;
+      if (typedAddress) {
+        // What the background check found; an address with no model list is checked again with the model named here.
+        saved = list.kind === 'listed' || list.kind === 'unlisted' ? list.endpoints ?? [] : [];
+        if (!saved.length) {
+          const probe = await client.detectCustomModelProtocols({ apiKey, baseUrl: typedAddress, modelId: models[0] });
+          if (!probe.success) throw new Error(errorText(probe.error));
+          saved = probe.data.endpoints;
+          if (!saved.length) throw new Error(translate(probe.data.failures.some(({ reason }) => reason === 'unauthorized') ? 'customModels.refused' : 'customModels.unreachable'));
+        }
+      }
+      const result = await client.saveCustomModel({
         ...(connection ? { id: connection.id } : {}),
-        name: connection?.name || preset?.name || new URL(normalized[0]!.baseUrl).host,
-        preset: preset?.id ?? null, endpoints: normalized,
+        name: connection?.name || preset?.name || new URL(saved[0]!.baseUrl).host,
+        preset: preset?.id ?? null, endpoints: saved,
         ...(apiKey ? { apiKey } : {}),
         models: models.map((id) => {
           const existing = connection?.models.find((model) => model.id === id);
@@ -108,7 +112,7 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
               itemToStringLabel={labelOf}
               onValueChange={(id) => {
                 if (!id) return;
-                setPresetId(id); setTestResult('');
+                setPresetId(id); setPicked(null);
                 const next = providerPresets.find((item) => item.id === id);
                 if (id !== 'claude-subscription' && id !== 'chatgpt-subscription') setEndpoints(next?.endpoints ?? [{ protocol: 'openai-chat-completions', baseUrl: '' }]);
               }}
@@ -136,27 +140,15 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
             </Combobox>
           </label>}
           {accountProvider ? accountAgent ? <SubscriptionConnections key={accountProvider} agent={accountAgent} machine={machine} modelAccount={{ onClose, onBusyChange: setAccountCreating }} /> : agentsError ? <SettingsNote tone="danger" role="alert">{errorText(agentsError)} <Button size="sm" variant="outline" onClick={() => { void refetchAgents(); }}>{translate('common.retry')}</Button></SettingsNote> : agents ? <SettingsNote tone="danger">{translate('customModels.accountUnavailable')}</SettingsNote> : <Unknown className="h-9 w-full" /> : <form className="subscription-connection-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-          {preset ? <p className="subscription-connection-description">{preset.endpoints.map(({ protocol }) => translate(`customModels.${protocol}`)).join(' / ')}</p>
-            : endpoints.map((endpoint, index) => <div key={index} className="flex flex-col gap-2">
-              <label>{translate('customModels.address')}<Input data-testid={`custom-model-address-${index}`} type="url" required value={endpoint.baseUrl} onChange={(event) => updateEndpoint(index, { baseUrl: event.target.value })} /></label>
-              <label>{translate('customModels.protocol')}<Select value={endpoint.protocol} onValueChange={(value) => { if (value) updateEndpoint(index, { protocol: value }); }}>
-                <SelectTrigger data-testid={`custom-model-protocol-${index}`}><SelectValue>{translate(`customModels.${endpoint.protocol}`)}</SelectValue></SelectTrigger>
-                <SelectContent>{modelProtocolSchema.options.map((protocol) => <SelectItem key={protocol} value={protocol}>{translate(`customModels.${protocol}`)}</SelectItem>)}</SelectContent>
-              </Select></label>
-              {normalized?.[index] ? <p className="subscription-connection-description">{translate('customModels.savedAs', { address: normalized[index]!.baseUrl })}</p> : null}
-            </div>)}
-          <label>API Key<span className="flex items-center gap-2"><Input data-testid="custom-model-key" type="password" required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} placeholder={connection?.keySaved ? translate('customModels.keySaved') : undefined} onChange={(event) => { setApiKey(event.target.value); setTestResult(''); }} /><Button type="button" size="sm" variant="outline" disabled={!source || !!busy} onClick={() => { void test(); }}>{translate(busy === 'test' ? 'customModels.testing' : 'customModels.test')}</Button></span></label>
-          {testResult && <p className="subscription-connection-description" role="status">{testResult}</p>}
-          <ConnectionModelPicker machine={machine} source={source} value={models} onChange={setModels} />
+          {!preset && <label>{translate('customModels.address')}<Input data-testid="custom-model-address-0" type="url" required value={endpoints[0]?.baseUrl ?? ''} onChange={(event) => setAddress(event.target.value)} /></label>}
+          <label>API Key<Input data-testid="custom-model-key" type="password" required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={keyProblem ? true : undefined} placeholder={connection?.keySaved ? translate('customModels.keySaved') : undefined} onChange={(event) => setApiKey(event.target.value)} /></label>
+          {keyProblem && <p className="subscription-error" role="alert" data-testid="custom-model-key-problem">{keyProblem}</p>}
+          <ConnectionModelPicker list={list} value={models} onChange={setPicked} />
           <Button type="button" size="sm" variant="ghost" className="justify-start" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>{advanced ? '⌄' : '›'} {translate('customModels.advanced')}</Button>
           {advanced && <div className="flex flex-col gap-3">
             <label className="flex items-center justify-between">{translate('customModels.image')}<Toggle checked={features.image === true} onChange={(image) => feature({ image })} ariaLabel={translate('customModels.image')} /></label>
             <label className="flex items-center justify-between">{translate('customModels.thinking')}<Toggle checked={features.thinking === true} onChange={(thinking) => feature({ thinking })} ariaLabel={translate('customModels.thinking')} /></label>
             {(['contextWindow', 'maxOutput'] as const).map((key) => <label key={key}>{translate(key === 'contextWindow' ? 'customModels.context' : 'customModels.output')}<Input type="number" min="1" step="1" placeholder={translate('customModels.default')} value={features[key] ?? ''} onChange={(event) => feature({ [key]: event.target.value ? Number(event.target.value) : undefined })} /></label>)}
-            {!preset && endpoints.length < 4 && <Button type="button" size="sm" variant="outline" onClick={() => {
-              const protocol = modelProtocolSchema.options.find((item) => !endpoints.some((endpoint) => endpoint.protocol === item));
-              if (protocol) setEndpoints([...endpoints, { protocol, baseUrl: '' }]);
-            }}>{translate('customModels.anotherProtocol')}</Button>}
           </div>}
           {failure && <p className="subscription-error" role="alert">{failure}</p>}
           <div className="flex items-center justify-between gap-4"><p className="subscription-connection-description">{translate('subscriptions.connections.private')}</p><div className="flex gap-2">

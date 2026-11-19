@@ -11,7 +11,7 @@ export const LINK_PILL_CLASS = 'gg-link-pill'
 
 export function linkPillTarget(href: string) {
   const target = parseGuguLink(href)
-  return target?.kind === 'file' || target?.kind === 'chat' ? target : null
+  return target?.kind === 'file' || target?.kind === 'chat' || target?.kind === 'session' ? target : null
 }
 
 export function rehypeLinkPills() {

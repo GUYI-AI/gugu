@@ -36,8 +36,8 @@ import '@/mobile/phone-look.css'
 vi.mock('@/platform', () => import('../../../../../../../tests/support/capacitorPlatformTestDouble'))
 // Only the host-history transport result is controlled; keep the full page,
 // sidebar scope and picker. Lost transport prevents native/model/window reads.
-vi.mock('@/mobile/agent-watch/useAgentWatchSession', async original => {
-  const { emptyAgentWatchTimeline } = await import('@/mobile/agent-watch/agent-watch-store')
+vi.mock('@/components/session-watch/useAgentWatchSession', async original => {
+  const { emptyAgentWatchTimeline } = await import('@/components/session-watch/agent-watch-store')
   const timeline = emptyAgentWatchTimeline()
   return { ...await original<object>(), useAgentWatchSession: () => ({
     timeline, phase: 'ready', error: null, actionError: null, dismissActionError() {}, waitingForRecord: false, reload() {},
@@ -61,10 +61,6 @@ const devices: DevicesContextValue = { devices: [machine], loading: false, error
   refresh: async () => {}, rename: async () => {}, remove: async () => {}, listBoundAgents: async () => [] }
 type Destination = { deviceId: string; session: SessionpageSessionSummary; innerSidebarEntry?: string }
 async function openActualAgentPicker() {
-  const toggle = page.getByTestId('phone-composer-menu-toggle')
-  const button = document.querySelector<HTMLButtonElement>('[data-testid="phone-composer-menu-toggle"]')!
-  if (button.getAttribute('aria-expanded') === 'false') await toggle.click()
-  await expect.element(toggle).toHaveAttribute('aria-expanded', 'true')
   await page.getByTestId('phone-room-agents').click()
 }
 const destinations: Destination[] = []

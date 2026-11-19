@@ -8,11 +8,13 @@ import { i18n } from '@/i18n'
 import { readDisplayIdentities } from './identityReadAdapter'
 import { loginOtpRequestKey, runLoginOtpRequest, type LoginOtpIntent, type LoginOtpMetadata } from './loginOtpTransport'
 import { signupConsentRequired, validSignupConsent } from './signupConsent'
+import { accountKindFromMetadata } from '@/features/team/accountKind'
 
 const authLog = rendererLogger('auth/otp')
 
 export interface AuthUser {
   id: string
+  accountKind?: import('../features/team/types').TeamAccountKind
   gugu_number?: number | null
   email: string
   nickname: string
@@ -71,6 +73,7 @@ export async function hydrateIdentityAuthUser(user: User, signal: AbortSignal): 
   if (!identityUser) return null
   return {
     id: user.id,
+    accountKind: accountKindFromMetadata(user.app_metadata),
     gugu_number: identityUser.gugu_number,
     email: user.email ?? '',
     nickname: identityUser.display_name,

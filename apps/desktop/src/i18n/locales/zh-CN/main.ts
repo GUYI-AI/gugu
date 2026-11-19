@@ -142,9 +142,9 @@ export default {
     "sourceChanged": "来源已更新，请重试",
     "unreadable": "无法读取此文件"
   },
-  "local": "本机配置",
-  "updated": "本机配置有更新",
-  "row": "{{date}} 从 {{path}} 导入了一份。之后你在终端里的修改不会自动同步，咕咕里的改动也不会写回终端。",
+  "local": "终端配置",
+  "updated": "，终端里后来又改过",
+  "row": "{{date}} 导入",
   "upgradeKept": "咕咕已沿用你原来的 {{name}} 配置。",
   "upgradeRelogin": "请在设置 → 订阅中重新登录 {{name}}。",
   "reimport": "重新导入",
@@ -775,6 +775,7 @@ export default {
       "permissions": "本机控制",
       "prompts": "提示词",
       "sessions": "项目",
+      "team": "团队",
       "subscriptions": "订阅",
       "usage": "用量"
     },

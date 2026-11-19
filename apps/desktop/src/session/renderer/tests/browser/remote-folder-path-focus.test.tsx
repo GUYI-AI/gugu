@@ -76,6 +76,9 @@ it('keeps the existing keyboard entry, selection and explicit blur contracts', a
   expect(input()!.selectionEnd).toBe('/home/work'.length);
   await userEvent.keyboard('{Escape}');
   expect(input()).toBeNull();
+  // Closing the field drops focus to the body; the Sheet focuses its popup and focuses it again on
+  // the next animation frame. Let that frame run first, or it takes focus back from the picker.
+  await frames();
   picker.focus();
   await userEvent.keyboard('/');
   await frames();

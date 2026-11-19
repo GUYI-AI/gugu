@@ -8,6 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
 import { ChatHeaderActions } from '../../../../../apps/desktop/src/components/chat/ChatHeaderActions'
 
+// #2609 The search item's shortcut label follows the platform; these cases describe macOS (⌘F).
+vi.mock('@tanstack/react-hotkeys', async (original) => ({
+  ...await original<typeof import('@tanstack/react-hotkeys')>(),
+  detectPlatform: () => 'mac',
+}))
+
 vi.mock('@/lib/chatPinSettings', () => ({ readChatPinSettings: async () => ({ topicIds: [] }), setChatPinPreference: vi.fn(), watchChatPinSettings: () => () => {} }))
 
 let harness: ReturnType<typeof createReactHarness>

@@ -9,7 +9,9 @@ import { useDisplayDevices } from '../../hooks/useAssistantHomeLabel'
 import { SegmentedTabs } from '../ui/SegmentedTabs'
 import { SectionLabel } from '../ui/SectionLabel'
 import { EngineIcon } from '../AgentHarnessIdentity'
+import { Hint } from '../ui/Tooltip'
 import { engineLabel } from '../../lib/usage/engineLabel'
+import { cacheHitSeries, inputCacheHitRate, isInputCacheTracked } from '../../lib/usage/cacheHitRate'
 import {
   activeDays,
   busiestDay,
@@ -30,7 +32,7 @@ import {
 } from '../../lib/usage/derive'
 import { useUsageData, type Loadable } from './useUsageData'
 import { HeatLegend, UsageHeatmap, UsageHeatmapBone } from './UsageHeatmap'
-import { compact, duration, heightPx, plain } from './format'
+import { cachePercent, compact, duration, heightPx, plain } from './format'
 import { tokenAmounts } from '../../lib/usage/charts'
 import { Layers, Zap } from '@/lib/icons'
 import { ModelBadge, SegSwitch, StatStrip } from './UsageParts'
@@ -242,6 +244,7 @@ function Engines({ usage, range }: { usage: UsageDay[]; range: DayRange }) {
             <tr>
               <th>{t('usage.na.colEngine')}</th><th>{t('usage.na.colSessions')}</th>
               <th>{t('usage.na.colGuguTokens')}</th><th>{t('usage.na.colByokTokens')}</th><th>{t('usage.na.colRuntime')}</th>
+              <th><Hint label={t('usage.cacheHit.hint')} side="top"><span tabIndex={0}>{t('usage.cacheHit.label')}</span></Hint></th>
             </tr>
           </thead>
           <tbody>
@@ -257,6 +260,9 @@ function Engines({ usage, range }: { usage: UsageDay[]; range: DayRange }) {
                 <td data-label={t('usage.na.colGuguTokens')}><span className="na-mono-xs">{row.guguTokens > 0 ? compact(row.guguTokens) : '—'}</span></td>
                 <td data-label={t('usage.na.colByokTokens')}><span className="na-mono-xs">{row.byokTokens > 0 ? compact(row.byokTokens) : '—'}</span></td>
                 <td data-label={t('usage.na.colRuntime')}>{row.runSeconds > 0 ? <span className="na-cost">{duration(row.runSeconds, t)}</span> : <span className="gg-usage-muted">—</span>}</td>
+                <td data-label={t('usage.cacheHit.label')} data-testid={`usage-cache-hit-${row.engine}`}>
+                  {cachePercent(isInputCacheTracked(row.engine) ? inputCacheHitRate(row) : null)}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -276,8 +282,9 @@ function ModelTokensCard({ usage, range }: { usage: UsageDay[]; range: DayRange 
   const { t } = useTranslation('settings')
   const [source, setSource] = useState<'all' | 'gugu' | 'byok'>('all')
   const amounts = useMemo(() => tokenAmounts(usage, source === 'all' ? null : source), [usage, source])
+  const cacheHits = useMemo(() => cacheHitSeries(usage, range), [usage, range])
   return (
-    <ModelAnalysisCard amounts={amounts} range={range} kind="tokens" format={compact} testId="usage-model-tokens"
+    <ModelAnalysisCard amounts={amounts} range={range} kind="tokens" format={compact} testId="usage-model-tokens" cacheHits={cacheHits}
       filter={<SegSwitch label={t('usage.na.source')} value={source} onChange={setSource} items={[
         { value: 'all', label: t('usage.na.sourceAll'), testId: 'usage-source-all' },
         { value: 'gugu', label: t('usage.na.sourceGugu'), testId: 'usage-source-gugu' },

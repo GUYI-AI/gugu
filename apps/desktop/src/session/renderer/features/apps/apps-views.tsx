@@ -27,7 +27,7 @@ import { navigateBack } from '@renderer/lib/components/nav-buttons';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { InstalledManager } from '@renderer/features/extensions/installed/InstalledManager';
 import type { InstalledSection } from '@renderer/features/extensions/installed/installed-item';
-import { AgentAppDetailPage } from './agent-app-detail-page';
+import { AgentAppDetailDialog } from './agent-app-detail-dialog';
 import { restoreAgentDetailComposer } from './agent-app-detail-navigation';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -36,7 +36,6 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
   const { params, setParams } = useParams('apps');
   const { navigate } = useNavigate();
   const currentViewId = appState.navigation.currentViewId;
-  const { translate } = useSessionMessages();
   const { agentDetail, agentDetailFrom, detail, installedSection: requestedInstalled, installedDeviceId: requestedDevice } = params;
   const marketHost = detail?.deviceId ? deviceDetailHost(detail.deviceId) : LOCAL_LIBRARY_HOST;
   const [installedSection, setInstalledSection] = useState<InstalledSection | null>(null);
@@ -66,7 +65,7 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
 
   return (
     <>
-      <div hidden={!!agentDetail} className={agentDetail ? undefined : 'contents'}>
+      <div className="contents">
         <PageLayout wide>
           <PageContent className="max-w-none px-0">
             <LibraryHostProvider value={marketHost} key={marketHost.key}>
@@ -91,18 +90,16 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
         onOpenAgent={(agentId, deviceId) => { void followLink({ kind: 'agent-app-detail', agentId, deviceId }); }}
         onOpenApp={(extensionId, deviceId) => { void followLink({ kind: 'app-detail', extensionId, deviceId }); }} />}
       {agentDetail && (
-        <PageLayout key={`${agentDetail.deviceId ?? 'local'}:${agentDetail.agentId}`}>
-          <PageContent className="max-w-none">
-            <AgentDetailHost target={agentDetail}>
-              <AgentAppDetailPage
-                agentId={agentDetail.agentId}
-                backLabel={translate(agentDetailFrom === 'apps' ? 'extensions.tabMarket' : 'common.back')}
-                onBack={closeAgentDetail}
-                onCreate={() => navigate('new-session', { agentId: agentDetail.agentId, deviceId: agentDetail.deviceId })}
-              />
-            </AgentDetailHost>
-          </PageContent>
-        </PageLayout>
+        <AgentDetailHost key={`${agentDetail.deviceId ?? 'local'}:${agentDetail.agentId}`} target={agentDetail}>
+          <AgentAppDetailDialog
+            agentId={agentDetail.agentId}
+            onClose={closeAgentDetail}
+            onCreate={() => {
+              setParams({ agentDetail: undefined, agentDetailFrom: undefined });
+              navigate('new-session', { agentId: agentDetail.agentId, deviceId: agentDetail.deviceId });
+            }}
+          />
+        </AgentDetailHost>
       )}
     </>
   );

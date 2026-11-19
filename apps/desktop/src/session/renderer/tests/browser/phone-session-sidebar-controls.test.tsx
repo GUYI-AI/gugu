@@ -3,12 +3,12 @@ import { page, userEvent } from 'vitest/browser'
 import { observer } from 'mobx-react-lite'
 import { usePhoneSessionSidebar } from '@/mobile/chat/usePhoneSessionSidebar'
 import { PhoneSessionSidebarControls } from '@/mobile/chat/PhoneSessionSidebarControls'
-import { SessionConversation } from '@/mobile/agent-watch/SessionConversation'
-import { emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store'
-import { AgentWatchScreen } from '@/mobile/agent-watch/AgentWatchChrome'
+import { SessionConversation } from '@/components/session-watch/SessionConversation'
+import { emptyAgentWatchTimeline } from '@/components/session-watch/agent-watch-store'
+import { AgentWatchScreen } from '@/components/session-watch/AgentWatchChrome'
 import { followRendererSession } from '@/lib/replica'
-import '@/mobile/agent-watch/agent-watch.css'
-import '@/mobile/agent-watch/phone-conversation.css'
+import '@/components/session-watch/agent-watch.css'
+import '@/components/session-watch/phone-conversation.css'
 import '@gugu/session-ui/styles/global'
 import '@gugu/session-ui/theme/theme.css'
 import '@gugu/session-ui/theme/semantic.css'
@@ -36,8 +36,8 @@ vi.mock('@/hooks/useTopics', async original => ({ ...(await original<object>()),
 vi.mock('@/components/chat/useConversationOptions', () => ({ useConversationOptions: () => ({ props: {
   modelOptions: { glm: { name: '咕咕 GLM-5.3' }, luna: { name: '咕咕 GPT-6 Luna' } }, selectedModel: 'glm', onModelChange: actions.pickModel,
 }, confirmation: null, steers: false }) }))
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', async original => {
-  const real = await original<typeof import('@/mobile/agent-watch/sessionpage-rpc')>()
+vi.mock('@/components/session-watch/sessionpage-rpc', async original => {
+  const real = await original<typeof import('@/components/session-watch/sessionpage-rpc')>()
   return { ...real, machineRpc: (...args: Parameters<typeof real.machineRpc>) => {
     const rpc = real.machineRpc(...args)
     return { ...rpc, sessionTimeline: { ...rpc.sessionTimeline, sessionCreateSkills: async () => ({ ok: true, value: { skills: [{ id: 'native/review/SKILL.md', name: '代码检查', description: '检查当前改动' }] } }) } }
@@ -208,19 +208,11 @@ it.each(['room-task', 'solo'])('%s: the shared row fades and returns with no com
  const top = input.getBoundingClientRect().top
  expect(input.getBoundingClientRect().top - row.getBoundingClientRect().bottom).toBe(4)
  editor.focus()
- await until('existing controls fade', () => row.hasAttribute('data-editing'))
- await Promise.all(row.getAnimations().map(a=>a.finished))
- expect(getComputedStyle(row).opacity).toBe('0')
+ await until('existing controls hide', () => row.hasAttribute('hidden'))
   expect(row.getBoundingClientRect().height).toBe(0)
-  expect(getComputedStyle(row).marginBottom).toBe('0px')
-  expect(getComputedStyle(row).paddingTop).toBe('0px')
-  expect(getComputedStyle(row).paddingBottom).toBe('0px')
- expect(row.inert).toBe(true)
  expect(input.getBoundingClientRect().top).toBe(top)
  editor.blur()
- await until('existing controls return',()=>!row.hasAttribute('data-editing'))
- await Promise.all(row.getAnimations().map(a=>a.finished))
- expect(getComputedStyle(row).opacity).toBe('1')
+ await until('existing controls return',()=>!row.hasAttribute('hidden'))
  expect(input.getBoundingClientRect().top).toBe(top)
 })
 

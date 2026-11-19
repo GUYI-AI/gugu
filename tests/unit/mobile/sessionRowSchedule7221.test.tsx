@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { ScheduleMetaPart } from '../../../apps/desktop/src/mobile/agent-watch/schedule-meta'
+import { ScheduleMetaPart } from '../../../apps/desktop/src/components/session-watch/schedule-meta'
 import { createReactHarness } from '../../support/testHarness'
 
 // 手机任务行上「这个任务还会回来」那一段(#7221 schedule_create 的反馈):没有悬停,时间直接写在行上。

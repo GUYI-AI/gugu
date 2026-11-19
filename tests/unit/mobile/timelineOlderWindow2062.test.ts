@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { TimelineSnapshot, WindowCursor } from '@gugu/session-core/session-record/contract'
-import { olderTimelineTarget } from '@/mobile/agent-watch/timeline-older-window'
-import { applySnapshot, emptyAgentWatchTimeline, prependOlder } from '@/mobile/agent-watch/agent-watch-store'
+import { olderTimelineTarget } from '@/components/session-watch/timeline-older-window'
+import { applySnapshot, emptyAgentWatchTimeline, prependOlder } from '@/components/session-watch/agent-watch-store'
 
 const cursor: WindowCursor = { version: 1, scope: 's', sourceLineage: 'lineage', snapshotRevision: 'r', before: 5e9, segment: null }
 const snapshot = (extra: Partial<TimelineSnapshot> = {}): TimelineSnapshot => ({
