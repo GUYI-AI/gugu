@@ -60,7 +60,6 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
     ? translate(list.reason === 'unauthorized' ? 'customModels.refused' : 'customModels.unreachable') : '';
   const setAddress = (baseUrl: string) => {
     setEndpoints((current) => current.map((endpoint, i) => i === 0 ? { ...endpoint, baseUrl } : endpoint));
-    setPicked(null);
   };
   const feature = (patch: Partial<typeof features>) => { setFeatures((current) => ({ ...current, ...patch })); setFeaturesChanged(true); };
   const save = async () => {
