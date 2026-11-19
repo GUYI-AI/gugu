@@ -14,3 +14,15 @@ export async function getSessionsForGroup(groupChatId: string) {
     .where(and(eq(sessions.chatId, groupChatId), isNull(sessions.archivedAt)));
   return rows.map((r) => mapSessionRowToSession(r, false));
 }
+
+/**
+ * A folder's sessions: those that work in it (`sessions.workspace_id`, indexed), the same set its folder record counts
+ * (`FolderRecord.sessionIds`). Covers folders bound to no group (the task home) too.
+ */
+export async function getSessionsForFolder(folderId: string) {
+  const rows = await db
+    .select()
+    .from(sessions)
+    .where(and(eq(sessions.workspaceId, folderId), isNull(sessions.archivedAt)));
+  return rows.map((r) => mapSessionRowToSession(r, false));
+}
