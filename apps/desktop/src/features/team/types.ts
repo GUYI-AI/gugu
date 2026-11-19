@@ -144,6 +144,8 @@ export interface TeamDisableResult {
 
 /** Injectable at feature boundaries for component tests; production uses the HTTP adapter. */
 export interface TeamApi {
+  topupQuote(input: { teamId: string; credits: number; couponCode?: string }, signal?: AbortSignal): Promise<import('../../../shared/team-topup').TeamTopupQuote>
+  topupOrder(teamId: string, id: string, signal?: AbortSignal): Promise<import('../../../shared/team-topup').TeamTopupOrder>
   context(signal?: AbortSignal): Promise<CurrentAccountContext>
   challenge(input: { email: string; purpose: 'create' | 'sign_in' | 'accept_invitation'; team_id?: string; invitation_token?: string }): Promise<TeamChallenge>
   verify(challenge_id: string, code: string): Promise<TeamVerification>

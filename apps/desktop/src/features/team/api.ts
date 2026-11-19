@@ -1,3 +1,4 @@
+import { readTeamTopupQuote, readTeamTopupOrder } from '../../../shared/team-topup'
 import type { Session } from '@supabase/supabase-js'
 import { TeamApiError, teamStopReason } from './errors'
 import * as read from './readers'
@@ -78,6 +79,14 @@ export function createTeamApi(transport: TeamTransport): TeamApi {
   const billing = (action: string, body?: Record<string, unknown>, method: 'GET' | 'POST' = 'GET', signal?: AbortSignal) =>
     call({ endpoint: 'team-billing', action, method, body, signal })
   return {
+    async topupQuote(input, signal) {
+      const value = await billing('quote', { team_id: input.teamId, credits: String(input.credits),
+        ...(input.couponCode ? { coupon_code: input.couponCode } : {}) }, 'POST', signal)
+      return readTeamTopupQuote(value, input)
+    },
+    async topupOrder(teamId, id, signal) {
+      return readTeamTopupOrder(await billing('order', { team_id: teamId, out_trade_no: id }, 'GET', signal), { teamId, id })
+    },
     async context(signal) { return read.currentContext(await billing('context', undefined, 'GET', signal)) },
     async challenge(input) {
       const row = read.object(await accounts('email_challenge', input), 'challenge')

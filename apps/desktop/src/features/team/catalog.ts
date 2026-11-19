@@ -1,6 +1,14 @@
 import { registerLocaleNamespace } from '@/i18n'
 
 const zh = {
+  topupPresets: '充值档位', topupCredits: '{{count}} 积分', topupAmount: '自定义积分', topupHint: '1 积分等于 1 元面额，100 至 100,000 积分，限整数。',
+  topupInvalid: '请输入 100 至 100,000 的整数。', rate95: '95 折', rate90: '9 折', coupon: '优惠码', applyCoupon: '使用', removeCoupon: '移除',
+  couponAccepted: '优惠码 {{code}} 已优惠 {{amount}}', topupSaved: '已省 {{amount}}', paymentMethod: '支付方式', alipay: '支付宝', wxpay: '微信支付',
+  pay: '支付', payAmount: '支付 {{amount}}', creatingPayment: '正在打开支付…', continuePayment: '继续原订单支付', paymentPending: '订单尚未确认到账，付款后会自动查询。',
+  paymentPaid: '充值已到账。', paymentFinished: '原订单已结束，可重新充值。', quoteExpired: '报价已过期，请重新获取。', quoteLoading: '正在获取报价…',
+  couponInvalid: '优惠码不正确，请检查后重试。', couponUnavailable: '此优惠码暂时不可用，请更换或移除。', couponNotApplicable: '此优惠码不适用于当前充值金额。',
+  paymentOpenFailed: '支付页面暂时无法打开，请重试原订单。', checkoutPending: '上一笔订单还未确认，请先查询或继续原订单。',
+  checkoutRecoveryInvalid: '无法读取之前的订单，请联系支持人员核对。', checkoutStorageUnavailable: '无法保存订单恢复信息，请检查应用存储后重试。',
   memberCount: '{{count}} 人', memberList: '成员', recharge: '充值', addMember: '添加成员',
   searchNameOrNumber: '搜索名字或咕咕号', searchNameNumberOrEmail: '搜索名字、咕咕号或邮箱',
   guguNumberValue: '咕咕号 {{number}}', guguNumberUnassigned: '咕咕号未分配',
@@ -54,6 +62,14 @@ const zh = {
   googleFailed: 'Google 验证未完成，请重试。', googleChoosing: '选择本次登录的团队',
 }
 const en: Record<keyof typeof zh, string> = {
+  topupPresets: 'Credit packages', topupCredits: '{{count}} credits', topupAmount: 'Custom credits', topupHint: 'Each credit has a CNY 1 face value. Enter 100–100,000 whole credits.',
+  topupInvalid: 'Enter a whole number from 100 to 100,000.', rate95: '5% off', rate90: '10% off', coupon: 'Promotional code', applyCoupon: 'Apply', removeCoupon: 'Remove',
+  couponAccepted: '{{code}} saves {{amount}}', topupSaved: 'You save {{amount}}', paymentMethod: 'Payment method', alipay: 'Alipay', wxpay: 'WeChat Pay',
+  pay: 'Pay', payAmount: 'Pay {{amount}}', creatingPayment: 'Opening payment…', continuePayment: 'Continue original payment', paymentPending: 'Payment is not confirmed yet. The order will be checked automatically.',
+  paymentPaid: 'Credits have been added.', paymentFinished: 'The original order has ended. You can start a new recharge.', quoteExpired: 'This quote has expired. Request a new quote.', quoteLoading: 'Getting a quote…',
+  couponInvalid: 'Check the promotional code and try again.', couponUnavailable: 'This code is unavailable. Change or remove it.', couponNotApplicable: 'This code does not apply to the selected amount.',
+  paymentOpenFailed: 'The payment page could not open. Retry the original order.', checkoutPending: 'Check or continue the previous order before starting another.',
+  checkoutRecoveryInvalid: 'The previous order cannot be read. Contact support to verify it.', checkoutStorageUnavailable: 'Order recovery details could not be saved. Check app storage and retry.',
   memberCount: '{{count}} members', memberList: 'Members', recharge: 'Top up', addMember: 'Add member',
   searchNameOrNumber: 'Search names or Gugu IDs', searchNameNumberOrEmail: 'Search names, Gugu IDs or emails',
   guguNumberValue: 'Gugu ID {{number}}', guguNumberUnassigned: 'Gugu ID not assigned',
