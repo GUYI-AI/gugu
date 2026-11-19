@@ -2,7 +2,8 @@ export interface SessionEnvContext {
   /** 变量名还叫 TASK_*:那是用户脚本里写着的名字(`.gugu.json`),值是这条会话的。 */
   session: { id: string; title: string };
   sessionPath: string;
-  projectPath: string;
+  /** The folder the session's directory is in (`ROOT_PATH`). */
+  folderPath: string;
   defaultBranch?: string;
   portSeed?: string;
 }
@@ -14,7 +15,7 @@ export function getSessionEnvVars(ctx: SessionEnvContext): Record<string, string
     TASK_ID: ctx.session.id,
     TASK_NAME: sessionName,
     TASK_PATH: ctx.sessionPath,
-    ROOT_PATH: ctx.projectPath,
+    ROOT_PATH: ctx.folderPath,
     DEFAULT_BRANCH: ctx.defaultBranch || 'main',
     PORT: String(getBasePort(portSeed)),
   };

@@ -30,7 +30,7 @@ export function errorMessage(error: unknown): string {
 }
 
 export function projectPath(project: ProjectProvider, relPath: string): string {
-  return project.resolveProjectPath(relPath);
+  return project.resolvePath(relPath);
 }
 
 export function openProjectFileSystem(

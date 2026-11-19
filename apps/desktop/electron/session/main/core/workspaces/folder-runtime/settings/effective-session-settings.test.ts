@@ -2,12 +2,12 @@ import type { IFileSystem } from '@gugu/session-core/files';
 import { ok } from '@gugu/session-shared';
 import { describe, expect, it, vi } from 'vitest';
 import { getEffectiveSessionSettings } from './effective-session-settings';
-import type { ProjectSettingsProvider } from './provider';
+import type { FolderSettingsProvider } from './provider';
 
-function makeProjectSettings(settings: Awaited<ReturnType<ProjectSettingsProvider['get']>>) {
+function makeProjectSettings(settings: Awaited<ReturnType<FolderSettingsProvider['get']>>) {
   return {
     get: vi.fn().mockResolvedValue(settings),
-  } as unknown as ProjectSettingsProvider;
+  } as unknown as FolderSettingsProvider;
 }
 
 function makeSessionFs(config: unknown | null): Pick<IFileSystem, 'exists' | 'readText'> {

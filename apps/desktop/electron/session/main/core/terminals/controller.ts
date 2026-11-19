@@ -21,7 +21,6 @@ export const terminalsController = createRPCController({
   getTerminalsForSession,
   runLifecycleScript,
   stopLifecycleScript: (args: {
-    projectId: string;
     workspaceId: string;
     type: 'setup' | 'run' | 'teardown';
   }) => {

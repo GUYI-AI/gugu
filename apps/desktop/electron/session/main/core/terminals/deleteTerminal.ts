@@ -1,14 +1,12 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { terminals } from '@main/db/schema';
-import { resolveSession } from '../projects/utils';
+import { sessionWorkspaceManager } from '../sessions/session-workspace-manager';
 
 export async function deleteTerminal({
-  projectId,
   sessionId,
   terminalId,
 }: {
-  projectId: string;
   sessionId: string;
   terminalId: string;
 }) {
@@ -17,11 +15,10 @@ export async function deleteTerminal({
     .where(
       and(
         eq(terminals.id, terminalId),
-        eq(terminals.projectId, projectId),
         eq(terminals.sessionId, sessionId)
       )
     );
 
-  const session = resolveSession(projectId, sessionId);
+  const session = sessionWorkspaceManager.getSession(sessionId);
   await session?.terminals.killTerminal(terminalId);
 }

@@ -60,8 +60,8 @@ function createProject(
   return {
     repoPath,
     fileSystem,
-    projectConfigPath: join(repoPath, '.gugu.json'),
-    resolveProjectPath: (relativePath: string) => join(repoPath, relativePath),
+    configPath: join(repoPath, '.gugu.json'),
+    resolvePath: (relativePath: string) => join(repoPath, relativePath),
     configPathForDirectory: (directoryPath: string) => join(directoryPath, '.gugu.json'),
     settings,
   } as never;

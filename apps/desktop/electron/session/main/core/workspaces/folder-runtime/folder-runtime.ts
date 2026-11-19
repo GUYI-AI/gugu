@@ -1,6 +1,6 @@
 import type { IFileSystem } from '@gugu/session-core/files';
 import type { CanonicalPath } from '@gugu/session-core/files';
-import { projectDirectoryHasNoGit } from './resolve-project-gitless';
+import { directoryHasNoGit } from './folder-gitless';
 import type {
   FetchError,
   GitBranchRef,
@@ -15,11 +15,11 @@ import type { GitRepositoryService } from '@main/core/git/repository/service';
 import { previewServerService } from '@main/core/preview-servers/preview-server-service-instance';
 import { workspaceRegistry } from '@main/core/workspaces/workspace-registry';
 import type { WorkspaceProviderData } from '@shared/core/workspaces/workspace-provider-data';
-import type { ProjectRemoteState } from '@shared/projects';
-import type { SessionProvider } from '../sessions/types';
-import { sessionWorkspaceManager } from '../sessions/session-workspace-manager';
-import type { TerminalProvider } from '../terminals/terminal-provider';
-import type { ProjectSettingsProvider } from './settings/provider';
+import type { ProjectRemoteState as FolderRemoteState } from '@shared/projects';
+import type { SessionProvider } from '@main/core/sessions/types';
+import { sessionWorkspaceManager } from '@main/core/sessions/session-workspace-manager';
+import type { TerminalProvider } from '@main/core/terminals/terminal-provider';
+import type { FolderSettingsProvider } from './settings/provider';
 import { resolveTmuxEnabled } from './settings/resolve-tmux-enabled';
 
 export type { WorkspaceProviderData };
@@ -46,65 +46,65 @@ export interface SessionMount {
 }
 
 /**
- * Transport-specific dependencies of a project provider.
+ * Transport-specific dependencies of a folder runtime.
  * Pure data — no lifecycle methods.
  */
-export type ProjectProviderTransport = {
+export type FolderRuntimeTransport = {
   readonly kind: string;
   readonly ctx: IExecutionContext;
   readonly fileSystem: IFileSystem;
-  readonly projectConfigPath: string;
+  readonly configPath: string;
   /**
    * Transitional desktop-owned path helper. Remove once project config reads/writes
    * are served by the workspace server/core boundary instead of main-process adapters.
    */
-  readonly resolveProjectPath: (relativePath: string) => string;
+  readonly resolvePath: (relativePath: string) => string;
   /**
-   * Transitional desktop-owned path helper. Remove with resolveProjectPath when
+   * Transitional desktop-owned path helper. Remove with resolvePath when
    * config target resolution moves behind the workspace server/core boundary.
    */
   readonly configPathForDirectory: (directoryPath: string) => string;
   /**
-   * Project settings for this transport.
+   * The folder's settings.
    */
-  readonly settings: ProjectSettingsProvider;
+  readonly settings: FolderSettingsProvider;
 };
 
-export class ProjectProvider implements IReleasable, IDisposable {
+export class FolderRuntime implements IReleasable, IDisposable {
   readonly type: string;
-  readonly projectId: string;
+  readonly folderId: string;
   readonly repoPath: CanonicalPath;
-  readonly settings: ProjectSettingsProvider;
+  readonly settings: FolderSettingsProvider;
   // gugu #2358: 非 git 项目(远程非 git 目录)没有 git 仓 —— 三个 git 服务缺省(undefined)。
   // 消费方必须显式处理缺省(tsc 强制),git 专属功能对这类项目降级为空/不可用。
   readonly gitRepository: GitRepositoryService | undefined;
   readonly fileSystem: IFileSystem;
-  readonly projectConfigPath: string;
+  readonly configPath: string;
   readonly gitRepositoryFetchService: GitRepositoryFetchService | undefined;
   /** gugu #2358: true = 项目目录不是 git 仓库,git 服务全缺省。 */
   readonly isGitless: boolean;
 
   private readonly _ctx: IExecutionContext;
-  private readonly _resolveProjectPath: (relativePath: string) => string;
+  private readonly _resolvePath: (relativePath: string) => string;
   private readonly _configPathForDirectory: (directoryPath: string) => string;
 
   constructor(
-    projectId: string,
+    folderId: string,
     repoPath: CanonicalPath,
-    transport: ProjectProviderTransport,
+    transport: FolderRuntimeTransport,
     gitRepository: GitRepositoryService | undefined,
     gitRepositoryFetchService: GitRepositoryFetchService | undefined,
     private readonly _gitRuntime: IGitRuntime,
-    private readonly _releaseProjectLeases: () => void | Promise<void>
+    private readonly _releaseLeases: () => void | Promise<void>
   ) {
     this.type = transport.kind;
-    this.projectId = projectId;
+    this.folderId = folderId;
     this.repoPath = repoPath;
     this._ctx = transport.ctx;
     this.settings = transport.settings;
     this.fileSystem = transport.fileSystem;
-    this.projectConfigPath = transport.projectConfigPath;
-    this._resolveProjectPath = transport.resolveProjectPath;
+    this.configPath = transport.configPath;
+    this._resolvePath = transport.resolvePath;
     this._configPathForDirectory = transport.configPathForDirectory;
     this.gitRepository = gitRepository;
     this.gitRepositoryFetchService = gitRepositoryFetchService;
@@ -116,20 +116,20 @@ export class ProjectProvider implements IReleasable, IDisposable {
   }
 
   /**
-   * Transitional desktop-owned path helper. See ProjectProviderTransport.
+   * Transitional desktop-owned path helper. See FolderRuntimeTransport.
    */
-  resolveProjectPath(relativePath: string): string {
-    return this._resolveProjectPath(relativePath);
+  resolvePath(relativePath: string): string {
+    return this._resolvePath(relativePath);
   }
 
   /**
-   * Transitional desktop-owned path helper. See ProjectProviderTransport.
+   * Transitional desktop-owned path helper. See FolderRuntimeTransport.
    */
   configPathForDirectory(directoryPath: string): string {
     return this._configPathForDirectory(directoryPath);
   }
 
-  getRemoteState(): Promise<ProjectRemoteState> {
+  getRemoteState(): Promise<FolderRemoteState> {
     // gugu #2358: 非 git 项目无远端。
     if (!this.gitRepository) return Promise.resolve({ hasRemote: false, selectedRemoteUrl: null });
     return this.gitRepository.getRemoteState();
@@ -144,11 +144,11 @@ export class ProjectProvider implements IReleasable, IDisposable {
   async resolveGitless(): Promise<boolean> {
     return (
       this.isGitless ||
-      (await projectDirectoryHasNoGit(this.repoPath, this.resolveProjectPath('.git'), this.fileSystem))
+      (await directoryHasNoGit(this.repoPath, this.resolvePath('.git'), this.fileSystem))
     );
   }
 
-  async getProjectRootHead(): Promise<GitHeadModel> {
+  async getHead(): Promise<GitHeadModel> {
     // Non-Git directories have no HEAD. Recheck even when the provider is cached.
     if (await this.resolveGitless()) return { kind: 'unborn', name: '' };
     const lease = await this._gitRuntime.openWorktree(this.repoPath);
@@ -162,8 +162,8 @@ export class ProjectProvider implements IReleasable, IDisposable {
   async release(): Promise<void> {
     this.gitRepositoryFetchService?.stop();
     const results = await Promise.allSettled([
-      workspaceRegistry.releaseLeasesForProject(this.projectId),
-      this._releaseProjectLeases(),
+      workspaceRegistry.releaseLeasesForFolder(this.folderId),
+      this._releaseLeases(),
     ]);
     const failure = results.find((result) => result.status === 'rejected');
     if (failure?.status === 'rejected') throw failure.reason;
@@ -173,10 +173,10 @@ export class ProjectProvider implements IReleasable, IDisposable {
     try {
       this.gitRepositoryFetchService?.stop();
       // 与 spawn 同一个答案(resolveTmuxEnabled):跑进 tmux 的会话退出时 detach,❌ 按项目存的种子判成 terminate。
-      const mode = (await resolveTmuxEnabled(this.settings, this.projectId)) ? 'detach' : 'terminate';
-      await sessionWorkspaceManager.teardownAllForProject(this.projectId, mode);
-      await workspaceRegistry.teardownAllForProject(this.projectId, mode);
-      await previewServerService.stopForProject(this.projectId);
+      const mode = (await resolveTmuxEnabled(this.settings, this.folderId)) ? 'detach' : 'terminate';
+      await sessionWorkspaceManager.teardownAllForFolder(this.folderId, mode);
+      await workspaceRegistry.teardownAllForFolder(this.folderId, mode);
+      await previewServerService.stopForFolder(this.folderId);
     } finally {
       await this.release();
     }

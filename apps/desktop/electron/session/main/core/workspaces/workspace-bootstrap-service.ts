@@ -1,9 +1,10 @@
 import { err, ok, type Result } from '@gugu/session-shared';
 import type { CanonicalPath } from '@gugu/session-core/files';
 import { stat } from 'node:fs/promises';
-import { and, eq, or } from 'drizzle-orm';
-import { projectManager } from '@main/core/projects/project-manager';
-import type { ProjectProvider, SessionMount } from '@main/core/projects/project-provider';
+import { eq } from 'drizzle-orm';
+import { rootFolderOf } from '@main/core/folders/folders';
+import type { FolderRuntime, SessionMount } from '@main/core/workspaces/folder-runtime/folder-runtime';
+import { folderRuntime } from '@main/core/workspaces/folder-runtime/folder-runtimes';
 import { runtimeManager } from '@main/core/runtime/runtime-manager';
 import {
   buildSessionFromWorkspace,
@@ -11,7 +12,7 @@ import {
   type MountedSession,
 } from '@main/core/sessions/session-builder';
 import { db as appDb, type AppDb } from '@main/db/client';
-import { projects, sessions, workspaces } from '@main/db/schema';
+import { sessions, workspaces } from '@main/db/schema';
 import type { ProvisionWorkspaceError } from '@shared/core/sessions/create-session';
 import { log } from '@main/lib/logger';
 import type { WorkspaceType } from '@shared/core/workspaces/workspaces';
@@ -27,59 +28,44 @@ export type WorkspaceBootstrapResult = {
   sessionMount: SessionMount;
 };
 
-/**
- * 项目还没在这个进程里打开时,当场打开(与渲染层 / 启动时 `openAllEmdashProjects` 同一个入口,并发打开同一个项目只开一次)。
- * 返回 null = 打不开(库里没有、目录没了)。
- */
-export type OpenProjectOnDemand = (projectId: string) => Promise<ProjectProvider | null>;
+/** The runtime of a workspace's root folder, opened on demand (null = the workspace is in no recorded folder). */
+export type OpenRootFolder = (workspaceId: string) => Promise<FolderRuntime | null>;
 
-async function openProjectOnDemand(projectId: string): Promise<ProjectProvider | null> {
-  const { openProject } = await import('@main/core/projects/operations/openProject');
-  const opened = await openProject(projectId);
-  if (!opened.success) {
-    log.warn('ensureWorkspaceSetupForSession: project could not be opened on demand', { projectId, error: opened.error });
-    return null;
-  }
-  return projectManager.getProject(projectId) ?? null;
+async function openRootFolder(workspaceId: string): Promise<FolderRuntime | null> {
+  const root = rootFolderOf(workspaceId);
+  return root ? folderRuntime(root.id) : null;
 }
 
 export class WorkspaceBootstrapService {
   constructor(
     private readonly db: AppDb,
-    private readonly openOnDemand: OpenProjectOnDemand = openProjectOnDemand
+    private readonly openRoot: OpenRootFolder = openRootFolder
   ) {}
 
-  /** The registry is a cache. File/tree/git callers can restore it without starting a session. */
-  async ensureWorkspaceSetupForWorkspace(projectId: string | undefined, workspaceId: string) {
+  /**
+   * The registry is a cache. File/tree/git callers restore it without starting a session: a workspace mounts with
+   * its root folder's runtime (a folder is its own root), never with an unrelated folder's settings or git.
+   */
+  async ensureWorkspaceSetupForWorkspace(workspaceId: string) {
     const cached = workspaceRegistry.get(workspaceId);
     if (cached) return cached;
 
     const workspaceRow = this.db.select().from(workspaces).where(eq(workspaces.id, workspaceId)).get();
     if (!workspaceRow) return null;
-    const session = this.db.select({ id: sessions.id, config: sessions.config, projectId: sessions.projectId })
-      .from(sessions).where(and(eq(sessions.workspaceId, workspaceId), projectId ? eq(sessions.projectId, projectId) : undefined)).limit(1).get();
-    // Root, attached folder, or a historical session: never borrow an unrelated project's settings/identity.
-    const projectRow = this.db.select({ id: projects.id, name: projects.name }).from(projects).where(and(
-      projectId ? eq(projects.id, projectId) : undefined,
-      or(
-        eq(projects.repositoryWorkspaceId, workspaceId),
-        workspaceRow.projectId ? eq(projects.id, workspaceRow.projectId) : undefined,
-        session ? eq(projects.id, session.projectId) : undefined,
-      ),
-    )).get();
-    if (!projectRow) return null;
+    const session = this.db.select({ id: sessions.id, config: sessions.config })
+      .from(sessions).where(eq(sessions.workspaceId, workspaceId)).limit(1).get();
     if (isRetiredRemoteWorkspace(workspaceRow)) throw new Error(RETIRED_REMOTE_WORKSPACE_MESSAGE);
     if (!workspaceRow.path) throw new Error(`Workspace ${workspaceId} has no directory`);
-    // Mounting must never recreate a deleted real directory, including attached/gitless workspaces.
+    // Mounting must never recreate a deleted real directory, including gitless workspaces.
     if (!(await stat(workspaceRow.path)).isDirectory()) throw new Error(`Workspace directory is not a folder: ${workspaceRow.path}`);
-    const project = projectManager.getProject(projectRow.id) ?? await this.openOnDemand(projectRow.id);
-    if (!project) throw new Error(`Project ${projectRow.id} could not be opened`);
+    const folder = await this.openRoot(workspaceId);
+    if (!folder) return null;
     const acquired = await this._acquireWorkspace(
       workspaceId,
-      session ? { id: session.id, title: taskName(session) } : { id: workspaceId, title: projectRow.name },
-      project,
+      session ? { id: session.id, title: taskName(session) } : { id: workspaceId, title: '' },
+      folder,
       workspaceRow.path,
-      workspaceGitContext(project, { kind: workspaceRow.kind, path: workspaceRow.path }),
+      workspaceGitContext(folder, { kind: workspaceRow.kind, path: workspaceRow.path }),
       false,
     );
     return acquired.workspace;
@@ -88,18 +74,18 @@ export class WorkspaceBootstrapService {
   private _acquireWorkspace(
     workspaceId: string,
     session: MountedSession,
-    project: ProjectProvider,
+    folder: FolderRuntime,
     workDir: CanonicalPath,
     git: WorkspaceGitContext,
     retain = true
   ) {
-    return workspaceRegistry.acquire(workspaceId, project.projectId, createWorkspaceFactory(workspaceId, {
+    return workspaceRegistry.acquire(workspaceId, folder.folderId, createWorkspaceFactory(workspaceId, {
       session,
       workDir,
-      projectId: project.projectId,
-      projectPath: project.repoPath,
+      folderId: folder.folderId,
+      folderPath: folder.repoPath,
       workspaceRuntime: { manager: runtimeManager },
-      settings: project.settings,
+      settings: folder.settings,
       logPrefix: 'WorkspaceBootstrapService',
       ...git,
     }), { retain });
@@ -109,8 +95,7 @@ export class WorkspaceBootstrapService {
    * Resolves where a session runs, acquires that workspace (running lifecycle
    * scripts), and builds the session's providers.
    *
-   * A session always runs in a workspace that already exists — the project's own working
-   * tree. No git setup is performed: the product does not create branches or worktrees for
+   * A session always runs in a workspace that already exists — a folder or a directory inside one. No git setup is performed: the product does not create branches or worktrees for
    * a session, and a session that wants isolation creates its own from inside the session.
    */
   async ensureWorkspaceSetup(
@@ -122,7 +107,7 @@ export class WorkspaceBootstrapService {
       path: CanonicalPath | null;
     },
     session: MountedSession,
-    project: ProjectProvider
+    folder: FolderRuntime
   ): Promise<Result<WorkspaceBootstrapResult, ProvisionWorkspaceError>> {
     if (isRetiredRemoteWorkspace(workspaceRow)) {
       return err({
@@ -133,22 +118,20 @@ export class WorkspaceBootstrapService {
       });
     }
 
-    // Everything else runs in the directory its row names (the project's repository workspace,
-    // `ensureRepositoryWorkspace`, writes it with the row). A row without one says nowhere to run.
-    // #7341 挂在项目下的文件夹也走这一格:会话就在那一行记着的路径里开工,git 跟着那个文件夹走。
+    // Everything else runs in the directory its row names. A row without one says nowhere to run.
     if (!workspaceRow.path) return err({ type: 'no-intent' });
     return this._acquireAndBuild(
       workspaceRow.id,
       session,
-      project,
+      folder,
       workspaceRow.path,
-      workspaceGitContext(project, { kind: workspaceRow.kind, path: workspaceRow.path })
+      workspaceGitContext(folder, { kind: workspaceRow.kind, path: workspaceRow.path })
     );
   }
 
   /**
    * Public entry point for the RPC controller.
-   * Loads the session + workspace rows from DB, resolves the project,
+   * Loads the session + workspace rows from DB, opens the cwd's root folder,
    * and delegates to `ensureWorkspaceSetup`.
    */
   async ensureWorkspaceSetupForSession(
@@ -158,7 +141,6 @@ export class WorkspaceBootstrapService {
       .select({
         id: sessions.id,
         config: sessions.config,
-        projectId: sessions.projectId,
         workspaceId: sessions.workspaceId,
       })
       .from(sessions)
@@ -173,14 +155,12 @@ export class WorkspaceBootstrapService {
       .limit(1);
     if (!wsRow) return err({ type: 'missing-workspace' });
 
-    // ⚠️ 不能假定项目已经打开:咕咕 server 没有渲染层,项目靠启动时 `openAllEmdashProjects` 一个个打开,
-    // 而重启前那些 agent(tmux 里活着)拿着旧卡来敲门、云端投递来唤醒会话,都可能赶在它打开之前(#6264,
-    // 2026-09-25 d22:重启后 6 秒内来敲门的两条会话报 `Project … not found`,MCP 回 401,44 个咕咕工具就此失效)。
-    const project =
-      projectManager.getProject(row.projectId) ?? (await this.openOnDemand(row.projectId));
-    if (!project) throw new Error(`Project ${row.projectId} not found`);
+    // ⚠️ The folder may not be open yet: agents surviving a restart in tmux knock and cloud deliveries wake sessions
+    // before any window asks for it (#6264: `not found` → MCP 401 → every gugu tool dead). Open it here, on demand.
+    const folder = await this.openRoot(row.workspaceId);
+    if (!folder) throw new Error(`Session ${row.id} runs in ${row.workspaceId}, which is in no folder on this device`);
 
-    return this.ensureWorkspaceSetup(wsRow, { id: row.id, title: taskName(row) }, project);
+    return this.ensureWorkspaceSetup(wsRow, { id: row.id, title: taskName(row) }, folder);
   }
 
   /**
@@ -190,13 +170,13 @@ export class WorkspaceBootstrapService {
   private async _acquireAndBuild(
     workspaceId: string,
     session: MountedSession,
-    project: ProjectProvider,
+    folder: FolderRuntime,
     workDir: CanonicalPath,
     git: WorkspaceGitContext
   ): Promise<Result<WorkspaceBootstrapResult, ProvisionWorkspaceError>> {
     emitSessionProvisionProgress({
       sessionId: session.id,
-      projectId: project.projectId,
+      folderId: folder.folderId,
       step: 'initialising-workspace',
       message: 'Initialising workspace…',
     });
@@ -206,7 +186,7 @@ export class WorkspaceBootstrapService {
     const provisionStartedAt = Date.now();
     let acquired;
     try {
-      acquired = await this._acquireWorkspace(workspaceId, session, project, workDir, git);
+      acquired = await this._acquireWorkspace(workspaceId, session, folder, workDir, git);
     } catch (e) {
       return err({
         type: 'setup-failed',
@@ -220,7 +200,7 @@ export class WorkspaceBootstrapService {
 
     emitSessionProvisionProgress({
       sessionId: session.id,
-      projectId: project.projectId,
+      folderId: folder.folderId,
       step: 'starting-sessions',
       message: 'Preparing task…',
     });
@@ -231,14 +211,14 @@ export class WorkspaceBootstrapService {
       const buildResult = await buildSessionFromWorkspace(
         session,
         acquired.workspace,
-        project.projectId,
-        project.repoPath,
-        project.settings
+        folder.folderId,
+        folder.repoPath,
+        folder.settings
       );
       buildSucceeded = true;
       log.info('WorkspaceBootstrapService:provision stages', {
         sessionId: session.id,
-        projectId: project.projectId,
+        folderId: folder.folderId,
         acquireMs,
         buildMs: Date.now() - buildStartedAt,
         totalMs: Date.now() - provisionStartedAt,

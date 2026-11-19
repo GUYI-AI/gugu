@@ -16,15 +16,15 @@ import {
   serializeShareableProjectSettings,
 } from './legacy-shareable-migration-marker';
 import { compactUndefined, parseJsonObject, readJson } from './project-settings-json';
-import type { ProjectSettingsStorage, StoredProjectSettings } from './project-settings-storage';
+import type { FolderSettingsStorage, StoredFolderSettings } from './folder-settings-storage';
 
 export type LegacyProjectSettingsMigrationArgs = {
-  projectId: string;
-  row: StoredProjectSettings | undefined;
+  folderId: string;
+  row: StoredFolderSettings | undefined;
   configReader: Pick<IFileSystem, 'exists' | 'readText'> | undefined;
   configPath: string;
   defaultBranchFallback: string;
-  storage: ProjectSettingsStorage;
+  storage: FolderSettingsStorage;
   git?: ProjectSettingsGitInspector;
 };
 
@@ -87,7 +87,7 @@ async function readLegacyProjectConfig(
 }
 
 export async function migrateLegacyProjectSettingsIfNeeded({
-  projectId,
+  folderId,
   row,
   configReader,
   configPath,
@@ -142,7 +142,7 @@ export async function migrateLegacyProjectSettingsIfNeeded({
     }
   }
 
-  const update: Partial<StoredProjectSettings> = {
+  const update: Partial<StoredFolderSettings> = {
     ...(nextShareable
       ? {
           shareableProjectSettingsJson: serializeShareableProjectSettings(nextShareable, {
@@ -168,6 +168,6 @@ export async function migrateLegacyProjectSettingsIfNeeded({
   }
 
   if (Object.keys(update).length > 0) {
-    await storage.update(projectId, update);
+    await storage.update(folderId, update);
   }
 }

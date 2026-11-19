@@ -340,14 +340,12 @@ describe('runLifecycleScriptWithPolicy', () => {
     const workspaceId = 'workspace-rerun';
     const { provider, spawned } = makeTerminalProvider(workspaceId);
     const service = new LifecycleScriptService({
-      projectId,
       workspaceId,
       terminals: provider,
     });
     const workspace = { lifecycleService: service } as never;
     const args = {
       workspace,
-      projectId,
       workspaceId,
       type: 'run' as const,
       script: 'pnpm dev',

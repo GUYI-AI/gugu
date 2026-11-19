@@ -5,14 +5,14 @@ import {
   type ProjectSettings,
 } from '@shared/core/project-settings/project-settings';
 import { mergeShareableProjectSettings } from '@shared/core/project-settings/project-settings-fields';
-import type { ProjectSettingsProvider } from './provider';
+import type { FolderSettingsProvider } from './provider';
 
 /**
  * 会话级共享配置(`.gugu.json`)读不了、被截断或写坏了 ⇒ 抛,带着文件路径与原因。
  * ❌ 退回项目设置照跑:队友提交的 shellSetup / 脚本悄悄不生效,agent 在缺环境的 shell 里跑,失败看着像代码的问题。
  */
 export async function getEffectiveSessionSettings(args: {
-  projectSettings: ProjectSettingsProvider;
+  projectSettings: FolderSettingsProvider;
   sessionFs: Pick<IFileSystem, 'exists' | 'readText'>;
   sessionConfigPath: string;
 }): Promise<ProjectSettings> {

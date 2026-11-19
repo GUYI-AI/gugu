@@ -95,8 +95,8 @@ function projectFixture(fileSystem: IFileSystem, overrides: Record<string, unkno
     projectId: 'project-1',
     repoPath,
     fileSystem,
-    projectConfigPath: configPath,
-    resolveProjectPath: (relativePath: string) => joinPath(repoPath, relativePath),
+    configPath: configPath,
+    resolvePath: (relativePath: string) => joinPath(repoPath, relativePath),
     configPathForDirectory,
     ...overrides,
   };

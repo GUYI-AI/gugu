@@ -2,7 +2,7 @@ import { err, ok, type Result } from '@gugu/session-shared';
 import type { Workspace } from '@main/core/workspaces/workspace';
 import type { LifecycleScriptType } from '@shared/core/sessions/provisionEvents';
 import { getEffectiveSessionSettings } from '../projects/settings/effective-session-settings';
-import { resolveWorkspace } from '../projects/utils';
+import { resolveWorkspace } from '../workspaces/resolve-workspace';
 
 export type LifecycleScriptSettingsError =
   | { type: 'not_found'; entity: 'workspace'; workspaceId: string }
@@ -37,11 +37,9 @@ export async function resolveLifecycleScriptForWorkspace(
  * This is used by RPC adapters that only receive ids from the renderer.
  */
 export async function resolveLifecycleScript({
-  projectId,
   workspaceId,
   type,
 }: {
-  projectId: string;
   workspaceId: string;
   type: LifecycleScriptType;
 }): Promise<
@@ -50,7 +48,7 @@ export async function resolveLifecycleScript({
     LifecycleScriptSettingsError
   >
 > {
-  const workspace = await resolveWorkspace(projectId, workspaceId);
+  const workspace = await resolveWorkspace(workspaceId);
   if (!workspace) return err({ type: 'not_found', entity: 'workspace', workspaceId });
 
   const settings = await resolveLifecycleScriptForWorkspace(workspace, type);

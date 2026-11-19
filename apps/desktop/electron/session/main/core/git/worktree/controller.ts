@@ -12,100 +12,97 @@ import { revertWorktreeFiles, stageWorktreeFiles, unstageWorktreeFiles } from '.
 
 export const gitWorktreeController = createRPCController({
   getWorktreeSnapshot: async (
-    projectId: string,
-    workspaceId: string
+        workspaceId: string
   ): Promise<GitWorktreeSnapshotResult> => {
     try {
-      const workspace = await resolveWorkspace(projectId, workspaceId);
+      const workspace = await resolveWorkspace(workspaceId);
       if (!workspace) return err({ type: 'not_found' });
       // gugu #2358: 非 git 项目无 git worktree —— git 功能降级。
       if (!workspace.gitWorktree) return err({ type: 'not_found' });
       return ok(await workspace.gitWorktree.getSnapshot());
     } catch (error) {
-      log.error('gitCtrl.getWorktreeSnapshot failed', { projectId, workspaceId, error });
+      log.error('gitCtrl.getWorktreeSnapshot failed', { workspaceId, error });
       return err({ type: 'git_error', message: gitErrorMessage(error) });
     }
   },
 
-  getChangedFiles: async (projectId: string, workspaceId: string, base: DiffTarget) => {
+  getChangedFiles: async (workspaceId: string, base: DiffTarget) => {
     try {
-      const workspace = await resolveWorkspace(projectId, workspaceId);
+      const workspace = await resolveWorkspace(workspaceId);
       if (!workspace) return err({ type: 'not_found' as const });
       // gugu #2358: 非 git 项目无 git worktree —— git 功能降级。
       if (!workspace.gitWorktree) return err({ type: 'not_found' as const });
       return ok({ changes: await workspace.gitWorktree.getChangedFiles(base) });
     } catch (error) {
-      log.error('gitCtrl.getChangedFiles failed', { projectId, workspaceId, base, error });
+      log.error('gitCtrl.getChangedFiles failed', { workspaceId, base, error });
       return err({ type: 'git_error' as const, message: gitErrorMessage(error) });
     }
   },
 
-  getFileAtRef: async (projectId: string, workspaceId: string, filePath: string, ref: string) => {
+  getFileAtRef: async (workspaceId: string, filePath: string, ref: string) => {
     try {
-      const workspace = await resolveWorkspace(projectId, workspaceId);
+      const workspace = await resolveWorkspace(workspaceId);
       if (!workspace) return err({ type: 'not_found' as const });
       // gugu #2358: 非 git 项目无 git worktree —— git 功能降级。
       if (!workspace.gitWorktree) return err({ type: 'not_found' as const });
       return ok({ content: await workspace.gitWorktree.getFileAtRef(filePath, ref) });
     } catch (error) {
-      log.error('gitCtrl.getFileAtRef failed', { projectId, workspaceId, filePath, ref, error });
+      log.error('gitCtrl.getFileAtRef failed', { workspaceId, filePath, ref, error });
       return err({ type: 'git_error' as const, message: gitErrorMessage(error) });
     }
   },
 
-  getFileAtIndex: async (projectId: string, workspaceId: string, filePath: string) => {
+  getFileAtIndex: async (workspaceId: string, filePath: string) => {
     try {
-      const workspace = await resolveWorkspace(projectId, workspaceId);
+      const workspace = await resolveWorkspace(workspaceId);
       if (!workspace) return err({ type: 'not_found' as const });
       // gugu #2358: 非 git 项目无 git worktree —— git 功能降级。
       if (!workspace.gitWorktree) return err({ type: 'not_found' as const });
       return ok({ content: await workspace.gitWorktree.getFileAtIndex(filePath) });
     } catch (error) {
-      log.error('gitCtrl.getFileAtIndex failed', { projectId, workspaceId, filePath, error });
+      log.error('gitCtrl.getFileAtIndex failed', { workspaceId, filePath, error });
       return err({ type: 'git_error' as const, message: gitErrorMessage(error) });
     }
   },
 
-  getImageAtRef: async (projectId: string, workspaceId: string, filePath: string, ref: string) => {
+  getImageAtRef: async (workspaceId: string, filePath: string, ref: string) => {
     try {
-      const workspace = await resolveWorkspace(projectId, workspaceId);
+      const workspace = await resolveWorkspace(workspaceId);
       if (!workspace) return err({ type: 'not_found' as const });
       // gugu #2358: 非 git 项目无 git worktree —— git 功能降级。
       if (!workspace.gitWorktree) return err({ type: 'not_found' as const });
       return ok({ result: await workspace.gitWorktree.getImageAtRef(filePath, ref) });
     } catch (error) {
-      log.error('gitCtrl.getImageAtRef failed', { projectId, workspaceId, filePath, ref, error });
+      log.error('gitCtrl.getImageAtRef failed', { workspaceId, filePath, ref, error });
       return err({ type: 'git_error' as const, message: gitErrorMessage(error) });
     }
   },
 
-  getImageAtIndex: async (projectId: string, workspaceId: string, filePath: string) => {
+  getImageAtIndex: async (workspaceId: string, filePath: string) => {
     try {
-      const workspace = await resolveWorkspace(projectId, workspaceId);
+      const workspace = await resolveWorkspace(workspaceId);
       if (!workspace) return err({ type: 'not_found' as const });
       // gugu #2358: 非 git 项目无 git worktree —— git 功能降级。
       if (!workspace.gitWorktree) return err({ type: 'not_found' as const });
       return ok({ result: await workspace.gitWorktree.getImageAtIndex(filePath) });
     } catch (error) {
-      log.error('gitCtrl.getImageAtIndex failed', { projectId, workspaceId, filePath, error });
+      log.error('gitCtrl.getImageAtIndex failed', { workspaceId, filePath, error });
       return err({ type: 'git_error' as const, message: gitErrorMessage(error) });
     }
   },
 
   stageFiles: (
-    projectId: string,
-    workspaceId: string,
+        workspaceId: string,
     filePaths: string[]
   ): Promise<GitWorktreeMutationResult> => {
-    return stageWorktreeFiles(projectId, workspaceId, filePaths);
+    return stageWorktreeFiles(workspaceId, filePaths);
   },
 
   stageAllFiles: async (
-    projectId: string,
-    workspaceId: string
+        workspaceId: string
   ): Promise<GitWorktreeMutationResult> => {
     try {
-      const workspace = await resolveWorkspace(projectId, workspaceId);
+      const workspace = await resolveWorkspace(workspaceId);
       if (!workspace) return err({ type: 'not_found' as const });
       // gugu #2358: 非 git 项目无 git worktree —— git 功能降级。
       if (!workspace.gitWorktree) return err({ type: 'not_found' as const });
@@ -113,25 +110,23 @@ export const gitWorktreeController = createRPCController({
       if (!result.success) return err(result.error);
       return ok({ sequences: result.data });
     } catch (error) {
-      log.error('gitCtrl.stageAllFiles failed', { projectId, workspaceId, error });
+      log.error('gitCtrl.stageAllFiles failed', { workspaceId, error });
       return err({ type: 'git_error' as const, message: gitErrorMessage(error) });
     }
   },
 
   unstageFiles: (
-    projectId: string,
-    workspaceId: string,
+        workspaceId: string,
     filePaths: string[]
   ): Promise<GitWorktreeMutationResult> => {
-    return unstageWorktreeFiles(projectId, workspaceId, filePaths);
+    return unstageWorktreeFiles(workspaceId, filePaths);
   },
 
   unstageAllFiles: async (
-    projectId: string,
-    workspaceId: string
+        workspaceId: string
   ): Promise<GitWorktreeMutationResult> => {
     try {
-      const workspace = await resolveWorkspace(projectId, workspaceId);
+      const workspace = await resolveWorkspace(workspaceId);
       if (!workspace) return err({ type: 'not_found' as const });
       // gugu #2358: 非 git 项目无 git worktree —— git 功能降级。
       if (!workspace.gitWorktree) return err({ type: 'not_found' as const });
@@ -139,25 +134,23 @@ export const gitWorktreeController = createRPCController({
       if (!result.success) return err(result.error);
       return ok({ sequences: result.data });
     } catch (error) {
-      log.error('gitCtrl.unstageAllFiles failed', { projectId, workspaceId, error });
+      log.error('gitCtrl.unstageAllFiles failed', { workspaceId, error });
       return err({ type: 'git_error' as const, message: gitErrorMessage(error) });
     }
   },
 
   revertFiles: (
-    projectId: string,
-    workspaceId: string,
+        workspaceId: string,
     filePaths: string[]
   ): Promise<GitWorktreeMutationResult> => {
-    return revertWorktreeFiles(projectId, workspaceId, filePaths);
+    return revertWorktreeFiles(workspaceId, filePaths);
   },
 
   revertAllFiles: async (
-    projectId: string,
-    workspaceId: string
+        workspaceId: string
   ): Promise<GitWorktreeMutationResult> => {
     try {
-      const workspace = await resolveWorkspace(projectId, workspaceId);
+      const workspace = await resolveWorkspace(workspaceId);
       if (!workspace) return err({ type: 'not_found' as const });
       // gugu #2358: 非 git 项目无 git worktree —— git 功能降级。
       if (!workspace.gitWorktree) return err({ type: 'not_found' as const });
@@ -165,25 +158,24 @@ export const gitWorktreeController = createRPCController({
       if (!result.success) return err(result.error);
       return ok({ sequences: result.data });
     } catch (error) {
-      log.error('gitCtrl.revertAllFiles failed', { projectId, workspaceId, error });
+      log.error('gitCtrl.revertAllFiles failed', { workspaceId, error });
       return err({ type: 'git_error' as const, message: gitErrorMessage(error) });
     }
   },
 
   commit: async (
-    projectId: string,
-    workspaceId: string,
+        workspaceId: string,
     message: string
   ): Promise<GitWorktreeCommitResult> => {
-    const workspace = await resolveWorkspace(projectId, workspaceId);
+    const workspace = await resolveWorkspace(workspaceId);
     if (!workspace) return err({ type: 'not_found' });
     // gugu #2358: 非 git 项目无 git worktree —— git 功能降级。
     if (!workspace.gitWorktree) return err({ type: 'not_found' });
     return workspace.gitWorktree.commit(message);
   },
 
-  push: async (projectId: string, workspaceId: string, remote: string) => {
-    const workspace = await resolveWorkspace(projectId, workspaceId);
+  push: async (workspaceId: string, remote: string) => {
+    const workspace = await resolveWorkspace(workspaceId);
     if (!workspace) return err({ type: 'not_found' });
     // gugu #2358: 非 git 项目无 git worktree —— git 功能降级。
     if (!workspace.gitWorktree) return err({ type: 'not_found' });
@@ -191,8 +183,8 @@ export const gitWorktreeController = createRPCController({
     return result;
   },
 
-  pull: async (projectId: string, workspaceId: string) => {
-    const workspace = await resolveWorkspace(projectId, workspaceId);
+  pull: async (workspaceId: string) => {
+    const workspace = await resolveWorkspace(workspaceId);
     if (!workspace) return err({ type: 'not_found' as const });
     // gugu #2358: 非 git 项目无 git worktree —— git 功能降级。
     if (!workspace.gitWorktree) return err({ type: 'not_found' as const });
@@ -201,8 +193,7 @@ export const gitWorktreeController = createRPCController({
   },
 
   getLog: async (
-    projectId: string,
-    workspaceId: string,
+        workspaceId: string,
     maxCount?: number,
     skip?: number,
     knownAheadCount?: number,
@@ -211,7 +202,7 @@ export const gitWorktreeController = createRPCController({
     head?: GitObjectRef
   ) => {
     try {
-      const workspace = await resolveWorkspace(projectId, workspaceId);
+      const workspace = await resolveWorkspace(workspaceId);
       if (!workspace) return err({ type: 'not_found' as const });
       // gugu #2358: 非 git 项目无 git worktree —— git 功能降级。
       if (!workspace.gitWorktree) return err({ type: 'not_found' as const });
@@ -225,20 +216,20 @@ export const gitWorktreeController = createRPCController({
       });
       return ok({ commits: result.commits, aheadCount: result.aheadCount });
     } catch (error) {
-      log.error('gitCtrl.getLog failed', { projectId, workspaceId, error });
+      log.error('gitCtrl.getLog failed', { workspaceId, error });
       return err({ type: 'git_error' as const, message: gitErrorMessage(error) });
     }
   },
 
-  getCommitFiles: async (projectId: string, workspaceId: string, commitHash: string) => {
+  getCommitFiles: async (workspaceId: string, commitHash: string) => {
     try {
-      const workspace = await resolveWorkspace(projectId, workspaceId);
+      const workspace = await resolveWorkspace(workspaceId);
       if (!workspace) return err({ type: 'not_found' as const });
       // gugu #2358: 非 git 项目无 git worktree —— git 功能降级。
       if (!workspace.gitWorktree) return err({ type: 'not_found' as const });
       return ok({ files: await workspace.gitWorktree.getCommitFiles(commitHash) });
     } catch (error) {
-      log.error('gitCtrl.getCommitFiles failed', { projectId, workspaceId, commitHash, error });
+      log.error('gitCtrl.getCommitFiles failed', { workspaceId, commitHash, error });
       return err({ type: 'git_error' as const, message: gitErrorMessage(error) });
     }
   },

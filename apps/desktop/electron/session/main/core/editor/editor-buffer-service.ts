@@ -4,22 +4,21 @@ import { editorBuffers } from '@main/db/schema';
 
 export class EditorBufferService {
   async saveBuffer(
-    projectId: string,
-    workspaceId: string,
+        workspaceId: string,
     filePath: string,
     content: string
   ): Promise<void> {
     const id = `${projectId}:${workspaceId}:${filePath}`;
     await db
       .insert(editorBuffers)
-      .values({ id, projectId, workspaceId, filePath, content, updatedAt: Date.now() })
+      .values({ id, workspaceId, filePath, content, updatedAt: Date.now() })
       .onConflictDoUpdate({
         target: editorBuffers.id,
         set: { content, updatedAt: Date.now() },
       });
   }
 
-  async clearBuffer(projectId: string, workspaceId: string, filePath: string): Promise<void> {
+  async clearBuffer(workspaceId: string, filePath: string): Promise<void> {
     const id = `${projectId}:${workspaceId}:${filePath}`;
     await db.delete(editorBuffers).where(eq(editorBuffers.id, id));
   }
@@ -29,8 +28,7 @@ export class EditorBufferService {
   }
 
   async listBuffers(
-    projectId: string,
-    workspaceId: string
+        workspaceId: string
   ): Promise<{ filePath: string; content: string }[]> {
     const rows = await db
       .select({ filePath: editorBuffers.filePath, content: editorBuffers.content })

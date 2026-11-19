@@ -6,7 +6,7 @@ import {
   type ProjectGitHubAuthContextError,
 } from '@main/core/github/services/project-github-auth-context';
 import { projectManager } from '@main/core/projects/project-manager';
-import { projectSettingsService } from '@main/core/projects/settings/project-settings-service';
+import { folderSettingsService } from '@main/core/projects/settings/folder-settings-service';
 import { sessionWorkspaceManager } from '@main/core/sessions/session-workspace-manager';
 import { db } from '@main/db/client';
 import { projectRemotes } from '@main/db/schema';
@@ -38,7 +38,7 @@ export class PrSyncScheduler implements IInitializable, IDisposable {
       sessionWorkspaceManager.hooks.on('session:provisioned', ({ projectId, branchName }) => {
         void this.onSessionProvisioned(projectId, branchName);
       }),
-      projectSettingsService.on('project-settings:changed', ({ projectId }) => {
+      folderSettingsService.on('project-settings:changed', ({ projectId }) => {
         void this.onProjectSettingsChanged(projectId);
       }),
     ];

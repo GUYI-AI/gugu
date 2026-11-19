@@ -67,7 +67,7 @@ export async function resolveAllProjectSettingsTargets(
     label: projectRow?.name ?? 'Project repository',
     path: project.repoPath,
     fileSystem: projectFileSystem,
-    configPath: project.projectConfigPath,
+    configPath: project.configPath,
   };
   if (!projectRow) return [projectTarget];
 

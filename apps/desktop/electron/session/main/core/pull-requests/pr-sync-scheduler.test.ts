@@ -40,8 +40,8 @@ vi.mock('@main/core/projects/project-manager', () => ({
   },
 }));
 
-vi.mock('@main/core/projects/settings/project-settings-service', () => ({
-  projectSettingsService: {
+vi.mock('@main/core/projects/settings/folder-settings-service', () => ({
+  folderSettingsService: {
     on: vi.fn(),
   },
 }));

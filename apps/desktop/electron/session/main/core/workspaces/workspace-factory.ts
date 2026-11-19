@@ -29,9 +29,9 @@ import {
 } from '@shared/core/project-settings/project-settings';
 import { gitWorktreeUpdateChannel } from '@shared/core/git/events';
 import type { MountedSession } from '@main/core/sessions/session-builder';
-import { getEffectiveSessionSettings } from '../projects/settings/effective-session-settings';
-import type { ProjectSettingsProvider } from '../projects/settings/provider';
-import { resolveTmuxEnabled } from '../projects/settings/resolve-tmux-enabled';
+import { getEffectiveSessionSettings } from './folder-runtime/settings/effective-session-settings';
+import type { FolderSettingsProvider } from './folder-runtime/settings/provider';
+import { resolveTmuxEnabled } from './folder-runtime/settings/resolve-tmux-enabled';
 import { TEARDOWN_SCRIPT_WAIT_MS } from '../sessions/provision-session-error';
 import { getSessionEnvVars } from './workspace-env';
 
@@ -40,19 +40,20 @@ export type WorkspaceFactoryContext = {
   /** 第一次把这个工作区挂上的那条会话。 */
   session: MountedSession;
   workDir: CanonicalPath;
-  projectId: string;
-  projectPath: string;
+  /** The root folder the workspace mounts with. */
+  folderId: string;
+  folderPath: string;
   workspaceRuntime: { manager: Pick<RuntimeManager, 'acquire'> };
-  settings: ProjectSettingsProvider;
+  settings: FolderSettingsProvider;
   logPrefix: string;
-  /** gugu #2358: 非 git 项目 —— 不开 git worktree,工作区无 git 服务,agent 直接在目录里跑。 */
+  /** gugu #2358: a gitless folder —— 不开 git worktree,工作区无 git 服务,agent 直接在目录里跑。 */
   gitless?: boolean;
   /**
-   * #7341 拿工作区时按哪个目录复查「还是不是 git」;不给 = `projectPath`(根目录与旧 worktree 行一直如此)。
+   * #7341 拿工作区时按哪个目录复查「还是不是 git」;不给 = `folderPath`(文件夹本身与旧 worktree 行一直如此)。
    * 挂上来的文件夹是它自己的仓库或根本不是仓库,要照它自己的目录判(workspace-git-context.ts)。
    */
   gitProbePath?: string;
-  /** Inject an existing repository service (e.g. the project-level singleton). */
+  /** Inject an existing repository service (the folder runtime's). */
   gitRepository?: GitRepositoryService;
   /** Inject an existing fetch service. When absent, the factory creates and manages one.
    *  Lifecycle (start/stop) is only managed by the factory when it creates the instance. */
@@ -82,7 +83,7 @@ export function createWorkspaceFactory(
       context.workspaceRuntime,
       workDir,
       context.gitless ?? false,
-      context.gitless === undefined ? undefined : (context.gitProbePath ?? context.projectPath)
+      context.gitless === undefined ? undefined : (context.gitProbePath ?? context.folderPath)
     );
     const { gitWorktree, fileTree, filesRuntime } = runtime;
     const openedFileSystem = filesRuntime.fileSystem();
@@ -102,11 +103,11 @@ export function createWorkspaceFactory(
     const bootstrapSessionEnvVars = getSessionEnvVars({
       session: context.session,
       sessionPath: workDir,
-      projectPath: context.projectPath,
+      folderPath: context.folderPath,
       defaultBranch,
       portSeed: workDir,
     });
-    const resolveTmux = () => resolveTmuxEnabled(context.settings, context.projectId);
+    const resolveTmux = () => resolveTmuxEnabled(context.settings, context.folderId);
     const sessionLevelSettings = await getEffectiveSessionSettings({
       projectSettings: context.settings,
       sessionFs: fileSystem,
@@ -117,7 +118,6 @@ export function createWorkspaceFactory(
 
     // Workspace terminal provider (used only by lifecycle scripts)
     const workspaceTerminals = new LocalTerminalProvider({
-      projectId: context.projectId,
       workspaceId,
       scopeId: workspaceId,
       sessionPath: workDir,
@@ -128,7 +128,6 @@ export function createWorkspaceFactory(
     });
 
     const lifecycleService = new LifecycleScriptService({
-      projectId: context.projectId,
       workspaceId,
       terminals: workspaceTerminals,
     });
@@ -201,7 +200,6 @@ export function createWorkspaceFactory(
           unsubscribeGitUpdates = gitWorktree.subscribe((update) =>
             handleGitWorktreeUpdate(workspaceId, update, (emitted) => {
               events.emit(gitWorktreeUpdateChannel, {
-                projectId: context.projectId,
                 workspaceId,
                 update: emitted,
               });
@@ -217,7 +215,6 @@ export function createWorkspaceFactory(
         // 不收 nudge —— 对它的消费者来说 resync 就是重载预览、重读所有页签(见 @@@tree-by-directories)。
         const fileChanges = filesRuntime.watchChanges(workDir, (update) => {
           events.emit(fileChangesChannel, {
-            projectId: context.projectId,
             workspaceId,
             update,
           });
@@ -249,7 +246,6 @@ export function createWorkspaceFactory(
           if (scripts?.setup && (projectSettings.autoRunSetupScriptOnSessionCreation ?? true)) {
             const setupResult = await runLifecycleScriptWithPolicy({
               workspace: ws,
-              projectId: context.projectId,
               workspaceId,
               type: 'setup',
               script: scripts.setup,
@@ -269,7 +265,6 @@ export function createWorkspaceFactory(
           if (scripts?.run && (projectSettings.autoRunRunScriptOnSessionCreation ?? false)) {
             await runLifecycleScriptWithPolicy({
               workspace: ws,
-              projectId: context.projectId,
               workspaceId,
               type: 'run',
               script: scripts.run,
@@ -290,7 +285,7 @@ export function createWorkspaceFactory(
       onCreate: context.extraHooks?.onCreate,
 
       onDestroy: async (ws) => {
-        await previewServerService.stopForWorkspace(context.projectId, workspaceId);
+        await previewServerService.stopForWorkspace(workspaceId);
         if (ownsFetchService) {
           gitRepositoryFetchService?.stop();
         }
@@ -307,7 +302,6 @@ export function createWorkspaceFactory(
         if (teardownScript) {
           await runLifecycleScriptWithPolicy({
             workspace: ws,
-            projectId: context.projectId,
             workspaceId,
             type: 'teardown',
             script: teardownScript,
@@ -326,7 +320,7 @@ export function createWorkspaceFactory(
       },
 
       onDetach: async (ws) => {
-        await previewServerService.stopForWorkspace(context.projectId, workspaceId);
+        await previewServerService.stopForWorkspace(workspaceId);
         await context.extraHooks?.onDetach?.(ws);
       },
     };
@@ -334,7 +328,6 @@ export function createWorkspaceFactory(
 }
 
 type SessionMountOpts = {
-  projectId: string;
   sessionId: string;
   workspaceId: string;
   sessionPath: string;
@@ -358,7 +351,6 @@ export async function buildSessionProviders(
   const sessionShellProfile = await resolveLocalSessionShellProfile();
   return {
     sessions: new LocalSessionProvider({
-      projectId: opts.projectId,
       sessionPath: opts.sessionPath,
       workspaceId: opts.workspaceId,
       tmux: opts.tmuxEnabled,
@@ -368,7 +360,6 @@ export async function buildSessionProviders(
       sessionEnvVars: opts.sessionEnvVars,
     }),
     terminals: new LocalTerminalProvider({
-      projectId: opts.projectId,
       workspaceId: opts.workspaceId,
       scopeId: opts.sessionId,
       sessionPath: opts.sessionPath,
@@ -387,9 +378,9 @@ export async function buildSessionProviders(
 export async function resolveSessionEnv(
   session: MountedSession,
   workspace: Pick<Workspace, 'path' | 'fileSystem' | 'configPath'>,
-  projectPath: string,
-  settings: ProjectSettingsProvider,
-  projectId?: string
+  folderPath: string,
+  settings: FolderSettingsProvider,
+  folderId?: string
 ): Promise<{
   sessionEnvVars: Record<string, string>;
   tmuxEnabled: boolean | (() => Promise<boolean>);
@@ -406,11 +397,11 @@ export async function resolveSessionEnv(
     sessionEnvVars: getSessionEnvVars({
       session,
       sessionPath: workspace.path,
-      projectPath,
+      folderPath,
       defaultBranch,
       portSeed: workspace.path,
     }),
-    tmuxEnabled: () => resolveTmuxEnabled(settings, projectId),
+    tmuxEnabled: () => resolveTmuxEnabled(settings, folderId),
     shellSetup: sessionLevelSettings.shellSetup ?? projectSettings.shellSetup,
   };
 }

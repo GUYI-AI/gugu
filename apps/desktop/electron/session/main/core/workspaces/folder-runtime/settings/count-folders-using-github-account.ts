@@ -1,5 +1,5 @@
 import { db } from '@main/db/client';
-import { projectSettings as projectSettingsTable } from '@main/db/schema';
+import { workspaceSettings } from '@main/db/schema';
 import { parseJsonObject } from './project-settings-json';
 
 function readPinnedGithubAccountId(raw: string): string | undefined {
@@ -14,18 +14,18 @@ function readPinnedGithubAccountId(raw: string): string | undefined {
   }
 }
 
-export async function countProjectsUsingGithubAccount(accountId: string): Promise<number> {
+export async function countFoldersUsingGithubAccount(accountId: string): Promise<number> {
   const targetAccountId = accountId.trim();
   if (!targetAccountId) return 0;
 
   const rows = db
-    .select({ baseProjectSettingsJson: projectSettingsTable.baseProjectSettingsJson })
-    .from(projectSettingsTable)
+    .select({ baseSettingsJson: workspaceSettings.baseSettingsJson })
+    .from(workspaceSettings)
     .all();
 
   let count = 0;
   for (const row of rows) {
-    if (readPinnedGithubAccountId(row.baseProjectSettingsJson) === targetAccountId) {
+    if (readPinnedGithubAccountId(row.baseSettingsJson) === targetAccountId) {
       count += 1;
     }
   }

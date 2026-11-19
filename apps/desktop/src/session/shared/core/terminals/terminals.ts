@@ -2,7 +2,6 @@ import type { TerminalShellId } from './terminal-settings';
 
 export type Terminal = {
   id: string;
-  projectId: string;
   /** 这个终端属于哪条会话。 */
   sessionId: string;
   ssh?: boolean;
@@ -12,7 +11,6 @@ export type Terminal = {
 
 export type CreateTerminalParams = {
   id: string;
-  projectId: string;
   sessionId: string;
   name: string;
   shell?: TerminalShellId;

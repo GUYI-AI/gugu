@@ -6,7 +6,7 @@ import type {
 import type { UpdateProjectSettingsError } from '@shared/projects';
 export type { ProjectSettingsPatch };
 
-export interface ProjectSettingsProvider {
+export interface FolderSettingsProvider {
   getDefaultBranch(): Promise<string>;
   getBaseRemote(): Promise<string>;
   getPushRemote(): Promise<string>;

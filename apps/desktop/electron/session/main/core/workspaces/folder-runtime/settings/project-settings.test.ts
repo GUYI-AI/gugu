@@ -6,11 +6,11 @@ import type { IFileSystem } from '@gugu/session-core/files';
 import { err, ok } from '@gugu/session-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PRESERVE_PATTERNS } from '@shared/core/project-settings/project-settings';
-import type { ProjectSettingsStorage } from './project-settings-storage';
-import { LocalProjectSettingsProvider } from './providers/local-project-settings-provider';
+import type { FolderSettingsStorage } from './folder-settings-storage';
+import { LocalFolderSettingsProvider } from './providers/local-folder-settings-provider';
 
 const storageMockState = vi.hoisted(() => ({
-  storage: undefined as ProjectSettingsStorage | undefined,
+  storage: undefined as FolderSettingsStorage | undefined,
 }));
 
 function makeTrackingGit(isFileCleanlyTracked: boolean) {
@@ -50,9 +50,9 @@ function makeLocalConfigReader(projectPath: string): Pick<IFileSystem, 'exists' 
 
 function makeLocalProvider(
   projectPath: string,
-  options?: ConstructorParameters<typeof LocalProjectSettingsProvider>[4]
-): LocalProjectSettingsProvider {
-  return new LocalProjectSettingsProvider(
+  options?: ConstructorParameters<typeof LocalFolderSettingsProvider>[4]
+): LocalFolderSettingsProvider {
+  return new LocalFolderSettingsProvider(
     projectId(),
     projectPath,
     'main',
@@ -76,10 +76,10 @@ vi.mock('@main/db/client', () => ({
   db: {},
 }));
 
-vi.mock('./project-settings-storage', () => ({
-  ProjectSettingsRepository: vi.fn(function ProjectSettingsRepository() {
+vi.mock('./folder-settings-storage', () => ({
+  FolderSettingsRepository: vi.fn(function FolderSettingsRepository() {
     if (!storageMockState.storage) {
-      throw new Error('ProjectSettingsRepository test storage was not configured');
+      throw new Error('FolderSettingsRepository test storage was not configured');
     }
     return storageMockState.storage;
   }),
@@ -91,9 +91,9 @@ vi.mock('electron', () => ({
   },
 }));
 
-describe('ProjectSettingsProvider worktreeDirectory validation', () => {
+describe('FolderSettingsProvider worktreeDirectory validation', () => {
   const tempDirs: string[] = [];
-  const createStorage = (): ProjectSettingsStorage => {
+  const createStorage = (): FolderSettingsStorage => {
     const rows = new Map<
       string,
       {
@@ -192,7 +192,7 @@ describe('ProjectSettingsProvider worktreeDirectory validation', () => {
       shareableProjectSettingsJson: '{}',
       legacyConfigMigratedAt: new Date().toISOString(),
     };
-    const settingsStorage: ProjectSettingsStorage = {
+    const settingsStorage: FolderSettingsStorage = {
       get: async () => row,
       insertIfMissing: vi.fn(),
       update: async (_projectId, settings) => {
@@ -246,7 +246,7 @@ describe('ProjectSettingsProvider worktreeDirectory validation', () => {
       shareableProjectSettingsJson: '{}',
       legacyConfigMigratedAt: null,
     };
-    const settingsStorage: ProjectSettingsStorage = {
+    const settingsStorage: FolderSettingsStorage = {
       get: async () => row,
       insertIfMissing: vi.fn(),
       update: async (_projectId, settings) => {
@@ -289,7 +289,7 @@ describe('ProjectSettingsProvider worktreeDirectory validation', () => {
       }),
       legacyConfigMigratedAt: new Date().toISOString(),
     };
-    const settingsStorage: ProjectSettingsStorage = {
+    const settingsStorage: FolderSettingsStorage = {
       get: async () => row,
       insertIfMissing: vi.fn(),
       update: async (_projectId, settings) => {
@@ -325,7 +325,7 @@ describe('ProjectSettingsProvider worktreeDirectory validation', () => {
       legacyConfigMigratedAt: null,
     };
     let updateAttempts = 0;
-    const settingsStorage: ProjectSettingsStorage = {
+    const settingsStorage: FolderSettingsStorage = {
       get: async () => row,
       insertIfMissing: vi.fn(),
       update: async (_projectId, settings) => {
@@ -359,7 +359,7 @@ describe('ProjectSettingsProvider worktreeDirectory validation', () => {
       }),
       legacyConfigMigratedAt: new Date().toISOString(),
     };
-    const settingsStorage: ProjectSettingsStorage = {
+    const settingsStorage: FolderSettingsStorage = {
       get: async () => row,
       insertIfMissing: vi.fn(),
       update: async (_projectId, settings) => {
@@ -396,7 +396,7 @@ describe('ProjectSettingsProvider worktreeDirectory validation', () => {
       shareableProjectSettingsJson: JSON.stringify({}),
       legacyConfigMigratedAt: null as string | null,
     };
-    const settingsStorage: ProjectSettingsStorage = {
+    const settingsStorage: FolderSettingsStorage = {
       get: async () => row,
       insertIfMissing: vi.fn(),
       update: async (_projectId, settings) => {

@@ -11,14 +11,14 @@ import type {
 } from '@gugu/session-core/git';
 import type { Unsubscribe } from '@gugu/session-shared';
 import { Result } from '@gugu/session-shared/result';
-import type { ProjectSettingsProvider } from '@main/core/projects/settings/provider';
+import type { FolderSettingsProvider } from '@main/core/projects/settings/provider';
 import { resolveConfiguredRemotes } from '@shared/core/git/utils';
 import type { ProjectRemoteState } from '@shared/projects';
 
 export class GitRepositoryService {
   constructor(
     private readonly gitRepository: IGitRepository,
-    private readonly settings: ProjectSettingsProvider
+    private readonly settings: FolderSettingsProvider
   ) {}
 
   getSnapshot() {

@@ -19,7 +19,8 @@ export type WorkspaceFactoryResult = WorkspaceAcquireResult & WorkspaceHooks;
 type WorkspaceEntry = {
   workspace: Workspace;
   refCount: number;
-  projectId: string;
+  /** The root folder the workspace mounted with. */
+  folderId: string;
   onDestroy?: (workspace: Workspace) => Promise<void>;
   onDetach?: (workspace: Workspace) => Promise<void>;
   /** Single-flight release of the workspace's native leases. */
@@ -32,7 +33,7 @@ export class WorkspaceRegistry {
 
   async acquire(
     key: string,
-    projectId: string,
+    folderId: string,
     factory: () => Promise<WorkspaceFactoryResult>,
     { retain = true }: { retain?: boolean } = {}
   ): Promise<WorkspaceAcquireResult> {
@@ -56,9 +57,9 @@ export class WorkspaceRegistry {
         this.entries.set(key, {
           workspace,
           // A lookup can populate the cache without owning a session/draft lease.
-          // Its resources live until the normal project or process teardown.
+          // Its resources live until the folder's or the process's teardown.
           refCount: retain ? 1 : 0,
-          projectId,
+          folderId,
           onDestroy: result.onDestroy,
           onDetach: result.onDetach,
           release: once(async () => {
@@ -113,9 +114,9 @@ export class WorkspaceRegistry {
     return this.entries.get(key)?.workspace;
   }
 
-  listForProject(projectId: string): { workspaceId: string; path: string }[] {
+  listForFolder(folderId: string): { workspaceId: string; path: string }[] {
     return Array.from(this.entries.entries())
-      .filter(([, entry]) => entry.projectId === projectId)
+      .filter(([, entry]) => entry.folderId === folderId)
       .map(([workspaceId, entry]) => ({ workspaceId, path: entry.workspace.path }));
   }
 
@@ -123,9 +124,9 @@ export class WorkspaceRegistry {
     return this.entries.get(key)?.refCount ?? 0;
   }
 
-  async teardownAllForProject(projectId: string, mode: TeardownMode = 'terminate'): Promise<void> {
+  async teardownAllForFolder(folderId: string, mode: TeardownMode = 'terminate'): Promise<void> {
     const keys = Array.from(this.entries.entries())
-      .filter(([, e]) => e.projectId === projectId)
+      .filter(([, e]) => e.folderId === folderId)
       .map(([k]) => k);
     await Promise.all(keys.map((k) => this.teardown(k, mode)));
   }
@@ -147,9 +148,9 @@ export class WorkspaceRegistry {
     );
   }
 
-  async releaseLeasesForProject(projectId: string): Promise<void> {
+  async releaseLeasesForFolder(folderId: string): Promise<void> {
     const entries = Array.from(this.entries.values()).filter(
-      (entry) => entry.projectId === projectId
+      (entry) => entry.folderId === folderId
     );
     await Promise.all(entries.map((entry) => entry.release()));
   }

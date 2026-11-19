@@ -24,25 +24,25 @@ import {
   serializeShareableProjectSettings,
 } from '../legacy-shareable-migration-marker';
 import { compactUndefined, parseJsonObject, readJson } from '../project-settings-json';
-import { ProjectSettingsRepository } from '../project-settings-storage';
-import type { ProjectSettingsPatch, ProjectSettingsProvider } from '../provider';
+import { FolderSettingsRepository } from '../folder-settings-storage';
+import type { ProjectSettingsPatch, FolderSettingsProvider } from '../provider';
 import { CONFIG_FILE, LEGACY_CONFIG_FILE } from '../sharing/workspace-config-file';
 
-export type DbProjectSettingsProviderOptions = {
+export type DbFolderSettingsProviderOptions = {
   git?: ProjectSettingsGitInspector;
 };
 
-export abstract class DbProjectSettingsProvider implements ProjectSettingsProvider {
+export abstract class DbFolderSettingsProvider implements FolderSettingsProvider {
   private legacyMigrationPromise: Promise<void> | undefined;
-  private readonly storage = new ProjectSettingsRepository();
+  private readonly storage = new FolderSettingsRepository();
 
   protected constructor(
-    private readonly projectId: string,
-    protected readonly projectPath: string,
+    private readonly folderId: string,
+    protected readonly folderPath: string,
     protected readonly defaultBranchFallback: string = 'main',
     private readonly configReader: Pick<IFileSystem, 'exists' | 'readText'> | undefined,
-    private readonly joinProjectPath: (rootPath: string, relPath: string) => string,
-    private readonly options: DbProjectSettingsProviderOptions = {}
+    private readonly joinFolderPath: (rootPath: string, relPath: string) => string,
+    private readonly options: DbFolderSettingsProviderOptions = {}
   ) {}
 
   protected async initialBaseProjectSettings(): Promise<BaseProjectSettings> {
@@ -60,11 +60,11 @@ export abstract class DbProjectSettingsProvider implements ProjectSettingsProvid
    * (调用方的 `exists` 会照常报 false)。
    */
   private async resolveConfigPathForRead(): Promise<string> {
-    const currentPath = this.projectFilePath(CONFIG_FILE);
+    const currentPath = this.folderFilePath(CONFIG_FILE);
     if (!this.configReader) return currentPath;
     const current = await this.configReader.exists(currentPath);
     if (current.success && current.data) return currentPath;
-    const legacyPath = this.projectFilePath(LEGACY_CONFIG_FILE);
+    const legacyPath = this.folderFilePath(LEGACY_CONFIG_FILE);
     const legacy = await this.configReader.exists(legacyPath);
     return legacy.success && legacy.data ? legacyPath : currentPath;
   }
@@ -98,18 +98,18 @@ export abstract class DbProjectSettingsProvider implements ProjectSettingsProvid
     }
   }
 
-  private projectFilePath(relPath: string): string {
-    return this.joinProjectPath(this.projectPath, relPath);
+  private folderFilePath(relPath: string): string {
+    return this.joinFolderPath(this.folderPath, relPath);
   }
 
   private async ensureRow(): Promise<void> {
-    if (await this.storage.get(this.projectId)) return;
+    if (await this.storage.get(this.folderId)) return;
 
     const baseSettings = await this.initialBaseProjectSettings();
     const shareableSettings = (await this.hasSharedPreservePatterns())
       ? {}
       : { preservePatterns: [...DEFAULT_PRESERVE_PATTERNS] };
-    await this.storage.insertIfMissing(this.projectId, {
+    await this.storage.insertIfMissing(this.folderId, {
       baseProjectSettingsJson: JSON.stringify(compactUndefined(baseSettings)),
       shareableProjectSettingsJson: serializeShareableProjectSettings(shareableSettings),
       legacyConfigMigratedAt: null,
@@ -123,7 +123,7 @@ export abstract class DbProjectSettingsProvider implements ProjectSettingsProvid
   }> {
     await this.ensureRow();
     await this.migrateLegacyConfigIfNeeded();
-    const row = await this.storage.get(this.projectId);
+    const row = await this.storage.get(this.folderId);
     if (!row) {
       return {
         base: await this.initialBaseProjectSettings(),
@@ -159,9 +159,9 @@ export abstract class DbProjectSettingsProvider implements ProjectSettingsProvid
     }
 
     this.legacyMigrationPromise = (async () => {
-      const row = await this.storage.get(this.projectId);
+      const row = await this.storage.get(this.folderId);
       await migrateLegacyProjectSettingsIfNeeded({
-        projectId: this.projectId,
+        folderId: this.folderId,
         row,
         configReader: this.configReader,
         configPath: await this.resolveConfigPathForRead(),
@@ -179,7 +179,7 @@ export abstract class DbProjectSettingsProvider implements ProjectSettingsProvid
     }
   }
 
-  async ensure(options: DbProjectSettingsProviderOptions = {}): Promise<void> {
+  async ensure(options: DbFolderSettingsProviderOptions = {}): Promise<void> {
     await this.ensureRow();
     await this.migrateLegacyConfigIfNeeded(options.git);
   }
@@ -189,7 +189,7 @@ export abstract class DbProjectSettingsProvider implements ProjectSettingsProvid
    * 句柄,迁移已标记完成时可全程不碰 git。
    */
   async needsLegacyConfigMigration(): Promise<boolean> {
-    const row = await this.storage.get(this.projectId);
+    const row = await this.storage.get(this.folderId);
     if (!row) return true;
     return !(
       Boolean(row.legacyConfigMigratedAt) &&
@@ -215,8 +215,8 @@ export abstract class DbProjectSettingsProvider implements ProjectSettingsProvid
 
     try {
       await this.ensure();
-      const row = await this.storage.get(this.projectId);
-      await this.storage.update(this.projectId, {
+      const row = await this.storage.get(this.folderId);
+      await this.storage.update(this.folderId, {
         baseProjectSettingsJson: JSON.stringify(compactUndefined(base)),
         shareableProjectSettingsJson: serializeShareableProjectSettings(shareable, {
           previousRaw: row?.shareableProjectSettingsJson,
@@ -232,7 +232,7 @@ export abstract class DbProjectSettingsProvider implements ProjectSettingsProvid
   async patch(patch: ProjectSettingsPatch): Promise<Result<void, UpdateProjectSettingsError>> {
     try {
       await this.ensure();
-      const row = await this.storage.get(this.projectId);
+      const row = await this.storage.get(this.folderId);
       const base = row
         ? readJson(
             row.baseProjectSettingsJson,
@@ -259,7 +259,7 @@ export abstract class DbProjectSettingsProvider implements ProjectSettingsProvid
           : {}),
       });
 
-      await this.storage.update(this.projectId, {
+      await this.storage.update(this.folderId, {
         baseProjectSettingsJson: JSON.stringify(compactUndefined(nextBase)),
         shareableProjectSettingsJson: serializeShareableProjectSettings(shareable, {
           previousRaw: row?.shareableProjectSettingsJson,

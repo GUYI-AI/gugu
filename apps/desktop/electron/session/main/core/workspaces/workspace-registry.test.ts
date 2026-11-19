@@ -41,14 +41,14 @@ describe('WorkspaceRegistry', () => {
     const registry = new WorkspaceRegistry();
     const { workspace } = makeWorkspace('ws');
     const factory = vi.fn(async () => ({ workspace }));
-    const cached = registry.acquire('ws', 'project', factory, { retain: false });
-    const reading = registry.acquire('ws', 'project', factory, { retain: false });
-    const session = registry.acquire('ws', 'project', factory);
+    const cached = registry.acquire('ws', 'folder', factory, { retain: false });
+    const reading = registry.acquire('ws', 'folder', factory, { retain: false });
+    const session = registry.acquire('ws', 'folder', factory);
     const results = await Promise.all([cached, reading, session]);
     expect(results.every(result => result.workspace === workspace)).toBe(true);
     expect(factory).toHaveBeenCalledTimes(1);
     expect(registry.refCount('ws')).toBe(1);
-    await registry.acquire('ws', 'project', factory, { retain: false });
+    await registry.acquire('ws', 'folder', factory, { retain: false });
     expect(registry.refCount('ws')).toBe(1);
     await registry.teardown('ws', 'detach');
     expect(registry.get('ws')).toBeUndefined();
@@ -59,8 +59,8 @@ describe('WorkspaceRegistry', () => {
     const { workspace } = makeWorkspace('branch:main');
     const factory = vi.fn(async () => ({ workspace }));
 
-    const first = await registry.acquire('branch:main', 'test-project', factory);
-    const second = await registry.acquire('branch:main', 'test-project', factory);
+    const first = await registry.acquire('branch:main', 'test-folder', factory);
+    const second = await registry.acquire('branch:main', 'test-folder', factory);
 
     expect(first.workspace).toBe(workspace);
     expect(second.workspace).toBe(workspace);
@@ -79,8 +79,8 @@ describe('WorkspaceRegistry', () => {
         })
     );
 
-    const first = registry.acquire('branch:main', 'test-project', factory);
-    const second = registry.acquire('branch:main', 'test-project', factory);
+    const first = registry.acquire('branch:main', 'test-folder', factory);
+    const second = registry.acquire('branch:main', 'test-folder', factory);
 
     resolveFactory?.({ workspace });
 
@@ -94,8 +94,8 @@ describe('WorkspaceRegistry', () => {
     const { workspace, dispose, fileTreeDispose, gitDispose } = makeWorkspace('branch:main');
     const factory = vi.fn(async () => ({ workspace }));
 
-    await registry.acquire('branch:main', 'test-project', factory);
-    await registry.acquire('branch:main', 'test-project', factory);
+    await registry.acquire('branch:main', 'test-folder', factory);
+    await registry.acquire('branch:main', 'test-folder', factory);
 
     await registry.teardown('branch:main');
     expect(dispose).not.toHaveBeenCalled();
@@ -116,13 +116,13 @@ describe('WorkspaceRegistry', () => {
     const first = makeWorkspace('branch:main');
     const second = makeWorkspace('root:');
 
-    await registry.acquire('branch:main', 'test-project', async () => ({
+    await registry.acquire('branch:main', 'test-folder', async () => ({
       workspace: first.workspace,
     }));
-    await registry.acquire('branch:main', 'test-project', async () => ({
+    await registry.acquire('branch:main', 'test-folder', async () => ({
       workspace: first.workspace,
     }));
-    await registry.acquire('root:', 'test-project', async () => ({ workspace: second.workspace }));
+    await registry.acquire('root:', 'test-folder', async () => ({ workspace: second.workspace }));
 
     await registry.teardownAll();
 
@@ -147,11 +147,11 @@ describe('WorkspaceRegistry', () => {
     const onCreateSideEffect = vi.fn();
     const factory = vi.fn(async () => ({ workspace, onCreateSideEffect }));
 
-    await registry.acquire('branch:main', 'test-project', factory);
+    await registry.acquire('branch:main', 'test-folder', factory);
     expect(onCreateSideEffect).toHaveBeenCalledTimes(1);
     expect(onCreateSideEffect).toHaveBeenCalledWith(workspace);
 
-    await registry.acquire('branch:main', 'test-project', factory);
+    await registry.acquire('branch:main', 'test-folder', factory);
     expect(onCreateSideEffect).toHaveBeenCalledTimes(1);
   });
 
@@ -165,7 +165,7 @@ describe('WorkspaceRegistry', () => {
     });
     const factory = vi.fn(async () => ({ workspace, onCreate }));
 
-    const acquired = registry.acquire('branch:main', 'test-project', factory).then((result) => {
+    const acquired = registry.acquire('branch:main', 'test-folder', factory).then((result) => {
       order.push('acquired');
       return result.workspace;
     });
@@ -182,8 +182,8 @@ describe('WorkspaceRegistry', () => {
     const onDestroy = vi.fn(async () => {});
     const factory = vi.fn(async () => ({ workspace, onDestroy }));
 
-    await registry.acquire('branch:main', 'test-project', factory);
-    await registry.acquire('branch:main', 'test-project', factory);
+    await registry.acquire('branch:main', 'test-folder', factory);
+    await registry.acquire('branch:main', 'test-folder', factory);
 
     await registry.teardown('branch:main');
     expect(onDestroy).not.toHaveBeenCalled();
@@ -215,7 +215,7 @@ describe('WorkspaceRegistry', () => {
     });
     const factory = vi.fn(async () => ({ workspace, onDestroy }));
 
-    await registry.acquire('branch:main', 'test-project', factory);
+    await registry.acquire('branch:main', 'test-folder', factory);
     await registry.teardown('branch:main');
 
     expect(order).toEqual(['onDestroy', 'fileTreeDispose', 'gitDispose', 'lifecycleDispose']);
@@ -228,11 +228,11 @@ describe('WorkspaceRegistry', () => {
     const onDestroyFirst = vi.fn(async () => {});
     const onDestroySecond = vi.fn(async () => {});
 
-    await registry.acquire('branch:main', 'test-project', async () => ({
+    await registry.acquire('branch:main', 'test-folder', async () => ({
       workspace: first.workspace,
       onDestroy: onDestroyFirst,
     }));
-    await registry.acquire('root:', 'test-project', async () => ({
+    await registry.acquire('root:', 'test-folder', async () => ({
       workspace: second.workspace,
       onDestroy: onDestroySecond,
     }));
@@ -252,7 +252,7 @@ describe('WorkspaceRegistry', () => {
     const onDetach = vi.fn(async () => {});
     const factory = vi.fn(async () => ({ workspace, onDestroy, onDetach }));
 
-    await registry.acquire('branch:main', 'test-project', factory);
+    await registry.acquire('branch:main', 'test-folder', factory);
     await registry.teardown('branch:main', 'detach');
 
     expect(onDetach).toHaveBeenCalledTimes(1);
@@ -267,7 +267,7 @@ describe('WorkspaceRegistry', () => {
     const onDetach = vi.fn(async () => {});
     const factory = vi.fn(async () => ({ workspace, onDestroy, onDetach }));
 
-    await registry.acquire('branch:main', 'test-project', factory);
+    await registry.acquire('branch:main', 'test-folder', factory);
     await registry.teardown('branch:main', 'terminate');
 
     expect(onDestroy).toHaveBeenCalledTimes(1);
@@ -281,8 +281,8 @@ describe('WorkspaceRegistry', () => {
     const onDetach = vi.fn(async () => {});
     const factory = vi.fn(async () => ({ workspace, onDetach }));
 
-    await registry.acquire('branch:main', 'test-project', factory);
-    await registry.acquire('branch:main', 'test-project', factory);
+    await registry.acquire('branch:main', 'test-folder', factory);
+    await registry.acquire('branch:main', 'test-folder', factory);
 
     await registry.teardown('branch:main', 'detach');
     expect(onDetach).not.toHaveBeenCalled();
@@ -291,19 +291,19 @@ describe('WorkspaceRegistry', () => {
     expect(onDetach).toHaveBeenCalledTimes(1);
   });
 
-  it('teardownAllForProject passes detach mode to hooks', async () => {
+  it('teardownAllForFolder passes detach mode to hooks', async () => {
     const registry = new WorkspaceRegistry();
     const { workspace } = makeWorkspace('branch:main');
     const onDestroy = vi.fn(async () => {});
     const onDetach = vi.fn(async () => {});
 
-    await registry.acquire('branch:main', 'test-project', async () => ({
+    await registry.acquire('branch:main', 'test-folder', async () => ({
       workspace,
       onDestroy,
       onDetach,
     }));
 
-    await registry.teardownAllForProject('test-project', 'detach');
+    await registry.teardownAllForFolder('test-folder', 'detach');
 
     expect(onDetach).toHaveBeenCalledTimes(1);
     expect(onDestroy).not.toHaveBeenCalled();
@@ -315,13 +315,13 @@ describe('WorkspaceRegistry', () => {
     const onDestroy = vi.fn(async () => {});
     const onDetach = vi.fn(async () => {});
 
-    await registry.acquire('branch:main', 'test-project', async () => ({
+    await registry.acquire('branch:main', 'test-folder', async () => ({
       workspace,
       onDestroy,
       onDetach,
     }));
 
-    await registry.releaseLeasesForProject('test-project');
+    await registry.releaseLeasesForFolder('test-folder');
 
     expect(fileTreeDispose).toHaveBeenCalledTimes(1);
     expect(gitDispose).toHaveBeenCalledTimes(1);
@@ -330,7 +330,7 @@ describe('WorkspaceRegistry', () => {
     expect(onDetach).not.toHaveBeenCalled();
     expect(registry.refCount('branch:main')).toBe(1);
 
-    await registry.teardownAllForProject('test-project');
+    await registry.teardownAllForFolder('test-folder');
 
     expect(fileTreeDispose).toHaveBeenCalledTimes(1);
     expect(gitDispose).toHaveBeenCalledTimes(1);

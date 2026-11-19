@@ -1,6 +1,6 @@
 import { err, ok, type Result } from '@gugu/session-shared';
 import type { GitHubApiAuthContext } from '@main/core/github/services/github-api-auth-service';
-import type { ProjectSettingsProvider } from '@main/core/projects/settings/provider';
+import type { FolderSettingsProvider } from '@main/core/projects/settings/provider';
 
 export type ProjectGitHubAuthContextError =
   | {
@@ -25,7 +25,7 @@ export type ProjectGitHubAuthContextError =
     };
 
 type ProjectGitHubAuthContextProject = {
-  settings: Pick<ProjectSettingsProvider, 'get'>;
+  settings: Pick<FolderSettingsProvider, 'get'>;
 };
 
 type ProjectLookup = {
