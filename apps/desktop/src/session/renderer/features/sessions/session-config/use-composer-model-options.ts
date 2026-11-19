@@ -68,7 +68,6 @@ export function useComposerModelOptions(
       if (!records || error) {
         return { ...base, ...options, 'custom-models-status': {
           name: translate(error ? 'customModels.listFailed' : 'customModels.loading'),
-          groupLabel: translate('customModels.title'),
           disabled: true,
           disabledReason: error ? translate('customModels.retryInSettings') : undefined,
         } };

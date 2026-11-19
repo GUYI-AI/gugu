@@ -14,8 +14,8 @@ import { page } from 'vitest/browser';
 import type { TranscriptTurn } from '@gugu/session-core/acp/client';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
 import { AssistantTaskChatWindow } from '@/components/assistant/AssistantTaskChatWindow';
-import { SessionTimelinePage } from '@/mobile/agent-watch/SessionTimelinePage';
-import { emptyAgentWatchTimeline, type AgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store';
+import { SessionTimelinePage } from '@/components/session-watch/SessionTimelinePage';
+import { emptyAgentWatchTimeline, type AgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
 import { DevicesContext } from '@/store/devicesContext';
 import { i18n } from '@/i18n';
 import { composerModelOptions } from '@renderer/features/sessions/session-config/platform-model-options';
@@ -49,11 +49,11 @@ const TIMELINE: AgentWatchTimeline = { ...emptyAgentWatchTimeline(), turns: Arra
 
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } });
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', async (original) => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: { getStoredHistory: vi.fn() } }) }));
-vi.mock('@/mobile/agent-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: null, error: null, current: () => null }) }));
-vi.mock('@/mobile/agent-watch/useSessionRestart', () => ({ useSessionRestart: () => ({ canStartFresh: false, busy: false, refreshing: false, pendingPrompt: null, error: null, startFresh: async () => undefined, retry: null }) }));
-vi.mock('@/mobile/agent-watch/useTimelineFailureNotice', () => ({ useTimelineFailureNotice: () => undefined }));
-vi.mock('@/mobile/agent-watch/useAgentWatchSession', async (original) => ({
+vi.mock('@/components/session-watch/sessionpage-rpc', async (original) => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: { getStoredHistory: vi.fn() } }) }));
+vi.mock('@/components/session-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: null, error: null, current: () => null }) }));
+vi.mock('@/components/session-watch/useSessionRestart', () => ({ useSessionRestart: () => ({ canStartFresh: false, busy: false, refreshing: false, pendingPrompt: null, error: null, startFresh: async () => undefined, retry: null }) }));
+vi.mock('@/components/session-watch/useTimelineFailureNotice', () => ({ useTimelineFailureNotice: () => undefined }));
+vi.mock('@/components/session-watch/useAgentWatchSession', async (original) => ({
   ...(await original<object>()),
   useAgentWatchSession: () => ({
     timeline: fixture.timeline, phase: 'ready', error: null, actionError: null, dismissActionError() {}, waitingForRecord: false, reload() {},
@@ -62,8 +62,8 @@ vi.mock('@/mobile/agent-watch/useAgentWatchSession', async (original) => ({
   }),
 }));
 // The view switcher (对话 ▾ and the session's App tabs), as offered when there are App tabs: the page decides where it goes.
-vi.mock('@/mobile/agent-watch/SessionAppMenu', async importOriginal => ({
-  ...await importOriginal<typeof import('@/mobile/agent-watch/SessionAppMenu')>(),
+vi.mock('@/components/session-watch/SessionAppMenu', async importOriginal => ({
+  ...await importOriginal<typeof import('@/components/session-watch/SessionAppMenu')>(),
   SessionAppMenu: () => <button type="button" data-testid="session-app-menu">对话</button>,
 }));
 vi.mock('@/session/shared/remote-sessions/session-directory', async (original) => ({

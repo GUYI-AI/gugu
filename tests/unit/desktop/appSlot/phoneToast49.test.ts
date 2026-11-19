@@ -19,7 +19,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/insta
 })
 vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => null }))
 vi.mock('../../../../apps/desktop/src/store/devicesCache', () => ({ readCachedDevices: () => [] }))
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ fetchSessionsList: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ fetchSessionsList: vi.fn() }))
 
 let frame: HTMLIFrameElement
 let posted: ReturnType<typeof vi.fn>

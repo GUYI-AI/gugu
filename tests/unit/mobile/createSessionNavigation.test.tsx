@@ -23,7 +23,7 @@ vi.mock('../../../apps/desktop/src/store/auth', async (original) => ({
   ...(await original<typeof import('../../../apps/desktop/src/store/auth')>()),
   useAuth: () => ({ user: { id: state.owner } }),
 }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/useMachineLabel', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/useMachineLabel', () => ({
   useMachineLabel: () => ({ label: (device: Device) => device.label, isHome: () => false }),
 }))
 // 新建页从设备目录里挑机器(DESIGN 4a):每一格把要测的那台放进目录。
@@ -37,8 +37,8 @@ vi.mock('../../../apps/desktop/src/lib/agentCreateDefaults', () => ({
   readAgentCreateDefaults: async () => ({ deviceId: null, projectByDevice: {}, projectByChat: {}, machineByProject: {} }),
   rememberAgentCreateRunMachine: rememberRunMachineCloud,
 }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/CreateOptionsPill', () => ({ CreateOptionsPill: () => null }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/CreateOptionsPill', () => ({ CreateOptionsPill: () => null }))
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class SessionpageRpcError extends Error { readonly code = 'test' },
   fetchCreateOptions: rpc.options,
   fetchPhoneCreateOptions: rpc.options,

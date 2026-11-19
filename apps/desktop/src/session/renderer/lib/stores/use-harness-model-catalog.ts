@@ -92,7 +92,10 @@ export function useHarnessModelCatalog(
     /** `state` is the catalog read before and its re-read failed: a surface says so beside it (❌ the old catalog as current). */
     refreshFailed: reading.state === 'value' ? reading.error : null,
     /** Opening the model menu asks the host once more (it decides whether to probe again); a read on its way is joined. */
+    preparation: reading.state === 'value' && reading.value.refreshing ? reading.value.preparation : undefined,
     refresh: () => { if (args) void harnessModelCatalog.refresh(...args); },
+    /** The person asked again after a failed read: past the main process's cache, on this list's machine and leg. */
+    retry: () => { if (args) void forceRefreshHarnessModelCatalog(...args); },
     // 后台还在探也算「在读」—— 手上这份可能是陈的,调用方有权知道它还会变。
     isLoading: reading.state === 'unknown' || (reading.state === 'value' && reading.value.refreshing),
   };

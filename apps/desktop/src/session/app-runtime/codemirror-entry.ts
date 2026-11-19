@@ -14,6 +14,7 @@ import { basicSetup, minimalSetup } from 'codemirror';
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 import { CONTENT_MENU_EVENT, type ContentMenuRequest } from '@gugu/session-shared/content-menu';
 import * as Y from 'yjs';
+import { markdownLiteral } from '@gugu/core/shared/markdownLiteral';
 import { codeEditing } from '../renderer/lib/codemirror/code-editor';
 import { loadLanguage } from '../renderer/lib/codemirror/languages';
 import { getEditorLanguageId } from '../renderer/utils/diffUtils';
@@ -104,7 +105,7 @@ function pictureDrops(view: cmView.EditorView, file: { entry?: { chat?: unknown;
     verbs
       .upload(folder ? { chat, folder } : { chat }, files)
       .then((entries) => {
-        const named = (entries as { id: string; name: string }[]).map((e) => `![${e.name.replace(/[[\]\\]/g, '\\$&')}](gugu-file://${e.id})`);
+        const named = (entries as { id: string; name: string }[]).map((e) => `![${markdownLiteral(e.name)}](gugu-file://${e.id})`);
         if (named.length > 0) view.dispatch({ changes: { from: place.at, insert: named.join('\n') } });
       })
       .catch((error: unknown) => verbs.reportError(error instanceof Error ? error.message : String(error)))

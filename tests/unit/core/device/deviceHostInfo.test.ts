@@ -146,12 +146,9 @@ describe('#6264 被移除的 server:库拒收心跳 ⇒ 宿主只通知一次', 
     const env = await isolatedGuguEnv('gugu-device-removed-6264-')
     const client = pollOnlyRuntimeIdentityClient([], 'device removed #6264')
     let upsertError: string | null = 'boom: network'
-    const originalFrom = client.from.bind(client) as (table: string) => unknown
-    ;(client as unknown as { from: (table: string) => unknown }).from = (table: string) => {
-      const real = originalFrom(table) as Record<string, unknown>
-      if (table !== 'gugu_devices') return real
-      return { ...real, upsert: async () => ({ data: null, error: upsertError ? { message: upsertError } : null }) }
-    }
+    const originalRpc = client.rpc.bind(client)
+    client.rpc = async (name, args) => name === 'register_gugu_device' && upsertError
+      ? { data: null, error: { message: upsertError } } : originalRpc(name, args)
     const onDeviceRemoved = vi.fn()
     const host = createDeviceRuntimeHostLoop({
       env,

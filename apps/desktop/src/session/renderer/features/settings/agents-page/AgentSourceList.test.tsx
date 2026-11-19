@@ -1,4 +1,4 @@
-import { JSDOM } from 'jsdom';
+// @vitest-environment jsdom
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -7,30 +7,17 @@ import type { HostDependencyInstallation } from '@renderer/lib/stores/use-agent-
 import type { Installation } from '@shared/core/agents/agent-payload';
 import { AgentSourceList } from './AgentSourceList';
 
-let dom: JSDOM, root: Root, container: HTMLDivElement;
+let root: Root, container: HTMLDivElement;
 beforeEach(() => {
-  dom = new JSDOM('<div id="root"></div>');
-  for (const key of [
-    'window',
-    'document',
-    'HTMLElement',
-    'Element',
-    'Node',
-    'Event',
-    'CustomEvent',
-    'MutationObserver'
-  ] as const)
-    vi.stubGlobal(key, dom.window[key]);
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(cb, 0));
-  vi.stubGlobal('cancelAnimationFrame', clearTimeout);
-  container = document.getElementById('root') as HTMLDivElement;
+  container = document.createElement('div');
+  document.body.appendChild(container);
   root = createRoot(container);
 });
 afterEach(() => {
   act(() => root.unmount());
+  container.remove();
   vi.unstubAllGlobals();
-  dom.window.close();
 });
 const program: Installation = {
   id: '/bin/test-engine',
@@ -73,7 +60,7 @@ function vm(overrides: Partial<HostDependencyInstallation> = {}): HostDependency
     ...overrides
   };
 }
-async function render(model = vm(), local?: Installation, onUpdate?: () => void) {
+async function render(model = vm(), local?: Installation, onUpdate?: () => void, canUninstall = false) {
   const install = vi.fn();
   await act(async () =>
     root.render(
@@ -86,7 +73,7 @@ async function render(model = vm(), local?: Installation, onUpdate?: () => void)
           managed={undefined}
           custom={undefined}
           canInstall
-          canUninstall={false}
+          canUninstall={canUninstall}
           onSelect={vi.fn()}
           onInstall={install}
           onUpdate={onUpdate}
@@ -166,4 +153,33 @@ it('does not label a missing recorded binary as a failed-to-start binary', async
   await render(vm(), { ...program, status: 'missing', version: null });
   expect(container.querySelector('[data-testid="agent-installation-row"]')?.textContent).toContain('Not installed');
   expect(container.textContent).not.toContain('Fails to start');
+});
+
+it('only uninstalls the agent after confirming from the source menu', async () => {
+  const model = vm({ status: 'available', installations: [program] });
+  await render(model, program, undefined, true);
+  const confirmation = () => document.querySelector('[data-testid="agent-uninstall-confirmation"]');
+  const menu = container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!;
+  const open = async () => {
+    await act(async () => menu.click());
+    const uninstall = document.querySelector<HTMLElement>('[role="menuitem"]')!;
+    await act(async () => uninstall.click());
+  };
+  const choose = async (name: string) => {
+    const action = [...confirmation()!.querySelectorAll('button')].find((item) => item.textContent === name)!;
+    await act(async () => action.click());
+  };
+
+  await open();
+  expect(confirmation()?.textContent).toContain('Uninstall Agent?');
+  expect(confirmation()?.textContent).toContain('This will remove Agent from this computer.');
+  expect(model.uninstall).not.toHaveBeenCalled();
+  await choose('Cancel');
+  expect(confirmation()).toBeNull();
+  expect(model.uninstall).not.toHaveBeenCalled();
+
+  await open();
+  await choose('Uninstall');
+  expect(confirmation()).toBeNull();
+  expect(model.uninstall).toHaveBeenCalledOnce();
 });

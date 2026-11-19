@@ -111,7 +111,7 @@ async function renderConversation(width: number, naturallySeen = false, surface:
       <div data-window-head={messages[0]?.id} style={{ height: 560, width: '100%', display: hidden ? 'none' : 'flex', flexDirection: 'column' }}>
       {!emptySearch && <MessageList rows={rows} rowProps={rowProps} resetKey={resetKey} listRef={listRef} scrollerRef={memory.setScrollerRef} surface={surface}
         initialTopMostItemIndex={memory.openLocation()} followTail={!pending && !window.hasNewer} onAtBottomChange={onAtBottomChange}
-        unreadAbove={entry ? { messageId: entry.locator.message_id, messageSeq: entry.locator.message_seq, label: 'Jump to first unread', onJump: jump, onSeen: entry.onSeen } : null} />}
+        unreadAbove={entry ? { messageId: entry.locator.message_id, messageSeq: entry.locator.message_seq, label: 'Jump to first unread', onJump: jump, onSeen: entry.consume } : null} />}
     </div></>
   }
   slotHarness = createReactHarness()

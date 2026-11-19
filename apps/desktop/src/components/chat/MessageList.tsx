@@ -499,7 +499,7 @@ export function MessageList({
   const { start, end } = useFlowList({ scrollerRef: ownScrollerRef, contentRef, resetKey, rowIds, landing: initialTopMostItemIndex, followTail, atBottomThreshold: 80, onAtBottomChange, onStartReached, handleRef: listRef })
   // Each mounted row's place and the count are written here: as row props, every row element would re-render on each new
   // message (the count grows, and a full loaded window slides by one, which moves every row's position).
-  useLayoutEffect(() => { contentRef.current?.querySelectorAll(':scope > [role="listitem"]').forEach((row, i) => { row.setAttribute('aria-posinset', String(start + i + 1)); row.setAttribute('aria-setsize', String(rows.length)) }) }, [rows, start, end, resetKey])
+  useLayoutEffect(() => { [...contentRef.current?.children ?? []].filter((row) => row.getAttribute('role') === 'listitem').forEach((row, i) => { row.setAttribute('aria-posinset', String(start + i + 1)); row.setAttribute('aria-setsize', String(rows.length)) }) }, [rows, start, end, resetKey])
   // 未读行不在窗口里:比窗口最早一条还早 = 在上方(-1);否则是尾部对账还没回来,先不判(null)。
   const unreadIndex = unreadAbove ? rows.findIndex((row) => row.message.id === unreadAbove.messageId || !!albums.get(row.message.id)?.some(member => member.id === unreadAbove.messageId)) : -1
   const unreadAt = !unreadAbove ? null : unreadIndex >= 0 ? unreadIndex : rows.length > 0 && rows[0].message.seq > unreadAbove.messageSeq ? -1 : null

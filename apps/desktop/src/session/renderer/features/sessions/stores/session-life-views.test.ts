@@ -35,7 +35,7 @@ function publish(patch: Partial<LifeView>) {
 }
 
 describe('reload completion notices', () => {
-  it.each(['preserved', 'replaced'] as const)('does not replay an existing %s result on the first read or reopening', async nativeSession => {
+  it.each(['preserved', 'replaced', 'route-switched'] as const)('does not replay an existing %s result on the first read or reopening', async nativeSession => {
     current = { ...current, nativeSession };
     await readSessionLife(current.sessionId);
     await readSessionLife(current.sessionId);
@@ -43,13 +43,15 @@ describe('reload completion notices', () => {
     expect(host.toast).not.toHaveBeenCalled();
   });
 
-  it.each(['preserved', 'replaced'] as const)('notifies once when a reload becomes ready with %s context', async nativeSession => {
+  const RELOAD_NOTICE = { preserved: 'chat.reloadPreserved', replaced: 'chat.reloadReplaced', 'route-switched': 'chat.reloadRouteSwitched' } as const;
+
+  it.each(['preserved', 'replaced', 'route-switched'] as const)('notifies once when a reload becomes ready with %s context', async nativeSession => {
     await readSessionLife(current.sessionId);
     publish({ kind: 'starting' });
     expect(host.toast).not.toHaveBeenCalled();
     publish({ kind: 'ready', nativeSession });
     expect(host.toast).toHaveBeenCalledExactlyOnceWith({
-      title: nativeSession === 'preserved' ? 'chat.reloadPreserved' : 'chat.reloadReplaced', tier: 'info',
+      title: RELOAD_NOTICE[nativeSession], tier: 'info',
     });
     // Subsequent host updates and rereads carry the same durable result, not another completion.
     publish({ pending: { count: 0, items: [] } });

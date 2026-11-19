@@ -11,9 +11,9 @@ import {
   pendingSettlements,
   pinnedSettlements,
   withToolImage,
-} from '@/mobile/agent-watch/agent-watch-store'
+} from '@/components/session-watch/agent-watch-store'
 
-// 手机看管 agent 的时间线状态机(apps/desktop/src/mobile/agent-watch/agent-watch-store.ts)。
+// 手机看管 agent 的时间线状态机(apps/desktop/src/components/session-watch/agent-watch-store.ts)。
 // 这里钉的是「断线只补缺口」在代码里到底意味着什么:
 //   ① 同一批喂两次 = 喂一次(重连时重叠的那一段不会变成重复的消息)
 //   ② reset 是整份替换(❌ 拼出一份少了中间的)

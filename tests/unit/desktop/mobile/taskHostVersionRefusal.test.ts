@@ -33,7 +33,7 @@ it.each(['advertised-version', 'new-version-after-unknown', 'host-ready-without-
     }
   })
   const { writeCachedDevices } = await import('@/store/devicesCache')
-  const { fetchCreateOptions } = await import('@/mobile/agent-watch/sessionpage-rpc')
+  const { fetchCreateOptions } = await import('@/components/session-watch/sessionpage-rpc')
   const id = 'version-peer-' + signal
   const device = (version: string | null, online = true) => ({ device_id: id, is_online: online, label: 'fixture', capabilities: version ? { app_version: version } : {} }) as Device
   const writeCurrent = (version: string | null, online = true) => writeCachedDevices([

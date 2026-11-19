@@ -43,6 +43,7 @@ import { AppPeekSlot } from './AppPeekSlot'
 import { ClaimedPage } from './ClaimedPage'
 import { peekStore } from '../../session/renderer/features/extensions/peek-store'
 import { extensionViewStore } from '../../session/renderer/features/extensions/extension-view-store'
+import { reloadAppPage } from '../../session/renderer/features/extensions/app-page-unsaved'
 import { ExtensionTabPane } from '../../session/renderer/features/extensions/extension-tab-pane'
 import { ExtensionTabToolbar } from '../../session/renderer/features/extensions/extension-tab-toolbar'
 import { PhoneAppFrame } from './PhoneAppFrame'
@@ -365,7 +366,7 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
       >
         {marks}
       </PaneHeader>}
-      {appError && errorShown ? <AppErrorDetails error={appError} testId="group-app-slot-error-details" /> : null}
+      {appError && errorShown ? <AppErrorDetails error={appError} testId="group-app-slot-error-details" onReload={() => void reloadAppPage(null, slot, item.fileName ?? undefined)} /> : null}
       {update && updateAsk === 'deciding' ? (
         <div className="flex items-center gap-2 border-b border-[var(--border)] !px-3 !py-1 text-[length:var(--font-caption)]" data-testid="group-app-slot-update-deciding">
           <Unknown className="h-[var(--control-h-sm)] w-48" />

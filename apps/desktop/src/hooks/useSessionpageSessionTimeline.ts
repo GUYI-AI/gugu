@@ -16,7 +16,7 @@ import {
 } from '@/session/shared/core/sessions/sessionEvents'
 import { rendererLogger } from '../lib/log'
 import { useSelect } from '../lib/selectStore'
-import { sessionpageTimelineFacts, updateSessionpageFacts } from '../mobile/agent-watch/timeline-cache'
+import { sessionpageTimelineFacts, updateSessionpageFacts } from '../components/session-watch/timeline-cache'
 import { desktopIpc } from '../platform/desktopIpc'
 
 const timelineLog = rendererLogger('chat/sessionpage-session-timeline')

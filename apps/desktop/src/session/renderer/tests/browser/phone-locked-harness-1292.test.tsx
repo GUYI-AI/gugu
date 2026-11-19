@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
-import { SessionConversation } from '@/mobile/agent-watch/SessionConversation'
-import { emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store'
+import { SessionConversation } from '@/components/session-watch/SessionConversation'
+import { emptyAgentWatchTimeline } from '@/components/session-watch/agent-watch-store'
 import { ChatMessageComposer } from '@/components/chat/ChatMessageComposer'
 import {
   createReactHarness,

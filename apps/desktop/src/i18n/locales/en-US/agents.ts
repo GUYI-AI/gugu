@@ -142,10 +142,13 @@ export default {
       "broadPickAnother": "Pick another"
     },
     "title": "Create agent",
-    "unfinishedSweep": {
-      "cancelledWithWarning": "An Agent from last time was never finished and has been cancelled, but {{steps}} did not complete cleanly. Please create it again.",
-      "pending": "An Agent from last time was never finished; cancelling it is not done yet ({{steps}} did not complete cleanly). It will be retried on next launch.",
-      "pendingError": "An Agent from last time was never finished and could not be cancelled this time. It will be retried on next launch."
+    "unfinished": {
+      "title": "Unfinished creation",
+      "continue": "Continue",
+      "delete": "Delete",
+      "deleteTitle": "Delete this creation?",
+      "deleteDescription": "Cancel the unfinished creation of “{{name}}”.",
+      "readFailed": "Could not read creation status. The record was kept"
     },
     "toast": {
       "cancelFailed": "Could not cancel Agent creation. Try again.",
@@ -346,6 +349,7 @@ export default {
       "appliedHot": "Applied: the running task switched in place.",
       "appliedReloadPreserved": "Applied: the task was reopened with its history restored.",
       "appliedReloadReplaced": "Applied: the agent started a new session of its own; the conversation history in Gugu is kept, but the agent does not carry over its earlier context.",
+      "appliedReloadRouteSwitched": "Applied: switched billing route.",
       "appliedReload": "Applied: the task was reopened.",
       "appliedNextSession": "Saved: this Agent has no running task right now; it takes effect from its next task.",
       "applyFailed": "The device could not apply this selection. It said:",

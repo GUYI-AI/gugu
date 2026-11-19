@@ -14,6 +14,11 @@ import { publishInnerSidebarChat } from '../../../../../apps/desktop/src/lib/inn
 
 // This device's Apps are the desktop's (the header's 「打开 App」 lists the ones installed here).
 vi.mock('../../../../../apps/desktop/src/components/appSlot/hereHost', () => ({ HERE_HOST: 'local' }))
+// #2609 The search item's shortcut label follows the platform; these cases describe macOS (⌘F).
+vi.mock('@tanstack/react-hotkeys', async (original) => ({
+  ...await original<typeof import('@tanstack/react-hotkeys')>(),
+  detectPlatform: () => 'mac',
+}))
 
 /** Topic chatter: unread, none of it addressed to you. */
 const topicFixture = (patch: Partial<ChatItem>) => chat({ ...patch, unread_locator: { stream_id: 'main', stream_kind: 'main', thread_root_id: null, message_id: 'first', message_seq: 1,

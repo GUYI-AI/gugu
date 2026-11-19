@@ -56,6 +56,7 @@ describe('shared HTML frame lifecycle', () => {
     const assetsChanged = vi.fn(async (paths?: string[]) => paths?.includes('used.css') ?? false)
     const register = vi.fn(async (): Promise<HtmlPreviewRegistration> => ({ ok: true, url: 'blob:initial', update, release: vi.fn(), assetsChanged }))
     await harness.render(createElement(HtmlPreviewFrame, { fileName: 'report.html', rawContent: 'page', register, onLink: vi.fn(), subscribeChanges }))
+    await until('the registered frame listens for workspace changes', () => changed !== undefined)
     vi.useFakeTimers()
     try {
       await act(async () => { changed(['other.md', 'sub/shot.png']); await vi.advanceTimersByTimeAsync(210) })

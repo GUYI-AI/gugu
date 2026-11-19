@@ -1,6 +1,8 @@
-import { useCustomAutoReview } from './use-custom-auto-review';
+import { usePermissionMenu } from './use-permission-menu';
+import { localizePermissionModeOptions } from '../acp/permission-mode-options';
+import { classifyProviderPermissionMode, type ProviderPermissionModeMap } from '@gugu/session-core/acp/client';
+import type { SessionOptionGroup } from '@gugu/session-core/session-record/contract';
 import { withAutoReviewHint, type ReviewCostSource } from '../acp/auto-review-permission-hint';
-import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
 import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica } from '@/lib/replica';
 import { customModels } from './custom-models';
@@ -72,7 +74,7 @@ import type { SessionViewLockState } from './session-view-lock';
 import { SessionViewControl } from './session-view-control';
 import { terminalShown, useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
 import { DEFAULT_SESSION_VIEW } from '@shared/core/sessions/new-session-defaults';
-import { codexNeedsUpgrade } from '../session-input-failure-copy';
+import { codexNeedsUpgrade, isCodexStartupFailure, sessionStartupFailureCopy } from '../session-input-failure-copy';
 import { useSessionInputNotice } from '../session-input-notice';
 import { log } from '@renderer/utils/logger';
 import {
@@ -80,6 +82,7 @@ import {
   harnessCatalogToModelsCapability,
   harnessCatalogToOptions,
 } from './harness-model-field';
+import { useCodexPreparationNotice } from '@renderer/lib/stores/use-codex-preparation-notice';
 import { useHarnessModelOptions } from './use-harness-model-options';
 import { agentOffersFastMode, draftFastMode } from './fast-mode';
 import { renderFastModeHint } from './fast-mode-hint';
@@ -102,10 +105,7 @@ import {
   agentReadingForLeg,
   agentSupportsAcp,
   agentSupportsAutoApprove,
-  agentOffersEditMode,
   agentSupportsPermissionMode,
-  agentSupportsPlanMode,
-  agentSupportsReadOnlyMode,
   type AgentCapabilities,
   type AgentModelsCapability,
 } from '@shared/core/agents/agent-payload';
@@ -258,9 +258,8 @@ export type InitialSessionState = {
   /** Selected effort id, or null when nothing is armed (the CLI then resolves it itself). */
   effort: string | null;
   setEffort: (effort: string | null) => void;
-  autoReviewAvailable?: boolean;
-  autoReviewDisabled?: boolean;
-  autoReviewByHaiku?: boolean;
+  permissionOptions?: SessionOptionGroup | null;
+  permissionModeMap?: ProviderPermissionModeMap;
   autoReviewCostSource?: ReviewCostSource;
   fastMode?: boolean;
   setFastMode?: (enabled: boolean) => void;
@@ -1072,7 +1071,9 @@ export function useInitialSessionState(
   const platformCatalogNotice = machineUnreachable || ownModelsOnly ? null : guguCatalogNotice(platformCatalog.catalogError, translate);
   const platformNotice = platformCatalogNotice?.text ?? null;
   const harnessNoticeDetail = harnessCatalogState.kind === 'unavailable' ? harnessCatalogState.reason : null;
-  const upgradeCodex = !!harnessNoticeDetail && codexNeedsUpgrade(harnessNoticeDetail);
+  // The catalog carries the verified failure fact; provider identity cannot diagnose its cause.
+  const catalogStartupFailure = harnessCatalogState.kind === 'unavailable' && isCodexStartupFailure(harnessCatalogState);
+  const upgradeCodex = catalogStartupFailure && codexNeedsUpgrade(harnessCatalogState);
   const openInstaller = () => {
     if (!providerId) return;
     openAgentAppDetail(navigate, providerId);
@@ -1088,7 +1089,7 @@ export function useInitialSessionState(
     ? undefined
     : !harnessNoticeMessage ? null
     : harnessCatalogState.kind === 'unknown' ? undefined : {
-      title: upgradeCodex ? translate('taskError.codexUpgrade') : harnessNotice ?? undefined,
+      title: catalogStartupFailure ? sessionStartupFailureCopy(harnessCatalogState, translate) : harnessNotice ?? undefined,
       tier: 'error', action: harnessAction,
       diagnostic: harnessNoticeDetail ?? undefined,
     });
@@ -1138,7 +1139,6 @@ export function useInitialSessionState(
   const selectedCustom = customModelRefFromOption(customSelection);
   const customConnection = selectedCustom && customReading.state === 'value' ? customReading.value.find(record => record.id === selectedCustom.connectionId) : undefined;
   const customFeatures = customConnection?.models.find(({ id }) => id === selectedCustom?.modelId);
-  const customReview = useCustomAutoReview(providerId === 'claude' ? customConnection : undefined, selectedCustom?.modelId, machine);
   const runtimeModel = runtimeModelId(model) ?? null;
   const targetFastCatalog = useTargetModelCatalog(
     !selectedCustom && !unattended && !platformModel && agentOffersFastMode(capabilities) ? providerId : null,
@@ -1174,14 +1174,9 @@ export function useInitialSessionState(
   const { auth: reviewAuth } = useAgentAuthStatus(!platformModel && !selectedCustom ? providerId : null, undefined, { machine });
   const autoReviewCostSource: ReviewCostSource = platformModel ? 'platform' : selectedCustom ? 'api-key'
     : reviewAuth?.status.kind === 'authenticated' ? reviewAuth.status.credentialKind ?? 'unknown' : 'unknown';
-  const reviewCatalog = targetFastCatalog ?? harnessCatalogState;
-  const reviewQualified = !unattended && catalogAllowsAutoReview(
-    capabilities?.autoApprove.modes, reviewCatalog, platformModel ? 'platform' : selectedCustom ? 'custom' : 'own', platformModel ?? runtimeModel,
-  );
-  const needsCustomReview = providerId === 'claude' && !!selectedCustom;
-  const autoReviewAvailable = reviewQualified && (!needsCustomReview || customReview?.kind === 'own');
-  const autoReviewDisabled = reviewQualified && needsCustomReview && customReview?.kind === 'platform-fallback';
-  const autoReviewByHaiku = customReview?.kind === 'own' && customReview.byHaiku === true;
+  const permissionModeMap = capabilities?.autoApprove.modes;
+  const permissionOptions = usePermissionMenu({ provider: providerId, leg: sessionpageSurface, modeMap: permissionModeMap, machine,
+    model: platformModel ? (platformModel.startsWith('platform:') ? platformModel : 'platform:' + platformModel) : model });
   const autoApproveSupported = agentSupportsAutoApprove(capabilities);
   const grokStructuralFullAccess = providerId === 'grok';
   // @@@5597-draft-decides — **草稿上显示的档 = 落库的档 = 进程里生效的档**,三者同一个事实。
@@ -1243,7 +1238,7 @@ export function useInitialSessionState(
   const exhaustiveModes = capabilities?.autoApprove.modesExhaustive
     ? capabilities.autoApprove.modes
     : undefined;
-  const permissionMode: GuguPermissionMode = wantedPermissionMode === 'ai-review' && !autoReviewAvailable ? 'edit' : grokStructuralFullAccess
+  const permissionMode: GuguPermissionMode = grokStructuralFullAccess
     ? wantedPermissionMode
     : exhaustiveModes
       ? (resolveDeclaredPermissionMode(wantedPermissionMode, exhaustiveModes)
@@ -1317,9 +1312,8 @@ export function useInitialSessionState(
     // 档名走词表 —— 插件那份是硬编码中文,原样摆出来英文壳里就漏中文(见 effort-options.ts)。
     effortOptions: localizeEffortOptions(modelEfforts?.options ?? null, translate),
     effort,
-    autoReviewAvailable,
-    autoReviewDisabled,
-    autoReviewByHaiku,
+    permissionOptions,
+    permissionModeMap,
     autoReviewCostSource,
     fastMode: unattended || selectedCustom ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
     setFastMode: setFastModeDraft,
@@ -1446,7 +1440,8 @@ export function InitialSessionField({
   const syncingEditorTextRef = useRef(false);
   const localMentionItemsRef = useRef<MentionItem[]>([]);
   const { value: promptLibrary, overrides } = usePromptLibrary();
-  const { options: harnessModelOptions, refresh: refreshHarnessModels } = useHarnessModelOptions(state.provider, sessionpageLegOfView(state.sessionView));
+  const { options: harnessModelOptions, refresh: refreshHarnessModels, preparation } = useHarnessModelOptions(state.provider, sessionpageLegOfView(state.sessionView));
+  const modelPreparationNotice = useCodexPreparationNotice(preparation);
   const agentsReading = useAgents();
   const agents = agentsReading.state === 'value' ? agentsReading.value : null;
   const remoteHost = useLibraryHost().remote;
@@ -1519,10 +1514,6 @@ export function InitialSessionField({
   // treat that state as absent instead of dereferencing a partial payload before the error renders.
   const capabilities = state.providerError ? null : resolvedCapabilities;
   const canToggleAutoApprove = agentSupportsAutoApprove(capabilities);
-  const leg = sessionpageLegOfView(state.sessionView);
-  const readOnlyModeSupported = agentSupportsReadOnlyMode(capabilities, leg);
-  const planModeSupported = agentSupportsPlanMode(capabilities, leg);
-  const editModeOffered = agentOffersEditMode(capabilities, leg);
 
   useEffect(() => {
     const editor = editorApiRef.current;
@@ -1628,60 +1619,11 @@ export function InitialSessionField({
   // to a provider mode before the initial prompt, so visibility does not depend on the Chat UI toggle.
   // @@@permission-three-modes — 与会话 composer 共用同一组档位和文案。这里的 key 就是
   // GuguPermissionMode 本身,❌ 别再用 'ask'/'bypass' 这种只表达二值的别名。
-  const permissionModeOptions =
-    showAutoApproveToggle && canToggleAutoApprove
-      ? {
-          ...(state.provider === 'grok'
-            ? {
-                'full-access': {
-                  name: translate('taskConfig.grokPermissionFullAccess'),
-                  description: translate('taskConfig.grokPermissionWarning'),
-                  destructive: true,
-                },
-              }
-            : {
-              // ⚠️ 规划档、只读档都只对**真有那一档**的 agent 出现(capability 里核实过的那些)。
-              // 其余 harness 的 argv 上只有一个 auto-approve 开关,给它们摆这些档 =
-              // 用户以为锁住了 agent、实际照跑不误。少一档好过多一个骗人的档。
-              // 顺序按约束从严到松:规划 → 只读 → 编辑 → 完全访问。
-              ...(planModeSupported
-                ? {
-                    plan: {
-                      name: translate('taskConfig.permissionPlan'),
-                      description: translate('taskConfig.permissionPlanHint'),
-                    },
-                  }
-                : {}),
-              ...(readOnlyModeSupported
-                ? {
-                    'read-only': {
-                      name: translate('taskConfig.permissionReadOnly'),
-                      description: translate('taskConfig.permissionReadOnlyHint', { agent: selectedAgentName }),
-                    },
-                  }
-                : {}),
-              ...(editModeOffered
-                ? {
-                    edit: {
-                      name: translate('taskConfig.permissionEdit'),
-                      description: translate('taskConfig.permissionEditHint'),
-                    },
-                  }
-                : {}),
-              ...((state.autoReviewAvailable || state.autoReviewDisabled) ? { 'ai-review': {
-                name: translate('taskConfig.permissionAiReview'),
-                description: translate('taskConfig.permissionAiReviewHint'),
-                disabled: state.autoReviewDisabled,
-                reviewByHaiku: state.autoReviewByHaiku,
-              } } : {}),
-              'full-access': {
-                name: translate('taskConfig.permissionFullAccess'),
-                description: translate('taskConfig.permissionFullAccessHint'),
-                destructive: true,
-              },
-            }),
-        }
-      : null;
+  const canonicalPermissions = state.permissionOptions ? Object.fromEntries(state.permissionOptions.available.map(({ id, ...choice }) => [id, choice])) : null;
+  const localizedPermissions = localizePermissionModeOptions(canonicalPermissions, translate, selectedAgentName, state.permissionModeMap);
+  const permissionModeOptions = showAutoApproveToggle && canToggleAutoApprove
+    ? Object.fromEntries(Object.entries(localizedPermissions ?? {}).map(([id, choice]) => [classifyProviderPermissionMode(id, state.permissionModeMap) ?? id, choice]))
+    : null;
 
   const handleComposerInputChange = useCallback(
     (text: string) => {
@@ -1847,6 +1789,7 @@ export function InitialSessionField({
           modelOptions={modelOptions === undefined ? null : modelOptions}
           modelUnknown={modelOptions === undefined || !state.modelKnown}
           onModelMenuOpen={refreshHarnessModels}
+          modelMenuNotice={modelPreparationNotice}
           // 编解码都在装配那份里(@@@composer-model-assembly)—— 这里只把分好的两路写回
           // **本页自己的**两套 state。❌ 别把 state 也合过去:那两套决定 spawn 走哪条路,
           // 会话页只有一个活会话,合起来只能靠 surface flag 在里面分叉。

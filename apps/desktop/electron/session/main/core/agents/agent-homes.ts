@@ -18,6 +18,7 @@ import type { DependencyId } from '@gugu/session-core/deps/runtime';
 import { migrateOwnedHarnessAccounts } from './harness-connections';
 import { setAgentHomeUpgradePreparation } from './agent-home';
 import { appScope } from '@main/app/app-scope';
+import { migrateQwenUpgradeSignIn } from './qwen-upgrade-sign-in';
 import { reportAgentHomeMigrationFailure } from '../../../../error-summary-reporting-host';
 
 /** Declarations own paths; this service adds desktop account migration and IPC-safe metadata. */
@@ -81,17 +82,21 @@ function admitAutomaticImports(providers: ReadonlySet<string>): Promise<void> {
 
 async function planUpgrade(priorProfile: boolean): Promise<ReadonlySet<string>> {
   const previous = await upgradeState.get('providers');
-  if (previous) { inventoryComplete = true; return new Set(previous); }
-  const inventory = await upgradeState.get('inventory') ?? {};
+  const inventory = {
+    ...await upgradeState.get('inventory'),
+    ...Object.fromEntries((previous ?? []).map((providerId) => [providerId, true])),
+  };
+  // A profile originally created by Gugu can still predate a newly managed engine.
+  const existingProfile = priorProfile || Boolean(previous) || Object.keys(inventory).length > 0;
   const unknown = pluginRegistry.getAll().filter((plugin) =>
     plugin.capabilities.sessionBundle?.configRoot && !Object.hasOwn(inventory, plugin.metadata.id));
-  const observed = priorProfile && unknown.length > 0 && await ensureAgentDependenciesProbed(localDependencyManager)
+  const observed = existingProfile && unknown.length > 0 && await ensureAgentDependenciesProbed(localDependencyManager)
     .then(() => true, () => { log.warn('Could not finish the harness inventory for configuration upgrade'); return false; });
   const changed: Record<string, boolean> = {};
   for (const { metadata: { id } } of unknown) {
     const status = localDependencyManager.get(id as DependencyId)?.status;
-    if (hasOldTasks(id) || (priorProfile && status === 'available')) changed[id] = true;
-    else if (!priorProfile || observed && status === 'missing') changed[id] = false;
+    if (hasOldTasks(id) || (existingProfile && status === 'available')) changed[id] = true;
+    else if (!existingProfile || observed && status === 'missing') changed[id] = false;
   }
   if (Object.keys(changed).length) await upgradeState.setOrThrow('inventory', { ...inventory, ...changed });
   inventoryComplete = unknown.every(({ metadata: { id } }) => Object.hasOwn(changed, id));
@@ -190,7 +195,7 @@ export async function scanAgentHomes(providerIds?: readonly string[], upgradedOn
     rows.push({
       providerId, name: plugin.metadata.name, userRoot: home.userConfigRoot, sourceReadable,
       importedAt: scan.marker?.importedAt ?? null, needsImport: !scan.marker,
-      sourceUpdated: !!scan.marker && scan.newestMtime > Date.parse(scan.marker.importedAt),
+      sourceUpdated: scan.sourceUpdated,
       migration,
       ...(scan.marker?.migratedFrom === 'shared' ? {
         upgraded: true, upgradeSignIn: scan.marker.upgradeSignIn, terminalNeedsSignIn: scan.marker.terminalNeedsSignIn,
@@ -250,6 +255,15 @@ async function importHarnessHomeOnce(home: NonNullable<ReturnType<typeof homeFor
         upgradeIssues: [...issues, ...cleanupIssues],
       }),
       afterCommit: async () => {
+        if (providerId === 'qwen') {
+          const upgradeSignIn = await migrateQwenUpgradeSignIn(home.userConfigRoot, home.configRoot)
+            .catch((error: unknown) => {
+              log.warn('Could not transfer the previous Qwen sign-in during upgrade', { providerId });
+              reportAgentHomeMigrationFailure(error, 'sign-in');
+              return 'relogin' as const;
+            });
+          return upgradeSignIn ? { upgradeSignIn } : undefined;
+        }
         if (providerId !== 'claude' && providerId !== 'codex') return;
         notice = await migrateOwnedHarnessAccounts(providerId, { ...process.env, ...loginShellEnv() }, true);
         return { upgradeSignIn: notice.upgradeSignIn, terminalNeedsSignIn: notice.terminalNeedsSignIn };

@@ -16,7 +16,7 @@ vi.mock('@/lib/assistantSetupRules', async () => {
   const { NEUTRAL_ASSISTANT_RULES } = await import('../assistantRules/neutralRules')
   return { assistantSetupRules: async () => NEUTRAL_ASSISTANT_RULES }
 })
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ assistantHome: f }) }))
+vi.mock('@/components/session-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ assistantHome: f }) }))
 vi.mock('@/platform/desktopIpc', () => ({ desktopIpc: () => ({}) }))
 vi.mock('@/lib/supabase', () => ({ getCurrentAuthUserId: async () => {
   if (++f.ownerReads === 2 && f.disconnectBeforeRpc) f.online = false

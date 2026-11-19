@@ -9,7 +9,7 @@ beforeEach(() => { vi.resetModules() })
 
 async function load() {
   const publication = await import('../../../apps/desktop/src/lib/sessionPublication')
-  const cache = await import('../../../apps/desktop/src/mobile/agent-watch/timeline-cache')
+  const cache = await import('../../../apps/desktop/src/components/session-watch/timeline-cache')
   return { ...publication, ...cache }
 }
 const session = (id: string) => ({ user: { id } }) as never

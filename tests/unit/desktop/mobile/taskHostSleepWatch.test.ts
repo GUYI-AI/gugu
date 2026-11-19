@@ -20,7 +20,7 @@ it('the real mobile session-host client never attaches during sleep and resumes 
   network.open.mockImplementation(async (handlers: { onFrame(frame: string): void }) => ({ send(frame: string) { const request = JSON.parse(frame); if (request.t === 'invoke') handlers.onFrame(JSON.stringify({ t: 'result', id: request.id, ok: true, value: { ok: true, value: {} } })) }, close: network.close }))
   const { writeCachedDevices } = await import('@/store/devicesCache')
   const { readCloudSnapshotNow: refreshCloudComputer } = await import('@/lib/cloudComputer')
-  const { fetchCreateOptions, fetchSessionsList } = await import('@/mobile/agent-watch/sessionpage-rpc')
+  const { fetchCreateOptions, fetchSessionsList } = await import('@/components/session-watch/sessionpage-rpc')
   writeCachedDevices([{ device_id: 'cloud', is_online: true, label: 'cloud' } as Device])
   await refreshCloudComputer()
   await expect(fetchCreateOptions('cloud')).rejects.toMatchObject({ code: 'unreachable' })

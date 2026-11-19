@@ -1,6 +1,6 @@
 import type { SessionpageSessionCreateOptions, SessionpageSessionView } from '@gugu/session-core/session-record/contract'
 import { useEffect } from 'react'
-import { fetchCreateOptions, fetchPhoneCreateOptions } from '@/mobile/agent-watch/sessionpage-rpc'
+import { fetchCreateOptions, fetchPhoneCreateOptions } from '@/components/session-watch/sessionpage-rpc'
 import { fetchPlatformModelCatalog, fetchSessionCreateModels, readAgentModelSelection, type SessionCreateVia } from './agentModelSelection'
 import { replica, useReplica, type Reading } from './replica'
 import { rendererLogger } from './log'

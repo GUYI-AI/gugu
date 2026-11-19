@@ -5,7 +5,7 @@ import { wakeCloudComputer } from '@/lib/cloudComputer'
 import { waitForAssistantControl } from '@/lib/assistantControlReady'
 import { isAssistantActionRefusal } from '@/lib/assistantActionRefusal'
 import { getRendererSession } from '@/lib/sessionPublication'
-import { machineRpc } from '../agent-watch/sessionpage-rpc'
+import { machineRpc } from '../../components/session-watch/sessionpage-rpc'
 import { createLegacyConnectionGuard } from '@/components/connections/legacy-connection-routing'
 
 /** Constructing the API is inert. Only an explicit authorization mutation can

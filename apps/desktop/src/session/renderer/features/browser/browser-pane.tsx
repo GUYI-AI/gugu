@@ -73,7 +73,7 @@ export const BrowserPane = observer(function BrowserPane({
     () => surface.paneLayout.openBeside('browser', {}, paneId), openInStart,
   );
   const startPageActions = startTabId ? available.map((item): WorkspacePanelAction => {
-    if (item.id === WORKSPACE_APP_KIND) return { ...item, id: 'files', label: translate('workspace.files'), shortcutSettingsKey: 'session.sidebarFiles' };
+    if (item.id === WORKSPACE_APP_KIND) return { ...item, id: 'files', section: 'builtin', label: translate('workspace.files'), shortcutSettingsKey: 'session.sidebarFiles' };
     if (item.id === 'review') return { ...item, shortcutSettingsKey: 'session.sidebarChanges', onClick: () => openInStart('review') };
     if (item.id === 'ports') return { ...item, onClick: () => openInStart('remote-ports') };
     if (item.id === 'browser') return { ...item, shortcutSettingsKey: 'session.openBrowser' };
@@ -132,8 +132,9 @@ export const ChatBrowserPane = observer(function ChatBrowserPane({ chatId, tabId
     { id: 'files', label: translate('workspace.files'), icon: <Folder className="size-3.5" />, shortcutSettingsKey: 'session.sidebarFiles', onClick: openFolder },
     { id: 'browser', label: translate('workspace.browser'), icon: <Globe className="size-3.5" />, shortcutSettingsKey: 'session.openBrowser', onClick() {} },
     // What is installed here not read yet: only the host's own actions (the Apps appear when it is read).
-    ...(peekInstalledAppsTracked()?.openableApps ?? []).map((app) => ({
+    ...(peekInstalledAppsTracked()?.openableApps ?? []).map((app): WorkspacePanelAction => ({
       id: app.extensionId, label: app.name, icon: <ExtensionMark iconDataUrl={app.iconDataUrl} />,
+      section: 'extensions',
       onClick: () => openApp(app.extensionId, chatId, tabId),
     })),
   ];
@@ -201,7 +202,9 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
   const pendingInitialUrl = useRef<string | null>(null);
   const sessionBrowserId = session?.browserId;
   const sessionPartition = session?.partition;
-  const showStartPage = session?.currentUrl === 'about:blank' && !session.isLoading;
+  // 起始页 = 这张网页是空白页。❌ 再加「没在加载」:新页签挂网页时会先载一次 about:blank,那几十毫秒里起始页一撤,
+  // 底下的原生网页就露出来(深色外观下 about:blank 是黑的)。真去别的地址时 currentUrl 先变,起始页照常让开。
+  const showStartPage = session?.currentUrl === 'about:blank';
   const loadError = session && !session.isLoading ? session.loadError : undefined;
   const loadErrorUrl = loadError ? (loadError.url ?? session?.currentUrl ?? '') : '';
   const loadErrorPresentation = useMemo<BrowserLoadErrorPresentation | undefined>(

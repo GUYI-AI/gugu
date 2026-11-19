@@ -1161,6 +1161,11 @@ export default {
     },
     "engines": "By engine",
     "enginesEmpty": "No engine used in this period yet.",
+    "cacheHit": {
+      "label": "Cache hit",
+      "hint": "Cache-read tokens as a share of all input tokens",
+      "average": "Average "
+    },
     "heat": {
       "less": "Less",
       "more": "More",

@@ -26,6 +26,8 @@ import { AgentAdvancedSection } from './AgentAdvancedSection';
 import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import { InstallationOverrideCard } from './InstallationOverrideCard';
 import { canUninstallManagedSource, managedInstallOption, resolveManagedSourceUpdate } from './agent-source-actions';
+import { ManagedVersionsRow } from './ManagedVersionsRow';
+import { useLibraryHost } from '@renderer/features/library/library-host';
 
 export type AgentInstallationHeader = {
   version: string | null;
@@ -50,6 +52,7 @@ export type InstallSectionProps = {
   /** Link to installation documentation, null if not set. */
   installDocs?: string | null;
   renderPage?: (installation: AgentInstallationHeader, settings: ReactNode) => ReactNode;
+  manageOldVersions?: boolean;
 };
 
 /** Owns the existing install/source mutations; presentation follows the approved settings rows. */
@@ -59,8 +62,10 @@ export const InstallSection = observer(function InstallSection({
   installOptions,
   installDocs,
   renderPage,
+  manageOldVersions = false,
 }: InstallSectionProps) {
   const vm = useAgentInstallationStatus(agentId, agentPayload);
+  const host = useLibraryHost();
   const hasRegistryOptions = installOptions.some((option) => option.registry !== undefined);
   /**
    * 各下载源的「最新版本」。这一趟请求**本来就要发**(高级那一项要把版本列出来),
@@ -287,6 +292,8 @@ export const InstallSection = observer(function InstallSection({
         onUpdate={onManagedUpdate}
         onOpenCustom={openManual}
         customEditor={manualSlot}
+        managedVersions={manageOldVersions && inUse === 'managed' && managedCopy?.provenance.kind === 'mise'
+          ? <ManagedVersionsRow key={`${host.key}:${agentId}`} agentId={agentId} name={agentPayload?.name ?? agentId} disabled={vm.isInstalling || vm.isUpdating || vm.isUninstalling} /> : undefined}
       />
   );
   const runnable = vm.status === 'available' && state !== 'broken';

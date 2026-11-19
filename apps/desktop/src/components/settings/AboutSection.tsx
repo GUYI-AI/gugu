@@ -131,15 +131,6 @@ export function AboutSection() {
         </SettingsGroup>
       )}
 
-      <SettingsGroup>
-        <SettingsRow
-          data-testid="about-feedback"
-          title={t('shell.feedback', { ns: 'main' })}
-          control={<ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" />}
-          onClick={() => window.dispatchEvent(new Event(UI_EVENTS.sessionpageOpenFeedback))}
-        />
-      </SettingsGroup>
-
       {/* @@@1323-m6 about-wrap（对标 SSOT L886–890）：品牌 App 图标 + 名称 + tagline。
           图标 76/20 是品牌资产的固定几何(#2964 e2e 钉死 76×76),不进入通用头像/圆角梯——
           与气泡圆角同属「有专属 token 的例外」，不强收进 --r/--r-lg。 */}

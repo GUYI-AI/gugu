@@ -1,6 +1,6 @@
 import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client'
 import { useMyAssistant } from '@/lib/myAssistant'
-import { machineRpc } from '../agent-watch/sessionpage-rpc'
+import { machineRpc } from '../../components/session-watch/sessionpage-rpc'
 import { thisPhoneDeviceId } from './phoneDeviceSettings'
 
 /** Report committed phone choices through the same assistant App channel in settings and setup. */

@@ -8,7 +8,7 @@ import { expect, it, vi } from 'vitest'
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const rpc = vi.hoisted(() => ({ fetch: vi.fn() }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', async (original) => ({ ...await original<object>(), fetchBackgroundTasks: rpc.fetch }))
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', async (original) => ({ ...await original<object>(), fetchBackgroundTasks: rpc.fetch }))
 vi.mock('@gugu/session-chat-ui/background-rosters', async (original) => ({
   ...await original<object>(),
   collectBackgroundCommandRoster: (_c: unknown, _a: unknown, _l: unknown, ids: readonly string[] | null) =>
@@ -16,7 +16,7 @@ vi.mock('@gugu/session-chat-ui/background-rosters', async (original) => ({
   collectSubagentRoster: () => [],
 }))
 
-const { usePhoneBackgroundTasks, sessionBackgroundTasks } = await import('../../../apps/desktop/src/mobile/agent-watch/background-tasks')
+const { usePhoneBackgroundTasks, sessionBackgroundTasks } = await import('../../../apps/desktop/src/components/session-watch/background-tasks')
 const { followRendererSession, queryClient } = await import('../../../apps/desktop/src/lib/replica')
 
 it('lists every candidate without a stop key once its machine cannot be asked again', async () => {

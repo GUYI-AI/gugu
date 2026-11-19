@@ -38,6 +38,11 @@ export function svgPalette(element: Element): Record<string, string> {
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const TOKEN = /var\(\s*--([a-z0-9-]+)\s*(?:,[^()]*)?\)/gi;
+const PIXEL_LENGTH = /^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)(?:px)?$/i;
+
+function parsePixelLength(attribute: string | null): number {
+  return Number(attribute?.trim().match(PIXEL_LENGTH)?.[1]);
+}
 
 export function svgFigure(source: string, palette: Record<string, string>): SvgFigure {
   if (new TextEncoder().encode(source).length > SVG_FIGURE_MAX_BYTES) return { ok: false, reason: 'too-large' };
@@ -49,9 +54,14 @@ export function svgFigure(source: string, palette: Record<string, string>): SvgF
   const root = doc.documentElement;
   if (doc.getElementsByTagName('parsererror').length || root.namespaceURI !== SVG_NS || root.localName !== 'svg') return { ok: false, reason: 'invalid' };
   const box = (root.getAttribute('viewBox') ?? '').trim().split(/[\s,]+/).map(Number);
-  const [width, height] = [box[2], box[3]];
-  if (box.length !== 4 || box.some((n) => !Number.isFinite(n)) || !(width! > 0) || !(height! > 0)) {
-    return { ok: false, reason: 'no-viewbox' };
+  let [, , width = NaN, height = NaN] = box;
+  if (box.length !== 4 || box.some((n) => !Number.isFinite(n)) || width <= 0 || height <= 0) {
+    width = parsePixelLength(root.getAttribute('width'));
+    height = parsePixelLength(root.getAttribute('height'));
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      return { ok: false, reason: 'no-viewbox' };
+    }
+    root.setAttribute('viewBox', `0 0 ${width} ${height}`);
   }
   // The image's natural size is its viewBox (1 unit = 1px); the surface scales it down to fit.
   root.setAttribute('width', String(width));
@@ -59,5 +69,5 @@ export function svgFigure(source: string, palette: Record<string, string>): SvgF
   if (!root.hasAttribute('color') && palette.fg) root.setAttribute('color', palette.fg);
   if (!root.hasAttribute('font-family')) root.setAttribute('font-family', 'sans-serif');
   const markup = new XMLSerializer().serializeToString(root);
-  return { ok: true, src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`, width: width!, height: height! };
+  return { ok: true, src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`, width, height };
 }

@@ -1,4 +1,5 @@
 import { messageForUser } from '@/lib/userFacingError';
+import { codexStartupKind, isCodexProviderStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -190,9 +191,10 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
 
   // 设备拒了 ⇒ 原话原样摆出来(behavior:「设备拒了就把原话摆出来」),但原话是**设备说的**,不是文案:
   // 它单独成一段,❌ 不插进翻译词条里(user-copy-leak-check 把「文案里拼 {{error}}」当泄漏;这里两件事分开)。
-  const deviceError = outcome !== null && !outcome.ok
+  const rawDeviceError = outcome !== null && !outcome.ok
     ? outcome.error
     : state?.applyError ?? null
+  const deviceError = isCodexProviderStartupKind(codexStartupKind(rawDeviceError)) ? messageForUser(rawDeviceError) : rawDeviceError
   const outcomeText = outcome === null
     ? null
     : outcome.ok
@@ -205,6 +207,8 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
               ? 'settings.model.appliedReloadPreserved'
               : outcome.nativeSession === 'replaced'
                 ? 'settings.model.appliedReloadReplaced'
+                : outcome.nativeSession === 'route-switched'
+                  ? 'settings.model.appliedReloadRouteSwitched'
                 : 'settings.model.appliedReload'
             : 'settings.model.appliedNextSession',
       )}${outcome.warning ? ` ${outcome.warning}` : ''}`

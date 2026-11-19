@@ -8,7 +8,7 @@ vi.mock('../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendere
 vi.mock('@/lib/connectionBridge',() => ({ connectionBridge: () => ({ routing: {
   read: async () => ({ mode: 'legacy',epoch: '0',phase: 'stable',acceptingNewOperations: true }),assert: async () => {},
 } }) }))
-vi.mock('../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ integrations: { authorize: world.authorize,checkConfiguredConnections: world.ready }, github: {} }) }))
+vi.mock('../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ integrations: { authorize: world.authorize,checkConfiguredConnections: world.ready }, github: {} }) }))
 import { phoneAssistantAuthorization } from '../../apps/desktop/src/mobile/assistant/phoneAssistantAuthorization'
 afterEach(() => { vi.useRealTimers(); world.owner = 'owner'; world.online = false; world.wake.mockReset(); world.authorize.mockReset(); world.ready.mockReset() })
 it.each(['zh-CN', 'en-US'])('localizes unavailable authorization without raw diagnostics or asking the owner to retry (%s)', async locale => {

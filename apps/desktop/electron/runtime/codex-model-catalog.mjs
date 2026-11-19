@@ -1,3 +1,4 @@
+import { codexStartupKind, tagCodexStartupFailure } from '../../../../packages/core/src/local/codex-startup-failure.mjs'
 // Codex's model metadata for Gugu platform models — rendered from the gateway model directory.
 //
 // Codex sizes context, compaction and reasoning from a per-model descriptor looked up by slug.
@@ -35,7 +36,7 @@ export const PLATFORM_MODELS_ENV = 'GUGU_PLATFORM_MODELS'
 export const CODEX_UNKNOWN_MODEL_CONTEXT_WINDOW = 272_000
 
 function fail(message) {
-  throw new Error(`${PLATFORM_MODELS_ENV}: ${message}`)
+  throw tagCodexStartupFailure(new Error(`${PLATFORM_MODELS_ENV}: ${message}`), 'configuration')
 }
 
 /** Parse and validate the facts payload; `contextWindow` is null when the directory row has none. */
@@ -138,13 +139,13 @@ export async function writeCodexModelCatalog(env, readBundledCatalog) {
   let bundled
   try {
     bundled = JSON.parse(await readBundledCatalog()).models
-    if (!Array.isArray(bundled)) throw new Error('no "models" array')
+    if (!Array.isArray(bundled)) throw tagCodexStartupFailure(new Error('no "models" array'), 'protocol')
   } catch (error) {
     // Without it every platform model codex does know (gpt-5.x) would lose its own metadata.
-    throw new Error(
-      `本机 Codex 报不出它自带的模型目录(\`codex debug models --bundled\`,需要 Codex ≥ 0.122);`
-      + `请升级 Codex 后重试。原始错误:${error?.message ?? error}`,
-    )
+    throw tagCodexStartupFailure(new Error(
+      `Codex bundled model catalog (codex debug models --bundled) failed: ${error?.message ?? error}`,
+      { cause: error },
+    ), error instanceof SyntaxError ? 'protocol' : codexStartupKind(error, true))
   }
   const dir = await mkdtemp(join(tmpdir(), 'gugu-codex-catalog-'))
   const file = join(dir, 'model-catalog.json')

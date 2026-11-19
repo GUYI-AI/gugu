@@ -1,9 +1,14 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ importHome: vi.fn(), values: new Map<string, unknown>(), prepare: vi.fn(), resolveCli: vi.fn(), spawnEnv: vi.fn(), signIn: vi.fn(), dispose: undefined as (() => void) | undefined }));
-vi.mock('@gugu/session-plugins/agents', () => ({ pluginRegistry: { getAll: () => [{
-  metadata: { id: 'codex', name: 'Codex' }, capabilities: { sessionBundle: { configRoot: {}, injectionMode: 'managed-config-root' } },
-}], get: () => ({ capabilities: { sessionBundle: { configRoot: {}, injectionMode: 'managed-config-root' } } }) } }));
+const state = vi.hoisted(() => ({
+  importHome: vi.fn(), values: new Map<string, unknown>(), providers: ['codex'], marked: new Set<string>(),
+  prepare: vi.fn(), resolveCli: vi.fn(), spawnEnv: vi.fn(), signIn: vi.fn(), dispose: undefined as (() => void) | undefined,
+}));
+const capability = { sessionBundle: { configRoot: {}, injectionMode: 'managed-config-root' } };
+vi.mock('@gugu/session-plugins/agents', () => ({ pluginRegistry: {
+  getAll: () => state.providers.map((id) => ({ metadata: { id, name: id }, capabilities: capability })),
+  get: () => ({ capabilities: capability }),
+} }));
 vi.mock('@gugu/session-core/agents/plugins/helpers', () => ({
   AgentHomeMigrationFailure: class extends Error {},
   AgentHomeSpaceError: class extends Error {},
@@ -11,9 +16,12 @@ vi.mock('@gugu/session-core/agents/plugins/helpers', () => ({
   AGENT_HISTORY_LIMIT: 4 * 1024 ** 3,
   readAgentHomePending: async () => null,
   planAgentHomeHistory: async () => ({ paths: [], issues: [], skipped: [], sessions: 0, sessionBytes: 0 }),
-  resolveAgentHome: () => ({ providerId: 'codex', configRoot: '/managed', userConfigRoot: '/missing-source', importGroups: [{ id: 'settings' }] }),
-  readAgentHomeMarker: async () => null,
-  scanAgentHome: async () => ({ marker: null, newestMtime: 0, groups: [{ id: 'settings', count: 1, mcpCount: 0 }], issues: [], mcpSecrets: [], mcpNames: [], projectMcpCount: 0 }),
+  resolveAgentHome: ({ providerId }: { providerId: string }) => ({
+    providerId, configRoot: providerId === 'codex' ? '/managed' : `/managed/${providerId}`,
+    userConfigRoot: '/missing-source', importGroups: [{ id: 'settings' }],
+  }),
+  readAgentHomeMarker: async ({ providerId }: { providerId: string }) => state.marked.has(providerId) ? { importedAt: 'earlier' } : null,
+  scanAgentHome: async () => ({ marker: null, newestMtime: 0, sourceUpdated: false, groups: [{ id: 'settings', count: 1, mcpCount: 0 }], issues: [], mcpSecrets: [], mcpNames: [], projectMcpCount: 0 }),
   importAgentHome: state.importHome,
 }));
 vi.mock('@main/db/client', () => ({ db: { select: () => ({ from: () => ({ where: () => ({ limit: () => ({ all: () => [] }) }) }) }) } }));
@@ -33,19 +41,32 @@ vi.mock('../../../../error-summary-reporting-host', () => ({ reportAgentHomeMigr
 
 beforeEach(() => {
   vi.resetModules(); state.values.clear(); state.importHome.mockReset(); state.prepare.mockReset(); state.resolveCli.mockReset(); state.spawnEnv.mockReset(); state.signIn.mockReset();
+  state.providers = ['codex']; state.marked.clear();
   state.resolveCli.mockResolvedValue('/selected/codex'); state.spawnEnv.mockResolvedValue({ PATH: '/selected', CODEX_HOME: '/source' });
   state.signIn.mockResolvedValue({ upgradeSignIn: 'copied', terminalNeedsSignIn: false, relogin: [] });
 });
 
-it('returns status while automatic history migration is still unfinished', async () => {
-  state.importHome.mockReturnValue(new Promise(() => {}));
+it('reports a newly managed engine during migration even with an older provider list', async () => {
+  state.providers = ['codex', 'qwen'];
+  state.values.set('providers', ['codex']);
+  state.values.set('inventory', { claude: false });
+  state.marked.add('codex');
+  const started = Promise.withResolvers<void>();
+  state.importHome.mockImplementation(() => {
+    started.resolve();
+    return new Promise(() => {});
+  });
   const homes = await import('./agent-homes');
-  homes.initializeAgentHomeUpgrade(true);
-  await vi.waitFor(() => expect(state.importHome).toHaveBeenCalledOnce());
-  const rows = await homes.scanAgentHomes(['codex']);
-  expect(rows).toMatchObject([{ providerId: 'codex', needsImport: true, migration: true, migrationPreparation: { phase: 'copying' }, groups: [] }]);
-}, 1000);
-
+  homes.initializeAgentHomeUpgrade(false);
+  await started.promise;
+  expect(state.importHome).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ providerId: 'qwen' }),
+    expect.objectContaining({ migratedFrom: 'shared' }),
+  );
+  expect(state.values.get('inventory')).toEqual({ claude: false, codex: true, qwen: true });
+  const rows = await homes.scanAgentHomes(['qwen']);
+  expect(rows).toMatchObject([{ providerId: 'qwen', needsImport: true, migration: true, migrationPreparation: { phase: 'copying' }, groups: [] }]);
+});
 
 it('uses the selected CLI and final managed CODEX_HOME before migrating sign-in', async () => {
   const order: string[] = [];

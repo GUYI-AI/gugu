@@ -16,7 +16,7 @@ import { MobileAssistantApp } from '../../../../apps/desktop/src/mobile/assistan
 import { i18n } from '../../../../apps/desktop/src/i18n'
 import { DevicesContext, useDevicesStore } from '../../../../apps/desktop/src/store/devicesContext'
 import { PhoneGroupAgentCreation } from '../../../../apps/desktop/src/mobile/chat/PhoneNewTask'
-import * as sessionRpc from '../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc'
+import * as sessionRpc from '../../../../apps/desktop/src/components/session-watch/sessionpage-rpc'
 import { runInAction } from 'mobx'
 import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
 

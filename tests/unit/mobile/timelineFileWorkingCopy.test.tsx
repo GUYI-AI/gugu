@@ -3,7 +3,7 @@
 // that session's working copy on its machine, through the Files App's own read (`filesRead`). Before, both went to the
 // ledger of files the session had opened itself and said 「这条会话还没打开过这个文件」 for a file the Files App opens fine.
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { useOpenedOutputOpener } from '../../../apps/desktop/src/mobile/agent-watch/opened-output-opener'
+import { useOpenedOutputOpener } from '../../../apps/desktop/src/components/session-watch/opened-output-opener'
 import { sessionWorkingCopyReader } from '../../../apps/desktop/src/components/appSlot/phone-working-copy-file'
 import { ToastContext } from '../../../apps/desktop/src/components/toastContext'
 import { createNode, createReactHarness } from '../../support/testHarness'
@@ -11,7 +11,7 @@ import { createNode, createReactHarness } from '../../support/testHarness'
 const m = vi.hoisted(() => ({ ledger: vi.fn(), workingCopy: vi.fn(), call: vi.fn(), toast: vi.fn() }))
 vi.mock('../../../apps/desktop/src/platform', () => ({ platform: { kind: 'capacitor', saveFile: vi.fn(), capabilities: {} } }))
 vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => true, readMobileShell: () => true }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   readOpenedFileChunk: m.ledger,
   SessionpageRpcError: class extends Error { constructor(readonly code: string, message: string) { super(message) } },
 }))

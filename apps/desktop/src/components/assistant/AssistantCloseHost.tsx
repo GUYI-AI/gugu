@@ -29,7 +29,7 @@ import {
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { rendererLogger } from '../../lib/log'
 import { desktopIpc } from '../../platform/desktopIpc'
-import { machineRpc } from '../../mobile/agent-watch/sessionpage-rpc'
+import { machineRpc } from '../session-watch/sessionpage-rpc'
 import { clearServerAssistantSetup } from '../../lib/assistantServerSetup'
 import { refreshFailure, replica, useReplica } from '../../lib/replica'
 import { useAuth } from '../../store/auth'

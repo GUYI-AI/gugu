@@ -213,6 +213,13 @@ describe('AgentAiModelPane', () => {
       expect(text).not.toContain('续上历史')
     })
 
+    it('route-switched ⇒ says only that the billing route switched, claims neither', async () => {
+      const text = await reopenWith({ applied: 'reload', nativeSession: 'route-switched' })
+      expect(text).toContain('已生效：已切换计费路线。')
+      expect(text).not.toContain('续上历史')
+      expect(text).not.toContain('新会话')
+    })
+
     it('an older device that omits nativeSession ⇒ neutral copy, claims neither', async () => {
       const text = await reopenWith({ applied: 'reload' })
       expect(text).toContain('已生效：会话已重开。')

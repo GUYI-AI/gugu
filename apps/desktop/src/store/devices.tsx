@@ -1,3 +1,4 @@
+import { serverNow } from '@gugu/core/shared/serverClock'
 import { useEffect, useCallback, useMemo, useLayoutEffect } from 'react'
 import { chatService } from '../lib/chat'
 import { isLifecycleCancellation } from '../lib/authBoundedFetch'
@@ -26,7 +27,7 @@ import { platform } from '../platform'
 import { SERVER_SSH_MACHINES_CHANNELS } from '../lib/serverSshMachines'
 import { reportAssistantAppChange } from '../components/assistant/assistant-app-client'
 import { useMyAssistant } from '../lib/myAssistant'
-import { machineRpc } from '../mobile/agent-watch/sessionpage-rpc'
+import { machineRpc } from '../components/session-watch/sessionpage-rpc'
 import { cloudComputer, cloudComputerPollMs, cloudSnapshotOf, knownCloudDeviceId, useCloudComputer, useWakeRefusal, withCloudComputerPresence } from '../lib/cloudComputer'
 
 // #1749 设备 store：list(chatService.listDevices，含本机 self-merge) + 排序 + durable revision 刷新
@@ -189,7 +190,7 @@ export function DevicesProvider({ children, active = true }: { children: React.R
           // SSH list not read yet (first run only: it is kept across restarts): each row shows its own cloud heartbeat (its value, not a default).
           sshMachineIds ? withSshLinkOnline(devices, sshMachineIds, linkProblems) : devices,
           cloudSnapshot,
-          Date.now(),
+          serverNow(),
           refused?.deviceId ?? null,
         ),
       ),

@@ -10,10 +10,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { SessionpageSessionSummary, TimelineSnapshot } from '@gugu/session-core/session-record/contract'
 import { createReactHarness, device, renderWithAppProviders } from '../../../support/testHarness'
 import { createWindowOpenings } from '../../../../apps/desktop/electron/session/main/core/session-timeline/window-opening'
-import { SessionTimelinePage } from '../../../../apps/desktop/src/mobile/agent-watch/SessionTimelinePage'
+import { SessionTimelinePage } from '../../../../apps/desktop/src/components/session-watch/SessionTimelinePage'
 import { AssistantTaskChatWindow } from '../../../../apps/desktop/src/components/assistant/AssistantTaskChatWindow'
-import { hasPendingWindow } from '../../../../apps/desktop/src/mobile/agent-watch/timeline-window-fields'
-import type { AgentWatchTimeline } from '../../../../apps/desktop/src/mobile/agent-watch/agent-watch-store'
+import { hasPendingWindow } from '../../../../apps/desktop/src/components/session-watch/timeline-window-fields'
+import type { AgentWatchTimeline } from '../../../../apps/desktop/src/components/session-watch/agent-watch-store'
 
 const bus = vi.hoisted(() => ({
   routes: {} as Record<string, (input: never) => unknown>,
@@ -30,13 +30,13 @@ vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', async original 
   } },
 }))
 vi.mock('../../../../apps/desktop/src/lib/sessionInputOutboxBridge', () => ({ enqueueSessionInput: vi.fn(), retrySessionInputs: vi.fn(), useQueuedSessionInputs: () => [] }))
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/timeline-cache', async (original) => ({ ...await original<object>(),
+vi.mock('../../../../apps/desktop/src/components/session-watch/timeline-cache', async (original) => ({ ...await original<object>(),
   readCachedTimeline: () => null, hydrateCachedTimeline: async () => null, writeCachedTimeline: () => {},
   readCachedNativeRecord: () => null, hydrateCachedNativeRecord: async () => null, writeCachedNativeRecord: () => {},
 }))
 // The conversation is drawn by SessionConversation; what it is handed — the turns, a window's fragments, its
 // 「Loading…」 line (hasPendingWindow, SessionConversation.tsx) — is drawn here from the same timeline.
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/SessionConversation', () => ({
+vi.mock('../../../../apps/desktop/src/components/session-watch/SessionConversation', () => ({
   SessionConversation: ({ timeline }: { timeline: AgentWatchTimeline & { sourceFragments?: Array<{ text?: string }> } }) => <div data-testid="conversation" data-turns={timeline.turns.map(turn => turn.id).join()}>
     {timeline.turns.flatMap(turn => turn.items.map(item => 'text' in item ? <p key={item.id}>{String(item.text)}</p> : null))}
     {(timeline.sourceFragments ?? []).map((fragment, index) => <p key={index}>{fragment.text}</p>)}

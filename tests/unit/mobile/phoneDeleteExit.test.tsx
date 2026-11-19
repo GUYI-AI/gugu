@@ -25,7 +25,7 @@ vi.mock('../../../apps/desktop/src/mobile/assistant/phoneVoiceNotesData', async 
 vi.mock('../../../apps/desktop/src/session/renderer/features/assistant/assistant-machine-core', async (original) => ({
   ...await original<typeof import('../../../apps/desktop/src/session/renderer/features/assistant/assistant-machine-core')>(), removePath: m.remove,
 }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ automations: { deleteAutomation: m.remove } }) }))
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ automations: { deleteAutomation: m.remove } }) }))
 vi.mock('../../../apps/desktop/src/components/markdown/Markdown', () => ({ Markdown: () => null }))
 
 let h: ReturnType<typeof createReactHarness>

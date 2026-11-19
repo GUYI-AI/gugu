@@ -27,7 +27,7 @@ vi.mock('@/lib/assistantEntry', () => ({
   assistantEntryUnread: () => false, openAssistantEntry: vi.fn(),
 }))
 vi.mock('@/lib/productTour', () => ({
-  TOUR_FILMS: [], TOUR_STEPS: [], resumableStep: () => null, useProductTourState: () => ({ data: null }),
+  TOUR_FILMS: [], TOUR_STEPS: [], resumableStep: () => null, useProductTourState: () => ({ state: 'value', value: null, stale: false, error: null }),
 }))
 vi.mock('@/platform', async original => {
   const module = await original<typeof import('@/platform')>()

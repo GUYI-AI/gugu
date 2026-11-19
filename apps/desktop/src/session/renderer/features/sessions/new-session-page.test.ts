@@ -181,7 +181,6 @@ vi.mock('@renderer/lib/layout/layout-provider', () => ({
   useWorkspaceLayoutContext: () => ({
     isLeftOpen: true,
     leftAnimatedWidth: motionValue(260),
-    leftLayoutWidth: motionValue(260),
     setCollapsed: vi.fn(),
   })
 }));

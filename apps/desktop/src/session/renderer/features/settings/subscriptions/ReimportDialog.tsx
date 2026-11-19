@@ -7,11 +7,13 @@ import { DialogContentArea, DialogHeader, DialogTitle } from '@renderer/lib/ui/d
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import { errorText } from './subscription-queries'
 
-export function ReimportDialog({ providerId, machine, diff, onClose, onSuccess }: {
-  providerId: string; machine: string | null; diff: AgentHomeDiff; onClose: () => void; onSuccess: () => void
+export function ReimportDialog({ providerId, machine, diff, titleId, onClose, onSuccess }: {
+  providerId: string; machine: string | null; diff: AgentHomeDiff; titleId?: string; onClose: () => void; onSuccess: () => void
 }) {
   const { t } = useTranslation('main')
-  const [picked, setPicked] = useState(() => new Set(diff.entries.filter((entry) => ['userChanged', 'userAdded'].includes(entry.state)).map((entry) => entry.id)))
+  const [picked, setPicked] = useState(() => new Set(diff.entries
+    .filter((entry) => (providerId !== 'qwen' || entry.group !== 'hooks') && ['userChanged', 'userAdded'].includes(entry.state))
+    .map((entry) => entry.id)))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const apply = async () => {
@@ -28,8 +30,8 @@ export function ReimportDialog({ providerId, machine, diff, onClose, onSuccess }
     } catch (error) { setError(messageForUser(error)) }
     finally { setBusy(false) }
   }
-  return <div data-testid="agent-home-reimport-dialog">
-      <DialogHeader><DialogTitle>{t('agentHome.reimportTitle')}</DialogTitle></DialogHeader>
+  return <div className="flex min-h-0 flex-col" data-testid="agent-home-reimport-dialog">
+      <DialogHeader><DialogTitle id={titleId}>{t('agentHome.reimportTitle')}</DialogTitle></DialogHeader>
       <DialogContentArea>
         {[...new Set(diff.entries.map((entry) => entry.group))].map((group) => <fieldset key={group} className="mb-4">
           <legend className="mb-2 font-medium"><label className="flex gap-2"><input type="checkbox" disabled={busy}

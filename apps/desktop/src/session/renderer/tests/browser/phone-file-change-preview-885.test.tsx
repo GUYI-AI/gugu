@@ -4,8 +4,8 @@ import { getI18n } from 'react-i18next';
 import { getLocaleSnapshot, setLocalePreference } from '@/i18n';
 import { formatBytes } from '@renderer/utils/formatBytes';
 import { OPENED_FILE_MAX_BYTES } from '@gugu/session-core/session-record/contract';
-import { SessionConversation } from '@/mobile/agent-watch/SessionConversation';
-import { emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store';
+import { SessionConversation } from '@/components/session-watch/SessionConversation';
+import { emptyAgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
 import { textFilePatch } from '@gugu/session-core/lib';
 import { createReactHarness, renderWithAppProviders, clickElement } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
@@ -19,7 +19,7 @@ import '@renderer/index.css';
 const m = vi.hoisted(() => ({ call: vi.fn(), ledger: vi.fn() }));
 vi.mock('@gugu/core/cloud/config', async original => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } });
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', async original => ({
+vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({
   ...(await original<object>()),
   fetchSessionOptions: vi.fn(() => new Promise(() => {})), setSessionOption: vi.fn(),
   machineRpc: vi.fn(() => ({})), fetchToolImage: vi.fn(), stopBackgroundTask: vi.fn(),

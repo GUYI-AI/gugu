@@ -20,7 +20,7 @@ export function withAutoReviewHint(
   return Object.fromEntries(Object.entries(options).map(([id, option]) => {
     const auto = modeMap ? classifyProviderPermissionMode(id, modeMap) === 'ai-review' : id === 'ai-review';
     return [id, auto ? { ...option, icon: <ShieldCheck />,
-      ...(option.disabled ? { description: translateSessionMessage('taskConfig.reviewUnavailable') } : {}),
+      ...(option.disabled ? { description: option.description ?? translateSessionMessage('taskConfig.reviewUnavailable') } : {}),
       detail: option.disabled ? undefined : option.reviewByHaiku
         ? <>{translateSessionMessage('taskConfig.reviewByHaiku')}<br />{key ? translateSessionMessage(key) : null}</>
         : key ? translateSessionMessage(key) : undefined,

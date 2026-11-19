@@ -2,8 +2,8 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TimelineAfterResult, TimelineSnapshot } from '@gugu/session-core/session-record/contract'
-import { useTimelineSession, type AgentWatchSession, type SessionpageTimelineClient } from '../../../apps/desktop/src/mobile/agent-watch/use-timeline-session'
-import { clearTimelineCache } from '../../../apps/desktop/src/mobile/agent-watch/timeline-cache'
+import { useTimelineSession, type AgentWatchSession, type SessionpageTimelineClient } from '../../../apps/desktop/src/components/session-watch/use-timeline-session'
+import { clearTimelineCache } from '../../../apps/desktop/src/components/session-watch/timeline-cache'
 import { createNode, createReactHarness } from '../../support/testHarness'
 
 /**

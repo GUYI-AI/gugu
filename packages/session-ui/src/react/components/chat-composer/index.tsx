@@ -747,6 +747,7 @@ export function ChatComposer({
     modelCount: modelItems.length,
     effortCount: effortItems.length,
     unlock: Boolean(modelUnlock),
+    notice: Boolean(modelMenuNotice || modelSettingNotice),
   });
 
   // ── Permission mode items ────────────────────────────────────────────────────

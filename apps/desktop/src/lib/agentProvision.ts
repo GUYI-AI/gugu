@@ -600,7 +600,7 @@ export interface ProvisionResumeStore {
 const RESUME_STORE_PREFIX = 'gugu:agent-provision:pending:'
 
 /**
- * 一份按主人分开的续建记录(localStorage)。默认那份归「新建 agent」(启动时 unfinishedSingleAgentSweep 会把没建完的单 agent 收掉);
+ * 一份按主人分开的续建记录(localStorage)。默认那份归「新建 agent」(未完成的单 agent 留给用户继续或删除);
  * #7199 个人助理另用一份(前缀不同,扫不到它):建到一半退出,下次打开引导接着建同一个,❌ 被当成没建完的普通 agent 撤掉。
  */
 export function createResumeStore(prefix: string): ProvisionResumeStore {

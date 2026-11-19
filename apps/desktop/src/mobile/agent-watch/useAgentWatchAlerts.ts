@@ -5,17 +5,17 @@ import { platform } from '@/platform'
 import { useAuth } from '@/store/auth'
 import { claimBackgroundWatch } from '../backgroundWatchClaims'
 import { agentStatusText } from '@/lib/agentStatusText'
-import { readDevicePreferences } from '@/lib/devicePreferences'
 import {
   diffAlerts,
   statusMapOf,
   type AgentWatchAlert,
   type AgentWatchStatusMap,
-} from './agent-watch-alerts'
-import * as sessionpageRpc from './sessionpage-rpc'
+} from '@/lib/agent-wait/agent-watch-alerts'
+import * as sessionpageRpc from '../../components/session-watch/sessionpage-rpc'
 import { startSessionListSync } from '@/session/shared/remote-sessions/session-list-sync'
 import { registerDeviceSessionsRetry, retainDeviceSessions, updateDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
-import { workspaceDevices } from './machine-list'
+import { workspaceDevices } from '../../components/session-watch/machine-list'
+import { announceAgentWait } from '@/lib/agent-wait/agent-wait-banner'
 
 /**
  * 「agent 在等你」的提醒 —— 挂在看管入口的**根**上，不是挂在某一条会话的时间线页上。
@@ -111,7 +111,7 @@ export function useAgentWatchAlerts(devices: readonly Device[]): void {
 
     const deliver = (alerts: readonly AgentWatchAlert[]): void => {
       for (const alert of alerts) {
-        void announce(tRef.current('agentWatch.notify.status', { name: alert.title, status: agentStatusText(alert.label) }))
+        void announceAgentWait(tRef.current('agentWatch.notify.status', { name: alert.title, status: agentStatusText(alert.label) }))
       }
     }
     // 正看着这条会话:页头状态词已经在说这件事,再报一遍就是同一件事说两遍(#3566 审计)。
@@ -169,32 +169,6 @@ export function useAgentWatchAlerts(devices: readonly Device[]): void {
     // onlineIds 是每次渲染新建的数组，进依赖会让这个 effect 每帧重挂；key 是它的稳定投影。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, ownerId])
-}
-
-/**
- * 「agent 在等你」怎么送到人眼前 —— **只有一个通道:系统横幅**,不分 App 在不在前台。
- *
- * owner 2026-09-15:「其实你就统一一下,都用系统横幅不行吗?没必要搞什么 App 内的提示条,
- * 尤其是在手机端,我觉得完全没必要。……总之就是,你把话搞复杂了」。
- * ⇒ ❌ 不要再给提醒加第二个通道(App 内提示条、列表红点、未读角标)。这个功能有几个通道,
- * 判据就是几:超过一个就是设计复杂了。
- *
- * 安卓 App 走原生通知(WebView 没有网页 `Notification` 接口,MDN browser-compat-data:
- * webview_android 未实现);浏览器宿主走网页 Notification。两条都是同一个东西的不同实现,
- * 不是两个通道。发不出去(用户没给通知权限)就没有提醒 —— 那正是「我的 → 权限」那一页要解决的事。
- */
-async function announce(text: string): Promise<void> {
-  const silent = !readDevicePreferences().chatSound
-  if (platform.systemPermissions.includes('notifications')) {
-    void platform.showNotification({ title: text, chatId: null, silent }).catch(() => undefined)
-    return
-  }
-  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
-  try {
-    new Notification(text, { silent })
-  } catch {
-    // 通知发不出去不该把看管页拖垮（部分浏览器在非安全上下文里直接抛）。
-  }
 }
 
 let nativeAlertPermissionAsked = false

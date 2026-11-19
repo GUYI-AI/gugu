@@ -4,6 +4,17 @@
 // plural key 同时提供无后缀 base，因为 locale-store 的 missing-key guard 先用不带 count 的 exists() 探测。
 
 export const enUSCapabilityMessages = {
+  'agentsPage.oldVersions': 'Old versions',
+  'agentsPage.oldVersionsClean': 'Clean up old versions',
+  'agentsPage.oldVersionsNoOld': 'No old versions to clean up',
+  'agentsPage.oldVersionsReadFailed': 'Could not read installed versions',
+  'agentsPage.oldVersionsCurrent': 'Current version',
+  'agentsPage.oldVersionsConfirm': 'Clean up selected versions?',
+  'agentsPage.oldVersionsDescription': 'Remove the program files for {name} {version}.',
+  'agentsPage.oldVersionsCleanAction': 'Clean up',
+  'agentsPage.oldVersionsCleanFailed': 'Could not clean up versions',
+  'agentsPage.oldVersionsPartialFailure': 'Some versions could not be cleaned up',
+  'agentsPage.oldVersionsCleaned': 'Cleanup complete',
   // ── settings · reset control ────────────────────────────────────────────────
   'reset.toDefault': 'Reset to default',
   'reset.toDefaultWith': 'Reset to default: {label}',
@@ -988,6 +999,17 @@ export const enUSCapabilityMessages = {
 type CapabilityMessageKey = keyof typeof enUSCapabilityMessages;
 
 export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
+  'agentsPage.oldVersions': '旧版本',
+  'agentsPage.oldVersionsClean': '清理旧版本',
+  'agentsPage.oldVersionsNoOld': '没有可清理的旧版本',
+  'agentsPage.oldVersionsReadFailed': '暂时无法读取已安装版本',
+  'agentsPage.oldVersionsCurrent': '当前版本',
+  'agentsPage.oldVersionsConfirm': '清理所选版本？',
+  'agentsPage.oldVersionsDescription': '将移除 {name} {version} 的程序文件。',
+  'agentsPage.oldVersionsCleanAction': '清理',
+  'agentsPage.oldVersionsCleanFailed': '清理失败',
+  'agentsPage.oldVersionsPartialFailure': '部分版本清理失败',
+  'agentsPage.oldVersionsCleaned': '清理完成',
   // ── 设置 · 恢复默认控件 ─────────────────────────────────────────────────────
   'reset.toDefault': '恢复默认',
   'reset.toDefaultWith': '恢复默认：{label}',

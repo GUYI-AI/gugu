@@ -13,6 +13,7 @@ import {
   type CloudComputerSnapshot,
 } from '@gugu/core/cloud/cloudComputer'
 import type { Device } from '@gugu/core/shared/types/chat'
+import { serverNow } from '@gugu/core/shared/serverClock'
 import { rendererCloudComputerClient } from './cloudComputerClient'
 import { rendererLogger } from './log'
 import { onAccountChange, replica, useReplica, type Reading } from './replica'
@@ -67,7 +68,7 @@ export function cloudComputerWatchMs(snapshot: CloudComputerSnapshot | null): nu
 }
 
 /** 开通 / 唤醒途中多久问一次管家;不在途中 = null(那时由 cloudComputerWatchMs 慢慢问)。 */
-export function cloudComputerPollMs(snapshot: CloudComputerSnapshot | null, devices: readonly Device[], now: number = Date.now()): number | null {
+export function cloudComputerPollMs(snapshot: CloudComputerSnapshot | null, devices: readonly Device[], now: number = serverNow()): number | null {
   if (!snapshot) return null
   if (snapshot.state === 'provisioning') return CLOUD_COMPUTER_FAST_POLL_MS
   // 正在醒:管家自己会在时限内翻成醒了或出错;它卡在这一格太久就不再每 3 秒问(回到前台、设备行变动照样问)。
@@ -223,7 +224,7 @@ export async function destroyCloudComputer(): Promise<void> {
   const entry = cloudComputer.at()
   await requireClient().destroy()
   // 管家删干净才回成功:当场就是「没有」,「开一台云电脑」立刻回来(❌ 等下一次问到;那一次问不到时页面上什么都没有)。
-  entry.set({ available: true, snapshot: { state: 'none', deviceId: null, error: null, since: new Date().toISOString() } })
+  entry.set({ available: true, snapshot: { state: 'none', deviceId: null, error: null, since: new Date(serverNow()).toISOString() } })
   await cloudComputer.refresh()
 }
 
@@ -231,7 +232,7 @@ export async function destroyCloudComputer(): Promise<void> {
 export function withCloudComputerPresence(
   devices: Device[],
   snapshot: CloudComputerSnapshot | null,
-  now: number = Date.now(),
+  now: number = serverNow(),
   refusedDeviceId: string | null = null,
 ): Device[] {
   if (!snapshot?.deviceId) return devices

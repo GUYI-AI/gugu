@@ -10,7 +10,7 @@ import { fetchInstalledApps, installedExtensions, PHONE_HOST, setAutoUpdate, use
 import type { ExtensionsHost } from '@renderer/features/extensions/extensions-host'
 import { installedElsewhere } from '@renderer/features/extensions/installed-elsewhere'
 import { setExtensionEnabled } from '@renderer/features/extensions/set-extension-enabled'
-import { machineRpc } from '@/mobile/agent-watch/sessionpage-rpc'
+import { machineRpc } from '@/components/session-watch/sessionpage-rpc'
 import { AppManagePage } from '@/session/renderer/features/extensions/panel/app-manage-page'
 import { appLifecycle } from '@/session/renderer/features/extensions/panel/app-lifecycle'
 import type { InstalledRowNotice } from '@/session/renderer/features/extensions/panel/installed-extension-row'

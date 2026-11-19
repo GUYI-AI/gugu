@@ -118,6 +118,8 @@ export default {
   "migrationSkipped_one": "View {{count}} skipped item",
   "migrationSkipped_other": "View {{count}} skipped items",
   "migrationResults": "Configuration migration results",
+  "migrationRelogin": "Sign in to {{name}} again to use your account in Gugu.",
+  "configurationImportFailed": "Could not import the configuration. Try again.",
   "migrationReadFailed": "Could not read the configuration migration results.",
   "oldSessionsSkipped": "{{count}} old session files were too large and were not brought over.",
   "groups": {
@@ -152,9 +154,9 @@ export default {
     "sourceChanged": "Source changed; retry",
     "unreadable": "Could not read this file"
   },
-  "local": "Local configuration",
-  "updated": "Local configuration has updates",
-  "row": "A copy was imported from {{path}} on {{date}}. Terminal and Gugu changes do not sync automatically.",
+  "local": "Terminal configuration",
+  "updated": ", later changed in the terminal",
+  "row": "Imported {{date}}",
   "upgradeKept": "Gugu kept your existing {{name}} configuration.",
   "upgradeRelogin": "Sign in to {{name}} again in Settings → Subscriptions.",
   "reimport": "Re-import",

@@ -1,7 +1,7 @@
 import type { Device } from '@gugu/core/shared/types/chat'
 import { platform } from '@/platform'
 import { rpcOn } from '@/session/renderer/lib/ipc'
-import { machineRpc } from '@/mobile/agent-watch/sessionpage-rpc'
+import { machineRpc } from '@/components/session-watch/sessionpage-rpc'
 import { routeRemoteSettings } from '@/session/renderer/features/settings/app-settings-client'
 
 /** 问一台机器上的项目:手机经那台机器的会话页管道;窄窗口的桌面问自己走本机,问别的机器同电脑那一条(同 useAssistantWorkrooms)。 */

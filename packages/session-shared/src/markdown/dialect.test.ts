@@ -92,6 +92,19 @@ describe('markdown dialect', () => {
     expect(urls('gugu://session/ and guguX://session/x')).toEqual([]);
   });
 
+  // Owner 2026-11-16: `msg:<first 8+ characters>` in a message links to that message in the message's own chat.
+  it('links msg:<prefix> in a message to its own chat, and only there', () => {
+    const chat = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const links = (text: string, messageChat?: string) => collect(run(text, { trust: 'chat', messageChat }), 'link')
+      .map((node) => [('url' in node ? node.url : ''), textOf(node)]);
+    expect(links('看 msg:1A2B3C4D，还有 msg:1a2b3c4d-5e.', chat)).toEqual([
+      [`gugu-chat://${chat}/1a2b3c4d`, 'msg:1A2B3C4D'], [`gugu-chat://${chat}/1a2b3c4d-5e`, 'msg:1a2b3c4d-5e'],
+    ]);
+    // Too short, not hex, inside a word or code, or no chat to resolve in: text as written.
+    expect(links('msg:1a2b3c4 msg:zzzzzzzz xmsg:1a2b3c4d `msg:1a2b3c4d`', chat)).toEqual([]);
+    expect(links('msg:1a2b3c4d')).toEqual([]);
+  });
+
   it('keeps raw HTML and images literal for chat trust, and parses them for documents', () => {
     const source = 'hi <b>bold</b> ![pic](https://example.com/p.png)';
     const chat = run(source, { trust: 'chat' });

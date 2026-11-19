@@ -27,6 +27,7 @@ import type { FileAnnotationContext } from '../preview/FilePreviewAnnotations'
 import type { HtmlPreviewRegistration } from '../preview/HtmlPreviewFrame'
 import type { FileViewerSelection } from '@/session/shared/preview/file-viewer-menu'
 import { useFilePlace } from '../preview/file-place'
+import { serverNow } from '@gugu/core/shared/serverClock'
 
 const fileOpenLog = rendererLogger('chat/file-open')
 
@@ -272,7 +273,8 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
     const current = read, at = opening
     if (video.dataset.renewing) return
     const fail = (error?: unknown) => setNoted({ opening: at, read: { ...current, ...previewFailure(error, t) } })
-    if (!current?.renew || Date.now() < (current.expiresAt ?? Infinity)) { fail(); return }
+    // The lease's expiry is on the backend's clock (`@@@server-clock`).
+    if (!current?.renew || serverNow() < (current.expiresAt ?? Infinity)) { fail(); return }
     video.dataset.renewing = 'true'
     const time = video.currentTime, playing = !video.paused
     try {

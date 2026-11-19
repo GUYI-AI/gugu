@@ -22,7 +22,7 @@ vi.mock('@/lib/chatChannels', () => ({ rendererChatChannelsClient: () => ({ list
   return { channels: [], kinds: [], suggestedAgentId: null }
 } }) }))
 vi.mock('../../../apps/desktop/src/session/renderer/features/projects/stores/account-projects-store', () => ({ get accountProjectsStore() { return world.projects } }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/useMachineLabel', () => ({ useMachineLabel: () => ({ isHome: () => false }) }))
+vi.mock('../../../apps/desktop/src/components/session-watch/useMachineLabel', () => ({ useMachineLabel: () => ({ isHome: () => false }) }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/phoneProjectRows', () => ({ phoneProjectRows: (rows: unknown[]) => rows }))
 vi.mock('../../../apps/desktop/src/components/assistant/assistant-app-connections', () => ({ assistantApplicationCounts: () => ({ saved: 3, connected: 2 }) }))
 

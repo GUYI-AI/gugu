@@ -2551,10 +2551,27 @@ describe('InitialSessionField', () => {
     expect(container.querySelector('[data-testid="harness-catalog-failure-detail"]')).toBeNull();
     expect(container.textContent).not.toContain(raw);
     expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({
-      key: expect.stringMatching(/^session-catalog:/), title: 'taskError.codexUpgrade', ongoing: true,
-      action: expect.objectContaining({ label: expect.stringContaining('runtimeUpgradeOpenInstaller') }),
+      key: expect.stringMatching(/^session-catalog:/), title: 'taskError.codexExited', ongoing: true,
+      action: expect.objectContaining({ label: expect.stringContaining('harnessCatalog.retry') }),
     }));
     expect(JSON.stringify(mocks.notify.mock.calls)).not.toMatch(/app-server|code=|signal=/);
+  });
+
+  it('keeps an unclassified catalog error on the ordinary notice route', async () => {
+    harnessCatalog({ kind: 'unavailable', reason: 'unrelated catalog failure' });
+    await renderField({ provider: 'kimi' });
+    await guguCatalogAnswers();
+    expect(mocks.notify).toHaveBeenCalled();
+    expect(JSON.stringify(mocks.notify.mock.calls)).not.toMatch(/codexUpgrade|codexStartFailed|runtimeUpgradeOpenInstaller/);
+  });
+
+  it('offers the Codex update action only for a verified version failure', async () => {
+    harnessCatalog({ kind: 'unavailable', reason: 'native version unsupported', startupReason: 'version' });
+    await renderField({ provider: 'codex' });
+    await guguCatalogAnswers();
+    expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'taskError.codexUpgrade', action: expect.objectContaining({ label: expect.stringContaining('runtimeUpgradeOpenInstaller') }),
+    }));
   });
 
   it('drops the harness notice once a platform model is picked', async () => {

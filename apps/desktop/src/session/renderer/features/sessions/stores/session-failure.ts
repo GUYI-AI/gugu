@@ -1,3 +1,4 @@
+import type { CodexStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
 /**
  * 任务失败的**领域**表示 —— 与任何翻译目录无关。
  *
@@ -40,7 +41,7 @@ export type SessionFailure =
   | { kind: 'workspace-missing' }
   | { kind: 'setup-step-failed'; stepKind: string; stepErrorType: string; detail?: string }
   /** 未知失败：底层原始诊断，逐字保留、永不翻译。 */
-  | { kind: 'raw'; detail: string; target?: { machineId: string | null; leg: 'acp' | 'tui' } };
+  | { kind: 'raw'; detail: string; startupReason?: CodexStartupKind; target?: { machineId: string | null; leg: 'acp' | 'tui' } };
 
 /**
  * @@@5173 建任务失败时抛给调用方的**类型化**错误。
