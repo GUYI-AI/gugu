@@ -185,7 +185,7 @@ describe('claude bridge pairing at session start (#6394)', () => {
   });
 
   it('reports the same failure to a model probe and lets a later explicit retry install the paired version', async () => {
-    const installBridge = vi.fn(async () => { throw new Error('offline'); });
+    const installBridge = vi.fn(async (): Promise<void> => { throw new Error('offline'); });
     const { deps, files } = fakeDeps({ cli: '2.1.282', installBridge });
     await expect(probe(deps)).rejects.toThrow(/1\.1\.0.*offline/);
     installBridge.mockImplementationOnce(async () => { files.add(entryOf('1.1.0')); });
