@@ -49,7 +49,7 @@ export function sanitizeErrorSummary(input: unknown): ErrorSummary | null {
   const time = own(input, 'time')
   if (typeof time !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(time) || !Number.isFinite(Date.parse(time))) return null
   const rawType = redactErrorSummaryValue(own(input, 'type'))
-  const rawVersion = redactErrorSummaryValue(own(input, 'version'))
+  const rawVersion = own(input, 'version')
   const rawSystem = redactErrorSummaryValue(own(input, 'system'))
   const rawLocations = own(input, 'locations')
   const locations: string[] = []
@@ -62,7 +62,7 @@ export function sanitizeErrorSummary(input: unknown): ErrorSummary | null {
   return {
     type: rawType && ERROR_TYPES.has(rawType) ? rawType : 'Error',
     locations,
-    version: rawVersion && /^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-(?:beta|alpha|rc)[.-]?\d{1,5}(?:\.\d{1,3})?)?$/.test(rawVersion) ? rawVersion : 'unknown',
+    version: typeof rawVersion === 'string' && /^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-(?:beta|alpha|rc)[.-]?\d{1,12}(?:\.\d{1,3})?)?$/.test(rawVersion) ? rawVersion : 'unknown',
     system: rawSystem && SYSTEMS.has(rawSystem) ? rawSystem : 'unknown',
     time,
   }

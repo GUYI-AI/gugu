@@ -10,6 +10,22 @@ import { errorSummaryDestination, errorSummaryRequest } from '../shared/error-su
 
 declare const __GUGU_ERROR_REPORTING_ENDPOINT__: string | undefined
 
+// Existing summary transport represents the failure area as a reviewed application location.
+// These are fixed source locations, never paths from a user's configuration or an error message.
+const migrationLocations = {
+  inventory: 'apps/desktop/electron/session/main/core/agents/agent-homes.ts',
+  configuration: 'packages/session-core/src/agents/plugins/helpers/agent-home-import.ts',
+  history: 'packages/session-core/src/agents/plugins/helpers/agent-home-import.ts:454:1',
+  marker: 'packages/session-core/src/agents/plugins/helpers/agent-home-import.ts:320:1',
+  'sign-in': 'apps/desktop/electron/session/main/core/agents/harness-connections.ts',
+} as const
+
+let reportMigrationFailure: ((error: unknown, location: string) => void) | undefined
+
+export function reportAgentHomeMigrationFailure(error: unknown, area: keyof typeof migrationLocations): void {
+  reportMigrationFailure?.(error, migrationLocations[area])
+}
+
 export function registerErrorSummaryReporting(deps: {
   eligible: boolean
   owner: () => string | null | undefined
@@ -69,6 +85,10 @@ export function registerErrorSummaryReporting(deps: {
   const reportError = (error: unknown, type?: string) => safely(() => {
     if (captureScope() === undefined) return
     reporter.report(errorSummaryFromError(error, metadata(), type, errorSummaryStackLocations(error)))
+  })
+  reportMigrationFailure = (error, location) => safely(() => {
+    if (captureScope() === undefined) return
+    reporter.report(errorSummaryFromError(error, metadata(), undefined, [location]))
   })
   let initialized = false
   let previousOwner = deps.owner()

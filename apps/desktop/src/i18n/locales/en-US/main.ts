@@ -106,6 +106,13 @@ export default {
     "manageConnections": "Manage connections"
   },
   "agentHome": {
+  "migrationNoticeTitle": "Configuration migration complete",
+  "migrationNoticeCopied": "This update moved {{names}} configuration into Gugu and brought over your sign-in, skills, and session history.",
+  "migrationNotice": "This update moved {{names}} configuration into Gugu, including available skills and session history.",
+  "migrationSkipped_one": "View {{count}} skipped item",
+  "migrationSkipped_other": "View {{count}} skipped items",
+  "migrationResults": "Configuration migration results",
+  "migrationReadFailed": "Could not read the configuration migration results.",
   "mcpCount": "including {{count}} MCP servers",
   "unmarkedMcp": "Existing MCP servers are kept because their origin was not recorded: {{names}}",
   "terminalSignIn": "{{name}} in your terminal needs to sign in again.",

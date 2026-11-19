@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
 import { ensureAgentHome, resolveAgentHome } from './agent-home';
-import { AgentHomeNotImported, copyAgentHomeHistory, diffAgentHome, importAgentHome, readAgentHomeMarker, reimportAgentHome, scanAgentHome } from './agent-home-import';
+import { copyAgentHomeHistory, diffAgentHome, importAgentHome, readAgentHomeMarker, reimportAgentHome, scanAgentHome } from './agent-home-import';
 import type { AgentConfigRoot } from '../capabilities/session-bundle';
 
 const roots: string[] = [];
@@ -35,13 +35,15 @@ async function fixture(extraSettings: string[] = [], userPath = '.test') {
   return { root, home, source };
 }
 
-it('requires explicit consent, imports projections, excludes credentials and retains source files', async () => {
+it('runs unmarked homes as fresh and imports projections without copying credentials', async () => {
   const { home, source } = await fixture();
   await source('settings.json', '{"theme":"dark","hooks":{"Stop":[{"command":"mine"}]}}');
   await source('../.global.json', '{"mcpServers":{"example":{"command":"echo"}},"oauthAccount":{"id":"private"}}');
   await source('RULES.md', 'rules');
   for (const path of ['auth.json', '.credentials.json', '.env.local', 'cookie-store', 'secret-store/x', 'state.sqlite-wal', 'sessions/old.jsonl']) await source(path, 'never import');
-  await expect(ensureAgentHome(home)).rejects.toBeInstanceOf(AgentHomeNotImported);
+  expect(await ensureAgentHome(home)).toBe('already-present');
+  expect(await readAgentHomeMarker(home)).toBeNull();
+  await expect(readFile(join(home.configRoot, 'settings.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   const result = await importAgentHome(home, { groups: new Set(['settings', 'mcp', 'rules']), now: new Date('2026-11-18T00:00:00Z') });
   expect(JSON.parse(await readFile(join(home.configRoot, 'settings.json'), 'utf8'))).toEqual({ theme: 'dark' });
   expect(JSON.parse(await readFile(join(home.configRoot, '.global.json'), 'utf8'))).toEqual({ mcpServers: { example: { command: 'echo' } } });

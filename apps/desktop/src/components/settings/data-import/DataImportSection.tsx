@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useId, useLayoutEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { observer } from 'mobx-react-lite'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, RefreshCw, X } from '@/lib/icons'
@@ -78,8 +78,8 @@ const NO_EXTRA_PROVIDERS: readonly ImportProvider[] = []
 type ImportTab = 'apps' | 'devices'
 
 export const DataImportSection = observer(function DataImportSection({
-  onClose, extraProviders = NO_EXTRA_PROVIDERS,
-}: { onClose: () => void; extraProviders?: readonly ImportProvider[] }) {
+  onClose, extraProviders = NO_EXTRA_PROVIDERS, localDetails,
+}: { onClose: () => void; extraProviders?: readonly ImportProvider[]; localDetails?: ReactNode }) {
   const { t } = useTranslation('main')
   const { user } = useAuth()
   const [tab, setTab] = useState<ImportTab>('apps')
@@ -136,6 +136,7 @@ export const DataImportSection = observer(function DataImportSection({
         {user && (local ? (
           <>
             <LocalImportSources providers={providers} ownerId={user.id} jobs={ownerJobs} />
+            {localDetails}
             <ImportSyncSettings ownerId={user.id} />
           </>
         ) : (

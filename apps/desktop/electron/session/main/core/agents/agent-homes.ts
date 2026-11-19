@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
 import type { AgentHomeGroupId } from '@gugu/session-core/agents/plugins';
 import {
-  AgentHomeNotImported, diffAgentHome, importAgentHome, readAgentHomeMarker, reimportAgentHome, resolveAgentHome,
+  AgentHomeMigrationFailure, diffAgentHome, importAgentHome, readAgentHomeMarker, reimportAgentHome, resolveAgentHome,
   scanAgentHome, updateAgentHomeSource, type AgentHomeImportIssue, type AgentHomeMarker,
 } from '@gugu/session-core/agents/plugins/helpers';
 import { agentHomeOperationSchema, type AgentHomeScan } from '@gugu/session-core/workspace-server/agent-config';
@@ -17,6 +17,7 @@ import { loginShellEnv } from '@main/utils/userEnv';
 import type { DependencyId } from '@gugu/session-core/deps/runtime';
 import { migrateOwnedHarnessAccounts } from './harness-connections';
 import { setAgentHomeUpgradePreparation } from './agent-home';
+import { reportAgentHomeMigrationFailure } from '../../../../error-summary-reporting-host';
 
 /** Declarations own paths; this service adds desktop account migration and IPC-safe metadata. */
 function homeFor(providerId: string) {
@@ -33,6 +34,7 @@ const upgradeState = new KV<{ providers: string[]; inventory: Record<string, boo
 let upgradeProfile: boolean | undefined;
 let upgradePlan: Promise<ReadonlySet<string>> | undefined;
 let inventoryComplete = false;
+const automaticAttempts = new Map<string, Promise<void>>();
 
 async function planUpgrade(priorProfile: boolean): Promise<ReadonlySet<string>> {
   const previous = await upgradeState.get('providers');
@@ -65,29 +67,32 @@ export function initializeAgentHomeUpgrade(priorProfile: boolean): void {
   if (upgradeProfile !== undefined) return;
   upgradeProfile = priorProfile;
   setAgentHomeUpgradePreparation(prepareAutomaticImport);
-  void upgradeProviders()?.then((ids) => Promise.allSettled([...ids].map(prepareAutomaticImport))).catch(() => {
+  void upgradeProviders()?.then((ids) => Promise.allSettled([...ids].map(prepareAutomaticImport))).catch((error: unknown) => {
     log.error('Could not plan the managed configuration upgrade');
+    reportAgentHomeMigrationFailure(error, 'inventory');
   });
 }
 
 async function prepareAutomaticImport(providerId: string): Promise<void> {
-  try {
-    if (!(await upgradeProviders())?.has(providerId)) return;
-    const home = homeFor(providerId);
-    if (!home || await readAgentHomeMarker(home)) return;
-    await importHarnessHome(providerId, defaultAgentHomeGroups(home.importGroups));
-  } catch (error) {
-    log.error('Automatic harness configuration import failed', { providerId, error: error instanceof Error ? error.name : typeof error });
-    throw new AgentHomeNotImported(providerId, { cause: error });
+  const providers = await upgradeProviders()?.catch((error: unknown) => {
+    reportAgentHomeMigrationFailure(error, 'inventory');
+    return undefined;
+  });
+  if (!providers?.has(providerId)) return;
+  let pending = automaticAttempts.get(providerId);
+  if (!pending) {
+    pending = (async () => {
+      const home = homeFor(providerId);
+      if (!home || await readAgentHomeMarker(home)) return;
+      await importHarnessHome(providerId, defaultAgentHomeGroups(home.importGroups));
+    })().catch((error: unknown) => {
+      log.error('Automatic harness configuration import failed', { providerId, error: error instanceof Error ? error.name : typeof error });
+      reportAgentHomeMigrationFailure(error instanceof AgentHomeMigrationFailure ? error.cause : error,
+        error instanceof AgentHomeMigrationFailure ? error.stage : 'marker');
+    });
+    automaticAttempts.set(providerId, pending);
   }
-}
-
-/** Host preflight for entry points that cannot display the import choice. */
-export async function assertAgentHomeImportedForSession(providerId: string): Promise<void> {
-  const home = homeFor(providerId);
-  if (!home) return;
-  await prepareAutomaticImport(providerId);
-  if (!await readAgentHomeMarker(home)) throw new AgentHomeNotImported(providerId, { choiceRequired: true });
+  await pending;
 }
 
 export function defaultAgentHomeGroups(groups: readonly { id: AgentHomeGroupId }[]): AgentHomeGroupId[] {
@@ -102,8 +107,7 @@ export async function scanAgentHomes(providerIds?: readonly string[]): Promise<A
     if (providerIds ? !providerIds.includes(providerId) : localDependencyManager.get(providerId as DependencyId)?.status !== 'available') continue;
     const home = homeFor(providerId);
     if (!home) continue;
-    try { await prepareAutomaticImport(providerId); }
-    catch (error) { if (!(error instanceof AgentHomeNotImported)) throw error; }
+    await prepareAutomaticImport(providerId);
     const scan = await scanAgentHome(home);
     const migration = !scan.marker && !!(await upgradeProviders())?.has(providerId);
     const sourceReadable = await access(home.userConfigRoot).then(() => true, () => scan.groups.some((group) => group.count > 0));
@@ -114,7 +118,7 @@ export async function scanAgentHomes(providerIds?: readonly string[]): Promise<A
       migration,
       ...(scan.marker?.migratedFrom === 'shared' ? {
         upgraded: true, upgradeSignIn: scan.marker.upgradeSignIn, terminalNeedsSignIn: scan.marker.terminalNeedsSignIn,
-        oldSessionsSkipped: scan.marker.oldSessionsSkipped,
+        oldSessionsSkipped: scan.marker.oldSessionsSkipped, upgradeIssues: scan.marker.upgradeIssues,
       } : {}),
       groups: scan.groups, issues: scan.issues, mcpSecrets: scan.mcpSecrets, projectMcpCount: scan.projectMcpCount,
       ...(migration ? { unmarkedMcp: scan.mcpNames } : {}),
@@ -154,7 +158,8 @@ async function importHarnessHomeOnce(home: NonNullable<ReturnType<typeof homeFor
     beforeCommit: async (issues) => {
       if (!migration) return;
       if (providerId === 'claude' || providerId === 'codex') notice = await migrateOwnedHarnessAccounts(providerId, { ...process.env, ...loginShellEnv() }, true);
-      return { upgradeSignIn: notice?.upgradeSignIn, terminalNeedsSignIn: notice?.terminalNeedsSignIn, oldSessionsSkipped: oldSessionsSkipped(issues) };
+      return { upgradeSignIn: notice?.upgradeSignIn, terminalNeedsSignIn: notice?.terminalNeedsSignIn, oldSessionsSkipped: oldSessionsSkipped(issues),
+        upgradeIssues: [...issues, ...cleanupIssues].filter(({ reason }) => reason !== 'database' && reason !== 'sensitive') };
     },
   });
   if (migration && result.marker.migratedFrom === 'shared') log.info('Imported previous harness configuration', {
@@ -196,14 +201,4 @@ export async function answerAgentHomeCall(payload: unknown) {
   const groups = operation.action === 'skip' ? [] : operation.groups ?? defaultAgentHomeGroups(home.importGroups);
   const result = await importHarnessHome(operation.providerId, groups, operation.action === 'skip');
   return { result: { providerId: operation.providerId, hasMarker: true, issues: result.issues } };
-}
-
-/** Skipping configuration is valid for a signed-in CLI or a Gugu model. */
-export async function assertAgentHomeSignIn(providerId: string, connectionId?: string): Promise<void> {
-  const home = homeFor(providerId);
-  if (!home || !(await readAgentHomeMarker(home))?.skipped) return;
-  const { readAgentAuthStatus } = await import('@main/core/agent-config/runtime-process/host');
-  if ((await readAgentAuthStatus(providerId, connectionId))?.kind === 'unauthenticated') {
-    throw new AgentHomeNotImported(providerId);
-  }
 }

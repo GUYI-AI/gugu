@@ -26,6 +26,15 @@ export class AgentHomeNotImported extends Error {
     this.code = options?.choiceRequired ? AGENT_HOME_IMPORT_REQUIRED : AGENT_HOME_NOT_IMPORTED;
   }
 }
+export type AgentHomeImportStage = 'configuration' | 'history' | 'sign-in' | 'marker';
+
+export class AgentHomeMigrationFailure extends Error {
+  constructor(readonly stage: AgentHomeImportStage, cause: unknown) {
+    super(cause instanceof Error ? cause.message : 'Harness configuration migration failed', { cause });
+    this.name = 'AgentHomeMigrationFailure';
+  }
+}
+
 export type AgentHomeImportIssue = {
   path: string;
   reason: 'symlink' | 'sensitive' | 'database' | 'tooLarge' | 'sourceChanged' | 'unreadable';
@@ -39,6 +48,7 @@ export type AgentHomeMarker = {
   skipped?: true;
   terminalNeedsSignIn?: boolean;
   oldSessionsSkipped?: number;
+  upgradeIssues?: AgentHomeImportIssue[];
   upgradeSignIn?: 'copied' | 'relogin';
   legacyBaseline?: boolean;
 };
@@ -130,6 +140,10 @@ async function makeDirectory(home: ResolvedAgentHome, path: string): Promise<voi
     await noLinks(home.shadowHome, current);
     await disk.chmod(current, 0o700);
   }
+}
+
+export function initializeManagedAgentHome(home: ResolvedAgentHome): Promise<void> {
+  return makeDirectory(home, home.configRoot);
 }
 
 /** One handle and bounded reads; never reopen the source by path to copy it. */
@@ -393,37 +407,47 @@ export async function importAgentHome(home: ResolvedAgentHome, options: {
   groups: ReadonlySet<AgentHomeGroupId>; now?: Date; migratedFrom?: 'shared';
   historyPaths?: readonly string[];
   skip?: boolean;
-  beforeCommit?: (issues: readonly AgentHomeImportIssue[]) => Promise<Pick<AgentHomeMarker, 'upgradeSignIn' | 'terminalNeedsSignIn' | 'oldSessionsSkipped'> | void>;
+  beforeCommit?: (issues: readonly AgentHomeImportIssue[]) => Promise<Pick<AgentHomeMarker, 'upgradeSignIn' | 'terminalNeedsSignIn' | 'oldSessionsSkipped' | 'upgradeIssues'> | void>;
 }): Promise<{ marker: AgentHomeMarker; issues: AgentHomeImportIssue[] }> {
-  const existing = await readAgentHomeMarker(home);
-  if (existing && (!existing.skipped || !options.groups.size)) return { marker: existing, issues: [] };
-  if (existing?.skipped) {
-    const { entries } = await diffAgentHome(home);
-    const conflict = entries.find((entry) => options.groups.has(entry.group) && entry.state === 'bothChanged');
-    if (conflict) throw new Error(`Managed configuration already differs at ${conflict.path}; review the differences in Settings → Subscriptions before importing`);
+  let stage: AgentHomeImportStage = 'marker';
+  try {
+    const existing = await readAgentHomeMarker(home);
+    if (existing && (!existing.skipped || !options.groups.size)) return { marker: existing, issues: [] };
+    if (existing?.skipped) {
+      const { entries } = await diffAgentHome(home);
+      const conflict = entries.find((entry) => options.groups.has(entry.group) && entry.state === 'bothChanged');
+      if (conflict) throw new Error(`Managed configuration already differs at ${conflict.path}; review the differences in Settings → Subscriptions before importing`);
+    }
+    stage = 'configuration';
+    await makeDirectory(home, home.configRoot);
+    const root = options.groups.size || options.historyPaths?.length ? await realSource(home.userConfigRoot) : home.userConfigRoot;
+    const { items, issues } = options.groups.size ? await collect(home, {
+      root, groups: options.groups, strict: () => true,
+      consume: async (snapshots) => {
+        for (const entries of byTarget(snapshots)) {
+          const mode = existing?.skipped ? 'repair' : options.migratedFrom === 'shared' ? 'upgrade' : 'import';
+          await writeItem(home, entries, mode);
+        }
+      },
+    }) : { items: [] as Item[], issues: [] as AgentHomeImportIssue[] };
+    stage = 'history';
+    if (options.historyPaths?.length) issues.push(...await copyAgentHomeHistory(home, options.historyPaths, root));
+    stage = 'sign-in';
+    const upgrade = await options.beforeCommit?.(issues);
+    const marker: AgentHomeMarker = {
+      importedAt: (options.now ?? new Date()).toISOString(), sourceRoot: home.userConfigRoot,
+      groups: [...options.groups], files: Object.fromEntries(items.map((item) => [item.id, item.hash])),
+      ...(options.skip ? { skipped: true as const } : {}),
+      ...(options.migratedFrom ? { migratedFrom: options.migratedFrom } : {}),
+      ...(upgrade ?? {}),
+    };
+    stage = 'marker';
+    await writeMarker(home, marker);
+    return { marker, issues };
+  } catch (error) {
+    if (options.migratedFrom) throw new AgentHomeMigrationFailure(stage, error);
+    throw error;
   }
-  await makeDirectory(home, home.configRoot);
-  const root = options.groups.size || options.historyPaths?.length ? await realSource(home.userConfigRoot) : home.userConfigRoot;
-  const { items, issues } = options.groups.size ? await collect(home, {
-    root, groups: options.groups, strict: () => true,
-    consume: async (snapshots) => {
-      for (const entries of byTarget(snapshots)) {
-        const mode = existing?.skipped ? 'repair' : options.migratedFrom === 'shared' ? 'upgrade' : 'import';
-        await writeItem(home, entries, mode);
-      }
-    },
-  }) : { items: [] as Item[], issues: [] as AgentHomeImportIssue[] };
-  if (options.historyPaths?.length) issues.push(...await copyAgentHomeHistory(home, options.historyPaths, root));
-  const upgrade = await options.beforeCommit?.(issues);
-  const marker: AgentHomeMarker = {
-    importedAt: (options.now ?? new Date()).toISOString(), sourceRoot: home.userConfigRoot,
-    groups: [...options.groups], files: Object.fromEntries(items.map((item) => [item.id, item.hash])),
-    ...(options.skip ? { skipped: true as const } : {}),
-    ...(options.migratedFrom ? { migratedFrom: options.migratedFrom } : {}),
-    ...(upgrade ?? {}),
-  };
-  await writeMarker(home, marker);
-  return { marker, issues };
 }
 
 /** Stream resumable transcripts separately from the configuration-file budget. */

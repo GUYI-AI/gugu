@@ -22,7 +22,7 @@ export const agentHomeScanSchema = z.object({
   importedAt: z.string().nullable(), needsImport: z.boolean(), sourceUpdated: z.boolean(),
   migration: z.boolean(),
   upgraded: z.boolean().optional(), upgradeSignIn: z.enum(['copied', 'relogin']).optional(),
-  terminalNeedsSignIn: z.boolean().optional(), oldSessionsSkipped: z.number().optional(),
+  terminalNeedsSignIn: z.boolean().optional(), oldSessionsSkipped: z.number().optional(), upgradeIssues: z.array(agentHomeIssueSchema).optional(),
   groups: z.array(z.object({ id: agentHomeGroupIdSchema, count: z.number(), mcpCount: z.number().optional() })),
   issues: z.array(agentHomeIssueSchema),
   mcpSecrets: z.array(z.string()), projectMcpCount: z.number(), unmarkedMcp: z.array(z.string()).optional(),

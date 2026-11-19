@@ -179,9 +179,6 @@ export async function executeSessionCreate(
     }
     const workspaceConfig = sessionConfig.workspaceConfig;
 
-    const { assertAgentHomeImportedForSession } = await import('@main/core/agents/agent-homes');
-    await assertAgentHomeImportedForSession(automation.agentConfig.provider);
-
     const sessionRuntime = automation.agentConfig.type ?? 'pty';
     // Automation work is scheduler-owned system bootstrap, not user text from a create surface.
     const initialQueue =

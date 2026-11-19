@@ -1,6 +1,3 @@
-import { ensureAgentHomeImported } from '@renderer/features/settings/subscriptions/ensure-agent-home'
-import { AgentHomeRepair } from '@renderer/features/settings/subscriptions/AgentHomeRepair'
-import { isAgentHomeImportCode } from '@gugu/session-core/workspace-server/agent-config'
 import type { FirstPrompt } from './use-timeline-session'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -235,7 +232,7 @@ function CreateOnMachine({
   const modelListRead = useRef<Promise<SessionpageSessionCreateModels> | null>(null)
   /** 正在建的那句话;建成或失败后清空。它同时也是线程里唯一那条(乐观显示的)用户消息。 */
   const [pendingText, setPendingText] = useState<string | null>(null)
-  const [createError, setCreateError] = useState<string | { providerId: string; name?: string } | null>(null)
+  const [createError, setCreateError] = useState<string | null>(null)
   const [phoneAttempt, setPhoneAttempt] = useState<SessionpageSessionCreateRequest | null>(null)
   const attachmentAttempt = draftKey ? readAttachmentCreation(draftKey) : null
   const attachmentAdapter = useMemo(() => draftKey ? createAttachmentDraftAdapter(draftKey) : undefined, [draftKey])
@@ -373,7 +370,6 @@ function CreateOnMachine({
         }
         providerId = request.harness
         // The mobile-native Pi runtime has no managed root. Tasks on linked hosts use their import wire.
-        if (!phone || providerId !== 'pi') await ensureAgentHomeImported(providerId, device.device_id)
         if (phone && !files.length) {
           rememberPhoneSessionCreate(ownerId!, device.device_id, request)
           submittedPhoneRequest = request
@@ -418,9 +414,7 @@ function CreateOnMachine({
           : code === 'creation_attachments_unconfirmed' || code === 'attachment_creation_unverified' ? 'attachmentUnconfirmed'
             : code === 'creation_attachments_account_changed' ? 'attachmentAccountChanged'
               : code === 'creation_attachments_original_missing' ? 'attachmentOriginalMissing' : null
-        setCreateError(isAgentHomeImportCode(code)
-          ? { providerId, name: options.harnesses.find((item) => item.id === providerId)?.name }
-          : attachmentError ? attachmentCopy ? tFlow(attachmentCopy) : messageForUser(err) : phone ? describe(err) : code === 'harness_install_failed'
+        setCreateError(attachmentError ? attachmentCopy ? tFlow(attachmentCopy) : messageForUser(err) : phone ? describe(err) : code === 'harness_install_failed'
           ? t('agentWatch.create.agentInstallFailed')
           : code === 'harness_runtime_missing'
             ? t('agentWatch.create.agentRuntimeMissing')
@@ -464,11 +458,7 @@ function CreateOnMachine({
       aria-live="assertive"
     >
       <span className="gg-aw-action-error-title">{t('agentWatch.create.failed')}</span>
-      <div className="gg-aw-action-error-detail">{typeof createError === 'string' ? createError
-        : <AgentHomeRepair {...createError} machine={device.device_id} onImported={() => {
-          setCreateError(null)
-          setModelRetry((value) => value + 1)
-        }} />}</div>
+      <div className="gg-aw-action-error-detail">{createError}</div>
       <Button
         variant="ghost"
         size="sm"

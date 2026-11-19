@@ -21,7 +21,6 @@ const state = vi.hoisted(() => ({
   failures: new Map<string, string>(),
   startInputs: [] as Array<Record<string, unknown>>,
   hydrateError: null as Error | null,
-  importError: null as Error | null,
   /** session-life (owner of ACP sessions): creation turns become pending rows; an empty creation queue is a start. */
   lifeEnqueued: [] as Array<Record<string, unknown>>,
   lifeEnqueueError: null as Error | null,
@@ -38,10 +37,6 @@ vi.mock('@main/core/sessions/session-life', () => ({
     start: () => { state.calls.push('life.start'); },
   }),
 }));
-vi.mock('@main/core/agents/agent-homes', () => ({
-  assertAgentHomeImportedForSession: async () => { if (state.importError) throw state.importError; },
-}));
-
 vi.mock('./start-failures', () => ({
   recordStartFailure: (id: string, code: string) => state.failures.set(id, code),
   clearStartFailure: (id: string) => state.failures.delete(id),
@@ -271,15 +266,12 @@ describe('createSession:所选 harness 在这台机器上还没装', () => {
     state.warned = Promise.withResolvers<void>();
     state.lifeEnqueued = [];
     state.lifeEnqueueError = null;
-    state.importError = null;
   });
 
-  it('returns the import repair code before admitting a task on a fresh host', async () => {
-    const message = 'Run gugu-server agent-home import codex.';
-    state.importError = Object.assign(new Error(message), { code: 'AGENT_HOME_IMPORT_REQUIRED' });
-    expect(await createSession({ projectId: 'proj-1', harness: 'codex', prompt: 'hi' }, { ensureAgentInstalled: async () => {} }))
-      .toEqual({ ok: false, error: { code: 'AGENT_HOME_IMPORT_REQUIRED', message } });
-    expect(state.calls).not.toContain('prepareCreateSession');
+  it('admits a Codex session on a fresh host without checking for configuration import', async () => {
+    const result = await createSession({ projectId: 'proj-1', harness: 'codex', prompt: 'hi' }, { ensureAgentInstalled: async () => {} });
+    expect(result.ok).toBe(true);
+    expect(state.calls).toContain('prepareCreateSession');
   });
 
   // #639 后续(owner 10-28):「终端」开关只管终端入口显不显示,新任务没说展示时永远走通用 —— 群里「新任务」卡片交给
