@@ -13,6 +13,7 @@ import { For, Show, createEffect, onCleanup } from 'solid-js';
 import { changedFilePath } from '@gugu/session-core/acp';
 import type { ChatDiff } from '@session-chat/model';
 import type { DiffLayout, PatchLayout } from './diff.def';
+import type { DiffRow } from './diff-lines';
 import { diffBodyVisible } from './diff-visibility';
 import * as css from './diff.css';
 
@@ -45,6 +46,9 @@ export type DiffLinesProps = {
   codeLineHeight: () => number;
   caches?: Pick<SharedCaches, 'highlightWhenReady'>;
   showMarkers?: boolean;
+  /** Full recorded diffs use natural height; transcript previews retain measured rows. */
+  wrapLines?: boolean;
+  annotationSlots?: (row: DiffRow, index: number, control: HTMLElement, editor: HTMLElement) => void;
 };
 export function DiffLines(props: DiffLinesProps) {
   const contextCaches = useCaches();
@@ -62,11 +66,19 @@ export function DiffLines(props: DiffLinesProps) {
     }
     onCleanup(() => { cancelled = true; });
   });
-  return <div class={css.diffBodyCard}><div class={css.pdiffBody}>
-    <For each={props.layout.previewRows}>{(row, index) => <div class={css.diffRowClasses[row.type]} style={{ height: `${props.codeLineHeight()}px` }} data-patch-row={row.type} data-old-line={row.oldIdx === undefined ? undefined : row.oldIdx + 1} data-new-line={row.newIdx === undefined ? undefined : row.newIdx + 1}>
-      <Show when={props.showMarkers}><span class={`${css.pdiffLine} ${css.diffMarker}`} style={{ 'line-height': `${props.codeLineHeight()}px` }}>{row.type === 'add' ? '+' : row.type === 'remove' ? '−' : ' '}</span></Show>
-      <span class={`${css.pdiffLine} ${css.diffLineContent}`} style={{ 'line-height': `${props.codeLineHeight()}px` }} ref={el => { elements.set(index(), el); onCleanup(() => elements.delete(index())); }}>{row.text}</span>
-    </div>}</For>
+  return <div class={css.diffBodyCard} classList={{ [css.wrappedDiffBody]: props.wrapLines }}><div class={css.pdiffBody}>
+    <For each={props.layout.previewRows}>{(row, index) => {
+      let control: HTMLElement | undefined;
+      const annotate = props.annotationSlots && (row.oldIdx !== undefined || row.newIdx !== undefined);
+      return <>
+        <div class={css.diffRowClasses[row.type]} style={props.wrapLines ? { 'min-height': `${props.codeLineHeight()}px` } : { height: `${props.codeLineHeight()}px` }} data-patch-row={row.type} data-old-line={row.oldIdx === undefined ? undefined : row.oldIdx + 1} data-new-line={row.newIdx === undefined ? undefined : row.newIdx + 1}>
+          <Show when={annotate}><span class={css.annotationControl} style={{ height: `${props.codeLineHeight()}px` }} ref={el => { control = el; }} /></Show>
+          <Show when={props.showMarkers}><span class={`${css.pdiffLine} ${css.diffMarker}`} style={{ 'line-height': `${props.codeLineHeight()}px` }}>{row.type === 'add' ? '+' : row.type === 'remove' ? '−' : ' '}</span></Show>
+          <span class={`${css.pdiffLine} ${css.diffLineContent}`} style={{ 'line-height': `${props.codeLineHeight()}px` }} ref={el => { elements.set(index(), el); onCleanup(() => elements.delete(index())); }}>{row.text}</span>
+        </div>
+        <Show when={annotate}><div ref={editor => { if (control) props.annotationSlots?.(row, index(), control, editor); }} /></Show>
+      </>;
+    }}</For>
     <Show when={props.layout.truncated}><div style={{ height: `${props.codeLineHeight()}px`, 'line-height': `${props.codeLineHeight()}px` }}>…</div></Show>
   </div></div>;
 }

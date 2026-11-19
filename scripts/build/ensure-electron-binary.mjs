@@ -13,7 +13,7 @@
 //
 // 幂等:已经下载过就是一次 existsSync,不产生网络请求。
 
-import { existsSync } from 'node:fs'
+import { accessSync, constants, existsSync, statSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { configureVendorDownloads } from './vendor-download-env.cjs'
@@ -25,6 +25,10 @@ try {
   // electron 的 index.js 就是官方解析口:path.txt 或 dist 缺失时它同步补下载,
   // 并照顾 ELECTRON_OVERRIDE_DIST_PATH。已存在则直接返回路径。
   const binary = require('electron')
+  if (!existsSync(binary) || !statSync(binary).isFile()) {
+    throw new Error('Electron executable is missing or is not a file')
+  }
+  accessSync(binary, constants.X_OK)
   console.log(`[ensure-electron-binary] ok → ${binary}`)
 } catch (error) {
   // ❌ 不静默吞:吞掉的话故障会推迟到某个 e2e 里以 ENOENT 的形式冒出来,离真因两级远。

@@ -49,13 +49,13 @@ it('keeps the protected platform document and clamps Fast off without exposing c
 
 it.each([false, true])('copies explicit user settings without modifying its source (equals=%s)', async (equals) => {
   dir = await mkdtemp(join(tmpdir(), 'fast-user-settings-'))
-  const path = join(dir, 'settings.json'), original = '{"custom":42,"fastMode":true,"env":{"PRIVATE_KEY":"fixture-secret"}}'
+  const path = join(dir, 'settings.json'), original = '{"custom":42,"fastMode":true,"env":{"PRIVATE_KEY":"fixture-secret","CLAUDE_CODE_AUTO_MODE_MODEL":"user-reviewer"}}'
   await writeFile(path, original)
   const args = await claudeTuiSessionArgs({ ...defaults, userSettingsProvided: true,
     baseArgs: equals ? [`--settings=${path}`] : ['--settings', path] })
   const actual = await document(args)
   expect(actual.path).not.toBe(path)
-  expect(actual.value).toEqual({ custom: 42, fastMode: false, env: { PRIVATE_KEY: 'fixture-secret' } })
+  expect(actual.value).toEqual({ custom: 42, fastMode: false, env: { PRIVATE_KEY: 'fixture-secret', CLAUDE_CODE_AUTO_MODE_MODEL: 'user-reviewer' } })
   expect(await readFile(path, 'utf8')).toBe(original)
   expect(args.join(' ')).not.toContain('fixture-secret')
 })

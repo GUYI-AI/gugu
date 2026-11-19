@@ -11,13 +11,11 @@
  *    查表在**后台**:这一次按手上的表选(最新那一版没有上限,新 CLI 落在它身上),查到新桥下一次再用;
  * 4. 按表选出管这个版本的发布:就是随包那份 → 用随包的;否则用缓存里的,没有就下载(npm,随包的 npm CLI)。
  *
- * 下载是**共享的后台任务**:同一版本只装一次,谁先要谁触发,其余的都等同一个结果。只有真会话启动
- * (`wait`)才等它,并经 `wait.onWaiting` 把这一步报到启动进度里;模型目录探针这类调用不等 ——
- * 这一次用随包的,下载在后台接着跑。
+ * 下载是共享任务:同一版本只装一次,会话与模型目录探针都等同一个结果。真会话启动还经
+ * `wait.onWaiting` 把这一步报到启动进度里。
  *
  * 用户看到的、实际在跑的,始终是他自己装的那份 Claude(`CLAUDE_CODE_EXECUTABLE`);这里只换桥接。
- * 任何一步失败都退回随包的那份并**响亮记日志** —— 断网、镜像没同步不能让聊天面板起不来,
- * 但也不能悄悄发生。
+ * 前置读取失败保持原有随包策略;一旦选定需下载的配对桥,下载失败沿现有错误边界报告,由用户重试。
  */
 import { join } from 'node:path';
 import { createLogger } from '../../../../../lib/logger';
@@ -67,15 +65,14 @@ export type BridgeWait = {
   onSettled(): void;
 };
 
-/** 按安装目录合并的下载:同一版本只装一次。结果 = 装没装成;失败在任务里记一次日志。 */
-const installs = new Map<string, Promise<boolean>>();
+/** 按安装目录合并的下载:同一版本只装一次。失败传给所有等待者。 */
+const installs = new Map<string, Promise<void>>();
 /** 按「缓存目录 × CLI 版本」合并的后台查表。 */
 const refreshes = new Map<string, Promise<void>>();
 
 /**
- * 这次该用哪份桥接。返回入口路径;返回 `undefined` = 用随包的那份。除了表里没有 v2 桥这一格(打包坏了,抛),
- * ❌ 不抛:起不来的聊天面板比「这一轮用了随包的桥接」更糟,但每一次退回都在日志里说清为什么。
- * `wait` 只给真会话启动:要配的那一版还没下完就等它;不给 = 不等,先用随包的。
+ * 返回入口路径;`undefined` 沿既有前置读取策略或配对表选择使用随包版本。所有调用者都等所需的配对桥,
+ * `wait` 只负责真会话的启动进度。失败抛给现有调用边界,不改用另一版本。
  */
 export async function resolveClaudeBridgeEntry(opts: {
   cliPath: string;
@@ -129,23 +126,17 @@ export async function resolveClaudeBridgeEntry(opts: {
   }
   const spec = `${bridge.package}@${version}`;
   const installed = ensureInstalled({ spec, entry, destDir: join(cacheDir, `${CLAUDE_BRIDGE_KEY}@${version}`), env, deps, facts });
-  if (!wait) {
-    log.info({ ...facts, entry }, 'paired claude bridge is still downloading; this caller uses the bundled bridge');
-    return undefined;
-  }
-  wait.onWaiting(spec);
-  let ok: boolean;
+  wait?.onWaiting(spec);
   try {
-    ok = await installed;
+    await installed;
   } finally {
-    wait.onSettled();
+    wait?.onSettled();
   }
-  if (!ok) return undefined; // 原因已由下载任务记过一次
   log.info({ ...facts, entry }, 'claude bridge paired: downloaded');
   return entry;
 }
 
-/** 共享的下载任务:同一个入口只装一次;装完入口还不在也算失败。 */
+/** 共享的下载任务:同一个入口只装一次;装完入口还不在也报错。 */
 function ensureInstalled(opts: {
   spec: string;
   entry: string;
@@ -153,23 +144,22 @@ function ensureInstalled(opts: {
   env: Record<string, string>;
   deps: ClaudeBridgeDeps;
   facts: Record<string, unknown>;
-}): Promise<boolean> {
+}): Promise<void> {
   const { spec, entry, destDir, env, deps, facts } = opts;
   const running = installs.get(entry);
   if (running) return running;
   const task = deps.installBridge(spec, destDir, env).then(
     () => {
-      if (deps.exists(entry)) return true;
-      log.warn({ ...facts, entry }, 'paired claude bridge installed but its entry is missing; using the bundled bridge');
-      return false;
+      if (deps.exists(entry)) return;
+      throw new Error(`Claude 配对桥接 ${spec} 安装后找不到入口：${entry}`);
     },
     (error: unknown) => {
-      log.warn({ ...facts, err: String(error) }, 'could not download the paired claude bridge; using the bundled bridge');
-      return false;
+      log.warn({ ...facts, err: String(error) }, 'could not download the paired claude bridge');
+      throw new Error(`无法下载 Claude 配对桥接 ${spec}：${String(error)}`, { cause: error });
     },
   );
   installs.set(entry, task);
-  void task.finally(() => installs.delete(entry));
+  void task.then(() => installs.delete(entry), () => installs.delete(entry));
   return task;
 }
 

@@ -124,6 +124,7 @@ vi.mock('@renderer/lib/electron-api', () => ({
 
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
   getAgentConfigRuntimeClient: async () => ({
+    listCustomModels: async () => ({ success: true, data: [] }),
     listConnections: async () => ({ success: true, data: [{ id: 'native', kind: 'native', name: 'CLI', current: true }] }),
     refreshAuthStatus: async () => ({ success: true, data: { kind: 'unauthenticated' } }),
   }),
@@ -2296,7 +2297,7 @@ describe('InitialSessionField', () => {
       expect(latestState?.harnessModelUnlock).toMatchObject({
         groupLabel: `harnessCatalog.ownModelsGroup|${provider}`,
         label: `harnessCatalog.unlockModels|${provider}`,
-        detail: 'harnessCatalog.access.account / harnessCatalog.access.api-key / harnessCatalog.access.endpoint',
+        detail: 'harnessCatalog.access.account',
       });
       await act(async () => { latestState?.harnessSignIn?.(trigger); });
       // Base UI portals are browser-only. This node suite checks the real state

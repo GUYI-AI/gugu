@@ -8,6 +8,7 @@ import { DEFAULT_SESSION_AUTO_APPROVE } from '@shared/core/sessions/default-sess
 import { SESSION_TITLE_DEFAULT_MODEL } from '@shared/core/sessions/session-title-namer'
 import { TERMINAL_FONT_SIZE_DEFAULT } from '@shared/core/terminals/terminal-settings'
 import type { OpenInAppId } from '@shared/openInApps'
+import { DEVICE_PREFERENCES_FACTORY } from '../../../../../shared/device-preferences'
 
 /**
  * ⚠️ 这**不是**「默认智能体」那个设置项的出厂值了(出厂值 = 不预选,见 schema.ts)。
@@ -20,6 +21,7 @@ type SettingsDefaultsMap = {
 }
 
 export const SETTINGS_DEFAULTS = {
+  autoReviewModel: null,
   project: {
     tmuxByDefault: false
   },
@@ -48,10 +50,11 @@ export const SETTINGS_DEFAULTS = {
     macOptionIsMeta: false,
     defaultShell: 'system' as const
   },
-  theme: null,
+  devicePreferences: DEVICE_PREFERENCES_FACTORY,
   // 出厂不预选 agent —— 理由见 schema.ts 的 `defaultAgentSchema`。
   defaultAgent: null,
   // 新建会话框的记忆:出厂什么都没记(schema.ts 的 `newSessionMemorySchema`)。
+  dataImport: { owners: {} },
   newSessionMemory: { lastPicked: null, lastStarted: null, sessionView: DEFAULT_SESSION_VIEW },
   keyboard: {},
   openIn: {

@@ -364,12 +364,10 @@ describe('每个按机器的页面都挂在模块层、没有第二个选择器(
     expect(hits).toHaveLength(count);
   });
 
-  // owner:「资源库改了,你设置页也改啊」—— 资源库:左栏列头下一个选择器,整个资源库跟它走,子页标题旁不再各摆一个。
-  it('features/library/library-view.tsx:选择器只在左栏列头,内容区只挂一份不画选择器的 Provider', () => {
-    const source = read('features/library/library-view.tsx');
-    expect(source.match(/<DeviceScopePicker store=\{libraryDeviceStore\} variant="sidebar" \/>/g) ?? []).toHaveLength(1);
-    expect(source.match(/<DeviceScopeProvider store=\{libraryDeviceStore\} inTitle=\{false\}>/g) ?? []).toHaveLength(1);
-    expect(source).not.toMatch(/<DeviceScopeProvider store=\{\w+\}>/);
+  it('keeps market browsing on the local host without a machine picker', () => {
+    const source = read('features/apps/apps-views.tsx');
+    expect(source).toContain(': LOCAL_LIBRARY_HOST');
+    expect(source).not.toMatch(/DeviceScope(Picker|Provider)/);
   });
 
   it('旧的几处样子都删了:左栏列头下、搜索框旁、设置行里不再各摆一个', () => {
@@ -377,13 +375,6 @@ describe('每个按机器的页面都挂在模块层、没有第二个选择器(
     expect(read('features/automations/components/AutomationsHeader.tsx')).not.toContain('devicePicker');
     expect(read('features/settings/components/SessionSettingsRows.tsx')).not.toContain('DeviceScopePicker');
     expect(read('features/sessions/composer-context-tray.tsx')).not.toContain('ComposerDevicePicker');
-  });
-
-  it('资源库只有一个选择器:左栏「资源库」列头下,子页标题旁不画', () => {
-    const source = read('features/library/library-view.tsx');
-    expect(source.match(/<DeviceScopePicker\b/g)).toHaveLength(1);
-    expect(source).toContain('header={<DeviceScopePicker store={libraryDeviceStore} variant="sidebar" />}');
-    expect(source).toContain('<DeviceScopeProvider store={libraryDeviceStore} inTitle={false}>');
   });
 
   it('选机器的地方全用同一个组件:新建框也是它;会话历史不再选机器(全部机器一起列,机器只是筛选)', () => {

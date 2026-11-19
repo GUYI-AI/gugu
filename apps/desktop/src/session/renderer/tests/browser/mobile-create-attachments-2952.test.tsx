@@ -29,6 +29,8 @@ const fixture = vi.hoisted(() => ({
   legacyCreate: vi.fn(), created: vi.fn(), skills: vi.fn(), models: vi.fn(),
   ports: { assertAccount: vi.fn(), describe: vi.fn(), create: vi.fn(), place: vi.fn(), admit: vi.fn() },
 }))
+// This fixture exercises attachment admission on a host whose configuration is already ready.
+
 vi.mock('@/store/auth', async original => ({ ...(await original<typeof import('@/store/auth')>()), useAuth: () => ({ user: { id: fixture.owner } }) }))
 vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [fixture.device], phones: [] }) }))
 vi.mock('@/mobile/agent-watch/useMachineLabel', () => ({ useMachineLabel: () => ({ label: () => 'Test device', isHome: () => false }) }))

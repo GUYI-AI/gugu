@@ -1,3 +1,4 @@
+import { customModelRefFromOption, customModelRuntimeOption, runtimeModelId } from '@gugu/session-core/models/custom-model'
 import { sessionBootTasks } from './core/boot-tasks'
 import { hasAgentInstallsInProgress } from './core/agents/install-progress-ledger'
 // @@@sessionpage — the session backend's EMBEDDED-MODULE entry. The session backend is a cohesive
@@ -31,14 +32,14 @@ import { appSourcesRoot, extensionDataRoot, extensionsService } from './core/ext
 import { appKey } from '@shared/extensions/app-identity'
 import { ensurePreinstalledApps } from './core/extensions/preinstalled-apps'
 import { firstRunAtBoot } from './core/extensions/first-run-apps'
+import { captureAgentHomeUpgradeProfile } from './core/extensions/first-run-record'
+import { initializeAgentHomeUpgrade } from './core/agents/agent-homes'
 import { autoUpdateAtBoot } from './core/extensions/auto-update-apps'
-import { EXTENSION_DATA_DIR_NAME } from './core/extensions/extension-data'
 import { extensionPrograms, stopAllExtensionPrograms, type ExtensionPrograms } from './core/extensions/extension-programs'
 import type { ExtensionManifest, ExtensionMcpServerContribution } from '@shared/extensions/manifest'
 import {
   bundleContentDigest,
   ensureSessionSnapshot,
-  pruneExtensionData,
   pruneSessionSnapshots,
   sessionSnapshotDir,
 } from './core/extensions/extension-session-snapshot'
@@ -110,7 +111,7 @@ import { stopTaskTurnSearch } from '@main/core/search/task-turn-search'
 import { startTurnTextBackfillWorker, stopTurnTextBackfillWorker, type SearchBackfillLogger } from '@main/db/turn-text-backfill-runner'
 import { migrateProjectKind } from '@main/core/projects/operations/migrate-project-kind'
 import { copyClaudeHistoryForMovedFolders, migrateCanonicalPaths, migrateSessionOutputPaths } from '@main/core/projects/operations/migrate-canonical-paths'
-import { knownHarnessConfigRoots, loadHarnessConfigRoots } from '@main/core/agent-hooks/harness-config-roots'
+import { loadHarnessConfigRoots } from '@main/core/agent-hooks/harness-config-roots'
 import { closeDatabase, db, sqlite } from '@main/db/client'
 import { flushViewState } from '@main/core/view-state/view-state-service'
 import { resolveDatabasePath } from '@main/db/path'
@@ -141,11 +142,7 @@ import { readSessionOptions, SessionOptionsError } from '@main/core/session-time
 import { platformModelIdFromRuntimeOption, runtimeOptionForPlatformModelId } from '@shared/platform-model-id'
 import { searchService } from '@main/core/search/search-service'
 import { workspaceFileIndexService } from '@main/core/search/workspace-file-index-service'
-import { editorBufferService } from '@main/core/editor/editor-buffer-service'
-import {
-  cleanupLegacyBrowserPartitions,
-  migrateLegacyBrowserPartitionDirs,
-} from '@main/core/browser/browser-partition-cleanup'
+import { migrateLegacyBrowserPartitionDirs } from '@main/core/browser/browser-partition-cleanup'
 import { projectSettingsService } from '@main/core/projects/settings/project-settings-service'
 import { getProjectById, getProjects } from '@main/core/projects/operations/getProjects'
 import { machineLocalProjectsOf } from '@main/core/projects/project-public-id'
@@ -237,7 +234,7 @@ import {
   setConnectionConfigRootResolver,
   setSessionStatusFeed,
 } from '@main/core/session-timeline/service'
-import { connectionConfigRoot, nativeConfigRoot } from '@main/core/agents/harness-connections'
+import { connectionConfigRoot, managedConfigRoot } from '@main/core/agents/harness-connections'
 import { setSessionCancel, setSessionWake } from '@main/core/session-timeline/write-bridge'
 import { setOtherMachines } from '@main/core/sessions/session-family'
 import { loadAcpForkHandshakes } from '@main/core/agents/fork-legs'
@@ -281,9 +278,7 @@ import { checkpointEmdashPlatformSession } from '@main/core/acp/emdash-platform-
 // capability-bundle),会话页这边只留注入口。不注册 = 第二遍与第一遍完全一样,目录退回「未登录」。
 export {
   setProbePlatformEnvResolver,
-  setProbeConnectionModelResolver,
   type ProbePlatformEnvResolver,
-  type ProbeConnectionModelResolver,
 } from '@main/core/agents/harness-model-catalog'
 // @@@4972 「咕咕提供的模型」那一组的读取口 —— 会话发现工具(session_list_models)与 composer 下拉
 // 必须给出同一份,而算它要账号态与引擎协议映射,两样都住宿主 bundle。不注册 = 那一组缺席,
@@ -371,11 +366,6 @@ export {
 import { reconcileResourceSampler, stopResourceSampler } from '@main/core/resource-monitor/resource-sampler'
 import { ensureAgentDependenciesProbed, localDependencyManager } from '@main/core/dependencies/dependency-managers'
 import { ensureAgentInstalled } from '@main/core/agents/ensure-agent-installed'
-import { DEPENDENCIES } from '@main/core/dependencies/registry'
-import {
-  createProbeOrphanSweepDeps,
-  sweepProbeOrphans,
-} from '@main/core/dependencies/probe-orphan-sweep'
 import { projectManager } from '@main/core/projects/project-manager'
 import { runtimeManager } from '@main/core/runtime/runtime-manager'
 import { appScope } from '@main/app/app-scope'
@@ -500,6 +490,8 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   options.hostIpc.onConnectionClosed?.(releasePlacementsOf)
   const { ipcMain } = options.hostIpc
   const { browserFeatures } = options
+  const migrateAgentHomes = browserFeatures || HEADLESS_SERVER
+  const priorProfile = migrateAgentHomes && captureAgentHomeUpgradeProfile(app.getPath('userData'))
   // 首启默认组(161 10-15):这个 profile 是不是第一次启动,只有在任何东西建出 App 的记录目录之前才看得出来 —— 所以最先。
   // 只归桌面和咕咕 server(first-run-apps.ts `firstRunAtBoot`):网页版的无头宿主不记、不装。
   const firstRun = firstRunAtBoot(browserFeatures)
@@ -563,6 +555,8 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   await backupBeforeTaskToSession(sqlite, resolveDatabasePath())
   await backupBeforeSessionNaming(sqlite, resolveDatabasePath())
   await initializeDatabase()
+  const { migrateCustomModelConnections } = await import('./core/agents/custom-models')
+  migrateCustomModelConnections()
   await runPendingAssistantProjectCleanup(true)
   // #609 已有的、登记在 ~ / task-home / GUGU_HOME 底下的项目改成 workspace(会话随之列进「任务」);幂等,失败不拦启动。
   try {
@@ -577,7 +571,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
     if (moved.length > 0 || conflicts.length > 0) {
       const outputs = await migrateSessionOutputPaths(moved)
       await loadHarnessConfigRoots()
-      const claude = await copyClaudeHistoryForMovedFolders([nativeConfigRoot('claude'), ...knownHarnessConfigRoots('claude')], moved)
+      const claude = await copyClaudeHistoryForMovedFolders([managedConfigRoot('claude')], moved)
       log.info('canonical paths: records now in their one spelling', { moved: moved.length, conflicts: conflicts.length, outputs, claude })
     }
   } catch (error) {
@@ -617,6 +611,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
     logger: log,
     now: Date.now,
   })
+  if (migrateAgentHomes) initializeAgentHomeUpgrade(priorProfile)
   // Task names: a bound task is named by its roster identity (task-name.ts). The roster keys were just
   // renamed above, and every reader of a name below (search backfill first) needs the projection.
   await loadTaskNames()
@@ -673,31 +668,10 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   }
   searchService.initialize()
   workspaceFileIndexService.initialize()
-  void editorBufferService.pruneStale()
-  // 依赖体检的 `<bin> --version` 是 detached 起的(不然只杀得掉直接子进程)，收尾在 finally 里 ——
-  // 那一半只在我们还活着时有效。被强杀时子进程活下来，stdio 管道读端却没了，不处理 SIGPIPE 的
-  // 程序就在写失败上空转：mac1 实测两个 `amp --version` 各占满一核，清掉两个半小时后又长出两个。
-  // ⚠️ 只在这里跑：判据里的「ppid 已变成 1」要求 spawner 确实已经不在，运行中跑会误伤正在进行的探测。
-  {
-    const deps = createProbeOrphanSweepDeps((rows) =>
-      log.info('probe-orphans: swept stuck --version probes', {
-        pids: rows.map((row) => row.pid),
-      })
-    )
-    if (deps) {
-      void sweepProbeOrphans(
-        DEPENDENCIES.flatMap((dependency) => dependency.commands),
-        deps
-      ).catch((error: unknown) =>
-        log.warn('probe-orphans: sweep failed', { error: String(error) })
-      )
-    }
-  }
   // 分区改名后的目录搬迁:必须赶在任何浏览器会话打开之前(下面注册 RPC 之前)同步做完,见函数注释。
   if (browserFeatures) migrateLegacyBrowserPartitionDirs()
-  if (browserFeatures) void cleanupLegacyBrowserPartitions()
 
-  // #6387 上一次运行的会话都已随进程结束:它们冻结的扩展副本、以及卸载时延后删的数据夹,在这里清掉。
+  // #6387 上一次运行的会话都已随进程结束:只清它们冻结的扩展副本。App 数据只随明确卸载清除。
   // 放在任何会话启动之前,才保证清的都是没人在用的。
   try {
     sweepExtensionSessionLeftovers()
@@ -732,14 +706,6 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   // 这里不做遥测初始化:原有的 PostHog 埋点(56 个事件)2026-09-10 整套拆除 ——
   // owner:「他是个美国人的服务吗?感觉我很多软件用户是国内的,这种数据外流可能不安全」。
   // 那条管子默认是开的,只差构建时传一个 key 就会往美国发;所以是拆,不是藏开关。
-
-  // #26 订阅连接的开机对齐:趁还没有任何会话、自动化也还没起,把默认账号的凭据放到会话要读的地方(见 harness-connections)。
-  try {
-    const { alignHarnessConnectionsAtStartup } = await import('@main/core/agents/harness-connections')
-    await alignHarnessConnectionsAtStartup()
-  } catch (e: unknown) {
-    log.warn('harness connections: startup alignment failed; sessions keep the credentials already in place', { error: e })
-  }
 
   // --- Eager service .initialize()/.start() block (index.ts:146-156). ---
   projectSettingsService.initialize()
@@ -1047,14 +1013,10 @@ export function emdashLookPicture(): Promise<ExtensionPicture> {
   return lookGalleryPicture()
 }
 
-/** #6387 Frozen copies only last run's sessions could still have used, and what belongs to no installed App. */
+/** #6387 Frozen bundle copies only; missing installed bundles never authorize deleting App data. */
 function sweepExtensionSessionLeftovers(): void {
-  const { extensions, invalid } = extensionsService().list()
+  const { extensions } = extensionsService().list()
   const userData = app.getPath('userData')
-  pruneExtensionData(
-    path.join(userData, EXTENSION_DATA_DIR_NAME),
-    new Set([...extensions.map(({ manifest }) => manifest.id), ...invalid.map(({ dirName }) => dirName)])
-  )
   pruneSessionSnapshots(userData, new Map(extensions.map(({ manifest, rootDir }) => [manifest.id, bundleContentDigest(rootDir)])))
 }
 
@@ -1727,7 +1689,7 @@ async function recordReportedDefaultModel(
  * 会话不在跑时读不到清单 —— 那时 `setModelOption` 本身也不会成,调用方照旧走重开。
  */
 async function liveWireValue(sessionId: string, modelId: string, source: 'platform' | 'own'): Promise<string> {
-  if (source !== 'platform') return modelId
+  if (source !== 'platform') return runtimeModelId(modelId) ?? ''
   const options = await readSessionOptions(sessionId).catch((error: unknown) => {
     if (error instanceof SessionOptionsError && error.code === 'session_not_live') return null
     throw error
@@ -1773,13 +1735,19 @@ export async function applyEmdashSessionModelSelection(input: {
     return reloadOutcome(await reloadEmdashSession({ sessionId, reason, resetModel: true }))
   }
   const target: 'platform' | 'own' = selection.source === 'platform' ? 'platform' : 'own'
-  if (target === input.runningOn) {
+  const row = (await db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)))[0]
+  const runningCustom = customModelRefFromOption(row?.config?.model)
+  const requestedCustom = customModelRefFromOption(selection.modelId)
+  const sameConnection = runningCustom?.connectionId === requestedCustom?.connectionId
+  if (target === input.runningOn && sameConnection) {
     const client = await peekAcpRuntimeClient()
     const hot = client
       ? await client.setModelOption({
           sessionId,
           dimension: 'model',
-          value: await liveWireValue(sessionId, selection.modelId, target),
+          value: requestedCustom && runningCustom
+            ? customModelRuntimeOption(runningCustom, requestedCustom.modelId ?? '', (await readSessionOptions(sessionId)).model?.selected, (await readSessionOptions(sessionId)).model?.available.map((choice) => choice.id) ?? []) ?? runtimeModelId(selection.modelId) ?? ''
+            : await liveWireValue(sessionId, selection.modelId, target),
         })
       : null
     // 只有活会话**确认生效**才算热切:`restart_required` / `pending_next_turn` 也是 success,
@@ -2045,7 +2013,7 @@ async function startSessionpageAgentSessionClaimed(
     // Its creation turn (the first task / first message) is admitted here once, under the session's stable
     // `<id>:creation:0`: a replayed create of the same bound session finds it queued and admits nothing twice.
     if (session.providerSessionId) sessionLife().start(session.id, 'user-open')
-    else admitCreationTurns({ ...session, initialQueue: input.initialPrompt ? [{ text: input.initialPrompt, origin: 'communication' }] : undefined })
+    else await admitCreationTurns({ ...session, initialQueue: input.initialPrompt ? [{ text: input.initialPrompt, origin: 'communication' }] : undefined })
     mark('life-admitted')
     return { ...provisioned, sessionId: session.id, projectId: project.id }
   } catch (error) {
@@ -2238,7 +2206,7 @@ export async function emdashOpenSessionFile(
  * projection against (session-page spec ⑨: the session page is the single source of truth; gugu's contacts and
  * groups are a projection of it). `sessionIds` = conversations that still EXIST, including archived;
  * `projectIds` = projects that still exist. The host reaps any session-page agent whose conversation is absent
- * here, and archives the group mirroring any absent project. Visibility and existence are separate:
+ * here. Missing project inventory never archives its cloud group. Visibility and existence are separate:
  * an archived conversation keeps its identity, name, relationships and group seat.
  */
 export async function emdashSessionpageInventory(): Promise<{

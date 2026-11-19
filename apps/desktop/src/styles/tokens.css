@@ -1031,7 +1031,7 @@
 
 /* ── 侧栏渐进底色(设置 · 通用,默认关) ───────────────────────────────────────────
    @@@sidebar-tint owner 2026-09-10:「最左边菜单栏是这个色,消息列表是白色,会话列表要介于
-   两者之间」。开关的真值是 `<html data-sidebar-tint="on">`(见 lib/sidebarTint.ts),这里只改写
+   两者之间」。开关的真值是 `<html data-sidebar-tint="on">`(偏好在 lib/devicePreferences.ts),这里只改写
    `--sidebar` 一个 token —— 会话列表/通讯录/设置导航列(.gg-pane[data-role='nav'])与会话页左栏
    (皮肤桥把 .bg-background-tertiary 与 --em-background-secondary 都接在它上面)本来就同吃这一档,
    所以一处改完全都跟上;会话页那棵 Shadow DOM 靠自定义属性继承拿到同一个值。
@@ -1688,9 +1688,9 @@ body.barcode-scanner-active #root {
    pinned/selected 用 :not() 显式让开，别靠特异度赛跑去猜谁赢。 */
 @media (hover: hover) { .gg-row-host:hover > .gg-row:not([data-selected]):not([data-popup-open]):not([data-pinned]) { background: var(--hover); } }
 /* @@@contacts-offscreen-rows 通讯录分段里的行:屏幕外的跳过布局与绘制(content-visibility),页内查找照样搜得到。
-   auto 记住画过的实际高度,没画过的按 60px(一行头像 + 两行字)占位。paint containment 会裁掉框外的东西:
+   auto 记住画过的实际高度,没画过的按 48px(头像 32 + 上下内距 8,通讯录行一律单行)占位。paint containment 会裁掉框外的东西:
    键盘焦点环画在框外 4px(outline 2 + offset 2),用 overflow-clip-margin 让出来,外观不变。 */
-.gg-c-sec-body .gg-row-host, .gg-c-sec-body > div > .gg-row { content-visibility: auto; contain-intrinsic-size: auto 60px; overflow-clip-margin: 4px; }
+.gg-c-sec-body .gg-row-host, .gg-c-sec-body > div > .gg-row { content-visibility: auto; contain-intrinsic-size: auto 48px; overflow-clip-margin: 4px; }
 
 /* Ghost 图标钮:导航轨/composer 图标/消息工具条/关闭钮。「开」态挂 data-on;菜单 Trigger 菜单开着时 Base UI 挂 data-popup-open,同一个开态。
    图标色只在 faint-fg → muted-fg → fg 三档内移动,不引入色相。 */
@@ -2368,3 +2368,22 @@ body.barcode-scanner-active #root {
 @keyframes gg-unknown-appear { to { opacity: 1; } }
 .gg-unknown { opacity: 0; animation: gg-unknown-appear 0s linear 150ms forwards; }
 @media (prefers-reduced-motion: reduce) { .gg-unknown { animation-duration: 0s; } }
+
+
+/* Model settings: approved light palette, with the existing dark theme surfaces. */
+:root {
+  --model-settings-page: var(--page);
+  --model-settings-description: var(--text-secondary);
+  --model-settings-source: var(--muted-fg);
+  --model-settings-separator: var(--border);
+  --model-sign-in-expired-bg: var(--danger-tint);
+  --model-sign-in-expired-fg: var(--danger-fg);
+}
+[data-theme='light'] {
+  --model-settings-page: #f7f7f7;
+  --model-settings-description: rgba(0, 0, 0, .7);
+  --model-settings-source: rgba(0, 0, 0, .45);
+  --model-settings-separator: #f2f2f2;
+  --model-sign-in-expired-bg: #fbf1f1;
+  --model-sign-in-expired-fg: #b42c3f;
+}

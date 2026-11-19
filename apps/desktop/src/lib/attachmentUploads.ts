@@ -31,7 +31,7 @@ function progress(messageId: string, value?: DeclaredUploadProgress) {
         else shas.delete(messageId)
       }).catch(error => { if (shas.get(messageId) === value.sha256) shas.delete(messageId); warn(error) })
     }
-    if (value.failed) failAttachmentUploadProgress(messageId, value.final ? undefined : () => { void retry(messageId).catch(warn) })
+    if (value.failed) failAttachmentUploadProgress(messageId, value.final ? undefined : () => { void retry(messageId).catch(warn) }, value.reason)
     else setAttachmentUploadProgress(messageId, value)
   } else {
     copies.delete(messageId); shas.delete(messageId)
@@ -41,7 +41,6 @@ function progress(messageId: string, value?: DeclaredUploadProgress) {
 const local = native ? null : createDeclaredUploads({
   endpoint: async () => ({ ...await (await import('./attachmentsEndpoint')).attachmentsEndpoint(), upload: xhrAttachmentUpload }),
   copyOf: async sha => (await import('./attachmentBytes')).cachedAttachmentCopy(sha), progress, warn,
-  attempt: (task, attempt, run) => timings.get(task.messageId)!.stage('upload', attempt, run, undefined, { timeoutMs: null }),
 })
 native?.eventOn('attachments:progress', value => {
   const event = value as AttachmentProgressEvent

@@ -13,7 +13,7 @@ import type { EffortOption, ModeOption, ModelChoice, SessionConfigState } from '
 import { flattenSelectOptions } from '../models/select-options';
 
 /** Shape of a single ACP option entry within a select-type config option. */
-type RawOption = { value: string; name: string; description?: string | null };
+type RawOption = { value: string; name: string; description?: string | null; _meta?: Record<string, unknown> | null };
 
 function toEffortOption(raw: RawOption): EffortOption {
   const opt: EffortOption = { id: raw.value, name: raw.name };
@@ -23,6 +23,8 @@ function toEffortOption(raw: RawOption): EffortOption {
 
 function toModeOption(raw: RawOption): ModeOption {
   const opt: ModeOption = { id: raw.value, name: raw.name };
+  if (raw._meta?.['gugu:auto-review-disabled'] === true) opt.disabled = true;
+  if (raw._meta?.['gugu:auto-review-haiku'] === true) opt.reviewByHaiku = true;
   if (raw.description) opt.description = raw.description;
   return opt;
 }

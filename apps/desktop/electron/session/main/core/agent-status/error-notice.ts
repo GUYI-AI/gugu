@@ -1,3 +1,4 @@
+import { runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { createHash } from 'node:crypto';
 import { desc, eq, sql } from 'drizzle-orm';
 import { agentQuotaReason } from '@gugu/core/shared/agentQuotaReason';
@@ -52,7 +53,7 @@ export function acknowledgeErrorNotice(sessionId: string): void {
     .from(sessionTurns).where(eq(sessionTurns.sessionId, sessionId)).orderBy(desc(sessionTurns.seq)).limit(1).get();
   if (tail?.kind !== 'error' || !tail.message) return;
   const row = db.select({ provider: sessions.provider, config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)).get();
-  const model = row?.config?.type === 'acp' ? row.config.model ?? row.config.contextUsage?.modelId ?? undefined : row?.config?.model;
+  const model = runtimeModelId(row?.config?.type === 'acp' ? row.config.model ?? row.config.contextUsage?.modelId : row?.config?.model);
   const key = fingerprint(tail.message, row?.provider ?? undefined, model);
   if (key) write(sessionId, { current: key, acknowledged: [key] });
 }

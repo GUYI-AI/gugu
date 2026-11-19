@@ -22,6 +22,7 @@ import { MessageFilePreviewPanel } from './MessageFilePreviewPanel'
 import { classifyDocumentPreview, documentPreviewNeedsFetch, type DocumentPreviewKind } from './documentPreview'
 import { savedFileName } from '../../session/shared/extensions/app-runtime-protocol'
 import { chatFolderPreview } from '../preview/chat-folder-preview-registration'
+import type { FileAnnotationContext } from '../preview/FilePreviewAnnotations'
 import type { HtmlPreviewRegistration } from '../preview/HtmlPreviewFrame'
 import type { FileViewerSelection } from '@/session/shared/preview/file-viewer-menu'
 import { useFilePlace } from '../preview/file-place'
@@ -44,6 +45,7 @@ export interface HostedPreviewSource {
   quote: (selection: FileViewerSelection | null) => Promise<void>
   /** Its text preview offers Cite on a selection (a session's file): `quote` with that selection. */
   citesSelection?: boolean
+  annotation?: FileAnnotationContext
   /** Its text preview offers Send on a selection too (`openSelectionSend`, beside it). */
   send?: (selection: FileViewerSelection, at: DOMRect) => void
   /** The folders it is in, top first: one with `open` goes there. */
@@ -314,5 +316,5 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   const shown = read?.binary ? 'unsupported' : kind
   const loading = (kind !== 'unsupported' && read === null) || (shown === 'unsupported' && !!saving)
   const status = saving ?? progress
-  return <MessageFilePreviewPanel key={attempt} {...(file.source.kind === 'hosted' ? { folders: file.source.folders, onCite: readOnly || !file.source.citesSelection ? undefined : file.source.quote, onSend: readOnly ? undefined : file.source.send, unreadableAction: file.source.unreadableAction, ...(file.source.edit ? { onEdit: file.source.edit } : {}) } : {})} connection={connection} onReadAgain={read?.retryable && !waitingFor && file.source.kind !== 'hosted' ? () => setAttempt(n => n + 1) : undefined} registerHtml={registerHtml} at={at} viewerRef={viewerRef} fill={fill} tabbed={tabbed} mobile={mobile} file={file} kind={shown} content={read?.content ?? null} videoUrl={read?.videoUrl} onVideoError={renewVideo} loading={loading} showLoadingStatus={!!saving} loadingLabel={status?.label} loadingFraction={status?.fraction} error={read?.error} onBack={onBack} onClose={onClose} actions={actions} onOpenExternal={missing || file.document || (file.source.kind === 'url' && file.source.url.startsWith('blob:')) || (file.source.kind === 'hosted' ? !file.source.openExternal : shown === 'unsupported') ? undefined : openExternal} />
+  return <MessageFilePreviewPanel key={attempt} {...(file.source.kind === 'hosted' ? { folders: file.source.folders, onCite: readOnly || !file.source.citesSelection ? undefined : file.source.quote, onSend: readOnly ? undefined : file.source.send, annotation: readOnly ? undefined : file.source.annotation, unreadableAction: file.source.unreadableAction, ...(file.source.edit ? { onEdit: file.source.edit } : {}) } : {})} connection={connection} onReadAgain={read?.retryable && !waitingFor && file.source.kind !== 'hosted' ? () => setAttempt(n => n + 1) : undefined} registerHtml={registerHtml} at={at} viewerRef={viewerRef} fill={fill} tabbed={tabbed} mobile={mobile} file={file} kind={shown} content={read?.content ?? null} videoUrl={read?.videoUrl} onVideoError={renewVideo} loading={loading} showLoadingStatus={!!saving} loadingLabel={status?.label} loadingFraction={status?.fraction} error={read?.error} onBack={onBack} onClose={onClose} actions={actions} onOpenExternal={missing || file.document || (file.source.kind === 'url' && file.source.url.startsWith('blob:')) || (file.source.kind === 'hosted' ? !file.source.openExternal : shown === 'unsupported') ? undefined : openExternal} />
 }

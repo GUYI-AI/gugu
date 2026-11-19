@@ -61,24 +61,28 @@ export const LOCAL_EXTENSIONS_HOST: ExtensionsHost = {
   pickFolder: (options) => rpc.app.openSelectDirectoryDialog(options),
 };
 
+export type RemoteLibraryTransport = { rpc: ReturnType<typeof rpcOn>; onEvent: ExtensionsHost['onEvent'] };
+
 /** 别的机器的清单按机器留一份:换机器再换回来不必从骨架重来(与本机那份同一个「先画旧的、后台重读」)。 */
 const remoteStores = new Map<string, InstalledExtensionsStore>();
 
 export function createRemoteExtensionsHost(
   deviceId: string,
-  pickFolder: (deviceId: string, initialPath: string) => Promise<string | null>
+  pickFolder: (deviceId: string, initialPath: string) => Promise<string | null>,
+  transport?: RemoteLibraryTransport
 ): ExtensionsHost {
-  const api = rpcOn(deviceId).extensions as ExtensionsApi;
-  let store = remoteStores.get(deviceId);
+  const api = (transport?.rpc ?? rpcOn(deviceId)).extensions as ExtensionsApi;
+  const cacheKey = transport ? `transport:${deviceId}` : deviceId;
+  let store = remoteStores.get(cacheKey);
   if (!store) {
     store = new InstalledExtensionsStore(api);
-    remoteStores.set(deviceId, store);
+    remoteStores.set(cacheKey, store);
   }
   return {
     key: `remote:${deviceId}`,
     api,
     store,
-    onEvent: (event, listener) => onMachineEvent(deviceId, event, listener),
+    onEvent: transport?.onEvent ?? ((event, listener) => onMachineEvent(deviceId, event, listener)),
     local: false,
     pickFolder: () => pickFolder(deviceId, '~'),
   };

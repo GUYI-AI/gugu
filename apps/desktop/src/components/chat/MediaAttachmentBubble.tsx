@@ -49,7 +49,7 @@ export function MediaAttachmentBubble({ meta, messageId, isMine, onOpenFile, sen
   const caption = meta.caption ? <Markdown trust="chat" content={meta.caption} onAccent={isMine} /> : null
   if (metadata.data?.status === 'pending' || metadata.data?.status === 'failed') return <div ref={box} className={FIT_BUBBLE} data-attachment-pending={metadata.data.status === 'pending' || undefined}>
     <FileAttachmentCard file={meta} isMine={isMine} onOpen={upload?.failed ? upload.retry : metadata.data.status === 'pending' && onOpenFile ? () => onOpenFile(meta) : undefined}
-      details={t(upload?.failed && upload.retry ? 'attachmentView.uploadFailed' : metadata.data.status === 'failed' ? 'attachmentView.senderUploadFailed' : pendingLabel(isMine, upload))} />{caption}</div>
+      details={(upload?.failed ? upload.reason : undefined) ?? t(upload?.failed && upload.retry ? 'attachmentView.uploadFailed' : metadata.data.status === 'failed' ? 'attachmentView.senderUploadFailed' : pendingLabel(isMine, upload))} />{caption}</div>
   if (metadata.data?.status === 'missing') return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileMissing')} />{caption}</div>
   if (metadata.data?.status === 'expired') return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><ExpiredAttachmentCard meta={meta} messageId={messageId} isMine={isMine} />{caption}</div>
   if (metadata.data?.status === 'gone' || metadata.isError) return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine}
@@ -137,7 +137,7 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
     )
   }
   if (view.status === 'pending') return <div ref={box as RefObject<HTMLDivElement>} aria-label={meta.fileName} data-attachment-pending
-    className="chat-inline-image chat-inline-image--pending chat-inline-image--awaiting" style={imageStyle}><span>{t(pendingLabel(isMine, upload))}</span></div>
+    className="chat-inline-image chat-inline-image--pending chat-inline-image--awaiting" style={imageStyle}><span>{(upload?.failed ? upload.reason : undefined) ?? t(pendingLabel(isMine, upload))}</span></div>
   return <div ref={box as RefObject<HTMLDivElement>} aria-label={meta.fileName} className="chat-inline-image chat-inline-image--pending" style={imageStyle} />
 }
 

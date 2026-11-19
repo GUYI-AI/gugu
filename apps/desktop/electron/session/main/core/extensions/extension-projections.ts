@@ -7,6 +7,7 @@ import {
 import { openExtensionProgramAccess } from './extension-program-access';
 import { ProjectionViewer, type ProjectionConnection } from './projection-viewer';
 import { anySignal } from '@gugu/core/shared/anySignal';
+import { projectionPresentation, sameProjectionPicture, type ProjectionPresentation } from '@shared/extensions/projection-presentation';
 
 /** Supplied by the invoking tool/page's host binding, never by an App's parameters. */
 export interface ProjectionPrincipal { extensionId: string; sessionId: string; projectId?: string }
@@ -31,6 +32,8 @@ type Resource = {
   release(): void;
   off(): void;
   sequence: number;
+  picture: ProjectionFrame | null;
+  presentationRevision: number;
   geometry: { width: number; height: number } | null;
   viewers: Set<ProjectionViewer>;
   queue: Promise<void>;
@@ -48,7 +51,7 @@ export class ExtensionProjections {
   constructor(private readonly authorize: (principal: ProjectionPrincipal) => void) {}
 
   open(principal: ProjectionPrincipal, source: ProjectionSource, parent?: AbortSignal): {
-    id: string; publish(frame: unknown): void; close(): Promise<void>; isClosing(): boolean;
+    id: string; publish(frame: unknown): void; present(value: unknown): void; close(): Promise<void>; isClosing(): boolean;
   } {
     if (!principal.extensionId || !principal.sessionId) throw new Error('Projection needs an App and a session');
     this.authorize(principal);
@@ -58,7 +61,8 @@ export class ExtensionProjections {
     const id = randomUUID();
     const resource: Resource = {
       principal: { ...principal }, source, controller, release: access.release, off: () => {},
-      driver: null, sequence: 0, geometry: null, viewers: new Set(), queue: Promise.resolve(), queued: 0, disconnected: new Set(),
+      driver: null, sequence: 0, picture: null, presentationRevision: 0,
+      geometry: null, viewers: new Set(), queue: Promise.resolve(), queued: 0, disconnected: new Set(),
     };
     const abort = () => { void this.close(id, resource).catch(() => undefined); };
     access.signal.addEventListener('abort', abort, { once: true });
@@ -78,10 +82,23 @@ export class ExtensionProjections {
         const frame = projectionFrame(raw);
         if (frame.sequence <= resource.sequence) throw new Error('Projection frame sequence must increase');
         resource.sequence = frame.sequence;
+        resource.picture = frame;
         const changed = resource.geometry?.width !== frame.width || resource.geometry?.height !== frame.height;
         resource.geometry = { width: frame.width, height: frame.height };
         if (changed) liveWindowSourcesChanged(resource.principal.sessionId);
         for (const viewer of resource.viewers) viewer.publish(frame);
+      },
+      present: (raw) => {
+        this.authorize(resource.principal);
+        resource.controller.signal.throwIfAborted();
+        const presentation: ProjectionPresentation | null = projectionPresentation(raw);
+        if (presentation && (!resource.picture || !sameProjectionPicture(resource.picture, presentation.frame))) {
+          throw new Error('Presentation does not match the current source picture');
+        }
+        // A cleared target cannot be revived by a delayed decoration on its retained old frame.
+        if (!presentation) resource.picture = null;
+        const revision = ++resource.presentationRevision;
+        for (const viewer of resource.viewers) viewer.present(id, revision, presentation);
       },
       close: () => this.close(id, resource),
     };
@@ -129,7 +146,7 @@ export class ExtensionProjections {
       }
     };
     let disconnected: Promise<void> = Promise.resolve();
-    const viewer = new ProjectionViewer(randomUUID(), resource.sequence, connection, (gone) => {
+    const viewer = new ProjectionViewer(randomUUID(), resource.sequence, { ...connection, sourceId: id }, (gone) => {
       resource.viewers.delete(gone);
       resource.disconnected.add(gone.generation);
       disconnected = resource.queue.then(drain);

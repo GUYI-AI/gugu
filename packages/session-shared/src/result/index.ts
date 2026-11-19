@@ -87,8 +87,9 @@ const dataSentence = (data: unknown): string | undefined => {
  * 连 tooltip 都没有。它们活着穿过了序列化边界,是在这里被丢掉的。
  *
  * ⇒ 现在的合同:**句子在前,负载在后,两者都不丢**。
- *   第一行 = `data.details` / `data`(字符串)/ `message`,按这个精度顺序取**一句**;
- *   第二行 = `code` 与 `data` 一层内的每一对 `键=值`,原样列出。
+ *   第一行 = `data.details` / `data`(字符串)/ `message`(经 `errorSentence`),按这个精度顺序取**一句**;
+ *   第二行 = `code` 与 `data` 一层内的每一对 `键=值`,原样列出;
+ *   `message` 本身是结构化负载时,最后再原样附上它。
  * ❌ 不按「已经在句子里」去重(`max_chars` 与 `actual_chars` 都是数字,谁"已经在句子里"不可靠)——
  *   只跳过**一字不差就是那句话**的字段:codex 桥把 `turn.error` 整个塞进 `data`,它的 `message` 与第一行
  *   逐字相同,列出来就是「回合失败」点开同一句说两遍(#7103);
@@ -97,9 +98,10 @@ const dataSentence = (data: unknown): string | undefined => {
 export const errorDetail = (error: unknown): string | undefined => {
   if (!error || typeof error !== 'object') return undefined;
   const record = error as { message?: unknown; data?: unknown; code?: unknown };
-  const sentence =
-    dataSentence(record.data)
-    ?? (typeof record.message === 'string' ? record.message.trim() || undefined : undefined);
+  const message = typeof record.message === 'string' ? record.message.trim() || undefined : undefined;
+  const sentence = dataSentence(record.data) ?? (message !== undefined ? errorSentence(message) : undefined);
+  // `message` 本身是一份结构化负载(见 errorSentence):第一行换成从里面取出的那句,负载原样跟在最后,❌ 丢。
+  const structured = message !== undefined && errorSentence(message) !== message ? message : undefined;
 
   const fields: string[] = [];
   if (typeof record.code === 'number' || typeof record.code === 'string') {
@@ -117,8 +119,25 @@ export const errorDetail = (error: unknown): string | undefined => {
   }
 
   const payload = fields.length > 0 ? fields.join(', ') : undefined;
-  if (sentence && payload) return `${sentence}\n${payload}`;
-  return sentence ?? payload;
+  const lines = [sentence, payload, structured].filter((line): line is string => line !== undefined);
+  return lines.length > 0 ? lines.join('\n') : undefined;
+};
+
+/**
+ * 一段错误原文里给人读的那一句。原文多半本来就是一句话,原样交回;但有的错误把**结构化负载**当 message ——
+ * zod 的 `ZodError.message` 就是 issues 数组的多行 JSON,第一行是一个 `[`。谁只取第一行,用户就只看到一个括号
+ * (「Couldn't refresh the conversation [」)。这种原文取第一条的 `message`,有 `path` 就带上,好知道是哪一格。
+ */
+export const errorSentence = (text: string): string => {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('[') && !trimmed.startsWith('{')) return trimmed;
+  let parsed: unknown;
+  try { parsed = JSON.parse(trimmed); } catch { return trimmed; }
+  const first: unknown = Array.isArray(parsed) ? parsed[0] : parsed;
+  if (!first || typeof first !== 'object') return trimmed;
+  const { message, path } = first as { message?: unknown; path?: unknown };
+  if (typeof message !== 'string' || !message.trim()) return trimmed;
+  return Array.isArray(path) && path.length > 0 ? `${path.join('.')}: ${message.trim()}` : message.trim();
 };
 
 /**

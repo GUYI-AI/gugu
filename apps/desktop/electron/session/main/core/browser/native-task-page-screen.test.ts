@@ -23,7 +23,8 @@ it('watches only an existing owned tab, preserves its layout, and releases only 
   const screen = nativeTaskPageForScreen('owned')!;
   const publish = vi.fn();
   await screen.startScreen(publish);
-  expect(publish).toHaveBeenCalledWith({ data: Buffer.from('page').toString('base64'), width: 800, height: 600 });
+  expect(publish).toHaveBeenCalledWith(expect.objectContaining({ data: Buffer.from('page').toString('base64'), width: 800, height: 600,
+    feedback: expect.objectContaining({ target: expect.objectContaining({ revision: 1 }) }) }));
   expect(lease.setActive).toHaveBeenCalledWith(true);
   await screen.control({ action: 'resize', width: 390, height: 700, scale: 2 });
   expect(page.executeJavaScript).toHaveBeenCalledTimes(1);
@@ -41,7 +42,7 @@ it('recovers a live tab after its first native capture rejects and stops retryin
   vi.useFakeTimers();
   const image = { isEmpty: () => false, getSize: () => ({ width: 1280, height: 900 }), toJPEG: () => Buffer.from('real frame') };
   const page = Object.assign(new EventEmitter(), {
-    executeJavaScript: vi.fn(async () => ({ width: 1280, height: 900 })), isDestroyed: () => false,
+    executeJavaScript: vi.fn(async () => ({ width: 1280, height: 900 })), isDestroyed: () => false, getTitle: () => 'Example',
   });
   const lease = { ready: Promise.resolve(), setActive: vi.fn(), dispose: vi.fn(),
     snapshot: vi.fn().mockRejectedValueOnce(new Error('UnknownVizError')).mockResolvedValue(image) };
@@ -52,7 +53,8 @@ it('recovers a live tab after its first native capture rejects and stops retryin
   expect(publish).not.toHaveBeenCalled(); expect(destroyed).not.toHaveBeenCalled();
   expect(mocks.warn).toHaveBeenCalledExactlyOnceWith('Could not watch the task browser tab', { error: 'Error: UnknownVizError' });
   await vi.advanceTimersByTimeAsync(250);
-  expect(publish).toHaveBeenCalledWith({ data: Buffer.from('real frame').toString('base64'), width: 1280, height: 900 });
+  expect(publish).toHaveBeenCalledWith(expect.objectContaining({ data: Buffer.from('real frame').toString('base64'), width: 1280, height: 900,
+    feedback: expect.objectContaining({ target: expect.objectContaining({ revision: 1 }) }) }));
   await screen.stopScreen();
   await vi.advanceTimersByTimeAsync(1000);
   expect(lease.snapshot).toHaveBeenCalledTimes(2); expect(lease.dispose).toHaveBeenCalledTimes(1);

@@ -25,7 +25,7 @@ import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
 import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
 import { attachmentFolderLine, SHARED_READ_ONLY_COPY } from '../../../../packages/core/src/shared/attachmentFolderLine'
-import { accountAttachmentsEndpoint, AttachmentsError, commitAttachment, contentRequestId, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { accountAttachmentsEndpoint, AttachmentsError, commitAttachment, contentRequestId, retryableAttachmentError, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
 import { fileSha256 } from '../../../../packages/core/src/local/agent/sessionFileHandoff'
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 import { createGroupAdmin, setGroupAvatar } from '../../../../packages/core/src/cloud/groupAdmin'
@@ -2282,17 +2282,16 @@ async function documentUploadBytes(args) {
 
 // gugu_file:send-file-as-owner = 字节经 attachments/upload 直传 OSS,再由 attachments/share 以 owner 名义发出;send-file 走声明路径
 // (消息带文件索引先提交,字节随后,和人发附件同一条路);download = 按消息 id 把附件下到本机(downloadAttachment)。
-async function uploadForSend(args, deps, label, chatId) {
+async function uploadForSend(args, deps, requestId) {
   const fileName = resolveUploadName(args)
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
-  const bytes = await uploadBlob(label, args, contentType)
+  const bytes = await uploadBlob('message_send_as_owner', args, contentType)
   const endpoint = await deps.attachmentsEndpoint()
-  // Its bytes go up before anything is sent, so the same file from this agent to the same friend is one upload: sent again
-  // after a timeout or restart, it resumes. Another friend is another upload, so parallel sends never share one.
+  // Bind the permit to this send and its bytes. A separate send of the same file has its own message request ID.
   const sha = await fileSha256(String(args.file_path))
-  const request_id = await contentRequestId('send', deps.context.agentId, chatId ? `chat ${chatId}` : `friend ${String(args.friend_user_id)}`, sha, String(bytes.size))
+  const request_id = await contentRequestId('send', requestId, deps.context.agentId, String(args.friend_user_id), sha, String(bytes.size))
   return { endpoint, fileName, contentType, stagingKey: await uploadAttachmentBytes(endpoint, { bytes, name: fileName, contentType },
-    { chat_id: chatId, as: deps.context.agentId, request_id }) }
+    { chat_id: null, as: deps.context.agentId, request_id }) }
 }
 
 /**
@@ -2357,16 +2356,17 @@ async function commitWithReplay(commit) {
     try {
       return await commit()
     } catch (error) {
-      if ((error instanceof AttachmentsError && error.status < 500) || attempt === 3) throw error
+      if ((error instanceof AttachmentsError && !retryableAttachmentError(error)) || attempt === 3) throw error
     }
   }
 }
 
 async function handleOwnerFile(args, deps) {
   const friendUserId = friendUserIdArg(args.friend_user_id)
-  const { endpoint, fileName, contentType, stagingKey } = await uploadForSend(args, deps, 'message_send_as_owner', null)
+  const request_id = randomUUID()
+  const { endpoint, fileName, contentType, stagingKey } = await uploadForSend(args, deps, request_id)
   // 库里那一半照 send_friend_message_as_owner 的规矩(gugu-supabase send_friend_file_as_owner):发送者是主人,记下是这个 agent 代发。
-  const send = { staging_key: stagingKey, friend_user_id: friendUserId, agent_user_id: deps.context.agentId, request_id: randomUUID(), file_name: fileName, content_type: contentType, ...(args.caption ? { caption: args.caption } : {}) }
+  const send = { staging_key: stagingKey, friend_user_id: friendUserId, agent_user_id: deps.context.agentId, request_id, file_name: fileName, content_type: contentType, ...(args.caption ? { caption: args.caption } : {}) }
   const result = await commitWithReplay(() => sendFileAsOwner(endpoint, send))
   if (typeof result.message_id !== 'string' || result.sent_by_agent !== true) {
     throw new Error('message_send_as_owner: the server did not confirm the send')
@@ -2535,7 +2535,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
       ...(args.temporary === true ? { keep: 'temporary' } : {}),
     }
     try { message = await commitWithReplay(() => commitAttachment(endpoint, commit)) } catch (error) {
-      if (!(error instanceof AttachmentsError && (error.status < 500 || error.code === 'version_conflict'))) {
+      if (!(error instanceof AttachmentsError) || retryableAttachmentError(error)) {
         // The message may already exist: keep delivering its bytes, and prevent the outer auth retry from resending it.
         return JSON.stringify({ status: 'uncertain', message_id: messageId,
           note: 'Whether the message committed is uncertain; this machine keeps delivering its bytes. Check message_history for this message_id before deciding whether to resend.' })
@@ -2547,21 +2547,31 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
     if (message?.id) await uploaded.catch((error) => {
       const mismatch = error instanceof AttachmentsError && error.code === 'upload_mismatch'
       const tooLarge = error instanceof AttachmentsError && (error.code === 'too_large' || error.status === 413)
+      const refused = error instanceof AttachmentsError && error.status !== 401 && error.code !== 'upload_not_found' && !retryableAttachmentError(error)
       uploadReceipt = mismatch || tooLarge
         ? { upload: 'failed', reason: mismatch ? 'upload_mismatch' : 'too_large', note: mismatch
           ? 'The message was sent, but the file changed after declaration. Do not resend the same message; send the new file version if needed.'
           : 'The message was sent, but the file exceeds the storage limit and cannot upload. Do not resend the same message.' }
-        : { upload: 'retrying', note: 'The file keeps uploading from this machine; do not send it again.' }
+        : refused
+          ? { upload: 'failed', reason: error.code, note: 'The message was sent, but its attachment was refused. Do not send the same message again.' }
+          : retryableAttachmentError(error) || error instanceof AttachmentsError && (error.status === 401 || error.code === 'upload_not_found')
+            ? { upload: 'retrying', note: 'The attachment is pending and can resume from this machine. Do not send it again.' }
+            : { upload: 'unverified', note: 'The message was sent, but its attachment recovery could not be verified. Do not send the same message again.' }
     })
   }
   if (!message?.id) throw new Error('message_send: the server did not confirm the send')
   const pinned = typeof message.file_item_id === 'string' && Number.isInteger(message.file_version)
     ? { file: groupFileLink(message.file_item_id, { version: message.file_version }), version: message.file_version }
     : {}
-  const blocks = await messageDeliveryBlocks(deps, message.id)
   // Size and type let the task timeline draw the same file card as the chat (sentMessageOf), without reading the row back.
   const sent = parseAttachmentContent(String(message.content ?? ''), message)
   const card = sent ? { size_bytes: sent.sizeBytes, mime_type: sent.mimeType, ...(typeof message.file_blob_id === 'string' ? { file_blob_id: message.file_blob_id } : {}) } : {}
+  let blocks
+  try { blocks = await messageDeliveryBlocks(deps, message.id) } catch {
+    return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...card, ...pinned, ...uploadReceipt,
+      delivery_status: 'unverified', delivery_note: 'The message was sent, but recipient delivery could not be verified. Do not send it again.',
+      source_link: conversationLink(chatId, String(message.id).replace(/^msg:/, '')) })
+  }
   return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...card, ...pinned, ...uploadReceipt, ...(blocks.length ? { not_delivered_to: blocks, delivery_note: deliveryRefusalNotes(blocks).join('; ') } : {}),
     source_link: conversationLink(chatId, String(message.id).replace(/^msg:/, '')) })
 }

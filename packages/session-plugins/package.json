@@ -8,6 +8,7 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
+    "./agents/codex-history": "./src/agents/codex-history.ts",
     "./agents/types": "./src/agents/types.ts",
     "./agents/connection-capabilities": "./src/agents/connection-capabilities.ts",
     "./integrations": "./src/integrations/index.ts",

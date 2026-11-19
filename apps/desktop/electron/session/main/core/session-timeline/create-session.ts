@@ -1,4 +1,8 @@
+import { buildSessionPermissionOptions } from '@shared/session-permission-options';
+import { customClaudeReviewSource } from '@gugu/session-core/models/auto-review-source';
+import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { createFailureLogFields } from './create-failure-log-fields';
+import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
@@ -122,10 +126,10 @@ function offeredSessionViews(agent: AgentPayload): SessionpageSessionView[] {
  */
 function declaredPermissionModes(agent: AgentPayload): GuguPermissionMode[] {
   const legs = offeredSessionViews(agent).map(sessionpageLegOfView);
-  return GUGU_PERMISSION_MODES.filter((mode) =>
+  return GUGU_PERMISSION_MODES.filter((mode) => mode !== 'ai-review' && (
     legs.length === 0
       ? agentSupportsPermissionMode(agent.capabilities, mode)
-      : legs.every((leg) => agentSupportsPermissionMode(agent.capabilities, mode, leg)));
+      : legs.every((leg) => agentSupportsPermissionMode(agent.capabilities, mode, leg))));
 }
 
 /**
@@ -286,7 +290,7 @@ export async function createModels(
     const [catalog, state] = await Promise.all([
       listLocalModels(request.harness, { transport: sessionRuntimeOfView(view.view) }),
       probeHarnessCatalogState(request.harness, sessionRuntimeOfView(view.view),
-        request.model?.trim() && !request.model.trim().startsWith('platform:') ? request.model.trim() : undefined),
+        request.model?.trim() && !request.model.trim().startsWith('platform:') && !customModelRefFromOption(request.model) ? runtimeModelId(request.model.trim()) : undefined),
     ]);
     // 默认模型在这台机器上有没有凭据(#6264):远端创建框据此决定默认挪不挪到平台模型,与桌面同一个读数。
     const [selectedCredential, harnessAuth] = await Promise.all([
@@ -297,24 +301,51 @@ export async function createModels(
     // 在目录里认的档取交集(#6447)。
     const requestedModel = request.model?.trim() || null;
     const platformModel = !!requestedModel && requestedModel.startsWith('platform:');
-    const resolvedEfforts = resolveCreateEfforts({
+    const customRef = customModelRefFromOption(requestedModel);
+    const customRecords = await (await import('@main/core/agents/custom-models')).listCustomModels();
+    const reviewConnection = customRef ? customRecords.find(record => record.id === customRef.connectionId) : undefined;
+    const reviewEndpoint = reviewConnection?.endpoints.find(endpoint => endpoint.protocol === 'anthropic-messages');
+    const customReview = request.harness === 'claude' && customRef && reviewConnection?.keySaved && reviewEndpoint
+      ? customClaudeReviewSource({ connectionId: customRef.connectionId, endpoint: reviewEndpoint.baseUrl, selectedModel: customRef.modelId, models: reviewConnection.models,
+        preference: await (await import('@main/core/settings/settings-service')).appSettingsService.get('autoReviewModel') }) : null;
+    const customEntry = customRef && customRecords.find(({ id }) => id === customRef.connectionId)?.models.find(({ id }) => id === customRef.modelId);
+    const resolvedEfforts = customRef && customEntry?.thinking !== true ? null : resolveCreateEfforts({
       state,
       effortCapability: agent.capabilities?.effort,
       staticModelsCapability: agent.capabilities?.models,
-      model: platformModel ? null : (requestedModel ?? catalog.selected),
+      model: platformModel ? null : (runtimeModelId(requestedModel) ?? catalog.selected),
       platformModel: platformEffortFacts(
         platformModel ? requestedModel : null,
         catalog.models.map((m) => ({ id: m.id, reasoningEfforts: m.reasoning_efforts ?? null })),
       ),
       leg: sessionpageLegOfView(view.view),
     });
-    const fast = platformModel
+    const fast = customRef ? null : platformModel
       ? await platformCreationFastGroup(request.harness, requestedModel!)
       : creationFastGroup(agent.capabilities, requestedModel ?? catalog.selected, state);
+    const reviewQualified = (!customRef || request.harness !== 'claude' || customReview !== null) && catalogAllowsAutoReview(agent.capabilities?.autoApprove?.modes, state,
+          platformModel ? 'platform' : customRef ? 'custom' : 'own', runtimeModelId(requestedModel) ?? (state.kind === 'ready' ? state.selected : null));
+    const reviewAllowed = reviewQualified && customReview?.kind !== 'platform-fallback';
+    const cliVersion = state.kind === 'ready' || state.kind === 'auth-required' ? state.cliVersion : undefined;
+    const floor = agent.capabilities?.autoApprove?.modes?.['ai-review']?.reviewRequirements?.minimumCliVersion;
+    const versionTooOld = cliVersion && floor && cliVersion.split('.').reduce((n, part) => n * 10000 + Number(part), 0) < floor.split('.').reduce((n, part) => n * 10000 + Number(part), 0);
+    const permissionOptions = buildSessionPermissionOptions({
+      modeMap: agent.capabilities?.autoApprove?.modes,
+      native: state.kind === 'ready' || state.kind === 'auth-required' ? state.permissionModes : undefined,
+      structuralFullAccess: request.harness === 'grok',
+      leg: sessionpageLegOfView(view.view),
+      review: { allowed: reviewAllowed, byHaiku: customReview?.kind === 'own' && customReview.byHaiku,
+        reason: !cliVersion ? 'taskConfig.reviewEligibilityUnknown' : versionTooOld ? 'taskConfig.reviewVersionUnsupported'
+          : state.kind !== 'ready' ? 'taskConfig.reviewEligibilityUnknown' : !state.reviewerAvailable ? 'taskConfig.reviewNativeUnavailable' : 'taskConfig.reviewUnavailable' },
+    });
     return {
       ok: true,
       value: {
         ...(fast ? { fast } : {}),
+        permissionOptions,
+        customModels: customRecords,
+        modelProtocols: agent.capabilities?.modelProtocols,
+        customModel: agent.capabilities?.customModel,
         harness: catalog.harness_id,
         transport: catalog.transport,
         models: catalog.models.map((m) => ({
@@ -327,6 +358,7 @@ export async function createModels(
           ...(m.hidden ? { hidden: true } : {}),
         })),
         selected: catalog.selected,
+        ...(reviewQualified ? { autoReview: { model: requestedModel ?? (state.kind === 'ready' ? state.selected! : ''), ...(customReview?.kind === 'platform-fallback' ? { disabled: true } : {}), ...(customReview?.kind === 'own' && customReview.byHaiku ? { reviewByHaiku: true } : {}) } } : {}),
         efforts: Object.entries(resolvedEfforts?.options ?? {}).map(([id, option]) => ({
           id,
           name: option.name,
@@ -365,7 +397,7 @@ export async function resolveCreateEffort(
   const effort = request.effort.trim();
   if (!effort) return fail('effort_rejected', 'Reasoning effort must not be empty');
   let options: { id: string }[];
-  if (request.model?.trim().startsWith('platform:')) {
+  if (request.model?.trim().startsWith('platform:') || customModelRefFromOption(request.model?.trim())) {
     const catalog = await createModels(request);
     if (!catalog.ok) return catalog;
     options = catalog.value.efforts;
@@ -380,7 +412,7 @@ export async function resolveCreateEffort(
     options = state.efforts;
   }
   if (!options.some((option) => option.id === effort)) {
-    return fail('effort_rejected', `${request.harness} does not offer reasoning effort '${effort}' for ${request.model ?? 'its default model'}; available: ${options.map((option) => option.id).join(', ')}`);
+    return fail('effort_rejected', `${request.harness} does not offer reasoning effort '${effort}' for ${runtimeModelId(request.model?.trim()) ?? 'its default model'}; available: ${options.map((option) => option.id).join(', ')}`);
   }
   return { ok: true, value: effort };
 }

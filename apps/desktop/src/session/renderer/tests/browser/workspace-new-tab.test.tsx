@@ -95,7 +95,7 @@ it('shows the context tools, opens recent resources, and removes them only from 
   await expect.element(page.getByRole('button', { name: '公告', exact: true })).toBeVisible();
 });
 
-it('opens the actual group tab from the header and keeps newly opened tabs hidden until restored', async () => {
+it('opens the actual group tab from the header and reveals explicitly requested new tabs', async () => {
   await i18n.changeLanguage('zh-CN');
   await page.viewport(1240, 640);
   const view = harness = createReactHarness();
@@ -110,7 +110,7 @@ it('opens the actual group tab from the header and keeps newly opened tabs hidde
   const header = (mode: string) => view.container.querySelector(`[data-chat-workspace-header="${mode}"]`);
   try {
     await expect.poll(() => header('empty')).not.toBeNull();
-    await act(() => userEvent.click(page.getByRole('button', { name: '新建标签页' })));
+    await act(() => userEvent.click(page.getByRole('button', { name: '显示标签页' })));
     await expect.poll(() => header('split')).not.toBeNull();
     await expect.element(page.getByPlaceholder('搜索或输入网址')).toBeVisible();
     await expect.element(page.getByRole('heading', { name: '工具' })).toBeVisible();
@@ -125,8 +125,6 @@ it('opens the actual group tab from the header and keeps newly opened tabs hidde
       commandRegistry.setContext(page.getByRole('button', { name: '显示标签页' }).element() as HTMLElement);
       expect(commandRegistry.dispatch('session.openAddMenu')).toBe(true);
     });
-    await expect.poll(() => header('hidden')).not.toBeNull();
-    await act(() => userEvent.click(page.getByRole('button', { name: '显示标签页' })));
     await expect.poll(() => header('split')).not.toBeNull();
     expect(header('split')?.querySelectorAll('[data-tab-label="新标签页"]')).toHaveLength(2);
     await act(() => userEvent.click(page.getByRole('button', { name: '文件', exact: true })));

@@ -7,9 +7,40 @@ import { ComboboxPopup, type ComboboxPopupHandle, type ComboboxPopupItem } from 
 import { GROW_CAP, GrowingList, growSpan } from '@gugu/session-ui/react/growing-list'
 import { act, createRef, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it } from 'vitest'
+import { rendererLogger } from '@/lib/log'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@renderer/index.css'
+
+const diagnosticLog = rendererLogger('growing-readout')
+let lastLoggedCount = -1
+const idleFacts = { callbacks: 0, timedOut: 0, pendingInput: 0, minRemaining: Infinity }
+let restoreIdle = () => {}
+beforeEach(() => {
+  lastLoggedCount = -1
+  Object.assign(idleFacts, { callbacks: 0, timedOut: 0, pendingInput: 0, minRemaining: Infinity })
+  const original = globalThis.requestIdleCallback
+  if (typeof original !== 'function') return
+  globalThis.requestIdleCallback = (callback, options) => original.call(globalThis, deadline => {
+    idleFacts.callbacks++
+    if (deadline.didTimeout) idleFacts.timedOut++
+    if ((navigator as Navigator & { scheduling?: { isInputPending?: () => boolean } }).scheduling?.isInputPending?.()) idleFacts.pendingInput++
+    idleFacts.minRemaining = Math.min(idleFacts.minRemaining, deadline.timeRemaining())
+    callback(deadline)
+  }, options)
+  restoreIdle = () => { globalThis.requestIdleCallback = original }
+})
+function growthFacts(scroller: HTMLElement, mounted: () => number) {
+  const count = mounted()
+  if (count !== lastLoggedCount) {
+    lastLoggedCount = count
+    diagnosticLog.info({ readout: JSON.stringify({ count, monotonicMs: performance.now(),
+      idleCallbacks: idleFacts.callbacks, idleMinRemaining: Number.isFinite(idleFacts.minRemaining) ? idleFacts.minRemaining : null,
+      timeoutCallbacks: idleFacts.timedOut, visible: document.visibilityState === 'visible', focused: document.hasFocus() }) }, 'mount count changed')
+  }
+  return { mounted: mounted(), idle: { ...idleFacts }, visibility: document.visibilityState,
+    focus: document.hasFocus(), top: scroller.scrollTop, height: scroller.clientHeight, scrollHeight: scroller.scrollHeight }
+}
 
 let root: Root | null = null
 let container: HTMLDivElement | null = null
@@ -25,6 +56,7 @@ afterEach(() => {
   container?.remove()
   root = null
   container = null
+  restoreIdle()
 })
 
 const candidates = (count: number): ComboboxPopupItem[] => Array.from({ length: count }, (_, i) => ({ id: `m${i}`, label: `Member ${i}` }))
@@ -97,7 +129,7 @@ function counted(count: number) {
 it('an idle list grows to all its lines, each rendered once, and a scroll through them renders none', async () => {
   const { renders, scroller, mounted } = counted(400)
   expect(mounted()).toBeLessThan(40)
-  await until('all 400 lines are mounted', () => mounted() === 400)
+  await until('all 400 lines are mounted', () => growthFacts(scroller, mounted), value => value.mounted === 400)
   expect(Math.max(...renders.values())).toBe(1)
   for (let step = 1; step <= 5; step++) {
     renders.clear()
@@ -109,14 +141,14 @@ it('an idle list grows to all its lines, each rendered once, and a scroll throug
 
 it(`a list longer than GROW_CAP grows to GROW_CAP lines, and grows again around where a long scroll ends`, async () => {
   const { scroller, mounted } = counted(2000)
-  await until(`${GROW_CAP} lines are mounted`, () => mounted() === GROW_CAP)
+  await until(`${GROW_CAP} lines are mounted`, () => growthFacts(scroller, mounted), value => value.mounted === GROW_CAP)
   await new Promise((resolve) => setTimeout(resolve, 1500))
   expect(mounted()).toBe(GROW_CAP)
   act(() => { scroller.scrollTop = 1900 * 40 })
-  await until('the lines around the end are mounted, the far ones dropped', () => {
-    const line = document.querySelector('[data-line="1999"]')
-    return line != null && document.querySelector('[data-line="0"]') == null && mounted() === GROW_CAP
-  })
+  await until('the lines around the end are mounted, the far ones dropped', () => ({
+    ...growthFacts(scroller, mounted), last: document.querySelector('[data-line="1999"]') != null,
+    first: document.querySelector('[data-line="0"]') != null,
+  }), value => value.last && !value.first && value.mounted === GROW_CAP)
 })
 
 it('the grown span joins the view, fills a gap towards it, and stops at the ends and at the cap', () => {

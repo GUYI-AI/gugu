@@ -16,10 +16,13 @@ const HIDDEN_VISIBILITY_FLAG = '-fvisibility=hidden'
 const UNDEF_V8_DEPRECATION_WARNINGS_FLAG = '-UV8_DEPRECATION_WARNINGS'
 
 function createNativeAddonBuildEnv(platform, env = process.env) {
-  if (platform === 'win32') return env
+  // better-sqlite3 13's binding.gyp otherwise skips compilation when a bundled N-API prebuild exists.
+  // Use node-gyp's supported package-config channel for the upstream --force_build=1 option.
+  const forced = { ...env, npm_package_config_node_gyp_force_build: '1' }
+  if (platform === 'win32') return forced
 
   return {
-    ...env,
+    ...forced,
     CXXFLAGS: [env.CXXFLAGS, HIDDEN_VISIBILITY_FLAG, UNDEF_V8_DEPRECATION_WARNINGS_FLAG]
       .filter(Boolean)
       .join(' '),

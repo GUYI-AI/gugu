@@ -17,6 +17,7 @@ import type { TurnFileRef } from '../models/turn-files';
 import type { SessionCommandDefinition, SessionUsage } from '../models/config';
 import type { PlanEntryInput } from '../models/plan';
 import type { SessionNoticeCode } from '../models/turns/session-notice';
+import type { CompactionStatus } from '../models/turns/compaction';
 import type { TranscriptTurnTrigger } from '../models/turns/turn';
 import type { ToolImage } from '../models/turns/tool-calls';
 import type { TerminalExit, TerminalState } from '../models/terminals';
@@ -445,10 +446,10 @@ export type NormalizedEvent =
        * 一次上下文压缩的边界。两条来源都收敛到这一个事件上（见 `decode.ts` 的
        * `decodeCompactionSessionUpdate`）：
        *
-       * ① 适配器在 tool call 上挂的 `_meta.contextCompaction` —— 今天实际在走的那条。
-       * ② ACP `session-compaction` RFD 的 `compaction_update` —— 还没有一家发，接着等。
+       * ① 适配器在 tool call 上挂的 `_meta.contextCompaction`；
+       * ② ACP `session-compaction` RFD 的 `compaction_update` —— 今天 claude 适配器与 codex 桥走的那条。
        *
-       * 下面那几个数只有 ① 给得出：RFD 那条只报边界和摘要。所以**每一个都是可选的**，
+       * 下面那几个数只有 ① 给得出：RFD 那条只报边界、摘要和失败原因。所以**每一个都是可选的**，
        * ❌ 别让画面依赖它们存在。
        */
       kind: 'compaction';
@@ -457,7 +458,7 @@ export type NormalizedEvent =
        * 缺席 = 这条更新**没说**状态(适配器的补数更新),❌ 不是「在压」。
        * fold 据此保留行上原来的状态;只有新立的行才默认 in_progress。
        */
-      status?: 'in_progress' | 'completed' | 'failed';
+      status?: CompactionStatus;
       /** `completed` 时给出的完整摘要；缺席表示这次压缩不带摘要。 */
       summary?: string;
       /** 是用户自己敲的 `/compact`，还是撞到窗口自动压的。 */

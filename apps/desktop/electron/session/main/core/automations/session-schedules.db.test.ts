@@ -24,6 +24,7 @@ vi.mock('@main/core/sessions/archiveSession', () => ({ archiveSession: vi.fn() }
 vi.mock('./actions/sessionCreate', () => ({ executeSessionCreate: vi.fn() }));
 vi.mock('@main/core/sessions/session-orchestration', () => ({
   messageSessionFrom: mocks.messageSessionFrom,
+  messageSessionDeliveryFrom: mocks.messageSessionFrom,
 }));
 
 // 2026-10-19 10:00 北京时间
@@ -39,7 +40,7 @@ beforeEach(async () => {
   fixture = await openFixture('empty');
   mocks.db = fixture.db;
   mocks.messageSessionFrom.mockReset();
-  mocks.messageSessionFrom.mockResolvedValue({ id: 'delivered-1' });
+  mocks.messageSessionFrom.mockResolvedValue({ id: 'delivered-1', status: 'delivered' });
   fixture.sqlite
     .prepare(`INSERT INTO projects (id, name, path, created_at, updated_at) VALUES ('project-1', 'Home', '/home', 0, 0)`)
     .run();

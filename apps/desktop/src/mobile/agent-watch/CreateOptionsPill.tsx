@@ -13,6 +13,7 @@ import { SearchField } from '@/components/ui/SearchField'
 import { Sheet } from '@/components/ui/Sheet'
 import {
   createPillLabel,
+  createPermissionModes,
   harnessBlockReason,
   harnessUsable,
   selectHarness,
@@ -69,7 +70,8 @@ export function CreateOptionsPill({
   const { t } = useTranslation('main')
   const { t: tFlow } = useTranslation('mobileTaskFlow')
   const [view, setView] = useState<'root' | 'harness' | 'permission' | 'model' | 'effort' | null>(null)
-  const harnessOption = options.harnesses.find((h) => h.id === selection.harness) ?? null
+  const baseHarnessOption = options.harnesses.find((h) => h.id === selection.harness) ?? null
+  const harnessOption = baseHarnessOption ? { ...baseHarnessOption, permissionModes: createPermissionModes(baseHarnessOption, models, modelsState, selection) } : undefined
   const label = createPillLabel(options, selection, models, phoneHost ? tFlow('phoneAgent') : undefined)
 
   // 一个值都没有就整个不画(与会话选项胶囊同一条):机器上没有 harness 的情形,
@@ -128,7 +130,8 @@ export function CreateOptionsPill({
                 choices={(harnessOption?.permissionModes ?? []).map((m) => ({
                   id: m,
                   name: t(`agentWatch.create.permission.${m}.name`),
-                  desc: t(`agentWatch.create.permission.${m}.desc`),
+                  desc: m === 'ai-review' && models?.autoReview?.disabled ? translateSessionMessage('taskConfig.reviewUnavailable') : t(`agentWatch.create.permission.${m}.desc`),
+                  disabled: m === 'ai-review' && models?.autoReview?.disabled,
                 }))}
                 selected={selection.permissionMode}
                 onPick={(id) => {
@@ -302,12 +305,12 @@ function ChoiceList({
   onPick,
 }: {
   dimension: string
-  choices: Array<{ id: string; name: string; desc?: string }>
+  choices: Array<{ id: string; name: string; desc?: string; disabled?: boolean }>
   selected: string | null
   defaultChoice?: { name: string; desc: string }
   onPick: (id: string | null) => void
 }) {
-  const rows: Array<{ id: string | null; name: string; desc?: string }> = defaultChoice
+  const rows: Array<{ id: string | null; name: string; desc?: string; disabled?: boolean }> = defaultChoice
     ? [{ id: null, ...defaultChoice }, ...choices]
     : choices
   return (
@@ -322,6 +325,7 @@ function ChoiceList({
             className="gg-aw-choice"
             role="radio"
             aria-checked={isSelected}
+            disabled={row.disabled}
             data-testid="agent-watch-create-choice"
             data-dimension={dimension}
             data-option-id={row.id ?? ''}

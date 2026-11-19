@@ -1,9 +1,14 @@
 import type { ProjectionFrame, ProjectionHostPacket, ProjectionViewerPacket } from '@shared/extensions/projection-protocol';
+import type { ProjectionPresentation } from '@shared/extensions/projection-presentation';
 
 /** A host-owned connection. App arguments must never choose its scope or transport. */
 export interface ProjectionConnection {
   /** local: a page on this computer; device: a page on another of the person's computers (projection-remote-host.ts). */
   transport: 'local' | 'device';
+  /** Opt in before any new packet type is sent to an older viewer. */
+  presentation?: boolean;
+  /** Internal canonical resource identity, supplied by the source registry. */
+  sourceId?: string;
   send(packet: ProjectionHostPacket): void;
   onClose(close: () => void): () => void;
 }
@@ -27,7 +32,8 @@ export class ProjectionViewer {
 
   private post(packet: ProjectionHostPacket): void {
     if (this.abort.signal.aborted) return;
-    try { this.connection.send(packet); }
+    try { this.connection.send(packet.type === 'state' && this.connection.presentation
+      ? { ...packet, sourceId: this.connection.sourceId } : packet); }
     catch { this.close('Connection closed'); }
   }
 
@@ -36,6 +42,11 @@ export class ProjectionViewer {
     if (this.sent) { this.pending = frame; return; }
     this.sent = frame;
     this.post({ type: 'frame', generation: this.generation, frame });
+  }
+
+  present(sourceId: string, revision: number, presentation: ProjectionPresentation | null): void {
+    if (!this.connection.presentation) return;
+    this.post({ type: 'presentation', sourceId, generation: this.generation, revision, presentation });
   }
 
   ack(packet: Extract<ProjectionViewerPacket, { type: 'ack' }>): void {

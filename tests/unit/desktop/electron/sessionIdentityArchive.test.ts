@@ -10,7 +10,7 @@ vi.mock('../../../../apps/desktop/electron/supabase', () => ({
 
 const receipt = { userId: 'old-agent', removedAt: '2026-10-31T03:00:00Z' }
 const auth = { accessToken: 'test-token', refreshToken: '', userId: 'owner' }
-const host = (env: NodeJS.ProcessEnv, beforeIdentityRemoval?: (id: string) => (removed: boolean) => void) => createSessionpageIdentityHost({
+const host = (env: NodeJS.ProcessEnv, beforeIdentityRemoval?: Parameters<typeof createSessionpageIdentityHost>[0]['beforeIdentityRemoval']) => createSessionpageIdentityHost({
   beforeIdentityRemoval,
   env, getAuth: async () => auth, resolveDeviceId: async () => 'device',
   resolveProjectName: async () => 'Project', sessionFacts: async () => null, listSessionFacts: async () => [],
@@ -21,6 +21,20 @@ const bind = (env: NodeJS.ProcessEnv, key: string, id = 'old-agent') => createTe
 beforeEach(() => cloud.rpc.mockReset())
 
 describe('shared identity host archival receipt', () => {
+  it('waits for admitted state writes before it removes cloud write authority', async () => {
+    const env = await isolatedGuguEnv('gugu-runtime-remove-drain-')
+    await bind(env, 'emdash_session_id')
+    const draining = Promise.withResolvers<(removed: boolean) => void>()
+    const settle = vi.fn(), pause = vi.fn(() => draining.promise)
+    cloud.rpc.mockResolvedValueOnce({ data: { user_id: receipt.userId, removed_at: receipt.removedAt, remove_social_identity: true }, error: null })
+    const operation = host(env, pause).archive('same-task')
+    await vi.waitFor(() => expect(pause).toHaveBeenCalledOnce())
+    expect(cloud.rpc).not.toHaveBeenCalled()
+    draining.resolve(settle)
+    await expect(operation).resolves.toEqual(receipt)
+    expect(settle).toHaveBeenCalledExactlyOnceWith(true)
+  })
+
   it.each([true,false])('pauses publication before the removal request and settles confirmation=%s',async success=>{
     const env=await isolatedGuguEnv('gugu-panel-remove-race-')
     await bind(env,'emdash_session_id')

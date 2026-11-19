@@ -6,6 +6,7 @@ import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { PaneHeader } from '../ui/Pane'
 import { useTranslation } from 'react-i18next'
+import type { FileAnnotationContext } from '../preview/FilePreviewAnnotations'
 import { FileTextContent } from '../preview/FileTextContent'
 import type { DocumentPreviewKind } from './documentPreview'
 import type { MessageActionItem } from './messageActionItems'
@@ -74,18 +75,22 @@ export interface MessageFilePreviewPanelProps {
   connection?: ReactNode
   onCite?: (selection: FileViewerSelection) => void | Promise<void>
   onSend?: (selection: FileViewerSelection, at: DOMRect) => void
+  annotation?: FileAnnotationContext
 }
 
 /** The reading zoom each kind of preview keeps (a video or an unsupported file has none). */
 const READING_ZOOM: Partial<Record<DocumentPreviewKind, FileZoomKind>> = { image: 'image', markdown: 'markdown', text: 'text-code', html: 'html', pdf: 'pdf', docx: 'docx' }
 
-export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, onVideoError, kind, content, loading, showLoadingStatus, error, onReadAgain, loadingLabel, loadingFraction, actions = [], onOpenExternal, onBack, onClose, mobile = false, fill = false, tabbed = false, registerHtml, at, unreadableAction, onEdit, connection, onCite, onSend }: MessageFilePreviewPanelProps) {
+export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, onVideoError, kind, content, loading, showLoadingStatus, error, onReadAgain, loadingLabel, loadingFraction, actions = [], onOpenExternal, onBack, onClose, mobile = false, fill = false, tabbed = false, registerHtml, at, unreadableAction, onEdit, connection, onCite, onSend, annotation }: MessageFilePreviewPanelProps) {
   const { t } = useTranslation('messaging')
   const { translate } = useSessionMessages()
   const pane = useContext(PaneContext)?.pane
   const tabId = pane?.resolvedActiveTabId
   // This panel's own zoom: its ⋯ menu row and the document under it change it; a panel beside it keeps its own (#2567).
   const [zoomView] = useState(createFileZoomView)
+  const [annotationToolbar, setAnnotationToolbar] = useState<HTMLSpanElement | null>(null)
+  const htmlAnnotation = kind === 'html' && !mobile && annotation ? annotation : undefined
+  const annotationAction = htmlAnnotation ? <span ref={setAnnotationToolbar} className="inline-flex" /> : null
   const fileToolbar = tabbed && !mobile && pane && tabId
     ? <FileToolbar host={pane} tabId={tabId} path={<span className="flex min-w-0 flex-1 items-center justify-end overflow-hidden whitespace-nowrap">
       <span className="flex min-w-0 flex-[0_2_auto] items-center justify-end overflow-hidden text-xs text-[var(--text-secondary)]">
@@ -93,7 +98,7 @@ export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, on
       </span>
       <span className="min-w-0 flex-1 truncate" title={file.fileName}>{file.fileName}</span>
       {connection ? <span className="ml-2 flex min-w-0 shrink text-xs text-[var(--text-secondary)]">{connection}</span> : null}
-    </span>} mode={onEdit || kind === 'text' || kind === 'markdown' ? 'preview' : undefined} canEdit={!!onEdit} onModeChange={(next) => { if (next === 'source') onEdit?.() }} menu={<DropdownMenu>
+    </span>} actions={annotationAction} mode={onEdit || kind === 'text' || kind === 'markdown' ? 'preview' : undefined} canEdit={!!onEdit} onModeChange={(next) => { if (next === 'source') onEdit?.() }} menu={<DropdownMenu>
       <DropdownMenuTrigger render={<ToolbarButton size="icon-sm" variant="ghost" aria-label={translate('tabs.more')} title={translate('tabs.more')} />}><MoreHorizontal className="size-3.5" /></DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {actions.map((item) => <DropdownMenuItem key={item.key} disabled={item.disabled} onClick={item.onSelect}><item.icon />{item.label}</DropdownMenuItem>)}
@@ -136,6 +141,7 @@ export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, on
               {connection ? <span className="flex min-w-0 text-[length:var(--font-caption)] leading-[var(--lh-caption)] text-[var(--text-secondary)]">{connection}</span> : null}
             </span>
           </div>
+          {annotationAction}
           <IconButton size="md" aria-label={onBack ? t('common.close') : t('chatArea.filePreview.close')} title={onBack ? t('common.close') : t('chatArea.filePreview.close')} onClick={onClose}><X size={18} /></IconButton>
         </header>
       )}
@@ -148,7 +154,7 @@ export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, on
       {fileToolbar || mobile || ((loading || error) && file.sizeBytes === 0) ? null : <div style={{ padding: '0 18px 10px', color: 'var(--text-tertiary)', fontSize: 'var(--font-caption)', flexShrink: 0 }}>{formatAttachmentSize(file.sizeBytes)}{file.mimeType ? ` (${file.mimeType})` : ''}</div>}
       {showLoadingStatus && !loading ? loadingStatus : null}
       <div ref={kind === 'text' || kind === 'markdown' ? textRef : undefined} data-file-selection style={{ flex: 1, minHeight: 0, overflow: 'auto', color: 'var(--text-primary)' }}>
-        {loading ? loadingStatus : failure ? <div style={{ ...statusStyle, color: 'var(--danger-fg)' }}><p role="alert">{failure}</p>{onReadAgain ? <Button size="sm" variant="secondary" onClick={onReadAgain}>{t('chatArea.filePreview.readAgain')}</Button> : unreadableAction ? <div>{unreadableAction}</div> : null}</div> : kind === 'video' ? <video data-testid="message-file-preview-video" src={videoUrl} onError={event => onVideoError?.(event.currentTarget)} controls autoPlay playsInline className="block max-h-full w-full" /> : kind === 'unsupported' ? <div style={statusStyle}>{t('chatArea.filePreview.unsupported')}{unreadableAction ? <div>{unreadableAction}</div> : null}</div> : kind === 'image' && typeof content === 'string' ? <ImageRenderer file={{ path: file.fileName, content }} onError={() => setUndrawable(content)} /> : typeof content === 'string' && kind === 'text' && /\.csv$/i.test(file.fileName) ? <CsvTable content={content} /> : typeof content === 'string' && (kind === 'text' || kind === 'markdown') ? <FileTextContent key={content} content={content} kind={kind} onCite={onCite} onSend={onSend} style={{ padding: fileToolbar ? '4px 18px 16px' : '16px 18px', zoom }} /> : <Suspense fallback={loadingStatus}><DocumentPreviewContent kind={kind} content={content} title={file.fileName} onOpenExternally={onOpenExternal} registerHtml={registerHtml} at={at} /></Suspense>}
+        {loading ? loadingStatus : failure ? <div style={{ ...statusStyle, color: 'var(--danger-fg)' }}><p role="alert">{failure}</p>{onReadAgain ? <Button size="sm" variant="secondary" onClick={onReadAgain}>{t('chatArea.filePreview.readAgain')}</Button> : unreadableAction ? <div>{unreadableAction}</div> : null}</div> : kind === 'video' ? <video data-testid="message-file-preview-video" src={videoUrl} onError={event => onVideoError?.(event.currentTarget)} controls autoPlay playsInline className="block max-h-full w-full" /> : kind === 'unsupported' ? <div style={statusStyle}>{t('chatArea.filePreview.unsupported')}{unreadableAction ? <div>{unreadableAction}</div> : null}</div> : kind === 'image' && typeof content === 'string' ? <ImageRenderer file={{ path: file.fileName, content }} onError={() => setUndrawable(content)} /> : typeof content === 'string' && kind === 'text' && /\.csv$/i.test(file.fileName) ? <CsvTable content={content} /> : typeof content === 'string' && (kind === 'text' || kind === 'markdown') ? <FileTextContent key={content} content={content} kind={kind} onCite={onCite} onSend={onSend} annotation={annotation} style={{ padding: fileToolbar ? '4px 18px 16px' : '16px 18px', zoom }} /> : <Suspense fallback={loadingStatus}><DocumentPreviewContent kind={kind} content={content} title={file.fileName} onOpenExternally={onOpenExternal} registerHtml={registerHtml} at={at} htmlAnnotation={htmlAnnotation && { ...htmlAnnotation, toolbar: annotationToolbar }} /></Suspense>}
       </div>
     </aside>
     </FileZoomViewContext.Provider>

@@ -45,8 +45,8 @@ describe('Messages returns to the shared screen', () => {
     { kind: 'sample-project' },
   ]
   for (const content of contents) {
-    // Away on the library or an App's page (the assistant's page is its App: the built-in assistant view is gone).
-    for (const away of ['library', 'app'] as const) {
+    // Away on the marketplace or an App's page (the assistant's page is its App: the built-in assistant view is gone).
+    for (const away of ['apps', 'app'] as const) {
       it(`returns from ${away} to the focused ${content.kind} without replacing its group`, async () => {
         appState.navigation.navigate('session', { projectId: 'old-project', sessionId: 'old-session' })
         screenLayout.show({ kind: 'chat', chatId: 'beside' })
@@ -67,7 +67,7 @@ describe('Messages returns to the shared screen', () => {
 
   it('an empty screen opens home instead of reopening stale session parameters', async () => {
     appState.navigation.navigate('session', { projectId: 'old-project', sessionId: 'old-session' })
-    appState.navigation.navigate('library')
+    appState.navigation.navigate('apps')
     await clickMessages()
     expect(appState.navigation.currentViewId).toBe('home')
     expect(screenLayout.snapshot).toBeNull()
@@ -76,7 +76,7 @@ describe('Messages returns to the shared screen', () => {
   it('a screen containing only an App remains a screen', async () => {
     screenLayout.show({ kind: 'app', tabKind: 'notes.main' })
     const saved = screenLayout.snapshot
-    appState.navigation.navigate('library')
+    appState.navigation.navigate('apps')
     await clickMessages()
     expect(appState.navigation.currentViewId).toBe('screen')
     expect(screenLayout.snapshot).toEqual(saved)
@@ -103,11 +103,11 @@ describe('#2548 the sidebar as one list: 「消息」 again folds and unfolds th
     }
   })
 
-  it('away on the library it brings the list back first, as today (no toggle)', async () => {
+  it('away on the marketplace it brings the list back first, as today (no toggle)', async () => {
     publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
     const unregister = publishPanelToggle('list:sessions', sidebar)
     try {
-      appState.navigation.navigate('library')
+      appState.navigation.navigate('apps')
       await clickMessages()
       expect(sidebar.toggle).not.toHaveBeenCalled()
     } finally {

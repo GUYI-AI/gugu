@@ -175,11 +175,10 @@ export function phoneFileTools({ agent, job, cloud, store, env, authorize, emit,
         await store.save()
         let endpoint = await cloud.attachmentEndpoint()
         const contentType = resolveAttachmentMimeType(name, args.mime_type ?? file.mime_type)
-        // The message goes with the file's index; its bytes follow it (one path for every sender). A restart that finds the
-        // message committed only uploads them, under a new plan.
+        // The message goes with the file's index; its bytes follow it. A committed message keeps its original staging key.
         let declared = entry.stagingKey ? { staging_key: entry.stagingKey, sha256: entry.sha256, size_bytes: entry.sizeBytes } : null
         if (!declared) {
-          declared = await declareAttachment(endpoint, { bytes, contentType }, { chat_id: id, as: agent.agentUserId })
+          declared = await declareAttachment(endpoint, { bytes, contentType }, { chat_id: id, as: agent.agentUserId, request_id: messageId })
           Object.assign(entry, { stagingKey: declared.staging_key, sha256: declared.sha256, sizeBytes: declared.size_bytes })
           await store.save()
         }

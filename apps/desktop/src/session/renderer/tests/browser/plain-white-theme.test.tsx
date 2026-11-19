@@ -7,7 +7,7 @@ import { buildBubbleStyle } from '@/components/chat/messageBubbleStyle'
 import { i18n, LocalizationProvider, setLocalePreference } from '@/i18n'
 import { getLocaleSnapshot } from '@/i18n/runtime'
 import { ThemeProvider } from '@/store/theme'
-import { hydrateHostTheme, writeThemePreference } from '@/session/renderer/lib/theme/host-theme'
+import { hydrateHostTheme, readThemePreference, writeThemePreference } from '@/session/renderer/lib/theme/host-theme'
 import '@/i18n/registerMainCatalog'
 import '@/styles/tokens.css'
 import '@/session/renderer/features/assistant/assistant-today.css'
@@ -57,7 +57,7 @@ it.each([
     await act(async () => { await userEvent.click(options[index]!) })
     expect(options[index]!.getAttribute(selected)).toBe('true')
     expect(options.filter(button => button.getAttribute(selected) === 'true')).toHaveLength(1)
-    expect(localStorage.getItem('app-theme')).toBe(preference)
+    expect(readThemePreference()).toBe(preference)
   }
 })
 

@@ -21,6 +21,7 @@ import { ProductTour } from '../productTour/ProductTour'
 import { availableTourSteps } from '../productTour/tourTargets'
 import { FeatureFilms } from '../productTour/FeatureFilms'
 import type { ProductTourRequest, TourStepId } from '../../lib/productTour'
+import { readAgentHomeUpgradeResults, showAgentHomeUpgradeNotice } from '@renderer/features/settings/subscriptions/agent-home-upgrade-notice'
 import { FirstRunHarness } from './FirstRunHarness'
 import { FirstRunTerminal } from './FirstRunTerminal'
 import { FirstRunInstallProvider } from './FirstRunInstallProvider'
@@ -42,8 +43,9 @@ const STEPS: readonly StepKind[] = platform.kind === 'electron' ? ['profile', 'h
 function StepCount({ step }: { step: StepKind }) {
   const { t } = useTranslation('main')
   // 只有一页(手机)就不写「1 / 1」。
-  if (STEPS.length < 2) return null
-  return <p className="first-run-step-count" data-testid="first-run-step-count">{t('firstRun.stepCount', { current: STEPS.indexOf(step) + 1, total: STEPS.length })}</p>
+  const steps = STEPS
+  if (steps.length < 2) return null
+  return <p className="first-run-step-count" data-testid="first-run-step-count">{t('firstRun.stepCount', { current: steps.indexOf(step) + 1, total: steps.length })}</p>
 }
 
 type GateState =
@@ -78,7 +80,7 @@ export function FirstRunGate(props: { user: AuthUser; children: ReactNode }) {
 
 function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode }) {
   const { t } = useTranslation('main')
-  const [state, setState] = useState<GateState>(() => firstRunDoneHere(user.id) ? { kind: 'done' } : { kind: 'loading' })
+  const [state, setState] = useState<GateState>({ kind: 'loading' })
   const done = useCallback(() => { rememberFirstRunDone(user.id); setState({ kind: 'done' }) }, [user.id])
   // 退回上一页时「已填的内容还在」(规范 7-2):选过的 Agent 记在这里,称呼和身份由 FirstRunProfile 从账号读回。
   const harnessPicked = useRef<readonly string[] | null>(null)
@@ -92,7 +94,7 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
   // ❌ 等 identityPending 落定再读:身份行在注册那一刻就在(auth.users 的插入触发器),pending 只是「客户端还没补全」;
   // 补全一直落不了地时,等它 = 门口永远转圈,而主界面本来照样能用。补全晚到的称呼 / 头像由 FirstRunProfile 跟上。
   const load = useCallback(() => {
-    if (firstRunDoneHere(user.id)) return
+    if (firstRunDoneHere(user.id)) { done(); return }
     setState({ kind: 'loading' })
     readFirstRunProgress(user.id)
       .then((progress) => {
@@ -101,7 +103,8 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
         // 手机只有资料那一页:回到它(已填好),「继续」即走完。
         else if (progress.stage === 'intro' && platform.kind === 'electron') {
           harnessPicked.current = progress.harness
-          setState(!progress.harness ? { kind: 'harness' } : !progress.terminalSeen ? { kind: 'terminal' } : { kind: 'tourChoice' })
+          if (!progress.harness) setState({ kind: 'harness' })
+          else setState({ kind: progress.terminalSeen ? 'tourChoice' : 'terminal' })
         }
         else setState({ kind: 'profile', occupation: progress.occupation })
       })
@@ -112,6 +115,15 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
   }, [user.id, done])
 
   useEffect(load, [load])
+
+  useEffect(() => {
+    if (state.kind !== 'done' || platform.kind !== 'electron') return
+    let active = true
+    void readAgentHomeUpgradeResults().then((homes) => {
+      if (active) showAgentHomeUpgradeNotice(homes)
+    }).catch((error: unknown) => log.error({ error: String(error) }, 'read configuration upgrade notices failed'))
+    return () => { active = false }
+  }, [state.kind])
 
   const startTour = useCallback((from: TourStepId | null) => {
     const steps = availableTourSteps()

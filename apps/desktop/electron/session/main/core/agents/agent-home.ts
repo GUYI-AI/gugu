@@ -25,11 +25,16 @@ import { getPlugin } from '@main/core/agents/plugin-registry';
  * ❌ 不硬编码任何一家:只认 descriptor 上的 `configRoot` 声明。没声明的家返回空对象。
  */
 const cache = new Map<string, Promise<Resolved>>();
+let prepareUpgrade: ((providerId: string) => Promise<void>) | undefined;
 
 type Resolved = { env: Record<string, string>; root: string };
 
-export async function resolveAgentHomeEnv(providerId: string): Promise<Record<string, string>> {
-  return (await resolveOnce(providerId)).env;
+export function setAgentHomeUpgradePreparation(prepare: (providerId: string) => Promise<void>): void {
+  prepareUpgrade = prepare;
+}
+
+export async function resolveAgentHomeEnv(providerId: string, purpose?: 'version-probe'): Promise<Record<string, string>> {
+  return (await (purpose ? compute(providerId, purpose) : resolveOnce(providerId))).env;
 }
 
 /**
@@ -62,6 +67,7 @@ export async function prepareAgentFirstRunState(
     sourceEnv: process.env,
   });
   if (!home) return null;
+  await prepareUpgrade?.(providerId);
   await ensureAgentHome(home);
   if (home.firstRunState && home.firstRunState.length > 0) {
     await applyAgentFirstRunState(home, createLocalPluginFs(home.configRoot), workspacePath);
@@ -80,7 +86,7 @@ function resolveOnce(providerId: string): Promise<Resolved> {
   return task;
 }
 
-async function compute(providerId: string): Promise<Resolved> {
+async function compute(providerId: string, purpose?: 'version-probe'): Promise<Resolved> {
   const osHomeDir = homedir();
   let bundle;
   try {
@@ -100,8 +106,12 @@ async function compute(providerId: string): Promise<Resolved> {
     sourceEnv: process.env,
   });
   if (!home) return { env: {}, root: osHomeDir };
-  // ⚠️ 首次会**整份复制**用户那份过来。时机与幂等见 `helpers/agent-home.ts` 的抬头。
-  await ensureAgentHome(home);
+  // Version probes discover CLIs for the upgrade inventory, so they must not wait
+  // for the migration that consumes that inventory.
+  if (!purpose) {
+    await prepareUpgrade?.(providerId);
+    await ensureAgentHome(home);
+  }
   const spec = configRoot;
   return {
     env: spec?.injectEnv === false ? {} : { [home.envVar]: home.configRoot },

@@ -3,6 +3,9 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../../support/testHarness'
 
+vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
+  getAgentConfigRuntimeClient: async () => ({ scanAgentHomes: async () => ({ success: true, data: [] }) }),
+}))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { kind: 'electron' } }))
 const io = vi.hoisted(() => ({
   firstRunDoneHere: vi.fn(() => false), rememberFirstRunDone: vi.fn(),

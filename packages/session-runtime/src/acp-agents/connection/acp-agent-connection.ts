@@ -168,7 +168,7 @@ export async function createAcpAgentConnection(
   let connection: AcpAgentApi;
   try {
     connection = behavior.connect({ stdin: handle.stdin, stdout: handle.stdout }, (agent) =>
-      buildClient(agent, handle)
+      buildClient(agent, handle), { cliVersion: spawn.cliVersion, autoReviewAllowed: spawn.autoReviewAllowed, autoReviewUnavailable: spawn.autoReviewUnavailable, autoReviewByHaiku: spawn.autoReviewByHaiku }
     );
   } catch (e) {
     await connectionScope.dispose();
@@ -412,11 +412,9 @@ function initializeAgent(agent: AcpAgentApi, host: AcpAgentProcessHost) {
        * 出处:ACP `docs/rfds/session-compaction.mdx`,逐字
        * `{"clientCapabilities":{"session":{"compaction":{}}}}`。
        *
-       * ⚠️ 声明了不等于今天就看得见:2026-09-10 实查 `@agentclientprotocol/claude-agent-acp`
-       * 0.38.0,它把压缩报成一句字面文本 `"Compacting..."` 的 `agent_message_chunk`
-       * (dist/acp-agent.js 的 `system/status` 分支),一条 `compaction_update` 都不发。
-       * 这一位是**接好了等它** —— ❌ 别因为界面上还没出现过就断定这条路没通,
-       * 也❌ 别改去匹配那句英文文案:那是供应商的措辞,改一次就静默失灵。
+       * claude 适配器见到这一位就发 `compaction_update`,回合在压缩报终态之前收场时
+       * 补一条 `cancelled`;解码见 `decode.ts` 的 `decodeCompactionSessionUpdate`。
+       * ❌ 别改去匹配 `"Compacting..."` 这类英文文案:那是供应商的措辞,改一次就静默失灵。
        *
        * `notices`:不声明,供应商的提示就伪装成不带 messageId 的 agent 文本,闲着时来一条会开出
        * 没人关的自发轮(会话一直 working、下一句永远排队)。

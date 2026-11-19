@@ -133,3 +133,25 @@ export function chatsInReadScope<T extends ChatScopeRow>(chats: readonly T[], ro
 export function hasUnreadInRows(rows: readonly { unread_count: number; is_marked_unread?: boolean }[]): boolean {
   return rows.some((row) => row.unread_count > 0 || row.is_marked_unread === true)
 }
+
+/** Personal list actions do not archive the task, leave its group or remove its contact. */
+export function conversationCanHide(kind: string | null): boolean {
+  return kind === 'dm' || kind === 'ai' || kind === 'group' || kind === 'topic'
+}
+export type PersonalConversationAction = 'pin' | 'mark-read' | 'notifications' | 'hide-chat' | 'mark-all-read' | 'unpin-from-sidebar' | 'delete-chat'
+export type PersonalConversationMenuState = {
+  canDelete: boolean; pinned?: boolean; pinnedToSidebar?: boolean; notificationsMuted?: boolean
+  hasUnread: boolean; hasAnyUnread?: boolean
+}
+export function personalConversationMenu(state: PersonalConversationMenuState): {
+  id: PersonalConversationAction; label: string; icon: 'pin' | 'read' | 'notifications' | 'hide' | 'sidebar' | 'trash'; disabled?: boolean; fold?: boolean; danger?: boolean
+}[] {
+  return [
+    { id: 'pin', label: state.pinned ? 'unpin' : 'pin', icon: 'pin' },
+    { id: 'mark-read', label: 'markRead', icon: 'read', disabled: !state.hasUnread },
+    { id: 'notifications', label: state.notificationsMuted ? 'enableNotifications' : 'disableNotifications', icon: 'notifications' },
+    ...(state.canDelete ? [{ id: 'hide-chat', label: 'hide', icon: 'hide' } as const] : []),
+    ...(state.pinnedToSidebar ? [{ id: 'unpin-from-sidebar', label: 'unpinFromSidebar', icon: 'sidebar', fold: true } as const] : []),
+    ...(state.canDelete ? [{ id: 'delete-chat', label: 'clearHistory', icon: 'trash', danger: true } as const] : []),
+  ]
+}

@@ -16,6 +16,7 @@ export type BrowserWebviewElement = HTMLElement & {
   getURL(): string;
   getTitle(): string;
   getWebContentsId(): number;
+  send?(channel: string, value: unknown): Promise<void>;
   goBack(): void;
   goForward(): void;
   reload(): void;

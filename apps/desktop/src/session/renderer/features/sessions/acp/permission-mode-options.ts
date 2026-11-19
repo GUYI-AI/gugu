@@ -1,5 +1,6 @@
 import {
   classifyProviderPermissionMode,
+  permissionModeSupportsBillingRoute,
   GUGU_PERMISSION_MODES,
   type GuguPermissionMode,
   isDestructivePermissionMode,
@@ -24,30 +25,14 @@ export function sessionPermissionModeOptions(
   options: Options | null,
   liveSetting?: Pick<LiveSettingCapability, 'channel'> | null,
   sessionModes?: 'permission' | 'none',
+  billing?: { route: 'own' | 'platform' | 'unknown'; modeMap?: ProviderPermissionModeMap },
 ): Options | null {
   if (sessionModes === 'none') return null;
-  return liveSettingOptions(options, liveSetting);
-}
-
-/**
- * #7342 停下了(没有活会话、也不在起):引擎报的那份原生档位清单跟着进程没了,用 provider 声明的
- * 映射表把四档摆回来(id 仍是原生 id,`localizePermissionModeOptions` 照常收成四档、改名),
- * 选中记录里那一档。危险档的判法与活会话那份逐字相同(`isDestructivePermissionMode`)。
- * 没有映射表、或记录那一档这家没有原生 id = 说不出,❌ 猜:不摆(同「没声明表就一个字都不动」)。
- */
-export function detachedPermissionModeOptions(
-  tier: GuguPermissionMode | null,
-  modeMap: ProviderPermissionModeMap | undefined
-): { options: Options; selected: string } | null {
-  if (!tier || !modeMap) return null;
-  const selected = modeMap[tier]?.id;
-  if (!selected) return null;
-  const options: Options = {};
-  for (const rung of GUGU_PERMISSION_MODES) {
-    const id = modeMap[rung]?.id;
-    if (id) options[id] = { name: id, destructive: isDestructivePermissionMode(id) };
-  }
-  return { options, selected };
+  const available = liveSettingOptions(options, liveSetting);
+  if (!available || !billing) return available;
+  return Object.fromEntries(Object.entries(available).filter(([id]) => permissionModeSupportsBillingRoute(
+    classifyProviderPermissionMode(id, billing.modeMap), billing.modeMap, billing.route,
+  )));
 }
 
 /** 该档在这个 agent 上真正能用的那个原生 id —— 声明的 id 优先,其次别名,都没上报就没有。 */
@@ -76,13 +61,14 @@ function reportedIdFor(
  * 所以:**声明了映射表就只摆它声明过的那几档**(id 仍是原生 id,发下去照样认);
  * **没声明表就一个字都不动** —— 猜着改一半正是混杂的来源。
  *
- * ⚠️ 收敛的代价:同归一档的其余原生档(claude 的 `auto` / `dontAsk`)不再单列。
+ * Native dontAsk remains a read-only alias. Eligible auto is a separate AI-review row, filtered by the host first.
  */
 /** 咕咕四档的显示名(下拉、确认框共用这一份)。 */
 export const PERMISSION_TIER_LABEL_KEYS = {
   plan: 'taskConfig.permissionPlan',
   'read-only': 'taskConfig.permissionReadOnly',
   edit: 'taskConfig.permissionEdit',
+  'ai-review': 'taskConfig.permissionAiReview',
   'full-access': 'taskConfig.permissionFullAccess',
 } as const satisfies Record<GuguPermissionMode, SessionMessageLookupKey>;
 
@@ -94,7 +80,10 @@ export function localizePermissionModeOptions(
   nameForTier?: (tier: GuguPermissionMode) => string
 ): Options | null {
   if (!options) return null;
-  if (!modeMap) return options;
+  if (!modeMap) return Object.fromEntries(Object.entries(options).map(([id, option]) => [id, { ...option,
+    name: option.name.startsWith('taskConfig.') ? translate(option.name as SessionMessageLookupKey) : option.name,
+    description: option.description?.startsWith('taskConfig.') ? translate(option.description as SessionMessageLookupKey) : option.description,
+  }]));
 
   const labels: Record<GuguPermissionMode, { name: string; description: string }> = {
     plan: {
@@ -109,6 +98,10 @@ export function localizePermissionModeOptions(
       name: translate(PERMISSION_TIER_LABEL_KEYS.edit),
       description: translate('taskConfig.permissionEditHint'),
     },
+    'ai-review': {
+      name: translate('taskConfig.permissionAiReview'),
+      description: translate('taskConfig.permissionAiReviewHint'),
+    },
     'full-access': {
       name: translate(PERMISSION_TIER_LABEL_KEYS['full-access']),
       description: translate('taskConfig.permissionFullAccessHint'),
@@ -119,7 +112,9 @@ export function localizePermissionModeOptions(
   for (const rung of GUGU_PERMISSION_MODES) {
     const id = reportedIdFor(rung, options, modeMap);
     if (!id) continue;
-    collapsed[id] = { ...options[id], ...labels[rung], name: nameForTier?.(rung) ?? labels[rung].name };
+    const reason = options[id].disabled ? options[id].description : undefined;
+    const description = reason?.startsWith('taskConfig.') ? translate(reason as SessionMessageLookupKey) : reason ?? labels[rung].description;
+    collapsed[id] = { ...options[id], ...labels[rung], description, destructive: isDestructivePermissionMode(id), name: nameForTier?.(rung) ?? labels[rung].name };
   }
 
   // 表声明的档一个都没上报 = 这张表对不上这个 agent。别摆一个空下拉,原样交出去。

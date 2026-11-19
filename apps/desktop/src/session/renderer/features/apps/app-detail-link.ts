@@ -3,10 +3,10 @@ import { cachedDevicesAccount, readCachedDevices } from '@/store/devicesCache';
 import { revealSessionpage } from '@/hooks/useSessionpageReveal';
 import { rpcOn } from '@renderer/lib/ipc';
 import { appState } from '@renderer/lib/stores/app-state';
-import { libraryDeviceStore, LOCAL_DEVICE_SCOPE } from '@renderer/features/remote-hosts/device-scope-store';
+import { LOCAL_DEVICE_SCOPE } from '@renderer/features/remote-hosts/device-scope-store';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 
-/** Validate the named host before selecting a scope: the picker otherwise falls back to local. */
+/** Validate the named host before opening a detail that can act on it. */
 export async function openAppDetailLink(target: AppDetailLink, ownerId: string, isCurrent = () => true) {
   let scope = LOCAL_DEVICE_SCOPE;
   if (target.deviceId) {
@@ -30,7 +30,6 @@ export async function openAppDetailLink(target: AppDetailLink, ownerId: string, 
       ...(appState.navigation.currentViewId === 'apps' ? { agentDetailFrom: 'apps' } : {}),
     });
   } else {
-    libraryDeviceStore.select(scope);
-    appState.navigation.navigate('apps', { detail: target });
+    appState.navigation.navigate('apps', { detail: scope === LOCAL_DEVICE_SCOPE && target.deviceId ? { ...target, deviceId: undefined } : target });
   }
 }

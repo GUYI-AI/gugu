@@ -27,6 +27,7 @@ const THREAD = 'th-6628'
 const failed = (text) => ({ isError: true, content: [{ type: 'text', text }] })
 const ok = (text) => ({ content: [{ type: 'text', text }] })
 const SCRIPTS = {
+  RETRYING: [],
   CATALOG_EXT_ERROR: [['gugu', 'catalog_call', { result: failed('AX-FAIL') }]],
   NATIVE_RETRY: [
     ['gugu', 'session_list_harnesses', { status: 'failed', error: { message: 'rows must be a count like "20"' } }],
@@ -51,6 +52,19 @@ rl.on('line', (line) => {
     const key = Object.keys(SCRIPTS).find((k) => text.includes(k))
     out({ id: m.id, result: { turn: { id: turnId, status: 'inProgress' } } })
     out({ method: 'turn/started', params: { threadId: THREAD, turn: { id: turnId, status: 'inProgress' } } })
+    if (key === 'RETRYING') {
+      const retry = (message) => out({ method: 'error', params: { threadId: THREAD, turnId, willRetry: true, error: { message } } })
+      retry('Reconnecting: tls handshake eof')
+      setTimeout(() => {
+        retry('Reconnecting: waiting for network')
+        out({ method: 'item/agentMessage/delta', params: { threadId: 'other-thread', turnId, itemId: 'other', delta: 'other output' } })
+        out({ method: 'item/agentMessage/delta', params: { threadId: THREAD, turnId, itemId: 'empty', delta: '' } })
+        out({ method: 'item/completed', params: { threadId: THREAD, turnId, item: { type: 'userMessage', id: 'incoming', content: [] } } })
+        out({ method: 'item/completed', params: { threadId: THREAD, turnId, item: { type: 'agentMessage', id: 'answer', text: 'resumed output' } } })
+        out({ method: 'turn/completed', params: { threadId: THREAD, turn: { id: turnId, status: 'completed' } } })
+      }, 20)
+      return
+    }
     ;(SCRIPTS[key] ?? []).forEach(([server, tool, end], i) => {
       const item = { type: 'mcpToolCall', id: turnId + '-item-' + i, server, tool, status: 'completed', ...end }
       out({ method: 'item/completed', params: { threadId: THREAD, turnId, item } })
@@ -89,9 +103,11 @@ function start() {
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   adapter = child
+  const updates: Array<{ sessionUpdate: string; _meta?: { guguRetrying?: { since: number; message: string } | null } }> = []
   const responses = new Map<number, { result?: unknown; error?: { code: number; message: string } }>()
   createInterface({ input: child.stdout }).on('line', observeCodexForegroundCompletion((line) => {
     const m = JSON.parse(line)
+    if (m.method === 'session/update') updates.push(m.params.update)
     if (m.id !== undefined && !m.method) responses.set(m.id, { result: m.result, error: m.error })
   }))
   let nextId = 1
@@ -102,7 +118,7 @@ function start() {
   }
   const reply = (id: number, what: string) =>
     awaitFact(what, () => responses.get(id), { producer: child })
-  return { send, reply }
+  return { send, reply, updates }
 }
 
 async function turnOutcome(script: string) {
@@ -114,6 +130,18 @@ async function turnOutcome(script: string) {
 }
 
 describe('#6628 codex ACP bridge: only a failed reply fails the turn', () => {
+  it('retains the first explicit retry instant and clears it only for resumed foreground output', async () => {
+    const rig = start()
+    await rig.reply(rig.send('initialize', { protocolVersion: 2, capabilities: {} }), 'initialize')
+    const created = (await rig.reply(rig.send('session/new', { cwd: dir, mcpServers: [] }), 'session/new')).result as { sessionId: string }
+    await rig.reply(rig.send('session/prompt', { sessionId: created.sessionId, prompt: [{ type: 'text', text: 'RETRYING' }] }), 'retrying turn settles')
+    const retries = rig.updates.filter(update => update._meta?.guguRetrying !== undefined).map(update => update._meta!.guguRetrying)
+    expect(retries).toHaveLength(3)
+    expect(retries[0]).toMatchObject({ since: expect.any(Number), message: 'Reconnecting: tls handshake eof' })
+    expect(retries[1]).toEqual({ since: retries[0]!.since, message: 'Reconnecting: waiting for network' })
+    expect(retries[2]).toBeNull()
+  })
+
   it('an extension tool reached through catalog_call reports isError, the model answers: the turn ends normally', async () => {
     expect(await turnOutcome('CATALOG_EXT_ERROR')).toEqual({ result: { stopReason: 'end_turn' }, error: undefined })
   })

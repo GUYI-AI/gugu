@@ -127,7 +127,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
   const lines = groups.flatMap((group) => [...(scoped ? [] : [{ kind: 'scope' as const, group }]), ...group.hits.map((hit) => ({ kind: 'hit' as const, hit }))])
   const named = useNameMatches(view.query, NAMED_LIMIT, names && !!view.query && facet === 'all' && chips.length === 0)
   const nameRows = [...named.groups.map(([id, chat]) => ({ id, userId: '', groupAvatar: chat.avatar ?? null, name: chat.name ?? '', open: () => openGroup(id) })),
-      ...named.people.map((person) => ({ id: person.id, userId: person.id, groupAvatar: undefined, name: person.name, open: () => openPerson(person.id) }))]
+      ...named.people.map((person) => ({ id: person.id, userId: person.id, groupAvatar: undefined, name: person.name, open: () => openPerson(person.id, person.chatId) }))]
   const selected = ordered.find((hit) => hit.id === selectedId) ?? ordered[0] ?? null
   // Words, a sender or a kind of message: any of them is a search; with none the panel shows the quick filters.
   const hasQuery = !!text.trim() || chips.some((chip) => chip.kind === 'from' || chip.kind === 'type')
