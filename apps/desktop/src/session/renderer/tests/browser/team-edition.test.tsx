@@ -5,6 +5,7 @@ import { i18n } from '@/i18n'
 import { AuthContext } from '@/store/auth'
 import { TeamApiProvider, TeamProvider, TeamAccessGate } from '@/features/team/context'
 import { TeamPage } from '@/features/team/TeamPage'
+import { SettingsPanel } from '@/components/SettingsPanel'
 import { TeamAuthPane } from '@/features/team/TeamAuthPane'
 import { TeamAccountMembership, TeamAccountMethods } from '@/features/team/TeamAccount'
 import { TeamApiError } from '@/features/team/errors'
@@ -44,6 +45,7 @@ it('shows Gugu IDs and searches names or exact IDs while omitting emails and man
   expect(harness.container.textContent).not.toContain('充值')
   expect(harness.container.textContent).not.toContain('xu@example.test')
   expect(harness.container.textContent).toContain('1,236')
+  await capture('member-identities')
   await userEvent.fill(page.getByRole('searchbox', { name: '搜索名字或咕咕号' }), '许澄')
   await until('name search reaches the complete permitted directory', () => harness.container.querySelectorAll('.gg-team-settings-member').length === 1)
   expect(directorySummary.mock.calls.at(-1)?.[0]?.query).toBe('许澄')
@@ -59,6 +61,17 @@ it('shows Gugu IDs and searches names or exact IDs while omitting emails and man
   expect(harness.container.textContent).not.toContain('·')
   expect(summary).not.toHaveBeenCalled(); expect(setCaps).not.toHaveBeenCalled()
   await capture('member-settings')
+})
+
+it('places team members inside Settings and redirects the old subscription destination', async () => {
+  await mountTeam('member', mockTeamApi('member'), <SettingsPanel inline initialSection="subscriptions" />)
+  await until('settings resolves the team destination', () => harness.container.querySelectorAll('.gg-team-settings-member').length === 3)
+  expect(harness.container.querySelector('[data-settings-section="team"]')).not.toBeNull()
+  expect(page.getByRole('button', { name: '团队', exact: true }).elements()).toHaveLength(1)
+  expect(page.getByRole('button', { name: '订阅', exact: true }).elements()).toHaveLength(0)
+  expect(harness.container.textContent).toContain('咕咕号 635813')
+  expect(harness.container.textContent).not.toContain('zhou@example.test')
+  await capture('settings-member')
 })
 
 it('loads and searches a 128-person team while keeping the summary above the member scroll area', async () => {
