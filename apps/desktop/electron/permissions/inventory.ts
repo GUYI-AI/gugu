@@ -9,18 +9,18 @@ export const CORE_TOOL_RISKS: Readonly<Record<string, ToolRisk>> = {
     session_list_harnesses session_list_models`),
   ...entries('read', 'medium', `activity_chat_list activity_context activity_list
     message_conversations message_download_file message_history message_invitations message_search owner_friends_list
-    project_list schedule_list session_children session_get session_list_tabs session_peers group_join_requests
+    group_folders schedule_list session_children session_get session_list_tabs session_peers group_join_requests
     profile_lookup profile_whoami session_devices message_members message_rules topic_list topic_members group_info group_list
     widget_get`),
-  ...entries('write', 'medium', `profile_update project_create schedule_cancel schedule_create
+  ...entries('write', 'medium', `profile_update schedule_cancel schedule_create
     session_close_tab session_open_in_tab session_set_parent session_stop group_avatar_set group_leave
     group_announcement_delete group_announcement_post group_announcement_update topic_delete`),
   ...entries('send', 'medium', `message_send session_message widget_send session_ask_user`),
   ...entries('execute', 'high', `app_check app_create app_pack session_spawn`),
   ...entries('owner', 'high', `message_send_as_owner`),
-  ...entries('social', 'high', `contact_friend message_invite topic_invite topic_open group_create group_add_agent group_join_decide project_get`),
+  ...entries('social', 'high', `contact_friend message_invite topic_invite topic_open group_create group_add_agent group_join_decide`),
   ...entries('permission', 'high', `app_install app_manage group_remove_member group_set_role group_update
-    project_add_folder project_remove_folder project_add_device project_remove_device project_restore_device session_archive`),
+    group_folder_bind group_folder_unbind session_archive`),
   ...entries('send', 'medium', 'web_search'),
   // Wrappers are expanded before evaluation. Their own entries do not confer permission on the payload.
   ...entries('execute', 'high', 'catalog_call device_call'),

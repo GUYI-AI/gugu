@@ -54,7 +54,7 @@ async function fixture() {
     const devices = [{ device_id: 'mac', label: 'My Mac', platform: 'darwin', online: true, this_machine: true, last_seen_at: null }]
     if (action.action === 'devices') return devices
     if (action.action === 'device_actions') return { devices }
-    if (action.action === 'project_list') return Array.from({ length: state.many ? 180 : 1 }, (_, i) => ({ project_id: `p-${i}`, name: state.name + i, path: '/work/' + i }))
+    if (action.action === 'group_folders') return Array.from({ length: state.many ? 180 : 1 }, (_, i) => ({ chat_id: `g-${i}`, folder_id: `w-${i}`, path: `/work/${state.name}${i}` }))
     if (action.action === 'schedule_list') return { schedules: [] }
     return {}
   }
@@ -225,8 +225,8 @@ it('retains the complete bounded index inline so required applications do not de
   expect(index).toContain('</gugu_resource_index>')
   expect(context).not.toContain('"details"')
   const rows = index.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line))
-  const projects = rows.find(row => row.source === 'projects')
-  expect(projects.read.tool).toBe('project_list')
+  const projects = rows.find(row => row.source === 'folders')
+  expect(projects.read.tool).toBe('group_folders')
   expect(projects.omitted_items).toBeGreaterThan(0)
   expect(projects.items.length).toBeLessThan(180)
 }, 15000)

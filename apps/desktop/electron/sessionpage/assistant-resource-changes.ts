@@ -23,7 +23,7 @@ const HOLD_MS = 10 * 60_000
 const json = (value: unknown) => (JSON.stringify(value) ?? 'null').replace(/[<>&\u2028\u2029]/g,
   c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)
 const text = (value: unknown) => typeof value === 'string' ? value : ''
-const key = (value: unknown) => text(value).replace(/^(?:device|project|schedule):/, '')
+const key = (value: unknown) => text(value).replace(/^(?:device|schedule):/, '')
 const filename = (value: unknown) => text(value).split('/').at(-1) ?? ''
 const safeName = (value: unknown) => text(value).slice(0, 160)
 
@@ -63,7 +63,7 @@ export function resourceGroups(lines: readonly string[], partial = false): Recor
     if (row.status !== 'read' || !Array.isArray(row.items)) continue
     const scope = key(row.device ?? (row.this_machine ? home : ''))
     const source = text(row.source)
-    const type = ({ projects: ['项目', 'project_list'], assistant_memory: ['记忆', 'Read'],
+    const type = ({ folders: ['文件夹', 'group_folders'], assistant_memory: ['记忆', 'Read'],
       assistant_schedules: ['定时', 'schedule_list'], integrations: ['连接应用', INTEGRATION_READ] } as const)[source]
     if (!type) continue
     const group: Group = { kind: type[0], read: type[1], items: {} }
@@ -71,12 +71,12 @@ export function resourceGroups(lines: readonly string[], partial = false): Recor
       const item = raw as Row
       const [provider, account] = source === 'integrations' ? integrationKey(item.id) : ['', undefined]
       const id = source === 'assistant_memory' ? filename(item.id) : source === 'integrations'
-        ? provider : key(item.project_id ?? item.id)
+        ? provider : key(item.folder_id ?? item.id)
       if (!id) continue
-      group.items[id] = { name: safeName(item.name ?? item.title) || id, scope,
+      group.items[id] = { name: safeName(item.name ?? item.title ?? item.path) || id, scope,
         ...(source === 'integrations' ? { accounts: [...new Set([...(group.items[id]?.accounts ?? []), account ?? 'default'])].sort() } : {}),
         state: source === 'integrations' ? integrationState(item.use, item.note) : source === 'assistant_memory' ? text(item.modifiedAt)
-          : source === 'projects' ? text(item.path) : source === 'assistant_schedules'
+          : source === 'folders' ? text(item.chat_id) : source === 'assistant_schedules'
             ? json([item.active, item.enabled, item.at, item.cron, item.tz, item.title]) : text(item.modifiedAt) }
     }
     groups[`${group.kind}:${scope}`] = group
@@ -164,7 +164,7 @@ export function createResourceChanges(owner: string, storage: { load(): Promise<
       await state()
       if (!value) return false
       if (value.notices.includes(operationId)) return true
-      const type = ({ devices: ['设备', 'session_devices'], projects: ['项目', 'project_list'], memory: ['记忆', 'Read'], schedules: ['定时', 'schedule_list'],
+      const type = ({ devices: ['设备', 'session_devices'], folders: ['文件夹', 'group_folders'], memory: ['记忆', 'Read'], schedules: ['定时', 'schedule_list'],
         integrations: ['连接应用', INTEGRATION_READ] } as const)[text(notice.resource)]
       if (!type) return false
       const scope = key(notice.deviceId), groupId = type[0] === '设备' ? 'devices' : `${type[0]}:${scope}`

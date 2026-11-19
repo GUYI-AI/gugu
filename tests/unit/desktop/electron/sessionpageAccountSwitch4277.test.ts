@@ -259,7 +259,7 @@ describe('#4277 会话不带账号:起 agent 时按当下登录的账号找/登�
     expect(activeRow()?.gugu_user_id).toBe(asA.guguAgentUserId)
     expect(parkedRows().map((r) => r.gugu_user_id)).toEqual([asB.guguAgentUserId])
     expect(registryUnregistered).toEqual([asB.guguAgentUserId])
-    expect(back.projectContext?.groupChatId, 'A 的群还是原来那个').toBe(groups[0].chatId)
+    expect(back.groupContext?.groupChatId, 'A 的群还是原来那个').toBe(groups[0].chatId)
   })
 
   it('老行没记 owner:探针说不归我 → 停放并新登记;探针说归我 → 复用并补上 owner', async () => {

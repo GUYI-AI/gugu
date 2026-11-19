@@ -32,7 +32,6 @@ import { registerExternalImportIpc } from './external-import/ipc'
 import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
 import { writeTaskCopy } from './projectFilePublication'
 import { resourceMonitorWindow } from './resource-monitor-window'
-import { linkProjectDevice } from './session/main/core/projects/project-device-link'
 import { killAllMiseProcessesSync } from './session/main/core/dependencies/mise-process'
 import {
   app,
@@ -327,8 +326,7 @@ import { onSessionpageBirthGroupJoin, retrySessionpageBirthGroupJoin, sessionpag
 import type { EventDefinition } from '../src/session/shared/lib/ipc/events'
 import { MAIN_UI_EVENTS } from '../src/lib/mainUiEvents'
 import { createSessionpageIdentityHost } from './sessionpage/sessionpage-identity-host'
-import { createSessionpageProjectGroupHost, ensureProjectNoticeAccess } from './sessionpage/sessionpage-project-group-binding'
-import { prepareProjectAgentNotice } from './sessionpage/project-agent-notice'
+import { createSessionpageProjectGroupHost } from './sessionpage/sessionpage-project-group-binding'
 import { forgetProjectGroupId, onProjectGroupMappingChanged } from './sessionpage/sessionpage-project-groups'
 import { readSessionpageOpenTarget } from './sessionpage/sessionpage-agent-mapping'
 import {
@@ -3803,11 +3801,6 @@ function crossMachine(): CrossMachineSessions {
       })
     },
     requester,
-    outbound: async (action) => {
-      const bridge = loadEmdashBridge()
-      if (!bridge) throw new Error('Project registry is unavailable')
-      await bridge.assertOutboundProjectIds(action)
-    },
     // #7199 云电脑管家:地址同渲染层(开发实例的 GUGU_CLOUD_COMPUTER_URL,否则这套库的云端函数),带这台桌面登着的用户 JWT。
     cloudComputerState: async () => {
       try {
@@ -5021,12 +5014,6 @@ app.whenReady().then(async () => {
         await verify()
         return emdash.commitOwnerNotification(context, input, verify, signal)
       }
-      const projectResult = (result: unknown) => typeof record.action === 'string' && record.action.startsWith('project_')
-        ? prepareProjectAgentNotice(result, {
-          agentUserId: () => senderBinding(context, auth.userId).then((binding) => binding.guguAgentUserId),
-          ensureAccess: (agent, project) => ensureProjectNoticeAccess(auth, agent, project, { founding: record.action === 'project_create' }),
-        })
-        : result
       if (record.action === 'devices') return crossMachine().listDeviceRows()
       if (record.action === 'activity_list') {
         const caller = await remoteCaller(auth, context)
@@ -5094,14 +5081,6 @@ app.whenReady().then(async () => {
         }
         return hoistDevicePictures(result)
       }
-      if (record.action === 'project_add_device') {
-        const caller = await remoteCaller(auth, context)
-        const onDevice = async (device: string | undefined, step: Record<string, unknown>) =>
-          device && !(await crossMachine().isThisDevice(device))
-            ? crossMachine().runOnDevice(device, caller, step as { action: string }, signal)
-            : emdash.runSessionAction(context, step as SessionAction, signal)
-        return projectResult(await linkProjectDevice(record as unknown as Parameters<typeof linkProjectDevice>[0], onDevice))
-      }
       // A session named by a prefix is its full id before anything routes on it (a full id returns at once, unlisted).
       for (const field of ['session_id', 'parent_session_id'] as const) {
         const id = record[field]
@@ -5111,7 +5090,7 @@ app.whenReady().then(async () => {
       if (typeof record.device === 'string') {
         const { device, ...rest } = record
         if (!(await crossMachine().isThisDevice(device as string))) {
-          return projectResult(await crossMachine().runOnDevice(device as string, await remoteCaller(auth, context), rest as { action: string }, signal))
+          return crossMachine().runOnDevice(device as string, await remoteCaller(auth, context), rest as { action: string }, signal)
         }
         record = rest
       }
@@ -5140,7 +5119,7 @@ app.whenReady().then(async () => {
       if (['get', 'stop', 'archive', 'set_parent', 'schedule_list', 'schedule_cancel'].includes(String(record.action)) && elsewhere) {
         return crossMachine().runOnSession(sessionId, await remoteCaller(auth, context), record as { action: string }, signal)
       }
-      return projectResult(await emdash.runSessionAction(context, record as SessionAction, signal))
+      return emdash.runSessionAction(context, record as SessionAction, signal)
     }
     // 别的机器交过来的 session 动作:名录在宿主这一侧,其余交给会话页编排 —— 都与本机工具同一份实现。
     emdash.setAgentSessionHost(async (name, caller, action) => {

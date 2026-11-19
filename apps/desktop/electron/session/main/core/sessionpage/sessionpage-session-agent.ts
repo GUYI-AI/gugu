@@ -92,7 +92,7 @@ export async function guguAgentUserIdForSession(
  * 这条会话所属的项目群（spec ⑨「项目 = 群」）。
  *
  * 读的是 provisioning 盖在花名册记录上的那对绑定 —— 与注入进这条会话自己 system prompt 的
- * `<gugu_project_context>` 块**同一个事实源**，两处的在场判据也逐字相同（项目 id 与群 chat_id
+ * `<gugu_group_context>` 块**同一个事实源**，两处的在场判据也逐字相同（项目 id 与群 chat_id
  * 都非空才算有群）。所以「提示词说的默认通道」与「工具回执给的通道」不可能各说各的。
  *
  * ⚠️ 「没有群」有三种,调用方**不该把它们读成同一件事**:无项目（task-home / 隐式 sentinel 项目,

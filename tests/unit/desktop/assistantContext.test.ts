@@ -302,7 +302,7 @@ it.each(['computer', 'cloud'] as const)('installs one full resource hook for sta
     const cwd = join(root, 'assistant'); await mkdir(cwd); await mkdir(join(root, '.claude'))
     const deps = { accountId: async () => 'owner', run: async (action: { action: string }) =>
       action.action === 'devices' ? [] : action.action === 'device_actions' ? { devices: [] }
-        : action.action === 'project_list' ? [] : { items: [] } }
+        : action.action === 'group_folders' ? [] : { items: [] } }
     const start = await preparePersonalAssistantContext(fixture(), cwd, root, kind, deps, root)
     const hooks = JSON.parse(start.artifacts!.find(file => file.path.endsWith('/hooks/hooks.json'))!.content).hooks.SessionStart
     for (const source of ['startup', 'clear', 'compact', 'resume']) {
@@ -348,8 +348,8 @@ it('installs the deleted-file guard without replacing the native prompt or conve
 })
 
 it('delivers a large resource collection as one bounded native hook output with explicit omissions', async () => {
-  const lines = ['<gugu_resource_index>', JSON.stringify({ account: 'user:owner' }), JSON.stringify({ source: 'projects',
-    read: { tool: 'project_list' }, items: Array.from({ length: 180 }, (_, i) => ({
+  const lines = ['<gugu_resource_index>', JSON.stringify({ account: 'user:owner' }), JSON.stringify({ source: 'folders',
+    read: { tool: 'group_folders' }, items: Array.from({ length: 180 }, (_, i) => ({
       id: `project:${i}`, name: `项目-${i}-😀`, path: `/Users/owner/projects/${i}`, description: 'x'.repeat(150),
     })) }), '</gugu_resource_index>']
   const index = boundedAssistantIndex(lines)

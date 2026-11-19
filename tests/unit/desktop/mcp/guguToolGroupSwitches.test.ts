@@ -60,7 +60,7 @@ describe('built-in gugu tool groups', () => {
     expect(listed).toEqual(expect.arrayContaining(['message_send', 'session_message', 'catalog_call']))
     expect(listed.filter((name) => ['devices', 'apps', 'schedules'].includes(guguToolGroupOf(name)!))).toEqual([])
     const catalog = await catalogNames(client)
-    expect(catalog).toContain('project_create')
+    expect(catalog).toContain('group_folder_bind')
     for (const gone of ['app_install', 'app_search', 'widget_send', 'schedule_list', 'device_call']) expect(catalog).not.toContain(gone)
     const call = await client.callTool({ name: 'catalog_call', arguments: { tool: 'device_call', args: {} } })
     expect(call.isError).toBe(true)

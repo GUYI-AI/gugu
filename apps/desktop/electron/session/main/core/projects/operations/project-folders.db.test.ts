@@ -8,7 +8,6 @@ import type { AppDb } from '@main/db/client';
 import { computeWorkspaceKey } from '@main/core/workspaces/workspace-key';
 import { createLocalProject } from './create-local-project';
 import { getProjectById, getProjects } from './getProjects';
-import { runProjectAgentAction } from '../project-agent-actions';
 import { setProjectGroupHost } from '../project-group-host';
 import { onActivitySignal } from '../../activity/signals';
 
@@ -140,46 +139,6 @@ describe('project folders', () => {
         ['project.folder_detached', 'project-a', attached.workspaceId],
       ]);
     } finally { off(); }
-  });
-
-  it('MCP 把本机另一个项目根目录接进来时先确认,共享群后原目录与会话仍在,撤销可恢复', async () => {
-    const groups = new Map([['project-a', 'chat-a'], ['project-b', 'chat-b']]);
-    setProjectGroupHost({
-      listBindings: async (ids) => ({ success: true, data: ids.flatMap((projectId) => {
-        const chatId = groups.get(projectId);
-        return chatId ? [{ projectId, chatId }] : [];
-      }) }),
-      ensureGroup: async ({ projectId }) => ({ success: true, data: { chatId: groups.get(projectId)!, changed: false } }),
-      bindToGroup: async ({ projectId }, chatId, expectedChatId) => {
-        const previousChatId = groups.get(projectId) ?? null;
-        expect(previousChatId).toBe(expectedChatId);
-        groups.set(projectId, chatId);
-        return { success: true, data: { movedAgents: 1, previousChatId, changed: true } };
-      },
-      unbind: async ({ projectId }) => {
-        groups.delete(projectId);
-        return { success: true, data: { changed: true, expectedChatId: null } };
-      },
-    });
-    await writeFile(path.join(rootB, 'keep.txt'), 'original');
-    fixture.sqlite.exec("INSERT INTO sessions (id, project_id, workspace_id) VALUES ('source-session', 'project-b', 'ws-root-b')");
-
-    const pending = await runProjectAgentAction({ projectId: 'project-a' }, { action: 'project_add_folder', path: rootB }) as { needs_confirmation: boolean; source_project_id: string; sessions: number };
-    expect(pending).toMatchObject({ project_id: 'chat-a', needs_confirmation: true, source_project_id: 'chat-b', sessions: 1 });
-    expect(groups.get('project-b')).toBe('chat-b');
-    expect(workspaceRow('ws-root-b')?.project_id).toBeNull();
-
-    const joined = await runProjectAgentAction({ projectId: 'project-a' }, {
-      action: 'project_add_folder', path: rootB, merge_existing: true, source_project_id: pending.source_project_id,
-    }) as { undo: { tool: 'project_restore_device'; project_id: string; path: string; expected_chat_id: string } };
-    expect(groups.get('project-b')).toBe('chat-a');
-    expect(joined.undo).toEqual({ tool: 'project_restore_device', project_id: 'chat-b', path: rootB, expected_chat_id: 'chat-a' });
-    expect((await listProjectFolders('project-b')).success).toBe(true);
-    expect((fixture.sqlite.prepare("SELECT project_id FROM sessions WHERE id = 'source-session'").get() as { project_id: string }).project_id).toBe('project-b');
-    expect(await readFile(path.join(rootB, 'keep.txt'), 'utf8')).toBe('original');
-
-    await runProjectAgentAction({}, { action: joined.undo.tool, project_id: joined.undo.project_id, path: joined.undo.path, expected_chat_id: joined.undo.expected_chat_id });
-    expect(groups.get('project-b')).toBe('chat-b');
   });
 
   /** 挂上的时间来自时钟:钉住它,先后与「是这一次挂的」才判得出来。 */

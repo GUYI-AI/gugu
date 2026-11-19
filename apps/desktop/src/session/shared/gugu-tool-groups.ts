@@ -9,11 +9,12 @@ import z from 'zod';
  * 关掉它们,agent 收得到消息却回不了、找不到工具。
  */
 export const GUGU_TOOL_GROUPS = [
+  // Before messages: group_folder* would match its group_ prefix.
+  { id: 'folders', locked: false, match: /^group_folder/ },
   { id: 'messages', locked: true, match: /^(message_|topic_|group_|profile_|contact_friend$|owner_friends_list$|activity_chat_list$)/ },
   { id: 'sessions', locked: true, match: /^(session_|activity_list$|activity_context$)/ },
   { id: 'catalog', locked: true, match: /^(catalog_|guide_)/ },
   { id: 'devices', locked: false, match: /^device_/ },
-  { id: 'projects', locked: false, match: /^project_/ },
   { id: 'library', locked: false, match: /^library_/ },
   { id: 'schedules', locked: false, match: /^schedule_/ },
   { id: 'apps', locked: false, match: /^(app_|widget_send$|widget_get$)/ },

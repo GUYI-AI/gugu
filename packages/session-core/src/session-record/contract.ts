@@ -582,8 +582,7 @@ export interface SessionTimeline {
 export const AGENT_SESSION_ACTIONS = [
   'activity_list', 'activity_context', 'peers', 'locate', 'list_harnesses', 'list_models', 'spawn', 'children', 'message',
   'get', 'stop', 'archive', 'set_parent', 'schedule_list', 'schedule_cancel', 'app_install', 'app_manage', 'app_call',
-  'project_list', 'project_create', 'project_get', 'project_add_folder', 'project_remove_folder',
-  'project_remove_device', 'project_restore_device', 'project_prepare_device', 'project_bind_folder',
+  'group_folders', 'group_folder_bind', 'group_folder_unbind',
 ] as const;
 
 export type AgentSessionActionName = (typeof AGENT_SESSION_ACTIONS)[number];

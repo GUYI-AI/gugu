@@ -31,7 +31,7 @@ async function fixture(root, ownerId = randomUUID()) {
       throw new Error(`Unexpected formal RPC ${name}`)
     },
   }
-  const provision = createPhoneProvisioner({ ownerId, deviceId: 'phone', projectId: 'project', root, cloud, store,
+  const provision = createPhoneProvisioner({ ownerId, deviceId: 'phone', workspaceId: 'project', root, cloud, store,
     models: { resolve: async () => 'model' }, tick: async () => {}, publish() {},
     // The ordinary creator must not admit a caption in this mode.
     admit: async () => { throw new Error('Deferred creation admitted input before placement') },

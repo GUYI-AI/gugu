@@ -9,6 +9,7 @@ import type { McpServer } from '@agentclientprotocol/sdk';
 import type { GuguPermissionMode } from '@gugu/session-core/acp';
 import type { SessionPlatformModel } from '@main/core/sessions/platform-model-selection';
 import type { SessionExtensionDelivery } from '@shared/core/sessions/sessions';
+import type { SessionpageGroupContext } from '@shared/prompt-injection';
 
 /** The slice of the ACP start input the injector needs to decide what (if anything) to inject. */
 export interface EmdashSessionStartInfo {
@@ -133,7 +134,7 @@ export interface EmdashSessionIdentity {
   guguAgentUserId: string;
   chatId: string;
   agentIdentityFacts?: { specialFocus: string | null };
-  projectContext?: { projectId: string; projectName: string; projectPath: string; groupChatId: string; groupName: string; membership?: 'member' | 'unconfirmed' };
+  groupContext?: SessionpageGroupContext;
 }
 
 export interface EmdashIdentityRequest {

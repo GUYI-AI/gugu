@@ -8,7 +8,7 @@ const first = (data) => Array.isArray(data) ? data[0] : data
 const required = (value, name) => { if (typeof value !== 'string' || !value.trim()) throw new Error(name + ' is required'); return value.trim() }
 
 /** Both native and cloud creation drive this one durable provisioning saga and birth-group contract. */
-export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, projectId, root, models, tick, admit, snapshot, publish }) {
+export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, workspaceId, root, models, tick, admit, snapshot, publish }) {
   const provisioning = new Map()
   const provisionOnce = async (requestId, action, caller = null, inputDataProof = null, options = {}) => {
     const intent=action.assistant_work ? assistantWorkIntentSchema.parse(action.assistant_work) : null
@@ -20,7 +20,7 @@ export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, projec
       if (action.transport && action.transport !== 'acp') throw new Error('手机 Agent 只提供通用会话，不提供终端会话')
       if (action.sessionView && action.sessionView !== 'general') throw new Error('手机 Agent 只提供通用会话')
       if (action.permissionMode || action.effort) throw new Error('手机 Agent 尚未提供权限模式和思考档位选择')
-      if ((action.project_id && action.project_id !== projectId) || (action.projectId && action.projectId !== projectId) || (action.project_path && action.project_path !== root) || (action.projectPath && action.projectPath !== root)) throw new Error('手机 Agent 只能在这台手机的 App 私有工作目录中运行')
+      if ([action.projectId, action.workspaceId].some((id) => id && id !== workspaceId) || [action.cwd, action.projectPath].some((path) => path && path !== root)) throw new Error('手机 Agent 只能在这台手机的 App 私有工作目录中运行')
       if (options.deferFirstInput) validateCreationAttachmentRequest(action)
       const prompt = options.deferFirstInput && typeof action.prompt === 'string' ? action.prompt.trim() : required(action.prompt, 'prompt')
       const requestedGroup = action.chat_id ?? action.chatId ?? null
