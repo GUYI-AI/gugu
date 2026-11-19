@@ -1,3 +1,4 @@
+import { codexStartupKind, type CodexStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
 /**
  * 每家 harness 能跑哪些模型 —— 问 harness 自己，走 ACP 协议的正式出口。
  *
@@ -215,7 +216,7 @@ export type HarnessCatalogState =
       expired?: boolean;
     }
   /** 装了、登录了，但这次没读出来（超时/协议异常）。界面给原因与重试。 */
-  | { kind: 'unavailable'; reason: string; reasonCode?: 'probe-failed' };
+  | { kind: 'unavailable'; reason: string; reasonCode?: 'probe-failed'; startupReason?: CodexStartupKind };
 
 /**
  * 起一个 harness 的 ACP 进程。由组合根注入。
@@ -577,6 +578,7 @@ async function ensureCatalog(
         kind: 'unavailable',
         reason: 'Model catalog probe failed',
         reasonCode: 'probe-failed',
+        ...(pluginId === 'codex' ? { startupReason: codexStartupKind(error, true) ?? 'unknown' } : {}),
       };
     }
     const next = { ...(await loadAll()), [key]: { state, inputsHash, probedAt: Date.now() } };
@@ -883,7 +885,7 @@ async function probeOnce(
     const code = (error as NodeJS.ErrnoException | undefined)?.code;
     const state: HarnessCatalogState = code === 'ENOENT'
       ? { kind: 'not-installed' }
-      : { kind: 'unavailable', reason: message };
+      : { kind: 'unavailable', reason: message, ...(pluginId === 'codex' ? { startupReason: error instanceof AcpRpcError ? error.codexStartupReason() : codexStartupKind(error, true) ?? 'unknown' } : {}) };
     // ⚠️ 把**协议错误码**单独带出来:logger 序列化 Error 只留 name/message/stack,
     //    而码住在 AcpRpcError 私有的 payload 里 —— 2026-08-26 查 kimi 为什么被判成
     //    「读取失败」时,日志里一个码都看不到,只能靠猜。判错分类的下一步永远是「它到底回了几」。
@@ -1398,6 +1400,8 @@ class AcpRpcError extends Error {
   isAuthRequiredCode(): boolean {
     return this.code() === ACP_AUTH_REQUIRED_CODE;
   }
+
+  codexStartupReason(): CodexStartupKind { return codexStartupKind(this.payload, true) ?? 'unknown'; }
 
   /** 对方回的 JSON-RPC 错误码;没有就 undefined。分类判错时这是**第一个**要看的数。 */
   code(): number | undefined {

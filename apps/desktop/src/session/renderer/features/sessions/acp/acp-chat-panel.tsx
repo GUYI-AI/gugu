@@ -1991,7 +1991,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           // 认得的说法给修法,认不得的只说「无法启动」+ 重试:原话留在本机日志,不上界面(见 session-condition.def)。
           const reason = failureReason(error.message);
           const membership = reason !== null && guguReasonCopy(reason).action === 'join-membership';
-          const text = reason ? failureText(error.message, translate, membership ? membershipLock?.modelName : null) : sessionStartupFailureCopy(error.message, translate);
+          const text = reason ? failureText(error.message, translate, membership ? membershipLock?.modelName : null) : sessionStartupFailureCopy(error, translate);
           if (!reason) return { code: 'start-failed', label: text, detail: text, actions: [retry] };
           return {
             code: membership ? 'membership-required' : 'start-failed',

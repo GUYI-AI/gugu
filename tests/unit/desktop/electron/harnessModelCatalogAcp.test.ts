@@ -592,6 +592,15 @@ function handle(msg) {
     setAcpSpawnResolver(async () => null)
     expect((await probeHarnessModelCatalog('amp', 'acp')).kind).toBe('unsupported')
   })
+  it('preserves the native Codex reason code across the catalog RPC response', async () => {
+    await useAgent(`
+function handle(msg) {
+  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1 });
+  if (msg.method === 'session/new') return fail(msg.id, { code: -32603, message: 'native exited', data: { codexStartupKind: 'exited' } });
+}
+`)
+    expect(await probeHarnessModelCatalog('codex', 'acp')).toMatchObject({ kind: 'unavailable', startupReason: 'exited' })
+  })
   it('非认证类的 RPC 失败 → unavailable，带原因', async () => {
     await useAgent(`
 function handle(msg) {

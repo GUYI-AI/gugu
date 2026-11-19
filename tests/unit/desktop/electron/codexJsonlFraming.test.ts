@@ -18,7 +18,7 @@ const fixture = [
   'process.on("SIGTERM",()=>{require("fs").appendFileSync(process.env.RESUME_RELEASE+".signals","SIGTERM\\n");process.exit(0)});',
   'let raw = ""; process.stdin.setEncoding("utf8");',
   'process.stdin.on("data", chunk => { raw += chunk; let end; while ((end=raw.indexOf("\\n"))!==-1) { const m=JSON.parse(raw.slice(0,end)); raw=raw.slice(end+1); if(m.id===undefined)continue;',
-  'if (m.method==="initialize") { const ready=()=>out({id:m.id,result:{userAgent:"fixture"}}); const mode=process.env.SCENARIO; if(mode==="initialize-slow"){process.stderr.write("NATIVE_INITIALIZE_PENDING\\n");const t=setInterval(()=>{if(require("fs").existsSync(process.env.RESUME_RELEASE)){clearInterval(t);ready()}},10)}else if(mode==="backfill-once"){const fs=require("fs"),file=process.env.RESUME_RELEASE+".attempt";let n=fs.existsSync(file)?Number(fs.readFileSync(file,"utf8")):0;fs.writeFileSync(file,String(++n));if(n>1)ready();else {process.stderr.write("timed out waiting for state db backfill (status: running)\\n");process.exit(1)}}else ready();}',
+  'if (m.method==="initialize") { const ready=()=>out({id:m.id,result:{userAgent:"fixture"}}); const mode=process.env.SCENARIO; if(mode==="unsupported-initialize"){out({id:m.id,error:{code:-32601,message:"Method not found"}});continue;} if(mode==="initialize-slow"){process.stderr.write("NATIVE_INITIALIZE_PENDING\\n");const t=setInterval(()=>{if(require("fs").existsSync(process.env.RESUME_RELEASE)){clearInterval(t);ready()}},10)}else if(mode==="backfill-once"){const fs=require("fs"),file=process.env.RESUME_RELEASE+".attempt";let n=fs.existsSync(file)?Number(fs.readFileSync(file,"utf8")):0;fs.writeFileSync(file,String(++n));if(n>1)ready();else {process.stderr.write("timed out waiting for state db backfill (status: running)\\n");process.exit(1)}}else ready();}',
   'else if (m.method==="thread/resume") {',
   ' if(process.env.SCENARIO==="bad") {process.stdout.write("{broken\\n"); continue;}',
   ' if(process.env.SCENARIO==="eof") {process.exit(7);}',
@@ -49,7 +49,7 @@ afterEach(async () => {
 async function bridge(scenario = 'unicode') {
   dir = realpathSync(mkdtempSync(join(tmpdir(), 'gugu-jsonl-')))
   const fake = join(dir, 'codex.cjs')
-  writeFileSync(fake, fixture); chmodSync(fake, 0o755)
+  writeFileSync(fake, fixture); chmodSync(fake, scenario === 'permission' ? 0o600 : 0o755)
   // Expire deadlines only after the native fixture acknowledges the in-flight resume.
   const shim = join(dir, 'clock.mjs')
   writeFileSync(shim, "const realSet=globalThis.setTimeout, realClear=globalThis.clearTimeout, deadlines=new Map();\nglobalThis.setTimeout=(fn,ms,...args)=>{const timer=realSet(()=>{deadlines.delete(timer);fn(...args)},ms);if(ms===45000 || ms===120000)deadlines.set(timer,{fire:()=>fn(...args),ms});return timer;};\nglobalThis.clearTimeout=timer=>{deadlines.delete(timer);return realClear(timer);};\nprocess.on('message',message=>{if(message?.type!=='expire-deadlines')return;const pending=[...deadlines].filter(([,value])=>value.ms===message.ms);for(const [timer,value]of pending){deadlines.delete(timer);realClear(timer);value.fire()}process.send('deadlines-expired');});")
@@ -164,14 +164,24 @@ describe('Codex bridge JSONL boundary', () => {
   it('rejects corrupt native frames immediately with byte diagnostics', async () => {
     const h = await bridge('bad')
     const reply = await h.request('session/resume', { sessionId: 'same-thread', cwd: dir, mcpServers: [] })
-    expect(reply).toMatchObject({ error: { message: expect.stringContaining('Invalid JSONL from Codex app-server stdout: bytes=7') } })
+    expect(reply).toMatchObject({ error: { message: expect.stringContaining('Invalid JSONL from Codex app-server stdout: bytes=7'), data: { codexStartupKind: 'protocol' } } })
     expect(h.stderr()).toContain('ERROR:')
     expect(h.stderr()).toContain('headHex=7b62726f6b656e')
+  })
+  it('preserves the real spawn permission failure as a permission reason', async () => {
+    const h = await bridge('permission')
+    expect(await h.request('session/resume', { sessionId: 'same-thread', cwd: dir, mcpServers: [] }))
+      .toMatchObject({ error: { data: { codexStartupKind: 'permission' } } })
+  })
+  it('marks an explicitly unsupported native initialize method as a version capability failure', async () => {
+    const h = await bridge('unsupported-initialize')
+    expect(await h.request('session/resume', { sessionId: 'same-thread', cwd: dir, mcpServers: [] }))
+      .toMatchObject({ error: { data: { codexStartupKind: 'version' } } })
   })
   it('reports true native exit immediately', async () => {
     const h = await bridge('eof')
     expect(await h.request('session/resume', { sessionId: 'same-thread', cwd: dir, mcpServers: [] }))
-      .toMatchObject({ error: { message: expect.stringContaining('exited (code=7') } })
+      .toMatchObject({ error: { message: expect.stringContaining('exited (code=7'), data: { codexStartupKind: 'exited' } } })
   })
   it('reports corrupt host input as a parse error and terminates the broken channel', async () => {
     const h = await bridge()

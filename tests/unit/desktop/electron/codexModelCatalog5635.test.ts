@@ -158,7 +158,7 @@ describe('codex bridge catalog file (#5635)', () => {
 
   test('a broken payload or an unreadable bundled catalog fails loud', async () => {
     await expect(writeCodexModelCatalog({ GUGU_PLATFORM_MODELS: '{not json' }, bundled)).rejects.toThrow(/not JSON/)
-    await expect(writeCodexModelCatalog({ GUGU_PLATFORM_MODELS: FACTS }, async () => 'garbage')).rejects.toThrow(/升级 Codex/)
+    await expect(writeCodexModelCatalog({ GUGU_PLATFORM_MODELS: FACTS }, async () => 'garbage')).rejects.toMatchObject({ data: { codexStartupKind: 'protocol' } })
   })
 })
 

@@ -74,7 +74,7 @@ import type { SessionViewLockState } from './session-view-lock';
 import { SessionViewControl } from './session-view-control';
 import { terminalShown, useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
 import { DEFAULT_SESSION_VIEW } from '@shared/core/sessions/new-session-defaults';
-import { codexNeedsUpgrade } from '../session-input-failure-copy';
+import { codexNeedsUpgrade, sessionStartupFailureCopy } from '../session-input-failure-copy';
 import { useSessionInputNotice } from '../session-input-notice';
 import { log } from '@renderer/utils/logger';
 import {
@@ -1059,7 +1059,7 @@ export function useInitialSessionState(
   const platformCatalogNotice = machineUnreachable || ownModelsOnly ? null : guguCatalogNotice(platformCatalog.catalogError, translate);
   const platformNotice = platformCatalogNotice?.text ?? null;
   const harnessNoticeDetail = harnessCatalogState.kind === 'unavailable' ? harnessCatalogState.reason : null;
-  const upgradeCodex = !!harnessNoticeDetail && codexNeedsUpgrade(harnessNoticeDetail);
+  const upgradeCodex = providerId === 'codex' && harnessCatalogState.kind === 'unavailable' && codexNeedsUpgrade(harnessCatalogState);
   const openInstaller = () => {
     if (!providerId) return;
     openAgentAppDetail(navigate, providerId);
@@ -1075,7 +1075,7 @@ export function useInitialSessionState(
     ? undefined
     : !harnessNoticeMessage ? null
     : harnessCatalogState.kind === 'unknown' ? undefined : {
-      title: upgradeCodex ? translate('taskError.codexUpgrade') : harnessNotice ?? undefined,
+      title: providerId === 'codex' && harnessCatalogState.kind === 'unavailable' ? sessionStartupFailureCopy(harnessCatalogState, translate) : harnessNotice ?? undefined,
       tier: 'error', action: harnessAction,
       diagnostic: harnessNoticeDetail ?? undefined,
     });

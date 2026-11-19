@@ -62,3 +62,10 @@ describe('toLoadError — 到那台机器的线断了', () => {
     expect(toLoadError(timeout, 'device-d22').kind).toBe('generic');
   });
 });
+
+
+it('preserves the native Codex failure reason through the runtime wrapper', () => {
+  const cause = { name: 'Error', message: 'raw native error', data: { codexStartupKind: 'permission' } };
+  const error = new AcpStartError({ type: 'new_session_failed', cause });
+  expect(toLoadError(error)).toEqual({ kind: 'generic', message: 'raw native error', startupReason: 'permission' });
+});
