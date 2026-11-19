@@ -35,13 +35,11 @@ import { firstRunAtBoot } from './core/extensions/first-run-apps'
 import { captureAgentHomeUpgradeProfile } from './core/extensions/first-run-record'
 import { initializeAgentHomeUpgrade } from './core/agents/agent-homes'
 import { autoUpdateAtBoot } from './core/extensions/auto-update-apps'
-import { EXTENSION_DATA_DIR_NAME } from './core/extensions/extension-data'
 import { extensionPrograms, stopAllExtensionPrograms, type ExtensionPrograms } from './core/extensions/extension-programs'
 import type { ExtensionManifest, ExtensionMcpServerContribution } from '@shared/extensions/manifest'
 import {
   bundleContentDigest,
   ensureSessionSnapshot,
-  pruneExtensionData,
   pruneSessionSnapshots,
   sessionSnapshotDir,
 } from './core/extensions/extension-session-snapshot'
@@ -701,7 +699,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   if (browserFeatures) migrateLegacyBrowserPartitionDirs()
   if (browserFeatures) void cleanupLegacyBrowserPartitions()
 
-  // #6387 上一次运行的会话都已随进程结束:它们冻结的扩展副本、以及卸载时延后删的数据夹,在这里清掉。
+  // #6387 上一次运行的会话都已随进程结束:只清它们冻结的扩展副本。App 数据只随明确卸载清除。
   // 放在任何会话启动之前,才保证清的都是没人在用的。
   try {
     sweepExtensionSessionLeftovers()
@@ -1043,14 +1041,10 @@ export function emdashLookPicture(): Promise<ExtensionPicture> {
   return lookGalleryPicture()
 }
 
-/** #6387 Frozen copies only last run's sessions could still have used, and what belongs to no installed App. */
+/** #6387 Frozen bundle copies only; missing installed bundles never authorize deleting App data. */
 function sweepExtensionSessionLeftovers(): void {
-  const { extensions, invalid } = extensionsService().list()
+  const { extensions } = extensionsService().list()
   const userData = app.getPath('userData')
-  pruneExtensionData(
-    path.join(userData, EXTENSION_DATA_DIR_NAME),
-    new Set([...extensions.map(({ manifest }) => manifest.id), ...invalid.map(({ dirName }) => dirName)])
-  )
   pruneSessionSnapshots(userData, new Map(extensions.map(({ manifest, rootDir }) => [manifest.id, bundleContentDigest(rootDir)])))
 }
 
