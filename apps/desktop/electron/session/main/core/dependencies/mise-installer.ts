@@ -16,6 +16,7 @@ import { resolveMiseDistribution, type MiseTarget } from './mise-distribution';
 import { miseProgress, runMiseProcess } from './mise-process';
 import { startInstallProgressMeter } from './install-progress-meter';
 import { buildAgentEnv } from '@main/core/pty/pty-env';
+import { installerEnvironment } from '../../../../egress/installer';
 import { anySignal } from '@gugu/core/shared/anySignal';
 
 const IDLE_MS = 60_000;
@@ -147,8 +148,7 @@ export async function runMiseOperation(context: InstallCommandContext, preparati
   const work = path.join(root, 'operations', target.binary);
   const config = path.join(work, 'global.toml');
   const launcher = path.join(preparation?.launcherDir ?? managedMiseBinDir(), target.binary + (process.platform === 'win32' ? '.cmd' : ''));
-  // 与 agent 同一份环境(buildAgentEnv):用户登录 shell 里的代理、只开系统代理时补的代理(#6892)都在这里;
-  // miseEnvironment 再按自己的白名单只留 OS / 传输层那几格。
+  // Start with OS inputs; each actual Gugu-owned install resolves its download source below.
   let env = miseEnvironment(root, config, buildAgentEnv());
   const mise = bundledMisePath();
   const started = Date.now();
@@ -251,6 +251,7 @@ export async function runMiseOperation(context: InstallCommandContext, preparati
       await writeFile(config, distribution.config);
       // 下载源交给 mise 与 aube:`NPM_CONFIG_REGISTRY`(docs/dev-tools/backends/npm.md)。
       if (distribution.kind === 'npm') env = { ...env, ...distribution.env };
+      env = await installerEnvironment(distribution.kind === 'npm' ? distribution.env.NPM_CONFIG_REGISTRY! : distribution.downloadUrl, env);
       touch();
       const slug = miseToolSlug(tool);
       const measured = [path.join(root, 'data', 'downloads', slug), path.join(root, 'data', 'installs', slug)];

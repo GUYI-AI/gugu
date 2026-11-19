@@ -4,7 +4,6 @@ import { agentShellEnvPassThrough } from '@gugu/session-plugins/agents';
 import type { ResolvedShellProfile } from '@main/core/terminal-shell/types';
 import { buildUserShellBaseEnv } from '@main/utils/childProcessEnv';
 import { detectSshAuthSock } from '@main/utils/shellEnv';
-import { systemProxyFill } from '@main/utils/systemProxyEnv';
 import { loginShellEnv } from '@main/utils/userEnv';
 import { getWindowsEnvValue } from '@main/utils/windows-env';
 import { guguNodeEnv } from './gugu-node';
@@ -246,7 +245,7 @@ export function buildAgentEnv(options: AgentEnvOptions = {}): Record<string, str
   }
 
   // #6892 只开系统代理的用户:代理补进 agent 这一类子进程(上面已经有任何代理变量就不动)。
-  Object.assign(env, systemProxyFill(env));
+
 
   // 咕咕自带的 Node(`gugu-node`,gugu-node.ts):它的目录排在 PATH 最前,App skill 带的脚本跑在它上面。
   Object.assign(env, guguNodeEnv(env.PATH));
