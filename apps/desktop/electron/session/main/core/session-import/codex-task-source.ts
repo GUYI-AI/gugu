@@ -156,13 +156,17 @@ export async function scanCodexTasks(sourceRoot: string): Promise<CodexTaskScan>
 }
 
 /** A staged or preserved managed file must still belong to the selected native session. */
-export async function verifyCodexTaskFiles(root: string, rows: CodexTaskSourceRow[]): Promise<void> {
+export async function verifyCodexTaskFiles(root: string, rows: CodexTaskSourceRow[], signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
   const canonical = await realpath(root);
   for (const row of rows) {
+    signal?.throwIfAborted();
     const primary = row.files.find(file => file.relativePath === row.relativePath);
     if (!primary || primary.nativeId !== row.id || primary.cwd !== row.cwd) throw new Error('Copied rollout metadata does not match');
     for (const expected of row.files) {
+      signal?.throwIfAborted();
       const meta = await sessionMeta(await transcript(canonical, expected.relativePath, true));
+      signal?.throwIfAborted();
       if (meta.id !== expected.nativeId || meta.cwd !== expected.cwd || JSON.stringify(meta.historyBase) !== JSON.stringify(expected.historyBase)) throw new Error('Copied rollout metadata does not match');
     }
   }

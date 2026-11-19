@@ -75,6 +75,16 @@ it('changes the revision when the source changes after scanning', async () => {
   await expect(verifyCodexTaskFiles(f.root, [{ ...second, id: other }])).rejects.toThrow('metadata');
 });
 
+it('stops cancelled copied-file validation before reading another rollout', async () => {
+  const f = await fixture(); const path = await f.add(id); f.db.close();
+  const scan = await scanCodexTasks(f.root);
+  await rm(path);
+  const controller = new AbortController();
+  const reason = new Error('Import cancelled'); controller.abort(reason);
+  // Cancellation must win over the now-missing file; no continuation may be bound.
+  await expect(verifyCodexTaskFiles(f.root, scan.rows, controller.signal)).rejects.toBe(reason);
+});
+
 it.each(['sessions', 'archived_sessions'])('collects a paginated ancestor in %s as context, not a visible task', async folder => {
   const f = await fixture();
   const primary = await f.add(id);
