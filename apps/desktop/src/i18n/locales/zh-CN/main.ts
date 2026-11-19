@@ -102,11 +102,18 @@ export default {
     "manageConnections": "管理连接"
   },
   "agentHome": {
+  "historySummary_other": "已导入 {{count}} 条最近会话，{{skipped}} 条仍在原处",
+  "preparation": { "preparing": "正在准备迁移", "copying": "正在导入配置和会话", "history": "正在整理历史", "elapsedLabel_other": "{{label}}，已用 {{count}} 秒" },
+
+  "migrationDeferredTitle": "配置迁移暂缓",
+  "migrationSpaceNotice": "空间不够，腾出 {{size}} GB 后会在下次启动时自动迁移。原有会话可以继续使用。",
   "migrationNoticeTitle": "配置迁移完成",
   "migrationNoticeCopied": "这次更新把 {{names}} 的配置迁到了咕咕自己管理，你的登录、Skills 和会话记录都已带过来。",
   "migrationNotice": "这次更新把 {{names}} 的配置迁到了咕咕自己管理。",
   "migrationSkipped_other": "{{count}} 项没迁，查看",
   "migrationResults": "配置迁移结果",
+  "migrationRelogin": "需要重新登录 {{name}}，才能在咕咕里使用该账号。",
+  "configurationImportFailed": "配置导入未完成，请重试。",
   "migrationReadFailed": "暂时读不到配置迁移结果。",
   "oldSessionsSkipped": "{{count}} 个旧会话文件太大，未带过来。",
   "groups": {
@@ -119,16 +126,25 @@ export default {
     "models": "模型"
   },
   "issue": {
+    "historyLimit": "超出最近 4 GiB 会话范围，原件仍在原处",
+    "groupHistoryLimitSummary_other": "{{count}} 条较早会话未迁，原件仍在原处",
+
     "tooLargeSummary_other": "{{count}} 个文件太大，未导入",
     "skippedSummary_other": "{{count}} 个文件未导入",
+    "groupSkippedSummary_other": "{{name}}：{{count}} 个未导入项",
+    "groupLinksSummary_other": "{{name}}：{{count}} 个链接未导入",
+    "groupTooLargeSummary_other": "{{name}}：{{count}} 个文件太大，未导入",
+    "sensitive": "登录凭据由登录迁移单独处理",
+    "database": "数据库未导入",
+    "excluded": "不在所选配置范围内",
     "symlink": "符号链接，未导入",
     "tooLarge": "文件太大，未导入",
     "sourceChanged": "来源已更新，请重试",
     "unreadable": "无法读取此文件"
   },
-  "local": "本机配置",
-  "updated": "本机配置有更新",
-  "row": "{{date}} 从 {{path}} 导入了一份。之后你在终端里的修改不会自动同步，咕咕里的改动也不会写回终端。",
+  "local": "终端配置",
+  "updated": "，终端里后来又改过",
+  "row": "{{date}} 导入",
   "upgradeKept": "咕咕已沿用你原来的 {{name}} 配置。",
   "upgradeRelogin": "请在设置 → 订阅中重新登录 {{name}}。",
   "reimport": "重新导入",
@@ -551,6 +567,16 @@ export default {
     "subtitle": "登录你的账号，开始与 AI 协作",
     "brandSubtitle": "你想做的，咕咕帮你做到。",
     "emailLabel": "邮箱",
+    "signup": {
+      "start": "新用户注册",
+      "back": "返回登录",
+      "agree": "同意并继续",
+      "disagree": "不同意",
+      "declined": "不同意就没法使用咕咕。你的邮箱不会发给我们。",
+      "saveFailed": "未能保存本次同意，请重试。",
+      "consentRequired": "请升级到新版咕咕再注册。",
+      "notRegistered": "这个邮箱还没有注册。点「换邮箱」回去，再点「新用户注册」。"
+    },
     "otpLabel": "验证码",
     "or": "或",
     "invalidEmail": "邮箱地址格式不正确",
@@ -749,6 +775,7 @@ export default {
       "permissions": "本机控制",
       "prompts": "提示词",
       "sessions": "项目",
+      "team": "团队",
       "subscriptions": "订阅",
       "usage": "用量"
     },

@@ -6,6 +6,7 @@ import { createPhoneAssistantWorkOutbox } from './phone-assistant-work-outbox.mj
 import { createPhoneAssistantWorkHistory } from './phone-assistant-work-history.mjs'
 import { createPhoneAssistantWork } from './phone-assistant-work.mjs'
 import { randomUUID } from 'node:crypto'
+import { registerGuguDevice } from '../../../packages/core/src/cloud/deviceRegistration.ts'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { processPendingDeviceCommandsOnce, reportRuntimeInstanceHeartbeat, recoverOrphanedDeviceCommands } from '../../../packages/core/src/cloud/deviceCommands.ts'
@@ -96,7 +97,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
   const execution = () => activeJob?.status === 'running' ? { sessionId: store.state.agents[activeJob.agentUserId]?.sessionId, jobId: activeJob.id, phase: activeJob.cancelRequested ? 'stopping' : activeJob.phase ?? 'preparing' } : null
   const state = () => {
     const error = healthErrors.auth ?? healthErrors.rpc ?? healthErrors.heartbeat
-    return { ownerId, deviceId, project, taskTimeline: true, execution: execution(), status: stopped ? 'stopped' : ready ? 'ready' : error ? 'failed' : 'starting', ready, error: stopped ? null : error?.message ?? null, errorCode: stopped ? null : error?.code ?? null, authError: stopped ? null : healthErrors.auth?.authError ?? null, lastHeartbeatAt, accountRevision: store.state.personalAccountRevision ?? null, sessions: agents().map((agent) => ({ agentUserId: agent.agentUserId, sessionId: agent.sessionId, displayName: agent.displayName, chatId: agent.chatId, modelId: agent.modelId, status: agent.status, lastError: agent.lastError ?? null, lastActiveAt: agent.lastActiveAt ?? null, lastJobStatus: lastJob(agent.agentUserId)?.status ?? null, birthGroup: agent.birthGroup ?? null })) }
+    return { ownerId, deviceId, project, taskTimeline: true, execution: execution(), status: stopped ? 'stopped' : ready ? 'ready' : error ? 'failed' : 'starting', ready, error: stopped ? null : error?.message ?? null, errorCode: stopped ? null : error?.code ?? null, authError: stopped ? null : healthErrors.auth?.authError ?? null, lastHeartbeatAt, accountRevision: store.state.personalAccountRevision ?? null, sessions: retainedAgents().map((agent) => ({ agentUserId: agent.agentUserId, sessionId: agent.sessionId, displayName: agent.displayName, chatId: agent.chatId, modelId: agent.modelId, status: agent.ownershipError ? 'error' : agent.status, lastError: agent.ownershipError ?? agent.lastError ?? null, lastActiveAt: agent.lastActiveAt ?? null, lastJobStatus: lastJob(agent.agentUserId)?.status ?? null, birthGroup: agent.birthGroup ?? null })) }
   }
   const publish = (patch = {}) => emit({ type: 'host_state', ...state(), ...patch })
   const warn = (message) => emit({ type: 'host_log', ownerId, level: 'warn', message })
@@ -134,15 +135,28 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     if (!store.state.personalAccountRevision || BigInt(receipt.account_revision) > BigInt(store.state.personalAccountRevision)) { store.state.personalAccountRevision = receipt.account_revision; await store.save(); publish() }
   }, warn: ({ code }) => warn(`personal conversation publication: ${code}`) })
   const models = modelFactory(cloud, store, warn)
-  const agents = () => agentsForOwner(Object.values(store.state.agents), ownerId)
+  const retainedAgents = () => agentsForOwner(Object.values(store.state.agents), ownerId)
+  const agents = () => retainedAgents().filter(agent => !agent.ownershipError)
   const findSession = (id, includeArchived = false) => {
     const agent = agentsForOwner(Object.values(store.state.agents), ownerId, { includeArchived }).find((item) => item.sessionId === parseSession(id))
     if (!agent) throw new SessionInputAdmissionError('这台手机上已没有这条任务', 'rejected', 'SESSION_NOT_FOUND')
     return agent
   }
-  const reporter = createAgentRuntimeStateReporter(cloud.identity, { onGoneAgent: async (id) => { delete store.state.agents[id]; inboxScans.delete(id); await store.save(); publish() } })
+  const retainUnavailableAgent = async (id) => {
+    const agent = retainedAgents().find(row => row.agentUserId === id)
+    if (!agent) return
+    agent.ownershipError = '此 Agent 当前不属于这个账号或这台手机，已停止执行；本机任务和历史已保留。'
+    inboxScans.delete(id)
+    if (activeJob?.agentUserId === id) {
+      activeJob.cancelRequested = true
+      activeController?.abort(Object.assign(new Error(agent.ownershipError), { code: 'not_granted' }))
+      cancelTurn(agent.sessionId)
+    }
+    await store.save(); publish()
+  }
+  const reporter = createAgentRuntimeStateReporter(cloud.identity, { onGoneAgent: retainUnavailableAgent })
   const publishRuntimeState = createAgentRuntimeStatePublisher()
-  const report = (agent, online = true) => publishRuntimeState(() => agent.removedIdentity ? null : ({
+  const report = (agent, online = true) => publishRuntimeState(() => agent.removedIdentity || agent.ownershipError ? null : ({
     agentUserId: agent.agentUserId, runtimeStatus: online ? 'online' : 'offline',
     activityStatus: agent.status === 'working' ? 'running' : 'idle', agentStatus: agent.status,
     agentStatusDetail: agent.status === 'working' ? 'running' : agent.status === 'needs_user' ? 'question' : agent.status === 'error' ? null : 'plain',
@@ -152,7 +166,12 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
   const verifyAgent = async (agentUserId) => {
     const { data, error } = await cloud.identity.from('active_users').select('id,type,owner_user_id,device_id,display_name,gugu_number,desired_status').eq('id', uuid(agentUserId)).maybeSingle()
     if (error) throw new Error(error.message)
-    if (!data || data.type !== 'agent' || data.owner_user_id !== ownerId || data.device_id !== deviceId) throw new SessionInputAdmissionError('Agent 不属于当前账号和这台手机', 'rejected', 'not_granted')
+    if (!data || data.type !== 'agent' || data.owner_user_id !== ownerId || data.device_id !== deviceId) {
+      await retainUnavailableAgent(agentUserId)
+      throw new SessionInputAdmissionError('Agent 不属于当前账号和这台手机', 'rejected', 'not_granted')
+    }
+    const retained = retainedAgents().find(agent => agent.agentUserId === agentUserId)
+    if (retained?.ownershipError) { delete retained.ownershipError; await store.save(); publish() }
     return data
   }
   const preview = (agent) => {
@@ -163,7 +182,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     const messageId=(envelope?.segments?.at(-1)?.facts?.messageId??job?.route?.sourceMessageId??job?.id)?.replace(/^msg:/,'')
     return {running,ended:kind?{kind}:null,entries:messageId?[{kind:'prompt',messageId}]:[]}
   }
-  const snapshot = (agent) => ({ session_id: agent.sessionId, agent_user_id: agent.agentUserId, chat_id: agent.chatId, birth_group: agent.birthGroup ? { chat_id: agent.birthGroup.chatId, status: agent.birthGroup.status, ...(agent.birthGroup.error ? { error: agent.birthGroup.error } : {}) } : null, spawned_by_session_id: agent.caller?.sessionId ?? null, ...(agent.caller ? { spawned_by_device_id: agent.caller.deviceId } : {}), parent_session_id: agent.caller?.sessionId ?? null, project_id: projectId, title: agent.displayName, provider_id: 'pi', transport: 'acp', status: agent.status, detail: agent.status === 'working' ? 'running' : agent.status === 'needs_user' ? 'question' : agent.status === 'error' ? null : 'plain', model: { source: 'gugu', id: agent.modelId, spawn_model_id: `platform:${agent.modelId}` }, pinned: false, last_active_at: agent.lastActiveAt ?? null, runtime: null, message_route: { tool: 'session_message', to: [`session:${agent.sessionId}`] }, preview: preview(agent) })
+  const snapshot = (agent) => ({ session_id: agent.sessionId, agent_user_id: agent.agentUserId, chat_id: agent.chatId, birth_group: agent.birthGroup ? { chat_id: agent.birthGroup.chatId, status: agent.birthGroup.status, ...(agent.birthGroup.error ? { error: agent.birthGroup.error } : {}) } : null, spawned_by_session_id: agent.caller?.sessionId ?? null, ...(agent.caller ? { spawned_by_device_id: agent.caller.deviceId } : {}), parent_session_id: agent.caller?.sessionId ?? null, project_id: projectId, title: agent.displayName, provider_id: 'pi', transport: 'acp', status: agent.status, detail: agent.status === 'working' ? 'running' : agent.status === 'needs_user' ? 'question' : agent.status === 'error' ? null : 'plain', model: { source: 'gugu', id: agent.modelId, spawn_model_id: `platform:${agent.modelId}` }, pinned: false, last_active_at: agent.lastActiveAt ?? null, runtime: null, message_route: { tool: 'session_message', to: [`session:${agent.sessionId}`] }, preview: preview(agent), ...(agent.ownershipError ? { status: "error", detail: null } : {}) })
   const authorizeReply = async (groups, message) => {
     if (stopped || signingOut) throw Object.assign(new Error('手机宿主已停止，未交付任务数据'), { code: 'host_not_ready' })
     const currentAgent = store.state.agents[activeJob?.agentUserId]
@@ -177,7 +196,8 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     if (!result.ok) throw Object.assign(new Error(result.message ?? '手机数据授权已撤销，结果未交付'), { code: result.code ?? 'not_granted' })
   }
   const summary = async (agent) => {
-    const row = { conversationId: agent.sessionId, projectId, title: agent.displayName, harness: 'pi', runtime: 'acp', agentStatus: agent.status, status: { status: agent.status, detail: agent.status === 'working' ? 'running' : agent.status === 'needs_user' ? 'question' : agent.status === 'error' ? null : 'plain' }, lastInteractedAt: agent.lastActiveAt ?? null, supported: false, agent: { userId: agent.agentUserId }, chatId: agent.chatId, isPinned: false, parentConversationId: agent.caller?.sessionId ?? null, spawnedByConversationId: agent.caller?.sessionId ?? null }
+    const status = agent.ownershipError ? 'error' : agent.status
+    const row = { conversationId: agent.sessionId, projectId, title: agent.displayName, harness: 'pi', runtime: 'acp', agentStatus: status, status: { status, detail: status === 'working' ? 'running' : status === 'needs_user' ? 'question' : status === 'error' ? null : 'plain' }, lastInteractedAt: agent.lastActiveAt ?? null, supported: false, agent: { userId: agent.agentUserId }, chatId: agent.chatId, isPinned: false, parentConversationId: agent.caller?.sessionId ?? null, spawnedByConversationId: agent.caller?.sessionId ?? null }
     row.unseen = agent.agentStatusSeen !== 1
     try { await timelines.snapshot(agent, { limit: 1, trim: true }); return { ...row, supported: true } }
     catch (error) { return { ...row, unsupportedReason: error.message } }
@@ -205,8 +225,8 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     setImmediate(() => { void drain().catch((error) => warn(error.message)) })
     return job
   }
-  const inbox = async (agentUserId) => {
-    const agent = agents().find((row) => row.agentUserId === agentUserId)
+  const inbox = async (agentUserId, registrations = agents()) => {
+    const agent = registrations.find((row) => row.agentUserId === agentUserId)
     if (!agent || stopped || signingOut) return { pulled: 0, injected: 0 }
     const scanGap = inboxGap
     await verifyAgent(agentUserId)
@@ -313,7 +333,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     'agent.deliver': async (command) => {
       // From an App, not a chat (`source`): the chat inbox has nothing of it and App programs do not run here. Said, ❌ recorded as done.
       if (command.payload.source) throw Object.assign(new Error(`App ${command.payload.source} cannot deliver to an agent on a phone`), { reason: 'appUnavailable' })
-      return { agent_user_id: command.payload.agent_user_id, delivered: (await inbox(command.payload.agent_user_id)).injected > 0 }
+      return { agent_user_id: command.payload.agent_user_id, delivered: (await inbox(command.payload.agent_user_id, retainedAgents())).injected > 0 }
     },
     'agent.stop': async (command) => { const agent = agents().find((row) => row.agentUserId === command.payload.agent_user_id); if (!agent) throw new Error('Agent 没有在这台手机上建立会话'); await cancel(agent); return { stopped: true } },
     // Retire hands the identity to its new device: archive here, keep the social identity.
@@ -503,6 +523,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
         }
         emit({ ...event, ownerId, agentUserId: agent.agentUserId, sessionId: agent.sessionId })
       }, nativeCall, extraTools: tools, systemPrompt: `${systemPrompt}\n本轮 Skill 配置版本 ${skillTurn.revision}。任务开始时按需调用 phone_skills_list 查看本轮启用项，再用 phone_skills_read 读取相关说明；历史 Skill 返回不代表当前启用，不得继续应用已停用的旧配置。Skill 只指导现有能力，不授予新工具或权限，也不能覆盖群规和系统授权。长任务先按需调用 phone_memory_search 查本任务的笔记；只有确需保留的确认决定或主人明确要求记住的内容才用 phone_memory_save，不保存模型票据、令牌或凭据。你可以读取公开网页文字、读取已登记文本附件并产出文本文件；不能声称具有浏览器 GUI 操作或视觉模型能力。`, onRecord: async (record) => { agent.record = { ...record, contextEpoch: agent.contextEpoch }; job.record = { ...agent.record }; await store.save() } })
+      checkCancelled()
       job.text = result.text ?? ''
       await Promise.all(personalWrites)
       if (result.status !== 'done') throw Object.assign(new Error(result.error ?? (result.status === 'cancelled' ? '任务已取消' : '手机 Agent 运行失败')), { cancelled: result.status === 'cancelled' })
@@ -694,7 +715,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
       const changed = await archive(agent, args[2]?.removeSocialIdentity)
       return { archived: changed ? [{ projectId, sessionId: agent.sessionId }] : [], unreached: [] }
     }
-    if (channel === 'sessionTimeline.sessionsList') return { projects: [project], sessions: await Promise.all(agents().map(summary)) }
+    if (channel === 'sessionTimeline.sessionsList') return { projects: [project], sessions: await Promise.all(retainedAgents().map(summary)) }
     if (channel === 'sessionTimeline.sessionOfAgent') {
       const agent = agentsForOwner(Object.values(store.state.agents), ownerId, { includeArchived: true }).find((row) => row.agentUserId === String(args[0]).replace(/^user:/, ''))
       return agent ? { projectId, sessionId: agent.sessionId } : null
@@ -743,13 +764,11 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
       if (!row || row.device_id !== deviceId || row.user_id !== ownerId) throw new Error('手机设备登记信息与当前宿主不一致')
       await reportRuntimeInstanceHeartbeat(cloud.identity, instanceId, deviceId)
       if (stopped || signingOut) return
-      const now = new Date().toISOString()
       // This successful probe can restore heartbeat health; the other startup/auth/RPC gates
       // still have to be true before the device advertises a task runtime.
       const available = startupComplete && authenticated && rpcConnected
       // This host's version is known even while startup/auth/RPC readiness is pending.
-      const { error } = await cloud.identity.from('gugu_devices').upsert({ ...row, status: 'online', last_seen_at: now, updated_at: now, capabilities: { ...row.capabilities, runtimes: available ? ['pi'] : [], host_runtime_capability: 1, host_kind: 'phone', remote_protocol: REMOTE_PROTOCOL_VERSION, min_client_protocol: MIN_CLIENT_PROTOCOL } }, { onConflict: 'device_id' })
-      if (error) throw new Error(error.message)
+      await registerGuguDevice(cloud.identity, { ...row, capabilities: { ...row.capabilities, runtimes: available ? ['pi'] : [], host_runtime_capability: 1, host_kind: 'phone', remote_protocol: REMOTE_PROTOCOL_VERSION, min_client_protocol: MIN_CLIENT_PROTOCOL } }, { expectedDeviceId: deviceId, signal: abort.signal })
       if (stopped || signingOut) return
       if (available && store.state.preparationBackoff) {
         store.state.preparationBackoff.awaitingHeartbeat = false
@@ -838,10 +857,10 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     actions = await actionFactory({ ownerId, store, cloud, nativeCall, sendSession, emit, getManifest: provider.manifest })
     await heartbeat()
     await models.recover()
-    for (const agent of agents()) {
+    for (const agent of retainedAgents()) {
       try { await verifyAgent(agent.agentUserId) } catch (error) {
         // A definite identity move/removal is different from an unavailable identity service.
-        if (error.message === 'Agent 不属于当前账号和这台手机') { delete store.state.agents[agent.agentUserId]; await store.save() } else throw error
+        if (error.message === 'Agent 不属于当前账号和这台手机') { warn(agent.ownershipError) } else throw error
       }
     }
     let reportedConnectivity = false

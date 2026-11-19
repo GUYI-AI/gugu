@@ -3,7 +3,7 @@ import type { PhoneAgentHostState } from '../../../../apps/desktop/src/mobile/lo
 
 const test = vi.hoisted(() => ({
   ownerId: 'mode-owner', state: { ownerId: '', deviceId: '', status: 'ready', ready: true, sessions: [] } as PhoneAgentHostState,
-  configure: vi.fn(), stopHost: vi.fn(), hostState: vi.fn(), grants: vi.fn(), upsert: vi.fn(), rpcHost: vi.fn(), subscribe: vi.fn(),
+  configure: vi.fn(), stopHost: vi.fn(), hostState: vi.fn(), grants: vi.fn(), register: vi.fn(), rpcHost: vi.fn(), subscribe: vi.fn(),
   select: vi.fn(), readEq: vi.fn(), read: vi.fn(), update: vi.fn(), updateEq: vi.fn(), updated: vi.fn(), remove: vi.fn(),
   deviceInfo: vi.fn(), checkPermissions: vi.fn(),
 }))
@@ -17,7 +17,7 @@ vi.mock('../../../../apps/desktop/src/lib/phoneHostAuth', () => ({ withPhoneHost
 vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererSession: () => ({ user: { id: test.ownerId }, access_token: 'test-access', refresh_token: 'test-refresh', expires_at: 123 }), observeRendererSession: () => () => {} }))
 vi.mock('@gugu/core/cloud/config', () => ({ getSupabaseUrl: () => 'https://test.invalid', getSupabaseAnonKey: () => 'public-anon' }))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
-  identityDb: { from: () => ({ upsert: test.upsert, select: test.select, update: test.update }) },
+  identityDb: { rpc: (_name: string, args: { p_device: unknown }) => test.register(args.p_device), from: () => ({ select: test.select, update: test.update }) },
   dataClient: { channel: () => ({ on() { return this }, send: async () => 'ok' }) },
 }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { removeDevice: test.remove } }))
@@ -52,7 +52,7 @@ beforeEach(() => {
   test.hostState.mockReset().mockImplementation(async () => test.state)
   test.stopHost.mockResolvedValue(undefined)
   test.grants.mockResolvedValue(undefined)
-  test.upsert.mockResolvedValue({ error: null })
+  test.register.mockImplementation(async (row: { device_id: string }) => ({ data: { device_id: row.device_id, created: true }, error: null }))
   const readQuery = { eq: test.readEq, maybeSingle: test.read }
   test.readEq.mockReturnValue(readQuery)
   test.select.mockReturnValue(readQuery)
@@ -87,6 +87,20 @@ describe('one phone endpoint owns registration and RPC', () => {
     stop(); stop = null
     expect(test.stopHost).not.toHaveBeenCalled()
   })
+  it.each([
+    { data: null, error: { code: 'P0001', message: 'PHONE_DEVICE_ID_CONFLICT' } },
+    { data: { device_id: 'historical-phone-id', created: false }, error: null },
+  ])('does not subscribe or adopt a different binding after an invalid registration receipt: %j', async receipt => {
+    test.register.mockResolvedValue(receipt)
+    setPhoneDeviceEnabled(test.ownerId, true)
+    stop = start(false)
+    await vi.waitFor(() => expect(readSnapshot().link.state).toBe('error'))
+    expect(readSnapshot().deviceId).toBe(phoneDeviceId('owned-registration', test.ownerId))
+    expect(test.subscribe).not.toHaveBeenCalled()
+    expect(test.update).not.toHaveBeenCalled()
+    expect(test.remove).not.toHaveBeenCalled()
+  })
+
   it.each([false, true])('restarts after native exit without reading or removing the device row (snapshot unreadable: %s)', async (unreadable) => {
     const exiting = deferred()
     setPhoneAgentHostEnabled(test.ownerId, true)
@@ -130,12 +144,12 @@ describe('one phone endpoint owns registration and RPC', () => {
     stop = start(false)
     try {
       await vi.waitFor(() => expect(test.stopHost).toHaveBeenCalledOnce())
-      expect(test.upsert).not.toHaveBeenCalled()
+      expect(test.register).not.toHaveBeenCalled()
       expect(test.rpcHost).not.toHaveBeenCalled()
       expect(test.subscribe).not.toHaveBeenCalled()
       exiting.resolve()
       await vi.waitFor(() => expect(test.subscribe).toHaveBeenCalledOnce())
-      expect(test.upsert).toHaveBeenCalledOnce()
+      expect(test.register).toHaveBeenCalledOnce()
       expect(test.configure).not.toHaveBeenCalled()
     } finally { exiting.resolve() }
   })
@@ -149,7 +163,7 @@ describe('one phone endpoint owns registration and RPC', () => {
     stop = start(true)
     await vi.waitFor(() => expect(test.configure).toHaveBeenCalledTimes(2))
     expect(test.stopHost).not.toHaveBeenCalled()
-    expect(test.upsert).not.toHaveBeenCalled()
+    expect(test.register).not.toHaveBeenCalled()
     expect(test.rpcHost).not.toHaveBeenCalled()
     const exiting = deferred()
     test.stopHost.mockReturnValueOnce(exiting.promise)
@@ -158,11 +172,11 @@ describe('one phone endpoint owns registration and RPC', () => {
     stop = start(false)
     try {
       await vi.waitFor(() => expect(test.stopHost).toHaveBeenCalledOnce())
-      expect(test.upsert).not.toHaveBeenCalled()
+      expect(test.register).not.toHaveBeenCalled()
       expect(test.subscribe).not.toHaveBeenCalled()
       exiting.resolve()
       await vi.waitFor(() => expect(test.subscribe).toHaveBeenCalledOnce())
-      expect(test.upsert).toHaveBeenCalledOnce()
+      expect(test.register).toHaveBeenCalledOnce()
     } finally { exiting.resolve() }
   })
 
@@ -194,7 +208,7 @@ describe('one phone endpoint owns registration and RPC', () => {
     vi.useFakeTimers()
     setPhoneDeviceEnabled(test.ownerId, true)
     stop = start(false)
-    await vi.waitFor(() => expect(test.upsert).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(test.register).toHaveBeenCalledOnce())
     const old = deferred<{ calendar: string }>()
     test.checkPermissions.mockReturnValueOnce(old.promise).mockResolvedValue({ calendar: 'denied' })
     vi.advanceTimersByTime(PHONE_HEARTBEAT_MS)
@@ -204,7 +218,7 @@ describe('one phone endpoint owns registration and RPC', () => {
       old.resolve({ calendar: 'granted' })
       await refreshed
       expect(readSnapshot().os?.runtime.calendar).toBe('denied')
-      expect(test.upsert.mock.lastCall?.[0].capabilities.actions.actions[0].available).toBe(false)
+      expect(test.register.mock.lastCall?.[0].capabilities.actions.actions[0].available).toBe(false)
     } finally { old.resolve({ calendar: 'granted' }); await refreshed }
   })
 
@@ -228,7 +242,7 @@ describe('one phone endpoint owns registration and RPC', () => {
     setPhoneDeviceEnabled(test.ownerId, true)
     stop = start(false)
     try {
-      await vi.waitFor(() => expect(test.upsert).toHaveBeenCalledOnce())
+      await vi.waitFor(() => expect(test.register).toHaveBeenCalledOnce())
       const running = readSnapshot()
       old.resolve({ calendar: 'granted' })
       await offRead
@@ -250,7 +264,7 @@ describe('one phone endpoint owns registration and RPC', () => {
       old.resolve({ calendar: 'granted' })
       await stopPhoneAgentHost(test.ownerId)
       expect(readSnapshot()).toMatchObject({ link: { state: 'off' }, os: { runtime: { calendar: 'denied' } }, deviceId: null, info: stopped.info })
-      expect(test.upsert).not.toHaveBeenCalled()
+      expect(test.register).not.toHaveBeenCalled()
       expect(test.subscribe).not.toHaveBeenCalled()
     } finally { old.resolve({ calendar: 'granted' }) }
   })
@@ -269,7 +283,7 @@ describe('one phone endpoint owns registration and RPC', () => {
       expect(readSnapshot()).toEqual(stopped)
       expect(test.rpcHost).not.toHaveBeenCalled()
       expect(test.checkPermissions).not.toHaveBeenCalled()
-      expect(test.upsert).not.toHaveBeenCalled()
+      expect(test.register).not.toHaveBeenCalled()
     } finally { old.resolve({ install_key: 'stale-install' }) }
   })
 
@@ -286,7 +300,7 @@ describe('one phone endpoint owns registration and RPC', () => {
       expect(test.checkPermissions).toHaveBeenCalledOnce()
       boot.resolve({ calendar: 'granted' })
       await refreshed
-      expect(test.upsert).toHaveBeenCalledOnce()
+      expect(test.register).toHaveBeenCalledOnce()
       expect(test.subscribe).toHaveBeenCalledOnce()
       expect(readSnapshot().os?.runtime.calendar).toBe('granted')
     } finally { boot.resolve({ calendar: 'granted' }); await refreshed }

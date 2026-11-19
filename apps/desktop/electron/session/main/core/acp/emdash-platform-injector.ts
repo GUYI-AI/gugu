@@ -69,10 +69,13 @@ export type EmdashPlatformRelease = (
   intent?: 'end' | 'restart',
 ) => Promise<void>;
 export type EmdashPlatformCheckpoint = (sessionId: string) => Promise<void>;
+export interface EmdashPlatformClosureAck { status: 'settled'; sessionId: string; generation: string }
+export type EmdashPlatformClosureRelease = (sessionId: string, generation: string) => Promise<EmdashPlatformClosureAck>;
 
 let injector: EmdashPlatformInjector | null = null;
 let prepare: ((info: EmdashSessionStartInfo) => Promise<string | null>) | null = null;
 let release: EmdashPlatformRelease | null = null;
+let closureRelease: EmdashPlatformClosureRelease | null = null;
 let checkpoint: EmdashPlatformCheckpoint | null = null;
 const restartContext = new AsyncLocalStorage<{ sessionId: string; active: boolean }>();
 const retiringGenerations = new Map<string, string>();
@@ -120,8 +123,17 @@ export function getEmdashPlatformInjector(): EmdashPlatformInjector | null {
   return injector;
 }
 
-export function setEmdashPlatformRelease(fn: EmdashPlatformRelease | null): void {
+export function setEmdashPlatformRelease(fn: EmdashPlatformRelease | null, strict?: EmdashPlatformClosureRelease): void {
   release = fn;
+  closureRelease = strict ?? null;
+}
+
+/** Separate from the intentionally tolerant interactive-stop helper. A void,
+ * missing or wrong-generation host result never authorizes account erasure. */
+export async function releaseEmdashPlatformSessionForClosure(sessionId: string, generation: string): Promise<void> {
+  if (!closureRelease || !generation) throw new Error('Platform release is unconfirmed');
+  const result = await closureRelease(sessionId, generation);
+  if (result?.status !== 'settled' || result.sessionId !== sessionId || result.generation !== generation) throw new Error('Platform release is unconfirmed');
 }
 
 export function setEmdashPlatformCheckpoint(fn: EmdashPlatformCheckpoint | null): void {

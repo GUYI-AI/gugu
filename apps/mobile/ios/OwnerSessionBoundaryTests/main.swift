@@ -15,7 +15,7 @@ func envelope(subject: String = owner, storedExpiry: Double = 5000, claimExpiry:
 }
 let data = try envelope()
 expect(try GuguIOSOwnerKeychain.decode(data)?.ownerId == owner, "projects only the main owner")
-expect(try GuguIOSOwnerKeychain.decode(data)?.expiresAt == Date(timeIntervalSince1970: 2000), "stored expiry is bounded by the decoded JWT claim")
+expect(try GuguIOSOwnerKeychain.decode(data)?.expiresAt == Date(timeIntervalSince1970: 5000), "stored expiry (this device's clock) is not clamped to the JWT claim (the backend's clock)")
 expect(try GuguIOSOwnerKeychain.ownerForMainWrite(String(decoding: data, as: UTF8.self)) == owner, "pre-write identity uses the same envelope")
 expect(try GuguIOSOwnerKeychain.decode(Data("{\"state\":\"RETIRED_EMPTY\"}".utf8)) == nil, "retired record has no native session")
 expect(rejects { _ = try GuguIOSOwnerKeychain.decode(envelope(subject: "22222222-2222-4222-8222-222222222222")) }, "claims must match stored owner")

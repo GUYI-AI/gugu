@@ -1,0 +1,31 @@
+.gg-model-quota-colors[data-usage-provider='claude'] {
+  --quota-fill:var(--usage-brand-claude-fill);
+  --quota-edge-light:var(--usage-brand-claude-edgeLight);
+  --quota-edge-dark:var(--usage-brand-claude-edgeDark);
+  --quota-track-light:var(--usage-brand-claude-trackLight);
+  --quota-track-dark:var(--usage-brand-claude-trackDark);
+}
+.gg-model-quota-colors[data-usage-provider='codex'] {
+  --quota-fill:var(--usage-brand-codex-fill);
+  --quota-edge-light:var(--usage-brand-codex-edgeLight);
+  --quota-edge-dark:var(--usage-brand-codex-edgeDark);
+  --quota-track-light:var(--usage-brand-codex-trackLight);
+  --quota-track-dark:var(--usage-brand-codex-trackDark);
+}
+.gg-model-quota-colors { --quota-edge:var(--quota-edge-light); --quota-track:var(--quota-track-light); }
+[data-theme='dark'] .gg-model-quota-colors { --quota-edge:var(--quota-edge-dark); --quota-track:var(--quota-track-dark); }
+.gg-model-quota { display:flex; align-items:center; flex-wrap:wrap; gap:16px; min-width:0; }
+.gg-model-quota-window { display:flex; align-items:center; gap:8px; white-space:nowrap; font-size:var(--font-caption); }
+.gg-model-quota-label { color:var(--muted-fg); }
+.gg-model-quota-track { display:block; flex:0 0 44px; width:44px; height:4px; border-radius:var(--radius-capsule); background:var(--quota-track); overflow:hidden; }
+.gg-model-quota-track > span { display:block; height:100%; border-radius:inherit; background:var(--quota-fill); box-shadow:inset 0 0 0 1px var(--quota-edge); }
+.gg-model-quota-value { font-variant-numeric:tabular-nums; white-space:nowrap; }
+.gg-model-quota-popup { width:300px; max-width:calc(100vw - 32px); padding:16px; border-radius:var(--radius-surface); }
+.gg-model-quota-heading { display:flex; justify-content:space-between; gap:12px; font-size:var(--font-body); }
+.gg-model-quota-heading > span { color:var(--muted-fg); font-size:var(--font-caption); }
+.gg-model-quota-updated, .gg-model-quota-reset { color:var(--muted-fg); font-size:var(--font-caption); margin-top:4px; }
+.gg-model-quota-detail-window { margin-top:16px; }
+.gg-model-quota-detail { display:grid; grid-template-columns:1fr auto; gap:8px; }
+.gg-model-quota-detail .gg-model-quota-track { grid-column:1 / -1; grid-row:2; width:100%; }
+.gg-model-quota-detail .gg-model-quota-label { color:var(--fg); }
+.gg-model-quota-error { color:var(--danger); margin-top:12px; }

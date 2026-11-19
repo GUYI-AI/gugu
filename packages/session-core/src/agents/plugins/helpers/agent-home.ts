@@ -116,12 +116,14 @@ export function resolveAgentHome(input: {
     shadowHome,
     configRoot: join(input.guguHome, ...segments),
     userConfigRoot: moved || join(input.osHomeDir, spec.userPath),
+    osHomeDir: input.osHomeDir,
     carryExclusions: spec.carryExclusions.map((entry) => entry.path),
     importGroups: spec.importGroups.map((group) => ({ ...group, paths: group.paths.map((entry) => {
       const path = typeof entry === 'string' ? { path: entry } : entry;
       return moved && path.path.startsWith('../') ? { ...path, path: path.path.slice(3) } : entry;
     }) })),
     credentialPaths: spec.credentialPaths.map((entry) => entry.path),
+    historySession: spec.historySession,
     upgradeHistory: spec.carryExclusions.filter((entry) => entry.upgradeHistory).map((entry) => entry.path),
     legacyCleanup: spec.legacyCleanup,
     seedFiles: (spec.seedFiles ?? []).map((seed) => ({ path: seed.path, content: seed.content })),

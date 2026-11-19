@@ -1,8 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { page, userEvent } from 'vitest/browser';
-import { SessionConversation } from '@/mobile/agent-watch/SessionConversation';
-import { emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store';
+import { SessionConversation } from '@/components/session-watch/SessionConversation';
+import { emptyAgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
 import { state, changed, EMPTY } from '@/lib/sessionInputOutboxBridge';
 import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
@@ -15,11 +15,11 @@ import { i18n } from '@/i18n';
 const { retry, resend, discard } = vi.hoisted(() => ({ retry: vi.fn(async () => {}), resend: vi.fn(async () => {}), discard: vi.fn(async () => {}) }));
 const hostLife = vi.hoisted(() => ({ view: null as LifeView | null }));
 const hostHistory = vi.hoisted(() => ({ read: vi.fn() }));
-vi.mock('@/mobile/agent-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: hostLife.view, error: null, current: () => hostLife.view }) }));
+vi.mock('@/components/session-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: hostLife.view, error: null, current: () => hostLife.view }) }));
 vi.mock('@/lib/sessionInputOutboxBridge', async original => ({ ...(await original<object>()), retrySessionInputs: retry }));
 vi.mock('@gugu/core/cloud/config', async original => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } });
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', async original => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: { getStoredHistory: hostHistory.read, lifeRetryUnknown: resend, lifeDiscard: discard } }) }));
+vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: { getStoredHistory: hostHistory.read, lifeRetryUnknown: resend, lifeDiscard: discard } }) }));
 
 let harness: ReturnType<typeof createReactHarness>;
 afterEach(() => {

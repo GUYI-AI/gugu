@@ -1159,6 +1159,11 @@ export default {
     },
     "engines": "按引擎",
     "enginesEmpty": "这段时间还没有用过任何引擎。",
+    "cacheHit": {
+      "label": "缓存命中",
+      "hint": "读缓存的 Token 占全部输入的比例",
+      "average": "平均 "
+    },
     "heat": {
       "less": "少",
       "more": "多",

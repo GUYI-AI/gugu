@@ -15,7 +15,7 @@ import { TabStripShell } from '@renderer/features/tabs/tab-bar';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
 import { shellRestoreLaneTaken } from '@renderer/features/sidebar/inner-sidebar-fold';
 import { ContextMenu, MenuItem, MenuSeparator } from '@/components/ui/Menu';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@renderer/lib/ui/resizable';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup, setGroupLayout } from '@renderer/lib/ui/resizable';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { followLink } from '@/lib/guguLinks';
 import { cn } from '@renderer/utils/utils';
@@ -113,17 +113,9 @@ const BlockCut = observer(function BlockCut({ node }: { node: Extract<PaneLayout
   const participantWidth = groupParticipantPanes.rightWidth;
 
   // 份额以 node.sizes 为准:库里的布局对不上就摆回去。
-  const syncLayout = (current?: Record<string, number>) => {
+  const syncLayout = () => {
     const handle = groupRef.current;
-    if (!handle) return;
-    const wanted = Object.fromEntries(ids.map((id, index) => [id, node.sizes[index] ?? 0]));
-    try {
-      const layout = current ?? handle.getLayout();
-      if (ids.every((id) => Math.abs((layout[id] ?? -1) - wanted[id]) < 0.5)) return;
-      handle.setLayout(wanted);
-    } catch {
-      // Not laid out yet (first paint): its defaultSize already says the same.
-    }
+    if (handle) setGroupLayout(handle, Object.fromEntries(ids.map((id, index) => [id, node.sizes[index] ?? 0])), 0.5);
   };
   // ids / sizes are read through their keys: a new array every render must not re-run this.
   useEffect(() => syncLayout(), [idsKey, sizesKey, groupRef]);
@@ -152,7 +144,7 @@ const BlockCut = observer(function BlockCut({ node }: { node: Extract<PaneLayout
       onLayoutChanged={(layout, meta) => {
         // Sorted: the library lists a panel in registration order, so one opened in the middle comes last.
         const reported = Object.keys(layout).sort().join(',');
-        if (!meta.isUserInteraction && reported !== reportedIds.current) syncLayout(layout);
+        if (!meta.isUserInteraction && reported !== reportedIds.current) syncLayout();
         reportedIds.current = reported;
         if (meta.isUserInteraction) {
           screenLayout.setSplitSizes(node.id, ids.map((id) => layout[id] ?? 0));
@@ -394,7 +386,7 @@ export function BlockGrip({
   return (
     <span
       role="button"
-      tabIndex={-1}
+      tabIndex={0}
       draggable
       aria-label={label}
       title={label}
@@ -410,7 +402,7 @@ export function BlockGrip({
       }}
       onContextMenu={onContextMenu}
     >
-      <span className="screen-block-grip-dots" aria-hidden="true" />
+      <span className="screen-block-grip-lines" aria-hidden="true" />
     </span>
   );
 }

@@ -138,6 +138,32 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   expect(tool()).toBeNull();
 });
 
+it('docks chat into the strip before a wide floating control and keeps both pages alive', async () => {
+  const { inside, workspace, chat, tool, mode, width } = await mountWorkspace();
+  await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
+  await mode('split');
+  const originalChat = chat(), originalTool = tool();
+  await act(() => workspace.setChatToolLayout('full'));
+  await mode('full');
+  await userEvent.click(page.getByRole('button', { name: '聊天标题', exact: true }));
+  await until('conversation occupies the existing single pane', () => width(chat()), value => value === 800);
+  expect(workspace.chatWorkspaceMode).toBe('full');
+  expect(chat()).toBe(originalChat);
+  await userEvent.click(page.getByText('工具页签', { exact: true }));
+  await act(() => { inside('[data-chat-workspace-test-main]')!.style.width = '560px'; });
+  await until('chat stays a tab in the compact strip', () => workspace.chatWorkspaceConversationPresentation === 'tab');
+  expect(inside('[data-testid="chat-workspace-bubble"]')).toBeNull();
+  await act(() => { inside('[data-chat-workspace-test-main]')!.style.width = '380px'; });
+  await until('further narrowing exposes the chat bubble', () => !!inside('[data-testid="chat-workspace-bubble"]'));
+  const bubble = inside('[data-testid="chat-workspace-bubble"]')!;
+  expect(bubble.getBoundingClientRect().width).toBeGreaterThanOrEqual(44);
+  expect(bubble.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+  await userEvent.click(page.getByTestId('chat-workspace-bubble'));
+  await until('the same conversation returns', () => chat()?.closest('[inert]') === null);
+  expect(chat()).toBe(originalChat);
+  expect(tool()).toBe(originalTool);
+});
+
 it('shrinks and scrolls the group strip with the selected tab still in view', async () => {
   const { inside, mode, workspace } = await mountWorkspace();
   await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
@@ -146,9 +172,9 @@ it('shrinks and scrolls the group strip with the selected tab still in view', as
     for (let index = 0; index < 7; index += 1) {
       workspace.open('tool', { id: `extra-${index}` }, { from: null, intent: 'newTab' });
     }
-    workspace.setPaneSizes([59, 41]);
+    if (workspace.layout.type === 'split') workspace.setSplitSizes(workspace.layout.id, [59, 41]);
   });
-  const activeTab = () => inside('[data-chat-workspace-header] [data-tab-active]');
+  const activeTab = () => inside('[data-chat-workspace-header] [data-tab-label="工具页签"][data-tab-active]');
   const scroller = () => activeTab()?.closest<HTMLElement>('[data-tabstrip-scroller]');
   await until('the active tool scrolls into view as the strip gets narrow', () => {
     const active = activeTab()?.getBoundingClientRect();

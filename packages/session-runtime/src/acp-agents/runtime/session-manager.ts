@@ -1,3 +1,4 @@
+import { noteCodexPreparation } from './codex-preparation-progress';
 import type { SessionCommandDefinition } from '@gugu/session-core/acp';
 import { isAcpAuthRequired } from '@gugu/session-core/acp';
 import type { AcpPermissionParams } from '@gugu/session-core/agents/plugins';
@@ -435,6 +436,7 @@ export class SessionManager implements InboundRouter {
           providerSessionId: lostRecord.input.providerSessionId,
           sourceSessionId: lostRecord.input.sourceSessionId,
           forkFromProviderSessionId: lostRecord.input.forkFromProviderSessionId,
+          forkKeepsAgent: lostRecord.input.forkKeepsAgent,
           initialQueue: lostRecord.cell.sessionState.queuedPrompts.length > 0
             ? [...lostRecord.cell.sessionState.queuedPrompts]
             : undefined,
@@ -656,14 +658,11 @@ export class SessionManager implements InboundRouter {
         capabilitySpawnEnv: input.capabilitySpawnEnv,
         capabilitySpawnArgs: input.capabilitySpawnArgs,
         buildClient: (_agent, context) => buildAgentClient(context, this, this.ports),
-        ...(binding.behavior.turnFailure?.fromStderrLine
-          ? {
-              onStderrLine: (line: string) => {
-                const failure = binding.behavior.turnFailure?.fromStderrLine?.(line);
-                if (failure) record.cell.noteProviderStderrFailure(failure);
-              },
-            }
-          : {}),
+        onStderrLine: (line: string) => {
+          noteCodexPreparation(input.providerId, line, this.startProgress, input.sessionId, () => this.syncRecord(record));
+          const failure = binding.behavior.turnFailure?.fromStderrLine?.(line);
+          if (failure) record.cell.noteProviderStderrFailure(failure);
+        },
         onStage: (stage, executable) => this.markStartStage(input, stage, executable),
       },
       isAcpConnectionError
@@ -758,6 +757,8 @@ export class SessionManager implements InboundRouter {
       // 重放失败、退回 `session/new` 时的原因。有值 = 这条会话在引擎那侧是**新**的,
       // 转录开头要画一条界告诉用户「往上的内容它没有」(#5381 ④)。
       let contextResetReason: string | null = null;
+      // The engine's "no such session" for a session the host declared never-ran (#7223): what the reset line says.
+      let neverRanMissing: unknown;
       // 启动期的降级通知(模型用不了 / 模型被换掉)。**不杀会话** —— 会话照常开,
       // 这些事实在 ready 之后画成转录里的一行(spec `session-always-openable`)。
       const startupNotices: StartupNotice[] = [];
@@ -776,6 +777,7 @@ export class SessionManager implements InboundRouter {
             )
           );
         }
+        let neverRan = false;
         try {
           const forked = await connection.agent.unstable_forkSession(
             this.buildForkSessionRequest(input, persistentForkSource, false)
@@ -785,17 +787,27 @@ export class SessionManager implements InboundRouter {
             sessionId: input.sessionId,
             sourceProviderSessionId: persistentForkSource,
             forkedProviderSessionId: forked.sessionId,
+            keepsAgent: input.forkKeepsAgent === true,
             connectionKey: connection.key,
           });
         } catch (e) {
           if (isAuthRequiredError(e)) throw e;
-          await acquired.release();
-          if (isProviderSessionMissingError(e, { resumingProviderSessionId: persistentForkSource })) {
-            return acpErr.providerSessionMissing(toProviderSerializedError(e));
+          const missing = isProviderSessionMissingError(e, { resumingProviderSessionId: persistentForkSource });
+          // A route-switch fork of a session that never ran (#7223): the engine has nothing to fork, exactly as a
+          // resume of it has nothing to load, so it takes the same first start below. Any other fork stays loud.
+          neverRan = missing && input.forkKeepsAgent === true && input.freshIfProviderSessionMissing === true;
+          if (!neverRan) {
+            await acquired.release();
+            if (missing) return acpErr.providerSessionMissing(toProviderSerializedError(e));
+            return acpErr.newSessionFailed(toProviderSerializedError(e));
           }
-          return acpErr.newSessionFailed(toProviderSerializedError(e));
+          this.deps.logger.warn(
+            'SessionManager: provider session missing and the session never ran; starting a new session',
+            { sessionId: input.sessionId, cause: toSerializedError(e) }
+          );
+          neverRanMissing = e;
         }
-        if (!loadProviderSessionId) {
+        if (!loadProviderSessionId && !neverRan) {
           await acquired.release();
           return acpErr.newSessionFailed(
             toSerializedError(new Error('ACP session/fork returned no session id'))
@@ -984,7 +996,7 @@ export class SessionManager implements InboundRouter {
             'SessionManager: provider session missing and the session never ran; starting a new session',
             { sessionId: input.sessionId, cause: toSerializedError(e) }
           );
-          contextResetReason = e instanceof Error ? e.message : String(e);
+          neverRanMissing = e;
           record.cell.abandonReplay(Date.now());
         } finally {
           this.removeLoading(connection.key, input.sessionId);
@@ -995,6 +1007,9 @@ export class SessionManager implements InboundRouter {
         }
       }
 
+      if (neverRanMissing !== undefined) {
+        contextResetReason = neverRanMissing instanceof Error ? neverRanMissing.message : String(neverRanMissing);
+      }
       if (record.phase === 'starting') {
         // Own the startup queue in the runtime from the moment the adapter connection exists.
         // The provider session id is not known yet, but queued prompts do not need an ACP address
@@ -2204,7 +2219,13 @@ export class SessionManager implements InboundRouter {
         // session/load (Claude's transcript --resume path) instead of silently creating a new
         // conversation. Runtime forks retain their fork declaration and may recreate the fork
         // when their provider does not persist ephemeral transcripts.
-        record.input = { ...record.input, providerSessionId: record.cell.acpSessionId };
+        // A persistent fork (a new task's, or a route switch's) that already produced its session: that session is the
+        // one to load, and forking the source again would drop every turn since. Runtime forks keep their declaration.
+        const forked = !record.input.sourceSessionId && record.input.forkFromProviderSessionId
+          && record.cell.acpSessionId && record.cell.acpSessionId !== record.input.forkFromProviderSessionId;
+        record.input = forked
+          ? { ...record.input, providerSessionId: record.cell.acpSessionId, forkFromProviderSessionId: undefined, forkKeepsAgent: undefined }
+          : { ...record.input, providerSessionId: record.cell.acpSessionId };
         Object.assign(record, {
           phase: 'lost',
           loss: failure,
@@ -2867,7 +2888,7 @@ export class SessionManager implements InboundRouter {
       lastActionAt: recent.lastActionAt,
       failure: cell?.sessionState.failure ?? state.failure ?? null,
       ...(cell ? { canReattach: cell.canReattach } : {}),
-      startProgress: state.lifecycle === 'starting'
+      startProgress: state.lifecycle === 'starting' || state.lifecycle === 'replaying'
         ? this.startProgress.get(input.sessionId) ?? null
         : null,
       updatedAt: Date.now(),
@@ -3044,7 +3065,8 @@ export class SessionManager implements InboundRouter {
       // 两家各有各的名字,所以两个都写 —— ❌ 不许只写一个然后假设对面认得。
       _meta: {
         ...(ephemeral ? ephemeralForkMeta(envelope) : (envelope ?? {})),
-        gugu: { ephemeralFork: ephemeral },
+        // `forkKeepsAgent`:换计费路的分叉,同一个 agent 接着干 —— 桥 ❌ 给它补「你是分叉出来的新 agent」的交接。
+        gugu: { ephemeralFork: ephemeral, ...(input.forkKeepsAgent ? { forkKeepsAgent: true } : {}) },
       },
     };
   }

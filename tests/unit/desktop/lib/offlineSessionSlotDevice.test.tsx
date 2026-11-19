@@ -17,7 +17,7 @@ vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: sc
 vi.mock('@/platform', () => ({ platform: { kind: 'electron' } }))
 vi.mock('@/components/chat/ChatSummariesHost', () => ({ ChatSummariesHost: () => null }))
 vi.mock('@/components/chat/NativeConversationReadHost', () => ({ NativeConversationReadHost: () => null }))
-vi.mock('@/mobile/agent-watch/SessionTimelinePage', () => ({
+vi.mock('@/components/session-watch/SessionTimelinePage', () => ({
   SessionTimelinePage: ({ device }: { device: { device_id: string; last_seen_at: string } }) =>
     <output data-timeline-device={device.device_id}>{device.last_seen_at}</output>,
 }))

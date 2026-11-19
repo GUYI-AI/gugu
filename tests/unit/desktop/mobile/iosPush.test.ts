@@ -3,15 +3,15 @@ import { beforeEach, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({
   owner: { status: 'ready', binding: { ownerId: 'owner', installationId: 'install', deviceId: 'phone' } },
   host: { binding: { ownerId: 'owner', installationId: 'install' }, settings: { status: 'ready', meta: { value: { enabled: true, sound: false } } } },
-  chat: { chatMessages: true, sound: true },
+  chat: { chatMessages: true, chatSound: true },
   native: { configure: vi.fn(), suspend: vi.fn(), status: vi.fn(), register: vi.fn(), addListener: vi.fn() },
   lookup: vi.fn(),
   changed: [] as (() => void)[], foreground: null as (() => void) | null,
 }))
 vi.mock('@capacitor/core', () => ({ Capacitor: { getPlatform: () => 'ios', isPluginAvailable: () => true }, registerPlugin: () => state.native }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { subscribeAppForeground: (fn: () => void) => { state.foreground = fn; return () => {} } } }))
-vi.mock('../../../../apps/desktop/src/lib/notificationSettings', () => ({ readNotificationSettings: () => state.chat,
-  subscribeNotificationSettings: (fn: () => void) => { state.changed.push(fn); return () => {} } }))
+vi.mock('../../../../apps/desktop/src/lib/devicePreferences', () => ({ readDevicePreferences: () => state.chat,
+  subscribeDevicePreferences: (fn: () => void) => { state.changed.push(fn); return () => {} } }))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn() }) }))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ chatDb: { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: state.lookup }) }) }) } }))
 vi.mock('../../../../apps/desktop/src/mobile/ios-runtime/startIOSOwnerPublication', () => ({

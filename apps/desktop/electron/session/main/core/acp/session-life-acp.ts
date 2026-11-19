@@ -21,7 +21,7 @@ import type { RuntimeFork } from '../sessions/session-life-forks';
 import { localAgentForSession } from '@main/core/sessionpage/sessionpage-session-agent';
 import { acpAgentStatusBridge } from './agent-status-bridge';
 import type { EmdashSessionIdentity } from './emdash-mcp-injector';
-import { prepareEmdashPlatformSession, releaseEmdashPlatformSession } from './emdash-platform-injector';
+import { prepareEmdashPlatformSession, releaseEmdashPlatformSession, releaseEmdashPlatformSessionForClosure } from './emdash-platform-injector';
 import { injectEmdashPromptDetached } from './inject-prompt';
 import {
   acpWorkerLease, callSessionStart, persistProviderSessionMissing, persistReturnedProviderSessionId,
@@ -80,6 +80,17 @@ function beforeStartupDeadline<T>(work: Promise<T>, deadline: AbortSignal): Prom
   });
 }
 
+/**
+ * A billing-route switch left this conversation's native session to be forked onto the new route (descriptor
+ * `sourceChangeSession: 'fork'`): the start forks it as the same agent instead of resuming it. Still a resume of this
+ * conversation for everything else (identity, capabilities, history facts), so the lifecycle stays `resume`.
+ */
+function routeSwitchForkSource(row: Row): string | undefined {
+  // Valid only while it names the recorded session: once the fork's new id is written, the mark is spent.
+  const pending = row.forkOnStartProviderSessionId;
+  return pending && pending === row.providerSessionId ? pending : undefined;
+}
+
 function lifecycleOf(row: Row, fork: RuntimeFork | null): Lifecycle {
   if (fork) return 'fork';
   if (row.providerSessionId) return 'resume';
@@ -98,6 +109,7 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
   let facts: Facts | null = null;
   let identity: EmdashSessionIdentity | null = null;
   let platformPreparation: Promise<string | null> | null = null;
+  let lateTeardown: Promise<void> | null = null;
   const piDeadline = new AbortController();
   let releasePiStartup: (() => void) | undefined;
   let piMaterialization: Promise<void> | undefined;
@@ -153,10 +165,12 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
     // Not yet claimed by a first start: a pending persistent fork rides on it. The creation turns are pending
     // rows (one queue), never part of the start.
     const unclaimed = session.providerSessionId == null;
+    const forkSource = routeSwitchForkSource(session);
     return {
       input: {
         ...acpStartInputFor(session, workspace.workspaceId, workspace.path),
         ...(unclaimed && session.forkFromProviderSessionId ? { forkFromProviderSessionId: session.forkFromProviderSessionId } : {}),
+        ...(forkSource ? { forkFromProviderSessionId: forkSource, forkKeepsAgent: true } : {}),
       },
     } as StartInput;
   }
@@ -267,7 +281,11 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
       .catch(error => log.error('Human tool results could not resume', { sessionId, error: String(error) }));
     void persistSessionMcpServers(sessionId, command.input.providerId, command.input.cwd, f.mcpDisabledServers, injection.extensionDelivery);
     const previous = fork ? null : known().providerSessionId ?? null;
-    const nativeSession = previous === null ? null : result.data.providerSessionId === previous ? 'preserved' : 'replaced';
+    // A route-switch fork is a new native id carrying the conversation; how much of it the session itself says. Its
+    // pending mark names the source id, which is no longer the recorded one, so it is spent (see routeSwitchForkSource).
+    const nativeSession = previous === null ? null
+      : command.input.forkKeepsAgent ? 'route-switched'
+        : result.data.providerSessionId === previous ? 'preserved' : 'replaced';
     const waiting = (fork ? forkStore : lifeStore).pending(sessionId);
     backlogThrough = Math.max(-1, ...waiting.queued, ...waiting.dispatching);
     return lease({ gen, timing: 'next-tool-call', nativeSession }) as AdmittedChannel;
@@ -363,12 +381,19 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
         else if (platformPreparation) {
           // The attempt can stop before the platform stage took the ticket (its issue may still be out, or never answer):
           // settle only the generation this early operation owns, without waiting for it.
-          void platformPreparation.then(generation => generation ? releaseEmdashPlatformSession(sessionId, generation) : undefined)
-            .catch(error => log.warn('early platform preparation could not settle', { sessionId, error: String(error) }));
+          lateTeardown = platformPreparation.then(generation => generation ? releaseEmdashPlatformSession(sessionId, generation) : undefined);
+          void lateTeardown.catch(error => log.warn('early platform preparation could not settle', { sessionId, error: String(error) }));
         } else if (have.capabilities) await releaseEmdashPlatformSession(sessionId); // a session on its own model asks no ticket early
       } finally {
         finishPiStartup();
       }
+    },
+    async closureDrain() {
+      if (lateTeardown) await lateTeardown;
+      if (!facts?.platformModel) return;
+      const generation = await platformPreparation;
+      if (!generation) throw new Error('Platform release is unconfirmed');
+      await releaseEmdashPlatformSessionForClosure(sessionId, generation);
     },
     onExit(have, cb) {
       const worker = read<Worker>(have.process);

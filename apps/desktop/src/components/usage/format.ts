@@ -11,6 +11,14 @@ export function plain(value: number, fractionDigits = 0): string {
   return formatNumber(value, { maximumFractionDigits: fractionDigits })
 }
 
+/** Keep small positive cache shares distinct from an actual zero. */
+export function cachePercent(rate: number | null): string {
+  if (rate === null) return '—'
+  const percent = rate * 100
+  if (percent > 0 && percent < 0.1) return '<0.1%'
+  return `${plain(percent, percent > 0 && percent < 1 ? 1 : 0)}%`
+}
+
 /** 秒 → 「45 分钟」「3.2 小时」「60 小时」。不到 10 小时留一位小数,再多就取整。 */
 export function duration(seconds: number, t: TFunction<'settings'>): string {
   if (seconds < 3600) return t('usage.minutes', { count: Math.round(seconds / 60), value: plain(Math.round(seconds / 60)) })

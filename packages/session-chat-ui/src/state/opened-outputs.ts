@@ -87,7 +87,7 @@ function basenameOf(path: string): string {
   return parts.at(-1) ?? path;
 }
 
-/** 画成「图片」的扩展名(手机上点开进看图器,见 mobile/agent-watch/opened-output-open)。 */
+/** 画成「图片」的扩展名(手机上点开进看图器,见 components/session-watch/opened-output-open)。 */
 const IMAGE_EXTENSIONS = new Set(['PNG', 'JPG', 'JPEG', 'GIF', 'WEBP', 'SVG', 'BMP', 'AVIF']);
 
 const PRIVATE_HOST = /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1?\]|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)$|\.local$/i;

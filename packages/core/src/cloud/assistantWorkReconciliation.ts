@@ -1,3 +1,4 @@
+import { serverNow } from '../shared/serverClock'
 import { assistantWorkNoticeReason } from './assistantWorkNoticeReason'
 import { enqueueAssistantWorkDelivery, type AssistantWorkRpcClient } from './assistantWorkOutbox'
 import { assistantWorkCoordinator, type AssistantWorkAddress } from './assistantWorkRouting'
@@ -43,7 +44,8 @@ export function createAssistantWorkReconciler(deps:{
 }) {
   let flight:Promise<void>|null=null
   let stopped=false
-  const now=deps.now??Date.now
+  // `platform_received_at` is the platform's clock (`@@@server-clock`).
+  const now=deps.now??serverNow
   const postedNotices=new Map<string,{chatId:string;messageId:string}>()
   const current=async(ctx:WorkReconciliationContext)=>{
     const next=await deps.context()

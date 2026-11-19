@@ -31,7 +31,7 @@ function progress(messageId: string, value?: DeclaredUploadProgress) {
         else shas.delete(messageId)
       }).catch(error => { if (shas.get(messageId) === value.sha256) shas.delete(messageId); warn(error) })
     }
-    if (value.failed) failAttachmentUploadProgress(messageId, value.final ? undefined : () => { void retry(messageId).catch(warn) })
+    if (value.failed) failAttachmentUploadProgress(messageId, value.final ? undefined : () => { void retry(messageId).catch(warn) }, value.reason)
     else setAttachmentUploadProgress(messageId, value)
   } else {
     copies.delete(messageId); shas.delete(messageId)

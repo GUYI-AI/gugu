@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReactHarness, device, renderWithAppProviders } from '../../support/testHarness'
-import { SessionTimelinePage } from '../../../apps/desktop/src/mobile/agent-watch/SessionTimelinePage'
-import { emptyAgentWatchTimeline } from '../../../apps/desktop/src/mobile/agent-watch/agent-watch-store'
+import { SessionTimelinePage } from '../../../apps/desktop/src/components/session-watch/SessionTimelinePage'
+import { emptyAgentWatchTimeline } from '../../../apps/desktop/src/components/session-watch/agent-watch-store'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 
 // owner 2026-11-08: 「d22 未连接 · 最后在线 4 分钟前」 while d22 was online. The directory saying a machine is off and
@@ -10,9 +10,9 @@ import type { SessionpageSessionSummary } from '@gugu/session-core/session-recor
 // the header — ❌ a line / banner under it, ❌ 「未连接」 anywhere.
 const scope = vi.hoisted(() => ({ link: 'ok' as 'ok' | 'lost' }))
 vi.mock('../../../apps/desktop/src/lib/sessionInputOutboxBridge', () => ({ enqueueSessionInput: vi.fn(), retrySessionInputs: vi.fn(), useQueuedSessionInputs: () => [] }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/useAgentWatchSession', () => ({ useAgentWatchSession: () => ({ timeline: emptyAgentWatchTimeline(), phase: 'ready', error: null, link: scope.link, pendingSends: [], reload() {}, loadOlder: async () => undefined, cancel() {}, respond() {} }) }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/useNativeSessionRecord', () => ({ useNativeSessionRecord: () => ({ record: null, error: null, followTail() {}, loadNewer() {}, loadOlder: async () => undefined }) }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/SessionConversation', () => ({ SessionConversation: () => <div data-conversation="" /> }))
+vi.mock('../../../apps/desktop/src/components/session-watch/useAgentWatchSession', () => ({ useAgentWatchSession: () => ({ timeline: emptyAgentWatchTimeline(), phase: 'ready', error: null, link: scope.link, pendingSends: [], reload() {}, loadOlder: async () => undefined, cancel() {}, respond() {} }) }))
+vi.mock('../../../apps/desktop/src/components/session-watch/useNativeSessionRecord', () => ({ useNativeSessionRecord: () => ({ record: null, error: null, followTail() {}, loadNewer() {}, loadOlder: async () => undefined }) }))
+vi.mock('../../../apps/desktop/src/components/session-watch/SessionConversation', () => ({ SessionConversation: () => <div data-conversation="" /> }))
 vi.mock('../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: { enabledTabContributions: [] } }))
 vi.mock('../../../apps/desktop/src/components/ui/sheetStack', async original => ({ ...await original<object>(), useBackLayer() {} }))
 

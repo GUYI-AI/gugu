@@ -6,7 +6,7 @@ import {
   useTransform,
   type MotionValue,
 } from 'framer-motion';
-import { readInterface, takeLegacyInterface, writeInterface } from '@/lib/viewStateTable';
+import { clampPaneWidth, definePaneWidth, readPaneWidth, writePaneWidth } from '@/lib/paneWidth';
 import {
   createContext,
   useCallback,
@@ -26,12 +26,9 @@ export const SIDEBAR_MIN_WIDTH_PX = 200;
 export const SIDEBAR_MAX_WIDTH_PX = 520;
 export const SIDEBAR_DEFAULT_WIDTH_PX = NAV_COLUMN_WIDTH;
 
-const SIDEBAR_WIDTH_STORAGE_KEY = 'gugu.taskpage.sidebarWidth';
+const SIDEBAR_PANE = definePaneWidth({ id: 'gugu.taskpage.sidebarWidth', initial: SIDEBAR_DEFAULT_WIDTH_PX, min: SIDEBAR_MIN_WIDTH_PX, max: SIDEBAR_MAX_WIDTH_PX });
 
-export function clampSidebarWidth(width: number): number {
-  if (!Number.isFinite(width)) return SIDEBAR_DEFAULT_WIDTH_PX;
-  return Math.max(SIDEBAR_MIN_WIDTH_PX, Math.min(SIDEBAR_MAX_WIDTH_PX, width));
-}
+export const clampSidebarWidth = (width: number): number => clampPaneWidth(SIDEBAR_PANE, width);
 
 /**
  * GUYI-AI/gugu#2642 内层栏(打开一个群 / 项目时列表与正文之间那一列)的宽:拖它右边缘调。范围暂与左边列表同档,
@@ -43,11 +40,9 @@ export const INNER_SIDEBAR_DEFAULT_WIDTH_PX = SIDEBAR_DEFAULT_WIDTH_PX;
 /** 内层栏最多占这张卡片(内层栏 + 正文)宽的这个比例 —— 与列表占会话页的比例同一个口径,正文至少留六成。 */
 export const INNER_SIDEBAR_MAX_SHARE = 0.4;
 export const INNER_SIDEBAR_WIDTH_STORAGE_KEY = 'gugu.taskpage.innerSidebarWidth';
+const INNER_SIDEBAR_PANE = definePaneWidth({ id: INNER_SIDEBAR_WIDTH_STORAGE_KEY, initial: INNER_SIDEBAR_DEFAULT_WIDTH_PX, min: INNER_SIDEBAR_MIN_WIDTH_PX, max: INNER_SIDEBAR_MAX_WIDTH_PX });
 
-export function clampInnerSidebarWidth(width: number): number {
-  if (!Number.isFinite(width)) return INNER_SIDEBAR_DEFAULT_WIDTH_PX;
-  return Math.max(INNER_SIDEBAR_MIN_WIDTH_PX, Math.min(INNER_SIDEBAR_MAX_WIDTH_PX, width));
-}
+export const clampInnerSidebarWidth = (width: number): number => clampPaneWidth(INNER_SIDEBAR_PANE, width);
 
 /**
  * 内层栏此刻最宽能到哪:卡片宽(会话页宽 − 列表占位宽)的 INNER_SIDEBAR_MAX_SHARE,不过硬上限;`null` = 还没量到,只有硬上限。
@@ -66,19 +61,6 @@ export function innerSidebarShownWidth(width: number, cardWidth: number | null):
   return Math.max(INNER_SIDEBAR_MIN_WIDTH_PX, Math.min(innerSidebarMaxWidth(cardWidth), width));
 }
 
-// Pane widths are view state of the device (lib/viewStateTable), in the first frame; the old localStorage values move over.
-takeLegacyInterface(SIDEBAR_WIDTH_STORAGE_KEY, SIDEBAR_WIDTH_STORAGE_KEY, Number.parseFloat);
-takeLegacyInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY, INNER_SIDEBAR_WIDTH_STORAGE_KEY, Number.parseFloat);
-
-function readStoredWidth(key: string, clamp: (width: number) => number, fallback: number): number {
-  const width = readInterface<number>(key);
-  return width === undefined ? fallback : clamp(width);
-}
-
-function writeStoredWidth(key: string, width: number): void {
-  writeInterface(key, Math.round(width));
-}
-
 /**
  * #2548 the list collapses to a rail of its avatars, this wide: the list's gutter (12) + row padding (8) + avatar (32) + the
  * same 8 + 12 on the other side, so every avatar sits on its middle (x = 36) without moving. The rail is always there, so the
@@ -92,6 +74,15 @@ export function sidebarOccupiedWidth(progress: number, width: number, rail: numb
 }
 
 /**
+ * The width the list is drawn and laid out at: its occupied width, landed on an end once it is within SIDEBAR_LANDED_PX of it.
+ * The spring's sub-pixel tail (~130 ms) then moves nothing: the page beside it is not re-laid out for a fraction of a pixel.
+ */
+export function sidebarDrawnWidth(progress: number, width: number, rail: number): number {
+  const occupied = sidebarOccupiedWidth(progress, width, rail);
+  return occupied - rail < SIDEBAR_LANDED_PX ? rail : width - occupied < SIDEBAR_LANDED_PX ? width : occupied;
+}
+
+/**
  * #2548 收起成一列头像时,侧栏里文字(名字、预览、时间、搜索、分区头)的不透明度,由开合的同一条进度推出:
  * 只在进度的后一半里有字 —— 收起时字在前一半淡出,展开时在后一半淡入(一个式子两个方向都对)。
  */
@@ -100,8 +91,8 @@ export function sidebarRailTextOpacity(progress: number): number {
 }
 
 /**
- * A fold has landed once its drawn edge is this close to where it goes. The page's layout width and the rail layout switch
- * there, ❌ at the spring's formal rest: its sub-pixel tail ran on ~130 ms after the motion looked done, and the switch
+ * A fold has landed once its drawn edge is this close to where it goes. The rail layout switches there, ❌ at the spring's
+ * formal rest: its sub-pixel tail ran on ~130 ms after the motion looked done, and the switch
  * landed as a late snap.
  */
 export const SIDEBAR_LANDED_PX = 0.5;
@@ -142,14 +133,11 @@ export interface WorkspaceLayoutContextValue {
   leftWidth: MotionValue<number>;
   /** 开合进度 0→1,由弹簧驱动。 */
   leftProgress: MotionValue<number>;
-  /** 侧栏此刻画出来的宽 = 收起宽 + 进度 × (宽 − 收起宽)。 */
-  leftAnimatedWidth: MotionValue<number>;
   /**
-   * 侧栏在布局里占的宽,主区宽是「剩下的」。静止、拖宽时等于画出来的宽;收展动画和拖到最小宽以下时它只跳一次
-   * (@@@overlay-collapse):收起一开始就落到终值,展开在边落定(SIDEBAR_LANDED_PX)的那一帧落到终值 —— 中间侧栏盖在正文上滑,
-   * 正文 ❌ 逐帧重排。
+   * 侧栏此刻画出来的宽 = 收起宽 + 进度 × (宽 − 收起宽)。它也是侧栏在布局里占的宽(主区宽是「剩下的」):收起和展开
+   * 都由这一个弹簧逐帧推出,两个方向的布局在同一时刻变 —— ❌ 按方向在动画开头或落定时一次性切。
    */
-  leftLayoutWidth: MotionValue<number>;
+  leftAnimatedWidth: MotionValue<number>;
   /** 会话页根元素。 */
   workspaceRootRef: RefObject<HTMLDivElement | null>;
   setLeftWidth: (width: number, options?: { persist?: boolean }) => void;
@@ -200,37 +188,15 @@ const WorkspaceLayoutContext = createContext<WorkspaceLayoutContextValue | undef
  */
 export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   // Expanded until the user folds it (#2548 「默认展开」); the fold is stored with the sidebar's snapshot (sidebar-folds) and
-  // the width under SIDEBAR_WIDTH_STORAGE_KEY, so a restart comes back as it was left.
+  // the width under SIDEBAR_PANE, so a restart comes back as it was left.
   const [isLeftOpen, setIsLeftOpen] = useState(() => !sidebarFolds.has('left'));
   const prefersReducedMotion = useReducedMotion();
   const workspaceRootRef = useRef<HTMLDivElement | null>(null);
 
-  const leftWidth = useMotionValue(readStoredWidth(SIDEBAR_WIDTH_STORAGE_KEY, clampSidebarWidth, SIDEBAR_DEFAULT_WIDTH_PX));
+  const leftWidth = useMotionValue(readPaneWidth(SIDEBAR_PANE));
   const leftProgress = useMotionValue(isLeftOpen ? 1 : 0);
   const leftAnimatedWidth = useTransform([leftProgress, leftWidth], ([progress, width]: number[]) =>
-    sidebarOccupiedWidth(progress, width, SIDEBAR_RAIL_PX)
-  );
-  // @@@overlay-collapse - while the list moves, the page is laid out at the narrower end of the motion and takes the end it
-  // goes to once the drawn edge has landed (SIDEBAR_LANDED_PX): one re-layout of the page per fold, ❌ one per frame.
-  // -1 = not held: the layout follows the drawn width (at rest, a resize).
-  const leftHold = useMotionValue(-1);
-  const leftLayoutWidth = useTransform([leftAnimatedWidth, leftHold], ([width, hold]: number[]) => (hold < 0 ? width : hold));
-  const landingRef = useRef<(() => void) | null>(null);
-  const holdLayout = useCallback(
-    (width: number, landing = width) => {
-      landingRef.current?.();
-      landingRef.current = null;
-      leftHold.set(width);
-      if (width === landing) return;
-      const stop = leftAnimatedWidth.on('change', (drawn) => {
-        if (Math.abs(drawn - landing) >= SIDEBAR_LANDED_PX) return;
-        stop();
-        landingRef.current = null;
-        leftHold.set(landing);
-      });
-      landingRef.current = stop;
-    },
-    [leftAnimatedWidth, leftHold]
+    sidebarDrawnWidth(progress, width, SIDEBAR_RAIL_PX)
   );
   const runningAnimationRef = useRef<{ stop: () => void } | null>(null);
   /** An edge drag under way (rail only): the width it started from. */
@@ -251,17 +217,17 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     (width: number, options?: { persist?: boolean }) => {
       const next = clampSidebarWidth(width);
       leftWidth.set(next);
-      if (options?.persist) writeStoredWidth(SIDEBAR_WIDTH_STORAGE_KEY, next);
+      if (options?.persist) writePaneWidth(SIDEBAR_PANE, next);
     },
     [leftWidth]
   );
 
   const workspaceWidth = useMotionValue(0);
   const innerWidth = useMotionValue(
-    readStoredWidth(INNER_SIDEBAR_WIDTH_STORAGE_KEY, clampInnerSidebarWidth, INNER_SIDEBAR_DEFAULT_WIDTH_PX)
+    readPaneWidth(INNER_SIDEBAR_PANE)
   );
-  // 卡片宽 = 会话页宽 − 列表在布局里的占位宽(拖动时逐帧跟着变,收展动画里只跳一次;❌ 读用户选定宽)。
-  const innerShownWidth = useTransform([innerWidth, leftLayoutWidth, workspaceWidth], ([width, left, root]: number[]) =>
+  // 卡片宽 = 会话页宽 − 列表此刻占的宽(❌ 读用户选定宽)。
+  const innerShownWidth = useTransform([innerWidth, leftAnimatedWidth, workspaceWidth], ([width, left, root]: number[]) =>
     innerSidebarShownWidth(width, root > 0 ? root - left : null)
   );
   const [innerSidebarFrames, setInnerSidebarFrames] = useState(0);
@@ -273,7 +239,7 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     (width: number, options?: { persist?: boolean }) => {
       const next = clampInnerSidebarWidth(width);
       innerWidth.set(next);
-      if (options?.persist) writeStoredWidth(INNER_SIDEBAR_WIDTH_STORAGE_KEY, next);
+      if (options?.persist) writePaneWidth(INNER_SIDEBAR_PANE, next);
     },
     [innerWidth]
   );
@@ -286,7 +252,6 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
       setIsLeftOpen(open);
 
       const target = open ? 1 : 0;
-      const laidOut = leftLayoutWidth.get();
       runningAnimationRef.current?.stop();
       runningAnimationRef.current = null;
       const restore = open ? restoreWidthRef.current : null;
@@ -298,18 +263,12 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
         leftProgress.set(restore > SIDEBAR_RAIL_PX ? clamp01((occupied - SIDEBAR_RAIL_PX) / (restore - SIDEBAR_RAIL_PX)) : target);
       }
       if (prefersReducedMotion) {
-        holdLayout(-1);
         leftProgress.set(target);
         return;
       }
-      // From where the page is laid out now (held by a drag or a motion this one reverses), ❌ from the drawn edge.
-      const landing = sidebarOccupiedWidth(target, leftWidth.get(), SIDEBAR_RAIL_PX);
-      holdLayout(Math.min(laidOut, landing), landing);
-      const running = animate(leftProgress, target, PANEL_SPRING);
-      runningAnimationRef.current = running;
-      void running.then(() => { if (runningAnimationRef.current === running) holdLayout(-1); });
+      runningAnimationRef.current = animate(leftProgress, target, PANEL_SPRING);
     },
-    [holdLayout, leftAnimatedWidth, leftLayoutWidth, leftProgress, leftWidth, prefersReducedMotion]
+    [leftAnimatedWidth, leftProgress, leftWidth, prefersReducedMotion]
   );
 
   const toggleLeft = useCallback(() => {
@@ -325,12 +284,10 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
         edgeDragRef.current = { startWidth: restoreWidthRef.current ?? leftWidth.get() };
       }
       const next = sidebarEdgeDrag(rawWidth, { rail: SIDEBAR_RAIL_PX, min: SIDEBAR_MIN_WIDTH_PX, max: Math.min(SIDEBAR_MAX_WIDTH_PX, maxWidth) });
-      // Below the minimum the list moves over a page laid out at the rail; at or above it the drag is a resize.
-      holdLayout(next.progress < 1 ? SIDEBAR_RAIL_PX : -1);
       leftWidth.set(next.width);
       leftProgress.set(next.progress);
     },
-    [holdLayout, leftProgress, leftWidth]
+    [leftProgress, leftWidth]
   );
 
   const releaseLeftEdge = useCallback(() => {
@@ -340,7 +297,7 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     edgeDragRef.current = null;
     if (sidebarEdgeSnapsOpen(leftProgress.get())) {
       restoreWidthRef.current = null;
-      writeStoredWidth(SIDEBAR_WIDTH_STORAGE_KEY, leftWidth.get());
+      writePaneWidth(SIDEBAR_PANE, leftWidth.get());
       setCollapsed('left', false);
     } else {
       restoreWidthRef.current = drag.startWidth;
@@ -382,7 +339,6 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     leftWidth,
     leftProgress,
     leftAnimatedWidth,
-    leftLayoutWidth,
     workspaceRootRef,
     setLeftWidth,
     setCollapsed,

@@ -1,4 +1,7 @@
+import { createTeamPaymentCheckout } from './team-payment-checkout'
+import { openTeamPaymentWindow } from './team-payment-window'
 import { releaseCustomModelForwarders } from './session/main/core/agents/custom-model-forwarder'
+import { releaseConversionRouters } from './session/main/core/agents/conversion-routers'
 import { hostAttachmentsEndpoint } from './attachmentUploadTransport'
 import { inspectHtmlPreviewAnnotation } from './session/main/core/browser/html-preview-annotation'
 import { HTML_PREVIEW_ANNOTATION_CHANNEL, type HtmlPreviewAnnotationRequest } from '../src/session/shared/preview/html-preview-annotation'
@@ -6,6 +9,13 @@ import { createAttachmentUploadHost } from './attachmentUploadHost'
 import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
 import { PASSWORD_AGENT_RPC } from './password-vault/server-delivery'
 import { createPasswordBetaPolicyReader } from './password-vault/beta-policy-reader'
+import { isNativeAccountSender, registerDesktopClosureIpc } from './account-closure/ipc'
+import { closureV2Auth } from './account-closure/v2-auth'
+import { registerDesktopClosureAgentResumeIpc, registerDesktopClosureV2Ipc } from './account-closure/v2-ipc'
+import type { createDesktopClosureV2Service } from './account-closure/v2-service'
+import { createClosureAuthChange } from './account-closure/auth-change'
+import { ClosureFailure } from './account-closure/receipts'
+import type { createDesktopClosureService } from './account-closure/service'
 import './browser-user-agent-bootstrap'
 import './page-navigation-bootstrap'
 import { attachTabHistorySwipe } from './tab-history-swipe'
@@ -63,7 +73,7 @@ import { captureReading, currentReading, historyReading } from './session/main/c
 import { setMacFootprintReader } from './session/main/core/resource-monitor/footprint'
 import { clearTraceLeftovers } from './session/main/core/resource-monitor/capture'
 import { createScreenCapture } from './device-actions/screen-capture'
-import { installNativeAppearanceSync, installWindowMaterial, type WindowMaterialHost } from './window-material'
+import { applyNativeThemePreference, installWindowMaterial, type WindowMaterialHost } from './window-material'
 import { createDeviceActionCaller, type DeviceActionCaller } from '@gugu/core/cloud/deviceActionCaller'
 import type { DeviceActionResult } from '@gugu/core/shared/deviceActions'
 import {
@@ -120,6 +130,8 @@ import { detectLocalSigning, downloadDmg, pickMacDmgFile, shouldUseDmgPath } fro
 import type { LocalSigning } from './macDmgUpdater'
 import { createSelectAccountHandler, webAuthnKeychainGroup } from './macWebAuthn'
 import { isOAuthCallback } from '../shared/oauth-callback'
+import { isTeamInvitationLink } from '../shared/team-invitation-link'
+import { teamAccountTokenHint } from '../shared/team-account-claims'
 import { OpenedLinkMailbox } from './opened-link-mailbox'
 import { googleAuthorizationUrl, googleIdentityLinkUrl } from '../shared/google-authorization-url'
 import { isOAuthAttemptRedirect } from '../shared/oauth-attempt'
@@ -252,6 +264,8 @@ import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow }
 import { assistantHomeKind } from '@gugu/core/shared/assistantPolicy'
 import { landTaskCardFirstTurn } from './sessionpage/task-card-first-turn'
 import { withQuestionCard } from './sessionpage/question-card'
+import { createQuestionCardSync } from './sessionpage/question-card-sync'
+import { allAgentQuestionRecords, markPublicQuestionCardSynced, onAgentQuestionRecordsChanged, rememberPublicQuestionCard } from './session/main/core/sessions/agent-question-store'
 import {
   emdashAgentRegistry,
   type LocalSessionPeer,
@@ -371,6 +385,7 @@ import {
 import { sessionPlatformModel } from './session/main/core/sessions/platform-model-selection'
 import { providerSessionIdForSession } from './session/main/core/sessions/provider-session-id'
 import { SESSIONPAGE_SESSION_RELOAD_CHANNEL } from '../src/session/shared/core/agents/session-reload'
+import { codexStartupKind } from '@gugu/core/local/codex-startup-failure.mjs'
 import { SESSIONPAGE_PLATFORM_RETRY_CHANNEL } from '../src/session/shared/core/agents/platform-model'
 import { subscribeBackendRecovered } from '@gugu/core/cloud/backendReachability'
 import {
@@ -574,14 +589,15 @@ import {
   probeBusNameHasOwner,
   resolveSessionBusPath,
 } from './linux-notification-service'
-import { HOST_LOCALE_STATE_FILE, HostLocaleStore } from './host-locale-store'
+import { HostLocaleStore } from './host-locale-store'
 import {
   OVERLAY_BADGE_SIZE,
   buildOverlayBadgeBitmap,
   formatBadgeCount,
   paintBadgeOnBitmap,
 } from './tray-badge'
-import { VIEW_STATE_SNAPSHOT_CHANNEL } from '../shared/view-state-snapshot'
+import { FIRST_FRAME_CHANNEL, type FirstFrameAnswer, type FirstFrameRequest } from '../shared/first-frame'
+import type { DevicePreferences } from '../shared/device-preferences'
 import { HOST_SYSTEM_LANGUAGES_CHANNEL, hostCatalog, updateRestartCopy, type HostCatalog } from '../shared/host-localization'
 
 // ── Dual-instance support ────────────────────────────────────────────────────
@@ -829,6 +845,7 @@ if (SERVER_MODE) {
 }
 // F33 渲染进程推来的会话(见下面 human-auth-session:write / clear)。桌面模式的 getAuth 平时就用它。
 let pushedHumanAuth: PushedRuntimeAuth = undefined
+let humanAuthRevision = 0
 /**
  * #7290 `app_install { device }` from another machine of the owner's (`fromDevice`), as this machine's App action: a part of
  * their folder's package, sent over the device channel (`package_part`); then that package, installed here as a folder
@@ -847,6 +864,22 @@ function desktopAuthProvider(): RuntimeAuthProvider {
 }
 bindElectronSupabaseAuth(async (forceRefresh) =>
   (await desktopAuthProvider().getAuth({ forceRefresh }))?.accessToken ?? null)
+const questionCardSync = createQuestionCardSync({
+  auth: () => desktopAuthProvider().getAuth(), records: allAgentQuestionRecords,
+  publish: async (auth,messageId,result) => {
+    const { data,error } = await makeChatClient(auth.accessToken).rpc('settle_agent_question_card', {
+      p_message_id: messageId,p_state: result.state,p_answers: 'answers' in result ? result.answers : null,
+    });
+    if (error) throw new Error(`Question card update failed: ${error.message}`);
+    return data;
+  },
+  committed: record => markPublicQuestionCardSynced(record.sessionId,record.item.itemId),
+  failed: error => createLogger('question-card/sync').warn({ error: String(error) },'Question card result is waiting to synchronize'),
+})
+onAgentQuestionRecordsChanged(() => { void questionCardSync.wake() })
+onElectronCloudAnswer(questionCardSync.cloudAnswered)
+void app.whenReady().then(() => questionCardSync.wake())
+app.once('will-quit', questionCardSync.stop)
 let primaryGuguMcpHost: DesktopGuguMcpHost | null = null
 
 function hasPersistedMcpGrants(name: string): boolean {
@@ -1369,15 +1402,28 @@ function refreshApplicationMenu(): void {
   })
 }
 
-function syncResolvedHostLocale(value: unknown): void {
+/** Resolve the host's language again (its preference changed, or the system's languages may have); its surfaces follow a change. */
+function applyHostLocale(preference?: DevicePreferences['locale']): void {
   if (!hostLocaleStore) throw new Error('HOST_LOCALE_NOT_INITIALIZED')
-  const before = hostLocaleStore.current()
-  hostLocaleStore.syncResolvedLocale(value)
+  if (!hostLocaleStore.apply(preference)) return
   refreshTrayChrome()
   refreshApplicationMenu()
   publishSessionHostLocale()
   publishWindowChromeLabels()
-  if (hostLocaleStore.current() !== before) tellHostPresentationChanged()
+  tellHostPresentationChanged()
+}
+
+/**
+ * @@@device-preferences — the host applies this device's preferences from its own settings (shared/device-preferences.ts):
+ * at startup, before the window's contents load, and on every change. ❌ The renderer pushing them: one owner of each value.
+ */
+function applyDevicePreferences(preferences: DevicePreferences): void {
+  applyNativeThemePreference(process.platform, nativeTheme, preferences.theme)
+  applyHostLocale(preferences.locale)
+  if (trayBadgeEnabled !== preferences.trayBadge) {
+    trayBadgeEnabled = preferences.trayBadge
+    applyUnreadBadge()
+  }
 }
 
 function currentHostLocale(): string {
@@ -2164,6 +2210,7 @@ function startDeviceRuntimeWhenRendererReady(): void {
     // 续上租约 = 这一轮认出了设备 id、写上了心跳:开机时没起成的远程隧道(那时还没有设备 id)在这里起。
     onRuntimeLeaseRenewed: () => { void assistantWorkDeliveryHost().tick(); ensureServerTunnelEndpoint() },
     authProvider: hostAuthProvider,
+    ownerWorkAllowed: async owner => SERVER_MODE || desktopClosureBootReady && !await desktopClosureHost().isPaused(owner),
     makeIdentityClient: (accessToken) =>
       makeIdentityClient(accessToken) as unknown as DeviceRuntimeIdentityClient,
     subscribeCommandWake: createDesktopDeviceCommandWakeSubscription({ supabase }),
@@ -2314,13 +2361,6 @@ ipcMain.on('set-badge', (_event, count: number) => {
   applyUnreadBadge()
 })
 
-// @@@5295 托盘角标开关(app 设置 · 通用)。关掉 = 角标一律不画,计数照常在内存里跟着走,
-// 重新打开立刻显示当前真值,❌ 不需要等下一条消息来触发。
-ipcMain.on('set-tray-badge-enabled', (_event, enabled: unknown) => {
-  trayBadgeEnabled = enabled !== false
-  applyUnreadBadge()
-})
-
 // @@@822 frameless 自绘标题栏的窗口控制 —— Windows/Linux 无原生边框时,renderer 的 <WindowControls> 经此驱动。
 // 用事件来源窗口(BrowserWindow.fromWebContents)而非全局 mainWindow,兼容多窗(widget)。
 ipcMain.on('window:minimize', (event) => BrowserWindow.fromWebContents(event.sender)?.minimize())
@@ -2339,6 +2379,8 @@ const isAppActive = (): boolean => BrowserWindow.getFocusedWindow() !== null
 ipcMain.handle('app:is-active', () => isAppActive())
 const sendAppActive = (): void => { mainWindow?.webContents.send('app:active-changed', isAppActive()) }
 app.on('browser-window-focus', sendAppActive)
+// 「跟随系统」的语言:系统语言可能在咕咕不在前台时变了,回到前台时重新解析一次(变了才动托盘、菜单)。
+app.on('browser-window-focus', () => { if (hostLocaleStore) applyHostLocale() })
 app.on('browser-window-blur', sendAppActive)
 // @@@win-titlebar-row — Windows 标题栏「编辑 / 视图」菜单的命令(清单与理由见 window-menu-commands.ts)。
 ipcMain.on('window:menu-command', (event, command: unknown) => {
@@ -2352,9 +2394,6 @@ ipcMain.on('window:menu-command', (event, command: unknown) => {
 })
 ipcMain.on('window-chrome:get-labels', (event) => {
   event.returnValue = currentHostCatalog().windowChrome
-})
-ipcMain.handle('locale:sync-resolved', (_event, locale: unknown) => {
-  syncResolvedHostLocale(locale)
 })
 // @@@window-tone — 渲染层是主题真值的唯一写入者,落属性时顺带告诉主进程,主进程只被告知。
 ipcMain.on('window:sync-tone', (event, tone: unknown, colors: Record<string, string> | undefined) => {
@@ -2371,15 +2410,23 @@ ipcMain.on('window:sync-tone', (event, tone: unknown, colors: Record<string, str
 ipcMain.on(HOST_SYSTEM_LANGUAGES_CHANNEL, (event) => {
   event.returnValue = app.getPreferredSystemLanguages()
 })
-// @@@view-state-snapshot — the renderer's view state before its first frame (shared/view-state-snapshot.ts). The window loads
-// after the session page module (loadMainWindowContents), so it is there; a failed read is logged and answered with null.
-ipcMain.on(VIEW_STATE_SNAPSHOT_CHANNEL, (event) => {
+// @@@first-frame — the renderer's view state and this device's preferences before its first frame (shared/first-frame.ts),
+// with the one-time move of the old preference keys. The window loads after the session page module
+// (loadMainWindowContents), so it is there; a part that fails is logged and answered with null (and nothing settled).
+ipcMain.on(FIRST_FRAME_CHANNEL, (event, request: FirstFrameRequest) => {
+  const answer: FirstFrameAnswer = { viewState: null, devicePreferences: null, settled: [] }
   try {
-    event.returnValue = emdashBridgeModule?.viewStateSnapshot() ?? null
+    answer.viewState = emdashBridgeModule?.viewStateSnapshot() ?? null
   } catch (error) {
     createLogger('view-state').error({ error: String(error) }, 'view state snapshot failed; the renderer starts without it')
-    event.returnValue = null
   }
+  try {
+    const preferences = emdashBridgeModule?.answerDevicePreferences(request.storedPreferences)
+    if (preferences) Object.assign(answer, preferences)
+  } catch (error) {
+    createLogger('device-preferences').error({ error: String(error) }, 'device preferences could not be read; the renderer reads them later, the old keys stay')
+  }
+  event.returnValue = answer
 })
 // @@@logging (#2382) - renderer 的日志回传到主进程,和主进程日志同流、同脱敏、同落盘:
 // 渲染侧崩在用户机器上时,`console` 只活在 devtools 里,拿不回来。
@@ -2438,6 +2485,21 @@ ipcMain.handle('updates:changelog', async (): Promise<unknown> => {
     return null
   }
 })
+const teamPaymentCheckout = createTeamPaymentCheckout({
+  auth: () => desktopAuthProvider().getAuth(), url: getSupabaseUrl, anonKey: getSupabaseAnonKey, fetch: electronFetch,
+  open: input => {
+    if (!mainWindow || mainWindow.isDestroyed()) throw new Error('TEAM_PAYMENT_WINDOW_UNAVAILABLE')
+    return openTeamPaymentWindow(mainWindow, currentHostCatalog().teamPaymentTitle, input)
+  },
+  report: error => createLogger('team/payment').warn({ error: String(error) }, 'Team payment browser failed'),
+})
+ipcMain.handle('team-payment:open', (event, input: unknown) => {
+  const window = mainWindow
+  if (!window || window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame)
+    return { ok: false, error: { code: 'forbidden' } }
+  return teamPaymentCheckout.request(input)
+})
+app.on('before-quit', () => teamPaymentCheckout.close())
 ipcMain.handle('app:get-version', () => app.getVersion())
 ipcMain.handle('auth:oauth-redirect', () => `${GUGU_LINK_SCHEME}://auth/callback`)
 ipcMain.handle('opened-links:take', (event) => {
@@ -2643,7 +2705,8 @@ handleShellChannel(SESSIONPAGE_SESSION_RELOAD_CHANNEL, async (_event, input: unk
     // 从没起来过的会话只记下了选择(#7092):告诉渲染层接着正常首启,❌ 让它去重挂一条不存在的会话。
     return reloaded.nativeSession === 'not-started' ? { ok: true, notStarted: true } : { ok: true }
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    const startupReason = codexStartupKind(error)
+    return { ok: false, error: error instanceof Error ? error.message : String(error), ...(startupReason ? { startupReason } : {}) }
   }
 })
 
@@ -2674,6 +2737,8 @@ const externalImport = SERVER_MODE ? null : registerExternalImportIpc({
 })
 
 function onHumanAuthSessionChanged(): void {
+  resumeAccountClosureV2()
+  void questionCardSync.wake()
   externalImport?.ownerChanged()
   resumeDeclaredUploads()
   projectionDeviceRuntime.invalidate()
@@ -2730,6 +2795,87 @@ function handOffWechatIfAny(): void {
 // session-life runs for exactly one account. Its sign-out tears sessions down with the old credentials, so it is
 // awaited before they are replaced or cleared (contract v3.1 #10); a renewal of the same account changes nothing.
 let sessionLifeBooted = false
+let desktopClosureBootReady = false
+const desktopClosureReady = Promise.withResolvers<void>()
+void desktopClosureReady.promise.catch(() => undefined)
+let desktopClosureService: ReturnType<typeof createDesktopClosureService> | undefined
+function desktopClosureHost() {
+  if (SERVER_MODE || !desktopClosureBootReady) throw new ClosureFailure('closure_storage_unavailable')
+  const bridge = loadEmdashBridge()
+  if (!bridge) throw new ClosureFailure('closure_storage_unavailable')
+  return desktopClosureService ??= bridge.createDesktopAccountClosureHost({
+    profileBinding: JSON.stringify([app.getPath('userData'), resolveGuguHome(process.env)]),
+    currentOwner: async () => pushedHumanAuth === undefined ? undefined : humanAuthUserId(),
+    async stopOwner(ownerId) {
+      if (!sessionLifeBooted) throw new ClosureFailure('closure_not_prepared')
+      const host = deviceRuntimeHost
+      if (host && !host.quiesceOwnerForClosure) throw new ClosureFailure('closure_not_prepared')
+      await Promise.all([bootedSessionLife().stopOwnerForClosure(ownerId), host?.quiesceOwnerForClosure?.(ownerId)])
+    },
+    async detachMainLog(ownerId) {
+      const before = currentLogFile()
+      const path = switchLogFileForOwner(null)
+      const suffix = join('users', ownerId, 'gugu-main.log')
+      if (path?.endsWith(sep + suffix)) throw new ClosureFailure('closure_storage_unavailable')
+      // This path came from the native logger, never from renderer arguments.
+      return before?.endsWith(sep + suffix) ? [dirname(dirname(before))] : []
+    },
+    async clearAuthMirror(ownerId) {
+      const owner = humanAuthUserId()
+      if (owner !== null && owner !== ownerId) throw new ClosureFailure('wrong_local_owner')
+      pushedHumanAuth = null
+      humanAuthRevision += 1
+      errorSummaryConsent.identityChanged()
+      projectionDeviceRuntime.invalidate()
+      await nativeFiles.ownerChanged(null)
+      onHumanAuthSessionChanged()
+    },
+  })
+}
+if (!SERVER_MODE) registerDesktopClosureIpc(ipcMain, () => mainWindow, desktopClosureHost)
+let desktopClosureV2Service: ReturnType<typeof createDesktopClosureV2Service> | undefined
+async function desktopClosureV2Host(): Promise<ReturnType<typeof createDesktopClosureV2Service>> {
+  await desktopClosureReady.promise
+  const bridge = loadEmdashBridge()
+  if (!bridge) throw new ClosureFailure('closure_storage_unavailable')
+  return desktopClosureV2Service ??= bridge.createDesktopAccountClosureV2Host({
+    profileBinding: JSON.stringify([app.getPath('userData'), resolveGuguHome(process.env)]),
+    local: desktopClosureHost(),
+    auth: async () => closureV2Auth(pushedHumanAuth),
+    deviceId: async () => { const id = await localDeviceId(); if (!id) throw new ClosureFailure('closure_not_prepared'); return id },
+    async resumeOwner(ownerId) {
+      if (!sessionLifeBooted) throw new ClosureFailure('closure_not_prepared')
+      await bootedSessionLife().signIn(ownerId, async () => desktopClosureHost().underAuth(async () => {
+        if (humanAuthUserId() !== ownerId || await desktopClosureHost().isPaused(ownerId)) throw new ClosureFailure('wrong_local_owner')
+        // Invalidate Auth permits which drained before this newly explicit start.
+        // Later permits must queue their own lifecycle drain behind this start.
+        humanAuthRevision += 1
+      }))
+      deviceRuntimeHost?.notifyAuthChanged()
+    },
+    baseUrl: getSupabaseUrl(), anonKey: getSupabaseAnonKey(),
+  })
+}
+if (!SERVER_MODE) registerDesktopClosureV2Ipc(ipcMain, () => mainWindow, desktopClosureV2Host)
+if (!SERVER_MODE) registerDesktopClosureAgentResumeIpc(ipcMain, () => mainWindow, desktopClosureV2Host)
+let closureV2RecoveryRunning = false
+function resumeAccountClosureV2(): void {
+  // No new operation, policy admission, resend or confirm on startup/Auth loss.
+  // A signed-in B discovers only B. Unknown native identity waits for its push.
+  if (SERVER_MODE || !desktopClosureBootReady || pushedHumanAuth === undefined || closureV2RecoveryRunning) return
+  closureV2RecoveryRunning = true
+  void (async () => {
+    const host = await desktopClosureV2Host(), pending = await host.discover()
+    if (pending && pending.phase !== 'local-complete') {
+      await host.recover(pending.handle)
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('account-closure:v2-changed')
+    }
+  })().catch(() => {
+    // Protected original intent remains available to explicit recovery. Do not
+    // log request bodies, tokens, underlying transport errors or result JSON.
+    createLogger('account-closure').warn('Original account closure recovery remains pending')
+  }).finally(() => { closureV2RecoveryRunning = false })
+}
 /** Booted ⇒ the bridge is loaded; a missing bridge here is a broken boot, said loudly. */
 function bootedSessionLife() {
   const bridge = loadEmdashBridge()
@@ -2742,7 +2888,7 @@ async function sessionLifeLeaveIfChanging(nextUserId: string | null): Promise<vo
 }
 async function sessionLifeEnter(): Promise<void> {
   const userId = humanAuthUserId()
-  if (sessionLifeBooted && userId) await bootedSessionLife().signIn(userId)
+  if (sessionLifeBooted && userId && (SERVER_MODE || !await desktopClosureHost().isPaused(userId))) await bootedSessionLife().signIn(userId)
 }
 // 「帮助改进咕咕」开关在所有桌面版上都记;真正发送仍只在配好接收地址的已发布 Beta 上(下一段)。
 const errorSummaryConsent = registerErrorSummaryConsent({
@@ -2755,16 +2901,41 @@ registerErrorSummaryReporting({
 })
 const humanAuthSessionIpc = createHumanAuthSessionIpc({
   toAuth: runtimeAuthFromSupabaseTokens,
-  set: (auth) => { pushedHumanAuth = auth; errorSummaryConsent.identityChanged() },
-  revoke: () => projectionDeviceRuntime.invalidate(),
+  set: (auth) => { pushedHumanAuth = auth; humanAuthRevision += 1; errorSummaryConsent.identityChanged() },
+  revoke: () => {
+    projectionDeviceRuntime.invalidate()
+    teamPaymentCheckout.identityChanged(pushedHumanAuth && typeof pushedHumanAuth === 'object' ? pushedHumanAuth : null)
+  },
   persist: (mirror: Parameters<typeof writeHumanAuthSession>[0]) => writeHumanAuthSession(mirror),
   erase: () => clearHumanAuthSession(),
   leaveIfChanging: sessionLifeLeaveIfChanging,
   enter: sessionLifeEnter,
   changed: onHumanAuthSessionChanged,
+  prepareChange: SERVER_MODE ? undefined : createClosureAuthChange({
+    ready: () => desktopClosureReady.promise,
+    fence: desktopClosureHost,
+    source: () => ({ ownerId: humanAuthUserId(), generation: humanAuthRevision }),
+    leave: (source, next, qualify) => sessionLifeBooted
+      ? bootedSessionLife().leaveForAuthChange(source, next, qualify) : qualify(),
+  }),
+  async mutate(nextOwner, operation) {
+    if (SERVER_MODE) return operation()
+    await desktopClosureReady.promise
+    const closure = desktopClosureHost()
+    return closure.underAuth(async () => {
+      if (nextOwner) await closure.requireAuthWrite(nextOwner)
+      return operation()
+    })
+  },
 })
-ipcMain.handle('human-auth-session:write', (_event, session: unknown) => humanAuthSessionIpc.write(session as Parameters<typeof writeHumanAuthSession>[0]))
-ipcMain.handle('human-auth-session:clear', (_event, reason: unknown) => humanAuthSessionIpc.clear(reason))
+ipcMain.handle('human-auth-session:write', (event, session: unknown) => {
+  if (!isNativeAccountSender(event, mainWindow)) throw new ClosureFailure('wrong_local_owner')
+  return humanAuthSessionIpc.write(session as Parameters<typeof writeHumanAuthSession>[0])
+})
+ipcMain.handle('human-auth-session:clear', (event, reason: unknown) => {
+  if (!isNativeAccountSender(event, mainWindow)) throw new ClosureFailure('wrong_local_owner')
+  return humanAuthSessionIpc.clear(reason)
+})
 // #5906 —— 渲染层刚把一条设备命令放回了 pending(失败条的「重试」)。那是 UPDATE,库那侧的 `command_created`
 // 广播只挂在 INSERT 上 ⇒ 没有任何事件会叫醒宿主;由发起方在这里说一声。
 ipcMain.on('device-runtime:commands-changed', () => {
@@ -3488,7 +3659,7 @@ let guguLinksReady = false
 function handleGuguLink(url: string): void {
   if (!url.startsWith(`${GUGU_LINK_SCHEME}://`)) return
   openedLinks.push(url)
-  if (isOAuthCallback(url)) {
+  if (isOAuthCallback(url) || isTeamInvitationLink(url)) {
     focusMainWindow()
     return
   }
@@ -3526,7 +3697,7 @@ function flushPendingGuguLinks(): void {
   guguLinksReady = true
   // Windows / Linux 冷启动:链接是这一次启动的参数。
   const coldStart = process.argv.find((arg) => arg.startsWith(`${GUGU_LINK_SCHEME}://`))
-  if (coldStart && !isOAuthCallback(coldStart)) pendingGuguLinks.push(coldStart)
+  if (coldStart && !isOAuthCallback(coldStart) && !isTeamInvitationLink(coldStart)) pendingGuguLinks.push(coldStart)
   for (const url of pendingGuguLinks.splice(0)) handleGuguLink(url)
 }
 
@@ -3767,11 +3938,14 @@ function crossMachine(): CrossMachineSessions {
 async function cloudComputerClient() {
   const baseUrl = cloudComputerBaseUrl({ enabled: cloudComputerEnabled(), override: process.env.GUGU_CLOUD_COMPUTER_URL ?? null, supabaseUrl: getSupabaseUrl() })
   if (!baseUrl) return null
+  const account = await desktopAuthProvider().getAuth()
+  if (account && teamAccountTokenHint(account.accessToken) !== 'personal') return null
   return createCloudComputerClient({
     baseUrl,
     accessToken: async () => {
       const auth = await desktopAuthProvider().getAuth()
       if (!auth?.accessToken) throw new Error('this machine is not signed in to 咕咕')
+      if (teamAccountTokenHint(auth.accessToken) !== 'personal') throw new Error('Cloud computer spending requires a separate personal account')
       return auth.accessToken
     },
     anonKey: getSupabaseAnonKey(),
@@ -4085,7 +4259,7 @@ async function applyAgentModelSelectionOnDevice(input: {
   agentUserId: string
   engineId: string | null
   selection: AgentModelSelection
-}): Promise<{ applied: 'hot' | 'reload' | 'next-session'; warning?: string; nativeSession?: 'preserved' | 'replaced' }> {
+}): Promise<{ applied: 'hot' | 'reload' | 'next-session'; warning?: string; nativeSession?: 'preserved' | 'replaced' | 'route-switched' }> {
   const localAgent = await findLocalAgentByUserId(input.agentUserId, process.env)
   if (!localAgent) throw new Error('这个 Agent 不在当前设备上运行')
   const engineId = catalogEngineIdForAgent(localAgent, engineIdForAgentType) ?? input.engineId
@@ -4524,6 +4698,7 @@ async function stopDesktopOwnedResources(): Promise<void> {
         return null
       })
       releaseCustomModelForwarders()
+      releaseConversionRouters()
       await releasePlatformModelsAtExit(live)
     }, reportShutdownPhase),
   ])
@@ -4585,10 +4760,7 @@ app.whenReady().then(async () => {
   } catch (error) {
     createLogger('engine-reap').error({ err: error }, '启动回收自身失败,残留留待下轮')
   }
-  hostLocaleStore = new HostLocaleStore(
-    join(app.getPath('userData'), HOST_LOCALE_STATE_FILE),
-    app.getPreferredSystemLanguages(),
-  )
+  hostLocaleStore = new HostLocaleStore(() => app.getPreferredSystemLanguages())
   try {
     enableMacTouchIdPasskeys()
   } catch (error) {
@@ -4652,7 +4824,6 @@ app.whenReady().then(async () => {
       materialWindow: () => (process.platform === 'darwin' ? mainWindow : null),
     })
     windowMaterial.onChange(() => syncWindowTone(readWindowTone()))
-    installNativeAppearanceSync({ platform: process.platform, nativeTheme, ipcMain })
     createWindow(false)
   }
   // PATH 补救不再挑启动方式（曾经只在「mac 且已打包」时跑 → ssh/agent 起的验证流程、以及
@@ -4671,6 +4842,10 @@ app.whenReady().then(async () => {
     fatalSessionpageBoot(err)
     return
   }
+  // @@@device-preferences — theme (mac native appearance), language and tray badge from this device's settings, before the
+  // window's contents load; then on every change (a settings write, or the first-frame move of the old keys).
+  applyDevicePreferences(emdashBridgeModule.devicePreferencesNow())
+  emdashBridgeModule.onDevicePreferencesChanged(applyDevicePreferences)
   hydrateLoginShellPath()
   ensureWindowsNpmGlobalBinInPath()
   if (SERVER_MODE) {
@@ -4911,6 +5086,7 @@ app.whenReady().then(async () => {
           return byNumber
         },
         resolvePrefixes: (input) => resolvePrefixes(input, signal),
+        receivedMessageIds: (prefix) => emdash.receivedMessageIds(context.sessionId, prefix),
         localSessionIds: (sessionIds) => emdash.localSessionIds(sessionIds),
         remote: crossMachine().messageDeps(() => remoteCaller(auth, context), signal),
       })
@@ -4954,7 +5130,8 @@ app.whenReady().then(async () => {
       // gugu-dev#181 ⑨ 问自群里的那一句,问题卡也进那个群(question-card.ts)。
       if (record.action === 'ask_user') {
         const asked = await emdash.runSessionAction(context, record as SessionAction, signal)
-        return withQuestionCard({ auth, caller: await remoteCaller(auth, context), projectId: context.projectId, asked, questions: record.questions })
+        return withQuestionCard({ auth, caller: await remoteCaller(auth, context), projectId: context.projectId, asked, questions: record.questions,
+          onPosting: (questionId,card) => rememberPublicQuestionCard(context.sessionId,questionId,card) })
       }
       // #7199 第二步:列我的设备与它们的动作 / 调某台设备的某个动作(`device` 是目标,❌ 当成「在那台机器上做」转发)。
       if (record.action === 'device_actions') {
@@ -5162,7 +5339,10 @@ app.whenReady().then(async () => {
         privateLogin: (sessionId, input) => emdash.serverTaskPrivateLogin(sessionId, input),
       }))
     } else {
-    emdash.installPasswordBetaHost({ window: () => mainWindow, account: async () => (await getSessionpageAuth())?.userId ?? null, device: localDeviceId,
+    emdash.installPasswordBetaHost({ window: () => mainWindow, account: async () => {
+      const owner = (await getSessionpageAuth())?.userId ?? null
+      return owner && !SERVER_MODE && desktopClosureBootReady && await desktopClosureHost().isSealed(owner) ? null : owner
+    }, device: localDeviceId,
       deliver: (sessionId, requestId, status) => emdash.deliverPasswordBetaDecision(sessionId, requestId, status),
       deliverSave: (sessionId, requestId, status, credentialId) => emdash.deliverPasswordBetaSaveResult(sessionId, requestId, status, credentialId),
       readPolicy: createPasswordBetaPolicyReader(getSessionpageAuth),
@@ -5255,7 +5435,13 @@ app.whenReady().then(async () => {
       local: emdash.assistantPanelLocal,guguHome: resolveGuguHome(process.env),kind: assistantHomeKind(process.env),env: process.env,
       failed: domain => createLogger('assistant-panel').warn({ domain },'Panel publication will retry during host activity'),
     })
-    emdash.setSessionAdmissionPreparation((sessionId,text) => assistantPanel.prepare(sessionId,text))
+    emdash.setSessionAdmissionPreparation(async (sessionId,text) => {
+      if (!SERVER_MODE) {
+        const owner = humanAuthUserId()
+        if (!owner || !desktopClosureBootReady || await desktopClosureHost().isPaused(owner)) throw new ClosureFailure('closure_not_prepared')
+      }
+      return assistantPanel.prepare(sessionId,text)
+    })
     emdash.setProjectGroupHost(createSessionpageProjectGroupHost({ getAuth: getSessionpageAuth, env: process.env }))
     emdash.setAssistantProjectCleanupOwner(async () => (await getSessionpageAuth())?.userId ?? null, localDeviceId, async () => {
       const auth = await getSessionpageAuth()
@@ -5989,7 +6175,9 @@ app.whenReady().then(async () => {
     // conversationId 为 null = 运行时整个没了,把 Chat UI 这一批全结清(终端会话那批的进程还活着,
     // 一起撤会把它们打成每轮 401)。
     emdash.setEmdashPlatformRelease((sessionId, expectedAccessSessionId, intent) =>
-      sessionpagePlatformHooks.release(sessionId, expectedAccessSessionId, intent))
+      sessionpagePlatformHooks.release(sessionId, expectedAccessSessionId, intent),
+      (sessionId, generation) => sessionpagePlatformHooks.releaseForClosure?.(sessionId, generation)
+        ?? Promise.reject(new Error('Platform closure release unavailable')))
     emdash.setEmdashPlatformCheckpoint((sessionId) => sessionpagePlatformHooks.checkpoint(sessionId))
     // Sidecar-backed session-TUI legs (codex app-server, opencode serve) deliver over their own socket and
     // publish turn boundaries back through this one relay; the host never writes to the PTY for them.
@@ -6304,6 +6492,7 @@ app.whenReady().then(async () => {
       scheduleDiscovery: (work) => startupDiscovery.schedule(work),
     })
     sessionHostBoot = emdashBoot
+    void emdashBoot.then(() => { desktopClosureBootReady = true; desktopClosureReady.resolve(); deviceRuntimeHost?.notifyAuthChanged(); resumeAccountClosureV2() }, error => desktopClosureReady.reject(error))
     platformCredentialsBoot = emdashBoot.catch(() => undefined)
     // Task names are projected during boot; adopting names (cloud, then the one-time legacy ones) follows it.
     void emdashBoot
@@ -6314,7 +6503,7 @@ app.whenReady().then(async () => {
     void emdashBoot.then(async () => {
       sessionLifeBooted = true
       const auth = await desktopAuthProvider().getAuth()
-      if (auth?.userId) await bootedSessionLife().signIn(auth.userId)
+      if (auth?.userId && (SERVER_MODE || !await desktopClosureHost().isPaused(auth.userId))) await bootedSessionLife().signIn(auth.userId)
     }).catch((error: unknown) => createLogger('session-life').error({ error: String(error) }, 'session-life could not sign in at boot'))
     void emdashBoot.then(() => {
       emdash.onAgentStatus(change => {

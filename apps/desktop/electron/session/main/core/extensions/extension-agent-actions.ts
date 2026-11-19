@@ -592,6 +592,16 @@ function installNext(
  * shows when the market's search finds exactly one. What cannot be installed says why, and what to do — before anything
  * is fetched.
  */
+/**
+ * An install nobody answered in time is told to the agent in words, as a device capability nobody answered is
+ * (capability-ask.ts): the ask waited as an approval in its session and went; it is not a refusal.
+ */
+function saidIfUnanswered<T extends { outcome: string }>(result: T): T | (T & { message: string }) {
+  return result.outcome === 'timeout' && 'name' in result
+    ? { ...result, message: `Nobody answered the request to install ${String(result.name)} in time; it is not installed. It waited as an approval in this session. Ask again when the person is around.` }
+    : result;
+}
+
 async function marketOffer(asked: string, market: Pick<CloudExtensionMarket, 'entry' | 'list'>): Promise<CloudMarketEntry> {
   // The market's index taken now, not the copy from when the Apps page was last opened: an App published while gugu
   // runs is not in that one. The search below reads the index this call just took.
@@ -632,7 +642,7 @@ async function installFromMarketForAgent(
       ...(dependencies.afterInstall ? { afterInstall: dependencies.afterInstall } : {}),
     }
   );
-  if (!result.installed) return { installed: false, outcome: result.outcome, id: result.id, name: result.name };
+  if (!result.installed) return saidIfUnanswered({ installed: false, outcome: result.outcome, id: result.id, name: result.name });
   const service = extensionsService();
   return withWindowNote(result.announced, {
     installed: true,
@@ -729,7 +739,7 @@ async function installFolder(
   });
   const summary = { id: inspected.manifest.id, name: inspected.manifest.name };
   if (done.outcome === 'ask') return { installed: false, ...summary, version: inspected.manifest.version, ...done };
-  if (done.outcome !== 'confirmed') return { installed: false, outcome: done.outcome, ...summary };
+  if (done.outcome !== 'confirmed') return saidIfUnanswered({ installed: false, outcome: done.outcome, ...summary });
   const installed = done.installed;
   // 装完喊一声,新 tab 这才在 tab 栏里出现 —— 不喊就得整页刷新(owner 实测 #4135)。F52 喊了不等它点头才算装上。
   return withWindowNote(done.announced, {
@@ -939,7 +949,7 @@ async function actOn(action: z.infer<typeof agentActionSchema>, dependencies: Ex
       const result = await installExtensionFromAttachment({ messageId: action.message_id, ...(action.consent ? { consent: action.consent } : {}) }, dependencies);
       // E-05 for an agent is what it always was: an error with the install's own reason (the card says it to a person).
       if (result.outcome === 'refused') throw new Error(result.reason);
-      if (!result.installed) return result;
+      if (!result.installed) return saidIfUnanswered(result);
       const installed = extensionsService().get(result.id);
       const { manifest } = installed;
       return {

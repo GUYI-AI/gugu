@@ -37,7 +37,7 @@ export function cloudReadTarget(chatId: string, rootId: string | null, seq: numb
 async function nativeReadApi(deviceId: string | null) {
   return platform.kind === 'electron'
     ? (await import('@/session/renderer/lib/ipc')).rpcOn(deviceId).sessionTimeline
-    : (await import('@/mobile/agent-watch/sessionpage-rpc')).machineRpc(deviceId!).sessionTimeline
+    : (await import('@/components/session-watch/sessionpage-rpc')).machineRpc(deviceId!).sessionTimeline
 }
 
 /** Capture the actual host journal once per opening, rather than trusting a cached session-list count. */

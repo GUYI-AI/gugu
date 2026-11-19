@@ -15,12 +15,16 @@ export function isAgentHomeImportMessage(message: string): boolean {
 export const agentHomeGroupIdSchema = z.enum(['settings', 'hooks', 'mcp', 'rules', 'skills', 'agents', 'models']);
 export const agentHomeIssueSchema = z.object({
   path: z.string(),
-  reason: z.enum(['symlink', 'sensitive', 'database', 'tooLarge', 'sourceChanged', 'unreadable']),
+  reason: z.enum(['symlink', 'sensitive', 'database', 'tooLarge', 'sourceChanged', 'unreadable', 'excluded', 'historyLimit']),
 });
+const historyImportSchema = z.object({ imported: z.number(), skipped: z.number(), sessionBytes: z.number(), limitBytes: z.number() });
 export const agentHomeScanSchema = z.object({
   providerId: z.string(), name: z.string(), userRoot: z.string(), sourceReadable: z.boolean(),
   importedAt: z.string().nullable(), needsImport: z.boolean(), sourceUpdated: z.boolean(),
   migration: z.boolean(),
+  migrationPreparation: z.object({ phase: z.enum(['preparing', 'copying', 'history']), startedAt: z.number(), attempt: z.number() }).optional(),
+  historyImport: historyImportSchema.optional(),
+  migrationSpace: z.object({ requiredBytes: z.number(), availableBytes: z.number(), shortfallBytes: z.number() }).optional(),
   upgraded: z.boolean().optional(), upgradeSignIn: z.enum(['copied', 'relogin']).optional(),
   terminalNeedsSignIn: z.boolean().optional(), oldSessionsSkipped: z.number().optional(), upgradeIssues: z.array(agentHomeIssueSchema).optional(),
   groups: z.array(z.object({ id: agentHomeGroupIdSchema, count: z.number(), mcpCount: z.number().optional() })),
@@ -28,6 +32,7 @@ export const agentHomeScanSchema = z.object({
   mcpSecrets: z.array(z.string()), projectMcpCount: z.number(), unmarkedMcp: z.array(z.string()).optional(),
 });
 export const agentHomeImportResultSchema = z.object({
+  historyImport: historyImportSchema.optional(),
   issues: z.array(agentHomeIssueSchema),
   terminalNeedsSignIn: z.boolean().optional(), oldSessionsSkipped: z.number().optional(),
   relogin: z.array(z.object({ connectionId: z.string(), name: z.string(), methodId: z.string() })).optional(),

@@ -380,8 +380,9 @@ async function publishChats(change: { chats?: Array<{ id: string }>; activeChatI
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({
   chatService: chatServiceMock
 }))
-vi.mock('../../../../apps/desktop/src/lib/notificationSettings', () => ({
-  useNotificationSettings: () => ({ messages: false, requests: false })
+vi.mock('../../../../apps/desktop/src/lib/devicePreferences', async (importOriginal) => ({
+  ...await importOriginal<object>(),
+  useDevicePreferences: () => ({ chatMessages: false, chatSound: false }),
 }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: platformMock

@@ -4,6 +4,7 @@ import { guguReasonInText, guguReasonOf, type GuguCatalogReason } from '@gugu/se
 import type { SessionMessageKey } from '@renderer/localization/messages';
 import { assistantFileFailure, type AssistantFileOperation } from '@gugu/core/shared/assistantFileError';
 import { billingLinksAvailable } from '@/lib/appLinks';
+import { errorSentence } from '@gugu/session-shared';
 
 /** 原因上的那一个按钮(规格原因表的按钮列);`null` = 只说一句(没有动作能改变它)。 */
 export type GuguReasonAction = 'retry' | 'switch-model' | 'join-membership' | 'sign-in' | null;
@@ -37,6 +38,8 @@ const GUGU_REASONS: Record<GuguCatalogReason, GuguReasonCopy> = {
     action: 'switch-model',
   },
   'unknown': { copy: 'guguCatalog.reason.unknown', action: 'retry' },
+  'team-monthly-cap-reached': { copy: 'transcript.teamMonthlyCapReached', action: null },
+  'team-credits-exhausted': { copy: 'transcript.teamCreditsExhausted', action: null },
 };
 
 export function guguReasonCopy(kind: GuguCatalogReason): GuguReasonCopy {
@@ -106,14 +109,16 @@ export function reasonActions(kind: GuguCatalogReason, handlers: GuguReasonHandl
 
 const MAX_FAILURE_LINE_LENGTH = 280;
 
-/** 拒绝方原话的第一行:保留它说的事,去掉路径、profile、令牌与栈。 */
+/** 拒绝方原话的那一句(`errorSentence` 后的第一行):保留它说的事,去掉路径、profile、令牌与栈。 */
 export function safeFailureLine(message: string): string {
   // These host-authored failures contain a repair path, not settings or provider output.
   if (assistantFileFailure(message)) return message.replace(/^Error invoking remote method '[^']+':\s*/, '').replace(/^Error:\s*/, '');
-  const firstLine = message
-    .split(/\r?\n/, 1)[0]!
+  const said = message
     .replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, '')
-    .replace(/^Error:\s*/, '')
+    .replace(/^Error:\s*/, '');
+  // A structured payload (a ZodError's issues JSON) opens with a bare `[`: say its first issue, not the bracket.
+  const firstLine = errorSentence(said)
+    .split(/\r?\n/, 1)[0]!
     .replace(/(?:\/Users\/|\/home\/|[A-Za-z]:\\)[^\s,)]+/g, '[path]')
     .replace(/(?:eyJ[A-Za-z0-9._-]+|(?<![A-Za-z0-9])(?:sk-|ghp_|github_pat_|xox[baprs]-)[A-Za-z0-9_-]+)/g, '[redacted token]')
     .trim();

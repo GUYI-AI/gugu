@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionpageSessionCreateModels } from '@gugu/session-core/session-record/contract'
-import { creationThinking } from '../../../apps/desktop/src/mobile/agent-watch/creation-thinking'
+import { creationThinking } from '../../../apps/desktop/src/components/session-watch/creation-thinking'
 
 const selection = { harness: 'codex', model: 'native', effort: 'vendor-level', permissionMode: null, fastMode: true }
 const models: SessionpageSessionCreateModels = {

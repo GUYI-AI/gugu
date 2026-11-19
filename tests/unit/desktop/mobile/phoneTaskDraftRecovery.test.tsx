@@ -14,15 +14,15 @@ const auth = vi.hoisted(() => ({ owner: 'draft-owner-a' }))
 const rpc = vi.hoisted(() => ({ invoke: vi.fn(() => new Promise(() => undefined)) }))
 vi.mock('../../../../apps/desktop/src/lib/supabase', async (original) => ({ ...await original<typeof import('../../../../apps/desktop/src/lib/supabase')>(), getCurrentAuthUserId: async () => auth.owner }))
 vi.mock('../../../../apps/desktop/src/mobile/local-agent/phoneHostRpc', () => ({ invokePhoneHost: rpc.invoke }))
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class SessionpageRpcError extends Error {},
   fetchSessionOptions: vi.fn(() => new Promise(() => undefined)), setSessionOption: vi.fn(),
 }))
 
 vi.mock('../../../../apps/desktop/src/components/assistant-ui/session-transcript-view.aui', () => ({ SessionTranscriptView: (props: { composerContent: import('react').ReactNode; commands: ChatCommands; pendingMessages: unknown }) => { transcript.commands = props.commands; transcript.pendingMessages = props.pendingMessages; return createElement('div', {}, props.composerContent) } }))
 
-import { SessionConversation } from '../../../../apps/desktop/src/mobile/agent-watch/SessionConversation'
-import { emptyAgentWatchTimeline } from '../../../../apps/desktop/src/mobile/agent-watch/agent-watch-store'
+import { SessionConversation } from '../../../../apps/desktop/src/components/session-watch/SessionConversation'
+import { emptyAgentWatchTimeline } from '../../../../apps/desktop/src/components/session-watch/agent-watch-store'
 import { phoneTaskSendKey, readPhoneTaskSend, restorePhoneTaskDraft, sendPhoneTaskText } from '../../../../apps/desktop/src/mobile/local-agent/phoneTaskSend'
 
 let harness: ReturnType<typeof createReactHarness>

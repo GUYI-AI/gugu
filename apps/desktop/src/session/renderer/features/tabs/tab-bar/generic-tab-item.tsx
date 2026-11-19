@@ -9,7 +9,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { usePaneContext } from '../pane-context';
 import { DraggableTab } from './draggable-tab';
 import { PairSeparator } from './pair-separator';
-import { TabChip } from './tab-chip';
+import { TabChip, TabSlot } from './tab-chip';
 import type { TabCommand } from './tab-commands';
 import { TabContextMenu } from './tab-context-menu';
 import { ChatWorkspaceTabContext } from '../chat-workspace-context';
@@ -70,7 +70,8 @@ export const GenericTabItem = observer(function GenericTabItem({
 }: GenericTabItemProps) {
   const { translate } = useSessionMessages();
   const { isFocusedPane, pane } = usePaneContext();
-  const workspaceRole = useContext(ChatWorkspaceTabContext)?.role;
+  const workspace = useContext(ChatWorkspaceTabContext);
+  const workspaceRole = workspace?.role;
   const [isEditing, setIsEditing] = useState(false);
   const committedRef = useRef(false);
 
@@ -160,6 +161,17 @@ export const GenericTabItem = observer(function GenericTabItem({
         </div>
       </TabContextMenu>
     );
+  }
+
+  if (workspace?.role === 'conversation') {
+    const select = () => { workspace.layout.showChatWorkspaceConversation(); pane.focusActiveContent(); };
+    return <TabSlot data-chat-workspace-conversation-tab="" data-tabid={tab.tabId}>
+      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands} titleMenu>
+        <TabChip isActive={tab.isActive} isFocusedPane={isFocusedPane} label={label} title={tooltip ?? label}
+          preSlot={preSlot} labelSlot={editableTitle} statusSlot={statusSlot} onClick={select}
+          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(); } }} />
+      </TabContextMenu>
+    </TabSlot>;
   }
 
   const base = tooltip ?? label;

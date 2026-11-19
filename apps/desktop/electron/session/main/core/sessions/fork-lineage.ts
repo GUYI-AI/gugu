@@ -2,7 +2,7 @@ import { createReadStream } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { createInterface } from 'node:readline';
+import { readJsonlLines } from '@gugu/core/local/jsonl.mjs';
 import { nativeHomeRoots } from '@gugu/session-core/agents/plugins/helpers';
 import { requireNativeHome } from '@gugu/session-plugins/agents';
 
@@ -86,7 +86,7 @@ export type SessionTranscriptHead = {
 export async function readTranscriptHead(filePath: string): Promise<SessionTranscriptHead | null> {
   // 开头几行都不长,小块读就够;默认 64 KB 一块会把用不上的正文也读进来。
   const stream = createReadStream(filePath, { encoding: 'utf8', highWaterMark: 16 * 1024 });
-  const lines = createInterface({ input: stream, crlfDelay: Infinity });
+  const lines = readJsonlLines(stream);
   let seen = 0;
   try {
     for await (const rawLine of lines) {
@@ -111,7 +111,6 @@ export async function readTranscriptHead(filePath: string): Promise<SessionTrans
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
   } finally {
-    lines.close();
     stream.destroy();
   }
   return null;
@@ -127,7 +126,7 @@ export async function readTranscriptUuids(
   // Stream line-by-line and stop at the cap — readFile would materialize the whole
   // transcript in main-process memory, defeating the cap's purpose.
   const stream = createReadStream(filePath, { encoding: 'utf8' });
-  const lines = createInterface({ input: stream, crlfDelay: Infinity });
+  const lines = readJsonlLines(stream);
   let seen = 0;
   try {
     for await (const rawLine of lines) {
@@ -143,7 +142,6 @@ export async function readTranscriptUuids(
       }
     }
   } finally {
-    lines.close();
     stream.destroy();
   }
   return uuids;

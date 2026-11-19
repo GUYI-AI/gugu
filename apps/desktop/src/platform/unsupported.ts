@@ -1,3 +1,4 @@
+import { unsupportedAccountClosureV2 } from './desktopAccountClosureV2'
 import { unsupportedAccountClosure } from './accountClosure'
 import type { AppPlatform } from './types'
 import { unavailableCapability } from './errors'
@@ -10,6 +11,7 @@ export function createUnsupportedPlatform(
 
   return {
     accountClosure: unsupportedAccountClosure,
+    accountClosureV2: unsupportedAccountClosureV2,
     kind,
     documentTitle: '咕咕',
     systemPermissions: [],
@@ -35,7 +37,6 @@ export function createUnsupportedPlatform(
       phoneAgentHost: false,
       readingZoomMemory: false,
     },
-    syncResolvedLocale: async () => {},
     subscribeAppForeground: () => () => {},
     selectDirectory: async () => { throw unsupported('Directory picker') },
     checkForUpdates: async () => { throw unsupported('Updates') },
@@ -47,7 +48,6 @@ export function createUnsupportedPlatform(
     saveFile: async () => { throw unsupported('Save file') },
     writeClipboardText: async () => { throw unsupported('Clipboard') },
     setBadge: () => { throw unsupported('Badge updates') },
-    setTrayBadgeEnabled: () => { throw unsupported('Badge updates') },
     scanQrCode: async () => { throw unsupported('QR scan') },
     showNotification: async () => { throw unsupported('Notifications') },
     checkSystemPermission: async () => { throw unsupported('System permissions') },

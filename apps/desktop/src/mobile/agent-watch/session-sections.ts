@@ -12,7 +12,7 @@ import {
 } from '@/session/renderer/features/sessions/session-tree'
 import { assistantDescendants, isAssistantSession } from '@/session/renderer/features/assistant/assistant-lineage'
 import { sidebarStateGroup } from '@/session/renderer/features/sidebar/session-groups'
-import { sessionPresentation } from './watch-status'
+import { sessionPresentation } from '@/lib/agent-wait/watch-status'
 import { groupRowOrder } from '@/session/renderer/features/projects/stores/project-group-layout'
 import type { SessionDirectoryRow } from '@/session/shared/remote-sessions/session-directory'
 import type { AccountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'

@@ -39,6 +39,7 @@ import { LINK_PILL_CLASS, linkPillTarget, rehypeLinkPills } from './linkPills'
 import { useAuth } from '../../store/auth'
 import { useChatStore } from '../../store/chatContext'
 import { MentionPill } from './MentionPill'
+import { Bot } from '@/lib/icons'
 // Lazy: a link pill reads through the chat's readers (file metadata, messages, topics); Markdown itself stays free of them.
 const LinkPill = lazy(() => import('./LinkPill').then(module => ({ default: module.LinkPill })))
 import { GroupFileName } from './GroupFileName'
@@ -72,6 +73,8 @@ export interface MarkdownProps {
   className?: string
   /** File previews only: project a selected DOM range back to its original source lines. */
   sourceLines?: boolean
+  /** A chat message: the chat its `msg:<prefix>` ids resolve in (the dialect's messageChat). */
+  messageChat?: string
 }
 
 const DensityContext = createContext<MarkdownDensity>('compact')
@@ -128,7 +131,7 @@ const PLUGINS: PluginConfig = {
 // Plugin arrays keep their identity per dialect option set, so a re-render never re-creates the processor.
 const pluginCache = new Map<string, { remark: ReturnType<typeof markdownRemarkPlugins>; rehype: ReturnType<typeof markdownRehypePlugins> }>()
 function pluginsFor(options: MarkdownDialectOptions) {
-  const key = `${options.trust}|${options.hardBreaks ? 1 : 0}|${options.frontmatter ? 1 : 0}`
+  const key = `${options.trust}|${options.hardBreaks ? 1 : 0}|${options.frontmatter ? 1 : 0}|${options.messageChat ?? ''}`
   let entry = pluginCache.get(key)
   if (!entry) {
     // Link pills are a chat bubble's: documents and previews keep their links as written.
@@ -150,6 +153,18 @@ function LinkPillGate({ plain, ...props }: { plain: ReactNode } & Omit<Component
 }
 
 /**
+ * An `@` mention backed by the message's recipients stays the bold name it always was; an agent's carries the agent mark
+ * before it (owner 2026-11-16), so an agent and a person read apart. A person needs nothing: the `@` already says it.
+ */
+function MemberMention({ children }: { children: ReactNode }) {
+  const { identitiesById } = useChatStore('identitiesById')
+  const name = (onlyText(children) ?? '').replace(/^@/, '')
+  const matches = Object.values(identitiesById).filter((identity) => identity.display_name === name)
+  const agent = matches.length === 1 && matches[0]!.type === 'agent'
+  return <span data-mention="true">{agent ? <Bot className="gg-md-mention-mark" aria-hidden="true" /> : null}{children}</span>
+}
+
+/**
  * The one markdown renderer of the React surfaces (chat, previews, documents, PR comments, extension notes).
  * Grammar, sanitizing and typography come from `@gugu/session-shared` — the transcript renders the same dialect.
  */
@@ -167,6 +182,7 @@ export const Markdown = memo(function Markdown({
   renderImage,
   className,
   sourceLines = false,
+  messageChat,
 }: MarkdownProps) {
   // Streamdown's memo ignores `components` and plugin arrays: callbacks are read through refs, and anything
   // that changes the element mapping is part of the key below.
@@ -183,7 +199,7 @@ export const Markdown = memo(function Markdown({
   tRef.current = t
   useEffect(() => hookFilePillCopy(), [])
 
-  const plugins = pluginsFor({ trust, hardBreaks, frontmatter })
+  const plugins = pluginsFor({ trust, hardBreaks, frontmatter, messageChat })
   const source = useMemo(() => normalizeMarkdownSource(displayAgentReferences(content)), [content])
   const sourcePlugins = useMemo<PluggableList>(() => sourceLines ? [...plugins.rehype, [rehypeSourceLines, { source, lineOf: normalizeMarkdownSourceWithLines(displayAgentReferences(content)).lineOf }]] : plugins.rehype, [content, plugins, source, sourceLines])
   const mobile = useMobileShell()
@@ -195,7 +211,7 @@ export const Markdown = memo(function Markdown({
       ...(phoneTable ? { table: PlatformTable } : {}),
       a: ({ href, children, node: _node, ...rest }: ComponentPropsWithoutRef<'a'> & { node?: unknown }) => {
         // Only this render's nonce is a mention; any other `#ggm-*` (forged, stale) renders as plain text.
-        if (mentionMarker && href === mentionMarker) return <span data-mention="true">{children}</span>
+        if (mentionMarker && href === mentionMarker) return <MemberMention>{children}</MemberMention>
         if (isMentionMarkerUrl(href)) return <>{children}</>
         // Footnote references and heading anchors scroll inside this document; they never navigate the app.
         if (href?.startsWith('#')) {
@@ -259,7 +275,7 @@ export const Markdown = memo(function Markdown({
   return (
     <DensityContext.Provider value={density}>
       <Streamdown
-        key={`${trust}|${hardBreaks}|${frontmatter}|${mentionMarker ?? ''}|${hasImageRenderer}|${copyCode}|${phoneTable}|${sourceLines}`}
+        key={`${trust}|${hardBreaks}|${frontmatter}|${mentionMarker ?? ''}|${hasImageRenderer}|${copyCode}|${phoneTable}|${sourceLines}|${messageChat ?? ''}`}
         mode="static"
         parseIncompleteMarkdown={false}
         lineNumbers={false}
