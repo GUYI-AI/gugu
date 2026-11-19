@@ -207,6 +207,6 @@ async function askAppServerAttempt(ctx: AgentAuthContext, method: string | null,
     throw error;
   } finally {
     clearTimeout(timer); signal?.removeEventListener('abort', abort); lines.close();
-    await owned.stop({ graceMs: 2_000 });
+    await owned.stop({ graceMs: 2_000 }).catch(() => undefined);
   }
 }

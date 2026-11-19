@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, chmodSy
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { parseCodexPreparation } from '@gugu/core/local/codex-initialize.mjs'
 import { createJsonlReader, jsonlParseError } from '../../../../apps/desktop/electron/runtime/jsonl-reader.mjs'
 import { awaitFact } from '../../../support/awaitFact'
 
@@ -119,6 +120,10 @@ describe('Codex bridge native preparation', () => {
     const h = await bridge('backfill-once');
     expect(await h.request('session/list', { cwd: dir })).toHaveProperty('result');
     expect(readFileSync(join(dir, 'release-resume.attempt'), 'utf8')).toBe('2');
+    const progress = h.stderr().split('\n').map(parseCodexPreparation).filter(p => p !== undefined);
+    expect(progress).toContainEqual(expect.objectContaining({ phase: 'history' }));
+    expect(progress.at(-1)).toBeNull();
+    expect(h.stderr()).not.toContain('请升级');
   });
 });
 
