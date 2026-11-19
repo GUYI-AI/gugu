@@ -40,3 +40,19 @@ it('accepts a confirmed explicit delete/leave, and ignores another account and c
   publishChatSummaries([])
   expect(remove).toHaveBeenCalledOnce()
 })
+
+it('verifies only the restored references and removes the blank block after the authoritative read completes', async () => {
+  const layout = new Set(['restored-gone', 'opened-later'])
+  let removed = false
+  const readRestored = vi.fn(async (ids: readonly string[]) => {
+    expect(ids).toEqual(['restored-gone'])
+    if (removed) return
+    removed = true
+    publishChatRemovalFacts('owner', id => id === 'restored-gone')
+  })
+  stop = subscribeChatRemovals(() => [...layout], id => layout.delete(id), () => ['restored-gone'])
+  publishChatRemovalFacts('owner', () => false, readRestored)
+  await Promise.resolve()
+  expect([...layout]).toEqual(['opened-later'])
+  expect(readRestored).toHaveBeenCalledOnce()
+})

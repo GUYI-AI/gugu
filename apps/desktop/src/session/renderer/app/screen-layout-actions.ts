@@ -120,7 +120,9 @@ function pruneGoneApps(): void {
 function pruneGoneChats(): void {
   const chatsInLayout = () =>
     [...screenLayout.blocks.values(), ...screenLayout.parkedContents].flatMap((block) => (block.kind === 'chat' ? [block.chatId] : []));
-  subscribeChatRemovals(chatsInLayout, forgetChatOnScreen);
+  let restored = chatsInLayout();
+  onViewStateAccount(() => { restored = chatsInLayout(); });
+  subscribeChatRemovals(chatsInLayout, forgetChatOnScreen, () => restored);
 }
 
 /** 这条对话没了:它那块收掉;它在这屏上、屏空了就摆回最近看过的会话。人正看着别的视图(资源库、设置……)时 ❌ 把人拽回这屏。 */

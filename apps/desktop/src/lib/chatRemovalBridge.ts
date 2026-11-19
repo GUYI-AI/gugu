@@ -1,14 +1,15 @@
 import { replicaAccount } from './replica'
+import { rendererLogger } from './log'
 
-type RemovalFacts = { accountId: string; isRemoved: (chatId: string) => boolean }
+type RemovalFacts = { accountId: string; isRemoved: (chatId: string) => boolean; readRestored?: (chatIds: readonly string[]) => Promise<void> }
 type ExplicitRemoval = { accountId: string; chatId: string }
 const KEY = '__GUGU_CHAT_REMOVAL_FACTS__'
 const EVENT = 'gugu:chat-removal-facts'
 const state = () => window as unknown as Record<string, RemovalFacts | undefined>
 
 /** The existing projection's deletion/membership facts, never display-list absence. */
-export function publishChatRemovalFacts(accountId: string, isRemoved: RemovalFacts['isRemoved']): void {
-  state()[KEY] = { accountId, isRemoved }
+export function publishChatRemovalFacts(accountId: string, isRemoved: RemovalFacts['isRemoved'], readRestored?: RemovalFacts['readRestored']): void {
+  state()[KEY] = { accountId, isRemoved, readRestored }
   window.dispatchEvent(new Event(EVENT))
 }
 
@@ -20,7 +21,7 @@ export function publishChatRemoved(accountId: string, chatId: string): void {
 export function clearChatRemovalFacts(): void { delete state()[KEY] }
 
 /** Screen and parked groups supply their own ids; no second list or tombstone cache. */
-export function subscribeChatRemovals(candidates: () => readonly string[], remove: (chatId: string) => void): () => void {
+export function subscribeChatRemovals(candidates: () => readonly string[], remove: (chatId: string) => void, restored: () => readonly string[] = candidates): () => void {
   const check = (event?: Event) => {
     const explicit = (event as CustomEvent<ExplicitRemoval> | undefined)?.detail
     const accountId = replicaAccount().id
@@ -31,6 +32,7 @@ export function subscribeChatRemovals(candidates: () => readonly string[], remov
     const facts = state()[KEY]
     if (!facts || facts.accountId !== accountId) return
     for (const id of candidates()) if (facts.isRemoved(id)) remove(id)
+    void facts.readRestored?.(restored()).catch(error => rendererLogger('chat/layout-removal').error({ error, accountId }, 'restored layout membership read failed; layout retained'))
   }
   window.addEventListener(EVENT, check)
   check()

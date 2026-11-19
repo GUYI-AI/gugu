@@ -197,7 +197,7 @@ export function useChatProjectionBinding(deps: {
   }, [chatsRef, repositoryRef])
 
   /** `revokedMembership` 是增量那一路的另一半判据:要**权威的成员行 tombstone**,不是整表缺席(#4314)。 */
-  const publish = useCallback(async (
+  const publish = useCallback(async function publishSnapshot(
     fetched: readonly ChatItem[],
     identities: readonly unknown[],
     options: { requestSeq: number; notify: boolean; preserveMissingActive?: boolean; revokedMembership?: (chatId: string) => boolean },
@@ -239,10 +239,17 @@ export function useChatProjectionBinding(deps: {
     const binding = ownerRef.current
     if (binding?.accountId === accountId) publishChatRemovalFacts(accountId, id =>
       ownerRef.current === binding && repositoryRef.current?.accountId === accountId
-      && (binding.owner.isConversationDeleted(id) || binding.owner.isMembershipRevoked(id)))
+      && (binding.owner.isConversationDeleted(id) || binding.owner.isMembershipRevoked(id)), async ids => {
+        if (ownerRef.current !== binding || repositoryRef.current?.accountId !== accountId) return
+        const rows = await binding.owner.readRestoredLayoutMemberships(ids, readProjectionCursor(repositoryRef.current), currentAuthSessionSignal())
+        if (rows !== null && ownerRef.current === binding && repositoryRef.current?.accountId === accountId) {
+          await publishSnapshot(rows, binding.owner.identities(), { requestSeq: ++requestSeqRef.current, notify: false,
+            preserveMissingActive: false, revokedMembership: binding.owner.isMembershipRevoked })
+        }
+      })
     for (const persist of pendingReads) persist()
     if (revokeMissingActive && activeChatId) onActiveRevoked(activeChatId)
-  }, [ledger, activeChatIdRef, canAcknowledge, visibleSeqOf, chatsRef, getRepository, onActiveRevoked, acceptRows, repositoryRef])
+  }, [ledger, activeChatIdRef, canAcknowledge, visibleSeqOf, chatsRef, getRepository, onActiveRevoked, acceptRows, repositoryRef, requestSeqRef])
 
   /** 冷启快照:一次「哪些会话属于我」的读 + 与增量同一套族读 ⇒ 2 波(spec I7,没有第二条拉取路)。 */
   const hydrate = useCallback((accountId: string) => ownerFor(accountId)

@@ -1,4 +1,5 @@
-import { useChatListState } from './chatListState'; import { publishChatRemoved } from '../lib/chatRemovalBridge'
+import { useChatListState } from './chatListState'
+import { publishChatRemoved } from '../lib/chatRemovalBridge'
 import { useConversationHiding } from './useConversationHiding'
 import { useChatCatchupPriority, useChatCatchupResume } from './chatCatchupPriority'
 import { useChatListRefresh } from './chatListRefresh'
