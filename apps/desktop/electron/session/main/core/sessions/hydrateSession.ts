@@ -1,24 +1,20 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { isProviderSessionMissingError } from '@gugu/session-core/acp';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
-import { resolveSession } from '../projects/utils';
+import { resolveSession } from './session-workspace-manager';
 import { mapSessionRowToSession } from './utils';
 import { markProviderSessionMissing } from './mark-provider-session-missing';
 import { clearProviderSessionId, setProviderSessionId } from './set-session-id';
 
 export async function hydrateSession(
-  projectId: string,
   sessionId: string
 ): Promise<void> {
   const [row] = await db
     .select()
     .from(sessions)
     .where(
-      and(
-        eq(sessions.id, sessionId),
-        eq(sessions.projectId, projectId),
-      )
+      eq(sessions.id, sessionId)
     )
     .limit(1);
   if (!row) throw new Error('Session not found');
@@ -31,7 +27,7 @@ export async function hydrateSession(
   if (session.providerSessionState === 'missing') return;
 
   // PTY path.
-  const mount = resolveSession(projectId, sessionId);
+  const mount = resolveSession(sessionId);
   if (!mount) throw new Error('Session not found');
 
   const isFirstSpawn = row.providerSessionId === null;

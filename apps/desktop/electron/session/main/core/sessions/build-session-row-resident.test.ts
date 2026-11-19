@@ -7,7 +7,7 @@ import { buildSessionRow } from './build-session-row';
  */
 const base = {
   id: 'r1',
-  projectId: 'p1',
+  groupChatId: null,
   workspaceId: 'w1',
   title: '个人助理',
   agentDisplayName: '个人助理',

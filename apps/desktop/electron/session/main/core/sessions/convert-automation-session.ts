@@ -13,11 +13,10 @@ export async function convertAutomationSession(sessionId: string): Promise<void>
     .update(sessions)
     .set({ automationRunId: null, updatedAt: sql`CURRENT_TIMESTAMP` })
     .where(eq(sessions.id, sessionId))
-    .returning({ projectId: sessions.projectId });
+    .returning({ id: sessions.id });
   if (!row) throw new Error(`Session not found: ${sessionId}`);
   events.emit(sessionChangedChannel, {
     sessionId,
-    projectId: row.projectId,
     changes: { automationRunId: null },
   });
 }

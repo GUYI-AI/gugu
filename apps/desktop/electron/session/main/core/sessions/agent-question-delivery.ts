@@ -37,7 +37,7 @@ export function restoredAgentQuestion(settlement: Settlement): { request: Questi
   } catch { return null; }
 }
 
-export function deliverAgentQuestionAnswer(sessionId: string, projectId: string, request: Question, answerMessageId: string,
+export function deliverAgentQuestionAnswer(sessionId: string, request: Question, answerMessageId: string,
   result: Promise<import('../asks').AskResult>): void {
   void result.then(async (answer) => {
     if (typeof answer === 'string') return;
@@ -50,7 +50,7 @@ export function deliverAgentQuestionAnswer(sessionId: string, projectId: string,
       ...(source?.messageId ? { reply_destination: { chat_id: source.chatId, reply_to_message_id: source.messageId } } : {}),
     }).replaceAll('<', '\\u003c');
     const { sendMessage } = await import('./sendMessage');
-    const sent = await sendMessage({ projectId, sessionId, clientMessageId: answerMessageId,
+    const sent = await sendMessage({ sessionId, clientMessageId: answerMessageId,
       text: `<gugu_question_answer>\n${resultText}\n</gugu_question_answer>\nThe owner explicitly ${submitted ? 'submitted these answers' : 'withdrew this question'} in Gugu. Resume only the corresponding work; forward the answer to its executor. Any reply about this work belongs to reply_destination, never an unrelated later greeting.`, kind: 'session-direct' });
     if (sent.status === 'outcome-unknown') log.warn('agent question answer delivery outcome is unknown', { sessionId, itemId: request.itemId });
   }).catch((error: unknown) => log.error('agent question answer delivery failed', { sessionId, itemId: request.itemId, error: String(error) }));

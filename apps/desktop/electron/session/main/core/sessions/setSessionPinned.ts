@@ -6,7 +6,7 @@ import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
 
 export async function setSessionPinned(sessionId: string, isPinned: boolean): Promise<void> {
   const [row] = await db
-    .select({ projectId: sessions.projectId })
+    .select({ id: sessions.id })
     .from(sessions)
     .where(eq(sessions.id, sessionId))
     .limit(1);
@@ -23,7 +23,6 @@ export async function setSessionPinned(sessionId: string, isPinned: boolean): Pr
   // 桌面侧栏与手机置顶都经这一个写入口:渲染层据此当场挪行,手机的列表订阅也旁听这一条。
   events.emit(sessionChangedChannel, {
     sessionId,
-    projectId: row.projectId,
     changes: { isPinned },
   });
 }

@@ -73,7 +73,7 @@ const bridge = await import('./write-bridge');
 const target = {
   id: 'conv-1',
   runtime: 'acp',
-  projectId: 'p',
+  workspaceId: 'ws',
 } as unknown as SessionWriteTarget;
 
 function summary(lifecycle: string): SessionSummary {

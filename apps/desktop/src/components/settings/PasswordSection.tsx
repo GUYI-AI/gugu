@@ -292,7 +292,7 @@ function GrantsPage({ item, snapshot, busy, run, go, error }: ScreenProps & { it
     [candidates, item.grants, query])
   const describe = (subject: string) => {
     const value = label(subject)
-    return value?.kind === 'project' ? '项目里的所有任务' : value?.project
+    return value?.kind === 'group' ? '群里的所有任务' : undefined
   }
   const levels = (subject: string, current?: 'read' | 'write') => <div className="flex items-center gap-1" role="radiogroup" aria-label="权限">
     {(['read', 'write'] as const).map(level => <Button key={level} variant="option" size="sm" role="radio" aria-checked={current === level} disabled={busy}
@@ -300,14 +300,14 @@ function GrantsPage({ item, snapshot, busy, run, go, error }: ScreenProps & { it
     {current && <Button variant="ghost" size="sm" disabled={busy} onClick={() => set(subject)}>取消授权</Button>}
   </div>
   return <SettingsPage data-testid="password-grants">
-    <SearchField aria-label="搜索智能体" placeholder="搜索智能体或项目" value={query} onChange={event => setQuery(event.target.value)} />
+    <SearchField aria-label="搜索智能体" placeholder="搜索智能体或群" value={query} onChange={event => setQuery(event.target.value)} />
     <SettingsGroup note="不在名单里的智能体，每次使用都要你在私聊里允许。">
       {granted.map(grant => <SettingsRow key={grant.subject} title={label(grant.subject)?.name ?? '已不在的智能体'} description={describe(grant.subject)} control={levels(grant.subject, grant.level)} />)}
       {!item.grants.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">还没有授权</span>} />}
       <SettingsRow title={<Button variant="ghost" size="sm" onClick={() => setAdding(value => !value)}><Plus size={14} aria-hidden="true" />授权智能体</Button>} />
     </SettingsGroup>
-    {adding && <SettingsGroup title="选择智能体或项目">
-      {available.map(value => <SettingsRow key={value.subject} title={value.name} description={value.kind === 'project' ? '项目里的所有任务' : value.project} control={levels(value.subject)} />)}
+    {adding && <SettingsGroup title="选择智能体或群">
+      {available.map(value => <SettingsRow key={value.subject} title={value.name} description={value.kind === 'group' ? '群里的所有任务' : undefined} control={levels(value.subject)} />)}
       {!available.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">没有可选的</span>} />}
     </SettingsGroup>}
     {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}

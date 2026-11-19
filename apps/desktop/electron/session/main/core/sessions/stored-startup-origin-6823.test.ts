@@ -9,7 +9,7 @@ import { mapSessionRowToSession } from './utils';
  */
 function storedRow(config: Record<string, unknown>) {
   return {
-    id: 'c1', projectId: 'p1', title: 'T', provider: 'codex', runtime: 'acp', providerSessionId: null,
+    id: 'c1', projectId: 'p1', workspaceId: 'ws1', title: 'T', provider: 'codex', runtime: 'acp', providerSessionId: null,
     createdAt: '2026-09-20T00:00:00.000Z', updatedAt: '2026-09-20T00:00:00.000Z', lastInteractedAt: null,
     isInitialSession: false, agentStatus: null, agentStatusSeen: 1, agentStatusDetail: null, isPinned: 0,
     archivedAt: null, parentSessionId: null, spawnedBySessionId: null, spawnedByExtensionId: null,

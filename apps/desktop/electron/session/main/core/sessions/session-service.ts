@@ -1,6 +1,6 @@
 import { err, ok, type Result } from '@gugu/session-shared';
 import { eq } from 'drizzle-orm';
-import { projectManager } from '@main/core/projects/project-manager';
+import { rootFolderOf } from '@main/core/folders/folders';
 import {
   workspaceBootstrapService,
   type WorkspaceBootstrapResult,
@@ -44,31 +44,30 @@ export class SessionService {
     sessionId: string
   ): Promise<Result<ProvisionResult, ProvisionWorkspaceError>> {
     const [row] = await db
-      .select({ projectId: sessions.projectId })
+      .select({ groupChatId: sessions.chatId })
       .from(sessions)
       .where(eq(sessions.id, sessionId))
       .limit(1);
     if (!row) throw new Error(`Session not found: ${sessionId}`);
-    const { projectId } = row;
 
     const mountedWorkspaceId = sessionWorkspaceManager.getWorkspaceId(sessionId);
     const mountedWorkspace = mountedWorkspaceId ? workspaceRegistry.get(mountedWorkspaceId) : undefined;
     if (mountedWorkspaceId && mountedWorkspace) {
       const provisionResult: ProvisionResult = { path: mountedWorkspace.path, workspaceId: mountedWorkspaceId };
-      events.emit(sessionProvisionedChannel, { sessionId, projectId, ...provisionResult });
+      events.emit(sessionProvisionedChannel, { sessionId, ...provisionResult });
       return ok(provisionResult);
     }
 
     const result = await workspaceBootstrapService.ensureWorkspaceSetupForSession(sessionId);
     if (!result.success) return err(result.error);
 
-    await this._register(sessionId, projectId, result.data);
+    await this._register(sessionId, row.groupChatId, result.data);
 
     const provisionResult: ProvisionResult = {
       path: result.data.path,
       workspaceId: result.data.workspaceId,
     };
-    events.emit(sessionProvisionedChannel, { sessionId, projectId, ...provisionResult });
+    events.emit(sessionProvisionedChannel, { sessionId, ...provisionResult });
     return ok(provisionResult);
   }
 
@@ -106,13 +105,15 @@ export class SessionService {
 
   private async _register(
     sessionId: string,
-    projectId: string,
+    groupChatId: string | null,
     data: WorkspaceBootstrapResult
   ): Promise<void> {
-    const project = projectManager.getProject(projectId);
-    if (!project) throw new Error(`Project not found: ${projectId}`);
+    const folder = rootFolderOf(data.workspaceId);
+    if (!folder) throw new Error(`session ${sessionId}: workspace ${data.workspaceId} is in no folder recorded here`);
+    const { folderRuntime } = await import('@main/core/workspaces/folder-runtime/folder-runtimes');
+    const runtime = await folderRuntime(folder.id);
 
-    await sessionWorkspaceManager.registerSession(sessionId, data, projectId, project.ctx);
+    await sessionWorkspaceManager.registerSession(sessionId, data, groupChatId, runtime.ctx);
 
     await db
       .update(sessions)

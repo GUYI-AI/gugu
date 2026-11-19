@@ -48,6 +48,7 @@ describe('活会话设置落库:改完 → 记录 → 重开读到新值', () =>
       INSERT INTO sessions (id, project_id, provider, runtime, config)
         VALUES ('${CONV}', 'project-1', 'claude', 'acp',
                 '{"version":"1","type":"acp","agentDisplayName":"Task","permissionMode":"full-access","model":"opus","effort":"high","firstUtterance":"hi","mcpSessionServers":["gugu"]}');
+      INSERT OR IGNORE INTO workspaces (id, type, path) VALUES ('ws-fixture', 'local', '/fixture'); UPDATE sessions SET workspace_id = 'ws-fixture' WHERE workspace_id IS NULL;
     `);
   });
 
@@ -74,7 +75,6 @@ describe('活会话设置落库:改完 → 记录 → 重开读到新值', () =>
     // 渲染层手里那份也得跟上(它自己的启动路读的是它)。
     expect(mocks.emit).toHaveBeenCalledWith(sessionChangedChannel, {
       sessionId: CONV,
-      projectId: 'project-1',
       changes: { permissionMode: 'read-only' },
     });
   });
@@ -89,7 +89,7 @@ describe('活会话设置落库:改完 → 记录 → 重开读到新值', () =>
     const session = await reopened();
     expect(session.permissionMode).toBe('ai-review');
     expect(session.model).toBe('opus');
-    expect(mocks.emit).toHaveBeenCalledWith(sessionChangedChannel, { sessionId: CONV, projectId: 'project-1', changes: { permissionMode: 'ai-review' } });
+    expect(mocks.emit).toHaveBeenCalledWith(sessionChangedChannel, { sessionId: CONV, changes: { permissionMode: 'ai-review' } });
   });
 
   it('推理档:原样写回', async () => {

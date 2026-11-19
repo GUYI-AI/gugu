@@ -3,7 +3,7 @@ import { log } from '@main/lib/logger';
 import type { ProvisionStep } from '@shared/core/sessions/provisionEvents';
 
 type SessionProvisionProgress = {
-  projectId: string;
+  sessionId: string;
   step: ProvisionStep;
   message: string;
 };

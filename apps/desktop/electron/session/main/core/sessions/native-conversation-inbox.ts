@@ -4,7 +4,7 @@ import { kv, sessions } from '@main/db/schema';
 import { startNativeConversationPublicationHost } from './native-publication-host';
 
 type InboxDb = Pick<AppDb, 'select' | 'insert'>;
-type Target = { sessionId: string; projectId: string };
+type Target = { sessionId: string };
 const PREFIX = 'native-conversation-inbox:';
 const listeners = new Set<() => void>();
 let activeHost: object | null = null;
@@ -14,19 +14,20 @@ export function queueNativeConversationInbox(sessionId: string, source: InboxDb)
   const key = PREFIX + sessionId;
   const existing = source.select({ value: kv.value }).from(kv).where(eq(kv.key, key)).get();
   if (existing) return !JSON.parse(existing.value).chatId;
-  const session = source.select({ projectId: sessions.projectId }).from(sessions).where(eq(sessions.id, sessionId)).get();
+  const session = source.select({ id: sessions.id }).from(sessions).where(eq(sessions.id, sessionId)).get();
   if (!session) throw new Error(`Native inbox session is missing: ${sessionId}`);
-  source.insert(kv).values({ key, value: JSON.stringify(session), updatedAt: Date.now() }).onConflictDoNothing().run();
+  source.insert(kv).values({ key, value: JSON.stringify({}), updatedAt: Date.now() }).onConflictDoNothing().run();
   return true;
 }
 
 export function pendingNativeConversationInbox(source: InboxDb = db): Target[] {
   return source.select({ key: kv.key, value: kv.value }).from(kv).where(like(kv.key, PREFIX + '%')).all().flatMap(row => {
-    const value = JSON.parse(row.value) as { projectId: string; chatId?: string };
-    if (typeof value.projectId !== 'string' || !value.projectId || value.chatId !== undefined && (typeof value.chatId !== 'string' || !value.chatId)) throw new Error(`Invalid native inbox request: ${row.key}`);
+    // Requests written before C1 also carry a projectId; nothing reads it.
+    const value = JSON.parse(row.value) as { chatId?: string };
+    if (value.chatId !== undefined && (typeof value.chatId !== 'string' || !value.chatId)) throw new Error(`Invalid native inbox request: ${row.key}`);
     const sessionId = row.key.slice(PREFIX.length);
     const exists = source.select({ id: sessions.id }).from(sessions).where(eq(sessions.id, sessionId)).get();
-    return value.chatId || !exists ? [] : [{ sessionId, projectId: value.projectId }];
+    return value.chatId || !exists ? [] : [{ sessionId }];
   });
 }
 
@@ -59,8 +60,8 @@ export function startNativeConversationInboxHost(deps: {
             const chatId = await deps.open(target);
             if (!chatId) throw new Error(`Native inbox address is empty: ${target.sessionId}`);
             if (stopped) break;
-            db.insert(kv).values({ key: PREFIX + target.sessionId, value: JSON.stringify({ projectId: target.projectId, chatId }), updatedAt: Date.now() })
-              .onConflictDoUpdate({ target: kv.key, set: { value: JSON.stringify({ projectId: target.projectId, chatId }), updatedAt: Date.now() } }).run();
+            db.insert(kv).values({ key: PREFIX + target.sessionId, value: JSON.stringify({ chatId }), updatedAt: Date.now() })
+              .onConflictDoUpdate({ target: kv.key, set: { value: JSON.stringify({ chatId }), updatedAt: Date.now() } }).run();
             reported.delete(target.sessionId);
           } catch (error) {
             if (!reported.has(target.sessionId)) { reported.add(target.sessionId); deps.failed(error); }

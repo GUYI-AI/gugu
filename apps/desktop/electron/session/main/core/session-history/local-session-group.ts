@@ -1,21 +1,21 @@
 import { isAbsolute } from 'node:path';
 import { canonicalPath, placeUnder, type CanonicalPath } from '@gugu/session-core/files';
-import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
 import { SESSION_HOME_SECTION_KEY, isSessionHomeDirectory } from '@shared/core/session-history/session-history';
 import { findRepoRoot } from './repo-root';
 
 export type LocalSessionGroup = { key: string | null; label: string | null };
-type SessionProject = { projectId: string; projectPath: CanonicalPath; projectName: string };
+/** A folder recorded on this machine (@@@group-folders): its path and the name a section shows. */
+export type LocalGroupFolder = { path: CanonicalPath; name: string };
 
 /**
- * The history list and Apps group native transcripts by the same registered projects and repository boundaries. A
+ * The history list and Apps group native transcripts by the same recorded folders and repository boundaries. A
  * transcript's directory is the agent's own record of it: put in its one spelling here (`@@@canonical-path`), where it
- * enters, before it is compared with a project's.
+ * enters, before it is compared with a folder's. The task home is not a folder a person picked: never a section.
  */
-export function createLocalGroupOf(projects: SessionProject[]): (directory: string | null) => LocalSessionGroup {
-  const projectPaths = [...new Map(projects.map((project) => [project.projectPath, project])).values()]
-    .filter((project) => !isImplicitSessionHomeProjectId(project.projectId))
-    .map((project) => ({ key: project.projectPath, label: project.projectName }))
+export function createLocalGroupOf(folders: LocalGroupFolder[]): (directory: string | null) => LocalSessionGroup {
+  const projectPaths = [...new Map(folders.map((folder) => [folder.path, folder])).values()]
+    .filter((folder) => !isSessionHomeDirectory(folder.path))
+    .map((folder) => ({ key: folder.path, label: folder.name }))
     .sort((a, b) => b.key.length - a.key.length);
   const isAtOrUnder = (path: CanonicalPath, base: CanonicalPath) => placeUnder(base, path) !== null;
   return (named) => {

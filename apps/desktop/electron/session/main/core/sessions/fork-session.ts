@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
 import {
@@ -9,7 +9,6 @@ import { attachAgentToSession } from './attach-agent-to-session';
 import { mapSessionRowToSession } from './utils';
 
 export type ForkSessionParams = {
-  projectId: string;
   /** 被分叉的那条会话。新会话的一切(引擎、模型、权限档、上下文)都抄它。 */
   sourceSessionId: string;
 };
@@ -47,7 +46,7 @@ export async function forkSession(params: ForkSessionParams): Promise<Session> {
     .select()
     .from(sessions)
     .where(
-      and(eq(sessions.id, params.sourceSessionId), eq(sessions.projectId, params.projectId))
+      eq(sessions.id, params.sourceSessionId)
     )
     .limit(1);
   if (!row) throw new Error('Session not found');
@@ -64,7 +63,7 @@ export async function forkSession(params: ForkSessionParams): Promise<Session> {
   // 「照抄了上下文」、实际什么都没继承的会话。判据留在这里,而不是只长在菜单可见性上 ——
   // 菜单之外的调用方(命令、扩展)绕过去就静默造出这种会话。
   return attachAgentToSession({
-    projectId: params.projectId,
+    groupChatId: row.chatId,
     workspaceId: source.workspaceId,
     provider: source.providerId,
     agentDisplayName: name,

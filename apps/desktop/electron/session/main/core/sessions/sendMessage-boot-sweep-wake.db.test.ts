@@ -15,7 +15,10 @@ vi.mock('@main/db/client', () => ({
 vi.mock('@gugu/session-plugins/agents', () => ({
   resolveSessionpageSessionIntegration: () => ({ identity: 'addressable', messageTransport: 'router' }),
 }));
-vi.mock('@main/core/projects/utils', () => ({ resolveSession: () => null }));
+vi.mock('@main/core/sessions/session-workspace-manager', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  resolveSession: () => null,
+}));
 vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn() } }));
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
 
@@ -74,9 +77,9 @@ describe('the boot sweep wakes a terminal session that holds a pending ordinary 
   });
 
   async function holdMessage(sessionId: string, id: string): Promise<void> {
-    await sendMessage({ projectId: target.projectId, sessionId, clientMessageId: id, text: 'held for startup' });
+    await sendMessage({ sessionId, clientMessageId: id, text: 'held for startup' });
     // Settle the normal no-router drain before changing archival state.
-    await drainSessionMessageOutbox({ projectId: target.projectId, sessionId });
+    await drainSessionMessageOutbox({ sessionId });
   }
 
   it('continues boot with archived pending data preserved and active delivery still eligible', async () => {

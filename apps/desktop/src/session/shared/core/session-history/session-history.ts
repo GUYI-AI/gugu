@@ -103,7 +103,10 @@ export function isSessionHomeDirectory(directory: string): boolean {
 }
 
 export type SessionHistoryGuguRef = {
+  /** @@@group-folders — released readers only: the session's workspace id since C1. */
   projectId: string;
+  /** The group the session lives in; null = none (the task home section). */
+  groupChatId: string | null;
   sessionId: string;
   runtime: SessionRuntime;
 };

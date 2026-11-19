@@ -23,7 +23,6 @@ export type ProviderBlocker = {
 
 export const sessionChangedChannel = defineEvent<{
   sessionId: string;
-  projectId: string;
   changes: {
     /** The host read journal changed; list subscribers reread the unseen reply keys. */
     nativeUnreadKeys?: true;
@@ -97,7 +96,6 @@ export const sessionCreatedChannel = defineEvent<{
  */
 export type AgentStatusChange = {
   sessionId: string;
-  projectId: string;
   /** `null` = 这条会话没有状态源(只会出现在快照里)。 */
   reading: AgentStatusReading | null;
   /** 这一句你还没看过(做完、等人、出错时写下为未读;打开会话后已读)。 */
@@ -108,16 +106,12 @@ export type AgentStatusChange = {
   statusSourceFault: string | null;
 };
 
-/** 哪些会话不在了(删除、归档、随项目一起走):按会话或项目圈定。 */
-export type SessionScope = { sessionId: string } | { projectId: string };
+/** 哪些会话不在了(删除、归档):按会话圈定。 */
+export type SessionScope = { sessionId: string };
 
 /** 这条会话落在 `scope` 里吗。 */
-export function sessionInScope(
-  session: { sessionId: string; projectId: string },
-  scope: SessionScope,
-): boolean {
-  if ('sessionId' in scope) return session.sessionId === scope.sessionId;
-  return session.projectId === scope.projectId;
+export function sessionInScope(session: { sessionId: string }, scope: SessionScope): boolean {
+  return session.sessionId === scope.sessionId;
 }
 
 export const sessionAgentStatusChangedChannel = defineEvent<AgentStatusChange>('session:agent-status-changed');
@@ -125,7 +119,6 @@ export const sessionAgentStatusChangedChannel = defineEvent<AgentStatusChange>('
 /** Session-page work failed after the initiating request returned. */
 export const sessionDeliveryFailedChannel = defineEvent<{
   sessionId: string;
-  projectId: string;
   messageId?: string;
   message: string;
 }>('session:delivery-failed');

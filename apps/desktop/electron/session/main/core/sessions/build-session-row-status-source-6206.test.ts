@@ -9,7 +9,7 @@ import { buildSessionRow } from './build-session-row';
  */
 const create = {
   id: 'c1',
-  projectId: 'p1',
+  groupChatId: null,
   workspaceId: 'w1',
   title: 'T',
   agentDisplayName: 'Codex 1',

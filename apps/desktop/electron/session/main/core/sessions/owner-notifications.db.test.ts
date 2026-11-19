@@ -11,7 +11,7 @@ import { pendingNativePublications } from './native-publication-journal';
 const mocks = vi.hoisted(() => ({ db: undefined as AppDb | undefined, root: '', sourceTurn: 'runtime-turn' }));
 vi.mock('@main/db/client', () => ({ get db() { if (!mocks.db) throw new Error('Missing fixture'); return mocks.db; } }));
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
-vi.mock('../projects/utils', () => ({ resolveWorkspace: () => ({ path: mocks.root }) }));
+vi.mock('@main/core/workspaces/resolve-workspace', async (importOriginal) => ({ ...(await importOriginal<Record<string, unknown>>()), resolveWorkspace: () => ({ path: mocks.root }) }));
 vi.mock('./session-activity-source', () => ({ readCurrentTurnIdentity: async () => mocks.sourceTurn }));
 const { commitOwnerNotification, ownerNotificationFile } = await import('./owner-notifications');
 const { nativeConversationUnread, nativeOwnerNotificationUnread, markNativeConversationVisible } = await import('./session-conversation-read');

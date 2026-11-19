@@ -38,7 +38,7 @@ function row(input: Parameters<typeof buildSessionRow>[0]) {
 
 const base = {
   id: 'c1',
-  projectId: 'p1',
+  groupChatId: null,
   workspaceId: 'w1',
   title: 'T',
   agentDisplayName: 'Codex 1',

@@ -50,7 +50,6 @@ export const browserAppShortcutChannel = defineEvent<{
 }>('browser:app-shortcut');
 
 export const notificationFocusSessionChannel = defineEvent<{
-  projectId: string;
   sessionId: string;
   /** On the screen view: beside what is there, the layout kept (a task card's click). */
   beside?: true;
@@ -61,7 +60,6 @@ export const notificationFocusSessionChannel = defineEvent<{
 /** Host-validated request to open a file without navigating away from the user's current surface. */
 export const sessionOpenFileInPaneChannel = defineEvent<{
   requestId: string;
-  projectId: string;
   sessionId: string;
   path: string;
   external: boolean;
@@ -92,7 +90,6 @@ export const sessionOpenFileInPaneResultChannel = defineEvent<{
 /** Host-validated request to open an HTTP(S) URL in the caller task's browser pane. */
 export const sessionOpenBrowserInPaneChannel = defineEvent<{
   requestId: string;
-  projectId: string;
   sessionId: string;
   url: string;
   linkTarget?: GuguLinkTarget;
@@ -116,7 +113,7 @@ export const sessionOpenBrowserInPaneResultChannel = defineEvent<{
 export const sessionCancelBrowserAcquireChannel = defineEvent<{ requestId: string }>('session:cancel-browser-acquire');
 
 export const sessionManageTabsChannel = defineEvent<{
-  requestId: string; projectId: string; sessionId: string; tabId?: string;
+  requestId: string; sessionId: string; tabId?: string;
 }>('session:manage-tabs');
 
 export const sessionManageTabsResultChannel = defineEvent<SessionPaneTabsResult & {
@@ -168,7 +165,6 @@ export const remotePreviewReadResultChannel = defineEvent<{
  */
 export const sessionOpenExtensionInPaneChannel = defineEvent<{
   requestId: string;
-  projectId: string;
   sessionId: string;
   tabKind: string;
   intent: 'preview' | 'pinned';

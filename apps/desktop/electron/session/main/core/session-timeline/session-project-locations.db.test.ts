@@ -13,7 +13,8 @@ let fixture: Awaited<ReturnType<typeof openFixture>>;
 beforeEach(async () => {
   fixture = await openFixture('empty'); state.db = fixture.db;
   fixture.sqlite.exec("INSERT INTO projects(id,name,path) VALUES('p','User project','/repo')");
-  const insert = fixture.sqlite.prepare('INSERT INTO sessions(id,project_id,provider,runtime) VALUES(?,?,?,?)');
+  fixture.sqlite.exec("INSERT INTO workspaces(id,type,path) VALUES('ws','local','/repo')");
+  const insert = fixture.sqlite.prepare("INSERT INTO sessions(id,project_id,workspace_id,provider,runtime) VALUES(?,?,'ws',?,?)");
   fixture.sqlite.transaction(() => {
     for (let i = 0; i < 500; i++) insert.run(`unrelated-${i}`, 'p', 'claude', 'pty');
     insert.run('wanted', 'p', 'claude', 'pty');
@@ -22,7 +23,7 @@ beforeEach(async () => {
 afterEach(() => { fixture.close(); state.db = undefined; });
 
 it('looks up only requested primary keys among hundreds of sessions, without summaries or agent discovery', () => {
-  expect(sessionProjectLocations(['wanted', 'missing', 'wanted'])).toEqual([{ conversationId: 'wanted', projectId: 'p' }]);
+  expect(sessionProjectLocations(['wanted', 'missing', 'wanted'])).toEqual([{ conversationId: 'wanted', projectId: 'ws' }]);
   const plan = fixture.sqlite.prepare("EXPLAIN QUERY PLAN SELECT id,project_id FROM sessions WHERE id IN ('wanted','missing')").all() as Array<{ detail: string }>;
   expect(plan.map(row => String(row.detail)).join(' ')).toMatch(/SEARCH sessions USING INDEX/);
 });

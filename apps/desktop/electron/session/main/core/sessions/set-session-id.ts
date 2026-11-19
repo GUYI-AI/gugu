@@ -25,18 +25,14 @@ export async function setProviderSessionId(
     .update(sessions)
     .set({ providerSessionId: trimmed, updatedAt: new Date().toISOString() })
     .where(eq(sessions.id, sessionId))
-    .returning({
-      projectId: sessions.projectId,
-    });
+    .returning({ id: sessions.id });
 
   if (rows.length === 0) {
     return err({ type: 'session-not-found', message: sessionId });
   }
 
-  const row = rows[0];
   events.emit(sessionChangedChannel, {
     sessionId,
-    projectId: row.projectId,
     changes: { providerSessionId: trimmed },
   });
 
@@ -72,15 +68,12 @@ export async function clearProviderSessionId(
     .where(
       and(eq(sessions.id, sessionId), eq(sessions.providerSessionId, expectedProviderSessionId))
     )
-    .returning({
-      projectId: sessions.projectId,
-    });
+    .returning({ id: sessions.id });
 
   const row = rows[0];
   if (!row) return false;
   events.emit(sessionChangedChannel, {
     sessionId,
-    projectId: row.projectId,
     // `null` 而不是 `undefined` —— 理由见 sessionChangedChannel 那侧的抬头(JSON 会吃掉 undefined)。
     changes: { providerSessionId: null },
   });

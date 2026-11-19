@@ -11,7 +11,7 @@ import { sessionParentId } from './utils';
  */
 export async function setSessionPinnedToSidebar(sessionId: string, isPinnedToSidebar: boolean): Promise<void> {
   const [row] = await db
-    .select({ projectId: sessions.projectId, parentSessionId: sessions.parentSessionId, config: sessions.config })
+    .select({ parentSessionId: sessions.parentSessionId, config: sessions.config })
     .from(sessions)
     .where(eq(sessions.id, sessionId))
     .limit(1);
@@ -30,7 +30,6 @@ export async function setSessionPinnedToSidebar(sessionId: string, isPinnedToSid
 
   events.emit(sessionChangedChannel, {
     sessionId,
-    projectId: row.projectId,
     changes: { isPinnedToSidebar },
   });
 }

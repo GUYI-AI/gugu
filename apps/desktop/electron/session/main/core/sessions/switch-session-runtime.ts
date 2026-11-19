@@ -1,5 +1,5 @@
 import { sessionLife } from './session-life';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getPlugin } from '@main/core/agents/plugin-registry';
 import { assertSessionSurfaceDeclared } from '@main/core/agents/session-runtime-compatibility';
 import { db } from '@main/db/client';
@@ -49,7 +49,6 @@ import { dehydrateSession } from './dehydrateSession';
  *   与其让用户切过去再撞一次「does not declare a session-TUI host adapter」,不如在这里就说清。
  */
 export async function switchSessionRuntime(
-  projectId: string,
   sessionId: string,
   runtime: SessionRuntime
 ): Promise<void> {
@@ -57,10 +56,7 @@ export async function switchSessionRuntime(
     .select()
     .from(sessions)
     .where(
-      and(
-        eq(sessions.id, sessionId),
-        eq(sessions.projectId, projectId),
-      )
+      eq(sessions.id, sessionId)
     )
     .limit(1);
   if (!row) throw new Error('Session not found');
@@ -94,7 +90,7 @@ export async function switchSessionRuntime(
     await sessionLife().interrupt(sessionId, { k: 'interrupt', reason: 'reconfigure' });
     if (sessionLife().read(sessionId).kind === 'failed') throw new Error(`ACP session ${sessionId} could not be stopped for the runtime switch`);
   } else {
-    await dehydrateSession(projectId, sessionId);
+    await dehydrateSession(sessionId);
   }
 
   const nextConfig = configForRuntime(row.config, runtime, {
@@ -112,7 +108,6 @@ export async function switchSessionRuntime(
 
   events.emit(sessionChangedChannel, {
     sessionId,
-    projectId,
     changes: { runtime },
   });
 

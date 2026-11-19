@@ -33,6 +33,7 @@ describe('setSessionPinned', () => {
       INSERT INTO projects (id, name, path) VALUES ('project-1', 'Project', '/repo');
       INSERT INTO sessions (id, project_id, provider, runtime)
         VALUES ('conv-1', 'project-1', 'codex', 'acp');
+      INSERT OR IGNORE INTO workspaces (id, type, path) VALUES ('ws-fixture', 'local', '/fixture'); UPDATE sessions SET workspace_id = 'ws-fixture' WHERE workspace_id IS NULL;
     `);
   });
 
@@ -50,7 +51,6 @@ describe('setSessionPinned', () => {
     expect(row.is_pinned).toBe(1);
     expect(mocks.emit).toHaveBeenCalledWith(sessionChangedChannel, {
       sessionId: 'conv-1',
-      projectId: 'project-1',
       changes: { isPinned: true },
     });
   });

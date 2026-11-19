@@ -17,8 +17,9 @@ export type AttachmentCreationHostDeps = {
   journal?: typeof openCreationAttachmentJournal;
   context: () => Promise<Context>;
   create: (request: SessionCreateAttachmentDraftRequest, sessionId: string, beforeCommit: () => Promise<void>) => Promise<void>;
+  /** `projectId`: the contract's opaque task key — the session's workspace id since C1. */
   task: (sessionId: string, ownerId: string) => Promise<{ projectId: string; title: string } | null>;
-  address: (sessionId: string, projectId: string) => Promise<CreationAttachmentTarget>;
+  address: (sessionId: string) => Promise<CreationAttachmentTarget>;
   resolve: (file: TurnFileRef, target: CreationAttachmentTarget, ownerId: string) => Promise<ResolvedCreationAttachment>;
   prior: (conversationId: string, text: string, messageId: string, files: TurnFileRef[]) => 'accepted' | 'uncertain' | null;
   send: (conversationId: string, text: string, messageId: string, files: TurnFileRef[], owner: Context) => Promise<void>;
@@ -73,7 +74,7 @@ export function createAttachmentCreationHost(deps: AttachmentCreationHostDeps) {
         }
         if (!task) throw unverified('The original task has not been confirmed');
         await current(context);
-        const target = await deps.address(intent.conversationId, task.projectId);
+        const target = await deps.address(intent.conversationId);
         await current(context);
         result = { conversationId: intent.conversationId, projectId: task.projectId, title: task.title,
           attachmentTarget: target, attachmentDraft: { protocol: 1, clientRequestId: request.clientRequestId,
@@ -90,7 +91,7 @@ export function createAttachmentCreationHost(deps: AttachmentCreationHostDeps) {
     await current(context);
     const task = await deps.task(result.conversationId, context.ownerId);
     if (!task || task.projectId !== result.projectId) throw unverified('The original task is unavailable to this owner');
-    const target = await deps.address(result.conversationId, result.projectId);
+    const target = await deps.address(result.conversationId);
     if (!isDeepStrictEqual(target, result.attachmentTarget)) throw unverified('The original task attachment target changed');
     await current(context);
   }

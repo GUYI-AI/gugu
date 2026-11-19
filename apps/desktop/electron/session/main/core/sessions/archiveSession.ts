@@ -1,12 +1,12 @@
 import { sessionBootTasks } from '../boot-tasks';
 import { drainSessionMessageOutbox } from './sendMessage';
 import { sessionLife } from './session-life';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
+import { rootFolderOf } from '@main/core/folders/folders';
 import { db } from '@main/db/client';
-import { projects, sessions } from '@main/db/schema';
+import { sessions } from '@main/db/schema';
 import { events } from '@main/lib/events';
 import { sessionEvents } from './session-events';
-import { projectManager } from '@main/core/projects/project-manager';
 import { cleanupDetachedSessions, sessionWorkspaceManager } from './session-workspace-manager';
 import { log } from '@main/lib/logger';
 import { setSessionArchival, sessionArchivalState, serializeSessionArchival } from './session-archival';
@@ -14,7 +14,6 @@ import { sessionIdentityHost } from './session-identity-host';
 import { archiveTimestamp, type RemovedSessionIdentity } from '@gugu/core/shared/sessionArchival';
 import { archiveOnOtherMachine, familyOf } from './session-family';
 import { mapSessionRowToSession } from './utils';
-import { publishProjectVisibility } from '../projects/operations/project-visibility';
 import type {
   ArchivedSessionRef,
   ArchiveOutcome,
@@ -42,10 +41,9 @@ import {
  * fork 与它的来源在所有意义上都是平行同级(owner 2026-09-11)。
  */
 export async function archiveSession(
-  projectId: string,
   sessionId: string,
   options: { withChildren?: boolean; skipTransportStop?: boolean; removeSocialIdentity?: boolean } = {},
-  // Trusted host input only; the renderer RPC deliberately exposes just the first three arguments.
+  // Trusted host input only; the renderer RPC deliberately exposes just the first two arguments.
   confirmedRemoval?: RemovedSessionIdentity
 ): Promise<ArchiveOutcome> {
   if (confirmedRemoval) {
@@ -56,7 +54,7 @@ export async function archiveSession(
   const [row] = await db
     .select({ archivedAt: sessions.archivedAt })
     .from(sessions)
-    .where(and(eq(sessions.id, sessionId), eq(sessions.projectId, projectId)))
+    .where(eq(sessions.id, sessionId))
     .limit(1);
   if (!row) throw new Error(`Session not found: ${sessionId}`);
   if (row.archivedAt && options.removeSocialIdentity === false) return { archived: [], unreached: [] };
@@ -67,24 +65,24 @@ export async function archiveSession(
   const archived: ArchivedSessionRef[] = [];
   for (const member of members) {
     if (member.deviceId === null) {
-      archived.push(...(await archiveOne(member.projectId, member.id, false, options.removeSocialIdentity)));
+      archived.push(...(await archiveOne(member.id, false, options.removeSocialIdentity)));
     } else if (await archiveOnOtherMachine(member.deviceId, member, unreached, options.removeSocialIdentity)) {
-      archived.push({ projectId: member.projectId, sessionId: member.id });
+      archived.push({ sessionId: member.id });
     }
   }
-  archived.push(...(await archiveOne(projectId, sessionId, options.skipTransportStop, options.removeSocialIdentity, confirmedRemoval)));
+  archived.push(...(await archiveOne(sessionId, options.skipTransportStop, options.removeSocialIdentity, confirmedRemoval)));
   return { archived, unreached };
 }
 
 /**
  * 本机的一条:状态和拒投区间一起落库,再停运行时。工作区保留;身份按显式选项处理。
  */
-async function archiveOne(projectId: string, sessionId: string, skipTransportStop = false, removeSocialIdentity = true, confirmedRemoval?: RemovedSessionIdentity): Promise<ArchivedSessionRef[]> {
-  return serializeSessionArchival(sessionId, () => archiveOneLocked(projectId, sessionId, skipTransportStop, removeSocialIdentity, confirmedRemoval));
+async function archiveOne(sessionId: string, skipTransportStop = false, removeSocialIdentity = true, confirmedRemoval?: RemovedSessionIdentity): Promise<ArchivedSessionRef[]> {
+  return serializeSessionArchival(sessionId, () => archiveOneLocked(sessionId, skipTransportStop, removeSocialIdentity, confirmedRemoval));
 }
 
 /** Caller holds serializeSessionArchival. */
-export async function archiveOneLocked(projectId: string, sessionId: string, skipTransportStop: boolean, removeSocialIdentity = true, confirmedRemoval?: RemovedSessionIdentity): Promise<ArchivedSessionRef[]> {
+export async function archiveOneLocked(sessionId: string, skipTransportStop: boolean, removeSocialIdentity = true, confirmedRemoval?: RemovedSessionIdentity): Promise<ArchivedSessionRef[]> {
   const [row] = await db
     .select({ runtime: sessions.runtime, archivedAt: sessions.archivedAt })
     .from(sessions)
@@ -104,14 +102,12 @@ export async function archiveOneLocked(projectId: string, sessionId: string, ski
 
   events.emit(sessionChangedChannel, {
     sessionId,
-    projectId,
     changes: { archivedAt },
   });
   sessionEvents._emit('session:archived', sessionId);
-  await stopSessionRuntime(projectId, sessionId, row.runtime, skipTransportStop);
-  await publishProjectVisibility(projectId);
+  await stopSessionRuntime(sessionId, row.runtime, skipTransportStop);
   if (removedIdentity) await sessionIdentityHost().release(removedIdentity);
-  return row.archivedAt && previous.removedIdentity ? [] : [{ projectId, sessionId }];
+  return row.archivedAt && previous.removedIdentity ? [] : [{ sessionId }];
 }
 
 /**
@@ -127,11 +123,8 @@ export async function archiveOneLocked(projectId: string, sessionId: string, ski
  * 点恢复的不一定是这台机器的窗口(别的机器上撤销一次跨机器的「连同子会话」,#6873 Z2 实测这台的侧栏不回来)。
  * 也**返回恢复后的那一行**,点恢复的那个窗口当场放回,❌ 等事件绕一圈。
  */
-export async function restoreSession(
-  projectId: string,
-  sessionId: string
-): Promise<Session> {
-  const restored = await serializeSessionArchival(sessionId, () => restoreSessionLocked(projectId, sessionId));
+export async function restoreSession(sessionId: string): Promise<Session> {
+  const restored = await serializeSessionArchival(sessionId, () => restoreSessionLocked(sessionId));
   // ACP: session-life restores to dormant without starting (its archived rows already failed).
   if (restored.runtime === 'acp') {
     sessionLife().restore(sessionId);
@@ -139,33 +132,28 @@ export async function restoreSession(
   }
   // Run after releasing the archival lock: the existing router may wake this task through that lock.
   // Restore admits the retained outbox exactly once, without replaying any dispatching receipt.
-  await sessionBootTasks.run('restore-outbox', sessionId, () => drainSessionMessageOutbox({ projectId, sessionId }));
+  await sessionBootTasks.run('restore-outbox', sessionId, () => drainSessionMessageOutbox({ sessionId }));
   return restored;
 }
 
-async function restoreSessionLocked(projectId: string, sessionId: string): Promise<Session> {
+async function restoreSessionLocked(sessionId: string): Promise<Session> {
   const [row] = await db
     .select({ id: sessions.id })
     .from(sessions)
-    .where(and(eq(sessions.id, sessionId), eq(sessions.projectId, projectId)))
+    .where(eq(sessions.id, sessionId))
     .limit(1);
   if (!row) throw new Error(`Session not found: ${sessionId}`);
   const removedIdentity = sessionArchivalState(sessionId)?.removedIdentity;
-  if (removedIdentity) await sessionIdentityHost().restore({ projectId, sessionId }, removedIdentity);
+  if (removedIdentity) await sessionIdentityHost().restore({ sessionId }, removedIdentity);
   // A closed interval and the restored row become visible in one transaction.
-  db.transaction((tx) => {
-    setSessionArchival(sessionId, false);
-    tx.update(projects).set({ archivedAt: null }).where(eq(projects.id, projectId)).run();
-  });
+  setSessionArchival(sessionId, false);
   const restored = db.select().from(sessions).where(eq(sessions.id, sessionId)).get()!;
 
   events.emit(sessionChangedChannel, {
     sessionId,
-    projectId,
     changes: { archivedAt: null },
   });
   const session = mapSessionRowToSession(restored, false);
-  await publishProjectVisibility(projectId);
   sessionEvents._emit('session:created', session);
   events.emit(sessionCreatedChannel, { session });
   return session;
@@ -181,7 +169,6 @@ async function restoreSessionLocked(projectId: string, sessionId: string): Promi
  * `skipTransportStop`:provider 从没启动过(spawn 的补偿路径),只拆挂载,不去停一个不存在的进程。
  */
 async function stopSessionRuntime(
-  projectId: string,
   sessionId: string,
   runtime: string | null,
   skipTransportStop = false
@@ -195,6 +182,12 @@ async function stopSessionRuntime(
   }
   if (skipTransportStop) return;
   if (runtime === 'acp') return; // stopped by session-life's archive transition (archiveOneLocked)
-  const project = projectManager.getProject(projectId);
-  if (project) await cleanupDetachedSessions(projectId, sessionId, project.ctx);
+  // Not mounted: reap its tmux sessions with the folder's execution context (no folder here = nothing of it runs here).
+  const [stored] = await db.select({ workspaceId: sessions.workspaceId }).from(sessions).where(eq(sessions.id, sessionId)).limit(1);
+  if (!stored?.workspaceId) throw new Error(`session ${sessionId} has no workspace`);
+  const folder = rootFolderOf(stored.workspaceId);
+  // 用时再取:folder runtimes 带着整套 git / 账号依赖,归档这条路不该在加载时就拖起它们。
+  const { folderRuntimes } = await import('@main/core/workspaces/folder-runtime/folder-runtimes');
+  const opened = folder ? folderRuntimes.get(folder.id) : undefined;
+  if (opened) await cleanupDetachedSessions(stored.workspaceId, sessionId, opened.ctx);
 }

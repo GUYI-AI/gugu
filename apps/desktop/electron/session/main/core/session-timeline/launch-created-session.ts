@@ -18,7 +18,6 @@ export type LaunchOutcome =
  */
 export async function launchCreatedSession(input: {
   sessionId: string;
-  projectId: string;
   runtime: 'acp' | 'pty';
   launchWorkspace: () => Promise<
     { success: true; data: { workspaceId: string; path: string } } | { success: false; error: unknown }
@@ -50,7 +49,7 @@ export async function launchCreatedSession(input: {
   }
   const { hydrateSession } = await import('@main/core/sessions/hydrateSession');
   try {
-    await hydrateSession(input.projectId, input.sessionId);
+    await hydrateSession(input.sessionId);
   } catch (error) {
     const code = error instanceof Error && 'code' in error && isAgentHomeImportCode(error.code) ? error.code : 'session_start_failed';
     return { ok: false, code, detail: (error as Error)?.message ?? String(error) };

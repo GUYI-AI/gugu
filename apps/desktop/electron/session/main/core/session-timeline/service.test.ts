@@ -27,6 +27,8 @@ type Row = {
   agentStatus: string | null;
   lastInteractedAt: string | null;
   projectId: string;
+  /** The session's cwd (a folder, or a workspace inside one); defaults to `projectId` here. */
+  workspaceId?: string;
   /** 会话配置(第一句话记在这里);多数用例不关心。 */
   config?: unknown;
 };
@@ -91,20 +93,23 @@ vi.mock('../sessions/session-conversation-activity', () => ({ nativeConversation
 
 vi.mock('../sessions/session-turn-store', () => ({ getStoredHistory: (...args: unknown[]) => state.storedHistory(...args), getStoredToolImage: vi.fn() }));
 
-vi.mock('@main/db/client', () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        innerJoin: () => ({
-          where: () => ({ all: () => state.rows.map((row) => ({ ...row })) }),
-        }),
-        where: () => ({ orderBy: () => ({ all: () => [...new Map([
-          ...state.rows.map(row => [row.project.id, row.project] as const),
-          ...state.projects.map(project => [project.id, project] as const),
-        ]).values()].map(project => ({ ...project })) }) }),
-      }),
-    }),
-  },
+// The session rows (any select over `sessions` reads them; `limit` / `get` read the first).
+vi.mock('@main/db/client', () => {
+  const rows = () => state.rows.map((row) => ({ ...row.session }));
+  const chain: Record<string, unknown> = {};
+  for (const step of ['from', 'where', 'orderBy', 'limit', 'innerJoin', 'leftJoin']) chain[step] = () => chain;
+  chain.all = rows;
+  chain.get = () => rows()[0];
+  return { db: { select: () => chain } };
+});
+// @@@group-folders — the folders recorded on this machine (`state.projects`, ids are workspace ids); a session's cwd.
+vi.mock('@main/core/folders/folders', () => ({
+  listFolders: () => [],
+  listUnboundFolders: () => state.projects.map((project) => ({ id: project.id, path: project.path, chatId: null })),
+  isTaskHomeFolder: (id: string) => id === '00000000-0000-4000-8000-000000000001',
+}));
+vi.mock('@main/core/workspaces/resolve-workspace', () => ({
+  persistedWorkspacePath: (workspaceId: string) => state.rows.find((row) => row.session.workspaceId === workspaceId)?.project.path ?? null,
 }));
 
 vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
@@ -274,6 +279,7 @@ function row(overrides: Partial<Row> = {}): {
     projectId: 'proj-1',
     ...overrides,
   };
+  session.workspaceId ??= session.projectId;
   // A task's name lives in its pending-bind record (task-name.ts); the fixture title is that name.
   session.config = { agentDisplayName: session.title, ...(overrides.config as object | undefined) };
   return {
@@ -1307,7 +1313,6 @@ describe('session timeline service', () => {
       service.setSessionStatusFeed((cb) => {
         fire = () => cb({
           sessionId: 'conv-1',
-          projectId: 'project-1',
           reading: { status: 'needs_user', detail: 'approval', running: true, background: null },
           unseen: true,
           reviewGate: null,
@@ -1726,7 +1731,7 @@ describe('session timeline service', () => {
       const answer = { conversationId: 'conv-1', itemId: card.itemId, kind: 'question' as const, answers: [{ selected: ['PATH'] }], by: 'desktop' };
       expect(await service.respond(answer)).toMatchObject({ ok: true, value: { accepted: true } });
       await vi.waitFor(() => expect(state.questionSend).toHaveBeenCalledTimes(1));
-      expect(state.questionSend).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'conv-1', projectId: 'proj-1', clientMessageId: card.itemId.slice('agent-question:'.length), text: expect.stringContaining('"reply_to_message_id":"33333333-3333-4333-8333-333333333333"') }));
+      expect(state.questionSend).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'conv-1', clientMessageId: card.itemId.slice('agent-question:'.length), text: expect.stringContaining('"reply_to_message_id":"33333333-3333-4333-8333-333333333333"') }));
       expect(await service.respond(answer)).toMatchObject({ ok: true, value: { accepted: false } });
       expect(state.questionSend).toHaveBeenCalledTimes(1);
     });

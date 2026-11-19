@@ -20,7 +20,7 @@ vi.mock('../../../apps/desktop/electron/permissions/password-beta-access', () =>
   acquireFeatureGuard: async () => ({ status: 'ready', signal: options.signal, assertCurrent: () => options.signal.throwIfAborted() }),
 }) }))
 vi.mock('../../../apps/desktop/electron/session/main/core/sessions/password-beta-presentation', () => ({
-  passwordGrantCandidates: () => [], passwordGrantSubjects: () => [], passwordRequestPresentation: () => ({}),
+  passwordGrantCandidates: async () => [], passwordGrantSubjects: () => [], passwordRequestPresentation: () => ({}),
 }))
 import { closePasswordVaultForAccountClosure, installPasswordBetaHost, PASSWORD_UI_CHANNEL } from '../../../apps/desktop/electron/password-vault/beta-host'
 

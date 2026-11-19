@@ -4,8 +4,7 @@ import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/mod
 import { createFailureLogFields } from './create-failure-log-fields';
 import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
 import { randomUUID } from 'node:crypto';
-import { homedir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { basename } from 'node:path';
 import { desc, eq, isNull, sql } from 'drizzle-orm';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import { DEFAULT_SESSION_VIEW } from '@shared/core/sessions/new-session-defaults';
@@ -26,8 +25,9 @@ import {
   type SessionpageSessionView,
 } from '@gugu/session-core/session-record/contract';
 import { db } from '@main/db/client';
-import { readProjects } from '@main/core/projects/operations/getProjects';
-import { sessions, projects } from '@main/db/schema';
+import { listFolders, listUnboundFolders } from '@main/core/folders/folders';
+import { PlacementError, resolveSessionPlacement } from '@main/core/sessions/session-placement';
+import { sessions } from '@main/db/schema';
 import type { SessionRow } from '@main/db/schema';
 import {
   agentOffersSessionView,
@@ -154,22 +154,21 @@ async function harnessOptions(): Promise<SessionpageHarnessOption[]> {
 
 export async function createOptions(): Promise<CreateSessionResult<SessionpageSessionCreateOptions>> {
   try {
-    const rows = readProjects().map(({ id, name, path }) => ({ id, name, path }));
+    // @@@group-folders — the folders recorded on this machine (bound to a group or not); `id` is the workspace id.
+    const rows = [...listFolders(), ...listUnboundFolders()].map(({ id, path }) => ({ id, name: basename(path) || path, path }));
     /*
-     * 最近用过的项目排最前 —— 手机端默认选第一个,而人多半是想接着刚才那个项目干。
-     * 真机实测按建表顺序排时,第一个永远是内置的「任务工作区」(id 固定、最早建),
-     * 于是默认落进一个空目录;人得先点开胶囊换项目,而他上一条会话明明就在「验收工作区」。
-     * 「最近」= 该项目下会话最后一次交互(没有就取更新时间);一条会话都没有的排最后。
+     * 最近用过的文件夹排最前 —— 手机端默认选第一个,而人多半是想接着刚才那个文件夹干。
+     * 「最近」= 在这个文件夹里开工的会话最后一次交互(没有就取更新时间);一条会话都没有的排最后。
      */
     const recent = await db
       .select({
-        projectId: sessions.projectId,
+        workspaceId: sessions.workspaceId,
         last: sql<string | null>`max(coalesce(${sessions.lastInteractedAt}, ${sessions.updatedAt}))`,
       })
       .from(sessions)
-      .groupBy(sessions.projectId)
+      .groupBy(sessions.workspaceId)
       .all();
-    const lastUsed = new Map(recent.map((r) => [r.projectId, r.last ?? '']));
+    const lastUsed = new Map(recent.map((r) => [r.workspaceId, r.last ?? '']));
     const ordered = [...rows].sort((a, b) => (lastUsed.get(b.id) ?? '').localeCompare(lastUsed.get(a.id) ?? ''));
     return {
       ok: true,
@@ -188,7 +187,7 @@ async function lastUsedCreateSelection(): Promise<SessionpageSessionCreateLastUs
   const rows = await db
     .select({
       id: sessions.id,
-      projectId: sessions.projectId,
+      workspaceId: sessions.workspaceId,
       provider: sessions.provider,
       config: sessions.config,
       parentSessionId: sessions.parentSessionId,
@@ -443,12 +442,14 @@ async function createSessionSteps(
   if (!prompt && !staged?.attachmentNames.length) return fail('prompt_empty', '要开一条会话,总得先有一句话');
   const titleSource = prompt || staged!.attachmentNames.join(' ');
 
-  const resolved = await resolveProjectWorkspace({ projectId: request.projectId, projectPath: request.projectPath });
-  if (!resolved.ok) return resolved;
-  const { projectId } = resolved.value;
-  const folder = request.cwd?.trim() ? await resolveProjectFolderWorkspace(projectId, request.cwd) : null;
-  if (folder && !folder.ok) return folder;
-  const workspaceId = folder ? folder.value : resolved.value.repositoryWorkspaceId;
+  let placement;
+  try {
+    placement = resolveSessionPlacement({ groupChatId: request.chatId?.trim() || null, workspaceId: request.workspaceId, cwd: request.cwd });
+  } catch (error) {
+    if (error instanceof PlacementError) return fail(error.code, error.message);
+    throw error;
+  }
+  const { groupChatId, workspaceId } = placement;
 
   // ── 先把四维选择全部解析完,一维不对就在这里拒 —— 此时什么都还没建,❌ 不留空壳会话 ──
   const agent = await findAgent(request.harness);
@@ -552,14 +553,12 @@ async function createSessionSteps(
     ...(taskChatId ? { taskChatId, initialMessageId: taskMessageId } : request.initialMessageId ? { initialMessageId: request.initialMessageId } : {}),
   };
   const params: CreateSessionParams = {
-    projectId: projectId,
+    ...(groupChatId ? { groupChatId } : {}),
     sessionConfig: { version: '1', name: generateRandom(), initialSession },
     workspaceConfig: {
       version: '2',
       workspace: { kind: 'repository-instance', workspaceId },
     },
-    // 派的任务进群坐任务座位(不发入群提示),与桌面派任务同一口径。
-    ...(request.chatId ? { birthGroup: { chatId: request.chatId, asTask: Boolean(taskChatId) } } : {}),
   };
 
   const prepared = await prepareCreateSession(params);
@@ -576,7 +575,10 @@ async function createSessionSteps(
 
   const value: SessionpageSessionCreateResult = {
     conversationId: sessionId,
-    projectId: projectId,
+    // @@@group-folders — released readers assert a non-empty projectId: the session's workspace id since C1.
+    projectId: workspaceId,
+    groupChatId,
+    workspaceId,
     title: initialSession.title ?? titleSource.slice(0, 60),
     ...(taskMessageId ? { taskMessageId } : {}),
   };
@@ -589,7 +591,6 @@ async function createSessionSteps(
 
   const launched = await launchCreatedSession({
     sessionId,
-    projectId,
     runtime,
     launchWorkspace: () => sessionService.provisionWorkspace(sessionId),
   });
@@ -630,7 +631,6 @@ export async function startSession(sessionId: string): Promise<CreateSessionResu
   const platformModel = (await sessionPlatformModel(sessionId).catch(() => null)) != null;
   const launched = await launchCreatedSession({
     sessionId,
-    projectId: row.projectId,
     runtime,
     launchWorkspace: async () => ({ success: true, data: await sessionService.ensureSessionMounted(row.id) }),
   });
@@ -644,65 +644,3 @@ export async function startSession(sessionId: string): Promise<CreateSessionResu
   return { ok: true, value: { started: true } };
 }
 
-/**
- * 发起方给的项目(id 或这台机器上的目录)→ 这台机器上的项目 id 与它的根工作区。
- * 远端建会话与远端建「已安排」(#6264)共用这一步:只给了目录就按远端建 agent 同一条规则找 / 登记项目,
- * 没打开过就先打开一次(与桌面上「选了文件夹就开项目」同一步)。
- */
-export async function resolveProjectWorkspace(input: {
-  projectId?: string | null;
-  projectPath?: string | null;
-}): Promise<CreateSessionResult<{ projectId: string; repositoryWorkspaceId: string }>> {
-  let projectId = input.projectId?.trim() || null;
-  if (!projectId) {
-    try {
-      const { resolveAgentSessionProject } = await import(
-        '@main/core/projects/operations/resolve-agent-session-project'
-      );
-      projectId = (await resolveAgentSessionProject(expandHome(input.projectPath ?? ''))).id;
-    } catch (error) {
-      return fail('project_not_found', (error as Error)?.message ?? String(error));
-    }
-  }
-  const { openProject } = await import('@main/core/projects/operations/openProject');
-  const opened = await openProject(projectId);
-  if (!opened.success) {
-    return fail('project_open_failed', `打不开项目:${JSON.stringify(opened.error)}`);
-  }
-  const [project] = await db
-    .select({ id: projects.id, repositoryWorkspaceId: projects.repositoryWorkspaceId })
-    .from(projects)
-    .where(eq(projects.id, projectId))
-    .limit(1);
-  if (!project) return fail('project_not_found', `这台机器上没有项目 ${projectId}`);
-  // 项目根工作区就是任务要跑的地方(刚打开的项目以打开的回执为准)。取不到就如实报,
-  // ❌ 不替它编一个工作区:编出来的路径会让 agent 跑在一个谁都没想到的目录里。
-  const repositoryWorkspaceId = opened.data.repositoryWorkspaceId ?? project.repositoryWorkspaceId;
-  if (!repositoryWorkspaceId) {
-    return fail('project_not_open', '这个项目在那台机器上还没打开过,先在电脑上打开一次');
-  }
-  return { ok: true, value: { projectId, repositoryWorkspaceId } };
-}
-
-/**
- * 「在项目的哪个文件夹里开工」(手机新任务:点项目文件夹卡开工)→ 那个文件夹的工作区。只认这个项目的文件夹
- * (根目录或挂上的),❌ 不替它登记一个新文件夹:不是的就说出来,会话一行都不写。
- */
-async function resolveProjectFolderWorkspace(projectId: string, cwd: string): Promise<CreateSessionResult<string>> {
-  const target = expandHome(cwd);
-  if (!isAbsolute(target)) return fail('folder_not_in_project', `文件夹要给绝对路径:${cwd}`);
-  const { listProjectFolderRefs } = await import('@main/core/projects/operations/project-folders');
-  const folders = await listProjectFolderRefs(projectId);
-  if (!folders) return fail('project_not_found', `这台机器上没有项目 ${projectId}`);
-  const folder = folders.find((candidate) => resolve(candidate.path) === resolve(target));
-  if (!folder) return fail('folder_not_in_project', `${cwd} 不是这个项目的文件夹`);
-  return { ok: true, value: folder.workspaceId };
-}
-
-/** `~` / `~/x` → 这台机器上的家目录(远端传来的路径按那台机器解释)。 */
-function expandHome(path: string): string {
-  const trimmed = path.trim();
-  if (trimmed === '~') return homedir();
-  if (trimmed.startsWith('~/')) return join(homedir(), trimmed.slice(2));
-  return trimmed;
-}

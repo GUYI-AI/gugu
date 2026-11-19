@@ -2,7 +2,6 @@ import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppDb } from '@main/db/client';
 import type { LocalSessionRow } from '@shared/core/session-import/session-import';
-import { IMPLICIT_SESSION_HOME_PROJECT_ID } from '@shared/core/projects/session-home-project';
 import { SESSION_HOME_SECTION_KEY, displaySessionTitle } from '@shared/core/session-history/session-history';
 
 /**
@@ -23,8 +22,6 @@ const mocks = vi.hoisted(() => ({
   /** 目录 → git 打开它时说的错(stderr)。 */
   openErrors: {} as Record<string, string>,
   release: vi.fn(),
-  /** 这台机器上的项目群绑定:本地项目 id → 项目群 chat id(没写的 = 不在任何项目群里)。 */
-  groups: {} as Record<string, string>,
 }));
 
 vi.mock('@main/db/client', () => ({
@@ -36,10 +33,6 @@ vi.mock('@main/db/client', () => ({
 vi.mock('@main/core/session-import/host-source', () => ({
   hasLocalSessionSource: () => mocks.hasLocal,
   getLocalSessionSource: () => ({ list: mocks.list }),
-}));
-vi.mock('@main/core/projects/operations/project-folders', () => ({ projectRootFolder: vi.fn() }));
-vi.mock('@main/core/projects/project-public-id', () => ({
-  machineOutwardProjectIds: async () => (localId: string) => mocks.groups[localId] ?? null,
 }));
 vi.mock('@main/core/runtime/runtime-manager', () => ({ runtimeManager: { acquire: async () => ({
   value: { git: { openRepository: async (path: string) => {
@@ -88,7 +81,6 @@ describe('listSessionHistory', () => {
     mocks.repoRoots = { '/repo': '/repo' };
     mocks.remotes = {};
     mocks.openErrors = {};
-    mocks.groups = {};
     mocks.release.mockClear();
     mocks.list.mockImplementation(async () => ({
       rows: mocks.localRows,
@@ -101,17 +93,21 @@ describe('listSessionHistory', () => {
     }));
 
     const sql = fixture.sqlite;
-    sql.prepare(`INSERT INTO projects (id, name, path) VALUES ('p1', 'Repo', '/repo')`).run();
-    sql.prepare(`INSERT INTO projects (id, name, path) VALUES ('p2', 'Other', '/other')`).run();
+    // @@@group-folders: /repo is chat-repo's folder here, /other chat-other's; a session's section is its group.
+    sql.exec(`
+      INSERT INTO projects (id, name, path) VALUES ('p1', 'Legacy', '/legacy');
+      INSERT INTO workspaces (id, type, kind, location, path, key, chat_id) VALUES ('ws-repo', 'local', 'project-root', 'local', '/repo', 'k-repo', 'chat-repo');
+      INSERT INTO workspaces (id, type, kind, location, path, key, chat_id) VALUES ('ws-other', 'local', 'project-root', 'local', '/other', 'k-other', 'chat-other');
+    `);
     const insert = sql.prepare(
-      `INSERT INTO sessions (id, project_id, config, runtime, provider, provider_session_id, created_at, updated_at, last_interacted_at, archived_at, parent_session_id)
-       VALUES (@id, @project, json_object('version', '1', 'type', 'acp', 'agentDisplayName', @title), 'acp', 'acp-prov', @providerSessionId, @createdAt, @updatedAt, @lastInteractedAt, @archivedAt, @parent)`
+      `INSERT INTO sessions (id, project_id, chat_id, workspace_id, config, runtime, provider, provider_session_id, created_at, updated_at, last_interacted_at, archived_at, parent_session_id)
+       VALUES (@id, 'p1', 'chat-' || @project, 'ws-' || @project, json_object('version', '1', 'type', 'acp', 'agentDisplayName', @title), 'acp', 'acp-prov', @providerSessionId, @createdAt, @updatedAt, @lastInteractedAt, @archivedAt, @parent)`
     );
     // 时间故意与插入顺序、字母顺序都不一致:三种排序若有一种退化成「按插入顺序」就会红。
-    insert.run({ id: 'a', project: 'p1', title: 'Mango', providerSessionId: null, createdAt: '2026-09-01 00:00:00', updatedAt: '2026-09-05 00:00:00', lastInteractedAt: '2026-09-12T00:00:00.000Z', archivedAt: null, parent: null });
-    insert.run({ id: 'b', project: 'p1', title: 'Apple', providerSessionId: null, createdAt: '2026-09-03 00:00:00', updatedAt: '2026-09-08 00:00:00', lastInteractedAt: null, archivedAt: '2026-09-09 00:00:00', parent: 'a' });
-    insert.run({ id: 'c', project: 'p2', title: 'Kiwi', providerSessionId: 'sess-imported', createdAt: '2026-09-02 00:00:00', updatedAt: '2026-09-04 00:00:00', lastInteractedAt: null, archivedAt: null, parent: null });
-    insert.run({ id: 'd', project: 'p1', title: 'Banana', providerSessionId: null, createdAt: '2026-09-04 00:00:00', updatedAt: '2026-09-06 00:00:00', lastInteractedAt: null, archivedAt: '2026-09-07 00:00:00', parent: null });
+    insert.run({ id: 'a', project: 'repo', title: 'Mango', providerSessionId: null, createdAt: '2026-09-01 00:00:00', updatedAt: '2026-09-05 00:00:00', lastInteractedAt: '2026-09-12T00:00:00.000Z', archivedAt: null, parent: null });
+    insert.run({ id: 'b', project: 'repo', title: 'Apple', providerSessionId: null, createdAt: '2026-09-03 00:00:00', updatedAt: '2026-09-08 00:00:00', lastInteractedAt: null, archivedAt: '2026-09-09 00:00:00', parent: 'a' });
+    insert.run({ id: 'c', project: 'other', title: 'Kiwi', providerSessionId: 'sess-imported', createdAt: '2026-09-02 00:00:00', updatedAt: '2026-09-04 00:00:00', lastInteractedAt: null, archivedAt: null, parent: null });
+    insert.run({ id: 'd', project: 'repo', title: 'Banana', providerSessionId: null, createdAt: '2026-09-04 00:00:00', updatedAt: '2026-09-06 00:00:00', lastInteractedAt: null, archivedAt: '2026-09-07 00:00:00', parent: null });
 
     mocks.localRows = [
       // 已经导入过(c 的 session_id 就是它)→ 不再算「未导入」。
@@ -188,11 +184,11 @@ describe('listSessionHistory', () => {
     // 阴性对照:一个谁也不匹配的词。
     expect((await listSessionHistory({ query: 'nothing-matches-this' })).rows).toEqual([]);
     // 候选 = 节(一个项目一节):Repo 项目四条(a b d + cwd 在 /repo/sub 的本机 L2),/other 一条,/elsewhere 一条。
-    expect((await listSessionHistory()).directories[0]).toEqual({ directory: '/repo', projectName: 'Repo', count: 4 });
+    expect((await listSessionHistory()).directories[0]).toEqual({ directory: 'project:chat-repo', projectName: null, count: 4 });
     // 候选跟着类型筛选走:只看咕咕会话时,只剩咕咕会话所在的节(/elsewhere 只有本机原件,不出现)。
-    expect((await listSessionHistory({ source: 'gugu' })).directories.map((d) => d.directory)).toEqual(['/repo', '/other']);
+    expect((await listSessionHistory({ source: 'gugu' })).directories.map((d) => d.directory)).toEqual(['project:chat-repo', 'project:chat-other']);
     // 按节筛:给项目路径 = 这个项目下的全部(含子目录里的本机原件)。
-    expect(keys((await listSessionHistory({ directory: '/repo' })).rows)).toContain('local:/home/me/.claude/projects/x/L2.jsonl');
+    expect(keys((await listSessionHistory({ directory: 'project:chat-repo' })).rows)).toContain('local:/home/me/.claude/projects/x/L2.jsonl');
   });
 
   it('关键词也匹配 session id / conversation id(设计同事 2026-09-23:「特色是支持基于 sessionid 的搜索」)', async () => {
@@ -220,14 +216,14 @@ describe('listSessionHistory', () => {
     mocks.localRows = [...mocks.localRows, local({ providerSessionId: 'L4', title: 'Nowhere', cwd: null, updatedAt: T('2026-09-01T00:00:00Z') })];
     const page = await listSessionHistoryDirectories();
     // 默认按「节里最近那条」倒序:Repo(含 /repo/sub 的 L2,09-11)→ /other 09-04 → /elsewhere 09-02 → 没有目录 09-01。
-    expect(page.rows.map((row) => row.key)).toEqual(['/repo', '/other', '/elsewhere', '']);
+    expect(page.rows.map((row) => row.key)).toEqual(['project:chat-repo', 'project:chat-other', '/elsewhere', '']);
     expect(page.matched).toBe(4);
     expect(page.countsBySource).toEqual({ gugu: 4, 'claude-code': 2, codex: 1 });
 
     const repo = page.rows[0];
     expect(repo).toMatchObject({
-      directory: '/repo',
-      projectName: 'Repo',
+      directory: 'project:chat-repo',
+      projectName: null,
       sessionCount: 4,
       countsBySource: { gugu: 3, 'claude-code': 0, codex: 1 },
       countsByStatus: { active: 1, archived: 2, 'not-imported': 1 },
@@ -243,54 +239,48 @@ describe('listSessionHistory', () => {
     expect(page.rows[3]).toMatchObject({ key: '', directory: null, projectName: null, sessionCount: 1 });
 
     // 目录行的计数 = 展开(同一套筛选 + directory)看到的条数。
-    const expanded = await listSessionHistory({ directory: '/repo' });
+    const expanded = await listSessionHistory({ directory: 'project:chat-repo' });
     expect(expanded.matched).toBe(repo.sessionCount);
 
     // 每节随行带回头 N 条:按同一个 sort 排好再截(默认更新时间倒序 ⇒ L2 09-11、b 09-08),❌ 按插入顺序截。
     const withSessions = await listSessionHistoryDirectories({ sessionsPerDirectory: 2 });
-    const repo2 = withSessions.rows.find((row) => row.key === '/repo')!;
+    const repo2 = withSessions.rows.find((row) => row.key === 'project:chat-repo')!;
     expect(keys(repo2.sessions)).toEqual(['local:/home/me/.claude/projects/x/L2.jsonl', 'gugu:b']);
     expect(repo2.sessionCount).toBe(4);
     const byTitle = await listSessionHistoryDirectories({ sort: 'title', sessionsPerDirectory: 1 });
-    expect(keys(byTitle.rows.find((row) => row.key === '/repo')!.sessions)).toEqual(['gugu:b']); // Apple
+    expect(keys(byTitle.rows.find((row) => row.key === 'project:chat-repo')!.sessions)).toEqual(['gugu:b']); // Apple
   });
 
-  it('节按账号项目给:项目群里的本机项目进 `project:<群>` 一节(同群的几个本机项目并成一节,项目文件夹里的原件也进来);一个目录里两个项目的任务分两节', async () => {
+  it('节按群给:一个群在本机的几个文件夹并成一节(文件夹里的原件也进来);没有群的会话进任务那一节', async () => {
     const sql = fixture.sqlite;
     mocks.repoRoots = { '/repo': '/repo', '/web2': '/web2', '/docs': '/docs' };
-    // p1(/repo)与 p4(/web2)是同一个项目群 chat-web 在这台机器上的两个文件夹;p5(/docs)在 chat-docs 里、没有任务;
-    // p2(/other)不在任何项目群里;p6 是任务工作区(#609 workspace)。
-    mocks.groups = { p1: 'chat-web', p4: 'chat-web', p5: 'chat-docs' };
-    sql.prepare(`INSERT INTO projects (id, name, path) VALUES ('p4', 'Web2', '/web2')`).run();
-    sql.prepare(`INSERT INTO projects (id, name, path) VALUES ('p5', 'Docs', '/docs')`).run();
-    sql.prepare(`INSERT INTO projects (id, name, path, kind) VALUES ('p6', 'Scratch', '/scratch-ws', 'workspace')`).run();
+    // /web2 is chat-repo's second folder here; /docs is chat-docs' (no tasks); w has no group.
+    sql.exec(`
+      INSERT INTO workspaces (id, type, kind, location, path, key, chat_id) VALUES ('ws-web2', 'local', 'project-root', 'local', '/web2', 'k-web2', 'chat-repo');
+      INSERT INTO workspaces (id, type, kind, location, path, key, chat_id) VALUES ('ws-docs', 'local', 'project-root', 'local', '/docs', 'k-docs', 'chat-docs');
+      INSERT INTO workspaces (id, type, kind, location, path, key) VALUES ('ws-scratch', 'local', 'project-root', 'local', '/scratch-ws', 'k-scratch');
+    `);
     const insert = sql.prepare(
-      `INSERT INTO sessions (id, project_id, config, runtime, provider, created_at, updated_at) VALUES (?, ?, json_object('version', '1', 'type', 'acp', 'agentDisplayName', ?), 'acp', 'acp-prov', '2026-09-01 00:00:00', '2026-09-01 00:00:00')`
+      `INSERT INTO sessions (id, project_id, chat_id, workspace_id, config, runtime, provider, created_at, updated_at) VALUES (?, 'p1', ?, ?, json_object('version', '1', 'type', 'acp', 'agentDisplayName', ?), 'acp', 'acp-prov', '2026-09-01 00:00:00', '2026-09-01 00:00:00')`
     );
-    insert.run('e', 'p4', 'Fig');
-    insert.run('w', 'p6', 'Workspace task');
-    // c(项目 p2)跑在 /repo/sub 的工作区里 —— 与 L2(/repo/sub 的原件,归 p1)同一个目录,却是两个项目。
+    insert.run('e', 'chat-repo', 'ws-web2', 'Fig');
+    insert.run('w', null, 'ws-scratch', 'Workspace task');
+    // c (chat-other) works in /repo/sub — the directory of L2 (a native transcript in chat-repo's folder): two sections.
     sql.prepare(`INSERT INTO workspaces (id, type, kind, path) VALUES ('w2', 'local', 'worktree', '/repo/sub')`).run();
     sql.prepare(`UPDATE sessions SET workspace_id = 'w2' WHERE id = 'c'`).run();
     mocks.localRows = [...mocks.localRows, local({ providerSessionId: 'D1', cwd: '/docs/notes' })];
 
     const page = await listSessionHistoryDirectories({ sessionsPerDirectory: 10 });
     const sections = Object.fromEntries(page.rows.map((row) => [row.key, keys(row.sessions).sort()]));
-    expect(sections['project:chat-web']).toEqual(
+    expect(sections['project:chat-repo']).toEqual(
       ['gugu:a', 'gugu:b', 'gugu:d', 'gugu:e', 'local:/home/me/.claude/projects/x/L2.jsonl'].sort()
     );
     expect(sections['project:chat-docs']).toEqual(['local:/home/me/.claude/projects/x/D1.jsonl']);
-    expect(sections['/other']).toEqual(['gugu:c']);
+    expect(sections['project:chat-other']).toEqual(['gugu:c']);
     expect(sections[SESSION_HOME_SECTION_KEY]).toEqual(['gugu:w']);
-    expect(page.rows.find((row) => row.key === 'project:chat-docs')).toMatchObject({ directory: 'project:chat-docs', projectName: 'Docs' });
-    expect(page.rows.find((row) => row.key === '/other')).toMatchObject({ directory: '/other', projectName: 'Other' });
+    expect(page.rows.find((row) => row.key === 'project:chat-docs')).toMatchObject({ directory: 'project:chat-docs', projectName: null });
     // 展开一节 = 把它的 key 原样传回:计数与节头一致。
-    expect((await listSessionHistory({ directory: 'project:chat-web' })).matched).toBe(5);
-    // 字母序按项目名(Docs < Other < Repo / Web2),不是按 key(按 key 的话 /other 会排在两个 project: 之前)。
-    const byName = (await listSessionHistoryDirectories({ sort: 'title' })).rows.map((row) => row.key);
-    expect(['project:chat-docs', '/other', 'project:chat-web'].map((key) => byName.indexOf(key))).toEqual(
-      [...['project:chat-docs', '/other', 'project:chat-web'].map((key) => byName.indexOf(key))].sort((x, y) => x - y)
-    );
+    expect((await listSessionHistory({ directory: 'project:chat-repo' })).matched).toBe(5);
   });
 
   it('一个项目一节:咕咕会话跑在项目路径之外的 worktree 里,也归它自己的项目那一节', async () => {
@@ -301,10 +291,10 @@ describe('listSessionHistory', () => {
     // 行自己的目录是 worktree(详情里如实写),节却是项目的。
     expect(d.directory).toBe('/Users/me/.gugu/worktrees/repo-fix');
     const page = await listSessionHistoryDirectories({ sessionsPerDirectory: 10 });
-    expect(page.rows.map((row) => row.key)).toEqual(['/repo', '/other', '/elsewhere']);
+    expect(page.rows.map((row) => row.key)).toEqual(['project:chat-repo', 'project:chat-other', '/elsewhere']);
     expect(keys(page.rows[0].sessions)).toContain('gugu:d');
-    // 按节筛同样认项目:选「Repo」这一节看得到 worktree 里的那条。
-    expect(keys((await listSessionHistory({ directory: '/repo' })).rows)).toContain('gugu:d');
+    // 按节筛同样认群:选这一节看得到 worktree 里的那条。
+    expect(keys((await listSessionHistory({ directory: 'project:chat-repo' })).rows)).toContain('gugu:d');
   });
 
   it('本机原件按 git 仓库归节:同仓库的子目录、worktree 并成一节;不在仓库里的按目录本身', async () => {
@@ -318,7 +308,7 @@ describe('listSessionHistory', () => {
     ];
     const page = await listSessionHistoryDirectories({ sessionsPerDirectory: 10 });
     const sections = Object.fromEntries(page.rows.map((row) => [row.key, keys(row.sessions)]));
-    expect(sections['/repo']).toContain('local:/home/me/.claude/projects/x/W1.jsonl');
+    expect(sections['project:chat-repo']).toContain('local:/home/me/.claude/projects/x/W1.jsonl');
     expect(sections['/code/tool']).toEqual(
       expect.arrayContaining(['local:/home/me/.claude/projects/x/T1.jsonl', 'local:/home/me/.claude/projects/x/T2.jsonl'])
     );
@@ -336,14 +326,14 @@ describe('listSessionHistory', () => {
   });
 
   it('Apps group zero-task directories with history and canonicalize registered and native origins', async () => {
-    fixture.sqlite.prepare(`INSERT INTO project_remotes (project_id, remote_name, remote_url) VALUES ('p1', 'origin', 'git@github.com:OpenDCAI/gugu.git')`).run();
+    fixture.sqlite.prepare(`INSERT INTO workspace_remotes (workspace_id, remote_name, remote_url) VALUES ('ws-repo', 'origin', 'git@github.com:OpenDCAI/gugu.git')`).run();
     mocks.repoRoots = { '/repo': '/repo', '/wt/repo-fix': '/repo', '/tool': '/tool' };
     mocks.remotes = { '/tool': 'ssh://git@github.com/OpenDCAI/tools.git' };
     mocks.localRows = [local({ providerSessionId: 'W1', cwd: '/wt/repo-fix/pkg' }), local({ providerSessionId: 'M1', cwd: '/repo/pkg' })];
     const page = await indexSessionsForApp({ groupPaths: ['/tool/src', '/tool/docs', '/old-profile/task-home', '/scratch'] });
     expect(page.rows.map(({ group }) => group)).toEqual([
       { key: '/repo', label: null, repositoryUrl: 'https://github.com/OpenDCAI/gugu' },
-      { key: '/repo', label: 'Repo', repositoryUrl: 'https://github.com/OpenDCAI/gugu' },
+      { key: '/repo', label: 'repo', repositoryUrl: 'https://github.com/OpenDCAI/gugu' },
     ]);
     expect(page.groups).toEqual([
       { path: '/tool/src', group: { key: '/tool', label: null, repositoryUrl: 'https://github.com/OpenDCAI/tools' } },
@@ -371,12 +361,10 @@ describe('listSessionHistory', () => {
   });
 
   it('咕咕项目不吞它仓库之外的原件:路径是 /Users 的项目只收 cwd 就是 /Users 的那条', async () => {
-    fixture.sqlite.prepare(`INSERT INTO projects (id, name, path) VALUES ('p3', 'Users', '/Users')`).run();
-    fixture.sqlite
-      .prepare(
-        `INSERT INTO sessions (id, project_id, config, runtime, provider, created_at, updated_at) VALUES ('u', 'p3', json_object('version', '1', 'type', 'acp', 'agentDisplayName', 'U'), 'acp', 'acp-prov', '2026-09-01 00:00:00', '2026-09-01 00:00:00')`
-      )
-      .run();
+    fixture.sqlite.exec(`
+      INSERT INTO workspaces (id, type, kind, location, path, key, chat_id) VALUES ('ws-users', 'local', 'project-root', 'local', '/Users', 'k-users', 'chat-users');
+      INSERT INTO sessions (id, project_id, chat_id, workspace_id, config, runtime, provider, created_at, updated_at) VALUES ('u', 'p1', 'chat-users', 'ws-users', json_object('version', '1', 'type', 'acp', 'agentDisplayName', 'U'), 'acp', 'acp-prov', '2026-09-01 00:00:00', '2026-09-01 00:00:00');
+    `);
     mocks.repoRoots = { '/repo': '/repo', '/Users/me/proj': '/Users/me/proj' };
     mocks.localRows = [
       local({ providerSessionId: 'P1', cwd: '/Users/me/proj/app' }), // 在自己的仓库里 ⇒ 仓库那一节
@@ -384,7 +372,7 @@ describe('listSessionHistory', () => {
       local({ providerSessionId: 'H1', cwd: '/Users' }), // 就在项目路径上 ⇒ 项目那一节
     ];
     const page = await listSessionHistoryDirectories({ sessionsPerDirectory: 10 });
-    const users = page.rows.find((row) => row.key === '/Users')!;
+    const users = page.rows.find((row) => row.key === 'project:chat-users')!;
     expect(keys(users.sessions)).toEqual(['local:/home/me/.claude/projects/x/H1.jsonl', 'gugu:u']);
     expect(page.rows.map((row) => row.key)).toEqual(expect.arrayContaining(['/Users/me/proj', '/Users/me/scratch']));
     expect((await indexSessionsForApp({})).rows.map(({ group }) => group)).toEqual([
@@ -393,17 +381,15 @@ describe('listSessionHistory', () => {
     // 阴控:同一个 cwd 若就在 /Users 这个仓库里,它就该归项目 —— 证明上面没归进去是「仓库边界」的功劳,不是项目认不出。
     mocks.repoRoots = { '/repo': '/repo', '/Users': '/Users' };
     const inside = await listSessionHistoryDirectories({ sessionsPerDirectory: 10 });
-    expect(inside.rows.find((row) => row.key === '/Users')!.sessionCount).toBe(4);
+    expect(inside.rows.find((row) => row.key === 'project:chat-users')!.sessionCount).toBe(4);
   });
 
   it('咕咕独立任务拢成一节:咕咕自己的独立任务 + cwd 落在任一咕咕实例 task-home 下的原件', async () => {
     const sql = fixture.sqlite;
-    sql.prepare(`INSERT INTO projects (id, name, path) VALUES (?, 'Task home', '/Users/me/Library/gugu/task-home')`).run(IMPLICIT_SESSION_HOME_PROJECT_ID);
-    sql
-      .prepare(
-        `INSERT INTO sessions (id, project_id, config, runtime, provider, created_at, updated_at) VALUES ('s', ?, json_object('version', '1', 'type', 'acp', 'agentDisplayName', 'S'), 'acp', 'acp-prov', '2026-09-01 00:00:00', '2026-09-01 00:00:00')`
-      )
-      .run(IMPLICIT_SESSION_HOME_PROJECT_ID);
+    sql.exec(`
+      INSERT INTO workspaces (id, type, kind, location, path, key) VALUES ('ws-home', 'local', 'project-root', 'local', '/Users/me/Library/gugu/task-home', 'k-home');
+      INSERT INTO sessions (id, project_id, workspace_id, config, runtime, provider, created_at, updated_at) VALUES ('s', 'p1', 'ws-home', json_object('version', '1', 'type', 'acp', 'agentDisplayName', 'S'), 'acp', 'acp-prov', '2026-09-01 00:00:00', '2026-09-01 00:00:00');
+    `);
     mocks.localRows = [
       local({ providerSessionId: 'K1', cwd: '/Users/me/gugu-6386-profile/task-home' }), // 另一个咕咕实例的 task-home
       local({ providerSessionId: 'K2', cwd: 'C:\\Users\\me\\AppData\\Roaming\\gugu\\task-home\\sub' }), // Windows、在 task-home 之下
@@ -436,7 +422,7 @@ describe('listSessionHistory', () => {
 
   it('目录视图:「未关联目录」那一节永远排最后,即使它里面有最新的一条', async () => {
     mocks.localRows = [...mocks.localRows, local({ providerSessionId: 'L4', title: 'Nowhere', cwd: null, updatedAt: T('2026-09-20T00:00:00Z') })];
-    expect((await listSessionHistoryDirectories()).rows.map((row) => row.key)).toEqual(['/repo', '/other', '/elsewhere', '']);
+    expect((await listSessionHistoryDirectories()).rows.map((row) => row.key)).toEqual(['project:chat-repo', 'project:chat-other', '/elsewhere', '']);
     expect((await listSessionHistoryDirectories({ sort: 'title' })).rows.map((row) => row.key).at(-1)).toBe('');
     // 平铺视图不受影响:最新的那条照样排第一。
     expect(keys((await listSessionHistory()).rows)[0]).toBe('local:/home/me/.claude/projects/x/L4.jsonl');
@@ -460,15 +446,15 @@ describe('listSessionHistory', () => {
 
   it('目录视图:筛选先作用到会话再聚合;排序与切页作用在目录上', async () => {
     const archived = await listSessionHistoryDirectories({ status: 'archived' });
-    expect(archived.rows.map((row) => [row.key, row.sessionCount])).toEqual([['/repo', 2]]);
+    expect(archived.rows.map((row) => [row.key, row.sessionCount])).toEqual([['project:chat-repo', 2]]);
     expect(archived.rows[0].countsByStatus).toEqual({ active: 0, archived: 2, 'not-imported': 0 });
-    expect(keys((await listSessionHistoryDirectories({ query: 'zeta' })).rows)).toEqual(['/repo']);
+    expect(keys((await listSessionHistoryDirectories({ query: 'zeta' })).rows)).toEqual(['project:chat-repo']);
 
     // 字母序按节的路径;第二页 = 排好序之后的第 3 节,matched 仍是全集。
     const byName = await listSessionHistoryDirectories({ sort: 'title' });
-    expect(byName.rows.map((row) => row.key)).toEqual(['/elsewhere', '/other', '/repo']);
+    expect(byName.rows.map((row) => row.key)).toEqual(['/elsewhere', 'project:chat-other', 'project:chat-repo']);
     const second = await listSessionHistoryDirectories({ sort: 'title', limit: 2, offset: 2 });
-    expect(second.rows.map((row) => row.key)).toEqual(['/repo']);
+    expect(second.rows.map((row) => row.key)).toEqual(['project:chat-repo']);
     expect(second.matched).toBe(3);
   });
 
@@ -480,7 +466,7 @@ describe('listSessionHistory', () => {
     expect(a.parentTitle).toBeNull();
     expect(b.childCount).toBe(0);
     expect(b.parentTitle).toBe('Mango');
-    expect(a.gugu).toEqual({ projectId: 'p1', sessionId: 'a', runtime: 'acp' });
+    expect(a.gugu).toEqual({ projectId: 'ws-repo', groupChatId: 'chat-repo', sessionId: 'a', runtime: 'acp' });
     expect(b.archivedAt).toBe(toEpochMs('2026-09-09 00:00:00'));
   });
 

@@ -74,7 +74,7 @@ export function readRecordedContextUsage(sessionId: string): ContextReading | nu
 export function applyContextUsageChange(sessionId: string, change: NonNullable<ContextUsageChange>): void {
   const written = db.transaction((tx) => {
     const row = tx
-      .select({ projectId: sessions.projectId, config: sessions.config, providerSessionId: sessions.providerSessionId })
+      .select({ config: sessions.config, providerSessionId: sessions.providerSessionId })
       .from(sessions)
       .where(eq(sessions.id, sessionId))
       .limit(1)
@@ -102,13 +102,12 @@ export function applyContextUsageChange(sessionId: string, change: NonNullable<C
       .set({ config: usage ? { ...rest, contextUsage: usage } : rest })
       .where(eq(sessions.id, sessionId))
       .run();
-    return { projectId: row.projectId, usage };
+    return { usage };
   });
   if (!written) return;
   // 作废用 `null`,❌ `undefined`:网页宿主那条传输会把 undefined 的键整个丢掉(见 sessionChangedChannel 抬头)。
   events.emit(sessionChangedChannel, {
     sessionId,
-    projectId: written.projectId,
     changes: { contextUsage: written.usage },
   });
 }

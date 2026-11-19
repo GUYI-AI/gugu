@@ -1,3 +1,4 @@
+import { basename } from 'node:path';
 import { buildSessionPermissionOptions } from '@shared/session-permission-options';
 import { nativeConversationHistoryFloor } from '../sessions/native-publication-host';
 import { clearedHistoryResult, historyClearEpoch } from '@gugu/session-core/session-record/conversation-history-clear';
@@ -23,8 +24,8 @@ import { ownerNotificationEpoch } from '../sessions/owner-notification-state';
 import { nativeConversationListActivity } from '../sessions/session-conversation-live';
 import { deliverAgentQuestionAnswer, restoredAgentQuestion } from '../sessions/agent-question-delivery';
 import { and, eq, isNull } from 'drizzle-orm';
-import { readProjects } from '@main/core/projects/operations/getProjects';
-import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
+import { isTaskHomeFolder, listFolders, listUnboundFolders } from '@main/core/folders/folders';
+import { sessionWorkspaceId } from '@main/core/sessions/utils';
 import { resolveAgentHome } from '@gugu/session-core/agents/plugins/helpers';
 import { isVisibleQueuedPrompt } from '@shared/core/sessions/visible-queued-prompt';
 import { conversationQueueText } from '@shared/core/sessions/conversation-queue-text';
@@ -72,8 +73,8 @@ import { sessionBornInChatId } from '@shared/core/sessions/sessions';
 import { taskName } from '@main/core/sessions/task-name';
 import { agentIdsBySession, sessionAgents } from '@main/core/sessionpage/sessionpage-session-agent';
 import { db } from '@main/db/client';
-import { sessions, projects, type SessionRow } from '@main/db/schema';
-import { persistedWorkspacePath } from '@main/core/projects/utils';
+import { sessions, type SessionRow } from '@main/db/schema';
+import { persistedWorkspacePath } from '@main/core/workspaces/resolve-workspace';
 import { events, tapMainEvents } from '@main/lib/events';
 import { listSessionSchedules } from '@main/core/automations/repo';
 import {
@@ -228,35 +229,28 @@ const subscriptions = new Map<string, ActiveSubscription>();
  * 早先这里只选了列表要显示的那几列，再把它 `as Conversation` 递给注入路径 —— 那是一句
  * 类型上的谎：注入路径哪天多读一个字段，拿到的是 undefined 而类型说它在，静默走错。
  */
-function readSessionRows(includeArchived = false, id?: string): Array<{
-  session: SessionRow;
-  project: SessionpageProjectSummary;
-}> {
+function readSessionRows(includeArchived = false, id?: string): SessionRow[] {
   return db
-    .select({
-      session: sessions,
-      project: { id: projects.id, name: projects.name, path: projects.path, kind: projects.kind },
-    })
+    .select()
     .from(sessions)
-    .innerJoin(projects, eq(sessions.projectId, projects.id))
     // 归档的会话不上这张面 —— 与 `getSessions()` 同一条口径:归属键是**会话自己**那一列(spec session-graph)。
     .where(and(includeArchived ? undefined : isNull(sessions.archivedAt), id === undefined ? undefined : eq(sessions.id, id)))
-    .all()
-    .map(({ session, project }) => ({ session, project: projectSummary(project) }));
+    .all();
 }
 
-function readLocalProjects(): SessionpageProjectSummary[] {
-  return readProjects().map(({ id, name, path, kind }) => projectSummary({ id, name, path, kind }));
-}
-
-/** #609 workspace 带上 kind,手机据此把它的会话列进「任务」;项目照旧只有 id / name / path。 */
-function projectSummary({ kind, ...project }: { id: string; name: string; path: string; kind?: 'project' | 'workspace' }): SessionpageProjectSummary {
-  return kind === 'workspace' ? { ...project, kind } : project;
+/**
+ * @@@group-folders — the list's `projects` (the contract keeps the name for released readers): this machine's folders,
+ * keyed by workspace id like the sessions' `projectId`. The task home is `kind: 'workspace'` (its sessions are 「任务」).
+ */
+function folderSummaries(): SessionpageProjectSummary[] {
+  return [...listFolders(), ...listUnboundFolders()].map(({ id, path }) => ({
+    id, name: basename(path) || path, path, ...(isTaskHomeFolder(id) ? { kind: 'workspace' as const } : {}),
+  }));
 }
 
 export function readSessionRow(conversationId: string, options: { includeArchived?: boolean } = {}): SessionRow | null {
   return (
-    readSessionRows(options.includeArchived, conversationId).find((row) => row.session.id === conversationId)?.session ??
+    readSessionRows(options.includeArchived, conversationId).find((row) => row.id === conversationId) ??
     null
   );
 }
@@ -461,8 +455,8 @@ function syncPending(entry: TimelineEntry): void {
  * no `liveItemIds`, so the runtime's next sync cannot withdraw it either. Agent questions instead restore their
  * answer handler from the archived card and use the existing idempotent session outbox.
  */
-function restoreAgentQuestions(entry: TimelineEntry, projectId: string): void {
-  void import('../asks/human-tool-wait').then(({ restoreHumanToolResults }) => restoreHumanToolResults(entry.conversationId, projectId))
+function restoreAgentQuestions(entry: TimelineEntry): void {
+  void import('../asks/human-tool-wait').then(({ restoreHumanToolResults }) => restoreHumanToolResults(entry.conversationId))
     .catch(error => log.error('Human tool results could not be restored', { conversationId: entry.conversationId, error: String(error) }));
   const saved = new Map(readAgentQuestionRecords(entry.conversationId).map(item => [item.itemId, item]));
   for (const item of entry.timeline.getSnapshot({ limit: 1 }).settlements) {
@@ -479,7 +473,7 @@ function restoreAgentQuestions(entry: TimelineEntry, projectId: string): void {
     }
     const answer = restored.answer ? Promise.resolve(restored.answer) : ask(entry.conversationId, restored.request,
       { signal: new AbortController().signal });
-    deliverAgentQuestionAnswer(entry.conversationId, projectId, restored.request, restored.answerMessageId, answer);
+    deliverAgentQuestionAnswer(entry.conversationId, restored.request, restored.answerMessageId, answer);
   }
 }
 
@@ -588,7 +582,7 @@ async function acquire(conversationId: string): Promise<SessionTimelineResult<Ti
 }
 
 function attachInteractive(entry: TimelineEntry, row: SessionRow): void {
-  restoreAgentQuestions(entry, row.projectId);
+  restoreAgentQuestions(entry);
   if (summaryRuntime(row.runtime) === 'acp') attachPendingRequests(entry);
   withdrawOrphanHostAsks(entry);
   if (hostAsks.has(row.id)) syncPending(entry);
@@ -704,13 +698,13 @@ export async function listSessions(): Promise<SessionpageSessionsListResult> {
 }
 
 /** Resolve the canonical binding even when its task is archived; a missing task is an orphan, not an offline host. */
-export async function sessionOfAgent(agentUserId: string): Promise<{ projectId: string; sessionId: string } | null> {
+export async function sessionOfAgent(agentUserId: string): Promise<{ sessionId: string } | null> {
   const wanted = agentUserId.replace(/^user:/, '');
   if (!wanted) throw new Error('Agent identity is required');
   const bound = [...await agentIdsBySession(process.env)].filter(([, id]) => id === `user:${wanted}`);
   if (bound.length > 1) throw new Error('Agent identity is bound to multiple tasks');
   if (!bound.length) return null;
-  const [row] = db.select({ projectId: sessions.projectId, sessionId: sessions.id }).from(sessions).where(eq(sessions.id, bound[0][0])).limit(1).all();
+  const [row] = db.select({ sessionId: sessions.id }).from(sessions).where(eq(sessions.id, bound[0][0])).limit(1).all();
   return row ?? null;
 }
 
@@ -721,24 +715,27 @@ export function listSessionStates(): SessionpageSessionsListResult {
 
 function sessionList(agents: ReadonlyMap<string, { agentId: string; chatId: string | null }> | null): SessionpageSessionsListResult {
   const rows = readSessionRows();
-  const visibleProjects = readLocalProjects();
-  const visibleIds = new Set(visibleProjects.map(project => project.id));
+  const folders = folderSummaries();
   const projectById = new Map<string, SessionpageProjectSummary>();
   const sessions: SessionpageSessionSummary[] = [];
   const schedules = schedulesBySession(listSessionSchedules());
   const answered = readAnsweredAsks();
+  const folderById = new Map(folders.map((folder) => [folder.id, folder]));
 
-  for (const { session, project } of rows) {
-    if (!visibleIds.has(project.id)) continue;
-    projectById.set(project.id, project);
-    sessions.push(summaryOf(session, agents, schedules, answered));
+  for (const session of rows) {
+    const summary = summaryOf(session, agents, schedules, answered);
+    // A session in a worktree (not a folder itself) is listed under its own workspace.
+    const folder = folderById.get(summary.projectId)
+      ?? (summary.cwd ? { id: summary.projectId, name: basename(summary.cwd) || summary.cwd, path: summary.cwd } : undefined);
+    if (!folder) continue;
+    projectById.set(folder.id, folder);
+    sessions.push(summary);
   }
-  // 还没开过会话的项目也要列:手机新建会话只能挑这里列出的项目,刚在电脑上打开的项目 ❌ 因为没会话就看不见
-  // (#6985:在手机上给一台刚加的机器开第一条会话)。只列本机项目,与侧栏同一个口径:隐式的任务工作区不算
-  // 一个项目(侧栏也不列它),它只在里面有会话时随会话出现。
-  for (const project of visibleProjects) {
-    if (isImplicitSessionHomeProjectId(project.id)) continue;
-    if (!projectById.has(project.id)) projectById.set(project.id, project);
+  // 还没开过会话的文件夹也要列:手机新建会话只能挑这里列出的(#6985:在手机上给一台刚加的机器开第一条会话)。
+  // 任务 home 不算一个文件夹(侧栏也不列它),它只在里面有会话时随会话出现。
+  for (const folder of folders) {
+    if (folder.kind === 'workspace') continue;
+    if (!projectById.has(folder.id)) projectById.set(folder.id, folder);
   }
 
   return { projects: [...projectById.values()], sessions };
@@ -766,7 +763,10 @@ function summaryOf(
   return {
     ...(cwd ? { cwd } : {}),
     conversationId: session.id,
-    projectId: session.projectId,
+    // @@@group-folders — released readers key sessions by projectId: the workspace id since C1.
+    projectId: sessionWorkspaceId(session),
+    groupChatId: session.chatId,
+    workspaceId: sessionWorkspaceId(session),
     title: taskName(session),
     // `harness` 报的是 provider 自己的 id：三家之外也要看得见是哪一家，
     // 而不是被折叠成一个「不支持」。
@@ -847,8 +847,7 @@ function sourceWindowReader(): Promise<SourceWindowReader> {
         return { conversationId, historyFloor, locator: located.locator, cacheDirectory, conversationScope,
           scope: hash([conversationScope, located.locator.harness, located.locator.providerSessionId, historyFloor]),
           branchLineage: hash([located.locator.harness, located.locator.providerSessionId]),
-          cwd: row.workspaceId ? persistedWorkspacePath(row.workspaceId) ?? undefined
-            : readSessionRows(false, conversationId).find(value => value.session.id === conversationId)?.project.path,
+          cwd: persistedWorkspacePath(sessionWorkspaceId(row)) ?? undefined,
           limit, signal, budget: createWindowBudget() };
       },
       reportError: error => log.warn('sessionWindow: bounded source subscription failed', { error: String(error) }),
@@ -1599,7 +1598,7 @@ export async function updateSession(
     }
     if (input.archived === true) {
       const { archiveSession } = await import('@main/core/sessions/archiveSession');
-      await archiveSession(row.projectId, row.id, { removeSocialIdentity: input.removeSocialIdentity });
+      await archiveSession(row.id, { removeSocialIdentity: input.removeSocialIdentity });
     }
     const after = db.select().from(sessions).where(eq(sessions.id, row.id)).get();
     return {
@@ -1638,7 +1637,7 @@ export async function respond(
   // Every surface answers through here, so the list learns of an answer once, whichever device gave it.
   if (result.ok && result.value.accepted) {
     recordAnsweredAsk(row.id, answeredAskOf(result.value.settlement));
-    events.emit(sessionChangedChannel, { sessionId: row.id, projectId: row.projectId, changes: { lastAnswered: true } });
+    events.emit(sessionChangedChannel, { sessionId: row.id, changes: { lastAnswered: true } });
   }
   return result;
 }

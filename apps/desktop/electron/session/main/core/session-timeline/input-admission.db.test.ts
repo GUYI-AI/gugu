@@ -8,7 +8,10 @@ vi.mock('@main/db/client', () => ({ get db() { if (!state.db) throw new Error('N
 vi.mock('@main/core/sessions/session-life', () => ({ sessionLife: () => ({ enqueue: state.enqueue }) }));
 vi.mock('@main/core/sessions/session-life-forks', () => ({ runtimeForkInput: () => null }));
 vi.mock('@gugu/session-plugins/agents', () => ({ resolveSessionpageSessionIntegration: () => ({ identity: 'addressable', messageTransport: 'router' }) }));
-vi.mock('@main/core/projects/utils', () => ({ resolveSession: () => null }));
+vi.mock('@main/core/sessions/session-workspace-manager', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  resolveSession: () => null,
+}));
 vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
 vi.mock('@main/core/acp/runtime-process/host', () => ({ getAcpRuntimeClient: vi.fn() }));

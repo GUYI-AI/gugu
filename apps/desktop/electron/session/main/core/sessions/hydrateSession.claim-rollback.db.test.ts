@@ -22,7 +22,8 @@ vi.mock('@main/db/client', () => ({
     return mocks.db;
   },
 }));
-vi.mock('../projects/utils', () => ({
+vi.mock('@main/core/sessions/session-workspace-manager', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   resolveSession: () => ({ sessions: { startSession: mocks.startSession } }),
 }));
 vi.mock('@main/lib/events', () => ({
@@ -57,14 +58,15 @@ describe('hydrateSession 的启动认领', () => {
     mocks.startSession.mockReset();
     fixture.sqlite.exec(`
       INSERT INTO projects (id, name, path) VALUES ('project-1', 'Project', '/repo');
-      INSERT INTO sessions (id, project_id, provider, runtime, config)
-        VALUES ('fresh', 'project-1', 'codex', 'pty',
+      INSERT INTO workspaces (id, type, path) VALUES ('ws-1', 'local', '/repo');
+      INSERT INTO sessions (id, project_id, workspace_id, provider, runtime, config)
+        VALUES ('fresh', 'project-1', 'ws-1', 'codex', 'pty',
                 '{"version":"1","type":"pty","agentDisplayName":"hi","initialPrompt":"hi"}');
-      INSERT INTO sessions (id, project_id, provider, runtime, config, provider_session_id)
-        VALUES ('started', 'project-1', 'codex', 'pty',
+      INSERT INTO sessions (id, project_id, workspace_id, provider, runtime, config, provider_session_id)
+        VALUES ('started', 'project-1', 'ws-1', 'codex', 'pty',
                 '{"version":"1","type":"pty","agentDisplayName":"hi2","initialPrompt":"hi2"}', 'started');
-      INSERT INTO sessions (id, project_id, provider, runtime, config, provider_session_id)
-        VALUES ('dangling', 'project-1', 'codex', 'pty',
+      INSERT INTO sessions (id, project_id, workspace_id, provider, runtime, config, provider_session_id)
+        VALUES ('dangling', 'project-1', 'ws-1', 'codex', 'pty',
                 '{"version":"1","type":"pty","agentDisplayName":"lost","initialPrompt":"lost"}',
                 '00000000-0000-4000-8000-000000000369');
     `);
@@ -78,7 +80,7 @@ describe('hydrateSession 的启动认领', () => {
   it('第一次启动失败后退账,下一次仍是「首次启动」并带着初始提示词', async () => {
     mocks.startSession.mockRejectedValueOnce(new Error('codex app-server 起不来'));
 
-    await expect(hydrateSession('project-1', 'fresh')).rejects.toThrow(
+    await expect(hydrateSession('fresh')).rejects.toThrow(
       'codex app-server 起不来'
     );
 
@@ -87,7 +89,7 @@ describe('hydrateSession 的启动认领', () => {
 
     // 而且下一次真的按首次启动走:isResuming=false,且把提示词带下去。
     mocks.startSession.mockResolvedValueOnce(undefined);
-    await hydrateSession('project-1', 'fresh');
+    await hydrateSession('fresh');
     const [, , isResuming, initialPrompt] = mocks.startSession.mock.calls.at(-1) ?? [];
     expect(isResuming).toBe(false);
     expect(initialPrompt).toBe('hi');
@@ -96,7 +98,7 @@ describe('hydrateSession 的启动认领', () => {
   it('启动成功就保住认领(幂等闸不能因为这次修复失效)', async () => {
     mocks.startSession.mockResolvedValueOnce(undefined);
 
-    await hydrateSession('project-1', 'fresh');
+    await hydrateSession('fresh');
 
     expect(providerSessionIdOf(fixture, 'fresh')).toBe('fresh');
   });
@@ -114,21 +116,21 @@ describe('hydrateSession 的启动认领', () => {
         .map((payload) => payload.changes.providerSessionId);
 
     mocks.startSession.mockResolvedValueOnce(undefined);
-    await hydrateSession('project-1', 'fresh');
+    await hydrateSession('fresh');
     expect(providerSessionIdChanges()).toEqual(['fresh']);
 
     // 阳控:同一把尺子在退账那一侧也要动 —— 只测成功那半,回归时它照样全绿。
     mocks.emit.mockReset();
     fixture.sqlite.prepare('UPDATE sessions SET provider_session_id = NULL WHERE id = ?').run('fresh');
     mocks.startSession.mockRejectedValueOnce(new Error('boom'));
-    await expect(hydrateSession('project-1', 'fresh')).rejects.toThrow('boom');
+    await expect(hydrateSession('fresh')).rejects.toThrow('boom');
     expect(providerSessionIdChanges()).toEqual(['fresh', null]);
   });
 
   it('恢复既有会话时失败,不动它原来的 provider_session_id', async () => {
     mocks.startSession.mockRejectedValueOnce(new Error('boom'));
 
-    await expect(hydrateSession('project-1', 'started')).rejects.toThrow('boom');
+    await expect(hydrateSession('started')).rejects.toThrow('boom');
 
     // 退的只该是**这次**认领的那笔;别人的账不能碰,否则会把一条真起来过的会话
     // 降级成「首次启动」,resume 语义就丢了。
@@ -143,7 +145,7 @@ describe('hydrateSession 的启动认领', () => {
     );
     mocks.startSession.mockRejectedValueOnce(missing);
 
-    await expect(hydrateSession('project-1', 'dangling')).resolves.toBeUndefined();
+    await expect(hydrateSession('dangling')).resolves.toBeUndefined();
     expect(providerSessionIdOf(fixture, 'dangling')).toBe('00000000-0000-4000-8000-000000000369');
     expect(providerSessionStateOf(fixture, 'dangling')).toBe('missing');
     expect(mocks.emit).toHaveBeenCalledWith(
@@ -155,7 +157,7 @@ describe('hydrateSession 的启动认领', () => {
     );
     expect(mocks.startSession).toHaveBeenCalledTimes(1);
 
-    await expect(hydrateSession('project-1', 'dangling')).resolves.toBeUndefined();
+    await expect(hydrateSession('dangling')).resolves.toBeUndefined();
     expect(mocks.startSession).toHaveBeenCalledTimes(1);
   });
 });

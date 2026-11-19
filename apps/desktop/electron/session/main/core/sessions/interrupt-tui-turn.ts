@@ -6,7 +6,7 @@ type InterruptResult = Awaited<ReturnType<typeof ptyController.interrupt>>;
 
 export interface TuiTurnInterruptDeps {
   interrupt(ptySessionId: string): Promise<InterruptResult>;
-  markInterrupted(params: { sessionId: string; projectId: string }): Promise<void>;
+  markInterrupted(params: { sessionId: string }): Promise<void>;
 }
 
 const defaultDeps: TuiTurnInterruptDeps = {
@@ -27,16 +27,14 @@ const defaultDeps: TuiTurnInterruptDeps = {
  * 返回值与 `cancelEmdashTurn` 的约定一致:true = 发出去了;false = 没有这条 pty / 不是会话;其余失败抛。
  */
 export async function interruptTuiTurn(
-  session: { id: string; projectId: string },
+  session: { id: string; workspaceId?: string },
   deps: TuiTurnInterruptDeps = defaultDeps,
 ): Promise<boolean> {
-  const ptySessionId = makePtySessionId(session.projectId, session.id, session.id);
+  if (!session.workspaceId) throw new Error(`session ${session.id} has no workspace`);
+  const ptySessionId = makePtySessionId(session.workspaceId, session.id, session.id);
   const result = await deps.interrupt(ptySessionId);
   if (result.success) {
-    await deps.markInterrupted({
-      sessionId: session.id,
-      projectId: session.projectId,
-    });
+    await deps.markInterrupted({ sessionId: session.id });
     return true;
   }
   if (result.error.type === 'not_found' || result.error.type === 'not_a_conversation') return false;

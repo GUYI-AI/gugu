@@ -35,7 +35,8 @@ export type PasswordRequestView = PasswordApproval | PasswordSaveRequest
 /** What the Agent proposed. Shown only in the person's own add/edit form, never in a message. */
 export interface PasswordSaveDraft { origin: string; name?: string; account: string; accountSecret?: boolean; password: string; fields: PasswordField[]; credentialId?: string; agentName: string }
 export const PASSWORD_REQUEST_PREFIX = 'gugu-password-request-v1\n'
-export interface PasswordGrantCandidate { subject: string; name: string; kind: 'agent' | 'project'; project?: string }
+/** `chat:<id>` = every task of that group; `agent:<id>` = one Agent. Grants to a former local project (`project:<id>`) still hold. */
+export interface PasswordGrantCandidate { subject: string; name: string; kind: 'agent' | 'group' }
 /** Cross-device sync (#2481). joining: this device waits for approval on another device, `code` once both sides are
  * ready · blocked: this device joined before with a key it no longer has · ready: the account's devices and requests. */
 export interface PasswordSyncDevice { deviceId: string; label: string; platform: string; current: boolean }

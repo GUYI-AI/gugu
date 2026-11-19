@@ -81,19 +81,19 @@ async function renameTask(sessionId: string, rawName: string, source: 'manual' |
     .set({ config: { ...row.config!, agentDisplayName: name } })
     .where(eq(sessions.id, sessionId))
     .run();
-  announceTaskName(sessionId, row.projectId, name);
+  announceTaskName(sessionId, name);
   return true;
 }
 
 /** Search and every renderer follow one announcement per name change. */
-export function announceTaskName(sessionId: string, projectId: string, name: string): void {
-  sessionEvents._emit('session:renamed', sessionId, projectId, name);
-  events.emit(sessionChangedChannel, { sessionId, projectId, changes: { title: name } });
+export function announceTaskName(sessionId: string, name: string): void {
+  sessionEvents._emit('session:renamed', sessionId, name);
+  events.emit(sessionChangedChannel, { sessionId, changes: { title: name } });
 }
 
 function readRow(sessionId: string) {
   return db
-    .select({ id: sessions.id, projectId: sessions.projectId, provider: sessions.provider, config: sessions.config })
+    .select({ id: sessions.id, provider: sessions.provider, config: sessions.config })
     .from(sessions)
     .where(eq(sessions.id, sessionId))
     .limit(1)
@@ -137,6 +137,6 @@ onTaskNamesChanged((changes) => {
     if (!next && previous && row.config?.agentDisplayName !== previous.name) {
       db.update(sessions).set({ config: { ...row.config!, agentDisplayName: previous.name } }).where(eq(sessions.id, sessionId)).run();
     }
-    announceTaskName(sessionId, row.projectId, next?.name ?? previous!.name);
+    announceTaskName(sessionId, next?.name ?? previous!.name);
   }
 });

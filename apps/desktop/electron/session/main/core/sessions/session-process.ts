@@ -34,7 +34,7 @@ export function forgetSessionProcess(sessionId: string): void {
  * 哪些会话的引擎在 tmux 里还活着 —— 接回还是新起(`LocalSessionProvider`)、开机收残放不放过它、
  * 平台票的去留(主进程 `detached-runtime.ts`),同一个判据。
  * `names` 是一次 `listTmuxSessionNames` 的结果:要判一批会话时只问 tmux 一次。
- * 引擎的 tmux 名由 `<projectId>:<会话>:<会话>` 编码而来;终端那几格(leaf 是终端 id)不算。
+ * 引擎的 tmux 名由 `<workspaceId>:<会话>:<会话>` 编码而来(升级前起的是 `<老项目 id>:…`,中间两段一样);终端那几格(leaf 是终端 id)不算。
  */
 export function sessionsAliveInTmux(names: ReadonlySet<string>): Set<string> {
   const alive = new Set<string>();

@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
-import { takeBirthGroup } from '@main/core/sessions/birth-groups';
 import { createSession } from './createSession';
 import { setTaskNamer } from '../task-name';
 
@@ -9,12 +8,11 @@ afterEach(() => setTaskNamer(null));
 
 const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
-  getProject: vi.fn(),
   // The task namer reads the names this host's sessions already carry.
   select: vi.fn(() => ({ from: async () => [] })),
   recordSessionPlatformModel: vi.fn(async () => {}),
   checkLocalHarnessAvailable: vi.fn(async () => null as unknown),
-  resolveProjectFolder: vi.fn(async () => ({ kind: 'root' }) as unknown),
+  rootFolderOf: vi.fn((_id: string) => ({ id: 'ws-repo-1' }) as unknown),
 }));
 
 vi.mock('@main/db/client', () => ({
@@ -27,16 +25,10 @@ vi.mock('@main/db/client', () => ({
 // 带 initialConversation 的用例会走到 finalizeCreateSession 的事件广播（需要 electron BrowserWindow）。
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
 
-vi.mock('@main/core/projects/project-manager', () => ({
-  projectManager: {
-    getProject: mocks.getProject,
-  },
-}));
-
-// #7341「这个工作区是不是这个项目的文件夹」本身在 project-folders.db.test.ts 里打真库测;这里测的是
+// #7341「这个工作区是不是本机记录的文件夹(或在它里面)」本身在 folders 的真库测试里测;这里测的是
 // **它说不是时 createSession 做了什么**。
-vi.mock('@main/core/projects/operations/project-folders', () => ({
-  resolveProjectFolder: mocks.resolveProjectFolder,
+vi.mock('@main/core/folders/folders', () => ({
+  rootFolderOf: mocks.rootFolderOf,
 }));
 
 // @@@2504 — the post-commit side effects are not under test here; stub the emitters so the
@@ -97,24 +89,9 @@ function setupTransactionMock() {
 describe('createTask', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getProject.mockReturnValue({});
     mocks.checkLocalHarnessAvailable.mockResolvedValue(null);
-    mocks.resolveProjectFolder.mockResolvedValue({ kind: 'root' });
+    mocks.rootFolderOf.mockReturnValue({ id: 'ws-repo-1' });
     setupTransactionMock();
-  });
-
-  it('returns project-not-found when project does not exist', async () => {
-    mocks.getProject.mockReturnValue(undefined);
-    const result = await createSession({
-      projectId: 'project-1',
-      sessionConfig: { version: '1', name: 'Test Task', initialSession },
-      workspaceConfig: {
-        version: '2',
-        workspace: { kind: 'repository-instance', workspaceId: 'ws-repo-1' },
-      },
-    });
-    expect(result).toEqual({ success: false, error: { type: 'project-not-found' } });
-    expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
   describe('导入本机会话时带上 provider 的会话 id', () => {
@@ -122,7 +99,6 @@ describe('createTask', () => {
       const { captured } = setupTransactionMock();
 
       await createSession({
-        projectId: 'project-1',
         sessionConfig: {
           version: '1',
           name: '导入的会话',
@@ -148,7 +124,6 @@ describe('createTask', () => {
       const { captured } = setupTransactionMock();
 
       await createSession({
-        projectId: 'project-1',
         sessionConfig: {
           version: '1',
           name: 'Test Task',
@@ -174,7 +149,6 @@ describe('createTask', () => {
     it('reuses the existing workspace ID from config', async () => {
       const { captured } = setupTransactionMock();
       await createSession({
-        projectId: 'project-1',
         sessionConfig: { version: '1', name: 'Test Task', initialSession },
         workspaceConfig: {
           version: '2',
@@ -187,36 +161,30 @@ describe('createTask', () => {
       expect((captured[0] as Record<string, unknown>).workspaceId).toBe('ws-repo-1');
     });
 
-    // #7341 点项目首页里挂上的那个文件夹 ⇒ 会话的工作区就是那个文件夹(会话在它的路径里开工)。
-    it('accepts a folder attached to the project and keeps its workspace id', async () => {
+    // #7341 点群首页里的那个文件夹 ⇒ 会话的工作区就是那个文件夹(会话在它的路径里开工)。
+    it('accepts a folder recorded here (or a workspace inside one) and keeps its workspace id', async () => {
       const { captured } = setupTransactionMock();
-      mocks.resolveProjectFolder.mockResolvedValue({
-        kind: 'attached',
-        path: '/work/gugu-7341',
-        workspaceKind: 'path',
-      });
+      mocks.rootFolderOf.mockReturnValue({ id: 'ws-folder-1' });
 
       const result = await createSession({
-        projectId: 'project-1',
         sessionConfig: { version: '1', name: 'Test Task', initialSession },
         workspaceConfig: {
           version: '2',
-          workspace: { kind: 'repository-instance', workspaceId: 'ws-attached-1' },
+          workspace: { kind: 'repository-instance', workspaceId: 'ws-worktree-1' },
         },
       });
 
       expect(result.success).toBe(true);
-      expect(mocks.resolveProjectFolder).toHaveBeenCalledWith('project-1', 'ws-attached-1');
+      expect(mocks.rootFolderOf).toHaveBeenCalledWith('ws-worktree-1');
       expect(captured).toHaveLength(1);
-      expect((captured[0] as Record<string, unknown>).workspaceId).toBe('ws-attached-1');
+      expect((captured[0] as Record<string, unknown>).workspaceId).toBe('ws-worktree-1');
     });
 
-    // ❌ 照抄一个别的项目的工作区 id(会话会跑去那里),❌ 悄悄换成根目录:说出来,一行都不写。
-    it('refuses a workspace that is neither the project root nor attached to it, and writes nothing', async () => {
-      mocks.resolveProjectFolder.mockResolvedValue(null);
+    // ❌ 照抄一个本机没有的工作区 id,❌ 悄悄换成别的文件夹:说出来,一行都不写。
+    it('refuses a workspace that is in no folder recorded here, and writes nothing', async () => {
+      mocks.rootFolderOf.mockReturnValue(undefined);
 
       const result = await createSession({
-        projectId: 'project-1',
         sessionConfig: {
           version: '1',
           name: 'Test Task',
@@ -224,42 +192,19 @@ describe('createTask', () => {
         },
         workspaceConfig: {
           version: '2',
-          workspace: { kind: 'repository-instance', workspaceId: 'ws-of-project-2' },
+          workspace: { kind: 'repository-instance', workspaceId: 'ws-elsewhere' },
         },
       } as never);
 
-      expect(result).toEqual({
-        success: false,
-        error: {
-          type: 'provision-failed',
-          message: expect.stringContaining('ws-of-project-2'),
-        },
-      });
-      expect(mocks.resolveProjectFolder).toHaveBeenCalledWith('project-1', 'ws-of-project-2');
+      expect(result).toEqual({ success: false, error: { type: 'folder-not-found', workspaceId: 'ws-elsewhere' } });
       expect(mocks.transaction).not.toHaveBeenCalled();
       expect(mocks.recordSessionPlatformModel).not.toHaveBeenCalled();
     });
 
-    // 群成员里「新建 Agent」:会话一建好就记下那个群,身份第一次建出来时进群 —— 与 session_spawn 的 chat_id 同一条 birth-groups。
-    it('生在群里:记下那个群;不带群就什么都不记', async () => {
+    // @@@group-folders the group is the row's chat_id (what the agent joins and sessionGroupOf reads); #2599 it is also
+    // where its agent lives (birthChatId).
+    it('records the group on the row; no group, nothing recorded', async () => {
       const params = {
-        projectId: 'project-1',
-        sessionConfig: { version: '1' as const, name: 'Test Task', initialSession },
-        workspaceConfig: {
-          version: '2' as const,
-          workspace: { kind: 'repository-instance' as const, workspaceId: 'ws-repo-1' },
-        },
-      };
-      await createSession({ ...params, birthGroup: { chatId: 'chat-group-1', asTask: true } });
-      expect(takeBirthGroup('conv-1')).toEqual({ chatId: 'chat-group-1', asTask: true });
-      await createSession(params);
-      expect(takeBirthGroup('conv-1')).toBeNull();
-    });
-
-    // #2599 the group is also kept on the row: the left sidebar places the agent there, whatever groups it joins later.
-    it('records the group it was born in on the row; no group, nothing recorded', async () => {
-      const params = {
-        projectId: 'project-1',
         sessionConfig: { version: '1' as const, name: 'Test Task', initialSession },
         workspaceConfig: {
           version: '2' as const,
@@ -267,13 +212,13 @@ describe('createTask', () => {
         },
       };
       const { captured } = setupTransactionMock();
-      await createSession({ ...params, birthGroup: { chatId: 'chat-group-1', asTask: false } });
+      await createSession({ ...params, groupChatId: 'chat-group-1' });
+      expect(captured[0]).toMatchObject({ chatId: 'chat-group-1', projectId: 'c1-placeholder' });
       expect((captured[0] as { config: Record<string, unknown> }).config.birthChatId).toBe('chat-group-1');
       await createSession(params);
+      expect(captured[0]).toMatchObject({ chatId: null });
       expect((captured[0] as { config: Record<string, unknown> }).config).not.toHaveProperty('birthChatId');
-      takeBirthGroup('conv-1');
     });
-
   });
 
   describe('initial conversation agent status', () => {
@@ -287,7 +232,6 @@ describe('createTask', () => {
     ): Promise<Record<string, unknown>> {
       const { captured } = setupTransactionMock();
       await createSession({
-        projectId: 'project-1',
         sessionConfig: {
           version: '1',
           name: 'Test Task',
@@ -383,14 +327,12 @@ describe('createTask · 引擎不可用', () => {
   // 上面那个 beforeEach 挂在 describe('createSession') 里,兄弟块拿不到 —— 这里自己装一份同样的台子。
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getProject.mockReturnValue({});
     mocks.checkLocalHarnessAvailable.mockResolvedValue(null);
-    mocks.resolveProjectFolder.mockResolvedValue({ kind: 'root' });
+    mocks.rootFolderOf.mockReturnValue({ id: 'ws-repo-1' });
     setupTransactionMock();
   });
 
   const withInitialSession = {
-    projectId: 'project-1',
     sessionConfig: {
       version: '1' as const,
       name: 'Test Task',
@@ -402,7 +344,7 @@ describe('createTask · 引擎不可用', () => {
     },
     workspaceConfig: {
       version: '2' as const,
-      workspace: { kind: 'new-worktree' as const },
+      workspace: { kind: 'repository-instance' as const, workspaceId: 'ws-repo-1' },
     },
   } as unknown as Parameters<typeof createSession>[0];
 
@@ -445,7 +387,6 @@ describe('createTask · 引擎不可用', () => {
   it('没有首轮会话就没有可建的东西:当场抛,不问引擎、一行都不写', async () => {
     await expect(
       createSession({
-        projectId: 'project-1',
         sessionConfig: { version: '1', name: 'Test Task' },
         workspaceConfig: {
           version: '2',

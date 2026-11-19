@@ -1,10 +1,10 @@
+import { basename } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
-import { sessions, projects, workspaces } from '@main/db/schema';
+import { sessions, workspaces } from '@main/db/schema';
+import { listFolders, listUnboundFolders } from '@main/core/folders/folders';
 import { hasLocalSessionSource, getLocalSessionSource } from '@main/core/session-import/host-source';
-import { machineOutwardProjectIds } from '@main/core/projects/project-public-id';
 import type { SessionRuntime } from '@shared/core/sessions/sessions';
-import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
 import {
   LOCAL_SESSION_ENGINE_PROVIDER,
   type ListLocalSessionsResult,
@@ -18,6 +18,7 @@ import {
   compareSessionHistorySections,
   displaySessionTitle,
   matchesSessionHistoryFilters,
+  isSessionHomeDirectory,
   projectSectionKey,
   type SessionHistoryDirectoryPage,
   type SessionHistoryDirectoryParams,
@@ -26,7 +27,7 @@ import {
   type SessionHistoryParams,
   type SessionHistoryRow,
 } from '@shared/core/session-history/session-history';
-import { sessionParentId } from '@main/core/sessions/utils';
+import { sessionParentId, sessionWorkspaceId } from '@main/core/sessions/utils';
 import { taskName } from '@main/core/sessions/task-name';
 import { createLocalGroupOf } from './local-session-group';
 
@@ -60,23 +61,13 @@ export function toEpochMs(text: string | null | undefined): number | null {
 
 type GuguJoinedRow = {
   session: typeof sessions.$inferSelect;
-  projectName: string;
-  projectPath: string;
-  projectKind: 'project' | 'workspace';
   workspacePath: string | null;
 };
 
 async function readGuguRows(): Promise<GuguJoinedRow[]> {
   return db
-    .select({
-      session: sessions,
-      projectName: projects.name,
-      projectPath: projects.path,
-      projectKind: projects.kind,
-      workspacePath: workspaces.path,
-    })
+    .select({ session: sessions, workspacePath: workspaces.path })
     .from(sessions)
-    .innerJoin(projects, eq(projects.id, sessions.projectId))
     .leftJoin(workspaces, eq(workspaces.id, sessions.workspaceId));
 }
 
@@ -114,7 +105,8 @@ function toGuguRow(
   descendants: Map<string, number>
 ): SessionHistoryRow {
   const { session } = joined;
-  const standalone = isImplicitSessionHomeProjectId(session.projectId);
+  // 任务 home(没有群的会话默认落的目录)不是用户挑的目录,它的路径不报。
+  const directory = joined.workspacePath && !isSessionHomeDirectory(joined.workspacePath) ? joined.workspacePath : null;
   const archivedAt = toEpochMs(session.archivedAt);
   const parentId = sessionParentId(session);
   return {
@@ -124,9 +116,8 @@ function toGuguRow(
     title: displaySessionTitle(taskName(session)),
     providerSessionId: session.providerSessionId ?? null,
     providerId: session.provider ?? null,
-    // 独立任务住在用户从没见过的 task-home 项目里(spec session-page 任务分区),它的路径不是用户的目录。
-    directory: standalone ? null : (joined.workspacePath ?? joined.projectPath),
-    projectName: standalone ? null : joined.projectName,
+    directory,
+    projectName: directory ? basename(directory) || directory : null,
     updatedAt: toEpochMs(session.updatedAt) ?? 0,
     lastPromptAt: toEpochMs(session.lastInteractedAt),
     addedAt: toEpochMs(session.createdAt),
@@ -134,7 +125,9 @@ function toGuguRow(
     childCount: descendants.get(session.id) ?? 0,
     parentTitle: parentId ? (titles.get(parentId) ?? null) : null,
     gugu: {
-      projectId: session.projectId,
+      // @@@group-folders — released readers key sessions by projectId: the workspace id since C1.
+      projectId: sessionWorkspaceId(session),
+      groupChatId: session.chatId,
       sessionId: session.id,
       runtime: (session.runtime as SessionRuntime | null) ?? 'pty',
     },
@@ -184,10 +177,8 @@ type Collected = {
 
 /** 两种视图共用的前半段:读库 + 读索引 → 合并去重 → 计数 → 筛选。排序 / 聚合 / 切页由调用方做。 */
 async function collect(params: SessionHistoryParams): Promise<Collected> {
-  const [guguJoined, localProjects, outward, localPage] = await Promise.all([
+  const [guguJoined, localPage] = await Promise.all([
     readGuguRows(),
-    db.select({ projectId: projects.id, projectPath: projects.path, projectName: projects.name }).from(projects),
-    machineOutwardProjectIds(),
     hasLocalSessionSource()
       ? getLocalSessionSource().list({
           // 全量:排序要在合并之后做,切页之前的任何截断都会把「最早」截没。
@@ -220,35 +211,28 @@ async function collect(params: SessionHistoryParams): Promise<Collected> {
   // 本机的项目(有没有任务都算)只收**它自己那个仓库之内**的原件:项目路径是 cwd 或 cwd 的上级,且不高出 cwd 所在仓库的根
   // (不在仓库里时 = 就是 cwd 本身)。❌ 纯前缀匹配 —— 一个路径是 /Users 的项目会把它底下几千条原件全吞掉
   // (mac1 2026-09-24 读数:一节 3424 条)。
-  const localGroupOf = createLocalGroupOf(localProjects);
-  // 项目路径在本机唯一(idx_projects_path):原件归到的那个项目路径就认得出是哪个项目。
-  const projectAtPath = new Map<string, string>(localProjects.map((project) => [project.projectPath, project.projectId]));
-  // 一个账号项目一节(设计同事 2026-09-23 参照页:节名是「gugu」,❌ 每个 worktree 目录各一节):项目是账号级的,
-  // 本机项目在哪个项目群里,这一行就进那个群的节 —— 同一个群的几个本机项目、几台机器上的这个项目都并成一节。
-  // 不在项目群里的本机项目按它的路径一节。
-  const projectGroup = (projectId: string, path: string, name: string | null) => {
-    const chatId = outward(projectId);
-    return { key: chatId ? projectSectionKey(chatId) : path, projectName: name };
-  };
+  const folders = [...listFolders(), ...listUnboundFolders()];
+  const localGroupOf = createLocalGroupOf(folders.map(({ path }) => ({ path, name: basename(path) || path })));
+  // 文件夹路径在本机唯一:原件归到的那个文件夹认得出它挂在哪个群上。
+  const groupAtPath = new Map<string, string | null>(folders.map((folder) => [folder.path, folder.chatId]));
+  // 一个群一节(设计同事 2026-09-23 参照页:节名是「gugu」,❌ 每个 worktree 目录各一节):群是账号级的,
+  // 会话在哪个群里,这一行就进那个群的节 —— 同一个群的几个文件夹、几台机器上的会话都并成一节。
   const sessionHomeGroup = { key: SESSION_HOME_SECTION_KEY, projectName: null };
-  // 咕咕行直接认它自己的项目(工作区 worktree 常常不在项目路径之下,按前缀猜会猜丢);独立任务与任务工作区
-  // (#609 workspace:咕咕为自己的需要记的目录,不是项目)进任务那一节。本机行按仓库归,落在项目文件夹里的认那个项目。
+  // @@@group-folders 咕咕行直接认它自己的群(sessions.chat_id);没有群的会话进任务那一节。
+  // 本机行按仓库归,落在挂着群的文件夹里的认那个群,没挂群的文件夹按它的路径一节。
   const guguGroupOf = new Map(
     guguJoined.map((j) => [
       `gugu:${j.session.id}`,
-      isImplicitSessionHomeProjectId(j.session.projectId) || j.projectKind === 'workspace'
-        ? sessionHomeGroup
-        : projectGroup(j.session.projectId, j.projectPath, j.projectName),
+      j.session.chatId ? { key: projectSectionKey(j.session.chatId), projectName: null } : sessionHomeGroup,
     ])
   );
   const groupOf = (row: SessionHistoryRow): { key: string | null; projectName: string | null } => {
     const gugu = guguGroupOf.get(row.key);
     if (gugu) return gugu;
     const local = localGroupOf(row.directory);
-    const projectId = local.key === null ? undefined : projectAtPath.get(local.key);
-    return projectId && local.key !== null
-      ? projectGroup(projectId, local.key, local.label)
-      : { key: local.key, projectName: local.label };
+    const chatId = local.key === null ? null : groupAtPath.get(local.key) ?? null;
+    // A group's section is named by the group (the renderer has its name), never by one of its folders here.
+    return chatId ? { key: projectSectionKey(chatId), projectName: null } : { key: local.key, projectName: local.label };
   };
 
   const countsBySource = emptyCounts(SESSION_HISTORY_SOURCES);

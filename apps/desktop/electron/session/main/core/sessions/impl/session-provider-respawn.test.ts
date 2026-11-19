@@ -340,7 +340,6 @@ function localProvider({
   ctx?: ConstructorParameters<typeof LocalSessionProvider>[0]['ctx'];
 } = {}) {
   const provider = new LocalSessionProvider({
-    projectId: 'project-1',
     workspaceId: 'workspace-1',
     sessionPath: '/tmp/ws-1',
     tmux,
@@ -423,8 +422,8 @@ describe('conversation provider respawn state', () => {
     vi.mocked(agentHookService.getPort).mockReturnValue(0);
     setEmdashPtySessionpageHook(null);
     setEmdashPtySessionpageTeardown(null);
-    ptySessionRegistry.unregister('project-1:conversation-1:conversation-1');
-    ptySessionRegistry.unregister('project-1:claude-conversation:claude-conversation');
+    ptySessionRegistry.unregister('workspace-1:conversation-1:conversation-1');
+    ptySessionRegistry.unregister('workspace-1:claude-conversation:claude-conversation');
     unregisterLocalSessionDelivery('droid-conversation');
   });
 
@@ -862,7 +861,7 @@ describe('conversation provider respawn state', () => {
     spawnLocalPty.mockReturnValue(fakePty(exitHandlers));
     const provider = localProvider();
     const item = session();
-    const ptySessionId = makePtySessionId(item.projectId, item.id, item.id);
+    const ptySessionId = makePtySessionId('workspace-1', item.id, item.id);
 
     await provider.startSession(item);
     vi.mocked(events.emit).mockClear();
@@ -989,7 +988,7 @@ describe('conversation provider respawn state', () => {
     const listCalls = (ctx: { exec: ReturnType<typeof vi.fn> }) =>
       ctx.exec.mock.calls.filter(([, args]) => (args as string[]).includes('list-sessions'));
     const tmuxName = (id: string) =>
-      `gugu-${Buffer.from(makePtySessionId('project-1', id, id), 'utf8').toString('base64url')}`;
+      `gugu-${Buffer.from(makePtySessionId('workspace-1', id, id), 'utf8').toString('base64url')}`;
     const ctxListing = (names: string[]) => ({
       supportsLocalSpawn: true,
       exec: vi.fn(async (_command: string, args: string[]) =>
@@ -1201,7 +1200,6 @@ describe('conversation provider respawn state', () => {
       expect(teardown).toHaveBeenCalledWith(item.id);
       expect(events.emit).toHaveBeenCalledWith(sessionDeliveryFailedChannel, {
         sessionId: item.id,
-        projectId: item.projectId,
         message: `Agent session failed to resume thread ${item.providerSessionId} (exit code 1).`
           + ' Retry restoring this task; if the original thread was deleted, start a new task.',
       });
@@ -1225,7 +1223,7 @@ describe('conversation provider respawn state', () => {
       const exitHandlers: Array<(info: PtyExitInfo) => void> = [];
       spawnLocalPty.mockReturnValue(fakePty(exitHandlers));
       const item = session();
-      const name = `gugu-${Buffer.from(makePtySessionId(item.projectId, item.id, item.id), 'utf8').toString('base64url')}`;
+      const name = `gugu-${Buffer.from(makePtySessionId('workspace-1', item.id, item.id), 'utf8').toString('base64url')}`;
       // 起的时候还没有(新起),起来以后它在(引擎在 tmux 里跑)
       let engineRunning = false;
       const ctx = {
@@ -1291,7 +1289,7 @@ describe('conversation provider respawn state', () => {
     };
     const provider = localProvider({ tmux: true, ctx: ctx as never });
     const item = session();
-    const ptySessionId = makePtySessionId(item.projectId, item.id, item.id);
+    const ptySessionId = makePtySessionId('workspace-1', item.id, item.id);
 
     await provider.startSession(item);
     ctx.exec.mockClear();
@@ -1310,7 +1308,7 @@ describe('conversation provider respawn state', () => {
     };
     const provider = localProvider({ tmux: true, ctx: ctx as never });
     const item = session();
-    const ptySessionId = makePtySessionId(item.projectId, item.id, item.id);
+    const ptySessionId = makePtySessionId('workspace-1', item.id, item.id);
 
     await provider.startSession(item);
     await provider.detachSession(item.id);
@@ -1345,7 +1343,7 @@ describe('conversation provider respawn state', () => {
     const exitHandlers: Array<(info: PtyExitInfo) => void> = [];
     spawnLocalPty.mockReturnValue(fakePty(exitHandlers));
     const item = session();
-    const name = `gugu-${Buffer.from(makePtySessionId(item.projectId, item.id, item.id), 'utf8').toString('base64url')}`;
+    const name = `gugu-${Buffer.from(makePtySessionId('workspace-1', item.id, item.id), 'utf8').toString('base64url')}`;
     // 引擎起来以后一直在 tmux 里跑(tmux 列得出它)。
     let engineRunning = false;
     const ctx = {
@@ -1388,7 +1386,7 @@ describe('conversation provider respawn state', () => {
 
     await provider.startSession(item);
 
-    expect(takeRestored).toHaveBeenCalledWith(makePtySessionId(item.projectId, item.id, item.id));
+    expect(takeRestored).toHaveBeenCalledWith(makePtySessionId('workspace-1', item.id, item.id));
     expect(createSource).not.toHaveBeenCalled();
     expect(restored.keepAcrossRestart).toHaveBeenCalled();
     await provider.stopSession(item.id);
@@ -1414,7 +1412,7 @@ describe('conversation provider respawn state', () => {
     spawnLocalPty.mockReturnValueOnce(firstPty).mockReturnValueOnce(secondPty);
     const provider = localProvider({ tmux: true });
     const item = session();
-    const ptySessionId = makePtySessionId(item.projectId, item.id, item.id);
+    const ptySessionId = makePtySessionId('workspace-1', item.id, item.id);
 
     await provider.startSession(item);
     await provider.detachSession(item.id);
@@ -1443,7 +1441,7 @@ describe('conversation provider respawn state', () => {
 
     expect(localSessionDeliveryTarget.liveSessionIdByAgent('agent-droid')).toBe(item.id);
     expect((provider as unknown as RespawnState).ptysBySession.get(
-      makePtySessionId(item.projectId, item.id, item.id),
+      makePtySessionId('workspace-1', item.id, item.id),
     )).toBe(secondPty);
   });
 
@@ -1464,10 +1462,7 @@ describe('conversation provider respawn state', () => {
 
     await provider.stopSession(item.id);
 
-    expect(agentStatusWriter.settleSessionExited).toHaveBeenCalledWith({
-      sessionId: item.id,
-      projectId: 'project-1',
-    });
+    expect(agentStatusWriter.settleSessionExited).toHaveBeenCalledWith({ sessionId: item.id });
 
     // 阴控:被杀的进程随后打回的那次 onExit 走的是 stale/stopped 分支 —— 它不再补一次,
     // 两次落定会让「谁写的最后一笔」变成一场竞争。

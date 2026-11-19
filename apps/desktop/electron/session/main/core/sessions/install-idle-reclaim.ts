@@ -44,9 +44,9 @@ async function readLive(): Promise<{ live: LiveSession[]; withTerminals: Set<str
   // A side chat lives as long as its page (it ends with lifeEnd or its parent), never by idle reclaim.
   for (const { sessionId, parentId } of sessionLife().running()) {
     if (parentId !== null) continue;
-    const row = db.select({ projectId: sessions.projectId }).from(sessions).where(eq(sessions.id, sessionId)).get();
+    const row = db.select({ id: sessions.id }).from(sessions).where(eq(sessions.id, sessionId)).get();
     if (!row) throw new Error(`idle reclaim: running session ${sessionId} has no row`);
-    live.push({ projectId: row.projectId, sessionId, runtime: 'acp', acpAtRest: acpAtRest(summaries.get(sessionId)) });
+    live.push({ sessionId, runtime: 'acp', acpAtRest: acpAtRest(summaries.get(sessionId)) });
   }
   // 终端 pty 的中间段是它所属会话的 id(生命周期脚本那几个是工作区 id,碰不上任何会话)。
   const withTerminals = new Set<string>();
@@ -58,7 +58,7 @@ async function readLive(): Promise<{ live: LiveSession[]; withTerminals: Set<str
       withTerminals.add(parsed.scopeId);
       continue;
     }
-    live.push({ projectId: parsed.projectId, sessionId: parsed.leafId, runtime: 'pty' });
+    live.push({ sessionId: parsed.leafId, runtime: 'pty' });
   }
   // tmux outlives this host: tasks not reattached since restart have no PTY registry entry.
   if (getConfiguredTmuxSocketLabel()) {
@@ -70,7 +70,7 @@ async function readLive(): Promise<{ live: LiveSession[]; withTerminals: Set<str
       if (parsed.scopeId !== parsed.leafId) withTerminals.add(parsed.scopeId);
       else if (!known.has(parsed.leafId)) {
         known.add(parsed.leafId);
-        live.push({ projectId: parsed.projectId, sessionId: parsed.leafId, runtime: 'pty' });
+        live.push({ sessionId: parsed.leafId, runtime: 'pty' });
       }
     }
   }

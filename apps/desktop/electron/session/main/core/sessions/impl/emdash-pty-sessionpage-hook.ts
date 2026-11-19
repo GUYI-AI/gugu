@@ -13,13 +13,10 @@ export interface EmdashPtySessionpageStartInfo {
   sessionId: string;
   providerId: string;
   cwd: string;
-  /** The project + task this conversation belongs to. The gugu host mirrors a project as a chat group and
-   *  needs the ids to place (and later reap) the agent it provisions; `cwd` is the task WORKTREE path, which
-   *  identifies neither. Mirrors what the ACP injector already receives (emdash-mcp-injector.ts). */
-  projectId: string;
+  /** The group this conversation lives in (sessions.chat_id; null = none): the agent the host provisions joins it. */
+  groupChatId: string | null;
   sourceSessionId?: string;
-  /** spec session-graph: the workspace this session is bound to. Carried for the same reason `projectId`
-   *  is — the host's session tools verify that the caller's bound workspace is still the
+  /** spec session-graph: the workspace this session is bound to. Carried because the host's session tools verify that the caller's bound workspace is still the
    *  session's current one, and `cwd` is a path, not an id. The ACP injector already receives it; a PTY start
    *  that omitted it left the host filling in an empty string, which every downstream check then read as
    *  "workspace not ready" — a capability refused for a reason nothing in the product could explain. */
@@ -153,7 +150,7 @@ export function getEmdashPtySessionpageHook(): EmdashPtySessionpageHook | null {
 export interface EmdashPtyChatStartupRequest {
   sessionId: string;
   providerId: string;
-  projectId: string;
+  groupChatId: string | null;
   workspaceId: string;
   cwd: string;
   /** spec agent-provisioning:显式命名过就用那个名字开户(与 pty hook 同一口径)。 */

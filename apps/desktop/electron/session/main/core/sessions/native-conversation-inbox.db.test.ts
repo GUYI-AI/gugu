@@ -26,7 +26,7 @@ it('opens one canonical address for an actual exchange and does not reopen it fo
   const open = vi.fn(async () => 'dm');
   host = startNativeConversationInboxHost({ open, failed: error => { throw error; } });
   await host.flush();
-  expect(open).toHaveBeenCalledExactlyOnceWith({ sessionId: 's', projectId: 'p' });
+  expect(open).toHaveBeenCalledExactlyOnceWith({ sessionId: 's' });
   expect(pendingNativeConversationInbox()).toEqual([]);
   expect(queueNativeConversationInbox('s', fixture.db)).toBe(false);
   publishNativeConversationInbox(); await host.flush();
@@ -38,13 +38,13 @@ it('retains a failed explicit request and resumes it after restart without deriv
   const failed = vi.fn();
   host = startNativeConversationInboxHost({ open: async () => { throw new Error('offline'); }, failed });
   await host.flush(); await host.flush();
-  expect(pendingNativeConversationInbox()).toEqual([{ sessionId: 's', projectId: 'p' }]);
+  expect(pendingNativeConversationInbox()).toEqual([{ sessionId: 's' }]);
   expect(failed).toHaveBeenCalledTimes(1);
   host.dispose();
   const open = vi.fn(async () => 'dm');
   host = startNativeConversationInboxHost({ open, failed });
   await host.flush();
-  expect(open).toHaveBeenCalledExactlyOnceWith({ sessionId: 's', projectId: 'p' });
+  expect(open).toHaveBeenCalledExactlyOnceWith({ sessionId: 's' });
   expect(pendingNativeConversationInbox()).toEqual([]);
 });
 

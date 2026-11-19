@@ -1,4 +1,5 @@
 import { realpathSync } from 'node:fs';
+import { sessionWorkspaceId } from '@main/core/sessions/utils';
 import { userInfo } from 'node:os';
 import type { SessionCreateAttachmentDraftRequest, SessionAdmitCreatedAttachmentsRequest } from '@gugu/session-core/session-record/creation-attachment-protocol';
 import { privateCreationAttachmentDirectory } from '@gugu/core/local/state/protectedPrivateStorage';
@@ -36,14 +37,14 @@ const host = createAttachmentCreationHost({
     const agent = await localAgentForSession(sessionId, process.env);
     if (agent && agentOwnerUserId(agent) !== ownerId) throw unverified('The original task belongs to another owner or its ownership is unknown');
     // The persisted intent minted this exact task id before the transaction. No arbitrary session id is accepted.
-    return { projectId: row.projectId, title: row.config?.agentDisplayName ?? row.legacyTitle ?? '' };
+    return { projectId: sessionWorkspaceId(row), title: row.config?.agentDisplayName ?? row.legacyTitle ?? '' };
   },
-  address: async (sessionId, projectId) => {
+  address: async (sessionId) => {
     const identity = sessionIdentityHost();
     if (!identity.ensureAgentAddress) throw unverified('This host cannot return the actual task attachment target');
     const mounted = await sessionService.provisionWorkspace(sessionId);
     if (!mounted.success) throw unverified(`The original task workspace is not ready: ${mounted.error.type}`);
-    return identity.ensureAgentAddress({ projectId, sessionId });
+    return identity.ensureAgentAddress({ sessionId });
   },
   resolve: async (file, target, ownerId) => {
     const resolved = await resolveAccountFile({ id: file.itemId }, target.agentUserId, { version: file.version });

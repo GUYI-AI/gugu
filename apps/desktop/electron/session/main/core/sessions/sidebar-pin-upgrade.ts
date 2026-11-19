@@ -1,6 +1,6 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { db } from '@main/db/client';
-import { appSettings, projects, sessions } from '@main/db/schema';
+import { appSettings, sessions } from '@main/db/schema';
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
@@ -16,29 +16,29 @@ const MIGRATION_KEY = 'migration.sidebar-pin-upgrade-v1';
  * runs again and the person's later choices (unpinning one of them) are never undone. Archived ones are included:
  * restored later, they come back where they were.
  */
-export function upgradeProjectPinsToSidebarOnce(): Array<{ sessionId: string; projectId: string }> {
+export function upgradeProjectPinsToSidebarOnce(): Array<{ sessionId: string }> {
   if (db.select({ key: appSettings.key }).from(appSettings).where(eq(appSettings.key, MIGRATION_KEY)).limit(1).all().length) {
     return [];
   }
 
-  let marked: Array<{ sessionId: string; projectId: string }> = [];
+  let marked: Array<{ sessionId: string }> = [];
   db.transaction((tx) => {
     const rows = tx
-      .select({ id: sessions.id, projectId: sessions.projectId, parentSessionId: sessions.parentSessionId, config: sessions.config })
+      .select({ id: sessions.id, parentSessionId: sessions.parentSessionId, config: sessions.config })
       .from(sessions)
-      .innerJoin(projects, eq(projects.id, sessions.projectId))
-      .where(and(eq(sessions.isPinned, 1), eq(sessions.isPinnedToSidebar, 0), eq(projects.kind, 'project')))
+      // A session of a former project lives in that project's group since C1 (`chat_id`).
+      .where(and(eq(sessions.isPinned, 1), eq(sessions.isPinnedToSidebar, 0), isNotNull(sessions.chatId)))
       .all();
     // A child is never a row of the left list: only top-level sessions are marked (same rule as setSessionPinnedToSidebar).
-    marked = rows.filter((row) => sessionParentId(row) === null).map((row) => ({ sessionId: row.id, projectId: row.projectId }));
+    marked = rows.filter((row) => sessionParentId(row) === null).map((row) => ({ sessionId: row.id }));
     for (const { sessionId } of marked) {
       tx.update(sessions).set({ isPinnedToSidebar: 1, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(sessions.id, sessionId)).run();
     }
     tx.insert(appSettings).values({ key: MIGRATION_KEY, value: new Date().toISOString() }).run();
   });
 
-  for (const { sessionId, projectId } of marked) {
-    events.emit(sessionChangedChannel, { sessionId, projectId, changes: { isPinnedToSidebar: true } });
+  for (const { sessionId } of marked) {
+    events.emit(sessionChangedChannel, { sessionId, changes: { isPinnedToSidebar: true } });
   }
   if (marked.length > 0) log.info('sidebar pin upgrade: project-pinned sessions pinned to the sidebar', { count: marked.length });
   return marked;

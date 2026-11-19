@@ -6,12 +6,12 @@ vi.mock('./session-service', () => ({ sessionService: { createSession: calls.cre
 vi.mock('./session-life-creation', () => ({ admitFirstMessages: calls.admit }));
 vi.mock('./first-turn-placement', () => ({ holdFirstTurnForPlacement: calls.hold, firstTurnFilesPlaced: calls.placed }));
 vi.mock('./name-generation/generateSessionName', () => ({ generateSessionName: vi.fn() }));
-vi.mock('./operations/getProjectWorkspaces', () => ({ getProjectWorkspaces: vi.fn() }));
+vi.mock('./operations/getGroupWorkspaces', () => ({ getGroupWorkspaces: vi.fn() }));
 import { createAndProvision, sessionCreateController } from './create-controller';
 
 const PAGE = 3;
 
-const input = { projectId: 'project', sessionConfig: { initialSession: { id: 'new-task' } } } as CreateSessionParams;
+const input = { sessionConfig: { initialSession: { id: 'new-task' } } } as CreateSessionParams;
 beforeEach(() => {
   vi.clearAllMocks();
   calls.create.mockResolvedValue({ success: true, data: {} });

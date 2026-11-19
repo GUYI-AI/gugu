@@ -12,7 +12,7 @@ const state = vi.hoisted(() => ({
   agentStatus: 'missing' as string,
   commitCount: 0, finalizeCount: 0,
   calls: [] as string[],
-  createParams: [] as Array<{ projectId: string; sessionType?: string }>,
+  createParams: [] as Array<{ groupChatId?: string; sessionType?: string }>,
   acpStart: { success: true } as { success: boolean; error?: unknown },
   warnings: [] as Array<Record<string, unknown>>,
   warningCalls: [] as unknown[][],
@@ -58,7 +58,7 @@ vi.mock('@main/db/client', () => {
   const chain = {
     from: () => chain,
     where: () => chain,
-    limit: async () => [{ id: 'proj-1', repositoryWorkspaceId: 'ws-1', config: { agentDisplayName: 'Codex 1' } }],
+    limit: async () => [{ id: 'proj-1', workspaceId: 'ws-1', config: { agentDisplayName: 'Codex 1' } }],
   };
   return {
     db: {
@@ -97,23 +97,26 @@ vi.mock('@shared/core/agents/agent-payload', () => ({
     capabilities.permissionModes.includes(mode),
 }));
 
-vi.mock('@main/core/projects/operations/openProject', () => ({
-  openProject: async () => ({ success: true, data: { repositoryWorkspaceId: 'ws-1' } }),
-}));
-
-vi.mock('@main/core/projects/operations/project-folders', () => ({
-  listProjectFolderRefs: async (projectId: string) => projectId === 'proj-1'
-    ? [
-        { workspaceId: 'ws-1', kind: 'root', path: '/work/site', attachedAt: null },
-        { workspaceId: 'ws-docs', kind: 'attached', path: '/work/docs', attachedAt: '2026-10-20T00:00:00.000Z' },
-      ]
-    : undefined,
-}));
+// The placement rule itself (group, folder, cwd, task home) is session-placement's own test; here: what createSession
+// hands it and does with its answer. This machine's folders: /work/site (ws-1, the group's first) and /work/docs.
+vi.mock('@main/core/sessions/session-placement', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@main/core/sessions/session-placement')>();
+  return {
+    ...actual,
+    resolveSessionPlacement: (input: { groupChatId: string | null; workspaceId?: string; cwd?: string }) => {
+      if (input.cwd) {
+        if (input.cwd.replace(/\/$/, '') !== '/work/docs') throw new actual.PlacementError('cwd_invalid', `cwd is not a directory on this machine: ${input.cwd}`);
+        return { groupChatId: input.groupChatId, workspaceId: 'ws-docs' };
+      }
+      return { groupChatId: input.groupChatId, workspaceId: input.workspaceId ?? 'ws-1' };
+    },
+  };
+});
 
 vi.mock('@main/core/sessions/name-generation/generateSessionName', () => ({ generateRandom: () => 'task-name' }));
 
 vi.mock('@main/core/sessions/operations/createSession', () => ({
-  prepareCreateSession: async (params: { projectId: string; sessionType?: string }) => {
+  prepareCreateSession: async (params: { groupChatId?: string; sessionType?: string }) => {
     state.calls.push('prepareCreateSession');
     state.createParams.push(params);
     return { success: true, data: {} };
@@ -323,16 +326,16 @@ describe('createSession:所选 harness 在这台机器上还没装', () => {
   // 这里写死 standalone 时,手机 / 远端建在项目里的会话落进侧栏「任务」区、项目下面看不见。
   it('不替 createTask 定任务的 type', async () => {
     await createSession({ projectId: 'proj-1', harness: 'codex', prompt: 'hi', sessionView: 'general' }, { ensureAgentInstalled: async () => {} });
-    expect(state.createParams).toEqual([expect.objectContaining({ projectId: 'proj-1' })]);
+    expect(state.createParams).toEqual([expect.objectContaining({ workspaceConfig: { version: '2', workspace: { kind: 'repository-instance', workspaceId: 'ws-1' } } })]);
     expect(state.createParams[0]).not.toHaveProperty('taskType');
   });
 
-  // 手机从群成员里建:请求带的群原样交给建会话那一步(birthGroup),不带就不出现这一格。
-  it('请求带了群:交给建会话的 birthGroup(群成员里建的,不是任务座位)', async () => {
+  // 手机从群成员里建:请求带的群原样交给建会话那一步(groupChatId,记在会话行上),不带就不出现这一格。
+  it('请求带了群:交给建会话的 groupChatId', async () => {
     await createSession({ projectId: 'proj-1', harness: 'codex', prompt: 'hi', sessionView: 'general', chatId: 'chat-group-1' }, { ensureAgentInstalled: async () => {} });
     await createSession({ projectId: 'proj-1', harness: 'codex', prompt: 'hi', sessionView: 'general' }, { ensureAgentInstalled: async () => {} });
-    expect(state.createParams[0]).toMatchObject({ birthGroup: { chatId: 'chat-group-1', asTask: false } });
-    expect(state.createParams[1]).not.toHaveProperty('birthGroup');
+    expect(state.createParams[0]).toMatchObject({ groupChatId: 'chat-group-1' });
+    expect(state.createParams[1]).not.toHaveProperty('groupChatId');
   });
 
   // OpenDCAI/gugu#446 手机在项目里派任务:首句落成那个群里的任务卡(稳定 id 回给手机),agent 坐任务座位。
@@ -345,7 +348,7 @@ describe('createSession:所选 harness 在这台机器上还没装', () => {
     const taskMessageId = result.ok ? result.value.taskMessageId : undefined;
     expect(taskMessageId).toMatch(/^[0-9a-f-]{36}$/);
     expect(state.createParams[0]).toMatchObject({
-      birthGroup: { chatId: 'chat-project-1', asTask: true },
+      groupChatId: 'chat-project-1',
       sessionConfig: { initialSession: { taskChatId: 'chat-project-1', initialMessageId: taskMessageId, startupOrigin: 'session-page' } },
     });
     // The task's first sentence is admitted under the card's stable id, typed so its gugu message lands first.
@@ -393,11 +396,11 @@ describe('createSession:所选 harness 在这台机器上还没装', () => {
     expect(initialSession).toMatchObject({ startupOrigin: 'session-page' });
   });
 
-  it('cwd:在项目挂的那个文件夹里开工;不是这个项目的文件夹就拒,一行都不写', async () => {
+  it('cwd:在那个文件夹里开工;本机没有的目录就拒,一行都不写', async () => {
     await createSession({ projectId: 'proj-1', harness: 'codex', prompt: 'hi', sessionView: 'general', cwd: '/work/docs/' }, { ensureAgentInstalled: async () => {} });
     expect(state.createParams[0]).toMatchObject({ workspaceConfig: { workspace: { kind: 'repository-instance', workspaceId: 'ws-docs' } } });
     const rejected = await createSession({ projectId: 'proj-1', harness: 'codex', prompt: 'hi', sessionView: 'general', cwd: '/elsewhere' }, { ensureAgentInstalled: async () => {} });
-    expect(rejected).toMatchObject({ ok: false, error: { code: 'folder_not_in_project' } });
+    expect(rejected).toMatchObject({ ok: false, error: { code: 'cwd_invalid' } });
     expect(state.createParams).toHaveLength(1);
   });
 
