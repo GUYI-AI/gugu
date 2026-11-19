@@ -5,7 +5,7 @@ import { and, eq } from 'drizzle-orm';
 import { TRANSCRIPT_SOURCE_IDS, type TranscriptSource } from '@gugu/core/shared/types/transcripts';
 import { db } from '@main/db/client';
 import { workspaceRemotes, workspaces } from '@main/db/schema';
-import { listFolders } from '@main/core/folders/folders';
+import { listFolders, listUnboundFolders } from '@main/core/folders/folders';
 import { getLocalSessionSource } from '@main/core/session-import/host-source';
 import { createLocalGroupOf } from '@main/core/session-history/local-session-group';
 import { findRepoRoot } from '@main/core/session-history/repo-root';
@@ -45,10 +45,8 @@ export async function indexSessionsForApp(args: Record<string, unknown>): Promis
     db.select({ path: workspaces.path, url: workspaceRemotes.remoteUrl }).from(workspaces)
       .innerJoin(workspaceRemotes, and(eq(workspaceRemotes.workspaceId, workspaces.id), eq(workspaceRemotes.remoteName, 'origin'))),
   ]);
-  // Transcripts group under this computer's folders bound to a group (the task home is no group's).
-  const localGroupOf = createLocalGroupOf(listFolders().map((folder) => ({
-    projectId: folder.id, projectPath: folder.path, projectName: basename(folder.path) || folder.path,
-  })));
+  // Transcripts group under this computer's recorded folders (the grouping leaves the task home out by its path).
+  const localGroupOf = createLocalGroupOf([...listFolders(), ...listUnboundFolders()].map(({ path }) => ({ path, name: basename(path) || path })));
   const remotes = new Map<string, string | null>(registeredRemotes.flatMap(({ path, url }) => (path ? [[path, url] as const] : [])));
   const repositories = new Map<string | null, Promise<Pick<AppSessionGroup, 'repositoryUrl' | 'repositoryError'>>>();
   // @@@group-repository - `findRepoRoot` only reads the disk (a `.git` there), so git has the last word: a folder git calls
