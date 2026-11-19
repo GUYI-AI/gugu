@@ -1,5 +1,6 @@
 import { anySignal } from '@gugu/core/shared/anySignal'
 import { createHash } from 'node:crypto'
+import type { EventEmitter } from 'node:events'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { app, ipcMain, BrowserWindow } from 'electron'
@@ -22,9 +23,10 @@ const migrationLocations = {
 
 // The native main and session host are separate bundles in the same Electron process.
 const migrationFailureEvent = Symbol.for('gugu.error-summary.agent-home-migration')
+const migrationBus: EventEmitter = ipcMain
 
 export function reportAgentHomeMigrationFailure(error: unknown, area: keyof typeof migrationLocations): void {
-  ipcMain.emit(migrationFailureEvent, error, area)
+  migrationBus.emit(migrationFailureEvent, error, area)
 }
 
 export function registerErrorSummaryReporting(deps: {
@@ -90,7 +92,7 @@ export function registerErrorSummaryReporting(deps: {
   // Device upgrade starts before the renderer restores its account. Retain at most one
   // sanitized summary per phase in memory and resolve it against the first known consent.
   const bootMigrationFailures = new Map<keyof typeof migrationLocations, ErrorSummary>()
-  ipcMain.on(migrationFailureEvent, (error: unknown, area: keyof typeof migrationLocations) => safely(() => {
+  migrationBus.on(migrationFailureEvent, (error: unknown, area: keyof typeof migrationLocations) => safely(() => {
     if (!Object.hasOwn(migrationLocations, area)) return
     const current = context()
     if (current.scope !== undefined && !current.allowed) return
