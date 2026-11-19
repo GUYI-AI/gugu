@@ -136,10 +136,10 @@ export function cloudFileProviders(deps: {
       const waiting = { ...context, signal: anySignal([context.signal, timeout]) }, requestId = crypto.randomUUID()
       for (;;) {
         waiting.signal.throwIfAborted()
-        const state = await request(waiting, 'file-request', { ref, as: context.actor.actorId, request_id: requestId, download_request_id: downloadRequest }) as { status: string; transfer_status: string; failure_code?: string | null; host_label?: string | null; host_online?: boolean; download?: Download | null }
+        const state = await request(waiting, 'file-request', { ref, as: context.actor.actorId, request_id: requestId, download_request_id: downloadRequest }) as { status: string; transfer_status: string; transfer_declined?: string | null; host_label?: string | null; host_online?: boolean; download?: Download | null }
+        // A request ended with a reason (the holder declined it, or the server refused the holder) stops now, with that reason.
+        if (state.status === 'ready' && state.transfer_status === 'retired' && state.transfer_declined) throw relayRefusedError(state.transfer_declined)
         if (state.status !== 'ready' || state.transfer_status === 'retired') throw new Error('File transfer is no longer available')
-        // The holder's device was refused for a reason this request cannot cure: stop now, with the server's reason.
-        if (state.transfer_status === 'failed') throw relayRefusedError(state.failure_code)
         if (state.transfer_status === 'ready') {
           combined = state.download !== undefined
           if (state.download) lease = accept(state.download)
