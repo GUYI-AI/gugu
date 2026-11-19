@@ -346,7 +346,7 @@ describe('ImagePreviewProvider', () => {
     await waitForCondition(() => full.mock.calls.length === 1, 'the original never started')
     await act(async () => report({ status: 'transferring', route: 'oss', done: 524_288, total: 1_048_576 }))
     const reading = byTestId(AUTOMATION_TEST_IDS.imagePreviewReading)
-    expect(reading?.textContent).toBe('正在从 OSS 读取 · 512.0 KB / 1.0 MB')
+    expect(reading?.textContent).toBe('正在加载 · 512.0 KB / 1.0 MB')
     expect(reading?.querySelector('progress')?.value).toBe(0.5)
     await act(async () => showOriginal('blob:original'))
     await waitForCondition(() => byTestId(AUTOMATION_TEST_IDS.imagePreviewReading) === null, 'the reading line stayed after the original arrived')

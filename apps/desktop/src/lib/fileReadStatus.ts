@@ -18,7 +18,8 @@ export function fileReadProgress(t: TFunction<'messaging'>, update: (next: ReadP
       const label = device ? t('attachmentView.waitingForDevice', { device }) : t('attachmentView.senderUploading')
       update({ label: seconds ? t('attachmentView.waitedForUpload', { label, seconds }) : label })
     } else if (state.status === 'transferring') {
-      const label = t(state.route === 'local' ? 'attachmentView.readFromDevice' : state.route === 'ssh' ? 'attachmentView.readOverSsh' : 'attachmentView.readFromOss')
+      // One word whichever way the bytes come (the route is the read's log, not the reader's concern).
+      const label = t('attachmentView.loadingFile')
       if (state.done === undefined || state.total === undefined || state.total <= 0) {
         fraction = undefined
         update({ label })
