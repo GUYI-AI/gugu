@@ -1,4 +1,5 @@
 import { useRef, useSyncExternalStore } from 'react'
+import { onAccountChange } from './replica'
 
 /**
  * @@@select-store - one value that many components read a slice of. A reader names its slice (`select`) and when two
@@ -16,15 +17,32 @@ export type SelectStore<T> = {
   notify: () => void
 }
 
-export function createSelectStore<T>(initial: T): SelectStore<T> {
+/**
+ * `scope: 'account'`: the value belongs to the signed-in person — back to `initial` when another person signs in or the
+ * account signs out, as the replica judges it (`onAccountChange`). ❌ A store following the session by hand.
+ */
+export function createSelectStore<T>(initial: T, options: { scope?: 'account' } = {}): SelectStore<T> {
   let value = initial
   const listeners = new Set<() => void>()
-  return {
+  const store: SelectStore<T> = {
     get: () => value,
     subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     publish: (next) => { value = next },
     notify: () => { for (const listener of [...listeners]) listener() },
   }
+  if (options.scope === 'account') onAccountChange(() => { if (value !== initial) { value = initial; store.notify() } })
+  return store
+}
+
+/** One key of a record store, set or (`undefined`) removed, and its readers told: ❌ the spread / rest by hand at each caller. */
+export function patch<T extends Record<string, unknown>>(store: SelectStore<T>, key: string, next: T[string] | undefined): void {
+  const now = store.get()
+  if (next === undefined ? !(key in now) : Object.is(now[key], next)) return
+  if (next === undefined) {
+    const { [key]: _removed, ...rest } = now
+    store.publish(rest as T)
+  } else store.publish({ ...now, [key]: next })
+  store.notify()
 }
 
 /** Same own keys, each `Object.is`; anything else `Object.is`. */

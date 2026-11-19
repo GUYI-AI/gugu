@@ -1800,11 +1800,6 @@ body.barcode-scanner-active #root {
 .gg-winctl:hover { background-color: var(--hover); color: var(--text-primary); }
 .gg-winctl--close:hover { background-color: #E81123; color: #fff; }
 
-/* 悬浮显现:消息 hover 工具条/卡片快捷操作。❌ display:none 切换(闪跳);focus-within 保键盘可达。 */
-.gg-reveal { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
-.gg-reveal-host:hover .gg-reveal,
-.gg-reveal:focus-within { opacity: 1; }
-
 /* 系统减弱动态:全部动效降级为即时。iteration-count 必须配对压成 1——
    只压时长的话 infinite 动画(spinner/pulse/shimmer)会变成每圈 0.01ms 的高频闪烁,比不降级更糟。 */
 @media (prefers-reduced-motion: reduce) {
@@ -2363,13 +2358,6 @@ body.barcode-scanner-active #root {
   background: var(--border-subtle);
 }
 
-/* @@@unknown-slot — the read model's placeholder (components/ui/Unknown.tsx): it holds the value's place from the first
-   frame but is drawn only after 150 ms, so a read that answers sooner shows nothing in between (❌ a flash of a bar). */
-@keyframes gg-unknown-appear { to { opacity: 1; } }
-.gg-unknown { opacity: 0; animation: gg-unknown-appear 0s linear 150ms forwards; }
-@media (prefers-reduced-motion: reduce) { .gg-unknown { animation-duration: 0s; } }
-
-
 /* Model settings: approved light palette, with the existing dark theme surfaces. */
 :root {
   --model-settings-page: var(--page);
@@ -2387,3 +2375,19 @@ body.barcode-scanner-active #root {
   --model-sign-in-expired-bg: #fbf1f1;
   --model-sign-in-expired-fg: #b42c3f;
 }
+
+/* @@@placeholder-reveal — how what stands for a value not read yet appears: the read model's placeholder
+   (components/ui/Unknown.tsx, `.gg-unknown`), a loading line (`.gg-loading-line`), a search's previous results dimmed
+   (`.gg-stale`). Nothing for 150 ms (a read that answers sooner leaves nothing drawn in between), then a slow start
+   (ease-in cubic over 450 ms): half way only ~500 ms after it is drawn, so a read answering within half a second leaves a
+   faint bar at most (❌ a flash of a bar); a slower one shows the placeholder, as it should. The same with reduced motion
+   (an opacity change, no movement). */
+:root {
+  --gg-placeholder-delay: 150ms;
+  --gg-placeholder-duration: 450ms;
+  --gg-placeholder-easing: cubic-bezier(0.55, 0.055, 0.675, 0.19);
+}
+@keyframes gg-placeholder-in { from { opacity: 0; } to { opacity: 1; } }
+.gg-unknown, .gg-loading-line { animation: gg-placeholder-in var(--gg-placeholder-duration) var(--gg-placeholder-easing) var(--gg-placeholder-delay) both; }
+@keyframes gg-stale-dim { from { opacity: 1; } to { opacity: 0.6; } }
+.gg-stale { animation: gg-stale-dim var(--gg-placeholder-duration) var(--gg-placeholder-easing) var(--gg-placeholder-delay) both; }
