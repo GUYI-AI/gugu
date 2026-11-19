@@ -269,7 +269,7 @@ export class PrSyncScheduler implements IInitializable, IDisposable {
     const rows = await db
       .select({ remoteUrl: workspaceRemotes.remoteUrl })
       .from(workspaceRemotes)
-      .where(eq(workspaceRemotes.folderId, folderId));
+      .where(eq(workspaceRemotes.workspaceId, folderId));
 
     return rows.flatMap((r) => {
       const repository = parseRepositoryRef(r.remoteUrl);

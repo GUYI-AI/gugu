@@ -77,13 +77,12 @@ describe('#6180 状态输出按写入顺序播出,取消重置也在其中', () 
       {
         type: 'start',
         providerId: 'codex',
-        projectId: 'p1',
         sessionId: 'c1',
         timestamp: Date.now(),
         payload: {},
       }
     );
-    await agentStatusWriter.interrupt({ sessionId: 'c1', projectId: 'p1' });
+    await agentStatusWriter.interrupt({ sessionId: 'c1' });
     off();
 
     expect(statuses).toEqual(['working', 'idle']);
@@ -101,14 +100,13 @@ describe('#6180 状态输出按写入顺序播出,取消重置也在其中', () 
     const row = () =>
       fixture.sqlite.prepare(`SELECT agent_status AS s, agent_status_seen AS seen FROM sessions WHERE id = 'c1'`).get();
 
-    agentStatusWriter.reportProviderReviewGate({ sessionId: 'c1', projectId: 'p1', gate: 'mcp' });
+    agentStatusWriter.reportProviderReviewGate({ sessionId: 'c1', gate: 'mcp' });
     await statusWritesSettled(agentStatusWriter, 'c1');
     expect(statuses).toEqual(['needs_user']);
     expect(row()).toEqual({ s: 'needs_user', seen: 0 });
 
     agentStatusWriter.reportProviderBlocker({
       sessionId: 'c1',
-      projectId: 'p1',
       blocker: { kind: 'provider', message: 'User not found', reason: 'auth' },
     });
     await statusWritesSettled(agentStatusWriter, 'c1');

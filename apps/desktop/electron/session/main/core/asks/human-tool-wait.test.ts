@@ -149,9 +149,9 @@ describe('a human request outlives only its steered tool waiter', () => {
     expect(hostAsks.has('session')).toBe(false);
     expect(h.completed).toHaveBeenCalledWith('withdrawn');
     expect(fixture.send).not.toHaveBeenCalled();
-    restoreHumanToolResults('session', 'project'); await drain();
+    restoreHumanToolResults('session'); await drain();
     expect(fixture.send).not.toHaveBeenCalled();
-    restoreHumanToolResults('session', 'project', true); await drain();
+    restoreHumanToolResults('session', true); await drain();
     expect(fixture.send).toHaveBeenCalledTimes(1);
   });
 
@@ -159,8 +159,8 @@ describe('a human request outlives only its steered tool waiter', () => {
     const record = { id: 'operation', sessionId: 'session', requestId: 'same-human-card', tool: 'app_install' as const,
       messageId: 'a50457a7-8e2f-4f27-b0cc-dd3de59a0c1e', state: 'waiting' as const };
     saveHumanToolRecord(record);
-    restoreHumanToolResults('session', 'project');
-    restoreHumanToolResults('session', 'project');
+    restoreHumanToolResults('session');
+    restoreHumanToolResults('session');
     await drain();
     expect(fixture.send).toHaveBeenCalledTimes(1);
     expect(fixture.send).toHaveBeenCalledWith(expect.objectContaining({ clientMessageId: record.messageId,
@@ -176,7 +176,7 @@ describe('a human request outlives only its steered tool waiter', () => {
     writeFileSync(join(directory, 'session.json'), JSON.stringify({ version: 1, items: [
       { ...record, id: 'retired', tool: 'browser_request_login', messageId: 'retired-message' }, record,
     ] }));
-    restoreHumanToolResults('session', 'project');
+    restoreHumanToolResults('session');
     await drain();
     expect(fixture.send).toHaveBeenCalledTimes(1);
     expect(fixture.send).toHaveBeenCalledWith(expect.objectContaining({ clientMessageId: 'current-message' }));
@@ -207,7 +207,7 @@ describe('a human request outlives only its steered tool waiter', () => {
     const id = readHumanToolRecords('session')[0]!.messageId;
     answer(); await drain();
     expect(readHumanToolRecords('session')[0]).toMatchObject({ messageId: id, state: 'finished', result: { outcome: 'done' } });
-    restoreHumanToolResults('session', 'project'); await drain();
+    restoreHumanToolResults('session'); await drain();
     expect(fixture.send).toHaveBeenCalledTimes(2);
     expect(fixture.send.mock.calls.map(([input]) => (input as { clientMessageId: string }).clientMessageId)).toEqual([id, id]);
     expect(readHumanToolRecords('session')).toEqual([]);

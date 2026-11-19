@@ -16,7 +16,7 @@ function fixture() {
   const closures = new Set<(reason: string) => void>();
   const source: TaskFileSource = { metadata: vi.fn(async () => ({ id: ITEM, chat: CHAT, name: 'card.txt', contentType: 'text/plain', version: 1, size: 3 })),
     version: vi.fn(async page => { if (page.callId === 'held') { entered.resolve(); return held.promise; } return { n: 1, text: 'abc' }; }) };
-  const native: TaskPageNative = { projectId: 'file-close-project', title: '', url: 'https://example.org',
+  const native: TaskPageNative = { title: '', url: 'https://example.org',
     protocol: { attached: false, send: vi.fn(async () => ({})), onMessage: () => () => {},
       onClose: fn => { closures.add(fn); return () => { closures.delete(fn); }; }, close: vi.fn() },
     setActive: vi.fn(), release: vi.fn() };

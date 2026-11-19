@@ -1,5 +1,5 @@
 import type { Result } from '@gugu/session-shared';
-import type { ProjectSettings } from '@shared/core/folder-settings/folder-settings';
+import type { ProjectSettings } from '@shared/core/project-settings/project-settings';
 import { normalizeRepositoryHost, parseRepositoryRef } from '@shared/repository-ref';
 import {
   GITHUB_PROVIDER_ID,

@@ -17,7 +17,7 @@ export async function syncFolderRemotes(folderId: string, remotes: GitRemote[]):
       .insert(workspaceRemotes)
       .values({ workspaceId: folderId, remoteName: r.name, remoteUrl })
       .onConflictDoUpdate({
-        target: [workspaceRemotes.folderId, workspaceRemotes.remoteName],
+        target: [workspaceRemotes.workspaceId, workspaceRemotes.remoteName],
         set: { remoteUrl },
       });
   }
@@ -25,7 +25,7 @@ export async function syncFolderRemotes(folderId: string, remotes: GitRemote[]):
   if (remotes.length > 0) {
     await db.delete(workspaceRemotes).where(
       and(
-        eq(workspaceRemotes.folderId, folderId),
+        eq(workspaceRemotes.workspaceId, folderId),
         notInArray(
           workspaceRemotes.remoteName,
           remotes.map((r) => r.name)
@@ -34,7 +34,7 @@ export async function syncFolderRemotes(folderId: string, remotes: GitRemote[]):
     );
   } else {
     // No remotes at all — clear all rows for this folder
-    await db.delete(workspaceRemotes).where(eq(workspaceRemotes.folderId, folderId));
+    await db.delete(workspaceRemotes).where(eq(workspaceRemotes.workspaceId, folderId));
   }
 }
 

@@ -40,8 +40,8 @@ const KEEPER_NEXT_DUE = `select min(r.scheduled_at) as next from automation_runs
 
 // 2026-10-15 06:00 北京时间
 const NOW = Date.UTC(2026, 9, 14, 22, 0, 0);
-const AGENT = { sessionId: 'assistant-session', projectId: 'project-1', provider: 'claude' };
-const OTHER = { sessionId: 'other-session', projectId: 'project-1', provider: 'codex' };
+const AGENT = { sessionId: 'assistant-session', provider: 'claude' };
+const OTHER = { sessionId: 'other-session', provider: 'codex' };
 
 let fixture: Awaited<ReturnType<typeof openFixture>>;
 let service: AutomationsService;
@@ -139,7 +139,6 @@ describe('schedule_create / schedule_list / schedule_cancel', () => {
     const automation = await getAutomation(scheduleIdOf(created));
     expect(automation).toMatchObject({
       agentSessionId: AGENT.sessionId,
-      projectId: 'project-1',
       enabled: true,
       agentSession: { name: '个人助理', gone: false },
     });
@@ -192,7 +191,7 @@ describe('schedule_create / schedule_list / schedule_cancel', () => {
       service.updateAutomationSettings(id, { agentConfig: { prompt: 'y', provider: 'claude', autoApprove: false } })
     ).rejects.toThrow('agent_schedule_not_editable');
     await expect(
-      service.updateAutomationSettings(id, { triggerConfig: { expr: '0 9 * * *', tz: 'Asia/Shanghai' }, projectId: 'project-1' })
+      service.updateAutomationSettings(id, { triggerConfig: { expr: '0 9 * * *', tz: 'Asia/Shanghai' } })
     ).rejects.toThrow('agent_schedule_not_editable');
 
     const moved = await service.updateAutomationSettings(id, { triggerConfig: { expr: '0 9 * * *', tz: 'Asia/Shanghai' } });

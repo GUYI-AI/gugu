@@ -72,16 +72,16 @@ describe('状态来源失效:随状态输出发布,不改读数', () => {
     expect(agentStatusWriter.isWorkingOrWaiting('c1')).toBe(false);
 
     agentHookService.emitAgentEvent(
-      { type: 'start', providerId: 'claude', projectId: 'p1', sessionId: 'c1', timestamp: Date.now(), payload: {} },
+      { type: 'start', providerId: 'claude', sessionId: 'c1', timestamp: Date.now(), payload: {} },
     );
     await statusWritesSettled(agentStatusWriter, 'c1');
     expect(agentStatusWriter.isWorkingOrWaiting('c1')).toBe(true);
 
-    agentStatusWriter.reportStatusSourceFault({ sessionId: 'c1', projectId: 'p1', message: 'sessions/42.json did not appear' });
+    agentStatusWriter.reportStatusSourceFault({ sessionId: 'c1', message: 'sessions/42.json did not appear' });
     await statusWritesSettled(agentStatusWriter, 'c1');
-    agentStatusWriter.reportStatusSourceFault({ sessionId: 'c1', projectId: 'p1', message: 'sessions/42.json did not appear' });
+    agentStatusWriter.reportStatusSourceFault({ sessionId: 'c1', message: 'sessions/42.json did not appear' });
     await statusWritesSettled(agentStatusWriter, 'c1');
-    agentStatusWriter.reportStatusSourceFault({ sessionId: 'c1', projectId: 'p1', message: null });
+    agentStatusWriter.reportStatusSourceFault({ sessionId: 'c1', message: null });
     await statusWritesSettled(agentStatusWriter, 'c1');
     off();
 

@@ -21,7 +21,6 @@ function session(opts: { autoApproved?: boolean } = {}) {
     const event: AgentEvent = {
       type: input.type,
       providerId: 'claude',
-      projectId: 'p',
       sessionId: 'c',
       timestamp: 0,
       payload: input.payload ?? {},

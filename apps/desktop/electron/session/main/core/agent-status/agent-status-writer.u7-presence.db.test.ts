@@ -259,9 +259,9 @@ describe('U7 boot presence reconciliation through the real SQLite writer and def
     try {
       await entered.promise;
       if (eventType === 'start') {
-        agentHookService.emitAgentEvent({ type: 'start', providerId: 'claude', projectId: 'p1', sessionId: 'first', timestamp: 1000, payload: {} });
+        agentHookService.emitAgentEvent({ type: 'start', providerId: 'claude', sessionId: 'first', timestamp: 1000, payload: {} });
       } else {
-        agentHookService.emitAgentEvent({ type: 'stop', providerId: 'claude', projectId: 'p1', sessionId: 'first', timestamp: 1000, payload: {} });
+        agentHookService.emitAgentEvent({ type: 'stop', providerId: 'claude', sessionId: 'first', timestamp: 1000, payload: {} });
       }
       await statusWritesSettled(agentStatusWriter, 'first');
       const row = status('first'), reading = agentStatusWriter.currentReading('first'), published = [...changes];
@@ -285,7 +285,7 @@ describe('U7 boot presence reconciliation through the real SQLite writer and def
     const pending = boot(['survivor']);
     try {
       await entered.promise;
-      agentHookService.emitAgentEvent({ type: 'start', providerId: 'claude', projectId: 'p1', sessionId: 'survivor', timestamp: 1000, payload: {} });
+      agentHookService.emitAgentEvent({ type: 'start', providerId: 'claude', sessionId: 'survivor', timestamp: 1000, payload: {} });
       release.resolve(); await pending;
       await statusWritesSettled(agentStatusWriter, 'survivor');
       expect(status('survivor')).toEqual({ status: 'working', detail: 'running', seen: 1 });
@@ -315,7 +315,7 @@ describe('U7 boot presence reconciliation through the real SQLite writer and def
     if (value === 'waiting') {
       agentStatusWriter.reportProviderReviewGate({ sessionId: 'survivor', gate: 'mcp' });
     } else {
-      agentHookService.emitAgentEvent({ type: 'background', providerId: 'claude', projectId: 'p1', sessionId: 'survivor', timestamp: 1000,
+      agentHookService.emitAgentEvent({ type: 'background', providerId: 'claude', sessionId: 'survivor', timestamp: 1000,
         payload: { backgroundTasks: 3, scheduledTasks: 2 } });
     }
     await statusWritesSettled(agentStatusWriter, 'survivor');
@@ -345,7 +345,7 @@ describe('U7 boot presence reconciliation through the real SQLite writer and def
     expect(route).not.toHaveBeenCalled();
     expect(fixture.sqlite.prepare(`SELECT json_extract(metadata, '$.state') AS state FROM messages WHERE id='deferred'`).get())
       .toEqual({ state: 'deferred' });
-    agentHookService.emitAgentEvent({ type: 'start', providerId: 'claude', projectId: 'p1', sessionId: 'survivor', timestamp: 1000, payload: {} });
+    agentHookService.emitAgentEvent({ type: 'start', providerId: 'claude', sessionId: 'survivor', timestamp: 1000, payload: {} });
     await vi.waitFor(() => expect(route).toHaveBeenCalledOnce());
     await deferredMessagesSettled('survivor');
   });

@@ -52,7 +52,7 @@ const { recordAnsweredAsk, readAnsweredAsks } = await import('../asks/answered-a
 let clock = 1_000_000;
 function event(sessionId: string, type: AgentEvent['type']): AgentEvent {
   clock += 1_000;
-  return { type, providerId: 'claude', projectId: 'p1', sessionId, timestamp: clock, payload: {} };
+  return { type, providerId: 'claude', sessionId, timestamp: clock, payload: {} };
 }
 const ANSWER = { itemId: 'ask-1', kind: 'permission' as const, source: 'app-install' as const, optionId: 'allow',
   option: { optionId: 'allow', name: 'Install' }, resolvedBy: 'mobile', resolvedAt: 5 };
@@ -86,10 +86,10 @@ describe('the answered-Ask record', () => {
     const id = `answered-${clock}`;
     fixture.sqlite.prepare(`INSERT INTO sessions (id, project_id, provider, runtime, agent_status, agent_status_seen) VALUES (?, 'p1', 'claude', 'acp', 'idle', 1)`).run(id);
     await deliver(event(id, 'start'));
-    agentStatusWriter.reportHostWait({ sessionId: id, projectId: 'p1', id: 'host-ask:ask-1', open: true });
+    agentStatusWriter.reportHostWait({ sessionId: id, id: 'host-ask:ask-1', open: true });
     await statusWritesSettled(agentStatusWriter, id);
     recordAnsweredAsk(id, ANSWER);
-    agentStatusWriter.reportHostWait({ sessionId: id, projectId: 'p1', id: 'host-ask:ask-1', open: false });
+    agentStatusWriter.reportHostWait({ sessionId: id, id: 'host-ask:ask-1', open: false });
     await statusWritesSettled(agentStatusWriter, id);
     await deliver(event(id, 'start'));
     await deliver(event(id, 'stop'));
@@ -98,6 +98,6 @@ describe('the answered-Ask record', () => {
 
     await deliver(event(id, 'start'));
     expect(readAnsweredAsks().has(id)).toBe(false);
-    expect(vi.mocked(events.emit)).toHaveBeenCalledWith(sessionChangedChannel, { sessionId: id, projectId: 'p1', changes: { lastAnswered: true } });
+    expect(vi.mocked(events.emit)).toHaveBeenCalledWith(sessionChangedChannel, { sessionId: id, changes: { lastAnswered: true } });
   });
 });

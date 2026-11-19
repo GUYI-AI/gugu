@@ -34,11 +34,12 @@ vi.mock('@main/core/github/services/github-repository-resolver', () => ({
 }));
 
 vi.mock('@main/core/workspaces/folder-runtime/folder-runtimes', () => ({
-  projectManager: {
-    getProject: mocks.getProject,
+  folderRuntimes: {
+    get: mocks.getProject,
     on: mocks.projectOn,
   },
 }));
+vi.mock('@main/core/folders/folders', () => ({ rootFolderOf: () => ({ id: 'project-1' }) }));
 
 vi.mock('@main/core/workspaces/folder-runtime/settings/folder-settings-service', () => ({
   folderSettingsService: {
@@ -131,7 +132,7 @@ describe('PrSyncScheduler', () => {
 
       const scheduler = new PrSyncScheduler();
 
-      await scheduler.onProjectMounted('project-1');
+      await scheduler.onFolderOpened('project-1');
 
       expect(project.gitRepository.subscribeRemotes).toHaveBeenCalledTimes(1);
       expect(prSyncEngine.sync).toHaveBeenCalledTimes(1);
@@ -144,7 +145,7 @@ describe('PrSyncScheduler', () => {
       expect(prSyncEngine.sync).toHaveBeenCalledTimes(2);
       expect(prSyncEngine.cancel).toHaveBeenCalledWith('https://github.com/acme/repo');
 
-      scheduler.onProjectUnmounted('project-1');
+      scheduler.onFolderClosed('project-1');
     } finally {
       vi.useRealTimers();
     }
@@ -168,14 +169,14 @@ describe('PrSyncScheduler', () => {
       mocks.getProject.mockReturnValue(mounted.project);
       const scheduler = new PrSyncScheduler();
 
-      await scheduler.onProjectMounted('project-1');
-      scheduler.onProjectUnmounted('project-1');
+      await scheduler.onFolderOpened('project-1');
+      scheduler.onFolderClosed('project-1');
       expect(mounted.unsubscribe).toHaveBeenCalledTimes(1);
 
       const disposed = createProject();
       mocks.getProject.mockReturnValue(disposed.project);
 
-      await scheduler.onProjectMounted('project-2');
+      await scheduler.onFolderOpened('project-2');
       scheduler.dispose();
       expect(disposed.unsubscribe).toHaveBeenCalledTimes(1);
     } finally {
@@ -205,7 +206,7 @@ describe('PrSyncScheduler', () => {
 
     const scheduler = new PrSyncScheduler();
 
-    await scheduler.onProjectMounted('project-1');
+    await scheduler.onFolderOpened('project-1');
 
     expect(prSyncEngine.sync).not.toHaveBeenCalled();
   });
@@ -232,7 +233,7 @@ describe('PrSyncScheduler', () => {
 
     const scheduler = new PrSyncScheduler();
 
-    await scheduler.onProjectMounted('project-1');
+    await scheduler.onFolderOpened('project-1');
 
     expect(prSyncEngine.sync).not.toHaveBeenCalled();
     expect(mocks.emit).toHaveBeenCalledWith(prSyncProgressChannel, {
@@ -265,7 +266,7 @@ describe('PrSyncScheduler', () => {
 
     const scheduler = new PrSyncScheduler();
 
-    await scheduler.onProjectMounted('project-1');
+    await scheduler.onFolderOpened('project-1');
 
     expect(prSyncEngine.sync).not.toHaveBeenCalled();
     expect(mocks.emit).not.toHaveBeenCalled();
@@ -291,7 +292,7 @@ describe('PrSyncScheduler', () => {
 
       const scheduler = new PrSyncScheduler();
 
-      await scheduler.onProjectMounted('project-1');
+      await scheduler.onFolderOpened('project-1');
       await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
 
       expect(prSyncEngine.sync).toHaveBeenNthCalledWith(1, 'https://github.com/acme/repo', {
@@ -301,7 +302,7 @@ describe('PrSyncScheduler', () => {
         accountId: 'github.com:84',
       });
 
-      scheduler.onProjectUnmounted('project-1');
+      scheduler.onFolderClosed('project-1');
     } finally {
       vi.useRealTimers();
     }
@@ -330,10 +331,10 @@ describe('PrSyncScheduler', () => {
 
       const scheduler = new PrSyncScheduler();
 
-      await scheduler.onProjectMounted('project-1');
+      await scheduler.onFolderOpened('project-1');
       clearIntervalSpy.mockClear();
 
-      await scheduler.onProjectSettingsChanged('project-1');
+      await scheduler.onFolderSettingsChanged('project-1');
       await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
 
       expect(prSyncEngine.cancel).toHaveBeenCalledWith('https://github.com/acme/repo');
@@ -348,7 +349,7 @@ describe('PrSyncScheduler', () => {
         accountId: 'github.com:126',
       });
 
-      scheduler.onProjectUnmounted('project-1');
+      scheduler.onFolderClosed('project-1');
     } finally {
       clearIntervalSpy?.mockRestore();
       vi.useRealTimers();

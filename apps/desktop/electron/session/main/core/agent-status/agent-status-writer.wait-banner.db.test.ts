@@ -64,7 +64,7 @@ let clock = 1_000;
 let cid = 'c0';
 function event(type: AgentEvent['type'], payload: AgentEvent['payload'] = {}, sourceId?: string): AgentEvent {
   clock += 1;
-  return { type, providerId: 'codex', projectId: 'p1', sessionId: cid, timestamp: clock, payload, ...(sourceId ? { sourceId } : {}) };
+  return { type, providerId: 'codex', sessionId: cid, timestamp: clock, payload, ...(sourceId ? { sourceId } : {}) };
 }
 
 describe('desktop agent banners follow the status reading, whatever path it came by', () => {

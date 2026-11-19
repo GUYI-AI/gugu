@@ -105,7 +105,7 @@ function makeTerminalProvider(workspaceId: string): {
       const pty = new FakePty();
       spawned.push(pty);
       requests.push(request);
-      ptySessionRegistry.register(`${terminal.projectId}:${workspaceId}:${terminal.id}`, pty, {
+      ptySessionRegistry.register(`${workspaceId}:${workspaceId}:${terminal.id}`, pty, {
         size: { cols: 80, rows: 24 },
         preserveBufferOnExit: true,
       });
@@ -137,7 +137,6 @@ function mockPlatform(platform: NodeJS.Platform): void {
 function baseArgs(runLifecycleScript = vi.fn()) {
   return {
     workspace: makeWorkspace(runLifecycleScript),
-    projectId: 'project-1',
     workspaceId: 'workspace-1',
     type: 'run' as const,
     script: 'pnpm dev',
@@ -276,7 +275,6 @@ describe('runLifecycleScriptWithPolicy', () => {
 
     expect(
       stopLifecycleScriptSession({
-        projectId: 'project-1',
         workspaceId: 'workspace-1',
         type: 'run',
         origin: 'manual',
@@ -284,7 +282,6 @@ describe('runLifecycleScriptWithPolicy', () => {
     ).toBe(true);
     expect(
       stopLifecycleScriptSession({
-        projectId: 'project-1',
         workspaceId: 'workspace-1',
         type: 'run',
         origin: 'manual',
@@ -391,7 +388,6 @@ describe('runLifecycleScriptWithPolicy', () => {
 
     expect(
       stopLifecycleScriptSession({
-        projectId: 'project-idle',
         workspaceId: 'workspace-idle',
         type: 'run',
         origin: 'manual',
@@ -407,7 +403,6 @@ describe('runLifecycleScriptWithPolicy', () => {
     await expect(
       runLifecycleScriptWithPolicy({
         ...baseArgs(runLifecycleScript),
-        projectId: 'project-idle',
         workspaceId: 'workspace-idle',
       })
     ).resolves.toMatchObject({ kind: 'succeeded' });

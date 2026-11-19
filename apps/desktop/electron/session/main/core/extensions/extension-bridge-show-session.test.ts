@@ -42,17 +42,17 @@ vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), error: vi.fn(), info:
 // as for none — its own test reads the database).
 vi.mock('@main/core/extensions/extension-show-session', async (original) => ({
   ...(await original<typeof import('./extension-show-session')>()),
-  sessionHere: async (sessionId: string) => (sessionId === 's-here' ? 'p-here' : null),
+  sessionHere: async (sessionId: string) => sessionId === 's-here',
 }));
 // The window, over the App command channel (relay → renderer command; the channel's own waits and refusals are
-// ipc-bridge's): its task list has another computer's s-far under p-far — or it cannot answer, with the channel's reason.
-const theWindow = vi.hoisted(() => ({ listed: new Map<string, string>(), cannot: null as Error | null }));
+// ipc-bridge's): its task list has another computer's s-far — or it cannot answer, with the channel's reason.
+const theWindow = vi.hoisted(() => ({ listed: new Set<string>(), cannot: null as Error | null }));
 vi.mock('@main/core/extensions/extension-bridge-relay', () => ({
   // The window opens no session itself here (only the assistant's own task opens in its chat).
   actInWindow: vi.fn(async () => undefined),
-  listedSessionProject: vi.fn(async (sessionId: string) => {
+  sessionListedByWindow: vi.fn(async (sessionId: string) => {
     if (theWindow.cannot) throw theWindow.cannot;
-    return theWindow.listed.get(sessionId) ?? null;
+    return theWindow.listed.has(sessionId);
   }),
 }));
 // Main's events, in memory (the real one broadcasts to windows): what main brings up is read off it below.
@@ -74,14 +74,14 @@ vi.mock('@main/lib/events', async () => {
 });
 // Whose composer is extension-send's (its own test); here: an agent's session comes up the one way before its composer.
 vi.mock('@main/core/extensions/extension-send', () => ({
-  dispatchForApp: async (_id: string, args: { text: string }, _here: unknown, effects: { draftInSession(session: { id: string; projectId: string }, text: string): Promise<void> }) => {
-    await effects.draftInSession({ id: 's-here', projectId: 'p-here' }, `${args.text}\n`);
+  dispatchForApp: async (_id: string, args: { text: string }, _here: unknown, effects: { draftInSession(session: { id: string }, text: string): Promise<void> }) => {
+    await effects.draftInSession({ id: 's-here' }, `${args.text}\n`);
     return { to: { agent: 'user:0a000000-0000-4000-8000-0000000000a3' } };
   },
 }));
 
 const { bindExtensionSurface, registerExtensionBridge, setExtensionBridgeHost } = await import('./extension-bridge');
-const { listedSessionProject } = await import('@main/core/extensions/extension-bridge-relay');
+const { sessionListedByWindow } = await import('@main/core/extensions/extension-bridge-relay');
 const { events } = await import('@main/lib/events');
 const { notificationFocusSessionChannel } = await import('@shared/events/appEvents');
 const emitted = vi.spyOn(events, 'emit');
@@ -95,15 +95,15 @@ const show = (sender: number, id: unknown) => call(sender, 'showSession', { id }
 /** What main brought up: every focus it emitted, as the window receives it. */
 const broughtUp = () => emitted.mock.calls.filter(([channel]) => channel === notificationFocusSessionChannel).map(([, payload]) => payload);
 /** What main asked the window about: every session it asked the task list for. */
-const asked = () => vi.mocked(listedSessionProject).mock.calls.map(([sessionId]) => sessionId);
+const asked = () => vi.mocked(sessionListedByWindow).mock.calls.map(([sessionId]) => sessionId);
 
 const deliver = vi.fn((_origin: unknown, _action: unknown) => Promise.resolve());
 
 beforeEach(async () => {
   emitted.mockClear();
   deliver.mockClear();
-  vi.mocked(listedSessionProject).mockClear();
-  theWindow.listed = new Map([['s-far', 'p-far']]);
+  vi.mocked(sessionListedByWindow).mockClear();
+  theWindow.listed = new Set(['s-far']);
   theWindow.cannot = null;
   setExtensionBridgeHost({
     deliver,
@@ -119,9 +119,9 @@ describe('gugu.showSession: the session comes up as a click on its row in the ta
   it('a session here: brought up by its project, from a page wherever it is — the window is not asked, the page told nothing', async () => {
     for (const page of [SESSION_TAB, GROUP_PAGE, DOCK_PAGE]) expect(await show(page, 's-here')).toEqual({ ok: true, value: undefined });
     expect(broughtUp()).toEqual([
-      { projectId: 'p-here', sessionId: 's-here' },
-      { projectId: 'p-here', sessionId: 's-here' },
-      { projectId: 'p-here', sessionId: 's-here' },
+      { sessionId: 's-here' },
+      { sessionId: 's-here' },
+      { sessionId: 's-here' },
     ]);
     expect(asked()).toEqual([]);
   });
@@ -129,7 +129,7 @@ describe('gugu.showSession: the session comes up as a click on its row in the ta
   it("another computer's session the task list has: brought up the same way, under the project the window lists it in", async () => {
     expect(await show(SESSION_TAB, 's-far')).toEqual({ ok: true, value: undefined });
     expect(asked()).toEqual(['s-far']);
-    expect(broughtUp()).toEqual([{ projectId: 'p-far', sessionId: 's-far' }]);
+    expect(broughtUp()).toEqual([{ sessionId: 's-far' }]);
   });
 
   it('one the task list does not have: not-found, said — nothing comes up', async () => {
@@ -157,7 +157,7 @@ describe('gugu.showSession: the session comes up as a click on its row in the ta
     // Control: the window answers, and the same call brings it up.
     theWindow.cannot = null;
     expect(await show(SESSION_TAB, 's-far')).toEqual({ ok: true, value: undefined });
-    expect(broughtUp()).toEqual([{ projectId: 'p-far', sessionId: 's-far' }]);
+    expect(broughtUp()).toEqual([{ sessionId: 's-far' }]);
   });
 
   it('one spelling: an address or no id at all is invalid, saying which to pass — never looked up, never translated', async () => {
@@ -177,7 +177,7 @@ describe('gugu.showSession: the session comes up as a click on its row in the ta
     expect(asked()).toEqual([]);
     // Control: the very id these were written around comes up.
     expect(await show(SESSION_TAB, 's-here')).toMatchObject({ ok: true });
-    expect(broughtUp()).toEqual([{ projectId: 'p-here', sessionId: 's-here' }]);
+    expect(broughtUp()).toEqual([{ sessionId: 's-here' }]);
   });
 
   it("a page's own: the background page has no click to bring it from; a page an agent works hands it back and brings nothing up (owner 10-14)", async () => {
@@ -194,8 +194,8 @@ describe('gugu.showSession: the session comes up as a click on its row in the ta
     expect(await call(DOCK_PAGE, 'showSession', { id: 's-far', peek: true })).toEqual({ ok: true, value: undefined });
     expect(broughtUp()).toEqual([]);
     expect(deliver.mock.calls).toEqual([
-      [expect.objectContaining({ sessionId: null, tabId: 'slot-1' }), { kind: 'peek', target: { kind: 'session', sessionId: 's-here', projectId: 'p-here' } }],
-      [expect.objectContaining({ sessionId: null, tabId: 'dock' }), { kind: 'peek', target: { kind: 'session', sessionId: 's-far', projectId: 'p-far' } }],
+      [expect.objectContaining({ sessionId: null, tabId: 'slot-1' }), { kind: 'peek', target: { kind: 'session', sessionId: 's-here' } }],
+      [expect.objectContaining({ sessionId: null, tabId: 'dock' }), { kind: 'peek', target: { kind: 'session', sessionId: 's-far' } }],
     ]);
     // One it cannot find is refused as without peek; nothing goes to the slot.
     expect(await call(GROUP_PAGE, 'showSession', { id: 's-gone', peek: true })).toMatchObject({ ok: false, code: 'not-found' });
@@ -204,7 +204,7 @@ describe('gugu.showSession: the session comes up as a click on its row in the ta
 
   it("a draft into an agent's session brings it up the same one way, before its composer gets the text", async () => {
     expect(await call(SESSION_TAB, 'dispatch', { text: 'about this', draft: true, to: { agent: 'user:0a000000-0000-4000-8000-0000000000a3' } })).toMatchObject({ ok: true });
-    expect(broughtUp()).toEqual([{ projectId: 'p-here', sessionId: 's-here' }]);
+    expect(broughtUp()).toEqual([{ sessionId: 's-here' }]);
     expect(deliver.mock.calls.map(([, action]) => action)).toEqual([{ kind: 'compose', sessionId: 's-here', text: 'about this\n' }]);
     const focusAt = emitted.mock.calls.findIndex(([channel]) => channel === notificationFocusSessionChannel);
     expect(emitted.mock.invocationCallOrder[focusAt]).toBeLessThan(deliver.mock.invocationCallOrder[0]!);

@@ -84,7 +84,7 @@ function answerFrom(files: Record<string, string>) {
 }
 
 function register() {
-  const created = createRemotePreview({ projectId: 'proj', workspaceId: 'ws', root: ROOT, surface: 'browser', failureCopy: COPY });
+  const created = createRemotePreview({ workspaceId: 'ws', root: ROOT, surface: 'browser', failureCopy: COPY });
   if (!created) throw new Error('not registered');
   return created.previewId;
 }
@@ -120,7 +120,7 @@ describe('loaded preview dependencies (#1117)', () => {
       ? { success: false, error: { type: 'not_found' } }
       : { success: true, data: { bytes: Buffer.from(files[path]!), totalSize: files[path]!.length, truncated: false } });
     vi.mocked(resolveWorkspace).mockResolvedValue({ path: '/w', fileSystem: { readBytes } } as never);
-    const preview = (await createPreview('p', 'w', '/w/site/index.html', '<link rel="stylesheet" href="a.css">'))!;
+    const preview = (await createPreview('w', '/w/site/index.html', '<link rel="stylesheet" href="a.css">'))!;
     try {
       await handlePreviewRequest(new Request(preview.url), 'pane');
       await handlePreviewRequest(new Request(new URL('a.css', preview.url)), 'pane');
@@ -155,7 +155,7 @@ describe('loaded preview dependencies (#1117)', () => {
   it('uses the same fetched list for remote bytes instead of reading this computer', async () => {
     const files = { [`${ROOT}/a.css`]: 'one' };
     const stop = answerFrom(files);
-    const preview = createRemotePreview({ projectId: 'p', workspaceId: 'w', root: ROOT, surface: 'pane', documentPath: `${ROOT}/index.html`, documentHtml: 'page' })!;
+    const preview = createRemotePreview({ workspaceId: 'w', root: ROOT, surface: 'pane', documentPath: `${ROOT}/index.html`, documentHtml: 'page' })!;
     try {
       await handlePreviewRequest(new Request(preview.url!), 'pane');
       await handlePreviewRequest(new Request(new URL('a.css', preview.url!)), 'pane');
@@ -217,7 +217,6 @@ describe('gugu-preview handler for a page on another machine (#6264)', () => {
   // ❌ 让它打到这台电脑自己的端口(2026-09-24 那一撞的另一条路)。
   it('a remote HTML preview in the file tab may not reach plain http/ws (this computer\'s localhost)', async () => {
     const created = createRemotePreview({
-      projectId: 'proj',
       workspaceId: 'ws',
       root: ROOT,
       surface: 'pane',
@@ -243,7 +242,7 @@ it('review: a timed-out first asset remains observable to recovery resync', asyn
   const good = { success: true, data: { bytes: Buffer.from('body{color:blue}'), totalSize: 16, truncated: false } };
   const readBytes = vi.fn().mockImplementationOnce(() => new Promise(resolve => { finish = resolve; })).mockResolvedValue(good);
   vi.mocked(resolveWorkspace).mockResolvedValue({ path: '/w', fileSystem: { readBytes } } as never);
-  const preview = (await createPreview('p', 'w', '/w/site/index.html', '<link rel="stylesheet" href="a.css">'))!;
+  const preview = (await createPreview('w', '/w/site/index.html', '<link rel="stylesheet" href="a.css">'))!;
   try {
     const pending = handlePreviewRequest(new Request(new URL('a.css', preview.url)), 'pane');
     await vi.advanceTimersByTimeAsync(PREVIEW_REQUEST_DEADLINE_MS + 1);
@@ -259,7 +258,7 @@ it('review: a stalled dependency check cannot pin all later changes forever', as
   const good = { success: true, data: { bytes: Buffer.from('one'), totalSize: 3, truncated: false } };
   const readBytes = vi.fn().mockResolvedValue(good);
   vi.mocked(resolveWorkspace).mockResolvedValue({ path: '/w', fileSystem: { readBytes } } as never);
-  const preview = (await createPreview('p', 'w', '/w/site/index.html', '<link rel="stylesheet" href="a.css">'))!;
+  const preview = (await createPreview('w', '/w/site/index.html', '<link rel="stylesheet" href="a.css">'))!;
   const reload = vi.fn(), error = vi.fn();
   const queue = previewReloadQueue(paths => previewAssetsChanged(preview.previewId, paths), reload, error);
   try {
@@ -285,7 +284,7 @@ it('review: the remote workspace fence refusal is excluded from fetched resource
       for(const cb of bus.listeners.get(remotePreviewReadResultChannel.name) ?? []) cb({requestId:request.requestId,errorCode:'outside_workspace'});
     }
   },1);
-  const preview=createRemotePreview({projectId:'p',workspaceId:'w',root:ROOT,surface:'pane',documentPath:ROOT+'/index.html',documentHtml:'page'})!;
+  const preview=createRemotePreview({workspaceId:'w',root:ROOT,surface:'pane',documentPath:ROOT+'/index.html',documentHtml:'page'})!;
   try {
     const pending=handlePreviewRequest(new Request(new URL('linked.css',preview.url!)), 'pane');
     await vi.advanceTimersByTimeAsync(10);expect((await pending).status).toBe(403);expect(reads).toBe(1);
@@ -301,7 +300,7 @@ it('does not replace a served timeout with unserved late bytes', async () => {
   let finish!: (value: typeof good) => void;
   const readBytes = vi.fn().mockImplementationOnce(() => new Promise<typeof good>(resolve => { finish = resolve; })).mockResolvedValue(good);
   vi.mocked(resolveWorkspace).mockResolvedValue({ path: '/w', fileSystem: { readBytes } } as never);
-  const preview = (await createPreview('p', 'w', '/w/index.html', 'page'))!;
+  const preview = (await createPreview('w', '/w/index.html', 'page'))!;
   try {
     const response = handlePreviewRequest(new Request(new URL('a.css', preview.url)), 'pane');
     await vi.advanceTimersByTimeAsync(PREVIEW_REQUEST_DEADLINE_MS + 1);
@@ -319,7 +318,7 @@ it('bounds a whole dependency scan and stops it after its pending read finishes 
   const good = { success: true, data: { bytes: Buffer.from('same'), totalSize: 4, truncated: false } };
   const readBytes = vi.fn().mockResolvedValue(good);
   vi.mocked(resolveWorkspace).mockResolvedValue({ path: '/w', fileSystem: { readBytes } } as never);
-  const preview = (await createPreview('p', 'w', '/w/index.html', 'page'))!;
+  const preview = (await createPreview('w', '/w/index.html', 'page'))!;
   let finish!: (value: typeof good) => void;
   try {
     await handlePreviewRequest(new Request(new URL('a.css', preview.url)), 'pane');
@@ -343,7 +342,7 @@ it('does not let an older timeout overwrite a newer response for the same resour
   let finish!: (value: typeof good) => void;
   const readBytes = vi.fn().mockImplementationOnce(() => new Promise<typeof good>(resolve => { finish = resolve; })).mockResolvedValue(good);
   vi.mocked(resolveWorkspace).mockResolvedValue({ path: '/w', fileSystem: { readBytes } } as never);
-  const preview = (await createPreview('p', 'w', '/w/index.html', 'page'))!;
+  const preview = (await createPreview('w', '/w/index.html', 'page'))!;
   try {
     const stale = handlePreviewRequest(new Request(new URL('a.css', preview.url)), 'pane');
     expect((await handlePreviewRequest(new Request(new URL('a.css', preview.url)), 'pane')).status).toBe(200);
@@ -358,7 +357,7 @@ it('keeps an unexpected failed read observable when storage recovers', async () 
   const good = { success: true, data: { bytes: Buffer.from('ok'), totalSize: 2, truncated: false } };
   const readBytes = vi.fn().mockRejectedValueOnce(new Error('storage unavailable')).mockResolvedValue(good);
   vi.mocked(resolveWorkspace).mockResolvedValue({ path: '/w', fileSystem: { readBytes } } as never);
-  const preview = (await createPreview('p', 'w', '/w/index.html', 'page'))!;
+  const preview = (await createPreview('w', '/w/index.html', 'page'))!;
   try {
     expect((await handlePreviewRequest(new Request(new URL('a.css', preview.url)), 'pane')).status).toBe(500);
     expect(await previewAssetsChanged(preview.previewId)).toBe(true);
@@ -370,7 +369,7 @@ it('review r2: an in-flight refetch cannot erase the last bytes supplied to the 
   const next = { success: true, data: { bytes: Buffer.from('new'), totalSize: 3, truncated: false } };
   const readBytes = vi.fn().mockResolvedValue(old);
   vi.mocked(resolveWorkspace).mockResolvedValue({ path: '/w', fileSystem: { readBytes } } as never);
-  const preview = (await createPreview('p', 'w', '/w/index.html', 'page'))!;
+  const preview = (await createPreview('w', '/w/index.html', 'page'))!;
   let finish!: (value: typeof old) => void;
   let refetch: Promise<Response> | undefined;
   try {
@@ -386,7 +385,7 @@ it('review r2: an in-flight refetch cannot erase the last bytes supplied to the 
 it('review r2: an expired main-process scan does not start more remote chunks after its pending reply', async () => {
   vi.useFakeTimers();
   const path = ROOT + '/a.css';
-  const preview = createRemotePreview({ projectId: 'p', workspaceId: 'w', root: ROOT, surface: 'pane', documentPath: ROOT + '/index.html', documentHtml: 'page' })!;
+  const preview = createRemotePreview({ workspaceId: 'w', root: ROOT, surface: 'pane', documentPath: ROOT + '/index.html', documentHtml: 'page' })!;
   const stop = answerFrom({ [path]: 'old' });
   const reply = (request: {requestId:string;length:number}, error = false) => {
     const result = error ? { requestId: request.requestId, errorCode: 'not_found' } : {
@@ -422,7 +421,7 @@ it('keeps a served baseline when another request begins during a dependency chec
   const next = { ...old, data: { ...old.data, bytes: Buffer.from('new') } };
   const readBytes = vi.fn().mockResolvedValue(old);
   vi.mocked(resolveWorkspace).mockResolvedValue({ path: '/w', fileSystem: { readBytes } } as never);
-  const preview = (await createPreview('p', 'w', '/w/index.html', 'page'))!;
+  const preview = (await createPreview('w', '/w/index.html', 'page'))!;
   let finishScan!: (value: typeof old) => void;
   let finishRefetch!: (value: typeof old) => void;
   let scanStarted!: () => void;
@@ -455,7 +454,7 @@ it('does not compare an old disk read against a newly supplied response', async 
   const next = { ...old, data: { ...old.data, bytes: Buffer.from('new') } };
   const readBytes = vi.fn().mockResolvedValue(old);
   vi.mocked(resolveWorkspace).mockResolvedValue({ path: '/w', fileSystem: { readBytes } } as never);
-  const preview = (await createPreview('p', 'w', '/w/index.html', 'page'))!;
+  const preview = (await createPreview('w', '/w/index.html', 'page'))!;
   let finish!: (value: typeof old) => void;
   try {
     await handlePreviewRequest(new Request(new URL('a.css', preview.url)), 'pane');
@@ -470,7 +469,7 @@ it('does not compare an old disk read against a newly supplied response', async 
 
 it('cancels a timed-out served remote stream and removes its pending reply listener', async () => {
   vi.useFakeTimers();
-  const preview = createRemotePreview({ projectId: 'p', workspaceId: 'w', root: ROOT, surface: 'pane', documentPath: ROOT + '/index.html', documentHtml: 'page' })!;
+  const preview = createRemotePreview({ workspaceId: 'w', root: ROOT, surface: 'pane', documentPath: ROOT + '/index.html', documentHtml: 'page' })!;
   const reply = (request: { requestId: string; length: number }) => {
     for (const cb of bus.listeners.get(remotePreviewReadResultChannel.name) ?? []) cb({
       requestId: request.requestId,

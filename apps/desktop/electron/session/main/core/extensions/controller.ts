@@ -578,6 +578,7 @@ export const extensionsController = createRPCController({
    */
   setAppState: async (args: {
     activeSessionId: string | null;
+    activeProjectId: string | null;
     panes: readonly {
       paneId: string;
       focused: boolean;

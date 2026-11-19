@@ -89,7 +89,7 @@ vi.mock('./extension-programs', () => ({
 }));
 vi.mock('./extension-session', () => ({ configureExtensionSession: () => undefined }));
 // Each session in a project of its own name.
-vi.mock('@main/core/extensions/extension-agent-context', () => ({ agentSessionContext: async (sessionId: string) => ({ projectId: `project-of-${sessionId}` }) }));
+vi.mock('@main/core/extensions/extension-agent-context', () => ({ agentSessionContext: async (sessionId: string) => ({ sessionId }) }));
 vi.mock('./extension-look-picture', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./extension-look-picture')>()),
   keepPainting: async () => undefined,
@@ -253,14 +253,6 @@ describe('a check\'s page is kept for its session to go on with (owner 10-13)', 
     await vi.advanceTimersByTimeAsync(20_000);
     expect(answer).toMatchObject({ loaded: false, loadError: 'the page was closed (its session ended) while this check ran' });
     expect(answer?.page).toBeUndefined();
-  });
-
-  it('goes with its session\'s project, which is deleted without a word for each of its sessions', async () => {
-    const mine = (await check({ caller: 's1' })).page!;
-    await check({ caller: 's2' });
-    closeCheckPages({ projectId: 'project-of-s1' });
-    expect(windows.map(({ destroyed }) => destroyed)).toEqual([true, false]);
-    await expect(check({ caller: 's1', page: mine })).rejects.toThrow(notFound(mine));
   });
 
   it('the machine holds nine (~1 GB): a tenth closes the machine\'s least recently used, whichever session\'s', async () => {

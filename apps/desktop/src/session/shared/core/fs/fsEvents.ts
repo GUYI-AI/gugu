@@ -2,7 +2,6 @@ import type { FileChangeUpdate, FileNode, NodeId } from '@gugu/session-core/file
 import { defineEvent } from '@shared/lib/ipc/events';
 
 export type FileChangesEvent = {
-  projectId: string;
   workspaceId: string;
   update: FileChangeUpdate;
 };

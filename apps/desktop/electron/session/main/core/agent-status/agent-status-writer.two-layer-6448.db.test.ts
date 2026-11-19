@@ -46,7 +46,7 @@ let clock = 1_000;
 let cid = 'c0';
 function event(type: AgentEvent['type'], payload: AgentEvent['payload'] = {}): AgentEvent {
   clock += 1;
-  return { type, providerId: 'claude', projectId: 'p1', sessionId: cid, timestamp: clock, payload };
+  return { type, providerId: 'claude', sessionId: cid, timestamp: clock, payload };
 }
 const notification = (notificationType: NotificationType) => event('notification', { notificationType });
 
@@ -155,7 +155,6 @@ describe('#6448 基础态 + 附属态 + 功能布尔', () => {
     seed('idle');
     agentStatusWriter.reportProviderBlocker({
       sessionId: cid,
-      projectId: 'p1',
       blocker: { kind: 'provider', reason: 'workspace-trust', message: 'Trust this folder?' },
     });
     await statusWritesSettled(agentStatusWriter, cid);
@@ -209,7 +208,6 @@ describe('#6448 基础态 + 附属态 + 功能布尔', () => {
     const before = outputs.length;
     await agentStatusWriter.birth({
       id: cid,
-      projectId: 'p1',
       agentStatus: 'working',
       agentStatusDetail: 'running',
     });
@@ -225,7 +223,7 @@ describe('#6448 基础态 + 附属态 + 功能布尔', () => {
     seed('working');
     await deliver(event('stop'));
     expect(row()).toEqual({ status: 'idle', detail: 'done', seen: 0 });
-    await agentStatusWriter.restart({ sessionId: cid, projectId: 'p1' });
+    await agentStatusWriter.restart({ sessionId: cid });
     expect(outputs.at(-1)).toEqual({ status: 'working', detail: 'running', running: true, background: null });
     expect(row()).toEqual({ status: 'working', detail: 'running', seen: 1 });
     await deliverNoop(event('start'));
@@ -235,7 +233,7 @@ describe('#6448 基础态 + 附属态 + 功能布尔', () => {
 
   it('阴控:没有状态源的会话出生不写、不播', async () => {
     seed(null);
-    await agentStatusWriter.birth({ id: cid, projectId: 'p1', agentStatus: null, agentStatusDetail: null });
+    await agentStatusWriter.birth({ id: cid, agentStatus: null, agentStatusDetail: null });
     expect(outputs).toEqual([]);
     expect(row()).toEqual({ status: null, detail: null, seen: 1 });
   });

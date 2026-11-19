@@ -47,7 +47,7 @@ describe('acknowledged persistent quota errors', () => {
   afterEach(() => { agentStatusWriter.dispose(); agentHookService.dispose(); fixture.close(); mocks.db = undefined; });
   const row = (id = 'c1') => fixture.sqlite.prepare('SELECT agent_status AS status, agent_status_seen AS seen FROM sessions WHERE id = ?').get(id);
   async function event(type: 'start' | 'error' | 'stop' | 'wait', message?: string, id = 'c1', modelId = 'model-a') {
-    agentHookService.emitAgentEvent({ type, sessionId: id, projectId: 'p1', providerId: 'claude', timestamp: Date.now(), payload: { message, modelId } });
+    agentHookService.emitAgentEvent({ type, sessionId: id, providerId: 'claude', timestamp: Date.now(), payload: { message, modelId } });
     await statusWritesSettled(agentStatusWriter, id);
   }
   const weekly = "You've hit your weekly limit · resets Nov 15, 7am (America/Los_Angeles)";

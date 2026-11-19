@@ -14,7 +14,7 @@ function caller(extensionId = 'app-a', session = 'task-a', pageId = -1) {
 function native() {
   const messages = new Set<(method: string, params: Record<string, unknown>, session?: string) => void>();
   const closures = new Set<(reason: string) => void>();
-  const value: TaskPageNative = { projectId: 'project-a', title: 'A page', url: 'https://example.org',
+  const value: TaskPageNative = { title: 'A page', url: 'https://example.org',
     protocol: { attached: false, send: vi.fn(async () => ({ result: 1 })),
       onMessage: fn => { messages.add(fn); return () => { messages.delete(fn); }; },
       onClose: fn => { closures.add(fn); return () => { closures.delete(fn); }; },
@@ -116,7 +116,7 @@ it('program exit fences pending restoration and waits for its late resource clea
   expect(page.value.release).toHaveBeenCalledTimes(1);
 });
 it('archive and project deletion fence pending acquisitions even if the task later returns', async () => {
-  for (const scope of [{ sessionId: 'task-a' }, { projectId: 'project-a' }]) {
+  for (const scope of [{ sessionId: 'task-a' }]) {
     const late = Promise.withResolvers<TaskPageNative>();
     const page = native();
     const { pages } = setup(vi.fn(() => late.promise));

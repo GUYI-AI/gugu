@@ -89,7 +89,7 @@ export class PrQueryService {
       const remoteRows = await db
         .select({ remoteUrl: workspaceRemotes.remoteUrl })
         .from(workspaceRemotes)
-        .where(eq(workspaceRemotes.folderId, folderId));
+        .where(eq(workspaceRemotes.workspaceId, folderId));
 
       if (remoteRows.length === 0) return [];
       repositoryUrls = remoteRows.map((r) => r.remoteUrl);
@@ -172,7 +172,7 @@ export class PrQueryService {
     const remoteRows = await db
       .select({ remoteUrl: workspaceRemotes.remoteUrl })
       .from(workspaceRemotes)
-      .where(eq(workspaceRemotes.folderId, folderId));
+      .where(eq(workspaceRemotes.workspaceId, folderId));
 
     if (remoteRows.length === 0) {
       return { authors: [], labels: [], assignees: [] };

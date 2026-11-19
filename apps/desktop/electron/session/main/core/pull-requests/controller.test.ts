@@ -13,9 +13,10 @@ const dbMocks = vi.hoisted(() => ({
   select: vi.fn(),
 }));
 
+vi.mock('@main/core/folders/folders', () => ({ rootFolderOf: () => ({ id: 'folder-1' }) }));
 vi.mock('@main/core/repository/provider-repository-service', () => ({
   providerRepositoryService: {
-    resolveProject: vi.fn(),
+    resolveFolder: vi.fn(),
   },
 }));
 
@@ -105,7 +106,7 @@ function queueDbSelectResult<T>(rows: T[]): void {
 }
 
 function mockProviderRepositoryUrl(repositoryUrl = 'https://github.com/acme/repo'): void {
-  mockProviderRepositoryService.resolveProject.mockResolvedValue(
+  mockProviderRepositoryService.resolveFolder.mockResolvedValue(
     ok({
       provider: 'github',
       host: 'github.com',
@@ -332,7 +333,7 @@ describe('pullRequestController', () => {
     mockPrQueryService.getSessionPullRequests.mockResolvedValue([]);
 
     await expect(
-      pullRequestController.getPullRequestsForSession('project-1', 'task-1')
+      pullRequestController.getPullRequestsForSession('task-1')
     ).resolves.toEqual(ok({ prs: [], branchName: 'feature/current' }));
 
     expect(mockPrQueryService.getSessionPullRequests).toHaveBeenCalledWith(
@@ -347,7 +348,7 @@ describe('pullRequestController', () => {
     queueDbSelectResult([{ branchName: null }]);
 
     await expect(
-      pullRequestController.getPullRequestsForSession('project-1', 'task-1')
+      pullRequestController.getPullRequestsForSession('task-1')
     ).resolves.toEqual(ok({ prs: [], branchName: null }));
 
     expect(mockPrQueryService.getSessionPullRequests).not.toHaveBeenCalled();

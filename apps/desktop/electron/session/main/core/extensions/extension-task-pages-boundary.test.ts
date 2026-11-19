@@ -7,7 +7,7 @@ const instances: ExtensionTaskPages[] = [];
 afterEach(async () => { for (const pages of instances.splice(0)) await pages.closeProgram(-811); });
 function setup() {
   const completeA = Promise.withResolvers<unknown>(), completeB = Promise.withResolvers<unknown>();
-  const native: TaskPageNative = { projectId: 'project', title: 'Page', url: 'https://example.test',
+  const native: TaskPageNative = { title: 'Page', url: 'https://example.test',
     protocol: { attached: true, onMessage: () => () => {}, onClose: () => () => {}, close: vi.fn(),
       send: vi.fn(async (_method: string, params?: Record<string, unknown>, _session?: string, signal?: AbortSignal) => {
         const work = params?.call === 'a' ? completeA.promise : completeB.promise;

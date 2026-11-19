@@ -50,7 +50,6 @@ function event(type: AgentEvent['type'], notificationType?: NotificationType, ba
   return {
     type,
     providerId: 'claude',
-    projectId: 'p1',
     sessionId: cid,
     timestamp: clock,
     payload: {

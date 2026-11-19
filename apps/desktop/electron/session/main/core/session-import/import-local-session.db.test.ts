@@ -9,9 +9,8 @@ import type { ImportLocalSessionParams } from '@shared/core/session-import/sessi
 const mocks = vi.hoisted(() => ({
   db: undefined as AppDb | undefined,
   createSession: vi.fn(),
-  createLocalProject: vi.fn(),
-  ensureRepositoryWorkspace: vi.fn(() => 'workspace-repo-1'),
-  openProject: vi.fn(),
+  workspaceAtDirectory: vi.fn(),
+  rootFolderOf: vi.fn(),
   preview: vi.fn(),
 }));
 
@@ -24,14 +23,11 @@ vi.mock('@main/db/client', () => ({
 vi.mock('@main/core/sessions/session-service', () => ({
   sessionService: { createSession: mocks.createSession },
 }));
-vi.mock('@main/core/projects/operations/create-local-project', () => ({
-  createLocalProject: mocks.createLocalProject,
+vi.mock('@main/core/workspaces/workspace-at-directory', () => ({
+  workspaceAtDirectory: mocks.workspaceAtDirectory,
 }));
-vi.mock('@main/core/projects/operations/ensure-repository-workspace', () => ({
-  ensureRepositoryWorkspace: mocks.ensureRepositoryWorkspace,
-}));
-vi.mock('@main/core/projects/operations/openProject', () => ({
-  openProject: mocks.openProject,
+vi.mock('@main/core/folders/folders', () => ({
+  rootFolderOf: mocks.rootFolderOf,
 }));
 vi.mock('./host-source', () => ({
   getLocalSessionSource: () => ({ preview: mocks.preview }),
@@ -74,22 +70,10 @@ describe('importLocalSession', () => {
     mocks.db = fixture.db;
     mocks.createSession.mockReset();
     mocks.createSession.mockResolvedValue({ success: true, data: {} });
-    mocks.createLocalProject.mockReset();
-    mocks.createLocalProject.mockResolvedValue({
-      success: true,
-      data: {
-        type: 'local',
-        id: 'project-new',
-        name: 'webapp',
-        path: '/work/webapp',
-        baseRef: null,
-        repositoryWorkspaceId: 'workspace-repo-1',
-        createdAt: '',
-        updatedAt: '',
-      },
-    });
-    mocks.openProject.mockReset();
-    mocks.openProject.mockResolvedValue({ success: true, data: { repositoryWorkspaceId: null } });
+    mocks.workspaceAtDirectory.mockReset();
+    mocks.workspaceAtDirectory.mockReturnValue('workspace-repo-1');
+    mocks.rootFolderOf.mockReset();
+    mocks.rootFolderOf.mockReturnValue({ id: 'workspace-repo-1', chatId: null });
     mocks.preview.mockReset();
     mocks.preview.mockResolvedValue(previewOf({}));
   });
@@ -188,25 +172,7 @@ describe('importLocalSession', () => {
       });
     });
 
-    it('这个目录已经是某个项目时直接用它，不再建一个', async () => {
-      fixture.sqlite.exec(`
-        INSERT INTO projects (id, name, path, repository_workspace_id)
-          VALUES ('project-existing', 'webapp', '/work/webapp', 'workspace-existing');
-      `);
-
-      const result = await importLocalSession({
-        engine: 'claude-code',
-        providerSessionId: CLAUDE_SESSION,
-        filePath: '/f.jsonl',
-        title: '标题',
-        cwd: '/work/webapp',
-      });
-
-      expect(result.projectId).toBe('project-existing');
-      expect(mocks.createLocalProject).not.toHaveBeenCalled();
-    });
-
-    it('目录不是仓库根时按原目录建项目（不归一化到仓库根，否则 resume 找不到原会话）', async () => {
+    it('落点是这个目录本身的工作区', async () => {
       await importLocalSession({
         engine: 'claude-code',
         providerSessionId: CLAUDE_SESSION,
@@ -215,65 +181,22 @@ describe('importLocalSession', () => {
         cwd: '/work/webapp',
       });
 
-      expect(mocks.createLocalProject).toHaveBeenCalledWith(
-        expect.objectContaining({ path: '/work/webapp', exactPath: true })
-      );
+      expect(mocks.workspaceAtDirectory).toHaveBeenCalledWith('/work/webapp');
     });
 
-    it('目录还不是项目时把它加成项目，且放行非 git 目录', async () => {
-      await importLocalSession({
-        engine: 'claude-code',
-        providerSessionId: CLAUDE_SESSION,
-        filePath: '/f.jsonl',
-        title: '标题',
-        cwd: '/work/webapp',
-      });
+    it('目录所在的文件夹挂着群时，会话开在那个群里；没有群就不带群', async () => {
+      const params = { engine: 'claude-code' as const, providerSessionId: CLAUDE_SESSION, filePath: '/f.jsonl', title: '标题', cwd: '/work/webapp' };
+      await importLocalSession(params);
+      expect(lastCreateSessionParams().groupChatId).toBeUndefined();
 
-      expect(mocks.createLocalProject).toHaveBeenCalledWith(
-        // #609 导入是替人登记的:在 ~ 里跑的会话导进来是 workspace,❌ 多出一个「~」项目。
-        expect.objectContaining({ path: '/work/webapp', allowNonGit: true, reuseExisting: true, automatic: true })
-      );
-    });
-  });
-
-  // 真机实测抓到的：项目在库里建出来了，但没挂进 projectManager，建任务就报 project-not-found
-  // ——一个指向错误方向的报错（项目明明在）。复用既有项目那条路尤其致命：重试永远走它，永久失败。
-  describe('落点项目必须挂载', () => {
-    it('新建的项目要挂载', async () => {
-      await importLocalSession({
-        engine: 'claude-code',
-        providerSessionId: CLAUDE_SESSION,
-        filePath: '/f.jsonl',
-        title: '标题',
-        cwd: '/work/webapp',
-      });
-
-      expect(mocks.openProject).toHaveBeenCalledWith('project-new');
+      mocks.rootFolderOf.mockReturnValue({ id: 'workspace-repo-1', chatId: 'chat-1' });
+      mocks.preview.mockResolvedValue(previewOf({ providerSessionId: CODEX_SESSION }));
+      await importLocalSession({ ...params, engine: 'codex', providerSessionId: CODEX_SESSION });
+      expect(lastCreateSessionParams().groupChatId).toBe('chat-1');
     });
 
-    it('复用已存在的项目时同样要挂载（否则重试永远失败）', async () => {
-      fixture.sqlite.exec(`
-        INSERT INTO projects (id, name, path, repository_workspace_id)
-          VALUES ('project-existing', 'webapp', '/work/webapp', 'workspace-existing');
-      `);
-
-      await importLocalSession({
-        engine: 'claude-code',
-        providerSessionId: CLAUDE_SESSION,
-        filePath: '/f.jsonl',
-        title: '标题',
-        cwd: '/work/webapp',
-      });
-
-      expect(mocks.openProject).toHaveBeenCalledWith('project-existing');
-      expect(mocks.createLocalProject).not.toHaveBeenCalled();
-    });
-
-    it('挂不上就报出真实原因并停下，不留一个建不了任务的项目', async () => {
-      mocks.openProject.mockResolvedValue({
-        success: false,
-        error: { type: 'error', message: 'git rev-parse --show-toplevel failed (exit 128)' },
-      });
+    it('目录读不到就报出来并停下，不建会话', async () => {
+      mocks.workspaceAtDirectory.mockImplementation(() => { throw new Error('ENOENT'); });
 
       await expect(
         importLocalSession({
@@ -283,7 +206,7 @@ describe('importLocalSession', () => {
           title: '标题',
           cwd: '/work/webapp',
         })
-      ).rejects.toThrow('rev-parse');
+      ).rejects.toThrow('读不到');
       expect(mocks.createSession).not.toHaveBeenCalled();
     });
   });
@@ -307,7 +230,6 @@ describe('importLocalSession', () => {
       expect(result).toMatchObject({
         alreadyImported: true,
         sessionId: 'conv-1',
-        projectId: 'project-1',
       });
       expect(mocks.createSession).not.toHaveBeenCalled();
     });
@@ -323,7 +245,7 @@ describe('importLocalSession', () => {
       const session = params.sessionConfig.initialSession!;
       fixture.sqlite.prepare(
         'INSERT INTO sessions (id, project_id, provider, runtime, provider_session_id) VALUES (?, ?, ?, ?, ?)'
-      ).run(session.id, params.projectId, session.provider, session.type, importedProviderSessionId(params));
+      ).run(session.id, 'project-race', session.provider, session.type, importedProviderSessionId(params));
       return { success: true, data: {} };
     }
 
@@ -354,7 +276,6 @@ describe('importLocalSession', () => {
 
       expect(previews).toBe(2);
       expect(results[0].sessionId).toBe(results[1].sessionId);
-      expect(results.map(result => result.projectId)).toEqual(['project-race', 'project-race']);
       expect(results.map(result => result.alreadyImported).sort()).toEqual([false, true]);
       expect(mocks.createSession).toHaveBeenCalledTimes(1);
       expect(fixture.sqlite.prepare(

@@ -111,7 +111,7 @@ describe('human-tool review regressions', () => {
       expect(readFileSync(actual.pictures[0].file_path)).toEqual(bytes);
     }
     const messageId = record.messageId;
-    restoreHumanToolResults('session', 'project'); await drain();
+    restoreHumanToolResults('session'); await drain();
     expect(fixture.send).toHaveBeenCalledTimes(2);
     expect(fixture.send.mock.calls[1]![0]).toEqual(expect.objectContaining({ clientMessageId: messageId, text: sent.text }));
   });

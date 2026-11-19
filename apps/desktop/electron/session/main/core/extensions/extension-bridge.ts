@@ -1638,15 +1638,17 @@ interface ReportedPane {
 
 interface ReportedAppView {
   activeSessionId: string | null;
+  /** The active session's root folder: the App protocol's `activeProjectId` (renamed in S2). */
+  activeProjectId: string | null;
   panes: readonly ReportedPane[];
 }
 
-let appView: ReportedAppView = { activeSessionId: null, panes: [] };
+let appView: ReportedAppView = { activeSessionId: null, activeProjectId: null, panes: [] };
 /** #6387 The last session view the person had on screen — survives leaving the session page. */
 let lastSessionView: { sessionId: string } | null = null;
 
 function sameAppView(a: ReportedAppView, b: ReportedAppView): boolean {
-  if (a.activeSessionId !== b.activeSessionId) return false;
+  if (a.activeSessionId !== b.activeSessionId || a.activeProjectId !== b.activeProjectId) return false;
   if (a.panes.length !== b.panes.length) return false;
   return a.panes.every((pane, i) => {
     const other = b.panes[i];

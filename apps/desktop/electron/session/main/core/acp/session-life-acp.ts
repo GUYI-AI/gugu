@@ -149,7 +149,7 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
     if (!facts?.platformModel) return;
     const session = known();
     platformPreparation = prepareEmdashPlatformSession({ sessionId, ...(fork ? { sourceSessionId: fork.parentId } : {}),
-      providerId: session.providerId, groupChatId: session.chatId ?? null, workspaceId: session.workspaceId!, cwd,
+      providerId: session.providerId, groupChatId: session.groupChatId ?? null, workspaceId: session.workspaceId!, cwd,
       lifecycle: lifecycleOf(session, fork), platformModel: facts!.platformModel, agentDisplayName: facts!.agentDisplayName });
     // The capabilities stage owns the error. Do not turn an early issue refusal into an unhandled rejection.
     void platformPreparation.catch(() => {});
@@ -195,7 +195,7 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
       const cwd = persistedWorkspacePath(row.workspaceId);
       if (!cwd) throw new Error(RETIRED_REMOTE_WORKSPACE_MESSAGE);
       facts = await readSessionInjectionFacts({ sessionId });
-      identity = await provisionStartIdentity({ sessionId, providerId: row.providerId, groupChatId: row.chatId ?? null, cwd }, lifecycleOf(row, null), facts);
+      identity = await provisionStartIdentity({ sessionId, providerId: row.providerId, groupChatId: row.groupChatId ?? null, cwd }, lifecycleOf(row, null), facts);
       // A persisted session is never a runtime fork: no identity here means tombstoned or not provisionable.
       if (!identity) throw new Error(`Session ${sessionId} has no gugu identity and cannot be given one`);
       preparePlatform(cwd);

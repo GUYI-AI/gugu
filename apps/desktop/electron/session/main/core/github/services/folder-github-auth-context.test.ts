@@ -41,7 +41,7 @@ describe('FolderGitHubAuthContextResolver', () => {
     projects = new FakeProjectLookup();
     logger = new FakeLogger();
     resolver = new FolderGitHubAuthContextResolver({
-      projects,
+      openFolder: async (folderId) => projects.getProject(folderId),
       logger,
     });
   });
@@ -79,12 +79,12 @@ describe('FolderGitHubAuthContextResolver', () => {
     );
   });
 
-  it('fails when the project is not mounted instead of silently falling back', async () => {
+  it('fails when the folder cannot be opened instead of silently falling back', async () => {
     await expect(resolver.resolve('project-1')).resolves.toEqual(
       err<FolderGitHubAuthContextError>({
         type: 'folder_not_found',
         folderId: 'project-1',
-        message: 'Project project-1 is not mounted.',
+        message: 'Folder project-1 could not be opened.',
       })
     );
   });

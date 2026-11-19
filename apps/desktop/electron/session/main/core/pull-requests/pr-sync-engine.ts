@@ -291,7 +291,7 @@ export class PrSyncEngine {
     const remoteRows = await db
       .select({ remoteUrl: workspaceRemotes.remoteUrl })
       .from(workspaceRemotes)
-      .where(eq(workspaceRemotes.folderId, folderId));
+      .where(eq(workspaceRemotes.workspaceId, folderId));
 
     if (remoteRows.length === 0) return;
 
@@ -299,9 +299,9 @@ export class PrSyncEngine {
       this.cancel(url);
 
       const shared = await db
-        .select({ folderId: workspaceRemotes.folderId })
+        .select({ folderId: workspaceRemotes.workspaceId })
         .from(workspaceRemotes)
-        .where(and(eq(workspaceRemotes.remoteUrl, url), ne(workspaceRemotes.folderId, folderId)))
+        .where(and(eq(workspaceRemotes.remoteUrl, url), ne(workspaceRemotes.workspaceId, folderId)))
         .limit(1);
 
       if (shared.length > 0) {

@@ -50,13 +50,14 @@ export class ActivityJournal {
   }
   /**
    * The group an event belongs to, derived here from its subject; producers cannot supply it. A session keeps the group
-   * it was started in, so its row answers for every event of its life (an event after its deletion has no group).
-   * An automation run belongs to the group its automation's folder is bound to at the time of the run. A subject
-   * without a group, or one this machine never had, belongs to none.
+   * it was started in, so the record the database writes with every session row (activity_session_chats) gives the
+   * same answer before and after the session is deleted. An automation run belongs to the group its automation's
+   * folder is bound to at the time of the run. A subject without a group, or one this machine never had, belongs to
+   * none.
    */
   private chatOf(event: ActivityObservation): string | null {
     if (event.session_id !== undefined) {
-      const row = this.sql.prepare('SELECT chat_id FROM sessions WHERE id = ?')
+      const row = this.sql.prepare('SELECT chat_id FROM activity_session_chats WHERE session_id = ?')
         .get(event.session_id) as { chat_id: string | null } | undefined;
       return row?.chat_id ?? null;
     }
