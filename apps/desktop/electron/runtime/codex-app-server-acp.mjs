@@ -4,6 +4,8 @@ import { codexTerminalUpdate } from './codex-terminals.mjs'
 import { codexFastConfigOptions, codexFastTier, codexTierForTurn } from './codex-fast-mode.mjs'
 
 // Thin protocol adapter: preserve Gugu's ACP host contract while running the user's own Codex app-server.
+// It runs as its own process, the middle of three, each pair over stdio:
+//   Gugu ACP runtime <-> this bridge (started with process.execPath by session-plugins impl/codex) <-> `codex app-server --stdio`.
 import { execFile } from '../../../../packages/core/src/local/childProcess.ts'
 import { randomUUID } from 'node:crypto'
 import { appendFileSync, readFileSync, statSync } from 'node:fs'

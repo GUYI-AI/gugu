@@ -159,12 +159,14 @@ import {
 import {
   composerModelSelection,
   composerModelFooter,
+  composerOwnTierAgentName,
   composerSelectedOptionId,
+  composerTierLabel,
   useComposerModelOptions,
   openMembershipPage,
 } from '@renderer/features/sessions/session-config/use-composer-model-options';
 import { ownModelTierOptions } from '@renderer/features/sessions/session-config/own-model-tier';
-import { harnessCatalogToOptions } from '@renderer/features/sessions/session-config/harness-model-field';
+import { harnessCatalogNotice, harnessCatalogToOptions } from '@renderer/features/sessions/session-config/harness-model-field';
 import {
   refreshPlatformModelCatalogs,
   usePlatformModelCatalog,
@@ -934,6 +936,20 @@ const ComposerForStore = observer(function ComposerForStore({
     }),
     [route, runningCustomModel, store.modelOptions, startupOwnOptions, harnessCatalog.state]
   );
+  // 「你的 X 模型」读不到(探针失败)时,这一档在菜单里不消失:组头照旧,下面一句「读取失败」+ 重试 —— 与新建页同一份
+  // 判定(harnessCatalogNotice)。只说「坏了」这一态:没装、没登录各有各的入口,不在这里。
+  // #2982 PR-A 合进来以后收编进 ReadingSlot(读数三态的唯一画法)。
+  const ownCatalogFailure = !ownTier && harnessCatalog.state.kind === 'unavailable'
+    ? harnessCatalogNotice(harnessCatalog.state, composerOwnTierAgentName(agents, providerId), translate)
+    : null;
+  const ownCatalogRetry = ownCatalogFailure
+    ? {
+        groupLabel: composerTierLabel('own', composerOwnTierAgentName(agents, providerId), translate),
+        label: translate(ownCatalogFailure.key, ownCatalogFailure.values),
+        title: ownCatalogFailure.detail ?? '',
+        detail: translate('harnessCatalog.retry'),
+      }
+    : null;
   // 「这条会话现在切得动哪些」的清单:活会话报的;还在起的那段是启动那一步会设的那份(同上)。
   const advertisedModels = useMemo(
     () => Object.keys(store.modelOptions ?? startupOwnOptions ?? {}),
@@ -1487,6 +1503,8 @@ const ComposerForStore = observer(function ComposerForStore({
         modelSettingNotice={modelSettingNotice}
         modelMenuNotice={lockedForTurn ? translate('composer.modelBusy') : undefined}
         onModelMenuOpen={onModelMenuOpen}
+        modelUnlock={ownCatalogRetry}
+        onModelUnlock={ownCatalogRetry ? harnessCatalog.retry : undefined}
         // 底部「管理模型 / 升级解锁更多模型」(#7056),三个模型菜单同一份。
         {...composerModelFooter(platformCatalog.models)}
         effortOptions={localizeEffortOptions(sessionEffortOptions, translate)}
@@ -1969,7 +1987,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
             actions: [retry],
           };
         default: {
-          // 咕咕这一侧的失败按原因表说、给原因表的按钮(#7103);咕咕以外的(harness / provider)递它的原话(#4657)+ 重试。
+          // 咕咕这一侧的失败按原因表说、给原因表的按钮(#7103);咕咕以外的(harness / provider)按 sessionStartupFailureCopy
+          // 认得的说法给修法,认不得的只说「无法启动」+ 重试:原话留在本机日志,不上界面(见 session-condition.def)。
           const reason = failureReason(error.message);
           const membership = reason !== null && guguReasonCopy(reason).action === 'join-membership';
           const text = reason ? failureText(error.message, translate, membership ? membershipLock?.modelName : null) : sessionStartupFailureCopy(error.message, translate);

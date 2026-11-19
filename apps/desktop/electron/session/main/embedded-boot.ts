@@ -650,17 +650,17 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
     // (别的活宿主占着这份数据目录时,它那几段区间还开着是对的)。
     sessionBootTasks.runSync('run-interval-sweep', '', closeInterruptedRunIntervals)
     // 收残只收引擎随上一个进程没了的会话;在 tmux 里活下来的照旧在跑。tmux 只问这一次,所有会话按同一份列表判。
-    // 没有 tmux 服务器 = 空列表(listTmuxSessionNames 自己这样答);问不出来(没装 tmux、tmux 坏了)= 一个都没活下来,
-    // 照旧全收 —— 响亮记一条,❌ 为此让开机失败。
+    // 没有服务器由下层明确返回空集;读取失败不授权把未知的存活状态写成已停止。
     const tmuxSessionNames = await listTmuxSessionNames(new LocalExecutionContext()).catch((error: unknown) => {
-      log.error('[session-host] 开机收残问不出 tmux 会话列表,按一个都没活下来收', { error: String(error) })
-      return new Set<string>()
+      log.error('[session-host] 无法读取 tmux 会话清单，保留原会话状态', { error: String(error) })
+      return null
     })
     ptyRecordResume = ptyRecordResumeSet()
-    // 上一次是怎么退出的(更新 / 重启 / 没正常退出):被打断的那几条会话据此说清原因。读一次就删。
-    lastExit = takeLastExit(dataDir)
-    updateInterrupted = await sessionBootTasks.run('status-sweep', '', () => agentStatusWriter.settleAfterRestart(tmuxSessionNames, lastExit.reason)) ?? []
-    presenceReconciliation = reconcileSurvivorsWithPresence(tmuxSessionNames)
+    if (tmuxSessionNames !== null) {
+      lastExit = takeLastExit(dataDir)
+      updateInterrupted = await sessionBootTasks.run('status-sweep', '', () => agentStatusWriter.settleAfterRestart(tmuxSessionNames, lastExit.reason)) ?? []
+      presenceReconciliation = reconcileSurvivorsWithPresence(tmuxSessionNames)
+    }
     // 上一个进程投到一半就没了的消息：现在认领为「结果未知」终态（不能重投，只能如实说）。
     // 必须在任何人看见会话之前做完 —— 正常在途不经过这里，所以新建会话不会闪这条提示。
     sessionBootTasks.runSync('dispatch-sweep', '', claimInterruptedDispatches)

@@ -62,6 +62,20 @@ afterEach(() => {
 });
 
 describe('settings navigation hierarchy and interaction (#7333)', () => {
+  it('subscriptions has one shell heading while its refresh action stays available', async () => {
+    await renderWithAppProviders(harness, <SettingsPanel initialSection="subscriptions" onClose={vi.fn()} />, { auth: null, contacts: {} });
+    const detail = document.querySelector<HTMLElement>('[data-settings-modal-card] [data-role="detail"]')!;
+    await until('the real subscriptions content and refresh action loaded', () => detail.querySelector('[data-testid="subscriptions-refresh"]') !== null);
+    expect(detail.querySelectorAll('h2')).toHaveLength(1);
+    expect(detail.querySelector('h2')?.textContent).toBe(i18n.t('settings.nav.subscriptions', { ns: 'main' }));
+    expect(detail.querySelector('[data-slot="page-title-row"]')).toBeNull();
+    if (import.meta.env.VITE_SUBSCRIPTIONS_HEADER_CAPTURE === '1') {
+      const dialog = detail.closest<HTMLElement>('[role="dialog"]')!;
+      await until('the isolated renderer settings dialog is stable', () => dialog.getAnimations({ subtree: true }).every(animation => animation.playState === 'finished'));
+      await page.screenshot({ element: dialog, path: '__screenshots__/subscriptions-single-heading/after-light.png' });
+    }
+  });
+
   it.each(['light', 'dark'])('the full desktop menu fits the normal dialog height with one restrained current item in %s', async (theme) => {
     document.documentElement.dataset.theme = theme;
     await renderWithAppProviders(harness, <NavHost />);

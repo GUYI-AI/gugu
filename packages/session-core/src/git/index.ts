@@ -1,5 +1,5 @@
 export { GitRuntime, type GitRuntimeOptions } from './git-runtime';
-export { classifyCloneRepositoryError, gitErrorMessage, toGitCommandError } from './errors';
+export { classifyCloneRepositoryError, gitErrorMessage, isNotRepositoryInspectionError, toGitCommandError } from './errors';
 export { computeBaseRef } from './utils';
 export type {
   CloneRepositoryError,

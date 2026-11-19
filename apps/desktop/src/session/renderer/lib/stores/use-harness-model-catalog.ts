@@ -1,4 +1,4 @@
-import { useQuery, type QueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { rpcOn } from '@renderer/lib/ipc';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import type {
@@ -99,6 +99,7 @@ export function useHarnessModelCatalog(
   leg: SessionpageLeg
 ) {
   // #6264 会话 / 新建框在别的机器上:问那台机器的同一个控制器(一套工作台)。
+  const client = useQueryClient();
   const host = useLibraryHost().remote;
   const machine = host?.deviceId ?? null;
   const remote = machine !== null;
@@ -149,6 +150,8 @@ export function useHarnessModelCatalog(
     /** 还没探完时是 `unknown` —— 界面据此显示「读取中」，❌ 不显示「没有模型」。 */
     state,
     refresh: () => { if (enabled) void query.refetch({ cancelRefetch: false }); },
+    /** The person asked again after a failed read: past the main process's cache, on this list's machine and leg. */
+    retry: () => { if (enabled) void forceRefreshHarnessModelCatalog(client, providerId as string, leg, machine); },
     // 后台还在探也算「在读」—— 手上这份可能是陈的,调用方有权知道它还会变。
     isLoading: query.isPending || query.isFetching || (query.data?.refreshing ?? false),
   };

@@ -73,7 +73,7 @@ export const BrowserPane = observer(function BrowserPane({
     () => surface.paneLayout.openBeside('browser', {}, paneId), openInStart,
   );
   const startPageActions = startTabId ? available.map((item): WorkspacePanelAction => {
-    if (item.id === WORKSPACE_APP_KIND) return { ...item, id: 'files', label: translate('workspace.files'), shortcutSettingsKey: 'session.sidebarFiles' };
+    if (item.id === WORKSPACE_APP_KIND) return { ...item, id: 'files', section: 'builtin', label: translate('workspace.files'), shortcutSettingsKey: 'session.sidebarFiles' };
     if (item.id === 'review') return { ...item, shortcutSettingsKey: 'session.sidebarChanges', onClick: () => openInStart('review') };
     if (item.id === 'ports') return { ...item, onClick: () => openInStart('remote-ports') };
     if (item.id === 'browser') return { ...item, shortcutSettingsKey: 'session.openBrowser' };
@@ -131,8 +131,9 @@ export const ChatBrowserPane = observer(function ChatBrowserPane({ chatId, tabId
   const startPageActions: WorkspacePanelAction[] = [
     { id: 'files', label: translate('workspace.files'), icon: <Folder className="size-3.5" />, shortcutSettingsKey: 'session.sidebarFiles', onClick: openFolder },
     { id: 'browser', label: translate('workspace.browser'), icon: <Globe className="size-3.5" />, shortcutSettingsKey: 'session.openBrowser', onClick() {} },
-    ...installedExtensionsStore.openableApps.map((app) => ({
+    ...installedExtensionsStore.openableApps.map((app): WorkspacePanelAction => ({
       id: app.extensionId, label: app.name, icon: <ExtensionMark iconDataUrl={app.iconDataUrl} />,
+      section: 'extensions',
       onClick: () => openApp(app.extensionId, chatId, tabId),
     })),
   ];

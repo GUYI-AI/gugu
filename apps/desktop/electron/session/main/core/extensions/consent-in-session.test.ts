@@ -9,6 +9,7 @@ vi.mock('./extension-bridge-relay', () => ({ requestExtensionInstallConsent: vi.
 vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 
 const { askInstallInSession, IN_USE_IDLE_SECONDS } = await import('./consent-in-session');
+const { log } = await import('@main/lib/logger');
 
 const request = {
   sourceDir: '/tmp/reader',
@@ -161,10 +162,13 @@ describe('an agent’s App install, asked as an approval in its session (D-31)',
 
   it('a Gugu server has no window: the session’s approval is the only ask', async () => {
     const w = world();
+    vi.mocked(log.warn).mockClear();
     const result = askInstallInSession('conv-1', request, requester, { ...w.dependencies, window: null } as never);
     await flush();
     w.answer({ optionId: 'decline', by: 'phone' });
     await expect(result).resolves.toEqual({ outcome: 'declined' });
     expect(w.windows).toEqual([]);
+    // No sheet here is not a failure of one: nothing about a window is logged on a server.
+    expect(vi.mocked(log.warn)).not.toHaveBeenCalled();
   });
 });
