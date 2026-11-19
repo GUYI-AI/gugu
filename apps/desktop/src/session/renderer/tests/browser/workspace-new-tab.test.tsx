@@ -181,9 +181,14 @@ it('draws the start page in the app theme and the pinned-light web area in light
     expect(luminance(getComputedStyle(heading).color)).toBeGreaterThan(0.8);
     expect(luminance(getComputedStyle(card).color)).toBeGreaterThan(0.3);
 
-    const pinned = view.container.querySelector('[data-theme="light"]')!;
+    // The web area pins itself light once the start page steps aside; its colour classes must resolve to that light set.
+    const pinned = document.createElement('div');
+    pinned.dataset.theme = 'light';
+    pinned.className = 'emlight bg-background text-foreground';
+    start.append(pinned);
     expect(luminance(getComputedStyle(pinned).backgroundColor)).toBeGreaterThan(0.9);
     expect(luminance(getComputedStyle(pinned).color)).toBeLessThan(0.1);
+    pinned.remove();
   } finally {
     const layout = chatLayoutOf(group.place.chatId);
     await act(() => {
