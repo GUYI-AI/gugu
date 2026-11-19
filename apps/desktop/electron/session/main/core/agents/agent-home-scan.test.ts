@@ -8,7 +8,7 @@ vi.mock('@gugu/session-core/agents/plugins/helpers', () => ({
   AgentHomeMigrationFailure: class extends Error {},
   AgentHomeSpaceError: class extends Error {},
   checkAgentHomeImportSpace: async () => {},
-  AGENT_HISTORY_LIMIT: 1024 ** 3,
+  AGENT_HISTORY_LIMIT: 4 * 1024 ** 3,
   readAgentHomePending: async () => null,
   planAgentHomeHistory: async () => ({ paths: [], issues: [], skipped: [], sessions: 0, sessionBytes: 0 }),
   resolveAgentHome: () => ({ providerId: 'codex', configRoot: '/managed', userConfigRoot: '/missing-source', importGroups: [{ id: 'settings' }] }),
