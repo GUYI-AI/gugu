@@ -370,6 +370,7 @@ async function collect(home: ResolvedAgentHome, options: {
         snapshots.push({ ...item, bytes: projected });
       }
     }
+    if (snapshots.length) newestMtime = Math.max(newestMtime, inputStat.mtimeMs);
     } catch (error) {
       if (!missing(error)) {
         const rejected = issue(path, error);
@@ -380,7 +381,6 @@ async function collect(home: ResolvedAgentHome, options: {
     // Source failures are listed; destination writes and stale choices must fail the operation.
     // Keep at most one bounded source file in memory; large tree assets are streamed.
     if (snapshots.length) {
-      newestMtime = Math.max(newestMtime, stat.mtimeMs);
       await options.consume?.(snapshots);
     }
   };
