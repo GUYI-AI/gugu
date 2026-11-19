@@ -38,9 +38,9 @@ function FriendshipRequest({ peerId }: { peerId: string }) {
     try {
       // Reuse the existing request API, with no greeting that could become a chat message.
       await sendRequest(peerId)
-      if (mounted.current) toast(t('addFriend.sentToast', { ns: 'contacts' }), 'success')
+      if (mounted.current) toast(t('friendSearch.sentToast', { ns: 'contacts' }), 'success')
     } catch (error) {
-      if (mounted.current) toast(t('addFriend.sendFailed', { ns: 'contacts', detail: messageForUser(error) }), 'error')
+      if (mounted.current) toast(t('friendSearch.sendFailed', { ns: 'contacts', detail: messageForUser(error) }), 'error')
     } finally {
       inFlight.current = false
       if (mounted.current) setSending(false)
@@ -50,7 +50,7 @@ function FriendshipRequest({ peerId }: { peerId: string }) {
     {t('humanDm.notFriends', { ns: 'messaging' })}{' '}
     <Button variant="ghost" disabled={sending || pending} onClick={() => void request()}
       className="inline h-auto min-h-0 max-[719px]:min-h-0 border-0 p-0 align-baseline text-[length:inherit] leading-[inherit] font-[inherit] text-[var(--text-secondary)] hover:underline [&:hover:not([data-disabled])]:bg-transparent">
-      {sending ? t('addFriend.sending', { ns: 'contacts' }) : pending ? t('addFriend.sent', { ns: 'contacts' }) : t('humanDm.addFriend', { ns: 'messaging' })}
+      {sending ? t('friendSearch.sending', { ns: 'contacts' }) : pending ? t('friendSearch.sent', { ns: 'contacts' }) : t('humanDm.addFriend', { ns: 'messaging' })}
     </Button>
   </span></div>
 }
