@@ -108,7 +108,7 @@ export async function scanAgentHomes(providerIds?: readonly string[], upgradedOn
     if (!providerIds && !upgradedOnly && localDependencyManager.get(providerId as DependencyId)?.status !== 'available') continue;
     const home = homeFor(providerId);
     if (!home) continue;
-    await prepareAutomaticImport(providerId);
+    // Status reads must not wait for the background history/configuration migration.
     if (upgradedOnly) {
       // A provider with a failed or invalid import record cannot hide the other results.
       const marker = await readAgentHomeMarker(home).catch(() => null);
