@@ -6,7 +6,7 @@ import { log } from '../../../lib/logger';
 import type { Session } from '../../../../../../src/session/shared/core/sessions/sessions';
 import {
   buildPromptInjectionPayload,
-  buildSessionpageGroupContextBlock,
+  buildSessionpageProjectContextBlock,
 } from '../../../../../../src/session/shared/prompt-injection';
 import { localAgentForSession } from '@main/core/sessionpage/sessionpage-session-agent';
 import { projectGroupHost } from '@main/core/projects/project-group-host';
@@ -362,10 +362,12 @@ function injectSystemBootstrapPastGate(args: {
       // #2347 — a refused join leaves no group on the roster row; the project still has its group, so name it
       // (unconfirmed) from the project→group mapping, as provisioning does for ACP sessions.
       const groupChatId = recordedGroup || await mappedProjectGroup(projectId)
-      if (!groupChatId) return ''
-      return buildSessionpageGroupContextBlock({
+      return buildSessionpageProjectContextBlock({
+        projectId,
+        projectName,
+        projectPath: args.projectPath,
         groupChatId,
-        path: args.projectPath ?? '',
+        groupName: projectName,
         // #2347 — a freshly minted identity records the mapped group before its join lands (and the join can be
         // refused); only a landed identity's recorded group is a confirmed seat.
         // Rows from before #5331 carry no state; their identities landed long ago.
