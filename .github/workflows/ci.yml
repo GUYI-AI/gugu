@@ -261,6 +261,8 @@ jobs:
       - uses: ./.github/actions/setup-linux-tools
         with:
           profile: android
+      - name: Compile optional FCM path with a synthetic project
+        run: node scripts/ci/android-fcm-fixture.mjs
       - run: pnpm android:build
       - name: Run Android JVM unit tests
         run: bash scripts/build/android-gradle-build.sh testDebugUnitTest

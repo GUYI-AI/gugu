@@ -33,7 +33,7 @@ export type VoiceNoteTranscribeResult =
   | { ok: true; text: string }
   | {
       ok: false;
-      code: 'signed-out' | 'membership-required' | 'model-unavailable' | 'unreachable' | 'service-unavailable' | 'refused' | 'failed';
+      code: 'signed-out' | 'membership-required' | 'model-unavailable' | 'unreachable' | 'service-unavailable' | 'team-monthly-cap-reached' | 'team-credits-exhausted' | 'refused' | 'failed';
       message: string;
     };
 

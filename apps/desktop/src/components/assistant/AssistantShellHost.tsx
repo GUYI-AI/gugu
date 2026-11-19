@@ -37,6 +37,7 @@ import { AssistantMoveDialog } from './AssistantMoveDialog'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { openAssistantPageInApp } from '../../lib/assistantEntry'
 import { useAuth } from '../../store/auth'
+import { hasTeamAccountMarker } from '@/features/team/accountKind'
 import { useContactsStore } from '../../store/contactsContext'
 import { useDevicesStore } from '../../store/devicesContext'
 import type { ActiveSection } from '@gugu/core/shared/enums/settingsSectionModels'
@@ -69,7 +70,7 @@ export function OnboardingSlot({ snapshot: given, device: givenDevice }: { snaps
       ownerName={user.nickname ?? null}
       snapshot={snapshot}
       device={device}
-      cloudAvailable={cloudComputer !== undefined && canSetUpCloudAssistant(cloudComputer)}
+      cloudAvailable={!hasTeamAccountMarker(user) && cloudComputer !== undefined && canSetUpCloudAssistant(cloudComputer)}
       localDeviceId={localDeviceId}
     />
   )
@@ -132,6 +133,7 @@ export function AssistantStatusGroups({
  */
 export function AssistantShellHost() {
   const { user } = useAuth()
+  const teamAccount = hasTeamAccountMarker(user)
   const { contacts, contactsStatus, updateAgentProfile } = useContactsStore()
   const { cloudComputer, devices, phones } = useDevicesStore()
   const snapshot = cloudComputer?.snapshot ?? null
@@ -178,7 +180,7 @@ export function AssistantShellHost() {
   // 会员档:最左栏入口在「还没有咕咕」时按它写提示;读不到 = null(不当成非会员)。
   const [member, setMember] = useState<boolean | null>(null)
   useEffect(() => {
-    if (!ownerUserId || !cloudComputerEnabled()) return
+    if (!ownerUserId || !cloudComputerEnabled() || teamAccount) return
     let cancelled = false
     getMembership()
       .then((m) => !cancelled && setMember(!!m && m.tier !== 'free'))
@@ -189,7 +191,7 @@ export function AssistantShellHost() {
     return () => {
       cancelled = true
     }
-  }, [ownerUserId])
+  }, [ownerUserId, teamAccount])
   // 本机正在给它安家:那一次的恢复记录在(建好或失败才清);云上正在开 = 管家说 provisioning。
   const [localPreparing, setLocalPreparing] = useState(false)
   useEffect(() => {
@@ -239,7 +241,7 @@ export function AssistantShellHost() {
   useEffect(() => {
     publishAssistantShell({
       deviceCount,
-      cloudAvailable: !!cloudComputer?.available,
+      cloudAvailable: !teamAccount && !!cloudComputer?.available,
       canHostHere: !!localDeviceId,
       cloud: snapshot,
       loadError: cloudComputer?.loadError ? String(cloudComputer.loadError) : null,
@@ -252,11 +254,11 @@ export function AssistantShellHost() {
       chatReadFailed: !!dm.failed,
       home,
       setup,
-      member,
+      member: teamAccount ? true : member,
       preparing,
       rulesPending: rules.pending,
     })
-  }, [deviceCount, cloudComputer?.available, cloudComputer?.loadError, localDeviceId, snapshot, contact, assistantState, user?.nickname, user?.id, user?.avatarUrl, dm.chatId, dm.failed, home, setup, member, preparing, rules.pending])
+  }, [deviceCount, cloudComputer?.available, cloudComputer?.loadError, localDeviceId, snapshot, contact, assistantState, user?.nickname, user?.id, user?.avatarUrl, dm.chatId, dm.failed, home, setup, member, teamAccount, preparing, rules.pending])
 
   return (
     <>
