@@ -12,7 +12,7 @@ import { boundedWindowReady } from './desktop-window-history'
 import { useSessionHistorySource } from './use-session-history-source'
 import { useSessionRestart } from './useSessionRestart'
 import { useTimelineFailureNotice } from './useTimelineFailureNotice'
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type ComponentProps, type CSSProperties } from 'react'
 import { showPhoneAppView } from '@/components/appSlot/phoneAppState'
 import { reaction } from 'mobx'
 import { useTranslation } from 'react-i18next'
@@ -82,6 +82,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   local = false,
   cleanedRecord = false,
   appPanel = false,
+  embedded = false,
   onBack,
 }: {
   device: Device
@@ -100,6 +101,12 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
    * view switcher is not offered there — the panel is the task's conversation, nothing else.
    */
   appPanel?: boolean
+  /**
+   * Inside the desktop task page (its tab strip says the machine is offline): only the conversation — the cached record,
+   * the queued input box — never the phone page's own header (back, avatar, view switcher). One page per session on the
+   * desktop, online or not.
+   */
+  embedded?: boolean
   onBack: () => void
 }) {
   const { t } = useTranslation('main')
@@ -267,7 +274,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   ) : null
 
   const centeredHeader = mobile && !appPanel && appKind === null
-  const appNavigation = !phoneHost && !appPanel ? {
+  const appNavigation = !phoneHost && !appPanel && !embedded ? {
     appKind,
     onConversation: () => setAppKind(null),
     apps: [{ kind: PHONE_TASK_BROWSER, name: translateSessionMessage('workspace.browser') }, ...apps],
@@ -303,7 +310,8 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       sessionId={session.conversationId} conversationId={session.chatId} agentId={agentUserId}
       connected={connection === 'online'} operating={online && (attention === 'running' || attention === 'waiting')}>
     {live => (
-    <AgentWatchScreen
+    <TimelineScreen
+      embedded={embedded}
       {...taskHeader}
       centeredHeader={centeredHeader}
       titleLeading={centeredHeader ? undefined : taskHeader.titleLeading}
@@ -357,7 +365,12 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           onLoadOlder={nativeHistory ? nativeRecord.loadOlder : loadOlder}
           onHeldShown={nativeHistory ? nativeRecord.fillHeldTurn : undefined}
           onLoadToolImage={loadToolImage}
-          emptyNote={answering && (phase === 'loading' || timeline.turns.length > 0) ? (
+          emptyNote={!answering && !online ? (
+            // The machine is offline and nothing of this task was read here before: say where the record is, ❌ a blank page.
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <div className="gg-aw-placeholder" data-testid="agent-watch-offline-record">{t('agentWatch.timeline.offlineRecord', { device: machineLabel(device) })}</div>
+            </div>
+          ) : answering && (phase === 'loading' || timeline.turns.length > 0) ? (
             /* 刚建的会话:记录要等 agent 写下第一行才有。那时说「正在等它开口」,❌ 不说「正在读取」——
                读取早就成功了,是对面还没写。线上已画着刚发的那句时不说(线程有内容就不画空态):那句本身就是「发出去了」。
                画在线程自己的空态位上,❌ 在线程上方另起一行:那样空着的线程还会再说一句「Nothing in this task yet」
@@ -377,8 +390,14 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       </PhoneLiveWindowSurface>
       {appKind === PHONE_TASK_BROWSER && <PhoneTaskBrowser key={`${device.device_id}:${session.conversationId}`} deviceId={device.device_id} sessionId={session.conversationId} onSent={() => setAppKind(null)} />}
       <SessionActions menu={sessionMenu} onArchived={onBack} appItems={appItems} canManage={canManage} />
-    </AgentWatchScreen>
+    </TimelineScreen>
     )}
     </PhoneLiveWindowConversation>
   )
 })
+
+/** The phone page's screen, or (`embedded`, inside the desktop task page) only its body. */
+function TimelineScreen({ embedded, children, ...screen }: { embedded: boolean } & ComponentProps<typeof AgentWatchScreen>) {
+  if (!embedded) return <AgentWatchScreen {...screen}>{children}</AgentWatchScreen>
+  return <div className="flex min-h-0 flex-1 flex-col" data-testid="desktop-offline-session">{children}</div>
+}
