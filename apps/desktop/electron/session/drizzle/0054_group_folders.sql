@@ -11,6 +11,14 @@ CREATE INDEX `idx_sessions_chat_id` ON `sessions` (`chat_id`);--> statement-brea
 ALTER TABLE `automations` ADD `workspace_id` text;--> statement-breakpoint
 ALTER TABLE `activity_events` ADD `chat_id` text;--> statement-breakpoint
 CREATE INDEX `activity_events_chat` ON `activity_events` (`chat_id`,`seq`);--> statement-breakpoint
+CREATE TABLE `activity_session_chats` (
+	`session_id` text PRIMARY KEY NOT NULL,
+	`chat_id` text
+);--> statement-breakpoint
+INSERT INTO `activity_session_chats` SELECT `id`, `chat_id` FROM `sessions`;--> statement-breakpoint
+CREATE TRIGGER `activity_session_chats_record` AFTER INSERT ON `sessions` BEGIN
+	INSERT OR REPLACE INTO `activity_session_chats` VALUES (NEW.`id`, NEW.`chat_id`);
+END;--> statement-breakpoint
 CREATE TABLE `workspace_settings` (
 	`workspace_id` text PRIMARY KEY NOT NULL,
 	`base_settings_json` text DEFAULT '{}' NOT NULL,
