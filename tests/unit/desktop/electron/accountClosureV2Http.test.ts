@@ -52,6 +52,15 @@ describe('private V2 HTTP boundary',()=>{
   await expect(fixture({operation:{private:'x'.repeat(17000)}}).http.post('result',binding)).rejects.toMatchObject({code:'closure_unavailable'})
   await expect(fixture({operation:{...wire().operation,can_retry:true}}).http.post('result',binding)).rejects.toMatchObject({code:'closure_unavailable'})
  })
+ it('preserves private HTTP conflict status for native cancellation recovery',async()=>{
+  await expect(fixture({error:'request_active'},409).http.post('cancel',binding,{},auth)).rejects.toMatchObject({code:'request_active',status:409})
+  await expect(fixture({error:'unavailable'},503).http.post('cancel',binding,{},auth)).rejects.toMatchObject({status:503,outcomeUnknown:true})
+ })
+ it('retains conflict status even when an error response has malformed JSON',async()=>{
+  const {f,http}=fixture()
+  f.mockImplementationOnce(async(url:string|URL|Request,_init?:RequestInit)=>{const response=new Response('not-json',{status:409});Object.defineProperty(response,'url',{value:String(url)});return response})
+  await expect(http.post('cancel',binding,{},auth)).rejects.toMatchObject({status:409,code:'state_conflict'})
+ })
  it('rejects a foreign response target',async()=>{
   const f=vi.fn(async()=>{const r=new Response(JSON.stringify(wire()));Object.defineProperty(r,'url',{value:'https://other.invalid/result'});return r})
   const h=createClosureV2Http({baseUrl:'https://fixture.invalid',anonKey:anon,fetch:f as typeof fetch})

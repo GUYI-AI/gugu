@@ -18,7 +18,7 @@ export interface ClosureV2Reply {
   preparation: null | { nativeGeneration: string; serverGeneration: string | null; prepared: boolean | null; cancelled: boolean | null }
 }
 export class ClosureV2HttpFailure extends Error {
-  constructor(readonly code: AccountClosureV2ErrorCode, readonly outcomeUnknown = false, readonly rejection: ClosureV2Reply | null = null) { super(code) }
+  constructor(readonly code: AccountClosureV2ErrorCode, readonly outcomeUnknown = false, readonly rejection: ClosureV2Reply | null = null, readonly status: number | null = null) { super(code) }
 }
 export type ClosureV2Route = 'register' | 'challenge' | 'prepare_device' | 'read_preparation' | 'cancel_preparation' | 'confirm' | 'result' | 'cancel'
 const uuid = (x: unknown): x is string => typeof x === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(x)
@@ -135,7 +135,12 @@ export function createClosureV2Http(input: { baseUrl: string; anonKey: string; f
       const body = JSON.stringify({ ...extra, local_operation_id: binding.localOperationId, receipt_token: binding.receipt })
       if (Buffer.byteLength(body) > 4096) throw new ClosureV2HttpFailure('invalid_scope')
       const response = await raw(route, { method: 'POST', headers, body })
-      const doc = await jsonBody(response)
+      let doc: unknown
+      try { doc = await jsonBody(response) }
+      catch (error) {
+        if (!response.ok) throw new ClosureV2HttpFailure(response.status === 409 ? 'state_conflict' : 'closure_unavailable', true, null, response.status)
+        throw error
+      }
       if (!response.ok) {
         if (route === 'confirm' && response.status === 422 && object(doc) && doc.error === 'verification_failed') {
           let rejection: ClosureV2Reply | null = null
@@ -145,7 +150,7 @@ export function createClosureV2Http(input: { baseUrl: string; anonKey: string; f
           throw new ClosureV2HttpFailure('outcome_unknown', true)
         }
         const code = object(doc) && isAccountClosureV2ErrorCode(doc.error) ? doc.error : 'closure_unavailable'
-        throw new ClosureV2HttpFailure(code, true)
+        throw new ClosureV2HttpFailure(code, true, null, response.status)
       }
       return parseClosureV2Reply(doc)
     },

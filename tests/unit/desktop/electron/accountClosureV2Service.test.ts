@@ -129,7 +129,7 @@ describe('native V2 custody and trusted receiver',()=>{
   const f=fixture(),ready=await prepared(f);f.reject();f.lost.add('confirm')
   await expect(f.native.confirm(ready.handle,{code:'000000',acknowledgeForfeit:true})).rejects.toThrow()
   const pending=(await f.native.discover())!
-  await expect(f.native.cancel(pending.handle)).rejects.toMatchObject({code:'closure_recovery_required'})
+  expect(pending.pendingEffect).toBe('confirm')
   f.transform(reply=>({...reply,operation:{...reply.operation,confirmation:{...reply.operation.confirmation!,id:A}}}))
   const mismatch=await f.native.recover(pending.handle)
   expect(mismatch.pendingEffect).toBe('confirm');expect(await f.local.isSealed(A)).toBe(true)
@@ -193,6 +193,64 @@ describe('native V2 custody and trusted receiver',()=>{
   f.transform(null);const good=await f.native.recover(bad.handle)
   expect(good).toMatchObject({pendingEffect:null,phase:'challenge',serverOperation:{challengeExpiresAt:expect.any(String)}})
   expect(f.http.post.mock.calls.filter(c=>c[0]==='challenge')).toHaveLength(1)
+ })
+ it('unknown confirmation can be explicitly cancelled only by the original-generation authoritative ACK',async()=>{
+  const f=fixture(),ready=await prepared(f);f.before.add('confirm')
+  await expect(f.native.confirm(ready.handle,{code:'123456',acknowledgeForfeit:true})).rejects.toMatchObject({code:'outcome_unknown'})
+  const pending=(await f.native.discover())!, original=await f.records.readNative({ownerId:A,localOperationId:pending.handle.localOperationId})
+  const closed=await f.native.cancel(pending.handle)
+  expect(closed).toMatchObject({phase:'cancelled',agentsPaused:true})
+  expect(await f.local.isSealed(A)).toBe(false)
+  const cancel=f.http.post.mock.calls.find(c=>c[0]==='cancel')!
+  expect(cancel[1]).toMatchObject({confirmationId:original.confirmationId,nativeGeneration:original.nativeGeneration,serverGeneration:PREP})
+  expect(f.http.post.mock.calls.filter(c=>c[0]==='confirm')).toHaveLength(1)
+  expect(f.effects).toEqual(['stop'])
+ })
+ it('request_active cancellation retains original nonce/seal, blocks another cancel and reads original result',async()=>{
+  const f=fixture(),ready=await prepared(f);f.before.add('confirm')
+  await expect(f.native.confirm(ready.handle,{code:'123456',acknowledgeForfeit:true})).rejects.toThrow()
+  const pending=(await f.native.discover())!, before=await f.records.readNative({ownerId:A,localOperationId:pending.handle.localOperationId})
+  f.server().operation.state='confirming'
+  f.server().operation.confirmation={id:before.confirmationId!,challengeGeneration:before.confirmationGeneration!,state:'verifying',errorCode:null}
+  f.http.post.mockRejectedValueOnce(new ClosureV2HttpFailure('request_active',true,null,409))
+  await expect(f.native.cancel(pending.handle)).rejects.toMatchObject({code:'request_active'})
+  const blocked=(await f.native.discover())!, count=f.http.post.mock.calls.length
+  expect(blocked).toMatchObject({pendingEffect:'confirm',confirmCancellationBlocked:true})
+  const kept=await f.records.readNative({ownerId:A,localOperationId:blocked.handle.localOperationId})
+  expect(kept.confirmationId).toBe(before.confirmationId);expect(kept.receipt).toBe(before.receipt)
+  expect(await f.local.isSealed(A)).toBe(true)
+  await expect(f.native.cancel(blocked.handle)).rejects.toMatchObject({code:'closure_recovery_required'})
+  expect(f.http.post).toHaveBeenCalledTimes(count)
+  await f.native.recover(blocked.handle)
+  expect(f.http.post.mock.calls.at(-1)![0]).toBe('result')
+  expect(f.effects).toEqual(['stop'])
+ })
+ it('a cancel which never arrived can be explicitly retried after restart with the same intent and no confirmation replay',async()=>{
+  const f=fixture(),ready=await prepared(f);f.before.add('confirm')
+  await expect(f.native.confirm(ready.handle,{code:'123456',acknowledgeForfeit:true})).rejects.toThrow()
+  f.before.add('cancel')
+  await expect(f.native.cancel((await f.native.discover())!.handle)).rejects.toMatchObject({code:'outcome_unknown'})
+  const n=f.restart().native, pending=(await n.discover())!
+  expect(pending).toMatchObject({pendingEffect:'confirm',confirmCancellationBlocked:false})
+  await n.recover(pending.handle)
+  expect(await f.local.isSealed(A)).toBe(true)
+  f.before.delete('cancel')
+  expect((await n.cancel((await n.discover())!.handle)).phase).toBe('cancelled')
+  const cancels=f.http.post.mock.calls.filter(c=>c[0]==='cancel')
+  expect(cancels).toHaveLength(2);expect(cancels[0]!.slice(1,3)).toEqual(cancels[1]!.slice(1,3))
+  expect(f.http.post.mock.calls.filter(c=>c[0]==='confirm')).toHaveLength(1)
+ })
+ it('a lost successful cancellation response is recovered by original result without a second cancel',async()=>{
+  const f=fixture(),ready=await prepared(f);f.before.add('confirm')
+  await expect(f.native.confirm(ready.handle,{code:'123456',acknowledgeForfeit:true})).rejects.toThrow()
+  f.lost.add('cancel')
+  await expect(f.native.cancel((await f.native.discover())!.handle)).rejects.toThrow()
+  expect(await f.local.isSealed(A)).toBe(true)
+  const n=f.restart().native
+  expect((await n.recover((await n.discover())!.handle)).phase).toBe('cancelled')
+  expect(await f.local.isSealed(A)).toBe(false)
+  expect(f.http.post.mock.calls.filter(c=>c[0]==='cancel')).toHaveLength(1)
+  expect(f.http.post.mock.calls.at(-1)![0]).toBe('result')
  })
  it('rechecks native runtime exit proof immediately before confirmation, including restored server preparation',async()=>{
   const f=fixture(), ready=await prepared(f), count=f.http.post.mock.calls.length

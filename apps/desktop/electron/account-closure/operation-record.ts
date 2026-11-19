@@ -31,6 +31,8 @@ export interface ClosureOperationRecord {
   localPreparationStarted: boolean
   pendingChallengeGeneration: number | null
   confirmationGeneration: number | null
+  pendingConfirmCancellation?: boolean
+  confirmCancellationBlocked?: boolean
   challengeGeneration: number
   requestId: string | null
   confirmationId: string | null
@@ -73,6 +75,7 @@ function valid(value: unknown): value is ClosureOperationRecord {
       && typeof r.serverRequest.canRetry === 'boolean')
     && (r.canReleasePreparation === null || typeof r.canReleasePreparation === 'boolean')
     && typeof r.serverPrepared === 'boolean' && typeof r.serverCancelled === 'boolean' && typeof r.recoveryOnly === 'boolean' && typeof r.localPreparationStarted === 'boolean'
+    && [r.pendingConfirmCancellation, r.confirmCancellationBlocked].every(v => v === undefined || typeof v === 'boolean')
     && (r.pendingEffect === null || ['register', 'challenge', 'prepare_device', 'confirm', 'cancel'].includes(r.pendingEffect))
     && [r.pendingChallengeGeneration, r.confirmationGeneration].every(v => v === null || Number.isInteger(v) && v > 0 && v <= 2147483647)
     && (r.serverConfirmation === null || !!r.serverConfirmation && uuid.test(r.serverConfirmation.id) && ['verifying', 'rejected', 'processing', 'deleted'].includes(r.serverConfirmation.state)
@@ -134,7 +137,7 @@ export function createClosureOperationRecords(ports: Ports) {
         phase: 'captured', revision: 1, serverOperationId: null, serverGeneration: null, serverRevision: 0,
         serverState: null, serverRequestState: null, serverRequest: null, serverConfirmation: null, canReleasePreparation: null,
         serverPrepared: false, serverCancelled: false, pendingEffect: null, recoveryOnly: false, localPreparationStarted: false,
-        pendingChallengeGeneration: null, confirmationGeneration: null,
+        pendingChallengeGeneration: null, confirmationGeneration: null, pendingConfirmCancellation: false, confirmCancellationBlocked: false,
         challengeGeneration: 0, requestId: null, confirmationId: null, retainedUnattributed: [],
       }
       await own(record, true)

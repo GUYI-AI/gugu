@@ -43,6 +43,7 @@ export function createDesktopClosureV2Service(p: Ports): AccountClosureV2Native 
       operationRevision: r.serverRevision, challengeGeneration: r.challengeGeneration, challengeExpiresAt: r.serverRequest?.id === r.requestId && r.serverRequest.state === 'challenge' && r.serverRequest.lastError === null
         && (r.pendingChallengeGeneration === null || r.pendingChallengeGeneration === r.challengeGeneration) ? r.serverRequest.expiresAt : null } : null,
     serverPreparationGeneration: r.serverGeneration, recoveryOnly: r.recoveryOnly, pendingEffect: r.pendingEffect,
+    confirmCancellationBlocked: r.pendingEffect === 'confirm' && r.confirmCancellationBlocked === true,
     agentsPaused: await p.local.isPaused(r.ownerId), retainedUnattributed: [...r.retainedUnattributed],
     })
   })
@@ -82,7 +83,7 @@ export function createDesktopClosureV2Service(p: Ports): AccountClosureV2Native 
       })
     } else if (releaseProof(r)) {
       if (r.localPreparationStarted) await p.local.releaseNativePreparation(localScope(r), r.nativeGeneration)
-      r = await update(r, value => { value.phase = 'cancelled'; value.pendingEffect = null; value.recoveryOnly = false; value.receipt = null })
+      r = await update(r, value => { value.phase = 'cancelled'; value.pendingConfirmCancellation = false; value.confirmCancellationBlocked = false; value.pendingEffect = null; value.recoveryOnly = false; value.receipt = null })
     }
     return r
   }
@@ -108,7 +109,7 @@ export function createDesktopClosureV2Service(p: Ports): AccountClosureV2Native 
       else if (o.state === 'closed_before_confirm') { value.phase = 'cancel-pending'; value.recoveryOnly = true }
       else if (value.pendingEffect === 'confirm') {
         if (rejected) {
-          value.pendingEffect = null; value.recoveryOnly = false
+          value.pendingEffect = null; value.recoveryOnly = false; value.pendingConfirmCancellation = false; value.confirmCancellationBlocked = false
           value.phase = value.serverPrepared ? 'prepared' : 'challenge'
         } // open/422 alone cannot clear an unknown confirmation.
       } else if (value.pendingEffect === 'cancel') {
@@ -202,7 +203,7 @@ export function createDesktopClosureV2Service(p: Ports): AccountClosureV2Native 
       if (!r.serverRequest || r.serverRequest.id !== r.requestId || Date.parse(r.serverRequest.expiresAt) <= Date.now()) return fail('state_conflict')
       const c = await p.local.underAuth(async () => {
         await p.local.requireNativePreparation(localScope(r), r.nativeGeneration)
-        return claim(r, 'confirm', value => { value.confirmationId = randomUUID(); value.confirmationGeneration = value.challengeGeneration; value.phase = 'confirming' })
+        return claim(r, 'confirm', value => { value.confirmationId = randomUUID(); value.confirmationGeneration = value.challengeGeneration; value.phase = 'confirming'; value.pendingConfirmCancellation = false; value.confirmCancellationBlocked = false })
       })
       return snapshot(await request(c.record, 'confirm', { consent_version: 'immediate-forfeit-v1', generation: c.record.confirmationGeneration!,
         confirmation_id: c.record.confirmationId!, native_generation: r.nativeGeneration, server_generation: r.serverGeneration,
@@ -216,8 +217,25 @@ export function createDesktopClosureV2Service(p: Ports): AccountClosureV2Native 
     }),
     cancel: handle => exclusive(async () => {
       let r = await current(handle)
-      if (r.pendingEffect === 'confirm' || ['confirming', 'processing', 'deleted', 'local-complete', 'finalized'].includes(r.phase)) return fail('closure_recovery_required')
       if (releaseProof(r)) return snapshot(await settle(r))
+      const unknownConfirmation = r.pendingEffect === 'confirm'
+      if (['processing', 'deleted', 'local-complete', 'finalized'].includes(r.phase)
+        || unknownConfirmation && r.confirmCancellationBlocked
+        || r.phase === 'confirming' && !unknownConfirmation) return fail('closure_recovery_required')
+      if (unknownConfirmation) {
+        if (!r.confirmationId || !r.confirmationGeneration || !r.serverGeneration || !r.localPreparationStarted) return fail('closure_not_prepared')
+        // One original idempotent cancel per human command, never a loop. Keep
+        // the original confirmation intent/nonce until the authority closes it.
+        const c = await claim(r, 'confirm', value => { value.pendingConfirmCancellation = true })
+        try {
+          return snapshot(await request(c.record, 'cancel', { native_generation: r.nativeGeneration, server_generation: r.serverGeneration }, c.auth))
+        } catch (error) {
+          if (error instanceof ClosureV2HttpFailure && (error.status === 409 || error.code === 'request_active')) {
+            await update(c.record, value => { value.confirmCancellationBlocked = true })
+          }
+          throw error
+        }
+      }
       if (r.recoveryOnly) {
         try { r = await recoverRecord(r) }
         catch (error) {
