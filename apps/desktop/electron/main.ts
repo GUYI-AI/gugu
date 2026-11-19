@@ -547,6 +547,7 @@ import { createLocalDeviceIdResolver, type DeviceHeartbeatTableClient } from '@g
 import { announceLocalDeviceIdentity } from './local-device-identity'
 import { setAssistantHomeDeviceResolver } from '@main/core/app/assistant-home-controller'
 import { createChatFoldersPublisher, type ChatFoldersPublisher } from '@gugu/core/cloud/chatFoldersPublisher'
+import { fileHoldings, setFileHoldings } from './fileHoldings'
 import type { ChatFoldersPublishClient } from '@gugu/core/cloud/chatFolders'
 import { emdashPlatformReleaseIntent } from './session/main/core/acp/emdash-platform-injector'
 import type {
@@ -2483,8 +2484,9 @@ const remoteFileOpenDirectories = new Set<string>()
 const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider().getAuth(), tempRoot: remoteFileTempRoot,
   rpc: signedInFileRpc(() => desktopAuthProvider().getAuth(), makeChatClient),
   fetch: electronFetch, links: () => sshLinks,
-  root: async projectId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectRoot(projectId) },
-  project: async chatId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectOfGroup(chatId) },
+  // @@@group-folders a holder key is a folder id, or a released project's id (its root folder).
+  root: async key => fileHoldings().root(key),
+  project: async chatId => fileHoldings().firstFolder(chatId),
   deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
 })
 function drainProjectFiles() { void desktopFiles.drain().catch(error => createLogger('files').warn({ error: String(error) }, 'Project transfer reconciliation failed')) }
@@ -4408,6 +4410,8 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
       throw new Error('session page module requested before app.whenReady preloaded it')
     }
     emdashBridge = emdashBridgeModule
+    setFileHoldings({ read: emdashBridge.readFileRevision, remember: emdashBridge.rememberFileRevision, findCopy: emdashBridge.findFileCopy,
+      findByName: emdashBridge.findFileByName, root: emdashBridge.holderRoot, firstFolder: emdashBridge.firstFolderOf })
     // @@@2374-webview-policy — <webview> 准入策略在**拿到模块的这一刻**就装,而不是等 bootEmdashModule。
     // boot 是可失败的(失败时宿主只 log 后继续,见下方调用点),把安全策略挂在它后面 =
     // 一旦出问题就从「默认拒绝」退化成「默认放行」。注册幂等,boot 里那次照旧。

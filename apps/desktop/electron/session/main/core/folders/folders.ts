@@ -14,6 +14,8 @@ import { computeWorkspaceKey } from '@main/core/workspaces/workspace-key';
 import { db, type AppDb, type DrizzleTx } from '@main/db/client';
 import { workspaces } from '@main/db/schema';
 import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
+import { canonicalPath } from '@gugu/session-core/files';
+import { sessionHomeDir } from '@main/core/app/session-home-dir';
 
 export type Folder = {
   /** The workspace id: the folder's id on this device and the key file versions held in it carry. */
@@ -134,4 +136,18 @@ export function rootFolderOf(workspaceId: string, runner: Runner = db): Folder |
     .filter((folder) => folder.path && (path === folder.path || path.startsWith(`${folder.path}/`)))
     .sort((a, b) => (b.path?.length ?? 0) - (a.path?.length ?? 0))
     .map(toFolder)[0];
+}
+
+/**
+ * The task home: the folder sessions without a group start in (`sessionHomeDir()`), formerly the implicit session-home
+ * project. Recognised by its path, so a machine that never had that project knows it too.
+ */
+export function isTaskHomeFolder(id: string, runner: Runner = db): boolean {
+  const folder = getFolder(id, runner);
+  return !!folder && folder.path === canonicalPath(sessionHomeDir());
+}
+
+/** The task home folder, recorded on first use (without a group). */
+export function ensureTaskHomeFolder(runner: Runner = db): Folder {
+  return ensureFolder(canonicalPath(sessionHomeDir()), { gitless: true }, runner);
 }

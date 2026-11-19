@@ -226,6 +226,7 @@ export { broadcastDeviceSessionHostEvent, setDeviceSessionHostShellHandlers } fr
 export { setDirectTerminalResolver, type DirectTerminalResolver } from '@main/core/pty/direct-terminal/controller'
 // #113 这台机器的项目记到账号上:那一份,与「它可能变了」的信号(订阅在 boot 之后,同 onEmdashSessionpageReapTrigger)。
 export { listPublishedFolders, onFoldersMaybeChanged, unbindRefusedFolders } from '@main/core/folders/folder-publish'
+export { readFileRevision, rememberFileRevision, findFileCopy, findFileByName, holderRoot, firstFolderOf } from '@main/core/folders/file-revisions'
 export { projectFoldersPublished } from '@main/core/extensions/extension-bridge'
 export { sessionBootTasks } from '../session/main/core/boot-tasks'
 export { flushViewState, viewStateSnapshot } from '@main/core/view-state/view-state-service'

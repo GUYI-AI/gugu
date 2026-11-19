@@ -7,7 +7,7 @@ import { isAbsolute, join, relative, sep } from 'node:path'
 import { DEVICE_STORE, FILE_CHUNK_BYTES, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { imagePixelSize } from '@gugu/core/shared/imagePixelSize'
 import { isInside, readWorkspaceChunk } from './session/main/core/files/workspace-transfer'
-import { findProjectFileCopy, rememberProjectFile } from './sessionpage/sessionpage-project-groups'
+import { fileHoldings } from './fileHoldings'
 import { importProjectFile } from './projectFileImport'
 import { sanitizeRemoteFileName } from './remoteFileOpen'
 import { createLogger } from './lib/logger'
@@ -31,8 +31,9 @@ type Publisher = NonNullable<FilesPlatform['publishFile']>
 type AppUpload = Parameters<Publisher>[1]
 type Rpc = (name: string, args: Record<string, unknown>) => Promise<unknown>
 /**
- * A project chat has no host: what this device sends into it stays on this device — in a project it binds to the chat, or
- * in its device store — and every member's device may send the next version of any file, which it then keeps. Whether
+ * A chat this account binds folders to (@@@group-folders) has no host: what this device sends into it stays on this
+ * device — in a folder it binds to the chat, or in its device store — and every member's device may send the next
+ * version of any file, which it then keeps. Whether
  * a file stays here or is uploaded is this account's own setting. The ordinary uploader stays shared.
  */
 export function createProjectFilePublisher(deps: {
@@ -40,9 +41,9 @@ export function createProjectFilePublisher(deps: {
   rpc: Rpc; env?: NodeJS.ProcessEnv
   /** This account's own file storage setting. */
   storage(): Promise<FileStorage>
-  /** This device's project bound to the chat — the one the account records for it (device_projects), so the publication names a project the account knows. */
+  /** This device's first folder bound to the chat: what it sends there is kept in it. */
   project(chatId: string): Promise<string | undefined>
-  /** Whether the chat is one of this account's projects (its project group), whatever folders its machines bind. */
+  /** Whether this account keeps files on its own machines in this chat: one of its devices binds a folder to it. */
   projectChat(chatId: string): Promise<boolean>
   /** Ask for a version's temporary copy, as a reader's first open does. */
   requestCopy?(itemId: string, version: number): Promise<unknown>
@@ -66,7 +67,7 @@ export function createProjectFilePublisher(deps: {
     if (!root) throw new Error('Project root is unavailable')
     if (!isAbsolute(file.path)) throw new Error('Choose an original file on this computer')
     if (temporary || !isInside(root, file.path)) file = { ...file,
-      path: await importProjectFile(root, file, sha => findProjectFileCopy(projectId, sha, identity.accountId, identity.deviceId, deps.env)) }
+      path: await importProjectFile(root, file, async sha => fileHoldings().findCopy(projectId, sha, identity.accountId, identity.deviceId)) }
     const path = relative(root, file.path).split(sep).join('/')
     const first = await readWorkspaceChunk(root, { path, offset: 0, length: 0 }), hash = createHash('sha256')
     if (first.size !== file.size) throw new Error('Selected file changed before it was sent')
@@ -91,7 +92,7 @@ export function createProjectFilePublisher(deps: {
     const revision: FileRevision = { source: 'local', item_id: row.id, version: row.version, chat_id: row.chat_id, file_name: row.filename,
       content_type: row.content_type, size_bytes: first.size, sha256, host_account_id: identity.accountId, host_device_id: identity.deviceId, host_project_id: projectId, relative_path: path,
       workspace: { path: row.path, parent_id: row.parent_id, created_at: row.created_at, updated_at: row.updated_at, created_by: row.created_by, source_message_ids: row.source_message_ids ?? [] } }
-    await rememberProjectFile(revision, identity.accountId, deps.env)
+    fileHoldings().remember(revision, identity.accountId)
     // An image is read at a glance, often when this machine is off: its temporary copy goes up now instead of at the first read.
     // Not when its owner turned copies off, nor for a read-once copy: the first reader would use it up, and the sender's own screen must not be that reader.
     if (message && file.contentType.startsWith('image/') && here.storage?.temporary_transfer !== false && here.storage?.retention !== 'read-once') {

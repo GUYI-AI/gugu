@@ -1,7 +1,7 @@
 import { copyVerifiedFile } from '@gugu/core/shared/fileCipher'
 import { fileRefKey, requireFileRange, requireFileRevision, type FileBytes, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { readWorkspaceChunk } from './session/main/core/files/workspace-transfer'
-import { readProjectFile, type ProjectFileVersionLookup } from './sessionpage/sessionpage-project-groups'
+import { fileHoldings, type FileVersionLookup as ProjectFileVersionLookup } from './fileHoldings'
 import { createFileSink } from './fileSnapshot'
 import { nextPartBytes, SMALLEST_PART_BYTES } from '@shared/extensions/working-copy-upload'
 
@@ -22,14 +22,14 @@ export function createProjectFileReader(deps: {
     fileRefKey(request.ref)
     const identity = await deps.identity()
     if (identity.accountId !== callerId) throw new Error('File reader is not the device owner')
-    const revision = await readProjectFile(request.ref, identity.accountId, identity.deviceId, deps.env, deps.later)
+    const revision = await fileHoldings().read(request.ref, identity.accountId, identity.deviceId, deps.later)
     if (!revision) throw new Error('Local file revision is unavailable')
     requireFileRange(revision.size_bytes, request.offset, request.length)
     const root = await deps.root(revision.host_project_id!)
     if (!root) throw new Error('Project root is unavailable')
     const chunk = await readWorkspaceChunk(root, { path: revision.relative_path!, offset: request.offset, length: request.length })
     if (chunk.size !== revision.size_bytes || request.etag !== undefined && request.etag !== chunk.etag) throw new Error('Local file changed during read')
-    if (JSON.stringify(await deps.identity()) !== JSON.stringify(identity) || !await readProjectFile(request.ref, identity.accountId, identity.deviceId, deps.env, deps.later)) throw new Error('File binding changed during read')
+    if (JSON.stringify(await deps.identity()) !== JSON.stringify(identity) || !await fileHoldings().read(request.ref, identity.accountId, identity.deviceId, deps.later)) throw new Error('File binding changed during read')
     // Absolute host paths stay here. The current etag anchors this read, not the publication mtime.
     return { revision, offset: chunk.offset, etag: chunk.etag, data: chunk.data }
   }
@@ -104,7 +104,7 @@ export function localProjectFileProvider(deps: {
   return async (context: FileContext) => {
     const identity = await deps.identity()
     if (context.actor.actorId !== identity.accountId || context.actor.accountId !== identity.accountId) return null
-    const revision = await readProjectFile(context.ref, identity.accountId, identity.deviceId, deps.env, deps.later)
+    const revision = await fileHoldings().read(context.ref, identity.accountId, identity.deviceId, deps.later)
     return revision ? { revision, open: () => context.download ? openProjectFileSource(revision, request => deps.read(request, context.actor.actorId)) : snapshotProjectFile(revision, request => deps.read(request, context.actor.actorId), deps.tempRoot, context.signal, context.progress) } : null
   }
 }

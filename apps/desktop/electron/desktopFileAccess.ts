@@ -12,7 +12,8 @@ import { readUserSettingsConfig, type SettingsTableClient } from '@gugu/core/clo
 import { PROJECT_FILE_READ, createProjectFileReader, localProjectFileProvider } from './projectFileHost'
 import { ownSshFileProvider, type HeldFileSshLinks } from './projectFileSsh'
 import { createProjectTransferHost } from './projectFileTransferHost'
-import { findProjectFileByName, type ProjectFileVersionLookup } from './sessionpage/sessionpage-project-groups'
+import { fileHoldings, type FileVersionLookup as ProjectFileVersionLookup } from './fileHoldings'
+import { listMyChatFolders, type ChatFoldersRpcClient } from '@gugu/core/cloud/chatFolders'
 import type { setAccountFileResolver } from './session/main/core/extensions/account-token'
 import { createProjectFilePublisher } from './projectFilePublication'
 import type { makeIdentityClient } from './supabase'
@@ -85,7 +86,7 @@ export function createDesktopFileAccess(deps: {
   const resolveAccount: Parameters<typeof setAccountFileResolver>[0] = async (ref, actor, options) => {
     const { accountId, deviceId } = await identity()
     if ('name' in ref) {
-      const local = await findProjectFileByName(ref.chat, ref.name, accountId, deviceId, deps.env)
+      const local = fileHoldings().findByName(ref.chat, ref.name, accountId, deviceId)
       if (!local) { if (options?.localOnly) return null; throw new Error('File must first be resolved to its item id') }
       ref = { item_id: local.item_id! }
     }
@@ -97,13 +98,10 @@ export function createDesktopFileAccess(deps: {
   const publish = createProjectFilePublisher({ identity, root, project: deps.project, rpc: deps.rpc, env: deps.env,
     requestCopy: async (itemId, version) => attachmentRequest(await endpoint(), 'file-request', { ref: { item_id: itemId, version }, as: (await identity()).accountId, request_id: crypto.randomUUID() }),
     async storage() { const { auth, db } = await identityDb(); return parseFileStorage(await readUserSettingsConfig(db as unknown as SettingsTableClient, auth.userId, 'user')) },
-    // The account's projects are its project groups (chat.project_groups), with or without a folder on any machine.
+    // @@@group-folders Files stay on this account's machines in a chat one of its devices binds a folder to.
     async projectChat(chatId) {
       const { db } = await identityDb()
-      const { data, error } = await db.rpc('is_my_project', { p_chat_id: chatId })
-      if (error) throw new Error(`is_my_project: ${error.message}`)
-      if (typeof data !== 'boolean') throw new Error('is_my_project: unexpected answer')
-      return data
+      return (await listMyChatFolders(db as unknown as ChatFoldersRpcClient)).some((group) => group.chatId === chatId)
     },
   })
   return { providers, resolve, resolveAccount, read, drain, publish,
