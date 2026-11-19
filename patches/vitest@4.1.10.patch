@@ -1,0 +1,16 @@
+diff --git a/dist/chunks/startVitestModuleRunner.DB-7oCpn.js b/dist/chunks/startVitestModuleRunner.DB-7oCpn.js
+index 51603db..984b89d 100644
+--- a/dist/chunks/startVitestModuleRunner.DB-7oCpn.js
++++ b/dist/chunks/startVitestModuleRunner.DB-7oCpn.js
+@@ -561,6 +561,11 @@ class VitestModuleRunner extends viteModuleRunner.ModuleRunner {
+ 			// - self-import: mock factory/file is importing the module it's mocking
+ 			const isStale = !this.mocker.getDependencyMock(mod.id);
+ 			const isSelfImport = callstack.includes(mockId) || callstack.includes(url) || "redirect" in mockedModule && callstack.includes(mockedModule.redirect);
++			// A manual mock whose factory already returned cannot be importing itself: its id is still on the
++			// shared callstack only because a concurrent import() of the same module is awaiting it. Hand out
++			// the resolved mock, as a sequential import would, instead of the real module.
++			const resolvedMock = isSelfImport && !isStale && mockedModule.type === "manual" && !callstack.includes(url) ? this.evaluatedModules.getModuleById(mockId)?.exports : void 0;
++			if (resolvedMock) return resolvedMock;
+ 			if (isStale || isSelfImport) {
+ 				const node = await this.fetchModule(injectQuery(url, "_vitest_original"));
+ 				return this._cachedRequest(node.url, node, callstack, metadata);

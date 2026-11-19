@@ -100,7 +100,7 @@ describe('installer archive boundaries', () => {
       expect(existsSync(join(directory, '.sqlite-node-deps/node_modules/better-sqlite3/node_modules'))).toBe(false)
       expect(existsSync(join(directory, '.sqlite-node-deps/node_modules/better-sqlite3/build'))).toBe(false)
     } finally { rmSync(directory, { recursive: true, force: true }) }
-  }, 30_000)
+  })
 
   it('keeps the root, session and isolated Node SQLite pins aligned without legacy archive downloads', () => {
     const root = resolve(__dirname, '../../..')
