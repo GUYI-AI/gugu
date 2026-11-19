@@ -346,6 +346,8 @@ function watchForInactivity(
   child: ChildProcessWithoutNullStreams,
   pluginId: string
 ): { stalled: Promise<never>; stop: () => void } {
+  // Codex bounds each initialize attempt itself and resumes its native backfill lease.
+  if (pluginId === 'codex') return { stalled: new Promise<never>(() => {}), stop: () => {} };
   let timer: NodeJS.Timeout | undefined;
   let done = false;
   let fire!: (error: Error) => void;

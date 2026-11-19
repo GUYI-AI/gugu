@@ -50,6 +50,7 @@ export const emdashAliasEntries = [
 // `new URL('./<out>.js', import.meta.url)` relative to whichever chunk the manifest lands in — all
 // chunks are flat in dist-electron/, so the sibling lookup holds regardless of chunking.
 export const emdashWorkerEntries = [
+  { out: 'cursor-import', src: `${SESSION_MAIN_ROOT}/main/core/session-import/cursor-worker.ts` },
   { out: 'turn-text-backfill', src: `${SESSION_MAIN_ROOT}/main/db/turn-text-backfill-worker.ts` },
   { out: 'task-turn-search', src: `${SESSION_MAIN_ROOT}/main/core/search/task-turn-search-worker.ts` },
   { out: 'acp-runtime', src: `${SESSION_MAIN_ROOT}/main/core/acp/runtime-process/entry.ts` },

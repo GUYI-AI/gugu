@@ -33,6 +33,30 @@ function makeLayout(owner?: string) {
 afterEach(() => layouts.splice(0).forEach((layout) => layout.dispose()));
 
 describe('chat and tool layout', () => {
+  it('keeps the same conversation as a tab before the floating control and switches without restoring a split', () => {
+    const layout = makeLayout('owner');
+    const owner = layout.open('chat', { id: 'owner' }, newTab)!;
+    const tool = layout.open('tool', { id: 'one' }, newTab)!;
+    const detach = layout.attachChatWorkspace();
+    try {
+      const panes = layout.chatWorkspacePanes!;
+      layout.setDimensions(900, 600);
+      expect(layout.chatWorkspaceConversationPresentation).toBe('pane');
+      layout.collapseChatToolSide(layout.chatToolSide === 'right' ? 'left' : 'right');
+      expect(layout.chatWorkspaceConversationPresentation).toBe('tab');
+      const tree = layout.layout;
+      layout.setDimensions(380, 600);
+      expect(layout.chatWorkspaceConversationPresentation).toBe('bubble');
+      layout.showChatWorkspaceConversation();
+      expect(layout.chatWorkspaceSinglePaneId).toBe(panes.chat.paneId);
+      expect(layout.chatWorkspaceMode).toBe('full');
+      expect(layout.chatWorkspaceConversationPresentation).toBe('tab');
+      panes.tools!.pane.setActiveTab(tool);
+      expect(layout.chatWorkspaceSinglePaneId).toBe(panes.tools!.paneId);
+      expect(layout.layout).toBe(tree);
+      expect(panes.chat.pane.tabOrder).toEqual([owner]);
+    } finally { detach(); }
+  });
   it('splits when the first tool opens, keeps a chosen mode, and resets after the last tool closes', () => {
     const layout = makeLayout('owner');
     const owner = layout.open('chat', { id: 'owner' }, newTab)!;
@@ -148,9 +172,9 @@ describe('mounted chat workspace', () => {
 
       layout.setChatToolLayout('hidden');
       const second = layout.open('tool', { id: 'two' }, newTab)!;
-      expect(layout.chatWorkspaceMode).toBe('hidden');
-      expect(layout.activePaneId).toBe(panes.chat.paneId);
-      expect(layout.isPaneShown(panes.tools!.paneId)).toBe(false);
+      expect(layout.chatWorkspaceMode).toBe('split');
+      expect(layout.activePaneId).toBe(panes.tools!.paneId);
+      expect(layout.isPaneShown(panes.tools!.paneId)).toBe(true);
 
       layout.setChatToolLayout('split');
       const before = layout.layout;
@@ -172,6 +196,44 @@ describe('mounted chat workspace', () => {
     } finally {
       detachWorkspace();
     }
+  });
+
+  it.each([640, 1440])('keeps background opens hidden, but reveals the same resource on an explicit open at %ipx', (width) => {
+    const layout = makeLayout('explicit-owner');
+    const owner = layout.open('chat', { id: 'explicit-owner' }, newTab)!;
+    const detach = layout.attachChatWorkspace();
+    try {
+      layout.setDimensions(width, 600);
+      layout.open('tool', { id: 'first' }, newTab);
+      const panes = layout.chatWorkspacePanes!;
+      layout.setChatToolLayout('hidden');
+      const geometry = layout.layout;
+      const background = layout.open('tool', { id: 'background' }, { ...newTab, activate: false })!;
+      const resource = panes.tools!.pane._resources.get(background);
+      expect(layout.chatWorkspaceMode).toBe('hidden');
+      expect(layout.activePaneId).toBe(panes.chat.paneId);
+      expect(layout.isPaneShown(panes.tools!.paneId)).toBe(false);
+      expect(layout.open('tool', { id: 'background' }, { from: owner, intent: 'navigate' })).toBe(background);
+      expect(layout.chatWorkspaceMode).toBe('split');
+      expect(layout.activePaneId).toBe(panes.tools!.paneId);
+      expect(layout.focusedPane.resolvedActiveTabId).toBe(background);
+      expect(layout.isPaneShown(panes.tools!.paneId)).toBe(true);
+      expect(layout.layout).toBe(geometry);
+      expect(panes.tools!.pane._resources.get(background)).toBe(resource);
+      const order = [...panes.tools!.pane.tabOrder];
+      layout.setChatToolLayout('hidden');
+      expect(layout.open('tool', { id: 'background' }, { from: owner, intent: 'navigate' })).toBe(background);
+      expect(layout.chatWorkspaceMode).toBe('split');
+      expect(layout.focusedPane.resolvedActiveTabId).toBe(background);
+      expect(panes.tools!.pane.tabOrder).toEqual(order);
+      layout.setChatToolLayout('hidden');
+      const saved = layout.snapshot;
+      const restored = makeLayout('explicit-owner');
+      restored.restoreSnapshot(saved);
+      const detachRestored = restored.attachChatWorkspace();
+      try { expect(restored.chatWorkspaceMode).toBe('hidden'); }
+      finally { detachRestored(); }
+    } finally { detach(); }
   });
 
   it('closes tool tabs as a group without including the conversation in the tool strip', async () => {

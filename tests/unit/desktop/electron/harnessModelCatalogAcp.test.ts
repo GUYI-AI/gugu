@@ -1110,6 +1110,29 @@ function handle(msg) {
    * 不设上限就会永远占着 `inFlight`,那家 harness 的目录卡在 `unknown` 直到重启 = 静默失败。
    * 这是停摆守卫存在的**唯一**理由,所以必须有一条断言钉着它真的会咬。
    */
+  it('Codex history preparation is owned by its native initialize budget, not the outer inactivity guard', async () => {
+    const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process')
+    vi.mocked(spawn).mockImplementationOnce(((...args: Parameters<typeof actual.spawn>) => {
+      const child = actual.spawn(...args)
+      queueMicrotask(() => child.stdout?.on('data', () => vi.advanceTimersByTime(1_000)))
+      return child
+    }) as typeof spawn)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      __setInactivityLimitForTest(200)
+      await useAgent(`
+function handle(msg) {
+  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1 });
+  if (msg.method === 'session/new') return reply(msg.id, { sessionId: 's', configOptions: [
+    { id: 'model', category: 'model', type: 'select', currentValue: 'prepared', options: [{ value: 'prepared', name: 'Prepared' }] }
+  ] });
+}
+`)
+      const state = await probeHarnessModelCatalog('codex', 'acp')
+      expect(state.kind).toBe('ready')
+    } finally { vi.useRealTimers() }
+  })
+
   it('起来了但彻底不出声 → 被停摆守卫收掉,报出原因', async () => {
     __setInactivityLimitForTest(200)
     await useAgent(`

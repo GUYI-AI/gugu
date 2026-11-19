@@ -155,6 +155,7 @@ export const acpStartStageSchema = z.enum([
 export type AcpStartStage = z.infer<typeof acpStartStageSchema>;
 export const acpStartProgressSchema = z.object({
   stage: acpStartStageSchema,
+  preparation: z.object({ phase: z.enum(['preparing', 'history']), startedAt: z.number(), attempt: z.number().int().positive() }).optional(),
   /** 这一步开始的时刻。 */
   since: z.number(),
   /** 整次启动开始的时刻。 */

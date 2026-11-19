@@ -22,8 +22,12 @@ export const TabBar = observer(function TabBar({
   leadingReservePx,
   leadingSlot,
   toolsOnly = false,
+  leadingTabsSlot,
+  selectedTabId,
 }: {
   toolsOnly?: boolean;
+  leadingTabsSlot?: ReactNode;
+  selectedTabId?: string;
   /** Rendered immediately after the last tab, before the flexible drop zone. */
   tabTrailingSlot?: ReactNode;
   /** 左端还要让出多宽(单独成窗时让开 mac 的红绿灯)。见 <TabStripShell>。 */
@@ -57,7 +61,7 @@ export const TabBar = observer(function TabBar({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const order = useTabOrderPreview(pane, scrollContainerRef);
   const entries = [
-    ...resolvedTabs.map((tab) => ({ tab: toolsOnly ? { ...tab, pairRole: undefined } : tab, host: pane, paneId, focused: isFocusedPane })),
+    ...resolvedTabs.map((tab) => ({ tab: toolsOnly ? { ...tab, pairRole: undefined, isActive: selectedTabId ? tab.tabId === selectedTabId : tab.isActive } : tab, host: pane, paneId, focused: isFocusedPane })),
     ...(side?.pane.resolvedTabs.map((tab) => ({ tab, host: side.pane, paneId: side.paneId, focused: !isFocusedPane })) ?? []),
   ];
   const tabsById = new Map(entries.map((entry) => [entry.tab.tabId, entry]));
@@ -124,7 +128,8 @@ export const TabBar = observer(function TabBar({
       leadingReservePx={leadingReservePx}
       leadingSlot={leadingSlot}
     >
-      <TabStripMotion scroller={scrollContainerRef} order={stripOrder.join('\0')} activeTabId={pane.activeTabId} keepActiveOnResize={toolsOnly}>
+      <TabStripMotion scroller={scrollContainerRef} order={stripOrder.join('\0')} activeTabId={selectedTabId ?? pane.activeTabId} keepActiveOnResize={toolsOnly}>
+      {leadingTabsSlot}
       {stripOrder.map((id) => {
         const entry = tabsById.get(id);
         if (!entry) return null;

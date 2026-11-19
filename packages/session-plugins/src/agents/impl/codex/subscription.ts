@@ -1,4 +1,5 @@
 import { createInterface } from 'node:readline';
+import { retryCodexPreparation, type CodexPreparation } from '@gugu/core/local/codex-initialize.mjs';
 import type {
   AgentAuthContext,
   ISubscriptionBehavior,
@@ -146,65 +147,66 @@ export function windowsFromUsage(response: unknown, now = Date.now()): Subscript
  * 起一个 `codex app-server`,握手、问一句、拿到回答就停掉整棵进程树。
  * env 用宿主给的那份(代理、CODEX_HOME 都在里面);app-server 的 stderr 只留最后一段做报错原话。
  */
-async function askAppServer(ctx: AgentAuthContext, method: string, params: unknown): Promise<unknown> {
+export type CodexPrepareOptions = { signal?: AbortSignal; onProgress?: (progress: CodexPreparation | null) => void };
+
+/** Native initialize is also the migration's index preparation entry; it never edits state tables. */
+export async function prepareCodexHistory(ctx: AgentAuthContext, options: CodexPrepareOptions = {}): Promise<void> {
+  await askAppServer(ctx, null, {}, options);
+}
+
+async function askAppServer(ctx: AgentAuthContext, method: string | null, params: unknown, options: CodexPrepareOptions = {}): Promise<unknown> {
+  return retryCodexPreparation(() => askAppServerAttempt(ctx, method, params, options.signal), options);
+}
+
+async function askAppServerAttempt(ctx: AgentAuthContext, method: string | null, params: unknown, signal?: AbortSignal): Promise<unknown> {
+  signal?.throwIfAborted();
   const binary = ctx.env.GUGU_CODEX_BIN?.trim() || ctx.cli;
   let failure: Error | null = null;
-  const owned = spawnOwnedChild(binary, ['app-server'], {
-    env: ctx.env,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    onError: (error) => {
-      failure = error;
-    },
-  });
+  const owned = spawnOwnedChild(binary, ['app-server'], { env: ctx.env, stdio: ['pipe', 'pipe', 'pipe'], onError: error => { failure = error; } });
   const child = owned.child;
   let stderrTail = '';
-  child.stderr?.on('data', (chunk: Buffer) => {
-    stderrTail = (stderrTail + chunk.toString('utf8')).slice(-2000);
-  });
+  child.stderr?.on('data', (chunk: Buffer) => { stderrTail = (stderrTail + chunk.toString('utf8')).slice(-8192); });
   const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
   const lines = createInterface({ input: child.stdout!, crlfDelay: Infinity });
-  lines.on('line', (line) => {
-    let message: { id?: unknown; result?: unknown; error?: { message?: unknown } };
-    try {
-      message = JSON.parse(line);
-    } catch {
-      return;
-    }
-    if (typeof message.id !== 'number') return;
-    const waiter = pending.get(message.id);
+  lines.on('line', line => {
+    let message: { id?: number; result?: unknown; error?: { message?: unknown } };
+    try { message = JSON.parse(line); } catch { return; }
+    const waiter = typeof message.id === 'number' ? pending.get(message.id) : undefined;
     if (!waiter) return;
-    pending.delete(message.id);
-    if (message.error) waiter.reject(new Error(String(message.error.message ?? JSON.stringify(message.error))));
+    pending.delete(message.id!);
+    if (message.error) waiter.reject(new Error(String(message.error.message ?? 'Codex request failed')));
     else waiter.resolve(message.result);
   });
   let nextId = 1;
-  const request = (name: string, body: unknown) =>
-    new Promise<unknown>((resolve, reject) => {
-      const id = nextId++;
-      pending.set(id, { resolve, reject });
-      child.stdin!.write(`${JSON.stringify({ id, method: name, params: body })}\n`);
-    });
+  const request = (name: string, body: unknown) => new Promise<unknown>((resolve, reject) => {
+    const id = nextId++; pending.set(id, { resolve, reject });
+    child.stdin!.write(JSON.stringify({ id, method: name, params: body }) + '\n');
+  });
   const exited = new Promise<never>((_, reject) => {
-    child.once('exit', (code) => reject(failure ?? new Error(`codex app-server 退出了(${code}):${stderrTail.trim().split('\n').pop() ?? ''}`)));
+    child.once('close', code => reject(failure ?? new Error('Codex app-server exited (' + code + ')')));
+    child.once('error', reject);
+  });
+  exited.catch(() => {});
+  let abort!: () => void;
+  const aborted = new Promise<never>((_, reject) => {
+    abort = () => reject(signal?.reason ?? new Error('Codex preparation cancelled'));
+    signal?.addEventListener('abort', abort, { once: true });
   });
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`codex app-server ${APP_SERVER_TIMEOUT_MS / 1000} 秒内没有回答`)), APP_SERVER_TIMEOUT_MS);
+  const deadline = (ms: number) => new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Codex app-server request timed out')), ms);
   });
   try {
-    return await Promise.race([
-      (async () => {
-        await request('initialize', { clientInfo: { name: 'gugu', title: 'Gugu', version: '0' }, capabilities: null });
-        child.stdin!.write(`${JSON.stringify({ method: 'initialized' })}\n`);
-        return request(method, params);
-      })(),
-      exited,
-      timeout,
-    ]);
-  } finally {
+    const initialized = await Promise.race([request('initialize', { clientInfo: { name: 'gugu', title: 'Gugu', version: '0' }, capabilities: null }), exited, aborted]);
     clearTimeout(timer);
-    lines.close();
-    exited.catch(() => undefined);
+    if (method === null) return initialized;
+    child.stdin!.write(JSON.stringify({ method: 'initialized' }) + '\n');
+    return await Promise.race([request(method, params), exited, aborted, deadline(APP_SERVER_TIMEOUT_MS)]);
+  } catch (error) {
+    if (error instanceof Error) Object.assign(error, { stderrTail });
+    throw error;
+  } finally {
+    clearTimeout(timer); signal?.removeEventListener('abort', abort); lines.close();
     await owned.stop({ graceMs: 2_000 }).catch(() => undefined);
   }
 }

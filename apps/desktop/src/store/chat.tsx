@@ -1,4 +1,5 @@
 import { useChatListState } from './chatListState'
+import { publishChatRemoved } from '../lib/chatRemovalBridge'
 import { useConversationHiding } from './useConversationHiding'
 import { useChatCatchupPriority, useChatCatchupResume } from './chatCatchupPriority'
 import { useChatListRefresh } from './chatListRefresh'
@@ -786,26 +787,25 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   }, [chatsRef, setChats, userId])
 
   const { hideConversation, clearConversation, undoConversationHide } = useConversationHiding(userId, chatProjection)
-  const deleteChat = useCallback(async (chatId: string, persist = false) => {
-    if (persist) { await (chatsRef.current.find((chat) => chat.id === chatId)?.kind === 'topic' ? topicService.archiveTopic(chatId) : chatService.archiveChat(chatId)); if (imRepositoryScope.disposed) return }
-    projectionRef.current.forgetChat(chatId) // 显式删除是权威动作:乐观行与投影水位一起出列 (#4314)
+  const removeLocalChat = useCallback((chatId: string) => {
+    projectionRef.current.forgetChat(chatId)
+    if (userId) publishChatRemoved(userId, chatId)
     setChats((prev) => prev.filter((c) => c.id !== chatId))
     dropTextDraft(chatId)
     dropDraftAttachments(chatId) // @@@draft-attachment (#1872) - drop queued attachments alongside the draft
     cache.delete(chatId)
     if (activeChatIdRef.current === chatId) setActiveChatId(null)
-  }, [setChats, dropTextDraft, dropDraftAttachments, cache, setActiveChatId, chatsRef, imRepositoryScope.disposed])
+  }, [setChats, dropTextDraft, dropDraftAttachments, cache, setActiveChatId, userId])
+  const deleteChat = useCallback(async (chatId: string, persist = false) => {
+    if (persist) { await (chatsRef.current.find((chat) => chat.id === chatId)?.kind === 'topic' ? topicService.archiveTopic(chatId) : chatService.archiveChat(chatId)); if (imRepositoryScope.disposed) return }
+    removeLocalChat(chatId)
+  }, [chatsRef, imRepositoryScope.disposed, removeLocalChat])
   // #901 退出群聊：共同 RPC 确认移除本人席位后，再本地清理。
   const leaveGroup = useCallback(async (chatId: string) => {
     if (!userId) throw new Error('Not authenticated')
     await chatService.removeGroupMember(chatId, userId)
-    projectionRef.current.forgetChat(chatId) // 同 deleteChat:退出是权威动作 (#4314)
-    setChats((prev) => prev.filter((c) => c.id !== chatId))
-    dropTextDraft(chatId)
-    dropDraftAttachments(chatId) // @@@draft-attachment (#1872) - drop queued attachments alongside the draft
-    cache.delete(chatId)
-    if (activeChatIdRef.current === chatId) setActiveChatId(null)
-  }, [userId, setChats, dropTextDraft, dropDraftAttachments, cache, setActiveChatId])
+    removeLocalChat(chatId)
+  }, [userId, removeLocalChat])
   const markUnread = useCallback((chatId: string) => markManualUnreadAndRefresh(chatId, { chats: chatsRef.current, patchChat, toast, refresh: loadChats }), [chatsRef, loadChats, patchChat, toast])
   const setChatNotificationLevel = useCallback(async (chatId: string, level: NotificationLevel) => {
     if (!userId) throw new Error('Not authenticated')

@@ -1,4 +1,5 @@
 import type { IAcpBehavior } from '@gugu/session-core/agents/plugins';
+import { noteCodexPreparation } from './codex-preparation-progress';
 import type { SessionCommandDefinition } from '@gugu/session-core/acp';
 import { isAcpAuthRequired } from '@gugu/session-core/acp';
 import type { AcpPermissionParams } from '@gugu/session-core/agents/plugins';
@@ -681,14 +682,11 @@ export class SessionManager implements InboundRouter {
         capabilitySpawnEnv: input.capabilitySpawnEnv,
         capabilitySpawnArgs: input.capabilitySpawnArgs,
         buildClient: (_agent, context) => buildAgentClient(context, this, this.ports),
-        ...(binding.behavior.turnFailure?.fromStderrLine
-          ? {
-              onStderrLine: (line: string) => {
-                const failure = binding.behavior.turnFailure?.fromStderrLine?.(line);
-                if (failure) record.cell.noteProviderStderrFailure(failure);
-              },
-            }
-          : {}),
+        onStderrLine: (line: string) => {
+          noteCodexPreparation(input.providerId, line, this.startProgress, input.sessionId, () => this.syncRecord(record));
+          const failure = binding.behavior.turnFailure?.fromStderrLine?.(line);
+          if (failure) record.cell.noteProviderStderrFailure(failure);
+        },
         onStage: (stage, executable) => this.markStartStage(input, stage, executable),
       },
       isAcpConnectionError
@@ -2917,7 +2915,7 @@ export class SessionManager implements InboundRouter {
       lastActionAt: recent.lastActionAt,
       failure: cell?.sessionState.failure ?? state.failure ?? null,
       ...(cell ? { canReattach: cell.canReattach } : {}),
-      startProgress: state.lifecycle === 'starting'
+      startProgress: state.lifecycle === 'starting' || state.lifecycle === 'replaying'
         ? this.startProgress.get(input.sessionId) ?? null
         : null,
       updatedAt: Date.now(),
