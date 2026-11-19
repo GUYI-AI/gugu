@@ -76,7 +76,6 @@ import { cachedPhoneAgents, phoneDispatch } from './phoneDispatch'
 import { onPhoneAppState, phoneAppState } from './phoneAppState'
 import { subscribeDeviceSessions } from '../../session/shared/remote-sessions/session-directory'
 import { callOnComputer } from './phoneProgramCall'
-import { isImplicitSessionHomeProjectId } from '../../session/shared/core/projects/session-home-project'
 import { openPhoneWorkingCopyFile, type ReadWorkingCopyChunk } from './phone-working-copy-file'
 import { appDeviceId, folderElsewhereRefusal, followsSessionMachine, notOnSessionMachine } from '../../session/shared/extensions/machine-call'
 import { rendererFileServiceUrl } from '../../lib/chatFolder'
@@ -521,7 +520,8 @@ export function hostAppFrame(
             sessionId: hosted.binding.session.id,
             deviceId: hosted.binding.session.deviceId,
             ...(hosted.binding.session.deviceLabel ? { deviceLabel: hosted.binding.session.deviceLabel } : {}),
-            ...(hosted.binding.session.projectId ? { projectId: hosted.binding.session.projectId, ...(isImplicitSessionHomeProjectId(hosted.binding.session.projectId) ? { taskHome: true as const } : {}) } : {}),
+            // Another machine's session: its task home is not recognisable here, so no taskHome mark (as on the desktop's App surface).
+            ...(hosted.binding.session.projectId ? { projectId: hosted.binding.session.projectId } : {}),
           },
         }
       : {}),

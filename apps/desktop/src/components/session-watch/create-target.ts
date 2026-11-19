@@ -12,14 +12,20 @@ import type { GroupWithFolders } from '@renderer/features/folders/group-folders-
  */
 export type CreateProject = { chatId: string; name: string; homes: ReadonlyMap<string, { folderId: string; path: string }> }
 
-/** 挂了文件夹的群(groupFoldersStore,桌面群选择器同一份)。 */
-export function accountProjects(groups: readonly GroupWithFolders[]): CreateProject[] {
-  return groups.map((group) => {
+/**
+ * 挂了文件夹的群(groupFoldersStore,桌面群选择器同一份)。#1629:个人助理宿主上的文件夹是助理的家,不列,那台宿主也不算群的
+ * 机器;文件夹全在那台上的群整个不列(与从前只绑在助理宿主上的项目同一条)。
+ */
+export function accountProjects(groups: readonly GroupWithFolders[], devices: readonly Device[], isAssistantHome: (device: Device) => boolean): CreateProject[] {
+  const home = new Set(devices.filter(isAssistantHome).map((device) => device.device_id))
+  return groups.flatMap((group) => {
+    const folders = group.folders.filter((folder) => !folder.deviceId || !home.has(folder.deviceId))
+    if (group.folders.length > 0 && folders.length === 0) return []
     const homes = new Map<string, { folderId: string; path: string }>()
-    for (const folder of group.folders) {
+    for (const folder of folders) {
       if (folder.deviceId && !homes.has(folder.deviceId)) homes.set(folder.deviceId, { folderId: folder.id, path: folder.path })
     }
-    return { chatId: group.chatId, name: group.name, homes }
+    return [{ chatId: group.chatId, name: group.name, homes }]
   })
 }
 

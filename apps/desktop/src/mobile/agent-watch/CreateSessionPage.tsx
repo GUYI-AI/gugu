@@ -117,7 +117,7 @@ function CreateSessionForm({ taskGroup = null, onBack, onCreated }: CreateSessio
   const machines = useMemo(() => visibleMachines(devices, isHome), [devices, isHome])
   // 挂了文件夹的群(groupFoldersStore,桌面群选择器同一份)。
   const groups = useSyncExternalStore(groupFoldersStore.subscribe, () => groupFoldersStore.groups)
-  const projects = useMemo(() => accountProjects(groups), [groups])
+  const projects = useMemo(() => accountProjects(groups, devices, isHome), [groups, devices, isHome])
   // 默认不选群(桌面 New task 同:`没选群 · 默认机器`)。
   const [projectKey, setProjectKey] = useState<string | null>(null)
   const project = projects.find((one) => one.chatId === projectKey) ?? null
