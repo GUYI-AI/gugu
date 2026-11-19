@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from '@shared/core/sessions/sessions';
-import { projectCreatedChannel, projectDeletedChannel, projectVisibilityChangedChannel } from '@shared/core/projects/projectEvents';
+import { projectCreatedChannel, projectDeletedChannel, projectRootRestoredChannel, projectVisibilityChangedChannel } from '@shared/core/projects/projectEvents';
 import { sessionCreatedChannel } from '@shared/core/sessions/sessionEvents';
 import type { LocalProject } from '@shared/projects';
 // 这个模块被 vi.mock 掉了,导进来拿到的就是那份替身 —— 挂载末尾补跑的 revalidate 打在它上面。
@@ -362,6 +362,30 @@ describe('ProjectManagerStore project creation', () => {
     expect(store.projects.get(project.id)?.name).toBe(project.name);
     expect(mount).toHaveBeenCalledWith(project.id);
     expect(mocks.createProject).not.toHaveBeenCalled();
+  });
+
+  it.each(['/project', '/restored-folder'])('reopens the retained project provider after root recovery at %s', (path) => {
+    const store = new ProjectManagerStore();
+    const project = localProject({ repositoryWorkspaceId: 'retained-root' });
+    const known = createUnmountedProject(project, 'idle');
+    const dispose = vi.fn();
+    known.state = 'mounted';
+    known.mountedProject = { dispose } as never;
+    store.projects.set(project.id, known);
+    const mount = vi.spyOn(store, 'mountProject').mockResolvedValue(undefined);
+    const handler = mocks.eventOn.mock.calls.find(([channel]) => channel === projectRootRestoredChannel)?.[1];
+    if (!handler) throw new Error('Expected root-restored subscription');
+    const restored = localProject({ ...project, path: path as CanonicalPath });
+
+    handler({ project: restored });
+
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(store.projects.size).toBe(1);
+    expect(store.projects.get(project.id)?.data).toEqual(restored);
+    expect(store.projects.get(project.id)?.mountedProject).toBeNull();
+    expect(mount).toHaveBeenCalledWith(project.id);
+    expect(mocks.createProject).not.toHaveBeenCalled();
+    store.dispose();
   });
 
   it('hands a session created in a project that is not mounted yet to its task manager once it mounts', async () => {
