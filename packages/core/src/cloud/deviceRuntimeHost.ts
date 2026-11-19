@@ -128,6 +128,9 @@ export interface DeviceRuntimeHostOptions {
   safetyIntervalMs?: number
   nowMs?: () => number
   authProvider: RuntimeAuthProvider
+  /** Native account-closure admission. A false value pauses this owner's work
+   * without pretending its auth disappeared or stopping another owner's host. */
+  ownerWorkAllowed?: (ownerId: string) => Promise<boolean>
   makeIdentityClient: (accessToken: string) => DeviceRuntimeIdentityClient
   nowIso?: () => string
   capabilities?: DeviceCapabilitiesSource
@@ -221,6 +224,8 @@ export interface DeviceRuntimeHost {
   notifyScheduledTasksChanged: () => void
   start: () => void
   stop: () => Promise<void>
+  /** Caller first persists ownerWorkAllowed=false, then drains admitted IO. */
+  quiesceOwnerForClosure?: (ownerId: string) => Promise<void>
   getDebugSnapshot: () => DeviceRuntimeHostDebugSnapshot
 }
 
@@ -301,6 +306,11 @@ export function createDeviceRuntimeHostLoop(
   options: DeviceRuntimeHostOptions
 ): DeviceRuntimeHost {
   const env = options.env ?? process.env
+  const readWorkAuth = async () => {
+    const auth = await options.authProvider.getAuth()
+    if (auth?.userId && options.ownerWorkAllowed && !await options.ownerWorkAllowed(auth.userId)) return null
+    return auth
+  }
   const intervalMs = options.intervalMs ?? DEVICE_COMMAND_DRAIN_RETRY_INTERVAL_MS
   const superviseIntervalMs = options.superviseIntervalMs ?? DEVICE_SUPERVISE_INTERVAL_MS
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEVICE_HEARTBEAT_INTERVAL_MS
@@ -752,7 +762,7 @@ export function createDeviceRuntimeHostLoop(
     blanketAnnouncementDuringTick = false
     const preClaim = startPreClaimTimer(trigger)
     try {
-      const auth = await options.authProvider.getAuth()
+      const auth = await readWorkAuth()
       if (!auth?.accessToken || !auth.userId) {
         unsubscribeCommandWake()
         unsubscribeDeviceRpc()
@@ -1061,7 +1071,7 @@ export function createDeviceRuntimeHostLoop(
 
   async function runScheduledTasksOnce(generation: number): Promise<void> {
     try {
-      const auth = await options.authProvider.getAuth()
+      const auth = await readWorkAuth()
       if (!auth?.accessToken || !auth.userId) return
       if (generation !== lifecycleGeneration || stopped) return
       // 身份边界未确立之前不跑:owner 还没被 tick 认定时,扫到的可能是上一个人的任务。
@@ -1094,7 +1104,7 @@ export function createDeviceRuntimeHostLoop(
     if (stopped || !lastDeviceId) return
     const generation = lifecycleGeneration
     try {
-      const auth = await options.authProvider.getAuth()
+      const auth = await readWorkAuth()
       if (!auth?.accessToken || !auth.userId) return
       if (generation !== lifecycleGeneration || stopped || activeOwnerUserId !== auth.userId || !lastDeviceId) return
       const reading = await reportRuntimeInstanceHeartbeat(
@@ -1139,7 +1149,7 @@ export function createDeviceRuntimeHostLoop(
     if (stopped) return
     const generation = lifecycleGeneration
     try {
-      const auth = await options.authProvider.getAuth()
+      const auth = await readWorkAuth()
       if (!auth?.accessToken || !auth.userId) return
       if (generation !== lifecycleGeneration || stopped) return
       if (activeOwnerUserId !== auth.userId) return
@@ -1264,6 +1274,7 @@ export function createDeviceRuntimeHostLoop(
   async function maintainLocalAgents(generation: number): Promise<void> {
     const auth = lastAuth
     if (!auth?.accessToken || auth.userId !== activeOwnerUserId) return
+    if (options.ownerWorkAllowed && !await options.ownerWorkAllowed(auth.userId)) return
     // @@@push-fresh-session - owner 的 GoTrue 会话每次续期都轮换,本机 agent 的令牌档跟着换;令牌没变就没有要写的。
     // 有一档没写成就不记账,稍后整批重写。新建的 agent 由 provisioning 自己写它那一档。
     if (auth.accessToken !== runtimeSessionsAccessToken && nowMs() >= runtimeSessionsRetryAt) {
@@ -1282,7 +1293,7 @@ export function createDeviceRuntimeHostLoop(
     lastActivityReconcileAt = nowMs()
     await pruneStaleGuestRecords({ env })
     // lastAuth 是上一轮 tick 拿的:队列空着时 tick 几分钟才一轮,它会过期(#1760)。对账很少跑,现取一份。
-    const current = await options.authProvider.getAuth()
+    const current = await readWorkAuth()
     if (!current?.accessToken || current.userId !== activeOwnerUserId) return
     cloudReconciled = await reconcileWithCloud(current, generation)
   }
@@ -1435,7 +1446,7 @@ export function createDeviceRuntimeHostLoop(
         (id) => !samePublishedStatus(publishedActivity.get(id), publishedStatusOf(agentStatusOf(id))),
       ) || agentUserIds.some(recentActionsChanged) || [...publishedActivity.keys()].some((id) => !agentUserIds.includes(id))
       if (!somethingChanged) return
-      const auth = await options.authProvider.getAuth()
+      const auth = await readWorkAuth()
       if (!auth?.accessToken || !auth.userId) return
       if (generation !== lifecycleGeneration || stopped) return
       if (activeOwnerUserId !== auth.userId) return
@@ -1464,6 +1475,24 @@ export function createDeviceRuntimeHostLoop(
       if (error instanceof RuntimeAuthExpiredError) throw error
       options.warn?.(`[device-runtime] activity edge publish failed: ${String((error as Error)?.message ?? error)}`)
     }
+  }
+
+  async function quiesceOwnerForClosure(ownerId: string): Promise<void> {
+    if (!options.ownerWorkAllowed || await options.ownerWorkAllowed(ownerId)) throw new Error('Account closure work admission is not paused')
+    const detach = () => {
+      if (activeOwnerUserId !== ownerId) return
+      unsubscribeCommandWake(); unsubscribeDeviceRpc(); unsubscribeOwnedAgentChanges()
+      clearScheduledTasksTimer()
+      lastLeaseRenewAt = null
+      if (lastAuth?.userId === ownerId) lastAuth = null
+    }
+    detach()
+    // Do not stop the shared publisher, rewrite its owner or abort a possible B
+    // generation. New A work is refused by the persisted native admission gate.
+    await Promise.allSettled([activeTick, activeScheduledTasksRun, activeLeaseRenewal,
+      activeActivityPublish, activeHeartbeat, ...heartbeatFlights.values()].filter((flight): flight is Promise<void> | Promise<DeviceRuntimeHostTickResult> => flight !== null))
+    if (await options.ownerWorkAllowed(ownerId)) throw new Error('Account closure work admission changed while draining')
+    detach()
   }
 
   async function stop(): Promise<void> {
@@ -1579,6 +1608,7 @@ export function createDeviceRuntimeHostLoop(
     },
     start,
     stop,
+    quiesceOwnerForClosure,
     getDebugSnapshot,
   }
 }

@@ -63,7 +63,8 @@ const sameValue = (a: SyncValue, b: SyncValue) => JSON.stringify(valueSchema.par
 
 /** Sync state lives beside the account's vault root, never inside it: the vault requires its root to be empty
  * before it is first created, and treats anything else there as damage. */
-export const syncDirectory = (vaultDirectory: string, ownerId: string) => join(vaultDirectory, 'sync', ownerId)
+export const syncRootDirectory = (vaultDirectory: string) => join(vaultDirectory, 'sync')
+export const syncDirectory = (vaultDirectory: string, ownerId: string) => join(syncRootDirectory(vaultDirectory), ownerId)
 export interface VaultSyncOptions {
   root: string; ownerId: string; deviceId: string; keys: VaultKeyProtector; rpc: SyncRpc; vault: SyncVault
   /** The person approved a device; scope by the device kind (pending owner decision 2: every device gets the whole vault). */
@@ -79,6 +80,9 @@ export class VaultSync {
   #view: SyncView = { state: 'off' }
   #queue: Promise<unknown> = Promise.resolve()
   #writes: Promise<unknown> = Promise.resolve()
+  #closed = false
+  #closing?: Promise<void>
+  readonly #active = new Set<Promise<unknown>>()
   /** Per requesting device: the nonce this device posted as approver, and the key and commitment it saw before posting.
    * Lost on restart: the request then shows as elsewhere, and opening it again starts a new round. */
   readonly #challenges = new Map<string, { nonce: string; publicKey: string; commitment: string }>()
@@ -87,18 +91,53 @@ export class VaultSync {
   constructor(options: VaultSyncOptions) { this.#o = options }
   view(): SyncView { return this.#view }
   /** Cheap check: has anything been written for this account since the last pull? */
-  async poll(): Promise<boolean> {
-    const file = await this.load()
-    return String(await this.call('password_vault_revision', { p_device_id: file.deviceId })) !== this.#seen
+  poll(): Promise<boolean> {
+    return this.track(async () => {
+      const file = await this.load()
+      return String(await this.call('password_vault_revision', { p_device_id: file.deviceId })) !== this.#seen
+    })
   }
-  dispose() { this.#secret?.fill(0); this.#secret = undefined; this.#vaultKey?.key.fill(0); this.#vaultKey = undefined }
+  sealAdmission(): void { this.#closed = true }
+  dispose() { this.sealAdmission(); this.#secret?.fill(0); this.#secret = undefined; this.#vaultKey?.key.fill(0); this.#vaultKey = undefined; this.#file = undefined; this.#challenges.clear(); this.#view = { state: 'off' } }
+
+  /** Seal admission before waiting for independent poll/publish operations,
+   * serialized UI work and atomic device-file writes. Erasure waits for this. */
+  close(): Promise<void> {
+    if (this.#closing) return this.#closing
+    this.sealAdmission()
+    return this.#closing = (async () => {
+      for (;;) {
+        const queue = this.#queue, writes = this.#writes
+        await Promise.allSettled([...this.#active, queue, writes])
+        if (!this.#active.size && this.#queue === queue && this.#writes === writes) break
+      }
+      this.dispose()
+    })()
+  }
+  private assertOpen() { if (this.#closed) throw new VaultError('UNAVAILABLE') }
+  private track<T>(work: () => Promise<T>): Promise<T> {
+    if (this.#closed) return Promise.reject(new VaultError('UNAVAILABLE'))
+    const pending = Promise.resolve().then(() => { this.assertOpen(); return work() })
+    this.#active.add(pending)
+    const settled = () => { this.#active.delete(pending) }
+    void pending.then(settled, settled)
+    return pending
+  }
 
   private serial<T>(work: () => Promise<T>): Promise<T> {
-    const next = this.#queue.then(work); this.#queue = next.catch(() => undefined); return next
+    return this.track(() => {
+      const next = this.#queue.then(() => { this.assertOpen(); return work() })
+      this.#queue = next.catch(() => undefined)
+      return next
+    })
   }
   private async call<T = unknown>(name: string, args: Record<string, unknown>): Promise<T> {
-    try { return await this.#o.rpc(name, args) as T }
+    this.assertOpen()
+    let result: T
+    try { result = await this.#o.rpc(name, args) as T }
     catch (error) { throw toSyncError(error) }
+    this.assertOpen()
+    return result
   }
   private get path() { return join(this.#o.root, 'sync-device.json') }
   private binding(deviceId: string) { return JSON.stringify(['gugu-vault-sync-device', 1, this.#o.ownerId, deviceId]) }
@@ -123,7 +162,9 @@ export class VaultSync {
     } finally { pair.secretKey.fill(0) }
   }
   private save(): Promise<void> {
+    this.assertOpen()
     const write = this.#writes.then(async () => {
+      this.assertOpen()
       if (!this.#file) return
       await mkdir(this.#o.root, { recursive: true, mode: 0o700 })
       const temporary = `${this.path}.${randomUUID()}.tmp`
@@ -480,7 +521,8 @@ export class VaultSync {
 
   /** Called by the vault before a local commit. A device that never joined keeps the change local; it merges on joining.
    * A joined device that cannot reach the cloud refuses the edit: offline devices read and use, they do not edit. */
-  async publish(change: SyncChange): Promise<void> {
+  publish(change: SyncChange): Promise<void> { return this.track(() => this.publishNow(change)) }
+  private async publishNow(change: SyncChange): Promise<void> {
     const file = await this.load()
     if (!file.merged) return
     try {

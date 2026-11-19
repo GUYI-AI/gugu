@@ -21,7 +21,7 @@ import type { RuntimeFork } from '../sessions/session-life-forks';
 import { localAgentForSession } from '@main/core/sessionpage/sessionpage-session-agent';
 import { acpAgentStatusBridge } from './agent-status-bridge';
 import type { EmdashSessionIdentity } from './emdash-mcp-injector';
-import { prepareEmdashPlatformSession, releaseEmdashPlatformSession } from './emdash-platform-injector';
+import { prepareEmdashPlatformSession, releaseEmdashPlatformSession, releaseEmdashPlatformSessionForClosure } from './emdash-platform-injector';
 import { injectEmdashPromptDetached } from './inject-prompt';
 import {
   acpWorkerLease, callSessionStart, persistProviderSessionMissing, persistReturnedProviderSessionId,
@@ -98,6 +98,7 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
   let facts: Facts | null = null;
   let identity: EmdashSessionIdentity | null = null;
   let platformPreparation: Promise<string | null> | null = null;
+  let lateTeardown: Promise<void> | null = null;
   const piDeadline = new AbortController();
   let releasePiStartup: (() => void) | undefined;
   let piMaterialization: Promise<void> | undefined;
@@ -363,12 +364,19 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
         else if (platformPreparation) {
           // The attempt can stop before the platform stage took the ticket (its issue may still be out, or never answer):
           // settle only the generation this early operation owns, without waiting for it.
-          void platformPreparation.then(generation => generation ? releaseEmdashPlatformSession(sessionId, generation) : undefined)
-            .catch(error => log.warn('early platform preparation could not settle', { sessionId, error: String(error) }));
+          lateTeardown = platformPreparation.then(generation => generation ? releaseEmdashPlatformSession(sessionId, generation) : undefined);
+          void lateTeardown.catch(error => log.warn('early platform preparation could not settle', { sessionId, error: String(error) }));
         } else if (have.capabilities) await releaseEmdashPlatformSession(sessionId); // a session on its own model asks no ticket early
       } finally {
         finishPiStartup();
       }
+    },
+    async closureDrain() {
+      if (lateTeardown) await lateTeardown;
+      if (!facts?.platformModel) return;
+      const generation = await platformPreparation;
+      if (!generation) throw new Error('Platform release is unconfirmed');
+      await releaseEmdashPlatformSessionForClosure(sessionId, generation);
     },
     onExit(have, cb) {
       const worker = read<Worker>(have.process);
