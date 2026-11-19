@@ -1,3 +1,4 @@
+import { settingsSectionsForAccount } from './sectionsForAccount'
 import type { JSX } from 'react'
 import { SETTINGS_GROUPS, type ActiveSection, type SettingsGroupId } from '@gugu/core/shared/enums/settingsSectionModels'
 import type { AuthUser } from '../../store/auth'
@@ -161,8 +162,9 @@ function warmSettingsSection(key: string): void {
   if (key === 'model' && platformModels.peek().state === 'unknown') void platformModels.prefetch()
 }
 
-export function SettingsNav({ activeSection, sections, mobile = false, user, onSelect, onBack }: SettingsNavProps) {
+export function SettingsNav({ activeSection, sections: availableSections, mobile = false, user, onSelect, onBack }: SettingsNavProps) {
   const { t } = useTranslation('main')
+  const sections = settingsSectionsForAccount(availableSections, user)
   if (!mobile && import.meta.env.DEV) {
     const missing = sections.filter((section) => !DESKTOP_NAV_GROUPS.some((group) => group.sections.includes(section)))
     if (missing.length > 0) throw new Error(`SettingsNav: desktop sections missing a group: ${missing.join(', ')}`)
