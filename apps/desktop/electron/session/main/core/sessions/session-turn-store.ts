@@ -8,6 +8,8 @@ import { findToolImage, findToolItem, LOCAL_PAYLOAD_BUDGET, REMOTE_OLDER_PAGE_BU
 import { and, asc, desc, eq, gte, like, lt, notLike, sql } from 'drizzle-orm';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { nativePromptDigest } from '@gugu/session-core/acp/native-prompt';
+import { prepareSessionTurn, readSessionTurn, sessionTurnHeaderSql, sessionTurnRevision } from './session-turn-storage';
+import { withTurnPayloadWrite } from './session-turn-payload-owners';
 import { db, sqlite } from '@main/db/client';
 import { sessionTurns } from '@main/db/schema';
 import { randomUUID } from 'node:crypto';
@@ -58,8 +60,7 @@ export type CommittedTurnSource = 'live' | 'replay' | 'revision' | 'backfill';
  *
  * 是否回填在重放第一条时固定。不能只逐条对齐数量：旧档案非空，重放尾部的编号仍可能追上它的条数。
  *
- * 新回合用 `INSERT OR IGNORE` 保持按到达序幂等；已提交回合的改口(结局或迟到的尾巴)整轮替换其最新投影行。
- * `backfill`(更早那一轮被后台命令的终态补了内容,#6582)落盘与 `revision` 同一条路:按 turn id 找行、整轮替换。
+ * 新回合用 `INSERT OR IGNORE` 保持按到达序幂等；修订和补尾按 turn id 找行，只更新变化的规范化字段。
  */
 const persistenceTails = new Map<string, Promise<void>>();
 type PersistInput = { sessionId: string; source: CommittedTurnSource; turn: TranscriptTurn; windowCapture?: WindowCommitCapture };
@@ -67,7 +68,7 @@ type PersistInput = { sessionId: string; source: CommittedTurnSource; turn: Tran
 export function persistCommittedTurn(input: PersistInput): Promise<void> {
   if (input.windowCapture) input = { ...input, windowCapture: { ...input.windowCapture, cursor: { ...input.windowCapture.cursor } } };
   const previous = persistenceTails.get(input.sessionId) ?? Promise.resolve();
-  const write = async () => {
+  const write = () => withTurnPayloadWrite(db.$client, async () => {
     let captured: WindowCommitReceipt | undefined, phaseError: unknown, phaseFailed = false;
     if (input.windowCapture) input.windowCapture.intentBudget = createWindowBudget();
     try {
@@ -78,7 +79,7 @@ export function persistCommittedTurn(input: PersistInput): Promise<void> {
     }
     if (phaseFailed) throw phaseError;
     return captured;
-  };
+  });
   const completed = beginCanonicalQueueTask(input.sessionId);
   const next = previous.then(write, write).finally(completed);
   const tail = next.then(() => undefined, () => undefined);
@@ -98,7 +99,7 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
   const context = input.source === 'live' ? await nativePublicationContext(input.sessionId) : null;
   if (input.source === 'revision' || input.source === 'backfill') {
     const [row] = await db
-      .select({ id: sessionTurns.id, seq: sessionTurns.seq, data: sessionTurns.data })
+      .select({ id: sessionTurns.id, seq: sessionTurns.seq, data: sessionTurns.data, revision: sessionTurns.revision })
       .from(sessionTurns)
       .where(and(
         eq(sessionTurns.sessionId, input.sessionId),
@@ -107,17 +108,16 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
       .orderBy(desc(sessionTurns.seq))
       .limit(1);
     if (!row) throw new Error(`Cannot revise missing stored turn: sessionId=${input.sessionId} turnId=${input.turn.id} source=${input.source}`);
-    // 改口的可能是结局(进程退出改写 prompt_failed),也可能是内容(落定后才到的尾巴,#6191)
-    // ⇒ 整轮按库里的序号重编号后替换,❌ 只挑某个字段写。
-    const previous = JSON.parse(row.data) as TranscriptTurn;
+    // Preserve the stored identity; revisions update normalized fields, never the legacy data blob.
+    const previous = readSessionTurn(db.$client, row, { headerOnly: true });
     const turn = { ...input.turn, referenceId: input.turn.referenceId ?? previous.referenceId };
     const prepared = prepareNativePublicationTurn({ ...input, turn: renumberStoredTurn(turn, input.sessionId, row.seq), rowId: row.id, source: input.source, context }, db);
-    const revised = prepared.turn, serialized = JSON.stringify(revised);
+    const revised = prepared.turn, normalized = prepareSessionTurn(db.$client, row, revised, false);
     const captured = input.windowCapture ? await prepareWindowCommitWrite(sqlite, { sessionId: input.sessionId, referenceId: input.turn.referenceId,
-      rowId: row.id, storedSeq: row.seq, insert: false, serialized, capture: input.windowCapture }) : undefined;
+      rowId: row.id, storedSeq: row.seq, insert: false, normalized, capture: input.windowCapture }) : undefined;
     const publish = db.transaction(tx => {
       prepared.commit(tx);
-      tx.update(sessionTurns).set({ data: serialized }).where(eq(sessionTurns.id, row.id)).run();
+      normalized.commit();
       if (captured) commitWindowReceipt(sqlite, captured);
       return noteNativeConversationReplies(input.sessionId, revised, input.turn, tx);
     });
@@ -136,9 +136,9 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
   const rawTurn = renumberStoredTurn(input.turn, input.sessionId, next);
   const prepared = input.source === 'live' ? prepareNativePublicationTurn({ ...input, turn: rawTurn, rowId: `${input.sessionId}:${next}`, source: 'live', context }, db) : undefined;
   const turn = prepared?.turn ?? rawTurn;
-  const serialized = JSON.stringify(turn);
+  const normalized = prepareSessionTurn(db.$client, { id: `${input.sessionId}:${next}`, data: '', revision: 0 }, turn, true);
   const captured = input.windowCapture ? await prepareWindowCommitWrite(sqlite, { sessionId: input.sessionId, referenceId: input.turn.referenceId,
-    rowId: `${input.sessionId}:${next}`, storedSeq: next, insert: true, serialized, capture: input.windowCapture }) : undefined;
+    rowId: `${input.sessionId}:${next}`, storedSeq: next, insert: true, normalized, capture: input.windowCapture }) : undefined;
   const inserted = db.transaction(tx => {
     const result = tx.insert(sessionTurns)
     .values({
@@ -148,11 +148,12 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
       // turn_id 记**这一行来自引擎的哪一轮**(运行时原始 turn id);库里自己的 id 在 data 里(`:turn:sN`)。
       // 界面据此判断「引擎里新提交的那一轮是否已经落库」—— 按身份去重,❌ 不按条数(#5381 评审 #2/#3)。
       turnId: input.turn.id,
-      data: serialized,
+      data: normalized.marker,
     })
     .onConflictDoNothing()
     .returning({ seq: sessionTurns.seq }).all();
     if (result.length) {
+      normalized.commit();
       prepared?.commit(tx);
       if (captured) commitWindowReceipt(sqlite, captured);
     }
@@ -184,7 +185,8 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
 export function withStoredTurns<T>(sessionId: string, run: () => T | Promise<T>): Promise<T> {
   const previous = persistenceTails.get(sessionId) ?? Promise.resolve();
   const completed = beginCanonicalQueueTask(sessionId);
-  const result = previous.then(run, run).finally(completed);
+  const write = () => withTurnPayloadWrite(db.$client, run);
+  const result = previous.then(write, write).finally(completed);
   const tail = result.then(() => undefined, () => undefined);
   persistenceTails.set(sessionId, tail);
   void tail.then(() => {
@@ -196,12 +198,12 @@ export function withStoredTurns<T>(sessionId: string, run: () => T | Promise<T>)
 /** #980 库尾往前读,由新到旧,最多 `limit` 行。只在写链里调(`withStoredTurns`)。 */
 export async function readStoredTailNow(sessionId: string, limit: number): Promise<TranscriptTurn[]> {
   const rows = await db
-    .select({ data: sessionTurns.data })
+    .select({ id: sessionTurns.id, data: sessionTurns.data })
     .from(sessionTurns)
     .where(eq(sessionTurns.sessionId, sessionId))
     .orderBy(desc(sessionTurns.seq))
     .limit(limit);
-  return rows.map((row) => JSON.parse(row.data) as TranscriptTurn);
+  return rows.map(row => readSessionTurn(db.$client, row));
 }
 
 /**
@@ -216,9 +218,9 @@ export function* storedTurnsNewestFirstNow(sessionId: string, limit = Number.MAX
       .where(and(eq(sessionTurns.sessionId, sessionId), lt(sessionTurns.seq, before)))
       .orderBy(desc(sessionTurns.seq)).limit(Math.min(left, STORED_SEQ_PAGE)).all();
     for (const { seq } of seqs) {
-      const row = db.select({ data: sessionTurns.data }).from(sessionTurns)
+      const row = db.select({ id: sessionTurns.id, data: sessionTurns.data }).from(sessionTurns)
         .where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.seq, seq))).limit(1).get();
-      if (row) yield { seq, turn: JSON.parse(row.data) as TranscriptTurn };
+      if (row) yield { seq, turn: readSessionTurn(db.$client, row) };
     }
     if (seqs.length < Math.min(left, STORED_SEQ_PAGE)) return;
     before = seqs.at(-1)!.seq; left -= seqs.length;
@@ -229,17 +231,18 @@ const STORED_SEQ_PAGE = 200;
 /** The messages of this session's rows that carry the Hermes receipt for `nativeText` (found by SQL, not read in turn). */
 export function storedMessagesWithPromptHash(sessionId: string, nativeText: string): TranscriptTurn['items'] {
   const digest = nativePromptDigest(nativeText);
-  return db.select({ data: sessionTurns.data }).from(sessionTurns)
-    .where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.data, `%${digest}%`))).all()
-    .flatMap(row => (JSON.parse(row.data) as TranscriptTurn).items.filter(item => item.kind === 'message'));
+  return db.select({ id: sessionTurns.id }).from(sessionTurns)
+    .where(eq(sessionTurns.sessionId, sessionId)).all()
+    .flatMap(row => readSessionTurn(db.$client, row, { messagesOnly: true }).items)
+    .filter(item => JSON.stringify(item).includes(digest));
 }
 
 /** Record-backed rows without an outcome, with their sequence: a later read may complete them (see below). */
 export function readUnfinishedRecordRowsNow(sessionId: string): Array<{ seq: number; turn: TranscriptTurn }> {
-  return db.select({ seq: sessionTurns.seq, data: sessionTurns.data }).from(sessionTurns)
+  return db.select({ id: sessionTurns.id, seq: sessionTurns.seq, data: sessionTurns.data }).from(sessionTurns)
     .where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.turnId, 'record:%'),
-      sql`json_extract(${sessionTurns.data}, '$.outcome.kind') IS NULL`)).all()
-    .map(row => ({ seq: row.seq, turn: JSON.parse(row.data) as TranscriptTurn }));
+      sql`${sql.raw(sessionTurnHeaderSql('outcome_kind', '$.outcome.kind'))} IS NULL`)).all()
+    .map(row => ({ seq: row.seq, turn: readSessionTurn(db.$client, row) }));
 }
 
 /**
@@ -248,23 +251,24 @@ export function readUnfinishedRecordRowsNow(sessionId: string): Array<{ seq: num
  * `turn_id` 记 `record:` 开头的记录侧 id:这一行**不来自引擎的哪一轮**,界面按引擎 turn id 去重时不会把它认成谁。
  */
 export async function readUnfinishedRecordTurnsNow(sessionId: string): Promise<TranscriptTurn[]> {
-  const rows = await db.select({ data: sessionTurns.data }).from(sessionTurns)
+  const rows = await db.select({ id: sessionTurns.id, data: sessionTurns.data }).from(sessionTurns)
     .where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.turnId, 'record:%'),
-      sql`json_extract(${sessionTurns.data}, '$.outcome.kind') IS NULL`));
-  return rows.map(row => JSON.parse(row.data) as TranscriptTurn);
+      sql`${sql.raw(sessionTurnHeaderSql('outcome_kind', '$.outcome.kind'))} IS NULL`));
+  return rows.map(row => readSessionTurn(db.$client, row));
 }
 
 /** The record matcher has proved this unfinished row's native identity; keep its stored sequence/references. */
 export function reviseRecordTurnNow(sessionId: string, seq: number, turn: TranscriptTurn): void {
   // Synchronous: a fill writes each turn as the record streams (resume-tail), inside the reader's callback.
-  const stored = db.select({ id: sessionTurns.id, seq: sessionTurns.seq, data: sessionTurns.data })
+  const stored = db.select({ id: sessionTurns.id, seq: sessionTurns.seq, data: sessionTurns.data, revision: sessionTurns.revision })
     .from(sessionTurns).where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.seq, seq), like(sessionTurns.turnId, 'record:%'))).limit(1).get();
   if (!stored) throw new Error(`Cannot revise missing record turn: sessionId=${sessionId} seq=${seq}`);
-  const data = JSON.stringify(renumberStoredTurn(turn, sessionId, stored.seq));
-  if (stored.data !== data) {
+  const revised = renumberStoredTurn(turn, sessionId, stored.seq);
+  const normalized = prepareSessionTurn(db.$client, stored, revised, false);
+  if (normalized.changed) {
     const publish = db.transaction(tx => {
-      tx.update(sessionTurns).set({ data }).where(eq(sessionTurns.id, stored.id)).run();
-      return noteNativeConversationHistory(sessionId, JSON.parse(data) as TranscriptTurn, tx);
+      normalized.commit();
+      return noteNativeConversationHistory(sessionId, revised, tx);
     });
     publish?.();
   }
@@ -275,10 +279,12 @@ export function reviseRecordTurnNow(sessionId: string, seq: number, turn: Transc
 export function appendRecordTurnNow(sessionId: string, turn: TranscriptTurn): number {
   const next = nextSeqNow(sessionId);
   const stored = renumberStoredTurn(turn, sessionId, next);
+  const normalized = prepareSessionTurn(db.$client, { id: `${sessionId}:${next}`, data: '', revision: 0 }, stored, true);
   const publish = db.transaction(tx => {
     const inserted = tx.insert(sessionTurns).values({
-      id: `${sessionId}:${next}`, sessionId, seq: next, turnId: `record:${turn.id}`, data: JSON.stringify(stored),
+      id: `${sessionId}:${next}`, sessionId, seq: next, turnId: `record:${turn.id}`, data: normalized.marker,
     }).onConflictDoNothing().returning({ seq: sessionTurns.seq }).all();
+    if (inserted.length) normalized.commit();
     return inserted.length ? noteNativeConversationHistory(sessionId, stored, tx) : undefined;
   });
   publish?.();
@@ -293,7 +299,7 @@ export function appendRecordTurnNow(sessionId: string, turn: TranscriptTurn): nu
 export async function storedTurnIndexBase(sessionId: string): Promise<number> {
   await persistenceTails.get(sessionId);
   const rows = await db
-    .select({ turnId: sessionTurns.turnId, notifiedSource: sql<string | null>`CASE WHEN ${sessionTurns.turnId} LIKE 'owner-notify:%' THEN json_extract(${sessionTurns.data}, '$.items[0].ownerNotification.sourceTurnId') END` })
+    .select({ turnId: sessionTurns.turnId, notifiedSource: sql<string | null>`CASE WHEN ${sessionTurns.turnId} LIKE 'owner-notify:%' THEN ${sql.raw(sessionTurnHeaderSql('notified_source', '$.items[0].ownerNotification.sourceTurnId'))} END` })
     .from(sessionTurns)
     .where(eq(sessionTurns.sessionId, sessionId));
   let max = -1;
@@ -385,12 +391,12 @@ export async function getStoredToolImage(params: {
   sessionId: string; itemId: string; index: number;
 } & ({ seq: number } | { originTurnId: string })) {
   await persistenceTails.get(params.sessionId);
-  const [row] = await db.select({ data: sessionTurns.data, turnId: sessionTurns.turnId })
+  const [row] = await db.select({ id: sessionTurns.id, data: sessionTurns.data, turnId: sessionTurns.turnId })
     .from(sessionTurns).where(and(
       eq(sessionTurns.sessionId, params.sessionId),
       'seq' in params ? eq(sessionTurns.seq, params.seq) : eq(sessionTurns.turnId, params.originTurnId),
     )).orderBy(desc(sessionTurns.seq)).limit(1);
-  const stored = row ? JSON.parse(row.data) as TranscriptTurn : null;
+  const stored = row ? readSessionTurn(db.$client, row) : null;
   const turn = stored ? clearedHistoryTurns([stored], await nativeConversationHistoryFloor(params.sessionId))[0] ?? null : null;
   const itemId = row && turn && !('seq' in params)
     ? rewriteTurnId(params.itemId, row.turnId, turn.id) : params.itemId;
@@ -408,12 +414,12 @@ export async function getStoredToolImage(params: {
 /** Read one immutable live origin, even after its runtime record was removed. No provider is contacted. */
 export async function getStoredSettledTurn(params: { sessionId: string; referenceId: string; originTurnId: string }): Promise<StoredSettledTurn | null> {
   await persistenceTails.get(params.sessionId);
-  const [row] = await db.select({ data: sessionTurns.data, originTurnId: sessionTurns.turnId })
+  const [row] = await db.select({ id: sessionTurns.id, data: sessionTurns.data, originTurnId: sessionTurns.turnId })
     .from(sessionTurns).where(and(eq(sessionTurns.sessionId, params.sessionId), eq(sessionTurns.turnId, params.originTurnId),
-      sql`json_extract(${sessionTurns.data}, '$.referenceId') = ${params.referenceId}`))
+      sql`${sql.raw(sessionTurnHeaderSql('reference_id', '$.referenceId'))} = ${params.referenceId}`))
     .orderBy(desc(sessionTurns.seq)).limit(1);
   if (!row) return null;
-  const turn = clearedHistoryTurns([JSON.parse(row.data) as TranscriptTurn], await nativeConversationHistoryFloor(params.sessionId))[0];
+  const turn = clearedHistoryTurns([readSessionTurn(db.$client, row)], await nativeConversationHistoryFloor(params.sessionId))[0];
   return turn?.outcome ? { originTurnId: row.originTurnId, turn: trimTurnsForTransport([turn])[0]! } : null;
 }
 
@@ -448,6 +454,7 @@ export async function readStoredTurns(
     // 开场那一刻前后落库的那几行,有界;分页取反而会在两次取之间被新写进来的行错开。
     const rows = await db
       .select({
+        id: sessionTurns.id,
         seq: sessionTurns.seq,
         data: sessionTurns.data,
         turnId: sessionTurns.turnId,
@@ -474,12 +481,12 @@ export async function readStoredTurns(
   // @@@read-no-more-than-fits — the page that leaves here is cut to `budget` bytes, and the next call starts from the
   // oldest turn that was kept. Reading all `limit` rows first meant parsing megabytes to send a few turns, then
   // reading the same rows again. Rows come in small steps instead, and the reading stops once the page is full.
-  const rows: { seq: number; data: string; turnId: string; revision: number; turn: TranscriptTurn }[] = [];
+  const rows: { id: string; seq: number; data: string; turnId: string; revision: number; turn: TranscriptTurn }[] = [];
   let before = options.before, bytes = 0, exhausted = false;
   while (rows.length < limit) {
     const want = Math.min(options.budget === undefined ? limit : STORED_PAGE_STEP, limit - rows.length);
     const step = await db
-      .select({ seq: sessionTurns.seq, data: sessionTurns.data, turnId: sessionTurns.turnId, revision: sessionTurns.revision })
+      .select({ id: sessionTurns.id, seq: sessionTurns.seq, data: sessionTurns.data, turnId: sessionTurns.turnId, revision: sessionTurns.revision })
       .from(sessionTurns)
       .where(before === undefined
         ? eq(sessionTurns.sessionId, sessionId)
@@ -487,8 +494,8 @@ export async function readStoredTurns(
       .orderBy(desc(sessionTurns.seq))
       .limit(want);
     for (const row of step) {
-      const turn = JSON.parse(row.data) as TranscriptTurn;
-      rows.push({ ...row, turn });
+      const turn = readSessionTurn(db.$client, row);
+      rows.push({ ...row, revision: sessionTurnRevision(db.$client, row), turn });
       if (options.budget !== undefined) bytes += transportSizeOf(turn, TRANSPORT_TEXT_LIMIT, options.lean) + 1;
     }
     if (step.length < want) { exhausted = true; break; }
@@ -512,10 +519,10 @@ export async function readStoredTurns(
 /** Resolve the durable display boundary by the provider receipt, never by a runtime row index. */
 export async function storedRevertBoundary(sessionId: string, anchor: string): Promise<number | null> {
   await persistenceTails.get(sessionId);
-  const rows = await db.select({ seq: sessionTurns.seq, data: sessionTurns.data })
+  const rows = await db.select({ id: sessionTurns.id, seq: sessionTurns.seq })
     .from(sessionTurns).where(eq(sessionTurns.sessionId, sessionId)).orderBy(asc(sessionTurns.seq));
   for (const row of rows) {
-    const turn = JSON.parse(row.data) as TranscriptTurn;
+    const turn = readSessionTurn(db.$client, row, { messagesOnly: true });
     if (turn.items.some((item) => item.kind === 'message' && item.role === 'user' && item.revertAnchor === anchor)) return row.seq;
   }
   if (rows.length) throw new Error('The stored conversation no longer contains this revert point.');
@@ -530,9 +537,9 @@ export async function truncateStoredHistory(sessionId: string, fromSeq: number |
       const result = tx.delete(sessionTurns).where(and(eq(sessionTurns.sessionId, sessionId), gte(sessionTurns.seq, fromSeq))).returning({ seq: sessionTurns.seq, turnId: sessionTurns.turnId }).all();
       const origins = new Set(result.map(row => row.turnId));
       // A notification commits before its calling provider turn; deleting that turn must remove its earlier notice too.
-      const attached = tx.select({ seq: sessionTurns.seq, turnId: sessionTurns.turnId, data: sessionTurns.data }).from(sessionTurns)
+      const attached = tx.select({ id: sessionTurns.id, seq: sessionTurns.seq, turnId: sessionTurns.turnId }).from(sessionTurns)
         .where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.turnId, 'owner-notify:%'))).all()
-        .filter(row => (JSON.parse(row.data) as TranscriptTurn).items.some(item => item.kind === 'message' && item.ownerNotification?.sourceTurnId && origins.has(item.ownerNotification.sourceTurnId)));
+        .filter(row => readSessionTurn(db.$client, row, { messagesOnly: true }).items.some(item => item.kind === 'message' && item.ownerNotification?.sourceTurnId && origins.has(item.ownerNotification.sourceTurnId)));
       for (const row of attached) tx.delete(sessionTurns).where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.turnId, row.turnId))).run();
       rewindOwnerNotificationState(sessionId, tx);
       return { rows: [...result, ...attached], publish: truncateNativeConversationRead(sessionId, fromSeq, tx, new Set(attached.map(row => row.seq))) };
@@ -552,15 +559,15 @@ export async function truncateStoredHistory(sessionId: string, fromSeq: number |
  * to find the few it has to read again. Integers only, so even a long conversation's whole list is small.
  */
 export async function storedTurnRevisions(sessionId: string, fromSeq: number): Promise<Array<[seq: number, revision: number]>> {
-  const rows = await db.select({ seq: sessionTurns.seq, revision: sessionTurns.revision }).from(sessionTurns)
+  const rows = await db.select({ id: sessionTurns.id, seq: sessionTurns.seq, data: sessionTurns.data, revision: sessionTurns.revision }).from(sessionTurns)
     .where(and(eq(sessionTurns.sessionId, sessionId), gte(sessionTurns.seq, fromSeq))).orderBy(asc(sessionTurns.seq));
-  return rows.map(row => [row.seq, row.revision]);
+  return rows.map(row => [row.seq, sessionTurnRevision(db.$client, row)]);
 }
 
 /** One stored turn by its sequence, or null when the session's stored history no longer has it. */
 export async function readStoredTurn(sessionId: string, seq: number): Promise<TranscriptTurn | null> {
   await persistenceTails.get(sessionId);
-  const [row] = await db.select({ data: sessionTurns.data }).from(sessionTurns)
+  const [row] = await db.select({ id: sessionTurns.id, data: sessionTurns.data }).from(sessionTurns)
     .where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.seq, seq))).limit(1);
-  return row ? JSON.parse(row.data) as TranscriptTurn : null;
+  return row ? readSessionTurn(db.$client, row) : null;
 }

@@ -24,7 +24,8 @@ function encode(input: WindowCommitReceipt): string {
   if (!input || input.version !== 1 || ![input.sourceId, input.sessionId, input.rowId, input.referenceId].every(value => scalar(value))
     || !Number.isSafeInteger(input.storedSeq) || input.storedSeq < 0 || !b || !/^[a-f0-9]{64}$/.test(b.scope)
     || !/^[a-f0-9]{64}$/.test(b.sourceLineage) || !Number.isSafeInteger(b.decoderVersion) || b.decoderVersion < 1
-    || !s || s.version !== 1 || !Number.isSafeInteger(s.bytes) || s.bytes < 1 || s.chunks !== Math.ceil(s.bytes / 16384)
+    || !s || ![1,2].includes(s.version) || !Number.isSafeInteger(s.bytes) || s.bytes < 1 || s.chunks !== Math.ceil(s.bytes / 16384)
+    || (s.version === 2 && (!Number.isSafeInteger(s.storedBytes) || s.storedBytes! < 1 || s.storedBytes! > 3500))
     || !Number.isSafeInteger(s.stride) || s.stride < 16384 || s.stride > 20480 || !/^[a-f0-9]{64}$/.test(s.sha256)
     || !s.physical || ![s.physical.dev, s.physical.ino, s.physical.mtimeNs, s.physical.ctimeNs].every(value => scalar(value, 40) && /^-?\d+$/.test(value)))
     throw new Error('Invalid commit receipt');
@@ -32,7 +33,8 @@ function encode(input: WindowCommitReceipt): string {
   const result = JSON.stringify({ version: 1, sourceId: input.sourceId, sessionId: input.sessionId, rowId: input.rowId,
     storedSeq: input.storedSeq, referenceId: input.referenceId, firstCommitCursor: input.firstCommitCursor === null ? null : cursor(input.firstCommitCursor),
     latestRevisionCursor: cursor(input.latestRevisionCursor), binding: { scope: b.scope, sourceLineage: b.sourceLineage, decoderVersion: b.decoderVersion },
-    source: { version: 1, bytes: s.bytes, chunks: s.chunks, stride: s.stride, sha256: s.sha256,
+    source: { version: s.version, bytes: s.bytes, chunks: s.chunks, stride: s.stride, sha256: s.sha256,
+      ...(s.version === 2 ? { storedBytes: s.storedBytes } : {}),
       physical: { dev: s.physical.dev, ino: s.physical.ino, mtimeNs: s.physical.mtimeNs, ctimeNs: s.physical.ctimeNs } } });
   if (input.firstCommitCursor && (input.firstCommitCursor.workerEpoch !== input.latestRevisionCursor.workerEpoch
     || input.firstCommitCursor.storeEpoch !== input.latestRevisionCursor.storeEpoch || input.firstCommitCursor.sequence > input.latestRevisionCursor.sequence))

@@ -3,6 +3,7 @@ import { openPhysicalDatabase } from './physical-connection';
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { resolveDatabasePath } from './path';
 import * as schema from './schema';
+import { stopTurnPayloadMaintenance } from '../core/sessions/session-turn-payload-owners';
 
 // @@@task-fusion (#2802) — 用 drizzle 自己导出的类型,别写成 `ReturnType<typeof drizzle<...>>`:
 // 那种实例化表达式套在重载泛型上会踩到 tsc 的 `Debug Failure. No error for last overload
@@ -47,6 +48,7 @@ export function sessionDatabaseConnection(): Database.Database { return getSqlit
 export function closeDatabase(): void {
   if (!sqliteInstance) return;
   if (!sqliteInstance.open) return;
+  stopTurnPayloadMaintenance(sqlite);
   sqliteInstance.pragma('wal_checkpoint(TRUNCATE)');
   sqliteInstance.close();
   sqliteInstance = undefined;

@@ -1,3 +1,4 @@
+import { readSessionTurn } from './session-turn-storage';
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppDb } from '@main/db/client';
@@ -46,9 +47,9 @@ function turn(id: string, text: string, seq = 0): TranscriptTurn {
 const storedTexts = (fixture: Fixture) =>
   (
     fixture.sqlite
-      .prepare('SELECT seq, data FROM session_turns ORDER BY seq')
-      .all() as { seq: number; data: string }[]
-  ).map((row) => (JSON.parse(row.data) as TranscriptTurn).items[0]);
+      .prepare('SELECT id, seq, data FROM session_turns ORDER BY seq')
+      .all() as { seq: number; id: string; data: string }[]
+  ).map((row) => (readSessionTurn(fixture.sqlite, row) as TranscriptTurn).items[0]);
 
 describe('conversation-turn-store', () => {
   let fixture: Fixture;
@@ -247,10 +248,10 @@ describe('conversation-turn-store', () => {
     });
 
     const rows = fixture.sqlite
-      .prepare('SELECT seq, data FROM session_turns ORDER BY seq')
-      .all() as { seq: number; data: string }[];
+      .prepare('SELECT id, seq, data FROM session_turns ORDER BY seq')
+      .all() as { seq: number; id: string; data: string }[];
     expect(rows).toHaveLength(1);
-    expect((JSON.parse(rows[0]!.data) as TranscriptTurn).outcome).toEqual({
+    expect((readSessionTurn(fixture.sqlite, rows[0]!) as TranscriptTurn).outcome).toEqual({
       kind: 'error',
       reason: 'process_closed',
       detail: 'signal=SIGKILL',
@@ -277,10 +278,10 @@ describe('conversation-turn-store', () => {
     });
 
     const rows = fixture.sqlite
-      .prepare('SELECT seq, data FROM session_turns ORDER BY seq')
-      .all() as { seq: number; data: string }[];
+      .prepare('SELECT id, seq, data FROM session_turns ORDER BY seq')
+      .all() as { seq: number; id: string; data: string }[];
     expect(rows).toHaveLength(2);
-    const revised = JSON.parse(rows[1]!.data) as TranscriptTurn;
+    const revised = readSessionTurn(fixture.sqlite, rows[1]!) as TranscriptTurn;
     expect(nativeConversationUnread('c1')).toEqual(['c1:turn:s1:m2']);
     expect(revised.outcome).toEqual({ kind: 'cancelled', reason: 'cancelled' });
     expect(revised.items.map((item) => [item.id, (item as { text: string }).text])).toEqual([
@@ -306,12 +307,12 @@ describe('conversation-turn-store', () => {
     });
 
     const rows = fixture.sqlite
-      .prepare('SELECT seq, data FROM session_turns ORDER BY seq')
-      .all() as { seq: number; data: string }[];
+      .prepare('SELECT id, seq, data FROM session_turns ORDER BY seq')
+      .all() as { seq: number; id: string; data: string }[];
     expect(rows).toHaveLength(2);
-    const backfilled = JSON.parse(rows[0]!.data) as TranscriptTurn;
+    const backfilled = readSessionTurn(fixture.sqlite, rows[0]!) as TranscriptTurn;
     expect(backfilled.items.at(-1)).toMatchObject({ id: 'c1:turn:s0:tool:call_bg', backgroundTaskDone: true });
-    expect((JSON.parse(rows[1]!.data) as TranscriptTurn).items.map((item) => (item as { text?: string }).text)).toEqual([
+    expect((readSessionTurn(fixture.sqlite, rows[1]!) as TranscriptTurn).items.map((item) => (item as { text?: string }).text)).toEqual([
       'anything else?',
     ]);
   });
@@ -487,14 +488,14 @@ describe('conversation-turn-store · 跨重启的 id', () => {
     await persistCommittedTurn({ sessionId: 'c1', source: 'live', turn: turn('c1:turn:0', '三', 0) });
 
     const rows = fixture.sqlite
-      .prepare('SELECT turn_id, data FROM session_turns ORDER BY seq')
-      .all() as { turn_id: string; data: string }[];
+      .prepare('SELECT id, turn_id, data FROM session_turns ORDER BY seq')
+      .all() as { turn_id: string; id: string; data: string }[];
     // 库里的 id(data 里那份)互不相同;turn_id 记的是来源,跨重启重复是正常的。
-    const ids = rows.map((r) => (JSON.parse(r.data) as TranscriptTurn).id);
+    const ids = rows.map((r) => (readSessionTurn(fixture.sqlite, r) as TranscriptTurn).id);
     expect(new Set(ids).size).toBe(3);
     expect(rows.map((r) => r.turn_id)).toEqual(['c1:turn:0', 'c1:turn:1', 'c1:turn:0']);
     // 而且顺序单调 —— 转录那侧按 turn.seq 判有没有乱序。
-    const seqs = rows.map((r) => (JSON.parse(r.data) as TranscriptTurn).seq);
+    const seqs = rows.map((r) => (readSessionTurn(fixture.sqlite, r) as TranscriptTurn).seq);
     expect(seqs).toEqual([0, 1, 2]);
   });
 
@@ -503,9 +504,9 @@ describe('conversation-turn-store · 跨重启的 id', () => {
     await persistCommittedTurn({ sessionId: 'c1', source: 'live', turn: turn('c1:turn:0', '二', 0) });
 
     const rows = fixture.sqlite
-      .prepare('SELECT data FROM session_turns ORDER BY seq')
-      .all() as { data: string }[];
-    const second = JSON.parse(rows[1]!.data) as TranscriptTurn;
+      .prepare('SELECT id, data FROM session_turns ORDER BY seq')
+      .all() as { id: string; data: string }[];
+    const second = readSessionTurn(fixture.sqlite, rows[1]!) as TranscriptTurn;
     expect(second.id).toBe('c1:turn:s1');
     expect(second.items[0]!.id).toBe('c1:turn:s1:m');
   });
@@ -515,8 +516,8 @@ describe('conversation-turn-store · 跨重启的 id', () => {
     const t = turn('c1:turn:0', '我刚才提到 c1:turn:0 这个 id', 0);
     await persistCommittedTurn({ sessionId: 'c1', source: 'live', turn: t });
 
-    const row = fixture.sqlite.prepare('SELECT data FROM session_turns').get() as { data: string };
-    const stored = JSON.parse(row.data) as TranscriptTurn;
+    const row = fixture.sqlite.prepare('SELECT id, data FROM session_turns').get() as { id: string; data: string };
+    const stored = readSessionTurn(fixture.sqlite, row) as TranscriptTurn;
     expect((stored.items[0] as { text: string }).text).toBe('我刚才提到 c1:turn:0 这个 id');
   });
 });

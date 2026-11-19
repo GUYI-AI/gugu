@@ -2,20 +2,12 @@ import { sqlite } from '@main/db/client';
 import { nativeConversationHistoryFloor } from './native-publication-host';
 import { historyTime } from '@gugu/core/shared/conversationHistoryTime';
 import { OUTLINE_REPLY_CHARS, outlineOfMessages, type OutlineMessageRow, type StoredOutlineTurn } from '@shared/core/sessions/session-outline';
+import { readSessionTurn } from './session-turn-storage';
 
 /** Rows are read a slice of turns at a time, yielding in between: the whole of a long conversation is a second of work. */
 const OUTLINE_SLICE_TURNS = 50;
 
-// Only message items leave the database, and of an agent's message only the start: the outline shows how a reply began.
-const MESSAGES = `SELECT t.seq AS seq, json_extract(t.data, '$.id') AS turnId, json_extract(t.data, '$.referenceId') AS referenceId,
-    json_extract(t.data, '$.initiator') AS initiator, json_extract(item.value, '$.id') AS itemId, json_extract(item.value, '$.role') AS role,
-    CASE WHEN json_extract(item.value, '$.role') = 'user' THEN json_extract(item.value, '$.text')
-      ELSE substr(json_extract(item.value, '$.text'), 1, ${4 * OUTLINE_REPLY_CHARS}) END AS text
-  FROM session_turns t, json_each(t.data, '$.items') item
-  WHERE t.session_id = ? AND t.seq >= ? AND t.seq < ? AND json_valid(t.data) AND json_extract(item.value, '$.kind') = 'message'
-    AND (? IS NULL OR coalesce(json_extract(item.value, '$.at'), CASE WHEN json_extract(item.value, '$.role') = 'user'
-      THEN json_extract(t.data, '$.startedAt') ELSE json_extract(t.data, '$.endedAt') END) >= ?)
-  ORDER BY t.seq, item.key`;
+const MESSAGES = `SELECT id,seq FROM session_turns WHERE session_id=? AND seq>=? AND seq<? ORDER BY seq`;
 
 /**
  * The outline of the stored turns older than `before` (exclusive, like the history cursor), oldest first
@@ -34,7 +26,17 @@ export async function getStoredOutline(params: { sessionId: string; before: numb
   const slices: StoredOutlineTurn[][] = [];
   for (let end = stored.last + 1; end > first; end -= OUTLINE_SLICE_TURNS) {
     const start = Math.max(first, end - OUTLINE_SLICE_TURNS);
-    slices.push(outlineOfMessages(read.all(params.sessionId, start, end, boundary, boundary) as OutlineMessageRow[]));
+    const messages: OutlineMessageRow[] = [];
+    for (const row of read.all(params.sessionId, start, end) as { id: string; seq: number }[]) {
+      const turn = readSessionTurn(sqlite, row, { messagesOnly: true });
+      for (const item of turn.items) if (item.kind === 'message') {
+        const at = item.at ?? (item.role === 'user' ? turn.startedAt : turn.endedAt);
+        if (boundary !== null && (at === undefined || at < boundary)) continue;
+        messages.push({ seq: row.seq, turnId: turn.id, referenceId: turn.referenceId ?? null, initiator: turn.initiator,
+          itemId: item.id, role: item.role, text: item.role === 'user' ? item.text : Array.from(item.text).slice(0, 4 * OUTLINE_REPLY_CHARS).join('') });
+      }
+    }
+    slices.push(outlineOfMessages(messages));
     // Other work of the main process runs between slices.
     await new Promise<void>(resolve => setImmediate(resolve));
   }

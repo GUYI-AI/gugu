@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createHash } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import type { AppDb } from '@main/db/client';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
@@ -15,6 +14,7 @@ import { beginWindowCommitIntent } from '../session-timeline/window-commit-inten
 import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 import { EventStreamSource } from '@gugu/session-wire';
 import { createWindowCommitRuntime } from '../session-timeline/window-commit-runtime';
+import { collectTurnPayloads } from './session-turn-payload-owners';
 import type { WindowCommittedEvent } from '../session-timeline/window-commit-tap';
 
 const state = vi.hoisted(() => ({ db: undefined as AppDb | undefined, sqlite: undefined as Database.Database | undefined }));
@@ -25,6 +25,7 @@ vi.mock('@main/db/client', () => ({
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
 import { events } from '@main/lib/events';
 import { persistCommittedTurn } from './session-turn-store';
+import { readSessionTurn } from './session-turn-storage';
 
 const cursor = (sequence: number) => ({ workerEpoch: 'worker', storeEpoch: 'store', sequence });
 const turn = (text = 'canonical 😀中文'.repeat(10000)): TranscriptTurn => ({
@@ -51,7 +52,7 @@ describe('actual canonical writer capture', () => {
       }, committed: completed };
   }
 
-  it('reuses one serialized canonical value, commits its receipt in the row transaction and leaves final projection publication to the owner', async () => {
+  it('shares canonical payloads without whole-turn serialization and commits its source receipt in the row transaction', async () => {
     const phases: string[] = [], original = JSON.stringify; let serializations = 0;
     vi.spyOn(JSON, 'stringify').mockImplementation(((value: unknown, ...rest: unknown[]) => {
       if (value && typeof value === 'object' && 'items' in value && Array.isArray(value.items)) serializations++;
@@ -59,14 +60,17 @@ describe('actual canonical writer capture', () => {
     }) as typeof original);
     const committed = vi.fn(async (receipt: WindowCommitReceipt | null) => {
       expect(settled()).toEqual(['persisted']); expect(receipt).not.toBeNull();
-      const row = fixture.sqlite.prepare('SELECT data FROM session_turns WHERE id=?').get(receipt!.rowId) as { data: string };
-      expect(createHash('sha256').update(row.data).digest('hex')).toBe(receipt!.source.sha256);
-      const bytes = await readWindowCommitSourceChunk(root, receipt!.binding, receipt!.source, 0, createWindowBudget());
-      expect(bytes).toEqual(Buffer.from(row.data).subarray(0, bytes.length)); phases.push('owner-publication');
+      const row = fixture.sqlite.prepare('SELECT id,data FROM session_turns WHERE id=?').get(receipt!.rowId) as { id: string; data: string };
+      expect(receipt!.source.version).toBe(2);
+      expect(receipt!.source.storedBytes).toBeLessThanOrEqual(3500);
+      const chunks: Buffer[] = [];
+      for (let ordinal = 0; ordinal < receipt!.source.chunks; ordinal++) chunks.push(Buffer.from(
+        await readWindowCommitSourceChunk(root, receipt!.binding, receipt!.source, ordinal, createWindowBudget())));
+      expect(JSON.parse(Buffer.concat(chunks).toString('utf8'))).toEqual(readSessionTurn(fixture.sqlite, row)); phases.push('owner-publication');
     });
     await persistCommittedTurn({ sessionId: 'c', source: 'live', turn: turn(), windowCapture: capture(3, phases, committed) });
     expect(phases).toEqual(['source_durable', 'canonical_committed', 'owner-publication']);
-    expect(serializations).toBe(1); expect(committed).toHaveBeenCalledTimes(1);
+    expect(serializations).toBe(0); expect(committed).toHaveBeenCalledTimes(1);
     expect(createWindowCommitReceipts(fixture.sqlite).byReference('c', 'source:real')).toMatchObject({ rowId: 'c:0', storedSeq: 0, firstCommitCursor: cursor(3) });
   });
 
@@ -101,9 +105,10 @@ describe('actual canonical writer capture', () => {
     const latest = createWindowCommitReceipts(fixture.sqlite).byReference('c', 'source:real')!;
     expect(latest.firstCommitCursor).toEqual(cursor(3)); expect(latest.latestRevisionCursor).toEqual(cursor(10));
     expect(latest.rowId).toBe(receipts[0].rowId); expect(latest.sourceId).not.toBe(receipts[0].sourceId);
+    while (collectTurnPayloads(fixture.sqlite)) { /* Old receipt ownership must survive ordinary payload collection. */ }
     const old = await readWindowCommitSourceChunk(root, receipts[0].binding, receipts[0].source, 0, createWindowBudget());
     expect(new TextDecoder().decode(old)).toContain('first');
-    expect(JSON.parse((fixture.sqlite.prepare('SELECT data FROM session_turns').get() as { data: string }).data).items[0].text).toBe('revised 😀');
+    expect((readSessionTurn(fixture.sqlite, fixture.sqlite.prepare('SELECT id,data FROM session_turns').get() as { id: string; data: string }).items[0] as { text: string }).text).toBe('revised 😀');
   });
 
   it('keeps canonical settlement persisted when later projection publication fails', async () => {
@@ -161,7 +166,7 @@ describe('actual canonical writer capture', () => {
     } })).rejects.toThrow('revision observer failed');
     expect(settled()).toEqual(['persisted']); expect(completed).not.toHaveBeenCalled();
     expect(createWindowCommitReceipts(fixture.sqlite).byReference('c', 'source:real')!.latestRevisionCursor).toEqual(cursor(10));
-    expect(JSON.parse((fixture.sqlite.prepare('SELECT data FROM session_turns').get() as { data: string }).data).items[0].text).toBe('after');
+    expect((readSessionTurn(fixture.sqlite, fixture.sqlite.prepare('SELECT id,data FROM session_turns').get() as { id: string; data: string }).items[0] as { text: string }).text).toBe('after');
   });
 
   it('keeps a cold reservation through actual canonical persistence and withholds its reference until projection completion', async () => {

@@ -2,6 +2,7 @@ import { and, desc, eq, lt, sql } from 'drizzle-orm';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { db } from '@main/db/client';
 import { sessionTurns } from '@main/db/schema';
+import { readSessionTurn, sessionTurnHeaderSql, sessionTurnRevision } from './session-turn-storage';
 
 const filling = new Map<string, number>();
 
@@ -45,8 +46,8 @@ export function filterReadableStoredRows<T extends StoredReplayRow>(parsed: (T &
 }
 
 /** View repair only: leave archived rows, sequence numbers and message contents unchanged. */
-export async function readableStoredRows<T extends StoredReplayRow>(sessionId: string, rows: T[]) {
-  return readableParsedRows(sessionId, rows.map(row => ({ ...row, turn: JSON.parse(row.data) as TranscriptTurn })));
+export async function readableStoredRows<T extends StoredReplayRow & { id: string; revision: number }>(sessionId: string, rows: T[]) {
+  return readableParsedRows(sessionId, rows.map(row => ({ ...row, turn: readSessionTurn(db.$client, row), revision: sessionTurnRevision(db.$client, row) })));
 }
 
 /** The same projection for rows a caller has already parsed, oldest first. */
@@ -55,12 +56,12 @@ export async function readableParsedRows<T extends StoredReplayRow>(sessionId: s
   const first = parsed[0];
   // Carry the same preceding settled context across any page boundary, including a leading unfinished row.
   if (first && !(first.turn.outcome && first.turn.startedAt !== undefined)) {
-    const [row] = await db.select({ data: sessionTurns.data }).from(sessionTurns).where(and(
+    const [row] = await db.select({ id: sessionTurns.id, data: sessionTurns.data }).from(sessionTurns).where(and(
       eq(sessionTurns.sessionId, sessionId), lt(sessionTurns.seq, first.seq),
-      sql`json_extract(${sessionTurns.data}, '$.outcome.kind') IS NOT NULL`,
-      sql`json_extract(${sessionTurns.data}, '$.startedAt') IS NOT NULL`,
+      sql`${sql.raw(sessionTurnHeaderSql('outcome_kind', '$.outcome.kind'))} IS NOT NULL`,
+      sql`${sql.raw(sessionTurnHeaderSql('started_at', '$.startedAt'))} IS NOT NULL`,
     )).orderBy(desc(sessionTurns.seq)).limit(1);
-    previous = row ? JSON.parse(row.data) as TranscriptTurn : null;
+    previous = row ? readSessionTurn(db.$client, row) : null;
   }
   return filterReadableStoredRows(parsed, previous);
 }

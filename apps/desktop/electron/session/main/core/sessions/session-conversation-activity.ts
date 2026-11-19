@@ -6,6 +6,7 @@ import { activityPreviewSources } from '@gugu/session-chat-ui/activity-preview';
 export { personalConversationMessages } from '@gugu/session-core/session-record/personal-conversation';
 import { db, type AppDb } from '@main/db/client';
 import { kv, sessionTurns } from '@main/db/schema';
+import { readSessionTurn } from './session-turn-storage';
 
 type Activity = { text: string; at: string; turnSeq: number } & PreviewActivity;
 type ActivityDb = Pick<AppDb, 'select' | 'insert'>;
@@ -20,9 +21,9 @@ export function nativeConversationActivity(sessionId: string, source: ActivityDb
   if (value.activityVersion !== 1 || value.activity === undefined) {
     // Old cached text has no fold ownership. Rebuild only its recorded turn from the journal;
     // a missing journal cannot establish that this is an ordinary owner reply.
-    const stored = source.select({ data: sessionTurns.data }).from(sessionTurns)
+    const stored = source.select({ id: sessionTurns.id, data: sessionTurns.data }).from(sessionTurns)
       .where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.seq, value.turnSeq))).get();
-    const preview = stored ? personalConversationPreview(JSON.parse(stored.data) as TranscriptTurn, activityPreviewSources) : null;
+    const preview = stored ? personalConversationPreview(readSessionTurn(db.$client, stored), activityPreviewSources) : null;
     return preview ? { ...preview, at: new Date(preview.at).toISOString(), turnSeq: value.turnSeq } : null;
   }
   return value;

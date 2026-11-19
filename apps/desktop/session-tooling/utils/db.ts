@@ -71,6 +71,7 @@ export async function openFixture(
         for (const suffix of ['', '-wal', '-shm']) {
           fs.rmSync(`${tmpPath}${suffix}`, { force: true });
         }
+        fs.rmSync(`${tmpPath}.turn-payloads`, { recursive: true, force: true });
       },
     };
   }
@@ -95,6 +96,7 @@ export async function openFixture(
       for (const suffix of ['', '-wal', '-shm']) {
         fs.rmSync(`${tmpPath}${suffix}`, { force: true });
       }
+      fs.rmSync(`${tmpPath}.turn-payloads`, { recursive: true, force: true });
     },
   };
 }

@@ -3,6 +3,7 @@ import { sqlite } from '@main/db/client';
 import { log } from '@main/lib/logger';
 import { agentStatusWriter } from '../agent-status/agent-status-writer';
 import { syncStoredHistoryFromRecord } from './record-backfill';
+import { sessionTurnHeaderSql } from './session-turn-storage';
 
 /**
  * Terminal tasks whose record must be read once at boot, from facts that were persisted before this host started:
@@ -13,7 +14,7 @@ import { syncStoredHistoryFromRecord } from './record-backfill';
  */
 export function ptyRecordResumeSet(): string[] {
   const rows = sqlite.prepare(`SELECT id, agent_status AS status, EXISTS (SELECT 1 FROM session_turns t WHERE t.session_id = sessions.id
-      AND t.turn_id LIKE 'record:%' AND json_extract(t.data, '$.outcome.kind') IS NULL) AS unfinished
+      AND t.turn_id LIKE 'record:%' AND ${sessionTurnHeaderSql('outcome_kind', '$.outcome.kind', 't')} IS NULL) AS unfinished
     FROM sessions WHERE runtime IS NULL OR runtime = 'pty'`).all() as { id: string; status: string | null; unfinished: number }[];
   return rows.filter(row => {
     const status = parseAgentStatus(row.status);

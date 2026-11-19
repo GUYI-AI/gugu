@@ -5,6 +5,8 @@ import journal from '@root/drizzle/meta/_journal.json';
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { isGuguSilence } from '@gugu/core/local/agent/silenceMarker';
 import { messageReferenceId } from '@gugu/session-core/acp/client';
+import { readSessionTurn, syncSessionTurnText } from '../core/sessions/session-turn-storage';
+import { startTurnPayloadMaintenance } from '../core/sessions/session-turn-payload-owners';
 
 // Vite bundles all migration SQL files at build time — no runtime path resolution needed.
 // Each value is the raw SQL string content of the file.
@@ -139,7 +141,7 @@ function ensureSearchIndex(connection: BetterSqlite3.Database): void {
 }
 
 /**
- * Task conversation text for search, derived from session_turns by triggers: every writer of a turn (live, replay,
+ * Task conversation text for search, derived by legacy triggers and normalized message commits: every writer (live, replay,
  * revision, record append, truncation, session cascade) updates it in the same transaction, and nothing else writes it.
  * Only message items (what the person and the agent said, through `search_text`) are kept; thinking and tools are not searchable.
  * A stored turn whose data is not JSON has no items here, as for every other reader of session_turns.
@@ -206,12 +208,12 @@ function ensureTurnText(connection: BetterSqlite3.Database): void {
   `);
 }
 
-/** Each committed batch owns its stable cursor; live turn writes keep using the same triggers. */
+/** Each committed batch owns its stable cursor; normalized bodies count their actual message bytes too. */
 export async function backfillTurnText(connection: BetterSqlite3.Database): Promise<void> {
   const read = connection.prepare('SELECT value FROM kv WHERE key = ?');
   const write = connection.prepare('INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, unixepoch())');
   const next = connection.prepare(`SELECT session_id, seq, sum(b) OVER (ORDER BY session_id, seq) AS bytes
-    FROM (SELECT session_id, seq, octet_length(data) AS b FROM session_turns
+    FROM (SELECT session_id, seq, octet_length(data) + coalesce((SELECT h.text_bytes FROM session_turn_heads h WHERE h.row_id=session_turns.id),0) AS b FROM session_turns
       WHERE (session_id, seq) > (?, ?) ORDER BY session_id, seq LIMIT ?)
     ORDER BY session_id, seq`);
   const insert = connection.prepare(`INSERT INTO turn_text_rows (session_id, seq, item_id, role, text)
@@ -233,6 +235,11 @@ export async function backfillTurnText(connection: BetterSqlite3.Database): Prom
     // Commit one bounded chunk, not repeated chunks under the same write lock.
     // A live trigger may already have indexed a turn ahead of the persisted cursor.
     insert.run(...cursor, end.session_id, end.seq);
+    // A normalized turn's data is only its format marker. Rebuild its message projection through the same decoder.
+    for (const row of connection.prepare(`SELECT t.id FROM session_turns t JOIN session_turn_heads h ON h.row_id=t.id
+      WHERE (t.session_id,t.seq)>(?,?) AND (t.session_id,t.seq)<=(?,?)`).all(...cursor, end.session_id, end.seq) as { id: string }[]) {
+      syncSessionTurnText(connection, row.id, readSessionTurn(connection, row, { messagesOnly: true }));
+    }
     write.run('turn_text_backfill_cursor', JSON.stringify([end.session_id, end.seq]));
     return true;
   });
@@ -322,5 +329,6 @@ export async function initializeDatabase(
   applyMigrations(conn, bundledMigrations());
   ensureSearchIndex(conn);
   ensureFileIndex(conn);
+  if (!connection) startTurnPayloadMaintenance(conn);
   return conn;
 }

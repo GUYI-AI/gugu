@@ -1,0 +1,173 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { openFixture } from '@tooling/utils/db';
+import type { TranscriptTurn } from '@gugu/session-core/acp';
+import { prepareSessionTurn, readSessionTurn, sessionTurnRevision, turnPayloadFiles } from './session-turn-storage';
+import { collectTurnPayloads, withTurnPayloadWrite } from './session-turn-payload-owners';
+import Database from 'better-sqlite3';
+import { backfillTurnText } from '@main/db/initialize';
+import { cpSync, mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
+type Fixture = Awaited<ReturnType<typeof openFixture>>;
+let fixture: Fixture;
+const turn = (): TranscriptTurn => ({ id: 's:turn:s0', referenceId: 'source', seq: 0, initiator: 'user', startedAt: 10,
+  items: [
+    { kind: 'message', id: 's:turn:s0:message:a', seq: 0, role: 'user', text: 'searchable question' },
+    { kind: 'execute-tool-call', id: 's:turn:s0:tool:a', seq: 1, toolCallId: 'a', title: 'echo', status: 'done',
+      outputText: 'A'.repeat(20000), rawOutput: JSON.stringify({ aggregatedOutput: 'A'.repeat(20000), exitCode: 0 }, null, 2) },
+    { kind: 'mcp-tool-call', id: 's:turn:s0:tool:b', seq: 2, toolCallId: 'b', title: 'screenshot', tool: 'screenshot', status: 'done',
+      images: [{ mimeType: 'image/png', data: Buffer.from('picture'.repeat(10000)).toString('base64') }] },
+  ] });
+
+function insert(value: TranscriptTurn, legacy: boolean) {
+  const row = { id: 's:0', data: JSON.stringify(value), revision: 0 };
+  const prepared = legacy ? undefined : prepareSessionTurn(fixture.sqlite, row, value, true);
+  fixture.sqlite.transaction(() => {
+    fixture.sqlite.prepare('INSERT INTO session_turns(id,session_id,seq,turn_id,data) VALUES (?,\'s\',0,\'runtime:0\',?)')
+      .run(row.id, prepared?.marker ?? row.data);
+    prepared?.commit();
+  })();
+  return { ...row, data: prepared?.marker ?? row.data };
+}
+
+beforeEach(async () => {
+  fixture = await openFixture('empty');
+  fixture.sqlite.exec("INSERT INTO projects(id,name,path) VALUES ('p','P','/p'); INSERT INTO sessions(id,project_id) VALUES ('s','p');");
+});
+afterEach(() => fixture.close());
+
+describe('versioned session turn storage', () => {
+  it.each(['legacy', 'legacy-revised', 'normalized'] as const)('reads exactly the same history through one entry: %s', mode => {
+    const original = turn(), row = insert(original, mode !== 'normalized');
+    const expected = mode === 'legacy-revised' ? { ...original, outcome: { kind: 'done' as const }, endedAt: 20 } : original;
+    if (mode === 'legacy-revised') fixture.sqlite.transaction(() => prepareSessionTurn(fixture.sqlite, row, expected, false).commit())();
+    expect(readSessionTurn(fixture.sqlite, row)).toEqual(expected);
+    expect(fixture.sqlite.prepare('SELECT data FROM session_turns WHERE id=?').get(row.id)).toEqual({ data: row.data });
+    expect(readSessionTurn(fixture.sqlite, { id: row.id }, { messagesOnly: true }).items).toEqual([expected.items[0]]);
+    expect(readSessionTurn(fixture.sqlite, { id: row.id }, { headerOnly: true })).toMatchObject({ id: expected.id, items: [] });
+  });
+
+  it('keeps image bytes and JSON-escaped execute output once, including repeated images in different items', () => {
+    const value = turn(), image = value.items[2];
+    value.items.push({ ...image, id: 'second-image', seq: 3 });
+    const row = insert(value, false), files = turnPayloadFiles(fixture.sqlite);
+    const descriptors = fixture.sqlite.prepare('SELECT value FROM session_turn_fields WHERE row_id=? AND field IN (\'images\',\'rawOutput\',\'outputText\') ORDER BY field')
+      .all(row.id) as { value: string }[];
+    const imageValues = fixture.sqlite.prepare("SELECT value FROM session_turn_fields WHERE field='images'").all() as { value: string }[];
+    expect(imageValues[0].value).toBe(imageValues[1].value);
+    expect(descriptors.every(part => Buffer.byteLength(part.value) <= 8192)).toBe(true);
+    expect(row.data).not.toContain('picture');
+    expect(readSessionTurn(fixture.sqlite, row)).toEqual(value);
+    // Two shared image blocks + one branch, and three text chunks + one branch. No base64 or second output copy.
+    expect(files.counters.writtenBytes).toBeLessThan(100000);
+    expect(fixture.sqlite.prepare('SELECT max(length(CAST(value AS BLOB))) n FROM session_turn_fields').get()).toMatchObject({ n: expect.any(Number) });
+  });
+
+  it('updates a small field without rewriting data, static image bytes or searchable message rows', () => {
+    const value = turn(), row = insert(value, false), files = turnPayloadFiles(fixture.sqlite);
+    const before = files.counters.writtenBytes;
+    let textExtractions = 0;
+    fixture.sqlite.function('search_text', { deterministic: true }, (text: unknown) => { textExtractions++; return typeof text === 'string' ? text : null; });
+    fixture.sqlite.exec(`CREATE TABLE search_mutations (n INTEGER); INSERT INTO search_mutations VALUES(0);
+      CREATE TRIGGER count_search_insert AFTER INSERT ON turn_text_rows BEGIN UPDATE search_mutations SET n=n+1; END;
+      CREATE TRIGGER count_search_delete AFTER DELETE ON turn_text_rows BEGIN UPDATE search_mutations SET n=n+1; END;`);
+    const revised = { ...value, outcome: { kind: 'error' as const, reason: 'process_closed' as const } };
+    const prepared = prepareSessionTurn(fixture.sqlite, row, revised, false);
+    fixture.sqlite.transaction(() => prepared.commit())();
+    expect(readSessionTurn(fixture.sqlite, row)).toEqual(revised);
+    expect(files.counters.writtenBytes).toBe(before);
+    expect(fixture.sqlite.prepare('SELECT n FROM search_mutations').get()).toEqual({ n: 0 });
+    expect(textExtractions).toBe(0);
+    expect(fixture.sqlite.prepare('SELECT data FROM session_turns').get()).toEqual({ data: row.data });
+    expect(sessionTurnRevision(fixture.sqlite, row)).toBe(1);
+    fixture.sqlite.transaction(() => prepareSessionTurn(fixture.sqlite, row, revised, false).commit())();
+    expect(sessionTurnRevision(fixture.sqlite, row)).toBe(1);
+  });
+
+  it('preserves unknown fields, cleared fields, child order, empty terminals and exact noncanonical JSON', () => {
+    const original = { ...turn(), terminals: [], extra: { unicode: '\ud800', unknown: ['a', null, 2] } } as TranscriptTurn;
+    const row = insert(original, true);
+    const changed = { ...original, items: original.items.slice(0, 1), extra: { unicode: '\udc00', unknown: [] } } as TranscriptTurn;
+    fixture.sqlite.transaction(() => prepareSessionTurn(fixture.sqlite, row, changed, false).commit())();
+    expect(readSessionTurn(fixture.sqlite, row)).toEqual(changed);
+    const returned = { ...changed, items: [...changed.items, { ...original.items[1], rawOutput: '{ "aggregatedOutput": "other" }', outputText: undefined }] } as TranscriptTurn;
+    fixture.sqlite.transaction(() => prepareSessionTurn(fixture.sqlite, row, returned, false).commit())();
+    expect(readSessionTurn(fixture.sqlite, row)).toEqual({ ...returned, items: returned.items.map(item => Object.fromEntries(Object.entries(item).filter(([, v]) => v !== undefined))) });
+  });
+
+  it('preserves unknown JSON keys without assigning object prototypes', () => {
+    const value = { ...turn(), ['__proto__']: { preserved: true }, storageVersion: 'provider metadata' } as TranscriptTurn;
+    const row = insert(value, false);
+    expect(readSessionTurn(fixture.sqlite, row)).toEqual(value);
+    expect(Object.hasOwn(readSessionTurn(fixture.sqlite, row), '__proto__')).toBe(true);
+  });
+
+  it('rolls back parts and search changes with the canonical transaction', () => {
+    const row = insert(turn(), true), original = readSessionTurn(fixture.sqlite, row);
+    const prepared = prepareSessionTurn(fixture.sqlite, row, { ...original, outcome: { kind: 'done' } }, false);
+    expect(() => fixture.sqlite.transaction(() => { prepared.commit(); throw new Error('stop'); })()).toThrow('stop');
+    expect(readSessionTurn(fixture.sqlite, row)).toEqual(original);
+    expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turn_heads').get()).toEqual({ n: 0 });
+  });
+
+  it('collects replaced bodies and rolled-back writes while keeping bodies shared by surviving fields', async () => {
+    const original = turn();
+    original.items.push({ ...original.items[2], id: 'shared-picture', seq: 3 });
+    const row = await withTurnPayloadWrite(fixture.sqlite, () => insert(original, false));
+    const initialBytes = (fixture.sqlite.prepare('SELECT sum(bytes) n FROM session_turn_payload_objects').get() as { n: number }).n;
+    const removed = { ...original, items: [original.items[0], original.items[3]] };
+    await withTurnPayloadWrite(fixture.sqlite, () => fixture.sqlite.transaction(() => prepareSessionTurn(fixture.sqlite, row, removed, false).commit())());
+    while (collectTurnPayloads(fixture.sqlite)) { /* Each production batch has a fixed object/time budget. */ }
+    expect(readSessionTurn(fixture.sqlite, row)).toEqual(removed);
+    expect((fixture.sqlite.prepare('SELECT sum(bytes) n FROM session_turn_payload_objects').get() as { n: number }).n).toBeLessThan(initialBytes - 20000);
+    const before = fixture.sqlite.prepare('SELECT hash FROM session_turn_payload_objects ORDER BY hash').all();
+    await expect(withTurnPayloadWrite(fixture.sqlite, () => {
+      const failed = prepareSessionTurn(fixture.sqlite, row, { ...removed, outcome: { kind: 'error', message: 'failed'.repeat(10000) } } as TranscriptTurn, false);
+      fixture.sqlite.transaction(() => { failed.commit(); throw new Error('rollback'); })();
+    })).rejects.toThrow('rollback');
+    while (collectTurnPayloads(fixture.sqlite)) { /* Drain the bounded collector for the assertion. */ }
+    expect(readSessionTurn(fixture.sqlite, row)).toEqual(removed);
+    expect(fixture.sqlite.prepare('SELECT hash FROM session_turn_payload_objects ORDER BY hash').all()).toEqual(before);
+    fixture.sqlite.prepare("DELETE FROM sessions WHERE id='s'").run();
+    while (collectTurnPayloads(fixture.sqlite)) { /* Foreign-key cascades release the final field owners. */ }
+    expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turn_payload_objects').get()).toEqual({ n: 0 });
+  });
+
+  it('keeps released bodies while another connection can still read their older SQLite snapshot', async () => {
+    const original = turn(), row = await withTurnPayloadWrite(fixture.sqlite, () => insert(original, false));
+    const reader = new Database(fixture.sqlite.name, { readonly: true });
+    try {
+      reader.exec('BEGIN');
+      reader.prepare('SELECT revision FROM session_turn_heads WHERE row_id=?').get(row.id);
+      const revised = { ...original, items: original.items.slice(0, 1) };
+      await withTurnPayloadWrite(fixture.sqlite, () => fixture.sqlite.transaction(() => prepareSessionTurn(fixture.sqlite, row, revised, false).commit())());
+      expect(collectTurnPayloads(fixture.sqlite)).toBe(0);
+      expect(readSessionTurn(reader, row)).toEqual(original);
+      reader.exec('COMMIT');
+      while (collectTurnPayloads(fixture.sqlite)) { /* Released roots can be collected once the older reader leaves. */ }
+      expect(readSessionTurn(fixture.sqlite, row)).toEqual(revised);
+      expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turn_payload_objects').get()).toEqual({ n: 0 });
+    } finally { reader.close(); }
+  });
+
+  it('rebuilds searchable message text from normalized history after the derived FTS rows are cleared', async () => {
+    const original = turn(); insert(original, false);
+    fixture.sqlite.exec("DELETE FROM turn_text_rows; DELETE FROM kv WHERE key IN ('turn_text_backfilled','turn_text_backfill_cursor')");
+    await backfillTurnText(fixture.sqlite);
+    expect(fixture.sqlite.prepare('SELECT text FROM turn_text_rows').all()).toEqual([{ text: 'searchable question' }]);
+    expect(fixture.sqlite.prepare("SELECT count(*) n FROM turn_text WHERE turn_text MATCH 'searchable'").get()).toEqual({ n: 1 });
+  });
+
+  it('reads the same history from a database backup with its payload directory at a new location', async () => {
+    const original = turn(), row = await withTurnPayloadWrite(fixture.sqlite, () => insert(original, false));
+    const directory = mkdtempSync(join(tmpdir(), 'turn-copy-')), path = join(directory, 'restored.db');
+    try {
+      await fixture.sqlite.backup(path);
+      cpSync(`${fixture.sqlite.name}.turn-payloads`, `${path}.turn-payloads`, { recursive: true });
+      const restored = new Database(path, { readonly: true });
+      try { expect(readSessionTurn(restored, { id: row.id })).toEqual(original); }
+      finally { restored.close(); }
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
+});
