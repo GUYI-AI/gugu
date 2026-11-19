@@ -9,6 +9,7 @@ Var guguLogHandle
 Var guguLogSize
 Var guguLogReady
 Var guguFailureWasLock
+Var guguFailureForeignTarget
 Var guguFailureTitle
 Var guguFailureMessage
 Var guguFailureOutput
@@ -90,6 +91,8 @@ Function guguShowFailure
     StrCpy $guguFailureTitle "安装未完成"
     ${If} $guguFailureWasLock == "true"
       StrCpy $guguFailureMessage "有程序正在使用咕咕的安装目录，请关闭后重试。日志：$guguDiagnosticDir"
+    ${ElseIf} $guguFailureForeignTarget == "true"
+      StrCpy $guguFailureMessage "所选文件夹包含无法识别为咕咕的文件，已保留。请重新运行安装器，选择新的空文件夹。目录：$INSTDIR。日志：$guguDiagnosticDir"
     ${Else}
       StrCpy $guguFailureMessage "请保留安装日志并联系支持。日志：$guguDiagnosticDir"
     ${EndIf}
@@ -97,6 +100,8 @@ Function guguShowFailure
     StrCpy $guguFailureTitle "Installation could not be completed"
     ${If} $guguFailureWasLock == "true"
       StrCpy $guguFailureMessage "An application is using the installation folder. Close it and retry. Log: $guguDiagnosticDir"
+    ${ElseIf} $guguFailureForeignTarget == "true"
+      StrCpy $guguFailureMessage "This folder contains unrecognized files and was preserved. Run the installer again and choose a new empty folder. Folder: $INSTDIR. Log: $guguDiagnosticDir"
     ${Else}
       StrCpy $guguFailureMessage "Keep the installer log and contact support. Log: $guguDiagnosticDir"
     ${EndIf}
@@ -148,6 +153,8 @@ FunctionEnd
     StrCpy $guguFailureOutput $guguTransactionOutput
     ${If} $guguTransactionResult == "3"
       StrCpy $guguFailureWasLock "true"
+    ${ElseIf} $guguTransactionResult == "4"
+      StrCpy $guguFailureForeignTarget "true"
     ${EndIf}
     Call guguRollback
     Call guguShowFailure
@@ -165,6 +172,7 @@ FunctionEnd
   !endif
   StrCpy $guguDiagnosticDir "$TEMP\gugu-installer"
   StrCpy $guguFailureWasLock "false"
+  StrCpy $guguFailureForeignTarget "false"
   StrCpy $guguFailureOutput ""
   StrCpy $guguFailureShown "false"
   Push "version=${VERSION} normalize target=$INSTDIR"

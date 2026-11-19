@@ -183,6 +183,56 @@ try {
   Assert (-not (Test-Path -LiteralPath $journal)) 'Committed cleanup retry left its journal'
   Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'committed') 'Committed cleanup retry rolled back the new application'
   $results += 'committed cleanup resumes after marker deletion'
+
+  # Real PE product metadata distinguishes an unregistered Gugu residue from an
+  # arbitrary file merely named like its executable. Compile a private fixture;
+  # do not depend on an installed Gugu application or its real registration.
+  $ownedExe = Join-Path $root 'owned-payload.exe'
+  Add-Type -TypeDefinition '[assembly:System.Reflection.AssemblyCompany("Gugu")][assembly:System.Reflection.AssemblyProduct("Gugu")] public class GuguFixturePayload { public static void Main() {} }' -OutputAssembly $ownedExe -OutputType ConsoleApplication
+  Remove-Item -LiteralPath "HKCU:\$key","HKCU:\$uninstall" -Recurse
+  Remove-Item -LiteralPath $target -Recurse -Force
+  New-Item -ItemType Directory -Path (Join-Path $target 'resources\app') -Force | Out-Null
+  Copy-Item $ownedExe (Join-Path $target 'fixture.exe')
+  [IO.File]::WriteAllText((Join-Path $target 'resources\app\package.json'), '{"name":"gugu","productName":"Gugu","version":"0.3.4","main":"apps/desktop/dist-electron/main.js"}')
+  $ownedHash = (Get-FileHash (Join-Path $target 'fixture.exe')).Hash
+  Invoke-Phase prepare
+  Payload $stage 'unregistered-replacement'
+  Invoke-Phase commit
+  Invoke-Phase finish 2 # Deliberately omit registration to exercise recovery.
+  Assert ((Get-FileHash (Join-Path $target 'fixture.exe')).Hash -eq $ownedHash) 'Adopted residue was not restored'
+  Assert (-not (Test-Path "HKCU:\$key") -and -not (Test-Path "HKCU:\$uninstall")) 'Adoption rollback invented registration'
+  Invoke-Phase prepare
+  Payload $stage 'recovered-residue'
+  Invoke-Phase commit
+  Registration '0.3.5'
+  Invoke-Phase finish
+  Assert (-not (Test-Path $backup) -and -not (Test-Path $journal)) 'Adopted residue left a transaction'
+  $results += 'unregistered Gugu residue installs transactionally and restores absent registration on failure'
+
+  Remove-Item -LiteralPath "HKCU:\$key","HKCU:\$uninstall" -Recurse
+  Remove-Item -LiteralPath $target -Recurse -Force
+  New-Item -ItemType Directory -Path $target | Out-Null
+  Copy-Item $ownedExe (Join-Path $target 'fixture.exe')
+  Invoke-Phase prepare # A partial old application can have lost its manifest.
+  Invoke-Phase rollback
+  $results += 'partial residue with authentic Gugu product identity is recognized without a manifest'
+
+  [IO.File]::WriteAllText((Join-Path $target 'fixture.exe'), 'unrelated same-named file')
+  [IO.File]::WriteAllText((Join-Path $target 'keep.txt'), 'unrelated bytes')
+  $foreignHash = (Get-FileHash (Join-Path $target 'fixture.exe')).Hash
+  Invoke-Phase prepare 4
+  Assert ((Get-FileHash (Join-Path $target 'fixture.exe')).Hash -eq $foreignHash) 'Foreign executable-name collision was changed'
+  Assert (-not (Test-Path $journal)) 'Foreign target created a transaction'
+  $last = Get-Content -LiteralPath $failLog -Encoding UTF8 | Select-Object -Last 1 | ConvertFrom-Json
+  Assert ($last.error -match 'choose a new empty installation folder') 'Foreign target lacks an actionable instruction'
+  $results += 'unrelated files including a same-named fake executable are preserved with actionable failure'
+
+  Copy-Item $ownedExe (Join-Path $target 'fixture.exe') -Force
+  New-Item -ItemType Directory -Path (Join-Path $target 'resources\app') -Force | Out-Null
+  [IO.File]::WriteAllText((Join-Path $target 'resources\app\package.json'), '{"name":"another-app","productName":"Gugu","version":"0.3.4","main":"apps/desktop/dist-electron/main.js"}')
+  Invoke-Phase prepare 4
+  Assert ([IO.File]::ReadAllText((Join-Path $target 'keep.txt')) -eq 'unrelated bytes') 'Contradictory manifest caused deletion'
+  $results += 'a surviving manifest must agree with the executable identity'
   Assert (([IO.File]::ReadAllText($data)) -eq 'preserved') 'User data changed'
   $results += 'user data remains intact'
   $results | ConvertTo-Json
