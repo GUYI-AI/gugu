@@ -1,3 +1,5 @@
+import { createTeamPaymentCheckout } from './team-payment-checkout'
+import { openTeamPaymentWindow } from './team-payment-window'
 import { releaseCustomModelForwarders } from './session/main/core/agents/custom-model-forwarder'
 import { releaseConversionRouters } from './session/main/core/agents/conversion-routers'
 import { hostAttachmentsEndpoint } from './attachmentUploadTransport'
@@ -2462,6 +2464,21 @@ ipcMain.handle('updates:changelog', async (): Promise<unknown> => {
     return null
   }
 })
+const teamPaymentCheckout = createTeamPaymentCheckout({
+  auth: () => desktopAuthProvider().getAuth(), url: getSupabaseUrl, anonKey: getSupabaseAnonKey, fetch: electronFetch,
+  open: input => {
+    if (!mainWindow || mainWindow.isDestroyed()) throw new Error('TEAM_PAYMENT_WINDOW_UNAVAILABLE')
+    return openTeamPaymentWindow(mainWindow, currentHostCatalog().teamPaymentTitle, input)
+  },
+  report: error => createLogger('team/payment').warn({ error: String(error) }, 'Team payment browser failed'),
+})
+ipcMain.handle('team-payment:open', (event, input: unknown) => {
+  const window = mainWindow
+  if (!window || window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame)
+    return { ok: false, error: { code: 'forbidden' } }
+  return teamPaymentCheckout.request(input)
+})
+app.on('before-quit', () => teamPaymentCheckout.close())
 ipcMain.handle('app:get-version', () => app.getVersion())
 ipcMain.handle('auth:oauth-redirect', () => `${GUGU_LINK_SCHEME}://auth/callback`)
 ipcMain.handle('opened-links:take', (event) => {
@@ -2819,7 +2836,10 @@ registerErrorSummaryReporting({
 const humanAuthSessionIpc = createHumanAuthSessionIpc({
   toAuth: runtimeAuthFromSupabaseTokens,
   set: (auth) => { pushedHumanAuth = auth; humanAuthRevision += 1; errorSummaryConsent.identityChanged() },
-  revoke: () => projectionDeviceRuntime.invalidate(),
+  revoke: () => {
+    projectionDeviceRuntime.invalidate()
+    teamPaymentCheckout.identityChanged(pushedHumanAuth && typeof pushedHumanAuth === 'object' ? pushedHumanAuth : null)
+  },
   persist: (mirror: Parameters<typeof writeHumanAuthSession>[0]) => writeHumanAuthSession(mirror),
   erase: () => clearHumanAuthSession(),
   leaveIfChanging: sessionLifeLeaveIfChanging,

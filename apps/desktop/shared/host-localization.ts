@@ -14,6 +14,7 @@ export interface WindowChromeLabels {
 
 const HOST_CATALOG = {
   'zh-CN': {
+    teamPaymentTitle: '团队积分充值',
     tray: {
       tooltip: '咕咕',
       show: '打开咕咕',
@@ -121,6 +122,7 @@ const HOST_CATALOG = {
     },
   },
   'en-US': {
+    teamPaymentTitle: 'Team credit payment',
     tray: {
       tooltip: 'Gugu',
       show: 'Open Gugu',
