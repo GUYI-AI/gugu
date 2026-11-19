@@ -431,6 +431,47 @@ it('rolls back the whole staged home on a mid-history ENOSPC and never transfers
   expect(await fs.readdir(dirname(home.shadowHome))).toEqual(['fixture']);
 });
 
+it('reports sensitive link targets without copying or projecting them', async () => {
+  const { home, source } = await fixture();
+  const ssh = join(dirname(home.userConfigRoot), '.ssh');
+  const declaredStore = join(home.userConfigRoot, 'secret-store');
+  const alias = join(dirname(home.userConfigRoot), 'ssh-alias');
+  const credentialRoot = join(dirname(home.userConfigRoot), 'private-credentials');
+  await mkdir(credentialRoot, { recursive: true });
+  await symlink(credentialRoot, ssh, 'dir');
+  await mkdir(declaredStore, { recursive: true });
+  await writeFile(join(ssh, 'data.json'), '{"theme":"private fixture"}');
+  await symlink(ssh, alias, 'dir');
+  await source('skills/movie/tokens/skin.json', '{}');
+  await source('secret-store/session', 'private fixture');
+  await source('projects/example/old.jsonl', 'transcript');
+  await mkdir(join(dirname(home.userConfigRoot), 'memory-notes'));
+  await symlink(join(ssh, 'data.json'), join(home.userConfigRoot, 'settings.json'), 'file');
+  await symlink(join(declaredStore, 'session'), join(home.userConfigRoot, 'skills/credential'), 'file');
+  await symlink(join(alias, 'data.json'), join(home.userConfigRoot, 'skills/via-alias'), 'file');
+  await symlink(join(credentialRoot, 'data.json'), join(home.userConfigRoot, 'skills/via-store-location'), 'file');
+  await symlink(join(alias, 'not-created'), join(home.userConfigRoot, 'skills/future-target'), 'file');
+  await symlink(join(ssh, 'data.json'), join(home.userConfigRoot, 'projects/example/private'), 'file');
+  await symlink(join(dirname(home.userConfigRoot), 'memory-notes'), join(home.userConfigRoot, 'projects/example/memory'), 'dir');
+  const result = await importAgentHome(home, {
+    groups: new Set(['settings', 'skills']), migratedFrom: 'shared', historyPaths: ['projects'],
+    upgradeSummary: (upgradeIssues) => ({ upgradeIssues: [...upgradeIssues] }),
+  });
+  const skipped = [
+    'projects/example/private', 'settings.json', 'skills/credential', 'skills/future-target',
+    'skills/via-alias', 'skills/via-store-location',
+  ];
+  expect(result.issues.sort((a, b) => a.path.localeCompare(b.path)))
+    .toEqual(skipped.map((path) => ({ path, reason: 'sensitive' })));
+  expect(result.marker.upgradeIssues).toEqual(expect.arrayContaining(result.issues));
+  for (const path of skipped) {
+    await expect(fs.lstat(join(home.configRoot, path))).rejects.toMatchObject({ code: 'ENOENT' });
+  }
+  expect(await readFile(join(home.configRoot, 'skills/movie/tokens/skin.json'), 'utf8')).toBe('{}');
+  expect(await fs.readlink(join(home.configRoot, 'projects/example/memory')))
+    .toBe(join(dirname(home.userConfigRoot), 'memory-notes'));
+});
+
 it('preserves internal and external links, refuses cycles, and copies token/cookie skill assets completely', async () => {
   const { home, source } = await fixture();
   const external = join(dirname(home.userConfigRoot), '.agents/skills/find-skills');
