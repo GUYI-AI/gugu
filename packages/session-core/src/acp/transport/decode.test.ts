@@ -78,6 +78,22 @@ const fixtures: { name: string; update: unknown; event: NormalizedEvent }[] = [
     event: { kind: 'compaction', compactionId: 'compact', status: 'completed', summary: 'kept fact' },
   },
   {
+    // The adapter closes a compaction the turn outran (pause / interrupt) with `cancelled`: the context was not compacted.
+    name: 'a cancelled compaction is a failed one',
+    update: { sessionUpdate: 'compaction_update', compactionId: 'compact', status: 'cancelled' },
+    event: { kind: 'compaction', compactionId: 'compact', status: 'failed' },
+  },
+  {
+    name: 'a failed compaction keeps its top-level error',
+    update: { sessionUpdate: 'compaction_update', compactionId: 'compact', status: 'failed', error: 'Not enough messages to compact.' },
+    event: { kind: 'compaction', compactionId: 'compact', status: 'failed', error: 'Not enough messages to compact.' },
+  },
+  {
+    name: 'a compaction status outside the enum never reaches the transcript',
+    update: { sessionUpdate: 'compaction_update', compactionId: 'compact', status: 'paused' },
+    event: { kind: 'ignored' },
+  },
+  {
     name: 'idle preserves the complete native outcome',
     update: { sessionUpdate: 'state_update', state: 'idle', stopReason: 'error', error: { code: -32603, message: 'failed' } },
     event: { kind: 'agent_state', source: 'agent', state: 'idle', stopReason: 'error', error: { code: -32603, message: 'failed' } },
