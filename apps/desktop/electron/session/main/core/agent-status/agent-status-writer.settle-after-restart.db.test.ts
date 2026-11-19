@@ -63,8 +63,8 @@ describe('settling after a restart leaves sessions whose engine survived in tmux
   const seed = (id: string, runtime: 'pty' | 'acp', agentStatus: string) =>
     fixture.sqlite
       .prepare(
-        `INSERT INTO sessions (id, project_id, provider, runtime, agent_status, agent_status_seen, config)
-         VALUES (?, 'p1', 'claude', ?, ?, 1, json_object('version', '1', 'type', ?, 'agentDisplayName', 'C'))`
+        `INSERT INTO sessions (id, project_id, workspace_id, provider, runtime, agent_status, agent_status_seen, config)
+         VALUES (?, 'p1', 'w1', 'claude', ?, ?, 1, json_object('version', '1', 'type', ?, 'agentDisplayName', 'C'))`
       )
       .run(id, runtime, agentStatus, runtime);
 

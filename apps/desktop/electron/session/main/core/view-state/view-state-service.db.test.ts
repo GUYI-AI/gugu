@@ -70,7 +70,7 @@ describe('navigation restore: "not in this table" is not "deleted"', () => {
   });
 
   it('the restore read returns only the referenced session locations (the view state came with the first frame)', () => {
-    expect(readViewStateForRestore(['archived', 'not-here'])).toEqual({ locations: [{ conversationId: 'archived', projectId: 'local-project' }] });
+    expect(readViewStateForRestore(['archived', 'not-here'])).toEqual({ locations: [{ conversationId: 'archived', projectId: 'ws-local' }] });
   });
 });
 

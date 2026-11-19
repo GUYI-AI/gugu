@@ -276,9 +276,9 @@ describe('search_index writes', () => {
     const { sessionEvents } = await import('../sessions/session-events');
     const { mapSessionRowToSession } = await import('../sessions/utils');
     const { db, sqlite } = fixture();
-    sqlite.exec(`INSERT INTO sessions (id, project_id, config) VALUES
-      ('s1', 'p1', '{"version":"1","type":"acp","agentDisplayName":"alpha one"}'),
-      ('s2', 'p1', '{"version":"1","type":"acp","agentDisplayName":"alpha two"}')`);
+    sqlite.exec(`INSERT INTO sessions (id, project_id, workspace_id, config) VALUES
+      ('s1', 'p1', 'w1', '{"version":"1","type":"acp","agentDisplayName":"alpha one"}'),
+      ('s2', 'p1', 'w1', '{"version":"1","type":"acp","agentDisplayName":"alpha two"}')`);
     for (const id of ['s1', 's2']) sessionEvents._emit('session:created', mapSessionRowToSession(db.select().from(sessions).where(eq(sessions.id, id)).get()!));
     sqlite.exec(`UPDATE sessions SET config = json_set(config, '$.agentDisplayName', 'alpha renamed') WHERE id = 's1'`);
     sessionEvents._emit('session:renamed', 's1', 'alpha renamed');

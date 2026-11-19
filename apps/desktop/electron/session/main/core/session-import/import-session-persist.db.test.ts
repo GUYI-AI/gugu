@@ -46,7 +46,7 @@ describe('导入的会话落库', () => {
     // #7341 起 createSession 会核对这个工作区是不是这个项目的文件夹 —— 种子得像真库那样连上。
     fixture.sqlite.exec(`
       INSERT INTO projects (id, name, path, repository_workspace_id) VALUES ('project-1', 'webapp', '/work/webapp', 'ws-repo-1');
-      INSERT INTO workspaces (id, kind, location, type) VALUES ('ws-repo-1', 'project-root', 'local', 'local');
+      INSERT INTO workspaces (id, kind, location, type, path) VALUES ('ws-repo-1', 'project-root', 'local', 'local', '/work/webapp');
     `);
   });
 

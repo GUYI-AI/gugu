@@ -104,8 +104,8 @@ describe('#6167 做完未读只由回合结束那条边写出', () => {
     // 会话出生:idle + 已读(build-session-row 的口径)。
     fixture.sqlite
       .prepare(
-        `INSERT INTO sessions (id, project_id, provider, runtime, agent_status, agent_status_seen)
-         VALUES (?, 'p1', 'claude', 'pty', 'idle', 1)`
+        `INSERT INTO sessions (id, project_id, workspace_id, provider, runtime, agent_status, agent_status_seen)
+         VALUES (?, 'p1', 'w1', 'claude', 'pty', 'idle', 1)`
       )
       .run(cid);
     off = agentStatusWriter.on('agent:status', ({ reading }) => {
@@ -176,11 +176,11 @@ describe('#6167 做完未读只由回合结束那条边写出', () => {
     const interrupt = vi.fn(async () => ({ success: true as const, data: undefined }));
     await expect(
       interruptTuiTurn(
-        { id: cid },
+        { id: cid, workspaceId: 'w1' },
         { interrupt, markInterrupted: (params) => agentStatusWriter.interrupt(params) },
       ),
     ).resolves.toBe(true);
-    expect(interrupt).toHaveBeenCalledWith(`p1:${cid}:${cid}`);
+    expect(interrupt).toHaveBeenCalledWith(`w1:${cid}:${cid}`);
     expect(row(), '打断不是做完:已读、不进托盘').toEqual({ status: 'idle', seen: 1 });
     // 会发 Stop 的家:迟到的 stop 看到的已经不在跑 ⇒ 同样不写「做完未读」
     await deliverNoop(event('stop'));
@@ -192,7 +192,7 @@ describe('#6167 做完未读只由回合结束那条边写出', () => {
     const interrupt = vi.fn(async () => ({ success: false as const, error: { type: 'not_found' as const } }));
     await expect(
       interruptTuiTurn(
-        { id: cid },
+        { id: cid, workspaceId: 'w1' },
         { interrupt: interrupt as never, markInterrupted: (params) => agentStatusWriter.interrupt(params) },
       ),
     ).resolves.toBe(false);

@@ -57,7 +57,8 @@ describe('baseline fixture integrity', () => {
     const [{ value: projectCount }] = await fixture.db.select({ value: count() }).from(projects);
     const [{ value: sessionCount }] = await fixture.db.select({ value: count() }).from(sessions);
 
-    expect(projectCount).toBe(2);
+    // +1: the placeholder row drizzle 0054 writes for a rolled-back build (@@@c1-legacy-project).
+    expect(projectCount).toBe(3);
     expect(sessionCount).toBe(2);
   });
 
@@ -66,6 +67,7 @@ describe('baseline fixture integrity', () => {
 
     const [{ value: projectCount }] = await fixture.db.select({ value: count() }).from(projects);
 
-    expect(projectCount).toBe(0);
+    // Only the placeholder row drizzle 0054 writes for a rolled-back build (@@@c1-legacy-project).
+    expect(projectCount).toBe(1);
   });
 });
