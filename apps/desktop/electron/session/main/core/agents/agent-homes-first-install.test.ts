@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
   root: '', oldTasks: false, kv: new Map<string, unknown>(), markers: new Map<string, unknown>(),
-  importHome: vi.fn(), probe: vi.fn(), prepare: undefined as undefined | ((id: string) => Promise<void>),
+  importHome: vi.fn(), probe: vi.fn(), report: vi.fn(), prepare: undefined as undefined | ((id: string) => Promise<void>),
 }));
 vi.mock('@gugu/session-plugins/agents', () => ({
   pluginRegistry: {
@@ -44,10 +44,11 @@ vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error:
 vi.mock('@main/utils/userEnv', () => ({ loginShellEnv: () => ({}) }));
 vi.mock('./harness-connections', () => ({ migrateOwnedHarnessAccounts: vi.fn() }));
 vi.mock('./agent-home', () => ({ setAgentHomeUpgradePreparation: (prepare: typeof state.prepare) => { state.prepare = prepare; } }));
-vi.mock('../../../../error-summary-reporting-host', () => ({ reportAgentHomeMigrationFailure: vi.fn() }));
+vi.mock('../../../../error-summary-reporting-host', () => ({ reportAgentHomeMigrationFailure: state.report }));
 
 beforeEach(async () => {
   vi.resetModules(); state.kv.clear(); state.markers.clear(); state.oldTasks = false; vi.clearAllMocks();
+  state.probe.mockResolvedValue(undefined);
   state.root = await mkdtemp(join(tmpdir(), 'gugu-first-install-'));
   state.importHome.mockImplementation(async ({ providerId }) => {
     const marker = { migratedFrom: 'shared', importedAt: 'fixture', files: {}, groups: ['settings'] };
@@ -90,6 +91,7 @@ it('leaves upgrade automatic imports in place and never offers the first-install
   api.initializeAgentHomeUpgrade(true);
   await state.prepare!('codex'); await state.prepare!('claude');
   expect(state.importHome).toHaveBeenCalledTimes(2);
+  expect(state.report).not.toHaveBeenCalled();
   expect(await api.scanAgentHomes(undefined, false, true)).toEqual([]);
 });
 
