@@ -110,24 +110,6 @@ describe('group_create (#7471)', () => {
       expect(def.schema.strict().safeParse(args).success).toBe(false)
     }
   })
-})
-
-test('shared ordinary group creation trims name/prompt, removes duplicates/owner, and propagates RPC errors', async () => {
-  const calls: Record<string, unknown>[] = []
-  const client = { rpc: async (_name: string, body: Record<string, unknown>) => {
-    calls.push(body)
-    return { data: [{ id: 'saved-chat' }], error: null }
-  } }
-  expect(await createGroupChat(client, '  汤局 ', OWNER, [SELF, OWNER, SELF, SIBLING], '  章程 ')).toBe('saved-chat')
-  expect(calls).toEqual([{
-    p_chat_id: expect.any(String), p_name: '汤局', p_owner_user_id: OWNER,
-    p_initial_members: [SELF, SIBLING].map((id) => ({ user_id: id, role: 'member' })),
-    p_default_agent_type: null, p_group_prompt: '章程',
-  }])
-  await expect(createGroupChat(client, ' ', OWNER, [SELF])).rejects.toThrow('Group name is required')
-  expect(await createGroupChat(client, '汤局', OWNER, [OWNER])).toBe('saved-chat')
-  await expect(createGroupChat({ rpc: async () => ({ data: null, error: { message: 'cannot create group' } }) }, '汤局', OWNER, [SELF])).rejects.toThrow('cannot create group')
-
   test('folder: the group is created first, then the folder is bound to it on the named device', async () => {
     const seen: unknown[] = []
     const h = harness({ runSessionAction: async (action) => { seen.push(action); return { folder_id: 'w1', path: '/work/app' } } })
@@ -148,4 +130,21 @@ test('shared ordinary group creation trims name/prompt, removes duplicates/owner
     await expect(h.call({ name: 'App', folder: { path: '/work/app' } })).rejects.toThrow(/device host/)
     expect(h.rpcs.filter((call) => call.name === 'create_gugu_group')).toEqual([])
   })
+})
+
+test('shared ordinary group creation trims name/prompt, removes duplicates/owner, and propagates RPC errors', async () => {
+  const calls: Record<string, unknown>[] = []
+  const client = { rpc: async (_name: string, body: Record<string, unknown>) => {
+    calls.push(body)
+    return { data: [{ id: 'saved-chat' }], error: null }
+  } }
+  expect(await createGroupChat(client, '  汤局 ', OWNER, [SELF, OWNER, SELF, SIBLING], '  章程 ')).toBe('saved-chat')
+  expect(calls).toEqual([{
+    p_chat_id: expect.any(String), p_name: '汤局', p_owner_user_id: OWNER,
+    p_initial_members: [SELF, SIBLING].map((id) => ({ user_id: id, role: 'member' })),
+    p_default_agent_type: null, p_group_prompt: '章程',
+  }])
+  await expect(createGroupChat(client, ' ', OWNER, [SELF])).rejects.toThrow('Group name is required')
+  expect(await createGroupChat(client, '汤局', OWNER, [OWNER])).toBe('saved-chat')
+  await expect(createGroupChat({ rpc: async () => ({ data: null, error: { message: 'cannot create group' } }) }, '汤局', OWNER, [SELF])).rejects.toThrow('cannot create group')
 })
