@@ -2242,7 +2242,7 @@ export async function emdashOpenSessionFile(
  * projection against (session-page spec ⑨: the session page is the single source of truth; gugu's contacts and
  * groups are a projection of it). `sessionIds` = conversations that still EXIST, including archived;
  * `projectIds` = projects that still exist. The host reaps any session-page agent whose conversation is absent
- * here, and archives the group mirroring any absent project. Visibility and existence are separate:
+ * here. Missing project inventory never archives its cloud group. Visibility and existence are separate:
  * an archived conversation keeps its identity, name, relationships and group seat.
  */
 export async function emdashSessionpageInventory(): Promise<{
