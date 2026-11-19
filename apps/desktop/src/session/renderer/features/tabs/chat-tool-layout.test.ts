@@ -263,7 +263,8 @@ describe('mounted chat workspace', () => {
       const panes = layout.chatWorkspacePanes!;
       const tools = panes.tools!.pane;
       const firstResource = tools._resources.get(first);
-      layout.setPaneSizes([38, 62]);
+      const cut = layout.layout;
+      if (cut.type === 'split') layout.setSplitSizes(cut.id, [38, 62]);
       layout.setChatToolLayout('full');
 
       // The 62 was dragged with the second tool in front: it is the second's. The first, never dragged, is a peer.

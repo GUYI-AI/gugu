@@ -216,7 +216,6 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       handleDragEnd: action,
       setActiveGroup: action,
       setViewActive: action,
-      setPaneSizes: action,
       setSplitSizes: action,
       equalizeSplit: action,
       restoreSnapshot: action,
@@ -321,16 +320,12 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     const panes = this.chatWorkspacePanes!;
     if (node.type !== 'split' || node.children.length !== 2 || !panes.tools) return;
     if (this.chatToolSide !== side) {
-      this.layout = {
-        ...node,
-        orientation: 'horizontal',
-        children: [...node.children].reverse(),
-        sizes: [...node.sizes].reverse(),
-      };
+      this.layout = { ...node, orientation: 'horizontal', children: [...node.children].reverse() };
       this._syncGroupOrder();
     }
     this.setChatToolLayout('split');
     panes.tools.pane.setActiveTab(tabId);
+    this._seatShown();
   }
 
   collapseChatToolSide(side: ChatToolSide): void {
@@ -429,7 +424,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     this._recordChatWorkspacePair();
     // A tool brought to the front is a page arriving on the side: it comes at its own width (@@@side-width), ❌ the
     // width the tool before it left on the pane.
-    if (arriving) this._applyOwnSizes(primary, tabId);
+    if (arriving) this._seatSide(primary, tabId);
     // Explicit selection reveals its destination; passive restoration keeps the chosen visibility.
     if (focus && this.chatWorkspaceMode === 'hidden') this.setChatToolLayout('split');
     if (focus && this.chatWorkspaceMode !== 'hidden') this.activePaneId = tools.paneId;
@@ -679,7 +674,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       }
       main.pane.activeTabId = pinned;
       sideGroup.pane.activeTabId = side;
-      if (rebuilt || !unchanged) this._applyOwnSizes(pinned, side, extent);
+      if (rebuilt || !unchanged) this._seatSide(pinned, side, extent);
       if (opts.focus) this.activePaneId = this._groupOf(other)!.paneId;
     }
     for (const id of [pinned, side]) {
@@ -710,6 +705,8 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     if (workspaceTools?.paneId === paneId) {
       this._displaced.delete(tabId);
       this._recordChatWorkspacePair();
+      // The tool behind it comes to the front: a page arriving on the side.
+      if (wasActive) this._seatShown();
       return;
     }
     const record = this._displaced.get(tabId);
@@ -893,25 +890,31 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     return this.layout.type === 'split' ? this.layout.sizes : [100];
   }
 
-  /** Legacy: the outermost cut's shares, when it has that many children. */
-  setPaneSizes(sizes: number[]): void {
-    if (this.layout.type === 'split') this.setSplitSizes(this.layout.id, sizes);
+  /** The pair's cut, if `splitId` is it, with the side page's pane's index there. */
+  private _pairCut(splitId: string): number | undefined {
+    const layout = this.layout;
+    if (!this._shownPair || layout.type !== 'split' || layout.id !== splitId) return undefined;
+    const at = layout.children.findIndex((child) => child.type === 'pane' && child.paneId === this.sidePaneId);
+    return at >= 0 ? at : undefined;
   }
 
-  /** A divider dragged: that cut's new shares; on the pair's cut, the side page's own from now on. */
+  /** A divider dragged: on the pair's cut, the side page's own width from now on (seated by `_seatSide`); else that cut's shares. */
   setSplitSizes(splitId: string, sizes: readonly number[]): void {
-    this.layout = setSplitSizes(this.layout, splitId, sizes);
-    const side = this._shownPair?.side;
-    const at = this.layout.type === 'split' && this.layout.id === splitId ? this.layout.children.findIndex((child) => child.type === 'pane' && child.paneId === this.sidePaneId) : -1;
-    if (side && at >= 0 && this.layout.type === 'split') this._sideShares.set(side, this.layout.sizes[at]);
+    const at = this._pairCut(splitId);
+    if (at === undefined) this.layout = setSplitSizes(this.layout, splitId, sizes);
+    else {
+      this._sideShares.set(this._shownPair!.side, sizes[at]);
+      this._seatShown();
+    }
   }
 
-  /** A divider double-clicked: the side page forgets its dragged width and comes back to its own (`side-width.ts`). */
+  /** A divider double-clicked: on the pair's cut the side page forgets its dragged width (`side-width.ts`); else even shares. */
   equalizeSplit(splitId: string): void {
-    const pair = this._shownPair;
-    if (pair && this.layout.type === 'split' && this.layout.id === splitId) this._sideShares.delete(pair.side);
-    const own = pair && this.layout.type === 'split' && this.layout.id === splitId ? this._ownSizes(pair.pinned, pair.side, this._pairExtent()) : null;
-    this.layout = own && this.layout.type === 'split' ? { ...this.layout, sizes: own } : equalizeSplit(this.layout, splitId);
+    if (this._pairCut(splitId) === undefined) this.layout = equalizeSplit(this.layout, splitId);
+    else {
+      this._sideShares.delete(this._shownPair!.side);
+      this._seatShown();
+    }
   }
 
   /** How wide the pair's panes are together, as measured (null until the tree has been). */
@@ -939,11 +942,21 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     return layout.children.map((child) => (child.type === 'pane' && child.paneId === paneId ? share : 100 - share));
   }
 
-  /** The pair's cut at the side page's own width; left as it is (the same object) when it is already there. */
-  private _applyOwnSizes(pinned: string, side: string, extent = this._pairExtent()): void {
+  /**
+   * @@@seat-side - the one place the pair's cut gets its shares: every way a page comes to the side (opened, pushed out
+   * and back, its tab brought to the front, a tool group dropped on an edge, a restart, the divider let go or
+   * double-clicked) ends here, so no path can give a page another page's width (pane-side-width.test.ts walks each one).
+   * Left as it is (the same object) when it is already there.
+   */
+  private _seatSide(pinned: string, side: string, extent = this._pairExtent()): void {
     const own = this._ownSizes(pinned, side, extent);
     const layout = this.layout;
     if (own && layout.type === 'split' && own.some((share, at) => share !== layout.sizes[at])) this.layout = { ...layout, sizes: own };
+  }
+
+  private _seatShown(): void {
+    const pair = this._shownPair;
+    if (pair) this._seatSide(pair.pinned, pair.side);
   }
 
   /** All opens name their source. No cardinality lookup, anchor inference or tab moving happens here. */
@@ -1165,6 +1178,8 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     this._displaced.replace(Object.entries(snapshot.displaced ?? {}).filter(([tabId, record]) => open.has(tabId) && open.has(record.tabId)));
     this._sideShares.replace(Object.entries(snapshot.sideShares ?? {}).filter(([tabId, share]) => open.has(tabId) && Number.isFinite(share)));
     this._restoreChatToolLayout(snapshot.chatToolLayout);
+    // Not measured yet: the saved cut stands (it was seated before the restart); a declared width needs the extent.
+    if (this._pairExtent()) this._seatShown();
   }
 
   /**

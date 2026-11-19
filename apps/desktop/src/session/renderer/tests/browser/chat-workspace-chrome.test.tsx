@@ -172,7 +172,7 @@ it('shrinks and scrolls the group strip with the selected tab still in view', as
     for (let index = 0; index < 7; index += 1) {
       workspace.open('tool', { id: `extra-${index}` }, { from: null, intent: 'newTab' });
     }
-    workspace.setPaneSizes([59, 41]);
+    if (workspace.layout.type === 'split') workspace.setSplitSizes(workspace.layout.id, [59, 41]);
   });
   const activeTab = () => inside('[data-chat-workspace-header] [data-tab-label="工具页签"][data-tab-active]');
   const scroller = () => activeTab()?.closest<HTMLElement>('[data-tabstrip-scroller]');
