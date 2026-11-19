@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({
   createAndProvisionSession: vi.fn(),
   sessionAcquire: vi.fn(),
   sessionRelease: vi.fn(),
-  getSessions: vi.fn(),
+  getSessionsForFolder: vi.fn(),
   getGroupWorkspaces: vi.fn(),
   getProjectManagerStore: vi.fn(),
   getPullRequestsForSession: vi.fn(),
@@ -49,7 +49,7 @@ vi.mock('@renderer/lib/ipc', () => {
       list: vi.fn(async () => [{ id: 'claude', capabilities: { hooks: { kind: 'config' } } }]),
     },
     sessions: {
-      getSessions: mocks.getSessions,
+      getSessionsForFolder: mocks.getSessionsForFolder,
     },
     terminals: { getTerminalsForSession: mocks.getTerminalsForSession },
     pullRequests: {
@@ -155,7 +155,7 @@ describe('ProjectSessionsStore session lifecycle', () => {
     mocks.viewModels.length = 0;
     mocks.terminalAcquire.mockReset();
     mocks.getTerminalsForSession.mockResolvedValue([]);
-    mocks.getSessions.mockResolvedValue([]);
+    mocks.getSessionsForFolder.mockResolvedValue([]);
     mocks.getGroupWorkspaces.mockResolvedValue([]);
     mocks.getProjectManagerStore.mockReturnValue({ mountProject: mocks.mountProject });
     mocks.getPullRequestsForSession.mockResolvedValue({ success: true, data: { prs: [] } });
@@ -216,8 +216,8 @@ describe('ProjectSessionsStore session lifecycle', () => {
       return terminals;
     });
     const sessions = Array.from({ length: 12 }, (_, i) => makeSession({ id: `session-${i}`, groupChatId: 'group-1' }));
-    // The host lists the machine's sessions; another folder's stay out of this one.
-    mocks.getSessions.mockResolvedValue([...sessions, makeSession({ id: 'elsewhere', projectId: 'project-2' })]);
+    // The host reads this folder's sessions only.
+    mocks.getSessionsForFolder.mockResolvedValue(sessions);
     mocks.getGroupWorkspaces.mockResolvedValue([{ id: 'workspace-1', linesAdded: 3, linesDeleted: 1 }]);
 
     await manager.loadSessions();
@@ -226,7 +226,7 @@ describe('ProjectSessionsStore session lifecycle', () => {
     expect(manager.listState).toBe('read');
     expect(manager.sessions.size).toBe(12);
     expect(manager.sessions.get('session-0')?.workspaceGit).toEqual({ linesAdded: 3, linesDeleted: 1 });
-    expect(mocks.getSessions).toHaveBeenCalledTimes(1);
+    expect(mocks.getSessionsForFolder).toHaveBeenCalledExactlyOnceWith(projectId);
     expect(mocks.getGroupWorkspaces).toHaveBeenCalledExactlyOnceWith('group-1');
     expect(mocks.getTerminalsForSession).not.toHaveBeenCalled();
 
@@ -469,7 +469,7 @@ describe('ProjectSessionsStore session lifecycle', () => {
     await Promise.all([creating, pane]);
     expect(mocks.createAndProvisionSession).toHaveBeenCalledOnce();
     expect(mocks.provisionWorkspace).not.toHaveBeenCalled();
-    expect(mocks.getSessions).not.toHaveBeenCalled();
+    expect(mocks.getSessionsForFolder).not.toHaveBeenCalled();
     expect(manager.sessions.get('new-task')?.state).toBe('provisioned');
     manager.dispose();
   });
