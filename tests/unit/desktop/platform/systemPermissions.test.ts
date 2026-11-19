@@ -76,14 +76,19 @@ vi.mock('capacitor-native-settings', () => ({
 }))
 vi.mock('@capacitor/app', () => ({ App: { addListener: vi.fn(), getState: mocks.appState } }))
 
-import { setAndroidPushConfirmed } from '../../../../apps/desktop/src/mobile/android-push/androidPushState'
-import { capacitorPlatform, toSystemPermissionState } from '../../../../apps/desktop/src/platform/capacitor'
+type CapacitorModule = typeof import('../../../../apps/desktop/src/platform/capacitor')
+let capacitorPlatform: CapacitorModule['capacitorPlatform']
+let toSystemPermissionState: CapacitorModule['toSystemPermissionState']
+let setAndroidPushConfirmed: typeof import('../../../../apps/desktop/src/mobile/android-push/androidPushState')['setAndroidPushConfirmed']
 import { desktopSystemPermissions, electronPlatform } from '../../../../apps/desktop/src/platform/electron'
 import { webPlatform } from '../../../../apps/desktop/src/platform/web'
 import { systemPermissionAction } from '../../../../apps/desktop/src/lib/systemPermissions'
 
-beforeEach(() => {
+beforeEach(async () => {
+  vi.resetModules()
   for (const mock of Object.values(mocks)) mock.mockReset()
+  ;({ setAndroidPushConfirmed } = await import('../../../../apps/desktop/src/mobile/android-push/androidPushState'))
+  ;({ capacitorPlatform, toSystemPermissionState } = await import('../../../../apps/desktop/src/platform/capacitor'))
   setAndroidPushConfirmed(false)
   mocks.appState.mockResolvedValue({ isActive: false })
   mocks.createChannel.mockResolvedValue(undefined)

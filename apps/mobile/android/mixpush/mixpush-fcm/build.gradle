@@ -8,4 +8,5 @@ android {
 dependencies {
     api project(':mixpush-core')
     implementation 'com.google.firebase:firebase-messaging:26.0.2'
+    implementation 'com.google.android.gms:play-services-base:18.11.1'
 }

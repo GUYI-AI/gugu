@@ -102,7 +102,7 @@ describe('SessionCoordinator', () => {
     const other = harness({ prepareSignOut: () => cleanup.promise })
     const stopOther = other.coordinator.start(); other.fire('INITIAL_SESSION', session()); await flush()
     const logout = other.coordinator.logout()
-    other.fire('SIGNED_IN', session('replacement')); await flush()
+    await other.login(session('replacement'))
     cleanup.resolve(undefined)
     expect(await logout).toEqual({ success: false })
     expect(other.deps.signOut).not.toHaveBeenCalled()

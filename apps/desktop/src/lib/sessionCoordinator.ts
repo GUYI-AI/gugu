@@ -631,6 +631,7 @@ export const sessionCoordinator = new SessionCoordinator({
   onAuthStateChange: (listener) => supabase.auth.onAuthStateChange((event, session) => listener(event, session)),
   // @@@6659 退出只吊销这一个会话 —— 不传 scope 时 supabase-js 默认 global,同账号所有设备一起被踢下线。
   prepareSignOut: async () => {
+    if (!platform.androidNotificationSettings) return
     const { prepareAndroidPushSignOut } = await import('../mobile/android-push/startAndroidPush')
     await prepareAndroidPushSignOut()
   },
