@@ -28,6 +28,7 @@ const MODEL_GROUPS = [
   { id: 'custom', testId: 'settings-custom-models', addId: 'custom-model-add', title: 'customModels.title', add: 'customModels.add', note: 'customModels.description' },
 ] as const;
 type ModelGroup = (typeof MODEL_GROUPS)[number]['id'];
+type NewModel = { group: ModelGroup; account?: 'claude' | 'codex' };
 const groupOf = (connection: CustomModelConnection): ModelGroup => providerPresets.find(preset => preset.id === connection.preset)?.group ?? 'custom';
 
 type AddRequest = { addRequested?: boolean; onAddClose?: () => void };
@@ -46,8 +47,8 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
   const { translate } = useSessionMessages();
   const reading = useReplica(customModels, [machine]);
   const { data: agents } = useAgents();
-  const [userEdit, setEditing] = useState<CustomModelConnection | ModelGroup | null>(null);
-  const editing = addRequested ? 'custom' : userEdit;
+  const [userEdit, setEditing] = useState<CustomModelConnection | NewModel | null>(null);
+  const editing: CustomModelConnection | NewModel | null = addRequested ? { group: 'custom' } : userEdit;
   const [busy, setBusy] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ group: ModelGroup; text: string } | null>(null);
   const refresh = () => { void customModels.refresh(machine); };
@@ -74,9 +75,13 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
   return <>
     {MODEL_GROUPS.map(({ id: group, testId, addId, title, add, note }) => <SettingsGroup key={group} data-testid={testId} title={<span className="flex items-center justify-between gap-3">
       {translate(title)}
-      <Button size="sm" variant="outline" onClick={() => setEditing(group)} data-testid={addId}>{translate(add)}</Button>
+      <Button size="sm" variant="outline" onClick={() => setEditing({ group })} data-testid={addId}>{translate(add)}</Button>
     </span>} note={translate(note)} footer={feedback?.group === group ? <SettingsNote role="status">{feedback.text}</SettingsNote> : undefined}>
-      {group === 'coding-plan' && agents?.filter(agent => agent.id === 'claude' || agent.id === 'codex').map(agent => <SubscriptionConnections key={agent.id} agent={agent} machine={machine} modelRows />)}
+      {group === 'coding-plan' && agents?.filter(agent => agent.id === 'claude' || agent.id === 'codex').map(agent => (
+        <SubscriptionConnections key={agent.id} agent={agent} machine={machine} modelRows={{
+          onAddAccount: () => setEditing({ group: 'coding-plan', account: agent.id === 'codex' ? 'codex' : 'claude' }),
+        }} />
+      ))}
       {reading.state === 'error' ? <SettingsRow description={errorText(reading.error)} control={<Button onClick={refresh}>{translate('common.retry')}</Button>} />
         : reading.state === 'unknown' ? <SettingsRow control={<Unknown className="w-32" />} /> : <>
           <RefreshFailed error={reading.error} onRetry={refresh} />
@@ -99,7 +104,14 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
           })}
         </>}
     </SettingsGroup>)}
-    {editing && <CustomModelDialog key={typeof editing === 'string' ? editing : editing.id} machine={machine} group={typeof editing === 'string' ? editing : groupOf(editing)} connection={typeof editing === 'string' ? undefined : editing} onClose={() => { setEditing(null); onAddClose?.(); }} />}
+    {editing && <CustomModelDialog
+      key={'group' in editing ? editing.account ?? editing.group : editing.id}
+      machine={machine}
+      group={'group' in editing ? editing.group : groupOf(editing)}
+      initialAccount={'group' in editing ? editing.account : undefined}
+      connection={'group' in editing ? undefined : editing}
+      onClose={() => { setEditing(null); onAddClose?.(); }}
+    />}
   </>;
 });
 

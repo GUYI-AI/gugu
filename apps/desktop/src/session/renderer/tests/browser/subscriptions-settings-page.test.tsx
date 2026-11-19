@@ -791,6 +791,33 @@ it.each(['claude', 'codex'])('the model page puts an expired %s account directly
 });
 
 
+it.each([
+  ['claude', 'Claude subscription'],
+  ['codex', 'ChatGPT subscription'],
+] as const)('an expired native %s connection creates a separate account for sign-in', async (provider, label) => {
+  control.codex = true;
+  control.signedOut = true;
+  control.expired = true;
+  control.connectionsByProvider[provider] = [{ id: 'native', kind: 'native', name: '', current: true }];
+  root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider><UiPortalContainerProvider value={layer}><CustomModelsGroup /></UiPortalContainerProvider></SessionLocalizationProvider></QueryClientProvider>);
+
+  const row = () => host.querySelector(`[data-subscription-model="${provider}:native"]`);
+  await until('the native row displays its expiry', () => row()?.textContent?.includes('Sign-in expired') === true);
+  expect(row()?.querySelector('[data-testid="model-sign-in-native"]')).toBeNull();
+
+  await userEvent.click(page.getByTestId(`model-add-account-${provider}`));
+  const dialog = page.getByTestId('custom-model-dialog');
+  await expect.element(dialog.getByTestId('custom-model-provider')).toHaveTextContent(label);
+  expect(control.created).toBeNull();
+  expect(modalStore.activeModalId).not.toBe('agentSignInModal');
+
+  await userEvent.click(dialog.getByRole('button', { name: 'Sign in', exact: true }));
+  await until('the separate account signs in', () => modalStore.activeModalId === 'agentSignInModal');
+  expect(control.created).toMatchObject({ providerId: provider, kind: 'account' });
+  expect(modalStore.activeModalArgs).toMatchObject({ providerId: provider, connectionId: 'account-1' });
+  expect(thrown).toEqual([]);
+});
+
 it('shows a localized connection-read failure and retries the same real reading', async () => {
   setLocalePreference('zh-CN');
   control.connectionsError = true;
