@@ -8,7 +8,7 @@ import { execFile } from '../../../../packages/core/src/local/childProcess.ts'
 import { randomUUID } from 'node:crypto'
 import { appendFileSync, readFileSync, statSync } from 'node:fs'
 import { createJsonlReader, jsonlParseError } from './jsonl-reader.mjs'
-import { CODEX_INITIALIZE_TIMEOUT_MS, CODEX_INITIALIZE_TIMEOUT, CODEX_PREPARATION_PREFIX, retryCodexPreparation, retryableCodexPreparation } from '../../../../packages/core/src/local/codex-initialize.mjs'
+import { CODEX_PREPARATION_PREFIX, retryCodexPreparation, codexBackfillWaiting } from '../../../../packages/core/src/local/codex-initialize.mjs'
 import { fileURLToPath } from 'node:url'
 import { GUGU_MCP_CONFIG_KEY, normalizeGuguToolName } from '../mcp/gugu-mcp-name.mjs'
 import { joinPromptText, promptInputItems } from './codex-app-server-prompt.mjs'
@@ -263,7 +263,6 @@ function appRequest(method, params, timeoutMs = 45_000) {
     const timer = timeoutMs === null ? null : setTimeout(() => {
       appPending.delete(id)
       const error = new Error(`local Codex app-server ${method} timed out after ${timeoutMs}ms`)
-      if (method === 'initialize') error.code = CODEX_INITIALIZE_TIMEOUT
       reject(error)
     }, timeoutMs)
     timer?.unref?.()
@@ -959,13 +958,13 @@ async function startAppAttempt(servers) {
     const initialized = await appRequest('initialize', {
       clientInfo: { name: 'gugu', title: 'Gugu', version: '0' },
       capabilities: { experimentalApi: true },
-    }, CODEX_INITIALIZE_TIMEOUT_MS)
+    }, null)
     const version = String(initialized?.userAgent ?? '').match(/^[^/]+\/(\d+)\.(\d+)\.(\d+)(?:[\s(/]|$)/)
     autoReviewSupported = !!version && (Number(version[1]) > 0 || Number(version[2]) > 156 || (Number(version[2]) === 156 && Number(version[3]) >= 1))
   } catch (error) {
     if (app && (app.exitCode !== null || app.signalCode !== null) && !(app.stdout.readableEnded && app.stderr.readableEnded)) await new Promise(resolve => app.once('close', resolve))
     error.stderrTail = startupStderr
-    if (retryableCodexPreparation(error)) throw error
+    if (codexBackfillWaiting(error)) throw error
     throw new Error(
       `本机 Codex 无法启动 app-server；请升级 Codex 后重试。原始错误：${error.message || String(error)}`,
     )
