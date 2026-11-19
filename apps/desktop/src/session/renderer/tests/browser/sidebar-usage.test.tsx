@@ -15,7 +15,8 @@ import '@/components/Sidebar.css'
 import '@renderer/index.css'
 
 const control = vi.hoisted(() => ({
-  missingFiveHours: false, expired: false, apiKey: false, refreshFails: false,
+  missingFiveHours: false, expired: false, apiKey: false, refreshFails: false, listsPending: false, listsFail: false,
+  finishLists: [] as (() => void)[],
   reads: [] as { providerId: string; connectionId: string; force: boolean }[],
   creditRefreshes: 0,
 }))
@@ -27,7 +28,11 @@ vi.mock('@/lib/billing', () => ({
 }))
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
   getAgentConfigRuntimeClient: async () => ({
-    listConnections: async ({ providerId }: { providerId: string }) => ({ success: true, data: [{ id: `${providerId}-one`, kind: 'account', name: `${providerId}-account`, current: true }] }),
+    listConnections: async ({ providerId }: { providerId: string }) => {
+      if (control.listsPending) await new Promise<void>(resolve => control.finishLists.push(resolve))
+      if (control.listsFail) return { success: false, error: { message: 'Account list unavailable' } }
+      return { success: true, data: [{ id: `${providerId}-one`, kind: 'account', name: `${providerId}-account`, current: true }] }
+    },
     refreshAuthStatus: async () => ({ success: true, data: control.expired
       ? { kind: 'unauthenticated', reason: 'expired' }
       : { kind: 'authenticated', credentialKind: control.apiKey ? 'api-key' : 'subscription' } }),
@@ -47,7 +52,7 @@ let element: HTMLDivElement
 let root: Root
 beforeEach(async () => {
   queryClient.clear()
-  Object.assign(control, { missingFiveHours: false, expired: false, apiKey: false, refreshFails: false, reads: [], creditRefreshes: 0 })
+  Object.assign(control, { missingFiveHours: false, expired: false, apiKey: false, refreshFails: false, listsPending: false, listsFail: false, finishLists: [], reads: [], creditRefreshes: 0 })
   await setLocalePreference('zh-CN')
   document.documentElement.dataset.theme = 'light'
   element = document.createElement('div')
@@ -60,6 +65,27 @@ async function open() {
   await userEvent.click(page.getByTestId('sidebar-usage'))
   await until('the nearby usage popup is open', () => document.querySelector('[data-testid="usage-popover"]') !== null)
 }
+
+it('keeps unread account lists visibly pending until their own readings arrive', async () => {
+  control.listsPending = true
+  await open()
+  await until('both account list reads are pending', () => control.finishLists.length === 2)
+  expect(document.querySelector('[data-testid="usage-popover"] [aria-busy="true"]')).not.toBeNull()
+  expect(document.querySelectorAll('.gg-usage-ring')).toHaveLength(0)
+  control.listsPending = false
+  control.finishLists.forEach(finish => finish())
+  await until('the pending lists resolve to their account windows', () => document.querySelectorAll('[role="meter"]').length === 4)
+})
+
+it('reports failed account lists instead of drawing them as stored empty lists', async () => {
+  control.listsFail = true
+  await open()
+  await until('each failed account list has a visible error', () => document.querySelectorAll('.gg-usage-error[role="status"]').length === 2)
+  expect(document.querySelectorAll('.gg-usage-ring')).toHaveLength(0)
+  expect(control.reads).toHaveLength(0)
+  expect(document.body.textContent).toContain('Claude')
+  expect(document.body.textContent).toContain('ChatGPT')
+})
 
 it('shows per-account real windows, matching ring/bar colors, and the shared credit balance', async () => {
   const capture = import.meta.env.VITE_USAGE_CAPTURE === '1'

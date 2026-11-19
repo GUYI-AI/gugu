@@ -18,8 +18,21 @@ export interface SidebarSubscription {
 /** The rail and account menus observe the same device-owned readings. No second cache. */
 export function useSidebarUsage() {
   const lists = useReplicas(harnessConnections, PROVIDERS.map((provider): [null, string] => [null, provider]))
-  const offered = lists.flatMap((list, index) => list.state === 'value'
-    ? list.value.map(connection => ({ provider: PROVIDERS[index]!, connection })) : [])
+  const offered: { provider: SubscriptionUsageProvider; connection: HarnessConnection }[] = []
+  const failures: { provider: SubscriptionUsageProvider; error: unknown }[] = []
+  let pendingLists = false
+  for (const [index, list] of lists.entries()) {
+    const provider = PROVIDERS[index]!
+    // An unread list and a failed list have their own visible states, not an empty account list.
+    switch (list.state) {
+      case 'unknown': pendingLists = true; break
+      case 'error': failures.push({ provider, error: list.error }); break
+      case 'value':
+        offered.push(...list.value.map(connection => ({ provider, connection })))
+        if (list.error) failures.push({ provider, error: list.error })
+        break
+    }
+  }
   const details = useReplicas(connectionDetails, offered.map(({ provider, connection }): Subject => [null, provider, connection.id]))
   const accounts = offered.flatMap((item, index) => {
     const reading = details[index]!
@@ -62,8 +75,7 @@ export function useSidebarUsage() {
   }
   return {
     subscriptions, rings, refreshing, refresh, readOnOpen,
-    pending: lists.some(list => list.state === 'unknown') || details.some(detail => detail.state === 'unknown'),
-    failures: lists.flatMap((list, index) => list.state === 'error' || list.state === 'value' && list.error
-      ? [{ provider: PROVIDERS[index]!, error: list.error! }] : []),
+    pending: pendingLists || details.some(detail => detail.state === 'unknown'),
+    failures,
   }
 }
