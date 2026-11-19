@@ -957,7 +957,7 @@ export type SessionpageSessionCreateModels = {
   autoReview?: { model: string; disabled?: boolean; reviewByHaiku?: boolean };
   customModels?: CustomModelConnection[];
   modelProtocols?: readonly ModelProtocol[];
-  customModel?: { modelOptional: true };
+  customModel?: { modelOptional?: true; convertFrom?: readonly ModelProtocol[] };
   harness: string;
   transport: 'acp' | 'pty';
   models: SessionpageSessionCreateModelChoice[];

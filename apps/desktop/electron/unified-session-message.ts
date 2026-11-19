@@ -15,6 +15,7 @@ import type { SessionAttachmentRef, SessionFileInput } from '@gugu/core/cloud/se
 import { assistantWorkIntentSchema, type AssistantWorkIntent, type AssistantWorkTarget } from '@gugu/core/shared/assistantWorkIntent'
 import { workReportSchema, type WorkReport } from '../src/session/shared/assistant-work'
 import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '@gugu/core/shared/typedId.mjs'
+import { matchIdPrefix, uuidPrefixRange } from '@gugu/core/shared/idPrefix'
 
 export type UnifiedRecipientResult = {
   /** Typed recipient address, exactly as the caller may reuse it. */
@@ -60,6 +61,8 @@ export type UnifiedSessionMessageDeps = {
    * id is not in the maps. Absent = ids are taken as written.
    */
   resolvePrefixes?: (input: { sessionIds: string[]; agentIds: string[] }) => Promise<{ sessions: Map<string, string>; agents: Map<string, string> }>
+  /** The msg ids of deliveries the caller was given that start with this prefix (reply_to_message_id written short). Absent = taken as written. */
+  receivedMessageIds?: (prefix: string) => Promise<string[]>
   /** Which of these `session:` ids are sessions on this machine. Absent = every one is taken as local (the graph leg judges). */
   localSessionIds?: (sessionIds: string[]) => Promise<string[]>
   /**
@@ -127,6 +130,14 @@ export async function handleUnifiedSessionMessage(
     })
     for (const item of sessions) item.id = full.sessions.get(item.id) ?? item.id
     for (const item of identities) if (item.userId !== null) item.userId = full.agents.get(item.userId) ?? item.userId
+  }
+  const replyTo = said.reply_to_message_id?.startsWith('msg:') ? said.reply_to_message_id.slice('msg:'.length) : null
+  if (replyTo !== null && uuidPrefixRange(replyTo) && deps.receivedMessageIds) {
+    said.reply_to_message_id = `msg:${matchIdPrefix({
+      kind: 'msg', id: replyTo, rows: await deps.receivedMessageIds(replyTo), keyOf: (id) => id,
+      noun: 'messages', tail: '; nothing was sent',
+      notFound: (written) => `No delivery you were given matches ${written}; reply_to_message_id is a delivery's msg. Nothing was sent`,
+    })}`
   }
   if (said.work_result && record.assistant_work) throw new Error('A report cannot also dispatch work')
   if (said.work_result && deps.enqueueReport) return deps.enqueueReport(record)

@@ -409,7 +409,7 @@ export function SubscriptionConnections({
   return (
     <>
       {modelRows ? <>{failure && <SwitchNoticeLine notice={{ tone, text: failure, ...(refusedId ? { closeAndSwitch } : {}), ...(closing ? { progress } : {}) }} />}<SubscriptionModelRows agent={agent} machine={machine} connections={listed} busy={action.isPending}
-        onSignIn={id => signIn(id)} onAddAccount={modelRows.onAddAccount} onTest={id => action.mutate({ kind: 'refresh', id })} onRemove={id => action.mutate({ kind: 'remove', id })}
+        onSignIn={id => signIn(id)} onAddAccount={modelRows.onAddAccount} onRemove={id => action.mutate({ kind: 'remove', id })}
         onRetry={refresh} error={connections.error || native.error ? translate('customModels.connectionsReadFailed', { provider: agent.name }) : null} /></> : modelAccount ? <ConnectionForm
           agent={agent} machine={machine} account={accountMethod} vendorKey={false}
           onCreated={connection => { setModelAccountId(connection.id); onCreated(connection) }} onCliSignIn={signInCli}

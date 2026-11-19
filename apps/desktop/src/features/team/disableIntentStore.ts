@@ -57,4 +57,3 @@ export function createTeamDisableIntentStore(storage: Storage, teamId: string, a
     },
   }
 }
-

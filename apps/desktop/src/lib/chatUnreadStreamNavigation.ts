@@ -171,7 +171,7 @@ export function useChatUnreadStreamNavigation(deps: Deps) {
     const locator = deps.chatsRef.current.find((chat) => chat.id === chatId)?.unread_locator
     if (locator?.message_id && locator.message_seq != null) {
       const saved = { ...locator, message_id: locator.message_id, message_seq: locator.message_seq }
-      const entry = { chatId, epoch: getMessageSnapshotEpoch(chatId), locator: saved, onSeen: () => consumeUnreadEntry(chatId, saved) }
+      const entry = { chatId, epoch: getMessageSnapshotEpoch(chatId), locator: saved, consume: () => consumeUnreadEntry(chatId, saved) }
       setUnreadEntries((previous) => ({ ...previous, [chatId]: entry }))
     } else dropUnreadEntry(chatId) // an opening with nothing new has no first unread: an earlier opening's pill goes
   }, [deps.chatsRef, getMessageSnapshotEpoch, consumeUnreadEntry, dropUnreadEntry])
@@ -182,7 +182,8 @@ export function useChatUnreadStreamNavigation(deps: Deps) {
     captureUnreadEntry(chatId)
     deps.setActiveChatId(chatId)
   }, [captureUnreadEntry, openStreamAtLocator])
-  // 离开这个会话、或它的窗口被换掉(点了标签跳过去、回到最新页)都作废:epoch 与 ownsChat 同一把尺子。
+  // 窗口被换掉(点了标签跳过去、回到最新页)即作废:epoch 与 ownsChat 同一把尺子。离开这个会话由呈现它的那一面了结
+  // (usePresentedUnreadEntry):桌面上群是会话页里的一块,块关了,账号那条线可能还观察着它,epoch 不会变。
   const entryFor = useCallback((chatId: string | null) => {
     const entry = chatId ? unreadEntries[chatId] : null
     return entry && entry.epoch === getMessageSnapshotEpoch(entry.chatId) ? entry : null
@@ -218,4 +219,23 @@ export function useChatUnreadStreamNavigation(deps: Deps) {
     finishChatOpen,
     cancelChatOpen,
   }
+}
+
+/**
+ * @@@presented-unread-entry — 「↑ N 条新消息」属于一次打开,打开在呈现它的那一面上结束:这一面不再显示这条会话
+ * (换会话、卸载、整面藏起)时,把它拿着的那条 entry 消掉。再进来时有新未读就重新记一条,没有就没有提示。
+ * ❌ 靠「账号那条线还在不在观察这个群」判离开:侧栏打开的群只换会话页的块,不动账号的当前会话,那条线一直观察着上一个群。
+ * StrictMode 的卸了再挂与换成新 entry 同一拍里认领回来,不算结束(微任务里再判)。
+ */
+export function usePresentedUnreadEntry(entry: CapturedUnreadEntry | null | undefined, presenting: boolean): void {
+  const shown = presenting ? entry ?? null : null
+  const claimed = useRef<CapturedUnreadEntry | null>(null)
+  useEffect(() => {
+    if (!shown) return
+    claimed.current = shown
+    return () => {
+      claimed.current = null
+      queueMicrotask(() => { if (claimed.current !== shown) shown.consume() })
+    }
+  }, [shown])
 }

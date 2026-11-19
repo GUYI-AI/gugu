@@ -21,8 +21,9 @@ export type CapabilityGrant = Brand<object, 'CapabilityGrant'> | None
 export type PlatformTicket = Brand<object, 'PlatformTicket'> | None
 export type ResolvedCli = Brand<object, 'ResolvedCli'> | None
 export type ProcessLease = Brand<object, 'ProcessLease'>
-// nativeSession: this attempt continued the previous provider session or got a new one (null on a first start).
-export type AdmittedChannel = Brand<Readonly<{ gen: Gen; timing: Timing; nativeSession: 'preserved' | 'replaced' | null }>, 'AdmittedChannel'>
+// nativeSession: this attempt continued the previous provider session or got a new one (null on a first start);
+// 'route-switched' = a billing-route switch moved it to a new one carrying the conversation (how much: the session says).
+export type AdmittedChannel = Brand<Readonly<{ gen: Gen; timing: Timing; nativeSession: 'preserved' | 'replaced' | 'route-switched' | null }>, 'AdmittedChannel'>
 
 export interface StageOut {
   readonly identity: BoundIdentity

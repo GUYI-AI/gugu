@@ -117,7 +117,11 @@ export const claudeSessionBundleDescriptor = {
     legacyCleanup: [{ path: 'settings.local.json', update: (fs, path) => stripManagedJsonHooks(fs, path, 'user') }],
   },
   platform: harnessPlatform,
-  customModel: { modelOptional: true, evidence: 'Claude Code can use the configured Anthropic endpoint and key without ANTHROPIC_MODEL.' },
+  customModel: {
+    modelOptional: true,
+    convertFrom: ['openai-chat-completions'],
+    evidence: 'Claude Code can use the configured Anthropic endpoint and key without ANTHROPIC_MODEL. cc-switch-cli v5.11.4 serves Anthropic Messages to Claude Code from an OpenAI Chat provider (api-format openai_chat).',
+  },
   // ❌ `IS_DEMO` / `CLAUDE_CODE_SANDBOXED` 是咕咕给 claude 的工作区信任通道(./trust.ts),必须成对由 WorkspaceTrustService 给出 ——
   // 曾经只透传 IS_DEMO(#2905),用户 shell 里碰巧 export 了它,claude 跳过信任对话框而工作区仍不可信。
   // `CLAUDE_PROJECT_DIR` 是 claude 每次调用按当前项目填给钩子用的,shell 里的残留值会把钩子指到另一个项目。
