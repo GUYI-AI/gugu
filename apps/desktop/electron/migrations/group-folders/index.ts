@@ -4,10 +4,12 @@
 //   · every project's root folder (created when the project was never opened) and attached folders become folders bound
 //     to the project's group — from <GUGU_HOME>/taskpage-project-groups.json, the only record of that binding — with
 //     the root first; a detached root stays a folder without a group; gitless/base_ref move onto the root folder;
-//   · sessions take the group of their project (the task home's and app-kept directories' sessions have none);
+//   · sessions take the group of their project (the task home's and app-kept directories' sessions have none), and
+//     those that never had a workspace take the project's root folder as their cwd;
 //   · project_settings / project_remotes / automations.project_id move to the root folder (workspace id);
 //   · legacy_project_aliases records every project (id → root folder, group) for ids written outside this database;
 //   · the mapping's per-account `files` cache moves into file_revision_cache;
+//   · activity events take their project's group (column and JSON);
 //   · a placeholder project row lets new sessions satisfy the previous release's NOT NULL project_id after a rollback.
 // Then the mapping file is renamed `.migrated-c1` (kept for a rollback) and `<userData>/migrations/group-folders-v1.done`
 // is written with a summary. A project bound to different groups by different accounts of this device is left without a
@@ -134,6 +136,8 @@ export async function runGroupFoldersOnce(deps: GroupFoldersDeps): Promise<Group
           .run(group, group === null ? null : index + 2, row.id)
         summary.folders += 1
       })
+      // Every session has a cwd from here on: one that never had a workspace works in its project's root.
+      db.prepare('UPDATE sessions SET workspace_id = ? WHERE project_id = ? AND workspace_id IS NULL').run(root, project.id)
       const sessions = db.prepare('UPDATE sessions SET chat_id = ? WHERE project_id = ?').run(group, project.id).changes
       if (group === null) summary.sessionsWithoutGroup += sessions
       else summary.sessionsInGroups += sessions
@@ -146,6 +150,15 @@ export async function runGroupFoldersOnce(deps: GroupFoldersDeps): Promise<Group
       db.prepare('INSERT OR REPLACE INTO legacy_project_aliases (project_id, root_workspace_id, chat_id) VALUES (?, ?, ?)')
         .run(project.id, root, group)
     }
+    // The activity journal is grouped by group now: an event of a project takes that project's group, in its column and
+    // in its (strictly parsed) JSON; one with no group just loses the project key.
+    db.prepare(`UPDATE activity_events SET
+        chat_id = (SELECT a.chat_id FROM legacy_project_aliases a WHERE a.project_id = activity_events.project_id),
+        data = CASE WHEN (SELECT a.chat_id FROM legacy_project_aliases a WHERE a.project_id = activity_events.project_id) IS NULL
+          THEN json_remove(data, '$.project_id')
+          ELSE json_set(json_remove(data, '$.project_id'), '$.chat_id',
+            (SELECT a.chat_id FROM legacy_project_aliases a WHERE a.project_id = activity_events.project_id)) END
+      WHERE project_id IS NOT NULL OR json_extract(data, '$.project_id') IS NOT NULL`).run()
     // Ambiguous bindings: no group rather than a guess (listed in the summary).
     for (const projectId of ambiguous.keys()) db.prepare('UPDATE sessions SET chat_id = NULL WHERE project_id = ?').run(projectId)
     if (mapping) {

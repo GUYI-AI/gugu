@@ -134,7 +134,7 @@ export function personalAssistantPlatformPrompt(prompt: string): string {
 }
 
 /** Dynamic session-page facts. Kept separate from the static platform contract. */
-export { buildSessionpageProjectContextBlock } from '../src/session/shared/prompt-injection'
+export { buildSessionpageGroupContextBlock } from '../src/session/shared/prompt-injection'
 
 /**
  * token 估算：CJK 一字一 token，其余按 4 字符一 token。

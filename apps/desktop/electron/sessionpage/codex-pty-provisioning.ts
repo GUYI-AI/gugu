@@ -141,7 +141,7 @@ export interface CodexPtyProvisionDeps extends SessionpageProvisionDeps {
     model: SessionModelCapability,
     autonomy: SessionAutonomyCapability | null,
     includePromptBlocks: boolean,
-    projectContext?: ProvisionedSessionpageAgent['projectContext'],
+    projectContext?: ProvisionedSessionpageAgent['groupContext'],
     /**
      * #5331 刚铸出来的身份,它的 persona 这一步就已经全知道 —— 递过去,别再为一个自己刚写下的
      * 事实跑一趟网络。实测:库放到 3 秒之外时,codex 编程面就卡在这一发 `identity.users` 查询上。
@@ -322,7 +322,7 @@ async function provisionAndOverrideOnce(
       },
       { permissionMode: resolveSessionPermissionMode(info) },
       !resumeThreadId,
-      provisioned.projectContext,
+      provisioned.groupContext,
       provisioned.agentIdentityFacts,
     ), signal, (ms) => { codexSteps['capabilities-loaded'] = ms })
     // gugu MCP、模型/推理强度/权限模式、身份 prompt 与 agent 事件 hook 的 `notify` 回调

@@ -85,7 +85,6 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
       capabilities: () => (capabilities ??= detectDeviceCapabilities()),
       warn: (message) => log.warn(`[session-host] session-page ${message}`),
     }),
-    resolveProjectName: (projectId) => emdashProjectName(projectId),
     takeBirthGroup: (sessionId) => emdashTakeBirthGroup(sessionId),
     sessionFacts: (target, options) => emdashSessionProvisionInput(target, options),
     listSessionFacts: () => emdashSessionpageSessionFacts(),
