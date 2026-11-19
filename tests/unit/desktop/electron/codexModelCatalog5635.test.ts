@@ -156,6 +156,14 @@ describe('codex bridge catalog file (#5635)', () => {
     expect(written.args).toEqual([])
   })
 
+  test('retains the catalog operation and native permission cause without suggesting an upgrade', async () => {
+    const cause = Object.assign(new Error('execute denied'), { code: 'EACCES' })
+    const failure = writeCodexModelCatalog({ GUGU_PLATFORM_MODELS: FACTS }, async () => { throw cause })
+    await expect(failure).rejects.toThrow(/codex debug models --bundled/)
+    await expect(failure).rejects.toMatchObject({ cause, data: { codexStartupKind: 'permission' } })
+    await expect(failure).rejects.not.toThrow(/升级/)
+  })
+
   test('a broken payload or an unreadable bundled catalog fails loud', async () => {
     await expect(writeCodexModelCatalog({ GUGU_PLATFORM_MODELS: '{not json' }, bundled)).rejects.toThrow(/not JSON/)
     await expect(writeCodexModelCatalog({ GUGU_PLATFORM_MODELS: FACTS }, async () => 'garbage')).rejects.toMatchObject({ data: { codexStartupKind: 'protocol' } })

@@ -1,4 +1,4 @@
-import { tagCodexStartupFailure } from '../../../../packages/core/src/local/codex-startup-failure.mjs'
+import { codexStartupKind, tagCodexStartupFailure } from '../../../../packages/core/src/local/codex-startup-failure.mjs'
 // Codex's model metadata for Gugu platform models — rendered from the gateway model directory.
 //
 // Codex sizes context, compaction and reasoning from a per-model descriptor looked up by slug.
@@ -142,7 +142,10 @@ export async function writeCodexModelCatalog(env, readBundledCatalog) {
     if (!Array.isArray(bundled)) throw tagCodexStartupFailure(new Error('no "models" array'), 'protocol')
   } catch (error) {
     // Without it every platform model codex does know (gpt-5.x) would lose its own metadata.
-    throw tagCodexStartupFailure(error, error instanceof SyntaxError ? 'protocol' : undefined)
+    throw tagCodexStartupFailure(new Error(
+      `Codex bundled model catalog (codex debug models --bundled) failed: ${error?.message ?? error}`,
+      { cause: error },
+    ), error instanceof SyntaxError ? 'protocol' : codexStartupKind(error, true))
   }
   const dir = await mkdtemp(join(tmpdir(), 'gugu-codex-catalog-'))
   const file = join(dir, 'model-catalog.json')
