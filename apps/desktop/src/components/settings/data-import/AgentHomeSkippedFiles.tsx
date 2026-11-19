@@ -7,6 +7,7 @@ function IssueGroup({ name, issues }: { name: string; issues: Issues }) {
   const { t } = useTranslation('main')
   const [expanded, setExpanded] = useState(false)
   const summary = issues.every(({ reason }) => reason === 'symlink') ? 'groupLinksSummary'
+    : issues.every(({ reason }) => reason === 'historyLimit') ? 'groupHistoryLimitSummary'
     : issues.every(({ reason }) => reason === 'tooLarge') ? 'groupTooLargeSummary' : 'groupSkippedSummary'
   return <details className="gg-import-meta agent-home-skipped" onToggle={(event) => setExpanded(event.currentTarget.open)}>
     <summary>{t(`agentHome.issue.${summary}`, { name, count: issues.length })}</summary>

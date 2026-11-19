@@ -3,6 +3,7 @@ import { createReactHarness, clickElement } from '../../../../../../../tests/sup
 import { ModalRenderer } from '@renderer/lib/modal/modal-renderer'
 import { openAgentHomeImport } from '@renderer/features/settings/subscriptions/ensure-agent-home'
 import { readAgentHomeUpgradeResults, showAgentHomeUpgradeNotice } from '@renderer/features/settings/subscriptions/agent-home-upgrade-notice'
+import { AgentHomePreparationStatus } from '@/components/settings/data-import/AgentHomePreparationStatus'
 import { AgentHomeSkippedFiles } from '@/components/settings/data-import/AgentHomeSkippedFiles'
 import type { AgentHomeScan } from '@gugu/session-core/workspace-server/agent-config'
 import { UI_EVENTS } from '@/lib/uiEvents'
@@ -103,4 +104,34 @@ it('groups skipped library links by skill and reveals paths only in the expanded
   expect(harness.container.textContent).toContain('.venv/bin/python')
   expect(harness.container.textContent).not.toContain('tokens/file.json')
   expect(harness.container.textContent).not.toContain('·')
+})
+
+
+it('keeps a native preparation reading visible without announcing a completed migration', async () => {
+  const preparing = { ...home, migration: true, migrationPreparation: { phase: 'history' as const, startedAt: Date.now() - 2000, attempt: 2 } }
+  calls.scanHomes.mockResolvedValue({ success: true, data: [preparing] })
+  expect(await readAgentHomeUpgradeResults()).toEqual([preparing])
+  showAgentHomeUpgradeNotice([preparing])
+  expect(calls.notice).not.toHaveBeenCalled()
+  harness = createReactHarness()
+  await harness.render(<AgentHomePreparationStatus preparation={preparing.migrationPreparation} />)
+  expect(harness.container.textContent).toMatch(/Preparing history|正在整理历史/)
+  expect(harness.container.textContent).toMatch(/2/)
+  expect(harness.container.textContent).not.toContain('%')
+  expect(harness.container.textContent).not.toContain('·')
+})
+
+it('folds quota-excluded sessions and says their originals remain in place', async () => {
+  harness = createReactHarness()
+  await harness.render(<AgentHomeSkippedFiles issues={[
+    { path: 'sessions/old-a.jsonl', reason: 'historyLimit' },
+    { path: 'sessions/old-b.jsonl', reason: 'historyLimit' },
+  ]} />)
+  const summary = harness.container.querySelector('summary')!
+  expect(summary.textContent).toMatch(/2/)
+  expect(summary.textContent).toMatch(/original location|原处/)
+  expect(harness.container.textContent).not.toContain('old-a.jsonl')
+  await clickElement(summary)
+  await expect.poll(() => harness.container.querySelectorAll('li').length).toBe(2)
+  expect(harness.container.textContent).toContain('old-a.jsonl')
 })

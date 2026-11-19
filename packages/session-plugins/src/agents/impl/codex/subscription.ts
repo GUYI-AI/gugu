@@ -150,15 +150,15 @@ export function windowsFromUsage(response: unknown, now = Date.now()): Subscript
 export type CodexPrepareOptions = { signal?: AbortSignal; onProgress?: (progress: CodexPreparation | null) => void };
 
 /** Native initialize is also the migration's index preparation entry; it never edits state tables. */
-export async function prepareCodexHistory(ctx: AgentAuthContext, options: CodexPrepareOptions = {}): Promise<void> {
+export async function prepareCodexHistory(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, options: CodexPrepareOptions = {}): Promise<void> {
   await askAppServer(ctx, null, {}, options);
 }
 
-async function askAppServer(ctx: AgentAuthContext, method: string | null, params: unknown, options: CodexPrepareOptions = {}): Promise<unknown> {
+async function askAppServer(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, method: string | null, params: unknown, options: CodexPrepareOptions = {}): Promise<unknown> {
   return retryCodexPreparation(() => askAppServerAttempt(ctx, method, params, options.signal), options);
 }
 
-async function askAppServerAttempt(ctx: AgentAuthContext, method: string | null, params: unknown, signal?: AbortSignal): Promise<unknown> {
+async function askAppServerAttempt(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, method: string | null, params: unknown, signal?: AbortSignal): Promise<unknown> {
   signal?.throwIfAborted();
   const binary = ctx.env.GUGU_CODEX_BIN?.trim() || ctx.cli;
   let failure: Error | null = null;
