@@ -71,6 +71,6 @@ describe('SearchService · sessions on retired remote workspaces', () => {
     sqlite.exec("UPDATE sessions SET archived_at=NULL WHERE id='session-local';");
     const row = db.select().from(sessions).where(eq(sessions.id, 'session-local')).get()!;
     sessionEvents._emit('session:created', mapSessionRowToSession(row));
-    expect(searchService.search({ query: 'alpha' }).map(item => item.id)).toContain('session-local');
+    await vi.waitFor(() => expect(searchService.search({ query: 'alpha' }).map(item => item.id)).toContain('session-local'));
   });
 });

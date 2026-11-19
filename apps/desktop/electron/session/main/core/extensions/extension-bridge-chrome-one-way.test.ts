@@ -63,7 +63,7 @@ const dispatchForApp = vi.fn(async (_id: string, args: Record<string, unknown>, 
     to = picked.to;
   }
   if (to.chat) await effects.draftInChat({ chatId: to.chat, text: `${text}\n` });
-  else await effects.draftInSession({ id: to.session ?? 'task-2', projectId: 'p-1' }, `${text}\n`);
+  else await effects.draftInSession({ id: to.session ?? 'task-2' }, `${text}\n`);
   return { to };
 });
 vi.mock('@main/core/extensions/extension-send', () => ({ dispatchForApp }));
@@ -151,7 +151,7 @@ describe('what a page says about itself: one way out of main', () => {
       [{ extensionId: 'board', sessionId: 'task-1', tabId: 'tab-1', pageId: SESSION_TAB, embedderId: 42 }, { kind: 'compose', sessionId: 'task-2', text: 'picked\n' }],
       [{ extensionId: 'board', sessionId: null, tabId: 'dock-1', pageId: DOCK_PAGE, embedderId: 42 }, { kind: 'compose', detail: { chatId: CHAT, text: 'picked\n' } }],
     ]);
-    expect(emitted).toHaveBeenCalledWith(expect.anything(), { projectId: 'p-1', sessionId: 'task-2' });
+    expect(emitted).toHaveBeenCalledWith(expect.anything(), { sessionId: 'task-2' });
     // Where the page is fills only what the sheet shows: its session.
     expect(dispatchForApp.mock.calls[1]![2]).toMatchObject({ session: 'task-1' });
     deliver.mockClear();
