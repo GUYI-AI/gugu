@@ -17,7 +17,7 @@ const state = vi.hoisted(() => ({
   resume: vi.fn(async () => ({ kind: 'pending', stages: [] })),
   remove: vi.fn(async () => ({ kind: 'pending', stages: [] })),
 }))
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: state.t, i18n: { language: 'zh-CN' } }) }))
+vi.mock('react-i18next', async original => ({ ...(await original<typeof import('react-i18next')>()), useTranslation: () => ({ t: state.t, i18n: { language: 'zh-CN' } }) }))
 vi.mock('../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: state.owner } }) }))
 vi.mock('../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => ({ refreshChats: state.refresh }) }))
 vi.mock('../../../apps/desktop/src/components/toastContext', () => ({ useToast: () => ({ toast: state.toast }) }))

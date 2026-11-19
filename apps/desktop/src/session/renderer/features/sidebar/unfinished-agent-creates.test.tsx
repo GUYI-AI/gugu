@@ -12,7 +12,7 @@ import { UnfinishedAgentCreates } from './unfinished-agent-creates';
 const confirm = vi.hoisted(() => vi.fn());
 vi.mock('@renderer/lib/modal/modal-provider', () => ({ useShowModal: () => confirm }));
 vi.mock('@/lib/agentProvision', () => ({ defaultResumeStore: { list: () => [] } }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-i18next', async original => ({ ...(await original<typeof import('react-i18next')>()), useTranslation: () => ({ t: (key: string) => key }) }));
 let root: Root;
 let container: HTMLDivElement;
 afterEach(async () => {
