@@ -29,7 +29,6 @@ export type PlatformCredentialRuntimeObservation = {
 
 export type SessionpagePlatformRecoveryTarget = {
   sessionId: string
-  projectId: string
   providerId: string
   surface: SessionpageSessionSurface
   expiresAt?: string

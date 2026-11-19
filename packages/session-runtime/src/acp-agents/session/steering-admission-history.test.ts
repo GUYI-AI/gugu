@@ -42,7 +42,7 @@ describe('steering admission records the submitted message', () => {
     };
     const activity = transport === 'native' ? null : createRequestActivity(agent as never, ({ event }) => cell.push(event));
     const api = activity ? activity.agent : agent as unknown as AcpAgentApi;
-    const cell: SessionCell = new SessionCell({ sessionId: 'conversation', projectId: 'project', providerId: 'fixture', acpSessionId: 'native',
+    const cell: SessionCell = new SessionCell({ sessionId: 'conversation', providerId: 'fixture', acpSessionId: 'native',
       agent: api, supportsSteering: true, logger: noopLogger,
       resolveAttachment: async () => ({ data: '', mimeType: 'text/plain' }), callbacks: { onTranscriptChanged: changed } });
     cell.applySessionReady();

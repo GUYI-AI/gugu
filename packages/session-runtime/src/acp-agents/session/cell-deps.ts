@@ -62,7 +62,6 @@ export type LiveSettingApplyResult =
 
 export interface SessionCellDeps {
   sessionId: string;
-  projectId: string;
   providerId: string;
   acpSessionId: string;
   /**

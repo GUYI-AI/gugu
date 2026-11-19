@@ -4,7 +4,7 @@ import { FakeAcpAgent } from '../acp-test-support';
 import { SessionCell } from './cell';
 
 function cell() {
-  const value = new SessionCell({ sessionId: 'replay', projectId: 'project', providerId: 'claude', acpSessionId: 'provider',
+  const value = new SessionCell({ sessionId: 'replay', providerId: 'claude', acpSessionId: 'provider',
     agent: new FakeAcpAgent(), logger: noopLogger, resolveAttachment: async () => ({ data: '', mimeType: 'image/png' }) });
   return value;
 }

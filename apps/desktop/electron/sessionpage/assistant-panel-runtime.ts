@@ -82,7 +82,7 @@ export function createAssistantPanelRuntime(deps: {
       roles.set(key,assistant)
     }
     if (!assistant) return null
-    const home = await deps.local.home(sessionId, { assistantId: agent.gugu_user_id, deviceId: await deps.deviceId(), ownerId: auth.userId })
+    const home = await deps.local.home(sessionId)
     const binding = { assistantId: agent.gugu_user_id,ownerId: auth.userId,sessionId,cwd: home.cwd,home: homedir(),kind: deps.kind }
     if (unavailable.has(binding.assistantId)) return null
     bindings.set(sessionId,binding)

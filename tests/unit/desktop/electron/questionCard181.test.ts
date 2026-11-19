@@ -35,7 +35,7 @@ const QUESTION = '44444444-4444-4444-8444-444444444444'
 const ask = (chatId: string, questions: unknown, agentUserId: string | null = 'agent-7') => withQuestionCard({
   auth: { accessToken: 'token', userId: 'owner-1' },
   caller: { agentUserId, deviceId: 'device-1', deviceLabel: 'Mac Studio', sessionId: 'session-1' },
-  projectId: 'project-1',
+  workspaceId: 'project-1',
   asked: { state: 'pending', question_id: `agent-question:${QUESTION}`, source_link: `gugu-chat://${chatId}/${SOURCE}` },
   questions,
 })

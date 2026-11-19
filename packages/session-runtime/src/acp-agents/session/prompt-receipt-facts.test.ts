@@ -12,7 +12,7 @@ function fixture() {
   const prompt = vi.fn((_input: unknown, _dispatch: { requestId: string }) => {
     const receipt = Promise.withResolvers<SessionPromptReceipt>(); receipts.push(receipt); return receipt.promise;
   });
-  const cell = new SessionCell({ sessionId: 'receipt-facts', projectId: 'project', providerId: 'fixture', acpSessionId: 'native',
+  const cell = new SessionCell({ sessionId: 'receipt-facts', providerId: 'fixture', acpSessionId: 'native',
     agent: { prompt, steer: vi.fn(() => steerReceipt.promise), cancel: vi.fn(async () => {}) } as unknown as AcpAgentApi,
     supportsSteering: true, mergeEnvelopes: texts => texts.join('\n'),
     resolveAttachment: async () => ({ data: '', mimeType: 'image/png' }), logger: { ...noopLogger, info, warn } });

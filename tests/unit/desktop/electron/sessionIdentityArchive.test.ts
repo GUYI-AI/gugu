@@ -13,7 +13,7 @@ const auth = { accessToken: 'test-token', refreshToken: '', userId: 'owner' }
 const host = (env: NodeJS.ProcessEnv, beforeIdentityRemoval?: Parameters<typeof createSessionpageIdentityHost>[0]['beforeIdentityRemoval']) => createSessionpageIdentityHost({
   beforeIdentityRemoval,
   env, getAuth: async () => auth, resolveDeviceId: async () => 'device',
-  resolveProjectName: async () => 'Project', sessionFacts: async () => null, listSessionFacts: async () => [],
+  sessionFacts: async () => null, listSessionFacts: async () => [],
 })
 const bind = (env: NodeJS.ProcessEnv, key: string, id = 'old-agent') => createTestLocalAgent(env,
   { gugu_user_id: id }, { cache: { [key]: 'same-task', sessionpage_owner_user_id: 'owner' } })

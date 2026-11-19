@@ -74,7 +74,7 @@ describe('boot-installed collector and real committed producers', () => {
     expect(query().coverage.untracked).toContain('terminal_input_submission');
   });
   it('collects lifecycle and durable question settlements, never their title/options/answer', async () => {
-    sessionEvents._emit('session:renamed', 's1', 'p1', 'SECRET SESSION TITLE');
+    sessionEvents._emit('session:renamed', 's1', 'SECRET SESSION TITLE');
     await new Promise<void>(resolve => setImmediate(resolve));
     const request = { itemId: 'agent-question:q1', kind: 'question', title: 'SECRET QUESTION',
       options: [{ optionId: 'yes', name: 'SECRET OPTION' }],
@@ -97,7 +97,7 @@ describe('boot-installed collector and real committed producers', () => {
     expect(query().events).toMatchObject([{ kind: 'agent.status', occurred_at: at, status: 'idle', detail: 'done' }]);
   });
   it('reads a committed activity through the real HTTP grant and catalog tool, without a preview call', async () => {
-    sessionEvents._emit('session:renamed', 's1', 'p1', 'SECRET RENAMED TITLE');
+    sessionEvents._emit('session:renamed', 's1', 'SECRET RENAMED TITLE');
     await new Promise<void>(resolve => setImmediate(resolve));
     const host = createDesktopGuguMcpHost();
     const client = new Client({ name: 'activity-product-path', version: '1' });

@@ -9,7 +9,7 @@ function fixture() {
     return { status: 'dispatched', requestId: dispatch!.requestId };
   });
   const cell = new SessionCell({
-    sessionId: 'token-retry', projectId: 'probe', providerId: 'fixture', acpSessionId: 'native',
+    sessionId: 'token-retry', providerId: 'fixture', acpSessionId: 'native',
     supportsSteering: false,
     agent: { prompt, cancel: vi.fn(async () => {}) } as unknown as AcpAgentApi,
     mergeEnvelopes: texts => texts.join('\n'),

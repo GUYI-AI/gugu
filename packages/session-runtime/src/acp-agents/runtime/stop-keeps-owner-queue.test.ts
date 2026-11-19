@@ -70,7 +70,7 @@ describe('stopping a session keeps the owner\'s queued message for the next star
     const cell = new SessionCell({
       mergeEnvelopes: (texts) => texts.join('\n'),
       sessionId: 'conv-closing',
-      projectId: 'proj-1',
+     
       providerId: 'claude',
       acpSessionId: 'session-1',
       agent,

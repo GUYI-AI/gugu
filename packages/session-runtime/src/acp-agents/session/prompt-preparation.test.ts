@@ -11,7 +11,7 @@ const cells: SessionCell[] = []
 afterEach(() => { setNativePromptPreparation(null); for (const cell of cells.splice(0)) cell.dispose() })
 function fixture(providerId = 'claude') {
   const agent = new FakeAcpAgent()
-  const cell = requestActivityCell(agent, { sessionId: 'assistant',projectId: 'home',providerId,acpSessionId: 'native',
+  const cell = requestActivityCell(agent, { sessionId: 'assistant',providerId,acpSessionId: 'native',
     historyRecovery: pluginRegistry.get(providerId)?.behavior.acp?.historyRecovery,
     mergeEnvelopes: texts => texts.join('\n'),resolveAttachment: async () => ({ data: '',mimeType: 'image/png' }),logger: noopLogger,
   })

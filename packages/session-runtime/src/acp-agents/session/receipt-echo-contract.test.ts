@@ -9,7 +9,7 @@ describe('accepted receipt requires an earlier native echo', () => {
     const receipt = Promise.withResolvers<SessionPromptReceipt>();
     const prompt = vi.fn(() => receipt.promise);
     const logger = { ...noopLogger, error: vi.fn() };
-    const cell = new SessionCell({ sessionId: 'c', projectId: 'p', providerId: 'receipt-provider-fixture', acpSessionId: 's',
+    const cell = new SessionCell({ sessionId: 'c', providerId: 'receipt-provider-fixture', acpSessionId: 's',
       agent: { prompt, cancel: vi.fn(async () => {}) } as unknown as AcpAgentApi,
       resolveAttachment: async () => ({ data: '', mimeType: 'image/png' }), logger });
     cell.applySessionReady();

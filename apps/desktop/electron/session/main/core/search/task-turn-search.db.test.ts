@@ -281,7 +281,7 @@ describe('search_index writes', () => {
       ('s2', 'p1', '{"version":"1","type":"acp","agentDisplayName":"alpha two"}')`);
     for (const id of ['s1', 's2']) sessionEvents._emit('session:created', mapSessionRowToSession(db.select().from(sessions).where(eq(sessions.id, id)).get()!));
     sqlite.exec(`UPDATE sessions SET config = json_set(config, '$.agentDisplayName', 'alpha renamed') WHERE id = 's1'`);
-    sessionEvents._emit('session:renamed', 's1', 'p1', 'alpha renamed');
+    sessionEvents._emit('session:renamed', 's1', 'alpha renamed');
     await vi.waitFor(() => expect(sqlite.prepare("SELECT title FROM search_index WHERE item_id = 's1'").all()).toEqual([{ title: 'alpha renamed' }]));
     expect(sqlite.prepare("SELECT count(*) AS n FROM search_index WHERE item_type = 'project'").get()).toEqual({ n: 0 });
   });

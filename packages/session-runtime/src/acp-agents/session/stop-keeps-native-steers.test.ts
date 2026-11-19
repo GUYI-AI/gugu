@@ -9,7 +9,7 @@ function runningCell(providerId = 'claude') {
   agent.extMethod = vi.fn().mockResolvedValue({ outcome: 'injected' });
   agent.prompt = vi.fn(() => new Promise<{ stopReason: 'end_turn' }>(() => {}));
   const cell = requestActivityCell(agent, {
-    mergeEnvelopes: (texts) => texts.join('\n'), sessionId: 'stopped-steer', projectId: 'proj',
+    mergeEnvelopes: (texts) => texts.join('\n'), sessionId: 'stopped-steer',
     providerId, acpSessionId: 'native', supportsSteering: true,
     resolveAttachment: vi.fn(), logger: noopLogger,
   });

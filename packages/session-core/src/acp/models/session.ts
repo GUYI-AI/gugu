@@ -178,7 +178,6 @@ export type PendingPermissionWait = z.infer<typeof pendingPermissionWaitSchema>;
 export const sessionSummarySchema = z.object({
   retrying: sessionRetryingSchema.nullable().optional(),
   sessionId: z.string(),
-  projectId: z.string(),
   providerId: z.string(),
   lifecycle: sessionLifecycleSchema,
   /** Admission is withdrawn before provider teardown; the process may still be exiting. */

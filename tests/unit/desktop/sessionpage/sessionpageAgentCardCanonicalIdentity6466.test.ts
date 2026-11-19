@@ -9,7 +9,7 @@ describe('session-page agent display names', () => {
       identity: { users: { id: 'agent-1', gugu_number: null, display_name: 'Codex 8' } },
       sessionId: 'conv-1',
       title: 'fix the build',
-      project: 'gugu',
+      folder: 'gugu',
       status: null,
       detail: null,
       pinned: false,

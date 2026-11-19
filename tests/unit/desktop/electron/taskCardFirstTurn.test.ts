@@ -66,7 +66,7 @@ function land(chatId: string, text = '  登录页闪一下，看看为什么  ')
   return landTaskCardFirstTurn({
     auth: { accessToken: 'token', userId: 'owner-1' },
     sessionId: 'session-1',
-    projectId: 'project-1',
+    workspaceId: 'project-1',
     agentUserId: 'agent-7',
     chatId,
     messageId: '00000000-0000-4000-8000-000000000004',

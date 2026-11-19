@@ -20,7 +20,7 @@ async function fixture() {
     nativeInputs.push(text);
     return 'injected';
   });
-  const cell: SessionCell = new SessionCell({ sessionId: 'fairness-probe', projectId: 'probe', providerId: 'codex', acpSessionId: 'native',
+  const cell: SessionCell = new SessionCell({ sessionId: 'fairness-probe', providerId: 'codex', acpSessionId: 'native',
     supportsSteering: true, agent: { prompt, steer, cancel: vi.fn(async () => {}) } as unknown as AcpAgentApi,
     mergeEnvelopes: texts => texts.join('\n'), resolveAttachment: async () => ({ data: '', mimeType: 'image/png' }), logger: noopLogger });
   cell.applySessionReady();

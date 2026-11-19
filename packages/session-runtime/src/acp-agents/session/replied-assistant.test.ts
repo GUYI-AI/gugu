@@ -18,7 +18,7 @@ function fixture(extra: Record<string, unknown> = {}) {
   const old = deferred<{ stopReason: 'cancelled' | 'end_turn' }>();
   agent.prompt.mockReturnValueOnce(old.promise);
   const cell = requestActivityCell(agent, {
-    sessionId: 'session', projectId: 'project', providerId: 'claude', acpSessionId: 'native',
+    sessionId: 'session', providerId: 'claude', acpSessionId: 'native',
     resolveAttachment: async () => { throw Error('No fixture attachments'); }, mergeEnvelopes: mergeDeliveryEnvelopes,
     logger: noopLogger, assistantOwnerId: owner, queuedPromptsPersisted: () => true, ...extra,
   });

@@ -24,7 +24,7 @@ describe('session peer sidebar titles', () => {
   const facts = (sessionId: string, title: string, extra: Record<string, unknown> = {}) => ({
     sessionId,
     title,
-    projectName: 'gugu',
+    folder: 'gugu',
     status: null,
     isPinned: false,
     lastInteractedAt: null,
@@ -44,7 +44,7 @@ describe('session peer sidebar titles', () => {
       identity: { users: identity },
       sessionId: binding.sessionId,
       title: 'Review delivery routing',
-      project: 'gugu',
+      folder: 'gugu',
       status: 'needs_user',
       detail: 'approval',
       pinned: true,
@@ -52,14 +52,10 @@ describe('session peer sidebar titles', () => {
     }])
   })
 
-  it('does not advertise the implicit task workspace as a project to the assistant', () => {
-    const peers = resolveLocalSessionPeers([binding], [identity], [facts(binding.sessionId, 'Question task', {
-      projectId: '00000000-0000-4000-8000-000000000001', projectName: '任务工作区',
-    })]);
-    expect(peers[0]).toMatchObject({ title: 'Question task', project: '' });
-    expect(resolveLocalSessionPeers([binding], [identity], [facts(binding.sessionId, 'Real project task', {
-      projectId: 'business-project', projectName: '任务工作区',
-    })])[0]?.project).toBe('任务工作区');
+  it('carries the folder the session works in; the task home reads as none', () => {
+    const peers = resolveLocalSessionPeers([binding], [identity], [facts(binding.sessionId, 'Question task', { folder: '' })]);
+    expect(peers[0]).toMatchObject({ title: 'Question task', folder: '' });
+    expect(resolveLocalSessionPeers([binding], [identity], [facts(binding.sessionId, 'Real task', { folder: 'gugu' })])[0]?.folder).toBe('gugu');
   });
 
   it('orders rows most recently active first; never-active rows go last', () => {

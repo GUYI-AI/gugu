@@ -11,7 +11,7 @@ function fixture() {
     receipts.push(receipt);
     return receipt.promise;
   });
-  const cell = new SessionCell({ sessionId: 'queued', projectId: 'project', providerId: 'fixture', acpSessionId: 'native',
+  const cell = new SessionCell({ sessionId: 'queued', providerId: 'fixture', acpSessionId: 'native',
     agent: { prompt, cancel: vi.fn(async () => {}) } as unknown as AcpAgentApi,
     resolveAttachment: async () => ({ data: '', mimeType: 'image/png' }), logger: noopLogger });
   cell.applySessionReady();

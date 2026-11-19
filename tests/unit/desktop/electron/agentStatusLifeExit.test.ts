@@ -14,7 +14,7 @@ it('forwards only the lifecycle owner process-exit fact and clears it on the nex
   let life: LifeStatus = { kind: 'ready', stage: null };
   let onLife!: (view: LifeView) => void;
   const ready = Promise.withResolvers<void>();
-  const change: AgentStatusChange = { sessionId: 's', projectId: 'p',
+  const change: AgentStatusChange = { sessionId: 's',
     reading: { status: 'working', detail: 'running', running: true, background: null },
     unseen: false, reviewGate: null, providerBlocker: null, statusSourceFault: null };
   const feed = new AgentStatusFeed();

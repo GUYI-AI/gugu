@@ -11,7 +11,7 @@ function nativeCell() {
     receipts.push(receipt);
     return receipt.promise;
   });
-  const cell = new SessionCell({ sessionId: 'c', projectId: 'p', providerId: 'fixture', acpSessionId: 's',
+  const cell = new SessionCell({ sessionId: 'c', providerId: 'fixture', acpSessionId: 's',
     agent: { prompt, cancel: vi.fn(async () => {}) } as unknown as AcpAgentApi,
     resolveAttachment: async () => ({ data: '', mimeType: 'image/png' }), logger: noopLogger });
   cell.applySessionReady();

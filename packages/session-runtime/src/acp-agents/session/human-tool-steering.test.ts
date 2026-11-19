@@ -19,7 +19,7 @@ function harness() {
   });
   const yielded = vi.fn(finishTool);
   const cell = requestActivityCell(agent, {
-    sessionId: 'human-wait', projectId: 'project', providerId: 'claude', acpSessionId: 'native',
+    sessionId: 'human-wait', providerId: 'claude', acpSessionId: 'native',
     supportsSteering: true, resolveAttachment: vi.fn(), logger: noopLogger,
     callbacks: { onSessionStateChanged: () => undefined, ...{ onPromptSteered: yielded } },
   });

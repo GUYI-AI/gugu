@@ -22,7 +22,7 @@ const identities = [
 const sessionFacts = (sessionId: string, title: string) => ({
   sessionId,
   title,
-  projectName: 'gugu',
+  folder: 'gugu',
   status: null,
   isPinned: false,
   lastInteractedAt: null,

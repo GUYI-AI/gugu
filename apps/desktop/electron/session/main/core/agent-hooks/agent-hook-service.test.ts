@@ -114,7 +114,6 @@ describe('Enter in an agent terminal (#6391)', () => {
 
   const submit = (providerId: string) =>
     sessionEvents._emit('session:input-submitted', {
-      projectId: 'project-1',
       sessionId: `conversation-${providerId}`,
       providerId,
     });

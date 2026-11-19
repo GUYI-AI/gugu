@@ -724,7 +724,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   installSessionsGoneFeed()
   onSessionsGone((scope) => {
     agentStatusWriter.forget(scope)
-    sessionBootTasks.clearTask('sessionId' in scope ? scope.sessionId : scope.projectId)
+    sessionBootTasks.clearTask(scope.sessionId)
   })
   agentStatusWriter.on('agent:status', ({ sessionId, reading }) => {
     if (reading.status === 'idle' && reading.detail === 'done') sessionBootTasks.clearTask(sessionId)
@@ -1084,7 +1084,7 @@ async function wakeEmdashSessionStages(sessionId: string, ledger: StageLedger): 
     ledger.mark('session-mounted')
     // Use the same resume operation as reopening this conversation in the UI. It preserves the
     // provider session and the supervisor prevents a second spawn if it is already starting/live.
-    await hydrateSession(session.projectId, sessionId)
+    await hydrateSession(sessionId)
     const resumed = (await getSessions()).find((candidate) => candidate.id === sessionId)
     if (!resumed || resumed.providerSessionState === 'missing') {
       throw new Error(`session ${sessionId} could not resume its provider session`)
@@ -1113,7 +1113,7 @@ export function acpStartInputFor(
 ) {
   return {
     sessionId: session.id,
-    projectId: session.projectId,
+    groupChatId: session.groupChatId ?? null,
     providerId: session.providerId,
     workspaceId,
     cwd,
@@ -1463,7 +1463,7 @@ export async function reloadEmdashSession(input: {
       .where(eq(sessions.id, sessionId))
     // 权限档是渲染层从会话记录读的(这一维没有活会话报档),记录改了就得播出去,与 `recordLiveSessionSetting` 同一条广播。
     if (input.permissionMode !== undefined) {
-      events.emit(sessionChangedChannel, { sessionId, projectId: session.projectId, changes: { permissionMode: input.permissionMode } })
+      events.emit(sessionChangedChannel, { sessionId, changes: { permissionMode: input.permissionMode } })
     }
   } else if (input.resetModel) {
     configBeforePatch = await dropRecordedModel(sessionId, reason)
@@ -1525,7 +1525,7 @@ export async function reloadEmdashSession(input: {
       if (input.permissionMode !== undefined) {
         // 回滚也播:否则界面停在没生效的那一档。播的是 spawn 按回滚后的记录会用的那一档(缺键 = 默认档)。
         const before = resolveSessionPermissionMode(configBeforePatch as { permissionMode?: GuguPermissionMode })
-        events.emit(sessionChangedChannel, { sessionId, projectId: session.projectId, changes: { permissionMode: before } })
+        events.emit(sessionChangedChannel, { sessionId, changes: { permissionMode: before } })
       }
       // provider 会话 id 的回滚也经 `setSessionId` —— 它会广播(#5869)。
       // ⚠️ 这一步**不能省**:换计费路那一支上面已经 `clearSessionId` 过一次,渲染端此刻以为
@@ -2156,12 +2156,9 @@ export async function emdashRecordLibraryMcp(sessionId: string, fact: SessionLib
  * exist. Its status, review gate and blocker are NOT read here — they ride the host's per-agent feed
  * (spec agent-status-writer), one channel for one fact.
  */
-export async function emdashSessionExists(target: {
-  projectId: string
-  sessionId: string
-}): Promise<boolean> {
+export async function emdashSessionExists(target: { sessionId: string }): Promise<boolean> {
   const rows = await getSessions()
-  return rows.some((row) => row.id === target.sessionId && row.projectId === target.projectId)
+  return rows.some((row) => row.id === target.sessionId)
 }
 
 /**
@@ -2177,17 +2174,14 @@ export async function emdashSessionView(target: {
 }
 
 /** Stop the exact session-page conversation through its owning ACP or PTY runtime. */
-export async function emdashStopSession(target: {
-  projectId: string
-  sessionId: string
-}): Promise<void> {
+export async function emdashStopSession(target: { sessionId: string }): Promise<void> {
   const stopped = await stopExactSessionpageSession(target)
   if (!stopped) throw new Error('mapped session-page session no longer exists')
 }
 
 /** Open a mapped DM file through the same validated task action used by task-session tools. */
 export async function emdashOpenSessionFile(
-  target: { projectId: string; sessionId: string },
+  target: { sessionId: string },
   path: string,
 ): Promise<unknown> {
   const session = (await getSessions()).find((candidate) => candidate.id === target.sessionId)

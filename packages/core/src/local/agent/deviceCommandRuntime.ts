@@ -212,7 +212,6 @@ export interface AgentRuntimeBridge {
     chatId: string
     created: boolean
     sessionId: string
-    projectId: string
   }>
   /** Exact provider-visible names for the transport that owns this agent's injected turns. */
   deliveryToolNames?(agentUserId: string): AgentDeliveryToolNames | null

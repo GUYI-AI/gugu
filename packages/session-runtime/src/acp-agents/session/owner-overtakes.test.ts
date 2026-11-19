@@ -15,7 +15,7 @@ function steeringCell(_agentStarted = false, callbacks?: ConstructorParameters<t
   const cell = requestActivityCell(agent, {
     mergeEnvelopes: (texts) => texts.join('\n'),
     sessionId: 'conv-1',
-    projectId: 'proj-1',
+   
     providerId: 'claude',
     acpSessionId: 'session-1',
     supportsSteering: true,

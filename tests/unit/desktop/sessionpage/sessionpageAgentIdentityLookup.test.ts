@@ -72,7 +72,7 @@ describe('session-page canonical identity lookup', () => {
     const selected = state.queries[0].find(([method]) => method === 'select')?.[1][0] as string
     expect(selected.split(',')).toContain('session_archived_at')
     const bindings = identities.map((identity) => ({ guguAgentUserId: identity.id, sessionId: `task-${identity.id}` }))
-    const facts = bindings.map(({ sessionId }) => ({ sessionId, title: 'Existing task', projectName: 'Project',
+    const facts = bindings.map(({ sessionId }) => ({ sessionId, title: 'Existing task', folder: 'Project',
       status: null, isPinned: false, lastInteractedAt: null }))
     const peers = resolveLocalSessionPeers(bindings, identities, facts)
     expect(peers).toHaveLength(2)

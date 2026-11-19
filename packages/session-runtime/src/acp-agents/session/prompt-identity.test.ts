@@ -18,7 +18,7 @@ function fixture() {
   const prompt = vi.fn(() => { const receipt = Promise.withResolvers<SessionPromptReceipt>(); receipts.push(receipt); return receipt.promise; });
   const closeSession = vi.fn(async () => {});
   const snapshots: ReturnType<SessionCell['history']>[] = [];
-  const cell = new SessionCell({ sessionId: 'identity', projectId: 'p', providerId: 'fixture', acpSessionId: 's',
+  const cell = new SessionCell({ sessionId: 'identity', providerId: 'fixture', acpSessionId: 's',
     agent: { prompt, closeSession, cancel: vi.fn(async () => {}) } as unknown as AcpAgentApi,
     resolveAttachment: async () => ({ data: '', mimeType: 'image/png' }), logger: noopLogger,
     callbacks: { onTranscriptChanged: () => snapshots.push(cell.history()) } });
@@ -33,7 +33,7 @@ describe('one submitted user identity through native admission', () => {
     const receipt = Promise.withResolvers<SessionPromptReceipt>();
     const prompt = vi.fn(() => receipt.promise);
     const snapshots: ReturnType<SessionCell['history']>[] = [];
-    const cell = new SessionCell({ sessionId: 'identity', projectId: 'p', providerId: 'fixture', acpSessionId: 's',
+    const cell = new SessionCell({ sessionId: 'identity', providerId: 'fixture', acpSessionId: 's',
       agent: { prompt, cancel: vi.fn(async () => {}) } as unknown as AcpAgentApi,
       resolveAttachment: async () => ({ data: '', mimeType: 'image/png' }), logger: noopLogger,
       callbacks: { onTranscriptChanged: () => snapshots.push(cell.history()) } });

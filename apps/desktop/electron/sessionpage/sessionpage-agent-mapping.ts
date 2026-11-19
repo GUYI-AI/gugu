@@ -1,6 +1,6 @@
-// @@@2504 TASKPAGE-FUSION — 「在任务中打开」需要的那一步解析:一个 gugu agent → 它在会话页里的坐标
-// (project / 会话)。数据不是新开的:会话页每起一个会话,emdash-agent-provisioning 就把这
-// 两个 id 记在该 agent 的 roster 记录 cache 上;这里只是把它读回来。
+// @@@2504 TASKPAGE-FUSION — 「在任务中打开」需要的那一步解析:一个 gugu agent → 它在会话页里的会话。
+// 数据不是新开的:会话页每起一个会话,emdash-agent-provisioning 就把会话 id 记在该 agent 的 roster 记录 cache 上;
+// 这里只是把它读回来。
 //
 // owner 拍板(#2504 spec 讨论):**按钮按解析结果渲染** —— 解析得到才显示「在任务中打开」,解析不到就
 // 不渲染这个入口。所以 null 是正常返回值,不是错误:
@@ -12,16 +12,10 @@
 // 与 sessionpage-agent-card 的分工:那边回答「这条会话是哪个 agent」(分享名片,按会话 id 查);这边回答
 // 「这个 agent 在会话页的哪儿」(按 agentUserId 查),方向相反,共用同一份 roster cache。
 import { listAgents } from '@gugu/core'
-import {
-  SESSION_CACHE_KEY,
-  IMPLICIT_SESSION_HOME_PROJECT_ID,
-  PROJECT_CACHE_KEY,
-  cacheString,
-} from './emdash-agent-provisioning'
+import { SESSION_CACHE_KEY, cacheString } from './emdash-agent-provisioning'
 
-/** 会话页里能直接打开的一处坐标 —— 正好是 openSessionInSessionWhenReady 要的两件。 */
+/** 会话页里能直接打开的一处:会话按 id 就能打开(@@@group-folders:不再有项目坐标)。 */
 export interface SessionpageOpenTarget {
-  projectId: string
   sessionId: string
 }
 
@@ -34,7 +28,7 @@ export interface SessionpageMappingCandidate {
 /**
  * 纯解析:从 roster 里找出该 agent 的会话页坐标。不做 IO —— roster 由调用方给。
  *
- * 两个 id 必须同时在:少任何一个都打不开一处确定的会话,宁可不渲染入口,也不要打开半个。
+ * 没记会话 id 就打不开一处确定的会话,宁可不渲染入口。
  */
 export function resolveSessionpageOpenTarget(
   agents: readonly SessionpageMappingCandidate[],
@@ -45,15 +39,8 @@ export function resolveSessionpageOpenTarget(
 
   for (const agent of agents) {
     if ((agent.gugu_user_id ?? '') !== wanted) continue
-    const projectId = cacheString(agent.cache, PROJECT_CACHE_KEY)
     const sessionId = cacheString(agent.cache, SESSION_CACHE_KEY)
-    if (!agent.cache || !Object.hasOwn(agent.cache, PROJECT_CACHE_KEY) || !sessionId) {
-      return null
-    }
-    return {
-      projectId: projectId || IMPLICIT_SESSION_HOME_PROJECT_ID,
-      sessionId,
-    }
+    return sessionId ? { sessionId } : null
   }
   return null
 }

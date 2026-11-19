@@ -41,7 +41,7 @@ function makeCell(agent = new FakeAcpAgent(), extra: Record<string, unknown> = {
   const cell = new SessionCell({
     mergeEnvelopes: stubMergeEnvelopes,
     sessionId: 'conv-1',
-    projectId: 'proj-1',
+   
     providerId: 'claude',
     acpSessionId: 'session-1',
     agent: boundary.agent,
@@ -105,7 +105,7 @@ describe('SessionCell prompts', () => {
       void dispatch;
       return receipt.promise;
     });
-    const cell = new SessionCell({ mergeEnvelopes: stubMergeEnvelopes, sessionId: 'conv-1', projectId: 'proj-1', providerId: 'claude',
+    const cell = new SessionCell({ mergeEnvelopes: stubMergeEnvelopes, sessionId: 'conv-1', providerId: 'claude',
       acpSessionId: 'session-1', agent: { prompt, cancel: vi.fn(async () => {}) } as unknown as AcpAgentApi,
       liveSettings: TEST_LIVE_SETTINGS, resolveAttachment: vi.fn().mockResolvedValue({ data: '', mimeType: 'image/png' }), logger: noopLogger });
     cell.applySessionReady();
@@ -2701,7 +2701,7 @@ describe('SessionCell idle turns and queue commands', () => {
     // 与 session/load 同序:cell 建出来还在 starting,重放从那里开始(makeCell 已经 applySessionReady,不适用)。
     const agent = new FakeAcpAgent();
     const cell = new SessionCell({
-      mergeEnvelopes: stubMergeEnvelopes, sessionId: 'conv-1', projectId: 'proj-1', providerId: 'claude',
+      mergeEnvelopes: stubMergeEnvelopes, sessionId: 'conv-1', providerId: 'claude',
       acpSessionId: 'session-1', agent, liveSettings: TEST_LIVE_SETTINGS,
       resolveAttachment: vi.fn().mockResolvedValue({ data: '', mimeType: 'image/png' }), logger: noopLogger,
     });

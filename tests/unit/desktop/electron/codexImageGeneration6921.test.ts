@@ -116,7 +116,6 @@ describe('#6921 ACP 腿:签发响应 → 注入信封 → codex 的 argv', () =>
     })
     const injection = await hooks.acpInjector({
       sessionId: SESSION,
-      projectId: 'project-1',
       providerId: 'codex',
       cwd: '/work',
       platformModel: { modelId: 'gpt-6-astra' },

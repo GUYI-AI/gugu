@@ -13,7 +13,7 @@ describe('submitted image identity', () => {
     const boundary = createRequestActivity(new Proxy(agent, { get(target, key) {
       const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value;
     } }) as never, ({ event }) => cell.push(event));
-    const cell = new SessionCell({ sessionId: 'conversation', projectId: 'project', providerId: 'fixture', acpSessionId: 'native',
+    const cell = new SessionCell({ sessionId: 'conversation', providerId: 'fixture', acpSessionId: 'native',
       agent: boundary.agent, acceptsImagePrompts, logger: noopLogger,
       resolveAttachment: async () => ({ data: 'AQID', mimeType: ref.mimeType, ref }) });
     cell.applySessionReady();
@@ -34,7 +34,7 @@ describe('submitted image identity', () => {
       cell.push({ kind: 'message', role: 'user', messageId, text: 'caption', contentMode: 'replace', attachments: [{ ...ref, id: 'provider-echo-image' }] });
       return { status: 'accepted' as const, requestId: 'request', messageId };
     });
-    const cell = new SessionCell({ sessionId: 'conversation', projectId: 'project', providerId: 'fixture', acpSessionId: 'native',
+    const cell = new SessionCell({ sessionId: 'conversation', providerId: 'fixture', acpSessionId: 'native',
       agent: { prompt, cancel: vi.fn() } as unknown as AcpAgentApi, acceptsImagePrompts: true, logger: noopLogger,
       resolveAttachment: async () => ({ data: 'AQID', mimeType: ref.mimeType, ref }) });
     cell.applySessionReady();

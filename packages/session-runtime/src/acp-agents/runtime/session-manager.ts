@@ -2353,7 +2353,6 @@ export class SessionManager implements InboundRouter {
     };
     const cell = new SessionCell({
       sessionId: input.sessionId,
-      projectId: input.projectId,
       providerId: input.providerId,
       acpSessionId,
       billingRoute: input.platformModel ? 'platform' : input.billingRoute ?? 'unknown',
@@ -2862,7 +2861,6 @@ export class SessionManager implements InboundRouter {
     const recent = this.recentActionsForSummary(input.sessionId, cell, state.lifecycle);
     const summary: SessionSummary = {
       sessionId: input.sessionId,
-      projectId: input.projectId,
       providerId: input.providerId,
       lifecycle: state.lifecycle,
       ...(this.cells.get(input.sessionId)?.closing ? { closing: true } : {}),

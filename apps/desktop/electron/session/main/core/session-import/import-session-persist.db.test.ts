@@ -57,7 +57,6 @@ describe('导入的会话落库', () => {
 
   it('conversation 行带着 provider 的原会话 id（下次启动据此 resume）', async () => {
     await createSession({
-      projectId: 'project-1',
       sessionConfig: {
         version: '1',
         name: '导入的会话',
@@ -88,7 +87,6 @@ describe('导入的会话落库', () => {
 
   it('正常创建的会话 provider_session_id 为空（保持「首次启动 = 全新会话」）', async () => {
     await createSession({
-      projectId: 'project-1',
       sessionConfig: {
         version: '1',
         name: '普通任务',
@@ -129,7 +127,6 @@ describe('导入的会话落库', () => {
     });
 
     await createSession({
-      projectId: 'project-1',
       sessionConfig: {
         version: '1',
         name: '导入的会话',

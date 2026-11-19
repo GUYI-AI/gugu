@@ -11,7 +11,7 @@ it('does not complete a queued user prompt with the preceding autonomous foregro
   // receipt, and the user's running/idle. A receipt is not a cycle boundary.
   const receipt = Promise.withResolvers<SessionPromptReceipt>();
   const prompt = vi.fn(() => receipt.promise);
-  const cell = new SessionCell({ sessionId: 'c', projectId: 'p', providerId: 'fixture', acpSessionId: 's',
+  const cell = new SessionCell({ sessionId: 'c', providerId: 'fixture', acpSessionId: 's',
     agent: { prompt, cancel: vi.fn(async () => {}) } as unknown as AcpAgentApi,
     resolveAttachment: async () => ({ data: '', mimeType: 'image/png' }), logger: noopLogger });
   cell.applySessionReady();
@@ -41,7 +41,7 @@ it('does not complete a queued user prompt with the preceding autonomous foregro
 it('a receipt arriving during another autonomous cycle completes only its already committed message', async () => {
   const receipt = Promise.withResolvers<SessionPromptReceipt>();
   const prompt = vi.fn(() => receipt.promise);
-  const cell = new SessionCell({ sessionId: 'late', projectId: 'p', providerId: 'fixture', acpSessionId: 's',
+  const cell = new SessionCell({ sessionId: 'late', providerId: 'fixture', acpSessionId: 's',
     agent: { prompt, cancel: vi.fn(async () => {}) } as unknown as AcpAgentApi,
     resolveAttachment: async () => ({ data: '', mimeType: 'image/png' }), logger: noopLogger });
   cell.applySessionReady();
@@ -69,7 +69,7 @@ it.each([false, true])('request-activity cancellation waits for both concurrent 
     return reply.promise;
   }), cancel: vi.fn(async () => {}) };
   const { agent, observe } = createRequestActivity(raw as never, ({ event }) => cell.push(event));
-  const cell = new SessionCell({ sessionId: 'v1', projectId: 'p', providerId: 'fixture', acpSessionId: 's', agent,
+  const cell = new SessionCell({ sessionId: 'v1', providerId: 'fixture', acpSessionId: 's', agent,
     resolveAttachment: async () => ({ data: '', mimeType: 'image/png' }), logger: noopLogger });
   cell.applySessionReady();
   const first = cell.promptDetached({ text: 'first' });

@@ -27,7 +27,7 @@ const modelOptions = [{
 function makeCell() {
   const agent = new FakeAcpAgent();
   const cell: SessionCell = new SessionCell({
-    sessionId: 'review', projectId: 'review', providerId: 'claude', acpSessionId: 'review',
+    sessionId: 'review', providerId: 'claude', acpSessionId: 'review',
     agent: createRequestActivity(agent.observed() as never, ({ event }) => cell.push(event)).agent, logger: noopLogger, resolveAttachment: async () => { throw new Error('No attachments'); },
     liveSettings: { model: capability, permission: capability, effort: capability },
   });
@@ -40,7 +40,7 @@ describe('setting recovery preserves the permission boundary and prompt delivery
   it('rejects missing Fast without holding prompts and confirms Off after a rejected enable', async () => {
     const agent = new FakeAcpAgent();
     const cell = new SessionCell({
-      sessionId: 'fast', projectId: 'fast', providerId: 'claude', acpSessionId: 'fast',
+      sessionId: 'fast', providerId: 'claude', acpSessionId: 'fast',
       agent: createRequestActivity(agent.observed() as never, ({ event }) => cell.push(event)).agent,
       logger: noopLogger, resolveAttachment: async () => { throw new Error('No attachments'); },
       liveSettings: { fast: capability },

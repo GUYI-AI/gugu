@@ -4,7 +4,7 @@ import { FakeAcpAgent, requestActivityCell } from '../acp-test-support';
 
 function fixture() {
   const agent = new FakeAcpAgent();
-  const cell = requestActivityCell(agent, { sessionId: 'assistant', projectId: 'project', providerId: 'claude',
+  const cell = requestActivityCell(agent, { sessionId: 'assistant', providerId: 'claude',
     acpSessionId: 'native', resolveAttachment: vi.fn(), logger: noopLogger });
   cell.applySessionReady();
   cell.push({ kind: 'commands', commands: [{ name: 'compact', description: 'Compact context' }] });

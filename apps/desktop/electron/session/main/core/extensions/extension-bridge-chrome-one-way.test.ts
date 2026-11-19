@@ -52,7 +52,7 @@ vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), error: vi.fn(), info:
 const dispatchForApp = vi.fn(async (_id: string, args: Record<string, unknown>, here: Record<string, unknown>, effects: {
   pick(ask: unknown): Promise<unknown>;
   draftInChat(detail: unknown): Promise<void>;
-  draftInSession(session: { id: string; projectId: string }, text: string): Promise<void>;
+  draftInSession(session: { id: string }, text: string): Promise<void>;
 }) => {
   const text = String(args.text ?? '').trim();
   if (!text) throw Object.assign(new Error('Say something: text is empty'), { code: 'invalid' });

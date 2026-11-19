@@ -205,7 +205,7 @@ export async function executeSessionCreate(
       const error = prepared.error;
       let runError: Parameters<typeof markRunFailed>[1];
       switch (error.type) {
-        case 'project-not-found':
+        case 'folder-not-found':
           runError = { step: 'create_session', code: 'project_not_found' };
           break;
         case 'provision-failed':

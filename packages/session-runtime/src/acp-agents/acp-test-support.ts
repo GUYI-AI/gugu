@@ -707,7 +707,7 @@ export function makeStartInput(
 ): AcpStartInput {
   return {
     sessionId: overrides.sessionId ?? 'conv-1',
-    projectId: 'proj-1',
+    groupChatId: null,
     providerId: 'claude',
     workspaceId: 'ws-1',
     cwd: '/tmp/workspace',

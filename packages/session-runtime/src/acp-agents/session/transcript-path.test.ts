@@ -9,7 +9,7 @@ import { SessionCell } from './cell';
 
 it('keeps the latest reported transcript path out of the transcript and notifies only on change', () => {
   const onSessionStateChanged = vi.fn();
-  const cell = new SessionCell({ sessionId: 'c', projectId: 'p', providerId: 'claude', acpSessionId: 's',
+  const cell = new SessionCell({ sessionId: 'c', providerId: 'claude', acpSessionId: 's',
     agent: { prompt: vi.fn(), cancel: vi.fn(async () => {}) } as unknown as AcpAgentApi,
     resolveAttachment: async () => ({ data: '', mimeType: 'image/png' }), logger: noopLogger,
     callbacks: { onSessionStateChanged } });

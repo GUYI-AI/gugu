@@ -49,7 +49,6 @@ const reading = (status: AgentStatusReading['status'], detail: AgentStatusReadin
 
 const change = (sessionId: string, r: AgentStatusReading | null, unseen = false): AgentStatusChange => ({
   sessionId,
-  projectId: 'project-1',
   reading: r,
   unseen,
   reviewGate: null,

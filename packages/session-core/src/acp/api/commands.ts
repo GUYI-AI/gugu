@@ -67,7 +67,8 @@ export const acpStartInputSchema = z.object({
    * agent: no fork handoff, and the host's resume facts (no replay, turn numbering) apply as on a resume.
    */
   forkKeepsAgent: z.boolean().optional(),
-  projectId: z.string(),
+  /** The group the session lives in (null: none). */
+  groupChatId: z.string().nullable(),
   providerId: z.string(),
   workspaceId: z.string(),
   cwd: z.string(),
