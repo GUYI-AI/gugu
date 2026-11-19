@@ -53,6 +53,8 @@ export function TeamTopupDialog({ onClose, onSettled, openPayment = openTeamPaym
       return value
     } : skipToken,
     refetchInterval: query => query.state.data?.status && query.state.data.status !== 'pending' ? false : 3000 })
+  // @@@effect-flow - settling this checkout consumes its original intent and refreshes the parent balance.
+  // Order data stays in the query; the asynchronous continuation only reports this interaction's refresh failure.
   useEffect(() => {
     const value = order.data
     if (!value || value.status === 'pending' || settled.current === value.id) return
