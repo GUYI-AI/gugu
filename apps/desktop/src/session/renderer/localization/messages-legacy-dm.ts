@@ -1,4 +1,5 @@
 export const enUSLegacyDmMessages = {
+  'humanDm.friendshipRequired': 'Add this person as a friend before sending messages.',
   'legacyDm.history': 'Old private chat history',
   'legacyDm.archive': 'Old private chat archive',
   'legacyDm.readOnly': 'Read only',
@@ -19,6 +20,7 @@ export const enUSLegacyDmMessages = {
   'conversationDelete.notVisible': 'You no longer have access to this conversation.',
 };
 export const zhCNLegacyDmMessages: Record<keyof typeof enUSLegacyDmMessages, string> = {
+  'humanDm.friendshipRequired': '请先添加对方为好友，再发送消息。',
   'legacyDm.history': '旧私聊历史',
   'legacyDm.archive': '旧私聊归档',
   'legacyDm.readOnly': '只读',

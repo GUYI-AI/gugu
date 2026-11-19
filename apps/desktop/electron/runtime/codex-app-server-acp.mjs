@@ -9,7 +9,7 @@ import { codexFastConfigOptions, codexFastTier, codexTierForTurn } from './codex
 //   Gugu ACP runtime <-> this bridge (started with process.execPath by session-plugins impl/codex) <-> `codex app-server --stdio`.
 import { execFile } from '../../../../packages/core/src/local/childProcess.ts'
 import { randomUUID } from 'node:crypto'
-import { codexSpawnDiagnostic, codexVersionFromUserAgent } from '@gugu/core/local/codex-spawn-diagnostic.mjs'
+import { codexSpawnDiagnostic, codexVersionFromUserAgent } from '../../../../packages/core/src/local/codex-spawn-diagnostic.mjs'
 import { appendFileSync, readFileSync, statSync } from 'node:fs'
 import { createJsonlReader, jsonlParseError } from './jsonl-reader.mjs'
 import { CODEX_PREPARATION_PREFIX, retryCodexPreparation, codexBackfillWaiting } from '../../../../packages/core/src/local/codex-initialize.mjs'

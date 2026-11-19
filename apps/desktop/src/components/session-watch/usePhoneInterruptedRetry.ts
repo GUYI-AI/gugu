@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ChatCommands } from '@gugu/session-chat-ui'
-import { invokePhoneHost } from '../local-agent/phoneHostRpc'
+import { invokePhoneHost } from '../../mobile/local-agent/phoneHostRpc'
 import { runNativeInputAction } from '@/lib/nativeInputFailureNotice'
 import { messageForUser } from '@/lib/userFacingError'
 import { translateSessionMessage } from '@renderer/localization/locale-store'

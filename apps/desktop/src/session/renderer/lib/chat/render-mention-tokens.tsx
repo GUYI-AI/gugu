@@ -1,3 +1,4 @@
+import { readMarkdownLiteral } from '@gugu/core/shared/markdownLiteral';
 import { AT_BARE_PATTERN } from '@gugu/session-shared/markdown';
 import { chatMentionProvider } from './chat-mention-provider';
 
@@ -22,7 +23,7 @@ const MENTION_PATTERN = new RegExp(
 
 export function renderMentionTokens(text: string, uri?: string): string {
   return text.replace(new RegExp(MENTION_PATTERN.source, 'g'), (token, bracketName?: string, _address?: string, bareToken?: string) => {
-    const name = bracketName?.trim() || (bareToken ? chatMentionProvider.resolve(bareToken, uri)?.name?.trim() : '') || '';
+    const name = (bracketName && readMarkdownLiteral(bracketName).trim()) || (bareToken ? chatMentionProvider.resolve(bareToken, uri)?.name?.trim() : '') || '';
     return name ? `@${name}` : token;
   });
 }

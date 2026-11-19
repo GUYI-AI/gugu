@@ -1,7 +1,7 @@
 import type { RpcRouter } from '@main/rpc'
 import type { RemoteLibraryTransport } from '@renderer/features/extensions/extensions-host'
 import { SessionInputAdmissionError, sessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission'
-import { invokePhoneHost } from '../local-agent/phoneHostRpc'
+import { invokePhoneHost } from '../../mobile/local-agent/phoneHostRpc'
 import type { ToolImage } from '@gugu/session-core/acp/client'
 import { rendererLogger } from '@/lib/log'
 import { readCachedDevices, subscribeCachedDevices } from '@/store/devicesCache'

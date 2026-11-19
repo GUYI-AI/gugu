@@ -30,7 +30,7 @@ vi.mock('@/platform', () => ({
     showNotification: async () => ({ success: true, displayed: true }),
   },
 }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   subscribeSessionsList: (deviceId: string, subscriptionId: string) => mocks.subscribeSessionsList(deviceId, subscriptionId),
   unsubscribeSessionsList: (deviceId: string, subscriptionId: string) => mocks.unsubscribeSessionsList(deviceId, subscriptionId),
   onLinkChange: () => () => undefined,

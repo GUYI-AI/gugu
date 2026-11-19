@@ -9,8 +9,10 @@ import type { AgentHomeGroupId, AgentHomeImportPath } from '../capabilities/sess
 import type { PluginFs } from '../../runtime/fs';
 import { filterUserHooks } from './hooks';
 import {
+  AgentHomeSensitiveLinkError,
   checkAgentHomeImportSpace,
   importedLinkTarget,
+  resolveAgentHomeImportLink,
   streamImportFile
 } from './agent-home-migration';
 export * from './agent-home-migration';
@@ -190,6 +192,7 @@ async function snapshot(root: string, path: string, limit = FILE_LIMIT): Promise
   } catch (error) { if (missing(error)) return null; throw error; }
 }
 function issue(path: string, error: unknown): AgentHomeImportIssue {
+  if (error instanceof AgentHomeSensitiveLinkError) return { path, reason: 'sensitive' };
   const code = (error as NodeJS.ErrnoException).code;
   return { path, reason: code === 'ELOOP' ? 'symlink' : code === 'EFBIG' ? 'tooLarge' : code === 'ESTALE' ? 'sourceChanged' : 'unreadable' };
 }
@@ -297,15 +300,11 @@ async function collect(home: ResolvedAgentHome, options: {
     const strict = selected.some((entry) => entry.path === path && options.strict?.({ group: entry.group, id: itemId(path, entry.spec) }));
     try {
       // Project linked documents into regular files so unselected fields cannot cross the import boundary.
-      const input = projectLink ? await disk.realpath(full).catch((error: unknown) => {
-        if (missing(error)) return null;
-        throw error;
-      }) : full;
+      const input = projectLink ? (await resolveAgentHomeImportLink(home, full, root)).resolved : full;
       if (input === null) { issues.push({ path, reason: 'sourceChanged' }); return; }
       const inputStat = projectLink ? await disk.lstat(input) : stat;
       if (projectLink) {
         const targetRel = relative(root, input).split(sep).join('/');
-        if (excluded(targetRel, home.credentialPaths)) { issues.push({ path, reason: 'sensitive' }); return; }
         if (excluded(targetRel, home.carryExclusions)) { issues.push({ path, reason: 'excluded' }); return; }
         if (!inputStat.isFile()) { issues.push({ path, reason: 'unreadable' }); return; }
       }

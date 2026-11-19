@@ -11,9 +11,9 @@ import {
   readCachedNativeRecord,
   writeCachedNativeRecord,
   hydrateCachedNativeRecord,
-} from '@/mobile/agent-watch/timeline-cache'
+} from '@/components/session-watch/timeline-cache'
 import { readCachedSessionList, writeCachedSessionList } from '@/session/shared/remote-sessions/session-list-cache'
-import { emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store'
+import { emptyAgentWatchTimeline } from '@/components/session-watch/agent-watch-store'
 
 /**
  * 手机端的本地留存：进一条会话的第一帧就该有东西，❌ 不是每次都从「正在读取时间线…」开始。

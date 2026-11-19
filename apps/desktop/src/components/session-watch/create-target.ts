@@ -4,7 +4,7 @@ import { deviceAcceptsWork } from '@gugu/core/cloud/cloudComputer'
 import type { RunMachineCandidate } from '@renderer/features/projects/components/main-panel/project-run-machine'
 import type { AccountProject } from '@gugu/core/cloud/deviceProjects'
 import { isAssistantHome } from '@/lib/assistantHome'
-import { phoneAccountProjects } from '../phoneAccountProjects'
+import { phoneAccountProjects } from '../../mobile/phoneAccountProjects'
 
 /**
  * 手机「+」新建页的「项目 · 机器」两行(DESIGN 点击路径 4a):项目是账号上的,机器只是这一次跑在哪。

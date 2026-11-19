@@ -23,7 +23,7 @@ vi.mock('@/lib/chat', () => import('../../../support/contactsChatServiceTestDoub
 vi.mock('@/hooks/useAgentDisplayStatus', () => import('../../../support/agentDisplayStatusTestDouble'))
 vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [{ device_id: 'server', label: 'Server', capabilities: {}, is_online: true }] }) }))
 vi.mock('@/session/shared/remote-sessions/session-directory', async original => ({ ...await original<typeof import('@/session/shared/remote-sessions/session-directory')>(), useLiveDeviceSessions: () => ({ server: { cached: false, error: null, sessions: state.sessions } }) }))
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', async original => ({ ...await original<typeof import('@/mobile/agent-watch/sessionpage-rpc')>(), machineRpc: () => ({ sessions: { markSessionSeen: markSeen } }) }))
+vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({ ...await original<typeof import('@/components/session-watch/sessionpage-rpc')>(), machineRpc: () => ({ sessions: { markSessionSeen: markSeen } }) }))
 vi.mock('@/lib/agentPresenceMobx', () => ({ observedAgentPresence: (id: string) => ({ presentation: presentAgentStatus({ reading: state.sessions.find(session => session.agent?.userId === id)?.status as never ?? null }) }) }))
 vi.mock('@renderer/features/sessions/stores/session-agent-bindings', () => ({ sessionAgentBindings: { start: () => {} } }))
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({ remoteHostsStore: { start: () => {} } }))

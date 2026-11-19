@@ -13,10 +13,10 @@ const env = vi.hoisted(() => ({
 vi.mock('@/hooks/useConversationSessionSummary', () => ({ useConversationSessionSummary: (_id: unknown, _device: unknown, pick: (summary: { nativeInputVersion: unknown }) => unknown) => pick({ nativeInputVersion: env.version }) }));
 vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => env.deviceId } }));
 vi.mock('../machine-unavailable-label', () => ({ machineUnavailableLabel: () => env.unavailable }));
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: (deviceId: string) => ({
+vi.mock('@/components/session-watch/sessionpage-rpc', () => ({ machineRpc: (deviceId: string) => ({
   sessionTimeline: { sessionNativeRecord: (input: unknown) => env.read(deviceId, input) },
 }) }));
-vi.mock('@/mobile/agent-watch/timeline-cache', () => ({ rememberNativeTailPage: env.write }));
+vi.mock('@/components/session-watch/timeline-cache', () => ({ rememberNativeTailPage: env.write }));
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn: env.warn }) }));
 import { rememberNativeTail, useRememberNativeTail } from './use-remember-native-tail';
 

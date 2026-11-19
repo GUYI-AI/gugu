@@ -27,7 +27,7 @@ import {
 import type { IntegrationMetadata } from '@/session/renderer/features/integrations/integrations-provider'
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
 import { githubAuthDeviceCodeChannel } from '@/session/shared/events/githubEvents'
-import { machineRpc, onMachineEvent } from '../agent-watch/sessionpage-rpc'
+import { machineRpc, onMachineEvent } from '../../components/session-watch/sessionpage-rpc'
 import { phoneAssistantAuthorization } from './phoneAssistantAuthorization'
 import type { PhoneConnectorScope } from './PhoneConnectors'
 import { ReadFailed,ReadingNow } from './PhoneMachineView'

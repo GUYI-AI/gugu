@@ -23,7 +23,7 @@ const transcriptCommands = vi.hoisted(() => vi.fn())
 const transcriptView = vi.hoisted(() => ({ setScrollMode: vi.fn(), openItem: vi.fn(() => false) }))
 const openImageViewer = vi.hoisted(() => vi.fn())
 vi.mock('../../../apps/desktop/src/lib/imageViewer', () => ({ openImageViewer }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class extends Error {}, fetchSessionOptions: vi.fn(() => new Promise(() => {})),
   setSessionOption: vi.fn(), onLinkChange: vi.fn(() => () => {}),
   onMachineEvent: vi.fn((_device: string, channel: { name: string }, listener: (view: LifeView) => void) => {
@@ -40,8 +40,8 @@ vi.mock('../../../apps/desktop/src/components/assistant-ui/session-transcript-vi
   return ready ? createElement('div', {}, props.composerContent) : null
 } }))
 
-import { SessionConversation } from '../../../apps/desktop/src/mobile/agent-watch/SessionConversation'
-import { emptyAgentWatchTimeline } from '../../../apps/desktop/src/mobile/agent-watch/agent-watch-store'
+import { SessionConversation } from '../../../apps/desktop/src/components/session-watch/SessionConversation'
+import { emptyAgentWatchTimeline } from '../../../apps/desktop/src/components/session-watch/agent-watch-store'
 import { state, changed, EMPTY } from '../../../apps/desktop/src/lib/sessionInputOutboxBridge'
 import type { SessionInputOutbox } from '../../../apps/desktop/src/lib/sessionInputOutbox'
 import { SessionInputQueue } from '../../../apps/desktop/src/components/chat/SessionInputQueue'

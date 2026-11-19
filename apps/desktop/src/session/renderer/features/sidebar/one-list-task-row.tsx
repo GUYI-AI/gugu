@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { useShownAgentName } from '@/hooks/useShownAgentName';
 import { formatCalendarDay } from '@/i18n/format';
-import { SessionAvatar } from '@/mobile/agent-watch/StatusGlyph';
+import { SessionAvatar } from '@/components/session-watch/StatusGlyph';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { OneListRow } from './project-row-parts';
 import { openSidebarSession } from './sidebar-session-item';

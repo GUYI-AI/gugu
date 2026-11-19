@@ -11,7 +11,7 @@ vi.mock('@/lib/remoteSessionHost', () => ({ openPhoneSessionHostPipe: vi.fn(() =
 const { callDeviceRpc } = await import('@/lib/deviceRpc')
 const { SESSION_HOST_RPC } = await import('@/session/shared/lib/ipc/session-host-device-frames')
 const { writeCachedDevices } = await import('@/store/devicesCache')
-const { fetchToolImage } = await import('@/mobile/agent-watch/sessionpage-rpc')
+const { fetchToolImage } = await import('@/components/session-watch/sessionpage-rpc')
 // The replica reads for the signed-in account, as the product publishes it.
 ;(await import('../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'owner')
 
