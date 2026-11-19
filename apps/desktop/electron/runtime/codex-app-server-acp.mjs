@@ -7,7 +7,7 @@ import { codexFastConfigOptions, codexFastTier, codexTierForTurn } from './codex
 import { execFile } from '../../../../packages/core/src/local/childProcess.ts'
 import { randomUUID } from 'node:crypto'
 import { appendFileSync, readFileSync, statSync } from 'node:fs'
-import { createInterface } from 'node:readline'
+import { createJsonlReader, jsonlParseError } from './jsonl-reader.mjs'
 import { fileURLToPath } from 'node:url'
 import { GUGU_MCP_CONFIG_KEY, normalizeGuguToolName } from '../mcp/gugu-mcp-name.mjs'
 import { joinPromptText, promptInputItems } from './codex-app-server-prompt.mjs'
@@ -259,11 +259,11 @@ function appWrite(message) {
 function appRequest(method, params, timeoutMs = 45_000) {
   const id = appNextId++
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
+    const timer = timeoutMs === null ? null : setTimeout(() => {
       appPending.delete(id)
       reject(new Error(`local Codex app-server ${method} timed out after ${timeoutMs}ms`))
     }, timeoutMs)
-    timer.unref?.()
+    timer?.unref?.()
     appPending.set(id, {
       resolve: (value) => {
         clearTimeout(timer)
@@ -941,8 +941,7 @@ async function startAppOnce(servers) {
     appReady = false
     if (established && !shuttingDown) process.exit(code && code !== 0 ? code : 1)
   })
-  appReader = createInterface({ input: app.stdout, crlfDelay: Infinity })
-  appReader.on('line', onAppLine)
+  appReader = createJsonlReader({ input: app.stdout, onLine: onAppLine, onError: failProtocol })
   try {
     const initialized = await appRequest('initialize', {
       clientInfo: { name: 'gugu', title: 'Gugu', version: '0' },
@@ -2268,7 +2267,7 @@ function onAppLine(line) {
   try {
     message = JSON.parse(line)
   } catch {
-    process.stderr.write(`[codex-app-server-acp] non-JSON app-server output: ${line.slice(0, 200)}\n`)
+    failProtocol(jsonlParseError('Codex app-server stdout', line))
     return
   }
   if (message.id !== undefined && (message.result !== undefined || message.error !== undefined)) {
@@ -2471,6 +2470,7 @@ async function handleAcpRequest(message) {
     // 见 @@@resume-provider:resume 要用**这个进程**的 provider,❌ 不是 rollout 里记的那个。
     const resumeProvider = await processModelProviderOnce(params.cwd)
     const resumed = await appRequest('thread/resume', {
+      excludeTurns: true,
       serviceTier: 'default',
       threadId: params.sessionId,
       cwd: params.cwd,
@@ -2478,7 +2478,7 @@ async function handleAcpRequest(message) {
       ...(appServerThreadConfig ? { config: appServerThreadConfig } : {}),
       // 同 session/new:档位由 argv 单一决定。重开一个会话不该把它悄悄提到全权。
       ...developerInstructionsFrom(params),
-    })
+    }, null) // A live resume stays restoring; EOF, protocol failure or host cancellation ends it.
     sessionId = String(resumed?.thread?.id ?? params.sessionId ?? '')
     if (!sessionId) throw new Error('local Codex thread/resume returned no thread id')
     if (requestedPermission) {
@@ -2753,13 +2753,14 @@ function handleAcpNotification(message) {
   }
 }
 
-const reader = createInterface({ input: process.stdin, crlfDelay: Infinity })
-reader.on('line', (line) => {
+const reader = createJsonlReader({ input: process.stdin, onClose: shutdown, onError: failProtocol, onLine: (line) => {
   let message
   try {
     message = JSON.parse(line)
   } catch {
-    process.stderr.write(`[codex-app-server-acp] non-JSON ACP input: ${line.slice(0, 200)}\n`)
+    const error = jsonlParseError('ACP stdin', line)
+    respond(null, null, { code: -32700, message: error.message })
+    failProtocol(error)
     return
   }
   // 「只有 id、没有 method」= host 对**我们发出去的**请求的回答。原本没有这一支,
@@ -2788,21 +2789,31 @@ reader.on('line', (line) => {
     if (message.method === 'session/set_config_option') serializeConfigOption(run)
     else void run()
   } else if (message.method) handleAcpNotification(message)
-})
+} })
+
+let shutdownExitCode = 0
+function failProtocol(error) {
+  process.stderr.write(`[codex-app-server-acp] ERROR: ${error.message}\n`)
+  shutdownExitCode = 1
+  rejectAppPending(error)
+  shutdown()
+}
 
 function shutdown() {
   if (shuttingDown) return
   shuttingDown = true
+  rejectAppPending(new Error('ACP host connection closed'))
   cancelAcpPending('ACP host connection closed')
   for (const entry of promptInsertions.values()) entry.resolve({ error: 'ACP host connection closed' })
   promptInsertions.clear()
+  reader.close()
   appReader?.close()
   // Let approval handlers flush their explicit denial before stopping the local server.
   // Exit only once the app-server tree is down; a tree that will not stop exits non-zero, loud.
   setTimeout(() => {
-    if (!appServer) process.exit(0)
+    if (!appServer) process.exit(shutdownExitCode)
     appServer.stop().then(
-      () => process.exit(0),
+      () => process.exit(shutdownExitCode),
       (error) => {
         process.stderr.write(`gugu codex-acp: app-server tree stop failed: ${error.message}\n`)
         process.exit(1)
@@ -2811,6 +2822,5 @@ function shutdown() {
   }, 0)
 }
 
-reader.on('close', shutdown)
 process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
