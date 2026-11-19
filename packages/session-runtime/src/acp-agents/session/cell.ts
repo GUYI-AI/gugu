@@ -1615,13 +1615,17 @@ export class SessionCell {
     // The turn settles once its revert point is known, so the point lands on this turn's own user message.
     // A lookup that fails or does not answer in time only means this turn has no revert entry.
     const revert = this.deps.revert;
-    const settle = revert
-      ? () => void withTimeout(revert.point(this.agent, this.acpSessionId, event as unknown as Readonly<Record<string, unknown>>), REVERT_POINT_TIMEOUT_MS)
-        .then(finish, (error: unknown) => {
-          this.deps.logger.warn('SessionCell: revert point lookup failed', { sessionId: this.sessionId, providerId: this.deps.providerId, error: toSerializedError(error) });
-          finish();
-        })
-      : () => finish();
+    const lookupFailed = (error: unknown) => {
+      this.deps.logger.warn('SessionCell: revert point lookup failed', { sessionId: this.sessionId, providerId: this.deps.providerId, error: toSerializedError(error) });
+      finish();
+    };
+    const settle = revert ? () => {
+      let point: ReturnType<typeof revert.point>;
+      try { point = revert.point(this.agent, this.acpSessionId, event as unknown as Readonly<Record<string, unknown>>); }
+      catch (error) { lookupFailed(error); return; }
+      if (point instanceof Promise) void withTimeout(point, REVERT_POINT_TIMEOUT_MS).then(finish, lookupFailed);
+      else finish(point);
+    } : () => finish();
     // Some providers report a swallowed failure on stderr, independently of their result pipe.
     if (event.stopReason === 'end_turn' && this.deps.turnFailure?.watchesStderr
       && !this.turnHadAgentOutput && !this.providerTurnFailure && !this.providerStderrFailure) {

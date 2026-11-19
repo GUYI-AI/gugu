@@ -532,8 +532,10 @@ export type AcpRevert = {
   /**
    * After a foreground turn settles: the point that steps back to before it, or null when it has none.
    * `response` is how the turn ended as the agent sent it (its `_meta`, or vendor fields at the top level).
+   * Answer synchronously when the point is in `response`: the turn then settles at its idle like any other; a point
+   * that needs a request (a Promise) holds the turn's settlement until it answers.
    */
-  point(agent: Pick<AcpAgentApi, 'extMethod'>, sessionId: string, response: Readonly<Record<string, unknown>>): Promise<AcpRevertPoint | null>;
+  point(agent: Pick<AcpAgentApi, 'extMethod'>, sessionId: string, response: Readonly<Record<string, unknown>>): AcpRevertPoint | null | Promise<AcpRevertPoint | null>;
   /** Step back to before `before`, in place. `restoreFiles: false` must leave files untouched. Throws when it cannot. */
   revert(agent: Pick<AcpAgentApi, 'extMethod'>, sessionId: string, before: string, restoreFiles: boolean): Promise<void>;
 };
@@ -547,7 +549,7 @@ export function guguRevertPoint(meta: unknown): AcpRevertPoint | null {
 
 /** Gugu's own bridges (claude-agent-acp, the Codex app-server bridge): `_meta.guguRevert` and `_session/revert`. */
 export const guguBridgeRevert: AcpRevert = {
-  async point(_agent, _sessionId, response) { return guguRevertPoint(response._meta); },
+  point(_agent, _sessionId, response) { return guguRevertPoint(response._meta); },
   async revert(agent, sessionId, before, restoreFiles) {
     const result = await agent.extMethod!('_session/revert', { sessionId, before, ...(restoreFiles ? { restoreFiles } : {}) });
     if (result?.sessionId !== sessionId) throw new Error('Revert changed the provider session ID.');

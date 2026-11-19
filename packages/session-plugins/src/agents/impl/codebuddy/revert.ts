@@ -14,7 +14,7 @@ import type { AcpRevert } from '@gugu/session-core/agents/plugins';
 const ROLLBACK = '_codebuddy.ai/session/rollback';
 
 export const codebuddyRevert: AcpRevert = {
-  async point(_agent, _sessionId, response) {
+  point(_agent, _sessionId, response) {
     const id = response.userMessageId;
     return typeof id === 'string' && id ? { before: id } : null;
   },
