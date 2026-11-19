@@ -202,7 +202,7 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
       return { kind: 'bound', agentUserId: identity.guguAgentUserId };
     },
     async workspace(): Promise<WorkspaceLease> {
-      const session = known();
+      known();
       const mounted = await sessionService.ensureSessionMounted(fork?.parentId ?? sessionId);
       const workspace = await resolveWorkspace(mounted.workspaceId);
       if (!workspace) throw new Error(`Session ${sessionId} workspace is not mounted`);

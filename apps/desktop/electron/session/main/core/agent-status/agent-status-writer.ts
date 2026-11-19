@@ -516,9 +516,9 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
       });
   }
 
-  /** 这些会话不在了(删掉、归档、随任务 / 项目一起走):日志与门一并回收。 */
+  /** 这些会话不在了(删掉、归档):日志与门一并回收。 */
   forget(scope: SessionScope): void {
-    for (const [sessionId, entry] of [...this.logs]) {
+    for (const sessionId of [...this.logs.keys()]) {
       if (!sessionInScope({ sessionId }, scope)) continue;
       this.logs.delete(sessionId);
       this.providerReviewGates.delete(sessionId);
