@@ -16,7 +16,7 @@
 
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 import { assistantDescendants, isAssistantSession } from '@/session/renderer/features/assistant/assistant-lineage'
-import { isMyAssistant } from './myAssistant'
+import { myAssistant } from './myAssistant'
 import { UI_EVENTS } from './uiEvents'
 
 export type CloseSession = Pick<
@@ -58,10 +58,8 @@ export class AssistantCloseError extends Error {
   }
 }
 
-/** 确认框要先知道的:它自己的会话、它开过的会话(数一下给那个勾)。 */
-export async function planLocalClose(assistantId: string, deps: Pick<LocalCloseDeps, 'check' | 'listSessions'>): Promise<LocalClosePlan> {
-  await deps.check?.()
-  const listed = await deps.listSessions()
+/** 确认框要先知道的:它自己的会话、它开过的会话(数一下给那个勾),从它那台机器上列出的会话里分出来。 */
+export function planLocalClose(assistantId: string, listed: readonly CloseSession[]): LocalClosePlan {
   return {
     own: listed.filter((summary) => isAssistantSession(summary, assistantId)),
     started: assistantDescendants(listed.map((summary) => ({ summary })), assistantId).map((item) => item.summary),
@@ -127,7 +125,10 @@ export function requestAssistantClose(): void {
 
 /** 通讯录 / agent 设置里删的是他的个人助理 = 换成关闭咕咕那一份确认(返回 true,调用方别再走通用删除);不是 = false。 */
 export function closeIfMyAssistant(ownerUserId: string | null | undefined, agentUserId: string): boolean {
-  if (!isMyAssistant(ownerUserId, agentUserId)) return false
+  const mine = myAssistant.peek()
+  // @@@reading-default(route) - a one-moment routing decision outside rendering: not read yet = not known to be the assistant, the delete takes the general path (today's behaviour)
+  const personal = mine.state === 'value' ? mine.value.agentId === agentUserId : false
+  if (!ownerUserId || !personal) return false
   requestAssistantClose()
   return true
 }

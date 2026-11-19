@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { isDeviceOnline } from '@gugu/core/shared/enums/deviceModels'
 import { useDevicesStore } from '../store/devicesContext'
 import { i18n } from '../i18n'
 import { UI_EVENTS } from './uiEvents'
 import { fileMetadata } from './fileAccess'
+import { chatFileMetadata } from './fileMetadataReplica'
+import { useReplica } from './replica'
 import { rendererLogger } from './log'
 
 const log = rendererLogger('file-host')
@@ -16,19 +18,12 @@ export type FileHost = { device: string; account: string }
  * Null for every other file, and while unknown: it only says where the file is, so a failed read draws nothing.
  */
 export function useFileHost(itemId: string | null): FileHost | null {
-  const [host, setHost] = useState<FileHost | null>(null)
-  useEffect(() => {
-    setHost(null)
-    if (!itemId) return undefined
-    let live = true
-    Promise.resolve().then(() => fileMetadata(itemId)).then((file) => {
-      if (live && file.status === 'ready' && file.revision.source === 'local' && file.revision.host_device_id && file.revision.host_account_id) {
-        setHost({ device: file.revision.host_device_id, account: file.revision.host_account_id })
-      }
-    }).catch((error: unknown) => log.warn({ itemId, error: String(error) }, 'where the file is kept is unknown'))
-    return () => { live = false }
-  }, [itemId])
-  return host
+  const reading = useReplica(chatFileMetadata, itemId ? [itemId, null] : null)
+  if (reading.state !== 'value') return null
+  const metadata = reading.value
+  return metadata.status === 'ready' && metadata.revision.source === 'local' && metadata.revision.host_device_id && metadata.revision.host_account_id
+    ? { device: metadata.revision.host_device_id, account: metadata.revision.host_account_id }
+    : null
 }
 
 /** The machine that keeps a version, while it is off: its name (`''` when it has none), and the version that is waiting on it. */

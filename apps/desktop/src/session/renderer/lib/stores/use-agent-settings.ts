@@ -1,37 +1,22 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
+import { refreshFailure, useReplica } from '@/lib/replica';
+import { agentSettings } from './agent-replicas';
 import { useLibraryHost } from '@renderer/features/library/library-host';
-import type { AgentSettings } from '@shared/core/agents/agent-payload';
 import type { ProviderCustomConfig } from '@shared/core/app-settings';
 
-/** 最后一段是哪台机器(#6264):附加参数与环境变量是那台机器上这家的设置,❌ 与本机共用一格缓存。 */
-function agentSettingsQueryKey(id: string, hostKey: string) {
-  return ['agents', 'settings', id, hostKey] as const;
-}
-
 /**
- * Manages settings for a single agent: current value, defaults, mutations for
- * update and reset-to-defaults.
- *
- * Replaces `use-provider-settings.ts`.
+ * Manages settings for a single agent on the library's machine (#6264: 附加参数与环境变量是那台机器上这家的设置):
+ * the `agentSettings` reading, mutations for update and reset-to-defaults.
  */
 export function useAgentSettings(id: string) {
-  const queryClient = useQueryClient();
   const host = useLibraryHost();
   const agentsRpc = host.agents;
-  const queryKey = agentSettingsQueryKey(id, host.key);
-
-  const query = useQuery<AgentSettings | null>({
-    queryKey,
-    queryFn: () => agentsRpc.getSettings(id),
-    enabled: host.remote?.online !== false,
-    staleTime: 60_000,
-  });
+  const machine = host.remote?.deviceId ?? null;
+  const reading = useReplica(agentSettings, [machine, id], { read: host.remote?.online !== false });
 
   const updateMutation = useMutation<void, Error, Partial<ProviderCustomConfig>>({
     mutationFn: (config) => agentsRpc.updateSettings(id, config),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey });
-    },
+    onSuccess: () => { void agentSettings.refresh(machine, id); },
   });
 
   const resetMutation = useMutation<void, Error, void>({
@@ -41,14 +26,15 @@ export function useAgentSettings(id: string) {
         await agentsRpc.updateSettings(id, defaults);
       }
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey });
-    },
+    onSuccess: () => { void agentSettings.refresh(machine, id); },
   });
 
-  const { data } = query;
+  const data = reading.state === 'value' ? reading.value : null;
   return {
-    ...query,
+    isLoading: reading.state === 'unknown',
+    /** Not read, or read before and its re-read failed (`value` then stays what was read): a surface says it with `retry`. */
+    error: refreshFailure(reading),
+    retry: () => void agentSettings.refresh(machine, id),
     value: data?.value,
     defaults: data?.defaults,
     overrides: data?.overrides,

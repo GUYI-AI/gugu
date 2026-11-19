@@ -1,13 +1,17 @@
 import { setBrowserCorsRelaxationSettings } from '@main/core/browser/browser-profile-session';
 import { browserWebContentsRegistry } from '@main/core/browser/browser-webcontents-registry';
 import { reconcileResourceSampler } from '@main/core/resource-monitor/resource-sampler';
+import { events } from '@main/lib/events';
+import { appSettingsChangedChannel } from '@shared/events/appEvents';
 import { pushIdleCompactionSetting } from '@main/core/acp/idle-compaction-setting';
 import { peekAcpWorkerClient } from '@main/core/acp/runtime-process/host';
 import { createRPCController } from '@shared/lib/ipc/rpc';
 import { devicePreferencesChanged } from './device-preferences';
 import { AppSettingsKeys, appSettingsService, type AppSettings, type AppSettingsKey } from './settings-service';
 
-async function reconcileSettingsRuntimeState(key: AppSettingsKey): Promise<void> {
+export async function reconcileSettingsRuntimeState(key: AppSettingsKey): Promise<void> {
+  // Every window keeps this device's settings in its replica: say which key changed, each reads it again.
+  events.emit(appSettingsChangedChannel, { key });
   if (key === 'resourceMonitor') await reconcileResourceSampler();
   // The host applies theme, language and tray badge itself (main.ts @@@device-preferences).
   if (key === 'devicePreferences') devicePreferencesChanged();

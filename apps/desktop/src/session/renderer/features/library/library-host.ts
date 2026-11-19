@@ -6,7 +6,7 @@
 // 提示词不在这里:它是账号的(`@shared/prompt-library`,owner 11-07),哪台机器看都是同一份。
 import { createContext, useContext } from 'react';
 import type { AgentInstallProgress } from '@gugu/session-core/workspace-server';
-import { events, onMachineEvent, rpc, rpcOn } from '@renderer/lib/ipc';
+import { events, onMachineEvent, routeMachine, rpc, rpcOn } from '@renderer/lib/ipc';
 import { TOO_OLD_CODES } from '@renderer/features/remote-hosts/connection-status';
 import {
   createRemoteExtensionsHost,
@@ -199,7 +199,9 @@ export function createRemoteLibraryHost(
   transport?: RemoteLibraryTransport
 ): LibraryHost {
   const { deviceId } = device;
-  const there = transport?.rpc ?? rpcOn(deviceId);
+  // The pipe this app reaches that machine by: every reader of it (replicas included) follows through `rpcOn`.
+  if (transport) routeMachine(deviceId, transport.rpc);
+  const there = rpcOn(deviceId);
   const subscribe: RemoteLibraryTransport['onEvent'] = transport?.onEvent ?? ((event, listener) => onMachineEvent(deviceId, event, listener));
   const agents: LibraryAgentsRpc = {
     listManagement: () => there.agents.listManagement() as Promise<AgentPayload[]>,
@@ -271,7 +273,7 @@ export function createRemoteLibraryHost(
       authCancel: () => there.github.authCancel(),
       onEvent: subscribe,
     },
-    extensions: createRemoteExtensionsHost(deviceId, pickFolder, transport),
+    extensions: createRemoteExtensionsHost(deviceId, pickFolder, subscribe),
     remote: device,
   };
 }
@@ -289,8 +291,26 @@ export function machineLibraryHost(device: LibraryRemoteDevice | null, transport
   let host = machineHosts.get(key);
   if (!host) {
     for (const [existing, value] of machineHosts) if (value.remote?.deviceId === device.deviceId) machineHosts.delete(existing);
-    machineHosts.set(key, (host = createRemoteLibraryHost(device, undefined, transport)));
+    machineHosts.set(key, (host = keepLibraryHost(createRemoteLibraryHost(device, undefined, transport))));
   }
+  return host;
+}
+
+/** @@@library-host-of — library host key → its host; a key nobody kept fails loud (❌ empty). */
+const hostsByKey = new Map<string, LibraryHost>();
+
+export function keepLibraryHost(host: LibraryHost): LibraryHost {
+  hostsByKey.set(host.key, host);
+  return host;
+}
+
+export function peekLibraryHost(hostKey: string): LibraryHost | undefined {
+  return hostKey === LOCAL_HOST_KEY ? hostsByKey.get(hostKey) ?? LOCAL_LIBRARY_HOST : hostsByKey.get(hostKey);
+}
+
+export function libraryHostOf(hostKey: string): LibraryHost {
+  const host = peekLibraryHost(hostKey);
+  if (!host) throw new Error(`No library host is kept for ${hostKey}`);
   return host;
 }
 

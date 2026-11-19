@@ -2,31 +2,38 @@
 // shows it preparing meanwhile, and once getting them is truly stuck, one failure notice says so — through the app's one
 // notice outlet, never a strip above the composer. Main decides both (electron/assistant-rules-root.ts); a phone or a
 // web page hosts no assistant, so it never waits.
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { desktopIpc } from '../platform/desktopIpc'
 import { ASSISTANT_HOME_CHANNELS, type AssistantRulesState } from './assistantHomeIpc'
 import { notify } from './notices'
-import { rendererLogger } from './log'
+import { replica, useReplica, type Reading } from './replica'
 import '../i18n/registerMainCatalog'
 
-const log = rendererLogger('assistant-rules')
-const NOT_WAITING: AssistantRulesState = { pending: false, stuck: false }
-
-export function useAssistantRulesState(): AssistantRulesState {
-  const [state, setState] = useState<AssistantRulesState>(NOT_WAITING)
-  useEffect(() => {
+/** Main's answer for the signed-in account; no desktop IPC = `{pending: false, stuck: false}` (a value). Pushed; ❌ kept (would flash "preparing"). */
+export const assistantRulesState = replica({
+  name: 'assistantRulesState',
+  scope: 'account',
+  networkMode: 'always',
+  read: async (): Promise<AssistantRulesState> => {
     const ipc = desktopIpc()
-    if (!ipc) return
-    let live = true
-    ipc.invoke(ASSISTANT_HOME_CHANNELS.rulesState).then(
-      (value) => { if (live) setState(value as AssistantRulesState) },
-      (error: unknown) => log.warn({ error: String(error) }, 'assistant rules state not read; the entry shows as it is'),
-    )
-    const off = ipc.eventOn(ASSISTANT_HOME_CHANNELS.rulesStateChanged, (value) => setState(value as AssistantRulesState))
-    return () => { live = false; off() }
-  }, [])
-  return state
+    if (!ipc) return { pending: false, stuck: false }
+    return (await ipc.invoke(ASSISTANT_HOME_CHANNELS.rulesState)) as AssistantRulesState
+  },
+  fresh: Infinity,
+  watch: {
+    // Main publishes for the account signed in now: put it there (bound per feed, which follows the account).
+    start: () => {
+      const entry = assistantRulesState.at()
+      return desktopIpc()?.eventOn(ASSISTANT_HOME_CHANNELS.rulesStateChanged, (value) => entry.set(value as AssistantRulesState)) ?? (() => undefined)
+    },
+  },
+})
+
+
+/** Unknown until main answers: the entry is not drawn as preparing meanwhile (❌ a literal "not waiting" either). */
+export function useAssistantRulesState(): Reading<AssistantRulesState> {
+  return useReplica(assistantRulesState, [])
 }
 
 /** The one notice for a truly stuck wait: shown when it becomes stuck, in place (by key) if it is shown already. */

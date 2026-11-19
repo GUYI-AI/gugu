@@ -103,6 +103,42 @@ export function platformCatalogFailureReason(error: unknown): string {
   return guguCatalogReasonCode(modelAccessFailureReason(error))
 }
 
+/**
+ * 这道门本身:这一家在这条腿上给不给「咕咕提供的模型」;不给 ⇒ 原因码,给 ⇒ null。同步、不联网 ——
+ * 下面的目录与 composer 读的那一格(`agents.modelCatalog` 回包的 `gugu`,platform-model-catalog-hook.ts)
+ * 都只问它,❌ 渲染层另算一份。
+ */
+export function sessionpagePlatformGate(input: {
+  authProvider: RuntimeAuthProvider | null
+  providerId: string
+  surface: SessionpageSessionSurface
+}): string | null {
+  const providerId = input.providerId.trim()
+  // 协议由插件声明(platformProtocolForEngine)。没有协议 = 这个引擎无法被指向平台 relay,
+  // 对它而言平台模型不存在 —— 空列表,不是错误。
+  const protocol = providerId ? platformProtocolForEngine(providerId) : null
+  // 平台 token 签给一个咕咕 agent 身份,所以拿不到身份的 provider 一个平台模型都不该列 —— 列了会让
+  // 用户选中一个签不出 token 的模型,而那在启动路径上只能响亮失败,不如一开始就不给选。
+  //
+  // @@@2503 这道门本身是对的,错的是它曾经问的名单:opencode 在 platform_models.engine_ids 里、协议有
+  // (OPENAI_API_KEY)、模型注入方言也有(opencode-config-content),却因为身份名单当时只按「投递走哪条腿」
+  // 收人而被整组挡掉 —— 症状是「列得出却签不出」。现在直接读 registry 的 exact provider/surface
+  // identity 轴：OpenCode 只保留 acp，已适配的 tui harness 也都明确可寻址（2026-09-21
+  // #6097 删掉八家后是 24 家，原 31 家）；没有 sessionpage cell 的家不会进入会话页平台模型目录。
+  //
+  // ⚠️ 两条**分开判**,❌ 不再合成一句 `!protocol || !canProvision`:它们是两个不同的原因
+  // (「这家根本指不向中转」 vs 「这条腿还没接通咕咕身份」),而合并之后只能给出一个共同的
+  // 空结果 —— 那正是这道门过去静默的方式。
+  if (!protocol) return ENGINE_NOT_ROUTABLE
+  if (!canProvisionSessionpageAgent(providerId, input.surface)) {
+    return noSessionpageIdentity(input.surface)
+  }
+  if (!input.authProvider) {
+    return guguCatalogReasonCode('runtime-not-connected')
+  }
+  return null
+}
+
 export async function sessionpagePlatformCatalog(input: {
   authProvider: RuntimeAuthProvider | null
   providerId: string
@@ -119,33 +155,15 @@ export async function sessionpagePlatformCatalog(input: {
   const sessionSelection = includeSessionSelection
     ? await input.sessionSelectionResolver!(sessionId!)
     : undefined
-  // 协议由插件声明(platformProtocolForEngine)。没有协议 = 这个引擎无法被指向平台 relay,
-  // 对它而言平台模型不存在 —— 空列表,不是错误。
-  const protocol = providerId ? platformProtocolForEngine(providerId) : null
-  // 平台 token 签给一个咕咕 agent 身份,所以拿不到身份的 provider 一个平台模型都不该列 —— 列了会让
-  // 用户选中一个签不出 token 的模型,而那在启动路径上只能响亮失败,不如一开始就不给选。
-  //
-  // @@@2503 这道门本身是对的,错的是它曾经问的名单:opencode 在 platform_models.engine_ids 里、协议有
-  // (OPENAI_API_KEY)、模型注入方言也有(opencode-config-content),却因为身份名单当时只按「投递走哪条腿」
-  // 收人而被整组挡掉 —— 症状是「列得出却签不出」。现在直接读 registry 的 exact provider/surface
-  // identity 轴：OpenCode 只保留 acp，已适配的 tui harness 也都明确可寻址（2026-09-21
-  // #6097 删掉八家后是 24 家，原 31 家）；没有 sessionpage cell 的家不会进入会话页平台模型目录。
-  //
-  // ⚠️ 两条**分开判**,❌ 不再合成一句 `!protocol || !canProvision`:它们是两个不同的原因
-  // (「这家根本指不向中转」 vs 「这条腿还没接通咕咕身份」),而合并之后只能给出一个共同的
-  // 空结果 —— 那正是这道门过去静默的方式。
-  if (!protocol) return empty(ENGINE_NOT_ROUTABLE, sessionSelection, includeSessionSelection)
-  if (!canProvisionSessionpageAgent(providerId, input.surface)) {
-    return empty(noSessionpageIdentity(input.surface), sessionSelection, includeSessionSelection)
-  }
-  if (!input.authProvider) {
-    return empty(guguCatalogReasonCode('runtime-not-connected'), sessionSelection, includeSessionSelection)
-  }
+  const gate = sessionpagePlatformGate(input)
+  if (gate) return empty(gate, sessionSelection, includeSessionSelection)
+  // The gate passed: the engine has a wire protocol and there is an auth provider.
+  const protocol = platformProtocolForEngine(providerId)!
 
   let models: PlatformModelOption[] = []
   let catalogError: string | null = null
   try {
-    models = (await listPlatformModels(input.authProvider))
+    models = (await listPlatformModels(input.authProvider!))
       // ❌ 这里曾经还有一道 `model.engineIds.includes(providerId)`。它是一张**人工准入名单**,
       // 而准入与否已经被上面的 `protocol`(引擎说哪条协议,编译期完备的代码事实)和这里的
       // `protocols`(模型支持哪条协议,运营数据)完整决定 —— 名单只能让结果比事实更严,

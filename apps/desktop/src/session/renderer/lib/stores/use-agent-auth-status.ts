@@ -1,12 +1,10 @@
 import {
-  agentConfigListSchema,
   type AgentConfigAuthError,
   type AuthStatusModelState,
 } from '@gugu/session-core/workspace-server/agent-config';
-import { ReplicaState } from '@gugu/session-wire';
-import { createImmutableMobxStore } from '@gugu/session-wire/util/mobx';
-import { reaction } from 'mobx';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { refreshFailure, useReplica } from '@/lib/replica';
+import { agentConfigList } from './live/agent-config-list';
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
 import { log } from '@renderer/utils/logger';
 import { expiredProviderIds } from './harness-auth-expiry';
@@ -67,86 +65,46 @@ export function useAgentAuthStatuses(
   const machine = options.machine ?? null;
   // 数组每次渲染都是新对象 —— 按内容做依赖(`undefined` = 主程序,记成空串)。
   const programsKey = programs.map((program) => program ?? '').join('\u0000');
-  const [auths, setAuths] = useState<Array<AuthStatusModelState | null>>(() => programs.map(() => null));
+  const list = useReplica(agentConfigList, [machine]);
+  /** 探不出来的那几个程序:落一个终局的「判不出」(只在还没有任何真读数时用)。 */
+  const [probeFailures, setProbeFailures] = useState<{ key: string; messages: ReadonlyMap<number, string> }>({ key: '', messages: new Map() });
+  const subject = `${machine ?? ''}\u0001${providerId ?? ''}\u0001${programsKey}`;
+  const failures = probeFailures.key === subject ? probeFailures.messages : null;
   const probeRef = useRef<(() => Promise<void>) | null>(null);
 
+  // @@@effect-flow(command) - asks the worker to probe each program's sign-in (it runs the CLI's status; the answer lands in the live agent list read above); state holds only this probe's own failures, which settle that row as unknown with its reason
   useEffect(() => {
-    const list = programsKey.split('\u0000').map((key) => (key === '' ? undefined : key));
-    setAuths(list.map(() => null));
+    const programList = programsKey.split('\u0000').map((key) => (key === '' ? undefined : key));
     probeRef.current = null;
     if (!providerId) return;
-
     let disposed = false;
-    const disposers: Array<() => void> = [];
-    /** 落一个终局的「判不出」—— 只在还没有任何真读数时。 */
-    const settle = (index: number, message: string) => {
-      if (disposed) return;
-      setAuths((current) =>
-        current.map((auth, i) => (i === index ? auth ?? { status: { kind: 'unknown', message }, login: null } : auth))
-      );
-    };
-    // pop 式 —— 重复调用是安全的(下面 await 之间的每个逃逸点都会调它)。
-    const runDisposers = () => {
-      while (disposers.length) disposers.pop()?.();
-    };
-
-    void (async () => {
+    const probe = async () => {
       const client = await getAgentConfigRuntimeClient(machine);
-      if (disposed) return;
-      const agents = new ReplicaState(client.agents.state(undefined, 'list'), {
-        schema: agentConfigListSchema,
-        store: createImmutableMobxStore(),
-      });
-      disposers.push(() => void agents.dispose());
-      if (disposed) return runDisposers();
-
-      const probe = async () => {
-        await Promise.all(
-          list.map(async (program, index) => {
-            const result = await client.refreshAuthStatus(
-              program === undefined ? { providerId } : { providerId, program }
-            );
-            if (result.success) return;
-            log.warn('Agent auth status probe failed', { providerId, program, error: result.error });
-            // 探不出也要落一个**终局**读数。❌ 不让「正在检查」转到天荒地老 —— 那是把
-            // 「问不出来」画成「还在问」,用户对着一个永远转的圈没有任何下一步。
-            // `?? ` 而不是覆盖:订阅那侧要是已经送来真读数,它比这条兜底新。
-            settle(index, authErrorMessage(result.error));
-          })
-        );
-      };
-      probeRef.current = probe;
-
-      // 先 seed 再建 reaction:`current()` 在 seed 之前没有值可读。
-      await agents.ready;
-      if (disposed) return runDisposers();
-      disposers.push(
-        reaction(
-          () => {
-            const entry = agents.current()[providerId];
-            return list.map(
-              (program) => (program === undefined ? entry?.auth : entry?.programAuth?.[program]) ?? null
-            );
-          },
-          (next) => {
-            if (!disposed) setAuths(next);
-          },
-          { fireImmediately: true, equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) }
-        )
+      await Promise.all(
+        programList.map(async (program, index) => {
+          const result = await client.refreshAuthStatus(program === undefined ? { providerId } : { providerId, program });
+          if (result.success || disposed) return;
+          log.warn('Agent auth status probe failed', { providerId, program, error: result.error });
+          // 探不出也要落一个**终局**读数。❌ 不让「正在检查」转到天荒地老 —— 那是把「问不出来」画成「还在问」。
+          setProbeFailures((current) => ({ key: subject, messages: new Map(current.key === subject ? current.messages : []).set(index, authErrorMessage(result.error)) }));
+        })
       );
-      if (probeOnMount) await probe();
-    })().catch((error) => {
-      log.warn('Agent auth status subscription failed', { providerId, programs: list, error });
-      // 通道根本没建起来(wire 不在 / runtime 掉线)同样要落终局读数,理由同上。
-      const message = error instanceof Error ? error.message : String(error);
-      list.forEach((_, index) => settle(index, message));
-    });
-
-    return () => {
-      disposed = true;
-      runDisposers();
     };
-  }, [providerId, programsKey, probeOnMount, machine]);
+    probeRef.current = probe;
+    if (probeOnMount) void probe().catch((error: unknown) => log.warn('Agent auth status probe failed', { providerId, error }));
+    return () => { disposed = true; };
+  }, [providerId, programsKey, probeOnMount, machine, subject]);
+
+  const auths = useMemo(() => programsKey.split('\u0000').map((key, index): AuthStatusModelState | null => {
+    const program = key === '' ? undefined : key;
+    // 通道根本没建起来(wire 不在 / runtime 掉线)同样落终局读数;读到过、重读没成也一样(❌ 上次的登录态当成现在的)。
+    const listFailure = refreshFailure(list);
+    if (listFailure) return providerId ? { status: { kind: 'unknown', message: listFailure.message }, login: null } : null;
+    const entry = list.state === 'value' && providerId ? list.value[providerId] : undefined;
+    const read = (program === undefined ? entry?.auth : entry?.programAuth?.[program]) ?? null;
+    const failed = failures?.get(index);
+    return read ?? (failed !== undefined ? { status: { kind: 'unknown', message: failed }, login: null } : null);
+  }), [list, providerId, programsKey, failures]);
 
   /** 登录终端关掉之后再问一次 —— 关窗那一刻的旧读数 ❌ 不是本次的结果(见 `login-success.ts`)。 */
   const refresh = useCallback(async () => {
@@ -157,42 +115,11 @@ export function useAgentAuthStatuses(
 }
 
 /**
- * #6264 这台机器上此刻「登录已失效」的那几家 —— 只订阅 live state,❌ 探任何一家。
- * 资源库图标网格一次读完用(一格一个订阅就是几十条通道)。读不到就是空集合:没有读数时不把谁说成失效。
+ * #6264 这台机器上此刻「登录已失效」的那几家 —— 只订阅,❌ 探。null:不画失效标记。
  */
-export function useExpiredAgentIds(enabled = true): ReadonlySet<string> {
-  const [ids, setIds] = useState<ReadonlySet<string>>(() => new Set());
-  useEffect(() => {
-    setIds(new Set());
-    if (!enabled) return;
-    let disposed = false;
-    const disposers: Array<() => void> = [];
-    void (async () => {
-      const client = await getAgentConfigRuntimeClient();
-      if (disposed) return;
-      const agents = new ReplicaState(client.agents.state(undefined, 'list'), {
-        schema: agentConfigListSchema,
-        store: createImmutableMobxStore(),
-      });
-      disposers.push(() => void agents.dispose());
-      await agents.ready;
-      if (disposed) return;
-      disposers.push(
-        reaction(
-          () => [...expiredProviderIds(agents.current())].sort().join('\u0000'),
-          (key) => {
-            if (!disposed) setIds(new Set(key ? key.split('\u0000') : []));
-          },
-          { fireImmediately: true }
-        )
-      );
-    })().catch((error) => {
-      log.warn('Agent auth expiry subscription failed', { error });
-    });
-    return () => {
-      disposed = true;
-      while (disposers.length) disposers.pop()?.();
-    };
-  }, [enabled]);
-  return ids;
+export function useExpiredAgentIds(enabled = true): ReadonlySet<string> | null {
+  const list = useReplica(agentConfigList, enabled ? [null] : null);
+  // Its re-read failed: no marks, as when unreadable (❌ the expired set read before drawn as current).
+  const key = list.state === 'value' && !list.error ? [...expiredProviderIds(list.value)].sort().join('\u0000') : null;
+  return useMemo(() => (key === null ? null : new Set(key ? key.split('\u0000') : [])), [key]);
 }

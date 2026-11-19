@@ -90,7 +90,7 @@ export interface PublicGroupInviteGroup {
 }
 
 export interface PublicGroupInviteLookupResult {
-  status: 'joined' | 'available' | 'not_found' | 'lookup_error'
+  status: 'joined' | 'available' | 'not_found'
   group: PublicGroupInviteGroup | null
 }
 
