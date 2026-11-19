@@ -124,5 +124,7 @@ it('the two-line group button covers the avatar and lower row, with independent 
   await harness.render(row(true));
   expect(button()).toHaveAttribute('aria-current', 'page');
   expect(getComputedStyle(button()).backgroundColor).toBe('rgba(0, 0, 0, 0)');
-  expect(hoverLayer().content).toBe('none');
+  // Keyboard focus keeps the same complete hover surface on the selected card.
+  expect(hoverLayer().content).toBe('""');
+  expect([hoverLayer().left, hoverLayer().right, hoverLayer().borderRadius]).toEqual(['0px', '0px', '8px']);
 });
