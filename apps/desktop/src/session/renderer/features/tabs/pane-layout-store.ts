@@ -434,6 +434,8 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     chat.pane.activeTabId = primary;
     tools.pane.activeTabId = tabId;
     this._recordChatWorkspacePair();
+    // Explicit selection reveals its destination; passive restoration keeps the chosen visibility.
+    if (focus && this.chatWorkspaceMode === 'hidden') this.setChatToolLayout('split');
     if (focus && this.chatWorkspaceMode !== 'hidden') this.activePaneId = tools.paneId;
     this._focusChatWorkspacePage();
     return true;

@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
 import type { AgentHomeGroupId } from '@gugu/session-core/agents/plugins';
 import {
-  AgentHomeMigrationFailure, diffAgentHome, importAgentHome, readAgentHomeMarker, reimportAgentHome, resolveAgentHome,
+  AgentHomeMigrationFailure, AgentHomeSpaceError, checkAgentHomeImportSpace, diffAgentHome, importAgentHome, readAgentHomeMarker, reimportAgentHome, resolveAgentHome,
   scanAgentHome, updateAgentHomeSource, type AgentHomeImportIssue, type AgentHomeMarker,
 } from '@gugu/session-core/agents/plugins/helpers';
 import { agentHomeOperationSchema, type AgentHomeScan } from '@gugu/session-core/workspace-server/agent-config';
@@ -35,6 +35,24 @@ let upgradeProfile: boolean | undefined;
 let upgradePlan: Promise<ReadonlySet<string>> | undefined;
 let inventoryComplete = false;
 const automaticAttempts = new Map<string, Promise<void>>();
+let spaceAdmission: Promise<void> | undefined;
+let migrationSpace: AgentHomeScan['migrationSpace'];
+function admitAutomaticImports(providers: ReadonlySet<string>): Promise<void> {
+  spaceAdmission ??= (async () => {
+    const entries = [];
+    for (const providerId of providers) {
+      const home = homeFor(providerId);
+      if (home && !await readAgentHomeMarker(home)) entries.push({
+        home, groups: new Set(defaultAgentHomeGroups(home.importGroups)), historyPaths: home.upgradeHistory,
+      });
+    }
+    await checkAgentHomeImportSpace(entries);
+  })().catch((error: unknown) => {
+    if (error instanceof AgentHomeSpaceError) migrationSpace = error.space;
+    throw error;
+  });
+  return spaceAdmission;
+}
 
 async function planUpgrade(priorProfile: boolean): Promise<ReadonlySet<string>> {
   const previous = await upgradeState.get('providers');
@@ -84,8 +102,15 @@ async function prepareAutomaticImport(providerId: string): Promise<void> {
     pending = (async () => {
       const home = homeFor(providerId);
       if (!home || await readAgentHomeMarker(home)) return;
+      await admitAutomaticImports(providers);
       await importHarnessHome(providerId, defaultAgentHomeGroups(home.importGroups));
-    })().catch((error: unknown) => {
+    })().catch(async (error: unknown) => {
+      const cause = error instanceof AgentHomeMigrationFailure ? error.cause : error;
+      if (cause instanceof AgentHomeSpaceError) { migrationSpace = cause.space; log.info('Deferred configuration migration until disk space is available'); return; }
+      if ((cause as NodeJS.ErrnoException)?.code === 'ENOSPC') {
+        spaceAdmission = undefined;
+        await admitAutomaticImports(providers).catch(() => undefined);
+      }
       log.error('Automatic harness configuration import failed', { providerId, error: error instanceof Error ? error.name : typeof error });
       reportAgentHomeMigrationFailure(error instanceof AgentHomeMigrationFailure ? error.cause : error,
         error instanceof AgentHomeMigrationFailure ? error.stage : 'marker');
@@ -109,6 +134,13 @@ export async function scanAgentHomes(providerIds?: readonly string[], upgradedOn
     const home = homeFor(providerId);
     if (!home) continue;
     // Status reads must not wait for the background history/configuration migration.
+    const deferred = migrationSpace && (await upgradeProviders())?.has(providerId) && !await readAgentHomeMarker(home);
+    if (deferred) {
+      rows.push({ providerId, name: plugin.metadata.name, userRoot: home.userConfigRoot,
+        sourceReadable: await access(home.userConfigRoot).then(() => true, () => false), importedAt: null, needsImport: true, sourceUpdated: false, migration: true,
+        migrationSpace, groups: home.importGroups.map(({ id }) => ({ id, count: 0 })), issues: [], mcpSecrets: [], projectMcpCount: 0 });
+      continue;
+    }
     if (upgradedOnly) {
       // A provider with a failed or invalid import record cannot hide the other results.
       const marker = await readAgentHomeMarker(home).catch(() => null);
@@ -152,6 +184,7 @@ async function importHarnessHomeOnce(home: NonNullable<ReturnType<typeof homeFor
     upgradeSignIn?: AgentHomeMarker['upgradeSignIn'] } | undefined;
   const cleanupIssues: AgentHomeImportIssue[] = [];
   if (migration && !(await readAgentHomeMarker(home))) {
+    await checkAgentHomeImportSpace([{ home, groups: new Set(groups), historyPaths }]);
     for (const { path, update } of home.legacyCleanup ?? []) {
       const issue = await updateAgentHomeSource(home, path, update);
       if (issue) cleanupIssues.push(issue);
@@ -164,7 +197,7 @@ async function importHarnessHomeOnce(home: NonNullable<ReturnType<typeof homeFor
     ...(migration ? {
       upgradeSummary: (issues: readonly AgentHomeImportIssue[]) => ({
         oldSessionsSkipped: oldSessionsSkipped(issues),
-        upgradeIssues: [...issues, ...cleanupIssues].filter(({ reason }) => reason !== 'database' && reason !== 'sensitive'),
+        upgradeIssues: [...issues, ...cleanupIssues],
       }),
       afterCommit: async () => {
         if (providerId !== 'claude' && providerId !== 'codex') return;
