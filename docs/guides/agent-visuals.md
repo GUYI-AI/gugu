@@ -14,7 +14,8 @@ content twice. The explanation goes in your message around the figure, not insid
 
 ## SVG rules
 - Root: `<svg viewBox="0 0 680 H" xmlns="http://www.w3.org/2000/svg">`. One unit is one pixel; 680 fills the column
-  and a phone scales it down. H = bottom of the lowest element + 20. A root without a viewBox is shown as code.
+  and a phone scales it down. H = bottom of the lowest element + 20. If `viewBox` is missing or invalid, positive
+  numeric `width` and `height` (unitless or `px`) supply it. A figure without usable dimensions is shown as code.
 - Colours only through tokens, never hex (a hex colour vanishes in the other theme):
   `var(--fg)` text, `var(--muted)` secondary text, `var(--border)` lines, `var(--surface)` box fill,
   `var(--accent)` the one emphasis, `var(--success)` / `var(--warning)` / `var(--error)` status,
