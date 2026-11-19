@@ -13,7 +13,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => {
   // 本机(null)那条线就是 events.on;测试里的项目都在本机。
   return { ...ipc, onMachineEvent: (_machine: unknown, event: never, cb: never) => (ipc.events.on as (...args: unknown[]) => () => void)(event, cb) };
 })
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: mocks.mobileRpc }))
+vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ machineRpc: mocks.mobileRpc }))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ warn: mocks.warn }) }))
 
 import { useAssistantWorkrooms } from '../../../../apps/desktop/src/components/assistant/useAssistantWorkrooms'

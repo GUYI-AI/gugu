@@ -72,3 +72,13 @@ it.each(['draft', 'whisper', 'reply'])('a new %s intent has a new identity witho
   expect((send.mock.calls[1][1] as { clientMessageId: string }).clientMessageId).not.toBe(first)
   expect(notices.size).toBe(1)
 })
+
+it('a friendship refusal retains the draft and uses one existing failure notice, without a composer banner', async () => {
+  send.mockRejectedValue(new Error('dm_friendship_required'))
+  await click('dm', 0); await click('dm', 1)
+  expect(ui.container.querySelector<HTMLTextAreaElement>('[data-chat="dm"] textarea')!.value).toBe('same words')
+  expect(notices.size).toBe(1)
+  expect([...notices.values()][0]).toContain('请先添加对方为好友，再发送消息。')
+  expect(ui.container.textContent).not.toContain('dm_friendship_required')
+  expect(ui.container.querySelector('[role="alert"]')).toBeNull()
+})

@@ -11,7 +11,6 @@ import {
   type providerCustomConfigEntrySchema,
   type sessionSettingsSchema,
   type terminalSettingsSchema,
-  type themeSchema,
 } from '@main/core/settings/schema';
 
 export type LocalProjectSettings = z.infer<typeof localProjectSettingsSchema>;
@@ -19,7 +18,6 @@ export type ProjectSettings = z.infer<typeof projectSettingsSchema>;
 export type NotificationSettings = z.infer<typeof notificationSettingsSchema>;
 export type SessionSettings = z.infer<typeof sessionSettingsSchema>;
 export type TerminalSettings = z.infer<typeof terminalSettingsSchema>;
-export type Theme = z.infer<typeof themeSchema>;
 
 export type InterfaceSettings = z.infer<typeof interfaceSettingsSchema>;
 export type ProviderCustomConfig = z.infer<typeof providerCustomConfigEntrySchema>;

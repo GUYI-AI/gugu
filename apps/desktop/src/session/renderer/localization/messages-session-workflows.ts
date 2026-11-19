@@ -8,6 +8,14 @@
 // 一个复数类别，`_one` 永远不会被选中，但 catalog 的共享类型是 `Record<keyof typeof enUS…, string>`，
 // 两侧 key 集合必须逐字相等，所以中文侧照样写满两个形态。
 export const enUSSessionWorkflowMessages = {
+  "taskError.codexMissing": "Codex is not installed. Install it in engine settings, then retry.",
+  "taskError.codexPermission": "File permissions prevent Codex from starting. Check permissions or reinstall it.",
+  "taskError.codexConfiguration": "Codex configuration is invalid. Check model and service settings, then retry.",
+  "taskError.codexProtocol": "Codex returned unreadable data. Retry.",
+  "taskError.codexExited": "The Codex process exited. Retry.",
+  "taskError.codexTimeout": "Codex did not respond in time. Retry.",
+  "taskError.codexStartFailed": "Codex could not start. Retry.",
+
   'transcript.copySelection': 'Copy selected text',
   'sessionImport.title': 'Import session',
   'sessionImport.done': 'Done',
@@ -425,6 +433,10 @@ export const enUSSessionWorkflowMessages = {
   // 中文侧一直就是「完全访问」,英文只是没跟上。
   'taskConfig.permissionAiReview': 'Auto mode',
   'taskConfig.permissionAiReviewHint': 'Send actions that need approval to an AI reviewer. Repeated denials can require your help.',
+  'taskConfig.reviewEligibilityUnknown': 'Auto mode eligibility could not be confirmed',
+  'taskConfig.reviewVersionUnsupported': 'This CLI version does not support Auto mode',
+  'taskConfig.reviewNativeUnavailable': 'The native CLI does not offer Auto mode for this connection and model',
+  'taskConfig.permissionNativeUnavailable': 'The native CLI does not offer this permission mode',
   'taskConfig.reviewUnavailable': 'This connection has no model that can review actions',
   'taskConfig.reviewByHaiku': 'Reviewed by Haiku',
   'taskConfig.reviewCostClaude': 'Uses your Claude subscription allowance',
@@ -627,6 +639,14 @@ export const enUSSessionWorkflowMessages = {
 } as const;
 
 export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflowMessages, string> = {
+  "taskError.codexMissing": "尚未安装 Codex，请在引擎设置中安装后重试。",
+  "taskError.codexPermission": "文件权限不允许启动 Codex，请检查权限或重新安装。",
+  "taskError.codexConfiguration": "Codex 配置有误，请检查模型与服务设置后重试。",
+  "taskError.codexProtocol": "Codex 返回的数据无法读取，请重试。",
+  "taskError.codexExited": "Codex 进程已退出，请重试。",
+  "taskError.codexTimeout": "Codex 暂未响应，请重试。",
+  "taskError.codexStartFailed": "Codex 启动失败，请重试。",
+
   'transcript.copySelection': '复制所选文字',
   'sessionImport.title': '导入会话',
   'sessionImport.done': '完成',
@@ -1016,6 +1036,10 @@ export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflo
   'taskConfig.permissionEditHint': 'agent 可以在工作区内改文件、跑命令。',
   'taskConfig.permissionAiReview': '自动模式',
   'taskConfig.permissionAiReviewHint': '需要授权时交给 AI 审查，连续被拒会停下来找你。',
+  'taskConfig.reviewEligibilityUnknown': '暂时无法确认自动模式资格',
+  'taskConfig.reviewVersionUnsupported': '这个 CLI 版本不支持自动模式',
+  'taskConfig.reviewNativeUnavailable': '原生 CLI 未为这条连接和模型提供自动模式',
+  'taskConfig.permissionNativeUnavailable': '原生 CLI 不提供这个权限档位',
   'taskConfig.reviewUnavailable': '这条连接没有能用来审查的模型',
   'taskConfig.reviewByHaiku': '由 Haiku 审查',
   'taskConfig.reviewCostClaude': '用你的 Claude 订阅额度审',

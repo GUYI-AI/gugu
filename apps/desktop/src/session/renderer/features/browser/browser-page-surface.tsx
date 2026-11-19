@@ -168,14 +168,15 @@ export function BrowserPageSurface({
       const now = win.performance.now();
       if (now - lastTickAt >= FALLBACK_TICK_MS) tick(now);
     }, FALLBACK_TICK_MS);
-    // 弹层挂到 body 上、拖拽开始 / 结束:当场看一眼,❌ 等下一个 OCCLUSION_CHECK_MS(菜单在网页底下晚出来一下,
-    // 拖着的页签头一段指针落进网页、宿主收不到移动)。
+    // 弹层挂到 body 上、页签自己那一层里的起始页 / 加载失败页挂上或撤下、拖拽开始 / 结束:当场看一眼,❌ 等下一个
+    // OCCLUSION_CHECK_MS(菜单在网页底下晚出来一下;起始页闪一下撤掉时,采样落没落进那一两帧决定网页露不露出来)。
     const doc = element.ownerDocument;
     const recheck = new MutationObserver(() => {
       lastOcclusionCheck = -Infinity;
       tick(win.performance.now());
     });
     recheck.observe(doc.body, { childList: true });
+    if (element.parentElement) recheck.observe(element.parentElement, { childList: true });
     recheck.observe(doc.documentElement, { attributes: true, attributeFilter: ['data-gugu-dragging'] });
 
     return () => {

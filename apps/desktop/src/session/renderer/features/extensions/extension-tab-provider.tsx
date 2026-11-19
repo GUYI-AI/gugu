@@ -1,4 +1,3 @@
-import { when } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useContext, useMemo } from 'react';
 import { PaneContext } from '@renderer/features/tabs/pane-context';
@@ -21,6 +20,7 @@ import { ExtensionMark } from './extension-mark';
 import { ExtensionTabPane } from './extension-tab-pane';
 import { ExtensionSharedSlot } from './extension-shared-slot';
 import { extensionViewStore, residentPageKey, residentPlace } from './extension-view-store';
+import { confirmCloseOfUnsaved, reloadAppPage } from './app-page-unsaved';
 import { extensionSurfaceStore, extensionTabTitle } from './extension-surface-store';
 import { installedExtensionsStore, WORKSPACE_APP_ID } from './installed-extensions-store';
 import { useScreenBlock } from '@renderer/app/screen-block-context';
@@ -29,8 +29,6 @@ import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { followLink } from '@/lib/guguLinks';
 import { fileTabLabels } from '@renderer/features/tabs/file-tab-label';
 import { fileBaseName, filePathKey } from '@renderer/features/sessions/stores/workspace-path';
-import { showModal } from '@renderer/lib/modal/modal-provider';
-import { rpc } from '@renderer/lib/ipc';
 import { Folder } from '@/lib/icons';
 import { AppFileMark } from './app-file-mark';
 
@@ -94,28 +92,6 @@ export class ExtensionTabResource implements TabResource {
 /** The tab is one per task (manifest `perSession`, #7317): every task keeps its own, none is moved from another. */
 function isPerSession(kind: string): boolean {
   return installedExtensionsStore.allTabContributions.find((entry) => entry.kind === kind)?.perSession === true;
-}
-
-/**
- * A tab with unsaved edits asks before it goes, the same question for any file: save, drop, or stay. Only its page can do
- * either, and it answers by saying again whether anything is unsaved. Not saved (the disk or the machine out of reach): it stays.
- */
-async function confirmCloseOfUnsaved(sessionId: string | null, tabId: string, filePath?: string): Promise<boolean> {
-  const { dirtyIn, dirtyReports } = extensionSurfaceStore.state(sessionId, tabId);
-  if (dirtyIn === null) return true;
-  const choice = await new Promise<'save' | 'discard' | null>((resolve) =>
-    showModal('unsavedChangesModal', {
-      fileName: fileBaseName(filePath ?? ''),
-      onSuccess: (result) => resolve(result === 'save' ? 'save' : 'discard'),
-      onClose: () => resolve(null),
-    })
-  );
-  if (!choice) return false;
-  const told = await rpc.extensions.invokeCommand({ webContentsId: dirtyIn, commandId: `gugu.file.${choice}:${tabId}` });
-  // The page is gone: its edits wait in their draft, and come back when the file opens again.
-  if (!told.success) return true;
-  await when(() => extensionSurfaceStore.state(sessionId, tabId).dirtyReports > dirtyReports);
-  return extensionSurfaceStore.state(sessionId, tabId).dirtyIn === null;
 }
 
 function createExtensionTabContent(extensionId: string, kind: string) {
@@ -277,6 +253,13 @@ export function createExtensionTabProvider(
               runExtensionCommand(sessionId, tab.tabId, command.id);
             },
           })),
+          // Whatever state the page is in (it did not load, it threw), the person can have it built again from the start.
+          {
+            id: `${kind}:reload-page`,
+            label: translateSessionMessage('extensions.reloadPage'),
+            group: 'extension',
+            run: () => void reloadAppPage(sessionId, tab.tabId, claimedFile),
+          },
           {
             id: `${kind}:app-settings`,
             label: translateSessionMessage('extensions.appSettings'),

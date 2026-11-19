@@ -73,11 +73,11 @@ if (typeof window !== 'undefined') {
 }
 
 beforeEach(async () => {
-  const { setLocalePreference } = await import('../../apps/desktop/src/i18n')
+  const { applyLocalePreference } = await import('../../apps/desktop/src/i18n/runtime')
   await import('../../apps/desktop/src/i18n/registerMainCatalog')
   await import('../../apps/desktop/src/i18n/registerSettingsCatalog')
   await import('../../apps/desktop/src/i18n/registerMessagingCatalog')
   await import('../../apps/desktop/src/i18n/registerContactsCatalog')
   await import('../../apps/desktop/src/i18n/registerAgentsCatalog')
-  setLocalePreference('zh-CN')
+  applyLocalePreference('zh-CN', false)
 })

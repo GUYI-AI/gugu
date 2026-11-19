@@ -1,3 +1,4 @@
+import { usePermissionMenu } from '@renderer/features/sessions/session-config/use-permission-menu';
 import { withAutoReviewHint } from './auto-review-permission-hint';
 import { customModelOptionId, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica } from '@/lib/replica';
@@ -140,7 +141,6 @@ import { agentSteersActiveAcpTurn } from '@shared/core/agents/agent-payload';
 import { linkedIssueMentionName, type LinkedIssue } from '@shared/core/linked-issue';
 import type { AcpChatStore } from './acp-chat-store';
 import {
-  detachedPermissionModeOptions,
   localizePermissionModeOptions,
   PERMISSION_TIER_LABEL_KEYS,
   sessionPermissionModeOptions,
@@ -159,12 +159,14 @@ import {
 import {
   composerModelSelection,
   composerModelFooter,
+  composerOwnTierAgentName,
   composerSelectedOptionId,
+  composerTierLabel,
   useComposerModelOptions,
   openMembershipPage,
 } from '@renderer/features/sessions/session-config/use-composer-model-options';
 import { ownModelTierOptions } from '@renderer/features/sessions/session-config/own-model-tier';
-import { harnessCatalogToOptions } from '@renderer/features/sessions/session-config/harness-model-field';
+import { harnessCatalogNotice, harnessCatalogToOptions } from '@renderer/features/sessions/session-config/harness-model-field';
 import {
   refreshPlatformModelCatalogs,
   usePlatformModelCatalog,
@@ -198,6 +200,7 @@ import { useSessionHeroCopy } from './use-session-hero-copy';
 import { useLastTurnSignInRequired } from './use-last-turn-sign-in';
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { isAuthExpired } from '@renderer/lib/stores/harness-auth-expiry';
+import { useCodexPreparationNotice } from '@renderer/lib/stores/use-codex-preparation-notice';
 import { useHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { filterSlashCommands } from './slash-command-matching';
 import { startupPlaceholderKey } from './startup-placeholder';
@@ -825,20 +828,15 @@ const ComposerForStore = observer(function ComposerForStore({
     },
     [store, reportUnwiredRestart, resetEffortId, declaredEffortOptions]
   );
-  // #7342 停下了:引擎那份档位清单没了,按映射表摆回四档、选中记录那一档(改了记进记录,见 store.setMode)。
-  const detachedPermission = detachedPermissionModeOptions(store.detachedPermissionTier, providerPermissionModeMap);
-  // 权限一维走 `reload-session` 的家(dsh):活会话也不报档位表(档位在 spawn 那刻进进程),与停下时同一个道理 ——
-  // 按映射表摆出这家的几档、选中记录里那一档;选了就走确认 + 重开(`handleModeChange`)。
-  const reloadPermission = providerCapabilities?.acp.liveSettings?.permission?.channel === 'reload-session'
-    ? detachedPermissionModeOptions(store.recordedPermissionTier, providerPermissionModeMap)
-    : null;
   const platformCatalog = usePlatformModelCatalog(providerId, 'acp', store.sessionId);
   const route = sessionBillingRoute(platformCatalog.sessionSelection);
+  const permissionGroup = usePermissionMenu({ provider: providerId, leg: 'acp', modeMap: providerPermissionModeMap, connectionKnown: route !== 'unknown',
+    machine: machineRegistry.machineOf(store.projectId),
+    model: composerSelectedOptionId({ platformModel: platformCatalog.sessionSelection?.modelId, model: store.model, customModel: runningCustomModel }) ?? null });
   const sessionPermissionOptions = sessionPermissionModeOptions(
-    store.permissionModeOptions ?? detachedPermission?.options ?? reloadPermission?.options ?? null,
+    permissionGroup ? Object.fromEntries(permissionGroup.available.map(({ id, ...choice }) => [id, choice])) : null,
     providerCapabilities?.acp.liveSettings?.permission,
     providerCapabilities?.acp.sessionModes,
-    { route, modeMap: providerPermissionModeMap },
   );
 
   /**
@@ -871,6 +869,7 @@ const ComposerForStore = observer(function ComposerForStore({
   const [catalogMenuSession, setCatalogMenuSession] = useState<string | null>(null);
   const readOwnCatalog = route !== 'own' || !store.session || catalogMenuSession === store.sessionId;
   const harnessCatalog = useHarnessModelCatalog(readOwnCatalog ? providerId : null, 'acp');
+  const modelPreparationNotice = useCodexPreparationNotice(harnessCatalog.preparation);
   const onModelMenuOpen = () => {
     platformCatalog.refresh();
     if (readOwnCatalog) harnessCatalog.refresh();
@@ -939,6 +938,20 @@ const ComposerForStore = observer(function ComposerForStore({
     }),
     [route, runningCustomModel, store.modelOptions, startupOwnOptions, harnessCatalog.state]
   );
+  // 「你的 X 模型」读不到(探针失败)时,这一档在菜单里不消失:组头照旧,下面一句「读取失败」+ 重试 —— 与新建页同一份
+  // 判定(harnessCatalogNotice)。只说「坏了」这一态:没装、没登录各有各的入口,不在这里。
+  // #2982 PR-A 合进来以后收编进 ReadingSlot(读数三态的唯一画法)。
+  const ownCatalogFailure = !ownTier && harnessCatalog.state.kind === 'unavailable'
+    ? harnessCatalogNotice(harnessCatalog.state, composerOwnTierAgentName(agents, providerId), translate)
+    : null;
+  const ownCatalogRetry = ownCatalogFailure
+    ? {
+        groupLabel: composerTierLabel('own', composerOwnTierAgentName(agents, providerId), translate),
+        label: translate(ownCatalogFailure.key, ownCatalogFailure.values),
+        title: ownCatalogFailure.detail ?? '',
+        detail: translate('harnessCatalog.retry'),
+      }
+    : null;
   // 「这条会话现在切得动哪些」的清单:活会话报的;还在起的那段是启动那一步会设的那份(同上)。
   const advertisedModels = useMemo(
     () => Object.keys(store.modelOptions ?? startupOwnOptions ?? {}),
@@ -994,7 +1007,6 @@ const ComposerForStore = observer(function ComposerForStore({
       const recorded = customModelOptionId(runningCustomModel);
       options[recorded] ??= {
         name: runningCustomModel.modelId ?? translate('customModels.noModel'),
-        groupLabel: translate('customModels.title'),
         disabled: true,
         disabledReason: translate('composer.modelNotInCatalog'),
       };
@@ -1490,8 +1502,10 @@ const ComposerForStore = observer(function ComposerForStore({
         onModelChange={handleModelChange}
         modelMenuOpenRequest={modelMenuRequest}
         modelSettingNotice={modelSettingNotice}
-        modelMenuNotice={lockedForTurn ? translate('composer.modelBusy') : undefined}
+        modelMenuNotice={lockedForTurn ? translate('composer.modelBusy') : modelPreparationNotice}
         onModelMenuOpen={onModelMenuOpen}
+        modelUnlock={ownCatalogRetry}
+        onModelUnlock={ownCatalogRetry ? harnessCatalog.retry : undefined}
         // 底部「管理模型 / 升级解锁更多模型」(#7056),三个模型菜单同一份。
         {...composerModelFooter(platformCatalog.models)}
         effortOptions={localizeEffortOptions(sessionEffortOptions, translate)}
@@ -1508,7 +1522,7 @@ const ComposerForStore = observer(function ComposerForStore({
           providerPermissionModeMap
         ), providerId, runningCustomModel ? 'api-key' : costSource, providerPermissionModeMap)}
         selectedPermissionMode={selectedPermissionModeId(
-          store.permissionMode ?? detachedPermission?.selected ?? reloadPermission?.selected,
+          store.permissionMode ?? (store.recordedPermissionTier ? providerPermissionModeMap?.[store.recordedPermissionTier]?.id : undefined),
           sessionPermissionOptions,
           providerPermissionModeMap
         )}
@@ -1974,10 +1988,11 @@ export const AcpChatPanel = observer(function AcpChatPanel({
             actions: [retry],
           };
         default: {
-          // 咕咕这一侧的失败按原因表说、给原因表的按钮(#7103);咕咕以外的(harness / provider)递它的原话(#4657)+ 重试。
+          // 咕咕这一侧的失败按原因表说、给原因表的按钮(#7103);咕咕以外的(harness / provider)按 sessionStartupFailureCopy
+          // 认得的说法给修法,认不得的只说「无法启动」+ 重试:原话留在本机日志,不上界面(见 session-condition.def)。
           const reason = failureReason(error.message);
           const membership = reason !== null && guguReasonCopy(reason).action === 'join-membership';
-          const text = reason ? failureText(error.message, translate, membership ? membershipLock?.modelName : null) : sessionStartupFailureCopy(error.message, translate);
+          const text = reason ? failureText(error.message, translate, membership ? membershipLock?.modelName : null) : sessionStartupFailureCopy(error, translate);
           if (!reason) return { code: 'start-failed', label: text, detail: text, actions: [retry] };
           return {
             code: membership ? 'membership-required' : 'start-failed',

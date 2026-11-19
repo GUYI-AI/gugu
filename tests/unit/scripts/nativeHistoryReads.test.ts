@@ -71,6 +71,15 @@ describe('bounded history read guard (#2062)', () => {
     const text = readFileSync(join(repo, path), 'utf8')
     expect(violations(fixture(text + text, path))).not.toEqual([])
   })
+  it('keeps exactly two legacy tail reads after connecting bounded prefixes and rejects an additional read', () => {
+    const path = `${ROOTS[0]}/sources/jsonl-tail-source.ts`
+    const text = readFileSync(join(repo, path), 'utf8')
+    expect(analyze(path, text).map((finding: { rule: string }) => finding.rule).sort()).toEqual(['readFromStart', 'readSnapshot'])
+    expect(violations(fixture(text, path))).toEqual([])
+    const added = text.replace('await reader.readFromStart(emit);', 'await reader.readFromStart(emit); await reader.readFromStart(emit);')
+    expect(added).not.toBe(text)
+    expect(violations(fixture(added, path))).not.toEqual([])
+  })
   it('changing a grandfathered function changes its fingerprint', () => {
     const a = analyze('source.ts', 'async function load() { return readFile(path) }')[0]
     const b = analyze('source.ts', 'async function load() { const extra = 1; return readFile(path) }')[0]

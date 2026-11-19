@@ -6,6 +6,7 @@ import { createPhoneAssistantWorkOutbox } from './phone-assistant-work-outbox.mj
 import { createPhoneAssistantWorkHistory } from './phone-assistant-work-history.mjs'
 import { createPhoneAssistantWork } from './phone-assistant-work.mjs'
 import { randomUUID } from 'node:crypto'
+import { registerGuguDevice } from '../../../packages/core/src/cloud/deviceRegistration.ts'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { processPendingDeviceCommandsOnce, reportRuntimeInstanceHeartbeat, recoverOrphanedDeviceCommands } from '../../../packages/core/src/cloud/deviceCommands.ts'
@@ -763,13 +764,11 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
       if (!row || row.device_id !== deviceId || row.user_id !== ownerId) throw new Error('手机设备登记信息与当前宿主不一致')
       await reportRuntimeInstanceHeartbeat(cloud.identity, instanceId, deviceId)
       if (stopped || signingOut) return
-      const now = new Date().toISOString()
       // This successful probe can restore heartbeat health; the other startup/auth/RPC gates
       // still have to be true before the device advertises a task runtime.
       const available = startupComplete && authenticated && rpcConnected
       // This host's version is known even while startup/auth/RPC readiness is pending.
-      const { error } = await cloud.identity.from('gugu_devices').upsert({ ...row, status: 'online', last_seen_at: now, updated_at: now, capabilities: { ...row.capabilities, runtimes: available ? ['pi'] : [], host_runtime_capability: 1, host_kind: 'phone', remote_protocol: REMOTE_PROTOCOL_VERSION, min_client_protocol: MIN_CLIENT_PROTOCOL } }, { onConflict: 'device_id' })
-      if (error) throw new Error(error.message)
+      await registerGuguDevice(cloud.identity, { ...row, capabilities: { ...row.capabilities, runtimes: available ? ['pi'] : [], host_runtime_capability: 1, host_kind: 'phone', remote_protocol: REMOTE_PROTOCOL_VERSION, min_client_protocol: MIN_CLIENT_PROTOCOL } }, { expectedDeviceId: deviceId, signal: abort.signal })
       if (stopped || signingOut) return
       if (available && store.state.preparationBackoff) {
         store.state.preparationBackoff.awaitingHeartbeat = false

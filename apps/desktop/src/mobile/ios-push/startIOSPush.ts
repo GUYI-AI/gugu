@@ -1,6 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import { platform } from '@/platform'
-import { readNotificationSettings, subscribeNotificationSettings } from '@/lib/notificationSettings'
+import { readDevicePreferences, subscribeDevicePreferences } from '@/lib/devicePreferences'
 import { rendererLogger } from '@/lib/log'
 import { UI_EVENTS } from '@/lib/uiEvents'
 import { chatDb } from '@/lib/supabase'
@@ -28,7 +28,7 @@ export function startIOSPush(): () => void {
   const synchronize = (force = false) => {
     const owner = getIOSOwnerPublicationSnapshot()
     const host = iosHostRuntime.getSnapshot()
-    const chat = readNotificationSettings()
+    const chat = readDevicePreferences()
     const task = host.settings.status === 'ready' ? host.settings.meta?.value : null
     const binding = owner.status === 'ready' ? owner.binding : null
     const key = JSON.stringify([binding, task, chat, owner.status])
@@ -43,7 +43,7 @@ export function startIOSPush(): () => void {
       && getIOSOwnerPublicationSnapshot().binding?.ownerId === binding.ownerId
     flight = flight.catch(() => undefined).then(async () => {
       if (!valid()) return
-      await native.configure({ expectedBinding: binding, chatEnabled: chat.chatMessages, chatSoundEnabled: chat.sound,
+      await native.configure({ expectedBinding: binding, chatEnabled: chat.chatMessages, chatSoundEnabled: chat.chatSound,
         taskEnabled: task.enabled, taskSoundEnabled: task.sound })
       if (!valid()) return
       const status = await native.status({ expectedBinding: binding })
@@ -51,7 +51,7 @@ export function startIOSPush(): () => void {
     }).catch(() => { if (valid()) log.error({}, 'Notification registration is unavailable; retry on foreground') })
   }
   const stops = [subscribeIOSOwnerPublication(() => synchronize()), iosHostRuntime.subscribe(() => synchronize()),
-    subscribeNotificationSettings(() => synchronize()), platform.subscribeAppForeground(() => { wake(); synchronize(true) },
+    subscribeDevicePreferences(() => synchronize()), platform.subscribeAppForeground(() => { wake(); synchronize(true) },
       () => log.error({}, 'Cannot observe notification foreground recovery'))]
   const listener = native.addListener('reconcile', (hint) => {
     const owner = getIOSOwnerPublicationSnapshot()

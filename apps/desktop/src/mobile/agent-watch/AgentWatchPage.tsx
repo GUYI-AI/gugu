@@ -1,4 +1,4 @@
-import type { FirstPrompt } from './use-timeline-session'
+import type { FirstPrompt } from '../../components/session-watch/use-timeline-session'
 import { messageForUser } from '@/lib/userFacingError';
 import { groupJoinDenialKey } from '@/lib/groupAgentJoin';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -16,9 +16,9 @@ import { navigateMobile, skipMobileTransition } from '../navigateMobile'
 import { requestAlertPermissionOnce, useAgentWatchAlerts, useAgentWatchFocus } from './useAgentWatchAlerts'
 import { rowOpens, useLiveDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import { ProjectsPage } from './ProjectsPage'
-import { SessionTimelinePage } from './SessionTimelinePage'
-import './agent-watch.css'
-import './phone-conversation.css'
+import { SessionTimelinePage } from '../../components/session-watch/SessionTimelinePage'
+import '../../components/session-watch/agent-watch.css'
+import '../../components/session-watch/phone-conversation.css'
 import { PhoneAgentGrants } from '../local-agent/PhoneAgentGrants'
 import { PhoneAgentActions } from '../local-agent/PhoneAgentActions'
 import '@/i18n/registerMobileWorkspaceCatalog'

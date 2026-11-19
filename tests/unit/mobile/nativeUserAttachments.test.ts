@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
-import { nativeUserAttachmentCommands } from '../../../apps/desktop/src/mobile/agent-watch/native-user-attachments'
+import { nativeUserAttachmentCommands } from '../../../apps/desktop/src/components/session-watch/native-user-attachments'
 
 it('resolves the recorded user image for both the thumbnail and the full-size viewer', async () => {
   const ref = { id: 'immutable-image', name: 'photo.png', mimeType: 'image/png' as const }

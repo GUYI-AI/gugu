@@ -6,7 +6,7 @@ import { MessageProvider } from '@gugu/session-ui/react/components'
 import { LocalizationProvider } from '@/i18n'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { PhoneThinkingOptions } from '@/mobile/composer/PhoneThinkingOptions'
-import '@/mobile/agent-watch/create-controls-catalog'
+import '@/components/session-watch/create-controls-catalog'
 import '@/styles/tokens.css'
 
 let root: Root | null = null, host: HTMLDivElement | null = null
