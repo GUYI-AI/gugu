@@ -930,7 +930,7 @@ it('refreshes usage for every saved subscription without selecting an account', 
   expect(control.selected).toBe('');
 });
 it.each([
-  ['environment', '环境变量'], ['config-file', '配置文件'], [undefined, undefined],
+  ['environment'], ['config-file'], [undefined],
 ] as const)('keeps the active native connection without a redundant origin label: %s', async (origin) => {
   await setLocalePreference('zh-CN');
   control.origin = origin;

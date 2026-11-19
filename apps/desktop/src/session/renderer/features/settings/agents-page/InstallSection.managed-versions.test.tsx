@@ -47,7 +47,7 @@ afterEach(async () => {
 
 function copy(id: string, kind: Installation['provenance']['kind'], ours: boolean): Installation {
   return { id, realpath: id, pathEntry: id, isActive: id === state.active, manageable: ours,
-    provenance: { kind, confidence: 'confirmed', ...(ours ? { ours: true } : {}) }, status: 'available', version: '1.3.0' };
+    provenance: { kind, confidence: 'confirmed', ...(ours ? { ours: true } : {}) }, status: 'available', version: '1.3.0', latestVersion: null, updateAvailable: false };
 }
 async function mount() {
   await act(async () => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>
