@@ -584,22 +584,25 @@ export class SessionManager implements InboundRouter {
       return acpErr.providerUnsupported(input.providerId);
     }
 
-    // The provider names the program owning this conversation's native store, once per open.
-    const providerSessionId = input.forkFromProviderSessionId ?? input.providerSessionId;
+    const canStartFreshWhenMissing = !input.forkFromProviderSessionId && input.freshIfProviderSessionMissing === true;
+    let providerSessionId = input.forkFromProviderSessionId ?? input.providerSessionId;
     let sessionProgram: string | null = null;
-    // A conversation absent from every store is answered like an engine's own `session/load` miss: the default
-    // program starts, and the load below raises this error into the provider-session-missing recovery.
-    let storeMissing: unknown;
-    if (providerSessionId && binding.behavior.sessionProgram) {
-      try {
-        sessionProgram = binding.behavior.sessionProgram({ env: this.providerEnv(input), providerSessionId }) ?? null;
-      } catch (error) {
-        if (!isProviderSessionMissingError(error, { resumingProviderSessionId: providerSessionId })) {
-          return acpErr.initializeFailed(toSerializedError(error));
-        }
-        if (input.forkFromProviderSessionId) return acpErr.providerSessionMissing(toSerializedError(error));
-        storeMissing = error;
+    let contextResetReason: string | null = null;
+    try {
+      if (providerSessionId) sessionProgram = binding.behavior.sessionProgram?.({ env: this.providerEnv(input), providerSessionId }) ?? null;
+    } catch (error) {
+      const cause = toSerializedError(error);
+      if (!providerSessionId || !isProviderSessionMissingError(error, { resumingProviderSessionId: providerSessionId })) {
+        return acpErr.initializeFailed(cause);
       }
+      if (!canStartFreshWhenMissing) return acpErr.providerSessionMissing(cause);
+
+      // No native store exists yet. The host expressly allowed this agent's first session.
+      this.deps.logger.warn('SessionManager: provider session missing before launch; starting a new session', {
+        sessionId: input.sessionId, cause,
+      });
+      providerSessionId = null;
+      contextResetReason = 'The saved provider conversation could not be found.';
     }
 
     this.upsertSessionSummary(input, null, {
@@ -633,7 +636,7 @@ export class SessionManager implements InboundRouter {
       input.workspaceId,
       input.sessionId,
     );
-    const record: SessionRecord = this.createRecord(input, input.providerSessionId ?? '');
+    const record: SessionRecord = this.createRecord(input, contextResetReason === null ? input.providerSessionId ?? '' : '');
     record.sessionProgram = sessionProgram;
     let initialQueueAdmitted = false;
     if (input.initialQueue?.length) {
@@ -777,10 +780,7 @@ export class SessionManager implements InboundRouter {
       // `session/new` 的 resume/fork 输入。若先按这个字段走 `session/load`,side chat
       // 会重新绑定到 parent,而下面的 fork metadata 分支永远不可达。分叉身份优先于
       // 这个可选的持久化 session id;持久分叉仍在上面拿到独立 id 后进入 load。
-      let loadProviderSessionId = input.forkFromProviderSessionId ? undefined : input.providerSessionId;
-      // 重放失败、退回 `session/new` 时的原因。有值 = 这条会话在引擎那侧是**新**的,
-      // 转录开头要画一条界告诉用户「往上的内容它没有」(#5381 ④)。
-      let contextResetReason: string | null = null;
+      let loadProviderSessionId = input.forkFromProviderSessionId ? undefined : providerSessionId;
       // 启动期的降级通知(模型用不了 / 模型被换掉)。**不杀会话** —— 会话照常开,
       // 这些事实在 ready 之后画成转录里的一行(spec `session-always-openable`)。
       const startupNotices: StartupNotice[] = [];
@@ -924,7 +924,6 @@ export class SessionManager implements InboundRouter {
 
         try {
           const loadingCell = record.cell;
-          if (storeMissing) throw storeMissing;
           const response = await reattach.open(
             this.buildLoadSessionRequest(input, loadProviderSessionId)
           ).catch((error: unknown): Awaited<ReturnType<typeof reattach.open>> => {
@@ -992,7 +991,7 @@ export class SessionManager implements InboundRouter {
           // #7223 建来常驻、一句没聊过的 agent(宿主说的,见 `freshIfProviderSessionMissing`):引擎没有这条 =
           // 它缺的只是一次还没发生的启动 ⇒ 照下面的降级退回 `session/new`,同一张票、同一条 record,
           // 启动途中排进来的话都还在。聊过的(没带这一格)照旧如实报 missing。
-          const neverRan = missing && !resolvedFork && input.freshIfProviderSessionMissing === true;
+          const neverRan = missing && canStartFreshWhenMissing;
           if (missing && !neverRan) {
             this.removeRecord(input.sessionId, false, false, true);
             await acquired.release();

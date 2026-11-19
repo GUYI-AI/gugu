@@ -1,6 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pluginRegistry } from '@gugu/session-plugins/agents';
+import { expect, it, vi } from 'vitest';
 import { makeAcpHarness, makeStartInput } from '../acp-test-support';
 import { AcpRuntime } from './runtime';
+
+const antigravitySessionProgram = pluginRegistry.get('antigravity')!.behavior.acp!.sessionProgram!;
 
 it('passes native session metadata and the resolved account context to the provider without another connection', async () => {
   const observe = vi.fn().mockResolvedValue(undefined);
@@ -97,52 +103,68 @@ it('selects the native program once and carries it through startup and provider 
   } finally { await rt.stopSession('conv-1'); }
 });
 
-describe('a conversation absent from every native store takes the provider-session-missing recovery', () => {
-  const absent = () => {
-    throw Object.assign(new Error('stored conversation was not found in either store'), { code: -32002 });
-  };
-  function harness() {
-    const spawn = vi.fn((ctx) => ({ command: ctx.cli, args: [], env: {} }));
-    const h = makeAcpHarness({ acpBehavior: {
-      sessionProgram: absent, buildSpawn: spawn,
-      connect: (io, client) => h.agent.behavior.connect(io, client),
-    } });
-    h.agent.initialize.mockResolvedValue({ protocolVersion: 1, agentCapabilities: { loadSession: true } });
-    return { h, spawn };
-  }
 
-  it('a conversation that has run reports provider_session_missing, so the host offers Start again', async () => {
-    const { h } = harness();
-    const rt = new AcpRuntime(h.deps);
-    const result = await rt.resumeSession({ ...makeStartInput({ sessionId: 'conv-chatted' }), providerSessionId: 'stored-native' });
-    expect(result).toEqual({ success: false, error: expect.objectContaining({ type: 'provider_session_missing' }) });
+it.each([
+  ['used conversation', false, 'provider_session_missing'],
+  ['never-run resident agent', true, 'new'],
+])('recovers from Antigravity store lookup: %s', async (_label, fresh, expected) => {
+  const root = await mkdtemp(join(tmpdir(), 'agy-missing-runtime-'));
+  const h = makeAcpHarness({ acpBehavior: {
+    buildSpawn: (ctx) => ({ command: ctx.cli, args: [], env: {} }),
+    connect: (io, client) => h.agent.behavior.connect(io, client),
+    sessionProgram: antigravitySessionProgram,
+  } });
+  h.agent.newSession.mockResolvedValue({ sessionId: 'fresh-native' });
+  const rt = new AcpRuntime(h.deps);
+  const input = makeStartInput({
+    providerSessionId: '11111111-2222-4333-8444-555555555555',
+    freshIfProviderSessionMissing: fresh,
+  });
+  input.runContext.env.GEMINI_HOME = root;
+  try {
+    const result = await rt.resumeSession({ ...input, providerSessionId: input.providerSessionId! });
+    if (expected === 'new') {
+      expect(result).toMatchObject({ success: true, data: { providerSessionId: 'fresh-native' } });
+      expect(h.agent.newSession).toHaveBeenCalledOnce();
+    } else {
+      expect(result).toMatchObject({ success: false, error: { type: expected } });
+      expect(h.agent.newSession).not.toHaveBeenCalled();
+    }
     expect(h.agent.loadSession).not.toHaveBeenCalled();
+    expect(h.agent.prompt).not.toHaveBeenCalled();
+  } finally {
+    await rt.stopSession(input.sessionId);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it.each(['both stores', 'lookup failure'] as const)('rejects %s even with permission to start fresh', async (condition) => {
+  const root = await mkdtemp(join(tmpdir(), 'agy-unknown-runtime-'));
+  const id = '11111111-2222-4333-8444-555555555555';
+  const h = makeAcpHarness({ acpBehavior: {
+    buildSpawn: (ctx) => ({ command: ctx.cli, args: [], env: {} }),
+    connect: (io, client) => h.agent.behavior.connect(io, client),
+    sessionProgram: antigravitySessionProgram,
+  } });
+  const rt = new AcpRuntime(h.deps);
+  const input = makeStartInput({ providerSessionId: id, freshIfProviderSessionMissing: true });
+  input.runContext.env.GEMINI_HOME = root;
+  try {
+    if (condition === 'both stores') {
+      for (const store of ['antigravity-acp', 'antigravity-cli']) {
+        const dir = join(root, store, 'conversations');
+        await mkdir(dir, { recursive: true });
+        await writeFile(join(dir, `${id}.db`), 'fake SQLite');
+      }
+    } else {
+      await writeFile(join(root, 'antigravity-acp'), 'a file where a directory should be');
+    }
+    expect(await rt.resumeSession({ ...input, providerSessionId: id })).toMatchObject({
+      success: false, error: { type: 'initialize_failed' },
+    });
     expect(h.agent.newSession).not.toHaveBeenCalled();
-  });
-
-  it('a never-ran resident agent starts its first session on the default program', async () => {
-    const { h, spawn } = harness();
-    h.agent.newSession.mockResolvedValue({ sessionId: 'session-fresh' });
-    const rt = new AcpRuntime(h.deps);
-    try {
-      const result = await rt.resumeSession({
-        ...makeStartInput({ sessionId: 'conv-never-ran', freshIfProviderSessionMissing: true }),
-        providerSessionId: 'stored-native',
-      });
-      expect(result).toMatchObject({ success: true, data: { providerSessionId: 'session-fresh' } });
-      expect(spawn).toHaveBeenCalledWith(expect.objectContaining({ sessionProgram: null }));
-      expect(h.agent.loadSession).not.toHaveBeenCalled();
-    } finally { await rt.stopSession('conv-never-ran'); }
-  });
-
-  it('an ambiguous or unreadable store still fails startup loudly', async () => {
-    const h = makeAcpHarness({ acpBehavior: {
-      sessionProgram: () => { throw new Error('exists in both stores'); },
-      buildSpawn: () => ({ command: '/fake/node', args: [], env: {} }),
-      connect: (io, client) => h.agent.behavior.connect(io, client),
-    } });
-    const rt = new AcpRuntime(h.deps);
-    const result = await rt.resumeSession({ ...makeStartInput({ sessionId: 'conv-ambiguous', freshIfProviderSessionMissing: true }), providerSessionId: 'stored-native' });
-    expect(result).toEqual({ success: false, error: expect.objectContaining({ type: 'initialize_failed' }) });
-  });
+  } finally {
+    await rt.stopSession(input.sessionId);
+    await rm(root, { recursive: true, force: true });
+  }
 });

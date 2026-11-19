@@ -340,8 +340,8 @@ export interface AcpStorageForkContext {
 export interface IAcpBehavior {
   /**
    * Called once when a stored conversation opens: names the host-resolved program (`AgentRunContext.programs`) that
-   * owns its native store; undefined = the default ACP program. A conversation absent from every store throws the
-   * ACP resource-not-found error, so the runtime's provider-session-missing recovery applies.
+   * owns its native store; undefined = the default ACP program. A conversation absent from every store throws
+   * `MissingProviderSessionError`, so the runtime's provider-session-missing recovery applies.
    */
   sessionProgram?(ctx: { env: Readonly<Record<string, string>>; providerSessionId: string }): string | undefined;
   /** Reuse vendor metadata from a real new/load/fork response; failure must not prevent the conversation opening. */

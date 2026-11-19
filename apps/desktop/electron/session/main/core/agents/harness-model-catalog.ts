@@ -860,7 +860,7 @@ async function probeOnce(
         const state = await Promise.race([
           rpc.readCatalog(cwd, sessionMeta, model, spec.modelsInConfigUpdate, spec.authenticateWhenAdvertised,
             // Own route only: a placeholder or connection pass runs on credentials that are not this account.
-            probeCredentials ? undefined : spec.readSignIn, spec.reviewPermission, spec.modelSource),
+            probeCredentials ? undefined : spec.readSignIn, spec.modelSource, spec.reviewPermission),
           processFailed,
           watchdog.stalled,
         ]);
@@ -996,8 +996,8 @@ class AcpProbeClient extends AcpProbeRpcClient {
     modelsInConfigUpdate?: boolean,
     authenticateWhenAdvertised?: AcpSpawnSpec['authenticateWhenAdvertised'],
     readSignIn?: AcpSpawnSpec['readSignIn'],
-    reviewPermission?: AcpSpawnSpec['reviewPermission'],
     modelSource?: AcpSpawnSpec['modelSource'],
+    reviewPermission?: AcpSpawnSpec['reviewPermission'],
   ): Promise<HarnessCatalogState> {
     const initialized = await this.request('initialize', {
       protocolVersion: 1,

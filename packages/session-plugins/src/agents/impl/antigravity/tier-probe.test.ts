@@ -7,9 +7,9 @@ import { readAntigravityPlan, readAntigravityUsage } from './subscription';
 import { observeAgyTier, tierNameFromAcpResponse } from './acp-tier';
 
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
+afterEach(async () => { vi.unstubAllGlobals(); await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 
-async function fixture(tier: unknown, authRequired = false, tokenFile = true) {
+async function fixture(tier: unknown, authRequired = false) {
   const root = await mkdtemp(join(tmpdir(), 'agy-tier-test-'));
   roots.push(root);
   const cli = join(root, process.platform === 'win32' ? 'agy.cmd' : 'agy');
@@ -18,7 +18,6 @@ async function fixture(tier: unknown, authRequired = false, tokenFile = true) {
   const home = join(root, '.gemini');
   await mkdir(join(home, 'antigravity-cli', 'conversations'), { recursive: true });
   await writeFile(join(home, 'antigravity-cli', 'conversations', 'preserved.db'), 'existing history');
-  if (tokenFile) await writeFile(join(home, 'antigravity-cli', 'antigravity-oauth-token'), 'account-a-fixture');
   await writeFile(script, `#!/usr/bin/env node
 const fs = require('node:fs');
 const path = require('node:path');
@@ -53,16 +52,22 @@ rl.on('line', line => {
   return { ctx, transcript, home, root };
 }
 
+function useTrackedCachePlatform() {
+  if (process.platform === 'linux') {
+    vi.stubGlobal('process', Object.create(process, { platform: { value: 'darwin' } }));
+  }
+}
+
 describe('Antigravity subscription comes from the signed-in CLI ACP response', () => {
   it('recognizes Ultra without an IDE installation and sends no model prompt or authenticate request', async () => {
+    useTrackedCachePlatform();
     const { ctx, transcript } = await fixture({ id: 'g1-ultra-lite-tier', name: 'Google AI Ultra', upgradeUri: 'https://antigravity.google/g1-upgrade' });
     await expect(readAntigravityPlan(ctx)).resolves.toMatchObject({ payer: 'subscription', plan: 'Google AI Ultra' });
     await expect(readAntigravityPlan(ctx)).resolves.toMatchObject({ payer: 'subscription', plan: 'Google AI Ultra' });
     const requests = (await readFile(transcript, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
     expect(requests.map(request => request.method)).toEqual(['initialize', 'initialized', 'session/new']);
     expect(requests.at(-1).params.mcpServers).toEqual([]);
-    // Each read confirms sign-in; only the first opens an ACP session.
-    expect(vi.mocked(ctx.exec).mock.calls.filter(([, args]) => args?.includes('models'))).toHaveLength(2);
+    expect(vi.mocked(ctx.exec).mock.calls.filter(([, args]) => args?.includes('models'))).toHaveLength(1);
   });
 
   it('does not infer Ultra from Carbon access if the server reports no tier', async () => {
@@ -80,6 +85,7 @@ describe('Antigravity subscription comes from the signed-in CLI ACP response', (
   });
 
   it('invalidates the cached tier when the account credential generation changes', async () => {
+    useTrackedCachePlatform();
     const { ctx, transcript, home } = await fixture({ name: 'Google AI Ultra' });
     await readAntigravityPlan(ctx);
     await writeFile(join(home, 'antigravity-cli', 'antigravity-oauth-token'), 'different-account-fixture');
@@ -89,27 +95,46 @@ describe('Antigravity subscription comes from the signed-in CLI ACP response', (
   });
 
   it('uses tier metadata from a real chat open without starting a plan-only ACP process', async () => {
+    useTrackedCachePlatform();
     const { ctx, transcript } = await fixture({ name: 'unused' });
     await observeAgyTier(ctx, { _meta: { antigravity: { tier: { name: 'Google AI Pro' } } } }, ctx.exec);
     await expect(readAntigravityPlan(ctx)).resolves.toMatchObject({ plan: 'Google AI Pro', planAsOf: expect.any(Number) });
     await expect(readFile(transcript)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('a cached tier never outlives a sign-out', async () => {
-    const { ctx } = await fixture({ name: 'unused' });
+  it.skipIf(process.platform === 'win32')('revalidates sign-out when account A only changed in the Linux keyring', async () => {
+    const { ctx, transcript } = await fixture({ name: 'unused' });
+    vi.stubGlobal('process', Object.create(process, { platform: { value: 'linux' } }));
     await observeAgyTier(ctx, { _meta: { antigravity: { tier: { name: 'Google AI Pro' } } } }, ctx.exec);
     vi.mocked(ctx.exec).mockRejectedValue({ code: 1, stderr: 'Please sign in to view available models.' });
     await expect(readAntigravityPlan(ctx)).resolves.toEqual({ payer: 'not-signed-in' });
+    expect(vi.mocked(ctx.exec).mock.calls.filter(([, args]) => args?.includes('models'))).toHaveLength(1);
+    await expect(readFile(transcript)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it.skipIf(process.platform === 'darwin')('without a credential file, an account switch is invisible, so the tier is read live each time', async () => {
-    const { ctx, transcript, home } = await fixture({ name: 'Google AI Ultra' }, false, false);
+  it.skipIf(process.platform === 'win32')('reads account B when Linux credential files have not changed since account A', async () => {
+    const { ctx, transcript } = await fixture({ name: 'Google AI Ultra' });
+    vi.stubGlobal('process', Object.create(process, { platform: { value: 'linux' } }));
     await observeAgyTier(ctx, { _meta: { antigravity: { tier: { name: 'Google AI Pro' } } } }, ctx.exec);
-    await expect(readAntigravityPlan(ctx)).resolves.toMatchObject({ plan: 'Google AI Ultra' });
-    await expect(readAntigravityPlan(ctx)).resolves.toMatchObject({ plan: 'Google AI Ultra' });
-    expect(await readdir(home)).not.toContain('.gugu-cli-tier.json');
-    const requests = (await readFile(transcript, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
-    expect(requests.filter(request => request.method === 'session/new')).toHaveLength(2);
+    await expect(readAntigravityPlan(ctx)).resolves.toMatchObject({ payer: 'subscription', plan: 'Google AI Ultra' });
+    expect(vi.mocked(ctx.exec).mock.calls.filter(([, args]) => args?.includes('models'))).toHaveLength(1);
+    expect(await readFile(transcript, 'utf8')).toContain('session/new');
+  });
+
+  it.skipIf(process.platform === 'win32')('leaves the tier unknown when only an unrelated Linux IDE cache is available', async () => {
+    const { ctx, root } = await fixture(null);
+    const ide = join(root, '.config', 'Antigravity IDE', 'User', 'globalStorage');
+    await mkdir(ide, { recursive: true });
+    await writeFile(join(ide, 'state.vscdb'), 'old IDE fixture');
+    vi.stubGlobal('process', Object.create(process, { platform: { value: 'linux' } }));
+    vi.mocked(ctx.exec).mockResolvedValue({
+      stdout: Buffer.from('g1-pro-tier\x12\x0dGoogle AI Pro', 'latin1').toString('base64'),
+      stderr: '',
+    });
+    await expect(readAntigravityPlan(ctx)).resolves.toMatchObject({
+      payer: 'subscription', plan: 'Google AI', tierUnknown: true,
+    });
+    expect(vi.mocked(ctx.exec).mock.calls.some(([command]) => command === 'sqlite3')).toBe(false);
   });
 
   it('checks authentication before a usage command even when the caller has a cached subscription plan', async () => {
