@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
-  "ref": "6fc0ff280436d499c95c06674f20a0b840e3e56e",
-  "status": "gugu-supabase dev 6fc0ff28 (atomic device registration, gugu-supabase#311; gugu#2863)"
+  "ref": "c5627505af8d2db8c6100f8eb612d15d97046d13",
+  "status": "Backend #267 merged on dev: personal hiding, history clear and undo. Isolated CI fixture; staging deployment acceptance is pending."
 }

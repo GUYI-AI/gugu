@@ -273,7 +273,7 @@ describe('转发 (API 23)', () => {
   }
 
   test('a file\'s menu: Forward first in the use group (as a message\'s menu has it before Download); the host\'s page gets that file', async () => {
-    expect(menuOf('a').slice(0, 4)).toEqual(['转发', '复制链接', '用别的 App 打开', '下载'])
+    expect(menuOf('a').slice(0, 4)).toEqual(['转发', '复制链接', '用其他应用打开', '下载'])
     await menu.pick('转发')
     await until('forward asked', () => gugu.files.forward!.mock.calls.length > 0)
     expect(gugu.files.forward).toHaveBeenLastCalledWith([expect.objectContaining({ id: 'a' })])

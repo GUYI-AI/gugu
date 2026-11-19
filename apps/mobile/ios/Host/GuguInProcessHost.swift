@@ -90,7 +90,7 @@ final class GuguInProcessHost {
     /// supply its verified session context; renderer input cannot create one.
     func readTimeline(context: GuguHostContext, method: String, cursor: [String: Any]? = nil,
                       limit: Int? = nil, beforeTurnId: String? = nil, trim: Bool = true,
-                      pendingRequests: [[String: Any]] = [], queuedPrompts: [[String: Any]] = [], settlements: [[String: Any]] = [],
+                      pendingRequests: [[String: Any]] = [], queuedPrompts: [[String: Any]] = [], settlements: [[String: Any]] = [], retriedJobIds: [String] = [], interruptedInputs: [[String: Any]] = [], inputOrder: [String] = [],
                       completion: @escaping ([String: Any]) -> Void) throws {
         try checkHistoricalIdentity(context)
         guard ["snapshot", "after", "older"].contains(method) else { throw failure("unknown_method", "Unsupported native timeline read") }
@@ -102,6 +102,9 @@ final class GuguInProcessHost {
         let authorized = try ids.map { try readTask(jobId: $0) }
         let key = [context.ownerId, context.installationId, context.agentUserId, context.sessionId, context.contextEpoch, runtimeInstanceId].joined(separator: ":")
         var input: [String: Any] = ["key": key, "sessionId": context.sessionId, "jobs": authorized, "method": method, "trim": trim, "pendingRequests": pendingRequests, "queuedPrompts": queuedPrompts, "settlements": settlements]
+        input["retriedJobIds"] = retriedJobIds
+        input["interruptedInputs"] = interruptedInputs
+        input["inputOrder"] = inputOrder
         if let cursor { input["cursor"] = cursor }; if let limit { input["limit"] = limit }; if let beforeTurnId { input["beforeTurnId"] = beforeTurnId }
         try runtime.readTimeline(input) { [weak self] reply in
             guard let self else { completion(["ok": false, "code": "cancelled", "message": "Native host stopped before projection"]); return }

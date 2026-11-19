@@ -11,8 +11,12 @@ describe('Fast capability for the composer', () => {
     expect(sessionFastMode({ capabilities: capabilitiesFor(providerId), route: 'own', group: native })).toBe(false);
     expect(sessionFastMode({ capabilities: capabilitiesFor(providerId), route: 'own', group: { ...native, selected: 'on' } })).toBe(true);
   });
-  it.each(['platform', 'unknown'] as const)('hides the native group on the %s route', route => {
-    expect(sessionFastMode({ capabilities: capabilitiesFor('codex'), route, group: native })).toBeUndefined();
+  it('offers the actual current-model group on the credit-billed route', () => {
+    expect(sessionFastMode({ capabilities: capabilitiesFor('codex'), route: 'platform', group: native })).toBe(false);
+    expect(sessionFastMode({ capabilities: capabilitiesFor('codex'), route: 'platform', group: { ...native, selected: 'on' } })).toBe(true);
+  });
+  it('hides an unknown billing route', () => {
+    expect(sessionFastMode({ capabilities: capabilitiesFor('codex'), route: 'unknown', group: native })).toBeUndefined();
   });
   it.each(['pi', 'gemini', undefined])('hides an ineligible harness %s', providerId => {
     expect(sessionFastMode({ capabilities: capabilitiesFor(providerId), route: 'own', group: native })).toBeUndefined();

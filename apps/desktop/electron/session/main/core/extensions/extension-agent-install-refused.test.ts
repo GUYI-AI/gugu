@@ -26,4 +26,12 @@ describe("an agent's install of a chat package over an App that did not come fro
     installExtensionFromAttachment.mockResolvedValueOnce({ installed: false, outcome: 'declined', id: 'office', name: 'Office', version: '0.1.3', sha256: 's' });
     await expect(runExtensionAgentAction({ action: 'install_attachment', message_id: 'm-office' })).resolves.toMatchObject({ outcome: 'declined' });
   });
+
+  it('an install nobody answered in time is said to the agent, not left as a bare outcome', async () => {
+    installExtensionFromAttachment.mockResolvedValueOnce({ installed: false, outcome: 'timeout', id: 'office', name: 'Office', version: '0.1.3', sha256: 's' });
+    await expect(runExtensionAgentAction({ action: 'install_attachment', message_id: 'm-office' })).resolves.toMatchObject({
+      outcome: 'timeout',
+      message: expect.stringContaining('Nobody answered the request to install Office in time'),
+    });
+  });
 });

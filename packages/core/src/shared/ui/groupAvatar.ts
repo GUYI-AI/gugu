@@ -2,7 +2,7 @@ import { BODY_COLORS } from './avatarPalette'
 
 // Groups and projects use the same twelve hue families as human and agent defaults.
 export function groupAvatarThemeColors(index: number) {
-  return { color: `var(--avatar-group-text-${index + 1})`, strokeColor: `var(--avatar-group-stroke-${index + 1})`, fill: `var(--avatar-group-fill-${index + 1})` }
+  return { color: `var(--avatar-group-text-${index + 1})`, strokeColor: `var(--avatar-group-stroke-${index + 1})` }
 }
 
 /** Which of the colours a group gets: fixed by its id, so every member and surface sees the same. */
@@ -45,11 +45,10 @@ const GROUP_MARK = '<circle cx="90" cy="82" r="21"/><path d="M52 146c0-21 17-34 
 const escapeXml = (value: string) => value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`)
 
 /**
- * The face as one SVG. `fill` is the surface inside the outline (a CSS colour, so a live face can follow the theme);
- * `px` keeps the outline at least a pixel and a half wide, and uses the group mark below the text threshold.
+ * The face as one SVG: an unfilled circular outline, so the row or page shows through. `px` keeps the outline at least a pixel and a half wide, and uses the group mark below the text threshold.
  * `label` names it for a screen reader.
  */
-export function groupAvatarSvg({ color, strokeColor = color, text = '', fill, px, label }: { color: string; strokeColor?: string; text?: string; fill: string; px: number; label?: string }): string {
+export function groupAvatarSvg({ color, strokeColor = color, text = '', px, label }: { color: string; strokeColor?: string; text?: string; px: number; label?: string }): string {
   const lines = px < TEXT_FROM_PX ? [] : groupAvatarTextLines(text)
   const count = lines.reduce((sum, line) => sum + Array.from(segmenter.segment(line)).length, 0)
   const fontSize = fontSizeFor(lines.join(''), count)
@@ -59,5 +58,5 @@ export function groupAvatarSvg({ color, strokeColor = color, text = '', fill, px
       `<text x="${SIZE / 2}" y="${SIZE / 2}" dominant-baseline="central">${escapeXml(line)}</text>`).join('')}</g>`
     : `<g fill="${color}">${GROUP_MARK}</g>`
   return `<svg xmlns="http://www.w3.org/2000/svg" role="img"${label ? ` aria-label="${escapeXml(label)}"` : ''} viewBox="0 0 ${SIZE} ${SIZE}" width="100%" height="100%">`
-    + `<circle cx="${SIZE / 2}" cy="${SIZE / 2}" r="${(SIZE - stroke) / 2}" fill="${fill}" stroke="${strokeColor}" stroke-width="${stroke}"/>${inner}</svg>`
+    + `<circle cx="${SIZE / 2}" cy="${SIZE / 2}" r="${(SIZE - stroke) / 2}" fill="none" stroke="${strokeColor}" stroke-width="${stroke}"/>${inner}</svg>`
 }

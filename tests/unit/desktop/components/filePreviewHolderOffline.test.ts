@@ -4,6 +4,7 @@
 import { act, createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
+import { queryClient } from '@/lib/replica'
 import { FilePreviewHost } from '../../../../apps/desktop/src/components/chat/filePreviewHost'
 
 const { readBytes, metadata, devices } = vi.hoisted(() => ({
@@ -32,18 +33,34 @@ function Conversation() {
 }
 const kept = (online: boolean, label: string | null) => ({ status: 'ready', revision: { source: 'local', host_online: online, host_label: label, host_device_id: 'mac' } })
 
+const originalQueryOptions = queryClient.getDefaultOptions()
 describe('a project file whose machine is off', () => {
   let harness: ReturnType<typeof createReactHarness>
   let pane: HTMLElement
-  beforeEach(() => { harness = createReactHarness(); pane = document.createElement('section'); document.body.append(pane) })
-  afterEach(() => { harness.cleanup(); pane.remove(); vi.clearAllMocks(); devices.rows = [] })
+  beforeEach(() => { queryClient.setDefaultOptions({ ...originalQueryOptions, queries: { ...originalQueryOptions.queries, retryDelay: 0 } }); harness = createReactHarness(); pane = document.createElement('section'); document.body.append(pane) })
+  afterEach(() => { harness.cleanup(); queryClient.setDefaultOptions(originalQueryOptions); pane.remove(); vi.clearAllMocks(); devices.rows = [] })
   const draw = () => harness.render(createElement(FilePreviewHost.Provider, { value: { target: pane, onOpenChange: () => undefined } }, createElement(Conversation)))
   const settle = () => act(async () => { await new Promise((done) => setTimeout(done, 0)) })
   const open = async () => {
     await draw()
     await act(async () => { harness.container.querySelector('button')!.click() })
-    await act(async () => { await new Promise((done) => setTimeout(done, 0)) })
+    await vi.waitFor(async () => { await act(async () => {}); expect(pane.textContent).not.toBe('') })
   }
+
+  it('does not start another holder read after a pending preview closes and its reader signs out', async () => {
+    let fail!: (error: Error) => void
+    readBytes.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject }))
+    metadata.mockResolvedValue(null)
+    await draw()
+    await act(async () => harness.container.querySelector('button')!.click())
+    await vi.waitFor(() => expect(readBytes).toHaveBeenCalledTimes(1))
+    const readsBeforeClose = metadata.mock.calls.length
+    metadata.mockImplementation(() => { throw new Error('File reader is not signed in') })
+    await harness.render(null)
+    await act(async () => fail(new Error('Transfer ended after the reader closed')))
+    await settle()
+    expect(metadata).toHaveBeenCalledTimes(readsBeforeClose)
+  })
 
   it('names the machine that keeps that version, asked for that version after the read failed', async () => {
     metadata.mockResolvedValue(kept(false, 'Studio Mac'))

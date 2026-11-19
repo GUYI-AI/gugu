@@ -4,6 +4,8 @@ import { page, userEvent } from 'vitest/browser'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import { ChatComposer } from '@gugu/session-ui/react/components'
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
+import { liveSettingOptions } from '@renderer/features/sessions/session-config/live-setting-options'
+import { sessionPermissionModeOptions } from '@renderer/features/sessions/acp/permission-mode-options'
 // 主题层与同目录 composer-panel-family 同一套(理由见那份文件顶部)。
 import '@gugu/session-ui/styles/global'
 import '@gugu/session-ui/theme/theme.css'
@@ -179,7 +181,7 @@ describe('会话里暂时改不了的选项:看得见 · 选不了 · 看得出 
 
   /** 换一份档位表重渲染 —— 这颗 composer 是受控的,锁不锁只能由外面换。 */
   function renderComposer(
-    effortOptions: Record<string, { name: string; disabled?: boolean; disabledReason?: string }>
+    effortOptions: Record<string, { name: string; disabled?: boolean; disabledReason?: string }> | null
   ) {
     root!.render(
       <SessionLocalizationProvider>
@@ -203,6 +205,17 @@ describe('会话里暂时改不了的选项:看得见 · 选不了 · 看得出 
     container?.remove()
     root = null
     container = null
+  })
+
+  it('hides unsupported live effort and permission catalogs while keeping the model picker usable', async () => {
+    const unsupported = { channel: 'unsupported' } as const
+    renderComposer(liveSettingOptions(EFFORTS, unsupported))
+    expect(sessionPermissionModeOptions({ default: { name: 'Default' } }, unsupported)).toBeNull()
+    await openPanel()
+    expect(panel()!.querySelector('[data-slot="composer-effort-row"]')).toBeNull()
+    await userEvent.click(rowByName('Sonnet')!)
+    expect(onModelChange).toHaveBeenCalledWith('claude-sonnet')
+    expect(onEffortChange).not.toHaveBeenCalled()
   })
 
   it('置灰的模型行:在、点不动、看得出、带原因', async () => {

@@ -1,14 +1,33 @@
 import { anySignal } from '@gugu/core/shared/anySignal'
 import { createHash } from 'node:crypto'
+import type { EventEmitter } from 'node:events'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { app, ipcMain, BrowserWindow } from 'electron'
 import { createErrorSummaryReporter } from '../shared/error-summary-reporter'
-import { errorSummaryFromError, sanitizeErrorSummary } from '../shared/error-summary'
+import { errorSummaryFromError, sanitizeErrorSummary, type ErrorSummary } from '../shared/error-summary'
 import { errorSummaryStackLocations } from '../shared/error-summary-stack'
 import { errorSummaryDestination, errorSummaryRequest } from '../shared/error-summary-transport'
 
 declare const __GUGU_ERROR_REPORTING_ENDPOINT__: string | undefined
+
+// Existing summary transport represents the failure area as a reviewed application location.
+// These are fixed source locations, never paths from a user's configuration or an error message.
+const migrationLocations = {
+  inventory: 'apps/desktop/electron/session/main/core/agents/agent-homes.ts',
+  configuration: 'packages/session-core/src/agents/plugins/helpers/agent-home-import.ts',
+  history: 'packages/session-core/src/agents/plugins/helpers/agent-home-import.ts:454:1',
+  marker: 'packages/session-core/src/agents/plugins/helpers/agent-home-import.ts:320:1',
+  'sign-in': 'apps/desktop/electron/session/main/core/agents/harness-connections.ts',
+} as const
+
+// The native main and session host are separate bundles in the same Electron process.
+const migrationFailureEvent = Symbol.for('gugu.error-summary.agent-home-migration')
+const migrationBus: EventEmitter = process
+
+export function reportAgentHomeMigrationFailure(error: unknown, area: keyof typeof migrationLocations): void {
+  migrationBus.emit(migrationFailureEvent, error, area)
+}
 
 export function registerErrorSummaryReporting(deps: {
   eligible: boolean
@@ -70,12 +89,32 @@ export function registerErrorSummaryReporting(deps: {
     if (captureScope() === undefined) return
     reporter.report(errorSummaryFromError(error, metadata(), type, errorSummaryStackLocations(error)))
   })
+  // Device upgrade starts before the renderer restores its account. Retain at most one
+  // sanitized summary per phase in memory and resolve it against the first known consent.
+  const bootMigrationFailures = new Map<keyof typeof migrationLocations, ErrorSummary>()
+  migrationBus.on(migrationFailureEvent, (error: unknown, area: keyof typeof migrationLocations) => safely(() => {
+    if (!Object.hasOwn(migrationLocations, area)) return
+    const current = context()
+    if (current.scope !== undefined && !current.allowed) return
+    const summary = errorSummaryFromError(error, metadata(), undefined, [migrationLocations[area]])
+    if (!summary) return
+    if (current.scope === undefined) bootMigrationFailures.set(area, summary)
+    else reporter.report(summary)
+  }))
   let initialized = false
   let previousOwner = deps.owner()
   ipcMain.on('error-summary:consent-changed', () => safely(() => {
     const owner = deps.owner()
     if (owner === undefined) return
-    if (!initialized) { initialized = true; previousOwner = owner; reporter.start(); return }
+    if (!initialized) {
+      initialized = true
+      previousOwner = owner
+      reporter.start()
+      const buffered = [...bootMigrationFailures.values()]
+      bootMigrationFailures.clear()
+      if (captureScope() !== undefined) for (const summary of buffered) reporter.report(summary)
+      return
+    }
     if (owner !== previousOwner || !context().allowed) reporter.changed()
     previousOwner = owner
   }))

@@ -11,6 +11,9 @@ import {
   type ExtensionTabKind
 } from '@shared/extensions/manifest';
 import { localizedManifestText, localizedPromptText, localizedTabText } from '@shared/extensions/catalog';
+import { fileIconKey } from '@shared/extensions/app-icon';
+import { fileOpenersFor } from '@shared/extensions/file-openers';
+import type { FileOpenContext } from '@shared/extensions/manifest';
 import type { MarketUpdatesSummary } from '@shared/extensions/market';
 import type { ExtensionOrigin } from '@shared/extensions/upgrade';
 import { SIDE_PAGE_WIDTH_PX } from '@renderer/features/tabs/side-width';
@@ -78,7 +81,7 @@ export class InstalledExtensionsStore {
   variants: NonNullable<InstalledExtensionsList['variants']> = {};
   /** Bundles present but unreadable — surfaced rather than silently skipped. */
   invalid: { dirName: string; reason: string }[] = [];
-  /** Tab kind → host-rendered icon. Absent means the tab draws the generic mark. */
+  /** Tab kind → host-rendered icon, and `fileIconKey` → a declared file icon (`fileIcons`). Absent means the generic mark. */
   icons: Record<string, string> = {};
   /** App id → its own icon, host-rendered at the rail's size. Absent means the rail draws its first letter. */
   appIcons: Record<string, string> = {};
@@ -129,6 +132,17 @@ export class InstalledExtensionsStore {
     const chatFile = tab?.chatFile?.toLowerCase();
     const name = fileName?.toLowerCase();
     return !!chatFile && !!name && (chatFile === name || chatFile.startsWith(`${name}.`));
+  }
+
+  /**
+   * The icon the App behind tab `kind` declared for this file (`fileIcons`, by the most specific claim of that tab that
+   * takes it), or null: the host's file mark then, never the App's own icon (owner 10-17). The folder list draws the
+   * same declaration (app-files.ts `claimant`).
+   */
+  fileIcon(kind: string, fileName: string, context: FileOpenContext): string | null {
+    const manifest = this.manifestFor(parseExtensionTabKind(kind)?.extensionId ?? '');
+    const claim = manifest ? fileOpenersFor(fileName, [manifest], context).find((candidate) => candidate.tabKind === kind)?.suffix : undefined;
+    return claim ? this.icons[fileIconKey(kind, claim)] ?? null : null;
   }
 
   /** A default App page uses its localized name; specifically named subpages keep their contribution title. */

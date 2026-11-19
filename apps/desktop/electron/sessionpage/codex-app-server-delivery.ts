@@ -13,7 +13,8 @@
 //
 // 一个 TUI agent 会话 = 一个 `codex app-server --listen <endpoint>` 进程(持有会话)+ 一个 WS 投递客户端。
 // 三件套:①起 app-server ②会话页后端的 pty 起 `codex --remote … resume <tid>`(remoteTuiArgs)③本模块
-// 经 WS 投递(turn/start,忙时 turn/steer)。接进 delivery-bridge 与 provisioning 是上层接线,另见那两处。
+// 经 WS 投递(闲时排进 codex 队列 `thread/queue/add` 再 `thread/queue/start`,忙时 `turn/steer`;本模块从不
+// `turn/start`,见 deliver)。接进 delivery-bridge 与 provisioning 是上层接线,另见那两处。
 
 import crypto from 'node:crypto'
 import WebSocket from 'ws'
@@ -897,6 +898,11 @@ export function codexTuiPermissionArgs(threadStart?: Readonly<Record<string, unk
   const args: string[] = []
   for (const [key, value] of Object.entries(threadStart ?? {})) {
     if (value === undefined || value === null) continue
+    if (key === 'approvalsReviewer') {
+      if (value !== 'user' && value !== 'auto_review') throw new Error('Invalid Codex approvals reviewer');
+      args.push('-c', `approvals_reviewer=${JSON.stringify(value)}`)
+      continue
+    }
     const flag = FLAGS[key]
     if (!flag) {
       throw new Error(
@@ -1002,6 +1008,7 @@ export function codexThreadConfigProcessArgs(opts: {
 }): string[] {
   const THREAD_START_CONFIG_KEYS: Readonly<Record<string, string>> = {
     approvalPolicy: 'approval_policy',
+    approvalsReviewer: 'approvals_reviewer',
     sandbox: 'sandbox_mode',
   }
   const isScalar = (value: unknown): boolean =>
@@ -1142,7 +1149,7 @@ export function describeCodexStartFailure(
   const spoken = spokenByCodex(source, codexBin)
   const summary =
     spoken && code === 'ENOENT'
-      ? `Codex app-server 启动失败：找不到可执行文件 "${codexBin}"。请安装 Codex CLI，确保桌面 App 的 PATH 能解析该路径，然后重试。\n${describePathHydration()}`
+      ? `Codex app-server 启动失败：找不到可执行文件 "${codexBin}"。请安装 Codex CLI，确保桌面端的 PATH 能解析该路径，然后重试。\n${describePathHydration()}`
       : `Codex app-server 启动失败（${codexBin}）：${source.message}`
   const stderrTail = stderr.trim()
   const stderrDetails = stderrTail ? `Codex stderr:\n${stderrTail}` : ''
@@ -1689,7 +1696,8 @@ export class CodexAppServerSession {
    * opts.extraArgs 拼进 app-server 的 argv,承载 adapter 物化的模型配置；权限由
    * opts.threadStart 进入 thread/start，避免进程 argv 遮住线程设置。MCP 由
    * thread-open 原生 `config` map 与 child env 承载，prompt 块则经 developerInstructions 进入原生
-   * thread-open RPC。Codex 继续使用用户真实 `CODEX_HOME` 读取 auth/跨 run 状态；workspace trust 由 capability bundle 的 session-owned overlay 与 `-c` 覆盖提供，用户全局 config.toml 不被改写。这里不补 provider `buildCommand` 的 `notify`：本路径
+   * thread-open RPC。Codex 从托管 `CODEX_HOME` 读取配置和跨会话状态。工作目录信任由进程级 `-c` 提供。
+   * 这里不补 provider `buildCommand` 的 `notify`：本路径
    * 直接消费 WS `turn/started` / `turn/completed` 驱动会话页后端的 lifecycle,且 divert 时不会加载会话页的 CLI
    * hooks,所以 app-server 进程不带 `--dangerously-bypass-hook-trust`;用户自己的 hook 由新建 thread 的 TUI
    * 按权限档处理(见 codexTuiPermissionArgs)。
@@ -2160,11 +2168,14 @@ export class CodexAppServerSession {
   }
 
   /**
-   * 投递一条消息作为**新一轮**(spec ⑧「作为新一轮输入交付」)。fresh thread 的第一条投递直接
-   * turn/start，因为 Codex 在首条用户消息前不允许 thread/read includeTurns。已 materialize 的 thread 先读
-   * inProgress turn:忙 → turn/steer 中途插入(owner #85);闲 → turn/start。steer 输给正在结束的 turn 竞态失败则回退 turn/start。
+   * 投递一条消息作为**新一轮**(spec ⑧「作为新一轮输入交付」)。TUI 未载入 / 未接入,或 thread 尚未 materialize
+   * (Codex 在首条用户消息前不允许 thread/read includeTurns)⇒ 不读,直接排队。已 materialize 的 thread 先读
+   * inProgress turn:忙 → turn/steer 中途插入(owner #85);闲 → 排队。steer 输给正在结束的 turn 竞态失败也排队。
+   * 「排队」= enqueue:`thread/queue/add`,再 `thread/queue/start` 显式起咕咕这一条(上一轮被打断时队列不自动续跑)。
+   * 本模块从不 `turn/start`。
    */
-  async deliver(text: string): Promise<CodexTurnRef> {
+  async deliver(text: string, beforeAdmission?: () => void): Promise<CodexTurnRef> {
+    beforeAdmission?.()
     if (this.terminalError) throw this.terminalError
     const client = this.client
     if (!client || !this.threadId) throw new Error('codex app-server 会话未建立(fail-loud)')
@@ -2172,7 +2183,7 @@ export class CodexAppServerSession {
     // @@@6112 TUI 还没载入 / 咕咕还没接入:❌ 不读、不起轮,直接交给 codex 队列 —— 服务端在 TUI
     // 载入之后才起这一轮,TUI 不会「中途加入」(实测:先排队、后 TUI resume,3/3 干净)。
     const attached = this.adoptedThreadAttachedSettled()
-    if (!attached) return this.enqueue(client, this.threadId, input)
+    if (!attached) return this.enqueue(client, this.threadId, input, beforeAdmission)
     let activeTurnId: string | null = null
     if (this.threadMaterialization !== 'unmaterialized' && !this.threadRefusesTurnsRead) {
       try {
@@ -2186,6 +2197,7 @@ export class CodexAppServerSession {
         else this.threadMaterialization = 'unmaterialized'
       }
     }
+    beforeAdmission?.()
     if (activeTurnId) {
       try {
         await client.rpc('turn/steer', {
@@ -2196,14 +2208,14 @@ export class CodexAppServerSession {
         deliveryLog.info({ threadId: this.threadId, turnId: activeTurnId }, 'codex delivery bytes accepted by app-server steer channel')
         return { turnId: activeTurnId }
       } catch {
-        // steer 竞态输给正在结束的 turn → 回退新起一轮。
+        // steer 竞态输给正在结束的 turn → 回退排队(enqueue,`thread/queue/add`)。
       }
     }
     // @@@6112 空闲时 ❌ 不 turn/start:外部程序往一个 TUI 在显示的会话里送消息,官方的路是
     // `thread/queue/add`(codex 自带的 `codex queue` 命令、Remote Control 都走它)—— 由服务端在
     // thread 空闲时自己起轮。咕咕自己 turn/start 是「我就是界面」的客户端才用的那条路。
     // 注意官方语义:上一轮被中断(用户按了 Esc)后,队列**不自动续跑**,等人发话。
-    return this.enqueue(client, this.threadId, input)
+    return this.enqueue(client, this.threadId, input, beforeAdmission)
   }
 
   /** 接入已完成 → true;还没开始 / 还在进行 → false;失败 → 抛(fail-loud)。非 tuiLoads 恒为 true。 */
@@ -2218,7 +2230,9 @@ export class CodexAppServerSession {
     client: CodexRpcClient,
     threadId: string,
     input: Array<Record<string, unknown>>,
+    beforeAdmission?: () => void,
   ): Promise<CodexTurnRef> {
+    beforeAdmission?.()
     const clientUserMessageId = crypto.randomUUID()
     let entry!: { submissionId: string | null; resolve: (turnId: string) => void; reject: (error: unknown) => void }
     const dispatched = new Promise<string>((resolve, reject) => { entry = { submissionId: null, resolve, reject } })
@@ -2424,7 +2438,7 @@ export function killAllCodexAppServerProcessGroupsSync(): void {
 
 /**
  * codex-TUI agent 的投递目标(delivery-bridge 的第二 driver 用):把 gugu agentUserId 映射到它的 codex
- * app-server 会话,`injectMessage` = 往该会话投一条新一轮(turn/start,忙时 steer)。实现 SessionpageDeliveryTarget:
+ * app-server 会话,`injectMessage` = 往该会话投一条新一轮(闲时排进 codex 队列,忙时 steer;见 deliver)。实现 SessionpageDeliveryTarget:
  * 未映射 → `liveSessionIdByAgent` 返回 null(delivery-bridge 透传给下一 target / inner);映射了但会话死 →
  * `tryInjectMessage` 返回 false,上层保留本机债务(❌ 无 pty 兜底)。回复由 agent 经注入的
  * gugu MCP 自发回(与 ACP 路一致),此处不写回、不做 NO_REPLY。
@@ -2539,8 +2553,9 @@ export class CodexAppServerRegistry implements SessionpageDeliveryTarget {
   async tryInjectSessionMessage(
     threadId: string,
     message: { id: string; text: string; kind?: 'ordinary' | 'session-direct' },
+    beforeAdmission?: () => void,
   ): Promise<false | SessionpageTurnReceipt> {
-    return this.tryInjectMessage(threadId, message.text)
+    return beforeAdmission ? this.tryInjectMessage(threadId, message.text, beforeAdmission) : this.tryInjectMessage(threadId, message.text)
   }
 
   /**
@@ -2581,14 +2596,14 @@ export class CodexAppServerRegistry implements SessionpageDeliveryTarget {
     })
   }
 
-  async tryInjectMessage(threadId: string, text: string): Promise<false | SessionpageTurnReceipt> {
+  async tryInjectMessage(threadId: string, text: string, beforeAdmission?: () => void): Promise<false | SessionpageTurnReceipt> {
     const session = [...this.byAgent.values()]
       .map((entry) => entry.session)
       .find((candidate) => candidate.threadId === threadId)
     if (!session?.isLive()) return false
     try {
       deliveryLog.info({ threadId }, 'codex tryInjectMessage entered provider delivery')
-      const turn = await session.deliver(text)
+      const turn = await (beforeAdmission ? session.deliver(text, beforeAdmission) : session.deliver(text))
       deliveryLog.info({ threadId, turnId: turn.turnId, queued: Boolean(turn.queued) }, 'codex tryInjectMessage reached provider delivery')
       if (turn.queued) {
         // 消息已在 codex 自己的队列里(TUI 可见)。completion 跟到它**真正起成的那一轮**结束为止:

@@ -6,3 +6,25 @@
 .gg-settings-detail:not([data-mobile]) .gg-account-login-methods + .gg-referral-account-preview .gg-settings-row {
   border-top: 1px solid var(--border-color);
 }
+
+.gg-referral-dialog{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden}
+.gg-referral-dialog-heading{display:flex;flex:none;align-items:center;justify-content:space-between;padding:20px 20px 0 24px}
+.gg-referral-dialog-heading h2{margin:0;font-size:var(--font-title);font-weight:600}
+.gg-referral-panel{display:flex;flex-direction:column;gap:16px;min-height:0;height:100%;overflow:hidden;padding:20px 24px 24px}
+.gg-referral-code-card{flex:none;border-radius:var(--radius-surface);background:var(--muted);padding:18px 16px 16px;text-align:center}
+.gg-referral-code{display:block;font-size:30px;font-weight:600;letter-spacing:3px;overflow-wrap:anywhere}
+.gg-referral-note{margin:6px 0 0;font-size:var(--font-caption);line-height:1.5;color:var(--muted-fg)}
+.gg-referral-copy{display:flex;justify-content:center;gap:8px;margin-top:14px}
+.gg-referral-stats{display:flex;flex:none}
+.gg-referral-stats>div{display:flex;flex:1;flex-direction:column;gap:2px}
+.gg-referral-stats strong{font-size:var(--font-heading);font-weight:600}
+.gg-referral-stats span,.gg-referral-activity-heading{font-size:var(--font-caption);color:var(--muted-fg)}
+.gg-referral-activity-heading{display:flex;align-items:center;justify-content:space-between;flex:none}
+.gg-referral-activity{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.gg-referral-activity-row{display:flex;align-items:center;gap:10px;padding:9px 0;font-size:var(--font-body)}
+.gg-referral-activity-row+.gg-referral-activity-row{border-top:1px solid var(--border-subtle)}
+.gg-referral-friend{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gg-referral-activity time{font-size:var(--font-caption);color:var(--muted-fg);white-space:nowrap}
+.gg-referral-paid,.gg-referral-pending{margin-left:auto;font-size:var(--font-caption);white-space:nowrap}
+.gg-referral-paid{font-weight:600;color:var(--green)}
+.gg-referral-pending{color:var(--muted-fg)}

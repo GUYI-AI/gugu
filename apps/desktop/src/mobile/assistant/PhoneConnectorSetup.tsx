@@ -28,7 +28,7 @@ import { translateSessionMessage } from '@/session/renderer/localization/locale-
 import { githubAuthDeviceCodeChannel } from '@/session/shared/events/githubEvents'
 import { machineRpc, onMachineEvent } from '../agent-watch/sessionpage-rpc'
 import { phoneAssistantAuthorization } from './phoneAssistantAuthorization'
-import type { PhonePageProps } from './MobileAssistantApp'
+import type { PhoneConnectorScope } from './PhoneConnectors'
 import { ReadFailed,ReadingNow } from './PhoneMachineView'
 import { CloudGate, ConnectorIcon } from './PhoneConnectors'
 import { createNativeFetch } from './phoneNativeFetch'
@@ -84,7 +84,7 @@ export function PhoneConnectorSetupPage({
   integrations,
   id,
   go,
-}: PhonePageProps & { integrations: Integrations; id: string }) {
+}: PhoneConnectorScope & { integrations: Integrations; id: string }) {
   const { t } = useTranslation('assistant')
   const name = assistant.display_name
   const selected = integrations.data?.items.find(item => item.id === id)

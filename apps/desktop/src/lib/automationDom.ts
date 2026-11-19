@@ -66,7 +66,7 @@ export const AUTOMATION_TEST_IDS = {
   sidebarContactsNav: 'sidebar-contacts-nav',
   sidebarAppsNav: 'sidebar-apps-nav',
   sidebarDock: 'sidebar-dock',
-  sidebarLibraryNav: 'sidebar-library-nav',
+  sidebarMoreApps: 'sidebar-more-apps',
   sidebarAssistantNav: 'sidebar-assistant-nav',
   sidebarSettingsNav: 'sidebar-settings-nav',
   mobileAssistantNav: 'mobile-assistant-nav',

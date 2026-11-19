@@ -1,13 +1,14 @@
 import { useLayoutEffect, useState } from 'react'
 
-const COMPOSER = '[data-slot="composer"]'
-// Product spacing: the notice stack ends 8px above every visible composer.
+// The phone bar's actual box includes its token height, lower gap and safe area.
+const ANCHORS = '[data-slot="composer"], [data-phone-shell] [data-phone-tabbar]'
+// Product spacing: the notice stack ends 8px above every visible composer or phone bar.
 const COMPOSER_GAP = 8
 
 export function readNoticeComposerBottom(): number | undefined {
   let top = window.innerHeight
   let visible = false
-  for (const composer of document.querySelectorAll<HTMLElement>(COMPOSER)) {
+  for (const composer of document.querySelectorAll<HTMLElement>(ANCHORS)) {
     // Retained task/chat surfaces keep their layout while content-visibility hides them.
     if (!composer.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue
     const rect = composer.getBoundingClientRect()
@@ -24,7 +25,7 @@ export function readNoticeComposerBottom(): number | undefined {
 const hidingStyle = (style: string | null) => style?.match(/(?:content-)?visibility\s*:[^;]*/g)?.join(';') ?? ''
 const showsOrHides = (record: MutationRecord) => hidingStyle(record.oldValue) !== hidingStyle((record.target as Element).getAttribute('style'))
 
-/** The single outlet follows actual composer geometry, including retained/split surfaces. */
+/** The single outlet follows actual composer/navigation geometry, including retained/split surfaces. */
 export function useNoticeComposerBottom(active: boolean): number | undefined {
   const [bottom, setBottom] = useState<number>()
   useLayoutEffect(() => {
@@ -34,7 +35,7 @@ export function useNoticeComposerBottom(active: boolean): number | undefined {
     const resize = new ResizeObserver(() => measure())
     const measure = () => {
       const next = new Set<Element>()
-      for (const composer of document.querySelectorAll(COMPOSER)) {
+      for (const composer of document.querySelectorAll(ANCHORS)) {
         // A parent can move the composer without changing its own size (pane/layout changes).
         for (let element: Element | null = composer; element; element = element.parentElement) next.add(element)
       }
@@ -44,7 +45,7 @@ export function useNoticeComposerBottom(active: boolean): number | undefined {
       setBottom((previous) => previous === value ? previous : value)
     }
     const schedule = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; measure() }) }
-    const containsComposer = (node: Node) => node instanceof Element && (node.matches(COMPOSER) || node.querySelector(COMPOSER) !== null)
+    const containsComposer = (node: Node) => node instanceof Element && (node.matches(ANCHORS) || node.querySelector(ANCHORS) !== null)
     const mutations = new MutationObserver((records) => {
       // Streaming transcript rows and Sonner's own style updates do not change the anchor.
       if (records.some((record) => record.type === 'attributes'

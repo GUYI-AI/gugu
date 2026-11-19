@@ -1,4 +1,5 @@
 import { runInAction } from 'mobx';
+import type { TabEntry } from '@renderer/features/tabs/core/tab-provider';
 import type { sessionTabView } from '../session-tab-registry';
 
 type SessionPaneLayout = ReturnType<typeof sessionTabView.createPaneLayoutStore>;
@@ -22,11 +23,15 @@ export function findChatPaneId(paneLayout: SessionPaneLayout): string | undefine
   )?.paneId;
 }
 
+export function isSessionConversationTab(entry: TabEntry, sessionId: string): boolean {
+  return CHAT_TAB_KINDS.has(entry.kind) && (entry.state as { sessionId?: string } | undefined)?.sessionId === sessionId;
+}
+
 /** Resolve only the named conversation's identity; no active-pane or neighbouring fallback. */
 export function sessionConversationTabId(paneLayout: SessionPaneLayout, sessionId: string): string | null {
   for (const { pane } of paneLayout.groups) {
     for (const entry of pane.entries.values()) {
-      if (CHAT_TAB_KINDS.has(entry.kind) && (entry.state as { sessionId?: string })?.sessionId === sessionId) return entry.tabId;
+      if (isSessionConversationTab(entry, sessionId)) return entry.tabId;
     }
   }
   return null;

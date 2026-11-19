@@ -517,6 +517,7 @@ export function ChatComposer({
   const [hasText, setHasText] = useState(false);
   const [phoneSubmitting, setPhoneSubmitting] = useState(false);
   const phoneSubmittingRef = useRef(false);
+  const stopPointer = useRef<number | null>(null);
   // 底排放不下时按档把标签收成图标(渐进披露),见 use-toolbar-disclosure.ts
   const toolbarDisclosure = useToolbarDisclosure();
   const [dragActive, setDragActive] = useState(false);
@@ -908,7 +909,7 @@ export function ChatComposer({
             ) : promptEditor}
           </div>
 
-          {phoneCapsule && (phoneEditor.multiline || phoneEditor.expanded) && <Button variant="ghost" size="base" icon
+          {phoneCapsule && (phoneEditor.attachmentRow || phoneEditor.expanded) && <Button variant="ghost" size="base" icon
             data-phone-editor-toggle="" aria-expanded={phoneEditor.expanded}
             aria-label={translate(phoneEditor.expanded ? 'composer.collapseEditor' : 'composer.expandEditor')}
             onPointerDown={(event) => event.preventDefault()} onMouseDown={(event) => event.preventDefault()}
@@ -949,10 +950,11 @@ export function ChatComposer({
                   onValueChange={(id) => onPermissionModeChange?.(id)}
                   itemToKey={(item) => item.id}
                   itemToLabel={(item) => item.name}
+                  isItemDisabled={(item) => item.disabled === true}
                   disabled={disabled}
                   searchPlaceholder={translate('common.search')}
                   className={permissionModeIsFirst ? styles.permissionModeTrigger : undefined}
-                  contentStyle={{ minWidth: '18rem' }}
+                  contentStyle={{ minWidth: '12rem' }}
                   // 面板自己不留内距 —— 与模型/agent 面板同一族,见 @@@composer-panel-row。
                   contentClassName={styles.composerPanelContent}
                   // 底排不画下拉箭头 —— 见 composer-model-menu.tsx 的 @@@composer-no-chevron。
@@ -982,7 +984,7 @@ export function ChatComposer({
                           ❌ 但不能整枚删掉:档 2 起名字被藏,图标是这颗控件仅剩的身份 ——
                           删了那一档就是个空药丸。形状随危险性换(⚠ / 盾)而不只换色调:
                           余光里形状比色相好认,而这是底排唯一一个能造成破坏的控件。 */}
-                      {selected?.destructive ? (
+                      {selected?.icon ? <span className={styles.permissionModeProvidedIcon}>{selected.icon}</span> : selected?.destructive ? (
                         <CircleAlert
                           className={styles.permissionModeIcon}
                           style={{ width: '0.75rem', height: '0.75rem', flexShrink: 0 }}
@@ -998,15 +1000,18 @@ export function ChatComposer({
                       </span>
                     </span>
                   )}
+                  renderItemDetail={(item) => item.description || item.detail ? (
+                    <div className={styles.permissionModeDetail} data-slot="permission-mode-detail">
+                      {item.description && <div>{item.description}</div>}
+                      {item.detail && <div className={styles.permissionModeCost}>{item.detail}</div>}
+                    </div>
+                  ) : null}
                   renderItem={(item) => (
                     <div
                       className={styles.composerPanelItemText}
                       data-permission-mode-id={item.id}
                     >
                       <span className={styles.composerPanelItemName}>{item.name}</span>
-                      {item.description && (
-                        <span className={styles.composerPanelItemDesc}>{item.description}</span>
-                      )}
                     </div>
                   )}
                 />
@@ -1071,7 +1076,15 @@ export function ChatComposer({
                     data-phone-send={phoneCapsule || undefined}
                     disabled={disabled || stopDisabled}
                     aria-busy={stopDisabled || undefined}
-                    onClick={onStop}
+                    onPointerDown={phoneActions ? (event) => { stopPointer.current = event.pointerId; } : undefined}
+                    onPointerCancel={phoneActions ? () => { stopPointer.current = null; } : undefined}
+                    onClick={phoneActions ? (event) => {
+                      // A touch begun on pending Send can be retargeted here when the commit ends.
+                      const pointerId = 'pointerId' in event.nativeEvent ? event.nativeEvent.pointerId : undefined;
+                      const startedHere = stopPointer.current !== null && (pointerId === undefined || stopPointer.current === pointerId);
+                      stopPointer.current = null;
+                      if (startedHere || event.detail === 0) onStop?.();
+                    } : onStop}
                     aria-label={translate('composer.stopGeneration')}
                   >
                     <span className={styles.stopIcon} aria-hidden="true" />

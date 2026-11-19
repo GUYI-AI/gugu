@@ -6,9 +6,9 @@ import { NEW_SESSION_DRAFT_KEY, composerDrafts } from '@renderer/features/sessio
 import { rpc } from '@renderer/lib/ipc';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { LIBRARY_TAB_LABELS } from '@renderer/features/library/library-view';
+import { openShellSettings } from '@renderer/lib/open-shell-settings';
 import { localizedManifestText } from '@shared/extensions/catalog';
-import { hostLinkTarget } from '@shared/extensions/host-links';
+import { hostLinkTarget, type HostLink } from '@shared/extensions/host-links';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
 import { AppSettingsForm } from './app-settings-form';
 import { installedExtensionsStore } from './installed-extensions-store';
@@ -17,6 +17,14 @@ import './panel/app-store.css';
 import './app-settings-page.css';
 
 type Tab = 'overview' | 'settings';
+
+const hostLinkLabels = {
+  'library:prompts': 'prompts.title',
+  'library:agents': 'extensions.tabAgents',
+  'library:integrations': 'extensions.tabConnectors',
+  'library:mcp': 'mcpLibrary.title',
+  'library:themes': 'themes.title',
+} as const satisfies Record<HostLink, string>;
 
 /**
  * Resident host page of an App without a page of its own (#7289). Overview = what to ask an agent; Settings = what its author
@@ -55,8 +63,11 @@ export const AppSettingsPage = observer(function AppSettingsPage({ manifest, act
       {manifest.contributes.hostLinks ? <div className="mk-asks tool-app-links" data-testid="app-settings-host-links">
         {manifest.contributes.hostLinks.map(link => {
           const target = hostLinkTarget(link);
-          return <button type="button" className="mk-ask" key={link} data-testid={`app-settings-host-link-${link}`} onClick={() => navigate(target.view, target.params)}>
-            <span>{t('extensions.hostLinkLibrary', { page: t(LIBRARY_TAB_LABELS[target.params.tab]) })}</span>
+          return <button type="button" className="mk-ask" key={link} data-testid={`app-settings-host-link-${link}`} onClick={() => {
+            if (target.view === 'settings') openShellSettings(target.section);
+            else navigate(target.view, target.params);
+          }}>
+            <span>{t('extensions.hostLinkPage', { page: t(hostLinkLabels[link]) })}</span>
             <ArrowRight className="size-3.5" />
           </button>;
         })}

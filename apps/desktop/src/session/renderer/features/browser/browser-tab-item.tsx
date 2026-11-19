@@ -27,10 +27,12 @@ function pagePath(url: string | undefined): string {
 // is localized.
 export function browserTabLabel(
   session: BrowserSessionSnapshot | undefined,
-  translate: ProjectsTranslate
+  translate: ProjectsTranslate,
+  workspaceStart = false,
 ): string {
-  if (!session) return translate('browser.tabFallbackTitle');
-  if (session.currentUrl === 'about:blank') return translate('browser.tabFallbackTitle');
+  if (!session || session.currentUrl === 'about:blank') {
+    return translate(workspaceStart ? 'browser.workspaceTabTitle' : 'browser.tabFallbackTitle');
+  }
   if (session.title.trim()) return session.title.trim();
   try {
     // file: 网页没有 host:退回文件名,❌ 空串(打不开的 file: 页,页签上一个字都没有)。
@@ -50,8 +52,8 @@ export const BrowserTabBarItem = observer(function BrowserTabBarItem({
   // 两个目录下各一个没有 title 的 index.html:与文件页签同一条规矩,补上区分它们的那截路径(file-tab-label.ts)。
   const browserTabs = host.resolvedTabs.filter((t): t is ResolvedTab<BrowserTabResource> => t.kind === 'browser');
   const { name: label, hint } = fileTabLabels(
-    browserTabs.map((t) => ({ path: pagePath(t.resource.session?.currentUrl), title: browserTabLabel(t.resource.session, translate) }))
-  )[browserTabs.findIndex((t) => t.tabId === tab.tabId)] ?? { name: browserTabLabel(session, translate) };
+    browserTabs.map((t) => ({ path: pagePath(t.resource.session?.currentUrl), title: browserTabLabel(t.resource.session, translate, t.resource.workspaceStart) }))
+  )[browserTabs.findIndex((t) => t.tabId === tab.tabId)] ?? { name: browserTabLabel(session, translate, tab.resource.workspaceStart) };
 
   return (
     <GenericTabItem
@@ -72,7 +74,7 @@ export const BrowserTabBarItem = observer(function BrowserTabBarItem({
 
 export function BrowserTabBarItemDragPreview({ tab }: { tab: ResolvedTab<BrowserTabResource> }) {
   const { translate } = useSessionMessages();
-  const label = browserTabLabel(tab.resource.session, translate);
+  const label = browserTabLabel(tab.resource.session, translate, tab.resource.workspaceStart);
   return (
     <GenericTabDragPreview
       preSlot={<Globe className="size-3 shrink-0 text-foreground-muted" />}

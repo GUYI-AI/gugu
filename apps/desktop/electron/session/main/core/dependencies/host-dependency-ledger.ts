@@ -62,7 +62,7 @@ export async function buildHostDependencyLedgerSnapshot(
         hostDependencyStore.getInstallRecord('local', id),
         hostDependencyStore.getLastCustom('local', id),
         // 伴随程序按属主那一家的环境探(#6335)。
-        resolveLocalAgentSpawnEnv(descriptor.ownerId ?? id).then(
+        resolveLocalAgentSpawnEnv(descriptor.ownerId ?? id, 'version-probe').then(
           (probeEnv) => ({ probeEnv }),
           (error: unknown) => ({ probeError: `${descriptor.ownerId ?? id}: ${error instanceof Error ? error.message : String(error)}` }),
         ),

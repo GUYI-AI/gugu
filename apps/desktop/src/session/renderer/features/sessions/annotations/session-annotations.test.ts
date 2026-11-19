@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { annotationPrompt, SessionAnnotations, sessionAnnotations, type BrowserAnnotationSelection } from './session-annotations';
 import { sendComposerInput } from '../acp/send-composer-input';
-import { annotationImageId, currentAnnotationImages } from './annotation-images';
+import { annotationImageId, currentAnnotationImages, prepareAnnotationImages } from './annotation-images';
 import type { SupportedLocale } from '@gugu/session-shared/format';
 
 const page = (annotation = 'Revise this paragraph'): BrowserAnnotationSelection => ({
@@ -122,4 +122,47 @@ describe('the conversation annotation draft', () => {
     expect(prompt.match(/^## (?:User Comment \d+|浏览器批注 \d+：)$/gm)).toEqual([locale === 'zh-CN' ? '## 浏览器批注 1：' : '## User Comment 1']);
     for (const value of [`https://example.org/${hostile}`, `#${hostile}`, `p#${hostile}`, hostile]) expect(prompt).toContain(JSON.stringify(value));
   });
+});
+
+it('composes the three sources in draft order and uploads only actual page evidence', async () => {
+  const draft = new SessionAnnotations();
+  const file = draft.add({ kind: 'file', path: 'docs/pricing.txt', startLine: 3, endLine: 4,
+    text: 'First line\n## Still literal file text', annotation: 'Check both lines' });
+  const browser = draft.add(page());
+  draft.add({ kind: 'diff', path: 'src/sample.ts', turnId: 'turn1', patchIndex: 1, rowIndex: 4,
+    oldLine: 8, text: 'const prior = 1;', annotation: 'Explain removal' });
+  expect(draft.items.map(item => item.number)).toEqual([1, 2, 3]);
+  const sent = annotationPrompt('', draft.items);
+  expect(sent.match(/^## (?:User Comment \d+|Selection \d+ \(file\))$/gm)).toEqual(['## Selection 1 (file)', '## User Comment 2', '## User Comment 3']);
+  expect(sent).toContain('# Selected text:\n\n## Selection 1 (file)\n');
+  expect(JSON.parse(sent.split('\n').find(line => line.startsWith('{"path":'))!)).toEqual({
+    path: 'docs/pricing.txt', startLine: 3, endLine: 4, text: 'First line\n## Still literal file text', annotation: 'Check both lines',
+  });
+  expect(sent).toContain('File path: "src/sample.ts"\nRecorded patch 2\nOld line: 8');
+  expect(sent).not.toContain('New line:');
+  const upload = vi.fn(async () => true);
+  prepareAnnotationImages(draft.items, { has: () => false, add: upload });
+  expect(upload).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ id: annotationImageId(browser.id) }), browser.screenshot);
+  draft.remove(file.id);
+  expect(draft.items.map(item => item.number)).toEqual([2, 3]);
+});
+
+it.each<SupportedLocale>(['en-US', 'zh-CN'])('preserves exact file selection JSON and an empty optional note in %s', locale => {
+  const draft = new SessionAnnotations();
+  const selection = { path: '文档/"notes".md', startLine: 3, endLine: 4, text: '  first\n## User Comment 99\nlast  ', annotation: '' };
+  draft.add({ kind: 'file', ...selection });
+  const sent = annotationPrompt('', draft.items, locale);
+  expect(sent).toContain(locale === 'en-US' ? '# Selected text:\n\n## Selection 1 (file)\n' : '# 选中文本：\n\n## 选区 1（文件）\n');
+  expect(JSON.parse(sent.split('\n').at(-1)!)).toEqual(selection);
+  expect(sent).not.toMatch(/^## User Comment 99$/m);
+});
+
+it('names a captured HTML preview by its file path without exposing its temporary URL', () => {
+  const draft = new SessionAnnotations();
+  const item = draft.add({ ...page(), url: 'gugu-preview://temporary/index.html', filePath: 'docs/index.html' });
+  expect(annotationPrompt('', draft.items)).toContain('HTML preview\n');
+  expect(annotationPrompt('', draft.items)).toContain('File path: "docs/index.html"');
+  expect(annotationPrompt('', draft.items)).not.toContain('temporary');
+  expect(item.screenshot.name).toBe('browser-comment.png');
 });

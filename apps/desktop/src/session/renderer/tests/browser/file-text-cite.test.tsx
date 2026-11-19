@@ -1,8 +1,14 @@
+import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { FileTextContent } from '@/components/preview/FileTextContent'
 import { until } from '../../../../../../../tests/support/awaitCondition'
+import { sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
+import { AnnotationTray } from '@renderer/features/sessions/annotations/annotation-tray'
+import '@gugu/session-ui/styles/global'
+import '@gugu/session-ui/theme/theme.css'
+import '@gugu/session-ui/theme/semantic.css'
 import '@/styles/tokens.css'
 
 let host: HTMLDivElement, root: Root
@@ -39,4 +45,49 @@ it.each([390, 1000])('keeps native source selection and its one Cite action usab
   await until('the selection reaches the cite callback', () => cite.mock.calls.length === 1)
   expect(cite).toHaveBeenCalledWith({ text: 'second', at: { lines: '2' }, code: true })
   await until('the action closes once cited', () => !document.querySelector('.gg-file-cite-popup'))
+})
+
+it('stores exact source selections and changes a file comment by deleting and selecting again', async () => {
+  await page.viewport(960, 700)
+  const sessionId = crypto.randomUUID(), path = 'docs/pricing.txt'
+  const draft = sessionAnnotations.forSession(sessionId)
+  host = document.createElement('div')
+  host.className = 'gugu-skin'
+  Object.assign(host.style, { width: '480px', paddingTop: '130px' })
+  document.body.append(host)
+  root = createRoot(host)
+  await act(async () => {
+    root.render(<><FileTextContent kind="text" content={'same line\nselected words\nselected words'}
+      onCite={vi.fn()} annotation={{ sessionId, path }} /><AnnotationTray sessionId={sessionId} onSend={() => {}} enabled /></>)
+  })
+  const range = document.createRange()
+  const selected = host.querySelector('[data-file-line="3"]')!.firstChild!
+  range.setStart(selected, 0)
+  range.setEnd(selected, 8)
+  document.getSelection()?.addRange(range)
+  document.dispatchEvent(new Event('selectionchange'))
+  await until('the file offers annotation alongside cite', () => document.querySelectorAll('.gg-file-cite-popup button').length === 2)
+  await act(async () => { await userEvent.click(document.querySelectorAll('.gg-file-cite-popup button')[1]!) })
+  const editor = () => host.querySelector<HTMLFormElement>('[data-annotation-editor]')
+  await until('the shared annotation field is mounted', () => !!editor())
+  await act(async () => { await userEvent.keyboard('Clarify the pricing{Enter}') })
+  expect(draft.items).toMatchObject([{ kind: 'file', path, startLine: 3, endLine: 3, text: 'selected', annotation: 'Clarify the pricing', number: 1 }])
+
+  expect(editor()).toBeNull()
+  expect(host.querySelector('[data-annotation-marker]')).toBeNull()
+  await act(async () => { await userEvent.click(host.querySelector('[data-composer-annotations] button')!) })
+  const remove = () => document.querySelector('button[aria-label="Delete annotation"],button[aria-label="删除批注"]')
+  await until('the saved file comment can be deleted', () => !!remove())
+  expect(document.querySelector('button[aria-label="Edit annotation"],button[aria-label="修改批注"]')).toBeNull()
+  await act(async () => { await userEvent.click(remove()!) })
+  expect(draft.items).toHaveLength(0)
+  await until('the empty attachment closes', () => !host.querySelector('[data-composer-annotations]'))
+  document.getSelection()?.removeAllRanges()
+  document.getSelection()?.addRange(range)
+  document.dispatchEvent(new Event('selectionchange'))
+  await until('the source can be selected again', () => document.querySelectorAll('.gg-file-cite-popup button').length === 2)
+  await act(async () => { await userEvent.click(document.querySelectorAll('.gg-file-cite-popup button')[1]!) })
+  await until('the new comment input is mounted', () => !!editor())
+  await act(async () => { await userEvent.keyboard('Use monthly totals{Enter}') })
+  expect(draft.items).toMatchObject([{ kind: 'file', path, startLine: 3, endLine: 3, text: 'selected', number: 2, annotation: 'Use monthly totals' }])
 })

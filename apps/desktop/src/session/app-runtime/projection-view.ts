@@ -3,6 +3,7 @@ import { ProjectionInputNotSent } from './projection-input-queue';
 import { projectionClient } from './projection-client';
 import type { ProjectionHost } from './projection-source';
 import { installLocalTouchViewing } from './projection-local-touch';
+import { installProjectionPresentation } from './projection-presentation-view';
 export type PendingProjectionText = { id: number; text: string; state: 'not-sent' | 'unconfirmed'; reason?: string };
 export type ProjectionViewState = 'connecting' | 'live' | 'input-paused' | 'closed';
 
@@ -13,6 +14,8 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
   /** A host presentation can watch a thumbnail without admitting picture input. */
   interactive?: boolean;
   localTouchViewing?: boolean;
+  /** Shared host pictures can display App decorations; App pages may keep their own existing chrome. */
+  decorations?: boolean;
 } = {}) {
   const surface = document.createElement('div');
   surface.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;touch-action:none';
@@ -27,6 +30,7 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
   input.autocomplete = 'off';
   input.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;resize:none';
   surface.append(image, input);
+  const presentation = options.decorations ? installProjectionPresentation(surface) : null;
   root.append(surface);
   let frame: Pick<ProjectionFrame, 'sequence' | 'width' | 'height'> | null = null;
   let ready = false;
@@ -171,10 +175,11 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
         await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       },
       painted,
+      presentation: value => presentation?.update(value),
       state: changed,
       error: pause,
     });
-  } catch (error) { lifetime.abort(); surface.remove(); throw error; }
+  } catch (error) { lifetime.abort(); presentation?.close(); surface.remove(); throw error; }
   const freeze = () => {
     if (freezing) return freezing;
     frozen = true; interactive = false; ready = false; input.disabled = true; surface.style.pointerEvents = 'none';
@@ -194,7 +199,7 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
     freeze,
     close: async () => {
       try { await freeze(); }
-      finally { surface.remove(); }
+      finally { presentation?.close(); surface.remove(); }
     },
   });
 }

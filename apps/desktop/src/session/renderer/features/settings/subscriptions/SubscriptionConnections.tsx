@@ -1,16 +1,18 @@
+import { SubscriptionModelRows, SubscriptionAccountField } from '@/components/settings/SubscriptionModelRows'
 import { metadataSeparator } from '@/i18n/format'
 import { Unknown } from '@/components/ui/Unknown';
 import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { ChevronDown, MoreHorizontal, Plus } from '@/lib/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config'
-import { type AgentConnectionForm, type AgentPayload } from '@shared/core/agents/agent-payload'
+import { type AgentPayload } from '@shared/core/agents/agent-payload'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import { onMachineEvent } from '@renderer/lib/ipc'
 import { subscriptionSwitchProgressChannel } from '@shared/core/sessions/subscriptionSwitchEvents'
 import { useShowModal } from '@renderer/lib/modal/modal-provider'
 import { Button } from '@renderer/lib/ui/button'
 import { SelectItem } from '@renderer/lib/ui/select'
+import { AgentHomeRow } from './AgentHomeRow'
 import { ConnectionSettingsRows } from './ConnectionSettingsRows'
 import { Input } from '@renderer/lib/ui/input'
 import {
@@ -52,8 +54,6 @@ import {
 import { NEARLY_USED_PERCENT, payerLine, windowLabel } from './subscription-view'
 import { nativeConfigured, useConnectionDetails, useListedConnections } from './listed-connections'
 import { SwitchNoticeLine } from './SwitchNoticeLine'
-import { ConnectionModelPicker, modelsLine } from './ConnectionModelPicker'
-import { SegmentedTabs } from '@/components/ui/SegmentedTabs'
 import './subscriptions.css'
 
 /**
@@ -79,7 +79,7 @@ type AccountMethod = 'connection' | 'cli' | null
  * `onError` 把切换失败的原因交给行去摆(整行宽度);这里只管菜单与按钮,❌ 在窄的操作列里画长句。
  *
  * 只列真有东西的连接(`useListedConnections`)。一个都没有时只有「添加连接」,点了直接是表单,❌「切换连接 ▾」
- * 下拉里摆一个空的「现有 CLI 配置」(owner 2026-11-12)。表单里的方式照这家支持的给:账号 | API Key。
+ * 下拉里摆一个空的「现有 CLI 配置」(owner 2026-11-12)。表单依照各家的账号与厂商 Key 声明。
  */
 export function SubscriptionConnections({
   agent,
@@ -92,8 +92,15 @@ export function SubscriptionConnections({
   anchor,
   settingsRows = false,
   embedded = false,
+  modelRows,
+  modelAccount,
+  signInRequested,
   description
 }: {
+  modelRows?: { onAddAccount: () => void }
+  modelAccount?: { onClose: () => void; onBusyChange?: (busy: boolean) => void }
+  /** A fresh object is created only by an explicit press on the transcript's expired-login action. */
+  signInRequested?: object
   settingsRows?: boolean
   /** 嵌在订阅页那一行里:只画这几行，不另起「连接」一组(资源库详情里才有组头)。 */
   embedded?: boolean
@@ -118,6 +125,7 @@ export function SubscriptionConnections({
     [onOpenChange]
   )
   const [adding, setAdding] = useState(false)
+  const [modelAccountId, setModelAccountId] = useState<string>()
   const queryClient = useQueryClient()
   const showSignIn = useShowModal('agentSignInModal')
   const host = useLibraryHost()
@@ -152,8 +160,8 @@ export function SubscriptionConnections({
     !!cli.row?.canSignIn &&
     (native.data?.status.kind !== 'authenticated' || cli.row.status === 'partial')
   const accountMethod: AccountMethod = canSignIn ? 'connection' : cliAccount ? 'cli' : null
-  const apiKeyMethod = form !== null
-  const canAdd = accountMethod !== null || apiKeyMethod
+  const vendorKeyMethod = form?.vendorKey === true
+  const canAdd = accountMethod !== null || vendorKeyMethod
   const refresh = () => {
     refreshSubscriptionReadings(machine, agent.id)
     void queryClient.invalidateQueries({ queryKey: harnessModelCredentialKey(agent.id) })
@@ -271,7 +279,8 @@ export function SubscriptionConnections({
   const dropIfUnsigned = async (connectionId: string) => {
     try {
       const client = await getAgentConfigRuntimeClient(machine)
-      await dropIfNeverSignedIn(client, { providerId: agent.id, connectionId })
+      const outcome = await dropIfNeverSignedIn(client, { providerId: agent.id, connectionId })
+      if (outcome === 'removed') setModelAccountId(current => current === connectionId ? undefined : current)
     } catch (error) {
       rendererLogger('settings/subscriptions').warn({ error, providerId: agent.id }, 'unsigned connection not removed')
     } finally {
@@ -323,12 +332,27 @@ export function SubscriptionConnections({
     setOpen(false)
     cli.openSignIn()
   }
+  const signInAttempt = useRef<object | null>(null)
+  // @@@effect-flow - consumes an explicit login press once after replica reads; the async work is the existing login mutation, not a surface read copied into state.
+  useEffect(() => {
+    if (!signInRequested || signInAttempt.current === signInRequested) return
+    if (connections.error || native.error) {
+      signInAttempt.current = signInRequested
+      setOpen(true)
+      return
+    }
+    if (!listedRead) return
+    signInAttempt.current = signInRequested
+    if (canSignIn) signIn(listed?.find(connection => connection.current)?.id ?? 'native')
+    else if (cliSignIn) signInCli()
+    else setOpen(true)
+  }, [signInRequested, listedRead, listed, connections.error, native.error, canSignIn, cliSignIn, signIn, signInCli, setOpen])
   const onCreated = (connection: HarnessConnection) => {
     refresh()
     setAdding(false)
     // 账号连接要登上才能用:登上那一刻再切;API Key 存好就能用,当场切。
-    if (connection.kind === 'account') signIn(connection.id, true, nothingCurrent)
-    else if (nothingCurrent) adopt(connection.id)
+    if (vendorKeyMethod) { if (nothingCurrent) adopt(connection.id) }
+    else if (connection.kind === 'account') signIn(connection.id, true, nothingCurrent)
     // 已有当前连接:就地表单(订阅页那一行、资源库详情)收起就完,新的一条躺在列表里,❌ 自己把选择框弹开。
     // 面板(新建任务、会话里打开)的表单是从菜单里点出来的弹窗:存好回到那份菜单,新的一条在里面可选。
     else if (!settingsRows) {
@@ -341,8 +365,7 @@ export function SubscriptionConnections({
       agent={agent}
       machine={machine}
       account={accountMethod}
-      apiKey={apiKeyMethod}
-      form={form}
+      vendorKey={vendorKeyMethod}
       onCreated={onCreated}
       onCliSignIn={signInCli}
       {...(settingsRows ? { onCancel: () => setAdding(false) } : {})}
@@ -370,8 +393,6 @@ export function SubscriptionConnections({
       )}
     </Button>
   )
-  // 「管理模型」的弹窗挂在菜单外面:菜单一关,里面的行就卸了。
-  const [managing, setManaging] = useState<HarnessConnection | null>(null)
   const options = (selectItem: boolean) =>
     listed?.map((connection) => (
       <ConnectionOption
@@ -383,19 +404,17 @@ export function SubscriptionConnections({
         selectItem={selectItem}
         onSignIn={canSignIn ? () => signIn(connection.id) : undefined}
         onRemove={() => action.mutate({ kind: 'remove', id: connection.id })}
-        {...(connection.kind === 'api-key' && form?.model === 'required'
-          ? {
-              onManageModels: () => {
-                setOpen(false)
-                setManaging(connection)
-              }
-            }
-          : {})}
       />
     ))
   return (
     <>
-      {settingsRows ? (
+      {modelRows ? <>{failure && <SwitchNoticeLine notice={{ tone, text: failure, ...(refusedId ? { closeAndSwitch } : {}), ...(closing ? { progress } : {}) }} />}<SubscriptionModelRows agent={agent} machine={machine} connections={listed} busy={action.isPending}
+        onSignIn={id => signIn(id)} onAddAccount={modelRows.onAddAccount} onTest={id => action.mutate({ kind: 'refresh', id })} onRemove={id => action.mutate({ kind: 'remove', id })}
+        onRetry={refresh} error={connections.error || native.error ? translate('customModels.connectionsReadFailed', { provider: agent.name }) : null} /></> : modelAccount ? <ConnectionForm
+          agent={agent} machine={machine} account={accountMethod} vendorKey={false}
+          onCreated={connection => { setModelAccountId(connection.id); onCreated(connection) }} onCliSignIn={signInCli}
+          modelAccount={{ connectionId: modelAccountId, onLogin: () => { if (modelAccountId) signIn(modelAccountId) }, onClose: modelAccount.onClose, onBusyChange: modelAccount.onBusyChange }}
+        /> : settingsRows ? (
         <ConnectionSettingsRows
           signIn={currentSignIn || undefined}
           connections={listed}
@@ -404,13 +423,7 @@ export function SubscriptionConnections({
           onOpenChange={setOpen}
           onSelect={select}
           onAdd={canAdd ? () => setAdding(true) : undefined}
-          addHint={translate(
-            accountMethod && apiKeyMethod
-              ? 'agentsPage.connectionAddHint'
-              : apiKeyMethod
-                ? 'agentsPage.connectionAddHintApiKey'
-                : 'agentsPage.connectionAddHintAccount'
-          )}
+          addHint={translate(vendorKeyMethod ? 'agentsPage.connectionAddHintApiKey' : 'agentsPage.connectionAddHintAccount')}
           busy={action.isPending}
           description={description}
           agentId={agent.id}
@@ -434,6 +447,7 @@ export function SubscriptionConnections({
             )
           }
           form={adding && canAdd ? connectionForm : null}
+          localConfiguration={<AgentHomeRow providerId={agent.id} machine={machine ?? null} />}
         >
           {open && options(true)}
         </ConnectionSettingsRows>
@@ -523,133 +537,9 @@ export function SubscriptionConnections({
           <DialogContentArea>{connectionForm}</DialogContentArea>
         </DialogContent>
       </Dialog>
-      <ManageModelsDialog
-        agent={agent}
-        machine={machine}
-        connection={managing}
-        onClose={() => setManaging(null)}
-        onSaved={async (connection) => {
-          refresh()
-          setManaging(null)
-          // 正在用的就是它:新建任务的模型菜单照新的几个重读。
-          if (connection.current) await forceRefreshHarnessModelCatalog(queryClient, agent.id, 'acp', machine)
-        }}
-      />
     </>
   )
 }
-
-/**
- * 「管理模型」(#2507):换一把已存连接点名的模型,与新建时同一个选择器;清单由宿主拿这把连接自己的 key 读。
- * 订阅页那一行与面板(新建任务、会话)都从连接的 ⋯ 打开它。
- */
-function ManageModelsDialog({
-  agent,
-  machine,
-  connection,
-  onClose,
-  onSaved
-}: {
-  agent: AgentPayload
-  machine: string | null
-  connection: HarnessConnection | null
-  onClose: () => void
-  onSaved: (connection: HarnessConnection) => Promise<void>
-}) {
-  const { translate } = useSessionMessages()
-  return (
-    <Dialog open={connection !== null} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>
-            {translate('subscriptions.connections.manageModelsTitle', { name: connection?.name ?? '' })}
-          </DialogTitle>
-        </DialogHeader>
-        <DialogContentArea>
-          {connection && (
-            <ManageModelsForm
-              key={connection.id}
-              agent={agent}
-              machine={machine}
-              connection={connection}
-              onCancel={onClose}
-              onSaved={onSaved}
-            />
-          )}
-        </DialogContentArea>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function ManageModelsForm({
-  agent,
-  machine,
-  connection,
-  onCancel,
-  onSaved
-}: {
-  agent: AgentPayload
-  machine: string | null
-  connection: HarnessConnection
-  onCancel: () => void
-  onSaved: (connection: HarnessConnection) => Promise<void>
-}) {
-  const { translate } = useSessionMessages()
-  const [models, setModels] = useState<string[]>(connection.models ?? [])
-  const [missing, setMissing] = useState(false)
-  const save = useMutation({
-    mutationFn: async () => {
-      const result = await (
-        await getAgentConfigRuntimeClient(machine)
-      ).updateConnectionModels({ providerId: agent.id, connectionId: connection.id, models })
-      if (!result.success) throw new Error(errorText(result.error))
-      return result.data
-    },
-    onSuccess: onSaved
-  })
-  return (
-    <form
-      className="subscription-connection-form"
-      data-testid="connection-models-form"
-      onSubmit={(event) => {
-        event.preventDefault()
-        if (models.length === 0) setMissing(true)
-        else save.mutate()
-      }}
-    >
-      <ConnectionModelPicker
-        machine={machine}
-        providerId={agent.id}
-        source={{ connectionId: connection.id }}
-        value={models}
-        onChange={(next) => {
-          setModels(next)
-          if (next.length > 0) setMissing(false)
-        }}
-      />
-      {missing && (
-        <p className="subscription-error" role="alert">
-          {translate('subscriptions.connections.modelsRequired')}
-        </p>
-      )}
-      {save.error && (
-        <p className="subscription-error" role="alert">
-          {errorText(save.error)}
-        </p>
-      )}
-      <div className="subscription-connection-form-actions">
-        <Button type="submit" size="sm" disabled={save.isPending}>
-          {save.isPending ? translate('subscriptions.connections.saving') : translate('subscriptions.connections.saveModels')}
-        </Button>
-        <Button type="button" size="sm" variant="outline" disabled={save.isPending} onClick={onCancel}>
-          {translate('agentsPage.cancel')}
-        </Button>
-      </div>
-    </form>
-  )
-}
-
 
 function ConnectionOption({
   connection,
@@ -658,7 +548,6 @@ function ConnectionOption({
   busy,
   onRemove,
   onSignIn,
-  onManageModels,
   selectItem = false
 }: {
   connection: HarnessConnection
@@ -668,14 +557,12 @@ function ConnectionOption({
   selectItem?: boolean
   onRemove: () => void
   onSignIn?: () => void
-  /** 点名模型的家的 API Key 连接才有:换它的模型,❌ 删了重加。 */
-  onManageModels?: () => void
 }) {
   const { translate } = useSessionMessages()
   const details = useConnectionDetails(machine, agent.id, connection.id)
   // 不切过去也看得到这个号还剩多少(10-30 owner):按连接读，与「订阅」行同一把键、同一份读数。
   // 没登录的号没有额度可读;API key 的余量只在厂商后台。
-  const usage = useSubscriptionUsage(machine, agent.id, connection.id, connection.kind !== 'api-key' && details.data?.status.kind === 'authenticated')
+  const usage = useSubscriptionUsage(machine, agent.id, connection.id, details.data?.status.kind === 'authenticated')
   const quota = usage.data?.kind === 'windows' ? remainingLine(usage.data.windows, translate) : null
   const nearlyUsed =
     usage.data?.kind === 'windows' &&
@@ -692,15 +579,6 @@ function ConnectionOption({
       : // 「现有 CLI 配置」写它登的是谁、谁在付钱(Pi 这类没有账号读数的家靠这一条)。
         connection.kind === 'native' && plan && nativeConfigured(details.data)
         ? payerLine(plan, translate, false)
-        : connection.kind === 'api-key'
-        ? [
-            connection.endpoint
-              ? new URL(connection.endpoint).host
-              : translate('subscriptions.connections.officialApi'),
-            modelsLine(connection.models, translate)
-          ]
-            .filter(Boolean)
-            .join(metadataSeparator())
         : status?.kind === 'unauthenticated'
           ? translate(
               status.reason === 'expired'
@@ -716,11 +594,6 @@ function ConnectionOption({
       {canSignIn && (
         <DropdownMenuItem disabled={busy} onClick={onSignIn}>
           {translate('subscriptions.connections.signIn')}
-        </DropdownMenuItem>
-      )}
-      {onManageModels && (
-        <DropdownMenuItem disabled={busy} onClick={onManageModels}>
-          {translate('subscriptions.connections.manageModels')}
         </DropdownMenuItem>
       )}
       <DropdownMenuItem disabled={busy} variant="destructive" onClick={onRemove}>
@@ -796,11 +669,6 @@ function ConnectionOption({
                   {translate('subscriptions.connections.signIn')}
                 </DropdownMenuItem>
               )}
-              {onManageModels && (
-                <DropdownMenuItem disabled={busy} onClick={onManageModels}>
-                  {translate('subscriptions.connections.manageModels')}
-                </DropdownMenuItem>
-              )}
               <DropdownMenuItem disabled={busy} variant="destructive" onClick={onRemove}>
                 {translate('subscriptions.connections.remove')}
               </DropdownMenuItem>
@@ -825,228 +693,59 @@ function remainingLine(
     .join(metadataSeparator())
 }
 
-function ConnectionForm({
-  agent,
-  machine,
-  account,
-  apiKey,
-  form,
-  onCreated,
-  onCliSignIn,
-  onCancel
-}: {
+function ConnectionForm({ agent, machine, account, vendorKey, onCreated, onCliSignIn, onCancel, modelAccount }: {
   agent: AgentPayload
   machine: string | null
   account: AccountMethod
-  apiKey: boolean
-  form: AgentConnectionForm | null
+  vendorKey: boolean
   onCreated: (connection: HarnessConnection) => void
   onCliSignIn: () => void
-  /** 就地展开时(订阅页那一行、资源库详情)才有:「取消」与主按钮同一行。弹窗用它自己的关闭。 */
   onCancel?: () => void
+  modelAccount?: { connectionId?: string; onLogin: () => void; onClose: () => void; onBusyChange?: (busy: boolean) => void }
 }) {
   const { translate } = useSessionMessages()
-  const [kind, setKind] = useState<'account' | 'api-key'>(account || !apiKey ? 'account' : 'api-key')
-  // 登它 CLI 自己那一份:不存连接、不起名，直接是那个登录窗口。
-  const cliAccount = kind === 'account' && account === 'cli'
-  // 地址 + Key 是主体(owner 2026-11-12):有地址格的家一律摆出来,一开始就填好这家的官方地址(真值,❌ 占位);
-  // 用中转就改掉它。官方那一个没改 ⇒ 宿主不记地址,处处读作「官方」。
-  const endpointField = form?.endpoint ?? 'none'
-  const showEndpoint = endpointField !== 'none'
-  const showModel = form?.model === 'required'
-  const official = form?.officialEndpoint ?? ''
-  const [apiKeyText, setApiKeyText] = useState('')
-  const [endpointText, setEndpointText] = useState(official)
-  const [models, setModels] = useState<string[]>([])
-  const [modelsMissing, setModelsMissing] = useState(false)
-  const endpointValue = endpointText.trim()
-  // 模型清单照这把 key 和这个地址读(宿主里读);地址还不成形就先不读。
-  const modelSource =
-    showModel && apiKeyText.trim() && (!showEndpoint || isEndpointUrl(endpointValue))
-      ? { apiKey: apiKeyText.trim(), ...(showEndpoint && endpointValue ? { endpoint: endpointValue } : {}) }
-      : null
+  const cliAccount = account === 'cli' && !vendorKey
   const create = useMutation({
-    mutationFn: async (element: HTMLFormElement) => {
-      const data = new FormData(element)
-      const endpoint = String(data.get('endpoint') ?? '').trim()
-      const result = await (
-        await getAgentConfigRuntimeClient(machine)
-      ).createConnection({
-        providerId: agent.id,
-        kind,
+    mutationFn: async (element?: HTMLFormElement) => {
+      const data = element ? new FormData(element) : new FormData()
+      const result = await (await getAgentConfigRuntimeClient(machine)).createConnection({
+        providerId: agent.id, kind: 'account',
         name: String(data.get('name') ?? '').trim() || undefined,
-        ...(kind === 'api-key'
-          ? {
-              apiKey: String(data.get('apiKey') ?? '').trim(),
-              // 原样交给宿主:是不是官方由宿主判(同一个值),❌ 在这里先替它删。
-              ...(showEndpoint && endpoint ? { endpoint } : {}),
-              ...(showModel ? { models } : {})
-            }
-          : {})
+        ...(vendorKey ? { apiKey: String(data.get('apiKey') ?? '').trim() } : {}),
       })
       if (!result.success) throw new Error(errorText(result.error))
-      element.reset()
-      setApiKeyText('')
-      setEndpointText(official)
-      setModels([])
+      element?.reset()
       return result.data
     },
-    onSuccess: onCreated
+    onSuccess: onCreated,
   })
-  return (
-    <form
-      className="subscription-connection-form"
-      onSubmit={(event) => {
-        event.preventDefault()
-        if (cliAccount) onCliSignIn()
-        else if (kind === 'api-key' && showModel && models.length === 0) setModelsMissing(true)
-        else create.mutate(event.currentTarget)
-      }}
-      // 与「来源 → 自定义路径」那格一样:Esc 收起。
-      onKeyDown={(event) => {
-        if (event.key === 'Escape' && onCancel) onCancel()
-      }}
-    >
-      {/* 两种方式才有得选:照仓里的分段控件(SegmentedTabs pill,选中 = --muted 实底块)。
-          ❌ 从前那对 secondary / ghost 按钮:选中底色 --background-2 就是卡片底色(--card)、字色两档一样,看不出选中。
-          只有一种方式(Pi、Qwen 只接 Key;Kiro 只能登 CLI)就不画,直接是那一种表单。 */}
-      {account && apiKey && (
-        <SegmentedTabs<'account' | 'api-key'>
-          items={[
-            { value: 'account', label: translate('subscriptions.connections.account') },
-            { value: 'api-key', label: 'API Key' }
-          ]}
-          value={kind}
-          onChange={setKind}
-          ariaLabel={translate('subscriptions.connections.method')}
-        />
-      )}
-      {kind === 'api-key' ? (
-        <>
-          <label>
-            API Key
-            <Input
-              name="apiKey"
-              type="password"
-              required
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="sk-…"
-              // 换「账号 | API Key」再换回来:填过的还在(模型清单照它读)。
-              defaultValue={apiKeyText}
-              onChange={(event) => setApiKeyText(event.target.value)}
-            />
-          </label>
-          {showEndpoint && (
-            <label>
-              {translate('subscriptions.connections.endpoint')}
-              <Input
-                name="endpoint"
-                type="url"
-                // 可选的家(Claude / Codex)清空 = 官方;离了地址起不来的家必填。
-                required={endpointField === 'required'}
-                defaultValue={endpointText}
-                placeholder={official ? undefined : endpointPlaceholder(agent.id, form?.protocol)}
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(event) => setEndpointText(event.target.value)}
-              />
-            </label>
-          )}
-          {/* 宿主按地址探接口的家(pi / opencode)❌ 再说「地址须支持某某接口」:它讲哪种就用哪种。 */}
-          {showEndpoint && form?.protocol && !form.protocolDetected && (
-            <p className="subscription-connection-description">
-              {translate('subscriptions.connections.protocolHint', {
-                protocol: PROTOCOL_NAMES[form.protocol]
-              })}
-            </p>
-          )}
-          {showModel && (
-            <ConnectionModelPicker
-              machine={machine}
-              providerId={agent.id}
-              source={modelSource}
-              value={models}
-              onChange={(next) => {
-                setModels(next)
-                if (next.length > 0) setModelsMissing(false)
-              }}
-            />
-          )}
-          {showModel && modelsMissing && (
-            <p className="subscription-error" role="alert">
-              {translate('subscriptions.connections.modelsRequired')}
-            </p>
-          )}
-        </>
-      ) : (
-        <p className="subscription-connection-description">
-          {cliAccount
-            ? translate('subscriptions.connections.cliAccountHint', { provider: agent.name })
-            : translate('subscriptions.connections.accountHint')}
-        </p>
-      )}
-      {!cliAccount && (
-        <>
-          <label>
-            {translate('subscriptions.connections.remark')}
-            <Input
-              name="name"
-              maxLength={80}
-              placeholder={translate('subscriptions.connections.remarkPlaceholder')}
-            />
-          </label>
-          <p className="subscription-connection-description">
-            {translate('subscriptions.connections.private')}
-          </p>
-        </>
-      )}
-      {create.error && (
-        <p className="subscription-error" role="alert">
-          {errorText(create.error)}
-        </p>
-      )}
-      {/* 照「来源 → 自定义路径」那格:主按钮与「取消」同一行、靠行尾,都是 sm;「取消」是 outline。 */}
-      <div className="subscription-connection-form-actions">
-        <Button type="submit" size="sm" disabled={create.isPending}>
-          {create.isPending
-            ? translate('subscriptions.connections.saving')
-            : cliAccount
-              ? translate('subscriptions.connections.signIn')
-              : kind === 'account'
-                ? translate('subscriptions.connections.addAndSignIn')
-                : translate('subscriptions.connections.save')}
-        </Button>
-        {onCancel && (
-          <Button type="button" size="sm" variant="outline" disabled={create.isPending} onClick={onCancel}>
-            {translate('agentsPage.cancel')}
-          </Button>
-        )}
-      </div>
-    </form>
-  )
-}
-
-/** 接口的官方名字(专名,不翻译)—— 地址下那一行提示用。 */
-const PROTOCOL_NAMES: Record<NonNullable<AgentConnectionForm['protocol']>, string> = {
-  'anthropic-messages': 'Anthropic Messages',
-  'openai-chat-completions': 'OpenAI Chat Completions',
-  'openai-responses': 'OpenAI Responses',
-  'gemini-generate-content': 'Gemini'
-}
-
-/** 地址成不成形(宿主那边要的是一个 http(s) URL):没成形就先不去读模型清单。 */
-function isEndpointUrl(value: string): boolean {
-  try {
-    return ['http:', 'https:'].includes(new URL(value).protocol)
-  } catch {
-    return false
-  }
-}
-
-/** 没有官方地址可填的家才有占位(例子)。Claude 的地址是裸根、Codex 带 `/v1`;其余家照它要讲的接口:OpenAI 那两种带 `/v1`。 */
-function endpointPlaceholder(providerId: string, protocol: AgentConnectionForm['protocol']): string {
-  if (providerId === 'codex') return 'https://api.example.com/v1'
-  if (protocol === 'openai-chat-completions' || protocol === 'openai-responses') return 'https://api.example.com/v1'
-  return 'https://api.example.com'
+  const onBusyChange = modelAccount?.onBusyChange
+  useEffect(() => { onBusyChange?.(create.isPending); return () => onBusyChange?.(false) }, [create.isPending, onBusyChange])
+  if (modelAccount) return <SubscriptionAccountField agent={agent} machine={machine} connectionId={modelAccount.connectionId}
+    creating={create.isPending} failure={create.error ? errorText(create.error) : null}
+    onLogin={() => { if (modelAccount.connectionId) modelAccount.onLogin(); else create.mutate(undefined) }}
+    onSave={modelAccount.onClose} onCancel={modelAccount.onClose} />
+  return <form className="subscription-connection-form" onSubmit={(event) => {
+    event.preventDefault()
+    if (cliAccount) onCliSignIn()
+    else create.mutate(event.currentTarget)
+  }} onKeyDown={(event) => { if (event.key === 'Escape') onCancel?.() }}>
+    {vendorKey ? <label>API Key<Input name="apiKey" type="password" required autoComplete="off" spellCheck={false} /></label>
+      : <p className="subscription-connection-description">{cliAccount
+        ? translate('subscriptions.connections.cliAccountHint', { provider: agent.name })
+        : translate('subscriptions.connections.accountHint')}</p>}
+    {!cliAccount && <>
+      <label>{translate('subscriptions.connections.remark')}<Input name="name" maxLength={80} placeholder={translate('subscriptions.connections.remarkPlaceholder')} /></label>
+      <p className="subscription-connection-description">{translate('subscriptions.connections.private')}</p>
+    </>}
+    {create.error && <p className="subscription-error" role="alert">{errorText(create.error)}</p>}
+    <div className="subscription-connection-form-actions">
+      <Button type="submit" size="sm" disabled={create.isPending}>{create.isPending
+        ? translate('subscriptions.connections.saving') : vendorKey
+          ? translate('subscriptions.connections.save') : cliAccount
+            ? translate('subscriptions.connections.signIn') : translate('subscriptions.connections.addAndSignIn')}</Button>
+      {vendorKey && account === 'cli' && <Button type="button" size="sm" variant="outline" disabled={create.isPending} onClick={onCliSignIn}>{translate('subscriptions.connections.signIn')}</Button>}
+      {onCancel && <Button type="button" size="sm" variant="outline" disabled={create.isPending} onClick={onCancel}>{translate('agentsPage.cancel')}</Button>}
+    </div>
+  </form>
 }

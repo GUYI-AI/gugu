@@ -23,6 +23,10 @@ describe('contributes.hostLinks (API 52)', () => {
     expect(safeParseExtensionManifest(tool(links, apiVersion)).ok).toBe(false);
   });
   it('opens the Library on that tab', () => {
-    expect(hostLinkTarget('library:prompts')).toEqual({ view: 'library', params: { tab: 'prompts' } });
+    expect(hostLinkTarget('library:prompts')).toEqual({ view: 'settings', section: 'prompts' });
+    expect(hostLinkTarget('library:themes')).toEqual({ view: 'settings', section: 'general' });
+    expect(hostLinkTarget('library:agents')).toEqual({ view: 'apps', params: { marketPage: 'agents' } });
+    expect(hostLinkTarget('library:integrations')).toEqual({ view: 'apps', params: { marketPage: 'connectors' } });
+    expect(hostLinkTarget('library:mcp')).toEqual({ view: 'apps', params: { marketPage: 'connectors', installedSection: 'connectors' } });
   });
 });

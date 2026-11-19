@@ -23,7 +23,7 @@ export async function openMessageAttachment(messageId: string, chatId?: string):
     const { openAttachmentImage } = await import('./attachmentBytes')
     openAttachmentImage(file.source, file.fileName)
   } else if (file.source.kind === 'item') {
-    await openLinkTarget({ kind: 'file', itemId: file.source.itemId, version: file.source.version }, { message })
+    await openLinkTarget({ kind: 'file', itemId: file.source.itemId, version: file.source.version }, { message, fileName: file.fileName })
   } else {
     const { openAttachmentInSystemApp } = await import('./attachmentBytes')
     await openAttachmentInSystemApp(file.source, file.fileName)

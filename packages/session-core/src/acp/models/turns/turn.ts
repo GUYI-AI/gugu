@@ -94,6 +94,9 @@ export const transcriptTurnOutcomeSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('error'),
     reason: errorTurnReasonSchema.optional(),
+    /** Native phone ledger interruption, joined by its recorded input identity.
+     * Older clients discard this optional fact and retain the ordinary error outcome. */
+    phoneInterruption: z.object({ jobId: z.string().min(1), retryable: z.boolean() }).optional(),
     /**
      * 出事那一侧**自己说的话**,逐字 —— `reason` 回答「哪一类失败」,它回答「到底是什么」。
      *

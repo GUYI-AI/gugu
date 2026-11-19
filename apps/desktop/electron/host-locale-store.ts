@@ -1,73 +1,28 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
-import {
-  isResolvedLocale,
-} from '../shared/host-localization'
-import { resolveSystemLocale, type SupportedLocale } from '@/i18n/locale'
+import { resolveLocale, type SupportedLocale } from '@/i18n/locale'
+import type { LocalePreference } from '../shared/device-preferences'
 
-export const HOST_LOCALE_STATE_FILE = 'host-locale-v1.json'
-
-export class HostLocaleStoreError extends Error {
-  readonly code: 'HOST_LOCALE_STATE_INVALID' | 'HOST_LOCALE_INVALID'
-
-  constructor(code: HostLocaleStoreError['code'], cause?: unknown) {
-    super(code, { cause })
-    this.name = 'HostLocaleStoreError'
-    this.code = code
-  }
-}
-
+/**
+ * @@@device-preferences — the host's language (tray, menus, window chrome, the session page's copy): resolved by main from
+ * the stored language preference and the system's own languages (app.getPreferredSystemLanguages()), the same rule the
+ * renderer resolves with. Until the settings are read at startup it follows the system.
+ */
 export class HostLocaleStore {
   private locale: SupportedLocale
+  private preference: LocalePreference = 'system'
 
-  constructor(
-    private readonly filePath: string,
-    systemLanguages: readonly string[],
-  ) {
-    this.locale = this.readPersistedLocale() ?? resolveSystemLocale(systemLanguages)
+  constructor(private readonly systemLanguages: () => readonly string[]) {
+    this.locale = resolveLocale('system', systemLanguages())
   }
 
   current(): SupportedLocale {
     return this.locale
   }
 
-  syncResolvedLocale(value: unknown): SupportedLocale {
-    if (!isResolvedLocale(value)) throw new HostLocaleStoreError('HOST_LOCALE_INVALID')
-    this.persist(value)
-    this.locale = value
-    return value
-  }
-
-  private readPersistedLocale(): SupportedLocale | null {
-    if (!existsSync(this.filePath)) return null
-    try {
-      const parsed = JSON.parse(readFileSync(this.filePath, 'utf8')) as {
-        version?: unknown
-        resolvedLocale?: unknown
-      }
-      if (parsed.version !== 1 || !isResolvedLocale(parsed.resolvedLocale)) {
-        throw new HostLocaleStoreError('HOST_LOCALE_STATE_INVALID')
-      }
-      return parsed.resolvedLocale
-    } catch (error) {
-      if (error instanceof HostLocaleStoreError) throw error
-      throw new HostLocaleStoreError('HOST_LOCALE_STATE_INVALID', error)
-    }
-  }
-
-  private persist(locale: SupportedLocale): void {
-    mkdirSync(dirname(this.filePath), { recursive: true })
-    const temporaryPath = `${this.filePath}.${process.pid}.tmp`
-    try {
-      writeFileSync(temporaryPath, `${JSON.stringify({ version: 1, resolvedLocale: locale })}\n`, {
-        encoding: 'utf8',
-        mode: 0o600,
-      })
-      renameSync(temporaryPath, this.filePath)
-    } catch (error) {
-      rmSync(temporaryPath, { force: true })
-      throw error
-    }
+  /** Resolve again (the preference changed, or the system's languages may have); true when the language changed. */
+  apply(preference: LocalePreference = this.preference): boolean {
+    this.preference = preference
+    const before = this.locale
+    this.locale = resolveLocale(preference, this.systemLanguages())
+    return this.locale !== before
   }
 }
-

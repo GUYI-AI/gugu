@@ -7,23 +7,28 @@ import { Popover } from '../ui/Popover'
 import { useBackLayer } from '../ui/sheetStack'
 import type { FileViewerSelection } from '@/session/shared/preview/file-viewer-menu'
 import { fileTextRange, sourceLineRange, type FileTextRange } from './file-text-range'
+import { useSessionMessages } from '@renderer/localization/use-session-messages'
+import { FilePreviewAnnotations, type FileAnnotationContext } from './FilePreviewAnnotations'
 import './file-text-content.css'
 
 type Selection = { range: Range; quote: FileTextRange }
 
 /** The file's existing native selection (including touch handles) offers Cite (into the composer) and, where given, Send. */
-export function FileTextContent({ content, kind, style, onCite, onSend }: {
+export function FileTextContent({ content, kind, style, onCite, onSend, annotation }: {
   content: string
   kind: 'text' | 'markdown'
   style?: CSSProperties
   onCite?: (selection: FileViewerSelection) => void | Promise<void>
   /** Send this selection with a few words, from a box beside it (`openSelectionSend`), at the selection's place on screen. */
   onSend?: (selection: FileViewerSelection, at: DOMRect) => void
+  annotation?: FileAnnotationContext
 }) {
   const { t } = useTranslation('messaging')
+  const { translate } = useSessionMessages()
   const container = useUiPortalContainer()
   const root = useRef<HTMLDivElement>(null)
   const [selection, setSelection] = useState<Selection | null>(null)
+  const [annotationSelection, setAnnotationSelection] = useState<Selection | null>(null)
   const selecting = useRef(false)
   const lineAnchor = useRef<number | null>(null)
   const dragging = useRef<number | null>(null)
@@ -86,7 +91,7 @@ export function FileTextContent({ content, kind, style, onCite, onSend }: {
     close()
   }
   return <>
-    <div ref={root} style={style} data-file-cite={onCite ? '' : undefined}
+    <div ref={root} style={style} className={annotation ? "relative" : undefined} data-file-cite={onCite ? '' : undefined}
       onPointerDown={event => {
         if (!(event.target instanceof Element) || !event.target.closest('.gg-file-line-number')) selectedLines.current = null
         if (event.button === 0) { selecting.current = true; setSelection(null) }
@@ -114,6 +119,8 @@ export function FileTextContent({ content, kind, style, onCite, onSend }: {
             <span data-file-line={index + 1} data-file-source-start={index + 1} data-file-source-end={index + 1}>{line}{index < lines.length - 1 ? '\n' : ''}</span>
           </div>)}
         </div> : <pre style={{ margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontFamily: 'inherit', fontSize: 'var(--font-body)', lineHeight: 1.65 }}>{content}</pre>}
+      {annotation && <FilePreviewAnnotations key={`${annotation.sessionId}:${annotation.path}`} context={annotation}
+        root={root} selection={annotationSelection} onClose={() => setAnnotationSelection(null)} />}
     </div>
     {selection && onCite ? <Popover.Root open modal={false} onOpenChange={open => { if (!open) close() }}>
       <Popover.Portal container={container}>
@@ -122,7 +129,12 @@ export function FileTextContent({ content, kind, style, onCite, onSend }: {
           side="bottom" align="start" sideOffset={8} collisionPadding={8} collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}>
           <Popover.Popup initialFocus={false} finalFocus={false} data-occludes-browser-page className="gg-file-cite-popup">
             <Button variant="ghost" size="md" onPointerDown={event => event.preventDefault()} onClick={() => take(picked => void onCite?.(picked))}>{t('fileCite.cite')}</Button>
-            {onSend ? <Button variant="ghost" size="md" onPointerDown={event => event.preventDefault()} onClick={() => take(onSend)}>{t('selectionSend.send')}</Button> : null}
+            {annotation ? <Button variant="ghost" size="md" onPointerDown={event => event.preventDefault()} onClick={() => {
+              const original = kind === 'text' && !selection.range.collapsed ? selection.range.toString() : selection.quote.text
+              setAnnotationSelection({ ...selection, quote: { ...selection.quote, text: original } })
+              root.current?.ownerDocument.getSelection()?.removeAllRanges()
+              close()
+            }}>{translate('annotations.mode')}</Button> : onSend ? <Button variant="ghost" size="md" onPointerDown={event => event.preventDefault()} onClick={() => take(onSend)}>{t('selectionSend.send')}</Button> : null}
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>

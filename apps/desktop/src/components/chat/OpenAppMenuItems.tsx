@@ -49,6 +49,7 @@ export const OpenableAppRows = observer(function OpenableAppRows({ apps, onOpen 
       <MenuItem
         key={app.extensionId}
         className="gg-sidebar-launch-item"
+        data-pane-opener=""
         icon={<RailAppIcon app={app} className="gg-sidebar-launch-icon" />}
         onClick={() => onOpen(app.extensionId)}
       >

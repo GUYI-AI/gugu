@@ -47,13 +47,20 @@ export function phoneTurnFiles({ store, cloud, warn = console.warn }) {
     cached.set(key, artifact.file_path)
     return artifact.file_path
   }
-  const turn = async (agent, refs, signal) => {
+  const turn = async (agent, refs, signal, options = {}) => {
     const parts = []
     for (const ref of refs) {
       let localPath = null
       try {
+        if (options.requireComplete) {
+          const expected = options.expectedFileDigests?.find(value => value.itemId === ref.itemId && value.version === ref.version)
+          if (!expected) throw new Error('The original first-input file digest is missing')
+          const actual = await turn.placementFact(agent, ref, signal)
+          if (actual.sha256 !== expected.sha256 || actual.sizeBytes !== expected.sizeBytes) throw new Error('The first-input attachment bytes changed')
+        }
         localPath = await localPathOf(agent, ref, signal)
       } catch (error) {
+        if (options.requireComplete) throw error
         warn(`Task attachment could not be saved: sessionId=${agent.sessionId} itemId=${ref.itemId} reason=${error instanceof Error ? error.message : String(error)}`)
       }
       parts.push(turnAttachmentText(ref, localPath ? { localPath } : null))
@@ -64,6 +71,22 @@ export function phoneTurnFiles({ store, cloud, warn = console.warn }) {
     try { await localPathOf(agent, ref, signal); return { itemId: ref.itemId, ok: true } }
     catch (error) { return { itemId: ref.itemId, ok: false, error: error instanceof Error ? error.message : String(error), code: error?.code } }
   }))
+  turn.placementFact = async (agent, ref, signal) => {
+    const full = await files({ item_id: ref.itemId, version: ref.version }, { accountId: store.state.ownerId, actorId: agent.agentUserId }, { signal })
+    if (full.status !== 'ready') throw new Error('The placed file is not available yet')
+    try {
+      const revision = full.revision
+      if (full.reader.accountId !== store.state.ownerId || full.reader.actorId !== agent.agentUserId
+        || revision.chat_id !== agent.chatId || revision.item_id !== ref.itemId || revision.version !== ref.version) throw new Error('The placed file does not belong to this task DM/version')
+      const saved = await saveFileHandle(full, join(store.directory, 'downloads', agent.sessionId), ref.name)
+      const artifact = await registerArtifact({ store, agent, groups: [], file: {
+        file_path: saved.file_path, name: saved.file_name, size: saved.size_bytes, sha256: saved.sha256, mime_type: saved.content_type,
+      } })
+      cached.set(keyOf(agent, ref), artifact.file_path)
+      return { agentUserId: agent.agentUserId, chatId: revision.chat_id, itemId: revision.item_id, version: revision.version,
+        sizeBytes: saved.size_bytes, sha256: saved.sha256 }
+    } finally { await full.dispose() }
+  }
   return turn
 }
 
@@ -120,11 +143,10 @@ export function phoneFileTools({ agent, job, cloud, store, env, authorize, emit 
         await store.save()
         let endpoint = await cloud.attachmentEndpoint()
         const contentType = resolveAttachmentMimeType(name, args.mime_type ?? file.mime_type)
-        // The message goes with the file's index; its bytes follow it (one path for every sender). A restart that finds the
-        // message committed only uploads them, under a new plan.
+        // The message goes with the file's index; its bytes follow it. A committed message keeps its original staging key.
         let declared = entry.stagingKey ? { staging_key: entry.stagingKey, sha256: entry.sha256, size_bytes: entry.sizeBytes } : null
         if (!declared) {
-          declared = await declareAttachment(endpoint, { bytes, contentType }, { chat_id: id, as: agent.agentUserId })
+          declared = await declareAttachment(endpoint, { bytes, contentType }, { chat_id: id, as: agent.agentUserId, request_id: messageId })
           Object.assign(entry, { stagingKey: declared.staging_key, sha256: declared.sha256, sizeBytes: declared.size_bytes })
           await store.save()
         }

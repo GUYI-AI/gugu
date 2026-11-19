@@ -33,7 +33,7 @@ export async function markRunStartingAgent(
 
 /** starting_agent → done, writes finishedAt */
 export async function markRunDone(runId: string, finishedAt: number): Promise<AutomationRun> {
-  return updateRunOrThrow(runId, { status: 'done', finishedAt });
+  return updateRunOrThrow(runId, { status: 'done', finishedAt, error: null });
 }
 
 /** any step → failed, writes JSON error + finishedAt */

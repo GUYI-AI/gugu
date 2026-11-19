@@ -76,7 +76,7 @@ const PROGRAM: ReadonlySet<HostMember> = new Set<HostMember>([
   'showTaskPages',
   'surfaces.open', 'surfaces.screen', 'surfaces.update', 'surfaces.close', 'onSurface',
   'pages.acquire', 'pages.send', 'pages.maintain', 'pages.release', 'onTaskPage',
-  'projection.create', 'projection.publish', 'projection.close', 'projection.closed', 'projection.inputResult', 'onProjectionSource',
+  'projection.create', 'projection.publish', 'projection.present', 'projection.close', 'projection.closed', 'projection.inputResult', 'onProjectionSource',
   'getContext', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', 'messages.history', 'messages.search',
   'chats.list', 'chats.members', 'projects.list', 'linkTo',
   'sessions.index', 'sessions.read', 'cloud.read', 'cloud.programWrite', 'prompts.list', 'prompts.save', 'prompts.delete',

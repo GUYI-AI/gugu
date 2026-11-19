@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { runInAction } from 'mobx';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTabProvider, createTabRegistry } from './core/tab-provider-registry';
+import { chatToolDropId } from './chat-tool-geometry';
 import { PaneLayoutStore } from './pane-layout-store';
 
 // The pair's cut belongs to the page on the side (@@@side-width): each page brings its own width there. Owner 11-10:
@@ -161,6 +163,7 @@ describe('a page in full screen is no measure of the pair', () => {
     layout.mainGroup.pane.setDimensions(EXTENT + 240, 900);
     layout.groups.find(({ pane }) => pane.entries.has(wide))!.pane.setActiveTab(wide);
     expect(sideWidth()).toBe(480);
+    layout.setActiveGroup(layout.mainGroup.paneId);
     layout.groups.find(({ pane }) => pane.entries.has(members))!.pane.setActiveTab(members);
     expect(sideWidth()).toBe(360);
   });
@@ -197,5 +200,128 @@ describe('the pair on screen keeps its shares', () => {
     leave(layout, 600);
     front(layout, members);
     expect(sideWidth()).toBe(360);
+  });
+});
+
+// The chat page's tools (a chat with its tool pages beside it): the tool pane is no owner of a width either. Owner 11-19:
+// 「+」, closed, then the members — the members came at the 「+」 page's width.
+describe('a chat\'s tool pages come at their own width', () => {
+  const provider = (kind: string, sideWidth?: number) => createTabProvider({
+    kind,
+    conversation: kind === 'chat',
+    resourceKey: (state: { path: string }) => state.path,
+    initialize: () => ({ dispose() {} }),
+    dispose() {},
+    TabBarItem: () => null,
+    TabBarItemDragPreview: () => null,
+    TabContent: () => null,
+    ...(sideWidth ? { sideWidth: () => sideWidth } : {}),
+  });
+  const registry = createTabRegistry([provider('chat'), provider('start'), provider('info', 360)]);
+  function workspace() {
+    const layout = new PaneLayoutStore(registry, { viewId: 'chat-tools' }, undefined, {
+      isPrimaryChatTab: (entry) => entry.kind === 'chat',
+      placementMemory: { read: () => undefined, write() {} },
+    });
+    layouts.push(layout);
+    layout.open('chat', { path: 'chat' }, { from: null, intent: 'newTab' });
+    const w = {
+      layout,
+      detach: layout.attachChatWorkspace(),
+      open: (kind: string, path = kind) => w.layout.open(kind, { path }, { from: null, intent: 'newTab' })!,
+      close: (tabId: string) => w.layout.groups.find(({ pane }) => pane.entries.has(tabId))!.pane.closeTab(tabId),
+      /** The tool pane's width in px, as drawn. */
+      sideWidth: () => {
+        const cut = w.layout.layout;
+        if (cut.type !== 'split') return null;
+        const at = cut.children.findIndex((child) => child.type === 'pane' && child.paneId === w.layout.chatWorkspacePanes?.tools?.paneId);
+        return Math.round((cut.sizes[at] * EXTENT) / 100);
+      },
+      drag: (px: number) => {
+        const cut = w.layout.layout;
+        if (cut.type !== 'split') throw new Error('not split');
+        const tools = w.layout.chatWorkspacePanes!.tools!.paneId;
+        const share = (px / EXTENT) * 100;
+        w.layout.setSplitSizes(cut.id, cut.children.map((child) => (child.type === 'pane' && child.paneId === tools ? share : 100 - share)));
+      },
+    };
+    layout.setDimensions(EXTENT, 800);
+    return w;
+  }
+
+  /** Each way a page comes to the side, from a tool pane left at the 「+」 page's dragged 900: the members come at 360. */
+  const ways: Record<string, (w: ReturnType<typeof workspace>) => void> = {
+    'opened after the 「+」 page closed (owner 11-19)': ({ open, close, drag }) => {
+      const start = open('start'); drag(900); close(start);
+      open('info');
+    },
+    'opened in front of the 「+」 page': ({ open, drag }) => {
+      open('start'); drag(900);
+      open('info');
+    },
+    'its tab brought to the front': ({ layout, open, drag }) => {
+      const members = open('info'); const start = open('start'); drag(900);
+      const tools = layout.chatWorkspacePanes!.tools!.pane;
+      tools.setActiveTab(start); tools.setActiveTab(members);
+    },
+    'back in front when the 「+」 page in front of it closes': ({ open, close, drag }) => {
+      open('info'); const start = open('start'); drag(900);
+      close(start);
+    },
+    'its tool group dropped on the other edge': ({ layout, open, drag }) => {
+      const members = open('info'); open('start'); drag(900);
+      layout.setChatToolLayout('full');
+      layout.handleDragEnd(members, chatToolDropId('left', layout.chatWorkspacePanes!.chat.paneId));
+    },
+    'a restart': (w) => {
+      const start = w.open('start'); w.drag(900); w.open('info');
+      const restarted = workspace();
+      restarted.layout.restoreSnapshot(JSON.parse(JSON.stringify(w.layout.snapshot)));
+      w.detach();
+      Object.assign(w, { layout: restarted.layout, detach: restarted.detach });
+      void start;
+    },
+    'the divider dragged, then double-clicked': ({ layout, open, drag }) => {
+      open('start'); drag(900); open('info'); drag(500);
+      const cut = layout.layout;
+      if (cut.type !== 'split') throw new Error('not split');
+      layout.equalizeSplit(cut.id);
+    },
+  };
+
+  it.each(Object.keys(ways))('the members come at their own width: %s', (way) => {
+    const w = workspace();
+    try {
+      ways[way](w);
+      expect(w.sideWidth()).toBe(360);
+    } finally { w.detach(); }
+  });
+
+  it('a dragged width stays the page\'s own: it comes back with the page, not with the pane', () => {
+    const { layout, detach, open, sideWidth, drag } = workspace();
+    try {
+      const start = open('start');
+      drag(900);
+      const members = open('info');
+      const tools = layout.chatWorkspacePanes!.tools!.pane;
+      tools.setActiveTab(start);
+      expect(sideWidth()).toBe(900);
+      tools.setActiveTab(members);
+      expect(sideWidth()).toBe(360);
+    } finally { detach(); }
+  });
+});
+
+// @@@seat-side guard: a page's width on the side is chosen in one place. A new path that writes the pair's shares itself
+// (as #3065's open and drop did) fails here; route it through `_seatSide` instead.
+describe('the pair\'s shares are written in one place', () => {
+  it('only _seatSide, a cut that is not the pair\'s, and the restored saved cut write shares', () => {
+    const source = readFileSync(new URL('./pane-layout-store.ts', import.meta.url), 'utf8').split('\n');
+    const writes = source.flatMap((line, at) => {
+      if (!/\bsizes:\s|\bsetSplitSizes\(this\.layout|\bequalizeSplit\(this\.layout|\.sizes\s*=[^=]/.test(line)) return [];
+      const owner = source.slice(0, at + 1).reverse().map((l) => /^ {2}(?:private |static )?(?:get |set )?(\w+)(?:<[^>]*>)?\(/.exec(l)?.[1]).find(Boolean);
+      return [owner];
+    });
+    expect(new Set(writes)).toEqual(new Set(['setSplitSizes', 'equalizeSplit', '_seatSide', '_restorePair']));
   });
 });

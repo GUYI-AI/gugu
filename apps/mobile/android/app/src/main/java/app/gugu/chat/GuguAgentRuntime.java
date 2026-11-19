@@ -14,6 +14,7 @@ final class GuguAgentRuntime {
         return start(context, owner, false);
     }
     static synchronized Process start(Context context, String owner, boolean persistentHost) throws Exception {
+        AccountClosurePreparation.requireOpen(context, owner);
         File root = new File(context.getFilesDir(), "embedded-node");
         long installed = context.getPackageManager().getPackageInfo(context.getPackageName(), 0).lastUpdateTime;
         File runtime = new File(root, PhoneAgentRuntimeFiles.directoryName(BuildConfig.VERSION_NAME, installed));

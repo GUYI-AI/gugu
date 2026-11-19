@@ -1,3 +1,4 @@
+import { sliceWholeCharacters } from '@gugu/core/shared/unicodeSlice';
 import type { ActivityPreviewSource } from '@gugu/session-chat-ui/activity-preview';
 
 export type SearchItemKind = 'project' | 'session';
@@ -29,9 +30,10 @@ export interface TaskTurnHit {
 export function excerpt(text: string, query: string): string {
   const flat = text.replace(/\s+/g, ' ').trim();
   const first = query.trim().split(/\s+/)[0] ?? '';
-  const at = Math.max(0, flat.toLowerCase().indexOf(first.toLowerCase()));
+  const at = matchRanges(flat, first)[0]?.start ?? 0;
   const start = Math.max(0, at - 30);
-  return `${start > 0 ? '…' : ''}${flat.slice(start, start + 120)}${start + 120 < flat.length ? '…' : ''}`;
+  const end = Math.min(flat.length, start + 120);
+  return `${start > 0 ? '…' : ''}${sliceWholeCharacters(flat, start, end)}${end < flat.length ? '…' : ''}`;
 }
 
 export interface CommandPaletteQuery {
@@ -50,9 +52,17 @@ export type TaskTurnIndexStatus = { state: 'preparing' | 'ready' | 'failed'; don
 /** Where each whitespace-separated piece of the query occurs in text (case-insensitive), merged, for highlighting. */
 export function matchRanges(text: string, query: string): { start: number; end: number }[] {
   const lower = text.toLowerCase();
+  const starts: number[] = [];
+  const ends: number[] = [];
+  let offset = 0;
+  for (const char of text) {
+    const folded = char.toLowerCase();
+    for (let index = 0; index < folded.length; index += 1) { starts.push(offset); ends.push(offset + char.length); }
+    offset += char.length;
+  }
   const ranges: { start: number; end: number }[] = [];
   for (const piece of query.trim().toLowerCase().split(/\s+/).filter(Boolean)) {
-    for (let at = lower.indexOf(piece); at !== -1; at = lower.indexOf(piece, at + piece.length)) ranges.push({ start: at, end: at + piece.length });
+    for (let at = lower.indexOf(piece); at !== -1; at = lower.indexOf(piece, at + piece.length)) ranges.push({ start: starts[at], end: ends[at + piece.length - 1] });
   }
   ranges.sort((a, b) => a.start - b.start);
   const merged: { start: number; end: number }[] = [];

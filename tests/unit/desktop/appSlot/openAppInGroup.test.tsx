@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import './chatFileReadsStub'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, createElement } from 'react'
 import { createReactHarness } from '../../../support/testHarness'

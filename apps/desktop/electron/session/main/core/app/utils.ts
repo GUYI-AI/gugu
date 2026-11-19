@@ -190,7 +190,6 @@ export const resolveAppVersion = async (): Promise<string> => {
     // @@@4865 本模块所在 chunk 平铺在 apps/desktop/dist-electron/(从前在其 sessionpage/ 子目录,这里曾是 '../../');
     // 上一层即 apps/desktop/package.json。前面 app.getVersion() 在打包形态下总先命中,这里只是 dev 兜底。
     join(__dirname, '../package.json'),
-    join(process.cwd(), 'package.json'),
     join(app.getAppPath(), 'package.json'),
   ];
 

@@ -116,7 +116,10 @@ public class GuguAgentPlugin extends Plugin {
             if (call.getString("prompt", "").trim().isEmpty()) throw new IllegalArgumentException("请先输入任务");
             if (!call.getString("baseUrl", "").startsWith("https://")) throw new IllegalArgumentException("模型连接必须使用 HTTPS");
             if (call.getString("apiKey", "").isEmpty() || call.getString("model", "").isEmpty()) throw new IllegalArgumentException("缺少模型凭据");
-            if (!GuguAgentService.claim()) throw new IllegalStateException("手机上还有一条正在运行的任务");
+            synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
+                AccountClosurePreparation.requireOpen(getContext(), owner(call));
+                if (!GuguAgentService.claim(owner(call))) throw new IllegalStateException("手机上还有一条正在运行的任务");
+            }
             try {
                 ContextCompat.startForegroundService(getContext(), new Intent(getContext(), GuguAgentService.class).putExtra("command", call.getData().toString()));
             } catch (Exception error) { GuguAgentService.release(); throw error; }

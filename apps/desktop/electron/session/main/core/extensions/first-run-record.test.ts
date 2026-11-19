@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ app: { getPath: () => '' } }));
 
-const { FIRST_RUN_RECORD_FILE, noteFirstRunProfile, readFirstRunRecord, writeFirstRunRecord } = await import('./first-run-record');
+const { FIRST_RUN_RECORD_FILE, captureAgentHomeUpgradeProfile, noteFirstRunProfile, readFirstRunRecord, writeFirstRunRecord } = await import('./first-run-record');
 
 // 161 10-15: whether this profile is a new one can be told only at the very start of a start, before anything makes the
 // Apps' folder (`task-extensions/`) — a profile that has one has been in use (an old profile upgraded: nothing put in).
@@ -18,6 +18,18 @@ afterEach(() => {
 });
 
 describe('the first-run record on this computer', () => {
+  it('keeps a new agent-home profile new across an interrupted first boot', () => {
+    expect(captureAgentHomeUpgradeProfile(userData)).toBe(false);
+    noteFirstRunProfile(userData);
+    fs.mkdirSync(path.join(userData, 'task-extensions'));
+    expect(captureAgentHomeUpgradeProfile(userData)).toBe(false);
+  });
+
+  it('captures an existing profile before managed homes are provisioned', () => {
+    noteFirstRunProfile(userData);
+    expect(captureAgentHomeUpgradeProfile(userData)).toBe(true);
+  });
+
   it('a new profile: pending, written down', () => {
     expect(noteFirstRunProfile(userData)).toEqual({ state: 'pending' });
     expect(readFirstRunRecord(userData)).toEqual({ state: 'pending' });

@@ -9,6 +9,7 @@ import { Clipboard } from '@capacitor/clipboard'
 import type { AppPlatform } from './types'
 import { createUnsupportedPlatform } from './unsupported'
 import { rendererLogger } from '../lib/log'
+import { nativeTextSelection } from './nativeTextSelection'
 import { nativePhoneAgentHostAvailable } from './phoneAgentHostCapability'
 import { iosCalendarPermissionsAvailable } from '../mobile/ios-calendar/iosCalendarPermissionsAvailability'
 
@@ -22,6 +23,7 @@ const lifecycleError = (error: unknown) => rendererLogger('ios/lifecycle').error
 export const iosPlatform: AppPlatform = {
   ...base,
   accountClosure: nativeIOSAccountClosure,
+  textSelection: nativeTextSelection,
   capabilities: { ...base.capabilities, appVersion: true, clipboard: true, get notifications() { return Capacitor.isPluginAvailable('GuguPushNotifications') },
     get phoneAgentHost() { return nativePhoneAgentHostAvailable('ios') },
     get calendarSettings() { return iosCalendarPermissionsAvailable() },

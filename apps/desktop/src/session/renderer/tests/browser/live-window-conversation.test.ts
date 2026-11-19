@@ -29,10 +29,30 @@ function setup(descriptor: LiveWindowResourceDescriptor = source) {
     emit(watch, { type: 'frame', generation: 'g', frame: { sequence, width: 640, height: 480, mime: 'image/png', data: canvas.toDataURL().split(',')[1]! } });
     await vi.waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({ packet: expect.objectContaining({ type: 'ack', frame: sequence }) })));
   };
-  return { current, transport, paint, unwatch, report, watched };
+  return { current, transport, paint, unwatch, report, watched,
+    end: () => {
+      emit(watch, { type: 'state', generation: 'g', state: 'connecting' });
+      emit(watch, { type: 'state', generation: 'g', state: 'closed', reason: 'The browser closed' });
+    } };
 }
 
 describe('live conversation picture lifetime', () => {
+  it('retains the decoded frame offline and removes it only on a successful host close read', async () => {
+    const s = setup(); s.current.setOperating(true); s.current.setVisible('chat', true);
+    await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(1));
+    const picture = s.current.picture('page')!; document.body.append(picture); await s.paint(1);
+    const last = picture.querySelector('img')!.src;
+    s.current.setConnected(false);
+    await vi.waitFor(() => expect(s.unwatch).toHaveBeenCalledTimes(1));
+    expect(s.current.model.getSnapshot()).toMatchObject({ connected: false, operating: false, visible: true, headerSource: { id: 'page' } });
+    expect(picture.querySelector('img')!.src).toBe(last);
+    vi.mocked(s.transport.list).mockResolvedValue([]);
+    await s.current.refresh();
+    expect(s.current.picture('page')).toBe(picture);
+    s.current.setConnected(true); await s.current.refresh();
+    expect(s.current.model.getSnapshot()).toMatchObject({ headerSource: null, visible: false, sources: [] });
+    expect(s.current.picture('page')).toBeNull();
+  });
   it('ends picture watches on true close and uses a fresh watch when the tool row reopens it', async () => {
     const s = setup(); s.current.setOperating(true); s.current.setVisible('chat', true);
     await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(1));
@@ -49,7 +69,7 @@ describe('live conversation picture lifetime', () => {
     expect(s.watched.mock.calls[1]![0].watchId).not.toBe(first);
     expect(s.report).not.toHaveBeenCalled();
   });
-  it('retains the last decoded frame after the real turn ends and disposes it with the conversation', async () => {
+  it('hides the desktop window and clears its running state when the real turn ends', async () => {
     const s = setup(); s.current.setOperating(true); s.current.setVisible('chat', true);
     await vi.waitFor(() => expect(s.current.picture('page')?.querySelector('img') ?? null).not.toBeNull());
     document.body.append(s.current.picture('page')!); await s.paint(1);
@@ -57,7 +77,7 @@ describe('live conversation picture lifetime', () => {
     const last = image.src;
     s.current.setOperating(false);
     await vi.waitFor(() => expect(s.unwatch).toHaveBeenCalled());
-    expect(s.current.model.getSnapshot()).toMatchObject({ operating: false, visible: true });
+    expect(s.current.model.getSnapshot()).toMatchObject({ operating: false, visible: false, presentation: { mode: 'closed' } });
     expect(image.src).toBe(last); expect(image.isConnected).toBe(true);
     expect(s.current.picture('page')!.querySelector('textarea')!.disabled).toBe(true);
     s.current.dispose(); expect(image.isConnected).toBe(false); expect(s.report).not.toHaveBeenCalled();
@@ -71,10 +91,13 @@ describe('live conversation picture lifetime', () => {
     s.current.setOperating(false);
     await vi.waitFor(() => expect(s.unwatch).toHaveBeenCalledTimes(1));
     s.current.setOperating(true);
+    s.current.model.dispatch({ type: 'toggle-window' });
     await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(2));
     s.current.setOperating(false);
     await vi.waitFor(() => expect(s.unwatch).toHaveBeenCalledTimes(2));
+    s.current.model.dispatch({ type: 'toggle-window' });
     s.current.model.dispatch({ type: 'enlarge' }); s.current.model.dispatch({ type: 'show-tab' });
+    expect(s.current.model.getSnapshot().presentation?.mode).toBe('tabbed');
     const tab = document.createElement('div'); document.body.append(tab); tab.append(picture);
     expect(picture.querySelector('img')!.src === last).toBe(true);
     expect(picture.querySelectorAll('img')).toHaveLength(1);
@@ -90,6 +113,7 @@ describe('live conversation picture lifetime', () => {
     s.current.setOperating(false);
     await vi.waitFor(() => expect(s.unwatch).toHaveBeenCalledTimes(1));
     s.current.setOperating(true);
+    s.current.model.dispatch({ type: 'toggle-window' });
     await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(2));
     expect(picture.querySelector('img')!.src === last).toBe(true);
     await s.paint(2);
@@ -111,6 +135,35 @@ describe('live conversation picture lifetime', () => {
     s.current.model.dispatch({ type: 'show-from-tool', kind: 'browser' });
     await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(3));
     expect(s.report).not.toHaveBeenCalled();
+  });
+  it('reconciles a closed browser stream before the surrounding agent turn ends', async () => {
+    const s = setup(); s.current.setOperating(true); s.current.setVisible('chat', true);
+    await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(1));
+    await s.paint(1);
+    vi.mocked(s.transport.list).mockResolvedValue([]);
+    s.end();
+    await vi.waitFor(() => expect(s.current.model.getSnapshot()).toMatchObject({ visible: false, operating: false, headerSource: null }));
+    expect(s.current.picture('page')).toBeNull();
+    expect(s.report).not.toHaveBeenCalled();
+  });
+  it('reconciles a source that closes while its initial watch is still being admitted', async () => {
+    const s = setup(), admitted = Promise.withResolvers<void>();
+    const watch = s.watched.getMockImplementation()!;
+    s.watched.mockImplementationOnce(async args => { await watch(args); await admitted.promise; });
+    s.current.setOperating(true); s.current.setVisible('chat', true);
+    await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(1));
+    vi.mocked(s.transport.list).mockResolvedValue([]);
+    s.end(); admitted.resolve();
+    await vi.waitFor(() => expect(s.current.model.getSnapshot()).toMatchObject({ visible: false, headerSource: null }));
+    expect(s.report).not.toHaveBeenCalled();
+  });
+  it('reports a failed initial watch without starting a resource refresh and retry loop', async () => {
+    const s = setup(), failure = new Error('watch admission refused');
+    s.watched.mockRejectedValueOnce(failure);
+    s.current.setOperating(true); s.current.setVisible('chat', true);
+    await vi.waitFor(() => expect(s.report).toHaveBeenCalledWith(failure));
+    expect(s.watched).toHaveBeenCalledTimes(1);
+    expect(s.transport.list).toHaveBeenCalledTimes(1);
   });
   it('does not let a delayed read from the previous visibility overwrite a newly opened conversation', async () => {
     const s = setup(); const first = Promise.withResolvers<readonly LiveWindowResourceDescriptor[]>();

@@ -28,5 +28,5 @@ export async function revealLiveWindow(projectId: string, sessionId: string, kin
   });
   const conversation = getLiveWindowConversation(context, 'desktop', transport);
   await conversation.refresh();
-  conversation.model.dispatch({ type: 'show-from-tool', kind });
+  // Automatic App preview may discover a source, but must not undo the person's header-toggle choice.
 }
