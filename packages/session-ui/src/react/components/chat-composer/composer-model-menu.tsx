@@ -632,6 +632,11 @@ export function ComposerModelMenu({
                           <span data-slot="composer-model-name" className={styles.modelPanelItemName}>
                             {m.name}
                           </span>
+                          {m.tag && (
+                            <span data-slot="composer-model-tag" className={styles.modelPanelItemTag}>
+                              {m.tag}
+                            </span>
+                          )}
                         </Combobox.Item>
                       )}
                     </Combobox.Collection>

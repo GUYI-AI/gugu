@@ -1709,6 +1709,22 @@ export const modelPanelItemName = style([
   { flex: '1 1 auto', minWidth: 0 },
 ]);
 
+/** The vendor tag after a person's own model (`ComposerModelOption.tag`): 10px on a light grey, darker on the row in focus. */
+export const modelPanelItemTag = style({
+  flexShrink: 0,
+  paddingLeft: '0.25rem',
+  paddingRight: '0.25rem',
+  borderRadius: tokenVars.radiusSm,
+  background: vars.background1,
+  color: vars.foregroundMuted,
+  fontSize: '10px',
+  lineHeight: '14px',
+  whiteSpace: 'nowrap',
+  selectors: {
+    '[data-highlighted] &, [data-selected] &': { background: vars.background2 },
+  },
+});
+
 /** 悬浮详情卡本体。宽度随内容、但夹在一个窄区间里:卡跟着鼠标换行时不该忽宽忽窄得太厉害。 */
 export const modelDetailCard = style({
   width: 'max-content',

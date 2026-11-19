@@ -116,6 +116,11 @@ export interface ComposerModelOption {
    */
   providerLabel?: string;
   /**
+   * Small grey tag after the name in the desktop list: which vendor a person's own address belongs to (its registrable
+   * domain without the public suffix, e.g. `deepseek`). Gugu's own models have none.
+   */
+  tag?: string;
+  /**
    * 这一条**看得见但选不了**,以及为什么。
    *
    * owner 2026-09-07 定的过渡态:「原则上讲,一个 session 的模型和思考强度都是应该可以改的,
@@ -193,6 +198,8 @@ export interface ComposerModelItem {
   modelFeatures?: ComposerModelOption['modelFeatures'];
   groupLabel?: string;
   providerLabel?: string;
+  /** 见 `ComposerModelOption` 上同名字段。 */
+  tag?: string;
   /** 见 `ComposerModelOption` 上同名字段。 */
   disabled?: boolean;
   disabledReason?: string;
