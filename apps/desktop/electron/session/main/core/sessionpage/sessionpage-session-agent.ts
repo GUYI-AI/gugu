@@ -3,6 +3,7 @@ import { AGENT_OWNER_CACHE_KEY, agentOwnerUserId, agentsForOwner } from '@gugu/c
 
 /** Roster cache keys written by the host's session-page provisioning flow. */
 export const SESSIONPAGE_SESSION_CACHE_KEY = 'emdash_session_id'
+/** @@@c1-legacy-project — written by releases before C1; read only to tell their DM-in-group-key records apart. */
 export const SESSIONPAGE_PROJECT_CACHE_KEY = 'emdash_project_id'
 export const SESSIONPAGE_GROUP_CHAT_CACHE_KEY = 'sessionpage_group_chat_id'
 /** The person's private chat with the session's agent (provisioning's `DIRECT_CHAT_CACHE_KEY`). */
@@ -99,19 +100,22 @@ export async function guguAgentUserIdForSession(
  * 那更可能是这条会话还没供给身份、或键名分了家。两者都退回点对点,但只有前者是对的,所以把
  * 原因一起交出去,让读的人能在日志里把它们分开(❌ 不折成一个 `hasGroup:false`)。
  */
-export type SessionpageProjectGroup =
-  | { kind: 'group'; projectId: string; groupChatId: string }
-  | { kind: 'none'; reason: 'no-roster-record' | 'no-project' | 'no-group-yet' }
+export type SessionpageGroup =
+  | { kind: 'group'; groupChatId: string }
+  | { kind: 'none'; reason: 'no-roster-record' | 'no-group-yet' }
 
-export async function sessionpageProjectGroupForSession(
+/**
+ * @@@group-folders The group this session's agent is in: the roster records the session's group once the agent joined
+ * it (provisioning). A session without a group, or whose agent has not joined yet, answers 'no-group-yet' — callers
+ * route point to point either way.
+ */
+export async function sessionpageGroupForSession(
   sessionId: string,
   env: NodeJS.ProcessEnv,
-): Promise<SessionpageProjectGroup> {
+): Promise<SessionpageGroup> {
   const record = await localAgentForSession(sessionId, env)
   if (!record) return { kind: 'none', reason: 'no-roster-record' }
-  const projectId = cached(record, SESSIONPAGE_PROJECT_CACHE_KEY)
-  if (!projectId) return { kind: 'none', reason: 'no-project' }
   const groupChatId = cached(record, SESSIONPAGE_GROUP_CHAT_CACHE_KEY)
   if (!groupChatId) return { kind: 'none', reason: 'no-group-yet' }
-  return { kind: 'group', projectId, groupChatId }
+  return { kind: 'group', groupChatId }
 }
