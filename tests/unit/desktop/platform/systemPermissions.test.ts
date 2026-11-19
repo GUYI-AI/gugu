@@ -87,6 +87,8 @@ import { systemPermissionAction } from '../../../../apps/desktop/src/lib/systemP
 beforeEach(async () => {
   vi.resetModules()
   for (const mock of Object.values(mocks)) mock.mockReset()
+  const { applyLocalePreference } = await import('../../../../apps/desktop/src/i18n/runtime')
+  applyLocalePreference('zh-CN', false)
   ;({ setAndroidPushConfirmed } = await import('../../../../apps/desktop/src/mobile/android-push/androidPushState'))
   ;({ capacitorPlatform, toSystemPermissionState } = await import('../../../../apps/desktop/src/platform/capacitor'))
   setAndroidPushConfirmed(false)
