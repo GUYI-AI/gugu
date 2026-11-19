@@ -258,7 +258,7 @@ describe('chat tool state is scoped to the conversation ID', () => {
     }
   });
 
-  it('reveals a selected topic from a hidden group and reveals its own message from full view', () => {
+  it('reveals a selected topic from a hidden group and selects its retained conversation tab from full view', () => {
     const sourceId = 'workspace-source-navigation';
     const topicId = 'workspace-topic-navigation';
     const source = chatLayoutOf(sourceId);
@@ -277,7 +277,9 @@ describe('chat tool state is scoped to the conversation ID', () => {
       const directionAndWidth = topic.layout;
       topic.setChatToolLayout('full');
       revealChatWorkspaceMessage(topicId);
-      expect(topic.chatWorkspaceMode).toBe('split');
+      expect(topic.chatWorkspaceMode).toBe('full');
+      expect(topic.activePaneId).toBe(topic.chatWorkspacePanes?.chat.paneId);
+      expect(topic.chatWorkspaceSinglePaneId).toBe(topic.chatWorkspacePanes?.chat.paneId);
       expect(topic.layout).toBe(directionAndWidth);
       expect(panelTabsOf(topicId).map((tab) => tab.tabId)).toEqual([topicTool]);
       expect(topicTabOf(sourceId)?.topic.topicChatId).toBe(topicId);
