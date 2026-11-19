@@ -1,6 +1,7 @@
 // #987 Agent 定时任务 — 渲染层服务（CRUD）。
 // 表 identity.agent_scheduled_tasks（owner RLS）；建任务时解析 owner↔agent 私聊为触发目标 chat_id，
 // 并算好首个 next_run_at。触发由设备运行时 tick 负责（见 packages/core/cloud/agentScheduledTasks）。
+import { serverNow } from '@gugu/core/shared/serverClock'
 import { identityDb } from './supabase'
 import { chatService } from './chat'
 import { i18n } from '@/i18n'
@@ -84,7 +85,8 @@ export const agentScheduledTaskService = {
     }
     // 触发目标 = owner↔agent 私聊；建任务时解析并固化（agent 回合在此会话里跑）。
     const chatId = await chatService.getOrCreateDM(input.ownerUserId, input.agentUserId)
-    const nextRunAt = new Date(Date.now() + input.intervalSeconds * 1000).toISOString()
+    // Due is judged on the server's clock, by whichever device runs it (`@@@server-clock`).
+    const nextRunAt = new Date(serverNow() + input.intervalSeconds * 1000).toISOString()
     const { data, error } = await identityDb
       .from('agent_scheduled_tasks')
       .insert({
@@ -115,7 +117,7 @@ export const agentScheduledTaskService = {
         .eq('id', id)
         .maybeSingle()
       const interval = (data as { interval_seconds?: number | null } | null)?.interval_seconds
-      if (interval) patch.next_run_at = new Date(Date.now() + interval * 1000).toISOString()
+      if (interval) patch.next_run_at = new Date(serverNow() + interval * 1000).toISOString()
     }
     const { error } = await identityDb.from('agent_scheduled_tasks').update(patch).eq('id', id)
     if (error) throw new Error(error.message)

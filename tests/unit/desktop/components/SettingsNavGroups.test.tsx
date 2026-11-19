@@ -41,7 +41,7 @@ describe('the one settings nav', () => {
       ['account', 'subscriptions', 'usage'],
       ['general', 'data-import', 'interface', 'model', 'permissions', 'passwords'],
       ['sessions', 'prompts', 'devices', 'browser', 'files'],
-      ['resource-monitor', 'about'],
+      ['resource-monitor', 'help', 'about'],
     ])
   })
 
@@ -60,7 +60,7 @@ describe('the one settings nav', () => {
       ['account', 'usage', 'files', 'subscriptions'],
       ['general', 'connectors', 'interface', 'permissions', 'model', 'resource-monitor'],
       ['sessions', 'browser', 'devices', 'apps', 'phone'],
-      ['about'],
+      ['help', 'about'],
     ])
   })
 
@@ -70,7 +70,7 @@ describe('the one settings nav', () => {
     expect(groups()).toEqual([
       ['account', 'usage', 'files'],
       ['general', 'connectors', 'permissions', 'model'],
-      ['about'],
+      ['help', 'about'],
     ])
   })
 

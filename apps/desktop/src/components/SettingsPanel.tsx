@@ -5,6 +5,7 @@ import { lazy, Suspense, useRef, useState } from 'react'
 import { useAuth } from '../store/auth'
 import { membershipSettingsSection } from '../lib/billing/settingsDestination'
 import { AboutSection } from './settings/AboutSection'
+import { HelpSection } from './settings/HelpSection'
 import { AccountSection } from './settings/AccountSection'
 import type { PhoneAssistantState } from '../mobile/assistant/usePhoneAssistant'
 import { Button } from './ui/Button'
@@ -144,6 +145,7 @@ export function SettingsPanel({
       case 'model':    return <ModelSection addRequested={addCustomModel} onAddClose={onCustomModelDialogClose} />
       case 'usage':    return teamAccount ? <TeamSettingsUsage /> : <UsageSection />
       case 'about':    return <AboutSection />
+      case 'help':     return <HelpSection />
       case 'permissions': return <PermissionsSection />
       case 'passwords': return PASSWORD_BETA_ENABLED ? <PasswordSection actionsHost={() => passwordActions.current} /> : null
       case 'apps':     return <Suspense fallback={null}><PhoneMarketplace key={requestedSection}
@@ -166,7 +168,7 @@ export function SettingsPanel({
   }
 
   // 内容区顶部条的标题:与 SettingsNav 里同一个 key 的导航项同一份翻译("账户"/"通用"/…)。
-  const sectionTitle = t(`settings.nav.${activeSection}`)
+  const sectionTitle = t(activeSection === 'help' ? 'productTour:help.label' : `settings.nav.${activeSection}`)
 
   const card = (
       <div

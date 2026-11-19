@@ -5,6 +5,7 @@
  *
  * 不碰 node / electron:管道(设备 RPC 请求方)与设备清单由调用方给;设备推来的事件经 `onEvent` 交进来。
  */
+import { serverNow } from '../shared/serverClock'
 import {
   DEVICE_ACTION_ACK_TIMEOUT_MS,
   DEVICE_ACTION_PROGRESS_EVENT,
@@ -258,7 +259,8 @@ export function createDeviceActionCaller(deps: DeviceActionCallerDeps): DeviceAc
         args: input.args ?? {},
         timeout_ms: timeoutMs,
         // 最晚开始时刻:两次「收到」等待之内还没开始的,设备就不该再做(掉线后才收到的旧请求)。
-        deadline_at: new Date(startedAt + 2 * DEVICE_ACTION_ACK_TIMEOUT_MS + 5_000).toISOString(),
+        // On the server's clock: the device that reads it may run a different local clock (`@@@server-clock`).
+        deadline_at: new Date(serverNow() + 2 * DEVICE_ACTION_ACK_TIMEOUT_MS + 5_000).toISOString(),
         ...(input.caller ? { caller: input.caller } : {}),
       }
 

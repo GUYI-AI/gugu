@@ -1,3 +1,4 @@
+import { serverNow } from '@gugu/core/shared/serverClock'
 import { rendererLogger } from '@/lib/log';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { messageForUser } from '@/lib/userFacingError';
@@ -327,7 +328,7 @@ function PlatformBrowserSetup({ item, rpc, onConnected }: {
       if (generation.current !== current) return
       attempt.current = id
       openInBrowser(begun.authorizationUrl)
-      while (generation.current === current && Date.now() < begun.expiresAt) {
+      while (generation.current === current && serverNow() < begun.expiresAt) {
         const status = await rpc.integrations.platformOAuthStatus(item.id, id)
         if (generation.current !== current) return
         if (status.state === 'connected') { onConnected(); return }

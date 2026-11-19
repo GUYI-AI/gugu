@@ -16,6 +16,7 @@ export type ActiveSection =
   | 'usage'
   // 用户自己在各家买的订阅(product spec):这台电脑上各家 Harness 的套餐与这一期还剩多少。
   | 'subscriptions'
+  | 'help'
   | 'about'
   | 'permissions'
   | 'passwords'
@@ -61,7 +62,7 @@ export const SETTINGS_GROUPS: readonly { readonly id: SettingsGroupId; readonly 
   // agent 跑起来的那几样(会话的默认行为、仓库、浏览器)挨着「设备」。App 只在手机壳上:那里的 App 由
   // 这一页自己的 App 仓管(L9)。
   { id: 'work', sections: ['sessions', 'prompts', 'browser', 'devices', 'apps', 'phone'] },
-  { id: 'about', sections: ['about'] },
+  { id: 'about', sections: ['help', 'about'] },
 ]
 export const SETTINGS_SECTION_GROUPS: readonly (readonly ActiveSection[])[] = SETTINGS_GROUPS.map((group) => group.sections)
 // ❌ 别在这里加「机器与会话」:手机看管 agent 的入口只有底部「项目」tab(owner 2026-09-05),一张自带三层导航的

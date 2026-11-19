@@ -16,6 +16,7 @@ import {
   type IssuedModelAccess,
 } from './model-access'
 import { createLogger } from './lib/logger'
+import { serverNow } from '@gugu/core/shared/serverClock'
 import {
   VOICE_NOTE_MODEL_ID,
   VOICE_NOTE_MODEL_PROTOCOL,
@@ -55,7 +56,7 @@ async function ticketFor(authProvider: RuntimeAuthProvider, agentUserId: string,
     try { assertTeamTaskSession(await requireRuntimeAuth(authProvider, 'team voice note'), original.teamTask) }
     catch (cause) { if (current) void retire(authProvider, current); throw cause }
   }
-  if (current && Date.parse(current.access.expiresAt) - Date.now() > TICKET_MARGIN_MS) return current
+  if (current && Date.parse(current.access.expiresAt) - serverNow() > TICKET_MARGIN_MS) return current
   const pending = issuing.get(agentUserId)
   if (pending) return pending
   const next = (async () => {

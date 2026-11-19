@@ -28,6 +28,7 @@
  */
 import { CloudComputerError, cloudComputerErrorFromResponse, isCloudComputerNotOpen } from './cloudComputer'
 import { anySignal } from '../shared/anySignal'
+import { withServerClock } from '../shared/serverClock'
 import { parsePlatformConnectionReceipt, type PlatformConnectionReceipt } from './connections'
 
 export type PlatformIntegrationAccount = {
@@ -148,8 +149,6 @@ export type PlatformIntegrationsClient = {
   oauthStatus?(provider: string, attemptId: string, signal?: AbortSignal): Promise<{ state: 'pending' | 'connected' | 'failed'; error?: string }>
   cancelOAuth?(provider: string, attemptId: string, signal?: AbortSignal): Promise<void>
   list(signal?: AbortSignal): Promise<PlatformIntegrationProvider[]>
-  /** 同一个读,外加平台答话时它自己的钟(应答的 `Date` 头,毫秒,整秒精度);没给这个头 = null。 */
-  listWithClock(signal?: AbortSignal): Promise<{ providers: PlatformIntegrationProvider[]; platformNow: number | null }>
   /** 连接页:`{ connect: 'manual' }`;#649 搬上来的 key:`{ migration }`。 */
   saveCredential(
     provider: string,
@@ -217,7 +216,8 @@ export function createPlatformIntegrationsClient(options: {
   fetch?: typeof fetch
   requestTimeoutMs?: number
 }): PlatformIntegrationsClient {
-  const doFetch = options.fetch ?? fetch
+  // Each answer also tunes this runtime's server clock (`@@@server-clock`); OAuth deadlines are read against it.
+  const doFetch = withServerClock(options.fetch ?? fetch)
   const timeoutMs = options.requestTimeoutMs ?? PLATFORM_REQUEST_TIMEOUT_MS
   const headers = async (): Promise<Record<string, string>> => ({
     Authorization: `Bearer ${await options.accessToken()}`,
@@ -229,7 +229,7 @@ export function createPlatformIntegrationsClient(options: {
     url: string,
     body?: unknown,
     signal?: AbortSignal,
-  ): Promise<{ raw: string; platformNow: number | null }> => {
+  ): Promise<{ raw: string }> => {
     const init: Record<string, string> = await headers()
     if (body !== undefined) init['Content-Type'] = 'application/json'
     const timeout = AbortSignal.timeout(timeoutMs)
@@ -253,8 +253,7 @@ export function createPlatformIntegrationsClient(options: {
       throw new CloudComputerError(0, 'network', error instanceof Error ? error.message : String(error))
     }
     if (!response.ok) throw cloudComputerErrorFromResponse(response.status, raw)
-    const date = Date.parse(response.headers.get('date') ?? '')
-    return { raw, platformNow: Number.isFinite(date) ? date : null }
+    return { raw }
   }
   const json = (raw: string, what: string): unknown => {
     try {
@@ -262,10 +261,6 @@ export function createPlatformIntegrationsClient(options: {
     } catch {
       throw badResponse(what)
     }
-  }
-  const listWithClock = async (signal?: AbortSignal) => {
-    const { raw, platformNow } = await request('GET', `${options.baseUrl}/integrations`, undefined, signal)
-    return { providers: parsePlatformIntegrations(json(raw, '/integrations')), platformNow }
   }
   return {
     beginOAuth: async (provider, signal) => {
@@ -282,8 +277,7 @@ export function createPlatformIntegrationsClient(options: {
     cancelOAuth: async (provider, attemptId, signal) => {
       await request('DELETE', `${providerPath(provider)}/oauth/status?attemptId=${encodeURIComponent(attemptId)}`, undefined, signal);
     },
-    list: async (signal) => (await listWithClock(signal)).providers,
-    listWithClock,
+    list: async (signal) => parsePlatformIntegrations(json((await request('GET', `${options.baseUrl}/integrations`, undefined, signal)).raw, '/integrations')),
     saveCredential: async (provider, fields, source, signal) => {
       const body = 'connect' in source ? { fields, connect: 'manual' } : { fields, migration: { savedAt: source.migration.savedAt } }
       const saved = json((await request('PUT', `${providerPath(provider)}/credential`, body, signal)).raw, 'PUT credential') as Record<string, unknown> | null

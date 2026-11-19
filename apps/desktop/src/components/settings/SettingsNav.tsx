@@ -25,8 +25,11 @@ import {
   SquarePenFilled,
   SidebarMinimalistic,
   Buildings,
+  HelpCircle,
+  HelpCircleFilled,
 } from '@/lib/icons'
 import { useTranslation } from 'react-i18next'
+import '../../i18n/registerProductTourCatalog'
 import { platformModels } from '../../lib/agentModelReplicas'
 
 interface NavItem {
@@ -43,7 +46,7 @@ const DESKTOP_NAV_GROUPS: readonly { id: NavGroupId; sections: readonly ActiveSe
   { id: 'account', sections: ['account', 'team', 'subscriptions', 'usage'] },
   { id: 'preferences', sections: ['general', 'data-import', 'interface', 'model', 'permissions', 'passwords'] },
   { id: 'work', sections: ['sessions', 'prompts', 'devices', 'browser', 'files'] },
-  { id: 'diagnostics', sections: ['resource-monitor', 'about'] },
+  { id: 'diagnostics', sections: ['resource-monitor', 'help', 'about'] },
 ]
 
 interface SettingsNavProps {
@@ -149,6 +152,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'apps',    labelKey: 'settings.nav.apps', il: <IlApps />,    ib: <IbApps />    },
   { key: 'phone',   labelKey: 'settings.nav.phone', il: <IlPhone />,   ib: <IbPhone />   },
   { key: 'about',   labelKey: 'settings.nav.about', il: <IlAbout />,   ib: <IbAbout />   },
+  { key: 'help', labelKey: 'productTour:help.label', il: <HelpCircle size={15} />, ib: <HelpCircleFilled size={15} /> },
   // 会话页画的那几格(product spec)。同一套 Solar linear / bold,尺寸与上面这些一样。
   { key: 'prompts', labelKey: 'settings.nav.prompts', il: <FileText size={15} />, ib: <FileText size={15} /> },
   { key: 'sessions', labelKey: 'settings.nav.sessions', il: <SquarePen size={15} />, ib: <SquarePenFilled size={15} /> },
