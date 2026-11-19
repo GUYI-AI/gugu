@@ -48,6 +48,7 @@ describe('活会话设置落库:改完 → 记录 → 重开读到新值', () =>
       INSERT INTO sessions (id, project_id, provider, runtime, config)
         VALUES ('${CONV}', 'project-1', 'claude', 'acp',
                 '{"version":"1","type":"acp","agentDisplayName":"Task","permissionMode":"full-access","model":"opus","effort":"high","firstUtterance":"hi","mcpSessionServers":["gugu"]}');
+      INSERT OR IGNORE INTO workspaces (id, type, path) VALUES ('ws-fixture', 'local', '/fixture'); UPDATE sessions SET workspace_id = 'ws-fixture' WHERE workspace_id IS NULL;
     `);
   });
 

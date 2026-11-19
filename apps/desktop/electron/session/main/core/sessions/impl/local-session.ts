@@ -55,6 +55,7 @@ import {
 import {
   assertTmuxAvailable,
   killTmuxSession,
+  makeTmuxSessionName,
   resolveTmuxSessionName,
   listTmuxSessionNames,
 } from '@main/core/pty/tmux-session-name';
@@ -610,9 +611,11 @@ export class LocalSessionProvider implements SessionProvider {
       }
       // 接回还是新起,在钩子之前定下来:钩子要据此决定做不做新起才做的事(物化能力、重签平台票……)。
       // 与 tmux 启动行里 `has-session || new-session` 是同一个判据;tmux 调用失败就抛,❌ 当成「不在」去新起。
-      const tmuxSessionName = tmuxEnabled ? await resolveTmuxSessionName(this.ctx, ptySessionId) : undefined;
       const start: 'fresh' | 'reattach' =
         tmuxEnabled && sessionsAliveInTmux(await listTmuxSessionNames(this.ctx)).has(session.id) ? 'reattach' : 'fresh';
+      // A running engine may still carry the name an earlier release gave it (@@@legacy-pty-tmux): only a reattach looks.
+      const tmuxSessionName = !tmuxEnabled ? undefined
+        : start === 'reattach' ? await resolveTmuxSessionName(this.ctx, ptySessionId) : makeTmuxSessionName(ptySessionId);
       const sessionpageOverride = await sessionpageHook?.({
         sessionId: session.id,
         start,

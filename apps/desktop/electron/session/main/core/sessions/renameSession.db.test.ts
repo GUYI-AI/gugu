@@ -72,7 +72,7 @@ describe('task name renames', () => {
     expect(sessionTitleIsFallback('default').fallback).toBe(true);
     expect(await applyHarnessTitle('default', 'Explain gugu briefly')).toBe(true);
     expect(nameOf('default')).toBe('Explain gugu briefly');
-    expect(mocks.renamed).toHaveBeenCalledWith('session:renamed', 'default', 'project-1', 'Explain gugu briefly');
+    expect(mocks.renamed).toHaveBeenCalledWith('session:renamed', 'default', 'Explain gugu briefly');
     expect(mocks.emit).toHaveBeenCalledWith(sessionChangedChannel, {
       sessionId: 'default', changes: { title: 'Explain gugu briefly' },
     });

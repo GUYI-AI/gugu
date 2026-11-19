@@ -94,7 +94,7 @@ it('stores completed history without outcome metadata or live notification/activ
     // Only the list projection changes: imported history is not a new unread/live message.
     expect(fixture.sqlite.prepare("SELECT key FROM kv WHERE key LIKE 'native-conversation-%'").all()).toEqual([{ key: 'native-conversation-activity:c1' }]);
     expect(vi.mocked(events.emit).mock.calls.map(([channel, data]) => [channel.name, data]))
-      .toEqual(rows().map(() => ['session:changed', { sessionId: 'c1', projectId: 'p1', changes: { nativeLastMessage: true } }]));
+      .toEqual(rows().map(() => ['session:changed', { sessionId: 'c1', changes: { nativeLastMessage: true } }]));
     expect(activity).not.toHaveBeenCalled();
   } finally { off(); }
 });
@@ -142,7 +142,7 @@ it.each([false, true])('finds a settled Claude reply after a live snapshot (earl
     expect(events.emit).toHaveBeenCalledTimes(earlyPrompt ? 2 : 1);
     for (const [channel, data] of vi.mocked(events.emit).mock.calls) {
       expect(channel.name).toBe('session:changed');
-      expect(data).toEqual({ sessionId: 'c1', projectId: 'p1', changes: { nativeLastMessage: true } });
+      expect(data).toEqual({ sessionId: 'c1', changes: { nativeLastMessage: true } });
     }
     expect(nativeConversationActivity('c1')?.text).toBe('SETTLEDREPLY');
     expect(activity).not.toHaveBeenCalled();

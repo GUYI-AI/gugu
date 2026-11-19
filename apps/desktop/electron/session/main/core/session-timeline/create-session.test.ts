@@ -58,7 +58,7 @@ vi.mock('@main/db/client', () => {
   const chain = {
     from: () => chain,
     where: () => chain,
-    limit: async () => [{ id: 'proj-1', repositoryWorkspaceId: 'ws-1', config: { agentDisplayName: 'Codex 1' } }],
+    limit: async () => [{ id: 'proj-1', workspaceId: 'ws-1', config: { agentDisplayName: 'Codex 1' } }],
   };
   return {
     db: {

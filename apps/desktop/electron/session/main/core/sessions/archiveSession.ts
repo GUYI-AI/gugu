@@ -3,7 +3,6 @@ import { drainSessionMessageOutbox } from './sendMessage';
 import { sessionLife } from './session-life';
 import { eq } from 'drizzle-orm';
 import { rootFolderOf } from '@main/core/folders/folders';
-import { folderRuntimes } from '@main/core/workspaces/folder-runtime/folder-runtimes';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
 import { events } from '@main/lib/events';
@@ -187,6 +186,8 @@ async function stopSessionRuntime(
   const [stored] = await db.select({ workspaceId: sessions.workspaceId }).from(sessions).where(eq(sessions.id, sessionId)).limit(1);
   if (!stored?.workspaceId) throw new Error(`session ${sessionId} has no workspace`);
   const folder = rootFolderOf(stored.workspaceId);
+  // 用时再取:folder runtimes 带着整套 git / 账号依赖,归档这条路不该在加载时就拖起它们。
+  const { folderRuntimes } = await import('@main/core/workspaces/folder-runtime/folder-runtimes');
   const opened = folder ? folderRuntimes.get(folder.id) : undefined;
   if (opened) await cleanupDetachedSessions(stored.workspaceId, sessionId, opened.ctx);
 }

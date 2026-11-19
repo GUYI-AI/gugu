@@ -1,7 +1,6 @@
 import { err, ok, type Result } from '@gugu/session-shared';
 import { eq } from 'drizzle-orm';
 import { rootFolderOf } from '@main/core/folders/folders';
-import { folderRuntime } from '@main/core/workspaces/folder-runtime/folder-runtimes';
 import {
   workspaceBootstrapService,
   type WorkspaceBootstrapResult,
@@ -111,6 +110,7 @@ export class SessionService {
   ): Promise<void> {
     const folder = rootFolderOf(data.workspaceId);
     if (!folder) throw new Error(`session ${sessionId}: workspace ${data.workspaceId} is in no folder recorded here`);
+    const { folderRuntime } = await import('@main/core/workspaces/folder-runtime/folder-runtimes');
     const runtime = await folderRuntime(folder.id);
 
     await sessionWorkspaceManager.registerSession(sessionId, data, groupChatId, runtime.ctx);
