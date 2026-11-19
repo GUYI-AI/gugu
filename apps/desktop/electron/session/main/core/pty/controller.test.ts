@@ -67,7 +67,7 @@ vi.mock('../sessions/session-workspace-manager', () => ({
   },
 }));
 
-vi.mock('../projects/project-manager', () => ({
+vi.mock('@main/core/workspaces/folder-runtime/folder-runtimes', () => ({
   projectManager: {
     getProject: mocks.getProject,
   },

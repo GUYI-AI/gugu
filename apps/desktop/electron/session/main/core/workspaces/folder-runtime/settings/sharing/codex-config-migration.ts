@@ -10,7 +10,7 @@ import {
   type ShareableProjectSettingsWriteField,
 } from '@shared/core/project-settings/project-settings';
 import type { UpdateProjectSettingsError } from '@shared/projects';
-import type { ProjectProvider } from '../../project-provider';
+import type { FolderRuntime } from '../../folder-runtime';
 import type { ProjectConfigMigrator } from './config-migration';
 import {
   addScript,
@@ -83,7 +83,7 @@ function toCodexMigration(data: CodexMigrationData): ProjectConfigMigration | nu
 }
 
 async function readCodexMigrationData(
-  project: ProjectProvider,
+  project: FolderRuntime,
   fileSystem: IFileSystem
 ): Promise<CodexMigrationData> {
   const data: CodexMigrationData = {
@@ -124,7 +124,7 @@ async function readCodexMigrationData(
 }
 
 async function migrateCodexConfig(
-  project: ProjectProvider,
+  project: FolderRuntime,
   request: MigrateProjectConfigRequest
 ): Promise<Result<ProjectConfigMigration, UpdateProjectSettingsError>> {
   try {

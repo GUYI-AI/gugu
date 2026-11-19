@@ -1,5 +1,5 @@
 import type { IFileSystem } from '@gugu/session-core/files';
-import { PROJECT_STATE_DIR_NAME } from './project-state-dir';
+import { PROJECT_STATE_DIR_NAME } from './folder-state-dir';
 import { log } from '@main/lib/logger';
 
 const GIT_EXCLUDE_PATH = '.git/info/exclude';
@@ -62,11 +62,11 @@ export async function ensureEmdashGitExcluded(fs: IFileSystem, repoPath: string)
 export function ensureEmdashGitExcludedSafe(
   fs: IFileSystem,
   repoPath: string,
-  projectId: string
+  folderId: string
 ): void {
   void ensureEmdashGitExcluded(fs, repoPath).catch((error) => {
     log.warn('ensureEmdashGitExcluded failed', {
-      projectId,
+      folderId,
       error: error instanceof Error ? error.message : String(error),
     });
   });

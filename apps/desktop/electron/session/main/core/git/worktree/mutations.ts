@@ -1,6 +1,6 @@
 import { gitErrorMessage } from '@gugu/session-core/git';
 import { err, ok } from '@gugu/session-shared';
-import { resolveWorkspace } from '@main/core/projects/utils';
+import { resolveWorkspace } from '@main/core/workspaces/resolve-workspace';
 import { log } from '@main/lib/logger';
 import type { GitWorktreeMutationResult } from '@shared/core/git/rpc';
 

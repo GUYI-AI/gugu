@@ -9,7 +9,7 @@ import {
   type ShareableProjectSettingsWriteField,
 } from '@shared/core/project-settings/project-settings';
 import type { UpdateProjectSettingsError } from '@shared/projects';
-import type { ProjectProvider } from '../../project-provider';
+import type { FolderRuntime } from '../../folder-runtime';
 import { parseJsonObject } from '../project-settings-json';
 import type { ProjectConfigMigrator } from './config-migration';
 import {
@@ -65,7 +65,7 @@ function toConductorMigration(data: ConductorMigrationData): ProjectConfigMigrat
 }
 
 async function readConductorMigrationData(
-  project: ProjectProvider,
+  project: FolderRuntime,
   fileSystem: IFileSystem
 ): Promise<ConductorMigrationData> {
   const data: ConductorMigrationData = {
@@ -141,7 +141,7 @@ async function readConductorMigrationData(
 }
 
 async function migrateConductorConfig(
-  project: ProjectProvider,
+  project: FolderRuntime,
   request: MigrateProjectConfigRequest
 ): Promise<Result<ProjectConfigMigration, UpdateProjectSettingsError>> {
   try {

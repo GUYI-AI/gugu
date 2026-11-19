@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ open: new Map<string, unknown>() }));
 
 vi.mock('@main/db/client', () => ({ db: {} }));
-vi.mock('@main/core/projects/project-manager', () => ({
+vi.mock('@main/core/workspaces/folder-runtime/folder-runtimes', () => ({
   projectManager: { getProject: (id: string) => mocks.open.get(id) },
 }));
 vi.mock('@main/core/runtime/runtime-manager', () => ({ runtimeManager: {} }));

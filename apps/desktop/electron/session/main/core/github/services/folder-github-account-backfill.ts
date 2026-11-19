@@ -1,5 +1,5 @@
 import type { Result } from '@gugu/session-shared';
-import type { ProjectSettings } from '@shared/core/project-settings/project-settings';
+import type { ProjectSettings } from '@shared/core/folder-settings/folder-settings';
 import { normalizeRepositoryHost, parseRepositoryRef } from '@shared/repository-ref';
 import {
   GITHUB_PROVIDER_ID,
@@ -15,8 +15,8 @@ type ProjectSettingsForBackfill = {
   patch(patch: { githubAccountId?: string | null }): Promise<Result<void, unknown>>;
 };
 
-type ProjectForGitHubAccountBackfill = {
-  projectId: string;
+type FolderForGitHubAccountBackfill = {
+  folderId: string;
   settings: ProjectSettingsForBackfill;
   getRemoteState(): Promise<{
     hasRemote: boolean;
@@ -24,20 +24,20 @@ type ProjectForGitHubAccountBackfill = {
   }>;
 };
 
-export type ProjectGitHubAccountBackfillResult =
+export type FolderGitHubAccountBackfillResult =
   | { status: 'updated'; accountId: string }
   | { status: 'skipped' };
 
-export class ProjectGitHubAccountBackfillService {
+export class FolderGitHubAccountBackfillService {
   constructor(private readonly accountLookup: AccountLookup) {}
 
-  async backfillProject(
-    project: ProjectForGitHubAccountBackfill
-  ): Promise<ProjectGitHubAccountBackfillResult> {
-    const settings = await project.settings.get();
+  async backfillFolder(
+    folder: FolderForGitHubAccountBackfill
+  ): Promise<FolderGitHubAccountBackfillResult> {
+    const settings = await folder.settings.get();
     if (Object.hasOwn(settings, 'githubAccountId')) return { status: 'skipped' };
 
-    const remoteState = await project.getRemoteState();
+    const remoteState = await folder.getRemoteState();
     if (!remoteState.hasRemote || !remoteState.selectedRemoteUrl) return { status: 'skipped' };
 
     const repository = parseRepositoryRef(remoteState.selectedRemoteUrl);
@@ -46,7 +46,7 @@ export class ProjectGitHubAccountBackfillService {
     const accountId = await this.selectAccountIdForHost(repository.host);
     if (!accountId) return { status: 'skipped' };
 
-    const result = await project.settings.patch({ githubAccountId: accountId });
+    const result = await folder.settings.patch({ githubAccountId: accountId });
     return result.success ? { status: 'updated', accountId } : { status: 'skipped' };
   }
 

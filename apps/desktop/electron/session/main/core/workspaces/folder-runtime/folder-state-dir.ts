@@ -1,5 +1,5 @@
 /**
- * Per-project runtime state directory kept inside the repository.
+ * Per-folder runtime state directory kept inside the repository.
  *
  * Holds state the product writes on the user's behalf but that never belongs in
  * their tree — today that is uploaded images and saved attachments. It is excluded

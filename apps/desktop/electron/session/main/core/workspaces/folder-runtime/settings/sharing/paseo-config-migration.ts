@@ -9,7 +9,7 @@ import {
   type ShareableProjectSettingsWriteField,
 } from '@shared/core/project-settings/project-settings';
 import type { UpdateProjectSettingsError } from '@shared/projects';
-import type { ProjectProvider } from '../../project-provider';
+import type { FolderRuntime } from '../../folder-runtime';
 import { parseJsonObject } from '../project-settings-json';
 import type { ProjectConfigMigrator } from './config-migration';
 import {
@@ -87,7 +87,7 @@ function addUnsupportedScripts(
 }
 
 async function readPaseoMigrationData(
-  project: ProjectProvider,
+  project: FolderRuntime,
   fileSystem: IFileSystem
 ): Promise<PaseoMigrationData> {
   const data: PaseoMigrationData = {
@@ -132,7 +132,7 @@ async function readPaseoMigrationData(
 }
 
 async function migratePaseoConfig(
-  project: ProjectProvider,
+  project: FolderRuntime,
   request: MigrateProjectConfigRequest
 ): Promise<Result<ProjectConfigMigration, UpdateProjectSettingsError>> {
   try {

@@ -16,7 +16,7 @@ const bus = vi.hoisted(() => {
 
 vi.mock('electron', () => ({ protocol: { isProtocolHandled: () => false, handle: vi.fn() } }));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
-vi.mock('../projects/utils', () => ({ resolveWorkspace: vi.fn(async () => null) }));
+vi.mock('@main/core/workspaces/resolve-workspace', () => ({ resolveWorkspace: vi.fn(async () => null) }));
 // The chat folder a document is in, as the signed-in person reads it (app-files.ts): one document and the files beside it.
 const folder = vi.hoisted(() => ({
   files: new Map<string, { kind: 'file'; bytes: Uint8Array; type: string } | { kind: 'text'; text: string; type: string } | { kind: 'offline'; machine: string }>(),
@@ -52,7 +52,7 @@ vi.mock('@main/lib/events', () => ({
 
 import { remotePreviewReadChannel, remotePreviewReadResultChannel } from '@shared/events/appEvents';
 import { REMOTE_CHUNK_TIMEOUT_MS, createChatFolderPreview, createDocumentPreview, createPreview, createRemotePreview, handlePreviewRequest, previewAssetsChanged, releasePreview, setPreviewDocument } from './preview-protocol';
-import { resolveWorkspace } from '../projects/utils';
+import { resolveWorkspace } from '@main/core/workspaces/resolve-workspace';
 import { previewDocumentHtml } from '@shared/preview/preview-link-script';
 
 const ROOT = '/root/.config/咕咕/task-home';

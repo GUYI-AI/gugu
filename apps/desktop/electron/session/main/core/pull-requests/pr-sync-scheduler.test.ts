@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => {
     resolveRepository: vi.fn(),
     getProject: vi.fn(),
     projectOn: vi.fn(),
-    resolveProjectGitHubAuthContext: vi.fn(),
+    resolveFolderGitHubAuthContext: vi.fn(),
     emit: vi.fn(),
   };
 });
@@ -33,14 +33,14 @@ vi.mock('@main/core/github/services/github-repository-resolver', () => ({
   },
 }));
 
-vi.mock('@main/core/projects/project-manager', () => ({
+vi.mock('@main/core/workspaces/folder-runtime/folder-runtimes', () => ({
   projectManager: {
     getProject: mocks.getProject,
     on: mocks.projectOn,
   },
 }));
 
-vi.mock('@main/core/projects/settings/folder-settings-service', () => ({
+vi.mock('@main/core/workspaces/folder-runtime/settings/folder-settings-service', () => ({
   folderSettingsService: {
     on: vi.fn(),
   },
@@ -62,8 +62,8 @@ vi.mock('./pr-sync-engine', () => ({
   },
 }));
 
-vi.mock('@main/core/github/services/project-github-auth-context', () => ({
-  resolveProjectGitHubAuthContext: mocks.resolveProjectGitHubAuthContext,
+vi.mock('@main/core/github/services/folder-github-auth-context', () => ({
+  resolveFolderGitHubAuthContext: mocks.resolveFolderGitHubAuthContext,
 }));
 
 vi.mock('@main/lib/events', () => ({
@@ -72,12 +72,12 @@ vi.mock('@main/lib/events', () => ({
   },
 }));
 
-vi.mock('./project-remotes-service', () => ({
-  syncProjectRemotes: vi.fn(),
+vi.mock('./folder-remotes-service', () => ({
+  syncFolderRemotes: vi.fn(),
 }));
 
 type SchedulerInternals = {
-  _getGitHubRemoteUrls(projectId: string): Promise<string[]>;
+  _getGitHubRemoteUrls(folderId: string): Promise<string[]>;
 };
 
 function createProject(
@@ -127,7 +127,7 @@ describe('PrSyncScheduler', () => {
           repo: 'repo',
         })
       );
-      mocks.resolveProjectGitHubAuthContext.mockResolvedValue(ok({ accountId: 'github.com:42' }));
+      mocks.resolveFolderGitHubAuthContext.mockResolvedValue(ok({ accountId: 'github.com:42' }));
 
       const scheduler = new PrSyncScheduler();
 
@@ -162,7 +162,7 @@ describe('PrSyncScheduler', () => {
           repo: 'repo',
         })
       );
-      mocks.resolveProjectGitHubAuthContext.mockResolvedValue(ok({ accountId: 'github.com:42' }));
+      mocks.resolveFolderGitHubAuthContext.mockResolvedValue(ok({ accountId: 'github.com:42' }));
 
       const mounted = createProject();
       mocks.getProject.mockReturnValue(mounted.project);
@@ -195,10 +195,10 @@ describe('PrSyncScheduler', () => {
         repo: 'repo',
       })
     );
-    mocks.resolveProjectGitHubAuthContext.mockResolvedValue(
+    mocks.resolveFolderGitHubAuthContext.mockResolvedValue(
       err({
         type: 'account_selection_failed',
-        projectId: 'project-1',
+        folderId: 'project-1',
         message: 'git config failed',
       })
     );
@@ -222,10 +222,10 @@ describe('PrSyncScheduler', () => {
         repo: 'repo',
       })
     );
-    mocks.resolveProjectGitHubAuthContext.mockResolvedValue(
+    mocks.resolveFolderGitHubAuthContext.mockResolvedValue(
       err({
         type: 'unconfigured',
-        projectId: 'project-1',
+        folderId: 'project-1',
         message: 'No GitHub account is configured for this project.',
       })
     );
@@ -255,10 +255,10 @@ describe('PrSyncScheduler', () => {
         repo: 'repo',
       })
     );
-    mocks.resolveProjectGitHubAuthContext.mockResolvedValue(
+    mocks.resolveFolderGitHubAuthContext.mockResolvedValue(
       err({
         type: 'disabled',
-        projectId: 'project-1',
+        folderId: 'project-1',
         message: 'GitHub API is disabled for this project.',
       })
     );
@@ -285,7 +285,7 @@ describe('PrSyncScheduler', () => {
           repo: 'repo',
         })
       );
-      mocks.resolveProjectGitHubAuthContext
+      mocks.resolveFolderGitHubAuthContext
         .mockResolvedValueOnce(ok({ accountId: 'github.com:42' }))
         .mockResolvedValueOnce(ok({ accountId: 'github.com:84' }));
 
@@ -323,7 +323,7 @@ describe('PrSyncScheduler', () => {
           repo: 'repo',
         })
       );
-      mocks.resolveProjectGitHubAuthContext
+      mocks.resolveFolderGitHubAuthContext
         .mockResolvedValueOnce(ok({ accountId: 'github.com:42' }))
         .mockResolvedValueOnce(ok({ accountId: 'github.com:84' }))
         .mockResolvedValueOnce(ok({ accountId: 'github.com:126' }));

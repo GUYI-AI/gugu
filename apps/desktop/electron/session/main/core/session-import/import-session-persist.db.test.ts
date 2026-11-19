@@ -16,7 +16,7 @@ vi.mock('@main/db/client', () => ({
     return mocks.db;
   },
 }));
-vi.mock('@main/core/projects/project-manager', () => ({
+vi.mock('@main/core/workspaces/folder-runtime/folder-runtimes', () => ({
   projectManager: { getProject: () => ({ id: 'project-1' }) },
 }));
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));

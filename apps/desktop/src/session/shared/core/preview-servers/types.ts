@@ -8,7 +8,6 @@ export type DirectPreviewServerHost = 'localhost' | '127.0.0.1';
 
 export type PreviewServerBase = {
   id: string;
-  projectId: string;
   workspaceId: string;
   source: PreviewServerSource;
   protocol: PreviewServerProtocol;

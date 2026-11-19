@@ -4,7 +4,7 @@ import type { CanonicalPath } from '@gugu/session-core/files';
 import { eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
-import { persistedWorkspacePath } from '@main/core/projects/utils';
+import { persistedWorkspacePath } from '@main/core/workspaces/resolve-workspace';
 import { sessionModelLabel, sessionPlatformModel } from '@main/core/sessions/platform-model-selection';
 import { sessionModelFromDecision } from '@main/core/sessions/session-model-fact';
 import { knownTaskName } from '@main/core/sessions/task-name';

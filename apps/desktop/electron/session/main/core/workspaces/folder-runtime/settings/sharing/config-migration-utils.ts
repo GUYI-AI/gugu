@@ -9,7 +9,7 @@ import type {
 } from '@shared/core/project-settings/project-settings';
 import { mergeShareableProjectSettings } from '@shared/core/project-settings/project-settings-fields';
 import type { UpdateProjectSettingsError } from '@shared/projects';
-import type { ProjectProvider } from '../../project-provider';
+import type { FolderRuntime } from '../../folder-runtime';
 import { CONFIG_FILE } from './workspace-config-file';
 
 type ScriptField = Extract<ShareableProjectSettingsWriteField, `scripts.${string}`>;
@@ -29,12 +29,12 @@ export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function projectPath(project: ProjectProvider, relPath: string): string {
+export function projectPath(project: FolderRuntime, relPath: string): string {
   return project.resolvePath(relPath);
 }
 
 export function openProjectFileSystem(
-  project: ProjectProvider
+  project: FolderRuntime
 ): Result<IFileSystem, UpdateProjectSettingsError> {
   return ok(project.fileSystem);
 }
@@ -71,7 +71,7 @@ export function addScript(
 }
 
 export async function applyProjectConfigMigration(
-  project: ProjectProvider,
+  project: FolderRuntime,
   request: MigrateProjectConfigRequest,
   data: MigrationSettingsData,
   migration: ProjectConfigMigration

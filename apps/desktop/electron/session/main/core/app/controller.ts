@@ -7,7 +7,7 @@ import { getDiagnosticLogAttachment } from '@main/lib/file-logger';
 import { log } from '@main/lib/logger';
 import { createRPCController } from '@shared/lib/ipc/rpc';
 import type { OpenInAppId } from '@shared/openInApps';
-import { resolveWorkspace } from '../projects/utils';
+import { resolveWorkspace } from '@main/core/workspaces/resolve-workspace';
 import { appService } from './service';
 import { callAssistantApp } from './assistant-app';
 

@@ -1,40 +1,40 @@
 import type { GitRemote } from '@gugu/session-core/git';
 import { and, eq, notInArray } from 'drizzle-orm';
 import { db } from '@main/db/client';
-import { projectRemotes } from '@main/db/schema';
+import { workspaceRemotes } from '@main/db/schema';
 import { parseRepositoryRef } from '@shared/repository-ref';
 
 /**
- * Upsert all git remotes for a project into the `project_remotes` table and
+ * Upsert all git remotes for a folder into the `workspace_remotes` table and
  * delete any rows that are no longer present in the live remote list.
  *
  * Called on every task provision and whenever the repository remotes model changes.
  */
-export async function syncProjectRemotes(projectId: string, remotes: GitRemote[]): Promise<void> {
+export async function syncFolderRemotes(folderId: string, remotes: GitRemote[]): Promise<void> {
   for (const r of remotes) {
     const remoteUrl = parseRepositoryRef(r.url)?.repositoryUrl ?? r.url;
     await db
-      .insert(projectRemotes)
-      .values({ projectId, remoteName: r.name, remoteUrl })
+      .insert(workspaceRemotes)
+      .values({ workspaceId: folderId, remoteName: r.name, remoteUrl })
       .onConflictDoUpdate({
-        target: [projectRemotes.projectId, projectRemotes.remoteName],
+        target: [workspaceRemotes.folderId, workspaceRemotes.remoteName],
         set: { remoteUrl },
       });
   }
 
   if (remotes.length > 0) {
-    await db.delete(projectRemotes).where(
+    await db.delete(workspaceRemotes).where(
       and(
-        eq(projectRemotes.projectId, projectId),
+        eq(workspaceRemotes.folderId, folderId),
         notInArray(
-          projectRemotes.remoteName,
+          workspaceRemotes.remoteName,
           remotes.map((r) => r.name)
         )
       )
     );
   } else {
-    // No remotes at all — clear all rows for this project
-    await db.delete(projectRemotes).where(eq(projectRemotes.projectId, projectId));
+    // No remotes at all — clear all rows for this folder
+    await db.delete(workspaceRemotes).where(eq(workspaceRemotes.folderId, folderId));
   }
 }
 

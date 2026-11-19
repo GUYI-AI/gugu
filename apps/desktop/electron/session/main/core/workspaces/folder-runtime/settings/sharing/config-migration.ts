@@ -6,7 +6,7 @@ import type {
   ProjectConfigMigration,
 } from '@shared/core/project-settings/project-settings';
 import type { UpdateProjectSettingsError } from '@shared/projects';
-import type { ProjectProvider } from '../../project-provider';
+import type { FolderRuntime } from '../../folder-runtime';
 import { codexConfigMigrator } from './codex-config-migration';
 import { conductorConfigMigrator } from './conductor-config-migration';
 import {
@@ -22,11 +22,11 @@ import { CONFIG_FILE, LEGACY_CONFIG_FILE } from './workspace-config-file';
 export type ProjectConfigMigrator = {
   provider: ProjectConfigMigration['provider'];
   inspect: (
-    project: ProjectProvider,
+    project: FolderRuntime,
     fileSystem: IFileSystem
   ) => Promise<ProjectConfigMigration | null>;
   migrate: (
-    project: ProjectProvider,
+    project: FolderRuntime,
     request: MigrateProjectConfigRequest
   ) => Promise<Result<ProjectConfigMigration, UpdateProjectSettingsError>>;
 };
@@ -43,7 +43,7 @@ const PROJECT_CONFIG_MIGRATORS = [
  * 从别家工具再导一份进来,把用户已有的设置盖掉。
  */
 async function hasExistingProjectConfig(
-  project: ProjectProvider,
+  project: FolderRuntime,
   fileSystem: IFileSystem
 ): Promise<Result<boolean, { message: string }>> {
   for (const name of [CONFIG_FILE, LEGACY_CONFIG_FILE]) {
@@ -55,7 +55,7 @@ async function hasExistingProjectConfig(
 }
 
 export async function inspectProjectConfigMigrations(
-  project: ProjectProvider
+  project: FolderRuntime
 ): Promise<ProjectConfigMigration[]> {
   const fileSystem = openProjectFileSystem(project);
   if (!fileSystem.success) {
@@ -85,7 +85,7 @@ export async function inspectProjectConfigMigrations(
 }
 
 export async function migrateProjectConfigFromProvider(
-  project: ProjectProvider,
+  project: FolderRuntime,
   request: MigrateProjectConfigRequest
 ): Promise<Result<ProjectConfigMigration, UpdateProjectSettingsError>> {
   try {

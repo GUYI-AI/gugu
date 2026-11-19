@@ -111,7 +111,6 @@ export const ptyController = createRPCController({
         const parsed = parsePtySessionId(ptySessionId);
         if (parsed) {
           sessionEvents._emit('session:input-submitted', {
-            projectId: parsed.projectId,
             sessionId: parsed.leafId,
             providerId: meta.providerId,
           });

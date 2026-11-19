@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, isNotNull, like, or } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import {
-  projectRemotes,
+  workspaceRemotes,
   pullRequestAssignees,
   pullRequestChecks,
   pullRequestLabels,
@@ -80,16 +80,16 @@ async function fetchRelated(rows: PrRow[]): Promise<PullRequest[]> {
 }
 
 export class PrQueryService {
-  async listPullRequests(projectId: string, options: ListPrOptions = {}): Promise<PullRequest[]> {
+  async listPullRequests(folderId: string, options: ListPrOptions = {}): Promise<PullRequest[]> {
     let repositoryUrls: string[];
 
     if (options.repositoryUrl) {
       repositoryUrls = [options.repositoryUrl];
     } else {
       const remoteRows = await db
-        .select({ remoteUrl: projectRemotes.remoteUrl })
-        .from(projectRemotes)
-        .where(eq(projectRemotes.projectId, projectId));
+        .select({ remoteUrl: workspaceRemotes.remoteUrl })
+        .from(workspaceRemotes)
+        .where(eq(workspaceRemotes.folderId, folderId));
 
       if (remoteRows.length === 0) return [];
       repositoryUrls = remoteRows.map((r) => r.remoteUrl);
@@ -168,11 +168,11 @@ export class PrQueryService {
     return fetchRelated(rows);
   }
 
-  async getFilterOptions(projectId: string): Promise<PrFilterOptions> {
+  async getFilterOptions(folderId: string): Promise<PrFilterOptions> {
     const remoteRows = await db
-      .select({ remoteUrl: projectRemotes.remoteUrl })
-      .from(projectRemotes)
-      .where(eq(projectRemotes.projectId, projectId));
+      .select({ remoteUrl: workspaceRemotes.remoteUrl })
+      .from(workspaceRemotes)
+      .where(eq(workspaceRemotes.folderId, folderId));
 
     if (remoteRows.length === 0) {
       return { authors: [], labels: [], assignees: [] };

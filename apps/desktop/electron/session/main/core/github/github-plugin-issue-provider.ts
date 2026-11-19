@@ -6,7 +6,7 @@ import type { GitHubApiAuthContext } from '@main/core/github/services/github-api
 import { githubApiAuthService } from '@main/core/github/services/github-api-auth-service-instance';
 import { githubApiBaseUrlForHost } from '@main/core/github/services/github-api-base-url';
 import { githubRepositoryResolver } from '@main/core/github/services/github-repository-resolver';
-import { resolveProjectGitHubAuthContext } from '@main/core/github/services/project-github-auth-context';
+import { resolveFolderGitHubAuthContext } from '@main/core/github/services/folder-github-auth-context';
 import {
   clampIssueProviderLimit,
   DEFAULT_SEARCH_LIMIT,
@@ -24,10 +24,10 @@ import type { RepositoryRef } from '@shared/repository-ref';
 import type { IssueProvider, IssueSearchOpts } from '../issues/issue-provider';
 
 async function resolveIssueAuthContext(
-  projectId: string | undefined
+  folderId: string | undefined
 ): Promise<Result<GitHubApiAuthContext | undefined, IssueListError>> {
-  if (!projectId) return ok(undefined);
-  const authContext = await resolveProjectGitHubAuthContext(projectId);
+  if (!folderId) return ok(undefined);
+  const authContext = await resolveFolderGitHubAuthContext(folderId);
   if (authContext.success) return ok(authContext.data);
   if (authContext.error.type === 'unconfigured') {
     return err({ type: 'no_account_selected', message: authContext.error.message });
@@ -37,7 +37,7 @@ async function resolveIssueAuthContext(
   }
   return err({
     type: 'generic',
-    message: `Unable to resolve GitHub account for project: ${authContext.error.message}`,
+    message: `Unable to resolve GitHub account for folder: ${authContext.error.message}`,
   });
 }
 
@@ -102,7 +102,7 @@ export function createGitHubPluginIssueProvider(plugin: IssuesPluginProvider): I
     const repository = await resolveRepository(opts);
     if (!repository.success) return repository;
 
-    const authContext = await resolveIssueAuthContext(opts.projectId);
+    const authContext = await resolveIssueAuthContext(opts.folderId);
     if (!authContext.success) return err(authContext.error);
 
     const credentials = await resolveGitHubPluginCredentials(repository.data, authContext.data);

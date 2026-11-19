@@ -138,7 +138,6 @@ export const appFileHeardElsewhereChannel = defineEvent<{ key: string; change: E
  */
 export const remotePreviewReadChannel = defineEvent<{
   requestId: string;
-  projectId: string;
   workspaceId: string;
   path: string;
   offset: number;

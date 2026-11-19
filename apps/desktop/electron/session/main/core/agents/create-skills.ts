@@ -37,14 +37,14 @@ export async function readNativeCreationSkills(roots: readonly string[]): Promis
 }
 
 /** Same registered harness and spawn environment as a real new task; no App catalog or process launch. */
-export async function createSkills(input: { harness: string; projectId?: string }) {
+export async function createSkills(input: { harness: string; folderId?: string }) {
   try {
     const { getPlugin } = await import('./plugin-registry');
     const { resolveLocalAgentSpawnEnv } = await import('./agent-run-context');
-    const { readProjects } = await import('../projects/operations/getProjects');
     const bundle = getPlugin(input.harness).capabilities.sessionBundle;
-    const project = input.projectId ? readProjects().find((one) => one.id === input.projectId) : null;
-    if (input.projectId && !project) throw new Error('Project is unavailable on this device');
+    const { getFolder } = await import('@main/core/folders/folders');
+    const project = input.folderId ? getFolder(input.folderId) : null;
+    if (input.folderId && !project) throw new Error('Folder is unavailable on this device');
     const env = await resolveLocalAgentSpawnEnv(input.harness);
     const roots: string[] = [];
     const folder = input.harness === 'claude' ? '.claude' : input.harness === 'codex' ? '.agents' : input.harness === 'pi' ? '.pi' : null;

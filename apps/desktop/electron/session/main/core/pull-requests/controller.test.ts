@@ -5,9 +5,9 @@ import { pullRequestController } from './controller';
 import { prQueryService } from './pr-query-service';
 import { prSyncEngine } from './pr-sync-engine';
 import {
-  resolveProjectPullRequestAuthContext,
-  resolveProjectPullRequestContext,
-} from './project-pull-request-context';
+  resolveFolderPullRequestAuthContext,
+  resolveFolderPullRequestContext,
+} from './folder-pull-request-context';
 
 const dbMocks = vi.hoisted(() => ({
   select: vi.fn(),
@@ -56,38 +56,38 @@ vi.mock('./pr-sync-engine', () => ({
   },
 }));
 
-vi.mock('./project-pull-request-context', () => ({
-  resolveProjectPullRequestAuthContext: vi.fn(),
-  resolveProjectPullRequestContext: vi.fn(),
+vi.mock('./folder-pull-request-context', () => ({
+  resolveFolderPullRequestAuthContext: vi.fn(),
+  resolveFolderPullRequestContext: vi.fn(),
 }));
 
 const mockPrSyncEngine = vi.mocked(prSyncEngine);
 const mockPrQueryService = vi.mocked(prQueryService);
 const mockProviderRepositoryService = vi.mocked(providerRepositoryService);
-const mockResolveProjectPullRequestContext = vi.mocked(resolveProjectPullRequestContext);
-const mockResolveProjectPullRequestAuthContext = vi.mocked(resolveProjectPullRequestAuthContext);
+const mockResolveFolderPullRequestContext = vi.mocked(resolveFolderPullRequestContext);
+const mockResolveFolderPullRequestAuthContext = vi.mocked(resolveFolderPullRequestAuthContext);
 
 const selectedAuthContext = { accountId: 'github.com:42' };
 
 function mockProjectGithubContext(
   overrides: Partial<{
-    projectId: string;
+    folderId: string;
     repositoryUrl: string;
     host: string;
     nameWithOwner: string;
     authContext: { accountId?: string };
   }> = {}
 ) {
-  mockResolveProjectPullRequestContext.mockResolvedValue(
+  mockResolveFolderPullRequestContext.mockResolvedValue(
     ok({
-      projectId: overrides.projectId ?? 'project-1',
+      folderId: overrides.folderId ?? 'project-1',
       host: overrides.host ?? 'github.com',
       repositoryUrl: overrides.repositoryUrl ?? 'https://github.com/acme/repo',
       nameWithOwner: overrides.nameWithOwner ?? 'acme/repo',
       authContext: overrides.authContext ?? selectedAuthContext,
     })
   );
-  mockResolveProjectPullRequestAuthContext.mockResolvedValue(
+  mockResolveFolderPullRequestAuthContext.mockResolvedValue(
     ok(overrides.authContext ?? selectedAuthContext)
   );
 }
@@ -141,7 +141,7 @@ describe('pullRequestController', () => {
       err({ type: 'cross_host_pr', baseHost: 'ghe.example.com', headHost: 'github.com' })
     );
     expect(mockPrSyncEngine.createPullRequest).not.toHaveBeenCalled();
-    expect(mockResolveProjectPullRequestContext).not.toHaveBeenCalled();
+    expect(mockResolveFolderPullRequestContext).not.toHaveBeenCalled();
   });
 
   it('maps github.com auth failures separately from GHES auth failures', async () => {
@@ -375,7 +375,7 @@ describe('pullRequestController', () => {
   });
 
   it('does not create pull requests with the default account when project account resolution fails', async () => {
-    mockResolveProjectPullRequestAuthContext.mockResolvedValue(
+    mockResolveFolderPullRequestAuthContext.mockResolvedValue(
       err({
         type: 'github_account_resolution_failed',
         message: 'Unable to resolve GitHub account for project: git config failed',
@@ -398,7 +398,7 @@ describe('pullRequestController', () => {
     );
 
     expect(mockPrSyncEngine.createPullRequest).not.toHaveBeenCalled();
-    expect(mockResolveProjectPullRequestContext).not.toHaveBeenCalled();
+    expect(mockResolveFolderPullRequestContext).not.toHaveBeenCalled();
   });
 
   it('passes the project GitHub account context to pull request mutations', async () => {

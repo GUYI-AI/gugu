@@ -11,7 +11,7 @@ import type {
 } from '@gugu/session-core/git';
 import type { Unsubscribe } from '@gugu/session-shared';
 import { Result } from '@gugu/session-shared/result';
-import type { FolderSettingsProvider } from '@main/core/projects/settings/provider';
+import type { FolderSettingsProvider } from '@main/core/workspaces/folder-runtime/settings/provider';
 import { resolveConfiguredRemotes } from '@shared/core/git/utils';
 import type { ProjectRemoteState } from '@shared/projects';
 

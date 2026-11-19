@@ -41,7 +41,7 @@ vi.mock('@main/db/client', () => ({
   },
 }));
 // `persistedWorkspacePath` (its own test covers missing rows and retired remote rows): null is no folder here.
-vi.mock('@main/core/projects/utils', () => ({ persistedWorkspacePath: (id: string) => recorded[id] ?? null }));
+vi.mock('@main/core/workspaces/resolve-workspace', () => ({ persistedWorkspacePath: (id: string) => recorded[id] ?? null }));
 vi.mock('@main/core/sessions/platform-model-selection', () => ({
   sessionPlatformModel: async (sessionId: string) => decisions[sessionId],
   // The name kept with the decision (its own test fills and keeps it): here, the decision's model under a menu name.

@@ -13,7 +13,7 @@ const workspace = vi.hoisted(() => ({
 vi.mock('electron', () => ({ protocol: { isProtocolHandled: () => false, handle: vi.fn() } }));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('@main/lib/events', () => ({ events: { on: () => () => undefined, emit: vi.fn() } }));
-vi.mock('../../projects/utils', () => ({
+vi.mock('@main/core/workspaces/resolve-workspace', () => ({
   resolveWorkspace: (_projectId: string, workspaceId: string) => (workspaceId === 'ws' ? workspace : null),
 }));
 

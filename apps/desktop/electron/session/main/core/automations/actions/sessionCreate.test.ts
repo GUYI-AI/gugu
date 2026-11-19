@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { hydrateSession } from '@main/core/sessions/hydrateSession';
 import { issueController } from '@main/core/issues/controller';
 import { openProject } from '@main/core/projects/operations/openProject';
-import { projectManager } from '@main/core/projects/project-manager';
+import { projectManager } from '@main/core/workspaces/folder-runtime/folder-runtimes';
 import { recordStartFailure } from '@main/core/session-timeline/start-failures';
 import { appSettingsService } from '@main/core/settings/settings-service';
 import { generateRandom } from '@main/core/sessions/name-generation/generateSessionName';
@@ -66,7 +66,7 @@ vi.mock('@main/db/client', () => ({
     }),
   },
 }));
-vi.mock('@main/core/projects/project-manager', () => ({
+vi.mock('@main/core/workspaces/folder-runtime/folder-runtimes', () => ({
   projectManager: { getProject: vi.fn() },
 }));
 vi.mock('@main/core/settings/settings-service', () => ({

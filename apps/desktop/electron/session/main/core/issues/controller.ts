@@ -1,6 +1,6 @@
 import { err } from '@gugu/session-shared';
 import { checkSourceConnection as checkProviderConnection } from '@main/core/integrations/connection-statuses';
-import { projectManager } from '@main/core/projects/project-manager';
+import { openFolder } from '@main/core/workspaces/folder-runtime/folder-runtimes';
 import type {
   IssueContextResult,
   IssueListResult,
@@ -17,19 +17,20 @@ const DEFAULT_CAPABILITIES = {
 } as const;
 
 async function withResolvedRemote<T extends IssueQueryOpts>(opts: T): Promise<T> {
-  if (!opts.projectId) return opts;
-  const project = projectManager.getProject(opts.projectId);
-  if (!project) return opts;
+  if (!opts.folderId) return opts;
+  const opened = await openFolder(opts.folderId);
+  if (!opened.success) return opts;
+  const folder = opened.data;
   // gugu #2358: 非 git 项目无远端 → 不做远端/仓库 URL 解析,原样返回。
-  if (!project.gitRepository) return opts;
+  if (!folder.gitRepository) return opts;
 
-  const remote = await project.gitRepository.getBaseRemote().catch(() => undefined);
+  const remote = await folder.gitRepository.getBaseRemote().catch(() => undefined);
   const selectedRemote = opts.remote?.trim() || remote;
   const providedRepositoryUrl = opts.repositoryUrl?.trim();
 
   const remoteRepositoryUrl =
     !providedRepositoryUrl && selectedRemote
-      ? (await project.gitRepository.getRemotes().catch(() => [])).find(
+      ? (await folder.gitRepository.getRemotes().catch(() => [])).find(
           (candidate) => candidate.name === selectedRemote
         )?.url
       : undefined;

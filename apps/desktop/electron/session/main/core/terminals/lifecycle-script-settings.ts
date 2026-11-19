@@ -1,7 +1,7 @@
 import { err, ok, type Result } from '@gugu/session-shared';
 import type { Workspace } from '@main/core/workspaces/workspace';
 import type { LifecycleScriptType } from '@shared/core/sessions/provisionEvents';
-import { getEffectiveSessionSettings } from '../projects/settings/effective-session-settings';
+import { getEffectiveSessionSettings } from '@main/core/workspaces/folder-runtime/settings/effective-session-settings';
 import { resolveWorkspace } from '../workspaces/resolve-workspace';
 
 export type LifecycleScriptSettingsError =

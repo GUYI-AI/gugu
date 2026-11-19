@@ -9,7 +9,7 @@ import {
   type ShareableProjectSettingsWriteField,
 } from '@shared/core/project-settings/project-settings';
 import type { UpdateProjectSettingsError } from '@shared/projects';
-import type { ProjectProvider } from '../../project-provider';
+import type { FolderRuntime } from '../../folder-runtime';
 import { parseJsonObject } from '../project-settings-json';
 import type { ProjectConfigMigrator } from './config-migration';
 import {
@@ -81,7 +81,7 @@ function toSupersetMigration(data: SupersetMigrationData): ProjectConfigMigratio
 }
 
 async function readSupersetMigrationData(
-  project: ProjectProvider,
+  project: FolderRuntime,
   fileSystem: IFileSystem
 ): Promise<SupersetMigrationData> {
   const data: SupersetMigrationData = {
@@ -133,7 +133,7 @@ async function readSupersetMigrationData(
 }
 
 async function migrateSupersetConfig(
-  project: ProjectProvider,
+  project: FolderRuntime,
   request: MigrateProjectConfigRequest
 ): Promise<Result<ProjectConfigMigration, UpdateProjectSettingsError>> {
   try {

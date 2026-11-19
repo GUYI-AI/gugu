@@ -2,7 +2,7 @@ import { ok, type Result } from '@gugu/session-shared';
 import { log } from '@main/lib/logger';
 import type { WriteProjectConfigRequest } from '@shared/core/project-settings/project-settings';
 import type { UpdateProjectSettingsError } from '@shared/projects';
-import type { ProjectProvider } from '../../project-provider';
+import type { FolderRuntime } from '../../folder-runtime';
 import { errorMessage, writeConfigFailed } from './config-migration-utils';
 import {
   resolveProjectSettingsTarget,
@@ -15,7 +15,7 @@ import {
 } from './workspace-config-file';
 
 export async function shareProjectSettingsToConfig(
-  project: ProjectProvider,
+  project: FolderRuntime,
   request: WriteProjectConfigRequest,
   resolvedTargets: ProjectSettingsResolvedTarget[]
 ): Promise<Result<void, UpdateProjectSettingsError>> {

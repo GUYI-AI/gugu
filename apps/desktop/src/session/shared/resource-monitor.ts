@@ -27,7 +27,7 @@ export type ResourceHistory = { points: ResourcePoint[]; count: number; bytes: n
  */
 export interface ResourcePtyEntry {
   ptySessionId: string;
-  projectId: string;
+  workspaceId: string;
   scopeId: string;
   leafId: string;
   pid: number | undefined;
@@ -158,7 +158,6 @@ export interface ResourceProcessGroup {
   kind: 'runtime' | 'session';
   label: string;
   sessionId?: string;
-  projectId?: string;
   cpu?: number;
   memory: number;
   processes: { pid: number; ppid: number; name: string; cpu?: number; memory: number }[];

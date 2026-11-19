@@ -1,14 +1,15 @@
 import type { IFileSystem } from '@gugu/session-core/files';
-import { eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
-import { sessions, projects as projectsTable } from '@main/db/schema';
+import { sessions } from '@main/db/schema';
+import { basename } from 'node:path';
+import { rootFolderOf } from '@main/core/folders/folders';
 import type {
   ProjectSettingsWriteTarget,
   ProjectSettingsWriteTargetOption,
   WriteProjectConfigRequest,
 } from '@shared/core/project-settings/project-settings';
-import type { ProjectProvider } from '../../project-provider';
-import { resolveWorkspace } from '../../utils';
+import type { FolderRuntime } from '../../folder-runtime';
+import { resolveWorkspace } from '@main/core/workspaces/resolve-workspace';
 import { taskName } from '@main/core/sessions/task-name';
 
 export type ProjectSettingsResolvedTarget = ProjectSettingsWriteTargetOption & {
@@ -35,10 +36,10 @@ function targetKey(target: ProjectSettingsWriteTarget): string {
 
 /** 一条会话挂着的、不是项目根目录的工作区(它自己的 worktree):可以单独写一份配置。 */
 async function resolveSessionWorkspaceTarget(
-  project: ProjectProvider,
+  project: FolderRuntime,
   session: { title: string; workspaceId: string | null }
 ): Promise<ProjectSettingsResolvedTarget | null> {
-  const workspace = session.workspaceId ? await resolveWorkspace(project.projectId, session.workspaceId) : undefined;
+  const workspace = session.workspaceId ? await resolveWorkspace(session.workspaceId) : undefined;
   if (!session.workspaceId || !workspace || workspace.path === project.repoPath) return null;
   return {
     type: 'workspace',
@@ -51,30 +52,24 @@ async function resolveSessionWorkspaceTarget(
 }
 
 export async function resolveAllProjectSettingsTargets(
-  project: ProjectProvider
+  project: FolderRuntime
 ): Promise<ProjectSettingsResolvedTarget[]> {
   const projectFileSystem = resolveProjectFileSystem(project);
   if (!projectFileSystem) return [];
 
-  const [projectRow] = await db
-    .select({ name: projectsTable.name })
-    .from(projectsTable)
-    .where(eq(projectsTable.id, project.projectId))
-    .limit(1);
-
   const projectTarget: ProjectSettingsResolvedTarget = {
     type: 'project',
-    label: projectRow?.name ?? 'Project repository',
+    label: basename(project.repoPath) || 'Folder',
     path: project.repoPath,
     fileSystem: projectFileSystem,
     configPath: project.configPath,
   };
-  if (!projectRow) return [projectTarget];
 
-  const sessionRows = await db
+  // The folder's sessions: those whose cwd is the folder or a directory inside it.
+  const sessionRows = (await db
     .select({ id: sessions.id, config: sessions.config, workspaceId: sessions.workspaceId })
-    .from(sessions)
-    .where(eq(sessions.projectId, project.projectId));
+    .from(sessions))
+    .filter((session) => session.workspaceId !== null && rootFolderOf(session.workspaceId)?.id === project.folderId);
 
   // 多条会话共享一个工作区时只列一次。
   const byWorkspace = new Map<string, ProjectSettingsResolvedTarget>();
@@ -94,7 +89,7 @@ export function getProjectSettingsWriteTargets(
 }
 
 export async function resolveProjectSettingsTarget(
-  project: ProjectProvider,
+  project: FolderRuntime,
   request: Pick<WriteProjectConfigRequest, 'target'>,
   resolvedTargets: ProjectSettingsResolvedTarget[]
 ): Promise<ProjectSettingsResolvedTarget | null> {
@@ -104,7 +99,7 @@ export async function resolveProjectSettingsTarget(
   if (target) return target;
 
   if (request.target.type === 'workspace') {
-    const workspace = await resolveWorkspace(project.projectId, request.target.workspaceId);
+    const workspace = await resolveWorkspace(request.target.workspaceId);
     if (!workspace) return null;
     return {
       type: 'workspace',
@@ -119,6 +114,6 @@ export async function resolveProjectSettingsTarget(
   return null;
 }
 
-function resolveProjectFileSystem(project: ProjectProvider): IFileSystem | null {
+function resolveProjectFileSystem(project: FolderRuntime): IFileSystem | null {
   return project.fileSystem;
 }

@@ -8,7 +8,7 @@ import type {
 
 export type IssueQueryOpts = {
   limit?: number;
-  projectId?: string;
+  folderId?: string;
   projectPath?: string;
   remote?: string;
   repositoryUrl?: string;

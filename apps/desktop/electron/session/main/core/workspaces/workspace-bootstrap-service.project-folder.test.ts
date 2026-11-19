@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@main/db/client', () => ({ db: {} }));
-vi.mock('@main/core/projects/project-manager', () => ({ projectManager: { getProject: () => undefined } }));
+vi.mock('@main/core/workspaces/folder-runtime/folder-runtimes', () => ({ projectManager: { getProject: () => undefined } }));
 vi.mock('@main/core/runtime/runtime-manager', () => ({ runtimeManager: {} }));
 vi.mock('@main/core/sessions/session-builder', () => ({
   buildSessionFromWorkspace: mocks.buildSessionFromWorkspace,

@@ -3,7 +3,7 @@ import { err, ok } from '@gugu/session-shared';
 import { events } from '@main/lib/events';
 import { planEventChannel } from '@shared/events/appEvents';
 import { createRPCController } from '@shared/lib/ipc/rpc';
-import { resolveWorkspace } from '../../projects/utils';
+import { resolveWorkspace } from '@main/core/workspaces/resolve-workspace';
 import { workspaceFileIndexService } from '@main/core/search/workspace-file-index-service';
 import { fileErrorToMessage, isPermissionDenied } from './file-errors';
 import { readInlineBinaryDataUrl, readWorkspaceImage } from './image-support';
@@ -239,7 +239,7 @@ export const workspaceFileSystemController = createRPCController({
       if (isPermissionDenied(result.error)) {
         events.emit(planEventChannel, {
           type: 'write_blocked' as const,
-          root: projectId,
+          root: workspaceId,
           path: filePath,
           message: result.error.message,
         });
@@ -268,7 +268,7 @@ export const workspaceFileSystemController = createRPCController({
       if (isPermissionDenied(result.error)) {
         events.emit(planEventChannel, {
           type: 'remove_blocked' as const,
-          root: projectId,
+          root: workspaceId,
           path: filePath,
           message: result.error.message,
         });
@@ -340,7 +340,7 @@ export const workspaceFileSystemController = createRPCController({
     return ok({ leaseId });
   },
 
-  // projectId / workspaceId 只用来把这一调路由到开租约的那台机器(与 watchDirectory 同一条)。
+  // workspaceId 只用来把这一调路由到开租约的那台机器(与 watchDirectory 同一条)。
   releaseDirectoryWatch: async (_workspaceId: string, leaseId: string) => {
     directoryWatches.get(leaseId)?.();
     directoryWatches.delete(leaseId);

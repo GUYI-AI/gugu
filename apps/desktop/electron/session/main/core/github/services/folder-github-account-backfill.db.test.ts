@@ -2,7 +2,7 @@ import { openRegistryFixture, type RegistryFixture } from '@tooling/utils/provid
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectSettings } from '@shared/core/project-settings/project-settings';
 import { GITHUB_PROVIDER_ID, upsertGitHubAccount } from '../accounts/github-accounts';
-import { ProjectGitHubAccountBackfillService } from './project-github-account-backfill';
+import { FolderGitHubAccountBackfillService } from './folder-github-account-backfill';
 
 class FakeProjectSettings {
   settings: ProjectSettings = {};
@@ -25,7 +25,7 @@ function makeProject({
   if (settings) projectSettings.settings = settings;
   return {
     project: {
-      projectId: 'project-1',
+      folderId: 'project-1',
       settings: projectSettings,
       getRemoteState: vi.fn(async () => ({
         hasRemote: selectedRemoteUrl !== null,
@@ -36,13 +36,13 @@ function makeProject({
   };
 }
 
-describe('ProjectGitHubAccountBackfillService', () => {
+describe('FolderGitHubAccountBackfillService', () => {
   let fixture: RegistryFixture;
-  let service: ProjectGitHubAccountBackfillService;
+  let service: FolderGitHubAccountBackfillService;
 
   beforeEach(async () => {
     fixture = await openRegistryFixture('empty');
-    service = new ProjectGitHubAccountBackfillService(fixture.registry);
+    service = new FolderGitHubAccountBackfillService(fixture.registry);
   });
 
   afterEach(() => {
@@ -69,7 +69,7 @@ describe('ProjectGitHubAccountBackfillService', () => {
     await upsertAccount('42');
     const { project, settings } = makeProject();
 
-    await expect(service.backfillProject(project)).resolves.toEqual({
+    await expect(service.backfillFolder(project)).resolves.toEqual({
       status: 'updated',
       accountId: 'github.com:42',
     });
@@ -83,7 +83,7 @@ describe('ProjectGitHubAccountBackfillService', () => {
       settings: { githubAccountId: 'github.com:84' },
     });
 
-    await expect(service.backfillProject(project)).resolves.toEqual({ status: 'skipped' });
+    await expect(service.backfillFolder(project)).resolves.toEqual({ status: 'skipped' });
 
     expect(settings.patch).not.toHaveBeenCalled();
   });
@@ -95,7 +95,7 @@ describe('ProjectGitHubAccountBackfillService', () => {
       selectedRemoteUrl: 'https://ghe.example.com/acme/repo',
     });
 
-    await expect(service.backfillProject(project)).resolves.toEqual({
+    await expect(service.backfillFolder(project)).resolves.toEqual({
       status: 'updated',
       accountId: 'ghe.example.com:168',
     });
@@ -112,7 +112,7 @@ describe('ProjectGitHubAccountBackfillService', () => {
       selectedRemoteUrl: 'https://ghe.example.com/acme/repo',
     });
 
-    await expect(service.backfillProject(project)).resolves.toEqual({
+    await expect(service.backfillFolder(project)).resolves.toEqual({
       status: 'updated',
       accountId: 'ghe.example.com:252',
     });
@@ -128,7 +128,7 @@ describe('ProjectGitHubAccountBackfillService', () => {
       selectedRemoteUrl: 'https://ghe.example.com/acme/repo',
     });
 
-    await expect(service.backfillProject(project)).resolves.toEqual({
+    await expect(service.backfillFolder(project)).resolves.toEqual({
       status: 'updated',
       accountId: 'ghe.example.com:168',
     });
@@ -142,7 +142,7 @@ describe('ProjectGitHubAccountBackfillService', () => {
       selectedRemoteUrl: 'https://ghe.example.com/acme/repo',
     });
 
-    await expect(service.backfillProject(project)).resolves.toEqual({ status: 'skipped' });
+    await expect(service.backfillFolder(project)).resolves.toEqual({ status: 'skipped' });
 
     expect(settings.patch).not.toHaveBeenCalled();
   });
@@ -150,7 +150,7 @@ describe('ProjectGitHubAccountBackfillService', () => {
   it('leaves projects unconfigured when no accounts exist', async () => {
     const { project, settings } = makeProject();
 
-    await expect(service.backfillProject(project)).resolves.toEqual({ status: 'skipped' });
+    await expect(service.backfillFolder(project)).resolves.toEqual({ status: 'skipped' });
 
     expect(settings.patch).not.toHaveBeenCalled();
   });

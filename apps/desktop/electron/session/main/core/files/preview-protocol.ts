@@ -30,7 +30,7 @@ import {
 } from '@shared/preview/preview-url';
 import { remotePageRoot } from '@shared/preview/remote-page-url';
 import { previewDocumentHtml } from '@shared/preview/preview-link-script';
-import { resolveWorkspace } from '../projects/utils';
+import { resolveWorkspace } from '@main/core/workspaces/resolve-workspace';
 import { readRemotePreviewBytes, remotePreviewFailureStatus, withUtf8Charset, type RemoteChunk } from './remote-preview-read';
 
 /**
@@ -199,7 +199,7 @@ export function createRemotePreview(input: {
     if (!url) return null;
   }
   registry.set(previewId, {
-    source: { kind: 'remote', projectId: input.projectId, workspaceId: input.workspaceId },
+    source: { kind: 'remote', workspaceId: input.workspaceId },
     surface: input.surface,
     root,
     documentPath: input.surface === 'pane' ? input.documentPath : undefined,
@@ -209,7 +209,6 @@ export function createRemotePreview(input: {
   log.info('Remote preview registered', {
     previewId,
     surface: input.surface,
-    projectId: input.projectId,
     workspaceId: input.workspaceId,
   });
   return { previewId, url };
@@ -562,7 +561,7 @@ export const REMOTE_CHUNK_TIMEOUT_MS = 20_000;
  * 主进程这边 ❌ 另开一条到那台机器的通道。
  */
 function readRemoteChunk(
-    workspaceId: string,
+  workspaceId: string,
   chunk: { path: string; offset: number; length: number },
   signal?: AbortSignal
 ): Promise<RemoteChunk> {

@@ -5,7 +5,7 @@ import { FileSystem } from '@gugu/session-core/files';
 import { openFixture, type FixtureDb } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppDb } from '@main/db/client';
-import type { ProjectProvider } from '@main/core/projects/project-provider';
+import type { ProjectProvider } from '@main/core/workspaces/folder-runtime/folder-runtime';
 import type { WorkspaceFactoryContext } from './workspace-factory';
 
 const h = vi.hoisted(() => ({
@@ -18,7 +18,7 @@ const h = vi.hoisted(() => ({
   build: vi.fn(),
 }));
 vi.mock('@main/db/client', () => ({ get db() { return h.db; } }));
-vi.mock('@main/core/projects/project-manager', () => ({ projectManager: { getProject: () => h.opened ? h.project : undefined } }));
+vi.mock('@main/core/workspaces/folder-runtime/folder-runtimes', () => ({ projectManager: { getProject: () => h.opened ? h.project : undefined } }));
 vi.mock('@main/core/projects/operations/openProject', () => ({ openProject: h.open }));
 vi.mock('@main/core/runtime/runtime-manager', () => ({ runtimeManager: {} }));
 vi.mock('@main/core/sessions/session-builder', () => ({ buildSessionFromWorkspace: h.build, emitSessionProvisionProgress: vi.fn() }));
@@ -32,7 +32,7 @@ describe('workspace operations after the host process loses its cache', () => {
   let root: string;
   let registry: typeof import('./workspace-registry').workspaceRegistry;
   let files: typeof import('../files/file-system/controller').workspaceFileSystemController;
-  let resolve: typeof import('../projects/utils').resolveWorkspace;
+  let resolve: typeof import('@main/core/workspaces/resolve-workspace').resolveWorkspace;
 
   beforeEach(async () => {
     vi.resetModules();
@@ -59,7 +59,7 @@ describe('workspace operations after the host process loses its cache', () => {
       };
     });
     registry = (await import('./workspace-registry')).workspaceRegistry;
-    resolve = (await import('../projects/utils')).resolveWorkspace;
+    resolve = (await import('@main/core/workspaces/resolve-workspace')).resolveWorkspace;
     files = (await import('../files/file-system/controller')).workspaceFileSystemController;
   });
 

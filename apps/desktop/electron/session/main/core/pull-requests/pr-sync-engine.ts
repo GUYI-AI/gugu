@@ -14,7 +14,7 @@ import {
 import { db } from '@main/db/client';
 import { KV } from '@main/db/kv';
 import {
-  projectRemotes,
+  workspaceRemotes,
   pullRequestAssignees,
   pullRequestChecks,
   pullRequestLabels,
@@ -284,14 +284,14 @@ export class PrSyncEngine {
     }
   }
 
-  /** Cancel any in-flight syncs for a project and clean up its PR rows and KV cursors. */
-  async deleteProjectData(projectId: string): Promise<void> {
-    log.info('PrSyncEngine: deleteProjectData', { projectId });
+  /** Cancel any in-flight syncs for a folder and clean up its PR rows and KV cursors. */
+  async deleteFolderData(folderId: string): Promise<void> {
+    log.info('PrSyncEngine: deleteFolderData', { folderId });
 
     const remoteRows = await db
-      .select({ remoteUrl: projectRemotes.remoteUrl })
-      .from(projectRemotes)
-      .where(eq(projectRemotes.projectId, projectId));
+      .select({ remoteUrl: workspaceRemotes.remoteUrl })
+      .from(workspaceRemotes)
+      .where(eq(workspaceRemotes.folderId, folderId));
 
     if (remoteRows.length === 0) return;
 
@@ -299,20 +299,20 @@ export class PrSyncEngine {
       this.cancel(url);
 
       const shared = await db
-        .select({ projectId: projectRemotes.projectId })
-        .from(projectRemotes)
-        .where(and(eq(projectRemotes.remoteUrl, url), ne(projectRemotes.projectId, projectId)))
+        .select({ folderId: workspaceRemotes.folderId })
+        .from(workspaceRemotes)
+        .where(and(eq(workspaceRemotes.remoteUrl, url), ne(workspaceRemotes.folderId, folderId)))
         .limit(1);
 
       if (shared.length > 0) {
         log.info(
-          'PrSyncEngine: deleteProjectData — remote shared with other project, skipping data cleanup',
+          'PrSyncEngine: deleteFolderData — remote shared with another folder, skipping data cleanup',
           { url }
         );
         continue;
       }
 
-      log.info('PrSyncEngine: deleteProjectData — deleting PR rows and KV cursors', { url });
+      log.info('PrSyncEngine: deleteFolderData — deleting PR rows and KV cursors', { url });
       await db.delete(pullRequests).where(eq(pullRequests.repositoryUrl, url));
       await Promise.all([
         this.kv.del(`fullsync:${url}`),

@@ -4,7 +4,7 @@ import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import { err, ok, type Result } from '@gugu/session-shared';
 import { issueController } from '@main/core/issues/controller';
 import { openProject } from '@main/core/projects/operations/openProject';
-import { projectManager } from '@main/core/projects/project-manager';
+import { projectManager } from '@main/core/workspaces/folder-runtime/folder-runtimes';
 import { classifyCreateFailure } from '@main/core/session-timeline/create-failure';
 import { launchCreatedSession } from '@main/core/session-timeline/launch-created-session';
 import { isAgentHomeImportCode } from '@gugu/session-core/workspace-server/agent-config';

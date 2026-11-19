@@ -11,7 +11,7 @@ import type {
   AdmittedChannel, BoundIdentity, CapabilityGrant, ExitFact, Gen, Have, PlatformTicket, ProcessLease,
   ResolvedCli, StageName, StageOut, WorkspaceLease,
 } from '@gugu/core/local/session-life/types';
-import { persistedWorkspacePath, resolveWorkspace } from '@main/core/projects/utils';
+import { persistedWorkspacePath, resolveWorkspace } from '@main/core/workspaces/resolve-workspace';
 import { RETIRED_REMOTE_WORKSPACE_MESSAGE } from '@main/core/workspaces/resolve-workspace-kind';
 import { getSessions } from '@main/core/sessions/getSessions';
 import { sessionService } from '@main/core/sessions/session-service';

@@ -31,16 +31,12 @@ export const assistantPanelLocal = {
       if (channel === automationChangedChannel.name || channel === automationRunChangedChannel.name) listener()
     })
   },
-  async home(sessionId: string, identity?: { assistantId: string; deviceId: string; ownerId: string }) {
+  async home(sessionId: string) {
     const row = (await getSessions()).find(row => row.id === sessionId && !row.archivedAt)
     if (!row?.workspaceId) throw new Error('PANEL_SESSION_HOME_UNAVAILABLE')
     const [workspace] = await db.select({ path: workspaceTable.path }).from(workspaceTable).where(eq(workspaceTable.id,row.workspaceId)).limit(1)
     if (!workspace?.path) throw new Error('PANEL_SESSION_HOME_UNAVAILABLE')
-    if (identity) {
-      const { noteAssistantProjectCandidate } = await import('../projects/operations/assistant-project-cleanup')
-      noteAssistantProjectCandidate({ ...identity, sessionId, projectId: row.projectId, path: workspace.path })
-    }
-    return { cwd: workspace.path,projectId: row.projectId }
+    return { cwd: workspace.path }
   },
   async sessions(ownerId: string) {
     const agents = await listAgents(process.env,{ includeGuests: true })

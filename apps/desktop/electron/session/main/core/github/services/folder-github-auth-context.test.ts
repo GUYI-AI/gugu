@@ -2,9 +2,9 @@ import { err, ok } from '@gugu/session-shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectSettings } from '@shared/core/project-settings/project-settings';
 import {
-  ProjectGitHubAuthContextResolver,
-  type ProjectGitHubAuthContextError,
-} from './project-github-auth-context-resolver';
+  FolderGitHubAuthContextResolver,
+  type FolderGitHubAuthContextError,
+} from './folder-github-auth-context-resolver';
 
 type FakeProject = {
   settings: { get(): Promise<ProjectSettings> };
@@ -13,12 +13,12 @@ type FakeProject = {
 class FakeProjectLookup {
   private readonly projects = new Map<string, FakeProject>();
 
-  setProject(projectId: string, project: FakeProject): void {
-    this.projects.set(projectId, project);
+  setProject(folderId: string, project: FakeProject): void {
+    this.projects.set(folderId, project);
   }
 
-  getProject(projectId: string): FakeProject | undefined {
-    return this.projects.get(projectId);
+  getProject(folderId: string): FakeProject | undefined {
+    return this.projects.get(folderId);
   }
 }
 
@@ -32,15 +32,15 @@ function makeProject(settings: ProjectSettings = {}): FakeProject {
   };
 }
 
-describe('ProjectGitHubAuthContextResolver', () => {
+describe('FolderGitHubAuthContextResolver', () => {
   let projects: FakeProjectLookup;
   let logger: FakeLogger;
-  let resolver: ProjectGitHubAuthContextResolver;
+  let resolver: FolderGitHubAuthContextResolver;
 
   beforeEach(() => {
     projects = new FakeProjectLookup();
     logger = new FakeLogger();
-    resolver = new ProjectGitHubAuthContextResolver({
+    resolver = new FolderGitHubAuthContextResolver({
       projects,
       logger,
     });
@@ -59,9 +59,9 @@ describe('ProjectGitHubAuthContextResolver', () => {
     projects.setProject('project-1', makeProject({}));
 
     await expect(resolver.resolve('project-1')).resolves.toEqual(
-      err<ProjectGitHubAuthContextError>({
+      err<FolderGitHubAuthContextError>({
         type: 'unconfigured',
-        projectId: 'project-1',
+        folderId: 'project-1',
         message: 'No GitHub account is configured for this project.',
       })
     );
@@ -71,9 +71,9 @@ describe('ProjectGitHubAuthContextResolver', () => {
     projects.setProject('project-1', makeProject({ githubAccountId: null }));
 
     await expect(resolver.resolve('project-1')).resolves.toEqual(
-      err<ProjectGitHubAuthContextError>({
+      err<FolderGitHubAuthContextError>({
         type: 'disabled',
-        projectId: 'project-1',
+        folderId: 'project-1',
         message: 'GitHub API is disabled for this project.',
       })
     );
@@ -81,9 +81,9 @@ describe('ProjectGitHubAuthContextResolver', () => {
 
   it('fails when the project is not mounted instead of silently falling back', async () => {
     await expect(resolver.resolve('project-1')).resolves.toEqual(
-      err<ProjectGitHubAuthContextError>({
-        type: 'project_not_found',
-        projectId: 'project-1',
+      err<FolderGitHubAuthContextError>({
+        type: 'folder_not_found',
+        folderId: 'project-1',
         message: 'Project project-1 is not mounted.',
       })
     );
@@ -95,14 +95,14 @@ describe('ProjectGitHubAuthContextResolver', () => {
     projects.setProject('project-1', project);
 
     await expect(resolver.resolve('project-1')).resolves.toEqual(
-      err<ProjectGitHubAuthContextError>({
+      err<FolderGitHubAuthContextError>({
         type: 'account_selection_failed',
-        projectId: 'project-1',
+        folderId: 'project-1',
         message: 'settings failed',
       })
     );
     expect(logger.warn).toHaveBeenCalledWith('Failed to resolve project GitHub account selection', {
-      projectId: 'project-1',
+      folderId: 'project-1',
       error: 'settings failed',
     });
   });
