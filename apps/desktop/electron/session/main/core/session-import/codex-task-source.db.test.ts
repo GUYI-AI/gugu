@@ -74,3 +74,34 @@ it('changes the revision when the source changes after scanning', async () => {
   expect(second.revision).not.toBe(first.revision);
   await expect(verifyCodexTaskFiles(f.root, [{ ...second, id: other }])).rejects.toThrow('metadata');
 });
+
+it.each(['sessions', 'archived_sessions'])('collects a paginated ancestor in %s as context, not a visible task', async folder => {
+  const f = await fixture();
+  const primary = await f.add(id);
+  const parent = join(f.root, folder, `rollout-${other}.jsonl`);
+  await mkdir(join(f.root, folder), { recursive: true });
+  const ancestor = JSON.stringify({ type: 'session_meta', payload: { id: other, cwd: f.root, history_mode: 'paginated', history_base: null } }) + '\n';
+  await writeFile(parent, ancestor);
+  await writeFile(primary, JSON.stringify({ type: 'session_meta', payload: { id, cwd: f.root, history_mode: 'paginated',
+    history_base: { thread_id: other, end_ordinal_exclusive: 1, end_byte_offset: Buffer.byteLength(ancestor) } } }) + '\n');
+  f.db.close();
+  const scan = await scanCodexTasks(f.root);
+  expect(scan).toMatchObject({ indexed: 1, invalid: 0, rows: [{ id, files: [{ nativeId: id }, { nativeId: other, relativePath: `${folder}/rollout-${other}.jsonl` }] }] });
+  await verifyCodexTaskFiles(f.root, scan.rows);
+  await rm(parent);
+  expect(await scanCodexTasks(f.root)).toMatchObject({ indexed: 1, rows: [], blocked: [{ id, reason: 'missing-history' }] });
+});
+
+it('refuses cyclic lineage and detects an altered ancestor in the scan revision', async () => {
+  const f = await fixture(); const primary = await f.add(id); f.db.close();
+  const parent = join(f.root, 'sessions', `rollout-${other}.jsonl`);
+  const meta = (nativeId: string, base: string | null) => JSON.stringify({ type: 'session_meta', payload: { id: nativeId, cwd: f.root,
+    history_mode: 'paginated', history_base: base ? { thread_id: base, end_ordinal_exclusive: 1, end_byte_offset: 0 } : null } }) + '\n';
+  await writeFile(primary, meta(id, other)); await writeFile(parent, meta(other, null));
+  const first = await scanCodexTasks(f.root);
+  expect(first.rows).toHaveLength(1);
+  await utimes(parent, 200, 200);
+  expect((await scanCodexTasks(f.root)).rows[0].revision).not.toBe(first.rows[0].revision);
+  await writeFile(parent, meta(other, id));
+  expect(await scanCodexTasks(f.root)).toMatchObject({ invalid: 1, rows: [], blocked: [{ id, reason: 'invalid-history' }] });
+});

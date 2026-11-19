@@ -6,9 +6,10 @@ function validScan(value: unknown): value is CodexTaskScan {
   if (!value || typeof value !== 'object') return false;
   const scan = value as CodexTaskScan;
   return ['ready', 'unavailable'].includes(scan.status) && [scan.indexed, scan.missing, scan.invalid].every(Number.isSafeInteger)
-    && Array.isArray(scan.rows) && scan.rows.every(row => row && typeof row.id === 'string' && typeof row.title === 'string'
+    && Array.isArray(scan.blocked) && Array.isArray(scan.rows) && scan.rows.every(row => row && typeof row.id === 'string' && typeof row.title === 'string'
       && typeof row.cwd === 'string' && typeof row.relativePath === 'string' && typeof row.revision === 'string'
-      && Number.isFinite(row.updatedAt) && Number.isSafeInteger(row.sizeBytes));
+      && Number.isFinite(row.updatedAt) && Number.isSafeInteger(row.sizeBytes) && Array.isArray(row.files)
+      && row.files.every(file => typeof file.relativePath === 'string' && typeof file.nativeId === 'string' && typeof file.cwd === 'string'));
 }
 
 export function readCodexTasks(sourceRoot: string, signal: AbortSignal): Promise<CodexTaskScan> {

@@ -1,4 +1,11 @@
 /** Local ChatGPT/Codex tasks. Bodies and source database handles stay in a child process. */
+export type CodexTaskHistoryFile = {
+  relativePath: string;
+  nativeId: string;
+  cwd: string;
+  sizeBytes: number;
+  historyBase: { thread_id: string; end_ordinal_exclusive: number; end_byte_offset: number } | null;
+};
 export type CodexTaskSourceRow = {
   id: string;
   title: string;
@@ -7,6 +14,8 @@ export type CodexTaskSourceRow = {
   updatedAt: number;
   sizeBytes: number;
   revision: string;
+  /** Current rollout plus every immutable ancestor needed for native resume. */
+  files: CodexTaskHistoryFile[];
 };
 export type CodexTaskScan = {
   status: 'ready' | 'unavailable';
@@ -14,6 +23,7 @@ export type CodexTaskScan = {
   indexed: number;
   missing: number;
   invalid: number;
+  blocked: { id: string; reason: 'missing-original' | 'missing-history' | 'invalid-history' }[];
   rows: CodexTaskSourceRow[];
 };
 export type ImportCodexTaskParams = { id: string; revision: string };

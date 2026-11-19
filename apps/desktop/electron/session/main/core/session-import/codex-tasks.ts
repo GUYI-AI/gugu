@@ -69,22 +69,22 @@ export async function importCodexTasks(params: readonly ImportCodexTaskParams[])
     if (!selected.length) return result;
     await ensureAgentHome(home);
     const ids = new Set(selected.map(row => row.id));
-    // Reuse #3202's complete-session planner, with explicit selection and no automatic-import cap.
-    const plan = await planAgentHomeHistory({ ...home, upgradeHistory: selected.map(row => row.relativePath) }, Number.MAX_SAFE_INTEGER,
-      { sessionIds: ids, includeShared: false });
-    if (plan.issues.length || selected.some(row => !plan.paths.includes(row.relativePath))) throw new Error('会话原文发生变化，请重新扫描后导入');
-    const managed = await planAgentHomeHistory({ ...home, userConfigRoot: home.configRoot, upgradeHistory: ['sessions'] }, Number.MAX_SAFE_INTEGER,
-      { sessionIds: ids, includeShared: false });
-    const managedPaths = new Map(managed.paths.map(path => [home.historySession!(path)!.id, path]));
-    const targets = selected.map(row => ({ ...row, relativePath: managedPaths.get(row.id) ?? row.relativePath }));
-    const toCopy = selected.filter(row => !managedPaths.has(row.id));
+    const ownership = new Map(selected.map(row => [row.relativePath, { id: row.id, primary: true }]));
+    for (const row of selected) for (const file of row.files) {
+      if (!ownership.has(file.relativePath)) ownership.set(file.relativePath, { id: row.id, primary: false });
+    }
+    // Use the same planner with the source-validated complete lineage as each session's bundle.
+    const selectedHome = { ...home, upgradeHistory: [...ownership.keys()], historySession: (path: string) => ownership.get(path) ?? null };
+    const plan = await planAgentHomeHistory(selectedHome, Number.MAX_SAFE_INTEGER, { sessionIds: ids, includeShared: false });
+    if (plan.issues.length || [...ownership.keys()].some(path => !plan.paths.includes(path))) throw new Error('会话原文发生变化，请重新扫描后导入');
+    const targets = selected;
     preparation = { phase: 'copying', startedAt: Date.now() };
-    if (toCopy.length) await appendAgentHomeHistory(home, plan.paths.filter(path => !managedPaths.has(home.historySession!(path)!.id)), {
+    await appendAgentHomeHistory(selectedHome, plan.paths, {
       signal, validate: async root => {
-        await verifyCodexTaskFiles(root, toCopy, signal);
+        await verifyCodexTaskFiles(root, selected, signal);
         const latest = await readCodexTasks(home.userConfigRoot, signal);
         const revisions = new Map(latest.rows.map(row => [row.id, row.revision]));
-        if (latest.status !== 'ready' || toCopy.some(row => revisions.get(row.id) !== row.revision)) {
+        if (latest.status !== 'ready' || selected.some(row => revisions.get(row.id) !== row.revision)) {
           throw new Error('会话在复制期间发生变化，请重新扫描后导入');
         }
       },

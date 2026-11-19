@@ -18,7 +18,8 @@ vi.mock('@main/db/kv', () => ({ KV: class { setOrThrow = mocks.write; } }));
 vi.mock('@main/db/client', () => ({ db: { select: () => ({ from: () => ({ where: () => ({ limit: mocks.existing }) }) }) } }));
 import { importCodexTasks, cancelCodexTaskImport } from './codex-tasks';
 
-const row = { id: 'one', title: 'Task', cwd: '/project', relativePath: 'sessions/one.jsonl', updatedAt: 1, sizeBytes: 100, revision: 'r1' };
+const row = { id: 'one', title: 'Task', cwd: '/project', relativePath: 'sessions/one.jsonl', updatedAt: 1, sizeBytes: 100, revision: 'r1',
+  files: [{ relativePath: 'sessions/one.jsonl', nativeId: 'one', cwd: '/project', sizeBytes: 100, historyBase: null }] };
 beforeEach(() => {
   for (const mock of Object.values(mocks)) mock.mockReset();
   mocks.scan.mockResolvedValue({ status: 'ready', indexed: 1, missing: 0, invalid: 0, rows: [row] });
@@ -49,11 +50,15 @@ it('does not copy stale/archived selections or tasks already bound in Gugu', asy
   expect((await importCodexTasks([{ id: 'one', revision: 'old' }])).items).toEqual([{ id: 'one', status: 'changed' }]);
 });
 
-it('preserves a managed continuation with another rollout filename', async () => {
-  mocks.plan.mockImplementation(async home => ({ paths: home.userConfigRoot === '/managed' ? ['sessions/managed-one.jsonl'] : [row.relativePath], issues: [] }));
+it('puts archived ancestor segments in the same bundle without binding them as tasks', async () => {
+  const inherited = { relativePath: 'archived_sessions/base.jsonl', nativeId: 'parent', cwd: '/project', sizeBytes: 80, historyBase: null };
+  const withParent = { ...row, files: [...row.files, inherited] };
+  mocks.scan.mockResolvedValue({ status: 'ready', rows: [withParent] });
+  mocks.plan.mockResolvedValue({ paths: ['sessions/one.jsonl', 'archived_sessions/base.jsonl'], issues: [] });
   await importCodexTasks([{ id: 'one', revision: 'r1' }]);
-  expect(mocks.append).not.toHaveBeenCalled();
-  expect(mocks.prepare.mock.calls[0][3]).toEqual([{ id: 'one', path: '/managed/sessions/managed-one.jsonl' }]);
+  expect(mocks.append.mock.calls[0][1]).toEqual(['sessions/one.jsonl', 'archived_sessions/base.jsonl']);
+  expect(mocks.bind).toHaveBeenCalledOnce();
+  expect(mocks.bind.mock.calls[0][1].providerSessionId).toBe('one');
 });
 
 it('never binds when native preparation or managed metadata validation fails', async () => {
