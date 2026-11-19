@@ -81,6 +81,7 @@ export function createDesktopClosureV2Service(p: Ports): AccountClosureV2Native 
         if (current.revision !== r.revision || current.serverState !== 'deleted') return fail('scope_conflict')
         // Persist retirement and purge on the same canonical SQLite connection,
         // before the legacy local-cache step or any later renderer finalizer.
+        await p.local.beginNativeErasure(localScope(r), r.nativeGeneration)
         await p.retireMessages(r.ownerId)
       })
       const result = await p.local.native.eraseLocal(localScope(r))

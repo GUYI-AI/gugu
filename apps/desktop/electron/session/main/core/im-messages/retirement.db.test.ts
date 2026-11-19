@@ -83,6 +83,26 @@ describe('permanent native IM retirement', () => {
     expect(store.throughRevision(B)).toBe('7')
     expect(rows('im_messages')).toEqual([])
   })
+  it('cannot commit a legacy writer snapshot opened before retirement', async () => {
+    fixture = await openFixture('empty')
+    const first = createImMessageStore(fixture.sqlite)
+    first.ingest(A, batch('before'))
+    const other = new Database(fixture.sqlite.name)
+    try {
+      const legacy = other.prepare("INSERT INTO im_messages(account_id,id,chat_id,seq,created_at,content_type,content,is_whisper,to_user_ids,rest) VALUES(?,?,?,1,'2026-11-02T00:00:00Z','text','legacy',0,'[]','{}')")
+      legacy.run(A,'positive-before','chat')
+      other.exec('BEGIN')
+      try {
+        expect(other.prepare('SELECT * FROM im_message_retired_accounts').all()).toEqual([])
+        first.retireAccount(A)
+        // WAL snapshot promotion must refuse a stale writer; it cannot commit
+        // based on the old absence of the newly durable retirement marker.
+        expect(() => legacy.run(A,'late','chat')).toThrow()
+      } finally { other.exec('ROLLBACK') }
+      expect(rows('im_messages')).toEqual([])
+      expect(rows('im_message_retired_accounts')).toHaveLength(1)
+    } finally { other.close() }
+  })
   it('rolls back both retirement and cache/index changes when the purge cannot commit, then retries safely', async () => {
     fixture = await openFixture('empty')
     const store = createImMessageStore(fixture.sqlite)

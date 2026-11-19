@@ -124,6 +124,20 @@ export function createDesktopClosureService(ports: DesktopClosureServicePorts) {
         if (fence.paused) await writeFence(ownerId, { ...fence, paused: false })
       })
     },
+    /** Trusted-deleted V2 receiver only. Requalify ownership/runtime exit
+     * before even the first cache purge, and fence late same-owner Auth writes. */
+    async beginNativeErasure(input: AccountClosureScope, epoch: string): Promise<void> {
+      const scope = scopeOf(input)
+      await underAuth(async () => {
+        const owner = await ports.currentOwner()
+        if (owner === undefined) return unavailable()
+        if (owner !== null && owner !== scope.ownerId) throw new ClosureFailure('wrong_local_owner')
+        const fence = await readFence(scope.ownerId)
+        if (!fence?.active || !fence.ready || fence.operation !== scope.localOperationId || fence.epoch !== epoch) throw new ClosureFailure('closure_not_prepared')
+        await ports.recheckStopped?.(scope.ownerId)
+        if (!fence.erasing) await writeFence(scope.ownerId, { ...fence, erasing: true })
+      })
+    },
     /** Private V2 pre-confirm proof. A restored server preparation cannot
      * replace this installation's still-current runtime exit evidence. */
     async requireNativePreparation(input: AccountClosureScope, epoch: string): Promise<void> {

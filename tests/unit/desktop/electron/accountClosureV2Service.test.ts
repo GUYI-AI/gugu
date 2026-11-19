@@ -252,6 +252,17 @@ describe('native V2 custody and trusted receiver',()=>{
   expect(f.http.post.mock.calls.filter(c=>c[0]==='cancel')).toHaveLength(1)
   expect(f.http.post.mock.calls.at(-1)![0]).toBe('result')
  })
+ it('rechecks runtime ownership before permanent cache retirement and keeps custody if the proof changed',async()=>{
+  const f=fixture(),ready=await prepared(f)
+  f.after(()=>f.blocked(true))
+  await expect(f.native.confirm(ready.handle,{code:'123456',acknowledgeForfeit:true})).rejects.toMatchObject({code:'closure_not_prepared'})
+  const pending=(await f.native.discover())!
+  expect(pending.phase).toBe('deleted');expect(f.effects).toEqual(['stop'])
+  f.blocked(false)
+  expect((await f.native.recover(pending.handle)).phase).toBe('local-complete')
+  expect(f.effects).toEqual(['stop','retire','first','second'])
+  expect(f.http.post.mock.calls.filter(c=>c[0]==='confirm')).toHaveLength(1)
+ })
  it('retains the trusted deleted capability when permanent message retirement fails, and retries before local cleanup',async()=>{
   const f=fixture(),ready=await prepared(f);f.retirementFails(true)
   await expect(f.native.confirm(ready.handle,{code:'123456',acknowledgeForfeit:true})).rejects.toMatchObject({code:'closure_storage_unavailable'})
