@@ -83,7 +83,7 @@ for (const width of [360, 390]) for (const theme of ['dark', 'light']) for (cons
       rowToInput: rect(input).top - rect(row).bottom,
     }
     expect(dock.hasAttribute('data-running-status')).toBe(count > 0)
-    expect(rect(button).height).toBe(44)
+    expect(rect(button).height).toBe(keyboard ? 0 : 44)
     expect(parseFloat(getComputedStyle(composer).paddingBottom)).toBeGreaterThanOrEqual(8)
     if (token) {
       expect(rect(slot).height).toBe(rect(token.closest('.rtb-bar')!).height + parseFloat(getComputedStyle(slot).paddingTop))
@@ -102,7 +102,7 @@ for (const width of [360, 390]) for (const theme of ['dark', 'light']) for (cons
     }
     if (keyboard) {
       expect(rect(row).height).toBe(0)
-      expect(data.rowSpacing.marginBottom).toBe('0px')
+      expect(row.hidden).toBe(true)
     }
     if (count === 0) expect(rect(slot).height).toBe(0)
     if (!keyboard) expect(data.rowToInput).toBe(4)
