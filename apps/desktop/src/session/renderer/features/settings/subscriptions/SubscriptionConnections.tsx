@@ -417,7 +417,7 @@ export function SubscriptionConnections({
     <>
       {modelRows ? <SubscriptionModelRows notice={failure ? <SwitchNoticeLine notice={{ tone, text: failure, ...(refusedId ? { closeAndSwitch } : {}), ...(closing ? { progress } : {}) }} /> : undefined} agent={agent} machine={machine} connections={listed} busy={action.isPending || rename.isPending}
         onSignIn={id => signIn(id)} onAddAccount={modelRows.onAddAccount} onRemove={id => action.mutate({ kind: 'remove', id })} onSelect={select} onRename={(id, name) => rename.mutateAsync({ id, name })}
-        onRetry={refresh} error={rename.error ? translate('task.renameFailed') : connections.error || native.error ? translate('customModels.connectionsReadFailed', { provider: agent.name }) : null} /> : modelAccount ? <ConnectionForm
+        onRetry={refresh} error={rename.error ? translate('mcpLibrary.saveFailed') : connections.error || native.error ? translate('customModels.connectionsReadFailed', { provider: agent.name }) : null} /> : modelAccount ? <ConnectionForm
           agent={agent} machine={machine} account={accountMethod} vendorKey={false}
           onCreated={connection => { setModelAccountId(connection.id); onCreated(connection) }} onCliSignIn={signInCli}
           modelAccount={{ connectionId: modelAccountId, onLogin: () => { if (modelAccountId) signIn(modelAccountId) }, onClose: modelAccount.onClose, onBusyChange: modelAccount.onBusyChange }}
