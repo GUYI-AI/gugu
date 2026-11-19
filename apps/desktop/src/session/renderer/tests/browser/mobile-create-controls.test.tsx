@@ -10,11 +10,11 @@ import '@/i18n/registerMessagingCatalog'
 import { followRendererSession } from '@/lib/replica'
 import { PhoneComposerControl, PhoneComposerControlRow } from '@/mobile/composer/PhoneComposerControls'
 import { Monitor, Sparkles, Hash, Users } from '@/lib/icons'
-import { CreateTarget } from '@/mobile/agent-watch/CreateTarget'
-import { SelectedCreationSkills } from '@/mobile/agent-watch/CreateSkills'
-import type { CreationSkill } from '@/mobile/agent-watch/create-skills'
-import type { CreateMachine } from '@/mobile/agent-watch/create-target'
-import type { CreateSelection } from '@/mobile/agent-watch/create-session-form'
+import { CreateTarget } from '@/components/session-watch/CreateTarget'
+import { SelectedCreationSkills } from '@/components/session-watch/CreateSkills'
+import type { CreationSkill } from '@/components/session-watch/create-skills'
+import type { CreateMachine } from '@/components/session-watch/create-target'
+import type { CreateSelection } from '@/components/session-watch/create-session-form'
 import type { SessionpageSessionCreateOptions } from '@gugu/session-core/session-record/contract'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import { revealPhoneControl } from '../../../../../../../tests/support/phoneControlTargets'
@@ -22,7 +22,7 @@ import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ sessionTimeline: {
+vi.mock('@/components/session-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ sessionTimeline: {
   sessionCreateSkills: async (input: { harness: string }) => ({ ok: true, value: { skills: input.harness === 'pi' ? [] : [{ id: '/native/meeting/SKILL.md', name: '会议记录', description: '整理会议记录与待办事项' }, { id: '/native/code/SKILL.md', name: '代码检查', description: '检查代码中的问题' }] } }),
 } }) }))
 const machines: CreateMachine[] = ['Mac', 'Cloud'].map((name) => ({ device: { device_id: name, label: name, hostname: name, platform: 'darwin', status: 'online', is_online: true, last_seen_at: '2026-11-15T00:00:00Z', capabilities: { terminals: [], runtimes: ['codex'] } }, localProjectId: null, path: null, available: true }))

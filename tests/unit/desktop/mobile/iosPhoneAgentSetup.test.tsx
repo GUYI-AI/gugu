@@ -37,7 +37,7 @@ vi.mock('../../../../apps/desktop/src/components/ui/Sheet', () => ({
   Sheet: ({ children, testId }: { children: ReactNode; testId?: string }) => createElement('section', { role: 'dialog', 'data-testid': testId }, children),
 }))
 import { PhoneAgentSetupGate } from '../../../../apps/desktop/src/mobile/local-agent/PhoneAgentSetupGate'
-import { PhoneHostSetupEntry } from '../../../../apps/desktop/src/mobile/agent-watch/PhoneHostSetupEntry'
+import { PhoneHostSetupEntry } from '../../../../apps/desktop/src/components/session-watch/PhoneHostSetupEntry'
 import { IOSPhoneAgentHostControl } from '../../../../apps/desktop/src/mobile/local-agent/IOSPhoneAgentHostControl'
 import { verifiedPhoneHostBinding } from '../../../../apps/desktop/src/mobile/local-agent/usePhoneHostIdentity'
 import { readPhoneAgentSetup, savePhoneAgentSetup } from '../../../../apps/desktop/src/mobile/local-agent/PhoneAgentSetupState'

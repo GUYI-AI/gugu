@@ -5,7 +5,7 @@ import { releaseQueuedSessionInput, state } from '@/lib/sessionInputOutboxBridge
 import { withSessionInputDeadline } from '@/lib/sessionInputOutbox'
 import { sessionInputFailureText } from '@/lib/pendingSessionInput'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
-import { phoneTimelineClient } from '../local-agent/phoneTimelineClient'
+import { phoneTimelineClient } from '../../mobile/local-agent/phoneTimelineClient'
 import type { SessionpageTimelineClient } from './use-timeline-session'
 
 /** Pi's generic stop clears all hosted jobs; its original queue action interrupts only the foreground. */

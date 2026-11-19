@@ -4,8 +4,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import { createReactHarness } from '../../support/testHarness'
 import { createNativeRecordReader } from '../../../apps/desktop/electron/session/main/core/session-timeline/native-record'
-import { useNativeSessionRecord } from '../../../apps/desktop/src/mobile/agent-watch/useNativeSessionRecord'
-import { projectPhonePendingInputs } from '../../../apps/desktop/src/mobile/agent-watch/phone-pending-inputs'
+import { useNativeSessionRecord } from '../../../apps/desktop/src/components/session-watch/useNativeSessionRecord'
+import { projectPhonePendingInputs } from '../../../apps/desktop/src/components/session-watch/phone-pending-inputs'
 import { activeTurnWithInputs } from '@session-chat/state/pending-prompt'
 import { splitActiveTurn } from '../../../apps/desktop/src/components/assistant-ui/transcript-sync'
 import { sessionInputBaseline } from '../../../apps/desktop/src/lib/pendingSessionInput'
@@ -16,7 +16,7 @@ vi.mock('../../../apps/desktop/electron/session/main/core/sessions/session-conve
 vi.mock('../../../apps/desktop/electron/session/main/core/sessions/owner-notification-state', () => ({ ownerNotificationEpoch: () => 0 }))
 vi.mock('../../../apps/desktop/electron/session/main/core/session-timeline/native-attachment', () => ({ nativeAttachmentDataUrl: vi.fn() }))
 vi.mock('../../../apps/desktop/electron/session/main/core/sessions/session-turn-store', () => ({ getStoredHistory: (...args: unknown[]) => scope.stored(...args) }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   machineRpc: () => ({ sessionTimeline: { sessionNativeRecord: scope.rpc } }), onLinkChange: () => () => {},
 }))
 const cleanups: (() => void)[] = []

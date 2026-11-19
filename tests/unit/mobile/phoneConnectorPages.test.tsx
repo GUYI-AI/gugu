@@ -24,7 +24,7 @@ vi.mock('@/components/settings/channels/useChatChannels', () => ({ useChatChanne
 vi.mock('../../../apps/desktop/src/mobile/assistant/phoneAssistantAuthorization',() => ({ phoneAssistantAuthorization: () => ui.rpc }))
 vi.mock('../../../apps/desktop/src/components/assistant/assistant-app-client',() => ({ reportAssistantAppChange: vi.fn(async () => {}) }))
 vi.mock('../../../apps/desktop/src/platform', () => ({ platform: { get kind() { return ui.platformKind }, writeClipboardText: ui.writeClipboardText } }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   machineRpc: () => ui.rpc,
   onMachineEvent: (_device: string, _event: unknown, listener: (data: unknown) => void) => {
     ui.listeners.push(listener)

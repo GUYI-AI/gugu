@@ -11,7 +11,7 @@ import { useDevicesStore } from '@/store/devicesContext'
 import type { PhoneMachineState } from './phoneMachine'
 import { phoneProjectRows } from './phoneProjectRows'
 import { usePhoneIntegrations } from './usePhoneProfileData'
-import { useMachineLabel } from '../agent-watch/useMachineLabel'
+import { useMachineLabel } from '../../components/session-watch/useMachineLabel'
 
 const LOADING = { state: 'loading' } as const
 const UNREADABLE = { state: 'unreadable' } as const
