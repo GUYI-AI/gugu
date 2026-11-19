@@ -4,6 +4,7 @@ import { replica, useReplica } from '@/lib/replica'
 import { readAgentHomeUpgradeResults } from '@renderer/features/settings/subscriptions/agent-home-upgrade-notice'
 import { AgentHomeMigrationResultList } from './AgentHomeMigrationResultList'
 import { DataImportSection } from './DataImportSection'
+import { QwenConfigImport } from './QwenConfigImport'
 import { useExternalImportProviders } from './use-external-import-providers'
 
 const agentHomeUpgradeResults = replica({
@@ -16,7 +17,7 @@ export function DesktopDataImportSection({ onClose }: { onClose: () => void }) {
   const { providers, historyDialog } = useExternalImportProviders()
   return (
     <>
-      <DataImportSection onClose={onClose} extraProviders={providers} localDetails={<AgentHomeMigrationResults />} />
+      <DataImportSection onClose={onClose} extraProviders={providers} localDetails={<><QwenConfigImport /><AgentHomeMigrationResults /></>} />
       {historyDialog}
     </>
   )
