@@ -129,7 +129,7 @@ it('folds quota-excluded sessions and says their originals remain in place', asy
   ]} />)
   const summary = harness.container.querySelector('summary')!
   expect(summary.textContent).toMatch(/2/)
-  expect(summary.textContent).toMatch(/originals remain in place|原处/)
+  expect(summary.textContent).toMatch(/originals are unchanged|原处/)
   expect(harness.container.textContent).not.toContain('old-a.jsonl')
   await clickElement(summary)
   await expect.poll(() => harness.container.querySelectorAll('li').length).toBe(2)

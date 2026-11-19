@@ -16,8 +16,8 @@ beforeEach(async () => {
   await i18n.changeLanguage('zh-CN')
   await page.viewport(900, 600)
   harness = createReactHarness()
-  harness.container.className = 'gugu-skin'
-  Object.assign(harness.container.style, { width: '720px', padding: '24px', fontFamily: 'system-ui, sans-serif', background: 'var(--background)' })
+  harness.container.className = 'gugu-skin emlight'
+  Object.assign(harness.container.style, { width: '720px', padding: '24px', fontFamily: 'system-ui, sans-serif', background: 'var(--bg)', color: 'var(--fg)' })
 })
 afterEach(async () => {
   harness?.cleanup()
