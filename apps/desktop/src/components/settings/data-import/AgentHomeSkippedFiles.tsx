@@ -21,7 +21,7 @@ export function AgentHomeSkippedFiles({ issues }: { issues: Issues }) {
   const groups = new Map<string, { name: string; issues: Issues }>()
   for (const issue of issues) {
     const parts = issue.path.replaceAll('\\', '/').split('/')
-    const key = parts[0] === 'skills' && parts[1] ? 'skills/' + parts[1] : parts[0] || issue.path
+    const key = issue.reason === 'historyLimit' ? 'history-limit' : parts[0] === 'skills' && parts[1] ? 'skills/' + parts[1] : parts[0] || issue.path
     const name = key.startsWith('skills/') ? parts[1]! : ['rules', 'agents', 'models'].includes(key)
       ? t(`agentHome.groups.${key}`) : key
     const group = groups.get(key) ?? { name, issues: [] }

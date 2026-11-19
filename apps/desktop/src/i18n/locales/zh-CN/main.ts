@@ -125,7 +125,7 @@ export default {
   },
   "issue": {
     "historyLimit": "超出最近 1 GiB 会话范围，原件仍在原处",
-    "groupHistoryLimitSummary_other": "{{name}}：{{count}} 条较旧会话保留在原处",
+    "groupHistoryLimitSummary_other": "{{count}} 条较早会话未迁，原件仍在原处",
 
     "tooLargeSummary_other": "{{count}} 个文件太大，未导入",
     "skippedSummary_other": "{{count}} 个文件未导入",

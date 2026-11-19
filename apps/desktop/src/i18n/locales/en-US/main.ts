@@ -131,8 +131,8 @@ export default {
   },
   "issue": {
     "historyLimit": "Outside the recent 1 GiB session budget; the original is unchanged",
-    "groupHistoryLimitSummary_one": "{{name}}: {{count}} older session remains in the original location",
-    "groupHistoryLimitSummary_other": "{{name}}: {{count}} older sessions remain in the original location",
+    "groupHistoryLimitSummary_one": "{{count}} older session was not migrated; the original is unchanged",
+    "groupHistoryLimitSummary_other": "{{count}} older sessions were not migrated; the originals are unchanged",
 
     "tooLargeSummary_one": "{{count}} file was too large to import",
     "tooLargeSummary_other": "{{count}} files were too large to import",

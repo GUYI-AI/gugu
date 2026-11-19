@@ -220,6 +220,13 @@ async function importHarnessHomeOnce(home: NonNullable<ReturnType<typeof homeFor
   const pending = migration && providerId === 'codex' ? await readAgentHomePending(home) : null;
   const plan = migration && groups.length && !pending ? await historyPlan(home) : undefined;
   const historyPaths = plan?.paths ?? [];
+  const selectedSessionIds = new Set(historyPaths.flatMap((path) => {
+    const session = home.historySession?.(path); return session?.primary ? [session.id] : [];
+  }));
+  const failedSessions = (issues: readonly AgentHomeImportIssue[]) => new Set(issues.flatMap((issue) => {
+    const id = home.historySession?.(issue.path)?.id;
+    return id && historyPaths.includes(issue.path) && selectedSessionIds.has(id) ? [id] : [];
+  })).size;
   const historyIssues: AgentHomeImportIssue[] = plan ? [...plan.issues, ...plan.skipped.map(({ path }) => ({ path, reason: 'historyLimit' as const }))] : [];
   let notice: { terminalNeedsSignIn: boolean; relogin: { connectionId: string; name: string; methodId: string }[];
     upgradeSignIn?: AgentHomeMarker['upgradeSignIn'] } | undefined;
@@ -239,7 +246,7 @@ async function importHarnessHomeOnce(home: NonNullable<ReturnType<typeof homeFor
     ...(migration ? {
       upgradeSummary: (issues: readonly AgentHomeImportIssue[]) => ({
         oldSessionsSkipped: oldSessionsSkipped(issues),
-        ...(plan ? { historyImport: { imported: plan.sessions - new Set(issues.filter((issue) => historyPaths.includes(issue.path)).map((issue) => home.historySession?.(issue.path)?.id).filter(Boolean)).size, skipped: plan.skipped.length, sessionBytes: plan.sessionBytes, limitBytes: AGENT_HISTORY_LIMIT } } : pending?.historyImport ? { historyImport: pending.historyImport } : {}),
+        ...(plan ? { historyImport: { imported: plan.sessions - failedSessions(issues), skipped: plan.skipped.length + failedSessions(issues), sessionBytes: plan.sessionBytes, limitBytes: AGENT_HISTORY_LIMIT } } : pending?.historyImport ? { historyImport: pending.historyImport } : {}),
         upgradeIssues: [...issues, ...cleanupIssues],
       }),
       afterCommit: async () => {
