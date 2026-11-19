@@ -46,8 +46,9 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
   if(m.params.model!==thread.meta.model)throw Error('model changed');
   if(!thread.path.endsWith('.zst'))fs.appendFileSync(thread.path,JSON.stringify({type:'thread_settings',payload:{model:m.params.model}})+'\\n');
   result={thread:{id:thread.meta.id,path:process.env.TEST_ESCAPE_PATH||thread.path},modelProvider:thread.meta.model_provider};
- } else if(m.method==='thread/read') { if(!thread)throw Error('thread not found'); result={thread:{id:thread.meta.id,model:thread.meta.model,path:thread.path}}; }
+ } else if(m.method==='thread/read') { if(native&&process.env.TEST_NATIVE_READ_FAIL==='1')throw Error('native history no longer readable'); if(!thread)throw Error('thread not found'); result={thread:{id:thread.meta.id,model:thread.meta.model,path:thread.path}}; }
  else if(m.method==='thread/turns/list') {
+  if(native&&process.env.TEST_NATIVE_READ_FAIL==='1')throw Error('native history no longer readable');
   if(!thread)throw Error('thread not found'); let turns=thread.meta.turns||[];
   if(!native&&process.env.TEST_TURNS_DIFFER==='1')turns=[...turns,'extra'];
   const from=Number(m.params.cursor||0),end=from+m.params.limit;
@@ -192,6 +193,27 @@ describe('native Codex history relocation', () => {
     const result = await relocateNativeCodexHistory(r.options);
     expect(result.counts.removed).toBe(1); expect(await readFile(join(r.native, prefix.path))).toEqual(prefix.content);
     expect(await readFile(join(r.managed, prefix.path))).toEqual(prefix.content); expect(await exists(join(r.native, root.path))).toBe(false);
+  });
+  it('records a missing history prefix as pending before any app-server is started', async () => {
+    const r = await rig(), root = await r.add('gugu_platform', true, { history_base: { thread_id: randomUUID() } });
+    const result = await relocateNativeCodexHistory(r.options);
+    expect(result.entries[root.id]!.state).toBe('pending'); expect(result.counts.pending).toBe(1);
+    expect(await exists(join(r.native, root.path))).toBe(true); expect(await r.calls()).toEqual([]);
+  });
+  it('deletes an owned referencing root before the root whose prefix it uses', async () => {
+    const r = await rig(), prefix = await r.add(), fork = await r.add('gugu_platform', true, { history_base: { thread_id: prefix.id } });
+    const result = await relocateNativeCodexHistory(r.options);
+    expect(result.counts.removed).toBe(2);
+    expect((await r.calls()).filter(call => call.method === 'thread/delete').map(call => call.params.threadId)).toEqual([fork.id, prefix.id]);
+  });
+  it('continues deleting without replaying native history that a prior partial delete already removed', async () => {
+    const r = await rig(), root = await r.add();
+    await mkdir(dirname(join(r.managed, root.path)), { recursive: true }); await writeFile(join(r.managed, root.path), root.content);
+    const proof = await verifyNativeHistoryPrefix(join(r.native, root.path), join(r.managed, root.path));
+    await writeAgentHomeRecord(r.home, NATIVE_HISTORY_RECORD, { version: 1, sourceRoot: r.native, complete: false, unowned: [], counts: {}, entries: { [root.id]: { state: 'deleting', model: 'original-model', members: [root.id], files: [{ path: root.path, destination: root.path, ...proof }], created: [] } } });
+    Object.assign(r.env, { TEST_NATIVE_READ_FAIL: '1' });
+    const result = await relocateNativeCodexHistory(r.options);
+    expect(result.counts.removed).toBe(1); expect((await r.calls()).filter(call => call.native && ['thread/read', 'thread/turns/list'].includes(call.method))).toEqual([]);
   });
   it('does not claim removal while state rows remain after an interrupted delete', async () => {
     const r = await rig(), root = await r.add(); Object.assign(r.env, { TEST_PARTIAL_DELETE: '1' });

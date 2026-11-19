@@ -102,17 +102,21 @@ export async function scanNativeRollouts(root: string, signal?: AbortSignal): Pr
   for (const folder of ['sessions', 'archived_sessions']) await visit(join(root, folder));
   return found;
 }
-export function nativeHistoryClosure(root: string, inventory: readonly NativeRollout[], previouslyProven: readonly string[] = []) {
+function nativeHistoryMembers(root: string, inventory: readonly NativeRollout[], previouslyProven: readonly string[] = []) {
   const members = new Set([root, ...previouslyProven]);
   for (;;) {
     const before = members.size;
     for (const file of inventory) if (parent(file.meta) && members.has(parent(file.meta)!)) members.add(file.meta.id);
     if (members.size === before) break;
   }
+  return members;
+}
+export function nativeHistoryClosure(root: string, inventory: readonly NativeRollout[], previouslyProven: readonly string[] = [], includePrefixes = true) {
+  const members = nativeHistoryMembers(root, inventory, previouslyProven);
   const files = new Set(inventory.filter(file => members.has(file.meta.id)));
   for (;;) {
     const before = files.size;
-    for (const file of [...files]) if (file.meta.history_base) {
+    for (const file of [...files]) if (includePrefixes && file.meta.history_base) {
       const prefixes = inventory.filter(prefix => prefix.rolloutId === file.meta.history_base!.thread_id);
       if (!prefixes.length) throw new Error('Referenced history prefix is missing');
       for (const prefix of prefixes) files.add(prefix);
@@ -231,14 +235,14 @@ export async function relocateNativeCodexHistory(options: NativeHistoryOptions):
   signal?.throwIfAborted();
   let inventory = await scanNativeRollouts(home.userConfigRoot, signal);
   const candidates = new Set(inventory.filter(file => (file.meta.model_provider === PLATFORM || file.unreadable) && ownedIds.has(file.meta.id)).map(file => file.meta.id));
-  const profileMembers = new Set([...candidates].flatMap(id => [...nativeHistoryClosure(id, inventory).members]));
+  const profileMembers = new Set([...candidates].flatMap(id => [...nativeHistoryMembers(id, inventory)]));
   ledger.unowned = [...new Set(inventory.filter(file => file.meta.model_provider === PLATFORM && !profileMembers.has(file.meta.id)).map(file => file.meta.id))];
   // A spawned descendant belongs to its root's record, never an independent delete attempt.
-  const closures = new Map([...candidates].map(id => [id, nativeHistoryClosure(id, inventory)]));
-  const descendants = new Set([...closures].flatMap(([root, closure]) => [...closure.members].filter(id => id !== root)));
+  const closures = new Map([...candidates].map(id => [id, nativeHistoryMembers(id, inventory)]));
+  const descendants = new Set([...closures].flatMap(([root, closure]) => [...closure].filter(id => id !== root)));
   for (const [id, closure] of closures) {
     if (descendants.has(id)) continue;
-    ledger.entries[id] ??= { state: 'pending', members: [...closure.members], files: [], created: [] };
+    ledger.entries[id] ??= { state: 'pending', members: [...closure], files: [], created: [] };
   }
   await save();
   // Referencing roots are visited first. An external/unmovable reference is retained below.
@@ -260,7 +264,7 @@ export async function relocateNativeCodexHistory(options: NativeHistoryOptions):
     let deletionStarted = wasDeleting;
     try {
       inventory = await scanNativeRollouts(home.userConfigRoot, signal);
-      const closure = nativeHistoryClosure(root, inventory, entry.members);
+      const closure = nativeHistoryClosure(root, inventory, entry.members, !wasDeleting);
       const members = new Set([...entry.members, ...closure.members]);
       const reason = retention(root, members, inventory, ownedIds, entry.ancestry);
       if (reason) { entry.state = 'retained'; entry.reason = reason; await save(); continue; }
@@ -305,41 +309,43 @@ export async function relocateNativeCodexHistory(options: NativeHistoryOptions):
             await verifyNativeHistoryPrefix(source, destination, signal);
         }
         await withCodexAppServer(managedCtx, async managed => {
-        if (!wasDeleting || !entry.model) {
-          const original = await native.request('thread/read', { threadId: root, includeTurns: false }) as { thread?: { model?: string } };
-          if (typeof original.thread?.model !== 'string' || !original.thread.model) throw new Error('Native thread has no model');
-          entry.model = original.thread.model; await save();
-        }
-        const resumed = await managed.request('thread/resume', { threadId: root, excludeTurns: true, model: entry.model }) as { modelProvider?: string; thread?: { id: string; path: string } };
-        if (resumed.modelProvider !== PLATFORM || resumed.thread?.id !== root || !resumed.thread.path
-          || !inside(await fs.realpath(home.configRoot), await fs.realpath(resumed.thread.path))) throw new Error('Managed resume did not prove the relocated thread');
-        for (const id of members) {
-          if (wasDeleting && !inventory.some(file => file.meta.id === id)) continue;
-          const original = await turnIds(native, id, pageSize), copy = await turnIds(managed, id, pageSize);
-          if (JSON.stringify(original) !== JSON.stringify(copy)) throw new Error('Managed turn sequence differs');
-        }
-        const fresh = await scanNativeRollouts(home.userConfigRoot, signal), freshClosure = nativeHistoryClosure(root, fresh, entry.members);
-        if ([...freshClosure.members].some(id => !members.has(id)) || retention(root, members, fresh, ownedIds, entry.ancestry)) throw new Error('Native subtree changed before deletion');
-        for (const file of freshClosure.files) {
-          if (!entry.files.some(proof => proof.path === file.path)) throw new Error('Native rollout set changed before deletion');
-          await verifyNativeHistoryPrefix(resolve(home.userConfigRoot, file.path), resolve(home.configRoot, file.path), signal);
-        }
-        entry.state = 'deleting'; entry.reason = undefined; entry.created = []; await save();
-        deletionStarted = true;
-        signal?.throwIfAborted();
-        try { await native.request('thread/delete', { threadId: root }); }
-        catch (error) {
-          if (!/no rollout found|thread not found/i.test(String(error))) {
-            if (/attached|forked history still references/i.test(String(error))) { entry.state = 'retained'; entry.reason = 'referenced'; await save(); return; }
-            throw error;
+          if (wasDeleting) {
+            const readable = await managed.request('thread/read', { threadId: root, includeTurns: false }) as { thread?: { id?: string } };
+            if (readable.thread?.id !== root) throw new Error('Managed history is unavailable before continuing deletion');
+          } else {
+            const original = await native.request('thread/read', { threadId: root, includeTurns: false }) as { thread?: { model?: string } };
+            if (typeof original.thread?.model !== 'string' || !original.thread.model) throw new Error('Native thread has no model');
+            entry.model = original.thread.model; await save();
+            const resumed = await managed.request('thread/resume', { threadId: root, excludeTurns: true, model: entry.model }) as { modelProvider?: string; thread?: { id: string; path: string } };
+            if (resumed.modelProvider !== PLATFORM || resumed.thread?.id !== root || !resumed.thread.path
+              || !inside(await fs.realpath(home.configRoot), await fs.realpath(resumed.thread.path))) throw new Error('Managed resume did not prove the relocated thread');
+            for (const id of members) {
+              const original = await turnIds(native, id, pageSize), copy = await turnIds(managed, id, pageSize);
+              if (JSON.stringify(original) !== JSON.stringify(copy)) throw new Error('Managed turn sequence differs');
+            }
           }
-        }
-        const listed = await listedIds(native, pageSize);
-        if ([...members].some(id => listed.has(id)) || (await scanNativeRollouts(home.userConfigRoot, signal)).some(file => members.has(file.meta.id)))
-          throw new Error('Native deletion is incomplete');
-        const read = await managed.request('thread/read', { threadId: root, includeTurns: false }) as { thread?: { id?: string } };
-        if (read.thread?.id !== root) throw new Error('Managed thread cannot be read after deletion');
-        entry.state = 'removed'; entry.reason = undefined; await save();
+          const fresh = await scanNativeRollouts(home.userConfigRoot, signal), freshClosure = nativeHistoryClosure(root, fresh, entry.members, !wasDeleting);
+          if ([...freshClosure.members].some(id => !members.has(id)) || retention(root, members, fresh, ownedIds, entry.ancestry)) throw new Error('Native subtree changed before deletion');
+          for (const file of freshClosure.files) {
+            if (!entry.files.some(proof => proof.path === file.path)) throw new Error('Native rollout set changed before deletion');
+            await verifyNativeHistoryPrefix(resolve(home.userConfigRoot, file.path), resolve(home.configRoot, file.path), signal);
+          }
+          entry.state = 'deleting'; entry.reason = undefined; entry.created = []; await save();
+          deletionStarted = true;
+          signal?.throwIfAborted();
+          try { await native.request('thread/delete', { threadId: root }); }
+          catch (error) {
+            if (!/no rollout found|thread not found/i.test(String(error))) {
+              if (/attached|forked history still references/i.test(String(error))) { entry.state = 'retained'; entry.reason = 'referenced'; await save(); return; }
+              throw error;
+            }
+          }
+          const listed = await listedIds(native, pageSize);
+          if ([...members].some(id => listed.has(id)) || (await scanNativeRollouts(home.userConfigRoot, signal)).some(file => members.has(file.meta.id)))
+            throw new Error('Native deletion is incomplete');
+          const read = await managed.request('thread/read', { threadId: root, includeTurns: false }) as { thread?: { id?: string } };
+          if (read.thread?.id !== root) throw new Error('Managed thread cannot be read after deletion');
+          entry.state = 'removed'; entry.reason = undefined; await save();
         }, { args: provider.args, signal });
       }, { signal });
     } catch (error) {
