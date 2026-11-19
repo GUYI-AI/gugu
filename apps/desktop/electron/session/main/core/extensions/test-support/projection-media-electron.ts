@@ -94,16 +94,17 @@ void app.whenReady().then(async () => {
   let server: ReturnType<typeof createServer> | undefined, browser: ReturnType<typeof spawn> | undefined;
   let browserExit = Promise.resolve(), exited = false;
   let phase = 'setup';
+  let expectedViewerClose = false;
   const requests: Record<string, number> = {};
   const observations = () => ({ phase, requests, paints: paints.map(frame => frame.sequence),
-    outcomes: outcomes.length, decoded: decoded.length, encoded: [...encoded.keys()], inputCalls, viewerGeneration: Boolean(viewerGeneration) });
+    outcomes: outcomes.length, expectedViewerClose, decoded: decoded.length, encoded: [...encoded.keys()], inputCalls, viewerGeneration: Boolean(viewerGeneration) });
   await withFixtureCleanup(() => phase, async () => {
     const opened = await signals.receive(context, { type: 'open', requestId: 'fixture-open', sourceId: publisher.id }) as { id: string; offer: { type: 'offer'; sdp: string } };
     assert.ok(opened?.offer);
     server = createServer(async (request, response) => {
       try {
         const route = request.url ?? '';
-        if (['/', '/viewer.mjs', '/offer', '/answer', '/paint', '/result', '/error'].includes(route)) requests[route] = (requests[route] ?? 0) + 1;
+        if (['/', '/viewer.mjs', '/offer', '/answer', '/paint', '/result', '/error', '/viewer-closed'].includes(route)) requests[route] = (requests[route] ?? 0) + 1;
         if (request.url === '/viewer.mjs') { response.setHeader('Content-Type', 'text/javascript'); response.end(fs.readFileSync(path.join(process.cwd(), 'apps/desktop/native/projection-media/web/viewer.mjs'))); return; }
         if (request.url === '/offer') { response.end(JSON.stringify(opened.offer)); return; }
         if (request.method !== 'POST') { response.setHeader('Content-Type', 'text/html; charset=utf-8'); response.end(html); return; }
@@ -112,9 +113,10 @@ void app.whenReady().then(async () => {
         if (request.url === '/answer') await signals.receive(context, { type: 'answer', id: opened.id, sdp: JSON.parse(data) });
         else if (request.url === '/paint') paints.push(JSON.parse(data));
         else if (request.url === '/result') outcomes.push(JSON.parse(data));
+        else if (request.url === '/viewer-closed' && !expectedViewerClose) throw new Error('Viewer closed before test revocation: ' + data);
         else if (request.url === '/error') throw new Error(data);
         response.end('{}');
-      } catch (error) { fault = error; response.statusCode = 400; response.end(String(error)); }
+      } catch (error) { fault ??= error; response.statusCode = 400; response.end(String(error)); }
     });
     const listening = server;
     await new Promise<void>(resolve => listening.listen(0, '127.0.0.1', resolve));
@@ -155,6 +157,7 @@ void app.whenReady().then(async () => {
         width: 128, height: 96, fps: 10, bitrate: 500000, signal: new AbortController().signal }));
     phase = 'device-projection';
     const device = await probeDeviceProjection(id);
+    expectedViewerClose = true;
     service.setPermissionGranted(id, 'agents:tools', false);
     await assert.rejects(publisher.publish({ width: 128, height: 96, mime: 'image/png', data: 'YQ==' }), /revoked/);
     revokeExtensionProgramAccess(id);
@@ -191,6 +194,9 @@ import {openProjectionVideo} from '/viewer.mjs';
  if(!sent){sent=true;send(JSON.stringify({type:'input',generation,frame:frame.sequence,sequence:1,input:{kind:'text',text:'整链中文🙂'}}))}}
  });
  // Keep asynchronous media failures observable after the handshake promise resolves.
- await viewer.closed;
+ await viewer.closed.then(
+  ()=>fetch('/viewer-closed',{method:'POST',body:'closed'}),
+  error=>fetch('/viewer-closed',{method:'POST',body:String(error)})
+ );
 })().catch(error=>fetch('/error',{method:'POST',body:String(error)}));
 </script>`;
