@@ -38,8 +38,8 @@ describe('cache hit chart', () => {
     expect(spec.axes[0].label.formatMethod(100)).toBe('100%')
     expect(spec.data[0].values.map(point => point.value)).toEqual([81, 64, 0, null])
     const tooltip = spec.tooltip.dimension.updateContent
-    expect(tooltip([{ datum: spec.data[0].values[0] }])).toMatchObject([{ key: 'Claude', value: '81%' }, { key: 'Codex', value: '64%' }])
-    expect(tooltip([{ datum: spec.data[0].values[2] }])).toMatchObject([{ key: 'Claude', value: '0%' }, { key: 'Codex', value: '—' }])
+    expect(tooltip([{ datum: spec.data[0].values[0] }])).toMatchObject([{ key: 'Claude Code', value: '81%' }, { key: 'Codex', value: '64%' }])
+    expect(tooltip([{ datum: spec.data[0].values[2] }])).toMatchObject([{ key: 'Claude Code', value: '0%' }, { key: 'Codex', value: '—' }])
     expect(tooltip([{}])).toEqual([])
     expect(spec.tooltip.mark.content[0].value(spec.data[0].values[3])).toBe('—')
   })
