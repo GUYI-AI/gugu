@@ -15,7 +15,7 @@
  * `wait.onWaiting` 把这一步报到启动进度里。
  *
  * 用户看到的、实际在跑的,始终是他自己装的那份 Claude(`CLAUDE_CODE_EXECUTABLE`);这里只换桥接。
- * 只有配对表选中随包版本才用它;配对或下载失败沿现有错误边界报告,由用户重试。
+ * 前置读取失败保持原有随包策略;一旦选定需下载的配对桥,下载失败沿现有错误边界报告,由用户重试。
  */
 import { join } from 'node:path';
 import { createLogger } from '../../../../../lib/logger';
@@ -71,7 +71,7 @@ const installs = new Map<string, Promise<void>>();
 const refreshes = new Map<string, Promise<void>>();
 
 /**
- * 返回入口路径;`undefined` 只表示配对表选中了随包版本。所有调用者都等所需的配对桥,
+ * 返回入口路径;`undefined` 沿既有前置读取策略或配对表选择使用随包版本。所有调用者都等所需的配对桥,
  * `wait` 只负责真会话的启动进度。失败抛给现有调用边界,不改用另一版本。
  */
 export async function resolveClaudeBridgeEntry(opts: {
@@ -82,13 +82,20 @@ export async function resolveClaudeBridgeEntry(opts: {
   wait?: BridgeWait;
 }): Promise<string | undefined> {
   const { cliPath, env, cacheDir, deps, wait } = opts;
-  const bundled = deps.readBundled();
+  let bundled: ReturnType<ClaudeBridgeDeps['readBundled']>;
+  try {
+    bundled = deps.readBundled();
+  } catch (error) {
+    log.warn({ err: String(error) }, 'bundled bridge or compat table unreadable; using the bundled bridge');
+    return undefined;
+  }
   const cache = safeReadCache(deps, cacheDir);
   const known = newerCompat(bundled.compat, cache.compat)!;
 
   const cliVersion = await deps.probeCliVersion(cliPath, env).catch(() => null);
   if (!cliVersion) {
-    throw new Error(`无法读取 Claude 版本，不能选择配对桥接：${cliPath}`);
+    log.warn({ cliPath }, 'could not read the Claude CLI version; using the bundled bridge');
+    return undefined;
   }
 
   const bridge = known.table.bridges[CLAUDE_BRIDGE_KEY];

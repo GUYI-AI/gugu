@@ -213,9 +213,21 @@ describe('claude bridge pairing at session start (#6394)', () => {
     expect(writes).toEqual([{ compat: null, lastCheck: { cli: '2.1.300', at: 1_000 } }]);
   });
 
-  it('does not claim a compatible bundled bridge when the CLI version cannot be read', async () => {
+  it('keeps the existing bundled behavior when the CLI version is unknown', async () => {
     const { deps } = fakeDeps({ cli: null });
-    await expect(resolve(deps)).rejects.toThrow(/无法读取 Claude 版本/);
+    await expect(resolve(deps)).resolves.toBeUndefined();
+    expect(deps.installBridge).not.toHaveBeenCalled();
+  });
+
+  it('keeps the existing bundled behavior when a CLI version probe fails or times out', async () => {
+    const { deps } = fakeDeps({ probeCliVersion: async () => { throw new Error('version probe timed out'); } });
+    await expect(resolve(deps)).resolves.toBeUndefined();
+    expect(deps.installBridge).not.toHaveBeenCalled();
+  });
+
+  it('keeps the existing bundled behavior when reading its pairing metadata fails', async () => {
+    const { deps } = fakeDeps({ readBundled: () => { throw new Error('unreadable compat'); } });
+    await expect(resolve(deps)).resolves.toBeUndefined();
     expect(deps.installBridge).not.toHaveBeenCalled();
   });
 
