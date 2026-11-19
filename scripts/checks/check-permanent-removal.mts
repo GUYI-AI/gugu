@@ -7,13 +7,14 @@ import { PERMANENT_REMOVAL_RPCS } from '../../packages/core/src/cloud/agentIdent
 
 const entry = 'packages/core/src/cloud/agentIdentityRemoval.ts'
 const rpcs = new Set<string>(Object.values(PERMANENT_REMOVAL_RPCS))
-// Existing explicit deletion and non-identity GC are the only roster-removal callers.
+// Explicit deletion and named non-identity local cleanup are the only roster-removal callers.
 const removalCallers: Record<string, Record<string, string>> = {
   permanentlyDeleteAgentSession: {},
   permanentlyRemove: {
     'packages/core/src/cloud/devices.ts': 'removeDevice',
   },
   removeAgents: {
+    'apps/desktop/electron/account-closure/roster.ts': 'eraseClosedAccountRoster',
     'apps/desktop/electron/sessionpage/agent-local-footprint.ts': 'releaseAgentLocalFootprint',
     'apps/desktop/electron/sessionpage/emdash-agent-provisioning.ts': 'startCloudProvision',
     'packages/core/src/cloud/deviceRuntimeHost.ts': 'dropLocalAgentByGuguUserId',
