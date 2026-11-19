@@ -1,7 +1,7 @@
 // @@@vitest-environment node
 import { PassThrough } from 'node:stream'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync, chmodSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -16,7 +16,7 @@ const fixture = [
   'const out = m => process.stdout.write(JSON.stringify(m) + "\\n");',
   'let raw = ""; process.stdin.setEncoding("utf8");',
   'process.stdin.on("data", chunk => { raw += chunk; let end; while ((end=raw.indexOf("\\n"))!==-1) { const m=JSON.parse(raw.slice(0,end)); raw=raw.slice(end+1); if(m.id===undefined)continue;',
-  'if (m.method==="initialize") out({id:m.id,result:{userAgent:"fixture"}});',
+  'if (m.method==="initialize") { const ready=()=>out({id:m.id,result:{userAgent:"fixture"}}); const mode=process.env.SCENARIO; if(mode==="initialize-slow"){process.stderr.write("NATIVE_INITIALIZE_PENDING\\n");const t=setInterval(()=>{if(require("fs").existsSync(process.env.RESUME_RELEASE)){clearInterval(t);ready()}},10)}else if(mode==="initialize-timeout-once" || mode==="backfill-once"){const fs=require("fs"),file=process.env.RESUME_RELEASE+".attempt";let n=fs.existsSync(file)?Number(fs.readFileSync(file,"utf8")):0;fs.writeFileSync(file,String(++n));if(n>1)ready();else if(mode==="backfill-once"){process.stderr.write("timed out waiting for state db backfill (status: running)\\n");process.exit(1)}else process.stderr.write("NATIVE_INITIALIZE_PENDING\\n")}else ready();}',
   'else if (m.method==="thread/resume") {',
   ' if(process.env.SCENARIO==="bad") {process.stdout.write("{broken\\n"); continue;}',
   ' if(process.env.SCENARIO==="eof") {process.exit(7);}',
@@ -50,12 +50,12 @@ async function bridge(scenario = 'unicode') {
   writeFileSync(fake, fixture); chmodSync(fake, 0o755)
   // Expire deadlines only after the native fixture acknowledges the in-flight resume.
   const shim = join(dir, 'clock.mjs')
-  writeFileSync(shim, "const realSet=globalThis.setTimeout, realClear=globalThis.clearTimeout, deadlines=new Map();\nglobalThis.setTimeout=(fn,ms,...args)=>{const timer=realSet(()=>{deadlines.delete(timer);fn(...args)},ms);if(ms===45000)deadlines.set(timer,()=>fn(...args));return timer;};\nglobalThis.clearTimeout=timer=>{deadlines.delete(timer);return realClear(timer);};\nprocess.on('message',message=>{if(message!=='expire-deadlines')return;const pending=[...deadlines];deadlines.clear();for(const [timer,fire]of pending){realClear(timer);fire()}process.send('deadlines-expired');});")
+  writeFileSync(shim, "const realSet=globalThis.setTimeout, realClear=globalThis.clearTimeout, deadlines=new Map();\nglobalThis.setTimeout=(fn,ms,...args)=>{const timer=realSet(()=>{deadlines.delete(timer);fn(...args)},ms);if(ms===45000 || ms===120000)deadlines.set(timer,{fire:()=>fn(...args),ms});return timer;};\nglobalThis.clearTimeout=timer=>{deadlines.delete(timer);return realClear(timer);};\nprocess.on('message',message=>{if(message?.type!=='expire-deadlines')return;const pending=[...deadlines].filter(([,value])=>value.ms===message.ms);for(const [timer,value]of pending){deadlines.delete(timer);realClear(timer);value.fire()}process.send('deadlines-expired');});")
   const release = join(dir, 'release-resume')
   const env: NodeJS.ProcessEnv = { ...process.env, GUGU_HOME: join(dir, 'gugu'), GUGU_USER_DATA_DIR: join(dir, 'userdata'),
     CODEX_HOME: join(dir, 'codex-home'), GUGU_CODEX_BIN: fake, SCENARIO: scenario, RESUME_RELEASE: release }
   delete env.GUGU_PLATFORM_MODELS
-  child = spawn(process.execPath, scenario === 'slow' ? ['--import', shim, BRIDGE] : [BRIDGE], { cwd: dir, env, stdio: ['pipe', 'pipe', 'pipe', 'ipc'] })
+  child = spawn(process.execPath, (scenario === 'slow' || scenario.startsWith('initialize-')) ? ['--import', shim, BRIDGE] : [BRIDGE], { cwd: dir, env, stdio: ['pipe', 'pipe', 'pipe', 'ipc'] })
   const processChild = child
   const { stdin, stdout, stderr: errorOutput } = processChild
   if (!stdin || !stdout || !errorOutput) throw new Error('Bridge fixture requires piped stdio')
@@ -77,7 +77,7 @@ async function bridge(scenario = 'unicode') {
   await request('initialize', { protocolVersion: 2 })
   return { request, updates, replies, processChild, stdin, stderr: () => stderr,
     release: () => writeFileSync(release, 'ready'),
-    expireDeadlines: () => new Promise<void>(resolve => { processChild.once('message', () => resolve()); processChild.send('expire-deadlines') }),
+    expireDeadlines: (ms = 45000) => new Promise<void>(resolve => { processChild.once('message', () => resolve()); processChild.send({type:'expire-deadlines',ms}) }),
   }
 }
 
@@ -96,6 +96,31 @@ describe('JSONL framing', () => {
     expect(error.message).toBe('Invalid JSONL from native: bytes=200 headHex=' + '78'.repeat(80) + ' tailHex=' + '78'.repeat(80))
   })
 })
+
+describe('Codex bridge native preparation', () => {
+  it('an initialize slower than the old 45 second budget remains alive and completes before 120 seconds', async () => {
+    const h = await bridge('initialize-slow');
+    const opening = h.request('session/resume', { sessionId: 'same-thread', cwd: dir, mcpServers: [] });
+    await awaitFact('native initializing', () => h.stderr().includes('NATIVE_INITIALIZE_PENDING') || undefined, { producer: h.processChild });
+    await h.expireDeadlines(45000);
+    expect(h.processChild.exitCode).toBeNull();
+    h.release();
+    expect(await opening).toHaveProperty('result');
+  });
+  it('a 120 second attempt ends but a new process continues its saved work', async () => {
+    const h = await bridge('initialize-timeout-once');
+    const opening = h.request('session/resume', { sessionId: 'same-thread', cwd: dir, mcpServers: [] });
+    await awaitFact('native initializing', () => h.stderr().includes('NATIVE_INITIALIZE_PENDING') || undefined, { producer: h.processChild });
+    await h.expireDeadlines(120000);
+    expect(await opening).toHaveProperty('result');
+    expect(readFileSync(join(dir, 'release-resume.attempt'), 'utf8')).toBe('2');
+  });
+  it('session/list also recovers a busy backfill lease without reporting upgrade', async () => {
+    const h = await bridge('backfill-once');
+    expect(await h.request('session/list', { cwd: dir })).toHaveProperty('result');
+    expect(readFileSync(join(dir, 'release-resume.attempt'), 'utf8')).toBe('2');
+  });
+});
 
 describe('Codex bridge JSONL boundary', () => {
   it('resumes metadata and preserves Unicode in host input and live notifications', async () => {
