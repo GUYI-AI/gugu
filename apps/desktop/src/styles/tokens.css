@@ -2387,3 +2387,17 @@ body.barcode-scanner-active #root {
   --model-sign-in-expired-bg: #fbf1f1;
   --model-sign-in-expired-fg: #b42c3f;
 }
+
+/* Subscription quota identity colors shared by the rail rings and model rows. */
+:root {
+  --usage-brand-claude-fill: #E1B63D;
+  --usage-brand-claude-edgeLight: #8B6814;
+  --usage-brand-claude-edgeDark: #A78025;
+  --usage-brand-claude-trackLight: #E6D9AC;
+  --usage-brand-claude-trackDark: #514627;
+  --usage-brand-codex-fill: #E6E8EC;
+  --usage-brand-codex-edgeLight: #778390;
+  --usage-brand-codex-edgeDark: #AEB7C3;
+  --usage-brand-codex-trackLight: #C9CFD6;
+  --usage-brand-codex-trackDark: #41474F;
+}
