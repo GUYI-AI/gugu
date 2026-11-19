@@ -81,7 +81,7 @@ async function rig() {
   await mkdir(native); await mkdir(managed, { recursive: true }); await writeFile(cli, FAKE); await chmod(cli, 0o700); await writeFile(calls, '');
   const original = await vi.importActual<typeof import('@gugu/session-core/agents/plugins/helpers')>('@gugu/session-core/agents/plugins/helpers');
   vi.mocked(streamImportFile).mockImplementation(original.streamImportFile);
-  const home: ResolvedAgentHome = { providerId: 'codex', userConfigRoot: native, configRoot: managed, shadowHome: dirname(managed), envVar: 'CODEX_HOME', importGroups: [], credentialPaths: [], carryExclusions: [], seedFiles: [] };
+  const home: ResolvedAgentHome = { providerId: 'codex', osHomeDir: root, userConfigRoot: native, configRoot: managed, shadowHome: dirname(managed), envVar: 'CODEX_HOME', importGroups: [], credentialPaths: [], carryExclusions: [], seedFiles: [] };
   const ids = new Set<string>(), env = { ...process.env, TEST_NATIVE: native, TEST_CALLS: calls };
   const options: NativeHistoryOptions = { home, ownedIds: ids, context: { cli, env }, cliVersion: 'codex-cli 0.167.2', pageSize: 1,
     resolveProvider: async () => ({ args: codexPlatformProviderConfigArgs({ providerId: 'gugu_platform', providerName: 'Gugu', baseUrl: 'http://127.0.0.1:1/v1' }), env: { OPENAI_API_KEY: 'test-not-a-key' } }) };
