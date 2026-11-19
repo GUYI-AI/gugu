@@ -48,7 +48,7 @@ describe('ordinary personal replies in the native conversation directory', () =>
     });
     let finish!: () => void;
     try {
-      expect(await rt.startSession(makeStartInput({ sessionId: 's', projectId: 'p' }))).toMatchObject({ success: true });
+      expect(await rt.startSession(makeStartInput({ sessionId: 's' }))).toMatchObject({ success: true });
       h.agent.prompt = vi.fn(() => new Promise<{ stopReason: 'end_turn' }>(resolve => { finish = () => resolve({ stopReason: 'end_turn' }); }));
       const running = rt.sendPrompt('s', { text: 'One owner input', origin: 'manual' });
       await h.agent.called('prompt');

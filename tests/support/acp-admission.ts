@@ -35,7 +35,7 @@ export async function startAcpAdmissionFixture(scenario: string) {
   }));
   await api.initialize({ protocolVersion: 1, clientCapabilities: {} });
   const native = await api.newSession({ cwd: process.cwd(), mcpServers: [] });
-  cell = new SessionCell({ sessionId: 'host', projectId: 'project', providerId: 'stdio-fixture',
+  cell = new SessionCell({ sessionId: 'host', providerId: 'stdio-fixture',
     acpSessionId: native.sessionId, agent: api, logger: noopLogger,
     resolveAttachment: async () => ({ data: '', mimeType: 'image/png' }) });
   child.once('exit', (exitCode, signal) => cell?.processClosed({ exitCode, signal, stderrTail: '' }));

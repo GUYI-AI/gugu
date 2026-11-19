@@ -8,7 +8,7 @@ let observer: SessionActivityObserver;
 let events: Omit<ActivityEvent, 'observed_at'>[];
 let off: () => void;
 const summary = (lifecycle: SessionSummary['lifecycle'], modelId: string | null): SessionSummary => ({
-  sessionId: 's1', projectId: 'p1', lifecycle, modelId, title: 'PRIVATE TITLE',
+  sessionId: 's1', lifecycle, modelId, title: 'PRIVATE TITLE',
 } as SessionSummary);
 beforeEach(() => {
   observer = new SessionActivityObserver(); events = [];

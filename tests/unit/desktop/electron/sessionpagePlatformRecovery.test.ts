@@ -8,7 +8,6 @@ import {
 
 const target: SessionpagePlatformRecoveryTarget = {
   sessionId: 'conversation-1',
-  projectId: 'project-1',
   providerId: 'claude',
   surface: 'tui',
   expiresAt: '2026-09-12T00:00:00.000Z',

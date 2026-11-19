@@ -20,7 +20,6 @@ import { SessionMachine } from '../../../../../../../packages/session-runtime/sr
 function summary(overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {
     sessionId: 'c1',
-    projectId: 'p1',
     providerId: 'claude',
     lifecycle: 'ready',
     isGenerating: false,

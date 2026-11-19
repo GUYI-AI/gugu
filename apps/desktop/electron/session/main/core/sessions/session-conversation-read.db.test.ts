@@ -25,7 +25,7 @@ describe('native personal conversation unread', () => {
     let finish!: () => void;
     agent.prompt = vi.fn(() => new Promise<{ stopReason: 'end_turn' }>(resolve => { finish = () => resolve({ stopReason: 'end_turn' }); }));
     agent.extMethod = vi.fn().mockResolvedValue({ outcome: 'injected' });
-    const cell = requestActivityCell(agent, { sessionId: 's', projectId: 'p', providerId: 'claude', acpSessionId: 'native', supportsSteering: true, resolveAttachment: vi.fn(), logger: noopLogger });
+    const cell = requestActivityCell(agent, { sessionId: 's', providerId: 'claude', acpSessionId: 'native', supportsSteering: true, resolveAttachment: vi.fn(), logger: noopLogger });
     cell.applySessionReady();
     const running = cell.prompt({ text: delivered, origin: 'communication' });
     await agent.called('prompt');

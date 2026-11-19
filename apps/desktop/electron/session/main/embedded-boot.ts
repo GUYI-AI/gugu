@@ -2079,7 +2079,6 @@ export type EmdashSessionProvisionInput = {
   providerId: string
   surface: 'acp' | 'tui'
   cwd: string
-  projectId: string
   /**
    * spec session-graph:起这条会话的一方**显式**给的名字(`gugu_session spawn` 的 title)。
    *
@@ -2094,12 +2093,9 @@ export type EmdashSessionProvisionInput = {
 }
 
 /** Resolve the generic session facts needed to provision its optional Gugu address before runtime start. */
-export async function emdashSessionProvisionInput(target: {
-  projectId: string
-  sessionId: string
-}, options: { includeArchived?: boolean } = {}): Promise<EmdashSessionProvisionInput | null> {
+export async function emdashSessionProvisionInput(target: { sessionId: string }, options: { includeArchived?: boolean } = {}): Promise<EmdashSessionProvisionInput | null> {
   const rows = await getSessions(options)
-  const session = rows.find((row) => row.id === target.sessionId && row.projectId === target.projectId)
+  const session = rows.find((row) => row.id === target.sessionId)
   if (!session) return null
   if (!session.workspaceId) throw new Error('Session workspace is not ready')
   const [workspace] = await db
@@ -2113,7 +2109,6 @@ export async function emdashSessionProvisionInput(target: {
     providerId: session.providerId,
     surface: session.runtime === 'acp' ? 'acp' : 'tui',
     cwd: workspace.path,
-    projectId: session.projectId,
     displayName: session.agentDisplayName,
   }
 }
@@ -2165,11 +2160,8 @@ export async function emdashSessionExists(target: { sessionId: string }): Promis
  * 这条映射会话现在以哪种展示开(编程 / 通用);null = 会话已不在。私聊头部的模式按钮(#7167)据此把「使用中」
  * 那种排在前面、写出来 —— 在聊天页上看不见任务页,不说的话两行长得一模一样,而点哪一行的代价差一次重启。
  */
-export async function emdashSessionView(target: {
-  projectId: string
-  sessionId: string
-}): Promise<SessionView | null> {
-  const row = (await getSessions()).find((candidate) => candidate.id === target.sessionId && candidate.projectId === target.projectId)
+export async function emdashSessionView(target: { sessionId: string }): Promise<SessionView | null> {
+  const row = (await getSessions()).find((candidate) => candidate.id === target.sessionId)
   return row ? sessionViewOfRuntime(row.runtime ?? 'pty') : null
 }
 

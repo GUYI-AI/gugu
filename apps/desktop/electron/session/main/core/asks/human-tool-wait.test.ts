@@ -224,7 +224,7 @@ describe('a human request outlives only its steered tool waiter', () => {
       return { outcome: 'injected' };
     });
     agent.prompt = vi.fn(async () => { await tool; consumed.push(...admitted); return { stopReason: 'end_turn' as const }; });
-    const cell = requestActivityCell(agent, { sessionId: 'session', projectId: 'project', providerId: 'claude', acpSessionId: 'native',
+    const cell = requestActivityCell(agent, { sessionId: 'session', providerId: 'claude', acpSessionId: 'native',
       supportsSteering: true, resolveAttachment: vi.fn(), logger: noopLogger,
       callbacks: { onPromptSteered: () => yieldHumanToolWaits('session') } });
     cell.applySessionReady();
