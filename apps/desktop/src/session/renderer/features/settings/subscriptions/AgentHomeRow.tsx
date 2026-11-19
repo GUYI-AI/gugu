@@ -30,8 +30,8 @@ export function AgentHomeRow({ providerId, machine }: { providerId: string; mach
   }
   if (!home && !error) return null
   return <SettingsRow title={<>{t('agentHome.local')}{home?.sourceUpdated && <span className="ml-2 text-xs text-foreground-muted">● {t('agentHome.updated')}</span>}</>}
-      description={<>{home?.importedAt ? t('agentHome.row', { date: new Date(home.importedAt).toLocaleString(i18n.language), path: home.userRoot }) : t('agentHome.notImported')}
+      description={<>{home?.importedAt ? t('agentHome.row', { date: new Date(home.importedAt).toLocaleString(i18n.language), path: home.userRoot }) : t('agentHome.upgradeRelogin', { name: home?.name ?? providerId })}
         {home?.upgraded && <span className="block">{t('agentHome.upgradeKept', { name: home.name })}</span>}
         {error && <span role="alert" className="block text-destructive">{error}</span>}</>}
-      control={<Button variant="secondary" size="sm" onClick={() => void open()} disabled={busy || !home} data-testid={`agent-home-reimport-${providerId}`}>{t(home?.needsImport ? 'agentHome.importAction' : 'agentHome.reimport')}</Button>} />
+      control={home?.needsImport ? undefined : <Button variant="secondary" size="sm" onClick={() => void open()} disabled={busy || !home} data-testid={`agent-home-reimport-${providerId}`}>{t('agentHome.reimport')}</Button>} />
 }

@@ -229,10 +229,6 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
     async cli(have): Promise<ResolvedCli> {
       const platform = read<Platform>(have.platform);
       const resolved = await withHostResolvedCli(platform.command);
-      if (!platform.injected && !resolved.input.runContext.credentialEnv && !resolved.input.runContext.customModel) {
-        const { assertAgentHomeSignIn } = await import('../agents/agent-homes');
-        await assertAgentHomeSignIn(resolved.input.providerId, resolved.input.runContext.connectionId);
-      }
       const history = await resumeHistoryFacts(resolved.input, {});
       return lease<Cli>({ command: { ...resolved, input: { ...resolved.input, ...history } } }) as ResolvedCli;
     },

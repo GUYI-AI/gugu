@@ -501,7 +501,8 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   options.hostIpc.onConnectionClosed?.(releasePlacementsOf)
   const { ipcMain } = options.hostIpc
   const { browserFeatures } = options
-  const priorProfile = browserFeatures && captureAgentHomeUpgradeProfile(app.getPath('userData'))
+  const migrateAgentHomes = browserFeatures || HEADLESS_SERVER
+  const priorProfile = migrateAgentHomes && captureAgentHomeUpgradeProfile(app.getPath('userData'))
   // 首启默认组(161 10-15):这个 profile 是不是第一次启动,只有在任何东西建出 App 的记录目录之前才看得出来 —— 所以最先。
   // 只归桌面和咕咕 server(first-run-apps.ts `firstRunAtBoot`):网页版的无头宿主不记、不装。
   const firstRun = firstRunAtBoot(browserFeatures)
@@ -621,7 +622,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
     logger: log,
     now: Date.now,
   })
-  if (browserFeatures) initializeAgentHomeUpgrade(priorProfile)
+  if (migrateAgentHomes) initializeAgentHomeUpgrade(priorProfile)
   // Task names: a bound task is named by its roster identity (task-name.ts). The roster keys were just
   // renamed above, and every reader of a name below (search backfill first) needs the projection.
   await loadTaskNames()

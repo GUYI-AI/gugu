@@ -1,4 +1,3 @@
-import { ensureAgentHomeImported } from '@renderer/features/settings/subscriptions/ensure-agent-home';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { makeObservable, observable, reaction, runInAction, toJS } from 'mobx';
@@ -345,7 +344,6 @@ export class ProjectSessionsStore {
   async createSession(params: CreateSessionParams, options?: { placingFiles?: boolean; onOptimistic?: () => void }) {
     const ic = params.sessionConfig.initialSession;
     if (!ic) throw new Error('createSession: a session is created together with its initial agent config');
-    await ensureAgentHomeImported(ic.provider, machineRegistry.machineOf(this.projectId) ?? null);
     const id = ic.id;
     const initialHooksKind = await agentHooksKind(ic.provider);
     const workspace = params.workspaceConfig.workspace;
@@ -479,7 +477,6 @@ export class ProjectSessionsStore {
 
     const session = this.sessions.get(sessionId);
     if (!session || !isUnprovisioned(session)) return;
-    await ensureAgentHomeImported(session.data.providerId, machineRegistry.machineOf(this.projectId) ?? null);
 
     runInAction(() => {
       session.phase = 'provision';

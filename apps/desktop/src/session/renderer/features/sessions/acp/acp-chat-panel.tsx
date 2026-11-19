@@ -191,8 +191,6 @@ import {
 import { GUGU_CLIENT_COMMAND_MCP, isGuguClientCommand } from '@gugu/session-core/acp/commands';
 import { classifyProviderPermissionMode } from '@gugu/session-core/acp/client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { useTranslation } from 'react-i18next';
-import { openAgentHomeImport } from '@renderer/features/settings/subscriptions/ensure-agent-home';
 import { sessionFastMode } from '../session-config/fast-mode';
 import { renderFastModeHint } from '../session-config/fast-mode-hint';
 import { useBoundChatView } from './use-bound-chat-view';
@@ -1584,7 +1582,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   tabKind?: 'acp-chat' | 'side-chat';
 }) {
   const { translate } = useSessionMessages();
-  const { t: importText } = useTranslation('main');
   const { navigate } = useNavigate();
   const { pane } = usePaneContext();
 
@@ -1872,23 +1869,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     const retry = { label: translate('transcript.condition.retry'), run: () => store.retry() };
     const condition = ((): PanelCondition => {
       switch (error.kind) {
-        case 'agent_home_import': {
-          const label = agent?.name ? importText('agentHome.repairRequired', { name: agent.name }) : importText('agentHome.repairRequiredGeneric');
-          return {
-            code: 'start-failed',
-            label,
-            detail: label,
-            actions: [
-              ...(providerId ? [{ label: importText('agentHome.repairAction'), run: () => {
-                void openAgentHomeImport(providerId, machine).then((imported) => {
-                  if (imported) void store.retry();
-                }, () => setCondition({ code: 'start-failed', detail: importText('agentHome.repairFailed'), actions: [retry] }));
-              } }] : []),
-              ...(cliAuthMethod ? [{ label: translate('transcript.condition.signIn'), run: openAgentAccount }] : []),
-              retry,
-            ],
-          };
-        }
+        case 'agent_home_import':
+          return { code: 'start-failed', detail: error.message, actions: [retry] };
         case 'harness_not_installed':
           // 引擎不在盘上 —— 重试修不好它,所以这一行 ❌ 不给「再试一次」,给安装入口。
           return {
@@ -2015,7 +1997,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       }
     })();
     setCondition(condition);
-  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, importText, machine, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
+  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, machine, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
 
   /**
    * 还在跑的后台命令与子智能体 → 消息列表末尾那一行(owner 2026-10-27:去掉右上角「摘要」卡,后台任务放进主对话)。
