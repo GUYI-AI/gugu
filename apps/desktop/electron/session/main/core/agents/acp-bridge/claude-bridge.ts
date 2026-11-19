@@ -105,7 +105,7 @@ export async function resolveClaudeBridgeEntry(opts: {
   const version = pick.release.version;
   const facts = { cliVersion, bridgeVersion: version, reason: pick.reason, compatVersion: known.compatVersion };
   if (pick.reason === 'below-lowest') {
-    throw new Error(`Claude ${cliVersion} 低于配对表支持的最低版本 ${pick.release.cliFrom}`);
+    log.warn(facts, 'Claude CLI is older than every release in the compat table; using the lowest release');
   }
   if (version === bundled.bridgeVersion) {
     log.info(facts, 'claude bridge paired: bundled');

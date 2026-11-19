@@ -103,6 +103,14 @@ describe('claude bridge pairing at session start (#6394)', () => {
     expect(wait.onWaiting).not.toHaveBeenCalled();
   });
 
+  it.each(['1.0.0', '1.1.0'])('keeps the lowest release for an older CLI when the bundle carries %s', async (bridgeVersion) => {
+    const { deps } = fakeDeps({ cli: '2.1.257', readBundled: () => ({ bridgeVersion, compat: BUNDLED }) });
+    await expect(resolve(deps)).resolves.toBe(bridgeVersion === '1.0.0' ? undefined : entryOf('1.0.0'));
+    expect(deps.fetchLatestCompat).not.toHaveBeenCalled();
+    if (bridgeVersion === '1.0.0') expect(deps.installBridge).not.toHaveBeenCalled();
+    else expect(deps.installBridge).toHaveBeenCalledWith(`${PKG}@1.0.0`, expect.any(String), {});
+  });
+
   it('a session downloads the release that serves a newer CLI, reporting the wait while it does', async () => {
     const { deps } = fakeDeps({ cli: '2.1.282' });
     const wait = waiter();
