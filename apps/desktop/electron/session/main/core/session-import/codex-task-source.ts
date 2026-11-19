@@ -63,15 +63,21 @@ async function sessionMeta(file: Awaited<ReturnType<typeof transcript>>) {
 }
 
 /** Native history_base addresses immutable rollout IDs, which can differ from stable session IDs. */
-async function rolloutIndex(root: string): Promise<Map<string, string[]>> {
+export async function indexCodexRollouts(root: string): Promise<Map<string, string[]>> {
   const index = new Map<string, string[]>();
   const visit = async (path: string): Promise<void> => {
     let stat;
     try { stat = await lstat(join(root, path)); } catch (error) { if (missing(error)) return; throw error; }
     if (stat.isSymbolicLink()) return;
-    if (stat.isDirectory()) { for (const entry of await readdir(join(root, path))) await visit(`${path}/${entry}`); return; }
-    const id = path.match(/([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\.jsonl(?:\.zst)?$/i)?.[1]?.toLowerCase();
-    if (stat.isFile() && id) index.set(id, [...(index.get(id) ?? []), path]);
+    if (!stat.isDirectory()) return;
+    for (const entry of await readdir(join(root, path), { withFileTypes: true })) {
+      const child = `${path}/${entry.name}`;
+      if (entry.isDirectory()) await visit(child);
+      else if (entry.isFile()) {
+        const id = entry.name.match(/([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\.jsonl(?:\.zst)?$/i)?.[1]?.toLowerCase();
+        if (id) index.set(id, [...(index.get(id) ?? []), child]);
+      }
+    }
   };
   await visit('sessions'); await visit('archived_sessions');
   return index;
@@ -95,7 +101,7 @@ export async function scanCodexTasks(sourceRoot: string): Promise<CodexTaskScan>
     return { ...result, status: 'unavailable', reason: missing(error) ? 'missing-index' : 'unsupported-index' };
   } finally { database?.close(); }
   result.indexed = rows.length;
-  const index = await rolloutIndex(root);
+  let index: Promise<Map<string, string[]>> | undefined;
   const snapshots = new Map<string, Promise<{ file: Awaited<ReturnType<typeof transcript>>; meta: Awaited<ReturnType<typeof sessionMeta>> }>>();
   const snapshot = (path: string) => {
     let result = snapshots.get(path);
@@ -125,7 +131,7 @@ export async function scanCodexTasks(sourceRoot: string): Promise<CodexTaskScan>
         revisions.push([current.file.relativePath, current.file.before.size, current.file.before.mtimeMs, current.file.before.ino, current.meta]);
         const base = current.meta.historyBase;
         if (!base) break;
-        const candidates = index.get(base.thread_id.toLowerCase()) ?? [];
+        const candidates = (await (index ??= indexCodexRollouts(root))).get(base.thread_id.toLowerCase()) ?? [];
         const plain = candidates.filter(path => path.endsWith('.jsonl'));
         const available = plain.length ? plain : candidates;
         if (available.length !== 1) throw Object.assign(new Error('Missing or ambiguous ancestor rollout'), { code: 'HISTORY_DEPENDENCY' });
