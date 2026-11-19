@@ -4,6 +4,8 @@ import { toSerializedError } from '@gugu/session-shared';
 import { codexNeedsUpgrade, sessionStartupFailureCopy } from '../../../../apps/desktop/src/session/renderer/features/sessions/session-input-failure-copy';
 import { zhCNMessages } from '../../../../apps/desktop/src/session/renderer/localization/messages';
 
+const chineseMessages: Readonly<Partial<Record<string, string>>> = zhCNMessages;
+
 describe('Codex model-provider failures', () => {
   it.each([
     ['modelProviderNotConfigured', 'provider-missing'],
@@ -19,7 +21,11 @@ describe('Codex model-provider failures', () => {
     const wrapped = { runtimeError: { cause: serialized } };
     expect(codexStartupKind(wrapped)).toBe(kind);
     expect(codexNeedsUpgrade(wrapped)).toBe(false);
-    const copy = sessionStartupFailureCopy(wrapped, key => zhCNMessages[key]);
+    const copy = sessionStartupFailureCopy(wrapped, key => {
+      const message = chineseMessages[key];
+      if (message === undefined) throw new Error(`Missing test translation: ${key}`);
+      return message;
+    });
     expect(copy).toMatch(/来源|组织策略/);
     expect(copy).toContain('保留');
     expect(copy).not.toMatch(/private|English|gugu_platform|无法启动|操作未能完成/);
