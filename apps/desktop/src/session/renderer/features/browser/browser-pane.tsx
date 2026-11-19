@@ -73,7 +73,7 @@ export const BrowserPane = observer(function BrowserPane({
     () => surface.paneLayout.openBeside('browser', {}, paneId), openInStart,
   );
   const startPageActions = startTabId ? available.map((item): WorkspacePanelAction => {
-    if (item.id === WORKSPACE_APP_KIND) return { ...item, id: 'files', label: translate('workspace.files'), shortcutSettingsKey: 'session.sidebarFiles' };
+    if (item.id === WORKSPACE_APP_KIND) return { ...item, id: 'files', section: 'builtin', label: translate('workspace.files'), shortcutSettingsKey: 'session.sidebarFiles' };
     if (item.id === 'review') return { ...item, shortcutSettingsKey: 'session.sidebarChanges', onClick: () => openInStart('review') };
     if (item.id === 'ports') return { ...item, onClick: () => openInStart('remote-ports') };
     if (item.id === 'browser') return { ...item, shortcutSettingsKey: 'session.openBrowser' };
