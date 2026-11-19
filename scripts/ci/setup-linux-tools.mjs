@@ -29,12 +29,13 @@ export async function setupLinuxTools(profile, env = process.env) {
   const root = join(dirname(fileURLToPath(import.meta.url)), '../..')
   const lock = JSON.parse(await readFile(join(root, 'scripts/ci/linux-tools.json'), 'utf8'))
   const cache = join(root, '.ci-cache/linux-tool-archives', profile)
+  // FFprobe must be a sibling of FFmpeg: the native color-metadata regression resolves it there.
+  const directory = join(env.RUNNER_TEMP, 'gugu-linux-tools', profile)
+  await rm(directory, { recursive: true, force: true })
+  await mkdir(directory, { recursive: true })
   const paths = []
   for (const name of profiles[profile]) {
     const tool = lock[name], bytes = await verifiedArchive(tool, cache)
-    const directory = join(env.RUNNER_TEMP, 'gugu-linux-tools', name)
-    await rm(directory, { recursive: true, force: true })
-    await mkdir(directory, { recursive: true })
     if (tool.format === 'gzip') await writeFile(join(directory, tool.binaries[0]), gunzipSync(bytes))
     else {
       const archive = join(cache, tool.sha256)

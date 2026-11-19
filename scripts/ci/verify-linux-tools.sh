@@ -23,6 +23,7 @@ case "$1" in
   media)
     ffmpeg -version
     ffprobe -version
+    test -x "$(dirname "$(command -v ffmpeg)")/ffprobe"
     printf '#include <stdlib.h>\nint main(void) { return EXIT_SUCCESS; }\n' | gcc -x c - -o "$RUNNER_TEMP/gugu-c-probe"
     "$RUNNER_TEMP/gugu-c-probe"
     ;;
