@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   accountUsage: [] as UsageDay[],
   selectedUsage: [] as UsageDay[],
 }))
+vi.mock('../../../../apps/desktop/node_modules/@visactor/react-vchart', () => ({ VChart: () => null }))
 vi.mock('../../../../apps/desktop/src/components/usage/useUsageData', () => ({
   useUsageData: ({ deviceId }: { deviceId: string | null }) => deviceId
     ? { ...state.activity, usage: { status: 'ready', value: state.selectedUsage } }
@@ -51,6 +52,41 @@ const tile = (key: string) => document.querySelector(`[data-testid="usage-tile-$
 
 describe('#6334「活跃」页', () => {
   beforeEach(() => { state.activity = activity({}) })
+
+  it('shows cache hit in the last engine column, without treating unsupported or absent input as zero', async () => {
+    state.activity = activity({ usage: { status: 'ready', value: [
+      usageDay({ engine: 'claude', inputTokens: 100, cacheReadTokens: 800, cacheWriteTokens: 100 }),
+      usageDay({ engine: 'codex', inputTokens: 100 }),
+      usageDay({ engine: 'opencode', sessions: 1 }),
+    ] } })
+    const harness = await render(renderActivity)
+    try {
+      expect(document.querySelector('[data-testid="usage-cache-hit-claude"]')?.textContent).toBe('80%')
+      expect(document.querySelector('[data-testid="usage-cache-hit-codex"]')?.textContent).toBe('0%')
+      expect(document.querySelector('[data-testid="usage-cache-hit-opencode"]')?.textContent).toBe('—')
+      expect(document.querySelector('[data-testid="usage-engines"] thead th:last-child')?.textContent).toBe('缓存命中')
+      expect(document.querySelectorAll('[data-testid^="usage-metric-"]')).toHaveLength(2)
+    } finally { harness.cleanup() }
+  })
+
+  it('switches the existing model card to weighted cache average and restores its source filter on return', async () => {
+    state.activity = activity({ usage: { status: 'ready', value: [
+      usageDay({ engine: 'claude', inputTokens: 90, cacheReadTokens: 10 }),
+      usageDay({ engine: 'codex', cacheReadTokens: 900 }),
+    ] } })
+    const harness = await render(renderActivity)
+    try {
+      expect(document.querySelector('[data-testid="usage-source-byok"]')).not.toBeNull()
+      await act(async () => (document.querySelector('[data-testid="usage-source-byok"]') as HTMLButtonElement).click())
+      await act(async () => (document.querySelector('[data-testid="usage-model-tokens-cache"]') as HTMLButtonElement).click())
+      const card = document.querySelector('[data-testid="usage-model-tokens"]')!
+      expect(card.querySelector('.na-card-title')?.textContent).toContain('平均 91%')
+      expect(document.querySelector('[data-testid="usage-source-byok"]')).toBeNull()
+      await act(async () => (document.querySelector('[data-testid="usage-model-tokens-trend"]') as HTMLButtonElement).click())
+      expect(document.querySelector('[data-testid="usage-source-byok"]')?.getAttribute('aria-pressed')).toBe('true')
+      expect(card.querySelector('.na-card-title')?.textContent).not.toContain('平均')
+    } finally { harness.cleanup() }
+  })
 
   it('token 分两格:咕咕模型与自己账号,各按来源求和', async () => {
     state.activity = activity({ usage: { status: 'ready', value: [usageDay({
@@ -109,6 +145,22 @@ describe('#6334「用量」页', () => {
     state.activity = activity({ usage: { status: 'ready', value: [] } })
     state.accountUsage = []
     state.selectedUsage = []
+  })
+  it('recomputes the cache average when the shared page range changes', async () => {
+    const old = new Date(); old.setDate(old.getDate() - 10)
+    state.activity = activity({ usage: { status: 'ready', value: [
+      usageDay({ inputTokens: 100, cacheReadTokens: 900 }),
+      usageDay({ day: localDay(old), inputTokens: 900, cacheReadTokens: 100 }),
+    ] } })
+    const harness = await render(UsageSection)
+    try {
+      await act(async () => (document.querySelector('[data-testid="usage-model-tokens-cache"]') as HTMLButtonElement).click())
+      const title = () => document.querySelector('[data-testid="usage-model-tokens"] .na-card-title')?.textContent
+      expect(title()).toContain('平均 50%')
+      await act(async () => (document.querySelector('[data-testid="usage-range-7d"]') as HTMLButtonElement).click())
+      expect(title()).toContain('平均 90%')
+      expect(document.querySelector('[data-testid="usage-cache-hit-claude"]')?.textContent).toBe('90%')
+    } finally { harness.cleanup() }
   })
   it('积分那条链路原样交给积分段(挂了由它自己说取不到)', async () => {
     state.credits = { status: 'error', error: 'billing down' }
