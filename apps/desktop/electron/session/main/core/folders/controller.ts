@@ -11,6 +11,7 @@ import { sessions, workspaces } from '@main/db/schema';
 import { events } from '@main/lib/events';
 import { bindFolder, ensureFolder, ensureTaskHomeFolder, folderAtPath, getFolder, isTaskHomeFolder, listFolders, listUnboundFolders, reorderFolders, type Folder } from './folders';
 import { folderPathStatus } from './folder-path-status';
+import { legacyProject } from './legacy-project-aliases';
 
 function record(folder: Folder): FolderRecord {
   const [ws] = db.select({ branch: workspaces.branchName }).from(workspaces).where(eq(workspaces.id, folder.id)).limit(1).all();
@@ -37,6 +38,20 @@ export async function listAllFolders(): Promise<FolderRecord[]> {
 /** This machine's task home folder (where sessions without a group start), recorded on first use. Idempotent. */
 export async function ensureTaskHome(): Promise<FolderRecord> {
   return record(ensureTaskHomeFolder());
+}
+
+/**
+ * An id an earlier release wrote down outside this database (`gugu://project/<id>`, a task card): an earlier release's
+ * project (through its root folder and group), or already a folder id here. Null = neither on this machine.
+ */
+export async function resolveLegacyProject(id: string): Promise<{ chatId: string | null; folderId: string } | null> {
+  const legacy = legacyProject(id);
+  if (legacy?.rootWorkspaceId) {
+    const root = getFolder(legacy.rootWorkspaceId);
+    return { chatId: root?.chatId ?? legacy.chatId, folderId: legacy.rootWorkspaceId };
+  }
+  const folder = getFolder(id);
+  return folder ? { chatId: folder.chatId, folderId: folder.id } : null;
 }
 
 /** What is at a path on this machine, and the folder already recorded there. */
@@ -82,6 +97,7 @@ export const folderController = createRPCController({
   listGroupFolders,
   listAllFolders,
   ensureTaskHome,
+  resolveLegacyProject,
   inspectFolderPath,
   bindFolderAtPath,
   unbindFolder,
