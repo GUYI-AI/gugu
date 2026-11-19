@@ -56,6 +56,29 @@ it('runs unmarked homes as fresh and imports projections without copying credent
   expect(await ensureAgentHome(home)).toBe('already-present');
 });
 
+it('filters hooks from linked settings during upgrade and preserves links for whole skills', async () => {
+  const { home, root, source } = await fixture();
+  const settings = join(root, 'dotfiles-settings.json');
+  const original = '{"theme":"dark","hooks":{"Stop":[{"command":"local-hook"}]}}';
+  await writeFile(settings, original);
+  await symlink(settings, join(home.userConfigRoot, 'settings.json'));
+  await source('skills/local/SKILL.md', 'local skill');
+  await symlink(join(home.userConfigRoot, 'skills/local'), join(home.userConfigRoot, 'skills/linked'), 'dir');
+
+  await importAgentHome(home, { groups: new Set(['settings', 'skills']), migratedFrom: 'shared' });
+
+  const managed = join(home.configRoot, 'settings.json');
+  expect((await fs.lstat(managed)).isFile()).toBe(true);
+  expect(JSON.parse(await readFile(managed, 'utf8'))).toEqual({ theme: 'dark' });
+  expect(await readFile(settings, 'utf8')).toBe(original);
+  expect((await fs.lstat(join(home.configRoot, 'skills/linked'))).isSymbolicLink()).toBe(true);
+
+  const hookDiff = (await diffAgentHome(home)).entries.find((entry) => entry.group === 'hooks')!;
+  expect(hookDiff.state).toBe('bothChanged');
+  await reimportAgentHome(home, new Set([hookDiff.id]), new Map([[hookDiff.id, hookDiff.revision]]));
+  expect(JSON.parse(await readFile(managed, 'utf8'))).toEqual(JSON.parse(original));
+});
+
 it('keeps the old target and writes no sign-in when the staged marker cannot be committed', async () => {
   const { home, source } = await fixture();
   await source('config.toml', 'model = "fixture"');

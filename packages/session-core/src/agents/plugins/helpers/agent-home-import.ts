@@ -214,6 +214,7 @@ async function collect(home: ResolvedAgentHome, options: {
   let projectMcpCount = 0;
   let newestMtime = 0;
   const declarations = importDeclarations(home, options.groups);
+  const root = options.root ?? (await realSource(home.userConfigRoot));
   const seen = new Set<string>();
   const visit = async (path: string, boundary: string, depth: number): Promise<void> => {
     if (seen.has(path)) return;
@@ -234,7 +235,9 @@ async function collect(home: ResolvedAgentHome, options: {
     });
     if (!stat) { if (depth > 0) issues.push({ path, reason: 'sourceChanged' }); return; }
     newestMtime = Math.max(newestMtime, stat.mtimeMs);
-    if (stat.isSymbolicLink()) {
+    const selected = declarations.filter((entry) => matchesPath(path, entry.path));
+    const projectLink = stat.isSymbolicLink() && selected.some(({ spec }) => spec.keys || spec.omitKeys);
+    if (stat.isSymbolicLink() && !projectLink) {
       let linkSnapshots: SnapshotItem[];
       try {
         const linkTarget = await importedLinkTarget(
@@ -243,21 +246,19 @@ async function collect(home: ResolvedAgentHome, options: {
           declarations.map((entry) => entry.path),
           root
         );
-        linkSnapshots = declarations
-          .filter((entry) => matchesPath(path, entry.path))
-          .map(({ group, spec }) => ({
-            id: itemId(path, spec),
-            path,
-            target: localPath(spec.target ?? path),
-            group,
-            spec,
-            hash: hash('symlink:' + linkTarget),
-            mode: stat.mode & 0o777,
-            count: 1,
-            mcpCount: 0,
-            linkTarget,
-            bytes: Buffer.alloc(0)
-          }));
+        linkSnapshots = selected.map(({ group, spec }) => ({
+          id: itemId(path, spec),
+          path,
+          target: localPath(spec.target ?? path),
+          group,
+          spec,
+          hash: hash('symlink:' + linkTarget),
+          mode: stat.mode & 0o777,
+          count: 1,
+          mcpCount: 0,
+          linkTarget,
+          bytes: Buffer.alloc(0)
+        }));
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOSPC') throw error;
         issues.push(issue(path, error));
@@ -277,14 +278,13 @@ async function collect(home: ResolvedAgentHome, options: {
       for (const name of children.sort()) await visit(`${path}/${name}`, boundary, depth + 1);
       return;
     }
-    if (!stat.isFile()) {
+    if (!stat.isFile() && !projectLink) {
       issues.push({ path, reason: 'unreadable' });
       return;
     }
     const snapshots: SnapshotItem[] = [];
-    const selected = declarations.filter((entry) => matchesPath(path, entry.path));
     const declared = selected.some((entry) => entry.path === path);
-    const wholeTree = selected.some(
+    const wholeTree = !projectLink && selected.some(
       (entry) =>
         path.startsWith(entry.path.replace(/\/$/, '') + '/') &&
         !entry.spec.keys &&
@@ -292,7 +292,21 @@ async function collect(home: ResolvedAgentHome, options: {
     );
     const strict = selected.some((entry) => entry.path === path && options.strict?.({ group: entry.group, id: itemId(path, entry.spec) }));
     try {
-      if (!wholeTree && stat.size > FILE_LIMIT) { issues.push({ path, reason: 'tooLarge' }); return; }
+      // Project linked documents into regular files so unselected fields cannot cross the import boundary.
+      const input = projectLink ? await disk.realpath(full).catch((error: unknown) => {
+        if (missing(error)) return null;
+        throw error;
+      }) : full;
+      if (input === null) { issues.push({ path, reason: 'sourceChanged' }); return; }
+      const inputStat = projectLink ? await disk.lstat(input) : stat;
+      if (projectLink) {
+        const targetRel = relative(root, input).split(sep).join('/');
+        if (excluded(targetRel, home.credentialPaths)) { issues.push({ path, reason: 'sensitive' }); return; }
+        if (excluded(targetRel, home.carryExclusions)) { issues.push({ path, reason: 'excluded' }); return; }
+        if (!inputStat.isFile()) { issues.push({ path, reason: 'unreadable' }); return; }
+        newestMtime = Math.max(newestMtime, inputStat.mtimeMs);
+      }
+      if (!wholeTree && inputStat.size > FILE_LIMIT) { issues.push({ path, reason: 'tooLarge' }); return; }
       if (wholeTree && stat.size > FILE_LIMIT) {
         const digest = await streamImportFile(full, undefined, undefined, boundary);
         for (const { group, spec } of selected) {
@@ -313,7 +327,8 @@ async function collect(home: ResolvedAgentHome, options: {
           snapshots.push(item);
         }
       }
-      const content = snapshots.length ? null : await snapshot(boundary, full);
+      const content = snapshots.length ? null : await snapshot(projectLink ? dirname(input) : boundary, input);
+      if (projectLink && await disk.realpath(full) !== input) { issues.push({ path, reason: 'sourceChanged' }); return; }
       if (!content && !snapshots.length) { issues.push({ path, reason: 'sourceChanged' }); return; }
       if (content) {
         if (/\.(?:json|toml)$/.test(path)) {
@@ -347,7 +362,7 @@ async function collect(home: ResolvedAgentHome, options: {
               ? hooks.reduce<number>((sum, entry: unknown) => sum + (object(entry) && Array.isArray(entry.hooks) ? entry.hooks.length : 1), 0) : 0), 0) : 0;
           } catch { /* Unprojected files may be arbitrary user content. */ }
         }
-        const item: Item = { id: itemId(path, spec), path, target, group, spec, hash: hash(projected), mode: stat.mode & 0o777, count, mcpCount };
+        const item: Item = { id: itemId(path, spec), path, target, group, spec, hash: hash(projected), mode: inputStat.mode & 0o777, count, mcpCount };
         items.push(item);
         snapshots.push({ ...item, bytes: projected });
       }
@@ -363,7 +378,6 @@ async function collect(home: ResolvedAgentHome, options: {
     // Keep at most one bounded source file in memory; large tree assets are streamed.
     if (snapshots.length) await options.consume?.(snapshots);
   };
-  const root = options.root ?? (await realSource(home.userConfigRoot));
   const paths = [...new Set(declarations.map((entry) => entry.path))].sort();
   const parent = paths.some((path) => path.startsWith('../')) ? await realSource(dirname(home.userConfigRoot)) : root;
   for (const path of paths) await visit(path, path.startsWith('../') ? parent : root, 0);

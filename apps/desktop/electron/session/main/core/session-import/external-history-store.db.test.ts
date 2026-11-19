@@ -1,4 +1,7 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { once } from 'node:events'
+import { performance } from 'node:perf_hooks'
+import { fork } from '@gugu/core/local/childProcess'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
@@ -32,6 +35,45 @@ it('opens persisted history after reopening, deduplicates by owner and source, a
   } finally {
     store.close()
     reopened.close()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+
+it('reads during a child write transaction and sees its commit without reopening or a memory cache', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'external-history-concurrent-'))
+  const store = new ExternalHistoryStore(directory)
+  const row = { sourceId: 'one', title: 'Before commit', messages: [{ role: 'user' as const, text: 'Text', at: null }] }
+  const entry = store.import('owner', 'cursor', row)!
+  const worker = join(directory, 'writer.cjs')
+  writeFileSync(worker, `
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(process.argv[2]);
+    db.exec('BEGIN EXCLUSIVE');
+    db.prepare('UPDATE external_history SET title = ? WHERE id = ?').run('After commit', process.argv[3]);
+    process.send('writing');
+    process.once('message', () => { db.exec('COMMIT'); db.close(); process.send('committed', () => process.disconnect()); });
+  `)
+  const child = fork(worker, [join(directory, 'history.sqlite'), entry.sessionId], {
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, execArgv: [], stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+  })
+  const closed = once(child, 'close')
+  try {
+    expect(await once(child, 'message')).toEqual(['writing', undefined])
+    const start = performance.now()
+    expect(store.has('owner', 'cursor', 'one')).toBe(true)
+    expect(store.list('owner', 'cursor')).toEqual([entry])
+    expect(performance.now() - start).toBeLessThan(500)
+    // Only release the writer after the synchronous reader has returned.
+    const committed = once(child, 'message')
+    child.send('commit')
+    expect(await committed).toEqual(['committed', undefined])
+    await closed
+    expect(store.list('owner', 'cursor')).toEqual([{ ...entry, title: 'After commit' }])
+    expect(store.has('owner', 'cursor', 'one')).toBe(true)
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) { child.kill('SIGKILL'); await closed }
+    store.close()
     rmSync(directory, { recursive: true, force: true })
   }
 })

@@ -34,6 +34,7 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
   started?: () => void
   registered?: () => void
   deliveryReady?: () => void
+  globalVersionProcessSweep?: () => Promise<void>
 }, viaModule = false, database?: { initialize: () => Promise<Database.Database>; migrate: () => void; editorBufferService?: EditorBufferService }) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gugu-boot-entry941-'))
   const tasks = sessionBootTasks
@@ -85,6 +86,11 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
       if (presenceProbe?.tmuxError) throw presenceProbe.tmuxError
       return presenceProbe?.tmuxSessionNames ?? new Set()
     } },
+    '@main/core/dependencies/probe-orphan-sweep': {
+      createProbeOrphanSweepDeps: () => ({}),
+      sweepProbeOrphans: async () => presenceProbe?.globalVersionProcessSweep?.(),
+    },
+
     '@main/core/projects/operations/migrate-project-kind': { migrateProjectKind: () => [] },
     '@main/core/usage/run-interval-recorder': { closeInterruptedRunIntervals: fault('interval'), installRunIntervalRecorder: noop },
     '@main/core/sessions/sendMessage': { claimInterruptedDispatches: fault('dispatch') },
@@ -144,6 +150,13 @@ describe('real session host boot entry', () => {
     expect(settle).toHaveBeenCalledOnce()
     expect([...settle.mock.calls[0][0]]).toEqual([])
     expect(reconciliation).toHaveBeenCalledOnce()
+  })
+  it('does not trigger a global version-process sweep during startup', async () => {
+    const sweep = vi.fn(async () => {})
+    const result = await boot('', false, { reconciliation: async () => {}, globalVersionProcessSweep: sweep })
+    expect(result.registered).toHaveBeenCalledOnce()
+    expect(sweep).not.toHaveBeenCalled()
+
   })
   it('keeps old unsaved drafts through startup and still lets the person discard one explicitly', async () => {
     const sqlite = new Database(':memory:')
