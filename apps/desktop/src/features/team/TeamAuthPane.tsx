@@ -15,6 +15,7 @@ import { useTeamCommandKey } from './operations'
 import type { TeamChallenge, TeamChoice, TeamInvitationInfo, TeamSignInResult } from './types'
 import type { TeamInvitationLink } from '../../../shared/team-invitation-link'
 import { readRegionalInvitation } from './invitation-region'
+import { teamInvitation } from './invitation'
 import '@/pages/login/login.css'
 
 export function TeamAuthPane({ onPersonal, googleEnabled, invitationLink }: { onPersonal: () => void; googleEnabled: boolean; invitationLink?: TeamInvitationLink | null }) {
@@ -56,6 +57,10 @@ export function TeamAuthPane({ onPersonal, googleEnabled, invitationLink }: { on
     if (!alive.current) return
     receipt.current = null
     await sessionCoordinator.acceptInteractiveSession(attempt.current, result.session)
+    if (invitationLink && teamInvitation.readLink() === invitationLink) {
+      const accepted = sessionCoordinator.getSnapshot()
+      if (accepted.status === 'authenticated' && accepted.session?.user.id === result.session.user.id) teamInvitation.clear()
+    }
   }
   function failure(cause: unknown) {
     if (!alive.current) return
