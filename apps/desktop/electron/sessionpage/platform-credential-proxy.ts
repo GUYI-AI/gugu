@@ -13,6 +13,9 @@ export interface CredentialProxyOptions {
   refresh?: (rejected: string) => Promise<string>
   credentialHeaders?: (token: string) => Record<string, string>
   maxRequestBytes?: number
+  refreshForbidden?: boolean
+  refusal?: (status: number, retried: boolean) => Promise<{ code: string; reason_code?: string; message: string } | null>
+  refusalError?: (error: unknown) => { code: string; reason_code?: string; message: string } | null
   warn: (event: { kind: 'connection' | 'stream'; status?: number; code?: string }) => void
   streamTiming?: (timing: PlatformStreamTiming) => void
   httpError?: (diagnostic: PlatformHttpErrorDiagnostic) => void
@@ -78,46 +81,71 @@ export async function proxyPlatformCredentialRequest(
       method: request.method,
       headers: upstreamHeaders(request.headers, options, token, upstream),
     }, (upstreamResponse) => {
-      if (upstreamResponse.statusCode === 401 && !retried && options.refresh) {
-        // No inference was accepted and no response headers/bytes have reached the harness.
-        upstreamResponse.resume()
-        void options.refresh(token).then(next => send(next, true), () => {
-          if (!response.headersSent && !harnessGone) {
-            response.writeHead(503, { 'content-type': 'application/json' })
-            response.end(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'Platform credential refresh failed' } }))
+      const forward = async () => {
+        const status = upstreamResponse.statusCode ?? 502
+        if (options.refusal && (status === 401 || status === 403)) {
+          const refusal = await options.refusal(status, retried)
+          if (refusal) {
+            upstreamResponse.resume()
+            if (!harnessGone && !response.headersSent) {
+              response.writeHead(409, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+              response.end(JSON.stringify({ type: 'error', error: { type: 'permission_error', ...refusal } }))
+            }
+            return
           }
-        })
-        return
-      }
-      const headers: Record<string, string | string[]> = {}
-      for (const [name, value] of Object.entries(upstreamResponse.headers)) {
-        if (value !== undefined && !HOP_HEADERS.has(name.toLowerCase())) headers[name] = value
-      }
-      response.writeHead(upstreamResponse.statusCode ?? 502, headers)
-      const isSse = /^text\/event-stream\b/i.test(String(upstreamResponse.headers['content-type'] ?? ''))
-      const compressed = !['', 'identity'].includes(String(upstreamResponse.headers['content-encoding'] ?? '').toLowerCase())
-      const httpError = upstreamResponse.statusCode === 400 && options.httpError
-        ? new PlatformHttpErrorRecorder(upstreamResponse.headers) : undefined
-      if (httpError) upstreamResponse.on('data', (chunk: Buffer) => httpError.data(chunk))
-      // Encoded bytes remain observable; do not pretend compressed bytes are parsed SSE events.
-      const observer = isSse && options.streamTiming
-        ? new PlatformStreamTimingRecorder(!compressed, () => performance.now(), wallStart, startedAt)
-        : undefined
-      if (observer) upstreamResponse.on('data', (chunk: Buffer) => observer.data(chunk))
-      upstreamResponse.once('close', () => {
-        if (!upstreamResponse.complete && !harnessGone) gatewayCut = true
-      })
-      pipeline(upstreamResponse, response, (error) => {
-        try {
-          if (httpError) options.httpError?.(httpError.finish(!error && upstreamResponse.complete))
-        } catch {
-          // Passive diagnostics must not interrupt stream completion or transport cleanup.
-          // Do not log the thrown value: diagnostic failures may themselves contain secrets.
         }
-        if (observer) options.streamTiming?.(observer.finish(!error && upstreamResponse.complete))
-        if (!error) return
-        upstreamRequest?.destroy()
-        if (gatewayCut) options.warn({ kind: 'stream', status: upstreamResponse.statusCode })
+        if ((status === 401 || (status === 403 && options.refreshForbidden)) && !retried && options.refresh) {
+          // No inference was accepted and no response headers/bytes have reached the harness.
+          upstreamResponse.resume()
+          void options.refresh(token).then(next => send(next, true), error => {
+            if (!response.headersSent && !harnessGone) {
+              const refusal = options.refusalError?.(error)
+              if (refusal) {
+                response.writeHead(409, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+                response.end(JSON.stringify({ type: 'error', error: { type: 'permission_error', ...refusal } }))
+                return
+              }
+              response.writeHead(503, { 'content-type': 'application/json' })
+              response.end(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'Platform credential refresh failed' } }))
+            }
+          })
+          return
+        }
+        const headers: Record<string, string | string[]> = {}
+        for (const [name, value] of Object.entries(upstreamResponse.headers)) {
+          if (value !== undefined && !HOP_HEADERS.has(name.toLowerCase())) headers[name] = value
+        }
+        response.writeHead(upstreamResponse.statusCode ?? 502, headers)
+        const isSse = /^text\/event-stream\b/i.test(String(upstreamResponse.headers['content-type'] ?? ''))
+        const compressed = !['', 'identity'].includes(String(upstreamResponse.headers['content-encoding'] ?? '').toLowerCase())
+        const httpError = upstreamResponse.statusCode === 400 && options.httpError
+          ? new PlatformHttpErrorRecorder(upstreamResponse.headers) : undefined
+        if (httpError) upstreamResponse.on('data', (chunk: Buffer) => httpError.data(chunk))
+        // Encoded bytes remain observable; do not pretend compressed bytes are parsed SSE events.
+        const observer = isSse && options.streamTiming
+          ? new PlatformStreamTimingRecorder(!compressed, () => performance.now(), wallStart, startedAt)
+          : undefined
+        if (observer) upstreamResponse.on('data', (chunk: Buffer) => observer.data(chunk))
+        upstreamResponse.once('close', () => {
+          if (!upstreamResponse.complete && !harnessGone) gatewayCut = true
+        })
+        pipeline(upstreamResponse, response, (error) => {
+          try {
+            if (httpError) options.httpError?.(httpError.finish(!error && upstreamResponse.complete))
+          } catch {
+            // Passive diagnostics must not interrupt stream completion or transport cleanup.
+            // Do not log the thrown value: diagnostic failures may themselves contain secrets.
+          }
+          if (observer) options.streamTiming?.(observer.finish(!error && upstreamResponse.complete))
+          if (!error) return
+          upstreamRequest?.destroy()
+          if (gatewayCut) options.warn({ kind: 'stream', status: upstreamResponse.statusCode })
+        })
+      }
+      void forward().catch(() => {
+        upstreamResponse.resume()
+        if (!response.headersSent && !harnessGone) response.writeHead(503).end()
+        else response.destroy()
       })
     })
     upstreamRequest.on('error', (error: NodeJS.ErrnoException) => {
