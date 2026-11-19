@@ -190,7 +190,7 @@ describe('mounted chat workspace', () => {
     }
   });
 
-  it('reopens the whole group on either side and keeps order, resources and remembered width', () => {
+  it('reopens the whole group on either side and keeps order, resources and each tool\'s remembered width', () => {
     const layout = makeLayout('owner');
     const owner = layout.open('chat', { id: 'owner' }, newTab)!;
     const detach = layout.attachChatWorkspace();
@@ -204,10 +204,11 @@ describe('mounted chat workspace', () => {
       layout.setPaneSizes([38, 62]);
       layout.setChatToolLayout('full');
 
+      // The 62 was dragged with the second tool in front: it is the second's. The first, never dragged, is a peer.
       layout.handleDragEnd(first, chatToolDropId('left', panes.chat.paneId));
       expect(layout.chatWorkspaceMode).toBe('split');
       expect(layout.chatToolSide).toBe('left');
-      expect(layout.paneSizes).toEqual([62, 38]);
+      expect(layout.paneSizes).toEqual([50, 50]);
       expect(tools.tabOrder).toEqual([first, second]);
       expect(tools.resolvedActiveTabId).toBe(first);
       expect(tools._resources.get(first)).toBe(firstResource);
@@ -215,7 +216,7 @@ describe('mounted chat workspace', () => {
       layout.collapseChatToolSide('left');
       expect(layout.chatWorkspaceMode).toBe('hidden');
       layout.toggleChatToolSplit();
-      expect(layout.paneSizes).toEqual([62, 38]);
+      expect(layout.paneSizes).toEqual([50, 50]);
       layout.collapseChatToolSide('right');
       expect(layout.chatWorkspaceMode).toBe('full');
 

@@ -12,7 +12,7 @@ import type {
 import type { TabPersistenceAdapter } from './persistence';
 import { accountTabPlacementMemory, type TabPlacementMemory } from './tab-placement-memory';
 import { declaredShare } from './side-width';
-import { CHAT_TOOL_DROP_PREFIX, CHAT_TOOL_MIN_VISIBLE_PANE_PX, chatDividerAt, chatToolDropId, type ChatToolSide } from './chat-tool-geometry';
+import { CHAT_TOOL_DROP_PREFIX, CHAT_TOOL_MIN_VISIBLE_PANE_PX, chatToolDropId, type ChatToolSide } from './chat-tool-geometry';
 import {
   equalizeSplit,
   evenSizes,
@@ -379,7 +379,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     if (single) this.activePaneId = single;
   }
 
-  /** Keep all tools in one pane so changing the selected tool preserves order, size and the chat resource. */
+  /** Keep all tools in one pane so changing the selected tool preserves order and the chat resource; each tool brings its own width. */
   private _selectChatWorkspaceTab(tabId: string, focus = true): boolean {
     const primary = this.primaryChatTabId;
     const panes = this.chatWorkspacePanes;
@@ -392,15 +392,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     }
 
     const order = panes.chat.pane.tabOrder.length > 1 ? this.stripTabIds : [];
-    if (!panes.tools) {
-      this.pairWith(primary, tabId, { by: 'restore' });
-      const width = this.dimensions?.width;
-      if (focus && width && !this.narrow && this.layout.type === 'split' && this.sidePaneId) {
-        const chatMin = this.paneMinWidth(panes.chat.paneId);
-        const toolMin = this.paneMinWidth(this.sidePaneId);
-        this.layout = { ...this.layout, sizes: chatDividerAt(chatMin, width, chatMin, toolMin).sizes };
-      }
-    }
+    if (!panes.tools) this.pairWith(primary, tabId, { by: 'restore' });
     const chat = this._groupOf(primary)!;
     const tools = this.groups.find((group) => group !== chat);
     if (!tools) return false;
@@ -414,8 +406,12 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       if (from !== to) tools.pane.reorderTabs(from, to);
     });
     chat.pane.activeTabId = primary;
+    const arriving = tools.pane.resolvedActiveTabId !== tabId;
     tools.pane.activeTabId = tabId;
     this._recordChatWorkspacePair();
+    // A tool brought to the front is a page arriving on the side: it comes at its own width (@@@side-width), ❌ the
+    // width the tool before it left on the pane.
+    if (arriving) this._applyOwnSizes(primary, tabId);
     if (focus && this.chatWorkspaceMode !== 'hidden') this.activePaneId = tools.paneId;
     this._focusChatWorkspacePage();
     return true;
@@ -663,10 +659,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       }
       main.pane.activeTabId = pinned;
       sideGroup.pane.activeTabId = side;
-      if (rebuilt || !unchanged) {
-        const own = this._ownSizes(pinned, side, extent);
-        if (own && this.layout.type === 'split') this.layout = { ...this.layout, sizes: own };
-      }
+      if (rebuilt || !unchanged) this._applyOwnSizes(pinned, side, extent);
       if (opts.focus) this.activePaneId = this._groupOf(other)!.paneId;
     }
     for (const id of [pinned, side]) {
@@ -924,6 +917,13 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     const share = dragged ?? (declared ? declaredShare(declared.px!, extent!) : 50);
     const paneId = this._groupOf(declared?.tabId ?? side)?.paneId;
     return layout.children.map((child) => (child.type === 'pane' && child.paneId === paneId ? share : 100 - share));
+  }
+
+  /** The pair's cut at the side page's own width; left as it is (the same object) when it is already there. */
+  private _applyOwnSizes(pinned: string, side: string, extent = this._pairExtent()): void {
+    const own = this._ownSizes(pinned, side, extent);
+    const layout = this.layout;
+    if (own && layout.type === 'split' && own.some((share, at) => share !== layout.sizes[at])) this.layout = { ...layout, sizes: own };
   }
 
   /** All opens name their source. No cardinality lookup, anchor inference or tab moving happens here. */

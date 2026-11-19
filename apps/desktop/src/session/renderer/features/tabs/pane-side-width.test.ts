@@ -200,3 +200,73 @@ describe('the pair on screen keeps its shares', () => {
     expect(sideWidth()).toBe(360);
   });
 });
+
+// The chat page's tools (a chat with its tool pages beside it): the tool pane is no owner of a width either. Owner 11-19:
+// 「+」, closed, then the members — the members came at the 「+」 page's width.
+describe('a chat\'s tool pages come at their own width', () => {
+  const provider = (kind: string, sideWidth?: number) => createTabProvider({
+    kind,
+    conversation: kind === 'chat',
+    resourceKey: (state: { path: string }) => state.path,
+    initialize: () => ({ dispose() {} }),
+    dispose() {},
+    TabBarItem: () => null,
+    TabBarItemDragPreview: () => null,
+    TabContent: () => null,
+    ...(sideWidth ? { sideWidth: () => sideWidth } : {}),
+  });
+  const registry = createTabRegistry([provider('chat'), provider('start'), provider('info', 360)]);
+  function workspace() {
+    const layout = new PaneLayoutStore(registry, { viewId: 'chat-tools' }, undefined, {
+      isPrimaryChatTab: (entry) => entry.kind === 'chat',
+      placementMemory: { read: () => undefined, write() {} },
+    });
+    layouts.push(layout);
+    layout.open('chat', { path: 'chat' }, { from: null, intent: 'newTab' });
+    const detach = layout.attachChatWorkspace();
+    layout.setDimensions(EXTENT, 800);
+    const open = (kind: string, path = kind) => layout.open(kind, { path }, { from: null, intent: 'newTab' })!;
+    const close = (tabId: string) => layout.groups.find(({ pane }) => pane.entries.has(tabId))!.pane.closeTab(tabId);
+    const sideWidth = () => {
+      const cut = layout.layout;
+      if (cut.type !== 'split') return null;
+      const at = cut.children.findIndex((child) => child.type === 'pane' && child.paneId === layout.chatWorkspacePanes?.tools?.paneId);
+      return Math.round((cut.sizes[at] * EXTENT) / 100);
+    };
+    const drag = (px: number) => {
+      const cut = layout.layout;
+      if (cut.type !== 'split') throw new Error('not split');
+      const tools = layout.chatWorkspacePanes!.tools!.paneId;
+      const share = (px / EXTENT) * 100;
+      layout.setSplitSizes(cut.id, cut.children.map((child) => (child.type === 'pane' && child.paneId === tools ? share : 100 - share)));
+    };
+    return { layout, detach, open, close, sideWidth, drag };
+  }
+
+  it('「+」 dragged wide and closed, then the members: the members come at their own width (owner 11-19)', () => {
+    const { detach, open, close, sideWidth, drag } = workspace();
+    try {
+      const start = open('start');
+      expect(sideWidth()).toBe(600);
+      drag(900);
+      close(start);
+      open('info');
+      expect(sideWidth()).toBe(360);
+    } finally { detach(); }
+  });
+
+  it('switching between open tools: each comes at its own width, a dragged one at its dragged width', () => {
+    const { layout, detach, open, sideWidth, drag } = workspace();
+    try {
+      const start = open('start');
+      drag(900);
+      const members = open('info');
+      expect(sideWidth()).toBe(360);
+      const tools = layout.chatWorkspacePanes!.tools!.pane;
+      tools.setActiveTab(start);
+      expect(sideWidth()).toBe(900);
+      tools.setActiveTab(members);
+      expect(sideWidth()).toBe(360);
+    } finally { detach(); }
+  });
+});
