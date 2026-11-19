@@ -175,7 +175,7 @@ export const ChatMessageComposer = observer(function ChatMessageComposer(props: 
           mentionProvider={mentionProvider} renderMentionIcon={renderMentionIcon} queryCommands={queryPrompts} dataDropTypes={dataDropTypes} onDataDropped={onDataDropped}
           onFilesDropped={enqueueFiles} onImageFilesDropped={enqueueFiles} onDirectoriesDropped={onDirectoriesDropped}
           attachments={composerAttachments} onAttachmentsChange={(next) => { const kept = attachments.filter((file) => next.some((item) => item.id === file.id)); revokeAttachmentPreviewUrls(attachments.filter((file) => !kept.includes(file))); setAttachments(kept) }}
-          attachmentExtra={annotationConversation && <AnnotationTray conversation={annotationConversation} onSend={() => { void handleSend() }} enabled={!disabled && !sending && !hidden && !takenOver && isMain} />}
+          attachmentExtra={annotationConversation && annotationDraft?.items.length ? <AnnotationTray conversation={annotationConversation} onSend={() => { void handleSend() }} enabled={!disabled && !sending && !hidden && !takenOver && isMain} /> : null}
           onAttachmentQualityChange={(id) => setAttachments((pending) => pending.map((item) => item.id === id && item.photo ? { ...item, file: item.file === item.photo.compressed ? item.photo.original : item.photo.compressed } : item))}
           toolbarExtra={mobile
             ? <IconButton shape="pill" size="md" title={t('composer.attach')} aria-label={t('composer.attach')} aria-expanded={attachOpen} disabled={disabled} data-testid="chat-composer-attach-menu"
