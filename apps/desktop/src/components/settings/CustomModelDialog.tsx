@@ -52,6 +52,7 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
   let probeInput: { baseUrl: string; apiKey: string } | null = null;
   try { if (!preset && apiKey && endpoints[0]?.baseUrl) probeInput = { baseUrl: normalizeModelBaseUrl(endpoints[0].baseUrl), apiKey }; } catch { /* the address line reports it */ }
   const probeKey = probeInput ? JSON.stringify(probeInput) : '';
+  // @@@effect-flow - probing the address and key the person is typing in this dialog; the answer is not stored data.
   useEffect(() => {
     if (!probeInput) { setProbe(null); return; }
     const input = probeInput;

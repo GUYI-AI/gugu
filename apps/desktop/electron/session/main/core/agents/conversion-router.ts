@@ -1,6 +1,7 @@
-import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import type { ChildProcess, SpawnOptions } from 'node:child_process';
+import { spawn } from '@gugu/core/local/childProcess';
 import { constants } from 'node:fs';
-import { access, chmod, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { access, chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 
 type ConversionHarness = 'claude' | 'codex';
@@ -90,18 +91,23 @@ function readBoundEndpoint(stdout: NonNullable<ChildProcess['stdout']>): Promise
   });
 }
 
-function providerConfigArgs(harness: ConversionHarness, upstream: URL, relayKey: string): string[] {
-  if (harness === 'claude') return ['--base-url', upstream.href, '--api-key', relayKey];
-  // Codex's field mode sets a default model that the router would force onto every request.
+function providerSettings(harness: ConversionHarness, upstream: URL, relayKey: string): string {
+  // Claude mode appends `/v1/chat/completions` to a base URL unless it ends in `/v1`; a trailing `#` makes the binary use
+  // the URL as written, so the forwarder route receives the protocol's own `/chat/completions` tail.
+  if (harness === 'claude') {
+    return JSON.stringify({ env: { ANTHROPIC_BASE_URL: `${upstream.href.replace(/\/$/, '')}/chat/completions#`, ANTHROPIC_AUTH_TOKEN: relayKey } });
+  }
+  // Codex's field mode sets a default model that the router would force onto every request. Codex appends
+  // `/chat/completions` to base_url itself.
   const config = [
     'model_provider = "gugu_conversion"',
     '[model_providers.gugu_conversion]',
     'name = "Gugu conversion"',
-    `base_url = ${JSON.stringify(upstream.href)}`,
+    `base_url = ${JSON.stringify(upstream.href.replace(/\/$/, ''))}`,
     'wire_api = "responses"',
     'requires_openai_auth = true',
   ].join('\n');
-  return ['--config', JSON.stringify({ auth: { OPENAI_API_KEY: relayKey }, config })];
+  return JSON.stringify({ auth: { OPENAI_API_KEY: relayKey }, config });
 }
 
 /**
@@ -139,11 +145,16 @@ export async function launchConversionRouter(options: RouterOptions): Promise<Co
   };
   try {
     await chmod(directory, 0o700);
-    await configure([
-      'add', '--id', 'gugu-local', '--name', 'Gugu conversion',
-      ...providerConfigArgs(options.harness, upstream, options.relayKey),
-      '--api-format', formats[options.harness],
-    ]);
+    // The relay token goes through a private file, never argv, where other local users could read it.
+    const settings = join(directory, 'provider.json');
+    await writeFile(settings, providerSettings(options.harness, upstream, options.relayKey), { mode: 0o600 });
+    try {
+      await configure([
+        'add', '--id', 'gugu-local', '--name', 'Gugu conversion', '--config-file', settings, '--api-format', formats[options.harness],
+      ]);
+    } finally {
+      await rm(settings, { force: true });
+    }
     await configure(['switch', 'gugu-local']);
     const child = spawn(options.executable, [
       ...appArgs, 'proxy', 'serve', '--listen-address', '127.0.0.1', '--listen-port', '0',

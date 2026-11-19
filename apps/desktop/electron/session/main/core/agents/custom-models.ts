@@ -168,7 +168,7 @@ async function readSelectedCustomModel(providerId: string, ref: CustomModelRef, 
   return {
     meta, name: row?.meta?.displayName || ref.connectionId, model, protocol: matched.endpoint.protocol,
     // A converted record reaches the harness in its own wire protocol, through the bundled router.
-    ...(matched.converted && nativeProtocol ? { converted: true as const, harnessProtocol: nativeProtocol } : {}),
+    harnessProtocol: matched.converted ? nativeProtocol : undefined,
   };
 }
 
@@ -189,13 +189,13 @@ export async function resolveCustomModel(providerId: string, sessionId: string, 
   const local = await customModelForwarder(resolveCustomRoute);
   const route = customModelRoute(local.endpoint, ref.connectionId, protocol);
   // The router speaks the harness's protocol on loopback and calls the forwarder route in the record's protocol.
-  const endpoint = selected.converted
+  const endpoint = selected.harnessProtocol
     ? await (await import('./conversion-routers')).convertedBaseUrl(providerId, ref.connectionId, route, local.apiKey)
     : route;
   return {
     connectionId: ref.connectionId, name,
     apiKey: local.apiKey, endpoint,
-    models, protocol: selected.converted ? selected.harnessProtocol : protocol, capabilities: model, entries: meta.models,
+    models, protocol: selected.harnessProtocol ?? protocol, capabilities: model, entries: meta.models,
     upstreamEndpoint: meta.endpoints.find(entry => entry.protocol === protocol)!.baseUrl, removed: meta.removed,
   };
 }
