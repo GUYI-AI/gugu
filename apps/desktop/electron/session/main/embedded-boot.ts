@@ -142,7 +142,6 @@ import { readSessionOptions, SessionOptionsError } from '@main/core/session-time
 import { platformModelIdFromRuntimeOption, runtimeOptionForPlatformModelId } from '@shared/platform-model-id'
 import { searchService } from '@main/core/search/search-service'
 import { workspaceFileIndexService } from '@main/core/search/workspace-file-index-service'
-import { editorBufferService } from '@main/core/editor/editor-buffer-service'
 import {
   cleanupLegacyBrowserPartitions,
   migrateLegacyBrowserPartitionDirs,
@@ -677,7 +676,6 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   }
   searchService.initialize()
   workspaceFileIndexService.initialize()
-  void editorBufferService.pruneStale()
   // 依赖体检的 `<bin> --version` 是 detached 起的(不然只杀得掉直接子进程)，收尾在 finally 里 ——
   // 那一半只在我们还活着时有效。被强杀时子进程活下来，stdio 管道读端却没了，不处理 SIGPIPE 的
   // 程序就在写失败上空转：mac1 实测两个 `amp --version` 各占满一核，清掉两个半小时后又长出两个。
