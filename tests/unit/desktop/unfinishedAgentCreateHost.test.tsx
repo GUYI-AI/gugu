@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { UnfinishedAgentCreateSweeper } from '../../../apps/desktop/src/components/UnfinishedAgentCreateSweeper'
 import { readUnfinishedAgentCreates } from '../../../apps/desktop/src/lib/unfinishedAgentCreateBridge'
 import { publishSelfIdentity } from '../../../apps/desktop/src/lib/selfIdentityBridge'
+import { unfinishedAgentCreateRows } from '../../../apps/desktop/src/lib/unfinishedAgentCreateRows'
+import { followRendererSession } from '../../../apps/desktop/src/lib/replica'
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const state = vi.hoisted(() => ({
@@ -31,6 +33,7 @@ let root: Root
 let container: HTMLDivElement
 async function show(owner = 'owner') {
   state.owner = owner
+  followRendererSession('SIGNED_IN', owner)
   publishSelfIdentity({ userId: owner, displayName: null, guguNumber: null })
   if (!root) { container = document.createElement('div'); document.body.append(container); root = createRoot(container) }
   await act(async () => root.render(<UnfinishedAgentCreateSweeper />))
@@ -40,13 +43,15 @@ afterEach(async () => {
   root = undefined as unknown as Root
   container?.remove()
   publishSelfIdentity(null)
+  followRendererSession('SIGNED_OUT', null)
   vi.clearAllMocks()
 })
 describe('shell recovery host', () => {
   it('publishes rows while the startup read is pending without starting an action', async () => {
     state.sweep.mockImplementationOnce(() => new Promise<never[]>(() => {}))
     await show()
-    expect(readUnfinishedAgentCreates()).toMatchObject({ ownerUserId: 'owner', busy: false, rows: [{ operationId: 'op-owner' }] })
+    expect(readUnfinishedAgentCreates()).toMatchObject({ ownerUserId: 'owner', busy: false })
+    expect(unfinishedAgentCreateRows.peek()).toMatchObject({ state: 'value', value: [{ operationId: 'op-owner' }] })
     expect(state.resume).not.toHaveBeenCalled()
     expect(state.remove).not.toHaveBeenCalled()
   })
@@ -64,5 +69,13 @@ describe('shell recovery host', () => {
     old.run('op-owner', 'delete')
     expect(state.remove).not.toHaveBeenCalled()
     expect(readUnfinishedAgentCreates()?.ownerUserId).toBe('another')
+  })
+  it('signing back into the same account does not revive the previous interaction', async () => {
+    await show()
+    const old = readUnfinishedAgentCreates()!
+    await show('another')
+    await show('owner')
+    old.run('op-owner', 'delete')
+    expect(state.remove).not.toHaveBeenCalled()
   })
 })

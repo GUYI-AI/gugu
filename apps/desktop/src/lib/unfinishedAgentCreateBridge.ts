@@ -1,28 +1,29 @@
 import { readSelfIdentityBridge } from './selfIdentityBridge'
+import { createSelectStore, type SelectStore } from './selectStore'
 
 export interface UnfinishedAgentCreateView {
   ownerUserId: string
-  rows: ReadonlyArray<{ operationId: string; name: string }>
   busy: boolean
   run: (operationId: string, action: 'continue' | 'delete') => void
 }
 const KEY = '__GUGU_UNFINISHED_AGENT_CREATES__'
-const EVENT = 'gugu:unfinished-agent-creates'
-type BridgeWindow = Window & { [KEY]?: UnfinishedAgentCreateView }
-
-// Separate renderer bundle: only display fields and explicit actions cross this boundary.
-export function publishUnfinishedAgentCreates(view: UnfinishedAgentCreateView | null): void {
+type BridgeWindow = Window & { [KEY]?: SelectStore<UnfinishedAgentCreateView | null> }
+const store = () => {
   const target = window as BridgeWindow
-  if (view) target[KEY] = view
-  else delete target[KEY]
-  window.dispatchEvent(new Event(EVENT))
+  return target[KEY] ??= createSelectStore<UnfinishedAgentCreateView | null>(null)
+}
+
+// Only the cross-component interaction controller. Rows are read through their account replica.
+export function publishUnfinishedAgentCreates(view: UnfinishedAgentCreateView | null): void {
+  store().publish(view)
+  store().notify()
 }
 export function readUnfinishedAgentCreates(): UnfinishedAgentCreateView | null {
-  const view = (window as BridgeWindow)[KEY]
+  const view = store().get()
   return view?.ownerUserId === readSelfIdentityBridge()?.getSnapshot()?.userId ? view ?? null : null
 }
 export function subscribeUnfinishedAgentCreates(listener: () => void): () => void {
-  window.addEventListener(EVENT, listener)
+  const offView = store().subscribe(listener)
   const offIdentity = readSelfIdentityBridge()?.subscribe(listener)
-  return () => { window.removeEventListener(EVENT, listener); offIdentity?.() }
+  return () => { offView(); offIdentity?.() }
 }

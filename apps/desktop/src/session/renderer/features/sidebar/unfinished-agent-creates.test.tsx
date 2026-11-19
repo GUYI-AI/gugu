@@ -4,11 +4,14 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { publishSelfIdentity } from '@/lib/selfIdentityBridge';
 import { publishUnfinishedAgentCreates } from '@/lib/unfinishedAgentCreateBridge';
+import { unfinishedAgentCreateRows } from '@/lib/unfinishedAgentCreateRows';
+import { followRendererSession } from '@/lib/replica';
 import { UnfinishedAgentCreates } from './unfinished-agent-creates';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const confirm = vi.hoisted(() => vi.fn());
 vi.mock('@renderer/lib/modal/modal-provider', () => ({ useShowModal: () => confirm }));
+vi.mock('@/lib/agentProvision', () => ({ defaultResumeStore: { list: () => [] } }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 let root: Root;
 let container: HTMLDivElement;
@@ -17,12 +20,15 @@ afterEach(async () => {
   container?.remove();
   publishUnfinishedAgentCreates(null);
   publishSelfIdentity(null);
+  followRendererSession('SIGNED_OUT', null);
   confirm.mockReset();
 });
 async function mount(collapsed = false, busy = false) {
   publishSelfIdentity({ userId: 'owner', displayName: null, guguNumber: null });
+  followRendererSession('SIGNED_IN', 'owner');
+  unfinishedAgentCreateRows.set([], [{ operationId: 'op', name: '资料整理助手' }]);
   const run = vi.fn();
-  publishUnfinishedAgentCreates({ ownerUserId: 'owner', rows: [{ operationId: 'op', name: '资料整理助手' }], busy, run });
+  publishUnfinishedAgentCreates({ ownerUserId: 'owner', busy, run });
   container = document.createElement('div'); document.body.append(container);
   root = createRoot(container);
   await act(async () => root.render(<UnfinishedAgentCreates collapsed={collapsed} />));
@@ -58,7 +64,7 @@ describe('approved unfinished creation row', () => {
     await mount(true);
     expect(container.textContent).toBe('');
     await act(async () => root.render(<UnfinishedAgentCreates collapsed={false} />));
-    await act(async () => publishUnfinishedAgentCreates({ ownerUserId: 'owner', rows: [{ operationId: 'op', name: '资料整理助手' }], busy: true, run: vi.fn() }));
+    await act(async () => publishUnfinishedAgentCreates({ ownerUserId: 'owner', busy: true, run: vi.fn() }));
     expect([...container.querySelectorAll('button')].every(button => button.disabled)).toBe(true);
   });
 });
