@@ -75,7 +75,6 @@ describe('活会话设置落库:改完 → 记录 → 重开读到新值', () =>
     // 渲染层手里那份也得跟上(它自己的启动路读的是它)。
     expect(mocks.emit).toHaveBeenCalledWith(sessionChangedChannel, {
       sessionId: CONV,
-      projectId: 'project-1',
       changes: { permissionMode: 'read-only' },
     });
   });
@@ -90,7 +89,7 @@ describe('活会话设置落库:改完 → 记录 → 重开读到新值', () =>
     const session = await reopened();
     expect(session.permissionMode).toBe('ai-review');
     expect(session.model).toBe('opus');
-    expect(mocks.emit).toHaveBeenCalledWith(sessionChangedChannel, { sessionId: CONV, projectId: 'project-1', changes: { permissionMode: 'ai-review' } });
+    expect(mocks.emit).toHaveBeenCalledWith(sessionChangedChannel, { sessionId: CONV, changes: { permissionMode: 'ai-review' } });
   });
 
   it('推理档:原样写回', async () => {

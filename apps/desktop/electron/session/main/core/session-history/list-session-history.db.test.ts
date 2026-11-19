@@ -326,14 +326,14 @@ describe('listSessionHistory', () => {
   });
 
   it('Apps group zero-task directories with history and canonicalize registered and native origins', async () => {
-    fixture.sqlite.prepare(`INSERT INTO project_remotes (project_id, remote_name, remote_url) VALUES ('p1', 'origin', 'git@github.com:OpenDCAI/gugu.git')`).run();
+    fixture.sqlite.prepare(`INSERT INTO workspace_remotes (workspace_id, remote_name, remote_url) VALUES ('ws-repo', 'origin', 'git@github.com:OpenDCAI/gugu.git')`).run();
     mocks.repoRoots = { '/repo': '/repo', '/wt/repo-fix': '/repo', '/tool': '/tool' };
     mocks.remotes = { '/tool': 'ssh://git@github.com/OpenDCAI/tools.git' };
     mocks.localRows = [local({ providerSessionId: 'W1', cwd: '/wt/repo-fix/pkg' }), local({ providerSessionId: 'M1', cwd: '/repo/pkg' })];
     const page = await indexSessionsForApp({ groupPaths: ['/tool/src', '/tool/docs', '/old-profile/task-home', '/scratch'] });
     expect(page.rows.map(({ group }) => group)).toEqual([
       { key: '/repo', label: null, repositoryUrl: 'https://github.com/OpenDCAI/gugu' },
-      { key: '/repo', label: 'Repo', repositoryUrl: 'https://github.com/OpenDCAI/gugu' },
+      { key: '/repo', label: 'repo', repositoryUrl: 'https://github.com/OpenDCAI/gugu' },
     ]);
     expect(page.groups).toEqual([
       { path: '/tool/src', group: { key: '/tool', label: null, repositoryUrl: 'https://github.com/OpenDCAI/tools' } },

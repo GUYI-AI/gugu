@@ -121,6 +121,7 @@ vi.mock('./session-workspace-manager', async (importOriginal) => ({
 }));
 // A directory named as cwd is a directory here (the fixture's paths are not on this disk).
 vi.mock('@main/core/utils/directory-status', () => ({ checkIsValidDirectory: () => true }));
+vi.mock('@main/core/app/session-home-dir', () => ({ sessionHomeDir: () => '/home/tester/gugu/task-home' }));
 vi.mock('@main/core/workspaces/folder-runtime/settings/resolve-tmux-enabled', () => ({ resolveTmuxEnabled: () => mocks.tmuxEnabled() }));
 vi.mock('@main/core/sessions/session-service', () => ({
   sessionService: { ensureSessionMounted: mocks.ensureSessionMounted },

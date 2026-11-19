@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -72,6 +72,8 @@ vi.mock('@main/core/sessions/session-workspace-manager', () => ({
   cleanupDetachedSessions: vi.fn(),
 }));
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
+// An unmounted session's folder is not open in these tests: nothing of it runs here.
+vi.mock('@main/core/workspaces/folder-runtime/folder-runtimes', () => ({ folderRuntimes: { get: () => undefined } }));
 vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock('./session-events', () => ({ sessionEvents: { _emit: vi.fn() } }));
 
@@ -363,7 +365,7 @@ describe('archiveSession', () => {
   });
 
   it('非 ACP 会话不经 session-life 归档', async () => {
-    fixture.sqlite.prepare(`INSERT INTO sessions (id, project_id, title, runtime) VALUES ('pty-task', 'p1', 'pty-task', NULL)`).run();
+    fixture.sqlite.prepare(`INSERT INTO sessions (id, project_id, workspace_id, title, runtime) VALUES ('pty-task', 'p1', 'ws1', 'pty-task', NULL)`).run();
 
     await archiveSession('pty-task');
 
@@ -384,9 +386,8 @@ describe('archiveSession', () => {
     expect(mocks.stopped).toEqual([]);
   });
 
-  it('点名一条不在这个项目里的会话时响亮失败', async () => {
-    insertSession('a');
-    await expect(archiveSession('a')).rejects.toThrow(/not found/i);
+  it('点名一条这台机器上没有的会话时响亮失败', async () => {
+    await expect(archiveSession('nowhere')).rejects.toThrow(/not found/i);
   });
 
   // owner 2026-10-01「一起收」「链路统一」:按父子关系找出各台机器上的后代,每一条走它所在机器上的单条归档。
