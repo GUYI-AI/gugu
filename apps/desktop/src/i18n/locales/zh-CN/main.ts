@@ -1,4 +1,9 @@
 export default {
+  "firstInstallImport": {
+    "title": "咕咕 支持一键数据导入啦",
+    "description": "快速带入你的记忆、项目规则和工作习惯",
+    "available": "可从本机导入 {{name}} 的配置"
+},
   "referrals": {
     "accountCount": "已邀请 {{count}} 人",
     "invite": "邀请",

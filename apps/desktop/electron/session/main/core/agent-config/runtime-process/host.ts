@@ -211,7 +211,7 @@ export function withHostResolvedCli(
     });
   return {
     ...client,
-    scanAgentHomes: ({ providerIds, upgradedOnly }) => connectionOperation(() => scanAgentHomes(providerIds, upgradedOnly)),
+    scanAgentHomes: ({ providerIds, upgradedOnly, firstInstallOnly }) => connectionOperation(() => scanAgentHomes(providerIds, upgradedOnly, firstInstallOnly)),
     importAgentHome: ({ providerId, groups, skip }) => connectionOperation(() => importHarnessHome(providerId, groups, skip)),
     diffAgentHome: ({ providerId }) => connectionOperation(() => diffHarnessHome(providerId)),
     reimportAgentHome: ({ providerId, decisions }) => connectionOperation(() => reimportHarnessHome(providerId, decisions)),
