@@ -27,12 +27,16 @@ export interface AccountClosureV2Snapshot {
     state: AccountClosureV2ServerState
     operationRevision: number
     challengeGeneration: number
+    /** Authoritative request expiry, when present in original result. */
+    challengeExpiresAt?: string | null
   }
   /** Neither nativeGeneration nor local/server operation revision. */
   serverPreparationGeneration: string | null
   /** Unknown preparation/confirmation retains custody and permits only recovery. */
   recoveryOnly: boolean
-  pendingEffect: 'challenge' | 'prepare_device' | 'confirm' | 'cancel' | null
+  /** A server 409/request_active leaves only original-result recovery. */
+  confirmCancellationBlocked?: boolean
+  pendingEffect: 'register' | 'challenge' | 'prepare_device' | 'confirm' | 'cancel' | null
   agentsPaused: boolean
   /** Fixed item names; never values, paths or credentials. */
   retainedUnattributed: readonly string[]
@@ -56,8 +60,20 @@ export interface AccountClosureV2Native {
   confirm(handle: AccountClosureV2Handle, input: AccountClosureV2Confirmation): Promise<AccountClosureV2Snapshot>
   /** Original result only: never registers, resends, prepares or reconfirms. */
   recover(handle: AccountClosureV2Handle): Promise<AccountClosureV2Snapshot>
-  /** Only a trusted matching-generation ACK permits native unsealing. */
+  /** Each explicit click sends at most one idempotent cancel, including an
+   * unknown confirmation. No automatic loop; only a matching ACK unseals. */
   cancel(handle: AccountClosureV2Handle): Promise<AccountClosureV2Snapshot>
   /** Requires trusted deleted, scoped cleanup and renderer sign-out completion. */
   finalize(handle: AccountClosureV2Handle): Promise<AccountClosureV2Snapshot>
+}
+
+/** Fixed categories only; unrecognized native/transport details stay private. */
+export const ACCOUNT_CLOSURE_V2_ERROR_CODES = [
+  'closure_context_missing', 'closure_not_prepared', 'wrong_local_owner', 'scope_conflict', 'receipt_missing', 'invalid_scope', 'closure_storage_unavailable',
+  'closure_busy', 'closure_unavailable', 'closure_not_available', 'closure_recovery_required', 'closure_not_complete',
+  'unauthorized', 'invalid_request', 'verification_failed', 'rate_limited', 'operation_busy', 'request_active', 'state_conflict', 'not_found', 'preparation_unavailable', 'outcome_unknown', 'email_outcome_unknown',
+] as const
+export type AccountClosureV2ErrorCode = typeof ACCOUNT_CLOSURE_V2_ERROR_CODES[number]
+export function isAccountClosureV2ErrorCode(value: unknown): value is AccountClosureV2ErrorCode {
+  return typeof value === 'string' && (ACCOUNT_CLOSURE_V2_ERROR_CODES as readonly string[]).includes(value)
 }
