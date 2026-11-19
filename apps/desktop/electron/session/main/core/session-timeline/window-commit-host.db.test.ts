@@ -125,6 +125,9 @@ describe('the main-process commit host and actual canonical writer', () => {
   it('publishes an admitted, underfilled projection group as soon as the host closes while the canonical queue is busy', async () => {
     // Frozen timers: only the close itself may publish the group, never the busy ceiling.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const timers = vi.spyOn(globalThis, 'setTimeout');
+    // Canonical persistence also schedules payload GC. Wait for the pack's busy ceiling specifically.
+    const busyTimers = () => timers.mock.calls.filter(([, delay]) => delay === 80);
     const busy = beginCanonicalQueueTask('c'), events = source(), owner = reserveProduction('closing-view', 'c', vi.fn()), after = await owner.prepare();
     owner.authorize(); void owner.read(after).catch(() => {});
     const turns = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -134,13 +137,13 @@ describe('the main-process commit host and actual canonical writer', () => {
       const host = await connectWindowCommitHost(stream(events), () => {}, connection);
       events.emit({ sessionId: 'c', source: 'live', turn: { id: 'tail', seq: 0, referenceId: 'tail-ref', initiator: 'user',
         items: [{ kind: 'message', id: 'tail-item', seq: 0, role: 'assistant', text: 'underfilled tail' }], outcome: { kind: 'done' } } });
-      await until(() => vi.getTimerCount() > 0);
-      expect(vi.getTimerCount()).toBe(1); expect(complete()).toEqual({ n: 0 });
+      await until(() => busyTimers().length > 0);
+      expect(busyTimers()).toHaveLength(1); expect(complete()).toEqual({ n: 0 });
       host.close();
       await until(() => (complete() as { n: number }).n > 0);
       expect(complete()).toEqual({ n: 1 });
       expect(createWindowCommitReceipts(fixture.sqlite).byReference('c', 'tail-ref')).toBeDefined();
-    } finally { busy(); owner.close(); vi.useRealTimers(); }
+    } finally { busy(); owner.close(); timers.mockRestore(); vi.useRealTimers(); }
   });
 
   it('rejects new handoff reservations without a durable producer rather than declaring a successful empty view', () => {
