@@ -17,7 +17,6 @@ import { remoteInstallNote } from './remote-install-before-create';
 import { MachinePicker } from '@renderer/features/remote-hosts/machine-picker';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
-import { installRemoteHostsBridge, type RemoteHostsBridge } from '@shared/remote-hosts';
 import { ComposerProjectPicker } from './composer-context-tray';
 import { getSessionWorkspaceActionOrder, sessionWorkspaceActionBlocked } from './pane-empty-state';
 import { registerWorkspaceBackend, type WorkspaceBackend } from './workspace-backend/workspace-backend';
