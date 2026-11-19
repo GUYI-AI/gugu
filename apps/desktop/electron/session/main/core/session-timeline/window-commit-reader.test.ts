@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, open, readdir, rm, stat, type FileHandle } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
-import { writeWindowCommitSource } from './window-commit-source';
+import { createWindowBudget, WINDOW_LIMITS } from '@gugu/session-core/session-record/window-cache/read-budget';
+import { writeSharedWindowCommitSource, writeWindowCommitSource } from './window-commit-source';
 import { createWindowCommitReader as create } from './window-commit-reader';
+import { TurnPayloadFiles } from '../sessions/session-turn-payloads';
+import { encodeTurnValue } from '../sessions/session-turn-codec';
 
 const directories: string[] = [], binding = { scope: 'a'.repeat(64), sourceLineage: 'b'.repeat(64), decoderVersion: 1 };
 afterEach(async () => { vi.restoreAllMocks(); for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true }); });
@@ -17,6 +19,41 @@ async function fixture(text = 'x'.repeat(100000)) {
 }
 
 describe('request-owned bounded commit reader', () => {
+  it.each(['sourceBytes', 'indexBytes'] as const)('rejects shared-source reads at the unchanged default %s ceiling', async counter => {
+    const path = await mkdtemp(join(tmpdir(), 'commit-reader-limit-')); directories.push(path);
+    const files = new TurnPayloadFiles(join(path, 'test.db.turn-payloads'));
+    const value = { text: counter === 'sourceBytes' ? 'X'.repeat(16384) : 'small' };
+    const { manifest } = await writeSharedWindowCommitSource(path, binding, { files, value: encodeTurnValue(value, files) });
+    const budget = createWindowBudget(); let failure: unknown;
+    // New readers share the request's budget; their caches cannot reset its accounting.
+    for (let at = 0; at < 1024; at++) {
+      const reader = create(path, binding, manifest, budget);
+      try { await reader.bytes(0, 4); }
+      catch (error) { failure = error; break; }
+      finally { reader.close(); }
+    }
+    expect(failure).toMatchObject({ name: 'WindowBudgetExceeded', counter });
+    expect(WINDOW_LIMITS.sourceBytes).toBe(512 * 1024);
+    expect(WINDOW_LIMITS.indexBytes).toBe(64 * 1024);
+    expect(budget.counters.sourceBytes).toBeGreaterThan(0);
+    expect(budget.counters.sourceBytes).toBeLessThanOrEqual(WINDOW_LIMITS.sourceBytes);
+    expect(budget.counters.indexBytes).toBeGreaterThan(0);
+    expect(budget.counters.indexBytes).toBeLessThanOrEqual(WINDOW_LIMITS.indexBytes);
+  });
+
+  it('snapshots the physical descriptor length of a shared source before the caller can mutate it', async () => {
+    const path = await mkdtemp(join(tmpdir(), 'commit-reader-shared-')); directories.push(path);
+    const files = new TurnPayloadFiles(join(path, 'test.db.turn-payloads')), value = { text: 'whole cold turn' };
+    const { manifest } = await writeSharedWindowCommitSource(path, binding, { files, value: encodeTurnValue(value, files) });
+    const serialized = Buffer.from(JSON.stringify(value)), budget = createWindowBudget(), reader = create(path, binding, manifest, budget);
+    manifest.storedBytes = 1;
+    try {
+      expect(await reader.bytes(0, serialized.length)).toEqual(new Uint8Array(serialized));
+      expect(budget.counters.indexBytes).toBeGreaterThan(0);
+      expect(budget.counters.sourceBytes).toBeGreaterThan(0);
+    } finally { reader.close(); }
+  });
+
   it('shares one physical frame among metadata reads and returns copies that cannot mutate the cache', async () => {
     const f = await fixture(), budget = createWindowBudget(), original = f.proto.read;
     let actual = 0;

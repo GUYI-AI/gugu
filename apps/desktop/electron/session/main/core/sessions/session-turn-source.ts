@@ -109,6 +109,7 @@ export function readTurnJsonRange(directory: string, root: TurnJsonRef, start: n
   let io: 'sourceBytes' | 'indexBytes' = 'indexBytes';
   const files = new TurnPayloadFiles(directory, (requested, read) => budget.readSync(io, requested, read));
   const cache = new Map<string, Piece>();
+  // CAS bodies are canonical source I/O; descriptors remain index I/O. Keep both existing ceilings.
   const withBody = <T>(read: () => T): T => { const before = io; io = 'sourceBytes'; try { return read(); } finally { io = before; } };
   const valid = (ref: TurnJsonRef) => ref && /^[a-f0-9]{64}$/.test(ref.ref?.hash) && Number.isSafeInteger(ref.bytes) && ref.bytes >= 0;
   function read(ref: TurnJsonRef, from: number, to: number, lineage: ReadonlySet<string>): Buffer {

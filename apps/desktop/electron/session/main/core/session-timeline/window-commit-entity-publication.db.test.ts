@@ -54,7 +54,7 @@ describe('immutable canonical entity publication', () => {
     const c = await captured(), io: { indexBytes: number; sourceBytes: number }[] = [];
     const result = await publishCommitEntity({ ...c, observed(counters) { io.push({ ...counters }); } });
     expect(result.kind).toBe('published'); expect(Math.max(...io.map(c => c.indexBytes))).toBeLessThanOrEqual(65536);
-    expect(io.every(c => c.sourceBytes === 0)).toBe(true);
+    expect(io.every(c => c.sourceBytes <= 512 * 1024)).toBe(true);
     const reopened = await readCommitEntityPublication(directory, c.receipts, c.receipt, commitEntityPublicationId(c.position), createWindowBudget());
     if (reopened.kind !== 'entity') throw new Error('Missing durable entity');
     expect(reopened.facts).toMatchObject({ id: 'c:turn:s0:tool:actual', rowId: 'c:0', kind: 'execute-tool-call' });

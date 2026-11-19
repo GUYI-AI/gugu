@@ -72,7 +72,7 @@ describe('complete durable canonical commit publisher', () => {
     const p = await publisher.publish(receipt); expect(p.count).toBe(7); expect(p.nodes).toBe(2);
     expect(await readWindowCommitPublication(c, createWindowBudget())).toEqual(p);
     expect(phase).toHaveBeenCalledExactlyOnceWith('projection_durable', p);
-    expect(io.every(counters => counters.indexBytes <= 65536 && counters.sourceBytes === 0)).toBe(true);
+    expect(io.every(counters => counters.indexBytes <= 65536 && counters.sourceBytes <= 512 * 1024)).toBe(true);
     const parentIds: string[] = [];
     for (let ordinal = 0; ordinal < p.count; ordinal++) {
       const budget = createWindowBudget(), row = await readPublishedCommitEntity(c, p.projectionId, ordinal, budget);
