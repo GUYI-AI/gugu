@@ -17,30 +17,12 @@ export interface PickModeData extends BaseModeData {
   githubAccountId?: string;
 }
 
-export interface CloneModeData extends BaseModeData {
-  mode: 'clone';
-  repositoryUrl: string;
-}
-
-export interface NewModeData extends BaseModeData {
-  mode: 'new';
-  repositoryName: string;
-  repositoryOwner: string;
-  repositoryVisibility: 'public' | 'private';
-  githubAccountId?: string;
-}
-
-export type ModeData = PickModeData | CloneModeData | NewModeData;
+export type ModeData = PickModeData;
 
 /** machine:#6264 在哪台机器上建(那台机器上的文件夹);缺席 = 本机。 */
 export type ProjectType = { type: 'local'; machine?: string | null };
 
-export type ProjectCreationError =
-  | CreateProjectError
-  | { type: 'clone-failed'; message: string }
-  | { type: 'repository-create-failed'; message: string }
-  | { type: 'repository-response-incomplete'; message: string }
-  | { type: 'initialize-failed'; message: string };
+export type ProjectCreationError = CreateProjectError;
 
 export type ProjectCreationCompletion = Result<void, ProjectCreationError>;
 
