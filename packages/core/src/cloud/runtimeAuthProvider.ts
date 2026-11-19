@@ -1,3 +1,4 @@
+import { egress } from '../shared/egress'
 import { withBoundedOperation } from './boundedOperation'
 import { serverNow, withServerClock } from '../shared/serverClock'
 
@@ -91,7 +92,8 @@ export async function refreshSupabaseSession(input: {
   timeoutMs?: number
 }): Promise<{ accessToken: string; refreshToken: string }> {
   const url = `${input.supabaseUrl.replace(/\/$/, '')}/auth/v1/token?grant_type=refresh_token`
-  const doFetch = withServerClock(input.fetchImpl ?? fetch)
+  const send: (url: string, init: RequestInit) => Promise<Response> = input.fetchImpl ?? egress.fetch
+  const doFetch = withServerClock(send)
   const timeoutMs = input.timeoutMs ?? RUNTIME_AUTH_REFRESH_TIMEOUT_MS
   return await withBoundedOperation(
     timeoutMs,
@@ -156,7 +158,7 @@ export function createRefreshingRuntimeAuthProvider(
   let refreshToken = input.refreshToken
   const skew = input.skewSeconds ?? 60
   const now = input.now ?? (() => serverNow() / 1000)
-  const doFetch = input.fetchImpl ?? fetch
+  const doFetch = input.fetchImpl ?? egress.fetch
   const backoffBaseMs = input.backoffBaseMs ?? 5_000
   const backoffMaxMs = input.backoffMaxMs ?? 5 * 60_000
   let inflight: Promise<void> | null = null

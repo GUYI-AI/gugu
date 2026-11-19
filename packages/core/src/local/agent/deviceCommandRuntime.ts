@@ -1,4 +1,5 @@
 import { serverNow } from '../../shared/serverClock'
+import { egress } from '../../shared/egress'
 import { randomUUID } from 'node:crypto'
 import { hostname } from 'node:os'
 // #4280 —— 信封形状与那句回路提示只有一个属主。本层是设备命令 adapter,不拼壳;壳归 deliveryEnvelope,
@@ -1182,7 +1183,7 @@ async function fetchPostgrest<T>(
   opts: { failLoud?: boolean } = {}
 ): Promise<T[] | null> {
   try {
-    const response = await fetch(
+    const response = await egress.fetch(
       `${getSupabaseUrl().replace(/\/+$/, '')}/rest/v1/${path}`,
       {
         headers: {

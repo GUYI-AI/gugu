@@ -18,7 +18,8 @@
 
 import { routeSwitchHistory } from '../runtime/codex-route-history.mjs'
 import crypto from 'node:crypto'
-import WebSocket from 'ws'
+import type WebSocket from 'ws'
+import { loopbackWebSocket } from '@gugu/core/local/loopback'
 import { pluginRegistry, resolveSessionTuiDeliveryToolNames } from '@gugu/session-plugins/agents'
 import { NodeExecutionContext, spawnOwnedChild, type OwnedChild } from '@gugu/session-core/exec'
 import { harnessSelfUpdateLaunch, HarnessStartupError } from '@gugu/session-core/agents/plugins'
@@ -587,7 +588,7 @@ export class CodexRpcClient {
     return new Promise((resolve, reject) => {
       const url = endpoint.kind === 'unix' ? `ws+unix://${endpoint.socketPath}:/rpc` : `ws://${endpoint.host}:${endpoint.port}/rpc`
       // 与原手写客户端同一个握手:不协商压缩扩展。
-      const socket = new WebSocket(url, { perMessageDeflate: false })
+      const socket = loopbackWebSocket(url, { perMessageDeflate: false })
       this.socket = socket
       let settled = false
       const timer = setTimeout(() => {
@@ -625,7 +626,7 @@ export class CodexRpcClient {
 
   private send(message: unknown): void {
     const socket = this.socket
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
+    if (!socket || socket.readyState !== socket.OPEN) {
       throw new Error('codex app-server 未连接 — 无法发送(fail-loud,❌ 不回退 pty)')
     }
     socket.send(JSON.stringify(message))
@@ -659,7 +660,7 @@ export class CodexRpcClient {
   }
 
   rpc(method: string, params: unknown, timeoutMs = 20_000): Promise<unknown> {
-    if (this.socket?.readyState !== WebSocket.OPEN) {
+    if (!this.socket || this.socket.readyState !== this.socket.OPEN) {
       throw new Error(`codex app-server 未就绪 — 无法 ${method}(fail-loud,❌ 不回退 pty)`)
     }
     return new Promise((resolve, reject) => {

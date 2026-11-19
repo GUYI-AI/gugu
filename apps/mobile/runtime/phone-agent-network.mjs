@@ -1,3 +1,4 @@
+import { EgressError } from '../../../packages/core/src/shared/egress.ts'
 import { setTimeout as delay } from 'node:timers/promises'
 import { anySignal } from '../../../packages/core/src/shared/anySignal.ts'
 
@@ -11,6 +12,10 @@ const transientStatus = new Set([408, 425, 500, 502, 503, 504])
 
 /** Whitelist transport facts. Never retain an error message, URL, body, header, or ticket. */
 export function phoneRequestFailure(error, status) {
+  if (error instanceof EgressError) {
+    const category = { dns: 'dns', connect: 'unreachable', proxy: 'unreachable', timeout: 'timeout', reset: 'connection_reset' }[error.kind]
+    return { category: category ?? 'other', retryable: category !== undefined }
+  }
   if (['dns', 'timeout', 'connection_reset', 'unreachable', 'network', 'service', 'authorization', 'quota', 'other'].includes(error?.category)) {
     return { category: error.category, ...(transportCodes.has(error.code) ? { code: error.code } : {}), ...(Number.isInteger(error.status) ? { status: error.status } : {}), ...(Number.isFinite(error.retryAt) ? { retryAt: error.retryAt } : {}), retryable: error.retryable === true }
   }

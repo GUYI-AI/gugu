@@ -51,7 +51,7 @@ import {
   resolveSessionpageSessionIntegration,
   type SessionpageSessionSurface,
 } from '@gugu/session-plugins/agents'
-import { electronFetch, makeChatClient } from '../supabase'
+import { makeChatClient } from '../supabase'
 import { agentsForOwner } from '@gugu/core/local/state/agentOwner'
 import { AGENT_CLOUD_IDENTITY_STATE_CACHE_KEY } from '@gugu/core/local/state/agentCloudIdentity'
 import { emdashAgentRegistry, registerEmdashAgent, unregisterEmdashAgent } from './emdash-agent-registry'
@@ -183,7 +183,7 @@ export async function defaultTaskAgentName(
 }
 
 const listAgentNameSerialsDefault = (auth: { accessToken: string; userId: string }): Promise<Map<string, number>> =>
-  listAgentNameSerialsViaSupabase({ accessToken: auth.accessToken, fetch: electronFetch })
+  listAgentNameSerialsViaSupabase({ accessToken: auth.accessToken })
 
 /**
  * 同一账号同一时刻只许一发在途。推送是成批来的(批量删 10 个 agent = 10 条 agent_changed),在途时再来的

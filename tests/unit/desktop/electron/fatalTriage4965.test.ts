@@ -1,3 +1,4 @@
+import { EgressError } from '@gugu/core/shared/egress'
 import { mkdtempSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,14 +12,11 @@ const withCode = (message: string, code: string): Error =>
   Object.assign(new Error(message), { code })
 describe('classifyFatal — 环境故障', () => {
   it.each<readonly [string, () => unknown]>([
-    ['Chromium net::ERR', () => new Error('net::ERR_NETWORK_IO_SUSPENDED')],
-    ['Chromium wrapped ERR', () => new Error('request failed: net::ERR_CONNECTION_RESET')],
+    ['egress connect', () => new EgressError('connect', 'example.test')],
+    ['egress proxy authentication', () => new EgressError('proxy-auth', 'example.test')],
     ['libuv ECONNRESET', () => withCode('read ECONNRESET', 'ECONNRESET')],
     ['libuv EAI_AGAIN', () => withCode('getaddrinfo EAI_AGAIN db.example', 'EAI_AGAIN')],
     ['AbortSignal timeout', () => Object.assign(new Error('signal timed out'), { name: 'TimeoutError' })],
-    ['undici fetch cause', () => Object.assign(new TypeError('fetch failed'), {
-      cause: withCode('connect ECONNREFUSED 127.0.0.1:443', 'ECONNREFUSED'),
-    })],
     ['all-network AggregateError', () => new AggregateError([
       withCode('connect ECONNREFUSED ::1:443', 'ECONNREFUSED'),
       withCode('connect EHOSTUNREACH 10.0.0.1:443', 'EHOSTUNREACH'),
@@ -29,6 +27,8 @@ describe('classifyFatal — 环境故障', () => {
 })
 describe('classifyFatal — 缺陷(不许放行)', () => {
   it.each<readonly [string, () => unknown]>([
+    ['unclassified Chromium error', () => new Error('net::ERR_CONNECTION_RESET')],
+    ['unclassified fetch error', () => Object.assign(new TypeError('fetch failed'), { cause: withCode('ECONNREFUSED', 'ECONNREFUSED') })],
     ['ordinary TypeError', () => new TypeError("Cannot read properties of undefined (reading 'id')")],
     ['ordinary Error', () => new Error('session-page status bridge is unavailable')],
     ['domain error with network cause', () => {

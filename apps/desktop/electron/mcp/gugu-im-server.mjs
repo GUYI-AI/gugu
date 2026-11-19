@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { serverNow, withServerClock } from '@gugu/core/shared/serverClock'
+import { egress, EgressError, egressErrorText } from '@gugu/core/shared/egress'
 import { conversationLink, groupFileLink, parseGroupFileLink } from '@gugu/core/shared/ui/guguLink'
 import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
 import { markdownLiteral } from '@gugu/core/shared/markdownLiteral'
@@ -347,11 +348,11 @@ function restHeaders(context, accessToken, profile, extra = {}) {
   }
   return h
 }
-export async function restGet(context, path, profile = 'chat', fetchImpl = fetch) {
+export async function restGet(context, path, profile = 'chat', fetchImpl = egress.fetch) {
   const accessToken = await context.getAccessToken()
   let res
   try {
-    res = await fetchImpl(`${context.supabaseUrl}/rest/v1/${path}`, {
+    res = await cloudRequest(fetchImpl, `${context.supabaseUrl}/rest/v1/${path}`, {
       headers: restHeaders(context, accessToken, profile),
     })
   } catch (error) {
@@ -359,9 +360,6 @@ export async function restGet(context, path, profile = 'chat', fetchImpl = fetch
     const status = Number(error?.status)
     if (Number.isInteger(status) && status >= 400 && status <= 599) {
       throw new RpcHttpError(status, { accessToken })
-    }
-    if (error instanceof TypeError || error?.name === 'AbortError' || error?.name === 'TimeoutError') {
-      throw new RpcTransportError()
     }
     throw error
   }
@@ -371,9 +369,9 @@ export async function restGet(context, path, profile = 'chat', fetchImpl = fetch
   }
   return res.json()
 }
-async function restInsert(context, table, row, profile = 'chat', fetchImpl = fetch) {
+async function restInsert(context, table, row, profile = 'chat', fetchImpl = egress.fetch) {
   const accessToken = await context.getAccessToken()
-  const res = await fetchImpl(`${context.supabaseUrl}/rest/v1/${table}`, {
+  const res = await cloudRequest(fetchImpl, `${context.supabaseUrl}/rest/v1/${table}`, {
     method: 'POST',
     headers: restHeaders(context, accessToken, profile, { Prefer: 'return=minimal' }),
     body: JSON.stringify(row),
@@ -407,9 +405,9 @@ function recipientRefusal(error, chatId) {
   const ids = whisper ? [whisper[1]] : String(error.details ?? '').split(',').map((id) => id.trim()).filter(Boolean)
   return new Error(`收件人不在本 chat（${chatId}）成员里：${ids.join(', ')}。用 message_members 查有效成员后重发。`)
 }
-async function restPatch(context, path, body, profile = 'chat', fetchImpl = fetch, returning = false) {
+async function restPatch(context, path, body, profile = 'chat', fetchImpl = egress.fetch, returning = false) {
   const accessToken = await context.getAccessToken()
-  const res = await fetchImpl(`${context.supabaseUrl}/rest/v1/${path}`, {
+  const res = await cloudRequest(fetchImpl, `${context.supabaseUrl}/rest/v1/${path}`, {
     method: 'PATCH',
     headers: restHeaders(context, accessToken, profile, { Prefer: returning ? 'return=representation' : 'return=minimal' }),
     body: JSON.stringify(body),
@@ -417,21 +415,13 @@ async function restPatch(context, path, body, profile = 'chat', fetchImpl = fetc
   if (!res.ok) throw new Error(`PATCH ${path} → ${res.status} ${await res.text()}`)
   return returning ? res.json() : undefined
 }
-export async function restRpc(context, name, body, profile = 'chat', fetchImpl = fetch) {
+export async function restRpc(context, name, body, profile = 'chat', fetchImpl = egress.fetch) {
   const accessToken = await context.getAccessToken()
-  let res
-  try {
-    res = await fetchImpl(`${context.supabaseUrl}/rest/v1/rpc/${name}`, {
-      method: 'POST',
-      headers: restHeaders(context, accessToken, profile),
-      body: JSON.stringify(body || {}),
-    })
-  } catch (error) {
-    if (error instanceof TypeError || error?.name === 'AbortError' || error?.name === 'TimeoutError') {
-      throw new RpcTransportError()
-    }
-    throw error
-  }
+  const res = await cloudRequest(fetchImpl, `${context.supabaseUrl}/rest/v1/rpc/${name}`, {
+    method: 'POST',
+    headers: restHeaders(context, accessToken, profile),
+    body: JSON.stringify(body || {}),
+  })
   if (!res.ok) {
     const detail = rpcErrorDetail(await res.text().catch(() => ''))
     throw new RpcHttpError(res.status, { accessToken, detail })
@@ -442,8 +432,23 @@ export async function restRpc(context, name, body, profile = 'chat', fetchImpl =
   return t ? JSON.parse(t) : null
 }
 
+/**
+ * The request never got an answer (the egress says why: dns, connect, proxy, proxy-auth, tls, timeout, reset). What the
+ * runtime said about it means nothing to an agent or the person reading the task, so the error says what is wrong in
+ * their terms and what to do (`egressErrorText`); the egress already logged the cause.
+ */
 export class RpcTransportError extends Error {
-  constructor() { super('command RPC transport failed') }
+  constructor(failure = 'connect') { super(egressErrorText(failure)); this.kind = typeof failure === 'string' ? failure : failure.kind }
+}
+
+/** Every REST primitive below sends through here, so a request that got no answer reads the same from each of them. */
+async function cloudRequest(fetchImpl, url, init) {
+  try {
+    return await fetchImpl(url, init)
+  } catch (error) {
+    if (error instanceof EgressError) throw new RpcTransportError(error)
+    throw error
+  }
 }
 
 export class RpcHttpError extends Error {
@@ -542,7 +547,7 @@ function createSessionState() {
 
 function createDeps(context, injected = {}, state = createSessionState()) {
   // Its answers tune this process's `serverNow()` (`@@@server-clock`): message `created_at` is the database's clock.
-  const fetchImpl = withServerClock(injected.fetch ?? fetch)
+  const fetchImpl = withServerClock(injected.fetch ?? egress.fetch)
   return {
     restGet: (path, profile) => restGet(context, path, profile, fetchImpl),
     restInsert: (table, row, profile) => restInsert(context, table, row, profile, fetchImpl),
@@ -3170,7 +3175,7 @@ export function createGuguImServer(getContext, deps = {}) {
           ? { runHostAction: (action) => current.runHostAction(action, signal) }
           : {}),
       }
-      const fetchImpl = deps.fetch ?? fetch
+      const fetchImpl = deps.fetch ?? egress.fetch
       const out = await dispatchTool(context, def.name, toolArgs, {
         ...deps,
         fetch: (input, init) => fetchImpl(input, { ...init, signal }),

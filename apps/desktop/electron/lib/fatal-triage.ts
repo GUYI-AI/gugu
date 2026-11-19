@@ -1,5 +1,6 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { EgressError } from '@gugu/core/shared/egress'
 
 /**
  * 崩溃分诊:把「进程真的坏了」和「网络/电源这类外部环境故障」分开。
@@ -12,8 +13,7 @@ import { join } from 'node:path'
  * - 判据只认错误自身的形状(name / code / message),❌ 不看调用栈、❌ 不看模块来源;
  * - 被**自定义** Error 子类包过的一律判缺陷 —— 包装说明代码已经接手过这个错误,
  *   那时候还没接住,就是真缺陷,不是环境问题;
- * - 只有两种**透明包装**允许下探 cause:`TypeError: fetch failed`(undici 的固定形状)
- *   与 `AggregateError`(且要求每一个子错误都是环境故障)。多网卡/多地址时 Node 抛的就是它。
+ * - 出网错误由 EgressError 标识;其余只接受明确的 errno、取消和全部为环境故障的 AggregateError。
  * - 放行的每一条都必须落盘留痕(见 recordFatalSync),❌ 静默放过。
  */
 
@@ -39,13 +39,7 @@ const RECOVERABLE_ERRNO = new Set([
 /** WHATWG fetch / AbortSignal 的超时与取消。断网时 `AbortSignal.timeout()` 抛的就是 TimeoutError。 */
 const RECOVERABLE_ERROR_NAMES = new Set(['TimeoutError', 'AbortError'])
 
-/**
- * Chromium 网络栈的错误串,形如 `net::ERR_CONNECTION_RESET`、`net::ERR_NETWORK_IO_SUSPENDED`
- * (后者正是 macOS 合盖睡眠时的专属码)。Electron 的 net 请求把它塞在 message 里。
- */
-const CHROMIUM_NET_ERROR = /\bnet::ERR_[A-Z0-9_]+/
-
-/** cause 链下探上限。够深到穿过 undici 的包装,又不至于在自引用的链上走远。 */
+/** 聚合错误下探上限。够深到穿过多层 AggregateError,又不至于在自引用的链上走远。 */
 const MAX_CAUSE_DEPTH = 5
 
 /** 崩溃记录的文件名。append-only,❌ 不随启动轮转 —— 上一次崩溃的现场必须还在。 */
@@ -60,17 +54,14 @@ const errnoOf = (err: Error): string | null => {
 
 /** 只看这一层错误自身,不下探 cause。 */
 const selfIsEnvironmentFault = (err: Error): boolean => {
+  if (err instanceof EgressError) return true
   if (RECOVERABLE_ERROR_NAMES.has(err.name)) return true
   // 自定义子类(name 被改过)一律不算环境故障 —— 见文件头「被包装过的判缺陷」。
   if (err.name !== 'Error') return false
   const code = errnoOf(err)
   if (code && RECOVERABLE_ERRNO.has(code)) return true
-  return CHROMIUM_NET_ERROR.test(err.message)
+  return false
 }
-
-/** undici 的 `fetch()` 失败固定是 `TypeError: fetch failed`,真正的原因在 cause 里。 */
-const isTransparentFetchWrapper = (err: Error): boolean =>
-  err.name === 'TypeError' && err.message === 'fetch failed'
 
 const isAggregate = (err: Error): err is AggregateError =>
   err.name === 'AggregateError' && Array.isArray((err as AggregateError).errors)
@@ -89,9 +80,6 @@ const isEnvironmentFault = (value: unknown, depth: number, seen: Set<unknown>): 
     return errors.length > 0 && errors.every((inner) => isEnvironmentFault(inner, depth + 1, seen))
   }
 
-  if (isTransparentFetchWrapper(value)) {
-    return isEnvironmentFault((value as Error & { cause?: unknown }).cause, depth + 1, seen)
-  }
 
   return false
 }

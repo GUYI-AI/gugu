@@ -1,9 +1,10 @@
+import { egress } from '@gugu/core/shared/egress'
 import type { ModelProtocol } from '@gugu/session-core/models/custom-model';
 import type { ConnectionModelList } from '@gugu/session-core/workspace-server/agent-config';
 
 const PROBE_TIMEOUT_MS = 10_000;
 
-type Fetch = typeof fetch;
+type Fetch = typeof globalThis.fetch;
 type Endpoint = { endpoint: string; apiKey: string; protocol: ModelProtocol };
 
 function endpointRequest(input: Endpoint) {
@@ -37,7 +38,7 @@ async function requestEndpoint(fetchImpl: Fetch, url: string, init: RequestInit)
  */
 export async function listEndpointModels(
   input: Endpoint,
-  fetchImpl: Fetch = fetch
+  fetchImpl: Fetch = egress.fetch
 ): Promise<ConnectionModelList> {
   const { root, headers } = endpointRequest(input);
   const response = await requestEndpoint(fetchImpl, root + '/models', { headers });
@@ -66,7 +67,7 @@ export async function listEndpointModels(
 }
 
 /** Try a tiny request only after the person asks to test a named model. */
-export async function verifyEndpointModel(input: Endpoint, modelId: string, fetchImpl: Fetch = fetch): Promise<ConnectionModelList> {
+export async function verifyEndpointModel(input: Endpoint, modelId: string, fetchImpl: Fetch = egress.fetch): Promise<ConnectionModelList> {
   const { root, headers } = endpointRequest(input);
   headers.set('content-type', 'application/json');
   const messages = [{ role: 'user', content: 'OK' }];
@@ -120,7 +121,7 @@ async function sendMinimal(fetchImpl: Fetch, input: Endpoint, modelId: string): 
  */
 export async function probeEndpointProtocols(
   input: { baseUrl: string; apiKey: string; modelId?: string; hint?: ModelProtocol },
-  fetchImpl: Fetch = fetch,
+  fetchImpl: Fetch = egress.fetch,
 ): Promise<ProtocolProbe> {
   const base = input.baseUrl.trim().replace(/\/+$/, '');
   const openaiBases = /\/v\d+(?:beta)?$/.test(base) ? [base] : [`${base}/v1`, base];

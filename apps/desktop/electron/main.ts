@@ -4,6 +4,8 @@ import { hostAttachmentsEndpoint } from './attachmentUploadTransport'
 import { inspectHtmlPreviewAnnotation } from './session/main/core/browser/html-preview-annotation'
 import { HTML_PREVIEW_ANNOTATION_CHANNEL, type HtmlPreviewAnnotationRequest } from '../src/session/shared/preview/html-preview-annotation'
 import { createAttachmentUploadHost } from './attachmentUploadHost'
+import { egress } from '@gugu/core/shared/egress'
+import { localFileResponse } from './lib/file-response'
 import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
 import { PASSWORD_AGENT_RPC } from './password-vault/server-delivery'
 import { createPasswordBetaPolicyReader } from './password-vault/beta-policy-reader'
@@ -50,7 +52,6 @@ import {
   dialog,
   clipboard,
   Notification,
-  net,
   protocol,
   powerMonitor,
   safeStorage,
@@ -87,7 +88,6 @@ import { registerErrorSummaryReporting } from './error-summary-reporting-host'
 import { registerErrorSummaryConsent } from './error-summary-consent-host'
 import { resolveSessionPermissionMode, type GuguPermissionMode } from '@gugu/session-core/acp'
 import { classifyFatal, recordFatalSync } from './lib/fatal-triage'
-import { pathToFileURL } from 'node:url'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { homedir, hostname, platform } from 'os'
 import { dirname, join, resolve, sep } from 'path'
@@ -146,8 +146,9 @@ import {
 } from '../shared/update-policy'
 import { createUpdateState, type VersionedUpdateState } from '../shared/update-state'
 import { createBuiltRendererRootResolver } from './rendererRoot'
+import { installHostEgress } from './egress/install'
 import { ensureWindowsNpmGlobalBinInPath, hydrateLoginShellPath, loginShellEnvSnapshot } from './shellPath'
-import { makeChatClient, makeIdentityClient, supabase, electronFetch, onElectronCloudAnswer, bindElectronSupabaseAuth, refreshElectronSupabaseAuth, resumeElectronSupabaseRealtime, createElectronRealtimeClient } from './supabase'
+import { makeChatClient, makeIdentityClient, supabase, onElectronCloudAnswer, bindElectronSupabaseAuth, refreshElectronSupabaseAuth, resumeElectronSupabaseRealtime, createElectronRealtimeClient } from './supabase'
 import { createAccountResumeHandler, installNativeResumeSource, installNativeSleepActivity, watchHostResumeGap } from './server/account-resume-wiring'
 import { applyOwnerTimeZoneContext, ownerTimeZoneFromEnvironment } from './server/owner-timezone'
 import { runDueScheduledTasksForOwner } from './scheduled-tasks-runner'
@@ -1058,7 +1059,7 @@ function createDeviceSessionpageBridge() {
           resolveDeviceId: async () => deviceId,
           resolveProjectName: (projectId: string) => emdash.emdashProjectName(projectId),
           takeBirthGroup: (sessionId: string) => emdash.emdashTakeBirthGroup(sessionId),
-          provisionOneTrip: (input) => provisionSessionpageAgentOneTrip({ ...input, fetchImpl: electronFetch }),
+          provisionOneTrip: (input) => provisionSessionpageAgentOneTrip({ ...input, fetchImpl: egress.fetch }),
           env: process.env,
         })
         if (!provisioned) throw new Error(`session-page agent session ${session.sessionId} has no addressable identity`)
@@ -2438,7 +2439,7 @@ ipcMain.handle('updates:install', () => installUpdate())
 // @@@5758 更新说明**由主进程去取**。渲染层的 origin 是 gugu-app://app(corsEnabled),去下载站属于
 // 跨源,而下载站一个 Access-Control-Allow-Origin 都不发 —— 浏览器层当场拦掉,产品里就是那句
 // 「暂时取不到更新说明」。2026-09-18 在同样的 scheme 下实测:渲染层 TypeError: Failed to fetch,
-// 主进程 net.fetch 200。主进程没有同源策略,这条路本来就不该走渲染层。
+// 主进程云请求 200。主进程没有同源策略,这条路本来就不该走渲染层。
 // 取不到返回 null(调用方回落本机缓存,❌ 不当成「没有更新说明」),但原因必须进日志 ——
 // 之前渲染层那个空 catch 把它吞了,查了一轮才找到。
 ipcMain.handle('updates:changelog', async (): Promise<unknown> => {
@@ -2449,7 +2450,7 @@ ipcMain.handle('updates:changelog', async (): Promise<unknown> => {
     return null
   }
   try {
-    const res = await net.fetch(url, { cache: 'no-cache' })
+    const res = await egress.fetch(url, { cache: 'no-cache' })
     if (!res.ok) {
       updaterLogger.warn({ url, status: res.status }, '[updater] 更新说明取回来了但状态码不对')
       return null
@@ -2483,7 +2484,7 @@ const remoteFileTempRoot = join(app.getPath('userData'), 'cache', 'remote-files'
 const remoteFileOpenDirectories = new Set<string>()
 const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider().getAuth(), tempRoot: remoteFileTempRoot,
   rpc: signedInFileRpc(() => desktopAuthProvider().getAuth(), makeChatClient),
-  fetch: electronFetch, links: () => sshLinks,
+  fetch: egress.fetch, links: () => sshLinks,
   root: async projectId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectRoot(projectId) },
   project: async chatId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectOfGroup(chatId) },
   deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
@@ -2498,7 +2499,7 @@ const attachmentUploads = createAttachmentUploadHost({
       if (current?.userId !== auth.userId || !current.accessToken) throw new Error('Attachment upload account changed')
       return hostAttachmentsEndpoint({
         supabaseUrl: getSupabaseUrl(), anonKey: getSupabaseAnonKey(), getAccessToken: async () => current.accessToken,
-      }, electronFetch, SERVER_MODE)
+      })
     } }
   },
   result: result => createLogger('files/attachment-uploads')[result.outcome === 'failed' ? 'warn' : 'info'](result, 'Attachment upload outcome'),
@@ -4621,6 +4622,8 @@ async function stopDesktopOwnedResources(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  // Before anything reaches the network: every host request and cloud socket goes through the egress from here on.
+  installHostEgress()
   if (!hasSingleInstanceLock) return
   // #6264 重启前发出去的卡还有 agent 拿着(tmux 里的会话):开机**第一步**就把端口绑回来。agent 的 HTTP MCP 客户端在宿主
   // 一退就开始重连(claude:5 次、退避 1/2/4/8 s,15 s 内用完就永远放弃),而开机到会话页就绪要十几秒;端口晚绑,
@@ -4684,9 +4687,9 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error('[codex-app-server] retired capability run cleanup failed:', error)
   }
-  // @@@gugu-app-scheme — serve the built renderer (dist/) over gugu-app://app/…; net.fetch on the
+  // @@@gugu-app-scheme — serve the built renderer (dist/) over gugu-app://app/…; the local file response on the
   // file URL supplies correct Content-Type per extension (module scripts require a JS MIME).
-  // 路径越界直接 403,找不到的文件由 net.fetch 报 404 — fail loud,无兜底页。
+  // 路径越界直接 403,找不到的文件由本地文件适配报 404 — fail loud,无兜底页。
   // 解析惰性执行:注册不碰磁盘,第一次真有人请求才解析(#2795)。dev 从 VITE_DEV_SERVER_URL
   // 取渲染层、永不请求本 scheme,所以不该被生产产物的存在性检查挡住启动。
   const builtRendererRoot = createBuiltRendererRootResolver({
@@ -4700,7 +4703,7 @@ app.whenReady().then(async () => {
     if (url.host !== 'app' || !filePath.startsWith(rendererRoot + sep)) {
       return new Response('forbidden', { status: 403 })
     }
-    return net.fetch(pathToFileURL(filePath).toString())
+    return localFileResponse(filePath)
   })
   // @@@deeplink-register - Packaged builds declare gugu:// via electron-builder `protocols`
   // #6387 前缀按版本区分(见 GUGU_LINK_SCHEME):同机的正式版、Beta、开发版各认各的链接。

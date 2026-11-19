@@ -209,7 +209,7 @@ function makeFakeChat() {
   }
   return api
 }
-vi.mock('../../../../apps/desktop/electron/supabase', () => ({ makeChatClient: () => makeFakeChat(), electronFetch: undefined }))
+vi.mock('../../../../apps/desktop/electron/supabase', () => ({ makeChatClient: () => makeFakeChat() }))
 const registered: Array<{ guguAgentUserId: string; sessionId: string }> = []
 const clearedDeliveryOwners: string[] = []
 vi.mock('../../../../apps/desktop/electron/sessionpage/emdash-agent-registry', () => ({

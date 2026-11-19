@@ -136,7 +136,6 @@ vi.mock('../../../../apps/desktop/electron/supabase', () => ({
   makeIdentityClient: () => {
     throw new Error('identity client is not used by project group binding')
   },
-  electronFetch: undefined,
 }))
 
 const SUT = '../../../../apps/desktop/electron/sessionpage/sessionpage-project-group-binding'

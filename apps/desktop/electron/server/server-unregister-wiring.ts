@@ -2,6 +2,7 @@
  * `gugu-server unregister` 的生产装配(判断全在 server-unregister.ts):GoTrue 换令牌 / 注销、库里移除这台机器。
  * 每个网络请求 10 秒上限:卸载不为网络卡住。
  */
+import { egress } from '@gugu/core/shared/egress'
 import { removeDevice, type DeviceRpcClient } from '@gugu/core/cloud/devices'
 import { getSupabaseAnonKey, getSupabaseUrl } from '@gugu/core/cloud/config'
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase'
@@ -21,11 +22,11 @@ export async function unregisterAccountNow(userId: string, out: (line: string) =
       }
     },
     refresh: async (refreshToken) => {
-      const response = await fetch(`${base}/auth/v1/token?grant_type=refresh_token`, {
+      const response = await egress.fetch(`${base}/auth/v1/token?grant_type=refresh_token`, {
         method: 'POST',
         headers: { apikey: anonKey, 'content-type': 'application/json' },
         body: JSON.stringify({ refresh_token: refreshToken }),
-        signal: AbortSignal.timeout(10_000),
+        timeoutMs: 10_000,
       })
       if (!response.ok) return null
       const body = (await response.json()) as { access_token?: unknown }
@@ -37,10 +38,10 @@ export async function unregisterAccountNow(userId: string, out: (line: string) =
       await removeDevice(client as unknown as DeviceRpcClient, deviceId, { cascade: false })
     },
     revoke: async (accessToken) => {
-      const response = await fetch(`${base}/auth/v1/logout?scope=local`, {
+      const response = await egress.fetch(`${base}/auth/v1/logout?scope=local`, {
         method: 'POST',
         headers: { apikey: anonKey, authorization: `Bearer ${accessToken}` },
-        signal: AbortSignal.timeout(10_000),
+        timeoutMs: 10_000,
       })
       if (!response.ok && response.status !== 204) throw new Error(`logout ${response.status}`)
     },

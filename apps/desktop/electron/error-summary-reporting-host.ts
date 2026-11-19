@@ -1,4 +1,4 @@
-import { anySignal } from '@gugu/core/shared/anySignal'
+import { egress } from '@gugu/core/shared/egress'
 import { createHash } from 'node:crypto'
 import type { EventEmitter } from 'node:events'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -67,11 +67,11 @@ export function registerErrorSummaryReporting(deps: {
       // A private connection: never use the signed-in Chromium session/cookie jar.
       const body = errorSummaryRequest(summary)
       if (!body) return
-      const response = await fetch(destination.url, {
+      const response = await egress.fetch(destination.url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'user-agent': 'gugu-error-summary/1' },
         body,
-        signal: anySignal([signal, AbortSignal.timeout(5_000)]),
+        timeoutMs: 5_000, signal: signal,
         redirect: 'error',
         credentials: 'omit',
       })

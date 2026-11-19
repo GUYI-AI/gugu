@@ -140,7 +140,7 @@ const authClient = createGuguSupabaseClient({
   persistSession: true,
   autoRefreshToken: false,
   flowType: 'pkce',
-  fetch: authBoundedFetch,
+  wrapFetch: next => (input, init) => authBoundedFetch(input, init, next),
   // supabase-js 收到 SIGNED_OUT 就 realtime.setAuth(),它默认的取令牌回调是 auth.getSession() —— 一次刷新失败
   // 发出的 SIGNED_OUT 会让它从上面那份删不掉的存储里再刷一次,失败再签出,自己转圈(#6723)。这里的 realtime
   // 与数据客户端一样只读协调器已发布的令牌。
@@ -150,18 +150,18 @@ export const supabase: Pick<typeof authClient, 'auth'> = authClient
 
 export const dataClient = createGuguSupabaseClient({
   accessToken: mainAccessToken,
-  fetch: authBoundedFetch,
+  wrapFetch: next => (input, init) => authBoundedFetch(input, init, next),
 })
 
 export const chatDb = createGuguSupabaseClient({
   schema: 'chat',
   accessToken: mainAccessToken,
-  fetch: authBoundedFetch,
+  wrapFetch: next => (input, init) => authBoundedFetch(input, init, next),
 })
 export const identityDb = createGuguSupabaseClient({
   schema: 'identity',
   accessToken: mainAccessToken,
-  fetch: authBoundedFetch,
+  wrapFetch: next => (input, init) => authBoundedFetch(input, init, next),
 })
 
 export async function getCurrentAuthUserId(): Promise<string> {
