@@ -57,7 +57,7 @@
   {
     "rule": "console-member",
     "file": "apps/desktop/electron/sessionpage/sessionpage-agent-reaper.ts",
-    "count": 4
+    "count": 1
   },
   {
     "rule": "console-member",
