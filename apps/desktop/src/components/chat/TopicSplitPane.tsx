@@ -44,6 +44,7 @@ import { useFollowingTail, useTailPinning } from './useFollowingTail'
 import { useChatHistoryPagination } from './useChatHistoryPagination'
 import { useConversationScrollMemory } from './useConversationScrollMemory'
 import { unreadAboveCount } from '../../lib/chatUnreadLocatorWindow'
+import { usePresentedUnreadEntry } from '../../lib/chatUnreadStreamNavigation'
 import { ChatTailNotice } from './ChatTailNotice'
 import { MessageLoadFailure } from './MessageLoadFailure'
 import { MessageListSkeleton } from './MessageListSkeleton'
@@ -267,6 +268,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   const listRef = useRef<FlowListHandle | null>(null)
   const isAtBottomRef = useRef(true)
   const { messageWindow, setFollowingTail, loadMessageAnchor } = history
+  usePresentedUnreadEntry(history.unreadEntry, visible !== false)
   const [flashMessageId, setFlashMessageId] = useState<string | null>(null)
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { toast } = useToast()
@@ -401,7 +403,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
               initialTopMostItemIndex={openLocation()}
               followTail={!unreadNavigationPending && !messageWindow.hasNewer && messageWindow.change !== 'newer'}
               unreadAbove={history.unreadEntry ? { messageId: history.unreadEntry.locator.message_id, messageSeq: history.unreadEntry.locator.message_seq,
-                label: t('chatArea.unreadAbove', { count: unreadAboveCount(history.unreadEntry.locator, messages) }), onSeen: history.unreadEntry.onSeen, onJump: () => void history.jumpToUnreadEntry(scrollerRef.current).catch(onHistoryError) } : null}
+                label: t('chatArea.unreadAbove', { count: unreadAboveCount(history.unreadEntry.locator, messages) }), onSeen: history.unreadEntry.consume, onJump: () => void history.jumpToUnreadEntry(scrollerRef.current).catch(onHistoryError) } : null}
               onAtBottomChange={onAtBottomChange}
               style={MESSAGE_LIST_STYLE}
               surface="aside"
