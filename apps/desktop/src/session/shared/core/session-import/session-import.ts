@@ -79,8 +79,10 @@ export type LocalSessionPreview = {
   providerSessionId: string;
   title: string;
   cwd: string | null;
-  /** 真实对话轮次数（工具调用/思考不计）。 */
-  turnCount: number;
+  /** Only a completely read bounded source has an exact count; never count a large history for a preview. */
+  turnCount: number | null;
+  incomplete?: boolean;
+  oversizedTail?: boolean;
   /** 开头几轮，用来确认「是这条会话」。 */
   head: LocalSessionTurn[];
   /** 最后几轮，用来确认「聊到哪了」。 */

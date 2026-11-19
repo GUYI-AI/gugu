@@ -93,7 +93,7 @@ export function SessionPreviewPane({
         </span>
         <span className="text-xs text-foreground-tertiary-muted">
           {LOCAL_SESSION_ENGINE_LABEL[session.engine]}
-          {preview
+          {preview?.turnCount != null
             ? ` ${translate('sessionImport.previewTurnCount', { count: preview.turnCount })}`
             : ''}
         </span>
@@ -118,7 +118,11 @@ export function SessionPreviewPane({
           {preview.head.map((turn, index) => (
             <TurnBubble key={`head-${index}`} role={turn.role} content={turn.content} />
           ))}
-          {preview.turnCount > preview.head.length + preview.tail.length ? (
+          {preview.turnCount === null ? (
+            <span className="text-tiny text-foreground-tertiary-muted">
+              {translate('sessionImport.previewPartial')}
+            </span>
+          ) : preview.turnCount > preview.head.length + preview.tail.length ? (
             <span className="text-tiny text-foreground-tertiary-muted">
               {translate('sessionImport.previewOmitted', {
                 count: preview.turnCount - preview.head.length - preview.tail.length,
