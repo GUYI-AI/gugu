@@ -131,8 +131,9 @@ export const ChatBrowserPane = observer(function ChatBrowserPane({ chatId, tabId
   const startPageActions: WorkspacePanelAction[] = [
     { id: 'files', label: translate('workspace.files'), icon: <Folder className="size-3.5" />, shortcutSettingsKey: 'session.sidebarFiles', onClick: openFolder },
     { id: 'browser', label: translate('workspace.browser'), icon: <Globe className="size-3.5" />, shortcutSettingsKey: 'session.openBrowser', onClick() {} },
-    ...installedExtensionsStore.openableApps.map((app) => ({
+    ...installedExtensionsStore.openableApps.map((app): WorkspacePanelAction => ({
       id: app.extensionId, label: app.name, icon: <ExtensionMark iconDataUrl={app.iconDataUrl} />,
+      section: 'extensions',
       onClick: () => openApp(app.extensionId, chatId, tabId),
     })),
   ];
