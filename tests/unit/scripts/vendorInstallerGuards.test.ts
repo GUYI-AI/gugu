@@ -47,9 +47,9 @@ describe('installer archive boundaries', () => {
     } finally { rmSync(directory, { recursive: true, force: true }) }
   })
 
-  // Real offline npm lifecycle work follows the suite's global no-case-budget
-  // policy. Host contention must not turn intact payloads into a timeout failure;
-  // the CI job still owns the hang limit and runner process cleanup.
+  // Real offline npm installation can take longer than 30 seconds when mac1
+  // is heavily loaded; that delay does not prove a hung test. Keep a wider
+  // explicit 120-second limit so a hang still identifies this lifecycle case.
   it('preserves the locked SQLite payload with competing node-addon-api versions and other native hooks', () => {
     const directory = mkdtempSync(join(tmpdir(), 'sqlite-napi-lifecycle-'))
     try {
@@ -103,7 +103,7 @@ describe('installer archive boundaries', () => {
       expect(existsSync(join(directory, '.sqlite-node-deps/node_modules/better-sqlite3/node_modules'))).toBe(false)
       expect(existsSync(join(directory, '.sqlite-node-deps/node_modules/better-sqlite3/build'))).toBe(false)
     } finally { rmSync(directory, { recursive: true, force: true }) }
-  })
+  }, 120_000)
 
   it('keeps the root, session and isolated Node SQLite pins aligned without legacy archive downloads', () => {
     const root = resolve(__dirname, '../../..')
