@@ -16,7 +16,8 @@ import { removeTreeSync } from '@main/core/utils/remove-tree';
  * keep reading from the copy they came from. Uninstalling retires its programs and, once they have
  * exited, takes the data folder and the copies at once (removeUninstalledLeftovers): a program left
  * running after an uninstall held a chat file open and its next file frame took gugu down (10-06).
- * Whatever belongs to no installed App at gugu's start goes then (a quit before that finished).
+ * Frozen bundle copies of Apps no longer installed go at the next start. Their data stays:
+ * a missing installation is not an uninstall receipt. Only explicit uninstall removes App data.
  */
 
 export const SESSION_SNAPSHOTS_DIR_NAME = 'extension-sessions';
@@ -104,15 +105,4 @@ export function pruneSessionSnapshots(
 export async function removeUninstalledLeftovers(userDataDir: string, dataDir: string, extensionId: string): Promise<void> {
   await fs.promises.rm(dataDir, { recursive: true, force: true });
   await fs.promises.rm(path.join(sessionSnapshotsRoot(userDataDir), extensionId), { recursive: true, force: true });
-}
-
-/**
- * At gugu's start: data folders of Apps not installed go (an uninstall gugu quit before finishing). An installed bundle
- * gugu cannot read still counts as installed — its data stays for when it can.
- */
-export function pruneExtensionData(dataRoot: string, installed: ReadonlySet<string>): void {
-  if (!fs.existsSync(dataRoot)) return;
-  for (const entry of fs.readdirSync(dataRoot, { withFileTypes: true })) {
-    if (entry.isDirectory() && !installed.has(entry.name)) removeTreeSync(path.join(dataRoot, entry.name));
-  }
 }

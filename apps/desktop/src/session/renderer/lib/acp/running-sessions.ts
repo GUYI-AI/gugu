@@ -1,3 +1,4 @@
+import { acpStartProgressSchema, type AcpStartProgress } from '@gugu/session-core/acp/models/session';
 import { ReplicaState } from '@gugu/session-wire';
 import { log } from '@renderer/utils/logger';
 import { z } from 'zod';
@@ -19,13 +20,14 @@ export type RunningPhase = 'stopped' | 'starting' | 'running';
 export type RunningSessionWatch = {
   /** 此刻这条会话在运行时里走到哪一步。 */
   phase(): RunningPhase;
+  preparation?(): AcpStartProgress['preparation'];
   dispose(): void;
 };
 
 // 只取判据要的那几格,其余原样留着:别的机器上的运行时可能是另一个版本,摘要多一格少一格都不该让打开失败。
 const sessionListSchema = z.record(
   z.string(),
-  z.object({ sessionId: z.string(), lifecycle: z.string(), closing: z.boolean().optional() }).passthrough()
+  z.object({ sessionId: z.string(), lifecycle: z.string(), closing: z.boolean().optional(), startProgress: acpStartProgressSchema.pick({ preparation: true }).passthrough().nullish().catch(undefined) }).passthrough()
 );
 type SessionList = z.infer<typeof sessionListSchema>;
 
@@ -91,6 +93,7 @@ export async function watchRunningSession(
   let disposed = false;
   return {
     phase: () => runningPhase(replica.current(), sessionId),
+    preparation: () => (replica.current()[sessionId] ?? Object.values(replica.current()).find(entry => entry.sessionId === sessionId))?.startProgress?.preparation,
     dispose: () => {
       if (disposed) return;
       disposed = true;

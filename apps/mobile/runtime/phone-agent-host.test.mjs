@@ -1417,6 +1417,59 @@ const seedInboxAgents = async ({ root, users }, ids = [agentId, inboxAgentB]) =>
   }
   await store.save()
 }
+
+for (const unavailable of ['missing', 'moved']) test(`startup retains ${unavailable} phone identity and local history without executing it`, async () => {
+  let sessionId
+  const fx = await fixture(async () => assert.fail('unavailable identity must not run'), { prepare: async context => {
+    await seedInboxAgents(context, [agentId])
+    const store = await openPhoneAgentStore(context.root, ownerId)
+    const agent = store.state.agents[agentId]
+    sessionId = agent.sessionId
+    agent.contextEpoch = randomUUID()
+    await recordTurn({ sessionId, contextEpoch: agent.contextEpoch, prompt: 'old input', jobId: 'history' }, {
+      onRecord: async record => { agent.record = { ...record, contextEpoch: agent.contextEpoch } }, emit() {},
+    }, 'kept history')
+    store.state.jobs.history = { id: 'history', agentUserId: agentId, contextEpoch: agent.contextEpoch, status: 'done', text: 'kept history', prompt: 'old input', createdAt: new Date().toISOString() }
+    await store.save()
+    if (unavailable === 'missing') context.users.splice(0, 1)
+    else context.users[0].device_id = 'another-phone'
+  } })
+  try {
+    const saved = await openPhoneAgentStore(fx.root, ownerId)
+    assert.equal(saved.state.agents[agentId].sessionId, sessionId)
+    assert.match(saved.state.agents[agentId].ownershipError, /历史已保留/)
+    assert.equal(saved.state.jobs.history.text, 'kept history')
+    const list = await fx.host.invoke('sessionTimeline.sessionsList', [])
+    assert.equal(list.sessions[0].conversationId, sessionId)
+    assert.equal(list.sessions[0].status.status, 'error')
+    assert.match(JSON.stringify(await fx.host.invoke('sessionTimeline.sessionSnapshot', [{ conversationId: sessionId }])), /kept history/)
+    assert.equal((await fx.host.invoke('sessionTimeline.sessionOfAgent', [agentId])).sessionId, sessionId)
+    await assert.rejects(fx.host.invoke('sessionTimeline.sessionSend', [{ conversationId: sessionId, text: 'denied input', clientRequestId: randomUUID() }]), { code: 'not_granted' })
+    assert.equal(inboxCalls(fx).length, 0)
+    assert.equal(fx.calls.filter(([name]) => name === 'archive_user').length, 0)
+  } finally { await fx.close() }
+})
+
+test('a runtime ownership refusal stops the local turn and retains its registration instead of deleting it', async () => {
+  const fx = await fixture(async () => assert.fail('must stop before model access'), { prepare: async context => {
+    await seedInboxAgents(context, [agentId])
+    const store = await openPhoneAgentStore(context.root, ownerId)
+    const id = randomUUID()
+    store.state.jobs[id] = { id, agentUserId: agentId, status: 'queued', prompt: 'must not execute', route: { kind: 'task', senderUserId: ownerId } }
+    await store.save()
+    const rpc = context.cloud.identity.rpc
+    context.cloud.identity.rpc = async (name, args) => name === 'set_agent_runtime_state' && args.p_agent_status === 'working'
+      ? { data: null, error: { message: 'not writable by current user' } } : rpc(name, args)
+  } })
+  try {
+    await until(() => !fx.host.state().execution && fx.host.state().sessions[0]?.lastJobStatus === 'cancelled', fx.events)
+    const saved = await openPhoneAgentStore(fx.root, ownerId)
+    assert.ok(saved.state.agents[agentId].sessionId)
+    assert.match(saved.state.agents[agentId].ownershipError, /历史已保留/)
+    assert.equal((await fx.host.invoke('sessionTimeline.sessionsList', [])).sessions.length, 1)
+    assert.equal(fx.calls.filter(([name]) => name === 'model-access').length, 0)
+  } finally { await fx.close() }
+})
 const flushInbox = () => new Promise(resolve => setImmediate(resolve))
 const advanceInbox = async (t, ms) => {
   t.mock.timers.tick(ms)
