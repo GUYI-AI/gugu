@@ -28,6 +28,13 @@ async function mount() {
 const button = (key: string) => [...host.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent === key)!;
 async function open() { await act(async () => button('agentsPage.oldVersionsClean').click()); }
 describe('approved managed versions row', () => {
+  it('an unknown read never renders an empty inventory or permits cleanup', async () => {
+    state.reading = { state: 'unknown' };
+    await mount();
+    expect(host.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(host.textContent).not.toContain('agentsPage.oldVersionsNoOld');
+    expect(host.querySelector('button')).toBeNull();
+  });
   it('lists old versions, defaults unchecked and prevents selecting the current version', async () => {
     await mount(); expect(host.textContent).toContain('v1.1.0、v1.2.0');
     await open();

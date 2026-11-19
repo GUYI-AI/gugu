@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ManagedAgentVersions } from '@shared/core/agents/managed-versions';
 import { SettingsRow } from '@/components/settings/SettingsPrimitives';
 import { replicaAccount, useReplica } from '@/lib/replica';
 import { messageForUser } from '@/lib/userFacingError';
@@ -19,9 +20,18 @@ export function ManagedVersionsRow({ agentId, name, disabled }: { agentId: strin
   const deviceId = host.remote?.deviceId ?? null;
   const { translate } = useSessionMessages();
   const reading = useReplica(managedVersions, [deviceId, agentId], { read: !disabled && host.remote?.online !== false });
-  const data = reading.state === 'value' ? reading.value : undefined;
-  const readFailed = reading.state === 'error' || (reading.state === 'value' && !!reading.error);
-  const old = data?.versions.filter(version => version !== data.currentVersion) ?? [];
+  if (reading.state === 'unknown') return <SettingsRow title={translate('agentsPage.oldVersions')} data-testid="managed-old-versions" description={<span aria-busy="true">…</span>} />;
+  if (reading.state === 'error') return <SettingsRow title={translate('agentsPage.oldVersions')} data-testid="managed-old-versions"
+    description={translate('agentsPage.oldVersionsReadFailed')}
+    control={<Button size="sm" variant="outline" disabled={disabled || host.remote?.online === false} onClick={() => void managedVersions.refresh(deviceId, agentId)}>{translate('common.retry')}</Button>} />;
+  return <KnownManagedVersionsRow agentId={agentId} name={name} disabled={disabled} data={reading.value} readFailed={!!reading.error} />;
+}
+
+function KnownManagedVersionsRow({ agentId, name, disabled, data, readFailed }: { agentId: string; name: string; disabled: boolean; data: ManagedAgentVersions; readFailed: boolean }) {
+  const host = useLibraryHost();
+  const deviceId = host.remote?.deviceId ?? null;
+  const { translate } = useSessionMessages();
+  const old = data.versions.filter(version => version !== data.currentVersion);
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -56,11 +66,10 @@ export function ManagedVersionsRow({ agentId, name, disabled }: { agentId: strin
   };
   const unavailable = disabled || busy;
   return <SettingsRow title={translate('agentsPage.oldVersions')} data-testid="managed-old-versions"
-    description={readFailed ? translate('agentsPage.oldVersionsReadFailed') : !data ? <span aria-busy="true">…</span>
-      : !old.length ? translate('agentsPage.oldVersionsNoOld') : !open ? old.map(displayVersion).join('、') : undefined}
+    description={readFailed ? translate('agentsPage.oldVersionsReadFailed') : !old.length ? translate('agentsPage.oldVersionsNoOld') : !open ? old.map(displayVersion).join('、') : undefined}
     control={readFailed ? <Button size="sm" variant="outline" disabled={unavailable} onClick={() => void managedVersions.refresh(deviceId, agentId)}>{translate('common.retry')}</Button>
       : !open && old.length ? <Button size="sm" variant="outline" disabled={unavailable} onClick={() => { setSelected([]); setOpen(true); void managedVersions.refresh(deviceId, agentId); }}>{translate('agentsPage.oldVersionsClean')}</Button> : undefined}>
-    {open && data && old.length > 0 && <div className="space-y-3">
+    {open && old.length > 0 && <div className="space-y-3">
       <div className="max-h-48 space-y-2 overflow-y-auto">{[data.currentVersion, ...old].map(version => <label key={version} className="flex items-center gap-2 text-sm">
         <Checkbox disabled={unavailable || version === data.currentVersion || readFailed} checked={version !== data.currentVersion && chosen.includes(version)}
           onCheckedChange={checked => setSelected(previous => checked ? [...previous.filter(item => item !== version), version] : previous.filter(item => item !== version))} />
