@@ -51,7 +51,7 @@ import {
 import { SESSIONPAGE_PLATFORM_CATALOG_CHANNEL } from './sessionpage-platform-catalog'
 import { SESSIONPAGE_PLATFORM_RETRY_CHANNEL } from '../../src/session/shared/core/agents/platform-model'
 import { clearPlatformIssueBackoff } from './sessionpage-platform-model'
-import { adoptLegacyTaskNames, announceEmdashSession, emdashSessionProvisionInput, emdashProjectName, emdashSessionpageSessionFacts, emdashTakeBirthGroup, setTaskNamer, setTaskNameOwner } from '../session/main/embedded-boot'
+import { adoptLegacyTaskNames, announceEmdashSession, emdashSessionProvisionInput, emdashSessionpageSessionFacts, emdashSessionGroup, setTaskNamer, setTaskNameOwner } from '../session/main/embedded-boot'
 import { sessionpageRenameAnnouncement, type SessionpageAgentNameTaken } from './sessionpage-rename-announcement'
 import type { HostIpc } from '../session/main/lib/host-ipc'
 import { log } from '../session/main/lib/logger'
@@ -85,7 +85,7 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
       capabilities: () => (capabilities ??= detectDeviceCapabilities()),
       warn: (message) => log.warn(`[session-host] session-page ${message}`),
     }),
-    takeBirthGroup: (sessionId) => emdashTakeBirthGroup(sessionId),
+    groupOfSession: (sessionId) => emdashSessionGroup(sessionId),
     sessionFacts: (target, options) => emdashSessionProvisionInput(target, options),
     listSessionFacts: () => emdashSessionpageSessionFacts(),
   })

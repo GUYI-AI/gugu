@@ -48,9 +48,6 @@ export {
   emdashSessionpageSessionFacts,
   // @@@sessionpage TASKPAGE-FUSION — a project's display name, so the host can name the gugu group it
   // mirrors that project onto (spec ⑨「项目 = 群」) without deep-importing the session backend's projects/DB layer.
-  emdashProjectName,
-  emdashProjectRoot,
-  emdashProjectOfGroup,
   emdashTakeBirthGroup,
   // 资源库 → MCP:这条任务带上的那几台(会话能力包的桥问它)。
   emdashLibraryMcpForSession,
@@ -84,7 +81,6 @@ export {
   // 同 runEmdashExtensionAction 那条教训:漏在这张清单外只会在真有人跨机器时才炸。
   runRemoteSessionAction,
   // 离开这台机器的动作:本地项目 id 不出这台机器(cross-machine-sessions 的唯一出口 call 调它)。
-  assertOutboundProjectIds,
   readAssistantWorkReceipts,
   sessionCallerFacts,
   localSessionIds,

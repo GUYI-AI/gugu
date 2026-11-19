@@ -145,8 +145,7 @@ import { searchService } from '@main/core/search/search-service'
 import { workspaceFileIndexService } from '@main/core/search/workspace-file-index-service'
 import { migrateLegacyBrowserPartitionDirs } from '@main/core/browser/browser-partition-cleanup'
 import { projectSettingsService } from '@main/core/projects/settings/project-settings-service'
-import { getProjectById, getProjects } from '@main/core/projects/operations/getProjects'
-import { machineLocalProjectsOf } from '@main/core/projects/project-public-id'
+import { getProjects } from '@main/core/projects/operations/getProjects'
 import { resolveAgentSessionProject } from '@main/core/projects/operations/resolve-agent-session-project'
 import { resolveAssistantSessionWorkspace } from '@main/core/projects/operations/task-directory-workspace'
 import { runPendingAssistantProjectCleanup } from '@main/core/projects/operations/assistant-project-cleanup'
@@ -190,7 +189,6 @@ import { providerConsumesStartupPrompt } from '@gugu/session-core/agents/plugins
 import { pluginRegistry, resolveSessionpageCredentialLifecycle, type AgentProviderId } from '@gugu/session-plugins/agents'
 import {
   localSessionIds,
-  assertOutboundProjectIds,
   resolveCreateModelChoice,
   runRemoteSessionAction,
   runSessionAction,
@@ -269,7 +267,6 @@ export {
   adoptLegacyTaskNames,
   runRemoteSessionAction,
   runSessionAction,
-  assertOutboundProjectIds,
   sessionCallerFacts,
   type SessionAction,
   type SessionCallerContext,
@@ -2092,22 +2089,9 @@ export async function exportEmdashRawAcpLog(sessionId: string): Promise<string> 
   return result.data
 }
 
-/**
- * @@@sessionpage TASKPAGE-FUSION — a project's display name, for the gugu host to name the chat group it
- * mirrors that project onto (session-page spec ⑨「项目 = 群」). Read-only projection at the module boundary so
- * the host never deep-imports the session backend's projects/DB layer (owner #43). Returns null for an unknown id; the
- * host falls back to an id-derived name rather than failing a session start over a cosmetic lookup.
- */
-export async function emdashProjectName(projectId: string): Promise<string | null> {
-  const project = await getProjectById(projectId)
-  return project?.name ?? null
-}
-export async function emdashProjectRoot(projectId: string): Promise<string | null> { return (await getProjectById(projectId))?.path ?? null }
-/** This device's project for a chat, as the account records it (device_projects): the same pick an agent's project:<chat> gets. */
-export async function emdashProjectOfGroup(chatId: string): Promise<string | undefined> { return (await machineLocalProjectsOf(chatId))[0] }
-/** The chat a conversation's agent was born in, taken at its first mint (birth-groups.ts). */
-export async function emdashTakeBirthGroup(sessionId: string): Promise<BirthGroup | null> {
-  return (await import('@main/core/sessions/birth-groups')).takeBirthGroup(sessionId)
+/** The group a conversation lives in and how its agent takes the seat there, read at its first mint (session-group.ts). */
+export async function emdashSessionGroup(sessionId: string): Promise<BirthGroup | null> {
+  return (await import('@main/core/sessions/session-group')).sessionGroupOf(sessionId)
 }
 
 export type EmdashSessionProvisionInput = {

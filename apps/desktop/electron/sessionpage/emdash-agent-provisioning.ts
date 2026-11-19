@@ -288,7 +288,7 @@ export interface SessionpageProvisionDeps {
    * spawn and taken here when its identity is first minted (birth-groups.ts) — once: an agent later removed from the
    * group, or that left it, is not put back.
    */
-  takeBirthGroup?: (sessionId: string) => Promise<BirthGroup | null | undefined>
+  groupOfSession?: (sessionId: string) => Promise<BirthGroup | null | undefined>
   /**
    * #4277 老名册行没记 owner:问云端一次「这个 agent 归当前账号吗」。缺席 ⇒ 按「归我」认领(老行为,
    * 单账号机器上永远正确);在场 ⇒ 别家的行被停放、当前账号自己登记一个。
@@ -835,7 +835,7 @@ async function provisionLockedBody(
         ownerUserId,
         sessionId: info.sessionId,
         agentUserId: existing.gugu_user_id,
-        group: joined || !sessionGroup ? null : await deps.takeBirthGroup?.(info.sessionId) ?? { chatId: sessionGroup, asTask: false },
+        group: joined || !sessionGroup ? null : await deps.groupOfSession?.(info.sessionId) ?? { chatId: sessionGroup, asTask: false },
         directChatId,
         afterBinding,
       })
@@ -865,7 +865,7 @@ async function provisionLockedBody(
           afterBinding,
           provisionalLocalRow: false,
           // The creation's cloud send never landed, so this is still its first mint — it still joins where it was born.
-          ...(!info.replacesRemovedIdentity && deps.takeBirthGroup ? { birthGroup: () => deps.takeBirthGroup!(info.sessionId) } : {}),
+          ...(!info.replacesRemovedIdentity && deps.groupOfSession ? { birthGroup: () => deps.groupOfSession!(info.sessionId) } : {}),
         })
       }
     }
@@ -949,7 +949,7 @@ async function provisionLockedBody(
   // own rules (a refused or pending join is recorded for the session page to show and retry, as for any birth group).
   if (sessionGroup) {
     await joinBirthGroup({ env, accessToken: ownerAuth.accessToken, ownerUserId, sessionId: info.sessionId, agentUserId: guguAgentUserId,
-      group: await deps.takeBirthGroup?.(info.sessionId) ?? { chatId: sessionGroup, asTask: false }, log: createLogger('sessionpage/provision') })
+      group: await deps.groupOfSession?.(info.sessionId) ?? { chatId: sessionGroup, asTask: false }, log: createLogger('sessionpage/provision') })
     if (!await sessionpageBirthGroupJoin(info.sessionId, env, ownerUserId)) joinedGroup = sessionGroup
     mark('group-joined', { joined: Boolean(joinedGroup) })
   }
@@ -1072,7 +1072,7 @@ async function provisionFreshLocalFirst(
     localPath: info.cwd || null,
     afterBinding,
     provisionalLocalRow: true,
-    ...(!info.replacesRemovedIdentity && deps.takeBirthGroup ? { birthGroup: () => deps.takeBirthGroup!(info.sessionId) } : {}),
+    ...(!info.replacesRemovedIdentity && deps.groupOfSession ? { birthGroup: () => deps.groupOfSession!(info.sessionId) } : {}),
   })
   return { guguAgentUserId, displayName }
 }

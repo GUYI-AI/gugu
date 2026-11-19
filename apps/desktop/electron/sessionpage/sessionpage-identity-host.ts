@@ -58,8 +58,8 @@ export interface SessionpageIdentityHostDeps {
   beforeIdentityRemoval?: (agentUserId: string) => ((removed: boolean) => void) | Promise<(removed: boolean) => void>
   getAuth: () => Promise<SessionpageIdentityAuthSnapshot | null>
   resolveDeviceId: () => Promise<string | null>
-  /** The chat a conversation's agent was born in (SessionpageProvisionDeps `takeBirthGroup`). */
-  takeBirthGroup?: (sessionId: string) => Promise<BirthGroup | null>
+  /** The group a conversation lives in, read at its agent's first mint (SessionpageProvisionDeps `groupOfSession`). */
+  groupOfSession?: (sessionId: string) => Promise<BirthGroup | null>
   sessionFacts: (target: SessionShellAgentAddressInput, options?: { includeArchived?: boolean }) => Promise<SessionpageSessionFacts | null>
   /** 这台机器侧栏上的会话(名册 session_peers 拿它对标题;名字表是那份名册的投影)。 */
   listSessionFacts: () => Promise<readonly LocalSessionFacts[]>
@@ -119,7 +119,7 @@ export function createSessionpageIdentityHost(deps: SessionpageIdentityHostDeps)
   const provisionDeps: SessionpageProvisionDeps = {
     getAuth: deps.getAuth,
     resolveDeviceId: deps.resolveDeviceId,
-    ...(deps.takeBirthGroup ? { takeBirthGroup: deps.takeBirthGroup } : {}),
+    ...(deps.groupOfSession ? { groupOfSession: deps.groupOfSession } : {}),
     // #5331 铸身份 + 名字去重 + 进群一次往返。
     provisionOneTrip: (input) => provisionSessionpageAgentOneTrip({ ...input, fetchImpl: electronFetch }),
     // #4277 老名册行没记 owner 时问云端一次:identity.users 的 owner_user_id 是既有事实,RLS 下 owner

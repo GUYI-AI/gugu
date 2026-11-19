@@ -1054,7 +1054,7 @@ function createDeviceSessionpageBridge() {
             userId: auth.userId,
           }),
           resolveDeviceId: async () => deviceId,
-          takeBirthGroup: (sessionId: string) => emdash.emdashTakeBirthGroup(sessionId),
+          groupOfSession: (sessionId: string) => emdash.emdashSessionGroup(sessionId),
           provisionOneTrip: (input) => provisionSessionpageAgentOneTrip({ ...input, fetchImpl: electronFetch }),
           env: process.env,
         })
@@ -5276,7 +5276,7 @@ app.whenReady().then(async () => {
       getAuth: getSessionpageAuth,
       // #4320② 锁内解析:localDeviceId 不起 tick,不会派发要同一把锁的设备命令。
       resolveDeviceId: localDeviceId,
-      takeBirthGroup: (sessionId: string) => emdash.emdashTakeBirthGroup(sessionId),
+      groupOfSession: (sessionId: string) => emdash.emdashSessionGroup(sessionId),
       sessionFacts: (target, options) => emdash.emdashSessionProvisionInput(target, options),
       listSessionFacts: () => emdash.emdashSessionpageSessionFacts(),
     })
