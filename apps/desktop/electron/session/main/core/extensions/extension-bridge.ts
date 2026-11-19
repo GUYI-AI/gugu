@@ -59,6 +59,7 @@ import {
   type ExtensionHostActionResult,
   type SelectionSendAsk,
 } from '@shared/extensions/host-actions';
+import { annotationFilePath, EXTENSION_FILE_ANNOTATION_METHOD, parseFileAnnotation, type FileAnnotationAsk } from '@shared/extensions/file-annotation-draft';
 import { fileSync } from '@main/core/extensions/file-sync';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
 import { fileRefOf, folderOf, isWorkspace, openingNameOf, openingViewOf, opensAsLink, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
@@ -1948,6 +1949,18 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
   if (isMachineVerb(method)) return await machineCall(caller, method, args);
   const { binding, extensionId } = caller;
   switch (method) {
+    case 'filesAnnotateSelection': {
+      requirePreinstalledFiles({ id: extensionId, origin: extensionsService().origins()[extensionId] });
+      const page = thePage(caller), sessionId = sessionOfBinding(page);
+      if (!sessionId || !page.workspace) throw Object.assign(new Error('File annotations require a task workspace'), { code: 'denied' });
+      const ask: FileAnnotationAsk = {
+        sessionId, webContentsId: caller.pageId,
+        path: annotationFilePath(args.file, page.workspace),
+        open: parseFileAnnotation(args.open),
+      };
+      const { invokeInEmbedder } = await import('@main/core/extensions/extension-bridge-relay');
+      return await invokeInEmbedder(page.embedderId, EXTENSION_FILE_ANNOTATION_METHOD, ask) === true;
+    }
     case 'filesSendSelection': {
       requirePreinstalledFiles({ id: caller.extensionId, origin: extensionsService().origins()[caller.extensionId] });
       const page = thePage(caller), sessionId = sessionOfBinding(page), chatId = page.workspace ? null : page.conversation;

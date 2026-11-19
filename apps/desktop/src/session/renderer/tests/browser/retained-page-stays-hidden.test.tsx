@@ -18,9 +18,10 @@ vi.mock('@renderer/features/tabs/unavailable-tab', async (importOriginal) => ({
   isUnavailableTabResource: () => false,
   UnavailableTabContent: () => null,
 }));
-vi.mock('@renderer/features/browser/browser-pane', () => ({
-  BrowserPane: () => <div data-browser-pane="">page</div>,
-}));
+vi.mock('@renderer/features/browser/browser-pane', () => {
+  const BrowserPane = () => <div data-browser-pane="">page</div>;
+  return { BrowserPane, ChatBrowserPane: BrowserPane };
+});
 
 const { PaneContent } = await import('@renderer/features/tabs/pane-content');
 const { PaneContext } = await import('@renderer/features/tabs/pane-context');

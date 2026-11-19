@@ -191,6 +191,7 @@ function InnerLayout({
   const [settingsModalOpen, setSettingsModalOpen] = useState(false)
   // @@@1507 设置面板初始 section;侧栏「额度」直接开到 quota,齿轮入口回 account。
   const [settingsSection, setSettingsSection] = useState<ActiveSection>('account')
+  const [addCustomModel, setAddCustomModel] = useState(false)
   useBackgroundUsageSync(user?.id ?? null, effectsActive)
   // 手机上「我的」是推进来的一层(owner 10-26:页头左上角自己的头像进),nav / detail 两层都没有底栏;桌面走设置弹窗。
   const [settingsPane, setSettingsPane] = useState<'nav' | 'detail'>('nav')
@@ -317,6 +318,7 @@ function InnerLayout({
     return topic ? `${viewportKey ?? 'chats'}:topic` : viewportKey ?? 'chats'
   }, [enterChat, openChatBlock, setActiveChatId, readChats])
   const [appDetail, setAppDetail] = useState<import('@gugu/core/shared/ui/guguLink').ExtensionAppDetailLink>()
+  const clearAppDetail = useCallback(() => setAppDetail(undefined), [])
   useLinkNavigation({ ownerId: user.id, chats: () => readChats().chats, contacts: () => readContacts().contacts,
     openSender: (target, sourceChatId) => handleSwitchToChat(target, undefined, sourceChatId, true),
     openAppDetail: target => {
@@ -533,24 +535,18 @@ function InnerLayout({
   }, [])
 
   // @@@1507 直达指定设置 section(侧栏「额度」→ quota)。移动端无设置弹窗:直达「我的」tab 对应 detail 面。
-  const openSettingsSection = useCallback((asked: ActiveSection, ownerConnections = false) => {
-    let section = asked
-    // Nothing of the assistant is in Settings (owner 11-12): an old route to its 资料 / 连接应用 lands in its App. A phone
-    // with no assistant has the person's own connected apps as a row of Settings (SettingsPanel): a route to them goes there.
-    const ownDesktopConnections = ownerConnections && section === 'connectors' && !mobile && sessionHostAvailable
-    if (isAssistantSettingsSection(section) && !ownDesktopConnections) {
-      if (!mobile) {
-        setSettingsModalOpen(false)
-        openAssistantPageInApp(section === 'assistant' ? 'settings' : 'connected-apps')
-        return
-      }
+  const openSettingsSection = useCallback((section: ActiveSection) => {
+    if (!mobile && isAssistantSettingsSection(section)) {
+      setSettingsModalOpen(false)
+      openAssistantPageInApp(section === 'assistant' ? 'settings' : 'connected-apps')
+      return
+    }
+    if (mobile && section === 'assistant') {
       if (phoneAssistant.available) {
         setActiveTab('assistant')
-        window.dispatchEvent(new CustomEvent(UI_EVENTS.openAssistantConnectors, { detail: { sub: section === 'assistant' ? 'settings' : 'connectors' } }))
-        return
+        window.dispatchEvent(new CustomEvent(UI_EVENTS.openAssistantConnectors, { detail: { sub: 'settings' } }))
       }
-      if (section === 'assistant') return
-      section = 'connectors'
+      return
     }
     setSettingsSection(section)
     if (mobile) {
@@ -559,14 +555,18 @@ function InnerLayout({
       return
     }
     setSettingsModalOpen(true)
-  }, [setActiveTab, mobile, phoneAssistant.available, sessionHostAvailable])
+  }, [setActiveTab, mobile, phoneAssistant.available])
 
   // 会话页要打开设置(⌘, / 应用菜单 / 命令面板 / 浏览器工具栏「管理配置」):设置只有这一个弹窗(product spec)。
   // 指了格就落到那一格;没指就照原样打开(上次停在哪一格就是哪一格)。
   useEffect(() => {
     const open = (event: Event) => {
-      const detail = (event as CustomEvent<{ section?: ActiveSection; ownerConnections?: boolean }>).detail
-      if (detail?.section) openSettingsSection(detail.section, detail.ownerConnections)
+      const { section, action } = (event as CustomEvent<{
+        section?: ActiveSection
+        action?: 'add-custom-model'
+      }>).detail ?? {}
+      setAddCustomModel(section === 'model' && action === 'add-custom-model')
+      if (section) openSettingsSection(section)
       else setSettingsModalOpen(true)
     }
     // Feedback replaces the settings modal; sibling modal focus layers otherwise block its form.
@@ -607,11 +607,14 @@ function InnerLayout({
   // 打开它都切到那一格的聊天,❌ 在对话页里另开一屏。在画出来之前换过去,对话页 ❌ 先闪一帧那条私聊。
   useEffect(() => {
     if (!mobile) return
-    // 连接应用 is the assistant's (its profile's page on the phone), never in Settings.
-    const open = () => { if (phoneAssistant.available) setActiveTab('assistant') }
+    const open = (event: Event) => {
+      if ((event as CustomEvent<{ sub?: string }>).detail?.sub === 'settings') {
+        if (phoneAssistant.available) setActiveTab('assistant')
+      } else openSettingsSection('connectors')
+    }
     window.addEventListener(UI_EVENTS.openAssistantConnectors, open)
     return () => window.removeEventListener(UI_EVENTS.openAssistantConnectors, open)
-  }, [mobile,phoneAssistant.available,setActiveTab])
+  }, [mobile, openSettingsSection, phoneAssistant.available, setActiveTab])
   useLayoutEffect(() => {
     if (!assistantOnPhone || activeTab !== 'chats' || !phoneChatShown || !phoneAssistant.available) return
     shellTab.setChatFrom(null)
@@ -680,7 +683,7 @@ function InnerLayout({
   useEffect(() => {
     const bringUp = (chatId: string | null, ask: (chatId: string, viewportKey?: string) => void, resource = false): boolean => {
       const addressed = readChats().chats.find((candidate) => candidate.id === chatId)
-      const chat = resource && addressed?.kind === 'topic' ? readChats().chats.find((candidate) => candidate.id === addressed.source_chat_id) : addressed
+      const chat = resource && mobile && addressed?.kind === 'topic' ? readChats().chats.find((candidate) => candidate.id === addressed.source_chat_id) : addressed
       if (!chat) {
         toast(t('groupFile.notInGroup'), 'error')
         return false
@@ -734,7 +737,11 @@ function InnerLayout({
       const token = getRendererAccessToken()
       if (!token) { toast(t('groupFile.notInGroup'), 'error'); return }
       void resourceChatIdOf(token, named, user.id)
-        .then((chatId) => bringUp(chatId, (id) => askChat(id, { app: detail.extensionId }), true))
+        .then((chatId) => {
+          const from = readChats().chats.find((row) => row.id === named)
+          const topic = !mobile && from?.kind === 'topic' && from.source_chat_id === chatId
+          return bringUp(topic ? named : chatId, (id) => askChat(id, { app: detail.extensionId, ...(detail.from && id === named ? { from: detail.from } : {}) }), true)
+        })
         .catch((error: unknown) => toast(error instanceof Error ? error.message : String(error), 'error'))
     }
     window.addEventListener(APP_COMPOSE_EVENT, onCompose)
@@ -747,7 +754,7 @@ function InnerLayout({
       window.removeEventListener(APP_OPEN_IN_CHAT_EVENT, onOpenInChat)
       window.removeEventListener(UI_EVENTS.openApp, onOpenInChat)
     }
-  }, [focusComposerForUserEntry, openOwnedAgent, openChatTarget, readChats, writeDraft, setDraftAttachments, setDraftQuote, setDraftWhisper, t, toast, user.id])
+  }, [focusComposerForUserEntry, mobile, openOwnedAgent, openChatTarget, readChats, writeDraft, setDraftAttachments, setDraftQuote, setDraftWhisper, t, toast, user.id])
 
 
   // 选中变化 ⇒ shell 让位(收草稿面、移动壳下钻)。这条集中反应兜住只写得到 store 的入口(App 层的宿主),
@@ -1061,8 +1068,7 @@ function InnerLayout({
                   {/* #2525 移动端全屏创建页:列表/会话/底部 tab 岛全部让位(display 隐藏而非卸载 ——
                       返回时列表滚动位置与会话状态原样还在),真正的 composer 由下面那份 fixed overlay
                       盖到本页正文槽上。 */}
-                  <ResizableChatListPane
-                    active={activeTab === 'chats'} mobile={mobile}
+                  <ResizableChatListPane mobile={mobile}
                     hidden={chatListHidden}
                     width={chatListPaneWidth}
                     onWidthChange={previewChatListPaneWidth}
@@ -1184,6 +1190,10 @@ function InnerLayout({
               <SettingsPanel
                 mobile
                 appDetail={appDetail}
+                onHandledAppDetail={clearAppDetail}
+                marketAssistant={phoneAssistant}
+                addCustomModel={addCustomModel}
+                onCustomModelDialogClose={() => setAddCustomModel(false)}
                 inline
                 section={settingsSection}
                 onSectionChange={setSettingsSection}
@@ -1238,7 +1248,9 @@ function InnerLayout({
       </div>
 
       <ResourceMonitorHost />
-      {settingsModalOpen && <SettingsPanel mobile={mobile} section={settingsSection} onSectionChange={setSettingsSection} onClose={() => setSettingsModalOpen(false)} />}
+      {settingsModalOpen && <SettingsPanel mobile={mobile} section={settingsSection} onSectionChange={setSettingsSection}
+        addCustomModel={addCustomModel} onCustomModelDialogClose={() => setAddCustomModel(false)}
+        onClose={() => { setAddCustomModel(false); setSettingsModalOpen(false) }} />}
       {cameraPermissionSheetOpen && <CameraPermissionSheet onClose={() => setCameraPermissionSheetOpen(false)} />}
       <RemoteMachinesHost enabled={sessionHostAvailable} openSettingsSection={openSettingsSection} />
 
@@ -1284,7 +1296,7 @@ function InnerLayout({
           WM_NCHITTEST 回 HTCAPTION,系统当标题栏吃掉点击,按钮**完全按不动**。
           实测(chole/Windows 11,真鼠标点击 + WM_NCHITTEST):挂最前 ht=2、点最小化窗口不动;
           挂最后 ht=1、点最小化窗口收起。❌ 别把它移回上面去。 */}
-      <WindowControls activeTab={activeTab} mobile={mobile} activeChatId={activeChatId} sessionHostAvailable={sessionHostAvailable} onSelectTab={selectTab} onOpenChat={(chatId) => { if (!chatId || !openChatBlock(chatId)) setActiveChatId(chatId) }} onNewAgent={openAgentCreateDraftFromContacts} onOpenSettings={openSettingsSection} />
+      <WindowControls activeTab={activeTab} activeChatId={activeChatId} sessionHostAvailable={sessionHostAvailable} onSelectTab={selectTab} onOpenChat={(chatId) => { if (!chatId || !openChatBlock(chatId)) setActiveChatId(chatId) }} onNewAgent={openAgentCreateDraftFromContacts} onOpenSettings={openSettingsSection} />
       {/* #7199 「助理」App 在壳这一侧的那一半:发布云电脑 / 个人助理,把壳的组件画进 App 留的格子(lib/assistantShellBridge.ts)。 */}
       <AssistantTaskChatOpener visible={mobile ? activeTab === 'assistant' : activeTab === 'tasks'} desktop={!mobile} />
       <FeedbackHost />

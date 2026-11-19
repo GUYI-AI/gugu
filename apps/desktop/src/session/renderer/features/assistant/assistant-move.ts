@@ -91,6 +91,7 @@ export type MoveProgress = {
 };
 
 export type MoveReport = {
+  targetDeviceId?: string;
   files: number;
   /** 没拷的(软链接),逐条回报。 */
   skippedFiles: { rel: string; reason: string }[];
@@ -172,7 +173,7 @@ async function completeMove(deps: Pick<MoveCompletionDeps, 'activate' | 'journal
   await guard('restart', deps.activate);
   if (!journal.done.includes('restart')) journal.done.push('restart');
   await guard('restart', async () => deps.journal.clear());
-  return report;
+  return journal.targetDeviceId ? { ...report, targetDeviceId: journal.targetDeviceId } : report;
 }
 
 /** 接过被对面明确拒绝(没开始):`adopt()` 抛的错上带 `notStarted: true`,旧家就还是原样。其余失败一律当「可能已经落定」。 */

@@ -20,6 +20,7 @@ type SettingsDefaultsMap = {
 }
 
 export const SETTINGS_DEFAULTS = {
+  autoReviewModel: null,
   project: {
     tmuxByDefault: false
   },
@@ -52,6 +53,7 @@ export const SETTINGS_DEFAULTS = {
   // 出厂不预选 agent —— 理由见 schema.ts 的 `defaultAgentSchema`。
   defaultAgent: null,
   // 新建会话框的记忆:出厂什么都没记(schema.ts 的 `newSessionMemorySchema`)。
+  dataImport: { owners: {} },
   newSessionMemory: { lastPicked: null, lastStarted: null, sessionView: DEFAULT_SESSION_VIEW },
   keyboard: {},
   openIn: {

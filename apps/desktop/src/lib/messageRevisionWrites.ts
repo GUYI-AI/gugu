@@ -66,7 +66,8 @@ export function messageAccessWrites(cells: ProjectionCache, accountId: string, k
     writes.push({ type: 'chatAccess', access: { chatId: chat.id, sourceChatId: chat.source_chat_id ?? null,
       archived: chat.status === 'archived', revision: cell.stamp } })
     if (member) writes.push({ type: 'chatAccess', access: { chatId: chat.id,
-      ownMember: member.value !== null, revision: member.stamp } })
+      ownMember: member.value !== null, revision: member.stamp,
+      clearedAt: (member.value as { conversation_cleared_at?: string | null } | null)?.conversation_cleared_at } })
   }
   return writes
 }

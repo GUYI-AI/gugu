@@ -11,6 +11,8 @@ import {
  */
 const familyAuthStatus = opencodeFamilyAuthStatus();
 
+export const mimocodeVendorKeyAccount = { envVars: ['XIAOMI_API_KEY'], unsetEnv: ['XIAOMI_API_KEY'] };
+
 export async function mimocodeAuthStatus(ctx: AgentAuthContext): Promise<AgentAuthStatus> {
   return familyAuthStatus(ctx);
 }

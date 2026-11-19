@@ -9,7 +9,7 @@ import { chat, createReactHarness, device } from '../../../support/testHarness'
 import { useNativeAgentChats } from '../../../../apps/desktop/src/hooks/useNativeAgentChats'
 import { installOwnedAgentEntry } from '../../../../apps/desktop/src/lib/ownedAgentConversation'
 import { publishDirectoryDevices, removeDeviceSessions, updateDeviceSessions } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => true }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => true, readMobileShell: () => true }))
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/chat/actor-identity', () => ({ chatActor: (id: string) => ({ id, name: 'Worker', type: id.startsWith('user:111') ? 'agent' : 'human' }) }))
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/chat/chat-name', () => ({ chatDisplayName: () => 'Test group' }))
 vi.mock('../../../../apps/desktop/src/lib/chatSummariesBridge', () => ({ subscribeChatNames: () => () => undefined, chatNamesVersion: () => 0, useChatSummaries: () => new Map([['group', { kind: 'group' }]]), readChatSummary: () => ({ kind: 'group' }), resolveChatId: (id: string) => id }))

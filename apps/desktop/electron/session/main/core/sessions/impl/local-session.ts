@@ -1,3 +1,5 @@
+import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
+import { runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { diskWindowsShimReader } from '@gugu/session-core/exec';
@@ -551,6 +553,16 @@ export class LocalSessionProvider implements SessionProvider {
       const launchEffort = session.effort;
 
       const permissionMode = resolveSessionPermissionMode(session);
+      if (permissionMode === 'ai-review') {
+        const { probeHarnessModelCatalog } = await import('@main/core/agents/harness-model-catalog');
+        const catalog = await probeHarnessModelCatalog(session.providerId, 'tui',
+          !platformModelForSpawn && !runContext.customModel ? runtimeModelId(session.model) : undefined);
+        const available = runContext.autoReviewAllowed !== false && catalogAllowsAutoReview(plugin.capabilities.autoApprove.modes,
+          { ...catalog, cliVersion: runContext.cliVersion },
+          platformModelForSpawn ? 'platform' : platformModelForSpawn === null ? runContext.customModel ? 'custom' : 'own' : 'unknown',
+          platformModelForSpawn?.modelId ?? runtimeModelId(session.model) ?? (catalog.kind === 'ready' ? catalog.selected : null));
+        if (!available) throw new Error('AI review is unavailable for this session executable and model');
+      }
       let agentCommand = plugin.behavior.prompt!.buildCommand({
         cli: executableCli,
         extraArgs: runContext.extraArgs,
@@ -562,7 +574,7 @@ export class LocalSessionProvider implements SessionProvider {
         providerSessionId: session.providerSessionId ?? undefined,
         forkFromProviderSessionId: storageForkedProviderSessionId ? undefined : forkFromProviderSessionId,
         isResuming: commandResuming,
-        model: session.model ?? '',
+        model: runtimeModelId(session.model) ?? '',
         effort: launchEffort ?? '',
         fastMode: session.fastMode === true,
       });
@@ -662,7 +674,7 @@ export class LocalSessionProvider implements SessionProvider {
         isResuming: commandResuming,
         // A diverting host replaces the argv wholesale, so the user's picks have to travel separately —
         // otherwise the composer's model / effort controls silently do nothing on that path.
-        model: session.model ?? undefined,
+        model: runtimeModelId(session.model),
         effort: launchEffort ?? undefined,
         fastMode: session.fastMode === true,
         userSettingsProvided: (runContext.extraArgs ?? []).some((arg) => arg === '--settings' || arg.startsWith('--settings=')),

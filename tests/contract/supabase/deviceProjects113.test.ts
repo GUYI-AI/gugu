@@ -148,6 +148,9 @@ const projects = (chatId: string): DeviceProject[] => [
 describe('#113 项目记在账号上:客户端写的那份,库收得下、读回来一模一样', () => {
   it('整份记上去,别的端读回来与写的相同(新建的在前);再写同一份不算变化;只推进一个客户端认得的 revision', async () => {
     await rollback(async ({ owner, device }) => {
+      // Model the deferred commit boundary without committing the rollback fixture.
+      const committed = () => db.query('SET CONSTRAINTS chat.pending_user_revisions_flush IMMEDIATE; SET CONSTRAINTS chat.pending_user_revisions_flush DEFERRED')
+      await committed()
       const head = async () => (await db.query<{ revision: string }>(
         'SELECT revision::text FROM chat.account_revision_heads WHERE user_id = $1', [owner])).rows[0]?.revision ?? '0'
       const before = await head()
@@ -155,9 +158,11 @@ describe('#113 项目记在账号上:客户端写的那份,库收得下、读回
       await expect(publishDeviceProjects(clientAs(owner), device, written)).resolves.toEqual({ changed: true, rejected: [] })
       await expect(listDeviceProjects(clientAs(owner), owner)).resolves.toEqual({ [device]: written })
 
+      await committed()
       const after = await head()
       expect(BigInt(after)).toBe(BigInt(before) + 1n)
       await expect(publishDeviceProjects(clientAs(owner), device, written)).resolves.toEqual({ changed: false, rejected: [] })
+      await committed()
       expect(await head()).toBe(after)
 
       const { rows } = await db.query<{ event: string; resource_key: unknown }>(

@@ -30,7 +30,7 @@
  *
  * 喂这条行的是适配器挂在合成 tool call 上的 `_meta.contextCompaction`
  * （`claude-agent-acp` 自己的类型注释写明它 provider-neutral），以及 ACP
- * `session-compaction` RFD 的 `compaction_update`（还没有一家发）。
+ * `session-compaction` RFD 的 `compaction_update`（今天 claude 适配器与 codex 桥走这条）。
  * ❌ 别改成去匹配 `"Compact conversation"` 这类标题文案 —— 那是供应商的措辞，改一次就静默失灵。
  */
 import type { MeasureCtx } from '@session-chat/core/define';

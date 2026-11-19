@@ -7,8 +7,8 @@ describe('vendor mirror pin inventory', () => {
   it('lists every pinned platform with immutable own-storage URLs and original SHA pins', () => {
     const { artifacts } = vendorReleaseManifest()
     expect(JSON.parse(readFileSync(resolve(__dirname, '../../../scripts/build/vendor-assets.json'), 'utf8'))).toEqual(vendorReleaseManifest())
-    expect(artifacts).toHaveLength(64)
-    expect(new Set(artifacts.map(item => item.key)).size).toBe(64)
+    expect(artifacts).toHaveLength(58)
+    expect(new Set(artifacts.map(item => item.key)).size).toBe(58)
     for (const item of artifacts) {
       expect(item.sha256).toMatch(/^[a-f0-9]{64}$/)
       expect(item.url).toBe(`https://download.gugu.nextmind.space/${item.key.split('/').map(encodeURIComponent).join('/')}`)
@@ -24,7 +24,7 @@ describe('vendor mirror pin inventory', () => {
     expect(artifacts.filter(item => item.component === 'cua-driver')).toHaveLength(0)
     expect(artifacts.filter(item => item.component === 'tmux')).toHaveLength(4)
     expect(artifacts.filter(item => item.component === 'electron')).toHaveLength(7)
-    expect(artifacts.filter(item => item.component === 'better-sqlite3')).toHaveLength(6)
+    expect(artifacts.filter(item => item.component === 'better-sqlite3')).toHaveLength(0)
     expect(artifacts.filter(item => item.component === 'electron-builder')).toHaveLength(14)
     expect(artifacts.filter(item => item.component === 'node-toolchain')).toHaveLength(10)
   })

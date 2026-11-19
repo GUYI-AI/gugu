@@ -81,6 +81,8 @@ export const acpRuntimeStartInputSchema = acpStartInputSchema.extend({
    * 所以每一家都要把这一格交到 runtime,由 `session-manager.applyInitialModel` 断言。
    */
   platformModel: z.string().min(1).optional(),
+  /** Host-verified billing selection; renderer input cannot establish an own-account route. */
+  billingRoute: z.enum(['own', 'platform', 'unknown']).optional(),
   /** Host-owned platform access generation; never accepted from the renderer contract. */
   platformAccessSessionId: z.string().min(1).optional(),
   capabilitySpawnEnv: z.record(z.string(), z.string()).optional(),

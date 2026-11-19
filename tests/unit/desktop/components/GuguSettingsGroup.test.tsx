@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // owner 10-16「只有一个设置:咕咕的设置是全局设置里的一组,咕咕页里的齿轮直接开到这一组」:
 // 资料(AssistantSection)与连接应用(ConnectorsSection)两页。
-import { createElement, type ReactNode } from 'react'
+import { act, createElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders, typeInto } from '../../../support/testHarness'
 
@@ -16,7 +16,7 @@ vi.mock('../../../../apps/desktop/src/platform', async (importOriginal) => {
   return {
     ...actual,
     platform: new Proxy(actual.platform, {
-      get: (target, key) => (key === 'capabilities' ? { ...target.capabilities, agentRuntime: runtime.agentRuntime, sessionHost: runtime.sessionHost } : Reflect.get(target, key)),
+      get: (target, key) => (key === 'capabilities' ? { ...target.capabilities, ...runtime, mobileApps: true } : Reflect.get(target, key)),
     }),
   }
 })
@@ -227,7 +227,7 @@ describe('咕咕的连接应用(画在它 App 的面板上)', () => {
 describe('Settings has nothing of the assistant', () => {
   it.each([
     ['assistant', false], ['channels', false],
-    ['assistant', true], ['connectors', true], ['channels', true],
+    ['assistant', true],
   ] as const)('a %s route draws the account, not the assistant (mobile=%s; connections kept in its home)', async (section, mobile) => {
     mine.value = { contact: CONTACT, agentId: 'a1', loading: false, error: null }
     await render(createNode(SettingsPanel, { initialSection: section, inline: true, mobile, pane: 'detail' }), awake)
@@ -238,31 +238,35 @@ describe('Settings has nothing of the assistant', () => {
     if (mobile) expect(q('settings-nav-connectors')).toBeNull()
   })
 
-  it.each(['legacy', 'owner'] as const)('mounts the machine-scoped desktop connections in %s mode', async mode => {
+  it.each(['legacy', 'owner'] as const)('offers saved prompts in desktop settings in %s mode', async mode => {
     authority.mode = mode
-    await render(createNode(SettingsPanel, { initialSection: 'connectors', inline: true }), awake)
-    expect(q('settings-nav-connectors')).not.toBeNull()
-    expect(sessionSection.props).toEqual({ section: 'connectors', context: { desktopConnections: true } })
+    await render(createNode(SettingsPanel, { initialSection: 'prompts', inline: true }), awake)
+    expect(q('settings-nav-connectors')).toBeNull()
+    expect(q('settings-nav-prompts')).not.toBeNull()
+    expect(sessionSection.props).toEqual({ section: 'prompts' })
   })
 })
 
-// 11-12 gap: on a phone with no assistant, Settings' 连接应用 was the only way to the person's own connected apps. They are
-// the person's: a plain row under 偏好 on the phone in account-level connection mode.
 describe('the person\'s own connected apps on the phone', () => {
-  it('a plain row under 偏好, beside 通用; a route to them (or its chat tools) draws them', async () => {
+  it('lists Marketplace after Devices and accepts existing connector routes', async () => {
     authority.mode = 'owner'
     await render(createNode(SettingsPanel, { inline: true, mobile: true, pane: 'nav' }), awake)
-    const row = q('settings-nav-connectors')!
-    expect(row.textContent).toContain('连接应用')
-    expect(row.closest('[role="group"]')?.getAttribute('data-group')).toBe('preferences')
-    expect([...row.closest('[role="group"]')!.querySelectorAll('[data-testid^="settings-nav-"]')].slice(0, 2).map((el) => el.getAttribute('data-testid'))).toEqual(['settings-nav-general', 'settings-nav-connectors'])
+    const row = q('settings-nav-apps')!
+    expect(row.textContent).toContain('市场')
+    const group = row.closest('[role="group"]')
+    expect(group?.getAttribute('data-group')).toBe('work')
+    const rows = [...group!.querySelectorAll('[data-testid^="settings-nav-"]')]
+    expect(rows[rows.indexOf(row) - 1]).toBe(q('settings-nav-devices'))
     expect([...harness.container.querySelectorAll('.gg-settings-nav-caption')].map((el) => el.textContent)).not.toContain('咕咕')
+    expect(q('settings-nav-connectors')).toBeNull()
     expect(q('settings-nav-assistant')).toBeNull()
     expect(harness.container.textContent).not.toMatch(/资料/)
     for (const section of ['connectors', 'channels'] as const) {
       harness.cleanup(); harness = createReactHarness(); sessionSection.props = null
       await render(createNode(SettingsPanel, { initialSection: section, inline: true, mobile: true, pane: 'detail' }), awake)
-      expect(q('settings-connectors')).not.toBeNull()
+      // Settings loads the Marketplace lazily; await that import before checking its route.
+      await act(async () => { await vi.dynamicImportSettled() })
+      await vi.waitFor(() => expect(q('phone-market')?.querySelector('[role="tabpanel"][aria-label="连接器"]')).toBeTruthy())
       expect(sessionSection.props).toMatchObject({ section: 'connectors', context: { connectionRoute: { mode: 'owner' } } })
     }
   })

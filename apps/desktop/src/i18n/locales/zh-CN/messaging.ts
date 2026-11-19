@@ -60,7 +60,7 @@ export default {
     },
     "turnFailure": {
       "card": {
-        "appUnavailable": "App 用不了",
+        "appUnavailable": "应用用不了",
         "deliveryRejected": "消息未送达",
         "outcomeUnknown": "发送失败",
         "generic": "回复没有完成",
@@ -93,7 +93,7 @@ export default {
       "notAdmitted": "消息已保留，助理就绪后回复。",
       "outcomeUnknown": "消息发送失败。",
       "undelivered": "消息暂未送达：没有运行中的咕咕实例持有这个 Agent，打开那个实例后会由它读取。",
-      "appUnavailable": "未送达：这条来自一个 App，它在这个 Agent 所在的设备上用不了（没有安装、已关闭、需要更新，或手机上不能运行）。",
+      "appUnavailable": "未送达：这条来自一个应用，它在这个 Agent 所在的设备上用不了（没有安装、已关闭、需要更新，或手机上不能运行）。",
       "retry": "重试",
       "retrying": "重试中…",
       "timeout": "Agent 长时间未响应，本次回复未完成"
@@ -189,7 +189,7 @@ export default {
     },
     "appEnable": {
       "devices": "装到哪几台电脑",
-      "devicesHint": "每台新装的电脑上，所有 agent 默认都能用；之后可以在 App 设置里改。",
+      "devicesHint": "每台新装的电脑上，所有 agent 默认都能用；之后可以在应用设置里改。",
       "addsChat": "这台电脑上已经装了、只给了部分 agent：这次只加上群「{{name}}」，别的不变。",
       "decline": "不装",
       "machine": "这台电脑",
@@ -236,9 +236,9 @@ export default {
       "appFiles": "『{{name}}』的文件",
       "noAppFiles": "这个对话里还没有『{{name}}』的文件。它打开的是对话里的文件，先建一个，或者让 agent 建一个。",
       "fileUnavailable": "这里打不开这个文件：它可能已被删除，或者不在这个对话里。",
-      "noOpener": "本机没有能打开『{{name}}』的 App，咕咕市场里也没有。",
-      "marketUnreadable": "本机没有能打开『{{name}}』的 App；咕咕市场现在读不到，稍后再试。",
-      "offerFromMarket": "它是咕咕市场里的 App，在这里装一次就好。",
+      "noOpener": "本机没有能打开『{{name}}』的应用，咕咕市场里也没有。",
+      "marketUnreadable": "本机没有能打开『{{name}}』的应用；咕咕市场现在读不到，稍后再试。",
+      "offerFromMarket": "它是咕咕市场里的应用，在这里装一次就好。",
       "switchedOffWhy": "这个文件是『{{name}}』的，它装着，但停用了。启用它，就用它打开。",
       "switchOn": "启用",
       "switchFailed": "没启用上，稍后再试。",
@@ -253,8 +253,8 @@ export default {
       "showRaw": "查看原始内容",
       "hideRaw": "收起原始内容",
       "install": "安装",
-      "goToApps": "去 App 页",
-      "unavailable": "这个 App 现在打不开：没装上，或者已经停用。",
+      "goToApps": "前往市场",
+      "unavailable": "这个应用现在打不开：没装上，或者已经停用。",
       "title": "用哪个打开「{{name}}」"
     },
     "source": {
@@ -266,6 +266,25 @@ export default {
     }
   },
   "chatList": {
+    "undoHideRetry": "重试",
+    "undoHideChanged": "会话状态已更新，无法撤销这次操作",
+    "clearHistory": "清空聊天记录",
+    "clearHistoryTitle": "清空「{{name}}」的聊天记录？",
+    "clearHistoryConfirm": "清空",
+    "hiddenNotice": "「{{name}}」已不显示",
+    "undoHide": "撤销",
+    "undoHideFailed": "无法撤销不显示",
+    "unpinFromSidebar": "取消固定到左侧栏",
+    "hiddenRefreshFailed": "已从列表删除，但列表刷新失败，请重试",
+    "agentDeleted": "智能体已删除",
+    "retryAgentDelete": "重试删除智能体",
+    "hiddenAgentDeleteFailed": "聊天记录已清空，但智能体删除失败",
+    "alsoRemoveAgent": "同时删除 Agent",
+    "hideAgentDescription": "这条对话会从你的列表移除，有新消息时会重新出现。",
+    "removeFromList": "从列表删除",
+    "hideFailed": "无法隐藏这条对话",
+    "deleteHistoryDescription": "只清你这边，其他成员不受影响。",
+    "hide": "不显示",
     "createAgent": "创建智能体",
     "addContact": "添加联系人",
     "clearSearch": "清除搜索",
@@ -479,10 +498,6 @@ export default {
       "chatUnavailable": "对话已不可用，请返回消息列表确认",
       "timeout": "发送超时，请稍后重新发送",
       "unavailable": "发送未完成，请稍后重新发送"
-    },
-    "verb": {
-      "task": "新任务",
-      "agent": "新智能体"
     },
     "whisperBanner": "给 {{name}} 发悄悄话，仅你与对方可见。",
     "whisperPlaceholder": "悄悄话给 {{name}}…"
@@ -726,12 +741,12 @@ export default {
     }
   },
   "header": {
-    "openApp": "打开 App",
+    "openApp": "打开应用",
     "groupApps": "应用",
     "members": "{{count}} 位成员",
     "searchHistory": "搜索聊天记录",
     "groupInfoAndSettings": "群信息与设置",
-    "noGroupApps": "本设备暂无可用的 App。",
+    "noGroupApps": "本设备暂无可用的应用。",
     "announcement": "群公告",
     "groupInfo": "群信息",
     "chatInfo": "会话信息",
@@ -883,15 +898,15 @@ export default {
     "openSendingAgent": "打开 {{agent}} 的对话",
     "sendingAgentRemoved": "代发 Agent 已移除",
     "openSendingAgentFailed": "无法打开代发 Agent 的对话",
-    "viaApp": "由『{{app}}』App 代你发送",
-    "viaAppFor": "由『{{app}}』App 代 {{name}} 发送",
+    "viaApp": "由『{{app}}』应用代你发送",
+    "viaAppFor": "由『{{app}}』应用代 {{name}} 发送",
     "voice": "语音消息 {{duration}}",
     "whisperBoth": "仅你与对方可见的悄悄话",
     "whisperOnlyYou": "仅你可见的悄悄话",
     "whisperTo": "给 {{name}} 的悄悄话，仅你与对方可见。",
     "widget": "[Widget]",
     "reference": { "loading": "正在读取…", "unreadable": "一条你看不到的消息", "widgetUnreadable": "一个你看不到的 widget", "widgetRetracted": "这个 widget 已撤回", "widgetElsewhere": "这个 widget 在别的会话中", "locate": "定位原消息", "locateActive": "定位活的 widget", "previewQuote": "[引用]", "previewMessage": "[引用消息]" },
-    "widgetUnavailable": { "missing": "尚未安装 App。", "disabled": "App 已关闭。", "view": "此 App 视图不可用。", "platform": "此设备无法运行此 App。" }
+    "widgetUnavailable": { "missing": "尚未安装应用。", "disabled": "应用已关闭。", "view": "此应用视图不可用。", "platform": "此设备无法运行此应用。" }
   },
   "outbox": {
     "selectFileAgain": "上传已中断，请重新选择文件。",
@@ -965,9 +980,9 @@ export default {
   "resources": {
     "copyUrl": "复制咕咕 URL",
     "sendTo": "复制 URL 并发给…",
-    "appUnderstand": "了解 App", "appUnderstandText": "说明这个 App 能做什么。",
-    "appFork": "定制", "appForkText": "先问我想改什么，经我确认后 fork 这个 App。",
-    "appImprove": "提建议", "appImproveText": "帮我向这个 App 提出改进建议。",
+    "appUnderstand": "了解应用", "appUnderstandText": "说明这个应用能做什么。",
+    "appFork": "定制", "appForkText": "先问我想改什么，经我确认后 fork 这个应用。",
+    "appImprove": "提建议", "appImproveText": "帮我向这个应用提出改进建议。",
     "forkRequest": "向上游提需求", "forkRequestText": "帮我把这个 fork 的改动向上游作者提建议。",
     "forkMerge": "合并上游", "forkMergeText": "把上游合进这个 fork。先对比 fork 相对原始基点的改动，保留并逐项核对这些改动和已有数据，再重装并检查。",
     "forkRemove": "删除 fork", "forkRemoveText": "先征求我的确认，再删除这个 fork，保留数据和源码仓库。",

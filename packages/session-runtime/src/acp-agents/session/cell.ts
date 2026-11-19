@@ -43,6 +43,7 @@ import {
   AcpTranscriptParser,
   acpErr,
   classifyProviderPermissionMode,
+  permissionModeSupportsBillingRoute,
   createToolCallItem,
   makeToolId,
   permissionWaitKind,
@@ -191,6 +192,7 @@ export class SessionCell {
    */
   private lastFailureProvisional = false;
   /** 宿主要求关掉这条会话(stop / 删除 / 换运行时)。之后线断了是我们断的,在飞的那一轮是被停下,不是失败。 */
+  private retrying: SessionState['retrying'] = null;
   private closeRequested = false;
   private preparationRetryTimer: ReturnType<typeof setTimeout> | undefined;
   private preparationRetryDelay = 1500;
@@ -292,7 +294,7 @@ export class SessionCell {
   }
 
   get sessionState(): SessionState {
-    const state = this.machine.sessionState(this.transcript.activeTurn?.id ?? null);
+    const state = { ...this.machine.sessionState(this.transcript.activeTurn?.id ?? null), retrying: this.retrying ? { ...this.retrying } : null };
     return this.reverting ? { ...state, canSubmit: false } : state;
   }
 
@@ -302,7 +304,15 @@ export class SessionCell {
 
   get config(): SessionConfigState {
     // 转录里推不出「这家收不收图」——那是连接期 initialize 报的,所以在这里合进去。
-    return { ...this.transcript.config, acceptsImagePrompts: this.acceptsImagePrompts };
+    const config = this.transcript.config;
+    return {
+      ...config,
+      modeOptions: config.modeOptions ? {
+        ...config.modeOptions,
+        available: config.modeOptions.available.filter(mode => this.canUsePermissionMode(mode.id)),
+      } : null,
+      acceptsImagePrompts: this.acceptsImagePrompts,
+    };
   }
 
   get usage(): SessionUsage | null {
@@ -1097,6 +1107,9 @@ export class SessionCell {
     modeId: string,
     opts?: { startupOnly?: boolean },
   ): Promise<Result<LiveSettingApplyResult, AcpSetModeOptionError>> {
+    if (!this.canUsePermissionMode(modeId)) {
+      return acpErr.setModeFailed({ name: 'PermissionModeUnavailable', message: 'This permission tier is unavailable for the session billing route' });
+    }
     const configId = this.transcript.config.modeOptions?.configId ?? null;
     return this.enqueueSetting(
       'permission',
@@ -1452,6 +1465,7 @@ export class SessionCell {
   }
 
   private closeTurnCompletion(result: Result<SessionPromptResult, AcpSendPromptError> = ok({ queued: false })): void {
+    this.retrying = null;
     this.interruptedForMessage = false;
     this.yieldingRepliedAssistant = null;
     this.nativeInputAfterStart = false;
@@ -1559,6 +1573,10 @@ export class SessionCell {
       return;
     }
     if (event.state === 'unknown') return;
+    if (event.retrying !== undefined) {
+      this.retrying = event.retrying ? { ...event.retrying } : null;
+      this.deps.callbacks?.onSessionStateChanged?.();
+    }
     if (event.state !== 'idle') {
       if (this.machine.phase.kind === 'ready') {
         // 没有一句在飞,agent 自己开了工(后台跑完的通知、子任务回来):不是人开的。
@@ -2624,7 +2642,7 @@ export class SessionCell {
       // command that goes straight to idle). A receipt must not drain ordinary queued inputs.
       dispatchPending: this.promptEchoes.admissionClosed || this.activeTurnCompletion !== null
         || [...this.requests.values()].some(request => !request.steered && !request.accepted && !request.dispatched),
-      modeIds: this.transcript.config.modeOptions?.available.map((mode) => mode.id) ?? [],
+      modeIds: this.config.modeOptions?.available.map((mode) => mode.id) ?? [],
       configOptionIds: [
         ...(['model', 'effort', 'fast'] as const)
           .map((dimension) => this.configIdForDimension(dimension))
@@ -2639,6 +2657,14 @@ export class SessionCell {
    */
   hasConfigTarget(dimension: ConfigDimension): boolean {
     return this.configIdForDimension(dimension) !== null;
+  }
+
+  private canUsePermissionMode(modeId: string): boolean {
+    return permissionModeSupportsBillingRoute(
+      classifyProviderPermissionMode(modeId, this.deps.permissionModeMap),
+      this.deps.permissionModeMap,
+      this.deps.billingRoute ?? 'unknown',
+    );
   }
 
   /**

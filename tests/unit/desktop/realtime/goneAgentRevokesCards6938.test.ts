@@ -22,9 +22,15 @@ describe('#6938 gone 守卫把真删掉的名册行交给宿主', () => {
     const client = pollOnlyRuntimeIdentityClient([], 'not writable is not deleted')
     client.presence.set(agentId, presenceRow(agentId, { activity_status: 'running' }))
     const rpc = client.rpc.bind(client)
-    client.rpc = (async (fn: string, args: Record<string, unknown>) => fn === 'set_agent_runtime_state'
-      ? { data: null, error: { message: 'agent is not writable by current user' } }
-      : rpc(fn, args)) as typeof client.rpc
+    const rejectedWrites: string[] = []
+    const healthyWrites: string[] = []
+    client.rpc = (async (fn: string, args: Record<string, unknown>) => {
+      if (fn !== 'set_agent_runtime_state') return rpc(fn, args)
+      const id = String(args.p_agent_user_id)
+      if (id === agentId) { rejectedWrites.push(id); return { data: null, error: { message: 'agent is not writable by current user' } } }
+      healthyWrites.push(id)
+      return { data: null, error: null }
+    }) as typeof client.rpc
     const removed: string[] = []
     const host = createDeviceRuntimeHostLoop({
       env, intervalMs: 20, subscribeCommandWake: () => () => undefined,
@@ -36,8 +42,12 @@ describe('#6938 gone 守卫把真删掉的名册行交给宿主', () => {
     host.start()
     try {
       await awaitFact('not-writable row reached the host', async () => removed.length ? true : undefined)
+      // Drive a later real host iteration: another identity still publishes after the rejected one was dropped.
+      await createTestLocalAgent(env, { name: 'Healthy', gugu_user_id: 'healthy-agent' })
+      await awaitFact('the host continued after permanent rejection', async () => healthyWrites.includes('healthy-agent') ? true : undefined)
     } finally { await host.stop() }
     expect(removed).toEqual(['cloud-gone'])
+    expect(rejectedWrites).toEqual([agentId])
   })
 
   test('明确 removed 才给 cloud-removed;公网身份还在铸的行不交', async () => {

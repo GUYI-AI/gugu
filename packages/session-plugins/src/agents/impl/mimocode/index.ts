@@ -1,4 +1,3 @@
-import { mimocodeApiKeyConnection, mimocodeApiKeyConnectionBehavior } from './api-key-connection';
 import { platformModel } from './platform-model';
 import { resolveSessionPermissionMode } from '@gugu/session-core/acp';
 import {
@@ -18,7 +17,7 @@ import {
   BARE_VERSION_LINE,
 } from '@gugu/session-core/agents/plugins/helpers';
 import { createNativeAcpBehavior } from '../../helpers/acp-stdio';
-import { mimocodeAuthStatus, mimocodeModelCredential } from './auth';
+import { mimocodeAuthStatus, mimocodeModelCredential, mimocodeVendorKeyAccount } from './auth';
 import { MIMOCODE_EFFORT_OPTIONS } from './efforts';
 import { opencodeFamilyListedTitle } from '../../helpers/opencode-family-title';
 import { icon } from './icon';
@@ -54,7 +53,6 @@ export const plugin = definePlugin(
      * 这一格是**实测**出来的，❌ 不收「文档写着」。
      */
     // 「API Key 连接」(#2507):一把 key 怎么进这一家的进程,见 ./api-key-connection.ts。
-    apiKeyConnection: mimocodeApiKeyConnection,
     vendorAccount: {
       kind: 'not-required',
       evidence:
@@ -74,6 +72,7 @@ export const plugin = definePlugin(
      */
     auth: {
       kind: 'supported',
+      vendorKey: mimocodeVendorKeyAccount,
       methods: [
         {
           kind: 'cli-login',
@@ -229,7 +228,6 @@ export const plugin = definePlugin(
 );
 
 export const provider = registerPluginBehavior(plugin, {
-  apiKeyConnection: mimocodeApiKeyConnectionBehavior,
   sessionBundle: { materialize: materializeMimocodeSessionBundle, platformModel },
   subscription: mimocodeSubscription,
   // 两件事:#4956 默认预选规则的 modelCredential 判读,以及与 opencode 同形的

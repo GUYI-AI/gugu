@@ -1,4 +1,3 @@
-import { copilotApiKeyConnection, copilotApiKeyConnectionBehavior } from './api-key-connection';
 import { platformModel } from './platform-model';
 import {
   definePlugin,
@@ -56,7 +55,6 @@ export const plugin = definePlugin(
      * 这一格是**实测**出来的，❌ 不收「文档写着」。
      */
     // 「API Key 连接」(#2507):一把 key 怎么进这一家的进程,见 ./api-key-connection.ts。
-    apiKeyConnection: copilotApiKeyConnection,
     vendorAccount: {
       kind: 'not-required',
       evidence:
@@ -197,7 +195,6 @@ export const plugin = definePlugin(
 );
 
 export const provider = registerPluginBehavior(plugin, {
-  apiKeyConnection: copilotApiKeyConnectionBehavior,
   auth: { checkStatus: copilotAuthStatus },
   sessionBundle: { materialize: materializeCopilotSessionBundle, platformModel },
   subscription: copilotSubscription,

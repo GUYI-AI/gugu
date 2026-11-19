@@ -273,7 +273,7 @@ describe('「App」 on the phone: a market App’s versions and its 「自动更
     await marketAnswered(1)
     await open('notes')
     const row = () => page('[data-testid="app-manage-auto-update"]')
-    expect(row()?.textContent).toContain('安装旧版本后，此 App 的自')
+    expect(row()?.textContent).toContain('安装旧版本后，此应用的自动更新将关闭')
     await act(async () => { row()!.querySelector<HTMLElement>('[role="switch"]')!.click() })
     await until('switched off', () => store.autoUpdateOff.includes('notes'))
     expect(phone.setAutoUpdate).toHaveBeenLastCalledWith('notes', false)

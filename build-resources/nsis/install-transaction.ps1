@@ -8,9 +8,9 @@ param(
   [Parameter(Mandatory=$true)][string]$UninstallKey,
   [Parameter(Mandatory=$true)][ValidateSet('all','CurrentUser')][string]$Mode,
   [string]$LinkManifest,
-  # @@@install-failure-log — NSIS shows this script's error only in its "Show details" pane, which is gone once the
-  # window closes (a field report had nothing but "Installation Aborted" at ~3/4 progress). Every failure is also
-  # appended here; the app reads it on its next start and records it in its own log.
+  [string]$DiagnosticLog,
+  # @@@install-failure-log — keep the application-readable failure log in addition
+  # to the NSIS diagnostic directory shown before an installation aborts.
   [string]$FailureLog = (Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) ("gugu\installer\" + [IO.Path]::GetFileNameWithoutExtension($Executable) + '.log'))
 )
 # Runs from NSIS's private plugin directory, never from a directory being renamed.
@@ -26,6 +26,33 @@ $reg = Join-Path $env:SystemRoot 'System32\reg.exe'
 function Registry-Path([string]$hive, [string]$key) {
   $full = if ($hive -eq 'HKLM') { 'HKEY_LOCAL_MACHINE' } else { 'HKEY_CURRENT_USER' }
   return "Registry::$full\$key"
+}
+
+function Test-OwnedResidue([string]$directory) {
+  # A filename alone is not ownership. Old installers did not leave a durable
+  # marker, so recognize their executable's embedded Gugu product identity.
+  # If a manifest survived too, it must agree rather than contradict that identity.
+  $exe = Join-Path $directory $Executable
+  foreach ($path in @($directory,$exe)) {
+    if (-not (Test-Path -LiteralPath $path) -or
+        ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $false }
+  }
+  try {
+    $identity = [Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
+    if ($identity.CompanyName -ne 'Gugu' -or $identity.ProductName -notmatch '^(Gugu|咕咕)([ -]?Beta)?$') { return $false }
+    if (($Executable -match '-beta\.exe$') -ne ($identity.ProductName -match 'Beta$')) { return $false }
+    $manifest = Join-Path $directory 'resources\app\package.json'
+    if (Test-Path -LiteralPath $manifest) {
+      foreach ($path in @((Join-Path $directory 'resources'),(Join-Path $directory 'resources\app'),$manifest)) {
+        if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { return $false }
+      }
+      $package = [IO.File]::ReadAllText($manifest) | ConvertFrom-Json
+      if ($package.name -notin @('gugu','gugu-beta') -or $package.productName -ne $identity.ProductName -or
+          $package.version -notmatch '^\d+\.\d+\.\d+([+-].+)?$' -or
+          $package.main -notin @('apps/desktop/dist-electron/main.js','dist-electron/main.js')) { return $false }
+    }
+    return $true
+  } catch { return $false }
 }
 
 function Retry-Files([scriptblock]$operation) {
@@ -46,7 +73,7 @@ function Retry-Files([scriptblock]$operation) {
 # retry window than other file operations. If they still fail, the holders at that moment are recorded for the log.
 $script:moveFailure = $null
 function Move-Tree([string]$from, [string]$to) {
-  $delays = @(100,200,400,800,1000,1500,2000,2000,3000,3000,4000,4000,4000,4000)  # ~30 s in total
+  $delays = @(100,200,400,800,1000,1500,2000,2000,2000)  # 10 s; retain time for extraction and an actionable failure under 60 s
   for ($attempt=0; ; $attempt++) {
     try { [IO.Directory]::Move($from, $to); return } catch {
       $cause = $_.Exception.GetBaseException()
@@ -100,7 +127,8 @@ public static class GuguTreeHolders {
         IntPtr ph; if (!procs.TryGetValue(pid, out ph)) { ph = OpenProcess(0x40, false, (int)pid); procs[pid] = ph; }
         IntPtr d; if (ph == IntPtr.Zero || !DuplicateHandle(ph, e.Handle, me, out d, 0, false, 2)) continue;
         try {
-          if (fileType == -1) { if (GetFileType(d) != 1) continue; fileType = e.Type; }
+          if (GetFileType(d) != 1) continue; // pipes cannot hold the install tree and their names may block
+          if (fileType == -1) fileType = e.Type;
           string n = Name(d);
           if (n != null && (n.Equals(root, StringComparison.OrdinalIgnoreCase) || n.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase)))
             found.Add(pid + "\t0x" + e.Access.ToString("X") + "\t" + n.Substring(dev.Length));
@@ -181,15 +209,24 @@ function Restore-State($s) {
   }
   foreach ($entry in @($s.roots)) {
     if (Test-Path -LiteralPath $entry.backup) {
-      if (Test-Path -LiteralPath $entry.root) { throw 'Old install location is occupied; backup preserved' }
+      if (Test-Path -LiteralPath $entry.root) {
+        # NSIS can recreate its destination before prepare. A verified journal
+        # may recover through that empty directory, never through foreign files.
+        if ($entry.root -eq $s.target -and [IO.Directory]::Exists($entry.root) -and
+            @(Get-ChildItem -LiteralPath $entry.root -Force).Count -eq 0) {
+          [IO.Directory]::Delete($entry.root)
+        } else { throw 'Old install location is occupied; backup preserved' }
+      }
       Retry-Files { [IO.Directory]::Move($entry.backup, $entry.root) }
     }
   }
   if ($s.registryMayHaveChanged) {
     foreach ($snapshot in $s.registry) {
       if ($snapshot.existed) {
-        & $reg delete $snapshot.key /f | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw 'Could not reset installation registration' }
+        if (Test-Path -LiteralPath (Registry-Path $snapshot.key.Split('\',2)[0] $snapshot.key.Split('\',2)[1])) {
+          & $reg delete $snapshot.key /f | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Could not reset installation registration' }
+        }
         & $reg import (Join-Path $journal $snapshot.file) | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'Could not restore installation registration' }
       } else {
@@ -245,8 +282,17 @@ try {
       }
     }
     if ((Test-Path -LiteralPath $Target) -and ($roots.root -notcontains $Target)) {
-      if (@(Get-ChildItem -LiteralPath $Target -Force).Count) { throw 'Unregistered target is not empty; preserved' }
-      Remove-Item -LiteralPath $Target
+      if (@(Get-ChildItem -LiteralPath $Target -Force).Count) {
+        if (-not (Test-OwnedResidue $Target)) {
+          $script:unrecognizedTarget = $true
+          throw "Unregistered target contains unrecognized files; choose a new empty installation folder. Preserved: $Target"
+        }
+        $backup = "$Target.gugu-backup-$AppId"
+        if (Test-Path -LiteralPath $backup) { throw 'Unclaimed backup exists; preserved' }
+        # Treat a recognized residue exactly like a registered old tree. It is
+        # backed up at commit and restored with absent registration on failure.
+        $roots += @{ root=$Target; backup=$backup }
+      } else { Remove-Item -LiteralPath $Target }
     }
     foreach ($entry in $roots) {
       if ($Target.StartsWith("$($entry.root)\", [StringComparison]::OrdinalIgnoreCase) -or
@@ -332,9 +378,15 @@ try {
       step=$(if ($script:moveFailure) { $script:moveFailure.step }); holders=$(if ($script:moveFailure) { $script:moveFailure.holders } else { @() })
       # What still runs from the trees being replaced: the usual reason a directory rename is refused.
       running=@(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $path = $_.ExecutablePath; $path -and @($roots | Where-Object { $path.StartsWith("$_\", [StringComparison]::OrdinalIgnoreCase) }).Count } | ForEach-Object { "$($_.ProcessId) $($_.ExecutablePath)" }) }
-    New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($FailureLog)) -Force | Out-Null
-    $kept = @(if (Test-Path -LiteralPath $FailureLog) { Get-Content -LiteralPath $FailureLog -Encoding UTF8 | Select-Object -Last 49 })
-    [IO.File]::WriteAllLines($FailureLog, [string[]]($kept + ($entry | ConvertTo-Json -Compress)), (New-Object Text.UTF8Encoding($false)))
+    foreach ($destination in @($DiagnosticLog,$FailureLog) | Where-Object { $_ } | Select-Object -Unique) {
+      try {
+        New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($destination)) -Force | Out-Null
+        $kept = @(if (Test-Path -LiteralPath $destination) { Get-Content -LiteralPath $destination -Encoding UTF8 | Select-Object -Last 49 })
+        [IO.File]::WriteAllLines($destination, [string[]]($kept + ($entry | ConvertTo-Json -Compress)), (New-Object Text.UTF8Encoding($false)))
+      } catch { [Console]::Error.WriteLine("Could not record the failure in ${destination}: $($_.Exception.Message)") }
+    }
   } catch { [Console]::Error.WriteLine("Could not record the failure in ${FailureLog}: $($_.Exception.Message)") }
+  if ($script:moveFailure -and @($script:moveFailure.holders | Where-Object { $_ -match '^\d+ ' }).Count) { exit 3 }
+  if ($script:unrecognizedTarget) { exit 4 }
   exit 2
 }

@@ -3,7 +3,7 @@ import { useContext, useEffect } from 'react';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { SshPromptCard } from '@/components/settings/addServer/SshPromptCard';
 import '@/i18n/registerSettingsCatalog';
-import { BrowserPane } from '@renderer/features/browser/browser-pane';
+import { BrowserPane, ChatBrowserPane } from '@renderer/features/browser/browser-pane';
 import { RemoteFloatingCard } from '@renderer/features/remote-hosts/remote-floating-card';
 import type { ResolvedTab, TabContentProps } from '@renderer/features/tabs/core/tab-provider';
 import { rpc } from '@renderer/lib/ipc';
@@ -42,6 +42,8 @@ export const TabContent = observer(function BrowserTabContent({ host }: TabConte
         const focusThis = !tab.isFocused ? () => host.setActiveTab(tab.tabId) : undefined;
         // 不在屏上的那几枚照旧隐藏(#7274 网页本身是主进程的 view,隐藏的占位报 background,网页跟着收起;
         // agent 正在操作的那张由主进程让它收起着也照常出帧,这里不用再做透明那一套)。
+        const place = host.ctx.place;
+        const start = tab.resource.workspaceStart;
         return (
           <div
             key={browserId}
@@ -51,7 +53,9 @@ export const TabContent = observer(function BrowserTabContent({ host }: TabConte
             onPointerDownCapture={focusThis}
             onFocusCapture={focusThis}
           >
-            <BrowserTab resource={tab.resource} visible={visible && pageActive} focused={tab.isFocused ?? visible} />
+            {place?.kind === 'chat'
+              ? <ChatBrowserPane chatId={place.chatId} tabId={tab.tabId} browserId={browserId} visible={visible && pageActive} focused={tab.isFocused ?? visible} workspaceStart={start} />
+              : <BrowserTab resource={tab.resource} visible={visible && pageActive} focused={tab.isFocused ?? visible} startTabId={start ? tab.tabId : undefined} />}
           </div>
         );
       })}
@@ -63,18 +67,20 @@ const BrowserTab = observer(function BrowserTab({
   resource,
   visible,
   focused,
+  startTabId,
 }: {
   resource: BrowserTabResource;
   visible: boolean;
   focused: boolean;
+  startTabId?: string;
 }) {
   const attachment = resource.attachment;
-  if (!attachment) return <BrowserPane browserId={resource.browserId} visible={visible} focused={focused} />;
+  if (!attachment) return <BrowserPane browserId={resource.browserId} visible={visible} focused={focused} startTabId={startTabId} />;
   const pending = attachment.prompt;
   return (
     <BrowserUrlResolverContext.Provider value={attachment.resolve}>
       <div className="relative h-full">
-        <BrowserPane browserId={resource.browserId} visible={visible} focused={focused} />
+        <BrowserPane browserId={resource.browserId} visible={visible} focused={focused} startTabId={startTabId} />
         {pending && (
           <RemoteFloatingCard testId="remote-browser-prompt" offsetClassName="top-14">
             <SshPromptCard

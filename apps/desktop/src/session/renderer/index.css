@@ -1125,6 +1125,40 @@
     font-family: var(--font-display);
   }
 
+  /* 聊天页头的高度独立于普通工作区和两工具并排。 */
+  [data-chat-workspace-header] {
+    --tab-strip-height: 44px;
+    --chat-tool-tab-height: 32px;
+    --tab-slot-min-width: 84px;
+    --tab-slot-max-width: 238px;
+    --tab-strip-inset-start: calc((var(--tab-strip-height) - var(--chat-tool-tab-height)) / 2);
+    --tab-strip-inset-end: var(--tab-strip-inset-start);
+    height: var(--tab-strip-height);
+  }
+
+  [data-chat-workspace-header] [data-tab-label] {
+    height: var(--chat-tool-tab-height);
+    border-radius: var(--radius-md);
+  }
+
+  [data-chat-workspace-header] .session-tab-ears::before,
+  [data-chat-workspace-header] .session-tab-ears::after {
+    display: none;
+  }
+
+  [data-chat-workspace-header] [data-tab-density='compact'] [data-tool-tab-title] {
+    text-overflow: clip;
+    mask-image: linear-gradient(to right, currentColor 75%, transparent);
+  }
+
+  [data-chat-tool-collapse-preview][data-chat-tool-collapse-ready] {
+    background: color-mix(in oklab, var(--foreground) 16%, transparent);
+  }
+
+  [data-chat-tool-dragging] [data-pane-content-drop-preview] {
+    display: none;
+  }
+
   /* ── 工作区页签:Chrome 式形态 ──────────────────────────────────────────────
      只有「要看兄弟节点」的两件事写在这儿,其余几何全在 tab-bar.tsx / generic-tab-item.tsx
      的 Tailwind class 里 —— 这两件 Tailwind 表达不了,不是偷懒:
@@ -1423,31 +1457,32 @@ html[data-gugu-dragging] :is(webview, iframe) {
 }
 
 /* 一块左上的 ⋮⋮(spec session-page「一屏几块」,照 Zen 分屏块的拖柄):平时只留位置,指着页签条才淡淡显出来,
-   指着它时深一档,整块描一圈 —— 告诉你抓的是整块。点是两列三行的小圆点,不是图标。 */
+   指着它时深一档,整块描一圈 —— 告诉你抓的是整块。把手用两条横线,静止时隐藏。 */
 .screen-block-grip {
   display: flex;
   height: 24px;
-  width: 12px;
+  width: 20px;
   align-items: center;
   justify-content: center;
   border-radius: 4px;
-  color: transparent;
+  color: var(--color-foreground);
+  opacity: 0;
   cursor: grab;
-  transition: color var(--dur-fast);
+  transition: opacity var(--dur-fast);
 }
-.session-tab-bar:hover .screen-block-grip {
-  color: color-mix(in oklab, var(--color-foreground) 32%, transparent);
+.session-tab-bar:hover .screen-block-grip,
+.session-tab-bar:focus-within .screen-block-grip {
+  opacity: 0.45;
 }
-.screen-block-grip:hover {
-  color: var(--color-foreground) !important;
+.screen-block-grip:hover,
+.screen-block-grip:focus-visible:not([data-pointer-focus]) {
+  opacity: 1;
 }
-.screen-block-grip-dots {
+.screen-block-grip-lines {
   display: block;
-  width: 8px;
-  height: 14px;
-  background-image: radial-gradient(circle, currentColor 1.1px, transparent 1.3px);
-  background-size: 4px 5px;
-  background-position: 0 -0.5px;
+  width: 10px;
+  height: 5px;
+  border-block: 1.5px solid currentColor;
 }
 [data-screen-page]:has([data-block-grip]:hover)::after,
 [data-screen-block]:has([data-block-grip]:hover)::after {

@@ -26,6 +26,8 @@ export type ClaudeCredentialLocation = {
 export type ClaudeCredentialStore = {
   read(location: ClaudeCredentialLocation): Promise<string | null>;
   write(location: ClaudeCredentialLocation, text: string): Promise<void>;
+  /** Update any existing copies, including a fallback file when a keychain item also exists. */
+  updateExisting(location: ClaudeCredentialLocation, update: (text: string) => string): Promise<void>;
 };
 
 const SERVICE = 'Claude Code-credentials';
@@ -141,6 +143,13 @@ async function writeFileCredential(root: string, text: string): Promise<void> {
   }
 }
 
+async function updateFileCredential(root: string, update: (text: string) => string): Promise<void> {
+  const before = await readFileCredential(root);
+  if (before === null) return;
+  const after = update(before);
+  if (after !== before) await writeFileCredential(root, after);
+}
+
 export type ClaudeCredentialStoreOptions = {
   platform?: NodeJS.Platform;
   /** 钥匙串条目的账户名:CLI 用的是系统用户名。 */
@@ -156,6 +165,7 @@ export function createClaudeCredentialStore(options: ClaudeCredentialStoreOption
     return {
       read: ({ root }) => readFileCredential(root),
       write: ({ root }, text) => writeFileCredential(root, text),
+      updateExisting: ({ root }, update) => updateFileCredential(root, update),
     };
   }
   const security = options.security ?? realSecurity();
@@ -167,6 +177,18 @@ export function createClaudeCredentialStore(options: ClaudeCredentialStoreOption
       'find-generic-password', '-s', claudeKeychainService(location), '-a', account, '-w', ...keychainArgs,
     ]);
     return output === null ? null : decodeSecret(output);
+  };
+
+  const writeKeychain = async (location: ClaudeCredentialLocation, text: string): Promise<void> => {
+    const service = claudeKeychainService(location);
+    const hex = Buffer.from(text, 'utf8').toString('hex');
+    const command =
+      `add-generic-password -U -a ${quote(account)} -s ${quote(service)} -X ${hex}` +
+      (options.keychain ? ` ${quote(options.keychain)}` : '');
+    if (command.length <= SECURITY_STDIN_LIMIT) await security.interactive(command);
+    else await security.run(['add-generic-password', '-U', '-a', account, '-s', service, '-X', hex, ...keychainArgs]);
+    // `security` may report success even when a write was truncated.
+    if ((await readKeychain(location)) !== text) throw new Error('The Claude sign-in was not stored intact in the keychain');
   };
 
   return {
@@ -181,15 +203,15 @@ export function createClaudeCredentialStore(options: ClaudeCredentialStoreOption
         await writeFileCredential(location.root, text);
         return;
       }
-      const service = claudeKeychainService(location);
-      const hex = Buffer.from(text, 'utf8').toString('hex');
-      const command =
-        `add-generic-password -U -a ${quote(account)} -s ${quote(service)} -X ${hex}` +
-        (options.keychain ? ` ${quote(options.keychain)}` : '');
-      if (command.length <= SECURITY_STDIN_LIMIT) await security.interactive(command);
-      else await security.run(['add-generic-password', '-U', '-a', account, '-s', service, '-X', hex, ...keychainArgs]);
-      // 读回来逐字比对:`security` 写坏了也可能报成功,宁可当场报错让切换回滚,❌ 留一份坏凭据在那里。
-      if ((await readKeychain(location)) !== text) throw new Error('The Claude sign-in was not stored intact in the keychain');
+      await writeKeychain(location, text);
+    },
+    async updateExisting(location, update) {
+      const before = await readKeychain(location);
+      if (before !== null) {
+        const after = update(before);
+        if (after !== before) await writeKeychain(location, after);
+      }
+      await updateFileCredential(location.root, update);
     },
   };
 }

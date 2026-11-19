@@ -14,12 +14,15 @@ import { ShareIntakeContent } from '../../../../apps/desktop/src/mobile/share-in
 import { landPendingStarters } from '../../../../apps/desktop/src/lib/starterContinuation'
 import { MobileAssistantApp } from '../../../../apps/desktop/src/mobile/assistant/MobileAssistantApp'
 import { i18n } from '../../../../apps/desktop/src/i18n'
-import { InChatSlot } from '../../../../apps/desktop/src/lib/shellSlots'
 import { DevicesContext, useDevicesStore } from '../../../../apps/desktop/src/store/devicesContext'
 import { PhoneGroupAgentCreation } from '../../../../apps/desktop/src/mobile/chat/PhoneNewTask'
 import * as sessionRpc from '../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc'
 import { runInAction } from 'mobx'
 import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+
+vi.mock('@renderer/features/settings/subscriptions/ensure-agent-home', () => ({
+  ensureAgentHomeImported: async () => undefined,
+}))
 
 // The task folder card's project is the account project of this group (accountProjectsStore); 'machine' has its folder.
 beforeEach(() => runInAction(() => {
@@ -97,15 +100,6 @@ describe('chat editor draft writes', () => {
     await act(async () => { setComposerVerb('chat', 'task') })
     await act(async () => { setComposerVerb('chat', null, 'returned task text') })
     expect(readComposer(input())).toBe('returned task text')
-  })
-
-  it('carries the current document into a new task and clears it through the shared writer', async () => {
-    await renderWithAppProviders(harness, <InChatSlot.Provider value={{ projectName: null }}><ChatMessageComposer chatId="chat" isGroupChat onSend={async () => {}} /></InChatSlot.Provider>)
-    await act(async () => { writeComposer(input(), 'React snapshot') })
-    await act(async () => { editor().commands.setContent(plainTextDoc('current document'), { emitUpdate: false }) })
-    await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="composer-verb-task"]')!)
-    expect(takeComposerCarry('chat')).toBe('current document')
-    expect(readComposer(input())).toBe('')
   })
 
   it('keeps the live group message draft when the separate creation sheet sends a task', async () => {

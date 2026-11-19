@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { provider } from './index';
-import { codexNotifyConfigValue } from './hooks';
+import { codexNotifyConfigValue, stripLegacyCodexNotify } from './hooks';
 import { GUGU_CODEX_NOTIFY_CONFIG_ENV } from './session-bundle';
 
 /**
@@ -36,7 +36,7 @@ describe('codex ACP spawn', () => {
     const raw = env?.[GUGU_CODEX_NOTIFY_CONFIG_ENV];
     expect(raw, '桥没收到 notify ⇒ 这条腿一条 hook 事件都发不出来').toBeTypeOf('string');
     expect(JSON.parse(raw as string)).toEqual(codexNotifyConfigValue());
-    // 出处标记必须在里面 —— `isLegacyCodexNotify` 靠它认出「这份是咕咕写的」。
+    // The old writer's callback includes Gugu's dispatch marker.
     expect(raw).toContain('GUGU_HOOK_PORT');
   });
 
@@ -55,5 +55,20 @@ describe('codex ACP spawn', () => {
 
   it('声明的是咕咕自带的 app-runtime 桥', () => {
     expect(provider.behavior.acp!.bridge).toEqual({ kind: 'app-runtime', file: 'codex-app-server-acp.mjs' });
+  });
+});
+
+describe('legacy Codex terminal notify cleanup', () => {
+  it('removes the exact old assignment and preserves user comments, tables, and nested notify keys', () => {
+    const command = codexNotifyConfigValue().map((argument) => JSON.stringify(argument)).join(',\n  ');
+    const before = `# preferences\r\nnotify = [\r\n  ${command}\r\n] # callback\r\n[profile.local]\r\nnotify = ["other"]\r\n`;
+    const after = '# preferences\r\n# callback\r\n[profile.local]\r\nnotify = ["other"]\r\n';
+    expect(stripLegacyCodexNotify(before)).toBe(after);
+    expect(stripLegacyCodexNotify(after)).toBe(after);
+  });
+
+  it('leaves a user-authored notification command untouched', () => {
+    const config = 'notify = ["bash", "-c", "custom GUGU_HOOK_PORT callback"]\n';
+    expect(stripLegacyCodexNotify(config)).toBe(config);
   });
 });

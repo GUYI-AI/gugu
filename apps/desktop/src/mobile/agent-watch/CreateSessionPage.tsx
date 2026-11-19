@@ -455,7 +455,7 @@ function CreateOnMachine({
       aria-live="assertive"
     >
       <span className="gg-aw-action-error-title">{t('agentWatch.create.failed')}</span>
-      <span className="gg-aw-action-error-detail">{createError}</span>
+      <div className="gg-aw-action-error-detail">{createError}</div>
       <Button
         variant="ghost"
         size="sm"

@@ -65,18 +65,18 @@ function makeDeps(commitAnswer?: (args: Record<string, unknown>) => Response, fi
 }
 
 describe('message_send with a file, by reference', () => {
-  test('a committed file with a lost finish response returns sent/retrying and the same queue resumes without resending', async () => {
-    let fail = true
-    const h = makeDeps(undefined, () => fail ? new Response(JSON.stringify({ error: 'failed' }), { status: 503 }) : new Response(JSON.stringify({ status: 'ready' })))
+  test('a committed file with a lost finish response retries finalization without sending the bytes or message again', async () => {
+    let finishCalls = 0
+    const h = makeDeps(undefined, () => ++finishCalls === 1 ? new Response(JSON.stringify({ error: 'failed' }), { status: 503 }) : new Response(JSON.stringify({ status: 'ready' })))
     const receipt = JSON.parse(await callTool('message_send', { chat_id: CHAT, file_path: localFile, temporary: true }, h.deps))
-    expect(receipt).toMatchObject({ status: 'sent', upload: 'retrying', note: expect.stringContaining('do not send it again') })
+    expect(receipt).toMatchObject({ status: 'sent' })
+    expect(receipt.upload).toBeUndefined()
     expect(h.commits).toHaveLength(1)
     expect(h.commits[0]).toMatchObject({ keep: 'temporary' })
-    fail = false
-    await vi.waitFor(() => expect(h.finishes).toHaveLength(2), { timeout: 8000 })
-    expect(h.commits).toHaveLength(1)
+    expect(h.uploads).toHaveLength(1)
+    expect(h.finishes).toHaveLength(2)
     expect(h.finishes[1]).toMatchObject({ message_id: h.commits[0]!.message_id })
-  }, 12_000)
+  })
 
   test.each(['upload_mismatch', 'too_large'])('terminal %s reports the committed message and asks against resending it', async reason => {
     const h = makeDeps(undefined, () => new Response(JSON.stringify({ error: reason, message: reason }), { status: reason === 'too_large' ? 413 : 409 }))
@@ -99,10 +99,10 @@ describe('message_send with a file, by reference', () => {
     expect(drop).toHaveBeenCalledExactlyOnceWith(h.commits[0]!.message_id)
   })
 
-  test.each(['network', '5xx'])('an uncertain %s commit keeps delivering its bytes, even if it only settles an orphan', async kind => {
+  test.each(['network', '5xx', '408', '429'])('an uncertain %s commit keeps delivering its bytes, even if it only settles an orphan', async kind => {
     const h = makeDeps(() => {
       if (kind === 'network') throw new TypeError('response lost')
-      return new Response(JSON.stringify({ error: 'failed' }), { status: 503 })
+      return new Response(JSON.stringify({ error: 'failed' }), { status: kind === '5xx' ? 503 : Number(kind) })
     })
     const drop = vi.spyOn(h.attachments, 'drop')
     const receipt = JSON.parse(await callTool('message_send', { chat_id: CHAT, file_path: localFile }, h.deps))
@@ -111,6 +111,17 @@ describe('message_send with a file, by reference', () => {
     expect(new Set(h.commits.map(commit => commit.message_id)).size).toBe(1)
     expect(drop).not.toHaveBeenCalled()
     await vi.waitFor(() => expect(h.finishes).toHaveLength(1))
+  })
+  test('a failed recipient read after commit preserves the sent file receipt and never resends', async () => {
+    const h = makeDeps(), read = h.deps.restGet as (path: string) => Promise<unknown>
+    h.deps.restGet = (path: string) => {
+      if (path.startsWith('message_agent_delivery_blocks?')) throw new TypeError('fetch failed')
+      return read(path)
+    }
+    const receipt = JSON.parse(await callTool('message_send', { chat_id: CHAT, file_path: localFile }, h.deps))
+    expect(receipt).toMatchObject({ status: 'sent', delivery_status: 'unverified', file_name: 'GLM_Agent.pptx', size_bytes: 12, mime_type: PPTX,
+      message_id: `msg:${h.commits[0]!.message_id}`, file: `gugu-file://${ITEM}?v=3` })
+    expect(h.commits).toHaveLength(1)
   })
   test('file alone: one attachments/share call pinned to that version, no upload, no commit; the receipt names the pinned file', async () => {
     const { deps, shares, commits, uploads } = makeDeps()

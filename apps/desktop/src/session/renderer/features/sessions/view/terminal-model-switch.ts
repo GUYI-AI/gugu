@@ -1,3 +1,4 @@
+import { customModelOptionId, type CustomModelRef } from '@gugu/session-core/models/custom-model';
 import { platformModelIdFromOption, platformOptionId } from '@/session/shared/platform-model-id';
 import {
   runningPlatformModelId,
@@ -22,6 +23,7 @@ export function terminalSelectedOptionId(input: {
   platformModelIds: readonly string[];
   /** 会话记录里的 `model`(BYOK 那一路的模型;缺席 = harness 自家默认)。 */
   recordedModel?: string | null;
+  customModel?: CustomModelRef;
 }): string | undefined {
   const platformModel = runningPlatformModelId(
     input.sessionSelection,
@@ -30,6 +32,7 @@ export function terminalSelectedOptionId(input: {
   );
   if (platformModel) return platformOptionId(platformModel);
   // 平台那一路时宿主会把 config.model 删掉;万一残留,也由上面平台那一格优先。
+  if (input.customModel) return customModelOptionId(input.customModel);
   return input.recordedModel?.trim() || undefined;
 }
 

@@ -1,3 +1,9 @@
+import { useCustomAutoReview } from './use-custom-auto-review';
+import { withAutoReviewHint, type ReviewCostSource } from '../acp/auto-review-permission-hint';
+import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
+import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
+import { useReplica } from '@/lib/replica';
+import { customModels } from './custom-models';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
 import { agentAccessMethods, agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
@@ -181,6 +187,7 @@ export type InitialSessionState = {
    * would be a second, contradicting declaration.
    */
   model: string | null;
+  acceptsImageAttachments?: boolean;
   setModel: (model: string | null) => void;
   /**
    * 「咕咕提供的模型」目录;取不到就是空数组 —— 分组缺席而 harness 模型照常。
@@ -245,6 +252,10 @@ export type InitialSessionState = {
   /** Selected effort id, or null when nothing is armed (the CLI then resolves it itself). */
   effort: string | null;
   setEffort: (effort: string | null) => void;
+  autoReviewAvailable?: boolean;
+  autoReviewDisabled?: boolean;
+  autoReviewByHaiku?: boolean;
+  autoReviewCostSource?: ReviewCostSource;
   fastMode?: boolean;
   setFastMode?: (enabled: boolean) => void;
   /** What the CLI would pick on its own for this model — shown in the 「默认」 row. */
@@ -761,6 +772,15 @@ export function useInitialSessionState(
     harnessCatalogState,
     staticModelsCapability?.modelOptions
   );
+  const customReading = useReplica(customModels, [machine]);
+  const rememberedModel = lastStartedConfiguration?.provider === providerId ? lastStartedConfiguration?.model : undefined;
+  const rememberedCustom = customModelRefFromOption(rememberedModel);
+  const availableRememberedModel = rememberedCustom && customReading.state === 'value' &&
+    customReading.value.some((record) => record.id === rememberedCustom.connectionId && record.keySaved)
+    ? rememberedModel : undefined;
+  const requestedModel = modelOverride ?? availableRememberedModel;
+  const customSelection = !(providerId && platformModelOverrides[providerId]) && customModelRefFromOption(requestedModel)
+    ? requestedModel : undefined;
   // 从这里建终端起不来 ⇒ 不管偏好是哪头都锁在通用(❌ 等人点了终端才变灰);只在通用那条腿真能落时锁,
   // 锁显示的才等于这条会话真实的展示。
   const generalForcedHere = terminalUnstartable && sessionpageSurface === 'acp';
@@ -846,7 +866,7 @@ export function useInitialSessionState(
       harnessDefaultCredential === 'uncredentialed');
   // 聊天(ACP)与终端(pty)在这件事上没有分别:composer 是会话的唯一决策点,两种会话都
   // 照它跑。所以这里不看 sessionView —— 切展示既不撤走分组,也不动用户已经选好的模型。
-  const platformModel = resolvePlatformModel(
+  const platformModel = customSelection ? null : resolvePlatformModel(
     platformCatalog,
     providerId,
     providerId ? platformModelOverrides[providerId] : undefined,
@@ -1087,21 +1107,27 @@ export function useInitialSessionState(
   // 选了平台模型就没有 harness 模型可言:模型由网关签发的 token 钉死,这里再报一个只会打架。
   const model = platformModel
     ? null
+    : customSelection ? customSelection
     : modelOverride && modelOptions?.[modelOverride]
       ? modelOverride
       : resolvedDefaultModel;
+  const selectedCustom = customModelRefFromOption(customSelection);
+  const customConnection = selectedCustom && customReading.state === 'value' ? customReading.value.find(record => record.id === selectedCustom.connectionId) : undefined;
+  const customFeatures = customConnection?.models.find(({ id }) => id === selectedCustom?.modelId);
+  const customReview = useCustomAutoReview(providerId === 'claude' ? customConnection : undefined, selectedCustom?.modelId, machine);
+  const runtimeModel = runtimeModelId(model) ?? null;
   const targetFastCatalog = useTargetModelCatalog(
-    !unattended && !platformModel && agentOffersFastMode(capabilities) ? providerId : null,
+    !selectedCustom && !unattended && !platformModel && agentOffersFastMode(capabilities) ? providerId : null,
     sessionpageSurface,
-    harnessCatalogState.kind === 'ready' && harnessCatalogState.selected !== model ? model : null,
+    harnessCatalogState.kind === 'ready' && harnessCatalogState.selected !== runtimeModel ? runtimeModel : null,
   );
   // 活目录 → 插件声明 → 静态表三级合成,与手机新建页共用同一个 resolveCreateEfforts(shared),
   // ❌ 别在这里再展开一遍那三步 —— 两处各写一份就会漂。
-  const modelEfforts = resolveCreateEfforts({
+  const modelEfforts = selectedCustom && customFeatures?.thinking !== true ? null : resolveCreateEfforts({
     state: harnessCatalogState,
     effortCapability: capabilities?.effort,
     staticModelsCapability: staticModelsCapability,
-    model,
+    model: runtimeModel,
     platformModel: platformEffortFacts(platformModel, platformCatalog.models),
     leg: sessionpageSurface,
   });
@@ -1121,6 +1147,17 @@ export function useInitialSessionState(
           : undefined))
       : undefined
   );
+  const { auth: reviewAuth } = useAgentAuthStatus(!platformModel && !selectedCustom ? providerId : null, undefined, { machine });
+  const autoReviewCostSource: ReviewCostSource = platformModel ? 'platform' : selectedCustom ? 'api-key'
+    : reviewAuth?.status.kind === 'authenticated' ? reviewAuth.status.credentialKind ?? 'unknown' : 'unknown';
+  const reviewCatalog = targetFastCatalog ?? harnessCatalogState;
+  const reviewQualified = !unattended && catalogAllowsAutoReview(
+    capabilities?.autoApprove.modes, reviewCatalog, platformModel ? 'platform' : selectedCustom ? 'custom' : 'own', platformModel ?? runtimeModel,
+  );
+  const needsCustomReview = providerId === 'claude' && !!selectedCustom;
+  const autoReviewAvailable = reviewQualified && (!needsCustomReview || customReview?.kind === 'own');
+  const autoReviewDisabled = reviewQualified && needsCustomReview && customReview?.kind === 'platform-fallback';
+  const autoReviewByHaiku = customReview?.kind === 'own' && customReview.byHaiku === true;
   const autoApproveSupported = agentSupportsAutoApprove(capabilities);
   const grokStructuralFullAccess = providerId === 'grok';
   // @@@5597-draft-decides — **草稿上显示的档 = 落库的档 = 进程里生效的档**,三者同一个事实。
@@ -1182,7 +1219,7 @@ export function useInitialSessionState(
   const exhaustiveModes = capabilities?.autoApprove.modesExhaustive
     ? capabilities.autoApprove.modes
     : undefined;
-  const permissionMode: GuguPermissionMode = grokStructuralFullAccess
+  const permissionMode: GuguPermissionMode = wantedPermissionMode === 'ai-review' && !autoReviewAvailable ? 'edit' : grokStructuralFullAccess
     ? wantedPermissionMode
     : exhaustiveModes
       ? (resolveDeclaredPermissionMode(wantedPermissionMode, exhaustiveModes)
@@ -1198,6 +1235,7 @@ export function useInitialSessionState(
 
 
   return {
+    acceptsImageAttachments: !selectedCustom || customFeatures?.image === true,
     provider: providerId,
     setProvider: (next) => {
       setFastModeDraft(false);
@@ -1253,7 +1291,11 @@ export function useInitialSessionState(
     // 档名走词表 —— 插件那份是硬编码中文,原样摆出来英文壳里就漏中文(见 effort-options.ts)。
     effortOptions: localizeEffortOptions(modelEfforts?.options ?? null, translate),
     effort,
-    fastMode: unattended ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
+    autoReviewAvailable,
+    autoReviewDisabled,
+    autoReviewByHaiku,
+    autoReviewCostSource,
+    fastMode: unattended || selectedCustom ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
     setFastMode: setFastModeDraft,
     defaultEffort: modelEfforts?.defaultId ?? null,
     setEffort: (nextEffort) => {
@@ -1604,6 +1646,12 @@ export function InitialSessionField({
                     },
                   }
                 : {}),
+              ...((state.autoReviewAvailable || state.autoReviewDisabled) ? { 'ai-review': {
+                name: translate('taskConfig.permissionAiReview'),
+                description: translate('taskConfig.permissionAiReviewHint'),
+                disabled: state.autoReviewDisabled,
+                reviewByHaiku: state.autoReviewByHaiku,
+              } } : {}),
               'full-access': {
                 name: translate('taskConfig.permissionFullAccess'),
                 description: translate('taskConfig.permissionFullAccessHint'),
@@ -1635,13 +1683,15 @@ export function InitialSessionField({
   // ❌ 不往正文里插一条路径 pill —— 那是把传输方式摆到用户脸上。
   const remoteMachine = state.machine;
   const handleFiles = useCallback((files: File[]) => {
-    if (files.length === 0) return;
+    const accepted = state.acceptsImageAttachments === false ? files.filter((file) => !file.type.startsWith('image/')) : files;
+    if (accepted.length < files.length) toast({ title: translate('customModels.imagesUnsupported'), variant: 'destructive' });
+    if (accepted.length === 0) return;
     // ❌ 不写成裸 `void promise`:这条链里任何一步抛出都会变成一次没人看见的 unhandled rejection,
     // 屏幕上只表现为「文件掉进去了什么都没发生」。
-    state.enqueueAttachments(files).catch((error: unknown) => {
+    state.enqueueAttachments(accepted).catch((error: unknown) => {
       log.error('Failed to queue attachments', { error });
     });
-  }, [state]);
+  }, [state, translate]);
   const handleAttachPicked = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     handleFiles(Array.from(e.target.files ?? []));
     // 允许连续挑同一个文件:不清空的话第二次 change 不触发。
@@ -1797,7 +1847,7 @@ export function InitialSessionField({
           onFastModeChange={state.setFastMode}
           renderFastModeHint={renderFastModeHint}
           defaultEffort={state.defaultEffort ?? undefined}
-          permissionModeOptions={permissionModeOptions}
+          permissionModeOptions={withAutoReviewHint(permissionModeOptions, state.provider, state.autoReviewCostSource ?? 'unknown')}
           selectedPermissionMode={permissionModeOptions ? state.permissionMode : undefined}
           onPermissionModeChange={(modeId) => {
             if (isGuguPermissionMode(modeId)) state.setPermissionMode(modeId);
