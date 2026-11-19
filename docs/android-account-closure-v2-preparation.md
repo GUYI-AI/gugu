@@ -79,16 +79,27 @@ tombstone. Late Auth/runtime writes for that deleted owner remain blocked.
 
 ## Validation evidence
 
-A fixed 20-file production/test source snapshot was compiled with real JDK 21,
-release 17, pinned JUnit and two processors: **92 tests passed** on 2026-11-19.
-It covers protected index atomic failures/corruption, owner/SID/device/backend/CAS
-isolation, signed-out result recovery, preparation response loss, unknown confirmation,
-strict cancellation, drain admission and resumable cleanup. It does not exercise
-Android Keystore, the actual Capacitor bridge, services or a live backend.
+Executable source commit `a950414de8c275e665e5192e02e3031827f88e81`, tree
+`69bec8635b76a158fa0b3e1039860a8d55242b02`, was verified on 2026-11-19:
 
-`AccountClosureV2NativeTest` adds actual Android JSON/Keystore/files cases using
-isolated test contexts and local identities without HTTP. Its execution and full
-Android build/device acceptance must be recorded separately; source presence is
-not a pass. Current full-path attempts stopped at the mac1 resource guard before
-completion. No App, Keystore, dedicated-account deletion or real-window pass is
-claimed by the portable suite. Runtime gates and all production admission remain closed.
+- A fixed 20-file production/test snapshot passed **107 portable JUnit tests**
+  with real JDK 21, release 17 and pinned JUnit. The full App Gradle JVM suite
+  passed **208 tests**, including those portable cases, with no failures/errors/skips.
+- Ten focused renderer test files passed **83 Vitest cases**. The official
+  `pnpm android:build` and App instrumentation APK build completed.
+- The same App and test APKs installed on an isolated API34 AVD. All **7 actual
+  Android JSON/Keystore/files/pause-recovery cases** passed in 2.587 seconds using
+  local synthetic identities. The real App cold-started in 1,982ms and its native
+  login screen was inspected. Owned processes and private ADB ports were closed.
+
+App APK SHA-256: `23e8246529943d9131693a556c9b584842465f9b315e98bf8ae5f26aa49b2f0a`.
+Test APK SHA-256: `8661ab0d49598a4fb0cad0fea73620571471cbab131d0c0e9b89e4fb8b3084e7`.
+
+The root `assembleDebugAndroidTest` invocation subsequently failed in the Cordova
+plugin's own Kotlin duplicate-class check, tracked as #3208; the successful App
+task and its actual 7-case execution are recorded separately. Use the scoped
+`:app:assembleDebugAndroidTest` task to reproduce the App test package.
+
+Live-backend account deletion and the later single-dialog renderer integration
+remain separate acceptance boundaries. This local run used no live backend or
+real account, and does not establish end-to-end deletion or production admission.
