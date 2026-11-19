@@ -4,7 +4,7 @@
 // 「域」是架构一等公民(#4191),边界靠模块划分,不靠 server 拓扑。
 //
 // 这里也是 agent 与宿主之间的 id 边界(id 收敛第三刀,见 typedId.mjs):agent 看到的每个 id 都带类型
-// (`session:` / `project:` / `msg:`),传进来的 id 也必须带对类型——裸 UUID 或类型不符当场报错,
+// (`session:` / `device:` / `msg:`),传进来的 id 也必须带对类型——裸 UUID 或类型不符当场报错,
 // 而不是静默 not found。宿主内部(编排层、DB)照旧裸 UUID;编解码只在这一层做一次。
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -53,28 +53,26 @@ async function eachWindowed(spec: SessionpageListSpec, windowed: unknown, call: 
   return { ...out, [key]: await Promise.all((out[key] as Record<string, unknown>[]).map((item) => spec.eachItem!(item, call))) }
 }
 
+/**
+ * A group id as agents pass it: bare (as every message envelope and group tool prints it), `chat:<id>`, or
+ * `project:<id>` — the id earlier releases printed for a project, which was its group. Any other typed id is a mistake.
+ */
+function decodeGroupId(value: string, field: string): string {
+  const trimmed = value.trim()
+  const prefix = trimmed.split(':', 1)[0] as TypedIdKind
+  if (!trimmed.includes(':') || !TYPED_ID_KINDS.includes(prefix)) return trimmed
+  return decodeTypedId('chat', prefix === 'project' ? `chat:${trimmed.slice('project:'.length)}` : trimmed, field)
+}
+
 /** id 边界：agent 传进来的带类型 id → 宿主内部裸 id。类型不符 / 裸 id 在这里就报错。
  *  `to`（session_message 的 union 寻址）是例外：条目保持 typed 传给宿主分派器，由它按前缀拆分两条腿。 */
 function decodeAction(action: SessionDispatchAction): SessionDispatchAction {
   const out: SessionDispatchAction = { ...action }
-  if (typeof out.project_id === 'string') out.project_id = decodeTypedId('project', out.project_id, 'project_id')
-  if (typeof out.source_project_id === 'string') out.source_project_id = decodeTypedId('project', out.source_project_id, 'source_project_id')
+  if (typeof out.chat_id === 'string') out.chat_id = decodeGroupId(out.chat_id, 'chat_id')
   if (typeof out.device === 'string') out.device = decodeTypedId('device', out.device, 'device')
-  // `project` 是 typed project: id 或那台机器上的目录(与会话页新建会话同一种点名);目录原样交给那台机器解释。
-  // 带任一种 typed 前缀的都按 id 解,传成 session: 之类当场说「要的是 project:」,❌ 当成一个叫 session:… 的目录去找。
-  if (typeof out.project === 'string') {
-    const prefix = out.project.trim().split(':', 1)[0] as TypedIdKind
-    if (out.project.includes(':') && TYPED_ID_KINDS.includes(prefix)) out.project_id = decodeTypedId('project', out.project, 'project')
-    else out.project_path = out.project
-    delete out.project
-  }
   if (typeof out.device_id === 'string') {
     out.device = decodeTypedId('device', out.device_id, 'device_id')
     delete out.device_id
-  }
-  if (typeof out.target_device_id === 'string') {
-    out.target_device = decodeTypedId('device', out.target_device_id, 'target_device_id')
-    delete out.target_device_id
   }
   if (typeof out.session_id === 'string') {
     out.session_id = decodeTypedId('session', out.session_id, 'session_id')

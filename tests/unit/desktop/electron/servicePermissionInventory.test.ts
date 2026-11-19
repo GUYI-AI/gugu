@@ -43,10 +43,10 @@ describe('service permission risk inventory', () => {
       }
     } finally { setExtensionCheckAvailable(false) }
     expect(Object.keys(CORE_TOOL_RISKS).sort()).toEqual([...names].sort())
-    // app_check drives a real page; project operations also change group access, despite their names.
+    // app_check drives a real page; folder bindings also change which group a device's files are served to.
     expect(CORE_TOOL_RISKS.app_check).toEqual({ risk: 'high', effect: 'execute' })
-    expect(CORE_TOOL_RISKS.project_get).toEqual({ risk: 'high', effect: 'social' })
-    expect(CORE_TOOL_RISKS.project_add_folder).toEqual({ risk: 'high', effect: 'permission' })
+    expect(CORE_TOOL_RISKS.group_folder_bind).toEqual({ risk: 'high', effect: 'permission' })
+    expect(CORE_TOOL_RISKS.group_folder_unbind).toEqual({ risk: 'high', effect: 'permission' })
     expect(CORE_TOOL_RISKS.session_archive).toEqual({ risk: 'high', effect: 'permission' })
     for (const name of ['message_rules', 'message_members', 'topic_list', 'topic_members', 'group_info', 'group_list', 'profile_whoami', 'session_devices']) {
       expect(CORE_TOOL_RISKS[name]).toEqual({ risk: 'medium', effect: 'read' })

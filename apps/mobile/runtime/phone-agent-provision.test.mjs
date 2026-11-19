@@ -33,7 +33,7 @@ function fixture(status) {
     },
   }
   const provision = createPhoneProvisioner({ ownerId, cloud, store, deviceId: 'phone-device',
-    projectId: 'phone-project', root: '/phone-private', models: { resolve: async () => 'free' },
+    workspaceId: 'phone-project', root: '/phone-private', models: { resolve: async () => 'free' },
     tick: async () => {}, admit: async () => {}, publish: () => {},
     snapshot: (entry) => ({ agent_user_id: entry.agentUserId, birth_group: entry.birthGroup }),
   })

@@ -86,7 +86,8 @@ function withoutActivityVersions(value: unknown): unknown {
 
 export function presentSession(row: unknown): unknown {
   if (!row || typeof row !== 'object' || Array.isArray(row)) return row
-  const { runtime, pinned, preview, ...rest } = row as Record<string, unknown>
+  // project_id is the group's old name, kept on the host answer for released callers (S2 removes it): agents read chat_id.
+  const { runtime, pinned, preview, project_id: _groupOldName, ...rest } = row as Record<string, unknown>
   const shown: Record<string, unknown> = { ...rest }
   if (pinned === true) shown.pinned = true
   if (runtime && typeof runtime === 'object') {
@@ -160,14 +161,14 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
       source_link: sourceLinkSchema.optional(),
       title: z.string().min(1).describe('Short name; default automatic.').optional(),
       device: deviceSchema.describe(DEVICE_DESCRIPTION).optional(),
-      // #7331 先复用:描述只说「新目录当场登记」时,agent 把每个自己切的 worktree 都传进来,对方机器上一个 worktree 一个项目。
-      project: z.string().min(1).describe('Existing project:<id> or folder there. New projects only on request; worktrees/subfolders go in prompt. Omit: your project. Remote: that device\'s copy (missing: named fails, else task workspace; result says).').optional(),
+      // #7331: a cwd is never recorded as a new folder, so a worktree an agent cut does not become one.
+      cwd: z.string().min(1).describe('Directory there: a folder of the group or a worktree/subfolder of one. Omit: the group\'s first folder there.').optional(),
       parent_session_id: sessionIdSchema.nullable().describe('session:<id>. Omit: you; null: root.').optional(),
       transport: z.enum(['acp', 'pty']).optional(),
       harness: z.string().describe('From session_list_harnesses; default: your sub-agent default.').optional(),
       model: z.string().describe('From session_list_models (verbatim) or model.spawn_model_id; platform: ids bill Gugu credits.').optional(),
       thinking: z.string().trim().min(1).describe('Harness reasoning level.').optional(),
-      chat_id: z.string().min(1).describe('A group your owner is in, for the child to join.').optional(),
+      chat_id: z.string().min(1).nullable().describe('The child\'s group (it joins it). Omit: yours; null: no group.').optional(),
     }).strict(),
     action: 'spawn',
     linksSession: true,
@@ -288,7 +289,7 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
   },
   {
     name: 'session_get',
-    description: 'Read this session (omit session_id) or another of yours: project_id, transport, status, model, preview. Pass model.spawn_model_id, not model.id, to session_spawn.',
+    description: 'Read this session (omit session_id) or another of yours: chat_id, cwd, transport, status, model, preview. Pass model.spawn_model_id, not model.id, to session_spawn.',
     schema: z.object({ session_id: sessionIdSchema.describe(SESSION_ID_DESCRIPTION).optional() }).strict(),
     action: 'get',
     present: presentSession,

@@ -61,7 +61,7 @@ describe('Gugu service permission order', () => {
     expect(decide(policy).effect).toBe('allow')
   })
   it.each(['message_send_as_owner', 'contact_friend', 'message_invite', 'group_set_role', 'app_install',
-    'project_get', 'project_add_folder', 'project_add_device', 'session_archive'])('%s always requires person confirmation despite a wildcard allow', name => {
+    'group_folder_bind', 'group_folder_unbind', 'session_archive'])('%s always requires person confirmation despite a wildcard allow', name => {
     const policy = defaultPermissionPolicy()
     policy.user.rules = [{ id: 'everything', tool: '*', effect: 'allow' }]
     policy.agents['agent-a'] = { rules: [{ id: 'agent-all', tool: '*', effect: 'allow' }] }

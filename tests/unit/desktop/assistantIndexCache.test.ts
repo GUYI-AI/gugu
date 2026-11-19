@@ -16,7 +16,7 @@ async function fixture() {
   const run = vi.fn<AssistantStartupIndexDeps['run']>(async action => {
     if (action.action === 'devices') { await gate.promise; return [host] }
     if (action.action === 'device_actions') return { devices: [host] }
-    if (action.action === 'project_list') return [{ project_id: 'p', name: 'original-project', path: '/project' }]
+    if (action.action === 'group_folders') return [{ chat_id: 'g', folder_id: 'w', path: '/original-project' }]
     throw new Error('Unexpected action')
   })
   const deps = { accountId: async () => owner, run, timeoutMs: 15_000 }

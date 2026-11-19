@@ -2164,9 +2164,22 @@ async function handleGroup(args, deps) {
       `users?id=in.(${batch.map(enc).join(',')})&select=id,type,owner_user_id`, 'identity',
     ))
     if (ids.some((id) => !users.some((row) => row.id === id))) throw new Error('group_create: selected person or agent was not found')
-    return JSON.stringify(await createGroupWithInvitations({
+    const folder = args.folder
+    // Checked before the group exists: a folder that cannot be bound here must not leave a group behind for nothing.
+    if (folder && !deps.context.runSessionAction) throw new Error('group_create: folder needs this session\'s device host; create the group without it')
+    const created = await createGroupWithInvitations({
       rpc: async (name, body) => ({ data: await deps.restRpc(name, body), error: null }),
-    }, name, ownerId, deps.context.agentId, users))
+    }, name, ownerId, deps.context.agentId, users)
+    if (!folder) return JSON.stringify(created)
+    // @@@group-folders: the group exists first, then the folder is bound to it (the same group_folder_bind the tool runs).
+    const bind = { action: 'group_folder_bind', chat_id: created.chat_id, path: folder.path,
+      ...(folder.device ? { device: decodeTypedId('device', folder.device, 'folder.device') } : {}) }
+    try {
+      return JSON.stringify({ ...created, folder: await deps.context.runSessionAction(bind) })
+    } catch (error) {
+      return JSON.stringify({ ...created, folder: { error: error instanceof Error ? error.message : String(error),
+        next: 'The group was created; bind the folder with group_folder_bind once the cause is fixed.' } })
+    }
   }
   if (args.action === 'list') {
     const [groups, pinned] = await Promise.all([ownerGroupsAs(deps, deps.context.agentId, 'group_list'), ownerPinnedChatIds(deps)])
@@ -2928,6 +2941,10 @@ export const TOOL_DEFS = [
     schema: z.object({
       name: z.string().trim().min(1).describe('Group name.'),
       members: z.array(z.string().trim().min(1)).optional().describe('Optional members as user:<uuid> / aid:<Agent ID>, gugu:<number>, or session:<id> on this machine. Your owner and you are always included. Invitations say: 邀请你加入群聊「<name>」。'),
+      folder: z.object({
+        path: z.string().trim().min(1).describe('An existing absolute directory.'),
+        device: z.string().trim().min(1).optional().describe('device:<id> from session_devices; omit for this machine.'),
+      }).strict().optional().describe('Also bind this folder to the new group (group_folder_bind); its answer is in folder.'),
     }),
     handler: (args, deps) => handleGroup({ ...args, action: 'create' }, deps),
   },
@@ -3166,6 +3183,9 @@ export function createGuguImServer(getContext, deps = {}) {
         getAccessToken: () => current.getAccessToken(signal),
         ...(current.runHostAction
           ? { runHostAction: (action) => current.runHostAction(action, signal) }
+          : {}),
+        ...(current.runSessionAction
+          ? { runSessionAction: (action) => current.runSessionAction(action, signal) }
           : {}),
       }
       const fetchImpl = deps.fetch ?? fetch

@@ -14,7 +14,7 @@ import type { SessionPaneTabsResult } from '@gugu/session-core/session-record/co
 import { parseConversationLink } from '@gugu/core/shared/ui/guguLink';
 import { readCurrentActivitySource } from './session-activity-source';
 import { receiveAssistantWorkReport, workReportSchema, type WorkReport } from '../../../../sessionpage/assistant-work';
-import { isProjectAgentAction, runProjectAgentAction, type ProjectAgentAction } from '../projects/project-agent-actions';
+import { isGroupFolderAgentAction, runGroupFolderAgentAction, type GroupFolderAgentAction } from '../folders/agent-actions';
 import { machineLocalProjectOf, machineLocalProjectsOf, machineOutwardProjectIds } from '../projects/project-public-id';
 import { getProjectById } from '../projects/operations/getProjects';
 import { randomUUID } from 'node:crypto';
@@ -164,9 +164,11 @@ export type SessionAction =
       prompt: string;
       source_link?: string;
       title?: string;
-      /** The `project` parameter, decoded at the host boundary: a project id (its project group chat id), or a folder on this machine. */
+      /** Lane A replaces the placement that reads these with chat_id / cwd, then deletes them. */
       project_id?: string;
       project_path?: string;
+      /** A directory on the machine it starts on: a folder of the group, or a worktree / subfolder of one. Omit: the group's first folder there. */
+      cwd?: string;
       parent_session_id?: string | null;
       transport?: SessionRuntime;
       /** Canonical plugin id returned by session_list_harnesses. */
@@ -174,8 +176,8 @@ export type SessionAction =
       /** A model id returned by session_list_models — `platform:<id>` for a Gugu model, otherwise harness-native. */
       model?: string;
       thinking?: string;
-      /** A group of the owner's the child is born in — joined once its identity is minted (birth-groups.ts). */
-      chat_id?: string;
+      /** The child's group (joined once its identity is minted). Omit: the caller's group; null: no group (task home). */
+      chat_id?: string | null;
     }
   | { action: 'ask_user'; questions: Array<{ question: string; header?: string; options: Array<{ label: string; description?: string }>; multi_select?: boolean }>; source_link?: string }
   | { action: 'children'; session_id?: string }
@@ -216,7 +218,7 @@ export type SessionAction =
   | { action: 'set_parent'; session_id: string; parent_session_id: string | null }
   /** #7221 schedule_*:建只给自己;看与取消可指名主人的另一条会话(agent-schedules.ts)。 */
   | AgentScheduleAction
-  | ProjectAgentAction
+  | GroupFolderAgentAction
   | ActivityAction;
 
 // `SessionModel` 与它的取值规则搬去了 `./session-model-fact` —— 那一格的合同里有一条
@@ -285,7 +287,7 @@ async function sessionPreview(sessionId: string): Promise<SessionPreview> {
  * 它此前只有一种形状（`session_message`，字面量类型：结构上说不出别的话），于是不管这条会话有没有
  * 项目群，回执都把往来钉死在一条不进任何 chat 的点对点管道上——而 child 信封的 arrival 又按同一条
  * 通道回信，父子全部对话就此从群里消失（#4566：owner 真机四个 child 全部私发 parent，群里 exact 0）。
- * 会话自己的 `<gugu_project_context>` 早就说了默认走项目群，但那是散文、这是字段，字段赢。
+ * 会话自己的 `<gugu_group_context>` 早就说了默认走项目群，但那是散文、这是字段，字段赢。
  *
  * 所以这里有两种形状，由一个事实分派：**这条会话有没有项目群**。
  */
@@ -2086,7 +2088,7 @@ export async function runSessionAction(
   signal?: AbortSignal,
 ): Promise<unknown> {
   signal?.throwIfAborted();
-  if (isProjectAgentAction(action)) return runProjectAgentAction(context, action);
+  if (isGroupFolderAgentAction(action)) return runGroupFolderAgentAction(action);
   if (isActivityAction(action)) return runActivityAction(action);
   const caller = await callerRow(context);
   signal?.throwIfAborted();
@@ -2309,7 +2311,7 @@ export async function runRemoteSessionAction(
   signal?: AbortSignal,
 ): Promise<unknown> {
   signal?.throwIfAborted();
-  if (isProjectAgentAction(action)) return runProjectAgentAction({}, action);
+  if (isGroupFolderAgentAction(action)) return runGroupFolderAgentAction(action);
   if (isActivityAction(action)) return runActivityAction(action);
 
 

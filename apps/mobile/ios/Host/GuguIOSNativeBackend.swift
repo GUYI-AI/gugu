@@ -32,7 +32,7 @@ final class GuguIOSNativeBackend: GuguIOSHostBackend {
     let instanceId = UUID().uuidString.lowercased()
     // Pinned to core/cloud/serverMachineHealth.ts; author contract checks must
     // compare both values when the existing shared protocol changes.
-    let remoteProtocol = 18, minimumClientProtocol = 17
+    let remoteProtocol = 19, minimumClientProtocol = 19
     var binding: GuguIOSHostBinding?
     var store: GuguIOSBackendStore?
     var sources: GuguIOSSourceAccess?
@@ -183,7 +183,9 @@ final class GuguIOSNativeBackend: GuguIOSHostBackend {
         guard ticket.binding == expected, ticket.expiresAt > Date() else { throw Self.failure("auth_unavailable", "Native verified credentials are unavailable") }
     }
     var workspacePath: String { root.appendingPathComponent("tasks", isDirectory: true).path }
-    func project(_ binding: GuguIOSHostBinding) throws -> [String: Any] { ["id": try GuguIOSStableID.strings("phone-project", binding.ownerId, binding.deviceId), "name": "手机任务", "path": workspacePath] }
+    // @@@group-folders — phone sessions live in no group; they work in the App's private directory, a folder without a group.
+    // Its id keeps the seed of earlier releases. The host state still names it `project` for the phone's own pages.
+    func project(_ binding: GuguIOSHostBinding) throws -> [String: Any] { ["id": try GuguIOSStableID.strings("phone-project", binding.ownerId, binding.deviceId), "name": "手机工作目录", "path": workspacePath, "kind": "workspace"] }
     func snapshot(_ expected: GuguIOSHostBinding) throws -> [String: Any] {
         try check(expected)
         guard binding == expected else { throw Self.failure("host_not_ready", "Native host is not configured") }

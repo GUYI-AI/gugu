@@ -90,13 +90,18 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
   const abort = new AbortController()
   const store = await openPhoneAgentStore(root, ownerId)
   const preparationNow = preparationOptions.now ?? Date.now
-  const projectId = stableId('phone-project', ownerId, deviceId)
-  const project = { id: projectId, name: '手机任务', path: root }
+  // @@@group-folders — the phone's sessions live in no group; they all work in the App's private directory, a folder
+  // without a group (kind 'workspace'). Its id keeps the seed earlier releases used, so stored rows still match.
+  const workspaceId = stableId('phone-project', ownerId, deviceId)
+  const folder = { id: workspaceId, name: '手机工作目录', path: root, kind: 'workspace' }
+  // Released readers require projectId on session rows (and `project` on the host state, read by the phone's own pages):
+  // since C1 both carry the folder.
+  const placement = { projectId: workspaceId, workspaceId, groupChatId: null }
   const lastJob = (id) => Object.values(store.state.jobs).filter((job) => job.agentUserId === id).reverse().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0]
   const execution = () => activeJob?.status === 'running' ? { sessionId: store.state.agents[activeJob.agentUserId]?.sessionId, jobId: activeJob.id, phase: activeJob.cancelRequested ? 'stopping' : activeJob.phase ?? 'preparing' } : null
   const state = () => {
     const error = healthErrors.auth ?? healthErrors.rpc ?? healthErrors.heartbeat
-    return { ownerId, deviceId, project, taskTimeline: true, execution: execution(), status: stopped ? 'stopped' : ready ? 'ready' : error ? 'failed' : 'starting', ready, error: stopped ? null : error?.message ?? null, errorCode: stopped ? null : error?.code ?? null, authError: stopped ? null : healthErrors.auth?.authError ?? null, lastHeartbeatAt, accountRevision: store.state.personalAccountRevision ?? null, sessions: retainedAgents().map((agent) => ({ agentUserId: agent.agentUserId, sessionId: agent.sessionId, displayName: agent.displayName, chatId: agent.chatId, modelId: agent.modelId, status: agent.ownershipError ? 'error' : agent.status, lastError: agent.ownershipError ?? agent.lastError ?? null, lastActiveAt: agent.lastActiveAt ?? null, lastJobStatus: lastJob(agent.agentUserId)?.status ?? null, birthGroup: agent.birthGroup ?? null })) }
+    return { ownerId, deviceId, project: folder, taskTimeline: true, execution: execution(), status: stopped ? 'stopped' : ready ? 'ready' : error ? 'failed' : 'starting', ready, error: stopped ? null : error?.message ?? null, errorCode: stopped ? null : error?.code ?? null, authError: stopped ? null : healthErrors.auth?.authError ?? null, lastHeartbeatAt, accountRevision: store.state.personalAccountRevision ?? null, sessions: retainedAgents().map((agent) => ({ agentUserId: agent.agentUserId, sessionId: agent.sessionId, displayName: agent.displayName, chatId: agent.chatId, modelId: agent.modelId, status: agent.ownershipError ? 'error' : agent.status, lastError: agent.ownershipError ?? agent.lastError ?? null, lastActiveAt: agent.lastActiveAt ?? null, lastJobStatus: lastJob(agent.agentUserId)?.status ?? null, birthGroup: agent.birthGroup ?? null })) }
   }
   const publish = (patch = {}) => emit({ type: 'host_state', ...state(), ...patch })
   const warn = (message) => emit({ type: 'host_log', ownerId, level: 'warn', message })
@@ -181,7 +186,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     const messageId=(envelope?.segments?.at(-1)?.facts?.messageId??job?.route?.sourceMessageId??job?.id)?.replace(/^msg:/,'')
     return {running,ended:kind?{kind}:null,entries:messageId?[{kind:'prompt',messageId}]:[]}
   }
-  const snapshot = (agent) => ({ session_id: agent.sessionId, agent_user_id: agent.agentUserId, chat_id: agent.chatId, birth_group: agent.birthGroup ? { chat_id: agent.birthGroup.chatId, status: agent.birthGroup.status, ...(agent.birthGroup.error ? { error: agent.birthGroup.error } : {}) } : null, spawned_by_session_id: agent.caller?.sessionId ?? null, ...(agent.caller ? { spawned_by_device_id: agent.caller.deviceId } : {}), parent_session_id: agent.caller?.sessionId ?? null, project_id: projectId, title: agent.displayName, provider_id: 'pi', transport: 'acp', status: agent.status, detail: agent.status === 'working' ? 'running' : agent.status === 'needs_user' ? 'question' : agent.status === 'error' ? null : 'plain', model: { source: 'gugu', id: agent.modelId, spawn_model_id: `platform:${agent.modelId}` }, pinned: false, last_active_at: agent.lastActiveAt ?? null, runtime: null, message_route: { tool: 'session_message', to: [`session:${agent.sessionId}`] }, preview: preview(agent), ...(agent.ownershipError ? { status: "error", detail: null } : {}) })
+  const snapshot = (agent) => ({ session_id: agent.sessionId, agent_user_id: agent.agentUserId, chat_id: null, direct_chat_id: agent.chatId, birth_group: agent.birthGroup ? { chat_id: agent.birthGroup.chatId, status: agent.birthGroup.status, ...(agent.birthGroup.error ? { error: agent.birthGroup.error } : {}) } : null, spawned_by_session_id: agent.caller?.sessionId ?? null, ...(agent.caller ? { spawned_by_device_id: agent.caller.deviceId } : {}), parent_session_id: agent.caller?.sessionId ?? null, cwd: root, title: agent.displayName, provider_id: 'pi', transport: 'acp', status: agent.status, detail: agent.status === 'working' ? 'running' : agent.status === 'needs_user' ? 'question' : agent.status === 'error' ? null : 'plain', model: { source: 'gugu', id: agent.modelId, spawn_model_id: `platform:${agent.modelId}` }, pinned: false, last_active_at: agent.lastActiveAt ?? null, runtime: null, message_route: { tool: 'session_message', to: [`session:${agent.sessionId}`] }, preview: preview(agent), ...(agent.ownershipError ? { status: "error", detail: null } : {}) })
   const authorizeReply = async (groups, message) => {
     if (stopped || signingOut) throw Object.assign(new Error('手机宿主已停止，未交付任务数据'), { code: 'host_not_ready' })
     const currentAgent = store.state.agents[activeJob?.agentUserId]
@@ -196,7 +201,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
   }
   const summary = async (agent) => {
     const status = agent.ownershipError ? 'error' : agent.status
-    const row = { conversationId: agent.sessionId, projectId, title: agent.displayName, harness: 'pi', runtime: 'acp', agentStatus: status, status: { status, detail: status === 'working' ? 'running' : status === 'needs_user' ? 'question' : status === 'error' ? null : 'plain' }, lastInteractedAt: agent.lastActiveAt ?? null, supported: false, agent: { userId: agent.agentUserId }, chatId: agent.chatId, isPinned: false, parentConversationId: agent.caller?.sessionId ?? null, spawnedByConversationId: agent.caller?.sessionId ?? null }
+    const row = { conversationId: agent.sessionId, ...placement, title: agent.displayName, harness: 'pi', runtime: 'acp', agentStatus: status, status: { status, detail: status === 'working' ? 'running' : status === 'needs_user' ? 'question' : status === 'error' ? null : 'plain' }, lastInteractedAt: agent.lastActiveAt ?? null, supported: false, agent: { userId: agent.agentUserId }, chatId: agent.chatId, isPinned: false, parentConversationId: agent.caller?.sessionId ?? null, spawnedByConversationId: agent.caller?.sessionId ?? null }
     row.unseen = agent.agentStatusSeen !== 1
     try { await timelines.snapshot(agent, { limit: 1, trim: true }); return { ...row, supported: true } }
     catch (error) { return { ...row, unsupportedReason: error.message } }
@@ -276,7 +281,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
         startAgentSession: async (input) => {
           if (input.agentType !== 'pi') throw new Error('这台手机只能创建手机 Agent')
           if (input.permissionMode || input.effort) throw new Error('手机 Agent 暂未提供权限模式和思考档位选择')
-          if (input.projectPath && input.projectPath !== root) throw new Error('手机 Agent 只能在 App 的私有工作目录中运行')
+          if ((input.projectPath && input.projectPath !== root) || (input.cwd && input.cwd !== root)) throw new Error('手机 Agent 只能在 App 的私有工作目录中运行')
           const identity = await verifyAgent(input.agentUserId)
           const existing = store.state.agents[input.agentUserId]
           // Readers may overlap the first admitted job. Establish its context before either
@@ -620,7 +625,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     return draining
   }
 
-  const provision = createPhoneProvisioner({ ownerId, cloud, store, deviceId, projectId, root, models, tick, admit, snapshot, publish })
+  const provision = createPhoneProvisioner({ ownerId, cloud, store, deviceId, workspaceId, root, models, tick, admit, snapshot, publish })
 
   const timelines = createPhoneTimelineRuntime({ root, store, historyFloor: createPhoneConversationHistory({ cloud, store, ownerId }), confirmations: (agent) => actions?.settlements?.(agent) ?? [], authorize: async (agent) => {
     const proof = agent.dataProof ?? { groups: [], permissionRequirements: [] }
@@ -636,7 +641,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
       const created = await provision(request.clientRequestId, request, null, null, { deferFirstInput: true })
       const agent = findSession(created.session_id)
       await verifyAgent(agent.agentUserId)
-      return { conversationId: agent.sessionId, projectId, title: created.title,
+      return { conversationId: agent.sessionId, ...placement, title: created.title,
         attachmentTarget: { agentUserId: agent.agentUserId, chatId: agent.chatId }, session: await summary(agent) }
     },
     task: async id => findSession(id), verify: verifyAgent,
@@ -683,7 +688,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
         if (action.transport && action.transport !== 'acp') throw new Error('手机 Agent 只提供通用会话')
         return { harness_id: 'pi', transport: 'acp', models: (await models.catalog(true)).map((model) => ({ id: `platform:${model.id}`, name: model.display_name, source: 'gugu', ...(model.hidden ? { hidden: true } : {}) })), selected: null, efforts: [], selected_effort: null, harness_catalog: { source: 'none', state: 'auth-required' }, gugu_catalog: { available: true } }
       }
-      if (name === 'peers') return agents().map((agent) => ({ sessionId: agent.sessionId, session_id: agent.sessionId, agentUserId: agent.agentUserId, name: agent.displayName, title: agent.displayName, harness: 'pi', status: agent.status, detail: agent.status === 'working' ? 'running' : agent.status === 'needs_user' ? 'question' : null, pinned: false, project: project.name, identity: { users: { id: agent.agentUserId, display_name: agent.displayName, gugu_number: agent.guguNumber ?? null } }, model: { spawn_model_id: `platform:${agent.modelId}`, source: 'gugu', id: agent.modelId } }))
+      if (name === 'peers') return agents().map((agent) => ({ sessionId: agent.sessionId, session_id: agent.sessionId, agentUserId: agent.agentUserId, name: agent.displayName, title: agent.displayName, harness: 'pi', status: agent.status, detail: agent.status === 'working' ? 'running' : agent.status === 'needs_user' ? 'question' : null, pinned: false, identity: { users: { id: agent.agentUserId, display_name: agent.displayName, gugu_number: agent.guguNumber ?? null } }, model: { spawn_model_id: `platform:${agent.modelId}`, source: 'gugu', id: agent.modelId } }))
       if (name === 'locate') return { session_ids: (action.session_ids ?? []).filter((id) => agents().some((agent) => agent.sessionId === id)) }
       if (name === 'children') return agents().filter((agent) => agent.caller?.sessionId === (action.session_id ?? caller.sessionId)).map(snapshot)
       if (name === 'get') return snapshot(findSession(action.session_id))
@@ -712,14 +717,14 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     if (channel === 'sessions.archiveSession') {
       const agent = findSession(args[1], true)
       const changed = await archive(agent, args[2]?.removeSocialIdentity)
-      return { archived: changed ? [{ projectId, sessionId: agent.sessionId }] : [], unreached: [] }
+      return { archived: changed ? [{ projectId: workspaceId, sessionId: agent.sessionId }] : [], unreached: [] }
     }
-    if (channel === 'sessionTimeline.sessionsList') return { projects: [project], sessions: await Promise.all(retainedAgents().map(summary)) }
+    if (channel === 'sessionTimeline.sessionsList') return { projects: [folder], sessions: await Promise.all(retainedAgents().map(summary)) }
     if (channel === 'sessionTimeline.sessionOfAgent') {
       const agent = agentsForOwner(Object.values(store.state.agents), ownerId, { includeArchived: true }).find((row) => row.agentUserId === String(args[0]).replace(/^user:/, ''))
-      return agent ? { projectId, sessionId: agent.sessionId } : null
+      return agent ? { projectId: workspaceId, sessionId: agent.sessionId } : null
     }
-    if (channel === 'sessionTimeline.sessionCreateOptions') return { projects: [project], harnesses: [{ id: 'pi', name: '手机 Agent', status: 'available', sessionViews: ['general'], permissionModes: [], watchable: true, chatAvailable: false }], lastUsed: null }
+    if (channel === 'sessionTimeline.sessionCreateOptions') return { projects: [folder], harnesses: [{ id: 'pi', name: '手机 Agent', status: 'available', sessionViews: ['general'], permissionModes: [], watchable: true, chatAvailable: false }], lastUsed: null }
     if (channel === 'sessionTimeline.sessionCreateModels') {
       if (args[0]?.harness !== 'pi') throw new Error('这台手机只能创建手机 Agent')
       return { harness: 'pi', transport: 'acp', models: (await models.catalog()).map((model) => ({ id: `platform:${model.id}`, name: model.display_name, source: 'gugu', requires_membership: model.requires_membership === true })), selected: null, efforts: [], selectedEffort: null, harnessState: 'auth-required', harnessReason: null, guguReason: null, selectedCredential: 'uncredentialed' }
@@ -727,7 +732,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     if (channel === 'sessionTimeline.sessionCreate') {
       const result = await provision(requestId, args[0] ?? {})
       const agent = findSession(result.session_id)
-      return { conversationId: result.session_id, projectId, title: result.title, agentUserId: agent.agentUserId, chatId: agent.chatId, birthGroup: agent.birthGroup ?? null, session: await summary(agent) }
+      return { conversationId: result.session_id, ...placement, title: result.title, agentUserId: agent.agentUserId, chatId: agent.chatId, birthGroup: agent.birthGroup ?? null, session: await summary(agent) }
     }
     if (channel === 'sessionTimeline.sessionCancel') return cancel(findSession(args[0]?.conversationId))
     throw Object.assign(new Error(`手机宿主尚不支持 ${channel}`), { code: 'unknown_method' })

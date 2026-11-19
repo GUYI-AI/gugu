@@ -6,7 +6,7 @@ export type AssistantCase = {
   route: 'direct' | 'delegate' | 'blocked' | 'closed'
   device?: 'device:mac' | 'device:phone'
   executorDevices?: readonly string[]
-  project?: 'project:launch'
+  project?: 'chat:launch'
   reuse?: boolean
   offline?: boolean
   requiredFacts?: string[]
@@ -33,14 +33,14 @@ export const assistantCases: readonly AssistantCase[] = [
   theme({ id: 'travel-memory', route: 'delegate', device: 'device:mac', requiredFacts: ['5000', '杭州'],
     memory: '我这次2026年10月24日至26日一人从上海去杭州，住两晚；交通住宿总预算上限5000元，优先高铁。决定于2026-10-20，来源：用户明确提交。',
     prompt: '按我记住的这次出行目的地、日期和预算，用Mac上已连接的浏览器实查交通和住宿，给出具体候选、逐项价格与来源，形成可回读的方案文件，先别下单。' }),
-  theme({ id: 'meeting-project', route: 'delegate', device: 'device:mac', project: 'project:launch',
+  theme({ id: 'meeting-project', route: 'delegate', device: 'device:mac', project: 'chat:launch',
     prompt: '继续「发布准备」项目，读上次讨论和未结事项，准备会前材料和会后跟进模板，交回原项目。' }),
-  theme({ id: 'interrupted-project', route: 'delegate', device: 'device:mac', project: 'project:launch', reuse: true,
-    requiredFacts: ['周五'], working: '原始需求：gugu-chat://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222\n执行者：session:existing\n项目：project:launch\n设备：device:mac\n仍有效约束：截止周五；只交草稿。\n下一步：核对任务频道最新要求后续做。',
+  theme({ id: 'interrupted-project', route: 'delegate', device: 'device:mac', project: 'chat:launch', reuse: true,
+    requiredFacts: ['周五'], working: '原始需求：gugu-chat://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222\n执行者：session:existing\n项目：chat:launch\n设备：device:mac\n仍有效约束：截止周五；只交草稿。\n下一步：核对任务频道最新要求后续做。',
     prompt: '接着做上次发布准备的材料，先核对任务那边我最新说了什么。' }),
   theme({ id: 'content-package', route: 'delegate', device: 'device:mac',
     prompt: '用我 Mac 上的品牌素材做一份完整的活动内容包：资料出处、文案草稿、视觉建议和发布前检查，先给我看。' }),
-  theme({ id: 'bugfix-project', route: 'delegate', device: 'device:mac', project: 'project:launch',
+  theme({ id: 'bugfix-project', route: 'delegate', device: 'device:mac', project: 'chat:launch',
     prompt: '「发布准备」项目在 Mac 的工程目录里。复现设置页保存失败，收集证据、修复并验证，给我可以审的改动。' }),
   theme({ id: 'invoice-draft', route: 'delegate', device: 'device:mac',
     prompt: '用我 Mac 上已授权的财务软件和订单文件整理逾期账款，准备催款信草稿，不发送。' }),
@@ -49,7 +49,7 @@ export const assistantCases: readonly AssistantCase[] = [
   theme({ id: 'purchase-prepare', route: 'delegate', device: 'device:mac', requiredFacts: ['800'],
     memory: '咖啡机预算上限800元，不接受订阅制。2026-10-20主人确认。',
     prompt: '按我之前定的咖啡机预算，在 Mac 浏览器里比较可买的型号和退换条款，准备购买清单，付款前给我检查。' }),
-  theme({ id: 'specialist-handoff', route: 'delegate', device: 'device:mac', project: 'project:launch',
+  theme({ id: 'specialist-handoff', route: 'delegate', device: 'device:mac', project: 'chat:launch',
     prompt: '在「发布准备」项目里把市场调研、数据分析和演示文稿制作安排好，最后给我带出处的完整材料包。' }),
   gugu({ id: 'greeting', route: 'direct', prompt: '你好，今天也请多关照。' }),
   gugu({ id: 'simple-answer', route: 'direct', prompt: '用一句话解释什么是缓存。' }),
@@ -65,7 +65,7 @@ export const assistantCases: readonly AssistantCase[] = [
     forbidden: ['无关私人暗号Z9K7'], memory: '演示文稿要照顾无障碍阅读，正文至少18pt。这是主人已确认的排版约定。',
     prompt: '按我的排版约定，用 Mac 上的材料做演示稿。无关的个人信息不要交给执行者。' }),
   gugu({ id: 'closed-after-compact', route: 'closed',
-    working: '执行者：session:existing\n项目：project:launch\n下一步：继续准备发布材料。此便笺可能旧了，恢复前查任务。',
+    working: '执行者：session:existing\n项目：chat:launch\n下一步：继续准备发布材料。此便笺可能旧了，恢复前查任务。',
     prompt: '上下文压缩后，核对上次发布准备有没有未完成的工作。已经取消的不要继续。' }),
   gugu({ id: 'native-compact-recovery', route: 'delegate', device: 'device:mac', compact: true, requiredFacts: ['周五'],
     prompt: '在我的Mac上整理评审资料，周五截止，只交草稿。安排好执行者后先等结果，我离开一会儿，稍后回来继续。' }),

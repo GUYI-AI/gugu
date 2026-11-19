@@ -9,7 +9,7 @@ export const ACTIVITY_TOOL_DEFS: readonly SessionpageToolDef[] = [
     description: 'Metadata for what agents did and when. Chat claims are not executor records. All task devices unless device_id selects one. Gaps mean no record, not no work. Turn done is not acceptance; external CLI must enroll. activity_context reads sources.',
     schema: z.object({ device_id, since: z.string().datetime({ offset: true }).optional(), until: z.string().datetime({ offset: true }).optional(),
       time_zone: z.string().min(1).optional(), details: z.boolean().optional(),
-      session_id: z.string().min(1).optional(), project_id: z.string().min(1).optional(),
+      session_id: z.string().min(1).optional(), chat_id: z.string().min(1).describe('Only sessions of this group.').optional(),
       limit: z.number().int().min(1).max(200).optional(), cursor: z.string().optional() }).strict() },
   { name: 'activity_context', action: 'activity_context',
     description: 'On demand, read original input and latest reply behind an activity_list event on the same device. A session.turn_recorded event returns that turn; other events return four latest turns with explicit scope. Use next_before_seq to read older pages. Missing sources are reported. This does not start or message an agent.',

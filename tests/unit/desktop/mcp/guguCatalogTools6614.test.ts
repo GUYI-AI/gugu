@@ -14,7 +14,7 @@ import { GUGU_ASSISTANT_LISTED_TOOLS, GUGU_LISTED_TOOLS, RETIRED_TOOLS, register
 import type { AppSearchHit } from '../../../../apps/desktop/electron/mcp/gugu-app-search-tool'
 import { GUIDE_TOPICS } from '../../../../apps/desktop/electron/mcp/gugu-guide-tool'
 import { ACTIVITY_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-activity-tool'
-import { PROJECT_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-project-tool'
+import { GROUP_FOLDER_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-group-folder-tool'
 import { SESSION_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-session-tool'
 import { SCHEDULE_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-schedule-tool'
 import { EXTENSION_TOOL_DEFS, setExtensionCheckAvailable } from '../../../../apps/desktop/electron/mcp/gugu-extension-tool'
@@ -102,7 +102,7 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
     const registered = [
       ...TOOL_DEFS.map((def: { name: string }) => def.name),
       ...SESSION_TOOL_DEFS.map((def) => def.name),
-      ...PROJECT_TOOL_DEFS.map((def) => def.name),
+      ...GROUP_FOLDER_TOOL_DEFS.map((def) => def.name),
       ...ACTIVITY_TOOL_DEFS.map((def) => def.name),
       ...SCHEDULE_TOOL_DEFS.map((def) => def.name),
       ...EXTENSION_TOOL_DEFS.map((def) => def.name),
@@ -119,8 +119,8 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
     expect(catalog).toContain('widget_send')
     expect(listed).not.toContain('group_create')
     expect(catalog).toContain('group_create')
-    expect(listed).not.toContain('project_add_device')
-    expect(catalog).toContain('project_add_device')
+    expect(listed).not.toContain('group_folder_bind')
+    expect(catalog).toContain('group_folder_bind')
     // The assistant's capability/device notes are gone: no agent has them, listed or in the catalog.
     for (const name of ['library_list', 'library_read', 'library_write']) {
       expect(listed).not.toContain(name)
@@ -178,20 +178,17 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
     expect(b).toBe(a)
   })
 
-  it('"delete project" finds folder detachment and exposes preservation in the catalog summary', async () => {
+  it('"unbind folder" finds folder unbinding and says files, sessions and history stay', async () => {
     const client = await connectTo(social({ runSessionAction: async () => ({}) }))
     const { items } = JSON.parse(text(await client.callTool({
-      name: 'catalog_list', arguments: { name: 'delete project' },
+      name: 'catalog_list', arguments: { name: 'unbind folder' },
     }))) as { items: Array<{ call: string; about: string }> }
 
-    expect(items.map((item) => nameOfCall(item.call))).toEqual(['project_remove_folder'])
-    expect(items[0]!.about).toMatch(/detach.*folders.*remove a project/i)
-    expect(items[0]!.about).toMatch(/files, sessions and history.*never deleted/i)
-    // The summary cannot promise unconditional deletion: the full definition keeps the visibility condition and undo.
+    expect(items.map((item) => nameOfCall(item.call))).toContain('group_folder_unbind')
     const definition = JSON.parse(text(await client.callTool({
-      name: 'catalog_list', arguments: { name: 'project_remove_folder' },
+      name: 'catalog_list', arguments: { name: 'group_folder_unbind' },
     }))) as { description: string }
-    expect(definition.description).toContain('only without folders or unarchived sessions')
+    expect(definition.description).toMatch(/files, sessions and history stay/i)
     expect(definition.description).toContain('Returns undo')
   })
 

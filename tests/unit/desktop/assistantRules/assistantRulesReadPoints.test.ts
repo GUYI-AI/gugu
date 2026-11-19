@@ -64,7 +64,7 @@ it('each read point asks once per render, so a swap during it cannot mix two ver
   asked = 0
   const started = await preparePersonalAssistantContext({ report: {} as never, sessionPrompt: 'platform', sessionNewPatch: { meta: {} } },
     codexCwd, codexHome, 'computer', { accountId: async () => 'owner', run: async (action: { action: string }) =>
-      action.action === 'devices' || action.action === 'project_list' ? [] : action.action === 'device_actions' ? { devices: [] } : { items: [] } }, home, 'codex')
+      action.action === 'devices' || action.action === 'group_folders' ? [] : action.action === 'device_actions' ? { devices: [] } : { items: [] } }, home, 'codex')
   renders.sessionStart = [started.sessionPrompt, await readFile(join(codexCwd, 'CLAUDE.md'), 'utf8'), await readFile(join(codexCwd, '.gugu-assistant-reference.md'), 'utf8')].join('\n')
   expect(asked).toBe(1)
 
@@ -98,7 +98,7 @@ it('with no rules here, a session start waits until the App brings them, and a h
   let started = false
   const start = preparePersonalAssistantContext({ report: {} as never, sessionPrompt: 'platform', sessionNewPatch: { meta: {} } },
     cwd, guguHome, 'computer', { accountId: async () => 'owner', run: async (action: { action: string }) =>
-      action.action === 'devices' || action.action === 'project_list' ? [] : action.action === 'device_actions' ? { devices: [] } : { items: [] } }, home, 'codex')
+      action.action === 'devices' || action.action === 'group_folders' ? [] : action.action === 'device_actions' ? { devices: [] } : { items: [] } }, home, 'codex')
     .then(context => { started = true; return context })
   await new Promise(resolve => setTimeout(resolve, 50))
   expect(started).toBe(false)

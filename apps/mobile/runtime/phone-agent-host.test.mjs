@@ -609,7 +609,7 @@ test('a local create runs its first input directly and reads the actual Pi resul
     assert.match(JSON.stringify(snapshot.turns), /直接在任务页查日程/)
     assert.equal(snapshot.turns[0].outcome.kind, 'done')
     const list = await fx.host.invoke('sessionTimeline.sessionsList', [])
-    assert.equal(list.projects[0].name, '手机任务')
+    assert.deepEqual([list.projects[0].kind, list.sessions[0].groupChatId, list.sessions[0].workspaceId], ['workspace', null, list.projects[0].id])
     assert.equal(list.sessions[0].supported, true)
   } finally { await fx.close() }
 })
@@ -1090,7 +1090,7 @@ function provisionCase(input = {}) {
   const originalFrom = cloud.identity.from
   cloud.identity.from = (table) => table !== 'gugu_device_commands' ? originalFrom(table)
     : { select: () => ({ eq: (_key, id) => ({ single: async () => ({ data: commands.find((command) => command.id === id), error: null }) }) }) }
-  const provision = createPhoneProvisioner({ ownerId, deviceId, projectId: 'phone-project', root: '/private/phone', cloud, store,
+  const provision = createPhoneProvisioner({ ownerId, deviceId, workspaceId: 'phone-project', root: '/private/phone', cloud, store,
     models: { resolve: async () => { if (options.modelError) throw new Error('model no longer available'); return 'free' } },
     tick: async () => {
       const command = commands.find((entry) => entry.id === row.create_command_id)

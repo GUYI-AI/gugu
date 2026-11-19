@@ -10,8 +10,6 @@ const ID_FIELD_KINDS = {
   related_session_id: 'session',
   recipient_session_id: 'session',
   sender_session_id: 'session',
-  project_id: 'project',
-  source_project_id: 'project',
   message_id: 'msg',
   device_id: 'device',
   spawned_by_device_id: 'device',
