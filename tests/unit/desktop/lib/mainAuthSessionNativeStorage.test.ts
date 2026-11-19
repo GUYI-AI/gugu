@@ -204,6 +204,32 @@ describe('mainAuthSessionStorage native state agent', () => {
     native.value = JSON.stringify({ state: 'RETIRED_EMPTY' })
     await expect(Promise.resolve(mainAuthSessionStorage.storage.getItem(MAIN_AUTH_STORAGE_KEY))).resolves.toBeNull()
   })
+  it('keeps legacy evidence and the current session projection when encrypted storage cannot be read', async () => {
+    const { MAIN_AUTH_STORAGE_KEY, mainAuthSessionStorage } = await loadStorage()
+    const current = session('user-b')
+    await mainAuthSessionStorage.commit(current, new AbortController().signal)
+    const committed = native.value
+    const legacy = JSON.stringify(session('user-a'))
+    window.localStorage.setItem(MAIN_AUTH_STORAGE_KEY, legacy)
+    native.write.mockClear()
+    native.get.mockRejectedValueOnce(Object.assign(new Error('请联系支持恢复登录'), { code: 'auth_storage_recovery_required' }))
+    await expect(Promise.resolve(mainAuthSessionStorage.storage.getItem(MAIN_AUTH_STORAGE_KEY))).rejects.toThrow('请联系支持恢复登录')
+    expect(window.localStorage.getItem(MAIN_AUTH_STORAGE_KEY)).toBe(legacy)
+    expect(native.value).toBe(committed)
+    expect(native.write).not.toHaveBeenCalled()
+    expect(mainAuthSessionStorage.getState().bootCandidate).toEqual(current)
+  })
+  it('does not remove WebView credentials or publish a session before a failed secure migration commit', async () => {
+    const legacy = JSON.stringify(session('legacy'))
+    window.localStorage.setItem('sb-main', legacy)
+    native.write.mockRejectedValueOnce(new Error('请重试'))
+    const { MAIN_AUTH_STORAGE_KEY, mainAuthSessionStorage } = await loadStorage()
+    await expect(Promise.resolve(mainAuthSessionStorage.storage.getItem(MAIN_AUTH_STORAGE_KEY))).rejects.toThrow('请重试')
+    expect(window.localStorage.getItem(MAIN_AUTH_STORAGE_KEY)).toBe(legacy)
+    expect(native.value).toBeNull()
+    expect(mainAuthSessionStorage.getState().bootCandidate).toBeNull()
+    await expect(Promise.resolve(mainAuthSessionStorage.storage.getItem(MAIN_AUTH_STORAGE_KEY))).resolves.toBe(legacy)
+  })
   it.each([true, false])('persists only allowed temporary data across module restart (native=%s)', async (enabled) => {
     native.enabled = enabled
     const { mainAuthTemporaryStorage, MAIN_PKCE_STORAGE_KEY, OAUTH_PENDING_STORAGE_KEY } = await loadStorage()
