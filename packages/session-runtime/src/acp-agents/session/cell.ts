@@ -1615,7 +1615,7 @@ export class SessionCell {
     // The turn settles once its revert point is known, so the point lands on this turn's own user message.
     // A lookup that fails or does not answer in time only means this turn has no revert entry.
     const revert = this.deps.revert;
-    const settle = revert && this.agent.extMethod
+    const settle = revert
       ? () => void withTimeout(revert.point(this.agent, this.acpSessionId, event as unknown as Readonly<Record<string, unknown>>), REVERT_POINT_TIMEOUT_MS)
         .then(finish, (error: unknown) => {
           this.deps.logger.warn('SessionCell: revert point lookup failed', { sessionId: this.sessionId, providerId: this.deps.providerId, error: toSerializedError(error) });

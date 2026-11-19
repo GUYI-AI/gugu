@@ -1,6 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -97,8 +96,15 @@ describe('claude record after a revert through claude-agent-acp', () => {
   });
 
   it('the mark is the text the installed bridge writes', () => {
-    const require = createRequire(import.meta.url);
-    const bridge = readFileSync(join(dirname(require.resolve('@agentclientprotocol/claude-agent-acp')), 'acp-agent.js'), 'utf8');
+    // The package exports only an `import` entry, so find its file the way Node walks node_modules.
+    let dir = dirname(fileURLToPath(import.meta.url)), entry = '';
+    while (!entry) {
+      const candidate = join(dir, 'node_modules/@agentclientprotocol/claude-agent-acp/dist/acp-agent.js');
+      if (existsSync(candidate)) entry = candidate;
+      else if (dirname(dir) === dir) throw new Error('claude-agent-acp is not installed');
+      else dir = dirname(dir);
+    }
+    const bridge = readFileSync(entry, 'utf8');
     expect(bridge).toContain(`export const REVERT_MARK = ${JSON.stringify(CLAUDE_REVERT_MARK)};`);
   });
 });
