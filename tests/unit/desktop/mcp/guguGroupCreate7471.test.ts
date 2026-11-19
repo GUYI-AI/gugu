@@ -11,13 +11,14 @@ const EXTERNAL = '55555555-5555-4555-8555-555555555555'
 const OTHER_OWNER = '66666666-6666-4666-8666-666666666666'
 const user = (id: string, type = 'agent', owner_user_id: string | null = OWNER) => ({ id, type, owner_user_id })
 
-function harness(options: { users?: ReturnType<typeof user>[]; failInvite?: string; createError?: string; token?: string } = {}) {
+function harness(options: { users?: ReturnType<typeof user>[]; failInvite?: string; createError?: string; token?: string; runSessionAction?: (action: unknown) => Promise<unknown> } = {}) {
   const rpcs: Array<{ name: string; body: Record<string, unknown> }> = []
   const users = options.users ?? [user(SELF), user(SIBLING), user(HUMAN, 'human', null), user(EXTERNAL, 'agent', OTHER_OWNER)]
   const context = {
     supabaseUrl: '', anonKey: '', agentId: SELF, threadRootId: null, guguHome: '/tmp/gugu-group-create-test',
     getAccessToken: async () => options.token ?? `x.${Buffer.from(JSON.stringify({ sub: OWNER })).toString('base64url')}.x`,
     runHostAction: async () => [{ sessionId: 'sibling', identity: { users: { id: SIBLING } } }],
+    ...(options.runSessionAction ? { runSessionAction: options.runSessionAction } : {}),
   }
   const deps = {
     restGet: async (path: string, schema: string) => {
@@ -126,4 +127,25 @@ test('shared ordinary group creation trims name/prompt, removes duplicates/owner
   await expect(createGroupChat(client, ' ', OWNER, [SELF])).rejects.toThrow('Group name is required')
   expect(await createGroupChat(client, '汤局', OWNER, [OWNER])).toBe('saved-chat')
   await expect(createGroupChat({ rpc: async () => ({ data: null, error: { message: 'cannot create group' } }) }, '汤局', OWNER, [SELF])).rejects.toThrow('cannot create group')
+
+  test('folder: the group is created first, then the folder is bound to it on the named device', async () => {
+    const seen: unknown[] = []
+    const h = harness({ runSessionAction: async (action) => { seen.push(action); return { folder_id: 'w1', path: '/work/app' } } })
+    const out = await h.call({ name: 'App', folder: { path: '/work/app', device: 'device:mac' } })
+    expect(seen).toEqual([{ action: 'group_folder_bind', chat_id: out.chat_id, path: '/work/app', device: 'mac' }])
+    expect(out.folder).toEqual({ folder_id: 'w1', path: '/work/app' })
+  })
+
+  test('folder: a failed bind still returns the created group and says how to finish', async () => {
+    const h = harness({ runSessionAction: async () => { throw new Error('/nope is not a directory on this device') } })
+    const out = await h.call({ name: 'App', folder: { path: '/nope' } })
+    expect(out.chat_id).toEqual(expect.any(String))
+    expect(out.folder).toMatchObject({ error: '/nope is not a directory on this device', next: expect.stringContaining('group_folder_bind') })
+  })
+
+  test('folder without a session host is refused before any group is created', async () => {
+    const h = harness()
+    await expect(h.call({ name: 'App', folder: { path: '/work/app' } })).rejects.toThrow(/device host/)
+    expect(h.rpcs.filter((call) => call.name === 'create_gugu_group')).toEqual([])
+  })
 })
