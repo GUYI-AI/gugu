@@ -368,6 +368,13 @@ jobs:
           container-image: ${{ env.PLAYWRIGHT_IMAGE }}
       - run: node scripts/test-infra/vitest-browser-shards.mjs --project session-browser --shard-group=${{ matrix.shard }}/3 --shards-per-group=4
         shell: bash .github/actions/setup-playwright/run-in-container.sh {0}
+      - name: Upload Chinese migration regression screenshot
+        if: ${{ always() && hashFiles('test-results/agent-home-migration-zh.png') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-home-migration-zh-${{ matrix.shard }}
+          path: test-results/agent-home-migration-zh.png
+          retention-days: 14
   web-smoke:
     name: Web E2E (${{ matrix.id }})
     needs: changes

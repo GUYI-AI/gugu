@@ -55,6 +55,7 @@ export type ResolvedAgentHome = {
    */
   carryExclusions: readonly string[];
   upgradeHistory?: readonly string[];
+  historySession?: AgentConfigRoot['historySession'];
   legacyCleanup?: AgentConfigRoot['legacyCleanup'];
   /**
    * 首次铺好之后顺手写下的文件(相对配置根)—— 见 `AgentConfigRoot.seedFiles`。

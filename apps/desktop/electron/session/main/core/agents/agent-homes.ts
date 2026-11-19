@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
 import type { AgentHomeGroupId } from '@gugu/session-core/agents/plugins';
 import {
-  AgentHomeMigrationFailure, AgentHomeSpaceError, checkAgentHomeImportSpace, diffAgentHome, importAgentHome, readAgentHomeMarker, reimportAgentHome, resolveAgentHome,
+  AGENT_HISTORY_LIMIT, AgentHomeMigrationFailure, AgentHomeSpaceError, planAgentHomeHistory, readAgentHomePending, checkAgentHomeImportSpace, diffAgentHome, importAgentHome, readAgentHomeMarker, reimportAgentHome, resolveAgentHome,
   scanAgentHome, updateAgentHomeSource, type AgentHomeImportIssue, type AgentHomeMarker,
 } from '@gugu/session-core/agents/plugins/helpers';
 import { agentHomeOperationSchema, type AgentHomeScan } from '@gugu/session-core/workspace-server/agent-config';
@@ -17,6 +17,7 @@ import { loginShellEnv } from '@main/utils/userEnv';
 import type { DependencyId } from '@gugu/session-core/deps/runtime';
 import { migrateOwnedHarnessAccounts } from './harness-connections';
 import { setAgentHomeUpgradePreparation } from './agent-home';
+import { appScope } from '@main/app/app-scope';
 import { reportAgentHomeMigrationFailure } from '../../../../error-summary-reporting-host';
 
 /** Declarations own paths; this service adds desktop account migration and IPC-safe metadata. */
@@ -32,18 +33,42 @@ function hasOldTasks(providerId: string): boolean {
 
 const upgradeState = new KV<{ providers: string[]; inventory: Record<string, boolean> }>('agent-home-upgrade');
 let upgradeProfile: boolean | undefined;
+let upgradeStartedAt = 0;
 let upgradePlan: Promise<ReadonlySet<string>> | undefined;
 let inventoryComplete = false;
 const automaticAttempts = new Map<string, Promise<void>>();
 let spaceAdmission: Promise<void> | undefined;
 let migrationSpace: AgentHomeScan['migrationSpace'];
+const migrationAbort = new AbortController();
+appScope.add(() => migrationAbort.abort(new Error('Application is closing')));
+const migrationPreparation = new Map<string, NonNullable<AgentHomeScan['migrationPreparation']>>();
+const historyPlans = new Map<string, ReturnType<typeof planAgentHomeHistory>>();
+function historyPlan(home: NonNullable<ReturnType<typeof homeFor>>) {
+  let plan = historyPlans.get(home.configRoot);
+  if (!plan) { plan = planAgentHomeHistory(home); historyPlans.set(home.configRoot, plan); }
+  return plan;
+}
+async function prepareManagedCodexHistory(home: NonNullable<ReturnType<typeof homeFor>>) {
+  migrationPreparation.set(home.providerId, { phase: 'history', startedAt: Date.now(), attempt: 1 });
+  const [{ prepareCodexHistory }, { resolveLocalAgentCli }, { resolveLocalAgentSpawnEnv }] = await Promise.all([
+    import('@gugu/session-plugins/agents/codex-history'),
+    import('@main/core/acp/transport/local-acp-process-host'),
+    import('./agent-run-context'),
+  ]);
+  const [cli, env] = await Promise.all([resolveLocalAgentCli('codex', 'primary'), resolveLocalAgentSpawnEnv('codex', 'version-probe')]);
+  await prepareCodexHistory({ cli, env: { ...env, CODEX_HOME: home.configRoot } }, {
+    signal: migrationAbort.signal,
+    onProgress: (progress) => { if (progress) migrationPreparation.set(home.providerId, { phase: 'history', startedAt: progress.startedAt, attempt: progress.attempt }); },
+  });
+  migrationAbort.signal.throwIfAborted();
+}
 function admitAutomaticImports(providers: ReadonlySet<string>): Promise<void> {
   spaceAdmission ??= (async () => {
     const entries = [];
     for (const providerId of providers) {
       const home = homeFor(providerId);
-      if (home && !await readAgentHomeMarker(home)) entries.push({
-        home, groups: new Set(defaultAgentHomeGroups(home.importGroups)), historyPaths: home.upgradeHistory,
+      if (home && !await readAgentHomeMarker(home) && !await readAgentHomePending(home)) entries.push({
+        home, groups: new Set(defaultAgentHomeGroups(home.importGroups)), historyPaths: (await historyPlan(home)).paths,
       });
     }
     await checkAgentHomeImportSpace(entries);
@@ -84,6 +109,7 @@ function upgradeProviders(): Promise<ReadonlySet<string>> | undefined {
 export function initializeAgentHomeUpgrade(priorProfile: boolean): void {
   if (upgradeProfile !== undefined) return;
   upgradeProfile = priorProfile;
+  upgradeStartedAt = Date.now();
   setAgentHomeUpgradePreparation(prepareAutomaticImport);
   void upgradeProviders()?.then((ids) => Promise.allSettled([...ids].map(prepareAutomaticImport))).catch((error: unknown) => {
     log.error('Could not plan the managed configuration upgrade');
@@ -99,12 +125,15 @@ async function prepareAutomaticImport(providerId: string): Promise<void> {
   if (!providers?.has(providerId)) return;
   let pending = automaticAttempts.get(providerId);
   if (!pending) {
+    migrationPreparation.set(providerId, { phase: 'preparing', startedAt: Date.now(), attempt: 1 });
     pending = (async () => {
       const home = homeFor(providerId);
       if (!home || await readAgentHomeMarker(home)) return;
+      migrationPreparation.set(providerId, { phase: 'copying', startedAt: Date.now(), attempt: 1 });
       await admitAutomaticImports(providers);
       await importHarnessHome(providerId, defaultAgentHomeGroups(home.importGroups));
     })().catch(async (error: unknown) => {
+      if (migrationAbort.signal.aborted) return;
       const cause = error instanceof AgentHomeMigrationFailure ? error.cause : error;
       if (cause instanceof AgentHomeSpaceError) { migrationSpace = cause.space; log.info('Deferred configuration migration until disk space is available'); return; }
       if ((cause as NodeJS.ErrnoException)?.code === 'ENOSPC') {
@@ -114,7 +143,7 @@ async function prepareAutomaticImport(providerId: string): Promise<void> {
       log.error('Automatic harness configuration import failed', { providerId, error: error instanceof Error ? error.name : typeof error });
       reportAgentHomeMigrationFailure(error instanceof AgentHomeMigrationFailure ? error.cause : error,
         error instanceof AgentHomeMigrationFailure ? error.stage : 'marker');
-    });
+    }).finally(() => migrationPreparation.delete(providerId));
     automaticAttempts.set(providerId, pending);
   }
   await pending;
@@ -133,7 +162,16 @@ export async function scanAgentHomes(providerIds?: readonly string[], upgradedOn
     if (!providerIds && !upgradedOnly && localDependencyManager.get(providerId as DependencyId)?.status !== 'available') continue;
     const home = homeFor(providerId);
     if (!home) continue;
-    // Status reads must not wait for the background history/configuration migration.
+    // Reads observe migration state without starting or waiting for the copy/index job.
+    const planned = upgradedOnly && upgradeProfile !== undefined ? (await upgradeProviders())?.has(providerId) : false;
+    const preparation = migrationPreparation.get(providerId) ?? (planned && !automaticAttempts.has(providerId)
+      ? { phase: 'preparing' as const, startedAt: upgradeStartedAt, attempt: 1 } : undefined);
+    if (preparation && !await readAgentHomeMarker(home)) {
+      rows.push({ providerId, name: plugin.metadata.name, userRoot: home.userConfigRoot, sourceReadable: await access(home.userConfigRoot).then(() => true, () => false),
+        importedAt: null, needsImport: true, sourceUpdated: false, migration: true, migrationPreparation: preparation,
+        groups: [], issues: [], mcpSecrets: [], projectMcpCount: 0 });
+      continue;
+    }
     const deferred = migrationSpace && (await upgradeProviders())?.has(providerId) && !await readAgentHomeMarker(home);
     if (deferred) {
       rows.push({ providerId, name: plugin.metadata.name, userRoot: home.userConfigRoot,
@@ -156,7 +194,7 @@ export async function scanAgentHomes(providerIds?: readonly string[], upgradedOn
       migration,
       ...(scan.marker?.migratedFrom === 'shared' ? {
         upgraded: true, upgradeSignIn: scan.marker.upgradeSignIn, terminalNeedsSignIn: scan.marker.terminalNeedsSignIn,
-        oldSessionsSkipped: scan.marker.oldSessionsSkipped, upgradeIssues: scan.marker.upgradeIssues,
+        oldSessionsSkipped: scan.marker.oldSessionsSkipped, upgradeIssues: scan.marker.upgradeIssues, historyImport: scan.marker.historyImport,
       } : {}),
       groups: scan.groups, issues: scan.issues, mcpSecrets: scan.mcpSecrets, projectMcpCount: scan.projectMcpCount,
       ...(migration ? { unmarkedMcp: scan.mcpNames } : {}),
@@ -179,11 +217,21 @@ export async function importHarnessHome(providerId: string, groups: readonly Age
 
 async function importHarnessHomeOnce(home: NonNullable<ReturnType<typeof homeFor>>, providerId: string, groups: readonly AgentHomeGroupId[], skip: boolean) {
   const migration = !skip && !!(await upgradeProviders())?.has(providerId);
-  const historyPaths = migration && groups.length ? home.upgradeHistory ?? [] : [];
+  const pending = migration && providerId === 'codex' ? await readAgentHomePending(home) : null;
+  const plan = migration && groups.length && !pending ? await historyPlan(home) : undefined;
+  const historyPaths = plan?.paths ?? [];
+  const selectedSessionIds = new Set(historyPaths.flatMap((path) => {
+    const session = home.historySession?.(path); return session?.primary ? [session.id] : [];
+  }));
+  const failedSessions = (issues: readonly AgentHomeImportIssue[]) => new Set(issues.flatMap((issue) => {
+    const id = home.historySession?.(issue.path)?.id;
+    return id && historyPaths.includes(issue.path) && selectedSessionIds.has(id) ? [id] : [];
+  })).size;
+  const historyIssues: AgentHomeImportIssue[] = plan ? [...plan.issues, ...plan.skipped.map(({ path }) => ({ path, reason: 'historyLimit' as const }))] : [];
   let notice: { terminalNeedsSignIn: boolean; relogin: { connectionId: string; name: string; methodId: string }[];
     upgradeSignIn?: AgentHomeMarker['upgradeSignIn'] } | undefined;
   const cleanupIssues: AgentHomeImportIssue[] = [];
-  if (migration && !(await readAgentHomeMarker(home))) {
+  if (migration && !pending && !(await readAgentHomeMarker(home))) {
     await checkAgentHomeImportSpace([{ home, groups: new Set(groups), historyPaths }]);
     for (const { path, update } of home.legacyCleanup ?? []) {
       const issue = await updateAgentHomeSource(home, path, update);
@@ -191,12 +239,14 @@ async function importHarnessHomeOnce(home: NonNullable<ReturnType<typeof homeFor
     }
   }
   const oldSessionsSkipped = (issues: readonly AgentHomeImportIssue[]) =>
-    issues.filter((issue) => issue.reason === 'tooLarge' && historyPaths.some((path) => issue.path.startsWith(`${path}/`))).length;
+    issues.filter((issue) => issue.reason === 'historyLimit').length;
   const result = await importAgentHome(home, {
-    skip, groups: new Set(groups), ...(migration ? { migratedFrom: 'shared' as const, historyPaths } : {}),
+    skip, groups: new Set(groups), ...(migration ? { migratedFrom: 'shared' as const, historyPaths, historyIssues } : {}),
+    ...(migration && providerId === 'codex' && groups.length ? { prepareAfterPublish: () => prepareManagedCodexHistory(home) } : {}),
     ...(migration ? {
       upgradeSummary: (issues: readonly AgentHomeImportIssue[]) => ({
         oldSessionsSkipped: oldSessionsSkipped(issues),
+        ...(plan ? { historyImport: { imported: plan.sessions - failedSessions(issues), skipped: plan.skipped.length + failedSessions(issues), sessionBytes: plan.sessionBytes, limitBytes: AGENT_HISTORY_LIMIT } } : pending?.historyImport ? { historyImport: pending.historyImport } : {}),
         upgradeIssues: [...issues, ...cleanupIssues],
       }),
       afterCommit: async () => {
@@ -212,7 +262,7 @@ async function importHarnessHomeOnce(home: NonNullable<ReturnType<typeof homeFor
   });
   const issues = [...result.issues, ...cleanupIssues.filter((issue) =>
     !result.issues.some((item) => item.path === issue.path && item.reason === issue.reason))];
-  return { issues, ...notice, oldSessionsSkipped: oldSessionsSkipped(result.issues) };
+  return { issues, ...notice, oldSessionsSkipped: oldSessionsSkipped(result.issues), historyImport: result.marker.historyImport };
 }
 export async function diffHarnessHome(providerId: string) {
   const home = homeFor(providerId);

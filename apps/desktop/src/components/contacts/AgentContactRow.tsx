@@ -84,7 +84,7 @@ export const AgentContactRow = memo(function AgentContactRow({
             {allowsLiveActions && contact.agent_public ? <Chip>{ct('panel.shared')}</Chip> : null}
           </>
         }
-        subtitle={
+        meta={
           <span className={agentContactRowStatusClass(tone)}>
             <AgentContactStatusMark tone={tone} />
             {statusLabel}
