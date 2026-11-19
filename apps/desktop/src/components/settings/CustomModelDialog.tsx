@@ -22,10 +22,14 @@ import { AppIcon } from '@renderer/lib/components/app-icon';
 import { ChevronDownIcon } from '@/lib/icons';
 import { SettingsNote, Toggle } from './SettingsPrimitives';
 
-export function CustomModelDialog({ machine, connection, group = 'custom', onClose }: { machine: string | null; connection?: CustomModelConnection; group?: 'coding-plan' | 'api' | 'custom'; onClose: () => void }) {
+export function CustomModelDialog({ machine, connection, group = 'custom', initialAccount, onClose }: {
+  machine: string | null; connection?: CustomModelConnection; group?: 'coding-plan' | 'api' | 'custom';
+  initialAccount?: 'claude' | 'codex'; onClose: () => void;
+}) {
   const { translate } = useSessionMessages();
   const initialPreset = providerPresets.find(preset => preset.group === group);
-  const [presetId, setPresetId] = useState(connection?.preset ?? (connection ? 'custom' : group === 'coding-plan' ? 'claude-subscription' : initialPreset?.id ?? 'custom'));
+  const accountPreset = initialAccount === 'codex' ? 'chatgpt-subscription' : 'claude-subscription';
+  const [presetId, setPresetId] = useState(connection?.preset ?? (connection ? 'custom' : group === 'coding-plan' ? accountPreset : initialPreset?.id ?? 'custom'));
   const preset = providerPresets.find(({ id }) => id === presetId);
   const accountProvider = presetId === 'claude-subscription' ? 'claude' : presetId === 'chatgpt-subscription' ? 'codex' : null;
   const { data: agents, error: agentsError, refetch: refetchAgents } = useAgents();
