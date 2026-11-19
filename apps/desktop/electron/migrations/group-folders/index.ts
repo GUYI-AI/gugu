@@ -139,8 +139,8 @@ export async function runGroupFoldersOnce(deps: GroupFoldersDeps): Promise<Group
       if (group === null) summary.sessionsWithoutGroup += sessions
       else summary.sessionsInGroups += sessions
       db.prepare('UPDATE automations SET workspace_id = ? WHERE project_id = ? AND workspace_id IS NULL').run(root, project.id)
-      db.prepare(`INSERT OR IGNORE INTO workspace_settings (workspace_id, base_settings_json, shareable_settings_json, created_at, updated_at)
-        SELECT ?, base_project_settings_json, shareable_project_settings_json, created_at, updated_at FROM project_settings WHERE project_id = ?`)
+      db.prepare(`INSERT OR IGNORE INTO workspace_settings (workspace_id, base_settings_json, shareable_settings_json, legacy_config_migrated_at, created_at, updated_at)
+        SELECT ?, base_project_settings_json, shareable_project_settings_json, legacy_config_migrated_at, created_at, updated_at FROM project_settings WHERE project_id = ?`)
         .run(root, project.id)
       db.prepare(`INSERT OR IGNORE INTO workspace_remotes (workspace_id, remote_name, remote_url)
         SELECT ?, remote_name, remote_url FROM project_remotes WHERE project_id = ?`).run(root, project.id)

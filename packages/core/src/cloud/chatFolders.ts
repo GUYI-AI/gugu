@@ -54,3 +54,29 @@ export async function listMyChatFolders(client: ChatFoldersRpcClient): Promise<A
     }
   })
 }
+
+/** One folder as a device publishes it to the account. */
+export type PublishedFolder = { folderId: string; chatId: string; path: string; attachedAt: string | null }
+
+export interface ChatFoldersPublishClient {
+  rpc(fn: 'publish_chat_folders', args: { p_device_id: string; p_folders: unknown[] }): { abortSignal?(signal: AbortSignal): PromiseLike<RpcResult> } & PromiseLike<RpcResult>
+}
+
+/** What the account made of a publish: whether its copy changed, and the folders whose group it refused. */
+export type ChatFoldersPublished = { changed: boolean; rejected: string[] }
+
+/** This device's whole folder set onto the account (folders not listed are unbound there). */
+export async function publishChatFolders(client: ChatFoldersPublishClient, deviceId: string, folders: readonly PublishedFolder[],
+  signal?: AbortSignal): Promise<ChatFoldersPublished> {
+  const request = client.rpc('publish_chat_folders', {
+    p_device_id: deviceId,
+    p_folders: folders.map((folder) => ({ folder_id: folder.folderId, chat_id: folder.chatId, path: folder.path, attached_at: folder.attachedAt })),
+  })
+  const { data, error } = await (signal && request.abortSignal ? request.abortSignal(signal) : request)
+  if (error) throw new Error(error.message)
+  const reply = data as { changed?: unknown; rejected?: unknown } | null
+  if (typeof reply?.changed !== 'boolean' || !Array.isArray(reply.rejected) || !reply.rejected.every((id) => typeof id === 'string' && id)) {
+    throw new Error('Folder publish response must be {changed, rejected}')
+  }
+  return { changed: reply.changed, rejected: reply.rejected as string[] }
+}

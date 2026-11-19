@@ -281,6 +281,7 @@ export const workspaceSettings = sqliteTable('workspace_settings', {
   workspaceId: text('workspace_id').primaryKey(),
   baseSettingsJson: text('base_settings_json').notNull().default('{}'),
   shareableSettingsJson: text('shareable_settings_json').notNull().default('{}'),
+  legacyConfigMigratedAt: text('legacy_config_migrated_at'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });

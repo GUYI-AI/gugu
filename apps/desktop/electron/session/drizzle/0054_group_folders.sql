@@ -13,6 +13,7 @@ CREATE TABLE `workspace_settings` (
 	`workspace_id` text PRIMARY KEY NOT NULL,
 	`base_settings_json` text DEFAULT '{}' NOT NULL,
 	`shareable_settings_json` text DEFAULT '{}' NOT NULL,
+	`legacy_config_migrated_at` text,
 	`created_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	`updated_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL
 );--> statement-breakpoint

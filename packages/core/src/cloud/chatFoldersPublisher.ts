@@ -1,5 +1,5 @@
 /**
- * #113 这台机器的项目记到账号上:开机一次,之后项目或文件夹一变就再记一次(桌面与咕咕 server 同一份)。
+ * @@@group-folders 这台机器挂在群上的文件夹记到账号上(publish_chat_folders):开机一次,之后文件夹或绑定一变就再记一次(桌面与咕咕 server 同一份)。
  *
  *  · 变化往往一串一串来(挂一个文件夹 = 文件夹变了 + 显隐变了):从头一个变化起攒 {@link SETTLE_MS} 再记
  *    (后来的变化不往后推,❌ 一直有变化就一直不记),一次只记一份;记的途中又变了,记完再记一次。
@@ -8,28 +8,28 @@
  *    后端真断着边就挂上了),最迟 {@link REFRESH_MS} 再记,直到记上:账号上那份旧着,别的端看到的就是旧的,
  *    ❌ 只喊一声就算了;❌ 自己再起一个重试定时器。
  *  · 记上之后每 {@link REFRESH_MS} 再记一次:账号上那份也会在这台机器不知道的时候没了(设备行被收掉又登记回来,
- *    它的项目跟着删了),这台机器自己没有变化可报。记的是整份,库里没变就什么都不动(不推进账号 revision),多记一次无害。
- *  · 账号不认的群绑定(别人的群,rejected):这台机器上那几个项目的群绑定当场丢掉({@link DeviceProjectsPublisherDeps.dropBindings}),
+ *    它的文件夹跟着删了),这台机器自己没有变化可报。记的是整份,库里没变就什么都不动(不推进账号 revision),多记一次无害。
+ *  · 账号不认的群绑定(别人的群,rejected):这台机器上那几个文件夹的群绑定当场摘下({@link ChatFoldersPublisherDeps.dropBindings}),
  *    界面不再显示一个账号没记下的绑定;丢掉之后绑定变了,会再记一次(那几行不带群)。丢不掉 = 这一次没记上,照常重试。
  */
 import { withBoundedOperation } from './boundedOperation'
 import { noteBackendRequestFailed, subscribeBackendRecovered } from './backendReachability'
-import { publishDeviceProjects, type DeviceProject, type DeviceProjectsRpcClient } from './deviceProjects'
+import { publishChatFolders, type ChatFoldersPublishClient, type PublishedFolder } from './chatFolders'
 
 export const SETTLE_MS = 1_000
 export const PUBLISH_TIMEOUT_MS = 60_000
 export const REFRESH_MS = 15 * 60_000
 
-export type DeviceProjectsPublisherDeps = {
+export type ChatFoldersPublisherDeps = {
   getAuth: () => Promise<{ accessToken: string; userId: string } | null>
   /** 这台机器在当前账号下的设备 id(第一次问时先登记设备行,见 createLocalDeviceIdResolver)。 */
   deviceId: () => Promise<string | null>
-  client: (accessToken: string) => DeviceProjectsRpcClient
-  /** 这台机器此刻的项目(会话页后端读本地库)。 */
-  records: () => Promise<DeviceProject[]>
+  client: (accessToken: string) => ChatFoldersPublishClient
+  /** 这台机器此刻挂在群上的文件夹(会话页后端读本地库)。 */
+  records: () => Promise<PublishedFolder[]>
   warn: (message: string, fields: Record<string, unknown>) => void
-  /** The account refused these local projects' group bindings: this machine drops them (they show as not bound). */
-  dropBindings: (ownerUserId: string, localProjectIds: readonly string[]) => Promise<void>
+  /** The account refused these folders' group bindings (no such group, or not a member): this machine unbinds them. */
+  dropBindings: (ownerUserId: string, folderIds: readonly string[]) => Promise<void>
   /** The account has this machine's record as it is now: whoever reads it may read it again. */
   onPublished?: () => void
   setTimeout?: (run: () => void, ms: number) => unknown
@@ -38,13 +38,13 @@ export type DeviceProjectsPublisherDeps = {
   backend?: { writeFailed: () => void; onRecovered: (run: () => void) => () => void }
 }
 
-export type DeviceProjectsPublisher = {
+export type ChatFoldersPublisher = {
   /** 可能变了:攒一下再记。 */
   notify(): void
   stop(): void
 }
 
-export function createDeviceProjectsPublisher(deps: DeviceProjectsPublisherDeps): DeviceProjectsPublisher {
+export function createChatFoldersPublisher(deps: ChatFoldersPublisherDeps): ChatFoldersPublisher {
   const setTimer = deps.setTimeout ?? ((run, ms) => setTimeout(run, ms))
   const clearTimer = deps.clearTimeout ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>))
   let timer: unknown = null
@@ -99,7 +99,7 @@ export function createDeviceProjectsPublisher(deps: DeviceProjectsPublisherDeps)
           if (!deviceId) throw new Error('this machine has no device id under the signed-in account yet')
           const records = await deps.records()
           signal.throwIfAborted()
-          const { rejected } = await publishDeviceProjects(deps.client(auth.accessToken), deviceId, records, signal)
+          const { rejected } = await publishChatFolders(deps.client(auth.accessToken), deviceId, records, signal)
           if (rejected.length) {
             deps.warn('device projects: the account refused these project group bindings; dropping them on this machine', { rejected })
             await deps.dropBindings(auth.userId, rejected)
