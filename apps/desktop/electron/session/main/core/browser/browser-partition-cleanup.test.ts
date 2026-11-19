@@ -74,7 +74,7 @@ describe('migrateLegacyBrowserPartitionDirs', () => {
 });
 
 describe('explicit browsing-data cleanup', () => {
-  it('retains every old partition and includes it only when the person clears browsing data', async () => {
+  it.each([false, true])('retains every old partition during explicit cleanup (standalone profiles: %s)', async (hasStandaloneProfiles) => {
     const dir = partitionsDir({
       'emdash-browser-tab-1': 'x',
       'gugu-browser-tab-2': 'x',
@@ -112,6 +112,7 @@ describe('explicit browsing-data cleanup', () => {
       '@main/core/settings/settings-service': { appSettingsService: { get: async () => ({ profiles: [{ id: 'work' }] }) } },
       '@main/core/browser/browser-webcontents-registry': { browserWebContentsRegistry: { registeredPartitions: ['persist:gugu-browser-isolated-live'], clearBrowsingData: clear } },
       './browser-partition-cleanup': { listPersistedBrowserPartitions: () => listPersistedBrowserPartitions(dir) },
+      './standalone-kernel-service': { standaloneKernelService: () => ({ hasProfiles: async () => hasStandaloneProfiles }) },
     };
     const entry = join(__dirname, 'controller.ts');
     const compiled = ts.transpileModule(readFileSync(entry, 'utf8'), {
@@ -127,6 +128,11 @@ describe('explicit browsing-data cleanup', () => {
       module, exports: module.exports,
     });
     expect(clear).not.toHaveBeenCalled();
+    if (hasStandaloneProfiles) {
+      await expect(module.exports.browserController.clearBrowsingData('all')).rejects.toThrow('Clearing all standalone Chrome browsing data is not available in this prototype');
+      expect(clear).not.toHaveBeenCalled();
+      return;
+    }
     expect(await module.exports.browserController.clearBrowsingData('all')).toEqual({ success: true });
     expect(clear).toHaveBeenCalledOnce();
     expect(clear).toHaveBeenCalledWith('all', expect.arrayContaining([

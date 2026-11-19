@@ -42,7 +42,7 @@ export function BrowserKernelSettings({ status, action, onError }: Props) {
     <SettingsRow title={translate('browserSettings.kernel')} control={
       <Popover open={consent} onOpenChange={open => setConsent(open && !pending && !status.installation)}>
         <ToggleGroup value={[status.selected]} size="sm" spacing={1}
-          aria-label={translate('browserSettings.kernel')} className="border-0 bg-background-secondary p-0.5"
+          aria-label={translate('browserSettings.kernel')} className="border-0 bg-background-secondary p-1"
           onValueChange={([value]) => {
             if (value === 'builtin') perform('builtin');
             else if (value === 'standalone') {

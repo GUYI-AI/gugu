@@ -112,9 +112,7 @@ export async function installStandaloneKernel(options: {
       const reader = response.body.getReader();
       try {
         progress({ stage: 'downloading', receivedBytes: 0, totalBytes: asset.bytes });
-        while (true) {
-          const next = await reader.read();
-          if (next.done) break;
+        for (let next = await reader.read(); !next.done; next = await reader.read()) {
           const chunk = next.value;
           signal.throwIfAborted();
           received += chunk.byteLength;

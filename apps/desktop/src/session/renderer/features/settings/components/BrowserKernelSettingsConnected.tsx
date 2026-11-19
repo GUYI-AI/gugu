@@ -1,39 +1,38 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { replica, useReplica } from '@/lib/replica';
 import { messageForUser } from '@/lib/userFacingError';
 import { SettingsNote } from '@/components/settings/SettingsPrimitives';
+import { Unknown } from '@/components/ui/Unknown';
 import { rpc } from '@renderer/lib/ipc';
 import type { BrowserKernelStatus } from '@shared/browser-kernel';
 import { BrowserKernelSettings } from './BrowserKernelSettings';
 import { getAppSettingValueSnapshot, setAppSettingsValueInCache } from '../app-settings-client';
 
-/** Poll only while settings is mounted; progress comes from the actual installer, never a timer estimate. */
+/** Device-owned status, without a snapshot: installation progress must be read from the current installer. */
+const kernelStatus = replica({
+  name: 'browserKernelStatus', scope: 'device', refreshEvery: 500, keep: 60_000,
+  read: async () => {
+    const status = await rpc.browser.kernelStatus();
+    // New tabs adopt a choice only after installation commits the preference.
+    if (status.phase === 'idle') {
+      const browser = getAppSettingValueSnapshot('browser');
+      if (browser && browser.kernel !== status.selected) setAppSettingsValueInCache('browser', { ...browser, kernel: status.selected });
+    }
+    return status;
+  },
+});
+
 export function BrowserKernelSettingsConnected() {
-  const [status, setStatus] = useState<BrowserKernelStatus | null>(null);
+  const reading = useReplica(kernelStatus, []);
   const [error, setError] = useState<unknown>(null);
-  const [readError, setReadError] = useState<unknown>(null);
-  const remember = (value: BrowserKernelStatus) => {
-    setStatus(value);
-    // An in-progress choice is visual only: new tabs adopt it after installation commits the preference.
-    if (value.phase !== 'idle') return;
-    const browser = getAppSettingValueSnapshot('browser');
-    if (browser && browser.kernel !== value.selected) setAppSettingsValueInCache('browser', { ...browser, kernel: value.selected });
-  };
-  useEffect(() => {
-    let closed = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const refresh = async () => {
-      try {
-        const value = await rpc.browser.kernelStatus();
-        if (!closed) { remember(value); setReadError(null); }
-      } catch (failure) { if (!closed) setReadError(failure); }
-      if (!closed) timer = setTimeout(() => { void refresh(); }, 500);
-    };
-    void refresh();
-    return () => { closed = true; clearTimeout(timer); };
-  }, []);
+  const status: BrowserKernelStatus | null = reading.state === 'value' ? reading.value : null;
+  const readError = reading.state === 'unknown' ? null : reading.error;
   return <>
+    {reading.state === 'unknown' && <Unknown className="h-8 w-full" />}
     {status && <BrowserKernelSettings status={status} onError={setError} action={async action => {
-      remember(await rpc.browser.kernelAction(action));
+      await rpc.browser.kernelAction(action);
+      // Invalidate instead of replacing a concurrently polled value with an older action response.
+      await kernelStatus.refresh();
       setError(null);
     }} />}
     {(error != null || readError != null) && <SettingsNote tone="danger">{messageForUser(error ?? readError)}</SettingsNote>}
