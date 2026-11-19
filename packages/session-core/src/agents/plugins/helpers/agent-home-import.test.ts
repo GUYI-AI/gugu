@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rename, rm, symlink, truncate, writeFile, chmod, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rename, rm, symlink, truncate, writeFile, chmod, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -9,18 +9,19 @@ import type { AgentConfigRoot } from '../capabilities/session-bundle';
 
 const roots: string[] = [];
 afterEach(async () => { vi.restoreAllMocks(); for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
-async function fixture() {
+async function fixture(extraSettings: string[] = [], userPath = '.test') {
   const root = await mkdtemp(join(tmpdir(), 'agent-home-import-'));
   roots.push(root);
   const spec: AgentConfigRoot = {
-    envVar: 'TEST_HOME', userPath: '.test', evidence: 'Fixture CLI configuration root.',
+    envVar: 'TEST_HOME', userPath, evidence: 'Fixture CLI configuration root.',
     carryExclusions: [{ path: 'sessions', evidence: 'Session history is separate.' }],
     credentialPaths: [{ path: 'secret-store', evidence: 'Fixture credential store.' }],
     importGroups: [
-      { id: 'settings', paths: [{ path: 'settings.json', omitKeys: ['hooks'] }, 'config.toml'], evidence: 'Fixture settings.' },
+      { id: 'settings', paths: [{ path: 'settings.json', omitKeys: ['hooks'] }, 'config.toml', ...extraSettings], evidence: 'Fixture settings.' },
       { id: 'hooks', paths: [{ path: 'settings.json', keys: ['hooks'] }], evidence: 'Fixture hooks.' },
       { id: 'mcp', paths: [{ path: '../.global.json', keys: ['mcpServers'], target: '.global.json' }], evidence: 'Fixture sibling MCP source.' },
-      { id: 'rules', paths: ['RULES.md'], evidence: 'Fixture rules.' },
+      { id: 'rules', paths: ['RULES.md', 'AGENTS.md', 'rules/'], evidence: 'Fixture rules.' },
+      { id: 'skills', paths: ['skills/'], evidence: 'Fixture skills.' },
     ],
   };
   const home = resolveAgentHome({ providerId: 'fixture', injectionMode: 'managed-config-root', configRoot: spec,
@@ -106,7 +107,7 @@ it('requires a decision for different managed content in a previously unticked g
 });
 
 it('follows the selected source root and its HOME boundary while refusing links inside the root', async () => {
-  const { home, root, source } = await fixture();
+  const { home, root, source } = await fixture(['inner-link']);
   await source('RULES.md', 'local rules');
   await source('sessions/old.jsonl', 'existing task');
   await source('../.global.json', '{"mcpServers":{"local":{"command":"echo"}}}');
@@ -117,7 +118,7 @@ it('follows the selected source root and its HOME boundary while refusing links 
   await rename(home.userConfigRoot, dotfiles);
   await symlink(dotfiles, home.userConfigRoot, 'dir');
   await symlink(join(dotfiles, 'RULES.md'), join(dotfiles, 'inner-link'));
-  const imported = await importAgentHome(home, { groups: new Set(['rules', 'mcp']), historyPaths: ['sessions'] });
+  const imported = await importAgentHome(home, { groups: new Set(['settings', 'rules', 'mcp']), historyPaths: ['sessions'] });
   expect(imported.issues).toContainEqual({ path: 'inner-link', reason: 'symlink' });
   expect(await readFile(join(home.configRoot, 'RULES.md'), 'utf8')).toBe('local rules');
   expect(await readFile(join(home.configRoot, 'sessions/old.jsonl'), 'utf8')).toBe('existing task');
@@ -150,8 +151,8 @@ it('merges separately selected projections and keeps hook-only changes in the ho
   expect(JSON.parse(await readFile(join(home.configRoot, 'settings.json'), 'utf8'))).toEqual({ theme: 'dark', hooks: { Stop: [{ command: 'changed' }] } });
 });
 
-it('skips symlinks and oversized files and reports each skipped source', async () => {
-  const { root, home, source } = await fixture();
+it('skips declared symlinks and oversized files and reports each skipped source', async () => {
+  const { root, home, source } = await fixture(['normal.txt', 'link', 'directory-link', 'large']);
   await source('normal.txt', 'normal');
   await writeFile(join(root, 'outside'), 'private');
   await symlink(join(root, 'outside'), join(home.userConfigRoot, 'link'));
@@ -166,7 +167,7 @@ it('skips symlinks and oversized files and reports each skipped source', async (
 });
 
 it('distinguishes six states and never deletes a managed file or overwrites an unselected conflict', async () => {
-  const { home, source } = await fixture();
+  const { home, source } = await fixture(['unchanged', 'userChanged', 'guguChanged', 'bothChanged', 'userDeleted', 'userAdded']);
   for (const name of ['unchanged', 'userChanged', 'guguChanged', 'bothChanged', 'userDeleted']) await source(name, 'base');
   await importAgentHome(home, { groups: new Set(['settings']) });
   await source('userChanged', 'user');
@@ -208,7 +209,7 @@ it('upgrades legacy markers without asking again and treats unequal unbased cont
 });
 
 it('keeps managed roots private and does not widen source permission bits', async () => {
-  const { home, source } = await fixture();
+  const { home, source } = await fixture(['private-script']);
   await source('private-script', 'fixture');
   await chmod(join(home.userConfigRoot, 'private-script'), 0o750);
   await importAgentHome(home, { groups: new Set(['settings']) });
@@ -231,11 +232,12 @@ it('rejects a stale re-import decision if the managed configuration changed afte
 it('reports a source changed between stat and reading through its open handle', async () => {
   const { home, source } = await fixture();
   await source('RULES.md', 'before');
+  const sourceFile = await realpath(join(home.userConfigRoot, 'RULES.md'));
   const original = fs.open.bind(fs);
   let exercised = false;
   vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
     const handle = await original(...args);
-    if (args[0] === join(home.userConfigRoot, 'RULES.md')) {
+    if (args[0] === sourceFile) {
       exercised = true;
       await writeFile(join(home.userConfigRoot, 'RULES.md'), 'changed while reading');
     }
@@ -247,13 +249,50 @@ it('reports a source changed between stat and reading through its open handle', 
   await expect(stat(join(home.configRoot, 'RULES.md'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
-it('streams old transcripts above the configuration-file cap under the remaining root budget', async () => {
+it('streams old transcripts above the configuration-file cap and keeps copies already present', async () => {
   const { home, source } = await fixture();
   await source('sessions/large.jsonl', '');
   const size = 50 * 1024 * 1024 + 1;
   await truncate(join(home.userConfigRoot, 'sessions/large.jsonl'), size);
   await importAgentHome(home, { groups: new Set(), historyPaths: ['sessions'] });
   expect((await stat(join(home.configRoot, 'sessions/large.jsonl'))).size).toBe(size);
-  expect(await copyAgentHomeHistory(home, ['sessions'], 2 * 1024 * 1024 * 1024 - size + 1))
-    .toContainEqual({ path: 'sessions/large.jsonl', reason: 'tooLarge' });
+  await truncate(join(home.userConfigRoot, 'sessions/large.jsonl'), 2 * 1024 * 1024 * 1024 + 1);
+  expect(await copyAgentHomeHistory(home, ['sessions'])).toEqual([]);
+  expect((await stat(join(home.configRoot, 'sessions/large.jsonl'))).size).toBe(size);
+});
+
+
+it('walks only declared configuration and transcript paths in a populated Codex home over 2 GiB', async () => {
+  const { home, source } = await fixture([], '.codex');
+  await source('config.toml', 'model = "fixture"\n[mcp_servers.example]\ncommand = "echo"\n');
+  await source('AGENTS.md', 'fixture instructions');
+  await source('rules/default.rules', 'fixture rules');
+  await source('skills/example/SKILL.md', 'fixture skill');
+  await source('sessions/2026/11/19/rollout.jsonl', 'current transcript');
+  await source('archived_sessions/rollout-old.jsonl', 'archived transcript');
+  const program = 'plugins/.plugin-appserver/codex-cli/CodexCLI.app/Contents/MacOS/codex';
+  await source(program, '');
+  await truncate(join(home.userConfigRoot, program), 2 * 1024 * 1024 * 1024 + 2);
+  await source('plugins/cache/browser/payload', 'module cache');
+  await source('visualizations/task/desktop.png', 'task output');
+  const sourceRoot = await realpath(home.userConfigRoot);
+  const listing = vi.spyOn(fs, 'readdir');
+  const scanned = await scanAgentHome(home);
+  expect(scanned.issues).toEqual([]);
+  expect(scanned.groups.find((group) => group.id === 'settings')?.count).toBe(1);
+  expect(scanned.mcpNames).toEqual(['example']);
+  const imported = await importAgentHome(home, {
+    groups: new Set(['settings', 'rules', 'skills']), migratedFrom: 'shared',
+    historyPaths: ['sessions', 'archived_sessions'],
+  });
+  expect(imported.issues).toEqual([]);
+  expect(Object.keys(imported.marker.files)).toEqual(['AGENTS.md', 'config.toml', 'rules/default.rules', 'skills/example/SKILL.md']);
+  for (const dir of ['', 'plugins', 'visualizations']) {
+    expect(listing.mock.calls.some(([path]) => String(path) === join(sourceRoot, dir))).toBe(false);
+  }
+  for (const dir of ['plugins', 'visualizations']) {
+    await expect(stat(join(home.configRoot, dir))).rejects.toMatchObject({ code: 'ENOENT' });
+  }
+  expect(await readFile(join(home.configRoot, 'sessions/2026/11/19/rollout.jsonl'), 'utf8')).toBe('current transcript');
+  expect(await readFile(join(home.configRoot, 'archived_sessions/rollout-old.jsonl'), 'utf8')).toBe('archived transcript');
 });
