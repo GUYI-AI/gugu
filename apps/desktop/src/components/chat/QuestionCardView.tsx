@@ -39,12 +39,15 @@ export function QuestionCardView({ card, chatId, messageId, agentUserId, time, m
   const ownerName = owner?.display_name || t('group.memberFallback.unknown', { ns: 'messaging' })
   const { devices } = useDevicesStore()
   const device = devices.find((row) => row.device_id === card.deviceId)
-  const mine = user?.id === card.ownerUserId && Boolean(device)
+  const addressedToMe = user?.id === card.ownerUserId
+  const mine = addressedToMe && Boolean(device)
+  const head = addressedToMe ? t(composerCardCopy.question.head, { ns: 'messaging' }) : t('question.needsOwner', { name: ownerName })
   const read = useTimelineSession(assistantTimelineClient(device?.is_current_device === true), mobile ? 'mobile' : 'desktop', card.deviceId, card.sessionId, mine && !card.settled)
   const settlement = read.timeline.settlements[card.questionId] ?? null
   if (card.settled) return <div className="question-message-card" data-testid="composer-card" data-card-type="question">
-    <div className="question-message-card__head"><AgentHarnessIcon agentId={agentUserId} size={16} /><span>{t('question.needsOwner', { name: ownerName })}</span><span>{time}</span></div>
+    <div className="question-message-card__head"><AgentHarnessIcon agentId={agentUserId} size={16} /><span>{head}</span><span>{time}</span></div>
     <div className="question-message-card__receipt" data-testid="agent-question-receipt">
+      {card.settled.state === 'discuss' && card.questions?.length && <p className="question-message-card__state">{t('question.count', { count: card.questions.length })}</p>}
       <p className="question-message-card__state">{t(card.settled.state === 'answered' ? 'question.answered' : card.settled.state === 'discuss' ? 'question.discuss' : 'question.withdrawn')}</p>
       {card.settled.state === 'answered' && (card.questions
         ? <AgentQuestionAnswers questions={card.questions} answers={card.settled.answers} />
@@ -63,6 +66,7 @@ export function QuestionCardView({ card, chatId, messageId, agentUserId, time, m
             onDiscuss={() => read.respond({ itemId: card.questionId, kind: 'question', discuss: true })}
             respond={answers => read.respond({ itemId: card.questionId, kind: 'question', answers })} />
         : <div className="question-message-card__receipt" data-testid="agent-question-receipt">
+            {settlement.optionId === 'discuss' && <p className="question-message-card__state">{t('question.count', { count: settlement.questions.length })}</p>}
             <p className="question-message-card__state">{t(settlement.optionId === 'discuss' ? 'question.discuss' : settlement.state === 'resolved' ? 'question.answered' : 'question.withdrawn')}</p>
             {completeAnswers && <AgentQuestionAnswers questions={settlement.questions} answers={completeAnswers} />}
             {settlement.state === 'resolved' && settlement.optionId !== 'discuss' && !completeAnswers && <p className="question-message-card__state">{t('question.answerUnreadable')}</p>}
@@ -70,7 +74,7 @@ export function QuestionCardView({ card, chatId, messageId, agentUserId, time, m
     </div>
   }
   if (card.questions?.length) return <div className="question-message-card" data-testid="composer-card" data-card-type="question">
-    <div className="question-message-card__head"><AgentHarnessIcon agentId={agentUserId} size={16} /><span>{t('question.needsOwner', { name: ownerName })}</span><span>{time}</span></div>
+    <div className="question-message-card__head"><AgentHarnessIcon agentId={agentUserId} size={16} /><span>{head}</span><span>{time}</span></div>
     <ReadonlyAgentQuestions questions={card.questions} mobile={mobile} />
     <p className="question-message-card__waiting"><span aria-hidden="true" />{t('question.waitingForOwner', { name: ownerName })}</p>
   </div>

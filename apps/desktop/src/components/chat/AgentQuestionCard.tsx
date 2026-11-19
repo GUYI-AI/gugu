@@ -45,7 +45,10 @@ function QuestionFlow({ scope, settlement, unavailable = false, mobile = false, 
   const update = (next: Draft) => { drafts.set(key, next); setDraft(next) }
   const current = observed ?? settlement
   useEffect(() => { if (current.state !== 'pending') drafts.delete(key) }, [key, current.state])
-  if (current.state === 'resolved' && current.optionId === 'discuss') return <div className="agent-question-receipt" data-testid="agent-question-discussion">{t('question.discuss')}</div>
+  if (current.state === 'resolved' && current.optionId === 'discuss') return <div data-testid="agent-question-discussion">
+    {embedded && <p className="question-message-card__state">{t('question.count', { count: questions.length })}</p>}
+    <div className="agent-question-receipt">{t('question.discuss')}</div>
+  </div>
   if (current.state !== 'pending' || accepted) return null
   if (questions.length === 0) return null
   if (draft.deferred) return <div className="agent-question-receipt" data-testid="agent-question-deferred">

@@ -133,7 +133,7 @@ describe('question card in a group (gugu-dev#181 ⑨)', () => {
     ]
     await render({ ...CARD, options: [], questions })
     for (const text of ['选哪种？', '覆盖哪里？', '补充要求？', '展示方式', '留在当前聊天里回答', '选一项', '可多选']) expect(harness.container.textContent).toContain(text)
-    expect(harness.container.textContent).toContain('需要 Alice 确认')
+    expect(harness.container.textContent).toContain(who === 'owner-1' ? '需要你确认' : '需要 Alice 确认')
     expect(harness.container.textContent).toContain('待 Alice 回答')
     expect(harness.container.querySelectorAll('.agent-question-card__option:last-child')).toHaveLength(3)
     expect(harness.container.querySelector('button, input, textarea, [role="button"], [role="radio"], [role="checkbox"]')).toBeNull()
@@ -165,6 +165,7 @@ describe('question card in a group (gugu-dev#181 ⑨)', () => {
     settlement = { itemId: 'agent-question:q1', kind: 'question', state: 'resolved', optionId: 'discuss', questions: fullQuestions }
     await render({ ...CARD, questions: fullQuestions })
     expect(harness.container.textContent).toContain('先聊聊')
+    expect(harness.container.textContent).toContain('2 个问题')
     expect(harness.container.textContent).not.toContain('回答详情暂时无法读取')
     expect(harness.container.querySelector('button, textarea, .agent-question-card__answers')).toBeNull()
   })
@@ -175,6 +176,7 @@ describe('question card in a group (gugu-dev#181 ⑨)', () => {
     await render({ ...CARD, questions: fullQuestions, settled: { state: 'answered', at: 'now',
       answers: [{ selected: [], skipped: true }, { selected: ['group', 'topic'] }] } })
     for (const text of ['已回答', '已跳过', '群聊、话题']) expect(harness.container.textContent).toContain(text)
+    expect(harness.container.textContent).toContain(who === 'owner-1' ? '需要你确认' : '需要 Alice 确认')
     expect(harness.container.querySelectorAll('[data-testid="composer-card"]')).toHaveLength(1)
     expect(harness.container.querySelector('button, input, textarea, [data-testid="question-card-readonly"]')).toBeNull()
     expect(reads.every(read => !read.enabled)).toBe(true)
@@ -186,6 +188,7 @@ describe('question card in a group (gugu-dev#181 ⑨)', () => {
     viewer = 'colleague-1'
     await render({ ...CARD, questions: fullQuestions, settled: { state, at: 'now' } })
     expect(harness.container.textContent).toContain(state === 'discuss' ? '先聊聊' : '这次提问已结束')
+    if (state === 'discuss') expect(harness.container.textContent).toContain('2 个问题')
     expect(harness.container.querySelector('button, input, textarea')).toBeNull()
     expect(harness.container.textContent).not.toContain('待 Alice 回答')
   })
