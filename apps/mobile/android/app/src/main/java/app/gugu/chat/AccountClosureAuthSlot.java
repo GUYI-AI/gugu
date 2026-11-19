@@ -1,16 +1,15 @@
 package app.gugu.chat;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.List;
 
 /** Every caller holds the existing native main-auth commit lock. */
 final class AccountClosureAuthSlot {
-    private final SharedPreferences storage;
-    AccountClosureAuthSlot(Context context) { storage = context.getSharedPreferences("gugu-auth-storage", Context.MODE_PRIVATE); }
-    String owner() throws Exception { return ownerOf(storage.getString("sb-main", null)); }
+    private final AndroidAuthStore storage;
+    AccountClosureAuthSlot(Context context) { storage = new AndroidAuthStore(context); }
+    String owner() throws Exception { return ownerOf(storage.get("sb-main")); }
     static String ownerOf(String value) throws Exception {
         if (value == null) return null;
         JSONObject envelope = new JSONObject(value);
@@ -24,13 +23,12 @@ final class AccountClosureAuthSlot {
         if (!owner.equals(owner())) return;
         // A retirement envelope also prevents the existing legacy fallback
         // reader from importing an old WebView authentication value again.
-        if (!storage.edit().putString("sb-main", new JSONObject().put("state", "RETIRED_EMPTY").toString()).commit())
-            throw new AccountClosureReceiptStore.Failure("closure_storage_unavailable");
+        storage.put("sb-main", new JSONObject().put("state", "RETIRED_EMPTY").toString());
     }
     List<String> unattributed() throws Exception {
         List<String> names = new ArrayList<>();
-        if (storage.contains("sb-main-code-verifier")) names.add("auth-code-verifier");
-        if (storage.contains("sb-main-oauth-pending")) names.add("auth-oauth-pending");
+        if (storage.get("sb-main-code-verifier") != null) names.add("auth-code-verifier");
+        if (storage.get("sb-main-oauth-pending") != null) names.add("auth-oauth-pending");
         return names;
     }
 }

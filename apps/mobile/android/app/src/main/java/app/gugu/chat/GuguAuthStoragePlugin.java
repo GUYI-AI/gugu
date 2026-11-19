@@ -9,16 +9,25 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 @CapacitorPlugin(name = "GuguAuthStorage")
 public class GuguAuthStoragePlugin extends Plugin {
     static final Object STORAGE_LOCK = new Object();
+    private static void reject(PluginCall call, Exception error) {
+        if (error instanceof AuthStorageFailure) {
+            AuthStorageFailure failure = (AuthStorageFailure) error;
+            call.reject(failure.getMessage(), failure.recovery ? "auth_storage_recovery_required" : "auth_storage_unavailable");
+        } else {
+            android.util.Log.e("GuguAuthStorage", "auth_storage_failure operation=bridge reason=request_failed");
+            call.reject("请重试", "auth_storage_unavailable");
+        }
+    }
     @PluginMethod
     public void get(PluginCall call) {
         try {
             String key = call.getString("key");
             if (!AuthStorageKeys.isAllowed(key)) { call.reject("Unsupported storage key"); return; }
-            var storage = getContext().getSharedPreferences("gugu-auth-storage", android.content.Context.MODE_PRIVATE);
+            var storage = new AndroidAuthStore(getContext());
             JSObject result = new JSObject();
-            synchronized (STORAGE_LOCK) { result.put("value", storage.contains(key) ? storage.getString(key, null) : JSObject.NULL); }
+            synchronized (STORAGE_LOCK) { String value = storage.get(key); result.put("value", value == null ? JSObject.NULL : value); }
             call.resolve(result);
-        } catch (RuntimeException error) { call.reject("Auth storage read failed", error); }
+        } catch (Exception error) { reject(call, error); }
     }
 
     @PluginMethod
@@ -28,16 +37,16 @@ public class GuguAuthStoragePlugin extends Plugin {
             if (!AuthStorageKeys.isAllowed(key)) { call.reject("Unsupported storage key"); return; }
             String value = call.getString("value");
             if (value == null) { call.reject("Missing storage value"); return; }
-            var storage = getContext().getSharedPreferences("gugu-auth-storage", android.content.Context.MODE_PRIVATE);
+            var storage = new AndroidAuthStore(getContext());
             synchronized (STORAGE_LOCK) {
                 if ("sb-main".equals(key)) {
                     try { AccountClosurePreparation.requireAuthWrite(getContext(), value); }
                     catch (Exception refused) { call.reject("Account closure prevents this auth write", "closure_not_prepared"); return; }
                 }
-                if (!storage.edit().putString(key, value).commit()) { call.reject("Auth storage commit failed"); return; }
+                storage.put(key, value);
             }
             call.resolve();
-        } catch (RuntimeException error) { call.reject("Auth storage write failed", error); }
+        } catch (Exception error) { reject(call, error); }
     }
 
     @PluginMethod
@@ -46,9 +55,9 @@ public class GuguAuthStoragePlugin extends Plugin {
             String key = call.getString("key");
             // Session retirement remains an explicit envelope write owned by the coordinator.
             if (!AuthStorageKeys.isTemporary(key)) { call.reject("Unsupported temporary storage key"); return; }
-            var storage = getContext().getSharedPreferences("gugu-auth-storage", android.content.Context.MODE_PRIVATE);
-            synchronized (STORAGE_LOCK) { if (!storage.edit().remove(key).commit()) { call.reject("Auth storage removal failed"); return; } }
+            var storage = new AndroidAuthStore(getContext());
+            synchronized (STORAGE_LOCK) { storage.removeTemporary(key); }
             call.resolve();
-        } catch (RuntimeException error) { call.reject("Auth storage removal failed", error); }
+        } catch (Exception error) { reject(call, error); }
     }
 }

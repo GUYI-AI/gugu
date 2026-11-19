@@ -26,7 +26,7 @@ final class GuguAgentHostStore {
         JSObject previous = read(context, owner);
         JSONObject committed;
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
-            String raw = context.getSharedPreferences("gugu-auth-storage", Context.MODE_PRIVATE).getString("sb-main", null);
+            String raw = new AndroidAuthStore(context).get("sb-main");
             if (raw == null) throw new SecurityException("登录会话尚未保存，不能启用手机宿主");
             JSONObject envelope = new JSONObject(raw);
             if (!"SESSION".equals(envelope.optString("state"))) throw new SecurityException("账号已退出，旧宿主不能恢复登录");
@@ -80,8 +80,8 @@ final class GuguAgentHostStore {
         if (user == null || !owner.equals(user.optString("id"))) throw new SecurityException("登录会话不属于当前账号");
         if (session.optString("access_token").isEmpty() || session.optString("refresh_token").isEmpty()) throw new SecurityException("登录会话缺少凭据");
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
-            var storage = context.getSharedPreferences("gugu-auth-storage", Context.MODE_PRIVATE);
-            String current = storage.getString("sb-main", null);
+            var storage = new AndroidAuthStore(context);
+            String current = storage.get("sb-main");
             if (current != null) {
                 JSONObject existing = new JSONObject(current);
                 if (!"SESSION".equals(existing.optString("state"))) throw new SecurityException("账号已退出，旧宿主不能恢复登录");
@@ -96,7 +96,7 @@ final class GuguAgentHostStore {
             save(context, owner, config);
             // This is the existing native Supabase storage contract, not a public host-state event.
             JSONObject envelope = new JSONObject().put("state", "SESSION").put("raw", session.toString());
-            if (!storage.edit().putString("sb-main", envelope.toString()).commit()) throw new IllegalStateException("无法保存续期后的登录会话");
+            storage.put("sb-main", envelope.toString());
         }
         return config;
     }
