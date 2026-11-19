@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AcpSpawnContext } from '@gugu/session-core/agents/plugins';
 import { pluginRegistry } from '../../registry';
-import { buildAntigravityAcpSpawn } from './acp-routing';
-import { canRepresentPermissionMode } from '@gugu/session-core/acp';
+import { antigravitySessionProgram, buildAntigravityAcpSpawn } from './acp-routing';
+import { canRepresentPermissionMode, isProviderSessionMissingError } from '@gugu/session-core/acp';
 import { agentProgramFor } from '@gugu/session-core/deps/runtime';
 
 const roots: string[] = [];
@@ -22,8 +22,7 @@ async function context(store?: 'antigravity-acp' | 'antigravity-cli') {
   return {
     cwd: root, env: { GEMINI_HOME: root }, cli: '/managed/agy',
     programs: { antigravity: '/managed/agy_acp_server' },
-    ...(store ? { providerSessionId: id } : {}),
-  } as AcpSpawnContext & { providerSessionId?: string };
+  } as AcpSpawnContext;
 }
 
 describe('one Antigravity provider routes each conversation to its original store', () => {
@@ -41,17 +40,30 @@ describe('one Antigravity provider routes each conversation to its original stor
       command: '/managed/agy', args: ['acp', '--stdio', '--gemini-dir', ctx.env.GEMINI_HOME],
     });
   });
-  it('resumes standalone-server conversations through the resolved legacy program', async () => {
-    expect(pluginRegistry.get('antigravity')!.behavior.acp!.buildSpawn(await context('antigravity-acp')))
-      .toMatchObject({ command: '/managed/agy_acp_server', args: [] });
+  it('selects the standalone server for conversations in its store, and agy for CLI conversations', async () => {
+    const acp = pluginRegistry.get('antigravity')!.behavior.acp!;
+    expect(acp.sessionProgram).toBe(antigravitySessionProgram);
+    const legacy = await context('antigravity-acp');
+    expect(antigravitySessionProgram({ env: legacy.env, providerSessionId: id })).toBe('antigravity');
+    expect(acp.buildSpawn({ ...legacy, sessionProgram: 'antigravity' })).toMatchObject({ command: '/managed/agy_acp_server', args: [] });
+    const cli = await context('antigravity-cli');
+    expect(antigravitySessionProgram({ env: cli.env, providerSessionId: id })).toBeUndefined();
+    expect(acp.buildSpawn({ ...cli, sessionProgram: null })).toMatchObject({ command: '/managed/agy', args: expect.arrayContaining(['acp']) });
   });
-  it('keeps CLI conversations on the CLI store', async () => {
-    expect(pluginRegistry.get('antigravity')!.behavior.acp!.buildSpawn(await context('antigravity-cli')))
-      .toMatchObject({ command: '/managed/agy', args: expect.arrayContaining(['acp']) });
+  it('reports a conversation absent from both stores as a missing provider session', async () => {
+    const ctx = await context();
+    let error: unknown;
+    try { antigravitySessionProgram({ env: ctx.env, providerSessionId: id }); } catch (caught) { error = caught; }
+    expect(isProviderSessionMissingError(error, { resumingProviderSessionId: id })).toBe(true);
   });
-  it('refuses a missing stored conversation rather than silently opening it in another store', async () => {
-    const ctx = await context(); ctx.providerSessionId = id;
-    expect(() => pluginRegistry.get('antigravity')!.behavior.acp!.buildSpawn(ctx)).toThrow(/store|stored/i);
+  it('refuses a conversation present in both stores', async () => {
+    const ctx = await context('antigravity-acp');
+    await mkdir(join(ctx.cwd, 'antigravity-cli', 'conversations'), { recursive: true });
+    await writeFile(join(ctx.cwd, 'antigravity-cli', 'conversations', `${id}.db`), 'fixture');
+    let error: unknown;
+    try { antigravitySessionProgram({ env: ctx.env, providerSessionId: id }); } catch (caught) { error = caught; }
+    expect(error).toBeInstanceOf(Error);
+    expect(isProviderSessionMissingError(error, { resumingProviderSessionId: id })).toBe(false);
   });
   it('passes a Windows path with spaces as one argument to the native ACP process', () => {
     const root = 'C:\\Dev Home\\.gemini';
@@ -61,7 +73,7 @@ describe('one Antigravity provider routes each conversation to its original stor
   });
   it('uses the chosen program even if the store file is no longer visible to the launcher', async () => {
     const ctx = await context();
-    expect(buildAntigravityAcpSpawn({ ...ctx, providerSessionId: id, sessionProgram: 'antigravity' }))
+    expect(buildAntigravityAcpSpawn({ ...ctx, sessionProgram: 'antigravity' }))
       .toMatchObject({ command: '/managed/agy_acp_server', args: [] });
   });
   it('does not infer full access from the CLI auto mode', () => {

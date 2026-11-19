@@ -9,7 +9,7 @@ import { observeAgyTier, tierNameFromAcpResponse } from './acp-tier';
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 
-async function fixture(tier: unknown, authRequired = false) {
+async function fixture(tier: unknown, authRequired = false, tokenFile = true) {
   const root = await mkdtemp(join(tmpdir(), 'agy-tier-test-'));
   roots.push(root);
   const cli = join(root, process.platform === 'win32' ? 'agy.cmd' : 'agy');
@@ -18,6 +18,7 @@ async function fixture(tier: unknown, authRequired = false) {
   const home = join(root, '.gemini');
   await mkdir(join(home, 'antigravity-cli', 'conversations'), { recursive: true });
   await writeFile(join(home, 'antigravity-cli', 'conversations', 'preserved.db'), 'existing history');
+  if (tokenFile) await writeFile(join(home, 'antigravity-cli', 'antigravity-oauth-token'), 'account-a-fixture');
   await writeFile(script, `#!/usr/bin/env node
 const fs = require('node:fs');
 const path = require('node:path');
@@ -91,6 +92,23 @@ describe('Antigravity subscription comes from the signed-in CLI ACP response', (
     await observeAgyTier(ctx, { _meta: { antigravity: { tier: { name: 'Google AI Pro' } } } }, ctx.exec);
     await expect(readAntigravityPlan(ctx)).resolves.toMatchObject({ plan: 'Google AI Pro', planAsOf: expect.any(Number) });
     await expect(readFile(transcript)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('a cached tier never outlives a sign-out', async () => {
+    const { ctx } = await fixture({ name: 'unused' });
+    await observeAgyTier(ctx, { _meta: { antigravity: { tier: { name: 'Google AI Pro' } } } }, ctx.exec);
+    vi.mocked(ctx.exec).mockRejectedValue({ code: 1, stderr: 'Please sign in to view available models.' });
+    await expect(readAntigravityPlan(ctx)).resolves.toEqual({ payer: 'not-signed-in' });
+  });
+
+  it.skipIf(process.platform === 'darwin')('without a credential file, an account switch is invisible, so the tier is read live each time', async () => {
+    const { ctx, transcript, home } = await fixture({ name: 'Google AI Ultra' }, false, false);
+    await observeAgyTier(ctx, { _meta: { antigravity: { tier: { name: 'Google AI Pro' } } } }, ctx.exec);
+    await expect(readAntigravityPlan(ctx)).resolves.toMatchObject({ plan: 'Google AI Ultra' });
+    await expect(readAntigravityPlan(ctx)).resolves.toMatchObject({ plan: 'Google AI Ultra' });
+    expect(await readdir(home)).not.toContain('.gugu-cli-tier.json');
+    const requests = (await readFile(transcript, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+    expect(requests.filter(request => request.method === 'session/new')).toHaveLength(2);
   });
 
   it('checks authentication before a usage command even when the caller has a cached subscription plan', async () => {

@@ -584,12 +584,22 @@ export class SessionManager implements InboundRouter {
       return acpErr.providerUnsupported(input.providerId);
     }
 
+    // The provider names the program owning this conversation's native store, once per open.
     const providerSessionId = input.forkFromProviderSessionId ?? input.providerSessionId;
-    let sessionProgram: string | null;
-    try {
-      sessionProgram = binding.behavior.sessionProgram?.({ env: this.providerEnv(input), providerSessionId }) ?? null;
-    } catch (error) {
-      return acpErr.initializeFailed(toSerializedError(error));
+    let sessionProgram: string | null = null;
+    // A conversation absent from every store is answered like an engine's own `session/load` miss: the default
+    // program starts, and the load below raises this error into the provider-session-missing recovery.
+    let storeMissing: unknown;
+    if (providerSessionId && binding.behavior.sessionProgram) {
+      try {
+        sessionProgram = binding.behavior.sessionProgram({ env: this.providerEnv(input), providerSessionId }) ?? null;
+      } catch (error) {
+        if (!isProviderSessionMissingError(error, { resumingProviderSessionId: providerSessionId })) {
+          return acpErr.initializeFailed(toSerializedError(error));
+        }
+        if (input.forkFromProviderSessionId) return acpErr.providerSessionMissing(toSerializedError(error));
+        storeMissing = error;
+      }
     }
 
     this.upsertSessionSummary(input, null, {
@@ -639,7 +649,7 @@ export class SessionManager implements InboundRouter {
     await this.attachProviderRules(record, binding.behavior);
     if (binding.behavior.prepareSession) {
       await binding.behavior
-        .prepareSession({ cwd: input.cwd, env: this.providerEnv(input), homeDir: os.homedir(), providerSessionId, sessionProgram })
+        .prepareSession({ cwd: input.cwd, env: this.providerEnv(input), homeDir: os.homedir(), sessionProgram })
         .catch((error: unknown) => {
           this.deps.logger.warn('SessionManager: provider session preparation failed', {
             sessionId: input.sessionId,
@@ -663,7 +673,6 @@ export class SessionManager implements InboundRouter {
         cwd: input.cwd,
         behavior: binding.behavior,
         runContext: input.runContext,
-        providerSessionId,
         sessionProgram,
         platform: input.platform,
         capabilitySpawnEnv: input.capabilitySpawnEnv,
@@ -915,6 +924,7 @@ export class SessionManager implements InboundRouter {
 
         try {
           const loadingCell = record.cell;
+          if (storeMissing) throw storeMissing;
           const response = await reattach.open(
             this.buildLoadSessionRequest(input, loadProviderSessionId)
           ).catch((error: unknown): Awaited<ReturnType<typeof reattach.open>> => {
@@ -2528,7 +2538,6 @@ export class SessionManager implements InboundRouter {
     try {
       await behavior.observeSessionMetadata({
         env: this.providerEnv(input), cli: input.runContext.cli.path,
-        providerSessionId: input.forkFromProviderSessionId ?? input.providerSessionId,
         sessionProgram: record.sessionProgram,
       }, response);
     } catch (error) {

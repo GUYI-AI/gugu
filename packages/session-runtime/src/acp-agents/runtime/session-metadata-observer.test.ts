@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { makeAcpHarness, makeStartInput } from '../acp-test-support';
 import { AcpRuntime } from './runtime';
 
@@ -35,7 +35,7 @@ it('a tier-cache write failure does not prevent the actual conversation opening'
   } finally { await rt.stopSession('conv-1'); }
 });
 
-it('forwards the persisted native id and host-resolved programs through runtime admission to buildSpawn', async () => {
+it('forwards the store selected at open and the host-resolved programs through runtime admission to buildSpawn', async () => {
   const spawn = vi.fn(() => ({ command: '/fake/node', args: ['agent.js'], env: {} }));
   const h = makeAcpHarness({ acpBehavior: {
     buildSpawn: spawn, connect: (io, client) => h.agent.behavior.connect(io, client),
@@ -47,7 +47,7 @@ it('forwards the persisted native id and host-resolved programs through runtime 
   try {
     expect((await rt.startSession(input)).success).toBe(true);
     expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
-      providerSessionId: 'stored-native', programs: { antigravity: '/managed/legacy-server' },
+      sessionProgram: null, programs: { antigravity: '/managed/legacy-server' },
     }));
   } finally { await rt.stopSession('conv-1'); }
 });
@@ -95,4 +95,54 @@ it('selects the native program once and carries it through startup and provider 
     expect(observe).toHaveBeenCalledWith(expect.objectContaining({ sessionProgram: 'legacy' }), expect.anything());
     expect(ended).toHaveBeenCalledWith(expect.objectContaining({ sessionProgram: 'legacy' }));
   } finally { await rt.stopSession('conv-1'); }
+});
+
+describe('a conversation absent from every native store takes the provider-session-missing recovery', () => {
+  const absent = () => {
+    throw Object.assign(new Error('stored conversation was not found in either store'), { code: -32002 });
+  };
+  function harness() {
+    const spawn = vi.fn((ctx) => ({ command: ctx.cli, args: [], env: {} }));
+    const h = makeAcpHarness({ acpBehavior: {
+      sessionProgram: absent, buildSpawn: spawn,
+      connect: (io, client) => h.agent.behavior.connect(io, client),
+    } });
+    h.agent.initialize.mockResolvedValue({ protocolVersion: 1, agentCapabilities: { loadSession: true } });
+    return { h, spawn };
+  }
+
+  it('a conversation that has run reports provider_session_missing, so the host offers Start again', async () => {
+    const { h } = harness();
+    const rt = new AcpRuntime(h.deps);
+    const result = await rt.resumeSession({ ...makeStartInput({ sessionId: 'conv-chatted' }), providerSessionId: 'stored-native' });
+    expect(result).toEqual({ success: false, error: expect.objectContaining({ type: 'provider_session_missing' }) });
+    expect(h.agent.loadSession).not.toHaveBeenCalled();
+    expect(h.agent.newSession).not.toHaveBeenCalled();
+  });
+
+  it('a never-ran resident agent starts its first session on the default program', async () => {
+    const { h, spawn } = harness();
+    h.agent.newSession.mockResolvedValue({ sessionId: 'session-fresh' });
+    const rt = new AcpRuntime(h.deps);
+    try {
+      const result = await rt.resumeSession({
+        ...makeStartInput({ sessionId: 'conv-never-ran', freshIfProviderSessionMissing: true }),
+        providerSessionId: 'stored-native',
+      });
+      expect(result).toMatchObject({ success: true, data: { providerSessionId: 'session-fresh' } });
+      expect(spawn).toHaveBeenCalledWith(expect.objectContaining({ sessionProgram: null }));
+      expect(h.agent.loadSession).not.toHaveBeenCalled();
+    } finally { await rt.stopSession('conv-never-ran'); }
+  });
+
+  it('an ambiguous or unreadable store still fails startup loudly', async () => {
+    const h = makeAcpHarness({ acpBehavior: {
+      sessionProgram: () => { throw new Error('exists in both stores'); },
+      buildSpawn: () => ({ command: '/fake/node', args: [], env: {} }),
+      connect: (io, client) => h.agent.behavior.connect(io, client),
+    } });
+    const rt = new AcpRuntime(h.deps);
+    const result = await rt.resumeSession({ ...makeStartInput({ sessionId: 'conv-ambiguous', freshIfProviderSessionMissing: true }), providerSessionId: 'stored-native' });
+    expect(result).toEqual({ success: false, error: expect.objectContaining({ type: 'initialize_failed' }) });
+  });
 });

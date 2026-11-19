@@ -693,7 +693,6 @@ export class AgentPluginHost {
        * 设置里选的那份拷贝,❌ 缺席时退回它 —— 那正是「终端跑 A、Chat UI 跑 B」的由来。
        */
       runContext: AgentRunContext;
-      providerSessionId?: string | null;
       sessionProgram?: string | null;
       authProgram?: string | null;
       platform?: AcpPlatformInjection;
@@ -705,10 +704,7 @@ export class AgentPluginHost {
   ): Promise<Result<AgentHostAcpSpawn, AgentHostError>> {
     const provider = this.resolveAcp(providerId);
     if (!provider) return err({ type: 'capability-unsupported', providerId, capability: 'acp' });
-    const program = ctx.sessionProgram !== undefined ? ctx.sessionProgram : provider.behavior.sessionProgram?.({
-      env: composeAgentSpawnEnv(ctx.runContext, { hostInjections: [ctx.capabilitySpawnEnv] }),
-      providerSessionId: ctx.providerSessionId, authProgram: ctx.authProgram,
-    });
+    const program = ctx.sessionProgram ?? null;
     const selectedPath = program ? ctx.runContext.programs?.[program] : undefined;
     const launchContext: typeof ctx.runContext = program ? {
       ...ctx.runContext,
@@ -739,8 +735,7 @@ export class AgentPluginHost {
     }
     const spawn = provider.behavior.buildSpawn({
       cwd: ctx.cwd,
-      providerSessionId: ctx.providerSessionId,
-      sessionProgram: program ?? null,
+      sessionProgram: program,
       authProgram: ctx.authProgram,
       programs: ctx.runContext.programs,
       env: composeAgentSpawnEnv(ctx.runContext),

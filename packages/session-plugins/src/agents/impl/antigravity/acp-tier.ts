@@ -23,14 +23,23 @@ export function tierNameFromAcpResponse(response: unknown): string | null {
     ? name.trim() : null;
 }
 
-/** The account generation includes file-backed credentials and macOS keychain metadata, never its password. */
-async function accountFingerprint(ctx: TierContext): Promise<string> {
+const TOKEN_FILE = 'antigravity-cli/antigravity-oauth-token';
+
+/**
+ * The account generation: file-backed credentials, plus keychain item metadata on macOS (never its password).
+ * Null when the credential lives where none of this sees it (e.g. a Linux Secret Service login): an account
+ * switch there changes nothing local, so no cached tier may be trusted.
+ */
+async function accountFingerprint(ctx: TierContext): Promise<string | null> {
   const root = ctx.env.GEMINI_HOME!;
   const hash = createHash('sha256').update(root).update(await realpath(ctx.cli).catch(() => ctx.cli));
-  for (const relative of ['antigravity-cli/settings.json', 'antigravity-cli/antigravity-oauth-token']) {
+  let tokenFile = false;
+  for (const relative of ['antigravity-cli/settings.json', TOKEN_FILE]) {
     const info = await stat(join(root, relative)).catch(() => null);
+    if (info && relative === TOKEN_FILE) tokenFile = true;
     hash.update(relative).update(info ? `${info.ino}:${info.size}:${info.mtimeMs}` : 'absent');
   }
+  if (process.platform !== 'darwin' && !tokenFile) return null;
   if (process.platform === 'darwin') {
     const metadata = await ctx.exec('/usr/bin/security', ['find-generic-password', '-s', 'gemini', '-a', 'antigravity'], { timeout: 5_000 })
       .then(result => result.stdout, () => 'absent');
@@ -39,19 +48,14 @@ async function accountFingerprint(ctx: TierContext): Promise<string> {
   return hash.digest('hex');
 }
 
-async function cached(ctx: TierContext, fingerprint: string): Promise<AgyAcpTier> {
+async function cached(ctx: TierContext, fingerprint: string | null): Promise<AgyAcpTier> {
+  if (!fingerprint) return null;
   try {
     const value = JSON.parse(await readFile(join(ctx.env.GEMINI_HOME!, CACHE_FILE), 'utf8'));
     const name = tierNameFromAcpResponse({ _meta: { antigravity: { tier: { name: value.name } } } });
     return value.fingerprint === fingerprint && name && Number.isFinite(value.asOf)
       ? { kind: 'tier', name, asOf: value.asOf } : null;
   } catch { return null; }
-}
-
-/** Local credential metadata and an account-scoped cache only; no CLI/network query on a warm plan read. */
-export async function readCachedAgyTier(ctx: AgentAuthContext): Promise<AgyAcpTier> {
-  if (!ctx.env.GEMINI_HOME?.trim()) return null;
-  return cached(ctx, await accountFingerprint(ctx));
 }
 
 async function save(ctx: TierContext, fingerprint: string, name: string): Promise<void> {
@@ -70,7 +74,8 @@ export async function observeAgyTier(
   const name = tierNameFromAcpResponse(response);
   if (!name || !ctx.env.GEMINI_HOME?.trim()) return;
   const context = { ...ctx, exec: execute };
-  await save(context, await accountFingerprint(context), name);
+  const fingerprint = await accountFingerprint(context);
+  if (fingerprint) await save(context, fingerprint, name);
 }
 
 /** A probe owns its conversation and cache directories. On POSIX, link the file credential to preserve refresh. */
@@ -92,22 +97,24 @@ export async function createAgyProbeRoot(managed: string, scratch: string): Prom
   return root;
 }
 
-/** One single-flight read per account generation. A settings refresh never creates another ACP session. */
+/**
+ * The caller has already confirmed sign-in. One single-flight read per account generation; while the generation
+ * is cached, a settings refresh never creates another ACP session.
+ */
 export async function readAgyAcpTier(ctx: AgentAuthContext): Promise<AgyAcpTier> {
   if (!ctx.env.GEMINI_HOME?.trim()) return null;
   const fingerprint = await accountFingerprint(ctx);
   const existing = await cached(ctx, fingerprint);
   if (existing) return existing;
-  const pending = requests.get(fingerprint);
+  const key = fingerprint ?? `unidentified:${ctx.env.GEMINI_HOME}`;
+  const pending = requests.get(key);
   if (pending) return pending;
   const request = queryTier(ctx).then(async tier => {
     if (fingerprint !== await accountFingerprint(ctx)) return null;
-    if (tier?.kind === 'tier') {
-      await save(ctx, fingerprint, tier.name);
-    }
+    if (fingerprint && tier?.kind === 'tier') await save(ctx, fingerprint, tier.name);
     return tier;
-  }).finally(() => requests.delete(fingerprint));
-  requests.set(fingerprint, request);
+  }).finally(() => requests.delete(key));
+  requests.set(key, request);
   return request;
 }
 
