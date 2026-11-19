@@ -236,6 +236,13 @@ describe('native Codex history relocation', () => {
     expect(await relocateNativeCodexHistory(r.options)).toEqual(first); expect(await r.calls()).toEqual(calls);
     expect((await readNativeHistoryLedger(r.home))?.counts).toEqual(nativeHistoryCounts(first));
   });
+  it.each(['same', 'nested'])('refuses overlapping source and managed homes: %s', async placement => {
+    const r = await rig(), root = await r.add();
+    const configRoot = placement === 'same' ? r.native : join(r.native, 'managed');
+    await mkdir(configRoot, { recursive: true });
+    await expect(relocateNativeCodexHistory({ ...r.options, home: { ...r.home, configRoot } })).rejects.toThrow('homes overlap');
+    expect(await readFile(join(r.native, root.path))).toEqual(root.content); expect(await r.calls()).toEqual([]);
+  });
   it('rejects symlinked rollout directories', async () => {
     const r = await rig(); const { symlink } = await import('node:fs/promises'); await symlink(r.managed, join(r.native, 'sessions'));
     await expect(relocateNativeCodexHistory(r.options)).rejects.toThrow('symbolic link');

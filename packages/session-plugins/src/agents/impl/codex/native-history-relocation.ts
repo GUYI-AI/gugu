@@ -230,6 +230,9 @@ export async function relocateNativeCodexHistory(options: NativeHistoryOptions):
   const { home, context, ownedIds, signal, pageSize = 100 } = options;
   let ledger = await readNativeHistoryLedger(home);
   if (ledger?.complete) return ledger;
+  const sourceRoot = await fs.realpath(home.userConfigRoot).catch((error: unknown) => { if (missing(error)) return resolve(home.userConfigRoot); throw error; });
+  const managedRoot = await fs.realpath(home.configRoot);
+  if (inside(sourceRoot, managedRoot) || inside(managedRoot, sourceRoot)) throw new Error('Native and managed history homes overlap');
   ledger ??= { version: 1, sourceRoot: home.userConfigRoot, complete: false, entries: {}, unowned: [], counts: { removed: 0, pending: 0, retained: 0, unowned: 0 } };
   const save = async () => { ledger.counts = nativeHistoryCounts(ledger); await writeAgentHomeRecord(home, NATIVE_HISTORY_RECORD, ledger); };
   signal?.throwIfAborted();
