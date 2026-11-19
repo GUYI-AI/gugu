@@ -3,7 +3,7 @@ import type { CanonicalPath } from '@gugu/session-shared/canonical-path'
 const state = vi.hoisted(() => ({
   rows: [] as { id: string; name: string; path: string; chatId: string }[],
   retained: null as null | { id: string; name: string; path: string; chatId: string },
-  status: 'archived', restore: vi.fn(), archive: vi.fn(), changed: vi.fn(), save: vi.fn(), inspect: vi.fn(), invalidate: vi.fn(), create: vi.fn(),
+  status: 'archived', restore: vi.fn(), archive: vi.fn(), changed: vi.fn(), save: vi.fn(), inspect: vi.fn(), invalidate: vi.fn(), create: vi.fn(), notify: vi.fn(), logError: vi.fn(),
 }))
 vi.mock('@/session/renderer/lib/ipc', () => ({ rpcOn: () => ({ projects: {
   listUnavailableProjects: async () => state.rows,
@@ -17,8 +17,8 @@ vi.mock('@/lib/archivedGroupsRead', () => ({ noteGroupArchived: state.changed, r
 vi.mock('@/lib/groupAdmin', () => ({ currentGroupAdmin: async () => ({ restore: state.restore, archive: state.archive }) }))
 vi.mock('@/lib/supabase', () => ({ chatDb: { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { status: state.status }, error: null }) }) }) }) } }))
 vi.mock('@renderer/features/projects/stores/project-selectors', () => ({ getProjectManagerStore: () => ({ createProject: state.create, projects: new Map(), removeUnregisteredProject: vi.fn() }) }))
-vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: vi.fn() }))
-vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn() }) }))
+vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: state.notify }))
+vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ error: state.logError }) }))
 import { archiveUnavailableProjects, projectRecoveryMessage, recoverUnavailableProject } from '../../../../apps/desktop/src/lib/projectRecovery'
 import { createProjectFromLocalFolder } from '../../../../apps/desktop/src/session/renderer/features/projects/components/create-project-from-local-folder'
 
@@ -49,6 +49,16 @@ describe('project recovery actions', () => {
     await expect(recoverUnavailableProject(original, '/selected')).rejects.toThrow('group_recovery_requires_topic_evidence')
     expect(state.save).not.toHaveBeenCalled(); expect(state.changed).not.toHaveBeenCalled()
     expect(projectRecoveryMessage(new Error('group_recovery_requires_topic_evidence'))).toBe('恢复记录不完整，请联系维护者核对')
+  })
+  it.each([
+    ['group_recovery_requires_topic_evidence', '恢复记录不完整，请联系维护者核对'],
+    ['SQLITE_BUSY internal diagnostic detail', '请检查文件夹访问权限和项目群权限后再试。'],
+  ])('keeps diagnostic %s in the logger and shows only approved next-step copy', async (diagnostic, description) => {
+    state.restore.mockRejectedValue(new Error(diagnostic))
+    expect(await createProjectFromLocalFolder('/old', key => key)).toBeNull()
+    expect(state.notify).toHaveBeenCalledWith({ title: '恢复项目未完成', description, variant: 'destructive' })
+    expect(state.logError).toHaveBeenCalledWith({ path: '/old', error: diagnostic }, '恢复原项目失败')
+    expect(state.save).not.toHaveBeenCalled(); expect(state.create).not.toHaveBeenCalled()
   })
   it('validates a selected folder before restoring its group', async () => {
     state.inspect.mockResolvedValue({ success: false, error: { message: '文件夹已属于其他项目' } })
