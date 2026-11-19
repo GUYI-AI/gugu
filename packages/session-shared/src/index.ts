@@ -5,6 +5,7 @@ export {
   andThenAsync,
   err,
   errorDetail,
+  errorSentence,
   fail,
   gen,
   genAsync,
