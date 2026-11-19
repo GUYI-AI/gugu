@@ -32,7 +32,7 @@ export interface AccountClosureV2Snapshot {
   }
   /** Neither nativeGeneration nor local/server operation revision. */
   serverPreparationGeneration: string | null
-  /** Unknown preparation/confirmation retains custody and permits only recovery. */
+  /** Unknown effects retain custody; only original recovery or explicit safe cancellation is allowed. */
   recoveryOnly: boolean
   /** A server 409/request_active leaves only original-result recovery. */
   confirmCancellationBlocked?: boolean
