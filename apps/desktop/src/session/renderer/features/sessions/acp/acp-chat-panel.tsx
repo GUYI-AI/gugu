@@ -1,3 +1,4 @@
+import { usePermissionMenu } from '@renderer/features/sessions/session-config/use-permission-menu';
 import { withAutoReviewHint } from './auto-review-permission-hint';
 import { customModelOptionId, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica } from '@/lib/replica';
@@ -140,7 +141,6 @@ import { agentSteersActiveAcpTurn } from '@shared/core/agents/agent-payload';
 import { linkedIssueMentionName, type LinkedIssue } from '@shared/core/linked-issue';
 import type { AcpChatStore } from './acp-chat-store';
 import {
-  detachedPermissionModeOptions,
   localizePermissionModeOptions,
   PERMISSION_TIER_LABEL_KEYS,
   sessionPermissionModeOptions,
@@ -825,20 +825,15 @@ const ComposerForStore = observer(function ComposerForStore({
     },
     [store, reportUnwiredRestart, resetEffortId, declaredEffortOptions]
   );
-  // #7342 停下了:引擎那份档位清单没了,按映射表摆回四档、选中记录那一档(改了记进记录,见 store.setMode)。
-  const detachedPermission = detachedPermissionModeOptions(store.detachedPermissionTier, providerPermissionModeMap);
-  // 权限一维走 `reload-session` 的家(dsh):活会话也不报档位表(档位在 spawn 那刻进进程),与停下时同一个道理 ——
-  // 按映射表摆出这家的几档、选中记录里那一档;选了就走确认 + 重开(`handleModeChange`)。
-  const reloadPermission = providerCapabilities?.acp.liveSettings?.permission?.channel === 'reload-session'
-    ? detachedPermissionModeOptions(store.recordedPermissionTier, providerPermissionModeMap)
-    : null;
   const platformCatalog = usePlatformModelCatalog(providerId, 'acp', store.sessionId);
   const route = sessionBillingRoute(platformCatalog.sessionSelection);
+  const permissionGroup = usePermissionMenu({ provider: providerId, leg: 'acp', modeMap: providerPermissionModeMap, connectionKnown: route !== 'unknown',
+    machine: machineRegistry.machineOf(store.projectId),
+    model: composerSelectedOptionId({ platformModel: platformCatalog.sessionSelection?.modelId, model: store.model, customModel: runningCustomModel }) ?? null });
   const sessionPermissionOptions = sessionPermissionModeOptions(
-    store.permissionModeOptions ?? detachedPermission?.options ?? reloadPermission?.options ?? null,
+    permissionGroup ? Object.fromEntries(permissionGroup.available.map(({ id, ...choice }) => [id, choice])) : null,
     providerCapabilities?.acp.liveSettings?.permission,
     providerCapabilities?.acp.sessionModes,
-    { route, modeMap: providerPermissionModeMap },
   );
 
   /**
@@ -1508,7 +1503,7 @@ const ComposerForStore = observer(function ComposerForStore({
           providerPermissionModeMap
         ), providerId, runningCustomModel ? 'api-key' : costSource, providerPermissionModeMap)}
         selectedPermissionMode={selectedPermissionModeId(
-          store.permissionMode ?? detachedPermission?.selected ?? reloadPermission?.selected,
+          store.permissionMode ?? (store.recordedPermissionTier ? providerPermissionModeMap?.[store.recordedPermissionTier]?.id : undefined),
           sessionPermissionOptions,
           providerPermissionModeMap
         )}

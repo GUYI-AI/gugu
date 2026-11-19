@@ -951,6 +951,8 @@ export type SessionpageSessionCreateModelChoice = {
  * 空列表要说得出为什么：两段 reason 各自解释自己那一组为什么缺席。
  */
 export type SessionpageSessionCreateModels = {
+  /** Canonical native permission choices for this exact connection and model. */
+  permissionOptions?: SessionOptionGroup | null;
   /** Verified on this model and selected host executable; absent on old/unknown hosts. */
   autoReview?: { model: string; disabled?: boolean; reviewByHaiku?: boolean };
   customModels?: CustomModelConnection[];

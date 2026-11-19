@@ -168,6 +168,7 @@ export type HarnessCatalogState =
     efforts: HarnessModelChoice[];
     selectedEffort: string | null;
     /** Native Fast option for this snapshot's selected model only. */
+    permissionModes?: { id: string; name: string; description?: string }[];
     autoReview?: boolean;
     reviewerAvailable?: boolean;
     cliVersion?: string;
@@ -201,6 +202,7 @@ export type HarnessCatalogState =
    */
   | {
       kind: 'auth-required';
+      permissionModes?: { id: string; name: string; description?: string }[];
       reviewerAvailable?: boolean;
       cliVersion?: string;
       authMethods: HarnessAuthMethod[];
@@ -940,7 +942,7 @@ export async function probeHarnessModelCatalog(
     const second = await probeOnce(pluginId, leg, probeCredentials, model);
     if (second.kind === 'ready') {
       log.info(`${pluginId}: 未登录,但占位凭据那趟读到 ${second.efforts.length} 档推理强度`);
-      return { ...first, efforts: second.efforts, selectedEffort: second.selectedEffort, reviewerAvailable: second.reviewerAvailable, cliVersion: second.cliVersion };
+      return { ...first, efforts: second.efforts, selectedEffort: second.selectedEffort, permissionModes: second.permissionModes, reviewerAvailable: second.reviewerAvailable, cliVersion: second.cliVersion };
     }
     return second.kind === 'auth-required' ? first : second;
   } finally {
@@ -1206,6 +1208,7 @@ class AcpProbeClient {
             : null,
       efforts,
       selectedEffort,
+      ...(reviewOptions.some(option => option.category === 'mode' && option.type === 'select') ? { permissionModes: reviewOptions.flatMap(option => option.category === 'mode' && option.type === 'select' ? flattenSelectOptions(option.options).map(choice => ({ id: choice.value, name: choice.name, ...(choice.description ? { description: choice.description } : {}) })) : []) } : {}),
       autoReview, reviewerAvailable,
       ...(reviewPermission?.cliVersion ? { cliVersion: reviewPermission.cliVersion } : {}),
       ...(fastMode ? { fastMode } : {}),
