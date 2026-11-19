@@ -24,7 +24,7 @@ export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, worksp
       if (options.deferFirstInput) validateCreationAttachmentRequest(action)
       const prompt = options.deferFirstInput && typeof action.prompt === 'string' ? action.prompt.trim() : required(action.prompt, 'prompt')
       const requestedGroup = action.chat_id ?? action.chatId ?? null
-      const inputFingerprint = stableId('phone-provision-intent', { prompt, title: action.title ?? action.displayName ?? null, harness, model: action.model ?? caller?.platformModel ?? null, chat: requestedGroup, projectId: action.projectId ?? action.project_id ?? null, projectPath: action.projectPath ?? action.project_path ?? null, callerSession: caller?.sessionId ?? null, callerDevice: caller?.deviceId ?? null,...(intent ? {assistantWork:intent} : {}), ...(options.deferFirstInput ? { attachmentIntent: creationAttachmentIntentIdentity(ownerId, deviceId, action) } : {}) })
+      const inputFingerprint = stableId('phone-provision-intent', { prompt, title: action.title ?? action.displayName ?? null, harness, model: action.model ?? caller?.platformModel ?? null, chat: requestedGroup, projectId: action.projectId ?? action.workspaceId ?? null, projectPath: action.projectPath ?? action.cwd ?? null, callerSession: caller?.sessionId ?? null, callerDevice: caller?.deviceId ?? null,...(intent ? {assistantWork:intent} : {}), ...(options.deferFirstInput ? { attachmentIntent: creationAttachmentIntentIdentity(ownerId, deviceId, action) } : {}) })
       if (request?.inputFingerprint && request.inputFingerprint !== inputFingerprint) throw new Error('同一个创建请求不能更换任务、名字、群或模型；请开始一条新的创建请求')
       if (request?.result) return request.result
       if (!request) {
