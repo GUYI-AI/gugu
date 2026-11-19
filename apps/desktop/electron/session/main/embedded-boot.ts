@@ -2134,7 +2134,7 @@ export async function emdashLibraryMcpForSession(sessionId: string): Promise<Emd
     pluginRegistry.get(session.providerId)?.capabilities.sessionBundle,
     session.runtime === 'acp' ? 'acp' : 'tui',
   )
-  const provision = delivery.channel ? await emdashSessionProvisionInput({ projectId: session.projectId, sessionId }) : null
+  const provision = delivery.channel ? await emdashSessionProvisionInput({ sessionId }) : null
   const own = delivery.channel
     ? new Set((await mcpService.listForAgent(session.providerId, provision?.cwd)).map((server) => server.name))
     : new Set<string>()
