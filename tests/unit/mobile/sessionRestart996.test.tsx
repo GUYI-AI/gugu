@@ -5,7 +5,6 @@ import type { LifeView } from '../../../apps/desktop/src/session/shared/core/ses
 import { createReactHarness } from '../../support/testHarness'
 import { translateSessionMessage } from '../../../apps/desktop/src/session/renderer/localization/locale-store'
 import { useSessionRestart } from '../../../apps/desktop/src/components/session-watch/useSessionRestart'
-import { SessionLoadFailure } from '../../../apps/desktop/src/mobile/agent-watch/SessionLoadFailure'
 
 const host = vi.hoisted(() => ({ read: vi.fn(), life: vi.fn(), restart: vi.fn(), retry: vi.fn(), ready: vi.fn() }))
 vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
@@ -21,8 +20,14 @@ let harness: ReturnType<typeof createReactHarness>
 let recovery: ReturnType<typeof useSessionRestart>
 function Fixture({ code = 'record_not_found', id = 's' }: { code?: string; id?: string }) {
   recovery = useSessionRestart({ deviceId: 'host', projectId: 'p', sessionId: id, missing: code === 'record_not_found', online: true, local: false, onReady: host.ready })
-  return <SessionLoadFailure title="Could not open the timeline" detail={recovery.error ?? 'Missing record'} reloadLabel="Load again"
-    onReload={() => { if (recovery.retry) void recovery.retry() }} recovery={recovery} />
+  // The hook's own surface: its error, a reload that retries, and Start fresh while the hook offers it.
+  return <div>
+    <p>{recovery.error ?? 'Missing record'}</p>
+    <button type="button" onClick={() => { if (recovery.retry) void recovery.retry() }} disabled={recovery.busy}>Load again</button>
+    {recovery.canStartFresh ? <button type="button" onClick={() => { void recovery.startFresh() }} disabled={recovery.busy}>
+      {translateSessionMessage('transcript.condition.startFresh')}
+    </button> : null}
+  </div>
 }
 const tick = (ms = 0) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
 const freshButton = () => [...harness.container.querySelectorAll('button')].find(b => b.textContent === translateSessionMessage('transcript.condition.startFresh'))
