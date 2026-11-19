@@ -73,7 +73,7 @@ export function resourceGroups(lines: readonly string[], partial = false): Recor
       const id = source === 'assistant_memory' ? filename(item.id) : source === 'integrations'
         ? provider : key(item.folder_id ?? item.id)
       if (!id) continue
-      group.items[id] = { name: safeName(item.name ?? item.title ?? item.path) || id, scope,
+      group.items[id] = { name: safeName(item.name ?? item.title ?? (source === 'folders' ? text(item.path).split('/').filter(Boolean).at(-1) : undefined)) || id, scope,
         ...(source === 'integrations' ? { accounts: [...new Set([...(group.items[id]?.accounts ?? []), account ?? 'default'])].sort() } : {}),
         state: source === 'integrations' ? integrationState(item.use, item.note) : source === 'assistant_memory' ? text(item.modifiedAt)
           : source === 'folders' ? text(item.chat_id) : source === 'assistant_schedules'

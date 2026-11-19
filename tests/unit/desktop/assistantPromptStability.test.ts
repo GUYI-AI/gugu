@@ -66,7 +66,7 @@ async function renderPrefix(kind: 'computer' | 'cloud', clock: string, seed: num
       deferred.push(JSON.parse(text(result)))
     }
     expect(listed.some(tool => tool.name === 'activity_list')).toBe(true)
-    expect(deferred.some(tool => tool.name === 'project_create')).toBe(true)
+    expect(deferred.some(tool => tool.name === 'group_folder_bind')).toBe(true)
     expect(deferred.some(tool => tool.name === 'session_list_harnesses')).toBe(true)
     return JSON.stringify({ systemPrompt: options.systemPrompt, listed, deferred })
   } finally {
