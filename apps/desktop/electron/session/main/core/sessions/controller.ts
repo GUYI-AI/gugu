@@ -4,7 +4,7 @@ import { isFrameSender } from '@main/host-ws/frame-host';
 import { archiveSession, restoreSession } from './archiveSession';
 import { dehydrateSession } from './dehydrateSession';
 import { getSessions } from './getSessions';
-import { getSessionsForGroup } from './getSessionsForGroup';
+import { getSessionsForFolder, getSessionsForGroup } from './getSessionsForPlace';
 import { getUnarchivedSession } from './getUnarchivedSession';
 import { convertAutomationSession } from './convert-automation-session';
 import { forkSession } from './fork-session';
@@ -72,6 +72,7 @@ export const sessionController = createRPCController({
   convertAutomationSession,
   getUnarchivedSession,
   getSessionsForGroup,
+  getSessionsForFolder,
   markSessionSeen,
   sendMessage,
   ensurePlatformSessionReady,
