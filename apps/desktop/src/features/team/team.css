@@ -72,7 +72,7 @@ section.gg-team-settings-summary { display: flex; align-items: center; gap: var(
 .gg-team-settings-balance > strong { font-size: var(--font-title); line-height: var(--lh-title); font-weight: var(--font-weight-semibold); }
 .gg-team-settings-toolbar { display: flex; align-items: center; gap: var(--spacing-sm); }
 .gg-team-settings-toolbar > h2 { flex: 1; white-space: nowrap; }
-.gg-team-settings-toolbar > h2 > span { color: var(--muted-fg); font-weight: var(--font-weight-normal); }
+.gg-team-settings-toolbar > h2 > span { color: var(--muted-fg); font-weight: var(--font-weight-regular); }
 .gg-team-settings-toolbar > [data-slot=search-field] { width: 190px; min-width: 0; }
 .gg-team-settings-management { display: flex; align-items: center; gap: var(--spacing-sm); font-size: var(--font-caption); color: var(--muted-fg); }
 .gg-team-settings-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
