@@ -9,14 +9,13 @@ import { archiveSession } from './archiveSession';
  * 再抛 —— ❌ 留一条起不来、也没人回收的会话。
  */
 export async function mountSpawnedSession(
-  projectId: string,
   sessionId: string
 ): Promise<{ workspaceId: string; path: string }> {
   try {
     const mounted = await sessionService.ensureSessionMounted(sessionId);
     return { workspaceId: mounted.workspaceId, path: mounted.path };
   } catch (error) {
-    await archiveSession(projectId, sessionId, { skipTransportStop: true, removeSocialIdentity: false });
+    await archiveSession(sessionId, { skipTransportStop: true, removeSocialIdentity: false });
     throw error;
   }
 }

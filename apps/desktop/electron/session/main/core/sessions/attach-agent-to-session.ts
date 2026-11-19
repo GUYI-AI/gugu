@@ -23,7 +23,7 @@ import {
   recordSessionPlatformModel,
 } from './platform-model-selection';
 import { mountSpawnedSession } from './spawn-session';
-import { resolveSession } from '../projects/utils';
+import { resolveSession } from './session-workspace-manager';
 
 type SessionCreateDb = Pick<typeof db, 'delete' | 'insert' | 'select'>;
 
@@ -60,7 +60,8 @@ export type InternalSessionRelations = {
  */
 export type AttachAgentToSessionParams = {
   id?: string;
-  projectId: string;
+  /** The group the session lives in (sessions.chat_id); null = none. */
+  groupChatId: string | null;
   /** 来源会话的工作区:新会话和它共用同一份工作副本。 */
   workspaceId: string;
   provider: AgentProviderId;
@@ -91,7 +92,7 @@ export type AttachAgentToSessionParams = {
   initialQueue?: InitialQueuePrompt[];
   startupOrigin?: 'chat-page' | 'session-page';
   initialMessageId?: string;
-  /** #2599 the group it is born in (BirthGroup.chatId), recorded on the row: where it lives. */
+  /** #2599 the conversation it is born in, recorded on the row: where its agent lives. */
   birthChatId?: string;
   /** Session-graph spawn uses this to persist (and mount) the child before starting its provider asynchronously. */
   deferStart?: boolean;
@@ -155,7 +156,7 @@ export async function attachAgentToSession(
     .values(
       buildSessionRow({
         id,
-        projectId: params.projectId,
+        groupChatId: params.groupChatId,
         workspaceId: params.workspaceId,
         provider: params.provider,
         runtime: sessionRuntime,
@@ -182,7 +183,7 @@ export async function attachAgentToSession(
     .returning();
 
   // 这条会话的运行时挂在它自己的 id 上:落行之后才挂得了。挂载失败 = 撤掉这一行再抛,❌ 留一条起不来的孤儿行。
-  await mountSpawnedSession(params.projectId, id);
+  await mountSpawnedSession(id);
 
   // 出生在会话能开口(spawn)之前:之后的 hook 都排在它后面。
   const session = sessionBorn(row, 'attachAgentToSession');
@@ -202,7 +203,7 @@ export async function attachAgentToSession(
      *
      * 失败仍然如实上抛（调用方据此写失败账本、界面据此给出重试），只是不再销毁证据。
      */
-    const mounted = resolveSession(params.projectId, id);
+    const mounted = resolveSession(id);
     if (!mounted) throw new Error(`Session ${id} is not mounted`);
     try {
       await mounted.sessions.startSession(

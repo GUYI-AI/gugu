@@ -10,7 +10,6 @@ export async function markProviderSessionMissing(
 ): Promise<boolean> {
   const [row] = await db
     .select({
-      projectId: sessions.projectId,
       providerSessionId: sessions.providerSessionId,
       config: sessions.config
     })
@@ -35,7 +34,6 @@ export async function markProviderSessionMissing(
 
   events.emit(sessionChangedChannel, {
     sessionId,
-    projectId: row.projectId,
     changes: { providerSessionState: 'missing' }
   })
   return true
@@ -52,7 +50,6 @@ export async function clearProviderSessionMissing(
 ): Promise<boolean> {
   const [row] = await db
     .select({
-      projectId: sessions.projectId,
       providerSessionId: sessions.providerSessionId,
       config: sessions.config
     })
@@ -73,7 +70,6 @@ export async function clearProviderSessionMissing(
 
   events.emit(sessionChangedChannel, {
     sessionId,
-    projectId: row.projectId,
     // `null` 而不是 undefined:网页宿主那条传输走 JSON,值为 undefined 的键会整个丢掉(见 sessionChangedChannel)。
     changes: { providerSessionState: null }
   })

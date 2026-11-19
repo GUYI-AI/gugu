@@ -6,7 +6,7 @@ import { db } from '@main/db/client';
 import { sessions, sessionTurns } from '@main/db/schema';
 import { events } from '@main/lib/events';
 import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
-import { resolveWorkspace } from '../projects/utils';
+import { resolveWorkspace } from '@main/core/workspaces/resolve-workspace';
 import { createAttachmentUploads } from '../files/attachment-uploads';
 import { ATTACHMENT_UPLOAD_CHUNK_BYTES } from '@gugu/session-core/session-record/contract';
 import type { TranscriptMessage, TranscriptTurn } from '@gugu/session-core/acp/client';
@@ -22,7 +22,7 @@ export type OwnerNotificationInput = {
   request_id: string; agent_user_id: string; text: string;
   file?: { path: string; name: string; mime_type: string };
 };
-type Context = { sessionId: string; projectId: string; workspaceId: string };
+type Context = { sessionId: string; workspaceId: string };
 const uploads = createAttachmentUploads();
 const hash = (data: Uint8Array) => createHash('sha256').update(data).digest('hex');
 
@@ -52,10 +52,10 @@ async function snapshotFile(root: string, input: OwnerNotificationInput): Promis
 export async function commitOwnerNotification(context: Context, input: OwnerNotificationInput, beforeCommit: () => Promise<void>, signal?: AbortSignal) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.request_id)
     || typeof input.text !== 'string' || (!input.text.trim() && !input.file)) throw new Error('Invalid owner notification');
-  const row = db.select().from(sessions).where(and(eq(sessions.id, context.sessionId), eq(sessions.projectId, context.projectId))).get();
+  const row = db.select().from(sessions).where(eq(sessions.id, context.sessionId)).get();
   if (!row || row.archivedAt || row.workspaceId !== context.workspaceId) throw new Error('The sending native session is missing, archived, or no longer bound to this workspace');
   if (row.runtime !== 'acp') throw new Error('This PTY session does not support native owner notifications. This message was not delivered to your owner.');
-  const workspace = input.file ? await resolveWorkspace(context.projectId, context.workspaceId) : null;
+  const workspace = input.file ? await resolveWorkspace(context.workspaceId) : null;
   if (input.file && !workspace) throw new Error('The sending session workspace is not mounted');
   const sourceId = `owner-notify:${input.request_id}`;
   const requestHash = hash(Buffer.from(JSON.stringify([input.agent_user_id, input.text, input.file?.path, input.file?.name, input.file?.mime_type])));
@@ -78,7 +78,7 @@ export async function commitOwnerNotification(context: Context, input: OwnerNoti
     let publish: (() => void) | undefined;
     const seq = db.transaction(tx => {
       const current = tx.select().from(sessions).where(eq(sessions.id, context.sessionId)).get();
-      if (!current || current.archivedAt || current.projectId !== context.projectId || current.workspaceId !== context.workspaceId) throw new Error('The sending session changed before the owner notification committed');
+      if (!current || current.archivedAt || current.workspaceId !== context.workspaceId) throw new Error('The sending session changed before the owner notification committed');
       const tail = tx.select({ seq: sessionTurns.seq }).from(sessionTurns).where(eq(sessionTurns.sessionId, context.sessionId)).orderBy(desc(sessionTurns.seq)).limit(1).get();
       const next = (tail?.seq ?? -1) + 1;
       const turn = recordNativePublicationTurn({ sessionId: context.sessionId, rowId: `${context.sessionId}:${next}`, source: 'live', context: publication, turn: renumberStoredTurn({ id: sourceId, seq: next, initiator: 'agent', trigger: { kind: 'agent' }, startedAt: at, endedAt: at,
@@ -90,7 +90,7 @@ export async function commitOwnerNotification(context: Context, input: OwnerNoti
       return next;
     });
     publish?.();
-    events.emit(sessionChangedChannel, { sessionId: context.sessionId, projectId: context.projectId, changes: { nativeOwnerNotificationSeq: true } });
+    events.emit(sessionChangedChannel, { sessionId: context.sessionId, changes: { nativeOwnerNotificationSeq: true } });
     return { status: 'sent' as const, message_id: input.request_id, session_id: context.sessionId, seq, ...(files?.[0] ? { file_name: files[0].name } : {}) };
   });
 }

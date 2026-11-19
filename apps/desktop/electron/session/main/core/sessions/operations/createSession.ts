@@ -9,13 +9,11 @@ import {
 } from '@main/core/sessions/platform-model-selection';
 import { buildSessionRow } from '@main/core/sessions/build-session-row';
 import { sessionBorn } from '@main/core/sessions/session-born';
-import { rememberBirthGroup } from '@main/core/sessions/birth-groups';
 import {
   checkLocalHarnessAvailable,
   type HarnessUnavailable,
 } from '@main/core/sessions/impl/harness-availability';
-import { resolveProjectFolder } from '@main/core/projects/operations/project-folders';
-import { projectManager } from '@main/core/projects/project-manager';
+import { rootFolderOf } from '@main/core/folders/folders';
 import { db, type DrizzleTx } from '@main/db/client';
 import { sessions } from '@main/db/schema';
 import type { SessionRow } from '@main/db/schema';
@@ -57,16 +55,13 @@ export interface PreparedCreateSession {
 }
 
 /**
- * Performs all async preparation for creating a session (project validation, workspace
+ * Performs all async preparation for creating a session (the folder check, workspace
  * resolution). Returns a `PreparedCreateSession` that can be committed synchronously
  * inside a Drizzle transaction via `commitCreateSession`.
  */
 export async function prepareCreateSession(
   params: CreateSessionParams
 ): Promise<Result<PreparedCreateSession, CreateSessionError>> {
-  if (!projectManager.getProject(params.projectId)) {
-    return err({ type: 'project-not-found' });
-  }
   const ic = params.sessionConfig.initialSession;
   // 建会话就是建它的首轮会话:没有它就没有可建的东西。这是调用方的错,不是用户能遇到的状态。
   if (!ic) throw new Error('createSession: a session is created together with its initial agent config');
@@ -88,16 +83,9 @@ export async function prepareCreateSession(
   }
 
   const { workspaceId } = params.workspaceConfig.workspace;
-  // #7341 会话只在这个项目自己的文件夹里开工:根目录,或挂在它下面的文件夹(会话就在那个文件夹的路径里跑,
-  // 见 workspace-bootstrap-service)。从前这里照抄 id 不核对:抄进一个别的项目的工作区,会话就跑去那里。
-  // ❌ 也不悄悄换成根目录 —— 用户点的是哪个文件夹,就得在哪个文件夹;不在这个项目里就说出来。
-  const folder = await resolveProjectFolder(params.projectId, workspaceId);
-  if (!folder) {
-    return err({
-      type: 'provision-failed',
-      message: `工作区 ${workspaceId} 不是项目 ${params.projectId} 的文件夹:既不是它的根目录,也没有挂在它下面`,
-    });
-  }
+  // #7341 会话只在本机记录过的文件夹里开工:文件夹本身,或它里面的工作区(worktree)。
+  // ❌ 不悄悄换成别的文件夹 —— 用户点的是哪个文件夹,就得在哪个文件夹;本机没有就说出来。
+  if (!rootFolderOf(workspaceId)) return err({ type: 'folder-not-found', workspaceId });
 
   // @@@2503 composer 平台模型 — 首轮会话由 composer 拍板,选择记在会话上。写在事务之外、启动之前:
   // 会话是在 provisioning 之后才 spawn 的,这里落库足够早。
@@ -110,7 +98,7 @@ export async function prepareCreateSession(
   // session_id 三处各自漂移。闸也在那里 —— 新建不带首轮当场抛。
   const convInsert = buildSessionRow({
     id: ic.id,
-    projectId: params.projectId,
+    groupChatId: params.groupChatId ?? null,
     workspaceId,
     ...(params.sessionConfig.linkedIssue && { linkedIssue: params.sessionConfig.linkedIssue }),
     ...(params.automationRunId && { automationRunId: params.automationRunId }),
@@ -129,7 +117,7 @@ export async function prepareCreateSession(
     startupOrigin: ic.startupOrigin,
     initialMessageId: ic.initialMessageId,
     taskChatId: ic.taskChatId,
-    ...(params.birthGroup && { birthChatId: params.birthGroup.chatId }),
+    ...(params.groupChatId && { birthChatId: params.groupChatId }),
     // 首启由 hydrateSession 做(工作区要先 provision 完),所以这一行落库时**不**认领
     // session_id —— 那把尺子留给 hydrate 用。
     claimsFirstSpawn: false,
@@ -157,8 +145,6 @@ export function finalizeCreateSession(
   prepared: PreparedCreateSession,
   convRow: SessionRow
 ): CreateSessionSuccess {
-  // Born in a group: its identity joins it when first minted (birth-groups.ts), the same as a spawned child.
-  if (prepared.params.birthGroup) rememberBirthGroup(convRow.id, prepared.params.birthGroup);
   // 出生排在这条会话的任何事件之前。新建带首轮 ⇒ 出生即 working,
   // ❌ 不再补发一条首句的 start:running 时 start 翻成空,它对读数从来不起作用。
   const session = sessionBorn(convRow, 'createSession');

@@ -4,10 +4,10 @@ import type { RemovedSessionIdentity } from '@gugu/core/shared/sessionArchival';
 export interface SessionIdentityHost {
   /** Current authenticated host context; no credentials cross this boundary. */
   attachmentCreationContext?(): Promise<{ ownerId: string; deviceId: string }>;
-  ensureAgentAddress?(target: { projectId: string; sessionId: string }): Promise<{ chatId: string; agentUserId: string }>;
+  ensureAgentAddress?(target: { sessionId: string }): Promise<{ chatId: string; agentUserId: string }>;
   archive(sessionId: string, confirmedRemoval?: RemovedSessionIdentity): Promise<RemovedSessionIdentity | null>;
   release(identity: RemovedSessionIdentity): Promise<void>;
-  restore(target: { projectId: string; sessionId: string }, identity: RemovedSessionIdentity): Promise<void>;
+  restore(target: { sessionId: string }, identity: RemovedSessionIdentity): Promise<void>;
 }
 
 let host: SessionIdentityHost | null = null;

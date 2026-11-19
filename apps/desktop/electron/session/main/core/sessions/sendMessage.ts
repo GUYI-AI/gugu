@@ -2,7 +2,7 @@ import { sessionBootTasks } from '../boot-tasks';
 import { and, eq } from 'drizzle-orm';
 import { resolveSessionpageSessionIntegration } from '@gugu/session-plugins/agents';
 import { recordLocalSessionDeliveryFailureForTest } from '@main/core/sessionpage/local-session-delivery';
-import { resolveSession } from '@main/core/projects/utils';
+import { resolveSession } from '@main/core/sessions/session-workspace-manager';
 import { db } from '@main/db/client';
 import { sessions, messages } from '@main/db/schema';
 import { log } from '@main/lib/logger';
@@ -41,7 +41,6 @@ import { nativePersonalInputContext } from './native-publication-host';
 import { isLifeSession } from './session-pending';
 
 export interface SendSessionMessageParams {
-  projectId: string;
   sessionId: string;
   clientMessageId: string;
   text: string;
@@ -161,16 +160,12 @@ function serialize<T>(
 }
 
 async function readSession(params: {
-  projectId: string;
   sessionId: string;
 }) {
   const [row] = db
     .select()
     .from(sessions)
-    .where(and(
-      eq(sessions.id, params.sessionId),
-      eq(sessions.projectId, params.projectId),
-    ))
+    .where(eq(sessions.id, params.sessionId))
     .limit(1)
     .all();
   if (!row?.provider || !row.config) throw new Error('session not found');
@@ -216,7 +211,7 @@ function receiptState(
 }
 
 function persistDispatchState(
-  params: { projectId: string; sessionId: string },
+  params: { sessionId: string },
   pending: { id: string; text: string; kind?: SendSessionMessageParams['kind'] },
   state: 'queued' | 'dispatching',
 ): void {
@@ -224,10 +219,7 @@ function persistDispatchState(
     const [row] = tx
       .select()
       .from(sessions)
-      .where(and(
-        eq(sessions.id, params.sessionId),
-        eq(sessions.projectId, params.projectId),
-      ))
+      .where(eq(sessions.id, params.sessionId))
       .limit(1)
       .all();
     if (!row?.config) throw new Error('session not found');
@@ -270,16 +262,13 @@ function persistDispatchState(
     }
     tx.update(sessions)
       .set({ config: nextConfig })
-      .where(and(
-        eq(sessions.id, params.sessionId),
-        eq(sessions.projectId, params.projectId),
-      ))
+      .where(eq(sessions.id, params.sessionId))
       .run();
   });
 }
 
 function persistAcceptedMessage(
-  params: { projectId: string; sessionId: string },
+  params: { sessionId: string },
   pending: { id: string; text: string; kind?: SendSessionMessageParams['kind'] },
   receipt: { messageId: string; nativeReceiptId?: string },
 ): void {
@@ -287,10 +276,7 @@ function persistAcceptedMessage(
     const [row] = tx
       .select()
       .from(sessions)
-      .where(and(
-        eq(sessions.id, params.sessionId),
-        eq(sessions.projectId, params.projectId),
-      ))
+      .where(eq(sessions.id, params.sessionId))
       .limit(1)
       .all();
     if (!row?.config) throw new Error('session not found');
@@ -326,17 +312,14 @@ function persistAcceptedMessage(
       .run();
     tx.update(sessions)
       .set({ config: acceptedConfig })
-      .where(and(
-        eq(sessions.id, params.sessionId),
-        eq(sessions.projectId, params.projectId),
-      ))
+      .where(eq(sessions.id, params.sessionId))
       .run();
   });
   if (pending.kind === 'session-direct') sessionDirectAccepted(params.sessionId, pending);
 }
 
 function persistFailedMessage(
-  params: { projectId: string; sessionId: string },
+  params: { sessionId: string },
   pending: { id: string; text: string; kind?: SendSessionMessageParams['kind'] },
   error: unknown,
 ): void {
@@ -345,10 +328,7 @@ function persistFailedMessage(
     const [row] = tx
       .select()
       .from(sessions)
-      .where(and(
-        eq(sessions.id, params.sessionId),
-        eq(sessions.projectId, params.projectId),
-      ))
+      .where(eq(sessions.id, params.sessionId))
       .limit(1)
       .all();
     if (!row?.config) throw new Error('session not found');
@@ -375,15 +355,11 @@ function persistFailedMessage(
     }
     tx.update(sessions)
       .set({ config: failSessionMessage(row.config, pending.id) })
-      .where(and(
-        eq(sessions.id, params.sessionId),
-        eq(sessions.projectId, params.projectId),
-      ))
+      .where(eq(sessions.id, params.sessionId))
       .run();
   });
   events.emit(sessionDeliveryFailedChannel, {
     sessionId: params.sessionId,
-    projectId: params.projectId,
     messageId: pending.id,
     message,
   });
@@ -434,7 +410,7 @@ export function recordDeliveredSessionDirectMessage(
 
 /** Record a provider-owned startup prompt that was admitted to the conversation but failed its turn receipt. */
 export function recordFailedSessionDirectMessage(
-  params: { projectId: string; sessionId: string },
+  params: { sessionId: string },
   message: { id: string; text: string },
   error: unknown,
 ): void {
@@ -443,7 +419,7 @@ export function recordFailedSessionDirectMessage(
 
 /** Keep a gate-rejected session-direct message in the recipient's existing inbox projection. */
 async function enqueuePendingSessionDirectMessage(
-  params: Pick<SendSessionMessageParams, 'projectId' | 'sessionId' | 'sourceInput' | 'personalPublication' | 'beforeAdmission'> & { clientMessageId: string },
+  params: Pick<SendSessionMessageParams, 'sessionId' | 'sourceInput' | 'personalPublication' | 'beforeAdmission'> & { clientMessageId: string },
   text: string,
 ): Promise<void> {
   await serialize(enqueueOperations, params.sessionId, async () => {
@@ -473,17 +449,13 @@ async function enqueuePendingSessionDirectMessage(
       if (params.personalPublication) queueNativeInput(params.personalPublication, params.sessionId, pending.id, new Date().toISOString(), tx);
       tx.update(sessions)
         .set({ config: enqueue.config })
-        .where(and(
-          eq(sessions.id, params.sessionId),
-          eq(sessions.projectId, params.projectId),
-        ))
+        .where(eq(sessions.id, params.sessionId))
         .run()
     })
   })
 }
 
 async function drain(params: {
-  projectId: string;
   sessionId: string;
 }): Promise<void> {
   for (;;) {
@@ -522,7 +494,7 @@ async function drain(params: {
         persistDispatchState(params, pending, 'dispatching');
         receipt = await router(params.sessionId, transportMessage);
       } else {
-        const session = resolveSession(params.projectId, params.sessionId);
+        const session = resolveSession(params.sessionId);
         if (!session) {
           persistDispatchState(params, pending, 'queued');
           return;
@@ -581,7 +553,7 @@ export async function sendMessage(params: SendSessionMessageParams): Promise<Sen
   if (isLifeSession(params.sessionId)) return enqueueIntoLife(params);
   if (params.kind !== 'session-direct' || params.queuedStartupDelegation) return sendMessageOnce(params);
   const key = params.clientMessageId.trim();
-  const signature = JSON.stringify([params.projectId, params.sessionId, sessionDirectMessageIdentity(params.text.trim(),key), params.delivery ?? null]);
+  const signature = JSON.stringify([params.sessionId, sessionDirectMessageIdentity(params.text.trim(),key), params.delivery ?? null]);
   const existing = directAdmissions.get(key);
   if (existing) {
     if (existing.signature !== signature) throw new Error('message identity reused with different delivery content');
@@ -723,10 +695,7 @@ async function sendMessageOnce(
       if (params.personalPublication) queueNativeInput(params.personalPublication, params.sessionId, clientMessageId, new Date().toISOString(), tx);
       tx.update(sessions)
         .set({ config: enqueue.config })
-        .where(and(
-          eq(sessions.id, params.sessionId),
-          eq(sessions.projectId, params.projectId),
-        ))
+        .where(eq(sessions.id, params.sessionId))
         .run();
     });
     return enqueue.status;
@@ -773,7 +742,7 @@ export function acceptPendingSessionDirectMessage(sessionId: string, messageId: 
     throw new Error(`pending session-direct message ${messageId} not found for ${sessionId}`);
   }
   persistAcceptedMessage(
-    { projectId: row.projectId, sessionId },
+    { sessionId },
     pending,
     { messageId },
   );
@@ -788,19 +757,18 @@ export function rejectPendingSessionDirectMessage(sessionId: string, messageId: 
     if (receipt?.sessionId === sessionId && receipt.metadata && JSON.parse(receipt.metadata).state === 'failed') return;
   }
   if (!row?.config || !pending || pending.kind !== 'session-direct') throw new Error(`pending session-direct message ${messageId} not found for ${sessionId}`);
-  persistFailedMessage({ projectId: row.projectId, sessionId }, pending, cause);
+  persistFailedMessage({ sessionId }, pending, cause);
 }
 
 /** Replay persisted pending rows after runtime startup or restart. */
 export function drainSessionMessageOutbox(params: {
-  projectId: string;
   sessionId: string;
 }): Promise<void> {
   return serialize(drainOperations, params.sessionId, () => drain(params));
 }
 
 /**
- * 按会话 id 排它的 outbox（project / task 从行上取）。
+ * 按会话 id 排它的 outbox。
  *
  * 为什么需要它：一条会话真正**能收**的那一刻是「投递属主注册好了」，而那一刻宿主手上只有
  * conversationId。以前那里只踢收件箱 pull，可 pull 的本机投影只捞 `session-direct` 行 ——
@@ -811,14 +779,12 @@ export function drainSessionMessageOutbox(params: {
  * 于是双方互等，90 秒后超时（实测 outbox 里那条 `{kind:"ordinary",state:"pending"}` 一直没动）。
  */
 export async function drainSessionMessageOutboxById(sessionId: string): Promise<void> {
-  // 取整行（与同文件 acceptPendingSessionDirectMessage 一致）：drain 要 project/task 两个键。
-  const [row] = db.select().from(sessions).where(eq(sessions.id, sessionId)).limit(1).all();
+    const [row] = db.select().from(sessions).where(eq(sessions.id, sessionId)).limit(1).all();
   // ❌ 不静默 return：查不到会话说明调用方拿着一个不存在的 id，那是要修的 bug，不是空活。
   if (!row) throw new Error(`session ${sessionId} not found for outbox drain`);
   // An ACP session's queue is session-life's (session_pending), as in drainAll: the session-live kick has nothing here.
   if (row.runtime === 'acp') return;
   await drainSessionMessageOutbox({
-    projectId: row.projectId,
     sessionId,
   });
 }
@@ -828,7 +794,6 @@ export async function drainAllSessionMessageOutboxes(): Promise<void> {
   const rows = db
     .select({
       id: sessions.id,
-      projectId: sessions.projectId,
       archivedAt: sessions.archivedAt,
       runtime: sessions.runtime,
     })
@@ -839,7 +804,7 @@ export async function drainAllSessionMessageOutboxes(): Promise<void> {
     try {
       const task = db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, row.id)).get();
       if (!task?.config || !nextPendingSessionMessage(task.config)) return;
-      await drainSessionMessageOutbox({ projectId: row.projectId, sessionId: row.id });
+      await drainSessionMessageOutbox({ sessionId: row.id });
     } catch (error) {
       // Archival may win after selection; this is not a boot failure. Restore owns the next drain.
       if (!(error instanceof SessionArchivedError)) throw error;

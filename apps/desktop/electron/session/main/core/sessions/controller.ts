@@ -4,7 +4,7 @@ import { isFrameSender } from '@main/host-ws/frame-host';
 import { archiveSession, restoreSession } from './archiveSession';
 import { dehydrateSession } from './dehydrateSession';
 import { getSessions } from './getSessions';
-import { getSessionsForProject } from './getSessionsForProject';
+import { getSessionsForGroup } from './getSessionsForGroup';
 import { getUnarchivedSession } from './getUnarchivedSession';
 import { convertAutomationSession } from './convert-automation-session';
 import { forkSession } from './fork-session';
@@ -52,14 +52,14 @@ export const sessionController = createRPCController({
   restartSession,
   switchSessionRuntime,
   // 人手动收起与自动清理共用归档;任务历史与绑定保留。
-  archiveSession: (projectId: string, sessionId: string, options?: Parameters<typeof archiveSession>[2]) =>
-    archiveSession(projectId, sessionId, options),
+  archiveSession: (sessionId: string, options?: Parameters<typeof archiveSession>[1]) =>
+    archiveSession(sessionId, options),
   // spec session-graph:UI 上没有恢复入口(owner 2026-09-11),但接口在 —— 归档不是删除,
   // 「数据回得来」这件事必须有代码作证。摆不摆入口是另一个决定。
   restoreSession,
   // #7103 起任务失败到界面之前按层分:咕咕这一侧的只交原因码,harness 自己说的照原话(startupFailureForUser)。
-  hydrateSession: (projectId: string, sessionId: string) =>
-    hydrateSession(projectId, sessionId).catch((error: unknown) => {
+  hydrateSession: (sessionId: string) =>
+    hydrateSession(sessionId).catch((error: unknown) => {
       throw startupFailureForUser(error);
     }),
   dehydrateSession,
@@ -71,7 +71,7 @@ export const sessionController = createRPCController({
   setSessionParent,
   convertAutomationSession,
   getUnarchivedSession,
-  getSessionsForProject,
+  getSessionsForGroup,
   markSessionSeen,
   sendMessage,
   ensurePlatformSessionReady,

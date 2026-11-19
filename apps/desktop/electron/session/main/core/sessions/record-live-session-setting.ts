@@ -62,7 +62,6 @@ export async function recordLiveSessionSetting(
   const written = db.transaction((tx) => {
     const row = tx
       .select({
-        projectId: sessions.projectId,
         provider: sessions.provider,
         config: sessions.config,
       })
@@ -112,7 +111,6 @@ export async function recordLiveSessionSetting(
 
   events.emit(sessionChangedChannel, {
     sessionId,
-    projectId: row.projectId,
     // 渲染层手里那份 Conversation 也要跟上 —— 渲染层自己的启动路读的是它,不是库。
     changes,
   });

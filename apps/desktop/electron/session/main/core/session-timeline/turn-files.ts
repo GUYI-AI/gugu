@@ -88,14 +88,14 @@ async function localPathOf(file: TurnFileRef, agent: string, sessionId: string):
   prefetched.delete(key);
   if (file.workspacePath) {
     if (!file.workspacePath.startsWith('.gugu/attachments/')) throw new Error('The SSH attachment is outside its directory');
-    const [{ db }, { sessions, workspaces, projects }, { eq }, { inWorkspace }] = await Promise.all([
+    const [{ db }, { sessions, workspaces }, { eq }, { inWorkspace }] = await Promise.all([
       import('@main/db/client'), import('@main/db/schema'), import('drizzle-orm'), import('../files/workspace-transfer'),
     ]);
-    const row = db.select({ workspace: workspaces.path, project: projects.path }).from(sessions)
-      .innerJoin(workspaces, eq(sessions.workspaceId, workspaces.id)).innerJoin(projects, eq(sessions.projectId, projects.id))
+    const row = db.select({ workspace: workspaces.path }).from(sessions)
+      .innerJoin(workspaces, eq(sessions.workspaceId, workspaces.id))
       .where(eq(sessions.id, runtimeFork(sessionId)?.parentId ?? sessionId)).get();
-    if (!row) throw new Error('The task workspace is not available');
-    const path = await inWorkspace(row.workspace ?? row.project, file.workspacePath);
+    if (!row?.workspace) throw new Error('The task workspace is not available');
+    const path = await inWorkspace(row.workspace, file.workspacePath);
     const info = await stat(path);
     if (!info.isFile() || info.size !== file.sizeBytes) throw new Error('The SSH attachment changed');
     return { localPath: path };

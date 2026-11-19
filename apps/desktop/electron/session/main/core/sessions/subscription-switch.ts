@@ -18,7 +18,7 @@ import { runtimeForksOf } from './session-life-forks';
 
 /** Claude / Codex,以及有 API Key 连接的家(#2507)—— 能不能切由 `harness-connections` 判。 */
 type SubscriptionProvider = string;
-type LiveSession = { projectId: string; sessionId: string; busy: boolean; acp: boolean };
+type LiveSession = { sessionId: string; busy: boolean; acp: boolean };
 
 /** 停一条会话等它的进程退出,一轮最多 10 s(`stop_pending` = 信号发了、还没退)。几轮都没退才报失败。 */
 const STOP_ATTEMPTS = 3;
@@ -40,10 +40,10 @@ function liveSessions(providerId: SubscriptionProvider): LiveSession[] {
   // A side chat runs the same harness on the same config root as its session: it stops too.
   for (const { sessionId, parentId } of sessionLife().running()) {
     const recordId = parentId ?? sessionId;
-    const row = db.select({ projectId: sessions.projectId, provider: sessions.provider, config: sessions.config }).from(sessions).where(eq(sessions.id, recordId)).get();
+    const row = db.select({ provider: sessions.provider, config: sessions.config }).from(sessions).where(eq(sessions.id, recordId)).get();
     if (!row) throw new Error(`subscription switch: running session ${recordId} has no row`);
     if (row.provider !== providerId || customModelRefFromOption(row.config?.model)) continue;
-    live.set(sessionId, { projectId: row.projectId, sessionId, busy: acpBusy(summaries.get(sessionId)), acp: true });
+    live.set(sessionId, { sessionId, busy: acpBusy(summaries.get(sessionId)), acp: true });
   }
   for (const pty of ptySessionRegistry.listActiveSessions()) {
     if (pty.metadata?.providerId !== providerId) continue;
@@ -52,7 +52,7 @@ function liveSessions(providerId: SubscriptionProvider): LiveSession[] {
     const row = db.select({ status: sessions.agentStatus, config: sessions.config }).from(sessions).where(eq(sessions.id, parsed.leafId)).get();
     if (customModelRefFromOption(row?.config?.model)) continue;
     const status = row?.status;
-    live.set(parsed.leafId, { projectId: parsed.projectId, sessionId: parsed.leafId, busy: status === 'working' || status === 'needs_user', acp: false });
+    live.set(parsed.leafId, { sessionId: parsed.leafId, busy: status === 'working' || status === 'needs_user', acp: false });
   }
   return [...live.values()];
 }
@@ -121,7 +121,7 @@ export async function switchSubscription(
       await selectHarnessConnection(providerId, connectionId, { nativeEnv });
     });
   } finally {
-    for (const session of stopped) events.emit(sessionReclaimedChannel, { projectId: session.projectId, sessionId: session.sessionId });
+    for (const session of stopped) events.emit(sessionReclaimedChannel, { sessionId: session.sessionId });
     if (stopped.length > 0) {
       log.warn('subscription switch: restarted running sessions', { providerId, count: stopped.length, busy, connectionId });
     }

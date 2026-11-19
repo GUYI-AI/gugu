@@ -80,6 +80,12 @@ function interruptedBy(sessionId: string): { interruptedBy?: InterruptedBy } {
   }
 }
 
+/** Every session works in a workspace (the C1 migration filled the rows that had none): a row without one is a fault. */
+export function sessionWorkspaceId(row: Pick<SessionRow, 'id' | 'workspaceId'>): string {
+  if (!row.workspaceId) throw new Error(`session ${row.id} has no workspace`);
+  return row.workspaceId;
+}
+
 export function mapSessionRowToSession(
   row: SessionRow,
   resume: boolean = false
@@ -90,8 +96,10 @@ export function mapSessionRowToSession(
     // The task's one name (task-name.ts): its identity's when bound, else its pending-bind record.
     title: taskName(row),
     createdAt: row.createdAt,
-    projectId: row.projectId,
-    ...(row.workspaceId ? { workspaceId: row.workspaceId } : {}),
+    // @@@group-folders — released readers key sessions by projectId: since C1 it carries the workspace id.
+    projectId: sessionWorkspaceId(row),
+    workspaceId: sessionWorkspaceId(row),
+    groupChatId: row.chatId,
     ...(row.linkedIssue ? { linkedIssue: row.linkedIssue } : {}),
     ...(row.automationRunId ? { automationRunId: row.automationRunId } : {}),
     providerId: row.provider as AgentProviderId,

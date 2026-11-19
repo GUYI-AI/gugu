@@ -8,14 +8,14 @@ import { mapSessionRowToSession } from './utils';
 let requestSequence = 0;
 
 /** 这条会话(未归档时)。外部 fork 由这一次读顺带扫一趟,扫到的经 session:created 进侧栏。 */
-export async function getUnarchivedSession(projectId: string, sessionId: string) {
+export async function getUnarchivedSession(sessionId: string) {
   const requestId = ++requestSequence;
   const startedAt = Date.now();
-  log.info('getUnarchivedSession: enter', { requestId, projectId, sessionId });
+  log.info('getUnarchivedSession: enter', { requestId, sessionId });
   try {
     // Captured forks land after this read returns and reach the sidebar via
     // session:created events — the list call itself stays fast.
-    scheduleExternalForkCapture(projectId, sessionId);
+    scheduleExternalForkCapture(sessionId);
     const rows = await db
       .select()
       .from(sessions)
@@ -25,14 +25,13 @@ export async function getUnarchivedSession(projectId: string, sessionId: string)
       .where(
         and(
           eq(sessions.id, sessionId),
-          eq(sessions.projectId, projectId),
           isNull(sessions.archivedAt)
         )
       );
     const result = rows.map((r) => mapSessionRowToSession(r, false));
     log.info('getUnarchivedSession: return', {
       requestId,
-      projectId,
+      sessionId,
       count: result.length,
       elapsedMs: Date.now() - startedAt,
     });
@@ -40,7 +39,7 @@ export async function getUnarchivedSession(projectId: string, sessionId: string)
   } catch (error) {
     log.error('getUnarchivedSession: error', {
       requestId,
-      projectId,
+      sessionId,
       elapsedMs: Date.now() - startedAt,
       error,
     });

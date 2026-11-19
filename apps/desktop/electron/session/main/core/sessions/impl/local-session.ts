@@ -55,7 +55,7 @@ import {
 import {
   assertTmuxAvailable,
   killTmuxSession,
-  makeTmuxSessionName,
+  resolveTmuxSessionName,
   listTmuxSessionNames,
 } from '@main/core/pty/tmux-session-name';
 import {
@@ -159,7 +159,6 @@ export class LocalSessionProvider implements SessionProvider {
   // process exists. The marker lets the exit callback preserve that offline blocker after pty.kill().
   private detachedPtySessionIds = new Set<string>();
   private supervisor = new SessionPtySupervisor();
-  private readonly projectId: string;
   private readonly sessionPath: string;
   private readonly workspaceId: string;
   // One hook source per agent process, not per PTY: a tmux-backed agent keeps running (and keeps
@@ -171,7 +170,6 @@ export class LocalSessionProvider implements SessionProvider {
   private readonly ctx: IExecutionContext;
   private readonly sessionEnvVars: Record<string, string>;
   constructor({
-    projectId,
     sessionPath,
     workspaceId,
     tmux = false,
@@ -180,7 +178,6 @@ export class LocalSessionProvider implements SessionProvider {
     ctx,
     sessionEnvVars = {},
   }: {
-    projectId: string;
     sessionPath: string;
     workspaceId: string;
     tmux?: boolean | (() => Promise<boolean>);
@@ -189,7 +186,6 @@ export class LocalSessionProvider implements SessionProvider {
     ctx: IExecutionContext;
     sessionEnvVars?: Record<string, string>;
   }) {
-    this.projectId = projectId;
     this.sessionPath = sessionPath;
     this.workspaceId = workspaceId;
     const initialTmux = typeof tmux === 'boolean' ? tmux : false;
@@ -205,7 +201,7 @@ export class LocalSessionProvider implements SessionProvider {
     message: SessionMessage,
     beforeAdmission?: () => void,
   ): Promise<{ status: 'not-ready' } | { status: 'accepted'; messageId: string }> {
-    const ptySessionId = makePtySessionId(session.projectId, session.id, session.id);
+    const ptySessionId = makePtySessionId(this.workspaceId, session.id, session.id);
     const pty = this.ptysBySession.get(ptySessionId);
     if (!pty) return { status: 'not-ready' };
     return injectSessionMessageWhenReady({ pty, session, message, beforeAdmission });
@@ -248,7 +244,7 @@ export class LocalSessionProvider implements SessionProvider {
     requireDesired: boolean,
     forkFromProviderSessionId?: string
   ): Promise<void> {
-    const ptySessionId = makePtySessionId(session.projectId, session.id, session.id);
+    const ptySessionId = makePtySessionId(this.workspaceId, session.id, session.id);
     // 只加入**仍然当前**的那次:stop() 已经取消了它(换模型重开 = stop 再 start)时,新的启动要真的起。
     const inFlight = this.startsInFlight.get(ptySessionId);
     if (inFlight && this.supervisor.hasStartInFlight(ptySessionId)) return inFlight;
@@ -275,7 +271,7 @@ export class LocalSessionProvider implements SessionProvider {
     // Only the initial fork spawn carries the source id; later spawns resume the child id.
     forkFromProviderSessionId?: string
   ): Promise<void> {
-    const ptySessionId = makePtySessionId(session.projectId, session.id, session.id);
+    const ptySessionId = makePtySessionId(this.workspaceId, session.id, session.id);
     this.knownPtySessionIds.add(ptySessionId);
     this.detachedPtySessionIds.delete(ptySessionId);
 
@@ -461,7 +457,7 @@ export class LocalSessionProvider implements SessionProvider {
         startupPrompt = await resolveChatStartupEnvelope({
           sessionId: session.id,
           providerId: session.providerId,
-          projectId: session.projectId,
+          groupChatId: session.groupChatId ?? null,
           workspaceId: this.workspaceId,
           cwd: this.sessionPath,
           agentDisplayName: session.agentDisplayName,
@@ -614,7 +610,7 @@ export class LocalSessionProvider implements SessionProvider {
       }
       // 接回还是新起,在钩子之前定下来:钩子要据此决定做不做新起才做的事(物化能力、重签平台票……)。
       // 与 tmux 启动行里 `has-session || new-session` 是同一个判据;tmux 调用失败就抛,❌ 当成「不在」去新起。
-      const tmuxSessionName = tmuxEnabled ? makeTmuxSessionName(ptySessionId) : undefined;
+      const tmuxSessionName = tmuxEnabled ? await resolveTmuxSessionName(this.ctx, ptySessionId) : undefined;
       const start: 'fresh' | 'reattach' =
         tmuxEnabled && sessionsAliveInTmux(await listTmuxSessionNames(this.ctx)).has(session.id) ? 'reattach' : 'fresh';
       const sessionpageOverride = await sessionpageHook?.({
@@ -622,7 +618,7 @@ export class LocalSessionProvider implements SessionProvider {
         start,
         providerId: session.providerId,
         cwd: this.sessionPath,
-        projectId: session.projectId,
+        groupChatId: session.groupChatId ?? null,
         workspaceId: this.workspaceId,
         initialPrompt: agentSession.isResuming ? undefined : effectiveInitialPrompt,
         sourceSessionId: session.forkedFrom?.sessionId,
@@ -636,8 +632,8 @@ export class LocalSessionProvider implements SessionProvider {
           ? { forkKeepsAgent: true }
           : {}),
         // #6264 TUI 住在 tmux 里 ⇒ 宿主把它的推理后台也放进 tmux(同名配对),活过宿主进程重启。
-        ...(tmuxEnabled && process.platform !== 'win32'
-          ? { tmuxSessionName: makeTmuxSessionName(ptySessionId) }
+        ...(tmuxSessionName && process.platform !== 'win32'
+          ? { tmuxSessionName }
           : {}),
         onHarnessTitle: (title) => {
           void applyHarnessTitle(session.id, title).catch((error: unknown) => {
@@ -871,7 +867,6 @@ export class LocalSessionProvider implements SessionProvider {
             emitSessionSpawnFailure(session, failure);
             events.emit(sessionDeliveryFailedChannel, {
               sessionId: session.id,
-              projectId: session.projectId,
               message: failure.message,
             });
             return;
@@ -962,14 +957,12 @@ export class LocalSessionProvider implements SessionProvider {
         onProviderReviewGate: (gate) => {
           agentStatusWriter.reportProviderReviewGate({
             sessionId: session.id,
-            projectId: session.projectId,
             gate,
           });
         },
         onProviderBlocker: (blocker) => {
           agentStatusWriter.reportProviderBlocker({
             sessionId: session.id,
-            projectId: session.projectId,
             blocker,
           });
         },
@@ -988,7 +981,6 @@ export class LocalSessionProvider implements SessionProvider {
         spawnEnv,
         harnessSessionId: () => harnessSessionId,
         sessionId: session.id,
-        projectId: session.projectId,
         providerId: session.providerId,
       });
       // 带着首句起的、这一家报得出回合开始:首句一进去就该有 hook 回来。一条都没有 ⇒ 屏上最后几行进日志、在会话页说出来
@@ -1011,7 +1003,6 @@ export class LocalSessionProvider implements SessionProvider {
             });
             events.emit(sessionDeliveryFailedChannel, {
               sessionId: session.id,
-              projectId: session.projectId,
               message: firstTurnNotTakenMessage(plugin.metadata.name, lines),
             });
           },
@@ -1080,7 +1071,6 @@ export class LocalSessionProvider implements SessionProvider {
         });
       }
       void drainSessionMessageOutbox({
-        projectId: session.projectId,
         sessionId: session.id,
       });
     } catch (error) {
@@ -1191,7 +1181,7 @@ export class LocalSessionProvider implements SessionProvider {
   }
 
   async detachSession(sessionId: string): Promise<void> {
-    const ptySessionId = makePtySessionId(this.projectId, sessionId, sessionId);
+    const ptySessionId = makePtySessionId(this.workspaceId, sessionId, sessionId);
     this.detachPty(ptySessionId);
     const sessionTmux = sessionProcess(sessionId)?.home === 'tmux';
     if (!sessionTmux) {
@@ -1202,11 +1192,11 @@ export class LocalSessionProvider implements SessionProvider {
   }
 
   ownsSession(sessionId: string): boolean {
-    return this.knownPtySessionIds.has(makePtySessionId(this.projectId, sessionId, sessionId));
+    return this.knownPtySessionIds.has(makePtySessionId(this.workspaceId, sessionId, sessionId));
   }
 
   async stopSession(sessionId: string): Promise<void> {
-    const ptySessionId = makePtySessionId(this.projectId, sessionId, sessionId);
+    const ptySessionId = makePtySessionId(this.workspaceId, sessionId, sessionId);
     const sessionTmux = sessionProcess(sessionId)?.home === 'tmux';
     this.detachedPtySessionIds.delete(ptySessionId);
     this.knownPtySessionIds.delete(ptySessionId);
@@ -1229,7 +1219,7 @@ export class LocalSessionProvider implements SessionProvider {
       }
     }
     if (sessionTmux) {
-      await killTmuxSession(this.ctx, makeTmuxSessionName(ptySessionId));
+      await killTmuxSession(this.ctx, await resolveTmuxSessionName(this.ctx, ptySessionId));
     }
     // The agent process is gone either way now, so its hook credentials stop being valid here.
     this.hookSourcesByPtySession.get(ptySessionId)?.dispose();
@@ -1247,10 +1237,7 @@ export class LocalSessionProvider implements SessionProvider {
     // 「还有没有运行时」❌ 不落成事实(#6546):进程在不在不是 agent 的事实,下一条消息会按原会话唤醒它。
     // detachSession / destroyAll ❌ 不走这里:前者只是把 tab 收起来(tmux 会话还活着),
     // 后者是整个 app 在退,由启动时写入者的 settleAfterRestart 负责。
-    await agentStatusWriter.settleSessionExited({
-      sessionId,
-      projectId: this.projectId,
-    });
+    await agentStatusWriter.settleSessionExited({ sessionId });
   }
 
   async destroyAll(): Promise<void> {
@@ -1269,7 +1256,7 @@ export class LocalSessionProvider implements SessionProvider {
           const parsed = parsePtySessionId(id);
           return parsed !== null && sessionProcess(parsed.leafId)?.home === 'tmux';
         })
-        .map((id) => killTmuxSession(this.ctx, makeTmuxSessionName(id)))
+        .map(async (id) => killTmuxSession(this.ctx, await resolveTmuxSessionName(this.ctx, id)))
     );
     for (const ptySessionId of ptySessionIds) {
       this.supervisor.forget(ptySessionId);

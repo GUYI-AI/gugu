@@ -29,6 +29,6 @@ export function rewindOwnerNotificationState(id: string, source: Source): void {
     .onConflictDoUpdate({ target: kv.key, set: { value: String(epoch), updatedAt: Date.now() } }).run();
 }
 export function publishOwnerNotificationState(id: string): void {
-  const row = db.select({ projectId: sessions.projectId }).from(sessions).where(eq(sessions.id, id)).get();
-  if (row) events.emit(sessionChangedChannel, { sessionId: id, projectId: row.projectId, changes: { nativeOwnerNotificationSeq: true, nativeOwnerNotificationEpoch: true } });
+  const row = db.select({ id: sessions.id }).from(sessions).where(eq(sessions.id, id)).get();
+  if (row) events.emit(sessionChangedChannel, { sessionId: id, changes: { nativeOwnerNotificationSeq: true, nativeOwnerNotificationEpoch: true } });
 }

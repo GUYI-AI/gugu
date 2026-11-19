@@ -10,12 +10,15 @@ import { sessionSpawnerId } from './utils';
 /**
  * The group this session lives in, and how its agent takes the seat there: a task agent (a task card's session, a
  * child another session spawned) joins without a join notice; one a person or an App pulled in on purpose joins with
- * it. Null = no group, or no such session.
+ * it (an App's spawn counts as the App's, whoever worked the App's page). Null = no group, or no such session.
  */
 export function sessionGroupOf(sessionId: string): BirthGroup | null {
   const row = db.select({
     chatId: sessions.chatId, config: sessions.config, spawnedBySessionId: sessions.spawnedBySessionId,
+    spawnedByExtensionId: sessions.spawnedByExtensionId,
   }).from(sessions).where(eq(sessions.id, sessionId)).get();
   if (!row?.chatId) return null;
-  return { chatId: row.chatId, asTask: Boolean(row.config?.taskChatId) || sessionSpawnerId(row) !== null };
+  // An App's agent is pulled in on purpose even when an agent working the App's page asked for it.
+  const asTask = !row.spawnedByExtensionId && (Boolean(row.config?.taskChatId) || sessionSpawnerId(row) !== null);
+  return { chatId: row.chatId, asTask };
 }

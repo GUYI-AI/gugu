@@ -162,7 +162,6 @@ export async function deliverSessionText(
     const body = [text.trim(), turn?.text].filter(Boolean).join('\n\n');
     admissionFence?.();
     const params = {
-      projectId: target.projectId,
       sessionId: target.id,
       clientMessageId: clientMessageId ?? crypto.randomUUID(),
       text: body,
@@ -299,7 +298,8 @@ export async function deliverQuestionAnswer(
   prepared: PreparedQuestionAnswer,
   question: { askedAt: number | undefined; stillOpen: () => Promise<boolean> }
 ): Promise<{ ok: true } | { ok: false; error: SessionWriteError; written: number }> {
-  const ptySessionId = makePtySessionId(target.projectId, target.id, target.id);
+  if (!target.workspaceId) throw new SessionWriteError('session_not_live', `session ${target.id} has no workspace`);
+  const ptySessionId = makePtySessionId(target.workspaceId, target.id, target.id);
   const { key, settleMs, maxWaitMs } = prepared.cancel;
   const result = await writeKeyBeats(ptySessionId, [key], { settleMs, maxWaitMs }, question);
   if (!result.success) {

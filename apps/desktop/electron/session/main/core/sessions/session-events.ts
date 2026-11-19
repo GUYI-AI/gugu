@@ -7,7 +7,6 @@ export type SessionCrudHooks = {
   'session:created': (session: Session) => void | Promise<void>;
   'session:renamed': (
     sessionId: string,
-    projectId: string,
     newTitle: string
   ) => void | Promise<void>;
   'session:deleted': (sessionId: string) => void | Promise<void>;
@@ -17,7 +16,6 @@ export type SessionCrudHooks = {
    */
   'session:archived': (sessionId: string) => void | Promise<void>;
   'session:input-submitted': (params: {
-    projectId: string;
     sessionId: string;
     providerId: AgentProviderId;
   }) => void | Promise<void>;

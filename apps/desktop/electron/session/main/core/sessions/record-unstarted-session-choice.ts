@@ -44,7 +44,7 @@ export async function recordUnstartedSessionChoice(input: {
   }
 
   const rows = await db
-    .select({ projectId: sessions.projectId, config: sessions.config })
+    .select({ config: sessions.config })
     .from(sessions)
     .where(eq(sessions.id, sessionId));
   const row = rows[0];
@@ -81,6 +81,6 @@ export async function recordUnstartedSessionChoice(input: {
   if (model || input.resetModel) changes.model = model && input.modelSource === 'own' ? model : null;
   if (input.effort !== undefined) changes.effort = effort;
   if (Object.keys(changes).length > 0) {
-    events.emit(sessionChangedChannel, { sessionId, projectId: row.projectId, changes });
+    events.emit(sessionChangedChannel, { sessionId, changes });
   }
 }

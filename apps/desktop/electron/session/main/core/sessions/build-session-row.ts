@@ -1,4 +1,5 @@
 import { isDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
+import { LEGACY_PLACEHOLDER_PROJECT_ID } from '@main/core/folders/legacy-project-aliases';
 import { pluginRegistry, type AgentProviderId } from '@gugu/session-plugins/agents';
 import type { GuguPermissionMode } from '@gugu/session-core/acp';
 import type { sessions } from '@main/db/schema';
@@ -27,7 +28,8 @@ export function assertNoDeliveryEnvelopeInPersistedText(value: string | undefine
 
 export type BuildSessionRowInput = {
   id: string;
-  projectId: string;
+  /** The group the session lives in (sessions.chat_id); null = none. */
+  groupChatId: string | null;
   /** 这条会话在哪个工作区里干活。 */
   workspaceId: string;
   linkedIssue?: LinkedIssue;
@@ -55,7 +57,7 @@ export type BuildSessionRowInput = {
   startupOrigin?: 'chat-page' | 'session-page';
   initialMessageId?: string;
   taskChatId?: string;
-  /** #2599 the group it was created in and joined at birth (BirthGroup.chatId): where it lives. */
+  /** #2599 the group it was created in and joined at birth (its groupChatId then): where its agent lives. */
   birthChatId?: string;
   /** Required: the task's one name until it is bound to an identity (task-name.ts). ❌ Never derived from the first prompt. */
   agentDisplayName: string;
@@ -177,7 +179,9 @@ export function buildSessionRow(input: BuildSessionRowInput): SessionInsert {
 
   return {
     id: input.id,
-    projectId: input.projectId,
+    // @@@c1-legacy-project — the previous release's NOT NULL FK; nothing since C1 reads it.
+    projectId: LEGACY_PLACEHOLDER_PROJECT_ID,
+    chatId: input.groupChatId,
     // The creation name, for the previous release only (0043 @@@rollback-title); nothing here reads it.
     legacyTitle: agentDisplayName,
     workspaceId: input.workspaceId,

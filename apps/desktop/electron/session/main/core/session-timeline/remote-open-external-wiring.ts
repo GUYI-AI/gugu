@@ -10,22 +10,18 @@ import { sharedRemotePaneRoute } from './remote-pane';
 
 /** 这台机器上每条会话的工作目录,最近用过的在前(同一个目录上好几条会话时,当前目录认会话按这个先后兜底)。 */
 async function sessionRoots(): Promise<SessionRoot[]> {
-  const [{ desc, eq }, { db }, { sessions, projects, workspaces }] = await Promise.all([
+  const [{ desc, eq }, { db }, { sessions, workspaces }] = await Promise.all([
     import('drizzle-orm'),
     import('@main/db/client'),
     import('@main/db/schema'),
   ]);
   const rows = db
-    .select({ sessionId: sessions.id, workspacePath: workspaces.path, projectPath: projects.path })
+    .select({ sessionId: sessions.id, root: workspaces.path })
     .from(sessions)
-    .innerJoin(projects, eq(sessions.projectId, projects.id))
-    .leftJoin(workspaces, eq(sessions.workspaceId, workspaces.id))
+    .innerJoin(workspaces, eq(sessions.workspaceId, workspaces.id))
     .orderBy(desc(sessions.updatedAt))
     .all();
-  return rows.flatMap((row) => {
-    const root = row.workspacePath || row.projectPath;
-    return root ? [{ sessionId: row.sessionId, root }] : [];
-  });
+  return rows.flatMap(({ sessionId, root }) => (root ? [{ sessionId, root }] : []));
 }
 
 export function openExternalDeps(): OpenExternalDeps {

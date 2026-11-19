@@ -1,20 +1,16 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
-import { resolveSession } from '../projects/utils';
+import { resolveSession } from './session-workspace-manager';
 
 export async function dehydrateSession(
-  projectId: string,
   sessionId: string
 ): Promise<void> {
   const [row] = await db
     .select({ type: sessions.runtime })
     .from(sessions)
     .where(
-      and(
-        eq(sessions.id, sessionId),
-        eq(sessions.projectId, projectId),
-      )
+      eq(sessions.id, sessionId)
     )
     .limit(1);
 
@@ -22,6 +18,6 @@ export async function dehydrateSession(
     return;
   }
 
-  const session = resolveSession(projectId, sessionId);
+  const session = resolveSession(sessionId);
   await session?.sessions.detachSession(sessionId);
 }

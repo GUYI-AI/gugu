@@ -9,7 +9,7 @@
 export const IDLE_RECLAIM_AFTER_MS = 10 * 60_000;
 export const IDLE_RECLAIM_TICK_MS = 60_000;
 
-export type ReclaimTarget = { projectId: string; sessionId: string };
+export type ReclaimTarget = { sessionId: string };
 
 /** 此刻仍持有引擎进程的一条会话。 */
 export type LiveSession = ReclaimTarget & {
@@ -104,7 +104,7 @@ export class IdleReclaimer {
       if (this.deps.onScreen(entry.sessionId) || withTerminals.has(entry.sessionId)) continue;
       if (this.deps.watchedRemotely(entry.sessionId)) continue;
       if (!facts.resumable || (entry.runtime === 'acp' && !entry.acpAtRest)) continue;
-      const target = { projectId: entry.projectId, sessionId: entry.sessionId };
+      const target = { sessionId: entry.sessionId };
       try {
         await this.deps.stop(target, entry.runtime);
       } catch (error) {

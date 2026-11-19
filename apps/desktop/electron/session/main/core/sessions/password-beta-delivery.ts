@@ -19,7 +19,7 @@ export async function deliverPasswordBetaDecision(sessionId: string, requestId: 
         ? `你的代填请求已获本人批准（requestId ${requestId}）。`
         : `你的代填请求${LOGIN_ENDED[status]}（requestId ${requestId}）。这次请求已结束，不要继续使用；需要时重新发起。`
   const messageId = decisionMessageId(requestId, status)
-  await sendMessage({ sessionId, projectId: row.projectId, clientMessageId: messageId, kind: 'session-direct',
+  await sendMessage({ sessionId, clientMessageId: messageId, kind: 'session-direct',
     text: envelope(messageId, text, status === 'filled') })
 }
 
@@ -48,6 +48,6 @@ export async function deliverPasswordBetaSaveResult(sessionId: string, requestId
   if (!row || row.archivedAt || row.runtime !== 'acp') throw new Error('password_delivery_unavailable')
   const text = `你的密码保存请求有结果了（requestId ${requestId}${credentialId ? `，credentialId ${credentialId}` : ''}）：${next}`
   const messageId = decisionMessageId(requestId, `save:${status}`)
-  await sendMessage({ sessionId, projectId: row.projectId, clientMessageId: messageId, kind: 'session-direct',
+  await sendMessage({ sessionId, clientMessageId: messageId, kind: 'session-direct',
     text: envelope(messageId, text, false) })
 }

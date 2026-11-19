@@ -14,7 +14,6 @@ import { sessionParentId, storedParent, type SessionParent } from './utils';
  */
 export type FamilyMember = {
   id: string;
-  projectId: string;
   /** 在别的机器上时那台机器;本机为 null。 */
   deviceId: string | null;
   label: string | null;
@@ -75,7 +74,6 @@ async function sessionGraph(options: {
   const rows = await db
     .select({
       id: sessions.id,
-      projectId: sessions.projectId,
       parentSessionId: sessions.parentSessionId,
       config: sessions.config,
       archivedAt: sessions.archivedAt,
@@ -85,7 +83,6 @@ async function sessionGraph(options: {
     .filter((row) => options.includeArchived || !row.archivedAt)
     .map((row) => ({
       id: row.id,
-      projectId: row.projectId,
       deviceId: null,
       label: null,
       parentId: sessionParentId(row),
@@ -154,7 +151,7 @@ async function sessionsElsewhere(
 ): Promise<{ sessions: Linked[]; unreached: UnreachedMachine[] }> {
   try {
     const { sessions, unreached } = await machines.sessions(since, { fresh });
-    const nodes = sessions.map(({ deviceId, label, session: s }) => ({ id: s.conversationId, projectId: s.projectId, deviceId, label, parentId: s.parentConversationId ?? null }));
+    const nodes = sessions.map(({ deviceId, label, session: s }) => ({ id: s.conversationId, deviceId, label, parentId: s.parentConversationId ?? null }));
     return { sessions: nodes, unreached };
   } catch (error) {
     return {
@@ -225,7 +222,7 @@ export async function setSessionParent(
 ): Promise<{ parent_session_id: string | null; not_reached: string[] }> {
   const { parent, not_reached } = await resolveSessionParent(childId, parentId);
   const [row] = await db
-    .select({ projectId: sessions.projectId, config: sessions.config, isPinnedToSidebar: sessions.isPinnedToSidebar })
+    .select({ config: sessions.config, isPinnedToSidebar: sessions.isPinnedToSidebar })
     .from(sessions)
     .where(eq(sessions.id, childId))
     .limit(1);
@@ -251,7 +248,6 @@ export async function setSessionParent(
   // 与删父会话时把孩子挂成根同一条事件:侧栏与手机列表(`LISTED_FIELDS`)都跟着它重画。
   events.emit(sessionChangedChannel, {
     sessionId: childId,
-    projectId: row.projectId,
     changes: { parentSessionId: parentId, ...(unpin ? { isPinnedToSidebar: false } : {}) },
   });
   return { parent_session_id: parentId, not_reached };

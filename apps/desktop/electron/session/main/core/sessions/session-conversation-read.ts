@@ -24,7 +24,7 @@ export function nativeOwnerNotificationUnread(sessionId: string): string[] { ret
 
 function update(sessionId: string, change: (journal: NativeReadJournal) => NativeReadJournal, transaction?: JournalDb): { unread: string[]; publish: () => void } {
   const write = (tx: JournalDb) => {
-    const session = tx.select({ projectId: sessions.projectId }).from(sessions).where(eq(sessions.id, sessionId)).get();
+    const session = tx.select({ id: sessions.id }).from(sessions).where(eq(sessions.id, sessionId)).get();
     if (!session) throw new Error(`Session not found: ${sessionId}`);
     const before = read(sessionId, tx);
     const journal = change(before);
@@ -32,19 +32,19 @@ function update(sessionId: string, change: (journal: NativeReadJournal) => Nativ
     const dirty = value !== JSON.stringify(before);
     if (dirty) tx.insert(kv).values({ key: keyFor(sessionId), value, updatedAt: Date.now() })
       .onConflictDoUpdate({ target: kv.key, set: { value, updatedAt: Date.now() } }).run();
-    return { projectId: session.projectId, unread: unreadNativeMessages(journal), dirty };
+    return { unread: unreadNativeMessages(journal), dirty };
   };
   const result = transaction ? write(transaction) : db.transaction(write);
   const publish = () => {
-    if (result.dirty) events.emit(sessionChangedChannel, { sessionId, projectId: result.projectId, changes: { nativeUnreadKeys: true } });
+    if (result.dirty) events.emit(sessionChangedChannel, { sessionId, changes: { nativeUnreadKeys: true } });
   };
   if (!transaction) publish();
   return { unread: result.unread, publish };
 }
 
 export function publishConversationActivity(sessionId: string): void {
-  const session = db.select({ projectId: sessions.projectId }).from(sessions).where(eq(sessions.id, sessionId)).get();
-  if (session) events.emit(sessionChangedChannel, { sessionId, projectId: session.projectId, changes: { nativeLastMessage: true } });
+  const session = db.select({ id: sessions.id }).from(sessions).where(eq(sessions.id, sessionId)).get();
+  if (session) events.emit(sessionChangedChannel, { sessionId, changes: { nativeLastMessage: true } });
 }
 
 /** Historical imports repair the preview only; they do not create unread/live-message side effects. */

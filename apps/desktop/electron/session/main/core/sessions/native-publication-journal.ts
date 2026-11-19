@@ -5,7 +5,7 @@ import { kv, sessions } from '@main/db/schema';
 
 export type NativePublicationContext = { ownerUserId: string; deviceId: string; agentUserId?: string };
 export type NativePublication = NativePublicationContext & {
-  id: string; order: number; sessionId: string; projectId: string; occurredAt: string; chatId?: string;
+  id: string; order: number; sessionId: string; occurredAt: string; chatId?: string;
   ack?: { accountRevision: string; already: boolean };
 };
 export type PublicationDb = Pick<AppDb, 'select' | 'insert'>;
@@ -26,11 +26,11 @@ export function writePublicationValue(key: string, value: unknown, source: Publi
 /** The caller writes this beside the actual input/transcript admission, in the same SQLite transaction. */
 export function queueNativePublication(context: NativePublicationContext, sessionId: string, occurredAt: string, source: PublicationDb, id: string = randomUUID()): NativePublication {
   if (!context.ownerUserId || !context.deviceId || !Number.isFinite(Date.parse(occurredAt))) throw new Error('Invalid native publication admission');
-  const session = source.select({ projectId: sessions.projectId }).from(sessions).where(eq(sessions.id, sessionId)).get();
+  const session = source.select({ id: sessions.id }).from(sessions).where(eq(sessions.id, sessionId)).get();
   if (!session) throw new Error(`Native publication session is missing: ${sessionId}`);
   const order = (readPublicationValue<number>('native-personal-publication-order', source) ?? 0) + 1;
   if (!Number.isSafeInteger(order)) throw new Error('Native publication admission order is exhausted');
-  const entry: NativePublication = { ...context, id, order, sessionId, projectId: session.projectId, occurredAt };
+  const entry: NativePublication = { ...context, id, order, sessionId, occurredAt };
   writePublicationValue('native-personal-publication-order', order, source);
   writePublicationValue(PREFIX + entry.id, entry, source);
   // Runs after the synchronous transaction exits. A rollback leaves no item for the host to send.

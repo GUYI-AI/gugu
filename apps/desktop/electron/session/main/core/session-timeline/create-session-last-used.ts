@@ -14,13 +14,14 @@ import type { SessionPlatformModel } from '../sessions/platform-model-selection'
  * 对象 = 咕咕平台模型,编成与 create 请求同一套的 `platform:<id>`;null / undefined = harness 自家,取 config.model。
  */
 export function lastUsedFromSession(
-  row: Pick<SessionRow, 'projectId' | 'provider' | 'config' | 'parentSessionId'>,
+  row: Pick<SessionRow, 'workspaceId' | 'provider' | 'config' | 'parentSessionId'>,
   platformModel: SessionPlatformModel | undefined,
 ): SessionpageSessionCreateLastUsed | null {
   const config = row.config;
-  if (!row.provider || row.parentSessionId || !config?.firstUtterance) return null;
+  if (!row.provider || row.parentSessionId || !config?.firstUtterance || !row.workspaceId) return null;
   return {
-    projectId: row.projectId,
+    // @@@group-folders — the workspace (folder) it started in; the contract field keeps its released name.
+    projectId: row.workspaceId,
     harness: row.provider,
     sessionView: sessionViewOfRuntime(config.type),
     permissionMode: config.permissionMode ?? null,

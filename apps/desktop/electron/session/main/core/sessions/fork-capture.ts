@@ -82,17 +82,17 @@ export function tombstoneDeletedSession(providerSessionIds: Array<string | null 
  * 别的会话、别的咕咕实例的会话)读一次开头就再也不碰。同目录里咕咕**自己管着**的别的会话(产品分叉就住在那儿,#6269)
  * 算「已知」、也进候选池认父亲,但登记归父亲那一条的那一趟。
  */
-export function scheduleExternalForkCapture(projectId: string, sessionId: string): void {
-  const key = `${projectId}:${sessionId}`;
+export function scheduleExternalForkCapture(sessionId: string): void {
+  const key = sessionId;
   const now = Date.now();
   if (inFlight.has(key)) return;
   const last = lastScanAt.get(key);
   if (last !== undefined && now - last < SCAN_MIN_INTERVAL_MS) return;
   lastScanAt.set(key, now);
   inFlight.add(key);
-  void captureExternalForks(projectId, sessionId)
+  void captureExternalForks(sessionId)
     .catch((error) => {
-      log.warn('forkCapture: scan failed', { projectId, error: String(error) });
+      log.warn('forkCapture: scan failed', { sessionId, error: String(error) });
     })
     .finally(() => {
       inFlight.delete(key);
@@ -212,7 +212,6 @@ async function readCodexForkTranscript(filePath: string): Promise<CodexForkTrans
 }
 
 async function captureCodexForks(
-  projectId: string,
   workspaceId: string,
   sessionPath: string,
   rows: SessionRow[],
@@ -269,7 +268,7 @@ async function captureCodexForks(
       .values({
         ...buildSessionRow({
           id: randomUUID(),
-          projectId,
+          groupChatId: parent.chatId,
           workspaceId,
           agentDisplayName: `${taskName(parent)}-fork`.slice(0, MAX_SESSION_TITLE_LENGTH),
           provider: 'codex',
@@ -390,7 +389,6 @@ async function bindProviderSessionId(sessionId: string, providerSessionId: strin
 }
 
 async function bindProviderContinuations(
-  projectId: string,
   sessionPath: string,
   rows: SessionRow[],
   files: SessionTranscriptFile[],
@@ -443,7 +441,6 @@ async function bindProviderContinuations(
     knownProviderSessionIds.add(continuation.providerSessionId);
     await completeProviderContinuationIntent(sessionPath, intent, continuation.providerSessionId);
     log.info('forkCapture: bound provider continuation to existing session', {
-      projectId,
       sessionId: row.id,
       sourceProviderSessionId: intent.sourceProviderSessionId,
       continuationProviderSessionId: continuation.providerSessionId,
@@ -487,7 +484,7 @@ async function resolveForkParent(
   return best ? (sameRoot.find((c) => c.sessionId === best.sessionId) ?? null) : null;
 }
 
-export async function captureExternalForks(projectId: string, sessionId: string): Promise<void> {
+export async function captureExternalForks(sessionId: string): Promise<void> {
   const [workspace] = await db
     .select({
       id: workspaces.id,
@@ -507,23 +504,23 @@ export async function captureExternalForks(projectId: string, sessionId: string)
   const workspacePath = workspace.path;
   const sessionPath = await realpath(workspacePath).catch(() => workspacePath);
 
-  // 「这条记录咕咕认不认识」按**整个项目**问,「谁能当父亲」只看这一条。两件事的范围不同:
+  // 「这条记录咕咕认不认识」按**这个工作目录里的全部会话**问,「谁能当父亲」只看这一条。两件事的范围不同:
   // 产品分叉是独立会话、与来源共用工作目录(#6269)⇒ 两边的记录在同一个目录里、还共享开头;
   // 只拿这一条当「已知」,来源那一趟会把分叉的记录当成外部 fork 再登记一遍,分叉那一趟
   // 又会把来源的记录认成自己的 fork。咕咕管着的任何会话,都不是「外部」。
-  const projectRows = await db
+  const workspaceRows = await db
     .select()
     .from(sessions)
-    .where(eq(sessions.projectId, projectId));
+    .where(eq(sessions.workspaceId, workspace.id));
 
   const knownProviderSessionIds = new Set<string>(tombstonedProviderSessionIds);
-  for (const row of projectRows) {
+  for (const row of workspaceRows) {
     knownProviderSessionIds.add(row.id);
     if (row.providerSessionId) knownProviderSessionIds.add(row.providerSessionId);
   }
   // spec session-graph:归档只问会话自己那一列。已归档的会话仍算「已知」—— 它的记录不许被当成新 fork
   // 再登记一遍 —— 但不再监测它派生出的 fork。
-  const managed = projectRows.filter((row) => row.id === sessionId && !row.archivedAt);
+  const managed = workspaceRows.filter((row) => row.id === sessionId && !row.archivedAt);
   if (managed.length === 0) return;
   const owner = managed[0]!;
   if (owner.provider !== 'claude' && owner.provider !== 'codex') return;
@@ -537,11 +534,10 @@ export async function captureExternalForks(projectId: string, sessionId: string)
     knownProviderSessionIds.add(runtimeFork.runtimeSessionId);
   }
 
-  // 待认领的产品分叉是别的会话(#6269),它的来源却是这一条 —— 所以也按整个项目找。
-  const unclaimedForkSourceIds = unclaimedProductForkSourceIds(projectRows);
+  // 待认领的产品分叉是别的会话(#6269),它的来源却是这一条 —— 所以也按整个工作目录找。
+  const unclaimedForkSourceIds = unclaimedProductForkSourceIds(workspaceRows);
 
   await captureCodexForks(
-    projectId,
     workspace.id,
     sessionPath,
     managed,
@@ -552,14 +548,14 @@ export async function captureExternalForks(projectId: string, sessionId: string)
 
   if (!managed.some((row) => row.provider === 'claude')) return;
   const files = await listSessionTranscriptFiles(sessionPath, transcriptEnv);
-  await bindProviderContinuations(projectId, sessionPath, managed, files, knownProviderSessionIds);
+  await bindProviderContinuations(sessionPath, managed, files, knownProviderSessionIds);
 
   const fileByProviderSessionId = new Map(files.map((file) => [file.providerSessionId, file]));
   // 候选父亲 = 这个目录里咕咕在管的**全部**会话,不只这一条:产品分叉是独立会话、与来源同目录
   // (#6269),在分叉的终端里再 `/fork` 一次,真父亲是那条分叉 —— 候选池里没有它,这一趟就会把孙子
   // 错认成来源的儿子,而 config.forkedFrom 一经写下就是永久的。父亲认准之后**由父亲那一条的那一趟登记**,
   // 别的会话只让它进池(好让它的后代也认对父亲),不替人落行。
-  const lineageRows = projectRows.filter((row) => !row.archivedAt);
+  const lineageRows = workspaceRows.filter((row) => !row.archivedAt);
   const foreignLineageIds = new Set(
     lineageRows.filter((row) => row.id !== sessionId).map((row) => row.id)
   );
@@ -639,7 +635,7 @@ export async function captureExternalForks(projectId: string, sessionId: string)
           // The external session id is a UUID; using it as the conversation id keeps the
           // claude invariant (conversation.id == session id), so opening the row resumes it.
           id: transcript.providerSessionId,
-          projectId,
+          groupChatId: parentRow.chatId,
           workspaceId: workspace.id,
           agentDisplayName: `${parentName}-fork`.slice(0, MAX_SESSION_TITLE_LENGTH),
           provider: 'claude',
@@ -669,7 +665,7 @@ export async function captureExternalForks(projectId: string, sessionId: string)
     const session = sessionBorn(inserted, 'forkCapture');
     events.emit(sessionCreatedChannel, { session });
     log.info('forkCapture: registered external fork', {
-      projectId,
+      sessionId,
       providerSessionId: transcript.providerSessionId,
       forkedFrom: parent.sessionId,
     });
@@ -680,17 +676,17 @@ export async function captureExternalForks(projectId: string, sessionId: string)
 // the workspace (and its transcript dir) is actually resolvable. The list-RPC trigger alone
 // misses the common boot path where sidebar conversations arrive preloaded in bulk and
 // getUnarchivedSession never fires (verified live: boot → zero scans).
-sessionWorkspaceManager.hooks.on('session:provisioned', ({ projectId, sessionId }) => {
-  scheduleExternalForkCapture(projectId, sessionId);
-  const key = `${projectId}:${sessionId}`;
+sessionWorkspaceManager.hooks.on('session:provisioned', ({ sessionId }) => {
+  scheduleExternalForkCapture(sessionId);
+  const key = sessionId;
   if (recurringScans.has(key)) return;
-  const timer = setInterval(() => scheduleExternalForkCapture(projectId, sessionId), 5_000);
+  const timer = setInterval(() => scheduleExternalForkCapture(sessionId), 5_000);
   timer.unref();
   recurringScans.set(key, timer);
 });
 
-sessionWorkspaceManager.hooks.on('session:torn-down', ({ projectId, sessionId }) => {
-  const key = `${projectId}:${sessionId}`;
+sessionWorkspaceManager.hooks.on('session:torn-down', ({ sessionId }) => {
+  const key = sessionId;
   const timer = recurringScans.get(key);
   if (timer) clearInterval(timer);
   recurringScans.delete(key);

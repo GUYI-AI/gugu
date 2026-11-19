@@ -23,17 +23,13 @@ import { sessionLife } from './session-life';
  * 「这句话正在重新跑」,不是一条凭空多出来的会话。
  */
 export async function restartSession(
-  projectId: string,
   sessionId: string
 ): Promise<void> {
   const [row] = await db
     .select()
     .from(sessions)
     .where(
-      and(
-        eq(sessions.id, sessionId),
-        eq(sessions.projectId, projectId),
-      )
+      eq(sessions.id, sessionId)
     )
     .limit(1);
   if (!row) throw new Error('Session not found');
@@ -79,11 +75,10 @@ export async function restartSession(
     })
     .where(eq(sessions.id, sessionId));
   // 重开:一次出生,经状态写入者写库、播出。只有首轮重来时有一轮在跑。
-  await agentStatusWriter.restart({ sessionId, projectId }, Boolean(replay));
+  await agentStatusWriter.restart({ sessionId }, Boolean(replay));
 
   events.emit(sessionChangedChannel, {
     sessionId,
-    projectId,
     // `sessionId` 清空用 `null` 而不是 `undefined` —— JSON 传输会把值为 undefined 的键整个丢掉,
     // 于是网页宿主那条上「清空」变成「什么都没说」(见 sessionChangedChannel 的抬头)。
     // `providerSessionState` 同一个坑、同一个写法(#7223 收的)。
@@ -112,7 +107,7 @@ export async function restartSession(
     if (replay) sessionLife().enqueue({ sessionId, messageId: replayId, text: replay, kind: 'ordinary',
       turn: { kind: 'prompt', origin: 'manual' } });
   } else {
-    await hydrateSession(projectId, sessionId);
+    await hydrateSession(sessionId);
   }
 }
 

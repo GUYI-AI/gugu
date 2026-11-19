@@ -1,28 +1,21 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { listFolders } from '@main/core/folders/folders';
 import { workspaceRegistry } from '@main/core/workspaces/workspace-registry';
 import { db } from '@main/db/client';
-import { sessions, projects, workspaces } from '@main/db/schema';
+import { sessions, workspaces } from '@main/db/schema';
 import type { ProjectWorkspace } from '@shared/core/workspaces/project-workspace';
 import { resolveWorkspaceKind } from '../../workspaces/resolve-workspace-kind';
 import { taskName } from '../task-name';
 
 /**
- * Returns all workspaces for a project:
- * - The project-root workspace (from `projects.repositoryWorkspaceId`)
- * - All worktree workspaces linked through non-archived sessions
+ * The workspaces of a group on this machine (@@@group-folders):
+ * - its folders, in the group's order
+ * - every other workspace a non-archived session of the group works in (a worktree, a folder since moved away)
  *
- * Deduplicates by workspace ID (sessions pointing at the project-root workspace
- * are covered by the project-root entry).
+ * Deduplicated by workspace id (sessions in one of the group's folders are covered by that folder's entry).
  */
-export async function getProjectWorkspaces(projectId: string): Promise<ProjectWorkspace[]> {
-  // 1. Resolve the repository workspace ID for this project.
-  const [projectRow] = await db
-    .select({ repositoryWorkspaceId: projects.repositoryWorkspaceId })
-    .from(projects)
-    .where(eq(projects.id, projectId))
-    .limit(1);
-
-  const repositoryWorkspaceId = projectRow?.repositoryWorkspaceId ?? null;
+export async function getGroupWorkspaces(groupChatId: string): Promise<ProjectWorkspace[]> {
+  const folderIds = listFolders(groupChatId).map((folder) => folder.id);
 
   // 2. Load all workspaces linked through non-archived sessions for this project,
   //    joining the session title for display purposes.
@@ -41,19 +34,13 @@ export async function getProjectWorkspaces(projectId: string): Promise<ProjectWo
     })
     .from(sessions)
     .innerJoin(workspaces, eq(sessions.workspaceId, workspaces.id))
-    .where(and(eq(sessions.projectId, projectId), isNull(sessions.archivedAt)));
+    .where(and(eq(sessions.chatId, groupChatId), isNull(sessions.archivedAt)));
 
-  // 3. If repositoryWorkspaceId exists, load it separately so we always have it
-  //    even when no session points to it yet.
-  let repoWsRow: typeof workspaces.$inferSelect | undefined;
-  if (repositoryWorkspaceId) {
-    const [row] = await db
-      .select()
-      .from(workspaces)
-      .where(eq(workspaces.id, repositoryWorkspaceId))
-      .limit(1);
-    repoWsRow = row;
-  }
+  // 3. The folders themselves, so they are listed even when no session works in them yet.
+  const folderRows = folderIds.length
+    ? (await db.select().from(workspaces).where(inArray(workspaces.id, folderIds)))
+        .sort((a, b) => folderIds.indexOf(a.id) - folderIds.indexOf(b.id))
+    : [];
 
   // 4. Count how many non-archived sessions link to each workspace.
   const wsSessionCount = new Map<string, number>();
@@ -65,8 +52,8 @@ export async function getProjectWorkspaces(projectId: string): Promise<ProjectWo
   const seen = new Set<string>();
   const result: ProjectWorkspace[] = [];
 
-  // Project-root workspace comes first.
-  if (repoWsRow) {
+  // The group's folders come first.
+  for (const repoWsRow of folderRows) {
     seen.add(repoWsRow.id);
     result.push({
       id: repoWsRow.id,

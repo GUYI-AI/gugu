@@ -1,7 +1,7 @@
 import type { CreateSessionParams } from '@shared/core/sessions/create-session';
 import { createRPCController, withSender } from '@shared/lib/ipc/rpc';
 import { generateSessionName } from './name-generation/generateSessionName';
-import { getProjectWorkspaces } from './operations/getProjectWorkspaces';
+import { getGroupWorkspaces } from './operations/getGroupWorkspaces';
 import { sessionService } from './session-service';
 import { admitFirstMessages } from './session-life-creation';
 import { firstTurnFilesPlaced, holdFirstTurnForPlacement } from './first-turn-placement';
@@ -40,8 +40,8 @@ export const sessionCreateController = createRPCController({
   },
   createAndProvisionSession: withSender((sender: number, params: CreateSessionParams, options?: CreateOptions) =>
     createAndProvision(params, { ...options, sender })),
-  async getProjectWorkspaces(projectId: string) {
-    return getProjectWorkspaces(projectId);
+  async getGroupWorkspaces(groupChatId: string) {
+    return getGroupWorkspaces(groupChatId);
   },
   // The desktop task page's launch of the session it just created: workspace first, then its creation turns.
   provisionWorkspace: (sessionId: string) => provisionWorkspace(sessionId),
