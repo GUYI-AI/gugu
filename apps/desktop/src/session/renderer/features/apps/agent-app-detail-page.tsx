@@ -49,6 +49,7 @@ export function AgentAppDetailPage({ agentId, backLabel, onBack, onCreate }: {
       {agent ? (
         <fieldset disabled={readOnly} className="contents">
           <InstallSection
+            manageOldVersions
             agentId={agentId}
             agentPayload={agent}
             installOptions={agent.installOptions}

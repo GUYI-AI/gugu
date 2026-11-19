@@ -232,10 +232,18 @@ export class MemoryHeartbeatClient implements DeviceHeartbeatTableClient {
     }
   }
 
-  async rpc(fn: 'cleanup_legacy_gugu_devices', args: Record<string, unknown>) {
+  async rpc(fn: string, args: Record<string, unknown>): Promise<{ data: unknown; error: { message: string } | null }> {
+    if (fn === 'register_gugu_device') {
+      if (this.errorMessage) return { data: null, error: { message: this.errorMessage } }
+      const payload = args.p_device as Record<string, unknown>
+      const old = this.rows.find(row => row.machine_id === payload.machine_id && (row.tier ?? 'production') === payload.tier)
+      const deviceId = old?.device_id ?? String(payload.device_id)
+      if (!payload.reserve_only) this.upserts.push({ row: { ...payload, device_id: deviceId } })
+      return { data: { device_id: deviceId, created: !old }, error: null }
+    }
     expect(fn).toBe('cleanup_legacy_gugu_devices')
     this.cleanupCalls.push(args)
-    return { error: null }
+    return { data: null, error: null }
   }
 }
 
@@ -411,7 +419,7 @@ export class MemoryRuntimeIdentityClient
   /** `get_agent_presence_batch` 的次数与云端那一行:没登记的 id 回一行「在、空闲、没有读数」。 */
   presenceBatchCalls = 0
   presence = new Map<string, Record<string, unknown>>()
-  /** @@@5912 identity lookup(`GET gugu_devices`)的次数 —— 三刀之二判的就是这个账本。 */
+  /** @@@5912 Identity resolution requests (now reserve-only registration); recurring ticks must not repeat them. */
   deviceIdentityLookups = 0
   /** @@@5912 假库里那个清扫者有多久没跑了;用例把它调大来测宿主会不会响亮报故障。 */
   deviceLeaseSweepAgeSeconds: number | null = 0
@@ -464,7 +472,13 @@ export class MemoryRuntimeIdentityClient
     return new MemoryDeviceCommandTable(this.rows, this.options)
   }
 
-  async rpc(fn: string, args: Record<string, unknown>) {
+  async rpc(fn: string, args: Record<string, unknown>): Promise<{ data: unknown; error: { message: string } | null }> {
+    if (fn === 'register_gugu_device') {
+      const payload = args.p_device as Record<string, unknown>
+      if (payload.reserve_only) this.deviceIdentityLookups += 1
+      else this.upserts.push({ row: { ...payload } })
+      return { data: { device_id: String(payload.device_id), created: true }, error: null }
+    }
     if (fn === 'fetch_fair_pending_device_commands') {
       return simulateFairPendingFetch(this.rows, args)
     } else if (fn === 'cleanup_legacy_gugu_devices') {

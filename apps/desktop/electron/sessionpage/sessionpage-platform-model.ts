@@ -67,6 +67,7 @@ import { guguAgentUserIdForSession } from './sessionpage-session-agent'
 import type { PlatformCredentialRuntimeObservation } from './sessionpage-platform-recovery'
 import { hostCatalog, type HostCatalog } from '../../shared/host-localization'
 import { quoteShellArg } from '../session/main/utils/shellEscape'
+import { serverNow } from '@gugu/core/shared/serverClock'
 
 import { proxyPlatformCredentialRequest, withinCredentialDeadline } from './platform-credential-proxy'
 
@@ -1118,7 +1119,7 @@ function scheduleRenewal(sessionId: string, expiresAt: string): void {
     log.error({ sessionId, renewUntil: held.renewUntil }, '平台模型令牌达到续期寿命上限，停止盲续；下一次真实请求时重新签发，没人用则自然过期由 reconciler 结算')
     return
   }
-  const remaining = new Date(expiresAt).getTime() - Date.now()
+  const remaining = new Date(expiresAt).getTime() - serverNow()
   if (!Number.isFinite(remaining) || remaining <= RENEWAL_FLOOR_MS) {
     log.error({ sessionId, expiresAt, remaining }, '平台模型令牌已来不及续期，会话将因凭据过期失败')
     return
@@ -2034,10 +2035,10 @@ export function platformRequestsUseCredentialProxy(sessionId: string): boolean {
   return Boolean(held?.credentialRoute && !held.credentialConfigPath)
 }
 
-/** A held platform generation is usable only while its server expiry is still in the future. */
+/** A held platform generation is usable only while its server expiry is still in the future (on the server's clock). */
 export function platformModelIsExpired(
   platform: Pick<SessionpagePlatformModel, 'expiresAt'>,
-  now = Date.now(),
+  now = serverNow(),
 ): boolean {
   if (!platform.expiresAt) return false
   const expiresAt = Date.parse(platform.expiresAt)

@@ -4,11 +4,11 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import type { NativeSessionRecord } from '@gugu/session-core/session-record/contract'
 import { createReactHarness } from '../../support/testHarness'
-import { useNativeSessionRecord } from '../../../apps/desktop/src/mobile/agent-watch/useNativeSessionRecord'
+import { useNativeSessionRecord } from '../../../apps/desktop/src/components/session-watch/useNativeSessionRecord'
 import { planHistorySync } from '../../../apps/desktop/src/components/assistant-ui/transcript-sync'
 
 const rpc = vi.hoisted(() => ({ read: vi.fn() }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   machineRpc: () => ({ sessionTimeline: { sessionNativeRecord: rpc.read } }),
   onLinkChange: () => () => {},
 }))

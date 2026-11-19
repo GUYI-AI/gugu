@@ -1,8 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { act, useState, type ComponentProps } from 'react';
 import { page } from 'vitest/browser';
-import { SessionConversation } from '@/mobile/agent-watch/SessionConversation';
-import { emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store';
+import { SessionConversation } from '@/components/session-watch/SessionConversation';
+import { emptyAgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
 import { RENDERER_MESSAGE_MENU_OPEN, type RendererMessageMenu } from '@/lib/contentContextMenu';
 import { messageQuoteText } from '@gugu/core/shared/ui/messageQuote';
 import type { TranscriptTurn } from '@gugu/session-chat-ui';
@@ -14,7 +14,7 @@ import '@renderer/index.css';
 
 vi.mock('@gugu/core/cloud/config', async original => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } });
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', async original => ({
+vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({
   ...(await original<object>()),
   SessionpageRpcError: class SessionpageRpcError extends Error {},
   fetchSessionOptions: vi.fn(() => new Promise(() => {})),

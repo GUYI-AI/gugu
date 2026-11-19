@@ -14,7 +14,6 @@ export function SubscriptionsSettingsPage() {
     <SettingsPage>
       <PageHeader
         title={translate('subscriptions.title')}
-        showTitleInSettings
         aside={<Button variant="outline" size="sm" data-testid="subscriptions-refresh" onClick={refreshSpendingPower}>
           {translate('subscriptions.refresh')}
         </Button>}

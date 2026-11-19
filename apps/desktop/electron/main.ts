@@ -1,4 +1,5 @@
 import { releaseCustomModelForwarders } from './session/main/core/agents/custom-model-forwarder'
+import { releaseConversionRouters } from './session/main/core/agents/conversion-routers'
 import { hostAttachmentsEndpoint } from './attachmentUploadTransport'
 import { inspectHtmlPreviewAnnotation } from './session/main/core/browser/html-preview-annotation'
 import { HTML_PREVIEW_ANNOTATION_CHANNEL, type HtmlPreviewAnnotationRequest } from '../src/session/shared/preview/html-preview-annotation'
@@ -4184,7 +4185,7 @@ async function applyAgentModelSelectionOnDevice(input: {
   agentUserId: string
   engineId: string | null
   selection: AgentModelSelection
-}): Promise<{ applied: 'hot' | 'reload' | 'next-session'; warning?: string; nativeSession?: 'preserved' | 'replaced' }> {
+}): Promise<{ applied: 'hot' | 'reload' | 'next-session'; warning?: string; nativeSession?: 'preserved' | 'replaced' | 'route-switched' }> {
   const localAgent = await findLocalAgentByUserId(input.agentUserId, process.env)
   if (!localAgent) throw new Error('这个 Agent 不在当前设备上运行')
   const engineId = catalogEngineIdForAgent(localAgent, engineIdForAgentType) ?? input.engineId
@@ -4623,6 +4624,7 @@ async function stopDesktopOwnedResources(): Promise<void> {
         return null
       })
       releaseCustomModelForwarders()
+      releaseConversionRouters()
       await releasePlatformModelsAtExit(live)
     }, reportShutdownPhase),
   ])
@@ -5010,6 +5012,7 @@ app.whenReady().then(async () => {
           return byNumber
         },
         resolvePrefixes: (input) => resolvePrefixes(input, signal),
+        receivedMessageIds: (prefix) => emdash.receivedMessageIds(context.sessionId, prefix),
         localSessionIds: (sessionIds) => emdash.localSessionIds(sessionIds),
         remote: crossMachine().messageDeps(() => remoteCaller(auth, context), signal),
       })

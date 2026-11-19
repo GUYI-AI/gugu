@@ -39,6 +39,7 @@ export type AgentSourceListProps = {
   onUpdate: (() => void) | undefined;
   onOpenCustom: () => void;
   customEditor: ReactNode | undefined;
+  managedVersions?: ReactNode;
 };
 
 /** Installation is always first; source selection never pretends an absent copy is active. */
@@ -57,7 +58,8 @@ export const AgentSourceList = observer(function AgentSourceList({
   onInstall,
   onUpdate,
   onOpenCustom,
-  customEditor
+  customEditor,
+  managedVersions,
 }: AgentSourceListProps) {
   const { translate } = useSessionMessages();
   const busy = vm.isInstalling || vm.isUpdating || vm.isUninstalling;
@@ -270,6 +272,7 @@ export const AgentSourceList = observer(function AgentSourceList({
           {customEditor}
         </SettingsRow>
       )}
+      {managedVersions}
     </SettingsGroup>
   );
 });

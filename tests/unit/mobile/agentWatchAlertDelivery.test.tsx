@@ -27,7 +27,7 @@ vi.mock('@/platform', () => ({
   },
 }))
 // 假宿主:订上那一刻推一份整的(协议 8);`mocks.onList` 再推一份整的(合并时整份就是它)。
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   subscribeSessionsList: async () => { mocks.onList?.({ sessions: mocks.baseline }) },
   unsubscribeSessionsList: async () => undefined,
   onLinkChange: () => () => undefined,

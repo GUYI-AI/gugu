@@ -46,7 +46,7 @@ extension GuguIOSCloudBroker {
                       let url = URL(string: relay), url.scheme == "https", url.host != nil, url.user == nil, url.password == nil,
                       url.query == nil, url.fragment == nil, let token = value["token"] as? String, !token.isEmpty,
                       !token.contains("\r"), !token.contains("\n"), let model = value["model"] as? String, !model.isEmpty,
-                      let expiry = value["expires_at"] as? String, let expires = Self.modelExpiry(expiry), expires > Date() else {
+                      let expiry = value["expires_at"] as? String, let expires = Self.modelExpiry(expiry), expires > GuguServerClock.shared.now() else {
                     throw Self.failure("invalid_model_lease", "Model issuer returned an invalid native grant")
                 }
                 // Existing modelAccess.ts injects relay root + /v1; preserve a
@@ -69,7 +69,7 @@ extension GuguIOSCloudBroker {
         modelAccess(binding: binding, body: ["action": "renew", "session_id": grant.leaseId]) { result in
             completion(result.flatMap { raw in Result {
                 guard let value = raw as? [String: Any], let expiry = value["expires_at"] as? String,
-                      let expires = Self.modelExpiry(expiry), expires > Date(), grant.lease.ownerId == binding.ownerId else {
+                      let expires = Self.modelExpiry(expiry), expires > GuguServerClock.shared.now(), grant.lease.ownerId == binding.ownerId else {
                     throw Self.failure("invalid_model_lease", "Model renewal did not return a valid expiry")
                 }
                 let old = grant.lease

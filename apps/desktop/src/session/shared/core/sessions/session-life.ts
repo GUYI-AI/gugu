@@ -22,7 +22,7 @@ export interface LifeView {
   /** The lifecycle owner observed a process exit; absent on older hosts. */
   readonly processExited?: boolean;
   /** Only for an attempt started by a reconfigure: did it continue the provider session or start a new one. */
-  readonly nativeSession: 'preserved' | 'replaced' | null;
+  readonly nativeSession: 'preserved' | 'replaced' | 'route-switched' | null;
 }
 
 /** Inputs held by a failed start stay queued until the person retries. Sign-out is not a send failure. */

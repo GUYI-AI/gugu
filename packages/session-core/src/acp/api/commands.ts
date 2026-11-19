@@ -62,6 +62,11 @@ export const acpStartInputSchema = z.object({
   sourceSessionId: z.string().optional(),
   /** Provider session to fork through ACP session/fork. Never persisted under conversationId. */
   forkFromProviderSessionId: z.string().optional(),
+  /**
+   * The persistent fork continues this same conversation and agent (a billing-route switch), not a new
+   * agent: no fork handoff, and the host's resume facts (no replay, turn numbering) apply as on a resume.
+   */
+  forkKeepsAgent: z.boolean().optional(),
   projectId: z.string(),
   providerId: z.string(),
   workspaceId: z.string(),

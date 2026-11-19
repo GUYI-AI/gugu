@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Device } from '@gugu/core/shared/types/chat'
-import { directoryMachines, visibleMachines, workspaceDevices } from '../../../apps/desktop/src/mobile/agent-watch/machine-list'
+import { directoryMachines, visibleMachines, workspaceDevices } from '../../../apps/desktop/src/components/session-watch/machine-list'
 import { isAssistantHome } from '../../../apps/desktop/src/lib/assistantHome'
 
 // #7199 手机「任务」tab 的机器列表:个人助理住的那台两种模式都不列(product spec「它住在哪」)。

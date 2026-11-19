@@ -13,13 +13,19 @@ const views = observable.map<string, LifeView>();
 const requested = new Set<string>();
 const listening = new Set<string>();
 
+const RELOAD_NOTICE = {
+  preserved: 'chat.reloadPreserved',
+  replaced: 'chat.reloadReplaced',
+  'route-switched': 'chat.reloadRouteSwitched',
+} as const;
+
 function accept(view: LifeView): void {
   const current = views.get(view.sessionId);
   if (current && current.version >= view.version) return;
   runInAction(() => views.set(view.sessionId, view));
   // A first snapshot may contain an old reload result. Only a new completion gets a transient notice.
   if (current && view.kind === 'ready' && view.nativeSession && current.nativeSession !== view.nativeSession) {
-    toast({ title: translateSessionMessage(view.nativeSession === 'preserved' ? 'chat.reloadPreserved' : 'chat.reloadReplaced'), tier: 'info' });
+    toast({ title: translateSessionMessage(RELOAD_NOTICE[view.nativeSession]), tier: 'info' });
   }
 }
 

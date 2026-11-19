@@ -1,6 +1,7 @@
 import { windowResult, matchesAgentStatus } from '../../desktop/electron/mcp/list-window.mjs'
 import { effectiveGroupRules, groupRulesLedgerFor, groupRulesVersion } from '../../../packages/core/src/local/agent/groupRulesDelivery.ts'
 import { uuid } from './phone-agent-store.mjs'
+import { matchIdPrefix, uuidPrefixRange } from '../../../packages/core/src/shared/idPrefix.ts'
 
 const row = (value) => Array.isArray(value) ? value[0] : value
 const result = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value) }], details: value })
@@ -56,6 +57,23 @@ export function createPhoneChatAccess({ agent, cloud, store, env }) {
     if (!Array.isArray(data)) throw new Error('聊天成员列表未返回列表')
     return data
   }
+  // A msg id written as its first 8+ characters (idPrefix.ts, the desktop's matcher): matched in this chat, among what this
+  // agent may read; only the full id goes on.
+  const messageId = async (value, id, label) => {
+    const written = bare(value, 'msg')
+    const range = typeof written === 'string' ? uuidPrefixRange(written) : null
+    if (!range) return uuid(written, label)
+    const { data, error } = await cloud.chat.from('messages').select('id,content,created_at').eq('chat_id', id)
+      .gte('id', range.lo).lte('id', range.hi).order('created_at', { ascending: false }).limit(11)
+    if (error) throw new Error(error.message)
+    const readable = await Promise.all(data.map((message) => cloud.rpc('chat', 'can_read_message', { p_message_id: message.id, p_user_id: agent.agentUserId })))
+    const rows = data.filter((_message, index) => readable[index] === true)
+    return matchIdPrefix({
+      kind: 'msg', id: written, rows, keyOf: (message) => message.id, noun: 'messages',
+      describe: (message) => `${JSON.stringify(String(message.content ?? '').slice(0, 40))}, ${message.created_at}`,
+      notFound: (address) => `No message matches ${address} in this chat; message_history lists message ids`,
+    })
+  }
   const facts = async (id) => row(await cloud.rpc('chat', 'chat_facts', { p_chat_id: id, p_as_user_id: agent.agentUserId }))
   const rules = (id) => effectiveGroupRules(id, facts)
   const ledger = groupRulesLedgerFor(env)
@@ -67,7 +85,7 @@ export function createPhoneChatAccess({ agent, cloud, store, env }) {
     const current = await rules(id)
     if (current.trim() && (await ledger.read(agent.agentUserId, id))?.version !== groupRulesVersion(current)) throw new Error('发送前必须先调用 message_rules 阅读当前群规')
   }
-  return { chats, chatId, userId, members, facts, rules, ledger, beforeWrite }
+  return { chats, chatId, userId, messageId, members, facts, rules, ledger, beforeWrite }
 }
 
 /** Reads always use the agent-as RPCs; the owner JWT never broadens the agent's history. */
@@ -88,7 +106,7 @@ export function phoneChatReadTools({ agent, cloud, store, env }) {
     if (args.before_seq !== undefined && !Number.isSafeInteger(args.before_seq)) throw new Error('before_seq 必须是消息返回的 seq 整数')
     const data = search
       ? await cloud.rpc('chat', 'message_search_as', { ...query, p_query: String(args.query ?? '') })
-      : await cloud.rpc('chat', 'message_history_as', { ...query, p_thread_root_id: args.thread_root_id ? uuid(bare(args.thread_root_id, 'msg'), 'thread_root_id') : null })
+      : await cloud.rpc('chat', 'message_history_as', { ...query, p_thread_root_id: args.thread_root_id ? await access.messageId(args.thread_root_id, id, 'thread_root_id') : null })
     if (!Array.isArray(data)) throw new Error('消息历史未返回列表')
     return result(encodePhoneChatRows(data, true))
   }

@@ -18,7 +18,8 @@ describe('session input failure notices', () => {
     expect(h.notify).toHaveBeenCalledTimes(1);
     const shown = h.notify.mock.calls[0]![0];
     expect(shown.title).toMatch(/Codex/);
-    expect(shown.title).toMatch(/升级|Update/);
+    expect(shown.title).not.toMatch(/升级|Update/);
+    expect(shown.title).toMatch(/退出|exited/);
     expect(JSON.stringify(shown)).not.toMatch(/app-server|code=|signal=|原始错误/);
     expect(h.diagnostic).toHaveBeenCalledWith('catalog:codex', raw);
   });

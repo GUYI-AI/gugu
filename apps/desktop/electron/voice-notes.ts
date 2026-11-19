@@ -15,6 +15,7 @@ import {
   type IssuedModelAccess,
 } from './model-access'
 import { createLogger } from './lib/logger'
+import { serverNow } from '@gugu/core/shared/serverClock'
 import {
   VOICE_NOTE_MODEL_ID,
   VOICE_NOTE_MODEL_PROTOCOL,
@@ -49,7 +50,7 @@ function netFetch(url: string, init: RequestInit): Promise<Response> {
 
 async function ticketFor(authProvider: RuntimeAuthProvider, agentUserId: string): Promise<Held> {
   const current = held.get(agentUserId)
-  if (current && Date.parse(current.access.expiresAt) - Date.now() > TICKET_MARGIN_MS) return current
+  if (current && Date.parse(current.access.expiresAt) - serverNow() > TICKET_MARGIN_MS) return current
   const pending = issuing.get(agentUserId)
   if (pending) return pending
   const next = (async () => {

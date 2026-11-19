@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { createChatContext, createChatState, createChatView } from '@gugu/session-chat-ui';
-import { nativeUserAttachmentCommands } from '@/mobile/agent-watch/native-user-attachments';
+import { nativeUserAttachmentCommands } from '@/components/session-watch/native-user-attachments';
 import type { TranscriptTurn } from '@gugu/session-core/acp/client';
 
 // A restarted task: nothing runs, its turns come from the archive and the image is read by its attachment id alone.

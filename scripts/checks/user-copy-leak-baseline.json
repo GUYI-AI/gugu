@@ -132,7 +132,7 @@
   {
     "rule": "copy-leaks-raw-error-field",
     "file": "packages/session-runtime/src/acp-agents/runtime/session-manager.ts",
-    "count": 2
+    "count": 1
   },
   {
     "rule": "copy-leaks-raw-error-slot",
