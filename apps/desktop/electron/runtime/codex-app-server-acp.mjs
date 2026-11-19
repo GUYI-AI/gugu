@@ -9,6 +9,7 @@ import { codexFastConfigOptions, codexFastTier, codexTierForTurn } from './codex
 //   Gugu ACP runtime <-> this bridge (started with process.execPath by session-plugins impl/codex) <-> `codex app-server --stdio`.
 import { execFile } from '../../../../packages/core/src/local/childProcess.ts'
 import { randomUUID } from 'node:crypto'
+import { codexSpawnDiagnostic, codexVersionFromUserAgent } from '@gugu/core/local/codex-spawn-diagnostic.mjs'
 import { appendFileSync, readFileSync, statSync } from 'node:fs'
 import { createJsonlReader, jsonlParseError } from './jsonl-reader.mjs'
 import { CODEX_PREPARATION_PREFIX, retryCodexPreparation, codexBackfillWaiting } from '../../../../packages/core/src/local/codex-initialize.mjs'
@@ -882,6 +883,9 @@ async function startAppAttempt(servers) {
       + 'codex sizes them with its unknown-model window\n',
     )
   }
+  process.stderr.write('[gugu-codex-runtime] ' + JSON.stringify(codexSpawnDiagnostic({
+    executable: codexBin, appVersion: process.env.GUGU_APP_VERSION, mode: 'acp-stdio', phase: 'spawn',
+  })) + '\n')
   appServer = spawnOwnedChild(codexBin, [
     'app-server',
     '--stdio',
@@ -907,6 +911,10 @@ async function startAppAttempt(servers) {
       clientInfo: { name: 'gugu', title: 'Gugu', version: '0' },
       capabilities: { experimentalApi: true },
     }, null)
+    process.stderr.write('[gugu-codex-runtime] ' + JSON.stringify(codexSpawnDiagnostic({
+      executable: codexBin, nativeVersion: codexVersionFromUserAgent(initialized?.userAgent),
+      appVersion: process.env.GUGU_APP_VERSION, mode: 'acp-stdio', phase: 'initialized', versionSource: 'initialize',
+    })) + '\n')
     const version = String(initialized?.userAgent ?? '').match(/^[^/]+\/(\d+)\.(\d+)\.(\d+)(?:[\s(/]|$)/)
     autoReviewSupported = !!version && (Number(version[1]) > 0 || Number(version[2]) > 156 || (Number(version[2]) === 156 && Number(version[3]) >= 1))
   } catch (error) {

@@ -16,7 +16,9 @@ import { findSessionHostBridge } from '@renderer/lib/electron-api';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { localizeEffortOptions } from '../session-config/effort-options';
 import { sessionStartupFailures } from '../stores/session-startup-failures';
-import { useTerminalModelMenuRequest } from './terminal-model-menu-request';
+import { requestTerminalModelMenu, useTerminalModelMenuRequest } from './terminal-model-menu-request';
+import { codexStartupKind, isCodexProviderStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
+import { sessionStartupFailureCopy } from '../session-input-failure-copy';
 import { usePlatformModelCatalog } from '../session-config/platform-model-catalog';
 import { composerModelFooter, useComposerModelOptions } from '../session-config/use-composer-model-options';
 import { useCodexPreparationNotice } from '@renderer/lib/stores/use-codex-preparation-notice';
@@ -164,12 +166,20 @@ export function TerminalModelMenu({
           ...(target.effort !== undefined ? { effort: target.effort } : {}),
         });
         if (!result.ok) {
+          const startupReason = result.startupReason ?? codexStartupKind(result.error);
+          const providerFailure = isCodexProviderStartupKind(startupReason);
+          if (providerFailure) setPending(null);
           // 原话直接给用户 —— 宿主已经把记录退回原设置,这句话说的是「为什么没换成」。
           showConfirm({
             title: translate('chat.modelSwitchFailedTitle', { target: target.label }),
-            description: result.error ?? '',
-            confirmLabel: translate('common.close'),
-            onSuccess: () => undefined,
+            description: startupReason ? sessionStartupFailureCopy({ startupReason }, translate) : result.error ?? '',
+            confirmLabel: translate(providerFailure ? 'taskError.codexChooseModel' : 'common.close'),
+            onSuccess: () => {
+              if (providerFailure) {
+                setPending(null);
+                requestTerminalModelMenu(sessionId);
+              }
+            },
           });
           return false;
         }
