@@ -166,9 +166,22 @@ void app.whenReady().then(async () => {
     const chromium = browser;
     browserExit = new Promise<void>(resolve => { chromium.once('error', error => { fault = error; }); chromium.once('close', () => { mark('browser-closed'); exited = true; resolve(); }); });
     const until = async (condition: () => boolean | Promise<boolean>) => {
-      const deadline = Date.now() + 12000;
-      while (!await condition()) { if (fault) throw fault; if (exited) throw new Error('Chromium exited: ' + stderr);
-        if (Date.now() > deadline) { mark('wait-timeout'); throw new Error('Pipeline timed out: ' + stderr); } await pause(20); }
+      let active = true, timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          (async () => {
+            while (active) {
+              if (fault) throw fault;
+              if (exited) throw new Error('Chromium exited: ' + stderr);
+              if (await condition()) return;
+              if (active) await pause(20);
+            }
+          })(),
+          new Promise<never>((_, reject) => { timer = setTimeout(() => {
+            mark('wait-timeout'); reject(new Error('Pipeline timed out: ' + stderr));
+          }, 12000); }),
+        ]);
+      } finally { active = false; if (timer !== undefined) clearTimeout(timer); }
     };
     phase = 'first-paint'; mark('first-wait-entered');
     await until(() => paints.some(paint => paint.sequence === 1) && outcomes.length > 0);
