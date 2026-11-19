@@ -61,10 +61,6 @@ const devices: DevicesContextValue = { devices: [machine], loading: false, error
   refresh: async () => {}, rename: async () => {}, remove: async () => {}, listBoundAgents: async () => [] }
 type Destination = { deviceId: string; session: SessionpageSessionSummary; innerSidebarEntry?: string }
 async function openActualAgentPicker() {
-  const toggle = page.getByTestId('phone-composer-menu-toggle')
-  const button = document.querySelector<HTMLButtonElement>('[data-testid="phone-composer-menu-toggle"]')!
-  if (button.getAttribute('aria-expanded') === 'false') await toggle.click()
-  await expect.element(toggle).toHaveAttribute('aria-expanded', 'true')
   await page.getByTestId('phone-room-agents').click()
 }
 const destinations: Destination[] = []
