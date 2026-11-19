@@ -9,6 +9,8 @@ type RouterOptions = {
   scratchRoot: string;
   harness: ConversionHarness;
   upstream: string;
+  /** The custom-model forwarder's token for this app process; the router sends it upstream to the local relay. */
+  relayKey: string;
 };
 
 export type ConversionRouter = {
@@ -20,7 +22,6 @@ export type ConversionRouter = {
 };
 
 const formats = { claude: 'openai_chat', codex: 'chat' } satisfies Record<ConversionHarness, string>;
-const placeholderKey = 'gugu-conversion-placeholder';
 const startupTimeoutMs = 10_000;
 const stopTimeoutMs = 2_000;
 
@@ -89,8 +90,8 @@ function readBoundEndpoint(stdout: NonNullable<ChildProcess['stdout']>): Promise
   });
 }
 
-function providerConfigArgs(harness: ConversionHarness, upstream: URL): string[] {
-  if (harness === 'claude') return ['--base-url', upstream.href, '--api-key', placeholderKey];
+function providerConfigArgs(harness: ConversionHarness, upstream: URL, relayKey: string): string[] {
+  if (harness === 'claude') return ['--base-url', upstream.href, '--api-key', relayKey];
   // Codex's field mode sets a default model that the router would force onto every request.
   const config = [
     'model_provider = "gugu_conversion"',
@@ -100,12 +101,13 @@ function providerConfigArgs(harness: ConversionHarness, upstream: URL): string[]
     'wire_api = "responses"',
     'requires_openai_auth = true',
   ].join('\n');
-  return ['--config', JSON.stringify({ auth: { OPENAI_API_KEY: placeholderKey }, config })];
+  return ['--config', JSON.stringify({ auth: { OPENAI_API_KEY: relayKey }, config })];
 }
 
 /**
  * Runs the pinned foreground converter against a local relay in a private directory.
- * The stock binary has no ingress authentication. Only fixture code uses this launcher for now.
+ * The stock binary has no ingress authentication (owner 11-19: accepted for user-configured third-party models). Its
+ * upstream is gugu's custom-model forwarder, so the router holds only the forwarder's per-process token, never a key.
  */
 export async function launchConversionRouter(options: RouterOptions): Promise<ConversionRouter> {
   const upstream = new URL(options.upstream);
@@ -139,7 +141,7 @@ export async function launchConversionRouter(options: RouterOptions): Promise<Co
     await chmod(directory, 0o700);
     await configure([
       'add', '--id', 'gugu-local', '--name', 'Gugu conversion',
-      ...providerConfigArgs(options.harness, upstream),
+      ...providerConfigArgs(options.harness, upstream, options.relayKey),
       '--api-format', formats[options.harness],
     ]);
     await configure(['switch', 'gugu-local']);
@@ -171,6 +173,7 @@ export async function launchConversionRouter(options: RouterOptions): Promise<Co
 
 type RouterEntry = {
   upstream: string;
+  relayKey: string;
   started: Promise<ConversionRouter>;
   users: number;
   idleTimer?: ReturnType<typeof setTimeout>;
@@ -180,6 +183,7 @@ type RouterEntry = {
 export class ConversionRouterPool {
   private readonly entries = new Map<string, RouterEntry>();
   private readonly installation: Pick<RouterOptions, 'executable' | 'scratchRoot'>;
+  get executable(): string { return this.installation.executable; }
   private readonly idleMs: number;
   private readonly reportCleanupError: (error: unknown) => void;
   private closing?: Promise<void>;
@@ -198,20 +202,21 @@ export class ConversionRouterPool {
     harness: ConversionHarness,
     connectionId: string,
     upstream: string,
+    relayKey: string,
   ): Promise<{ router: ConversionRouter; release: () => void }> {
     if (this.closing) throw new Error('The conversion router pool is closing');
     const key = JSON.stringify([harness, connectionId]);
     let entry = this.entries.get(key);
     if (entry?.stopping) {
       await entry.stopping;
-      return this.acquire(harness, connectionId, upstream);
+      return this.acquire(harness, connectionId, upstream, relayKey);
     }
-    if (entry && entry.upstream !== upstream) {
+    if (entry && (entry.upstream !== upstream || entry.relayKey !== relayKey)) {
       throw new Error('The conversion route changed while in use');
     }
     if (!entry) {
-      const started = launchConversionRouter({ ...this.installation, harness, upstream });
-      entry = { upstream, started, users: 0 };
+      const started = launchConversionRouter({ ...this.installation, harness, upstream, relayKey });
+      entry = { upstream, relayKey, started, users: 0 };
       this.entries.set(key, entry);
       const created = entry;
       const forget = () => {
@@ -255,4 +260,32 @@ export class ConversionRouterPool {
     entry.stopping ??= entry.started.then((router) => router.stop(), () => {});
     return entry.stopping;
   }
+}
+
+/** Where the pinned binary is: GUGU_CC_SWITCH_BIN (development) > the packaged resources > beside the app (server package, `build:cc-switch`). */
+export function ccSwitchCandidates(input: {
+  env: NodeJS.ProcessEnv;
+  platform: NodeJS.Platform;
+  arch: string;
+  isPackaged: boolean;
+  resourcesPath: string | undefined;
+  appPath: string;
+}): string[] {
+  const exe = input.platform === 'win32' ? 'cc-switch.exe' : 'cc-switch';
+  const os = input.platform === 'darwin' ? 'mac' : input.platform === 'win32' ? 'win' : 'linux';
+  return [
+    input.env.GUGU_CC_SWITCH_BIN?.trim() || '',
+    input.isPackaged && input.resourcesPath ? join(input.resourcesPath, 'cc-switch-bundle', exe) : '',
+    join(input.appPath, 'cc-switch-bundle', exe),
+    join(input.appPath, 'cc-switch-bundle', `${os}-${input.arch}`, exe),
+  ].filter(Boolean);
+}
+
+export function isConversionHarness(providerId: string): providerId is ConversionHarness {
+  return Object.hasOwn(formats, providerId);
+}
+
+/** The base URL each harness's own client appends its request path to. */
+export function harnessBaseUrl(harness: ConversionHarness, router: Pick<ConversionRouter, 'endpoint'>): string {
+  return harness === 'codex' ? `${router.endpoint}/v1` : router.endpoint;
 }

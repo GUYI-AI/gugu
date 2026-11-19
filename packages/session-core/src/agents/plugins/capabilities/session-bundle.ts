@@ -1,4 +1,4 @@
-import type { HarnessPlatform } from './platform';
+import type { HarnessPlatform, HarnessWireProtocol } from './platform';
 import type { IPlatformModelBehavior } from './platform-model';
 import type { McpServerOwner } from '../../../mcp/session-toggle';
 import type { McpServer } from '@agentclientprotocol/sdk';
@@ -771,7 +771,12 @@ export interface SessionBundleDescriptor {
   /** 平台额度怎么送进这一家(见 `HarnessPlatform`)。**必答**:没接的给 `{ kind: 'unsupported' }`。 */
   platform: HarnessPlatform;
   /** The legacy custom connection can supply credentials while the CLI selects its own model. */
-  customModel?: { modelOptional: true; evidence: string };
+  customModel?: {
+    modelOptional?: true;
+    /** Upstream protocols the bundled local router (cc-switch-cli) turns into this harness's own wire protocol. */
+    convertFrom?: readonly HarnessWireProtocol[];
+    evidence: string;
+  };
   /** Static credential delivery/recovery capability; lease state belongs to the host runtime. */
   credentialLifecycle?: SessionCredentialLifecycleBySurface;
   /** 见 {@link AcpConfigRoot}。 */
@@ -2026,7 +2031,11 @@ const sessionBundleDescriptorSchema: z.ZodType<SessionBundleDescriptor> = z.obje
     denied: z.array(z.string().regex(/^[A-Z][A-Z0-9_]*$/)).optional(),
   }).strict().optional(),
   /** ⚠️ 同上:少了这一条,`platform` 会被 zod 静默剥掉(而它是必答字段)。 */
-  customModel: z.object({ modelOptional: z.literal(true), evidence: z.string().min(1) }).strict().optional(),
+  customModel: z.object({
+    modelOptional: z.literal(true).optional(),
+    convertFrom: z.array(z.enum(['anthropic-messages', 'openai-responses', 'openai-chat-completions', 'gemini-generate-content'])).min(1).optional(),
+    evidence: z.string().min(1),
+  }).strict().optional(),
   platform: harnessPlatformSchema,
   /**
    * ⚠️ 同上:少了这一条,`mcpToggle` 会被 zod **静默剥掉** —— 而症状极具迷惑性:

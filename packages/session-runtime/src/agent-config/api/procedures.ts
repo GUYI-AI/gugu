@@ -24,6 +24,7 @@ export function createAgentConfigProcedures(runtime: AgentConfigRuntime) {
     saveCustomModel: unsupportedConnectionOperation,
     removeCustomModel: unsupportedConnectionOperation,
     testCustomModel: unsupportedConnectionOperation,
+    detectCustomModelProtocols: unsupportedConnectionOperation,
     listConnections: unsupportedConnectionOperation,
     createConnection: unsupportedConnectionOperation,
     selectConnection: unsupportedConnectionOperation,

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { normalizeModelBaseUrl, modelProtocolSchema, type CustomModelConnection, type CustomModelEntry, type CustomModelMeta } from '@gugu/session-core/models/custom-model';
 import { providerPresets } from '@gugu/session-core/models/provider-presets';
 import { Button } from '@renderer/lib/ui/button';
@@ -10,6 +10,7 @@ import {
   ComboboxCollection, ComboboxItem, ComboboxEmpty,
 } from '@renderer/lib/ui/combobox';
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
+import type { CustomModelProtocolProbe } from '@gugu/session-core/workspace-server/agent-config';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { openExternalLinkInBrowser } from '@renderer/lib/open-external-link';
 import { errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
@@ -46,10 +47,42 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
   const [accountCreating, setAccountCreating] = useState(false);
   const [failure, setFailure] = useState('');
   const [testResult, setTestResult] = useState('');
+  const [probe, setProbe] = useState<{ input: string; result?: CustomModelProtocolProbe; error?: string } | null>(null);
+  // A typed custom address and a key are probed for the protocols they really answer (owner 11-19).
+  let probeInput: { baseUrl: string; apiKey: string } | null = null;
+  try { if (!preset && apiKey && endpoints[0]?.baseUrl) probeInput = { baseUrl: normalizeModelBaseUrl(endpoints[0].baseUrl), apiKey }; } catch { /* the address line reports it */ }
+  const probeKey = probeInput ? JSON.stringify(probeInput) : '';
+  useEffect(() => {
+    if (!probeInput) { setProbe(null); return; }
+    const input = probeInput;
+    const timer = setTimeout(() => {
+      setProbe({ input: probeKey });
+      void (async () => {
+        try {
+          const result = await (await getAgentConfigRuntimeClient(machine)).detectCustomModelProtocols({ ...input, ...(models[0] ? { modelId: models[0] } : {}) });
+          if (!result.success) throw new Error(errorText(result.error));
+          setProbe((current) => current?.input === probeKey ? { input: probeKey, result: result.data } : current);
+        } catch (error) {
+          setProbe((current) => current?.input === probeKey ? { input: probeKey, error: errorText(error) } : current);
+        }
+      })();
+    }, 800);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the probe follows the typed address, key and first model
+  }, [probeKey, machine, models[0]]);
+  const detected = probe?.input === probeKey ? probe.result?.endpoints ?? [] : [];
   let normalized: CustomModelMeta['endpoints'] | null = null;
   let addressProblem = '';
-  try { normalized = endpoints.map((endpoint) => ({ ...endpoint, baseUrl: normalizeModelBaseUrl(endpoint.baseUrl) })); }
-  catch (error) { addressProblem = errorText(error); }
+  try {
+    const typed = endpoints.map((endpoint) => ({ ...endpoint, baseUrl: normalizeModelBaseUrl(endpoint.baseUrl) }));
+    // What the probe found replaces the first typed address; further addresses added by hand stay.
+    normalized = detected.length ? [...detected, ...typed.slice(1).filter((entry) => !detected.some(({ protocol }) => protocol === entry.protocol))] : typed;
+  } catch (error) { addressProblem = errorText(error); }
+  const probeFailure = probe?.input === probeKey && probe.result && !probe.result.endpoints.length
+    ? probe.result.failures.map(({ step, reason }) => `${translate(step === 'models' ? 'customModels.probeModels' : `customModels.${step}`)}: ${translate(
+      reason === 'unauthorized' ? 'customModels.refused' : reason === 'no-model' ? 'customModels.probeNoModel'
+        : reason === 'no-list' ? 'customModels.noList' : reason === 'refused' ? 'customModels.probeRejected' : 'customModels.unreachable')}`).join(' ')
+    : probe?.input === probeKey ? probe.error : undefined;
   const source = normalized && (apiKey ? { apiKey, endpoints: normalized }
     : connection?.keySaved ? { connectionId: connection.id, endpoints: normalized } : null);
   const updateEndpoint = (index: number, patch: Partial<CustomModelMeta['endpoints'][number]>) => {
@@ -139,11 +172,15 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
           {preset ? <p className="subscription-connection-description">{preset.endpoints.map(({ protocol }) => translate(`customModels.${protocol}`)).join(' / ')}</p>
             : endpoints.map((endpoint, index) => <div key={index} className="flex flex-col gap-2">
               <label>{translate('customModels.address')}<Input data-testid={`custom-model-address-${index}`} type="url" required value={endpoint.baseUrl} onChange={(event) => updateEndpoint(index, { baseUrl: event.target.value })} /></label>
-              <label>{translate('customModels.protocol')}<Select value={endpoint.protocol} onValueChange={(value) => { if (value) updateEndpoint(index, { protocol: value }); }}>
-                <SelectTrigger data-testid={`custom-model-protocol-${index}`}><SelectValue>{translate(`customModels.${endpoint.protocol}`)}</SelectValue></SelectTrigger>
-                <SelectContent>{modelProtocolSchema.options.map((protocol) => <SelectItem key={protocol} value={protocol}>{translate(`customModels.${protocol}`)}</SelectItem>)}</SelectContent>
-              </Select></label>
-              {normalized?.[index] ? <p className="subscription-connection-description">{translate('customModels.savedAs', { address: normalized[index]!.baseUrl })}</p> : null}
+              {index === 0 && (detected.length || (probeInput && probe?.input === probeKey && !probe.result && !probe.error))
+                ? <label>{translate('customModels.protocol')}<Input data-testid="custom-model-protocol-detected" readOnly disabled
+                  value={detected.length ? detected.map(({ protocol }) => translate(`customModels.${protocol}`)).join(' / ') : translate('customModels.probing')} /></label>
+                : <label>{translate('customModels.protocol')}<Select value={endpoint.protocol} onValueChange={(value) => { if (value) updateEndpoint(index, { protocol: value }); }}>
+                  <SelectTrigger data-testid={`custom-model-protocol-${index}`}><SelectValue>{translate(`customModels.${endpoint.protocol}`)}</SelectValue></SelectTrigger>
+                  <SelectContent>{modelProtocolSchema.options.map((protocol) => <SelectItem key={protocol} value={protocol}>{translate(`customModels.${protocol}`)}</SelectItem>)}</SelectContent>
+                </Select></label>}
+              {index === 0 && probeFailure ? <p className="subscription-error" role="alert" data-testid="custom-model-probe-failure">{probeFailure}</p> : null}
+              {!(index === 0 && detected.length) && normalized?.[index] ? <p className="subscription-connection-description">{translate('customModels.savedAs', { address: normalized[index]!.baseUrl })}</p> : null}
             </div>)}
           <label>API Key<span className="flex items-center gap-2"><Input data-testid="custom-model-key" type="password" required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} placeholder={connection?.keySaved ? translate('customModels.keySaved') : undefined} onChange={(event) => { setApiKey(event.target.value); setTestResult(''); }} /><Button type="button" size="sm" variant="outline" disabled={!source || !!busy} onClick={() => { void test(); }}>{translate(busy === 'test' ? 'customModels.testing' : 'customModels.test')}</Button></span></label>
           {testResult && <p className="subscription-connection-description" role="status">{testResult}</p>}

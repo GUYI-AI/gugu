@@ -1,0 +1,25 @@
+{
+  "version": "5.11.4",
+  "assets": {
+    "darwin-x64": {
+      "asset": "cc-switch-cli-v5.11.4-darwin-x64.tar.gz",
+      "sha256": "52e3c6962e965596bd1717be126581e26f810c788bd68b1595de9f0bc85edd38"
+    },
+    "darwin-arm64": {
+      "asset": "cc-switch-cli-v5.11.4-darwin-arm64.tar.gz",
+      "sha256": "aa77310a4947535941e131a5980bd0d63204edcb6b4545c11429d11f45937988"
+    },
+    "linux-x64": {
+      "asset": "cc-switch-cli-v5.11.4-linux-x64.tar.gz",
+      "sha256": "6c165ca6461f200aea1f739e4dad3be3ebacd21de864895679046ca99cd44024"
+    },
+    "linux-arm64": {
+      "asset": "cc-switch-cli-v5.11.4-linux-arm64.tar.gz",
+      "sha256": "f1357e8e242170e4166a4fb04438d824ccbd68c027e6293226de69c17dac761a"
+    },
+    "win32-x64": {
+      "asset": "cc-switch-cli-v5.11.4-windows-x64.zip",
+      "sha256": "cfafaa7e0070d5f2498c14c427639f3473c6a17eb0fc7e1d1d79d7950421288a"
+    }
+  }
+}

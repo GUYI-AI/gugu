@@ -3,15 +3,15 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
 import {
-  customModelRefFromOption, matchCustomModel,
+  customModelRefFromOption, detectModelProtocol, matchCustomModel, normalizeModelBaseUrl,
   type CustomModelConnection, type CustomModelMeta, type CustomModelRef, type ModelProtocol, type PiCustomModelProvider,
 } from '@gugu/session-core/models/custom-model';
-import type { ConnectionModelList, SaveCustomModel, TestCustomModel } from '@gugu/session-core/workspace-server/agent-config';
+import type { ConnectionModelList, CustomModelProtocolProbe, DetectCustomModelProtocols, SaveCustomModel, TestCustomModel } from '@gugu/session-core/workspace-server/agent-config';
 import { providerAccountRegistry as registry } from '@main/core/provider-accounts/provider-account-registry-instance';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
 import { migrateCustomModels } from './custom-model-migration';
-import { listEndpointModels, verifyEndpointModel } from './connection-endpoint-probe';
+import { listEndpointModels, probeEndpointProtocols, verifyEndpointModel } from './connection-endpoint-probe';
 
 const namespace = 'models:custom';
 const migratedDatabases = new WeakSet<object>();
@@ -83,6 +83,14 @@ export async function testCustomModel(input: TestCustomModel): Promise<Connectio
     : result;
 }
 
+/** Probes a typed address and key for the protocols it answers; runs on the machine whose key it is. */
+export async function detectCustomModelProtocols(input: DetectCustomModelProtocols): Promise<CustomModelProtocolProbe> {
+  const probe = await probeEndpointProtocols({
+    baseUrl: normalizeModelBaseUrl(input.baseUrl), apiKey: input.apiKey, modelId: input.modelId, hint: detectModelProtocol(input.baseUrl),
+  });
+  return { ...probe, endpoints: probe.endpoints.map((endpoint) => ({ ...endpoint, baseUrl: normalizeModelBaseUrl(endpoint.baseUrl) })) };
+}
+
 export type ResolvedCustomModel = {
   connectionId: string;
   name: string;
@@ -152,11 +160,16 @@ async function readSelectedCustomModel(providerId: string, ref: CustomModelRef, 
   const nativeProtocol = providerId === 'antigravity' ? 'gemini-generate-content' : platform?.kind === 'supported' ? platform.wireProtocol : undefined;
   const matched = matchCustomModel({
     nativeProtocol, protocols: platform?.kind === 'supported' ? platform.protocols : undefined,
+    convertFrom: descriptor?.customModel?.convertFrom,
     connection: { endpoints: meta.endpoints, keySaved: Boolean(apiKey) },
     hasModel: Boolean(ref.modelId), allowDefaultModel: descriptor?.customModel?.modelOptional,
   });
   if (matched.reason) throw new Error(`Custom model unavailable: ${matched.reason}`);
-  return { meta, name: row?.meta?.displayName || ref.connectionId, model, protocol: matched.endpoint.protocol };
+  return {
+    meta, name: row?.meta?.displayName || ref.connectionId, model, protocol: matched.endpoint.protocol,
+    // A converted record reaches the harness in its own wire protocol, through the bundled router.
+    ...(matched.converted && nativeProtocol ? { converted: true as const, harnessProtocol: nativeProtocol } : {}),
+  };
 }
 
 /** Credential resolution runs only on the machine that will run this session. */
@@ -170,13 +183,19 @@ export async function resolveCustomModel(providerId: string, sessionId: string, 
   const ref = customModelRefFromOption(db.select({ config: sessions.config }).from(sessions)
     .where(eq(sessions.id, sourceSessionId ?? sessionId)).get()?.config?.model);
   if (!ref) return null;
-  const { meta, name, model, protocol } = await readSelectedCustomModel(providerId, ref, 'bound');
+  const selected = await readSelectedCustomModel(providerId, ref, 'bound');
+  const { meta, name, model, protocol } = selected;
   const models = ref.modelId ? [ref.modelId, ...meta.models.map(({ id }) => id).filter((id) => id !== ref.modelId)] : [];
   const local = await customModelForwarder(resolveCustomRoute);
+  const route = customModelRoute(local.endpoint, ref.connectionId, protocol);
+  // The router speaks the harness's protocol on loopback and calls the forwarder route in the record's protocol.
+  const endpoint = selected.converted
+    ? await (await import('./conversion-routers')).convertedBaseUrl(providerId, ref.connectionId, route, local.apiKey)
+    : route;
   return {
     connectionId: ref.connectionId, name,
-    apiKey: local.apiKey, endpoint: customModelRoute(local.endpoint, ref.connectionId, protocol),
-    models, protocol, capabilities: model, entries: meta.models,
+    apiKey: local.apiKey, endpoint,
+    models, protocol: selected.converted ? selected.harnessProtocol : protocol, capabilities: model, entries: meta.models,
     upstreamEndpoint: meta.endpoints.find(entry => entry.protocol === protocol)!.baseUrl, removed: meta.removed,
   };
 }
