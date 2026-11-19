@@ -8,9 +8,8 @@ import { PASSWORD_AGENT_RPC } from './password-vault/server-delivery'
 import { createPasswordBetaPolicyReader } from './password-vault/beta-policy-reader'
 import { isNativeAccountSender, registerDesktopClosureIpc } from './account-closure/ipc'
 import { closureV2Auth } from './account-closure/v2-auth'
-import { registerDesktopClosureV2Ipc } from './account-closure/v2-ipc'
+import { registerDesktopClosureAgentResumeIpc, registerDesktopClosureV2Ipc } from './account-closure/v2-ipc'
 import type { createDesktopClosureV2Service } from './account-closure/v2-service'
-import { isAccountClosureV2ErrorCode } from '../src/platform/accountClosureV2'
 import { createClosureAuthChange } from './account-closure/auth-change'
 import { ClosureFailure } from './account-closure/receipts'
 import type { createDesktopClosureService } from './account-closure/service'
@@ -2803,17 +2802,7 @@ async function desktopClosureV2Host(): Promise<ReturnType<typeof createDesktopCl
   })
 }
 if (!SERVER_MODE) registerDesktopClosureV2Ipc(ipcMain, () => mainWindow, desktopClosureV2Host)
-if (!SERVER_MODE) ipcMain.handle('account-closure:resume-paused', async (event, input: unknown) => {
-  if (!isNativeAccountSender(event, mainWindow)) return { ok: false, code: 'wrong_local_owner' }
-  if (input !== undefined) return { ok: false, code: 'invalid_scope' }
-  try {
-    await (await desktopClosureV2Host()).resumePausedAgents()
-    return { ok: true }
-  } catch (error) {
-    const code = (error as { code?: unknown } | null)?.code
-    return { ok: false, code: isAccountClosureV2ErrorCode(code) ? code : 'closure_unavailable' }
-  }
-})
+if (!SERVER_MODE) registerDesktopClosureAgentResumeIpc(ipcMain, () => mainWindow, desktopClosureV2Host)
 let closureV2RecoveryRunning = false
 function resumeAccountClosureV2(): void {
   // No new operation, policy admission, resend or confirm on startup/Auth loss.

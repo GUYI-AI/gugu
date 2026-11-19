@@ -38,3 +38,25 @@ export function registerDesktopClosureV2Ipc(ipc: Pick<IpcMain, 'handle'>, window
     }
   })
 }
+
+
+/** Separate explicit enable intent. The renderer supplies the owner it captured
+ * when clicked; native identity/custody still decide whether anything resumes. */
+export function registerDesktopClosureAgentResumeIpc(
+  ipc: Pick<IpcMain, 'handle'>,
+  window: () => BrowserWindow | null,
+  service: () => Promise<{ resumePausedAgents(expectedOwnerId: string): Promise<void> }>,
+) {
+  ipc.handle('account-closure:resume-paused', async (event: IpcMainInvokeEvent, input: unknown) => {
+    try {
+      if (!isNativeAccountSender(event, window())) return { ok: false, code: 'wrong_local_owner' }
+      if (!object(input) || Object.keys(input).length !== 1 || !Object.hasOwn(input, 'ownerId') || typeof input.ownerId !== 'string'
+        || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(input.ownerId)) return { ok: false, code: 'invalid_scope' }
+      await (await service()).resumePausedAgents(input.ownerId)
+      return { ok: true }
+    } catch (error) {
+      const code = (error as { code?: unknown } | null)?.code
+      return { ok: false, code: isAccountClosureV2ErrorCode(code) ? code : 'closure_unavailable' }
+    }
+  })
+}

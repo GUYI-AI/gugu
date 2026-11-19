@@ -27,7 +27,7 @@ const binding = (r: ClosureOperationRecord): ClosureV2Binding => {
  * cleanup checkpoints never come from renderer claims. Network/drain work runs
  * outside the short identity barrier; receiving it still requires the same CAS.
  */
-export function createDesktopClosureV2Service(p: Ports): AccountClosureV2Native & { resumePausedAgents(): Promise<void> } {
+export function createDesktopClosureV2Service(p: Ports): AccountClosureV2Native & { resumePausedAgents(expectedOwnerId: string): Promise<void> } {
   let busy = false
   const exclusive = async <T>(work: () => Promise<T>): Promise<T> => {
     if (busy) return fail('closure_busy')
@@ -150,16 +150,24 @@ export function createDesktopClosureV2Service(p: Ports): AccountClosureV2Native 
   }
   const recoverRecord = (r: ClosureOperationRecord) => request(r, 'result', {})
   return {
-    resumePausedAgents: () => exclusive(async () => {
+    resumePausedAgents: expectedOwnerId => exclusive(async () => {
+      if (!uuid(expectedOwnerId)) return fail('invalid_scope')
       const owner = await p.local.underAuth(async () => {
-        const auth = await live(), record = await p.records.currentNative()
-        if (!record || record.phase !== 'cancelled') return fail('closure_not_complete')
+        const auth = await live()
+        if (auth.ownerId !== expectedOwnerId) return fail('wrong_local_owner')
+        const record = await p.records.currentNative()
+        if (record && record.phase !== 'cancelled') return fail('closure_not_complete')
+        if (await p.local.isSealed(auth.ownerId)) return fail('closure_not_prepared')
+        // Normal manual enable must work before any closure exists. An already
+        // resumed account also needs no extra lifecycle restart.
+        if (!await p.local.isPaused(auth.ownerId)) return null
+        if (!record) return fail('closure_not_complete')
         await p.local.resumeCancelledOwner(auth.ownerId)
         return auth.ownerId
       })
       // The lifecycle transition requalifies identity before starting work. It
       // runs outside the identity barrier, like the corresponding stop/drain.
-      await p.resumeOwner(owner)
+      if (owner !== null) await p.resumeOwner(owner)
     }),
     readPolicy: async () => {
       const auth = await p.local.underAuth(() => live())
