@@ -172,7 +172,7 @@ describe('ImagePreviewProvider', () => {
     localStorage.removeItem('gugu.file-content-zoom.image')
   })
 
-  it('waits for the opening zoom before fetching the original, which lands in the box its recorded size already set', async () => {
+  it('reads the original while the opening zoom runs, puts it in only after, in the box its recorded size already set', async () => {
     let finish!: (url: string) => void
     const full = vi.fn(() => new Promise<string>(resolve => { finish = resolve }))
     writeFileZoom('image', 1)
@@ -186,12 +186,15 @@ describe('ImagePreviewProvider', () => {
     const pswp = instances[0]
     expect(pswp.opener.isOpening).toBe(true)
     expect(pswp.currSlide!.width).toBe(3000)
-    expect(full).not.toHaveBeenCalled()
-    await act(async () => {
-      await waitForCondition(() => !pswp.opener.isOpening && full.mock.calls.length === 1, 'the original never started')
-    })
+    expect(full).toHaveBeenCalledTimes(1)
     const slide = pswp.currSlide!
     await act(async () => finish('blob:original'))
+    expect(pswp.opener.isOpening).toBe(true)
+    expect(document.querySelector('img.pswp__img[src="blob:original"]')).toBeNull()
+    await act(async () => {
+      await waitForCondition(() => !pswp.opener.isOpening, 'the opening zoom never ended')
+    })
+    expect(full).toHaveBeenCalledTimes(1)
     await waitForCondition(() => document.querySelector('img.pswp__img[src="blob:original"]') !== null, 'original bytes were not displayed')
     const image = slide.content.element as HTMLImageElement
     Object.defineProperties(image, { naturalWidth: { value: 3000 }, naturalHeight: { value: 2000 } })

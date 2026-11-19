@@ -524,3 +524,16 @@ it.each(['Failed to fetch', 'Load failed', 'NetworkError when attempting to fetc
   value(await finish(f.cloud.managed(revision, context)))
   expect(f.committed).toHaveBeenCalledTimes(1)
 })
+it('reports arrived bytes every 64 KiB read, not only per 512 KiB chunk, ending at the full size', async () => {
+  const f = fixture()
+  f.object.mockImplementation(async () => new Response(new ReadableStream({ start(stream) {
+    for (let at = 0; at < bytes.length; at += 16 * 1024) stream.enqueue(bytes.slice(at, at + 16 * 1024))
+    stream.close()
+  } }), { status: 200 }))
+  const progress = vi.fn()
+  const file = value(await finish(f.cloud.managed(revision, { ...context, progress })))
+  expect(sha(Buffer.concat([await file.read(0, 524288), await file.read(524288, bytes.length - 524288)]))).toBe(revision.sha256)
+  const step = 64 * 1024
+  expect(progress.mock.calls.map(([done]) => done)).toEqual([...Array.from({ length: 7 }, (_, i) => (i + 1) * step), 524288, 524288 + step, bytes.length])
+  expect(progress.mock.calls.every(([, total]) => total === bytes.length)).toBe(true)
+})

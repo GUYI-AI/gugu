@@ -87,7 +87,7 @@ async function fetchImageAsPngBlob(url: string): Promise<Blob> {
   })
 }
 
-type ViewerSlide = SlideData & { item: ImageViewerItem; sizeKnown: boolean; warmed?: boolean; upgraded?: boolean }
+type ViewerSlide = SlideData & { item: ImageViewerItem; sizeKnown: boolean; warmed?: boolean; upgraded?: boolean; original?: Promise<string> }
 
 function slideFor(item: ImageViewerItem): ViewerSlide {
   // 另有原图可取时,缩略图的 natural 尺寸不是原图的:不拿它排版
@@ -163,7 +163,17 @@ interface OriginalReads { follow: (item: ImageViewerItem) => (state: FileReadSta
 function wireViewer(pswp: PhotoSwipe, dialogLabel: string, reads: OriginalReads, onFileError: (item: ImageViewerItem, error: unknown) => void): void {
   wireReadingZoom(pswp)
   // 缩略图打开的那几张:翻到哪张,取哪张的原图,换上(取不到就留着缩略图;item.full 自己记着结果,不重复下)。
-  // 打开动画期间不换:它从缩略图的状态飞向这张幻灯片,换图会改掉它的起点和终点。
+  // The clicked one's original is asked for as the viewer opens, so its read overlaps the opening animation; it is put in
+  // only once the animation has ended — 换图会改掉它飞行的起点和终点。
+  const startOriginal = (data: ViewerSlide): Promise<string> | undefined => {
+    if (!data.item.full) return undefined
+    if (!data.original) {
+      const item = data.item
+      data.original = item.full(reads.follow(item))
+      void data.original.then(() => reads.end(item), () => reads.end(item))
+    }
+    return data.original
+  }
   // Its neighbours are warmed with their thumbnails only (`current` false), so paging to one shows pixels at once, never
   // an original nobody looks at (an item whose only bytes are its original is not warmed); what fails there is said once
   // it is the one looked at.
@@ -191,9 +201,8 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, reads: OriginalReads,
         }
         if (pswp.isDestroying || !pswp.isOpen) return
       }
-      if (current && data.item.full) {
-        try { replace(await data.item.full(reads.follow(data.item))) } finally { reads.end(data.item) }
-      }
+      const original = current ? startOriginal(data) : undefined
+      if (original) replace(await original)
     })().catch((error: unknown) => {
       if (!current || pswp.isDestroying || !pswp.isOpen) return
       log.warn({ error: String(error) }, 'image bytes unavailable')
@@ -306,6 +315,10 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, reads: OriginalReads,
     root.setAttribute('aria-label', dialogLabel)
     root.classList.add('window-no-drag-region')
     markCurrentImage()
+    const slides = pswp.options.dataSource
+    const clicked = (Array.isArray(slides) ? slides[pswp.currIndex] : undefined) as ViewerSlide | undefined
+    // A thumbnail-first item reads its preview first; one opened on its thumbnail already reads its original now.
+    if (clicked && !clicked.item.preview) startOriginal(clicked)
   })
 }
 

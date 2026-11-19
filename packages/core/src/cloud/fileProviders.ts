@@ -26,6 +26,9 @@ const sameLegacyObject = (revision: FileRevision, row: { bucket_id?: string; obj
 // An unhashed historical object cannot authenticate persistent cached chunks between opens.
 const uncached: FileChunkCache = { get: async () => null, put: async () => {}, clear: async () => {} }
 
+/** How often a read reports its arrived bytes: per 64 KiB read, not per chunk, so a 1 MB image's bar moves (16 steps, not 2). */
+const PROGRESS_STEP_BYTES = 64 * 1024
+
 /** Retain verified chunks; reconnect only the incomplete chunk, with the signer's authorized origin fallback. */
 function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (renew?: boolean, origin?: boolean) => Promise<SignedDownload>, fetcher: () => Promise<typeof fetch>, session: FileDownloadSession, signal?: AbortSignal, progress?: FileContext['progress'], reused?: () => void) {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined, buffered: Uint8Array = new Uint8Array(), next = -1, interrupted = false
@@ -62,7 +65,8 @@ function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (r
         }
         if (index !== next) throw new Error('File transfer must continue from its cached prefix')
         const bytes = new Uint8Array(length)
-        for (let filled = 0; filled < length;) {
+        for (let filled = 0, reported = 0; filled < length;) {
+          if (filled - reported >= PROGRESS_STEP_BYTES) { reported = filled; progress?.(offset + filled, size) }
           if (!buffered.length) {
             const received = await transport.read(reader)
             if (received.done) throw new Error('Truncated file response')
