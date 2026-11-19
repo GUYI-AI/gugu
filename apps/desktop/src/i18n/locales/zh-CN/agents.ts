@@ -142,10 +142,13 @@ export default {
       "broadPickAnother": "换一个"
     },
     "title": "创建智能体",
-    "unfinishedSweep": {
-      "cancelledWithWarning": "上次有一个 Agent 没建完，已取消，但{{steps}}没有做干净。请重新创建。",
-      "pending": "上次有一个 Agent 没建完，取消还没做完（{{steps}}没有做干净），下次启动会再试。",
-      "pendingError": "上次有一个 Agent 没建完，这次没能取消，下次启动会再试。"
+    "unfinished": {
+      "title": "未完成创建",
+      "continue": "继续",
+      "delete": "删除",
+      "deleteTitle": "删除这次创建？",
+      "deleteDescription": "将取消“{{name}}”尚未完成的创建。",
+      "readFailed": "未能读取创建状态，记录已保留"
     },
     "toast": {
       "cancelFailed": "取消 Agent 创建失败。请重试。",
