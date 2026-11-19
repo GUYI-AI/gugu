@@ -348,7 +348,6 @@ function CreateOnMachine({
       setPendingText(text)
       const sentAt = Date.now()
       let submittedPhoneRequest: SessionpageSessionCreateRequest | null = null
-      let providerId = selection.harness!
       try {
         if ((phone || files.length) && !ownerId) throw new Error('请先登录后创建 Agent')
         if (attachmentAttempt && !files.length) throw Object.assign(new Error('Original creation attachments are required'), { code: 'creation_attachments_pending' })
@@ -368,8 +367,6 @@ function CreateOnMachine({
           ...(creationThinking(models, selection).fastMode !== undefined ? { fastMode: creationThinking(models, selection).fastMode } : {}),
           ...(taskGroup ? { chatId: taskGroup.chatId, taskChatId: taskGroup.chatId } : {}),
         }
-        providerId = request.harness
-        // The mobile-native Pi runtime has no managed root. Tasks on linked hosts use their import wire.
         if (phone && !files.length) {
           rememberPhoneSessionCreate(ownerId!, device.device_id, request)
           submittedPhoneRequest = request
