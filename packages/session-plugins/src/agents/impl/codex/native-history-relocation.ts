@@ -276,7 +276,7 @@ export async function relocateNativeCodexHistory(options: NativeHistoryOptions):
       const sourceCtx = { ...context, env: { ...context.env, CODEX_HOME: home.userConfigRoot } };
       const managedCtx = { ...context, env: { ...context.env, ...provider.env, CODEX_HOME: home.configRoot } };
       await save(); // Before either app-server can perform native backfill.
-      await withCodexAppServer(sourceCtx, native => withCodexAppServer(managedCtx, async managed => {
+      await withCodexAppServer(sourceCtx, async native => {
         if (!wasDeleting) {
           await checkAgentHomeImportSpace([{ home, groups: new Set(), historyPaths: closure.files.map(file => file.path) }], { includeStaging: false, includeCredentials: false });
           entry.state = 'copying'; entry.reason = undefined; await save();
@@ -304,6 +304,7 @@ export async function relocateNativeCodexHistory(options: NativeHistoryOptions):
           if (await fs.lstat(source).then(() => true, error => { if (missing(error)) return false; throw error; }))
             await verifyNativeHistoryPrefix(source, destination, signal);
         }
+        await withCodexAppServer(managedCtx, async managed => {
         if (!wasDeleting || !entry.model) {
           const original = await native.request('thread/read', { threadId: root, includeTurns: false }) as { thread?: { model?: string } };
           if (typeof original.thread?.model !== 'string' || !original.thread.model) throw new Error('Native thread has no model');
@@ -339,7 +340,8 @@ export async function relocateNativeCodexHistory(options: NativeHistoryOptions):
         const read = await managed.request('thread/read', { threadId: root, includeTurns: false }) as { thread?: { id?: string } };
         if (read.thread?.id !== root) throw new Error('Managed thread cannot be read after deletion');
         entry.state = 'removed'; entry.reason = undefined; await save();
-      }, { args: provider.args, signal }), { signal });
+        }, { args: provider.args, signal });
+      }, { signal });
     } catch (error) {
       // Only outputs created by this attempt are eligible for rollback, and never after delete began.
       if (deletionStarted) entry.state = 'deleting';
