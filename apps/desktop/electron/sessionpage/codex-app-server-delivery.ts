@@ -13,7 +13,8 @@
 //
 // 一个 TUI agent 会话 = 一个 `codex app-server --listen <endpoint>` 进程(持有会话)+ 一个 WS 投递客户端。
 // 三件套:①起 app-server ②会话页后端的 pty 起 `codex --remote … resume <tid>`(remoteTuiArgs)③本模块
-// 经 WS 投递(turn/start,忙时 turn/steer)。接进 delivery-bridge 与 provisioning 是上层接线,另见那两处。
+// 经 WS 投递(闲时排进 codex 队列 `thread/queue/add` 再 `thread/queue/start`,忙时 `turn/steer`;本模块从不
+// `turn/start`,见 deliver)。接进 delivery-bridge 与 provisioning 是上层接线,另见那两处。
 
 import crypto from 'node:crypto'
 import WebSocket from 'ws'
@@ -2167,9 +2168,11 @@ export class CodexAppServerSession {
   }
 
   /**
-   * 投递一条消息作为**新一轮**(spec ⑧「作为新一轮输入交付」)。fresh thread 的第一条投递直接
-   * turn/start，因为 Codex 在首条用户消息前不允许 thread/read includeTurns。已 materialize 的 thread 先读
-   * inProgress turn:忙 → turn/steer 中途插入(owner #85);闲 → turn/start。steer 输给正在结束的 turn 竞态失败则回退 turn/start。
+   * 投递一条消息作为**新一轮**(spec ⑧「作为新一轮输入交付」)。TUI 未载入 / 未接入,或 thread 尚未 materialize
+   * (Codex 在首条用户消息前不允许 thread/read includeTurns)⇒ 不读,直接排队。已 materialize 的 thread 先读
+   * inProgress turn:忙 → turn/steer 中途插入(owner #85);闲 → 排队。steer 输给正在结束的 turn 竞态失败也排队。
+   * 「排队」= enqueue:`thread/queue/add`,再 `thread/queue/start` 显式起咕咕这一条(上一轮被打断时队列不自动续跑)。
+   * 本模块从不 `turn/start`。
    */
   async deliver(text: string, beforeAdmission?: () => void): Promise<CodexTurnRef> {
     beforeAdmission?.()
@@ -2205,7 +2208,7 @@ export class CodexAppServerSession {
         deliveryLog.info({ threadId: this.threadId, turnId: activeTurnId }, 'codex delivery bytes accepted by app-server steer channel')
         return { turnId: activeTurnId }
       } catch {
-        // steer 竞态输给正在结束的 turn → 回退新起一轮。
+        // steer 竞态输给正在结束的 turn → 回退排队(enqueue,`thread/queue/add`)。
       }
     }
     // @@@6112 空闲时 ❌ 不 turn/start:外部程序往一个 TUI 在显示的会话里送消息,官方的路是
@@ -2435,7 +2438,7 @@ export function killAllCodexAppServerProcessGroupsSync(): void {
 
 /**
  * codex-TUI agent 的投递目标(delivery-bridge 的第二 driver 用):把 gugu agentUserId 映射到它的 codex
- * app-server 会话,`injectMessage` = 往该会话投一条新一轮(turn/start,忙时 steer)。实现 SessionpageDeliveryTarget:
+ * app-server 会话,`injectMessage` = 往该会话投一条新一轮(闲时排进 codex 队列,忙时 steer;见 deliver)。实现 SessionpageDeliveryTarget:
  * 未映射 → `liveSessionIdByAgent` 返回 null(delivery-bridge 透传给下一 target / inner);映射了但会话死 →
  * `tryInjectMessage` 返回 false,上层保留本机债务(❌ 无 pty 兜底)。回复由 agent 经注入的
  * gugu MCP 自发回(与 ACP 路一致),此处不写回、不做 NO_REPLY。
