@@ -113,6 +113,8 @@ async function readPreview(file: PreviewFile | HostedPreviewFile, kind: Document
     try { return { content: null, ...await renew(), renew, release } } catch (error) { await release(); throw error }
   }
   const { blob, acknowledged } = await previewBytes(file, options)
+  // Heard here too: if turning the bytes into content throws below, nobody else is left to hear a refused acknowledgement.
+  acknowledged?.catch(() => undefined)
   if (kind === 'image') {
     const content = URL.createObjectURL(blob)
     return { content, acknowledged, release: async () => URL.revokeObjectURL(content) }
