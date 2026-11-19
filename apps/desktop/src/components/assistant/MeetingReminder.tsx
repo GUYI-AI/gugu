@@ -1,5 +1,5 @@
 import { metadataSeparator } from '@/i18n/format'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { formatClock } from '../../i18n/format'
 import { meetingKey, meetingRemindable, meetingToRemind, type UpcomingMeeting } from '@gugu/core/shared/voiceNotes'
@@ -11,13 +11,13 @@ import { IconButton } from '../ui/IconButton'
 import { Mic, X } from '../../lib/icons'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { openAssistantEntry } from '../../lib/assistantEntry'
-import { invokeOnMachine } from '../../session/renderer/lib/ipc'
-import { VOICE_NOTE_MEETINGS_CHANNEL, type VoiceNoteMeetingsResult } from '../../session/shared/core/voice-notes'
-import { readDevicePreferences } from '../../lib/devicePreferences'
+import { useDevicePreferences } from '../../lib/devicePreferences'
+import { deviceMeetings } from '../../lib/deviceMeetings'
+import { useReplica } from '../../lib/replica'
 import '../../i18n/registerVoiceNotesCatalog'
 import { useVoiceNoteHandler } from './useVoiceNoteHandler'
 
-/** 多久看一次日历(提醒在开会前 1 分钟弹,半分钟一看才赶得上)。 */
+/** 多久收一次过了时间窗的卡(日历本身由 `deviceMeetings` 每半分钟读一次:提醒在开会前 1 分钟弹,半分钟一看才赶得上)。 */
 const POLL_MS = 30_000
 /** 提醒过的那几场记在这台电脑上(记最近 256 条),关了 App 再开也不重复弹。 */
 const SEEN_KEY = 'gugu.voiceNotes.remindedMeetings'
@@ -72,12 +72,17 @@ export function MeetingReminder({ enabled }: { enabled: boolean }) {
   const seen = useRef<Set<string> | null>(null)
   const { recording } = useVoiceNoteHandler()
 
-  const check = useCallback(async () => {
-    if (!enabled || !readDevicePreferences().meetingReminder) return
-    const result = (await invokeOnMachine(null, VOICE_NOTE_MEETINGS_CHANNEL).catch(() => null)) as VoiceNoteMeetingsResult | null
-    if (!result?.ok) return
+  const reminding = useDevicePreferences().meetingReminder
+  const calendar = useReplica(deviceMeetings, enabled && reminding ? [] : null)
+  const meetings = calendar.state === 'value' ? calendar.value.meetings : undefined
+  // The clock the reminder window is judged by: a meeting enters its window as time passes, not only when the calendar changes.
+  const [now, setNow] = useState(() => Date.now())
+
+  // @@@effect-flow(event) - raises a one-time reminder (card + system notification) for a meeting that enters its window; the calendar is the deviceMeetings replica
+  useEffect(() => {
+    if (!meetings) return
     seen.current ??= readSeen()
-    const next = meetingToRemind(result.meetings, Date.now(), seen.current)
+    const next = meetingToRemind(meetings, now, seen.current)
     if (!next) return
     seen.current.add(meetingKey(next))
     writeSeen(seen.current)
@@ -85,23 +90,18 @@ export function MeetingReminder({ enabled }: { enabled: boolean }) {
     setMeeting(next)
     if (!document.hasFocus())
       void platform?.showNotification({ title: t('meeting.heading'), body: [next.title, `${clock(next.start)} - ${clock(next.end)}`].filter(Boolean).join(metadataSeparator()) }).catch(() => undefined)
-  }, [enabled, t])
+  }, [meetings, now, t])
 
   useEffect(() => {
     if (!enabled) return
-    void check()
+    // 过了提醒的时间窗就自己收起(最晚开始后 5 分钟)。
     const timer = window.setInterval(() => {
-      void check()
-      // 过了提醒的时间窗就自己收起(最晚开始后 5 分钟)。
-      setMeeting((current) => (current && !meetingRemindable(current, Date.now()) ? null : current))
+      const at = Date.now()
+      setNow(at)
+      setMeeting((current) => (current && !meetingRemindable(current, at) ? null : current))
     }, POLL_MS)
-    const onFocus = () => void check()
-    window.addEventListener('focus', onFocus)
-    return () => {
-      window.clearInterval(timer)
-      window.removeEventListener('focus', onFocus)
-    }
-  }, [enabled, check])
+    return () => window.clearInterval(timer)
+  }, [enabled])
 
   // 没有个人助理了(退出登录、云电脑没了):挂着的这张也收起。
   if (!meeting || !enabled) return null

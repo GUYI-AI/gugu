@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { cloudComputerFailureKind, type CloudComputerFailureKind } from '@gugu/core/cloud/cloudComputer'
 import type { Device } from '@gugu/core/shared/types/chat'
-import { refreshCloudComputer, wakeCloudComputer } from '../lib/cloudComputerStore'
+import { readCloudSnapshotNow, wakeCloudComputer } from '../lib/cloudComputer'
 import { rendererLogger } from '../lib/log'
 
 const log = rendererLogger('agent-watch/cloud-computer')
@@ -52,6 +52,7 @@ export function useCloudComputerWake(device: Pick<Device, 'device_id' | 'cloud_c
         if (mounted.current) setInFlight(false)
       })
   }, [])
+  // @@@effect-flow(command) - opening a page on a sleeping cloud computer wakes it once (a command); its state is read from the cloudComputer replica
   useEffect(() => {
     if (!deviceId || seenFor.current === deviceId) return
     seenFor.current = deviceId
@@ -63,7 +64,7 @@ export function useCloudComputerWake(device: Pick<Device, 'device_id' | 'cloud_c
     }
     // 设备表里的「醒着」可能还是睡下之前的(库里那一行要等心跳超时才翻):现问一次管家,真睡着了再叫。
     // 问不到 ❌ 说「没能唤醒」(没叫过),照醒着处理。
-    void refreshCloudComputer()
+    void readCloudSnapshotNow()
       .catch(() => null)
       .then((fresh) => {
         if (mounted.current && fresh?.deviceId === deviceId && fresh.state === 'asleep') return wake()

@@ -10,6 +10,7 @@ import { parseExtensionManifest } from '@shared/extensions/manifest';
 import type { MarketListItem } from '@shared/extensions/market';
 import { MarketDetailDialog } from './market-detail-dialog';
 import { MarketExtensionDevices } from './market-detail-extension-devices';
+import { queryClient as replicaClient } from '@/lib/replica';
 
 const mocks = vi.hoisted(() => {
   const online = { id: 'studio', label: 'Studio', isOnline: true, directTerminal: false, lastSeenAt: null };
@@ -79,6 +80,8 @@ describe('actions for other devices in Marketplace details', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // What each device holds is a replica (one cache for the app): every case reads its devices afresh.
+    replicaClient.clear();
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     container = document.createElement('div');
     document.body.appendChild(container);

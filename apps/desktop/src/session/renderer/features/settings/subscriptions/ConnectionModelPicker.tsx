@@ -46,7 +46,7 @@ function useConnectionModelList(
   const endpoints = source?.endpoints
   const endpointKey = JSON.stringify(endpoints)
   const [list, setList] = useState<ModelList>({ kind: 'waiting' })
-  // @@@effect-flow - probing the key being typed (debounced); the key is never put in a cache.
+  // @@@effect-flow(command) - probing the key being typed (debounced); the key is never put in a cache.
   useEffect(() => {
     if (!connectionId && !apiKey) {
       setList({ kind: 'waiting' })

@@ -8,7 +8,7 @@ vi.mock('@/session/shared/lib/ipc/session-host-client', () => ({
   SESSION_HOST_CLIENT_HEARTBEAT_MS: 20_000,
 }))
 vi.mock('@/store/devicesCache', () => ({ readCachedDevices: () => [], subscribeCachedDevices: vi.fn() }))
-vi.mock('@/lib/cloudComputerStore', () => ({ getCloudComputerState: () => ({ snapshot: null }), subscribeCloudComputerState: vi.fn() }))
+vi.mock('@/lib/cloudComputer', async (original) => ({ ...await original<object>() }))
 vi.mock('@/lib/deviceRpc', () => ({ callDeviceRpc: vi.fn() }))
 vi.mock('@/mobile/local-agent/phoneHostRpc', () => ({ invokePhoneHost: vi.fn() }))
 vi.mock('@/session/renderer/lib/ipc', () => ({ rpcOn: vi.fn() }))

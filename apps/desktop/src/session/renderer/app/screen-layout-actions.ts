@@ -5,7 +5,7 @@ import type { PaneEdge } from '@renderer/features/tabs/pane-layout-tree';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { peekInstalledApps, peekInstalledAppsTracked } from '@renderer/features/extensions/installed-extensions';
 import { getSessionPageStore } from '@renderer/features/sessions/stores/session-selectors';
 import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-session-in-session';
 import { MIN_PANE_HEIGHT_PX, MIN_PANE_WIDTH_PX, type PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
@@ -100,8 +100,9 @@ export function appsOnScreen(): string[] {
 function pruneGoneApps(): void {
   reaction(
     () => {
-      if (!installedExtensionsStore.isLoaded) return '';
-      const enabled = new Set<string>(installedExtensionsStore.residentTabContributions.map((entry) => entry.kind));
+      const installed = peekInstalledAppsTracked();
+      if (!installed) return '';
+      const enabled = new Set<string>(installed.residentTabContributions.map((entry) => entry.kind));
       return appsOnScreen()
         .filter((kind) => !enabled.has(kind))
         .join('\n');
@@ -460,7 +461,8 @@ export function putBackFromWindow(windowId: string): void {
     screenLayout.placeAt(content, target, edge, { even: halfWontFit(target, edge) });
     return;
   }
-  const extensionId = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === content.tabKind)?.extensionId;
+  // A placement the person makes, one moment: the App's page opens only for an App the list (read by now) has.
+  const extensionId = peekInstalledApps()?.allTabContributions.find((entry) => entry.kind === content.tabKind)?.extensionId;
   if (extensionId) appState.navigation.navigate('app', { appId: extensionId });
 }
 

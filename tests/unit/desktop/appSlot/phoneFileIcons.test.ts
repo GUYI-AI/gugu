@@ -5,7 +5,7 @@ import { hostAppFrame } from '../../../../apps/desktop/src/components/appSlot/ph
 import { APP_FRAME_MARKER } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 import { fileIconKey } from '../../../../apps/desktop/src/session/shared/extensions/app-icon'
 import { EXTENSION_API_VERSION, parseExtensionManifest } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
-import { installedExtensionsStore, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
+import { tellInstalled, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { until } from '../../../support/awaitCondition'
 
 /**
@@ -54,7 +54,7 @@ let frame: HTMLIFrameElement
 let posted: ReturnType<typeof vi.fn>
 let host: ReturnType<typeof hostAppFrame> | undefined
 beforeEach(() => {
-  installedExtensionsStore.applyList({
+  tellInstalled('phone', {
     extensions: [workspace], invalid: [],
     icons: { 'workspace.main': 'data:tab-icon', [fileIconKey('workspace.main', '.md')]: 'data:md-icon' },
   } as unknown as InstalledExtensionsList)

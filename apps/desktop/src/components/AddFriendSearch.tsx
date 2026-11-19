@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useContactsStore } from '../store/contactsContext'
+import { userSearch } from '../lib/contactsReplicas'
+import { useReplica, refreshFailure } from '../lib/replica'
 import { parseGuguQrPayload } from '@gugu/core/shared/qrPayload'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { Avatar } from './Avatar'
@@ -94,6 +96,19 @@ function SearchResultItem({
   )
 }
 
+type Submission = { text: string; query: string }
+
+/** What a submitted box asks for: nothing when empty; a pasted contact QR is looked up by its 咕咕号. */
+function submissionOf(typed: string): Submission | null {
+  const text = typed.trim()
+  if (!text) return null
+  // @@@contact-qr-import (#537) - 粘贴一张联系人 QR 的文本时，解析出对方咕咕号再搜，让「加我」QR 不用扫码也能加。
+  const qr = parseGuguQrPayload(text)
+  return { text, query: qr?.kind === 'contact' ? String(qr.gugu_number) : text }
+}
+
+const messageOf = (error: Error | null) => String(error?.message ?? error)
+
 // ── AddFriendSearch (exported) ────────────────────────────────────────────────
 
 // showHeader: 面板态渲染「添加联系人」头部（+ 移动端 onBack chevron）；弹窗态由 modal 自带头部 → 传 false。
@@ -118,31 +133,17 @@ export function AddFriendSearch({
 }) {
   const { t } = useTranslation('contacts')
   useBackLayer(showHeader ? onBack : undefined) // 面板态(手机整页):安卓返回键 = 左上返回
-  const {
-    contacts,
-    sentRequests,
-    searchResults,
-    isSearching,
-    searchUsers,
-    clearSearch,
-    sendRequest,
-  } = useContactsStore()
+  const { contacts, sentRequests, sendRequest } = useContactsStore()
 
   const { toast } = useToast()
   const [query, setQuery] = useState('')
-  const [completedQuery, setCompletedQuery] = useState('')
+  // The search the person asked for (Enter, or a scanned code); a query only typed asks nothing.
+  const [submitted, setSubmitted] = useState<Submission | null>(null)
+  const found = useReplica(userSearch, submitted ? [submitted.query] : null)
   // @@@1505 点「添加」先开附言 Dialog 收集申请附言（选填），再发申请（加好友先附言、再发申请）。
   const [pendingTarget, setPendingTarget] = useState<ContactUser | null>(null)
   const [note, setNote] = useState('')
   const [sending, setSending] = useState(false)
-  const reportSearchError = useCallback((err: unknown) => {
-    toast(t('friendSearch.searchFailed', { detail: String((err as Error)?.message ?? err) }), 'error')
-  }, [t, toast])
-
-  // @@@add-friend-unify 卸载时清搜索结果，避免下次打开残留上一次的命中（原 AddFriendModal 的清理口径）。
-  useEffect(() => {
-    return () => clearSearch()
-  }, [clearSearch])
 
   function closeNoteDialog() {
     if (sending) return
@@ -158,7 +159,7 @@ export function AddFriendSearch({
       setPendingTarget(null)
       setNote('')
       setQuery('')
-      clearSearch()
+      setSubmitted(null)
       toast(t('friendSearch.sentToast'), 'success')
       onBack?.()
     } catch (err) {
@@ -169,37 +170,27 @@ export function AddFriendSearch({
     }
   }
 
-  const handleSearch = async () => {
-    const q = query.trim()
-    if (!q) {
-      clearSearch()
-      return
-    }
-    // @@@contact-qr-import (#537) - 粘贴一张联系人 QR 的文本时，解析出对方咕咕号再搜，
-    // 让「加我」QR 不用扫码也能加。
-    const qr = parseGuguQrPayload(q)
-    setCompletedQuery('')
-    await searchUsers(qr?.kind === 'contact' ? String(qr.gugu_number) : q)
-      .then(() => setCompletedQuery(q)).catch(reportSearchError)
+  const handleSearch = () => {
+    const next = submissionOf(query)
+    if (next && next.query === submitted?.query) void userSearch.refresh(next.query)
+    setSubmitted(next)
   }
 
   const handleQueryChange = (v: string) => {
     setQuery(v)
-    setCompletedQuery('')
-    if (!v.trim()) clearSearch()
+    if (!v.trim()) setSubmitted(null)
   }
 
-  // @@@scan-seed (#537-A) - 扫码得到的咕咕号路由到这里：填入搜索框并跑搜索，命中的人带「添加」按钮。
+  // @@@scan-seed (#537-A) - 扫码得到的咕咕号路由到这里：填入搜索框并提交这次搜索，命中的人带「添加」按钮。
   useEffect(() => {
     if (!seed) return
     setQuery(seed.query)
-    void searchUsers(seed.query).then(() => setCompletedQuery(seed.query.trim())).catch(reportSearchError)
+    setSubmitted(submissionOf(seed.query))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seed?.token, reportSearchError, searchUsers])
+  }, [seed?.token])
 
   const sentIds = new Set(sentRequests.map((r) => r.receiver_id))
   const friendIds = new Set(contacts.map((c) => c.id))
-  const hasQuery = query.trim().length > 0
 
   return (
     <div
@@ -232,8 +223,8 @@ export function AddFriendSearch({
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px' }}>
-        {hasQuery && isSearching && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        {submitted && found.state === 'unknown' && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} aria-busy="true" data-testid="friend-search-pending">
             <div
               style={{
                 width: 18,
@@ -246,13 +237,19 @@ export function AddFriendSearch({
             />
           </div>
         )}
-        {hasQuery && !isSearching && searchResults.length === 0 && (
-          <div style={{ padding: '32px 16px', textAlign: 'center', fontSize: 'var(--font-body)', color: 'var(--text-secondary)' }}>
-            <div>{t('friendSearch.noResults')}</div>
-            {completedQuery === query.trim() && <InviteFriendsPreview />}
+        {submitted && refreshFailure(found) && (
+          <div role="alert" data-testid="friend-search-failed" className="flex items-center justify-center gap-3 p-4 text-[length:var(--font-body)] text-[var(--text-secondary)]">
+            <span>{t('friendSearch.searchFailed', { detail: messageOf(refreshFailure(found)!) })}</span>
+            <Button variant="secondary" size="sm" onClick={() => void userSearch.refresh(submitted.query)}>{t('common.retry')}</Button>
           </div>
         )}
-        {hasQuery && !isSearching && searchResults.length > 0 && searchResults.map((u) => (
+        {submitted && found.state === 'value' && found.value.length === 0 && (
+          <div style={{ padding: '32px 16px', textAlign: 'center', fontSize: 'var(--font-body)', color: 'var(--text-secondary)' }}>
+            <div>{t('friendSearch.noResults')}</div>
+            {submitted.text === query.trim() && <InviteFriendsPreview />}
+          </div>
+        )}
+        {submitted && found.state === 'value' && found.value.map((u) => (
           <SearchResultItem
             key={u.id}
             user={u}

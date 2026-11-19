@@ -2,15 +2,20 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { usePhoneToday } from '../../../apps/desktop/src/mobile/assistant/usePhoneToday'
-import { TODAY_REFRESH_MS, type TodayFeedView } from '../../../apps/desktop/src/session/renderer/features/assistant/assistant-today-file'
+import { TODAY_REFRESH_MS, type TodayRead } from '../../../apps/desktop/src/session/renderer/features/assistant/assistant-today-file'
+import type { Reading } from '../../../apps/desktop/src/lib/replica'
 import { createNode, createReactHarness, deferred } from '../../support/testHarness'
+import { followRendererSession, queryClient } from '../../../apps/desktop/src/lib/replica'
 
 const mocks = vi.hoisted(() => ({ read: vi.fn() }))
 vi.mock('../../../apps/desktop/src/lib/chatFolder', () => ({ readChatFolderText: mocks.read }))
 
-let latest: TodayFeedView | null = null
+let latest: Reading<TodayRead> | null = null
+let retry: () => void = () => undefined
 function Probe({ chatId }: { chatId: string }) {
-  latest = usePhoneToday(chatId)
+  const view = usePhoneToday(chatId)
+  latest = view.today
+  retry = view.retry
   return null
 }
 const file = (title: string) => ({ text: JSON.stringify({ version: 1, widgets: [{ id: title, title }] }), updatedAt: title })
@@ -19,6 +24,8 @@ describe('phone Today reads', () => {
   let harness: ReturnType<typeof createReactHarness>
   beforeEach(() => {
     vi.useFakeTimers()
+    queryClient.clear()
+    followRendererSession('SIGNED_IN', 'owner')
     mocks.read.mockReset()
     harness = createReactHarness()
     latest = null
@@ -30,14 +37,14 @@ describe('phone Today reads', () => {
     const current = deferred<ReturnType<typeof file>>()
     mocks.read.mockResolvedValueOnce(file('old')).mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise)
     await harness.render(createNode(Probe, { chatId: 'one' }))
-    expect(latest).toMatchObject({ state: 'read', read: { state: 'ok', updatedAt: 'old' } })
+    expect(latest).toMatchObject({ state: 'value', value: { state: 'ok', updatedAt: 'old' } })
     await act(async () => { await vi.advanceTimersByTimeAsync(TODAY_REFRESH_MS) })
     await harness.render(createNode(Probe, { chatId: 'two' }))
-    expect(latest).toMatchObject({ state: 'loading' })
+    expect(latest).toMatchObject({ state: 'unknown' })
     await act(async () => { old.resolve(file('late old')) })
-    expect(latest).toMatchObject({ state: 'loading' })
+    expect(latest).toMatchObject({ state: 'unknown' })
     await act(async () => { current.resolve(file('new')) })
-    expect(latest).toMatchObject({ state: 'read', read: { state: 'ok', updatedAt: 'new' } })
+    expect(latest).toMatchObject({ state: 'value', value: { state: 'ok', updatedAt: 'new' } })
   })
 
   it('does not overlap a slow initial read or a slow poll', async () => {
@@ -50,14 +57,21 @@ describe('phone Today reads', () => {
     await act(async () => { first.resolve(file('one')) })
     await act(async () => { await vi.advanceTimersByTimeAsync(TODAY_REFRESH_MS * 3) })
     expect(mocks.read).toHaveBeenCalledTimes(2)
-    expect(latest).toMatchObject({ state: 'read', read: { updatedAt: 'one' } })
+    expect(latest).toMatchObject({ state: 'value', value: { updatedAt: 'one' } })
   })
 
   it('shows read failures and lets retry recover without treating them as empty', async () => {
     mocks.read.mockRejectedValueOnce(new Error('file service unavailable')).mockResolvedValueOnce(null)
     await harness.render(createNode(Probe, { chatId: 'one' }))
     expect(latest).toMatchObject({ state: 'error' })
-    await act(async () => { if (latest?.state === 'error') latest.retry() })
-    expect(latest).toMatchObject({ state: 'read', read: { state: 'none' } })
+    await act(async () => { retry() })
+    expect(latest).toMatchObject({ state: 'value', value: { state: 'none' } })
+  })
+
+  it('E-4: a refresh that fails keeps the ideas read before and says it failed (❌ the old file silently as current)', async () => {
+    mocks.read.mockResolvedValueOnce(file('morning')).mockRejectedValueOnce(new Error('file service unavailable'))
+    await harness.render(createNode(Probe, { chatId: 'one' }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(TODAY_REFRESH_MS) })
+    expect(latest).toMatchObject({ state: 'value', value: { state: 'ok', updatedAt: 'morning' }, error: { message: 'file service unavailable' } })
   })
 })

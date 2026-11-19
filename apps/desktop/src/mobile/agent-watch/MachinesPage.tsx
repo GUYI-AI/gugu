@@ -17,6 +17,7 @@ import { visibleMachines, workspaceDevices } from './machine-list'
 import { DeviceDirectoryRetry } from './DeviceDirectoryRetry'
 import { PhoneHostSetupEntry } from './PhoneHostSetupEntry'
 import { platform } from '@/platform'
+import { Unknown } from '@/components/ui/Unknown'
 import './task-flow-catalog'
 
 /**
@@ -112,7 +113,9 @@ function MachineCard({
   const seen = formatRelativeTime(device.last_seen_at)
   // #7199 个人助理自己的会话不算任务(它不住任务区)。
   const assistant = usePhoneAssistantIdentity()
-  const count = sessionListFromDigest(device.session_digest).sessions.filter((session) => !isAssistantSession(session, assistant?.id)).length
+  // No digest = this row came from the last run's snapshot, which does not keep it: the count is not known yet.
+  const count = device.session_digest === undefined ? null
+    : sessionListFromDigest(device.session_digest).sessions.filter((session) => !isAssistantSession(session, assistant?.id)).length
 
   return (
     <Button
@@ -129,7 +132,7 @@ function MachineCard({
         <span className="gg-aw-machine-icon" data-online={online ? 'true' : 'false'}>
           {isPhoneDevice(device) ? <MonitorSmartphone /> : <Monitor />}
         </span>
-      } meta={count > 0 ? t('agentWatch.machines.sessionCount', { count }) : undefined} subtitle={
+      } meta={count === null ? <Unknown className="w-12" /> : count > 0 ? t('agentWatch.machines.sessionCount', { count }) : undefined} subtitle={
         <span className="gg-aw-item-meta">
           <LiveGlyph state={online ? 'online' : waking ? 'busy' : 'offline'} />
           <span>{online ? t('agentWatch.machines.online') : connectable ? tFlow(waking ? 'connecting' : 'readyToConnect') : t('agentWatch.machines.offline')}</span>

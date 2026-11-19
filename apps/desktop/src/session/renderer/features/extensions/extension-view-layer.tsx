@@ -7,7 +7,7 @@ import type { BrowserWebviewElement } from '@renderer/features/browser/browser-w
 import { extensionSurfaceStore } from './extension-surface-store';
 import { extensionViewStore, type ExtensionViewClaim } from './extension-view-store';
 import { sessionWorkspace } from '@shared/extensions/app-runtime-protocol';
-import { installedExtensionsStore } from './installed-extensions-store';
+import { LOCAL_HOST, peekInstalledAppsTracked, useInstalledApps } from './installed-extensions';
 import { AppSettingsPage } from './app-settings-page';
 import { ExtensionGuestBinding, type ExtensionGuestTarget } from './extension-guest-binding';
 import { nativeAppSurfaceMetrics, observeNativeSurfaceOcclusion } from './native-app-surface';
@@ -17,7 +17,8 @@ import { bindAppPageZoom } from '@/components/preview/file-content-zoom';
 import { clippedElementBox, elementBox, type ElementBox as Box } from '@/lib/elementVisibility';
 import { readSelfIdentityBridge } from '@/lib/selfIdentityBridge';
 import { useTheme } from '@/store/theme';
-import { widgetSnapshotWebP, widgetSnapshots } from '@/lib/widgetSnapshots';
+import { widgetSnapshotWebP, widgetSnapshots, widgetWidthBucket } from '@/lib/widgetSnapshots';
+import { widgetSnapshot, widgetSnapshotDataUrl } from '@/lib/widgetSnapshot';
 import { PageLoading } from '@/lib/loading/PageLoading';
 
 /**
@@ -49,14 +50,16 @@ export const ExtensionViewLayer = observer(function ExtensionViewLayer() {
   useEffect(
     () =>
       reaction(
-        () => installedExtensionsStore.residentTabContributions.map((contribution) => contribution.kind),
+        () => peekInstalledAppsTracked()?.residentTabContributions.map((contribution) => contribution.kind) ?? null,
         (now, before) => {
-          for (const kind of before) if (!now.includes(kind)) extensionViewStore.forgetOpened(kind);
+          if (now && before) for (const kind of before) if (!now.includes(kind)) extensionViewStore.forgetOpened(kind);
         }
       ),
     []
   );
-  const contributions = installedExtensionsStore.residentTabContributions;
+  const installed = useInstalledApps(LOCAL_HOST);
+  if (installed.state !== 'value') return <div ref={layerRef} data-slot="extension-view-layer" className="pointer-events-none absolute inset-0" />;
+  const contributions = installed.value.residentTabContributions;
   const enabled = new Map<string, (typeof contributions)[number]>(
     contributions.map((contribution) => [contribution.kind, contribution])
   );
@@ -171,6 +174,7 @@ export const ExtensionPage = observer(function ExtensionPage({
 }) {
   const unusedLayerRef = useRef<HTMLDivElement | null>(null);
   const layerRef = residentLayerRef ?? unusedLayerRef;
+  const installed = useInstalledApps(LOCAL_HOST);
   const claimOf = useCallback(
     () => pageKey === undefined ? undefined : extensionViewStore.claims.get(pageKey),
     [pageKey]
@@ -229,10 +233,12 @@ export const ExtensionPage = observer(function ExtensionPage({
     lastCaptureRef.current = performance.now();
     capturingRef.current = true;
     const theme = themeRef.current;
+    // Bound to the account now: a picture that lands after a switch goes nowhere (no account the replica follows: none shown).
+    const shown = widgetSnapshot.key(widgetId, theme, widgetWidthBucket(width)) ? widgetSnapshot.at(widgetId, theme, widgetWidthBucket(width)) : null;
     void rpc.extensions.captureWidget({ webContentsId, widgetId }).then(async reply => {
       if (!reply.success || !reply.data) return;
       const blob = await widgetSnapshotWebP(reply.data, width);
-      if (blob) await widgetSnapshots.put(account, widgetId, theme, width, blob);
+      if (blob && await widgetSnapshots.put(account, widgetId, theme, width, blob)) shown?.set(await widgetSnapshotDataUrl(blob));
     }).catch(error => log.warn('Widget picture could not be saved:', error))
       .finally(() => {
         capturingRef.current = false;
@@ -241,6 +247,7 @@ export const ExtensionPage = observer(function ExtensionPage({
   }, [guestBinding]);
   useEffect(() => () => { clearTimeout(captureTimerRef.current); pendingCaptureRef.current = false; }, [capture]);
 
+  // @@@effect-flow(lifecycle) - activates the App's page in main (starts its guest) and binds the webview to the surface it returns
   useEffect(() => {
     if (managed) return;
     let disposed = false;
@@ -571,7 +578,7 @@ export const ExtensionPage = observer(function ExtensionPage({
   }, [marked, pageKey]);
   // Not started yet, its box is still placed: the loading mark shows from the moment the page is asked for.
   if (!surface && !managed && inline) return null;
-  const manifest = installedExtensionsStore.manifestFor(extensionId);
+  const manifest = installed.state === 'value' ? installed.value.manifestFor(extensionId) : undefined;
   const page = managed && manifest ? <AppSettingsPage key={`${manifest.version}:${JSON.stringify(manifest.settings)}`} manifest={manifest} active={claimOf() !== undefined} /> : surface ? <webview
     key={`${extensionId}:${surface.partition}`}
     ref={attachWebview}

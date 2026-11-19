@@ -101,3 +101,18 @@ it('does not restore an old ready value after a reconnect read fails', async () 
   expect(latest.current()).toBeNull()
   expect(latest.error).toContain('new epoch read failed')
 })
+
+it('F2-4: a link that comes back reads again a session whose host had input waiting, even on a page that does not ask a read', async () => {
+  function Quiet() {
+    latest = useSessionLifeView('device', 'a', false, true, false)
+    return null
+  }
+  root = createRoot(container)
+  await act(async () => { root.render(<Quiet />) })
+  expect(host.reads).toHaveLength(0)
+  const waiting: LifeView = { ...view('a', 4), pending: { count: 1, items: [{ seq: 1, messageId: 'm', preview: 'hi', text: 'hi', kind: 'ordinary', state: 'queued', failure: null } as never] } }
+  await act(async () => { for (const cb of host.events) cb(waiting) })
+  await act(async () => { for (const cb of host.links) cb(false) })
+  await act(async () => { for (const cb of host.links) cb(true) })
+  expect(host.reads).toHaveLength(1)
+})

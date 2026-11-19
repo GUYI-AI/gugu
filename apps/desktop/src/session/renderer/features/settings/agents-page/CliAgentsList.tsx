@@ -62,7 +62,7 @@ const AgentGrid: React.FC<{
   agents: AgentPayload[];
   busy: ReadonlySet<string>;
   /** #6264 此刻「登录已失效」的那几家 —— 图标上挂警示角标。 */
-  expired: ReadonlySet<string>;
+  expired: ReadonlySet<string> | null;
   onSelectAgent: (agentId: string) => void;
 }> = ({ agents, busy, expired, onSelectAgent }) => (
   // auto-fill 而不是定死列数:弹层宽度随窗口变,格子跟着回流,❌ 不在某个宽度上留一条空带。
@@ -72,7 +72,7 @@ const AgentGrid: React.FC<{
         key={agent.id}
         agent={agent}
         busy={busy.has(agent.id)}
-        signInExpired={expired.has(agent.id)}
+        signInExpired={!!expired?.has(agent.id)}
         state={resolveHarnessState({
           reading: agent.reading,
           status: agent.status,
@@ -91,7 +91,8 @@ export const CliAgentsList: React.FC<CliAgentsListProps> = ({
   selectedAgentId,
   onSelectAgent,
 }) => {
-  const { data: agentPayloads } = useManagementAgents();
+  const reading = useManagementAgents().reading;
+  const agentPayloads = reading.state === 'value' ? reading.value : null;
   const busy = useBusyInstallAgents();
   // 本机那份「登录已失效」只订阅不探;资源库看的是别的机器时不画(那台机器的读数在抽屉的「账号」一行)。
   const expired = useExpiredAgentIds(!useLibraryHost().remote);
@@ -100,8 +101,8 @@ export const CliAgentsList: React.FC<CliAgentsListProps> = ({
 
   const visible = useMemo(
     () =>
-      (agentPayloads ?? [])
-        .filter((a) => !normalizedQuery || a.name.toLowerCase().includes(normalizedQuery))
+      agentPayloads
+        ?.filter((a) => !normalizedQuery || a.name.toLowerCase().includes(normalizedQuery))
         .sort(compareAgents),
     [agentPayloads, normalizedQuery]
   );
@@ -113,13 +114,14 @@ export const CliAgentsList: React.FC<CliAgentsListProps> = ({
    * ❌ 从前是 `status !== 'available'` 一刀切,它被并进「未安装」,用户照着去装第二份,而第一份
    * 还在 PATH 前面。
    */
-  const installed = useMemo(() => visible.filter(isInstalledAgent), [visible]);
-  const notInstalled = useMemo(() => visible.filter((a) => !isInstalledAgent(a)), [visible]);
+  const installed = useMemo(() => visible?.filter(isInstalledAgent), [visible]);
+  const notInstalled = useMemo(() => visible?.filter((a) => !isInstalledAgent(a)), [visible]);
 
   const query = searchQuery.trim();
   const emptyMessage =
     query === '' ? translate('agentsPage.emptyAll') : translate('agentsPage.noMatch', { query });
 
+  if (!visible || !installed || !notInstalled) return null;
   return (
     <div className="pb-4">
       {visible.length === 0 && <EmptyState>{emptyMessage}</EmptyState>}

@@ -4,14 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, waitForCondition } from '../../../support/testHarness'
 import type { PhoneAgentHostState } from '../../../../apps/desktop/src/mobile/local-agent/nativeAgent'
 import type { PhoneOsState } from '../../../../apps/desktop/src/mobile/phone-device/phoneActionCatalog'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
 
 const mocks = vi.hoisted(() => ({
   kind: 'capacitor', permissions: ['notifications', 'batteryOptimization', 'camera', 'microphone'], host: null as PhoneAgentHostState | null,
   owner: 'setup-owner', installKey: 'native-install-a', available: true, restartHost: vi.fn(),
   runtimeRequest: vi.fn(), dataRequest: vi.fn(), healthRequest: vi.fn(), nativeSettings: vi.fn(),
-  check: vi.fn(), request: vi.fn(), settings: vi.fn(), foreground: [] as Array<() => void>, os: null as PhoneOsState | null, refresh: vi.fn(),
+  check: vi.fn(), request: vi.fn(), settings: vi.fn(), foreground: [] as Array<() => void>, os: null as PhoneOsState | null, osError: null as Error | null, refresh: vi.fn(),
 }))
-vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ useMyAssistant: () => ({ agentId: null, provisionDeviceId: null, loading: false, error: null }) }))
+vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ useMyAssistant: () => ({ state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null }) }))
 vi.mock('../../../../apps/desktop/src/mobile/local-agent/nativeAgent', () => ({ phoneAgentAvailable: () => mocks.available }))
 vi.mock('../../../../apps/desktop/src/mobile/phone-device/nativePhoneActions', () => ({
   HEALTH_TYPES: ['steps', 'sleep'], nativePhoneActions: { deviceInfo: async () => ({ install_key: mocks.installKey, registration_id: `registration-${mocks.installKey}` }), requestPermissions: mocks.runtimeRequest, healthRequest: mocks.healthRequest, openSettings: mocks.nativeSettings },
@@ -19,10 +20,15 @@ vi.mock('../../../../apps/desktop/src/mobile/phone-device/nativePhoneActions', (
 vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneDataActions', async original => ({
   ...await original<typeof import('../../../../apps/desktop/src/mobile/phone-device/phoneDataActions')>(), nativePhoneData: { request: mocks.dataRequest },
 }))
-vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneDeviceRuntime', () => ({
-  usePhoneDevice: () => ({ os: mocks.os, host: mocks.host, link: { state: 'off' } }), readPhoneOsState: async () => mocks.os,
-  refreshPhoneDevice: mocks.refresh, stopPhoneAgentHost: vi.fn(), restartPhoneAgentHost: mocks.restartHost,
-}))
+vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneDeviceRuntime', async () => {
+  // The OS state's one holder is the phoneOsState replica; here it reads the test's system (a copy per read).
+  const { replica } = await import('../../../../apps/desktop/src/lib/replica')
+  const phoneOsState = replica({ name: 'phoneOsState', scope: 'device', read: async () => { if (mocks.osError) throw mocks.osError; return JSON.parse(JSON.stringify(mocks.os)) as PhoneOsState } })
+  return {
+    usePhoneDevice: () => ({ host: mocks.host, link: { state: 'off' } }), readPhoneOsState: async () => mocks.os, phoneOsState,
+    refreshPhoneDevice: async () => { mocks.refresh(); await phoneOsState.refresh() }, stopPhoneAgentHost: vi.fn(), restartPhoneAgentHost: mocks.restartHost,
+  }
+})
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {
   get kind() { return mocks.kind }, systemPermissions: mocks.permissions,
   get capabilities() { return { phoneDevice: mocks.kind === 'capacitor', phoneAgentHost: mocks.available && mocks.kind === 'capacitor' } },
@@ -54,9 +60,10 @@ async function renderGate(ownerId = mocks.owner) {
   await waitForCondition(() => !!byId('phone-agent-setup-form') || !document.querySelector('[role="dialog"]'), 'installation loaded')
   return h
 }
-beforeEach(() => {
+beforeEach(async () => {
+  await freshReplicaAccount(`setup-owner-${ownerSequence + 1}`)
   vi.clearAllMocks(); localStorage.clear(); mocks.kind = 'capacitor'; mocks.permissions.splice(0, mocks.permissions.length, 'notifications', 'batteryOptimization', 'camera', 'microphone')
-  mocks.host = null; mocks.owner = `setup-owner-${++ownerSequence}`; mocks.installKey = 'native-install-a'; mocks.available = true; mocks.os = osState(); mocks.foreground = []
+  mocks.host = null; mocks.owner = `setup-owner-${++ownerSequence}`; mocks.installKey = 'native-install-a'; mocks.available = true; mocks.os = osState(); mocks.osError = null; mocks.foreground = []
   mocks.check.mockReset().mockResolvedValue('prompt'); mocks.request.mockReset().mockResolvedValue('blocked'); mocks.settings.mockReset().mockResolvedValue(true)
   mocks.runtimeRequest.mockReset().mockResolvedValue({}); mocks.nativeSettings.mockReset().mockResolvedValue(undefined); mocks.dataRequest.mockReset().mockResolvedValue({}); mocks.refresh.mockReset().mockResolvedValue(undefined)
 })
@@ -94,7 +101,9 @@ describe('single phone permissions destination', () => {
   it('keeps dismissal bound to the actual installation', async () => {
     const h = await renderGate(); await clickElement(document.querySelector<HTMLElement>('[aria-label="返回咕咕"]')!); h.cleanup()
     await renderGate(); expect(byId('phone-agent-setup-form')).toBeNull()
-    mocks.installKey = 'another-install'; await renderGate(); expect(byId('phone-agent-setup-form')).not.toBeNull()
+    // Another native installation is another run of the app: nothing read in this one carries over.
+    mocks.installKey = 'another-install'; (await import('../../../../apps/desktop/src/lib/replica')).queryClient.clear()
+    await renderGate(); expect(byId('phone-agent-setup-form')).not.toBeNull()
   })
   it('reopens correctly after switching owners with different request counts', async () => {
     const previous = 'previous-owner', current = 'current-owner', install = phoneInstallId(mocks.installKey, `registration-${mocks.installKey}`)
@@ -173,8 +182,19 @@ describe('phone permission actions and real Android state', () => {
     expect(readPhoneDeviceSettings(mocks.owner).groups.recordings).toBe(false)
     expect(mocks.dataRequest).not.toHaveBeenCalled()
   })
+  it('a re-read that fails after an earlier answer says it could not read, ❌ the earlier answer as now', async () => {
+    mocks.os!.runtime.calendar = 'granted'; setPhoneActionGroup(mocks.owner, 'calendar', true); setPhoneDeviceEnabled(mocks.owner, true)
+    await render()
+    await waitForCondition(() => byId('phone-device-group-calendar')?.textContent?.includes('已开启') ?? false, 'first answer drawn')
+    // Back from the system settings, the system does not answer.
+    mocks.osError = new Error('the system did not answer')
+    await act(async () => { for (const f of mocks.foreground) f() })
+    await waitForCondition(() => byId('phone-device-group-calendar')?.textContent?.includes('查不到') ?? false, 'failed re-read drawn')
+    expect(byId('phone-device-group-calendar')?.textContent).not.toContain('已开启')
+    expect(document.querySelectorAll('[role="alert"]')).toHaveLength(1)
+  })
   it('keeps unreadable rows visible and reports one combined failure', async () => {
-    mocks.refresh.mockRejectedValue(new Error('read failed')); mocks.check.mockRejectedValue(new Error('system failed')); await render()
+    mocks.osError = new Error('read failed'); mocks.check.mockRejectedValue(new Error('system failed')); await render()
     expect(byId('phone-device-group-photos')?.textContent).toContain('查不到')
     expect(document.querySelectorAll('[role="alert"]')).toHaveLength(1)
     expect(mocks.request).not.toHaveBeenCalled()

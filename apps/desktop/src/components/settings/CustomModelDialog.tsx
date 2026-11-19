@@ -16,6 +16,7 @@ import { errorText } from '@renderer/features/settings/subscriptions/subscriptio
 import { ConnectionModelPicker } from '@renderer/features/settings/subscriptions/ConnectionModelPicker';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { agentsMetadata } from '@renderer/lib/stores/agent-replicas';
 import { SubscriptionConnections } from '@renderer/features/settings/subscriptions/SubscriptionConnections';
 import { Unknown } from '@/components/ui/Unknown';
 import { AppIcon } from '@renderer/lib/components/app-icon';
@@ -32,7 +33,10 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
   const [presetId, setPresetId] = useState(connection?.preset ?? (connection ? 'custom' : group === 'coding-plan' ? accountPreset : initialPreset?.id ?? 'custom'));
   const preset = providerPresets.find(({ id }) => id === presetId);
   const accountProvider = presetId === 'claude-subscription' ? 'claude' : presetId === 'chatgpt-subscription' ? 'codex' : null;
-  const { data: agents, error: agentsError, refetch: refetchAgents } = useAgents();
+  const agentsReading = useAgents();
+  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
+  const agentsError = agentsReading.state === 'error' ? agentsReading.error : null;
+  const refetchAgents = () => agentsMetadata.refresh();
   const accountAgent = agents?.find(agent => agent.id === accountProvider);
   const labelOf = (id: string) => id === 'claude-subscription' ? translate('customModels.claudeAccount') : id === 'chatgpt-subscription' ? translate('customModels.codexAccount') : providerPresets.find(item => item.id === id)?.name ?? translate('customModels.custom');
   const providerLabel = (id: string) => <span className="flex items-center gap-2">{id === 'claude-subscription' || id === 'chatgpt-subscription' ? <AppIcon id={id === 'claude-subscription' ? 'claude' : 'codex'} size={16} /> : null}{labelOf(id)}</span>;

@@ -507,7 +507,7 @@ const defaultBrowser = replica({
   name: 'defaultBrowser',
   scope: 'device',
   read: () => rpc.browser.defaultBrowser() as Promise<{ name: string; supported: boolean }>,
-  persist: { maxBytes: 512, maxEntries: 1 },
+  persist: { maxBytes: 256, maxEntries: 1 },
 });
 
 function ImportLoginsRow({

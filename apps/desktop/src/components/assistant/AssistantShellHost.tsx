@@ -1,5 +1,4 @@
 import { deviceMachines } from '@gugu/core/shared/deviceMachines'
-import { cloudComputerEnabled } from '@gugu/core/cloud/optionalServices'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { CloudComputerSnapshot } from '@gugu/core/cloud/cloudComputer'
@@ -17,14 +16,14 @@ import {
   readAssistantShellBridge,
   type AssistantSetupStep,
 } from '../../lib/assistantShellBridge'
-import { refreshCloudComputer } from '../../lib/cloudComputerStore'
-import { assistantIdentityState, reloadMyAssistant, useMyAssistantContact } from '../../lib/myAssistant'
-import { assistantHomePlace, canSetUpCloudAssistant, withoutAssistantHome } from '../../lib/assistantHome'
+import { canSetUpCloudAssistant, cloudComputer, cloudFailureOf, cloudSnapshotOf, useCloudComputer } from '../../lib/cloudComputer'
+import { assistantIdentityState, refreshMyAssistant, useMyAssistantContact } from '../../lib/myAssistant'
+import { assistantHomePlace, withoutAssistantHome } from '../../lib/assistantHome'
 import { readSetupStep, subscribeSetupStep, writeSetupStep } from '../../lib/assistantSetupState'
 import { pendingLocalAssistant, resumeLocalAssistant, setupStillStarting } from '../../lib/assistantSetup'
 import { keepFinishingLocalAssistant } from '../../lib/assistantSetupFinish'
 import { requestAssistantClose } from '../../lib/assistantClose'
-import { getMembership } from '../../lib/billing/membership'
+import { useSpendingPower } from '../../lib/billing/useSpendingPower'
 import { membershipSettingsSection } from '../../lib/billing/settingsDestination'
 import { rendererLogger } from '../../lib/log'
 import { installShellSlots } from '../../lib/shellSlots'
@@ -57,8 +56,9 @@ function openSettings(section: ActiveSection) {
  */
 export function OnboardingSlot({ snapshot: given, device: givenDevice }: { snapshot?: CloudComputerSnapshot | null; device?: Device | null } = {}) {
   const { user } = useAuth()
-  const { cloudComputer, devices } = useDevicesStore()
-  const snapshot = given !== undefined ? given : cloudComputer?.snapshot ?? null
+  const { devices } = useDevicesStore()
+  const cloud = useCloudComputer()
+  const snapshot = given !== undefined ? given : cloudSnapshotOf(cloud)
   const cloudDeviceId = snapshot?.deviceId ?? null
   const device = givenDevice !== undefined ? givenDevice : cloudDeviceId ? devices.find((d) => d.device_id === cloudDeviceId) ?? null : null
   const localDeviceId = platform.capabilities.agentRuntime ? devices.find((d) => d.is_current_device)?.device_id ?? null : null
@@ -69,7 +69,7 @@ export function OnboardingSlot({ snapshot: given, device: givenDevice }: { snaps
       ownerName={user.nickname ?? null}
       snapshot={snapshot}
       device={device}
-      cloudAvailable={cloudComputer !== undefined && canSetUpCloudAssistant(cloudComputer)}
+      cloudAvailable={canSetUpCloudAssistant(cloud)}
       localDeviceId={localDeviceId}
     />
   )
@@ -133,8 +133,9 @@ export function AssistantStatusGroups({
 export function AssistantShellHost() {
   const { user } = useAuth()
   const { contacts, contactsStatus, updateAgentProfile } = useContactsStore()
-  const { cloudComputer, devices, phones } = useDevicesStore()
-  const snapshot = cloudComputer?.snapshot ?? null
+  const { devices, phones } = useDevicesStore()
+  const cloud = useCloudComputer()
+  const snapshot = cloudSnapshotOf(cloud)
   const cloudDeviceId = snapshot?.deviceId ?? null
   // 按库里的标记认(lib/myAssistant.ts),❌ 按名字、❌ 按住在哪台:会员住云上、非会员住自己的电脑,它会搬家。
   const mine = useMyAssistantContact(contacts)
@@ -148,7 +149,7 @@ export function AssistantShellHost() {
   useEffect(() => {
     // A retry completes the same provision and identity: the contacts key can
     // remain unchanged. Re-read its marker when the host reports completion.
-    if (ownerUserId && readyCloudDeviceId) reloadMyAssistant(ownerUserId)
+    if (ownerUserId && readyCloudDeviceId) void refreshMyAssistant()
   }, [ownerUserId, readyCloudDeviceId])
   useEffect(() => {
     const bridge = readAssistantShellBridge()
@@ -163,7 +164,7 @@ export function AssistantShellHost() {
       openModel: () => {
         openAssistantPageInApp('settings', 'aimodel')
       },
-      refreshCloud: () => void refreshCloudComputer().catch(() => undefined),
+      refreshCloud: () => void cloudComputer.refresh(),
       advanceSetup: (next) => {
         if (ownerUserId) writeSetupStep(ownerUserId, next === 'shell' ? null : next)
       },
@@ -174,22 +175,10 @@ export function AssistantShellHost() {
   const localDeviceId = platform.capabilities.agentRuntime ? devices.find((d) => d.is_current_device)?.device_id ?? null : null
   const home = useMemo(() => (contact ? assistantHomePlace(mine.homeDeviceId, devices, cloudDeviceId) : null), [contact, mine.homeDeviceId, devices, cloudDeviceId])
 
-  const assistantState = assistantIdentityState(contact !== null, mine, contactsStatus)
-  // 会员档:最左栏入口在「还没有咕咕」时按它写提示;读不到 = null(不当成非会员)。
-  const [member, setMember] = useState<boolean | null>(null)
-  useEffect(() => {
-    if (!ownerUserId || !cloudComputerEnabled()) return
-    let cancelled = false
-    getMembership()
-      .then((m) => !cancelled && setMember(!!m && m.tier !== 'free'))
-      .catch((error: unknown) => {
-        log.warn({ error: String(error) }, 'read membership failed')
-        if (!cancelled) setMember(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [ownerUserId])
+  const assistantState = assistantIdentityState(contact !== null, mine.reading, contactsStatus)
+  // 会员档:最左栏入口在「还没有咕咕」时按它写提示;没读到、读不到 = null(不当成非会员)。
+  const spending = useSpendingPower(user)
+  const member = spending.state === 'value' && spending.membership ? spending.membership.tier !== 'free' : null
   // 本机正在给它安家:那一次的恢复记录在(建好或失败才清);云上正在开 = 管家说 provisioning。
   const [localPreparing, setLocalPreparing] = useState(false)
   useEffect(() => {
@@ -210,7 +199,7 @@ export function AssistantShellHost() {
   }, [contact, ownerUserId])
   const preparing = !contact && (snapshot?.state === 'provisioning' || localPreparing)
   const rules = useAssistantRulesState()
-  useAssistantRulesStuckNotice(rules.stuck)
+  useAssistantRulesStuckNotice(rules.state === 'value' && rules.value.stuck)
   // 它已经有了、这台电脑上那一次开通却没走完(开通页没等到它起来):接着推完,让它先开口(见 lib/assistantSetupFinish)。
   const contactId = contact?.id ?? null
   useEffect(() => {
@@ -220,7 +209,7 @@ export function AssistantShellHost() {
       resume: async (record) => {
         await resumeLocalAssistant(record)
         writeSetupStep(ownerUserId, 'connect')
-        reloadMyAssistant(ownerUserId)
+        await refreshMyAssistant()
       },
       // 只有「还没起来」值得过一会儿再推;别的失败(真失败、那一单已被收回……)再推也一样,停下、原因进日志,下次打开 App 再试。
       isFinal: (error) => !setupStillStarting(error),
@@ -239,10 +228,10 @@ export function AssistantShellHost() {
   useEffect(() => {
     publishAssistantShell({
       deviceCount,
-      cloudAvailable: !!cloudComputer?.available,
+      cloudAvailable: cloud.state === 'value' && cloud.value.available,
       canHostHere: !!localDeviceId,
       cloud: snapshot,
-      loadError: cloudComputer?.loadError ? String(cloudComputer.loadError) : null,
+      loadError: cloudFailureOf(cloud),
       assistant: contact ? { id: contact.id, display_name: contact.display_name, avatar: contact.avatar, created_at: contact.created_at ?? null, agent_type: contact.agent_type } : null,
       assistantState,
       ownerName: user?.nickname ?? null,
@@ -254,9 +243,9 @@ export function AssistantShellHost() {
       setup,
       member,
       preparing,
-      rulesPending: rules.pending,
+      rulesPending: rules.state === 'value' && rules.value.pending,
     })
-  }, [deviceCount, cloudComputer?.available, cloudComputer?.loadError, localDeviceId, snapshot, contact, assistantState, user?.nickname, user?.id, user?.avatarUrl, dm.chatId, dm.failed, home, setup, member, preparing, rules.pending])
+  }, [deviceCount, cloud, localDeviceId, snapshot, contact, assistantState, user?.nickname, user?.id, user?.avatarUrl, dm.chatId, dm.failed, home, setup, member, preparing, rules])
 
   return (
     <>

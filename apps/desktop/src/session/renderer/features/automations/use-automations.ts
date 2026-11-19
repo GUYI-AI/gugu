@@ -1,107 +1,85 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
-import { onMachineEvent } from '@renderer/lib/ipc';
+import { useMutation } from '@tanstack/react-query';
+import { queryClient, useReplica, type Reading, type Replica } from '@/lib/replica';
 import type {
   CreateAutomationParams,
   UpdateAutomationSettingsPatch,
 } from '@shared/core/automations/automation';
+import { useAutomationsHost, type AutomationsHost } from './automations-host';
 import {
-  automationChangedChannel,
-  automationRunChangedChannel,
-} from '@shared/core/automations/automationEvents';
-import { automationsQueryKey, useAutomationsHost, type AutomationsHost } from './automations-host';
+  automationLatestRun,
+  automationNextRun,
+  automationRunCounts,
+  automationRunPage,
+  automations as automationsModel,
+  refreshAutomationRuns,
+  type AutomationMachine,
+  type RunStatusFilter,
+} from './automation-replicas';
 
-/**
- * 别的机器:离线就不问(问不到,只会挂满超时)。变化与本机一样靠那台机器推来的事件(#6264 会话页宿主连接),❌ 轮询。
- */
-function remoteQueryOptions(host: AutomationsHost) {
-  if (!host.remote) return {};
-  // 变化由那台机器推事件来(与本机同一套);切回窗口 ❌ 再问一遍(每一问都是一次跨网往返)。
-  return { enabled: host.remote.online, retry: false, refetchOnWindowFocus: false } as const;
+function machineOf(host: AutomationsHost): AutomationMachine {
+  return host.remote?.deviceId ?? 'local';
 }
 
-/** 这一页看的那台机器(null = 本机)。 */
-function machineOf(host: AutomationsHost): string | null {
-  return host.remote?.deviceId ?? null;
+/** 别的机器离线就不问(问不到,只会挂满超时),照旧画上次读到的(#6264)。 */
+function useMachineReplica<A extends [AutomationMachine, ...unknown[]], V>(
+  model: Replica<A, V>,
+  host: AutomationsHost,
+  args: A | null
+): Reading<V> {
+  return useReplica(model, args, { read: host.remote?.online !== false });
 }
 
-export function useAutomations(projectId?: string) {
-  const queryClient = useQueryClient();
+export function useAutomations() {
   const host = useAutomationsHost();
   const api = host.api;
-
-  useEffect(() => {
-    // Restore must refresh an empty list too: there may be no visible row left to subscribe for it.
-    return onMachineEvent(machineOf(host), automationChangedChannel, () => {
-      void queryClient.invalidateQueries({ queryKey: automationsQueryKey(host) });
-    });
-  }, [queryClient, host.key]);
-
-  function invalidateAutomations() {
-    void queryClient.invalidateQueries({ queryKey: automationsQueryKey(host, projectId) });
-  }
-
-  function invalidateRuns(automationId?: string) {
-    void queryClient.invalidateQueries({
-      queryKey: automationId
-        ? automationsQueryKey(host, 'runs', automationId)
-        : automationsQueryKey(host, 'runs'),
-    });
-  }
-
-  const automations = useQuery({
-    queryKey: automationsQueryKey(host, projectId),
-    queryFn: () => api.listAutomations(projectId),
-    placeholderData: keepPreviousData,
-    ...remoteQueryOptions(host),
-  });
+  const machine = machineOf(host);
+  const automations = useMachineReplica(automationsModel, host, [machine]);
+  const refreshList = () => automationsModel.refresh(machine);
 
   const create = useMutation({
     mutationFn: (params: CreateAutomationParams) => api.createAutomation(params),
-    onSuccess: invalidateAutomations,
-  });
+    onSuccess: refreshList,
+  }, queryClient);
 
   const updateSettings = useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: UpdateAutomationSettingsPatch }) =>
       api.updateAutomationSettings(id, patch),
-    onSuccess: invalidateAutomations,
-  });
+    onSuccess: refreshList,
+  }, queryClient);
 
   const rename = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) =>
-      api.renameAutomation(id, name),
-    onSuccess: invalidateAutomations,
-  });
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.renameAutomation(id, name),
+    onSuccess: refreshList,
+  }, queryClient);
 
   const setEnabled = useMutation({
-    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-      api.setAutomationEnabled(id, enabled),
-    onSuccess: invalidateAutomations,
-  });
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => api.setAutomationEnabled(id, enabled),
+    onSuccess: refreshList,
+  }, queryClient);
 
   const toggleEnabled = useMutation({
-    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-      api.toggleAutomationEnabled(id, enabled),
-    onSuccess: invalidateAutomations,
-  });
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => api.toggleAutomationEnabled(id, enabled),
+    onSuccess: refreshList,
+  }, queryClient);
 
   const runNow = useMutation({
     mutationFn: (id: string) => api.runAutomation(id),
-    onSuccess: (_run, id) => invalidateRuns(id),
-  });
+    onSuccess: (_run, id) => refreshAutomationRuns(machine, id),
+  }, queryClient);
 
   const stop = useMutation({
     mutationFn: (runId: string) => api.stopRun(runId),
-    onSuccess: () => invalidateRuns(),
-  });
+    onSuccess: () => refreshAutomationRuns(machine),
+  }, queryClient);
 
   const destroy = useMutation({
     mutationFn: (id: string) => api.deleteAutomation(id),
-    onSuccess: invalidateAutomations,
-  });
+    onSuccess: refreshList,
+  }, queryClient);
 
   return {
     automations,
+    retry: () => void refreshList(),
     create,
     updateSettings,
     rename,
@@ -113,109 +91,27 @@ export function useAutomations(projectId?: string) {
   };
 }
 
-export function useAutomationRuns(automationId: string, limit = 20) {
-  const host = useAutomationsHost();
-  return useQuery({
-    queryKey: automationsQueryKey(host, 'runs', automationId, limit),
-    queryFn: () => host.api.listAutomationRuns(automationId, limit, 0),
-    ...remoteQueryOptions(host),
-    enabled: !!automationId && host.remote?.online !== false,
-  });
-}
-
-const PAGINATED_PAGE_SIZE = 25;
-
 export function useScheduledAutomationRun(automationId: string) {
   const host = useAutomationsHost();
-  return useQuery({
-    queryKey: automationsQueryKey(host, 'runs', automationId, 'scheduled'),
-    queryFn: () => host.api.getNextScheduledRun(automationId),
-    ...remoteQueryOptions(host),
-    enabled: !!automationId && host.remote?.online !== false,
-  });
+  return useMachineReplica(automationNextRun, host, [machineOf(host), automationId]);
 }
 
-type RunStatusFilter = 'done' | 'failed' | 'skipped' | undefined;
-
-export function useAutomationRunsPaginated(
-  automationId: string,
-  page: number,
-  statusFilter?: RunStatusFilter
-) {
+export function useLatestAutomationRun(automationId: string) {
   const host = useAutomationsHost();
-  return useQuery({
-    queryKey: automationsQueryKey(host, 'runs', automationId, 'page', page, statusFilter),
-    queryFn: () =>
-      host.api.listAutomationRuns(
-        automationId,
-        PAGINATED_PAGE_SIZE + 1,
-        page * PAGINATED_PAGE_SIZE,
-        statusFilter
-      ),
-    placeholderData: keepPreviousData,
-    ...remoteQueryOptions(host),
-    enabled: !!automationId && host.remote?.online !== false,
-  });
+  return useMachineReplica(automationLatestRun, host, [machineOf(host), automationId]);
+}
+
+export function useAutomationRunsPaginated(automationId: string, page: number, status: RunStatusFilter) {
+  const host = useAutomationsHost();
+  return useMachineReplica(automationRunPage, host, [machineOf(host), automationId, page, status]);
 }
 
 export function useAutomationRunCounts(automationId: string) {
   const host = useAutomationsHost();
-  return useQuery({
-    queryKey: automationsQueryKey(host, 'runs', automationId, 'counts'),
-    queryFn: () => host.api.countAutomationRunsByStatus(automationId),
-    ...remoteQueryOptions(host),
-    enabled: !!automationId && host.remote?.online !== false,
-  });
+  return useMachineReplica(automationRunCounts, host, [machineOf(host), automationId]);
 }
 
-export function useLatestAutomationRun(automationId: string) {
-  const queryClient = useQueryClient();
-  const host = useAutomationsHost();
-  const key = automationsQueryKey(host, 'runs', automationId, 'latest');
-
-  useEffect(() => {
-    // 只听这一页看的那台机器推的(事件按机器订,见 lib/ipc.ts 的 onMachineEvent)。
-    return onMachineEvent(machineOf(host), automationRunChangedChannel, ({ automationId: id, run }) => {
-      if (id !== automationId) return;
-      queryClient.setQueryData(key, run);
-    });
-  }, [automationId, queryClient, host.key]);
-
-  return useQuery({
-    queryKey: key,
-    queryFn: () => host.api.getLatestRun(automationId),
-    ...remoteQueryOptions(host),
-    enabled: !!automationId && host.remote?.online !== false,
-  });
-}
-
-export function useAutomationRun(automationId: string, runId: string) {
-  const runs = useAutomationRuns(automationId);
-  return runs.data?.find((r) => r.id === runId);
-}
-
-export function useAutomation(automationId: string, projectId?: string) {
-  const { automations } = useAutomations(projectId);
-  return automations.data?.find((a) => a.id === automationId);
-}
-
-export function useAutomationEventBridge(automationId: string) {
-  const queryClient = useQueryClient();
-  const host = useAutomationsHost();
-  useEffect(() => {
-    // 只听这一页看的那台机器推的(事件按机器订,见 lib/ipc.ts 的 onMachineEvent)。
-    const machine = machineOf(host);
-    const unsubChanged = onMachineEvent(machine, automationChangedChannel, ({ automationId: id }) => {
-      if (id !== automationId) return;
-      void queryClient.invalidateQueries({ queryKey: automationsQueryKey(host, 'runs', id, 'scheduled') });
-    });
-    const unsubRun = onMachineEvent(machine, automationRunChangedChannel, ({ automationId: id }) => {
-      if (id !== automationId) return;
-      void queryClient.invalidateQueries({ queryKey: automationsQueryKey(host, 'runs', id) });
-    });
-    return () => {
-      unsubChanged();
-      unsubRun();
-    };
-  }, [automationId, queryClient, host.key]);
+export function useRetryAutomationRuns(automationId: string) {
+  const machine = machineOf(useAutomationsHost());
+  return () => refreshAutomationRuns(machine, automationId);
 }

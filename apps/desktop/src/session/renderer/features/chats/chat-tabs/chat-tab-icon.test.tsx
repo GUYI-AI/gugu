@@ -15,14 +15,16 @@ vi.mock('@renderer/features/tabs/tab-bar/generic-tab-item', () => ({
   ),
 }));
 // Office is an installed App with a page of its own (so in `openableApps`); its chat files open in `office.main`.
-vi.mock('@renderer/features/extensions/installed-extensions-store', async (original) => ({
+const apps = vi.hoisted(() => ({
+  tabTitle: () => 'Office', isChatFile: () => false, manifestFor: () => undefined, sideWidth: () => undefined,
+  openableApps: [{ extensionId: 'office', name: 'Office', kind: 'office.main', iconDataUrl: null }],
+  // Office declared an icon for .pptx (`fileIcons`); nothing else here declares one.
+  fileIcon: (kind: string, name: string) => (kind === 'office.main' && name.endsWith('.pptx') ? 'data:image/png;base64,cHB0eA==' : null),
+}));
+vi.mock('@renderer/features/extensions/installed-extensions', async (original) => ({
   ...(await original<object>()),
-  installedExtensionsStore: {
-    tabTitle: () => 'Office', isChatFile: () => false, manifestFor: () => undefined,
-    openableApps: [{ extensionId: 'office', name: 'Office', kind: 'office.main', iconDataUrl: null }],
-    // Office declared an icon for .pptx (`fileIcons`); nothing else here declares one.
-    fileIcon: (kind: string, name: string) => (kind === 'office.main' && name.endsWith('.pptx') ? 'data:image/png;base64,cHB0eA==' : null),
-  },
+  useInstalledApps: () => ({ state: 'value', value: apps, stale: false, error: null }),
+  peekInstalledAppsTracked: () => apps,
 }));
 vi.mock('@/components/RailAppIcon', () => ({ RailAppIcon: () => <i data-app-icon="" /> }));
 vi.mock('@/components/chat/chatFolderName', () => ({ useChatFolderName: () => 'Chat folder' }));

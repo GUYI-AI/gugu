@@ -108,3 +108,20 @@ describe('member picker', () => {
     expect(chips()).toEqual([])
   })
 })
+
+describe('the open-time read of the contacts (F1-6)', () => {
+  it('waits from the first frame: no "selection unavailable" judged by the list as last read, confirmation held', async () => {
+    const { followRendererSession, queryClient } = await import('../../../../apps/desktop/src/lib/replica')
+    const { contactsService } = await import('../../../../apps/desktop/src/lib/contacts')
+    queryClient.clear()
+    followRendererSession('SIGNED_IN', 'owner-1')
+    const read = vi.spyOn(contactsService, 'getContacts').mockReturnValue(new Promise(() => {}))
+    const picker = createNode(MemberPicker, { title: 'Add', confirmLabel: (n: number) => `Add ${n}`, initialSelectedIds: ['newcomer'], onConfirm: () => {}, onClose: () => {} })
+    await renderWithAppProviders(harness, picker, providers)
+    expect(read).toHaveBeenCalled()
+    expect(harness.container.querySelector('[role="alert"]')).toBeNull()
+    const button = [...harness.container.querySelectorAll('button')].find((b) => /^Add/.test(b.textContent ?? ''))
+    expect(button?.disabled).toBe(true)
+    read.mockRestore()
+  })
+})

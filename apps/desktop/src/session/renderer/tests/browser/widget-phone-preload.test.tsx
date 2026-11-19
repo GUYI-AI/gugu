@@ -14,10 +14,14 @@ vi.mock('@/store/auth', async original => ({ ...(await original<object>()), useA
 vi.mock('@/components/chat/useConversationVisibility', () => ({ useConversationVisibility: () => ({ ref: useRef(null), shown: true }) }))
 vi.mock('@/components/appSlot/appsHere', () => ({ appsHere: {} }))
 vi.mock('@/components/appSlot/PhoneAppFrame', () => ({ PhoneAppFrame: () => <iframe title="preloaded widget" data-testid="widget-frame" /> }))
-vi.mock('@/session/renderer/features/extensions/installed-extensions-store', async original => ({ ...(await original<object>()), installedExtensionsStore: {
+vi.mock('@/session/renderer/features/extensions/installed-extensions', async original => {
+  const installed = {
   isLoaded: true, isEnabled: () => true,
   manifestFor: () => ({ id: 'vote', version: '1.0.0', contributes: { tabs: [{ name: 'poll', widget: { height: 64 } }] } }),
-} }))
+}
+  return { ...(await original<object>()), useInstalledApps: () => ({ state: 'value', stale: false, error: null, value: installed }),
+    peekInstalledApps: () => installed, peekInstalledAppsTracked: () => installed, fetchInstalledApps: async () => installed }
+})
 
 let harness: ReturnType<typeof createReactHarness>
 afterEach(() => harness?.cleanup())

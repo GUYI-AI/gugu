@@ -14,13 +14,22 @@ import { PhoneConnectorSetupPage } from '../../../apps/desktop/src/mobile/assist
 import { failureKey, type SetupFailure } from '../../../apps/desktop/src/mobile/assistant/phoneConnectorFlow'
 import type { PhoneIntegrations } from '../../../apps/desktop/src/mobile/assistant/usePhoneProfileData'
 import { clickElement, createNode, createReactHarness, deferred, renderWithAppProviders, waitForCondition } from '../../support/testHarness'
+import { freshReplicaAccount } from '../../support/replicaAccount'
+import { readableAssistantPanelCollection } from '@gugu/core/cloud/assistantPanelFiles'
+import type { AssistantPanelDomain } from '@gugu/core/cloud/assistantPanel'
+import { assistantPanel } from '../../../apps/desktop/src/components/assistant/assistant-panel-replica'
 
 // #7199 手机连接应用的详情页与连接页:真目录(二十家)+ 假的助理的家(rpc 记下调用),渲染出来点一遍。
 // 判据落在行为上:点了什么就发了什么调用、连上后重读状态、没断成就留在确认卡上。
 
 const ui = vi.hoisted(() => ({ platformKind: 'capacitor' as 'capacitor' | 'web', writeClipboardText: vi.fn(async (_text: string) => {}), rpc: null as unknown, listeners: [] as Array<(data: unknown) => void> }))
 
-vi.mock('@/components/settings/channels/useChatChannels', () => ({ useChatChannels: () => ({ client: null, list: null, status: 'absent', error: '', refresh: async () => {}, apply: () => {} }) }))
+// The saved accounts are derived from the panel snapshot (the real `useAssistantPanelCollection` over the `assistantPanel`
+// replica); here the panel's cloud read is played at its bridge (`panelSnapshot`): the page's `integrations` rows, as the
+// cloud snapshot would carry them, read again on each refresh. A failed read is the reading's error.
+const panel = vi.hoisted(() => ({ rows: async (): Promise<Array<{ resource_key: string; data: Record<string, unknown> }>> => [], revision: 0, reads: 0 }))
+// No chat channels client in this build: the `chatChannels` replica reads `absent`.
+vi.mock('@/lib/chatChannels', () => ({ rendererChatChannelsClient: () => null }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/phoneAssistantAuthorization',() => ({ phoneAssistantAuthorization: () => ui.rpc }))
 vi.mock('../../../apps/desktop/src/components/assistant/assistant-app-client',() => ({ reportAssistantAppChange: vi.fn(async () => {}) }))
 vi.mock('../../../apps/desktop/src/platform', () => ({ platform: { get kind() { return ui.platformKind }, writeClipboardText: ui.writeClipboardText } }))
@@ -67,6 +76,14 @@ function makeRpc() {
 }
 
 function pageProps(id: string, options: { configured?: Record<string, boolean>; statuses?: PhoneIntegrations['statuses'] } = {}) {
+  // This page's provider's rows in the cloud snapshot of the panel.
+  panel.rows = async () => {
+    const rows = id === 'github' ? await rpc.github.listAccounts() : await rpc.integrations.accounts(id)
+    return (rows.length ? rows : options.configured?.[id] && !catalog.find(item => item.id === id)?.multiAccount ? [{ accountId: 'default' }] : []).map((raw: unknown) => {
+      const row = raw as { accountId: string; displayName?: string; login?: string }
+      return { resource_key: row.accountId,data: { providerId: id,accountId: row.accountId,displayName: row.displayName ?? row.login ?? row.accountId } }
+    })
+  }
   const retry = vi.fn()
   const go = vi.fn()
   const integrations = {
@@ -79,14 +96,12 @@ function pageProps(id: string, options: { configured?: Record<string, boolean>; 
     retry,
     go,
     props: { assistant, chatId: 'chat-1', ownerName: null, homeDeviceId: "cloud-1", readiness: 'ready', machine: { state: 'ready',machine: { deviceId: 'cloud-1',projectId: 'panel',workspaceId: 'dm',paths: { memoryDir: 'memory' },panel: {
-      invalidate: vi.fn(),
-      collection: async () => {
-        const rows = id === 'github' ? await rpc.github.listAccounts() : await rpc.integrations.accounts(id)
-        return (rows.length ? rows : options.configured?.[id] && !catalog.find(item => item.id === id)?.multiAccount ? [{ accountId: 'default' }] : []).map((raw: unknown) => {
-          const row = raw as { accountId: string; displayName?: string; login?: string }
-          return { resource_key: row.accountId,data: { providerId: id,accountId: row.accountId,displayName: row.displayName ?? row.login ?? row.accountId } }
-        })
-      },change: async (row: { data: { providerId: string; accountId: string } }) => {
+      ownerId: owner(),assistantId: assistant.id,deviceId: 'cloud-1',
+      // As the panel files' invalidate: the panel is read again.
+      invalidate: vi.fn(() => { void assistantPanel.refresh(assistant.id) }),
+      // As the panel files read a collection: through the same replica entry.
+      collection: async (domain: AssistantPanelDomain) => readableAssistantPanelCollection(await assistantPanel.fetch(assistant.id), domain, 'cloud-1'),
+      change: async (row: { data: { providerId: string; accountId: string } }) => {
         const result = (row.data.providerId === 'github' ? await rpc.github.removeAccount(row.data.accountId)
           : await rpc.integrations.disconnect(row.data.providerId,row.data.accountId === 'default' ? undefined : row.data.accountId)) as { success: boolean; error?: string }
         if (!result.success) throw new Error('Cloud removal could not be saved')
@@ -111,8 +126,33 @@ let harness: ReturnType<typeof createReactHarness>
 let rpc: FakeRpc
 let opened: string[]
 let accountSequence = 0
-beforeEach(() => {
+const owner = () => `phone-connectors-test-${accountSequence}`
+const panelItem = (resourceKey: string, data: Record<string, unknown>, revision: string) => ({
+  assistant_user_id: assistant.id, owner_user_id: owner(), domain: 'integrations' as const, resource_key: resourceKey, device_id: 'cloud-1', revision, data,
+  body_item_id: null, body_sha256: null, deleted_at: null, observed_at: null, updated_at: '2026-11-15T00:00:00Z',
+})
+/** The panel bridge's cloud read (the shell's half): a snapshot of the page's rows, a newer revision each read. */
+function installPanelBridge() {
+  (window as unknown as { __GUGU_ASSISTANT_PANEL__: unknown }).__GUGU_ASSISTANT_PANEL__ = {
+    accountId: () => owner(),
+    subscribeAccount: () => () => {},
+    subscribeChanges: () => () => {},
+    files: () => { throw new Error('not in this test') },
+    queueNotice: async () => null,
+    panelSnapshot: async () => {
+      panel.reads += 1
+      const revision = String(++panel.revision)
+      const rows = await panel.rows()
+      return { version: 1, revision, application: [],
+        items: [panelItem('__collection__:cloud-1', { state: 'ready' }, revision), ...rows.map((row) => panelItem(row.resource_key, row.data, revision))] }
+    },
+  }
+}
+beforeEach(async () => {
   accountSequence += 1
+  await freshReplicaAccount(owner())
+  installPanelBridge()
+  panel.reads = 0
   setLocalePreference('zh-CN')
   harness = createReactHarness()
   rpc = makeRpc()
@@ -133,7 +173,7 @@ afterEach(() => {
   delete (HTMLElement.prototype as Partial<HTMLElement>).getAnimations
 })
 
-const render = (node: Parameters<typeof createNode>[0], props: Record<string, unknown>) => renderWithAppProviders(harness, createNode(I18nextProvider, { i18n }, createNode(node, props)), { auth: { id: `phone-connectors-test-${accountSequence}` } })
+const render = (node: Parameters<typeof createNode>[0], props: Record<string, unknown>) => renderWithAppProviders(harness, createNode(I18nextProvider, { i18n }, createNode(node, props)), { auth: { id: owner() } })
 
 describe('市场的连接器目录', () => {
   it('市场的连接按钮打开详情，不直接启动授权', async () => {
@@ -145,6 +185,14 @@ describe('市场的连接器目录', () => {
     expect(q('assistant-connector-connect')).toBeNull()
     await clickElement(row.querySelectorAll('button')[1]!)
     expect(page.go).toHaveBeenLastCalledWith('connector:qq-mail')
+  })
+
+  it('列表读过、再读失败:照旧列着,上面说没刷新并给重试', async () => {
+    const page = pageProps('qq-mail')
+    await render(PhoneConnectorsPage, { ...page.props, marketMode: 'market', integrations: { ...(page.props.integrations as object), error: new Error('link closed') } })
+    expect(q('phone-market-connector-qq-mail')).not.toBeNull()
+    await clickElement(q('assistant-connectors')!.querySelector<HTMLButtonElement>('[data-refresh-failed] button')!)
+    expect(page.retry).toHaveBeenCalledOnce()
   })
 
   it('已安装只列实际保存的连接，并把健康状态和已连接区分开', async () => {
@@ -265,6 +313,18 @@ describe('详情页', () => {
     await waitForCondition(() => document.querySelector('[role="alert"]') !== null, 'read failure shown')
     expect(q('assistant-connector-accounts-retry')).toBeNull()
     expect(q('assistant-connector-disconnect')).toBeNull()
+  })
+
+  it('邮箱:账号清单读过、再读失败:列着上一次的,下面说没读到并给重试', async () => {
+    rpc.integrations.accounts.mockResolvedValue([{ accountId: 'imap.qq.com:a@qq.com', displayName: 'a@qq.com', connectedAt: null, isDefault: true, fields: {} }])
+    const page = pageProps('qq-mail', { configured: { 'qq-mail': true } })
+    await render(PhoneConnectorDetail, page.props)
+    await waitForCondition(() => qa('assistant-connector-account').length === 1, 'account listed')
+    expect(document.querySelector('[role="alert"]')).toBeNull()
+    rpc.integrations.accounts.mockRejectedValue(new Error('link closed'))
+    await act(async () => { await assistantPanel.refresh(assistant.id).catch(() => undefined) })
+    await waitForCondition(() => document.querySelector('[role="alert"]') !== null, 'failed refresh not said')
+    expect(qa('assistant-connector-account')).toHaveLength(1)
   })
 
   it('邮箱:那台机器比多账号老(unknown_method)= 按单账号画,有整家「断开连接」', async () => {

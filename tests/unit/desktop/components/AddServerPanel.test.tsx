@@ -18,6 +18,11 @@ vi.mock('@gugu/core/cloud/remoteTunnel', () => ({
   },
   SERVER_LOGIN_ACTION: '在咕咕桌面「设置 → 设备 → 添加一台机器」用远程 SSH 添加这台机器',
 }))
+const limits = vi.hoisted(() => ({ recent: vi.fn(async (_since: string): Promise<{ limit: 'tunnel'; used: number; max: number; hostname: string | null } | null> => null) }))
+vi.mock('../../../../apps/desktop/src/lib/device-labels', async (original) => ({
+  ...await original<object>(),
+  recentMachineLimitRefusal: limits.recent,
+}))
 import { AddServerPanel, LANDING_SLOW_MS } from '../../../../apps/desktop/src/components/settings/AddServerPanel'
 import { DevicesSection } from '../../../../apps/desktop/src/components/settings/DevicesSection'
 import { OneLineInstall } from '../../../../apps/desktop/src/components/settings/addServer/OneLineInstall'
@@ -866,10 +871,12 @@ describe('#6264 机器上限:平时不披露,碰到了就地停下说清楚', ()
     const onUpgrade = vi.fn()
     const onRemoveMachine = vi.fn()
     let answer: { limit: 'tunnel'; used: number; max: number; hostname: string | null } | null = null
-    const recentMachineLimitRefusal = vi.fn(async () => answer)
+    const recentMachineLimitRefusal = limits.recent
+    recentMachineLimitRefusal.mockReset()
+    recentMachineLimitRefusal.mockImplementation(async () => answer)
     const value: DevicesContextValue = {
       devices: [device('mine', '本机')], loading: false, error: null, refresh: async () => {}, rename: async () => {},
-      remove: async () => {}, listBoundAgents: async () => [], recentMachineLimitRefusal,
+      remove: async () => {}, listBoundAgents: async () => [],
     }
     const harness = createReactHarness()
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
@@ -897,6 +904,44 @@ describe('#6264 机器上限:平时不披露,碰到了就地停下说清楚', ()
       const calls = recentMachineLimitRefusal.mock.calls.length
       await act(async () => { vi.advanceTimersByTime(20_000) })
       expect(recentMachineLimitRefusal.mock.calls.length).toBe(calls)
+    } finally {
+      vi.useRealTimers()
+      harness.cleanup()
+    }
+  })
+
+  it('远程隧道:问不到上限时不打断等待,只在等待那行下面说一句并接着问;机器一出现就不再问', async () => {
+    installApi()
+    const recent = limits.recent
+    recent.mockReset()
+    recent.mockRejectedValueOnce(new Error('network down')).mockResolvedValue(null)
+    let devices = [device('mine', '本机')]
+    const value = (): DevicesContextValue => ({
+      devices, loading: false, error: null, refresh: async () => {}, rename: async () => {}, remove: async () => {}, listBoundAgents: async () => [],
+    })
+    const harness = createReactHarness()
+    const view = () => <DevicesContext.Provider value={value()}><OneLineInstall onAdded={noop} /></DevicesContext.Provider>
+    const failed = () => document.querySelector('[data-testid="add-server-limit-check-failed"]')
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      await harness.render(view())
+      await act(async () => undefined)
+      expect(recent).toHaveBeenCalledTimes(1)
+      const status = () => document.querySelector('[data-testid="add-server-one-line-status"]')?.textContent
+      expect(status()).toContain('等待机器上线…')
+      expect(failed()?.textContent).toBe('暂时查不到机器上限，稍后再查。')
+      await act(async () => { vi.advanceTimersByTime(5_000) })
+      await act(async () => undefined)
+      expect(recent).toHaveBeenCalledTimes(2)
+      expect(failed()).toBeNull()
+      expect(status()).toContain('等待机器上线…')
+
+      devices = [...devices, device('new', 'gpu-9')]
+      await harness.render(view())
+      expect(status()).toContain('gpu-9')
+      const calls = recent.mock.calls.length
+      await act(async () => { vi.advanceTimersByTime(20_000) })
+      expect(recent.mock.calls.length).toBe(calls)
     } finally {
       vi.useRealTimers()
       harness.cleanup()

@@ -26,6 +26,12 @@ vi.mock('@/lib/listDevicesOnceIdentified', () => ({ listDevicesOnceIdentified: a
   device_id: 'server', label: 'Linux', is_online: f.online, platform: 'linux',
   capabilities: { host_kind: 'server', arch: 'x64', remote_protocol: REMOTE_PROTOCOL_VERSION, assistant_home_setup: 1 },
 }] }))
+// The server list is derived from the account's machines (the devices replica): the same rows as above.
+vi.mock('@/store/devicesCache', async (original) => ({
+  ...await original<object>(),
+  devicesModel: (await import('@/lib/replica')).replica({ name: 'devicesForServerReturnTest', scope: 'account',
+    read: async () => (await import('@/lib/listDevicesOnceIdentified')).listDevicesOnceIdentified() }),
+}))
 vi.mock('@/lib/assistantSetup', () => ({
   cleanAssistantSetupDraft: () => ({ name: '小满', avatar: '', ownerProfile: 'Owner' }),
   assistantResumeStore: { list: () => [] }, completedAssistantSetup: (value: unknown) => value,
@@ -33,14 +39,15 @@ vi.mock('@/lib/assistantSetup', () => ({
 vi.mock('@/lib/agentProvision', () => ({ provisionSingleAgent: vi.fn(), resumeSingleAgent: vi.fn() }))
 vi.mock('@/lib/agentModelSelection', () => ({ fetchAgentHarnessModels: vi.fn() }))
 vi.mock('@/lib/assistantSetupState', () => ({ offerCustomizeCard: vi.fn(), writeSetupStep: vi.fn() }))
-vi.mock('@/lib/myAssistant', () => ({ reloadMyAssistant: vi.fn() }))
-vi.mock('@/lib/cloudComputerStore', () => ({ refreshCloudComputer: vi.fn() }))
+vi.mock('@/lib/myAssistant', () => ({ refreshMyAssistant: vi.fn() }))
+vi.mock('@/lib/cloudComputer', async (original) => ({ ...await original<object>(), readCloudSnapshotNow: vi.fn() }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn() }) }))
 vi.mock('@/components/agentAvatar/AgentAvatar', () => ({ AgentAvatar: () => null }))
 
 import { AssistantServerSetup } from '@/components/assistant/AssistantServerSetup'
 import { AssistantHomeChoice } from '@/components/assistant/AssistantHomeChoice'
 import { pendingServerAssistant } from '@/lib/assistantServerSetup'
+import { followRendererSession, queryClient } from '@/lib/replica'
 const draft = { name: '小满', color: 0, rest: 'neutral' as const, owner: { preferredName: '主人', about: '' } }
 function HomeFlow() {
   const [server, setServer] = useState(true)
@@ -54,6 +61,7 @@ function HomeFlow() {
 }
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
+  queryClient.clear(); followRendererSession('SIGNED_IN', 'owner')
   vi.clearAllMocks(); localStorage.clear()
   f.online = true; f.ownerReads = 0; f.disconnectBeforeRpc = false
   f.start.mockReset(); f.cancel.mockReset()

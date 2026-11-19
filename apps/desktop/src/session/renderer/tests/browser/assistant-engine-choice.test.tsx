@@ -1,5 +1,5 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
-import { queryClient } from '@/lib/replica';
+import { followRendererSession, queryClient } from '@/lib/replica';
 import { createRoot, type Root } from 'react-dom/client';
 import { useState } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -71,6 +71,8 @@ vi.mock('@renderer/lib/stores/use-agent-auth-status', async original => ({
   useAgentAuthStatus: () => ({ auth: null, refresh: async () => {} }),
   useAgentAuthStatuses: (_: string, programs: unknown[]) => ({ auths: programs.map(() => null), refresh: async () => {} }),
 }));
+// Assistant setup runs inside the signed-in app: the model catalog it refreshes after a switch is an account's reading.
+followRendererSession('SIGNED_IN', 'reader');
 let root: Root;
 let host: HTMLDivElement;
 let client: QueryClient;

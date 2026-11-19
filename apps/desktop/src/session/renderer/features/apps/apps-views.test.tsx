@@ -51,9 +51,15 @@ vi.mock('./app-host-layer', () => ({
     return null;
   },
 }));
-vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: { mainTabOf: () => mocks.main, manifestFor: () => mocks.manifest, get isLoaded() { return mocks.loaded; }, get allTabContributions() { return mocks.tabs; } },
-}));
+// What is installed here, as the replica reads it (`loaded` false: not read yet).
+vi.mock('@renderer/features/extensions/installed-extensions', () => {
+  const apps = { mainTabOf: () => mocks.main, manifestFor: () => mocks.manifest, get allTabContributions() { return mocks.tabs; } };
+  return {
+    LOCAL_HOST: 'local',
+    installedExtensions: { refresh: async () => undefined },
+    useInstalledApps: () => (mocks.loaded ? { state: 'value', value: apps, stale: false, error: null } : { state: 'unknown' }),
+  };
+});
 // #1925 The frame beside a bound conversation is app-conversation-frame.test.tsx's: here, only whether it is chosen.
 vi.mock('./app-conversation-frame', () => ({
   AppConversationFrame: (props: Record<string, unknown>) => { mocks.frames.push(props); return null; },
@@ -124,6 +130,7 @@ describe('an App opened from the far-left rail', () => {
     mocks.main = { kind: 'clock.main', enabled: true, extensionName: 'Clock' };
     mocks.lastSession = { projectId: 'project-1', sessionId: 'task-1' };
     mocks.target = { kind: 'built-in' };
+    mocks.loaded = true;
   });
 
   it('uses the same live page title as its task tab and keeps the App name as the initial title', () => {
@@ -179,6 +186,18 @@ describe('an App opened from the far-left rail', () => {
     expect(renderToStaticMarkup(<appView.MainPanel />)).toMatch(/data-testid="app-page"[^>]*>[^]*extensions\.turnOnInSettings/);
     expect(renderToStaticMarkup(<appView.MainPanel />)).toContain(`padding-top:${WINDOW_CONTROL_BAR_HEIGHT_PX}px`);
     expect(mocks.claims).toEqual([]);
+  });
+
+  // Reload, then the rail's App clicked before what is installed is read — the page said 「已停用」 and the title was
+  // empty, then the App and its name appeared. Not read yet: the page held whole, the name's place held, nothing claimed.
+  it('before what is installed is read, it never says switched off: the page and the name\'s place are held', () => {
+    mocks.loaded = false;
+    const page = renderToStaticMarkup(<appView.MainPanel />);
+    expect(page).toContain('data-testid="app-page-unknown"');
+    expect(page).not.toContain('extensions.turnOnInSettings');
+    expect(page).not.toContain('extensions.assistantPreparing');
+    expect(mocks.claims).toEqual([]);
+    expect(renderToStaticMarkup(<appView.TitlebarSlot />)).toContain('data-unknown');
   });
 
   // Real window (verify-pass1 D9): the window restored to the assistant App's page while the App was not installed yet (the entry

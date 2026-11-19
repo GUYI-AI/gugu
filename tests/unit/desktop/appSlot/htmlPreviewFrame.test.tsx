@@ -106,12 +106,19 @@ describe('shared HTML frame lifecycle', () => {
     const subscribeChanges = (listener: typeof changed) => { changed = listener; return vi.fn() }
     const register = vi.fn<(...args: string[]) => Promise<HtmlPreviewRegistration>>()
       .mockResolvedValue({ ok: false, message: 'Host unavailable' })
-    await harness.render(createElement(HtmlPreviewFrame, { fileName: 'report.html', rawContent: 'body', register, subscribeChanges, onLink: vi.fn() }))
-    await until('bounded automatic recovery is exhausted', () => harness.container.textContent!.includes('Host unavailable'))
-    expect(register).toHaveBeenCalledTimes(4)
-    register.mockResolvedValue({ ok: true, url: 'blob:recovered', update: vi.fn(), release: vi.fn() })
-    await act(async () => { changed(); await new Promise(resolve => setTimeout(resolve, 220)) })
-    expect(register).toHaveBeenCalledTimes(5)
-    expect(harness.container.querySelector('iframe')?.getAttribute('src')).toBe('blob:recovered')
+    // The bounded recovery waits 1 s, 2 s and 4 s between tries: run on the test's clock.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await harness.render(createElement(HtmlPreviewFrame, { fileName: 'report.html', rawContent: 'body', register, subscribeChanges, onLink: vi.fn() }))
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
+      expect(harness.container.textContent).toContain('Host unavailable')
+      expect(register).toHaveBeenCalledTimes(4)
+      register.mockResolvedValue({ ok: true, url: 'blob:recovered', update: vi.fn(), release: vi.fn() })
+      await act(async () => { changed(); await vi.advanceTimersByTimeAsync(220) })
+      expect(register).toHaveBeenCalledTimes(5)
+      expect(harness.container.querySelector('iframe')?.getAttribute('src')).toBe('blob:recovered')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

@@ -8,11 +8,11 @@ import { usePhoneToday } from './usePhoneToday'
  * (胶囊本身不用读:没有灵感也露着,点开是空态 +「让它想几个」)。
  */
 export function PhoneIdeas({ assistant, chatId, askInChat, onClose }: { assistant: PhoneAssistant; chatId: string; askInChat: (draft: string) => void; onClose: () => void }) {
-  const view = usePhoneToday(chatId)
+  const { today, retry } = usePhoneToday(chatId)
   useBackLayer(onClose, true)
   return (
     <div className="ta-phone-layer" data-testid="mobile-assistant-ideas">
-      <IdeasPanel layout="page" view={view} assistantId={assistant.id} name={assistant.display_name} askInChat={askInChat} onClose={onClose} />
+      <IdeasPanel layout="page" today={today} retry={retry} assistantId={assistant.id} name={assistant.display_name} askInChat={askInChat} onClose={onClose} />
     </div>
   )
 }

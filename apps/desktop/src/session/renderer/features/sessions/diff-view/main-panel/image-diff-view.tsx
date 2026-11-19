@@ -1,13 +1,14 @@
 import type { Result } from '@gugu/session-shared';
-import { useQuery } from '@tanstack/react-query';
 import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
+import { Unknown } from '@/components/ui/Unknown';
+import { replica, useReplica, type Reading } from '@/lib/replica';
 import { useWorkspace } from '@renderer/features/sessions/session-view-context';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import { MicroLabel } from '@renderer/lib/ui/label';
 import { formatBytes } from '@renderer/utils/formatBytes';
 import {
   HEAD_REF,
-  type GitRef,
   type ImageReadResult,
   type ImageUnavailableReason,
 } from '@shared/core/git/types';
@@ -23,11 +24,9 @@ interface ImageDiffViewProps {
 }
 
 type SideState =
-  | { status: 'loading' }
   | { status: 'ready'; dataUrl: string; mimeType: string; size: number }
   | { status: 'missing' }
-  | { status: 'unavailable'; reason: ImageUnavailableReason }
-  | { status: 'error'; message: string };
+  | { status: 'unavailable'; reason: ImageUnavailableReason };
 
 type Side = 'original' | 'modified';
 
@@ -62,11 +61,14 @@ function fromImageReadResult(result: ImageReadResult): SideState {
   }
 }
 
+/** Right after a write a side can briefly fail to read (file mid-write, index mid-update): retried. */
+class TransientImageError extends Error {}
+
 type ImageRpcResult = Result<{ result: ImageReadResult }, unknown>;
 
 async function loadGitImage(call: () => Promise<ImageRpcResult>): Promise<SideState> {
   const res = await call();
-  if (!res.success) return { status: 'error', message: 'Failed to load image' };
+  if (!res.success) throw new TransientImageError('Failed to load image', { cause: res.error });
   return fromImageReadResult(res.data.result);
 }
 
@@ -74,10 +76,10 @@ function loadFromRef(
   projectId: string,
   workspaceId: string,
   filePath: string,
-  ref: GitRef
+  ref: string
 ): Promise<SideState> {
   return loadGitImage(() =>
-    workspaceRpc(projectId).gitWorktree.getImageAtRef(projectId, workspaceId, filePath, gitRefToString(ref))
+    workspaceRpc(projectId).gitWorktree.getImageAtRef(projectId, workspaceId, filePath, ref)
   );
 }
 
@@ -87,14 +89,14 @@ async function loadFromDisk(
   filePath: string
 ): Promise<SideState> {
   const res = await workspaceRpc(projectId).files.readImage(projectId, workspaceId, filePath);
-  if (!res.success) return { status: 'unavailable', reason: 'git-error' };
+  if (!res.success) throw new TransientImageError('Failed to read image', { cause: res.error });
   const image = res.data;
   if (!image?.success) {
     const error = image?.error ?? '';
     if (/not found/i.test(error)) return { status: 'missing' };
-    return { status: 'unavailable', reason: 'git-error' };
+    throw new TransientImageError(error || 'Failed to read image');
   }
-  if (!image.dataUrl) return { status: 'unavailable', reason: 'git-error' };
+  if (!image.dataUrl) throw new TransientImageError('The image read carried no data');
   return {
     status: 'ready',
     dataUrl: image.dataUrl,
@@ -103,71 +105,60 @@ async function loadFromDisk(
   };
 }
 
+type ImageFile = { path: string; group: ActiveFile['group']; originalRef: string; modifiedRef: string | null };
+
 function loadOriginal(
   projectId: string,
   workspaceId: string,
-  activeFile: ActiveFile
+  activeFile: ImageFile
 ): Promise<SideState> {
-  const ref: GitRef = activeFile.group === 'staged' ? HEAD_REF : activeFile.originalRef;
+  const ref = activeFile.group === 'staged' ? gitRefToString(HEAD_REF) : activeFile.originalRef;
   return loadFromRef(projectId, workspaceId, activeFile.path, ref);
 }
 
-function loadModified(
+async function loadModified(
   projectId: string,
   workspaceId: string,
-  activeFile: ActiveFile
+  activeFile: ImageFile
 ): Promise<SideState> {
-  switch (activeFile.group) {
-    case 'disk':
-      return loadFromDisk(projectId, workspaceId, activeFile.path);
-    case 'staged':
-      return loadGitImage(() =>
-        workspaceRpc(projectId).gitWorktree.getImageAtIndex(projectId, workspaceId, activeFile.path)
-      );
-    case 'git':
-    case 'pr':
-      return loadFromRef(
-        projectId,
-        workspaceId,
-        activeFile.path,
-        activeFile.modifiedRef ?? HEAD_REF
-      );
-  }
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function shouldRetryModifiedLoad(state: SideState): boolean {
-  return (
-    state.status === 'error' || (state.status === 'unavailable' && state.reason === 'git-error')
-  );
-}
-
-async function loadModifiedWithTransientRetry(
-  projectId: string,
-  workspaceId: string,
-  activeFile: ActiveFile
-): Promise<SideState> {
-  const delays = [120, 300, 600];
-  let state = await loadModified(projectId, workspaceId, activeFile);
-
-  for (const ms of delays) {
-    if (!shouldRetryModifiedLoad(state)) return state;
-    await delay(ms);
-    state = await loadModified(projectId, workspaceId, activeFile);
-  }
-
+  const state = await (() => {
+    switch (activeFile.group) {
+      case 'disk':
+        return loadFromDisk(projectId, workspaceId, activeFile.path);
+      case 'staged':
+        return loadGitImage(() =>
+          workspaceRpc(projectId).gitWorktree.getImageAtIndex(projectId, workspaceId, activeFile.path)
+        );
+      case 'git':
+      case 'pr':
+        return loadFromRef(projectId, workspaceId, activeFile.path, activeFile.modifiedRef ?? gitRefToString(HEAD_REF));
+    }
+  })();
+  if (state.status === 'unavailable' && state.reason === 'git-error') throw new TransientImageError('Preview unavailable');
   return state;
 }
 
-function ImageSidePanel({ label, state, side }: { label: string; state: SideState; side: Side }) {
+export const IMAGE_RETRY_DELAYS_MS = [120, 300, 600];
+
+/** Keyed by what names its bytes; bytes that change in place add the worktree's status revision. */
+export const imageDiffSide = replica({
+  name: 'imageDiffSide',
+  scope: 'device',
+  read: (_owner, projectId: string, workspaceId: string, side: Side, activeFile: ImageFile, _revision: number): Promise<SideState> =>
+    side === 'original' ? loadOriginal(projectId, workspaceId, activeFile) : loadModified(projectId, workspaceId, activeFile),
+  fresh: Infinity,
+  keep: 60_000,
+  retry: IMAGE_RETRY_DELAYS_MS.length,
+  retryDelay: (attempt) => IMAGE_RETRY_DELAYS_MS[Math.min(attempt, IMAGE_RETRY_DELAYS_MS.length - 1)]!,
+});
+
+function ImageSidePanel({ label, reading, side, onRetry }: { label: string; reading: Reading<SideState>; side: Side; onRetry: () => void }) {
+  const state = reading.state === 'value' ? reading.value : null;
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex shrink-0 items-baseline gap-2 border-b border-border px-3 py-2">
         <span className="font-sans text-xs text-foreground-muted">{label}</span>
-        {state.status === 'ready' && (
+        {state?.status === 'ready' && (
           // 一次性 10px caption → MicroLabel(design.md Reject:tiny muted prose);
           // 字节数是「数」,mono 才是它的家(design.md:mono 唯一的活是命令/包名/路径/
           // 标识符/版本号/计数)—— 2026-09-22 两条一起改。
@@ -175,17 +166,23 @@ function ImageSidePanel({ label, state, side }: { label: string; state: SideStat
         )}
       </div>
       <div className="flex flex-1 items-center justify-center overflow-auto p-4">
-        <ImageSideContent state={state} side={side} />
+        {reading.state === 'unknown' ? (
+          <Unknown className="h-40 w-40" />
+        ) : reading.state === 'error' ? (
+          <ReadFailedLine
+            message={reading.error instanceof TransientImageError ? unavailableMessage('git-error') : reading.error.message}
+            onRetry={onRetry}
+          />
+        ) : (
+          <ImageSideContent state={reading.value} side={side} />
+        )}
       </div>
     </div>
   );
 }
 
 function ImageSideContent({ state, side }: { state: SideState; side: Side }) {
-  const { translate } = useSessionMessages();
   switch (state.status) {
-    case 'loading':
-      return <div className="text-xs text-foreground-passive">{translate('task.loading')}</div>;
     case 'missing':
       return (
         <div className="text-xs text-foreground-passive">
@@ -196,8 +193,6 @@ function ImageSideContent({ state, side }: { state: SideState; side: Side }) {
       return (
         <div className="text-xs text-foreground-passive">{unavailableMessage(state.reason)}</div>
       );
-    case 'error':
-      return <div className="text-xs text-foreground-passive">{state.message}</div>;
     case 'ready':
       return <PreviewImage state={state} alt={side} />;
   }
@@ -237,38 +232,29 @@ export const ImageDiffView = observer(function ImageDiffView({
   const workspace = useWorkspace();
   const git = workspace.gitWorktree;
 
-  const fileKey = `${activeFile.path}|${activeFile.group}|${gitRefToString(activeFile.originalRef)}|${activeFile.modifiedRef ? gitRefToString(activeFile.modifiedRef) : ''}`;
+  // Plain data: the pane's file may be observable.
+  const file: ImageFile = {
+    path: activeFile.path,
+    group: activeFile.group,
+    originalRef: gitRefToString(activeFile.originalRef),
+    modifiedRef: activeFile.modifiedRef ? gitRefToString(activeFile.modifiedRef) : null,
+  };
 
-  // For disk/staged groups the bytes can change without fileKey changing
+  // For disk/staged groups the bytes can change without the file changing
   // (in-place overwrite, re-stage). Pinning to statusRevision reruns the
   // load whenever GitWorktreeStore observes an fs-watch or index event.
   const reactiveRevision =
     activeFile.group === 'disk' || activeFile.group === 'staged' ? git.statusRevision : 0;
 
-  const placeholder: SideState = { status: 'loading' };
-
-  const originalQuery = useQuery({
-    queryKey: ['image-diff', 'original', projectId, workspaceId, fileKey, reactiveRevision],
-    queryFn: () => loadOriginal(projectId, workspaceId, activeFile),
-    placeholderData: placeholder,
-    staleTime: Infinity,
-  });
-
-  const modifiedQuery = useQuery({
-    queryKey: ['image-diff', 'modified', projectId, workspaceId, fileKey, reactiveRevision],
-    queryFn: () => loadModifiedWithTransientRetry(projectId, workspaceId, activeFile),
-    placeholderData: placeholder,
-    staleTime: Infinity,
-  });
-
-  const original = originalQuery.data ?? placeholder;
-  const modified = modifiedQuery.data ?? placeholder;
+  const original = useReplica(imageDiffSide, [projectId, workspaceId, 'original', file, reactiveRevision]);
+  const modified = useReplica(imageDiffSide, [projectId, workspaceId, 'modified', file, reactiveRevision]);
+  const retry = (side: Side) => () => void imageDiffSide.refresh(projectId, workspaceId, side, file, reactiveRevision);
 
   return (
     <div className="flex h-full min-h-0 w-full">
-      <ImageSidePanel label={translate('diff.original')} state={original} side="original" />
+      <ImageSidePanel label={translate('diff.original')} reading={original} side="original" onRetry={retry('original')} />
       <div className="w-px shrink-0 bg-border" />
-      <ImageSidePanel label={translate('diff.modified')} state={modified} side="modified" />
+      <ImageSidePanel label={translate('diff.modified')} reading={modified} side="modified" onRetry={retry('modified')} />
     </div>
   );
 });

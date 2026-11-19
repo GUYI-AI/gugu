@@ -7,7 +7,6 @@ export type SessionStateContextValue = {
   workspaceConfig: WorkspaceConfigState;
   initialSession: InitialSessionState;
   projectId?: string;
-  isUnborn: boolean;
   hasPR: boolean;
   linkedIssue?: LinkedIssue;
   includeIssueContextByDefault: boolean;

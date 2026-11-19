@@ -1,38 +1,59 @@
-import { retryAssistantPanelRead } from '@gugu/core/cloud/assistantPanelRead';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLibraryHost } from '@renderer/features/library/library-host';
+import { isAssistantPanelReadRetryable } from '@gugu/core/cloud/assistantPanelRead';
+import { useMutation } from '@tanstack/react-query';
+import { queryClient, replica, useReplica, type Reading } from '@/lib/replica';
+import { keepLibraryHost, libraryHostOf, useLibraryHost, type LibraryHost } from '@renderer/features/library/library-host';
 import { rpcOn } from '@renderer/lib/ipc';
 import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client';
 import { cachedDevicesAccount } from '@/store/devicesCache';
+import { CONNECTIONS } from '@/components/connections/connection-replicas';
+import { refreshTag } from '@/lib/replica';
+import type { GitHubAccountSummary } from '@shared/github';
 
-export const GITHUB_ACCOUNTS_QUERY_KEY = ['github:accounts'] as const;
-export const GITHUB_ACCOUNT_STATE_QUERY_KEY = ['github:account-state'] as const;
-export const ISSUE_CONNECTION_STATUS_QUERY_KEY = ['issues:connection-status'] as const;
+/** An assistant panel's store may still be settling right after it opened. */
+const ASSISTANT_PANEL_READ_ATTEMPTS = 3;
 
-function invalidateGitHubAccountState(queryClient: ReturnType<typeof useQueryClient>) {
-  void queryClient.invalidateQueries({ queryKey: GITHUB_ACCOUNTS_QUERY_KEY });
-  void queryClient.invalidateQueries({ queryKey: GITHUB_ACCOUNT_STATE_QUERY_KEY });
-  void queryClient.invalidateQueries({ queryKey: ISSUE_CONNECTION_STATUS_QUERY_KEY });
+/**
+ * GitHub 账号是**这台机器上**连的(#6264 整个资源库都分机器);按机器(`host.key`)各一条。Signal tier.
+ */
+export const githubAccounts = replica({
+  name: 'githubAccounts',
+  scope: 'device',
+  read: async (_owner, hostKey: string): Promise<GitHubAccountSummary[]> => {
+    const host = libraryHostOf(hostKey);
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await host.github.listAccounts();
+      } catch (error) {
+        if (!host.assistantPanelExpected || attempt >= ASSISTANT_PANEL_READ_ATTEMPTS || !isAssistantPanelReadRetryable(error)) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+      }
+    }
+  },
+  fresh: 30_000,
+  refreshOnFocus: true,
+});
+
+/** Whether this host can be asked now: its store is there (assistant panel, connection metadata), its machine online. */
+function askable(host: LibraryHost): boolean {
+  if (host.connectionMetadataExpected) return !!host.connectionMetadata;
+  if (host.assistantPanelExpected) return !!host.assistantPanel;
+  return host.remote?.online !== false;
 }
 
 /**
- * GitHub 账号是**这台机器上**连的(#6264 整个资源库都分机器):资源库选了别的机器时,列 / 连 / 设默认 / 移除
- * 都是那台机器上的;其余地方(项目设置、PR 选择器)用本机的。缓存键带机器,两份互不覆盖。
+ * Every host's list is read again, and the connection readings derived from them.
  */
-export function useGitHubAccounts() {
-  const host = useLibraryHost();
-  return useQuery({
-    queryKey: host.remote || host.assistantPanelExpected || host.connectionMetadataExpected ? [...GITHUB_ACCOUNTS_QUERY_KEY, host.key] : GITHUB_ACCOUNTS_QUERY_KEY,
-    queryFn: () => host.github.listAccounts(),
-    staleTime: 30_000,
-    refetchOnWindowFocus: true,
-    enabled: host.connectionMetadataExpected ? !!host.connectionMetadata : host.assistantPanelExpected ? !!host.assistantPanel : host.remote?.online !== false,
-    ...(host.assistantPanelExpected ? { retry: retryAssistantPanelRead } : host.remote ? { retry: false } : {}),
-  });
+export function refreshGitHubAccountState(): void {
+  void githubAccounts.refresh();
+  void refreshTag(CONNECTIONS);
+}
+
+export function useGitHubAccounts(): Reading<GitHubAccountSummary[]> {
+  const host = keepLibraryHost(useLibraryHost());
+  return useReplica(githubAccounts, askable(host) ? [host.key] : null);
 }
 
 export function useImportGitHubCliAccounts() {
-  const queryClient = useQueryClient();
   const host = useLibraryHost();
   return useMutation({
     mutationFn: async () => {
@@ -42,12 +63,11 @@ export function useImportGitHubCliAccounts() {
         { resource: 'integrations', operation: 'saved', section: 'accounts', id: 'github', deviceId: host.remote?.deviceId }, ownerId);
       return result;
     },
-    onSuccess: () => invalidateGitHubAccountState(queryClient),
-  });
+    onSuccess: refreshGitHubAccountState,
+  }, queryClient);
 }
 
 export function useGitHubDeviceFlowAuth() {
-  const queryClient = useQueryClient();
   const host = useLibraryHost();
   return useMutation({
     mutationFn: async () => {
@@ -57,12 +77,11 @@ export function useGitHubDeviceFlowAuth() {
         { resource: 'integrations', operation: 'saved', section: 'accounts', id: 'github', deviceId: host.remote?.deviceId }, ownerId);
       return result;
     },
-    onSettled: () => invalidateGitHubAccountState(queryClient),
-  });
+    onSettled: refreshGitHubAccountState,
+  }, queryClient);
 }
 
 export function useSetDefaultGitHubAccount() {
-  const queryClient = useQueryClient();
   const host = useLibraryHost();
   return useMutation({
     mutationFn: async (accountId: string) => {
@@ -73,12 +92,11 @@ export function useSetDefaultGitHubAccount() {
           after: { isDefault: true } }, ownerId);
       return result;
     },
-    onSuccess: () => invalidateGitHubAccountState(queryClient),
-  });
+    onSuccess: refreshGitHubAccountState,
+  }, queryClient);
 }
 
 export function useRemoveGitHubAccount() {
-  const queryClient = useQueryClient();
   const host = useLibraryHost();
   return useMutation({
     mutationFn: async (accountId: string) => {
@@ -88,6 +106,6 @@ export function useRemoveGitHubAccount() {
         { resource: 'integrations', operation: 'removed', section: 'accounts', id: `github:${accountId}`, deviceId: host.remote?.deviceId }, ownerId);
       return result;
     },
-    onSuccess: () => invalidateGitHubAccountState(queryClient),
-  });
+    onSuccess: refreshGitHubAccountState,
+  }, queryClient);
 }

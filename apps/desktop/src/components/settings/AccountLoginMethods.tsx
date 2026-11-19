@@ -101,7 +101,7 @@ export function AccountLoginMethods({ userId, onEmailChanged }: { userId: string
       {message && <SettingsNote role="status">{message}</SettingsNote>}
       {notice && <SettingsNote>{t(`loginMethods.notices.${notice.kind}`)}</SettingsNote>}
       {busy && <SettingsNote role="status">{t('loginMethods.working')}</SettingsNote>}
-      {methods && reading.state === 'value' ? <RefreshFailed error={reading.error} onRetry={() => { void loginMethodsModel.refresh() }} /> : null}
+      {methods && reading.state === 'value' ? <RefreshFailed reading={reading} /> : null}
     </>}>
     {!methods ? (reading.state === 'error'
       ? <SettingsRow title={t('loginMethods.email')} control={button(t('loginMethods.retry'), () => { void loginMethodsModel.refresh() })} />

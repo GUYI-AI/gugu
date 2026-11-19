@@ -7,24 +7,21 @@ import {
 } from '@renderer/features/projects/components/github-account-select';
 import { sortGitHubAccountsByDefault } from '@renderer/features/projects/components/github-account-select-model';
 import { useToast } from '@renderer/lib/hooks/use-toast';
-import {
-  useGitHubAccounts,
-  useRemoveGitHubAccount,
-  useSetDefaultGitHubAccount,
-} from '@renderer/lib/hooks/useGithubAccounts';
+import { Unknown } from '@/components/ui/Unknown';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import { useGitHubAccounts, useRemoveGitHubAccount, useSetDefaultGitHubAccount } from '@renderer/lib/hooks/useGithubAccounts';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { rpc } from '@renderer/lib/ipc';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { Button } from '@renderer/lib/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import { PRODUCT_NAME } from '@shared/app-identity';
 import type { GitHubAccountSummary } from '@shared/github';
-import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 
 export function GitHubAccountsSection() {
-  const { data: accounts = [], isLoading } = useGitHubAccounts();
-  const sortedAccounts = sortGitHubAccountsByDefault(accounts);
+  const accounts = useGitHubAccounts();
   const showConnectGitHub = useShowModal('githubConnectModal');
   const { translate } = useSessionMessages();
 
@@ -52,12 +49,11 @@ export function GitHubAccountsSection() {
         </TooltipProvider>
       </div>
 
-      {isLoading ? (
-        <div className="text-foreground-muted flex items-center gap-2 py-3 text-sm">
-          <LoadingIndicator size="inline" />
-          {translate('github.loading')}
-        </div>
-      ) : sortedAccounts.length === 0 ? (
+      {accounts.state === 'unknown' ? (
+        <Unknown className="h-[60px] w-full rounded-lg" />
+      ) : accounts.state === 'error' ? (
+        <ReadFailedLine className="py-3" message={translate('github.loadFailed')} onRetry={accounts.retry} />
+      ) : accounts.value.length === 0 ? (
         <div className="flex items-center gap-3 rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3 dark:bg-foreground/[0.03]">
           <div className="bg-background-2/50 flex h-9 w-9 shrink-0 items-center justify-center rounded-md">
             <Github className="text-foreground-muted h-4 w-4" />
@@ -65,8 +61,10 @@ export function GitHubAccountsSection() {
           <p className="text-foreground-muted min-w-0 flex-1 text-sm">{translate('github.none')}</p>
         </div>
       ) : (
-        <GitHubAccountRows accounts={sortedAccounts} />
+        <GitHubAccountRows accounts={sortGitHubAccountsByDefault(accounts.value)} />
       )}
+      {/* Read before, its re-read failed: said with a retry, the accounts read before staying (❌ shown as current). */}
+      {accounts.state === 'value' ? <RefreshFailed reading={accounts} /> : null}
     </section>
   );
 }

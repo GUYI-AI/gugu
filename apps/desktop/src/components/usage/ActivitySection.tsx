@@ -63,7 +63,7 @@ export function ActivitySection({ preset }: { preset: RangePreset }) {
       <div className="gg-usage-toolbar">
         <SectionLabel id="usage-activity">{t('usage.activity')}</SectionLabel>
         {/* Before the device control: the control keeps the toolbar's end while the note comes and goes. */}
-        {data.syncing && <span className="gg-usage-caption mr-auto" data-testid="usage-syncing">{t('usage.syncing')}</span>}
+        {data.syncing && <span className="gg-usage-caption gg-loading-line mr-auto" data-testid="usage-syncing">{t('usage.syncing')}</span>}
         {data.devices === null ? <Unknown className="gg-usage-caption w-20" /> : deviceOptions.length > 1 || deviceId ? (
           <select
             // @@@6436 与设置里其它下拉(语言)同一种:手机上 44px 触控高度,桌面 32。

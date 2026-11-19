@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import './chatFileReadsStub'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { clearViewState } from '../../../../apps/desktop/src/lib/viewStateTable'
+import { followRendererSession } from '../../../../apps/desktop/src/lib/replica'
+import { tellInstalled, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { act, createElement, Fragment } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
 import { until } from '../../../support/awaitCondition'
@@ -18,23 +21,32 @@ import { ask, chatTabs, linkShell, pill, shownItem } from './chatTabsHarness'
  * held open. A pill is a file link: the shell asks the host once (`useLinkNavigation`) and hands the chat the answer; the
  * earlier pill is told it was superseded (`OpenSuperseded`), not that it failed.
  */
+// 最近打开: an open is kept through the chat database (useChatOpener `noteOpened`); never the network here.
+vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ chatDb: { rpc: vi.fn(async () => ({ error: null })) } }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: { kind: 'electron', capabilities: { appUpdates: false, notifications: false, rendererCommandBridge: false } },
 }))
 vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
-  appsHere: { runs: () => true, grantable: (manifest: unknown) => manifest, installAttachment: vi.fn(), marketOffers: vi.fn(async () => ({ success: true, data: [] })), groupFileOpener: vi.fn(), groupFilesOpenedBy: vi.fn(async () => ({ success: true, data: [] })), setOpenWithDefault: vi.fn() },
+  appsHere: { runs: () => true, grantable: (manifest: unknown) => manifest, installAttachment: vi.fn(), marketOffers: vi.fn(async () => ({ success: true, data: [] })), onMarketChanged: () => () => {}, groupFileOpener: vi.fn(), groupFilesOpenedBy: vi.fn(async () => ({ success: true, data: [] })), setOpenWithDefault: vi.fn() },
 }))
-vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', () => ({
-  sharedPackagesOf: async () => new Map(),
-  subscribeSharedPackages: () => () => {},
+vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', async (original) => ({
+  ...(await original<object>()),
+  chatPackageCards: async () => (await import('./chatTabsHarness')).sharedCards.answer(),
 }))
 
 let harness: ReturnType<typeof createReactHarness>
 const originalCheckVisibility = HTMLElement.prototype.checkVisibility
 beforeEach(() => {
+  // Signed in, as the harness's person (user-1): the group's shared packages are read for an account.
+  followRendererSession('SIGNED_IN', 'user-1')
   harness = createReactHarness()
   HTMLElement.prototype.checkVisibility = () => false
+  // What is installed here is read (as main tells it at start): nothing.
+  tellInstalled('local', { extensions: [], invalid: [] } as unknown as InstalledExtensionsList)
 })
+// Where each resource last opened is the account's (tab-placement memory): each case starts with none remembered (after
+// the setup above, whose closing of tabs is itself remembered).
+beforeEach(() => { clearViewState({ conversation: '', panel: 'tab-placement' }) })
 afterEach(() => {
   harness.cleanup()
   HTMLElement.prototype.checkVisibility = originalCheckVisibility
@@ -186,4 +198,9 @@ describe('two pills clicked one after the other: the panel ends on the second (#
     expect(on('race-9')).toBe('A')
     expect(isWaitingItem(shownItem('race-9'))).toBe(false)
   }, 30_000)
+})
+
+it('the shared-package mock is live (signed in): a file waits for this chat\'s packages, then is drawn', async () => {
+  const { expectSharedPackagesLive } = await import('./chatTabsHarness')
+  await expectSharedPackagesLive((node) => harness.render(node))
 })

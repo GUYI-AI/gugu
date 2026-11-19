@@ -14,12 +14,12 @@ vi.mock('@/lib/deviceRpc', () => ({ callDeviceRpc: async (...args: unknown[]) =>
   return { result: args[1] === 'server.versionMatch.activity' ? { busyAgents: state.busyAgents } : { requested: !state.refused } }
 } }))
 vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: state.devices }) }))
+const problems = vi.hoisted(() => ({ ssh: new Map([['remote', 'waitingIdle']]), none: new Map() }))
 vi.mock('@/lib/sshLinkChannel', () => ({
   isSshMachine: () => state.ssh,
-  subscribeSshLinkProblems: (listener: (value: Map<string, string>) => void) => {
-    listener(new Map(state.ssh ? [['remote', 'waitingIdle']] : []))
-    return () => {}
-  },
+  // The channel's link problems store (read with useSelect): one map per state, a stable reference.
+  sshLinkProblems: { get: () => (state.ssh ? problems.ssh : problems.none), subscribe: () => () => {} },
+  sshUpgrades: { get: () => problems.none, subscribe: () => () => {} },
   subscribeSshSignInPrompts: () => () => {},
   subscribeSshUpgradeEvents: (listener: (event: SshUpgradeEvent) => void) => {
     state.onUpgrade = listener

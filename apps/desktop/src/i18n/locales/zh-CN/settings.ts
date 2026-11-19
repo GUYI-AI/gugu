@@ -598,6 +598,7 @@ export default {
         "next": "然后打开它输出的链接，点「允许」。短码 15 分钟内有效。",
         "wgetToggle": "没有 curl？用 wget",
         "curlToggle": "改用 curl",
+        "limitCheckFailed": "暂时查不到机器上限，稍后再查。",
         "waiting": "等待机器上线…",
         "appeared": "{{name}} 已添加"
       },
@@ -820,6 +821,7 @@ export default {
     },
     "lastSeen": "上次在线 {{time}}",
     "listFailed": "无法加载设备，请检查网络。",
+    "sshListFailed": "没读到这台电脑通过 SSH 连的是哪几台机器。",
     "loading": "正在加载设备…",
     "loginState": {
       "reconnecting": "重连中",

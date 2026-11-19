@@ -1,4 +1,6 @@
-import { useMutation, useMutationState, useQueries, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useMutationState } from '@tanstack/react-query';
+import { useReplicas, type Reading as ReplicaReading } from '@/lib/replica';
+import { marketDeviceReading, readOnDevicesWith } from '../market-device-readings';
 import { useEffect, useState } from 'react';
 import { ChevronDown } from '@/lib/icons';
 import type { RemoteHostDevice } from '@shared/remote-hosts';
@@ -42,7 +44,6 @@ export function useMarketDevicePicker<Reading, Plan>({
   refresh?: (target: Target) => Promise<unknown>;
 }) {
   const { translate } = useSessionMessages();
-  const client = useQueryClient();
   const [open, setOpen] = useState(false);
   const [opened, setOpened] = useState(false);
   const devices = opened
@@ -59,15 +60,16 @@ export function useMarketDevicePicker<Reading, Plan>({
     });
     return { device, host };
   });
-  const key = ['market-device', itemKey] as const;
-  const queries = useQueries({
-    queries: targets.map((target) => ({
-      queryKey: [...key, target.device.id],
-      queryFn: () => read(target),
-      enabled: opened && remoteHostReachable(target.device),
-      retry: false,
-    })),
+  const readKey = `desktop:${itemKey}`;
+  readOnDevicesWith(readKey, (deviceId) => {
+    const target = targets.find(({ device }) => device.id === deviceId);
+    if (!target) throw new Error(`No device ${deviceId}`);
+    return read(target);
   });
+  // A device that cannot be reached is not asked (nothing would answer): its row says so instead.
+  const asked = targets.filter(({ device }) => remoteHostReachable(device));
+  const readings = useReplicas(marketDeviceReading, asked.map(({ device }) => [readKey, device.id] as [string, string]));
+  const readingOf = (deviceId: string) => readings[asked.findIndex(({ device }) => device.id === deviceId)] as ReplicaReading<Reading>;
   const mutationKey = ['market-device-install', itemKey] as const;
   type Operation = { target: Target; plan: Plan };
   const running = useMutationState<string | undefined>({
@@ -79,7 +81,7 @@ export function useMarketDevicePicker<Reading, Plan>({
     mutationFn: ({ target, plan }: Operation) => install(target, plan),
     onSuccess: async (ok, { target }) => {
       if (!ok) return;
-      await client.invalidateQueries({ queryKey: [...key, target.device.id] });
+      await marketDeviceReading.refresh(readKey, target.device.id);
       void refresh?.(target).catch((error: unknown) => log.warn('Marketplace device inventory refresh failed:', error));
     },
     onError: (error, { target }) => {
@@ -88,10 +90,9 @@ export function useMarketDevicePicker<Reading, Plan>({
     },
   });
 
-  const rows: PickerRow[] = targets.map((target, index) => {
+  const rows: PickerRow[] = targets.map((target) => {
     const { device } = target;
     const row = { id: device.id, name: device.label };
-    const query = queries[index]!;
     if (running.includes(device.id)) return { ...row, state: 'working', detail: translate('extensions.installing') };
     if (!remoteHostReachable(device)) {
       const waking = remoteHostsStore.cloudScope(device.id)?.state === 'waking';
@@ -103,21 +104,18 @@ export function useMarketDevicePicker<Reading, Plan>({
         hint: !waking && ago ? translate('marketDetail.lastSeen', { ago }) : undefined,
       };
     }
-    if (query.isPending) return { ...row, state: 'reading', detail: translate('extensions.loading') };
-    if (query.isError || query.data === undefined) {
-      const outOfDate = TOO_OLD_CODES.has((query.error as { code?: string } | null)?.code ?? '');
+    const reading = readingOf(device.id);
+    if (reading.state === 'unknown') return { ...row, state: 'reading', detail: translate('extensions.loading') };
+    if (reading.state === 'error') {
+      const outOfDate = TOO_OLD_CODES.has((reading.error as { code?: string }).code ?? '');
       return { ...row, state: 'blocked', detail: translate(outOfDate ? 'extensions.tileNeedsApp' : 'marketDetail.deviceUnavailable') };
     }
-    const entry = describe(query.data);
+    const entry = describe(reading.value);
     if (entry.state !== 'available') return { ...row, ...entry };
     return {
       ...row, state: entry.state, detail: entry.detail, hint: entry.hint,
       start: () => {
-        const pending = client.isMutating({
-          mutationKey, exact: true,
-          predicate: (operation) => (operation.state.variables as Operation | undefined)?.target.device.id === device.id,
-        });
-        if (!pending) mutate({ target, plan: entry.plan });
+        if (!running.includes(device.id)) mutate({ target, plan: entry.plan });
       },
     };
   });

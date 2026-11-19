@@ -98,6 +98,7 @@ export function ExtensionTabPane({
   // Activation depends on the extension, not on the current language: keeping
   // `translate` out of the dependencies is what stops a fresh translator
   // identity each render from tearing the surface down and asking again.
+  // @@@effect-flow(lifecycle) - activates the App's page in main (starts its guest) and binds the webview to the surface it returns
   useEffect(() => {
     let disposed = false;
     setSurface(null);

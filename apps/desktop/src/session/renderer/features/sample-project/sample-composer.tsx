@@ -105,10 +105,12 @@ type AgentNotice = { kind: 'none' | 'installing'; text: string } | null;
  */
 function useSampleAgentNotice(): AgentNotice {
   const { translate, locale } = useSessionMessages();
-  const { data: agents } = useAgents();
-  const { data: statuses } = useAgentInstallationStatuses();
+  const agentsReading = useAgents();
+  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
+  const statusesReading = useAgentInstallationStatuses().reading;
   const installing = useInstallingAgents();
-  if (!agents || !statuses) return null;
+  if (!agents || statusesReading.state !== 'value') return null;
+  const statuses = statusesReading.value;
   const usable = new Set(agents.filter((agent) => sessionpageLegFor(agent.capabilities.sessionpage, 'acp') !== null).map((agent) => agent.id));
   if (statuses.some((status) => status.status === 'available' && usable.has(status.id))) return null;
   const names = agents.filter((agent) => installing.has(agent.id)).map((agent) => agent.name);

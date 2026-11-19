@@ -1,12 +1,11 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { useEffect, useRef, useState, useCallback, type ReactNode } from 'react'
-import QRCode from 'qrcode'
 import { createSharePosterCanvas, copyPosterToClipboard, downloadPoster } from './sharePosterCanvas'
 import { Sheet } from './ui/Sheet'
 import { useTranslation } from 'react-i18next'
 import { rendererLogger } from '@/lib/log'
 import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
-import { qrColors } from '../lib/qrColors'
+import { useQrCode } from '../lib/qrCode'
 
 // @@@share-poster (#903) - Share poster dialog: canvas-composed image with QR + branding.
 // Supports copy-to-clipboard and download. QR rendering uses the existing `qrcode` dependency.
@@ -38,7 +37,8 @@ export interface SharePosterDialogProps {
 
 export function SharePosterDialog({ title, subtitle, qrValue, memberAvatarUrls, totalMemberCount, qrCaption, ctaText, posterVariant, zIndex = 'var(--z-modal-top)', heading, headerContent, previewContent, onClose }: SharePosterDialogProps) {
   const { t } = useTranslation('contacts')
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const qr = useQrCode(qrValue || null, 280)
+  const qrDataUrl = qr.state === 'value' ? qr.value : null
   const [posterDataUrl, setPosterDataUrl] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
@@ -46,24 +46,12 @@ export function SharePosterDialog({ title, subtitle, qrValue, memberAvatarUrls, 
   const [downloadDone, setDownloadDone] = useState(false)
   const posterCanvasRef = useRef<HTMLCanvasElement | null>(null)
 
-  // Step 1: Generate QR data URL
-  useEffect(() => {
-    if (!qrValue) return
-    let cancelled = false
-    QRCode.toDataURL(qrValue, { width: 280, margin: 1, color: qrColors() })
-      .then((url) => { if (!cancelled) setQrDataUrl(url) })
-      .catch((err) => {
-        console.error('[SharePosterDialog] QR gen error', err)
-        if (!cancelled) setGenError(messageForUser(err))
-      })
-    return () => { cancelled = true }
-  }, [qrValue])
-
   // @@@445 数组 prop 转稳定 key 当 effect 依赖,避免每次渲染新引用触发重画。
   // 用 JSON.stringify(非 join('|')):URL 含字面 '|' 时 split round-trip 会损坏。直接把数组传给 canvas。
   const memberKey = JSON.stringify(memberAvatarUrls ?? [])
 
   // Step 2: Composite poster once QR is ready
+  // @@@effect-flow(render) - composites the poster canvas from the QR and avatars in hand (render of content in hand)
   useEffect(() => {
     if (!qrDataUrl) return
     let cancelled = false
@@ -201,9 +189,9 @@ export function SharePosterDialog({ title, subtitle, qrValue, memberAvatarUrls, 
               position: 'relative',
             }}
           >
-            {genError ? (
+            {genError || qr.state === 'error' ? (
               <span style={{ fontSize: 'var(--font-body)', color: 'var(--danger-fg)', textAlign: 'center', padding: '0 16px' }}>
-                {genError}
+                {genError ?? (qr.state === 'error' ? messageForUser(qr.error) : null)}
               </span>
             ) : generating || !posterDataUrl ? (
               <span style={{ fontSize: 'var(--font-body)', color: 'var(--text-tertiary)' }}>

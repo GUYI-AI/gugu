@@ -22,7 +22,7 @@ vi.mock('../../../../apps/desktop/src/lib/agentProvision', () => provision)
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ getCurrentAuthUserId: vi.fn(async () => 'owner') }))
 const setup = vi.hoisted(() => ({ prepareLocalAssistantSetup: vi.fn(async () => ({ workdir: '/home/assistant', home: '/home' })) }))
 vi.mock('../../../../apps/desktop/src/lib/assistantSetupPreparation', () => setup)
-vi.mock('../../../../apps/desktop/src/lib/cloudComputerStore', () => ({ provisionCloudComputer: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/lib/cloudComputer', () => ({ provisionCloudComputer: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/contacts', () => ({ contactsService: { agentLookAvatarUrl: () => 'avatar' } }))
 // The language the profile records: the capture's first owner's.
 vi.mock('../../../../apps/desktop/src/i18n/runtime', async importOriginal => ({
@@ -35,7 +35,7 @@ vi.mock('../../../../apps/desktop/src/platform/desktopIpc', () => ({ desktopIpc:
 const { assistantRules, installAssistantRulesResolver } = await import('../../../../apps/desktop/electron/assistant-rules-resolver')
 const { prepareLocalAssistantHome } = await import('../../../../apps/desktop/electron/assistant-home-prepare')
 const { claimCloudAssistant, setUpAssistantOnThisComputer } = await import('../../../../apps/desktop/src/lib/assistantSetup')
-const { provisionCloudComputer } = await import('../../../../apps/desktop/src/lib/cloudComputerStore')
+const { provisionCloudComputer } = await import('../../../../apps/desktop/src/lib/cloudComputer')
 const policy = await import('@gugu/core/shared/assistantPolicy')
 const { claudeProjectDirName } = policy
 const { fingerprint, readNeutralDigests } = await import('./capture')

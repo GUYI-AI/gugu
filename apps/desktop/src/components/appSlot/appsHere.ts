@@ -2,7 +2,8 @@ import { revealSessionpage } from '../../hooks/useSessionpageReveal'
 import { rendererLogger } from '../../lib/log'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { platform } from '../../platform'
-import { rpc } from '../../session/renderer/lib/ipc'
+import { onMachineEvent, rpc } from '../../session/renderer/lib/ipc'
+import { marketRefreshedChannel } from '../../session/shared/extensions/marketEvents'
 import { appState } from '../../session/renderer/lib/stores/app-state'
 import type { AppOpenWithDetail } from '../../session/shared/extensions/app-runtime-protocol'
 import type { ExtensionInstallConsentOutcome } from '../../session/shared/extensions/host-actions'
@@ -44,8 +45,8 @@ export interface AppMarketInstall {
 /**
  * This device's Apps (L9): who installs them from a chat, who says which App opens a group file, where 「始终用它」 is
  * kept — main on the desktop (`rpc.extensions`), the phone's own App store in this page (phoneApps.ts). The card and the
- * group's panel ask here, never which platform they are on; what is installed they read from `installedExtensionsStore`,
- * which both fill. None on the web, where Apps do not run.
+ * group's panel ask here, never which platform they are on; what is installed they read from the `installedExtensions`
+ * replica under `HERE_HOST`, which both fill. None on the web, where Apps do not run.
  */
 export interface AppsHere {
   /** Whether this device can use the App at all — by what it can do (app-redesign §5): the desktop every App, the phone `phoneRuns`. */
@@ -60,6 +61,8 @@ export interface AppsHere {
   installFromMarket(args: AppMarketInstall): Promise<Answer<AppMarketAnswer>>
   /** The market's Apps this device can install, each its version for here: what a group's 「用 X 打开」 offer looks among. */
   marketOffers(): Promise<Answer<{ manifest: ExtensionManifest; version: string }[]>>
+  /** The market index this device reads was fetched again and differs (`changed`): what it offers is read again. Returns stop. */
+  onMarketChanged(listener: () => void): () => void
   /** `at`: the place a pill points at — the App that opens the file gets it as a `link` event (desktop: main; phone: its host). */
   groupFileOpener(args: { chatId?: string; itemId: string; at?: Record<string, string>; among?: string[] }): Promise<Answer<AppOpenWithDetail>>
   groupFilesOpenedBy(args: { chatId: string; extensionId: string }): Promise<Answer<{ itemId: string; name: string; displayName: string }[]>>
@@ -78,6 +81,7 @@ const desktop: AppsHere = {
   installAttachment: (args) => rpc.extensions.installAttachment(args),
   installFromMarket: (args) => rpc.extensions.installFromMarket(args),
   marketOffers: () => rpc.extensions.marketOffers(),
+  onMarketChanged: (listener) => onMachineEvent(null, marketRefreshedChannel, (refreshed) => { if (refreshed.outcome === 'changed') listener() }),
   groupFileOpener: (args) => rpc.extensions.groupFileOpener(args),
   groupFilesOpenedBy: (args) => rpc.extensions.groupFilesOpenedBy(args),
   appChatFile: (args) => rpc.extensions.appChatFile(args),
@@ -101,6 +105,7 @@ const phone: AppsHere = {
   grantable: (manifest) => grantableBy(manifest, PHONE_CAPABILITIES),
   installAttachment: (args) => phoneApps.installAttachment(args),
   installFromMarket: (args) => phoneApps.installFromMarket(args),
+  onMarketChanged: (listener) => phoneApps.market.onRefreshed((refreshed) => { if (refreshed.outcome === 'changed') listener() }),
   marketOffers: async () => {
     try {
       const entries = await phoneApps.market.entries()
@@ -126,6 +131,8 @@ const phone: AppsHere = {
 }
 
 export const appsHere: AppsHere | null = platform.kind === 'electron' ? desktop : platform.capabilities.mobileApps ? phone : null
+
+export { HERE_HOST } from './hereHost'
 
 // The phone reads what it has installed once the page is up, so the cards and the panel know it from the start.
 if (appsHere === phone) {

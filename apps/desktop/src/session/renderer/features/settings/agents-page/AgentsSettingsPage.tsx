@@ -8,6 +8,8 @@ import { PageHeader } from '@renderer/lib/components/page-header';
 import { PageLoading } from '@renderer/lib/components/page-layout';
 import { useAgentInstallationStatuses } from '@renderer/lib/stores/use-agent-installation-statuses';
 import { useManagementAgents } from '@renderer/lib/stores/use-agents';
+import { refreshFailure } from '@/lib/replica';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import { Button } from '@renderer/lib/ui/button';
 import { SearchInput } from '@renderer/lib/ui/search-input';
 import { CliAgentsList } from './CliAgentsList';
@@ -41,7 +43,7 @@ export function AgentsSettingsPage({
    * 手上有它上次的读数就照旧画(离线时只读);一份都没有就只有这句话 —— ❌ 画一句「这里还没有智能体」。
    */
   const notice = deviceScopeNotice(
-    { remote: host.remote, error: agents.error, hasData: !!agents.data, now: Date.now(), cloud: remoteHostsStore.cloudScope(host.remote?.deviceId) },
+    { remote: host.remote, error: refreshFailure(agents.reading), hasData: agents.reading.state === 'value', now: Date.now(), cloud: remoteHostsStore.cloudScope(host.remote?.deviceId) },
     translate
   );
 
@@ -81,10 +83,12 @@ export function AgentsSettingsPage({
           </div>
         </div>
       </PageHeader>
-      {notice && <DeviceScopeNoticeLine notice={notice} onRetry={() => void agents.refetch()} />}
-      {agents.isLoading ? (
+      {/* Another machine's failure is its notice; this computer's list unreadable, or its re-read failed: said with a retry. */}
+      {notice ? <DeviceScopeNoticeLine notice={notice} onRetry={() => void agents.refetch()} />
+        : <RefreshFailed reading={agents.reading} />}
+      {agents.reading.state === 'unknown' ? (
         <PageLoading />
-      ) : notice && !agents.data ? null : (
+      ) : notice && agents.reading.state !== 'value' ? null : (
         <div className="flex flex-col gap-3">
           <CliAgentsList
             searchQuery={searchQuery}

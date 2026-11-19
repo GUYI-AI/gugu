@@ -18,7 +18,9 @@ vi.mock('@/lib/realtimeChannel', () => ({ subscribePrivateUserEventBus: (_user: 
 const marked = vi.hoisted(() => ({ scopes: [] as string[][] }))
 vi.mock('@/lib/chatUnreadLocator', async (original) => ({ ...await original<typeof import('@/lib/chatUnreadLocator')>(),
   markChatsReadAndRefresh: async ({ chats }: { chats: readonly { id: string }[] }) => { marked.scopes.push(chats.map((chat) => chat.id)); return { failedChats: 0 } } }))
-vi.mock('@/platform', async (original) => { const actual = await original<typeof import('@/platform')>(); return { ...actual, platform: { ...actual.platform, subscribeAppForeground: () => () => {} } } })
+const foreground = vi.hoisted(() => ({ listeners: new Set<() => void>() }))
+vi.mock('@/platform', async (original) => { const actual = await original<typeof import('@/platform')>(); return { ...actual, platform: { ...actual.platform,
+  subscribeAppForeground: (listener: () => void) => { foreground.listeners.add(listener); return () => { foreground.listeners.delete(listener) } } } } })
 
 const { ChatHeaderActions } = await import('@/components/chat/ChatHeaderActions')
 const { PinnedTopicTabs } = await import('@/components/chat/PinnedTopicTabs')
@@ -238,6 +240,17 @@ describe('pinned topic tabs', () => {
     await act(async () => { io.listeners.forEach((receive) => receive()) })
     await vi.waitFor(() => expect(document.querySelector('[data-testid="phone-chat-tabs"]')).toBeNull())
   })
+})
+
+it('the main window regaining focus (switching between Gugu windows) does not read the pins again', async () => {
+  save(['old'])
+  await renderWithAppProviders(harness, strip(), options())
+  await vi.waitFor(() => expect(document.querySelector('[data-testid="phone-chat-tab-old"]')).not.toBeNull())
+  save(['new'])
+  await act(async () => { foreground.listeners.forEach((listener) => listener()) })
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  expect(document.querySelector('[data-testid="phone-chat-tab-old"]')).not.toBeNull()
+  expect(document.querySelector('[data-testid="phone-chat-tab-new"]')).toBeNull()
 })
 
 it('pins from Topics and immediately shows that topic on the strip', async () => {

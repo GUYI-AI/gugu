@@ -1,4 +1,6 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
+import { followRendererSession, queryClient as replicaClient } from '@/lib/replica';
+import { managementAgents } from './agent-replicas';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
@@ -18,8 +20,11 @@ const local = vi.hoisted(() => ({
   install: vi.fn(async () => ({ success: true, data: {} })),
 }));
 
+// Readings go to the machine by id (rpcOn); actions go through the library host. Both must reach the same machine.
+const remoteRef = vi.hoisted(() => ({ agents: null as unknown }));
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: { agents: local, mcp: {} },
+  rpcOn: (machine: string | null) => ({ agents: machine ? remoteRef.agents : local }),
   events: { on: () => () => {} },
 }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: vi.fn() }));
@@ -51,6 +56,7 @@ function remoteAgents(): FakeAgents {
 }
 
 function remoteHost(agents: FakeAgents, online: boolean): LibraryHost {
+  remoteRef.agents = agents;
   return {
     key: 'remote:d22',
     agents: agents as unknown as LibraryAgentsRpc,
@@ -112,7 +118,8 @@ describe('资源库选了别的机器时,取数与动作都去那台机器(#6264
     vi.stubGlobal('document', dom.window.document);
     vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
     vi.stubGlobal('Event', dom.window.Event);
-    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient = replicaClient;
+    followRendererSession('SIGNED_IN', 'account-1');
     root = createRoot(dom.window.document.getElementById('root') as HTMLDivElement);
   });
 
@@ -128,19 +135,19 @@ describe('资源库选了别的机器时,取数与动作都去那台机器(#6264
   it('opens agent details from the same host cache before a slow probe finishes, then retries silently', async () => {
     const agents = remoteAgents();
     const cached = { id: 'claude', name: 'Cached CLI', status: 'available', reading: 'installed', installOptions: [] };
-    queryClient.setQueryData(['agents', 'management', 'host', 'remote:d22'], [cached]);
+    managementAgents.set(['d22'], [cached as never]);
     let finish!: (value: unknown) => void;
     agents.getManagement.mockRejectedValueOnce(new Error('temporary host failure')).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     let detail!: ReturnType<typeof useManagementAgent>;
-    function Detail() { detail = useManagementAgent('claude'); return React.createElement('p', null, detail.data?.name); }
+    function Detail() { detail = useManagementAgent('claude'); return React.createElement('p', null, detail.state === 'value' ? detail.value?.name : null); }
     await act(async () => root.render(React.createElement(QueryClientProvider, { client: queryClient }, React.createElement(LibraryHostProvider, { value: remoteHost(agents, true) }, React.createElement(Detail)))));
-    expect(detail.data?.name).toBe('Cached CLI');
+    expect(detail.state === 'value' && detail.value?.name).toBe('Cached CLI');
     expect(dom.window.document.body.textContent).toContain('Cached CLI');
     await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
     expect(agents.getManagement).toHaveBeenCalledTimes(2);
-    expect(detail.data?.name).toBe('Cached CLI');
+    expect(detail.state === 'value' && detail.value?.name).toBe('Cached CLI');
     await act(async () => { finish({ ...cached, name: 'Fresh CLI' }); await vi.advanceTimersByTimeAsync(50); });
-    expect(detail.data?.name).toBe('Fresh CLI');
+    expect(detail.state === 'value' && detail.value?.name).toBe('Fresh CLI');
     expect(dom.window.document.body.textContent).toContain('Fresh CLI');
   });
 
@@ -152,7 +159,8 @@ describe('资源库选了别的机器时,取数与动作都去那台机器(#6264
     expect(agents.listAgentInstallationStatus).toHaveBeenCalled();
     expect(local.listManagement).not.toHaveBeenCalled();
     expect(local.listAgentInstallationStatus).not.toHaveBeenCalled();
-    expect(api?.list.data?.map((a) => [a.id, a.reading])).toEqual([['claude', 'installed']]);
+    expect(api?.list.reading).toMatchObject({ state: 'value' });
+    expect(api?.list.reading.state === 'value' && api.list.reading.value.map((a) => [a.id, a.reading])).toEqual([['claude', 'installed']]);
   });
 
   it('点「安装」装在那台机器上;进行中只挂在那台机器的网格上', async () => {
@@ -180,7 +188,7 @@ describe('资源库选了别的机器时,取数与动作都去那台机器(#6264
     await settle();
     expect(agents.listManagement).not.toHaveBeenCalled();
     expect(agents.listAgentInstallationStatus).not.toHaveBeenCalled();
-    expect(api?.list.fetchStatus).toBe('idle');
+    expect(api?.list.reading).toEqual({ state: 'unknown' });
   });
 
   it('没有挂资源库的机器(composer、会话页)= 本机,照旧问本机', async () => {

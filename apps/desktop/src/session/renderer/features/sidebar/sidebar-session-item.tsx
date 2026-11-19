@@ -5,7 +5,7 @@ import { dissolveScreenGroup, isScreenView, showSessionBeside, takeSessionOutOfG
 import { screenLayout } from '@renderer/app/screen-layout';
 import { AlertTriangle, LayoutGrid, PanelLeft, Scissors, Sparkles, SquareMinus } from '@/lib/icons'
 import { GitFork } from '@/lib/icons'
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
 import { spawnedByExtensionLabel as spawnedByExtensionLabelFor } from '@renderer/features/extensions/spawned-by-extension-label';
 import { useAssistantShell } from '@renderer/features/assistant/assistant-shell';
 import { observer } from 'mobx-react-lite';
@@ -121,8 +121,10 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
 }: SidebarSessionItemProps) {
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
+  const installed = useInstalledApps(LOCAL_HOST);
   const { params } = useParams('session');
-  const { data: agents } = useAgents();
+  const agentsReading = useAgents();
+  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
   const { translate } = useSessionMessages();
   const shownStatus = useShownAgentStatus();
   const assistantName = useAssistantShell()?.assistant?.display_name ?? null;
@@ -147,7 +149,8 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   const localSchedules = useSessionSchedules(null, sessionId, machine === null);
   const schedule =
     machine === null
-      ? sessionScheduleDigest(localSchedules)
+      // A mark only: none until this computer answered (`undefined` = the row's "not known"); the task's tray says why.
+      ? localSchedules.state === 'value' ? sessionScheduleDigest(localSchedules.value) : undefined
       : (listed ?? sidebarStore.remoteSession(projectId, sessionId))?.summary.schedule;
   const row = session ? rowOfStore(session, schedule) : listed ? rowOfListing(listed) : null;
   const agentUserId = agentBinding?.agentUserId ?? listed?.summary.agent?.userId;
@@ -190,10 +193,10 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   const spawnedByExtensionId = row.spawnedByExtensionId;
   const spawnedByExtensionLabel = spawnedByExtensionLabelFor({
     extensionId: spawnedByExtensionId,
-    installedName: spawnedByExtensionId
-      ? installedExtensionsStore.appName(spawnedByExtensionId)
+    installedName: spawnedByExtensionId && installed.state === 'value'
+      ? installed.value.appName(spawnedByExtensionId)
       : undefined,
-    manifestsLoaded: installedExtensionsStore.isLoaded,
+    manifestsLoaded: installed.state === 'value',
   });
 
   // A row of the inner column (a group's agents) opens inside that group: the screen stays the group's (screen-layout `entry`).

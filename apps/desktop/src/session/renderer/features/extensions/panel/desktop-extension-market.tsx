@@ -1,25 +1,19 @@
 import { useMemo, useState, type Ref } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { chatDb } from '@/lib/supabase';
+import { useReplica } from '@/lib/replica';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { localizedManifestText, MARKET_CATEGORIES, marketCategoryOf, type MarketCategory } from '@shared/extensions/catalog';
 import { marketHome } from '@shared/extensions/market-home';
 import type { MarketListItem } from '@shared/extensions/market';
 import type { ResourceContext } from '@shared/resource-actions';
-import type { AppMarketState } from './app-market-content';
+import { marketInstallRanking, type MarketShelfFull } from '../market-replicas';
 import { MarketCard, MarketCategoryBar, MarketFeatured, MarketGrid, useMarketFeatured, type MarketCategoryChoice } from './desktop-market-cards';
 import { MarketExtensionIcon } from './market-extension-icon';
 import { ShelfMoreSkeleton } from './extension-skeletons';
 
 type ExtensionMarketFilter = 'all' | MarketCategory;
 type AppSort = 'recommended' | 'newest' | 'popular';
-export type DesktopMarketShelf = Omit<Extract<AppMarketState, { status: 'ready' }>, 'featured' | 'home'>;
-
-async function readInstallRanking() {
-  const { data, error } = await chatDb.rpc('market_install_ranking');
-  if (error) throw error;
-  return new Map(((data ?? []) as { app_id: string; score: number }[]).map(({ app_id, score }) => [app_id, score]));
-}
+/** The shelf as the page draws it: which search it is (`query`, '' = none) and whether the next page is on its way. */
+export type DesktopMarketShelf = Omit<MarketShelfFull, 'fetchedAt'> & { status: 'ready'; query: string; loadingMore: boolean };
 
 export function DesktopExtensionMarket({
   shelf, query, category, onCategoryChange, installedIds, onOpen, resourceOf, sentinelRef, stale,
@@ -36,13 +30,9 @@ export function DesktopExtensionMarket({
 }) {
   const { translate, locale } = useSessionMessages();
   const [sort, setSort] = useState<AppSort>('recommended');
-  const { data: scores } = useQuery({
-    queryKey: ['desktop-market-install-ranking'],
-    queryFn: readInstallRanking,
-    enabled: !query,
-    staleTime: 60_000,
-    retry: false,
-  });
+  // Unreadable or not read yet: the catalog's own order (the ranking only reorders; ❌ held back for it).
+  const ranking = useReplica(marketInstallRanking, query ? null : []);
+  const scores = ranking.state === 'value' ? ranking.value : null;
   const home = useMemo(() => {
     if (shelf.query || shelf.hasMore || shelf.items.some(({ cloud }) => !cloud.firstPublishedAt)) return null;
     const byId = new Map(shelf.items.map((item) => [item.manifest.id, item]));

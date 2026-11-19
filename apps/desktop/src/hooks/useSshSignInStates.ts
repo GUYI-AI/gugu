@@ -26,6 +26,7 @@ export function signInProbeKeys(devices: readonly Device[], sshAddress: (deviceI
 const sshSignInState = replica({
   name: 'sshSignInState',
   scope: 'account',
+  networkMode: 'always',
   read: async (_userId, deviceId: string, _offlineSince: string) => {
     const electron = desktopIpc()
     if (!electron) throw new Error('SSH sign-in state needs the desktop host')

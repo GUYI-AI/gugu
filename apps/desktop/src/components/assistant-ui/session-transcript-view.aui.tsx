@@ -86,6 +86,7 @@ function SessionTranscriptContent({
   const written = useRef<readonly TranscriptTurn[]>([])
   const viewCommands = useMemo(() => ({ ...commands, sourceWindow }), [commands, sourceWindow])
 
+  // @@@effect-flow(code) - loads the chat UI module and builds this view's local transcript state; no server data (the next effect writes the transcript in)
   useEffect(() => {
     let live = true
     let created: Model | null = null

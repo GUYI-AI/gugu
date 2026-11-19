@@ -15,15 +15,16 @@ import { EXTENSION_API_VERSION, parseExtensionManifest } from '../../../../apps/
 const ORIGIN = 'https://data-lens.acct.apps.gugu.invalid'
 const { CHAT, SALES } = vi.hoisted(() => ({ CHAT: '0b000000-0000-4000-8000-0000000000c2', SALES: '0c000000-0000-4000-8000-0000000000c2' }))
 const apps = vi.hoisted(() => ({ manifests: [] as unknown[] }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: {
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', async (original) => {
+  const installed = {
     get manifests() { return apps.manifests },
     icons: {},
     locale: 'en',
     isEnabled: () => true,
     manifestFor: (id: string) => (apps.manifests as { id: string }[]).find((manifest) => manifest.id === id),
-  },
-}))
+  }
+  return { ...(await original<object>()), peekInstalledApps: () => installed, fetchInstalledApps: async () => installed }
+})
 vi.mock('../../../../apps/desktop/src/store/devicesCache', () => ({ readCachedDevices: () => [] }))
 // A plain open is handed to the window as a link (`openChatFile`, the desktop's own path): what it is handed is read here.
 const linked = vi.hoisted(() => vi.fn())

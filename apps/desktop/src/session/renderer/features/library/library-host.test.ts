@@ -37,7 +37,7 @@ const d22 = vi.hoisted(() => {
         ),
     }
   );
-  return { calls, client, failures, events: [] as Array<{ machine: string | null; name: string; cb: (data: unknown) => void }> };
+  return { calls, client, failures, routed: new Map<string, unknown>(), events: [] as Array<{ machine: string | null; name: string; cb: (data: unknown) => void }> };
 });
 
 vi.mock('@renderer/lib/ipc', () => ({
@@ -45,7 +45,8 @@ vi.mock('@renderer/lib/ipc', () => ({
     agents: { listManagement: local.listManagement, install: local.install },
     integrations: { acquireAuthorization: local.acquireAuthorization, cancelAuthorization: local.cancelAuthorization },
   },
-  rpcOn: (machine: string | null) => (machine === 'd22' ? d22.client : {}),
+  routeMachine: (machine: string, client: unknown) => { d22.routed.set(machine, client) },
+  rpcOn: (machine: string | null) => (machine && d22.routed.get(machine)) ?? (machine === 'd22' ? d22.client : {}),
   onMachineEvent: (machine: string | null, event: { name: string }, cb: (data: unknown) => void) => {
     d22.events.push({ machine, name: event.name, cb });
     return () => undefined;

@@ -14,7 +14,7 @@ vi.mock('../../../apps/desktop/src/lib/sessionInputOutboxBridge', () => ({ enque
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/useAgentWatchSession', () => ({ useAgentWatchSession: () => ({ timeline: scope.timeline ?? emptyAgentWatchTimeline(), phase: 'error', error: 'Host unreachable', pendingSends: [], reload() {}, loadOlder: async () => undefined, cancel() {}, respond() {} }) }))
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/useNativeSessionRecord', () => ({ useNativeSessionRecord: () => ({ record: scope.nativeRecord, error: null, followTail() {}, loadNewer() {}, loadOlder: async () => undefined }) }))
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/SessionConversation', () => ({ SessionConversation: (props: { timeline: ReturnType<typeof emptyAgentWatchTimeline>; onBeforeSend?: () => void; onSend: (text: string) => Promise<void>; footerNotice?: ReactNode }) => { scope.composer = props; return <>{props.footerNotice}<button data-cold-native-composer="" onClick={() => { void props.onSend('Cold native input') }}>Send</button></> } }))
-vi.mock('../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: { enabledTabContributions: [] } }))
+vi.mock('../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', async (importOriginal) => ({ ...await importOriginal<object>(), useInstalledApps: () => ({ state: 'value', value: { enabledTabContributions: [] }, stale: false, error: null }) }))
 vi.mock('../../../apps/desktop/src/components/ui/sheetStack', async original => ({ ...await original<object>(), useBackLayer() {} }))
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { harness = createReactHarness() })

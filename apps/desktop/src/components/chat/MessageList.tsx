@@ -116,7 +116,7 @@ export interface MessageListRowProps {
   // @@@5856 开话题(从本消息长出一条线)+ 本消息底下已有的话题锚点卡。锚点是溯源不是父容器:
   // 卡片只是双向连接的一端,话题本身在会话列表里缩进挂在来源那条线底下。
   onOpenTopic: ((messageId: string) => void) | undefined
-  topicAnchors: ReadonlyMap<string, TopicSummary[]> | undefined
+  topicAnchors: ReadonlyMap<string, TopicSummary[]> | null | undefined
   onOpenTopicAnchor: ((topicChatId: string) => void) | undefined
   /** 这条线上「agent 超过 5 个已自动转 passive」的那条系统消息(每条线至多一条)。 */
   agentFloodNoticeMessageId: string | null | undefined

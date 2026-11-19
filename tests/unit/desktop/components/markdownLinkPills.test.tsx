@@ -100,6 +100,19 @@ describe('chat link pills, drawn in place', () => {
     expect(pills()[1]?.title).toBe('不可用：已删除，或你无权查看')
   })
 
+  it('a file and a message read before whose reads again fail keep their names, greyed with the reason (❌ drawn as current)', async () => {
+    mocks.fileMetadata.mockResolvedValue({ status: 'ready', revision: { source: 'managed-object', version: 2, file_name: 'plan.pdf', content_type: 'application/pdf', size_bytes: 2048 } })
+    mocks.getMessageById.mockResolvedValue({ id: MESSAGE, chat_id: CHAT, sender_user_id: ALICE, content: 'Ship it', retracted_at: null })
+    await render(`[the spec](${groupFileLink(DOC, { version: 2 })}) [the decision](${conversationLink(CHAT, MESSAGE)})`)
+    await settle(() => expect(pills().map(pill => pill.textContent)).toEqual(['plan.pdf', 'Alice：Ship it']))
+    expect(pills().map(pill => pill.dataset.unavailable)).toEqual([undefined, undefined])
+    mocks.fileMetadata.mockRejectedValue(new Error('offline'))
+    mocks.getMessageById.mockRejectedValue(new Error('offline'))
+    await act(async () => { await queryClient.refetchQueries({ type: 'active' }).catch(() => undefined) })
+    await settle(() => expect(pills().map(pill => pill.dataset.unavailable)).toEqual(['true', 'true']))
+    expect(pills().map(pill => pill.textContent)).toEqual(['plan.pdf', 'Alice：Ship it'])
+  })
+
   it('keeps the plain link where nobody is signed in and no chat list is read', async () => {
     await render(`[the spec](${groupFileLink(DOC)}) [the decision](${conversationLink(CHAT, MESSAGE)})`, 'chat', 'bare')
     await act(async () => { await vi.dynamicImportSettled() })

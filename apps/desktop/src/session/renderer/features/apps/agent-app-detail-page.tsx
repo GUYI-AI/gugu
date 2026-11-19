@@ -6,6 +6,8 @@ import { rpc } from '@renderer/lib/ipc';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { confirmOpenExternalLink } from '@renderer/lib/open-external-link';
 import { useManagementAgent } from '@renderer/lib/stores/use-agents';
+import { managementAgent } from '@renderer/lib/stores/agent-replicas';
+import { refreshFailure } from '@/lib/replica';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { agentMarketCategoryOf } from '@shared/extensions/catalog';
@@ -33,11 +35,12 @@ export function AgentAppDetailPage({ agentId, backLabel, onBack, onCreate }: {
 }) {
   const { translate } = useSessionMessages();
   const host = useLibraryHost();
-  const query = useManagementAgent(agentId);
-  const agent = query.data;
+  const reading = useManagementAgent(agentId);
+  const agent = reading.state === 'value' ? reading.value : undefined;
+  const retry = () => void managementAgent.refresh(host.remote?.deviceId ?? null, agentId);
   const notice = deviceScopeNotice({
     remote: host.remote,
-    error: query.error,
+    error: refreshFailure(reading),
     hasData: !!agent,
     now: Date.now(),
   }, translate);
@@ -45,7 +48,7 @@ export function AgentAppDetailPage({ agentId, backLabel, onBack, onCreate }: {
   return (
     <div className="mk py-10" data-testid="agent-app-detail" data-agent-id={agentId}>
       <AppProductBack label={backLabel} onBack={onBack} testId="agent-app-detail-back" />
-      {notice && <DeviceScopeNoticeLine notice={{ ...notice, inHeading: false }} onRetry={() => void query.refetch()} />}
+      {notice && <DeviceScopeNoticeLine notice={{ ...notice, inHeading: false }} onRetry={retry} />}
       {agent ? (
         <fieldset disabled={readOnly} className="contents">
           <InstallSection
@@ -62,9 +65,9 @@ export function AgentAppDetailPage({ agentId, backLabel, onBack, onCreate }: {
           />
         </fieldset>
       ) : !notice && (
-        query.isError || agent === null ? (
+        reading.state === 'error' || agent === null ? (
           <div className="mk-status" role="status">
-            {translate(query.isError ? 'agentsPage.detailLoadFailed' : 'agentsPage.detailUnavailable')}
+            {translate(reading.state === 'error' ? 'agentsPage.detailLoadFailed' : 'agentsPage.detailUnavailable')}
           </div>
         ) : <PageLoading />
       )}

@@ -16,7 +16,9 @@ import { topicsSourceChatId, useTopicsOfChat } from './useTopics'
 import { useChatConversation, type ChatConversation } from '@/store/useChatConversation'
 import { rendererLogger } from '@/lib/log'
 import { topicNameFromMessage } from '@/components/chat/topicAnchorModels'
-import { useTabsReading } from '@/components/appSlot/useTabsReading'
+import { useSelect } from '@/lib/selectStore'
+import { mobxReadable } from '@/lib/mobxReadable'
+import { comparer } from 'mobx'
 import { closeTopicTab, focusedChatTab, hideTopicTab, openTopicTab, topicTabOf, updateTopicNames } from '@/session/renderer/features/chats/chat-tabs/chat-layouts'
 
 const topicSurfaceLog = rendererLogger('chat/topic-surface')
@@ -45,7 +47,7 @@ type UseTopicSurfaceArgs = {
 
 export type TopicSurface = {
   /** 这条线上长出来的话题,按来源消息分组 —— 锚点卡读它。 */
-  anchorsByMessageId: Map<string, TopicSummary[]>
+  anchorsByMessageId: Map<string, TopicSummary[]> | null
   topics: TopicSummary[]
   topicsReady: boolean
   reloadTopics: () => void
@@ -96,13 +98,13 @@ export function useTopicSurface({
   useEffect(() => { if (chatId) updateTopicNames(chatId, topics) }, [chatId, topics])
   // 分栏是这条线页签条上的一枚(chat-tabs/chat-layouts):开着哪条话题、在不在屏上都由那里说,按来源线各记各的
   // (@@@3922 的 subject-scoped 由此而来:换了来源线读的就是另一条页签条)。
-  const tab = useTabsReading(() => {
+  const tab = useSelect(useMemo(() => mobxReadable(() => {
     if (!chatId) return null
     const tab = topicTabOf(chatId)
     if (!tab) return null
     const up = embedded ? tab.shown : focusedChatTab(chatId)?.tabId === tab.tabId
     return { topic: { chatId: tab.topic.topicChatId, name: tab.topic.name }, shown: up }
-  }, [chatId, embedded])
+  }, comparer.structural), [chatId, embedded]), (reading) => reading, Object.is)
   const topic = tab?.topic ?? null
   const splitTopic = tab?.shown ? topic : null
   const chatIdRef = useRef<string | null>(null)

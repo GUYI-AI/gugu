@@ -7,8 +7,9 @@ import { groupParticipantPanes } from '@renderer/features/chats/group-participan
 import { observeGroupParticipantWidth } from '@renderer/features/chats/group-participant-width';
 import { ExtensionMark } from '@renderer/features/extensions/extension-mark';
 import { ExtensionSharedSlot } from '@renderer/features/extensions/extension-shared-slot';
-import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { extensionSurfaceStore } from '@renderer/features/extensions/extension-surface-store';
+import { useAppPageTab } from '@renderer/features/extensions/extension-tab-provider';
+import { Unknown } from '@/components/ui/Unknown';
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import type { PaneLayoutNode } from '@renderer/features/tabs/pane-layout-tree';
 import { TabStripShell } from '@renderer/features/tabs/tab-bar';
@@ -259,8 +260,7 @@ const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: st
  */
 const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: string; tabKind: string }) {
   const { translate } = useSessionMessages();
-  const contribution = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === tabKind);
-  const { label, tooltip } = extensionTabTitle(extensionSurfaceStore.said(null, `screen:${blockId}`), installedExtensionsStore.tabTitle(tabKind) ?? tabKind);
+  const { contribution, label, tooltip, unknown, failed } = useAppPageTab(extensionSurfaceStore.said(null, `screen:${blockId}`), tabKind);
   const corners = screenLayout.corners(blockId);
   const multi = screenLayout.order.length > 1;
   const focused = screenLayout.focusedBlockId === blockId;
@@ -300,7 +300,7 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
                 onClick={() => void followLink({ kind: 'app-detail', extensionId: contribution.extensionId })}>
                 <Settings className="size-3.5" />
               </button>
-            ) : null}
+            ) : contribution === null && !failed ? <Unknown className="size-6" /> : null}
             {multi ? <CloseBlockButton blockId={blockId} /> : null}
           </TabBarActionRow>
         }
@@ -311,6 +311,7 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
             isFocusedPane={focused}
             label={label}
             title={tooltip}
+            labelSlot={unknown ? <Unknown className="w-20" /> : undefined}
             preSlot={<ExtensionMark iconDataUrl={contribution?.iconDataUrl} />}
             closeLabel={translate('task.closeTab', { label })}
             onClose={takeAway}
@@ -331,9 +332,8 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
 const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { blockId: string; content: Extract<ScreenBlockContent, { kind: 'chat-app' }> }) {
   const { translate } = useSessionMessages();
   const { chatId, tabKind, itemId, title } = content;
-  const contribution = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === tabKind);
   const slot = `screen:${blockId}`;
-  const { label, tooltip } = extensionTabTitle(extensionSurfaceStore.said(null, slot), itemId && !installedExtensionsStore.isChatFile(tabKind, title) ? title : (installedExtensionsStore.tabTitle(tabKind) ?? title));
+  const { contribution, label, tooltip, unknown } = useAppPageTab(extensionSurfaceStore.said(null, slot), tabKind, itemId ? title : undefined, title);
   const corners = screenLayout.corners(blockId);
   const multi = screenLayout.order.length > 1;
   const putBack = () => {
@@ -362,6 +362,7 @@ const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { bloc
             isFocusedPane={screenLayout.focusedBlockId === blockId}
             label={label}
             title={tooltip}
+            labelSlot={unknown ? <Unknown className="w-20" /> : undefined}
             preSlot={<ExtensionMark iconDataUrl={contribution?.iconDataUrl} />}
             closeLabel={translate('task.closeTab', { label })}
             onClose={putBack}

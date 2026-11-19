@@ -19,9 +19,12 @@ export function useInstalledAgentRows(query: string) {
   const operations = useAgentInstallationStatuses();
   const busy = useBusyInstallAgents();
   const uninstalling = useUninstallingAgents();
-  const readings = new Map(operations.data?.map((reading) => [reading.id, reading]));
-  const installed = (inventory.data ?? [])
-    .map((agent) => ({ agent, reading: readings.get(agent.id) ?? agent }))
+  // Until the install statuses are read, each agent's own payload says whether it is installed.
+  const statuses = operations.reading.state === 'value' ? new Map(operations.reading.value.map((reading) => [reading.id, reading])) : null;
+  // @@@reading-default(paired) - no rows until the agents are read; every reader shows its placeholder on `inventory.reading.state`
+  const agents = inventory.reading.state === 'value' ? inventory.reading.value : [];
+  const installed = agents
+    .map((agent) => ({ agent, reading: statuses?.get(agent.id) ?? agent }))
     .filter(({ reading }) => isInstalledAgent(reading))
     .sort((a, b) => compareAgents(a.agent, b.agent));
 

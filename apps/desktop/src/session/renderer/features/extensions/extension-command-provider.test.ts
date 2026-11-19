@@ -1,4 +1,4 @@
-import { autorun, runInAction } from 'mobx';
+import { autorun } from 'mobx';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EXTENSION_API_VERSION } from '@shared/extensions/manifest';
 
@@ -8,7 +8,8 @@ vi.mock('@renderer/utils/logger', () => ({ log: { warn: vi.fn(), error: vi.fn() 
 vi.mock('@renderer/features/sessions/stores/open-file-in-file-editor', () => ({ openHostRequestedExtensionInSessionWhenReady: vi.fn() }));
 
 const { createExtensionCommandProvider } = await import('./extension-command-provider');
-const { installedExtensionsStore: store } = await import('./installed-extensions-store');
+const { tellInstalled, putInstalled } = await import('./installed-extensions');
+const { setLocalePreference } = await import('@/i18n');
 const { extensionViewStore: views } = await import('./extension-view-store');
 const { extensionSurfaceStore: surfaces } = await import('./extension-surface-store');
 const { auxWindows } = await import('@renderer/app/aux-windows');
@@ -22,8 +23,8 @@ const app = (id = 'board') => ({ id, name: 'Board', version: '1.0.0', apiVersion
     { name: 'file', title: 'File', opensFiles: { chat: ['.board.json'] }, menu: [command] },
   ] } });
 function install(apps: unknown[] = [app()], disabled: string[] = []) {
-  store.applyList({ extensions: apps, invalid: [], icons: {}, disabled, disclosure: {} } as never);
-  runInAction(() => { store.locale = 'en'; });
+  setLocalePreference('en-US');
+  tellInstalled('local', { extensions: apps, invalid: [], icons: {}, disabled, disclosure: {} } as never);
 }
 afterEach(() => {
   invokeCommand.mockClear();
@@ -39,7 +40,7 @@ describe('enabled App commands in the global registry', () => {
     expect(provider.getCommands().map(({ id, label }) => [id, label])).toEqual([
       ['extension:board.main:new', 'Board: New card'], ['extension:board.main:refresh', 'Board: Refresh'],
     ]);
-    runInAction(() => { store.locale = 'zh'; });
+    setLocalePreference('zh-CN');
     expect(provider.getCommands()[0]?.label).toBe('看板: New card');
   });
 
@@ -48,9 +49,9 @@ describe('enabled App commands in the global registry', () => {
     const seen: string[][] = [];
     const dispose = autorun(() => { seen.push(provider.getCommands().map((entry) => entry.label!)); });
     try {
-      store.applyDisabled(['board']);
+      putInstalled('local', (list) => ({ ...list, disabled: ['board'] }));
       expect(seen.at(-1)).toEqual([]);
-      store.applyDisabled([]);
+      putInstalled('local', (list) => ({ ...list, disabled: [] }));
       expect(seen.at(-1)).toEqual(['Board: New card', 'Board: Refresh']);
       const updated = app(); updated.contributes.tabs[0]!.menu = [{ id: 'export', title: 'Export' }];
       updated.contributes.tabs[0]!.toolbar = [];

@@ -23,6 +23,8 @@ vi.useFakeTimers()
 window.localStorage.setItem('gugu.assistant-panel.notices.v1:owner', JSON.stringify([
   { notice: { operationId: '6f9619ff-8b86-4011-b42d-00c04fc964ff', resource: 'devices', operation: 'edited', id: 'device-1', deviceId: 'device-1' } },
 ]))
+// The account the replicas read for (the session publication is stubbed above).
+;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'owner')
 await import('../../../../apps/desktop/src/components/assistant/assistant-panel-cloud')
 afterAll(() => { vi.useRealTimers(); window.localStorage.clear() })
 

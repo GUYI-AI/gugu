@@ -1,11 +1,16 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { queryClient } from '@/lib/replica';
-import { getRendererSession, observeRendererSession } from '@/lib/sessionPublication';
+import { useMemo } from 'react';
+import { replica, useReplica, refreshFailure } from '@/lib/replica';
+import { catalogDetailed, followCatalogChanges, platformModels, useDetailedPlatformCatalog } from '@/lib/agentModelReplicas';
+import type { PlatformCatalogModel } from '@/lib/agentModelSelection';
 import { useLibraryHost } from '@renderer/features/library/library-host';
+import { harnessModelCatalog } from '@renderer/lib/stores/agent-replicas';
+import type { GuguModelsOffer } from '@main/core/agents/platform-model-catalog-hook';
+import { platformWireProtocol } from '@gugu/session-plugins/agents/platform-protocols';
 import { invokeOnMachine } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
+import { onMachineReconnected } from '@renderer/lib/machine-clients';
 import {
+  offeredInModelPicker,
   parsePlatformReasoningEfforts,
   PLATFORM_MODELS_CHANGED_EVENT,
   SESSIONPAGE_PLATFORM_CATALOG_CHANNEL,
@@ -31,7 +36,9 @@ export type PlatformModelCatalog = {
 };
 
 export type PlatformModelCatalogState = PlatformModelCatalog & {
-  /** The initial auth retry has settled successfully; an interim empty list proves no retirement. */
+  /** The catalog and what it rests on are read; while false `models` means nothing (❌ the harness route drawn, then replaced). */
+  known: boolean;
+  /** Read in this run (not the last run's snapshot) without a failure: an empty list here proves no retirement. */
   settled: boolean;
   retry: () => void;
   /**
@@ -42,12 +49,8 @@ export type PlatformModelCatalogState = PlatformModelCatalog & {
 };
 
 /**
- * 目录取不到时的取值。「咕咕提供的模型」分组是**加法**:主进程没接线、控制面不可达、
- * 响应超时,都只让这一组缺席,harness 自家模型照常可选 —— composer 不因为一个额度目录
- * 取不到就打不开。(计费路径本身的 fail loud 在主进程,见 sessionpage-platform-model.ts。)
- *
- * 这里原因码为 null:这是「还没取 / 不该取」的初值。IPC 这一趟真失败了由 hook 记成
- * `host-not-ready`(带重试),见 usePlatformModelCatalog。
+ * 「不该取」的那份目录:宿主送来的回包形状不对(解析时)。「咕咕提供的模型」分组是**加法**:取不到只让这一组
+ * 缺席,harness 自家模型照常可选。❌ 拿它当「还没读到」—— 那是 `known: false`。
  */
 export const NO_PLATFORM_CATALOG: PlatformModelCatalog = {
   models: [],
@@ -61,9 +64,6 @@ export const NO_PLATFORM_CATALOG: PlatformModelCatalog = {
  * 「还没到」——超时按取不到处理。
  */
 const CATALOG_TIMEOUT_MS = 8_000;
-const CATALOG_AUTH_RETRY_DELAY_MS = 250;
-/** 回到前台时重取目录的最短间隔:focus 与 visibilitychange 常常一前一后同时到,别为一次切窗取两遍。 */
-const FOREGROUND_REFRESH_MIN_MS = 5_000;
 /** A session's catalog entry (its preselection) is dropped this long after its last reader leaves. */
 export const SESSION_CATALOG_GC_MS = 5 * 60_000;
 /** 这一侧问宿主没问到(IPC 失败 / 超时)。 */
@@ -188,122 +188,98 @@ export async function fetchPlatformModelCatalog(
   return parsePlatformModelCatalog(response);
 }
 
-export const PLATFORM_MODEL_CATALOG_QUERY_KEY = ['gugu', 'platformModelCatalog'] as const;
+/** A session's platform preselection (#6182); the models themselves are the account's catalog, ❌ a second one per machine. */
+export const sessionPlatformSelection = replica({
+  name: 'sessionPlatformSelection',
+  scope: 'account',
+  read: async (_owner, sessionId: string, providerId: string, surface: SessionpageSessionSurface, machine: string | null) => {
+    const { agentDefault, sessionSelection } = await fetchPlatformModelCatalog(providerId, surface, sessionId, machine);
+    return { agentDefault, sessionSelection };
+  },
+  fresh: Infinity,
+  keep: SESSION_CATALOG_GC_MS,
+  watch: {
+    group: (_sessionId, _providerId, _surface, machine) => machine,
+    start: (_owner, _sessionId, _providerId, _surface, machine) => {
+      const offs = [followCatalogChanges(() => { void sessionPlatformSelection.refresh(); })];
+      if (machine) offs.push(onMachineReconnected(machine, () => { void sessionPlatformSelection.refresh(undefined, undefined, undefined, machine); }));
+      return () => offs.forEach((off) => off());
+    },
+  },
+});
 
 /**
- * One load, with one retry: the main process may receive the first request before its
- * renderer-backed auth provider has observed the freshly injected session, so an empty answer
- * or a transport failure is asked again once. The second answer is authoritative; a second
- * failure throws (error state, the list on hand stays).
+ * The account's catalog as one engine sees it: enabled models of its protocol, its multiplier and levels. Only for a
+ * catalog as read (`catalogDetailed`): one restored from the snapshot carries no multipliers or levels.
  */
-async function loadPlatformModelCatalog(
-  providerId: string,
-  surface: SessionpageSessionSurface,
-  sessionId: string | null,
-  machine: string | null
-): Promise<PlatformModelCatalog> {
-  const ask = () => fetchPlatformModelCatalog(providerId, surface, sessionId, machine);
-  try {
-    const first = await ask();
-    if (first.models.length > 0) return first;
-  } catch {
-    // asked again below
-  }
-  await new Promise((resolve) => setTimeout(resolve, CATALOG_AUTH_RETRY_DELAY_MS));
-  return ask();
+function platformModelsFor(providerId: string, catalog: readonly PlatformCatalogModel[]): PlatformModelOption[] {
+  if (!catalogDetailed(catalog)) throw new Error('platformModelsFor needs the catalog as read (with its menu details)');
+  const protocol = platformWireProtocol(providerId) as PlatformModelProtocol | null;
+  if (!protocol || !PROTOCOLS.includes(protocol)) return [];
+  return catalog
+    .filter((model) => model.enabled && model.protocols.includes(protocol))
+    .map((model) => ({
+      id: model.id,
+      displayName: model.displayName,
+      protocol,
+      // null: the catalog has no multiplier for this protocol, or no context window (checked above: the details were read).
+      creditMultiplier: model.creditMultipliers![protocol] ?? null,
+      contextWindow: model.contextWindow ?? null,
+      reasoningEfforts: model.reasoningEfforts!,
+      requiresMembership: model.requiresMembership,
+      hidden: model.hidden,
+    }));
 }
 
 /**
- * 当前 provider 的平台模型目录。providerId 为 null(未选 agent,或调用方关掉了平台分组)
- * 时不发请求。
- *
- * Account-level shared data (one query per account + provider + surface + machine + session):
- * every composer, settings row and session view reading the same catalog shares one load, and a
- * remount reads it from the cache instead of starting empty. That empty start used to present
- * the harness route (its default model, its sign-in notice) on every New task until the answer
- * arrived. Refreshed on demand: a models-changed signal, returning to the foreground, the
- * machine coming back, retry.
+ * 当前 provider 的平台模型目录。providerId 为 null(未选 agent,或调用方关掉了平台分组)时什么都不读。
+ * Derived, not read per surface: the account's catalog (`platformModels`) filtered to the engine's protocol, offered or not
+ * as the machine's own gate answers (`gugu` in its harness model catalog, the reading the composer draws its own group
+ * from); a session adds its preselection. A disconnected machine is not asked.
  */
 export function usePlatformModelCatalog(
   providerId: string | null,
   surface: SessionpageSessionSurface,
   sessionId?: string | null
 ): PlatformModelCatalogState {
-  // #6264 会话 / 新建框在别的机器上:平台模型也问那台机器(它用自己的登录态与额度)。
+  // #6264 会话 / 新建框在别的机器上:给不给咕咕那一组由那台机器自己的门说。
   const host = useLibraryHost().remote;
   const hostMachine = host?.deviceId ?? null;
   const machine = sessionId ? machineRegistry.machineOf(sessionId) : hostMachine;
-  // 那台机器此刻连没连上(只有这个框所在的那台知道;会话落在别处的照旧去问)。
   const online = machine === null || machine !== hostMachine || host?.online !== false;
-  const account = useSyncExternalStore(observeRendererSession, () => getRendererSession()?.user.id ?? null);
-  // The model list belongs to account + provider + surface + machine; only the preselection belongs to the session.
-  const list = [account, providerId, surface, machine] as const;
-  const queryKey = [...PLATFORM_MODEL_CATALOG_QUERY_KEY, ...list, sessionId ?? null];
-  const query = useQuery<PlatformModelCatalog>({
-    queryKey,
-    queryFn: () => loadPlatformModelCatalog(providerId!, surface, sessionId ?? null, machine),
-    // 机器没连上就不问:问不到只会落一个「模型列表尚未就绪」,而原因是机器离线(那由机器的提示说)。
-    enabled: online && providerId !== null,
-    // The account-level entry (no session: New task, settings) is loaded once and kept, or the next
-    // New task would start empty again. A session's entry carries only that session's preselection:
-    // dropped once nobody has read it for a while, so viewing sessions does not grow the cache forever.
-    staleTime: Infinity,
-    gcTime: sessionId ? SESSION_CATALOG_GC_MS : Infinity,
-    retry: false,
-    // Switching sessions keeps the list on screen and drops just the previous session's
-    // preselection until this one's arrives. Another provider / surface / machine starts empty:
-    // ❌ 把上一台 / 上一家的模型留在下拉里。
-    placeholderData: (previous, previousQuery) =>
-      previous && list.every((part, index) => previousQuery?.queryKey[PLATFORM_MODEL_CATALOG_QUERY_KEY.length + index] === part)
-        ? { ...previous, agentDefault: null, sessionSelection: undefined }
-        : undefined,
-  }, queryClient);
-  const refetch = query.refetch;
-  // A fresh request, never the one already in flight: after a hot switch the record just changed (#6182).
-  const refresh = () => { void refetch(); };
+  const catalog = useDetailedPlatformCatalog(providerId !== null);
+  const harness = useReplica(harnessModelCatalog, providerId ? [providerId, surface, machine] : null, { read: online });
+  const selection = useReplica(sessionPlatformSelection, providerId && sessionId ? [sessionId, providerId, surface, machine] : null, { read: online });
 
-  const wasOnline = useRef(online);
-  useEffect(() => {
-    // 机器断开 / 连上本身不换目录:列着的留着,别先清空再填。断开时问到一半的那一趟作废(它是机器那头没应答);
-    // 连上时重取 —— 机器回来,列表自己续上,❌ 停在「尚未就绪」等人点重试。
-    if (!online && wasOnline.current) void queryClient.cancelQueries({ queryKey, exact: true });
-    if (online && !wasOnline.current && query.status !== 'pending') void refetch();
-    wasOnline.current = online;
-  }, [online]);
-
-  useEffect(() => {
-    const refreshAll = () => {
-      void queryClient.invalidateQueries({ queryKey: PLATFORM_MODEL_CATALOG_QUERY_KEY });
-    };
-    // 回到前台就重取(#7056):人可能刚在网页上开通、续费会员 —— 点「升级解锁更多模型」去付完钱回来,
-    // 下拉里就该是会员的模型。开会员只写会员表(bind_subscription),没有任何推送会到这里;
-    // 与 useSpendingPower 的 refreshWhenVisible 同一条规矩、同一个理由。
-    let lastAt = Date.now();
-    const onForeground = () => {
-      if (document.visibilityState === 'hidden') return;
-      const now = Date.now();
-      if (now - lastAt < FOREGROUND_REFRESH_MIN_MS) return;
-      lastAt = now;
-      refreshAll();
-    };
-    // 设置「模型」页开关了一条(#7056):所有读者一起重取,不等下次换 agent / 换会话。
-    window.addEventListener(PLATFORM_MODELS_CHANGED_EVENT, refreshAll);
-    window.addEventListener('focus', onForeground);
-    document.addEventListener('visibilitychange', onForeground);
-    return () => {
-      window.removeEventListener(PLATFORM_MODELS_CHANGED_EVENT, refreshAll);
-      window.removeEventListener('focus', onForeground);
-      document.removeEventListener('visibilitychange', onForeground);
-    };
-  }, []);
-
-  const data = query.data ?? NO_PLATFORM_CATALOG;
-  // A refetch in flight supersedes the failure it is answering; a failure keeps the list on hand.
-  const failed = query.isError && query.fetchStatus !== 'fetching';
+  // Offered or not is the machine's own gate (sessionpagePlatformGate), answered with its harness catalog. Not answered
+  // (the read failed, or a machine older than that answer): the group is absent, said as "not ready" with a retry.
+  const offer = harness.state === 'value' ? (harness.value.gugu as GuguModelsOffer | undefined) : undefined;
+  const gate = harness.state === 'unknown' || offer?.offered ? null : offer ? offer.reason : PLATFORM_CATALOG_RETRY_ERROR;
+  const models = useMemo(
+    () => (providerId && catalog.state === 'value' && !gate ? platformModelsFor(providerId, catalog.value) : []),
+    [providerId, catalog, gate]
+  );
+  const refresh = () => {
+    void platformModels.refresh();
+    if (providerId) void harnessModelCatalog.refresh(providerId, surface, machine);
+    if (providerId && sessionId) void sessionPlatformSelection.refresh(sessionId, providerId, surface, machine);
+  };
+  // The catalog or the session's preselection could not be read: said with a retry (the group stays absent meanwhile).
+  const failed = refreshFailure(catalog) !== null || refreshFailure(selection) !== null || refreshFailure(harness) !== null;
+  const known = !providerId || (catalog.state !== 'unknown' && harness.state !== 'unknown' && (!sessionId || selection.state !== 'unknown'));
+  const catalogError = gate ?? (failed ? PLATFORM_CATALOG_RETRY_ERROR : null);
+  const agentDefault = selection.state === 'value' && selection.value.agentDefault
+    && models.some((model) => model.id === selection.value.agentDefault!.modelId && offeredInModelPicker(model))
+    ? selection.value.agentDefault : null;
   return {
-    ...data,
-    catalogError: failed ? PLATFORM_CATALOG_RETRY_ERROR : data.catalogError,
-    settled: online && query.isSuccess && !query.isPlaceholderData && data.catalogError === null,
+    // @@@reading-default(paired) - while `known` is false the list means nothing: every surface drawing it gates on `known`
+    models: known ? models : [],
+    agentDefault,
+    sessionSelection: selection.state === 'value' ? selection.value.sessionSelection : undefined,
+    catalogError,
+    known,
+    // ❌ `stale`: a refresh on its way (a focus, a models-changed signal) keeps what is settled (owner 11-10: a notice rising and withdrawn).
+    settled: known && online && catalog.state === 'value' && !failed,
     retry: refresh,
     refresh,
   };

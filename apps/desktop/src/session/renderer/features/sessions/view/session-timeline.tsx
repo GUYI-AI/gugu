@@ -102,6 +102,7 @@ function useReadingTurn(
   const turnsRef = useRef(turns);
   turnsRef.current = turns;
   const signature = turns.map((turn) => `${turn.id}:${turn.itemIds.length}`).join('|');
+  // @@@effect-flow(dom) - measures which turn is at the reading line (DOM observation)
   useEffect(() => {
     const host = navRef.current?.parentElement;
     if (!host) return;

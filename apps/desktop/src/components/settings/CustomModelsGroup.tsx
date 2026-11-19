@@ -13,7 +13,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
-import { type CustomModelConnection } from '@gugu/session-core/models/custom-model';
+import type { CustomModelConnection } from '@gugu/session-core/models/custom-model';
 import { providerPresets } from '@gugu/session-core/models/provider-presets';
 import { modelProviderIcon } from '@renderer/features/sessions/session-config/model-provider-icon';
 import { useSelectedRemoteDevice } from '@renderer/features/remote-hosts/device-scope-picker';
@@ -46,7 +46,8 @@ export const CustomModelsGroup = observer(function CustomModelsGroup({ addReques
 const CustomModels = observer(function CustomModels({ machine, addRequested, onAddClose }: { machine: string | null } & AddRequest) {
   const { translate } = useSessionMessages();
   const reading = useReplica(customModels, [machine]);
-  const { data: agents } = useAgents();
+  const agentsReading = useAgents();
+  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
   const [userEdit, setEditing] = useState<CustomModelConnection | NewModel | null>(null);
   const editing: CustomModelConnection | NewModel | null = addRequested ? { group: 'custom' } : userEdit;
   const [busy, setBusy] = useState<string | null>(null);
@@ -84,7 +85,7 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
       ))}
       {reading.state === 'error' ? <SettingsRow description={errorText(reading.error)} control={<Button onClick={refresh}>{translate('common.retry')}</Button>} />
         : reading.state === 'unknown' ? <SettingsRow control={<Unknown className="w-32" />} /> : <>
-          <RefreshFailed error={reading.error} onRetry={refresh} />
+          <RefreshFailed reading={reading} />
           {reading.value.length === 0 ? null
           : reading.value.filter(connection => groupOf(connection) === group).flatMap((connection) => {
             const preset = providerPresets.find(({ id }) => id === connection.preset);

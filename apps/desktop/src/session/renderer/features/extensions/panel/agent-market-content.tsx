@@ -2,6 +2,7 @@ import { CircleAlert } from '@/lib/icons';
 import { AppIcon } from '@renderer/lib/components/app-icon';
 import { useManagementAgents } from '@renderer/lib/stores/use-agents';
 import { Button } from '@renderer/lib/ui/button';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { isInstalledAgent } from '@renderer/features/settings/agents-page/agent-order';
 import {
@@ -32,9 +33,13 @@ export function AgentMarketContent({
   assistantResource?: ResourceContext;
 }) {
   const { translate, locale } = useSessionMessages();
-  const { data, isPending, isError, refetch } = useManagementAgents();
+  const { reading, refetch } = useManagementAgents();
+  const data = reading.state === 'value' ? reading.value : null;
+  const isPending = reading.state === 'unknown';
+  const isError = reading.state === 'error';
   const categoryLabel = (key: AgentMarketCategory) => translate(`extensions.agentCategory.${key}`);
   const search = query.trim();
+  // @@@reading-default(paired) - no agent rows until the list is read; the skeleton and the empty sentence wait on `isPending` / `isError`
   const agents = data ?? [];
   const rows = agents.map((agent) => ({
     agent,
@@ -110,7 +115,8 @@ export function AgentMarketContent({
       {choices.length > 1 && (
         <MarketCategoryBar choices={choices} selected={activeCategory} onChange={onCategoryChange} testIdPrefix="agent-market-chip" />
       )}
-      {isError && !data && (
+      {data ? <RefreshFailed reading={reading} /> : null}
+      {isError && (
         <div className="mk-status" role="alert">
           <CircleAlert className="size-4 shrink-0" aria-hidden />
           <span>{translate('extensions.agentMarketUnavailable')}</span>

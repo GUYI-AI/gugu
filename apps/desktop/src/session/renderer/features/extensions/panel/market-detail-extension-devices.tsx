@@ -1,5 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { installedExtensions, marketUpdates } from '../installed-extensions';
 import type { LibraryHost } from '@renderer/features/library/library-host';
 import { compareExtensionVersions } from '@shared/extensions/manifest';
 import { marketCompatText, type MarketListItem } from '@shared/extensions/market';
@@ -58,8 +59,8 @@ export const MarketExtensionDevices = observer(function MarketExtensionDevices({
       return true;
     },
     refresh: async ({ host }) => {
-      await host.extensions.store.load();
-      await host.extensions.store.checkUpdates();
+      await installedExtensions.refresh(host.extensions.key);
+      await marketUpdates.refresh(host.extensions.key);
     },
   });
   return <MarketDevicePicker {...picker} />;

@@ -15,6 +15,8 @@ import {
   sessionChangedChannel
 } from '@/session/shared/core/sessions/sessionEvents'
 import { rendererLogger } from '../lib/log'
+import { useSelect } from '../lib/selectStore'
+import { sessionpageTimelineFacts, updateSessionpageFacts } from '../mobile/agent-watch/timeline-cache'
 import { desktopIpc } from '../platform/desktopIpc'
 
 const timelineLog = rendererLogger('chat/sessionpage-session-timeline')
@@ -92,10 +94,6 @@ function pendingPermissionFrom(
   }
 }
 
-type TimelineFacts = {
-  recentActions: SessionpageRecentActions | null
-  settlements: Readonly<Record<string, Settlement>>
-}
 
 function indexSettlements(
   base: Readonly<Record<string, Settlement>>,
@@ -105,6 +103,9 @@ function indexSettlements(
   for (const settlement of settlements) next[settlement.itemId] = settlementFromWire(settlement)
   return next
 }
+
+/** Pages following each session's facts: the entry goes when the last one leaves. */
+const factsFollowers = new Map<string, number>()
 
 /** 这条会话的记录此刻还读不到,但会出现(会话刚建、provider 还没落下第一份记录)—— 不是错。 */
 const RECORD_NOT_YET = new Set(['record_unsupported', 'record_not_found'])
@@ -121,10 +122,7 @@ const RECORD_NOT_YET = new Set(['record_unsupported', 'record_not_found'])
  * ❌ 不拿定时器轮询去「等它出现」。
  */
 export function useSessionpageSessionTimeline(sessionId: string | null): SessionpageSessionTimeline {
-  const [state, setState] = useState<{
-    sessionId: string | null
-    value: TimelineFacts
-  }>({ sessionId: null, value: { recentActions: null, settlements: {} } })
+  const facts = useSelect(sessionpageTimelineFacts, (map) => (sessionId ? map.get(sessionId) ?? null : null), Object.is)
   const attachedRef = useRef<string | null>(null)
   const [attempt, setAttempt] = useState(0)
 
@@ -146,13 +144,9 @@ export function useSessionpageSessionTimeline(sessionId: string | null): Session
   useEffect(() => {
     attachedRef.current = null
     const api = desktopIpc()
-    if (!sessionId || !api) {
-      setState({ sessionId, value: { recentActions: null, settlements: {} } })
-      return
-    }
-
-    setState({ sessionId, value: { recentActions: null, settlements: {} } })
+    if (!sessionId || !api) return
     let alive = true
+    factsFollowers.set(sessionId, (factsFollowers.get(sessionId) ?? 0) + 1)
     let cursor: RecordCursor | null = null
     let stopEvents: (() => void) | null = null
     const subscriptionId = globalThis.crypto?.randomUUID?.()
@@ -162,13 +156,10 @@ export function useSessionpageSessionTimeline(sessionId: string | null): Session
     const commitSnapshot = (snapshot: TimelineSnapshot) => {
       if (!alive) return
       cursor = snapshot.cursor
-      setState({
-        sessionId,
-        value: {
-          recentActions: recentActionsFromSnapshot(snapshot),
-          settlements: indexSettlements({}, snapshot.settlements)
-        }
-      })
+      updateSessionpageFacts(sessionId, () => ({
+        recentActions: recentActionsFromSnapshot(snapshot),
+        settlements: indexSettlements({}, snapshot.settlements)
+      }))
     }
 
     const onResult = (result: TimelineAfterResult) => {
@@ -179,22 +170,16 @@ export function useSessionpageSessionTimeline(sessionId: string | null): Session
       }
       const { batch } = result
       cursor = batch.cursor
-      setState((prev) => {
-        if (prev.sessionId !== sessionId) return prev
-        return {
-          sessionId,
-          value: {
-            // Older hosts may send a transcript-only batch. Keep the presence projection
-            // until a timeline payload actually carries its own summary fields.
-            recentActions:
-              batch.recentActions === undefined || batch.lastActionAt === undefined
-                ? prev.value.recentActions
-                : { actions: batch.recentActions, lastActionAt: toIso(batch.lastActionAt) },
-            // 增量里的结算按 itemId 替换(与手机 agent-watch-store 同一合并规则)。
-            settlements: indexSettlements(prev.value.settlements, batch.settlements)
-          }
-        }
-      })
+      updateSessionpageFacts(sessionId, (prev) => ({
+        // Older hosts may send a transcript-only batch. Keep the presence projection
+        // until a timeline payload actually carries its own summary fields.
+        recentActions:
+          batch.recentActions === undefined || batch.lastActionAt === undefined
+            ? prev?.recentActions ?? null
+            : { actions: batch.recentActions, lastActionAt: toIso(batch.lastActionAt) },
+        // 增量里的结算按 itemId 替换(与手机 agent-watch-store 同一合并规则)。
+        settlements: indexSettlements(prev?.settlements ?? {}, batch.settlements)
+      }))
     }
 
     // Listen before opening the subscription so a provider update between the
@@ -237,17 +222,17 @@ export function useSessionpageSessionTimeline(sessionId: string | null): Session
           'sessionpage session timeline unavailable'
         )
         if (!alive) return
-        setState((prev) =>
-          prev.sessionId === sessionId
-            ? { sessionId, value: { ...prev.value, settlements: {} } }
-            : prev
-        )
+        updateSessionpageFacts(sessionId, (prev) => ({ recentActions: prev?.recentActions ?? null, settlements: {} }))
       }
     }
     void load()
 
     return () => {
       alive = false
+      // The last page showing it left: what it said can go stale unheard, so it is forgotten.
+      const left = (factsFollowers.get(sessionId) ?? 1) - 1
+      if (left > 0) factsFollowers.set(sessionId, left)
+      else { factsFollowers.delete(sessionId); updateSessionpageFacts(sessionId, () => undefined) }
       stopEvents?.()
       void api
         .invoke('sessionTimeline.sessionUnsubscribe', { subscriptionId })
@@ -280,7 +265,6 @@ export function useSessionpageSessionTimeline(sessionId: string | null): Session
     [sessionId]
   )
 
-  const facts = state.sessionId === sessionId ? state.value : null
   const respondQuestion = useCallback(async (itemId: string, answers: readonly QuestionAnswer[]) => {
     const api = desktopIpc()
     if (!sessionId || !api) throw new Error('Session question transport is unavailable')

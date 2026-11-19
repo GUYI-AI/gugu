@@ -1,14 +1,13 @@
 import { observer } from 'mobx-react-lite';
-import { useQueryClient } from '@tanstack/react-query';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { refreshSubscriptionReadings } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { refreshAgentReadings } from '@renderer/lib/stores/agent-replicas';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { marketAgentInstallPlan, type MarketAgentInstallPlan } from './market-agent-install-plan';
 import { MarketDevicePicker, useMarketDevicePicker } from './market-detail-devices';
 
 export const MarketAgentDevices = observer(function MarketAgentDevices({ agentId }: { agentId: string }) {
   const { translate } = useSessionMessages();
-  const client = useQueryClient();
   const picker = useMarketDevicePicker<AgentPayload | null, MarketAgentInstallPlan>({
     itemKey: `agent:${agentId}`,
     read: ({ host }) => host.agents.getManagement(agentId),
@@ -29,7 +28,7 @@ export const MarketAgentDevices = observer(function MarketAgentDevices({ agentId
       return true;
     },
     refresh: async ({ device }) => {
-      await client.invalidateQueries({ queryKey: ['agents'] });
+      await refreshAgentReadings(device.id);
       void refreshSubscriptionReadings(device.id, agentId);
     },
   });

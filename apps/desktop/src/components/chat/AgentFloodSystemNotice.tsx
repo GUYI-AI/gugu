@@ -65,11 +65,12 @@ export function AgentFloodSystemNotice({ messageId, content, onUndone }: AgentFl
     if (!adjustment || busy) return
     setBusy(true)
     setUndoError(null)
+    const entry = agentFloodAdjustment.at(messageId)
     try {
       await topicService.undoAgentFloodAdjustment(adjustment.id)
       // RPC 返回即代表台账那行真的落了 undone_at(它在同一个事务里改的),所以这不是乐观更新;
       // 失败会从 await 抛出来,走下面的 catch,按钮保持原样。
-      agentFloodAdjustment.set([messageId], (prev) => (prev ? { ...prev, undone_at: new Date().toISOString() } : prev))
+      entry.set((prev) => (prev ? { ...prev, undone_at: new Date().toISOString() } : prev))
       onUndone?.()
     } catch (err) {
       floodLog.error({ error: err, messageId }, 'agent flood undo failed')

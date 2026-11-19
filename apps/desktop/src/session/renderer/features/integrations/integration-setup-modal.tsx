@@ -236,6 +236,7 @@ function IntegrationCliLogin({
   const method = cliMethod(metadata);
   const { startCliLogin, waitCliLogin, readCliProgress, cancelIntegrationAuthorization } = useIntegrationsContext();
   const readProgress = useCallback(() => readCliProgress?.(integration) ?? Promise.resolve(null), [readCliProgress, integration]);
+  const libraryHostKey = useLibraryHost().key;
   const host = useLibraryHost(),remote = host.remote;
   const cloudVersion = useCloudVersionMatch(remote?.deviceId ?? null);
   const { toast } = useToast();
@@ -378,6 +379,7 @@ function IntegrationCliLogin({
             </p>
             {phase === 'starting' ? (
               <CliInstallProgress
+                source={`${libraryHostKey}:${integration}`}
                 read={readProgress}
                 idle={<p className="text-sm leading-6 text-foreground-muted" role="status">{translate('integrations.cliPreparing')}</p>}
               />

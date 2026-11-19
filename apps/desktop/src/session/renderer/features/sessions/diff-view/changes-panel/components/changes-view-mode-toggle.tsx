@@ -4,19 +4,21 @@ import { Button } from '@renderer/lib/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import type { ChangesListViewMode } from '@shared/core/app-settings';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { Unknown } from '@/components/ui/Unknown';
 
 interface ChangesViewModeToggleProps {
-  value: ChangesListViewMode;
+  value: ChangesListViewMode | null;
   onChange: (mode: ChangesListViewMode) => void;
   label: string;
 }
 
 export function ChangesViewModeToggle({ value, onChange, label }: ChangesViewModeToggleProps) {
   const { translate } = useSessionMessages();
+  const [open, setOpen] = useState(false);
+  if (value === null) return <Unknown className="size-6" />;
   const nextMode: ChangesListViewMode = value === 'flat' ? 'tree' : 'flat';
   const Icon = value === 'flat' ? AlignJustify : ListTree;
   const tooltip = translate(value === 'flat' ? 'changes.switchToTree' : 'changes.switchToFlat');
-  const [open, setOpen] = useState(false);
 
   return (
     <Tooltip

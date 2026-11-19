@@ -25,17 +25,17 @@ function agentVersion(version: string | null | undefined) {
 
 export function MarketAgentDetail({ agentId, onCreate }: { agentId: string; onCreate: () => void }) {
   const { translate } = useSessionMessages();
-  const query = useManagementAgent(agentId);
-  if (!query.data) {
+  const reading = useManagementAgent(agentId);
+  if (reading.state !== 'value' || !reading.value) {
     return (
       <DialogHeader>
         <DialogTitle role="status">{translate(
-          query.isPending ? 'extensions.loading' : query.isError ? 'agentsPage.detailLoadFailed' : 'agentsPage.detailUnavailable'
+          reading.state === 'unknown' ? 'extensions.loading' : reading.state === 'error' ? 'agentsPage.detailLoadFailed' : 'agentsPage.detailUnavailable'
         )}</DialogTitle>
       </DialogHeader>
     );
   }
-  const agent = query.data;
+  const agent = reading.value;
   return (
     <InstallSection
       agentId={agentId}

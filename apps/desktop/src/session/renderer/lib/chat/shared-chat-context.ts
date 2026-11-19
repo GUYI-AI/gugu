@@ -1,6 +1,6 @@
 import { createChatContext, DEFAULT_CONFIG, type ChatConfig, type ChatContext } from '@gugu/session-chat-ui';
-import { reaction } from 'mobx';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { subscribeLocale } from '@/i18n';
+import { LOCAL_HOST, peekInstalledApps, watchInstalled } from '@renderer/features/extensions/installed-extensions';
 import { readSelfIdentityBridge } from '@/lib/selfIdentityBridge';
 import { rpc } from '@renderer/lib/ipc';
 import { advertisedCommandProvider } from './advertised-command-provider';
@@ -75,9 +75,17 @@ export function createSessionChatContext(): ChatContext {
     // session:<id> 画这条会话的属主 agent(宿主花名册回答会话 → agent),所以两张表变了都要重读。
     senderAvatar: (fromId) => senderAvatarUrl(fromId),
     subscribeSenderAvatars,
-    // App 代发的投递卡写 App 的名字:这台装着的 App、界面语言(store 的 appName);没装就是 null,卡上写 id。
-    appName: (appId) => installedExtensionsStore.appName(appId) ?? null,
-    subscribeAppNames: (listener) => reaction(() => [installedExtensionsStore.manifests, installedExtensionsStore.locale], listener),
+    // App 代发的投递卡写 App 的名字:这台装着的 App、界面语言(store 的 appName);没装就是 null,卡上写 id;
+    // 装着的还没读到就是 undefined,卡先不写这一段,下面的订阅读到后补上。
+    appName: (appId) => {
+      const installed = peekInstalledApps(LOCAL_HOST);
+      return installed ? installed.appName(appId) : undefined;
+    },
+    subscribeAppNames: (listener) => {
+      const stopList = watchInstalled(LOCAL_HOST, () => listener());
+      const stopLocale = subscribeLocale(listener);
+      return () => { stopList(); stopLocale(); };
+    },
     // 群里来的投递写群名(项目群就是项目名,见 chat-name.ts);认不出来是 null,卡上只说「来自群聊」。
     chatName: chatDisplayName,
     chatKind: id => readChatSummary(resolveChatId(id) ?? id)?.kind ?? null,

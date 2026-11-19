@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useReplica } from '@/lib/replica';
 import { History, Image, KeyRound } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
 import { Spinner } from '@renderer/lib/ui/spinner';
@@ -19,6 +19,7 @@ import { MarketDetailCard, useMarketDetailConfirmation } from './market-detail-d
 import { MarketExtensionDevices } from './market-detail-extension-devices';
 import { type ConfirmMarketInstall, useConfirmMarketInstall } from './market-detail-install';
 import { useVersionHistory } from './use-version-history';
+import { marketListing } from '../market-replicas';
 import type { ReactNode } from 'react';
 
 export function MarketExtensionDetail({
@@ -36,25 +37,19 @@ export function MarketExtensionDetail({
   onUninstall?: () => void;
 }) {
   const { translate, locale } = useSessionMessages();
-  const { api } = useLibraryHost().extensions;
+  const { key: hostKey } = useLibraryHost().extensions;
   const { manifest, cloud, ref } = item;
   const text = localizedManifestText(manifest, locale);
   const permissions = declaredPermissions(manifest);
   const confirm = useMarketDetailConfirmation();
   const confirmInstall = useConfirmMarketInstall(cloud.version);
-  const { state: history, retry: retryHistory } = useVersionHistory(api, manifest.id);
-  const listing = useQuery({
-    queryKey: ['market-detail-listing', manifest.id, cloud.version],
-    queryFn: async () => {
-      const result = await api.marketListing({ extensionId: manifest.id, version: cloud.version });
-      if (!result.success || !result.data) throw new Error(result.error);
-      return result.data;
-    },
-    retry: false,
-  });
-  const shots = listing.data?.screenshots;
+  const { state: history, retry: retryHistory } = useVersionHistory(hostKey, manifest.id);
+  // Its pictures and about text are drawn once read; not read (yet, or at all) they are left out, as before.
+  const reading = useReplica(marketListing, [hostKey, manifest.id, cloud.version]);
+  const listing = reading.state === 'value' && 'listing' in reading.value ? reading.value.listing : null;
+  const shots = listing?.screenshots;
   const textLanguage = manifestLanguages(manifest, locale)[0]?.locale;
-  const about = textLanguage ? listing.data?.about[textLanguage]?.trim().split(/\r?\n[ \t]*\r?\n/, 1)[0] : undefined;
+  const about = textLanguage ? listing?.about[textLanguage]?.trim().split(/\r?\n[ \t]*\r?\n/, 1)[0] : undefined;
   const install = (version: string) => onInstall({ extensionId: manifest.id, version }, confirmInstall);
 
   const uninstall = async () => {

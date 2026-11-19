@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 import { queryClient } from '@/lib/replica'
 import { FilePreviewHost } from '../../../../apps/desktop/src/components/chat/filePreviewHost'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
 
 const { readBytes, metadata, devices } = vi.hoisted(() => ({
   readBytes: vi.fn(async (): Promise<unknown> => { throw new Error('File device is unavailable or its transfer timed out') }),
@@ -14,9 +15,9 @@ const { readBytes, metadata, devices } = vi.hoisted(() => ({
 }))
 vi.mock('@/lib/guguLinks', () => ({ openLinkTarget: vi.fn() }))
 vi.mock('@/platform', () => ({ platform: { kind: 'electron' } }))
-vi.mock('@/lib/attachmentBytes', () => ({
+vi.mock('@/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({
   attachmentBytes: readBytes, sourceKeyOf: () => 'notes', attachmentPreview: vi.fn(), openAttachmentInSystemApp: vi.fn(),
-}))
+})))
 vi.mock('@/lib/fileAccess', () => ({ fileMetadata: metadata }))
 vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: devices.rows }) }))
 vi.mock('@/components/chat/MessageFilePreviewPanel', () => ({
@@ -37,7 +38,7 @@ const originalQueryOptions = queryClient.getDefaultOptions()
 describe('a project file whose machine is off', () => {
   let harness: ReturnType<typeof createReactHarness>
   let pane: HTMLElement
-  beforeEach(() => { queryClient.setDefaultOptions({ ...originalQueryOptions, queries: { ...originalQueryOptions.queries, retryDelay: 0 } }); harness = createReactHarness(); pane = document.createElement('section'); document.body.append(pane) })
+  beforeEach(async () => { await freshReplicaAccount('preview-reader'); queryClient.setDefaultOptions({ ...originalQueryOptions, queries: { ...originalQueryOptions.queries, retryDelay: 0 } }); harness = createReactHarness(); pane = document.createElement('section'); document.body.append(pane) })
   afterEach(() => { harness.cleanup(); queryClient.setDefaultOptions(originalQueryOptions); pane.remove(); vi.clearAllMocks(); devices.rows = [] })
   const draw = () => harness.render(createElement(FilePreviewHost.Provider, { value: { target: pane, onOpenChange: () => undefined } }, createElement(Conversation)))
   const settle = () => act(async () => { await new Promise((done) => setTimeout(done, 0)) })

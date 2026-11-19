@@ -1,10 +1,9 @@
-import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
 import { useLibraryHost, type LibraryRemoteDevice } from '@renderer/features/library/library-host';
 import { refreshSubscriptionReadings } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { useAgentAuthStatuses } from '@renderer/lib/stores/use-agent-auth-status';
 import { forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
-import { harnessModelCredentialKey } from '@renderer/lib/stores/use-harness-model-credential';
+import { harnessModelCredential, refreshAgentReadings } from '@renderer/lib/stores/agent-replicas';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { agentAccountForm, type AgentPayload } from '@shared/core/agents/agent-payload';
 import { accountRowOf, mergeAccountRows, resolveAccountTargets, type MergedAccountRow } from './agent-account';
@@ -38,7 +37,6 @@ export function useAgentSignIn(
     { machine: remote?.deviceId ?? null, ...(options.probe === false ? { probe: false } : {}) }
   );
   const refreshAuth = local.refresh;
-  const queryClient = useQueryClient();
   const showSignIn = useShowModal('agentSignInModal');
   const row = mergeAccountRows(targets.map((target, index) => accountRowOf(target, local.auths[index])));
   const machine = remote?.deviceId ?? null;
@@ -68,7 +66,7 @@ export function useAgentSignIn(
       /** 在那台机器上登:登完 / 关窗都让那台机器上这一家的读数(账号、模型目录)重问一遍。 */
       const refresh = () => {
         void refreshAuth();
-        void queryClient.invalidateQueries({ queryKey: ['agents'] });
+        void refreshAgentReadings(machine);
         refreshSubscriptionReadings(machine, agent.id);
       };
       const main = row?.steps.find((step) => step.program === undefined) ?? row?.steps[0];
@@ -107,8 +105,8 @@ export function useAgentSignIn(
       void refreshAuth();
       refreshSubscriptionReadings(machine, agent.id);
       if (!touchesMain) return;
-      void forceRefreshHarnessModelCatalog(queryClient, agent.id);
-      void queryClient.invalidateQueries({ queryKey: harnessModelCredentialKey(agent.id) });
+      void forceRefreshHarnessModelCatalog(agent.id);
+      void harnessModelCredential.refresh(agent.id);
     };
     showSignIn({
       providerId: agent.id,
@@ -122,7 +120,7 @@ export function useAgentSignIn(
       onSuccess: refreshAfterLogin,
       onClose: refreshAfterLogin,
     });
-  }, [agent.id, agent.name, agent.command, queryClient, refreshAuth, row?.steps, showSignIn, remote, machine, loginConnectionId]);
+  }, [agent.id, agent.name, agent.command, refreshAuth, row?.steps, showSignIn, remote, machine, loginConnectionId]);
 
   return { row, openSignIn, refreshAuth };
 }

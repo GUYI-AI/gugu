@@ -55,7 +55,7 @@ export const ComposerFolderPicker = observer(function ComposerFolderPicker({
         {/* 分组标题只能在 Group 里(Base UI):少了这一层,点开菜单整页崩(#7341 实机撞过)。 */}
         <DropdownMenuGroup>
           <DropdownMenuLabel>{translate('projects.folders.pickerTitle')}</DropdownMenuLabel>
-          {state.folders.map((folder) => (
+          {state.folders.filter((folder) => !folder.placeholder).map((folder) => (
             <DropdownMenuItem key={folder.workspaceId} onClick={() => state.choose(folder.workspaceId)} title={folder.path}>
               <Folder className="size-3.5" />
               {/* 名字优先露全,路径是辅助:挤不下先截路径(❌「项目根...」配一整条路径)。 */}

@@ -13,7 +13,7 @@ import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives';
 import { useLayoutEffect } from 'react';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { queryClient } from '@/lib/replica';
+import { followRendererSession, queryClient } from '@/lib/replica';
 import { setLocalePreference } from '@/i18n';
 import type { AgentHomeScan, HarnessConnection } from '@gugu/session-core/workspace-server/agent-config';
 import { modalStore } from '@renderer/lib/modal/modal-store';
@@ -215,6 +215,9 @@ async function openSwitch(provider: string) {
   await userEvent.click(page.getByTestId(`subscription-switch-${provider}`));
 }
 
+// Account-scoped replicas read only for a live account.
+followRendererSession('SIGNED_IN', 'subscription-test');
+
 beforeEach(() => {
   queryClient.clear();
   control.hold = null;
@@ -272,7 +275,8 @@ function ConnectionDetailsFixture() {
   </SessionLocalizationProvider></QueryClientProvider>;
 }
 function ConnectionDetailsList() {
-  const { data } = useManagementAgents();
+  const { reading } = useManagementAgents();
+  const data = reading.state === 'value' ? reading.value : undefined;
   return <>{data?.filter(agent => agent.id !== 'pi').map(agent => <div key={agent.id} data-testid={`subscription-row-${agent.id}`}>
     {agentOffersConnections(agent) && <AgentConnectionDetails agent={agent} machine={null} embedded />}
   </div>)}</>;

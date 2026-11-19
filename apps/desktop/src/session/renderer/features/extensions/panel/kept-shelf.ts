@@ -2,7 +2,7 @@ import type { MarketHome } from '@shared/extensions/market-home';
 import { safeParseExtensionManifest } from '@shared/extensions/manifest';
 
 /**
- * Apps 页上次画出来的那份,留到下次启动的第一帧(owner 10-30「既然曾经缓存过,为什么又要失效又要重新读取」)。
+ * Apps 页上次画出来的那份,留到下次启动的第一帧(`marketShelf` 的 `local`)(owner 10-30「既然曾经缓存过,为什么又要失效又要重新读取」)。
  * 存 localStorage,理由同 devicesCache.ts:第一帧要的是**同步**读到 —— 异步读(问主进程、IndexedDB)会把第一帧推到下一个
  * 宏任务,白白闪一下骨架。它不是事实源:画出来之后照常重读,读回来整份换上。
  * 每个 App 只存一份,推荐页那几排(精选 / 其余 / 最新 / 热门)只存 id —— 同一个 App 不在里面重复几遍。
@@ -11,7 +11,6 @@ import { safeParseExtensionManifest } from '@shared/extensions/manifest';
  * 页面一读就崩),就整份当没有。
  */
 const SHELF_KEY = 'gugu.appsShelf.v1:';
-const SHOT_KEY = 'gugu.appsShot.v1';
 
 type Item = { manifest: { id: string } };
 type Ids = { featured: string[]; remaining: string[]; newest: string[]; popular: string[] | null };
@@ -55,59 +54,3 @@ export function keptShelfItems<T extends Item, X>(hostKey: string): { items: T[]
   return { items: kept.items as T[], ids: kept.ids, extra: kept.extra as X };
 }
 
-/** 上次存下的手机市场目录,几排按 id 接回同一个对象。 */
-export function keptShelf<T extends Item, X>(hostKey: string): { items: T[]; home: MarketHome<T>; extra: X } | null {
-  const kept = keptShelfItems<T, X>(hostKey);
-  if (!kept?.ids) return null;
-  const { items } = kept;
-  const byId = new Map(items.map((item) => [item.manifest?.id, item]));
-  const rows = (ids: unknown): T[] | null => {
-    if (!Array.isArray(ids)) return null;
-    const found = ids.map((id) => byId.get(id as string));
-    return found.every(Boolean) ? (found as T[]) : null;
-  };
-  const featured = rows(kept.ids.featured);
-  const remaining = rows(kept.ids.remaining);
-  const newest = rows(kept.ids.newest);
-  const popular = kept.ids.popular === null ? null : rows(kept.ids.popular);
-  if (!featured || !remaining || !newest || (kept.ids.popular !== null && !popular)) return null;
-  return { items, home: { featured, remaining, newest, popular }, extra: kept.extra };
-}
-
-/** 一个 App 在这台机器上精选底图的那一版:每个 App 只记最后取到的那一版(新一版取到就顶掉旧的)。 */
-export function keptShot(hostKey: string, id: string, version: string): Shot | undefined {
-  const kept = (read(SHOT_KEY) as Record<string, { version?: string; shot?: Shot }> | null)?.[`${hostKey}|${id}`];
-  return kept && kept.version === version && kept.shot !== undefined ? kept.shot : undefined;
-}
-
-export function keepShot(hostKey: string, id: string, version: string, shot: Shot): void {
-  const all = (read(SHOT_KEY) as Record<string, unknown> | null) ?? {};
-  write(SHOT_KEY, { ...all, [`${hostKey}|${id}`]: { version, shot } });
-}
-
-/** 存下的每一张精选底图(启动时预解码)。 */
-export function keptShotSrcs(): string[] {
-  const all = (read(SHOT_KEY) as Record<string, { shot?: Shot }> | null) ?? {};
-  return Object.values(all).flatMap((kept) => (kept?.shot?.src ? [kept.shot.src] : []));
-}
-
-/**
- * 这次运行里解码好的底图,留着那个 Image:卡片再挂上时,同一张图直接画(❌ 每挂一次就重新解码、空几帧)。
- * 没解码好的那张不上屏 —— 一张图只有解码好了才出现。
- */
-const decoded = new Map<string, HTMLImageElement>();
-
-export const isDecoded = (src: string) => decoded.has(src);
-
-export async function decodeShot(src: string): Promise<void> {
-  if (decoded.has(src)) return;
-  const image = new window.Image();
-  image.src = src;
-  await image.decode();
-  decoded.set(src, image);
-}
-
-/** 启动时把上次存下的精选底图先解码好:重启后点进 Apps,第一帧就是图。只是预热,解不出来的等卡片自己取。 */
-export function warmKeptShots(): void {
-  for (const src of keptShotSrcs()) void decodeShot(src).catch(() => undefined);
-}

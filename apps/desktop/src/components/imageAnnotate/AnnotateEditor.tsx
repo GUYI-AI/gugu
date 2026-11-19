@@ -11,16 +11,16 @@ import { useAnnotateActions } from './useAnnotateActions'
 import { AnnotateToolbar } from './AnnotateToolbar'
 import { AnnotateNotes } from './AnnotateNotes'
 import { AnnotateDoneMenu } from './AnnotateDoneMenu'
-import { annotationItem } from './annotateSource'
 import './annotate.css'
 
 export default function AnnotateEditor({ item, imageBounds, mobile, onCancel, onDone }: { item: ImageViewerItem; imageBounds?: () => DOMRectReadOnly | undefined; mobile: boolean; onCancel: () => void; onDone: () => void }) {
   const { t } = useTranslation('main', { keyPrefix: 'imageAnnotate' })
   const [ready, setReady] = useState<{ image: HTMLImageElement; item: ImageViewerItem } | null>(null), [error, setError] = useState<string | null>(null), [attempt, setAttempt] = useState(0)
+  // @@@effect-flow(render) - opens the annotation editor: decodes the viewer item's original bytes into its canvas
   useEffect(() => {
     let disposed = false
     setReady(null); setError(null)
-    void Promise.all([loadAnnotationImage(item), annotationItem(item)]).then(([image, source]) => { if (!disposed) setReady({ image, item: source }) }, failure => { if (!disposed) setError(messageForUser(failure)) })
+    void loadAnnotationImage(item).then((image) => { if (!disposed) setReady({ image, item }) }, failure => { if (!disposed) setError(messageForUser(failure)) })
     return () => { disposed = true }
   }, [item, attempt])
   return ready ? <AnnotationCanvas item={ready.item} image={ready.image} imageBounds={imageBounds} mobile={mobile} onCancel={onCancel} onDone={onDone} />

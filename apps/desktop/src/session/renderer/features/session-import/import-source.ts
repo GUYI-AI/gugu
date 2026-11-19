@@ -1,3 +1,4 @@
+import { replica } from '@/lib/replica';
 import { rpc, rpcOn } from '@renderer/lib/ipc';
 import type {
   ImportLocalSessionParams,
@@ -56,3 +57,14 @@ export function resolveImportSource(deviceId: string, directTerminal = false): S
   if (deviceId === LOCAL_IMPORT_DEVICE) return localImportSource;
   return machineImportSource(deviceId, directTerminal);
 }
+
+/** Read each time it is selected (the file may change). */
+export const sessionImportPreview = replica({
+  name: 'sessionImportPreview',
+  scope: 'account',
+  networkMode: 'always',
+  read: (_owner, deviceId: string, filePath: string, engine: PreviewLocalSessionParams['engine']) =>
+    resolveImportSource(deviceId).preview({ filePath, engine }),
+  fresh: 0,
+  keep: 60_000,
+});

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelItem } from './chat-panel-item';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -13,16 +13,17 @@ vi.mock('@renderer/features/tabs/tab-bar/generic-tab-item', () => ({
   GenericTabItem: ({ label, hint }: { label: string; hint?: string }) => { shown.push({ label, hint }); return null; },
 }));
 // The Files App opens .md in its `file` page, titled `Files`; a board App's own page is titled `Board`.
-vi.mock('@renderer/features/extensions/installed-extensions-store', async (original) => ({
-  ...(await original<object>()),
-  installedExtensionsStore: { tabTitle: (kind: string) => (kind.startsWith('workspace.') ? 'Files' : kind.startsWith('board.') ? 'Board' : undefined), isChatFile: () => false, openableApps: [], manifestFor: () => undefined },
-}));
 vi.mock('@/components/chat/chatFolderName', () => ({ useChatFolderName: () => 'Chat folder' }));
 vi.mock('@/lib/fileHost', () => ({ useFileHost: () => null, openFileStorageSettings: () => {} }));
 
 const { chatPanelTabProvider } = await import('./chat-tab-providers');
 const { extensionSurfaceStore } = await import('@renderer/features/extensions/extension-surface-store');
 const { groupPageSlot, folderItem } = await import('./chat-panel-item');
+const { tellInstalled } = await import('@renderer/features/extensions/installed-extensions');
+beforeEach(() => tellInstalled('local', { extensions: [
+  { id: 'workspace', name: 'Files', version: '1.0.0', apiVersion: 14, defaultLocale: 'en', contributes: { tabs: [{ name: 'file', title: 'Files' }] } },
+  { id: 'board', name: 'Board', version: '1.0.0', apiVersion: 14, defaultLocale: 'en', contributes: { tabs: [{ name: 'main', title: 'Board' }] } },
+], invalid: [] } as never));
 
 function stripLabel(item: PanelItem, said?: string) {
   const tabId = `tab-${shown.length}`;

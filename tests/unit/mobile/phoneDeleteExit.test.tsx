@@ -5,9 +5,10 @@ import { clickElement, createNode, createReactHarness, renderWithAppProviders } 
 import { expectExit, frame, holdDialogExit } from '../../support/dialogExit'
 
 const m = vi.hoisted(() => ({ data: {} as Record<string, unknown>, remove: vi.fn(async () => undefined), reload: vi.fn() }))
-vi.mock('../../../apps/desktop/src/mobile/assistant/usePhoneRead', async (original) => ({
-  ...await original<typeof import('../../../apps/desktop/src/mobile/assistant/usePhoneRead')>(),
-  usePhoneRead: (key: string | null) => ({ state: 'ok', data: m.data[key?.split('|')[0] ?? 'none'] ?? null, reload: m.reload }),
+// The memory cards are derived from the panel snapshot (replica `assistantPanel`): here, read.
+vi.mock('../../../apps/desktop/src/components/assistant/assistant-panel-reads', async (original) => ({
+  ...await original<typeof import('../../../apps/desktop/src/components/assistant/assistant-panel-reads')>(),
+  useAssistantPanelCollection: (_machine: unknown, domain: string) => ({ state: 'value', value: m.data[domain] ?? null, stale: false, error: null }),
 }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/usePhoneRoutines', () => ({ usePhoneRoutines: () => ({
   routines: [{ id: 'routine-1', name: 'Routine', enabled: false, triggerConfig: { expr: '0 9 * * *' }, agentConfig: {} }],

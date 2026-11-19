@@ -13,6 +13,7 @@ import {
   sessionComposerDockedWidthClassName,
 } from '@renderer/features/sessions/session-composer-styles';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
+import { useDelayedBoolean } from '@renderer/lib/hooks/use-delay-boolean';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { ComposerFolderPicker } from './composer-folder-picker';
 import { useProjectFolderStage, type ProjectFolderStage } from './project-folder-stage';
@@ -77,6 +78,9 @@ export const ProjectTaskComposer = observer(function ProjectTaskComposer({
   // gugu #2328: 挂载中页面已上屏,发送由新会话要建进去的那个项目挂上之后解锁;这行小字是
   // 发送暂不可用的唯一提示(安静补齐,❌ 显眼 loading)。
   const isBootstrapping = projectViewKind(getProjectStore(targetProjectId)) === 'bootstrapping';
+  // Placed only when mounting outlasts 150 ms (a mount that finishes sooner draws no line that comes and goes, nor moves the
+  // composer), then fading in as a placeholder does (@@@placeholder-reveal).
+  const connectingShown = useDelayedBoolean(isBootstrapping, 150);
   const boxRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (focusOnOpen && boxRef.current) focusSessionComposer(boxRef.current);
@@ -128,8 +132,8 @@ export const ProjectTaskComposer = observer(function ProjectTaskComposer({
               {...machineComposerProps(machineContext, { projectId: targetProjectId, isContextPending: scopedFolders.folders === null, blockReason: scopedFolders.folders?.length === 0 ? translate('projects.folders.scopeUnavailable') : null })}
             />
           </ComposerTray>
-          {isBootstrapping && (
-            <p className="mt-2 px-1 text-tiny text-foreground-passive">
+          {connectingShown && (
+            <p className="gg-loading-line mt-2 px-1 text-tiny text-foreground-passive">
               {translate('projects.home.connecting')}
             </p>
           )}

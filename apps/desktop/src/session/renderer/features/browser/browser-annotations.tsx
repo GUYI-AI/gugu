@@ -65,7 +65,7 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
   useEffect(() => { if (draft.submissionVersion !== enteredAtSubmission.current) onExit(); }, [draft.submissionVersion, onExit]);
   useEffect(() => { if (!browsing) root.current?.focus({ preventScroll: true }); }, [browsing]);
 
-  // @@@effect-flow - A held Space interaction arms native focus before exposing the page; it does not read stored state.
+  // @@@effect-flow(input) - a held Space arms native focus before exposing the page; the state is that interaction's flag, no stored data.
   useEffect(() => {
     const win = root.current?.ownerDocument.defaultView;
     if (!win) return;

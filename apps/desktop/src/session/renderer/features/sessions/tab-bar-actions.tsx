@@ -6,7 +6,9 @@ import { observer } from 'mobx-react-lite';
 import type { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { useState } from 'react';
 import { ExtensionMark } from '@renderer/features/extensions/extension-mark';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { installedExtensions, LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
+import { messageForUser } from '@/lib/userFacingError';
+import { Unknown } from '@/components/ui/Unknown';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { usePaneContext } from '@renderer/features/tabs/pane-context';
 import {
@@ -76,14 +78,19 @@ const TaskAddItems = observer(function TaskAddItems() {
   const { translate } = useSessionMessages();
   const sessionView = useWorkspaceViewModel();
   const { projectId, sessionId } = useSessionViewContext();
-  const { data: agents } = useAgents();
+  // Unknown (undefined) is not evidence the provider cannot fork: startSideSession checks again (canStartSideSession).
+  const agentsReading = useAgents();
+  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
   const canSideSession = canStartSideSession(projectId, sessionId, agents);
   const terminalEnabled = terminalShown(useTerminalEnabled());
   const openTab = (kind: string) => sessionView.paneLayout.openBeside(kind, {});
-  const folder = installedExtensionsStore.enabledTabContributions.find((entry) => entry.kind === WORKSPACE_APP_KIND);
+  const installed = useInstalledApps(LOCAL_HOST);
+  const apps = installed.state === 'value' ? installed.value : null;
+  const failed = installed.state === 'error' ? installed.error : null;
+  const folder = apps?.enabledTabContributions.find((entry) => entry.kind === WORKSPACE_APP_KIND);
   return (
     <>
-      {folder && <FolderMenuItem label={installedExtensionsStore.tabTitle(folder.kind) ?? folder.title} onOpen={() => openTab(folder.kind)} />}
+      {!apps ? <NotReadMenuItem error={failed} /> : folder && <FolderMenuItem label={apps.tabTitle(folder.kind) ?? folder.title} onOpen={() => openTab(folder.kind)} />}
       {getSessionWorkspaceActionOrder(projectId, terminalEnabled).map((actionId) =>
         renderWorkspaceActionMenuItem(actionId, translate, {
           blocked: sessionWorkspaceActionBlocked(projectId, actionId) !== null,
@@ -102,7 +109,8 @@ const TaskAddItems = observer(function TaskAddItems() {
           这一格(它原来在哪就从哪拿走,一个 App 只有一份,#7052)。只列启用的:停用的不出现(owner 10-20「灰掉也占位置」),
           启用在「App」页 —— 最后一行就去那里。 */}
       <AppsSection
-        apps={installedExtensionsStore.enabledTabContributions.filter((entry) => entry.kind !== WORKSPACE_APP_KIND).map((contribution) => ({
+        error={failed}
+        apps={apps && apps.enabledTabContributions.filter((entry) => entry.kind !== WORKSPACE_APP_KIND).map((contribution) => ({
           key: contribution.kind,
           title: contribution.title,
           iconDataUrl: contribution.iconDataUrl,
@@ -124,13 +132,15 @@ function OpenAddMenuCommand({ onOpen }: { onOpen: () => void }) {
 }
 
 /** 块里一个对话的那几项(gugu-dev#181 第 ⑥ 步):这个对话的文件夹(群文件夹 / 文件夹),和能在这里打开的 App。 */
-const ChatAddItems = observer(function ChatAddItems({ chatId }: { chatId: string }) {
+function ChatAddItems({ chatId }: { chatId: string }) {
   const folderName = useChatFolderName();
+  const installed = useInstalledApps(LOCAL_HOST);
   return (
     <>
       <FolderMenuItem label={folderName} onOpen={() => openPanelItem(chatId, folderItem())} />
       <AppsSection
-        apps={installedExtensionsStore.openableApps.map((app) => ({
+        error={installed.state === 'error' ? installed.error : null}
+        apps={installed.state !== 'value' ? null : installed.value.openableApps.map((app) => ({
           key: app.extensionId,
           title: app.name,
           iconDataUrl: app.iconDataUrl,
@@ -139,7 +149,13 @@ const ChatAddItems = observer(function ChatAddItems({ chatId }: { chatId: string
       />
     </>
   );
-});
+}
+
+function NotReadMenuItem({ error }: { error: Error | null }) {
+  const { translate } = useSessionMessages();
+  if (!error) return <DropdownMenuItem disabled><Unknown className="w-24" /></DropdownMenuItem>;
+  return <DropdownMenuItem data-read-failed="" onClick={() => void installedExtensions.refresh(LOCAL_HOST)}>{messageForUser(error)} · {translate('extensions.retry')}</DropdownMenuItem>;
+}
 
 /** One built-in folder entry; its context supplies the name and the page to open. */
 function FolderMenuItem({ label, onOpen }: { label: string; onOpen: () => void }) {
@@ -151,7 +167,7 @@ function FolderMenuItem({ label, onOpen }: { label: string; onOpen: () => void }
  * 标题与它下面的项必须在同一个 DropdownMenuGroup 里:DropdownMenuLabel 是 Base UI 的 Menu.GroupLabel,
  * 没有 Menu.Group 在上面就抛错,整页会被错误边界拿下(装着一个 App 时打开这个菜单就是这样)。
  */
-function AppsSection({ apps }: { apps: { key: string; title: string; iconDataUrl: string | null; open: () => void }[] }) {
+function AppsSection({ apps, error }: { apps: { key: string; title: string; iconDataUrl: string | null; open: () => void }[] | null; error: Error | null }) {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
   return (
@@ -160,7 +176,7 @@ function AppsSection({ apps }: { apps: { key: string; title: string; iconDataUrl
       <DropdownMenuLabel className="text-foreground-passive text-xs font-normal">
         {translate('extensions.appsSection')}
       </DropdownMenuLabel>
-      {apps.map((app) => (
+      {apps === null ? <NotReadMenuItem error={error} /> : apps.map((app) => (
         <DropdownMenuItem key={app.key} onClick={app.open}>
           <ExtensionMark iconDataUrl={app.iconDataUrl} /> {app.title}
         </DropdownMenuItem>

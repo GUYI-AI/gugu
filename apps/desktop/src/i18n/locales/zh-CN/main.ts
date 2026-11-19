@@ -1013,7 +1013,6 @@ export default {
       "pickFolder": "选文件夹",
       "offline": "离线",
       "noMachine": "没有在线的电脑",
-      "readingDirectory": "正在读这台电脑的项目目录",
       "noDefaultDirectory": "这台电脑没设默认项目目录",
       "invalidName": "项目名里不能有 / \\ : * ? \" < > |",
       "pathTaken": "这个文件夹已被「{{name}}」占着",

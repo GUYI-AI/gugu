@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowUp,
   Bell,
@@ -26,7 +26,6 @@ import { ExpandableImage } from '@renderer/lib/ui/expandable-image';
 import { ToggleGroup, ToggleGroupItem } from '@renderer/lib/ui/toggle-group';
 import { rpc } from '@renderer/lib/ipc';
 import { confirmOpenExternalLink } from '@renderer/lib/open-external-link';
-import { log } from '@renderer/utils/logger';
 import { cn } from '@renderer/utils/utils';
 import { givesAgentTools } from '@shared/extensions/app-places';
 import {
@@ -50,6 +49,9 @@ import {
 import { describeCapability, programDetails, type SessionTranslate } from '../extension-consent';
 import type { ExtensionsApi } from '../extensions-host';
 import { AppLifecycleButton, type AppLifecycle } from './app-lifecycle-button';
+import { useReplica } from '@/lib/replica';
+import { LOCAL_HOST } from '../extensions-api';
+import { marketListing } from '../market-replicas';
 import { ResourceMenu } from '@/components/ResourceMenu';
 import type { ResourceContext } from '@shared/resource-actions';
 import { AppShelfRow } from './app-shelf';
@@ -88,7 +90,7 @@ export function AppProductPage({
   locale,
   translate,
   machine,
-  api = rpc.extensions,
+  hostKey = LOCAL_HOST,
   readOnly = false,
   justInstalled = false,
   backLabel,
@@ -115,8 +117,8 @@ export function AppProductPage({
   translate: SessionTranslate;
   /** 看的是另一台机器的 App 时,那台的名字:权限那一张卡如实写它,❌ 写「这台电脑」。不给 = 本机。 */
   machine?: string;
-  /** 产品页内容、版本历史、工具清单问哪台机器(#6264)。不给 = 本机。 */
-  api?: ProductPageApi;
+  /** 产品页内容、版本历史问哪台机器的市场(#6264;手机 = `phone`)。不给 = 本机。 */
+  hostKey?: string;
   /** 那台机器此刻做不了事(离线 / server 太旧,#6264):照旧看,动作全灰。 */
   readOnly?: boolean;
   /** 刚在这一页装好:头下面一句「装好了」和去哪找它。 */
@@ -149,38 +151,18 @@ export function AppProductPage({
   const textLocale = languages.find((option) => option.locale === picked)?.locale ?? languages[0]!.locale;
   const text = localizedManifestText(manifest, textLocale);
   const { compat, deprecated } = cloud;
-  const [listing, setListing] = useState<Loadable<MarketListing> | { status: 'outdated' }>({ status: 'idle' });
-  const { state: history, retry: readHistoryAgain } = useVersionHistory(api, manifest.id);
+  const { state: history, retry: readHistoryAgain } = useVersionHistory(hostKey, manifest.id);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aboutClamped, setAboutClamped] = useState(false);
   const aboutRef = useRef<HTMLDivElement | null>(null);
 
-  // 懒加载,换了 App(id / 版本变了)才取一次;卸下时取消挂起的那次,免得旧数据落进新的一页。只有市场上的版本有产品页内容
-  // (`store/` 不进安装包);读不到就照实说(那台机器的咕咕太旧 / 市场上这一版没有),❌ 改读别处。
+  // 只有市场上的版本有产品页内容(`store/` 不进安装包);读不到就照实说,❌ 改读别处。
   const listedVersion = cloud.version;
-  useEffect(() => {
-    setAboutOpen(false);
-    let cancelled = false;
-    setListing({ status: 'loading' });
-    void api
-      .marketListing({ extensionId: manifest.id, version: listedVersion })
-      .then((result) => {
-        if (cancelled) return;
-        if (!result.success) throw new Error(result.error);
-        setListing({ status: 'ready', data: result.data });
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        log.warn('App market listing unreadable:', error);
-        setListing({ status: (error as { code?: unknown } | null)?.code === 'server_outdated' ? 'outdated' : 'error' });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [api, manifest.id, listedVersion]);
-
-
+  const listingReading = useReplica(marketListing, [hostKey, manifest.id, listedVersion]);
+  const listing: Loadable<MarketListing> | { status: 'outdated' } = listingReading.state === 'unknown' ? { status: 'loading' }
+    : listingReading.state === 'error' ? { status: 'error' }
+    : 'outdated' in listingReading.value ? { status: 'outdated' } : { status: 'ready', data: listingReading.value.listing };
 
   const publishedAt = cloud.publishedAt;
   const permissions = declaredPermissions(manifest);
@@ -270,9 +252,9 @@ export function AppProductPage({
           ) : null}
         </>
       ) : (
-        <p className="mk-note" role={listing.status === 'idle' || listing.status === 'loading' ? undefined : 'alert'}>
+        <p className="mk-note" role={listing.status === 'loading' ? undefined : 'alert'}>
           {translate(
-            listing.status === 'idle' || listing.status === 'loading'
+            listing.status === 'loading'
               ? 'extensions.loading'
               : listing.status === 'outdated'
                 ? 'extensions.listingPeerOutdated'

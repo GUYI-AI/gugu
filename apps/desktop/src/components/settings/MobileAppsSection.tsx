@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { observer } from 'mobx-react-lite'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { ExtensionAppDetailLink } from '@gugu/core/shared/ui/guguLink'
@@ -11,7 +10,10 @@ import { useTheme } from '@/store/theme'
 import { ExtensionMonogram } from '@renderer/features/extensions/panel/extension-monogram'
 import { AppProductPage } from '@renderer/features/extensions/panel/app-product-page'
 import { ShelfSkeleton } from '@renderer/features/extensions/panel/extension-skeletons'
-import { installedExtensionsStore as store } from '@renderer/features/extensions/installed-extensions-store'
+import { installedExtensions, useInstalledApps } from '@renderer/features/extensions/installed-extensions'
+import { refreshFailure } from '@/lib/replica'
+import { rendererLogger } from '@/lib/log'
+import { messageForUser } from '@/lib/userFacingError'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { ASSISTANT_APP_ID } from '@shared/extensions/assistant-entry'
 import { MARKET_CATEGORIES, localizedManifestText, marketCategoryOf, type MarketCategory } from '@shared/extensions/catalog'
@@ -24,11 +26,12 @@ import { Sheet } from '../ui/Sheet'
 import { SettingsNote } from './SettingsPrimitives'
 import { AppsSection } from './AppsSection'
 import { PhoneAppManage } from './PhoneAppManage'
-import { PHONE_MARKET_QUERY_KEY, phoneMarketRows, phoneProductApi, useOfferedVersions, usePhoneMarketPage } from './phoneMarketPage'
+import { PHONE_HOST, phoneMarketRows, refreshPhoneMarketPage, useOfferedVersions, usePhoneMarketPage } from './phoneMarketPage'
 import '@/session/renderer/index.css'
 import './mobile-app-market.css'
 
 const NO_DEVICES: readonly Device[] = []
+const log = rendererLogger('settings/mobile-apps')
 
 type Props = {
   mode: 'market' | 'installed' | 'detail'
@@ -48,8 +51,9 @@ export const MobileAppsSection = observer(function MobileAppsSection({
 }: Props) {
   const { t } = useTranslation('main')
   const { translate, locale } = useSessionMessages()
-  const client = useQueryClient()
-  const catalog = usePhoneMarketPage(mode === 'installed' ? 'phone' : 'desktop')
+  const platform = mode === 'installed' ? 'phone' : 'desktop'
+  const catalog = usePhoneMarketPage(platform)
+  const entries = catalog.state === 'value' ? catalog.value.entries : null
   const offered = useOfferedVersions()
   const installedIds = usePhoneMarketInstalledAppIds(mode === 'market' ? devices : NO_DEVICES)
   const [manage, setManage] = useState<string | null>(null)
@@ -60,41 +64,33 @@ export const MobileAppsSection = observer(function MobileAppsSection({
   const [detail, setDetail] = useState<MarketListItem | null>(null)
   const [error, setError] = useState<string | null>(null)
   const openedLink = useRef<ExtensionAppDetailLink | undefined>(undefined)
-  const inventory = useQuery({
-    queryKey: ['phone-app-inventory'],
-    queryFn: async () => {
-      await phoneApps.ready()
-      if (phoneApps.unreadable()) throw new Error('Unreadable phone App inventory')
-      return true
-    },
-    retry: false,
-  })
-  const unreadable = inventory.isError
-  const inventoryLoaded = store.isLoaded
-  const reloadInventory = () => void phoneApps.reload().then(() => inventory.refetch(), () => inventory.refetch())
-  useEffect(() => {
-    const off = phoneApps.market.onRefreshed((result) => {
-      if (result.outcome === 'changed') void client.invalidateQueries({ queryKey: PHONE_MARKET_QUERY_KEY })
+  const installedReading = useInstalledApps(PHONE_HOST)
+  const store = installedReading.state === 'value' ? installedReading.value : null
+  // Unread, or read before and its read again failing (the list read stays drawn), or the phone's store unreadable: said with a retry.
+  const unreadable = installedReading.state === 'error' || refreshFailure(installedReading) !== null || store?.unreadable != null
+  const inventoryLoaded = store !== null
+  const reloadInventory = () => {
+    void phoneApps.reload().then(() => installedExtensions.refresh(PHONE_HOST), (error: unknown) => {
+      log.error({ error: String(error) }, 'Phone Apps unreadable')
+      setError(messageForUser(error))
     })
-    void phoneApps.market.refresh()
-    return off
-  }, [client])
+  }
 
   useEffect(() => {
     if (!appDetail || openedLink.current === appDetail) return
     if (openInstalledDetail && !inventoryLoaded) return
-    const installed = openInstalledDetail && store.manifests.some(app => app.id === appDetail.extensionId)
-    if (!installed && !catalog.data) return
+    const installed = openInstalledDetail && !!store?.manifests.some(app => app.id === appDetail.extensionId)
+    if (!installed && !entries) return
     openedLink.current = appDetail
     onHandledAppDetail?.()
     if (installed) {
       setManage(appDetail.extensionId)
       return
     }
-    const item = phoneMarketRows(catalog.data?.entries ?? [], '').find(row => row.manifest.id === appDetail.extensionId)
+    const item = entries && phoneMarketRows(entries, '').find(row => row.manifest.id === appDetail.extensionId)
     if (item) setDetail(item)
     else setError(translate('extensions.marketUnavailable'))
-  }, [appDetail, catalog.data, onHandledAppDetail, openInstalledDetail, inventoryLoaded, translate])
+  }, [appDetail, entries, store, onHandledAppDetail, openInstalledDetail, inventoryLoaded, translate])
 
   const closeDetail = () => {
     setDetail(null)
@@ -105,7 +101,7 @@ export const MobileAppsSection = observer(function MobileAppsSection({
   const categories = (['all', ...MARKET_CATEGORIES, 'other'] as const).map(value => ({
     value, label: value === 'all' ? t('phoneMarket.all') : translate(`extensions.category.${value}`),
   }))
-  const rows = phoneMarketRows(catalog.data?.entries ?? [], query)
+  const rows = entries && phoneMarketRows(entries, query)
     .filter(item => item.manifest.id !== ASSISTANT_APP_ID && (chip === 'all' || marketCategoryOf(item.manifest) === chip))
 
   return <>
@@ -113,13 +109,13 @@ export const MobileAppsSection = observer(function MobileAppsSection({
       {translate('extensions.loadFailed')} <Button onClick={reloadInventory}>{translate('extensions.retry')}</Button>
     </SettingsNote>}
     {mode === 'installed' && (inventoryLoaded
-      ? <AppsSection updates={offered.updates} gone={offered.gone} known={offered.known} onManage={setManage}
+      ? <AppsSection offered={offered} onManage={setManage}
         assistant={installedAssistant} hideEmpty={hideInstalledEmpty} />
       : !unreadable ? <ShelfSkeleton label={translate('extensions.loading')} /> : null)}
     {mode === 'market' && <div className="phone-market" data-testid="phone-app-market">
       <PhoneMarketFilters<'all' | MarketCategory> search={t('phoneMarket.searchApps')} query={query} onQueryChange={setQuery}
         choices={categories} category={chip} onCategoryChange={setChip} />
-      {catalog.data ? <div>
+      {rows ? <div>
         {rows.map(item => {
           const id = item.manifest.id
           const text = localizedManifestText(item.manifest, locale)
@@ -130,22 +126,23 @@ export const MobileAppsSection = observer(function MobileAppsSection({
               : <PhoneMarketAction label={t('phoneMarket.install')} name={text.name} onClick={open} />} />
         })}
         {!rows.length && <SettingsNote role="status">{t('phoneMarket.noResults')}</SettingsNote>}
-      </div> : catalog.isPending ? <ShelfSkeleton label={translate('extensions.loading')} /> : (
+      </div> : catalog.state === 'unknown' ? <ShelfSkeleton label={translate('extensions.loading')} /> : (
         <SettingsNote role="alert">{translate('extensions.marketUnavailable')}
-          <Button onClick={() => void catalog.refetch()}>{translate('extensions.retry')}</Button>
+          <Button onClick={() => void refreshPhoneMarketPage(platform)}>{translate('extensions.retry')}</Button>
         </SettingsNote>
       )}
     </div>}
-    {!detail && !manage && mode === 'detail' && !error && !catalog.isError && <ShelfSkeleton label={translate('extensions.loading')} />}
-    {(error || mode === 'detail' && catalog.isError && !detail) && <SettingsNote role="alert" tone="danger">
+    {!detail && !manage && mode === 'detail' && !error && catalog.state !== 'error' && <ShelfSkeleton label={translate('extensions.loading')} />}
+    {(error || mode === 'detail' && catalog.state === 'error' && !detail) && <SettingsNote role="alert" tone="danger">
       {error ?? translate('extensions.marketUnavailable')}
       {onCloseRequestedDetail && <Button onClick={() => { setError(null); onCloseRequestedDetail() }}>{translate('common.cancel')}</Button>}
     </SettingsNote>}
     {detail && <PhoneMarketAppDetail item={detail} devices={devices} onClose={closeDetail} fromSettings={marketFrom !== null} />}
-    {manage && <PhoneAppManage extensionId={manage} updateVersion={offered.updates[manage]} gone={offered.gone.includes(manage)}
+    {manage && <PhoneAppManage extensionId={manage} updateVersion={offered.state === 'value' ? offered.value.offered[manage] : undefined}
+      gone={offered.state === 'value' && offered.value.gone.includes(manage)}
       onClose={() => { setManage(null); onCloseRequestedDetail?.() }}
       onViewInMarket={() => {
-        const item = phoneMarketRows(catalog.data?.entries ?? [], '').find(row => row.manifest.id === manage)
+        const item = entries && phoneMarketRows(entries, '').find(row => row.manifest.id === manage)
         if (item) { setMarketFrom(manage); setDetail(item) }
         else setError(translate('extensions.marketUnavailable'))
         setManage(null)
@@ -168,7 +165,7 @@ function PhoneMarketAppDetail({ item, devices, onClose, fromSettings }: {
     <div className={`${sessionSkinClassName(theme)} phone-app-product`}>
       <SessionUiTheme theme={theme} skin>
         <AppProductPage subject={{ manifest: item.manifest, cloud: item.cloud, installRef: item.ref }}
-          lifecycle={{ kind: 'get' }} locale={locale} translate={translate} api={phoneProductApi}
+          lifecycle={{ kind: 'get' }} locale={locale} translate={translate} hostKey={PHONE_HOST}
           onOpenExternal={url => { window.open(url, '_blank', 'noopener,noreferrer') }}
           backLabel={fromSettings ? translate('extensions.appSettings') : undefined}
           onBack={onClose} onLifecycle={() => setChoosing(true)}

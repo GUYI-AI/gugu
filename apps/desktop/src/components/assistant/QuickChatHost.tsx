@@ -84,7 +84,8 @@ export function QuickChatHost({
   const [mounted, setMounted] = useState<Mounted | null>(null)
   const [generation, setGeneration] = useState(0)
   const [visible, setVisible] = useState(false)
-  const { state } = useQuickChatState()
+  const quick = useQuickChatState()
+  const state = quick.reading.state === 'value' ? quick.reading.value : null
   const mountedRef = useRef<Mounted | null>(null)
   mountedRef.current = mounted
 

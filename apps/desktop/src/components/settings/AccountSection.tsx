@@ -218,7 +218,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
           stack
           layout="field"
           title={<label htmlFor="settings-account-occupation">{t('account.occupation')}</label>}
-          description={occupation.kind === 'ready' ? <>{t('account.occupationNote')}{settingsRow.state === 'value' ? <RefreshFailed error={settingsRow.error} onRetry={() => { void ownSettings.refresh('user') }} /> : null}</> : undefined}
+          description={occupation.kind === 'ready' ? <>{t('account.occupationNote')}{settingsRow.state === 'value' ? <RefreshFailed reading={settingsRow} /> : null}</> : undefined}
           control={occupation.kind !== 'ready' ? (
             occupation.kind === 'unknown' ? <Unknown className="h-8 w-full max-w-xs" /> : (
               <span className="gg-settings-row-value flex items-center gap-2" role="alert">{occupation.message}

@@ -36,9 +36,11 @@ vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneActionCatalog', (
 vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneActionProvider', () => ({ createPhoneActionProvider: () => ({}), mergeCallRecord: () => [] }))
 vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneDeviceRpcHost', () => ({ createPhoneDeviceRpcHost: test.rpcHost }))
 
-import { disconnectPhoneDevice, startPhoneDevice, stopPhoneAgentHost, restartPhoneAgentHost, refreshPhoneDevice, PHONE_HEARTBEAT_MS, usePhoneDevice as readSnapshot } from '../../../../apps/desktop/src/mobile/phone-device/phoneDeviceRuntime'
+import { disconnectPhoneDevice, startPhoneDevice, stopPhoneAgentHost, restartPhoneAgentHost, refreshPhoneDevice, PHONE_HEARTBEAT_MS, phoneOsState, usePhoneDevice as readSnapshot } from '../../../../apps/desktop/src/mobile/phone-device/phoneDeviceRuntime'
 import { phoneDeviceId, phoneInstallId, readPhoneDeviceSettings, setPhoneAgentHostEnabled, setPhoneDeviceEnabled } from '../../../../apps/desktop/src/mobile/phone-device/phoneDeviceSettings'
 
+/** The OS state as the one holder (the phoneOsState replica) has it. */
+const osShown = () => { const reading = phoneOsState.peek(); return reading.state === 'value' ? reading.value : null }
 function deferred<T = void>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done }); return { promise, resolve } }
 const start = (hostEnabled: boolean) => startPhoneDevice({ userId: test.ownerId, hostEnabled, noticeLabel: () => 'test', claimNotice: () => () => {} })
 let stop: (() => void) | null = null
@@ -190,10 +192,10 @@ describe('one phone endpoint owns registration and RPC', () => {
     vi.advanceTimersByTime(PHONE_HEARTBEAT_MS)
     const refreshed = refreshPhoneDevice()
     try {
-      await vi.waitFor(() => expect(readSnapshot().os?.runtime.calendar).toBe('denied'))
+      await vi.waitFor(() => expect(osShown()?.runtime.calendar).toBe('denied'))
       old.resolve({ calendar: 'granted' })
       await refreshed
-      expect(readSnapshot().os?.runtime.calendar).toBe('denied')
+      expect(osShown()?.runtime.calendar).toBe('denied')
       expect(test.upsert.mock.lastCall?.[0].capabilities.actions.actions[0].available).toBe(false)
     } finally { old.resolve({ calendar: 'granted' }); await refreshed }
   })
@@ -204,10 +206,10 @@ describe('one phone endpoint owns registration and RPC', () => {
     const first = refreshPhoneDevice()
     try {
       await refreshPhoneDevice()
-      expect(readSnapshot().os?.runtime.calendar).toBe('denied')
+      expect(osShown()?.runtime.calendar).toBe('denied')
       old.resolve({ calendar: 'granted' })
       await first
-      expect(readSnapshot().os?.runtime.calendar).toBe('denied')
+      expect(osShown()?.runtime.calendar).toBe('denied')
     } finally { old.resolve({ calendar: 'granted' }); await first }
   })
 
@@ -223,7 +225,7 @@ describe('one phone endpoint owns registration and RPC', () => {
       old.resolve({ calendar: 'granted' })
       await offRead
       expect(readSnapshot()).toEqual(running)
-      expect(readSnapshot().os?.runtime.calendar).toBe('denied')
+      expect(osShown()?.runtime.calendar).toBe('denied')
     } finally { old.resolve({ calendar: 'granted' }); await offRead }
   })
 
@@ -239,7 +241,8 @@ describe('one phone endpoint owns registration and RPC', () => {
       await refreshPhoneDevice()
       old.resolve({ calendar: 'granted' })
       await stopPhoneAgentHost(test.ownerId)
-      expect(readSnapshot()).toMatchObject({ link: { state: 'off' }, os: { runtime: { calendar: 'denied' } }, deviceId: null, info: stopped.info })
+      expect(readSnapshot()).toMatchObject({ link: { state: 'off' }, deviceId: null, info: stopped.info })
+      expect(osShown()?.runtime.calendar).toBe('denied')
       expect(test.upsert).not.toHaveBeenCalled()
       expect(test.subscribe).not.toHaveBeenCalled()
     } finally { old.resolve({ calendar: 'granted' }) }
@@ -263,6 +266,24 @@ describe('one phone endpoint owns registration and RPC', () => {
     } finally { old.resolve({ install_key: 'stale-install' }) }
   })
 
+  it('a re-read that fails is the reading\'s failure, ❌ the earlier answer left standing as now', async () => {
+    await refreshPhoneDevice()
+    expect(osShown()?.runtime.calendar).toBe('granted')
+    test.checkPermissions.mockRejectedValue(new Error('the system did not answer'))
+    await expect(refreshPhoneDevice()).rejects.toThrow('the system did not answer')
+    await vi.waitFor(() => {
+      const reading = phoneOsState.peek()
+      expect(reading.state === 'value' ? reading.error?.message : reading.state).toBe('the system did not answer')
+    })
+  })
+
+  it('keeps nothing of the OS state across restarts', async () => {
+    await refreshPhoneDevice()
+    expect(osShown()?.runtime.calendar).toBe('granted')
+    const kept = Array.from({ length: localStorage.length }, (_, index) => localStorage.getItem(localStorage.key(index)!) ?? '')
+    expect(kept.filter((value) => value.includes('phoneOsState'))).toEqual([])
+  })
+
   it('lets a foreground refresh wait for boot without superseding or blocking initial registration', async () => {
     const boot = deferred<{ calendar: string }>()
     test.checkPermissions.mockReturnValueOnce(boot.promise)
@@ -278,7 +299,7 @@ describe('one phone endpoint owns registration and RPC', () => {
       await refreshed
       expect(test.upsert).toHaveBeenCalledOnce()
       expect(test.subscribe).toHaveBeenCalledOnce()
-      expect(readSnapshot().os?.runtime.calendar).toBe('granted')
+      expect(osShown()?.runtime.calendar).toBe('granted')
     } finally { boot.resolve({ calendar: 'granted' }); await refreshed }
   })
 })

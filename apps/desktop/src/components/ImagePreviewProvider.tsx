@@ -415,6 +415,7 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
   const latest = useRef({ t, i18n, mobile, toast })
   latest.current = { t, i18n, mobile, toast }
 
+  // @@@effect-flow(lifecycle) - registers the image viewer host; each request opens a modal viewer, and state holds that open viewer's handle (the PhotoSwipe instance and the items it was opened with) until it closes; its offline explanation is asked afresh on purpose (lib/fileHost.ts)
   useEffect(() => {
     let active: PhotoSwipe | null = null
     // @@@one-viewer - the viewer is modal, so a request that lands while one is loading or open is a repeat

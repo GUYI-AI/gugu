@@ -14,14 +14,14 @@ const D = '../../../../apps/desktop/src';
 vi.mock('react-i18next', async (original) => ({ ...(await original<object>()), useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }) }));
 vi.mock('../../../../apps/desktop/src/session/renderer/utils/logger', () => ({ log: { warn: vi.fn() } }));
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/extension-shared-slot', () => ({ ExtensionSharedSlot: () => <div data-testid="app-page" /> }));
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: { isEnabled: () => true, manifests: [] } }));
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', () => ({ LOCAL_HOST: 'local', useInstalledApps: () => ({ state: 'value', value: { isEnabled: () => true, manifests: [] }, stale: false, error: null }) }));
 vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-data', () => ({ useAssistantMachine: () => ({ data: undefined }) }));
 vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-ui', () => ({
   AssistantShellPageFrame: ({ testId, children }: { testId: string; children: unknown }) => <div data-testid={testId}>{children as never}</div>,
 }));
 vi.mock('../../../../apps/desktop/src/components/assistant/AssistantProjectsLibrary', () => ({ AssistantProjectsLibrary: () => <div data-testid="page-projects" /> }));
 vi.mock('../../../../apps/desktop/src/session/renderer/features/apps/assistant-app-counts', () => ({ AssistantAppCountsSource: () => null }));
-vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ isMyAssistant: () => false }));
+vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ myAssistant: { peek: () => ({ state: 'unknown' }), fetch: async () => ({ agentId: null, provisionDeviceId: null }), refresh: async () => undefined }, refreshMyAssistant: async () => undefined, useMyAssistant: () => ({ state: 'unknown' }) }));
 // The engine draws in WebGL, which jsdom has not: who is drawn, and how big, is what is checked here.
 vi.mock('../../../../apps/desktop/src/components/agentAvatar/AgentAvatar', () => ({
   AgentAvatar: ({ id, size, look }: { id: string; size: number; look?: unknown }) => <div data-testid={`avatar-${id}`} data-size={size} data-look={look ? 'default' : 'own'} />,

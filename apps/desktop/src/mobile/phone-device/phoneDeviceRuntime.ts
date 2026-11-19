@@ -45,12 +45,12 @@ import { createPhoneDeviceRpcHost } from './phoneDeviceRpcHost'
 import type { JoinDeviceTopic } from '@gugu/core/cloud/deviceRpcAttach'
 import { readPhoneDataStatus } from './phoneDataActions'
 import { phoneDeviceRow } from './phoneDeviceRow'
-import { readPhoneInstallation } from './phoneInstallation'
+import { readPhoneInstallationOf } from './phoneInstallation'
+import { replica } from '@/lib/replica'
 import {
   effectiveGrants,
   groupGranted,
   phoneDeviceId,
-  phoneInstallId,
   readPhoneDeviceSettings,
   setPhoneAgentHostEnabled,
   setPhoneDeviceEnabled,
@@ -79,7 +79,6 @@ export const RECENT_CALLS_LIMIT = 30
 export interface PhoneDeviceSnapshot {
   link: PhoneDeviceLink
   /** 系统此刻给了什么;还没读到 = null。 */
-  os: PhoneOsState | null
   info: PhoneDeviceInfo | null
   deviceId: string | null
   /** 最近一次心跳成功的时刻。 */
@@ -88,7 +87,7 @@ export interface PhoneDeviceSnapshot {
   host: PhoneAgentHostState | null
 }
 
-const OFF: PhoneDeviceSnapshot = { link: { state: 'off' }, os: null, info: null, deviceId: null, lastHeartbeatAt: null, recent: [], host: null }
+const OFF: PhoneDeviceSnapshot = { link: { state: 'off' }, info: null, deviceId: null, lastHeartbeatAt: null, recent: [], host: null }
 let snapshot: PhoneDeviceSnapshot = OFF
 let osReadRevision = 0
 const listeners = new Set<() => void>()
@@ -115,13 +114,31 @@ export async function readPhoneOsState(): Promise<PhoneOsState> {
   return { runtime, special, health, data }
 }
 
+/** What the system grants this phone now (device): the one holder of the OS permission state. ❌ Persisted. */
+export const phoneOsState = replica({
+  name: 'phoneOsState',
+  scope: 'device',
+  read: () => readPhoneOsState(),
+})
+
+function osNow(): PhoneOsState | null {
+  const reading = phoneOsState.peek()
+  return reading.state === 'value' ? reading.value : null
+}
+
 /** All readers share ordering, including the settings page while both endpoints are off. */
-async function readLatestOs(isCurrent: () => boolean, apply: (os: PhoneOsState) => void = () => {}): Promise<boolean> {
+async function readLatestOs(isCurrent: () => boolean): Promise<boolean> {
   const revision = ++osReadRevision
-  const os = await readPhoneOsState()
+  let os: PhoneOsState
+  try {
+    os = await readPhoneOsState()
+  } catch (error) {
+    // A failure is the reading's (the page says so), ❌ the earlier answer left standing as now.
+    if (revision === osReadRevision) void phoneOsState.prefetch()
+    throw error
+  }
   if (revision !== osReadRevision || !isCurrent()) return false
-  apply(os)
-  publish({ os })
+  phoneOsState.set([], os)
   return true
 }
 
@@ -174,7 +191,6 @@ export function startPhoneDevice(options: {
   let deviceId: string | null = null
   let installId: string | null = null
   let info: PhoneDeviceInfo | null = null
-  let os: PhoneOsState | null = null
   let capability: DeviceActionsCapability | null = null
   let channel: ManagedRealtimeChannel | null = null
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
@@ -187,7 +203,7 @@ export function startPhoneDevice(options: {
   let hostTimer: ReturnType<typeof setInterval> | null = null
   let stoppingHost: Promise<void> | null = null
   let booting: Promise<void> | null = null
-  const readCurrentOs = () => readLatestOs(() => alive, (next) => { os = next })
+  const readCurrentOs = () => readLatestOs(() => alive)
 
   let recent: PhoneActionCall[] = []
 
@@ -205,7 +221,7 @@ export function startPhoneDevice(options: {
   const provider = createPhoneActionProvider({
     action: phoneActionByName,
     granted: (group) => alive && groupGranted(readPhoneDeviceSettings(userId), group),
-    os: () => os,
+    os: () => osNow(),
     manifest: () => capability?.actions ?? [],
     record: (entry) => {
       if (!alive) return
@@ -255,6 +271,7 @@ export function startPhoneDevice(options: {
   })
 
   const rebuildCapability = () => {
+    const os = osNow()
     if (!os) return false
     const next = buildPhoneActionsCapability(effectiveGrants(readPhoneDeviceSettings(userId)), os)
     if (capability && capabilityFingerprint(capability) === capabilityFingerprint(next)) return false
@@ -363,10 +380,10 @@ export function startPhoneDevice(options: {
         collecting = false
         syncCollecting()
       }
-      const installation = await readPhoneInstallation(userId)
+      const installation = await readPhoneInstallationOf(userId)
       if (!alive) return
-      info = installation
-      installId = phoneInstallId(info.install_key ?? '', info.registration_id ?? '', info.previous_install_key)
+      info = installation.info
+      installId = installation.installId
       deviceId = phoneDeviceId(installId, userId)
       if (!embeddedHost) rpcHost = createPhoneDeviceRpcHost({ userId, deviceId, provider, join,
         replyShared: async (payload) => { if (!channel) return; await channel.send({ type: 'broadcast', event: 'broadcast', payload }) },
@@ -461,8 +478,8 @@ export function startPhoneDevice(options: {
       }
       if (session === current) session = null
       previousSessionDrain = current.drain()
-      // 系统权限的读数留着:设置页关掉总开关之后仍要显示各组「系统给没给」。
-      publish({ ...OFF, os: snapshot.os, info: snapshot.info })
+      // 系统权限的读数留着(phoneOsState):设置页关掉总开关之后仍要显示各组「系统给没给」。
+      publish({ ...OFF, info: snapshot.info })
     },
     refresh: refreshOs,
     drain: async () => {

@@ -1,5 +1,5 @@
 import { observable, runInAction } from 'mobx';
-import { queryClient, useReplica, type Reading } from '@/lib/replica';
+import { useReplica, type Reading } from '@/lib/replica';
 import { appSettingsModel, getAppSettingValueSnapshot, LOCAL_SETTINGS_HOST_KEY, type SettingsMeta } from './app-settings-client';
 
 /**
@@ -28,9 +28,7 @@ function installMirror(): void {
   mirrorInstalled = true;
   const sync = () =>
     runInAction(() => terminalEnabledBox.set(getAppSettingValueSnapshot('terminal')?.enabled === true));
-  queryClient.getQueryCache().subscribe((event) => {
-    if (event.query.queryKey[0] === appSettingsModel.name && event.query.queryKey[2] === 'terminal') sync();
-  });
+  appSettingsModel.subscribe(['terminal'], sync);
   sync();
 }
 

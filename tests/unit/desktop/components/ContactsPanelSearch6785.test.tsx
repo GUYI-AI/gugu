@@ -3,17 +3,22 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ContactsPanel } from '../../../../apps/desktop/src/components/ContactsPanel'
 import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
+import { contactsService } from '../../../../apps/desktop/src/lib/contacts'
 import { clickElement, contact, contactsStore, createNode, createReactHarness, renderWithAppProviders, typeInto } from '../../../support/testHarness'
 
 vi.mock('../../../../apps/desktop/src/lib/chat', () => import('../../../support/contactsChatServiceTestDouble'))
 vi.mock('../../../../apps/desktop/src/hooks/useAgentDisplayStatus', () => import('../../../support/agentDisplayStatusTestDouble'))
+vi.mock('../../../../apps/desktop/src/lib/imRepository', async (original) => ({
+  ...await original<object>(),
+  openedImRepository: async () => ({ putIdentities: async () => undefined }),
+}))
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
   harness = createReactHarness()
   Element.prototype.scrollIntoView = vi.fn() // jsdom 没有 scrollIntoView
 })
-afterEach(() => { harness.cleanup(); vi.useRealTimers() })
+afterEach(() => { harness.cleanup(); vi.useRealTimers(); vi.restoreAllMocks() })
 
 const people = [
   contact({ id: 'zs', display_name: '张三', gugu_number: 109591 }),
@@ -122,12 +127,12 @@ describe('contacts search (desktop sidebar)', () => {
   })
 
   it('offers a 咕咕号 lookup when a number finds nobody, and seeds the add-contact search with it', async () => {
-    const searchUsers = vi.fn(async () => {})
-    await render({ contacts: { searchUsers } })
+    const searchUsers = vi.spyOn(contactsService, 'searchUsers').mockResolvedValue([])
+    await render()
     await typeInto(input(), '109601')
     expect(titles()).toEqual(['用咕咕号 109601 查找'])
     await press('Enter')
-    expect(searchUsers).toHaveBeenCalledWith('109601')
+    expect(searchUsers).toHaveBeenCalledWith('109601', 'owner-1')
     await typeInto(input(), 'nobody')
     expect(rows()).toHaveLength(0)
   })
@@ -181,13 +186,13 @@ describe('contacts search (phone home)', () => {
   })
 
   it('looks a 咕咕号 up on Enter from the header box when it finds nobody', async () => {
-    const searchUsers = vi.fn(async () => {})
-    await render({ mobile: true, contacts: { searchUsers } })
+    const searchUsers = vi.spyOn(contactsService, 'searchUsers').mockResolvedValue([])
+    await render({ mobile: true })
     await clickElement($('[data-header-search-open]')!)
     await typeInto(input(), '109601')
     expect(titles()).toEqual(['用咕咕号 109601 查找'])
     expect(searchUsers).not.toHaveBeenCalled()
     await press('Enter')
-    expect(searchUsers).toHaveBeenCalledWith('109601')
+    expect(searchUsers).toHaveBeenCalledWith('109601', 'owner-1')
   })
 })

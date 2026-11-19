@@ -8,9 +8,13 @@ import { requirementGranted, type PhoneActionGroup, type PhoneOsState } from './
 import { HEALTH_TYPES } from './nativePhoneActions'
 import { connectPhoneActionGroupChoice, setPhoneActionGroup, usePhoneDeviceSettings } from './phoneDeviceSettings'
 import { openPhonePermissionSettings, requestPhoneRequirement } from './phonePermissionActions'
-import { readPhoneOsState, refreshPhoneDevice, usePhoneDevice } from './phoneDeviceRuntime'
+import { phoneOsState, readPhoneOsState, refreshPhoneDevice } from './phoneDeviceRuntime'
+import { useReplica } from '@/lib/replica'
+import { rendererLogger } from '@/lib/log'
 import { PHONE_PERMISSION_ROWS, type PhonePermissionRow } from './phonePermissionRows'
 import { usePhonePermissionReporter } from './usePhonePermissionReporter'
+
+const log = rendererLogger('phone-permissions')
 
 const SYSTEM_NAMES = { notifications: '通知', batteryOptimization: '后台运行', camera: '相机', microphone: '麦克风', fileAccess: '文件访问' }
 const SYSTEM_PURPOSES = { notifications: '接收任务进展和聊天新消息', batteryOptimization: '切走后继续处理任务', camera: '扫码加好友、进群', microphone: '发语音消息', fileAccess: '打开你选择的项目目录' }
@@ -22,20 +26,16 @@ function unsupported(group: PhoneActionGroup, os: PhoneOsState): boolean {
 export function PhonePermissionsList({ ownerId }: { ownerId: string }) {
   const settings = usePhoneDeviceSettings(ownerId)
   const report = usePhonePermissionReporter(ownerId)
-  const { os } = usePhoneDevice()
+  const osReading = useReplica(phoneOsState, [])
+  // Read on open and again back from the system settings; a failed read again ❌ shows the earlier answer as now.
+  const read: 'loading' | 'ready' | 'failed' = osReading.state === 'unknown' ? 'loading' : osReading.state === 'value' && !osReading.error ? 'ready' : 'failed'
+  const os = osReading.state === 'value' && !osReading.error ? osReading.value : null
   const systemRows = systemPermissionRows()
   const system = useSystemPermissionStates(systemRows.map(row => row.permission))
-  const [read, setRead] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const refresh = useCallback(async () => {
-    setRead('loading')
-    try { await refreshPhoneDevice(); setRead('ready') } catch { setRead('failed') }
-  }, [])
-  useEffect(() => {
-    void refresh()
-    return platform.subscribeAppForeground(() => void refresh(), () => setRead('failed'))
-  }, [refresh])
+  const refresh = useCallback(() => refreshPhoneDevice().catch((error: unknown) => log.warn({ error: String(error) }, 'phone re-read or re-registration failed')), [])
+  useEffect(() => platform.subscribeAppForeground(() => { void refresh() }, () => undefined), [refresh])
   const act = async (key: string, action: () => Promise<void>) => {
     if (busy) return
     setBusy(key); setError(null)

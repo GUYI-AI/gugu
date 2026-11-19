@@ -1,4 +1,5 @@
 import { observable, runInAction } from 'mobx';
+import { queryClient } from '@/lib/replica';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
 
@@ -9,7 +10,9 @@ vi.mock('@renderer/lib/ipc', () => ({
 
 const { startAppPlacementSync } = await import('./app-placement-sync');
 const { appPlacementStore } = await import('./app-placement-store');
-const { installedExtensionsStore } = await import('./installed-extensions-store');
+const { tellInstalled, installedExtensions } = await import('./installed-extensions');
+
+const listOf = (extensions: ExtensionManifest[]) => ({ extensions, invalid: [], icons: {}, disabled: [], disclosure: {} }) as never;
 
 function manifest(id: string, tabNames: string[], opensFiles?: unknown, perSession?: true): ExtensionManifest {
   return {
@@ -47,13 +50,11 @@ function fakeSession() {
 describe('startAppPlacementSync', () => {
   beforeEach(() => {
     for (const kind of [...appPlacementStore.placements.keys()]) appPlacementStore.take(kind);
-    runInAction(() => {
-      installedExtensionsStore.manifests = [
-        manifest('timer', ['main']),
-        manifest('kanban', ['board'], { session: ['.kanban.json'] }),
-        manifest('computer', ['screen'], undefined, true),
-      ];
-    });
+    tellInstalled('local', listOf([
+      manifest('timer', ['main']),
+      manifest('kanban', ['board'], { session: ['.kanban.json'] }),
+      manifest('computer', ['screen'], undefined, true),
+    ]));
   });
 
   it("keeps each task's independent App contexts regardless of the old placement table", () => {
@@ -112,10 +113,19 @@ describe('startAppPlacementSync', () => {
     stopB();
   });
 
+  it('nothing is taken while what is installed is not known', () => {
+    queryClient.removeQueries({ queryKey: [installedExtensions.name] });
+    const a = fakeSession();
+    a.add('stale', 'kanban.board', {});
+    const stop = startAppPlacementSync(a.layout, 'a');
+    expect(a.tabs()).toEqual(['stale']);
+    tellInstalled('local', listOf([manifest('kanban', ['board'], { session: ['.kanban.json'] })]));
+    expect(a.tabs()).toEqual([]);
+    stop();
+  });
+
   it('a pending manifest does not destroy restored App contexts', () => {
-    runInAction(() => {
-      installedExtensionsStore.manifests = [];
-    });
+    tellInstalled('local', listOf([]));
     const a = fakeSession();
     a.add('mine', 'computer.screen', { perSession: true });
     a.add('unknown', 'computer.screen', {});

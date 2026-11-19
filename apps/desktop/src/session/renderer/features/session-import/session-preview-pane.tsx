@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { refreshFailure, useReplica } from '@/lib/replica';
+import { Unknown } from '@/components/ui/Unknown';
 import { Spinner } from '@renderer/lib/ui/spinner';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import {
   LOCAL_SESSION_ENGINE_LABEL,
-  type LocalSessionPreview,
   type LocalSessionRow,
 } from '@shared/core/session-import/session-import';
-import type { SessionImportSource } from './import-source';
+import { sessionImportPreview, type SessionImportSource } from './import-source';
 
 // @@@sessionpage 导入本机会话 (spec session-page-import)：选中一条后的确认视图。
 // 列表那一行只有标题（来自文件头部），光看标题分不清「哪一条」——尤其是同一个项目里
@@ -39,40 +39,10 @@ export function SessionPreviewPane({
   describeError: (error: unknown) => string;
 }) {
   const { translate } = useSessionMessages();
-  const [preview, setPreview] = useState<LocalSessionPreview | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  // 说法随语言变,但语言一变 ❌ 重读原件。
-  const describeErrorRef = useRef(describeError);
-  describeErrorRef.current = describeError;
-
-  useEffect(() => {
-    if (!session) {
-      setPreview(null);
-      setError(null);
-      return;
-    }
-    let cancelled = false;
-    setIsLoading(true);
-    setError(null);
-    source
-      .preview({ filePath: session.filePath, engine: session.engine })
-      .then((next) => {
-        if (cancelled) return;
-        setPreview(next);
-        setIsLoading(false);
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        // 文件可能已被删/移走（清单来自索引缓存）——直说，别给一个空白的预览。
-        setError(describeErrorRef.current(e));
-        setPreview(null);
-        setIsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [session, source]);
+  const reading = useReplica(sessionImportPreview, session ? [source.deviceId, session.filePath, session.engine] : null);
+  const preview = reading.state === 'value' ? reading.value : null;
+  // Also a read again (the session picked again) failing over the preview read before: the file may be gone since.
+  const failure = refreshFailure(reading);
 
   if (!session) {
     return (
@@ -93,23 +63,23 @@ export function SessionPreviewPane({
         </span>
         <span className="text-xs text-foreground-tertiary-muted">
           {LOCAL_SESSION_ENGINE_LABEL[session.engine]}
-          {preview
-            ? ` ${translate('sessionImport.previewTurnCount', { count: preview.turnCount })}`
-            : ''}
+          {reading.state === 'value' ? ` ${translate('sessionImport.previewTurnCount', { count: reading.value.turnCount })}` : null}
+          {reading.state === 'unknown' ? <> <Unknown className="w-12" /></> : null}
         </span>
       </div>
 
-      {isLoading && !preview ? (
+      {reading.state === 'unknown' ? (
         <div className="flex items-center gap-2 text-xs text-foreground-muted">
           <Spinner size="sm" />
           {translate('sessionImport.previewLoading')}
         </div>
       ) : null}
 
-      {error ? (
+      {failure ? (
+        // 文件可能已被删/移走（清单来自索引缓存）——直说，别给一个空白的预览。
         <p className="text-xs leading-relaxed text-foreground-destructive">
           {/* 已是整句(describeImportFailure):本机的诊断原样穿过外壳,别的机器按原因说人话。 */}
-          {error}
+          {describeError(failure)}
         </p>
       ) : null}
 

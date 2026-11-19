@@ -5,9 +5,27 @@ import { subscribePrivateUserEventBus, unsubscribePrivateUserEventBus } from '..
 import { rendererLogger } from '../lib/log'
 import { subscribeBackendRecovered } from '@gugu/core/cloud/backendReachability'
 import { useAuth } from '../store/auth'
+import { replica, useReplica } from '../lib/replica'
 
 const log = rendererLogger('agent/stored-turn-failure')
-const EMPTY: StoredAgentTurnFailure[] = []
+
+/** Agents' persisted turn failures per scope and agent set. Signal tier; a failed read is retried with backoff (1 s … 30 s). */
+export const storedAgentTurnFailures = replica({
+  name: 'storedAgentTurnFailures',
+  scope: 'account',
+  read: async (_owner: string, scopeKey: string, idsKey: string): Promise<StoredAgentTurnFailure[]> => {
+    try {
+      return (await readStoredAgentTurnFailures(JSON.parse(scopeKey) as StoredFailureScope, idsKey ? idsKey.split(',') : [])).failures
+    } catch (error) {
+      log.error({ scope: JSON.parse(scopeKey) as StoredFailureScope, error: String(error) }, 'could not read agent reply outcome')
+      throw error
+    }
+  },
+  retry: true,
+  retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 30_000),
+  // Back in the app after having left (lib/foregroundReturn.ts): read again, ❌ on every focus (switching Gugu windows).
+  refreshOnFocus: true,
+})
 
 function loadDismissals(userId: string | undefined): AgentTurnFailureDismissals {
   if (!userId) return {}
@@ -27,8 +45,6 @@ export function useStoredAgentTurnFailure(scope: StoredFailureScope | null, agen
   const { user } = useAuth()
   const ids = [...new Set(agentIds)].sort().join(',')
   const scopeKey = scope === null ? null : JSON.stringify(scope)
-  const subject = JSON.stringify([user?.id, scopeKey, ids])
-  const [snapshot, setSnapshot] = useState<{ subject: string; rows: StoredAgentTurnFailure[] }>({ subject: '', rows: [] })
   // 关掉记在本机存储里（按命令、按那一版），❌ 只记在组件里：切走再回来、重开 App 都还认得（owner 10-28 Codex 91）。
   const [dismissals, setDismissals] = useState<{ userId: string | undefined; value: AgentTurnFailureDismissals }>(() => ({ userId: user?.id, value: loadDismissals(user?.id) }))
   const currentDismissals = dismissals.userId === user?.id ? dismissals.value : loadDismissals(user?.id)
@@ -43,33 +59,31 @@ export function useStoredAgentTurnFailure(scope: StoredFailureScope | null, agen
     }
     setDismissals({ userId: user.id, value: next })
   }, [user?.id])
+  // A chat with no agent left can still owe its owner a notice about one that was removed; the task page reads only its own.
+  const asks = !!user?.id && scopeKey !== null && !(scope === 'any-chat' && !ids)
+  const reading = useReplica(storedAgentTurnFailures, asks && scopeKey !== null ? [scopeKey, ids] : null)
+  const read = reading.state === 'value' ? reading.value : null
+  // A reading's failures that were dismissed before their revision was known: the dismissal now names that revision.
   useEffect(() => {
-    if (!user?.id || scopeKey === null) return
+    if (!read) return
+    changeDismissals((now) => {
+      const pending = read.filter((row) => now[row.commandId]?.revision === null)
+      return pending.length ? { ...now, ...Object.fromEntries(pending.map((row) => [row.commandId, { revision: row.revision, at: Date.now() }])) } : null
+    })
+  }, [read, changeDismissals])
+  // Only the status is reread: a failed read never resends an agent's command.
+  useEffect(() => {
+    if (!asks || !user?.id || scopeKey === null) return
     const where = JSON.parse(scopeKey) as StoredFailureScope
-    // A chat with no agent left can still owe its owner a notice about one that was removed; the task page reads only its own.
-    if (where === 'any-chat' && !ids) return
-    let live = true
-    let generation = 0
-    let retryDelay = 1_000
-    let retryTimer: ReturnType<typeof setTimeout> | undefined
-    const refresh = () => {
-      clearTimeout(retryTimer)
-      const current = ++generation
-      void readStoredAgentTurnFailures(where, ids ? ids.split(',') : []).then(({ failures: rows }) => {
-        if (!live || current !== generation) return
-        retryDelay = 1_000
-        changeDismissals((now) => {
-          const pending = rows.filter((row) => now[row.commandId]?.revision === null)
-          return pending.length ? { ...now, ...Object.fromEntries(pending.map((row) => [row.commandId, { revision: row.revision, at: Date.now() }])) } : null
-        })
-        setSnapshot({ subject, rows })
-      }, (error: unknown) => {
-        if (!live || current !== generation) return
-        log.error({ scope: where, error: String(error) }, 'could not read agent reply outcome')
-        // Only reread the status; a failed read must never resend an agent's command.
-        retryTimer = setTimeout(refresh, retryDelay)
-        retryDelay = Math.min(retryDelay * 2, 30_000)
-      })
+    const refresh = () => { void storedAgentTurnFailures.refresh(scopeKey, ids) }
+    // The first subscribed notice follows the mount's own read when one is unknown or on its way (❌ every open read twice);
+    // later ones (resubscribed) read.
+    let opened = true
+    const subscribed = () => {
+      const first = opened
+      opened = false
+      if (first && (storedAgentTurnFailures.peek(scopeKey, ids).state === 'unknown' || storedAgentTurnFailures.isFetching(scopeKey, ids))) return
+      refresh()
     }
     const handle = subscribePrivateUserEventBus(user.id, AGENT_DELIVER_CHANGED, (raw) => {
       if (!raw || typeof raw !== 'object') return
@@ -84,30 +98,21 @@ export function useStoredAgentTurnFailure(scope: StoredFailureScope | null, agen
         return rest
       })
       refresh()
-    }, { onSubscribed: refresh })
-    const visible = () => { if (document.visibilityState === 'visible') refresh() }
-    window.addEventListener('focus', refresh)
+    }, { onSubscribed: subscribed })
     const stopRecovered = subscribeBackendRecovered(refresh) // the backend came back: read the failure rows again
-    document.addEventListener('visibilitychange', visible)
-    // The first read is the bus's onSubscribed: it fires on mount when the channel is already live, otherwise once it
-    // subscribes — reading here as well sent every open twice.
     return () => {
-      live = false
-      clearTimeout(retryTimer)
       unsubscribePrivateUserEventBus(handle)
-      window.removeEventListener('focus', refresh)
       stopRecovered()
-      document.removeEventListener('visibilitychange', visible)
     }
-  }, [user?.id, scopeKey, ids, subject, changeDismissals])
+  }, [asks, user?.id, scopeKey, ids, changeDismissals])
 
-  const rows = snapshot.subject === subject ? snapshot.rows : EMPTY
   const dismiss = useCallback((commandId: string) => {
-    const revision = rows.find((row) => row.commandId === commandId)?.revision ?? null
+    const revision = read?.find((row) => row.commandId === commandId)?.revision ?? null
     changeDismissals((now) => ({ ...now, [commandId]: { revision, at: Date.now() } }))
-  }, [rows, changeDismissals])
+  }, [read, changeDismissals])
   return {
-    failure: rows.find((row) => currentDismissals[row.commandId]?.revision !== row.revision) ?? null,
+    // Not read yet (or unreadable, retried with backoff): no failure is shown — this is a notice, not a list.
+    failure: read ? read.find((row) => currentDismissals[row.commandId]?.revision !== row.revision) ?? null : null,
     dismiss,
   }
 }

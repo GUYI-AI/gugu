@@ -1,6 +1,9 @@
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Device } from '@gugu/core/shared/types/chat'
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store'
+import { useReplicas, type Reading as ReplicaReading } from '@/lib/replica'
+import { marketDeviceReading, readOnDevicesWith } from '@renderer/features/extensions/market-device-readings'
+import { PHONE_HOST } from '@renderer/features/extensions/extensions-api'
+import { installedExtensions, useInstalledApps, type InstalledExtensionsList } from '@renderer/features/extensions/installed-extensions'
+import { refreshAgentReadings } from '@renderer/lib/stores/agent-replicas'
 import { askInShell, installConsentPrompt } from '@renderer/features/extensions/install-consent'
 import { isInstalledAgent } from '@renderer/features/settings/agents-page/agent-order'
 import { marketAgentInstallPlan } from '@renderer/features/extensions/panel/market-agent-install-plan'
@@ -21,33 +24,39 @@ type Plans<T> = {
   describe(value: T, target: Target): Reading
 }
 
+/** The devices by id: a model's arguments are data. */
+const devicesById = new Map<string, Device>()
+
 function usePhoneMarketTargets<T>(devices: readonly Device[], plans: Plans<T>) {
-  const client = useQueryClient()
+  for (const device of devices) devicesById.set(device.device_id, device)
+  const readKey = `phone:${plans.key}`
+  readOnDevicesWith(readKey, (deviceId) => {
+    const device = devicesById.get(deviceId)
+    if (!device) throw new Error(`No device ${deviceId}`)
+    return plans.read({ device, host: marketDeviceHost(device) })
+  })
   const entries = devices.map(device => ({ device, host: marketDeviceHost(device) }))
-  const keys = entries.map(({ device }) => ['market-device', plans.key, device.device_id])
-  const queries = useQueries({ queries: entries.map((target, index) => ({
-    queryKey: keys[index]!,
-    queryFn: () => plans.read(target),
-    enabled: target.device.is_online,
-    staleTime: 30_000,
-    retry: false,
-  })) })
-  return entries.map((target, index) => {
+  // An offline device is not asked (nothing would answer): it says so instead.
+  const readings = useReplicas(marketDeviceReading, entries.flatMap(({ device }) => device.is_online ? [[readKey, device.device_id] as [string, string]] : []))
+  let next = 0
+  return entries.map((target) => {
     const { device } = target
-    const query = queries[index]!
-    const reading = query.data === undefined ? null : plans.describe(query.data, target)
-    const unavailable = !device.is_online ? 'offline' : query.isError ? 'unavailable' : query.isPending ? 'checking' : null
+    const query = device.is_online ? readings[next++]! as ReplicaReading<T> : null
+    const reading = query?.state === 'value' ? plans.describe(query.value, target) : null
+    const unavailable = !query ? 'offline' : query.state === 'error' ? 'unavailable' : query.state === 'unknown' ? 'checking' : null
+    // @@@reading-default(paired) - a device not read yet is not among the ones it is installed on; its row says so by `status` ('checking')
+    const present = reading?.present ?? false
     return {
       id: device.device_id,
       name: device.label || device.hostname,
-      present: reading?.present ?? false,
+      present,
       status: unavailable ?? reading?.status,
       install: !unavailable && reading?.install ? async () => {
         const installed = await reading.install!()
         if (installed) {
-          await client.invalidateQueries({ queryKey: keys[index] })
-          void client.invalidateQueries({ queryKey: ['agents'] })
-          void client.invalidateQueries({ queryKey: APP_INVENTORY_KEY })
+          await marketDeviceReading.refresh(readKey, device.device_id)
+          void refreshAgentReadings(device.device_id)
+          void installedExtensions.refresh(target.host.extensions.key)
         }
         return installed
       } : undefined,
@@ -120,27 +129,17 @@ export function usePhoneAgentInstallTargets(id: string, devices: readonly Device
   })
 }
 
-const APP_INVENTORY_KEY = ['market-installed-apps'] as const
-
-function deviceApplicationInventory(device: Device) {
-  return {
-    queryKey: [...APP_INVENTORY_KEY, device.device_id],
-    queryFn: async () => {
-      const { store } = marketDeviceHost(device).extensions
-      await store.load()
-      return store.manifests.map(app => app.id)
-    },
-    staleTime: 30_000,
-    enabled: device.is_online,
-    retry: false,
-  }
-}
-
-export function usePhoneMarketDeviceApps(device: Device) {
-  return useQuery(deviceApplicationInventory(device))
+/** What is installed on each online device (its `installedExtensions` entry); an offline one is not asked. */
+export function useDeviceInstalledReadings(devices: readonly Device[]): ReplicaReading<InstalledExtensionsList>[] {
+  return useReplicas(installedExtensions, devices.filter(device => device.is_online).map(device => [marketDeviceHost(device).extensions.key] as [string]))
 }
 
 export function usePhoneMarketInstalledAppIds(devices: readonly Device[]): Set<string> {
-  const inventory = useQueries({ queries: devices.map(deviceApplicationInventory) })
-  return new Set([...installedExtensionsStore.manifests.map(app => app.id), ...inventory.flatMap(entry => entry.data ?? [])])
+  const here = useInstalledApps(PHONE_HOST)
+  const there = useDeviceInstalledReadings(devices)
+  // The Apps known to be installed: a device not read yet adds none (its rows say they are being checked).
+  const ids = new Set<string>()
+  if (here.state === 'value') for (const app of here.value.manifests) ids.add(app.id)
+  for (const entry of there) if (entry.state === 'value') for (const app of entry.value.extensions) ids.add(app.id)
+  return ids
 }

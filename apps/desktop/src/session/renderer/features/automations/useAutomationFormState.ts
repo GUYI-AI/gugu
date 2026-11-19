@@ -37,7 +37,8 @@ export function useAutomationFormState(
   const seedConfig = seed?.sessionConfig;
   const seedPrompt =
     seedSessionConfig?.prompt ?? initialTemplate?.defaultSessionConfig.initialPrompt;
-  const { data: agents } = useAgents();
+  const agentsReading = useAgents();
+  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
   // #6264 已安排看的是哪台机器,项目就只在那台机器的项目里挑(同一张项目表,见 firstMountedProjectId)。
   const machine = useAutomationsHost().remote?.deviceId ?? null;
 
@@ -111,9 +112,7 @@ export function useAutomationFormState(
     initialSession.setSessionView(sessionViewOfRuntime(seedType));
   }
 
-  const localGit = useProjectGitContext(effectiveProjectId);
-  const { isUnborn, currentBranch } = localGit;
-  const repositoryWorkspaceId = localGit.repositoryWorkspaceId;
+  const { repositoryWorkspaceId } = useProjectGitContext(effectiveProjectId);
 
   const sessionName = useSessionName({
     generatedName: seedConfig?.sessionConfig.name,
@@ -191,8 +190,6 @@ export function useAutomationFormState(
     cronTz,
     initialSession,
     workspaceConfig,
-    isUnborn,
-    currentBranch,
     prompt,
     provider,
     model,

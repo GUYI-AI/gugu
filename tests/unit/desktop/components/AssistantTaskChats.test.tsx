@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
-import { clickElement, createReactHarness, renderWithAppProviders, device } from '../../../support/testHarness'
+import { clickElement, createReactHarness, displayIdentity, renderWithAppProviders, device } from '../../../support/testHarness'
 import { UNAVAILABLE_APP_STATES, clearAssistantAppState, setAssistantAppState } from '../../../support/assistantAppStates'
 import '../../../../apps/desktop/src/i18n/registerAssistantCatalog'
 
@@ -31,6 +31,11 @@ import { AssistantTaskChatOpener } from '../../../../apps/desktop/src/components
 import { OPEN_ASSISTANT_TASK_CHAT,openAssistantTaskChat, readAssistantTaskChat, showAssistantTaskChat } from '../../../../apps/desktop/src/lib/assistantTaskChat'
 import { installAssistantShellBridge, publishAssistantShell } from '../../../../apps/desktop/src/lib/assistantShellBridge'
 import { installShellSlots, readShellSlots } from '../../../../apps/desktop/src/lib/shellSlots'
+// The identity directory (the IM library's identities, pushed through its bridge): what a task window reads for an agent
+// not in contacts — the real `useAvatarIdentity` reads it, and asks it (`ensure`) for an id it lacks.
+import { installIdentityDirectoryBridge, publishIdentityDirectory } from '../../../../apps/desktop/src/lib/identityDirectoryBridge'
+const directory = { ensured: [] as string[] }
+const ensure = (ids: readonly string[]) => { directory.ensured.push(...ids) }
 import { publishDirectoryDevices, retainDeviceSessions, updateDeviceSessions } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 
 let harness: ReturnType<typeof createReactHarness>
@@ -46,6 +51,9 @@ beforeEach(() => {
   mocks.localWorker = false
   mocks.listed = true
   mocks.identities.mockReset()
+  installIdentityDirectoryBridge()
+  directory.ensured = []
+  publishIdentityDirectory({}, ensure)
   mocks.work.mockReset();mocks.wake.mockReset();mocks.refresh=null
   mocks.rows = [{ deviceId: 'home', summary: summary('assistant-session', 'assistant'), live: true }, { deviceId: 'worker', summary: summary('task-session', 'task-agent', 'assistant-session'), live: false }]
   mocks.devices = [device('worker', [], { label: 'Worker', is_online: false, session_digest: [{ conversationId: 'task-session', projectId: 'p', projectName: 'Project', title: 'task-session', agentUserId: 'task-agent', parentConversationId: 'assistant-session', agentStatus: 'idle', lastInteractedAt: '2026-10-16T12:00:00Z', harness: 'codex', supported: false }] }), device('home', [], { label: 'Home' })]
@@ -143,6 +151,7 @@ describe('assistant task rows open the task chat on both shells', () => {
     const work={work_id:'new-work',title:'Preparing task',assistant_user_id:'assistant',owner_user_id:'user-1',outcome:'active',executor_outcomes:{},executors:[{session_id:'prepared',device_id:'sleeping',agent_user_id:null}],coordinator_session_id:'main',coordinator_device_id:'home'}
     await act(async()=>finish({work,events:[]}))
     mocks.work.mockResolvedValue({work:{...work,executors:[{session_id:'prepared',device_id:'sleeping',agent_user_id:'task-agent'}]},events:[]})
+    act(()=>publishIdentityDirectory({'task-agent':displayIdentity('task-agent',{display_name:'New agent',type:'agent',owner_user_id:'user-1',avatar:null})},ensure))
     await act(async()=>{mocks.refresh?.()})
     await vi.waitFor(()=>expect(document.querySelector('[data-testid="task-chat-panel"]')?.getAttribute('data-session-id')).toBe('prepared'))
     expect(toast).not.toHaveBeenCalled()

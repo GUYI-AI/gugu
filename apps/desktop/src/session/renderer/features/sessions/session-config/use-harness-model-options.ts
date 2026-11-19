@@ -21,7 +21,8 @@ export function useHarnessModelOptions(
   leg: SessionpageLeg
 ) {
   const catalog = useHarnessModelCatalog(providerId, leg);
-  const { data: agents } = useAgents();
+  const agentsReading = useAgents();
+  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
   const capabilities = providerId
     ? (agents?.find((agent) => agent.id === providerId)?.capabilities ?? null)
     : null;

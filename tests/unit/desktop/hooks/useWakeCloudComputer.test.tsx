@@ -11,7 +11,7 @@ const store = vi.hoisted(() => ({
   refreshCloudComputer: vi.fn<() => Promise<unknown>>(),
   wakeCloudComputer: vi.fn<() => Promise<void>>(),
 }))
-vi.mock('../../../../apps/desktop/src/lib/cloudComputerStore', () => store)
+vi.mock('../../../../apps/desktop/src/lib/cloudComputer', () => ({ readCloudSnapshotNow: store.refreshCloudComputer, wakeCloudComputer: store.wakeCloudComputer }))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ warn: () => {}, info: () => {}, error: () => {} }) }))
 
 const { useCloudComputerWake: useWakeForIssue } = await import('../../../../apps/desktop/src/hooks/useWakeCloudComputer')

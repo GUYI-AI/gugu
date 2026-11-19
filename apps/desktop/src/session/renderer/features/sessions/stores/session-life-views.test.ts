@@ -12,10 +12,10 @@ vi.mock('@renderer/lib/ipc', () => ({
   },
 }));
 vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => host.machine } }));
-vi.mock('@renderer/lib/machine-clients', () => ({ machineClient: () => ({}) }));
+vi.mock('@renderer/lib/machine-clients', () => ({ machineClient: () => ({}), onMachineReconnected: () => () => undefined }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: host.toast }));
 vi.mock('@renderer/localization/locale-store', () => ({ translateSessionMessage: (key: string) => key }));
-import { readSessionLife } from './session-life-views';
+import { lifeReadable, readSessionLife } from './session-life-views';
 
 let nextId = 0;
 let current: LifeView;
@@ -86,5 +86,17 @@ describe('reload completion notices', () => {
     expect(host.toast).not.toHaveBeenCalled();
     publish({ kind: 'ready', nativeSession: 'preserved' });
     expect(host.toast).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a read that fails', () => {
+  it('keeps the view the host pushed and says the failure next to it (❌ the view dropped)', async () => {
+    await readSessionLife(current.sessionId);
+    publish({ pending: { count: 1, items: [] } });
+    host.read.mockRejectedValueOnce(new Error('host unreachable'));
+    await expect(readSessionLife(current.sessionId)).rejects.toThrow('host unreachable');
+    const life = lifeReadable({ key: host.machine, read: host.read, listen: () => () => {} }, current.sessionId).get();
+    expect(life.view).toMatchObject({ version: current.version, pending: { count: 1 } });
+    expect(life.error).toBe('host unreachable');
   });
 });

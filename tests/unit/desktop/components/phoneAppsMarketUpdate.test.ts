@@ -30,35 +30,6 @@ const phone = vi.hoisted(() => ({
   },
 }))
 vi.mock('../../../../apps/desktop/src/components/appSlot/phoneApps', () => ({ phoneApps: phone, PHONE_CAPABILITIES: [] }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', async () => {
-  const { observable } = await import('mobx')
-  const app = (id: string, name: string) => ({ id, name, version: '1.0.0', apiVersion: 4, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: name }] } })
-  return {
-    installedExtensionsStore: observable({
-      manifests: [app('notes', 'Notes'), app('vote', 'Vote')],
-      origins: {} as Record<string, string>,
-      isPreinstalled(id: string) {
-        return this.origins[id] === 'preinstalled'
-      },
-      disabled: [] as string[],
-      isEnabled(id: string) {
-        return !this.disabled.includes(id)
-      },
-      // Notes is the market's: it has a 「自动更新」 switch; Vote came from a chat and has none.
-      autoUpdateOff: [] as string[],
-      autoUpdates(id: string) {
-        return id === 'notes' ? !this.autoUpdateOff.includes(id) : null
-      },
-      invalid: [] as unknown[],
-      appIcons: {} as Record<string, string>,
-      publishers: { notes: { id: 'gugu' }, vote: { id: 'alice', name: 'Alice' } },
-      // Notes has a page of its own; Vote only opens its files.
-      mainTabOf(id: string) {
-        return id === 'notes' ? { kind: 'notes.main' } : null
-      },
-    }),
-  }
-})
 const { followLink } = vi.hoisted(() => ({ followLink: vi.fn(() => true) }))
 vi.mock('../../../../apps/desktop/src/lib/guguLinks', () => ({ followLink }))
 const { AppsSection } = await import('../../../../apps/desktop/src/components/settings/AppsSection')
@@ -66,8 +37,32 @@ const { useOfferedVersions } = await import('../../../../apps/desktop/src/compon
 const { queryClient } = await import('../../../../apps/desktop/src/lib/replica')
 const { notifyManager } = await import('@tanstack/react-query')
 const { PhoneAppManage } = await import('../../../../apps/desktop/src/components/settings/PhoneAppManage')
-const { installedExtensionsStore: store } = (await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store')) as unknown as {
-  installedExtensionsStore: { disabled: string[]; autoUpdateOff: string[] }
+const { definePhoneInstalledList, definePhoneMarketUpdates, marketUpdates, tellInstalled } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
+
+// What is installed on this phone, as the phone's App store keeps it (phoneApps.ts `listed`), told to the replica on a change.
+const app = (id: string, name: string) => ({ id, name, version: '1.0.0', apiVersion: 4, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: name }] } })
+const store = {
+  manifests: [app('notes', 'Notes'), app('vote', 'Vote')],
+  origins: { notes: 'market', vote: 'attachment' } as Record<string, string>,
+  disabled: [] as string[],
+  autoUpdateOff: [] as string[],
+}
+const listed = () => ({
+  extensions: store.manifests.map((manifest) => ({ ...manifest })), invalid: [], icons: {}, appIcons: {}, dock: [], hiddenTabs: {},
+  disabled: [...store.disabled], autoUpdateOff: [...store.autoUpdateOff], quit: [], disclosure: {}, origins: { ...store.origins }, openWith: {},
+  publishers: { notes: { id: 'gugu' }, vote: { id: 'alice', name: 'Alice' } }, unreadable: null,
+}) as never
+definePhoneInstalledList(async () => { await phone.ready(); return listed() })
+definePhoneMarketUpdates(async () => {
+  const result = (await phone.marketUpdates()) as { success: boolean; data?: never; error?: string }
+  if (!result.success) throw new Error(result.error)
+  return result.data!
+})
+/** phoneApps' `tell` as played here: the list told to the replica, and the market asked again when a version changed (that
+ * the store itself asks on a version change is measured on the real store, phoneApps76). */
+const tell = (versionChanged = false) => {
+  tellInstalled('phone', listed())
+  if (versionChanged) void marketUpdates.refresh('phone')
 }
 
 let harness: ReturnType<typeof createReactHarness>
@@ -84,6 +79,7 @@ beforeEach(() => {
   phone.market.heard = []
   phone.setEnabled.mockReset().mockImplementation(async (id: string, enabled: boolean) => {
     store.disabled = enabled ? store.disabled.filter((one) => one !== id) : [...store.disabled, id]
+    tell()
     return { success: true, data: null }
   })
   store.disabled = []
@@ -91,6 +87,7 @@ beforeEach(() => {
   phone.installFromMarket.mockClear()
   phone.setAutoUpdate.mockReset().mockImplementation(async (id: string, on: boolean) => {
     store.autoUpdateOff = on ? store.autoUpdateOff.filter((one) => one !== id) : [...store.autoUpdateOff, id]
+    tell()
     return { success: true, data: null }
   })
   phone.market.history.mockReset().mockResolvedValue([])
@@ -104,8 +101,8 @@ function Apps() {
   const offered = useOfferedVersions()
   const [manage, setManage] = useState<string | null>(null)
   return createElement(Fragment, null,
-    createElement(AppsSection, { updates: offered.updates, gone: offered.gone, known: offered.known, onManage: setManage }),
-    manage ? createElement(PhoneAppManage, { extensionId: manage, updateVersion: offered.updates[manage], gone: offered.gone.includes(manage), onClose: () => setManage(null), onViewInMarket: () => setManage(null) }) : null)
+    createElement(AppsSection, { offered, onManage: setManage }),
+    manage ? createElement(PhoneAppManage, { extensionId: manage, updateVersion: offered.state === 'value' ? offered.value.offered[manage] : undefined, gone: offered.state === 'value' && offered.value.gone.includes(manage), onClose: () => setManage(null), onViewInMarket: () => setManage(null) }) : null)
 }
 const open = async (id: string) => {
   await act(async () => { row(id)!.click() })
@@ -156,10 +153,25 @@ describe('「App」 on the phone: a row is a name and how it stands', () => {
     await harness.render(createElement(Apps))
     await until('notes offers its update', () => row('notes')?.textContent?.includes('1.1.0') === true)
     phone.marketUpdates.mockResolvedValue(NOTHING_NEWER)
-    const manifests = (store as unknown as { manifests: { id: string; version: string }[] }).manifests
-    await act(async () => { manifests[0]!.version = '1.1.0' })
-    await until('the offer is gone', () => phone.marketUpdates.mock.calls.length >= 2)
-    manifests[0]!.version = '1.0.0'
+    try {
+      await act(async () => { store.manifests[0]!.version = '1.1.0'; tell(true) })
+      await until('the offer is gone', () => row('notes')?.textContent?.includes('更新到') === false)
+      expect(row('notes')?.textContent).toContain('版本 1.1.0')
+      expect(phone.marketUpdates.mock.calls.length).toBeGreaterThanOrEqual(2)
+    } finally { store.manifests[0]!.version = '1.0.0' }
+  })
+})
+
+describe('「App」 on the phone: a market answer read before whose read again fails', () => {
+  it('keeps 「更新到 vX」 and says the failure with a retry (❌ the old offer drawn as current)', async () => {
+    phone.marketUpdates.mockResolvedValue({ success: true, data: { checkedAt: '', updates: { notes: { version: '1.1.0', releaseNotes: '' } }, yanked: {}, deprecated: {} } })
+    await harness.render(createElement(Apps))
+    await until('notes offers its update', () => row('notes')?.textContent?.includes('1.1.0') === true)
+    expect(harness.container.querySelector('[data-refresh-failed]')).toBeNull()
+    phone.marketUpdates.mockResolvedValue({ success: false, error: 'market unreachable' })
+    await act(async () => { await marketUpdates.refresh('phone').catch(() => undefined) })
+    await until('the failed read again is said', () => harness.container.querySelector('[data-refresh-failed]') !== null)
+    expect(row('notes')?.textContent).toContain('1.1.0')
   })
 })
 
@@ -198,14 +210,15 @@ describe('「App」 on the phone: an App’s settings page', () => {
     await act(async () => { page('[data-testid="app-manage-action"]')!.click() })
     expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'app', extensionId: 'notes', tab: 'main', path: '', query: {}, place: null })
     store.disabled = ['notes']
-    await act(async () => { await Promise.resolve() })
+    await act(async () => { tell() })
     await act(async () => { page('[data-testid="app-manage-action"]')!.click() })
     expect(phone.setEnabled).toHaveBeenLastCalledWith('notes', true)
   })
 
   it('one gugu ships has no switch and no uninstall: its link opens the page, and pressing nothing can only fail', async () => {
-    const origins = (store as unknown as { origins: Record<string, string> }).origins
+    const origins = store.origins
     origins.vote = 'preinstalled'
+    tell()
     try {
       await harness.render(createElement(PhoneAppManage, { extensionId: 'vote', gone: false, onClose: () => undefined, onViewInMarket: () => undefined }))
       await until('its settings page', () => page('[data-testid="app-manage-page"]') !== null)
@@ -214,7 +227,7 @@ describe('「App」 on the phone: an App’s settings page', () => {
       expect(page('[data-testid="app-manage-version"]')).toBeNull()
       expect(page('[data-testid="app-manage-origin"]')?.textContent).toContain('咕咕自带')
     } finally {
-      delete origins.vote
+      origins.vote = 'attachment'
     }
   })
 

@@ -78,6 +78,7 @@ export default {
     "error": "无法开始录制，请重试。",
     "setting": "入会提醒",
     "settingDescription": "这台电脑日历里的会快开始时，提醒你录音。",
-    "needsCalendar": "要先在「连接应用 → 本机」里连上日历。"
+    "needsCalendar": "要先在「连接应用 → 本机」里连上日历。",
+    "calendarUnreadable": "没读到这台电脑的日历。"
   }
 } as const;

@@ -2,11 +2,13 @@ import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { readIdentityDirectoryBridge } from '@/lib/identityDirectoryBridge'
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings'
 import { observer } from 'mobx-react-lite';
-import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent } from 'react';
+import { Unknown } from '@/components/ui/Unknown';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent } from 'react';
 import { Check, Monitor, Plus, Server } from '@/lib/icons';
 import type { ProjectFolder } from '@shared/core/projects/project-folders';
 import { basenameFromAnyPath, shortHome } from '@shared/path-name';
-import { senderAvatarUrl, subscribeSenderAvatars } from '@renderer/lib/chat/sender-avatar';
+import { senderAvatarChanges, senderAvatarUrl } from '@renderer/lib/chat/sender-avatar';
+import { useSelect } from '@/lib/selectStore';
 import { sidebarStore } from '@renderer/lib/stores/app-state';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { Button } from '@renderer/lib/ui/button';
@@ -100,11 +102,6 @@ function FrostedFront({ projectId, running, count, uid, W, paperW }: { projectId
       </g>
     </svg>
   </>;
-}
-
-function useAvatarTick() {
-  const [, tick] = useReducer((n: number) => n + 1, 0);
-  useEffect(() => subscribeSenderAvatars(tick), []);
 }
 
 function reducedMotion() {
@@ -237,7 +234,8 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
   touch?: boolean;
 }) {
   const { translate } = useSessionMessages();
-  useAvatarTick();
+  // Redraw when an agent's avatar should be read again (its identity, its session's owner, the theme).
+  useSelect(senderAvatarChanges, (seen) => seen);
   const [open, setOpen] = useState(false);
   const [dragover, setDragover] = useState(false);
   const [landing, setLanding] = useState(false);
@@ -292,8 +290,11 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
     Date.now() - Date.parse(folder.attachedAt) < FRESH_MS;
   // 刚挂上的排最前,然后是选中的,再是根目录和其余的(按挂上的先后)。
   const ordered = [...folders].sort((x, y) => {
-    const rank = (f: ProjectFolder) =>
-      isFresh(f) ? 0 : f.workspaceId === state.chosen?.workspaceId ? 1 : f.kind === 'root' ? 2 : 3;
+    // The root placeholder holds the chosen place, ❌ the real root moves to the front when it arrives.
+    const chosenPlace = (f: ShownFolder) => f.workspaceId === state.chosen?.workspaceId
+      || (state.chosen === null && f.placeholder === true && f.kind === 'root' && f.projectId === projectId);
+    const rank = (f: ShownFolder) =>
+      isFresh(f) ? 0 : chosenPlace(f) ? 1 : f.kind === 'root' ? 2 : 3;
     return rank(x) - rank(y);
   });
 
@@ -464,9 +465,18 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
               return (
                 // 位置与动画放在外面这一层:按钮原语自带一组带 !important 的过渡(120ms、只认固定几种属性),
                 // 摊开 / 悬停上浮 / 落进来的动画放在按钮身上会被它压掉 —— 分层的 !important 从外面压不回来。
+                folder.placeholder ? (
+                  <div key={folder.workspaceId} className="gg-folder-paper-slot" style={paperStyle(place, index)} data-peek={place.hidden ? 'hidden' : 'shown'} data-folder-of={folder.projectId} aria-hidden>
+                    <div className="gg-folder-paper" aria-busy="true" data-testid="project-folder-paper-pending">
+                      <span className="gg-folder-paper__top"><Unknown className="w-24" /></span>
+                      <span className="gg-folder-paper__path block"><Unknown className="w-32" /></span>
+                    </div>
+                  </div>
+                ) :
                 <ProjectFolderMenu key={folder.workspaceId} folder={folder} projectName={projectName} state={state} disabled={!open}>
                 <div
                   className={cn('gg-folder-paper-slot', folder.workspaceId === dropping && 'is-dropping')}
+                  data-folder-of={folder.projectId}
                   style={paperStyle(place, index)}
                   data-peek={place.hidden ? 'hidden' : 'shown'}
                   aria-hidden={place.hidden || undefined}
@@ -587,7 +597,8 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
       {state.folders !== null || !state.loadError ? (
         <p className="gg-folder-card__hint" role={state.folders === null ? 'status' : undefined}>
           {state.folders === null
-            ? translate('projects.folders.loading')
+            // As a placeholder (@@@placeholder-reveal): nothing for 150 ms, then fading in — a read that answers sooner shows nothing.
+            ? <span className="gg-loading-line">{translate('projects.folders.loading')}</span>
             : open
               ? translate(floating ? (touch ? 'projects.folders.hintFloatingTouch' : 'projects.folders.hintFloating') : 'projects.folders.hintOpen')
               : translate('projects.folders.hintClosed', { count: folders.length })}

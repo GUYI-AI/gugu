@@ -8,17 +8,16 @@ import { AssistantEmpty, AssistantRow, AssistantSection, PageHead } from '@/sess
 import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
 import { useMachineLabel } from '../agent-watch/useMachineLabel'
 import { ReadView } from './PhoneMachineView'
-import type { PhoneRead } from './usePhoneRead'
+import type { Reading } from '@/lib/replica'
 import { phoneProjectRows, type PhoneProjectEntry } from './phoneProjectRows'
 
-/** accountProjectsStore 这一刻的读数,按助理库页的读法说(读不到、但有上次的 = 列着上次的、上面一句读不到)。 */
-function storeRead(): PhoneRead<null> & { reload: () => void } {
-  const reload = () => { void accountProjectsStore.refresh() }
+/** accountProjectsStore 这一刻的读数(一个 MobX store,还不是 replica),按助理库页的读法说(读不到、但有上次的 = 列着上次的、上面一句读不到)。 */
+function storeReading(): Reading<null> {
   const { status, error, projects } = accountProjectsStore
-  if (status === 'ready') return { state: 'ok', data: null, reload }
-  if (status === 'loading') return { state: 'loading', reload }
+  if (status === 'ready') return { state: 'value', value: null, stale: false, error: null }
+  if (status === 'loading') return { state: 'unknown' }
   const failure = new Error(error ?? 'account projects unreadable')
-  return projects.length ? { state: 'ok', data: null, refreshError: failure, reload } : { state: 'error', error: failure, reload }
+  return projects.length ? { state: 'value', value: null, stale: true, error: failure } : { state: 'error', error: failure }
 }
 
 const Stale = () => {
@@ -37,15 +36,15 @@ export const PhoneProjects = observer(function PhoneProjects({ detail = false,on
   const { isHome } = useMachineLabel()
   const accountList = accountProjectsStore.projects
   const projects = useMemo(() => phoneProjectRows(accountList,devices,isHome),[accountList,devices,isHome])
-  const read = storeRead()
+  const read = storeReading()
   const [selected, setSelected] = useState<string | null>(null)
   const current = selected ? projects.find(project => project.id === selected) : null
   if (!detail) return <AssistantRow leading={<Folder />} title={t('library.workspace')} testId="assistant-library-workspace" onClick={onOpen}
-    detail={read.state === 'ok' ? t('library.items',{ count: projects.length }) : t(read.state === 'error' ? 'library.failed' : 'library.loading')} />
+    detail={read.state === 'value' ? t('library.items',{ count: projects.length }) : t(read.state === 'error' ? 'library.failed' : 'library.loading')} />
   if (current) return <PhoneProjectIndex project={current} onBack={() => setSelected(null)} />
   return <div className="ta-page" data-testid="assistant-library-page-workspace">
     <PageHead title={t('library.workspace')} />
-    <ReadView read={read} failedTitle={t('library.failed')}>{() => projects.length
+    <ReadView reading={read} failedTitle={t('library.failed')}>{() => projects.length
       ? <AssistantSection>{projects.map(project => <AssistantRow key={project.id} leading={<Folder />} title={project.label}
         detail={project.stale ? <>{project.rootPath ? `${project.rootPath} ` : null}<Stale /></> : project.rootPath ?? undefined}
         testId={`assistant-project-${project.id}`} onClick={() => setSelected(project.id)} />)}</AssistantSection>

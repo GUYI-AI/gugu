@@ -1,14 +1,19 @@
 import { observer } from 'mobx-react-lite'
-import { useContext, useEffect, useMemo, useState, type ReactNode, type RefObject } from 'react'
+import { useContext, useMemo, useState, type ReactNode, type RefObject } from 'react'
+import { refreshFailure, useReplica } from '../../lib/replica'
+import { Unknown } from '../ui/Unknown'
+import { marketOffers, useMarketOffers } from '../appSlot/marketOffers'
 import { useTranslation } from 'react-i18next'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { parseWidgetMessage, type WidgetMessage } from '@gugu/core/shared/ui/widgetModels'
 import { platform } from '../../platform'
 import { appsHere } from '../appSlot/appsHere'
+import { HERE_HOST } from '../appSlot/hereHost'
 import { PhoneAppFrame } from '../appSlot/PhoneAppFrame'
 import { Button } from '../ui/Button'
 import { APP_OPEN_WITH_EVENT } from '../../session/shared/extensions/app-runtime-protocol'
-import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
+import { useInstalledApps } from '../../session/renderer/features/extensions/installed-extensions'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { isInstallRefused } from '../../session/shared/extensions/attachment-install'
 import { refusedLine } from '../extensionBundle/installedHere'
 import { ExtensionPage } from '../../session/renderer/features/extensions/extension-view-layer'
@@ -21,27 +26,33 @@ import { useStayedInView } from './useStayedInView'
 import { SentMessageSurface, widgetTabId } from './sentMessageSurface'
 import { useAuth } from '../../store/auth'
 import { messageForUser } from '../../lib/userFacingError'
-import { rendererLogger } from '../../lib/log'
-import { installPackageOf, sharedPackagesOf, subscribeSharedPackages, type SharedPackage } from '../extensionBundle/sharedPackages'
-import { availableInstallOffers, widgetInstallOffer, type MarketOffer } from '../extensionBundle/installOffers'
+import { installPackageOf } from '../extensionBundle/sharedPackages'
+import { sharedAppPackages } from '../extensionBundle/packageReplicas'
+import { availableInstallOffers, widgetInstallOffer } from '../extensionBundle/installOffers'
 
-const log = rendererLogger('chat/widget')
 
 type Message = Pick<MessageItem, 'id' | 'chat_id' | 'sender_user_id' | 'content'>
 
-export const WidgetBubble = observer(function WidgetBubble({ message, slotMessageId = message.id, referenceWidget }: { message: Message; slotMessageId?: string; referenceWidget?: ResolvedWidget }) {
+export function WidgetBubble({ message, slotMessageId = message.id, referenceWidget }: { message: Message; slotMessageId?: string; referenceWidget?: ResolvedWidget }) {
   const { t } = useTranslation('messaging')
   const widget = useMemo(() => referenceWidget?.widget ?? parseWidgetMessage(message.content), [message.content, referenceWidget])
+  const installedReading = useInstalledApps(HERE_HOST)
   if (!widget) return <span>{t('message.widget')}</span>
-  if (!installedExtensionsStore.isLoaded) return <p>{widget.text}</p>
-  const manifest = installedExtensionsStore.manifestFor(widget.app)
+  // No App store here (the web): the widget's App is not on this platform, said by `reason` below.
+  // Not read yet: the message's own text (its size is the App's to say), ❌ 「没有装」 for an App that may be installed.
+  if (HERE_HOST && installedReading.state === 'unknown') return <p>{widget.text}</p>
+  if (installedReading.state === 'error') {
+    return <div><p>{widget.text}</p><RefreshFailed reading={installedReading} /></div>
+  }
+  const installed = installedReading.state === 'value' ? installedReading.value : null
+  const manifest = installed?.manifestFor(widget.app)
   const tab = manifest?.contributes.tabs.find(tab => tab.name === widget.view)
   const reason = !appsHere || (manifest?.platforms && !manifest.platforms.includes(platform.kind === 'electron' ? 'desktop' : 'phone')) ? 'platform'
-    : !manifest ? 'missing' : !installedExtensionsStore.isEnabled(widget.app) ? 'disabled' : !tab?.widget ? 'view' : null
+    : !manifest || !installed ? 'missing' : !installed.isEnabled(widget.app) ? 'disabled' : !tab?.widget ? 'view' : null
   if (reason || !tab?.widget) return <WidgetUnavailable widget={widget} reason={reason ?? 'view'} chatId={message.chat_id} />
   return referenceWidget ? <WidgetView key={`${referenceWidget.id}:${manifest?.version}`} message={message} slotMessageId={slotMessageId} resolved={referenceWidget} height={widget.height ?? tab.widget.height} />
     : <OriginalWidgetView message={message} slotMessageId={slotMessageId} height={widget.height ?? tab.widget.height} text={widget.text} />
-})
+}
 
 function OriginalWidgetView({ message, slotMessageId, height, text }: { message: Message; slotMessageId: string; height: number; text: string }) {
   const resolved = useWidgetOriginal(message)
@@ -78,7 +89,7 @@ const WidgetView = observer(function WidgetView({ message, slotMessageId, resolv
   const [painted, setPainted] = useState(false)
   return <div className="w-[420px] max-w-full min-w-0" data-widget-bubble={slotMessageId} data-widget-id={widgetId}>
     <WidgetFrame height={height} element={ref}>
-      {phone ? null : <WidgetSnapshot widgetId={widgetId} element={ref} text={widget.text} visible={!active || !painted} inactive={!active} />}
+      {phone ? null : <WidgetSnapshot widgetId={widgetId} text={widget.text} visible={!active || !painted} inactive={!active} />}
       {mounted ? phone ? <PhoneAppFrame
         kind={kind} tabId={target.tabId} chatId={message.chat_id} widget={target.widget}
         placeholder={<WidgetLoading text={widget.text} />}
@@ -99,36 +110,24 @@ const WidgetView = observer(function WidgetView({ message, slotMessageId, resolv
   </div>
 })
 
-const WidgetUnavailable = observer(function WidgetUnavailable({ widget, reason, chatId }: { widget: WidgetMessage; reason: string; chatId: string }) {
+function WidgetUnavailable({ widget, reason, chatId }: { widget: WidgetMessage; reason: string; chatId: string }) {
   const { t } = useTranslation('messaging')
+  const installed = useInstalledApps(HERE_HOST)
   const { user } = useAuth()
   const { ref, shown } = useConversationVisibility(true)
-  const [sources, setSources] = useState<{ chatId: string; userId: string; shared: ReadonlyMap<string, SharedPackage>; market: readonly MarketOffer[] } | null>(null)
-  const [cue, setCue] = useState(0)
   const [installing, setInstalling] = useState(false)
   const [error, setError] = useState('')
   const canOffer = reason === 'missing' || reason === 'view'
-  useEffect(() => subscribeSharedPackages(changed => { if (changed === chatId) setCue(cue => cue + 1) }), [chatId])
-  useEffect(() => {
-    setSources(null)
-    setError('')
-    if (!shown || !canOffer || !appsHere || !user?.id) return
-    let live = true
-    void Promise.all([
-      sharedPackagesOf(chatId, user.id).catch(error => {
-        log.warn({ error: messageForUser(error), chatId }, 'widget App packages could not be read')
-        return new Map<string, SharedPackage>()
-      }),
-      appsHere.marketOffers().then(result => {
-        if (live && !result.success) setError(messageForUser(result.error))
-        return result.data ?? []
-      }, error => { if (live) setError(messageForUser(error)); return [] }),
-    ]).then(([shared, market]) => { if (live) setSources({ chatId, userId: user.id, shared, market }) })
-    return () => { live = false }
-  }, [shown, canOffer, chatId, user?.id, cue])
-  const offer = canOffer && sources?.chatId === chatId && sources.userId === user?.id
-    ? widgetInstallOffer(availableInstallOffers(sources.shared, sources.market, installedExtensionsStore.manifests, installedExtensionsStore.origins),
+  const asked = shown && canOffer && !!appsHere && !!user?.id
+  const shared = useReplica(sharedAppPackages, asked ? [chatId] : null)
+  const marketReading = useMarketOffers(asked)
+  // The market unreadable: the offer is looked for among what is shared here only; the failure is said below.
+  const offer = asked && shared.state === 'value' && marketReading.state !== 'unknown' && installed.state === 'value'
+    ? widgetInstallOffer(availableInstallOffers(shared.value, marketReading.state === 'value' ? marketReading.value : null, installed.value.manifests, installed.value.origins),
       widget.app, widget.view, platform.kind === 'electron' ? 'desktop' : 'phone') : null
+  const offerUnknown = asked && (shared.state === 'unknown' || marketReading.state === 'unknown' || installed.state === 'unknown')
+  // Unread, or read before and its read again failing (the offer from what was read stays): said with a retry.
+  const readFailed = refreshFailure(shared) ?? refreshFailure(marketReading)
   const install = async () => {
     if (!appsHere || !offer) return
     setInstalling(true)
@@ -145,8 +144,9 @@ const WidgetUnavailable = observer(function WidgetUnavailable({ widget, reason, 
   return <div ref={ref} className="max-w-full min-w-0">
     <p className="whitespace-pre-wrap break-words">{widget.text}</p>
     <p className="text-[length:var(--font-caption)] text-[var(--text-secondary)]">{t(`message.widgetUnavailable.${reason}`)}{' '}
-      {offer ? <Button size="sm" variant="ghost" disabled={installing} onClick={() => void install()} data-widget-install>{t('chatArea.openWith.install')}</Button> : null}
+      {offer ? <Button size="sm" variant="ghost" disabled={installing} onClick={() => void install()} data-widget-install>{t('chatArea.openWith.install')}</Button> : offerUnknown ? <Unknown className="h-6 w-14 align-middle" /> : null}
     </p>
     {error ? <p role="alert">{error}</p> : null}
+    <RefreshFailed error={readFailed} onRetry={() => { void sharedAppPackages.refresh(chatId); void marketOffers.refresh() }} />
   </div>
-})
+}

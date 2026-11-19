@@ -29,9 +29,9 @@ import { pendingServerAssistant } from '../../lib/assistantServerSetup'
 import { clearAssistantOnboardingNavigation, readAssistantOnboardingNavigation, saveAssistantOnboardingNavigation } from '../../lib/assistantOnboardingNavigation'
 import { AssistantSetupIdentity } from './AssistantSetupIdentity'
 import { DEFAULT_ASSISTANT_LOOK } from '../agentAvatar/look'
-import { reloadMyAssistant } from '../../lib/myAssistant'
+import { refreshMyAssistant } from '../../lib/myAssistant'
 import { rendererLogger } from '../../lib/log'
-import { getMembership } from '../../lib/billing/membership'
+import { refreshSpendingPower, useSpendingPower } from '../../lib/billing/useSpendingPower'
 import { membershipSettingsSection } from '../../lib/billing/settingsDestination'
 import { cloudComputerEnabled } from '@gugu/core/cloud/optionalServices'
 import { UI_EVENTS } from '../../lib/uiEvents'
@@ -101,9 +101,11 @@ export function AssistantOnboarding({
   const [error, setError] = useState<string | null>(null)
   const [setupEnded, setSetupEnded] = useState(false)
   const [cloudFailure, setCloudFailure] = useState<CloudComputerActionFailure | null>(null)
-  const [member, setMember] = useState<boolean | null>(null)
-  const [memberError, setMemberError] = useState<string | null>(null)
-  const [memberAttempt, setMemberAttempt] = useState(0)
+  // 安家页读取会员权益(账号额度那一份 replica):读取失败如实显示,不能当成免费会员;没读到 = null(那一页画「在读」)。
+  const spending = useSpendingPower(cloudEnabled && step === 'home' ? { id: ownerUserId } : null)
+  const member = spending.state === 'value' && spending.membership ? spending.membership.tier !== 'free' : null
+  // The plan unread (its read failed while the balance's did not: a value without membership) is unreadable too.
+  const memberError = spending.state !== 'unknown' && !spending.membership ? spending.balanceError : null
   const hue = BODY_COLORS[draft.color]?.hue ?? 268
   const displayName = draft.name.trim() || t('setup.namePlaceholder')
 
@@ -112,6 +114,7 @@ export function AssistantOnboarding({
   }, [ownerUserId, step])
 
   // 上次在这台电脑上建到一半(退出 / 断网):接着建同一个,❌ 再建一个。
+  // @@@effect-flow(command) - resumes a persisted half-done local assistant install (a setup step), not a read a surface shows
   useEffect(() => {
     if (!localDeviceId) return
     let record
@@ -129,7 +132,7 @@ export function AssistantOnboarding({
     setBusy('resume')
     writeSetupStep(ownerUserId, 'shell')
     resumeLocalAssistant(record)
-      .then(() => { resumed = true; writeSetupStep(ownerUserId, 'connect'); reloadMyAssistant(ownerUserId) })
+      .then(() => { resumed = true; writeSetupStep(ownerUserId, 'connect'); void refreshMyAssistant() })
       .catch((e: unknown) => {
         writeSetupStep(ownerUserId, 'shell')
         setSetupEnded(e instanceof AssistantSetupError && e.kind === 'cancelled')
@@ -138,22 +141,6 @@ export function AssistantOnboarding({
       })
       .finally(() => setBusy(resumed ? null : 'computer'))
   }, [ownerUserId, localDeviceId])
-
-  // 安家页读取会员权益；读取失败如实显示，不能当成免费会员。
-  useEffect(() => {
-    if (!cloudEnabled || step !== 'home' || member !== null) return
-    let cancelled = false
-    setMemberError(null)
-    getMembership()
-      .then((m) => !cancelled && setMember(!!m && m.tier !== 'free'))
-      .catch((e: unknown) => {
-        log.error({ error: String(e) }, 'read membership failed')
-        if (!cancelled) setMemberError(messageForUser(e))
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [cloudEnabled, step, member, memberAttempt])
 
   const claimCloud = useCallback(async () => {
     setBusy('cloud')
@@ -201,7 +188,7 @@ export function AssistantOnboarding({
         await resumeLocalAssistant(pending)
       } else await setUpAssistantOnThisComputer(await setupDraft(), localDeviceId, { signal: attempt.signal, onInstalling, engine })
       writeSetupStep(ownerUserId, 'connect')
-      reloadMyAssistant(ownerUserId)
+      void refreshMyAssistant()
     } catch (e) {
       keepBusy = localInstallationStarted.current || e instanceof AssistantSetupCleanupError
       writeSetupStep(ownerUserId, keepBusy ? 'shell' : null)
@@ -284,7 +271,7 @@ export function AssistantOnboarding({
         ) : memberError ? (
           <>
             <p className="ta-onb-error" role="alert">{memberError}</p>
-            <Button onClick={() => setMemberAttempt((attempt) => attempt + 1)}>{t('setup.retry')}</Button>
+            <Button onClick={refreshSpendingPower}>{t('setup.retry')}</Button>
           </>
         ) : (
           <AssistantHomeChoice

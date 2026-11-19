@@ -1,5 +1,5 @@
 import { withAutoReviewHint, type ReviewCostSource } from '@renderer/features/sessions/acp/auto-review-permission-hint'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import type { ComponentProps } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionOptionDimension } from '@gugu/session-core/session-record/contract'
@@ -12,74 +12,96 @@ import { SessionReloadConfirm } from '@renderer/features/sessions/session-reload
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { AgentConversationComposer } from '@renderer/lib/chat/agent-conversation-view'
 import { messageForUser } from '@/lib/userFacingError'
+import { rendererLogger } from '@/lib/log'
+import { refreshFailure, replica, useReplica } from '@/lib/replica'
 import { fastModeValue } from '@renderer/features/sessions/session-config/fast-mode'
 import { renderFastModeHint } from '@renderer/features/sessions/session-config/fast-mode-hint'
 
+const log = rendererLogger('chat/conversation-options')
+
 export type ConversationTarget = { deviceId: string; sessionId: string; local: boolean; phoneHost?: boolean; /** false while that machine is away: nothing to ask; asked again once it is back. */ reachable?: boolean }
+
+/** A conversation's model / effort / permission options as its host answers; no push, read on every open (`fresh: 0`). */
+const conversationOptions = replica({
+  name: 'conversationOptions',
+  scope: 'account',
+  networkMode: (_deviceId: string, _sessionId: string, local: boolean) => (local ? 'always' : 'online'),
+  read: (_owner: string, deviceId: string, sessionId: string, local: boolean, phoneHost: boolean): Promise<SessionpageSessionOptionsWithMenu> =>
+    conversationOptionClient({ deviceId, sessionId, local, phoneHost }).read(),
+  fresh: 0,
+})
+
+/** Who pays for the auto-review model: the platform, an API key, or the signed-in account's own kind; 'unknown' says it is not known. */
+function reviewCostSourceOf(menu: SessionpageSessionOptionsWithMenu['modelMenu'] | undefined): ReviewCostSource {
+  if (menu?.conversationSelection) return 'platform'
+  if (menu?.customModel) return 'api-key'
+  const auth = menu?.ownAuth?.status
+  return menu?.conversationSelection === null && auth?.kind === 'authenticated' ? auth.credentialKind ?? 'unknown' : 'unknown'
+}
 
 /** Adapts the host facts through the project page's model, effort and permission assemblers. */
 export function useConversationOptions(target: ConversationTarget | null, agentName: string, mobile = false) {
   const { t } = useTranslation('main')
   const deviceId = target?.deviceId, sessionId = target?.sessionId, local = target?.local, phoneHost = target?.phoneHost, reachable = target?.reachable !== false
+  // While that machine is away there is nothing to ask: unknown, read once it is back.
+  const args: [string, string, boolean, boolean] | null = deviceId && sessionId && local !== undefined && reachable ? [deviceId, sessionId, local, phoneHost === true] : null
+  const reading = useReplica(conversationOptions, args)
   const key = target ? `${deviceId}/${sessionId}/${local}/${phoneHost}` : ''
   const scopeRef = useRef({ key })
   if (scopeRef.current.key !== key) scopeRef.current = { key }
   const scope = scopeRef.current
-  const readVersion = useRef(0)
-  const invalidateReads = useCallback(() => { readVersion.current++ }, [])
-  const [read, setRead] = useState<{ key: string; options: SessionpageSessionOptionsWithMenu } | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [writeFailure, setWriteFailure] = useState<{ scope: typeof scope; message: string } | null>(null)
+  const writeError = writeFailure?.scope === scope ? writeFailure.message : null
   const [pendingScope, setPendingScope] = useState<typeof scope | null>(null)
   const pending = pendingScope === scope
   const fastWrite = useRef<typeof scope | null>(null)
   const [pendingFastScope, setPendingFastScope] = useState<typeof scope | null>(null)
   const fastModePending = pendingFastScope === scope
   const [restart, setRestart] = useState<{ modelId: string; label: string; source: 'platform' | 'own' } | null>(null)
-  const options = read?.key === key ? read.options : null
-  const readOptions = useCallback((includeOwnModelCatalog?: true) => {
-    if (!deviceId || !sessionId || local === undefined || !reachable) return
-    const version = ++readVersion.current
-    const current = () => readVersion.current === version && scopeRef.current === scope
-    void conversationOptionClient({ deviceId, sessionId, local, phoneHost }).read(includeOwnModelCatalog).then(options => {
-      if (current()) { setRead({ key, options }); setError(null) }
-    }, cause => { if (current()) setError(messageForUser(cause)) })
-  }, [key, deviceId, sessionId, local, phoneHost, reachable, scope])
-  useEffect(() => {
-    setError(null)
-    readOptions()
-    return invalidateReads
-  }, [readOptions, invalidateReads])
-  const pick = async (dimension: SessionOptionDimension, value: string) => {
-    if (!target || options?.[dimension]?.selected === value) return
-    if (dimension === 'fast') {
-      if (fastWrite.current === scope) return
-      fastWrite.current = scope
-      setPendingFastScope(scope)
-    }
-    invalidateReads()
+  const options = reading.state === 'value' ? reading.value : null
+  // Unread, or read before and its read again failing (the options read before stay drawn): said in the composer notice.
+  const readFailure = refreshFailure(reading)
+  const readError = readFailure ? messageForUser(readFailure) : null
+  const write = async (send: () => Promise<SessionpageSessionOptionsWithMenu>) => {
+    if (!args) return false
+    const entry = conversationOptions.at(...args)
     setPendingScope(scope)
     try {
-      const updated = await conversationOptionClient(target).set(dimension, value)
-      if (scopeRef.current === scope) { setRead({ key, options: updated }); setError(null) }
-    }
-    catch (cause) { if (scopeRef.current === scope) setError(messageForUser(cause)) }
+      entry.set(await send())
+      if (scopeRef.current !== scope) return false
+      setWriteFailure(null)
+      return true
+    } catch (cause) {
+      if (scopeRef.current === scope) setWriteFailure({ scope, message: messageForUser(cause) })
+      return false
+    } finally { setPendingScope(current => current === scope ? null : current) }
+  }
+  const pick = async (dimension: SessionOptionDimension, value: string) => {
+    if (!target || options?.[dimension]?.selected === value) return
+    // One fast-mode change at a time: a second click while the first is on its way is not a second write.
+    if (dimension !== 'fast') { await write(() => conversationOptionClient(target).set(dimension, value)); return }
+    if (fastWrite.current === scope) return
+    fastWrite.current = scope
+    setPendingFastScope(scope)
+    try { await write(() => conversationOptionClient(target).set(dimension, value)) }
     finally {
-      if (dimension === 'fast' && fastWrite.current === scope) {
+      if (fastWrite.current === scope) {
         fastWrite.current = null
         setPendingFastScope(null)
       }
-      setPendingScope(current => current === scope ? null : current)
     }
   }
   const model = options?.modelMenu && options.model ? sessionModelView(options.modelMenu, options.model) : null
   const permissions = options?.mode ? Object.fromEntries(options.mode.available.map(item => [item.id, { name: item.name, description: item.description, disabled: item.disabled, reviewByHaiku: item.reviewByHaiku }])) : null
-  const reviewAuth = options?.modelMenu?.ownAuth?.status
-  const reviewCostSource: ReviewCostSource = options?.modelMenu?.conversationSelection ? 'platform'
-    : options?.modelMenu?.customModel ? 'api-key'
-    : options?.modelMenu?.conversationSelection === null && reviewAuth?.kind === 'authenticated' ? reviewAuth.credentialKind ?? 'unknown' : 'unknown'
+  const reviewCostSource = reviewCostSourceOf(options?.modelMenu)
   const props: Partial<ComponentProps<typeof AgentConversationComposer>> = {
     modelOptions: model ? Object.fromEntries(model.groups.flatMap(group => group.items.map(({ id, ...option }) => [id, option]))) : undefined,
-    onModelMenuOpen: () => { if (!pending && !fastModePending) readOptions(true) },
+    // Opening the model menu reads the options again with this agent's own model catalog (asked only then: it is slow).
+    onModelMenuOpen: () => {
+      if (!target || !args || pending || fastModePending) return
+      const entry = conversationOptions.at(...args)
+      void conversationOptionClient(target).read(true).then(options => entry.set(options), cause => log.warn({ error: String(cause) }, 'conversation options with the model catalog unreadable'))
+    },
     selectedModel: model?.selectedId,
     onModelChange: id => {
       const plan = model?.plan(id)
@@ -97,16 +119,13 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
       mobile ? tier => t(`agentWatch.create.permission.${tier}.name`) : undefined), options?.modelMenu?.providerId, reviewCostSource, options?.modeMap),
     selectedPermissionMode: selectedPermissionModeId(options?.mode?.selected ?? undefined, permissions, options?.modeMap),
     onPermissionModeChange: id => { void pick('mode', id) },
-    ...(error ? { notice: { variant: 'error', message: error, onDismiss: () => setError(null) } } : {}),
+    ...(writeError ? { notice: { variant: 'error', message: writeError, onDismiss: () => setWriteFailure(null) } }
+      : readError && args ? { notice: { variant: 'error', message: readError, onDismiss: () => { void conversationOptions.refresh(...args) } } } : {}),
   }
   const confirmation = <SessionReloadConfirm open={!!restart} onOpenChange={open => { if (!open) setRestart(null) }}
     reason="model-switch" target={restart?.label ?? ''} isReloading={pending} onConfirm={async () => {
       if (!target || !restart) return
-      invalidateReads()
-      setPendingScope(scope)
-      try { setRead({ key, options: await conversationOptionClient(target).reload(restart) }); setRestart(null); setError(null) }
-      catch (cause) { setError(messageForUser(cause)) }
-      finally { setPendingScope(current => current === scope ? null : current) }
+      if (await write(() => conversationOptionClient(target).reload(restart))) setRestart(null)
     }} />
   return { props, confirmation, fastModePending, steers: options?.modelMenu?.steers === true }
 }

@@ -50,6 +50,7 @@ export function usePhoneInputQueue(target: ConversationQueueTarget, inputs: read
     }
   }
   const queue = useConversationQueue(target, [...remote, ...local], working, steers, write)
+  // @@@effect-flow(outbox) - releases a queued phone input to its session (an outbox send); the state is the send's error
   useEffect(() => {
     if (!local.length || hostedCount || releasing.current.has(key) || !canReleasePhoneInput(ready, working, stopping, turns)) return
     releasing.current.add(key)

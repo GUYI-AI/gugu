@@ -6,12 +6,19 @@
 // same component. Until it answers, the component draws the state's initial value as if
 // it were the stored one — that is what flickers when a surface opens.
 //
-// An effect that runs a *flow* rather than reading what a surface shows (a sign-in that waits for its window, a rename
-// that settles, a dialog step) is not this shape; it says so on the line above with `@@@effect-flow - <what flow>`,
-// and the marker needs the reason (a bare marker is still counted).
+// An effect that is not a read of what a surface shows says which kind it is on the line above:
+// `@@@effect-flow(<category>) - <reason>`; a reading defaulted on purpose likewise: `@@@reading-default(<category>) -
+// <reason>`. The categories are the fixed lists below (EXEMPTIONS); a marker without one, with one not listed, or without
+// a reason is itself a finding, and the finding prints what the category takes and what it does not. A read put into
+// component state fits no category: it goes through a replica.
 //
-// It is a ratchet: `effect-fetch-state-baseline.json` lists the files that still have the shape and how many effects;
-// a file may only go down. Real AST, not regex (the same reason as subject-scoped-hooks.mts).
+// A hard rule (there is no baseline): no source file has the shape, no reading is collapsed to a
+// literal default (`--defaults`), and nothing outside lib/replica.ts reaches react-query directly — its read hooks, the
+// fetch-state hooks, or the client's own methods (`queryClient.…`); writes may still use `useMutation` with the client;
+// and no surface hands a reading's failure a retry it wrote itself (`onRetry={() => model.refresh(…)}` on `RefreshFailed` /
+// `ReadFailedLine`): a reading carries its own (`reading.retry`, `<RefreshFailed reading={r} />`, `<ReadingSlot>`).
+// `node scripts/checks/effect-fetch-state.mts` prints every finding and exits 1 if there is one. Real AST, not regex
+// (the same reason as subject-scoped-hooks.mts).
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import ts from 'typescript'
@@ -29,6 +36,81 @@ function sourceFiles(dir: string): string[] {
   }
   return out
 }
+
+/**
+ * The exemption categories, a closed list so an exemption is a reason a reviewer can check. Each: what it takes, and what it
+ * does not (printed with a finding). Nothing outside these lists is exempt.
+ */
+export const EXEMPTIONS = {
+  'effect-flow': {
+    render: ['renders content already in hand (docx/pptx/xlsx/pdf/mermaid/markdown, an image decode)', 'not a read from a server, host or disk'],
+    dom: ['DOM measuring and observing (IntersectionObserver, ResizeObserver, scroll anchoring, viewport)', 'not data the surface shows'],
+    input: ['listens to user input (keyboard, pointer, clipboard)', 'not a read of what the input refers to'],
+    command: ['one execution this effect starts itself; state holds only that execution\'s result', 'not polling state or progress someone else produces (a read: `refreshEvery`), not "open, read, show"'],
+    lifecycle: ['holds and releases a resource for the component\'s life (session page mount, App activation handle, workspace lease, preview URL registration, live projection attach); state holds only its handle or connection state', 'not the data that resource serves'],
+    outbox: ['the outbox sending (queued input released)', 'not a read'],
+    event: ['a one-off event or a listener registration that puts no data in component state (system share, a revision listener); state at most a local UI flag', 'not "subscribe to a store\'s value, then setState" (`useSelect`), not pushed data the surface draws'],
+    'view-state': ['restores what this surface itself saved (a draft, a scroll position)', 'not server or host data'],
+    code: ['lazy-loads a code module (emoji picker, image viewer, chat UI module)', 'not data'],
+  },
+  'reading-default': {
+    moment: ['a decision at one moment outside rendering (a click, after a write, before a send); the value is not drawn', 'not anything a render path draws'],
+    route: ['a routing or dispatch decision (which machine, which line)', 'not anything drawn'],
+    paired: ['the same return value carries a "not known yet" flag every reader branches on, so the default is never drawn; the reason names the flag in backticks', 'not a default a reader can draw'],
+  },
+} as const
+
+type MarkerKind = keyof typeof EXEMPTIONS
+/** A marker as written: its kind, category and reason, and what is wrong with it (null = a valid exemption). */
+export type Marker = { kind: MarkerKind; category: string | null; reason: string; problem: string | null }
+
+const MARKER = /@@@(effect-flow|reading-default)(?:\(([^)]*)\))?(?:\s*-\s*(.*))?/
+
+/** Parse the marker in a comment, if any. */
+export function parseMarker(comment: string): Marker | null {
+  const match = MARKER.exec(comment)
+  if (!match) return null
+  const kind = match[1] as MarkerKind
+  const category = match[2]?.trim() || null
+  const reason = (match[3] ?? '').replace(/\*\/\s*$/, '').trim()
+  const categories = EXEMPTIONS[kind] as Record<string, readonly [string, string]>
+  let problem: string | null = null
+  if (!category) problem = 'no category'
+  else if (!(category in categories)) problem = `category "${category}" is not one of ${Object.keys(categories).join(', ')}`
+  else if (!reason) problem = 'no reason'
+  else if (kind === 'reading-default' && category === 'paired' && !/`[^`]+`/.test(reason)) problem = 'a paired exemption names its flag in backticks'
+  return { kind, category, reason, problem }
+}
+
+/** What each category takes and does not, for a finding. */
+export function categoryHelp(kind: MarkerKind): string {
+  return Object.entries(EXEMPTIONS[kind] as Record<string, readonly [string, string]>)
+    .map(([name, [takes, not]]) => `  ${kind}(${name}): takes ${takes}; ${not}.`).join('\n')
+}
+
+/** The markers of a file with their 1-based lines (every one, flagged by the scans or not). */
+export function markerLines(path: string, text: string): Array<Marker & { line: number }> {
+  const out: Array<Marker & { line: number }> = []
+  text.split('\n').forEach((line, index) => {
+    if (!line.includes('@@@effect-flow') && !line.includes('@@@reading-default')) return
+    const marker = parseMarker(line)
+    if (marker) out.push({ ...marker, line: index + 1 })
+  })
+  return out
+}
+
+/** Markers that are not valid exemptions, `{ path: lines }`. */
+export function scanMarkers(root = '.'): Record<string, number[]> {
+  const out: Record<string, number[]> = {}
+  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
+    const rel = relative(root, path).split('\\').join('/')
+    if (isTest(rel)) continue
+    const bad = markerLines(rel, readFileSync(path, 'utf8')).filter((marker) => marker.problem).map((marker) => marker.line)
+    if (bad.length > 0) out[rel] = bad
+  }
+  return out
+}
+
 
 const isFunction = (node: ts.Node): node is ts.FunctionLikeDeclaration =>
   ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node) || ts.isMethodDeclaration(node)
@@ -122,6 +204,35 @@ function setsStateAfterRead(callback: ts.Node, setters: Set<string>, readers: Re
   return found
 }
 
+/** In an `event` effect: a setter handed over as a callback, or a listener's argument put into a setter. */
+function eventSetsData(callback: ts.Node, setters: Set<string>): boolean {
+  let found = false
+  const mentions = (node: ts.Node, names: Set<string>): boolean => {
+    if (ts.isIdentifier(node) && names.has(node.text)) return true
+    return ts.forEachChild(node, (child) => mentions(child, names) || undefined) ?? false
+  }
+  const visit = (node: ts.Node, payloads: Set<string>): void => {
+    if (found) return
+    if (ts.isCallExpression(node)) {
+      if (node.arguments.some((argument) => ts.isIdentifier(argument) && setters.has(argument.text))) { found = true; return }
+      const name = calleeName(node)
+      if (name && setters.has(name) && payloads.size > 0 && node.arguments.some((argument) => mentions(argument, payloads))) { found = true; return }
+      for (const argument of node.arguments) {
+        if (ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)) {
+          const params = new Set(payloads)
+          for (const param of argument.parameters) if (ts.isIdentifier(param.name)) params.add(param.name.text)
+          visit(argument.body, params)
+        } else visit(argument, payloads)
+      }
+      visit(node.expression, payloads)
+      return
+    }
+    ts.forEachChild(node, (child) => visit(child, payloads))
+  }
+  visit(callback, new Set())
+  return found
+}
+
 /** The 1-based lines of the effects of that shape in a file. */
 export function effectLines(path: string, text: string): number[] {
   const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
@@ -134,18 +245,28 @@ export function effectLines(path: string, text: string): number[] {
       if (node !== fn && isFunction(node) && !isEffectCallback(node)) return
       if (ts.isCallExpression(node) && (calleeName(node) === 'useEffect' || calleeName(node) === 'useLayoutEffect')) {
         const callback = node.arguments[0]
-        if (callback && setsStateAfterRead(callback, setters, readers) && !markedFlow(node)) lines.push(source.getLineAndCharacterOfPosition(node.getStart()).line + 1)
+        const marker = markedFlow(node)
+        const shaped = callback && setsStateAfterRead(callback, setters, readers)
+        // An `event` exemption puts no pushed data in state: a setter handed to a listener, or a listener's payload put
+        // into a setter, is the shape again whatever the marker says.
+        if (callback && (shaped || marker?.category === 'event') && (!marker || (marker.category === 'event' && eventSetsData(callback, setters)))) {
+          lines.push(source.getLineAndCharacterOfPosition(node.getStart()).line + 1)
+        }
         return
       }
       ts.forEachChild(node, walk)
     }
     if (fn.body) walk(fn.body)
   }
-  const markedFlow = (call: ts.Node) => {
+  /** The valid `@@@effect-flow(<category>)` exemption on the line above the effect, if any. */
+  const markedFlow = (call: ts.Node): Marker | null => {
     let statement: ts.Node = call
     while (statement.parent && !ts.isExpressionStatement(statement) && !ts.isBlock(statement.parent)) statement = statement.parent
-    const comments = ts.getLeadingCommentRanges(text, statement.getFullStart()) ?? []
-    return comments.some((range) => /@@@effect-flow\s*-\s*\S/.test(text.slice(range.pos, range.end)))
+    for (const range of ts.getLeadingCommentRanges(text, statement.getFullStart()) ?? []) {
+      const marker = parseMarker(text.slice(range.pos, range.end))
+      if (marker?.kind === 'effect-flow' && !marker.problem) return marker
+    }
+    return null
   }
   const isEffectCallback = (node: ts.Node) => ts.isCallExpression(node.parent) && node.parent.arguments[0] === node
     && ['useEffect', 'useLayoutEffect'].includes(calleeName(node.parent) ?? '')
@@ -164,7 +285,7 @@ export function scanFile(path: string, text: string): number {
 
 /**
  * A reading collapsed to a literal default (@@@client-state-model): the unknown reading then draws like a stored empty
- * value. Branch on the reading's three states instead. Literal = `[]`, `{}`, a number, a string, `false`, an `EMPTY_*`
+ * value. Branch on the reading's three states instead. Literal = `[]`, `{}`, a number, a string, `false`, an `EMPTY_*` / `NO_*`
  * constant; `null` is not a default (null is "unknown" in the consumer's type) — until it is folded into one downstream.
  * Syntactic: a reading is a name bound to `useReplica(…)` / `….peek(…)`, or any `x` whose `x.state` is compared with
  * `'value'` in the file. Counted:
@@ -188,7 +309,8 @@ export function literalDefaultLines(path: string, text: string): number[] {
     if (ts.isObjectLiteralExpression(n) && n.properties.length === 0) return true
     if (ts.isNumericLiteral(n) || ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) return true
     if (n.kind === ts.SyntaxKind.FalseKeyword) return true
-    return ts.isIdentifier(n) && /^EMPTY_[A-Z0-9_]+$/.test(n.text)
+    // This codebase names its empty constants `EMPTY_*` or `NO_*` (`NO_PLATFORM_CATALOG`, `NO_SCHEDULES`).
+    return ts.isIdentifier(n) && /^(EMPTY|NO)_[A-Z0-9_]+$/.test(n.text)
   }
   const EQ = [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.EqualsEqualsToken]
   const NE = [ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken]
@@ -262,11 +384,11 @@ export function literalDefaultLines(path: string, text: string): number[] {
     ts.forEachChild(node, bind)
   }
   bind(source)
-  // A justified exception says why on the line above: `@@@reading-default - <reason>` (a bare marker still counts).
+  // A justified exception says why on the line above: `@@@reading-default(<category>) - <reason>` (EXEMPTIONS).
   const marked = (node: ts.Node) => {
     let statement: ts.Node = node
     while (statement.parent && !ts.isBlock(statement.parent) && !ts.isSourceFile(statement.parent)) statement = statement.parent
-    return (ts.getLeadingCommentRanges(text, statement.getFullStart()) ?? []).some((range) => /@@@reading-default\s*-\s*\S/.test(text.slice(range.pos, range.end)))
+    return (ts.getLeadingCommentRanges(text, statement.getFullStart()) ?? []).some((range) => { const marker = parseMarker(text.slice(range.pos, range.end)); return marker?.kind === 'reading-default' && !marker.problem })
   }
   const hit = (node: ts.Node) => { if (!marked(node)) lines.add(source.getLineAndCharacterOfPosition(node.getStart()).line + 1) }
   const visit = (node: ts.Node): void => {
@@ -306,19 +428,133 @@ export function scanEffectFetchState(root = '.'): Record<string, number> {
   return out
 }
 
+const REPLICA_MODULE = 'apps/desktop/src/lib/replica.ts'
+/**
+ * What a module other than the replica may import from react-query: writes and their state, the provider, and the
+ * structural-sharing helper. Anything else (a read or fetch-state hook, an observer, a client of its own, a namespace or
+ * default import) reads past the replica, whatever it is renamed to.
+ */
+const REACT_QUERY_ALLOWED = new Set(['useMutation', 'useMutationState', 'QueryClientProvider', 'replaceEqualDeep'])
+const REACT_QUERY_MODULE = /^@tanstack\/(react-)?query(-core)?$/
+
+/** Lines in this file that reach react-query past the replica: a read / fetch-state hook, or a method of the client. */
+export function reactQueryLines(path: string, text: string): number[] {
+  if (path === REPLICA_MODULE || isTest(path)) return []
+  const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+  const lines = new Set<number>()
+  const line = (node: ts.Node) => source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1
+  const visit = (node: ts.Node): void => {
+    // Imports and re-exports from react-query: only the allowed names (types are not a read).
+    const from = (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)
+      ? node.moduleSpecifier.text : null
+    if (from && REACT_QUERY_MODULE.test(from) && !(ts.isImportDeclaration(node) && node.importClause?.isTypeOnly)) {
+      const clause = ts.isImportDeclaration(node) ? node.importClause : undefined
+      const named = ts.isImportDeclaration(node) ? clause?.namedBindings : (node as ts.ExportDeclaration).exportClause
+      const wholesale = (ts.isImportDeclaration(node) && (!clause || !!clause.name || (named && ts.isNamespaceImport(named))))
+        || (ts.isExportDeclaration(node) && (!named || ts.isNamespaceExport(named)))
+      const disallowed = named && (ts.isNamedImports(named) || ts.isNamedExports(named))
+        ? named.elements.some((element) => !element.isTypeOnly && !REACT_QUERY_ALLOWED.has((element.propertyName ?? element.name).text))
+        : false
+      if (wholesale || disallowed) lines.add(line(node))
+    }
+    // A dynamic import of react-query, and a method of the replica's client.
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments[0] && ts.isStringLiteral(node.arguments[0])
+      && REACT_QUERY_MODULE.test(node.arguments[0].text)) lines.add(line(node))
+    if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'queryClient') lines.add(line(node))
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return [...lines].sort((a, b) => a - b)
+}
+
+/** `{ relative path: lines }` for every non-test source file that reaches react-query past the replica. */
+export function scanReactQuery(root = '.'): Record<string, number[]> {
+  const out: Record<string, number[]> = {}
+  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
+    const rel = relative(root, path).split('\\').join('/')
+    const lines = reactQueryLines(rel, readFileSync(path, 'utf8'))
+    if (lines.length > 0) out[rel] = lines
+  }
+  return out
+}
+
+const RETRY_HOLDERS = new Set(['RefreshFailed', 'ReadFailedLine'])
+
+/** The one call an arrow / function body makes, when that is all it does (`void` and a block of one statement unwrapped). */
+function soleCall(body: ts.Node): ts.CallExpression | null {
+  let node: ts.Node = body
+  if (ts.isBlock(node)) {
+    if (node.statements.length !== 1 || !ts.isExpressionStatement(node.statements[0]!)) return null
+    node = node.statements[0]!.expression
+  }
+  while (ts.isVoidExpression(node) || ts.isParenthesizedExpression(node)) node = node.expression
+  return ts.isCallExpression(node) ? node : null
+}
+
+/**
+ * The 1-based lines of a `RefreshFailed` / `ReadFailedLine` whose `onRetry` is a function that only calls `….refresh(…)`:
+ * a retry written by hand for one reading (it carries its own). A retry that does several things is not this shape.
+ */
+export function handRetryLines(path: string, text: string): number[] {
+  if (!path.endsWith('.tsx')) return []
+  const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const lines: number[] = []
+  const visit = (node: ts.Node): void => {
+    if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) && RETRY_HOLDERS.has(node.tagName.getText(source))) {
+      for (const attribute of node.attributes.properties) {
+        if (!ts.isJsxAttribute(attribute) || attribute.name.getText(source) !== 'onRetry') continue
+        const value = attribute.initializer && ts.isJsxExpression(attribute.initializer) ? attribute.initializer.expression : undefined
+        if (!value || !(ts.isArrowFunction(value) || ts.isFunctionExpression(value))) continue
+        const call = soleCall(value.body)
+        if (call && ts.isPropertyAccessExpression(call.expression) && call.expression.name.text === 'refresh') {
+          lines.push(source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1)
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return lines
+}
+
+/** `{ relative path: lines }` for every non-test source file with a hand-written retry for a reading. */
+export function scanHandRetries(root = '.'): Record<string, number[]> {
+  const out: Record<string, number[]> = {}
+  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
+    const rel = relative(root, path).split('\\').join('/')
+    if (isTest(rel)) continue
+    const lines = handRetryLines(rel, readFileSync(path, 'utf8'))
+    if (lines.length > 0) out[rel] = lines
+  }
+  return out
+}
+
 if (process.argv[1]?.endsWith('effect-fetch-state.mts')) {
-  const hits = scanEffectFetchState()
-  if (process.argv.includes('--defaults')) {
-    for (const [file, lines] of Object.entries(scanLiteralDefaults())) console.log(`${file}: ${lines.join(', ')}`)
-    process.exit(0)
+  const report = (title: string, hits: Record<string, number[]>) => {
+    for (const [file, lines] of Object.entries(hits)) console.log(`${title}: ${file}: ${lines.join(', ')}`)
+    return Object.keys(hits).length
   }
-  if (process.argv.includes('--lines')) {
-    for (const file of Object.keys(hits)) console.log(`${file}: ${effectLines(file, readFileSync(file, 'utf8')).join(', ')}`)
+  const effects = Object.fromEntries(Object.keys(scanEffectFetchState()).map((file) => [file, effectLines(file, readFileSync(file, 'utf8'))]))
+  const found = report('effect fills component state with a read', effects)
+    + report('reading collapsed to a literal default', scanLiteralDefaults())
+    + report('react-query reached past the replica', scanReactQuery())
+    + report('a reading\'s retry is its own: `<RefreshFailed reading={r} />`, `<ReadingSlot>`, or `r.retry`', scanHandRetries())
+  const markers = scanMarkers()
+  for (const [file, lines] of Object.entries(markers)) {
+    const text = readFileSync(file, 'utf8')
+    for (const marker of markerLines(file, text).filter((item) => lines.includes(item.line))) {
+      console.log(`exemption marker: ${file}:${marker.line}: ${marker.problem}\n${categoryHelp(marker.kind)}`)
+    }
   }
-  if (process.argv.includes('--write')) {
-    const { writeFileSync } = await import('node:fs')
-    writeFileSync('scripts/checks/effect-fetch-state-baseline.json', `${JSON.stringify(hits, null, 2)}\n`)
+  if (process.argv.includes('--table')) {
+    for (const path of sourceFiles(SOURCE_ROOT).sort()) {
+      if (isTest(path)) continue
+      for (const marker of markerLines(path, readFileSync(path, 'utf8'))) console.log(`| ${path}:${marker.line} | ${marker.kind}(${marker.category ?? '—'}) | ${marker.reason.replace(/\|/g, '/')} |`)
+    }
   }
-  console.log(JSON.stringify(hits, null, 2))
-  console.log('files =', Object.keys(hits).length, 'effects =', Object.values(hits).reduce((a, b) => a + b, 0))
+  if (found + Object.keys(markers).length > 0) {
+    console.log('Read what a surface shows through a replica (lib/replica.ts); branch on unknown / value / error — docs/design/client-state-model.md')
+    process.exit(1)
+  }
+  console.log('effect-fetch-state: clean')
 }

@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { MachineLimitRefusal } from '@gugu/core/cloud/machineLimit'
 import { deviceMachines } from '@gugu/core/shared/deviceMachines'
-import { currentMachineLimitRefusal } from '../../../lib/device-labels'
+import { useReplica } from '../../../lib/replica'
 import { messageForUser } from '../../../lib/userFacingError'
 import { useDevicesStore } from '../../../store/devicesContext'
 import { Button } from '../../ui/Button'
 import { useDeviceRemoval } from '../useDeviceRemoval'
 import { InlineAction } from './InlineAction'
+import { machineLimitCheck } from './machineLimitReplicas'
 
 function machineLimitText(t: (key: string, values?: Record<string, unknown>) => string, refusal: MachineLimitRefusal | null): string {
   if (!refusal) return t('devices.addServer.machineLimit.unknown')
@@ -28,25 +29,14 @@ export function MachineLimitNotice({
   const { t } = useTranslation('settings')
   const { devices, phones } = useDevicesStore()
   const machines = useMemo(() => deviceMachines([...devices, ...(phones ?? [])]), [devices, phones])
-  const { canRemoveDevices, openRemoveDevices, dialogs } = useDeviceRemoval(machines)
-  const [reading, setReading] = useState<{ source: typeof refusal; value: typeof refusal; error: string } | null>(null)
-  const [retry, setRetry] = useState(0)
-  // Device removal already refreshes the store. Read the same enforcement RPC
-  // after every change, including a partial removal of a multi-version machine.
-  // @@@effect-flow - checking again, after each removal, whether the refusal this notice is about still holds.
-  useEffect(() => {
-    if (!refusal?.machine_id || !refusal.via) return
-    let live = true
-    void currentMachineLimitRefusal({ machine_id: refusal.machine_id, via: refusal.via }).then(
-      (value) => { if (live) setReading({ source: refusal, value, error: '' }) },
-      (error) => { if (live) setReading({ source: refusal, value: refusal, error: messageForUser(error) }) },
-    )
-    return () => { live = false }
-  }, [refusal, devices, phones, retry])
-  const result = reading?.source === refusal ? reading : null
-  const current = result ? result.value : refusal
-  const error = result?.error
-  const available = result !== null && current === null && !error
+  // The attempted machine, when named: the refusal is checked again after each removal made here.
+  const attempt: [string, 'ssh' | 'tunnel'] | null = refusal?.machine_id && refusal.via ? [refusal.machine_id, refusal.via] : null
+  const check = useReplica(machineLimitCheck, attempt)
+  const recheck = () => { if (attempt) void machineLimitCheck.refresh(...attempt) }
+  const { canRemoveDevices, openRemoveDevices, dialogs } = useDeviceRemoval(machines, { onRemoved: recheck })
+  const current = check.state === 'value' ? check.value : refusal
+  const error = check.state === 'error' ? messageForUser(check.error) : check.state === 'value' && check.error ? messageForUser(check.error) : ''
+  const available = check.state === 'value' && check.value === null && !error
 
   return (
     <div data-testid="add-server-machine-limit">
@@ -73,7 +63,7 @@ export function MachineLimitNotice({
       </div>
       {error ? (
         <div role="alert" className="mt-2 text-[var(--danger-fg)]">
-          {error}{' '}<InlineAction onClick={() => setRetry((value) => value + 1)}>{t('devices.retry')}</InlineAction>
+          {error}{' '}<InlineAction onClick={recheck}>{t('devices.retry')}</InlineAction>
         </div>
       ) : current?.machines && current.machines.length > 0 && (
         <ul className="m-0 mt-2 flex list-none flex-col gap-1 p-0" aria-label={t('devices.addServer.machineLimit.occupants')}>

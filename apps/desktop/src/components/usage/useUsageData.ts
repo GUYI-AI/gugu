@@ -52,6 +52,8 @@ const creditDays = replica({
   scope: 'account',
   // Totals are in the account's credit unit: another unit version is another reading (unknown until read), ❌ the old total.
   read: (_userId, from: string, to: string, timeZone: string, _creditVersion: string | null) => fetchCreditDays(from, to, timeZone),
+  // Back to the foreground: a membership bought on the web meanwhile moves no broadcast here (#5899).
+  refreshOnFocus: true,
 })
 
 /** A reading as this page's three states: unknown is still loading (a placeholder block), ❌ an empty year. */
@@ -74,7 +76,7 @@ export function useUsageData({ userId, deviceId, wantPreviousYear }: { userId: s
   const devices = useReplica(usageDevices, userId ? [] : null)
 
   // 打开页面就先把这台机器的最新数据送上去,送完再读一遍 —— 否则刚跑完的会话要等半小时才出现。
-  // @@@effect-flow - uploading this device's usage on open; the page shows the readings above, this only says it is syncing.
+  // @@@effect-flow(command) - uploading this device's usage on open; the page shows the readings above, this only says it is syncing.
   useEffect(() => {
     if (!userId || !canSyncLocalUsage()) return
     let alive = true

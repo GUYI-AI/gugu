@@ -3,6 +3,7 @@ import { act, createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 import { FilePreviewHost } from '../../../../apps/desktop/src/components/chat/filePreviewHost'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
 
 const { openResource, readBytes } = vi.hoisted(() => ({
   openResource: vi.fn(async () => undefined),
@@ -10,9 +11,9 @@ const { openResource, readBytes } = vi.hoisted(() => ({
 }))
 vi.mock('@/lib/guguLinks', () => ({ openLinkTarget: openResource }))
 vi.mock('@/platform', () => ({ platform: { kind: 'electron' } }))
-vi.mock('@/lib/attachmentBytes', () => ({
+vi.mock('@/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({
   attachmentBytes: readBytes, sourceKeyOf: () => 'budget', attachmentPreview: vi.fn(), openAttachmentInSystemApp: vi.fn(),
-}))
+})))
 vi.mock('@/components/chat/MessageFilePreviewPanel', () => ({
   MessageFilePreviewPanel: ({ content, onClose, fill }: { content: string | null; onClose: () => void; fill: boolean }) =>
     createElement('aside', { 'data-fill': String(fill) }, content ?? '', createElement('button', { onClick: onClose }, '关闭预览')),
@@ -30,7 +31,7 @@ function Conversation({ restore }: { restore?: () => void }) {
 describe('personal assistant file preview', () => {
   let harness: ReturnType<typeof createReactHarness>
   let target: HTMLElement | undefined
-  beforeEach(() => { harness = createReactHarness() })
+  beforeEach(async () => { await freshReplicaAccount('preview-reader'); harness = createReactHarness() })
   afterEach(() => { harness.cleanup(); target?.remove(); target = undefined; vi.clearAllMocks() })
 
   it('shows the actual Markdown in the dedicated right pane, with no Folder App', async () => {

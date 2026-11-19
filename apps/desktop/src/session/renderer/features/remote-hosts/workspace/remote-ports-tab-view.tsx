@@ -4,10 +4,11 @@ import { toast } from '@renderer/lib/hooks/use-toast';
 import { copyExternalLink } from '@renderer/lib/open-external-link';
 import { Copy, Globe, RefreshCw, Unplug, X } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useEffect, useState } from 'react';
-import type { SessionpageListeningPort } from '@gugu/session-core/session-record/contract';
+import { useState } from 'react';
+import { refreshFailure, useReplica } from '@/lib/replica';
+import { Unknown } from '@/components/ui/Unknown';
 import type { TabContentProps } from '@renderer/features/tabs/core/tab-provider';
-import { events, rpc, rpcOn } from '@renderer/lib/ipc';
+import { rpc } from '@renderer/lib/ipc';
 import { Button } from '@renderer/lib/ui/button';
 import { EmptyState } from '@renderer/lib/ui/empty-state';
 import { Input } from '@renderer/lib/ui/input';
@@ -17,7 +18,8 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { log } from '@renderer/utils/logger';
 import { cn } from '@renderer/utils/utils';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
-import { MANUAL_PORT_HOLDER, remotePortsChangedChannel, type RemotePortsSnapshot } from '@shared/remote-ports';
+import { MANUAL_PORT_HOLDER } from '@shared/remote-ports';
+import { machineListeningPorts, remotePortForwards } from './remote-ports-replicas';
 import { remoteHostsStore } from '../remote-hosts-store';
 import { remotePortFailureText } from './remote-page-copy';
 import { mergePortRows, parsePortInput, type RemotePortRow } from './remote-ports-model';
@@ -33,8 +35,6 @@ function portsScope(ctx: SessionTabContext): PortsScope | null {
   const deviceId = machineRegistry.machineOf(ctx.projectId);
   return deviceId ? { viewId: ctx.viewId, deviceId, sessionId: ctx.sessionId } : null;
 }
-
-const EMPTY_SNAPSHOT: RemotePortsSnapshot = { forwards: [], detected: [] };
 
 export const TabContent = observer(function RemotePortsTabContent({ host, ctx }: TabContentProps) {
   const activeTab = host.resolvedTabs.find((tab) => tab.isActive && tab.kind === 'remote-ports');
@@ -64,46 +64,23 @@ const RemotePortsBody = observer(function RemotePortsBody({ ctx }: { ctx: PortsS
 const RemotePortsView = observer(function RemotePortsView({ ctx, onOpen }: { ctx: PortsScope; onOpen: (port: number) => void }) {
   const { translate } = useSessionMessages();
   const device = remoteHostsStore.device(ctx.deviceId)?.label ?? ctx.deviceId;
-  const [snapshot, setSnapshot] = useState<RemotePortsSnapshot>(EMPTY_SNAPSHOT);
-  const [listening, setListening] = useState<SessionpageListeningPort[]>([]);
-  const [supported, setSupported] = useState(true);
-  const [checking, setChecking] = useState(false);
+  const forwards = useReplica(remotePortForwards, [ctx.deviceId]);
+  const listening = useReplica(machineListeningPorts, [ctx.deviceId]);
   const [draft, setDraft] = useState('');
   const [draftError, setDraftError] = useState<string | null>(null);
   const [forwarding, setForwarding] = useState(false);
 
-  const readSnapshot = useCallback(() => {
-    void rpc.remotePorts
-      .list({ deviceId: ctx.deviceId })
-      .then((result) => {
-        if (!result.success) throw result.error; setSnapshot(result.data);
-      })
-      .catch((error: unknown) => { log.error({ error }, 'ports snapshot failed'); setDraftError(messageForUser(error)); });
-  }, [ctx.deviceId]);
-
-  const checkListening = useCallback(() => {
-    setChecking(true);
-    void rpcOn(ctx.deviceId)
-      .machine.listeningPorts()
-      .then((result) => {
-        if (!result.success) throw new Error(result.error.message);
-        setSupported(result.data.supported);
-        setListening(result.data.ports);
-      })
-      .catch((error: unknown) => {
-        // 此刻够不着:表上照样有转着的与输出里发现的,只记日志。
-        setDraftError(messageForUser(error)); log.error('[remote-ports] listening ports not read', { deviceId: ctx.deviceId, error: String(error) });
-      })
-      .finally(() => setChecking(false));
-  }, [ctx.deviceId]);
-
-  useEffect(() => {
-    readSnapshot();
-    checkListening();
-    return events.on(remotePortsChangedChannel, readSnapshot, ctx.deviceId);
-  }, [ctx.deviceId, readSnapshot, checkListening]);
-
-  const rows = mergePortRows(snapshot, listening);
+  const refresh = () => {
+    void remotePortForwards.refresh(ctx.deviceId);
+    void machineListeningPorts.refresh(ctx.deviceId);
+  };
+  const checking = listening.state === 'unknown';
+  // Also a refresh failing over the rows read before (they stay): said, ❌ the old rows shown as current.
+  const forwardsFailure = refreshFailure(forwards);
+  const listeningFailure = refreshFailure(listening);
+  const rows = forwards.state === 'value'
+    ? mergePortRows(forwards.value, listening.state === 'value' ? listening.value.ports : undefined)
+    : null;
 
   const forward = async () => {
     const port = parsePortInput(draft);
@@ -160,10 +137,7 @@ const RemotePortsView = observer(function RemotePortsView({ ctx, onOpen }: { ctx
         variant="ghost"
         aria-label={translate('remotePorts.refresh')}
         title={translate('remotePorts.refresh')}
-        onClick={() => {
-          readSnapshot();
-          checkListening();
-        }}
+        onClick={refresh}
       >
         {checking ? <LoadingIndicator size="inline" /> : <RefreshCw className="size-3.5" />}
       </Button>
@@ -174,16 +148,16 @@ const RemotePortsView = observer(function RemotePortsView({ ctx, onOpen }: { ctx
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {header}
       {draftError && <div className="shrink-0 px-3 pt-2 text-xs text-foreground-destructive">{draftError}</div>}
-      {!supported && <div className="shrink-0 px-3 pt-2 text-xs text-foreground-passive">{translate('remotePorts.notLinux', { device })}</div>}
+      {forwardsFailure && <ReadFailed error={forwardsFailure} onRetry={refresh} />}
+      {listeningFailure && <ReadFailed error={listeningFailure} onRetry={refresh} />}
+      {listening.state === 'value' && !listening.value.supported && <div className="shrink-0 px-3 pt-2 text-xs text-foreground-passive">{translate('remotePorts.notLinux', { device })}</div>}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {rows.length === 0 ? (
-          checking ? (
-            <div className="flex h-full items-center justify-center text-xs text-foreground-muted">
-              <LoadingIndicator label={translate('task.loading')} ariaLabel={translate('task.loading')} />
-            </div>
-          ) : (
-            <EmptyState label={translate('remotePorts.empty', { device })} />
-          )
+        {rows === null ? (
+          forwards.state === 'unknown' && <PortRowsUnknown />
+        ) : rows.length === 0 && listening.state !== 'unknown' ? (
+          <EmptyState label={translate('remotePorts.empty', { device })} />
+        ) : rows.length === 0 ? (
+          <PortRowsUnknown />
         ) : (
           <div role="table" className="px-2 py-2 text-xs">
             <div role="row" className="grid grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)] gap-2 px-2 pb-1 text-foreground-passive">
@@ -206,6 +180,26 @@ const RemotePortsView = observer(function RemotePortsView({ ctx, onOpen }: { ctx
     </div>
   );
 });
+
+function PortRowsUnknown() {
+  return (
+    <div className="px-2 py-2" data-testid="remote-ports-unknown">
+      {[0, 1, 2].map((index) => (
+        <div key={index} className="flex h-8 items-center px-2"><Unknown className="h-3.5 w-full" /></div>
+      ))}
+    </div>
+  );
+}
+
+function ReadFailed({ error, onRetry }: { error: Error; onRetry: () => void }) {
+  const { translate } = useSessionMessages();
+  return (
+    <div className="flex shrink-0 items-center gap-2 px-3 pt-2 text-xs text-foreground-destructive">
+      <span className="min-w-0 truncate">{messageForUser(error)}</span>
+      <Button size="xs" variant="ghost" onClick={onRetry}>{translate('remotePorts.refresh')}</Button>
+    </div>
+  );
+}
 
 function RowAction({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (

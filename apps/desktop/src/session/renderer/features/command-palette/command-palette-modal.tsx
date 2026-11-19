@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query';
 import { Command } from 'cmdk';
 import { FolderOpen, MessageSquare, Search } from '@/lib/icons';
 import { useObserver } from 'mobx-react-lite';
@@ -31,6 +30,17 @@ import { paletteTasks } from './palette-tasks';
 import { recentTaskIds } from './recent-tasks';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { machineRegistry } from '@renderer/lib/machine-routing';
+import { refreshFailure, replica, useReplica } from '@/lib/replica';
+import { Unknown } from '@/components/ui/Unknown';
+import type { SearchItem } from '@shared/core/search';
+
+const commandPaletteSearch = replica({
+  name: 'commandPaletteSearch',
+  scope: 'device',
+  read: (_owner, query: string): Promise<SearchItem[]> => rpc.search.commandPalette({ query }),
+  fresh: 5_000,
+  keep: 5_000,
+});
 
 interface CommandPaletteProps {
   initialQuery?: string;
@@ -53,12 +63,20 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
   const { navigate } = useNavigate();
   const keyboard = useShortcutOverrides();
   const { translate } = useSessionMessages();
-  const { data: results = [] } = useQuery({
-    queryKey: ['cmdk-search', debouncedQuery],
-    queryFn: () => rpc.search.commandPalette({ query: debouncedQuery }),
-    enabled: !commandsMode,
-    staleTime: 5_000,
-  });
+  const reading = useReplica(commandPaletteSearch, commandsMode ? null : [debouncedQuery]);
+  // Words typed but not settled into a read yet are as unknown as a read on its way: ❌ "no results" in between.
+  const settled = debouncedQuery === search;
+  const current = settled && reading.state === 'value' ? reading.value : null;
+  // The last completed reading stays shown (.gg-stale), including zero rows, while the next words' are on their way.
+  const [heldQuery, setHeldQuery] = useState<string | null>(null);
+  if (current && heldQuery !== debouncedQuery) setHeldQuery(debouncedQuery);
+  const held = useReplica(commandPaletteSearch, !commandsMode && heldQuery !== null ? [heldQuery] : null, { read: false });
+  const results = current ?? (!commandsMode && held.state === 'value' ? held.value : null);
+  const stale = current === null && results !== null;
+  // Only retained read rows are stale; live chats and the current words' search link are independent.
+  const readingGroupClass = stale ? `${GROUP_CLASS} gg-stale` : GROUP_CLASS;
+  // A failed read, or a refresh failing over results still drawn: said above them with a retry.
+  const failed = settled ? refreshFailure(reading) : null;
   const commands = useObserver(() => rankPaletteMatches(commandRegistry.activeCommands
     .filter((command, index, all) => command.enabled !== false && !command.hideFromPalette
       && all.findIndex((other) => other.id === command.id) === index)
@@ -75,8 +93,9 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
     })
     , search, ({ title, description }) => [title, description]));
   // 本机索引负责召回(短查询的 LIKE 没有分数);排序与 @ 选人同一套,同分保留索引给的顺序。
-  const ranked = rankPaletteMatches(results, search, (item) => [item.title], { recallOnly: true });
+  const ranked = results ? rankPaletteMatches(results, search, (item) => [item.title], { recallOnly: true }) : null;
   const tasks = useObserver(() => {
+    if (!results) return null;
     const recent = commandsMode || search ? [] : recentTaskIds();
     // Recall opened local tasks beyond the search RPC's newest ten, from existing task rows only.
     const remembered = recent.flatMap(id => {
@@ -91,7 +110,7 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
       ...item, deviceLabel: remoteHostsStore.device(item.deviceId)!.label,
     })), search, sidebarStore.assistantAgentId, recent);
   });
-  const projects = ranked.filter((item) => item.kind === 'project');
+  const projects = ranked ? ranked.filter((item) => item.kind === 'project') : null;
 
   return (
     <Command className="flex flex-col overflow-hidden" shouldFilter={false} loop>
@@ -100,10 +119,13 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
           placeholder={commandsMode ? translate('palette.commandPlaceholder') : translate('palette.switchPlaceholder')}
           className="w-full bg-transparent px-3 py-3 text-sm outline-none placeholder:text-foreground/40" autoFocus />
       </div>
-      <Command.List className="max-h-96 overflow-y-auto p-1">
-        <Command.Empty className="py-8 text-center text-sm text-foreground/40">
-          {translate('palette.noResults', { query: search })}
-        </Command.Empty>
+      <Command.List data-stale={stale || undefined} aria-busy={stale || undefined}
+        className="max-h-96 overflow-y-auto p-1">
+        {(commandsMode || current) && (
+          <Command.Empty className="py-8 text-center text-sm text-foreground/40">
+            {translate('palette.noResults', { query: search })}
+          </Command.Empty>
+        )}
         {commandsMode ? (
           <Command.Group heading={translate('palette.commands')} className={GROUP_CLASS}>
             {commands.map(({ command, title, icon: Icon, hotkey }) => (
@@ -117,8 +139,21 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
           </Command.Group>
         ) : (
           <>
-            {tasks.length > 0 && (
-              <Command.Group heading={translate(search ? 'palette.tasks' : 'palette.recentTasks')} className={GROUP_CLASS}>
+            {failed && (
+              <div role="alert" className="flex items-center gap-2 px-2 py-2 text-sm text-[var(--em-foreground-destructive)]">
+                <span className="flex-1 truncate">{translate('palette.searchFailed')}</span>
+                <button type="button" className="shrink-0 text-foreground/60 hover:text-foreground" onClick={() => { void commandPaletteSearch.refresh(debouncedQuery); }}>
+                  {translate('common.retry')}
+                </button>
+              </div>
+            )}
+            {!tasks && !failed && (
+              <div data-testid="palette-search-pending" className="p-0">
+                {[0, 1, 2].map((row) => <div key={row} className={PALETTE_ITEM_CLASS}><Unknown className="w-48" /></div>)}
+              </div>
+            )}
+            {tasks && tasks.length > 0 && (
+              <Command.Group heading={translate(search ? 'palette.tasks' : 'palette.recentTasks')} className={readingGroupClass}>
                 {tasks.map((item) => {
                   const open = () => { if (item.projectId) { done(); followLink({ kind: 'session', sessionId: item.id, projectId: item.projectId }); } };
                   const store = !item.deviceId && item.projectId ? getSessionPageStore(item.projectId, item.id) : undefined;
@@ -131,8 +166,8 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
                 })}
               </Command.Group>
             )}
-            {search ? projects.length > 0 && (
-              <Command.Group heading={translate('palette.projects')} className={GROUP_CLASS}>
+            {search ? projects && projects.length > 0 && (
+              <Command.Group heading={translate('palette.projects')} className={readingGroupClass}>
                 {projects.map((item) => (
                   <Command.Item key={item.id} value={`project:${item.id}`} className={PALETTE_ITEM_CLASS}
                     onSelect={() => { done(); navigate('project', { projectId: item.id }); }}>

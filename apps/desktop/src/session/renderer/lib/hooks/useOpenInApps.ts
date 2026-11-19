@@ -31,7 +31,7 @@ const platformModel = replica({
   scope: 'device',
   read: () => rpc.app.getPlatform() as Promise<PlatformKey>,
   fresh: Infinity,
-  persist: { maxBytes: 256, maxEntries: 1 },
+  persist: { maxBytes: 128, maxEntries: 1 },
 });
 
 const installedAppsModel = replica({
@@ -39,7 +39,7 @@ const installedAppsModel = replica({
   scope: 'device',
   read: async () => (await rpc.app.checkInstalledApps()) as Record<string, boolean>,
   fresh: 5 * 60 * 1000,
-  persist: { maxBytes: 2048, maxEntries: 1 },
+  persist: { maxBytes: 1024, maxEntries: 1 },
 });
 
 /** The "Open in" tools of this device: names and icons for its platform, and which ones are installed. */

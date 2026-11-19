@@ -1,3 +1,4 @@
+import { cloudSnapshotOf, useCloudComputer } from '@/lib/cloudComputer'
 import type { FirstPrompt } from './use-timeline-session'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -12,7 +13,6 @@ import {
 import type { Device } from '@gugu/core/shared/types/chat'
 import type {
   SessionpageSessionCreateModels,
-  SessionpageSessionCreateOptions,
   SessionpageSessionSummary,
   SessionpageSessionCreateRequest,
   SessionpageSessionCreateResult,
@@ -21,6 +21,7 @@ import type { PromptEditorRef } from '@gugu/session-ui/react/components'
 import { Thread, ThreadComposer } from '@/components/assistant-ui/thread.aui'
 import { ComposerExtrasProvider } from '@/components/assistant-ui/composer-extras'
 import { Button } from '@/components/ui/Button'
+import { RefreshFailed } from '@/components/ui/RefreshFailed'
 import { isAgentHostDevice, isPhoneDevice } from '@gugu/core/cloud/devices'
 import { useAuth } from '@/store/auth'
 import { useDevicesStore } from '@/store/devicesContext'
@@ -43,7 +44,9 @@ import { useCloudComputerWake } from '../../hooks/useWakeCloudComputer'
 import { guguReasonInText, remoteFailureKind } from '@gugu/session-core/session-record/contract'
 import { guguReasonText } from '@renderer/features/sessions/gugu-reason'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
-import { SessionpageRpcError, createSession, fetchCreateModels, fetchCreateOptions, createPhoneSession, fetchPhoneCreateModels, fetchPhoneCreateOptions } from './sessionpage-rpc'
+import { SessionpageRpcError, createSession, createPhoneSession } from './sessionpage-rpc'
+import { refreshFailure, useReplica } from '@/lib/replica'
+import { sessionCreateModels, sessionCreateOptions } from '@/lib/agentModelReplicas'
 import { bindCreationDraft, mobileCreationDraftKey } from './create-session-draft'
 import { createAttachmentDraftAdapter } from './create-attachment-adapter'
 import { creationThinking } from './creation-thinking'
@@ -67,6 +70,8 @@ import {
 } from './create-session-form'
 
 const createLog = rendererLogger('mobile/agent-watch')
+/** Before the machine's options are read nothing is picked (the options pill is not drawn until they are). */
+const NO_SELECTION: CreateSelection = { harness: null, model: null, permissionMode: null, effort: null }
 
 /** 「没沿用上」那句话里每一格叫什么 —— 与选项胶囊上的行名同一套词。 */
 const LAST_USED_ITEM_LABEL_KEYS: Record<LastUsedItem, string> = {
@@ -111,13 +116,14 @@ function CreateSessionForm({ taskGroup = null, onBack, onCreated }: CreateSessio
   const inSheet = taskGroup !== null
   const { t } = useTranslation('main')
   const ownerId = useAuth().user?.id ?? null
-  const { devices: hosts, phones, cloudComputer } = useDevicesStore()
+  const { devices: hosts, phones } = useDevicesStore()
+  const cloudComputer = useCloudComputer()
   const { isHome, label: machineLabel } = useMachineLabel()
   const devices = useMemo(() => [...new Map([...hosts, ...(phones ?? [])].map((one) => [one.device_id, one])).values()], [hosts, phones])
   const machines = useMemo(() => visibleMachines(devices, isHome), [devices, isHome])
   // 账号上的项目(accountProjectsStore,桌面项目选择器同一份)。
   const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
-  const projects = useMemo(() => accountProjects(accountList, devices, cloudComputer?.snapshot?.deviceId ?? null), [accountList, devices, cloudComputer])
+  const projects = useMemo(() => accountProjects(accountList, devices, cloudSnapshotOf(cloudComputer)?.deviceId ?? null), [accountList, devices, cloudComputer])
   // 默认不选项目(桌面 New task 同:`No project · 默认机器`)。
   const [projectKey, setProjectKey] = useState<string | null>(null)
   const project = projects.find((one) => one.chatId === projectKey) ?? null
@@ -215,94 +221,62 @@ function CreateOnMachine({
   // #7199 在睡着的云电脑上新建 = 叫醒它;醒了(在线)选项照常读出来。
   const { issue: wakeIssue, dropped: wakeDropped, retry: retryWake } = useCloudComputerWake(targetAvailable ? device : null)
   const catalogKey = JSON.stringify([ownerId, device.device_id, phone])
-  const [optionCatalog, setOptionCatalog] = useState<{ key: string; value: SessionpageSessionCreateOptions } | null>(null)
-  const options = optionCatalog?.key === catalogKey ? optionCatalog.value : null
-  const [optionsError, setOptionsError] = useState<string | null>(null)
-  const [reloadKey, setReloadKey] = useState(0)
-  const [selection, setSelection] = useState<CreateSelection>({ harness: null, model: null, permissionMode: null, effort: null })
+  const via = phone ? 'phone' as const : 'machine' as const
+  // 机器离线时不发 RPC(与会话页同一条):发过去只会等到超时,而超时长得像「机器没响应」。
+  const optionsReading = useReplica(sessionCreateOptions, online ? [device.device_id, via] : null)
+  const options = optionsReading.state === 'value' ? optionsReading.value : null
+  const optionsError = optionsReading.state === 'error' ? describe(optionsReading.error) : null
+  // Read before, read again failed: the options stay offered, the failure is said with the same retry (❌ shown as current).
+  const optionsFailure = refreshFailure(optionsReading)
+  /** 没确认完的那次创建(本机发件记录,同步读):带附件的那一次,或手机上的那一次;沿用它的选择,发的也只能是它。 */
+  const attachmentAttempt = draftKey ? readAttachmentCreation(draftKey) : null
+  const storedAttempt = useMemo(() => phone && ownerId ? readPhoneSessionCreate(ownerId, device.device_id) : null, [phone, ownerId, device.device_id])
+  const [attempt, setAttempt] = useState<{ key: string; value: SessionpageSessionCreateRequest | null } | null>(null)
+  const phoneAttempt = attempt?.key === catalogKey ? attempt.value : storedAttempt
+  const setPhoneAttempt = (value: SessionpageSessionCreateRequest | null) => setAttempt({ key: catalogKey, value })
+  const submittedAttempt = attachmentAttempt ?? phoneAttempt
+  const attachmentAdapter = useMemo(() => draftKey ? createAttachmentDraftAdapter(draftKey) : undefined, [draftKey])
+  const [choice, setChoice] = useState<{ key: string; value: CreateSelection | null } | null>(null)
+  const chosen = choice?.key === catalogKey ? choice.value : null
+  const setChosen = (value: CreateSelection | null) => setChoice({ key: catalogKey, value })
   /** 人动过选择没有 —— 动过之后「上次那一套没沿用上」就不再说(那是人自己的改动)。 */
-  const [touched, setTouched] = useState(false)
+  const touched = chosen !== null
   /** 与桌面创建框同一条：明确点选的自家默认不被自动默认覆盖；换 harness 后重算。 */
-  const modelTouched = useRef(false)
-  /** 选定 harness 的模型目录；自动默认等这份读数，人明确点选后沿用其选择。 */
-  const [modelCatalog, setModelCatalog] = useState<{ key: string; value: SessionpageSessionCreateModels } | null>(null)
-  const models = modelCatalog?.key === catalogKey ? modelCatalog.value : null
-  const [modelsState, setModelsState] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
-  const [modelRetry, setModelRetry] = useState(0)
-  const modelListRead = useRef<Promise<SessionpageSessionCreateModels> | null>(null)
+  const modelTouched = useRef(submittedAttempt !== null)
+  const modelScope = useRef(catalogKey)
+  if (modelScope.current !== catalogKey) { modelScope.current = catalogKey; modelTouched.current = submittedAttempt !== null }
+  const derived = options ? (submittedAttempt ? submittedCreationSelection(submittedAttempt) : initialSelection(options)) : null
+  const picked = chosen ?? derived ?? NO_SELECTION
+  // 展示不由手机选:那台电脑按自己的「终端」开关定。
+  const harness = picked.harness
+  const model = picked.model
+  const modelsReading = useReplica(sessionCreateModels, online && harness ? [device.device_id, harness, null, model, via] : null)
+  // 同一家同一腿只是换模型时**不清空**清单(清了会闪没,reconcile 还会把刚选的模型清掉):新读数到之前画上一份。
+  const [keptModels, setKeptModels] = useState<{ key: string; value: SessionpageSessionCreateModels } | null>(null)
+  const lastModels = keptModels?.key === catalogKey ? keptModels.value : null
+  if (modelsReading.state === 'value' && modelsReading.value !== lastModels) setKeptModels({ key: catalogKey, value: modelsReading.value })
+  const models = modelsReading.state === 'value' ? modelsReading.value : lastModels && lastModels.harness === harness ? lastModels : null
+  const modelsState: 'idle' | 'loading' | 'ready' | 'failed' = !online || !harness ? 'idle' : modelsReading.state === 'value' ? 'ready' : modelsReading.state === 'error' ? 'failed' : 'loading'
+  // A submitted creation is sent as it was: its selection stays (the controls are locked meanwhile).
+  const selection = submittedAttempt && !chosen ? picked : reconcileModel(picked, models, modelTouched.current, options?.lastUsed)
   /** 正在建的那句话;建成或失败后清空。它同时也是线程里唯一那条(乐观显示的)用户消息。 */
   const [pendingText, setPendingText] = useState<string | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
-  const [phoneAttempt, setPhoneAttempt] = useState<SessionpageSessionCreateRequest | null>(null)
-  const attachmentAttempt = draftKey ? readAttachmentCreation(draftKey) : null
-  const attachmentAdapter = useMemo(() => draftKey ? createAttachmentDraftAdapter(draftKey) : undefined, [draftKey])
-
-  // 机器离线时**不发 RPC**(与会话页同一条):发过去只会等到超时,而超时长得像「机器没响应」。
-  useEffect(() => {
-    setOptionCatalog(null)
-    setOptionsError(null)
-    if (!online) return
-    let cancelled = false
-    setTouched(false)
-    const readOptions = phone ? fetchPhoneCreateOptions : fetchCreateOptions
-    readOptions(device.device_id)
-      .then((next) => {
-        if (cancelled) return
-        const attempt = ownerId && draftKey ? readAttachmentCreation(draftKey)
-          ?? (phone ? readPhoneSessionCreate(ownerId, device.device_id) : null) : null
-        modelTouched.current = attempt !== null
-        setPhoneAttempt(attempt && !('attachments' in attempt) ? attempt : null)
-        setOptionCatalog({ key: catalogKey, value: next })
-        setSelection(attempt ? submittedCreationSelection(attempt) : initialSelection(next))
-      })
-      .catch((err) => { if (!cancelled) setOptionsError(describe(err)) })
-    return () => { cancelled = true }
-  }, [device.device_id, online, reloadKey, phone, ownerId, catalogKey, draftKey])
-
-  // 目录跟着 harness 走；复用这次读数定默认，不另发可用性探针。
-  // 展示不由手机选:那台电脑按自己的「终端」开关定。
-  const harness = selection.harness
-  const model = selection.model
-  useEffect(() => {
-    if (!online || !options || !harness) { setModelCatalog(null); setModelsState('idle'); return }
-    let cancelled = false
-    // 推理档跟着模型走(桌面同一条),所以换模型也重读;但同一家同一腿只是换模型时**不清空**清单 ——
-    // 清了列表会在人刚点完那一下闪没,而且 reconcile 会把刚选的模型判成「不在目录里」清掉。
-    setModelCatalog((prev) => (prev?.key === catalogKey && prev.value.harness === harness ? prev : null))
-    setModelsState('loading')
-    const readModels = phone ? fetchPhoneCreateModels : fetchCreateModels
-    readModels(device.device_id, harness, null, model)
-      .then((next) => {
-        if (cancelled) return
-        setModelCatalog({ key: catalogKey, value: next })
-        setModelsState('ready')
-        const attempt = ownerId && draftKey ? readAttachmentCreation(draftKey)
-          ?? (phone ? readPhoneSessionCreate(ownerId, device.device_id) : null) : null
-        setSelection((current) => attempt ? submittedCreationSelection(attempt) : reconcileModel(current, next, modelTouched.current, options?.lastUsed))
-      })
-      .catch(() => { if (!cancelled) setModelsState('failed') })
-    return () => { cancelled = true; modelListRead.current = null }
-  }, [device.device_id, online, harness, model, reloadKey, phone, options, catalogKey, ownerId, modelRetry, draftKey])
-
+  // Opening the model menu reads the list again (what the machine offers may have changed since).
   const refreshModelList = () => {
-    if (!online || !options || !harness || modelsState === 'loading' || modelListRead.current) return
-    if (!models || models.harness !== harness) { setModelRetry(value => value + 1); return }
-    // The menu only needs the list. Passing the selected model would run its effort probe again.
-    const readModels = phone ? fetchPhoneCreateModels : fetchCreateModels
-    const request = readModels(device.device_id, harness, null, null)
-    modelListRead.current = request
-    void request.then(next => {
-      if (modelListRead.current !== request) return
-      setModelCatalog(current => current?.key === catalogKey && current.value.harness === harness ? {
-        key: catalogKey, value: {
-          ...current.value, models: next.models, harnessState: next.harnessState,
-          harnessReason: next.harnessReason, guguReason: next.guguReason,
-        },
-      } : current)
-      setModelsState('ready')
-    }, () => { if (modelListRead.current === request) setModelsState('failed') }).finally(() => {
-      if (modelListRead.current === request) modelListRead.current = null
-    })
+    if (!online || !harness || modelsReading.state === 'unknown') return
+    // The menu only needs the list: the directory entry (no model) is read again, its list put into the entry shown.
+    // Reading the selected model's entry again would run its effort probe again.
+    const shown = sessionCreateModels.at(device.device_id, harness, null, model, via)
+    const directory = [device.device_id, harness, null, null, via] as const
+    void sessionCreateModels.refresh(...directory)
+      .then(() => sessionCreateModels.fetch(...directory))
+      .then((next) => {
+        if (model === null) return
+        shown.set((current) => current && {
+          ...current, models: next.models, harnessState: next.harnessState, harnessReason: next.harnessReason, guguReason: next.guguReason,
+        })
+      }, () => undefined)
   }
 
   const blocker = options ? createBlocker(options, selection) : null
@@ -315,9 +289,9 @@ function CreateOnMachine({
   const otherGroupAttempt = inSheet && phoneAttempt !== null && phoneAttempt.chatId !== taskGroup?.chatId
   const canSubmit = !otherGroupAttempt && !modelReadFailed && online && options !== null && optionsError === null && blocker === null && !readingModelDefault && !modelNeedsSignIn
   const reloadOptions = () => {
-    setOptionCatalog(null)
-    setOptionsError(null)
-    setReloadKey((key) => key + 1)
+    setChosen(null)
+    void sessionCreateOptions.refresh(device.device_id, via)
+    if (harness) void sessionCreateModels.refresh(device.device_id, harness)
   }
 
   const messages = useMemo<ThreadMessageLike[]>(
@@ -381,6 +355,8 @@ function CreateOnMachine({
               }), ports: creationAttachmentPorts(device.device_id, phone, ownerId!) })).result
           : await (phone ? createPhoneSession : createSession)(device.device_id, request)
         if (attachmentReceipt) request = attachmentReceipt.request
+        // That machine's last-used set changed: the next new session there starts from it.
+        void sessionCreateOptions.refresh(device.device_id)
         if (phone) {
           if (!result.session?.supported || result.session.conversationId !== result.conversationId) throw new Error('手机尚未返回完整的任务记录，请继续同一次创建')
           if (!files.length) forgetPhoneSessionCreate(ownerId!, device.device_id, request)
@@ -428,7 +404,7 @@ function CreateOnMachine({
   const skillEditor = useRef<PromptEditorRef | null>(null)
   const skillDraft = creationSkillInput(skill => skillEditor.current?.insertMention(skill))
 
-  // @@@effect-flow - acquire this editor's account-bound draft and settle its hydration/cleanup barrier.
+  // @@@effect-flow(lifecycle) - acquire this editor's account-bound draft and settle its hydration/cleanup barrier.
   useEffect(() => {
     if (!draftKey) return
     const binding = bindCreationDraft(runtime.thread.composer, draftKey)
@@ -486,10 +462,10 @@ function CreateOnMachine({
       </details>
     </div>
   ) : null
-  const optionsNotice = online && (!options || optionsError) ? (
-    <div className={optionsError ? 'gg-aw-action-error' : 'gg-aw-create-blocker gg-aw-create-birth-group'} role={optionsError ? 'alert' : 'status'} data-testid={optionsError ? 'agent-watch-create-options-error' : 'agent-watch-create-options-loading'}>
-      <span>{optionsError ? t('agentWatch.create.optionsFailed') : t('agentWatch.create.loadingOptions')}</span>
-      {optionsError ? <span className="gg-aw-action-error-detail">{optionsError}</span> : null}
+  const optionsNotice = online && (!options || optionsFailure) ? (
+    <div className={optionsFailure ? 'gg-aw-action-error' : 'gg-aw-create-blocker gg-aw-create-birth-group'} role={optionsFailure ? 'alert' : 'status'} data-testid={optionsFailure ? 'agent-watch-create-options-error' : 'agent-watch-create-options-loading'}>
+      <span>{optionsFailure ? t('agentWatch.create.optionsFailed') : t('agentWatch.create.loadingOptions')}</span>
+      {optionsFailure ? <span className="gg-aw-action-error-detail">{describe(optionsFailure)}</span> : null}
       <Button variant="ghost" size="sm" onClick={reloadOptions} data-testid="agent-watch-create-options-retry">{t('agentWatch.timeline.reload')}</Button>
     </div>
   ) : null
@@ -549,6 +525,8 @@ function CreateOnMachine({
   const controls = <div className="gg-aw-thread-extras">
     {errorNotice}
     {optionsNotice}
+    {online && harness && modelsReading.state === 'value'
+      ? <RefreshFailed reading={modelsReading} /> : null}
     {blockerNotice}
     {pendingCreationNotice}
     {lastUsedNotice}
@@ -558,8 +536,7 @@ function CreateOnMachine({
       onOpenModels: refreshModelList,
       onChange: (next, modelPicked) => {
         modelTouched.current = next.harness === selection.harness && (modelTouched.current || modelPicked === true)
-        setTouched(true)
-        setSelection(next.model !== selection.model || next.harness !== selection.harness
+        setChosen(next.model !== selection.model || next.harness !== selection.harness
           ? { ...next, fastMode: false } : next)
       },
     })}

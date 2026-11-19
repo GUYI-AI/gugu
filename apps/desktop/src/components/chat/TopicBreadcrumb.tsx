@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next'
 import { composerCardPreview } from '@gugu/core/shared/ui/taskCardModels'
 import { isTopicNameCutFromSource } from './topicAnchorModels'
+import type { Reading } from '../../lib/replica'
+import type { TopicSourceState } from '../../lib/topics'
 
 /**
  * @@@5856 话题分栏的标题块 —— 话题名 + 它引自哪一句(product spec 的「双向连接」上行那一半)。
@@ -14,15 +16,8 @@ import { isTopicNameCutFromSource } from './topicAnchorModels'
  * ⚠️ 名字默认就是从来源消息首行截的 ⇒ 没改过名时这两行是**同一个字符串上下堆着**。
  * 那时只画标题一行,❌ 不把同一句话印两遍(与锚点那一处同因同治,共用 isTopicNameCutFromSource)。
  *
- * `sourceMessagePreview` 的**四**种值必须分开,合并任意两种都会让这条面包屑说假话:
- *   · `'pending'` —— 还**没读到**(打开的第一帧、以及读取失败)。这一行什么都不显示。
- *   · `'unreadable'` —— 读到了:来源消息还在,只是**这个人**读不到(群开了隐藏历史、悄悄话……)。
- *     这一行同样什么都不说 —— @@@5856 找茬第八轮:它此前被并进「已删除」,而那是一句假话
- *     (消息没被删,别人都看得见),用户会以为产品把数据搞丢了。
- *   · `null` —— 读到了、来源消息**确实**被硬删了。此时必须**说出来**,❌ 不许静默显示成正常,
- *     否则用户只会看到一条来路不明的线,以为产品串了数据。
- *   · 有字 —— 正常预览。
- * 曾经三种都用 null 表示,于是每次打开话题的首帧都闪一次「来源消息已删除」。
+ * `source`(topicSource 的读数)四种情形分开:未知 / 读失败、`unreadable`(来源还在,只是这个人读不到 —— @@@5856 ❌ 说成已删除)
+ * 都什么都不说;`gone`(确实被硬删)必须说出来;`readable` 正常预览。
  */
 // @@@ui-ruler 结构性 style 提到模块作用域(同 ChatListPanel 的 *_STYLE 常量):
 // 既避免每次渲染重建对象,也让 JSX 里不再残留内联几何块这条债务痕迹。
@@ -51,16 +46,16 @@ const TOPIC_BREADCRUMB_SOURCE_PREVIEW_STYLE: React.CSSProperties = {
 
 export type TopicBreadcrumbProps = {
   topicName: string
-  /** 来源消息被硬删时为 null —— 要有一句可呈现的状态，❌ 不许静默显示成正常 */
-  sourceMessagePreview: string | null | 'pending' | 'unreadable'
+  source: Reading<TopicSourceState>
 }
 
 export function TopicBreadcrumb({
   topicName,
-  sourceMessagePreview,
+  source,
 }: TopicBreadcrumbProps) {
   const { t } = useTranslation('messaging')
-  const preview = sourceMessagePreview == null ? sourceMessagePreview : composerCardPreview(sourceMessagePreview)?.text ?? sourceMessagePreview
+  const known = source.state === 'value' ? source.value : null
+  const shown = known?.kind === 'readable' ? composerCardPreview(known.preview)?.text ?? known.preview : null
   return (
     <div
       data-testid="topic-breadcrumb"
@@ -72,8 +67,8 @@ export function TopicBreadcrumb({
       >
         {topicName}
       </span>
-      {preview === 'pending' || preview === 'unreadable'
-        || isTopicNameCutFromSource(topicName, preview) ? null : preview === null ? (
+      {known === null || known.kind === 'unreadable'
+        || (shown !== null && isTopicNameCutFromSource(topicName, shown)) ? null : known.kind === 'gone' ? (
         <span
           data-testid="topic-breadcrumb-source-deleted"
           style={TOPIC_BREADCRUMB_SOURCE_DELETED_STYLE}
@@ -85,7 +80,7 @@ export function TopicBreadcrumb({
           data-testid="topic-breadcrumb-source-preview"
           style={TOPIC_BREADCRUMB_SOURCE_PREVIEW_STYLE}
         >
-          {t('topic.breadcrumb.sourcePreview', { preview })}
+          {t('topic.breadcrumb.sourcePreview', { preview: shown })}
         </span>
       )}
     </div>

@@ -23,13 +23,13 @@ vi.mock('@/lib/assistantSetup', () => ({
 // The hand-off itself (sessionStorage) is the real one; only the account read it also holds is replaced.
 vi.mock('@/lib/firstRun', async (original) => ({ ...(await original<object>()), readOccupation: async () => null }))
 vi.mock('@/lib/assistantSetupState', () => ({ offerCustomizeCard: vi.fn(), writeSetupStep: vi.fn() }))
-vi.mock('@/lib/myAssistant', () => ({ reloadMyAssistant: vi.fn(), isMyAssistant: () => false }))
-vi.mock('@/lib/cloudComputerStore', () => ({ refreshCloudComputer: vi.fn() }))
-vi.mock('@gugu/core/cloud/optionalServices', () => ({ cloudComputerEnabled: () => false }))
+vi.mock('@/lib/myAssistant', () => ({ refreshMyAssistant: vi.fn(async () => undefined), myAssistant: { peek: () => ({ state: 'unknown' }) } }))
+vi.mock('@/lib/cloudComputer', async (original) => ({ ...await original<object>(), readCloudSnapshotNow: vi.fn() }))
+vi.mock('@gugu/core/cloud/optionalServices', async (original) => ({ ...await original<object>(), cloudComputerEnabled: () => false }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn() }) }))
 // The setup layer's page (AssistantSetupPage) as the shell draws it over the App's panel: who is signed in and that there is no
 // assistant yet are fixtures; the guide it draws is the real one (OnboardingSlot's props as the shell passes them).
-const who = vi.hoisted(() => ({ owner: '11000000-0000-4000-8000-000000000001', mine: { loading: false, agentId: null, error: null } as Record<string, unknown> }))
+const who = vi.hoisted(() => ({ owner: '11000000-0000-4000-8000-000000000001', mine: { reading: { state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null } } as Record<string, unknown> }))
 vi.mock('@/store/auth', () => ({ useAuth: () => ({ user: { id: who.owner } }) }))
 vi.mock('@/lib/useAssistantHome', () => ({ useAssistantHome: () => ({ mine: who.mine, contact: null }) }))
 vi.mock('@/components/assistant/AssistantShellHost', async () => {
@@ -79,7 +79,7 @@ describe('the setup layer over the App\'s panel (AssistantSetupPage)', () => {
 
   it('draws the guide from the name: the App\'s intro under it was the first screen; each opening the same', async () => {
     shell()
-    who.mine = { loading: false, agentId: null, error: null }
+    who.mine = { reading: { state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null } }
     await layerPage()
     expect(seen('name-step')).toBe(true)
     expect(seen('intro')).toBe(false)
@@ -90,7 +90,7 @@ describe('the setup layer over the App\'s panel (AssistantSetupPage)', () => {
   })
 
   it('still finding who it is, or unable to: says so, no guide, and no hand-off left for another way in', async () => {
-    for (const mine of [{ loading: true, agentId: null, error: null }, { loading: false, agentId: 'a1', error: null }, { loading: false, agentId: null, error: 'boom' }]) {
+    for (const mine of [{ reading: { state: 'unknown' } }, { reading: { state: 'value', value: { agentId: 'a1', provisionDeviceId: null }, stale: false, error: null } }, { reading: { state: 'error', error: new Error('boom') } }]) {
       who.mine = mine
       await layerPage()
       expect(seen('assistant-setup-page')).toBe(true)
@@ -98,7 +98,20 @@ describe('the setup layer over the App\'s panel (AssistantSetupPage)', () => {
       expect(takeAssistantStartAtHome(OWNER)).toBe(false)
       harness.cleanup(); harness = createReactHarness()
     }
-    who.mine = { loading: false, agentId: null, error: null }
+    who.mine = { reading: { state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null } }
+  })
+
+  it('"none" kept from a read whose read again failed: says it is unreadable, ❌ the guide (another device may have made one)', async () => {
+    who.mine = { reading: { state: 'error', error: new Error('offline') } }
+    await layerPage()
+    const unreadable = harness.container.textContent
+    harness.cleanup(); harness = createReactHarness()
+    who.mine = { reading: { state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: true, error: new Error('offline') } }
+    await layerPage()
+    expect(seen('assistant-setup-page')).toBe(true)
+    expect(seen('name-step') || seen('intro')).toBe(false)
+    expect(harness.container.textContent).toBe(unreadable)
+    who.mine = { reading: { state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null } }
   })
 })
 

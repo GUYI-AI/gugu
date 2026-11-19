@@ -39,6 +39,8 @@ beforeEach(async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   vi.clearAllMocks()
   vi.stubGlobal('fetch', async () => Response.json({ external: { google: true } }))
+  // The sign-in methods are a replica: its answers are published at once here, as in the app's act()-free frames.
+  ;(await import('@tanstack/react-query')).notifyManager.setScheduler((callback) => { callback() })
   await i18n.changeLanguage('zh-CN')
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
   await act(async () => root.render(createElement(LoginPage)))

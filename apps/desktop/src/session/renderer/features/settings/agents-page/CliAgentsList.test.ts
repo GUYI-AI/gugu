@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CliAgentsList } from './CliAgentsList';
 
 const mocks = vi.hoisted(() => ({
+  known: true,
   selectedAgentId: null as string | null,
   /** 每格拿到的状态 —— 网格把状态画在图标上,所以这是它唯一的对外读数。 */
   tileStates: [] as Array<{ id: string; state: string }>,
@@ -36,7 +37,7 @@ const mocks = vi.hoisted(() => ({
   ],
 }));
 
-vi.mock('@renderer/lib/stores/use-agents', () => ({ useManagementAgents: () => ({ data: mocks.agents }) }));
+vi.mock('@renderer/lib/stores/use-agents', () => ({ useManagementAgents: () => ({ reading: mocks.known ? { state: 'value', value: mocks.agents, stale: false, error: null } : { state: 'unknown' } }) }));
 vi.mock('@renderer/lib/stores/use-agent-installation-statuses', () => ({
   useBusyInstallAgents: () => new Set<string>(),
 }));
@@ -67,11 +68,21 @@ describe('CliAgentsList', () => {
     root = createRoot(container);
     mocks.selectedAgentId = null;
     mocks.tileStates = [];
+    mocks.known = true;
   });
 
   afterEach(() => {
     act(() => root.unmount());
     vi.unstubAllGlobals();
+  });
+
+  it('draws nothing while the list is not read (❌ "no agents here" before the answer: the page holds the place)', async () => {
+    mocks.known = false;
+    await act(async () => {
+      root.render(React.createElement(CliAgentsList, { selectedAgentId: null, onSelectAgent: vi.fn() }));
+    });
+    expect(container.textContent).not.toContain('agentsPage.emptyAll');
+    expect(mocks.tileStates).toEqual([]);
   });
 
   it('opens exactly the agent the caller selected, and follows it when the caller changes it', async () => {

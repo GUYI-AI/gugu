@@ -12,7 +12,7 @@ import { installIdentityDirectoryBridge, publishIdentityDirectory } from '../../
 import type { DisplayIdentity } from '../../../../apps/desktop/src/lib/displayIdentity'
 import { publishDirectoryDevices } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 
-vi.mock('../../../../apps/desktop/src/lib/cloudComputerStore', () => ({ refreshCloudComputer: vi.fn(async () => null) }))
+vi.mock('../../../../apps/desktop/src/lib/cloudComputer', async (original) => ({ ...await original<object>(), readCloudSnapshotNow: vi.fn(async () => null) }))
 
 const { useAgentsOnCloudComputer, useShownAgentStatus } = await import('../../../../apps/desktop/src/components/chat/useAgentsOnCloudComputer')
 

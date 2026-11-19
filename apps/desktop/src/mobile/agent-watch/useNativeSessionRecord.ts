@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { isDeepEqual } from '@gugu/session-shared'
 import { remoteFailureKind, type NativeSessionRecord } from '@gugu/session-core/session-record/contract'
 import { machineRpc, onLinkChange } from './sessionpage-rpc'
 import { messageForUser } from '@/lib/userFacingError'
 import { useStructurallyShared } from '@/hooks/useStructurallyShared'
-import { hydrateCachedNativeRecord, readCachedNativeRecord, writeCachedNativeRecord } from './timeline-cache'
+import { hydrateCachedNativeRecord, initialNativeRecordStream, nativeRecordStreams, readCachedNativeRecord, sessionStreamKey, updateNativeRecordStream, writeCachedNativeRecord, type NativeRecordStreamState } from './timeline-cache'
+import { useSelect } from '@/lib/selectStore'
 import { recoverTimelineRead } from './timeline-read-recovery'
 import { checkNativeRevisions, fillNativeRecordTurns, heldTurnOf, keepsRevisions, mergeNativeRecordPage, projectNativeRecord, replaceNativeRecordTurns } from './native-record-state'
 
@@ -16,15 +17,22 @@ const MAX_STALE = 40
 /** ACP records come from the task page archive, not a second parse of the provider's JSONL. */
 export function useNativeSessionRecord(deviceId: string, sessionId: string, enabled: boolean, online: boolean, local = false) {
   // What this phone read last time is drawn first, and is all there is while that machine is away.
-  const [record, setRecord] = useState<NativeSessionRecord | null>(() => enabled ? readCachedNativeRecord({ deviceId, sessionId }) : null)
-  const [error, setError] = useState<string | null>(null)
-  const [errorCode, setErrorCode] = useState<string | null>(null)
-  /** The last read failed because that machine did not answer (not because it refused): the page says it is away. */
-  const [unreachable, setUnreachable] = useState(false)
+  const streamKey = useMemo(() => ({ deviceId, sessionId }), [deviceId, sessionId])
+  const followed = useSelect(nativeRecordStreams, (map) => map.get(sessionStreamKey(streamKey)), Object.is)
+  const initial = useMemo(() => initialNativeRecordStream(streamKey, enabled), [streamKey, enabled])
+  const { record, error, errorCode, unreachable, confirmed } = followed ?? initial
+  const { setRecord, setError, setErrorCode, setUnreachable, setConfirmed } = useMemo(() => {
+    const field = <K extends keyof NativeRecordStreamState>(name: K) =>
+      (value: NativeRecordStreamState[K] | ((current: NativeRecordStreamState[K]) => NativeRecordStreamState[K])) =>
+        updateNativeRecordStream(streamKey, (current) => {
+          const next = typeof value === 'function' ? (value as (old: NativeRecordStreamState[K]) => NativeRecordStreamState[K])(current[name]) : value
+          return next === current[name] ? current : { ...current, [name]: next }
+        }, enabled)
+    return { setRecord: field('record'), setError: field('error'), setErrorCode: field('errorCode'), setUnreachable: field('unreachable'), setConfirmed: field('confirmed') }
+  }, [streamKey, enabled])
   const epoch = useRef(0)
   const recoveryAbort = useRef(new AbortController())
   const key = `${deviceId}/${sessionId}`
-  const [confirmed, setConfirmed] = useState<{ key: string; epoch: number } | null>(null)
   const connected = useRef(online)
   const current = useRef({ deviceId, sessionId, enabled, online })
   current.current = { deviceId, sessionId, enabled, online }
@@ -60,7 +68,7 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
       value.current = stored; setRecord(stored)
     }) : Promise.resolve()
     return () => { connectionEpoch.current++; recoveryAbort.current.abort() }
-  }, [deviceId, sessionId, key, enabled, online])
+  }, [deviceId, sessionId, key, enabled, online, setConfirmed, setError, setErrorCode, setRecord])
   const read = useCallback((mode: 'poll' | 'older' | 'newer' | 'tail' = 'poll') => {
     const ownEpoch = epoch.current
     const signal = recoveryAbort.current.signal
@@ -136,7 +144,7 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
       if (epoch.current !== ownEpoch) return
       setConfirmed(null); throw error
     })
-  }, [deviceId, sessionId, local, key])
+  }, [deviceId, sessionId, local, key, setConfirmed, setError, setErrorCode, setRecord, setUnreachable])
   useEffect(() => {
     if (!enabled || !online || local) return
     return onLinkChange(deviceId, open => {
@@ -146,7 +154,7 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
       checkAll.current = true
       if (open) { const ownEpoch = epoch.current; void read('tail').catch(error => { if (epoch.current === ownEpoch) setError(messageForUser(error)) }) }
     })
-  }, [deviceId, enabled, online, local, read])
+  }, [deviceId, enabled, online, local, read, setConfirmed, setError])
   useEffect(() => {
     if (!enabled || !online) return
     let active = true
@@ -163,7 +171,7 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
     }
     void poll()
     return () => { active = false; clearTimeout(timer) }
-  }, [enabled, online, read])
+  }, [enabled, online, read, setError, setErrorCode, setUnreachable])
   const heldWanted = useRef(new Set<number>())
   const heldReading = useRef(new Set<number>())
   const heldTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -192,7 +200,7 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
         })
         .finally(() => { for (const seq of wanted) heldReading.current.delete(seq) })
     }, 30)
-  }, [deviceId, sessionId, local])
+  }, [deviceId, sessionId, local, setRecord])
   const report = (error: unknown) => setError(messageForUser(error))
   // Wire pages and notification projection recreate unchanged turns; the transcript syncs by identity.
   const shown = useStructurallyShared(useMemo(() => projectNativeRecord(record), [record]))

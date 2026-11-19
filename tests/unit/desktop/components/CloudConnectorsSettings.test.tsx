@@ -15,9 +15,10 @@ vi.mock('@/lib/connectionBridge',() => ({ useConnectionAuthority: () => ({ route
   } }),
 }))
 
-vi.mock('@/components/settings/channels/useChatChannels', () => ({ useChatChannels: () => ({ client: null, list: null, status: 'absent', error: '', refresh: async () => {}, apply: () => {} }) }))
+// No chat channels client in this build: the `chatChannels` replica reads `absent`.
+vi.mock('@/lib/chatChannels', () => ({ rendererChatChannelsClient: () => null }))
 vi.mock('@/lib/assistantPanelBridge',() => ({ useAssistantPanelAccountId: () => 'owner',requireAssistantPanelBridge: () => { throw new Error('Unexpected identity lookup') } }))
-vi.mock('@/components/assistant/assistant-panel-files',() => ({ ASSISTANT_PANEL_CHANGED: 'panel-changed',useCloudAssistantFiles: () => ({ panel: { ownerId: 'owner',assistantId: 'a1' } }) }))
+vi.mock('@/components/assistant/assistant-panel-files',() => ({ useCloudAssistantFiles: () => ({ panel: { ownerId: 'owner',assistantId: 'a1' } }) }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-shell',() => ({ useAssistantShell: () => ({ assistant: { id: 'a1' },chatId: 'dm' }) }))
 const integrations = vi.hoisted(() => ({
   value: null as unknown,
@@ -57,10 +58,8 @@ const LIST = [
 const state = (over: Record<string, unknown> = {}) => ({
   integrations: LIST,
   configuredConnections: { feishu: true },
-  connectionStatus: { feishu: { displayName: '示例用户' } },
-  checkedConnections: { feishu: { connected: true } },
+  connectionStatus: { feishu: { connected: true, displayName: '示例用户' } },
   connectionCheckError: null,
-  hasConfiguredConnections: true,
   configuredConnectionsError: null,
   reloadConnections: vi.fn(),
   hasList: true,
@@ -161,7 +160,7 @@ describe('咕咕 · 连接应用 · 云端', () => {
   })
 
   it('授权失效与网络检查失败分开处理,检查失败只重查', async () => {
-    integrations.value = state({ checkedConnections: { feishu: { connected: false, errorType: 'authorization_expired' } } })
+    integrations.value = state({ connectionStatus: { feishu: { connected: false, errorType: 'authorization_expired' } } })
     await render()
     expect(q('assistant-connector-feishu')!.textContent).toContain('需要重新授权')
     expect(q('assistant-connect-feishu')).toBeNull()
@@ -178,7 +177,7 @@ describe('咕咕 · 连接应用 · 云端', () => {
 
   it('读不到列表:如实说读失败并给重试,❌ 画一张空的「可用」', async () => {
     const reloadList = vi.fn()
-    integrations.value = state({ integrations: [], hasList: false, listError: 'boom', reloadList })
+    integrations.value = state({ integrations: null, hasList: false, listError: 'boom', reloadList })
     await render()
     expect(harness.container.textContent).toContain('暂时读不到')
     expect(q('assistant-connectors-available')).toBeNull()

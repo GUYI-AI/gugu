@@ -1,5 +1,8 @@
 import { ExternalLink, MessageSquare } from '@/lib/icons'
 import { useMemo } from 'react';
+import { Unknown } from '@/components/ui/Unknown';
+import type { Reading } from '@/lib/replica';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import { rpc } from '@renderer/lib/ipc';
 import { MarkdownRenderer } from '@renderer/lib/ui/markdown-renderer';
 import { RelativeTime } from '@renderer/lib/ui/relative-time';
@@ -85,25 +88,30 @@ function CommentItem({ comment }: { comment: PullRequestSessionItem }) {
 
 export function CommentsList({
   comments,
-  isLoading,
-  error,
+  onRetry,
 }: {
-  comments: PullRequestSessionItem[];
-  isLoading?: boolean;
-  error?: Error | null;
+  comments: Reading<PullRequestSessionItem[]>;
+  onRetry: () => void;
 }) {
   const { translate } = useSessionMessages();
-  const sorted = useMemo(() => [...comments].sort(sortPullRequestSessionItems), [comments]);
+  const sorted = useMemo(
+    () => (comments.state === 'value' ? [...comments.value].sort(sortPullRequestSessionItems) : null),
+    [comments]
+  );
 
-  if (isLoading && sorted.length === 0) {
-    return <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.loadingComments')}</div>;
+  if (comments.state === 'unknown') {
+    return (
+      <div className="px-3 py-2">
+        <Unknown className="h-10 w-full" />
+      </div>
+    );
   }
 
-  if (error && sorted.length === 0) {
-    return <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.commentsFailed')}</div>;
+  if (comments.state === 'error') {
+    return <ReadFailedLine className="px-3 py-2" message={translate('pr.commentsFailed')} onRetry={onRetry} />;
   }
 
-  if (sorted.length === 0) {
+  if (!sorted || sorted.length === 0) {
     return <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.noComments')}</div>;
   }
 
@@ -112,11 +120,8 @@ export function CommentsList({
       {sorted.map((comment) => (
         <CommentItem key={comment.id} comment={comment} />
       ))}
-      {isLoading && (
-        <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.loadingComments')}</div>
-      )}
-      {error && (
-        <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.commentsFailed')}</div>
+      {comments.error && (
+        <ReadFailedLine className="px-3 py-2" message={translate('pr.commentsFailed')} onRetry={onRetry} />
       )}
     </div>
   );

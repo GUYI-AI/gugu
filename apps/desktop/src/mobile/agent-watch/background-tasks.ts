@@ -1,5 +1,5 @@
 import { metadataSeparator } from '@/i18n/format'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import {
   collectBackgroundCommandRoster,
   collectSubagentRoster,
@@ -12,6 +12,8 @@ import { isSubagentDismissed } from '@renderer/features/sessions/view/subagent-d
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { rendererLogger } from '@/lib/log'
 import { fetchBackgroundTasks } from './sessionpage-rpc'
+import { replica, useReplica } from '@/lib/replica'
+import { assistantTimelineClient } from '@/components/assistant/assistantTimelineClient'
 
 const log = rendererLogger('mobile/agent-watch/background-tasks')
 
@@ -48,9 +50,25 @@ export function backgroundTaskRosters(
   }
 }
 
+/** Which of a session's background tasks its machine still runs. No push: polled while a candidate may be running. */
+export const sessionBackgroundTasks = replica({
+  name: 'sessionBackgroundTasks',
+  scope: 'account',
+  read: async (_owner: string, deviceId: string, sessionId: string, local: boolean): Promise<{ runningCommandTaskIds: string[] | null }> => {
+    try {
+      return await (local ? assistantTimelineClient(true).fetchBackgroundTasks!(deviceId, sessionId) : fetchBackgroundTasks(deviceId, sessionId))
+    } catch (error) {
+      log.info({ error: String(error), deviceId }, 'that computer cannot report its running background tasks')
+      throw error
+    }
+  },
+  fresh: 0,
+  refreshEvery: BACKGROUND_TASKS_POLL_MS,
+})
+
 /**
  * `dismissals`:人按过 × 就加一,让名单重算(收起表是 mobx 的,React 这边不订它)。
- * `fetchRunning`:问那台机器哪些还活着;默认走 sessionpage RPC(另一台机器),本机会话传本机的那一问。
+ * `local`:问本机的运行时(本机会话),否则经 sessionpage RPC 问那台机器。
  */
 export function usePhoneBackgroundTasks(
   deviceId: string,
@@ -59,37 +77,20 @@ export function usePhoneBackgroundTasks(
   dismissals: number,
   enabled: boolean,
   subagentSteps: readonly SubagentRegistryEntry[],
-  fetchRunning?: (deviceId: string, sessionId: string) => Promise<{ runningCommandTaskIds: string[] | null }>,
+  local = false,
 ): PhoneBackgroundTasks {
-  const [running, setRunning] = useState<{ key: string; ids: string[] | null; canStop: boolean } | null>(null)
-  const key = `${deviceId}:${sessionId}`
-  const known = running?.key === key ? running : null
   // 先不筛地算一遍:有没有东西可能在跑,决定要不要去问那台机器。
   const candidates = useMemo(() => (enabled ? backgroundTaskRosters(sessionId, turns, null, subagentSteps) : { commands: [], subagents: [] }), [enabled, sessionId, turns, dismissals, subagentSteps]) // eslint-disable-line react-hooks/exhaustive-deps -- dismissals re-reads the mobx dismissal set
   const asking = candidates.commands.length + candidates.subagents.length > 0
-  useEffect(() => {
-    if (!asking) return
-    let live = true
-    const fetchRunningIds = fetchRunning ?? fetchBackgroundTasks
-    const ask = () => {
-      fetchRunningIds(deviceId, sessionId).then(
-        (value) => { if (live) setRunning({ key, ids: value.runningCommandTaskIds, canStop: true }) },
-        (error: unknown) => {
-          log.info({ error: String(error), deviceId }, 'that computer cannot report its running background tasks')
-          if (live) setRunning({ key, ids: null, canStop: false })
-        },
-      )
-    }
-    ask()
-    const timer = setInterval(ask, BACKGROUND_TASKS_POLL_MS)
-    return () => { live = false; clearInterval(timer) }
-  }, [asking, deviceId, sessionId, key, fetchRunning])
+  const reading = useReplica(sessionBackgroundTasks, asking ? [deviceId, sessionId, local] : null)
   return useMemo(() => {
     if (!asking) return { commands: [], subagents: [], canStop: false }
-    const ids = known?.ids ?? null
+    // Not answered yet, or that computer cannot tell: every candidate unfiltered, no stop key.
+    if (reading.state !== 'value' || reading.error) return { commands: candidates.commands, subagents: candidates.subagents, canStop: false }
+    const ids = reading.value.runningCommandTaskIds
     const commands = ids === null ? candidates.commands : candidates.commands.filter((entry) => ids.includes(entry.taskId))
-    return { commands, subagents: candidates.subagents, canStop: known?.canStop ?? false }
-  }, [asking, candidates, known])
+    return { commands, subagents: candidates.subagents, canStop: true }
+  }, [asking, candidates, reading])
 }
 
 /** 「后台 · 2 条命令 · 1 个子智能体」:与桌面那一行同一组文案键。 */

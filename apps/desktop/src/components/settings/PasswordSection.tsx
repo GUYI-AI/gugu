@@ -1,8 +1,11 @@
 import { metadataSeparator } from '@/i18n/format'
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
-import { PASSWORD_FILL_EVENT, takePasswordFill, type PasswordBetaUi, type PasswordField, type PasswordGrant, type PasswordItem, type PasswordSaveDraft, type PasswordSecrets, type PasswordSnapshot, type PasswordUiCommand, type PasswordUiReply } from '@gugu/core/shared/passwordBetaProtocol'
+import { PASSWORD_FILL_EVENT, takePasswordFill, type PasswordBetaUi, type PasswordField, type PasswordGrant, type PasswordItem, type PasswordSaveDraft, type PasswordSecrets, type PasswordSnapshot, type PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
+import { passwordSaveDraft, passwordVault } from '@/lib/passwordBetaNotifications'
+import { useReplica, type Reading } from '@/lib/replica'
+import { Unknown } from '../ui/Unknown'
 import { ChevronRight, Eye, EyeOff, Lock, LockOpen, Plus, Trash, X } from '@/lib/icons'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
 import { useSettingsDetail } from './SettingsDetailNavigation'
@@ -12,9 +15,8 @@ import { Field } from '../ui/Field'
 import { IconButton } from '../ui/IconButton'
 import { SearchField } from '../ui/SearchField'
 import { RecoveryOffer } from '../password/PasswordRecovery'
-import { passwordErrorText } from '../password/passwordModel'
+import { usePasswordCommand } from '../password/passwordModel'
 import { PasswordUnlockGate } from '../password/PasswordUnlockGate'
-import { publishPasswordSnapshot } from '@/lib/passwordBetaNotifications'
 
 declare global { interface Window { passwordVaultBeta?: PasswordBetaUi } }
 
@@ -24,7 +26,7 @@ declare global { interface Window { passwordVaultBeta?: PasswordBetaUi } }
  * A credential is key-value: website, account, password, plus any named fields.
  * Access is per credential: listed Agents/projects may read or write; everyone else must ask each time.
  */
-type View = { kind: 'list' } | { kind: 'form'; id?: string; request?: { id: string; draft: PasswordSaveDraft } } | { kind: 'detail'; id: string } | { kind: 'grants'; id: string }
+type View = { kind: 'list' } | { kind: 'form'; id?: string } | { kind: 'request'; requestId: string } | { kind: 'detail'; id: string } | { kind: 'grants'; id: string }
 
 const host = (origin: string) => { try { return new URL(origin).host } catch { return origin } }
 const title = (item: PasswordItem) => item.name || host(item.origin)
@@ -40,7 +42,6 @@ function matches(item: PasswordItem, query: string): boolean {
     ...item.fields.map(field => field.value ?? '')].join('\n').toLowerCase()
   return text.includes(query.trim().toLowerCase())
 }
-const errorText = passwordErrorText
 const LEVEL = { read: '可读', write: '可写' } as const
 /** A row is the field: the value is typed straight into it, and what you can do to it shows when you point at or edit it. */
 const ROW = 'group/row'
@@ -53,64 +54,45 @@ const secretMark = (label: string, secret: boolean, change: (value: boolean) => 
     title={secret ? '保密：智能体看不到值，只能由咕咕代填。点一下改为不保密' : '不保密：授权过的智能体能读到。点一下改为保密'}>{secret ? <Lock /> : <LockOpen />}</IconButton>
 
 export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLElement | null } = {}) {
-  const [snapshot, setSnapshot] = useState<PasswordSnapshot>()
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const clearError = useCallback(() => setError(''), [])
-  const invoke = useCallback(async (command: PasswordUiCommand) => {
-    const reply = await window.passwordVaultBeta?.invoke(command)
-    if (!reply?.ok) { setError(errorText(reply?.code ?? '')); return undefined }
-    setSnapshot(reply.snapshot); publishPasswordSnapshot(reply.snapshot); setError('')
-    return reply
-  }, [])
-  const run = useCallback(async (command: PasswordUiCommand) => {
-    setBusy(true)
-    try { return await invoke(command) } catch { setError(errorText('')); return undefined } finally { setBusy(false) }
-  }, [invoke])
-  // @@@effect-flow - the local password vault answers and pushes its own state; it is never kept outside the vault
-  useEffect(() => {
-    if (!PASSWORD_BETA_ENABLED) return
-    void invoke({ type: 'snapshot' })
-    return window.passwordVaultBeta?.subscribe(() => { void invoke({ type: 'snapshot' }) })
-  }, [invoke])
+  const vault = useReplica(passwordVault, PASSWORD_BETA_ENABLED ? [] : null)
+  const snapshot = vault.state === 'value' ? vault.value : undefined
+  const { busy, error, run, clear } = usePasswordCommand()
   if (!PASSWORD_BETA_ENABLED) return null
-  return <PasswordUnlockGate sync={snapshot?.sync} busy={busy} error={error} run={run} clearError={clearError}>
-    <PasswordContent snapshot={snapshot} busy={busy} error={error} run={run} invoke={invoke} clearError={clearError} actionsHost={actionsHost} />
+  return <PasswordUnlockGate sync={snapshot?.sync} busy={busy} error={error} run={run} clearError={clear}>
+    <PasswordContent vault={vault} snapshot={snapshot} busy={busy} error={error} run={run} clear={clear} actionsHost={actionsHost} />
   </PasswordUnlockGate>
 }
 
 /** Unmounting the credential screens while locked also clears their navigation and draft inputs. */
-function PasswordContent({ snapshot, busy, error, run, invoke, clearError, actionsHost }: Omit<ScreenProps, 'go'> & {
-  invoke(command: PasswordUiCommand): Promise<Extract<PasswordUiReply, { ok: true }> | undefined>
-  clearError(): void; actionsHost?: () => HTMLElement | null
+function PasswordContent({ vault, snapshot, busy, error, run, clear, actionsHost }: Omit<ScreenProps, 'go'> & {
+  vault: Reading<PasswordSnapshot>; clear(): void; actionsHost?: () => HTMLElement | null
 }) {
   const [view, setView] = useState<View>({ kind: 'list' })
   const [query, setQuery] = useState('')
   // 「去填写」 from an Agent's request in chat: open the same add/edit form, pre-filled with what the Agent proposed.
-  // @@@effect-flow - opening the form an Agent's save request asks for, once per request.
+  // @@@effect-flow(event) - opens the form an Agent's save request asks for (its id only, once per request); what it proposed is the passwordSaveDraft reading
   useEffect(() => {
     if (!PASSWORD_BETA_ENABLED) return
     const open = () => {
       const requestId = takePasswordFill()
-      if (requestId) void invoke({ type: 'save-draft', requestId }).then(reply => {
-        if (reply?.draft) { clearError(); setView({ kind: 'form', id: reply.draft.credentialId, request: { id: requestId, draft: reply.draft } }) }
-      })
+      if (requestId) { clear(); setView({ kind: 'request', requestId }) }
     }
     open()
     window.addEventListener(PASSWORD_FILL_EVENT, open)
     return () => window.removeEventListener(PASSWORD_FILL_EVENT, open)
-  }, [invoke, clearError])
+  }, [clear])
   const item = 'id' in view && view.id ? snapshot?.items.find(value => value.reference.id === view.id) : undefined
   // A credential deleted elsewhere returns to the list instead of showing a stale page.
   useEffect(() => { if ('id' in view && view.id && snapshot && !item) setView({ kind: 'list' }) }, [view, snapshot, item])
-  const go = (next: View) => { clearError(); setView(next) }
+  const go = (next: View) => { clear(); setView(next) }
 
   const props = { snapshot, busy, run, go, error }
   // Asked once, right after the first password is kept (the detail page that follows the save, or any page here).
   const offer = <RecoveryOffer snapshot={snapshot} />
-  if (view.kind === 'form') return <><CredentialForm key={view.request?.id ?? view.id ?? 'new'} item={item} request={view.request} {...props} />{offer}</>
+  if (view.kind === 'form') return <><CredentialForm key={view.id ?? 'new'} item={item} {...props} />{offer}</>
+  if (view.kind === 'request') return <><RequestedForm key={view.requestId} requestId={view.requestId} {...props} />{offer}</>
   if (view.kind === 'detail' && item) return <><CredentialDetail key={item.reference.id} item={item} {...props} />{offer}</>
-  if (view.kind === 'grants' && item) return <><GrantsPage item={item} {...props} />{offer}</>
+  if (view.kind === 'grants' && item && snapshot) return <><GrantsPage {...props} item={item} snapshot={snapshot} />{offer}</>
   const add = <Button variant="primary" disabled={busy} onClick={() => go({ kind: 'form' })}>添加</Button>
   const slot = actionsHost?.()
   const listed = snapshot?.items.filter(value => !query.trim() || matches(value, query))
@@ -122,15 +104,43 @@ function PasswordContent({ snapshot, busy, error, run, invoke, clearError, actio
     {!!snapshot?.items.length && <SearchField aria-label="搜索密码" placeholder="搜索名称、网站或账号" value={query} onChange={event => setQuery(event.target.value)}
       clearLabel="清除搜索" onClear={() => setQuery('')} />}
     <SettingsGroup presentation="navigation">
+      {vault.state === 'unknown' && <SettingsRow title={<Unknown className="w-40" />} />}
       {listed?.map(value => <SettingsRow key={value.reference.id} title={title(value)} description={subtitle(value)}
         control={<span className="flex items-center gap-1 text-[length:var(--font-caption)] text-[var(--text-secondary)]">{!!value.grants.length && `${value.grants.length} 个智能体`}<ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" /></span>}
         onClick={() => go({ kind: 'detail', id: value.reference.id })} />)}
       {!!snapshot?.items.length && !listed?.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">没有匹配的密码</span>} />}
       {snapshot && !snapshot.items.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">还没有保存密码</span>} />}
     </SettingsGroup>
+    {(vault.state === 'error' || (vault.state === 'value' && vault.error)) && <div className="flex items-center gap-2" data-testid="password-vault-failed">
+      <SettingsNote tone="danger" role="alert">{vault.error?.message}</SettingsNote>
+      <Button variant="secondary" size="sm" onClick={() => { void passwordVault.refresh() }}>重试</Button>
+    </div>}
     {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
     {offer}
   </SettingsPage>
+}
+
+/** The form an Agent's save request opens, with what it proposed (passwordSaveDraft) handed to it once. */
+function RequestedForm({ requestId, ...props }: ScreenProps & { requestId: string }) {
+  const draft = useReplica(passwordSaveDraft, [requestId])
+  const credentialId = draft.state === 'value' ? draft.value?.credentialId : undefined
+  // A request to change a stored credential opens on that credential, once the vault's state is there to find it in.
+  if (draft.state === 'value' && draft.value && !(credentialId && !props.snapshot)) {
+    const item = credentialId ? props.snapshot?.items.find(value => value.reference.id === credentialId) : undefined
+    return <CredentialForm item={item} request={{ id: requestId, draft: draft.value }} {...props} />
+  }
+  return <RequestWaiting requestId={requestId} go={props.go}>
+    {draft.state === 'error' ? <>
+      <SettingsNote tone="danger" role="alert">{draft.error.message}</SettingsNote>
+      <Button variant="secondary" onClick={() => { void passwordSaveDraft.refresh(requestId) }}>重试</Button>
+    </> : draft.state === 'value' && !draft.value ? <SettingsNote>这条保存请求已经处理过或已过期。</SettingsNote>
+      : <Unknown className="h-40 w-full" />}
+  </RequestWaiting>
+}
+
+function RequestWaiting({ requestId, go, children }: { requestId: string; go(view: View): void; children: ReactNode }) {
+  useSettingsDetail(`password-request:${requestId}`, '添加密码', () => go({ kind: 'list' }))
+  return <SettingsPage data-testid="password-request">{children}</SettingsPage>
 }
 
 interface ScreenProps {
@@ -274,11 +284,11 @@ function CredentialDetail({ item, busy, run, go, error }: ScreenProps & { item: 
   </SettingsPage>
 }
 
-function GrantsPage({ item, snapshot, busy, run, go, error }: ScreenProps & { item: PasswordItem }) {
+function GrantsPage({ item, snapshot, busy, run, go, error }: ScreenProps & { item: PasswordItem; snapshot: PasswordSnapshot }) {
   useSettingsDetail(`password-grants:${item.reference.id}`, '已授权的智能体', () => go({ kind: 'detail', id: item.reference.id }))
   const [query, setQuery] = useState('')
   const [adding, setAdding] = useState(false)
-  const candidates = snapshot?.candidates ?? []
+  const candidates = snapshot.candidates
   const label = (subject: string) => candidates.find(value => value.subject === subject)
   const save = (grants: PasswordGrant[]) => { void run({ type: 'grants', reference: item.reference, grants }) }
   const set = (subject: string, level?: 'read' | 'write') => {

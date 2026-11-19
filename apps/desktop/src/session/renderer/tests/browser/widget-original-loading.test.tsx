@@ -13,14 +13,18 @@ vi.mock('@/store/auth', async original => ({ ...(await original<object>()), useA
 vi.mock('@/store/theme', async original => ({ ...(await original<object>()), useTheme: () => ({ theme: 'light' }) }))
 vi.mock('@/store/chatContext', async original => ({ ...(await original<object>()), useChatStore: () => ({ subscribeAccountRevision: fixture.revision }) }))
 vi.mock('@/lib/widgetRegistry', async original => ({ ...(await original<object>()), widgetForOriginal: fixture.read }))
-vi.mock('@/lib/widgetSnapshots', async original => ({ ...(await original<object>()), widgetSnapshots: { read: async () => null } }))
+vi.mock('@/lib/widgetSnapshots', async original => ({ ...(await original<object>()), widgetSnapshots: { read: async () => null, capture: () => ({ accountId: 'reader', generation: 0 }) } }))
 vi.mock('@/components/appSlot/appsHere', () => ({ appsHere: {} }))
 vi.mock('@/components/appSlot/PhoneAppFrame', () => ({ PhoneAppFrame: () => <iframe title="resolved original" /> }))
 vi.mock('@/session/renderer/features/extensions/extension-view-layer', () => ({ ExtensionPage: () => <iframe title="resolved original" /> }))
-vi.mock('@/session/renderer/features/extensions/installed-extensions-store', async original => ({ ...(await original<object>()), installedExtensionsStore: {
+vi.mock('@/session/renderer/features/extensions/installed-extensions', async original => {
+  const installed = {
   isLoaded: true, isEnabled: () => true,
   manifestFor: () => ({ id: 'vote', version: '1', contributes: { tabs: [{ name: 'poll', widget: { height: 240 } }] } }),
-} }))
+}
+  return { ...(await original<object>()), useInstalledApps: () => ({ state: 'value', stale: false, error: null, value: installed }),
+    peekInstalledApps: () => installed, peekInstalledAppsTracked: () => installed, fetchInstalledApps: async () => installed }
+})
 
 let harness: ReturnType<typeof createReactHarness>
 afterEach(() => { harness?.cleanup(); fixture.read.mockReset() })

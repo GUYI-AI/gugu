@@ -78,7 +78,7 @@ export function ModelSection({ addRequested, onAddClose }: { addRequested?: bool
           clearLabel={t('model.searchClear')} onClear={() => setQuery('')} data-testid="settings-model-search" />
         {loadFailed ? <SettingsRow description={loadFailed} control={<Button variant="secondary" size="sm" onClick={load}>{t('model.retry')}</Button>} />
           : groups === null ? <Unknown className="h-64 w-full" /> : <>
-            {catalog.state === 'value' ? <RefreshFailed error={catalog.error} onRetry={load} /> : null}
+            {catalog.state === 'value' ? <RefreshFailed reading={catalog} /> : null}
             {needle && groups.usable.length === 0 && groups.locked.length === 0 && <SettingsNote>{t('model.noMatch')}</SettingsNote>}
             <div className="gg-model-rows" data-testid="settings-model-usable">
               {groups.usable.map(model => <SettingsRow key={model.id} data-model-id={model.id} title={model.displayName}

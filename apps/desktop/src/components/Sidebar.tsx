@@ -7,7 +7,8 @@ import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type D
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { platform } from '../platform'
-import { installedExtensionsStore, type RailApp } from '../session/renderer/features/extensions/installed-extensions-store'
+import { LOCAL_HOST, marketUpdates, updateCountOf, useInstalledApps, type InstalledApps, type RailApp } from '../session/renderer/features/extensions/installed-extensions'
+import { useReplica } from '../lib/replica'
 import { AppConversationUnread } from './extensionBundle/AppConversationUnread'
 import { extensionSurfaceStore } from '../session/renderer/features/extensions/extension-surface-store'
 import { appIsRunning, openApp, openAppInWindow, quitApp, setDock, unpinFromDock } from '../session/renderer/features/extensions/app-dock'
@@ -100,7 +101,7 @@ interface RailItemProps extends Omit<React.ComponentPropsWithRef<'button'>, 'tit
   onClick?: () => void
   title: string
   testId?: AutomationTestId
-  badge?: number
+  badge?: number | null
   /** 点的颜色:默认红;`warn` = 琥珀(有人在等你,同列表里「需要你」那一色)。 */
   badgeTone?: 'warn'
   /** Which entry this is (`tasks` / `chats` / …): its own small move on hover hangs off this (Sidebar.css). */
@@ -147,7 +148,7 @@ function RailItem({
         onContextMenu={onContextMenu}
       >
         {icon}
-        {badge > 0 && (
+        {badge != null && badge > 0 && (
           <span className="gg-sidebar-badge" data-tone={badgeTone} aria-hidden="true" />
         )}
         {running && <i className="gg-sidebar-running" aria-hidden="true" />}
@@ -163,7 +164,8 @@ function HelpOnRail() {
   const { t } = useTranslation('productTour')
   const { user } = useAuth()
   const tour = useProductTourState(user?.id ?? null)
-  const resume = resumableStep(tour.data)
+  // Progress not read yet (or unreadable): no 「继续」 entry and no dot until it is.
+  const resume = resumableStep(tour.state === 'value' ? tour.value : null)
   const [open, setOpen] = useState(false)
   const request = (detail: ProductTourRequest) => {
     window.dispatchEvent(new CustomEvent(UI_EVENTS.reopenProductTour, { detail }))
@@ -195,13 +197,13 @@ function sessionPagePlace(): 'tasks' | 'apps' | { app: string } {
   return 'tasks'
 }
 
-const DockItem = observer(function DockItem({ app, active, onOpen, onOpenInWindow, onUnpin, onQuit }: { app: RailApp; active: boolean; onOpen: () => void; onOpenInWindow: () => void; onUnpin: () => void; onQuit: () => void }) {
+const DockItem = observer(function DockItem({ apps, app, active, onOpen, onOpenInWindow, onUnpin, onQuit }: { apps: InstalledApps; app: RailApp; active: boolean; onOpen: () => void; onOpenInWindow: () => void; onUnpin: () => void; onQuit: () => void }) {
   const { t } = useTranslation('main')
   // Dragged to reorder; a click (the pointer moved less than 4px) still opens it. A right click never drags (dnd-kit's
   // pointer sensor takes the primary button only).
   const { setNodeRef, listeners, transform, transition, isDragging } = useSortable({ id: app.extensionId })
   const { menuPos, onContextMenu, closeMenu } = useRowContextMenu()
-  const running = appIsRunning(app.extensionId)
+  const running = appIsRunning(apps, app.extensionId)
   return (
     <>
       <div
@@ -211,7 +213,7 @@ const DockItem = observer(function DockItem({ app, active, onOpen, onOpenInWindo
         style={{ transform: CSS.Transform.toString(transform), transition }}
         {...listeners}
       >
-        {installedExtensionsStore.manifestFor(app.extensionId)?.contributes.unreadSource
+        {apps.manifestFor(app.extensionId)?.contributes.unreadSource
           ? <AppConversationUnread extensionId={app.extensionId}>{unread => <RailItem
               icon={<RailAppIcon app={app} />} active={active} onClick={onOpen} title={app.name}
               badge={unread === true || extensionSurfaceStore.badgedAnywhere(app.kind) ? 1 : 0}
@@ -248,14 +250,14 @@ const DockItem = observer(function DockItem({ app, active, onOpen, onOpenInWindo
  * voice note being recorded in it. There only while the App is where the assistant lives — installed, on, trusted
  * (`target.kind === 'app'`); otherwise nothing of it is on the rail and its chat is a chat in the message list.
  */
-const AssistantAppItem = observer(function AssistantAppItem({ app, chatId, active, onOpen }: { app: RailApp; chatId: string | null; active: boolean; onOpen: () => void }) {
+const AssistantAppItem = observer(function AssistantAppItem({ apps, app, chatId, active, onOpen }: { apps: InstalledApps; app: RailApp; chatId: string | null; active: boolean; onOpen: () => void }) {
   const { chats } = useChatStore('chats')
   const unread = !!chatId && assistantEntryUnread(chats, chatId) === true
   const { t: tVoice } = useTranslation('voiceNotes')
   const { recording } = useVoiceNoteHandler()
   return (
     <RailItem icon={<RailAppIcon app={app} />} active={active} onClick={onOpen} title={recording ? tVoice('bar.recording') : app.name}
-      testId={AUTOMATION_TEST_IDS.sidebarAssistantNav} rail="assistant" running={appIsRunning(app.extensionId)}
+      testId={AUTOMATION_TEST_IDS.sidebarAssistantNav} rail="assistant" running={appIsRunning(apps, app.extensionId)}
       badge={recording || unread || extensionSurfaceStore.badgedAnywhere(app.kind) ? 1 : 0} />
   )
 })
@@ -268,10 +270,14 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
   const place = sessionsShown ? sessionPagePlace() : null
   // The assistant App heads the group (AssistantAppItem), so it is not a second icon among the pinned ones.
   const target = useAssistantEntryTarget()
-  const assistantApp = target.kind === 'app' ? installedExtensionsStore.openableApps.find((app) => app.extensionId === ASSISTANT_APP_ID) ?? null : null
-  const apps = installedExtensionsStore.dockedApps.filter((app) => !(assistantApp && app.extensionId === ASSISTANT_APP_ID))
+  const installed = useInstalledApps(LOCAL_HOST)
+  const updates = useReplica(marketUpdates, [LOCAL_HOST])
+  const apps = installed.state === 'value' ? installed.value : null
+  const assistantApp = apps && target.kind === 'app' ? apps.openableApps.find((app) => app.extensionId === ASSISTANT_APP_ID) ?? null : null
+  const docked = apps ? apps.dockedApps.filter((app) => !(assistantApp && app.extensionId === ASSISTANT_APP_ID)) : null
   // A right click on 「App」 lists every App it can open, pinned or not: a click opens it, as its icon on the rail would.
-  const openable = installedExtensionsStore.openableApps
+  const openable = apps ? apps.openableApps : null
+  const updateCount = apps && updates.state === 'value' && updates.value.summary ? updateCountOf(updates.value.summary, apps) : null
   const open = (appId?: string) => {
     showSessions()
     if (appId) openApp(appId)
@@ -279,8 +285,8 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
   }
   const dockFailed = (error: unknown) => { rendererLogger('actions/Sidebar').error({ error: error }, 'action failed'); toast(t('shell.appDockFailed'), 'error', messageForUser(error)) }
   const reorder = ({ active, over }: DragEndEvent) => {
-    const dock = installedExtensionsStore.dock
-    if (!over || active.id === over.id) return
+    if (!apps || !over || active.id === over.id) return
+    const dock = apps.dock
     void setDock(arrayMove(dock, dock.indexOf(String(active.id)), dock.indexOf(String(over.id)))).catch(dockFailed)
   }
   return (
@@ -291,31 +297,31 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
         onClick={() => open()}
         title={t('shell.apps')}
         testId={AUTOMATION_TEST_IDS.sidebarAppsNav}
-        badge={installedExtensionsStore.updateCount}
+        badge={updateCount}
         rail="apps"
-        onContextMenu={openable.length > 0 ? onContextMenu : undefined}
+        onContextMenu={openable && openable.length > 0 ? onContextMenu : undefined}
         menuOpen={menuPos !== null}
       />
-      {menuPos && openable.length > 0 && (
+      {menuPos && openable && openable.length > 0 && (
         <Menu x={menuPos.x} y={menuPos.y} minWidth={180} onClose={closeMenu} ariaLabel={t('shell.apps')}>
           <OpenableAppRows apps={openable} onOpen={(appId) => { open(appId); closeMenu() }} />
         </Menu>
       )}
-      {(assistantApp || apps.length > 0) && <i className="gg-sidebar-rail-sep" aria-hidden="true" />}
-      {(assistantApp || apps.length > 0) && (
+      {(assistantApp || (docked && docked.length > 0)) && <i className="gg-sidebar-rail-sep" aria-hidden="true" />}
+      {apps && docked && (assistantApp || docked.length > 0) && (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={reorder}>
-          <SortableContext items={apps.map((app) => app.extensionId)} strategy={verticalListSortingStrategy}>
-            <SidebarAppDock apps={assistantApp ? [assistantApp, ...apps] : apps}
+          <SortableContext items={docked.map((app) => app.extensionId)} strategy={verticalListSortingStrategy}>
+            <SidebarAppDock apps={assistantApp ? [assistantApp, ...docked] : docked}
               moreButton={<RailItem icon={<MoreHorizontal size={22} />} title={t('shell.moreApps')} testId={AUTOMATION_TEST_IDS.sidebarMoreApps} />}
               onOpen={appId => {
                 if (assistantApp && appId === ASSISTANT_APP_ID) { showSessions(); openAssistantEntry() }
                 else open(appId)
               }}>
               {app => assistantApp && app.extensionId === ASSISTANT_APP_ID && target.kind === 'app' ? (
-                <AssistantAppItem app={assistantApp} chatId={target.chatId} active={typeof place === 'object' && place?.app === ASSISTANT_APP_ID}
+                <AssistantAppItem apps={apps} app={assistantApp} chatId={target.chatId} active={typeof place === 'object' && place?.app === ASSISTANT_APP_ID}
                   onOpen={() => { showSessions(); openAssistantEntry() }} />
               ) : (
-                <DockItem
+                <DockItem apps={apps}
                   app={app}
                   active={typeof place === 'object' && place?.app === app.extensionId}
                   onOpen={() => open(app.extensionId)}

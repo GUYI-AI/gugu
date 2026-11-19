@@ -1,8 +1,8 @@
-import { makeAutoObservable, when } from 'mobx'
+import { makeAutoObservable } from 'mobx'
 import { rendererLogger } from '../../lib/log'
 import { platform } from '../../platform'
 import { events, rpc } from '../../session/renderer/lib/ipc'
-import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
+import { fetchInstalledApps, PHONE_HOST } from '../../session/renderer/features/extensions/installed-extensions'
 import { firstRunRunner, type FirstRunArriving, type FirstRunDeps, type FirstRunState } from '../../session/shared/extensions/first-run'
 import { firstRunArrivingChannel } from '../../session/shared/extensions/marketEvents'
 import type { ExtensionManifest } from '../../session/shared/extensions/manifest'
@@ -51,8 +51,7 @@ function phoneDeps(): FirstRunDeps {
     // The phone's index points at an App only once its files are whole (phoneApps.ts `store`).
     here: async () => {
       await phoneApps.ready()
-      await when(() => installedExtensionsStore.isLoaded)
-      return installedExtensionsStore.manifests.map((manifest) => manifest.id)
+      return (await fetchInstalledApps(PHONE_HOST)).manifests.map((manifest) => manifest.id)
     },
     // An App that asks only for what this phone cannot give does nothing here (agents' tools): not put in.
     usable: (manifest: ExtensionManifest) => {

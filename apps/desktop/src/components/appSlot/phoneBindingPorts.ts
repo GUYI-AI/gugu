@@ -7,7 +7,7 @@ import { requireAssistantPanelBridge } from '../../lib/assistantPanelBridge'
 import { composeChatDraft } from '../../lib/composeDraft'
 import { getRendererAccessToken } from '../../lib/sessionPublication'
 import { chatDb, identityDb } from '../../lib/supabase'
-import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
+import { peekInstalledApps, PHONE_HOST } from '../../session/renderer/features/extensions/installed-extensions'
 import type { createAppFiles } from '../../session/shared/extensions/app-files-core'
 import { phoneApps } from './phoneApps'
 import { phoneAssistantLayer } from './phoneAssistantLayer'
@@ -31,19 +31,21 @@ const lazyPanelClient = {
   pending: async (...args: Parameters<AssistantPanelClient['pending']>) => (await panelCloud()).pending(...args),
 } as unknown as AssistantPanelClient
 
-/** The App as installed on this phone: its manifest, switch and the record of where it came from (phoneApps.ts). */
+/** The App as installed on this phone (phoneApps.ts), a one-moment answer. */
 export function phoneInstalledApp(extensionId: string): PhoneInstalledApp | null {
-  const manifest = installedExtensionsStore.manifestFor(extensionId)
-  if (!manifest) return null
+  const installed = peekInstalledApps(PHONE_HOST)
+  // @@@reading-default(moment) - a binding asked before the phone's list was read answers "not installed here": the call is refused, not drawn
+  const manifest = installed ? installed.manifestFor(extensionId) : undefined
+  if (!installed || !manifest) return null
   const record = phoneApps.installRecord(extensionId)
   return {
     manifest,
-    origin: record?.origin ?? installedExtensionsStore.origins[extensionId],
+    origin: record?.origin ?? installed.origins[extensionId],
     marketSource: record?.marketSource ?? null,
     manifestDigest: record?.manifestDigest ?? null,
     activeVariant: 'upstream',
-    enabled: installedExtensionsStore.isEnabled(extensionId),
-    mainTabKind: installedExtensionsStore.mainTabOf(extensionId)?.kind ?? null,
+    enabled: installed.isEnabled(extensionId),
+    mainTabKind: installed.mainTabOf(extensionId)?.kind ?? null,
   }
 }
 

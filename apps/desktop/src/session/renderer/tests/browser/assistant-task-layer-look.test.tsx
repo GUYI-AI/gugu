@@ -132,7 +132,7 @@ async function mountPanelLayer(theme: 'light' | 'dark') {
 
 const DEVICES = {
   devices: [], loading: false, error: null, refresh: async () => {}, rename: async () => {}, remove: async () => {},
-  listBoundAgents: async () => [], cloudComputer: { available: false, snapshot: null, loadError: null, wakeRefused: null },
+  listBoundAgents: async () => [],
 } as unknown as React.ContextType<typeof DevicesContext>;
 
 /** Pseudo-elements in `root` that paint something: the transcript's edge fades are drawn this way. */

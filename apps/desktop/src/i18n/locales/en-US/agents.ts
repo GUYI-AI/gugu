@@ -189,6 +189,7 @@ export default {
       "hostOffline": "{{machine}} is offline, so its activity can't be read",
       "hostSilent": "{{machine}} didn't answer, so its activity can't be read",
       "promptElsewhere": "A message from somewhere else",
+      "promptFailed": "This message could not be read",
       "recordNotFound": "This machine can't read this task's record",
       "toolCount": "{{state}} ×{{count}}",
       "unavailable": "Can't reach its activity right now"
@@ -329,6 +330,7 @@ export default {
       "original": "Keep the original configuration",
       "retryApply": "Retry switch",
       "retryCatalog": "Retry",
+      "retired": "{{model}} (no longer offered)",
       "deviceCatalogUnavailable": "Cannot read subscription models from the agent’s device right now.",
       "deviceSubscriptionMissing": "The agent’s device is not signed in to this model account.",
       "billed": "Provided by Gugu, billed in credits, and subject to platform quota windows.",

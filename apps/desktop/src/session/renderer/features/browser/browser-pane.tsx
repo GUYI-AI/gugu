@@ -27,7 +27,7 @@ import {
 import { decideBrowserReload } from './browser-navigation-controls';
 import { fitBrowserPageToPane } from './browser-page-fit';
 import { browserSessionStore } from './browser-session-store';
-import { installedExtensionsStore } from '../extensions/installed-extensions-store';
+import { peekInstalledAppsTracked } from '../extensions/installed-extensions';
 import { ExtensionMark } from '../extensions/extension-mark';
 import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
 import { folderItem, WORKSPACE_APP_KIND } from '../chats/chat-tabs/chat-panel-item';
@@ -131,7 +131,8 @@ export const ChatBrowserPane = observer(function ChatBrowserPane({ chatId, tabId
   const startPageActions: WorkspacePanelAction[] = [
     { id: 'files', label: translate('workspace.files'), icon: <Folder className="size-3.5" />, shortcutSettingsKey: 'session.sidebarFiles', onClick: openFolder },
     { id: 'browser', label: translate('workspace.browser'), icon: <Globe className="size-3.5" />, shortcutSettingsKey: 'session.openBrowser', onClick() {} },
-    ...installedExtensionsStore.openableApps.map((app) => ({
+    // What is installed here not read yet: only the host's own actions (the Apps appear when it is read).
+    ...(peekInstalledAppsTracked()?.openableApps ?? []).map((app) => ({
       id: app.extensionId, label: app.name, icon: <ExtensionMark iconDataUrl={app.iconDataUrl} />,
       onClick: () => openApp(app.extensionId, chatId, tabId),
     })),
@@ -237,6 +238,7 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
   const owningSessionId = session?.sessionId;
   const annotations = useBrowserAnnotations({ sessionId: owningSessionId, browserId, visible, available: !!adapter && !showStartPage && !loadError,
     inspect: (query, capture) => rpc.browser.inspectAnnotation({ browserId, sessionId: owningSessionId!, query, capture }) });
+  // @@@effect-flow(lifecycle) - registers this pane's browser session with main for its lifetime (a command, not a read)
   useEffect(() => {
     if (!sessionBrowserId || !sessionPartition) return;
     let disposed = false;

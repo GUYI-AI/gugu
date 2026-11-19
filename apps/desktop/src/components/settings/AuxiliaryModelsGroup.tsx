@@ -47,7 +47,7 @@ export function AuxiliaryModelsGroup() {
       }}
     </SettingValue>} />
     {failure && <SettingsNote tone="danger" role="alert">{failure}</SettingsNote>}
-    {models.state !== 'unknown' && <RefreshFailed error={models.error} onRetry={() => { void customModels.refresh(null); }} />}
+    {models.state !== 'unknown' && <RefreshFailed reading={models} />}
     {preference && options && !options.some(option => option.connectionId === preference.connectionId && option.modelId === preference.modelId)
       && <SettingsNote>{translate('customModels.auxiliaryFallback')}</SettingsNote>}
   </SettingsGroup>;

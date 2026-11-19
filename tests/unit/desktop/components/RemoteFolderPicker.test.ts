@@ -10,6 +10,7 @@ vi.mock('../../../../apps/desktop/src/lib/deviceFs', () => ({
   deviceFsMakeDirectory: (...args: unknown[]) => mkdirMock(...args),
 }))
 import { RemoteFolderPicker } from '../../../../apps/desktop/src/components/RemoteFolderPicker'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 let container: HTMLDivElement
 let root: Root
 async function flush() {
@@ -20,6 +21,8 @@ async function flush() {
   })
 }
 beforeEach(() => {
+  queryClient.clear()
+  followRendererSession('SIGNED_IN', 'tester')
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -65,7 +68,7 @@ describe('RemoteFolderPicker', () => {
     expect(listMock).toHaveBeenCalledWith(
       'dev-A',
       { path: '~', show_hidden: false },
-      expect.objectContaining({ signal: expect.anything(), timeoutMs: 20_000, retryOnTimeout: false }),
+      expect.objectContaining({ timeoutMs: 20_000, retryOnTimeout: false }),
     )
     const labels = Array.from(container.querySelectorAll('li button')).map((el) => {
       // The label is in the second <span> inside the entry button.
@@ -111,6 +114,27 @@ describe('RemoteFolderPicker', () => {
       return (spans[1]?.textContent ?? '').trim()
     })
     expect(labels).toEqual(['index.ts'])
+  })
+  it('refreshing a folder already shown: dimmed and counted while it is read again; a failed refresh is said with a retry beside the listing (F1-5)', async () => {
+    listMock.mockResolvedValueOnce({ result: { path: '/home/me', entries: [{ name: 'src', kind: 'dir' }] } })
+    await act(async () => {
+      root.render(createElement(RemoteFolderPicker, { deviceId: 'dev-R', initialPath: '/home/me', onSelect: () => {} }))
+    })
+    await flush()
+    let fail!: (error: Error) => void
+    listMock.mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject }))
+    await clickElement(container.querySelector('[aria-label="刷新"]') as HTMLElement)
+    await flush()
+    expect(container.textContent).toContain('加载中...')
+    const useButton = () => Array.from(container.querySelectorAll('button')).find((button) => button.textContent === '使用此目录') as HTMLButtonElement
+    expect(useButton().disabled).toBe(true)
+    await act(async () => { fail(Object.assign(new Error('设备 RPC timed out'), { name: 'DeviceRpcTimeoutError' })) })
+    await flush()
+    const alert = container.querySelector('[role="alert"]')
+    expect(alert?.textContent ?? '').toContain('无响应')
+    expect(alert?.querySelector('button')?.textContent ?? '').toContain('重试')
+    // The listing read before is still there.
+    expect(container.querySelectorAll('li button')).toHaveLength(1)
   })
   it('连不上那台机器时说清楚、给重试,且不许选一个没核实过的路径', async () => {
     const timeout = Object.assign(new Error('设备 RPC timed out after 5000ms (type=fs.list-directory)'), { name: 'DeviceRpcTimeoutError' })
@@ -248,6 +272,28 @@ describe('RemoteFolderPicker', () => {
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
     })
     expect((container.querySelector('[data-testid="remote-folder-path-input"]') as HTMLInputElement).value).toBe('/home/bob/projects/')
+  })
+
+  it('地址栏补全:读过的别处目录再读失败,补全照给、同时说失败(❌ 当成当前的)', async () => {
+    listMock.mockResolvedValueOnce({ result: { path: '/home/bob', entries: [] } })
+    listMock.mockResolvedValueOnce({ result: { path: '/srv', entries: [{ name: 'app', kind: 'dir' }] } })
+    await act(async () => {
+      root.render(createElement(RemoteFolderPicker, { deviceId: 'dev-C', initialPath: '/home/bob', onSelect: () => {} }))
+    })
+    await flush()
+    await clickElement(container.querySelector('[data-testid="remote-folder-path-blank"]') as HTMLElement)
+    await setValue(container.querySelector('[data-testid="remote-folder-path-input"]') as HTMLInputElement, '/srv/a')
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 200)) })
+    await flush()
+    const suggestions = () => Array.from(container.querySelectorAll('[data-testid="remote-folder-path-suggestions"] li[role="option"]')).map((li) => li.textContent)
+    expect(suggestions()).toEqual(['app'])
+    expect(container.querySelector('[data-testid="remote-folder-path-completion-error"]')).toBeNull()
+    listMock.mockResolvedValueOnce({ error: { code: 'unreachable', message: 'machine gone' } })
+    const { remoteDirectory } = await import('../../../../apps/desktop/src/lib/remoteDirectory')
+    await act(async () => { await remoteDirectory.refresh('dev-C', '/srv', true).catch(() => undefined) })
+    await flush()
+    expect(container.querySelector('[data-testid="remote-folder-path-completion-error"]')).not.toBeNull()
+    expect(suggestions()).toEqual(['app'])
   })
 
   it('选根目录或主目录本身当项目:先问一句,确认后才选', async () => {

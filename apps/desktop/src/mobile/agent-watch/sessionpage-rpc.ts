@@ -5,7 +5,7 @@ import { invokePhoneHost } from '../local-agent/phoneHostRpc'
 import type { ToolImage } from '@gugu/session-core/acp/client'
 import { rendererLogger } from '@/lib/log'
 import { readCachedDevices, subscribeCachedDevices } from '@/store/devicesCache'
-import { getCloudComputerState, subscribeCloudComputerState } from '@/lib/cloudComputerStore'
+import { cloudComputer, cloudSnapshotOf, subscribeCloudComputer } from '@/lib/cloudComputer'
 import { remoteHostReachable } from '@/session/shared/remote-hosts'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { appCallWaitMs, type AppCallAction, type AppMessageAction, type AppMessageReceipt, type AppSpawnAction } from '@gugu/session-core/session-record/contract'
@@ -63,7 +63,8 @@ const hosts = new Map<string, SessionHostClient>()
 
 function reachable(deviceId: string): boolean {
   const device = readCachedDevices().find((row) => row.device_id === deviceId)
-  const snapshot = getCloudComputerState().snapshot
+  // A one-moment decision outside rendering (is the link worth opening now).
+  const snapshot = cloudSnapshotOf(cloudComputer.peek())
   const cloud = snapshot?.deviceId === deviceId ? snapshot.state : device?.cloud_computer
   // An empty/unfinished device directory is unknown, not proof of an offline host.
   return remoteHostReachable({
@@ -80,7 +81,7 @@ function host(deviceId: string): SessionHostClient {
       isReachable: () => reachable(deviceId),
       peerVersion: () => readCachedDevices().find(device => device.device_id === deviceId)?.capabilities?.app_version ?? null,
       subscribeReachability: (listener) => {
-        const stopCloud = subscribeCloudComputerState(listener)
+        const stopCloud = subscribeCloudComputer(listener)
         const stopDevices = subscribeCachedDevices(listener)
         return () => { stopCloud(); stopDevices() }
       },

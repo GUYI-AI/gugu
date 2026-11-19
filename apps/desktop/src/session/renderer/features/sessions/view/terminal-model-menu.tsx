@@ -78,8 +78,8 @@ export function TerminalModelMenu({
     });
   }, [sessionId]);
   const harnessCatalog = useHarnessModelOptions(providerId, 'tui');
-  const { data: agents } = useAgents();
-  const capabilities = agents?.find((agent) => agent.id === providerId)?.capabilities ?? null;
+  const agents = useAgents();
+  const capabilities = agents.state === 'value' ? agents.value.find((agent) => agent.id === providerId)?.capabilities ?? null : null;
 
   /**
    * 重开成功后到记录被读回之前,先按用户刚选的那条高亮。平台那一路由下面的 `retry()` 读回;
@@ -199,7 +199,7 @@ export function TerminalModelMenu({
       const plan = planTerminalModelSwitch({
         optionId,
         selectedOptionId,
-        options,
+        options: options ?? null,
         recordedEffort: currentEffort,
         targetEffortIds: Object.keys(effortsFor(optionId)?.options ?? {}),
       });
@@ -245,6 +245,7 @@ export function TerminalModelMenu({
         modelItems={modelItems}
         onOpen={harnessCatalog.refresh}
         selectedModel={selectedOptionId}
+        modelUnknown={options === undefined || !platformCatalog.known}
         onModelChange={handleModelChange}
         openRequest={menuRequests - menuRequestsAtMount.current}
         // 底部「管理模型 / 升级解锁更多模型」(#7056),三个模型菜单同一份。

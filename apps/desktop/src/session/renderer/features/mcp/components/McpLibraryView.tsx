@@ -23,7 +23,10 @@ import { SectionLabel } from '@/components/ui/SectionLabel';
 import { GuguToolGroups } from './gugu-tool-groups';
 import { McpLibraryRow } from './mcp-library-row';
 import { useAddMcpServer } from './use-add-mcp-server';
-import { useHarnessMcpServers, useMcpLibrary } from './use-mcp-library';
+import { harnessMcpServers, useHarnessMcpServers, useMcpLibrary } from './use-mcp-library';
+import { Unknown } from '@/components/ui/Unknown';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 
 /**
@@ -50,6 +53,8 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations?: () => void; inSetti
     translate
   );
   const disabled = library.isBusy || !!notice?.readOnly;
+  // A failed read over what is still drawn: another machine's page says it once in `notice`; this machine's in its section.
+  const failed = (error: Error | null) => (notice ? null : <RefreshFailed error={error} onRetry={library.reload} />);
   const fail = (failure: unknown) => {
     log.error('library MCP action failed', { error: String(failure) });
     toast({ title: translate('mcpLibrary.saveFailed'), description: messageForUser(failure), variant: 'destructive' });
@@ -59,7 +64,8 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations?: () => void; inSetti
   const openEdit = async (server: LibraryMcpServer) =>
     showServerModal({
       initial: server,
-      existing: library.servers,
+      // A click on a drawn page: the list is read by then (the page draws a placeholder before).
+      existing: library.servers ?? [],
       harnessNames: await library.harnessNames(),
       onSuccess: ([edited]) => edited && void library.update({ ...edited, enabledByDefault: server.enabledByDefault }).catch(fail),
     });
@@ -86,39 +92,48 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations?: () => void; inSetti
           <div className="flex flex-col gap-6 py-8">
             <section data-slot="mcp-library-gugu" className="flex flex-col">
               <SectionLabel className="!px-0">{translate('mcpLibrary.ownGroup')}</SectionLabel>
-              {library.provided?.builtIn.map((name) => (
-                <BuiltInRow key={name} name={name} library={library} disabled={disabled} onFail={fail} />
-              ))}
-              {onOpenIntegrations && <ProvidedGroup
-                slot="mcp-library-integrations"
-                title={translate('mcpLibrary.integrationsGroup')}
-                servers={library.provided?.servers.filter((server) => server.group === 'integrations') ?? []}
-                action={{
-                  label: translate('mcpLibrary.manageIntegrations'),
-                  onClick: onOpenIntegrations,
-                }}
-                keepEmpty
-                library={library}
-                onFail={fail}
-              />}
-              <ProvidedGroup
-                slot="mcp-library-apps"
-                title={translate('mcpLibrary.appsGroup')}
-                servers={library.provided?.servers.filter((server) => server.group === 'apps') ?? []}
-                {...(appsHere
-                  ? {
-                      action: {
-                        label: translate('mcpLibrary.manageApps'),
-                        onClick: () => {
-                          if (inSettings) window.dispatchEvent(new Event(UI_EVENTS.closeSettings));
-                          appsHere!.openAppsPage();
-                        },
-                      },
-                    }
-                  : {})}
-                library={library}
-                onFail={fail}
-              />
+              {library.provided.state === 'unknown' ? (
+                <Unknown className="my-2 h-8 w-full" />
+              ) : library.provided.state === 'error' ? (
+                <ReadFailedLine message={messageForUser(library.provided.error)} onRetry={library.reload} className="my-2" />
+              ) : (
+                <>
+                  {failed(library.provided.error)}
+                  {library.provided.value.builtIn.map((name) => (
+                    <BuiltInRow key={name} name={name} library={library} disabled={disabled} onFail={fail} />
+                  ))}
+                  {onOpenIntegrations && <ProvidedGroup
+                    slot="mcp-library-integrations"
+                    title={translate('mcpLibrary.integrationsGroup')}
+                    servers={library.provided.value.servers.filter((server) => server.group === 'integrations')}
+                    action={{
+                      label: translate('mcpLibrary.manageIntegrations'),
+                      onClick: onOpenIntegrations,
+                    }}
+                    keepEmpty
+                    library={library}
+                    onFail={fail}
+                  />}
+                  <ProvidedGroup
+                    slot="mcp-library-apps"
+                    title={translate('mcpLibrary.appsGroup')}
+                    servers={library.provided.value.servers.filter((server) => server.group === 'apps')}
+                    {...(appsHere
+                      ? {
+                          action: {
+                            label: translate('mcpLibrary.manageApps'),
+                            onClick: () => {
+                              if (inSettings) window.dispatchEvent(new Event(UI_EVENTS.closeSettings));
+                              appsHere!.openAppsPage();
+                            },
+                          },
+                        }
+                      : {})}
+                    library={library}
+                    onFail={fail}
+                  />
+                </>
+              )}
             </section>
             <section data-slot="mcp-library-own" className="flex flex-col">
               <SectionLabel
@@ -132,7 +147,10 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations?: () => void; inSetti
               >
                 {translate('mcpLibrary.ownServers')}
               </SectionLabel>
-              {library.servers.length === 0 ? (
+              {failed(library.failures.servers)}
+              {library.servers === null ? (
+                <Unknown className="my-2 h-8 w-full" />
+              ) : library.servers.length === 0 ? (
                 <div data-slot="mcp-library-own-empty" className={QUIET}>
                   {translate('mcpLibrary.ownEmpty')}
                 </div>
@@ -153,6 +171,7 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations?: () => void; inSetti
                 ))
               )}
             </section>
+            {failed(library.failures.agents)}
             {library.installed.length > 0 && (
               <section data-slot="mcp-library-harnesses" className="flex flex-col">
                 <SectionLabel className="!px-0">{translate('mcpLibrary.harnessesGroup')}</SectionLabel>
@@ -185,11 +204,12 @@ function HarnessGroup({
 }) {
   const { translate } = useSessionMessages();
   const [open, setOpen] = React.useState(false);
+  const host = useLibraryHost();
   const servers = useHarnessMcpServers(agent.id, open);
   React.useEffect(() => {
     // 原因进日志;界面上只说读不了哪一家、给重试。
-    if (servers.error) log.error('agent MCP config read failed', { agentId: agent.id, error: String(servers.error) });
-  }, [agent.id, servers.error]);
+    if (servers.state === 'error') log.error('agent MCP config read failed', { agentId: agent.id, error: String(servers.error) });
+  }, [agent.id, servers]);
   return (
     <FoldGroup
       slot="mcp-library-harness"
@@ -200,31 +220,34 @@ function HarnessGroup({
       open={open}
       onOpenChange={setOpen}
     >
-      {servers.isLoading ? (
+      {servers.state === 'unknown' ? (
         <div className={QUIET}>{translate('mcpLibrary.harnessReading')}</div>
-      ) : servers.error ? (
+      ) : servers.state === 'error' ? (
         <div data-slot="mcp-library-harness-error" className="flex items-center gap-3 py-2 pl-6">
           <span className="min-w-0 flex-1 text-sm text-foreground-destructive">
             {translate('mcpLibrary.harnessReadFailed', { agent: agent.name })}
           </span>
-          <Button variant="outline" size="sm" onClick={() => void servers.refetch()}>
+          <Button variant="outline" size="sm" onClick={() => void harnessMcpServers.refresh(host.key, agent.id)}>
             {translate('common.retry')}
           </Button>
         </div>
-      ) : (servers.data ?? []).length === 0 ? (
-        <div className={QUIET}>{translate('mcpLibrary.harnessEmpty', { agent: agent.name })}</div>
       ) : (
-        (servers.data ?? []).map((server) => (
-          <McpLibraryRow
-            key={server.name}
-            server={server}
-            check={library.harnessChecks[`${agent.id}:${server.name}`]}
-            checking={library.checking.has(`${agent.id}:${server.name}`)}
-            disabled={disabled}
-            harnessName={agent.name}
-            onCheck={() => void library.checkHarness(agent.id, server.name).catch(onFail)}
-          />
-        ))
+        <>
+          <RefreshFailed reading={servers} />
+          {servers.value.length === 0 ? (
+            <div className={QUIET}>{translate('mcpLibrary.harnessEmpty', { agent: agent.name })}</div>
+          ) : servers.value.map((server) => (
+            <McpLibraryRow
+              key={server.name}
+              server={server}
+              check={library.harnessChecks[`${agent.id}:${server.name}`]}
+              checking={library.checking.has(`${agent.id}:${server.name}`)}
+              disabled={disabled}
+              harnessName={agent.name}
+              onCheck={() => void library.checkHarness(agent.id, server.name).catch(onFail)}
+            />
+          ))}
+        </>
       )}
     </FoldGroup>
   );
@@ -325,7 +348,7 @@ function BuiltInRow({
         check ? (
           <GuguToolGroups
             tools={check.tools}
-            off={library.provided?.guguToolsOff}
+            off={library.provided.state === 'value' ? library.provided.value.guguToolsOff : undefined}
             disabled={disabled}
             onChange={(off) => void library.setGuguToolsOff(off).catch(onFail)}
           />

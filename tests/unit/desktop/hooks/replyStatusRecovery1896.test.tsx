@@ -18,6 +18,7 @@ vi.mock('../../../../apps/desktop/src/lib/realtimeChannel', () => ({
   unsubscribePrivateUserEventBus: bus.off,
 }))
 import { useStoredAgentTurnFailure } from '../../../../apps/desktop/src/hooks/useStoredAgentTurnFailure'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
 
 const empty = { failures: [], recovered: [] }
 const failure = { agentUserId: 'agent', commandId: 'cmd', revision: 'one', at: 1, reason: 'weeklyQuota' }
@@ -29,7 +30,9 @@ let ui: ReturnType<typeof createReactHarness>
 const current = () => ui.container.querySelector('[data-failure]')?.textContent
 const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
 const reconnect = () => act(async () => bus.subscribed?.())
-beforeEach(() => {
+beforeEach(async () => {
+  await freshReplicaAccount('owner')
+
   vi.useFakeTimers()
   ui = createReactHarness()
   read.mockReset().mockResolvedValue(empty)
@@ -100,15 +103,21 @@ describe('automatic reply-status read recovery (#1896)', () => {
     expect(read).toHaveBeenCalledTimes(2)
   })
 
+  // The event came while the first attempt was on its way: that attempt is not restarted; once it
+  // lands (here, failed) the event's read runs once, and its success stands — no retry scheduled from the late failure.
   it('does not let a late failed request overwrite a newer success or schedule a retry', async () => {
     const old = deferred<typeof empty>()
-    read.mockReturnValueOnce(old.promise)
+    read.mockReturnValueOnce(old.promise).mockResolvedValue({ failures: [failure], recovered: [] })
     await ui.render(createNode(Probe, {}))
     await reconnect()
+    expect(read).toHaveBeenCalledTimes(1)
     await act(async () => old.reject(new Error('old timeout')))
+    await vi.waitFor(() => expect(current()).toBe('cmd'))
     await advance(30_000)
     expect(read).toHaveBeenCalledTimes(2)
-    expect(log.error).not.toHaveBeenCalled()
+    expect(current()).toBe('cmd')
+    // The superseded read logged its own failure once; nothing retried it.
+    expect(log.error).toHaveBeenCalledTimes(1)
   })
 
   it('cancels scheduled recovery on unmount', async () => {
