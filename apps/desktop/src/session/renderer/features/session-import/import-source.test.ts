@@ -25,7 +25,7 @@ vi.mock('@renderer/lib/ipc', () => ({
       },
       importLocalSession: async (params: unknown) => {
         machine.calls.push({ machine: id, verb: 'import', params });
-        return { projectId: 'p-d22', sessionId: 'c-d22', workingDirectory: '/home/me/work', alreadyImported: false };
+        return { sessionId: 'c-d22', workingDirectory: '/home/me/work', alreadyImported: false };
       },
     },
   }),
@@ -112,13 +112,13 @@ describe('#6264 导入会话按机器切换', () => {
     ]);
     expect(ipc.importLocalSession).not.toHaveBeenCalled();
     expect(outcomes).toEqual([
-      { kind: 'imported', row: ROW, projectId: 'p-d22', sessionId: 'c-d22' },
+      { kind: 'imported', row: ROW, sessionId: 'c-d22' },
     ]);
     expect(progress).toEqual([1]);
   });
 
   it.each([[LOCAL_IMPORT_DEVICE, false], ['ssh-host', true], ['tunnel-host', false]] as const)('defaults import from %s to the general view', async (device, directTerminal) => {
-    ipc.importLocalSession.mockResolvedValue({ projectId: 'p', sessionId: 's', alreadyImported: false });
+    ipc.importLocalSession.mockResolvedValue({ sessionId: 's', alreadyImported: false });
     const source = resolveImportSource(device, directTerminal);
     expect(source.sessionView).toBe('general');
     await runImport(source, [ROW], () => {}, String);
@@ -127,7 +127,7 @@ describe('#6264 导入会话按机器切换', () => {
   });
 
   it('passes the requested view through the import runner rather than relying on a transport default', async () => {
-    const importSession = vi.fn(async () => ({ projectId: 'p', sessionId: 's', workingDirectory: '/w', alreadyImported: false }));
+    const importSession = vi.fn(async () => ({ sessionId: 's', workingDirectory: '/w', alreadyImported: false }));
     await runImport({ importSession, sessionView: 'general' } as Parameters<typeof runImport>[0], [ROW], () => {}, String);
     expect(importSession).toHaveBeenCalledWith(expect.objectContaining({ sessionView: 'general' }));
   });

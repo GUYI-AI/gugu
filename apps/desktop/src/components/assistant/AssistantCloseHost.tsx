@@ -100,8 +100,8 @@ export function AssistantCloseHost() {
       listAutomations: () => remote().automations.listAutomations(),
       deleteAutomation: (id) => remote().automations.deleteAutomation(id),
       removeAgent: (agentUserId) => removeOwnedAgent(agentUserId),
-      archiveSession: async (projectId, sessionId) => {
-        const outcome = await remote().sessions.archiveSession(projectId, sessionId, { withChildren: false, removeSocialIdentity: false })
+      archiveSession: async (sessionId) => {
+        const outcome = await remote().sessions.archiveSession(sessionId, { withChildren: false, removeSocialIdentity: false })
         if (outcome.unreached.length > 0) throw new Error(`archive did not reach ${outcome.unreached.length} machine(s)`)
       },
       wipeHome: async () => {

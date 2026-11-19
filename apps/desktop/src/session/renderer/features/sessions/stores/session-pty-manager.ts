@@ -81,7 +81,7 @@ export class SessionPtyManager {
         retry: () => {
           sessionStartupFailures.markRetrying(payload.sessionId);
           void askPlatformAgain(payload.sessionId)
-            .then(() => rpc.sessions.hydrateSession(payload.projectId, payload.sessionId))
+            .then(() => rpc.sessions.hydrateSession(payload.sessionId))
             .then(() => this.withdrawFailure(payload.sessionId))
             .catch((error: unknown) => {
               const message = error instanceof Error ? error.message : String(error);

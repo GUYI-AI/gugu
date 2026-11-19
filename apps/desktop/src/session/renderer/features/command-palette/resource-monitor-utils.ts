@@ -4,6 +4,7 @@ import {
   getTerminalsForSession,
 } from '@renderer/features/sessions/stores/session-selectors';
 import { appState } from '@renderer/lib/stores/app-state';
+import { projectOfSession } from '@renderer/features/projects/stores/project-selectors';
 import { formatBytes } from '@renderer/utils/formatBytes';
 import { createLifecycleScriptTerminalId } from '@shared/core/terminals/terminals';
 import { resourceTotals } from '@shared/resource-monitor';
@@ -121,7 +122,9 @@ export function buildGroups(entries: ResourcePtyEntry[]): Group[] {
   const byProject = new Map<string, { projectName: string; sessions: Map<string, SessionBucket> }>();
 
   for (const entry of entries) {
-    const projectStore = projects.get(entry.projectId);
+    // A pty is keyed by its workspace; the folder holding it is the one whose list has its session (scope).
+    const projectId = projectOfSession(entry.scopeId) ?? entry.workspaceId;
+    const projectStore = projects.get(projectId);
     let sessionName = entry.scopeId;
     // The bucket key normally matches the entry's scopeId, but lifecycle
     // scripts are scoped by workspaceId while agents are scoped by conversationId.
@@ -133,8 +136,8 @@ export function buildGroups(entries: ResourcePtyEntry[]): Group[] {
     let projectKey = UNKNOWN_PROJECT_ID;
 
     if (projectStore) {
-      projectKey = entry.projectId;
-      projectName = projectStore.name ?? projectStore.data?.name ?? entry.projectId.slice(0, 8);
+      projectKey = projectId;
+      projectName = projectStore.name ?? projectStore.data?.name ?? projectId.slice(0, 8);
       const mounted = projectStore.mountedProject;
       // Agent PTYs use the task id as scopeId; lifecycle-script PTYs use the
       // workspace id. Try the direct lookup first, then fall back to matching

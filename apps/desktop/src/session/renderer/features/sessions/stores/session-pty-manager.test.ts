@@ -232,14 +232,14 @@ describe('SessionPtyManager 的失败提示', () => {
       await flush();
       const message = 'Agent session failed to resume thread 01a15d37-1674-7061-b298-37b108e1e970 (exit code 1).'
         + ' Retry restoring this task; if the original thread was deleted, start a new task.';
-      events.emit(sessionDeliveryFailedChannel, { sessionId: 'another-task', projectId: 'project-1', message });
+      events.emit(sessionDeliveryFailedChannel, { sessionId: 'another-task', message });
       expect(ledgerRow('resume-task')).toBeUndefined();
-      events.emit(sessionDeliveryFailedChannel, { sessionId: 'resume-task', projectId: 'project-1', message });
+      events.emit(sessionDeliveryFailedChannel, { sessionId: 'resume-task', message });
       expect(ledgerRow('resume-task')?.message).toBe(message);
       expect(sessionStartupFailures.retry('resume-task')).toBe(true);
       expect(sessionStartupFailures.retry('resume-task')).toBe(false);
       await flush();
-      expect(runtimeHydrate.mock.calls).toEqual([['project-1', 'resume-task']]);
+      expect(runtimeHydrate.mock.calls).toEqual([['resume-task']]);
       expect(ledgerRow('resume-task')).toBeUndefined();
       expect(toastError).not.toHaveBeenCalled();
     } finally { manager.dispose(); }

@@ -15,7 +15,6 @@ export function useCommitFiles(
     queryKey: commitFilesQueryKey(projectId, workspaceId, commitHash),
     queryFn: async (): Promise<GitChange[]> => {
       const result = await workspaceRpc(projectId).gitWorktree.getCommitFiles(
-        projectId,
         workspaceId,
         commitHash
       );

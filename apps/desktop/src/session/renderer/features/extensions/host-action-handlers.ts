@@ -1,3 +1,4 @@
+import { projectOfSession } from '@renderer/features/projects/stores/project-selectors';
 import { openFolderInTab } from '@renderer/features/sessions/file-view/file-view-kinds';
 import { findSessionAnywhere } from '@renderer/features/sessions/stores/session-selectors';
 import { composeChatDraft } from '@/lib/composeDraft';
@@ -187,7 +188,7 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
     case 'taskMessage': {
       const target = sessionId === null ? undefined : findSessionAnywhere(sessionId);
       if (!target || !sessionId) throw new Error('This task is no longer open');
-      return rpc.sessions.sendMessage({ projectId: target.projectId, sessionId, clientMessageId: crypto.randomUUID(), text: action.text })
+      return rpc.sessions.sendMessage({ sessionId, clientMessageId: crypto.randomUUID(), text: action.text })
         .then(result => { if (result.status === 'outcome-unknown') throw new Error('Task message delivery is unknown'); });
     }
     case 'navigateTab':
@@ -346,9 +347,10 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
     // through (`openFileInSessionEditor`) — the same for a session on this computer and one on another.
     case 'openSessionFile': {
       return (async () => {
-        if (!action.projectId) throw new Error('This session has no known project');
-        const { machineCodec } = await import('@renderer/lib/machine-routing');
-        const projectId = action.deviceId ? machineCodec(action.deviceId).inbound(action.projectId) : action.projectId;
+        // The folder holding it: this window's lists, else (another machine's session) that machine's session directory.
+        const reach = async (deviceId: string) => (await import('@renderer/features/remote-hosts/remote-hosts-store')).remoteHostsStore.reachProject(action.sessionId, deviceId);
+        const projectId = projectOfSession(action.sessionId) ?? (action.deviceId ? await reach(action.deviceId) : null);
+        if (!projectId) throw new Error('This session is not listed in this window');
         const { prepareSessionPane } = await import('@renderer/features/sessions/session-pane-ready');
         await prepareSessionPane(projectId, action.sessionId);
         if (!findSessionAnywhere(action.sessionId)) throw new Error('This session has no prepared pane');
@@ -378,7 +380,7 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       if (block) return focusScreenBlock(block);
       // A folder on another machine, as the account names it: its project's calls go there even before that machine's
       // own project list has come in (machine-routing).
-      if (action.target.kind === 'folder' && action.target.deviceId) machineRegistry.register(action.target.deviceId, [action.target.projectId, action.target.workspaceId]);
+      if (action.target.kind === 'folder' && action.target.deviceId) machineRegistry.register(action.target.deviceId, [action.target.workspaceId]);
       peekStore.open(sessionId, tabId, action.target);
       return;
     }

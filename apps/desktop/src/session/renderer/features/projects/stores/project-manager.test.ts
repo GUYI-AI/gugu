@@ -173,14 +173,13 @@ describe('挂载末尾:任务列表到位之后补跑路由校验', () => {
     const sessionManager = { loadSessions: vi.fn(async () => {}), provisionSession: vi.fn() };
     const store = new ProjectManagerStore();
     store.projects.set('project-id', mountableProject(sessionManager) as never);
-    mocks.openProject.mockResolvedValue({
-      success: true, data: { repositoryWorkspaceId: 'existing-workspace', baseRef: null },
-    });
+    mocks.openProject.mockResolvedValue({ success: true, data: { gitless: true } });
 
     await store.mountProject('project-id');
 
+    // The host's answer wins over the record; the repository's workspace is the folder itself.
     expect(store.projects.get('project-id')?.data).toMatchObject({
-      baseRef: null, repositoryWorkspaceId: 'existing-workspace',
+      baseRef: null, repositoryWorkspaceId: 'project-id',
     });
   });
 

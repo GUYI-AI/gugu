@@ -34,13 +34,8 @@ function HistoryEntry({ group, onClose }: { group: HistoryGroup; onClose: () => 
       if (provider.openImportedSession) {
         await provider.openImportedSession(session, session.deviceId)
         return
-      } else if (session.projectId) {
-        await openLink({ kind: 'session', projectId: session.projectId, sessionId: session.sessionId,
-          ...(session.deviceId ? { deviceId: session.deviceId } : {}) })
-      } else {
-        notify({ tier: 'error', title: t('settings.dataImport.openFailed') })
-        return
       }
+      await openLink({ kind: 'session', sessionId: session.sessionId, ...(session.deviceId ? { deviceId: session.deviceId } : {}) })
       onClose()
     } catch {
       notify({ tier: 'error', title: t('settings.dataImport.openFailed') })

@@ -75,8 +75,7 @@ export function submitAttachmentCreation({ key, ownerId, deviceId, request, file
     }
     const created = retained.result
     if (created.attachmentDraft.state === 'admitted') return { request: original, result: created }
-    const target: TaskAttachmentTarget = { owner: ownerId, deviceId, sessionId: created.conversationId,
-      projectId: created.projectId, chatId: created.attachmentTarget.chatId }
+    const target: TaskAttachmentTarget = { owner: ownerId, deviceId, sessionId: created.conversationId, chatId: created.attachmentTarget.chatId }
     const placements: SessionAdmitCreatedAttachmentsRequest['placements'] = []
     for (const entry of retained.files) {
       let placement = retained.placements.get(entry.id)

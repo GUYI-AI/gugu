@@ -213,13 +213,12 @@ export class ProjectManagerStore {
         runInAction(() => {
           const current = this.projects.get(projectId);
           if (current && isUnmountedProject(current)) {
-            // Patch repositoryWorkspaceId from the main process response so the
-            // mounted project data is up-to-date (fixes stale null after creation).
+            // The host answers whether the folder is a git repository now (its record may predate the answer);
+            // the repository's workspace is the folder itself.
             const projectData = current.data;
-            projectData.baseRef = openResult.data.baseRef;
-            if (openResult.data.repositoryWorkspaceId && projectData) {
-              projectData.repositoryWorkspaceId = openResult.data.repositoryWorkspaceId;
-            }
+            if (openResult.data.gitless) projectData.baseRef = null;
+            else projectData.baseRef ??= 'main';
+            projectData.repositoryWorkspaceId = projectId;
             current.transitionToMounted(
               projectData,
               savedSnapshot as ProjectViewSnapshot | undefined

@@ -30,7 +30,7 @@ describe('createSessionShellPort', () => {
     ]);
     await expect(port.shareAgent('conv-1')).resolves.toBe(true);
     await expect(
-      port.ensureAgentAddress({ projectId: 'p', sessionId: 'conv-1' }),
+      port.ensureAgentAddress({ sessionId: 'conv-1' }),
     ).resolves.toEqual({ chatId: 'c1', agentUserId: 'u1' });
     await expect(port.fatalBoot('boom')).resolves.toBeUndefined();
 
@@ -38,7 +38,7 @@ describe('createSessionShellPort', () => {
       [SESSION_SHELL_CHANNELS.agentCard, 'conv-1'],
       [SESSION_SHELL_CHANNELS.agentNames],
       [SESSION_SHELL_CHANNELS.shareAgent, 'conv-1'],
-      [SESSION_SHELL_CHANNELS.ensureAgentAddress, { projectId: 'p', sessionId: 'conv-1' }],
+      [SESSION_SHELL_CHANNELS.ensureAgentAddress, { sessionId: 'conv-1' }],
       [SESSION_SHELL_CHANNELS.fatalBoot, 'boom'],
     ]);
   });
@@ -49,7 +49,7 @@ describe('createSessionShellPort', () => {
     );
     await expect(port.agentCard('conv')).resolves.toBeNull();
     await expect(
-      port.ensureAgentAddress({ projectId: 'p', sessionId: 'conv' }),
+      port.ensureAgentAddress({ sessionId: 'conv' }),
     ).rejects.toThrow(/exact agent address/);
   });
 });

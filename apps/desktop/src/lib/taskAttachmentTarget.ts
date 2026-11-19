@@ -13,7 +13,7 @@ import { entryUploadItems, type DropEntry } from '@/session/renderer/features/re
 
 export type TaskAttachmentTarget = {
   chatId: string; owner: string; sessionId?: string; deviceId?: string | null
-  projectId?: string; workspaceId?: string
+  workspaceId?: string
 }
 
 export const taskAttachmentWorkspacePath = (id: string, name: string) => `.gugu/attachments/${id}/${name}`
@@ -34,12 +34,12 @@ export async function pushTaskDirectory(to: TaskAttachmentTarget, entry: FileSys
   }
   const relative = await pushTaskFiles(to, crypto.randomUUID(), items)
   if (!items.length) {
-    const directory = await rpcOn(to.deviceId).workspace.files.getAbsolutePath(to.projectId!, to.workspaceId!, relative)
+    const directory = await rpcOn(to.deviceId).workspace.files.getAbsolutePath(to.workspaceId!, relative)
     if (!directory.success) throw new Error('The uploaded folder is not available')
-    const created = await rpcOn(to.deviceId).workspace.files.createEntry(to.projectId!, to.workspaceId!, directory.data.path, entry.name, 'folder')
+    const created = await rpcOn(to.deviceId).workspace.files.createEntry(to.workspaceId!, directory.data.path, entry.name, 'folder')
     if (!created.success) throw new Error('Could not create the empty folder')
   }
-  const result = await rpcOn(to.deviceId).workspace.files.getAbsolutePath(to.projectId!, to.workspaceId!, `${relative}/${entry.name}`)
+  const result = await rpcOn(to.deviceId).workspace.files.getAbsolutePath(to.workspaceId!, `${relative}/${entry.name}`)
   if (!result.success) throw new Error('The uploaded folder is not available')
   return result.data.path
 }
@@ -48,24 +48,24 @@ export async function pushTaskFiles(to: TaskAttachmentTarget, id: string, items:
   signal?.throwIfAborted()
   if (!to.deviceId || !taskAttachmentUsesSsh(to.deviceId)) throw new Error('This computer has no SSH connection to the task host')
   assertTaskAttachmentProtocol(readCachedDevices().find(row => row.device_id === to.deviceId)?.capabilities?.remote_protocol)
-  if (!to.projectId || !to.workspaceId) throw new Error('The task workspace is not available')
+  if (!to.workspaceId) throw new Error('The task workspace is not available')
   const files = rpcOn(to.deviceId).workspace.files
-  const root = await files.getAbsolutePath(to.projectId, to.workspaceId, '.')
+  const root = await files.getAbsolutePath(to.workspaceId, '.')
   signal?.throwIfAborted()
   if (!root.success) throw new Error('The task workspace is not available')
   let directory = root.data.path
   for (const name of ['.gugu', 'attachments']) {
-    const created = await files.createEntry(to.projectId, to.workspaceId, directory, name, 'folder')
+    const created = await files.createEntry(to.workspaceId, directory, name, 'folder')
     signal?.throwIfAborted()
     if (!created.success && created.error.type !== 'exists') throw new Error('Could not create the task attachment directory')
     directory = `${directory.replace(/\/$/, '')}/${name}`
   }
   if (!items.length) {
-    const created = await files.createEntry(to.projectId, to.workspaceId, directory, id, 'folder')
+    const created = await files.createEntry(to.workspaceId, directory, id, 'folder')
     if (!created.success) throw new Error('Could not create the task attachment directory')
     return `.gugu/attachments/${id}`
   }
-  const transfers = transfersFor(to.deviceId, to.projectId, to.workspaceId)
+  const transfers = transfersFor(to.deviceId, to.workspaceId)
   const active = () => transfers.items.find(item => item.name === id && item.status === 'running')
   const cancel = () => active()?.cancel()
   signal?.addEventListener('abort', cancel, { once: true })
@@ -125,7 +125,7 @@ export async function pushTaskAttachment(to: TaskAttachmentTarget, file: TurnFil
   await sshMachinesReady()
   signal?.throwIfAborted()
   if (!to.deviceId || !isSshMachine(to.deviceId)) throw new Error('This computer has no SSH connection to the task host')
-  if (!to.deviceId || !taskAttachmentUsesSsh(to.deviceId) || !to.projectId || !to.workspaceId) throw new Error('The SSH task workspace is not available')
+  if (!to.deviceId || !taskAttachmentUsesSsh(to.deviceId) || !to.workspaceId) throw new Error('The SSH task workspace is not available')
   const protocol = readCachedDevices().find(row => row.device_id === to.deviceId)?.capabilities?.remote_protocol ?? 0
   if (protocol < ATTACHMENT_UPLOAD_PROTOCOL) {
     const directory = await pushTaskFiles(to, file.itemId, [{ segments: [file.name], size: source.size,
@@ -138,13 +138,13 @@ export async function pushTaskAttachment(to: TaskAttachmentTarget, file: TurnFil
     return result.data
   }
   return resumeTaskAttachment({ source, itemId: file.itemId, name: file.name,
-    scope: `${to.deviceId}/${to.projectId}/${to.workspaceId}`, context, signal, onProgress, onPhase,
+    scope: `${to.deviceId}/${to.workspaceId}`, context, signal, onProgress, onPhase,
     transport: {
-      begin: async spec => unwrap(await api.attachmentUploadBegin(to.projectId!, to.workspaceId!, spec)),
-      status: async spec => unwrap(await api.attachmentUploadStatus(to.projectId!, to.workspaceId!, spec)),
-      write: async chunk => unwrap(await api.attachmentUploadWrite(to.projectId!, to.workspaceId!, chunk)),
-      commit: async spec => unwrap(await api.attachmentUploadCommit(to.projectId!, to.workspaceId!, spec)),
-      abort: async spec => unwrap(await api.attachmentUploadAbort(to.projectId!, to.workspaceId!, spec)),
+      begin: async spec => unwrap(await api.attachmentUploadBegin(to.workspaceId!, spec)),
+      status: async spec => unwrap(await api.attachmentUploadStatus(to.workspaceId!, spec)),
+      write: async chunk => unwrap(await api.attachmentUploadWrite(to.workspaceId!, chunk)),
+      commit: async spec => unwrap(await api.attachmentUploadCommit(to.workspaceId!, spec)),
+      abort: async spec => unwrap(await api.attachmentUploadAbort(to.workspaceId!, spec)),
     },
   })
 }

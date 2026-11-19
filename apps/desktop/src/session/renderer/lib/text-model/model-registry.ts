@@ -306,8 +306,8 @@ export class TextModelRegistry {
           // it; both calls answer with the same shape (content / binary / truncated / size),
           // so everything downstream — status, eviction, too-large — stays one code path.
           const res = external
-            ? await workspaceRpc(projectId).files.readExternalFile(projectId, workspaceId, filePath, maxBytes)
-            : await workspaceRpc(projectId).files.readFile(projectId, workspaceId, filePath, maxBytes);
+            ? await workspaceRpc(projectId).files.readExternalFile(workspaceId, filePath, maxBytes)
+            : await workspaceRpc(projectId).files.readFile(workspaceId, filePath, maxBytes);
           if (!res.success) {
             const detail = 'message' in res.error ? res.error.message : JSON.stringify(res.error);
             throw new Error(`registerModel(disk): readFile failed for ${filePath}: ${detail}`);
@@ -392,7 +392,6 @@ export class TextModelRegistry {
       content = await this.dedupFetch(fetchKey, async () => {
           if (ref.kind === 'staged') {
             const res = await workspaceRpc(projectId).gitWorktree.getFileAtIndex(
-              projectId,
               workspaceId,
               filePath
             );
@@ -400,7 +399,6 @@ export class TextModelRegistry {
             return res.data.content;
           }
           const res = await workspaceRpc(projectId).gitWorktree.getFileAtRef(
-            projectId,
             workspaceId,
             filePath,
             gitRefToString(ref)
@@ -507,7 +505,6 @@ export class TextModelRegistry {
           if (!currentEntry || currentEntry.type !== 'buffer') return;
           if (!this.isDirty(uri)) return;
           void workspaceRpc(currentEntry.projectId).editor.saveBuffer(
-            currentEntry.projectId,
             currentEntry.workspaceId,
             currentEntry.filePath,
             currentEntry.model.getValue()
@@ -753,7 +750,7 @@ export class TextModelRegistry {
       // wrong one for a person saving a file on their own machine (#5585).
       const files = workspaceRpc(buf.projectId).files;
       const write = buf.external ? files.writeExternalFile : files.writeFile;
-      const result = await write(buf.projectId, buf.workspaceId, buf.filePath, content);
+      const result = await write(buf.workspaceId, buf.filePath, content);
       if (!result.success) {
         // 盘上那份在你上次读到之后被别人改过(别的机器的写入带着版本标记,对不上就拒):重读一次,那边的改动
         // 并进你的缓冲区(与本机外部改动同一条路,两边都留),再把并好的写下去 —— 这就是你按的那一下 ⌘S。
@@ -766,7 +763,7 @@ export class TextModelRegistry {
 
       this.markSaved(uri);
       runInAction(() => this.deletedOnDisk.delete(uri));
-      void workspaceRpc(buf.projectId).editor.clearBuffer(buf.projectId, buf.workspaceId, buf.filePath);
+      void workspaceRpc(buf.projectId).editor.clearBuffer(buf.workspaceId, buf.filePath);
       return content;
     } catch (error) {
       log.error('Failed to save file', { path: buf.filePath, error });
@@ -803,12 +800,10 @@ export class TextModelRegistry {
         const res =
           entry.ref.kind === 'staged'
             ? await workspaceRpc(entry.projectId).gitWorktree.getFileAtIndex(
-                entry.projectId,
                 entry.workspaceId,
                 entry.filePath
               )
             : await workspaceRpc(entry.projectId).gitWorktree.getFileAtRef(
-                entry.projectId,
                 entry.workspaceId,
                 entry.filePath,
                 gitRefToString(entry.ref)
@@ -854,13 +849,11 @@ export class TextModelRegistry {
   private async readDisk(uri: string, entry: DiskModelEntry, seenEmpty = false): Promise<void> {
     const res = entry.external
       ? await workspaceRpc(entry.projectId).files.readExternalFile(
-          entry.projectId,
           entry.workspaceId,
           entry.filePath,
           EDITOR_CONFIRM_FILE_BYTES
         )
       : await workspaceRpc(entry.projectId).files.readFile(
-          entry.projectId,
           entry.workspaceId,
           entry.filePath,
           EDITOR_CONFIRM_FILE_BYTES
@@ -868,7 +861,7 @@ export class TextModelRegistry {
     const bufferUri = uri.replace(/^disk:\/\//, 'file://');
     if (!res.success) {
       if (!entry.external) {
-        const exists = await workspaceRpc(entry.projectId).files.fileExists(entry.projectId, entry.workspaceId, entry.filePath);
+        const exists = await workspaceRpc(entry.projectId).files.fileExists(entry.workspaceId, entry.filePath);
         if (exists.success && !exists.data.exists) runInAction(() => this.deletedOnDisk.add(bufferUri));
       }
       return;

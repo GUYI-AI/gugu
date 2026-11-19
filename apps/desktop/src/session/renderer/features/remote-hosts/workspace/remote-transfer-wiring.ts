@@ -1,4 +1,4 @@
-// #6264 上传的生产装配:字节按块走那台机器的 `workspace.files.readChunk / writeChunk`(rpc 按项目所在的机器路由),
+// #6264 上传的生产装配:字节按块走那台机器的 `workspace.files.readChunk / writeChunk`(rpc 按工作区所在的机器路由),
 // 「替换吗」用本机文件树拖进来同一个对话框。
 // 判断都在 remote-transfers.ts;这里只接线。每个工作区一份,切走再切回来进度还在。
 import { WORKSPACE_WRITE_FORCE } from '@gugu/session-core/session-record/contract';
@@ -30,7 +30,7 @@ function joinPath(dir: string, name: string): string {
 }
 
 /** 传输要的四件事,落到那台机器的路由表动词上。 */
-export function machineTransferRpc(deviceId: string, projectId: string, workspaceId: string): TransferRpc {
+export function machineTransferRpc(deviceId: string, workspaceId: string): TransferRpc {
   return {
     async listWorkspace(_deviceId, request) {
       const result = await rpcOn(deviceId).files.browseDirectory({ type: 'local', path: request.path ?? '' });
@@ -46,7 +46,7 @@ export function machineTransferRpc(deviceId: string, projectId: string, workspac
       };
     },
     async readWorkspaceFile(_deviceId, request) {
-      const result = await rpc.workspace.files.readChunk(projectId, workspaceId, {
+      const result = await rpc.workspace.files.readChunk(workspaceId, {
         path: request.path,
         offset: request.offset,
         length: request.length,
@@ -56,7 +56,7 @@ export function machineTransferRpc(deviceId: string, projectId: string, workspac
     },
     async writeWorkspaceFile(_deviceId, request) {
       const { sessionId: _unused, ...chunk } = request;
-      const result = await rpc.workspace.files.writeChunk(projectId, workspaceId, chunk);
+      const result = await rpc.workspace.files.writeChunk(workspaceId, chunk);
       if (!result.success) throw machineFailure(result.error);
       return result.data;
     },
@@ -64,7 +64,7 @@ export function machineTransferRpc(deviceId: string, projectId: string, workspac
       const path = joinPath(request.dir, request.name);
       if (request.kind === 'file') {
         // 建(或清空)这个文件:整份覆盖写一段空的。人已经点过「替换」(或本来没有同名的)。
-        const result = await rpc.workspace.files.writeChunk(projectId, workspaceId, {
+        const result = await rpc.workspace.files.writeChunk(workspaceId, {
           path,
           uploadId: crypto.randomUUID(),
           offset: 0,
@@ -76,7 +76,7 @@ export function machineTransferRpc(deviceId: string, projectId: string, workspac
         if (!result.success) throw machineFailure(result.error);
         return { path };
       }
-      const result = await rpc.workspace.files.createEntry(projectId, workspaceId, request.dir, request.name, 'folder');
+      const result = await rpc.workspace.files.createEntry(workspaceId, request.dir, request.name, 'folder');
       if (result.success) return { path: result.data.path };
       if (result.error.type === 'exists') return { path };
       throw machineFailure({ type: result.error.type, message: 'message' in result.error ? result.error.message : undefined });
@@ -86,11 +86,11 @@ export function machineTransferRpc(deviceId: string, projectId: string, workspac
 
 const byWorkspace = new Map<string, RemoteTransfers>();
 
-export function transfersFor(deviceId: string, projectId: string, workspaceId: string): RemoteTransfers {
-  const key = `${deviceId}|${projectId}|${workspaceId}`;
+export function transfersFor(deviceId: string, workspaceId: string): RemoteTransfers {
+  const key = `${deviceId}|${workspaceId}`;
   let found = byWorkspace.get(key);
   if (!found) {
-    const transferRpc = machineTransferRpc(deviceId, projectId, workspaceId);
+    const transferRpc = machineTransferRpc(deviceId, workspaceId);
     found = new RemoteTransfers({ rpc: () => transferRpc, sessionId: workspaceId, deviceId, confirmReplace });
     byWorkspace.set(key, found);
   }

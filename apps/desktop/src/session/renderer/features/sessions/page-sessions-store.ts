@@ -53,7 +53,7 @@ export class PageSessionsStore implements IDisposable {
 
     const hasPreloaded = preloaded !== undefined;
     this.list = new Resource<Session[]>(
-      hasPreloaded ? null : () => rpc.sessions.getUnarchivedSession(projectId, id),
+      hasPreloaded ? null : () => rpc.sessions.getUnarchivedSession(id),
       hasPreloaded ? [] : [{ kind: 'demand' }],
       hasPreloaded ? { init: preloaded } : undefined
     );
@@ -224,7 +224,7 @@ export class PageSessionsStore implements IDisposable {
    * 会话 id 去打开。
    */
   async forkSession(sourceSessionId: string): Promise<Session> {
-    return rpc.sessions.forkSession({ projectId: this.projectId, sourceSessionId });
+    return rpc.sessions.forkSession({ sourceSessionId });
   }
 
   /**
@@ -232,7 +232,7 @@ export class PageSessionsStore implements IDisposable {
    * ❌ 不是新建一条顶上 —— 会话 id、标题、在任务里的位置原样保留。
    */
   async restartSession(sessionId: string): Promise<void> {
-    await rpc.sessions.restartSession(this.projectId, sessionId);
+    await rpc.sessions.restartSession(sessionId);
   }
 
   /**
@@ -248,7 +248,7 @@ export class PageSessionsStore implements IDisposable {
     if ((store.data.runtime ?? 'pty') !== 'acp') {
       this.ptySessions.get(sessionId)?.dispose();
     }
-    await rpc.sessions.switchSessionRuntime(this.projectId, sessionId, runtime);
+    await rpc.sessions.switchSessionRuntime(sessionId, runtime);
     // 主进程那条 `session:changed` 也会写这一格;这里先写是为了让调用方拿到控制权时
     // 页签种类已经算得出新的那一种(❌ 不赌事件先于下一行代码到达)。
     runInAction(() => {
@@ -257,7 +257,7 @@ export class PageSessionsStore implements IDisposable {
   }
 
   async hydrateSession(sessionId: string): Promise<void> {
-    await rpc.sessions.hydrateSession(this.projectId, sessionId);
+    await rpc.sessions.hydrateSession(sessionId);
     // 与 dehydrate 里的 dispose 成对:宿主那边的终端起来了,这边就接上。❌ 只靠 PtySession 的「第一次被读到才连」——
     // 别的视图一直读着 status 时,dispose 之后再也没有「第一次」,重开的页签永远停在「正在启动会话」(10-18 实撞)。
     void this.ptySessions.get(sessionId)?.connect();
@@ -266,7 +266,7 @@ export class PageSessionsStore implements IDisposable {
   async dehydrateSession(sessionId: string): Promise<void> {
     const session = this.ptySessions.get(sessionId);
     session?.dispose();
-    await rpc.sessions.dehydrateSession(this.projectId, sessionId);
+    await rpc.sessions.dehydrateSession(sessionId);
   }
 
   /**
@@ -304,7 +304,7 @@ export class PageSessionsStore implements IDisposable {
     if (scope.removeSocialIdentity === false) hide();
     try {
       // 主进程报回这一次真正收走的行(含别的机器上的子会话):归档提示的「撤销」按它放回。
-      const outcome = await rpc.sessions.archiveSession(this.projectId, sessionId, scope);
+      const outcome = await rpc.sessions.archiveSession(sessionId, scope);
       for (const ref of outcome.archived) rememberTask(ref.sessionId, true, recentOwner);
       if (scope.removeSocialIdentity !== false) hide();
       for (const session of removedSessions.values()) session.destroy();

@@ -54,8 +54,8 @@ export function LocalFolderProjectModal({ onClose, onSuccess }: LocalFolderProje
     setIsGitRepo(null);
     if (!path) return;
     let cancelled = false;
-    rpc.projects
-      .inspectProjectPath({ type: 'local', path })
+    rpc.folders
+      .inspectFolderPath(path)
       .then((status) => {
         if (!cancelled && status.isDirectory) setIsGitRepo(status.isGitRepo);
       })

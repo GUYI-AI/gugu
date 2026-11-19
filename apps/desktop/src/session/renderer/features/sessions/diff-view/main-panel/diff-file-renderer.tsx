@@ -252,7 +252,7 @@ const DiffContentPreview = observer(function DiffContentPreview({
       resourcePath: src,
     });
     if (!imagePath) return null;
-    const result = await workspaceRpc(projectId).files.readImage(projectId, workspaceId, imagePath);
+    const result = await workspaceRpc(projectId).files.readImage(workspaceId, imagePath);
     return result.success && result.data?.success ? result.data.dataUrl : null;
   };
 

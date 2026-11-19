@@ -6,14 +6,13 @@ import { Resource } from '@renderer/lib/stores/resource';
 import { fileChangesChannel } from '@shared/core/fs/fsEvents';
 import {
   isProjectConfigPath,
-  type ProjectConfigMigration,
   type ProjectSettings,
   type ProjectSettingsOverrideState,
   type ProjectSettingsPage,
   type ProjectSettingsWriteTargetOption,
   type WriteProjectConfigRequest,
 } from '@shared/core/project-settings/project-settings';
-import { projectSettingsChangedChannel } from '@shared/core/projects/projectEvents';
+import { folderSettingsChangedChannel } from '@shared/core/folders/folder-events';
 import type { UpdateProjectSettingsError } from '@shared/projects';
 
 export class ProjectSettingsStore {
@@ -35,7 +34,8 @@ export class ProjectSettingsStore {
     }, [{ kind: 'demand' }]);
 
     this._unsubscribeConfigWatch = workspaceEvents.on(fileChangesChannel, (data) => {
-      if (data.projectId !== projectId) return;
+      // A folder's config files sit at its root, the folder's own workspace (whose id is the folder id).
+      if (data.workspaceId !== projectId) return;
       if (
         data.update.kind === 'resync' ||
         data.update.changes.some((change) => isProjectConfigPath(change.path))
@@ -44,8 +44,8 @@ export class ProjectSettingsStore {
       }
     });
 
-    this._unsubscribeSettingsChanged = onMachineEvent(machineRegistry.machineOf(projectId), projectSettingsChangedChannel, (data) => {
-      if (data.projectId === projectId) {
+    this._unsubscribeSettingsChanged = onMachineEvent(machineRegistry.machineOf(projectId), folderSettingsChangedChannel, (data) => {
+      if (data.folderId === projectId) {
         this.pageData.invalidate();
       }
     });
@@ -61,14 +61,6 @@ export class ProjectSettingsStore {
 
   get overrideState(): ProjectSettingsOverrideState | null {
     return this.pageData.data?.overrideState ?? null;
-  }
-
-  get configMigrations(): ProjectConfigMigration[] | null {
-    return this.pageData.data?.configMigrations ?? null;
-  }
-
-  get shouldPromptConfigMigration(): boolean {
-    return this.pageData.data?.shouldPromptConfigMigration ?? false;
   }
 
   async load(): Promise<ProjectSettingsPage | null> {

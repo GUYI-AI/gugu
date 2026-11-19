@@ -154,7 +154,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
     turns: [...(nativeRecord.record?.turns ?? []), ...(nativeRecord.record?.activeTurn ? [nativeRecord.record.activeTurn] : [])],
     hasOlder: nativeRecord.record ? nativeRecord.record.nextCursor !== null : false,
   } : timeline
-  const recovery = useSessionRestart({ deviceId: device.device_id, projectId: session.projectId, sessionId: session.conversationId,
+  const recovery = useSessionRestart({ deviceId: device.device_id, sessionId: session.conversationId,
     missing: nativeHistory ? nativeRecord.errorCode === 'record_not_found' : errorCode === 'record_not_found', online, local,
     onReady: () => { reload(); return nativeHistory ? nativeRecord.reload() : undefined } })
   useTimelineFailureNotice(`${device.device_id}/${session.conversationId}`, error ?? (nativeHistory ? nativeRecord.error : null), recovery)

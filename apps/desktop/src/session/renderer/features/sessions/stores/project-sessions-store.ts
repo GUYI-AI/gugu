@@ -75,7 +75,7 @@ async function agentHooksKind(provider: string): Promise<string> {
 // 而且不需要重跑任何创建/准备流程。setup step 名与底层 message 都作为具名字段原样保存。
 export function createSessionFailure(error: CreateSessionError): SessionFailure {
   return match<CreateSessionError, SessionFailure>(error)
-    .with({ type: 'project-not-found' }, () => ({ kind: 'project-not-found' }))
+    .with({ type: 'folder-not-found' }, () => ({ kind: 'project-not-found' }))
     .with({ type: 'harness-unavailable' }, (e) => ({
       kind: 'harness-unavailable' as const,
       reason: e.reason,
@@ -149,13 +149,12 @@ export class ProjectSessionsStore {
         this.acceptCreatedSession(session);
       }),
       // 归档 = 这条会话离开列表:与删除同形,收起它在会话页的那一份(恢复时 session:created 再放回来)。
-      onMachineEvent(machine, sessionChangedChannel, ({ sessionId, projectId: evtProjectId, changes }) => {
-        if (evtProjectId !== this.projectId || !changes.archivedAt) return;
+      onMachineEvent(machine, sessionChangedChannel, ({ sessionId, changes }) => {
+        if (!this.sessions.has(sessionId) || !changes.archivedAt) return;
         rememberTask(sessionId, true);
         this._removeSessionLocally(sessionId);
       }),
-      onMachineEvent(machine, sessionProvisionProgressChannel, ({ sessionId, projectId: evtProjectId, message }) => {
-        if (evtProjectId !== this.projectId) return;
+      onMachineEvent(machine, sessionProvisionProgressChannel, ({ sessionId, message }) => {
         const store = this.sessions.get(sessionId);
         if (store?.isBootstrapping) {
           runInAction(() => {
@@ -164,16 +163,12 @@ export class ProjectSessionsStore {
         }
       }),
       onMachineEvent(machine, lifecycleScriptStatusChannel, (statusEvent) => {
-        if (
-          statusEvent.projectId !== this.projectId ||
-          statusEvent.status !== 'failed' ||
-          !statusEvent.surfaceFailure
-        ) {
-          return;
-        }
+        if (statusEvent.status !== 'failed' || !statusEvent.surfaceFailure) return;
         const { workspaceId, type, message } = statusEvent;
-        // 脚本是工作区的;报给人看时带上在这个工作区里的一条会话的名字。
-        const sessionName = [...this.sessions.values()].find((session) => session.workspaceId === workspaceId)?.displayName;
+        // 脚本是工作区的:这张表里有会话在这个工作区里才由它来报,报给人看时带上那条会话的名字。
+        const inWorkspace = [...this.sessions.values()].find((session) => session.workspaceId === workspaceId);
+        if (!inWorkspace) return;
+        const sessionName = inWorkspace.displayName;
         const label = type[0].toUpperCase() + type.slice(1);
         toast.error(
           sessionName
@@ -186,16 +181,15 @@ export class ProjectSessionsStore {
       // Handles sessions provisioned by the automation path (or any main-process caller)
       // without renderer-initiated RPCs. The `isUnprovisioned` guard prevents a
       // double-transition if the renderer-driven RPC already completed first.
-      onMachineEvent(machine, sessionProvisionedChannel, ({ sessionId, projectId: evtProjectId, path, workspaceId }) => {
-        if (evtProjectId !== this.projectId) return;
+      onMachineEvent(machine, sessionProvisionedChannel, ({ sessionId, path, workspaceId }) => {
+        if (!this.sessions.has(sessionId)) return;
         void this._doHandleProvisioned(sessionId, path, workspaceId);
       }),
       // spec idle-reclaim:回收停的是会话**进程**,界面原样留着 —— 会话挂起成「没准备」,视图模型(页签、聊天那份
       // store 和它的滚动位置)不动;下次显示时 view.tsx 照常 provision,终端腿按原会话续上,聊天腿下一句话再起(#6497)。
       // #6950:这里曾把视图模型 dispose 掉换一个新的,于是切回去贴到了底部、右栏还多出一个页签。
       // ❌ 释放会话表 / 终端表(归档那样):没准备的会话也靠它们给侧栏出行,表不计引用,一放就整张没了。
-      onMachineEvent(machine, sessionReclaimedChannel, ({ sessionId, projectId: evtProjectId }) => {
-        if (evtProjectId !== this.projectId) return;
+      onMachineEvent(machine, sessionReclaimedChannel, ({ sessionId }) => {
         const session = this.sessions.get(sessionId);
         if (!session || !isProvisioned(session)) return;
         runInAction(() => session.transitionToUnprovisioned('idle'));
@@ -225,7 +219,7 @@ export class ProjectSessionsStore {
         }
       }),
       workspaceEvents.on(gitWorktreeUpdateChannel, (payload) => {
-        if (payload.projectId !== this.projectId || payload.update.kind !== 'head') return;
+        if (payload.update.kind !== 'head') return;
         for (const [, store] of this.sessions) {
           if (isProvisioned(store) && store.workspaceId === payload.workspaceId) {
             void this._reloadPrsForSession(store);
@@ -258,7 +252,7 @@ export class ProjectSessionsStore {
 
   private async _reloadPrsForSession(store: SessionPageStore): Promise<void> {
     if (!isRegistered(store)) return;
-    const result = await rpc.pullRequests.getPullRequestsForSession(this.projectId, store.id);
+    const result = await rpc.pullRequests.getPullRequestsForSession(store.id);
     if (!result.success) return;
     runInAction(() => {
       store.prs = result.data.prs;
@@ -285,10 +279,11 @@ export class ProjectSessionsStore {
     sessions: Session[];
     gitByWorkspace: Map<string, { linesAdded: number; linesDeleted: number }>;
   }> {
-    const [sessions, workspaces] = await Promise.all([
-      rpc.sessions.getSessionsForProject(this.projectId),
-      rpc.sessionCreate.getProjectWorkspaces(this.projectId),
-    ]);
+    // @@@group-folders — the host lists sessions by group, not by folder: this folder's are the machine's sessions whose
+    // `projectId` (the workspace id) is this folder, and their groups give the workspaces' line counts.
+    const sessions = (await rpc.sessions.getSessions()).filter((session) => session.projectId === this.projectId);
+    const groups = [...new Set(sessions.flatMap((session) => (session.groupChatId ? [session.groupChatId] : [])))];
+    const workspaces = (await Promise.all(groups.map((chatId) => rpc.sessionCreate.getGroupWorkspaces(chatId)))).flat();
     const gitByWorkspace = new Map<string, { linesAdded: number; linesDeleted: number }>();
     for (const ws of workspaces) {
       if (ws.linesAdded != null) gitByWorkspace.set(ws.id, { linesAdded: ws.linesAdded, linesDeleted: ws.linesDeleted ?? 0 });

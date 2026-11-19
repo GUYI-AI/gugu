@@ -9,7 +9,7 @@ import { sessionAgentStatusChangedChannel } from '@shared/core/sessions/sessionE
  */
 export function nudgeWorkspace(projectId: string, workspaceId: string, options?: { reindex?: boolean }): Promise<boolean> {
   return workspaceRpc(projectId)
-    .files.nudgeWorkspace(projectId, workspaceId, options)
+    .files.nudgeWorkspace(workspaceId, options)
     .then(
       (result) => result.success && result.data.rescanned,
       () => false
@@ -18,8 +18,8 @@ export function nudgeWorkspace(projectId: string, workspaceId: string, options?:
 
 /**
  * 一个目录一个 watch 的平台上(Linux),git 改动、App 这些整棵树的订阅只看得到被盯着的目录;
- * 没人盯着的地方变了,靠这两个时刻补一次重算:窗口回到眼前,和这个项目里某个 agent 从 working 变成 idle
- * (它刚改完东西)。只订阅现成的状态事件,❌ 碰状态链路。项目里有几个工作区就各补一次 —— 事件里没有工作区,
+ * 没人盯着的地方变了,靠这两个时刻补一次重算:窗口回到眼前,和某个 agent 从 working 变成 idle
+ * (它刚改完东西)。只订阅现成的状态事件,❌ 碰状态链路。打开着的工作区各补一次 —— 事件里没有工作区,
  * 多算一次 git status 是便宜的。
  */
 export function wireWorkspaceNudges(projectId: string, workspaceId: string): () => void {
@@ -27,7 +27,6 @@ export function wireWorkspaceNudges(projectId: string, workspaceId: string): () 
   window.addEventListener('focus', nudge);
   const lastStatus = new Map<string, AgentStatus>();
   const off = events.on(sessionAgentStatusChangedChannel, (change) => {
-    if (change.projectId !== projectId) return;
     const status = change.reading?.status;
     if (!status) return;
     const before = lastStatus.get(change.sessionId);

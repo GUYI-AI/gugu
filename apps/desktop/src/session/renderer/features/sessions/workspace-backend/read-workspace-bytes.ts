@@ -13,7 +13,7 @@ export async function readWorkspaceBytes(projectId: string, workspaceId: string,
   const files = workspaceRpc(projectId).files;
   const parts: BlobPart[] = [];
   for (let offset = 0, size = Infinity; offset < size;) {
-    const result = await files.readChunk(projectId, workspaceId, { path, offset, length: 512 * 1024 });
+    const result = await files.readChunk(workspaceId, { path, offset, length: 512 * 1024 });
     if (!result.success) throw new Error(String(result.error.type));
     size = result.data.size;
     if (size > maxBytes) throw Object.assign(new Error('too large'), { code: 'too-large' });
@@ -32,7 +32,7 @@ export async function readWorkspaceFileBytes(projectId: string, workspaceId: str
   const files = workspaceRpc(projectId).files;
   if (isTextRead(path)) {
     const read = inWorkspace ? files.readFile : files.readExternalFile;
-    const result = await read(projectId, workspaceId, path, EDITOR_CONFIRM_FILE_BYTES);
+    const result = await read(workspaceId, path, EDITOR_CONFIRM_FILE_BYTES);
     if (!result.success) throw new Error('message' in result.error ? result.error.message : String(result.error));
     if (result.data.truncated) throw new Error(`File too large: ${result.data.totalSize} bytes`);
     return new Blob([result.data.content], { type: 'text/plain' });
@@ -40,7 +40,7 @@ export async function readWorkspaceFileBytes(projectId: string, workspaceId: str
   // Inside the workspace: read in chunks, so a large PDF opens (the inline read below is one message, capped at 10 MB). The
   // whole file lands in this window's memory, so it stops at the limit a preview of an opened file has on the phone too.
   if (inWorkspace) return new Blob(await readWorkspaceBytes(projectId, workspaceId, path, OPENED_FILE_MAX_BYTES), { type: mimeTypeFromName(path) ?? 'application/octet-stream' });
-  const result = await files.readInlineBinary(projectId, workspaceId, path);
+  const result = await files.readInlineBinary(workspaceId, path);
   if (!result.success) throw new Error('message' in result.error ? result.error.message : String(result.error));
   if (!result.data.success) throw new Error(result.data.error);
   return (await fetch(result.data.dataUrl)).blob();

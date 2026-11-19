@@ -19,7 +19,7 @@ type FolderPeek = Extract<PeekTarget, { kind: 'folder' }>;
  * workspace's own line says why (offline since, sign in, update), as a session's files there say it.
  */
 export const PeekFolderFile = observer(function PeekFolderFile({ target, tabId }: { target: FolderPeek; tabId: string }) {
-  const unreachable = target.deviceId ? workspaceReachLabel(target.projectId) : null;
+  const unreachable = target.deviceId ? workspaceReachLabel(target.workspaceId) : null;
   return unreachable ? <Unread target={target} why={unreachable} /> : <Reachable target={target} tabId={tabId} />;
 });
 
@@ -51,7 +51,7 @@ function Reachable({ target, tabId }: { target: FolderPeek; tabId: string }) {
   if ('cancelled' in opener) return <Unread target={target} />;
   return (
     <WorkspaceFileView
-      projectId={target.projectId}
+      projectId={target.workspaceId}
       workspaceId={target.workspaceId}
       {...(workspaceSession(target.place) ? { sessionId: workspaceSession(target.place)! } : {})}
       path={target.path}
@@ -67,7 +67,8 @@ function Reachable({ target, tabId }: { target: FolderPeek; tabId: string }) {
  * session there. A session's is held by its session. 'ready', why not, or null while asking.
  */
 function useHeldWorkspace(target: FolderPeek): 'ready' | string | null {
-  const project = workspaceSession(target.place) ? null : target.projectId;
+  // A folder's peek names the folder's own workspace: the folder id is its workspace id.
+  const project = workspaceSession(target.place) ? null : target.workspaceId;
   const { workspaceId } = target;
   const [held, setHeld] = useState<'ready' | string | null>(project ? null : 'ready');
   useEffect(() => {

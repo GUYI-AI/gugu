@@ -57,16 +57,16 @@ describe('已安排看别的机器:取数与动作都去那台机器(#6264)', ()
     const host = createMachineAutomationsHost(device);
     await host.api.createAutomation({
       name: 'daily',
-      projectId: 'p-d22',
+      workspaceId: 'p-d22',
       triggerConfig: { expr: '0 9 * * *' },
       agentConfig: { prompt: 'hi', provider: 'claude', autoApprove: true },
       sessionConfig,
     });
-    await host.api.updateAutomationSettings('a1', { projectId: 'p-d22', sessionConfig });
+    await host.api.updateAutomationSettings('a1', { workspaceId: 'p-d22', sessionConfig });
     await host.api.runAutomation('a1');
     await host.api.deleteAutomation('a1');
-    expect(d22.createAutomation).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'p-d22', sessionConfig }));
-    expect(d22.updateAutomationSettings).toHaveBeenCalledWith('a1', { projectId: 'p-d22', sessionConfig });
+    expect(d22.createAutomation).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'p-d22', sessionConfig }));
+    expect(d22.updateAutomationSettings).toHaveBeenCalledWith('a1', { workspaceId: 'p-d22', sessionConfig });
     expect(d22.runAutomation).toHaveBeenCalledWith('a1');
     expect(d22.deleteAutomation).toHaveBeenCalledWith('a1');
     expect(local.createAutomation).not.toHaveBeenCalled();

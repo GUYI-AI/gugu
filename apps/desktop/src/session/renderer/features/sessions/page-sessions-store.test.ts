@@ -280,13 +280,13 @@ describe('PageSessionsStore 归档', () => {
 
   it('乐观收起被点名的那一行,别的行不动;把主进程报回的清单原样交出去', async () => {
     const store = new PageSessionsStore('project-1', 'a', [row('a')]);
-    const reported = { archived: [{ projectId: 'project-1', sessionId: 'a' }], unreached: [] };
+    const reported = { archived: [{ sessionId: 'a' }], unreached: [] };
     archiveSession.mockResolvedValue(reported);
 
     const archived = await store.archiveSession('a');
 
     expect(archived).toBe(reported);
-    expect(archiveSession).toHaveBeenCalledWith('project-1', 'a', {});
+    expect(archiveSession).toHaveBeenCalledWith('a', {});
     expect(store.sessions.has('a')).toBe(false);
     store.dispose();
   });
@@ -327,7 +327,6 @@ describe('PageSessionsStore 归档', () => {
     for (const handler of handlers) {
       handler({
         sessionId: 'a',
-        projectId: 'project-1',
         changes: { archivedAt: '2026-09-11 01:00:00' },
       });
     }
@@ -341,7 +340,6 @@ describe('PageSessionsStore 归档', () => {
     for (const handler of eventHandlers.get(sessionChangedChannel) ?? []) {
       handler({
         sessionId: 'a',
-        projectId: 'project-1',
         changes: { title: 'renamed' },
       });
     }
@@ -369,7 +367,7 @@ describe('PageSessionsStore 引擎那边的状态清掉了 (#7223)', () => {
   // 网页宿主那条传输走 JSON:事件先过一遍 JSON 再交给 handler,才是那条宿主上真正收到的样子。
   const deliverOverJson = (changes: Record<string, unknown>) => {
     for (const handler of eventHandlers.get(sessionChangedChannel) ?? []) {
-      handler(JSON.parse(JSON.stringify({ sessionId: 'a', projectId: 'project-1', changes })));
+      handler(JSON.parse(JSON.stringify({ sessionId: 'a', changes })));
     }
   };
 
@@ -407,7 +405,7 @@ describe('PageSessionsStore 上下文读数跟着记录走 (#7342)', () => {
 
   const deliverOverJson = (changes: Record<string, unknown>) => {
     for (const handler of eventHandlers.get(sessionChangedChannel) ?? []) {
-      handler(JSON.parse(JSON.stringify({ sessionId: 'a', projectId: 'project-1', changes })));
+      handler(JSON.parse(JSON.stringify({ sessionId: 'a', changes })));
     }
   };
 

@@ -6,7 +6,7 @@ import {
   type LocalSessionEngine,
 } from '@shared/core/session-import/session-import'
 
-export type ImportedSession = { title: string; projectId: string | null; sessionId: string }
+export type ImportedSession = { title: string; sessionId: string }
 export type ImportResult = { imported: ImportedSession[]; existing: number; failed: number }
 
 export type ImportProvider = {
@@ -73,7 +73,7 @@ function transcriptProvider(engine: LocalSessionEngine): ImportProvider {
             sessionView: source.sessionView,
           })
           if (imported.alreadyImported) result.existing++
-          else result.imported.push({ title: row.title, projectId: imported.projectId, sessionId: imported.sessionId })
+          else result.imported.push({ title: row.title, sessionId: imported.sessionId })
         } catch {
           result.failed++
         }

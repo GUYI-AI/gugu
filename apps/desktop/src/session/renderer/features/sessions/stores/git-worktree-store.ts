@@ -48,10 +48,7 @@ export class GitWorktreeStore {
   ) {
     const snapshot = coalesce(
       async (): Promise<Result<GitWorktreeSnapshot, GitWorktreeSnapshotError>> => {
-        const result = await workspaceRpc(this.projectId).gitWorktree.getWorktreeSnapshot(
-          this.projectId,
-          this.workspaceId
-        );
+        const result = await workspaceRpc(this.projectId).gitWorktree.getWorktreeSnapshot(this.workspaceId);
         if (!result.success) return err(result.error);
         runInAction(() => {
           this.syncError = null;
@@ -283,7 +280,7 @@ export class GitWorktreeStore {
   async stageFiles(paths: string[]): Promise<GitWorktreeMutationResult> {
     const result = await this.optimisticStatus.run(
       (model) => stageFilesOptimistically(model, paths),
-      () => workspaceRpc(this.projectId).gitWorktree.stageFiles(this.projectId, this.workspaceId, paths),
+      () => workspaceRpc(this.projectId).gitWorktree.stageFiles(this.workspaceId, paths),
       (data) => data.sequences.status
     );
     return result;
@@ -292,7 +289,7 @@ export class GitWorktreeStore {
   async stageAllFiles(): Promise<GitWorktreeMutationResult> {
     const result = await this.optimisticStatus.run(
       (model) => stageAllOptimistically(model),
-      () => workspaceRpc(this.projectId).gitWorktree.stageAllFiles(this.projectId, this.workspaceId),
+      () => workspaceRpc(this.projectId).gitWorktree.stageAllFiles(this.workspaceId),
       (data) => data.sequences.status
     );
     return result;
@@ -301,7 +298,7 @@ export class GitWorktreeStore {
   async unstageFiles(paths: string[]): Promise<GitWorktreeMutationResult> {
     const result = await this.optimisticStatus.run(
       (model) => unstageFilesOptimistically(model, paths),
-      () => workspaceRpc(this.projectId).gitWorktree.unstageFiles(this.projectId, this.workspaceId, paths),
+      () => workspaceRpc(this.projectId).gitWorktree.unstageFiles(this.workspaceId, paths),
       (data) => data.sequences.status
     );
     return result;
@@ -310,7 +307,7 @@ export class GitWorktreeStore {
   async unstageAllFiles(): Promise<GitWorktreeMutationResult> {
     const result = await this.optimisticStatus.run(
       (model) => unstageAllOptimistically(model),
-      () => workspaceRpc(this.projectId).gitWorktree.unstageAllFiles(this.projectId, this.workspaceId),
+      () => workspaceRpc(this.projectId).gitWorktree.unstageAllFiles(this.workspaceId),
       (data) => data.sequences.status
     );
     return result;
@@ -319,7 +316,7 @@ export class GitWorktreeStore {
   async discardFiles(paths: string[]): Promise<GitWorktreeMutationResult> {
     const result = await this.optimisticStatus.run(
       (model) => discardFilesOptimistically(model, paths),
-      () => workspaceRpc(this.projectId).gitWorktree.revertFiles(this.projectId, this.workspaceId, paths),
+      () => workspaceRpc(this.projectId).gitWorktree.revertFiles(this.workspaceId, paths),
       (data) => data.sequences.status
     );
     return result;
@@ -328,7 +325,7 @@ export class GitWorktreeStore {
   async discardAllFiles(): Promise<GitWorktreeMutationResult> {
     const result = await this.optimisticStatus.run(
       (model) => discardAllOptimistically(model),
-      () => workspaceRpc(this.projectId).gitWorktree.revertAllFiles(this.projectId, this.workspaceId),
+      () => workspaceRpc(this.projectId).gitWorktree.revertAllFiles(this.workspaceId),
       (data) => data.sequences.status
     );
     return result;
@@ -337,7 +334,7 @@ export class GitWorktreeStore {
   async commit(message: string) {
     const result = await this.optimisticStatus.run(
       (model) => commitOptimistically(model),
-      () => workspaceRpc(this.projectId).gitWorktree.commit(this.projectId, this.workspaceId, message),
+      () => workspaceRpc(this.projectId).gitWorktree.commit(this.workspaceId, message),
       (data) => data.sequences.status
     );
     if (result.success) return ok();
@@ -347,13 +344,13 @@ export class GitWorktreeStore {
   async push() {
     // 别的机器上的会话由那台机器按它自己的上游推(remote 名在那边定)。
     const remote = this.gitRepositoryStore?.pushRemote.name ?? 'origin';
-    const result = await workspaceRpc(this.projectId).gitWorktree.push(this.projectId, this.workspaceId, remote);
+    const result = await workspaceRpc(this.projectId).gitWorktree.push(this.workspaceId, remote);
     if (result.success) return ok();
     return err(result.error);
   }
 
   async pull() {
-    const result = await workspaceRpc(this.projectId).gitWorktree.pull(this.projectId, this.workspaceId);
+    const result = await workspaceRpc(this.projectId).gitWorktree.pull(this.workspaceId);
     if (result.success) return ok();
     return err(result.error);
   }

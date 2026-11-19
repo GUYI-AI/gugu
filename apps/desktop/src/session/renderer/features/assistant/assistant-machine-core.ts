@@ -10,7 +10,7 @@ import type { AssistantPanelFiles } from '@gugu/core/cloud/assistantPanelFiles';
 import { assistantPaths, joinPath, memoryIndexHints, parseMemoryNote, type AssistantPaths, type MemoryNote } from './assistant-files';
 
 /** 问那台机器用的那张路由表:桌面经会话页的线(rpcOn),手机经手机壳的线(sessionpage-rpc 的 machineRpc),同一组动词。 */
-export type MachineRpc = Pick<ReturnType<typeof rpcOn>, 'projects' | 'files' | 'workspace' | 'app'>;
+export type MachineRpc = Pick<ReturnType<typeof rpcOn>, 'folderRuntime' | 'files' | 'workspace' | 'app'>;
 
 export type AssistantMachine = {
   deviceId: string;
@@ -57,8 +57,8 @@ export async function openMachineWith(
 ): Promise<AssistantMachine> {
   const opened = await rpc.folderRuntime.openFolder(projectId);
   if (!opened.success) fail({ type: 'project', message: 'message' in opened.error ? String(opened.error.message) : opened.error.type });
-  const workspaceId = acquiredWorkspaceId ?? opened.data.repositoryWorkspaceId;
-  if (!workspaceId) fail({ type: 'project', message: `no workspace for ${projectId}` });
+  // The folder's root is the folder's own workspace (its id is the folder id).
+  const workspaceId = acquiredWorkspaceId ?? projectId;
   // 项目开着 ≠ 工作区在那台机器上登记着:云电脑睡过一觉醒来,只有助理那条会话真跑起来才会登记它。读写动词认的是登记,
   // 所以这里自己领一份(与新建框的工作区面板同一个动词)。❌ 离开时释放 —— 释放 = 拆掉那个工作区,助理自己的会话也在用它。
   const acquired = acquiredWorkspaceId ? { success: true as const } : await rpc.folderRuntime.acquireFolderWorkspace(projectId, workspaceId);
@@ -83,7 +83,7 @@ export async function listDirectory(machine: AssistantMachine, dir: string): Pro
 /** 读一个文本文件;不存在 = null。 */
 export async function readText(machine: AssistantMachine, path: string): Promise<string | null> {
   if (machine.panel) return machine.panel.text(path);
-  const result = await nativeRpc(machine).workspace.files.readExternalFile(machine.projectId, machine.workspaceId, path, 1_048_576);
+  const result = await nativeRpc(machine).workspace.files.readExternalFile(machine.workspaceId, path, 1_048_576);
   if (result.success) return result.data.content;
   const message = 'message' in result.error ? String(result.error.message) : undefined;
   if (isMissing(message)) return null;
@@ -92,13 +92,13 @@ export async function readText(machine: AssistantMachine, path: string): Promise
 
 export async function writeText(machine: AssistantMachine, path: string, content: string, expectedRevision?: string): Promise<void> {
   if (machine.panel) return machine.panel.write(path,new TextEncoder().encode(content),'text/plain',expectedRevision);
-  const result = await nativeRpc(machine).workspace.files.writeExternalFile(machine.projectId, machine.workspaceId, path, content);
+  const result = await nativeRpc(machine).workspace.files.writeExternalFile(machine.workspaceId, path, content);
   if (!result.success) fail({ type: result.error.type, message: 'message' in result.error ? String(result.error.message) : undefined });
 }
 
 export async function removePath(machine: AssistantMachine, path: string, recursive = false): Promise<void> {
   if (machine.panel) return machine.panel.remove(path,recursive);
-  const result = await nativeRpc(machine).workspace.files.removeFile(machine.projectId, machine.workspaceId, path, { recursive });
+  const result = await nativeRpc(machine).workspace.files.removeFile(machine.workspaceId, path, { recursive });
   if (!result.success) fail({ type: result.error.type, message: 'message' in result.error ? String(result.error.message) : undefined });
   if (!result.data.success) fail(result.data.error);
 }
@@ -106,7 +106,7 @@ export async function removePath(machine: AssistantMachine, path: string, recurs
 /** 建一个文件夹;已经有了不算错(资料夹第一次上传时顺手建)。 */
 export async function makeFolder(machine: AssistantMachine, dir: string, name: string): Promise<string> {
   if (machine.panel) { const path = joinPath(dir,name); await machine.panel.mkdir(path); return path; }
-  const result = await nativeRpc(machine).workspace.files.createEntry(machine.projectId, machine.workspaceId, dir, name, 'folder');
+  const result = await nativeRpc(machine).workspace.files.createEntry(machine.workspaceId, dir, name, 'folder');
   if (result.success) return result.data.path;
   if (result.error.type === 'exists') return joinPath(dir, name);
   fail({ type: result.error.type, message: 'message' in result.error ? String(result.error.message) : undefined });
@@ -140,7 +140,7 @@ export async function uploadFile(
   do {
     const slice = new Uint8Array(await file.slice(offset, offset + CHUNK_BYTES).arrayBuffer());
     const final = offset + slice.length >= total;
-    const result = await nativeRpc(machine).workspace.files.writeChunk(machine.projectId, machine.workspaceId, {
+    const result = await nativeRpc(machine).workspace.files.writeChunk(machine.workspaceId, {
       path,
       uploadId,
       offset,

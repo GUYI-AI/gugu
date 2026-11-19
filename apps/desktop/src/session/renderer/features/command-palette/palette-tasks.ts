@@ -12,7 +12,7 @@ export function paletteTasks(local: readonly SearchItem[], listed: readonly List
   const remote = listed
     .filter(({ summary }) => rowOpens(summary) && !isAssistantSession(summary, assistantId))
     .map(({ deviceId, deviceLabel, summary }): PaletteTask => ({
-      kind: 'session', id: summary.conversationId, projectId: summary.projectId,
+      kind: 'session', id: summary.conversationId,
       title: summary.title,
       subtitle: '', score: 0, lastInteractedAt: summary.lastInteractedAt, deviceId, deviceLabel,
     }));

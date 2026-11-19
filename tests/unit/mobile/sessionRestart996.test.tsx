@@ -19,7 +19,7 @@ const view = (kind: LifeView['kind'], message?: string, version = kind === 'dorm
 let harness: ReturnType<typeof createReactHarness>
 let recovery: ReturnType<typeof useSessionRestart>
 function Fixture({ code = 'record_not_found', id = 's' }: { code?: string; id?: string }) {
-  recovery = useSessionRestart({ deviceId: 'host', projectId: 'p', sessionId: id, missing: code === 'record_not_found', online: true, local: false, onReady: host.ready })
+  recovery = useSessionRestart({ deviceId: 'host', sessionId: id, missing: code === 'record_not_found', online: true, local: false, onReady: host.ready })
   // The hook's own surface: its error, a reload that retries, and Start fresh while the hook offers it.
   return <div>
     <p>{recovery.error ?? 'Missing record'}</p>
@@ -52,14 +52,14 @@ describe('phone missing-session recovery (#996)', () => {
     await tick(600)
     expect(recovery.error).toBeNull()
     expect(host.ready).toHaveBeenCalledOnce()
-    expect(host.restart).toHaveBeenCalledExactlyOnceWith('p', 's')
+    expect(host.restart).toHaveBeenCalledExactlyOnceWith('s')
     expect(host.retry).not.toHaveBeenCalled()
   })
   it('offers the desktop action for a missing record with a recorded first utterance', async () => {
     await harness.render(<Fixture />); await tick()
     expect(freshButton()).toBeDefined()
     expect(harness.container.querySelectorAll('button')).toHaveLength(2)
-    expect(host.read).toHaveBeenCalledWith('p', 's')
+    expect(host.read).toHaveBeenCalledWith('s')
     expect(host.restart).not.toHaveBeenCalled()
   })
   it.each(['unreachable', 'record_unreadable', 'timeline_failed'])('does not offer Start fresh for an ordinary %s read failure', async code => {
@@ -86,7 +86,7 @@ describe('phone missing-session recovery (#996)', () => {
     let finish!: () => void
     host.restart.mockImplementation(() => new Promise<void>(resolve => { finish = resolve }))
     await act(async () => { freshButton()!.click(); freshButton()!.click() })
-    expect(host.restart).toHaveBeenCalledExactlyOnceWith('p', 's')
+    expect(host.restart).toHaveBeenCalledExactlyOnceWith('s')
     expect(freshButton()!.disabled).toBe(true)
     expect(recovery.pendingPrompt).toBeNull()
     host.life.mockResolvedValue(view('starting'))
@@ -121,7 +121,7 @@ describe('phone missing-session recovery (#996)', () => {
     expect(recovery.busy).toBe(false)
     expect(recovery.error).toBe(terminal === 'failed' ? 'Agent process exited' : null)
     expect(host.ready).toHaveBeenCalledTimes(terminal === 'ready' ? 1 : 0)
-    expect(host.restart).toHaveBeenCalledExactlyOnceWith('p', 's')
+    expect(host.restart).toHaveBeenCalledExactlyOnceWith('s')
   })
   it('shows a real bootstrap failure and retries that attempt without replacing the engine again', async () => {
     await harness.render(<Fixture />); await tick()

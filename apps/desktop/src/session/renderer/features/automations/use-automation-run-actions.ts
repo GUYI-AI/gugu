@@ -5,6 +5,6 @@ export function useAutomationRunActions(automationId: string) {
   const automation = useAutomation(automationId);
   return {
     stopRun: stop.mutate,
-    projectId: automation?.projectId ?? null,
+    projectId: automation?.workspaceId ?? null,
   };
 }

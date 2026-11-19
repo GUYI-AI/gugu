@@ -61,7 +61,7 @@ export type VoiceNotesContext = {
   /** 现读(❌ 用助理 App 最后一次渲染时的那个):离开 App 之后云电脑睡了 / 醒了这里也知道。 */
   readiness: () => MachineReadiness;
   wake: () => void;
-  prepareSummary?: () => Promise<{ session: { projectId: string; sessionId: string }; memoryDir: string }>;
+  prepareSummary?: () => Promise<{ session: { sessionId: string }; memoryDir: string }>;
   /** 云电脑上的文件变了:让列表 / 详情重读。 */
   invalidate: () => void;
 };
@@ -351,7 +351,7 @@ async function readBinary(machine: AssistantMachine, path: string): Promise<Blob
   const parts: BlobPart[] = [];
   let offset = 0;
   for (;;) {
-    const result = await rpcOn(machine.target).workspace.files.readChunk(machine.projectId, machine.workspaceId, { path, offset, length: 512 * 1024 });
+    const result = await rpcOn(machine.target).workspace.files.readChunk(machine.workspaceId, { path, offset, length: 512 * 1024 });
     if (!result.success) throw new Error(String(result.error.type));
     const bytes = base64ToBytes(result.data.data);
     parts.push(bytes.slice().buffer);
@@ -387,9 +387,9 @@ async function transcribeSegment(job: Job, machine: AssistantMachine, ctx: Voice
 }
 
 /** 助理自己那条会话(按身份认);它的会话目录还没读到 = null。 */
-function assistantSession(ctx: VoiceNotesContext): { projectId: string; sessionId: string } | null {
+function assistantSession(ctx: VoiceNotesContext): { sessionId: string } | null {
   const own = homeSessions(ctx.home).sessions.find((session) => isAssistantSession(session, ctx.assistantId));
-  return own ? { projectId: own.projectId, sessionId: own.conversationId } : null;
+  return own ? { sessionId: own.conversationId } : null;
 }
 
 async function requestSummary(job: Job, machine: AssistantMachine, ctx: VoiceNotesContext) {
@@ -400,7 +400,6 @@ async function requestSummary(job: Job, machine: AssistantMachine, ctx: VoiceNot
     if (!session) throw new StepFailure('summarize', 'assistant-session-missing');
     const dir = execution ? joinPath(joinPath(execution.memoryDir, VOICE_NOTES_DIR), job.id) : voiceNoteDir(machine, job.id);
     await rpcOn(homeTarget(ctx.home)).sessions.sendMessage({
-      projectId: session.projectId,
       sessionId: session.sessionId,
       clientMessageId: crypto.randomUUID(),
       kind: 'session-direct',

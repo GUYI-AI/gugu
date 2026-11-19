@@ -30,7 +30,6 @@ function directServer(overrides: Partial<PreviewServer> = {}): PreviewServer {
   return {
     kind: 'direct',
     id: 'direct-1',
-    projectId: 'project-1',
     workspaceId: 'workspace-1',
     source: { kind: 'terminal-output', terminalId: 'terminal-1' },
     protocol: 'http:',
@@ -53,13 +52,11 @@ describe('PreviewServerStore', () => {
     rpcMocks.listForWorkspace.mockResolvedValueOnce([vite, next]);
 
     const store = new PreviewServerStore({
-      projectId: 'project-1',
       workspaceId: 'workspace-1',
     });
     await store.serversResource.load();
 
     expect(rpcMocks.listForWorkspace).toHaveBeenCalledWith({
-      projectId: 'project-1',
       workspaceId: 'workspace-1',
     });
     expect(store.servers.map((server) => server.id)).toEqual(['next', 'vite']);
@@ -71,7 +68,6 @@ describe('PreviewServerStore', () => {
   it('applies upsert and remove events for the active workspace', async () => {
     rpcMocks.listForWorkspace.mockResolvedValue([]);
     const store = new PreviewServerStore({
-      projectId: 'project-1',
       workspaceId: 'workspace-1',
     });
     await store.serversResource.load();

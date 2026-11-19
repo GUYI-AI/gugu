@@ -20,8 +20,8 @@ const mocks = vi.hoisted(() => ({
   createAndProvisionSession: vi.fn(),
   sessionAcquire: vi.fn(),
   sessionRelease: vi.fn(),
-  getSessionsForProject: vi.fn(),
-  getProjectWorkspaces: vi.fn(),
+  getSessions: vi.fn(),
+  getGroupWorkspaces: vi.fn(),
   getProjectManagerStore: vi.fn(),
   getPullRequestsForSession: vi.fn(),
   getSessionGitWorktreeStore: vi.fn(),
@@ -49,7 +49,7 @@ vi.mock('@renderer/lib/ipc', () => {
       list: vi.fn(async () => [{ id: 'claude', capabilities: { hooks: { kind: 'config' } } }]),
     },
     sessions: {
-      getSessionsForProject: mocks.getSessionsForProject,
+      getSessions: mocks.getSessions,
     },
     terminals: { getTerminalsForSession: mocks.getTerminalsForSession },
     pullRequests: {
@@ -58,7 +58,7 @@ vi.mock('@renderer/lib/ipc', () => {
     sessionCreate: {
       createAndProvisionSession: mocks.createAndProvisionSession,
       provisionWorkspace: mocks.provisionWorkspace,
-      getProjectWorkspaces: mocks.getProjectWorkspaces,
+      getGroupWorkspaces: mocks.getGroupWorkspaces,
     },
   },
 };
@@ -155,8 +155,8 @@ describe('ProjectSessionsStore session lifecycle', () => {
     mocks.viewModels.length = 0;
     mocks.terminalAcquire.mockReset();
     mocks.getTerminalsForSession.mockResolvedValue([]);
-    mocks.getSessionsForProject.mockResolvedValue([]);
-    mocks.getProjectWorkspaces.mockResolvedValue([]);
+    mocks.getSessions.mockResolvedValue([]);
+    mocks.getGroupWorkspaces.mockResolvedValue([]);
     mocks.getProjectManagerStore.mockReturnValue({ mountProject: mocks.mountProject });
     mocks.getPullRequestsForSession.mockResolvedValue({ success: true, data: { prs: [] } });
     mocks.mountProject.mockResolvedValue(undefined);
@@ -215,9 +215,10 @@ describe('ProjectSessionsStore session lifecycle', () => {
       terminalManagers.push(terminals);
       return terminals;
     });
-    const sessions = Array.from({ length: 12 }, (_, i) => makeSession({ id: `session-${i}` }));
-    mocks.getSessionsForProject.mockResolvedValue(sessions);
-    mocks.getProjectWorkspaces.mockResolvedValue([{ id: 'workspace-1', linesAdded: 3, linesDeleted: 1 }]);
+    const sessions = Array.from({ length: 12 }, (_, i) => makeSession({ id: `session-${i}`, groupChatId: 'group-1' }));
+    // The host lists the machine's sessions; another folder's stay out of this one.
+    mocks.getSessions.mockResolvedValue([...sessions, makeSession({ id: 'elsewhere', projectId: 'project-2' })]);
+    mocks.getGroupWorkspaces.mockResolvedValue([{ id: 'workspace-1', linesAdded: 3, linesDeleted: 1 }]);
 
     await manager.loadSessions();
     await manager.loadSessions();
@@ -225,8 +226,8 @@ describe('ProjectSessionsStore session lifecycle', () => {
     expect(manager.listState).toBe('read');
     expect(manager.sessions.size).toBe(12);
     expect(manager.sessions.get('session-0')?.workspaceGit).toEqual({ linesAdded: 3, linesDeleted: 1 });
-    expect(mocks.getSessionsForProject).toHaveBeenCalledTimes(1);
-    expect(mocks.getProjectWorkspaces).toHaveBeenCalledTimes(1);
+    expect(mocks.getSessions).toHaveBeenCalledTimes(1);
+    expect(mocks.getGroupWorkspaces).toHaveBeenCalledExactlyOnceWith('group-1');
     expect(mocks.getTerminalsForSession).not.toHaveBeenCalled();
 
     await manager.provisionSession('session-0');
@@ -314,16 +315,16 @@ describe('ProjectSessionsStore session lifecycle', () => {
     const viewModel = mocks.viewModels[0];
     manager.sessions.set(session.id, store);
     const subscriptions = vi.mocked(events.on).mock.calls as unknown as Array<
-      [unknown, (payload: { sessionId: string; projectId: string; changes: { archivedAt?: string | null } }) => void]
+      [unknown, (payload: { sessionId: string; changes: { archivedAt?: string | null } }) => void]
     >;
     const onChanged = subscriptions.find(([channel]) => channel === sessionChangedChannel)?.[1];
     expect(onChanged).toBeDefined();
 
     // 对照:别的字段变了不算归档。
-    onChanged!({ sessionId: 'session-1', projectId: 'project-1', changes: {} });
+    onChanged!({ sessionId: 'session-1', changes: {} });
     expect(manager.sessions.has('session-1')).toBe(true);
 
-    onChanged!({ sessionId: 'session-1', projectId: 'project-1', changes: { archivedAt: '2026-01-02 00:00:00' } });
+    onChanged!({ sessionId: 'session-1', changes: { archivedAt: '2026-01-02 00:00:00' } });
 
     expect(manager.sessions.has('session-1')).toBe(false);
     expect(mocks.sessionRelease).toHaveBeenCalledWith('session-1');
@@ -344,16 +345,16 @@ describe('ProjectSessionsStore session lifecycle', () => {
     const viewModel = mocks.viewModels[0];
     manager.sessions.set(session.id, store);
     const subscriptions = vi.mocked(events.on).mock.calls as unknown as Array<
-      [unknown, (payload: { projectId: string; sessionId: string }) => void]
+      [unknown, (payload: { sessionId: string }) => void]
     >;
     const onReclaimed = subscriptions.find(([channel]) => channel === sessionReclaimedChannel)?.[1];
     expect(onReclaimed).toBeDefined();
 
-    // 对照:别的项目的回收不动这条会话。
-    onReclaimed!({ projectId: 'project-2', sessionId: 'session-1' });
+    // 对照:别的会话的回收不动这条会话。
+    onReclaimed!({ sessionId: 'session-2' });
     expect(store.state).toBe('provisioned');
 
-    onReclaimed!({ projectId: 'project-1', sessionId: 'session-1' });
+    onReclaimed!({ sessionId: 'session-1' });
 
     expect(viewModel.suspend).toHaveBeenCalledOnce();
     expect(viewModel.dispose).not.toHaveBeenCalled();
@@ -468,7 +469,7 @@ describe('ProjectSessionsStore session lifecycle', () => {
     await Promise.all([creating, pane]);
     expect(mocks.createAndProvisionSession).toHaveBeenCalledOnce();
     expect(mocks.provisionWorkspace).not.toHaveBeenCalled();
-    expect(mocks.getSessionsForProject).not.toHaveBeenCalled();
+    expect(mocks.getSessions).not.toHaveBeenCalled();
     expect(manager.sessions.get('new-task')?.state).toBe('provisioned');
     manager.dispose();
   });

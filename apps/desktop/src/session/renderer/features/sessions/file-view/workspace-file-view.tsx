@@ -90,13 +90,13 @@ export function WorkspaceFileView({ root, tabId, projectId, workspaceId, session
         kind: 'hosted',
         key: `${workspaceId}:${path}@${revision}`,
         read: () => readWorkspaceFileBytes(projectId, workspaceId, path, inWorkspace),
-        registerHtml: (documentHtml) => registerHtmlPreview(documentHtml, (content) => workspaceRpc(projectId).files.createPreview(projectId, workspaceId, absolutePath, content)),
+        registerHtml: (documentHtml) => registerHtmlPreview(documentHtml, (content) => workspaceRpc(projectId).files.createPreview(workspaceId, absolutePath, content)),
         quote: (selection) => sessionId ? quoteWorkspaceFile(projectId, sessionId, path, selection) : Promise.resolve(),
         citesSelection: !!sessionId,
         ...(sessionId ? { annotation: { sessionId, path } } : {}),
         // On another machine this computer's programs cannot reach it: it is downloaded instead.
         ...(elsewhere ? {} : {
-          openExternal: () => void openPathWithFailureToast(absolutePath, inWorkspace ? { projectId, workspaceId } : undefined),
+          openExternal: () => void openPathWithFailureToast(absolutePath, inWorkspace ? { workspaceId } : undefined),
           // 「用 VS Code、访达、终端打开」: this computer's programs, as the project tab's menu lists them.
           openIn: openInApps.map(({ id, label }) => ({
             key: id,
@@ -107,7 +107,7 @@ export function WorkspaceFileView({ root, tabId, projectId, workspaceId, session
         // On this computer the system's program takes it; from another machine it is downloaded (outside the workspace there: read back here).
         unreadableAction: elsewhere
           ? <Button size="sm" variant="outline" className="mt-4" onClick={download}>{translate('file.downloadInstead')}</Button>
-          : <OpenWithSystemButton absolutePath={absolutePath} {...(inWorkspace ? { workspace: { projectId, workspaceId } } : {})} />,
+          : <OpenWithSystemButton absolutePath={absolutePath} {...(inWorkspace ? { workspace: { workspaceId } } : {})} />,
         folders: absolutePath.split(/[\\/]/).slice(0, -1).map((name, index, parts) => {
           const here = parts.slice(0, index + 1).join('/');
           const inside = root !== undefined && sessionId && tabId && inWorkspace && (here === root || here.startsWith(`${root}/`));

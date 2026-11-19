@@ -105,7 +105,7 @@ describe('GitRepositoryStore', () => {
 
     for (const handler of repoHandlers) {
       handler({
-        projectId: 'project-1',
+        folderId: 'project-1',
         update: { kind: 'refs', model: refs(2), sequence: 2, generation: 1 },
       });
     }
@@ -121,7 +121,7 @@ describe('GitRepositoryStore', () => {
 
     for (const handler of repoHandlers) {
       handler({
-        projectId: 'project-2',
+        folderId: 'project-2',
         update: { kind: 'refs', model: refs(2), sequence: 2, generation: 1 },
       });
     }
@@ -138,7 +138,7 @@ describe('GitRepositoryStore', () => {
 
     for (const handler of repoHandlers) {
       handler({
-        projectId: 'project-1',
+        folderId: 'project-1',
         update: { kind: 'refs', model: refs(1), sequence: 2, generation: 1 },
       });
     }

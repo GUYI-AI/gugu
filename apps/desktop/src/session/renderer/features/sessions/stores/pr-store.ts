@@ -70,7 +70,7 @@ export class PrStore {
                 if (p.workspaceId === this.workspaceId && p.update.kind === 'head') handler();
               });
               const unsubRefs = workspaceEvents.on(gitRepoUpdateChannel, (p) => {
-                if (p.projectId === this.projectId && p.update.kind === 'refs') handler();
+                if (p.folderId === this.projectId && p.update.kind === 'refs') handler();
               });
               return () => {
                 unsubHead();
@@ -151,7 +151,6 @@ export class PrStore {
 
     const tryRange = async (): Promise<GitChange[] | null> => {
       const result = await workspaceRpc(this.projectId).gitWorktree.getChangedFiles(
-        this.projectId,
         this.workspaceId,
         range
       );

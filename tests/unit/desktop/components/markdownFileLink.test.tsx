@@ -30,7 +30,7 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { kind: 'web
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { getMessageById: vi.fn() } }))
 vi.mock('../../../../apps/desktop/src/components/appSlot/phoneAppHost', () => ({
   openPhoneLink: (target: GuguLinkTarget) => openLinkWith({
-    installed: () => [], isEnabled: () => false, locale: () => 'en', sessionProject: async () => null, agentSession: async () => null,
+    installed: () => [], isEnabled: () => false, locale: () => 'en', sessionListed: async () => false, agentSession: async () => null,
     reveal: async () => {}, openApp: async () => 'own', resourceChat: async (id) => id,
     openResource: async (resource) => { await openLinkTarget(resource) }, bringUp: async () => {}, deliver: () => {},
   }, target),

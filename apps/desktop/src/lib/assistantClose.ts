@@ -21,7 +21,7 @@ import { UI_EVENTS } from './uiEvents'
 
 export type CloseSession = Pick<
   SessionpageSessionSummary,
-  'conversationId' | 'projectId' | 'title' | 'agent' | 'parentConversationId' | 'spawnedByConversationId'
+  'conversationId' | 'title' | 'agent' | 'parentConversationId' | 'spawnedByConversationId'
 >
 
 export type LocalClosePlan = {
@@ -40,7 +40,7 @@ export type LocalCloseDeps = {
   /** 同一个归档入口:移出身份、放掉本机登记,保留绑定任务及历史。 */
   removeAgent: (agentUserId: string) => Promise<void>
   /** 收起一条会话(停掉它的进程)。 */
-  archiveSession: (projectId: string, sessionId: string) => Promise<void>
+  archiveSession: (sessionId: string) => Promise<void>
   wipeHome: () => Promise<void>
   resetLocalState: () => void
 }
@@ -101,7 +101,7 @@ export async function closeLocalAssistant(
       if (input.deleteStarted && session.agent?.userId && session.agent.userId !== input.assistantId) {
         await deps.removeAgent(session.agent.userId)
       } else {
-        await deps.archiveSession(session.projectId, session.conversationId)
+        await deps.archiveSession(session.conversationId)
       }
     }
   })
@@ -111,7 +111,7 @@ export async function closeLocalAssistant(
     await step('session', async () => {
       const ownIds = new Set(plan.own.map(session => session.conversationId))
       for (const session of await deps.listSessions()) {
-        if (ownIds.has(session.conversationId)) await deps.archiveSession(session.projectId, session.conversationId)
+        if (ownIds.has(session.conversationId)) await deps.archiveSession(session.conversationId)
       }
     })
     await step('home', deps.wipeHome)

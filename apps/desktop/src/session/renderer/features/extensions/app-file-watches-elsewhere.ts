@@ -10,7 +10,7 @@ import type { ExtensionFileChangeBatch } from '@shared/extensions/bridge-protoco
  */
 export type AppFileWatchRequest = { key: string; sessionId: string; on: boolean } & ({ file: string } | { folder: string });
 export type AppFileHeard = { key: string; change: ExtensionFileChangeBatch };
-export type WatchedWorkspace = { projectId: string; workspaceId: string; root: CanonicalPath };
+export type WatchedWorkspace = { workspaceId: string; root: CanonicalPath };
 
 export type AppFileWatchDeps = {
   onRequest: (handler: (request: AppFileWatchRequest) => void) => () => void;

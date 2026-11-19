@@ -1081,7 +1081,7 @@ export async function openPhoneLink(target: string | OpenTarget, source?: Pick<L
     isEnabled: (id) => installedExtensionsStore.isEnabled(id),
     locale: () => document.documentElement.lang,
     resourceChat: async (chatId) => { const { token, userId } = await sendPlatform.account(); return resourceChatIdOf(token, chatId, userId) },
-    sessionProject: async (sessionId) => { const listed = listedSession(readCachedDevices(), liveDeviceSessions(), sessionId); return 'row' in listed ? listed.row.session.projectId : null },
+    sessionListed: async (sessionId) => 'row' in listedSession(readCachedDevices(), liveDeviceSessions(), sessionId),
     // The phone's session directory carries each row's agent: the same lookup the DM header does (useAgentSessionRow).
     agentSession: async (agentId) => {
       const row = directoryRows(readCachedDevices(), liveDeviceSessions()).find(({ session }) => session.agent?.userId === agentId)

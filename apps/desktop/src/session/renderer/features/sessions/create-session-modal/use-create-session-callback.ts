@@ -160,7 +160,6 @@ export function useCreateSessionCallback({
 
   const sendOrdinaryMessage = useCallback(async (message: PendingMessage): Promise<void> => {
     const result = await rpc.sessions.sendMessage({
-      projectId: message.projectId,
       sessionId: message.sessionId,
       clientMessageId: message.clientMessageId,
       text: message.text,
@@ -316,8 +315,8 @@ export function useCreateSessionCallback({
           const placed = await input.placeAttachments(async () => {
             const owner = getRendererSession()?.user.id;
             if (!owner) throw new Error('attachments: not signed in');
-            return { chatId: (await shellPort().ensureAgentAddress({ projectId: selectedProjectId, sessionId })).chatId, owner, sessionId,
-              deviceId: machineRegistry.machineOf(selectedProjectId), projectId: selectedProjectId,
+            return { chatId: (await shellPort().ensureAgentAddress({ sessionId })).chatId, owner, sessionId,
+              deviceId: machineRegistry.machineOf(selectedProjectId),
               workspaceId: asProvisioned(getSessionPageStore(selectedProjectId, sessionId))?.workspaceId };
           });
           // ❌ 不 throw:任务已经建好,重试那条路会再建一个。没放成的那几件在日志与提示里说出来。

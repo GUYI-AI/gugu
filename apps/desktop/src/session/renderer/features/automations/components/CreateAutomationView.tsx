@@ -87,7 +87,7 @@ export const CreateAutomationView = observer(function CreateAutomationView({
         triggerConfig,
         agentConfig,
         sessionConfig,
-        projectId: effectiveProjectId,
+        workspaceId: effectiveProjectId,
       });
       toast({
         title: translate('automations.createdToast'),

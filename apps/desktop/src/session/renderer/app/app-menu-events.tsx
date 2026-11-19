@@ -17,7 +17,8 @@ import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { machineOfProject } from '@renderer/features/remote-hosts/workspace/machine-workspace-backend';
 import { onMachineReconnected } from '@renderer/lib/machine-clients';
 import { retryServerVersionMatch } from '@/lib/serverVersionRetry';
-import { getProjectManagerStore } from '@renderer/features/projects/stores/project-selectors';
+import { projectOfSession, resolveSessionFolder } from '@renderer/features/projects/stores/project-selectors';
+
 import { getSessionPageStore, getWorkspaceForSession } from '@renderer/features/sessions/stores/session-selectors';
 import { workspaceEvents, workspaceRpc } from '@renderer/features/sessions/workspace-backend/workspace-backend';
 import { fileChangesChannel } from '@shared/core/fs/fsEvents';
@@ -57,6 +58,9 @@ import {
   sessionOpenExtensionInPaneResultChannel,
 } from '@shared/events/appEvents';
 import { browserLinkCopiedChannel } from '@shared/events/browserEvents';
+
+/** A host request naming a session no mounted folder lists: answered at once, ❌ left to time out. */
+const SESSION_NOT_LISTED = 'target session is not listed in this window';
 
 export function AppMenuEvents() {
   const { navigate } = useNavigate();
@@ -102,24 +106,29 @@ export function AppMenuEvents() {
 
     const unlisten = events.on(
       notificationFocusSessionChannel,
-      ({ projectId, sessionId, beside, groupParticipantRequestId }) => {
-        const groupEntry = sessionId ? openRequestedGroupParticipant({ projectId, sessionId }, groupParticipantRequestId) : undefined;
+      ({ sessionId, beside, groupParticipantRequestId }) => {
+        void resolveSessionFolder(sessionId).then((projectId) => {
+        if (!projectId) {
+          log.warn('[notification] focus names a session no folder lists', { sessionId });
+          return;
+        }
+        const groupEntry = openRequestedGroupParticipant({ projectId, sessionId }, groupParticipantRequestId);
         if (groupEntry) {
           disposers.add(groupEntry);
           return;
         }
         // A task card on the screen view: beside what is there, the layout kept.
-        if (beside && sessionId && isScreenView(appState.navigation.currentViewId)) {
+        if (beside && isScreenView(appState.navigation.currentViewId)) {
           disposers.add(openSessionInSessionWhenReady({ projectId, sessionId, onReady: () => showSessionBeside({ projectId, sessionId }) }));
           return;
         }
         navigate('session', { projectId, sessionId: sessionId });
         revealSessionpage(); // a banner's click, or a composer an App named: the session in front, from any page
-        if (!sessionId) return;
 
         const dispose = openSessionInSessionWhenReady({ projectId, sessionId });
 
         disposers.add(dispose);
+        });
       }
     );
 
@@ -144,18 +153,25 @@ export function AppMenuEvents() {
   useEffect(() => {
     const disposers = new Set<() => void>();
     const unlisten = events.on(sessionOpenFileInPaneChannel, (request) => {
+      void resolveSessionFolder(request.sessionId).then((projectId) => {
+      if (!projectId) {
+        events.emit(sessionOpenFileInPaneResultChannel, { requestId: request.requestId, success: false, error: SESSION_NOT_LISTED });
+        return;
+      }
       const dispose = openHostRequestedFileInSessionWhenReady({
         ...request,
+        projectId,
         intent: request.intent === 'pinned' ? 'newTab' : 'navigate',
         onResult: (result) => {
           events.emit(sessionOpenFileInPaneResultChannel, {
             requestId: request.requestId,
             ...result,
-            ...(result.success ? { tabs: readSessionPaneTabs(request.projectId, request.sessionId) } : {}),
+            ...(result.success ? { tabs: readSessionPaneTabs(projectId, request.sessionId) } : {}),
           });
         },
       });
       disposers.add(dispose);
+      });
     });
     return () => {
       unlisten();
@@ -196,22 +212,20 @@ export function AppMenuEvents() {
         onRequest: (handler) => events.on(appFileWatchElsewhereChannel, handler),
         reply: (heard) => events.emit(appFileHeardElsewhereChannel, heard),
         locate: (sessionId) => {
-          for (const projectId of getProjectManagerStore().projects.keys()) {
-            const workspaceId = getSessionPageStore(projectId, sessionId)?.workspaceId;
-            const workspace = getWorkspaceForSession(projectId, sessionId);
-            if (workspaceId && workspace) return { projectId, workspaceId, root: receivedCanonicalPath(workspace.path) };
-          }
-          return null;
+          const projectId = projectOfSession(sessionId);
+          const workspaceId = projectId ? getSessionPageStore(projectId, sessionId)?.workspaceId : undefined;
+          const workspace = projectId ? getWorkspaceForSession(projectId, sessionId) : undefined;
+          return workspaceId && workspace ? { workspaceId, root: receivedCanonicalPath(workspace.path) } : null;
         },
         onFileChanges: (handler) => workspaceEvents.on(fileChangesChannel, handler),
-        watchDirectory: async ({ projectId, workspaceId }, directory) => {
-          const files = workspaceRpc(projectId).files;
-          const watched = await files.watchDirectory(projectId, workspaceId, directory);
+        watchDirectory: async ({ workspaceId }, directory) => {
+          const files = workspaceRpc(workspaceId).files;
+          const watched = await files.watchDirectory(workspaceId, directory);
           if (!watched.success) throw new Error(JSON.stringify(watched.error));
-          return () => void files.releaseDirectoryWatch(projectId, workspaceId, watched.data.leaseId);
+          return () => void files.releaseDirectoryWatch(workspaceId, watched.data.leaseId);
         },
-        onMachineBack: ({ projectId }, handler) => {
-          const deviceId = machineOfProject(projectId);
+        onMachineBack: ({ workspaceId }, handler) => {
+          const deviceId = machineOfProject(workspaceId);
           return deviceId ? onMachineReconnected(deviceId, handler) : () => {};
         },
         warn: (message, data) => log.warn(message, data),
@@ -225,8 +239,8 @@ export function AppMenuEvents() {
       answerMachinePreviewReads({
         onRequest: (handler) => events.on(remotePreviewReadChannel, handler),
         reply: (result) => events.emit(remotePreviewReadResultChannel, result),
-        read: async (projectId, workspaceId, chunk) => {
-          const result = await rpc.workspace.files.readChunk(projectId, workspaceId, chunk);
+        read: async (workspaceId, chunk) => {
+          const result = await rpc.workspace.files.readChunk(workspaceId, chunk);
           if (result.success) return result.data;
           throw Object.assign(new Error(String(result.error.type)), { code: String(result.error.type) });
         },
@@ -262,20 +276,27 @@ export function AppMenuEvents() {
         );
         return;
       }
+      void resolveSessionFolder(request.sessionId).then((projectId) => {
+      if (!projectId) {
+        events.emit(sessionOpenBrowserInPaneResultChannel, { requestId: request.requestId, success: false, error: SESSION_NOT_LISTED });
+        return;
+      }
       const dispose = openHostRequestedBrowserInSessionWhenReady({
         ...request,
+        projectId,
         intent: request.intent === 'pinned' ? 'newTab' : 'navigate',
         onResult: (result) => {
           acquisitions.delete(request.requestId);
           events.emit(sessionOpenBrowserInPaneResultChannel, {
             requestId: request.requestId,
             ...result,
-            ...(result.success ? { tabs: readSessionPaneTabs(request.projectId, request.sessionId) } : {}),
+            ...(result.success ? { tabs: readSessionPaneTabs(projectId, request.sessionId) } : {}),
           });
         },
       });
       disposers.add(dispose);
       if (request.acquire) acquisitions.set(request.requestId, dispose);
+      });
     });
     return () => {
       unlisten();
@@ -288,23 +309,30 @@ export function AppMenuEvents() {
   useEffect(() => {
     const disposers = new Set<() => void>();
     const unlisten = events.on(sessionOpenExtensionInPaneChannel, (request) => {
+      void resolveSessionFolder(request.sessionId).then((projectId) => {
+      if (!projectId) {
+        events.emit(sessionOpenExtensionInPaneResultChannel, { requestId: request.requestId, success: false, error: SESSION_NOT_LISTED });
+        return;
+      }
       // 从会话页外面来的(扩展横幅、gugu://ext 链接):先把那个任务带到屏幕上。
       if (request.reveal) {
-        navigate('session', { projectId: request.projectId, sessionId: request.sessionId });
+        navigate('session', { projectId, sessionId: request.sessionId });
         revealSessionpage();
       }
       const dispose = openHostRequestedExtensionInSessionWhenReady({
         ...request,
+        projectId,
         intent: request.intent === 'pinned' ? 'newTab' : 'navigate',
         onResult: (result) => {
           events.emit(sessionOpenExtensionInPaneResultChannel, {
             requestId: request.requestId,
             ...result,
-            ...(result.success ? { tabs: readSessionPaneTabs(request.projectId, request.sessionId) } : {}),
+            ...(result.success ? { tabs: readSessionPaneTabs(projectId, request.sessionId) } : {}),
           });
         },
       });
       disposers.add(dispose);
+      });
     });
     return () => {
       unlisten();
@@ -316,9 +344,15 @@ export function AppMenuEvents() {
   useEffect(() => {
     const disposers = new Set<() => void>();
     const off = events.on(sessionManageTabsChannel, (request) => {
-      disposers.add(manageSessionTabsWhenReady({ ...request, onResult: (result) => {
+      void resolveSessionFolder(request.sessionId).then((projectId) => {
+      if (!projectId) {
+        events.emit(sessionManageTabsResultChannel, { requestId: request.requestId, success: false, error: SESSION_NOT_LISTED });
+        return;
+      }
+      disposers.add(manageSessionTabsWhenReady({ ...request, projectId, onResult: (result) => {
         events.emit(sessionManageTabsResultChannel, { requestId: request.requestId, ...result });
       } }));
+      });
     });
     return () => { off(); disposers.forEach((dispose) => dispose()); };
   }, []);

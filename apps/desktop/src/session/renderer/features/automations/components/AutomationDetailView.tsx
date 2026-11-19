@@ -71,7 +71,7 @@ const AutomationSettingsDetailView = observer(function AutomationSettingsDetailV
 
   const { runNow } = useAutomations();
 
-  const canRunNow = !!automation.projectId && !runNow.isPending && !readOnly;
+  const canRunNow = !!automation.workspaceId && !runNow.isPending && !readOnly;
 
   return (
     <div className="flex h-full flex-col">
@@ -140,7 +140,7 @@ const AutomationSettingsDetailView = observer(function AutomationSettingsDetailV
                   <Play className="size-3.5" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  {automation.projectId == null
+                  {automation.workspaceId == null
                     ? translate('automations.assignProjectFirst')
                     : !automation.agentConfig || !automation.triggerConfig
                       ? translate('automations.configureFirst')

@@ -34,7 +34,7 @@ vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({
 
 import { restoreArchivedSession } from './restore-session-flow';
 
-const ref = { projectId: 'p1', sessionId: 'c1' };
+const ref = { sessionId: 'c1' };
 const restoredRow = { id: 'c1', projectId: 'p1', title: 'x', archivedAt: null };
 
 describe('restoreArchivedSession', () => {
@@ -50,7 +50,7 @@ describe('restoreArchivedSession', () => {
   it('库与渲染侧两处都动,且渲染侧那一份在项目挂上之后才放行', async () => {
     const result = await restoreArchivedSession(ref);
 
-    expect(mocks.restoreSession).toHaveBeenCalledWith('p1', 'c1');
+    expect(mocks.restoreSession).toHaveBeenCalledWith('c1');
     expect(mocks.ensureProjectLoaded).toHaveBeenCalledWith('p1');
     expect(mocks.acceptCreatedSession).toHaveBeenCalledWith(restoredRow);
     expect(mocks.order).toEqual(['project', 'session']);

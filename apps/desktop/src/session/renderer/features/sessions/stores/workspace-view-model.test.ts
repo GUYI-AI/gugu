@@ -175,7 +175,6 @@ function makeTerminal(id: string, name = 'Terminal 1'): TerminalStore {
   return {
     data: {
       id,
-      projectId: 'project-1',
       sessionId: 'conversation-1',
       shellId: 'system',
       name,

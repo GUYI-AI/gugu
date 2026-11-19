@@ -30,7 +30,7 @@ export function useProjectGitContext(projectId: string | undefined): ProjectGitC
     // (观察者组件在挂载转变时重渲,enabled 随之翻真)。
     enabled: !!projectId && !!project,
     queryFn: async () => {
-      const result = await rpc.gitRepository.getProjectRootHead(projectId!);
+      const result = await rpc.gitRepository.getFolderHead(projectId!);
       if (!result.success) throw new Error(result.error.type);
       return result.data.head;
     },

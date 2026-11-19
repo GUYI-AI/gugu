@@ -4,7 +4,7 @@ import type { SessionpageSessionSummary } from '@gugu/session-core/session-recor
 import { paletteTasks, type ListedPaletteTask } from './palette-tasks';
 
 const local = (id: string, lastInteractedAt?: string | null, title = id): SearchItem => ({
-  kind: 'session', id, projectId: 'local-project', title, subtitle: '', score: 0, lastInteractedAt,
+  kind: 'session', id, title, subtitle: '', score: 0, lastInteractedAt,
 });
 const remote = (id: string, lastInteractedAt: string | null, patch: Partial<SessionpageSessionSummary> = {}): ListedPaletteTask => ({
   deviceId: 'other-device', deviceLabel: 'Other computer', live: true,
@@ -43,9 +43,9 @@ describe('command palette tasks across devices', () => {
     expect(ids(paletteTasks([], rows, '', 'assistant-id'))).toEqual(['child', 'native']);
   });
 
-  it('keeps raw task titles for search and preserves the inbound project and device', () => {
+  it('keeps raw task titles for search and preserves the device', () => {
     expect(paletteTasks([], [remote('task', at(1), { title: 'codex (2)' })], '', null))
-      .toEqual([expect.objectContaining({ title: 'codex (2)', projectId: 'inbound-project', deviceId: 'other-device', deviceLabel: 'Other computer' })]);
+      .toEqual([expect.objectContaining({ title: 'codex (2)', deviceId: 'other-device', deviceLabel: 'Other computer' })]);
     expect(paletteTasks([local('here', at(2))], [], '', null)[0]).not.toHaveProperty('deviceId');
   });
 
@@ -73,8 +73,8 @@ describe('command palette tasks across devices', () => {
     expect(paletteTasks([], [], '', null)).toEqual([]);
   });
 
-  it('excludes projects from tasks and deduplicates repeated remote directory rows', () => {
-    expect(ids(paletteTasks([{ ...local('project'), kind: 'project' }], [remote('same', at(2)), remote('same', at(1))], '', null)))
+  it('deduplicates repeated remote directory rows', () => {
+    expect(ids(paletteTasks([], [remote('same', at(2)), remote('same', at(1))], '', null)))
       .toEqual(['same']);
   });
 });

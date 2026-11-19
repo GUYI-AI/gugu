@@ -5,6 +5,7 @@ import { useObserver } from 'mobx-react-lite';
 import { useState } from 'react';
 import { i18n } from '@/i18n';
 import { getSessionPageStore } from '@renderer/features/sessions/stores/session-selectors';
+import { projectOfSession } from '@renderer/features/projects/stores/project-selectors';
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import { useDebounce } from '@renderer/lib/hooks/useDebounce';
 import { getEffectiveHotkey, isHostCommandId, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
@@ -114,8 +115,9 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
             {tasks.length > 0 && (
               <Command.Group heading={translate(search ? 'palette.tasks' : 'palette.recentTasks')} className={GROUP_CLASS}>
                 {tasks.map((item) => {
-                  const open = () => { if (item.projectId) { done(); followLink({ kind: 'session', sessionId: item.id, projectId: item.projectId }); } };
-                  const store = !item.deviceId && item.projectId ? getSessionPageStore(item.projectId, item.id) : undefined;
+                  const open = () => { done(); followLink({ kind: 'session', sessionId: item.id, ...(item.deviceId ? { deviceId: item.deviceId } : {}) }); };
+                  const projectId = item.deviceId ? undefined : projectOfSession(item.id);
+                  const store = projectId ? getSessionPageStore(projectId, item.id) : undefined;
                   return store ? <PaletteSessionItem key={item.id} value={`task:${item.id}`} sessionPageStore={store} onSelect={open} /> : (
                     <Command.Item key={item.id} value={`task:${item.id}`} onSelect={open} className={PALETTE_ITEM_CLASS}>
                       <MessageSquare size={14} /><span className="flex-1 truncate">{item.title}</span>

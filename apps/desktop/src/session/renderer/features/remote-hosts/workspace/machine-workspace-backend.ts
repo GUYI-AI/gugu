@@ -64,10 +64,10 @@ function machineRpc(deviceId: string): WorkspaceRpc {
     get(target, verb, receiver) {
       if (verb !== 'createPreview') return Reflect.get(target, verb, receiver);
       // HTML 预览:登记在这台电脑的 `gugu-preview://`,字节按块从那台机器取(相对资源照常加载;路径由那台机器核)。
-      const createPreview: WorkspaceRpc['files']['createPreview'] = async (projectId, workspaceId, filePath, documentHtml) => {
+      const createPreview: WorkspaceRpc['files']['createPreview'] = async (workspaceId, filePath, documentHtml) => {
         const [root, doc] = await Promise.all([
-          rpc.workspace.files.getAbsolutePath(projectId, workspaceId, '.'),
-          rpc.workspace.files.getAbsolutePath(projectId, workspaceId, filePath),
+          rpc.workspace.files.getAbsolutePath(workspaceId, '.'),
+          rpc.workspace.files.getAbsolutePath(workspaceId, filePath),
         ]);
         const unavailable = err({
           type: 'fs_error' as const,
@@ -84,7 +84,6 @@ function machineRpc(deviceId: string): WorkspaceRpc {
           return unavailable;
         }
         const result = await rpc.workspace.files.createRemotePreview({
-          projectId,
           workspaceId,
           root: root.data.path,
           surface: 'pane',
@@ -123,13 +122,12 @@ class MachineBrowserAttachment implements WorkspaceBrowserAttachment {
     this.pages = new RemotePageSession({
       root: async () => {
         if (ctx.workspacePath) return ctx.workspacePath;
-        const result = await rpc.workspace.files.getAbsolutePath(ctx.projectId, ctx.workspaceId, '.');
+        const result = await rpc.workspace.files.getAbsolutePath(ctx.workspaceId, '.');
         if (!result.success) throw new Error('workspace root unavailable');
         return result.data.path;
       },
       register: async (root) => {
         const result = await rpc.workspace.files.createRemotePreview({
-          projectId: ctx.projectId,
           workspaceId: ctx.workspaceId,
           root,
           surface: 'browser',

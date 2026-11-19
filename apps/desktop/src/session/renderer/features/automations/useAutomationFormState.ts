@@ -43,7 +43,7 @@ export function useAutomationFormState(
 
   const [name, setName] = useState(seed?.name ?? initialTemplate?.name ?? '');
   const [projectId, setProjectId] = useState<string | undefined>(
-    seed?.projectId ?? firstMountedProjectId(machine)
+    seed?.workspaceId ?? firstMountedProjectId(machine)
   );
   const [cronExpr, setCronExpr] = useState<string>(
     seedTrigger?.expr ?? initialTemplate?.defaultTrigger.expr ?? DEFAULT_CRON

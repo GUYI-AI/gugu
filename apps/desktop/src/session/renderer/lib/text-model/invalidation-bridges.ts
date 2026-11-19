@@ -57,10 +57,11 @@ export function wireModelRegistryInvalidation(registry: TextModelRegistry): () =
     }
   });
 
-  const unsubRefs = workspaceEvents.on(gitRepoUpdateChannel, ({ projectId, update }) => {
+  const unsubRefs = workspaceEvents.on(gitRepoUpdateChannel, ({ folderId, update }) => {
     if (update.kind !== 'refs') return;
     const refKind = 'branch';
-    for (const uri of registry.findGitUris({ projectId, refKind })) {
+    // A model's projectId is its folder's id.
+    for (const uri of registry.findGitUris({ projectId: folderId, refKind })) {
       refresh(uri);
     }
   });

@@ -1659,16 +1659,16 @@ export function InitialSessionField({
           return;
         }
         void (async () => {
-          const projects = rpcOn(remoteMachine).projects;
-          const acquired = await projects.acquireProjectWorkspace(projectId, workspaceId);
+          const folderRuntime = rpcOn(remoteMachine).folderRuntime;
+          const acquired = await folderRuntime.acquireFolderWorkspace(projectId, workspaceId);
           if (!acquired.success) throw new Error('The task workspace is not available');
           try {
             for (const entry of entries) {
-              const path = await pushTaskDirectory({ deviceId: remoteMachine, projectId, workspaceId, chatId: '', owner: '' }, entry);
+              const path = await pushTaskDirectory({ deviceId: remoteMachine, workspaceId, chatId: '', owner: '' }, entry);
               editorApiRef.current?.insertMention({ id: path, label: path, kind: 'file', name: entry.name });
             }
           } finally {
-            await projects.releaseProjectWorkspace(projectId, workspaceId);
+            await folderRuntime.releaseFolderWorkspace(projectId, workspaceId);
           }
         })().catch(error => {
           log.warn('New task folder placement failed', { error: String(error) });

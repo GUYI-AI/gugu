@@ -16,13 +16,13 @@ function rig(located = true) {
   answerAppFileWatches({
     onRequest: (handler) => { request = handler; return () => {}; },
     reply: (one) => heard.push(one),
-    locate: () => (located ? { projectId: 'remote:d', workspaceId: 'w', root: '/srv/a' as CanonicalPath } : null),
+    locate: () => (located ? { workspaceId: 'w', root: '/srv/a' as CanonicalPath } : null),
     onFileChanges: (handler) => { feeds.add(handler); return () => feeds.delete(handler); },
     watchDirectory,
     onMachineBack: (_workspace, handler) => { back = handler; return () => { back = () => {}; }; },
     warn,
   });
-  const fire = (update: FileChangesEvent['update'], workspaceId = 'w') => feeds.forEach((feed) => feed({ projectId: 'remote:d', workspaceId, update }));
+  const fire = (update: FileChangesEvent['update'], workspaceId = 'w') => feeds.forEach((feed) => feed({ workspaceId, update }));
   const change = (kind: 'create' | 'update' | 'delete', path: string) => ({ kind: 'changes' as const, changes: [{ kind, path: path as CanonicalPath, entryType: 'file' as const }] });
   return { machineBack: () => back(), request: (r: AppFileWatchRequest) => request(r), heard, fire, change, letGo, watchDirectory, feeds, warn };
 }

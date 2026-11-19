@@ -11,7 +11,7 @@ import { chatService } from './chat'
 import { getCurrentAuthUserId, identityDb } from './supabase'
 import { i18n } from '../i18n'
 
-type SessionTarget = { projectId: string; sessionId: string }
+type SessionTarget = { sessionId: string }
 type ArchiveTarget = { device: Device; session: SessionTarget } | null
 export type AgentArchiveOptions = { removeSocialIdentity?: boolean }
 
@@ -57,7 +57,7 @@ export async function archiveOwnedAgent(agentUserId: string, options: AgentArchi
     return
   }
   const { device, session } = target
-  const args = [session.projectId, session.sessionId, { withChildren: false, removeSocialIdentity }] as const
+  const args = [session.sessionId, { withChildren: false, removeSocialIdentity }] as const
   const outcome = isPhoneDevice(device)
     ? await invokePhoneHost<ArchiveOutcome>(device.device_id, 'sessions.archiveSession', [...args])
     : await host(device).sessions.archiveSession(...args)

@@ -6,23 +6,20 @@ import type { PreviewServer, PreviewServerEvent } from '@shared/core/preview-ser
 import { previewServerUrl } from '@shared/core/preview-servers/types';
 
 type PreviewServerStoreOptions = {
-  projectId: string;
   workspaceId: string;
 };
 
 export class PreviewServerStore implements IDisposable {
   readonly serversResource: Resource<Map<string, PreviewServer>, PreviewServerEvent>;
 
-  private readonly projectId: string;
   private readonly workspaceId: string;
   private started = false;
 
-  constructor({ projectId, workspaceId }: PreviewServerStoreOptions) {
-    this.projectId = projectId;
+  constructor({ workspaceId }: PreviewServerStoreOptions) {
     this.workspaceId = workspaceId;
     this.serversResource = new Resource<Map<string, PreviewServer>, PreviewServerEvent>(
       async () => {
-        const servers = await rpc.previewServers.listForWorkspace({ projectId, workspaceId });
+        const servers = await rpc.previewServers.listForWorkspace({ workspaceId });
         return new Map(servers.map((server) => [server.id, server]));
       },
       [
@@ -32,12 +29,7 @@ export class PreviewServerStore implements IDisposable {
           onEvent: (event, ctx) => {
             const next = new Map(ctx.data ?? []);
             if (event.type === 'upsert') {
-              if (
-                event.server.projectId !== this.projectId ||
-                event.server.workspaceId !== this.workspaceId
-              ) {
-                return;
-              }
+              if (event.server.workspaceId !== this.workspaceId) return;
               next.set(event.server.id, event.server);
             } else {
               next.delete(event.id);

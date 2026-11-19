@@ -43,7 +43,6 @@ export function useCommits(projectId: string, workspaceId: string, range: Commit
       if (!range) return { commits: [], aheadCount: 0 };
 
       const result = await workspaceRpc(projectId).gitWorktree.getLog(
-        projectId,
         workspaceId,
         PAGE_SIZE,
         pageParam,

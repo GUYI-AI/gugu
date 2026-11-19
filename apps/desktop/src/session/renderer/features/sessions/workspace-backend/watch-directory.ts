@@ -10,7 +10,7 @@ export function watchWorkspaceDirectory(projectId: string, workspaceId: string, 
   const files = workspaceRpc(projectId).files;
   // Started inside the promise: a bridge that refuses the call reports it like any failed call, not by throwing in an effect.
   const lease = Promise.resolve()
-    .then(() => files.watchDirectory(projectId, workspaceId, directory))
+    .then(() => files.watchDirectory(workspaceId, directory))
     .then((result) => {
       if (result.success) return result.data.leaseId;
       log.warn('[watch-directory] not watched', { directory, error: result.error });
@@ -25,7 +25,7 @@ export function watchWorkspaceDirectory(projectId: string, workspaceId: string, 
     if (released) return;
     released = true;
     void lease.then((leaseId) => {
-      if (leaseId) void files.releaseDirectoryWatch(projectId, workspaceId, leaseId).catch(() => {});
+      if (leaseId) void files.releaseDirectoryWatch(workspaceId, leaseId).catch(() => {});
     });
   };
 }

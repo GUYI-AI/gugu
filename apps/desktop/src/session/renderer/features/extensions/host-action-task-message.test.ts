@@ -16,7 +16,7 @@ const origin = { extensionId: 'task-app', sessionId: 'bound-task', tabId: 'task-
 
 it('uses the ordinary conversation RPC for the admitted bound task without changing run state', async () => {
   await applyExtensionHostAction({ origin, action: { kind: 'taskMessage', text: '请暂停。' } });
-  expect(state.send).toHaveBeenCalledExactlyOnceWith({ projectId: 'bound-project', sessionId: 'bound-task',
+  expect(state.send).toHaveBeenCalledExactlyOnceWith({ sessionId: 'bound-task',
     clientMessageId: expect.any(String), text: '请暂停。' });
 });
 it('does not retarget an unavailable task and does not report an unknown outcome as sent', async () => {

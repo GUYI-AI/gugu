@@ -16,7 +16,7 @@ const { UI_EVENTS } = await import('../../../../apps/desktop/src/lib/uiEvents')
 
 const GUGU = 'agent-gugu'
 const session = (conversationId: string, extra: Record<string, unknown> = {}) =>
-  ({ conversationId, projectId: 'p1', title: conversationId, agent: null, parentConversationId: null, spawnedByConversationId: null, ...extra }) as CloseSession
+  ({ conversationId, title: conversationId, agent: null, parentConversationId: null, spawnedByConversationId: null, ...extra }) as CloseSession
 
 const sessions = [
   session('s-gugu', { agent: { userId: GUGU } }),
@@ -43,7 +43,7 @@ function rig(overrides: Record<string, unknown> = {}) {
       calls.push(`agent:${id}`)
       remaining = remaining.filter(session => session.agent?.userId !== id)
     }),
-    archiveSession: vi.fn(async (_projectId: string, id: string) => void calls.push(`archive:${id}`)),
+    archiveSession: vi.fn(async (id: string) => void calls.push(`archive:${id}`)),
     wipeHome: vi.fn(async () => void calls.push('wipe')),
     resetLocalState: vi.fn(() => void calls.push('reset')),
     ...overrides,

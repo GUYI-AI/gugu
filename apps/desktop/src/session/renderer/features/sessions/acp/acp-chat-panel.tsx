@@ -307,9 +307,9 @@ const ComposerForStore = observer(function ComposerForStore({
     to: async () => {
       const owner = getRendererSession()?.user.id;
       if (!owner) throw new Error('attachments: not signed in');
-      const address = await shellPort().ensureAgentAddress({ projectId: store.projectId, sessionId: store.sessionId });
+      const address = await shellPort().ensureAgentAddress({ sessionId: store.sessionId });
       return { chatId: address.chatId, owner, sessionId: store.sessionId, deviceId: machineRegistry.machineOf(store.projectId),
-        projectId: store.projectId, workspaceId: asProvisioned(getSessionPageStore(store.projectId, store.sessionId))?.workspaceId };
+        workspaceId: asProvisioned(getSessionPageStore(store.projectId, store.sessionId))?.workspaceId };
     },
     setAttachments,
     translate,
@@ -502,7 +502,7 @@ const ComposerForStore = observer(function ComposerForStore({
         }
         const workspaceId = asProvisioned(getSessionPageStore(store.projectId, store.sessionId))?.workspaceId;
         for (const entry of entries) {
-          void pushTaskDirectory({ deviceId, projectId: store.projectId, workspaceId, chatId: '', owner: '' }, entry).then(path => {
+          void pushTaskDirectory({ deviceId, workspaceId, chatId: '', owner: '' }, entry).then(path => {
             editorApiRef.current?.insertMention({ id: path, label: path, kind: 'file', name: entry.name });
           }).catch(error => {
             log.warn('Task folder placement failed', { error: String(error) });
@@ -683,7 +683,7 @@ const ComposerForStore = observer(function ComposerForStore({
                 .searchIssues(issueProvider, {
                   limit: ISSUE_SEARCH_LIMIT,
                   searchTerm: query.trim(),
-                  projectId: store.projectId,
+                  folderId: store.projectId,
                   projectPath: issueProviderContext.projectPath,
                   repositoryUrl: issueProviderContext.repositoryUrl ?? undefined,
                 })
@@ -2245,7 +2245,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           void rpc.issues
             .getIssueContext(target.provider, {
               identifier: target.identifier,
-              projectId: store.projectId,
+              folderId: store.projectId,
             })
             .then((result) => {
               if (result.success && result.data.url) {

@@ -110,7 +110,6 @@ export const CreatePrModal = observer(function CreatePrModal({
     try {
       if (push) {
         const pushResult = await workspaceRpc(projectId).gitWorktree.push(
-          projectId,
           workspaceId,
           repo?.pushRemote.name ?? 'origin'
         );

@@ -125,7 +125,6 @@ describe('TextModelRegistry', () => {
     const diskUri = registry.toDiskUri(uri);
 
     expect(fileMocks.readExternalFile).toHaveBeenCalledWith(
-      'project',
       'workspace',
       '/Users/me/plan.html',
       EDITOR_CONFIRM_FILE_BYTES
@@ -149,7 +148,7 @@ describe('TextModelRegistry', () => {
     // 按编辑器传下来的上限决定给正文还是给 too-large —— 与真实 FS 同一条约定:
     // 超限就不读,只回大小。
     fileMocks.readFile.mockImplementationOnce(async (..._args: unknown[]) => {
-      const maxBytes = _args[3] as number | undefined;
+      const maxBytes = _args[2] as number | undefined;
       const overLimit = maxBytes === undefined || totalSize > maxBytes;
       return {
         success: true,
@@ -173,7 +172,6 @@ describe('TextModelRegistry', () => {
     const diskUri = registry.toDiskUri(uri);
 
     expect(fileMocks.readFile).toHaveBeenCalledWith(
-      'project',
       'workspace',
       'report.html',
       EDITOR_CONFIRM_FILE_BYTES
@@ -267,7 +265,7 @@ describe('TextModelRegistry', () => {
     const content = 'x'.repeat(1000);
     // 用 Once 排队,❌ 不装持久实现 —— 那会漏给后面的用例,而 beforeEach 只做 mockClear。
     const byLimit = async (..._args: unknown[]) => {
-      const maxBytes = _args[3] as number;
+      const maxBytes = _args[2] as number;
       const overLimit = totalSize > maxBytes;
       return {
         success: true,
@@ -281,7 +279,7 @@ describe('TextModelRegistry', () => {
     );
     const diskUri = registry.toDiskUri(uri);
     expect(fileMocks.readFile).toHaveBeenLastCalledWith(
-      'project', 'workspace', 'huge.html', EDITOR_CONFIRM_FILE_BYTES
+      'workspace', 'huge.html', EDITOR_CONFIRM_FILE_BYTES
     );
     expect(registry.modelStatus.get(diskUri)).toBe('too-large');
     expect(registry.modelTotalSizes.get(diskUri)).toBe(totalSize);
@@ -292,7 +290,7 @@ describe('TextModelRegistry', () => {
       EDITOR_HARD_MAX_FILE_BYTES
     );
     expect(fileMocks.readFile).toHaveBeenLastCalledWith(
-      'project', 'workspace', 'huge.html', EDITOR_HARD_MAX_FILE_BYTES
+      'workspace', 'huge.html', EDITOR_HARD_MAX_FILE_BYTES
     );
     expect(registry.modelStatus.get(diskUri)).toBe('ready');
     expect(registry.getText(diskUri)).toHaveLength(1000);
@@ -501,7 +499,7 @@ describe('TextModelRegistry', () => {
 
     // ⌘S writes the merged text, and it is saved.
     expect(await registry.saveFileToDisk(uri)).toBe('## 待办\n- [ ] a (mine)\n## 进行中\n- [ ] b\n');
-    expect(fileMocks.writeFile).toHaveBeenLastCalledWith('project', 'workspace', 'TODO.md', '## 待办\n- [ ] a (mine)\n## 进行中\n- [ ] b\n');
+    expect(fileMocks.writeFile).toHaveBeenLastCalledWith('workspace', 'TODO.md', '## 待办\n- [ ] a (mine)\n## 进行中\n- [ ] b\n');
     expect(registry.isDirty(uri)).toBe(false);
   });
 
@@ -530,7 +528,7 @@ describe('TextModelRegistry', () => {
     fileMocks.writeFile.mockImplementationOnce(async () => ({ success: false, error: { type: 'fs_error', message: 'changed', code: 'conflict' } }));
     fileMocks.readFile.mockImplementationOnce(async () => disk('one\ntwo (theirs)\n'));
     expect(await registry.saveFileToDisk(uri)).toBe('one (mine)\ntwo (theirs)\n');
-    expect(fileMocks.writeFile).toHaveBeenLastCalledWith('project', 'workspace', 'c.txt', 'one (mine)\ntwo (theirs)\n');
+    expect(fileMocks.writeFile).toHaveBeenLastCalledWith('workspace', 'c.txt', 'one (mine)\ntwo (theirs)\n');
     expect(registry.isDirty(uri)).toBe(false);
   });
 });

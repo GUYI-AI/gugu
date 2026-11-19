@@ -86,7 +86,6 @@ export class TerminalManagerStore implements IDisposable {
     const defaultShell = getAppSettingValueSnapshot('terminal')?.defaultShell ?? 'system';
     const optimistic: Terminal = {
       id: params.id,
-      projectId: params.projectId,
       sessionId: params.sessionId,
       shellId: params.shell ?? defaultShell,
       name: params.name,
@@ -130,7 +129,6 @@ export class TerminalManagerStore implements IDisposable {
     const id = crypto.randomUUID();
     const params: CreateTerminalParams = {
       id,
-      projectId: this.projectId,
       sessionId: this.sessionId,
       name,
     };
@@ -154,7 +152,6 @@ export class TerminalManagerStore implements IDisposable {
       starting?.gridMeasured();
       await starting?.created.catch(() => undefined);
       await rpc.terminals.deleteTerminal({
-        projectId: this.projectId,
         sessionId: this.sessionId,
         terminalId,
       });
@@ -172,7 +169,6 @@ export class TerminalManagerStore implements IDisposable {
     const store = this.terminals.get(terminalId);
     if (!store) return;
     await rpc.terminals.hydrateTerminal({
-      projectId: this.projectId,
       sessionId: this.sessionId,
       terminalId,
     });
@@ -207,9 +203,9 @@ export class TerminalManagerStore implements IDisposable {
   }
 
   private createSession(terminal: Terminal): PtySession {
-    const handlers = makeFileLinkHandlers(terminal.projectId, terminal.sessionId);
+    const handlers = makeFileLinkHandlers(this.projectId, terminal.sessionId);
     return new PtySession(
-      makePtySessionId(terminal.projectId, terminal.sessionId, terminal.id),
+      makePtySessionId(this.projectId, terminal.sessionId, terminal.id),
       async () => {
         if (!this._starting.has(terminal.id)) await this.hydrateTerminal(terminal.id);
       },

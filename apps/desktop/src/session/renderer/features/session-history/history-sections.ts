@@ -82,7 +82,7 @@ export function digestEntry(machine: string, session: SessionpageSessionSummary)
     archivedAt: null,
     childCount: 0,
     parentTitle: null,
-    gugu: { projectId: session.projectId, sessionId: session.conversationId, runtime: session.runtime === 'pty' ? 'pty' : 'acp' },
+    gugu: { projectId: session.projectId, groupChatId: session.groupChatId ?? null, sessionId: session.conversationId, runtime: session.runtime === 'pty' ? 'pty' : 'acp' },
     machine,
     offline: true,
     opens: rowOpens(session),

@@ -164,8 +164,8 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
 
     // Archiving removes the task from the active list; retire its tabs through the same local cleanup.
     this._disposers.push(
-      onMachineEvent(machineRegistry.machineOf(projectId), sessionChangedChannel, ({ sessionId, projectId: eventProjectId, changes }) => {
-        if (eventProjectId !== projectId || sessionId !== this.sessionId) return;
+      onMachineEvent(machineRegistry.machineOf(projectId), sessionChangedChannel, ({ sessionId, changes }) => {
+        if (sessionId !== this.sessionId) return;
         if (!changes.archivedAt) return;
         this._retireSessionTabs(sessionId);
       })
@@ -357,10 +357,7 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
 
     const sessionData = this._sessionPageStore.data;
     const workspaceId = this._sessionPageStore.workspaceId!;
-    this.previewServers = new PreviewServerStore({
-      projectId: sessionData.projectId,
-      workspaceId,
-    });
+    this.previewServers = new PreviewServerStore({ workspaceId });
     this.previewServers.start();
     this.prStore = new PrStore(
       sessionData.projectId,

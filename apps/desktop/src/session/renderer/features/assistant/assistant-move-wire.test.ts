@@ -88,13 +88,13 @@ describe('native move file writes', () => {
     expect(release).toHaveBeenCalledWith('p', 'w-home');
   });
   it('passes the target revision for both binary files and user instructions, never force', async () => {
-    const writeChunk = vi.fn(async (_project, _workspace, request) => ({ success: true, data: { committed: { size: request.total } } }));
+    const writeChunk = vi.fn(async (_workspace, request) => ({ success: true, data: { committed: { size: request.total } } }));
     const fs = machineFs({ projectId: 'project', workspaceId: 'workspace', rpc: { workspace: { files: {
       readChunk: async () => ({ success: true, data: { etag: 'target-v1' } }), writeChunk,
     } } } } as unknown as AssistantMachine);
     expect(await fs.revision!('/file')).toBe('target-v1');
     await fs.writeChunk({ path: '/file', uploadId: 'upload', offset: 0, data: new Uint8Array([1]), total: 1, final: true, expectedRevision: 'target-v1' });
     await fs.writeText('/instructions', 'new instructions', 'target-v2');
-    expect(writeChunk.mock.calls.map(args => args[2].expectedEtag)).toEqual(['target-v1', 'target-v2']);
+    expect(writeChunk.mock.calls.map(args => args[1].expectedEtag)).toEqual(['target-v1', 'target-v2']);
   });
 });

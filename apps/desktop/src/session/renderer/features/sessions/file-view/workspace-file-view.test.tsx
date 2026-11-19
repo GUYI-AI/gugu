@@ -53,7 +53,7 @@ const draw = (inWorkspace: boolean, absolutePath = '/home/task/hw1.pdf') => act(
 
 it('watches the directory of the file it shows, reads it again when it changes there, and lets the watch go when closed', async () => {
   await draw(true);
-  expect(h.watchDirectory.mock.calls).toEqual([['p', 'w', '/home/task']]);
+  expect(h.watchDirectory.mock.calls).toEqual([['w', '/home/task']]);
   const before = container.querySelector('[data-key]')!.getAttribute('data-key');
 
   await act(async () => { for (const listener of h.listeners) listener({ workspaceId: 'w', update: { kind: 'changes', changes: [{ kind: 'update', path: '/home/task/hw1.pdf' }] } }); });
@@ -61,7 +61,7 @@ it('watches the directory of the file it shows, reads it again when it changes t
 
   await act(async () => root.unmount());
   root = createRoot(container);
-  await vi.waitFor(() => expect(h.releaseDirectoryWatch.mock.calls).toEqual([['p', 'w', 'lease-1']]));
+  await vi.waitFor(() => expect(h.releaseDirectoryWatch.mock.calls).toEqual([['w', 'lease-1']]));
 });
 
 it('watches nothing for a file outside the workspace: no change feed carries it', async () => {
@@ -71,7 +71,7 @@ it('watches nothing for a file outside the workspace: no change feed carries it'
 
 it('watches the folder of a Windows path, not the path cut by one character', async () => {
   await draw(true, 'C:\\Users\\me\\task\\hw1.pdf');
-  expect(h.watchDirectory.mock.calls).toEqual([['p', 'w', 'C:\\Users\\me\\task']]);
+  expect(h.watchDirectory.mock.calls).toEqual([['w', 'C:\\Users\\me\\task']]);
 });
 
 it('offers Cite on a selection only for a session\'s file, through the same quote as its menu', async () => {

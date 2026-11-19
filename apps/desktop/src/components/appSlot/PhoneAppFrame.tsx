@@ -167,7 +167,7 @@ export function PhoneAppFrame({
         const listed = listedSession(devicesRef.current, liveDeviceSessions(), sessionId)
         if (!('row' in listed)) return listed
         // Beside the page (G1): its timeline over this frame; else the task tab opens its row.
-        if (peek) peekStore.open(null, bindingRef.current.tabId, { kind: 'session', sessionId, projectId: listed.row.session.projectId, deviceId: listed.row.deviceId })
+        if (peek) peekStore.open(null, bindingRef.current.tabId, { kind: 'session', sessionId, deviceId: listed.row.deviceId })
         else followLink({ kind: 'session', sessionId, deviceId: listed.row.deviceId })
         return { shown: true }
       },

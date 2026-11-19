@@ -1,3 +1,5 @@
+import { log } from '@renderer/utils/logger';
+import { rpc } from '@renderer/lib/ipc';
 import type { ProjectsTranslate } from '@renderer/localization/messages-projects';
 import { isWorkspaceProject } from '@renderer/features/sessions/session-home-project-constants';
 import { appState } from '@renderer/lib/stores/app-state';
@@ -23,6 +25,37 @@ export function getProjectManagerStore(): ProjectManagerStore {
 /** Call only inside `observer` components (or other MobX reactions). */
 export function getProjectStore(projectId: string): ProjectStore | undefined {
   return getProjectManagerStore().projects.get(projectId);
+}
+
+/**
+ * The folder (project store) whose session list holds `sessionId`; undefined when no mounted folder lists it.
+ * Events and requests name a session alone now; the renderer's per-folder stores are reached through this.
+ */
+export function projectOfSession(sessionId: string): string | undefined {
+  for (const [projectId, store] of getProjectManagerStore().projects) {
+    if (store.mountedProject?.sessionManager.sessions.has(sessionId)) return projectId;
+  }
+  return undefined;
+}
+
+/**
+ * The folder a session works in, also when that folder is not mounted here yet (a request that names only a session — a
+ * notification click, a host asking to open a file — can arrive before it is): asked of this computer's host, then
+ * mounted. Not a session of this computer's, archived, or its folder failed to open = undefined.
+ */
+export async function resolveSessionFolder(sessionId: string): Promise<string | undefined> {
+  const mounted = projectOfSession(sessionId);
+  if (mounted) return mounted;
+  try {
+    const [session] = await rpc.sessions.getUnarchivedSession(sessionId);
+    if (!session) return undefined;
+    await getProjectManagerStore().ensureProjectLoaded(session.projectId);
+    return session.projectId;
+  } catch (error) {
+    // Said by the caller as「not listed」(its reply to the requester); the cause is here.
+    log.warn('[folders] the session\'s folder could not be opened', { sessionId, error: String(error) });
+    return undefined;
+  }
 }
 
 /** Summary for routing the project shell; call only inside `observer` (or other MobX reactions). */

@@ -51,7 +51,7 @@ export class GitRepositoryStore {
         mirror: this.refs,
         subscribe: (push) =>
           workspaceEvents.on(gitRepoUpdateChannel, (payload) => {
-            if (payload.projectId === this.projectId && payload.update.kind === 'refs') {
+            if (payload.folderId === this.projectId && payload.update.kind === 'refs') {
               push({
                 value: payload.update.model,
                 sequence: payload.update.sequence,
@@ -65,7 +65,7 @@ export class GitRepositoryStore {
         mirror: this.remotesModel,
         subscribe: (push) =>
           workspaceEvents.on(gitRepoUpdateChannel, (payload) => {
-            if (payload.projectId === this.projectId && payload.update.kind === 'remotes') {
+            if (payload.folderId === this.projectId && payload.update.kind === 'remotes') {
               push({
                 value: payload.update.model,
                 sequence: payload.update.sequence,

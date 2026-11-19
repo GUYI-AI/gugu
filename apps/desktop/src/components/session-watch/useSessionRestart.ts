@@ -10,8 +10,8 @@ import { recoverTimelineRead } from './timeline-read-recovery'
 type RestartAttempt = { key: string; afterVersion: number }
 
 /** Restart is the desktop's existing host action; only its lifecycle, never a local timer, says Starting. */
-export function useSessionRestart({ deviceId, projectId, sessionId, missing, online, local, onReady }: {
-  deviceId: string; projectId: string; sessionId: string; missing: boolean; online: boolean; local: boolean
+export function useSessionRestart({ deviceId, sessionId, missing, online, local, onReady }: {
+  deviceId: string; sessionId: string; missing: boolean; online: boolean; local: boolean
   onReady(): void | Promise<void>
 }) {
   const key = `${deviceId}:${sessionId}:${local}`
@@ -33,14 +33,14 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
     if (!missing || !online) { setEligible(null); return }
     let active = true
     const host = machineRpc(deviceId, local)
-    void Promise.all([host.sessions.getUnarchivedSession(projectId, sessionId), host.sessions.lifeView(sessionId)]).then(([rows, life]) => {
+    void Promise.all([host.sessions.getUnarchivedSession(sessionId), host.sessions.lifeView(sessionId)]).then(([rows, life]) => {
       if (active) baseline.current = { key, version: life.version }
       const absent = rows[0]?.providerSessionState === 'missing' || life.kind === 'dormant'
       if (active) setEligible(absent && !lifeIsStarting(life) && life.kind !== 'ready'
         && canStartFreshSession('provider_session_missing', rows[0]?.firstUtterance) ? key : null)
     }, () => { if (active) setEligible(null) })
     return () => { active = false }
-  }, [deviceId, projectId, sessionId, missing, online, local, key])
+  }, [deviceId, sessionId, missing, online, local, key])
 
   useEffect(() => {
     if (attempt?.key !== key || !online) return
@@ -88,7 +88,7 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
     try {
       const host = machineRpc(deviceId, local)
       if (fresh) {
-        await host.sessions.restartSession(projectId, sessionId)
+        await host.sessions.restartSession(sessionId)
         restarted.current = request
       } else await host.sessions.lifeStart(sessionId)
     } catch (cause) {

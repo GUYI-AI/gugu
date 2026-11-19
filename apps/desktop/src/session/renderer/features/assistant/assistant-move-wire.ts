@@ -107,12 +107,12 @@ export function machineFs(machine: AssistantMachine): HomeFs {
     },
     async readChunk(path, offset, length) {
       if (length === 0) return new Uint8Array(0);
-      const result = await files.readChunk(machine.projectId, machine.workspaceId, { path, offset, length });
+      const result = await files.readChunk(machine.workspaceId, { path, offset, length });
       if (!result.success) throw rpcError(result.error as { type?: string; message?: string });
       return fromBase64(result.data.data);
     },
     async revision(path) {
-      const result = await files.readChunk(machine.projectId, machine.workspaceId, { path, offset: 0, length: 0 });
+      const result = await files.readChunk(machine.workspaceId, { path, offset: 0, length: 0 });
       if (!result.success) {
         if (result.error.type === 'not_found') return null;
         throw rpcError(result.error as { type?: string; message?: string });
@@ -120,7 +120,7 @@ export function machineFs(machine: AssistantMachine): HomeFs {
       return result.data.etag;
     },
     async writeChunk({ path, uploadId, offset, data, total, final, expectedRevision }) {
-      const result = await files.writeChunk(machine.projectId, machine.workspaceId, {
+      const result = await files.writeChunk(machine.workspaceId, {
         path,
         uploadId,
         offset,
@@ -215,7 +215,7 @@ function sideOf(machine: AssistantMachine, label: string, assistantId: string, b
       async restore(items) {
         const own = await assistantSessionOn(target, assistantId, SESSION_WAIT_MS);
         return rpcOn(target).automations.restoreAgentSchedules(
-          { sessionId: own.conversationId, projectId: own.projectId, provider: own.harness },
+          { sessionId: own.conversationId, provider: own.harness },
           items
         );
       },

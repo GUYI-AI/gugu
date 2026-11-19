@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
+import { autorun } from 'mobx'
 import { useTranslation } from 'react-i18next'
 import { ChevronLeft, Maximize2, X } from '@/lib/icons'
 import { sessionPeek } from '../../session/renderer/app/session-peek'
@@ -61,7 +62,7 @@ export function AppPeek({ target, slotKey, beside, onClose }: { target: PeekTarg
           ) : target.kind === 'folder' ? (
             <PeekFolderFile target={target} tabId={`peek:${slotKey}`} />
           ) : platform.kind === 'electron' ? (
-            <SessionPeekBox sessionId={target.sessionId} projectId={target.projectId} />
+            <SessionPeekBox sessionId={target.sessionId} />
           ) : (
             <PeekSessionTimeline sessionId={target.sessionId} onBack={onClose} />
           )}
@@ -75,7 +76,7 @@ export function AppPeek({ target, slotKey, beside, onClose }: { target: PeekTarg
 function openFull(target: PeekTarget): (() => void) | null {
   if (target.kind === 'chat') return () => window.dispatchEvent(new CustomEvent<AppOpenWithDetail>(APP_OPEN_WITH_EVENT, { detail: target.detail }))
   if (target.kind === 'session' && platform.kind === 'electron') {
-    return () => void followLink({ kind: 'session', sessionId: target.sessionId, projectId: target.projectId, ...(target.deviceId ? { deviceId: target.deviceId } : {}) })
+    return () => void followLink({ kind: 'session', sessionId: target.sessionId, ...(target.deviceId ? { deviceId: target.deviceId } : {}) })
   }
   return null
 }
@@ -105,14 +106,23 @@ function ChatFileOpener({ detail, slotId }: { detail: AppOpenWithDetail; slotId:
 
 /**
  * Desktop: the box a session's own page is drawn over (`sessionPeek`, workspace.tsx) — the same page, conversation and
- * composer as its row opens, never a second one. Held while this box is up.
+ * composer as its row opens, never a second one. Held while this box is up. The page is the one its task-list row opens
+ * (the row names its folder), so it is drawn once that row is listed.
  */
-function SessionPeekBox({ sessionId, projectId }: { sessionId: string; projectId: string }) {
+function SessionPeekBox({ sessionId }: { sessionId: string }) {
   const [box, setBox] = useState<HTMLDivElement | null>(null)
   useEffect(() => {
     if (!box) return undefined
-    sessionPeek.open({ sessionId, projectId, box })
-    return () => sessionPeek.close(sessionId)
-  }, [box, sessionId, projectId])
+    let closed = false
+    let stop = () => {}
+    void import('../../session/renderer/lib/stores/app-state').then(({ sidebarStore }) => {
+      if (closed) return
+      stop = autorun(() => {
+        const row = [...sidebarStore.placement.entries.values()].flat().find((entry) => entry.sessionId === sessionId)
+        if (row) sessionPeek.open({ sessionId, projectId: row.projectId, box })
+      })
+    })
+    return () => { closed = true; stop(); sessionPeek.close(sessionId) }
+  }, [box, sessionId])
   return <div ref={setBox} className="min-h-0 flex-1" data-testid="app-peek-session" />
 }

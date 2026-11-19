@@ -6,6 +6,7 @@ import { GitBranch } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { getSessionView } from '@renderer/features/sessions/stores/session-selectors';
+import { projectOfSession } from '@renderer/features/projects/stores/project-selectors';
 import { closeTabsOfSession } from '@renderer/features/sessions/view/session-pane-policy';
 import { AgentIcon } from '@renderer/lib/components/agent-icon';
 import { rpc } from '@renderer/lib/ipc';
@@ -242,7 +243,8 @@ function closeSessionTabsForPtySession(ptySessionId: string): void {
   const parsed = parsePtySessionId(ptySessionId);
   if (!parsed) return;
 
-  const sessionView = getSessionView(parsed.projectId, parsed.scopeId);
+  const projectId = projectOfSession(parsed.scopeId);
+  const sessionView = projectId ? getSessionView(projectId, parsed.scopeId) : undefined;
   if (!sessionView) return;
   // Same loop the task view runs when a conversation is deleted. The copy that lived here read
   // `entry.conversationId` — a field TabEntry never had (the id sits in `entry.state`) — so Stop

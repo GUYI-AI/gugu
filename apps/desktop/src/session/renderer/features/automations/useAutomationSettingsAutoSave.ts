@@ -79,7 +79,7 @@ export function useAutomationSettingsAutoSave(automation: Automation) {
           ...triggerPatch,
           agentConfig,
           sessionConfig,
-          projectId: effectiveProjectId,
+          workspaceId: effectiveProjectId,
         },
       })
       .catch(() => {

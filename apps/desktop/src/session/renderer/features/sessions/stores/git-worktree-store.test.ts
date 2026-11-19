@@ -109,7 +109,6 @@ describe('GitWorktreeStore', () => {
 
     for (const handler of worktreeHandlers) {
       handler({
-        projectId: 'project-1',
         workspaceId: 'workspace-1',
         update: { kind: 'status', model: status(), sequence: 2, generation: 1 },
       });
@@ -130,7 +129,6 @@ describe('GitWorktreeStore', () => {
 
     for (const handler of worktreeHandlers) {
       handler({
-        projectId: 'project-1',
         workspaceId: 'workspace-other',
         update: { kind: 'status', model: status(), sequence: 2, generation: 1 },
       });
@@ -151,7 +149,6 @@ describe('GitWorktreeStore', () => {
 
     for (const handler of worktreeHandlers) {
       handler({
-        projectId: 'project-1',
         workspaceId: 'workspace-1',
         update: { kind: 'status', model: status(), sequence: 2, generation: 1 },
       });
@@ -213,7 +210,6 @@ describe('GitWorktreeStore', () => {
     // The producing instance restarted: sequence resets, generation advances.
     for (const handler of worktreeHandlers) {
       handler({
-        projectId: 'project-1',
         workspaceId: 'workspace-1',
         update: { kind: 'status', model: status(['src/b.ts']), sequence: 1, generation: 2 },
       });
@@ -223,7 +219,6 @@ describe('GitWorktreeStore', () => {
     // A stale message from the dead instance must not regress the state.
     for (const handler of worktreeHandlers) {
       handler({
-        projectId: 'project-1',
         workspaceId: 'workspace-1',
         update: { kind: 'status', model: status(['src/old.ts']), sequence: 11, generation: 1 },
       });

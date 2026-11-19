@@ -62,7 +62,7 @@ vi.mock('@renderer/features/sessions/acp/acp-chat-panel', () => ({
 }));
 
 const newTerminal = (store: TerminalManagerStore) =>
-  store.createTerminal({ id: 'terminal-1', projectId: 'project-1', sessionId: 'session-1', name: 'Terminal 1' });
+  store.createTerminal({ id: 'terminal-1', sessionId: 'session-1', name: 'Terminal 1' });
 
 const startShell = async (store: TerminalManagerStore, dims?: { cols: number; rows: number }) => {
   const session = store.sessions.get('terminal-1')!;
@@ -94,7 +94,6 @@ describe('TerminalManagerStore session hydration', () => {
     getTerminalsForSession.mockResolvedValue([
       {
         id: 'terminal-1',
-        projectId: 'project-1',
         sessionId: 'session-1',
         shellId: 'system',
         name: 'Terminal 1',
@@ -105,7 +104,6 @@ describe('TerminalManagerStore session hydration', () => {
     store.list.setValue([
       {
         id: 'terminal-1',
-        projectId: 'project-1',
         sessionId: 'session-1',
         shellId: 'system',
         name: 'Terminal 1',
@@ -121,7 +119,6 @@ describe('TerminalManagerStore session hydration', () => {
 
     expect(hydrateTerminal).toHaveBeenCalledTimes(1);
     expect(hydrateTerminal).toHaveBeenCalledWith({
-      projectId: 'project-1',
       sessionId: 'session-1',
       terminalId: 'terminal-1',
     });
@@ -139,7 +136,6 @@ describe('TerminalManagerStore session hydration', () => {
     getAppSettingValueSnapshot.mockReturnValue({ defaultShell: 'fish' });
     createTerminal.mockResolvedValue({
       id: 'terminal-1',
-      projectId: 'project-1',
       sessionId: 'session-1',
       shellId: 'fish',
       name: 'Terminal 1',

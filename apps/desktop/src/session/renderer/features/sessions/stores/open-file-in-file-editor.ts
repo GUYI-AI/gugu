@@ -74,7 +74,7 @@ async function expandHomeTildePath(filePath: string): Promise<string> {
  */
 export async function openPathWithFailureToast(
   filePath: string,
-  workspace?: { projectId: string; workspaceId: string }
+  workspace?: { workspaceId: string }
 ): Promise<void> {
   const result = await rpc.app.openPath(filePath, workspace);
   if (!result.success) {
@@ -192,7 +192,6 @@ async function openSessionFile(
   // path written through an alias (an old transcript's `accounts/<id>/…`) is inside although its letters are not, and
   // the tab is keyed on the machine's spelling, never on the one this link happened to carry.
   const exists = await workspaceRpc(projectId).files.fileExists(
-    projectId,
     provisioned.workspaceId,
     namedInside ?? filePath
   );
@@ -270,7 +269,7 @@ export async function openExternalFilePath(
   // ❌ 不因此静默吞掉点开动作。
   if (isAbsolutePath(filePath) && provisioned?.workspaceId) {
     const stat = await rpc.workspace.files
-      .statExternalFile(projectId, provisioned.workspaceId, filePath)
+      .statExternalFile(provisioned.workspaceId, filePath)
       .catch(() => null);
     if (stat?.success) {
       if (!stat.data.exists) {

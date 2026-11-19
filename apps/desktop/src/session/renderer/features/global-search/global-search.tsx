@@ -87,7 +87,7 @@ function formatWhen(iso: string): string {
 export function openHit(hit: SearchHit, words = ''): void {
   if (hit.kind === 'message') { askFlashWords(hit.messageId, words); followLink(conversationLink(hit.chatId, hit.messageId)); return }
   askTaskReveal(hit.taskId, messageQuoteLink({ kind: 'session', sessionId: hit.taskId, itemId: hit.itemId }))
-  followLink({ kind: 'session', sessionId: hit.taskId, projectId: hit.projectId })
+  followLink({ kind: 'session', sessionId: hit.taskId })
   window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked))
 }
 

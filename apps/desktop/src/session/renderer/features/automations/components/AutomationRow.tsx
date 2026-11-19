@@ -59,7 +59,7 @@ export const AutomationRow = observer(function AutomationRow({
 
   // #7221 agent 给自己排的:每次都送回建它的那条会话,状态就看那条会话的。
   const sessionId = run?.sessionId ?? automation.agentSessionId ?? null;
-  const projectId = automation.projectId ?? null;
+  const projectId = automation.workspaceId ?? null;
   // 别的机器上的项目与本机的是同一张项目表、同一张任务表(#6264 一套工作台)。
   const sessionPageStore = sessionId && projectId ? getSessionPageStore(projectId, sessionId) : undefined;
   const agentStatus = sessionPageStore ? sessionAgentStatus(sessionPageStore) : null;

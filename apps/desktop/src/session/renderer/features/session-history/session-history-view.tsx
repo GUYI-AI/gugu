@@ -428,19 +428,19 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
     setExpandedKey((currentKey) => (currentKey === row.key ? null : row.key));
   };
 
-  const openSession = async (ref: Omit<SessionHistoryGuguRef, 'runtime'>, machine: string) => {
+  const openSession = async (ref: { sessionId: string; projectId?: string }, machine: string) => {
     // The one way a session is opened; another machine's with that machine and its project, so one the task list does not
     // draw opens too (the window mounts that machine's projects).
     const deviceId = machineArg(machine);
     try {
-      await openLink({ kind: 'session', sessionId: ref.sessionId, projectId: ref.projectId, ...(deviceId ? { deviceId } : {}) });
+      await openLink({ kind: 'session', sessionId: ref.sessionId, ...(ref.projectId ? { projectId: ref.projectId } : {}), ...(deviceId ? { deviceId } : {}) });
     } catch (e) {
       log.error('open session from session history failed', { ref, error: String(e) });
       setActionError(messageForUser(e));
     }
   };
 
-  const restore = async (ref: Omit<SessionHistoryGuguRef, 'runtime'>, machine: string) => {
+  const restore = async (ref: Pick<SessionHistoryGuguRef, 'sessionId'>, machine: string) => {
     setActionError(null);
     try {
       const deviceId = machineArg(machine);
@@ -481,7 +481,7 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
           });
         }
         setIsImporting(false);
-        await openSession({ projectId: single.projectId, sessionId: single.sessionId }, row.machine);
+        await openSession({ sessionId: single.sessionId }, row.machine);
         return;
       }
       if (single && single.kind === 'failed') {
@@ -513,8 +513,7 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
     if (row.gugu && row.status === 'active') {
       if (row.opens) void openSession(row.gugu, row.machine);
     } else if (row.gugu && row.status === 'archived') {
-      const { projectId, sessionId } = row.gugu;
-      void restore({ projectId, sessionId }, row.machine);
+      void restore({ sessionId: row.gugu.sessionId }, row.machine);
     } else void startImport(row);
   };
 

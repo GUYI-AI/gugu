@@ -26,7 +26,6 @@ function setup(read: Parameters<typeof answerMachinePreviewReads>[0]['read']) {
 
 const request: MachinePreviewReadRequest = {
   requestId: 'r1',
-  projectId: 'proj-1',
   workspaceId: 'ws-1',
   path: '/root/proj/style.css',
   offset: 0,
@@ -38,7 +37,7 @@ describe('answerMachinePreviewReads', () => {
     const read = vi.fn(async () => ({ size: 3, etag: 'e', data: 'YWJj' }));
     const { ask, replies } = setup(read);
     await ask(request);
-    expect(read).toHaveBeenCalledWith('proj-1', 'ws-1', { path: '/root/proj/style.css', offset: 0, length: 524288 });
+    expect(read).toHaveBeenCalledWith('ws-1', { path: '/root/proj/style.css', offset: 0, length: 524288 });
     expect(replies).toEqual([{ requestId: 'r1', chunk: { size: 3, etag: 'e', data: 'YWJj' } }]);
   });
 

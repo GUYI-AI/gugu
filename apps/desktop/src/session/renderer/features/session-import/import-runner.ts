@@ -2,8 +2,8 @@ import type { LocalSessionRow } from '@shared/core/session-import/session-import
 import type { SessionImportSource } from './import-source';
 
 export type ImportOutcome =
-  | { kind: 'imported'; row: LocalSessionRow; projectId: string; sessionId: string }
-  | { kind: 'existing'; row: LocalSessionRow; projectId: string; sessionId: string }
+  | { kind: 'imported'; row: LocalSessionRow; sessionId: string }
+  | { kind: 'existing'; row: LocalSessionRow; sessionId: string }
   | { kind: 'failed'; row: LocalSessionRow; message: string };
 
 /**
@@ -37,7 +37,6 @@ export async function runImport(
       outcomes.push({
         kind: result.alreadyImported ? 'existing' : 'imported',
         row,
-        projectId: result.projectId,
         sessionId: result.sessionId,
       });
     } catch (error) {
