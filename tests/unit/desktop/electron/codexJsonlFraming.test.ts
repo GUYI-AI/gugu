@@ -1,6 +1,6 @@
 // @@@vitest-environment node
 import { PassThrough } from 'node:stream'
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, realpathSync, rmSync, writeFileSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -33,7 +33,7 @@ const fixture = [
 ].join('\n')
 
 let dir = ''
-let child: ChildProcessWithoutNullStreams | undefined
+let child: ChildProcess | undefined
 afterEach(async () => {
   if (child && child.exitCode === null && child.signalCode === null) {
     const ended = new Promise(done => child!.once('exit', done))
@@ -57,11 +57,13 @@ async function bridge(scenario = 'unicode') {
   delete env.GUGU_PLATFORM_MODELS
   child = spawn(process.execPath, scenario === 'slow' ? ['--import', shim, BRIDGE] : [BRIDGE], { cwd: dir, env, stdio: ['pipe', 'pipe', 'pipe', 'ipc'] })
   const processChild = child
+  const { stdin, stdout, stderr: errorOutput } = processChild
+  if (!stdin || !stdout || !errorOutput) throw new Error('Bridge fixture requires piped stdio')
   const replies = new Map<number | null, WireMessage>()
   const updates: WireMessage[] = []
   let stderr = ''
-  processChild.stderr.on('data', bytes => { stderr += bytes.toString() })
-  createJsonlReader({ input: processChild.stdout, onLine: (line: string) => {
+  errorOutput.on('data', bytes => { stderr += bytes.toString() })
+  createJsonlReader({ input: stdout, onLine: (line: string) => {
     const m = JSON.parse(line)
     if (m.id !== undefined && !m.method) replies.set(m.id, m)
     else updates.push(m)
@@ -69,11 +71,11 @@ async function bridge(scenario = 'unicode') {
   let seq = 0
   const request = async (method: string, params: unknown) => {
     const id = ++seq
-    processChild.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n')
+    stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n')
     return awaitFact(method, () => replies.get(id), { producer: processChild })
   }
   await request('initialize', { protocolVersion: 2 })
-  return { request, updates, replies, processChild, stderr: () => stderr,
+  return { request, updates, replies, processChild, stdin, stderr: () => stderr,
     release: () => writeFileSync(release, 'ready'),
     expireDeadlines: () => new Promise<void>(resolve => { processChild.once('message', () => resolve()); processChild.send('expire-deadlines') }),
   }
@@ -129,7 +131,7 @@ describe('Codex bridge JSONL boundary', () => {
   it('reports corrupt host input as a parse error and terminates the broken channel', async () => {
     const h = await bridge()
     const ended = new Promise(resolve => h.processChild.once('exit', resolve))
-    h.processChild.stdin.write('{broken\n')
+    h.stdin.write('{broken\n')
     await ended
     expect(h.replies.get(null)).toMatchObject({ error: { code: -32700, message: expect.stringContaining('Invalid JSONL from ACP stdin') } })
     expect(h.processChild.exitCode).toBe(1)

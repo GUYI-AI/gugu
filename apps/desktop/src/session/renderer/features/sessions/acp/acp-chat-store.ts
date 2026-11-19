@@ -865,7 +865,7 @@ export class AcpChatStore {
     // unless the start failed terminally (the engine is not there), when queueing waits for something that never happens.
     // Starting with its message drawn is running: the composer stops it (`stop` asks the host), as in any turn.
     const deliveryState = this.chatState.session.state.pendingPrompt?.delivery?.state;
-    const startingDrawn = !state && this.transcriptPendingId !== null && deliveryState !== 'waiting' && deliveryState !== 'failed' && deliveryState !== 'unknown';
+    const startingDrawn = !!this.startPhaseOf(sessionLifeView(this.runtimeSessionId)) || (!state && this.transcriptPendingId !== null && deliveryState !== 'waiting' && deliveryState !== 'failed' && deliveryState !== 'unknown');
     return {
       isWorking: agentWorking || startingDrawn || deliveryState === 'sending' || deliveryState === 'receiving' || deliveryState === 'accepted',
       isBusy: state?.isGenerating ?? false,
@@ -1542,8 +1542,8 @@ export class AcpChatStore {
 
   stop(): void {
     const session = this.session;
-    // Not attached yet (session-life is still starting it): stopping is the host owner's user-stop.
-    if (!session) {
+    const life = sessionLifeView(this.runtimeSessionId);
+    if (!session || (life && lifeIsStarting(life))) {
       void stopSessionLife(this.runtimeSessionId).catch((error: unknown) => this._toastError('acpFailure.stop', error));
       return;
     }
