@@ -6,7 +6,7 @@ vi.mock('../../../../apps/desktop/electron/session/main/core/sessions/session-or
 vi.mock('../../../../apps/desktop/electron/session/main/core/sessions/archiveSession', () => ({ archiveSession: io.discard }))
 import { rollbackAgentSessionStartup } from '../../../../apps/desktop/electron/session/main/core/sessions/agent-session-startup'
 
-const attempt = { projectId: 'project', sessionId: 'task', created: true, started: true }
+const attempt = { sessionId: 'task', created: true, started: true }
 beforeEach(() => {
   vi.resetAllMocks()
   io.binding.mockResolvedValue(null)
@@ -18,7 +18,7 @@ describe('agent startup rollback ownership (#861)', () => {
   it('discards only this attempt’s new task when provisioning never bound an identity', async () => {
     await rollbackAgentSessionStartup(attempt)
     expect(io.stop).toHaveBeenCalledWith(attempt)
-    expect(io.discard).toHaveBeenCalledWith('project', 'task', { skipTransportStop: true, removeSocialIdentity: false })
+    expect(io.discard).toHaveBeenCalledWith('task', { skipTransportStop: true, removeSocialIdentity: false })
   })
 
   it('preserves the durable task if provisioning bound an identity before startup failed', async () => {

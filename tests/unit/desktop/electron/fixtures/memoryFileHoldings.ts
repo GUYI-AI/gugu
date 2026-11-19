@@ -19,7 +19,7 @@ export function installMemoryFileHoldings(folders: Record<string, { root: string
       const mine = files.get(`${ownerId}/${ref.item_id}`)
       const answer = ref.version !== undefined && mine?.version === ref.version ? mine : await lookup(ref)
       if (!answer || answer.item_id !== ref.item_id || (ref.version !== undefined && answer.version !== ref.version)) return null
-      return held(answer, ownerId, deviceId)
+      return held(mine && mine.version === answer.version ? mine : answer, ownerId, deviceId)
     },
     remember(revision, ownerId) {
       if (revision.host_account_id !== ownerId || !revision.chat_id) throw new Error('File owner or group mismatch')

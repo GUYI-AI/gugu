@@ -20,7 +20,7 @@ function host() {
   const unregister = vi.fn(async (_id: string) => {})
   const revoke = vi.fn(async (_id: string) => {})
   const archive = vi.fn(async (..._args: unknown[]) => {})
-  const facts = vi.fn(async () => [{ sessionId: 'confirmed-task', projectId: 'project' }])
+  const facts = vi.fn(async () => [{ sessionId: 'confirmed-task' }])
   const dispose = vi.fn(async (_agent: unknown) => {})
   const stopPanel = vi.fn()
   const context = {
@@ -52,7 +52,7 @@ describe('main host archives the same task from a confirmed cloud receipt', () =
     const h = host()
     const receipt = { userId: 'removed-agent', removedAt: '2026-10-31T03:00:00Z' }
     await h.run({ gugu_user_id: 'removed-agent', cache: { [key]: 'confirmed-task' } }, 'cloud-removed', receipt)
-    expect(h.archive).toHaveBeenCalledExactlyOnceWith('project', 'confirmed-task', { removeSocialIdentity: true }, receipt)
+    expect(h.archive).toHaveBeenCalledExactlyOnceWith('confirmed-task', { removeSocialIdentity: true }, receipt)
     expect(h.revoke).toHaveBeenCalledExactlyOnceWith('removed-agent')
     expect(h.stopPanel).toHaveBeenCalledExactlyOnceWith('removed-agent')
     expect(h.stopPanel.mock.invocationCallOrder[0]).toBeLessThan(h.archive.mock.invocationCallOrder[0]!)

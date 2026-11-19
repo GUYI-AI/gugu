@@ -24,7 +24,7 @@ import {
 import { translateAgentEvent } from '../../../../apps/desktop/electron/session/main/core/agent-status/status-event-translator'
 
 const THREAD = 'thr_main'
-const target = { sessionId: 'c1', providerId: 'codex', projectId: 'p1' }
+const target = { sessionId: 'c1', providerId: 'codex' }
 
 const completed = (status: unknown, threadId = THREAD) => ({
   method: 'turn/completed',

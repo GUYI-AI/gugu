@@ -7,7 +7,7 @@ vi.mock('@main/lib/logger', () => ({ log: { error: mocks.error } }))
 import { postAgentQuestion } from '../../../apps/desktop/electron/session/main/core/sessions/agent-question'
 import { readQuestionAnswerDelivery } from '../../../packages/session-core/src/session-record/question-answer'
 
-const input = { sessionId: 'assistant', projectId: 'home', sourceLink: 'gugu-chat://22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333', questions: [
+const input = { sessionId: 'assistant', sourceLink: 'gugu-chat://22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333', questions: [
   { question: 'Which Node?', options: [{ label: 'PATH' }, { label: 'Repository' }] },
 ] }
 let answer: (value: AskAnswer | 'withdrawn' | 'unavailable') => void
@@ -27,7 +27,7 @@ it('returns pending without holding the model turn, then delivers only the expli
   answer({ optionId: 'answered', by: 'desktop', answers: [{ selected: ['PATH'] }] })
   await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledTimes(1))
   const sent = mocks.send.mock.calls[0][0]
-  expect(sent).toMatchObject({ sessionId: 'assistant', projectId: 'home', kind: 'session-direct' })
+  expect(sent).toMatchObject({ sessionId: 'assistant', kind: 'session-direct' })
   expect(sent.text).toContain(posted!.question_id)
   expect(sent.text).toContain('"selected":["PATH"]')
   expect(sent.text).toContain(input.sourceLink)

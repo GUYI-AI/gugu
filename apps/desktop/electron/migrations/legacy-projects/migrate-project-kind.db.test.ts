@@ -23,7 +23,7 @@ describe('migrateProjectKind', () => {
   let fixture: Awaited<ReturnType<typeof openFixture>>;
   let dir: string;
   // The placeholder row drizzle 0054 writes for a rolled-back build (@@@c1-legacy-project) is not a person's project.
-  const kinds = () => Object.fromEntries(fixture.sqlite.prepare("SELECT id, kind FROM projects WHERE id <> 'c1-placeholder' ORDER BY id").all().map((row: any) => [row.id, row.kind]));
+  const kinds = () => Object.fromEntries(fixture.sqlite.prepare("SELECT id, kind FROM projects WHERE id <> 'c1-placeholder' ORDER BY id").all().map((row) => { const { id, kind } = row as { id: string; kind: string }; return [id, kind]; }));
 
   beforeEach(async () => {
     fixture = await openFixture('empty');

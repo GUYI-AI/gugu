@@ -80,6 +80,7 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
     '@main/core/editor/editor-buffer-service': { editorBufferService: database?.editorBufferService ?? stub },
     '../../migrations/task-to-session': { runTaskToSessionOnce: async () => null },
     '../../migrations/session-naming': { runSessionNamingOnce: async () => null },
+    '../../migrations/group-folders': { runGroupFoldersOnce: async () => null },
     '@main/core/sessions/attachments/session-attachment-store': { sweepOrphanSessionAttachmentDirectories: async () => 0 },
     '@main/core/data-dir-occupancy': { dataDirHeldByAnotherHost: () => ({ held: false }) },
     '@main/core/pty/tmux-session-name': { listTmuxSessionNames: async () => {
@@ -174,6 +175,7 @@ describe('real session host boot entry', () => {
       const imports: Record<string, unknown> = {
         '@main/db/client': { db }, '@main/db/schema': schema,
         '@main/lib/logger': { log: { error: vi.fn() } },
+        '@main/core/folders/legacy-project-aliases': { LEGACY_PLACEHOLDER_PROJECT_ID: 'c1-placeholder' },
       }
       runInNewContext(compiled.outputText, {
         module: serviceModule, exports: serviceModule.exports,

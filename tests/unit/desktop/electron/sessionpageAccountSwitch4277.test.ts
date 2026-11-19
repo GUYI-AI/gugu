@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -180,7 +180,6 @@ async function openSession(overrides: Record<string, unknown> = {}) {
       providerId: 'codex',
       surface: 'tui',
       cwd: '/w/shared',
-      projectId: PROJECT,
       // The session was named once at creation and carries that name whichever account opens it.
       displayName: SESSION_NAME,
       ...overrides,
@@ -220,11 +219,11 @@ afterEach(async () => {
 })
 
 describe('#4277 会话不带账号:起 agent 时按当下登录的账号找/登记', () => {
-  it('A 建的会话 B 打开 → A 的行停放、B 得到自己的 agent 与自己的项目群', async () => {
+  it('A 建的会话 B 打开 → A 的行停放、B 得到自己的 agent;开户不再替会话建群', async () => {
     const asA = await openSession()
     expect(asA.guguAgentUserId).toBe(minted[0])
     expect(activeRow()?.cache?.['sessionpage_owner_user_id']).toBe('owner-A')
-    expect(groups.map((g) => g.ownerUserId)).toEqual(['owner-A'])
+    expect(groups, '没有群的会话:agent 不进任何群').toEqual([])
 
     // B 登录:RLS 下 A 的群对 B 不可见。
     currentOwner = 'owner-B'
@@ -239,7 +238,7 @@ describe('#4277 会话不带账号:起 agent 时按当下登录的账号找/登�
     expect(roster[0].cache?.['emdash_session_id'], '停放的行不再持有活动绑定').toBeUndefined()
     expect(registryUnregistered, '停放要摘掉 A 的 registry 项').toEqual([asA.guguAgentUserId])
     expect(deliveryUnregistered, '停放要摘掉 A 的投递注册').toEqual([{ agentUserId: asA.guguAgentUserId, sessionId: SESSION }])
-    expect(groups.map((g) => g.ownerUserId), 'B 在同一项目有自己的群(A 的群 B 进不去)').toEqual(['owner-A', 'owner-B'])
+    expect(groups).toEqual([])
     expect(deliveryClaims.at(-1), 'B 的 agent 接管投递归属').toEqual({ guguAgentUserId: asB.guguAgentUserId, sessionId: SESSION })
   })
 
@@ -259,7 +258,6 @@ describe('#4277 会话不带账号:起 agent 时按当下登录的账号找/登�
     expect(activeRow()?.gugu_user_id).toBe(asA.guguAgentUserId)
     expect(parkedRows().map((r) => r.gugu_user_id)).toEqual([asB.guguAgentUserId])
     expect(registryUnregistered).toEqual([asB.guguAgentUserId])
-    expect(back.groupContext?.groupChatId, 'A 的群还是原来那个').toBe(groups[0].chatId)
   })
 
   it('老行没记 owner:探针说不归我 → 停放并新登记;探针说归我 → 复用并补上 owner', async () => {
@@ -313,18 +311,5 @@ describe('#4277 会话不带账号:起 agent 时按当下登录的账号找/登�
     currentOwner = 'owner-B'
     await openSession()
     expect(tombstoneLookups).toEqual([{ sessionId: SESSION, ownerUserId: 'owner-B' }])
-  })
-
-  it('项目群映射按账号分区落盘:两个账号各记各的', async () => {
-    await openSession()
-    currentOwner = 'owner-B'
-    visibleGroups = new Set()
-    await openSession()
-
-    const mapping = JSON.parse(await readFile(join(home, 'taskpage-project-groups.json'), 'utf8')) as {
-      owners: Record<string, Record<string, string>>
-    }
-    expect(mapping.owners['owner-A']?.[PROJECT]).toBe(groups[0].chatId)
-    expect(mapping.owners['owner-B']?.[PROJECT]).toBe(groups[1].chatId)
   })
 })

@@ -23,6 +23,7 @@ vi.mock('node:fs/promises', async original => {
 const noRecord = async () => null
 
 let home: string, root: string, store: string, env: NodeJS.ProcessEnv
+let holdings: ReturnType<typeof installMemoryFileHoldings>
 const data = new Uint8Array([0, 255, 3]), file = { name: 'file.bin', bytes: data.buffer, contentType: 'application/octet-stream' }
 const row = { id: 'item', chat_id: 'group', filename: 'file.bin', version: 1, content_type: file.contentType, size_bytes: 3, path: 'file.bin', parent_id: null,
   created_at: '2026-10-24T00:00:00Z', updated_at: '2026-10-24T00:00:00Z', created_by: 'owner', source_message_ids: [], kind: 'file', pointer: null, epoch: 0, system_role: null }
@@ -30,7 +31,7 @@ beforeEach(async () => {
   copyFault.mode = ''
   home = await mkdtemp(join(tmpdir(), 'gugu-file-publication-153-')); root = join(home, 'project'); store = join(home, 'project-files'); env = { GUGU_HOME: home }
   await mkdir(root); await mkdir(store); await writeFile(join(root, file.name), data)
-  installMemoryFileHoldings({ project: { root, chatId: 'group' } })
+  holdings = installMemoryFileHoldings({ project: { root, chatId: 'group' } })
 })
 
 describe('external selections become durable project-owned copies through the same publisher', () => {
@@ -231,8 +232,7 @@ describe('project file publication runs before document conversion or cloud uplo
     const f = fixture(), original = f.rpc.getMockImplementation()!
     f.rpc.mockImplementation(async (name, args) => { if (name === 'workspace_get_as') f.account('other'); return original(name, args) })
     await expect(f.publish('group', file, null, 'owner')).rejects.toThrow('account changed')
-    const mapping = await readFile(join(home, 'taskpage-project-groups.json'), 'utf8')
-    expect(mapping).not.toContain('"sha256"')
+    expect(holdings.files.size).toBe(0)
   })
 })
 
@@ -301,26 +301,27 @@ describe('a sent image asks for its temporary copy when it is published', () => 
   })
 })
 
-// Audit item 4: "is this a project chat" is the account's project list (chat.project_groups), not a count of device rows.
-describe('a project chat is one of the account\'s projects, as the backend lists them', () => {
-  it('a project group with no folder on any machine keeps its files here; a chat that is no project uploads', async () => {
+// Files stay on this account's machines in a chat one of its devices binds a folder to (the account's my_chat_folders).
+describe('a chat keeps its files on my machines when one of them binds a folder to it', () => {
+  it('a group with a folder on another of my machines keeps its files here; a chat with none uploads', async () => {
     const { createDesktopFileAccess } = await import('../../../../apps/desktop/electron/desktopFileAccess')
     const { deviceFile, writeDeviceIdCache } = await import('@gugu/core/cloud/deviceRuntime')
     await writeDeviceIdCache(deviceFile(env, 'owner'), 'device')
     const asked: string[] = []
     const settings = { select: () => settings, eq: () => settings, maybeSingle: async () => ({ data: null, error: null }) }
     const db = {
-      rpc: async (fn: string, args: { p_chat_id: string }) => {
+      rpc: async (fn: string) => {
         asked.push(fn)
-        return { data: args.p_chat_id === 'folderless-project', error: null }
+        return { data: [{ chat_id: 'folder-elsewhere', name: 'g', status: 'active', last_message_at: null,
+          folders: [{ device_id: 'other-device', folder_id: 'f', path: '/work', position: 1, attached_at: null }] }], error: null }
       },
       from: (table: string) => { asked.push(table); return settings },
     }
     const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }) as never, root: async () => root, project: async () => undefined,
       links: () => null, tempRoot: join(home, 'snapshots'), fetch: vi.fn() as never, rpc: vi.fn(), env,
       deviceStore: store, identityDb: () => db as never })
-    expect(await access.publish.local('folderless-project')).toBe(true)
+    expect(await access.publish.local('folder-elsewhere')).toBe(true)
     expect(await access.publish.local('a-dm')).toBe(false)
-    expect(asked.filter((name) => name !== 'user_settings')).toEqual(['is_my_project', 'is_my_project'])
+    expect(asked.filter((name) => name !== 'user_settings')).toEqual(['my_chat_folders', 'my_chat_folders'])
   })
 })
