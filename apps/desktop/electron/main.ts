@@ -1,4 +1,5 @@
 import { releaseCustomModelForwarders } from './session/main/core/agents/custom-model-forwarder'
+import { releaseConversionRouters } from './session/main/core/agents/conversion-routers'
 import { hostAttachmentsEndpoint } from './attachmentUploadTransport'
 import { inspectHtmlPreviewAnnotation } from './session/main/core/browser/html-preview-annotation'
 import { HTML_PREVIEW_ANNOTATION_CHANNEL, type HtmlPreviewAnnotationRequest } from '../src/session/shared/preview/html-preview-annotation'
@@ -4604,6 +4605,7 @@ async function stopDesktopOwnedResources(): Promise<void> {
         return null
       })
       releaseCustomModelForwarders()
+      releaseConversionRouters()
       await releasePlatformModelsAtExit(live)
     }, reportShutdownPhase),
   ])
