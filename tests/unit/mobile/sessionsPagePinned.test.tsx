@@ -373,11 +373,11 @@ describe('ProjectsPage — 所有机器一页、个人助理一组', () => {
     expect(groups().map(heading)).toEqual(['Repo'])
   })
 
-  it('页头是「项目」、右上只有一颗 +,点它交给上层去选机器', async () => {
+  it('页头是「文件夹」、右上只有一颗 +,点它交给上层去选机器', async () => {
     write('mac', [summary('m1', 1)])
     const onCreate = vi.fn()
     await renderPage([mac], { onCreate })
-    expect(['项目', 'Projects']).toContain(harness.container.querySelector('.gg-pane-title')?.textContent)
+    expect(['文件夹', 'Folders']).toContain(harness.container.querySelector('.gg-pane-title')?.textContent)
     const actions = harness.container.querySelectorAll('.gg-pane-actions button')
     expect(actions).toHaveLength(1)
     await act(async () => (actions[0] as HTMLButtonElement).click())

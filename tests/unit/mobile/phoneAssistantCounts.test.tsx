@@ -17,9 +17,8 @@ const world = vi.hoisted(() => ({
 vi.mock('../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => world.devices }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/usePhoneProfileData', () => ({ usePhoneIntegrations: () => ({ ...world.integrations, loading: false, retry: vi.fn() }) }))
 vi.mock('../../../apps/desktop/src/components/settings/channels/useChatChannels', () => ({ useChatChannels: () => world.chats }))
-vi.mock('../../../apps/desktop/src/session/renderer/features/projects/stores/account-projects-store', () => ({ get accountProjectsStore() { return world.projects } }))
+vi.mock('../../../apps/desktop/src/session/renderer/features/folders/group-folders-store', () => ({ get groupFoldersStore() { return { status: world.projects.status, groups: world.projects.projects } } }))
 vi.mock('../../../apps/desktop/src/components/session-watch/useMachineLabel', () => ({ useMachineLabel: () => ({ isHome: () => false }) }))
-vi.mock('../../../apps/desktop/src/mobile/assistant/phoneProjectRows', () => ({ phoneProjectRows: (rows: unknown[]) => rows }))
 vi.mock('../../../apps/desktop/src/components/assistant/assistant-app-connections', () => ({ assistantApplicationCounts: () => ({ saved: 3, connected: 2 }) }))
 
 import { PhoneAssistantCountsSource } from '../../../apps/desktop/src/mobile/assistant/PhoneAssistantCounts'

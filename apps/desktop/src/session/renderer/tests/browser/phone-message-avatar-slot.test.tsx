@@ -14,16 +14,14 @@ import '@/mobile/phone-look.css'
 import '@/mobile/partners/partners.css'
 import '@/mobile/assistant/assistant-phone.css'
 
-vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [device('host', [], {
-  projects: [{ localProjectId: 'project', chatId: 'project-chat', name: 'task-project', rootPath: '/project', createdAt: '2026-11-02T00:00:00Z', folders: [] }],
-})] }) }))
+vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [device('host', [])] }) }))
 vi.mock('@/hooks/useAgentDisplayStatus', () => ({ useAgentDisplayStatuses: () => ({ codex: 'error' }) }))
-// The project group's badge reads the project's tasks (the desktop project dot's count): one waits for approval.
+// The group's badge reads the tasks that live in the group (the desktop needs-you dot's count): one waits for approval.
 // #2600 the row keeps the group's own avatar (here the group default) — no folder cover in its place.
 vi.mock('@/session/shared/remote-sessions/session-directory', async original => ({
   ...await original<typeof import('@/session/shared/remote-sessions/session-directory')>(),
   useLiveDeviceSessions: () => ({ host: { projects: [], cached: false, loading: false, error: null, sessions: [
-    { conversationId: 'waiting', projectId: 'project', title: 'Codex 1', status: { status: 'needs_user', detail: 'approval' }, runtime: 'acp', supported: true, unseen: true },
+    { conversationId: 'waiting', projectId: 'project', groupChatId: 'project-chat', title: 'Codex 1', status: { status: 'needs_user', detail: 'approval' }, runtime: 'acp', supported: true, unseen: true },
   ] } }),
 }))
 vi.mock('@/lib/agentPresenceMobx', async () => {

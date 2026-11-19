@@ -78,11 +78,11 @@ afterEach(() => {
   title.remove()
 })
 
-async function renderPanel(blockHost?: { actions: HTMLElement | null; title: HTMLElement | null; tabs: HTMLElement | null }, kind: 'group' | 'dm' | 'ai' = 'group', mobile = false, project = false, hideRunningStatus = false) {
+async function renderPanel(blockHost?: { actions: HTMLElement | null; title: HTMLElement | null; tabs: HTMLElement | null }, kind: 'group' | 'dm' | 'ai' = 'group', mobile = false, inSlot = false, hideRunningStatus = false) {
   shell.mobile = mobile
   const chrome = hideRunningStatus ? { placeholder: 'Chat', attachGlyph: null, hideRunningStatus: true } : undefined
   const panel = createNode(ChatAreaPanel, { openNonce: 0, blockHost, mobile, ...(chrome ? { chrome } : {}) })
-  await renderWithAppProviders(harness, project ? createNode(InChatSlot.Provider, { value: { projectName: 'Settings project' } }, panel) : panel, {
+  await renderWithAppProviders(harness, inSlot ? createNode(InChatSlot.Provider, { value: { groupName: 'Settings group' } }, panel) : panel, {
     chat: {
       getImRepository: getImRepositoryMock,
       activeChatId: 'group-1',
@@ -154,12 +154,12 @@ describe('ChatAreaPanel hosted in a block (gugu-dev#181)', () => {
     })
   }
 
-  it('an empty project keeps its home in the chat column while its info opens beside it', async () => {
-    publishChatSummaries([{ id: 'group-1', kind: 'group', unread_count: 0, name: 'Settings project', last_message_at: null }])
+  it('an empty group keeps its home in the chat column while its info opens beside it', async () => {
+    publishChatSummaries([{ id: 'group-1', kind: 'group', unread_count: 0, name: 'Settings group', last_message_at: null }])
     try {
       await renderPanel({ actions, title, tabs: null }, 'group', false, true)
       const home = harness.container.querySelector('[data-chat-part="empty"]')
-      expect(home, 'the project home has a place inside the same conversation surface').not.toBeNull()
+      expect(home, 'the group home has a place inside the same conversation surface').not.toBeNull()
       await clickElement(membersButtonIn(actions) as HTMLElement)
       expect(infoTabOf('group-1')?.shown, 'the group info is a tab beside the chat').toBe(true)
       expect(harness.container.contains(home)).toBe(true)

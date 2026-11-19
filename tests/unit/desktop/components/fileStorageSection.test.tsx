@@ -7,7 +7,7 @@ import { createReactHarness } from '../../../support/testHarness'
 import { DEFAULT_FILE_STORAGE, type FileStorage } from '../../../../packages/core/src/shared/fileStorage'
 import { FileStorageSection } from '../../../../apps/desktop/src/components/settings/FileStorageSection'
 
-const f = vi.hoisted(() => ({ stored: {} as Record<string, unknown>, write: vi.fn(), projects: vi.fn() }))
+const f = vi.hoisted(() => ({ stored: {} as Record<string, unknown>, write: vi.fn(), groups: vi.fn() }))
 // The page reads file storage from the account's own settings row (lib/ownSettings); a write puts the saved row back.
 vi.mock('@gugu/core/cloud/userSettings', async (original) => ({ ...await original<object>(), readUserSettingsConfig: async () => ({ file_storage: f.stored }) }))
 vi.mock('../../../../apps/desktop/src/lib/fileStorage', () => ({
@@ -18,7 +18,7 @@ vi.mock('../../../../apps/desktop/src/lib/fileStorage', () => ({
   },
 }))
 vi.mock('../../../../apps/desktop/src/components/settings/FileStorageDashboard', () => ({ FileStorageDashboard: () => null }))
-vi.mock('../../../../apps/desktop/src/lib/deviceProjects', () => ({ listMyDeviceProjects: f.projects }))
+vi.mock('../../../../apps/desktop/src/lib/chatFolders', () => ({ listMyGroupFolders: f.groups }))
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'owner' } }) }))
 vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [{ device_id: 'mac', label: 'Studio Mac' }] }) }))
 vi.mock('react-i18next', async (importOriginal) => ({ ...await importOriginal<object>(), useTranslation: () => ({ t: (key: string) => key }) }))
@@ -27,7 +27,8 @@ describe('the one 「文件存储与读取」: other files are one choice', () =
   let harness: ReturnType<typeof createReactHarness>
   beforeEach(() => { readModelNotify.setScheduler((callback) => { callback() }); queryClient.clear(); followRendererSession('SIGNED_IN', 'owner');
     harness = createReactHarness(); vi.clearAllMocks(); f.stored = { ...DEFAULT_FILE_STORAGE }
-    f.projects.mockResolvedValue({ mac: [{ localProjectId: 'p', chatId: 'group' }] })
+    f.groups.mockResolvedValue([{ chatId: 'group', name: 'Group', archived: false, activeAt: '2026-11-19T00:00:00.000Z',
+      folders: [{ deviceId: 'mac', folderId: 'p', path: '/p', position: 0, attachedAt: null, removalRequestedAt: null }] }])
   })
   afterEach(() => { harness.cleanup(); vi.unstubAllGlobals() })
   const $ = (id: string) => harness.container.querySelector<HTMLSelectElement>(`#${id}`)
@@ -63,8 +64,8 @@ describe('the one 「文件存储与读取」: other files are one choice', () =
     await vi.waitFor(() => expect(harness.container.textContent).not.toContain('fileStorage.keptDiffer'))
   })
 
-  it('shows only the ordinary rules to someone with no machine bound to a project', async () => {
-    f.projects.mockResolvedValue({ mac: [{ localProjectId: 'p', chatId: null }] })
+  it('shows only the ordinary rules to someone with no machine bound to a group', async () => {
+    f.groups.mockResolvedValue([])
     await harness.render(createElement(FileStorageSection, { onBack: vi.fn() }))
     await vi.waitFor(() => expect(harness.container.textContent).toContain('fileStorage.noMachine'))
     expect($('settings-file-mode')).toBeNull()

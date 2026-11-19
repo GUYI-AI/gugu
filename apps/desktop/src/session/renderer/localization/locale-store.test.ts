@@ -233,12 +233,12 @@ describe('task locale resources', () => {
     // 那个键连同目录一并删了(#5052)。换一个仍在的项目域带插值键,覆盖意图不变:
     // 「项目域文案在两个 locale 都译得出、且插值真的被替换」。
     expect(translateSessionMessage('projects.error.notFoundAtPath', { path: '/tmp/build-box' })).toBe(
-      'No project found at /tmp/build-box'
+      'No folder found at /tmp/build-box'
     );
     await i18n.changeLanguage('zh-CN');
     expect(translateSessionMessage('browser.urlLabel')).toBe('浏览器地址');
     expect(translateSessionMessage('projects.error.notFoundAtPath', { path: '/tmp/build-box' })).toBe(
-      '在 /tmp/build-box 找不到项目'
+      '在 /tmp/build-box 找不到文件夹'
     );
   });
 

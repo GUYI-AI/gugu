@@ -70,7 +70,7 @@ describe('member picker model', () => {
 
   it('a task without a project shows no project, not the app’s own task-home folder or hidden project name', () => {
     const home = `${IMPLICIT_SESSION_HOME_PROJECT_ID}~dev-linux`
-    const homeLive = { 'dev-linux': { cached: false, loading: false, error: null, projects: [{ id: home, name: '任务工作区', path: '' }], sessions: [
+    const homeLive = { 'dev-linux': { cached: false, loading: false, error: null, projects: [{ id: home, name: '任务工作区', path: '', kind: 'workspace' }], sessions: [
       { conversationId: 's9', projectId: home, title: 'Standalone task', harness: 'codex', runtime: 'acp', agentStatus: null, lastInteractedAt: iso(HOUR), supported: true, agent: { userId: 'a9' } },
     ] } } as never
     const homeContacts = [

@@ -78,7 +78,7 @@ describe('native move file writes', () => {
   });
   it('releases the workspace it acquired for the move on the machine it came from (a cloud home roots it at the home directory)', async () => {
     const release = vi.fn(async () => ({ success: true }));
-    mocks.rpc.mockReturnValue({ projects: { releaseProjectWorkspace: release } });
+    mocks.rpc.mockReturnValue({ folderRuntime: { releaseFolderWorkspace: release } });
     mocks.openMachine.mockResolvedValue({ target: 'cloud', projectId: 'p', workspaceId: 'w-home', home: '/remote', paths: {}, rpc: { workspace: { files: {} } } });
     const source = await openSource({ ownerUserId: 'owner', assistantId: 'agent', assistantName: 'Assistant', localDeviceId: 'local',
       home: { kind: 'computer', deviceId: 'local', thisDevice: true, known: true, online: true, label: null } },

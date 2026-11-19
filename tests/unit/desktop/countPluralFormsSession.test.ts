@@ -49,19 +49,6 @@ const single: ReadonlyArray<{
     ],
   },
   {
-    key: 'projects.folders.mergeDescription',
-    extra: { name: 'gugu', machine: 'MBP', projectName: 'Home' },
-    en: [
-      'gugu on MBP already has 0 sessions. Their agents will join the Home project group; its old group stays as history.',
-      'gugu on MBP already has 1 session. That session’s agent will join the Home project group; its old group stays as history.',
-      'gugu on MBP already has 2 sessions. Their agents will join the Home project group; its old group stays as history.',
-    ],
-    zh: [
-      'MBP 上的项目「gugu」已经有 1 个会话。并进来以后，这些会话的 agent 会进「Home」的项目群；它原来的群不删，留作历史。',
-      'MBP 上的项目「gugu」已经有 2 个会话。并进来以后，这些会话的 agent 会进「Home」的项目群；它原来的群不删，留作历史。',
-    ],
-  },
-  {
     key: 'browserSettings.importedToast',
     extra: { browser: 'Chrome', profile: 'Work' },
     en: [

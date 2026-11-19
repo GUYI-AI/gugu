@@ -27,8 +27,6 @@ import { folderAsProject } from '@renderer/features/folders/folder-project';
 import { startAgentSessionsBridge } from '@renderer/features/sidebar/agent-sessions-bridge';
 import { machineCodec, machineRegistry } from '@renderer/lib/machine-routing';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
-import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
-import { pageSessions } from '@renderer/features/sessions/stores/session-selectors';
 import { log } from '@renderer/utils/logger';
 import { hostConnectionState, type HostConnectionState } from './connection-status';
 import { forgetRetiredProjectCaches } from './account-projects';

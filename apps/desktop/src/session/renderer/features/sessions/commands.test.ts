@@ -160,6 +160,8 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
       viewParamsStore: { session: { projectId: 'project-1', sessionId: 'conversation-1' } },
     },
   },
+  // 离开后落到这条会话所在的群(leave-session-view.ts sessionLeaveDestination)。
+  sidebarStore: { groupOfSession: (sessionId: string) => (sessionId === 'conversation-1' ? 'chat-1' : null) },
 }));
 
 function activeBrowserTab() {
@@ -408,7 +410,7 @@ describe('createSessionCommandProvider', () => {
     // 按键静默归档时按**默认范围**走:一个不弹的确认不能替用户勾上递归,也不能替用户把 agent 移出群和通讯录。
     expect(archiveSession).toHaveBeenCalledWith('conversation-1', { withChildren: false, removeSocialIdentity: false });
     // 这条会话就是此刻打开的那一条:归档成功后离开它的视图。
-    expect(mocks.navigate).toHaveBeenCalledWith('project', { projectId: 'project-1' });
+    expect(mocks.navigate).toHaveBeenCalledWith('chat', { chatId: 'chat-1' });
   });
 
   // 「Mod+Shift+E」是默认绑好的键。归档前询问开着时,它必须先问 —— 否则一次误触就把当前会话收走,

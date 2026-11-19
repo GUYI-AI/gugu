@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-// #2569 the sample's footer is the new-task composer a project has. It says why it cannot send (no agent ready, one
-// installing), sends by turning the sample into the person's project through the app's own steps, and hands the typed
-// message to that project's new-task box with the sample's context; a step that fails is said under the box and the
-// message stays.
+// #2569 the sample's footer is the new-task composer a group has. It says why it cannot send (no agent ready, one
+// installing), sends by turning the sample into the person's group (with its folder) through the app's own steps, and
+// hands the typed message to that group's new-task box with the sample's context; a step that fails is said under the
+// box and the message stays.
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -27,10 +27,10 @@ const io = vi.hoisted(() => ({
   directory: '/Users/p/projects',
   taken: new Set<string>(),
   createProject: vi.fn(),
+  projects: new Map<string, unknown>(),
   ensureMounted: vi.fn(),
   inspect: vi.fn(),
   writeFile: vi.fn(),
-  ensureGroup: vi.fn(),
   listed: new Set<string>(),
   navigate: vi.fn(),
   forget: vi.fn(),
@@ -70,44 +70,36 @@ vi.mock('@/lib/sampleProject', () => ({
 }));
 vi.mock('@/lib/assistantShellBridge', () => ({ readAssistantShellBridge: () => ({ getSnapshot: () => ({ ownerId: io.signedIn }) }) }));
 vi.mock('@/lib/composerVerbBridge', () => ({ setComposerVerb: io.setComposerVerb }));
-// The chat list has loaded (the shell published it); the account projects above are drawn as rows.
-vi.mock('@/lib/sidebarChatsBridge', () => ({ readSidebarChatSignals: () => ({ listedGroups: new Set<string>() }), subscribeSidebarChatSignals: () => () => {} }));
+// The chat list has loaded (the shell published it); the groups in `listed` are drawn as rows.
+vi.mock('@/lib/sidebarChatsBridge', () => ({ readSidebarChatSignals: () => ({ listedGroups: io.listed }), subscribeSidebarChatSignals: () => () => {} }));
+vi.mock('@/lib/chatSummariesBridge', () => ({ readChatSummary: (chatId: string) => (io.listed.has(chatId) ? { id: chatId, name: '周末去杭州' } : undefined) }));
 vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen: io.openChat }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: io.toast }));
 vi.mock('@renderer/app/screen-layout-actions', () => ({ forgetSampleProjectOnScreen: io.forget }));
-vi.mock('@renderer/features/projects/project-task-entry', async () => {
-  const { composerDrafts, projectDraftKey } = await import('@renderer/features/sessions/composer-drafts');
-  return { prepareProjectTask: (projectId: string, from: string) => composerDrafts.moveToEmpty(from, projectDraftKey(projectId)) };
+vi.mock('@renderer/features/folders/group-home', async () => {
+  const { composerDrafts } = await import('@renderer/features/sessions/composer-drafts');
+  const groupDraftKey = (chatId: string) => `group:${chatId}`;
+  return { groupDraftKey, prepareGroupTask: (chatId: string, from: string) => composerDrafts.moveToEmpty(from, groupDraftKey(chatId)) };
 });
-vi.mock('@renderer/features/projects/stores/account-projects-store', () => ({
-  accountProjectsStore: {
-    project: (chatId: string) => (io.listed.has(chatId) ? { chatId, name: '周末去杭州' } : undefined),
-    get projects() { return [...io.listed].map((chatId) => ({ chatId, name: '周末去杭州', archived: false, bindings: [] })); },
-    refresh: vi.fn(),
+// 新建群（同时新建一个文件夹）:群和文件夹一起建出来;这里文件夹 id 记作 project-N,它的群是 chat-of-project-N。
+vi.mock('@renderer/features/folders/create-group-with-folder', () => ({
+  createGroupWithFolder: async (input: unknown) => {
+    const folderId = await io.createProject(input);
+    io.projects.set(folderId, {});
+    return `chat-of-${folderId}`;
   },
 }));
-vi.mock('@renderer/features/projects/stores/project-selectors', () => {
-  const projects = new Map<string, unknown>();
-  return {
-    getProjectManagerStore: () => ({
-      projects,
-      createProject: async (...args: unknown[]) => {
-        const projectId = await io.createProject(...args);
-        projects.set(projectId, {});
-        return projectId;
-      },
-      ensureMounted: io.ensureMounted,
-    }),
-    getProjectStore: (projectId: string) => ({ error: undefined, mountedProject: { data: { repositoryWorkspaceId: `${projectId}:folder` } } }),
-    asMounted: (store: { mountedProject?: unknown } | undefined) => store?.mountedProject,
-  };
-});
+vi.mock('@renderer/features/folders/group-folders-store', () => ({ groupFoldersStore: { chatOfFolder: () => undefined, refresh: vi.fn() } }));
+vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
+  getProjectManagerStore: () => ({ projects: io.projects, ensureMounted: io.ensureMounted }),
+}));
 vi.mock('@renderer/features/settings/app-settings-client', () => ({
+  LOCAL_SETTINGS_HOST_KEY: 'local',
   fetchAppSettingValue: async () => ({ defaultProjectsDirectory: io.directory }),
 }));
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: {
-    projects: { inspectProjectPath: io.inspect, ensureProjectGroup: io.ensureGroup },
+    folders: { inspectFolderPath: io.inspect, listGroupFolders: async (chatId: string) => [{ id: chatId.replace(/^chat-of-/, '') }] },
     workspace: { files: { writeFile: io.writeFile } },
   },
 }));
@@ -115,7 +107,8 @@ vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { navigation: { nav
 vi.mock('@renderer/utils/logger', () => ({ log: { error: io.logError, warn: vi.fn() } }));
 
 const { SampleComposer, SAMPLE_DRAFT_KEY } = await import('./sample-composer');
-const { composerDrafts, projectDraftKey } = await import('@renderer/features/sessions/composer-drafts');
+const { composerDrafts } = await import('@renderer/features/sessions/composer-drafts');
+const groupDraftKey = (chatId: string) => `group:${chatId}`;
 const { resetSampleConversion, sampleConversion, sampleConversionOf } = await import('./sample-conversion');
 const { zhCNSampleProject } = await import('./content/zh-CN');
 
@@ -145,17 +138,17 @@ beforeEach(() => {
   io.directory = '/Users/p/projects';
   io.taken = new Set();
   io.listed = new Set();
+  io.projects = new Map();
   io.signedIn = 'u';
-  for (const mock of [io.record, io.dismiss, io.createProject, io.ensureMounted, io.inspect, io.writeFile, io.ensureGroup, io.navigate, io.forget, io.logError, io.toast, io.setComposerVerb, io.openChat]) mock.mockReset();
+  for (const mock of [io.record, io.dismiss, io.createProject, io.ensureMounted, io.inspect, io.writeFile, io.navigate, io.forget, io.logError, io.toast, io.setComposerVerb, io.openChat]) mock.mockReset();
   let created = 0;
   io.createProject.mockImplementation(async () => {
     const projectId = `project-${++created}`;
     io.listed.add(`chat-of-${projectId}`);
     return projectId;
   });
-  io.inspect.mockImplementation(async ({ path }: { path: string }) => ({ isDirectory: io.taken.has(path), isGitRepo: false }));
+  io.inspect.mockImplementation(async (path: string) => ({ isDirectory: io.taken.has(path), isGitRepo: false }));
   io.writeFile.mockResolvedValue({ success: true, data: { success: true, bytesWritten: 1 } });
-  io.ensureGroup.mockImplementation(async (projectId: string) => ({ success: true, data: { chatId: `chat-of-${projectId}` } }));
   composerDrafts.set(SAMPLE_DRAFT_KEY, typed);
   host = document.body.appendChild(document.createElement('div'));
   root = createRoot(host);
@@ -164,7 +157,7 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   composerDrafts.discard(SAMPLE_DRAFT_KEY);
-  composerDrafts.discard(projectDraftKey('project-1'));
+  composerDrafts.discard(groupDraftKey('chat-of-project-1'));
 });
 
 describe('the sample project\'s composer (#2569)', () => {
@@ -197,27 +190,23 @@ describe('the sample project\'s composer (#2569)', () => {
     expect(io.composer).toMatchObject({ blocked: false, blockReason: null });
   });
 
-  it('sending makes the project in the default directory beside a taken name, writes the three files, makes the group, and hands the message over', async () => {
+  it('sending makes the group with its folder in the default directory beside a taken name, writes the three files, and hands the message over', async () => {
     io.taken.add('/Users/p/projects/周末去杭州');
     await render();
     await send();
-    expect(io.createProject).toHaveBeenCalledWith(
-      { type: 'local' },
-      { mode: 'pick', path: '/Users/p/projects/周末去杭州 2', name: '周末去杭州 2', createDirectory: true, allowNonGit: true },
+    expect(io.createProject).toHaveBeenCalledWith({ name: '周末去杭州 2', machine: null, path: '/Users/p/projects/周末去杭州 2', create: true });
+    expect(io.writeFile.mock.calls.map(([workspaceId, name, body]) => [workspaceId, name, body])).toEqual(
+      zhCNSampleProject.files.map((file) => ['project-1', file.name, file.text]),
     );
-    expect(io.writeFile.mock.calls.map(([projectId, folder, name, body]) => [projectId, folder, name, body])).toEqual(
-      zhCNSampleProject.files.map((file) => ['project-1', 'project-1:folder', file.name, file.text]),
-    );
-    expect(io.ensureGroup).toHaveBeenCalledWith('project-1');
     expect(io.record.mock.calls.map(([became]) => became)).toEqual([{ projectId: 'project-1' }, { projectId: 'project-1', chatId: 'chat-of-project-1' }]);
-    // The typed message now belongs to the project's new-task box, with the sample's request and files as context.
-    const moved = composerDrafts.forKey(projectDraftKey('project-1'));
+    // The typed message now belongs to the group's new-task box, with the sample's request and files as context.
+    const moved = composerDrafts.forKey(groupDraftKey('chat-of-project-1'));
     expect(moved.prompt).toBe(typed);
     expect(moved.handoff).toMatchObject({ sendWhenReady: true, picked: input });
     const request = zhCNSampleProject.messages.find((message) => message.kind === 'task');
     expect(moved.handoff?.hiddenContext).toContain(request && 'text' in request ? request.text : 'missing request');
     for (const file of zhCNSampleProject.files) expect(moved.handoff?.hiddenContext).toContain(file.name);
-    expect(io.navigate).toHaveBeenCalledWith('project', { projectId: 'project-1' });
+    expect(io.navigate).toHaveBeenCalledWith('chat', { chatId: 'chat-of-project-1' });
     expect(io.forget).toHaveBeenCalledOnce();
     expect(sampleConversion).toMatchObject({ owner: 'u', status: 'handed-off', chatId: 'chat-of-project-1' });
     // #2589 review 5: dismissed on the account at the hand-off, ❌ left to the task's in-memory completion.
@@ -228,21 +217,18 @@ describe('the sample project\'s composer (#2569)', () => {
     io.dismiss.mockRejectedValueOnce(new Error('settings row locked'));
     await render();
     await send();
-    expect(io.navigate).toHaveBeenCalledWith('project', { projectId: 'project-1' });
+    expect(io.navigate).toHaveBeenCalledWith('chat', { chatId: 'chat-of-project-1' });
     expect(io.toast).toHaveBeenCalledWith({ tier: 'error', title: 'projects.sample.dismissFailed', description: 'projects.sample.dismissFailedHint' });
     expect(JSON.stringify(io.logError.mock.calls)).toContain('settings row locked');
   });
 
   // #2589 review 8
   it('a regular file where the folder would go counts as taken: the project goes to the next name', async () => {
-    io.inspect.mockImplementation(async ({ path }: { path: string }) => (path === '/Users/p/projects/周末去杭州'
+    io.inspect.mockImplementation(async (path: string) => (path === '/Users/p/projects/周末去杭州'
       ? { isDirectory: false, isGitRepo: false, isFile: true } : { isDirectory: false, isGitRepo: false }));
     await render();
     await send();
-    expect(io.createProject).toHaveBeenCalledWith(
-      { type: 'local' },
-      { mode: 'pick', path: '/Users/p/projects/周末去杭州 2', name: '周末去杭州 2', createDirectory: true, allowNonGit: true },
-    );
+    expect(io.createProject).toHaveBeenCalledWith({ name: '周末去杭州 2', machine: null, path: '/Users/p/projects/周末去杭州 2', create: true });
   });
 
   // #2589 review 2
@@ -252,7 +238,6 @@ describe('the sample project\'s composer (#2569)', () => {
     await render();
     await send();
     expect(io.createProject).not.toHaveBeenCalled();
-    expect(io.ensureGroup).not.toHaveBeenCalled();
     expect(io.setComposerVerb).toHaveBeenCalledWith('chat-of-the-laptop-project', 'task', typed, { name: '周末去杭州', joinable: true, inGroup: true });
     expect(io.openChat).toHaveBeenCalledWith('chat-of-the-laptop-project', false);
     expect(io.forget).toHaveBeenCalledOnce();
@@ -295,28 +280,15 @@ describe('the sample project\'s composer (#2569)', () => {
     expect(io.createProject).toHaveBeenCalledOnce();
   });
 
-  // The line under the box says what the person can do next; the internal reason goes to the log only (user-copy-leak-check).
-  it('the group cannot be made: says what to do next, logs why, keeps the message; sending again continues with the same project', async () => {
-    io.ensureGroup.mockResolvedValueOnce({ success: false, error: { type: 'cloud-failed', message: 'the cloud did not answer' } });
-    await render();
-    await send();
-    expect(host.querySelector('[role="alert"]')?.textContent).toBe('projects.sample.convert.group');
-    expect(JSON.stringify(io.logError.mock.calls)).toContain('the cloud did not answer');
-    expect(composerDrafts.get(SAMPLE_DRAFT_KEY)).toBe(typed);
-    expect(io.navigate).not.toHaveBeenCalled();
-    await send();
-    expect(io.createProject).toHaveBeenCalledOnce();
-    expect(io.navigate).toHaveBeenCalledWith('project', { projectId: 'project-1' });
-  });
-
   it('while it works, the send is held and the box says what is happening', async () => {
     let finish!: (value: unknown) => void;
-    io.ensureGroup.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    io.createProject.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     await render();
     await send();
     expect(io.composer?.blocked).toBe(true);
     expect(host.querySelector('[data-sample-composer-status]')?.textContent).toBe('projects.sample.convert.working');
-    await act(async () => finish({ success: true, data: { chatId: 'chat-of-project-1' } }));
+    io.listed.add('chat-of-project-1');
+    await act(async () => finish('project-1'));
     await flush();
     expect(sampleConversion.status).toBe('handed-off');
   });

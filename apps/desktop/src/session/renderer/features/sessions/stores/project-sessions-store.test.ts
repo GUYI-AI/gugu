@@ -294,7 +294,7 @@ describe('ProjectSessionsStore session lifecycle', () => {
         ...extra,
       } as never);
 
-    await create('born-in-group', { birthGroup: { chatId: 'group-1', asTask: true } });
+    await create('born-in-group', { groupChatId: 'group-1' });
     await create('from-nowhere', {});
 
     expect(manager.sessions.get('born-in-group')?.data.bornInChatId).toBe('group-1');

@@ -14,13 +14,6 @@ vi.mock('@/lib/guguLinks', () => ({ followLink: (href: string) => { opened.links
 vi.mock('@renderer/localization/use-session-messages', () => ({
   useSessionMessages: () => ({ translate: (key: string, values?: { name?: string }) => (values?.name ? `${key}:${values.name}` : key) }),
 }));
-vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({
-  projectGroupsStore: {
-    rowProjectOfChat: (chatId: string) => (chatId === 'g-project' ? 'project-1' : undefined),
-    projectOfChat: (chatId: string) => (chatId === 'g-project' || chatId === '0b1e7c1a-0000-4000-8000-000000000003' ? 'project-1' : undefined),
-  },
-}));
-
 // cmdk 量列表高度用 ResizeObserver、把选中行滚进视野用 scrollIntoView,jsdom 都没有。
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
 Element.prototype.scrollIntoView ??= () => {};
@@ -55,9 +48,9 @@ async function render(query: string) {
 const rows = () => [...host.querySelectorAll('[cmdk-item]')].map((row) => row.textContent);
 
 describe('quick switcher groups and contacts', () => {
-  it('lists groups and contacts, with project groups represented by projects', async () => {
+  it('lists groups and contacts', async () => {
     await render('');
-    expect(rows()).toEqual(['咕咕内测群', '阿威']);
+    expect(rows()).toEqual(['咕咕内测群', '官网', '阿威']);
   });
 
   it('filters object names and leaves message contents and topics to their own searches', async () => {
@@ -75,14 +68,6 @@ describe('quick switcher groups and contacts', () => {
     await render('内测');
     await act(async () => (host.querySelector('[cmdk-item]') as HTMLElement).click());
     expect(opened.links).toEqual([conversationLink('0b1e7c1a-0000-4000-8000-000000000001')]);
-  });
-
-  it('finds and opens a bound group whose project has no row', async () => {
-    publishChatSummaries([{ id: '0b1e7c1a-0000-4000-8000-000000000003', kind: 'group', unread_count: 0, name: 'Hidden project group' }]);
-    await render('Hidden project');
-    expect(rows()).toEqual(['Hidden project group']);
-    await act(async () => (host.querySelector('[cmdk-item]') as HTMLElement).click());
-    expect(opened.links).toEqual([conversationLink('0b1e7c1a-0000-4000-8000-000000000003')]);
   });
 
   it('selects the existing contact details without creating a conversation', async () => {

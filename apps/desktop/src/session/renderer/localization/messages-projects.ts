@@ -126,7 +126,6 @@ export const enUSProjectMessages = {
   'projects.sample.wrote': 'Wrote {files}',
   'projects.sample.shared': 'Shared in the group: {files}',
   'projects.sample.posted': 'Replied in the group',
-  'projects.home.connecting': 'Connecting to the folder; you can send once it is ready…',
   // 卡片头「N 个文件夹 · N 个会话」:两个数各自取单复数,再拼起来(❌「1 folders」)。
   'projects.folders.meta': '{folders}, {sessions}',
   'projects.folders.folderCount_one': '{count} folder',
@@ -161,10 +160,7 @@ export const enUSProjectMessages = {
   'projects.folders.retry': 'Retry',
   'projects.folders.attachDialogTitle': 'Attach a folder to {projectName}',
   'projects.folders.attachDialogMessage': 'The folder becomes part of {projectName}; sessions can start there.',
-  'projects.picker.noFolder': 'No folder yet',
-  'projects.picker.deviceUnavailable': '{device} · unavailable',
   'projects.picker.pickFolderOn': 'Pick a folder on {machine}…',
-  'projects.picker.readFailed': 'Couldn’t read this group’s folders',
   'projects.folders.attached': 'Attached {path} to {projectName}',
   'projects.folders.detached': '{path} is no longer part of {projectName}',
   'projects.folders.undo': 'Undo',
@@ -172,7 +168,6 @@ export const enUSProjectMessages = {
   'projects.folders.errorDetach': 'Couldn’t remove the folder — try again',
   'projects.folders.errorNotDirectory': 'Only folders can be attached',
   'projects.folders.errorFull': '{projectName} already has {max} folders. Detach one you no longer use first',
-  'projects.folders.errorIsProjectRoot': 'That folder is the root folder of {projectName}',
   'projects.folders.errorOtherProject': 'That folder already belongs to {projectName}',
   'projects.folders.errorAttach': 'Couldn’t attach the folder — try again',
   'projects.folders.pickerTitle': 'Start in',
@@ -180,20 +175,11 @@ export const enUSProjectMessages = {
   'projects.folders.attachedOn': 'Attached {path} on {machine} to {projectName}',
   'projects.folders.moveDescription': 'Move it to {projectName}? Its old group and that group’s history stay as they are.',
   'projects.folders.moveConfirm': 'Move it here',
-  'projects.titlebar.remove': 'Remove group',
-  'projects.fallbackName': 'this group',
 
   // ── projects: mount failure panels ─────────────────────────────────────
-  'projects.error.setupFailed': 'Failed to set up group',
   'projects.error.openFailed': 'Failed to open group',
   'projects.error.notFoundAtPath': 'No folder found at {path}',
   'projects.error.configuredPath': 'the configured path',
-  'projects.notFound.title': 'Folder not found',
-  'projects.notFound.detail': 'The folder no longer exists at the configured path.',
-  'projects.accessBlocked.title': "Can't read the folder",
-  'projects.accessBlocked.detail':
-    'Reading this folder timed out. On macOS, allow access to this location in Privacy settings, then retry.',
-  'projects.accessBlocked.openSettings': 'Open Privacy Settings',
   'projects.error.retry': 'Retry',
   'projects.error.accountList': "Couldn't load your groups.",
 
@@ -241,25 +227,10 @@ export const enUSProjectMessages = {
   'projects.create.save': 'Save',
   'projects.create.failed': 'Didn\'t work. Try again',
   'projects.create.machineOffline': 'That machine is offline. Bind a folder there once it is back.',
-  'projects.create.providerLocal': 'local',
-  'projects.create.providerSsh': 'SSH',
-  'projects.create.pathConflict':
-    'The selected path is already used by the {provider} folder "{name}" ({id}). Remove or move that folder before creating another one.',
   'projects.create.noDefaultDirectory': 'No default location for new folders is configured. Set one in settings first.',
   'projects.create.invalidName': 'A group name cannot contain path separators or reserved characters.',
 
   // ── projects: delete confirmation ──────────────────────────────────────
-  'projects.delete.title': 'Delete group',
-  'projects.delete.confirm': 'Delete',
-  'projects.delete.failed': 'Could not delete the group',
-  'projects.delete.checking': 'Checking group…',
-  'projects.delete.checkTimeout': 'The device did not answer while checking the group. Try again once it is connected.',
-  'projects.delete.description':
-    '"{projectLabel}" will be removed from the list. Its tasks will be archived and can be restored from Task history. Files and worktrees will be kept.',
-  'projects.delete.detachWarning_one':
-    'If this automation belongs to an archived task, it will be kept and hidden until that task is restored. Otherwise, it will be detached and will not run until attached to another group:',
-  'projects.delete.detachWarning_other':
-    'Automations belonging to archived tasks will be kept and hidden until those tasks are restored. Other automations will be detached and will not run until attached to another group:',
 
   // ── projects: task list ────────────────────────────────────────────────
 
@@ -384,7 +355,6 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'projects.sample.wrote': '写了 {files}',
   'projects.sample.shared': '发到群里：{files}',
   'projects.sample.posted': '在群里回复',
-  'projects.home.connecting': '正在连接文件夹，就绪后即可发送…',
   'projects.folders.meta': "{folders}，{sessions}",
   'projects.folders.folderCount_one': '{count} 个文件夹',
   'projects.folders.folderCount_other': '{count} 个文件夹',
@@ -418,10 +388,7 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'projects.folders.retry': '重试',
   'projects.folders.attachDialogTitle': '挂一个文件夹到「{projectName}」',
   'projects.folders.attachDialogMessage': '挂上后它就是「{projectName}」的一部分，新会话可以从那儿开工。',
-  'projects.picker.noFolder': '还没有文件夹',
-  'projects.picker.deviceUnavailable': '{device} · 暂不可用',
   'projects.picker.pickFolderOn': '在{machine}上选文件夹…',
-  'projects.picker.readFailed': '读不到这个群的文件夹',
   'projects.folders.attached': '已把 {path} 挂进「{projectName}」',
   'projects.folders.detached': '{path} 不再挂在「{projectName}」下',
   'projects.folders.undo': '撤销',
@@ -429,7 +396,6 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'projects.folders.errorDetach': '没摘除成功，再试一次',
   'projects.folders.errorNotDirectory': '只能挂文件夹',
   'projects.folders.errorFull': '{projectName} 已经挂了 {max} 个文件夹,先移走用不上的再挂',
-  'projects.folders.errorIsProjectRoot': '这个文件夹本身就是群「{projectName}」的根文件夹',
   'projects.folders.errorOtherProject': '这个文件夹已经挂在群「{projectName}」里',
   'projects.folders.errorAttach': '没挂上，再试一次',
   'projects.folders.pickerTitle': '从哪个文件夹开工',
@@ -437,20 +403,11 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'projects.folders.attachedOn': '已把 {machine} 上的 {path} 挂进「{projectName}」',
   'projects.folders.moveDescription': '挪到「{projectName}」？原来的群和它的历史都不动。',
   'projects.folders.moveConfirm': '挪到本群',
-  'projects.titlebar.remove': '移除群',
-  'projects.fallbackName': '此群',
 
   // ── projects: mount failure panels ─────────────────────────────────────
-  'projects.error.setupFailed': '群设置失败',
   'projects.error.openFailed': '无法打开群',
   'projects.error.notFoundAtPath': '在 {path} 找不到文件夹',
   'projects.error.configuredPath': '配置的路径',
-  'projects.notFound.title': '找不到文件夹',
-  'projects.notFound.detail': '配置路径下的文件夹已不存在。',
-  'projects.accessBlocked.title': '读不到文件夹',
-  'projects.accessBlocked.detail':
-    '读取目录超时。在 macOS 上，请在隐私设置中允许访问该位置后重试。',
-  'projects.accessBlocked.openSettings': '打开隐私设置',
   'projects.error.retry': '重试',
   'projects.error.accountList': '群列表读取失败。',
 
@@ -494,22 +451,10 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'projects.create.save': '保存',
   'projects.create.failed': '没建成，再试一次',
   'projects.create.machineOffline': '那台机器现在离线，等它上线再挂文件夹。',
-  'projects.create.providerLocal': '本地',
-  'projects.create.providerSsh': 'SSH',
-  'projects.create.pathConflict':
-    '所选路径已被{provider}文件夹“{name}”（{id}）占用。请先删除或移动该文件夹，再新建群。',
   'projects.create.noDefaultDirectory': '未配置新文件夹的默认位置，请先到设置中配置',
   'projects.create.invalidName': '群名不能包含路径分隔符或系统保留字符',
 
   // ── projects: delete confirmation ──────────────────────────────────────
-  'projects.delete.title': '删除群',
-  'projects.delete.confirm': '删除',
-  'projects.delete.failed': '未能删除群',
-  'projects.delete.checking': '正在检查群…',
-  'projects.delete.checkTimeout': '检查群时那台设备没有应答。请等连接恢复后重试。',
-  'projects.delete.description': '将从列表移除“{projectLabel}”，并归档其中的任务；可从任务历史恢复。文件夹和 worktree 会保留。',
-  'projects.delete.detachWarning_one': '若该自动化属于归档任务，它会保留，并在任务恢复前隐藏；否则将从群分离，在挂到其他群之前不会运行：',
-  'projects.delete.detachWarning_other': '归档任务的自动化会保留，并在任务恢复前隐藏；其他自动化将从群分离，在挂到其他群之前不会运行：',
 
   // ── projects: task list ────────────────────────────────────────────────
 

@@ -57,7 +57,7 @@ function stopAskingBeforeArchive(): void {
  * fail-loud:每一条「归档没发生」的路径都要留下话,❌ 点了没反应。
  */
 export function archiveSessionNow(args: { projectId: string; sessionId: string; withChildren: boolean; removeSocialIdentity?: boolean }): void {
-  const { projectId, sessionId, withChildren, removeSocialIdentity = true } = args;
+  const { sessionId, withChildren, removeSocialIdentity = true } = args;
   const manager = sessionRegistry.get(sessionId);
   if (!manager) {
     log.error('[gugu-archive] 会话未挂载,无法归档', { sessionId });

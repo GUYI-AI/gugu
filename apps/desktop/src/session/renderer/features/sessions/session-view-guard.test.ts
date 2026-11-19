@@ -14,7 +14,7 @@ vi.mock('@/lib/assistantEntry', () => ({
 }));
 vi.mock('@/lib/assistantShellBridge', () => ({ readAssistantShellBridge: () => ({ getSnapshot: () => ({ assistant: { id: state.assistantId } }) }) }));
 vi.mock('@renderer/features/sessions/stores/session-agent-bindings', () => ({ sessionAgentBindings: { bindingFor: () => state.agentId ? { agentUserId: state.agentId } : undefined } }));
-vi.mock('@renderer/features/projects/project-presence', () => ({ projectPresence: () => 'present' }));
+vi.mock('@renderer/features/folders/folder-presence', () => ({ folderPresence: () => 'present' }));
 vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({ getSessionManagerStore: () => ({ listState: state.listState, sessions: state.listed ? new Map([['task', { data: { archivedAt: state.archived ? '2026-10-27' : null } }]]) : new Map() }) }));
 vi.mock('@renderer/features/sessions/leave-session-view', () => ({ sessionLeaveDestination: () => ({ viewId: 'new-session' }) }));
 beforeEach(() => { state.agentId = state.assistantId = 'assistant'; state.archived = false; state.listed = true; state.listState = 'read'; state.target = 'app'; state.opened.length = 0; });

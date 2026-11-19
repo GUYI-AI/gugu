@@ -211,7 +211,7 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
     const h = await mount('tasks')
     try {
       expect(ring()).toEqual({ x: 60, y: 300 })
-      expect(h.card().querySelector('h2')!.textContent).toBe('项目：集中推进一件事')
+      expect(h.card().querySelector('h2')!.textContent).toBe('群：集中推进一件事')
     } finally { h.cleanup() }
   })
   it('对话 points at the one list itself, ❌ a header or a page tab', async () => {
@@ -219,7 +219,7 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
     try {
       expect(ring()).toEqual({ x: 60, y: 92 })
       expect(h.card().querySelector('h2')!.textContent).toBe('对话')
-      expect(h.card().textContent).toContain('智能体、群、项目和人都在这一列，按最近动静排；有事找你的会挂红数字。')
+      expect(h.card().textContent).toContain('智能体、群和人都在这一列，按最近动静排；有事找你的会挂红数字。')
     } finally { h.cleanup() }
   })
   it.each([false, true])('skips an unavailable 创建智能体 without trapping or revisiting the step (lost during tour=%s)', async (during) => {

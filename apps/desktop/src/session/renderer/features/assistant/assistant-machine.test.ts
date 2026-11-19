@@ -1,14 +1,14 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { AssistantHomePlace } from '@/lib/assistantHome';
 
-const state = vi.hoisted(() => ({ local: vi.fn(), remote: vi.fn(), acquire: vi.fn(), open: vi.fn(), rootLease: vi.fn(), create: vi.fn(), homeProject: vi.fn(), project: vi.fn() }));
+const state = vi.hoisted(() => ({ local: vi.fn(), remote: vi.fn(), acquire: vi.fn(), open: vi.fn(), rootLease: vi.fn() }));
 vi.mock('@renderer/lib/ipc', () => ({ rpcOn: () => ({
   app: { getHomeDirectory: async () => '/home/me' },
-  projects: { acquireTaskDirectory: state.acquire, openProject: state.open, acquireProjectWorkspace: state.rootLease, createProject: state.create },
+  folderRuntime: { acquireTaskDirectory: state.acquire, openFolder: state.open, acquireFolderWorkspace: state.rootLease },
 }) }));
 vi.mock('@renderer/features/sessions/implicit-session-home-project', () => ({ ensureImplicitSessionHomeProjectId: state.local }));
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({ remoteHostsStore: {
-  ensureTaskWorkspace: state.remote, ensureHomeDir: async () => '/home/me', ensureHomeProject: state.homeProject, ensureProject: state.project,
+  ensureTaskWorkspace: state.remote, ensureHomeDir: async () => '/home/me',
 } }));
 vi.mock('./assistant-home-sessions', () => ({ homeTarget: (home: AssistantHomePlace) => home.kind === 'computer' && home.thisDevice ? null : home.deviceId }));
 import { openAssistantMachine } from './assistant-machine';
@@ -28,9 +28,8 @@ it.each([local, remote, cloud])('opening an assistant on $deviceId never registe
   expect(machine.projectId).toBe(projectId); expect(machine.workspaceId).toBe('assistant-cwd');
   // 住云上的说明、记忆、技能、资料都在主目录下、工作目录外:工作区圈住主目录。
   expect(state.acquire).toHaveBeenCalledWith(projectId, home === cloud ? '/home/me' : '/home/me/assistant');
-  expect(state.create).not.toHaveBeenCalled(); expect(state.project).not.toHaveBeenCalled(); expect(state.homeProject).not.toHaveBeenCalled();
   expect(state.rootLease).not.toHaveBeenCalled();
-  if (home !== local) expect(state.remote).toHaveBeenCalledWith(home.deviceId, true);
+  if (home !== local) expect(state.remote).toHaveBeenCalledWith(home.deviceId);
 });
 it('a cloud home can write its instructions, memory, skills and resources: every path is inside the acquired root', async () => {
   const machine = await openAssistantMachine(cloud, '/home/me/assistant');
@@ -42,7 +41,7 @@ it('a cloud home can write its instructions, memory, skills and resources: every
 it('fails closed instead of creating a home project when an older remote cannot supply a task workspace', async () => {
   state.remote.mockRejectedValue(new Error('TASK_WORKSPACE_UNAVAILABLE'));
   await expect(openAssistantMachine(remote, '/home/me/assistant')).rejects.toThrow('TASK_WORKSPACE_UNAVAILABLE');
-  expect(state.homeProject).not.toHaveBeenCalled(); expect(state.acquire).not.toHaveBeenCalled();
+  expect(state.acquire).not.toHaveBeenCalled();
 });
 it('propagates a real directory lease failure instead of reading the task-root directory', async () => {
   state.acquire.mockResolvedValue({ success: false, error: { type: 'acquire-failed' } });

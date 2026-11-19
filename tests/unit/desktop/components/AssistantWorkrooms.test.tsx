@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { capabilities: { get agentRuntime() { return mocks.native } } } }))
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => {
   const ipc = { rpcOn: mocks.rpc, events: { on: () => () => {} } };
-  // 本机(null)那条线就是 events.on;测试里的项目都在本机。
+  // 本机(null)那条线就是 events.on;测试里的文件夹都在本机。
   return { ...ipc, onMachineEvent: (_machine: unknown, event: never, cb: never) => (ipc.events.on as (...args: unknown[]) => () => void)(event, cb) };
 })
 vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ machineRpc: mocks.mobileRpc }))
@@ -30,11 +30,11 @@ let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
   harness = createReactHarness()
   mocks.native = true
-  mocks.rpc.mockReset().mockReturnValue({ sessionTimeline: { sessionsList: mocks.list }, projects: { listProjectGroupBindings: mocks.bindings } })
+  mocks.rpc.mockReset().mockReturnValue({ sessionTimeline: { sessionsList: mocks.list }, folders: { listGroupFolders: mocks.bindings } })
   mocks.mobileRpc.mockReset().mockImplementation(() => mocks.rpc())
   mocks.warn.mockReset()
   mocks.list.mockReset().mockResolvedValue({ sessions: [{ conversationId: 'root', projectId: 'home', agent: { userId: 'assistant' } }] })
-  mocks.bindings.mockReset().mockResolvedValue({ success: true, data: [{ projectId: 'home', chatId: 'workroom' }] })
+  mocks.bindings.mockReset().mockResolvedValue([{ id: 'home', chatId: 'workroom' }])
 })
 afterEach(() => harness.cleanup())
 
@@ -43,7 +43,7 @@ describe('assistant workroom ownership reads', () => {
     await renderWithAppProviders(harness, <Probe />)
     expect(mocks.rpc).toHaveBeenCalledWith(null)
     expect(harness.container.textContent).toContain('workroom')
-    mocks.bindings.mockResolvedValue({ success: false, error: { type: 'disconnected' } })
+    mocks.bindings.mockRejectedValue(new Error('disconnected'))
     await renderWithAppProviders(harness, <Probe revision="new-membership" />)
     expect(mocks.warn).toHaveBeenCalledOnce()
     expect(harness.container.textContent).toContain('workroom')
@@ -55,7 +55,7 @@ describe('assistant workroom ownership reads', () => {
     await renderWithAppProviders(harness, <Probe />)
     const other = { ...shell, assistant: { ...shell.assistant!, id: 'other-assistant' } }
     mocks.list.mockResolvedValue({ sessions: [{ conversationId: 'new-root', projectId: 'new-home', agent: { userId: 'other-assistant' } }] })
-    mocks.bindings.mockResolvedValue({ success: true, data: [{ projectId: 'new-home', chatId: 'new-room' }] })
+    mocks.bindings.mockResolvedValue([{ id: 'new-home', chatId: 'new-room' }])
     await renderWithAppProviders(harness, <Probe snapshot={other} />, { auth: { id: 'other-owner' } })
     await act(async () => { reply({ sessions: [{ conversationId: 'root', projectId: 'home', agent: { userId: 'assistant' } }] }) })
     expect(harness.container.textContent).toContain('new-room')

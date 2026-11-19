@@ -18,8 +18,6 @@ import { useChatChannels } from '@/components/settings/channels/useChatChannels'
 import { assistantApplicationCounts } from '@/components/assistant/assistant-app-connections';
 import type { AssistantHomePlace } from '@/lib/assistantHome';
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge';
-import { platform } from '@/platform';
-import { appState } from '@renderer/lib/stores/app-state';
 import { rpc } from '@renderer/lib/ipc';
 import { log } from '@renderer/utils/logger';
 import { useAssistantMachine } from '@renderer/features/assistant/assistant-data';

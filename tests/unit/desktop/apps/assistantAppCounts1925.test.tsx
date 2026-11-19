@@ -24,7 +24,8 @@ vi.mock('../../../../apps/desktop/src/components/assistant/assistant-panel-integ
 vi.mock('../../../../apps/desktop/src/components/settings/channels/useChatChannels', () => ({ useChatChannels: () => reads.chat }));
 vi.mock('../../../../apps/desktop/src/components/assistant/assistant-app-connections', () => ({ assistantApplicationCounts: () => ({ saved: 2, connected: 1 }) }));
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { capabilities: { agentRuntime: true } } }));
-vi.mock('../../../../apps/desktop/src/session/renderer/lib/stores/app-state', () => ({ appState: { sidebar: { orderedProjects: [{}, {}, {}] } } }));
+vi.mock('../../../../apps/desktop/src/session/renderer/lib/stores/app-state', () => ({ appState: {} }));
+vi.mock('../../../../apps/desktop/src/session/renderer/features/folders/group-folders-store', () => ({ groupFoldersStore: { status: 'ready', groups: [{}, {}, {}] } }));
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => ({ rpc: { extensions: {
   assistantCountsChanged: async (args: Record<string, unknown>) => { reads.pushes.push(args); return { success: true }; },
 } } }));

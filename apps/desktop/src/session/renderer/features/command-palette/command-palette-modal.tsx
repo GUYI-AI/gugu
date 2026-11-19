@@ -71,8 +71,6 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
         icon: def ? getCommandIcon(def.iconKey) : undefined, hotkey: hostId ? getEffectiveHotkey(hostId, keyboard) : null };
     })
     , search, ({ title, description }) => [title, description]));
-  // 本机索引负责召回(短查询的 LIKE 没有分数);排序与 @ 选人同一套,同分保留索引给的顺序。
-  const ranked = rankPaletteMatches(results, search, (item) => [item.title], { recallOnly: true });
   const tasks = useObserver(() => {
     const recent = commandsMode || search ? [] : recentTaskIds();
     // Recall opened local tasks beyond the search RPC's newest ten, from existing task rows only.

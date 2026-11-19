@@ -9,14 +9,6 @@ import type { ChatMessage } from '@session-chat/model'
 import { publishChatSummaries, resolveChatId, subscribeChatSummaries } from '@/lib/chatSummariesBridge'
 import { chatDisplayName } from '@renderer/lib/chat/chat-name'
 
-const project = vi.hoisted(() => ({ chatId: '', name: '' }))
-vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({
-  projectGroupsStore: { projectOfChat: (id: string) => id === project.chatId ? 'project' : undefined },
-}))
-vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
-  getProjectStore: () => ({}), projectDisplayName: () => project.name,
-}))
-
 const CHAT = '127ec4f0-30b1-4583-b469-706756153bdd'
 const OTHER = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
 type McpToolCall = Extract<TranscriptTurn['items'][number], { kind: 'mcp-tool-call' }>
@@ -33,7 +25,6 @@ const backgroundTurn = (chatId: string): TranscriptTurn => ({
 })
 
 beforeEach(() => {
-  project.chatId = ''; project.name = ''
   publishChatSummaries([])
 })
 
@@ -50,17 +41,15 @@ describe('send destinations resolved from the signed-in chat list', () => {
     expect(agentSendLabel(agentSendOf(send('216013'))!.to, defaultChatTranslator, chatDisplayName)).toBe('Sent to Other group')
   })
 
-  it('uses the actual group name for UUID and public addresses regardless of which bound folder is found', () => {
+  it('uses the actual group name for UUID and public addresses', () => {
     publishChatSummaries([group()])
-    project.chatId = CHAT; project.name = 'First local folder'
     expect(chatDisplayName(CHAT)).toBe('Design review')
     expect(chatDisplayName('216012')).toBe('Design review')
-    project.name = 'Another local folder'
     expect(agentSendLabel(agentSendOf(send('216012'))!.to, defaultChatTranslator, chatDisplayName)).toBe('Sent to Design review')
     publishChatSummaries([group({ alias: 'My alias' })])
     expect(chatDisplayName('216012')).toBe('My alias')
     publishChatSummaries([])
-    expect(chatDisplayName(CHAT)).toBe('Another local folder')
+    expect(chatDisplayName(CHAT)).toBeNull()
   })
 
   it('notifies once when a public number appears, changes or disappears, and resolves renamed chats', () => {
