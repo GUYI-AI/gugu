@@ -192,6 +192,7 @@ it(`a list longer than GROW_CAP grows to GROW_CAP lines, and grows again around 
   expect(mounted()).toBe(GROW_CAP)
   act(() => { scroller.scrollTop = 1900 * 40 })
   await until('the native scroll settles at the end', () => !isScrolling() && document.querySelector('[data-line="1900"]') !== null)
+  await until('the settled scroll schedules regrowth', () => idle.pending() > 0)
   await idle.growTo(GROW_CAP, mounted)
   await until('the lines around the end are mounted, the far ones dropped', () => ({
     ...growthFacts(scroller, mounted), last: document.querySelector('[data-line="1999"]') != null,
