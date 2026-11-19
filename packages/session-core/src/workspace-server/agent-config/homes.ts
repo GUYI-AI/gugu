@@ -15,12 +15,13 @@ export function isAgentHomeImportMessage(message: string): boolean {
 export const agentHomeGroupIdSchema = z.enum(['settings', 'hooks', 'mcp', 'rules', 'skills', 'agents', 'models']);
 export const agentHomeIssueSchema = z.object({
   path: z.string(),
-  reason: z.enum(['symlink', 'sensitive', 'database', 'tooLarge', 'sourceChanged', 'unreadable']),
+  reason: z.enum(['symlink', 'sensitive', 'database', 'tooLarge', 'sourceChanged', 'unreadable', 'excluded']),
 });
 export const agentHomeScanSchema = z.object({
   providerId: z.string(), name: z.string(), userRoot: z.string(), sourceReadable: z.boolean(),
   importedAt: z.string().nullable(), needsImport: z.boolean(), sourceUpdated: z.boolean(),
   migration: z.boolean(),
+  migrationSpace: z.object({ requiredBytes: z.number(), availableBytes: z.number(), shortfallBytes: z.number() }).optional(),
   upgraded: z.boolean().optional(), upgradeSignIn: z.enum(['copied', 'relogin']).optional(),
   terminalNeedsSignIn: z.boolean().optional(), oldSessionsSkipped: z.number().optional(), upgradeIssues: z.array(agentHomeIssueSchema).optional(),
   groups: z.array(z.object({ id: agentHomeGroupIdSchema, count: z.number(), mcpCount: z.number().optional() })),
