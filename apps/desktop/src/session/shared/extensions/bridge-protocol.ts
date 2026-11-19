@@ -197,18 +197,18 @@ export interface ExtensionChat {
   kind: 'group' | 'topic' | 'dm';
   /** The group: this chat for a group, the one a topic grew out of; null for a private chat and a topic of one. */
   groupId: string | null;
-  /** A project group's folders on the reader's own machines, the project's root first. Absent: none, or not a project group. */
+  /** The group's folders on the reader's own machines, in their order there. Absent: none, or not a group. */
   folders?: ExtensionChatFolder[];
 }
 
-/** A chat as a page sees it: a project's folders (paths, machines) only for a page that may read files. */
+/** A chat as a page sees it: its folders (paths, machines) only for a page that may read files. */
 export function chatForCapabilities<T extends ExtensionChat>(chat: T, capabilities: readonly string[]): T {
   if (!chat.folders || capabilities.some((capability) => capability.startsWith('files:'))) return chat;
   const { folders: _folders, ...rest } = chat;
   return rest as T;
 }
 
-/** One folder of a project group, as the account records it. Its machine may be offline, or no longer have it. */
+/** One folder of a group, as the account records it. Its machine may be offline, or no longer have it. */
 export interface ExtensionChatFolder {
   /** `folder:<device>/<workspace>`: the place `gugu.files.list({ workspace })` lists, on that machine. */
   workspace: string;

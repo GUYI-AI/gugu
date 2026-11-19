@@ -1,4 +1,5 @@
 import { readDocumentText, ChatFolderReadError } from './chat-folder-text';
+import { listMyChatFolders, type ChatFoldersRpcClient } from '@gugu/core/cloud/chatFolders';
 import { FILE_KEEPS, type FileKeep } from '@gugu/core/shared/fileStorage';
 import { AttachmentsError, configuredEndpoint, placeAttachment, uploadAttachmentBytes } from '@gugu/core/cloud/attachmentsApi';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
@@ -426,38 +427,45 @@ export type AppChat = Pick<ExtensionChat, 'id' | 'name' | 'kind'> & { lastMessag
  * they gave themselves — never the viewer's remark for them, which is the viewer's own, not the App's. Null for a chat
  * with no workspace ('ai').
  */
-/** What the account records of a project group's folders (identity.device_projects, the reader's own machines only). */
-async function projectFoldersOfChat(token: string, viewerId: string, chatId: string): Promise<ExtensionChatFolder[]> {
+/** The account's own folders of a group (identity.my_chat_folders: the reader's machines only), in their order there. */
+async function groupFoldersOfChat(token: string, chatId: string): Promise<ExtensionChatFolder[]> {
   const identity = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
-  const { data, error } = await identity.from('device_projects').select('device_id, folders').eq('user_id', viewerId).eq('chat_id', chatId);
-  if (error) throw new AppFileError('failed', error.message);
-  const rows = (data ?? []) as { device_id: string; folders: { workspace_id: string; kind: string; path: string }[] }[];
-  if (!rows.length) return [];
-  const machines = await identity.from('gugu_devices').select('device_id, label, hostname, status').in('device_id', rows.map((row) => row.device_id));
+  let groups: Awaited<ReturnType<typeof listMyChatFolders>>;
+  try {
+    groups = await listMyChatFolders(identity as unknown as ChatFoldersRpcClient);
+  } catch (error) {
+    throw new AppFileError('failed', error instanceof Error ? error.message : String(error));
+  }
+  const folders = [...(groups.find((group) => group.chatId === chatId)?.folders ?? [])]
+    .filter((folder) => !folder.removalRequestedAt)
+    .sort((a, b) => a.position - b.position);
+  if (!folders.length) return [];
+  const machines = await identity.from('gugu_devices').select('device_id, label, hostname, status').in('device_id', [...new Set(folders.map((folder) => folder.deviceId))]);
   if (machines.error) throw new AppFileError('failed', machines.error.message);
   const machineOf = new Map(((machines.data ?? []) as { device_id: string; label: string | null; hostname: string | null; status: string }[]).map((device) => [device.device_id, device]));
-  return rows.flatMap((row) => {
-    const machine = machineOf.get(row.device_id);
-    return [...row.folders].sort((a, b) => Number(b.kind === 'root') - Number(a.kind === 'root')).map((folder) => ({
-      workspace: folderWorkspace(row.device_id, folder.workspace_id),
+  return folders.map((folder) => {
+    const machine = machineOf.get(folder.deviceId);
+    return {
+      workspace: folderWorkspace(folder.deviceId, folder.folderId),
       path: folder.path,
-      machine: machine?.label || machine?.hostname || row.device_id,
+      machine: machine?.label || machine?.hostname || folder.deviceId,
       online: !!machine && isDeviceOnline(machine.status as Parameters<typeof isDeviceOnline>[0]),
-    }));
+    };
   });
 }
 
-/**
- * One project folder on one of the reader's machines, as the account records it (the same rows as above): the project it
- * is in there and its path there (that machine's own path). Null when the account no longer records it.
- */
-export async function recordedProjectFolder(token: string, viewerId: string, folder: { deviceId: string; workspaceId: string }): Promise<{ projectId: string; path: string } | null> {
+/** A folder of one of the viewer's devices as the account records it (identity.my_chat_folders): its group and path there. */
+export async function recordedFolder(token: string, folder: { deviceId: string; workspaceId: string }): Promise<{ chatId: string; path: string } | null> {
   const identity = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
-  const { data, error } = await identity.from('device_projects').select('local_project_id, folders').eq('user_id', viewerId).eq('device_id', folder.deviceId);
-  if (error) throw new AppFileError('failed', error.message);
-  for (const row of (data ?? []) as { local_project_id: string; folders: { workspace_id: string; path: string }[] }[]) {
-    const found = row.folders.find((each) => each.workspace_id === folder.workspaceId);
-    if (found) return { projectId: row.local_project_id, path: found.path };
+  let groups: Awaited<ReturnType<typeof listMyChatFolders>>;
+  try {
+    groups = await listMyChatFolders(identity as unknown as ChatFoldersRpcClient);
+  } catch (error) {
+    throw new AppFileError('failed', error instanceof Error ? error.message : String(error));
+  }
+  for (const group of groups) {
+    const found = group.folders.find((each) => each.deviceId === folder.deviceId && each.folderId === folder.workspaceId);
+    if (found) return { chatId: group.chatId, path: found.path };
   }
   return null;
 }
@@ -479,7 +487,7 @@ export async function extensionChatOf(
   if (!row) throw new AppFileError('not-found', 'This chat could not be read');
   if (row.kind === 'group') {
     // A chat whose folders cannot be read now is still that chat: its own files must not go with them.
-    const folders = await projectFoldersOfChat(token, viewerId, row.id).catch((error: unknown) => {
+    const folders = await groupFoldersOfChat(token, row.id).catch((error: unknown) => {
       coreLogger('app-files').warn({ chatId: row.id, error: error instanceof Error ? error.message : String(error) }, 'The folders of a project group could not be read');
       return [];
     });

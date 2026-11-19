@@ -2,13 +2,13 @@ import type { LiveWindowResourceDescriptor } from '@shared/extensions/live-windo
 import { extensionProjections } from './extension-projection-bridge';
 import { extensionTaskPages, taskPageForScreen } from './task-page-host';
 import { extensionsService } from './extensions-root';
-import { projectionTaskProject } from './projection-task';
+import { assertTaskLive } from './projection-task';
 import { liveWindowActivity } from './live-window-activity';
 
 /** This read cannot acquire a page, start an App program or launch a native driver. */
 export async function readLiveWindowSources(sessionId: string): Promise<LiveWindowResourceDescriptor[]> {
   if (typeof sessionId !== 'string' || !sessionId || sessionId.length > 256) throw new Error('A live window needs a session');
-  await projectionTaskProject(sessionId);
+  await assertTaskLive(sessionId);
   const result: LiveWindowResourceDescriptor[] = extensionProjections.describeSession(sessionId).map(source => {
     const manifest = extensionsService().get(source.extensionId).manifest;
     return { id: source.id, sessionId, type: 'app-projection', appId: source.extensionId, appVersion: manifest.version,

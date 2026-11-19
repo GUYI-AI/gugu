@@ -141,8 +141,6 @@ export async function checkExtensionSurface(request: ExtensionCheckRequest): Pro
     if (kept) {
       report.loaded = true;
     } else {
-      // Its session's project, for the page to go when the project does (a project's sessions go with no word of their own).
-      if (page.session) page.project = (await sessionProject(page.session)) ?? null;
       await bindExtensionSurface({
         webContentsId: contents.id,
         extensionId: installed.manifest.id,
@@ -362,15 +360,13 @@ export async function checkExtensionSurface(request: ExtensionCheckRequest): Pro
  * A check's page kept for the session that opened it (`page`, owner 10-13: 「连续地操作一个页面…而不是每次从头执行」):
  * what it holds in memory — a selection, a scroll, an open dialog — is there for the next call. One is ~108 MB (mac1 10-13,
  * two Apps). Closed when unused for EXTENSION_CHECK_PAGE_IDLE_MS, when its session or the machine opens one past
- * EXTENSION_CHECK_PAGES_PER_SESSION / _PER_MACHINE (`makeRoom`), when its session or project ends or its App is removed
+ * EXTENSION_CHECK_PAGES_PER_SESSION / _PER_MACHINE (`makeRoom`), when its session ends or its App is removed
  * (`closeCheckPages`), and when it is reloaded under it. No call closes one: these bound it (owner 10-13, no close).
  */
 interface CheckPage {
   readonly id: string;
   /** The session that opened it, the only one that may go on with it; null: a caller in no session, closed after its call. */
   readonly session: string | null;
-  /** That session's project: deleting it says only the project's id. */
-  project: string | null;
   /** Why it was closed while a check of it ran — that check says so. */
   closed: string | null;
   readonly extensionId: string;
@@ -403,11 +399,10 @@ function closePage(page: CheckPage, why?: string): void {
   if (!page.win.isDestroyed()) page.win.destroy();
 }
 
-/** Its session ended (deleted, archived, its project deleted) or its App was removed: the kept pages go with it. */
-export function closeCheckPages(of: { sessionId: string } | { projectId: string } | { extensionId: string }): void {
+/** Its session ended (deleted, archived) or its App was removed: the kept pages go with it. */
+export function closeCheckPages(of: { sessionId: string } | { extensionId: string }): void {
   for (const page of [...checkPages.values()]) {
     if ('sessionId' in of && page.session === of.sessionId) closePage(page, 'its session ended');
-    if ('projectId' in of && page.project === of.projectId) closePage(page, 'its project was deleted');
     if ('extensionId' in of && page.extensionId === of.extensionId) closePage(page, 'its App was removed');
   }
 }
@@ -424,16 +419,6 @@ function makeRoom(more: 0 | 1, session: string | null): void {
   for (const page of over([...checkPages.values()], EXTENSION_CHECK_PAGES_PER_MACHINE)) closePage(page);
 }
 
-/** The project a session is in, as its agent's context says; null when it cannot be read (the page then waits out its idle). */
-async function sessionProject(sessionId: string): Promise<string | null> {
-  try {
-    const { agentSessionContext } = await import('@main/core/extensions/extension-agent-context');
-    return (await agentSessionContext(sessionId))?.projectId ?? null;
-  } catch {
-    return null;
-  }
-}
-
 /** The page `id` for this caller to go on with: another session's is not found, exactly as a closed one is. */
 function keptPage(id: string, request: ExtensionCheckRequest): CheckPage {
   const page = checkPages.get(id);
@@ -441,7 +426,7 @@ function keptPage(id: string, request: ExtensionCheckRequest): CheckPage {
     throw new Error(
       `app_check: page "${id}" is not found. A page closes ${EXTENSION_CHECK_PAGE_IDLE_MS / 60_000} min after its last check, when ` +
         `its session opens more than ${EXTENSION_CHECK_PAGES_PER_SESSION} or the machine more than ${EXTENSION_CHECK_PAGES_PER_MACHINE}, ` +
-        'when its App is installed again or removed, and when its session or its project ends; only the session that opened it ' +
+        'when its App is installed again or removed, and when its session ends; only the session that opened it ' +
         'goes on with it. Check without page to open a new one.'
     );
   }
@@ -504,7 +489,6 @@ function openPage(request: ExtensionCheckRequest): CheckPage {
   const page: CheckPage = {
     id,
     session: request.caller ?? null,
-    project: null,
     closed: null,
     extensionId: installed.manifest.id,
     tabName: request.tabName,

@@ -79,7 +79,7 @@ export const cloudForApp = createAppCloud({ account, channel: cloudChannel });
 export interface DesktopDispatchEffects {
   pick(ask: DispatchAsk): Promise<DispatchPicked>;
   draftInChat(detail: AppComposeDetail): Promise<void>;
-  draftInSession(session: { id: string; projectId: string }, text: string): Promise<void>;
+  draftInSession(session: { id: string }, text: string): Promise<void>;
   from?: string;
 }
 
@@ -92,18 +92,18 @@ export interface DesktopDispatchEffects {
  * A draft citing a session's working-copy files goes into that session's composer as @file mentions, as the host's own
  * file preview quotes (`workspaceFileQuote`): a pill of a chat's file has no such file to point at.
  */
-async function draftOfWorkingCopyRefs(args: Record<string, unknown>): Promise<{ session: { id: string; projectId: string }; text: string } | null> {
+async function draftOfWorkingCopyRefs(args: Record<string, unknown>): Promise<{ session: { id: string }; text: string } | null> {
   if (args.draft !== true || !Array.isArray(args.refs) || args.refs.length === 0) return null;
   const refs = args.refs as { file?: { workspace?: unknown; id?: unknown; name?: unknown }; label?: unknown }[];
   const workspace = refs[0]?.file?.workspace;
   if (typeof workspace !== 'string' || refs.some(({ file }) => file?.workspace !== workspace || typeof file.id !== 'string')) return null;
   const id = workspaceSession({ workspace });
-  if (!id) throw new AppSendError('invalid', 'A draft citing a project folder\'s file has no session to go to');
+  if (!id) throw new AppSendError('invalid', 'A draft citing a folder\'s file has no session to go to');
   const { agentSessionContext } = await import('./extension-agent-context');
   const { sessionMachine } = await import('./app-programs-elsewhere');
-  const projectId = (await agentSessionContext(id).catch(() => null))?.projectId ?? (await sessionMachine(id).catch(() => null))?.projectId;
-  if (!projectId) throw new AppSendError('not-found', 'The session of this file is in no project here');
-  return { session: { id, projectId }, text: `${fileCiteDraft(typeof args.text === 'string' ? args.text : '', refs as { file: { id: string }; label?: unknown }[])}\n` };
+  const known = (await agentSessionContext(id).catch(() => null)) ?? (await sessionMachine(id).catch(() => null));
+  if (!known) throw new AppSendError('not-found', 'The session of this file is not on any of your computers');
+  return { session: { id }, text: `${fileCiteDraft(typeof args.text === 'string' ? args.text : '', refs as { file: { id: string }; label?: unknown }[])}\n` };
 }
 
 export async function dispatchForApp(
@@ -146,8 +146,8 @@ export async function dispatchForApp(
           const sessionId = (await agentsHere()).get(agent.agent);
           const { agentSessionContext } = await import('@main/core/extensions/extension-agent-context');
           const facts = sessionId ? await agentSessionContext(sessionId) : null;
-          if (!sessionId || !facts?.projectId) throw new AppSendError('not-found', `${agent.agent} is not an agent on this computer`);
-          await effects.draftInSession({ id: sessionId, projectId: facts.projectId }, `${text}\n`);
+          if (!sessionId || !facts) throw new AppSendError('not-found', `${agent.agent} is not an agent on this computer`);
+          await effects.draftInSession({ id: sessionId }, `${text}\n`);
           return agent.agent;
         },
         async tell(agent, text, how) {

@@ -9,11 +9,13 @@ import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
 import { fetchInChunks } from '@gugu/core/shared/inChunks';
 import { writeFileHandle } from '@gugu/core/local/files/fileSnapshots';
 import { editorBufferService } from '@main/core/editor/editor-buffer-service';
+import { getFolder, type Folder } from '@main/core/folders/folders';
+import { legacyProject } from '@main/core/folders/legacy-project-aliases';
 import {
   AppFileError,
   contentTypeOf,
   createAppFiles,
-  recordedProjectFolder,
+  recordedFolder,
   requireHandedOr,
   sourceMessageIdsOf,
   tooLargeError,
@@ -261,14 +263,25 @@ function chatSurface(page: DesktopFilePage): FileSurface {
 }
 
 /**
- * The folder on this computer a call names: a session's working copy, found the one way main finds a session's
- * (`agentSessionContext`, as an App tool call's `_meta` does); a project's root folder, the one its sessions run in
- * (`listProjectFolders`). A session not on this computer or with no such folder here, a project not on this computer,
- * is `not-found`; whether anything has opened it since this computer started does not matter. The same files, gates and
- * watch either way: a folder is a folder.
+ * The folder a `project:` place names: a folder of this computer, or — an id an earlier release gave a project — its root
+ * folder through the legacy aliases. The protocol keeps the name until the App protocol renames it (S2).
  */
-/** A working copy's folder on this computer, as its record has it: canonical (`@@@canonical-path`), and there. */
-export async function localRootOf(place: WorkspacePlace): Promise<{ workspaceRoot: CanonicalPath; projectId: string; workspaceId: string | null }> {
+export function folderNamed(id: string): Folder | undefined {
+  return getFolder(id) ?? (() => {
+    const root = legacyProject(id)?.rootWorkspaceId;
+    return root ? getFolder(root) : undefined;
+  })();
+}
+
+/**
+ * The folder on this computer a call names: a session's working copy, found the one way main finds a session's
+ * (`agentSessionContext`, as an App tool call's `_meta` does); a folder of this computer (`folder:` or the protocol's
+ * `project:` place, which names a folder — an id of an earlier release's project is read through the legacy aliases as
+ * its root folder). A session or folder not on this computer is `not-found`; whether anything has opened it since this
+ * computer started does not matter. The same files, gates and watch either way: a folder is a folder. Its record has it
+ * canonical (`@@@canonical-path`), and there.
+ */
+export async function localRootOf(place: WorkspacePlace): Promise<{ workspaceRoot: CanonicalPath; workspaceId: string | null }> {
   const there = async (root: CanonicalPath) => {
     await fs.stat(root).catch(() => { throw new AppFileError('not-found', `${root} is no longer on this computer`); });
     return root;
@@ -277,24 +290,22 @@ export async function localRootOf(place: WorkspacePlace): Promise<{ workspaceRoo
   if ('folder' in target) {
     const { otherMachines } = await import('@main/core/sessions/session-family');
     if (!(await otherMachines().isThisDevice(target.folder.deviceId))) throw new AppFileError('not-found', 'This folder is on another computer');
-    const { projectFolderOfWorkspace } = await import('@main/core/projects/operations/project-folders');
-    const folder = await projectFolderOfWorkspace(target.folder.workspaceId);
-    if (!folder) throw new AppFileError('not-found', 'This folder is no longer in a project on this computer');
-    return { workspaceRoot: await there(folder.path), projectId: folder.projectId, workspaceId: folder.workspaceId };
+    const folder = getFolder(target.folder.workspaceId);
+    if (!folder) throw new AppFileError('not-found', 'This folder is no longer on this computer');
+    return { workspaceRoot: await there(folder.path), workspaceId: folder.id };
   }
   if ('project' in target) {
-    const { projectRootFolder } = await import('@main/core/projects/operations/project-folders');
-    const root = await projectRootFolder(target.project);
-    if (!root) throw new AppFileError('not-found', `Project ${target.project} is not a project on this computer`);
-    return { workspaceRoot: await there(root.path), projectId: target.project, workspaceId: root.workspaceId };
+    const folder = folderNamed(target.project);
+    if (!folder) throw new AppFileError('not-found', `Folder ${target.project} is not on this computer`);
+    return { workspaceRoot: await there(folder.path), workspaceId: folder.id };
   }
   const { agentSessionContext } = await import('@main/core/extensions/extension-agent-context');
   const session = await agentSessionContext(target.session);
   if (!session?.workspaceRoot) throw new AppFileError('not-found', 'This task has no working folder on this computer');
-  return { workspaceRoot: await there(session.workspaceRoot), projectId: session.projectId, workspaceId: session.workspaceId ?? null };
+  return { workspaceRoot: await there(session.workspaceRoot), workspaceId: session.workspaceId ?? null };
 }
 
-async function localFolder(page: DesktopFilePage, place: WorkspacePlace): Promise<LocalSurface & { projectId: string; workspaceId: string | null }> {
+async function localFolder(page: DesktopFilePage, place: WorkspacePlace): Promise<LocalSurface & { workspaceId: string | null }> {
   const handed = page.handed && isWorkspace(page.handed) && placeKey(page.handed) === placeKey(place) ? page.handed.id : null;
   // Only the key that says where: a file's ref names its place and itself.
   const where: WorkspacePlace = { workspace: place.workspace };
@@ -514,7 +525,7 @@ export async function watchAppFile(page: DesktopFilePage, value: unknown, hear: 
     return watchWorkingCopyFile(ref, ref.id, hear, handedOf(page));
   }
   const session = workspaceSession(ref);
-  // A project folder's file elsewhere is read as it stands: no session there to hear it through.
+  // A folder's file elsewhere is read as it stands: no session there to hear it through.
   return session ? hearElsewhere(session, { file: ref.id }, hear) : () => undefined;
 }
 
@@ -552,7 +563,7 @@ export async function appFileExists(page: DesktopFilePage, args: { ref?: unknown
 
 /**
  * `files.draft`: a file's unsaved edits, on the machine the file is on, under the key its old editor used there too: its own
- * table, project and workspace, and its path in the working copy, so what that editor left is found.
+ * table, workspace, and its path in the working copy, so what that editor left is found.
  */
 export async function appFileDraft(page: DesktopFilePage, args: { ref?: unknown; text?: unknown }): Promise<string | null | void> {
   const ref = wholeFileRef(page, args.ref, 'files:read', 'draft');
@@ -563,15 +574,15 @@ export async function appFileDraft(page: DesktopFilePage, args: { ref?: unknown;
 
 /** On this machine: the page that named the file was let through where it is. */
 export async function draftHere(ref: WorkspaceFileRef & { id: string }, text: unknown): Promise<string | null | void> {
-  const { projectId, workspaceId, workspaceRoot } = await localRootOf({ workspace: ref.workspace });
+  const { workspaceId, workspaceRoot } = await localRootOf({ workspace: ref.workspace });
   const workspace = workspaceId ?? ref.workspace;
   const filePath = path.isAbsolute(ref.id) ? placeUnder(workspaceRoot, canonicalPath(ref.id)) ?? ref.id : ref.id;
   // Kept under either form of the path: the built-in editor this replaced also wrote absolute ones.
   const placed = (name: string) => path.isAbsolute(name) ? placeUnder(workspaceRoot, canonicalPath(name)) ?? name : name;
-  const buffers = (await editorBufferService.listBuffers(projectId, workspace)).filter((buffer) => placed(buffer.filePath) === filePath);
+  const buffers = (await editorBufferService.listBuffers(workspace)).filter((buffer) => placed(buffer.filePath) === filePath);
   if (text === undefined) return buffers[0]?.content ?? null;
-  await Promise.all(buffers.map((buffer) => editorBufferService.clearBuffer(projectId, workspace, buffer.filePath)));
-  if (text !== null) await editorBufferService.saveBuffer(projectId, workspace, filePath, String(text));
+  await Promise.all(buffers.map((buffer) => editorBufferService.clearBuffer(workspace, buffer.filePath)));
+  if (text !== null) await editorBufferService.saveBuffer(workspace, filePath, String(text));
 }
 
 /**
@@ -586,7 +597,7 @@ async function elsewhereGated(page: DesktopFilePage, place: WorkspacePlace): Pro
   return true;
 }
 
-/** A project folder's machine when that is another one; null for this computer's, and for any other kind of place. */
+/** A folder's machine when that is another one; null for this computer's, and for any other kind of place. */
 async function folderElsewhere(place: WorkspacePlace): Promise<{ deviceId: string } | null> {
   const folder = workspaceFolder(place);
   if (!folder) return null;
@@ -594,13 +605,13 @@ async function folderElsewhere(place: WorkspacePlace): Promise<{ deviceId: strin
   return (await otherMachines().isThisDevice(folder.deviceId)) ? null : { deviceId: folder.deviceId };
 }
 
-/** A session's working copy on another of the person's machines, and that session's project there; null for this computer's. */
-async function sessionElsewhere(place: WorkspacePlace): Promise<{ sessionId: string; projectId: string | null; deviceId: string } | null> {
+/** A session's working copy on another of the person's machines; null for this computer's. */
+async function sessionElsewhere(place: WorkspacePlace): Promise<{ sessionId: string; deviceId: string } | null> {
   const sessionId = workspaceSession(place);
   if (!sessionId) return null;
   const { sessionMachine } = await import('./app-programs-elsewhere');
   const machine = await sessionMachine(sessionId);
-  return machine ? { sessionId, projectId: machine.projectId, deviceId: machine.deviceId } : null;
+  return machine ? { sessionId, deviceId: machine.deviceId } : null;
 }
 
 /**
@@ -904,7 +915,7 @@ export async function openWithTarget(
   args: { ref?: unknown; ask?: boolean; peek?: boolean },
 ): Promise<
   | { kind: 'chat'; target: { chatId: string; itemId: string; name: string; typedName: string; file: ChatPeekFile; opening?: PreparedChatFile } }
-  | { kind: 'session'; target: { sessionId: string; projectId: string | null; deviceId: string | null; path: string; ask: boolean } }
+  | { kind: 'session'; target: { sessionId: string; deviceId: string | null; path: string; ask: boolean } }
   | { kind: 'peek'; target: Extract<PeekTarget, { kind: 'folder' }> }
 > {
   const ref = fileRefOf(args.ref);
@@ -915,10 +926,10 @@ export async function openWithTarget(
   const elsewhere = await sessionElsewhere(ref);
   if (elsewhere) {
     mayTouch(page, ref, ['files:read', 'files:write'], 'opening');
-    return { kind: 'session', target: { sessionId: elsewhere.sessionId, projectId: elsewhere.projectId, deviceId: elsewhere.deviceId, path: name, ask } };
+    return { kind: 'session', target: { sessionId: elsewhere.sessionId, deviceId: elsewhere.deviceId, path: name, ask } };
   }
-  // A project folder on another machine: the window opens it beside the page the way it opens one of this computer's, its
-  // bytes read on that machine (the window routes its project's calls there) — the project and path the account records.
+  // A folder on another machine: the window opens it beside the page the way it opens one of this computer's, its
+  // bytes read on that machine (the window routes the folder's calls there) — the path the account records.
   const there = await folderElsewhere(ref);
   if (there) {
     mayTouch(page, ref, ['files:read', 'files:write'], 'opening');
@@ -926,12 +937,12 @@ export async function openWithTarget(
     const account = await signedIn();
     if (!account) throw new AppFileError('denied', 'Nobody is signed in on this computer');
     const { workspaceId } = workspaceFolder(ref)!;
-    const recorded = await recordedProjectFolder(account.token, account.userId, { deviceId: there.deviceId, workspaceId });
-    if (!recorded) throw new AppFileError('not-found', 'This folder is no longer in a project on that computer');
+    const recorded = await recordedFolder(account.token, { deviceId: there.deviceId, workspaceId });
+    if (!recorded) throw new AppFileError('not-found', 'This folder is no longer recorded for that computer');
     // That machine's own path: a Windows root keeps its separator.
     const join = /^[A-Za-z]:\\/.test(recorded.path) ? path.win32.join : path.posix.join;
     const absolutePath = join(recorded.path, name);
-    return { kind: 'peek', target: { kind: 'folder', place: { workspace: ref.workspace }, deviceId: there.deviceId, projectId: recorded.projectId, workspaceId, path: name, absolutePath, name: path.posix.basename(name), ask } };
+    return { kind: 'peek', target: { kind: 'folder', place: { workspace: ref.workspace }, deviceId: there.deviceId, workspaceId, path: name, absolutePath, name: path.posix.basename(name), ask } };
   }
   await outsideOnlyAsOpened(page, ref);
   const copy = await localFolder(page, ref);
@@ -940,9 +951,9 @@ export async function openWithTarget(
   if (args.peek || !session) {
     if (!copy.workspaceId) throw new AppFileError('not-found', `${found.name} is in no workspace this computer has open`);
     const { place } = found;
-    return { kind: 'peek', target: { kind: 'folder', place, projectId: copy.projectId, workspaceId: copy.workspaceId, path: found.path, absolutePath: path.join(copy.workspaceRoot, found.path), name: found.name, ask } };
+    return { kind: 'peek', target: { kind: 'folder', place, workspaceId: copy.workspaceId, path: found.path, absolutePath: path.join(copy.workspaceRoot, found.path), name: found.name, ask } };
   }
-  return { kind: 'session', target: { sessionId: session, projectId: copy.projectId, deviceId: null, path: found.path, ask } };
+  return { kind: 'session', target: { sessionId: session, deviceId: null, path: found.path, ask } };
 }
 
 /**

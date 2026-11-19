@@ -4,7 +4,6 @@ import { browserWebContentsRegistry } from '../browser/browser-webcontents-regis
 import { acquireBrowserPage } from '../browser/browser-page-runtime';
 import { leasePageProtocol } from '../browser/leased-page-protocol';
 import { sessionEvents } from '../sessions/session-events';
-import { projectEvents } from '../projects/project-events';
 import path from 'node:path';
 import { app, BrowserWindow, type WebContents } from 'electron';
 import type { ServerTaskBrowser, TaskPageScreenTarget } from '../../../../server/server-task-browser';
@@ -26,13 +25,13 @@ export const extensionTaskPages = new ExtensionTaskPages(extensionId => {
   if (process.env.GUGU_SERVER_MODE === '1') return serverTaskPage(sessionId, url, signal);
   const { agentSessionContext } = await import('./extension-agent-context');
   const { openTaskBrowserPane } = await import('../sessions/session-orchestration');
-  const { projectionTaskProject } = await import('./projection-task');
-  const projectId = await projectionTaskProject(sessionId);
+  const { assertTaskLive } = await import('./projection-task');
+  await assertTaskLive(sessionId);
   signal.throwIfAborted();
   const context = await agentSessionContext(sessionId);
   signal.throwIfAborted();
-  if (!context || context.projectId !== projectId) throw new Error('The task has no page on this computer');
-  const browserId = await openTaskBrowserPane({ projectId, sessionId }, url ?? 'about:blank', signal);
+  if (!context) throw new Error('The task has no page on this computer');
+  const browserId = await openTaskBrowserPane({ sessionId }, url ?? 'about:blank', signal);
   signal.throwIfAborted();
   const selected = browserWebContentsRegistry.browsersOfSession(sessionId).find(page => page.browserId === browserId);
   if (!selected || selected.webContents.isDestroyed()) throw new Error('The task page was closed before it could be leased');
@@ -44,7 +43,7 @@ export const extensionTaskPages = new ExtensionTaskPages(extensionId => {
     });
     // Protocol observes this ready promise too; observe it before the first send.
     void page.ready.catch(() => {});
-    return { projectId, title: selected.webContents.getTitle(), url: selected.webContents.getURL(), protocol,
+    return { title: selected.webContents.getTitle(), url: selected.webContents.getURL(), protocol,
       cleanup,
       presentation: () => browserPagePresentation(browserId),
       onPresentation: listener => onBrowserPagePresentation(browserId, listener),
@@ -70,7 +69,6 @@ sessionEvents.on('session:archived', sessionId => {
   extensionTaskPages.closeScope({ sessionId });
   if (serverBrowser) void serverBrowser.closeTask(sessionId);
 });
-projectEvents.on('project:deleted', projectId => extensionTaskPages.closeScope({ projectId }));
 
 let serverBrowser: ServerTaskBrowser | null = null;
 
@@ -113,7 +111,7 @@ async function serverTaskPage(sessionId: string, url: string | undefined, signal
     ready: Promise.resolve(),
     capture: params => contents.debugger.sendCommand('Page.captureScreenshot', params),
   });
-  return { projectId: context.projectId, title: contents.getTitle(), url: contents.getURL(), protocol, cleanup,
+  return { title: contents.getTitle(), url: contents.getURL(), protocol, cleanup,
     presentation: () => null,
     onPresentation: () => () => {},
     setActive: () => {},

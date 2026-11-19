@@ -1,4 +1,5 @@
 import { requireAgentFileTreeAccess } from '@gugu/core/local/state/agentFileBoundary';
+import { rootFolderOf } from '@main/core/folders/folders';
 import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 import { REMOTE_WORKSPACE_CHUNK_BYTES, WORKSPACE_CONFLICT_CODE } from '@gugu/session-core/session-record/contract';
@@ -24,7 +25,7 @@ import { canonicalPath, inWorkingCopy, placeUnder, type CanonicalPath } from '@g
  */
 
 /** A subscription to the working copy's tree: a page keeps one while it is open, so the folders it listed stay loaded. */
-interface View { place: WorkspacePlace; root: CanonicalPath; projector: FileTreeProjector; subscriptionId: string; projectId: string; workspaceId: string | null; git: IGitWorktree | undefined; close: () => Promise<void> }
+interface View { place: WorkspacePlace; root: CanonicalPath; projector: FileTreeProjector; subscriptionId: string; folderId: string | null; workspaceId: string | null; git: IGitWorktree | undefined; close: () => Promise<void> }
 
 async function openGit(manager: Pick<RuntimeManager, 'acquire'>, root: string): Promise<{ value: IGitWorktree; release: () => Promise<void> } | null> {
   const lease = await manager.acquire();
@@ -42,7 +43,9 @@ async function openGit(manager: Pick<RuntimeManager, 'acquire'>, root: string): 
 async function openView(place: WorkspacePlace): Promise<View> {
   // Imported when used: a page let go of (`releaseWorkingCopies`) must not load the workspace stack to do it.
   const { localRootOf } = await import('./app-files');
-  const { workspaceRoot: root, projectId, workspaceId } = await localRootOf(place);
+  const { workspaceRoot: root, workspaceId } = await localRootOf(place);
+  // The protocol's `projectId` on an entry names its folder (renamed with the App protocol in S2).
+  const folderId = workspaceId ? rootFolderOf(workspaceId)?.id ?? null : null;
   await requireAgentFileTreeAccess(root);
   const [{ acquireWorkspaceRuntime }, { runtimeManager }, { FileTreeProjector: Projector }] = await Promise.all([
     import('@main/core/workspaces/workspace-runtime'),
@@ -57,7 +60,7 @@ async function openView(place: WorkspacePlace): Promise<View> {
   const close = async () => { projector.dispose(); await git?.release(); await runtime.release(); };
   const opened = await projector.openProjection();
   if (!opened.success) { await close(); throw unreadable(); }
-  return { place, root, projector, subscriptionId: opened.data.subscriptionId, projectId, workspaceId, git: git?.value, close };
+  return { place, root, projector, subscriptionId: opened.data.subscriptionId, folderId, workspaceId, git: git?.value, close };
 }
 
 const views = new Map<string, Promise<View>>();
@@ -98,7 +101,7 @@ async function entriesOf(view: View, dir: CanonicalPath): Promise<AppFileEntry[]
     if (rel.endsWith(UPLOADING_SUFFIX)) return null;
     const parentId = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : null;
     const link = await fsp.lstat(node.path).then((found) => found.isSymbolicLink(), () => false);
-    const facts = { parentId, absolutePath: node.path, ...(link ? { symlink: true as const } : {}), ...(view.workspaceId ? { projectId: view.projectId, workspaceId: view.workspaceId } : {}), ...(gitStatus.has(node.path) ? { gitStatus: gitStatus.get(node.path) } : {}) };
+    const facts = { parentId, absolutePath: node.path, ...(link ? { symlink: true as const } : {}), ...(view.workspaceId ? { ...(view.folderId ? { projectId: view.folderId } : {}), workspaceId: view.workspaceId } : {}), ...(gitStatus.has(node.path) ? { gitStatus: gitStatus.get(node.path) } : {}) };
     const stat = await fsp.stat(node.path).catch(() => null);
     if (stat?.isDirectory()) return { ...workingCopyFolder(view.place, rel), ...facts };
     // A link that points nowhere still stands in the folder: to be seen, and deleted.

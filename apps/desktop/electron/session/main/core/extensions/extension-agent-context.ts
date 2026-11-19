@@ -1,4 +1,5 @@
 import { customModelRefFromOption } from '@gugu/session-core/models/custom-model';
+import { rootFolderOf } from '@main/core/folders/folders';
 import fs from 'node:fs/promises';
 import type { CanonicalPath } from '@gugu/session-core/files';
 import { eq } from 'drizzle-orm';
@@ -24,7 +25,10 @@ import { knownTaskName } from '@main/core/sessions/task-name';
  */
 export interface AgentSessionContext {
   sessionId: string;
-  projectId: string;
+  /** The group it lives in (null: none). */
+  groupChatId: string | null;
+  /** The folder its working copy is in (rootFolderOf its workspace); null when that is in no folder here. */
+  folderId: string | null;
   /** The workspace it runs in (`sessions.workspaceId`): what the window reads its files through. */
   workspaceId: string | null;
   workspaceRoot: CanonicalPath | null;
@@ -45,12 +49,12 @@ export interface AgentSessionContext {
 const isFolder = (path: string) => fs.stat(path).then((found) => found.isDirectory(), () => false);
 
 /**
- * A session on this computer, as main knows it: its project, where its working copy is and its model — the one answer
+ * A session on this computer, as main knows it: its group and folder, where its working copy is and its model — the one answer
  * for an App tool call's `_meta` and for every `gugu.files` call naming `{ session }` (真源原则 13). Null: no such session here.
  */
 export async function agentSessionContext(agentId: string): Promise<AgentSessionContext | null> {
   const [session] = await db
-    .select({ workspaceId: sessions.workspaceId, projectId: sessions.projectId, config: sessions.config, provider: sessions.provider, runtime: sessions.runtime })
+    .select({ workspaceId: sessions.workspaceId, chatId: sessions.chatId, config: sessions.config, provider: sessions.provider, runtime: sessions.runtime })
     .from(sessions)
     .where(eq(sessions.id, agentId))
     .limit(1);
@@ -62,6 +66,7 @@ export async function agentSessionContext(agentId: string): Promise<AgentSession
   const custom = customModelRefFromOption(model);
   const modelLabel = custom ? custom.modelId ?? 'CLI default model' : await sessionModelLabel(agentId, decision, session.provider, session.runtime);
   const agentName = knownTaskName({ id: agentId, config: session.config });
-  return { sessionId: agentId, projectId: session.projectId, workspaceId: session.workspaceId ?? null, workspaceRoot, model, modelLabel,
+  const folderId = session.workspaceId ? rootFolderOf(session.workspaceId)?.id ?? null : null;
+  return { sessionId: agentId, groupChatId: session.chatId ?? null, folderId, workspaceId: session.workspaceId ?? null, workspaceRoot, model, modelLabel,
     ...(agentName ? { agentName, taskTitle: agentName } : {}) };
 }

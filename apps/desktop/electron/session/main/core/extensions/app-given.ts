@@ -9,7 +9,7 @@ import { log } from '@main/lib/logger';
 import { givesAgentTools, hereGives, isHerePlace, placesOfChats, type PlaceChat, type PlaceIdentity } from '@shared/extensions/app-places';
 import { HERE_ALL, type EnablePlace, type InstallGrant } from '@shared/extensions/host-actions';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
-import { recordedProjectGroupBindings } from '@main/core/projects/operations/device-project-records';
+import { listFolders } from '@main/core/folders/folders';
 
 /**
  * D-30 「给哪些 agent」, two layers (App architecture §4, owner 10-27): this computer's half is kept with the install
@@ -80,8 +80,8 @@ export async function appPlaces(extensionId: string): Promise<EnablePlace[]> {
   const identity = extensionsService().identityOf(extensionId);
   const on = new Set<string>(identity ? hereGivenOf(identity) : [HERE_ALL]);
   if (identity) for (const row of await readEnablements(token, userId)) if (appKey(row.app) === appKey(identity)) on.add(row.chatId);
-  // The project groups this machine records on the account: a workspace's or hidden project's old binding is not one.
-  const projects = new Set((await recordedProjectGroupBindings()).map((entry) => entry.chatId));
+  // The groups this machine has folders bound to.
+  const projects = new Set(listFolders().flatMap((folder) => (folder.chatId ? [folder.chatId] : [])));
   const { chats, identities } = await placeChats(token, userId);
   return placesOfChats(chats, identities, { me: userId, enabled: on, projects, here: true });
 }

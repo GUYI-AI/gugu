@@ -8,7 +8,6 @@ import { configureExtensionSession } from './extension-session';
 import { resolveExtensionBridgePreload } from './bridge-preload-path';
 import { hardenExtensionWebviewPreferences, isAllowedExtensionNavigation } from './extension-webview-security';
 import { sessionEvents } from '../sessions/session-events';
-import { projectEvents } from '../projects/project-events';
 import { presentAppSurface } from './app-surface-presentation';
 
 function displayBounds(bounds: AppSurfaceBounds): AppSurfaceBounds {
@@ -32,7 +31,7 @@ export function appSurfaceScreen(args: unknown): AppSurfaceScreen {
 export const extensionAppSurfaces = new ExtensionAppSurfaces(extensionId => {
   const service = extensionsService(); service.get(extensionId);
   if (!service.isEnabled(extensionId) || !service.hasCapability(extensionId, 'agents:tools')) throw new Error('App surface access was revoked');
-}, async sessionId => (await import('./projection-task')).projectionTaskProject(sessionId),
+}, async sessionId => (await import('./projection-task')).assertTaskLive(sessionId),
 async ({ id, extensionId, sessionId, options, signal, closed }) => {
   if (process.env.GUGU_SERVER_MODE === '1') throw new Error('This host has no desktop surface');
   const installed = extensionsService().get(extensionId), service = extensionsService();
@@ -108,4 +107,3 @@ async ({ id, extensionId, sessionId, options, signal, closed }) => {
 }, error => log.warn('App surface could not be displayed or closed', { error: String(error) }));
 
 sessionEvents.on('session:archived', sessionId => extensionAppSurfaces.closeScope({ sessionId }));
-projectEvents.on('project:deleted', projectId => extensionAppSurfaces.closeScope({ projectId }));

@@ -12,7 +12,7 @@ import {
   type WriteProjectConfigRequest,
 } from '@shared/core/project-settings/project-settings';
 import { hasConfiguredShareableProjectSettings } from '@shared/core/project-settings/project-settings-fields';
-import { projectSettingsChangedChannel } from '@shared/core/projects/projectEvents';
+import { folderSettingsChangedChannel } from '@shared/core/folders/folder-events';
 import type { UpdateProjectSettingsError } from '@shared/projects';
 import type { FolderRuntime } from '../folder-runtime';
 import { openFolder } from '../folder-runtimes';
@@ -47,7 +47,7 @@ export class FolderSettingsService implements Hookable<FolderSettingsHooks>, IIn
   initialize(): void {
     this._disposeRendererBridge?.();
     this._disposeRendererBridge = this.on('folder-settings:changed', ({ folderId }) => {
-      events.emit(projectSettingsChangedChannel, { folderId });
+      events.emit(folderSettingsChangedChannel, { folderId });
     });
   }
 

@@ -10,7 +10,7 @@ import { anySignal } from '@gugu/core/shared/anySignal';
 import { projectionPresentation, sameProjectionPicture, type ProjectionPresentation } from '@shared/extensions/projection-presentation';
 
 /** Supplied by the invoking tool/page's host binding, never by an App's parameters. */
-export interface ProjectionPrincipal { extensionId: string; sessionId: string; projectId?: string }
+export interface ProjectionPrincipal { extensionId: string; sessionId: string }
 export interface ProjectionSource {
   input(input: ProjectionInput, context: { frame: ProjectionFrame; signal: AbortSignal; viewer: string }): Promise<ProjectionInputOutcome | void>;
   /** Release this viewer's held keys/buttons before another viewer's next input. */
@@ -227,9 +227,9 @@ export class ExtensionProjections {
     };
   }
 
-  closeScope(scope: { sessionId: string } | { projectId: string }): void {
+  closeScope(scope: { sessionId: string }): void {
     for (const [id, resource] of this.resources) {
-      if ('sessionId' in scope ? resource.principal.sessionId === scope.sessionId : resource.principal.projectId === scope.projectId) {
+      if (resource.principal.sessionId === scope.sessionId) {
         void this.close(id, resource).catch(() => undefined);
       }
     }

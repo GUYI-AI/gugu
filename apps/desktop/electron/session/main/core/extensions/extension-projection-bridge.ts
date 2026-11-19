@@ -1,7 +1,6 @@
 import { workspaceSession } from '@shared/extensions/app-runtime-protocol';
 import { log } from '@main/lib/logger';
 import { sessionEvents } from '../sessions/session-events';
-import { projectEvents } from '../projects/project-events';
 import { randomUUID } from 'node:crypto';
 import { PROJECTION_NOT_SENT, PROJECTION_UNCONFIRMED, projectionInputOutcome, type ProjectionInputOutcome, type ProjectionHostPacket, type ProjectionSourceEvent } from '@shared/extensions/projection-protocol';
 import { ExtensionProjections, ProjectionInputFailure } from './extension-projections';
@@ -35,7 +34,7 @@ export class ExtensionProjectionBridge {
   private readonly pageLeases = new Map<number, Set<AbortController>>();
   private readonly watches = new Map<string, string>();
 
-  constructor(authorize: (extensionId: string) => void, private readonly projectOf: (session: string) => Promise<string>) {
+  constructor(authorize: (extensionId: string) => void, private readonly assertTask: (session: string) => Promise<void>) {
     this.resources = new ExtensionProjections(({ extensionId }) => authorize(extensionId));
     this.mediaAccess = new ProjectionMediaAccess(this.resources, pageId => this.epochs.get(pageId) ?? 0);
   }
@@ -142,11 +141,11 @@ export class ExtensionProjectionBridge {
       if (caller.kind !== 'program' || !caller.callingSession) throw new Error('Create a projection inside a task tool call');
       if (this.count(caller.pageId) >= 16) throw new Error('Too many projections in this program');
       const epoch = this.lifecycle;
-      const projectId = await this.projectOf(caller.callingSession);
+      await this.assertTask(caller.callingSession);
       if (epoch !== this.lifecycle) throw new Error('Projection task lifecycle changed');
       if (this.count(caller.pageId) >= 16) throw new Error('Too many projections in this program');
       const hear = (event: ProjectionSourceEvent) => caller.hear({ type: 'projectionSource', event });
-      const handle = this.resources.open({ extensionId: caller.extensionId, sessionId: caller.callingSession, projectId }, {
+      const handle = this.resources.open({ extensionId: caller.extensionId, sessionId: caller.callingSession }, {
         refresh: () => hear({ type: 'refresh', id: handle.id }),
         close: () => {
           for (const [requestId, pending] of this.inputs) {
@@ -268,7 +267,7 @@ export class ExtensionProjectionBridge {
       ...(presentation ? { presentation: 1 as const } : {}) }, deliver);
   }
 
-  closeScope(scope: { sessionId: string } | { projectId: string }): void {
+  closeScope(scope: { sessionId: string }): void {
     this.lifecycle++;
     this.resources.closeScope(scope);
   }
@@ -314,10 +313,9 @@ export const extensionProjections = new ExtensionProjectionBridge((id) => {
   service.get(id);
   if (!service.isEnabled(id) || !service.hasCapability(id, 'agents:tools')) throw new Error('App program access was revoked');
 }, async sessionId => {
-  const { projectionTaskProject } = await import('./projection-task');
-  return projectionTaskProject(sessionId);
+  const { assertTaskLive } = await import('./projection-task');
+  return assertTaskLive(sessionId);
 });
 
 // These hooks run synchronously, before another input can be admitted; a round finishing is not a task ending.
 sessionEvents.on('session:archived', sessionId => extensionProjections.closeScope({ sessionId }));
-projectEvents.on('project:deleted', projectId => extensionProjections.closeScope({ projectId }));

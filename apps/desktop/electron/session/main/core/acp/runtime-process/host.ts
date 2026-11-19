@@ -403,7 +403,7 @@ function decorateAcpRuntimeHandle(handle: AcpRuntimeProcessHandle): AcpRuntimeHa
 // servers, but still carries trusted session metadata and keeps the same host-selected permission mode.
 // 合并说明:`effort`(本 PR,起始推理档)与 `startupOrigin`/`initialMessageId`/`initialQueue`
 // (dev #4612,聊天页首轮走信封)是两侧各自的纯新增,没有语义冲突 —— 取并集,❌ 别二选一。
-export async function withEmdashMcpInjection<T extends { input: { sessionId: string; sourceSessionId?: string; projectId: string; workspaceId: string; providerId: string; cwd: string; providerSessionId?: string | null; permissionMode?: GuguPermissionMode; effort?: string | null; startupOrigin?: 'chat-page' | 'session-page'; initialMessageId?: string; taskChatId?: string; initialQueue?: Array<{ text: string; hiddenContext?: string }> } }>(
+export async function withEmdashMcpInjection<T extends { input: { sessionId: string; sourceSessionId?: string; groupChatId: string | null; workspaceId: string; providerId: string; cwd: string; providerSessionId?: string | null; permissionMode?: GuguPermissionMode; effort?: string | null; startupOrigin?: 'chat-page' | 'session-page'; initialMessageId?: string; taskChatId?: string; initialQueue?: Array<{ text: string; hiddenContext?: string }> } }>(
   input: T,
   lifecycle: 'fresh' | 'fork' | 'resume',
   facts: SessionInjectionFacts,
@@ -437,7 +437,7 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
   const injection = await injector({
     sessionId: input.input.sessionId,
     sourceSessionId: input.input.sourceSessionId,
-    projectId: input.input.projectId,
+    groupChatId: input.input.groupChatId,
     workspaceId: input.input.workspaceId,
     providerId: input.input.providerId,
     cwd: input.input.cwd,
@@ -513,7 +513,7 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
 // 钩子抛错就让 startSession 抛出去:选了平台模型却签不出令牌,这条会话本来就不该开。
 /** The one identity step of an ACP start; the capability injector only consumes its result. */
 export function provisionStartIdentity(
-  input: { sessionId: string; sourceSessionId?: string; providerId: string; projectId: string; cwd: string },
+  input: { sessionId: string; sourceSessionId?: string; providerId: string; groupChatId: string | null; cwd: string },
   lifecycle: 'fresh' | 'fork' | 'resume',
   facts: Pick<SessionInjectionFacts, 'agentDisplayName'>,
 ): Promise<EmdashSessionIdentity | null> {
@@ -521,14 +521,14 @@ export function provisionStartIdentity(
     sessionId: input.sessionId,
     sourceSessionId: input.sourceSessionId,
     providerId: input.providerId,
-    projectId: input.projectId,
+    groupChatId: input.groupChatId,
     cwd: input.cwd,
     displayName: facts.agentDisplayName,
     lifecycle,
   });
 }
 
-export async function withEmdashPlatformInjection<T extends { input: { sessionId: string; sourceSessionId?: string; forkFromProviderSessionId?: string; forkKeepsAgent?: boolean; projectId: string; workspaceId: string; providerId: string; cwd: string; effort?: string | null; providerSessionId?: string | null } }>(
+export async function withEmdashPlatformInjection<T extends { input: { sessionId: string; sourceSessionId?: string; forkFromProviderSessionId?: string; forkKeepsAgent?: boolean; groupChatId: string | null; workspaceId: string; providerId: string; cwd: string; effort?: string | null; providerSessionId?: string | null } }>(
   input: T,
   lifecycle: 'fresh' | 'fork' | 'resume',
   facts: SessionInjectionFacts,
@@ -593,7 +593,7 @@ export async function withEmdashPlatformInjection<T extends { input: { sessionId
   const injection = await injector({
     sessionId: input.input.sessionId,
     sourceSessionId: input.input.sourceSessionId,
-    projectId: input.input.projectId,
+    groupChatId: input.input.groupChatId,
     workspaceId: input.input.workspaceId,
     providerId: input.input.providerId,
     cwd: input.input.cwd,
