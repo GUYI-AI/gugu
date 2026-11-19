@@ -182,7 +182,7 @@ export async function requestFile(ref: FileRef, actor: FileActor, options: FileR
   }
   const reader = nativeReader(electron, ref, actor, signal, onState)
   try {
-    const { revision } = await reader.call({ op: 'request', purpose: options.purpose })
+    const { revision } = await reader.call({ op: 'request', purpose: options.purpose, ...(options.admit ? { admit: options.admit } : {}) })
     return nativeFileHandle(reader, actor, revision, options.purpose === 'show' ? true : undefined)
   } catch (error) {
     await reader.dispose().catch((failure) => log.warn({ error: failure }, 'native file disposal failed'))

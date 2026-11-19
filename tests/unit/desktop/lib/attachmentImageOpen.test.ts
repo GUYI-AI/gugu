@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { queryClient as attachmentQueryClient } from '@/lib/replica'
 import { openAttachmentImage, openAttachmentImages, originalImage } from '@/lib/attachmentBytes'
 import { FileReadError, type FileReadState } from '@gugu/core/shared/fileReads'
+import type { FileRevision } from '@gugu/core/shared/fileResolver'
 import { registerImageViewerHost, type ImageViewerRequest } from '@/lib/imageViewer'
 // The replica reads for the signed-in account, as the product publishes it.
 ;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'owner')
@@ -143,3 +144,10 @@ it('a refused acknowledgement takes the shown original down: the viewer hears fa
   original.release()
 })
 
+it("hands the message's metadata to the original's read, so a cloud fetch can be admitted by its own signature", async () => {
+  const metadata = { status: 'ready' as const, revision: revision as FileRevision }
+  const original = originalImage(source, { metadata })
+  await expect(original.full(undefined, true)).resolves.toBe('blob:full')
+  expect(io.request.mock.calls[0]?.[2]).toMatchObject({ purpose: 'show', admit: metadata })
+  original.release()
+})

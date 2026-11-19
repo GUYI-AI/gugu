@@ -26,6 +26,8 @@ async function host() {
   const started = gate(), bytes = gate()
   const requests: { op: string; actor: string; ref: unknown }[] = []
   const options = { backend: 'https://backend.invalid', pending: false, gets: 0, cancelObserved: false, corrupt: false,
+    // The same refusal from the reference's resolve and from its signer (which resolves first).
+    refuse: undefined as undefined | (() => Response),
     metadata: (actor: string, ref: object) => ({ ...revision, status: 'ready', actor, ref }) as Record<string, unknown> }
   const providers = {
     ...cloudFileProviders({
@@ -34,6 +36,7 @@ async function host() {
         fetch: async (url, init) => {
           const op = String(url).split('/').at(-1)!, row = JSON.parse(String(init?.body))
           requests.push({ op, ref: row.ref, actor: row.as })
+          if (options.refuse && (op === 'file-resolve' || op === 'file-download')) return options.refuse()
           if (op === 'file-resolve') return Response.json(options.pending
             ? { status: 'missing', code: 'object_not_found', upload: 'pending' } : options.metadata(row.as, row.ref))
           if (op !== 'file-download') throw Error(op)
@@ -260,5 +263,67 @@ describe('device file reads', () => {
     cancel.abort()
     await expect(request.result).rejects.toMatchObject({ code: 'cancelled' })
     expect(options.cancelObserved).toBe(true)
+  })
+})
+
+describe('a managed fetch admitted by its own signed download (contract §2.1 step 1, amended)', () => {
+  const projected = { status: 'ready' as const, revision }
+  const settle = async (h: Awaited<ReturnType<typeof host>>) => { await h.started.promise; h.bytes.release() }
+
+  it('signs once as its authorization and pin, fetches through that capability, and still rechecks before handing out', async () => {
+    const h = await host()
+    const request = h.reads.request(message, account, { purpose: 'bytes', admit: projected })
+    await settle(h)
+    const { file } = await request.result
+    expect(await fileBlob(file).then(blob => blob.arrayBuffer())).toEqual(body.buffer)
+    expect(h.requests.map(row => row.op)).toEqual(['file-download', 'file-resolve'])
+    expect(h.options.gets).toBe(1)
+  })
+
+  it('refuses a projection the signer does not confirm before any byte request (condition 1)', async () => {
+    const h = await host()
+    const other = { status: 'ready' as const, revision: { ...revision, sha256: 'f'.repeat(64) } }
+    await expect(h.reads.request(message, account, { purpose: 'bytes', admit: other }).result).rejects.toMatchObject({ code: 'access_revoked' })
+    expect(h.requests.map(row => row.op)).toEqual(['file-download'])
+    // Nothing fetched: the unused reservation closes through the server's unused-download settlement (#325).
+    expect(h.options.gets).toBe(0)
+  })
+
+  it('a request joining a running fetch does its own pure file-resolve first (condition 2)', async () => {
+    const h = await host()
+    const first = h.reads.request(message, account, { purpose: 'bytes', admit: projected })
+    await h.started.promise
+    const agent = { accountId: 'account', actorId: 'agent' }
+    const second = h.reads.request({ item_id: 'item', version: 3 }, agent, { purpose: 'bytes', admit: projected })
+    await vi.waitFor(() => expect(h.requests.filter(row => row.actor === 'agent').map(row => row.op)).toEqual(['file-resolve']))
+    h.bytes.release()
+    await Promise.all([first.result, second.result])
+    expect(h.requests.filter(row => row.op === 'file-download').map(row => row.actor)).toEqual(['owner'])
+    expect(h.options.gets).toBe(1)
+  })
+
+  it('a verified local copy is handed out only after a pure file-resolve (condition 4)', async () => {
+    const h = await host()
+    h.bytes.release()
+    await saveToFileStore((await h.reads.request(message, account, { purpose: 'save' }).result).file, h.root)
+    h.requests.length = 0
+    const again = await h.reads.request(message, account, { purpose: 'bytes', admit: projected }).result
+    expect(h.requests[0]?.op).toBe('file-resolve')
+    expect(again).toMatchObject({ reused: 'verified-local' })
+    await again.file.dispose()
+  })
+
+  it.each([
+    ['gone', () => Response.json({ status: 'gone', sha256: null })],
+    ['expired', () => Response.json({ status: 'expired', sha256: null })],
+    ['refused', () => Response.json({ error: 'denied', code: 'file_transfer_denied' }, { status: 403 })],
+  ])('maps a %s answer to the same failure as a resolve would (conditions 3, 6): no signature used, no bytes', async (_label, answer) => {
+    const viaResolve = await host(), viaSigner = await host()
+    viaResolve.options.refuse = answer; viaSigner.options.refuse = answer
+    const resolved = await viaResolve.reads.request(message, account, { purpose: 'bytes' }).result.catch((error: unknown) => error)
+    const signed = await viaSigner.reads.request(message, account, { purpose: 'bytes', admit: projected }).result.catch((error: unknown) => error)
+    expect(signed).toMatchObject({ code: (resolved as { code: string }).code })
+    expect(viaSigner.requests.map(row => row.op)).toEqual(['file-download'])
+    expect(viaSigner.options.gets).toBe(0)
   })
 })

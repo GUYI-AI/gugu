@@ -98,7 +98,8 @@ export type ResolvedPreview = Exclude<FileMetadata, { status: 'ready' }> | {
   content(): Promise<FilePreviewContent>; dispose(): Promise<void>
 }
 /** `progress`: the bytes arrived of the file being read, from the provider that carries them (a slow machine's line shows it). */
-export type FileContext = { ref: FileRef; actor: FileActor; signal?: AbortSignal; download?: true; backend?: string; reads?: FileReadHooks; openedBytes?: () => Promise<FileBytes>; progress?: (done: number, total: number) => void }
+/** `admitted`: the download capability whose signing was this read's step-1 authorization (`FileProviders.admit`); its read reuses it. */
+export type FileContext = { ref: FileRef; actor: FileActor; signal?: AbortSignal; download?: true; admitted?: unknown; backend?: string; reads?: FileReadHooks; openedBytes?: () => Promise<FileBytes>; progress?: (done: number, total: number) => void }
 export interface FileProviders {
   backend?(context: FileContext): Promise<string>
   saveTo?(revision: FileRevision, context: FileContext, directory: string, name: string, store?: boolean): Promise<SavedFile>
@@ -106,6 +107,11 @@ export interface FileProviders {
   /** Must check the current account, device and project binding locally, before any cloud lookup. */
   local(context: FileContext): Promise<{ revision: FileRevision; open(): Promise<FileBytes> } | null>
   metadata(context: FileContext): Promise<FileMetadata>
+  /**
+   * Step 1 for a managed object read over the network (contract §2.1, amended): the read's own signed download, as this
+   * actor, authorizes it and pins the revision. Refuses (before any byte request) a revision other than the projected one.
+   */
+  admit?(projected: FileRevision, context: FileContext): Promise<FileMetadata>
   managed(revision: FileRevision, context: FileContext): Promise<FileBytes>
   /** Only an already-held owner SSH link. Null means unavailable; ACL/integrity failures must throw. */
   ssh(revision: FileRevision, context: FileContext): Promise<FileBytes | null>
@@ -186,8 +192,8 @@ export async function openFileBytes(providers: FileProviders, revision: FileRevi
 export function createFileResolver(providers: FileProviders, readHooks?: () => FileReadHooks) {
   function resolveFile(ref: FileRef, actor: FileActor, options: { localOnly: true; purpose?: 'file'; signal?: AbortSignal }): Promise<ResolvedFile | null>
   function resolveFile(ref: FileRef, actor: FileActor, options: { purpose: 'preview'; metadata?: FileMetadata; signal?: AbortSignal }): Promise<ResolvedPreview>
-  function resolveFile(ref: FileRef, actor: FileActor, options?: { purpose?: 'file'; signal?: AbortSignal; progress?: FileContext['progress']; showFirst?: true }): Promise<ResolvedFile>
-  async function resolveFile(ref: FileRef, actor: FileActor, options: { purpose?: 'file' | 'preview'; metadata?: FileMetadata; localOnly?: boolean; signal?: AbortSignal; progress?: FileContext['progress']; showFirst?: true } = {}): Promise<ResolvedFile | ResolvedPreview | null> {
+  function resolveFile(ref: FileRef, actor: FileActor, options?: { purpose?: 'file'; admit?: FileMetadata; signal?: AbortSignal; progress?: FileContext['progress']; showFirst?: true }): Promise<ResolvedFile>
+  async function resolveFile(ref: FileRef, actor: FileActor, options: { purpose?: 'file' | 'preview'; metadata?: FileMetadata; admit?: FileMetadata; localOnly?: boolean; signal?: AbortSignal; progress?: FileContext['progress']; showFirst?: true } = {}): Promise<ResolvedFile | ResolvedPreview | null> {
     if (!actor.accountId || !actor.actorId) throw new Error('File reader is not signed in')
     fileRefKey(ref)
     const cancellation = new AbortController()
@@ -202,7 +208,13 @@ export function createFileResolver(providers: FileProviders, readHooks?: () => F
     if (projected && projected.status !== 'ready') return projected
     if (projected?.status === 'ready' && 'item_id' in ref && (projected.revision.item_id !== ref.item_id ||
       ref.version !== undefined && projected.revision.version !== ref.version)) throw new Error('File preview reference changed')
-    const metadata = local ? { status: 'ready' as const, revision: local.revision } : projected ?? (context.reads?.waitDeclared
+    // @@@signed-admission - a managed object this request must fetch is admitted by its own signed download (no separate
+    // file-resolve). A verified local copy, or a fetch already running that this request would join, is handed out only
+    // after this request's own pure file-resolve.
+    const admit = !local && options.purpose !== 'preview' && options.admit?.status === 'ready' ? options.admit.revision : undefined
+    const signs = admit && providers.admit && context.reads && context.backend !== undefined && admit.source === 'managed-object' && admit.sha256 !== null &&
+      !await context.reads.served(context.backend, admit, context)
+    const metadata = local ? { status: 'ready' as const, revision: local.revision } : projected ?? (signs ? await providers.admit!(admit, context) : context.reads?.waitDeclared
       ? await context.reads.waits.until(() => providers.metadata(context), row => {
         if (row.status !== 'pending') return
         if (row.host_online === false) throw new FileReadError('holder_offline', `${row.host_label || 'The computer that keeps this file'} is offline.`)

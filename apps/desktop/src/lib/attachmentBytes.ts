@@ -88,7 +88,8 @@ async function readAttachmentBytes(source: AttachmentSource, variant: Attachment
   }
   const ref = attachmentFileRef(source)
   if (!ref) return goneFile
-  const file = await requestFile(ref, fileReader(), { purpose: variant === 'shown' ? 'show' : variant === 'save' ? 'save' : 'bytes', signal }, onState)
+  // The message's metadata only lets a cloud fetch be admitted by its own signature; the read verifies it either way.
+  const file = await requestFile(ref, fileReader(), { purpose: variant === 'shown' ? 'show' : variant === 'save' ? 'save' : 'bytes', signal, ...(metadata ? { admit: metadata } : {}) }, onState)
   onLink?.(file.revision)
   const { sha256 } = file.revision
   const { accountId } = file.reader
@@ -249,12 +250,13 @@ function decodedImage(url: string): Promise<void> {
  * refused, to take them down; a download or copy gets them only once acknowledged. Every caller follows the same read's
  * state; a failed read is dropped, so the next look reads again.
  */
-export function originalImage(source: AttachmentSource, options: { signal?: AbortSignal; onLink?: (link: FileRevision) => void } = {}): { full: NonNullable<ImageViewerItem['full']>; release: () => void } {
+/** `metadata`: the message's metadata for this file, so a cloud fetch can be admitted by its own signed download. */
+export function originalImage(source: AttachmentSource, options: { signal?: AbortSignal; onLink?: (link: FileRevision) => void; metadata?: FileMetadata } = {}): { full: NonNullable<ImageViewerItem['full']>; release: () => void } {
   let read: { shown: Promise<string>; verified: Promise<string> } | undefined, url: string | undefined, last: FileReadState | undefined, released = false
   const listeners = new Set<(state: FileReadState) => void>()
   const onState = (state: FileReadState) => { last = state; listeners.forEach((listener) => listener(state)) }
   const start = () => {
-    const shown = attachmentBytes(source, 'shown', options.onLink, undefined, { signal: options.signal, onState }).then((bytes) => {
+    const shown = attachmentBytes(source, 'shown', options.onLink, options.metadata, { signal: options.signal, onState }).then((bytes) => {
       if (bytes.status !== 'ready') throw new Error(bytes.status)
       const objectUrl = URL.createObjectURL(bytes.blob)
       if (released) URL.revokeObjectURL(objectUrl); else url = objectUrl

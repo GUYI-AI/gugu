@@ -1,6 +1,6 @@
 import { coreLogger } from '../log'
 import { FileIntegrityError } from './fileCipher'
-import { createFileResolver, FileReadError, FileReadRevokedError, MissingFileObjectError, type FileActor, type FileBytes, type FileContext, type FileHandle, type FileRef, type FileRevision, type FileProviders } from './fileResolver'
+import { createFileResolver, FileReadError, FileReadRevokedError, MissingFileObjectError, type FileActor, type FileBytes, type FileContext, type FileHandle, type FileMetadata, type FileRef, type FileRevision, type FileProviders } from './fileResolver'
 
 const log = coreLogger('file-reads')
 
@@ -18,6 +18,8 @@ export type FileReadState =
 export interface FileReadOptions {
   purpose: 'save' | 'bytes' | 'show'
   signal?: AbortSignal
+  /** The message's metadata for this file: a managed object it must fetch is then admitted by its own signed download. */
+  admit?: FileMetadata
 }
 export interface FileReadResult {
   /** Caller owns this pinned handle. Use its existing stream, saveTo, acknowledgement and dispose contracts. */
@@ -83,6 +85,8 @@ export interface FileReadHooks {
   state(state: FileReadState): void
   reuse(value: FileReadReuse): void
   acquire(backend: string, route: FileReadRoute, revision: FileRevision, context: FileContext, open: Transfer, relay?: RelayScope): Promise<FileBytes>
+  /** A verified local copy of this managed revision, or a running fetch of it that a new request would join. */
+  served(backend: string, revision: FileRevision, context: FileContext): Promise<boolean>
 }
 
 /** A read's failure in the reader's terms (§2.8), whichever layer raised it. */
@@ -109,6 +113,9 @@ type Flight = {
   progress?: [number, number]
 }
 
+const flightKey = (backend: string, account: string, revision: FileRevision, deviceOnly: boolean, scope: unknown) =>
+  JSON.stringify([backend, account, revision.sha256, revision.size_bytes, deviceOnly, scope])
+
 /** One host owns the flights. Each participant arrives after its own route and authorization checks. */
 export function createFileReads(providers: FileProviders, store: FileReadStore = {}): FileReads {
   const waits = createSenderWaits()
@@ -129,7 +136,7 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
     const deviceOnly = revision.source === 'local' && !revision.temporary_transfer
     const readerScope = relay && 'reader' in relay
     const scope = readerScope ? ['reader', relay.reader] : relay && ['generation', relay.generation]
-    const key = JSON.stringify([backend, context.actor.accountId, revision.sha256, revision.size_bytes, deviceOnly, scope])
+    const key = flightKey(backend, context.actor.accountId, revision, deviceOnly, scope)
     let flight = flights.get(key)
     if (!flight) {
       const subscribers = new Set<Subscriber>(), controller = new AbortController()
@@ -195,11 +202,18 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
     })
   }
   const noop = () => {}
-  const hooks = (): FileReadHooks => ({ waits, acquire, waitDeclared: false, state: noop, reuse: noop })
+  const served: FileReadHooks['served'] = async (backend, revision, context) => {
+    if (flights.has(flightKey(backend, context.actor.accountId, revision, false, undefined))) return true
+    const cached = await store.cachedCopy?.(backend, revision, context)
+    if (!cached) return false
+    await cached.dispose()
+    return true
+  }
+  const hooks = (): FileReadHooks => ({ waits, acquire, served, waitDeclared: false, state: noop, reuse: noop })
   return {
     resolve: createFileResolver(providers, hooks),
     nudge: waits.nudge,
-    request(ref, actor, { purpose, signal }) {
+    request(ref, actor, { purpose, signal, admit }) {
       const listeners = new Set<(state: FileReadState) => void>()
       let latest: FileReadState | undefined, route: FileReadRoute = 'oss', reused: FileReadReuse = null
       let waited = 0, since: number | undefined
@@ -216,7 +230,7 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
       const result = (async () => {
         let file: FileHandle | undefined
         try {
-          const resolved = await resolve(ref, actor, { signal, showFirst: purpose === 'show' ? true : undefined,
+          const resolved = await resolve(ref, actor, { signal, ...(admit ? { admit } : {}), showFirst: purpose === 'show' ? true : undefined,
             progress: (done, total) => emit({ status: 'transferring', route, done, total }) })
           if (resolved.status !== 'ready') {
             if (resolved.status === 'missing') throw new MissingFileObjectError()

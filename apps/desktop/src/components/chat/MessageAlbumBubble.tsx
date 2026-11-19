@@ -89,7 +89,7 @@ function AlbumTile({ part: { member, meta }, chatId, style }: { part: Part; chat
   // The viewer opens on the thumbnail and swaps in the original when it reaches this image (same as one image).
   useEffect(() => {
     if (!ready || !img.current || meta.source.kind === 'url') return
-    const original = originalImage(meta.source)
+    const original = originalImage(meta.source, { metadata: meta.fileMetadata })
     const unregister = registerFullImage(img.current, original.full, meta.source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: meta.source.itemId, version: meta.source.version } } : undefined,
     { name: meta.fileName, contentType: meta.mimeType }, { chatId, messageId: member.id },
     size?.width && size.height ? { width: size.width, height: size.height } : undefined)
@@ -98,7 +98,7 @@ function AlbumTile({ part: { member, meta }, chatId, style }: { part: Part; chat
       original.release()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sourceKey 就是 meta.source 的身份
-  }, [ready, sourceKey, meta.fileName, meta.mimeType, chatId, member.id, size?.width, size?.height])
+  }, [ready, sourceKey, meta.fileName, meta.mimeType, meta.fileMetadata?.status, chatId, member.id, size?.width, size?.height])
   const failed = member.local_send_state === 'failed'
   return <div ref={box as RefObject<HTMLDivElement>} data-album-failed={failed || undefined} className="absolute overflow-hidden bg-[var(--muted)]" style={style}>
     <Button variant="ghost" size="icon" aria-label={meta.fileName} disabled={!ready} onClick={() => img.current && openImageFromThumb(img.current)}

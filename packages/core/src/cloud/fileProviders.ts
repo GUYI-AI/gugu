@@ -106,7 +106,7 @@ export function cloudFileProviders(deps: {
   metadata?(context: FileContext): Promise<unknown>
   image?(file: FileBytes, revision: FileRevision): Promise<Blob>
   imageCache?: Pick<Cache, 'match' | 'put'>
-}): Pick<FileProviders, 'backend' | 'metadata' | 'managed' | 'temporary' | 'preview' | 'download'> {
+}): Pick<FileProviders, 'backend' | 'metadata' | 'admit' | 'managed' | 'temporary' | 'preview' | 'download'> {
   const session = deps.downloadSession ?? fileDownloadSession
   const waits = createSenderWaits()
   const backend = async (context: FileContext) => (await deps.endpoint(context)).supabaseUrl
@@ -186,6 +186,9 @@ export function cloudFileProviders(deps: {
     // Managed reads authorize with file-resolve. Only a cache miss needs a download reservation.
     // An encrypted relay also requires this reader’s own grant and acknowledgement.
     if (encrypted && !lease) await sign()
+    // A read admitted by its own signed download (`admit`) fetches through that same capability.
+    const admitted = encrypted ? undefined : context.admitted as SignedDownload | undefined
+    if (admitted) { accept(admitted.lease); direct = admitted.direct }
     const digest = encrypted ? lease!.ciphertext_sha256! : revision.sha256
     const cacheScope = admission ? [context.actor.accountId, admission.reusable ? admission.generation : admission.requestId]
       : context.reads ? [context.actor.accountId] : [context.actor, fileRefKey(ref)]
@@ -292,6 +295,20 @@ export function cloudFileProviders(deps: {
       const result = await metadata(context)
       context.signal?.throwIfAborted()
       return parseFileMetadata(result, context.ref)
+    },
+    async admit(projected, context) {
+      context.signal?.throwIfAborted()
+      const signed = await download(context, { ref: context.ref, as: context.actor.actorId, request_id: crypto.randomUUID() }, 'file')
+      const row = signed.lease
+      // A refusal is the reference's own resolve answer (the signer resolves first), parsed the same way: gone stays gone.
+      if (row.status !== 'ready') return parseFileMetadata(row, context.ref)
+      // The projection is only a claim: a different revision fails here, before any byte is requested.
+      if (row.sha256 !== projected.sha256 || row.size_bytes !== projected.size_bytes) throw new FileReadRevokedError('revision')
+      const metadata = parseFileMetadata(row, context.ref)
+      if (metadata.status === 'ready' && metadata.revision.source !== 'managed-object') throw new FileReadRevokedError('revision')
+      advertised(signed)
+      context.admitted = { lease: row, direct: signed.direct } satisfies SignedDownload
+      return metadata
     },
     managed: (revision, context) => read(revision, context, false),
     async temporary(revision, context) {

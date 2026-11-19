@@ -14,7 +14,7 @@ type ReadIdentity = { id: string; ref: FileRef; actor: FileActor }
 export type NativeFileReadCommand =
   | { op: 'nudge' }
   | ReadIdentity & (
-    | { op: 'request'; purpose: FileReadOptions['purpose'] }
+    | { op: 'request'; purpose: FileReadOptions['purpose']; admit?: FileMetadata }
     | { op: 'resolve'; purpose?: 'file' | 'preview'; localOnly?: true; showFirst?: true }
     | { op: 'metadata' }
     | { op: 'cancel' | 'dispose' | 'ack' | 'preview' }
@@ -129,7 +129,7 @@ export function createNativeFileHost(deps: {
             return metadata
           }
           if (command.op === 'request') {
-            const request = deps.reads.request(ref, actor, { purpose: command.purpose, signal })
+            const request = deps.reads.request(ref, actor, { purpose: command.purpose, ...(command.admit ? { admit: command.admit } : {}), signal })
             row.unsubscribe = request.state$(state => { if (!signal.aborted) report?.({ id, state }) })
             const { file, ...outcome } = await request.result
             row.file = file
