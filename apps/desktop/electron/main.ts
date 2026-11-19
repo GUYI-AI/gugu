@@ -4991,6 +4991,7 @@ app.whenReady().then(async () => {
           return byNumber
         },
         resolvePrefixes: (input) => resolvePrefixes(input, signal),
+        receivedMessageIds: (prefix) => emdash.receivedMessageIds(context.sessionId, prefix),
         localSessionIds: (sessionIds) => emdash.localSessionIds(sessionIds),
         remote: crossMachine().messageDeps(() => remoteCaller(auth, context), signal),
       })

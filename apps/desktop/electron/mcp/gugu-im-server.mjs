@@ -20,6 +20,7 @@ import { EXTENSION_ARCHIVE_MIME, resolveAttachmentMimeType } from '../../../../p
 import { saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
 import { ATTACHMENT_PENDING_WAIT_MS, AttachmentUploadPendingError, fileRefKey } from '@gugu/core/shared/fileResolver'
 import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
+import { matchIdPrefix, uuidPrefixRange } from '../../../../packages/core/src/shared/idPrefix'
 import { WORKSPACE_TEXT_MAX_BYTES, workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
 import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
@@ -254,6 +255,41 @@ function decodeImArgs(args) {
   for (const field of MESSAGE_ID_LIST_FIELDS) {
     if (field in out) out[field] = decodeIdList('msg', out[field], field)
   }
+  return out
+}
+
+/**
+ * Owner 2026-11-16: a message id may be written as its first 8+ characters (idPrefix.ts, the same matcher as session ids).
+ * It is matched against the messages this agent can read — in chatId when the tool names a chat — and only the full id
+ * goes on. A full id (or anything that is not a prefix) is returned as written for the exact paths to judge.
+ */
+async function fullMessageId(deps, id, chatId = null, chatLabel = chatId) {
+  // A stored message id is opaque text (`turn-failure:batch:<hash>`): only the start of a UUID is a prefix.
+  const range = typeof id === 'string' ? uuidPrefixRange(id) : null
+  if (!range) return id
+  // Read as the owner, kept only where this agent may read (can_read_message), so neither a match nor a candidate leaks.
+  const read = await deps.restGet(`messages?id=gte.${range.lo}&id=lte.${range.hi}${chatId ? `&chat_id=eq.${enc(chatId)}` : ''}`
+    + '&select=id,content,created_at&order=created_at.desc&limit=11')
+  const visible = await Promise.all(read.map((row) => agentCanSee(deps, row)))
+  const rows = read.filter((_row, index) => visible[index])
+  return matchIdPrefix({
+    kind: 'msg', id, rows, keyOf: (row) => row.id, noun: 'messages',
+    describe: (row) => `${JSON.stringify(String(row.content ?? '').slice(0, 40))}, ${row.created_at}`,
+    notFound: (written) => `No message matches ${written} ${chatId ? `in chat ${chatLabel}` : 'among the messages you can read'}; message_history lists message ids`,
+  })
+}
+
+/** Every message-id argument of an IM tool, before its handler (client_message_id is the agent's own key, never looked up). */
+async function resolveMessagePrefixes(args, deps) {
+  const prefixed = (value) => typeof value === 'string' && uuidPrefixRange(value) !== null
+  const fields = [...MESSAGE_ID_FIELDS].filter((field) => field !== 'client_message_id' && prefixed(args[field]))
+  const lists = [...MESSAGE_ID_LIST_FIELDS].filter((field) => Array.isArray(args[field]) && args[field].some(prefixed))
+  if (!fields.length && !lists.length) return args
+  const address = typeof args.chat_id === 'string' ? args.chat_id.trim() : ''
+  const chatId = address && !/^(aid|user|gugu):/.test(address) ? await requireChat(args, deps) : null
+  const out = { ...args }
+  for (const field of fields) out[field] = await fullMessageId(deps, out[field], chatId, address)
+  for (const field of lists) out[field] = await Promise.all(out[field].map((value) => fullMessageId(deps, value, chatId, address)))
   return out
 }
 
@@ -896,6 +932,7 @@ async function agentCanSee(deps, message, readerId = deps.context.agentId) {
  */
 export async function extensionAttachmentOf(context, messageId, injected = {}) {
   const deps = createDeps(context, injected)
+  messageId = await fullMessageId(deps, messageId)
   const [message] = await deps.restGet(`messages?id=eq.${enc(messageId)}&select=id,chat_id,content,file_item_id,file_version,file_blob_id`)
   if (!message || !(await agentCanSee(deps, message))) throw new Error(`app_install: there is no message ${messageId} you can read`)
   // The message was just read as the owner, so the owner is in that chat and its member list is never empty; an empty
@@ -932,7 +969,7 @@ async function readableWidgetOf(deps, widgetId) {
 /** A checked widget resolves its original message through the same registry as references. */
 export async function widgetCheckScopeOf(context, target, injected = {}) {
   const deps = createDeps(context, injected)
-  const messageId = typeof target === 'object' && target !== null ? target.messageId : undefined
+  const messageId = typeof target === 'object' && target !== null ? await fullMessageId(deps, target.messageId) : undefined
   const id = typeof target === 'object' && target !== null ? messageId ?? target.widgetId : target
   const unreadable = () => new Error(`app_check: there is no widget message ${id} you can read`)
   if (typeof id !== 'string' || !id.length || id.includes('\0')) throw unreadable()
@@ -2799,7 +2836,7 @@ export const TOOL_DEFS = [
     description: 'Open a topic from a message. Only participants are notified. Messages use its chat_id; files and Apps use the source chat. Deletion: catalog topic_delete.',
     schema: z.object({
       chat_id: chatIdSchema.describe('The source chat.'),
-      source_message_id: z.string().trim().min(1).describe('A message of chat_id (msg:<uuid>).'),
+      source_message_id: z.string().trim().min(1).describe('A message of chat_id (msg:<id>).'),
       name: z.string().optional().describe('Default: the source message\'s start.'),
       to_user_ids: chatRecipientsSchema.describe('Who to bring in: members of the source chat only.'),
     }),
@@ -3065,8 +3102,9 @@ async function dispatchTool(context, name, args, injected, state) {
     )
   }
   // The id boundary lives here, on the one path both the SDK server and the exported callTool take.
-  const decoded = decodeImArgs(args || {})
-  const out = await def.handler(decoded, createDeps(context, injected, state))
+  const deps = createDeps(context, injected, state)
+  const decoded = await resolveMessagePrefixes(decodeImArgs(args || {}), deps)
+  const out = await def.handler(decoded, deps)
   if (def.rawOutput) return out
   // 列表工具(def.list)的 handler 回整张排好序的表,在这里按 list-window 的约定切窗(与 sessionpage 注册机同一个函数)。
   return encodeImOutput(name, decoded, def.list ? JSON.stringify(windowResult(def.list, out, decoded)) : out)
@@ -3088,7 +3126,7 @@ export async function callToolWithState(context, name, args, deps, state) {
 export async function sendWidgetOf(context, args, content, injected = {}, state = createSessionState()) {
   if (context.forkOf !== undefined) throw new Error('widget_send is unavailable in a side chat')
   const deps = createDeps(context, injected, state)
-  const decoded = decodeImArgs(args)
+  const decoded = await resolveMessagePrefixes(decodeImArgs(args), deps)
   const chatId = await requireChat(decoded, deps)
   await assertGroupRulesSeen(deps, chatId, 'widget_send')
   const replyToMessageId = decoded.reply_to_message_id ?? null
