@@ -120,15 +120,15 @@ describe('native summary reporting boundary', () => {
   })
 
   it.each(['allowed', 'denied'])('keeps startup migrations in memory until the first known %s preference', async decision => {
-    let owner: string | undefined
+    const owner: { current?: string } = {}
     ipcMain.on('error-summary:read-local-consent', (reply: unknown) => {
-      if (typeof reply === 'function') reply({ eligible: owner !== undefined, decision })
+      if (typeof reply === 'function') reply({ eligible: owner.current !== undefined, decision })
     })
-    registerErrorSummaryReporting({ eligible: true, owner: () => owner })
+    registerErrorSummaryReporting({ eligible: true, owner: () => owner.current })
     reportAgentHomeMigrationFailure(new RangeError('private'), 'history')
     expect(fetch).not.toHaveBeenCalled()
     expect(() => readFileSync(join(root, 'pending-error-summaries.json'))).toThrow()
-    owner = 'test-owner-only-local'
+    owner.current = 'test-owner-only-local'
     ipcMain.emit('error-summary:consent-changed')
     if (decision === 'allowed') await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
     else expect(fetch).not.toHaveBeenCalled()
