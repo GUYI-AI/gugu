@@ -168,4 +168,25 @@ describe('question card in a group (gugu-dev#181 ⑨)', () => {
     expect(harness.container.textContent).not.toContain('回答详情暂时无法读取')
     expect(harness.container.querySelector('button, textarea, .agent-question-card__answers')).toBeNull()
   })
+
+  it.each(['colleague-1', 'owner-1'])('shows the same published answers to %s without reading the host or creating another message', async who => {
+    viewer = who
+    settlement = { itemId: CARD.questionId, state: 'pending', questions: fullQuestions }
+    await render({ ...CARD, questions: fullQuestions, settled: { state: 'answered', at: 'now',
+      answers: [{ selected: [], skipped: true }, { selected: ['group', 'topic'] }] } })
+    for (const text of ['已回答', '已跳过', '群聊、话题']) expect(harness.container.textContent).toContain(text)
+    expect(harness.container.querySelectorAll('[data-testid="composer-card"]')).toHaveLength(1)
+    expect(harness.container.querySelector('button, input, textarea, [data-testid="question-card-readonly"]')).toBeNull()
+    expect(reads.every(read => !read.enabled)).toBe(true)
+    expect(send).not.toHaveBeenCalled()
+    expect(respond).not.toHaveBeenCalled()
+  })
+
+  it.each(['withdrawn', 'discuss'] as const)('shows the public %s state without answer controls or a host connection', async state => {
+    viewer = 'colleague-1'
+    await render({ ...CARD, questions: fullQuestions, settled: { state, at: 'now' } })
+    expect(harness.container.textContent).toContain(state === 'discuss' ? '先聊聊' : '这次提问已结束')
+    expect(harness.container.querySelector('button, input, textarea')).toBeNull()
+    expect(harness.container.textContent).not.toContain('待 Alice 回答')
+  })
 })

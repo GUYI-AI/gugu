@@ -21,7 +21,7 @@ import '../../i18n/registerAssistantCatalog'
 
 /**
  * gugu-dev#181 ⑨ 问题卡:agent 在群里问它的主人,引用它正回的那一条。与任务卡同一个面:是什么(右上时刻)、问题、选项、一行状态。
- * 等没等、答了什么,只读那条会话的结算(本机或别的机器,与助理进度同一个读口);这条消息发出去以后没人改它。
+ * 待答时主人读会话结算；结束后宿主更新原消息，让同事及离线回来的设备读取同一份结果。
  * 主人的完整题目沿用同一宿主结算口,统一核对后提交；旧宿主没有完整题目时保留原有引用回答路径。
  * 群里的同事不读取主人的私有会话,仍只展示消息中公开的题目和选项。
  */
@@ -40,8 +40,17 @@ export function QuestionCardView({ card, chatId, messageId, agentUserId, time, m
   const { devices } = useDevicesStore()
   const device = devices.find((row) => row.device_id === card.deviceId)
   const mine = user?.id === card.ownerUserId && Boolean(device)
-  const read = useTimelineSession(assistantTimelineClient(device?.is_current_device === true), mobile ? 'mobile' : 'desktop', card.deviceId, card.sessionId, mine)
+  const read = useTimelineSession(assistantTimelineClient(device?.is_current_device === true), mobile ? 'mobile' : 'desktop', card.deviceId, card.sessionId, mine && !card.settled)
   const settlement = read.timeline.settlements[card.questionId] ?? null
+  if (card.settled) return <div className="question-message-card" data-testid="composer-card" data-card-type="question">
+    <div className="question-message-card__head"><AgentHarnessIcon agentId={agentUserId} size={16} /><span>{t('question.needsOwner', { name: ownerName })}</span><span>{time}</span></div>
+    <div className="question-message-card__receipt" data-testid="agent-question-receipt">
+      <p className="question-message-card__state">{t(card.settled.state === 'answered' ? 'question.answered' : card.settled.state === 'discuss' ? 'question.discuss' : 'question.withdrawn')}</p>
+      {card.settled.state === 'answered' && (card.questions
+        ? <AgentQuestionAnswers questions={card.questions} answers={card.settled.answers} />
+        : <p className="question-message-card__state">{questionAnsweredText(JSON.stringify(card.settled.answers))}</p>)}
+    </div>
+  </div>
   // The authoritative timeline already carries every question, including cards sent by older hosts.
   // Only the addressee reads that private timeline. Everyone else reads the public question snapshot.
   if (mine && settlement?.questions?.length && (read.link === 'ok' || settlement.state !== 'pending')) {

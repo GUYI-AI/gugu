@@ -5,6 +5,7 @@ import { parseComposerCard } from '../../../../packages/core/src/shared/ui/taskC
 
 const kinds = new Map<string, string>()
 const writes: Array<Record<string, unknown>> = []
+const posting = vi.fn()
 let writeError: { message: string } | null = null
 
 vi.mock('../../../../apps/desktop/electron/supabase', () => ({
@@ -20,6 +21,7 @@ vi.mock('../../../../apps/desktop/electron/supabase', () => ({
     },
     rpc: async (name: string, args: Record<string, unknown>) => {
       if (name !== 'send_message_idempotent') throw new Error(`unexpected rpc ${name}`)
+      expect(posting).toHaveBeenLastCalledWith(`agent-question:${QUESTION}`, { chatId: args.p_chat_id, messageId: QUESTION, ownerUserId: 'owner-1' })
       writes.push(args)
       return { error: writeError }
     },
@@ -38,6 +40,7 @@ const ask = (chatId: string, questions: unknown, agentUserId: string | null = 'a
   projectId: 'project-1',
   asked: { state: 'pending', question_id: `agent-question:${QUESTION}`, source_link: `gugu-chat://${chatId}/${SOURCE}` },
   questions,
+  onPosting: posting,
 })
 const one = [{ question: '要把初始化提前吗？', options: [{ label: '提前' }, { label: '先不动' }] }]
 
@@ -45,6 +48,7 @@ beforeEach(() => {
   kinds.clear(); kinds.set(GROUP, 'group'); kinds.set(DM, 'dm')
   writes.length = 0
   writeError = null
+  posting.mockClear()
 })
 
 describe('a question asked from a group goes into that group (gugu-dev#181 ⑨)', () => {
@@ -72,6 +76,7 @@ describe('a question asked from a group goes into that group (gugu-dev#181 ⑨)'
     kinds.set(DM, kind)
     await ask(DM, one)
     expect(writes).toHaveLength(0)
+    expect(posting).not.toHaveBeenCalled()
   })
 
   it.each(['group', 'topic'])('publishes every question, header and option description in a %s', async kind => {

@@ -1,5 +1,11 @@
 import { transcriptFileRefSchema } from '@gugu/session-core/acp/client'
 import type { SettlementQuestion } from '@gugu/session-core/session-record/contract'
+import { parseQuestionAnswers, questionAnswerError } from '@gugu/session-core/session-record/question-answer'
+
+export type QuestionCardResult =
+  | { state: 'answered'; answers: NonNullable<ReturnType<typeof parseQuestionAnswers>> }
+  | { state: 'withdrawn' | 'discuss' }
+export type QuestionCardSettlement = QuestionCardResult & { at: string }
 
 /**
  * The cards a person's composer drops into a chat (gugu-dev#181「派任务」): a `content_type='card'` message whose
@@ -45,8 +51,8 @@ export interface ScheduleCard {
 
 /**
  * 「需要你」(gugu-dev#181 ⑨): a question an agent asks its owner, posted by the agent into the group the turn came from,
- * quoting the message it answers. Whether it is still waiting, and what was answered, is read from the session's
- * settlement — never from this message, which nobody edits after it is sent.
+ * quoting the message it answers. Its owner answers through the host settlement; the host then publishes the terminal
+ * result on this original message so every reader sees the same outcome, including after reconnecting.
  */
 export interface QuestionCard {
   v: 1
@@ -55,8 +61,10 @@ export interface QuestionCard {
   text: string
   /** The choices, when one pick answers it (one question, single choice); otherwise empty and it is answered in the session. */
   options: string[]
-  /** All public questions. Missing on older cards; private answers still come only from the owner's host. */
+  /** All public questions. Missing on older cards. */
   questions?: readonly SettlementQuestion[]
+  /** The owner's host confirmed this terminal result on the original message. */
+  settled?: QuestionCardSettlement
   /** The person asked (the agent's owner): only their reply answers it. */
   ownerUserId: string
   /** The settlement's item id in that session. */
@@ -104,13 +112,22 @@ export function parseComposerCard(content: string | null | undefined): ComposerC
   }
   if (card.type === 'question' && Array.isArray(card.options) && card.options.every(isText) && isText(card.ownerUserId)
     && isText(card.questionId) && isText(card.sessionId) && isText(card.projectId)) {
+    const clean = { ...card }
     if (card.questions !== undefined && !isQuestions(card.questions)) {
-      const { questions: _invalid, ...legacy } = card
-      return legacy as unknown as QuestionCard
+      delete clean.questions
     }
-    return card as unknown as QuestionCard
+    const settled = card.settled
+    if (settled !== undefined && (!isQuestionCardSettlement(settled)
+      || (settled.state === 'answered' && isQuestions(clean.questions) && questionAnswerError(clean.questions, settled.answers)))) delete clean.settled
+    return clean as unknown as QuestionCard
   }
   return null
+}
+
+export function isQuestionCardSettlement(value: unknown): value is QuestionCardSettlement {
+  if (!isObject(value) || !isText(value.at)) return false
+  if (value.state === 'answered') return Boolean(parseQuestionAnswers(value.answers)?.length)
+  return (value.state === 'withdrawn' || value.state === 'discuss') && value.answers === undefined
 }
 
 /**

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PendingRequest } from '@gugu/session-core/session-record';
-import { readAgentQuestionRecords, rememberAgentQuestion, settleAgentQuestionRecord } from './agent-question-store';
+import { allAgentQuestionRecords, markPublicQuestionCardSynced, readAgentQuestionRecords, rememberAgentQuestion, rememberPublicQuestionCard, settleAgentQuestionRecord } from './agent-question-store';
 import { restoredAgentQuestion } from './agent-question-delivery';
 import { log } from '@main/lib/logger';
 
@@ -69,6 +69,16 @@ describe('durable agent question state, independent of transcript archives', () 
     expect(restoredAgentQuestion(readAgentQuestionRecords('session-1')[0])).toMatchObject({
       request: { canDiscuss: true }, answerMessageId: '22222222-2222-4222-8222-222222222222', answer: { optionId: 'discuss' },
     });
+  });
+  it('keeps the public destination across answer-before-post and restart, then marks only the synchronized card', () => {
+    rememberAgentQuestion('session-1', question());
+    settleAgentQuestionRecord('session-1', id, { state: 'resolved', optionId: '[{"selected":["PATH"]}]', by: 'owner' });
+    const card = { chatId: 'room', messageId: 'message', ownerUserId: 'owner' };
+    rememberPublicQuestionCard('session-1', id, card);
+    expect(allAgentQuestionRecords()).toMatchObject([{ sessionId: 'session-1', item: { state: 'resolved', origin: { payload: { publicCard: card } } } }]);
+    expect(restoredAgentQuestion(readAgentQuestionRecords('session-1')[0])?.request.origin?.payload).toMatchObject({ publicCard: card });
+    markPublicQuestionCardSynced('session-1', id);
+    expect(readAgentQuestionRecords('session-1')[0].origin?.payload).toMatchObject({ publicCard: { ...card,synced: true } });
   });
   it('fails publication when it cannot commit and refuses corrupt stored state instead of showing empty', () => {
     writeFileSync(join(root, 'agent-questions'), 'blocking-file');

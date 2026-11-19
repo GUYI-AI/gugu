@@ -2,13 +2,14 @@ import { questionAnswerError, type PendingRequest, type Settlement } from '@gugu
 import { parseConversationLink } from '@gugu/core/shared/ui/guguLink';
 import { log } from '@main/lib/logger';
 import type { AskAnswer } from '../asks';
+import { publicQuestionCard, type PublicQuestionCard } from './agent-question-model';
 
 type Question = PendingRequest & { origin: NonNullable<PendingRequest['origin']> };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The archive owns the question and stable outbox id, rather than a process-local callback. */
-export function questionDeliveryPayload(sourceLink: string | undefined, answerMessageId: string) {
-  return { sourceLink: sourceLink ?? null, answerMessageId, deliveryVersion: 1 };
+export function questionDeliveryPayload(sourceLink: string | undefined, answerMessageId: string, publicCard?: PublicQuestionCard) {
+  return { sourceLink: sourceLink ?? null, answerMessageId, deliveryVersion: 1, ...(publicCard ? { publicCard } : {}) };
 }
 
 export function restoredAgentQuestion(settlement: Settlement): { request: Question; answerMessageId: string; answer?: AskAnswer } | null {
@@ -28,7 +29,7 @@ export function restoredAgentQuestion(settlement: Settlement): { request: Questi
     skippable: true, canDiscuss: true,
     questions: settlement.questions, options: settlement.options ?? settlement.questions[0].options,
     ...(settlement.askedAt !== undefined ? { askedAt: settlement.askedAt } : {}),
-    origin: { source: 'agent-question', payload: questionDeliveryPayload(typeof data.sourceLink === 'string' ? data.sourceLink : undefined, answerMessageId) } };
+    origin: { source: 'agent-question', payload: questionDeliveryPayload(typeof data.sourceLink === 'string' ? data.sourceLink : undefined, answerMessageId,publicQuestionCard(payload)) } };
   if (settlement.state === 'pending') return { request, answerMessageId };
   if (settlement.optionId === 'discuss') return { request, answerMessageId, answer: { optionId: 'discuss', by: settlement.resolvedBy ?? 'owner' } };
   if (!settlement.optionId) return null;

@@ -256,6 +256,8 @@ import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow }
 import { assistantHomeKind } from '@gugu/core/shared/assistantPolicy'
 import { landTaskCardFirstTurn } from './sessionpage/task-card-first-turn'
 import { withQuestionCard } from './sessionpage/question-card'
+import { createQuestionCardSync } from './sessionpage/question-card-sync'
+import { allAgentQuestionRecords, markPublicQuestionCardSynced, onAgentQuestionRecordsChanged, rememberPublicQuestionCard } from './session/main/core/sessions/agent-question-store'
 import {
   emdashAgentRegistry,
   type LocalSessionPeer,
@@ -853,6 +855,22 @@ function desktopAuthProvider(): RuntimeAuthProvider {
 }
 bindElectronSupabaseAuth(async (forceRefresh) =>
   (await desktopAuthProvider().getAuth({ forceRefresh }))?.accessToken ?? null)
+const questionCardSync = createQuestionCardSync({
+  auth: () => desktopAuthProvider().getAuth(), records: allAgentQuestionRecords,
+  publish: async (auth,messageId,result) => {
+    const { data,error } = await makeChatClient(auth.accessToken).rpc('settle_agent_question_card', {
+      p_message_id: messageId,p_state: result.state,p_answers: 'answers' in result ? result.answers : null,
+    });
+    if (error) throw new Error(`Question card update failed: ${error.message}`);
+    return data;
+  },
+  committed: record => markPublicQuestionCardSynced(record.sessionId,record.item.itemId),
+  failed: error => createLogger('question-card/sync').warn({ error: String(error) },'Question card result is waiting to synchronize'),
+})
+onAgentQuestionRecordsChanged(() => { void questionCardSync.wake() })
+onElectronCloudAnswer(questionCardSync.cloudAnswered)
+void app.whenReady().then(() => questionCardSync.wake())
+app.once('will-quit', questionCardSync.stop)
 let primaryGuguMcpHost: DesktopGuguMcpHost | null = null
 
 function hasPersistedMcpGrants(name: string): boolean {
@@ -2694,6 +2712,7 @@ const externalImport = SERVER_MODE ? null : registerExternalImportIpc({
 })
 
 function onHumanAuthSessionChanged(): void {
+  void questionCardSync.wake()
   externalImport?.ownerChanged()
   resumeDeclaredUploads()
   projectionDeviceRuntime.invalidate()
@@ -5034,7 +5053,8 @@ app.whenReady().then(async () => {
       // gugu-dev#181 ⑨ 问自群里的那一句,问题卡也进那个群(question-card.ts)。
       if (record.action === 'ask_user') {
         const asked = await emdash.runSessionAction(context, record as SessionAction, signal)
-        return withQuestionCard({ auth, caller: await remoteCaller(auth, context), projectId: context.projectId, asked, questions: record.questions })
+        return withQuestionCard({ auth, caller: await remoteCaller(auth, context), projectId: context.projectId, asked, questions: record.questions,
+          onPosting: (questionId,card) => rememberPublicQuestionCard(context.sessionId,questionId,card) })
       }
       // #7199 第二步:列我的设备与它们的动作 / 调某台设备的某个动作(`device` 是目标,❌ 当成「在那台机器上做」转发)。
       if (record.action === 'device_actions') {

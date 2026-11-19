@@ -77,6 +77,18 @@ describe('question card (gugu-dev#181 ⑨)', () => {
     expect(parseComposerCard(serializeComposerCard(question))).toEqual(question)
   })
 
+  test('round-trips the confirmed original-card result including explicit skips and rejects invalid answers', () => {
+    const complete: QuestionCard = { ...question, questions, settled: { state: 'answered', at: '2026-11-19T14:00:00Z',
+      answers: [{ selected: ['chat'] }, { selected: [], skipped: true }, { selected: [], other: 'Keep the wording' }] } }
+    expect(parseComposerCard(serializeComposerCard(complete))).toEqual(complete)
+    expect(parseComposerCard(JSON.stringify({ ...complete, settled: { ...complete.settled, answers: [{ selected: ['unknown'] }] } })))
+      .toEqual({ ...question, questions })
+    for (const settled of [null, {}, { state: 'pending', at: 'now' }, { state: 'answered', at: 'now', answers: [] },
+      { state: 'discuss', at: 'now', answers: [] }, { state: 'answered', at: 'now', answers: [{ selected: [], skipped: false }] }]) {
+      expect(parseComposerCard(JSON.stringify({ ...question, settled }))).toEqual(question)
+    }
+  })
+
   test.each([null, {}, [], [null], [{ ...questions[0], question: '' }], [{ ...questions[0], multiSelect: 'yes' }],
     [{ ...questions[0], header: 1 }], [{ ...questions[0], options: null }], [{ ...questions[0], options: [null] }],
     [{ ...questions[0], options: [{ optionId: 'a', name: 'A', description: 1 }] }],
