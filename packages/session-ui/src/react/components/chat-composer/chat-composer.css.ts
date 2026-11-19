@@ -1703,10 +1703,10 @@ export const modelPanelItemCompact = style({
 // 单行之后 logo 跟名字同一条中线,`composerPanelItemIcon` 那 3px 下压只属于两段式的行。
 globalStyle(`${modelPanelItemCompact} [data-slot="composer-model-icon"]`, { marginTop: 0 });
 
-/** 名字占满中间;超长名字截成省略号。 */
+/** 名字只占自己的宽度,标签(`modelPanelItemTag`)紧跟其后;超长名字截成省略号。 */
 export const modelPanelItemName = style([
   composerPanelItemName,
-  { flex: '1 1 auto', minWidth: 0 },
+  { flex: '0 1 auto', minWidth: 0 },
 ]);
 
 /** The vendor tag after a person's own model (`ComposerModelOption.tag`): 10px on a light grey, darker on the row in focus. */
