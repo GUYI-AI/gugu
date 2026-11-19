@@ -63,9 +63,8 @@ export class FileReadRevokedError extends Error {
 }
 /** How long an agent's read waits for bytes their sender is still uploading before saying so. */
 export const ATTACHMENT_PENDING_WAIT_MS = 8_000
-/** A declared attachment whose sender is still uploading its bytes, past the reader's wait: said with the file's name. */
-/** The holder's device was refused a relay copy (read-contract §2.8): the server names why, the reader does not guess. */
 const RELAY_QUOTA_FULL = new Set(['account_storage_full', 'group_storage_full', 'global_storage_full'])
+/** The holder's device was refused a relay copy (read-contract §2.8): the server names why, the reader does not guess. */
 export function relayRefusedError(failureCode: unknown) {
   const quota = typeof failureCode === 'string' && RELAY_QUOTA_FULL.has(failureCode)
   return Object.assign(new Error(quota
@@ -74,6 +73,7 @@ export function relayRefusedError(failureCode: unknown) {
   { code: quota ? 'quota_full' : 'upload_failed' })
 }
 
+/** A declared attachment whose sender is still uploading its bytes, past the reader's wait: said with the file's name. */
 export class AttachmentUploadPendingError extends Error {
   readonly code = 'upload_pending'
   constructor(fileName: string) { super(`${fileName}：发送方仍在上传，稍后用 message_download_file 再读`) }
