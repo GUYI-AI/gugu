@@ -129,6 +129,8 @@ export default {
     "models": "模型"
   },
   "issue": {
+    "tooLargeSummary_other": "{{count}} 个文件太大，未导入",
+    "skippedSummary_other": "{{count}} 个文件未导入",
     "symlink": "符号链接，未导入",
     "tooLarge": "文件太大，未导入",
     "sourceChanged": "来源已更新，请重试",
