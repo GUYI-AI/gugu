@@ -9,6 +9,7 @@ import { CommandShortcutBinder } from '../../../../apps/desktop/src/session/rend
 import { commandRegistry } from '../../../../apps/desktop/src/session/renderer/lib/commands/registry'
 import { ImagePreviewProvider } from '../../../../apps/desktop/src/components/ImagePreviewProvider'
 import { openImageViewer } from '../../../../apps/desktop/src/lib/imageViewer'
+import type { FileReadState } from '@gugu/core/shared/fileReads'
 import { isSheetOpen } from '../../../../apps/desktop/src/components/ui/sheetStack'
 import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
 import { Dialog } from '../../../../apps/desktop/src/components/ui/Dialog'
@@ -330,6 +331,29 @@ describe('ImagePreviewProvider', () => {
     await waitForCondition(() => toast.mock.calls.length > 0, 'file error was not reported')
     expect(full).toHaveBeenCalledTimes(1)
     expect(document.querySelector('.pswp__error-msg')).not.toBeNull()
+  })
+
+  it('says how far the original is while it is read, and nothing once it has arrived', async () => {
+    let report!: (state: FileReadState) => void, showOriginal!: (url: string) => void
+    const original = new Promise<string>(resolve => { showOriginal = resolve })
+    const full = vi.fn((onState?: (state: FileReadState) => void) => { report = onState!; return original })
+    await openViewer({ images: [{ url: 'blob:thumbnail', alt: 'large', full, size: { width: 2560, height: 3241 } }] })
+    await waitForCondition(() => full.mock.calls.length === 1, 'the original never started')
+    await act(async () => report({ status: 'transferring', route: 'oss', done: 524_288, total: 1_048_576 }))
+    const reading = byTestId(AUTOMATION_TEST_IDS.imagePreviewReading)
+    expect(reading?.textContent).toBe('正在从 OSS 读取 · 512.0 KB / 1.0 MB')
+    expect(reading?.querySelector('progress')?.value).toBe(0.5)
+    await act(async () => showOriginal('blob:original'))
+    await waitForCondition(() => byTestId(AUTOMATION_TEST_IDS.imagePreviewReading) === null, 'the reading line stayed after the original arrived')
+  })
+
+  it('a slide kept on its thumbnail says why its original did not come', async () => {
+    const full = vi.fn(async () => { throw new Error('gone') }), toast = vi.fn()
+    await openViewer({ toast, images: [{ url: 'blob:thumbnail', alt: 'deleted', full }] })
+    await waitForCondition(() => toast.mock.calls.length > 0, 'the failed original was not reported')
+    expect(toast).toHaveBeenCalledWith('图片加载失败', 'error', '这个文件已删除，或者你已没有读取权限。')
+    expect(byTestId(AUTOMATION_TEST_IDS.imagePreviewReading)).toBeNull()
+    expect(document.querySelector('img.pswp__img[src="blob:thumbnail"]')).not.toBeNull()
   })
 
   it('closing while the thumbnail is pending never loads the original or reopens the viewer', async () => {

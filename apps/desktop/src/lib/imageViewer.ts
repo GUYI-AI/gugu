@@ -5,6 +5,7 @@ import type { ResourceContext } from '@/session/shared/resource-actions'
 import type { TabOpenIntent } from '@/session/shared/view-state'
 import { savedFileName } from '@/session/shared/extensions/app-runtime-protocol'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
+import type { FileReadState } from '@gugu/core/shared/fileReads'
 
 /**
  * A file the person opens (a click, a link, an App page's `files.openWith`) that no App claims opens here when it is an
@@ -33,8 +34,11 @@ export interface ImageViewerItem {
    * opened from and closed back to as `thumb` is, drawn cropped to fill it (object-fit: cover).
    */
   thumbRect?: { x: number; y: number; width: number; height: number }
-  /** 气泡里画的是缩略图时:取原图(object URL)。查看器先用 url 打开,翻到这一张再换成原图。 */
-  full?: () => Promise<string>
+  /**
+   * 气泡里画的是缩略图时:取原图(object URL)。查看器先用 url 打开,翻到这一张再换成原图。
+   * `onState` follows that read (waiting, bytes, verifying), so the viewer says how far the original is.
+   */
+  full?: (onState?: (state: FileReadState) => void) => Promise<string>
   /** 原图的像素尺寸,取自文件记录。查看器从打开到关闭都按它排版:缩略图、原图只是画进同一个框的像素。 */
   size?: Size
   /** File previews keep their existing citation producer when opening the shared image viewer. */
@@ -43,7 +47,7 @@ export interface ImageViewerItem {
 
 /** 缩略图 <img> → 取它原图的办法(附件进群文件夹 ③:气泡用 CDN 缩略图,原图到看的时候才下)。 */
 const fullImageLoaders = new WeakMap<HTMLImageElement, Pick<ImageViewerItem, 'full' | 'resource' | 'file' | 'source' | 'size'>>()
-export function registerFullImage(thumb: HTMLImageElement, load: () => Promise<string>, resource?: ResourceContext, file?: ImageViewerItem['file'], source?: ImageViewerItem['source'], size?: Size): () => void {
+export function registerFullImage(thumb: HTMLImageElement, load: NonNullable<ImageViewerItem['full']>, resource?: ResourceContext, file?: ImageViewerItem['file'], source?: ImageViewerItem['source'], size?: Size): () => void {
   const entry = { full: load, resource, file, ...(source ? { source } : {}), ...(size ? { size } : {}) }
   fullImageLoaders.set(thumb, entry)
   return () => {

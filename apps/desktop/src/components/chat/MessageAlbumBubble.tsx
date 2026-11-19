@@ -4,7 +4,7 @@ import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { parseAttachmentContent, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
-import { attachmentBytes, sourceKeyOf, useAttachmentObjectUrl } from '../../lib/attachmentBytes'
+import { originalImage, sourceKeyOf, useAttachmentObjectUrl } from '../../lib/attachmentBytes'
 import { openImageFromThumb, registerFullImage } from '../../lib/imageViewer'
 import { sentFileCopy } from '../../lib/sentFileCopies'
 import { Markdown } from '../markdown/Markdown'
@@ -89,16 +89,13 @@ function AlbumTile({ part: { member, meta }, chatId, style }: { part: Part; chat
   // The viewer opens on the thumbnail and swaps in the original when it reaches this image (same as one image).
   useEffect(() => {
     if (!ready || !img.current || meta.source.kind === 'url') return
-    let full: Promise<string> | null = null
-    const unregister = registerFullImage(img.current, () => (full ??= attachmentBytes(meta.source, 'full').then((bytes) => {
-      if (bytes.status !== 'ready') throw new Error('attachment is gone')
-      return URL.createObjectURL(bytes.blob)
-    })), meta.source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: meta.source.itemId, version: meta.source.version } } : undefined,
+    const original = originalImage(meta.source)
+    const unregister = registerFullImage(img.current, original.full, meta.source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: meta.source.itemId, version: meta.source.version } } : undefined,
     { name: meta.fileName, contentType: meta.mimeType }, { chatId, messageId: member.id },
     size?.width && size.height ? { width: size.width, height: size.height } : undefined)
     return () => {
       unregister()
-      void full?.then((url) => URL.revokeObjectURL(url), () => undefined)
+      original.release()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sourceKey 就是 meta.source 的身份
   }, [ready, sourceKey, meta.fileName, meta.mimeType, chatId, member.id, size?.width, size?.height])

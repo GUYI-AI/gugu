@@ -92,6 +92,37 @@
   bottom: calc(env(safe-area-inset-bottom) + 16px);
 }
 
+/* 原图还在读:读到哪了(等发送方、已读字节、校验),和文件预览同一套文案;在页码上面一行 */
+.gg-image-viewer__reading {
+  position: absolute;
+  left: 50%;
+  bottom: 52px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: min(420px, calc(100% - 32px));
+  padding: 6px 12px;
+  border-radius: var(--radius-capsule);
+  background: var(--gg-viewer-control-bg);
+  color: color-mix(in oklab, var(--color-white) 90%, transparent);
+  font-size: var(--font-body);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  user-select: none;
+  pointer-events: none;
+}
+
+.gg-image-viewer__reading .gg-progress {
+  width: 180px;
+  margin-top: 0;
+}
+
+.gg-image-viewer__chrome[data-mobile] .gg-image-viewer__reading {
+  bottom: calc(env(safe-area-inset-bottom) + 48px);
+}
+
 /* PhotoSwipe 自带的加载圈住在顶栏、默认贴左:挪到正中,且不挡手势 */
 .pswp.gg-image-viewer .pswp__top-bar {
   inset: 0;

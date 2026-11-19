@@ -243,27 +243,53 @@ function decodedImage(url: string): Promise<void> {
   return image.decode().catch(() => undefined) // An undecodable image still shows what the <img> itself makes of it.
 }
 
+/**
+ * A chat image's verified original for the shared viewer (`ImageViewerItem.full`), read once for the viewer, its download
+ * and copy. Every caller follows the same read's state; a failed read is dropped, so the next look reads again.
+ */
+export function originalImage(source: AttachmentSource, options: { signal?: AbortSignal; onLink?: (link: FileRevision) => void } = {}): { full: NonNullable<ImageViewerItem['full']>; release: () => void } {
+  let url: Promise<string> | undefined, shown: string | undefined, last: FileReadState | undefined, released = false
+  const listeners = new Set<(state: FileReadState) => void>()
+  const onState = (state: FileReadState) => { last = state; listeners.forEach((listener) => listener(state)) }
+  const full = (listener?: (state: FileReadState) => void): Promise<string> => {
+    if (listener) { listeners.add(listener); if (last) listener(last) }
+    const read = url ??= attachmentBytes(source, 'full', options.onLink, undefined, { signal: options.signal, onState }).then((bytes) => {
+      if (bytes.status !== 'ready') throw new Error(bytes.status)
+      const objectUrl = URL.createObjectURL(bytes.blob)
+      if (released) URL.revokeObjectURL(objectUrl); else shown = objectUrl
+      return objectUrl
+    })
+    read.catch(() => { if (url === read) { url = undefined; last = undefined } })
+    return listener ? read.finally(() => listeners.delete(listener)) : read
+  }
+  return { full, release: () => { released = true; if (shown) URL.revokeObjectURL(shown); shown = undefined } }
+}
+
 /** One file in the shared viewer: the bubble's thumbnail cache first, then the verified original, each read when shown. */
 function attachmentImageItem(source: AttachmentSource, fileName: string, origin?: ImageViewerItem['source']): ImageViewerItem {
   const file: NonNullable<ImageViewerItem['file']> = { name: fileName }
   const urls: string[] = []
-  let released = false, preview: Promise<string> | undefined, full: Promise<string> | undefined
+  let released = false, preview: Promise<string> | undefined
   const controller = new AbortController()
-  const read = async (variant: AttachmentVariant) => {
-    const bytes = await (variant === 'thumb' ? sessionThumb(source) : attachmentBytes(source, 'full', undefined, undefined, { signal: controller.signal }))
-    if (bytes.status !== 'ready') throw new Error(bytes.status)
-    file.contentType = bytes.link.content_type
-    // The record's size reaches the viewer with the first pixels, so the thumbnail is laid out as the original.
-    const { width, height } = bytes.link
+  // The record's size reaches the viewer with the first pixels, so the thumbnail is laid out as the original.
+  const learn = (link: FileRevision) => {
+    file.contentType = link.content_type
+    const { width, height } = link
     if (!item.size && width && height) item.size = { width, height }
+  }
+  const original = originalImage(source, { signal: controller.signal, onLink: learn })
+  const thumb = async () => {
+    const bytes = await sessionThumb(source)
+    if (bytes.status !== 'ready') throw new Error(bytes.status)
+    learn(bytes.link)
     const url = URL.createObjectURL(bytes.blob)
     if (released) URL.revokeObjectURL(url); else urls.push(url)
     return url
   }
   const item: ImageViewerItem = {
     url: '', alt: fileName, file, source: origin,
-    preview: () => preview ??= read('thumb'), full: () => full ??= read('full'),
-    release: () => { released = true; controller.abort(); urls.splice(0).forEach(url => URL.revokeObjectURL(url)) },
+    preview: () => preview ??= thumb(), full: original.full,
+    release: () => { released = true; controller.abort(); urls.splice(0).forEach(url => URL.revokeObjectURL(url)); original.release() },
     resource: source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: source.itemId, version: source.version } } : undefined,
   }
   return item

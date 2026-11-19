@@ -17,6 +17,7 @@ import { FileReadRevokedError } from '@gugu/core/shared/fileResolver'
 import { rendererLogger } from '../../lib/log'
 import { holderOfflineText, offlineHolder, useHolderBack } from '../../lib/fileHost'
 import { messageForUser } from '../../lib/userFacingError'
+import { fileReadFailure, fileReadProgress, type ReadProgress } from '../../lib/fileReadStatus'
 import { useToast } from '../toastContext'
 import { MessageFilePreviewPanel } from './MessageFilePreviewPanel'
 import { classifyDocumentPreview, documentPreviewNeedsFetch, type DocumentPreviewKind } from './documentPreview'
@@ -90,22 +91,7 @@ type PreviewRead = { content: string | ArrayBuffer | null; binary?: boolean; ack
 class OfflinePreviewRead extends Error {
   constructor(readonly holder: NonNullable<Awaited<ReturnType<typeof offlineHolder>>>, cause: unknown) { super(holderOfflineText(holder), { cause }) }
 }
-function previewFailure(error: unknown, t: TFunction<'messaging'>): PreviewRead {
-  if (error instanceof FileReadError && error.cause instanceof FileReadRevokedError) return previewFailure(error.cause, t)
-  if (error instanceof FileReadRevokedError && (error.reason === 'access' || error.reason === 'revision') || error instanceof FileReadError && error.code === 'access_revoked') {
-    return { content: null, errorStatus: 'failed', error: t(error instanceof FileReadRevokedError && error.reason === 'revision' ? 'attachmentView.fileUpdated' : 'attachmentView.fileNoAccess') }
-  }
-  if (error instanceof FileReadError && error.code === 'holder_offline') return { content: null, errorStatus: 'failed', error: messageForUser(error) }
-  if (error instanceof FileReadError && error.code === 'transfer_disabled') return { content: null, errorStatus: 'failed', error: t('attachmentView.fileTransferDisabled') }
-  if (error instanceof FileReadError && error.code === 'upload_failed' || error instanceof Error && error.message === 'unsent') {
-    return { content: null, errorStatus: 'failed', error: t('attachmentView.senderUploadFailed') }
-  }
-  const statusOrMessage = error instanceof FileReadError ? error.code : error instanceof Error ? error.message : undefined
-  const errorStatus = statusOrMessage === 'gone' || statusOrMessage === 'expired' || statusOrMessage === 'missing' ? statusOrMessage : 'failed'
-  const status = (error as { status?: number } | null)?.status
-  const retryable = errorStatus === 'failed' && (error instanceof FileReadError ? error.code === 'interrupted' || error.code === 'integrity_failed' : !(status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 429))
-  return { content: null, errorStatus, retryable, error: t(errorStatus === 'gone' ? 'attachmentView.fileGone' : errorStatus === 'expired' ? 'attachmentView.fileExpired' : errorStatus === 'missing' ? 'attachmentView.fileMissing' : 'attachmentView.fileUnavailable') }
-}
+const previewFailure = (error: unknown, t: TFunction<'messaging'>): PreviewRead => ({ content: null, ...fileReadFailure(error, t) })
 async function readPreview(file: PreviewFile | HostedPreviewFile, kind: DocumentPreviewKind, options: NonNullable<Parameters<typeof previewBytes>[1]>): Promise<PreviewRead> {
   // A video read whole from here (a working copy, or a file this device sent this run) plays from its own bytes.
   const whole = documentPreviewNeedsFetch(kind) ? null : file.source.kind === 'hosted' ? await file.source.read() : file.document ? null : sentFileCopy(file.source)
@@ -135,31 +121,6 @@ async function readPreview(file: PreviewFile | HostedPreviewFile, kind: Document
   // like any video this preview cannot play.
   if (kind === 'text' && await isMpegTsVideo(file.fileName, blob)) return { content: null, binary: true, acknowledged }
   return { content: kind === 'text' || kind === 'markdown' || kind === 'html' ? await blob.text() : await blob.arrayBuffer(), acknowledged }
-}
-
-type ReadProgress = { label: string; fraction?: number }
-function fileReadProgress(t: TFunction<'messaging'>, update: (next: ReadProgress) => void) {
-  let waitingSince: number | undefined, fraction: number | undefined
-  return (state: FileReadState) => {
-    if (state.status === 'waiting_sender') {
-      waitingSince ??= performance.now()
-      const seconds = Math.floor((performance.now() - waitingSince) / 1_000)
-      const device = state.holder?.label?.trim()
-      const label = device ? t('attachmentView.waitingForDevice', { device }) : t('attachmentView.senderUploading')
-      update({ label: seconds ? t('attachmentView.waitedForUpload', { label, seconds }) : label })
-    } else if (state.status === 'transferring') {
-      const label = t(state.route === 'local' ? 'attachmentView.readFromDevice' : state.route === 'ssh' ? 'attachmentView.readOverSsh' : 'attachmentView.readFromOss')
-      if (state.done === undefined || state.total === undefined || state.total <= 0) {
-        fraction = undefined
-        update({ label })
-        return
-      }
-      fraction = Math.min(1, state.done / state.total)
-      update({ label: t('attachmentView.bytesRead', { label, done: formatAttachmentSize(state.done), total: formatAttachmentSize(state.total) }), fraction })
-    } else if (state.status === 'verifying') {
-      update({ label: t('attachmentView.verifyingFile'), fraction })
-    }
-  }
 }
 
 /** The host's preview wherever a file opens: messages, the chat's folder and an App's peek. */

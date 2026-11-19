@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { queryClient as attachmentQueryClient } from '@/lib/replica'
-import { openAttachmentImage, openAttachmentImages } from '@/lib/attachmentBytes'
+import { openAttachmentImage, openAttachmentImages, originalImage } from '@/lib/attachmentBytes'
+import { FileReadError, type FileReadState } from '@gugu/core/shared/fileReads'
 import { registerImageViewerHost, type ImageViewerRequest } from '@/lib/imageViewer'
 // The replica reads for the signed-in account, as the product publishes it.
 ;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'owner')
@@ -79,4 +80,28 @@ it('does not hold the viewer back for a thumbnail that is slow to come', async (
   io.resolve.mockReturnValue(new Promise(() => {}))
   await openAttachmentImages([{ itemId: 'a', version: 1, name: 'a.png', contentType: 'image/png' }], 0, undefined, { x: 0, y: 0, width: 10, height: 10 })
   expect(request.items[0]).toMatchObject({ url: '', thumbRect: { width: 10 } })
+})
+
+it('one original read for every caller, each hearing its states; a failed read is read again on the next look', async () => {
+  let report!: (state: FileReadState) => void
+  io.request.mockImplementationOnce(async (_ref, _reader, _options, onState) => {
+    report = onState
+    onState({ status: 'transferring', route: 'oss', done: 1, total: 4 })
+    await Promise.resolve()
+    throw new FileReadError('interrupted', 'connection reset')
+  })
+  const original = originalImage(source)
+  const first: FileReadState[] = [], second: FileReadState[] = []
+  const a = original.full(state => first.push(state)), b = original.full(state => second.push(state))
+  await expect(a).rejects.toThrow('connection reset')
+  await expect(b).rejects.toThrow('connection reset')
+  expect(io.request).toHaveBeenCalledTimes(1)
+  expect(first).toEqual([{ status: 'transferring', route: 'oss', done: 1, total: 4 }])
+  expect(second).toEqual(first)
+  report({ status: 'verifying' })
+  expect(first).toHaveLength(1)
+  await expect(original.full()).resolves.toBe('blob:full')
+  expect(io.request).toHaveBeenCalledTimes(2)
+  original.release()
+  expect(io.revoke).toHaveBeenCalledWith('blob:full')
 })
