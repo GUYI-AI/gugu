@@ -7,7 +7,8 @@ import { AnnotationTray } from '../annotations/annotation-tray';
 import { annotationPrompt, sessionAnnotations } from '../annotations/session-annotations';
 import { annotationImageId, currentAnnotationImages, isAnnotationImage, prepareAnnotationImages } from '../annotations/annotation-images';
 import { useSessionInputNotice, type SessionInputNotice } from '../session-input-notice';
-import { sessionStartupFailureCopy } from '../session-input-failure-copy';
+import { isCodexStartupFailure, sessionStartupFailureCopy } from '../session-input-failure-copy';
+import { codexStartupKind, isCodexProviderStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
 import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
@@ -269,6 +270,7 @@ const ComposerForStore = observer(function ComposerForStore({
   onViewAttachment,
   onScrollToBottom,
   modelMenuRequest,
+  onModelMenuRequest,
   onMembershipLockChange,
 }: {
   store: AcpChatStore;
@@ -277,6 +279,7 @@ const ComposerForStore = observer(function ComposerForStore({
   contentOverlaySlot: HTMLElement | null;
   /** 面板要把模型菜单打开(「这个模型要会员」那一行上的「换模型」):每变一次开一次。 */
   modelMenuRequest: number;
+  onModelMenuRequest: () => void;
   /** 这条会话正在用的咕咕模型要开会员了(#7056):报给面板,由它挂那一行条件。null = 没有。 */
   onMembershipLockChange: (lock: { modelName: string } | null) => void;
   /** 点开一枚附件 chip 看里面是什么(#5269)。图片看图,文本看内容。 */
@@ -318,7 +321,7 @@ const ComposerForStore = observer(function ComposerForStore({
   const [inputFailure, setInputFailure] = useState<SessionInputNotice | null>(null);
   useSessionInputNotice(`session-settings:${store.sessionId}`, inputFailure && { ...inputFailure, attempt: inputFailure });
   const reportInputFailure = useCallback((title: string, diagnostic?: unknown, description?: string) => {
-    setInputFailure({ title, description: description ?? translate('taskError.settingFailedRetry'), diagnostic });
+    setInputFailure({ title, description: description ?? (isCodexStartupFailure(diagnostic) ? sessionStartupFailureCopy(diagnostic, translate) : translate('taskError.settingFailedRetry')), diagnostic });
   }, [translate]);
   const [sendHold, setSendHold] = useState<'waiting' | 'blocked' | null>(null);
   const sendingRef = useRef(false);
@@ -1082,7 +1085,7 @@ const ComposerForStore = observer(function ComposerForStore({
       try {
         const result = await requestSessionReload(reloadRequestFor(target, store.sessionId));
         if (!result.ok) {
-          reportInputFailure(translate('chat.modelSwitchFailedTitle', { target: target.label }), result.error ?? '');
+          reportInputFailure(translate('chat.modelSwitchFailedTitle', { target: target.label }), result.startupReason ? { startupReason: result.startupReason, message: result.error } : result.error ?? '');
           return;
         }
         setInputFailure(null);
@@ -1239,14 +1242,18 @@ const ComposerForStore = observer(function ComposerForStore({
         reportInputFailure(translate(
             pending.dimension === 'permission' ? 'chat.reloadConfirmTitlePermission' : 'chat.reloadConfirmTitleModel',
             { target: pending.label },
-          ), result.error ?? '');
+          ), result.startupReason ? { startupReason: result.startupReason, message: result.error } : result.error ?? '');
+        if (isCodexProviderStartupKind(result.startupReason ?? codexStartupKind(result.error))) {
+          setPendingReload(null);
+          onModelMenuRequest();
+        }
       }
     } finally {
       setReloading(false);
       // Keep the target in the confirmation surface after a failed restart so it can be retried.
       if (succeeded) setPendingReload(null);
     }
-  }, [pendingReload, store, platformCatalog, reportInputFailure, translate]);
+  }, [pendingReload, store, platformCatalog, reportInputFailure, translate, onModelMenuRequest]);
 
   /**
    * `/mcp` —— **咕咕自己的**命令:拦下来开面板,**一个字都不发给 agent**。
@@ -1993,7 +2000,9 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           const reason = failureReason(error.message);
           const membership = reason !== null && guguReasonCopy(reason).action === 'join-membership';
           const text = reason ? failureText(error.message, translate, membership ? membershipLock?.modelName : null) : sessionStartupFailureCopy(error, translate);
-          if (!reason) return { code: 'start-failed', label: text, detail: text, actions: [retry] };
+          if (!reason) return { code: 'start-failed', label: text, detail: text, actions: isCodexProviderStartupKind(codexStartupKind(error))
+            ? [{ label: translate('taskError.codexChooseModel'), run: () => setModelMenuRequest((value) => value + 1) }]
+            : [retry] };
           return {
             code: membership ? 'membership-required' : 'start-failed',
             label: text,
@@ -2372,6 +2381,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           onViewAttachment={handleAttachmentView}
           onScrollToBottom={() => { store.closeHistoryWindow(); viewRef.current?.scrollToBottom({ behavior: 'smooth' }); }}
           modelMenuRequest={modelMenuRequest}
+          onModelMenuRequest={() => setModelMenuRequest((value) => value + 1)}
           onMembershipLockChange={setMembershipLock}
         />
       )}
