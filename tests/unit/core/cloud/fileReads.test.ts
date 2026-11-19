@@ -313,6 +313,24 @@ describe('a managed fetch admitted by its own signed download (contract §2.1 st
     await again.file.dispose()
   })
 
+  it('an item ref is pinned by the signer row; the recheck after the bytes asks for that pinned version, not the current one', async () => {
+    const h = await host()
+    // The projection is only a claim (an older version label with the same bytes); the signer row names version 3.
+    const stale = { status: 'ready' as const, revision: { ...revision, version: 2 } }
+    // After signing, the item moves on: an unpinned ref now resolves to version 4.
+    let moved = false
+    h.options.metadata = (actor, ref) => ({ ...revision, status: 'ready', actor, ref,
+      version: moved && !('version' in ref) ? 4 : 'version' in ref ? (ref as { version: number }).version : 3 })
+    const request = h.reads.request({ item_id: 'item' }, account, { purpose: 'bytes', admit: stale })
+    await h.started.promise
+    moved = true
+    h.bytes.release()
+    const { file } = await request.result
+    expect(file.revision).toMatchObject({ item_id: 'item', version: 3 })
+    expect(h.requests.map(row => [row.op, row.ref])).toEqual([['file-download', { item_id: 'item' }], ['file-resolve', { item_id: 'item', version: 3 }]])
+    expect(await fileBlob(file).then(blob => blob.arrayBuffer())).toEqual(body.buffer)
+  })
+
   it.each([
     ['gone', () => Response.json({ status: 'gone', sha256: null })],
     ['expired', () => Response.json({ status: 'expired', sha256: null })],
