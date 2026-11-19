@@ -17,6 +17,7 @@ export { passwordRequestPresentation } from '../session/main/core/sessions/passw
 export { serverTaskPrivateLogin } from '../session/main/core/extensions/task-page-host'
 export { archiveSession } from '../session/main/core/sessions/archiveSession'
 export { createDesktopAccountClosureHost } from '../session/main/core/desktop-account-closure'
+export { createDesktopAccountClosureV2Host } from '../session/main/core/desktop-account-closure-v2'
 // Session ids written as a prefix are matched against this machine's session list (main.ts localAddressRows).
 export { listSessions as listLocalSessions } from '../session/main/core/session-timeline/service'
 export { appInbox } from '../session/main/core/extensions/app-inbox'

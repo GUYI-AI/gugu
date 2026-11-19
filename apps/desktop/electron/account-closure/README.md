@@ -1,6 +1,6 @@
 # Desktop account-closure native custody
 
-Refs #2776 and #2777. This module adds no Settings entry and sends no account-deletion HTTP request. The shared request composition must call local erase only after the server authoritatively reports `deleted`.
+Refs #2776 and #2777. This module adds no Settings entry. The independent V2 native receiver sends only fixed V2 HTTP requests and permits scoped local erase only after a trusted original-operation result reports `deleted`. The older local-only receipt interface remains available to its existing callers; V2 does not use it to transport cloud capabilities.
 
 The renderer uses the existing `AccountClosureNative` interface. A dedicated main-frame-only IPC accepts a bounded account/opaque-operation scope, not a path, a secret-store key, or a claim that native preparation succeeded. Native receipt capture requires the current main-process account. Subsequent access requires that captured context and the same account or a signed-out main. An unknown native identity and another account both reject access.
 
@@ -21,3 +21,15 @@ Each named cleanup step is idempotent and checkpointed in the protected operatio
 Cleanup clears only the account's message cache, strictly attributed Agent credentials and roster rows, its native password-vault directory, its attributed diagnostic-log directories, and a matching native login mirror. A different login mirror rejects cleanup. Directory aliases reject removal. Password-vault sync and serialized writes must finish before its directory is removed. Log sinks move away and pending writes flush before their account directory is removed.
 
 Workspace files, device settings, provider credentials, mixed/unattributed session history, unattributed diagnostic logs and runtime records remain. The result reports only fixed item names, never identifiers, paths or values. Renderer auth publication, renderer caches, subscriptions, the return-to-login transition, the real server contract and end-to-end account deletion belong to the following common wiring/UI changes.
+
+## Independent V2 receiver
+
+`account-closure:v2` accepts only safe native commands, a bounded local handle and the confirmation code/forfeit intent. It never accepts a URL, bearer, receipt, original SID, server result, claimed preparation or deletion proof. The existing backend bundle supplies the canonical encrypted store. One atomic encrypted envelope holds each original account/SID, random capability, native generation, pending effect and local CAS revision. Safe snapshots are projected through a positive field list. A separate unexposed local cleanup scope holds only a non-authorizing marker, so the legacy public receipt getter cannot read a V2 capability.
+
+All active effects require the captured live owner/SID. The native identity barrier protects capture and intent/response checkpoints, not HTTP requests or runtime drains. A response arriving after B signs in cannot update A or clean B. Native generation, preparation server generation, local CAS revision and server operation revision are separate fields. Stale handles reject before effects.
+
+Interrupted register, challenge, preparation or confirmation keeps the original intent. Recovery sends only the original capability-authenticated result request, including after Auth deletion or policy closure. Cold startup/Auth changes use that same receiver. It never registers, resends, prepares or confirms on recovery. Confirm uncertainty remains until the original nonce and challenge generation have a trusted rejected confirmation, or the operation reaches an authoritative terminal state. A bare 422, open result, missing operation or absent preparation cannot release the seal.
+
+A cancellation ACK requires closed_before_confirm, operation.can_release_preparation=true, preparation.cancelled=true and the original native/server generations. An explicit unprepared cancellation may use the authoritative tombstone with server_generation=null; a missing operation itself grants nothing. Cancellation keeps work paused. Successful deletion runs the existing named, idempotent local cleanup checkpoints, retains the capability through local-complete, and removes it only after the shared renderer finalizes the original account. No model request, automatic destructive retry or V1 fallback is part of this module.
+
+Windows preparation deliberately rejects any remaining relevant process-tree ledger: checking a root PID is not evidence that its children exited. The actual owning stop must retire its own record. Windows native acceptance and real macOS keychain acceptance must be reported separately from mock-keychain functionality.

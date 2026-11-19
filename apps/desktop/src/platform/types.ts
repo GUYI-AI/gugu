@@ -1,3 +1,4 @@
+import type { AccountClosureV2Native } from './accountClosureV2'
 import type { AccountClosureNative } from './accountClosure'
 import type { LocalUsageRequest, LocalUsageSnapshot } from '@gugu/core/shared/usage/dailyUsage'
 import type { RendererCommandDomain } from '../lib/rendererCommandProtocol'
@@ -92,6 +93,7 @@ export type DeviceFreeCreditsStatus = 'granted' | 'already_claimed' | 'device_fu
 
 export interface AppPlatform {
   accountClosure: AccountClosureNative
+  accountClosureV2: AccountClosureV2Native
   kind: 'electron' | 'capacitor' | 'web'
   documentTitle: string
   textSelection?: NativeTextSelection
