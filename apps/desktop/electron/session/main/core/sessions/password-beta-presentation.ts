@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm'
+import type { PasswordGrantCandidate } from '@gugu/core/shared/passwordBetaProtocol'
 import { db } from '@main/db/client'
 import { legacyProjectAliases, sessions } from '@main/db/schema'
 import { boundTaskName, knownTaskName } from './task-name'
@@ -36,13 +37,12 @@ export function passwordGrantSubjects(ownerId: string, agentId: string, sessionI
   return [`agent:${agentId}`, `chat:${row.chatId}`, ...legacy]
 }
 
-export interface PasswordGrantCandidate { subject: string; name: string; kind: 'agent' }
 /**
- * Who the person can authorize on a credential: their bound task Agents. Presentation only.
- * @@@group-folders — local projects are gone; a group's name is not known on this machine, so groups are not offered
- * here (grants already given to a project keep working, see passwordGrantSubjects).
+ * Who the person can authorize on a credential: their bound task Agents and their groups (every task of a group,
+ * `chat:<id>`). Presentation only. @@@group-folders — the groups are the account's groups with a folder bound on one of
+ * its devices; their names are the account's (`groups`, my_chat_folders), not known on this machine alone.
  */
-export function passwordGrantCandidates(ownerId: string): PasswordGrantCandidate[] {
+export async function passwordGrantCandidates(ownerId: string, groups: () => Promise<Array<{ chatId: string; name: string; archived: boolean }>>): Promise<PasswordGrantCandidate[]> {
   const out = new Map<string, PasswordGrantCandidate>()
   for (const row of db.select({ id: sessions.id, runtime: sessions.runtime, archivedAt: sessions.archivedAt }).from(sessions).all()) {
     if (row.archivedAt || row.runtime !== 'acp') continue
@@ -51,5 +51,9 @@ export function passwordGrantCandidates(ownerId: string): PasswordGrantCandidate
     const subject = `agent:${bound.agentUserId}`
     if (!out.has(subject)) out.set(subject, { subject, kind: 'agent', name: readable(bound.name, '未命名 Agent') })
   }
-  return [...out.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+  const agents = [...out.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+  const list = (await groups()).filter(group => !group.archived)
+    .map(group => ({ subject: `chat:${group.chatId}`, kind: 'group' as const, name: readable(group.name, '未命名群') }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+  return [...list, ...agents]
 }

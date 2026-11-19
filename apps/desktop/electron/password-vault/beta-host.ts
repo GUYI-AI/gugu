@@ -1,4 +1,5 @@
 import { PASSWORD_SAVE_CARD_RPC } from '@gugu/core/shared/passwordCardCipher'
+import { listMyChatFolders } from '@gugu/core/cloud/chatFolders'
 import { passwordSaveCardHandler } from './save-card-host'
 import { PasswordSaveError } from './save-error'
 import { app, ipcMain, type BrowserWindow } from 'electron'
@@ -138,7 +139,8 @@ export async function closePasswordVaultForAccountClosure(ownerId: string): Prom
 }
 async function snapshot(value: Account): Promise<PasswordSnapshot> {
   let candidates: PasswordSnapshot['candidates'] = []
-  try { candidates = passwordGrantCandidates(value.ownerId) } catch { candidates = [] }
+  // @@@group-folders — the groups offered are the account's (my_chat_folders, the identity schema this host signs into).
+  try { candidates = await passwordGrantCandidates(value.ownerId, () => listMyChatFolders({ rpc: async (fn) => ({ data: await native!.rpc(fn, {}), error: null }) })) } catch { candidates = [] }
   return { items: await value.vault.list(person), approvals: [...value.login.pending(), ...value.remote.pending()], outcomes: [...value.login.outcomes(), ...value.saves.outcomes()], saves: value.saves.pending(), candidates, sync: value.sync.view() }
 }
 /** A dedicated native renderer IPC. Never uses generic action logging, transcript or device RPC. */
