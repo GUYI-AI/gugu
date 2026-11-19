@@ -20,7 +20,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => ({ rpcOn:
   mocks.statusListeners.push(entry)
   return () => { mocks.statusListeners.splice(mocks.statusListeners.indexOf(entry), 1) }
 } } }))
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ fetchSnapshot: vi.fn(), machineRpc: () => ({ sessionTimeline: mocks.sessionTimeline }), onLinkChange: () => () => {}, unsubscribeSession: (_d: string, id: string) => mocks.sessionTimeline.sessionUnsubscribe({ subscriptionId: id }) }))
+vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ fetchSnapshot: vi.fn(), machineRpc: () => ({ sessionTimeline: mocks.sessionTimeline }), onLinkChange: () => () => {}, unsubscribeSession: (_d: string, id: string) => mocks.sessionTimeline.sessionUnsubscribe({ subscriptionId: id }) }))
 vi.mock('../../../../apps/desktop/src/session/shared/core/session-timeline/sessionTimelineEvents', () => ({ sessionpageSessionTimelineChannel: { name: 'x' }, sessionpageSessionWindowStatusChannel: { name: 'status' } }))
 
 import { assistantTimelineClient } from '../../../../apps/desktop/src/components/assistant/assistantTimelineClient'

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { creationSkillsHostMethodMissing, creationSkillsHostTooOld, filterCreationSkills, loadCreationSkills } from '../../../apps/desktop/src/mobile/agent-watch/create-skills'
+import { creationSkillsHostMethodMissing, creationSkillsHostTooOld, filterCreationSkills, loadCreationSkills } from '../../../apps/desktop/src/components/session-watch/create-skills'
 
 describe('native creation skills', () => {
   it('requests the selected harness and actual project, without an App catalog', async () => {

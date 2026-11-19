@@ -17,7 +17,7 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({ useChatStore:
 vi.mock('../../../../apps/desktop/src/components/toastContext', () => ({ useToast: () => ({ toast: scope.toast }) }))
 vi.mock('react-i18next', async original => ({ ...await original<object>(), useTranslation: () => ({ t: (key: string) => key }) }))
 vi.mock('@/platform', () => ({ platform: { get kind() { return scope.kind } } }))
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', async () => ({ machineRpc: (device: string) => {
+vi.mock('@/components/session-watch/sessionpage-rpc', async () => ({ machineRpc: (device: string) => {
   scope.host(device)
   return { sessionTimeline: { sessionVisible: scope.visible } }
 } }))
@@ -36,7 +36,7 @@ let markRead: ReturnType<typeof useMarkChatsRead>
 function Reader() { markRead = useMarkChatsRead(); return null }
 beforeEach(async () => {
   await import('@/session/renderer/lib/ipc')
-  await import('@/mobile/agent-watch/sessionpage-rpc')
+  await import('@/components/session-watch/sessionpage-rpc')
   vi.clearAllMocks()
   scope.visible.mockReset().mockResolvedValue({ unreadKeys: [] })
   scope.kind = 'electron'

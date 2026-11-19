@@ -3,7 +3,7 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GuguSubscriptionRow } from '@/session/renderer/features/settings/subscriptions/GuguSubscriptionRow'
-import { ModelMenuFooter } from '@/mobile/agent-watch/ModelMenuFooter'
+import { ModelMenuFooter } from '@/components/session-watch/ModelMenuFooter'
 
 const data = vi.hoisted(() => ({
   native: true, platform: 'ios', error: '',

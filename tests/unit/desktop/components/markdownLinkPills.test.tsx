@@ -19,11 +19,16 @@ const GONE = '77777777-7777-4777-8777-777777777777'
 const TOPIC = '88888888-8888-4888-8888-888888888888'
 const SOURCE = '99999999-9999-4999-8999-999999999999'
 
-const mocks = vi.hoisted(() => ({ fileMetadata: vi.fn(), getMessageById: vi.fn() }))
+const AGENT = '66666666-6666-4666-8666-666666666666'
+const AGENT_CHAT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+const TASK = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+
+const mocks = vi.hoisted(() => ({ fileMetadata: vi.fn(), getMessageById: vi.fn(), sessionsList: vi.fn() }))
 vi.mock('@/platform', () => ({ platform: { kind: 'web' } }))
 vi.mock('@/components/appSlot/phoneAppHost', () => ({ openPhoneLink: vi.fn(async () => ({ kind: 'opened' })) }))
 vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({ fileMetadata: mocks.fileMetadata }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { getMessageById: mocks.getMessageById } }))
+vi.mock('@renderer/lib/ipc', async (load) => ({ ...(await load<object>()), rpcOn: () => ({ sessionTimeline: { sessionsList: mocks.sessionsList } }) }))
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 // Markdown loads the pill on first use; load it once here so a busy run does not spend a case's wait on compiling it.
@@ -43,9 +48,11 @@ afterEach(async () => {
   vi.clearAllMocks()
 })
 
-async function render(content: string, trust: 'chat' | 'document' = 'chat', surface: 'chat' | 'bare' = 'chat') {
-  const store = { chatsRead: true, chats: [{ id: CHAT, name: 'Design review', kind: 'group' }, { id: TOPIC, name: 'Launch', kind: 'topic' }], identitiesById: { [ALICE]: { id: ALICE, display_name: 'Alice' } } }
-  const markdown = createElement(Markdown, { trust, content })
+async function render(content: string, trust: 'chat' | 'document' = 'chat', surface: 'chat' | 'bare' = 'chat', mentionMarker?: string) {
+  const store = { chatsRead: true,
+    chats: [{ id: CHAT, name: 'Design review', kind: 'group' }, { id: TOPIC, name: 'Launch', kind: 'topic' }, { id: AGENT_CHAT, name: '', kind: 'ai', peer_user_id: AGENT }],
+    identitiesById: { [ALICE]: { id: ALICE, display_name: 'Alice', type: 'human' }, [AGENT]: { id: AGENT, display_name: 'Helper', type: 'agent' } } }
+  const markdown = createElement(Markdown, { trust, content, mentionMarker })
   await act(async () => {
     root.render(surface === 'bare' ? markdown : createElement(AuthContext.Provider, { value: { user: { id: ME } } as never },
       createElement(ChatStoreProvider, { value: store as never }, markdown)))
@@ -67,10 +74,28 @@ describe('chat link pills, drawn in place', () => {
     expect(container.querySelector('p')?.textContent).toBe('see plan.pdf before Friday')
   })
 
-  it('draws a group or topic link as # its name, and one this window does not list with the link\'s words', async () => {
+  // Owner 2026-11-16: one pill for every kind, told apart by one line mark; never a face, and no mark on what cannot open.
+  it('draws a group or topic link as its name with its mark, and greys one this window does not list', async () => {
     await render(`in [here](${conversationLink(CHAT)}), [there](${conversationLink(TOPIC)}) and [elsewhere](${conversationLink(SOURCE)})`)
-    await settle(() => expect(pills().map(pill => pill.textContent)).toEqual(['# Design review', '# Launch', 'elsewhere']))
-    expect(pills()[2]?.dataset.unavailable).toBeUndefined()
+    await settle(() => expect(pills().map(pill => pill.textContent)).toEqual(['Design review', 'Launch', '聊天不可用']))
+    expect(pills().map(pill => !!pill.querySelector('.gg-md-mention-icon svg'))).toEqual([true, true, false])
+    expect(pills().map(pill => pill.dataset.unavailable)).toEqual([undefined, undefined, 'true'])
+    expect(container.querySelector('a.gg-md-mention img')).toBeNull()
+  })
+
+  it('names a direct chat with an agent by the agent (that chat has no name of its own), and a task link by its title', async () => {
+    mocks.sessionsList.mockResolvedValue({ sessions: [{ conversationId: TASK, title: 'Fix the login', harness: 'claude' }] })
+    await render(`ask [it](${conversationLink(AGENT_CHAT)}) about [the task](gugu://session/${TASK}) or [that one](gugu://session/cccccccc-cccc-4ccc-8ccc-cccccccccccc)`)
+    await settle(() => expect(pills().map(pill => pill.textContent)).toEqual(['Helper', 'Fix the login', '任务不可用']))
+    expect(pills().map(pill => !!pill.querySelector('.gg-md-mention-icon svg'))).toEqual([true, true, false])
+  })
+
+  it('marks an @agent mention with the agent mark and leaves an @person mention the bold name', async () => {
+    const marker = '#ggm-test-marker'
+    await render(`[@Helper](${marker}) and [@Alice](${marker}) look`, 'chat', 'chat', marker)
+    const mentions = [...container.querySelectorAll<HTMLElement>('[data-mention]')]
+    expect(mentions.map(mention => mention.textContent)).toEqual(['@Helper', '@Alice'])
+    expect(mentions.map(mention => !!mention.querySelector('svg'))).toEqual([true, false])
   })
 
   it('names a message that is an attachment by its file, not its envelope', async () => {
@@ -95,7 +120,7 @@ describe('chat link pills, drawn in place', () => {
     mocks.getMessageById.mockResolvedValue(null)
     await render(`[old notes](${groupFileLink(GONE)}) [elsewhere](${conversationLink(CHAT, MESSAGE)})`)
     await settle(() => expect(pills().map(pill => pill.dataset.unavailable)).toEqual(['true', 'true']))
-    expect(pills().map(pill => pill.textContent)).toEqual(['old notes', 'elsewhere'])
+    expect(pills().map(pill => pill.textContent)).toEqual(['old notes', '消息不可用'])
     expect(pills()[0]?.title).toBe('文件已删除')
     expect(pills()[1]?.title).toBe('不可用：已删除，或你无权查看')
   })

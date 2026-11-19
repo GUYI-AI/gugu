@@ -106,6 +106,10 @@ const extraResources = [{ from: 'mise-bundle/${os}-${arch}', to: 'mise-bundle', 
 // 远程隧道的中转客户端 frpc(scripts/build/build-frpc-bundle.mjs,版本与哈希钉在 scripts/frpc-release.json):
 // 打包前由下面的 beforePack 按目标平台取好,运行时在 Resources/frpc-bundle/ 找(electron/server/frpc-runner.ts)。
 extraResources.push({ from: 'frpc-bundle/${os}-${arch}', to: 'frpc-bundle', filter: ['**/*', '!release.json'] })
+// Local protocol conversion for custom models (cc-switch-cli, scripts/build/build-cc-switch-bundle.mjs, pinned in
+// scripts/cc-switch-release.json). beforePack fetches it per target; at run time it is found in Resources/cc-switch-bundle/
+// (electron/session/main/core/agents/conversion-router.ts). Windows arm64 has no upstream binary, so the folder may be absent.
+extraResources.push({ from: 'cc-switch-bundle/${os}-${arch}', to: 'cc-switch-bundle', filter: ['**/*', '!release.json'] })
 if (!isWindowsOnlyBuild && fs.existsSync(path.join(__dirname, 'tmux-bundle', 'tmux'))) {
   extraResources.push({ from: 'tmux-bundle', to: 'tmux-bundle', filter: ['**/*'] })
 }
@@ -317,6 +321,7 @@ module.exports = {
     const { execSync, execFileSync } = require('node:child_process')
     execFileSync(process.execPath, [path.join(__dirname, 'scripts/build/build-mise-bundle.mjs'), '--platform', context.electronPlatformName, '--arch', arch], { stdio: 'inherit' })
     execFileSync(process.execPath, [path.join(__dirname, 'scripts/build/build-frpc-bundle.mjs'), '--platform', context.electronPlatformName, '--arch', arch], { stdio: 'inherit' })
+    execFileSync(process.execPath, [path.join(__dirname, 'scripts/build/build-cc-switch-bundle.mjs'), '--platform', context.electronPlatformName, '--arch', arch], { stdio: 'inherit' })
     // #7199 这台电脑能做的事:Mac 包要带原生助手(日历 / 提醒 / 通讯录 / 定位 / 文字识别 / 系统授权,从源码编),
     // 按架构放进 mac-native/<arch>,再由下面 mac.extraResources 拷进 Resources/mac-native。缺了它,用户点「连接」才发现。
     if (context.electronPlatformName === 'darwin') {

@@ -699,7 +699,7 @@
   --selected: color-mix(in oklab, var(--fg) 7.5%, transparent);
   --rail-selected: color-mix(in oklab, var(--fg) 5%, transparent); /* 最左栏选中:比列表里的选中行轻一档(gugu-dev#181 原型) */
   --press: color-mix(in oklab, var(--fg) 6%, transparent); /* @@@1787 按压反馈,比 hover 深一档才可感知 */
-  --pinned: color-mix(in oklab, var(--fg) 2.5%, transparent); /* #2598 置顶行常驻底色(飞书式):静息态可辨,压在 hover/selected 之下 */
+  --pinned: color-mix(in oklab, var(--fg) 1%, transparent); /* #2598 置顶行常驻底色(飞书式):静息态可辨,压在 hover/selected 之下 */
   /* @@@state-ladder-mix (#2322) 上面三档的「实色配方」。--hover/--press/--selected 是半透明叠色,
      叠在任何面上都成立;而会话页的设计系统(vanilla-extract 生成的 --em-surface-* 契约)只吃**实色**,
      没有叠色这一层。于是把同一条阶梯拆成「叠什么色 + 叠多少」,让皮肤桥能对每个面 color-mix 出
@@ -938,7 +938,7 @@
   --selected: color-mix(in oklab, var(--fg) 7.5%, transparent); /* @@@selected-neutral-7333 */
   --rail-selected: color-mix(in oklab, var(--fg) 5%, transparent); /* 最左栏选中:比列表里的选中行轻一档(gugu-dev#181 原型) */
   --press: color-mix(in oklab, var(--fg) 6%, transparent); /* @@@1787 按压反馈,比 hover 深一档才可感知 */
-  --pinned: color-mix(in oklab, var(--fg) 2.5%, transparent); /* #2598 置顶行常驻底色(飞书式):静息态可辨,压在 hover/selected 之下 */
+  --pinned: color-mix(in oklab, var(--fg) 1%, transparent); /* #2598 置顶行常驻底色(飞书式):静息态可辨,压在 hover/selected 之下 */
   /* @@@state-ladder-mix 浅色配方(说明见 :root),#7333 起与暗色侧同一组数。 */
   --state-tint: var(--fg); /* 浅色下 --fg 近黑 = 叠黑;与暗色侧同一条式子 */
   --state-tint-selected: var(--fg); /* @@@selected-neutral-7333 */
@@ -1484,20 +1484,18 @@ body.barcode-scanner-active #root {
 }
 
 /* @@@chat-offscreen-rows 消息流里的行(MessageRow):屏幕外的跳过样式、布局与绘制,同通讯录行(@@@contacts-offscreen-rows)一套机制。
-   主区宽度一变(收放侧栏的每一帧、拖窗口、开关右栏),要重排的只是看得见的那几行,不随翻过的历史和公式量变多;页内查找照样搜得到。
+   主区宽度一变(收放侧栏的每一帧、拖窗口、开关右栏),要重排、重画的只是看得见的那几行,不随翻过的历史和公式量变多;页内查找照样搜得到。
    行挂上后先按真实内容排一次、画一帧,auto 记下真实高度,MessageRow 再打 data-laid-out 才允许跳过:跳过的行占着记下的真高,
    落点、恢复阅读位置、往上翻都不会先按占位排再跳。宽度变过之后再露出来的行按新宽度重排,视口上方的差由滚动锚定吸收(flowList)。
-   跳过的是行里的消息列(名字行、气泡、表情回应),不是整行:content-visibility 带 paint containment,装在行上会把组尾的
-   头像层裁在这一行里,组尾在视口下面时头像就不画了(owner 10-25,StickyGroupAvatar)。头像列、时间分隔、话题锚点在框外。
-   列里画到框外的东西用 overflow-clip-margin 让出来,不然在屏幕上也被裁、点不到(paint containment 不分跳没跳过),
-   让出的宽度取头像栏的触控宽(下面 --msg-avatar-gutter-touch),它要盖住:已读环(锚在气泡左边,气泡撑满列时整个在列外;
-   手机点击区就是这个宽度,回缩 8px → 伸出 36px、下沉 14px;桌面 15+4 = 19px,MessageBubble)、气泡尾巴 8px
-   (messageBubbleChrome.css)、焦点环 4px。 */
+   跳过的是整个行身(时间分隔、名字行、气泡、表情回应、话题锚点),只有组头像的轨道在行身外(@@@avatar-track,StickyGroupAvatar):
+   content-visibility 带 paint containment,轨道要往上伸到组首气泡,组尾在视口下面时头像照样贴在坞上。
+   行身里画到框外一点的东西(已读环、气泡尾巴、焦点环)用 overflow-clip-margin 让出来,不然在屏幕上也被裁、点不到
+   (paint containment 不分跳没跳过),让出的宽度取头像栏的触控宽。 */
 /* 头像栏宽(GroupAvatarSlot):桌面与头像按钮同宽;触控宽 = 手机的点击目标,已读环在手机上的点击区也用它。 */
 :root { --msg-avatar-gutter: 32px; --msg-avatar-gutter-touch: 44px; }
-/* 记真实大小(auto)要在可跳过之前就开着:浏览器只在这条属性在场时记,data-laid-out 那一刻才开就没记下,屏幕外的列先按占位排。 */
-.gg-msg-row [data-message-bubble-column] { contain-intrinsic-size: auto 160px; }
-.gg-msg-row[data-laid-out] [data-message-bubble-column] { content-visibility: auto; overflow-clip-margin: var(--msg-avatar-gutter-touch); }
+/* 记真实大小(auto)要在可跳过之前就开着:浏览器只在这条属性在场时记,data-laid-out 那一刻才开就没记下,屏幕外的行先按占位排。 */
+.gg-msg-row > [data-row-body] { contain-intrinsic-size: auto 160px; }
+.gg-msg-row[data-laid-out] > [data-row-body] { content-visibility: auto; overflow-clip-margin: var(--msg-avatar-gutter-touch); }
 
 /* ── theme batch A:助理 App(.ta-*)的颜色取值 ───────────────────────────────────────────────
    从 assistant-today.css 原样搬来(owner 10-28 批的 token 方案:颜色只在 tokens.css 里写),
@@ -2386,4 +2384,18 @@ body.barcode-scanner-active #root {
   --model-settings-separator: #f2f2f2;
   --model-sign-in-expired-bg: #fbf1f1;
   --model-sign-in-expired-fg: #b42c3f;
+}
+
+/* Subscription quota identity colors shared by the rail rings and model rows. */
+:root {
+  --usage-brand-claude-fill: #E1B63D;
+  --usage-brand-claude-edgeLight: #8B6814;
+  --usage-brand-claude-edgeDark: #A78025;
+  --usage-brand-claude-trackLight: #E6D9AC;
+  --usage-brand-claude-trackDark: #514627;
+  --usage-brand-codex-fill: #E6E8EC;
+  --usage-brand-codex-edgeLight: #778390;
+  --usage-brand-codex-edgeDark: #AEB7C3;
+  --usage-brand-codex-trackLight: #C9CFD6;
+  --usage-brand-codex-trackDark: #41474F;
 }

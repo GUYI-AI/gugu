@@ -18,7 +18,7 @@ vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
   chatDb: { from: () => ({ select: () => ({ eq: (_c: string, id: string) => ({ maybeSingle: async () => { reads.push(id); return { data: { content: serializeComposerCard(stored) }, error: null } } }) }) }) },
 }))
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => ({ rpcOn: () => ({ sessionTimeline: { sessionRespond: local } }) }))
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ respondToSettlement: remote }))
+vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ respondToSettlement: remote }))
 
 const { answerIfQuestionReply, questionAnsweredText, questionCardAnswers } = await import('../../../../apps/desktop/src/lib/questionCardAnswer')
 

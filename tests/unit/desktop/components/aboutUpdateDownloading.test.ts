@@ -88,20 +88,11 @@ describe('关于页说得出「下载新版本中… N%」', () => {
     expect(text()).toContain('正在重启…')
     expect(text()).not.toContain('下载新版本中…')
   })
-  it('账户菜单移除后,关于页的问题反馈沿用原来的反馈入口', async () => {
-    const open = vi.fn()
-    window.addEventListener(UI_EVENTS.sessionpageOpenFeedback, open)
-    try {
-      await harness.render(createElement(AboutSection))
-      const feedback = harness.container.querySelector<HTMLElement>('[data-testid="about-feedback"]')
-      expect(feedback).not.toBeNull()
-      await act(async () => { feedback!.click() })
-      expect(open).toHaveBeenCalledOnce()
-    } finally {
-      window.removeEventListener(UI_EVENTS.sessionpageOpenFeedback, open)
-    }
+  it('feedback is no longer duplicated on the About page', async () => {
+    await harness.render(createElement(AboutSection))
+    expect(harness.container.querySelector('[data-testid="about-feedback"]')).toBeNull()
   })
-  it('关于页不再放功能导览:唯一的入口在功能栏的「帮助与导览」(规范 4.3)', async () => {
+  it('关于页不再放功能导览:唯一的入口在设置的「帮助与导览」(规范 4.3)', async () => {
     await harness.render(createElement(AboutSection))
     expect(harness.container.querySelector('[data-testid="about-reopen-product-tour"]')).toBeNull()
   })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { latestAgentSessionRow } from '../../../../apps/desktop/src/mobile/agent-watch/useAgentSessionRow'
+import { latestAgentSessionRow } from '../../../../apps/desktop/src/components/session-watch/useAgentSessionRow'
 
 // An agent with several session rows resolves to the latest one, not directory order.
 const row = (deviceId: string, conversationId: string, agent: string, lastInteractedAt?: string) =>

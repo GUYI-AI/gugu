@@ -1,6 +1,6 @@
 // 远程隧道的中转客户端 frpc(fatedier/frp,Apache-2.0):构建时按 frpc-release.json 钉的版本与 sha256 取一份,
 // 放进 frpc-bundle/<os>-<arch>/。桌面包经 electron-builder 的 extraResources 带上,server 包由 build-gugu-server.mjs 拷进去。
-// 归档走与 mise 同一个内容寻址缓存(mise-archive-cache.mts):拿过一次就不再联网;拿不到就响亮失败,❌ 换来源兜底。
+// 归档走与 mise 同一个内容寻址缓存;瞬时传输失败有限重试后可取官方上游,始终核同一个固定 sha256。
 import { execFileSync } from 'node:child_process'
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -25,6 +25,7 @@ if (existsSync(join(destination, exe)) && existsSync(join(destination, 'release.
   const archive = obtainMiseArchive({
     cacheDir: defaultMiseCacheDir(),
     downloadBase: 'https://download.gugu.nextmind.space/releases/vendor/frp',
+    mirrorBase: 'https://github.com/fatedier/frp/releases/download',
     version: release.version,
     asset: target.asset,
     sha256: target.sha256,

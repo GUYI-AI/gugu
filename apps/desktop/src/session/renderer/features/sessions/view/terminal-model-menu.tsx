@@ -19,6 +19,7 @@ import { sessionStartupFailures } from '../stores/session-startup-failures';
 import { useTerminalModelMenuRequest } from './terminal-model-menu-request';
 import { usePlatformModelCatalog } from '../session-config/platform-model-catalog';
 import { composerModelFooter, useComposerModelOptions } from '../session-config/use-composer-model-options';
+import { useCodexPreparationNotice } from '@renderer/lib/stores/use-codex-preparation-notice';
 import { useHarnessModelOptions } from '../session-config/use-harness-model-options';
 import {
   planTerminalEffortSwitch,
@@ -78,6 +79,7 @@ export function TerminalModelMenu({
     });
   }, [sessionId]);
   const harnessCatalog = useHarnessModelOptions(providerId, 'tui');
+  const modelPreparationNotice = useCodexPreparationNotice(harnessCatalog.preparation);
   const { data: agents } = useAgents();
   const capabilities = agents?.find((agent) => agent.id === providerId)?.capabilities ?? null;
 
@@ -141,6 +143,7 @@ export function TerminalModelMenu({
     modelCount: modelItems.length,
     effortCount: effortItems.length,
     unlock: false,
+    notice: !!modelPreparationNotice,
   });
 
   const [pending, setPending] = useState<PendingSwitch | null>(null);
@@ -244,6 +247,7 @@ export function TerminalModelMenu({
         disabled={reloading}
         modelItems={modelItems}
         onOpen={harnessCatalog.refresh}
+        menuNotice={modelPreparationNotice}
         selectedModel={selectedOptionId}
         onModelChange={handleModelChange}
         openRequest={menuRequests - menuRequestsAtMount.current}

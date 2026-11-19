@@ -1,3 +1,4 @@
+import { serverNow } from '@gugu/core/shared/serverClock'
 import { useEffect, useMemo } from 'react'
 import { useDeadlineClock } from '@/hooks/useDeadlineClock'
 import { useAgentDisplayStatus } from '@/hooks/useAgentDisplayStatus'
@@ -39,7 +40,7 @@ export function useAgentReplyPending(chatId: string | null, agentUserId: string 
   const asleep = cloud?.presence === 'asleep'
   useEffect(() => {
     if (!asleep || awaitingSince === null) return
-    const left = awaitingSince + WAKE_PICKUP_MS - Date.now()
+    const left = awaitingSince + WAKE_PICKUP_MS - serverNow()
     if (left <= 0) return
     void wakeCloudComputer().catch(() => undefined)
     askCloudComputer()

@@ -75,4 +75,3 @@ export function registerGuguMcpStdioRelayEntry(): void {
   if (process.env[GUGU_MCP_STDIO_RELAY_ENTRY_ENV]?.trim()) return;
   process.env[GUGU_MCP_STDIO_RELAY_ENTRY_ENV] = guguMcpStdioRelayEntryPath();
 }
-

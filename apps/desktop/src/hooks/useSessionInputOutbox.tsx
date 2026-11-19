@@ -14,7 +14,7 @@ import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { rendererLogger } from '@/lib/log'
 import { liveDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import { watchSessionSendQueues } from '@/lib/sessionSendQueueHost'
-import { watchPhoneSessionSendQueues } from '@/mobile/agent-watch/phone-send-queue-host'
+import { watchPhoneSessionSendQueues } from '@/components/session-watch/phone-send-queue-host'
 
 /** Runs with the signed-in shell, including while the conversation itself is closed. */
 export function SessionInputOutboxHost({ accountId }: { accountId: string }) {
@@ -74,7 +74,7 @@ export function SessionInputOutboxHost({ accountId }: { accountId: string }) {
           if (!result.ok) throw new SessionInputAdmissionError(result.error.message, sessionInputAdmission(result.error), result.error.code)
           if (result.value.clientMessageId !== input.id) throw new Error('Session host acknowledged another input')
         } else {
-          const { sendSessionText } = await import('@/mobile/agent-watch/sessionpage-rpc')
+          const { sendSessionText } = await import('@/components/session-watch/sessionpage-rpc')
           if (!input.deviceId) throw new Error('Remote session input has no device')
           await sendSessionText(input.deviceId, input.sessionId, input.text, input.id, input.files, input.attachments, input.steerIfBusy)
         }
