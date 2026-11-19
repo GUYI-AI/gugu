@@ -10,7 +10,8 @@ vi.mock('@gugu/session-plugins/agents', async (importOriginal) => ({
     get: () => ({ capabilities: { sessionBundle: { configRoot: {} } } }),
   },
 }));
-vi.mock('@gugu/session-core/agents/plugins/helpers', () => ({
+vi.mock('@gugu/session-core/agents/plugins/helpers', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@gugu/session-core/agents/plugins/helpers')>(),
   AgentHomeSpaceError: state.SpaceError, AgentHomeMigrationFailure: class extends Error {},
   checkAgentHomeImportSpace: state.check,
   AGENT_HISTORY_LIMIT: 4 * 1024 ** 3,
