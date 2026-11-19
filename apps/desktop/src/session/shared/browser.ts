@@ -75,6 +75,8 @@ export type BrowserLoadError = {
 export type BrowserZoomSource = 'auto' | 'user';
 
 export type BrowserSessionSnapshot = BrowserSessionIdentity & {
+  /** Missing until a new tab snapshots the device preference; legacy restores use built-in. */
+  kernel?: 'builtin' | 'standalone';
   profileId: BrowserProfileSelection;
   partition: string;
   currentUrl: string;
@@ -344,6 +346,7 @@ export function browserProfileLabel(
 
 export function createBrowserSessionSnapshot(input: {
   identity: BrowserSessionIdentity;
+  kernel?: 'builtin' | 'standalone';
   profileId?: BrowserProfileSelection;
   currentUrl?: string;
   now?: number;
@@ -356,6 +359,7 @@ export function createBrowserSessionSnapshot(input: {
   );
   return {
     ...input.identity,
+    ...(input.kernel ? { kernel: input.kernel } : {}),
     profileId,
     partition: browserPartitionForProfile(input.identity, profileId),
     currentUrl: normalized.ok ? normalized.url : BROWSER_DEFAULT_URL,

@@ -1,6 +1,10 @@
 import type { ProjectionHostPacket } from '@shared/extensions/projection-protocol';
 import type { TaskPageState } from '@shared/browser-task-page';
 import { defineEvent } from '@shared/lib/ipc/events';
+import type { BrowserKernelKind } from '@shared/browser-kernel';
+
+/** Emitted only after the device-local preference commits, including completion after settings was closed. */
+export const browserKernelSelectionChannel = defineEvent<{ kernel: BrowserKernelKind }>('browser:kernel-selection');
 
 export const browserOpenInNewTabChannel = defineEvent<{
   sourceBrowserId: string;

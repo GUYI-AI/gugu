@@ -55,6 +55,7 @@ export const browserTabProvider: TabProvider<
       browserSettings?.profiles
     );
     const session = browserSessionStore.createSession({
+      kernel: browserSettings?.kernel,
       projectId: chatId ? 'chat' : sessionCtx.projectId,
       workspaceId: chatId ?? sessionCtx.workspaceId,
       sessionId: chatId ? '' : sessionCtx.sessionId,

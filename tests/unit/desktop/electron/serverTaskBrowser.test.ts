@@ -32,6 +32,14 @@ describe('a Gugu server task browser (#1607 4b)', () => {
     await expect(browser.pageFor('task', undefined, new AbortController().signal)).rejects.toThrow('needs Chrome or Chromium')
   })
 
+  it('keeps system credential storage for desktop profiles without changing the server default', () => {
+    const desktop = taskBrowserArguments('/isolated-desktop-profile', 'UA', false, 'system')
+    expect(desktop).toContain('--user-data-dir=/isolated-desktop-profile')
+    expect(desktop).not.toContain('--password-store=basic')
+    expect(desktop).not.toContain('--use-mock-keychain')
+    expect(taskBrowserArguments('/server-profile', 'UA', false)).toEqual(expect.arrayContaining(['--password-store=basic', '--use-mock-keychain']))
+  })
+
   // Opt-in: GUGU_TEST_CHROME=/path/to/chrome. The shared page protocol drives the server's real page.
   it.skipIf(!process.env.GUGU_TEST_CHROME)('a task keeps one real page; the shared page protocol drives it and sees iframes', { timeout: 60_000 }, async () => {
     const { createPageProtocol } = await import('../../../../apps/desktop/electron/session/main/core/browser/page-protocol')

@@ -14,15 +14,20 @@ import { watchRemoteProjection } from '../extensions/projection-remote-viewer';
 const watches = new Map<string, Promise<{ receive(packet: unknown): Promise<void>; control(control: TaskPageControl): Promise<TaskPageControlResult>; close(): void }>>();
 
 export async function watchRemoteTaskPage(args: { watchId: string; deviceId: string; sessionId: string }): Promise<{ success: true }> {
-  if (typeof args.watchId !== 'string' || !args.watchId || args.watchId.length > 128) throw new Error('A task page watch needs an id');
-  // The picture's reset asks again with the same id (as for a projection on this computer): start that watch over.
-  unwatchRemoteTaskPage(args.watchId);
-  const watching = watchRemoteProjection(args.deviceId, { session: args.sessionId, page: true, presentation: 1 },
+  return watchTaskPageConnection(args.watchId, () => watchRemoteProjection(args.deviceId, { session: args.sessionId, page: true, presentation: 1 },
     (packet) => events.emit(browserTaskPagePacketChannel, { watchId: args.watchId, packet }),
-    (state) => events.emit(browserTaskPageStateChannel, { watchId: args.watchId, state }));
-  watches.set(args.watchId, watching);
+    (state) => events.emit(browserTaskPageStateChannel, { watchId: args.watchId, state })));
+}
+
+/** Local and remote task pages share the same acknowledged picture/input transport. */
+export async function watchTaskPageConnection(watchId: string, connect: () => ReturnType<typeof watchRemoteProjection>): Promise<{ success: true }> {
+  if (typeof watchId !== 'string' || !watchId || watchId.length > 128) throw new Error('A task page watch needs an id');
+  // The picture's reset asks again with the same id (as for a projection on this computer): start that watch over.
+  unwatchRemoteTaskPage(watchId);
+  const watching = connect();
+  watches.set(watchId, watching);
   try { await watching; }
-  catch (error) { if (watches.get(args.watchId) === watching) watches.delete(args.watchId); throw error; }
+  catch (error) { if (watches.get(watchId) === watching) watches.delete(watchId); throw error; }
   return { success: true };
 }
 

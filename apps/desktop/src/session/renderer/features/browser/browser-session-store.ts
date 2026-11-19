@@ -17,6 +17,7 @@ import {
 } from '@shared/browser';
 
 export type BrowserSessionCreateInput = {
+  kernel?: 'builtin' | 'standalone';
   projectId: string;
   workspaceId: string;
   sessionId: string;
@@ -28,7 +29,7 @@ export type BrowserSessionCreateInput = {
 export type BrowserSessionUpdate = Partial<
   Pick<
     BrowserSessionSnapshot,
-    'canGoBack' | 'canGoForward' | 'isLoading' | 'title' | 'zoomFactor' | 'zoomSource'
+    'canGoBack' | 'canGoForward' | 'isLoading' | 'title' | 'zoomFactor' | 'zoomSource' | 'kernel'
   >
 > & {
   currentUrl?: string;
@@ -76,6 +77,7 @@ export class BrowserSessionStore {
     });
     const snapshot = createBrowserSessionSnapshot({
       identity,
+      kernel: input.kernel,
       profileId: input.profileId,
       currentUrl: input.initialUrl,
     });
@@ -91,6 +93,7 @@ export class BrowserSessionStore {
     const profileId = normalizeBrowserProfileSelection(snapshot.profileId, profiles);
     const restored: BrowserSessionSnapshot = {
       ...snapshot,
+      kernel: snapshot.kernel === 'standalone' ? 'standalone' : 'builtin',
       profileId,
       partition: browserPartitionForProfile(snapshot, profileId),
       currentUrl: normalized.ok ? normalized.url : BROWSER_DEFAULT_URL,

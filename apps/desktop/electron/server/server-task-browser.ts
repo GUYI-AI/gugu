@@ -30,6 +30,8 @@ export type TaskPageScreenFrame = { data: string; width: number; height: number;
 
 /** The subset of Electron's `WebContents` / `Debugger` that `createPageProtocol` uses. */
 export interface TaskPageContents {
+  /** Host-owned connection, independent of the restricted Agent debugger lease. Never exposed as an RPC. */
+  hostCommand?(method: string, params: Record<string, unknown>): Promise<unknown>;
   readonly debugger: {
     attach(protocolVersion?: string): void;
     detach(): void;
@@ -102,6 +104,10 @@ class PipeConnection extends EventEmitter {
 
 /** One task's page as a WebContents-shaped object; each `attach` is one flattened CDP session on its target. */
 class PageTarget extends EventEmitter implements TaskPageContents {
+  hostCommand(method: string, params: Record<string, unknown>): Promise<unknown> {
+    if (!this.watchSession || this.destroyed) return Promise.reject(new Error('The task browser page closed'));
+    return this.connection.send(method, params, this.watchSession);
+  }
   readonly feedback = browserPageFeedback(this);
   private session: string | null = null;
   private readonly children = new Set<string>();
@@ -332,11 +338,11 @@ export function taskBrowserUserAgent(versionOutput: string, platform: NodeJS.Pla
   return `Mozilla/5.0 (${os}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
 }
 
-export function taskBrowserArguments(profile: string, userAgent: string, root: boolean): string[] {
+export function taskBrowserArguments(profile: string, userAgent: string, root: boolean, credentialStore: 'basic' | 'system' = 'basic'): string[] {
   return [
     '--headless=new', '--remote-debugging-pipe', `--user-data-dir=${profile}`, `--user-agent=${userAgent}`,
     '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-sync',
-    '--password-store=basic', '--use-mock-keychain',
+    ...(credentialStore === 'basic' ? ['--password-store=basic', '--use-mock-keychain'] : []),
     ...(root ? ['--no-sandbox'] : []),
     'about:blank',
   ];
@@ -371,6 +377,8 @@ export interface ServerTaskBrowser {
 export function createServerTaskBrowser(options: {
   binary: () => string | null;
   profile: string;
+  /** Desktop profiles retain Chrome's system credential storage; the display-free server keeps its existing basic store. */
+  credentialStore?: 'basic' | 'system';
   log: { info(message: string, fields?: object): void; warn(message: string, fields?: object): void };
 }): ServerTaskBrowser {
   let starting: Promise<{ process: ChildProcess; connection: PipeConnection }> | null = null;
@@ -379,10 +387,10 @@ export function createServerTaskBrowser(options: {
   async function launch() {
     const binary = options.binary();
     if (!binary) throw new Error('Browser Use on this server needs Chrome or Chromium (GUGU_APP_BROWSER_CHROME selects it)');
-    const { stdout } = await promisify(execFile)(binary, ['--version'], { timeout: 15_000 });
+    const { stdout } = await promisify(execFile)(binary, [`--user-data-dir=${options.profile}`, '--version'], { timeout: 15_000 });
     const userAgent = taskBrowserUserAgent(stdout);
     await mkdir(options.profile, { recursive: true });
-    const child = spawn(binary, taskBrowserArguments(options.profile, userAgent, process.getuid?.() === 0), {
+    const child = spawn(binary, taskBrowserArguments(options.profile, userAgent, process.getuid?.() === 0, options.credentialStore), {
       stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'],
     });
     let stderr = '';

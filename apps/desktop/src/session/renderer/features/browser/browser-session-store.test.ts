@@ -12,6 +12,24 @@ function setup() {
   return { store, browserId: session.browserId };
 }
 
+describe('browser engine snapshots', () => {
+  it('remembers the engine at creation even before the page surface mounts', () => {
+    const store = new BrowserSessionStore();
+    const page = store.createSession({ projectId: 'p', workspaceId: 'w', sessionId: 'task', kernel: 'standalone' });
+    expect(store.getSnapshot(page.browserId)?.kernel).toBe('standalone');
+    store.updateSession(page.browserId, { currentUrl: 'https://example.test' });
+    expect(store.getSnapshot(page.browserId)?.kernel).toBe('standalone');
+    expect(new BrowserSessionStore().restoreSession(store.getSnapshot(page.browserId)!).kernel).toBe('standalone');
+  });
+
+  it('keeps a legacy restored tab on the built-in browser', () => {
+    const { store, browserId } = setup();
+    const legacy = store.getSnapshot(browserId)!;
+    expect(legacy.kernel).toBeUndefined();
+    expect(new BrowserSessionStore().restoreSession(legacy).kernel).toBe('builtin');
+  });
+});
+
 // #6264 别的机器上的网页:页签加载的是 gugu-preview 地址,地址栏要显示人要开的 file: 地址。
 describe('BrowserSessionStore url presenter', () => {
   const present = (url: string) =>

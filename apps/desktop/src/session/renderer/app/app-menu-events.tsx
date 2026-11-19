@@ -57,8 +57,10 @@ import {
   sessionOpenExtensionInPaneResultChannel,
 } from '@shared/events/appEvents';
 import { browserLinkCopiedChannel } from '@shared/events/browserEvents';
+import { useBrowserKernelPreferenceEvents } from '../features/browser/browser-kernel-preference-events';
 
 export function AppMenuEvents() {
+  useBrowserKernelPreferenceEvents();
   const { navigate } = useNavigate();
   const showConfirmQuitModal = useShowModal('confirmActionModal');
 
