@@ -537,8 +537,15 @@ function groupCount(items: Item[], group: AgentHomeGroupId): number {
 export async function scanAgentHome(home: ResolvedAgentHome) {
   const { items, issues, newestMtime, mcpSecrets, mcpNames, projectMcpCount } = await collect(home);
   const marker = await readAgentHomeMarker(home);
+  // The import records hashes of its selected projections, not CLI runtime activity.
+  // Ignore unticked groups and metadata changes (including sibling-file runtime keys).
+  const imported = marker ? items.filter(item => marker.groups.includes(item.group)) : [];
+  const source = new Map(imported.map(item => [item.id, item.hash]));
+  const sourceUpdated = !!marker && !marker.skipped && !marker.legacyBaseline
+    && (imported.some(item => marker.files[item.id] !== item.hash)
+      || Object.keys(marker.files).some(id => !source.has(id) && !issues.some(issue => matchesPath(id.split('#')[0]!, issue.path))));
   return {
-    providerId: home.providerId, userRoot: home.userConfigRoot, marker, newestMtime,
+    providerId: home.providerId, userRoot: home.userConfigRoot, marker, newestMtime, sourceUpdated,
     groups: home.importGroups.map((group) => {
       const members = items.filter((item) => item.group === group.id);
       return { id: group.id, count: groupCount(members, group.id), mcpCount: members.reduce((count, item) => count + item.mcpCount, 0) };
