@@ -94,4 +94,3 @@ div.gg-pane.gg-settings-detail:has(.gg-model-page) { background: var(--model-set
 .gg-model-page .gg-model-name svg { opacity: 0; color: var(--model-settings-source); }
 .gg-model-page .gg-model-subscription-row:hover .gg-model-name svg,
 .gg-model-page .gg-model-name:focus-visible:not([data-pointer-focus]) svg { opacity: 1; }
-.gg-model-page .gg-model-name-with-origin { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; }
