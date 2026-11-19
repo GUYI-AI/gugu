@@ -193,7 +193,7 @@ describe('session-life ACP leg', () => {
     h.preparePlatform.mockReturnValueOnce(new Promise(() => {}));
     await boundAdapter();
     expect(h.preparePlatform).toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: 's', projectId: 'p', providerId: 'claude', cwd: '/repo', platformModel: h.platformModel,
+      sessionId: 's', groupChatId: null, workspaceId: 'w', providerId: 'claude', cwd: '/repo', platformModel: h.platformModel,
     }));
   });
 
