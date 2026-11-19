@@ -20,7 +20,7 @@ export function AgentQuestionAnswers({ questions, answers, busy = false, onEdit 
           <span>{question.header || question.question}</span>
           {onEdit && <Button variant="ghost" size="sm" disabled={busy} onClick={() => onEdit(index)}>{t('question.edit')}</Button>}
         </div>
-        <p>{labels.join(t('question.answerSeparator')) || t('question.noSelection')}</p>
+        <p>{answer.skipped === true ? t('question.skipped') : labels.join(t('question.answerSeparator')) || t('question.noSelection')}</p>
       </div>
     })}
   </div>

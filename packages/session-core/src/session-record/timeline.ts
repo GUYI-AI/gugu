@@ -604,6 +604,8 @@ class RecordTimeline implements SessionTimeline {
           ? { host: { kind: request.origin.source, payload: request.origin.payload } }
           : {}),
         ...(request.origin?.source === 'agent-question' && request.questions ? { questions: request.questions, askedAt: request.askedAt } : {}),
+        ...(request.origin?.source === 'agent-question' && request.skippable === true ? { skippable: true } : {}),
+        ...(request.origin?.source === 'agent-question' && request.canDiscuss === true ? { canDiscuss: true } : {}),
         state: 'pending',
         optionId: null,
         resolvedBy: null,

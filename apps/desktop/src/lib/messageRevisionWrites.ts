@@ -1,7 +1,7 @@
 import { messageItemFromRow } from '@gugu/core/cloud/messageItem'
 import type { ImMessageBatch, ImMessageWrite } from '../session/shared/core/im-messages'
 import type { AccountRevisionOperation } from './accountRevisionRuntime'
-import { readMemberRosterRevision, readMessageCreatedRevision, readRevisionResourceKey } from './accountRevisionCoordinator'
+import { readMemberRosterRevision, readMessageCreatedRevision, readMessageRefreshRevision, readRevisionResourceKey } from './accountRevisionCoordinator'
 import { entityKey, membershipId, splitMembershipId, type ProjectionCache } from './chatProjectionAlgebra'
 import { rendererLogger } from './log'
 
@@ -39,6 +39,19 @@ export function messageRevisionWrites(accountId: string, operations: readonly Ac
     } else if (operation.event === 'chat_changed') {
       const { chatId } = readRevisionResourceKey(operation.payload, 'chat_changed')
       if ((operation.payload as { tombstone?: unknown }).tombstone === true) writes.push({ type: 'deleteChat', chatId })
+      else {
+        const refreshed = readMessageRefreshRevision(operation.payload)
+        if (refreshed && !refreshed.message) writes.push({ type: 'delete', chatId, id: refreshed.messageId })
+        else if (refreshed?.message) {
+          const row = refreshed.message as typeof refreshed.message & { deleted_at?: unknown; deleted_for_user_ids?: unknown }
+          if (row.deleted_at || (Array.isArray(row.deleted_for_user_ids) && row.deleted_for_user_ids.includes(accountId))) writes.push({ type: 'delete', chatId, id: refreshed.messageId })
+          else {
+            const item = messageItemFromRow(row, accountId)
+            if (!item) throw new Error('Refreshed message body is malformed')
+            writes.push({ type: 'put', message: item })
+          }
+        }
+      }
     }
     return { revision: operation.revision, writes }
   }) }
