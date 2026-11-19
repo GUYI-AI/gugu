@@ -56,19 +56,19 @@ describe('idle reclaim resource enumeration', () => {
   it('finds an agent surviving in tmux without a PTY attached to this host', async () => {
     state.tmux.add(makeTmuxSessionName('p:cold:cold'));
     state.tmux.add('unrelated-user-session');
-    expect(await state.deps!.listLive()).toEqual([{ projectId: 'p', sessionId: 'cold', runtime: 'pty' }]);
+    expect(await state.deps!.listLive()).toEqual([{ sessionId: 'cold', runtime: 'pty' }]);
   });
 
   it('deduplicates attached agents and protects detached user terminal shells', async () => {
     state.ptys = [{ ptySessionId: 'p:agent:agent', metadata: { providerId: 'codex' } }];
     state.tmux.add(makeTmuxSessionName('p:agent:agent'));
     state.tmux.add(makeTmuxSessionName('p:agent:terminal'));
-    expect(await state.deps!.listLive()).toEqual([{ projectId: 'p', sessionId: 'agent', runtime: 'pty' }]);
+    expect(await state.deps!.listLive()).toEqual([{ sessionId: 'agent', runtime: 'pty' }]);
     expect(state.deps!.sessionsWithLiveTerminals()).toEqual(new Set(['agent']));
   });
 
   it('rechecks native idleness before stopping', async () => {
-    const target = { projectId: 'p', sessionId: 'idle' };
+    const target = { sessionId: 'idle' };
     vi.mocked(stopExactSessionpageSession).mockClear();
     await state.deps!.stop(target, 'acp');
     expect(stopExactSessionpageSession).toHaveBeenCalledWith({ ...target, reason: 'idle-reap' });

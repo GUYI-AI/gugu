@@ -37,6 +37,7 @@ describe('setSessionPinnedToSidebar', () => {
         VALUES ('conv-1', 'project-1', 'codex', 'acp', '{"version":"1","type":"acp","agentDisplayName":"Parent"}');
       INSERT INTO sessions (id, project_id, provider, runtime, config, parent_session_id)
         VALUES ('child-1', 'project-1', 'codex', 'acp', '{"version":"1","type":"acp","agentDisplayName":"Child"}', 'conv-1');
+      INSERT OR IGNORE INTO workspaces (id, type, path) VALUES ('ws-fixture', 'local', '/fixture'); UPDATE sessions SET workspace_id = 'ws-fixture' WHERE workspace_id IS NULL;
     `);
   });
 
@@ -61,7 +62,6 @@ describe('setSessionPinnedToSidebar', () => {
     expect((await reread('conv-1')).isPinnedToSidebar).toBe(true);
     expect(mocks.emit).toHaveBeenCalledWith(sessionChangedChannel, {
       sessionId: 'conv-1',
-      projectId: 'project-1',
       changes: { isPinnedToSidebar: true },
     });
 
@@ -69,7 +69,6 @@ describe('setSessionPinnedToSidebar', () => {
     expect((await reread('conv-1')).isPinnedToSidebar).toBe(false);
     expect(mocks.emit).toHaveBeenLastCalledWith(sessionChangedChannel, {
       sessionId: 'conv-1',
-      projectId: 'project-1',
       changes: { isPinnedToSidebar: false },
     });
   });

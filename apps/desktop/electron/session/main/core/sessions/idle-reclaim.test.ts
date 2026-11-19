@@ -93,7 +93,7 @@ describe('IdleReclaimer', () => {
     h.advance(IDLE_RECLAIM_AFTER_MS - 1);
     expect(await h.reclaimer.tick()).toEqual([]);
     h.advance(1);
-    const target = { projectId: 'p', sessionId: 'a' };
+    const target = { sessionId: 'a' };
     expect(await h.reclaimer.tick()).toEqual([target]);
     expect(h.stopped).toEqual([target]);
     expect(h.reclaimed).toEqual([target]);

@@ -43,7 +43,8 @@ vi.mock('@main/core/agents/plugin-registry', () => ({
     },
   }),
 }));
-vi.mock('../projects/utils', () => ({
+vi.mock('@main/core/sessions/session-workspace-manager', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   resolveSession: () => ({ sessions: { detachSession: mocks.detachSession } }),
 }));
 
@@ -87,6 +88,7 @@ describe('switchSessionRuntime', () => {
                 '{"version":"1","type":"pty","model":"claude-sonnet-5","initialPrompt":"yo",' ||
                 '"providerSessionEndpoint":"http://127.0.0.1:1234/","firstUtterance":"yo"}',
                 'provider-session-2');
+      INSERT OR IGNORE INTO workspaces (id, type, path) VALUES ('ws-fixture', 'local', '/fixture'); UPDATE sessions SET workspace_id = 'ws-fixture' WHERE workspace_id IS NULL;
     `);
   });
 

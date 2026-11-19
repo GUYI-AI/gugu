@@ -33,6 +33,7 @@ describe('setSessionId publication', () => {
       INSERT INTO sessions (id, project_id, provider, runtime, config)
         VALUES ('conversation-1', 'project-1', 'codex', 'acp',
                 '{"version":"1","type":"acp"}');
+      INSERT OR IGNORE INTO workspaces (id, type, path) VALUES ('ws-fixture', 'local', '/fixture'); UPDATE sessions SET workspace_id = 'ws-fixture' WHERE workspace_id IS NULL;
     `);
   });
 
@@ -55,7 +56,6 @@ describe('setSessionId publication', () => {
     expect(mocks.emit).toHaveBeenCalledOnce();
     expect(mocks.emit).toHaveBeenCalledWith(sessionChangedChannel, {
       sessionId: 'conversation-1',
-      projectId: 'project-1',
       changes: { providerSessionId: 'provider-session-1' },
     });
   });
@@ -88,6 +88,7 @@ describe('clearSessionId', () => {
       INSERT INTO sessions (id, project_id, provider, runtime, config, provider_session_id)
         VALUES ('conversation-1', 'project-1', 'claude', 'pty',
                 '{"version":"1","type":"pty"}', 'claimed-id');
+      INSERT OR IGNORE INTO workspaces (id, type, path) VALUES ('ws-fixture', 'local', '/fixture'); UPDATE sessions SET workspace_id = 'ws-fixture' WHERE workspace_id IS NULL;
     `);
   });
 

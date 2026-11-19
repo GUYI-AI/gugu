@@ -22,7 +22,8 @@ vi.mock('@main/db/client', () => ({
     return mocks.db;
   },
 }));
-vi.mock('../projects/utils', () => ({
+vi.mock('@main/core/sessions/session-workspace-manager', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   resolveSession: () => ({ sessions: { startSession: mocks.startSession } }),
 }));
 vi.mock('@main/lib/events', () => ({
@@ -57,14 +58,15 @@ describe('hydrateSession 的启动认领', () => {
     mocks.startSession.mockReset();
     fixture.sqlite.exec(`
       INSERT INTO projects (id, name, path) VALUES ('project-1', 'Project', '/repo');
-      INSERT INTO sessions (id, project_id, provider, runtime, config)
-        VALUES ('fresh', 'project-1', 'codex', 'pty',
+      INSERT INTO workspaces (id, type, path) VALUES ('ws-1', 'local', '/repo');
+      INSERT INTO sessions (id, project_id, workspace_id, provider, runtime, config)
+        VALUES ('fresh', 'project-1', 'ws-1', 'codex', 'pty',
                 '{"version":"1","type":"pty","agentDisplayName":"hi","initialPrompt":"hi"}');
-      INSERT INTO sessions (id, project_id, provider, runtime, config, provider_session_id)
-        VALUES ('started', 'project-1', 'codex', 'pty',
+      INSERT INTO sessions (id, project_id, workspace_id, provider, runtime, config, provider_session_id)
+        VALUES ('started', 'project-1', 'ws-1', 'codex', 'pty',
                 '{"version":"1","type":"pty","agentDisplayName":"hi2","initialPrompt":"hi2"}', 'started');
-      INSERT INTO sessions (id, project_id, provider, runtime, config, provider_session_id)
-        VALUES ('dangling', 'project-1', 'codex', 'pty',
+      INSERT INTO sessions (id, project_id, workspace_id, provider, runtime, config, provider_session_id)
+        VALUES ('dangling', 'project-1', 'ws-1', 'codex', 'pty',
                 '{"version":"1","type":"pty","agentDisplayName":"lost","initialPrompt":"lost"}',
                 '00000000-0000-4000-8000-000000000369');
     `);

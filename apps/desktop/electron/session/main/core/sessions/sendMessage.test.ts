@@ -35,7 +35,8 @@ vi.mock('@gugu/session-plugins/agents', async (importOriginal) => {
   };
 });
 
-vi.mock('@main/core/projects/utils', () => ({
+vi.mock('@main/core/sessions/session-workspace-manager', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   resolveSession: () => state.sessionAvailable
     ? { sessions: { sendMessage: state.accept } }
     : null,

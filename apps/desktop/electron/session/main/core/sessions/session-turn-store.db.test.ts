@@ -59,6 +59,7 @@ describe('conversation-turn-store', () => {
     fixture.sqlite.exec(`
       INSERT INTO projects (id, name, path) VALUES ('p1', 'P', '/repo');
       INSERT INTO sessions (id, project_id) VALUES ('c1', 'p1');
+      INSERT OR IGNORE INTO workspaces (id, type, path) VALUES ('ws-fixture', 'local', '/fixture'); UPDATE sessions SET workspace_id = 'ws-fixture' WHERE workspace_id IS NULL;
     `);
   });
 
@@ -117,9 +118,9 @@ describe('conversation-turn-store', () => {
         ],
       } });
       await inbox.flush();
-      expect(open).toHaveBeenCalledExactlyOnceWith({ sessionId: 'c1', projectId: 'p1' });
+      expect(open).toHaveBeenCalledExactlyOnceWith({ sessionId: 'c1' });
       const entry = fixture.sqlite.prepare('SELECT value FROM kv WHERE key = ?').get('native-conversation-inbox:c1') as { value: string } | undefined;
-      expect(entry && JSON.parse(entry.value)).toEqual({ projectId: 'p1', chatId: 'canonical-dm' });
+      expect(entry && JSON.parse(entry.value)).toEqual({ chatId: 'canonical-dm' });
     } finally { inbox.dispose(); }
   });
 
@@ -476,6 +477,7 @@ describe('conversation-turn-store · 跨重启的 id', () => {
     fixture.sqlite.exec(`
       INSERT INTO projects (id, name, path) VALUES ('p1', 'P', '/repo');
       INSERT INTO sessions (id, project_id) VALUES ('c1', 'p1');
+      INSERT OR IGNORE INTO workspaces (id, type, path) VALUES ('ws-fixture', 'local', '/fixture'); UPDATE sessions SET workspace_id = 'ws-fixture' WHERE workspace_id IS NULL;
     `);
   });
 
@@ -536,6 +538,7 @@ describe('conversation-turn-store · 对账读法', () => {
     fixture.sqlite.exec(`
       INSERT INTO projects (id, name, path) VALUES ('p1', 'P', '/repo');
       INSERT INTO sessions (id, project_id) VALUES ('c1', 'p1');
+      INSERT OR IGNORE INTO workspaces (id, type, path) VALUES ('ws-fixture', 'local', '/fixture'); UPDATE sessions SET workspace_id = 'ws-fixture' WHERE workspace_id IS NULL;
     `);
   });
 

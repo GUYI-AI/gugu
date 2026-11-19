@@ -99,7 +99,7 @@ describe('restartSession on a session-life session', () => {
     expect(JSON.parse(row.config)).not.toHaveProperty('initialPrompt');
     expect(JSON.parse(row.config)).not.toHaveProperty('initialMessageId');
     expect(JSON.parse(row.config)).not.toHaveProperty('initialQueue');
-    expect(restartStatus).toHaveBeenLastCalledWith({ sessionId: 's', projectId: 'p' }, false);
+    expect(restartStatus).toHaveBeenLastCalledWith({ sessionId: 's' }, false);
   });
 
 });

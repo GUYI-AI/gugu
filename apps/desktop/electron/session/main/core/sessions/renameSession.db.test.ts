@@ -58,6 +58,7 @@ describe('task name renames', () => {
       INSERT INTO sessions (id, project_id, provider, runtime, config)
         VALUES ('named', 'project-1', 'codex', 'pty',
                 '{"version":"1","type":"pty","agentDisplayName":"Reviewer"}');
+      INSERT OR IGNORE INTO workspaces (id, type, path) VALUES ('ws-fixture', 'local', '/fixture'); UPDATE sessions SET workspace_id = 'ws-fixture' WHERE workspace_id IS NULL;
     `);
   });
 
@@ -73,7 +74,7 @@ describe('task name renames', () => {
     expect(nameOf('default')).toBe('Explain gugu briefly');
     expect(mocks.renamed).toHaveBeenCalledWith('session:renamed', 'default', 'project-1', 'Explain gugu briefly');
     expect(mocks.emit).toHaveBeenCalledWith(sessionChangedChannel, {
-      sessionId: 'default', projectId: 'project-1', changes: { title: 'Explain gugu briefly' },
+      sessionId: 'default', changes: { title: 'Explain gugu briefly' },
     });
     // The first automatic name wins: neither the harness nor gugu renames it again.
     expect(sessionTitleIsFallback('default').fallback).toBe(false);
@@ -166,6 +167,7 @@ describe('task name renames', () => {
         ('unbound', 'project-1', 'claude', 'acp', 'Never bound', '{"version":"1","type":"acp","agentDisplayName":"Never bound"}'),
         ('blank', 'project-1', 'claude', 'acp', 'claude', '{"version":"1","type":"acp","agentDisplayName":"claude"}'),
         ('serial', 'project-1', 'claude', 'acp', 'Claude 4', '{"version":"1","type":"acp","agentDisplayName":"Claude 4"}');
+      INSERT OR IGNORE INTO workspaces (id, type, path) VALUES ('ws-fixture', 'local', '/fixture'); UPDATE sessions SET workspace_id = 'ws-fixture' WHERE workspace_id IS NULL;
     `);
     const bind = async (sessionId: string, agentUserId: string, name: string, agentType = 'claude') => {
       await createAgent({ name, agent_type: agentType, path: '/w', prompt: '', gugu_user_id: agentUserId }, env);

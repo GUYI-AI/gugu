@@ -93,17 +93,17 @@ describe('落库', () => {
     mocks.db = fixture.db;
     mocks.emit.mockReset();
     mocks.warn.mockReset();
-    fixture.sqlite.exec(`INSERT INTO projects (id, name, path) VALUES ('project-1', 'Project', '/repo');`);
+    fixture.sqlite.exec(`INSERT INTO projects (id, name, path) VALUES ('project-1', 'Project', '/repo'); INSERT INTO workspaces (id, type, path) VALUES ('ws-fixture', 'local', '/repo');`);
     fixture.sqlite
       .prepare(
-        `INSERT INTO sessions (id, project_id, provider, runtime, provider_session_id, config)
-         VALUES (?, 'project-1', 'codex', ?, ?, ?)`
+        `INSERT INTO sessions (id, project_id, workspace_id, provider, runtime, provider_session_id, config)
+         VALUES (?, 'project-1', 'ws-fixture', 'codex', ?, ?, ?)`
       )
       .run('acp-1', 'acp', 'native-1', config());
     fixture.sqlite
       .prepare(
-        `INSERT INTO sessions (id, project_id, provider, runtime, provider_session_id, config)
-         VALUES (?, 'project-1', 'codex', ?, ?, ?)`
+        `INSERT INTO sessions (id, project_id, workspace_id, provider, runtime, provider_session_id, config)
+         VALUES (?, 'project-1', 'ws-fixture', 'codex', ?, ?, ?)`
       )
       .run('pty-1', 'pty', 'native-9', JSON.stringify({ version: '1', type: 'pty' }));
   });
@@ -119,7 +119,6 @@ describe('落库', () => {
     expect(row('acp-1')).toMatchObject({ model: 'gpt-5.5', firstUtterance: '你好', contextUsage: written });
     expect(mocks.emit).toHaveBeenCalledWith(expect.anything(), {
       sessionId: 'acp-1',
-      projectId: 'project-1',
       changes: { contextUsage: written },
     });
     expect(readRecordedContextUsage('acp-1')).toEqual(written);

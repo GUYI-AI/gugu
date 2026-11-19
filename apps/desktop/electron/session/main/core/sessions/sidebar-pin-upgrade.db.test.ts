@@ -32,11 +32,11 @@ describe('sidebar pin upgrade', () => {
     fixture.sqlite.exec(`
       INSERT INTO projects (id, name, path, kind) VALUES ('project-1', 'Project', '/repo', 'project');
       INSERT INTO projects (id, name, path, kind) VALUES ('tasks', 'Tasks', '/task-home', 'workspace');
-      INSERT INTO sessions (id, project_id, is_pinned) VALUES ('project-pinned', 'project-1', 1);
-      INSERT INTO sessions (id, project_id, is_pinned, archived_at) VALUES ('project-pinned-archived', 'project-1', 1, '2026-11-01');
-      INSERT INTO sessions (id, project_id, is_pinned) VALUES ('project-unpinned', 'project-1', 0);
-      INSERT INTO sessions (id, project_id, is_pinned, parent_session_id) VALUES ('project-pinned-child', 'project-1', 1, 'project-pinned');
-      INSERT INTO sessions (id, project_id, is_pinned, config) VALUES ('project-pinned-remote-child', 'project-1', 1,
+      INSERT INTO sessions (id, project_id, chat_id, is_pinned) VALUES ('project-pinned', 'project-1', 'group-1', 1);
+      INSERT INTO sessions (id, project_id, chat_id, is_pinned, archived_at) VALUES ('project-pinned-archived', 'project-1', 'group-1', 1, '2026-11-01');
+      INSERT INTO sessions (id, project_id, chat_id, is_pinned) VALUES ('project-unpinned', 'project-1', 'group-1', 0);
+      INSERT INTO sessions (id, project_id, chat_id, is_pinned, parent_session_id) VALUES ('project-pinned-child', 'project-1', 'group-1', 1, 'project-pinned');
+      INSERT INTO sessions (id, project_id, chat_id, is_pinned, config) VALUES ('project-pinned-remote-child', 'project-1', 'group-1', 1,
         '{"version":"1","type":"acp","parentRemote":{"deviceId":"device-2","sessionId":"remote-parent"}}');
       INSERT INTO sessions (id, project_id, is_pinned) VALUES ('standalone-pinned', 'tasks', 1);
     `);
@@ -63,7 +63,6 @@ describe('sidebar pin upgrade', () => {
     expect(marker()).toBeDefined();
     expect(mocks.emit).toHaveBeenCalledWith(sessionChangedChannel, {
       sessionId: 'project-pinned',
-      projectId: 'project-1',
       changes: { isPinnedToSidebar: true },
     });
     expect(mocks.emit).toHaveBeenCalledTimes(2);

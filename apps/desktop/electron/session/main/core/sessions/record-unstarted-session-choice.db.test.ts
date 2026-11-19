@@ -39,6 +39,7 @@ describe('recordUnstartedSessionChoice', () => {
       INSERT INTO sessions (id, project_id, provider, runtime, config)
         VALUES ('acp-1', 'project-1', 'codex', 'acp',
                 '{"version":"1","type":"acp","model":"gpt-own","permissionMode":"full-access"}');
+      INSERT OR IGNORE INTO workspaces (id, type, path) VALUES ('ws-fixture', 'local', '/fixture'); UPDATE sessions SET workspace_id = 'ws-fixture' WHERE workspace_id IS NULL;
     `);
     await recordSessionPlatformModel('pty-1', { modelId: 'glm-5.3' });
   });
@@ -57,7 +58,7 @@ describe('recordUnstartedSessionChoice', () => {
     await expect(sessionPlatformModel('pty-1')).resolves.toEqual({ modelId: 'glm-5.3-flash' });
     expect(config('pty-1')).toEqual({ version: '1', type: 'pty', initialPrompt: 'hi', permissionMode: 'edit' });
     expect(mocks.emit).toHaveBeenCalledWith(sessionChangedChannel, {
-      sessionId: 'pty-1', projectId: 'project-1', changes: { model: null, effort: null },
+      sessionId: 'pty-1', changes: { model: null, effort: null },
     });
   });
 
@@ -69,7 +70,7 @@ describe('recordUnstartedSessionChoice', () => {
     await expect(sessionPlatformModel('acp-1')).resolves.toBeNull();
     expect(config('acp-1')).toEqual({ version: '1', type: 'acp', model: 'gpt-other', permissionMode: 'full-access' });
     expect(mocks.emit).toHaveBeenCalledWith(sessionChangedChannel, {
-      sessionId: 'acp-1', projectId: 'project-1', changes: { model: 'gpt-other' },
+      sessionId: 'acp-1', changes: { model: 'gpt-other' },
     });
   });
 

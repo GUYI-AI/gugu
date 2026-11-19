@@ -29,7 +29,8 @@ vi.mock('@main/core/agent-status/agent-status-writer', () => ({
 vi.mock('../agents/plugin-registry', () => ({ getPlugin: () => ({}) }));
 // fork 只对能在来源那条腿上分叉的 provider 开放,attachAgentToSession 会先问这一句。
 vi.mock('../agents/fork-legs', () => ({ forkRuntimes: () => ['pty', 'acp'] }));
-vi.mock('../projects/utils', () => ({
+vi.mock('@main/core/sessions/session-workspace-manager', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   resolveSession: () => ({ sessions: { startSession: mocks.startSession } }),
 }));
 vi.mock('./session-events', () => ({ sessionEvents: { _emit: vi.fn() } }));

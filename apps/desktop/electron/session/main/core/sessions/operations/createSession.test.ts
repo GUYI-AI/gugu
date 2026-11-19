@@ -344,7 +344,7 @@ describe('createTask · 引擎不可用', () => {
     },
     workspaceConfig: {
       version: '2' as const,
-      workspace: { kind: 'new-worktree' as const },
+      workspace: { kind: 'repository-instance' as const, workspaceId: 'ws-repo-1' },
     },
   } as unknown as Parameters<typeof createSession>[0];
 

@@ -231,7 +231,8 @@ async function collect(params: SessionHistoryParams): Promise<Collected> {
     if (gugu) return gugu;
     const local = localGroupOf(row.directory);
     const chatId = local.key === null ? null : groupAtPath.get(local.key) ?? null;
-    return chatId ? { key: projectSectionKey(chatId), projectName: local.label } : { key: local.key, projectName: local.label };
+    // A group's section is named by the group (the renderer has its name), never by one of its folders here.
+    return chatId ? { key: projectSectionKey(chatId), projectName: null } : { key: local.key, projectName: local.label };
   };
 
   const countsBySource = emptyCounts(SESSION_HISTORY_SOURCES);
