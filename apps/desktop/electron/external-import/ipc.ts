@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { anySignal } from '@gugu/core/shared/anySignal'
 import { join } from 'node:path'
 import { app, dialog, type BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from 'electron'
 import {
@@ -9,7 +10,9 @@ import {
   type ExternalImportSource,
 } from '../../src/session/shared/core/session-import/external-conversation-import'
 import { readChatGptConversation, readChatGptExport } from './chatgpt'
-import { readCursorHistory } from './cursor'
+import type { CursorSelection } from './cursor'
+import { runCursorProcess } from './cursor-process'
+import { desktopWorkerPath } from '../session/main/worker-manifest'
 import { ExternalHistoryStore } from './store'
 
 type Selection = {
@@ -20,16 +23,18 @@ type Selection = {
 type ImportRun = {
   id: string
   source: ExternalImportSource
-  selection: Selection
+  selection: Selection | CursorSelection
   offset: number
+  controller: AbortController
+  pending?: boolean
 }
 
 type Scope = {
   owner: string
-  selections: Partial<Record<ExternalImportSource, Selection>>
+  selections: { chatgpt?: Selection; cursor?: CursorSelection }
   pending: boolean
   controller: AbortController
-  cursorScan?: Promise<Selection>
+  cursorScan?: Promise<CursorSelection>
   runs: Map<string, ImportRun>
 }
 
@@ -48,7 +53,8 @@ export function registerExternalImportIpc(input: {
   let store: ExternalHistoryStore | undefined
   let activeScope: Scope | undefined
 
-  const history = () => store ??= new ExternalHistoryStore(join(app.getPath('userData'), 'external-conversation-history'))
+  const historyDirectory = () => join(app.getPath('userData'), 'external-conversation-history')
+  const history = () => store ??= new ExternalHistoryStore(historyDirectory())
   const ownerChanged = () => {
     if (!activeScope || activeScope.owner === input.getOwner()) return
     activeScope.controller.abort()
@@ -76,11 +82,13 @@ export function registerExternalImportIpc(input: {
     const state = entry.scope
     const kind = parseSource(source)
     if (kind === 'cursor') {
-      const scan = state.cursorScan ??= readCursorHistory(state.controller.signal)
+      const scan = state.cursorScan ??= runCursorProcess(desktopWorkerPath('cursor-import'), { action: 'scan' }, state.controller.signal)
+        .then(reply => { if (reply.action !== 'scan') throw new Error('Invalid Cursor scan response'); return reply.result })
         .finally(() => { state.cursorScan = undefined })
       const selected = await scan
-      if (scope(event)?.scope !== state || !selected.rows.length) return null
+      if (scope(event)?.scope !== state) return null
       state.selections.cursor = selected
+      if (!selected.rows.length) return null
     }
     const selected = state.selections[kind]
     const count = selected?.rows.filter(row => !history().has(state.owner, kind, row.sourceId)).length ?? 0
@@ -134,15 +142,29 @@ export function registerExternalImportIpc(input: {
     const selection = state.selections[kind]
     if (!selection) throw new Error('No conversation source is selected')
     const id = randomUUID()
-    state.runs.set(id, { id, source: kind, selection, offset: 0 })
+    state.runs.set(id, { id, source: kind, selection, offset: 0, controller: new AbortController() })
     return { id, total: selection.rows.length + selection.failed }
   })
 
-  input.ipc.handle(channels.next, (event, id: string): ExternalImportBatch => {
+  input.ipc.handle(channels.next, async (event, id: string): Promise<ExternalImportBatch> => {
     const { scope: state } = requireScope(event)
     const run = state.runs.get(id)
     if (!run) throw new Error('Import is unavailable')
     const { selection, source } = run
+    if (source === 'cursor') {
+      if (run.pending) throw new Error('Import batch is already running')
+      run.pending = true
+      try {
+        const reply = await runCursorProcess(desktopWorkerPath('cursor-import'), {
+          action: 'import', owner: state.owner, directory: historyDirectory(), selection,
+          offset: run.offset, size: BATCH_SIZE,
+        }, anySignal([state.controller.signal, run.controller.signal]))
+        if (reply.action !== 'import' || scope(event)?.scope !== state || !state.runs.has(id)) throw new Error('Import is unavailable')
+        run.offset += BATCH_SIZE
+        if (reply.result.done === reply.result.total) state.runs.delete(id)
+        return reply.result
+      } finally { run.pending = false }
+    }
     const result: ExternalImportBatch = {
       imported: [],
       alreadyImported: 0,
@@ -152,7 +174,7 @@ export function registerExternalImportIpc(input: {
     }
     for (const row of selection.rows.slice(run.offset, run.offset + BATCH_SIZE)) {
       try {
-        const added = history().import(state.owner, source, row)
+        const added = history().import(state.owner, source, row as ExternalConversation)
         if (added) result.imported.push(added)
         else result.alreadyImported++
       } catch {
@@ -165,7 +187,9 @@ export function registerExternalImportIpc(input: {
   })
 
   input.ipc.handle(channels.cancel, (event, id: string) => {
-    scope(event)?.scope.runs.delete(id)
+    const state = scope(event)?.scope
+    state?.runs.get(id)?.controller.abort()
+    state?.runs.delete(id)
   })
 
   input.ipc.handle(channels.list, (event, source: unknown) => {

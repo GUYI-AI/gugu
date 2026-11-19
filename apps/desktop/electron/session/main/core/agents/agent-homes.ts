@@ -133,7 +133,7 @@ export async function scanAgentHomes(providerIds?: readonly string[], upgradedOn
     if (!providerIds && !upgradedOnly && localDependencyManager.get(providerId as DependencyId)?.status !== 'available') continue;
     const home = homeFor(providerId);
     if (!home) continue;
-    await prepareAutomaticImport(providerId);
+    // Status reads must not wait for the background history/configuration migration.
     const deferred = migrationSpace && (await upgradeProviders())?.has(providerId) && !await readAgentHomeMarker(home);
     if (deferred) {
       rows.push({ providerId, name: plugin.metadata.name, userRoot: home.userConfigRoot,
