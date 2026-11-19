@@ -30,7 +30,7 @@ const log = createLogger('harness-model-catalog');
 
 // Old successful catalogs may have silently discarded every grouped choice.
 // Re-probe once instead of keeping those empty results for the ready-cache TTL.
-const STORAGE_KEY = 'harnessModelCatalogs.aiReview.v1';
+const STORAGE_KEY = 'harnessModelCatalogs.permissions.v2';
 
 let wired = false;
 

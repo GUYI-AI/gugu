@@ -699,7 +699,7 @@
   --selected: color-mix(in oklab, var(--fg) 7.5%, transparent);
   --rail-selected: color-mix(in oklab, var(--fg) 5%, transparent); /* 最左栏选中:比列表里的选中行轻一档(gugu-dev#181 原型) */
   --press: color-mix(in oklab, var(--fg) 6%, transparent); /* @@@1787 按压反馈,比 hover 深一档才可感知 */
-  --pinned: color-mix(in oklab, var(--fg) 2.5%, transparent); /* #2598 置顶行常驻底色(飞书式):静息态可辨,压在 hover/selected 之下 */
+  --pinned: color-mix(in oklab, var(--fg) 1%, transparent); /* #2598 置顶行常驻底色(飞书式):静息态可辨,压在 hover/selected 之下 */
   /* @@@state-ladder-mix (#2322) 上面三档的「实色配方」。--hover/--press/--selected 是半透明叠色,
      叠在任何面上都成立;而会话页的设计系统(vanilla-extract 生成的 --em-surface-* 契约)只吃**实色**,
      没有叠色这一层。于是把同一条阶梯拆成「叠什么色 + 叠多少」,让皮肤桥能对每个面 color-mix 出
@@ -938,7 +938,7 @@
   --selected: color-mix(in oklab, var(--fg) 7.5%, transparent); /* @@@selected-neutral-7333 */
   --rail-selected: color-mix(in oklab, var(--fg) 5%, transparent); /* 最左栏选中:比列表里的选中行轻一档(gugu-dev#181 原型) */
   --press: color-mix(in oklab, var(--fg) 6%, transparent); /* @@@1787 按压反馈,比 hover 深一档才可感知 */
-  --pinned: color-mix(in oklab, var(--fg) 2.5%, transparent); /* #2598 置顶行常驻底色(飞书式):静息态可辨,压在 hover/selected 之下 */
+  --pinned: color-mix(in oklab, var(--fg) 1%, transparent); /* #2598 置顶行常驻底色(飞书式):静息态可辨,压在 hover/selected 之下 */
   /* @@@state-ladder-mix 浅色配方(说明见 :root),#7333 起与暗色侧同一组数。 */
   --state-tint: var(--fg); /* 浅色下 --fg 近黑 = 叠黑;与暗色侧同一条式子 */
   --state-tint-selected: var(--fg); /* @@@selected-neutral-7333 */
@@ -1031,7 +1031,7 @@
 
 /* ── 侧栏渐进底色(设置 · 通用,默认关) ───────────────────────────────────────────
    @@@sidebar-tint owner 2026-09-10:「最左边菜单栏是这个色,消息列表是白色,会话列表要介于
-   两者之间」。开关的真值是 `<html data-sidebar-tint="on">`(见 lib/sidebarTint.ts),这里只改写
+   两者之间」。开关的真值是 `<html data-sidebar-tint="on">`(偏好在 lib/devicePreferences.ts),这里只改写
    `--sidebar` 一个 token —— 会话列表/通讯录/设置导航列(.gg-pane[data-role='nav'])与会话页左栏
    (皮肤桥把 .bg-background-tertiary 与 --em-background-secondary 都接在它上面)本来就同吃这一档,
    所以一处改完全都跟上;会话页那棵 Shadow DOM 靠自定义属性继承拿到同一个值。
@@ -1688,9 +1688,9 @@ body.barcode-scanner-active #root {
    pinned/selected 用 :not() 显式让开，别靠特异度赛跑去猜谁赢。 */
 @media (hover: hover) { .gg-row-host:hover > .gg-row:not([data-selected]):not([data-popup-open]):not([data-pinned]) { background: var(--hover); } }
 /* @@@contacts-offscreen-rows 通讯录分段里的行:屏幕外的跳过布局与绘制(content-visibility),页内查找照样搜得到。
-   auto 记住画过的实际高度,没画过的按 60px(一行头像 + 两行字)占位。paint containment 会裁掉框外的东西:
+   auto 记住画过的实际高度,没画过的按 48px(头像 32 + 上下内距 8,通讯录行一律单行)占位。paint containment 会裁掉框外的东西:
    键盘焦点环画在框外 4px(outline 2 + offset 2),用 overflow-clip-margin 让出来,外观不变。 */
-.gg-c-sec-body .gg-row-host, .gg-c-sec-body > div > .gg-row { content-visibility: auto; contain-intrinsic-size: auto 60px; overflow-clip-margin: 4px; }
+.gg-c-sec-body .gg-row-host, .gg-c-sec-body > div > .gg-row { content-visibility: auto; contain-intrinsic-size: auto 48px; overflow-clip-margin: 4px; }
 
 /* Ghost 图标钮:导航轨/composer 图标/消息工具条/关闭钮。「开」态挂 data-on;菜单 Trigger 菜单开着时 Base UI 挂 data-popup-open,同一个开态。
    图标色只在 faint-fg → muted-fg → fg 三档内移动,不引入色相。 */

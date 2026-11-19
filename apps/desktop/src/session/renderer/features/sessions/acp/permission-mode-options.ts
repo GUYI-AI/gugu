@@ -35,28 +35,6 @@ export function sessionPermissionModeOptions(
   )));
 }
 
-/**
- * #7342 停下了(没有活会话、也不在起):引擎报的那份原生档位清单跟着进程没了,用 provider 声明的
- * 映射表把四档摆回来(id 仍是原生 id,`localizePermissionModeOptions` 照常收成四档、改名),
- * 选中记录里那一档。危险档的判法与活会话那份逐字相同(`isDestructivePermissionMode`)。
- * 没有映射表、或记录那一档这家没有原生 id = 说不出,❌ 猜:不摆(同「没声明表就一个字都不动」)。
- */
-export function detachedPermissionModeOptions(
-  tier: GuguPermissionMode | null,
-  modeMap: ProviderPermissionModeMap | undefined
-): { options: Options; selected: string } | null {
-  if (!tier || tier === 'ai-review' || !modeMap) return null;
-  const selected = modeMap[tier]?.id;
-  if (!selected) return null;
-  const options: Options = {};
-  for (const rung of GUGU_PERMISSION_MODES) {
-    if (rung === 'ai-review') continue;
-    const id = modeMap[rung]?.id;
-    if (id) options[id] = { name: id, destructive: isDestructivePermissionMode(id) };
-  }
-  return { options, selected };
-}
-
 /** 该档在这个 agent 上真正能用的那个原生 id —— 声明的 id 优先,其次别名,都没上报就没有。 */
 function reportedIdFor(
   rung: GuguPermissionMode,
@@ -102,7 +80,10 @@ export function localizePermissionModeOptions(
   nameForTier?: (tier: GuguPermissionMode) => string
 ): Options | null {
   if (!options) return null;
-  if (!modeMap) return options;
+  if (!modeMap) return Object.fromEntries(Object.entries(options).map(([id, option]) => [id, { ...option,
+    name: option.name.startsWith('taskConfig.') ? translate(option.name as SessionMessageLookupKey) : option.name,
+    description: option.description?.startsWith('taskConfig.') ? translate(option.description as SessionMessageLookupKey) : option.description,
+  }]));
 
   const labels: Record<GuguPermissionMode, { name: string; description: string }> = {
     plan: {
@@ -131,7 +112,9 @@ export function localizePermissionModeOptions(
   for (const rung of GUGU_PERMISSION_MODES) {
     const id = reportedIdFor(rung, options, modeMap);
     if (!id) continue;
-    collapsed[id] = { ...options[id], ...labels[rung], name: nameForTier?.(rung) ?? labels[rung].name };
+    const reason = options[id].disabled ? options[id].description : undefined;
+    const description = reason?.startsWith('taskConfig.') ? translate(reason as SessionMessageLookupKey) : reason ?? labels[rung].description;
+    collapsed[id] = { ...options[id], ...labels[rung], description, destructive: isDestructivePermissionMode(id), name: nameForTier?.(rung) ?? labels[rung].name };
   }
 
   // 表声明的档一个都没上报 = 这张表对不上这个 agent。别摆一个空下拉,原样交出去。

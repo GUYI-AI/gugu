@@ -27,6 +27,8 @@ vi.mock('@renderer/lib/ipc', () => ({
     return () => listeners.delete(listener);
   } },
   rpc: { browser: { focusHost: native.focusHost, setAnnotationBrowsing: native.setAnnotationBrowsing } },
+  // The theme's device-preference store links the settings client (unused here: a web shell, no first-frame answer).
+  rpcOn: () => ({}),
 }));
 
 vi.mock('@/platform/desktopIpc', () => ({ desktopIpc: () => ({

@@ -4,6 +4,11 @@ import { creditChartScale } from '../../lib/usage/creditChartScale'
 import { tokenColor, useChartTheme } from './useChartTheme'
 import { VChart } from '@visactor/react-vchart'
 import type { ChartPoint, ModelTotal } from '../../lib/usage/charts'
+import type { CacheHitPoint, CacheHitSeries } from '../../lib/usage/cacheHitRate'
+import { engineLabel } from '../../lib/usage/engineLabel'
+import { parseDay } from '../../lib/usage/derive'
+import { formatDate } from '@/i18n'
+import { cachePercent } from './format'
 
 // 用量页的 VChart 图。这个模块整体懒加载 ——
 // VChart 有几百 KB,只有打开用量页才需要。
@@ -135,6 +140,52 @@ export function HourChart({ hours, seriesLabel, format }: { hours: number[]; ser
     legends: { visible: false },
     bar: { state: { hover: { stroke: tokenColor('--fg'), lineWidth: 1 } } },
     tooltip: { mark: { content: [{ key: () => seriesLabel, value: (d: { value: number }) => format(d.value) }] } },
+    theme,
+  }
+  return <VChart spec={spec as never} options={OPTIONS} />
+}
+
+/** The daily cache ratio is neither stacked nor interpolated across missing input. */
+export function CacheHitChart({ series: data }: { series: CacheHitSeries }) {
+  const theme = useChartTheme()
+  const values = data.points.map((point) => ({ ...point, engine: engineLabel(point.engine) }))
+  const domain = data.domain.map(engineLabel)
+  const colors = data.domain.map((engine) => tokenColor(engine === 'claude' ? '--usage-series-1' : '--muted-fg'))
+  const format = (value: number | null) => cachePercent(value === null ? null : value / 100)
+  const dateLabel = (day: string) => formatDate(parseDay(day), { month: 'short', day: 'numeric' })
+  const byDay = new Map<string, Map<string, CacheHitPoint>>()
+  for (const point of values) {
+    const day = byDay.get(point.time) ?? new Map<string, CacheHitPoint>()
+    day.set(point.engine, point)
+    byDay.set(point.time, day)
+  }
+  const content = [{ key: (d: CacheHitPoint) => d.engine, value: (d: CacheHitPoint) => format(d.value) }]
+  const spec = {
+    ...BASE, type: 'line', data: [{ id: 'cache-hit', values }],
+    xField: 'time', yField: 'value', seriesField: 'engine', stack: false, invalidType: 'break',
+    color: { type: 'ordinal', domain, range: colors },
+    line: { style: { lineWidth: 2, curveType: 'linear' } },
+    point: { style: { size: 4, fillOpacity: 0 }, state: { dimension_hover: { fillOpacity: 1, size: 7 } } },
+    legends: { visible: true, orient: 'bottom' },
+    axes: [
+      { orient: 'left', min: 0, max: 100, nice: false, tickCount: 5, label: { formatMethod: (v: number | string) => `${v}%` } },
+      { orient: 'bottom', type: 'band', label: { autoHide: true, formatMethod: dateLabel } },
+    ],
+    crosshair: { xField: { visible: true, line: { type: 'line' } } },
+    tooltip: {
+      mark: { title: { value: (d: CacheHitPoint) => dateLabel(d.time) }, content },
+      dimension: {
+        title: { value: (d: CacheHitPoint) => dateLabel(d.time) }, content,
+        updateContent: (items: { datum?: CacheHitPoint }[]) => {
+          const time = items.find((item) => item.datum?.time)?.datum?.time
+          if (!time) return []
+          return domain.map((engine, index) => ({
+            key: engine, value: format(byDay.get(time)?.get(engine)?.value ?? null),
+            hasShape: true, shapeType: 'circle', shapeColor: colors[index],
+          }))
+        },
+      },
+    },
     theme,
   }
   return <VChart spec={spec as never} options={OPTIONS} />

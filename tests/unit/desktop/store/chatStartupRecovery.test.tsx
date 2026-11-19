@@ -37,8 +37,9 @@ vi.mock('../../../../apps/desktop/src/lib/chatProjection', async original => ({
   ...await original<typeof import('../../../../apps/desktop/src/lib/chatProjection')>(),
   ...chatProjectionModuleStub(() => projection),
 }))
-vi.mock('../../../../apps/desktop/src/lib/notificationSettings', () => ({
-  useNotificationSettings: () => ({ chatMessages: false, sound: false }),
+vi.mock('../../../../apps/desktop/src/lib/devicePreferences', async (importOriginal) => ({
+  ...await importOriginal<object>(),
+  useDevicePreferences: () => ({ chatMessages: false, chatSound: false }),
 }))
 
 const { ChatProvider } = await import('../../../../apps/desktop/src/store/chat')

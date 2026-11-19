@@ -45,7 +45,7 @@ function emptyCloud(lookups: string[] = []): HeartbeatClient {
       select: () => ({ eq: () => ({ eq: (_c: string, machineId: string) => chain(machineId) }) }),
       upsert: async () => ({ error: null }),
     }),
-    rpc: async () => ({ error: null }),
+    rpc: async (_name: string, args: { p_device: { device_id: string; machine_id: string } }) => { lookups.push(args.p_device.machine_id); return { data: { device_id: args.p_device.device_id, created: true }, error: null } },
   } as unknown as HeartbeatClient
 }
 

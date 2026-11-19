@@ -1,7 +1,11 @@
 import type { ImportedTranscript, LocalTranscriptSession, TranscriptContext, TranscriptSource } from '@gugu/core/shared/types/transcripts';
 
 /** External CLI history uses the host's source IDs and parser, including its exclusion of subagents. */
-export type AppSessionGroup = { key: string | null; label: string | null; repositoryUrl?: string };
+/**
+ * `repositoryError`: this group's folder looked like a repository but git could not read it (the reason, as git said it).
+ * Only this group carries it; the rest of the index is unaffected.
+ */
+export type AppSessionGroup = { key: string | null; label: string | null; repositoryUrl?: string; repositoryError?: string };
 export type AppSessionIndexOptions = { project?: string; source?: TranscriptSource; offset?: number; limit?: number; device?: string; groupPaths?: string[] };
 export type AppSessionIndex = { rows: Array<LocalTranscriptSession & { group: AppSessionGroup }>; groups: Array<{ path: string; group: AppSessionGroup }>; total: number; pending: number; stale: boolean; nextOffset: number | null };
 export type AppSessionReadOptions = { filePath: string; source: TranscriptSource; offset?: number; limit?: number; view?: 'conversation' | 'context'; device?: string };

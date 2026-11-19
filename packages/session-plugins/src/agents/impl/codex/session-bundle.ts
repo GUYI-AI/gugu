@@ -168,9 +168,14 @@ export const codexSessionBundleDescriptor = {
     credentialPaths: [{ path: 'auth.json', evidence: 'Codex file credential store; OAuth refresh tokens must not be duplicated.' }],
     importGroups: [
       { id: 'settings', paths: [{ path: 'config.toml', isLegacyGeneratedTarget: isLegacyCodexTrustFile }], evidence: 'https://developers.openai.com/codex/config-basic/; settings and mcp_servers share config.toml.' },
-      { id: 'rules', paths: ['AGENTS.md', 'AGENTS.override.md', 'rules/'], evidence: 'https://developers.openai.com/codex/guides/agents-md/' },
+      { id: 'rules', paths: ['AGENTS.md', 'AGENTS.override.md', 'rules/', 'prompts/', 'memories/'], evidence: 'https://developers.openai.com/codex/guides/agents-md/' },
       { id: 'skills', paths: ['skills/'], evidence: 'https://developers.openai.com/codex/skills/' },
     ],
+    historySession: (path: string) => {
+      if (!/\.jsonl(?:\.(?:zst|gz))?$/.test(path)) return null;
+      const id = path.split('/').at(-1)!.match(/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/i)?.[0]?.toLowerCase() ?? path;
+      return { id, primary: true };
+    },
     carryExclusions: [
       ...['sessions', 'archived_sessions'].map((path) => ({ path, upgradeHistory: true, evidence: 'Native session transcripts imported when upgrading Gugu.' })),
       ...['log', 'logs', 'tmp', '.tmp', '.cache', 'cache', 'shell_snapshots', 'history.jsonl',
@@ -184,7 +189,11 @@ export const codexSessionBundleDescriptor = {
     } }],
   },
   platform: harnessPlatform,
-  customModel: { modelOptional: true, evidence: 'Codex can use the configured model_provider without a -c model argument.' },
+  customModel: {
+    modelOptional: true,
+    convertFrom: ['openai-chat-completions'],
+    evidence: 'Codex can use the configured model_provider without a -c model argument. cc-switch-cli v5.11.4 serves OpenAI Responses to Codex from an OpenAI Chat provider (api-format chat).',
+  },
   // ❌ `CODEX_ACCESS_TOKEN`:凭据的出处是咕咕给这一家的独立配置根,同名 export 会让「面板上的账号」与「实际在用的账号」分家且不报错。
   // ❌ 这里也没有 `GUGU_CODEX_BIN`(#5702):咕咕起适配器时自己填(./index.ts),透传就是让 shell 顶掉面板上的选择。
   shellEnv: { passThrough: ['CODEX_HOME', 'GUGU_CODEX_ACP_TEST_AUDIT_PATH'], denied: ['CODEX_ACCESS_TOKEN'] },
@@ -195,7 +204,11 @@ export const codexSessionBundleDescriptor = {
       recovery: 'reopen',
       inferenceOwner: 'app-server-process-thread',
       reopenEntry: 'host-session-reload',
-      sourceChangeSession: 'preserve',
+      // A Codex thread keeps the model provider it was created on: since codex 0.166 app-server refuses
+      // `thread/resume` under another one (openai/codex#57840, tightened in #59503). A cross-route reload
+      // therefore continues on a new thread of the new route that is given the conversation so far, without
+      // the old route's encrypted reasoning (the bridge's @@@route-switch-history), and the agent keeps its context.
+      sourceChangeSession: 'fork',
     },
     'app-server': {
       delivery: 'credential-proxy',
@@ -203,7 +216,8 @@ export const codexSessionBundleDescriptor = {
       recovery: 'reopen',
       inferenceOwner: 'app-server-process-thread',
       reopenEntry: 'host-session-reload',
-      sourceChangeSession: 'preserve',
+      // The same thread rule as the ACP leg.
+      sourceChangeSession: 'fork',
     },
   },
   /**

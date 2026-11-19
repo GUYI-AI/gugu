@@ -17,7 +17,7 @@ const {
 } = vi.hoisted(() => ({
   authUser: { id: 'user-1', email: 'user@example.test', nickname: 'User One' },
   setUserMock: vi.fn(),
-  notificationSettings: { messages: false },
+  notificationSettings: { chatMessages: false, chatSound: false },
   chatServiceMock: {
     _callCountsBySource: {},
     getMessages: vi.fn(),
@@ -75,8 +75,9 @@ vi.mock('../../../../apps/desktop/src/lib/accountRevisionCoordinator', () => ({
 vi.mock('../../../../apps/desktop/src/lib/supabaseAccountRevisionSource', () => ({
   createSupabaseAccountRevisionSource: () => ({}),
 }))
-vi.mock('../../../../apps/desktop/src/lib/notificationSettings', () => ({
-  useNotificationSettings: () => notificationSettings,
+vi.mock('../../../../apps/desktop/src/lib/devicePreferences', async (importOriginal) => ({
+  ...await importOriginal<object>(),
+  useDevicePreferences: () => notificationSettings,
 }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: { subscribeAppForeground: () => () => {}, capabilities: { notifications: false, badge: false }, showNotification: vi.fn(), setBadge: vi.fn() },
@@ -383,7 +384,7 @@ describe('#4258 jumping to the unread locator', () => {
     await openBadgedChat()
     markStreamReadMock.mockClear()
     const seenEntry = latestStore!.unreadEntry!
-    await act(async () => { seenEntry.onSeen() })
+    await act(async () => { seenEntry.consume() })
     expect(latestStore!.unreadEntry).toBeNull()
     await setChatOnScreen(false)
     serverRows = [...serverRows, peerRow(12)]
@@ -391,9 +392,9 @@ describe('#4258 jumping to the unread locator', () => {
     await act(async () => { await latestStore!.openUnreadChat(CHAT_ID, false) })
     const nextEntry = latestStore!.unreadEntry!
     expect(nextEntry.locator.message_id).toBe('m12')
-    await act(async () => { seenEntry.onSeen() })
+    await act(async () => { seenEntry.consume() })
     expect(latestStore!.unreadEntry).toBe(nextEntry)
-    await act(async () => { nextEntry.onSeen() })
+    await act(async () => { nextEntry.consume() })
     expect(latestStore!.unreadEntry).toBeNull()
     expect(markStreamReadMock).not.toHaveBeenCalled()
   })

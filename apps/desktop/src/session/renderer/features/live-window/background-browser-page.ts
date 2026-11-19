@@ -1,4 +1,4 @@
-import type { BrowserState } from '../browser/browser-tab-provider';
+import { browserTabProvider, type BrowserState } from '../browser/browser-tab-provider';
 import type { BrowserTabResource } from '../browser/browser-tab-resource';
 import type { WorkspaceViewModel } from '../sessions/stores/workspace-view-model';
 import type { TabEntry } from '../tabs/core/tab-provider';
@@ -8,10 +8,8 @@ type BackingPage = { state: BrowserState; resource: BrowserTabResource; preparin
 const pages = new WeakMap<WorkspaceViewModel, BackingPage>();
 
 /** Browser Use's real page can live behind its mapped picture without creating a second visible pane. */
-export async function acquireBackgroundBrowserPage(view: WorkspaceViewModel, url: string): Promise<BackingPage> {
+export function acquireBackgroundBrowserPage(view: WorkspaceViewModel, url: string): BackingPage {
   const existing = pages.get(view); if (existing) return existing;
-  const { browserTabProvider } = await import('../browser/browser-tab-provider');
-  const raced = pages.get(view); if (raced) return raced;
   const state = browserTabProvider.onBeforeOpen!({ initialUrl: url }, view.activePane.ctx);
   if (!state) throw new Error('The task browser page could not be created');
   const entry: TabEntry<BrowserState> = { kind: 'browser', tabId: `task-browser:${state.browserId}`, state };
@@ -33,7 +31,7 @@ export async function prepareBackgroundBrowserPage(view: WorkspaceViewModel, url
   check();
   const backing = backgroundBrowserPage(view);
   if (!backing && !request.createIfMissing) throw new Error('This session has no browser page. Use browser_navigate with a URL first.');
-  const page = backing ?? await acquireBackgroundBrowserPage(view, url);
+  const page = backing ?? acquireBackgroundBrowserPage(view, url);
   page.preparing++;
   let ended = false;
   const end = (success = false) => {

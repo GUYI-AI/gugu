@@ -44,7 +44,7 @@ import { SidebarIdentityCard, sidebarIdentityCard, useSidebarIdentityCardTrigger
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
 import type { SidebarJoin } from '@/lib/sidebarJoinedGroups';
 import { mountedSessionPresentation, type RemoteSidebarSession } from './sidebar-store';
-import { sessionPresentation, sessionReading } from '@/mobile/agent-watch/watch-status';
+import { sessionPresentation, sessionReading } from '@/lib/agent-wait/watch-status';
 import { useShownAgentStatus } from '@/components/chat/useAgentsOnCloudComputer';
 import { withMountedSession } from './with-mounted-session';
 import { useSessionSchedules } from '@renderer/features/automations/use-session-schedules';

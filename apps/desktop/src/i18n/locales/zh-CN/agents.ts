@@ -344,6 +344,7 @@ export default {
       "appliedHot": "已生效：当前会话已当场切换。",
       "appliedReloadPreserved": "已生效：会话已重开并续上历史。",
       "appliedReloadReplaced": "已生效：Agent 另起了一条自己的新会话；咕咕里的对话记录都在，但 Agent 不带之前的上下文。",
+      "appliedReloadRouteSwitched": "已生效：已切换计费路线。",
       "appliedReload": "已生效：会话已重开。",
       "appliedNextSession": "已保存：这个 Agent 此刻没有在跑的会话，下一个会话起生效。",
       "applyFailed": "设备没能应用这个选择，原因如下：",

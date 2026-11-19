@@ -106,6 +106,10 @@ export default {
     "manageConnections": "Manage connections"
   },
   "agentHome": {
+  "historySummary_one": "Imported {{count}} recent session; {{skipped}} remain in the original location",
+  "historySummary_other": "Imported {{count}} recent sessions; {{skipped}} remain in the original location",
+  "preparation": { "preparing": "Preparing migration", "copying": "Importing configuration and sessions", "history": "Preparing history", "elapsedLabel_one": "{{label}}, {{count}} second elapsed", "elapsedLabel_other": "{{label}}, {{count}} seconds elapsed" },
+
   "migrationDeferredTitle": "Configuration migration deferred",
   "migrationSpaceNotice": "Not enough disk space. Free {{size}} GB for automatic migration on the next startup. Existing sessions remain available.",
   "migrationNoticeTitle": "Configuration migration complete",
@@ -114,6 +118,8 @@ export default {
   "migrationSkipped_one": "View {{count}} skipped item",
   "migrationSkipped_other": "View {{count}} skipped items",
   "migrationResults": "Configuration migration results",
+  "migrationRelogin": "Sign in to {{name}} again to use your account in Gugu.",
+  "configurationImportFailed": "Could not import the configuration. Try again.",
   "migrationReadFailed": "Could not read the configuration migration results.",
   "oldSessionsSkipped": "{{count}} old session files were too large and were not brought over.",
   "groups": {
@@ -126,6 +132,10 @@ export default {
     "models": "Models"
   },
   "issue": {
+    "historyLimit": "Outside the recent 4 GiB session budget; the original is unchanged",
+    "groupHistoryLimitSummary_one": "{{count}} older session was not migrated; the original is unchanged",
+    "groupHistoryLimitSummary_other": "{{count}} older sessions were not migrated; the originals are unchanged",
+
     "tooLargeSummary_one": "{{count}} file was too large to import",
     "tooLargeSummary_other": "{{count}} files were too large to import",
     "skippedSummary_one": "{{count}} file was skipped",
@@ -144,9 +154,9 @@ export default {
     "sourceChanged": "Source changed; retry",
     "unreadable": "Could not read this file"
   },
-  "local": "Local configuration",
-  "updated": "Local configuration has updates",
-  "row": "A copy was imported from {{path}} on {{date}}. Terminal and Gugu changes do not sync automatically.",
+  "local": "Terminal configuration",
+  "updated": ", later changed in the terminal",
+  "row": "Imported {{date}}",
   "upgradeKept": "Gugu kept your existing {{name}} configuration.",
   "upgradeRelogin": "Sign in to {{name}} again in Settings → Subscriptions.",
   "reimport": "Re-import",

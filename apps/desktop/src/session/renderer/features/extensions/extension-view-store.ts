@@ -97,9 +97,13 @@ class ExtensionViewStore {
   private readonly surfaces = new Map<number, number>();
   /** Resident pages bound at least once: only these are kept while nobody looks (see `release`). */
   private readonly boundPages = new Set<string>();
+  /** Resident pages whose document did not load (`did-fail-load`): the next claim builds them afresh (see `claim`). */
+  private readonly failedPages = new Set<string>();
+  /** How many times a resident page was built afresh: part of its key in the layer, so a new number is a new webview. */
+  readonly builds = observable.map<string, number>({}, { deep: false });
 
   constructor() {
-    makeObservable(this, { claim: action, release: action, forgetOpened: action, forgetIdle: action, forgetSlot: action, closeSlot: action, pagePainted: action });
+    makeObservable(this, { claim: action, release: action, forgetOpened: action, forgetIdle: action, forgetSlot: action, closeSlot: action, pagePainted: action, reload: action });
   }
 
   /** The page now drawing this claim is bound (the layer says so). A claim already released: nothing to note. */
@@ -132,6 +136,8 @@ class ExtensionViewStore {
     if (!this.residentPages.has(key)) {
       this.residentPages.set(key, { key, kind, place, slot: slotKey(target.sessionId, target.tabId), ...(claim.itemId ? { itemId: claim.itemId } : {}) });
     }
+    // A page whose document never loaded is not kept as it is: whoever comes for it next gets it built again.
+    else if (this.failedPages.has(key)) this.reload(key);
     this.usedAt.set(key, nextUse++);
     const stack = this.stacks.get(key) ?? [];
     stack.push(claim);
@@ -206,7 +212,23 @@ class ExtensionViewStore {
     else this.paintedPages.delete(key);
   }
 
+  /** This page's document did not load. */
+  pageFailed(key: string): void {
+    if (this.residentPages.has(key)) this.failedPages.add(key);
+  }
+
+  /** Build this page afresh (the tab's 重新加载, or a claim of a page that did not load): a new webview, claims kept. */
+  reload(key: string): void {
+    if (!this.residentPages.has(key)) return;
+    this.failedPages.delete(key);
+    this.boundPages.delete(key);
+    this.paintedPages.delete(key);
+    this.builds.set(key, (this.builds.get(key) ?? 0) + 1);
+  }
+
   private drop(key: string): void {
+    this.failedPages.delete(key);
+    this.builds.delete(key);
     this.residentPages.delete(key);
     this.usedAt.delete(key);
     this.boundPages.delete(key);

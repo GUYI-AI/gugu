@@ -84,8 +84,7 @@ export function ContactsDeviceSections({
             <SectionLabel
               interactive
               className={sectionLabelClass}
-              leading={<span className={chevronClass(!open)}><ChevronDown size={16} /></span>}
-              trailing={<>{!open && <span className={sidebarCountClass}>{section.agents.length + section.groups.length}</span>}{isPrimary && <ContactsCreateAgentButton className={sectionAddClass} onCreate={onCreateAgent} />}</>}
+              trailing={<>{isPrimary && <ContactsCreateAgentButton className={sectionAddClass} onCreate={onCreateAgent} />}<span className={sidebarCountClass}>{section.agents.length + section.groups.length}</span><span className={chevronClass(!open)}><ChevronDown size={14} /></span></>}
               onClick={() => toggle(section.key)}
             >
               {titleOf(section)}
@@ -106,8 +105,7 @@ export function ContactsDeviceSections({
       <SectionLabel
         interactive
         className={sectionLabelClass}
-        leading={<span className={chevronClass(!isOpen(GROUPS_KEY))}><ChevronDown size={16} /></span>}
-        trailing={!isOpen(GROUPS_KEY) ? <span className={sidebarCountClass}>{partition.cloudGroups.length}</span> : undefined}
+        trailing={<><span className={sidebarCountClass}>{partition.cloudGroups.length}</span><span className={chevronClass(!isOpen(GROUPS_KEY))}><ChevronDown size={14} /></span></>}
         onClick={() => toggle(GROUPS_KEY)}
       >
         {t('panel.groupSectionTitle')}
@@ -121,9 +119,9 @@ export function ContactsDeviceSections({
 }
 
 // @@@folded-rows - 从没展开过的段(设备段默认收起):行只留名字这一个文字节点 —— 页内查找照样搜得到(#4323 hidden="until-found"),
-// 头像 SVG、状态、悬停菜单这些重的子树等第一次展开再挂。几何与完整行同高(头像位 + 两行),命中那一下浏览器滚到的位置不偏。
+// 头像 SVG、状态、悬停菜单这些重的子树等第一次展开再挂。几何与完整行同高(头像位 + 单行),命中那一下浏览器滚到的位置不偏。
 // memo: the sections re-render on every device heartbeat and chat-list update (owner-scale: ~300 folded rows each
 // time, with the contacts page not even shown); a folded row only changes with its name.
 const FoldedRow = memo(function FoldedRow({ name }: { name: string }) {
-  return <ListRow leading={<div className="h-[var(--avatar-sm)] w-[var(--avatar-sm)] shrink-0" />} title={name} subtitle={'\u00a0'} />
+  return <ListRow leading={<div className="h-[var(--avatar-sm)] w-[var(--avatar-sm)] shrink-0" />} title={name} />
 })
