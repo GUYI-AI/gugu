@@ -381,7 +381,7 @@ export default {
     "send": "发送",
     "settings": "设置"
   },
-  "linkPill": {"unavailable": "不可用：已删除，或你无权查看", "message": "{{sender}}：{{words}}"},
+  "linkPill": {"unavailable": "不可用：已删除，或你无权查看", "message": "{{sender}}：{{words}}", "noSuchMessage": "这个会话里没有以 {{prefix}} 开头的消息", "messageUnavailable": "消息不可用", "chatUnavailable": "聊天不可用", "sessionUnavailable": "任务不可用", "messages": "{{count}} 条消息", "severalMessages": "这个会话里有 {{count}} 条消息以 {{prefix}} 开头，选一条"},
   "attachmentView": {
     "types": {"pdf": "PDF 文档", "word": "Word 文档", "excel": "Excel 表格", "presentation": "演示文稿", "text": "文本", "markdown": "Markdown 文档", "csv": "CSV 表格", "html": "网页", "json": "JSON 文档", "archive": "压缩文件", "image": "图片", "audio": "音频", "video": "视频"},
     "fileGone": "文件已删除",

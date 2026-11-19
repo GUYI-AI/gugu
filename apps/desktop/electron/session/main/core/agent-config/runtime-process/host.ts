@@ -29,7 +29,7 @@ import { err, ok, type Result } from '@gugu/session-shared';
 import type { AgentAuthStatus } from '@gugu/session-core/agents/plugins';
 import type { AgentConfigAuthError } from '@gugu/session-core/workspace-server';
 import { createHarnessConnection, harnessHasConnections, harnessLoginConnectionId, listHarnessConnections, removeHarnessConnection, selectHarnessConnection, sessionHarnessConnectionId } from '@main/core/agents/harness-connections';
-import { listCustomModels, saveCustomModel, removeCustomModel, testCustomModel } from '@main/core/agents/custom-models';
+import { detectCustomModelProtocols, listCustomModels, saveCustomModel, removeCustomModel, testCustomModel } from '@main/core/agents/custom-models';
 import { scanAgentHomes, importHarnessHome, diffHarnessHome, reimportHarnessHome } from '@main/core/agents/agent-homes';
 import { connectionFailure } from '@main/core/sessions/subscription-sessions-busy';
 
@@ -230,6 +230,7 @@ export function withHostResolvedCli(
     saveCustomModel: (input) => connectionOperation(() => saveCustomModel(input)),
     removeCustomModel: ({ connectionId }) => connectionOperation(() => removeCustomModel(connectionId)),
     testCustomModel: (input) => connectionOperation(() => testCustomModel(input)),
+    detectCustomModelProtocols: (input) => connectionOperation(() => detectCustomModelProtocols(input)),
     createConnection: (input) => connectionOperation(() => createHarnessConnection(input)),
     // 读模型清单在宿主里做:key 只发给那个地址本身(#2507)。
     removeConnection: ({ stopBusySessions, ...input }) => connectionOperation(async () => {

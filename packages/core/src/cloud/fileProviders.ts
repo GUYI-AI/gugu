@@ -1,5 +1,7 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { copyVerifiedFile, ciphertextSize, transformFile, type FileSink } from '../shared/fileCipher'
+// Signed-URL expiries are on the backend's clock (`@@@server-clock`).
+import { serverNow } from '../shared/serverClock'
 import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileRefKey, requireFileRange, parseFileMetadata, snapshotBlob, type FileBytes, type FileContext, type FileMetadata, type FileProviders, type FileRevision } from '../shared/fileResolver'
 import type { FileChunkCache } from '../shared/fileCache'
 import { AttachmentsError, attachmentRequest, type AttachmentsEndpoint } from './attachmentsApi'
@@ -46,7 +48,7 @@ function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (r
           let response = await transport.open({ headers: offset ? { Range: `bytes=${offset}-` } : {} })
           const expires = Date.parse(lease!.expires_at ?? '')
           // A valid capability's 403 is a refusal. Only an actually expired lease may be renewed, once per read.
-          if (response.status === 403 && !renewed && Number.isFinite(expires) && expires <= Date.now()) {
+          if (response.status === 403 && !renewed && Number.isFinite(expires) && expires <= serverNow()) {
             void response.body?.cancel().catch(() => undefined); renewed = true
             const signed = await sign(true, origin); lease = signed.lease; origin = signed.direct
             response = await transport.open({ headers: offset ? { Range: `bytes=${offset}-` } : {} })
@@ -258,7 +260,7 @@ export function cloudFileProviders(deps: {
         const lease = signed.lease
         if (video) {
           const expiresAt = Date.parse(lease.expires_at ?? '')
-          if (typeof lease.url !== 'string' || !lease.url || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error('Invalid video preview lease')
+          if (typeof lease.url !== 'string' || !lease.url || !Number.isFinite(expiresAt) || expiresAt <= serverNow()) throw new Error('Invalid video preview lease')
           return { url: lease.url, expiresAt } // Every renewal goes through the same ACL and quota signer.
         }
         if (signed.direct || lease.thumb_url) {
@@ -271,7 +273,7 @@ export function cloudFileProviders(deps: {
             if (!renew) {
               const expires = Date.parse(next.lease.expires_at ?? ''), previous = Date.parse(signed.lease.expires_at ?? '')
               if (next.lease.download_id !== signed.lease.download_id || !Number.isFinite(expires) || !Number.isFinite(previous)
-                || origin && expires > previous || expires <= Date.now() || previous <= Date.now()) throw new Error('File thumbnail reservation changed')
+                || origin && expires > previous || expires <= serverNow() || previous <= serverNow()) throw new Error('File thumbnail reservation changed')
               // CDN expiry may retain subsecond precision omitted by an OSS V4 signature.
               next.lease.expires_at = new Date(Math.min(expires, previous)).toISOString()
             }

@@ -1,5 +1,5 @@
 import { readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { codexFilePatches } from '../../acp/transport/codex-file-patches';
 import type { NormalizedEvent } from '../../acp/reducer/normalized-event';
@@ -7,6 +7,7 @@ import { readCodexRecord, type CodexRecord, type CodexRecordItem } from '@gugu/c
 
 import type { RecordEntry, SessionRecordLocator, SessionRecordSource } from '../contract';
 import { createJsonlTailSource } from './jsonl-tail-source';
+import { openWindowByteSource } from '../window-cache/file-source';
 import { childState, withSubagentSources } from './subagent-sources';
 import {
   SessionRecordNotFoundError,
@@ -38,8 +39,9 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
   lineage.add(locator.providerSessionId);
   const root = createJsonlTailSource<Ordinals>(locator, options, {
     name: 'codex',
-    resumeVersion: 6,
+    resumeVersion: 7,
     resolve: () => resolveRolloutFile(locator, options?.readMode === 'snapshot'),
+    prefixes: (path) => rolloutPrefixes(locator, path),
     initial: () => ({ turn: 0, item: -1, userSeen: false, calls: {}, children: {} }),
     // `calls` and `children` are replaced, never changed in place: a snapshot need not copy them.
     snapshot: (ordinals) => ({ ...ordinals }),
@@ -167,7 +169,7 @@ function decode(record: CodexRecord, key: string): RecordEntry | null {
 // ─── 定位 ────────────────────────────────────────────────────────────────────
 
 /**
- * 找 `<sessionRoot>/<年>/<月>/<日>/rollout-<时间戳>-<threadId>.jsonl`。
+ * Find the newest rollout, including `-<threadId>_<segmentId>.jsonl` continuations across date directories.
  *
  * 日期目录并发下钻的做法照抄 `packages/core/src/local/agent/transcriptInventory.ts`：
  * 串行递归光 readdir 就要几秒，那是"打开会话"这件事最大的一块墙钟。
@@ -175,19 +177,82 @@ function decode(record: CodexRecord, key: string): RecordEntry | null {
 export async function resolveRolloutFile(locator: SessionRecordLocator, snapshot: boolean): Promise<string> {
   const suffix = `-${locator.providerSessionId}.jsonl`;
   // Prefer the live file across all roots. Only a historical read may open an archive.
-  for (const extension of snapshot ? [suffix, `${suffix}.zst`] : [suffix]) {
+  for (const extension of snapshot ? ['.jsonl', '.jsonl.zst'] : ['.jsonl']) {
+    let newest: string | null = null;
     for (const root of locator.roots) {
-      const hit = await findBySuffix(root, extension);
-      if (hit) return hit;
+      const hit = await findRollout(root, name => {
+        if (!name.endsWith(extension)) return false;
+        const stem = name.slice(0, -extension.length);
+        return stem.endsWith(`-${locator.providerSessionId}`) || stem.endsWith(`_${locator.providerSessionId}`)
+          || stem.includes(`-${locator.providerSessionId}_`);
+      });
+      if (hit && (!newest || basename(hit) > basename(newest))) newest = hit;
     }
+    if (newest) return newest;
   }
   throw new SessionRecordNotFoundError(
     `找不到 codex rollout 记录：threadId=${locator.providerSessionId}`,
-    locator.roots.map((root) => join(root, '**', `rollout-*${suffix}`))
+    locator.roots.map((root) => join(root, '**', `rollout-*${suffix.replace('.jsonl', '*.jsonl')}`))
   );
 }
 
-async function findBySuffix(root: string, suffix: string): Promise<string | null> {
+type RolloutPrefix = { path: string; endByteOffset: number };
+
+/** Each history_base names one physical file; its ordinal is chain-global, its byte cutoff is file-local. */
+async function rolloutPrefixes(locator: SessionRecordLocator, tail: string): Promise<RolloutPrefix[]> {
+  const prefixes: RolloutPrefix[] = [];
+  const seen = new Set<string>();
+  for (let path = tail; ;) {
+    if (seen.has(path)) throw new Error('Cyclic Codex history_base chain');
+    seen.add(path);
+    const base = await historyBase(path);
+    if (!base) return prefixes.reverse();
+    let parent: string | null = null;
+    for (const root of locator.roots) {
+      parent = await findRollout(root, name => name.endsWith(`-${base.threadId}.jsonl`) || name.endsWith(`_${base.threadId}.jsonl`));
+      if (parent) break;
+    }
+    if (!parent) throw new SessionRecordNotFoundError(`Missing Codex history_base: ${base.threadId}`, locator.roots);
+    prefixes.push({ path: parent, endByteOffset: base.endByteOffset });
+    path = parent;
+  }
+}
+
+/** Only the first record is metadata. Never scan the rollout looking for a history_base. */
+async function historyBase(path: string): Promise<{ threadId: string; endByteOffset: number } | null> {
+  // Original rollouts (including legacy archives) are complete files. Only segment names carry continuation metadata.
+  if (!basename(path).includes('_')) return null;
+  if (path.endsWith('.zst')) throw new Error('Compressed Codex history segments are not supported');
+  const source = await openWindowByteSource(path);
+  try {
+    // Match the inventory's metadata-head bound; base_instructions can make this first line much larger than a page.
+    const bytes = new Uint8Array(Math.min(1024 * 1024, (await source.snapshot()).size));
+    let used = 0;
+    while (used < bytes.length) {
+      const got = await source.read(bytes, used, bytes.length - used, used);
+      if (!got) break;
+      used += got;
+    }
+    const end = bytes.subarray(0, used).indexOf(10);
+    if (end < 0) {
+      throw new Error('Incomplete or oversized Codex segment session_meta');
+    }
+    let record: Record<string, unknown> | null;
+    try { record = asRecord(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, end)))); }
+    catch { throw new Error('Invalid Codex segment session_meta'); }
+    const payload = asRecord(record?.payload);
+    if (record?.type !== 'session_meta' || payload?.history_base == null) return null;
+    const base = asRecord(payload.history_base);
+    if (!base || typeof base.thread_id !== 'string' || !base.thread_id
+      || !Number.isSafeInteger(base.end_byte_offset) || (base.end_byte_offset as number) < 0
+      || !Number.isSafeInteger(base.end_ordinal_exclusive) || (base.end_ordinal_exclusive as number) < 0) {
+      throw new Error('Invalid Codex history_base');
+    }
+    return { threadId: base.thread_id, endByteOffset: base.end_byte_offset as number };
+  } finally { await source.close(); }
+}
+
+async function findRollout(root: string, matches: (name: string) => boolean): Promise<string | null> {
   let entries;
   try {
     entries = await readdir(root, { withFileTypes: true });
@@ -195,21 +260,20 @@ async function findBySuffix(root: string, suffix: string): Promise<string | null
     return null; // 这一家没装 / 根目录不在，不是错误
   }
   const subdirs: string[] = [];
+  let found: string | null = null;
   for (const entry of entries) {
     const path = join(root, entry.name);
     if (entry.isDirectory()) subdirs.push(path);
-    else if (entry.isFile() && entry.name.startsWith('rollout-') && entry.name.endsWith(suffix)) {
-      return path;
-    }
+    else if (entry.isFile() && entry.name.startsWith('rollout-') && matches(entry.name)
+      && (!found || entry.name > basename(found))) found = path;
   }
 
   let cursor = 0;
-  let found: string | null = null;
   await Promise.all(
     Array.from({ length: Math.min(DIR_CONCURRENCY, subdirs.length) }, async () => {
-      while (cursor < subdirs.length && !found) {
-        const nested = await findBySuffix(subdirs[cursor++], suffix);
-        if (nested) found = nested;
+      while (cursor < subdirs.length) {
+        const nested = await findRollout(subdirs[cursor++], matches);
+        if (nested && (!found || basename(nested) > basename(found))) found = nested;
       }
     })
   );

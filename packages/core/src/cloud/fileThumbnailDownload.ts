@@ -1,5 +1,6 @@
 import { createFileDownloadTransport, type FileDownloadSession } from './fileDownloadRouting'
 import { FileDownloadFailure, isTransientFileReadError, retryFileDownload } from './fileDownloadRetry'
+import { serverNow } from '../shared/serverClock'
 
 type Thumbnail = { thumb_url?: string | null; expires_at?: string; origin_available?: boolean }
 type SignedThumbnail = { lease: Thumbnail; direct: boolean }
@@ -30,7 +31,7 @@ export async function readFileThumbnail(initial: SignedThumbnail, sign: (renew: 
     try {
       let response = await transport.open()
       const expires = Date.parse(signed.lease.expires_at ?? '')
-      if (response.status === 403 && !compatibilityCdn && !renewed && Number.isFinite(expires) && expires <= Date.now()) {
+      if (response.status === 403 && !compatibilityCdn && !renewed && Number.isFinite(expires) && expires <= serverNow()) {
         void response.body?.cancel().catch(() => undefined); reset(); renewed = true
         signed = await sign(true, signed.direct ? 'origin' : 'cdn')
         await compatibleThumbnail()

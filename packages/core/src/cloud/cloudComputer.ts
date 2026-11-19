@@ -13,6 +13,7 @@
  *
  * 不碰 node / electron:渲染层(设置 → 设备、「在哪跑」)和主进程(agent 的 session_* 跨机器)共用这一份。
  */
+import { serverNow } from '../shared/serverClock'
 import type { CloudComputerPresence } from '../shared/types/deviceHost'
 import { anySignal } from '../shared/anySignal'
 
@@ -259,7 +260,7 @@ export function createCloudComputerClient(options: {
 export function cloudComputerPresence(
   device: { device_id: string; is_online: boolean },
   snapshot: CloudComputerSnapshot | null,
-  now: number = Date.now(),
+  now: number = serverNow(),
 ): CloudComputerPresence | null {
   if (!snapshot?.deviceId || snapshot.deviceId !== device.device_id) return null
   switch (snapshot.state) {
@@ -311,7 +312,7 @@ export class CloudComputerWakeError extends Error {
 /** 等它醒、并在库里上线,最多等多久(开机约 5 秒 + 放回数据 + server 启动,实测 10–20 秒;留足)。 */
 export const CLOUD_COMPUTER_WAKE_TIMEOUT_MS = 120_000
 
-/** 进入此刻这个状态已经超过 `limitMs`(默认叫醒时限);管家没给 since = 不知道,当作没超。 */
+/** 进入此刻这个状态已经超过 `limitMs`(默认叫醒时限);管家没给 since = 不知道,当作没超。`since` 是管家的钟,`now` 用 `serverNow()`。 */
 export function cloudComputerOverdue(snapshot: Pick<CloudComputerSnapshot, 'since'>, now: number, limitMs = CLOUD_COMPUTER_WAKE_TIMEOUT_MS): boolean {
   const since = snapshot.since ? Date.parse(snapshot.since) : NaN
   return Number.isFinite(since) && now - since > limitMs

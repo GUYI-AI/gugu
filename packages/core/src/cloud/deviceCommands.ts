@@ -1,3 +1,4 @@
+import { serverNow } from '../shared/serverClock'
 import { AGENT_INIT_HELD_TIMEOUT_MS, isDeviceCommandDone, isDeviceCommandError } from '../shared/enums/deviceModels'
 import type { DeviceCommand } from '../shared/types/chat'
 import { dbPayload } from './supabase'
@@ -428,7 +429,7 @@ async function claimDeviceCommand(
   client: DeviceCommandTableClient,
   commandId: string,
   instanceId: string | undefined,
-  nowIso = new Date().toISOString(),
+  nowIso = new Date(serverNow()).toISOString(),
   createClaimToken: () => string = () => globalThis.crypto.randomUUID(),
   operationTimeouts?: DeviceOperationTimeoutOverrides,
 ): Promise<string | null> {
@@ -572,7 +573,8 @@ export async function processPendingDeviceCommandsOnce(
   options: ProcessDeviceCommandOptions = {}
 ): Promise<ProcessDeviceCommandResult[]> {
   options.signal?.throwIfAborted()
-  const nowIso = options.nowIso ?? (() => new Date().toISOString())
+  // Rows are stamped by the database (`created_at`); read their age and write ours on its clock (`@@@server-clock`).
+  const nowIso = options.nowIso ?? (() => new Date(serverNow()).toISOString())
   // @@@1600 — options.limit 现为 per-agent 取条数(默认 1,契合 M4「一 agent 一次一 turn」);跨 agent 公平由
   // RPC 结构性保证,不再是旧的 device-wide 总量 5。
   const commands = await listPendingDeviceCommands(

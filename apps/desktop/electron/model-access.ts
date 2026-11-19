@@ -25,6 +25,7 @@ import type { GuguCatalogReason } from '@gugu/session-core/session-record/contra
 import { createLogger } from './lib/logger'
 import { getSupabaseAnonKey, getSupabaseUrl } from '@gugu/core/cloud/config'
 import { platformModelsEnabled } from '@gugu/core/cloud/optionalServices'
+import { serverNow, withServerClock } from '@gugu/core/shared/serverClock'
 import { parsePlatformReasoningEfforts } from '../src/session/shared/core/agents/platform-model'
 
 // Protocol membership is decided by the shared protocol table, so adding a
@@ -115,10 +116,11 @@ export interface IssuedModelAccess {
   membershipLocked: readonly string[]
 }
 
-function modelAccessFetch(url: string, init: RequestInit): Promise<Response> {
+// A ticket's `expires_at` is on the backend's clock: its answers tune the main process's `serverNow()` (`@@@server-clock`).
+const modelAccessFetch = withServerClock((url: string, init: RequestInit): Promise<Response> => {
   const netFetch = (electron as { net?: { fetch?: typeof fetch } } | undefined)?.net?.fetch
   return netFetch ? netFetch(url, init) : fetch(url, init)
-}
+})
 
 /**
  * model-access 的非 2xx 回应;status 让调用方分清「这张票服务端不认识」(404)与其它失败。
@@ -738,7 +740,7 @@ function scheduleAdoptedRenewal(
 ): void {
   const lease = adoptedLeases.get(sessionId)
   if (!lease || lease.accessSessionId !== entry.accessSessionId) return
-  const remaining = Date.parse(expiresAt) - Date.now()
+  const remaining = Date.parse(expiresAt) - serverNow()
   if (Date.now() >= Date.parse(entry.issuedAt) + ADOPTED_MAX_LIFETIME_MS || remaining <= ADOPTED_RENEWAL_FLOOR_MS) {
     ledgerLog.error({ accessSessionId: entry.accessSessionId, expiresAt }, 'detached 票不再续期,将自然过期,由下次启动结清')
     return

@@ -19,7 +19,7 @@ export type SessionModelMenu = {
   customModels?: CustomModelConnection[];
   customModel?: CustomModelRef;
   modelProtocols?: readonly ModelProtocol[];
-  customModelCapability?: { modelOptional: true };
+  customModelCapability?: { modelOptional?: true; convertFrom?: readonly import('@gugu/session-core/models/custom-model').ModelProtocol[] };
   steers?: boolean;
   /** 这条会话记下的计费路决定(`sessionPlatformModel`);缺席 = 没做过这个决定。 */
   conversationSelection?: { modelId: string } | null;

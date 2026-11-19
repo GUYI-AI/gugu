@@ -54,12 +54,9 @@ describe('#6264 机器上限:心跳被拒 ⇒ 宿主日志里说一次人话', (
     const env = await isolatedGuguEnv('gugu-machine-limit-6264-')
     const client = pollOnlyRuntimeIdentityClient([], 'machine limit #6264')
     let upsertError = 'boom: network'
-    const originalFrom = client.from.bind(client) as (table: string) => unknown
-    ;(client as unknown as { from: (table: string) => unknown }).from = (table: string) => {
-      const real = originalFrom(table) as Record<string, unknown>
-      if (table !== 'gugu_devices') return real
-      return { ...real, upsert: async () => ({ data: null, error: { message: upsertError } }) }
-    }
+    const originalRpc = client.rpc.bind(client)
+    client.rpc = async (name, args) => name === 'register_gugu_device' && upsertError
+      ? { data: null, error: { message: upsertError } } : originalRpc(name, args)
     const warn = vi.fn()
     const host = createDeviceRuntimeHostLoop({
       env,
