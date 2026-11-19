@@ -27,7 +27,7 @@
   {
     "rule": "console-member",
     "file": "apps/desktop/electron/main.ts",
-    "count": 23
+    "count": 22
   },
   {
     "rule": "console-member",
