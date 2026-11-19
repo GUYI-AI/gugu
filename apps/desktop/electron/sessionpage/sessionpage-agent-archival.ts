@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { listAgents } from '@gugu/core'
+import { archiveAgents, listAgents, restoreArchivedAgents, type LocalAgentRecord } from '@gugu/core'
 import { atomicWriteText, resolveGuguHome } from '@gugu/core/local/state/paths'
 import { agentSessionArchivalRevision, syncAgentSessionArchival, type AgentSessionArchivalOperation } from '@gugu/core/cloud/sessionArchival'
 import type { SessionArchivalState } from '@gugu/core/shared/sessionArchival'
@@ -33,6 +33,25 @@ export interface SessionpageArchivalSyncDeps {
   bindings?: () => Promise<Array<{ agentUserId: string; ownerUserId: string; sessionId: string }>>
   readRevision?: typeof agentSessionArchivalRevision
   synchronize?: typeof syncAgentSessionArchival
+  projectRoster?: typeof projectArchivalOntoRoster
+}
+
+function boundSessionId(agent: LocalAgentRecord): string {
+  return cacheString(agent.cache, SESSION_CACHE_KEY) || cacheString(agent.cache, PARKED_SESSION_CACHE_KEY)
+}
+
+/**
+ * The session's archival is the one fact; the roster row's status is its local projection. An archived session's
+ * roster row is archived, so every roster reader that skips archived rows (presence reconcile, activity publish,
+ * boot routing, task names) leaves it alone. Restore returns it to idle. Only sessions that have ever been archived
+ * (revision > 0) and rows bound to an owner are touched: rows archived for another reason keep their status.
+ */
+export async function projectArchivalOntoRoster(archival: readonly SessionArchivalState[], env: NodeJS.ProcessEnv): Promise<void> {
+  const archived = new Set(archival.filter((state) => state.revision > 0 && state.archivedAt !== null).map((state) => state.sessionId))
+  const restored = new Set(archival.filter((state) => state.revision > 0 && state.archivedAt === null).map((state) => state.sessionId))
+  const owned = (agent: LocalAgentRecord) => Boolean(agent.gugu_user_id && cacheString(agent.cache, OWNER_CACHE_KEY))
+  if (archived.size) await archiveAgents((agent) => owned(agent) && archived.has(boundSessionId(agent)), env)
+  if (restored.size) await restoreArchivedAgents((agent) => owned(agent) && restored.has(boundSessionId(agent)), env)
 }
 
 /**
@@ -83,16 +102,16 @@ export class SessionpageAgentArchivalSync {
   }
 
   private async synchronize(): Promise<void> {
+    const inventory = await this.deps.inventory()
+    await (this.deps.projectRoster ?? projectArchivalOntoRoster)(inventory.archival, this.deps.env ?? process.env)
     const auth = await this.deps.getAuth()
     if (!auth) return
     const deviceId = await this.deps.resolveDeviceId()
     if (!deviceId) return
     const store = await this.load()
-    const inventory = await this.deps.inventory()
     const states = new Map(inventory.archival.map((state) => [state.sessionId, state]))
     const bindings = this.deps.bindings ? await this.deps.bindings() : (await listAgents(this.deps.env ?? process.env, { includeGuests: true })).map((agent) => ({
-      agentUserId: agent.gugu_user_id, ownerUserId: cacheString(agent.cache, OWNER_CACHE_KEY),
-      sessionId: cacheString(agent.cache, SESSION_CACHE_KEY) || cacheString(agent.cache, PARKED_SESSION_CACHE_KEY),
+      agentUserId: agent.gugu_user_id, ownerUserId: cacheString(agent.cache, OWNER_CACHE_KEY), sessionId: boundSessionId(agent),
     }))
     const failures: unknown[] = []
     for (const binding of bindings) {

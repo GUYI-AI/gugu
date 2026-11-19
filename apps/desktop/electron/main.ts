@@ -3792,8 +3792,8 @@ function crossMachine(): CrossMachineSessions {
     lookupAgents: async ({ userIds, numbers }) => {
       const auth = await requireAuth()
       const query = (column: 'id' | 'gugu_number', values: Array<string | number>) => makeIdentityClient(auth.accessToken)
-        .from('active_users').select('id, device_id, gugu_number')
-        .eq('type', 'agent').eq('owner_user_id', auth.userId).in(column, values)
+        .from('users').select('id, device_id, gugu_number')
+        .is('removed_at', null).eq('type', 'agent').eq('owner_user_id', auth.userId).in(column, values)
       const results = await Promise.all([userIds.length ? query('id', userIds) : null, numbers.length ? query('gugu_number', numbers) : null])
       return results.flatMap((result) => {
         if (result?.error) throw new Error(`agent identity lookup failed: ${result.error.message}`)
