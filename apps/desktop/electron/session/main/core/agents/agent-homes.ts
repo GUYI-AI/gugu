@@ -1,4 +1,5 @@
 import { access } from 'node:fs/promises';
+import { startNativeCodexHistoryRelocation, nativeCodexHistoryCounts } from './codex-native-history';
 import { homedir } from 'node:os';
 import { eq } from 'drizzle-orm';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
@@ -116,6 +117,7 @@ export function initializeAgentHomeUpgrade(priorProfile: boolean): void {
   upgradeProfile = priorProfile;
   upgradeStartedAt = Date.now();
   setAgentHomeUpgradePreparation(prepareAutomaticImport);
+  startNativeCodexHistoryRelocation(homeFor('codex'), migrationAbort.signal);
   void upgradeProviders()?.then((ids) => Promise.allSettled([...ids].map(prepareAutomaticImport))).catch((error: unknown) => {
     log.error('Could not plan the managed configuration upgrade');
     reportAgentHomeMigrationFailure(error, 'inventory');
@@ -197,6 +199,7 @@ export async function scanAgentHomes(providerIds?: readonly string[], upgradedOn
       importedAt: scan.marker?.importedAt ?? null, needsImport: !scan.marker,
       sourceUpdated: !!scan.marker && scan.newestMtime > Date.parse(scan.marker.importedAt),
       migration,
+      ...(providerId === 'codex' ? { nativeHistory: await nativeCodexHistoryCounts(home) } : {}),
       ...(scan.marker?.migratedFrom === 'shared' ? {
         upgraded: true, upgradeSignIn: scan.marker.upgradeSignIn, terminalNeedsSignIn: scan.marker.terminalNeedsSignIn,
         oldSessionsSkipped: scan.marker.oldSessionsSkipped, upgradeIssues: scan.marker.upgradeIssues, historyImport: scan.marker.historyImport,
@@ -274,6 +277,7 @@ async function importHarnessHomeOnce(home: NonNullable<ReturnType<typeof homeFor
     providerId, sourceRoot: home.userConfigRoot, configRoot: home.configRoot, groups: result.marker.groups,
     files: Object.keys(result.marker.files).length, skipped: result.issues.length,
   });
+  if (providerId === 'codex') startNativeCodexHistoryRelocation(home, migrationAbort.signal);
   const issues = [...result.issues, ...cleanupIssues.filter((issue) =>
     !result.issues.some((item) => item.path === issue.path && item.reason === issue.reason))];
   return { issues, ...notice, oldSessionsSkipped: oldSessionsSkipped(result.issues), historyImport: result.marker.historyImport };

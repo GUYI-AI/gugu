@@ -26,7 +26,8 @@ export async function checkAgentHomeImportSpace(
     home: ResolvedAgentHome
     groups: ReadonlySet<AgentHomeGroupId>
     historyPaths?: readonly string[]
-  }[]
+  }[],
+  options: { includeStaging?: boolean; includeCredentials?: boolean } = {}
 ): Promise<void> {
   if (!entries.length) return
   let bytes = 0
@@ -53,9 +54,9 @@ export async function checkAgentHomeImportSpace(
       for (const item of group.paths) {
         await size(resolve(root, typeof item === 'string' ? item : item.path))
       }
-    for (const path of [...historyPaths, ...home.credentialPaths]) await size(resolve(root, path))
+    for (const path of [...historyPaths, ...(options.includeCredentials === false ? [] : home.credentialPaths)]) await size(resolve(root, path))
     // Staging preserves the existing managed home using an ordinary copy as well.
-    await size(home.shadowHome)
+    if (options.includeStaging !== false) await size(home.shadowHome)
   }
   let parent = dirname(entries[0]!.home.shadowHome)
   for (;;) {
@@ -109,7 +110,8 @@ export async function streamImportFile(
   source: string,
   destination?: string,
   expected?: string,
-  root = dirname(source)
+  root = dirname(source),
+  onDestinationOpened?: (identity: { ino: number; dev: number }) => Promise<void>
 ): Promise<string> {
   const checkParents = async () => {
     if (!inside(root, source)) throw new Error('Import source escapes its root');
@@ -127,7 +129,11 @@ export async function streamImportFile(
     const opened = await input.stat()
     if (!opened.isFile() || opened.ino !== before.ino || opened.dev !== before.dev)
       throw Object.assign(new Error('Source changed'), { code: 'ESTALE' })
-    if (destination) output = await disk.open(destination, 'wx', before.mode & 0o777)
+    if (destination) {
+      output = await disk.open(destination, 'wx', before.mode & 0o777)
+      const { ino, dev } = await output.stat()
+      await onDestinationOpened?.({ ino, dev })
+    }
     const hash = createHash('sha256'),
       buffer = Buffer.alloc(64 * 1024)
     let total = 0

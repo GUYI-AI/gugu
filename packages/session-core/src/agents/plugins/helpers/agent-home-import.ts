@@ -414,7 +414,7 @@ export async function readAgentHomeMarker(home: ResolvedAgentHome, filename = AG
 export function readAgentHomePending(home: ResolvedAgentHome): Promise<AgentHomeMarker | null> {
   return readAgentHomeMarker(home, AGENT_HOME_PENDING);
 }
-async function writeMarker(home: ResolvedAgentHome, marker: AgentHomeMarker, filename = AGENT_HOME_MARKER): Promise<void> {
+async function writeMarker(home: ResolvedAgentHome, marker: unknown, filename = AGENT_HOME_MARKER): Promise<void> {
   const destination = join(home.shadowHome, filename), temporary = `${destination}.${randomUUID()}`;
   await disk.writeFile(temporary, `${JSON.stringify(marker, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
   try { await disk.rename(temporary, destination); }
@@ -836,4 +836,15 @@ export async function updateAgentHomeSource(
     if (!current || hash(current) !== hash(before)) throw new Error('Source changed; retry migration');
     await disk.rename(temporary, target);
   } finally { await disk.rm(temporary, { force: true }); }
+}
+
+/** Separate atomic record for native history relocation; no import-marker fields are inferred. */
+export async function readAgentHomeRecord(home: ResolvedAgentHome, filename: string): Promise<unknown> {
+  if (basename(filename) !== filename) throw new Error('Invalid managed home record name');
+  const bytes = await snapshot(home.shadowHome, join(home.shadowHome, filename));
+  return bytes ? JSON.parse(bytes.toString('utf8')) as unknown : null;
+}
+export async function writeAgentHomeRecord(home: ResolvedAgentHome, filename: string, record: unknown): Promise<void> {
+  if (basename(filename) !== filename) throw new Error('Invalid managed home record name');
+  await writeMarker(home, record, filename);
 }

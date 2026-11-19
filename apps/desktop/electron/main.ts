@@ -115,7 +115,7 @@ import {
   type ExtensionInstallConsentResult,
 } from '@shared/extensions/host-actions'
 import { givesAgentTools } from '@shared/extensions/app-places'
-import { buildProbePlatformCredentials } from './harness-catalog-probe-env'
+import { buildProbePlatformCredentials, buildNativeHistoryProbeCredentials } from './harness-catalog-probe-env'
 import { runWindowMenuCommand } from './window-menu-commands'
 import { isWindowMenuCommand } from '../shared/window-menu-commands'
 import { purgeStaleUpdaterCache, updaterCacheBaseDir } from './updaterCache'
@@ -4518,6 +4518,7 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
     // 模型目录的第二遍探测:没登录这家 harness 的用户也要看得到推理强度(owner 08-26:每家都得有档位)。
     // 占位凭据由宿主算(要用 engine-injection-contract 与 capability-bundle),注进会话页那侧的探针。
     emdashBridge.setProbePlatformEnvResolver(buildProbePlatformCredentials)
+    emdashBridge.setNativeHistoryProviderResolver(buildNativeHistoryProbeCredentials)
     return emdashBridge
   } catch (err) {
     console.error('[sessionpage] FAILED to load session page module — session page backend disabled:', err)

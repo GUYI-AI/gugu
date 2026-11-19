@@ -155,14 +155,22 @@ export async function prepareCodexHistory(ctx: Pick<AgentAuthContext, 'cli' | 'e
 }
 
 async function askAppServer(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, method: string | null, params: unknown, options: CodexPrepareOptions = {}): Promise<unknown> {
-  return retryCodexPreparation(() => askAppServerAttempt(ctx, method, params, options.signal), options);
+  return withCodexAppServer(ctx, (server) => method === null ? Promise.resolve(server.initialized) : server.request(method, params), options);
 }
 
-async function askAppServerAttempt(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, method: string | null, params: unknown, signal?: AbortSignal): Promise<unknown> {
+export type CodexAppServer = { initialized: unknown; request: (method: string, params: unknown) => Promise<unknown> };
+export type CodexAppServerOptions = CodexPrepareOptions & { args?: readonly string[] };
+
+export function withCodexAppServer<T>(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, run: (server: CodexAppServer) => Promise<T>, options: CodexAppServerOptions = {}): Promise<T> {
+  return retryCodexPreparation(() => withCodexAppServerAttempt(ctx, run, options), options);
+}
+
+async function withCodexAppServerAttempt<T>(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, run: (server: CodexAppServer) => Promise<T>, options: CodexAppServerOptions): Promise<T> {
+  const { signal } = options;
   signal?.throwIfAborted();
   const binary = ctx.env.GUGU_CODEX_BIN?.trim() || ctx.cli;
   let failure: Error | null = null;
-  const owned = spawnOwnedChild(binary, ['app-server'], { env: ctx.env, stdio: ['pipe', 'pipe', 'pipe'], onError: error => { failure = error; } });
+  const owned = spawnOwnedChild(binary, [...options.args ?? [], 'app-server'], { env: ctx.env, stdio: ['pipe', 'pipe', 'pipe'], onError: error => { failure = error; } });
   const child = owned.child;
   let stderrTail = '';
   child.stderr?.on('data', (chunk: Buffer) => { stderrTail = (stderrTail + chunk.toString('utf8')).slice(-8192); });
@@ -199,9 +207,12 @@ async function askAppServerAttempt(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, m
   try {
     const initialized = await Promise.race([request('initialize', { clientInfo: { name: 'gugu', title: 'Gugu', version: '0' }, capabilities: null }), exited, aborted]);
     clearTimeout(timer);
-    if (method === null) return initialized;
     child.stdin!.write(JSON.stringify({ method: 'initialized' }) + '\n');
-    return await Promise.race([request(method, params), exited, aborted, deadline(APP_SERVER_TIMEOUT_MS)]);
+    return await run({ initialized, request: async (method, params) => {
+      signal?.throwIfAborted();
+      try { return await Promise.race([request(method, params), exited, aborted, deadline(APP_SERVER_TIMEOUT_MS)]); }
+      finally { clearTimeout(timer); }
+    } });
   } catch (error) {
     if (error instanceof Error) Object.assign(error, { stderrTail });
     throw error;
