@@ -19,7 +19,7 @@ describe('Codex startup repair copy', () => {
     expect(creationFailureCopy(creation, translate)).toBe(text);
     expect(creation.detail).toBe(failure.message);
   });
-  it('offers an upgrade only for a verified unsupported capability or version', () => {
+  it('offers an upgrade only for a verified unsupported version', () => {
     const failure = { code: 'runtime-version-unsupported', data: { providerId: 'codex', installedVersion: '0.100', supportedFloor: '0.160' } };
     expect(codexNeedsUpgrade(failure)).toBe(true);
     expect(sessionStartupFailureCopy(failure, translate)).toContain('升级');

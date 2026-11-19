@@ -968,7 +968,7 @@ async function startAppAttempt(servers) {
     if (app && (app.exitCode !== null || app.signalCode !== null) && !(app.stdout.readableEnded && app.stderr.readableEnded)) await new Promise(resolve => app.once('close', resolve))
     error.stderrTail = startupStderr
     if (codexBackfillWaiting(error)) throw error
-    throw tagCodexStartupFailure(error, error.code === -32601 ? 'version' : undefined)
+    throw tagCodexStartupFailure(error, error.code === -32601 ? 'protocol' : undefined)
   }
   appNotify('initialized', {})
   // #6387 Installed Apps' skills: the materializer's skill root, registered before any thread so codex lists them as its

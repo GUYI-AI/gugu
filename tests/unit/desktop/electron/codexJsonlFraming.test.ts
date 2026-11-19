@@ -173,10 +173,10 @@ describe('Codex bridge JSONL boundary', () => {
     expect(await h.request('session/resume', { sessionId: 'same-thread', cwd: dir, mcpServers: [] }))
       .toMatchObject({ error: { data: { codexStartupKind: 'permission' } } })
   })
-  it('marks an explicitly unsupported native initialize method as a version capability failure', async () => {
+  it('keeps an unsupported native initialize method as a protocol failure, without guessing its version', async () => {
     const h = await bridge('unsupported-initialize')
     expect(await h.request('session/resume', { sessionId: 'same-thread', cwd: dir, mcpServers: [] }))
-      .toMatchObject({ error: { data: { codexStartupKind: 'version' } } })
+      .toMatchObject({ error: { data: { codexStartupKind: 'protocol' } } })
   })
   it('reports true native exit immediately', async () => {
     const h = await bridge('eof')
