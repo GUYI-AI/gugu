@@ -27,7 +27,7 @@ describe('canonical-path migration', () => {
   let real: string;
   let alias: string;
   const rows = (table: 'projects' | 'workspaces') =>
-    Object.fromEntries(fixture.sqlite.prepare(`SELECT id, path${table === 'workspaces' ? ', key' : ''} FROM ${table} ORDER BY id`).all().map((row) => [(row as { id: string }).id, row]));
+    Object.fromEntries(fixture.sqlite.prepare(`SELECT id, path${table === 'workspaces' ? ', key' : ''} FROM ${table} ORDER BY id`).all().map((row) => { const r = row as { id: string; path: string; key?: string }; return [r.id, r]; }));
 
   beforeEach(async () => {
     fixture = await openFixture('empty');
