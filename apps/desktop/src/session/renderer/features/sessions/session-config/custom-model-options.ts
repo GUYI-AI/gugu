@@ -38,7 +38,7 @@ export function customComposerOptions(
         providerLabel: connection.name,
         ...(tag ? { tag } : {}),
         icon: modelProviderIcon(preset ? { id: preset.id, name: preset.name, iconKey: preset.icon } : null),
-        description: `${connection.name} · ${actual}`,
+        description: connection.name,
         ...(reason ? { disabled: true, disabledReason: reason } : {}),
         ...('contextWindow' in model && model.contextWindow ? { modelFeatures: { contextWindowSize: model.contextWindow } } : {}),
         ...('maxOutput' in model && model.maxOutput ? { facts: [{ label: translate('customModels.output'), value: model.maxOutput.toLocaleString() }] } : {}),
