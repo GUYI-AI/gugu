@@ -1,0 +1,26 @@
+{
+  "ripgrep": {
+    "url": "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz",
+    "sha256": "4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e",
+    "format": "tar",
+    "binaries": ["rg"]
+  },
+  "tmux": {
+    "url": "https://github.com/mjakob-gh/build-static-tmux/releases/download/v3.7b/tmux.linux-amd64.stripped.gz",
+    "sha256": "92ac102a1f9b33b21d891a836b4b5b5c8c5d2eeac4bae4dfd34d565bbed598bf",
+    "format": "gzip",
+    "binaries": ["tmux"]
+  },
+  "ffmpeg": {
+    "url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-linux-x64.gz",
+    "sha256": "bfe8a8fc511530457b528c48d77b5737527b504a3797a9bc4866aeca69c2dffa",
+    "format": "gzip",
+    "binaries": ["ffmpeg"]
+  },
+  "ffprobe": {
+    "url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffprobe-linux-x64.gz",
+    "sha256": "25d9b6ccb05e3d9de9e04e31e2506d8dd7f9f0418981965ac6df12e8d3afd067",
+    "format": "gzip",
+    "binaries": ["ffprobe"]
+  }
+}
