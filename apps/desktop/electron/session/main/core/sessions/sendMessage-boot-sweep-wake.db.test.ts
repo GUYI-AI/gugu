@@ -74,9 +74,9 @@ describe('the boot sweep wakes a terminal session that holds a pending ordinary 
   });
 
   async function holdMessage(sessionId: string, id: string): Promise<void> {
-    await sendMessage({ projectId: target.projectId, sessionId, clientMessageId: id, text: 'held for startup' });
+    await sendMessage({ sessionId, clientMessageId: id, text: 'held for startup' });
     // Settle the normal no-router drain before changing archival state.
-    await drainSessionMessageOutbox({ projectId: target.projectId, sessionId });
+    await drainSessionMessageOutbox({ sessionId });
   }
 
   it('continues boot with archived pending data preserved and active delivery still eligible', async () => {

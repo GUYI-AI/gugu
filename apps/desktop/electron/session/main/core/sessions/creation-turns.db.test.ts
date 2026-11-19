@@ -66,7 +66,7 @@ describe('creation turns: one row per creation entry, however often it is reache
 
   it('a session made elsewhere (another machine, the phone, a task card, an automation): its launch admits once, a replay adds nothing', async () => {
     insertSession('remote', { initialQueue: [{ text: FIRST, origin: 'manual' }], startupOrigin: 'session-page', taskChatId: 'chat', initialMessageId: 'card-1' });
-    const launch = () => launchCreatedSession({ sessionId: 'remote', projectId: 'p', runtime: 'acp', launchWorkspace: () => mocks.provision('remote') });
+    const launch = () => launchCreatedSession({ sessionId: 'remote', runtime: 'acp', launchWorkspace: () => mocks.provision('remote') });
     await expect(launch()).resolves.toEqual({ ok: true });
     await expect(launch()).resolves.toEqual({ ok: true });
     // Mounting the workspace (here, its provision) admitted nothing of its own: the card's stable id is the only row.

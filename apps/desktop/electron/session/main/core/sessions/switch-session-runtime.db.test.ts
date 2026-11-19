@@ -96,7 +96,7 @@ describe('switchSessionRuntime', () => {
   });
 
   it('通用 → 编程:停掉适配器、改记录、provider 会话 id 不动', async () => {
-    await switchSessionRuntime('project-1', 'chat', 'pty');
+    await switchSessionRuntime('chat', 'pty');
 
     expect(mocks.stopSession).toHaveBeenCalledExactlyOnceWith({ sessionId: 'chat', reason: 'reconfigure' });
     const row = rowOf(fixture, 'chat');
@@ -120,7 +120,7 @@ describe('switchSessionRuntime', () => {
   });
 
   it('编程 → 通用:摘掉伪终端,并丢掉那个进程的控制端点', async () => {
-    await switchSessionRuntime('project-1', 'term', 'acp');
+    await switchSessionRuntime('term', 'acp');
 
     expect(mocks.detachSession).toHaveBeenCalledExactlyOnceWith('term');
     const row = rowOf(fixture, 'term');
@@ -136,7 +136,7 @@ describe('switchSessionRuntime', () => {
   });
 
   it('目标就是当前那一种:抛,并且**一条腿都不停**', async () => {
-    await expect(switchSessionRuntime('project-1', 'chat', 'acp')).rejects.toThrow(
+    await expect(switchSessionRuntime('chat', 'acp')).rejects.toThrow(
       /已经是 acp/
     );
 
@@ -151,7 +151,7 @@ describe('switchSessionRuntime', () => {
     mocks.surfaces = ['acp'];
     mocks.sessionpage = { 'acp': { identity: 'addressable', messageTransport: 'router' } };
 
-    await expect(switchSessionRuntime('project-1', 'chat', 'pty')).rejects.toThrow(
+    await expect(switchSessionRuntime('chat', 'pty')).rejects.toThrow(
       /tui/
     );
 
@@ -164,7 +164,7 @@ describe('switchSessionRuntime', () => {
   it('停不掉当前那条腿:记录一个字节都不改', async () => {
     mocks.lifeKind = 'failed';
 
-    await expect(switchSessionRuntime('project-1', 'chat', 'pty')).rejects.toThrow('could not be stopped');
+    await expect(switchSessionRuntime('chat', 'pty')).rejects.toThrow('could not be stopped');
 
     expect(rowOf(fixture, 'chat')?.runtime).toBe('acp');
     expect(configOf(fixture, 'chat').type).toBe('acp');

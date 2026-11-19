@@ -9,7 +9,7 @@ import { sessionBornInChatId } from '@shared/core/sessions/sessions';
  */
 const base = {
   id: 's1',
-  projectId: 'p1',
+  groupChatId: null,
   workspaceId: 'w1',
   agentDisplayName: 'Codex 1',
   claimsFirstSpawn: false,

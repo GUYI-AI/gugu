@@ -340,7 +340,6 @@ function localProvider({
   ctx?: ConstructorParameters<typeof LocalSessionProvider>[0]['ctx'];
 } = {}) {
   const provider = new LocalSessionProvider({
-    projectId: 'project-1',
     workspaceId: 'workspace-1',
     sessionPath: '/tmp/ws-1',
     tmux,

@@ -396,7 +396,7 @@ describe('session orchestration', () => {
       parentSessionId: 'caller', spawnedBySessionId: 'caller',
     });
     const started = mocks.startSession.mock.calls.length;
-    await expect(restoreSession('project-1', sessionId)).resolves.toMatchObject({
+    await expect(restoreSession(sessionId)).resolves.toMatchObject({
       id: sessionId, projectId: 'project-1', workspaceId: 'workspace-1', archivedAt: null,
     });
     expect(childRows()).toEqual([child]);

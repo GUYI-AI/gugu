@@ -1307,7 +1307,6 @@ describe('session timeline service', () => {
       service.setSessionStatusFeed((cb) => {
         fire = () => cb({
           sessionId: 'conv-1',
-          projectId: 'project-1',
           reading: { status: 'needs_user', detail: 'approval', running: true, background: null },
           unseen: true,
           reviewGate: null,

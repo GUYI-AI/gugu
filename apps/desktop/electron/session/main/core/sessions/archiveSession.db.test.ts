@@ -171,7 +171,7 @@ describe('archiveSession', () => {
     insertSession('needs-cloud');
     const receipt = Promise.withResolvers<RemovedSessionIdentity | null>();
     identityHost.archive.mockReturnValueOnce(receipt.promise);
-    const pending = archiveSession('p1', 'needs-cloud');
+    const pending = archiveSession('needs-cloud');
     await vi.waitFor(() => expect(identityHost.archive).toHaveBeenCalledWith('needs-cloud', undefined));
     expect(archivedAt('needs-cloud')).toBeNull();
     expect(mocks.stopped).toEqual([]);
@@ -181,7 +181,7 @@ describe('archiveSession', () => {
     expect(archivedAt('needs-cloud')).toBeNull();
     expect(identityHost.release).not.toHaveBeenCalled();
     identityHost.archive.mockResolvedValueOnce({ userId: 'old-identity', removedAt: '2026-10-31T00:00:00Z' });
-    await archiveSession('p1', 'needs-cloud');
+    await archiveSession('needs-cloud');
     expect(archivedAt('needs-cloud')).not.toBeNull();
     expect(identityHost.release).toHaveBeenCalledWith({ userId: 'old-identity', removedAt: '2026-10-31T00:00:00Z' });
   });
@@ -189,9 +189,9 @@ describe('archiveSession', () => {
   it('keeps the existing offline archive and restore path when removal is explicitly false', async () => {
     insertSession('offline');
     setSessionIdentityHost(null);
-    await archiveSession('p1', 'offline', { removeSocialIdentity: false });
+    await archiveSession('offline', { removeSocialIdentity: false });
     expect(archivedAt('offline')).not.toBeNull();
-    await expect(restoreSession('p1', 'offline')).resolves.toMatchObject({ id: 'offline', archivedAt: null });
+    await expect(restoreSession('offline')).resolves.toMatchObject({ id: 'offline', archivedAt: null });
     expect(identityHost.archive).not.toHaveBeenCalled();
     expect(identityHost.restore).not.toHaveBeenCalled();
   });
@@ -205,11 +205,11 @@ describe('archiveSession', () => {
     fixture.sqlite.prepare("INSERT INTO messages (id, session_id, content, sender) VALUES ('old-message', 'same-task', 'original history', 'user')").run();
     const receipt = { userId: 'old-identity', removedAt: '2026-10-31T00:00:00Z' };
     identityHost.archive.mockResolvedValueOnce(receipt);
-    await archiveSession('p1', 'same-task');
+    await archiveSession('same-task');
     identityHost.restore.mockRejectedValueOnce(new Error('new identity provisioning unavailable'));
-    await expect(restoreSession('p1', 'same-task')).rejects.toThrow('provisioning unavailable');
+    await expect(restoreSession('same-task')).rejects.toThrow('provisioning unavailable');
     expect(archivedAt('same-task')).not.toBeNull();
-    await restoreSession('p1', 'same-task');
+    await restoreSession('same-task');
     expect(identityHost.restore).toHaveBeenLastCalledWith({ projectId: 'p1', sessionId: 'same-task' }, receipt);
     expect(fixture.sqlite.prepare('SELECT id, project_id, config, archived_at FROM sessions').all()).toEqual([{ id: 'same-task', project_id: 'p1', config, archived_at: null }]);
     expect(fixture.sqlite.prepare('SELECT session_id, content FROM messages').all()).toEqual([{ session_id: 'same-task', content: 'original history' }]);
@@ -237,7 +237,7 @@ describe('archiveSession', () => {
     expect(fixture.sqlite.prepare("SELECT id FROM projects WHERE id='p1'").get()).toEqual({ id: 'p1' });
     expect(fixture.sqlite.prepare("SELECT id FROM sessions WHERE id='late-task'").get()).toEqual({ id: 'late-task' });
     expect(archivedAt('late-task')).not.toBeNull();
-    await expect(restoreSession('p1', 'late-task')).resolves.toMatchObject({ id: 'late-task', archivedAt: null });
+    await expect(restoreSession('late-task')).resolves.toMatchObject({ id: 'late-task', archivedAt: null });
     expect(fixture.sqlite.prepare("SELECT session_id, content FROM messages WHERE id='late-message'").get()).toEqual({ session_id: 'late-task', content: 'Keep the original message' });
     if (boundary === 'task archival') expect(archivedAt('original-task')).not.toBeNull();
   });
@@ -270,7 +270,7 @@ describe('archiveSession', () => {
       const roster = await listAgents(env);
       expect(roster.find(row => row.gugu_user_id === 'orphan-identity')?.status).toBe('archived');
       expect(roster.find(row => row.gugu_user_id === 'kept-identity')?.status).not.toBe('archived');
-      await restoreSession('p1', 'incident');
+      await restoreSession('incident');
       expect(archivedAt('incident')).toBeNull();
       expect(fixture.sqlite.prepare("SELECT id FROM sessions WHERE id='incident'").get()).toEqual({ id: 'incident' });
     } finally { await rm(home, { recursive: true }); }
@@ -301,7 +301,7 @@ describe('archiveSession', () => {
     expect((await getProjects({ includeHidden: true })).map(project => project.id)).toContain('p1');
     expect(fixture.sqlite.prepare('SELECT id, project_id, attached_at, path FROM workspaces ORDER BY id').all()).toEqual(rows);
 
-    await restoreSession('p1', 'folder-task');
+    await restoreSession('folder-task');
     const after = await listProjectFolderRefs('p1');
     expect(after).toHaveLength(before!.length);
     expect(after).toEqual(before);
@@ -338,13 +338,13 @@ describe('archiveSession', () => {
     fixture.sqlite.prepare(`INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES ('historic-session:0', 'historic-session', 0, 'original-turn', ?)`)
       .run(originalTurn);
     expect((await getProjects()).map((project) => project.id)).toContain('p1');
-    await archiveSession('p1', 'historic-session');
+    await archiveSession('historic-session');
     expect(await getProjects()).toEqual([]);
     const history = await listSessionHistory({ source: 'gugu', status: 'archived' });
     expect(history.rows).toHaveLength(1);
     expect(history.rows[0]).toMatchObject({ title: 'history survives', gugu: { projectId: 'p1', sessionId: 'historic-session' } });
 
-    const restored = await restoreSession('p1', 'historic-session');
+    const restored = await restoreSession('historic-session');
     expect(restored).toMatchObject({ id: 'historic-session', projectId: 'p1', workspaceId: 'historic-ws', archivedAt: null });
     expect(fixture.sqlite.prepare(`SELECT id, workspace_id, provider_session_id FROM sessions`).all()).toEqual([
       { id: 'historic-session', workspace_id: 'historic-ws', provider_session_id: 'provider-original' },
@@ -359,23 +359,23 @@ describe('archiveSession', () => {
     insertSession('child', { parent: 'parent' });
     insertSession('grandchild', { parent: 'child' });
     insertSession('already', { parent: 'parent' });
-    expect(await archiveSession('p1', 'already')).toEqual({
+    expect(await archiveSession('already')).toEqual({
       archived: [{ projectId: 'p1', sessionId: 'already' }],
       unreached: [],
     });
 
-    const { archived } = await archiveSession('p1', 'parent', { withChildren: true });
+    const { archived } = await archiveSession('parent', { withChildren: true });
 
     expect(archived.map((ref) => ref.sessionId)).toEqual(['grandchild', 'child', 'parent']);
     // 已经归档过的再归一次:什么都没收走,清单为空 —— 撤销不该把它当成这一次的。
-    expect(await archiveSession('p1', 'parent')).toEqual({ archived: [], unreached: [] });
+    expect(await archiveSession('parent')).toEqual({ archived: [], unreached: [] });
   });
 
   it('归档一条 fork 会话,来源会话一个字都不动 —— #5413', async () => {
     insertSession('origin');
     insertSession('the-fork', { fork: 'origin' });
 
-    await archiveSession('p1', 'the-fork');
+    await archiveSession('the-fork');
 
     expect(archivedAt('the-fork')).not.toBeNull();
     // 阴控落在这一行:#5413 之前归档落在容器上,于是来源会话跟着从列表消失。
@@ -388,7 +388,7 @@ describe('archiveSession', () => {
     insertSession('parent');
     insertSession('child', { parent: 'parent', spawnedBy: 'parent' });
 
-    await archiveSession('p1', 'child');
+    await archiveSession('child');
 
     expect(archivedAt('child')).not.toBeNull();
     expect(archivedAt('parent')).toBeNull();
@@ -399,7 +399,7 @@ describe('archiveSession', () => {
     insertSession('child', { parent: 'parent' });
     insertSession('grandchild', { parent: 'child' });
 
-    await archiveSession('p1', 'parent');
+    await archiveSession('parent');
 
     expect(archivedAt('parent')).not.toBeNull();
     expect(archivedAt('child')).toBeNull();
@@ -412,7 +412,7 @@ describe('archiveSession', () => {
     insertSession('grandchild', { parent: 'child' });
     insertSession('bystander');
 
-    await archiveSession('p1', 'parent', { withChildren: true });
+    await archiveSession('parent', { withChildren: true });
 
     expect(archivedAt('parent')).not.toBeNull();
     expect(archivedAt('child')).not.toBeNull();
@@ -432,7 +432,7 @@ describe('archiveSession', () => {
     insertSession('moved', { parent: 'other', spawnedBy: 'parent' });
     insertSession('adopted', { parent: 'parent', spawnedBy: 'other' });
 
-    await archiveSession('p1', 'parent', { withChildren: true });
+    await archiveSession('parent', { withChildren: true });
 
     expect(archivedAt('adopted')).not.toBeNull();
     expect(archivedAt('standalone')).toBeNull();
@@ -443,7 +443,7 @@ describe('archiveSession', () => {
     insertSession('origin');
     insertSession('its-fork', { fork: 'origin' });
 
-    await archiveSession('p1', 'origin', { withChildren: true });
+    await archiveSession('origin', { withChildren: true });
 
     expect(archivedAt('origin')).not.toBeNull();
     expect(archivedAt('its-fork')).toBeNull();
@@ -453,7 +453,7 @@ describe('archiveSession', () => {
     insertSession('mounted');
     mocks.mounted.add('mounted');
 
-    await archiveSession('p1', 'mounted');
+    await archiveSession('mounted');
 
     expect(archivedAt('mounted')).not.toBeNull();
     expect(mocks.teardown).toHaveBeenCalledWith('mounted', 'archive');
@@ -468,7 +468,7 @@ describe('archiveSession', () => {
       expect(archivedAt(sessionId)).toBeNull();
     });
 
-    await archiveSession('p1', 'acp-task');
+    await archiveSession('acp-task');
 
     expect(archivedByLife()).toEqual(['acp-task']);
     expect(archivedAt('acp-task')).not.toBeNull();
@@ -478,7 +478,7 @@ describe('archiveSession', () => {
     insertSession('acp-refused');
     mocks.life.interrupt.mockRejectedValueOnce(new Error('archive transition failed'));
 
-    await expect(archiveSession('p1', 'acp-refused')).rejects.toThrow('archive transition failed');
+    await expect(archiveSession('acp-refused')).rejects.toThrow('archive transition failed');
 
     expect(archivedAt('acp-refused')).toBeNull();
   });
@@ -486,7 +486,7 @@ describe('archiveSession', () => {
   it('非 ACP 会话不经 session-life 归档', async () => {
     fixture.sqlite.prepare(`INSERT INTO sessions (id, project_id, title, runtime) VALUES ('pty-task', 'p1', 'pty-task', NULL)`).run();
 
-    await archiveSession('p1', 'pty-task');
+    await archiveSession('pty-task');
 
     expect(archivedAt('pty-task')).not.toBeNull();
     expect(mocks.life.interrupt).not.toHaveBeenCalled();
@@ -495,11 +495,11 @@ describe('archiveSession', () => {
   it('已经归档过的会话再归档是空动作,不会二次停 runtime', async () => {
     insertSession('a');
     insertSession('b');
-    await archiveSession('p1', 'a');
+    await archiveSession('a');
     expect(archivedByLife()).toEqual(['a']);
     mocks.life.interrupt.mockClear();
 
-    await archiveSession('p1', 'a');
+    await archiveSession('a');
 
     expect(mocks.life.interrupt).not.toHaveBeenCalled();
     expect(mocks.stopped).toEqual([]);
@@ -507,7 +507,7 @@ describe('archiveSession', () => {
 
   it('点名一条不在这个项目里的会话时响亮失败', async () => {
     insertSession('a');
-    await expect(archiveSession('p-nope', 'a')).rejects.toThrow(/not found/i);
+    await expect(archiveSession('a')).rejects.toThrow(/not found/i);
   });
 
   // owner 2026-10-01「一起收」「链路统一」:按父子关系找出各台机器上的后代,每一条走它所在机器上的单条归档。
@@ -547,7 +547,7 @@ describe('archiveSession', () => {
         appCall,
       });
 
-      const outcome = await archiveSession('p1', 'parent', { withChildren: true });
+      const outcome = await archiveSession('parent', { withChildren: true });
 
       expect(outcome.archived.map((ref) => ref.sessionId)).toEqual([
         'c-grandchild',
@@ -576,7 +576,7 @@ describe('archiveSession', () => {
         appMessage,
         appCall,
       });
-      expect(await archiveSession('p1', 'parent', { withChildren: true })).toEqual({
+      expect(await archiveSession('parent', { withChildren: true })).toEqual({
         archived: [
           { projectId: 'p1', sessionId: 'child' },
           { projectId: 'p1', sessionId: 'parent' },
@@ -593,7 +593,7 @@ describe('archiveSession', () => {
         appMessage,
         appCall,
       });
-      expect((await archiveSession('p1', 'second', { withChildren: true })).unreached).toEqual([
+      expect((await archiveSession('second', { withChildren: true })).unreached).toEqual([
         { deviceId: null, label: null, detail: 'other machines were not asked (not signed in)' },
       ]);
       expect(archivedAt('second')).not.toBeNull();
@@ -603,7 +603,7 @@ describe('archiveSession', () => {
       insertSession('only');
       const sessions = vi.fn();
       setOtherMachines({ devices: async () => [], isThisDevice: async () => false, appSpawn: vi.fn(), sessionHome: vi.fn(), sessions, archive: vi.fn(), appMessage, appCall });
-      await archiveSession('p1', 'only');
+      await archiveSession('only');
       expect(sessions).not.toHaveBeenCalled();
     });
   });
@@ -643,11 +643,11 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
     mocks.mounted.add('concurrent');
     const teardown = Promise.withResolvers<{ success: boolean }>();
     mocks.teardown.mockReturnValueOnce(teardown.promise);
-    const archiving = archiveSession('p1', 'concurrent');
+    const archiving = archiveSession('concurrent');
     await vi.waitFor(() => expect(mocks.teardown).toHaveBeenCalledWith('concurrent', 'archive'));
     expect(archivedAt('concurrent')).not.toBeNull();
     let restored = false;
-    const restoring = restoreSession('p1', 'concurrent').then(() => { restored = true; });
+    const restoring = restoreSession('concurrent').then(() => { restored = true; });
     await Promise.resolve();
     expect(restored).toBe(false);
     expect(archivedAt('concurrent')).not.toBeNull();
@@ -666,21 +666,21 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
     for (const id of ['removed-agent', 'kept-agent']) {
       fixture.sqlite.prepare('INSERT INTO messages (id, session_id, content, sender) VALUES (?, ?, ?, ?)').run(`${id}:message`, id, 'history', 'user');
       fixture.sqlite.prepare('INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES (?, ?, 0, ?, ?)').run(`${id}:turn`, id, `${id}:provider-turn`, '[]');
-      await archiveSession('p1', id, { removeSocialIdentity: false });
+      await archiveSession(id, { removeSocialIdentity: false });
     }
     const originalAt = archivedAt('removed-agent');
     const receipt = { userId: 'removed-identity', removedAt: '2026-10-31T03:00:00Z' };
-    await archiveSession('p1', 'removed-agent', {}, receipt);
-    await archiveSession('p1', 'removed-agent', {}, receipt);
+    await archiveSession('removed-agent', {}, receipt);
+    await archiveSession('removed-agent', {}, receipt);
     expect(identityHost.archive).toHaveBeenCalledTimes(1);
     expect(archivedAt('removed-agent')).toBe(originalAt);
     expect(sessionEvents._emit).not.toHaveBeenCalledWith('session:deleted', expect.any(String));
     expect(fixture.sqlite.prepare('SELECT id FROM sessions ORDER BY id').all()).toEqual([{ id: 'kept-agent' }, { id: 'removed-agent' }]);
     expect(fixture.sqlite.prepare('SELECT id FROM messages').all()).toHaveLength(2);
     expect(fixture.sqlite.prepare('SELECT id FROM session_turns').all()).toHaveLength(2);
-    await expect(restoreSession('p1', 'removed-agent')).resolves.toMatchObject({ id: 'removed-agent', archivedAt: null });
+    await expect(restoreSession('removed-agent')).resolves.toMatchObject({ id: 'removed-agent', archivedAt: null });
     expect(identityHost.restore).toHaveBeenCalledExactlyOnceWith({ projectId: 'p1', sessionId: 'removed-agent' }, receipt);
-    await expect(restoreSession('p1', 'kept-agent')).resolves.toMatchObject({ id: 'kept-agent', archivedAt: null });
+    await expect(restoreSession('kept-agent')).resolves.toMatchObject({ id: 'kept-agent', archivedAt: null });
   });
 
   it('retains the receipt and binding when runtime stop fails, then retries without another cloud removal', async () => {
@@ -688,16 +688,16 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
     mocks.mounted.add('stop-failed');
     const receipt = { userId: 'removed-identity', removedAt: '2026-10-31T03:00:00Z' };
     mocks.teardown.mockRejectedValueOnce(new Error('runtime stop unavailable'));
-    await expect(archiveSession('p1', 'stop-failed', {}, receipt)).rejects.toThrow('runtime stop unavailable');
+    await expect(archiveSession('stop-failed', {}, receipt)).rejects.toThrow('runtime stop unavailable');
     expect(archivedAt('stop-failed')).not.toBeNull();
     expect(identityHost.release).not.toHaveBeenCalled();
     const { sessionArchivalState } = await import('./session-archival');
     expect(sessionArchivalState('stop-failed')?.removedIdentity).toEqual(receipt);
     mocks.teardown.mockResolvedValueOnce({ success: true });
-    await archiveSession('p1', 'stop-failed', {}, receipt);
+    await archiveSession('stop-failed', {}, receipt);
     expect(identityHost.archive).toHaveBeenCalledTimes(1);
     expect(identityHost.release).toHaveBeenCalledExactlyOnceWith(receipt);
-    await expect(restoreSession('p1', 'stop-failed')).resolves.toMatchObject({ id: 'stop-failed' });
+    await expect(restoreSession('stop-failed')).resolves.toMatchObject({ id: 'stop-failed' });
   });
 
   it('retains attachments, activity, UI/model state and user files after confirmed identity removal', async () => {
@@ -722,7 +722,7 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
     await recordSessionOutput('retained', { kind: 'file', path: userFile });
     const model = await sessionPlatformModel('retained');
     const outputs = await sessionOutputs('retained');
-    await archiveSession('p1', 'retained', {}, { userId: 'removed-identity', removedAt: '2026-10-31T03:00:00Z' });
+    await archiveSession('retained', {}, { userId: 'removed-identity', removedAt: '2026-10-31T03:00:00Z' });
     expect(existsSync(owned)).toBe(true);
     expect(existsSync(userFile)).toBe(true);
     for (const table of ['activity_events', 'session_run_intervals', 'session_model_sources', 'activity_session_projects']) {
@@ -739,9 +739,9 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
     const stopping = Promise.withResolvers<{ success: boolean }>();
     mocks.teardown.mockReturnValueOnce(stopping.promise);
     const receipt = { userId: 'removed-identity', removedAt: '2026-10-31T03:00:00Z' };
-    const archiving = archiveSession('p1', 'archive-race', {}, receipt);
+    const archiving = archiveSession('archive-race', {}, receipt);
     await vi.waitFor(() => expect(mocks.teardown).toHaveBeenCalledWith('archive-race', 'archive'));
-    const restoring = restoreSession('p1', 'archive-race');
+    const restoring = restoreSession('archive-race');
     await Promise.resolve();
     expect(identityHost.restore).not.toHaveBeenCalled();
     stopping.resolve({ success: true });
@@ -799,9 +799,9 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
         removeAgent: async agentId => {
           removedIdentities.push(agentId); // Inject only the cloud single-write receipt.
           const sessionId = binding.get(agentId)!;
-          await archiveSession('p1', sessionId, {}, { userId: agentId, removedAt: '2026-10-31T03:00:00Z' });
+          await archiveSession(sessionId, {}, { userId: agentId, removedAt: '2026-10-31T03:00:00Z' });
         },
-        archiveSession: async (projectId, sessionId) => { await archiveSession(projectId, sessionId, { removeSocialIdentity: false }); },
+        archiveSession: async (projectId, sessionId) => { await archiveSession(sessionId, { removeSocialIdentity: false }); },
         wipeHome, resetLocalState,
       });
       expect(wipeHome).toHaveBeenCalledOnce();
@@ -810,13 +810,13 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
       const history = await listSessionHistory({ source: 'gugu', status: 'archived' });
       expect(history.rows.map(row => row.gugu?.sessionId).sort()).toEqual(['assistant-task', 'assistant-unbound', 'started-task']);
       expect(archivedAt('assistant-unbound')).not.toBeNull();
-      await expect(restoreSession('p1', 'assistant-task')).resolves.toMatchObject({ id: 'assistant-task' });
+      await expect(restoreSession('assistant-task')).resolves.toMatchObject({ id: 'assistant-task' });
       expect(await getAutomation(schedules.get('assistant-task')!)).toBeNull();
       expect(await getAutomation(schedules.get('assistant-unbound')!)).toBeNull();
       expect(await getAutomation(schedules.get('other-task')!)).toMatchObject({ agentSessionId: 'other-task', enabled: true });
       if (deleteStarted) {
         expect(await getAutomation(startedSchedule)).toBeNull();
-        await expect(restoreSession('p1', 'started-task')).resolves.toMatchObject({ id: 'started-task' });
+        await expect(restoreSession('started-task')).resolves.toMatchObject({ id: 'started-task' });
         expect(await listAgents(env)).toEqual([]);
       } else {
         expect((await listAgents(env)).map(agent => agent.gugu_user_id)).toEqual(['child-id']);
@@ -826,7 +826,7 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
         });
         expect(fixture.sqlite.prepare('SELECT * FROM automations WHERE id = ?').get(startedSchedule)).toEqual(originalSchedule);
         expect(fixture.sqlite.prepare('SELECT * FROM automation_runs WHERE automation_id = ?').all(startedSchedule)).toEqual(originalRuns);
-        await expect(restoreSession('p1', 'started-task')).resolves.toMatchObject({ id: 'started-task', archivedAt: null });
+        await expect(restoreSession('started-task')).resolves.toMatchObject({ id: 'started-task', archivedAt: null });
         const restoredSchedule = (await listAutomations()).find(row => row.id === startedSchedule);
         expect(restoredSchedule).toMatchObject({ id: startedSchedule, agentSessionId: 'started-task', enabled: true });
         expect(restoredSchedule?.agentSession?.archived).toBeUndefined();
@@ -838,11 +838,11 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
   it('把这条会话放回列表', async () => {
     insert('a');
     insert('b');
-    await archiveSession('p1', 'a');
+    await archiveSession('a');
     expect(archivedAt('a')).not.toBeNull();
     vi.mocked(events.emit).mockClear();
 
-    await restoreSession('p1', 'a');
+    await restoreSession('a');
 
     expect(archivedAt('a')).toBeNull();
     expect(archivedAt('b')).toBeNull();
@@ -855,23 +855,23 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
   // Retargeted to PTY (runtime null): the legacy outbox drain on restore now applies only to non-ACP sessions.
   it('drains only the restored task once after releasing its archival lock', async () => {
     insert('restore-owner', null); insert('other-owner', null);
-    await archiveSession('p1', 'restore-owner');
+    await archiveSession('restore-owner');
     vi.mocked(drainSessionMessageOutbox).mockClear();
     vi.mocked(drainSessionMessageOutbox).mockImplementationOnce(async () => {
       const { serializeSessionArchival } = await import('./session-archival');
       await serializeSessionArchival('restore-owner', async () => undefined);
     });
-    await restoreSession('p1', 'restore-owner');
+    await restoreSession('restore-owner');
     expect(drainSessionMessageOutbox).toHaveBeenCalledExactlyOnceWith({ projectId: 'p1', sessionId: 'restore-owner' });
     expect(mocks.life.restore).not.toHaveBeenCalled();
   });
 
   it('ACP restore hands the session back to session-life (dormant, not started) and never drains the legacy outbox', async () => {
     insert('acp-restore'); insert('acp-other');
-    await archiveSession('p1', 'acp-restore');
+    await archiveSession('acp-restore');
     vi.mocked(drainSessionMessageOutbox).mockClear();
 
-    await expect(restoreSession('p1', 'acp-restore')).resolves.toMatchObject({ id: 'acp-restore', archivedAt: null });
+    await expect(restoreSession('acp-restore')).resolves.toMatchObject({ id: 'acp-restore', archivedAt: null });
 
     expect(mocks.life.restore).toHaveBeenCalledExactlyOnceWith('acp-restore');
     expect(drainSessionMessageOutbox).not.toHaveBeenCalled();

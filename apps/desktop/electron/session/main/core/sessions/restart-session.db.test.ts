@@ -49,7 +49,7 @@ describe('restartSession on a session-life session', () => {
   afterEach(() => { fixture.close(); mocks.db = undefined; });
 
   it('replays the first utterance once as a new row, after resting the run; no initialQueue is borrowed', async () => {
-    await restartSession('p', 's');
+    await restartSession('s');
     expect(mocks.calls).toEqual(['reconfigure:s', 'forget:s', 'enqueue']);
     expect(mocks.enqueued).toHaveLength(1);
     expect(mocks.enqueued[0]).toMatchObject({ sessionId: 's', text: '把测试跑一遍' });
@@ -59,7 +59,7 @@ describe('restartSession on a session-life session', () => {
   });
 
   it('a session created before session-life (no earlier pending row): restart then provision leaves exactly one row', async () => {
-    await restartSession('p', 's');
+    await restartSession('s');
     // What provision does for a never-run ACP session (session-service admitFirstMessages), against the real store.
     const [{ mapSessionRowToSession }, { sessions }, { eq }, { enqueueCreationTurns }] = await Promise.all([
       import('./utils'), import('@main/db/schema'), import('drizzle-orm'), import('./session-life-creation'),
@@ -71,18 +71,18 @@ describe('restartSession on a session-life session', () => {
   });
 
   it('a 重来 before the engine took the last replay is that same restart: one row, and a later press rests nothing', async () => {
-    await Promise.all([restartSession('p', 's'), restartSession('p', 's')]);
-    await restartSession('p', 's');
+    await Promise.all([restartSession('s'), restartSession('s')]);
+    await restartSession('s');
     const rows = fixture.sqlite.prepare("SELECT message_id AS id FROM session_pending WHERE session_id = 's'").all();
     expect(rows).toEqual([{ id: 's:restart:0' }]);
     expect(mocks.calls.filter(call => call.startsWith('reconfigure'))).toHaveLength(2);
   });
 
   it.each(['accepted', 'failed', 'unknown'])('once the replay settled as %s, the next 重来 is a new replay, queued once', async (state) => {
-    await restartSession('p', 's');
+    await restartSession('s');
     fixture.sqlite.prepare("UPDATE session_pending SET state = ? WHERE session_id = 's'").run(state);
-    await restartSession('p', 's');
-    await restartSession('p', 's');
+    await restartSession('s');
+    await restartSession('s');
     const rows = fixture.sqlite.prepare("SELECT message_id AS id, state FROM session_pending WHERE session_id = 's' ORDER BY seq").all();
     expect(rows).toEqual([{ id: 's:restart:0', state }, { id: 's:restart:1', state: 'queued' }]);
   });
@@ -91,7 +91,7 @@ describe('restartSession on a session-life session', () => {
     fixture.sqlite.prepare("UPDATE sessions SET config = json_set(config, '$.initialPrompt', '把测试跑一遍', '$.initialMessageId', 'm1') WHERE id = 's'").run();
     fixture.sqlite.prepare("INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES ('s:0', 's', 0, 't0', ?)")
       .run(JSON.stringify({ id: 't0', seq: 0, initiator: 'user', items: [{ kind: 'message', id: 'm1', seq: 0, role: 'user', text: '把测试跑一遍' }] }));
-    await restartSession('p', 's');
+    await restartSession('s');
     expect(mocks.calls).toEqual(['reconfigure:s', 'forget:s']);
     expect(fixture.sqlite.prepare("SELECT count(*) AS n FROM session_pending WHERE session_id = 's'").get()).toEqual({ n: 0 });
     const row = fixture.sqlite.prepare("SELECT provider_session_id AS p, config FROM sessions WHERE id = 's'").get() as { p: string | null; config: string };

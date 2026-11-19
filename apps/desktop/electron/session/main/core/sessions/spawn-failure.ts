@@ -116,7 +116,6 @@ export function emitSessionSpawnFailure(session: Session, error: unknown): void 
     {
       type: 'error',
       providerId: session.providerId,
-      projectId: session.projectId,
       sessionId: session.id,
       timestamp: Date.now(),
       payload: { message },

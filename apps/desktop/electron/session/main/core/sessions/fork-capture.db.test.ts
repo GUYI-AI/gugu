@@ -140,7 +140,7 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
   });
 
   it('binds the grandchild to the child captured in the same sweep, not the grandparent', async () => {
-    await captureExternalForks(projectId, PARENT);
+    await captureExternalForks(PARENT);
 
     const rows = await fixture.db.select().from(sessions);
     const byId = new Map(rows.map((row) => [row.id, row]));
@@ -163,7 +163,7 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
     await fixture.db.update(sessions)
       .set({ config: { version: '1', type: 'pty', agentDisplayName: '母会话', permissionMode: 'read-only' } })
       .where(eq(sessions.id, PARENT));
-    await captureExternalForks(projectId, PARENT);
+    await captureExternalForks(PARENT);
 
     const rows = await fixture.db.select().from(sessions);
     const child = rows.find((row) => row.id === CHILD);
@@ -174,13 +174,13 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
     const removedId = randomUUID();
     const dir = claudeTranscriptDirFor(await realpath(workspace));
     await writeFile(path.join(dir, `${removedId}.jsonl`), jsonl(['p1', 'p2', 'deleted-fork']));
-    await captureExternalForks(projectId, PARENT);
+    await captureExternalForks(PARENT);
     expect(await fixture.db.select().from(sessions).where(eq(sessions.id, removedId))).toHaveLength(1);
     tombstoneDeletedSession([removedId]);
     await fixture.db.delete(sessions).where(eq(sessions.id, removedId));
-    await captureExternalForks(projectId, PARENT);
-    await captureExternalForks(projectId, CHILD);
-    await captureExternalForks(projectId, GRANDCHILD);
+    await captureExternalForks(PARENT);
+    await captureExternalForks(CHILD);
+    await captureExternalForks(GRANDCHILD);
     expect(await fixture.db.select().from(sessions).where(eq(sessions.id, removedId))).toHaveLength(0);
     // The scan is live: its sibling transcript is still represented, not hidden by a disabled scanner.
     expect(await fixture.db.select().from(sessions).where(eq(sessions.id, GRANDCHILD))).toHaveLength(1);
@@ -198,7 +198,7 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
     const afterIntent = new Date(Date.now() + 1_000);
     await utimes(path.join(transcriptDir, `${CHILD}.jsonl`), afterIntent, afterIntent);
 
-    await captureExternalForks(projectId, PARENT);
+    await captureExternalForks(PARENT);
 
     const rows = await fixture.db.select().from(sessions);
     expect(rows).toHaveLength(1);
@@ -207,7 +207,7 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
     const [intent] = await listProviderContinuationIntents(sessionPath);
     expect(intent?.continuationProviderSessionId).toBe(CHILD);
 
-    await captureExternalForks(projectId, PARENT);
+    await captureExternalForks(PARENT);
     expect(await fixture.db.select().from(sessions)).toHaveLength(1);
   });
 
@@ -234,8 +234,8 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
       lastInteractedAt: '2026-07-02T00:00:00.000Z',
     });
     const sweepBoth = async () => {
-      await captureExternalForks(projectId, PARENT);
-      await captureExternalForks(projectId, FORK);
+      await captureExternalForks(PARENT);
+      await captureExternalForks(FORK);
     };
 
     await sweepBoth();
@@ -255,7 +255,7 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
 
     // 只扫来源任务:GRANDCHILD 的父亲是 fork 行,住在别的任务 ⇒ 来源这一趟不替它落行,更不许错认成
     // 来源的儿子(候选池里若没有 fork 行,唯一同根的就是 PARENT)。
-    await captureExternalForks(projectId, PARENT);
+    await captureExternalForks(PARENT);
     expect((await fixture.db.select().from(sessions)).map((row) => row.id).sort()).toEqual(
       [FORK, PARENT].sort()
     );
@@ -294,14 +294,14 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
       lastInteractedAt: '2026-07-02T00:00:00.000Z',
     });
 
-    await captureExternalForks(projectId, PARENT);
+    await captureExternalForks(PARENT);
     expect((await fixture.db.select().from(sessions)).map((row) => row.id).sort()).toEqual(
       [FORK, PARENT].sort()
     );
 
     // 认领落定之后 CHILD 已知 —— 仍然不登记,而且不是因为扫描停了:见上一条用例的阳性对照。
     await fixture.db.update(sessions).set({ providerSessionId: CHILD }).where(eq(sessions.id, FORK));
-    await captureExternalForks(projectId, PARENT);
+    await captureExternalForks(PARENT);
     expect((await fixture.db.select().from(sessions)).map((row) => row.id).sort()).toEqual(
       [FORK, PARENT].sort()
     );
@@ -317,7 +317,7 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
       cwd: await realpath(workspace),
     }, { GUGU_HOME: configDir });
 
-    await captureExternalForks(projectId, PARENT);
+    await captureExternalForks(PARENT);
     const rows = await fixture.db.select().from(sessions);
     expect(rows.some((row) => row.id === CHILD)).toBe(false);
     expect(rows.some((row) => row.id === GRANDCHILD)).toBe(true);
@@ -352,7 +352,7 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
     );
 
     observeCodexFork(codexChildId, codexParentId);
-    await captureExternalForks(projectId, '66666666-6666-4666-8666-666666666666');
+    await captureExternalForks('66666666-6666-4666-8666-666666666666');
 
     expect(
       (await fixture.db.select().from(sessions)).some((row) => row.providerSessionId === codexChildId),
@@ -361,7 +361,7 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
     // An explicit `/fork` is not adopted by the live TUI session, so the normal scanner
     // must regain ownership after the classification window closes.
     settleCodexForkObservation(codexChildId, false);
-    await captureExternalForks(projectId, '66666666-6666-4666-8666-666666666666');
+    await captureExternalForks('66666666-6666-4666-8666-666666666666');
 
     const rows = await fixture.db.select().from(sessions);
     const child = rows.find((row) => row.providerSessionId === codexChildId);
@@ -404,7 +404,7 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
     openGauge.peak = 0;
     openGauge.opened = 0;
 
-    await captureExternalForks(projectId, '99999999-9999-4999-8999-999999999999');
+    await captureExternalForks('99999999-9999-4999-8999-999999999999');
 
     // 阳性对照:确实逐个打开过(否则「峰值很低」只是因为没扫)。
     expect(openGauge.opened).toBeGreaterThanOrEqual(total);
@@ -423,7 +423,7 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
       cwd: await realpath(workspace),
     }, { GUGU_HOME: configDir });
 
-    await expect(captureExternalForks(projectId, PARENT)).resolves.toBeUndefined();
+    await expect(captureExternalForks(PARENT)).resolves.toBeUndefined();
     const rows = await fixture.db.select().from(sessions);
     expect(rows.some((row) => row.id === CHILD)).toBe(false);
     expect(rows.some((row) => row.id === GRANDCHILD)).toBe(true);
@@ -435,7 +435,7 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
       .prepare(`UPDATE sessions SET archived_at = CURRENT_TIMESTAMP WHERE id = ?`)
       .run(PARENT);
 
-    await captureExternalForks(projectId, PARENT);
+    await captureExternalForks(PARENT);
 
     const rows = await fixture.db.select().from(sessions);
     expect(rows.map((row) => row.id)).toEqual([PARENT]);
@@ -449,7 +449,7 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
       JSON.stringify({ type: 'attachment', uuid: 'sdk-1', forkedFrom: { sessionId: PARENT } })
     );
 
-    await captureExternalForks(projectId, PARENT);
+    await captureExternalForks(PARENT);
 
     const rows = await fixture.db.select().from(sessions);
     expect(forkedFromId(rows.find((row) => row.id === SDK_FORK))).toBe(PARENT);
@@ -499,7 +499,7 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
     );
     openGauge.opened = 0;
 
-    await captureExternalForks(projectId, 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee');
+    await captureExternalForks('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee');
 
     expect(openGauge.opened).toBe(1);
     const rows = await fixture.db.select().from(sessions);
@@ -520,7 +520,7 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
     await mkdir(worktreeTranscripts, { recursive: true });
     await writeFile(path.join(worktreeTranscripts, `${FORK_COPY}.jsonl`), jsonl(['p1', 'p2', 'w1']));
 
-    await captureExternalForks(projectId, PARENT);
+    await captureExternalForks(PARENT);
 
     const rows = await fixture.db.select().from(sessions);
     expect(forkedFromId(rows.find((row) => row.id === FORK_COPY))).toBe(PARENT);
@@ -542,7 +542,7 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
       `${JSON.stringify({ type: 'mode' })}\n${boundary}\n${jsonl(['s1', 'p3', 'f1'])}\n`
     );
 
-    await captureExternalForks(projectId, PARENT);
+    await captureExternalForks(PARENT);
 
     const rows = await fixture.db.select().from(sessions);
     expect(forkedFromId(rows.find((row) => row.id === COMPACTED_FORK))).toBe(PARENT);

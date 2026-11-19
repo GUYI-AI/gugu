@@ -52,7 +52,7 @@ describe('real MCP SDK to durable native/DOM receipt chain', () => {
     const marker = 'sdk-durable-native-dom-marker';
     setSessionMessageRouter(async (_sessionId, message) => ({ status: 'accepted', messageId: message.id }));
     await expect(sendMessage({
-      projectId: 'project-1', sessionId: 'parent-session',
+      sessionId: 'parent-session',
       clientMessageId: messageId, text: marker, kind: 'session-direct',
     })).resolves.toMatchObject({ id: messageId, status: 'delivered' });
     expect(fixture.sqlite.prepare('SELECT content FROM messages WHERE id = ?').get(messageId))
@@ -65,7 +65,7 @@ describe('real MCP SDK to durable native/DOM receipt chain', () => {
     const router = vi.fn();
     setSessionMessageRouter(router);
     await expect(sendMessage({
-      projectId: 'project-1', sessionId: 'acp-session',
+      sessionId: 'acp-session',
       clientMessageId: messageId, text: 'to acp', kind: 'session-direct',
     })).resolves.toEqual({ id: messageId, status: 'delivered' });
     expect(mocks.enqueue).toHaveBeenCalledExactlyOnceWith({

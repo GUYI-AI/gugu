@@ -59,10 +59,10 @@ function harness(opts: {
 }
 
 const pty = (id: string): LiveSession => ({
-  projectId: 'p', sessionId: id, runtime: 'pty',
+  sessionId: id, runtime: 'pty',
 });
 const acp = (id: string, atRest: boolean): LiveSession => ({
-  projectId: 'p', sessionId: id, runtime: 'acp', acpAtRest: atRest,
+  sessionId: id, runtime: 'acp', acpAtRest: atRest,
 });
 
 describe('IdleReclaimer', () => {
