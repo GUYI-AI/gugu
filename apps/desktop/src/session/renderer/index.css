@@ -1461,27 +1461,28 @@ html[data-gugu-dragging] :is(webview, iframe) {
 .screen-block-grip {
   display: flex;
   height: 24px;
-  width: 12px;
+  width: 20px;
   align-items: center;
   justify-content: center;
   border-radius: 4px;
-  color: transparent;
+  color: var(--color-foreground);
+  opacity: 0;
   cursor: grab;
-  transition: color var(--dur-fast);
+  transition: opacity var(--dur-fast);
 }
-.session-tab-bar:hover .screen-block-grip {
-  color: color-mix(in oklab, var(--color-foreground) 32%, transparent);
+.session-tab-bar:hover .screen-block-grip,
+.session-tab-bar:focus-within .screen-block-grip {
+  opacity: 0.45;
 }
-.screen-block-grip:hover {
-  color: var(--color-foreground) !important;
+.screen-block-grip:hover,
+.screen-block-grip:focus-visible {
+  opacity: 1;
 }
-.screen-block-grip-dots {
+.screen-block-grip-lines {
   display: block;
-  width: 8px;
-  height: 14px;
-  background-image: radial-gradient(circle, currentColor 1.1px, transparent 1.3px);
-  background-size: 4px 5px;
-  background-position: 0 -0.5px;
+  width: 10px;
+  height: 5px;
+  border-block: 1.5px solid currentColor;
 }
 [data-screen-page]:has([data-block-grip]:hover)::after,
 [data-screen-block]:has([data-block-grip]:hover)::after {
