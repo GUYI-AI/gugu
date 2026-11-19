@@ -106,7 +106,8 @@ describe('versioned session turn storage', () => {
   it('rolls back parts and search changes with the canonical transaction', () => {
     const row = insert(turn(), true), original = readSessionTurn(fixture.sqlite, row);
     const prepared = prepareSessionTurn(fixture.sqlite, row, { ...original, outcome: { kind: 'done' } }, false);
-    expect(() => fixture.sqlite.transaction(() => { prepared.commit(); throw new Error('stop'); })()).toThrow('stop');
+    expect(fixture.db.connection).toBe(fixture.sqlite);
+    expect(() => fixture.db.transaction(() => { prepared.commit(); throw new Error('stop'); })).toThrow('stop');
     expect(readSessionTurn(fixture.sqlite, row)).toEqual(original);
     expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turn_heads').get()).toEqual({ n: 0 });
   });

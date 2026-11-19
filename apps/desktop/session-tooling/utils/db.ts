@@ -16,14 +16,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type Database from 'better-sqlite3';
 import { openPhysicalDatabase } from '@main/db/physical-connection';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { createAppDatabase, type ConnectedAppDb } from '@main/db/database';
 import { applyMigrations, bundledMigrations, initializeDatabase } from '@main/db/initialize';
-import * as schema from '@main/db/schema';
 
 const fixturesDir = fileURLToPath(new URL('../fixtures/', import.meta.url));
 
 export type FixtureDb = {
-  db: ReturnType<typeof drizzle<typeof schema>>;
+  db: ConnectedAppDb;
   sqlite: Database.Database;
   /** Close the database and delete the temporary copy. */
   close: () => void;
@@ -64,7 +63,7 @@ export async function openFixture(
     sqlite.pragma('busy_timeout = 5000');
     await migrate(sqlite);
     return {
-      db: drizzle(sqlite, { schema }),
+      db: createAppDatabase(sqlite),
       sqlite,
       close: () => {
         sqlite.close();
@@ -89,7 +88,7 @@ export async function openFixture(
   await migrate(sqlite);
 
   return {
-    db: drizzle(sqlite, { schema }),
+    db: createAppDatabase(sqlite),
     sqlite,
     close: () => {
       sqlite.close();

@@ -50,7 +50,7 @@ describe('isolated real session writer benchmark', () => {
     let connection = openPhysicalDatabase(database);
     connection.pragma('journal_mode=WAL'); connection.pragma('synchronous=FULL'); connection.pragma('wal_autocheckpoint=0');
     await initializeDatabase(connection);
-    state.sqlite = connection; state.db = drizzle(connection, { schema });
+    state.sqlite = connection; state.db = Object.assign(drizzle(connection, { schema }), { connection });
     connection.exec("INSERT INTO projects(id,name,path) VALUES('bench-project','Synthetic','/synthetic'); INSERT INTO sessions(id,project_id) VALUES('bench','bench-project')");
     connection.pragma('wal_checkpoint(TRUNCATE)');
     const samples: unknown[] = [], receipts: Array<{ receipt: WindowCommitReceipt; digest: string }> = [];
@@ -88,7 +88,7 @@ describe('isolated real session writer benchmark', () => {
         walAutocheckpoint: connection.pragma('wal_autocheckpoint', { simple: true }), pageSize: connection.pragma('page_size', { simple: true }) };
       assert.equal(connection.pragma('integrity_check', { simple: true }), 'ok');
       connection.close();
-      connection = openPhysicalDatabase(database); state.sqlite = connection; state.db = drizzle(connection, { schema });
+      connection = openPhysicalDatabase(database); state.sqlite = connection; state.db = Object.assign(drizzle(connection, { schema }), { connection });
       assert.deepEqual((await readStoredTurns('bench', { fromSeq: 0 })).turns, expected);
       // Each captured snapshot must survive subsequent revisions and a database reopen.
       for (const entry of receipts) {

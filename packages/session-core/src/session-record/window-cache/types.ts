@@ -26,6 +26,7 @@ export type IoKind = 'sourceBytes' | 'indexBytes';
 export interface WindowBudget {
   readonly counters: Readonly<WindowIoCounters>;
   read(kind: IoKind, requested: number, operation: () => Promise<number>): Promise<number>;
+  readSync(kind: IoKind, requested: number, operation: () => number): number;
   charge(kind: Exclude<keyof WindowIoCounters, IoKind>, amount: number): void;
 }
 

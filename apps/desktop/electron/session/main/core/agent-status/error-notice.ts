@@ -51,7 +51,7 @@ export function acknowledgeErrorNotice(sessionId: string): void {
   // Read only the latest stored outcome's fields, never the potentially large turn body.
   const stored = db.select({ id: sessionTurns.id })
     .from(sessionTurns).where(eq(sessionTurns.sessionId, sessionId)).orderBy(desc(sessionTurns.seq)).limit(1).get();
-  const outcome = stored ? readSessionTurn(db.$client, stored, { headerOnly: true }).outcome : undefined;
+  const outcome = stored ? readSessionTurn(db.connection, stored, { headerOnly: true }).outcome : undefined;
   if (outcome?.kind !== 'error') return;
   const message = outcome.detail ?? outcome.said;
   if (!message) return;

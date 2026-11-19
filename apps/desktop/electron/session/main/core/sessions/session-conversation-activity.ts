@@ -23,7 +23,7 @@ export function nativeConversationActivity(sessionId: string, source: ActivityDb
     // a missing journal cannot establish that this is an ordinary owner reply.
     const stored = source.select({ id: sessionTurns.id, data: sessionTurns.data }).from(sessionTurns)
       .where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.seq, value.turnSeq))).get();
-    const preview = stored ? personalConversationPreview(readSessionTurn(db.$client, stored), activityPreviewSources) : null;
+    const preview = stored ? personalConversationPreview(readSessionTurn(db.connection, stored), activityPreviewSources) : null;
     return preview ? { ...preview, at: new Date(preview.at).toISOString(), turnSeq: value.turnSeq } : null;
   }
   return value;

@@ -65,7 +65,7 @@ export async function commitOwnerNotification(context: Context, input: OwnerNoti
     await beforeCommit();
     const existing = db.select().from(sessionTurns).where(and(eq(sessionTurns.sessionId, context.sessionId), eq(sessionTurns.turnId, sourceId))).get();
     if (existing) {
-      const previous = readSessionTurn(db.$client, existing, { messagesOnly: true }).items[0];
+      const previous = readSessionTurn(db.connection, existing, { messagesOnly: true }).items[0];
       if (previous?.kind !== 'message' || previous.ownerNotification?.requestHash !== requestHash) throw new Error('Owner notification request_id was already committed with different content');
       return { status: 'sent' as const, message_id: input.request_id, session_id: context.sessionId, seq: existing.seq, ...(previous.ownerNotification.files?.[0] ? { file_name: previous.ownerNotification.files[0].name } : {}) };
     }
@@ -85,7 +85,7 @@ export async function commitOwnerNotification(context: Context, input: OwnerNoti
       const turn = recordNativePublicationTurn({ sessionId: context.sessionId, rowId: `${context.sessionId}:${next}`, source: 'live', context: publication, turn: renumberStoredTurn({ id: sourceId, seq: next, initiator: 'agent', trigger: { kind: 'agent' }, startedAt: at, endedAt: at,
         outcome: { kind: 'done' }, items: [{ kind: 'message', id: `${sourceId}:message:${input.request_id}`, seq: 0, role: 'assistant',
           text: input.text || files![0]!.name, at, ownerNotification: { requestId: input.request_id, requestHash, ...(sourceTurnId ? { sourceTurnId } : {}), ...(files ? { files } : {}) } }] }, context.sessionId, next) }, tx);
-      const normalized = prepareSessionTurn(db.$client, { id: `${context.sessionId}:${next}`, data: '', revision: 0 }, turn, true);
+      const normalized = prepareSessionTurn(db.connection, { id: `${context.sessionId}:${next}`, data: '', revision: 0 }, turn, true);
       tx.insert(sessionTurns).values({ id: `${context.sessionId}:${next}`, sessionId: context.sessionId, seq: next, turnId: sourceId, data: normalized.marker }).run();
       normalized.commit();
       setOwnerNotificationHead(context.sessionId, next, tx);
@@ -101,5 +101,5 @@ export async function commitOwnerNotification(context: Context, input: OwnerNoti
 /** Notification snapshots are authorized by their actual durable session message, not by arbitrary paths. */
 export function ownerNotificationFile(sessionId: string, path: string): boolean {
   return db.select({ id: sessionTurns.id }).from(sessionTurns).where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.turnId, 'owner-notify:%'))).all().some(row =>
-    readSessionTurn(db.$client, row, { messagesOnly: true }).items.some(item => item.kind === 'message' && item.ownerNotification?.files?.some(file => file.path === path)));
+    readSessionTurn(db.connection, row, { messagesOnly: true }).items.some(item => item.kind === 'message' && item.ownerNotification?.files?.some(file => file.path === path)));
 }

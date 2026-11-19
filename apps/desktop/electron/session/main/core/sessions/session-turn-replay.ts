@@ -47,7 +47,7 @@ export function filterReadableStoredRows<T extends StoredReplayRow>(parsed: (T &
 
 /** View repair only: leave archived rows, sequence numbers and message contents unchanged. */
 export async function readableStoredRows<T extends StoredReplayRow & { id: string; revision: number }>(sessionId: string, rows: T[]) {
-  return readableParsedRows(sessionId, rows.map(row => ({ ...row, turn: readSessionTurn(db.$client, row), revision: sessionTurnRevision(db.$client, row) })));
+  return readableParsedRows(sessionId, rows.map(row => ({ ...row, turn: readSessionTurn(db.connection, row), revision: sessionTurnRevision(db.connection, row) })));
 }
 
 /** The same projection for rows a caller has already parsed, oldest first. */
@@ -61,7 +61,7 @@ export async function readableParsedRows<T extends StoredReplayRow>(sessionId: s
       sql`${sql.raw(sessionTurnHeaderSql('outcome_kind', '$.outcome.kind'))} IS NOT NULL`,
       sql`${sql.raw(sessionTurnHeaderSql('started_at', '$.startedAt'))} IS NOT NULL`,
     )).orderBy(desc(sessionTurns.seq)).limit(1);
-    previous = row ? readSessionTurn(db.$client, row) : null;
+    previous = row ? readSessionTurn(db.connection, row) : null;
   }
   return filterReadableStoredRows(parsed, previous);
 }

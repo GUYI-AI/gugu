@@ -137,7 +137,7 @@ it('wires live transcript commits to the journal but leaves replay and old-row r
   await persistCommittedTurn({ sessionId: 's', source: 'live', turn: live });
   expect(pendingNativePublications()).toHaveLength(2);
   const stored = fixture.sqlite.prepare('SELECT id,data FROM session_turns WHERE turn_id=?').get(live.id) as { id: string; data: string };
-  expect((readSessionTurn(fixture.sqlite, stored).items[1] as { _meta: { guguPublicationId: string } })._meta.guguPublicationId).toBe(pendingNativePublications()[1]!.id);
+  expect(readSessionTurn(fixture.sqlite, stored).items[1]).toMatchObject({ _meta: { guguPublicationId: pendingNativePublications()[1]!.id } });
   await persistCommittedTurn({ sessionId: 's', source: 'revision', turn: { ...live, endedAt: live.endedAt! + 20 } });
   expect(pendingNativePublications()).toHaveLength(2);
 });

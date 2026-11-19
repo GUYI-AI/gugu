@@ -68,7 +68,7 @@ type PersistInput = { sessionId: string; source: CommittedTurnSource; turn: Tran
 export function persistCommittedTurn(input: PersistInput): Promise<void> {
   if (input.windowCapture) input = { ...input, windowCapture: { ...input.windowCapture, cursor: { ...input.windowCapture.cursor } } };
   const previous = persistenceTails.get(input.sessionId) ?? Promise.resolve();
-  const write = () => withTurnPayloadWrite(db.$client, async () => {
+  const write = () => withTurnPayloadWrite(db.connection, async () => {
     let captured: WindowCommitReceipt | undefined, phaseError: unknown, phaseFailed = false;
     if (input.windowCapture) input.windowCapture.intentBudget = createWindowBudget();
     try {
@@ -109,10 +109,10 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
       .limit(1);
     if (!row) throw new Error(`Cannot revise missing stored turn: sessionId=${input.sessionId} turnId=${input.turn.id} source=${input.source}`);
     // Preserve the stored identity; revisions update normalized fields, never the legacy data blob.
-    const previous = readSessionTurn(db.$client, row, { headerOnly: true });
+    const previous = readSessionTurn(db.connection, row, { headerOnly: true });
     const turn = { ...input.turn, referenceId: input.turn.referenceId ?? previous.referenceId };
     const prepared = prepareNativePublicationTurn({ ...input, turn: renumberStoredTurn(turn, input.sessionId, row.seq), rowId: row.id, source: input.source, context }, db);
-    const revised = prepared.turn, normalized = prepareSessionTurn(db.$client, row, revised, false);
+    const revised = prepared.turn, normalized = prepareSessionTurn(db.connection, row, revised, false);
     const captured = input.windowCapture ? await prepareWindowCommitWrite(sqlite, { sessionId: input.sessionId, referenceId: input.turn.referenceId,
       rowId: row.id, storedSeq: row.seq, insert: false, normalized, capture: input.windowCapture }) : undefined;
     const publish = db.transaction(tx => {
@@ -136,7 +136,7 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
   const rawTurn = renumberStoredTurn(input.turn, input.sessionId, next);
   const prepared = input.source === 'live' ? prepareNativePublicationTurn({ ...input, turn: rawTurn, rowId: `${input.sessionId}:${next}`, source: 'live', context }, db) : undefined;
   const turn = prepared?.turn ?? rawTurn;
-  const normalized = prepareSessionTurn(db.$client, { id: `${input.sessionId}:${next}`, data: '', revision: 0 }, turn, true);
+  const normalized = prepareSessionTurn(db.connection, { id: `${input.sessionId}:${next}`, data: '', revision: 0 }, turn, true);
   const captured = input.windowCapture ? await prepareWindowCommitWrite(sqlite, { sessionId: input.sessionId, referenceId: input.turn.referenceId,
     rowId: `${input.sessionId}:${next}`, storedSeq: next, insert: true, normalized, capture: input.windowCapture }) : undefined;
   const inserted = db.transaction(tx => {
@@ -185,7 +185,7 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
 export function withStoredTurns<T>(sessionId: string, run: () => T | Promise<T>): Promise<T> {
   const previous = persistenceTails.get(sessionId) ?? Promise.resolve();
   const completed = beginCanonicalQueueTask(sessionId);
-  const write = () => withTurnPayloadWrite(db.$client, run);
+  const write = () => withTurnPayloadWrite(db.connection, run);
   const result = previous.then(write, write).finally(completed);
   const tail = result.then(() => undefined, () => undefined);
   persistenceTails.set(sessionId, tail);
@@ -203,7 +203,7 @@ export async function readStoredTailNow(sessionId: string, limit: number): Promi
     .where(eq(sessionTurns.sessionId, sessionId))
     .orderBy(desc(sessionTurns.seq))
     .limit(limit);
-  return rows.map(row => readSessionTurn(db.$client, row));
+  return rows.map(row => readSessionTurn(db.connection, row));
 }
 
 /**
@@ -220,7 +220,7 @@ export function* storedTurnsNewestFirstNow(sessionId: string, limit = Number.MAX
     for (const { seq } of seqs) {
       const row = db.select({ id: sessionTurns.id, data: sessionTurns.data }).from(sessionTurns)
         .where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.seq, seq))).limit(1).get();
-      if (row) yield { seq, turn: readSessionTurn(db.$client, row) };
+      if (row) yield { seq, turn: readSessionTurn(db.connection, row) };
     }
     if (seqs.length < Math.min(left, STORED_SEQ_PAGE)) return;
     before = seqs.at(-1)!.seq; left -= seqs.length;
@@ -233,7 +233,7 @@ export function storedMessagesWithPromptHash(sessionId: string, nativeText: stri
   const digest = nativePromptDigest(nativeText);
   return db.select({ id: sessionTurns.id }).from(sessionTurns)
     .where(eq(sessionTurns.sessionId, sessionId)).all()
-    .flatMap(row => readSessionTurn(db.$client, row, { messagesOnly: true }).items)
+    .flatMap(row => readSessionTurn(db.connection, row, { messagesOnly: true }).items)
     .filter(item => JSON.stringify(item).includes(digest));
 }
 
@@ -242,7 +242,7 @@ export function readUnfinishedRecordRowsNow(sessionId: string): Array<{ seq: num
   return db.select({ id: sessionTurns.id, seq: sessionTurns.seq, data: sessionTurns.data }).from(sessionTurns)
     .where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.turnId, 'record:%'),
       sql`${sql.raw(sessionTurnHeaderSql('outcome_kind', '$.outcome.kind'))} IS NULL`)).all()
-    .map(row => ({ seq: row.seq, turn: readSessionTurn(db.$client, row) }));
+    .map(row => ({ seq: row.seq, turn: readSessionTurn(db.connection, row) }));
 }
 
 /**
@@ -254,7 +254,7 @@ export async function readUnfinishedRecordTurnsNow(sessionId: string): Promise<T
   const rows = await db.select({ id: sessionTurns.id, data: sessionTurns.data }).from(sessionTurns)
     .where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.turnId, 'record:%'),
       sql`${sql.raw(sessionTurnHeaderSql('outcome_kind', '$.outcome.kind'))} IS NULL`));
-  return rows.map(row => readSessionTurn(db.$client, row));
+  return rows.map(row => readSessionTurn(db.connection, row));
 }
 
 /** The record matcher has proved this unfinished row's native identity; keep its stored sequence/references. */
@@ -264,7 +264,7 @@ export function reviseRecordTurnNow(sessionId: string, seq: number, turn: Transc
     .from(sessionTurns).where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.seq, seq), like(sessionTurns.turnId, 'record:%'))).limit(1).get();
   if (!stored) throw new Error(`Cannot revise missing record turn: sessionId=${sessionId} seq=${seq}`);
   const revised = renumberStoredTurn(turn, sessionId, stored.seq);
-  const normalized = prepareSessionTurn(db.$client, stored, revised, false);
+  const normalized = prepareSessionTurn(db.connection, stored, revised, false);
   if (normalized.changed) {
     const publish = db.transaction(tx => {
       normalized.commit();
@@ -279,7 +279,7 @@ export function reviseRecordTurnNow(sessionId: string, seq: number, turn: Transc
 export function appendRecordTurnNow(sessionId: string, turn: TranscriptTurn): number {
   const next = nextSeqNow(sessionId);
   const stored = renumberStoredTurn(turn, sessionId, next);
-  const normalized = prepareSessionTurn(db.$client, { id: `${sessionId}:${next}`, data: '', revision: 0 }, stored, true);
+  const normalized = prepareSessionTurn(db.connection, { id: `${sessionId}:${next}`, data: '', revision: 0 }, stored, true);
   const publish = db.transaction(tx => {
     const inserted = tx.insert(sessionTurns).values({
       id: `${sessionId}:${next}`, sessionId, seq: next, turnId: `record:${turn.id}`, data: normalized.marker,
@@ -396,7 +396,7 @@ export async function getStoredToolImage(params: {
       eq(sessionTurns.sessionId, params.sessionId),
       'seq' in params ? eq(sessionTurns.seq, params.seq) : eq(sessionTurns.turnId, params.originTurnId),
     )).orderBy(desc(sessionTurns.seq)).limit(1);
-  const stored = row ? readSessionTurn(db.$client, row) : null;
+  const stored = row ? readSessionTurn(db.connection, row) : null;
   const turn = stored ? clearedHistoryTurns([stored], await nativeConversationHistoryFloor(params.sessionId))[0] ?? null : null;
   const itemId = row && turn && !('seq' in params)
     ? rewriteTurnId(params.itemId, row.turnId, turn.id) : params.itemId;
@@ -419,7 +419,7 @@ export async function getStoredSettledTurn(params: { sessionId: string; referenc
       sql`${sql.raw(sessionTurnHeaderSql('reference_id', '$.referenceId'))} = ${params.referenceId}`))
     .orderBy(desc(sessionTurns.seq)).limit(1);
   if (!row) return null;
-  const turn = clearedHistoryTurns([readSessionTurn(db.$client, row)], await nativeConversationHistoryFloor(params.sessionId))[0];
+  const turn = clearedHistoryTurns([readSessionTurn(db.connection, row)], await nativeConversationHistoryFloor(params.sessionId))[0];
   return turn?.outcome ? { originTurnId: row.originTurnId, turn: trimTurnsForTransport([turn])[0]! } : null;
 }
 
@@ -494,8 +494,8 @@ export async function readStoredTurns(
       .orderBy(desc(sessionTurns.seq))
       .limit(want);
     for (const row of step) {
-      const turn = readSessionTurn(db.$client, row);
-      rows.push({ ...row, revision: sessionTurnRevision(db.$client, row), turn });
+      const turn = readSessionTurn(db.connection, row);
+      rows.push({ ...row, revision: sessionTurnRevision(db.connection, row), turn });
       if (options.budget !== undefined) bytes += transportSizeOf(turn, TRANSPORT_TEXT_LIMIT, options.lean) + 1;
     }
     if (step.length < want) { exhausted = true; break; }
@@ -522,7 +522,7 @@ export async function storedRevertBoundary(sessionId: string, anchor: string): P
   const rows = await db.select({ id: sessionTurns.id, seq: sessionTurns.seq })
     .from(sessionTurns).where(eq(sessionTurns.sessionId, sessionId)).orderBy(asc(sessionTurns.seq));
   for (const row of rows) {
-    const turn = readSessionTurn(db.$client, row, { messagesOnly: true });
+    const turn = readSessionTurn(db.connection, row, { messagesOnly: true });
     if (turn.items.some((item) => item.kind === 'message' && item.role === 'user' && item.revertAnchor === anchor)) return row.seq;
   }
   if (rows.length) throw new Error('The stored conversation no longer contains this revert point.');
@@ -539,7 +539,7 @@ export async function truncateStoredHistory(sessionId: string, fromSeq: number |
       // A notification commits before its calling provider turn; deleting that turn must remove its earlier notice too.
       const attached = tx.select({ id: sessionTurns.id, seq: sessionTurns.seq, turnId: sessionTurns.turnId }).from(sessionTurns)
         .where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.turnId, 'owner-notify:%'))).all()
-        .filter(row => readSessionTurn(db.$client, row, { messagesOnly: true }).items.some(item => item.kind === 'message' && item.ownerNotification?.sourceTurnId && origins.has(item.ownerNotification.sourceTurnId)));
+        .filter(row => readSessionTurn(db.connection, row, { messagesOnly: true }).items.some(item => item.kind === 'message' && item.ownerNotification?.sourceTurnId && origins.has(item.ownerNotification.sourceTurnId)));
       for (const row of attached) tx.delete(sessionTurns).where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.turnId, row.turnId))).run();
       rewindOwnerNotificationState(sessionId, tx);
       return { rows: [...result, ...attached], publish: truncateNativeConversationRead(sessionId, fromSeq, tx, new Set(attached.map(row => row.seq))) };
@@ -561,7 +561,7 @@ export async function truncateStoredHistory(sessionId: string, fromSeq: number |
 export async function storedTurnRevisions(sessionId: string, fromSeq: number): Promise<Array<[seq: number, revision: number]>> {
   const rows = await db.select({ id: sessionTurns.id, seq: sessionTurns.seq, data: sessionTurns.data, revision: sessionTurns.revision }).from(sessionTurns)
     .where(and(eq(sessionTurns.sessionId, sessionId), gte(sessionTurns.seq, fromSeq))).orderBy(asc(sessionTurns.seq));
-  return rows.map(row => [row.seq, sessionTurnRevision(db.$client, row)]);
+  return rows.map(row => [row.seq, sessionTurnRevision(db.connection, row)]);
 }
 
 /** One stored turn by its sequence, or null when the session's stored history no longer has it. */
@@ -569,5 +569,5 @@ export async function readStoredTurn(sessionId: string, seq: number): Promise<Tr
   await persistenceTails.get(sessionId);
   const [row] = await db.select({ id: sessionTurns.id, data: sessionTurns.data }).from(sessionTurns)
     .where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.seq, seq))).limit(1);
-  return row ? readSessionTurn(db.$client, row) : null;
+  return row ? readSessionTurn(db.connection, row) : null;
 }

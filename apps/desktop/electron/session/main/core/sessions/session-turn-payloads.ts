@@ -17,7 +17,7 @@ export class TurnPayloadFiles {
   readonly counters = { writtenBytes: 0, writtenFiles: 0, readBytes: 0 };
   readonly staged = new Map<string, TurnPayloadObject>();
   private readonly syncedDirectories = new Set<string>();
-  constructor(readonly directory: string, private readonly admitRead?: (bytes: number) => void) {}
+  constructor(readonly directory: string, private readonly meterRead?: (requested: number, operation: () => number) => number) {}
 
   private path(hash: string): string {
     if (!HASH.test(hash)) throw new Error('Invalid turn payload hash');
@@ -27,18 +27,25 @@ export class TurnPayloadFiles {
   private readBlock(ref: TurnPayloadRef): Buffer {
     if (!Number.isSafeInteger(ref.bytes) || ref.bytes < 0) throw new Error('Invalid turn payload length');
     const fd = openSync(this.path(ref.hash), constants.O_RDONLY | constants.O_NOFOLLOW);
-    let bytes: Buffer;
+    let bytes: Buffer = Buffer.alloc(0);
     try {
       const before = fstatSync(fd);
       if (!before.isFile() || before.size > BLOCK_BYTES + 1) throw new Error('Invalid turn payload block size');
-      this.admitRead?.(before.size);
-      bytes = Buffer.alloc(before.size);
-      let offset = 0;
-      while (offset < bytes.length) {
-        const count = readSync(fd, bytes, offset, bytes.length - offset, offset);
-        if (!count) throw new Error('Turn payload changed while reading');
-        offset += count;
-      }
+      let failed = false, failure: unknown;
+      const read = () => {
+        bytes = Buffer.alloc(before.size);
+        let offset = 0;
+        try {
+          while (offset < bytes.length) {
+            const count = readSync(fd, bytes, offset, bytes.length - offset, offset);
+            if (!count) throw new Error('Turn payload changed while reading');
+            offset += count;
+          }
+        } catch (error) { failed = true; failure = error; }
+        return offset;
+      };
+      if (this.meterRead) this.meterRead(before.size, read); else read();
+      if (failed) throw failure;
       const after = fstatSync(fd);
       if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) throw new Error('Turn payload changed while reading');
     } finally { closeSync(fd); }
