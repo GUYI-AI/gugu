@@ -10,7 +10,7 @@ import { AgentConversationView } from '@renderer/lib/chat/agent-conversation-vie
 import { loadChatUi } from '@renderer/lib/chat/chat-transcript';
 
 const state = vi.hoisted(() => ({ model: null as unknown as LiveWindowModel }));
-vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => null } }));
+vi.mock('@renderer/lib/machine-routing', async (importOriginal) => ({ ...await importOriginal<object>(), machineRegistry: { machineOf: () => null } }));
 vi.mock('../../features/sessions/stores/session-agent-bindings', () => ({ sessionAgentBindings: { bindingFor: () => ({ agentUserId: 'agent' }) } }));
 vi.mock('../../features/remote-hosts/remote-hosts-store', () => ({ remoteHostsStore: { connectionState: () => 'connected' } }));
 vi.mock('../../features/live-window/desktop-context', () => ({ bindDesktopLiveWindowActivity: () => {} }));

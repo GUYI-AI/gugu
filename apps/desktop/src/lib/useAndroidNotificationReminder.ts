@@ -5,14 +5,14 @@ import { dismissNotice, notify } from './notices'
 import {
   ANDROID_NOTIFICATION_PROBLEM_COPY, androidNotificationProblem, openAndroidNotificationSettings,
 } from './notificationDiagnostics'
-import { useNotificationSettings } from './notificationSettings'
+import { useDevicePreferences } from './devicePreferences'
 import { useAppActive } from './onScreenChat'
 
 const NOTICE_KEY = 'android-chat-notification-settings'
 
 export function useAndroidNotificationReminder(active: boolean): void {
   const { t } = useTranslation('main')
-  const settings = useNotificationSettings()
+  const settings = useDevicePreferences()
   const foreground = useAppActive()
   const previous = useRef<string | null>(null)
 
@@ -25,7 +25,7 @@ export function useAndroidNotificationReminder(active: boolean): void {
     }
     if (!foreground) return
     let current = true
-    const silent = !settings.sound
+    const silent = !settings.chatSound
     void androidNotificationProblem.fetch(silent).then(({ problem }) => {
       if (!current || problem === undefined) return
       if (!problem) {
@@ -47,5 +47,5 @@ export function useAndroidNotificationReminder(active: boolean): void {
       })
     })
     return () => { current = false }
-  }, [active, foreground, settings.chatMessages, settings.sound, t])
+  }, [active, foreground, settings.chatMessages, settings.chatSound, t])
 }

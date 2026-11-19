@@ -15,7 +15,7 @@ import { chatAttention, upsertChatRow } from '@gugu/core/shared/ui/chatModels'
 import { writeRead } from '../lib/readWriter'
 import { useGroupCreation } from './useGroupCreation'
 import { mergeMessagesById, optimisticReplyFields, upsertMessageById } from '@gugu/core/shared/ui/messageListModels'
-import { useNotificationSettings } from '../lib/notificationSettings'
+import { useDevicePreferences } from '../lib/devicePreferences'
 import {
   openImRepository,
   imSelectors,
@@ -67,7 +67,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   const { toast } = useToast()
   const userId = user?.id ?? null
   const catchupPriority = useChatCatchupPriority(userId)
-  const notificationSettings = useNotificationSettings(); useWatchAppActive() // reads are taken only while the app is active
+  const devicePreferences = useDevicePreferences(); useWatchAppActive() // reads are taken only while the app is active
   const [chats, setChats, chatsRef] = useChatListState()
   const [identitiesById, setIdentitiesById] = useState<ReturnType<typeof imSelectors.identitiesById>>({})
   const [activeChatId, setActiveChatIdState] = useActiveChatTransitionState()
@@ -290,7 +290,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   const chatProjection = useChatProjectionBinding({
     ledger: projectionRef.current, repositoryRef: imRepositoryRef, getRepository: getImRepository, conversations: cache,
     chatsRef, activeChatIdRef, requestSeqRef: listRequestSeqRef, setChats, onActiveRevoked, canAcknowledge: canAcknowledgeOpenChat, visibleSeqOf: visibleSeqOfChat,
-    notifications: { chatMessages: notificationSettings.chatMessages, sound: notificationSettings.sound },
+    notifications: { chatMessages: devicePreferences.chatMessages, sound: devicePreferences.chatSound },
   })
 
   const loadChats = useChatListRefresh(userId, chatProjection, chatsRef, listRequestSeqRef, setChatsLoad, catchupPriority)
@@ -305,7 +305,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     }
     if (!chat || imRepositoryScope.disposed || repository.accountId !== userId) return
     await notifyForIngestedMessage(userId, chat, message, { onScreen: isChatOnScreen,
-      notificationsEnabled: notificationSettings.chatMessages, soundEnabled: notificationSettings.sound })
+      notificationsEnabled: devicePreferences.chatMessages, soundEnabled: devicePreferences.chatSound })
   }
 
   const patchChat: PatchChat = useCallback((chatId, partial, expectedReadStateVersion) => {

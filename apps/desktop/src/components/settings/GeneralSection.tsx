@@ -14,9 +14,8 @@ import { useReplica } from '../../lib/replica'
 import { useSystemPermissionStates } from '../../lib/systemPermissions'
 import { platform } from '../../platform'
 import type { SystemPermission } from '../../platform/types'
-import { readNotificationSettings, setNotificationSettings, useNotificationSettings, type NotificationSettings } from '../../lib/notificationSettings'
+import { readDevicePreferences, useDevicePreferences, writeDevicePreferences } from '../../lib/devicePreferences'
 import { nativePhoneActions } from '../../mobile/phone-device/nativePhoneActions'
-import { setTrayBadgeEnabled, useTrayBadgeEnabled } from '../../lib/trayBadgeSetting'
 import { SessionSettingsSection } from '../sessionpage/SessionSettingsSection'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow, Toggle } from './SettingsPrimitives'
 import { SettingsChoice } from './SettingsChoice'
@@ -36,7 +35,7 @@ const THEME_OPTIONS = ['light', 'dark', 'system'] as const
  * 那种开关正是本票要删掉的 `requests` 那类死字段,❌ 别为了和任务面板层数对齐把它造出来。
  */
 const NOTIFICATION_ROWS: ReadonlyArray<{
-  key: keyof NotificationSettings
+  key: 'chatMessages' | 'chatSound'
   labelKey: string
   descriptionKey?: string
   ariaKey: string
@@ -48,7 +47,7 @@ const NOTIFICATION_ROWS: ReadonlyArray<{
     ariaKey: 'settings.general.notificationsChatAria',
   },
   {
-    key: 'sound',
+    key: 'chatSound',
     labelKey: 'settings.general.notificationsSound',
     ariaKey: 'settings.general.notificationsSoundAria',
   },
@@ -78,7 +77,7 @@ const CHAT_BATTERY_GUIDANCE_KEY = 'gugu.android.chat-notifications.battery-guida
 /**
  * 通用:语言 + 主题 + 通知 (+ 托盘角标)。通知是这一页的一个分组,不是顶层导航项。
  * @@@sidebar-tint 侧栏渐进底色**不在这一页** —— 2026-09-18 owner 把它归到会话页的设置里
- * (设置合一后是会话页画的「界面」那一格,features/settings/components/SidebarTintRow.tsx),真值仍是 lib/sidebarTint.ts。
+ * (设置合一后是会话页画的「界面」那一格,features/settings/components/SidebarTintRow.tsx),真值在这台设备的偏好里(lib/devicePreferences.ts)。
  */
 export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPermissions: () => void; showThemePacks?: boolean }) {
   const { t } = useTranslation('main')
@@ -86,13 +85,12 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
   const [batteryGuidance, setBatteryGuidance] = useState<{ onePlus: boolean; restricted: boolean } | null>(null)
   const mobile = useMobileShell()
   const { preference, setPreference } = useLocale()
-  const notificationSettings = useNotificationSettings()
+  const devicePreferences = useDevicePreferences()
   // product spec:手机上「通用 → 通知」同时如实显示系统权限;读不到真值的宿主上恒为空、不渲染。
   const {
     states: systemNotificationStates,
     refresh: refreshSystemNotificationState,
   } = useSystemPermissionStates(NOTIFICATION_PERMISSION)
-  const trayBadgeEnabled = useTrayBadgeEnabled()
   const [notificationTest, setNotificationTest] = useState<{
     kind: keyof typeof NOTIFICATION_HINT_KEYS
     silent?: boolean
@@ -109,8 +107,8 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
     || systemNotificationStates.notifications === 'blocked'
   const notificationHint = notificationTest?.kind
 
-  function changeNotificationSetting(key: keyof NotificationSettings, on: boolean) {
-    setNotificationSettings({ [key]: on })
+  function changeNotificationSetting(key: 'chatMessages' | 'chatSound', on: boolean) {
+    writeDevicePreferences({ [key]: on })
     if (key !== 'chatMessages' || !platform.systemPermissions.includes('batteryOptimization')) return
     if (!on) {
       setBatteryGuidance(null)
@@ -120,7 +118,7 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
       if (localStorage.getItem(CHAT_BATTERY_GUIDANCE_KEY)) return
       if (await platform.checkSystemPermission('batteryOptimization') !== 'prompt') return
       const device = await nativePhoneActions.deviceInfo().catch(() => null)
-      if (!readNotificationSettings().chatMessages || localStorage.getItem(CHAT_BATTERY_GUIDANCE_KEY)) return
+      if (!readDevicePreferences().chatMessages || localStorage.getItem(CHAT_BATTERY_GUIDANCE_KEY)) return
       localStorage.setItem(CHAT_BATTERY_GUIDANCE_KEY, 'shown')
       const onePlus = [device?.brand, device?.manufacturer].some(name => name?.toLowerCase() === 'oneplus')
       setBatteryGuidance({ onePlus, restricted: true })
@@ -204,7 +202,7 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
             description={row.descriptionKey ? t(row.descriptionKey) : undefined}
             control={(
               <Toggle
-                checked={notificationSettings[row.key]}
+                checked={devicePreferences[row.key]}
                 onChange={(on) => changeNotificationSetting(row.key, on)}
                 ariaLabel={t(row.ariaKey)}
               />
@@ -243,7 +241,7 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
               size="sm"
               aria-label={t('settings.general.notificationsTestAria')}
               onClick={() => {
-                const silent = platform.androidNotificationSettings ? !notificationSettings.sound : undefined
+                const silent = platform.androidNotificationSettings ? !devicePreferences.chatSound : undefined
                 void sendTestNotification(silent).then(async result => {
                   if (silent !== undefined) await androidNotificationProblem.fetch(silent)
                   setBannerSeen(null)
@@ -273,8 +271,8 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
             title={t('settings.general.trayBadgeEnabled')}
             control={(
               <Toggle
-                checked={trayBadgeEnabled}
-                onChange={setTrayBadgeEnabled}
+                checked={devicePreferences.trayBadge}
+                onChange={(on) => writeDevicePreferences({ trayBadge: on })}
                 ariaLabel={t('settings.general.trayBadgeAria')}
               />
             )}
