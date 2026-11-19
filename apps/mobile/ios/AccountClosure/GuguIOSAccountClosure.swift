@@ -40,6 +40,8 @@ final class GuguIOSAccountClosure {
     private let preparation: (GuguIOSClosureScope) throws -> Bool
     private let steps: [(GuguIOSClosureScope) throws -> Bool]
     private let retained: () throws -> [String]
+    private let operationLock: NSRecursiveLock?
+    private let operationAdmission: (String) throws -> Void
 
     init(secrets: GuguIOSClosureSecrets, installation: @escaping () throws -> String,
          localAuthBarrier: @escaping (@escaping () throws -> Void) throws -> Void,
@@ -47,13 +49,16 @@ final class GuguIOSAccountClosure {
          capturePreparation: @escaping (GuguIOSClosureScope) throws -> GuguIOSOwnerRetirementStore.SignOutPreparation? = { _ in nil },
          cancelPreparation: @escaping (GuguIOSClosureScope, GuguIOSOwnerRetirementStore.SignOutPreparation) throws -> Void = { _, _ in throw GuguIOSAccountClosure.failure("stale_context") },
          preparation: @escaping (GuguIOSClosureScope) throws -> Bool = { _ in true }, steps: [(GuguIOSClosureScope) throws -> Bool],
-         retained: @escaping () throws -> [String]) {
+         retained: @escaping () throws -> [String], operationLock: NSRecursiveLock? = nil,
+         operationAdmission: @escaping (String) throws -> Void = { _ in }) {
         self.secrets = secrets; self.installation = installation; self.localAuthBarrier = localAuthBarrier
         self.mainOwner = mainOwner; self.capturePreparation = capturePreparation; self.cancelPreparation = cancelPreparation
         self.preparation = preparation; self.steps = steps; self.retained = retained
+        self.operationLock = operationLock; self.operationAdmission = operationAdmission
     }
 
     func put(_ scope: GuguIOSClosureScope, receipt: String) throws {
+        operationLock?.lock(); defer { operationLock?.unlock() }; try operationAdmission(scope.ownerId)
         lock.lock(); defer { lock.unlock() }
         try scope.validate()
         guard !receipt.isEmpty, receipt.utf8.count <= 65536 else { throw Self.failure("invalid_receipt") }
@@ -70,10 +75,12 @@ final class GuguIOSAccountClosure {
         }
     }
     func get(_ scope: GuguIOSClosureScope) throws -> String? {
+        operationLock?.lock(); defer { operationLock?.unlock() }; try operationAdmission(scope.ownerId)
         lock.lock(); defer { lock.unlock() }
         return try requireRecord(scope).receipt
     }
     func remove(_ scope: GuguIOSClosureScope) throws {
+        operationLock?.lock(); defer { operationLock?.unlock() }; try operationAdmission(scope.ownerId)
         lock.lock(); defer { lock.unlock() }
         var captured = try requireRecord(scope)
         captured.receipt = nil
@@ -84,6 +91,7 @@ final class GuguIOSAccountClosure {
     /// Keep the captured round in the tombstone: an old scope cannot cancel a
     /// new preparation, even when its owner and saved Auth session are unchanged.
     func cancelSignOut(_ scope: GuguIOSClosureScope) throws {
+        operationLock?.lock(); defer { operationLock?.unlock() }; try operationAdmission(scope.ownerId)
         lock.lock(); defer { lock.unlock() }
         try localAuthBarrier {
             let captured = try self.requireRecord(scope)
@@ -93,6 +101,7 @@ final class GuguIOSAccountClosure {
         }
     }
     func eraseLocal(_ scope: GuguIOSClosureScope) throws -> Outcome {
+        operationLock?.lock(); defer { operationLock?.unlock() }; try operationAdmission(scope.ownerId)
         lock.lock(); defer { lock.unlock() }
         var captured = try requireRecord(scope)
         if captured.complete { return Outcome(status: "complete", retainedUnattributed: captured.retained) }

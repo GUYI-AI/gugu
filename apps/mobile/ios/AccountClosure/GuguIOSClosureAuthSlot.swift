@@ -27,6 +27,16 @@ final class GuguIOSClosureAuthSlot {
         let status = SecItemDelete(query("sb-main") as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw GuguIOSAccountClosure.failure("closure_storage_unavailable") }
     }
+    /// V2 keeps an explicit empty envelope so a legacy WebView session cannot be imported on restart.
+    func retireMainIfOwned(by ownerId: String) throws {
+        guard try owner() == ownerId else { return }
+        let attributes: [String: Any] = [kSecValueData as String: Data("{\"state\":\"RETIRED_EMPTY\"}".utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
+        guard SecItemUpdate(query("sb-main") as CFDictionary, attributes as CFDictionary) == errSecSuccess else {
+            throw GuguIOSAccountClosure.failure("closure_storage_unavailable")
+        }
+        guard try owner() == nil else { throw GuguIOSAccountClosure.failure("closure_storage_unavailable") }
+    }
     func retainedUnattributed() throws -> [String] {
         var names: [String] = []
         if let data = try bytes("sb-main") {

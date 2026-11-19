@@ -1,13 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const state = vi.hoisted(() => ({ owner: 'A', v2: true, resume: vi.fn() }))
-vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform: () => true, getPlatform: () => 'android', isPluginAvailable: () => state.v2 } }))
+const state = vi.hoisted(() => ({ owner: 'A', platform: 'android', v2: true, resume: vi.fn() }))
+vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform: () => true, getPlatform: () => state.platform, isPluginAvailable: () => state.v2 } }))
 vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererSession: () => ({ user: { id: state.owner } }) }))
 vi.mock('../../../../apps/desktop/src/mobile/local-agent/nativeAgent', () => ({ nativeAgent: { resumeAfterAccountClosure: state.resume } }))
 import { resumePhoneAfterAccountClosure } from '../../../../apps/desktop/src/mobile/phone-device/phoneAccountClosureResume'
 
-beforeEach(() => { state.owner = 'A'; state.v2 = true; state.resume.mockReset().mockResolvedValue({ resumed: true }) })
+beforeEach(() => { state.owner = 'A'; state.platform = 'android'; state.v2 = true; state.resume.mockReset().mockResolvedValue({ resumed: true }) })
 describe('explicit phone resume after cancellation', () => {
+  it('requires the same native release ACK on an iOS V2 shell', async () => {
+    state.platform = 'ios'; const commit = vi.fn()
+    state.resume.mockRejectedValueOnce(Object.assign(new Error('Still sealed'), { code: 'closure_recovery_required' }))
+    await expect(resumePhoneAfterAccountClosure('A', commit)).rejects.toMatchObject({ code: 'closure_recovery_required' })
+    expect(commit).not.toHaveBeenCalled()
+  })
   it('commits one explicit preference choice only after native acknowledges the original owner', async () => {
     const commit = vi.fn(); await resumePhoneAfterAccountClosure('A', commit)
     expect(state.resume).toHaveBeenCalledExactlyOnceWith({ ownerId: 'A' }); expect(commit).toHaveBeenCalledOnce()

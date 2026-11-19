@@ -9,6 +9,21 @@ final class GuguIOSInstallation {
     // once. Later path substitutions must still match this trusted anchor.
     init(directory: URL) { self.directory = directory.standardizedFileURL.resolvingSymlinksInPath() }
 
+    /// Recovery must not create a fresh installation underneath a surviving Keychain capability.
+    func existingIdentifier() throws -> String {
+        lock.lock(); defer { lock.unlock() }
+        let path = directory.appendingPathComponent("installation.json")
+        guard directory.resolvingSymlinksInPath().path == directory.path,
+              path.resolvingSymlinksInPath().path == path.path else { throw invalid() }
+        let attributes = try FileManager.default.attributesOfItem(atPath: path.path)
+        guard attributes[.type] as? FileAttributeType == .typeRegular,
+              let length = attributes[.size] as? NSNumber, length.intValue <= 256,
+              let record = try JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any],
+              record["version"] as? Int == 1, let id = record["id"] as? String,
+              UUID(uuidString: id)?.uuidString.lowercased() == id else { throw invalid() }
+        return id
+    }
+
     func identifier() throws -> String {
         lock.lock(); defer { lock.unlock() }
         // Resolving a nonexistent directory can produce a file URL without a trailing

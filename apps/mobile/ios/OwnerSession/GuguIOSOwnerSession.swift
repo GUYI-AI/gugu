@@ -19,7 +19,7 @@ struct GuguIOSOwnerCredentials: CustomDebugStringConvertible {
     func originalSessionId() throws -> String {
         try Self.sessionId(ownerId: binding.ownerId, accessToken: accessToken)
     }
-    fileprivate static func sessionId(ownerId: String, accessToken: String) throws -> String {
+    static func sessionId(ownerId: String, accessToken: String) throws -> String {
         struct Scope: Decodable { let sub: String; let session_id: String }
         let parts = accessToken.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 3, accessToken.utf8.count <= 65536 else { throw Self.invalidScope() }
@@ -68,6 +68,7 @@ final class GuguIOSOwnerSession {
     private let retireNative: RetireExternal?
     private let retirementStore: GuguIOSOwnerRetirementStore?
     private let now: () -> Date
+    private let ordinaryAdmission: (String) throws -> Void
     private var generation: UInt64 = 0
     private var active: GuguIOSOwnerCredentials?
     private var retiring = false
@@ -79,11 +80,13 @@ final class GuguIOSOwnerSession {
          verifyUser: @escaping Verify, stopNative: @escaping Stop,
          retireExternal: RetireExternal? = nil, retireNative: RetireExternal? = nil,
          retirementStore: GuguIOSOwnerRetirementStore? = nil,
+         ordinaryAdmission: @escaping (String) throws -> Void = { _ in },
          now: @escaping () -> Date = Date.init) {
         self.readStored = readStored; self.installationId = installationId
         self.verifyUser = verifyUser; self.stopNative = stopNative
         self.retireExternal = retireExternal; self.retireNative = retireNative
         self.retirementStore = retirementStore; self.now = now
+        self.ordinaryAdmission = ordinaryAdmission
     }
 
     func publish(ownerId: String, accessToken: String,
@@ -93,6 +96,7 @@ final class GuguIOSOwnerSession {
             let stored: GuguIOSStoredSession
             do {
                 try restoreRetirementBarrier()
+                try ordinaryAdmission(ownerId)
                 guard !retiring else { throw Self.failure("host_not_ready", "Native retirement must finish before publication") }
                 stored = try matchingStored(ownerId: ownerId, accessToken: accessToken)
                 generation &+= 1
@@ -106,6 +110,7 @@ final class GuguIOSOwnerSession {
                 do {
                     guard self.generation == issued && !self.retiring else { throw Self.stale() }
                     try self.requireNoDurableRetirement()
+                    try self.ordinaryAdmission(ownerId)
                     let verifiedOwner = try result.get()
                     guard verifiedOwner == ownerId else { throw Self.failure("auth_identity_mismatch", "Verified user differs from the committed owner") }
                     let current = try self.matchingStored(ownerId: ownerId, accessToken: accessToken)
@@ -133,6 +138,7 @@ final class GuguIOSOwnerSession {
         try restoreRetirementBarrier()
         guard let stored = try readStored() else { return nil }
         guard stored.ownerId == expectedOwnerId else { throw Self.stale() }
+        try ordinaryAdmission(expectedOwnerId)
         guard !retiring, let active else { return nil }
         guard active.binding.ownerId == expectedOwnerId else { throw Self.stale() }
         guard active.accessToken == stored.accessToken else { return nil }
@@ -143,6 +149,7 @@ final class GuguIOSOwnerSession {
 
     func credentials(expectedBinding: GuguIOSHostBinding) throws -> GuguIOSOwnerCredentials {
         lock.lock(); defer { lock.unlock() }
+        try ordinaryAdmission(expectedBinding.ownerId)
         try restoreRetirementBarrier()
         guard !retiring, let active, active.binding == expectedBinding else { throw Self.stale() }
         _ = try matchingStored(ownerId: expectedBinding.ownerId, accessToken: active.accessToken)

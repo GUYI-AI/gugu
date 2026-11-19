@@ -9,7 +9,7 @@ export async function resumePhoneAfterAccountClosure(ownerId: string, commitChoi
   }
   sameOwner()
   // Older shells cannot have V2 custody. A native failure on a V2 shell never falls through.
-  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android' && Capacitor.isPluginAvailable('GuguAccountClosureV2')) {
+  if (Capacitor.isNativePlatform() && ['android', 'ios'].includes(Capacitor.getPlatform()) && Capacitor.isPluginAvailable('GuguAccountClosureV2')) {
     const reply = await nativeAgent.resumeAfterAccountClosure({ ownerId })
     sameOwner()
     if (!reply || reply.resumed !== true || Object.keys(reply).length !== 1) {

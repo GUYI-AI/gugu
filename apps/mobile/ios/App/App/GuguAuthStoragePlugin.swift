@@ -110,6 +110,11 @@ public final class GuguAuthStoragePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func persist(_ pending: PendingWrite) throws {
+            GuguIOSClosureV2Storage.lock.lock(); defer { GuguIOSClosureV2Storage.lock.unlock() }
+            if pending.key == "sb-main" {
+                try GuguIOSClosureV2Storage.protectAuthWrite(bundleIdentifier: Bundle.main.bundleIdentifier ?? "app.gugu.chat",
+                    ownerId: GuguIOSOwnerKeychain.ownerForMainWrite(pending.value))
+            }
             let query = self.query(pending.key)
             let attributes: [String: Any] = [
                 kSecValueData as String: Data(pending.value.utf8),

@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E4296AED322CBF5645EDE92D /* IOSAccountClosureV2Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFDE4268699C3FA0403FB60D /* IOSAccountClosureV2Tests.swift */; };
+		676E7CA4F8320C0F2C52B1E0 /* GuguAccountClosureV2Plugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4EACC7F3C49B4DC31F830B4 /* GuguAccountClosureV2Plugin.swift */; };
+		D7F7A38E570AD75A28137F31 /* GuguIOSClosureV2Composition.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF2697F2722D7E222BD5DF21 /* GuguIOSClosureV2Composition.swift */; };
+		4A8BAA956A656DB87615B935 /* GuguIOSClosureV2Facade.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D42B1FB125BE06A3B2F61FD /* GuguIOSClosureV2Facade.swift */; };
+		2D3E0D62D566370FA9DCF1EE /* GuguIOSClosureV2HTTP.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21D3169405CC8A74000C7F74 /* GuguIOSClosureV2HTTP.swift */; };
+		124F258F856B21EFF1E80811 /* GuguIOSClosureV2Receiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8DF9997696419AB36752E18 /* GuguIOSClosureV2Receiver.swift */; };
+		BF747E459B323F3F62643B52 /* GuguIOSClosureV2Operation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 958AF6BAA5F57908C777AABD /* GuguIOSClosureV2Operation.swift */; };
 		9838FDB36345EC2D55660CF4 /* IOSAccountClosureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4565E4815E5542761B19FBC5 /* IOSAccountClosureTests.swift */; };
 		1AFDC6B9F46FC12F9AE6F137 /* GuguAccountClosurePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A48F26525D0E34CD502F71DE /* GuguAccountClosurePlugin.swift */; };
 		037940E22795F5F0BE19FF26 /* GuguIOSAccountClosure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62EB81CE4CA25E516184E836 /* GuguIOSAccountClosure.swift */; };
@@ -108,6 +115,13 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		BFDE4268699C3FA0403FB60D /* IOSAccountClosureV2Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSAccountClosureV2Tests.swift; sourceTree = "<group>"; };
+		E4EACC7F3C49B4DC31F830B4 /* GuguAccountClosureV2Plugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguAccountClosureV2Plugin.swift; sourceTree = "<group>"; };
+		CF2697F2722D7E222BD5DF21 /* GuguIOSClosureV2Composition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSClosureV2Composition.swift; sourceTree = "<group>"; };
+		9D42B1FB125BE06A3B2F61FD /* GuguIOSClosureV2Facade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSClosureV2Facade.swift; sourceTree = "<group>"; };
+		21D3169405CC8A74000C7F74 /* GuguIOSClosureV2HTTP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSClosureV2HTTP.swift; sourceTree = "<group>"; };
+		D8DF9997696419AB36752E18 /* GuguIOSClosureV2Receiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSClosureV2Receiver.swift; sourceTree = "<group>"; };
+		958AF6BAA5F57908C777AABD /* GuguIOSClosureV2Operation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSClosureV2Operation.swift; sourceTree = "<group>"; };
 		4565E4815E5542761B19FBC5 /* IOSAccountClosureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSAccountClosureTests.swift; sourceTree = "<group>"; };
 		A48F26525D0E34CD502F71DE /* GuguAccountClosurePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguAccountClosurePlugin.swift; sourceTree = "<group>"; };
 		62EB81CE4CA25E516184E836 /* GuguIOSAccountClosure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSAccountClosure.swift; sourceTree = "<group>"; };
@@ -224,6 +238,12 @@
 			isa = PBXGroup;
 			children = (
 				A48F26525D0E34CD502F71DE /* GuguAccountClosurePlugin.swift */,
+				E4EACC7F3C49B4DC31F830B4 /* GuguAccountClosureV2Plugin.swift */,
+				CF2697F2722D7E222BD5DF21 /* GuguIOSClosureV2Composition.swift */,
+				9D42B1FB125BE06A3B2F61FD /* GuguIOSClosureV2Facade.swift */,
+				21D3169405CC8A74000C7F74 /* GuguIOSClosureV2HTTP.swift */,
+				D8DF9997696419AB36752E18 /* GuguIOSClosureV2Receiver.swift */,
+				958AF6BAA5F57908C777AABD /* GuguIOSClosureV2Operation.swift */,
 				62EB81CE4CA25E516184E836 /* GuguIOSAccountClosure.swift */,
 				E89170B46501F175A8039FCD /* GuguIOSClosureAuthSlot.swift */,
 				A7941E3B8E5201953DB7B3F3 /* GuguIOSClosureComposition.swift */,
@@ -350,6 +370,7 @@
 			isa = PBXGroup;
 			children = (
 				4565E4815E5542761B19FBC5 /* IOSAccountClosureTests.swift */,
+				BFDE4268699C3FA0403FB60D /* IOSAccountClosureV2Tests.swift */,
 				E98E00000000000000000211 /* DHostedRuntimeTests.swift */,
 				A178ABF9996B332057BD74C9 /* IOSHostLoopTests.swift */,
 				4C955986AA6FDB36033DA88B /* IOSHostRecoveryTests.swift */,
@@ -500,6 +521,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9838FDB36345EC2D55660CF4 /* IOSAccountClosureTests.swift in Sources */,
+				E4296AED322CBF5645EDE92D /* IOSAccountClosureV2Tests.swift in Sources */,
 				E98E00000000000000000201 /* DHostedRuntimeTests.swift in Sources */,
 				2BABF54160516A5D66CD97E2 /* IOSHostLoopTests.swift in Sources */,
 				1204DEE9D4D4EE28CFD14B46 /* IOSHostRecoveryTests.swift in Sources */,
@@ -512,6 +534,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				1AFDC6B9F46FC12F9AE6F137 /* GuguAccountClosurePlugin.swift in Sources */,
+				676E7CA4F8320C0F2C52B1E0 /* GuguAccountClosureV2Plugin.swift in Sources */,
+				D7F7A38E570AD75A28137F31 /* GuguIOSClosureV2Composition.swift in Sources */,
+				4A8BAA956A656DB87615B935 /* GuguIOSClosureV2Facade.swift in Sources */,
+				2D3E0D62D566370FA9DCF1EE /* GuguIOSClosureV2HTTP.swift in Sources */,
+				124F258F856B21EFF1E80811 /* GuguIOSClosureV2Receiver.swift in Sources */,
+				BF747E459B323F3F62643B52 /* GuguIOSClosureV2Operation.swift in Sources */,
 				037940E22795F5F0BE19FF26 /* GuguIOSAccountClosure.swift in Sources */,
 				8BB9348F42CD4E2989821456 /* GuguIOSClosureAuthSlot.swift in Sources */,
 				1BD4A012B93F4E4BB5A79066 /* GuguIOSClosureComposition.swift in Sources */,

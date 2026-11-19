@@ -10,6 +10,21 @@ private final class GuguUnavailableNativeExecutor: GuguNativeToolExecutor {
                  completion: @escaping ([String: Any]) -> Void) { completion(failure.envelope) }
 }
 
+private final class GuguClosureV2StopCompletion {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Bool, Error>?
+    private var first: Error?
+    init(_ continuation: CheckedContinuation<Bool, Error>) { self.continuation = continuation }
+    func note(_ result: Result<Void, Error>) {
+        lock.lock(); defer { lock.unlock() }
+        if case .failure(let error) = result, first == nil { first = error }
+    }
+    func finish(_ result: Result<Bool, Error>) {
+        lock.lock(); let saved = continuation; continuation = nil; let error = first; lock.unlock()
+        saved?.resume(with: error.map { .failure($0) } ?? result)
+    }
+}
+
 /// One App-lifetime assembly. Calendar settings and the task backend share the
 /// same native owner and journal custody; a new WebView does not create a host.
 final class GuguIOSAppRuntime {
@@ -22,6 +37,8 @@ final class GuguIOSAppRuntime {
     private let retirementQueue = DispatchQueue(label: "app.gugu.native-retirement", qos: .userInitiated)
     private let hostServiceLock = NSRecursiveLock()
     private var hostServiceStorage: GuguIOSHostService?
+    private let closureV2Lock = NSRecursiveLock()
+    private var closureV2Storage: GuguIOSClosureV2Composition?
     let backendConfiguration: GuguIOSBackendConfiguration
     let calendarStore = EventKitPhoneCalendarStore()
     private lazy var calendarService: PhoneCalendarService = PhoneCalendarService(store: calendarStore)
@@ -78,7 +95,58 @@ final class GuguIOSAppRuntime {
                     retirementId: capability.retirementId, completion: completion)
             } catch { completion(.failure(error)) }
         }
-    }, retirementStore: GuguIOSOwnerRetirementStore(directory: root.appendingPathComponent("retirement", isDirectory: true)))
+    }, retirementStore: GuguIOSOwnerRetirementStore(directory: root.appendingPathComponent("retirement", isDirectory: true)),
+       ordinaryAdmission: { [weak self] owner in
+           guard let self else { throw Self.unavailable() }
+           try self.accountClosureV2().operations.requireOpen(ownerId: owner)
+       })
+
+    private func accountClosureV2() throws -> GuguIOSClosureV2Composition {
+        closureV2Lock.lock(); defer { closureV2Lock.unlock() }
+        if let closureV2Storage { return closureV2Storage }
+        let created = try GuguIOSClosureV2Composition(root: root, bundleIdentifier: Bundle.main.bundleIdentifier ?? "app.gugu.chat",
+            ownerSession: ownerSession, installation: installation, configuration: backendConfiguration,
+            prepare: { [weak self] record, recovering in
+                guard let self else { throw Self.unavailable() }
+                return try await self.prepareV2(record, recovering: recovering)
+            }, hasUnattributedPush: { [weak self] in self?.hasUnattributedClosurePushState() == true })
+        closureV2Storage = created; return created
+    }
+
+    private func prepareV2(_ record: GuguIOSClosureV2Record, recovering: Bool) async throws -> Bool {
+        let operations = try accountClosureV2().operations
+        try operations.validatePreparation(record, recovering: recovering)
+        return try await withCheckedThrowingContinuation { completion in
+            let once = GuguClosureV2StopCompletion(completion)
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 30) {
+                once.finish(.failure(GuguIOSClosureV2Operation.failure("closure_not_prepared")))
+            }
+            retirementQueue.async {
+                do {
+                    let binding = GuguIOSHostBinding(ownerId: record.ownerId, deviceId: record.deviceId, installationId: record.installationId)
+                    let proof = { try operations.validatePreparation(record, recovering: recovering) }
+                    try proof()
+                    try self.ownerAccess.revokeForAccountClosure(expectedBinding: binding, authorize: proof)
+                    self.hostServiceLock.lock(); let service = self.hostServiceStorage; self.hostServiceLock.unlock()
+                    let group = DispatchGroup()
+                    if let service {
+                        group.enter(); service.adapter.invalidateForRetirement(expectedBinding: binding) { once.note($0); group.leave() }
+                        group.enter(); service.backend.quiesceForRetirement(binding) { once.note($0); group.leave() }
+                    } else { try self.lifecycle.stop(binding: binding) }
+                    group.notify(queue: self.retirementQueue) {
+                        do {
+                            try proof()
+                            guard try self.lifecycle.isStopped(binding: binding) else { throw GuguIOSClosureV2Operation.failure("closure_not_prepared") }
+                            if recovering && record.facts.deleted {
+                                guard try self.prepareLocalClosureErasure(ownerId: record.ownerId) else { throw GuguIOSClosureV2Operation.failure("closure_not_prepared") }
+                            }
+                            once.finish(.success(true))
+                        } catch { once.finish(.failure(error)) }
+                    }
+                } catch { once.finish(.failure(error)) }
+            }
+        }
+    }
 
     /// Construction performs no configure/HTTP and does not register a plugin.
     /// The same instance must own ordinary calls and sealed native cleanup.
@@ -145,13 +213,24 @@ final class GuguIOSAppRuntime {
     @MainActor func plugins() throws -> [CAPPlugin] {
         // Construct on the bridge's App startup thread before publishing plugins.
         // No real model host, cloud Agent or tool execution is created here.
-        [GuguAuthStoragePlugin(ownerSession: ownerSession),
+        let v2 = try accountClosureV2()
+        return [GuguAuthStoragePlugin(ownerSession: ownerSession),
          GuguIOSOwnerPlugin(ownerSession: ownerSession, cancelPreparation: { [service = accountClosure] scope in
              try Self.requireForegroundOwnerUI(); try service.cancelSignOut(scope)
          }),
          GuguAccountClosurePlugin(service: accountClosure, foreground: Self.requireForegroundOwnerUI),
+         GuguAccountClosureV2Plugin(service: v2.facade, foreground: Self.requireForegroundOwnerUI),
          GuguCalendarPermissionsPlugin(store: calendarStore, ownerAccess: ownerAccess),
-         GuguAgentPlugin(service: try nativeHostService()),
+         GuguAgentPlugin(service: try nativeHostService(), resumeAfterClosure: { [weak self] owner in
+             guard let self else { throw Self.unavailable() }
+             try Self.requireForegroundOwnerUI()
+             guard try self.keychain.read()?.ownerId == owner else { throw GuguIOSClosureV2Operation.failure("wrong_local_owner") }
+             let operations = try self.accountClosureV2().operations
+             guard try operations.protectedRecord(ownerId: owner) != nil else { return }
+             let installed = try self.installation.existingIdentifier()
+             let binding = GuguIOSHostBinding(ownerId: owner, deviceId: "phone-\(installed)-\(owner)", installationId: installed)
+             try operations.resumeAfterCancellation(ownerId: owner, idle: { try self.lifecycle.isStopped(binding: binding) })
+         }),
          GuguPushNotificationsPlugin(client: pushCleanupClient, platform: pushPlatform,
              ownerSession: ownerSession, configuration: backendConfiguration)]
     }
@@ -161,7 +240,11 @@ final class GuguIOSAppRuntime {
             guard let self else { throw Self.unavailable() }; return try self.installation.identifier()
         }, prepare: { [weak self] owner in
             guard let self else { throw Self.unavailable() }; return try self.prepareLocalClosureErasure(ownerId: owner)
-        }, hasUnattributedPush: { [weak self] in self?.hasUnattributedClosurePushState() == true })
+        }, hasUnattributedPush: { [weak self] in self?.hasUnattributedClosurePushState() == true },
+        operationLock: GuguIOSClosureV2Storage.captureLock, operationAdmission: { [weak self] owner in
+            guard let self else { throw Self.unavailable() }
+            try self.accountClosureV2().operations.requireOpen(ownerId: owner)
+        })
 
     /// Called on the closure plugin's worker queue, never while holding the
     /// authentication lock or performing another identity's server cleanup.

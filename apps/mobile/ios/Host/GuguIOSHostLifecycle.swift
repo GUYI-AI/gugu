@@ -122,6 +122,10 @@ final class GuguIOSHostLifecycle {
     func stop(binding: GuguIOSHostBinding) throws {
         try binding.validate(); try stopEntries { $0.binding == binding }
     }
+    func isStopped(binding: GuguIOSHostBinding) throws -> Bool {
+        try binding.validate(); custody.lock.lock(); defer { custody.lock.unlock() }
+        return !custody.entries.values.contains { $0.binding == binding && $0.phase != .stopped }
+    }
     private func stopEntries(_ matches: (Entry) -> Bool) throws {
         custody.lock.lock()
         let values = custody.entries.values.filter { matches($0) && $0.phase != .stopped }

@@ -5,7 +5,9 @@ enum GuguIOSClosureComposition {
     static func make(root: URL, ownerSession: GuguIOSOwnerSession,
                      installation: @escaping () throws -> String,
                      prepare: @escaping (String) throws -> Bool,
-                     hasUnattributedPush: @escaping () -> Bool) -> GuguIOSAccountClosure {
+                     hasUnattributedPush: @escaping () -> Bool,
+                     operationLock: NSRecursiveLock? = nil,
+                     operationAdmission: @escaping (String) throws -> Void = { _ in }) -> GuguIOSAccountClosure {
         let bundle = Bundle.main.bundleIdentifier ?? "app.gugu.chat"
         let slot = GuguIOSClosureAuthSlot(bundleIdentifier: bundle)
         let files = GuguIOSClosureFiles(root: root)
@@ -38,6 +40,6 @@ enum GuguIOSClosureComposition {
                 if let snapshot = try retirement.snapshot(), snapshot.original == nil, snapshot.target.ownerId == nil { names.append("retirement-unattributed") }
                 if hasUnattributedPush() { names.append("push-deduplication") }
                 return names.sorted()
-            })
+            }, operationLock: operationLock, operationAdmission: operationAdmission)
     }
 }

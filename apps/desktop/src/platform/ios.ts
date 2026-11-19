@@ -1,4 +1,5 @@
 import { nativeIOSAccountClosure } from './iosAccountClosure'
+import { nativeIOSAccountClosureV2 } from './iosAccountClosureV2'
 import { saveToDevice } from './capacitorShare'
 import { schedulePhoneNotification } from './phoneNotificationOutlet'
 import { LocalNotifications } from '@capacitor/local-notifications'
@@ -23,6 +24,7 @@ const lifecycleError = (error: unknown) => rendererLogger('ios/lifecycle').error
 export const iosPlatform: AppPlatform = {
   ...base,
   accountClosure: nativeIOSAccountClosure,
+  accountClosureV2: nativeIOSAccountClosureV2,
   textSelection: nativeTextSelection,
   capabilities: { ...base.capabilities, appVersion: true, clipboard: true, get notifications() { return Capacitor.isPluginAvailable('GuguPushNotifications') },
     get phoneAgentHost() { return nativePhoneAgentHostAvailable('ios') },

@@ -129,6 +129,26 @@ final class GuguIOSOwnerAccess {
         return try ownerSnapshot(expectedBinding: binding)
     }
 
+    /// Only the V2 composition supplies this durable native preparation proof.
+    /// Ordinary category changes continue to require current verified publication.
+    func revokeForAccountClosure(expectedBinding binding: GuguIOSHostBinding, authorize: () throws -> Void) throws {
+        try binding.validate(); try authorize()
+        let directory = root.appendingPathComponent(binding.ownerId, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let path = categoryPath(binding), lock = GuguJournalFileLock(url: categoryPath(binding))
+        try lock.lock(); defer { lock.unlock() }
+        try authorize(); markRevocation(path)
+        let revision = UUID().uuidString.lowercased()
+        let scope: [String: Any] = ["version": 1, "ownerId": binding.ownerId, "deviceId": binding.deviceId,
+            "installationId": binding.installationId, "revision": revision, "revocationPending": true]
+        try writeProtected(JSONSerialization.data(withJSONObject: scope, options: [.sortedKeys]), to: refusalPath(path))
+        _ = try load(path, binding)
+        var disconnected = scope; disconnected["connected"] = false
+        try writeProtected(JSONSerialization.data(withJSONObject: disconnected, options: [.sortedKeys]), to: path)
+        // The composition drains the complete original lifecycle next; no ordinary publication is borrowed here.
+        try authorize()
+    }
+
     private func currentBinding() throws -> GuguIOSHostBinding {
         let binding = try verifiedIdentity()
         try binding.validate()

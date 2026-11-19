@@ -12,10 +12,12 @@ final class GuguAgentPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "hostCall", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopHost", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "authSession", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "resumeAfterAccountClosure", returnType: CAPPluginReturnPromise),
     ]
     private let service: GuguIOSHostService
-    init(service: GuguIOSHostService) {
-        self.service = service; super.init()
+    private let resumeAfterClosure: ((String) throws -> Void)?
+    init(service: GuguIOSHostService, resumeAfterClosure: ((String) throws -> Void)? = nil) {
+        self.service = service; self.resumeAfterClosure = resumeAfterClosure; super.init()
         service.observeState { [weak self] state in DispatchQueue.main.async { self?.notifyListeners("hostState", data: state) } }
     }
     private func settle(_ call: CAPPluginCall, _ value: [String: Any]) {
@@ -26,6 +28,14 @@ final class GuguAgentPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func hostState(_ call: CAPPluginCall) { service.hostState(call.jsObjectRepresentation) { self.settle(call, $0) } }
     @objc func hostCall(_ call: CAPPluginCall) { service.hostCall(call.jsObjectRepresentation) { call.resolve($0) } }
     @objc func stopHost(_ call: CAPPluginCall) { service.stopHost(call.jsObjectRepresentation) { self.settle(call, $0) } }
+    @objc func resumeAfterAccountClosure(_ call: CAPPluginCall) {
+        do {
+            guard Set(call.options.keys) == ["ownerId"], let owner = call.getString("ownerId"), let resumeAfterClosure else {
+                throw GuguIOSClosureV2Operation.failure("invalid_request")
+            }
+            try resumeAfterClosure(owner); call.resolve(["resumed": true])
+        } catch { call.reject("Native account closure pause could not be released", (error as? GuguHostFailure)?.code ?? "closure_unavailable") }
+    }
     @objc func authSession(_ call: CAPPluginCall) {
         // Shared phoneHostAuth still carries a legacy refreshToken argument.
         // Read only the action; never materialize/pass that credential object.
