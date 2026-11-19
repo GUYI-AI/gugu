@@ -226,7 +226,7 @@ describe('ProjectSessionsStore session lifecycle', () => {
     expect(manager.listState).toBe('read');
     expect(manager.sessions.size).toBe(12);
     expect(manager.sessions.get('session-0')?.workspaceGit).toEqual({ linesAdded: 3, linesDeleted: 1 });
-    expect(mocks.getSessionsForFolder).toHaveBeenCalledExactlyOnceWith(projectId);
+    expect(mocks.getSessionsForFolder).toHaveBeenCalledExactlyOnceWith('project-1');
     expect(mocks.getGroupWorkspaces).toHaveBeenCalledExactlyOnceWith('group-1');
     expect(mocks.getTerminalsForSession).not.toHaveBeenCalled();
 
