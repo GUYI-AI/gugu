@@ -10,12 +10,12 @@ import {
   statusMapOf,
   type AgentWatchAlert,
   type AgentWatchStatusMap,
-} from './agent-watch-alerts'
+} from '@/lib/agent-wait/agent-watch-alerts'
 import * as sessionpageRpc from './sessionpage-rpc'
 import { startSessionListSync } from '@/session/shared/remote-sessions/session-list-sync'
 import { registerDeviceSessionsRetry, retainDeviceSessions, updateDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import { workspaceDevices } from './machine-list'
-import { announceAgentWait } from './agent-wait-banner'
+import { announceAgentWait } from '@/lib/agent-wait/agent-wait-banner'
 
 /**
  * 「agent 在等你」的提醒 —— 挂在看管入口的**根**上，不是挂在某一条会话的时间线页上。

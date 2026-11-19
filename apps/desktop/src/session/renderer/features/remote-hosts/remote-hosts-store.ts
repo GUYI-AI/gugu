@@ -74,8 +74,8 @@ import { browserStorage } from './browser-storage';
 import { i18n } from '@/i18n';
 import { platform } from '@/platform';
 import { agentStatusText } from '@/lib/agentStatusText';
-import { diffAlerts, statusMapOf, type AgentWatchStatusMap } from '@/mobile/agent-watch/agent-watch-alerts';
-import { announceAgentWait } from '@/mobile/agent-watch/agent-wait-banner';
+import { diffAlerts, statusMapOf, type AgentWatchStatusMap } from '@/lib/agent-wait/agent-watch-alerts';
+import { announceAgentWait } from '@/lib/agent-wait/agent-wait-banner';
 import type { SettingsMeta } from '@renderer/features/settings/app-settings-client';
 import { getProjectManagerStore } from '@renderer/features/projects/stores/project-selectors';
 

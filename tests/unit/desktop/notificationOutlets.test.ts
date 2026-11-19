@@ -11,7 +11,7 @@ const outlets: Record<string, string> = {
   'apps/desktop/electron/main.ts': 'Platform banner/badge implementation; documented auth-expiry and first close-to-tray hints.',
   'apps/desktop/src/store/chatListProjection.ts': 'Chat banners decided by shouldNotify.',
   'apps/desktop/src/store/chat.tsx': 'Badge counts chatAttention().askingYou.',
-  'apps/desktop/src/mobile/agent-watch/agent-wait-banner.ts': 'Agent waits seen through session lists (the phone watcher; the desktop for other machines), decided by agent-watch-alerts.',
+  'apps/desktop/src/lib/agent-wait/agent-wait-banner.ts': 'Agent waits seen through session lists (the phone watcher; the desktop for other machines), decided by agent-watch-alerts.',
   'apps/desktop/src/components/assistant/MeetingReminder.tsx': 'Exception: time-bound calendar reminder.',
   'apps/desktop/src/lib/notificationDiagnostics.ts': 'Exception: person pressed the test-notification button.',
   'apps/desktop/src/lib/notificationSettings.ts': 'Documents the existing chat-banner sound setting; no output of its own.',
@@ -46,7 +46,7 @@ describe('notification outlets', () => {
     for (const path of [
       'apps/desktop/electron/session/main/core/agent-hooks/notification.ts',
       'apps/desktop/src/store/chatListProjection.ts',
-      'apps/desktop/src/mobile/agent-watch/agent-watch-alerts.ts',
+      'apps/desktop/src/lib/agent-wait/agent-watch-alerts.ts',
       'apps/desktop/src/store/chat.tsx',
     ]) {
       expect(readFileSync(join(root, path), 'utf8'), `${path}: ${guide}`)

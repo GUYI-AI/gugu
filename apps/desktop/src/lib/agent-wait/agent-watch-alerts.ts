@@ -2,7 +2,7 @@ import type { SessionpageSessionSummary } from '@gugu/session-core/session-recor
 import type { AgentStatusView } from '@gugu/core/shared/agentStatus'
 import { presentAgentStatus, type AgentStatusLabel } from '@gugu/core/shared/agentStatusPresentation'
 import { shouldNotify } from '@gugu/core/shared/ui/notificationModels'
-import { sessionReading } from './watch-status'
+import { sessionReading } from '@/mobile/agent-watch/watch-status'
 
 /**
  * 「哪条会话该叫人」——纯函数，与界面、与传输都无关。
