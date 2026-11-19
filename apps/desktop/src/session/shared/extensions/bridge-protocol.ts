@@ -160,7 +160,9 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // box in the page). Presentation only, as 51: an older host opens the one image.
 // 58: frame-bound, App-owned projection presentation, without granting input or surface authority.
 // 59 (file-annotation-draft.ts): the preinstalled Files App can save a source selection to the session's annotation draft.
-export const EXTENSION_API_VERSION = 59;
+// 60 (app-github.ts): `gugu.github.read(path)` / `.write(method, path, body)` (`github`), GitHub's REST API as the person's
+// connected account, on a computer's pages; a write only in the person's click. Answers `{ status, data }` as GitHub sent it.
+export const EXTENSION_API_VERSION = 60;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
@@ -1033,6 +1035,12 @@ export const BRIDGE_VERBS = {
   cloudRead: { needs: null },
   cloudWrite: { needs: null, gesture: true, only: 'page', toAgent: { answer: null } },
   cloudProgramWrite: { needs: null, only: 'program' },
+  /**
+   * `gugu.github` (60, app-github.ts): GitHub's REST API as the person's connected account, the token kept in main. A read
+   * is a page's; a write is the person's click on it, and on a page an agent works it is not done (as `cloudWrite`).
+   */
+  githubRead: { needs: 'github', only: 'page' },
+  githubWrite: { needs: 'github', gesture: true, only: 'page', toAgent: { answer: null } },
   cloudSubscribe: { needs: null, only: 'page' },
   cloudUnsubscribe: { needs: null, only: 'page' },
   /**

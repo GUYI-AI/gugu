@@ -6,8 +6,9 @@ export type AppPlatform = (typeof APP_PLATFORMS)[number];
 export const APP_PLATFORMS_API_VERSION = 12;
 
 /**
- * The phone's one capability table. Agent features do not run here; declaring them does not make an otherwise usable
- * phone page invalid. A human-facing capability unavailable here does. New capability words must choose a category.
+ * The phone's one capability table. Agent features (`agent`) and a page's computer-only verbs (`computer`: absent from a
+ * phone's `gugu`, which the page checks) do not run here; declaring them does not make an otherwise usable phone page
+ * invalid. A human-facing capability a phone page cannot do without (`desktop-only`) does. New capability words must choose a category.
  * `files:read:all-machines` reads chat files here, as `files:read` does: a phone has no session working copies.
  */
 export const PHONE_CAPABILITY_SUPPORT = {
@@ -44,8 +45,10 @@ export const PHONE_CAPABILITY_SUPPORT = {
   'agents:tools': 'agent',
   // The person's prompts are the account's; only an App's program (its agent's tools) reads and writes them.
   prompts: 'agent',
+  // The connected GitHub account lives on a computer: a phone page has no `gugu.github` and shows what it can without it.
+  github: 'computer',
   notifications: 'desktop-only',
-} as const satisfies Record<ExtensionCapability, 'available' | 'agent' | 'desktop-only'>;
+} as const satisfies Record<ExtensionCapability, 'available' | 'agent' | 'computer' | 'desktop-only'>;
 
 export const PHONE_CAPABILITIES: readonly ExtensionCapability[] = (Object.keys(PHONE_CAPABILITY_SUPPORT) as ExtensionCapability[])
   .filter((capability) => PHONE_CAPABILITY_SUPPORT[capability] === 'available');

@@ -376,6 +376,7 @@ const enUSCoreMessages = {
   'extensions.disclosureFailed': 'Could not change how its tools are offered to agents',
   'extensions.permissionsNotifications': 'Show system notifications',
   'extensions.permissionsPrompts': 'Read and change your prompts',
+  'extensions.permissionsGithub': 'Use GitHub as you, with the account connected in Connectors (changes only when you click)',
   // Host-provided, on a tab opened by a file-type claim. The escape hatch that
   // keeps an install from making a file type unopenable.
   // 「用哪个打开」: several Apps claim this kind of file (真源 §2.4, 主人 09-29).
@@ -1626,6 +1627,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'extensions.disclosureFailed': '工具的提供方式没能改动',
   'extensions.permissionsNotifications': '发系统通知',
   'extensions.permissionsPrompts': '读取和修改你的提示词',
+  'extensions.permissionsGithub': '用你在「连接器」里连上的 GitHub 账号，以你的身份使用 GitHub（改动要你亲手点）',
   'extensions.openWithTitle': '用哪个打开「{name}」',
   'extensions.openWithAlways': '这类文件始终用它',
   'extensions.permissionChangeFailed': '这项权限没能改动',

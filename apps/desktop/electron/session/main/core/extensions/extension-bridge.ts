@@ -2309,6 +2309,12 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       return await promptsForApp(method, args, extensionId);
     }
 
+    case 'githubRead':
+    case 'githubWrite': {
+      const { githubForApp } = await import('@main/core/extensions/app-github');
+      return await githubForApp(method, args);
+    }
+
     case 'cloudRead':
     case 'cloudWrite':
     case 'cloudProgramWrite': {

@@ -422,6 +422,8 @@ export const EXTENSION_CAPABILITIES = [
   'agents:tools',
   // 读写这个人的提示词(输入框 `/` 里「我的」那一组):`gugu.prompts`。只有装了它的 App 的 agent 才碰得到,默认谁都没有。
   'prompts',
+  // 以这个人在「设置 › 集成」连上的 GitHub 账号调 GitHub 的 REST 接口(`gugu.github`,60):令牌留在主进程,写要这个人亲手点。
+  'github',
   // 发系统横幅。横幅是咕咕唯一的提醒通道,扩展借用它就要在装的时候说出来。
   'notifications',
 ] as const;
@@ -474,9 +476,10 @@ export function grantedReach(granted: readonly string[], family: string): AgentR
 /**
  * How many capabilities one manifest may list: a sanity bound on the manifest, not a permission (each is still consented
  * to and withdrawn on its own, from the closed list above). It was 12 when no binding had actions; the conversation
- * binding's actions each bring a capability of their own (15 today), so the assistant App alone lists 14.
+ * binding's actions each bring a capability of their own (15 today), so the assistant App alone lists 14. One tier of
+ * every capability fits, no more.
  */
-export const EXTENSION_CAPABILITIES_MAX = 24;
+export const EXTENSION_CAPABILITIES_MAX = 25;
 
 const permissionsSchema = z.strictObject({
   /**
@@ -791,6 +794,7 @@ export const extensionManifestSchema = z
       ctx.addIssue({ code: 'custom', path: ['contributes', 'assistantRules'], message: `assistantRules requires apiVersion ${EXTENSION_ASSISTANT_RULES_API_VERSION}` });
     }
     if (new Set(prompts.map((prompt) => prompt.name)).size !== prompts.length) ctx.addIssue({ code: 'custom', path: ['contributes', 'prompts'], message: 'duplicate prompt name' });
+    if ((manifest.permissions?.capabilities ?? []).includes('github') && manifest.apiVersion < 60) ctx.addIssue({ code: 'custom', path: ['permissions', 'capabilities'], message: '"github" requires apiVersion 60' });
     if ((manifest.permissions?.capabilities ?? []).includes('prompts') && manifest.apiVersion < 34) ctx.addIssue({ code: 'custom', path: ['permissions', 'capabilities'], message: '"prompts" requires apiVersion 34' });
     if (manifest.contributes.tabs.filter((tab) => tab.chatFile !== undefined).length > 1) {
       ctx.addIssue({ code: 'custom', path: ['contributes', 'tabs'], message: 'one tab at most names the file it shows in a chat (chatFile)' });

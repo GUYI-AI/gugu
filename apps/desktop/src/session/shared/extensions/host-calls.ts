@@ -127,6 +127,9 @@ export const HOST_CALLS = {
   'prompts.list': { verb: 'promptsList', pack: (args: Record<string, unknown> = {}) => args },
   'prompts.save': { verb: 'promptsSave' },
   'prompts.delete': { verb: 'promptsDelete', pack: (id: string) => ({ id }) },
+  // `gugu.github` (60, `github`): a path on api.github.com; a write's method is POST, PUT, PATCH or DELETE.
+  'github.read': { verb: 'githubRead', pack: (path: string) => ({ path }) },
+  'github.write': { verb: 'githubWrite', pack: (method: string, path: string, body?: unknown) => ({ method, path, ...(body === undefined ? {} : { body }) }) },
   pickAgent: { verb: 'pickAgent' },
   readData: { verb: 'readData', pack: (path: string) => ({ path }) },
   writeData: { verb: 'writeData', pack: (path: string, content: string) => ({ path, content }) },

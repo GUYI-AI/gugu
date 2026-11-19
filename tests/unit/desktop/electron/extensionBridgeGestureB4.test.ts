@@ -36,6 +36,7 @@ type Host = {
   clipboard: { writeText(text: string): Promise<unknown> }
   appFiles: Record<'openWith' | 'upload' | 'download' | 'forward' | 'sendSelection' | 'annotateSelection', (args: unknown) => Promise<unknown>>
   cloud: Record<'write', (...args: unknown[]) => Promise<unknown>>
+  github: Record<'write', (...args: unknown[]) => Promise<unknown>>
   pickAgent(ask: Record<string, unknown>): Promise<unknown>
   assistant: Record<'open' | 'advanceSetup' | 'rename' | 'connect', (name: string, value: string) => Promise<unknown>>
   bindings: { openWork(name: string, handle: string): Promise<unknown> }
@@ -59,6 +60,7 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   dispatch: () => host.dispatch('picked'),
   clipboardWriteText: () => host.clipboard.writeText('hi'),
   cloudWrite: () => host.cloud.write('radar_save', {}),
+  githubWrite: () => host.github.write('PUT', '/repos/GUYI-AI/gugu/pulls/1/merge', { sha: 'abc' }),
   pickAgent: () => host.pickAgent({}),
   openLink: () => host.openLink('gugu://ext/radar/radar'),
   // #1925 (44): one of the assistant's host screens, and the setup steps an App draws.

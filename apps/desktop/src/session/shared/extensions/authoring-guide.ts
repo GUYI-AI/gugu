@@ -95,6 +95,10 @@ skills go to the agents on this computer) and \`notifications\`. \`files:write\`
 \`files:read\`. \`network\` is bare hostnames (a leading \`*.\` is allowed). A bundle declaring nothing new
 installs at once; otherwise the person confirms first — tell them what it asks for and why.
 
+\`github\` (API 60, a computer's pages; a phone has no \`gugu.github\`): \`gugu.github.read(path)\` /
+\`gugu.github.write(method, path, body?)\` → \`{ status, data }\` from api.github.com as the person's account connected in
+Connectors (\`unavailable\`: none). Writes only in a click. A 4xx is GitHub's answer: show it.
+
 ## The sandbox — walls, not guidelines
 
 Own origin (\`gugu-ext://<id>/\`); no Node, no IPC, no new windows, no reach into the host or other tabs.

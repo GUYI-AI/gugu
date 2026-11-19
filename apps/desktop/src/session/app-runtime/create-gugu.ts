@@ -257,7 +257,7 @@ export function createGugu(
   // `files.onChanged`) are host halves.
   const api: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw)) {
-    if (['navigationGo', 'navigationClaimBack', 'onBack', 'appFiles', 'chats', 'checkPage', 'clipboard', 'bindings', 'assistant', 'onAssistantChanged', 'messages', 'prompts', 'cloud', 'framed', 'program', 'projects', 'sessions', 'theme', 'onFilesChanged', 'onDownloadProgress', 'onCloudHeard', 'onBindingResources', 'voiceNote', 'onVoiceNote', 'onSchedulesChanged', 'modal', 'onModalFocus', 'projection', 'onProjection', 'onProjectionSource', 'pages', 'onTaskPage', 'surfaces', 'onSurface', 'projectionMedia'].includes(key)) continue;
+    if (['navigationGo', 'navigationClaimBack', 'onBack', 'appFiles', 'chats', 'checkPage', 'clipboard', 'bindings', 'assistant', 'onAssistantChanged', 'messages', 'prompts', 'github', 'cloud', 'framed', 'program', 'projects', 'sessions', 'theme', 'onFilesChanged', 'onDownloadProgress', 'onCloudHeard', 'onBindingResources', 'voiceNote', 'onVoiceNote', 'onSchedulesChanged', 'modal', 'onModalFocus', 'projection', 'onProjection', 'onProjectionSource', 'pages', 'onTaskPage', 'surfaces', 'onSurface', 'projectionMedia'].includes(key)) continue;
     api[key] = typeof value === 'function' && verbs.has(key) ? coded(value as (...args: never[]) => unknown) : value;
   }
   api.files = files;
@@ -394,6 +394,8 @@ export function createGugu(
   if (raw.chats) api.chats = Object.freeze({ list: coded(raw.chats.list), members: coded(raw.chats.members) });
   // `gugu.prompts` (34, `prompts`): the person's own prompts.
   if (raw.prompts) api.prompts = Object.freeze({ list: coded(raw.prompts.list), save: coded(raw.prompts.save), delete: coded(raw.prompts.delete) });
+  // `gugu.github` (60, `github`): a page's on a computer; a phone has none, and no member.
+  if (raw.github) api.github = Object.freeze({ read: coded(raw.github.read), write: coded(raw.github.write) });
   // `gugu.projects` (`files:read`): this computer's projects — a phone has none, and no member.
   if (raw.projects) api.projects = Object.freeze({ list: coded(raw.projects.list) });
   if (raw.sessions) api.sessions = Object.freeze({ index: coded(raw.sessions.index), read: coded(raw.sessions.read) });

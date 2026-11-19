@@ -28,6 +28,9 @@ describe('App platform boundaries', () => {
     // API 49: the conversation binding's capabilities are the phone's too (phone-binding.ts).
     expect(PHONE_CAPABILITIES).toEqual(['files:read', 'files:read:all-machines', 'files:write', 'chat:relay', 'chat:read', 'chat:unread', 'chat:files', 'chat:draft', 'chat:surface', 'chat:resources', 'chat:resources:write', 'chat:voice-notes:manage', 'chat:schedules', 'chat:schedules:control', 'assistant:status', 'assistant:open', 'assistant:rename', 'chat:work', 'chat:voice-notes:record', 'agents:read', 'agents:read:all-machines', 'agents:history:all', 'agents:control', 'agents:control:all-machines']);
     expect(appPlatformProblems({ ...manifest('1.0.0', ['phone']), permissions: { capabilities: ['agents:tools'] } })).toEqual([]);
+    // API 60: a phone page with `github` is valid; the phone simply has no `gugu.github` (and grants none).
+    expect(appPlatformProblems({ ...manifest('1.0.0', ['phone']), permissions: { capabilities: ['github'] } })).toEqual([]);
+    expect(PHONE_CAPABILITIES).not.toContain('github');
     expect(appPlatformProblems({ ...manifest('1.0.0', ['phone']), permissions: { capabilities: ['notifications'] } })).toContain('platforms: phone does not support notifications');
     expect(appPlatformProblems({ ...manifest('1.0.0', ['desktop']), permissions: { capabilities: ['notifications'] } })).toEqual([]);
   });

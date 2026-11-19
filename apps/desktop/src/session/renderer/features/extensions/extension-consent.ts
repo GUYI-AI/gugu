@@ -62,6 +62,7 @@ const CAPABILITY_MESSAGE = {
   'agents:control:all-machines': 'extensions.permissionsAgentsControlAllMachines',
   'agents:tools': 'extensions.permissionsAgentsTools',
   'prompts': 'extensions.permissionsPrompts',
+  'github': 'extensions.permissionsGithub',
   'notifications': 'extensions.permissionsNotifications',
 } as const satisfies Record<ExtensionCapability, string>;
 

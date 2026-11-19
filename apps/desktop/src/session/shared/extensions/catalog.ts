@@ -73,6 +73,8 @@ export const CAPABILITY_RISK = {
   'agents:tools': 'high',
   // Reads and rewrites the person's own prompts; a delete can be undone.
   'prompts': 'medium',
+  // Acts on GitHub as the person, with their connected account: whatever that account may do there, on a click for a write.
+  'github': 'high',
   // A banner under the extension's own name: noise at worst, bounded per minute.
   'notifications': 'medium',
 } as const satisfies Record<ExtensionCapability, PermissionRisk>;

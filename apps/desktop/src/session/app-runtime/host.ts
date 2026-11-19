@@ -176,6 +176,11 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     save(args: Record<string, unknown>): Promise<unknown>;
     delete(id: string): Promise<unknown>;
   };
+  /** `gugu.github` (60, `github`): GitHub's REST API as the person's connected account; a page's, on a computer (app-github.ts). */
+  readonly github?: {
+    read(path: string): Promise<unknown>;
+    write(method: string, path: string, body?: unknown): Promise<unknown>;
+  };
   /** `gugu.cloud` (31, `app-cloud-core.ts`): `on` is composed of subscribe and `onCloudHeard`; a program writes with `programWrite`. */
   readonly cloud?: {
     read(name: string, args?: Record<string, unknown>): Promise<unknown>;
