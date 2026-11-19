@@ -28,6 +28,33 @@ function Registry-Path([string]$hive, [string]$key) {
   return "Registry::$full\$key"
 }
 
+function Test-OwnedResidue([string]$directory) {
+  # A filename alone is not ownership. Old installers did not leave a durable
+  # marker, so recognize their executable's embedded Gugu product identity.
+  # If a manifest survived too, it must agree rather than contradict that identity.
+  $exe = Join-Path $directory $Executable
+  foreach ($path in @($directory,$exe)) {
+    if (-not (Test-Path -LiteralPath $path) -or
+        ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $false }
+  }
+  try {
+    $identity = [Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
+    if ($identity.CompanyName -ne 'Gugu' -or $identity.ProductName -notmatch '^(Gugu|咕咕)([ -]?Beta)?$') { return $false }
+    if (($Executable -match '-beta\.exe$') -ne ($identity.ProductName -match 'Beta$')) { return $false }
+    $manifest = Join-Path $directory 'resources\app\package.json'
+    if (Test-Path -LiteralPath $manifest) {
+      foreach ($path in @((Join-Path $directory 'resources'),(Join-Path $directory 'resources\app'),$manifest)) {
+        if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { return $false }
+      }
+      $package = [IO.File]::ReadAllText($manifest) | ConvertFrom-Json
+      if ($package.name -notin @('gugu','gugu-beta') -or $package.productName -ne $identity.ProductName -or
+          $package.version -notmatch '^\d+\.\d+\.\d+([+-].+)?$' -or
+          $package.main -notin @('apps/desktop/dist-electron/main.js','dist-electron/main.js')) { return $false }
+    }
+    return $true
+  } catch { return $false }
+}
+
 function Retry-Files([scriptblock]$operation) {
   $delays = @(50,100,200,400,800)
   for ($attempt=0; ; $attempt++) {
@@ -255,8 +282,17 @@ try {
       }
     }
     if ((Test-Path -LiteralPath $Target) -and ($roots.root -notcontains $Target)) {
-      if (@(Get-ChildItem -LiteralPath $Target -Force).Count) { throw 'Unregistered target is not empty; preserved' }
-      Remove-Item -LiteralPath $Target
+      if (@(Get-ChildItem -LiteralPath $Target -Force).Count) {
+        if (-not (Test-OwnedResidue $Target)) {
+          $script:unrecognizedTarget = $true
+          throw "Unregistered target contains unrecognized files; choose a new empty installation folder. Preserved: $Target"
+        }
+        $backup = "$Target.gugu-backup-$AppId"
+        if (Test-Path -LiteralPath $backup) { throw 'Unclaimed backup exists; preserved' }
+        # Treat a recognized residue exactly like a registered old tree. It is
+        # backed up at commit and restored with absent registration on failure.
+        $roots += @{ root=$Target; backup=$backup }
+      } else { Remove-Item -LiteralPath $Target }
     }
     foreach ($entry in $roots) {
       if ($Target.StartsWith("$($entry.root)\", [StringComparison]::OrdinalIgnoreCase) -or
@@ -351,5 +387,6 @@ try {
     }
   } catch { [Console]::Error.WriteLine("Could not record the failure in ${FailureLog}: $($_.Exception.Message)") }
   if ($script:moveFailure -and @($script:moveFailure.holders | Where-Object { $_ -match '^\d+ ' }).Count) { exit 3 }
+  if ($script:unrecognizedTarget) { exit 4 }
   exit 2
 }
