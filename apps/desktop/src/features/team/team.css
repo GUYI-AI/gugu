@@ -100,3 +100,12 @@ div.gg-team-settings-member[data-selecting] { grid-template-columns: 32px 32px m
   button.gg-team-settings-actions { grid-area: actions; min-width: 44px; min-height: 44px; }
   .gg-team-settings-management { flex-wrap: wrap; }
 }
+
+.gg-team-topup-presets { display: flex; gap: var(--spacing-sm); }
+.gg-team-topup-presets > button { flex: 1; display: flex; flex-direction: column; height: auto; min-height: 64px; padding: var(--spacing-sm); gap: var(--spacing-xs); }
+.gg-team-topup-rate { font-size: var(--font-caption); line-height: var(--lh-caption); font-weight: var(--font-weight-semibold); border: 1px solid currentColor; padding: var(--spacing-xs) var(--spacing-sm); }
+.gg-team-topup-coupon, .gg-team-topup-methods { display: flex; align-items: center; gap: var(--spacing-sm); }
+.gg-team-topup-coupon > input { flex: 1; min-width: 0; }
+.gg-team-topup-total { display: flex; flex-direction: column; gap: var(--spacing-xs); font-variant-numeric: tabular-nums; }
+.gg-team-topup-total > strong { font-size: var(--font-title); line-height: var(--lh-title); font-weight: var(--font-weight-semibold); }
+.gg-team-topup-total > small { color: var(--muted-fg); font-size: var(--font-caption); line-height: var(--lh-caption); }

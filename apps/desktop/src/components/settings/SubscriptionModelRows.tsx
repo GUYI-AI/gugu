@@ -39,13 +39,11 @@ function SubscriptionModelRow({ agent, machine, connection, busy, onSignIn, onAd
   const plan = details.data?.plan?.plan;
   const brand = agent.id === 'claude' ? 'Claude' : 'ChatGPT';
   const name = connection.name || (connection.kind === 'native' ? translate('subscriptions.connections.existing') : plan ? plan.toLowerCase().includes(brand.toLowerCase()) ? plan : `${brand} ${plan}` : source);
-  const origin = connection.kind === 'native' && status?.kind === 'authenticated' ? status.credentialSource : undefined;
   const subscription = status?.kind === 'authenticated' && details.data?.plan?.payer !== 'api-key' && details.data?.plan?.payer !== 'custom-endpoint';
   return <SubscriptionModelQuota machine={machine} provider={agent.id === 'claude' ? 'claude' : 'codex'} connectionId={connection.id}
     account={status?.kind === 'authenticated' ? status.account ?? '' : ''} plan={plan} enabled={subscription}>
   <SettingsRow data-subscription-model={`${agent.id}:${connection.id}`}
-    title={<span className="gg-model-name-with-origin"><InlineConnectionName name={name} busy={busy} onRename={name => onRename(connection.id, name)} />
-      {origin && <span className="text-xs text-foreground-muted">{translate(origin === 'environment' ? 'subscriptions.connections.environment' : 'subscriptions.connections.configFile')}</span>}</span>} description={details.error ? <span role="alert" className="subscription-error block">{translate('customModels.statusReadFailed')}</span> : undefined}
+    title={<InlineConnectionName name={name} busy={busy} onRename={name => onRename(connection.id, name)} />} description={details.error ? <span role="alert" className="subscription-error block">{translate('customModels.statusReadFailed')}</span> : undefined}
     control={<div className="flex items-center gap-2">
       {(agent.id === 'claude' || agent.id === 'codex') && <SubscriptionModelQuota machine={machine} provider={agent.id} connectionId={connection.id} account={connection.name}
         enabled={subscription} inlineOnly />}

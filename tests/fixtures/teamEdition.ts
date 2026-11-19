@@ -43,6 +43,10 @@ export function mockTeamApi(role: TeamRole = 'member', overrides: Partial<TeamAp
   const own = () => caps[0]
   const stop = () => own().cap_credits !== null && creditUnits(own().cap_credits!) <= creditUnits(own().used_credits) ? 'team_member_monthly_cap_reached' as const : null
   return {
+    topupQuote: async input => ({ id: 'quote-fixture', teamId: input.teamId, credits: input.credits, discountRate: input.credits >= 1000 ? '0.90' : input.credits >= 500 ? '0.95' : '1.00',
+      amountCny: (input.credits * (input.credits >= 1000 ? .9 : input.credits >= 500 ? .95 : 1) - (input.couponCode ? 50 : 0)).toFixed(2),
+      couponCode: input.couponCode ?? null, couponDiscountCny: input.couponCode ? '50.00' : '0.00', expiresAt: Date.now() + 600000 }),
+    topupOrder: async (teamId, id) => ({ id, teamId, credits: 500, amountCny: '425.00', status: 'pending' }),
     context: async () => ({ ...teamContext(role), cap_credits: own().cap_credits, cap_revision: own().cap_revision, stop_reason: stop() }), profile: async () => teamProfile(role),
     challenge: async () => ({ challenge_id: 'challenge-fixture', expires_at: '2099-11-01T00:05:00Z', resend_after_seconds: 0 }),
     verify: async () => ({ verification_receipt: 'receipt-fixture', expires_at: '2099-11-01T00:05:00Z' }),

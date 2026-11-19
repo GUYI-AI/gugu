@@ -1,3 +1,4 @@
+import { TeamTopupDialog } from './TeamTopupDialog'
 import { useDeferredValue, useState } from 'react'
 import { skipToken, useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -25,6 +26,7 @@ export function TeamPage({ onTopUp }: {
 }) {
   const { t } = useTranslation('team'), { user } = useAuth(), session = useTeamSession(), api = useTeamApi(), cache = useQueryClient()
   const context = session.context, admin = session.status === 'ready' && context?.role !== 'member'
+  const [topup, setTopup] = useState(false)
   const [query, setQuery] = useState(''), [invite, setInvite] = useState(false), [manage, setManage] = useState(false)
   const [bulk, setBulk] = useState(false), [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [actions, setActions] = useState<TeamDirectoryUsageMember | null>(null), [editing, setEditing] = useState<CapTarget[] | null>(null)
@@ -56,7 +58,7 @@ export function TeamPage({ onTopUp }: {
       <div className="gg-team-settings-name"><h2>{summary?.team_name ?? context.team_name}</h2>
         {summary && <span>{t('memberCount', { count: summary.total_count })}</span>}</div>
       {summary && <div className="gg-team-settings-balance"><strong>{formatCredits(summary.team_balance_credits)}</strong><small>{t('remainingCredits')}</small></div>}
-      {admin && onTopUp && <Button variant="primary" onClick={onTopUp}>{t('recharge')}</Button>}
+      {admin && <Button variant="primary" onClick={onTopUp ?? (() => setTopup(true))}>{t('recharge')}</Button>}
     </section>
     {stop && <p role="status" className="gg-team-muted">{teamFailureCopy(stop, t)}</p>}
     <div className="gg-team-settings-toolbar"><h2>{t('memberList')}{summary && <span> {summary.total_count}</span>}</h2>
@@ -96,6 +98,7 @@ export function TeamPage({ onTopUp }: {
         </div>)}
       {result.hasNextPage && !result.isError && <Button disabled={result.isFetching} onClick={() => { void result.fetchNextPage() }}>{t('more')}</Button>}
     </div>
+    {admin && topup && <TeamTopupDialog key={context.team_id} onClose={() => setTopup(false)} onSettled={refresh} />}
     {admin && invite && <TeamInviteDialog onClose={() => setInvite(false)} onSaved={refresh} />}
     {admin && manage && <TeamDialog title={t('members')} onClose={() => setManage(false)}><TeamMembers /></TeamDialog>}
     {admin && managed && actions && <TeamMemberActionsDialog member={managed} onClose={() => setActions(null)} onChanged={refresh}
