@@ -50,7 +50,7 @@ beforeEach(() => {
   });
   const files = createAppFiles({ account: async () => ({ token: 'synthetic', userId: 'person-with-no-group-access' }),
     hasCapability: () => false, sync: { ensureFor: () => {} } as never, identities: async () => [], faces: async () => ({}), filesUrl: () => '', warn: vi.fn() });
-  const native: TaskPageNative = { projectId: 'project', title: '', url: 'https://example.org',
+  const native: TaskPageNative = { title: '', url: 'https://example.org',
     protocol: { attached: false, send: vi.fn(async () => ({})), onMessage: () => () => {}, onClose: () => () => {}, close: vi.fn() },
     setActive: vi.fn(), release: vi.fn() };
   pages = new ExtensionTaskPages(() => {}, async () => native, vi.fn(), (caller, refs, signal) => readTaskFilePayloads(caller, refs, signal, {

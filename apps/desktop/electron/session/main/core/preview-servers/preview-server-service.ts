@@ -1,3 +1,4 @@
+import { rootFolderOf } from '@main/core/folders/folders';
 import type {
   DirectPreviewServer,
   DirectPreviewServerHost,
@@ -9,7 +10,6 @@ import type {
 import type { DetectedPreviewUrl, PreviewSourceClosed } from './terminal-url-detector';
 
 export type RegisterDetectedPreviewTarget = {
-  projectId: string;
   workspaceId: string;
   source: PreviewServerSource;
   protocol: PreviewServerProtocol;
@@ -19,7 +19,6 @@ export type RegisterDetectedPreviewTarget = {
 };
 
 export type TerminalSourceClosedInput = {
-  projectId: string;
   workspaceId: string;
   terminalId: string;
   reason: PreviewSourceClosed['reason'];
@@ -44,7 +43,6 @@ export class PreviewServerService {
     const server: DirectPreviewServer = {
       id: identity,
       kind: 'direct',
-      projectId: target.projectId,
       workspaceId: target.workspaceId,
       source: target.source,
       protocol: target.protocol,
@@ -59,23 +57,14 @@ export class PreviewServerService {
     return server;
   }
 
-  listForWorkspace({
-    projectId,
-    workspaceId,
-  }: {
-    projectId: string;
-    workspaceId: string;
-  }): PreviewServer[] {
-    return Array.from(this.servers.values()).filter(
-      (server) => server.projectId === projectId && server.workspaceId === workspaceId
-    );
+  listForWorkspace({ workspaceId }: { workspaceId: string }): PreviewServer[] {
+    return Array.from(this.servers.values()).filter((server) => server.workspaceId === workspaceId);
   }
 
   async handleTerminalSourceClosed(input: TerminalSourceClosedInput): Promise<void> {
     const ids = Array.from(this.servers.values())
       .filter(
         (server) =>
-          server.projectId === input.projectId &&
           server.workspaceId === input.workspaceId &&
           server.source.kind === 'terminal-output' &&
           server.source.terminalId === input.terminalId &&
@@ -95,16 +84,17 @@ export class PreviewServerService {
     this.emit({ type: 'remove', id });
   }
 
-  async stopForWorkspace(projectId: string, workspaceId: string): Promise<void> {
+  async stopForWorkspace(workspaceId: string): Promise<void> {
     const ids = Array.from(this.servers.values())
-      .filter((server) => server.projectId === projectId && server.workspaceId === workspaceId)
+      .filter((server) => server.workspaceId === workspaceId)
       .map((server) => server.id);
     await Promise.all(ids.map((id) => this.stop(id)));
   }
 
-  async stopForProject(projectId: string): Promise<void> {
+  /** Every preview of the folder's workspaces (the folder itself and directories inside it). */
+  async stopForFolder(folderId: string): Promise<void> {
     const ids = Array.from(this.servers.values())
-      .filter((server) => server.projectId === projectId)
+      .filter((server) => rootFolderOf(server.workspaceId)?.id === folderId)
       .map((server) => server.id);
     await Promise.all(ids.map((id) => this.stop(id)));
   }
@@ -116,12 +106,11 @@ export class PreviewServerService {
 }
 
 function localAutoIdentity(target: {
-  projectId: string;
   workspaceId: string;
   host: DirectPreviewServerHost;
   port: number;
 }): string {
-  return `local:auto:${target.projectId}:${target.workspaceId}:${target.host}:${target.port}`;
+  return `local:auto:${target.workspaceId}:${target.host}:${target.port}`;
 }
 
 function matchesDetectedServer(

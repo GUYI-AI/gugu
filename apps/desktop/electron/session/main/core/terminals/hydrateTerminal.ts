@@ -1,19 +1,17 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { terminals } from '@main/db/schema';
-import { resolveSession } from '../projects/utils';
+import { sessionWorkspaceManager } from '../sessions/session-workspace-manager';
 import { mapTerminalRowToTerminal } from './core';
 
 export async function hydrateTerminal({
-  projectId,
   sessionId,
   terminalId,
 }: {
-  projectId: string;
   sessionId: string;
   terminalId: string;
 }): Promise<void> {
-  const session = resolveSession(projectId, sessionId);
+  const session = sessionWorkspaceManager.getSession(sessionId);
   if (!session) throw new Error('Session not mounted');
 
   const [row] = await db
@@ -22,7 +20,6 @@ export async function hydrateTerminal({
     .where(
       and(
         eq(terminals.id, terminalId),
-        eq(terminals.projectId, projectId),
         eq(terminals.sessionId, sessionId)
       )
     )

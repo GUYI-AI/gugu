@@ -10,20 +10,20 @@ export interface LinkOpenDeps {
   /** The interface language: a failure names the App as its manifest says it there. */
   locale(): string;
   /**
-   * The project the task list has a session under (this computer's, or another machine's it lists); null when none.
+   * Whether the task list has the session (this computer's, or another machine's it lists).
    * `hint` is what the opener knew: with its machine, a session the list does not draw is reached through that machine.
    */
-  sessionProject(sessionId: string, hint?: { deviceId?: string; projectId?: string }): Promise<string | null>;
+  sessionListed(sessionId: string, hint?: { deviceId?: string; projectId?: string }): Promise<boolean>;
   /** An agent's session: this computer's mapping first, else the session list of the machine it runs on; null when none. */
   agentSession(agentId: string, deviceId?: string): Promise<{ sessionId: string; deviceId?: string } | null>;
-  reveal(target: { projectId: string; sessionId: string; tabKind: string }): Promise<void>;
+  reveal(target: { sessionId: string; tabKind: string }): Promise<void>;
   /** The App in a chat's panel, or on its own page (no chat). */
   openApp(extensionId: string, tab: string, chatId: string | null): Promise<LinkPlace | 'own'>;
   resourceChat(chatId: string): Promise<string>;
   /** The window opens what it can; for a session only the personal assistant's own task, nothing (undefined) otherwise. */
   openResource(target: Exclude<GuguLinkTarget, { kind: 'app' }>): Promise<LinkPlace | 'own' | void>;
-  /** A session brought up the way a click on its row in the task list brings it (found by `sessionProject`); `beside` keeps the screen view's layout. */
-  bringUp(session: { projectId: string; sessionId: string; beside?: true }): Promise<void>;
+  /** A session brought up the way a click on its row in the task list brings it (found by `sessionListed`); `beside` keeps the screen view's layout. */
+  bringUp(session: { sessionId: string; beside?: true }): Promise<void>;
   deliver(extensionId: string, event: ExtensionHostEvent, opened: LinkPlace | 'own'): void;
 }
 
@@ -57,9 +57,8 @@ export async function openLinkWith(deps: LinkOpenDeps, raw: string | OpenTarget)
       } else link = named;
       // One way for every host: the window first (the assistant's task opens in its chat), then the host's own task list.
       if (!(await deps.openResource(link)) && link.kind === 'session') {
-        const projectId = await deps.sessionProject(link.sessionId, { deviceId: link.deviceId, projectId: link.projectId });
-        if (!projectId) return { kind: 'failed', reason: 'no-session', name: link.kind };
-        await deps.bringUp({ projectId, sessionId: link.sessionId, ...(link.beside ? { beside: true } : {}) });
+        if (!(await deps.sessionListed(link.sessionId, { deviceId: link.deviceId, projectId: link.projectId }))) return { kind: 'failed', reason: 'no-session', name: link.kind };
+        await deps.bringUp({ sessionId: link.sessionId, ...(link.beside ? { beside: true } : {}) });
       }
       return { kind: 'opened', target: link };
     } catch (error) {
@@ -80,9 +79,8 @@ export async function openLinkWith(deps: LinkOpenDeps, raw: string | OpenTarget)
       link.place = { chat: await deps.resourceChat(link.place.chat) };
     }
     if (link.place && 'session' in link.place) {
-      const projectId = await deps.sessionProject(link.place.session);
-      if (!projectId) return { kind: 'failed', reason: 'no-session', name };
-      await deps.reveal({ projectId, sessionId: link.place.session, tabKind: extensionTabKind(manifest.id, link.tab) });
+      if (!(await deps.sessionListed(link.place.session))) return { kind: 'failed', reason: 'no-session', name };
+      await deps.reveal({ sessionId: link.place.session, tabKind: extensionTabKind(manifest.id, link.tab) });
     } else {
       const opened = await deps.openApp(manifest.id, link.tab, link.place?.chat ?? null);
       link.place = opened === 'own' ? null : opened;

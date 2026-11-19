@@ -2,7 +2,7 @@ import type { ResourceProcessGroup } from '@shared/resource-monitor';
 
 export type ResourceProcessRoot = {
   id: string; pid: number; kind: 'electron' | 'runtime' | 'session' | 'pty'; label: string;
-  sessionId?: string; projectId?: string;
+  sessionId?: string;
 };
 export type ResourceProcess = { pid: number; ppid: number; name: string; command?: string };
 export type ProcessUsage = { cpu?: number; memory: number; ppid?: number };
@@ -38,7 +38,7 @@ export function accountProcessTrees(
       group = {
         id: key, kind: owner.kind === 'electron' ? 'runtime' : owner.kind,
         label: owner.kind === 'electron' ? 'Application services' : owner.label,
-        sessionId: owner.sessionId, projectId: owner.projectId, processes: [], memory: 0,
+        sessionId: owner.sessionId, processes: [], memory: 0,
       };
       groups.set(key, group);
     }

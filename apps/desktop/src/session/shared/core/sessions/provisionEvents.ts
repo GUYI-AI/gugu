@@ -19,7 +19,6 @@ export type LifecycleScriptType = 'setup' | 'run' | 'teardown';
 export type LifecycleScriptOrigin = 'auto-setup' | 'auto-run' | 'manual' | 'workspace-destroy';
 
 export type LifecycleScriptStatusEvent = {
-  projectId: string;
   workspaceId: string;
   type: LifecycleScriptType;
   origin: LifecycleScriptOrigin;

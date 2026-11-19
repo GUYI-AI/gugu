@@ -61,12 +61,11 @@ export type AgentStatusWriterHooks = {
     | Promise<void>;
 };
 
-/** 写口的参数:写哪条会话。`projectId` 缺省时从会话行取。 */
-export type StatusWriteParams = { sessionId: string; projectId?: string };
+/** 写口的参数:写哪条会话。 */
+export type StatusWriteParams = { sessionId: string };
 
 /** 一条会话的日志,以及最后一次写下的那句话。 */
 interface SessionStatusLog {
-  projectId: string;
   state: AgentStatusLogState;
   written: { status: AgentStatus; detail: AgentStatusReading['detail']; unseen: boolean } | null;
 }
@@ -74,7 +73,7 @@ interface SessionStatusLog {
 type PublishMeta = { event?: AgentEvent; timestamp: number };
 
 /** 一条会话出生时写下的那一行(建行的列值来自出生规则 `birthStatusColumns`)。 */
-export type SessionBirth = Pick<Session, 'id' | 'projectId' | 'agentStatus' | 'agentStatusDetail'>;
+export type SessionBirth = Pick<Session, 'id' | 'agentStatus' | 'agentStatusDetail'>;
 
 class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentStatusWriterHooks> {
   private readonly logs = new Map<string, SessionStatusLog>();
@@ -147,7 +146,6 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
     if (existing) return existing;
     const [row] = await db
       .select({
-        projectId: sessions.projectId,
         agentStatus: sessions.agentStatus,
         agentStatusDetail: sessions.agentStatusDetail,
         agentStatusSeen: sessions.agentStatusSeen,
@@ -163,7 +161,6 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
     const detail = parseAgentStatusDetail(row.agentStatusDetail, status);
     if (status === 'error' && row.agentStatusSeen === 1) acknowledgeErrorNotice(sessionId);
     const entry: SessionStatusLog = {
-      projectId: row.projectId,
       state: restoreStatusLog(status, detail),
       written: status ? { status, detail, unseen: row.agentStatusSeen !== 1 } : null,
     };
@@ -201,7 +198,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
     // A new turn: what the person last answered is past, as a failure is (answered-asks.ts). Answering lets a running
     // turn go on and is no `Started`.
     if (!before.running && canonical.some(e => e.kind === 'Started') && clearAnsweredAsk(sessionId)) {
-      events.emit(sessionChangedChannel, { sessionId, projectId: entry.projectId, changes: { lastAnswered: true } });
+      events.emit(sessionChangedChannel, { sessionId, changes: { lastAnswered: true } });
     }
     const reading = readStatusLog(state);
     const previous = entry.written;
@@ -222,7 +219,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
       active: true,
     });
     // 系统横幅跟着这一份读数走,与它从哪条路来(终端 hook、ACP、宿主的等待)无关;叫不叫人由 shouldNotify 定。
-    void maybeShowNotification({ sessionId, projectId: entry.projectId }, previous, reading);
+    void maybeShowNotification({ sessionId }, previous, reading);
   }
 
   /**
@@ -251,13 +248,12 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
       // 开工了:开机收残记下的「上一轮被打断」不再是现在的事。
       if (reading.status === 'working') clearInterruptedTurn(sessionId);
       if (lastInteractedAt) {
-        events.emit(sessionChangedChannel, { sessionId, projectId: entry.projectId, changes: { lastInteractedAt } });
+        events.emit(sessionChangedChannel, { sessionId, changes: { lastInteractedAt } });
       }
     }
     entry.written = { status: reading.status, detail: reading.detail, unseen };
     const change: AgentStatusChange & { reading: AgentStatusReading } = {
       sessionId,
-      projectId: entry.projectId,
       reading: { status: reading.status, detail: reading.detail, running: reading.running, background: reading.background },
       unseen,
       reviewGate: this.getProviderReviewGate(sessionId),
@@ -284,7 +280,6 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
     return this.inOrder(session.id, async () => {
       const detail = session.agentStatusDetail ?? null;
       const entry: SessionStatusLog = {
-        projectId: session.projectId,
         state: restoreStatusLog(status, detail),
         written: null,
       };
@@ -301,7 +296,6 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
       const previous = await this.logFor(params.sessionId);
       if (!previous) return;
       const entry: SessionStatusLog = {
-        projectId: previous.projectId,
         state: emptyStatusLogState(),
         written: previous.written,
       };
@@ -491,7 +485,6 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
     const rows = await db
       .select({
         id: sessions.id,
-        projectId: sessions.projectId,
         agentStatus: sessions.agentStatus,
         agentStatusDetail: sessions.agentStatusDetail,
         agentStatusSeen: sessions.agentStatusSeen,
@@ -512,7 +505,6 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
             : readStatusLog(restoreStatusLog(status, parseAgentStatusDetail(row.agentStatusDetail, status)));
         return {
           sessionId: row.id,
-          projectId: row.projectId,
           reading: reading
             ? { status: reading.status, detail: reading.detail, running: reading.running, background: reading.background }
             : null,
@@ -524,10 +516,10 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
       });
   }
 
-  /** 这些会话不在了(删掉、归档、随任务 / 项目一起走):日志与门一并回收。 */
+  /** 这些会话不在了(删掉、归档):日志与门一并回收。 */
   forget(scope: SessionScope): void {
-    for (const [sessionId, entry] of [...this.logs]) {
-      if (!sessionInScope({ sessionId, projectId: entry.projectId }, scope)) continue;
+    for (const sessionId of [...this.logs.keys()]) {
+      if (!sessionInScope({ sessionId }, scope)) continue;
       this.logs.delete(sessionId);
       this.providerReviewGates.delete(sessionId);
       this.providerBlockers.delete(sessionId);
@@ -560,8 +552,8 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
       if (event.type !== 'start') return;
       const lastInteractedAt = new Date(event.timestamp).toISOString();
       await db.update(sessions).set({ lastInteractedAt }).where(eq(sessions.id, event.sessionId));
-      const { sessionId, projectId } = event;
-      events.emit(sessionChangedChannel, { sessionId, projectId, changes: { lastInteractedAt } });
+      const { sessionId } = event;
+      events.emit(sessionChangedChannel, { sessionId, changes: { lastInteractedAt } });
       return;
     }
     await this.apply(event.sessionId, (ctx) => translateAgentEvent(event, ctx), {

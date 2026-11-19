@@ -4,7 +4,7 @@ import type { Result } from '@gugu/session-shared';
 import type { IGitWorktree } from '@gugu/session-core/git';
 import type { GitRepositoryFetchService } from '@main/core/git/repository/fetch-service';
 import type { GitRepositoryService } from '@main/core/git/repository/service';
-import type { ProjectSettingsProvider } from '@main/core/projects/settings/provider';
+import type { FolderSettingsProvider } from '@main/core/workspaces/folder-runtime/settings/provider';
 import type { LifecycleScriptService } from './workspace-lifecycle-service';
 
 export interface Workspace {
@@ -16,7 +16,7 @@ export interface Workspace {
   readonly fileTree: IFileTree;
   // gugu #2358: 非 git 项目的工作区没有 git 仓/worktree —— 三个 git 成员缺省,git 专属功能降级。
   readonly gitWorktree: IGitWorktree | undefined;
-  readonly settings: ProjectSettingsProvider;
+  readonly settings: FolderSettingsProvider;
   readonly lifecycleService: LifecycleScriptService;
   readonly gitRepository: GitRepositoryService | undefined;
   readonly gitRepositoryFetchService: GitRepositoryFetchService | undefined;

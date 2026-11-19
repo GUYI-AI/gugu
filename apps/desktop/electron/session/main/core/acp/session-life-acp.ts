@@ -11,7 +11,7 @@ import type {
   AdmittedChannel, BoundIdentity, CapabilityGrant, ExitFact, Gen, Have, PlatformTicket, ProcessLease,
   ResolvedCli, StageName, StageOut, WorkspaceLease,
 } from '@gugu/core/local/session-life/types';
-import { persistedWorkspacePath, resolveWorkspace } from '@main/core/projects/utils';
+import { persistedWorkspacePath, resolveWorkspace } from '@main/core/workspaces/resolve-workspace';
 import { RETIRED_REMOTE_WORKSPACE_MESSAGE } from '@main/core/workspaces/resolve-workspace-kind';
 import { getSessions } from '@main/core/sessions/getSessions';
 import { sessionService } from '@main/core/sessions/session-service';
@@ -149,7 +149,7 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
     if (!facts?.platformModel) return;
     const session = known();
     platformPreparation = prepareEmdashPlatformSession({ sessionId, ...(fork ? { sourceSessionId: fork.parentId } : {}),
-      providerId: session.providerId, projectId: session.projectId, workspaceId: session.workspaceId!, cwd,
+      providerId: session.providerId, groupChatId: session.groupChatId ?? null, workspaceId: session.workspaceId!, cwd,
       lifecycle: lifecycleOf(session, fork), platformModel: facts!.platformModel, agentDisplayName: facts!.agentDisplayName });
     // The capabilities stage owns the error. Do not turn an early issue refusal into an unhandled rejection.
     void platformPreparation.catch(() => {});
@@ -195,16 +195,16 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
       const cwd = persistedWorkspacePath(row.workspaceId);
       if (!cwd) throw new Error(RETIRED_REMOTE_WORKSPACE_MESSAGE);
       facts = await readSessionInjectionFacts({ sessionId });
-      identity = await provisionStartIdentity({ sessionId, providerId: row.providerId, projectId: row.projectId, cwd }, lifecycleOf(row, null), facts);
+      identity = await provisionStartIdentity({ sessionId, providerId: row.providerId, groupChatId: row.groupChatId ?? null, cwd }, lifecycleOf(row, null), facts);
       // A persisted session is never a runtime fork: no identity here means tombstoned or not provisionable.
       if (!identity) throw new Error(`Session ${sessionId} has no gugu identity and cannot be given one`);
       preparePlatform(cwd);
       return { kind: 'bound', agentUserId: identity.guguAgentUserId };
     },
     async workspace(): Promise<WorkspaceLease> {
-      const session = known();
+      known();
       const mounted = await sessionService.ensureSessionMounted(fork?.parentId ?? sessionId);
-      const workspace = await resolveWorkspace(session.projectId, mounted.workspaceId);
+      const workspace = await resolveWorkspace(mounted.workspaceId);
       if (!workspace) throw new Error(`Session ${sessionId} workspace is not mounted`);
       return lease<Workspace>({ workspaceId: mounted.workspaceId, path: workspace.path }) as WorkspaceLease;
     },
@@ -277,7 +277,7 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
     }
     const { injection, facts: f } = read<Capabilities>(have.capabilities);
     void import('../asks/human-tool-wait').then(({ restoreHumanToolResults }) =>
-      restoreHumanToolResults(sessionId, command.input.projectId, true))
+      restoreHumanToolResults(sessionId, true))
       .catch(error => log.error('Human tool results could not resume', { sessionId, error: String(error) }));
     void persistSessionMcpServers(sessionId, command.input.providerId, command.input.cwd, f.mcpDisabledServers, injection.extensionDelivery);
     const previous = fork ? null : known().providerSessionId ?? null;

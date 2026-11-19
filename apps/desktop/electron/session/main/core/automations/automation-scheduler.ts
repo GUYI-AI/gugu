@@ -356,7 +356,7 @@ export class AutomationScheduler {
           continue;
         }
 
-        if (entry.automation.projectId == null && !entry.automation.agentSessionId) {
+        if (entry.automation.workspaceId == null && !entry.automation.agentSessionId) {
           const skipped = await markRunSkipped(entry.run.id, { step: 'queue', code: 'no_project' });
           this.callbacks.onRunStep(skipped);
           madeProgress = true;

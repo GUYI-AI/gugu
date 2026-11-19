@@ -54,7 +54,7 @@ vi.mock('./emdash-platform-injector', async original => ({
 }));
 vi.mock('@main/core/sessions/runtime-fork-ownership', () => ({ recordRuntimeForkOwnership: vi.fn() }));
 vi.mock('@main/core/sessionpage/sessionpage-session-agent', () => ({ localAgentForSession: async () => h.parentAgent }));
-vi.mock('@main/core/projects/utils', () => ({ resolveWorkspace: () => (h.registered ? { path: '/repo' } : null), persistedWorkspacePath: () => '/repo' }));
+vi.mock('@main/core/workspaces/resolve-workspace', () => ({ resolveWorkspace: () => (h.registered ? { path: '/repo' } : null), persistedWorkspacePath: () => '/repo' }));
 vi.mock('@main/core/sessions/getSessions', () => ({ getSessions: async () => ['s', 'first', 'queued', 'next'].map(id => ({ id, runtime: 'acp', providerId: h.provider, projectId: 'p', workspaceId: 'w', providerSessionId: null })) }));
 vi.mock('@main/embedded-boot', () => ({ acpStartInputFor: (row: { id: string; providerId: string; projectId: string }, _workspace: string, cwd: string) => ({ sessionId: row.id, providerId: row.providerId, projectId: row.projectId, cwd }) }));
 vi.mock('@main/core/sessions/session-service', () => ({ sessionService: {} }));

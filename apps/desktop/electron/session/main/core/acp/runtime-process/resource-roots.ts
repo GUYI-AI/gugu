@@ -26,7 +26,7 @@ export async function collectAcpResourceRoots(): Promise<ResourceProcessRoot[]> 
       id: `acp-adapter:${pid}`, pid,
       kind: owners.length === 1 ? 'session' : 'runtime',
       label: owners.length === 1 ? label(session) : `Shared adapter: ${owners.map(owner => label(owner.session)).join(', ')}`,
-      ...(owners.length === 1 ? { sessionId: session.sessionId, projectId: session.projectId } : {}),
+      ...(owners.length === 1 ? { sessionId: session.sessionId } : {}),
     });
   }
   return roots;

@@ -54,7 +54,7 @@ const { agentStatusWriter } = await import('./agent-status-writer');
 let clock = 1_000;
 function event(sessionId: string, providerId: string, type: AgentEvent['type']): AgentEvent {
   clock += 1;
-  return { type, providerId, projectId: 'p1', sessionId, timestamp: clock, payload: {} };
+  return { type, providerId, sessionId, timestamp: clock, payload: {} };
 }
 
 describe('#6206 没有状态源的终端会话不写派生活动', () => {
@@ -116,7 +116,7 @@ describe('#6206 没有状态源的终端会话不写派生活动', () => {
     await deliverNoop(event(id, 'gemini', 'start'));
     await deliverNoop(event(id, 'gemini', 'error'));
     await deliverNoop(event(id, 'gemini', 'stop'));
-    await agentStatusWriter.settleSessionExited({ sessionId: id, projectId: 'p1' });
+    await agentStatusWriter.settleSessionExited({ sessionId: id });
 
     expect(status(id)).toBeNull();
     expect(published).toEqual([]);

@@ -57,7 +57,7 @@ const iso = (ms: number) => new Date(ms).toISOString();
 let clock = 1_000_000;
 function event(sessionId: string, providerId: string, type: AgentEvent['type']): AgentEvent {
   clock += 1_000;
-  return { type, providerId, projectId: 'p1', sessionId, timestamp: clock, payload: {} };
+  return { type, providerId, sessionId, timestamp: clock, payload: {} };
 }
 
 describe('会话的最近活动跟着每一轮走', () => {
@@ -118,7 +118,6 @@ describe('会话的最近活动跟着每一轮走', () => {
     expect(lastActive(id)).toBe(iso(ended));
     expect(vi.mocked(events.emit)).toHaveBeenCalledWith(sessionChangedChannel, {
       sessionId: id,
-      projectId: 'p1',
       changes: { lastInteractedAt: iso(ended) },
     });
   });
@@ -152,7 +151,7 @@ describe('会话的最近活动跟着每一轮走', () => {
     seed(id, 'claude', 'acp', 'idle');
     const now = vi.spyOn(Date, 'now').mockReturnValue(clock + 5_000);
     try {
-      await agentStatusWriter.restart({ sessionId: id, projectId: 'p1' });
+      await agentStatusWriter.restart({ sessionId: id });
       await statusWritesSettled(agentStatusWriter, id);
       expect(lastActive(id)).toBe(iso(clock + 5_000));
     } finally {

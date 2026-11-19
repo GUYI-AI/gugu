@@ -30,7 +30,7 @@ import {
 } from '@shared/preview/preview-url';
 import { remotePageRoot } from '@shared/preview/remote-page-url';
 import { previewDocumentHtml } from '@shared/preview/preview-link-script';
-import { resolveWorkspace } from '../projects/utils';
+import { resolveWorkspace } from '@main/core/workspaces/resolve-workspace';
 import { readRemotePreviewBytes, remotePreviewFailureStatus, withUtf8Charset, type RemoteChunk } from './remote-preview-read';
 
 /**
@@ -38,8 +38,8 @@ import { readRemotePreviewBytes, remotePreviewFailureStatus, withUtf8Charset, ty
  * (经渲染层走会话工作区那条既有的读文件动词,见 `readRemoteChunk`)。
  */
 type PreviewSource =
-  | { kind: 'local'; projectId: string; workspaceId: string }
-  | { kind: 'remote'; projectId: string; workspaceId: string }
+  | { kind: 'local'; workspaceId: string }
+  | { kind: 'remote'; workspaceId: string }
   /**
    * A document in a chat's folder: its page's relative URLs name the files beside it in that folder, read as the
    * signed-in person (in the cloud, or fetched from the machine that keeps them). The root is the document's own folder.
@@ -149,20 +149,19 @@ const MAX_PREVIEW_BYTES = 256 * 1024 * 1024;
  * 每次打开都发一个新 id:上一次预览存下的东西不该被下一次读到,而 id 即 origin,换 id 就是换源。
  */
 export async function createPreview(
-  projectId: string,
-  workspaceId: string,
+    workspaceId: string,
   documentPath: string,
   documentHtml?: string
 ): Promise<{ url: string; previewId: string } | null> {
   // 工作区根由主进程自己查,❌ 不收渲染层传来的那一份 —— 围栏的边界不该由被围的那一侧给。
-  const env = await resolveWorkspace(projectId, workspaceId);
+  const env = await resolveWorkspace(workspaceId);
   if (!env) return null;
   const root = previewRootFor(env.path, documentPath);
   const previewId = newPreviewId();
   const url = previewUrl(previewId, root, documentPath);
   if (!url) return null;
   registry.set(previewId, {
-    source: { kind: 'local', projectId, workspaceId },
+    source: { kind: 'local', workspaceId },
     surface: 'pane',
     root,
     documentPath,
@@ -183,7 +182,6 @@ export async function createPreview(
  */
 export function createRemotePreview(input: {
   /** 那台机器上的项目与工作区(渲染层按项目所在机器把读块请求路由过去)。 */
-  projectId: string;
   workspaceId: string;
   root: string;
   surface: PreviewSurface;
@@ -201,7 +199,7 @@ export function createRemotePreview(input: {
     if (!url) return null;
   }
   registry.set(previewId, {
-    source: { kind: 'remote', projectId: input.projectId, workspaceId: input.workspaceId },
+    source: { kind: 'remote', workspaceId: input.workspaceId },
     surface: input.surface,
     root,
     documentPath: input.surface === 'pane' ? input.documentPath : undefined,
@@ -211,7 +209,6 @@ export function createRemotePreview(input: {
   log.info('Remote preview registered', {
     previewId,
     surface: input.surface,
-    projectId: input.projectId,
     workspaceId: input.workspaceId,
   });
   return { previewId, url };
@@ -475,7 +472,7 @@ async function readPreviewBytes(
   const source = registration.source;
   if (source.kind === 'remote') {
     const result = await readRemotePreviewBytes(
-      (chunk) => readRemoteChunk(source.projectId, source.workspaceId, chunk, signal),
+      (chunk) => readRemoteChunk(source.workspaceId, chunk, signal),
       resolved,
       REMOTE_PREVIEW_MAX_BYTES,
       signal
@@ -564,7 +561,6 @@ export const REMOTE_CHUNK_TIMEOUT_MS = 20_000;
  * 主进程这边 ❌ 另开一条到那台机器的通道。
  */
 function readRemoteChunk(
-  projectId: string,
   workspaceId: string,
   chunk: { path: string; offset: number; length: number },
   signal?: AbortSignal
@@ -593,7 +589,7 @@ function readRemoteChunk(
     }, REMOTE_CHUNK_TIMEOUT_MS);
     timer.unref?.();
     signal?.addEventListener('abort', abort, { once: true });
-    events.emit(remotePreviewReadChannel, { requestId, projectId, workspaceId, ...chunk });
+    events.emit(remotePreviewReadChannel, { requestId, workspaceId, ...chunk });
   });
 }
 
@@ -630,7 +626,7 @@ function isRemotePanePreview(registration: PreviewRegistration | DocumentPreview
 }
 
 async function workspaceFileSystem(source: Extract<PreviewSource, { kind: 'local' }>): Promise<IFileSystem | null> {
-  const env = await resolveWorkspace(source.projectId, source.workspaceId);
+  const env = await resolveWorkspace(source.workspaceId);
   return env?.fileSystem ?? null;
 }
 

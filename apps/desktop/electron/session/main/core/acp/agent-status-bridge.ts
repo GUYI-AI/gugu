@@ -221,7 +221,6 @@ class AcpAgentStatusBridge {
         void agentStatusWriter
           .interrupt({
             sessionId: action.sessionId,
-            projectId: action.projectId,
           })
           .catch((error) => {
             log.warn('ACP agent status bridge failed to reset session status', {
@@ -241,7 +240,6 @@ class AcpAgentStatusBridge {
       summaries.map((summary) =>
         agentStatusWriter.interrupt({
           sessionId: summary.sessionId,
-          projectId: summary.projectId,
         })
       )
     );

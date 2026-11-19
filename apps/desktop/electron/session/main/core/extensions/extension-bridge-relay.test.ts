@@ -43,8 +43,9 @@ vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), error: vi.fn(), info:
 // The session the tab is in is named to the App as its agent (F35), and main reads its own facts (真源原则 13).
 vi.mock('@main/core/sessionpage/sessionpage-session-agent', () => ({ agentIdsBySession: async () => new Map([['task-1', 'user:agent-1']]) }));
 const workingCopy = fs.mkdtempSync(path.join(os.tmpdir(), 'ext-relay-'));
+vi.mock('@main/core/folders/folders', () => ({ isTaskHomeFolder: () => false }));
 vi.mock('@main/core/extensions/extension-agent-context', () => ({
-  agentSessionContext: async (id: string) => (id === 'task-1' ? { sessionId: id, projectId: 'proj-1', workspaceRoot: workingCopy } : null),
+  agentSessionContext: async (id: string) => (id === 'task-1' ? { sessionId: id, folderId: 'proj-1', workspaceRoot: workingCopy } : null),
 }));
 
 const { bindExtensionSurface, registerExtensionBridge, setExtensionBridgeHost } = await import('./extension-bridge');

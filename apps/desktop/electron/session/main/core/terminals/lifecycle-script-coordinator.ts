@@ -46,29 +46,25 @@ function withLifecycleTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 function lifecycleScriptPtySessionId({
-  projectId,
   workspaceId,
   type,
 }: {
-  projectId: string;
   workspaceId: string;
   type: LifecycleScriptType;
 }): string {
-  return makePtySessionId(projectId, workspaceId, createLifecycleScriptTerminalId(type));
+  return makePtySessionId(workspaceId, workspaceId, createLifecycleScriptTerminalId(type));
 }
 
 export function stopLifecycleScriptSession({
-  projectId,
   workspaceId,
   type,
   origin,
 }: {
-  projectId: string;
   workspaceId: string;
   type: LifecycleScriptType;
   origin: LifecycleScriptOrigin;
 }): boolean {
-  const ptySessionId = lifecycleScriptPtySessionId({ projectId, workspaceId, type });
+  const ptySessionId = lifecycleScriptPtySessionId({ workspaceId, type });
   const pty = ptySessionRegistry.get(ptySessionId);
   if (!pty) return false;
   if (!activePtySessionIds.has(ptySessionId)) return false;
@@ -77,7 +73,6 @@ export function stopLifecycleScriptSession({
   stoppedPtySessionIds.add(ptySessionId);
   pty.kill();
   events.emit(lifecycleScriptStatusChannel, {
-    projectId,
     workspaceId,
     type,
     origin,
@@ -105,7 +100,6 @@ function failureMessage(type: LifecycleScriptType, result: LifecycleScriptExecut
 
 export async function runLifecycleScriptWithPolicy({
   workspace,
-  projectId,
   workspaceId,
   type,
   script,
@@ -115,7 +109,6 @@ export async function runLifecycleScriptWithPolicy({
   logPrefix,
 }: {
   workspace: Workspace;
-  projectId: string;
   workspaceId: string;
   type: LifecycleScriptType;
   script: string;
@@ -124,14 +117,13 @@ export async function runLifecycleScriptWithPolicy({
   policy: LifecycleScriptPolicy;
   logPrefix: string;
 }): Promise<LifecycleScriptCoordinatorResult> {
-  const ptySessionId = lifecycleScriptPtySessionId({ projectId, workspaceId, type });
+  const ptySessionId = lifecycleScriptPtySessionId({ workspaceId, type });
   if (activePtySessionIds.has(ptySessionId)) {
     return { kind: 'already-running' };
   }
 
   activePtySessionIds.add(ptySessionId);
   events.emit(lifecycleScriptStatusChannel, {
-    projectId,
     workspaceId,
     type,
     origin,
@@ -163,7 +155,6 @@ export async function runLifecycleScriptWithPolicy({
 
     if (isSuccessfulResult(result)) {
       events.emit(lifecycleScriptStatusChannel, {
-        projectId,
         workspaceId,
         type,
         origin,
@@ -174,7 +165,6 @@ export async function runLifecycleScriptWithPolicy({
     }
 
     return handleFailure({
-      projectId,
       workspaceId,
       type,
       origin,
@@ -196,7 +186,6 @@ export async function runLifecycleScriptWithPolicy({
           : `${labelFor(type)} script failed to run.`;
 
     return handleFailure({
-      projectId,
       workspaceId,
       type,
       origin,
@@ -213,7 +202,6 @@ export async function runLifecycleScriptWithPolicy({
 }
 
 function handleFailure({
-  projectId,
   workspaceId,
   type,
   origin,
@@ -223,7 +211,6 @@ function handleFailure({
   result,
   error,
 }: {
-  projectId: string;
   workspaceId: string;
   type: LifecycleScriptType;
   origin: LifecycleScriptOrigin;
@@ -249,7 +236,6 @@ function handleFailure({
   }
 
   events.emit(lifecycleScriptStatusChannel, {
-    projectId,
     workspaceId,
     type,
     origin,

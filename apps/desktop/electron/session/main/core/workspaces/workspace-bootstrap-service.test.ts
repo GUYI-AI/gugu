@@ -8,12 +8,9 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ open: new Map<string, unknown>() }));
-
 vi.mock('@main/db/client', () => ({ db: {} }));
-vi.mock('@main/core/projects/project-manager', () => ({
-  projectManager: { getProject: (id: string) => mocks.open.get(id) },
-}));
+vi.mock('@main/core/folders/folders', () => ({ rootFolderOf: vi.fn() }));
+vi.mock('@main/core/workspaces/folder-runtime/folder-runtimes', () => ({ folderRuntime: vi.fn() }));
 vi.mock('@main/core/runtime/runtime-manager', () => ({ runtimeManager: {} }));
 vi.mock('@main/core/sessions/session-builder', () => ({ buildSessionFromWorkspace: vi.fn(), emitSessionProvisionProgress: vi.fn() }));
 vi.mock('@main/lib/logger', () => {
@@ -23,12 +20,10 @@ vi.mock('@main/lib/logger', () => {
 
 const { WorkspaceBootstrapService } = await import('./workspace-bootstrap-service');
 
-const OLD_SESSION_HOME = '89648ac1-68dd-4d63-b473-b83eeee942e7';
-
 /** 只回答这一问要的那两行:会话行、工作区行。 */
 function fakeDb() {
   const rows = [
-    [{ id: 'session-1', projectId: OLD_SESSION_HOME, workspaceId: 'ws-1', config: { version: '1', type: 'acp', agentDisplayName: 'late-cooks-wave' } }],
+    [{ id: 'session-1', workspaceId: 'ws-1', config: { version: '1', type: 'acp', agentDisplayName: 'late-cooks-wave' } }],
     [{ id: 'ws-1', type: 'local', kind: null, path: '/root/.config/咕咕/task-home', config: null }],
   ];
   let call = 0;
@@ -37,39 +32,21 @@ function fakeDb() {
 }
 
 describe('ensureWorkspaceSetupForSession on a machine that was just upgraded and restarted', () => {
-  it('opens a project that is not open yet, then sets the workspace up', async () => {
-    mocks.open.clear();
-    const provider = { repoPath: '/root/.config/咕咕/task-home' };
-    const openOnDemand = vi.fn(async (id: string) => {
-      mocks.open.set(id, provider);
-      return provider as never;
-    });
-    const service = new WorkspaceBootstrapService(fakeDb(), openOnDemand);
+  it('opens the root folder of the session\'s workspace on demand, then sets the workspace up', async () => {
+    const folder = { folderId: 'task-home', repoPath: '/root/.config/咕咕/task-home' };
+    const openRoot = vi.fn(async () => folder as never);
+    const service = new WorkspaceBootstrapService(fakeDb(), openRoot);
     const setup = vi.spyOn(service, 'ensureWorkspaceSetup').mockResolvedValue({ success: true, data: {} } as never);
 
     await service.ensureWorkspaceSetupForSession('session-1');
 
-    expect(openOnDemand).toHaveBeenCalledWith(OLD_SESSION_HOME);
+    expect(openRoot).toHaveBeenCalledWith('ws-1');
     expect(setup).toHaveBeenCalledTimes(1);
-    expect(setup.mock.calls[0]![2]).toBe(provider);
+    expect(setup.mock.calls[0]![2]).toBe(folder);
   });
 
-  it('does not reopen a project that is already open', async () => {
-    mocks.open.clear();
-    const provider = { repoPath: '/x' };
-    mocks.open.set(OLD_SESSION_HOME, provider);
-    const openOnDemand = vi.fn();
-    const service = new WorkspaceBootstrapService(fakeDb(), openOnDemand);
-    vi.spyOn(service, 'ensureWorkspaceSetup').mockResolvedValue({ success: true, data: {} } as never);
-
-    await service.ensureWorkspaceSetupForSession('session-1');
-
-    expect(openOnDemand).not.toHaveBeenCalled();
-  });
-
-  it('still says the project is missing when it cannot be opened (no such row, folder gone)', async () => {
-    mocks.open.clear();
+  it('says so when the workspace is in no folder on this device', async () => {
     const service = new WorkspaceBootstrapService(fakeDb(), async () => null);
-    await expect(service.ensureWorkspaceSetupForSession('session-1')).rejects.toThrow(`Project ${OLD_SESSION_HOME} not found`);
+    await expect(service.ensureWorkspaceSetupForSession('session-1')).rejects.toThrow('in no folder on this device');
   });
 });

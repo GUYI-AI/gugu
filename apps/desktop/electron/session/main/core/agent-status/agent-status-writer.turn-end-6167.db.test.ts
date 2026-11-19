@@ -55,7 +55,6 @@ function event(type: AgentEvent['type'], notificationType?: NotificationType): A
   return {
     type,
     providerId: 'claude',
-    projectId: 'p1',
     sessionId: cid,
     timestamp: clock,
     payload: notificationType ? { notificationType } : {},
@@ -167,7 +166,7 @@ describe('#6167 做完未读只由回合结束那条边写出', () => {
 
   it('跑着时用户点 Stop(会话退出)⇒ idle 已读', async () => {
     await deliver(event('start'));
-    await agentStatusWriter.settleSessionExited({ sessionId: cid, projectId: 'p1' });
+    await agentStatusWriter.settleSessionExited({ sessionId: cid });
     expect(row()).toEqual({ status: 'idle', seen: 1 });
   });
 
@@ -177,7 +176,7 @@ describe('#6167 做完未读只由回合结束那条边写出', () => {
     const interrupt = vi.fn(async () => ({ success: true as const, data: undefined }));
     await expect(
       interruptTuiTurn(
-        { id: cid, projectId: 'p1' },
+        { id: cid },
         { interrupt, markInterrupted: (params) => agentStatusWriter.interrupt(params) },
       ),
     ).resolves.toBe(true);
@@ -193,7 +192,7 @@ describe('#6167 做完未读只由回合结束那条边写出', () => {
     const interrupt = vi.fn(async () => ({ success: false as const, error: { type: 'not_found' as const } }));
     await expect(
       interruptTuiTurn(
-        { id: cid, projectId: 'p1' },
+        { id: cid },
         { interrupt: interrupt as never, markInterrupted: (params) => agentStatusWriter.interrupt(params) },
       ),
     ).resolves.toBe(false);

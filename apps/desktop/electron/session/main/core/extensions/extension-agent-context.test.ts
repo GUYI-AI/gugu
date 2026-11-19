@@ -24,7 +24,7 @@ vi.mock('@main/core/sessions/task-name', () => ({ knownTaskName: (row: { id: str
 
 vi.mock('drizzle-orm', () => ({ eq: (column: { name: string }, value: unknown) => ({ column: column.name, value }) }));
 vi.mock('@main/db/schema', () => ({
-  sessions: { __table: 'conversations', id: { name: 'id' }, workspaceId: { name: 'workspaceId' }, projectId: { name: 'projectId' }, config: { name: 'config' }, provider: { name: 'provider' }, runtime: { name: 'runtime' } },
+  sessions: { __table: 'conversations', id: { name: 'id' }, workspaceId: { name: 'workspaceId' }, chatId: { name: 'chatId' }, config: { name: 'config' }, provider: { name: 'provider' }, runtime: { name: 'runtime' } },
 }));
 vi.mock('@main/db/client', () => ({
   db: {
@@ -41,7 +41,8 @@ vi.mock('@main/db/client', () => ({
   },
 }));
 // `persistedWorkspacePath` (its own test covers missing rows and retired remote rows): null is no folder here.
-vi.mock('@main/core/projects/utils', () => ({ persistedWorkspacePath: (id: string) => recorded[id] ?? null }));
+vi.mock('@main/core/folders/folders', () => ({ rootFolderOf: (id: string) => ({ id: `folder-of-${id}` }) }));
+vi.mock('@main/core/workspaces/resolve-workspace', () => ({ persistedWorkspacePath: (id: string) => recorded[id] ?? null }));
 vi.mock('@main/core/sessions/platform-model-selection', () => ({
   sessionPlatformModel: async (sessionId: string) => decisions[sessionId],
   // The name kept with the decision (its own test fills and keeps it): here, the decision's model under a menu name.
@@ -53,12 +54,12 @@ const { agentSessionContext } = await import('./extension-agent-context');
 beforeEach(() => {
   names.clear();
   rows.conversations = [
-    { id: 'conv-a', workspaceId: 'ws-a', projectId: 'p-a', config: {} },
-    { id: 'conv-b', workspaceId: 'ws-b', projectId: 'p-b', config: { model: 'gpt-5.5' } },
-    { id: 'conv-gone', workspaceId: 'ws-gone', projectId: 'p-g', config: {} },
-    { id: 'conv-remote', workspaceId: 'ws-remote', projectId: 'p-r', config: {} },
-    { id: 'conv-nowhere', workspaceId: null, projectId: 'p-n', config: { model: 'opus-4-6' } },
-    { id: 'conv-own-default', workspaceId: null, projectId: 'p-o', config: {} },
+    { id: 'conv-a', workspaceId: 'ws-a', chatId: 'chat-a', config: {} },
+    { id: 'conv-b', workspaceId: 'ws-b', chatId: 'chat-b', config: { model: 'gpt-5.5' } },
+    { id: 'conv-gone', workspaceId: 'ws-gone', chatId: 'chat-g', config: {} },
+    { id: 'conv-remote', workspaceId: 'ws-remote', chatId: 'chat-r', config: {} },
+    { id: 'conv-nowhere', workspaceId: null, chatId: 'chat-n', config: { model: 'opus-4-6' } },
+    { id: 'conv-own-default', workspaceId: null, chatId: 'chat-o', config: {} },
   ];
   for (const key of Object.keys(recorded)) delete recorded[key];
   recorded['ws-a'] = folderA;
@@ -82,18 +83,18 @@ describe('agentSessionContext (#6615 问题 11)', () => {
   });
 
   it("reads the caller's own session and its working copy from the session's own record, opened or not", async () => {
-    expect(await agentSessionContext('conv-a')).toEqual({ sessionId: 'conv-a', projectId: 'p-a', workspaceId: 'ws-a', workspaceRoot: folderA, model: 'platform:glm-5.3-flash', modelLabel: 'menu:glm-5.3-flash' });
+    expect(await agentSessionContext('conv-a')).toEqual({ sessionId: 'conv-a', groupChatId: 'chat-a', folderId: 'folder-of-ws-a', workspaceId: 'ws-a', workspaceRoot: folderA, model: 'platform:glm-5.3-flash', modelLabel: 'menu:glm-5.3-flash' });
   });
 
   it('no such folder on this computer is null — a row with no match, a deleted folder or a retired remote one, never another session\'s', async () => {
     expect((await agentSessionContext('conv-gone'))?.workspaceRoot).toBeNull();
     expect((await agentSessionContext('conv-remote'))?.workspaceRoot).toBeNull();
-    expect(await agentSessionContext('conv-b')).toEqual({ sessionId: 'conv-b', projectId: 'p-b', workspaceId: 'ws-b', workspaceRoot: null, model: 'gpt-5.5', modelLabel: null });
+    expect(await agentSessionContext('conv-b')).toEqual({ sessionId: 'conv-b', groupChatId: 'chat-b', folderId: 'folder-of-ws-b', workspaceId: 'ws-b', workspaceRoot: null, model: 'gpt-5.5', modelLabel: null });
   });
 
   it('an unknown caller has no context; a session with no workspace yet leaves only its id', async () => {
     expect(await agentSessionContext('conv-nobody')).toBeNull();
-    expect(await agentSessionContext('conv-nowhere')).toMatchObject({ sessionId: 'conv-nowhere', projectId: 'p-n', workspaceRoot: null });
+    expect(await agentSessionContext('conv-nowhere')).toMatchObject({ sessionId: 'conv-nowhere', groupChatId: 'chat-n', folderId: null, workspaceRoot: null });
   });
 
   it('the model gugu runs it on: a Gugu model as platform:<id>, a harness model as its id — never one it was not told', async () => {

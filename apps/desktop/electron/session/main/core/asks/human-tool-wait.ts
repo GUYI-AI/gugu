@@ -101,13 +101,13 @@ export function runHumanTool<T>(sessionId: string, tool: HumanToolKind, signal: 
 }
 
 /** Process-bound operations cannot be resurrected as approvals. Say ended, using the original result ID. */
-export function restoreHumanToolResults(sessionId: string, projectId: string, resumed = false): void {
+export function restoreHumanToolResults(sessionId: string, resumed = false): void {
   for (const saved of readHumanToolRecords(sessionId)) {
     if ([...active].some(operation => operation.record.id === saved.id) || (saved.paused && !resumed)) continue;
     const record: HumanToolRecord = saved.state === 'waiting'
       ? { ...saved, state: 'finished', result: { state: 'ended', reason: 'The original host operation ended before a result was recorded. No approval or success is implied.' } }
       : saved;
     saveHumanToolRecord(record);
-    reportHumanToolDelivery(record, projectId);
+    reportHumanToolDelivery(record);
   }
 }

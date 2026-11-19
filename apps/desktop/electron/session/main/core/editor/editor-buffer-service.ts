@@ -1,44 +1,38 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
+import { LEGACY_PLACEHOLDER_PROJECT_ID } from '@main/core/folders/legacy-project-aliases';
 import { db } from '@main/db/client';
 import { editorBuffers } from '@main/db/schema';
 
+function bufferId(workspaceId: string, filePath: string): string {
+  return `${workspaceId}:${filePath}`;
+}
+
 export class EditorBufferService {
-  async saveBuffer(
-    projectId: string,
-    workspaceId: string,
-    filePath: string,
-    content: string
-  ): Promise<void> {
-    const id = `${projectId}:${workspaceId}:${filePath}`;
+  async saveBuffer(workspaceId: string, filePath: string, content: string): Promise<void> {
+    const id = bufferId(workspaceId, filePath);
     await db
       .insert(editorBuffers)
-      .values({ id, projectId, workspaceId, filePath, content, updatedAt: Date.now() })
+      // @@@c1-legacy-project — project_id is read only by the previous release after a rollback.
+      .values({ id, projectId: LEGACY_PLACEHOLDER_PROJECT_ID, workspaceId, filePath, content, updatedAt: Date.now() })
       .onConflictDoUpdate({
         target: editorBuffers.id,
         set: { content, updatedAt: Date.now() },
       });
   }
 
-  async clearBuffer(projectId: string, workspaceId: string, filePath: string): Promise<void> {
-    const id = `${projectId}:${workspaceId}:${filePath}`;
-    await db.delete(editorBuffers).where(eq(editorBuffers.id, id));
+  async clearBuffer(workspaceId: string, filePath: string): Promise<void> {
+    await db.delete(editorBuffers).where(eq(editorBuffers.id, bufferId(workspaceId, filePath)));
   }
 
   async clearAllForWorkspace(workspaceId: string): Promise<void> {
     await db.delete(editorBuffers).where(eq(editorBuffers.workspaceId, workspaceId));
   }
 
-  async listBuffers(
-    projectId: string,
-    workspaceId: string
-  ): Promise<{ filePath: string; content: string }[]> {
-    const rows = await db
+  async listBuffers(workspaceId: string): Promise<{ filePath: string; content: string }[]> {
+    return db
       .select({ filePath: editorBuffers.filePath, content: editorBuffers.content })
       .from(editorBuffers)
-      .where(
-        and(eq(editorBuffers.projectId, projectId), eq(editorBuffers.workspaceId, workspaceId))
-      );
-    return rows;
+      .where(eq(editorBuffers.workspaceId, workspaceId));
   }
 }
 

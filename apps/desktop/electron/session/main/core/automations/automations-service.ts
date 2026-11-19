@@ -1,7 +1,6 @@
 import { and, asc, count, desc, eq, ne, sql } from 'drizzle-orm';
 import { archiveSession } from '@main/core/sessions/archiveSession';
 import { sessionEvents } from '@main/core/sessions/session-events';
-import { projectEvents } from '@main/core/projects/project-events';
 import { db } from '@main/db/client';
 import { automationRuns, sessions } from '@main/db/schema';
 import { events } from '@main/lib/events';
@@ -75,7 +74,6 @@ export class AutomationsService implements Hookable<AutomationsServiceHooks> {
     if (this.lifecycleOffs.length === 0) {
       this.lifecycleOffs.push(
         sessionEvents.on('session:deleted', (id) => this.removeOrphanedAgentSchedules(id)),
-        projectEvents.on('project:deleted', () => this.removeOrphanedAgentSchedules()),
         sessionEvents.on('session:archived', (id) => this.notifyAgentSchedules(id)),
         sessionEvents.on('session:created', (session) => this.notifyAgentSchedules(session.id))
       );
@@ -92,9 +90,9 @@ export class AutomationsService implements Hookable<AutomationsServiceHooks> {
     this._hooks.callHookBackground('run:step-completed', run);
   }
 
-  async listAutomations(projectId?: string): Promise<Automation[]> {
+  async listAutomations(workspaceId?: string): Promise<Automation[]> {
     await this.removeOrphanedAgentSchedules();
-    return (await repoListAutomations(projectId)).filter((automation) => !automation.agentSession?.archived);
+    return (await repoListAutomations(workspaceId)).filter((automation) => !automation.agentSession?.archived);
   }
 
   private async removeOrphanedAgentSchedules(sessionId?: string): Promise<void> {
@@ -247,7 +245,7 @@ export class AutomationsService implements Hookable<AutomationsServiceHooks> {
     try {
       const automation = await getAutomation(id);
       if (!automation) throw new Error('automation_not_found');
-      if (!automation.projectId && !automation.agentSessionId) throw new Error('no_project_attached');
+      if (!automation.workspaceId && !automation.agentSessionId) throw new Error('no_project_attached');
       if (!automation.agentConfig || !automation.triggerConfig)
         throw new Error('automation_not_configured');
 
@@ -325,8 +323,8 @@ export class AutomationsService implements Hookable<AutomationsServiceHooks> {
 
       // 还挂在运行上的任务随自动化一起归档;被收成普通任务的已经不在这里(它的 automation_run_id 清掉了)。
       for (const target of targets) {
-        if (target.sessionId === null || target.projectId === null) continue;
-        await archiveSession(target.projectId, target.sessionId);
+        if (target.sessionId === null) continue;
+        await archiveSession(target.sessionId);
       }
 
       for (const runId of new Set(targets.map((target) => target.runId))) {

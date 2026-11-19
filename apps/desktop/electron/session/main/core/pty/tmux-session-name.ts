@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import type { IExecutionContext } from '@gugu/session-core/exec';
 import { log } from '@main/lib/logger';
 import { quoteShellArg } from '@main/utils/shellEscape';
+import { legacyProject } from '@main/core/folders/legacy-project-aliases';
+import { parsePtySessionId } from '@shared/core/pty/ptySessionId';
 
 export const TMUX_SESSION_PREFIX = 'gugu-';
 const TMUX_HISTORY_LIMIT = 100_000;
@@ -147,6 +149,33 @@ export function decodeTmuxSessionName(sessionName: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * @@@legacy-pty-tmux — the tmux session to attach for a PTY. PTYs started by earlier releases are named after a pty id
+ * whose first part is a local project id (`<projectId>:<scope>:<leaf>`); this release names them
+ * `<workspaceId>:<scope>:<leaf>`. A live session of the same scope and leaf whose first part is a legacy project id
+ * is that same terminal, still running from before the upgrade: attach to it under its old name. Anything else gets
+ * the new name.
+ */
+export async function resolveTmuxSessionName(
+  ctx: Pick<IExecutionContext, 'supportsLocalSpawn' | 'exec'>,
+  ptySessionId: string,
+  isLegacyProject: (id: string) => boolean = (id) => legacyProject(id) !== undefined
+): Promise<string> {
+  const name = makeTmuxSessionName(ptySessionId);
+  const parsed = parsePtySessionId(ptySessionId);
+  if (!parsed) return name;
+  const live = await listTmuxSessionNames(ctx);
+  if (live.has(name)) return name;
+  for (const liveName of live) {
+    const decoded = decodeTmuxSessionName(liveName);
+    const old = decoded ? parsePtySessionId(decoded) : null;
+    if (old && old.scopeId === parsed.scopeId && old.leafId === parsed.leafId && isLegacyProject(old.workspaceId)) {
+      return liveName;
+    }
+  }
+  return name;
 }
 
 /** `tmux -L <label>` 在本机的服务器套接字(tmux 的默认位置 `${TMUX_TMPDIR:-/tmp}/tmux-<uid>/<label>`);Windows(psmux)与远端不适用 = null。 */

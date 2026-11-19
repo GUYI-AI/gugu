@@ -19,7 +19,6 @@ import { issueController } from './core/issues/controller';
 import { mcpController } from './core/mcp/controller';
 import { mcpLibraryController } from './core/mcp-library/controller';
 import { previewServersController } from './core/preview-servers/controller';
-import { projectSetupController } from './core/project-setup/controller';
 import { projectController } from './core/projects/controller';
 import { folderController } from './core/folders/controller';
 import { promptLibraryController } from './core/prompt-library/controller';
@@ -36,6 +35,7 @@ import { appSettingsController } from './core/settings/controller';
 import { providerSettingsController } from './core/settings/provider-settings-controller';
 import { sessionCreateController } from './core/sessions/create-controller';
 import { terminalsController } from './core/terminals/controller';
+import { folderRuntimeController, folderSettingsController } from './core/workspaces/folder-runtime/controller';
 import { usageController } from './core/usage/controller';
 import { viewStateController } from './core/view-state/controller';
 
@@ -64,13 +64,14 @@ export const rpcRouter = createRPCRouter({
   integrations: integrationsController,
   issues: issueController,
   promptLibrary: promptLibraryController,
-  projectSetup: projectSetupController,
   projects: projectController,
   folders: folderController,
   previewServers: previewServersController,
   sessionCreate: sessionCreateController,
   sessions: sessionController,
   terminals: terminalsController,
+  folderRuntime: folderRuntimeController,
+  folderSettings: folderSettingsController,
   mcp: mcpController,
   mcpLibrary: mcpLibraryController,
   pullRequests: pullRequestController,

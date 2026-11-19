@@ -3,7 +3,7 @@ import { ExtensionProjections, type ProjectionSource } from './extension-project
 import { revokeExtensionProgramAccess } from './extension-program-access';
 import type { ProjectionHostPacket } from '@shared/extensions/projection-protocol';
 
-const principal = { extensionId: 'projection-resource-access-test', sessionId: 'task-a', projectId: 'project-a' };
+const principal = { extensionId: 'projection-resource-access-test', sessionId: 'task-a' };
 const deferred = () => {
   let resolve!: () => void;
   const promise = new Promise<void>(yes => { resolve = yes; });
@@ -54,7 +54,7 @@ describe('host resource access for the direct-media authority adapter', () => {
     await s.resource.close();
   });
 
-  it.each([{ sessionId: principal.sessionId }, { projectId: principal.projectId }])('invalidates the source access when its host closes scope %j', async scope => {
+  it.each([{ sessionId: principal.sessionId }])('invalidates the source access when its host closes scope %j', async scope => {
     const s = setup();
     const access = s.resources.sourceAccess(principal, s.resource.id);
     s.resources.closeScope(scope);

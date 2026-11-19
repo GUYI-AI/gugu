@@ -63,13 +63,13 @@ const dispatchForApp = vi.fn(async (_id: string, args: Record<string, unknown>, 
     to = picked.to;
   }
   if (to.chat) await effects.draftInChat({ chatId: to.chat, text: `${text}\n` });
-  else await effects.draftInSession({ id: to.session ?? 'task-2', projectId: 'p-1' }, `${text}\n`);
+  else await effects.draftInSession({ id: to.session ?? 'task-2' }, `${text}\n`);
   return { to };
 });
 vi.mock('@main/core/extensions/extension-send', () => ({ dispatchForApp }));
 // The window's sheet (DispatchSheet): what the person picked, or null — asked only when the call named no target.
 const pickDispatchTarget = vi.fn(async (_embedderId: number | null, _ask: unknown): Promise<unknown> => null);
-vi.mock('@main/core/extensions/extension-bridge-relay', () => ({ pickDispatchTarget, actInWindow: async () => undefined, listedSessionProject: async () => null }));
+vi.mock('@main/core/extensions/extension-bridge-relay', () => ({ pickDispatchTarget, actInWindow: async () => undefined, sessionListedByWindow: async () => false }));
 // The session a draft goes to is this computer's (the one way a session is opened finds it here).
 vi.mock('@main/core/extensions/extension-show-session', async (original) => ({
   ...(await original<typeof import('./extension-show-session')>()),
@@ -151,7 +151,7 @@ describe('what a page says about itself: one way out of main', () => {
       [{ extensionId: 'board', sessionId: 'task-1', tabId: 'tab-1', pageId: SESSION_TAB, embedderId: 42 }, { kind: 'compose', sessionId: 'task-2', text: 'picked\n' }],
       [{ extensionId: 'board', sessionId: null, tabId: 'dock-1', pageId: DOCK_PAGE, embedderId: 42 }, { kind: 'compose', detail: { chatId: CHAT, text: 'picked\n' } }],
     ]);
-    expect(emitted).toHaveBeenCalledWith(expect.anything(), { projectId: 'p-1', sessionId: 'task-2' });
+    expect(emitted).toHaveBeenCalledWith(expect.anything(), { sessionId: 'task-2' });
     // Where the page is fills only what the sheet shows: its session.
     expect(dispatchForApp.mock.calls[1]![2]).toMatchObject({ session: 'task-1' });
     deliver.mockClear();

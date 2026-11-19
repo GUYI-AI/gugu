@@ -29,12 +29,12 @@ export function matchTaskTurns(connection: BetterSqlite3.Database, query: string
     const rows = connection.prepare(`WITH hit AS MATERIALIZED (SELECT r.id, r.session_id, r.seq FROM turn_text_rows r WHERE ${where}),
       top AS (SELECT hit.id, t.rowid AS turn_row FROM hit JOIN sessions s ON s.id = hit.session_id
         JOIN session_turns t ON t.session_id = hit.session_id AND t.seq = hit.seq
-        WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = s.project_id AND p.workspace_provider != 'local')
+        WHERE NOT EXISTS (SELECT 1 FROM workspaces w WHERE w.id = s.workspace_id AND (w.kind = 'byoi' OR w.location = 'remote' OR w.type != 'local'))
         ORDER BY t.rowid DESC, hit.id DESC LIMIT ? OFFSET ?)
-      SELECT r.session_id, r.item_id, r.role, r.text, top.turn_row, json_extract(s.config, '$.agentDisplayName') AS agent_display_name, s.project_id, s.archived_at
+      SELECT r.session_id, r.item_id, r.role, r.text, top.turn_row, json_extract(s.config, '$.agentDisplayName') AS agent_display_name, s.archived_at
       FROM top JOIN turn_text_rows r ON r.id = top.id JOIN sessions s ON s.id = r.session_id
       ORDER BY top.turn_row DESC, top.id DESC`).all(...condition.params, Math.min(Math.max(limit, 1), 100), Math.max(0, offset)) as {
-        session_id: string; item_id: string; role: string; text: string; turn_row: number; agent_display_name: string | null; project_id: string; archived_at: string | null;
+        session_id: string; item_id: string; role: string; text: string; turn_row: number; agent_display_name: string | null; archived_at: string | null;
       }[];
     if (!rows.length) return [];
     const turns = new Map<number, { at: string; activity: Map<string, ActivityPreviewSource | null>; messageTimes: Map<string, bigint | undefined> }>();
@@ -47,7 +47,7 @@ export function matchTaskTurns(connection: BetterSqlite3.Database, query: string
     }
     return rows.flatMap((row) => {
       const turn = turns.get(row.turn_row);
-      return turn ? [{ sessionId: row.session_id, projectId: row.project_id, agentDisplayName: row.agent_display_name, archived: row.archived_at !== null,
+      return turn ? [{ sessionId: row.session_id, agentDisplayName: row.agent_display_name, archived: row.archived_at !== null,
         itemId: row.item_id, role: row.role === 'user' ? 'user' as const : 'assistant' as const, excerpt: excerpt(row.text, query), activity: turn.activity.get(row.item_id) ?? null, at: turn.at,
         messageTime: turn.messageTimes.get(row.item_id) }] : [];
     });

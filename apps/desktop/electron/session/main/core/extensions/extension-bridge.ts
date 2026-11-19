@@ -61,7 +61,7 @@ import {
 } from '@shared/extensions/host-actions';
 import { annotationFilePath, EXTENSION_FILE_ANNOTATION_METHOD, parseFileAnnotation, type FileAnnotationAsk } from '@shared/extensions/file-annotation-draft';
 import { fileSync } from '@main/core/extensions/file-sync';
-import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
+import { isTaskHomeFolder } from '@main/core/folders/folders';
 import { fileRefOf, folderOf, isWorkspace, openingNameOf, openingViewOf, opensAsLink, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
 import { placeFor, placeLink, type FileOpenerCandidate } from '@shared/extensions/file-openers';
 import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
@@ -901,10 +901,8 @@ export async function deliverToSessionFilePage(candidate: Pick<FileOpenerCandida
  * verb opens into it: a link or a banner names where it opens (真源原则 13). Null until the renderer has reported a
  * session view at least once.
  */
-export function currentOrLastSession(): { sessionId: string; projectId: string } | null {
-  if (appView.activeSessionId && appView.activeProjectId) {
-    return { sessionId: appView.activeSessionId, projectId: appView.activeProjectId };
-  }
+export function currentOrLastSession(): { sessionId: string } | null {
+  if (appView.activeSessionId) return { sessionId: appView.activeSessionId };
   return lastSessionView;
 }
 
@@ -1256,7 +1254,7 @@ function deliver(binding: SurfaceBinding, action: ExtensionHostAction): Promise<
  * A session brought up the way a click on its row in the task list brings it, from any page of gugu — the way an agent's
  * banner brings its session up (notificationFocusSessionChannel): `showSession`, and a session's `compose`.
  */
-export async function bringSessionUp(session: { sessionId: string; projectId: string; beside?: true; groupParticipantRequestId?: string }): Promise<void> {
+export async function bringSessionUp(session: { sessionId: string; beside?: true; groupParticipantRequestId?: string }): Promise<void> {
   const [{ events }, { notificationFocusSessionChannel }] = await Promise.all([import('@main/lib/events'), import('@shared/events/appEvents')]);
   events.emit(notificationFocusSessionChannel, session);
 }
@@ -1383,11 +1381,12 @@ async function workspaceOf(binding: SurfaceBinding): Promise<ExtensionWorkspace 
   const mayReachWorkspace = capabilities.includes('files:read') || capabilities.includes('files:write');
   const sessionId = workspaceSession({ workspace: id });
   if (!sessionId) {
-    // A project's root folder, or one of its folders (`folder:`, on this computer or another — its path is said only here).
+    // A folder (`project:` — the protocol's name for one until S2 — or `folder:`, on this computer or another; its path is
+    // said only here). `projectId` names the folder.
     const target = workspaceTarget({ workspace: id });
     const { localRootOf } = await import('@main/core/extensions/app-files');
     const root = mayReachWorkspace ? await localRootOf({ workspace: id }).catch(() => null) : null;
-    const projectId = 'project' in target ? target.project : root?.projectId;
+    const projectId = 'project' in target ? target.project : root?.workspaceId ?? undefined;
     const elsewhere = 'folder' in target && !(await (await import('@main/core/sessions/session-family')).otherMachines().isThisDevice(target.folder.deviceId));
     return { id, ...(projectId ? { projectId } : {}), ...(root ? { root: root.workspaceRoot } : {}), ...(elsewhere ? { thisMachine: false as const } : {}) };
   }
@@ -1398,7 +1397,9 @@ async function workspaceOf(binding: SurfaceBinding): Promise<ExtensionWorkspace 
       id,
       sessionId,
       ...(elsewhere.agentId ? { agentId: elsewhere.agentId } : {}),
-      ...(elsewhere.projectId ? { projectId: elsewhere.projectId, ...(isImplicitSessionHomeProjectId(elsewhere.projectId) ? { taskHome: true as const } : {}) } : {}),
+      // That machine's summary names the session's root folder there (`projectId`); whether it is that machine's task
+      // home is not said from here.
+      ...(elsewhere.projectId ? { projectId: elsewhere.projectId } : {}),
       deviceId: elsewhere.deviceId,
       ...(elsewhere.deviceLabel ? { deviceLabel: elsewhere.deviceLabel } : {}),
     };
@@ -1413,7 +1414,8 @@ async function workspaceOf(binding: SurfaceBinding): Promise<ExtensionWorkspace 
     id,
     sessionId,
     ...(agentId ? { agentId } : {}),
-    ...(facts?.projectId ? { projectId: facts.projectId, ...(isImplicitSessionHomeProjectId(facts.projectId) ? { taskHome: true as const } : {}) } : {}),
+    // `projectId` names the session's root folder (the protocol's name until S2).
+    ...(facts?.folderId ? { projectId: facts.folderId, ...(isTaskHomeFolder(facts.folderId) ? { taskHome: true as const } : {}) } : {}),
     ...(mayReachWorkspace && facts?.workspaceRoot ? { root: facts.workspaceRoot } : {}),
   };
 }
@@ -1636,13 +1638,14 @@ interface ReportedPane {
 
 interface ReportedAppView {
   activeSessionId: string | null;
+  /** The active session's root folder: the App protocol's `activeProjectId` (renamed in S2). */
   activeProjectId: string | null;
   panes: readonly ReportedPane[];
 }
 
 let appView: ReportedAppView = { activeSessionId: null, activeProjectId: null, panes: [] };
 /** #6387 The last session view the person had on screen — survives leaving the session page. */
-let lastSessionView: { sessionId: string; projectId: string } | null = null;
+let lastSessionView: { sessionId: string } | null = null;
 
 function sameAppView(a: ReportedAppView, b: ReportedAppView): boolean {
   if (a.activeSessionId !== b.activeSessionId || a.activeProjectId !== b.activeProjectId) return false;
@@ -1668,9 +1671,7 @@ function sameAppView(a: ReportedAppView, b: ReportedAppView): boolean {
  * every keystroke would be paying for the privilege of learning nothing.
  */
 export function setExtensionAppView(next: ReportedAppView): void {
-  if (next.activeSessionId && next.activeProjectId) {
-    lastSessionView = { sessionId: next.activeSessionId, projectId: next.activeProjectId };
-  }
+  if (next.activeSessionId) lastSessionView = { sessionId: next.activeSessionId };
   if (sameAppView(appView, next)) return;
   appView = next;
   // The tabs report their sessions; an App sees them by the id it names agents with (F35), read once per view. A newer
@@ -1984,10 +1985,10 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
         (page, text) => deliver(page, { kind: 'taskMessage', text }));
     }
     case 'showTaskPages': {
-      const [{ showTaskPages }, { projectionTaskProject }, { openTaskPagesOfApp }] = await Promise.all([
+      const [{ showTaskPages }, { assertTaskLive }, { openTaskPagesOfApp }] = await Promise.all([
         import('./show-task-pages'), import('./projection-task'), import('../sessions/session-orchestration'),
       ]);
-      return showTaskPages(caller, { projectOf: projectionTaskProject, open: openTaskPagesOfApp, authorize: id => {
+      return showTaskPages(caller, { assertTask: assertTaskLive, open: openTaskPagesOfApp, authorize: id => {
         const service = extensionsService(); service.get(id);
         if (!service.isEnabled(id) || !service.hasCapability(id, 'agents:tools')) throw new Error('App task page access was revoked');
       } });
@@ -2140,7 +2141,7 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
           draftInChat: async (detail) => { await deliver(thePage(caller), { kind: 'compose', detail }); },
           draftInSession: async (session, text) => {
             // Opened the one way a session is opened, then the draft in its composer.
-            const opened = await (await import('./gugu-links')).openLink({ kind: 'session', sessionId: session.id, projectId: session.projectId });
+            const opened = await (await import('./gugu-links')).openLink({ kind: 'session', sessionId: session.id });
             if (opened.kind === 'failed') throw new Error(`The session did not open: ${opened.reason}${opened.detail ? ` (${opened.detail})` : ''}`);
             await deliver(thePage(caller), { kind: 'compose', sessionId: session.id, text });
           },
@@ -2295,11 +2296,10 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
     }
 
     case 'projectsList': {
-      const [{ getProjects }, { isImplicitSessionHomeProjectId }] = await Promise.all([
-        import('@main/core/projects/operations/getProjects'),
-        import('@shared/core/projects/session-home-project'),
-      ]);
-      return { projects: (await getProjects()).filter((project) => !isImplicitSessionHomeProjectId(project.id)).map(({ id, name }) => ({ id, name, workspace: projectWorkspace(id) })) };
+      // The protocol's "projects" are this computer's folders bound to a group (renamed with the protocol in S2).
+      const { listFolders } = await import('@main/core/folders/folders');
+      const { basename } = await import('node:path');
+      return { projects: listFolders().map(({ id, path }) => ({ id, name: basename(path) || path, workspace: projectWorkspace(id) })) };
     }
 
     case 'promptsList':
@@ -2598,14 +2598,14 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
     case 'showSession': {
       // The session the call names, wherever the page is (真源原则 13): here, or on another computer the task list shows.
       // The window's list is asked over the App command channel (the relay imports this file: imported when asked).
-      const [{ showSession, sessionHere }, { listedSessionProject }] = await Promise.all([
+      const [{ showSession, sessionHere }, { sessionListedByWindow }] = await Promise.all([
         import('@main/core/extensions/extension-show-session'),
         import('@main/core/extensions/extension-bridge-relay'),
       ]);
       // `peek` (G1): the session's own page beside the page that asked, in its slot — found the same way.
       if ((args as { peek?: unknown }).peek === true) {
-        const bringUp = async (session: { sessionId: string; projectId: string }) => { await deliver(thePage(caller), { kind: 'peek', target: { kind: 'session', ...session } }); };
-        await showSession(args.id, { projectHere: sessionHere, projectListed: listedSessionProject, bringUp });
+        const bringUp = async (session: { sessionId: string }) => { await deliver(thePage(caller), { kind: 'peek', target: { kind: 'session', ...session } }); };
+        await showSession(args.id, { here: sessionHere, listed: sessionListedByWindow, bringUp });
         return undefined;
       }
       // Otherwise it opens the one way every session is opened (gugu-links.openLink); its failure in this API's codes.

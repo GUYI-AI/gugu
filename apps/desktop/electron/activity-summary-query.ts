@@ -8,7 +8,7 @@ import { createActivityDeviceQuery, type ActivityQueryDeps } from './activity-de
 const inputSchema = z.object({
   since: z.string().datetime({ offset: true }).optional(), until: z.string().datetime({ offset: true }).optional(),
   time_zone: z.string().min(1).optional(), details: z.boolean().optional(),
-  session_id: z.string().min(1).max(512).optional(), project_id: z.string().min(1).max(512).optional(),
+  session_id: z.string().min(1).max(512).optional(), chat_id: z.string().min(1).max(512).optional(),
   limit: z.number().int().min(1).max(200).optional(), cursor: z.string().max(4096).optional(),
 }).strict()
 type Timeline = Awaited<ReturnType<ReturnType<typeof createActivityDeviceQuery>>>
@@ -79,7 +79,7 @@ export function createActivitySummaryQuery(options: { now?: () => number; timeZo
     const deviceSet = JSON.stringify(available.map(d => d.device_id).sort())
     const { cursor, limit } = q
     const signature = (since: string, until: string, timeZone: string) => JSON.stringify([
-      device ?? null, since, until, q.session_id ?? null, q.project_id ?? null, q.details === true || !!q.session_id, timeZone,
+      device ?? null, since, until, q.session_id ?? null, q.chat_id ?? null, q.details === true || !!q.session_id, timeZone,
     ])
     for (const [id, value] of held) if (value.expires <= now()) held.delete(id)
     let id: string, offset = 0, snapshot: Held
@@ -96,10 +96,10 @@ export function createActivitySummaryQuery(options: { now?: () => number; timeZo
       snapshot = previous
     } else {
       const at = now()
-      const query = activityQuerySchema.parse({ session_id: q.session_id, project_id: q.project_id,
+      const query = activityQuerySchema.parse({ session_id: q.session_id, chat_id: q.chat_id,
         since: q.since ?? today(at, zone), until: q.until ?? new Date(at).toISOString(), limit: 200 })
       // Only the journal's query keys cross to a device. Presentation is local.
-      const native = { since: query.since, until: query.until, session_id: query.session_id, project_id: query.project_id, limit: 200 }
+      const native = { since: query.since, until: query.until, session_id: query.session_id, chat_id: query.chat_id, limit: 200 }
       const scoped = { ...deps, devices: async () => available }
       const timeline = await read({ action: 'activity_list', device, ...native }, scoped, signal)
       let next = timeline.next_cursor

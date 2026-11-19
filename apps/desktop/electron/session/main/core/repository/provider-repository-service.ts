@@ -1,15 +1,16 @@
 import { err, Result } from '@gugu/session-shared/result';
 import { match } from 'ts-pattern';
 import { githubRepositoryResolver } from '@main/core/github/services/github-repository-resolver';
-import { projectManager } from '@main/core/projects/project-manager';
+import { openFolder } from '@main/core/workspaces/folder-runtime/folder-runtimes';
 import type { ProviderRepositoryResult } from '@shared/provider-repository';
 
 export class ProviderRepositoryService {
-  async resolveProject(projectId: string): Promise<ProviderRepositoryResult> {
-    const project = projectManager.getProject(projectId);
-    if (!project) return err({ type: 'no_remote' });
+  async resolveFolder(folderId: string): Promise<ProviderRepositoryResult> {
+    const opened = await openFolder(folderId);
+    if (!opened.success) return err({ type: 'no_remote' });
+    const folder = opened.data;
 
-    const remoteState = await project.getRemoteState();
+    const remoteState = await folder.getRemoteState();
     if (!remoteState.hasRemote) return err({ type: 'no_remote' });
     if (!remoteState.selectedRemoteUrl) return err({ type: 'invalid_remote' });
 

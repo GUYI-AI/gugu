@@ -14,7 +14,7 @@ const f = vi.hoisted(() => ({
   dialogFile: '',
   openIn: vi.fn(async () => undefined),
   windowsNames: false,
-  recorded: vi.fn(async () => null as { projectId: string; path: string } | null),
+  recorded: vi.fn(async () => null as { chatId: string; path: string } | null),
   token: vi.fn(async () => null as string | null),
 }));
 // `windowsNames`: one case names saved files as Windows does (`:` saved as `_`) on this real disk. Only `entryPath`, the one
@@ -40,12 +40,13 @@ vi.mock('@main/lib/events', () => {
 vi.mock('@main/core/app/service', () => ({ appService: { openIn: f.openIn } }));
 vi.mock('@main/core/extensions/extensions-root', () => ({ extensionsService: () => ({ hasCapability: (_app: string, cap: string) => f.capabilities.has(cap), get: () => ({ manifest: { id: 'reader' } }) }) }));
 vi.mock('@main/core/extensions/account-token', () => ({ currentAccountAccessToken: f.token, resolveAccountFile: vi.fn(), publishAccountFile: vi.fn() }));
-vi.mock('@shared/extensions/app-files-core', async (original) => ({ ...(await original<object>()), recordedProjectFolder: f.recorded }));
+vi.mock('@shared/extensions/app-files-core', async (original) => ({ ...(await original<object>()), recordedFolder: f.recorded }));
 vi.mock('@main/core/extensions/file-sync', () => ({ fileSync: {}, localFileService: { removed() {}, renamed() {} }, fileServiceUrl: vi.fn() }));
 vi.mock('@main/core/extensions/extension-icon', () => ({ renderExtensionIcon: vi.fn() }));
 vi.mock('@main/core/sessions/session-family', () => ({ otherMachines: () => ({ isThisDevice: async (id: string) => id === 'dev-here' }) }));
 vi.mock('@main/core/extensions/app-programs-elsewhere', () => ({ sessionMachine: f.machine, callOnSessionMachine: f.remote }));
-vi.mock('@main/core/extensions/extension-agent-context', () => ({ agentSessionContext: async () => ({ workspaceRoot: f.root, projectId: 'p', workspaceId: 'w' }) }));
+vi.mock('@main/core/folders/folders', () => ({ rootFolderOf: () => ({ id: 'p' }), getFolder: () => undefined, listFolders: () => [] }));
+vi.mock('@main/core/extensions/extension-agent-context', () => ({ agentSessionContext: async () => ({ workspaceRoot: f.root, folderId: 'p', workspaceId: 'w' }) }));
 vi.mock('@main/core/runtime/runtime-manager', () => ({ runtimeManager: { acquire: async () => ({ value: { git: { openWorktree: async () => { throw new Error('no git'); } } }, release: async () => undefined }) } }));
 vi.mock('@main/core/workspaces/workspace-runtime', () => ({
   acquireWorkspaceRuntime: async (_r: unknown, workDir: string) => {
@@ -364,7 +365,7 @@ describe('listing', () => {
   });
 });
 
-describe('a project folder on another machine', () => {
+describe('a folder on another machine', () => {
   const place = { workspace: 'folder:dev-b/w1' };
   it('asks for all-machines before anything goes there', async () => {
     f.capabilities.add('files:read');
@@ -386,14 +387,14 @@ describe('a project folder on another machine', () => {
   it('opening one of its files opens it beside the page, in its project on that machine as the account records it', async () => {
     f.capabilities.add('files:read').add('files:read:all-machines');
     f.token.mockResolvedValue(`x.${Buffer.from(JSON.stringify({ sub: '22222222-2222-4222-8222-222222222222' })).toString('base64url')}.x`);
-    f.recorded.mockResolvedValueOnce({ projectId: 'p-b', path: '/home/b/repo' });
+    f.recorded.mockResolvedValueOnce({ chatId: 'chat-b', path: '/home/b/repo' });
     await expect(openWithTarget(page(), { ref: { workspace: place.workspace, id: 'docs/x.pdf' } })).resolves.toEqual({
       kind: 'peek',
-      target: { kind: 'folder', place, deviceId: 'dev-b', projectId: 'p-b', workspaceId: 'w1', path: 'docs/x.pdf', absolutePath: '/home/b/repo/docs/x.pdf', name: 'x.pdf', ask: false },
+      target: { kind: 'folder', place, deviceId: 'dev-b', workspaceId: 'w1', path: 'docs/x.pdf', absolutePath: '/home/b/repo/docs/x.pdf', name: 'x.pdf', ask: false },
     });
-    expect(f.recorded).toHaveBeenLastCalledWith(expect.any(String), '22222222-2222-4222-8222-222222222222', { deviceId: 'dev-b', workspaceId: 'w1' });
+    expect(f.recorded).toHaveBeenLastCalledWith(expect.any(String), { deviceId: 'dev-b', workspaceId: 'w1' });
     // A Windows machine's path keeps its own separator.
-    f.recorded.mockResolvedValueOnce({ projectId: 'p-b', path: 'C:\\repo' });
+    f.recorded.mockResolvedValueOnce({ chatId: 'chat-b', path: 'C:\\repo' });
     await expect(openWithTarget(page(), { ref: { workspace: place.workspace, id: 'docs/x.pdf' } })).resolves.toMatchObject({ target: { absolutePath: 'C:\\repo\\docs\\x.pdf' } });
   });
   it('opening one of its files asks for all-machines, and says so when the account no longer has the folder', async () => {

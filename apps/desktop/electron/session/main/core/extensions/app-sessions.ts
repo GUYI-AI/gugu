@@ -1,14 +1,15 @@
-import { isAbsolute, resolve } from 'node:path';
+import { basename, isAbsolute, resolve } from 'node:path';
 import { canonicalPath } from '@gugu/session-core/files';
 import { gitErrorMessage, isNotRepositoryInspectionError } from '@gugu/session-core/git';
 import { and, eq } from 'drizzle-orm';
 import { TRANSCRIPT_SOURCE_IDS, type TranscriptSource } from '@gugu/core/shared/types/transcripts';
 import { db } from '@main/db/client';
-import { projectRemotes, projects, sessions } from '@main/db/schema';
+import { workspaceRemotes, workspaces } from '@main/db/schema';
+import { listFolders, listUnboundFolders } from '@main/core/folders/folders';
 import { getLocalSessionSource } from '@main/core/session-import/host-source';
 import { createLocalGroupOf } from '@main/core/session-history/local-session-group';
 import { findRepoRoot } from '@main/core/session-history/repo-root';
-import { projectRootFolder } from '@main/core/projects/operations/project-folders';
+import { folderNamed } from './app-files';
 import { parseRepositoryRef } from '@shared/repository-ref';
 import { sessionPageNumber, type AppSessionGroup, type AppSessionIndex } from '@shared/extensions/app-sessions';
 
@@ -30,23 +31,25 @@ export async function indexSessionsForApp(args: Record<string, unknown>): Promis
   const groupPaths = (args.groupPaths as string[] | undefined) ?? [];
   let cwd: string | undefined;
   if (args.project !== undefined) {
-    if (typeof args.project !== 'string' || !args.project) return invalid('project is a project id or an absolute directory');
+    // `project` names a folder (the App protocol's name until S2) or an absolute directory.
+    if (typeof args.project !== 'string' || !args.project) return invalid('project is a folder id or an absolute directory');
     if (isAbsolute(args.project)) cwd = canonicalPath(args.project);
     else {
-      const root = await projectRootFolder(args.project);
-      if (!root) throw Object.assign(new Error('Project has no root folder on this machine'), { code: 'not-found' });
-      cwd = root.path;
+      const folder = folderNamed(args.project);
+      if (!folder) throw Object.assign(new Error('That folder is not on this machine'), { code: 'not-found' });
+      cwd = folder.path;
     }
   }
-  const [page, sessionProjects, registeredRemotes] = await Promise.all([
+  const [page, registeredRemotes] = await Promise.all([
     getLocalSessionSource().list({ engine: source, cwd, offset, limit }),
-    db.select({ projectId: sessions.projectId, projectPath: projects.path, projectName: projects.name })
-      .from(sessions).innerJoin(projects, eq(projects.id, sessions.projectId)),
-    db.select({ path: projects.path, url: projectRemotes.remoteUrl }).from(projects)
-      .leftJoin(projectRemotes, and(eq(projectRemotes.projectId, projects.id), eq(projectRemotes.remoteName, 'origin'))),
+    // Every recorded folder answers from its record (no remote: none), as the projects did; git is asked only elsewhere.
+    db.select({ path: workspaces.path, url: workspaceRemotes.remoteUrl }).from(workspaces)
+      .leftJoin(workspaceRemotes, and(eq(workspaceRemotes.workspaceId, workspaces.id), eq(workspaceRemotes.remoteName, 'origin')))
+      .where(eq(workspaces.kind, 'project-root')),
   ]);
-  const localGroupOf = createLocalGroupOf(sessionProjects);
-  const remotes = new Map<string, string | null>(registeredRemotes.map(({ path, url }) => [path, url]));
+  // Transcripts group under this computer's recorded folders (the grouping leaves the task home out by its path).
+  const localGroupOf = createLocalGroupOf([...listFolders(), ...listUnboundFolders()].map(({ path }) => ({ path, name: basename(path) || path })));
+  const remotes = new Map<string, string | null>(registeredRemotes.flatMap(({ path, url }) => (path ? [[path, url] as const] : [])));
   const repositories = new Map<string | null, Promise<Pick<AppSessionGroup, 'repositoryUrl' | 'repositoryError'>>>();
   // @@@group-repository - `findRepoRoot` only reads the disk (a `.git` there), so git has the last word: a folder git calls
   // "not a repository" (an empty `.git`) is a plain folder; any other failure is this group's, said on it, never the index's.

@@ -1,7 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { db, sqlite } from '@main/db/client';
 import { sessions, workspaces } from '@main/db/schema';
-import { readProjects } from '../projects/operations/getProjects';
 import { log } from '@main/lib/logger';
 import type { Session } from '@shared/core/sessions/sessions';
 import type {
@@ -11,11 +10,9 @@ import type {
   TaskTurnHit,
   WorkspaceFileHit,
 } from '@shared/core/search';
-import type { Project } from '@shared/projects';
 import { sessionEvents } from '../sessions/session-events';
 import { mapSessionRowToSession } from '../sessions/utils';
 import { taskName } from '../sessions/task-name';
-import { projectEvents } from '../projects/project-events';
 import { searchTaskTurnMatches } from './task-turn-search';
 import { textCondition } from './text-condition';
 import { workspaceFileIndexService } from './workspace-file-index-service';
@@ -26,7 +23,6 @@ import { historyTime } from '@gugu/core/shared/conversationHistoryTime';
 type FtsRow = {
   item_type: string;
   item_id: string;
-  project_id: string | null;
   title: string;
   rank: number;
 };
@@ -34,27 +30,18 @@ type FtsRow = {
 type RecentSessionRow = {
   id: string;
   agent_display_name: string | null;
-  project_id: string;
   last_interacted_at: string | null;
 };
 
-/** 已下架的 SSH 远程项目(#6264)行原样留在库里、也可能早已写进 search_index:查询时按项目的 workspace_provider 排除。 */
-const LOCAL_PROJECTS_ONLY = `NOT EXISTS (SELECT 1 FROM projects p
-  WHERE p.id = COALESCE(search_index.project_id,
-    CASE WHEN search_index.item_type = 'project' THEN search_index.item_id END)
-    AND p.workspace_provider != 'local')`;
+/** 已下架的 SSH 远程工作区(#6264)上的会话原样留在库里、也可能早已写进 search_index:查询时按会话的工作区排除。 */
+const RETIRED_WORKSPACE = `(w.kind = 'byoi' OR w.location = 'remote' OR w.type != 'local')`;
+const LOCAL_SESSIONS_ONLY = `NOT EXISTS (SELECT 1 FROM sessions s JOIN workspaces w ON w.id = s.workspace_id
+  WHERE s.id = search_index.item_id AND ${RETIRED_WORKSPACE})`;
 
 class SearchService {
   taskTurnIndexStatus() { return taskTurnIndexStatus(sqlite); }
   initialize(): void {
-    projectEvents.on('project:created', (project) => this.upsertProject(project));
-    projectEvents.on('project:deleted', (projectId) => this.removeByType('project', projectId));
-
-    sessionEvents.on('session:created', (session) => {
-      const project = readProjects().find(project => project.id === session.projectId);
-      if (project) this.upsertProject(project);
-      void this.upsertSession(session);
-    });
+    sessionEvents.on('session:created', (session) => void this.upsertSession(session));
     // Every change of a task's one name is announced here (renameSession.ts), bound names included:
     // a rename, a publish, another device, and the roster projection filling in at sign-in.
     sessionEvents.on('session:renamed', (sessionId) => {
@@ -66,7 +53,8 @@ class SearchService {
       this.removeByType('session', sessionId)
     );
 
-    sqlite.prepare("DELETE FROM search_index WHERE item_type = 'command'").run();
+    // Commands and (before groups were the only container) projects were indexed by earlier releases.
+    sqlite.prepare("DELETE FROM search_index WHERE item_type IN ('command', 'project')").run();
     this.backfill();
   }
 
@@ -81,8 +69,8 @@ class SearchService {
     if (!condition) return [];
     let rows: FtsRow[];
     try {
-      rows = sqlite.prepare(`SELECT item_type, item_id, project_id, title, ${condition.sql.includes('MATCH') ? 'bm25(search_index)' : '0'} AS rank
-        FROM search_index WHERE ${condition.sql} AND ${LOCAL_PROJECTS_ONLY} ORDER BY rank LIMIT 30`).all(...condition.params) as FtsRow[];
+      rows = sqlite.prepare(`SELECT item_type, item_id, title, ${condition.sql.includes('MATCH') ? 'bm25(search_index)' : '0'} AS rank
+        FROM search_index WHERE ${condition.sql} AND ${LOCAL_SESSIONS_ONLY} ORDER BY rank LIMIT 30`).all(...condition.params) as FtsRow[];
     } catch (e) {
       log.warn('SearchService: FTS query failed', { query, error: String(e) });
       return [];
@@ -91,7 +79,6 @@ class SearchService {
     const results: SearchItem[] = rows.map((r) => ({
       kind: r.item_type as SearchItemKind,
       id: r.item_id,
-      projectId: r.project_id,
       title: r.title,
       subtitle: '',
       score: r.rank,
@@ -127,11 +114,10 @@ class SearchService {
   private recents(): SearchItem[] {
     const rows = sqlite
       .prepare(
-        `SELECT c.id, json_extract(c.config, '$.agentDisplayName') AS agent_display_name, c.project_id, c.last_interacted_at
+        `SELECT c.id, json_extract(c.config, '$.agentDisplayName') AS agent_display_name, c.last_interacted_at
          FROM sessions c
          WHERE c.archived_at IS NULL AND c.automation_run_id IS NULL
-           AND NOT EXISTS (SELECT 1 FROM projects p
-             WHERE p.id = c.project_id AND p.workspace_provider != 'local')
+           AND NOT EXISTS (SELECT 1 FROM workspaces w WHERE w.id = c.workspace_id AND ${RETIRED_WORKSPACE})
          ORDER BY c.last_interacted_at DESC
          LIMIT 10`
       )
@@ -140,7 +126,6 @@ class SearchService {
     return rows.map((r) => ({
       kind: 'session' as const,
       id: r.id,
-      projectId: r.project_id,
       title: taskName({ id: r.id, config: { agentDisplayName: r.agent_display_name ?? undefined } }),
       lastInteractedAt: r.last_interacted_at,
       subtitle: '',
@@ -163,29 +148,21 @@ class SearchService {
       .filter(Boolean)
       .join(' ');
     try {
-      this.replace('session', session.id, session.projectId, session.title, keywords);
+      this.replace('session', session.id, session.title, keywords);
     } catch (e) {
       log.warn('SearchService: upsertSession failed', { sessionId: session.id, error: String(e) });
     }
   }
 
-  private upsertProject(project: Project): void {
-    try {
-      this.replace('project', project.id, null, project.name, project.path);
-    } catch (e) {
-      log.warn('SearchService: upsertProject failed', {
-        projectId: project.id,
-        error: String(e),
-      });
-    }
-  }
-
-  /** FTS5 has no key to replace on: an item's row is deleted before it is written again. */
-  private replace(itemType: SearchItemKind, itemId: string, projectId: string | null, title: string, keywords: string): void {
+  /**
+   * FTS5 has no key to replace on: an item's row is deleted before it is written again. The table's `project_id`
+   * column is left null (@@@c1-legacy-project: dropped with the projects table next release).
+   */
+  private replace(itemType: SearchItemKind, itemId: string, title: string, keywords: string): void {
     sqlite.transaction(() => {
       sqlite.prepare('DELETE FROM search_index WHERE item_id = ? AND item_type = ?').run(itemId, itemType);
-      sqlite.prepare('INSERT INTO search_index(item_type, item_id, project_id, title, keywords) VALUES (?, ?, ?, ?, ?)')
-        .run(itemType, itemId, projectId, title, keywords);
+      sqlite.prepare('INSERT INTO search_index(item_type, item_id, title, keywords) VALUES (?, ?, ?, ?)')
+        .run(itemType, itemId, title, keywords);
     })();
   }
 
@@ -207,11 +184,9 @@ class SearchService {
 
       if (count > 0) return;
 
-      const allProjects = readProjects();
       const allSessions = db
         .select({
           id: sessions.id,
-          projectId: sessions.projectId,
           config: sessions.config,
           archivedAt: sessions.archivedAt,
           linkedIssue: sessions.linkedIssue,
@@ -223,24 +198,20 @@ class SearchService {
         .filter((c) => !c.archivedAt);
 
       const upsertStmt = sqlite.prepare(
-        `INSERT INTO search_index(item_type, item_id, project_id, title, keywords)
-         VALUES (?, ?, ?, ?, ?)`
+        `INSERT INTO search_index(item_type, item_id, title, keywords)
+         VALUES (?, ?, ?, ?)`
       );
 
       // Names as they read now: boot loads the roster projection before the search index, and every later
       // name change arrives as `session:renamed` and is reindexed above.
       sqlite.transaction(() => {
-        for (const p of allProjects) {
-          upsertStmt.run('project', p.id, null, p.name, p.path);
-        }
         for (const c of allSessions) {
           const keywords = [c.branchName, c.linkedIssue?.identifier, c.linkedIssue?.title].filter(Boolean).join(' ');
-          upsertStmt.run('session', c.id, c.projectId, taskName(c), keywords);
+          upsertStmt.run('session', c.id, taskName(c), keywords);
         }
       })();
 
       log.info('SearchService: backfilled search index', {
-        projects: allProjects.length,
         sessions: allSessions.length,
       });
     } catch (e) {

@@ -8,7 +8,6 @@ import { agentScheduleChangeText, restoreAgentSchedules, runAgentScheduleAction,
 import { AutomationScheduler, type SchedulerCallbacks } from './automation-scheduler';
 import { archiveSession } from '@main/core/sessions/archiveSession';
 import { sessionEvents } from '@main/core/sessions/session-events';
-import { projectEvents } from '@main/core/projects/project-events';
 import { AutomationsService } from './automations-service';
 import { closeSpentOneTimeAutomation, getAutomation, insertRun, startCreatingSession } from './repo';
 import { setOwnerTimeZoneContext } from '@shared/core/automations/timezone';
@@ -40,8 +39,8 @@ const KEEPER_NEXT_DUE = `select min(r.scheduled_at) as next from automation_runs
 
 // 2026-10-15 06:00 北京时间
 const NOW = Date.UTC(2026, 9, 14, 22, 0, 0);
-const AGENT = { sessionId: 'assistant-session', projectId: 'project-1', provider: 'claude' };
-const OTHER = { sessionId: 'other-session', projectId: 'project-1', provider: 'codex' };
+const AGENT = { sessionId: 'assistant-session', provider: 'claude' };
+const OTHER = { sessionId: 'other-session', provider: 'codex' };
 
 let fixture: Awaited<ReturnType<typeof openFixture>>;
 let service: AutomationsService;
@@ -139,7 +138,6 @@ describe('schedule_create / schedule_list / schedule_cancel', () => {
     const automation = await getAutomation(scheduleIdOf(created));
     expect(automation).toMatchObject({
       agentSessionId: AGENT.sessionId,
-      projectId: 'project-1',
       enabled: true,
       agentSession: { name: '个人助理', gone: false },
     });
@@ -192,7 +190,7 @@ describe('schedule_create / schedule_list / schedule_cancel', () => {
       service.updateAutomationSettings(id, { agentConfig: { prompt: 'y', provider: 'claude', autoApprove: false } })
     ).rejects.toThrow('agent_schedule_not_editable');
     await expect(
-      service.updateAutomationSettings(id, { triggerConfig: { expr: '0 9 * * *', tz: 'Asia/Shanghai' }, projectId: 'project-1' })
+      service.updateAutomationSettings(id, { triggerConfig: { expr: '0 9 * * *', tz: 'Asia/Shanghai' }, sessionConfig: null })
     ).rejects.toThrow('agent_schedule_not_editable');
 
     const moved = await service.updateAutomationSettings(id, { triggerConfig: { expr: '0 9 * * *', tz: 'Asia/Shanghai' } });
@@ -633,19 +631,14 @@ describe('orphaned agent schedules (#933)', () => {
     expect(fixture.sqlite.prepare('SELECT deleted_at FROM automations WHERE id = ?').get(id)).toEqual({ deleted_at: null });
   });
 
-  it.each(['session', 'project'] as const)('cleans after a real %s deletion event even without opening the list', async (kind) => {
+  it('cleans after a real session deletion event even without opening the list', async () => {
     const id = scheduleIdOf(await runAgentScheduleAction(AGENT, { action: 'schedule_create', prompt: 'cascade', at: '2026-10-15T07:00', tz: 'Asia/Shanghai' }, service));
     // Exercise the real lifecycle emitter while keeping this database test out of the scheduler's timer loop.
     const start = vi.spyOn(AutomationScheduler.prototype, 'start').mockImplementation(() => {});
     try {
       service.start();
-      if (kind === 'session') {
-        fixture.sqlite.prepare('DELETE FROM sessions WHERE id = ?').run(AGENT.sessionId);
-        sessionEvents._emit('session:deleted', AGENT.sessionId);
-      } else {
-        fixture.sqlite.prepare('DELETE FROM projects WHERE id = ?').run('project-1');
-        projectEvents._emit('project:deleted', 'project-1');
-      }
+      fixture.sqlite.prepare('DELETE FROM sessions WHERE id = ?').run(AGENT.sessionId);
+      sessionEvents._emit('session:deleted', AGENT.sessionId);
       await vi.waitFor(async () => expect(await getAutomation(id)).toBeNull());
       expect(fixture.sqlite.prepare('SELECT id FROM automation_runs WHERE automation_id = ?').all(id)).toEqual([]);
     } finally {

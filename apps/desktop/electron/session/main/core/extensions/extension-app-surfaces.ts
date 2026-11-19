@@ -13,7 +13,7 @@ export interface AppSurfaceNative {
   update(update: AppSurfaceUpdate): void;
   close(): void;
 }
-type Surface = { id: string; caller: BridgeCaller; sessionId: string; projectId?: string; options: AppSurfaceOptions;
+type Surface = { id: string; caller: BridgeCaller; sessionId: string; options: AppSurfaceOptions;
   access: ReturnType<typeof openExtensionProgramAccess>; controller: AbortController; native?: AppSurfaceNative;
   release(): void; off(): void; closed: boolean; preparing: boolean; opening?: Promise<void> };
 
@@ -21,9 +21,8 @@ type Surface = { id: string; caller: BridgeCaller; sessionId: string; projectId?
 export class ExtensionAppSurfaces {
   private readonly surfaces = new Map<string, Surface>();
   private readonly tasks = new Map<string, number>();
-  private readonly deletedProjects = new Set<string>();
   constructor(private readonly authorize: (extensionId: string) => void,
-    private readonly projectOf: (sessionId: string) => Promise<string>,
+    private readonly assertTask: (sessionId: string) => Promise<void>,
     private readonly create: (input: { id: string; extensionId: string; sessionId: string; options: AppSurfaceOptions;
       signal: AbortSignal; closed(reason: string): void }) => Promise<AppSurfaceNative>,
     private readonly report: (error: unknown) => void) {}
@@ -62,10 +61,9 @@ export class ExtensionAppSurfaces {
     // The call authorizes creation. Normal completion must not prevent a slow display;
     // actual interruption, App withdrawal, or explicit release still cancels preparation.
     const signal = anySignal([caller.interruption, access.signal, controller.signal]);
-    surface.opening = Promise.resolve().then(() => this.projectOf(sessionId)).then(async projectId => {
+    surface.opening = Promise.resolve().then(() => this.assertTask(sessionId)).then(async () => {
       signal.throwIfAborted();
-      if (surface.closed || (this.tasks.get(sessionId) ?? 0) !== epoch || this.deletedProjects.has(projectId)) throw new Error('App surface task ended');
-      surface.projectId = projectId;
+      if (surface.closed || (this.tasks.get(sessionId) ?? 0) !== epoch) throw new Error('App surface task ended');
       const native = await this.create({ id: surface.id, extensionId: caller.extensionId, sessionId, options: surface.options,
         signal, closed: reason => this.end(surface, reason) });
       if (surface.closed || signal.aborted) { native.close(); return; }
@@ -112,9 +110,8 @@ export class ExtensionAppSurfaces {
     finally { surface.access.release(); this.emit(surface, { id: surface.id, type: 'closed', reason }); }
   }
   private end(surface: Surface, reason: string): void { try { this.close(surface, reason); } catch (error) { this.report(error); } }
-  closeScope(scope: { sessionId: string } | { projectId: string }): void {
-    if ('sessionId' in scope) this.tasks.set(scope.sessionId, (this.tasks.get(scope.sessionId) ?? 0) + 1);
-    else this.deletedProjects.add(scope.projectId);
-    for (const surface of this.surfaces.values()) if ('sessionId' in scope ? surface.sessionId === scope.sessionId : surface.projectId === scope.projectId) this.end(surface, 'App surface task ended');
+  closeScope(scope: { sessionId: string }): void {
+    this.tasks.set(scope.sessionId, (this.tasks.get(scope.sessionId) ?? 0) + 1);
+    for (const surface of this.surfaces.values()) if (surface.sessionId === scope.sessionId) this.end(surface, 'App surface task ended');
   }
 }

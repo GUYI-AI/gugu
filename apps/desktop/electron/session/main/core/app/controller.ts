@@ -7,7 +7,7 @@ import { getDiagnosticLogAttachment } from '@main/lib/file-logger';
 import { log } from '@main/lib/logger';
 import { createRPCController } from '@shared/lib/ipc/rpc';
 import type { OpenInAppId } from '@shared/openInApps';
-import { resolveWorkspace } from '../projects/utils';
+import { resolveWorkspace } from '@main/core/workspaces/resolve-workspace';
 import { appService } from './service';
 import { callAssistantApp } from './assistant-app';
 
@@ -57,10 +57,10 @@ export const appController = createRPCController({
     }
   },
   /** `workspace`:这个文件属于哪个工作区 —— 给了就也放行那个工作区里的路径(它可能在 home 外,#7191)。 */
-  openPath: async (path: string, workspace?: { projectId: string; workspaceId: string }) => {
+  openPath: async (path: string, workspace?: { workspaceId: string }) => {
     try {
       const workspaceRoot = workspace
-        ? (await resolveWorkspace(workspace.projectId, workspace.workspaceId))?.path
+        ? (await resolveWorkspace(workspace.workspaceId))?.path
         : undefined;
       // 说了是哪个工作区却找不到 → 报出来,❌ 悄悄退回只认 home。
       if (workspace && !workspaceRoot) throw new Error(`Workspace is not open: ${workspace.workspaceId}`);

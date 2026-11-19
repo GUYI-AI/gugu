@@ -105,7 +105,7 @@ function makeTerminalProvider(workspaceId: string): {
       const pty = new FakePty();
       spawned.push(pty);
       requests.push(request);
-      ptySessionRegistry.register(`${terminal.projectId}:${workspaceId}:${terminal.id}`, pty, {
+      ptySessionRegistry.register(`${workspaceId}:${workspaceId}:${terminal.id}`, pty, {
         size: { cols: 80, rows: 24 },
         preserveBufferOnExit: true,
       });
@@ -137,7 +137,6 @@ function mockPlatform(platform: NodeJS.Platform): void {
 function baseArgs(runLifecycleScript = vi.fn()) {
   return {
     workspace: makeWorkspace(runLifecycleScript),
-    projectId: 'project-1',
     workspaceId: 'workspace-1',
     type: 'run' as const,
     script: 'pnpm dev',
@@ -264,7 +263,7 @@ describe('runLifecycleScriptWithPolicy', () => {
     );
     const coordinatorPromise = runLifecycleScriptWithPolicy(baseArgs(runLifecycleScript));
 
-    const ptySessionId = 'project-1:workspace-1:script-lifecycle-run';
+    const ptySessionId = 'workspace-1:workspace-1:script-lifecycle-run';
     const pty = {
       write: vi.fn(),
       resize: vi.fn(),
@@ -276,7 +275,6 @@ describe('runLifecycleScriptWithPolicy', () => {
 
     expect(
       stopLifecycleScriptSession({
-        projectId: 'project-1',
         workspaceId: 'workspace-1',
         type: 'run',
         origin: 'manual',
@@ -284,7 +282,6 @@ describe('runLifecycleScriptWithPolicy', () => {
     ).toBe(true);
     expect(
       stopLifecycleScriptSession({
-        projectId: 'project-1',
         workspaceId: 'workspace-1',
         type: 'run',
         origin: 'manual',
@@ -336,18 +333,15 @@ describe('runLifecycleScriptWithPolicy', () => {
 
   it('runs a manual respawn policy script again after the first PTY exits', async () => {
     mockPlatform('win32');
-    const projectId = 'project-rerun';
     const workspaceId = 'workspace-rerun';
     const { provider, spawned } = makeTerminalProvider(workspaceId);
     const service = new LifecycleScriptService({
-      projectId,
       workspaceId,
       terminals: provider,
     });
     const workspace = { lifecycleService: service } as never;
     const args = {
       workspace,
-      projectId,
       workspaceId,
       type: 'run' as const,
       script: 'pnpm dev',
@@ -377,11 +371,11 @@ describe('runLifecycleScriptWithPolicy', () => {
     await when(() => spawned.length >= 3);
     expect(spawned).toHaveLength(3);
 
-    ptySessionRegistry.unregister('project-rerun:workspace-rerun:script-lifecycle-run');
+    ptySessionRegistry.unregister('workspace-rerun:workspace-rerun:script-lifecycle-run');
   });
 
   it('does not record a stale stopped state when stopping an idle lifecycle prompt', async () => {
-    const ptySessionId = 'project-idle:workspace-idle:script-lifecycle-run';
+    const ptySessionId = 'workspace-idle:workspace-idle:script-lifecycle-run';
     const pty = {
       write: vi.fn(),
       resize: vi.fn(),
@@ -393,7 +387,6 @@ describe('runLifecycleScriptWithPolicy', () => {
 
     expect(
       stopLifecycleScriptSession({
-        projectId: 'project-idle',
         workspaceId: 'workspace-idle',
         type: 'run',
         origin: 'manual',
@@ -409,7 +402,6 @@ describe('runLifecycleScriptWithPolicy', () => {
     await expect(
       runLifecycleScriptWithPolicy({
         ...baseArgs(runLifecycleScript),
-        projectId: 'project-idle',
         workspaceId: 'workspace-idle',
       })
     ).resolves.toMatchObject({ kind: 'succeeded' });

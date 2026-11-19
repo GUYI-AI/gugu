@@ -82,7 +82,7 @@ vi.mock('@main/core/acp/session-summary-reader', () => ({
       )
     ),
 }));
-vi.mock('@main/core/projects/utils', () => ({
+vi.mock('@main/core/workspaces/resolve-workspace', () => ({
   resolveSession: () => ({ sessions: { stopSession: () => Promise.resolve() } }),
   resolveWorkspace: () => ({ path: '/tmp/wc' }),
 }));

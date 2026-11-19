@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { hydrateSession } from '@main/core/sessions/hydrateSession';
 import { issueController } from '@main/core/issues/controller';
-import { openProject } from '@main/core/projects/operations/openProject';
-import { projectManager } from '@main/core/projects/project-manager';
+import { openFolder } from '@main/core/workspaces/folder-runtime/folder-runtimes';
 import { recordStartFailure } from '@main/core/session-timeline/start-failures';
 import { appSettingsService } from '@main/core/settings/settings-service';
 import { generateRandom } from '@main/core/sessions/name-generation/generateSessionName';
@@ -49,10 +48,7 @@ vi.mock('@main/core/session-timeline/start-failures', () => ({ recordStartFailur
 vi.mock('@main/core/agents/ensure-agent-installed', () => ({
   isHarnessRuntimeMissing: () => false,
 }));
-vi.mock('@main/core/projects/operations/ensure-repository-workspace', () => ({
-  ensureRepositoryWorkspace: vi.fn().mockResolvedValue('ws-repo-1'),
-}));
-vi.mock('@main/core/projects/operations/openProject', () => ({ openProject: vi.fn() }));
+vi.mock('@main/core/folders/folders', () => ({ getFolder: vi.fn(() => ({ id: 'folder-1', chatId: null })) }));
 vi.mock('@main/db/client', () => ({
   db: {
     select: vi.fn().mockReturnValue({
@@ -66,8 +62,8 @@ vi.mock('@main/db/client', () => ({
     }),
   },
 }));
-vi.mock('@main/core/projects/project-manager', () => ({
-  projectManager: { getProject: vi.fn() },
+vi.mock('@main/core/workspaces/folder-runtime/folder-runtimes', () => ({
+  openFolder: vi.fn(),
 }));
 vi.mock('@main/core/settings/settings-service', () => ({
   appSettingsService: { get: vi.fn() },
@@ -125,7 +121,7 @@ const automation: Automation = {
       workspace: { kind: 'repository-instance' as const, workspaceId: 'ws-1' },
     },
   },
-  projectId: 'project-1',
+  workspaceId: 'folder-1',
   enabled: true,
   createdAt: 0,
   updatedAt: 0,
@@ -167,7 +163,7 @@ describe('executeSessionCreate', () => {
     vi.clearAllMocks();
     vi.mocked(generateRandom).mockReturnValue('random-task-name');
     vi.mocked(appSettingsService.get).mockResolvedValue(null as never);
-    vi.mocked(projectManager.getProject).mockReturnValue({} as never);
+    vi.mocked(openFolder).mockResolvedValue({ success: true, data: {} } as never);
     vi.mocked(prepareCreateSession).mockResolvedValue({ success: true, data: preparedData });
     vi.mocked(commitCreateSession).mockReturnValue(mockConvRow);
     vi.mocked(finalizeCreateSession).mockReturnValue({ session: { id: 'conv-1' } } as never);
@@ -208,15 +204,14 @@ describe('executeSessionCreate', () => {
     expect(prepareCreateSession).not.toHaveBeenCalled();
   });
 
-  it('returns err when automation has no projectId', async () => {
-    const result = await executeSessionCreate({ ...automation, projectId: undefined }, run, noopStep);
+  it('returns err when automation has no folder', async () => {
+    const result = await executeSessionCreate({ ...automation, workspaceId: undefined }, run, noopStep);
     expect(result).toEqual({ success: false, error: 'no_project_attached' });
     expect(prepareCreateSession).not.toHaveBeenCalled();
   });
 
-  it('marks run failed and returns err when project cannot be opened', async () => {
-    vi.mocked(projectManager.getProject).mockReturnValue(undefined);
-    vi.mocked(openProject).mockResolvedValue({ success: false, error: 'not_found' as never });
+  it('marks run failed and returns err when the folder cannot be opened', async () => {
+    vi.mocked(openFolder).mockResolvedValue({ success: false, error: { type: 'error', message: 'not found' } } as never);
 
     const result = await executeSessionCreate(automation, run, noopStep);
 
@@ -436,7 +431,7 @@ describe('executeSessionCreate', () => {
       })
     );
     expect(session?.initialQueue).toBeUndefined();
-    expect(hydrateSession).toHaveBeenCalledWith('project-1', session?.id);
+    expect(hydrateSession).toHaveBeenCalledWith(session?.id);
     expect(mockAcpStartSession).not.toHaveBeenCalled();
   });
 });

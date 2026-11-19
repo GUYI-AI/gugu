@@ -10,7 +10,7 @@ const snapshot: ResourceSnapshot = {
     { pid: 2, type: 'Tab', name: 'secret window', cpu: 7, memory: 300 },
     { pid: 3, type: 'Tab', memory: 100 },
   ],
-  entries: [{ ptySessionId: 'p', projectId: 'proj', scopeId: 's', leafId: 'l', pid: 9, cpu: 1, memory: 50, title: 'ssh prod' }],
+  entries: [{ ptySessionId: 'p', workspaceId: 'ws', scopeId: 's', leafId: 'l', pid: 9, cpu: 1, memory: 50, title: 'ssh prod' }],
   processGroups: [
     { id: 'runtime:acp', kind: 'runtime', label: 'ACP', cpu: 2, memory: 70, processes: [{ pid: 20, ppid: 1, name: 'node /home/me/x', memory: 70 }] },
     { id: 'session:a', kind: 'session', label: 'Secret task', sessionId: 'a', cpu: 3, memory: 80, processes: [{ pid: 30, ppid: 1, name: 'claude', memory: 40 }, { pid: 31, ppid: 30, name: 'tsgo', memory: 40 }] },

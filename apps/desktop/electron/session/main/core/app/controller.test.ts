@@ -6,7 +6,7 @@ vi.mock('./service', () => ({ appService: { clipboardWriteText } }));
 vi.mock('@main/core/app/session-home-dir', () => ({ legacySessionHomeDir: vi.fn(), migrateLegacySessionHome: vi.fn(), sessionHomeDir: vi.fn() }));
 vi.mock('@main/lib/file-logger', () => ({ getDiagnosticLogAttachment: vi.fn() }));
 vi.mock('@main/lib/logger', () => ({ log: {} }));
-vi.mock('../projects/utils', () => ({ resolveWorkspace: vi.fn() }));
+vi.mock('@main/core/workspaces/resolve-workspace', () => ({ resolveWorkspace: vi.fn() }));
 vi.mock('./assistant-app', () => ({ callAssistantApp: vi.fn() }));
 
 import { appController } from './controller';

@@ -3,8 +3,8 @@ import { permissionModeFromAutoApprove } from '@gugu/session-core/acp';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import { err, ok, type Result } from '@gugu/session-shared';
 import { issueController } from '@main/core/issues/controller';
-import { openProject } from '@main/core/projects/operations/openProject';
-import { projectManager } from '@main/core/projects/project-manager';
+import { getFolder } from '@main/core/folders/folders';
+import { openFolder } from '@main/core/workspaces/folder-runtime/folder-runtimes';
 import { classifyCreateFailure } from '@main/core/session-timeline/create-failure';
 import { launchCreatedSession } from '@main/core/session-timeline/launch-created-session';
 import { isAgentHomeImportCode } from '@gugu/session-core/workspace-server/agent-config';
@@ -43,21 +43,15 @@ import {
   type OnStepCompleted,
 } from '../run-transitions';
 
-async function ensureProjectOpen(projectId: string) {
-  let project = projectManager.getProject(projectId);
-  if (!project) {
-    const openResult = await openProject(projectId);
-    if (!openResult.success) return err('project_not_found' as const);
-    project = projectManager.getProject(projectId);
-    if (!project) return err('project_not_found' as const);
-  }
-
-  return ok(project);
+async function ensureFolderOpen(folderId: string) {
+  const opened = await openFolder(folderId);
+  // The run's recorded code stays `project_not_found`: runs of earlier releases carry it.
+  return opened.success ? ok(opened.data) : err('project_not_found' as const);
 }
 
 async function buildAutomationInitialQueue(
   automation: Automation,
-  projectId: string,
+  folderId: string,
   prompt: string
 ): Promise<InitialQueuePrompt[]> {
   const hiddenContextParts: string[] = [];
@@ -78,7 +72,7 @@ async function buildAutomationInitialQueue(
   const mentionContext = await buildIssueMentionHiddenContext(prompt, async (target) => {
     const result = await issueController.getIssueContext(target.provider, {
       identifier: target.identifier,
-      projectId,
+      folderId,
     });
     return result.success ? result.data : null;
   });
@@ -147,8 +141,8 @@ export async function executeSessionCreate(
     return err('automation_config_required');
   }
 
-  const projectId = automation.projectId;
-  if (!projectId) return err('no_project_attached');
+  const folderId = automation.workspaceId;
+  if (!folderId) return err('no_project_attached');
 
   try {
     assertValidAutomationInput({
@@ -159,14 +153,14 @@ export async function executeSessionCreate(
     const sessionId = randomUUID();
     const sessionName = run.generatedSessionName ?? generateRandom();
 
-    const projectResult = await ensureProjectOpen(projectId);
-    if (!projectResult.success) {
+    const folderResult = await ensureFolderOpen(folderId);
+    if (!folderResult.success) {
       const failed = await markRunFailed(run.id, {
         step: 'create_session',
         code: 'project_not_found',
       });
       onStepCompleted(failed);
-      return err(projectResult.error);
+      return err(folderResult.error);
     }
 
     if (!sessionConfig?.workspaceConfig) {
@@ -183,7 +177,7 @@ export async function executeSessionCreate(
     // Automation work is scheduler-owned system bootstrap, not user text from a create surface.
     const initialQueue =
       sessionRuntime === 'acp'
-        ? await buildAutomationInitialQueue(automation, projectId, prompt)
+        ? await buildAutomationInitialQueue(automation, folderId, prompt)
         : undefined;
     const initialSession = automationInitialSession(automation, automation.agentConfig, {
       sessionId,
@@ -191,8 +185,9 @@ export async function executeSessionCreate(
       initialQueue,
     });
 
+    const groupChatId = getFolder(folderId)?.chatId;
     const createSessionParams: CreateSessionParams = {
-      projectId,
+      ...(groupChatId ? { groupChatId } : {}),
       sessionConfig: {
         version: '1',
         name: sessionName,
@@ -254,7 +249,6 @@ export async function executeSessionCreate(
     let setupFailure: string | undefined;
     const launched = await launchCreatedSession({
       sessionId,
-      projectId,
       runtime: sessionRuntime,
       launchWorkspace: async () => {
         const provision = await sessionService.provisionWorkspace(sessionId);

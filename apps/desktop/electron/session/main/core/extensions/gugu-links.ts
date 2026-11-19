@@ -26,7 +26,7 @@ export function setSessionOpening(next: SessionOpening | null): void {
 
 /** The live path: main.ts hands every URL the OS gives it to this, and every click that opens a session comes here. */
 export async function openLink(raw: string | OpenTarget, groupParticipantRequestId?: string, source?: { message?: MessageItem }): Promise<LinkOpenOutcome> {
-  const [{ extensionsService }, bridge, { sessionHere }, { actInWindow, listedSessionProject }] = await Promise.all([
+  const [{ extensionsService }, bridge, { sessionHere }, { actInWindow, sessionListedByWindow }] = await Promise.all([
     import('./extensions-root'),
     import('./extension-bridge'),
     import('./extension-show-session'),
@@ -38,8 +38,8 @@ export async function openLink(raw: string | OpenTarget, groupParticipantRequest
       isEnabled: (id) => extensionsService().isEnabled(id),
       locale: sessionHostLocale,
       // An archived session of this computer only when the opener named its project (任务历史 opens those).
-      sessionProject: async (sessionId, hint) =>
-        (await sessionHere(sessionId, { archived: Boolean(hint?.projectId && !hint.deviceId) })) ?? listedSessionProject(sessionId, hint),
+      sessionListed: async (sessionId, hint) =>
+        (await sessionHere(sessionId, { archived: Boolean(hint?.projectId && !hint.deviceId) })) || sessionListedByWindow(sessionId, hint),
       agentSession: async (agentId, deviceId) => (opening ? opening.agentSession(agentId, deviceId) : null),
       // App 面上那一格仍叫 sessionId(App 层那一刀改名);它的值就是那条会话的 id。
       reveal: async ({ sessionId, ...target }) =>

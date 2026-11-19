@@ -98,7 +98,7 @@ async function collectSample(): Promise<ResourceSnapshot> {
     if (typeof a.pid === 'number' && !processes.some(p => p.pid === a.pid)) continue;
     entries.push({
       ptySessionId: a.ptySessionId,
-      projectId: parsed.projectId,
+      workspaceId: parsed.workspaceId,
       scopeId: parsed.scopeId,
       leafId: parsed.leafId,
       pid: a.pid,

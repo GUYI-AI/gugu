@@ -13,13 +13,15 @@ export const activityEventSchema = z.object({
     // The session's stored history gained a turn / dropped its turns from turn_seq on (a revert). Only these name a
     // turn, by the stored history's own sequence: the one turn identity on this machine that survives restarts.
     'session.turn_recorded', 'session.history_reverted',
+    // project.* events were written by earlier releases only (a group is the only container now).
     'project.created', 'project.deleted', 'project.folder_attached', 'project.folder_detached',
     'project.group_bound', 'project.group_unbound', 'app.source_created', 'app.source_updated',
     'app.installed', 'app.replaced', 'session.model_changed', 'session.lifecycle', 'device.sleep']),
   occurred_at: z.number().int().nonnegative().nullable(),
   observed_at: z.number().int().nonnegative(),
   session_id: id.optional(),
-  project_id: id.optional(),
+  /** The group the event's subject lives in. */
+  chat_id: id.optional(),
   related_session_id: id.optional(),
   parent_session_id: id.optional(),
   spawned_by_session_id: id.optional(),
@@ -40,16 +42,13 @@ export const activityEventSchema = z.object({
 }).strict();
 export type ActivityEvent = z.infer<typeof activityEventSchema>;
 /**
- * What a producer reports. It never names a project: the journal derives `project_id` from the event's subject (its
- * session, or the automation of its run), in one place, so no producer can omit or contradict it.
+ * What a producer reports. It never names a group: the journal derives `chat_id` from the event's subject (its
+ * session, or the folder of its run's automation), in one place, so no producer can omit or contradict it.
  */
-export const activityObservationSchema = activityEventSchema.omit({ project_id: true }).superRefine((event, ctx) => {
+export const activityObservationSchema = activityEventSchema.omit({ chat_id: true }).superRefine((event, ctx) => {
   if (event.kind === 'device.sleep' && (event.occurred_at === null || event.sleep_until_at === undefined
     || event.sleep_until_at <= event.occurred_at || !event.sleep_source)) {
     ctx.addIssue({ code: 'custom', path: ['sleep_until_at'], message: 'Device sleep requires a confirmed ordered interval and source' });
-  }
-  if (event.kind.startsWith('project.') && !event.object_id) {
-    ctx.addIssue({ code: 'custom', path: ['object_id'], message: 'Project events must name their subject project' });
   }
 });
 export type ActivityObservation = z.infer<typeof activityObservationSchema>;
@@ -58,7 +57,7 @@ export const activityQuerySchema = z.object({
   since: z.string().datetime({ offset: true }),
   until: z.string().datetime({ offset: true }),
   session_id: id.optional(),
-  project_id: id.optional(),
+  chat_id: id.optional(),
   limit: z.number().int().min(1).max(200).default(50),
   cursor: z.string().max(4096).optional(),
 }).strict().refine(q => Date.parse(q.since) < Date.parse(q.until), 'until must be later than since');

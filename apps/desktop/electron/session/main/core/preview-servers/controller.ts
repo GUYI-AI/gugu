@@ -2,6 +2,6 @@ import { createRPCController } from '@shared/lib/ipc/rpc';
 import { previewServerService } from './preview-server-service-instance';
 
 export const previewServersController = createRPCController({
-  listForWorkspace: async (args: { projectId: string; workspaceId: string }) =>
+  listForWorkspace: async (args: { workspaceId: string }) =>
     previewServerService.listForWorkspace(args),
 });

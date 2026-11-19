@@ -33,7 +33,6 @@ function replay(run: Run, parse: Parse) {
       const event: AgentEvent = {
         type: canonical.type,
         providerId: 'copilot',
-        projectId: 'p',
         sessionId: 'c',
         timestamp: 0,
         payload: canonical.origin ? { origin: canonical.origin } : {},

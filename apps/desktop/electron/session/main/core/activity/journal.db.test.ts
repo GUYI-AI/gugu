@@ -52,14 +52,6 @@ describe('activity journal: real SQLite, no transcript storage or reader', () =>
     expect(restarted.list({ since, until }).events).toMatchObject([{ event_id: 'receipt', occurred_at: null }]);
     expect(restarted.list({ since, until }).events).toHaveLength(1);
   });
-  it('derives a project operation from its subject without accepting a producer project override', () => {
-    journal.append({ event_id: 'detached-folder', kind: 'project.folder_detached', object_id: 'p-deleted',
-      related_object_id: 'folder-gone', occurred_at: now, observed_at: now });
-    expect(journal.list({ since, until, project_id: 'p-deleted' }, ['p-deleted']).events).toMatchObject([
-      { project_id: 'p-deleted', object_id: 'p-deleted', related_object_id: 'folder-gone' },
-    ]);
-    expect(() => journal.append({ event_id: 'missing-project', kind: 'project.deleted', occurred_at: now, observed_at: now })).toThrow(/subject project/);
-  });
   it('rejects bodies, free-form payloads and non-metadata additions before writing', () => {
     expect(() => journal.append({ ...event('bad'), content: 'secret input' } as ActivityObservation)).toThrow();
     expect(() => journal.append({ ...event('bad'), payload: { text: 'secret output' } } as ActivityObservation)).toThrow();
@@ -92,36 +84,37 @@ describe('activity journal: real SQLite, no transcript storage or reader', () =>
   });
   it('does not depend on session or message rows remaining present, and enforces half-open time windows', () => {
     fixture.sqlite.exec(`INSERT INTO projects (id, name, path, created_at, updated_at) VALUES ('p1', 'P1', '/p1', 0, 0);
-      INSERT INTO sessions (id, project_id, config) VALUES ('s1', 'p1', json_object('version', '1', 'type', 'pty', 'agentDisplayName', 'one'));
+      INSERT INTO sessions (id, project_id, chat_id, config) VALUES ('s1', 'p1', 'chat-1', json_object('version', '1', 'type', 'pty', 'agentDisplayName', 'one'));
       DELETE FROM sessions;`);
     journal.append(event('start', { occurred_at: Date.parse(since) }));
     journal.append(event('end', { occurred_at: Date.parse(until) }));
-    expect(journal.list({ since, until, project_id: 'p1' }, ['p1']).events.map(e => e.event_id)).toEqual(['start']);
+    expect(journal.list({ since, until, chat_id: 'chat-1' }).events.map(e => e.event_id)).toEqual(['start']);
     expect(() => journal.list({ since: until, until: since })).toThrow(/until/);
     expect(() => journal.list({ since, until, cursor: 'garbage' })).toThrow(/cursor/);
   });
 });
 
 /**
- * The project of an event is derived by the journal from its subject, never reported by a producer: events whose
- * producer did not have the project at hand (archive, delete, questions, deliveries, automation runs) used to be
- * stored without one and vanished from project-scoped queries.
+ * The group of an event is derived by the journal from its subject, never reported by a producer: events whose
+ * producer did not have the group at hand (archive, delete, questions, deliveries, automation runs) would otherwise be
+ * stored without one and vanish from group-scoped queries.
  */
-describe('activity journal: the project comes from the subject', () => {
+describe('activity journal: the group comes from the subject', () => {
   beforeEach(() => {
     fixture.sqlite.exec(`
       INSERT INTO projects (id, name, path, created_at, updated_at) VALUES ('p1', 'P1', '/p1', 0, 0), ('p2', 'P2', '/p2', 0, 0);
-      INSERT INTO sessions (id, project_id, config) VALUES ('s1', 'p1', json_object('version', '1', 'type', 'pty', 'agentDisplayName', 'one')), ('s2', 'p2', json_object('version', '1', 'type', 'pty', 'agentDisplayName', 'two'));
-      INSERT INTO automations (id, name, project_id, trigger_config, agent_config, enabled, created_at, updated_at)
-        VALUES ('a1', 'Daily', 'p2', '{"expr":"0 9 * * *","tz":"UTC"}', '{"prompt":"x","provider":"claude","autoApprove":true}', 1, 0, 0);
+      INSERT INTO sessions (id, project_id, chat_id, config) VALUES ('s1', 'p1', 'chat-1', json_object('version', '1', 'type', 'pty', 'agentDisplayName', 'one')), ('s2', 'p2', 'chat-2', json_object('version', '1', 'type', 'pty', 'agentDisplayName', 'two'));
+      INSERT INTO workspaces (id, type, kind, path, chat_id) VALUES ('w2', 'local', 'project-root', '/w2', 'chat-2');
+      INSERT INTO automations (id, name, workspace_id, trigger_config, agent_config, enabled, created_at, updated_at)
+        VALUES ('a1', 'Daily', 'w2', '{"expr":"0 9 * * *","tz":"UTC"}', '{"prompt":"x","provider":"claude","autoApprove":true}', 1, 0, 0);
       INSERT INTO automation_runs (id, automation_id, status, trigger_kind) VALUES ('r1', 'a1', 'queued', 'cron');
     `);
   });
-  const ids = (project: string) => journal.list({ since, until, project_id: project }, [project]).events.map(e => e.event_id);
+  const ids = (chat: string) => journal.list({ since, until, chat_id: chat }).events.map(e => e.event_id);
   const about = (id: string, kind: ActivityObservation['kind'], subject: Partial<ActivityObservation> = { session_id: 's1' }): ActivityObservation =>
     ({ event_id: id, kind, occurred_at: now, observed_at: now, ...subject });
 
-  it('places every session event in its session\'s project, including events after the session is deleted', () => {
+  it('places every session event in its session\'s group, including events after the session is deleted', () => {
     journal.append(about('working', 'agent.status', { session_id: 's1', status: 'working' }));
     journal.append(about('asked', 'question.pending', { session_id: 's1', object_id: 'q1' }));
     journal.append(about('delivered', 'session.message_delivered', { session_id: 's1', object_id: 'm1' }));
@@ -129,36 +122,36 @@ describe('activity journal: the project comes from the subject', () => {
     fixture.sqlite.exec(`DELETE FROM sessions WHERE id = 's1'`);
     journal.append(about('deleted', 'session.deleted'));
     journal.append(about('other', 'session.renamed', { session_id: 's2' }));
-    expect(ids('p1')).toEqual(['working', 'asked', 'delivered', 'archived', 'deleted']);
-    expect(ids('p2')).toEqual(['other']);
+    expect(ids('chat-1')).toEqual(['working', 'asked', 'delivered', 'archived', 'deleted']);
+    expect(ids('chat-2')).toEqual(['other']);
   });
 
-  it('places a session created after the journal started, by any path, in its project', () => {
-    // A trigger on sessions records the project. The fixture runs every migration to head, so a later migration that
+  it('places a session created after the journal started, by any path, in its group', () => {
+    // A trigger on sessions records the group. The fixture runs every migration to head, so a later migration that
     // rebuilds the sessions table (and drops its triggers with it) fails here.
-    fixture.sqlite.exec(`INSERT INTO sessions (id, project_id, config) VALUES ('s3', 'p2', json_object('version', '1', 'type', 'pty', 'agentDisplayName', 'forked outside the app'))`);
+    fixture.sqlite.exec(`INSERT INTO sessions (id, project_id, chat_id, config) VALUES ('s3', 'p2', 'chat-2', json_object('version', '1', 'type', 'pty', 'agentDisplayName', 'forked outside the app'))`);
     journal.append(about('late', 'session.renamed', { session_id: 's3' }));
-    expect(ids('p2')).toEqual(['late']);
+    expect(ids('chat-2')).toEqual(['late']);
   });
 
-  it('places an automation run in its automation\'s project at the time of the run', () => {
+  it('places an automation run in its automation folder\'s group at the time of the run', () => {
     journal.append(about('automation.run:r1:queued', 'automation.run', { object_id: 'r1', status: 'queued' }));
-    expect(ids('p2')).toEqual(['automation.run:r1:queued']);
-    expect(journal.get('automation.run:r1:queued').project_id).toBe('p2');
+    expect(ids('chat-2')).toEqual(['automation.run:r1:queued']);
+    expect(journal.get('automation.run:r1:queued').chat_id).toBe('chat-2');
   });
 
-  it('leaves a subject this machine never had without a project', () => {
+  it('leaves a subject this machine never had without a group', () => {
     journal.append(about('unknown', 'session.renamed', { session_id: 'elsewhere' }));
-    expect(journal.get('unknown').project_id).toBeUndefined();
+    expect(journal.get('unknown').chat_id).toBeUndefined();
   });
 
-  it('refuses a project named by a producer', () => {
+  it('refuses a group named by a producer', () => {
     // At run time: the journal's observation schema is strict.
-    expect(() => journal.append({ ...about('named', 'session.renamed'), project_id: 'p2' } as ActivityObservation)).toThrow();
-    // At compile time: the typecheck fails if a signal may carry project_id (an unused @ts-expect-error is an error).
+    expect(() => journal.append({ ...about('named', 'session.renamed'), chat_id: 'chat-2' } as ActivityObservation)).toThrow();
+    // At compile time: the typecheck fails if a signal may carry chat_id (an unused @ts-expect-error is an error).
     // At run time the call reaches no journal: this test installs no signal listener.
-    // @ts-expect-error producers cannot name a project
-    activitySignal({ event_id: 'typed', kind: 'session.renamed', occurred_at: now, session_id: 's1', project_id: 'p2' });
-    expect(ids('p2')).toEqual([]);
+    // @ts-expect-error producers cannot name a group
+    activitySignal({ event_id: 'typed', kind: 'session.renamed', occurred_at: now, session_id: 's1', chat_id: 'chat-2' });
+    expect(ids('chat-2')).toEqual([]);
   });
 });

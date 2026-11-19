@@ -17,7 +17,8 @@ export interface EmdashSessionStartInfo {
   sessionId: string;
   /** Persisted conversation that owns identity/model authority for a runtime-only view. */
   sourceSessionId?: string;
-  projectId: string;
+  /** The group the session lives in (null: none, e.g. the task home). */
+  groupChatId: string | null;
   workspaceId: string;
   providerId: string;
   cwd: string;
@@ -134,6 +135,7 @@ export interface EmdashSessionIdentity {
   guguAgentUserId: string;
   chatId: string;
   agentIdentityFacts?: { specialFocus: string | null };
+  /** The session's group and its folder path here, for the prompt's group block (absent: no group). */
   groupContext?: SessionpageGroupContext;
 }
 
@@ -141,7 +143,7 @@ export interface EmdashIdentityRequest {
   sessionId: string;
   sourceSessionId?: string;
   providerId: string;
-  projectId: string;
+  groupChatId: string | null;
   cwd: string;
   displayName?: string;
   lifecycle: 'fresh' | 'fork' | 'resume';

@@ -19,7 +19,8 @@ let readyFails = false;
 const watchedDirectories: string[] = [];
 let feed: (update: unknown) => void = () => undefined;
 
-vi.mock('./app-files', () => ({ localRootOf: async () => ({ workspaceRoot: root, recordedRoot: root, projectId: 'p', workspaceId: 'ws' }), hearElsewhere: vi.fn() }));
+vi.mock('./app-files', () => ({ localRootOf: async () => ({ workspaceRoot: root, recordedRoot: root, workspaceId: 'ws' }), hearElsewhere: vi.fn() }));
+vi.mock('@main/core/folders/folders', () => ({ rootFolderOf: () => ({ id: 'p' }) }));
 vi.mock('./app-programs-elsewhere', () => ({ sessionMachine: async () => null }));
 vi.mock('./local-files', () => ({
   workingCopyEntry: (_place: unknown, rel: string) => ({ id: rel, name: rel, type: 'file' }),

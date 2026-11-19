@@ -60,7 +60,7 @@ function getProviderName(providerId: string): string {
  * 被自动批准的 permission_prompt 不会把读数推到 needs_user,也就不叫人。
  */
 export async function maybeShowNotification(
-  session: { sessionId: string; projectId: string },
+  session: { sessionId: string },
   previous: AgentStatusView | null,
   next: AgentStatusView,
 ): Promise<void> {
@@ -99,7 +99,7 @@ export async function maybeShowNotification(
 
       releaseNotification();
       // The window first (a banner's click comes from outside it), then the one way a session is opened.
-      void import('../extensions/gugu-links').then(({ openLink }) => openLink({ kind: 'session', sessionId: session.sessionId, projectId: session.projectId }));
+      void import('../extensions/gugu-links').then(({ openLink }) => openLink({ kind: 'session', sessionId: session.sessionId }));
     });
 
     notification.show();

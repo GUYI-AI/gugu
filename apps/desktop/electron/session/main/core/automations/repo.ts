@@ -4,11 +4,11 @@ import { Cron } from 'croner';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { getPlugin, isValidProviderId } from '@main/core/agents/plugin-registry';
 import { generateRandom } from '@main/core/sessions/name-generation/generateSessionName';
+import { getFolder } from '@main/core/folders/folders';
 import { db } from '@main/db/client';
 import {
   automationRuns,
   automations,
-  projects,
   sessions,
   type AutomationRow,
   type AutomationRunRow,
@@ -110,7 +110,7 @@ function mapAutomationRow(row: AutomationRow): Automation {
   return {
     id: row.id,
     name: row.name,
-    projectId: row.projectId ?? undefined,
+    workspaceId: row.workspaceId ?? undefined,
     triggerConfig: row.triggerConfig ?? undefined,
     agentConfig: row.agentConfig ?? undefined,
     sessionConfig: row.sessionConfig ?? undefined,
@@ -267,12 +267,12 @@ export function getNextRunAt(
   return next?.getTime() ?? null;
 }
 
-export async function listAutomations(projectId?: string): Promise<Automation[]> {
-  const query = projectId
+export async function listAutomations(workspaceId?: string): Promise<Automation[]> {
+  const query = workspaceId
     ? db
         .select()
         .from(automations)
-        .where(and(eq(automations.projectId, projectId), isNull(automations.deletedAt)))
+        .where(and(eq(automations.workspaceId, workspaceId), isNull(automations.deletedAt)))
     : db.select().from(automations).where(isNull(automations.deletedAt));
   const rows = await query;
   return withAgentSessions(mapAutomationRows(rows));
@@ -408,17 +408,12 @@ export async function skipQueuedCronRuns(
     .all());
 }
 
-async function projectExists(projectId: string): Promise<boolean> {
-  const rows = await db
-    .select({ id: projects.id })
-    .from(projects)
-    .where(eq(projects.id, projectId))
-    .limit(1);
-  return rows.length > 0;
+function folderExists(workspaceId: string): boolean {
+  return getFolder(workspaceId) !== undefined;
 }
 
 export async function createAutomation(input: CreateAutomationParams): Promise<Automation> {
-  if (!(await projectExists(input.projectId))) {
+  if (!folderExists(input.workspaceId)) {
     throw new Error('project_not_found');
   }
 
@@ -436,7 +431,7 @@ export async function createAutomation(input: CreateAutomationParams): Promise<A
       triggerConfig: input.triggerConfig,
       agentConfig: input.agentConfig,
       sessionConfig: input.sessionConfig ?? null,
-      projectId: input.projectId,
+      workspaceId: input.workspaceId,
       enabled: input.enabled === false ? 0 : 1,
       createdAt: now,
       updatedAt: now,
@@ -456,7 +451,6 @@ export async function createAutomation(input: CreateAutomationParams): Promise<A
  */
 export async function createAgentSchedule(input: {
   agentSessionId: string;
-  projectId: string;
   name: string;
   prompt: string;
   provider: string;
@@ -475,7 +469,6 @@ export async function createAgentSchedule(input: {
       // provider 只是记下是哪一家建的;到点不起新会话,也就用不到无人值守那一套。
       agentConfig: { prompt: input.prompt, provider: input.provider, autoApprove: false },
       sessionConfig: null,
-      projectId: input.projectId,
       agentSessionId: input.agentSessionId,
       enabled: 1,
       createdAt: now,
@@ -504,7 +497,7 @@ export async function updateAutomationSettings(
   id: string,
   patch: UpdateAutomationSettingsPatch
 ): Promise<Automation | null> {
-  if (patch.projectId !== undefined && !(await projectExists(patch.projectId))) {
+  if (patch.workspaceId !== undefined && !folderExists(patch.workspaceId)) {
     throw new Error('project_not_found');
   }
 
@@ -524,7 +517,7 @@ export async function updateAutomationSettings(
         patch.triggerConfig !== undefined &&
         patch.agentConfig === undefined &&
         patch.sessionConfig === undefined &&
-        patch.projectId === undefined;
+        patch.workspaceId === undefined;
       if (!onlyTime) throw new Error('agent_schedule_not_editable');
       assertAgentScheduleTrigger(patch.triggerConfig!);
       const [row] = tx
@@ -537,7 +530,7 @@ export async function updateAutomationSettings(
     }
     const finalTriggerConfig = patch.triggerConfig ?? existing.triggerConfig;
     const finalSessionConfig = patch.agentConfig ?? existing.agentConfig;
-    const finalProjectId = patch.projectId !== undefined ? patch.projectId : existing.projectId;
+    const finalWorkspaceId = patch.workspaceId !== undefined ? patch.workspaceId : existing.workspaceId;
 
     if (finalTriggerConfig && finalSessionConfig) {
       assertValidAutomationInput({
@@ -545,10 +538,10 @@ export async function updateAutomationSettings(
         agentConfig: finalSessionConfig,
       });
     }
-    if (existing.enabled && finalProjectId == null) throw new Error('no_project_attached');
+    if (existing.enabled && finalWorkspaceId == null) throw new Error('no_project_attached');
 
     const values: Partial<typeof automations.$inferInsert> = { updatedAt: Date.now() };
-    if (patch.projectId !== undefined) values.projectId = patch.projectId;
+    if (patch.workspaceId !== undefined) values.workspaceId = patch.workspaceId;
     if (patch.triggerConfig !== undefined) {
       values.triggerConfig = patch.triggerConfig;
     }
@@ -597,7 +590,7 @@ export async function setAutomationEnabled(
   if (enabled && existing.triggerConfig?.at != null && existing.triggerConfig.at <= Date.now()) {
     throw new Error('schedule_time_passed');
   }
-  if (existing.projectId == null && !existing.agentSessionId && enabled) {
+  if (existing.workspaceId == null && !existing.agentSessionId && enabled) {
     throw new Error('no_project_attached');
   }
   const [row] = await db
@@ -665,10 +658,10 @@ export async function ensureNextCronRun(
 }
 
 /**
- * 人建的那种没项目就开不了会话,不排;agent 排的那种不开会话,项目没了照排 ——
+ * 人建的那种没文件夹就开不了会话,不排;agent 排的那种不开会话,照排 ——
  * 到点由投递那一步说清建它的会话还在不在(#7221)。
  */
-const hasProjectOrAgent = sql`(${automations.projectId} IS NOT NULL OR ${automations.agentSessionId} IS NOT NULL)`;
+const hasFolderOrAgent = sql`(${automations.workspaceId} IS NOT NULL OR ${automations.agentSessionId} IS NOT NULL)`;
 
 /**
  * 还没到点的排程里最早的那一刻(`now` 之后),调度器据此在整分钟扫描之外准点醒一次;条件与 `markDueCronRunsQueued` 同一套。
@@ -684,7 +677,7 @@ export async function nextScheduledRunAt(now = Date.now()): Promise<number | nul
         eq(automationRuns.triggerKind, 'cron'),
         sql`${automationRuns.scheduledAt} > ${now}`,
         eq(automations.enabled, 1),
-        hasProjectOrAgent,
+        hasFolderOrAgent,
         isNull(automations.deletedAt)
       )
     );
@@ -704,7 +697,7 @@ export async function markDueCronRunsQueued(
         eq(automationRuns.triggerKind, 'cron'),
         sql`${automationRuns.scheduledAt} <= ${now}`,
         eq(automations.enabled, 1),
-        hasProjectOrAgent,
+        hasFolderOrAgent,
         isNull(automations.deletedAt)
       )
     )
@@ -743,7 +736,7 @@ export async function enabledAutomationsWithoutQueuedRun(): Promise<Automation[]
     .where(
       and(
         eq(automations.enabled, 1),
-        hasProjectOrAgent,
+        hasFolderOrAgent,
         isNull(automations.deletedAt),
         isNull(automationRuns.id)
       )
@@ -868,7 +861,6 @@ export type AutomationRunCleanupTarget = {
   runId: string;
   status: AutomationRunStatus;
   sessionId: string | null;
-  projectId: string | null;
 };
 
 export async function listAutomationRunCleanupTargets(
@@ -879,7 +871,6 @@ export async function listAutomationRunCleanupTargets(
       runId: automationRuns.id,
       status: automationRuns.status,
       sessionId: sessions.id,
-      projectId: sessions.projectId,
     })
     .from(automationRuns)
     .leftJoin(sessions, eq(sessions.automationRunId, automationRuns.id))

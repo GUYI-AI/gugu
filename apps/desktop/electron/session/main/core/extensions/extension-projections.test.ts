@@ -369,11 +369,11 @@ describe('App/session scoped picture and input', () => {
     try {
       const s = setup();
       const otherClose = vi.fn();
-      const other = s.resources.open({ ...owner, sessionId: 'task-b', projectId: 'project-b' }, { ...s.source, close: otherClose });
+      const other = s.resources.open({ ...owner, sessionId: 'task-b' }, { ...s.source, close: otherClose });
       s.resources.closeScope({ sessionId: owner.sessionId });
       await s.resource.close();
       expect(otherClose).not.toHaveBeenCalled();
-      s.resources.closeScope({ projectId: 'project-b' }); await other.close();
+      s.resources.closeScope({ sessionId: 'task-b' }); await other.close();
       expect(otherClose).toHaveBeenCalledOnce();
       const idle = setup();
       await vi.advanceTimersByTimeAsync(5 * 60_000);

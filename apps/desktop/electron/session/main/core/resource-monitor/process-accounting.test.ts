@@ -32,7 +32,7 @@ describe('owned process accounting', () => {
     const snapshot = {
       timestamp: 1, cpuCount: 4, totalMemoryBytes: 1024,
       app: { memoryBytes: 3 * 1024, cpuPercent: 2 }, appProcesses: [],
-      entries: [{ ptySessionId: 'pty', projectId: 'p', scopeId: 's', leafId: 'l', pid: 9, cpu: 2, memory: 19 * 1024 }],
+      entries: [{ ptySessionId: 'pty', workspaceId: 'w', scopeId: 's', leafId: 'l', pid: 9, cpu: 2, memory: 19 * 1024 }],
       processGroups: result.groups,
     };
     expect(resourceTotals(snapshot)).toEqual({ memoryBytes: 55 * 1024, cpuPercent: 10 });

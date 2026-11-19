@@ -49,7 +49,7 @@ function runtime() {
 // then reconstruct both owners from SQLite; no model, process or live client is involved.
 it.each(['reserved-before-start', 'started-before-admission', 'admitted-before-done', 'unknown-ack-before-run-update'] as const)(
   'reconciles the same durable run and input after interruption at %s', async cutAt => {
-    const { automation, nextRun } = await createAgentSchedule({ agentSessionId: 's', projectId: 'p', name: 'scheduled input',
+    const { automation, nextRun } = await createAgentSchedule({ agentSessionId: 's', name: 'scheduled input',
       prompt: 'continue this task', provider: 'codex', triggerConfig: { expr: '', tz: 'UTC', at: NOW + 120_000 } });
     vi.setSystemTime(NOW + 120_000);
     await markDueCronRunsQueued(Date.now());

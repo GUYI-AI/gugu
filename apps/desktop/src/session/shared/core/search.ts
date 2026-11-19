@@ -1,12 +1,11 @@
 import { sliceWholeCharacters } from '@gugu/core/shared/unicodeSlice';
 import type { ActivityPreviewSource } from '@gugu/session-chat-ui/activity-preview';
 
-export type SearchItemKind = 'project' | 'session';
+export type SearchItemKind = 'session';
 
 export interface SearchItem {
   kind: SearchItemKind;
   id: string;
-  projectId: string | null;
   title: string;
   subtitle: string;
   score: number;
@@ -16,7 +15,6 @@ export interface SearchItem {
 /** A message said in a local task, as task search finds it (turn_text). */
 export interface TaskTurnHit {
   sessionId: string;
-  projectId: string;
   title: string;
   archived: boolean;
   itemId: string;

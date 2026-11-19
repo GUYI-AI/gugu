@@ -16,7 +16,7 @@ function fixture() {
   const closures = new Set<(reason: string) => void>();
   const source: TaskFileSource = { metadata: vi.fn(async () => ({ id: ITEM, chat: CHAT, name: 'card.txt', contentType: 'text/plain', version: 1, size: 3 })),
     version: vi.fn(async page => { if (page.callId === 'held') { entered.resolve(); return held.promise; } return { n: 1, text: 'abc' }; }) };
-  const native: TaskPageNative = { projectId: 'file-close-project', title: '', url: 'https://example.org',
+  const native: TaskPageNative = { title: '', url: 'https://example.org',
     protocol: { attached: false, send: vi.fn(async () => ({})), onMessage: () => () => {},
       onClose: fn => { closures.add(fn); return () => { closures.delete(fn); }; }, close: vi.fn() },
     setActive: vi.fn(), release: vi.fn() };
@@ -25,7 +25,7 @@ function fixture() {
   return { pages, native, closures, source, entered, held };
 }
 
-it.each(['release', 'native-close', 'archive', 'delete-project', 'program-exit', 'task-stop', 'call-end', 'revocation'] as const)(
+it.each(['release', 'native-close', 'archive', 'program-exit', 'task-stop', 'call-end', 'revocation'] as const)(
   '%s settles a file-service wait before that service supplies its late result', async how => {
     const { pages, closures, entered, held } = fixture(), controller = new AbortController(), from = caller('held', 'file-close-task', controller);
     const lease = await pages.acquire(from, { watchId: how });
@@ -36,7 +36,6 @@ it.each(['release', 'native-close', 'archive', 'delete-project', 'program-exit',
       if (how === 'release') await pages.release(from, lease.id);
       else if (how === 'native-close') for (const close of [...closures]) close('native tab closed');
       else if (how === 'archive') pages.closeScope({ sessionId: 'file-close-task' });
-      else if (how === 'delete-project') pages.closeScope({ projectId: 'file-close-project' });
       else if (how === 'program-exit') await pages.closeProgram(from.pageId);
       else if (how === 'task-stop') cancelExtensionSessionCalls('file-close-task');
       else if (how === 'call-end') controller.abort(new Error('The tool call ended'));

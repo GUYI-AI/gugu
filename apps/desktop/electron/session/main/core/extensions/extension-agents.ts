@@ -306,8 +306,8 @@ export async function stopAgentForExtension(options: {
     await sessionLife().interrupt(row.id, { k: 'interrupt', reason: 'user-stop' });
     return;
   }
-  const { resolveSession } = await import('@main/core/projects/utils');
-  const session = resolveSession(row.projectId, row.id);
+  const { sessionWorkspaceManager } = await import('@main/core/sessions/session-workspace-manager');
+  const session = sessionWorkspaceManager.getSession(row.id);
   if (!session) throw new Error('that agent\'s session workspace is not mounted');
   await session.sessions.stopSession(row.id);
 }

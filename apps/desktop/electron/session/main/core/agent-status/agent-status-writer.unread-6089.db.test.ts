@@ -68,7 +68,7 @@ describe('#6089 agent 被杀掉后的已读位', () => {
   it('interrupt 把等批准的会话写成 idle + 已读', async () => {
     expect(row(), '前提:一条等人输入且没看过的会话').toEqual({ status: 'needs_user', seen: 0 });
 
-    await agentStatusWriter.interrupt({ sessionId: 'c1', projectId: 'p1' });
+    await agentStatusWriter.interrupt({ sessionId: 'c1' });
 
     expect(row()).toEqual({ status: 'idle', seen: 1 });
   });
@@ -76,7 +76,7 @@ describe('#6089 agent 被杀掉后的已读位', () => {
   it('不该动的行不动:状态不在 working/needs_user 时 interrupt 什么都不做', async () => {
     fixture.sqlite.prepare(`UPDATE sessions SET agent_status = 'idle' WHERE id = 'c1'`).run();
 
-    await agentStatusWriter.interrupt({ sessionId: 'c1', projectId: 'p1' });
+    await agentStatusWriter.interrupt({ sessionId: 'c1' });
 
     // 阴控:做完未读(idle + 未读)不归 interrupt 管(它是 agent 自己交回的回合,要用户点开才算看过)。
     expect(row()).toEqual({ status: 'idle', seen: 0 });

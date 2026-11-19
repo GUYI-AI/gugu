@@ -117,7 +117,7 @@ describe('settling after a restart leaves sessions whose engine survived in tmux
     expect(mapSessionRowToSession(row!)).toMatchObject({ agentStatus: 'idle', agentStatusDetail: 'plain', interruptedBy: reason });
     expect(turnCount()).toEqual(historyBefore);
 
-    await agentStatusWriter.restart({ sessionId: 'acp', projectId: 'p1' });
+    await agentStatusWriter.restart({ sessionId: 'acp' });
     expect(status('acp').status).toBe('working');
     expect(readInterruptedTurn('acp')).toBeNull();
   });

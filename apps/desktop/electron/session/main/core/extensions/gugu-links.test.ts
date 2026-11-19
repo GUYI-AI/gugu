@@ -71,7 +71,7 @@ function deps(overrides: Partial<LinkOpenDeps> = {}) {
     installed: () => [{ manifest }],
     isEnabled: () => true,
     locale: () => 'en-US',
-    sessionProject: async (sessionId) => (sessionId === 's1' ? 'p1' : null),
+    sessionListed: async (sessionId) => sessionId === 's1',
     agentSession: async (agentId) => (agentId === 'agent-1' ? { sessionId: 's1' } : null),
     reveal: vi.fn(async () => {}),
     openApp: vi.fn(async (_id, _tab, chat) => chat ? { chat } : 'own'),
@@ -89,7 +89,7 @@ describe('opening a link (#6387)', () => {
     const { value, delivered } = deps();
     await expect(openLinkWith(value, 'gugu://ext/notes/inbox/p/7?x=1&gugu.session=s1'))
       .resolves.toMatchObject({ kind: 'opened', target: { kind: 'app', extensionId: 'notes', tab: 'inbox' } });
-    expect(value.reveal).toHaveBeenCalledWith({ sessionId: 's1', projectId: 'p1', tabKind: 'notes.inbox' });
+    expect(value.reveal).toHaveBeenCalledWith({ sessionId: 's1', tabKind: 'notes.inbox' });
     expect(delivered).toEqual([{ id: 'notes', event: { type: 'link', tab: 'inbox', path: 'p/7', query: { x: '1' }, file: null }, opened: { session: 's1' } }]);
   });
 
@@ -161,7 +161,7 @@ describe('resource links share one parser and opener', () => {
     // link, clicked in a chat or handed over by the OS, failed for any session but the assistant's.
     const desktop = deps().value;
     await expect(openLinkWith(desktop, 'gugu://session/s1')).resolves.toMatchObject({ kind: 'opened' });
-    expect(desktop.bringUp).toHaveBeenCalledWith({ projectId: 'p1', sessionId: 's1' });
+    expect(desktop.bringUp).toHaveBeenCalledWith({ sessionId: 's1' });
     const assistant = deps({ openResource: vi.fn(async () => 'own' as const) }).value;
     await openLinkWith(assistant, 'gugu://session/s1');
     expect(assistant.bringUp).not.toHaveBeenCalled();
@@ -174,17 +174,17 @@ describe('resource links share one parser and opener', () => {
     const value = deps().value;
     await expect(openLinkWith(value, { kind: 'session', agentId: 'agent-1' })).resolves.toMatchObject({ kind: 'opened', target: { kind: 'session', sessionId: 's1' } });
     expect(value.openResource).toHaveBeenCalledWith({ kind: 'session', sessionId: 's1' });
-    expect(value.bringUp).toHaveBeenCalledWith({ projectId: 'p1', sessionId: 's1' });
+    expect(value.bringUp).toHaveBeenCalledWith({ sessionId: 's1' });
     const none = deps().value;
     await expect(openLinkWith(none, { kind: 'session', agentId: 'agent-x' })).resolves.toMatchObject({ kind: 'failed', reason: 'no-session' });
     expect(none.bringUp).not.toHaveBeenCalled();
   });
 
   it('hands what the opener knew (machine, project) to the task list, and a task card\'s beside to the bring-up', async () => {
-    const value = deps({ sessionProject: vi.fn(async () => 'p-far') }).value;
+    const value = deps({ sessionListed: vi.fn(async () => true) }).value;
     await openLinkWith(value, { kind: 'session', sessionId: 's-far', deviceId: 'dev-b', projectId: 'p-far', beside: true });
-    expect(value.sessionProject).toHaveBeenCalledWith('s-far', { deviceId: 'dev-b', projectId: 'p-far' });
-    expect(value.bringUp).toHaveBeenCalledWith({ projectId: 'p-far', sessionId: 's-far', beside: true });
+    expect(value.sessionListed).toHaveBeenCalledWith('s-far', { deviceId: 'dev-b', projectId: 'p-far' });
+    expect(value.bringUp).toHaveBeenCalledWith({ sessionId: 's-far', beside: true });
   });
 
   it('delivers to the actual place the App opened, including an App already placed in a task', async () => {

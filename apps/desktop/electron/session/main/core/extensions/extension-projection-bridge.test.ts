@@ -21,7 +21,7 @@ const turn = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 afterEach(() => { revokeExtensionProgramAccess(owner.extensionId); appApi.version = 58; vi.useRealTimers(); });
 
 function setup() {
-  const bridge = new ExtensionProjectionBridge(() => {}, async () => 'project-test');
+  const bridge = new ExtensionProjectionBridge(() => {}, async () => {});
   let sourceEvent: Parameters<NonNullable<ProjectionHost['onProjectionSource']>>[0] = noop;
   const sourceCaller = program(event => { if (event.type === 'projectionSource') sourceEvent(event.event); });
   const call = (verb: string, args: Record<string, unknown>) => bridge.call(sourceCaller, verb, args);

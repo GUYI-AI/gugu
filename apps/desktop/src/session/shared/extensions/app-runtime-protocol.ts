@@ -681,8 +681,8 @@ export interface ChatPeekFile {
  */
 export type PeekTarget =
   | { kind: 'chat'; detail: AppOpenWithDetail }
-  | { kind: 'folder'; place: WorkspacePlace; deviceId?: string; projectId: string; workspaceId: string; path: string; absolutePath: string; name: string; ask: boolean }
-  | { kind: 'session'; sessionId: string; projectId: string; deviceId?: string };
+  | { kind: 'folder'; place: WorkspacePlace; deviceId?: string; workspaceId: string; path: string; absolutePath: string; name: string; ask: boolean }
+  | { kind: 'session'; sessionId: string; deviceId?: string };
 
 export const GROUP_FILE_NOT_OPENED = 'Not opened: the person at this computer is not in the chat this file belongs to';
 

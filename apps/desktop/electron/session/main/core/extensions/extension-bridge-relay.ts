@@ -65,8 +65,8 @@ export type ExtensionHostWindowChannel = {
   notifyInstalledExtensionsChanged: () => Promise<void>;
   /** Members' faces by id (`lib/memberFaces.ts`). */
   drawMemberFaces: (people: readonly { id: string; avatar: string | null }[]) => Promise<Record<string, string>>;
-  /** #7158 The project the window's task list has another computer's session under, or null (`remoteHostsStore.listedProject`). */
-  listedSession: (sessionId: string, hint?: { deviceId?: string; projectId?: string }) => Promise<string | null>;
+  /** #7158 Whether the window's task list has another computer's session. */
+  listedSession: (sessionId: string, hint?: { deviceId?: string; projectId?: string }) => Promise<boolean>;
   /** An action no page asked for (a link's or a banner's click), done by the window that shows chats and Apps. */
   act: (command: ExtensionHostActionCommand) => Promise<ExtensionHostActionResult>;
   /** #1927 (47) `gugu.voiceNote`, asked of the window that holds the voice-note recorder (app-voice-note-host.ts). */
@@ -223,8 +223,8 @@ export function drawMemberFaces(people: readonly { id: string; avatar: string | 
   return Promise.resolve().then(() => requireHostWindow().drawMemberFaces(people));
 }
 
-/** The project the task list has another computer's session under, or null, asked of the window (`gugu.showSession`). */
-export function listedSessionProject(sessionId: string, hint?: { deviceId?: string; projectId?: string }): Promise<string | null> {
+/** Whether the task list has another computer's session, asked of the window (`gugu.showSession`). */
+export function sessionListedByWindow(sessionId: string, hint?: { deviceId?: string; projectId?: string }): Promise<boolean> {
   return Promise.resolve().then(() => requireHostWindow().listedSession(sessionId, hint));
 }
 

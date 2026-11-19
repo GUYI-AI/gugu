@@ -16,7 +16,6 @@ import type { TaskPageFilePayload } from '@shared/extensions/task-page-files';
 export type TaskPageRect = { x: number; y: number; width: number; height: number };
 
 export interface TaskPageNative {
-  projectId: string;
   title: string;
   url: string;
   protocol: PageProtocol;
@@ -43,7 +42,6 @@ export class ExtensionTaskPages {
   private readonly pages = new Map<string, RecordOfPage>();
   private readonly owners = new Map<number, { live: boolean; controller: AbortController; pending: Set<Promise<void>>; release(): void }>();
   private readonly taskEpochs = new Map<string, number>();
-  private readonly deletedProjects = new Set<string>();
   private readonly mounted = new Map<number, { id: string; layout(rect: TaskPageRect): void; close(): void }>();
   private readonly closing = new Map<number, Set<Promise<void>>>();
 
@@ -123,7 +121,7 @@ export class ExtensionTaskPages {
       signal.throwIfAborted();
       native = await this.select({ sessionId: from.sessionId, ...(args.url === undefined ? {} : { url: args.url as string }), signal, lifetime: access.signal });
       signal.throwIfAborted();
-      if (!owner.live || epoch !== (this.taskEpochs.get(from.sessionId) ?? 0) || this.deletedProjects.has(native.projectId)) {
+      if (!owner.live || epoch !== (this.taskEpochs.get(from.sessionId) ?? 0)) {
         throw new Error('The task page owner changed while acquiring the page');
       }
       const page: RecordOfPage = {
@@ -325,11 +323,10 @@ export class ExtensionTaskPages {
     if (failures.length) throw new AggregateError(failures, 'Task pages did not close cleanly');
   }
 
-  closeScope(scope: { sessionId: string } | { projectId: string }): void {
-    if ('sessionId' in scope) this.taskEpochs.set(scope.sessionId, (this.taskEpochs.get(scope.sessionId) ?? 0) + 1);
-    else this.deletedProjects.add(scope.projectId);
+  closeScope(scope: { sessionId: string }): void {
+    this.taskEpochs.set(scope.sessionId, (this.taskEpochs.get(scope.sessionId) ?? 0) + 1);
     for (const page of [...this.pages.values()]) {
-      if ('sessionId' in scope ? page.sessionId === scope.sessionId : page.native.projectId === scope.projectId) this.endFromNative(page, 'Task page ended');
+      if (page.sessionId === scope.sessionId) this.endFromNative(page, 'Task page ended');
     }
   }
 }

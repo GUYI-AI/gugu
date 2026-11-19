@@ -47,7 +47,6 @@ export class LocalTerminalProvider implements TerminalProvider {
   private knownPtySessionIds = new Set<string>();
   private shellProfiles = new Map<string, ResolvedShellProfile>();
   private respawnCounts = new Map<string, number>();
-  private readonly projectId: string;
   private readonly workspaceId: string;
   private readonly scopeId: string;
   private readonly sessionPath: string;
@@ -58,7 +57,6 @@ export class LocalTerminalProvider implements TerminalProvider {
   private readonly sessionEnvVars: Record<string, string>;
 
   constructor({
-    projectId,
     workspaceId,
     scopeId,
     sessionPath,
@@ -67,8 +65,8 @@ export class LocalTerminalProvider implements TerminalProvider {
     ctx,
     sessionEnvVars = {},
   }: {
-    projectId: string;
-    workspaceId?: string;
+    /** The workspace the terminals run in: the first part of their pty ids. */
+    workspaceId: string;
     scopeId: string;
     sessionPath: string;
     tmux?: boolean | (() => Promise<boolean>);
@@ -76,8 +74,7 @@ export class LocalTerminalProvider implements TerminalProvider {
     ctx: IExecutionContext;
     sessionEnvVars?: Record<string, string>;
   }) {
-    this.projectId = projectId;
-    this.workspaceId = workspaceId ?? scopeId;
+    this.workspaceId = workspaceId;
     this.scopeId = scopeId;
     this.sessionPath = sessionPath;
     const initialTmux = typeof tmux === 'boolean' ? tmux : false;
@@ -134,7 +131,7 @@ export class LocalTerminalProvider implements TerminalProvider {
   }
 
   async getLifecycleScriptShellFamily(terminalId: string) {
-    const ptySessionId = makePtySessionId(this.projectId, this.scopeId, terminalId);
+    const ptySessionId = makePtySessionId(this.workspaceId, this.scopeId, terminalId);
     const shellProfile = await this.getSessionShellProfile(ptySessionId, 'system');
     return shellProfile.family;
   }
@@ -148,7 +145,7 @@ export class LocalTerminalProvider implements TerminalProvider {
     metadata: PtySessionMetadata | undefined,
     policy: SpawnPolicy
   ): Promise<void> {
-    const ptySessionId = makePtySessionId(terminal.projectId, this.scopeId, terminal.id);
+    const ptySessionId = makePtySessionId(this.workspaceId, this.scopeId, terminal.id);
     this.knownPtySessionIds.add(ptySessionId);
     if (this.ptysBySession.has(ptySessionId)) return;
     const tmuxEnabled = await this.resolveTmuxSetting();
@@ -210,7 +207,6 @@ export class LocalTerminalProvider implements TerminalProvider {
         onDetected: (server) => {
           void previewServerService
             .registerDetectedTarget({
-              projectId: this.projectId,
               workspaceId: this.workspaceId,
               source: { kind: 'terminal-output', terminalId: terminal.id },
               protocol: server.protocol,
@@ -227,7 +223,6 @@ export class LocalTerminalProvider implements TerminalProvider {
         },
         onSourceClosed: (event) =>
           previewServerService.handleTerminalSourceClosed({
-            projectId: this.projectId,
             workspaceId: this.workspaceId,
             terminalId: terminal.id,
             reason: event.reason,
@@ -306,7 +301,7 @@ export class LocalTerminalProvider implements TerminalProvider {
   }
 
   async killTerminal(terminalId: string): Promise<void> {
-    const ptySessionId = makePtySessionId(this.projectId, this.scopeId, terminalId);
+    const ptySessionId = makePtySessionId(this.workspaceId, this.scopeId, terminalId);
     this.knownPtySessionIds.delete(ptySessionId);
     const pty = this.ptysBySession.get(ptySessionId);
     if (pty) {

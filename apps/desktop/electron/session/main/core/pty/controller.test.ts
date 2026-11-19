@@ -67,7 +67,7 @@ vi.mock('../sessions/session-workspace-manager', () => ({
   },
 }));
 
-vi.mock('../projects/project-manager', () => ({
+vi.mock('@main/core/workspaces/folder-runtime/folder-runtimes', () => ({
   projectManager: {
     getProject: mocks.getProject,
   },
@@ -152,7 +152,6 @@ describe('ptyController', () => {
     expect(result.success).toBe(true);
     expect(write).toHaveBeenCalledWith('hello\r');
     expect(emitSpy).toHaveBeenCalledWith('session:input-submitted', {
-      projectId: 'proj-1',
       sessionId: 'conv-1',
       providerId: 'amp',
     });

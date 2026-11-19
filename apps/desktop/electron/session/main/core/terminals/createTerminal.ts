@@ -2,10 +2,11 @@ import { eq, sql } from 'drizzle-orm';
 import { withCompensation } from '@main/core/utils/compensation';
 import { db } from '@main/db/client';
 import { terminals } from '@main/db/schema';
+import { LEGACY_PLACEHOLDER_PROJECT_ID } from '@main/core/folders/legacy-project-aliases';
 import { log } from '@main/lib/logger';
 import type { TerminalShellId } from '@shared/core/terminals/terminal-settings';
 import type { CreateTerminalParams, Terminal } from '@shared/core/terminals/terminals';
-import { resolveSession } from '../projects/utils';
+import { sessionWorkspaceManager } from '../sessions/session-workspace-manager';
 import { appSettingsService } from '../settings/settings-service';
 import { mapTerminalRowToTerminal } from './core';
 
@@ -23,7 +24,7 @@ async function resolveCreateTerminalShell(
 export async function createTerminal(params: CreateTerminalParams): Promise<Terminal> {
   const { id: terminalId, initialSize = { cols: 80, rows: 24 } } = params;
 
-  const session = resolveSession(params.projectId, params.sessionId);
+  const session = sessionWorkspaceManager.getSession(params.sessionId);
   if (!session) {
     throw new Error('Session not mounted');
   }
@@ -33,7 +34,8 @@ export async function createTerminal(params: CreateTerminalParams): Promise<Term
     .insert(terminals)
     .values({
       id: terminalId,
-      projectId: params.projectId,
+      // @@@c1-legacy-project — read only by the previous release after a rollback.
+      projectId: LEGACY_PLACEHOLDER_PROJECT_ID,
       sessionId: params.sessionId,
       name: params.name,
       shellId: shell,

@@ -42,31 +42,31 @@ export class ActivityJournal {
 
   append(input: ActivityObservation): void {
     const observed = activityObservationSchema.parse(input);
-    const projectId = this.projectOf(observed);
-    const event: ActivityEvent = projectId === null ? observed : { ...observed, project_id: projectId };
-    this.sql.prepare(`INSERT INTO activity_events (event_id, occurred_at, observed_at, kind, session_id, project_id, data)
+    const chatId = this.chatOf(observed);
+    const event: ActivityEvent = chatId === null ? observed : { ...observed, chat_id: chatId };
+    this.sql.prepare(`INSERT INTO activity_events (event_id, occurred_at, observed_at, kind, session_id, chat_id, data)
       VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(event_id) DO NOTHING`).run(event.event_id, event.occurred_at,
-      event.observed_at, event.kind, event.session_id ?? null, projectId, JSON.stringify(event));
+      event.observed_at, event.kind, event.session_id ?? null, chatId, JSON.stringify(event));
   }
   /**
-   * The project an event belongs to, derived here from its subject; producers cannot supply it. A session's project
-   * never changes (no path moves a session to another project; deleting a project deletes its sessions), so the
-   * record the database writes with every session row (activity_session_projects, migration 0039) gives the same
-   * answer before and after the session is deleted. An automation run belongs to its automation's project at the
-   * time of the run. A subject this machine never had belongs to no project.
+   * The group an event belongs to, derived here from its subject; producers cannot supply it. A session keeps the group
+   * it was started in, so the record the database writes with every session row (activity_session_chats) gives the
+   * same answer before and after the session is deleted. An automation run belongs to the group its automation's
+   * folder is bound to at the time of the run. A subject without a group, or one this machine never had, belongs to
+   * none.
    */
-  private projectOf(event: ActivityObservation): string | null {
-    if (event.kind.startsWith('project.')) return event.object_id ?? null;
+  private chatOf(event: ActivityObservation): string | null {
     if (event.session_id !== undefined) {
-      const row = this.sql.prepare('SELECT project_id FROM activity_session_projects WHERE session_id = ?')
-        .get(event.session_id) as { project_id: string } | undefined;
-      return row ? row.project_id : null;
+      const row = this.sql.prepare('SELECT chat_id FROM activity_session_chats WHERE session_id = ?')
+        .get(event.session_id) as { chat_id: string | null } | undefined;
+      return row?.chat_id ?? null;
     }
     if (event.kind === 'automation.run' && event.object_id !== undefined) {
-      const row = this.sql.prepare(`SELECT automations.project_id FROM automation_runs
-        JOIN automations ON automations.id = automation_runs.automation_id WHERE automation_runs.id = ?`)
-        .get(event.object_id) as { project_id: string | null } | undefined;
-      return row ? row.project_id : null;
+      const row = this.sql.prepare(`SELECT workspaces.chat_id FROM automation_runs
+        JOIN automations ON automations.id = automation_runs.automation_id
+        JOIN workspaces ON workspaces.id = automations.workspace_id WHERE automation_runs.id = ?`)
+        .get(event.object_id) as { chat_id: string | null } | undefined;
+      return row?.chat_id ?? null;
     }
     return null;
   }
@@ -86,12 +86,11 @@ export class ActivityJournal {
     if (!row) throw new Error('Activity event does not exist on this machine');
     return activityEventSchema.parse(JSON.parse(row.data));
   }
-  /** `projects`: the local projects `project_id` stands for on this machine (a project id names a group, not one of them); the caller translates it. */
-  list(input: ActivityQuery, projects?: readonly string[]) {
+  list(input: ActivityQuery) {
     if (this.fault) throw new Error('Activity capture failed in this process; coverage is incomplete. Check the host log.');
     const q = activityQuerySchema.parse(input);
     const identity = this.sql.prepare('SELECT id FROM activity_coverage ORDER BY rowid LIMIT 1').get() as { id: string } | undefined;
-    const signature = createHash('sha256').update(JSON.stringify([identity?.id, q.since, q.until, q.session_id ?? null, q.project_id ?? null])).digest('hex');
+    const signature = createHash('sha256').update(JSON.stringify([identity?.id, q.since, q.until, q.session_id ?? null, q.chat_id ?? null])).digest('hex');
     let after = 0;
     let high = (this.sql.prepare('SELECT COALESCE(MAX(seq), 0) AS n FROM activity_events').get() as { n: number }).n;
     if (q.cursor) {
@@ -106,7 +105,7 @@ export class ActivityJournal {
     const conditions = ['seq > ?', 'seq <= ?', 'COALESCE(occurred_at, observed_at) >= ?', 'COALESCE(occurred_at, observed_at) < ?'];
     const args: (string | number)[] = [after, high, Date.parse(q.since), Date.parse(q.until)];
     if (q.session_id) { conditions.push('session_id = ?'); args.push(q.session_id); }
-    if (projects) { conditions.push(`project_id IN (${projects.map(() => '?').join(',') || 'NULL'})`); args.push(...projects); }
+    if (q.chat_id) { conditions.push('chat_id = ?'); args.push(q.chat_id); }
     const rows = this.sql.prepare(`SELECT seq, data FROM activity_events WHERE ${conditions.join(' AND ')} ORDER BY seq LIMIT ?`).all(...args, q.limit + 1) as Row[];
     const page = rows.slice(0, q.limit);
     // Current session metadata, not input/reply text and not an event-time title.
@@ -120,7 +119,7 @@ export class ActivityJournal {
     ).all(...sessionIds) as Array<{ id: string; agentDisplayName: string | null }>;
     const segments = this.sql.prepare(`SELECT started_at, last_seen_at, ended_at FROM activity_coverage
       WHERE started_at < ? AND COALESCE(ended_at, last_seen_at) >= ? ORDER BY started_at`).all(Date.parse(q.until), Date.parse(q.since)) as Coverage[];
-    // Sleep can start before this query window and has no session/project. Read
+    // Sleep can start before this query window and has no session/group. Read
     // overlapping attestations independently of event pagination and filters.
     const sleepRows = this.sql.prepare(`SELECT data FROM activity_events WHERE kind = 'device.sleep'
       AND seq <= ? AND occurred_at < ? AND json_extract(data, '$.sleep_until_at') > ?`)

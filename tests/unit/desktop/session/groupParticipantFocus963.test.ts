@@ -5,9 +5,9 @@ vi.mock('@main/core/extensions/extensions-root', () => ({
   extensionsService: () => ({ list: () => ({ extensions: [] }), isEnabled: () => true }),
 }));
 vi.mock('@main/core/extensions/extension-bridge', () => ({ bringSessionUp: host.focus }));
-vi.mock('@main/core/extensions/extension-show-session', () => ({ sessionHere: async () => 'imported-project' }));
+vi.mock('@main/core/extensions/extension-show-session', () => ({ sessionHere: async () => true }));
 vi.mock('@main/core/extensions/extension-bridge-relay', () => ({
-  actInWindow: async () => undefined, listedSessionProject: async () => null,
+  actInWindow: async () => undefined, sessionListedByWindow: async () => false,
 }));
 vi.mock('@main/core/host-locale', () => ({ sessionHostLocale: () => 'en-US' }));
 import { openLink, setSessionOpening } from '@main/core/extensions/gugu-links';
@@ -20,15 +20,15 @@ beforeEach(() => {
 });
 afterEach(() => setSessionOpening(null));
 
-it('carries the group receipt through main authorization and project alias resolution', async () => {
+it('carries the group receipt through main authorization', async () => {
   await expect(openLink(target, 'group-request-id')).resolves.toMatchObject({ kind: 'opened' });
   expect(host.ready).toHaveBeenCalledWith(target.sessionId);
-  expect(host.focus).toHaveBeenCalledExactlyOnceWith({ projectId: 'imported-project', sessionId: target.sessionId, groupParticipantRequestId: 'group-request-id' });
+  expect(host.focus).toHaveBeenCalledExactlyOnceWith({ sessionId: target.sessionId, groupParticipantRequestId: 'group-request-id' });
 });
 
 it('leaves ordinary task focus untagged', async () => {
   await expect(openLink(target)).resolves.toMatchObject({ kind: 'opened' });
-  expect(host.focus).toHaveBeenCalledExactlyOnceWith({ projectId: 'imported-project', sessionId: target.sessionId });
+  expect(host.focus).toHaveBeenCalledExactlyOnceWith({ sessionId: target.sessionId });
 });
 
 it('emits no receipt when host readiness fails before focus', async () => {

@@ -51,7 +51,6 @@ function terminalInputForScript(script: string, exit: boolean, windowsCmdExit: b
 }
 
 export class LifecycleScriptService implements IDisposable {
-  private readonly projectId: string;
   private readonly workspaceId: string;
   private readonly terminals: TerminalProvider;
   private readonly ptySessionsWithRespawnHandler = new Set<string>();
@@ -60,15 +59,12 @@ export class LifecycleScriptService implements IDisposable {
   private disposed = false;
 
   constructor({
-    projectId,
     workspaceId,
     terminals,
   }: {
-    projectId: string;
     workspaceId: string;
     terminals: TerminalProvider;
   }) {
-    this.projectId = projectId;
     this.workspaceId = workspaceId;
     this.terminals = terminals;
   }
@@ -108,7 +104,7 @@ export class LifecycleScriptService implements IDisposable {
     ptySessionId: string;
   } {
     const terminalId = createLifecycleScriptTerminalId(script.type);
-    const ptySessionId = makePtySessionId(this.projectId, this.workspaceId, terminalId);
+    const ptySessionId = makePtySessionId(this.workspaceId, this.workspaceId, terminalId);
     return { terminalId, ptySessionId };
   }
 
@@ -130,7 +126,6 @@ export class LifecycleScriptService implements IDisposable {
     await this.terminals.spawnLifecycleScript({
       terminal: {
         id: terminalId,
-        projectId: this.projectId,
         shellId: 'system',
         name: script.type,
       },

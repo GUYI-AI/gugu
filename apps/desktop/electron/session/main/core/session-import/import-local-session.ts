@@ -1,13 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { basename, join } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import { KeyedMutex } from '@gugu/session-core/lib';
 import { NEW_SESSION_PERMISSION_MODE } from '@gugu/session-core/acp';
-import { createLocalProject } from '@main/core/projects/operations/create-local-project';
-import { ensureRepositoryWorkspace } from '@main/core/projects/operations/ensure-repository-workspace';
-import { getLocalProjectByPath } from '@main/core/projects/operations/getProjects';
-import { openProject } from '@main/core/projects/operations/openProject';
+import { rootFolderOf } from '@main/core/folders/folders';
+import { workspaceAtDirectory } from '@main/core/workspaces/workspace-at-directory';
 import { sessionService } from '@main/core/sessions/session-service';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
@@ -39,76 +35,23 @@ function sessionIdFor(engine: LocalSessionEngine, providerSessionId: string): st
   return engine === 'claude-code' ? providerSessionId : randomUUID();
 }
 
-/** 把项目创建失败的内部枚举翻成人话——用户看到「invalid-directory」等于没说。 */
-function describeCreateProjectError(type: string, directory: string): string {
-  switch (type) {
-    case 'invalid-directory':
-    case 'inspect-failed':
-      return `这条会话所在的目录已经不在了或读不到：${directory}`;
-    case 'not-repository':
-      return `无法把 ${directory} 作为项目打开`;
-    default:
-      return `无法把 ${directory} 加成项目（${type}）`;
-  }
-}
-
-/** 把 openProject 的失败翻成人话——「path-not-found」对用户等于没说。 */
-function describeOpenProjectError(
-  error: { type: string; message?: string },
-  directory: string
-): string {
-  if (error.type === 'path-not-found') return `目录已经不在了：${directory}`;
-  return error.message ? `${directory}（${error.message}）` : directory;
-}
-
 /**
- * 把项目挂载进 projectManager，并确认真的挂上了。
- *
- * 建任务查的是 projectManager 这个**内存注册表**，不是数据库 —— 库里有项目行 ≠ 能建任务。
- * 而挂载只发生在「新建项目」那条分支里，且那里 openProject 的返回值没人看；
- * 复用已存在项目的分支则根本不挂。两条路都会留下「库里有、注册表里没有」的项目，
- * 建任务时报成 project-not-found —— 一个指向错误方向的报错（项目明明在）。
- * 更糟的是重试：第二次会走「这个目录已经是项目了」的复用分支，同样不挂 → 永久失败。
- * 所以这里对**两条路**都显式挂一次并检查结果。
- */
-async function mountImportProject<T extends { id: string; path: string }>(project: T): Promise<T> {
-  const opened = await openProject(project.id);
-  if (!opened.success) {
-    throw new Error(
-      `打不开这条会话所在的项目：${describeOpenProjectError(opened.error, project.path)}`
-    );
-  }
-  return project;
-}
-
-/**
- * 找/建这条会话的落点项目。
+ * 这条会话的落点：原目录本身的工作区（记录过的文件夹、文件夹里的目录，或者一个新的、不挂群的文件夹）。
  *
  * 关键是**会话必须在它原来的目录里跑起来**：claude 按「会话所在目录」定位会话
  * （`~/.claude/projects/<转义 cwd>`），归一化到仓库根会让 `--resume` 直接找不到原会话。
- * 所以只有当这个目录本身就是仓库根时才走常规建法（顺带拿到分支/更改能力）；
- * 其余情况（非 git 目录、或仓库的子目录）一律按原目录建，宁可少一点 git 能力，
- * 也不能把会话恢复到另一个目录里去。
+ * 它所在文件夹挂着群，会话就开在那个群里；没有群就是一条没有群的会话。
  */
-async function resolveImportProject(workingDirectory: string) {
-  const existing = await getLocalProjectByPath(workingDirectory);
-  if (existing) return await mountImportProject(existing);
-
-  // 这个目录自己就是仓库根 → 照常建 git 项目（拿得到分支/更改这些能力）。
-  // 否则（非 git 目录，或仓库的子目录）→ 就按这个目录本身建，不做仓库根归一化。
-  const isRepositoryRoot = existsSync(join(workingDirectory, '.git'));
-  const created = await createLocalProject({
-    path: workingDirectory,
-    name: basename(workingDirectory) || workingDirectory,
-    allowNonGit: true,
-    reuseExisting: true,
-    exactPath: !isRepositoryRoot,
-    automatic: true,
-  });
-  if (!created.success) {
-    throw new Error(describeCreateProjectError(created.error.type, workingDirectory));
+function resolveImportWorkspace(workingDirectory: string): { workspaceId: string; groupChatId: string | null } {
+  let workspaceId: string;
+  try {
+    workspaceId = workspaceAtDirectory(workingDirectory);
+  } catch (error) {
+    throw new Error(`这条会话所在的目录已经不在了或读不到：${workingDirectory}（${error instanceof Error ? error.message : String(error)}）`);
   }
-  return await mountImportProject(created.data);
+  const folder = rootFolderOf(workspaceId);
+  if (!folder) throw new Error(`${workingDirectory} 不在这台电脑记录的文件夹里`);
+  return { workspaceId, groupChatId: folder.chatId };
 }
 
 // The database-owning host claims one native session at a time; other native sessions stay independent.
@@ -142,7 +85,6 @@ export async function importLocalSession(
     const [existing] = await db
       .select({
         id: sessions.id,
-        projectId: sessions.projectId,
       })
       .from(sessions)
       .where(and(
@@ -152,22 +94,19 @@ export async function importLocalSession(
       .limit(1);
     if (existing) {
       return {
-        projectId: existing.projectId,
         sessionId: existing.id,
         workingDirectory,
         alreadyImported: true,
       };
     }
 
-    const project = await resolveImportProject(workingDirectory);
-
-    const repositoryWorkspaceId = project.repositoryWorkspaceId ?? ensureRepositoryWorkspace(project);
+    const { workspaceId, groupChatId } = resolveImportWorkspace(workingDirectory);
 
     const sessionId = sessionIdFor(params.engine, providerSessionId);
     const title = preview.title.trim() || params.title.trim() || '导入的会话';
 
     const created = await sessionService.createSession({
-      projectId: project.id,
+      ...(groupChatId ? { groupChatId } : {}),
       sessionConfig: {
         version: '1',
         name: title,
@@ -184,7 +123,7 @@ export async function importLocalSession(
           permissionMode: NEW_SESSION_PERMISSION_MODE,
         },
       },
-      workspaceConfig: buildWorkspaceConfigFromPreset('repo-root', { repositoryWorkspaceId }),
+      workspaceConfig: buildWorkspaceConfigFromPreset('repo-root', { repositoryWorkspaceId: workspaceId }),
     });
     if (!created.success) {
       // ❌ 别在这里再写一次「导入失败：」——界面已经带了这个前缀，重复一遍只是噪音。
@@ -192,9 +131,8 @@ export async function importLocalSession(
     }
 
     return {
-      projectId: project.id,
       sessionId,
-      workingDirectory: project.path,
+      workingDirectory,
       alreadyImported: false,
     };
   });

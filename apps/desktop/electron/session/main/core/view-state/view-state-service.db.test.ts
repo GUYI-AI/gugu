@@ -14,7 +14,12 @@ vi.mock('@main/db/client', () => ({
 import { flushViewState, viewStateService, viewStateSnapshot } from './view-state-service';
 import { readViewStateForRestore } from './restore-state';
 
-const lastViewed = (projectId: string, sessionId: string) => ({
+const lastViewed = (workspaceId: string, sessionId: string) => ({
+  currentViewId: 'session',
+  viewParams: { session: { workspaceId, sessionId } },
+});
+/** A snapshot saved by an earlier release names the session's local project. */
+const lastViewedBefore = (projectId: string, sessionId: string) => ({
   currentViewId: 'session',
   viewParams: { session: { projectId, sessionId } },
 });
@@ -29,8 +34,10 @@ describe('navigation restore: "not in this table" is not "deleted"', () => {
     mocks.db = fixture.db;
     fixture.sqlite.exec(`
       INSERT INTO projects (id, name, path) VALUES ('local-project', 'Project', '/repo');
-      INSERT INTO sessions (id, project_id, provider, runtime, archived_at)
-        VALUES ('archived', 'local-project', 'claude', 'pty', '2026-10-22T00:00:00Z');
+      INSERT INTO workspaces (id, type, kind, location, path) VALUES ('ws-local', 'local', 'project-root', 'local', '/repo');
+      INSERT INTO legacy_project_aliases (project_id, root_workspace_id, chat_id) VALUES ('local-project', 'ws-local', NULL);
+      INSERT INTO sessions (id, project_id, workspace_id, provider, runtime, archived_at)
+        VALUES ('archived', 'local-project', 'ws-local', 'claude', 'pty', '2026-10-22T00:00:00Z');
     `);
   });
 
@@ -41,21 +48,25 @@ describe('navigation restore: "not in this table" is not "deleted"', () => {
   });
 
   it('a session of another machine is restored', async () => {
-    await viewStateService.save('navigation', lastViewed('server-project', 'server-session'));
-    expect(await viewStateService.get('navigation')).toEqual(lastViewed('server-project', 'server-session'));
+    await viewStateService.save('navigation', lastViewed('server-workspace', 'server-session'));
+    expect(await viewStateService.get('navigation')).toEqual(lastViewed('server-workspace', 'server-session'));
+    await viewStateService.save('navigation', lastViewedBefore('server-project', 'server-session'));
+    expect(await viewStateService.get('navigation')).toEqual(lastViewedBefore('server-project', 'server-session'));
   });
 
-  it('a session deleted from a project of this machine falls back to that project', async () => {
-    await viewStateService.save('navigation', lastViewed('local-project', 'deleted-session'));
-    expect(await viewStateService.get('navigation')).toEqual({
-      currentViewId: 'project',
-      viewParams: { project: { projectId: 'local-project' } },
-    });
+  it('a session deleted from a folder of this machine falls back home', async () => {
+    await viewStateService.save('navigation', lastViewed('ws-local', 'deleted-session'));
+    expect(await viewStateService.get('navigation')).toEqual({ currentViewId: 'home', viewParams: {} });
+  });
+
+  it('a snapshot of an earlier release finds this machine through the legacy project alias', async () => {
+    await viewStateService.save('navigation', lastViewedBefore('local-project', 'deleted-session'));
+    expect(await viewStateService.get('navigation')).toEqual({ currentViewId: 'home', viewParams: {} });
   });
 
   it('an archived session still falls back', async () => {
-    await viewStateService.save('navigation', lastViewed('local-project', 'archived'));
-    expect(await viewStateService.get('navigation')).toMatchObject({ currentViewId: 'project' });
+    await viewStateService.save('navigation', lastViewed('ws-local', 'archived'));
+    expect(await viewStateService.get('navigation')).toMatchObject({ currentViewId: 'home' });
   });
 
   it('the restore read returns only the referenced session locations (the view state came with the first frame)', () => {

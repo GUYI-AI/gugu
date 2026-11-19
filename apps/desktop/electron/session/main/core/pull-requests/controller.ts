@@ -1,5 +1,6 @@
 import { err, ok } from '@gugu/session-shared';
 import { match, P } from 'ts-pattern';
+import { rootFolderOf } from '@main/core/folders/folders';
 import { providerRepositoryService } from '@main/core/repository/provider-repository-service';
 import { log } from '@main/lib/logger';
 import type {
@@ -15,9 +16,9 @@ import { prQueryService } from './pr-query-service';
 import { prSyncEngine } from './pr-sync-engine';
 import { type PrSyncEngineError } from './pr-sync-errors';
 import {
-  resolveProjectPullRequestAuthContext,
-  resolveProjectPullRequestContext,
-} from './project-pull-request-context';
+  resolveFolderPullRequestAuthContext,
+  resolveFolderPullRequestContext,
+} from './folder-pull-request-context';
 // @@@4865 曾是三处模块顶层 `await import(...)`(整个会话页主进程图里仅有的顶层 await)。CJS 产物不能
 // 带顶层 await:旧的 esbuild 配方靠一个插件把它们改写成同步 require;并入 rollup 后直接写成静态
 // import —— 同图里 85 个文件本就这样引 @main/db/client,不存在要绕的初始化环。
@@ -123,9 +124,9 @@ function mapPrSyncEngineError(
 export const pullRequestController = createRPCController({
   // ── DB-cached reads ────────────────────────────────────────────────────────
 
-  listPullRequests: async (projectId: string, options?: ListPrOptions) => {
+  listPullRequests: async (folderId: string, options?: ListPrOptions) => {
     try {
-      const prs = await prQueryService.listPullRequests(projectId, options);
+      const prs = await prQueryService.listPullRequests(folderId, options);
       return ok({ prs, totalCount: prs.length });
     } catch (error) {
       log.error('Failed to list pull requests:', error);
@@ -136,9 +137,9 @@ export const pullRequestController = createRPCController({
     }
   },
 
-  getFilterOptions: async (projectId: string) => {
+  getFilterOptions: async (folderId: string) => {
     try {
-      const options = await prQueryService.getFilterOptions(projectId);
+      const options = await prQueryService.getFilterOptions(folderId);
       return ok(options);
     } catch (error) {
       log.error('Failed to get PR filter options:', error);
@@ -149,13 +150,8 @@ export const pullRequestController = createRPCController({
     }
   },
 
-  getPullRequestsForSession: async (projectId: string, sessionId: string) => {
+  getPullRequestsForSession: async (sessionId: string) => {
     try {
-      const capability = await providerRepositoryService.resolveProject(projectId);
-      if (!capability.success) {
-        return ok({ prs: [], branchName: null });
-      }
-
       const [sessionRow] = await db
         .select({ workspaceId: sessions.workspaceId })
         .from(sessions)
@@ -163,6 +159,14 @@ export const pullRequestController = createRPCController({
         .limit(1);
 
       if (!sessionRow?.workspaceId) {
+        return ok({ prs: [], branchName: null });
+      }
+
+      // The session's PRs are its root folder's repository's.
+      const folder = rootFolderOf(sessionRow.workspaceId);
+      if (!folder) return ok({ prs: [], branchName: null });
+      const capability = await providerRepositoryService.resolveFolder(folder.id);
+      if (!capability.success) {
         return ok({ prs: [], branchName: null });
       }
 
@@ -192,9 +196,9 @@ export const pullRequestController = createRPCController({
 
   // ── Sync triggers ──────────────────────────────────────────────────────────
 
-  forceFullSyncPullRequests: async (projectId: string) => {
+  forceFullSyncPullRequests: async (folderId: string) => {
     try {
-      const context = await resolveProjectPullRequestContext(projectId);
+      const context = await resolveFolderPullRequestContext(folderId);
       if (!context.success) return err(context.error);
 
       const result = await prSyncEngine.forceFullSync(
@@ -214,20 +218,20 @@ export const pullRequestController = createRPCController({
     }
   },
 
-  syncPullRequests: async (projectId: string) => {
+  syncPullRequests: async (folderId: string) => {
     try {
-      log.info('PrController: syncPullRequests called', { projectId });
-      const context = await resolveProjectPullRequestContext(projectId);
+      log.info('PrController: syncPullRequests called', { folderId });
+      const context = await resolveFolderPullRequestContext(folderId);
       if (!context.success) {
-        log.warn('PrController: project GitHub context not ready, skipping sync', {
-          projectId,
+        log.warn('PrController: folder GitHub context not ready, skipping sync', {
+          folderId,
           errorType: context.error.type,
           error: 'message' in context.error ? context.error.message : undefined,
         });
         return err(context.error);
       }
       log.info('PrController: triggering sync', {
-        projectId,
+        folderId,
         repositoryUrl: context.data.repositoryUrl,
       });
       const result = await prSyncEngine.sync(context.data.repositoryUrl, context.data.authContext);
@@ -244,9 +248,9 @@ export const pullRequestController = createRPCController({
     }
   },
 
-  refreshPullRequest: async (projectId: string, repositoryUrl: string, prNumber: number) => {
+  refreshPullRequest: async (folderId: string, repositoryUrl: string, prNumber: number) => {
     try {
-      const authContext = await resolveProjectPullRequestAuthContext(projectId);
+      const authContext = await resolveFolderPullRequestAuthContext(folderId);
       if (!authContext.success) return err(authContext.error);
 
       const result = await prSyncEngine.syncSingle(repositoryUrl, prNumber, authContext.data);
@@ -263,9 +267,9 @@ export const pullRequestController = createRPCController({
     }
   },
 
-  syncChecks: async (projectId: string, pullRequestUrl: string, headRefOid: string) => {
+  syncChecks: async (folderId: string, pullRequestUrl: string, headRefOid: string) => {
     try {
-      const authContext = await resolveProjectPullRequestAuthContext(projectId);
+      const authContext = await resolveFolderPullRequestAuthContext(folderId);
       if (!authContext.success) return err(authContext.error);
 
       const result = await prSyncEngine.syncChecks(pullRequestUrl, headRefOid, authContext.data);
@@ -289,7 +293,7 @@ export const pullRequestController = createRPCController({
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
-  createPullRequest: async (projectId: string, params: CreatePullRequestParams) => {
+  createPullRequest: async (folderId: string, params: CreatePullRequestParams) => {
     try {
       if (params.headRepositoryUrl) {
         const baseRef = parseRepositoryRef(params.repositoryUrl);
@@ -303,7 +307,7 @@ export const pullRequestController = createRPCController({
         }
       }
 
-      const authContext = await resolveProjectPullRequestAuthContext(projectId);
+      const authContext = await resolveFolderPullRequestAuthContext(folderId);
       if (!authContext.success) return err(authContext.error);
 
       const result = await prSyncEngine.createPullRequest(params, authContext.data);
@@ -321,13 +325,13 @@ export const pullRequestController = createRPCController({
   },
 
   mergePullRequest: async (
-    projectId: string,
+    folderId: string,
     repositoryUrl: string,
     prNumber: number,
     options: PullRequestMergeOptions
   ) => {
     try {
-      const authContext = await resolveProjectPullRequestAuthContext(projectId);
+      const authContext = await resolveFolderPullRequestAuthContext(folderId);
       if (!authContext.success) return err(authContext.error);
 
       const result = await prSyncEngine.mergePullRequest(
@@ -351,9 +355,9 @@ export const pullRequestController = createRPCController({
     }
   },
 
-  markReadyForReview: async (projectId: string, repositoryUrl: string, prNumber: number) => {
+  markReadyForReview: async (folderId: string, repositoryUrl: string, prNumber: number) => {
     try {
-      const authContext = await resolveProjectPullRequestAuthContext(projectId);
+      const authContext = await resolveFolderPullRequestAuthContext(folderId);
       if (!authContext.success) return err(authContext.error);
 
       const result = await prSyncEngine.markReadyForReview(
@@ -377,9 +381,9 @@ export const pullRequestController = createRPCController({
 
   // ── Pass-through reads ─────────────────────────────────────────────────────
 
-  getPullRequestFiles: async (projectId: string, repositoryUrl: string, prNumber: number) => {
+  getPullRequestFiles: async (folderId: string, repositoryUrl: string, prNumber: number) => {
     try {
-      const authContext = await resolveProjectPullRequestAuthContext(projectId);
+      const authContext = await resolveFolderPullRequestAuthContext(folderId);
       if (!authContext.success) return err(authContext.error);
 
       const result = await prSyncEngine.getPullRequestFiles(
@@ -401,9 +405,9 @@ export const pullRequestController = createRPCController({
     }
   },
 
-  getPullRequestComments: async (projectId: string, repositoryUrl: string, prNumber: number) => {
+  getPullRequestComments: async (folderId: string, repositoryUrl: string, prNumber: number) => {
     try {
-      const authContext = await resolveProjectPullRequestAuthContext(projectId);
+      const authContext = await resolveFolderPullRequestAuthContext(folderId);
       if (!authContext.success) return err(authContext.error);
 
       const result = await prSyncEngine.getPullRequestComments(

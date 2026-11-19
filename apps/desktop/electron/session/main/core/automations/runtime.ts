@@ -24,7 +24,7 @@ export async function runQueuedAutomation(
   // #7221 agent 给自己排的:不开会话,把交代送回建它的那条会话。
   if (automation.agentSessionId) return executeAgentDelivery(automation, run, onStepCompleted);
 
-  if (automation.projectId == null) {
+  if (automation.workspaceId == null) {
     run = await markRunSkipped(run.id, { step: 'queue', code: 'no_project' });
     onStepCompleted(run);
     return err('no_project');

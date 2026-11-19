@@ -73,7 +73,7 @@ export type ExtensionHostAction =
   /** A session's working-copy file (`files.openWith`): opened in that session's pane as a click there opens it. */
   | { kind: 'openSessionFolder'; folder: string }
   /** `among`, `origin` (API 57, `openingViewOf`): the working copy's images shown with it, and the clicked picture's box in the page. */
-  | { kind: 'openSessionFile'; sessionId: string; projectId: string | null; deviceId: string | null; path: string; ask: boolean; intent?: TabOpenIntent; viewState?: Record<string, unknown>; among?: string[]; origin?: ViewBox }
+  | { kind: 'openSessionFile'; sessionId: string; deviceId: string | null; path: string; ask: boolean; intent?: TabOpenIntent; viewState?: Record<string, unknown>; among?: string[]; origin?: ViewBox }
   /** `files.forward`: the window's forward page for chat files (ChatFileForwardHost). */
   | { kind: 'forwardFiles'; detail: AppForwardFilesDetail }
   /** G1 Beside the page that asked, in its own slot (the origin's): the page stays as it is. */

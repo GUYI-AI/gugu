@@ -32,7 +32,7 @@ vi.mock('electron', () => ({
 vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 vi.mock('@main/core/extensions/extension-session', () => ({ extensionIdForSession: () => 'board', isExtensionSessionConfigured: () => true }));
 vi.mock('@main/core/extensions/extension-background', () => ({ extensionBackgroundWebContentsId: () => null, runningExtensionBackgrounds: () => [] }));
-vi.mock('./projection-task', () => ({ projectionTaskProject: async () => 'project-1' }));
+vi.mock('./projection-task', () => ({ assertTaskLive: async () => {} }));
 vi.mock('@main/core/extensions/extension-programs', () => ({ extensionPrograms: {}, onExtensionProgramNotification: vi.fn() }));
 vi.mock('@main/core/extensions/extensions-root', () => ({
   extensionsService: () => ({
@@ -81,11 +81,10 @@ vi.mock('@main/core/extensions/app-files', () => ({
   appFilesCanDelete,
 }));
 // This computer's projects: one of the person's, and the hidden home folder sessions start in with no project chosen.
-vi.mock('@main/core/projects/operations/getProjects', () => ({
-  getProjects: async () => [
-    { id: 'project-1', name: 'gugu', path: '/repo/gugu' },
-    { id: '00000000-0000-4000-8000-000000000001', name: '任务工作区', path: '/home/.gugu/tasks' },
-  ],
+// The protocol's projects are this computer's group folders; the task home is bound to no group, so never listed.
+vi.mock('@main/core/folders/folders', () => ({
+  listFolders: () => [{ id: 'project-1', path: '/repo/gugu', chatId: 'chat-1' }],
+  isTaskHomeFolder: () => false,
 }));
 const dispatchForApp = vi.fn(async (_id: string, args: { to?: unknown }) => ({ to: args.to, id: 'm-1' }));
 const messagesHistory = vi.fn(async () => ({ messages: [], next: null }));

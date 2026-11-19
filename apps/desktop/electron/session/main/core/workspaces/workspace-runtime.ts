@@ -1,27 +1,27 @@
 import type { RuntimeManager } from '@main/core/runtime/types'
-import { projectDirectoryHasNoGit } from '../projects/resolve-project-gitless'
+import { directoryHasNoGit } from './folder-runtime/folder-gitless'
 
 export async function acquireWorkspaceRuntime(
   workspaceRuntime: { manager: Pick<RuntimeManager, 'acquire'> },
   workDir: string,
-  // gugu #2358: 非 git 项目的目录不是 git 仓,openWorktree 会抛 → 跳过,gitWorktree 缺省。
+  // gugu #2358: 非 git 文件夹的目录不是 git 仓,openWorktree 会抛 → 跳过,gitWorktree 缺省。
   // 会话的对话/终端 provider 不依赖 git,fileTree/filesRuntime 照常打开,agent 直接在目录里跑。
   gitless: boolean,
-  projectPath?: string
+  folderPath?: string
 ) {
   const runtimeLease = await workspaceRuntime.manager.acquire()
   try {
     const files = runtimeLease.value.files
     const opened = files.fileSystem()
     if (!opened.success) throw new Error(opened.error.message)
-    // Metadata can disappear after the project was mounted. Recheck when a new
+    // Metadata can disappear after the folder was opened. Recheck when a new
     // workspace is acquired without tearing down any already running sessions.
     const currentlyGitless =
       gitless ||
-      (projectPath !== undefined &&
-        (await projectDirectoryHasNoGit(
-          projectPath,
-          files.path.join(projectPath, '.git'),
+      (folderPath !== undefined &&
+        (await directoryHasNoGit(
+          folderPath,
+          files.path.join(folderPath, '.git'),
           opened.data
         )))
     const worktreeLease = currentlyGitless

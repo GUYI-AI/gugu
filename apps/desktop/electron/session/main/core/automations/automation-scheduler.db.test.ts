@@ -56,7 +56,7 @@ function seedAutomation(
 
   fixture.sqlite
     .prepare(
-      `INSERT INTO automations (id, name, project_id, trigger_config, agent_config, enabled, created_at, updated_at)
+      `INSERT INTO automations (id, name, workspace_id, trigger_config, agent_config, enabled, created_at, updated_at)
        VALUES (?, 'Daily follow-up', ?, ?, ?, ?, 0, 0)`
     )
     .run(id, projectId, triggerConfig, SESSION_CONFIG, enabled);

@@ -273,10 +273,9 @@ export async function showExtensionNotification(input: { extensionId: string; re
         import('./app-files'),
         import('../agent-hooks/system-notifications'),
       ]);
-    const projectOf = async (sessionId: string) => {
-      const projectId = (await agentSessionContext(sessionId))?.projectId;
-      if (!projectId) throw new Error(`No session ${sessionId} on this computer`);
-      return projectId;
+    const here = async (sessionId: string) => {
+      if (!(await agentSessionContext(sessionId))) throw new Error(`No session ${sessionId} on this computer`);
+      return sessionId;
     };
     notifier = createExtensionNotifier({
       manifestOf: (id) => extensionsService().get(id).manifest,
@@ -292,14 +291,14 @@ export async function showExtensionNotification(input: { extensionId: string; re
       },
       open: async (target) => {
         if ('session' in target) {
-          await orchestration.revealExtensionTabInSession({ projectId: await projectOf(target.session), sessionId: target.session, tabKind: target.tabKind });
+          await orchestration.revealExtensionTabInSession({ sessionId: await here(target.session), tabKind: target.tabKind });
         } else if ('chat' in target) {
           await actInWindow({ kind: 'openApp', extensionId: target.extensionId, chatId: target.chat });
         } else if ('own' in target) {
           await actInWindow({ kind: 'openApp', extensionId: target.own });
         } else if (isWorkspace(target.file)) {
           const sessionId = workspaceSession(target.file)!;
-          await orchestration.openSessionFileForApp({ projectId: await projectOf(sessionId), sessionId, path: target.file.id, ask: false });
+          await orchestration.openSessionFileForApp({ sessionId: await here(sessionId), path: target.file.id, ask: false });
         } else {
           await actInWindow({ kind: 'openChatFile', chatId: target.file.chat ?? (await files.chatOfItem(target.file.id)), itemId: target.file.id });
         }

@@ -64,11 +64,11 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
     fixtureRef.current = await openFixture('empty');
     fixture().sqlite.exec(`
       INSERT INTO projects (id, name, path) VALUES ('p1', 'P', '/repo');
-      INSERT INTO projects (id, name, path, workspace_provider) VALUES ('p-ssh', 'R', '/srv', 'ssh');
-      INSERT INTO sessions (id, project_id, config) VALUES
-        ('s1', 'p1', '{"version":"1","type":"acp","agentDisplayName":"Task one"}'),
-        ('s2', 'p1', '{"version":"1","type":"acp","agentDisplayName":"Task two"}'),
-        ('s-ssh', 'p-ssh', '{"version":"1","type":"acp","agentDisplayName":"Remote"}');
+      INSERT INTO workspaces (id, type, kind, location, path) VALUES ('ws-ssh', 'project-ssh', 'project-root', 'remote', '/srv');
+      INSERT INTO sessions (id, project_id, workspace_id, config) VALUES
+        ('s1', 'p1', NULL, '{"version":"1","type":"acp","agentDisplayName":"Task one"}'),
+        ('s2', 'p1', NULL, '{"version":"1","type":"acp","agentDisplayName":"Task two"}'),
+        ('s-ssh', 'p1', 'ws-ssh', '{"version":"1","type":"acp","agentDisplayName":"Remote"}');
     `);
   });
 
@@ -127,7 +127,7 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
     expect(found('deployment')).toEqual(['The deployment script is fixed.']);
     expect(found('secret')).toEqual([]);
     const [hit] = await searchService.searchTaskTurns('crash');
-    expect(hit).toMatchObject({ sessionId: 's1', projectId: 'p1', title: 'Task one', role: 'user', archived: false });
+    expect(hit).toMatchObject({ sessionId: 's1', title: 'Task one', role: 'user', archived: false });
     const stored = JSON.parse((fixture().sqlite.prepare('SELECT data FROM session_turns').get() as { data: string }).data) as TranscriptTurn;
     expect(hit!.itemId).toBe(stored.items[0]!.id);
   });
@@ -222,7 +222,7 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
     expect(found('revised')).toEqual([]);
   });
 
-  it('keeps remote projects out and returns the newest first', async () => {
+  it('keeps sessions of retired remote workspaces out and returns the newest first', async () => {
     fixture().sqlite.exec(`INSERT INTO session_turns (id, session_id, seq, turn_id, data, created_at) VALUES
       ('s1:0', 's1', 0, 't', '{"items":[{"kind":"message","id":"x","role":"user","text":"older alpha"}]}', '2026-10-01 00:00:00'),
       ('s2:0', 's2', 0, 't', '{"items":[{"kind":"message","id":"y","role":"assistant","text":"newer alpha"}]}', '2026-10-02 00:00:00'),
@@ -283,7 +283,7 @@ describe('search_index writes', () => {
     sqlite.exec(`UPDATE sessions SET config = json_set(config, '$.agentDisplayName', 'alpha renamed') WHERE id = 's1'`);
     sessionEvents._emit('session:renamed', 's1', 'p1', 'alpha renamed');
     await vi.waitFor(() => expect(sqlite.prepare("SELECT title FROM search_index WHERE item_id = 's1'").all()).toEqual([{ title: 'alpha renamed' }]));
-    expect(sqlite.prepare("SELECT title FROM search_index WHERE item_id = 'p1'").all()).toEqual([{ title: 'alpha project' }]);
+    expect(sqlite.prepare("SELECT count(*) AS n FROM search_index WHERE item_type = 'project'").get()).toEqual({ n: 0 });
   });
   it('an index built as version 6 (said-in-tasks search) is rebuilt once and names each task by its one name', async () => {
     const { sqlite } = fixture();

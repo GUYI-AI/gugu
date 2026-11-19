@@ -37,8 +37,8 @@ beforeEach(async () => {
   mocks.db = fixture.db;
   fixture.sqlite.exec(`
     INSERT INTO projects (id, name, path, created_at, updated_at) VALUES ('project-1', 'P', '/repo', 0, 0);
-    INSERT INTO automations (id, name, project_id, trigger_config, agent_config, enabled, created_at, updated_at)
-      VALUES ('automation-1', 'Daily', 'project-1', '${JSON.stringify(TRIGGER)}', '${JSON.stringify(AGENT)}', 1, 0, 0);
+    INSERT INTO automations (id, name, workspace_id, trigger_config, agent_config, enabled, created_at, updated_at)
+      VALUES ('automation-1', 'Daily', 'folder-1', '${JSON.stringify(TRIGGER)}', '${JSON.stringify(AGENT)}', 1, 0, 0);
     CREATE TEMP TABLE run_writes (run_id TEXT NOT NULL, status TEXT NOT NULL);
     CREATE TEMP TRIGGER run_inserted AFTER INSERT ON automation_runs BEGIN
       INSERT INTO run_writes VALUES (NEW.id, NEW.status);

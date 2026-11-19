@@ -198,7 +198,7 @@ const control = (change: Record<string, unknown>) => appBoundScheduleControl(ID,
 let ops = 0;
 const op = () => `op-${String(++ops).padStart(6, '0')}`;
 async function own(prompt = 'Check the inbox', extra: Record<string, unknown> = { cron: '0 8 * * *', tz: 'Asia/Shanghai' }) {
-  const row = await runAgentScheduleAction({ sessionId: SESSION, projectId: 'project-1', provider: 'claude' }, { action: 'schedule_create', prompt, ...extra } as never);
+  const row = await runAgentScheduleAction({ sessionId: SESSION, provider: 'claude' }, { action: 'schedule_create', prompt, ...extra } as never);
   return (row as { schedule_id: string }).schedule_id;
 }
 async function current(scheduleId: string) {
@@ -496,7 +496,7 @@ describe('lifecycle is the host\'s', () => {
     await settle();
     // Another agent's schedule is not this binding's.
     count = heard.mock.calls.length;
-    await runAgentScheduleAction({ sessionId: ELSE_SESSION, projectId: 'project-1', provider: 'claude' }, { action: 'schedule_create', prompt: 'x', cron: '0 9 * * *' });
+    await runAgentScheduleAction({ sessionId: ELSE_SESSION, provider: 'claude' }, { action: 'schedule_create', prompt: 'x', cron: '0 9 * * *' });
     await settle();
     expect(heard).toHaveBeenCalledTimes(count);
     expect(heard.mock.calls.every((call) => call.length === 0)).toBe(true);

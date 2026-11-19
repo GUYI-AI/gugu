@@ -25,9 +25,8 @@ vi.mock('./extensions-root', () => ({ extensionsService: () => ({ get: () => ({ 
   isEnabled: () => true, hasCapability: () => true, grantedHosts: () => [] }) }));
 vi.mock('./extension-session', () => ({ configureExtensionSession: vi.fn() }));
 vi.mock('./bridge-preload-path', () => ({ resolveExtensionBridgePreload: () => '/synthetic/preload.cjs' }));
-vi.mock('./projection-task', () => ({ projectionTaskProject: async () => 'project' }));
+vi.mock('./projection-task', () => ({ assertTaskLive: async () => {} }));
 vi.mock('../sessions/session-events', () => ({ sessionEvents: { on: vi.fn() } }));
-vi.mock('../projects/project-events', () => ({ projectEvents: { on: vi.fn() } }));
 vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn() } }));
 const { extensionAppSurfaces } = await import('./app-surface-host');
 const from = { kind: 'program', pageId: -913, extensionId: 'decoration-app', callingSession: 'task-a',
