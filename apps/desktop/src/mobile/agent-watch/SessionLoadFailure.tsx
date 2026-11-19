@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/Button'
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
-import { AgentWatchNote } from './AgentWatchChrome'
+import { AgentWatchNote } from '../../components/session-watch/AgentWatchChrome'
 
 export function SessionLoadFailure({ title, detail, reloadLabel, onReload, recovery }: {
   title: string; detail: string; reloadLabel: string; onReload(): void

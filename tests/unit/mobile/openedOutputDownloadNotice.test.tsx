@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 import { act, type MouseEvent } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { useOpenedOutputOpener } from '../../../apps/desktop/src/mobile/agent-watch/opened-output-opener'
+import { useOpenedOutputOpener } from '../../../apps/desktop/src/components/session-watch/opened-output-opener'
 import { ToastContext } from '../../../apps/desktop/src/components/toastContext'
 import { clickElement, createNode, createReactHarness } from '../../support/testHarness'
 
 const m = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn(), toast: vi.fn() }))
 vi.mock('../../../apps/desktop/src/platform', () => ({ platform: { kind: 'capacitor', capabilities: { readingZoomMemory: false }, saveFile: m.save } }))
 vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => true, readMobileShell: () => true }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   readOpenedFileChunk: m.read,
   SessionpageRpcError: class extends Error { constructor(readonly code: string, message: string) { super(message) } },
 }))

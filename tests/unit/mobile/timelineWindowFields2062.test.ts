@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TimelineWindowFields } from '@gugu/session-core/session-record/contract'
-import { hasPendingWindow, mergeTimelineWindowFields as merge } from '@/mobile/agent-watch/timeline-window-fields'
+import { hasPendingWindow, mergeTimelineWindowFields as merge } from '@/components/session-watch/timeline-window-fields'
 
 const pending = (ticket: string) => ({ kind: 'pending_long_record' as const, ticket,
   sourceInstance: 'source', pinnedEnd: 6e9, nextScanOffset: 5e9,

@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 const rpc = vi.hoisted(() => ({ call: vi.fn(), subscribe: vi.fn() }));
 vi.mock('@/lib/deviceRpc', () => ({ callDeviceRpc: rpc.call, subscribeDeviceRpcEvents: rpc.subscribe }));
-import { phoneTaskBrowserHost } from '@/mobile/agent-watch/phone-task-browser-host';
+import { phoneTaskBrowserHost } from '@/components/session-watch/phone-task-browser-host';
 
 afterEach(() => vi.clearAllMocks());
 

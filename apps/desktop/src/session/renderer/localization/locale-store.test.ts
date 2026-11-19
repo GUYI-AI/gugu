@@ -248,7 +248,7 @@ describe('task locale resources', () => {
 
   it('keeps the shared annotation catalog connected to browser, composer and phone consumers', () => {
     const roots = ['../features/browser/', '../features/sessions/annotations/', '../features/sessions/diff-view/',
-      '../../../components/preview/', '../../../mobile/agent-watch/']
+      '../../../components/preview/', '../../../components/session-watch/']
       .map(root => fileURLToPath(new URL(root, import.meta.url)));
     const keys = new Set<string>();
     for (const path of roots.flatMap(projectSourceFiles)) {

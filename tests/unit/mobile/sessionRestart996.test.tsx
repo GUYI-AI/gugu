@@ -4,11 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LifeView } from '../../../apps/desktop/src/session/shared/core/sessions/session-life'
 import { createReactHarness } from '../../support/testHarness'
 import { translateSessionMessage } from '../../../apps/desktop/src/session/renderer/localization/locale-store'
-import { useSessionRestart } from '../../../apps/desktop/src/mobile/agent-watch/useSessionRestart'
+import { useSessionRestart } from '../../../apps/desktop/src/components/session-watch/useSessionRestart'
 import { SessionLoadFailure } from '../../../apps/desktop/src/mobile/agent-watch/SessionLoadFailure'
 
 const host = vi.hoisted(() => ({ read: vi.fn(), life: vi.fn(), restart: vi.fn(), retry: vi.fn(), ready: vi.fn() }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   machineRpc: () => ({ sessions: { getUnarchivedSession: host.read, lifeView: host.life, restartSession: host.restart, lifeStart: host.retry } }),
 }))
 const view = (kind: LifeView['kind'], message?: string, version = kind === 'dormant' ? 0 : kind === 'starting' ? 1 : kind === 'failed' ? 2 : 3): LifeView => ({

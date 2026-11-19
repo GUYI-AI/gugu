@@ -27,7 +27,7 @@ import { platform } from '../platform'
 import { SERVER_SSH_MACHINES_CHANNELS } from '../lib/serverSshMachines'
 import { reportAssistantAppChange } from '../components/assistant/assistant-app-client'
 import { useMyAssistant } from '../lib/myAssistant'
-import { machineRpc } from '../mobile/agent-watch/sessionpage-rpc'
+import { machineRpc } from '../components/session-watch/sessionpage-rpc'
 import {
   cloudComputerPollMs,
   cloudComputerWatchMs,

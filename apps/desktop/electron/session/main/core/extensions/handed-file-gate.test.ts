@@ -61,7 +61,7 @@ vi.mock('@main/core/sessions/session-family', () => ({
     sessionHome: async () => ({ found: { deviceId: 'dev-there', label: 'there', session: { conversationId: SESSION, projectId: 'p', agent: null }, listsAgents: true }, unreached: [] }),
   }),
 }));
-vi.mock('../../../../../src/mobile/agent-watch/sessionpage-rpc', () => ({ appCallOn: (_device: string, caller: unknown, action: unknown) => across(caller, action) }));
+vi.mock('../../../../../src/components/session-watch/sessionpage-rpc', () => ({ appCallOn: (_device: string, caller: unknown, action: unknown) => across(caller, action) }));
 
 const { readAppFile, writeAppFileText } = await import('./app-files');
 const { answerAppCall } = await import('./app-programs-elsewhere');

@@ -1,6 +1,6 @@
 import * as sessionpageRpc from './sessionpage-rpc'
 import { useTimelineSession, type AgentWatchSession, type FirstPrompt } from './use-timeline-session'
-import { phoneTimelineClient } from '../local-agent/phoneTimelineClient'
+import { phoneTimelineClient } from '../../mobile/local-agent/phoneTimelineClient'
 import { assistantTimelineClient } from '@/components/assistant/assistantTimelineClient'
 import { MOBILE_RESPONDER_ID } from './responder'
 

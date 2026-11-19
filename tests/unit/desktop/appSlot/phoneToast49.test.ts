@@ -16,7 +16,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/lib/hooks/use-toast', () 
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: { manifests: [], icons: {}, isEnabled: () => true, manifestFor: () => ({ id: 'board', name: 'Board' }) } }))
 vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => null }))
 vi.mock('../../../../apps/desktop/src/store/devicesCache', () => ({ readCachedDevices: () => [] }))
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ fetchSessionsList: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ fetchSessionsList: vi.fn() }))
 
 let frame: HTMLIFrameElement
 let posted: ReturnType<typeof vi.fn>

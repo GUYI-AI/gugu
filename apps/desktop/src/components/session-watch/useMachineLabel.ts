@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '@/store/auth'
-import { usePhoneHostIdentity } from '../local-agent/usePhoneHostIdentity'
+import { usePhoneHostIdentity } from '../../mobile/local-agent/usePhoneHostIdentity'
 import '@/i18n/registerMobileWorkspaceCatalog'
 import type { Device } from '@gugu/core/shared/types/chat'
 import { useAssistantName } from '@/hooks/useAssistantHomeLabel'
