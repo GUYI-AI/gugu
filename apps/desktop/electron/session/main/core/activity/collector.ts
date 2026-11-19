@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { sqlite } from '@main/db/client';
 import { log } from '@main/lib/logger';
 import { sessionEvents } from '@main/core/sessions/session-events';
-import { projectEvents } from '@main/core/projects/project-events';
 import { agentStatusWriter } from '@main/core/agent-status/agent-status-writer';
 import { sqliteTextToMs } from '@main/core/usage/local-day';
 import { ActivityJournal } from './journal';
@@ -40,10 +39,6 @@ export function installActivityCollector(): () => void {
   };
   const observe: Parameters<typeof onActivitySignal>[0] = e => safely(() => recorder.append({ ...e, observed_at: Date.now() }));
   const offs = [onActivitySignal(observe),
-    projectEvents.on('project:created', project => observe({ event_id: randomUUID(), kind: 'project.created',
-      object_id: project.id, occurred_at: sqliteTextToMs(project.createdAt) })),
-    projectEvents.on('project:deleted', projectId => observe({ event_id: randomUUID(), kind: 'project.deleted',
-      object_id: projectId, occurred_at: null })),
     agentStatusWriter.on('agent:status', change => {
       if (change.activityAt === undefined) return; // Read/unread changes are not work activity.
       observe({ event_id: randomUUID(), kind: 'agent.status', session_id: change.sessionId,

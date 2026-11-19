@@ -26,7 +26,7 @@ import { resolveScheduleTrigger } from './schedule-time';
  */
 
 /** The agent's session here, as a schedule needs it; null when it is not here, or archived. */
-export type AgentScheduleHome = { sessionId: string; projectId: string; provider: string | null; runtime: string | null };
+export type AgentScheduleHome = { sessionId: string; provider: string | null; runtime: string | null };
 
 export type ScheduleOutcome =
   | { status: 'applied'; scheduleId: string; revision: string | null }
@@ -45,11 +45,11 @@ const IN_FLIGHT = new Set(['creating_session', 'launching_session', 'starting_ag
 
 export async function agentScheduleHome(sessionId: string): Promise<AgentScheduleHome | null> {
   const [row] = await db
-    .select({ id: sessions.id, projectId: sessions.projectId, provider: sessions.provider, runtime: sessions.runtime, archivedAt: sessions.archivedAt })
+    .select({ id: sessions.id, provider: sessions.provider, runtime: sessions.runtime, archivedAt: sessions.archivedAt })
     .from(sessions)
     .where(eq(sessions.id, sessionId))
     .limit(1);
-  return row && row.archivedAt == null ? { sessionId: row.id, projectId: row.projectId, provider: row.provider ?? null, runtime: row.runtime ?? null } : null;
+  return row && row.archivedAt == null ? { sessionId: row.id, provider: row.provider ?? null, runtime: row.runtime ?? null } : null;
 }
 
 /** Opaque, and different whenever anything the App sees or decides on is: a change names the one it was decided on. */
@@ -136,7 +136,7 @@ export async function planAppScheduleChange(home: AgentScheduleHome, change: App
       pending: { trigger },
       apply: async () => {
         const row = await runAgentScheduleAction(
-          { sessionId: home.sessionId, projectId: home.projectId, provider: home.provider },
+          { sessionId: home.sessionId, provider: home.provider },
           { action: 'schedule_create', prompt: change.prompt, title: change.title, at: change.at, cron: change.cron, tz: change.tz },
         ) as { schedule_id: string };
         const id = row.schedule_id.slice('schedule:'.length);

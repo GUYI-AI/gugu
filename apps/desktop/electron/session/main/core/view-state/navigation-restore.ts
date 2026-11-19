@@ -4,7 +4,7 @@
  * 导航快照记着「上次停在会话 S 的视图」。用户归档 / 删除了 S 再重启,渲染层照样恢复到 S ——
  * 而恢复那一刻会话 store 还没加载,渲染层的 canActivate 守卫看不出 S 已经没了 / 已归档,于是开机默认
  * 视图就是一条打不开的会话(真机:归档「何丽丽」→ 换号重启 → 首屏「无法加载对话」)。
- * 主进程读快照时有 DB,在这里判:S 已归档 / 确知已删除 ⇒ 退回它的项目视图;连项目都不知道 ⇒ home。
+ * 主进程读快照时有 DB,在这里判:S 已归档 / 确知已删除 ⇒ 退回 home。
  * S 在别的机器上(`elsewhere`)⇒ 照样恢复:这台机器的表里本来就没有它,不在表里 ≠ 删了。
  * 只改「恢复」这一步:用户主动点开归档会话照旧可达(那走 navigate,不走这里)。
  */
@@ -23,9 +23,6 @@ export function sanitizeNavigationSnapshotForRestore(
   const snap = snapshot as NavigationSnapshotLike
   if (snap.currentViewId !== 'session') return snapshot
   const sessionParams = snap.viewParams?.session
-  const projectId = typeof (sessionParams as { projectId?: unknown } | undefined)?.projectId === 'string'
-    ? ((sessionParams as { projectId: string }).projectId)
-    : ''
   const sessionId = typeof (sessionParams as { sessionId?: unknown } | undefined)?.sessionId === 'string'
     ? ((sessionParams as { sessionId: string }).sessionId)
     : ''
@@ -34,8 +31,5 @@ export function sanitizeNavigationSnapshotForRestore(
   if (state === 'live' || state === 'elsewhere') return snapshot
   const viewParams = { ...(snap.viewParams ?? {}) }
   delete viewParams.session
-  if (projectId) {
-    return { ...snap, currentViewId: 'project', viewParams: { ...viewParams, project: { projectId } } }
-  }
   return { ...snap, currentViewId: 'home', viewParams }
 }

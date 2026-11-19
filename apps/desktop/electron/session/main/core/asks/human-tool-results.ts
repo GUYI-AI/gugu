@@ -93,21 +93,19 @@ export function prepareHumanToolResult(record: HumanToolRecord, result: unknown)
 
 const delivering = new Map<string, Promise<void>>();
 /** Stable clientMessageId hands responsibility to the existing durable session outbox, exactly once. */
-export function deliverHumanToolResult(record: HumanToolRecord, projectId?: string): Promise<void> {
+export function deliverHumanToolResult(record: HumanToolRecord): Promise<void> {
   const previous = delivering.get(record.id);
   if (previous) return previous;
   const operation = (async () => {
     // Also migrate a pre-fix finished record before retrying it. Never encode typed IDs twice.
     record = prepareHumanToolResult(record, record.result);
     saveHumanToolRecord(record);
-    const project = projectId ?? (await import('../session-timeline/service')).readSessionRow(record.sessionId)?.projectId;
-    if (!project) throw new Error('Human tool result has no session project');
     const { sendMessage } = await import('../sessions/sendMessage');
     const payload = JSON.stringify({ tool: record.tool, request_id: record.requestId, state: 'finished', result: record.result,
       ...(record.picturesError ? { pictures_error: record.picturesError } : {}),
       ...(record.pictures ? { pictures: record.pictures } : {}) }).replaceAll('<', '\\u003c');
     const pictures = record.pictures?.map(picture => stringifyMention({ kind: 'file', label: picture.label, target: picture.file_path })).join('\n');
-    await sendMessage({ sessionId: record.sessionId, projectId: project, clientMessageId: record.messageId,
+    await sendMessage({ sessionId: record.sessionId, clientMessageId: record.messageId,
       kind: 'session-direct', text: `<gugu_human_tool_result>\n${payload}\n</gugu_human_tool_result>\nThis is the actual outcome of the original human request. Pending was not approval. Continue only the corresponding work.${pictures ? `\nRead the attached local pictures to inspect the result:\n${pictures}` : ''}`,
     });
     write(record.sessionId, readHumanToolRecords(record.sessionId).filter(item => item.id !== record.id));
@@ -117,7 +115,7 @@ export function deliverHumanToolResult(record: HumanToolRecord, projectId?: stri
   return operation;
 }
 
-export function reportHumanToolDelivery(record: HumanToolRecord, projectId?: string): void {
-  void deliverHumanToolResult(record, projectId).catch((error: unknown) =>
+export function reportHumanToolDelivery(record: HumanToolRecord): void {
+  void deliverHumanToolResult(record).catch((error: unknown) =>
     log.error('Human tool result remains durable for retry', { sessionId: record.sessionId, requestId: record.requestId, error: String(error) }));
 }

@@ -1,6 +1,8 @@
 import { asc, eq, like, sql } from 'drizzle-orm';
 import { db } from '@main/db/client';
-import { kv, projects, sessions } from '@main/db/schema';
+import { kv, sessions } from '@main/db/schema';
+import { rootFolderOf } from '@main/core/folders/folders';
+import { legacyProject } from '@main/core/folders/legacy-project-aliases';
 import { log } from '@main/lib/logger';
 import { sanitizeNavigationSnapshotForRestore, type RestoredSessionState } from './navigation-restore';
 
@@ -79,20 +81,21 @@ export function viewStateSnapshot(): Record<string, unknown> {
 }
 
 /**
- * 这条会话在这台机器眼里是什么状态 —— 「确知已删除」只认一种:它的项目在这台机器上,会话行却没了
- * (归档会保留行)。项目也不在这台机器上 = 会话在
+ * 这条会话在这台机器眼里是什么状态 —— 「确知已删除」只认一种:它的工作目录在这台机器上,会话行却没了
+ * (归档会保留行)。工作目录也不在这台机器上 = 会话在
  * 别的机器上(咕咕 server、别的电脑):这里不知道它的死活,❌ 当成删了 —— 由那台机器说了算。
+ * 升级前存下的快照只记着老项目 id:经别名表认出它在这台机器上。
  */
-async function restoredSessionState(sessionId: string, projectId: string): Promise<RestoredSessionState> {
+async function restoredSessionState(sessionId: string, place: { workspaceId: string; legacyProjectId: string }): Promise<RestoredSessionState> {
   const [row] = await db
     .select({ archivedAt: sessions.archivedAt })
     .from(sessions)
     .where(eq(sessions.id, sessionId))
     .limit(1);
   if (row) return row.archivedAt ? 'archived' : 'live';
-  if (!projectId) return 'deleted';
-  const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId)).limit(1);
-  return project ? 'deleted' : 'elsewhere';
+  if (!place.workspaceId && !place.legacyProjectId) return 'deleted';
+  const here = place.workspaceId ? rootFolderOf(place.workspaceId) !== undefined : legacyProject(place.legacyProjectId) !== undefined;
+  return here ? 'deleted' : 'elsewhere';
 }
 
 function read(key: string): unknown {
@@ -109,11 +112,14 @@ export const viewStateService = {
     const snapshot = read(key);
     if (key !== 'navigation') return snapshot;
     // #4277 开机不能默认落到已归档 / 已删除的会话上(见 navigation-restore.ts)。DB 查询一次,同步判。
-    const session = (snapshot as { viewParams?: { session?: { sessionId?: unknown; projectId?: unknown } } } | null)
+    const session = (snapshot as { viewParams?: { session?: { sessionId?: unknown; workspaceId?: unknown; projectId?: unknown } } } | null)
       ?.viewParams?.session;
     const sessionId = session?.sessionId;
-    const projectId = typeof session?.projectId === 'string' ? session.projectId : '';
-    const state = typeof sessionId === 'string' && sessionId ? await restoredSessionState(sessionId, projectId) : 'live';
+    const place = {
+      workspaceId: typeof session?.workspaceId === 'string' ? session.workspaceId : '',
+      legacyProjectId: typeof session?.projectId === 'string' ? session.projectId : '',
+    };
+    const state = typeof sessionId === 'string' && sessionId ? await restoredSessionState(sessionId, place) : 'live';
     return sanitizeNavigationSnapshotForRestore(snapshot, () => state);
   },
 

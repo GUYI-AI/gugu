@@ -47,7 +47,6 @@ export type AgentHookServiceHooks = {
   'agent:session': (input: {
     sourceId: string;
     sessionId: string;
-    projectId: string;
     providerId: string;
     providerSessionId: string;
   }) => void | Promise<void>;
@@ -79,7 +78,7 @@ export function sessionTuiTurnStartPublishedByHostAdapter(providerId: string): b
 }
 
 async function handleSessionEvent(
-  ctx: { sessionId: string; projectId: string; providerId: string },
+  ctx: { sessionId: string; providerId: string },
   providerSessionId: string
 ): Promise<string | undefined> {
   // Provider-specific session-id validation lives in the plugin (e.g. Droid UUIDs,
@@ -137,7 +136,7 @@ class AgentHookService implements IInitializable, IDisposable, Hookable<AgentHoo
     this.disposers.push(
       sessionEvents.on(
         'session:input-submitted',
-        ({ projectId, sessionId, providerId }) => {
+        ({ sessionId, providerId }) => {
           if (
             !providerSupportsNativeStartHook(providerId)
             && !sessionTuiTurnStartPublishedByHostAdapter(providerId)
@@ -145,7 +144,6 @@ class AgentHookService implements IInitializable, IDisposable, Hookable<AgentHoo
             const agentEvent: AgentEvent = {
               type: 'start',
               providerId,
-              projectId,
               sessionId,
               timestamp: Date.now(),
               payload: {},

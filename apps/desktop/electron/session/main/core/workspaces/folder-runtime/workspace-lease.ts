@@ -1,14 +1,8 @@
-import { randomUUID } from 'node:crypto';
-import { statSync } from 'node:fs';
-import { canonicalPath } from '@gugu/session-core/files';
 import { err, ok } from '@gugu/session-shared';
-import { eq } from 'drizzle-orm';
-import { ensureFolder, isTaskHomeFolder, rootFolderOf } from '@main/core/folders/folders';
+import { isTaskHomeFolder, rootFolderOf } from '@main/core/folders/folders';
 import { workspaceBootstrapService } from '@main/core/workspaces/workspace-bootstrap-service';
-import { computeWorkspaceKey } from '@main/core/workspaces/workspace-key';
+import { workspaceAtDirectory } from '@main/core/workspaces/workspace-at-directory';
 import { workspaceRegistry } from '@main/core/workspaces/workspace-registry';
-import { db } from '@main/db/client';
-import { workspaces } from '@main/db/schema';
 import { openFolder } from './folder-runtimes';
 
 /**
@@ -54,23 +48,6 @@ export async function releaseFolderWorkspace(folderId: string, workspaceId: stri
       message: error instanceof Error ? error.message : String(error),
     });
   }
-}
-
-/**
- * The workspace of a directory: the folder recorded at it, a directory row inside a folder, or — outside every folder —
- * a new folder without a group (an App's own directory). Never binds anything to a group.
- */
-export function workspaceAtDirectory(directory: string): string {
-  const path = canonicalPath(directory);
-  if (!statSync(path).isDirectory()) throw new Error(`Not a directory: ${path}`);
-  const key = computeWorkspaceKey(path);
-  const found = db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.key, key)).get();
-  if (found) return found.id;
-  const id = randomUUID();
-  db.insert(workspaces).values({ id, key, path, kind: 'path', type: 'local', location: 'local' }).run();
-  if (rootFolderOf(id)) return id;
-  db.delete(workspaces).where(eq(workspaces.id, id)).run();
-  return ensureFolder(path).id;
 }
 
 /** Read/write an assistant's directory from the task home without binding it to a group. */

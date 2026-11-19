@@ -16,7 +16,8 @@ export interface EmdashSessionStartInfo {
   sessionId: string;
   /** Persisted conversation that owns identity/model authority for a runtime-only view. */
   sourceSessionId?: string;
-  projectId: string;
+  /** The group the session lives in (null: none, e.g. the task home). */
+  groupChatId: string | null;
   workspaceId: string;
   providerId: string;
   cwd: string;
@@ -133,14 +134,15 @@ export interface EmdashSessionIdentity {
   guguAgentUserId: string;
   chatId: string;
   agentIdentityFacts?: { specialFocus: string | null };
-  projectContext?: { projectId: string; projectName: string; projectPath: string; groupChatId: string; groupName: string; membership?: 'member' | 'unconfirmed' };
+  /** The session's group and its folder path here, for the prompt's group block (absent: no group). */
+  groupContext?: { groupChatId: string; path: string; membership: 'member' | 'unconfirmed' };
 }
 
 export interface EmdashIdentityRequest {
   sessionId: string;
   sourceSessionId?: string;
   providerId: string;
-  projectId: string;
+  groupChatId: string | null;
   cwd: string;
   displayName?: string;
   lifecycle: 'fresh' | 'fork' | 'resume';

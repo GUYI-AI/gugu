@@ -10,7 +10,7 @@ const normalStopReasons = new Set<StopReason>([
 
 export type AcpAgentStatusAction =
   | { kind: 'event'; event: AgentEvent }
-  | { kind: 'reset'; sessionId: string; projectId: string };
+  | { kind: 'reset'; sessionId: string };
 
 /**
  * 此刻 agent 在干活(谁开的工都一样),或收下还没发出去的排队 prompt。
@@ -34,7 +34,6 @@ function backgroundWork(summary: SessionSummary | undefined): number {
 function eventBase(summary: SessionSummary): Omit<AgentEvent, 'type' | 'payload'> {
   return {
     providerId: summary.providerId,
-    projectId: summary.projectId,
     sessionId: summary.sessionId,
     timestamp: Date.now(),
   };
@@ -93,7 +92,6 @@ export function deriveAcpAgentStatusActions(
       {
         kind: 'reset',
         sessionId: previous.sessionId,
-        projectId: previous.projectId,
       },
     ];
   }
@@ -134,7 +132,6 @@ export function deriveAcpAgentStatusActions(
       {
         kind: 'reset',
         sessionId: next.sessionId,
-        projectId: next.projectId,
       },
     ];
   }
@@ -167,7 +164,6 @@ export function deriveAcpAgentStatusActions(
     actions.push({
       kind: 'reset',
       sessionId: next.sessionId,
-      projectId: next.projectId,
     });
   }
 

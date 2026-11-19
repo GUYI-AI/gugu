@@ -188,7 +188,6 @@ export function startPresenceInterrupt(input: {
   spawnEnv: Record<string, string | undefined>;
   harnessSessionId: () => string | undefined;
   sessionId: string;
-  projectId: string;
   providerId: string;
   start?: 'fresh' | 'reattach';
   reading?: AgentStatusView | null;
@@ -199,7 +198,7 @@ export function startPresenceInterrupt(input: {
   // 声明了却没注册读者 = 插件代码写错了:spawn 时就响亮(测试抓得到)。
   const presence = input.plugin.behavior.hooks?.presence;
   if (!presence) throw new Error(`${input.providerId} declares hooks.presence but registers no presence reader`);
-  const { sessionId, projectId, providerId } = input;
+  const { sessionId, providerId } = input;
   // 运行时读不出的事实(版本、进程号):状态来源坏了,❌ 连带让任务起不来 —— 记下、标出,hooks 照常。
   const fault = (message: string) => {
     log.error('PresenceInterrupt: the session presence this harness declares cannot be read', {
@@ -208,7 +207,7 @@ export function startPresenceInterrupt(input: {
       harnessVersion: input.harnessVersion,
       reason: message,
     });
-    agentStatusWriter.reportStatusSourceFault({ sessionId, projectId, message });
+    agentStatusWriter.reportStatusSourceFault({ sessionId, message });
   };
   if (input.harnessVersion === null) {
     fault(`writes session presence since ${declared.sinceVersion}, but the version of this spawn is unknown`);
@@ -229,12 +228,12 @@ export function startPresenceInterrupt(input: {
     isActive: () => agentStatusWriter.isWorkingOrWaiting(sessionId),
     onInterrupted: () => {
       agentHookService.emitAgentEvent(
-        { type: 'stop', providerId, projectId, sessionId, timestamp: Date.now(), payload: { outcome: 'cancelled' } },
+        { type: 'stop', providerId, sessionId, timestamp: Date.now(), payload: { outcome: 'cancelled' } },
       );
     },
     onFault: (message) => {
       if (message !== null) fault(message);
-      else agentStatusWriter.reportStatusSourceFault({ sessionId, projectId, message: null });
+      else agentStatusWriter.reportStatusSourceFault({ sessionId, message: null });
     },
   });
 }

@@ -11,7 +11,6 @@ import { learnHarnessConfigRoot } from './harness-config-roots';
 
 export type SessionContext = {
   sessionId: string;
-  projectId: string;
   providerId: string;
   ptyId: string;
   /** The spawn whose token carried this event; a retired spawn keeps its own id. */
@@ -31,7 +30,7 @@ async function resolveContext(raw: RawHookRequest): Promise<SessionContext | nul
   if (!parsed) return null;
 
   const [row] = await db
-    .select({ projectId: sessions.projectId })
+    .select({ id: sessions.id })
     .from(sessions)
     .where(eq(sessions.id, parsed.sessionId))
     .limit(1);
@@ -40,7 +39,6 @@ async function resolveContext(raw: RawHookRequest): Promise<SessionContext | nul
 
   return {
     sessionId: parsed.sessionId,
-    projectId: row.projectId,
     providerId: parsed.providerId,
     ptyId,
     sourceId: raw.sourceId,
@@ -66,7 +64,6 @@ export function canonicalToAgentEvent(
     type: canonical.type,
     sourceId: ctx.sourceId,
     providerId: ctx.providerId,
-    projectId: ctx.projectId,
     sessionId: ctx.sessionId,
     timestamp: ctx.receivedAt,
     payload: {

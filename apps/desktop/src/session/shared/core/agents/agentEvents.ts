@@ -32,7 +32,6 @@ export interface AgentEvent {
   /** Set only for hook-delivered events: which spawn's token carried it. */
   sourceId?: string;
   providerId?: string;
-  projectId: string;
   sessionId: string;
   timestamp: number;
   payload: {

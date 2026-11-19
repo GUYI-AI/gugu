@@ -102,7 +102,6 @@ export type ImportLocalSessionParams = {
 };
 
 export type ImportLocalSessionResult = {
-  projectId: string;
   sessionId: string;
   /** 会话将要运行的目录 —— 就是原会话的工作目录（非 git 目录也照原样用）。 */
   workingDirectory: string;

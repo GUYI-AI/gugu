@@ -2,7 +2,8 @@ import type { AgentConfig, TriggerConfig, StoredAutomationSessionConfig } from '
 
 export type Automation = {
   id: string;
-  projectId?: string;
+  /** The folder the automation's sessions start in. */
+  workspaceId?: string;
   name: string;
   triggerConfig?: TriggerConfig;
   agentConfig?: AgentConfig;
@@ -30,12 +31,12 @@ export type CreateAutomationParams = {
   triggerConfig: TriggerConfig;
   agentConfig: AgentConfig;
   sessionConfig?: StoredAutomationSessionConfig;
-  projectId: string;
+  workspaceId: string;
   enabled?: boolean;
 };
 
 export type UpdateAutomationSettingsPatch = {
-  projectId?: string;
+  workspaceId?: string;
   triggerConfig?: TriggerConfig;
   agentConfig?: AgentConfig;
   sessionConfig?: StoredAutomationSessionConfig | null;

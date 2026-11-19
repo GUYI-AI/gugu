@@ -17,7 +17,7 @@ export type AgentScheduleAction =
   | { action: 'schedule_list'; session_id?: string }
   | { action: 'schedule_cancel'; schedule_id: string; session_id?: string };
 
-export type AgentScheduleCaller = { sessionId: string; projectId: string; provider: string | null };
+export type AgentScheduleCaller = { sessionId: string; provider: string | null };
 
 /** 一条会话同时开着的上限:一个打转的 agent 不该在主人的列表里排出几百条。 */
 export const MAX_ACTIVE_SCHEDULES_PER_SESSION = 50;
@@ -99,7 +99,6 @@ export async function runAgentScheduleAction(
     }
     const { automation, nextRun } = await service.createAgentSchedule({
       agentSessionId: caller.sessionId,
-      projectId: caller.projectId,
       name: action.title?.trim() || defaultTitle(prompt),
       prompt,
       provider: caller.provider ?? 'unknown',
@@ -176,7 +175,6 @@ export async function restoreAgentSchedules(
     try {
       const { automation } = await deps.service.createAgentSchedule({
         agentSessionId: target.sessionId,
-        projectId: target.projectId,
         name: schedule.name,
         prompt: schedule.prompt,
         provider: target.provider ?? 'unknown',
