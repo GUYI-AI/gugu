@@ -1,11 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useHtmlPreviewAnnotations, type HtmlPreviewAnnotationContext } from './use-html-preview-annotations';
 import { PREVIEW_LINK_MESSAGE_TYPE, PREVIEW_SCROLL_MESSAGE_TYPE, PREVIEW_RESTORE_MESSAGE_TYPE, PREVIEW_RESTORED_MESSAGE_TYPE, PREVIEW_ZOOM_MESSAGE_TYPE, PREVIEW_SET_ZOOM_MESSAGE_TYPE } from '@/session/shared/preview/preview-link-script';
 import { isFileZoomCommand } from '@/session/shared/preview/file-zoom';
 import { DOCUMENT_MIN_ZOOM, DOCUMENT_MAX_ZOOM, pinchZoom, clampZoom } from '@/session/shared/preview/pinch-zoom';
 import { useFileZoom, zoomForCommand } from './file-content-zoom';
 
 /** Keep the last page painted until its replacement has loaded and restored its scroll. */
-export function HtmlPreviewSurface({ fileName, url, onLink, scrollPosition, anchor }: { fileName: string; url: string; onLink: (href: string) => void; scrollPosition?: { x: number; y: number }; anchor?: { id: string } }) {
+export function HtmlPreviewSurface({ fileName, url, onLink, scrollPosition, anchor, annotation }: { fileName: string; url: string; onLink: (href: string) => void; scrollPosition?: { x: number; y: number }; anchor?: { id: string }; annotation?: HtmlPreviewAnnotationContext }) {
+  const id = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(url);
   const frames = useRef(new Map<string, HTMLIFrameElement>());
@@ -18,6 +21,9 @@ export function HtmlPreviewSurface({ fileName, url, onLink, scrollPosition, anch
     setZoom(value => clampZoom(zoomForCommand(value, command), DOCUMENT_MIN_ZOOM, DOCUMENT_MAX_ZOOM));
   });
   const [loaded, setLoaded] = useState<{ frame: HTMLIFrameElement }>();
+  const annotations = useHtmlPreviewAnnotations({
+    context: annotation, root: rootRef, frames, source: visible, ready: !!loaded, id,
+  });
   const localScroll = useRef({ x: 0, y: 0 });
   const scroll = scrollPosition ?? localScroll.current;
   // A link's anchor: the page shown now scrolls to it; one still loading goes there instead of the kept position.
@@ -64,12 +70,17 @@ export function HtmlPreviewSurface({ fileName, url, onLink, scrollPosition, anch
     return () => window.removeEventListener('message', onMessage);
   }, [url, visible, onLink, scroll, setZoom]);
   return (
-    <div ref={rootRef} className="relative min-h-0 flex-1">
+    <>
+      {annotations.toolbar && (annotation?.toolbar
+        ? createPortal(annotations.toolbar, annotation.toolbar)
+        : <div className="flex shrink-0 justify-end border-b border-border px-2 py-1">{annotations.toolbar}</div>)}
+      <div ref={rootRef} className="relative min-h-0 flex-1">
       {[...new Set([visible, url])].map(source => (
         <iframe
           key={source}
           ref={frame => { if (frame) frames.current.set(source, frame); else frames.current.delete(source); }}
           title={fileName}
+          name={`gugu-preview-${id}-${source}`}
           src={source}
           // Keep the existing opaque sandbox; scroll/link messages never grant same-origin access.
           sandbox="allow-scripts"
@@ -85,6 +96,8 @@ export function HtmlPreviewSurface({ fileName, url, onLink, scrollPosition, anch
           }}
         />
       ))}
-    </div>
+        {annotations.overlay}
+      </div>
+    </>
   );
 }

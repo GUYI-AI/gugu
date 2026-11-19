@@ -157,3 +157,12 @@ it.each<SupportedLocale>(['en-US', 'zh-CN'])('preserves exact file selection JSO
   expect(JSON.parse(sent.split('\n').at(-1)!)).toEqual(selection);
   expect(sent).not.toMatch(/^## User Comment 99$/m);
 });
+
+it('names a captured HTML preview by its file path without exposing its temporary URL', () => {
+  const draft = new SessionAnnotations();
+  const item = draft.add({ ...page(), url: 'gugu-preview://temporary/index.html', filePath: 'docs/index.html' });
+  expect(annotationPrompt('', draft.items)).toContain('HTML preview\n');
+  expect(annotationPrompt('', draft.items)).toContain('File path: "docs/index.html"');
+  expect(annotationPrompt('', draft.items)).not.toContain('temporary');
+  expect(item.screenshot.name).toBe('browser-comment.png');
+});

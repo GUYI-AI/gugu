@@ -1,5 +1,7 @@
 import { releaseCustomModelForwarders } from './session/main/core/agents/custom-model-forwarder'
 import { hostAttachmentsEndpoint } from './attachmentUploadTransport'
+import { inspectHtmlPreviewAnnotation } from './session/main/core/browser/html-preview-annotation'
+import { HTML_PREVIEW_ANNOTATION_CHANNEL, type HtmlPreviewAnnotationRequest } from '../src/session/shared/preview/html-preview-annotation'
 import { createAttachmentUploadHost } from './attachmentUploadHost'
 import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
 import { PASSWORD_AGENT_RPC } from './password-vault/server-delivery'
@@ -2390,6 +2392,10 @@ const typingDiagnostics = createBetaTypingDiagnosticsHandler({
   captureTarget: () => mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null,
 })
 const forwardRendererLog = createRendererLogForwarder({ getMetrics: () => app.getAppMetrics(), typing: typingDiagnostics })
+ipcMain.handle(HTML_PREVIEW_ANNOTATION_CHANNEL, (event, args: HtmlPreviewAnnotationRequest) => {
+  if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) throw new Error('HTML preview requires the host window')
+  return inspectHtmlPreviewAnnotation(args, event.sender.id)
+})
 ipcMain.handle(RENDERER_LOG_CHANNEL, (event, payload: unknown) => forwardRendererLog(event.sender, payload, Boolean(event.senderFrame) && event.senderFrame === event.sender.mainFrame))
 
 // @@@4899 用户在反馈里勾了「附带日志」才走这条。读不到就让它抛到 renderer —— 界面当场取消

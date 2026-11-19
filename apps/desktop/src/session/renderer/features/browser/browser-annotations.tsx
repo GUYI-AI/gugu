@@ -14,9 +14,11 @@ import { markedAnnotationScreenshot } from './annotation-screenshot';
 const log = rendererLogger('browser/annotations');
 export type InspectAnnotation = (query: BrowserAnnotationQuery, capture: boolean) => Promise<BrowserAnnotationInspection>;
 type Point = { x: number; y: number };
+type SubscribeSpaceRelease = (released: () => void) => () => void;
 
-export function useBrowserAnnotations({ sessionId, browserId, visible, available, inspect }: {
+export function useBrowserAnnotations({ sessionId, browserId, visible, available, inspect, filePath, subscribeSpaceRelease }: {
   sessionId: string | undefined; browserId: string; visible: boolean; available: boolean; inspect: InspectAnnotation;
+  filePath?: string; subscribeSpaceRelease?: SubscribeSpaceRelease;
 }) {
   const [active, setActive] = useState(false);
   const exit = useCallback(() => setActive(false), []);
@@ -26,12 +28,13 @@ export function useBrowserAnnotations({ sessionId, browserId, visible, available
       aria-pressed={active} title={active ? `${translate('annotations.hint')}: ${translate('annotations.browse')}` : translate('annotations.annotate')}
       onClick={() => setActive(!active)}><MessageSquare className="size-3.5" />{translate('annotations.mode')}</Button> : null,
     overlay: active && visible && available && sessionId ? <BrowserAnnotationOverlay key={browserId} sessionId={sessionId} browserId={browserId}
-      inspect={inspect} onExit={exit} /> : null,
+      inspect={inspect} onExit={exit} filePath={filePath} subscribeSpaceRelease={subscribeSpaceRelease} /> : null,
   };
 }
 
-const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ sessionId, browserId, inspect, onExit }: {
+const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ sessionId, browserId, inspect, onExit, filePath, subscribeSpaceRelease }: {
   sessionId: string; browserId: string; inspect: InspectAnnotation; onExit: () => void;
+  filePath?: string; subscribeSpaceRelease?: SubscribeSpaceRelease;
 }) {
   const { translate } = useSessionMessages();
   const draft = sessionAnnotations.forSession(sessionId);
@@ -68,10 +71,14 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
     if (!win) return;
     let held = false;
     let browseRequest = 0;
+    // HTML previews are iframes in this WebContents, so only native browser
+    // views need to retain the host's keyboard focus during a page click.
+    const setBrowseFocus = (browsing: boolean) => subscribeSpaceRelease ? Promise.resolve({ success: true }) :
+      rpc.browser.setAnnotationBrowsing({ browserId, browsing });
     const stopBrowsing = () => {
       held = false; browseRequest++;
       setBrowsing(false);
-      void rpc.browser.setAnnotationBrowsing({ browserId, browsing: false }).catch(error => {
+      void setBrowseFocus(false).catch(error => {
         log.error({ error, browserId }, 'Could not release annotation browsing focus');
       });
     };
@@ -84,7 +91,7 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
         const own = ++browseRequest;
         // Arm native click handling before exposing the page. A quick release or
         // unmount must not let a late RPC response re-enter temporary browsing.
-        void rpc.browser.setAnnotationBrowsing({ browserId, browsing: true }).then(({ success }) => {
+        void setBrowseFocus(true).then(({ success }) => {
           if (!held || own !== browseRequest) return;
           if (!success) { stopBrowsing(); setError(true); return; }
           setBrowsing(true); setHover(null); setPage(null);
@@ -98,6 +105,13 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
     };
     const up = (event: KeyboardEvent) => { if (event.code === 'Space') stopBrowsing(); };
     const blur = () => stopBrowsing();
+    const stopPreview = subscribeSpaceRelease?.(() => {
+      // A host element can look focused while Chromium still routes keys to the iframe.
+      // Return to the host frame before focusing the rebuilt annotation canvas.
+      win.focus();
+      stopBrowsing();
+      win.requestAnimationFrame(() => root.current?.focus({ preventScroll: true }));
+    });
     const stop = events.on(browserAnnotationSpaceChannel, event => {
       if (event.browserId !== browserId || event.pressed) return;
       stopBrowsing();
@@ -106,8 +120,8 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
       });
     });
     win.addEventListener('keydown', down); win.addEventListener('keyup', up); win.addEventListener('blur', blur);
-    return () => { request.current++; stopBrowsing(); stop(); win.removeEventListener('keydown', down); win.removeEventListener('keyup', up); win.removeEventListener('blur', blur); };
-  }, [browserId, editorOpen, onExit]);
+    return () => { request.current++; stopBrowsing(); stop(); stopPreview?.(); win.removeEventListener('keydown', down); win.removeEventListener('keyup', up); win.removeEventListener('blur', blur); };
+  }, [browserId, editorOpen, onExit, subscribeSpaceRelease]);
 
   // Focusing the annotation surface resolves the visible page before any pointer move.
   const readViewport = () => {
@@ -152,7 +166,7 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
     try {
       const number = draft.reserveNumber();
       const screenshot = await markedAnnotationScreenshot(selection.screenshot, selection.target, number);
-      draft.add({ kind: 'browser', browserId, ...selection.target, annotation: text, screenshot }, number);
+      draft.add({ kind: 'browser', browserId, ...selection.target, annotation: text, screenshot, ...(filePath ? { filePath } : {}) }, number);
       closeEditor();
     } catch (error) { fail(error); } finally { busyRef.current = false; setBusy(false); }
   };
@@ -200,7 +214,7 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
       </div>}
       {error && <p role="alert" className="absolute top-4 left-4 rounded-lg bg-background p-2 text-sm">{translate('annotations.failed')}</p>}
     </div>}
-    {!browsing && draft.items.length > 0 && <div data-occludes-browser-page className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%_-_32px)] -translate-x-1/2 items-center gap-2 rounded-xl bg-foreground px-4 py-2 text-xs text-background shadow-lift">
+    {!browsing && draft.items.length > 0 && <div data-browser-annotation-controls data-occludes-browser-page className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%_-_32px)] -translate-x-1/2 items-center gap-2 rounded-xl bg-foreground px-4 py-2 text-xs text-background shadow-lift">
       <span className="min-w-0 truncate">{translate('annotations.active', { count: draft.items.length })}</span>
       <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0 text-background hover:text-background" aria-pressed={markersHidden}
         aria-label={translate(markersHidden ? 'annotations.showMarkers' : 'annotations.hideMarkers')} title={translate(markersHidden ? 'annotations.showMarkers' : 'annotations.hideMarkers')}

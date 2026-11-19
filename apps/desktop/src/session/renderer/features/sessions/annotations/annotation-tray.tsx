@@ -55,7 +55,7 @@ export const AnnotationTray = observer(function AnnotationTray({ sessionId, onSe
           </PopoverTrigger>
           <PopoverContent side="top" align="start" className="max-h-[60vh] w-80 max-w-[calc(100vw-32px)] gap-0 overflow-y-auto p-0">
             {draft.items.map(item => {
-              const place = item.kind === 'browser' ? item.url : item.path;
+              const place = item.kind === 'browser' ? item.filePath ?? item.url : item.path;
               const position = item.kind === 'browser' ? item.elementTag ? `<${item.elementTag}>` : item.selector ?? translate('annotations.region')
                 : item.kind === 'file' ? item.startLine === item.endLine
                   ? translate('annotations.line', { line: item.startLine })

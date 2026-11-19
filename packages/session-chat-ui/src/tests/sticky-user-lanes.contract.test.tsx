@@ -261,7 +261,18 @@ describe('sticky user lanes', () => {
         const now = read(st);
         expect(now.top, `${id} scrollTop=${st}: the same place after a jump`).toBe(seen.get(st));
         // Pushed above the scroller, there is nothing left to hit.
-        if (now.top >= 0) expect(now.shown, `${id} scrollTop=${st}: in front exactly while stuck`).toBe(now.stuck);
+        if (now.top >= 0) {
+          let detail = '';
+          if (now.shown !== now.stuck) {
+            const pin = summary.getBoundingClientRect(), card = t.card(`${id}-user`)!.getBoundingClientRect();
+            const hit = document.elementFromPoint(pin.left + pin.width / 2, Math.max(edge() + 1, pin.top + 1));
+            detail = JSON.stringify({ scrollTop: t.scrollEl.scrollTop, sampledHeight: h, connected: summary.isConnected,
+              pin: pin.toJSON(), card: card.toJSON(), lane: lane.getBoundingClientRect().toJSON(),
+              stuckAttribute: lane.dataset.pinStuck, leavingAttribute: lane.dataset.pinLeaving,
+              layerHeight: lane.style.getPropertyValue('--pin-layer-h'), hit: hit?.outerHTML.slice(0, 700) });
+          }
+          expect(now.shown, `${id} scrollTop=${st}: in front exactly while stuck ${detail}`).toBe(now.stuck);
+        }
       }
     };
     for (const id of ids) await sweep(id);
