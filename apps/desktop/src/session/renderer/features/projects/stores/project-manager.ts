@@ -8,7 +8,7 @@ import { machineLinkState, subscribeMachineLink } from '@renderer/lib/machine-cl
 import { appState } from '@renderer/lib/stores/app-state';
 import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
 import { log } from '@renderer/utils/logger';
-import { projectCreatedChannel, projectDeletedChannel, projectVisibilityChangedChannel } from '@shared/core/projects/projectEvents';
+import { projectCreatedChannel, projectDeletedChannel, projectRootRestoredChannel, projectVisibilityChangedChannel } from '@shared/core/projects/projectEvents';
 import { sessionCreatedChannel } from '@shared/core/sessions/sessionEvents';
 import { type LocalProject } from '@shared/projects';
 import { splitNameWithOwner } from '@shared/repository-ref';
@@ -47,6 +47,7 @@ export class ProjectManagerStore {
   private _disposeProjectCreatedEvent: (() => void) | null = null;
   private _disposeProjectDeletedEvent: (() => void) | null = null;
   private _disposeProjectVisibilityEvent: (() => void) | null = null;
+  private _disposeProjectRootRestoredEvent: (() => void) | null = null;
   private _disposeSessionCreatedEvent: (() => void) | null = null;
 
   constructor() {
@@ -98,6 +99,13 @@ export class ProjectManagerStore {
         appState.navigation.revalidate();
       }
     });
+    this._disposeProjectRootRestoredEvent = events.on(projectRootRestoredChannel, ({ project }) => {
+      runInAction(() => {
+        this.projects.get(project.id)?.mountedProject?.dispose();
+        this.projects.set(project.id, createUnmountedProject(project, 'idle'));
+      });
+      void this.mountProject(project.id).catch(error => log.error('Failed to mount restored root', { projectId: project.id, error }));
+    });
     // 会话建在一个还没挂载的项目里:先挂载项目(它读回来的列表里就有这一条),再交给项目的 sessionManager。
     this._disposeSessionCreatedEvent = events.on(sessionCreatedChannel, ({ session }) => {
       const project = this.projects.get(session.projectId);
@@ -127,6 +135,8 @@ export class ProjectManagerStore {
     this._disposeProjectDeletedEvent = null;
     this._disposeProjectVisibilityEvent?.();
     this._disposeProjectVisibilityEvent = null;
+    this._disposeProjectRootRestoredEvent?.();
+    this._disposeProjectRootRestoredEvent = null;
     this._disposeSessionCreatedEvent?.();
     this._disposeSessionCreatedEvent = null;
   }

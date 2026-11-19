@@ -1624,12 +1624,7 @@ async function joinProjectGroup(
   const { chat, ownerUserId, projectId, env } = prepared
   const priorGroupId = prepared.activeGroupId
   if (prepared.archivedGroupId) {
-    // 群在 provisioning 之外被归档了(见 groupIsUsable):映射忘掉,下面按「没有群」另建一个。
-    createLogger('sessionpage/provision').info(
-      { projectId, chatId: prepared.archivedGroupId },
-      '#4277 mapped project group is archived — forgetting the mapping and creating a fresh group',
-    )
-    await forgetProjectGroupId(projectId, ownerUserId, env)
+    throw new Error('项目群已收起，请使用现有文件夹恢复。')
   }
   const takeSeat = async (groupId: string): Promise<string> => {
     const admin = createGroupAdmin(chat, ownerUserId)
