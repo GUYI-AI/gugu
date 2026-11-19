@@ -21,6 +21,7 @@ import { mcpLibraryController } from './core/mcp-library/controller';
 import { previewServersController } from './core/preview-servers/controller';
 import { projectSetupController } from './core/project-setup/controller';
 import { projectController } from './core/projects/controller';
+import { folderController } from './core/folders/controller';
 import { promptLibraryController } from './core/prompt-library/controller';
 import { ptyController } from './core/pty/controller';
 import { remotePortsController } from './core/pty/direct-terminal/port-forward-controller';
@@ -65,6 +66,7 @@ export const rpcRouter = createRPCRouter({
   promptLibrary: promptLibraryController,
   projectSetup: projectSetupController,
   projects: projectController,
+  folders: folderController,
   previewServers: previewServersController,
   sessionCreate: sessionCreateController,
   sessions: sessionController,
