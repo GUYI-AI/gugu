@@ -681,7 +681,7 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
           const sessionId = binding.get(agentId)!;
           await archiveSession(sessionId, {}, { userId: agentId, removedAt: '2026-10-31T03:00:00Z' });
         },
-        archiveSession: async (projectId, sessionId) => { await archiveSession(sessionId, { removeSocialIdentity: false }); },
+        archiveSession: async (sessionId) => { await archiveSession(sessionId, { removeSocialIdentity: false }); },
         wipeHome, resetLocalState,
       });
       expect(wipeHome).toHaveBeenCalledOnce();

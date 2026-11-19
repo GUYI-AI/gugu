@@ -245,8 +245,10 @@ export class ProjectSessionsStore {
       // Acquire conversation/terminal managers inside the same action so the
       // WorkspaceViewModel's reaction on `sessions.size` registers the
       // manager's observable map as a dependency on its first evaluation.
-      sessionRegistry.acquire(session.id, this.projectId, [session]);
-      terminalRegistry.acquire(session.id, this.projectId);
+      // @@@group-folders — a session's managers are keyed by its own workspace (`Session.projectId`), the key its host gives
+      // its ptys; a session working in a worktree of this folder has a workspace of its own.
+      sessionRegistry.acquire(session.id, session.projectId, [session]);
+      terminalRegistry.acquire(session.id, session.projectId);
     });
   }
 
@@ -294,7 +296,7 @@ export class ProjectSessionsStore {
     const store = createUnprovisionedSession(session);
     store.workspaceGit = git;
     this.sessions.set(session.id, store);
-    sessionRegistry.acquire(session.id, this.projectId, [session]);
+    sessionRegistry.acquire(session.id, session.projectId, [session]);
   }
 
   /**
@@ -344,7 +346,8 @@ export class ProjectSessionsStore {
     const firstUtterance = firstUtteranceOf(ic);
     const optimistic: Session = {
       id,
-      projectId: this.projectId,
+      // The session's own workspace (the key its host gives it): the one named, else this folder.
+      projectId: workspace.kind === 'repository-instance' ? workspace.workspaceId : this.projectId,
       // For repository-instance sessions the workspace is known at creation time —
       // set it immediately so consumers can reference it before provisioning completes.
       ...(workspace.kind === 'repository-instance' && { workspaceId: workspace.workspaceId }),
@@ -381,8 +384,8 @@ export class ProjectSessionsStore {
     };
     runInAction(() => {
       this.sessions.set(id, createUnregisteredSession(optimistic));
-      sessionRegistry.acquire(id, this.projectId, [optimistic]);
-      terminalRegistry.acquire(id, this.projectId);
+      sessionRegistry.acquire(id, optimistic.projectId, [optimistic]);
+      terminalRegistry.acquire(id, optimistic.projectId);
     });
 
     const pending = this._completeCreateSession(params, optimistic, options);
@@ -544,8 +547,8 @@ export class ProjectSessionsStore {
     runInAction(() => {
       const current = this.sessions.get(sessionId);
       if (current && isUnprovisioned(current)) {
-        sessionRegistry.acquire(sessionId, this.projectId);
-        terminalRegistry.acquire(sessionId, this.projectId);
+        sessionRegistry.acquire(sessionId, workspaceId);
+        terminalRegistry.acquire(sessionId, workspaceId);
         current.transitionToProvisioned(path, workspaceId, this._repository, savedSnapshot);
         current.activate();
       }
