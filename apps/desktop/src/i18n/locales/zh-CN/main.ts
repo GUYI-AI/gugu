@@ -1,4 +1,30 @@
 export default {
+  "usagePopover": {
+    "title": "用量",
+    "refresh": "刷新用量",
+    "remaining": "剩余 {{amount}}%",
+    "reset": "{{date}} 重置",
+    "updated": "{{time}} 更新",
+    "windowMissing": "官方未返回可用窗口",
+    "fiveHours": "5 小时限额",
+    "weekly": "周限",
+    "readFailed": "暂时读不到用量，请重试。",
+    "expired": "登录已失效",
+    "signedOut": "尚未登录",
+    "refreshFailed": "刷新失败，显示上次读数。",
+    "guguSubscription": "咕咕订阅",
+    "credits": "剩余积分",
+    "fullUsage": "查看完整用量",
+    "reason": {
+      "vendor-console": "请到供应商后台查看用量。",
+      "not-reported": "供应商未提供用量读数。",
+      "not-signed-in": "尚未登录",
+      "custom-endpoint": "用量由接入的服务记录。",
+      "other-login": "需要供应商另一份登录，暂时无法读取。",
+      "not-read-yet": "尚未读取，点击刷新查看。",
+      "error": "暂时读不到用量，请重试。"
+    }
+  },
   "referrals": {
     "accountCount": "已邀请 {{count}} 人",
     "invite": "邀请",
