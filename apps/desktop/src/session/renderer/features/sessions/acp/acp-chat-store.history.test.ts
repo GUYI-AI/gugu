@@ -450,12 +450,6 @@ describe('#2493 a reset change cursor does not take the live session away', () =
       const delta = await runtime.session.getHistory(undefined, 100, internals._runtimeCursor!);
       expect(delta.success && delta.data.reset).toBe(true);
       await internals._refreshHistory();
-      console.log('LIVE_RESET_OBSERVATION ' + JSON.stringify({ source,
-        sameLiveSession: internals.session === runtime.session, permissionPresent: store.permissionModeOptions !== null,
-        backgroundIds: store.runningBackgroundTaskIds, backgroundRows: rows().length,
-        nativeConfigPresent: runtime.session.config.current().modeOptions !== undefined,
-        reattach: reattach.mock.calls.length, bootstrap: bootstrap.mock.calls.length,
-      }));
       expect(reattach).not.toHaveBeenCalled();
       expect(bootstrap).not.toHaveBeenCalled();
       expect(internals.session).toBe(runtime.session);
