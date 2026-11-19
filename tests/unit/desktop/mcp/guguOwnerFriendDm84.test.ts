@@ -206,9 +206,9 @@ describe('owner DMs with friends (#84)', () => {
     })
   })
 
-  it('message_send_file to a friend DM points to message_send_file_as_owner before reading the file', async () => {
+  it('message_send with a file to a friend DM points to message_send_as_owner before reading the file', async () => {
     const db = fakeDb()
-    await expect(callTool(context, 'message_send_file', { chat_id: 'friend-dm', file_path: '/nonexistent/report.pdf' }, db.deps))
-      .rejects.toThrow(`use message_send_file_as_owner with friend_user_id user:${FRIEND}`)
+    await expect(callTool(context, 'message_send', { chat_id: 'friend-dm', file_path: '/nonexistent/report.pdf' }, db.deps))
+      .rejects.toThrow(`use message_send_as_owner with friend_user_id user:${FRIEND}`)
   })
 })

@@ -7,6 +7,7 @@
 import type {
   SessionShellAgentAddress,
   SessionShellAgentAddressInput,
+  SessionShellBirthGroupJoin,
   SessionShellAgentCard,
   SessionShellAgentName,
   SessionShellPeer,
@@ -29,6 +30,8 @@ export type SessionpageIdentityRpc = {
   agentNames(): Promise<SessionShellAgentName[]>
   sessionPeers(sessionId?: string): Promise<SessionShellPeer[]>
   ensureAgentAddress(input: SessionShellAgentAddressInput): Promise<SessionShellAgentAddress>
+  birthGroupJoin(sessionId: string): Promise<SessionShellBirthGroupJoin | null>
+  retryBirthGroupJoin(sessionId: string): Promise<SessionShellBirthGroupJoin | null>
 }
 
 export type SessionpageIdentityRouter = { sessionpageIdentity: SessionpageIdentityRpc }
@@ -38,3 +41,8 @@ export type SessionpageIdentityRouter = { sessionpageIdentity: SessionpageIdenti
  * 收发都是这一个定义 —— 载荷形状由类型钉住,任一端改字段名当场编译不过(#6936 曾因原样转发静默断掉)。
  */
 export const sessionpageAgentProvisionedEvent = defineEvent<SessionShellAgentName>('sessionpage-agent-provisioned')
+
+/** Host → session page: this session's agent could not join the chat it was born in (join), or a retry settled it (null). */
+export const sessionpageBirthGroupJoinEvent = defineEvent<{ conversationId: string; join: SessionShellBirthGroupJoin | null }>(
+  'sessionpage-birth-group-join',
+)

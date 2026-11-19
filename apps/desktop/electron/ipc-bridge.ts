@@ -14,6 +14,7 @@ import {
   EXTENSION_EXPORT_VOICE_NOTE_METHOD,
   INSTALL_CONSENT_HUMAN_WINDOW_MS,
 } from '../src/session/shared/extensions/host-actions'
+import { EXTENSION_FILE_ANNOTATION_METHOD } from '../src/session/shared/extensions/file-annotation-draft'
 import { rendererDrawingId } from './window-drawer'
 
 let _window: BrowserWindow | null = null
@@ -45,6 +46,7 @@ const HUMAN_DECISION_TIMEOUT_MS = new Map<string, number>([
   [EXTENSION_INSTALL_CONSENT_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
   [EXTENSION_PICK_DISPATCH_TARGET_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
   [EXTENSION_SELECTION_SEND_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
+  [EXTENSION_FILE_ANNOTATION_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
   // #50 The assistant page's own question before a delete, and its save dialog: as long as the person takes.
   [EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
   [EXTENSION_EXPORT_VOICE_NOTE_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
@@ -61,6 +63,7 @@ const readyWaitersByDomain = new Map<RendererCommandDomain, Set<RendererReadyWai
 interface RendererRpcErrorResult {
   __rendererRpcError: true
   error: string
+  code?: string
 }
 
 function isRendererRpcErrorResult(result: unknown): result is RendererRpcErrorResult {
@@ -140,7 +143,7 @@ function waitForRendererCommandReady(domain: RendererCommandDomain): Promise<voi
       reject,
       timer: setTimeout(() => {
         waiters.delete(waiter)
-        reject(new Error(`Renderer readiness timeout: ${rendererCommandChannel(domain)}`))
+        reject(Object.assign(new Error(`Renderer readiness timeout: ${rendererCommandChannel(domain)}`), { code: 'timeout' }))
       }, RENDERER_COMMAND_TIMEOUT_MS),
     }
     waiters.add(waiter)
@@ -173,14 +176,15 @@ function makeInvoker(
       const timer = setTimeout(() => {
         if (pending.has(reqId)) {
           pending.delete(reqId)
-          reject(new Error(`IPC timeout: ${channel}/${method}`))
+          // `timeout`: no answer in time — what the window did is not known, which is not the same as its failing.
+          reject(Object.assign(new Error(`IPC timeout: ${channel}/${method}`), { code: 'timeout' }))
         }
       }, HUMAN_DECISION_TIMEOUT_MS.get(method) ?? RENDERER_COMMAND_TIMEOUT_MS)
       pending.set(reqId, {
         accept: (result) => {
           clearTimeout(timer)
           if (isRendererRpcErrorResult(result)) {
-            reject(new Error(result.error))
+            reject(Object.assign(new Error(result.error), result.code ? { code: result.code } : {}))
             return
           }
           resolve(result)

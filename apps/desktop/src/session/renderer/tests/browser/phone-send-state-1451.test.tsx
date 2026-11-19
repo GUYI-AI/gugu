@@ -4,7 +4,8 @@ import { AgentConversationView } from '@renderer/lib/chat/agent-conversation-vie
 import { messageUnitDef } from '@session-chat/components/rows/message/message.def'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
-import { page } from 'vitest/browser'
+import { cdp, page, userEvent } from 'vitest/browser'
+import { openSessionInputStorage, SessionInputOutbox } from '@/lib/sessionInputOutbox'
 import { ChatComposer, MessageProvider, type PromptEditorRef } from '@gugu/session-ui/react/components'
 import { ThemeProvider } from '@gugu/session-ui/react/primitives'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
@@ -48,6 +49,87 @@ it('a running phone composer sends once and becomes Stop only after local commit
   expect(stop).not.toHaveBeenCalled()
   expect(document.activeElement).toBe(document.body)
   expect(blurred).toHaveBeenCalledTimes(1)
+})
+
+
+it('a touch begun on pending Send cannot activate Stop after the outbox commits', async () => {
+  await page.viewport(390, 844)
+  const api = createRef<PromptEditorRef>()
+  const accountId = crypto.randomUUID()
+  const storage = await openSessionInputStorage()
+  let releaseWrite!: () => void
+  const writeGate = new Promise<void>(resolve => { releaseWrite = resolve })
+  const outbox = new SessionInputOutbox(accountId, {
+    ...storage,
+    put: async row => { await writeGate; await storage.put(row) },
+  }, vi.fn(), () => true)
+  const submit = vi.fn(async (text: string) => {
+    api.current!.clear()
+    await outbox.enqueue({ deviceId: 'host', sessionId: 'task', text, queued: true, sendQueue: { order: 1 } })
+  })
+  const stop = vi.fn()
+  host = document.body.appendChild(document.createElement('div'))
+  host.style.cssText = 'position:fixed;bottom:0;left:0;width:390px'
+  root = createRoot(host)
+  root.render(<ThemeProvider><MessageProvider locale="en-US" translate={translateSessionMessage}>
+    <ChatComposer mobile isWorking editorApiRef={api} editorOptions={{ clearOnSubmit: false }} onSubmit={submit} onSubmitWhileWorking={submit} onStop={stop} />
+  </MessageProvider></ThemeProvider>)
+  const send = page.getByRole('button', { name: translateSessionMessage('composer.sendMessage'), exact: true })
+  const stopButton = page.getByRole('button', { name: translateSessionMessage('composer.stopGeneration'), exact: true })
+  const input = cdp() as unknown as { send(method: string, params: object): Promise<unknown> }
+  const touchStart = (button: Element) => {
+    const bounds = button.getBoundingClientRect()
+    let x = bounds.left + bounds.width / 2
+    let y = bounds.top + bounds.height / 2
+    for (let current: Window = window; current.frameElement; current = current.parent) {
+      const frame = current.frameElement as HTMLElement
+      const frameBounds = frame.getBoundingClientRect()
+      const scale = frameBounds.width / frame.offsetWidth
+      x = frameBounds.left + (frame.clientLeft + x) * scale
+      y = frameBounds.top + (frame.clientTop + y) * scale
+    }
+    return input.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] })
+  }
+  const touchEnd = () => input.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  try {
+    await page.getByTestId('prompt-editor').fill('queue this follow-up')
+    await expect.element(send).toBeEnabled()
+    await touchStart(send.element())
+    await touchEnd()
+    await expect.element(send).toBeDisabled()
+    expect(submit).toHaveBeenCalledExactlyOnceWith('queue this follow-up')
+    expect(await outbox.list()).toHaveLength(0)
+    expect(stopButton.query()).toBeNull()
+
+    await touchStart(send.element())
+    releaseWrite()
+    await expect.element(stopButton).toBeEnabled()
+    expect((await outbox.list()).map(row => row.text)).toEqual(['queue this follow-up'])
+    await touchEnd()
+    expect(stop).not.toHaveBeenCalled()
+
+    await touchStart(stopButton.element())
+    await touchEnd()
+    expect(stop).toHaveBeenCalledTimes(1)
+    await userEvent.keyboard('{Enter}')
+    expect(stop).toHaveBeenCalledTimes(2)
+
+    // Some WebViews expose the click after a touch as a MouseEvent without pointerId.
+    const control = stopButton.element()
+    const mouseClick = () => new MouseEvent('click', { bubbles: true, detail: 1 })
+    control.dispatchEvent(mouseClick())
+    expect(stop).toHaveBeenCalledTimes(2)
+    const pointer = { bubbles: true, pointerId: 7, pointerType: 'touch' }
+    control.dispatchEvent(new PointerEvent('pointerdown', pointer))
+    control.dispatchEvent(new PointerEvent('pointerup', pointer))
+    control.dispatchEvent(mouseClick())
+    expect(stop).toHaveBeenCalledTimes(3)
+    expect(submit).toHaveBeenCalledTimes(1)
+  } finally {
+    releaseWrite()
+    await Promise.allSettled(submit.mock.results.map(result => result.value))
+    for (const row of await outbox.list()) await storage.remove(accountId, row.id)
+  }
 })
 
 

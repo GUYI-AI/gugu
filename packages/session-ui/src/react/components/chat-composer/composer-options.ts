@@ -138,7 +138,7 @@ export interface ComposerModelOption {
  *
  * 用咕咕自己的模型**不需要**登录任何一家。所以「去登录」这件事在用户打开任务、
  * 在底排扫一眼的那一刻是**噪音**:它跟他当下要做的事无关。等他点开模型清单、
- * 正在挑模型时,「登录以使用 X 自家的模型」才第一次成为一条相关的信息 ——
+ * 正在挑模型时,「添加个人 X 连接」才第一次成为一条相关的信息 ——
  * 而且它就在他的视线里,不用回头去别处找。
  *
  * ## 与旧实现的两处不同(❌ 别照旧版推理)
@@ -154,8 +154,10 @@ export interface ComposerModelOption {
 export interface ComposerModelUnlock {
   /** 这一组的组头,与「咕咕提供的模型」对仗 —— 如「Kimi 自家模型」。 */
   groupLabel: string;
-  /** 那一条的文案,如「登录以使用 Kimi 模型」。 */
+  /** 那一条的文案,如「添加个人 Kimi 连接」。 */
   label: string;
+  /** Smaller second line: the ways to connect it, such as "Account sign-in / API Key / Custom API address". */
+  detail?: string;
   /** 悬停提示 —— 说清点下去会发生什么,别让一条菜单项自己去猜。 */
   title?: string;
 }
@@ -234,6 +236,10 @@ export interface ComposerEffortItem {
 export interface ComposerPermissionModeOption {
   name: string;
   description?: string;
+  detail?: ReactNode;
+  icon?: ReactNode;
+  disabled?: boolean;
+  reviewByHaiku?: boolean;
   /**
    * Marks a mode that lets the agent act without asking (bypass / full-access / yolo).
    * The trigger then renders in warning color with an alert icon instead of the neutral
@@ -248,6 +254,10 @@ export interface ComposerPermissionModeItem {
   id: string;
   name: string;
   description?: string;
+  detail?: ReactNode;
+  icon?: ReactNode;
+  disabled?: boolean;
+  reviewByHaiku?: boolean;
   destructive?: boolean;
 }
 

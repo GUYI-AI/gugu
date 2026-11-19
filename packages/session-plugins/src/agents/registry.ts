@@ -252,18 +252,6 @@ export function createAgentPluginRegistry(entries: readonly CLIAgentPluginProvid
           : `Agent plugin '${id}' implements platformModel but declares sessionBundle.platform unsupported`
       );
     }
-    // API Key 走模型注入的家(#2507):它借的是这家的平台模型写法 ⇒ 平台得是 supported,地址要讲的协议就是平台那一种。
-    const apiKey = provider.capabilities.apiKeyConnection;
-    if (apiKey?.kind === 'supported' && apiKey.delivery === 'model-injection') {
-      if (descriptor.platform.kind !== 'supported') {
-        throw new Error(`Agent plugin '${id}' injects its API key connection as a model but declares no platform model`);
-      }
-      if (apiKey.protocol !== descriptor.platform.wireProtocol) {
-        throw new Error(
-          `Agent plugin '${id}' API key connection speaks ${apiKey.protocol}, its platform model speaks ${descriptor.platform.wireProtocol}`
-        );
-      }
-    }
     registry.register(withDeclaredPermissionModes(provider));
   }
 
@@ -569,6 +557,7 @@ export {
   type CodexPlatformAuthRequest,
   type CodexPlatformProviderBlock,
 } from './impl/codex/platform-model';
+export { claudeReviewSettings } from './impl/claude/auto-review';
 export { claudeAcpPlatformSessionMeta, claudeSessionFlagSettings, type ClaudeAcpPlatformSessionMeta } from './impl/claude/platform-model';
 export { materializePiModelConfig } from './impl/pi/session-bundle';
 // 宿主登记中继入口用的变量名 —— 只此一份,❌ 在 worker-manifest 里另写一个字面量。
@@ -578,8 +567,10 @@ export { effortOptionsFromReasoningVariants } from './helpers/opencode-family-mo
 export { opencodeFamilyUpdatedTitle } from './helpers/opencode-family-title';
 // @@@5380 agent 事件 hook 的 `notify` 回调值。宿主侧只需要**值**(它进 thread-open 的
 // `config` map),❌ 不再导出 `-c notify=…` 的 argv 拼法 —— 那条腿已经没有宿主消费者了。
-export { codexNotifyConfigValue } from './impl/codex/hooks';
+export { codexNotifyConfigValue, stripLegacyCodexNotify } from './impl/codex/hooks';
 export {
   CODEX_ACTOR_AUTHORIZATION_HEADER,
   CODEX_PLATFORM_DISABLE_APPS_ARGS,
 } from './impl/codex/platform-provider-args';
+
+export { antigravityCustomModelLaunch } from './impl/antigravity/api-key-connection';

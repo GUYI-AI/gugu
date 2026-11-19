@@ -99,6 +99,7 @@ export function ResourceLink(props: ResourceLinkProps) {
   return (
     <div
       class={isClickable() ? rowClickable : rowStatic}
+      data-pane-opener=""
       style={{ height: '100%' }}
       onClick={isClickable() ? handleClick : undefined}
       role={isClickable() ? 'button' : undefined}

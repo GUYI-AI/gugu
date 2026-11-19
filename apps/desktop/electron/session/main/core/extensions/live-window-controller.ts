@@ -53,7 +53,7 @@ export const liveWindowController = {
       const source = descriptors.find(source => source.id === args.sourceId);
       if (!source || entry.closed) throw new Error('This live picture is not in the current session');
       if (source.type === 'app-projection') {
-        return admitRemoteProjection({ app: source.appId, version: source.appVersion, session: source.sessionId, source: source.id }, packet);
+        return admitRemoteProjection({ app: source.appId, version: source.appVersion, session: source.sessionId, source: source.id, presentation: 1 }, packet);
       }
       const lease = extensionTaskPages.describeSession(args.sessionId).find(lease => lease.id === source.id);
       if (!lease) throw new Error('The task page lease ended');
@@ -61,7 +61,7 @@ export const liveWindowController = {
       lease.signal.addEventListener('abort', close, { once: true });
       entry.off = () => lease.signal.removeEventListener('abort', close);
       lease.signal.throwIfAborted();
-      return connectTaskPageScreen(args.sessionId, () => taskPageForScreen(args.sessionId), packet, state);
+      return connectTaskPageScreen(args.sessionId, () => taskPageForScreen(args.sessionId), packet, state, true);
     })();
     try { await entry.pending; }
     catch (error) { if (watches.get(args.watchId) === entry) unwatch(args.watchId); throw error; }

@@ -1,4 +1,6 @@
 import { sqlite } from '@main/db/client';
+import { nativeConversationHistoryFloor } from './native-publication-host';
+import { historyTime } from '@gugu/core/shared/conversationHistoryTime';
 import { OUTLINE_REPLY_CHARS, outlineOfMessages, type OutlineMessageRow, type StoredOutlineTurn } from '@shared/core/sessions/session-outline';
 
 /** Rows are read a slice of turns at a time, yielding in between: the whole of a long conversation is a second of work. */
@@ -11,6 +13,8 @@ const MESSAGES = `SELECT t.seq AS seq, json_extract(t.data, '$.id') AS turnId, j
       ELSE substr(json_extract(item.value, '$.text'), 1, ${4 * OUTLINE_REPLY_CHARS}) END AS text
   FROM session_turns t, json_each(t.data, '$.items') item
   WHERE t.session_id = ? AND t.seq >= ? AND t.seq < ? AND json_valid(t.data) AND json_extract(item.value, '$.kind') = 'message'
+    AND (? IS NULL OR coalesce(json_extract(item.value, '$.at'), CASE WHEN json_extract(item.value, '$.role') = 'user'
+      THEN json_extract(t.data, '$.startedAt') ELSE json_extract(t.data, '$.endedAt') END) >= ?)
   ORDER BY t.seq, item.key`;
 
 /**
@@ -19,6 +23,8 @@ const MESSAGES = `SELECT t.seq AS seq, json_extract(t.data, '$.id') AS turnId, j
  * it draws from the turns themselves.
  */
 export async function getStoredOutline(params: { sessionId: string; before: number }): Promise<{ turns: StoredOutlineTurn[] }> {
+  const floor = await nativeConversationHistoryFloor(params.sessionId);
+  const boundary = floor ? Number((historyTime(floor) + 999_999n) / 1_000_000n) : null;
   // The slices walk the turns that exist: `before` is the asker's number and may lie far above the newest of them.
   const stored = sqlite.prepare('SELECT min(seq) AS first, max(seq) AS last FROM session_turns WHERE session_id = ? AND seq < ?')
     .get(params.sessionId, params.before) as { first: number | null; last: number | null };
@@ -28,7 +34,7 @@ export async function getStoredOutline(params: { sessionId: string; before: numb
   const slices: StoredOutlineTurn[][] = [];
   for (let end = stored.last + 1; end > first; end -= OUTLINE_SLICE_TURNS) {
     const start = Math.max(first, end - OUTLINE_SLICE_TURNS);
-    slices.push(outlineOfMessages(read.all(params.sessionId, start, end) as OutlineMessageRow[]));
+    slices.push(outlineOfMessages(read.all(params.sessionId, start, end, boundary, boundary) as OutlineMessageRow[]));
     // Other work of the main process runs between slices.
     await new Promise<void>(resolve => setImmediate(resolve));
   }

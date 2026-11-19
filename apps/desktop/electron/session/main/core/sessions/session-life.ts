@@ -11,6 +11,7 @@ import type { LifeStatus, LifeView } from '@shared/core/sessions/session-life';
 import type { LegAdapter, PendingRow } from './session-life-adapter';
 import type { EnqueuePending } from './session-pending';
 import { LifeEvents, UncommittedLifeEvent } from './session-life-events';
+import { SessionLifeOwnerDrain } from './session-life-drain';
 import type { NativeInputEvidence, NativeInputLookup } from '@gugu/core/local/agent/deliveryIdentity';
 
 export interface LifeStore {
@@ -53,6 +54,10 @@ export interface SessionLifePorts {
   logger: Pick<Logger, 'info'>;
   now(): number;
 }
+
+export type QueuedDeliveryRecovery =
+  | { state: 'waiting' }
+  | { state: 'needed' | 'started' | 'blocked'; cause: string };
 
 interface Run {
   readonly gen: Gen;
@@ -101,6 +106,7 @@ function settledByHand(row: PendingRow): boolean {
  * external IO is ordered per session, while interrupts can abort a pending stage immediately.
  */
 export class SessionLife {
+  private readonly ownerDrain = new SessionLifeOwnerDrain();
   private readonly entries = new Map<string, Entry>();
   /** IO of a removed entry still running: a new entry of the same id starts behind it. */
   private readonly draining = new Map<string, Promise<void>>();
@@ -108,12 +114,26 @@ export class SessionLife {
   private readonly reconcileAgain = new Set<string>();
   private epoch = 0;
   private account: string | null = null;
+  /** A newly installed owner has not yet resolved its first account transition. */
+  private authSettled = false;
   /** The last queued auth transition; null = idle. The only fact saying whether a transition is in progress. */
   private tail: Promise<void> | null = null;
   /** v3.1 #7: from leave's first interrupt until the epoch advances, nothing may start a run. */
   private leaving = false;
 
   constructor(private readonly ports: SessionLifePorts) {}
+
+  /** A host-owned input keeps its original signed-in epoch across asynchronous preparation and routing. */
+  inputOwnerFence(ownerUserId: string): () => void {
+    const epoch = this.epoch;
+    const assert = () => {
+      if (!ownerUserId || this.account !== ownerUserId || this.epoch !== epoch || this.leaving || this.tail !== null) {
+        throw Object.assign(new Error('The original attachment input owner is no longer active'), { code: 'attachment_creation_unverified' });
+      }
+    };
+    assert();
+    return assert;
+  }
 
   private entry(sessionId: string): Entry {
     const existing = this.entries.get(sessionId);
@@ -131,6 +151,28 @@ export class SessionLife {
    * A rejection means sign-out did not complete (epoch unchanged); the caller decides whether to retry.
    */
   signOut(): Promise<void> { return this.transition(() => this.leave()); }
+
+  /** A native auth permit names the outgoing epoch. A later account cannot be
+   * signed out by an older writer waiting to reach this transition queue. */
+  leaveForAuthChange(expected: string | null, next: string | null, qualify: () => Promise<void>): Promise<void> {
+    return this.transition(async () => {
+      await qualify()
+      if (this.account !== null && this.account !== expected) throw new Error('Session account changed before auth transition')
+      if (expected !== next) await this.leave()
+    })
+  }
+
+  /** Account closure never signs out a newer account and requires proof for
+   * removed forks and late start results as well as the current entries. */
+  async stopOwnerForClosure(userId: string): Promise<void> {
+    await this.transition(async () => {
+      if (this.account !== null && this.account !== userId) throw new Error('Session account changed before closure preparation');
+      await this.leave();
+    });
+    // A late native result may never return. Keep its proof pending without
+    // holding the identity transition queue hostage to that old account.
+    await this.ownerDrain.drain(userId);
+  }
 
   signIn(userId: string): Promise<void> { return this.transition(() => this.enter(userId)); }
 
@@ -161,7 +203,10 @@ export class SessionLife {
   private transition(run: () => Promise<void>): Promise<void> {
     // Idle: run now, so a sign-out's interrupts land before the caller replaces its credentials.
     const next = this.tail ? this.tail.then(run) : run();
-    const tail: Promise<void> = next.catch(() => undefined).then(() => { if (this.tail === tail) this.tail = null; });
+    const tail: Promise<void> = next.catch(() => undefined).then(() => {
+      this.authSettled = true;
+      if (this.tail === tail) this.tail = null;
+    });
     this.tail = tail;
     return next;
   }
@@ -288,6 +333,35 @@ export class SessionLife {
       started.push(sessionId);
     }
     return started;
+  }
+
+  /**
+   * A host-owned scheduled delivery may retry its own unadmitted row. Ordinary duplicate enqueues
+   * retain their no-restart contract. The caller owns the retry budget; Life owns whether a start
+   * is safe. Never replay an accepted, dispatching, unknown or rejected input, or cross a stop.
+   */
+  recoverQueuedDelivery(sessionId: string, messageId: string, allowStart: boolean): QueuedDeliveryRecovery {
+    const store = this.ports.store(sessionId);
+    const row = store.unaccepted(sessionId).find(item => item.message.id === messageId);
+    if (row?.state !== 'queued') return { state: 'waiting' };
+    // The scheduler may bootstrap before the host restores its account or finishes hydration.
+    // This is pending initialization, not a terminal sign-out or a recovery reservation.
+    if (!this.authSettled || this.tail !== null) return { state: 'waiting' };
+    const entry = this.entry(sessionId);
+    const life = entry.life;
+    if (life.kind === 'starting' || life.kind === 'stopping' || life.kind === 'ready') return { state: 'waiting' };
+    const cause = life.kind === 'failed' ? life.hold.cause.message
+      : life.kind === 'archived' ? 'The session is archived'
+      : life.hold ? `The session is held: ${life.hold.reason}` : 'The pending session has no active runtime';
+    if (this.account === null || this.leaving) return { state: 'blocked', cause: 'The session is signed out' };
+    const mayRecover = shouldStartAfterOutage(life, store.pending(sessionId))
+      || (life.kind === 'dormant' && life.hold === null && shouldStartOnHydrate(life, store.pending(sessionId)));
+    if (!mayRecover) {
+      return { state: 'blocked', cause };
+    }
+    if (!allowStart) return { state: 'needed', cause };
+    this.send(sessionId, { k: 'start', origin: 'retry' });
+    return { state: 'started', cause };
   }
 
   interrupt(sessionId: string, event: InterruptEvent): Promise<void> {
@@ -484,7 +558,8 @@ export class SessionLife {
     if (life.kind === 'starting' && (!oldRun || !same(life.gen, oldRun.gen))) {
       entry.reconfigured = event.k === 'start' && event.origin === 'reconfigure';
       entry.attempt += 1;
-      entry.run = { gen: life.gen, abort: new AbortController(), adapter: this.ports.adapter(sessionId), unlisten: null };
+      if (this.account === null) throw new Error('Session start has no account owner');
+      entry.run = { gen: life.gen, abort: new AbortController(), adapter: this.ownerDrain.track(this.account, this.ports.adapter(sessionId)), unlisten: null };
     } else if (effects.some(effect => effect.e === 'dispatch')) {
       entry.reconfigured = false;
     }

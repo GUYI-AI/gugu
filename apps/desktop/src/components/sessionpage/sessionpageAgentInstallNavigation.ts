@@ -6,20 +6,28 @@ type TabSetter = (tab: SidebarTab) => void
 
 export function useSessionpageAgentInstallNavigation(
   enabled: boolean,
+  composerOpen: boolean,
   setSessionCreateOpen: BooleanSetter,
   setActiveTab: TabSetter,
 ) {
   useEffect(() => {
     if (!enabled) return
     const w = window as typeof window & {
-      __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void
+      __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => boolean
+      __GUGU_RESTORE_SESSIONPAGE_AGENT_INSTALL__?: () => void
     }
     w.__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__ = () => {
       setSessionCreateOpen(false)
       setActiveTab('tasks')
+      return composerOpen
+    }
+    w.__GUGU_RESTORE_SESSIONPAGE_AGENT_INSTALL__ = () => {
+      setActiveTab('chats')
+      setSessionCreateOpen(true)
     }
     return () => {
       delete w.__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__
+      delete w.__GUGU_RESTORE_SESSIONPAGE_AGENT_INSTALL__
     }
-  }, [enabled, setActiveTab, setSessionCreateOpen])
+  }, [enabled, composerOpen, setActiveTab, setSessionCreateOpen])
 }

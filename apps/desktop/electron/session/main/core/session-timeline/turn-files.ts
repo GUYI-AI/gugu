@@ -50,6 +50,7 @@ export async function turnFileText(sessionId: string, files: readonly TurnFileRe
       const { localPath, readOnly } = await localPathOf(file, agent, sessionId);
       local = { localPath, readOnly };
     } catch (error) {
+      if (file.requiredPlacement) throw error;
       log.warn('Task attachment could not be saved', { sessionId, itemId: file.itemId, reason: attachmentFailureReason(error) });
     }
     const promptText = turnAttachmentText(file, local);
@@ -64,6 +65,21 @@ export async function turnFileText(sessionId: string, files: readonly TurnFileRe
 }
 
 async function localPathOf(file: TurnFileRef, agent: string, sessionId: string): Promise<Prefetched> {
+  if (file.requiredPlacement) {
+    const resolved = await resolveAccountFile({ id: file.itemId }, agent, { version: file.version });
+    if (!resolved || resolved.status !== 'ready') throw new Error('A required creation attachment is no longer available');
+    try {
+      if (resolved.reader.actorId !== agent || resolved.revision.chat_id !== file.requiredPlacement.chatId
+        || resolved.revision.item_id !== file.itemId || resolved.revision.version !== file.version) {
+        throw new Error('The required creation placement changed');
+      }
+      const saved = await saveToFileStore(resolved, resolveGuguHome(process.env), file.name);
+      if (saved.size_bytes !== file.sizeBytes || saved.sha256 !== file.requiredPlacement.sha256) {
+        throw new Error('The required creation attachment bytes changed');
+      }
+      return { localPath: saved.file_path, readOnly: saved.read_only };
+    } finally { await resolved.dispose(); }
+  }
   const key = fileKey(sessionId, file), cached = prefetched.get(key);
   if (cached) {
     const info = await stat(cached.localPath).catch(() => null);

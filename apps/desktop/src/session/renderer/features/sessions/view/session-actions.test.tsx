@@ -12,6 +12,12 @@ vi.mock('@renderer/features/sessions/stores/session-registry', () => ({
 }));
 vi.mock('@renderer/lib/electron-api', () => ({ findSessionHostBridge: () => null }));
 vi.mock('@renderer/lib/ipc', () => ({ rpc: {} }));
+vi.mock('@renderer/features/sessions/fork-task', () => ({ forkTask: vi.fn() }));
+vi.mock('@renderer/features/sessions/copy-session-id', () => ({ copySessionId: vi.fn() }));
+vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgents: () => ({ data: [] }) }));
+vi.mock('@renderer/lib/layout/navigation-actions', () => ({ useNavigate: () => ({ navigate: vi.fn() }) }));
+vi.mock('@renderer/features/sidebar/sidebar-pin-actions', () => ({ setPinnedToSidebar: vi.fn() }));
+vi.mock('@renderer/features/sidebar/row-pin', () => ({ rowPinOf: (_p: string, _s: string, session: unknown) => session }));
 vi.mock('@renderer/lib/modal/modal-provider', () => ({ useShowModal: () => h.showError }));
 vi.mock('@renderer/localization/use-session-messages', () => ({
   useSessionMessages: () => ({ translate: (key: string) => key }),
@@ -32,7 +38,8 @@ import { SessionActionsProvider, useSessionTabCommands } from './session-actions
 
 function TaskMenu() {
   const reload = useSessionTabCommands('task', () => undefined).find(command => command.id === 'session:reload');
-  return <button data-reload disabled={reload?.isAvailable?.() === false} onClick={() => reload?.run()}>reload</button>;
+  // While a restart is in flight the session menu table leaves the item out (session-menu.ts `reloading`).
+  return <button data-reload disabled={!reload || reload.isAvailable?.() === false} onClick={() => reload?.run()}>reload</button>;
 }
 
 let root: Root;

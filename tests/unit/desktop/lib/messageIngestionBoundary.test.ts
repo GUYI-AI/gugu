@@ -17,6 +17,7 @@ it('e3 keeps message SQL and renderer writes at their sole boundaries', () => {
     .filter(line => !/\/drizzle\/meta\/\d{4}_snapshot\.json:/.test(line))
   const allowed = [
     'apps/desktop/electron/session/drizzle/0046_persistent_im_messages.sql:',
+    'apps/desktop/electron/session/drizzle/0053_personal_conversation_history.sql:',
     'apps/desktop/electron/session/main/db/schema.ts:',
     'apps/desktop/electron/session/main/core/im-messages/',
   ]

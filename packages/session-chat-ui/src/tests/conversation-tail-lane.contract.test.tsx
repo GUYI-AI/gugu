@@ -1,9 +1,5 @@
 /** @jsxImportSource solid-js */
-/**
- * 对话布局:一条用户消息离上一行墨迹的实画距离。上一条消息的尾行是空白(悬停才显时间、复制)时,尾行本身就是那 20;
- * 尾行里有常驻的「收起全文」时,它是墨迹,间距得另外给。回合末尾是「已编辑」卡时按接缝给 8。
- * 增量追加(这一轮正在跑)和整条重建(重启、再进来)画出来一样。
- */
+/** Appending and rebuilding reserve the same distance after the previous utterance's final row. */
 import { afterEach, describe, expect, it } from 'vitest';
 import { textFilePatch } from '@gugu/session-core/lib';
 import { createChatContext } from '@session-chat/chat-context';
@@ -50,66 +46,42 @@ async function mount(first: TranscriptTurn, mode: Mode, expandReply = false, dra
   return { host, state };
 }
 
-/** Painted extent of a row: text, images and filled or bordered boxes that are visible, clipped by overflowing ancestors. */
-function ink(root: Element): [number, number] {
-  let top = Infinity, bottom = -Infinity;
-  const visible = (e: Element) => { for (let x: Element | null = e; x && x !== document.body; x = x.parentElement) {
-    const c = getComputedStyle(x); if (c.opacity === '0' || c.visibility === 'hidden' || c.display === 'none') return false; } return true; };
-  const painted = (e: Element, c: CSSStyleDeclaration) => c.backgroundColor !== 'rgba(0, 0, 0, 0)' || c.borderTopWidth !== '0px'
-    || ['IMG', 'svg'].includes(e.tagName) || [...e.childNodes].some(n => n.nodeType === 3 && n.textContent!.trim());
-  const visit = (e: Element) => {
-    const r = e.getBoundingClientRect();
-    if (r.height > 0 && painted(e, getComputedStyle(e)) && visible(e)) {
-      let t = r.top, b = r.bottom;
-      for (let x = e.parentElement; x && x !== root.parentElement; x = x.parentElement) {
-        if (getComputedStyle(x).overflowY !== 'visible') { const q = x.getBoundingClientRect(); t = Math.max(t, q.top); b = Math.min(b, q.bottom); }
-      }
-      if (b > t) { top = Math.min(top, t); bottom = Math.max(bottom, b); }
-    }
-    for (const c of e.children) visit(c);
-  };
-  visit(root);
-  return [top, bottom];
-}
-
-function seam(host: HTMLElement): { gapBefore: number; painted: number } {
-  const rows = [...host.querySelectorAll<HTMLElement>('[data-row-kind]')].filter(r => r.offsetHeight > 0)
+function seam(host: HTMLElement): number {
+  const rows = [...host.querySelectorAll<HTMLElement>('[data-row-kind]')].filter(row => row.offsetHeight > 0)
     .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
-  const i = rows.findIndex(r => r.querySelector('[data-user-card="next"]'));
-  let above = -Infinity;
-  for (let j = i - 1; j >= 0 && above === -Infinity; j--) above = ink(rows[j])[1];
-  return { gapBefore: parseFloat(getComputedStyle(rows[i]).paddingTop), painted: Math.round(ink(rows[i])[0] - above) };
+  const index = rows.findIndex(row => row.querySelector('[data-user-card="next"]'));
+  const next = rows[index]!;
+  const preceding = rows[index - 1]!;
+  return Math.round(next.getBoundingClientRect().top + parseFloat(getComputedStyle(next).paddingTop)
+    - preceding.getBoundingClientRect().bottom);
 }
 
-describe('the next user message keeps its distance from what the turn above painted', () => {
-  it.each(['rebuilt', 'appended'] as const)('%s: a blank tail lane is the 20 itself (control)', async (mode) => {
+describe('the next user message starts 24px after the previous utterance', () => {
+  it.each(['rebuilt', 'appended'] as const)('%s: a hidden action row reserves its space', async (mode) => {
     const { host } = await mount(turn('t1', 0, [user('u'), bash, reply('Done: short answer.')]), mode);
-    expect(seam(host)).toEqual({ gapBefore: 0, painted: 20 });
+    expect(seam(host)).toBe(24);
   });
 
-  it.each(['rebuilt', 'appended'] as const)('%s: a lane that shows 「收起全文」 is ink, so the gap is still 20', async (mode) => {
+  it.each(['rebuilt', 'appended'] as const)('%s: an action row with a collapse control reserves the same space', async (mode) => {
     const { host } = await mount(turn('t1', 0, [user('u'), bash, reply(LONG)]), mode, true);
     expect(host.querySelector('[data-collapse-id="conversation-bubble:r"]'), 'the reply above shows its collapse control').not.toBeNull();
-    expect(seam(host)).toEqual({ gapBefore: 20, painted: 20 });
+    expect(seam(host)).toBe(24);
   });
 
-  it.each(['rebuilt', 'appended'] as const)('%s: after an "edited files" card the seam is 8', async (mode) => {
+  it.each(['rebuilt', 'appended'] as const)('%s: the file group ends at its action row', async (mode) => {
     const { host } = await mount(turn('t1', 0, [user('u'), edit('e1', '/p/a.txt'), edit('e2', '/p/b.txt'), reply('Done.')]), mode);
-    expect(seam(host)).toEqual({ gapBefore: 8, painted: 8 });
+    expect(seam(host)).toBe(24);
   });
 
-  // 引用在不在脚注,flatten 和头部布局问同一个函数:同一个人接着投来的第二条不再画名字,引用落到脚注里,是墨迹。
-  it.each(['rebuilt', 'appended'] as const)('%s: a quote in the footer (same sender again, no name) is ink, so the gap is still 20', async (mode) => {
+  // A second delivery from the same sender puts its quote in the footer.
+  it.each(['rebuilt', 'appended'] as const)('%s: a quote in the footer does not alter the seam', async (mode) => {
     const { host } = await mount(turn('t1', 0, [delivered('d1', 'user:peer'), delivered('d2', 'user:peer', true)]), mode, false, '[data-user-card="d2"]');
-    const { gapBefore, painted } = seam(host);
-    // 脚注那行字的墨迹比尾行底边高 1px,所以实画是 21;要钉的是「不贴上」。
-    expect(gapBefore).toBe(20);
-    expect(painted).toBeGreaterThanOrEqual(20);
+    expect(seam(host)).toBe(24);
   });
 
-  it.each(['rebuilt', 'appended'] as const)('%s: with a new sender the name carries the quote in the header, and the blank lane is the 20 (control)', async (mode) => {
+  it.each(['rebuilt', 'appended'] as const)('%s: the next utterance starts at the same distance with a quoted header', async (mode) => {
     const { host } = await mount(turn('t1', 0, [delivered('d1', 'user:other'), delivered('d2', 'user:peer', true)]), mode, false, '[data-user-card="d2"]');
-    expect(seam(host)).toEqual({ gapBefore: 0, painted: 20 });
+    expect(seam(host)).toBe(24);
   });
 
   // 「收起全文」只看展开标记(不再量正文高度),所以标记只能落在放不下的气泡上:最新那条让出位置时,短的不留标记。

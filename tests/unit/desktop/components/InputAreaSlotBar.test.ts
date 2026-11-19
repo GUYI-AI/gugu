@@ -13,7 +13,7 @@ import { ChatStoreProvider } from '../../../../apps/desktop/src/store/chatContex
 import { chatStore, createReactHarness } from '../../../support/testHarness'
 
 const shell = vi.hoisted(() => ({ mobile: false }))
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile, readMobileShell: () => shell.mobile }))
 vi.mock('../../../../apps/desktop/src/components/toastContext', () => ({ useToast: () => ({ toast: vi.fn() }) }))
 
 let container: HTMLDivElement

@@ -6,7 +6,8 @@ import { revokeExtensionProgramAccess } from './extension-program-access';
 
 // Expected failure cases must not open the production file-log transport in Node.
 vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn() } }));
-vi.mock('./extensions-root', () => ({ extensionsService: () => ({ get: () => ({ manifest: { version: '1.2.3' } }), isEnabled: () => true, hasCapability: () => true }) }));
+const appApi = vi.hoisted(() => ({ version: 58 }));
+vi.mock('./extensions-root', () => ({ extensionsService: () => ({ get: () => ({ manifest: { version: '1.2.3', apiVersion: appApi.version } }), isEnabled: () => true, hasCapability: () => true }) }));
 vi.mock('./app-programs-elsewhere', () => ({ knownSessionMachine: (id: string) => id === 'remote-task' ? { deviceId: 'remote' } : undefined }));
 const { ExtensionProjectionBridge } = await import('./extension-projection-bridge');
 const owner = { extensionId: 'projection-bridge-test', kind: 'program', pageId: -400, binding: null, callingSession: 'task-a' };
@@ -17,7 +18,7 @@ const page = (pageId: number, sessionId = 'task-a', hear: BridgeCaller['hear'] =
 }) as unknown as BridgeCaller;
 const frame = { width: 640, height: 480, mime: 'image/png' as const, data: 'YQ==' };
 const turn = () => new Promise<void>(resolve => setTimeout(resolve, 0));
-afterEach(() => { revokeExtensionProgramAccess(owner.extensionId); vi.useRealTimers(); });
+afterEach(() => { revokeExtensionProgramAccess(owner.extensionId); appApi.version = 58; vi.useRealTimers(); });
 
 function setup() {
   const bridge = new ExtensionProjectionBridge(() => {}, async () => 'project-test');
@@ -28,6 +29,7 @@ function setup() {
     projection: {
       create: args => call('projectionCreate', args) as Promise<{ id: string }>,
       publish: args => call('projectionPublish', args) as Promise<void>,
+      present: args => call('projectionPresent', args) as Promise<void>,
       close: args => call('projectionClose', args) as Promise<void>,
       closed: args => call('projectionClosed', args) as Promise<void>,
       inputResult: args => call('projectionInputResult', args) as Promise<void>,
@@ -39,6 +41,16 @@ function setup() {
 }
 
 describe('App program → dedicated host resource → bound App page', () => {
+  it('requires API58 for new presentation while an older App keeps publishing pixels', async () => {
+    const { runtime } = setup();
+    const source = await runtime.create({ input: async () => {}, disconnect: async () => {}, refresh() {}, close() {} });
+    appApi.version = 54;
+    await expect(source.publish(frame)).resolves.toBe(1);
+    await expect(source.present(null)).rejects.toThrow('declaring API58');
+    appApi.version = 58;
+    await expect(source.present(null)).resolves.toBeUndefined();
+    await source.close();
+  });
   it('ties internal media authority to the actual page document and program resource lifetime', async () => {
     const { bridge, runtime } = setup();
     const source = await runtime.create({ input: async () => {}, disconnect: async () => {}, refresh() {}, close() {} });
@@ -101,7 +113,7 @@ describe('App program → dedicated host resource → bound App page', () => {
     const { bridge } = setup();
     const { id } = await bridge.call(program(), 'projectionCreate', {}) as { id: string };
     const impostor = { ...program(), pageId: -401 };
-    for (const method of ['projectionPublish', 'projectionClose', 'projectionClosed', 'projectionInputResult']) {
+    for (const method of ['projectionPublish', 'projectionPresent', 'projectionClose', 'projectionClosed', 'projectionInputResult']) {
       await expect(bridge.call(impostor, method, { id, frame: { ...frame, sequence: 1 }, requestId: 'fake' })).rejects.toThrow(/not owned/);
     }
     bridge.closePage(owner.pageId);

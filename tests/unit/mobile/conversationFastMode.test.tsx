@@ -31,9 +31,18 @@ describe('phone watch Fast wiring', () => {
   it('uses the host-filtered fact and accepted value through the existing phone host client', async () => {
     await harness.render(<Probe />)
     await vi.waitFor(() => expect(current.props.fastMode).toBe(false))
-    bridge.set.mockResolvedValue(options('on'))
-    await act(async () => { current.props.onFastModeChange?.(true) })
+    const accepted = Promise.withResolvers<SessionpageSessionOptionsWithMenu>()
+    bridge.set.mockReturnValue(accepted.promise)
+    await act(async () => {
+      // A second tap can arrive before the disabled switch has rendered.
+      current.props.onFastModeChange?.(true)
+      current.props.onFastModeChange?.(true)
+    })
+    expect(current.fastModePending).toBe(true)
+    expect(current.props.fastMode).toBe(false)
+    await act(async () => accepted.resolve(options('on')))
     await vi.waitFor(() => expect(current.props.fastMode).toBe(true))
+    expect(current.fastModePending).toBe(false)
     expect(bridge.client).toHaveBeenLastCalledWith(target)
     expect(bridge.set).toHaveBeenCalledExactlyOnceWith('fast', 'on')
   })
@@ -44,6 +53,7 @@ describe('phone watch Fast wiring', () => {
     await act(async () => { current.props.onFastModeChange?.(true) })
     await vi.waitFor(() => expect(current.props.notice).toBeDefined())
     expect(current.props.fastMode).toBe(false)
+    expect(current.fastModePending).toBe(false)
     expect(bridge.set).toHaveBeenCalledExactlyOnceWith('fast', 'on')
   })
   it('hides Fast when the host has no eligible group', async () => {
@@ -68,7 +78,9 @@ describe('phone watch Fast wiring', () => {
     await harness.render(<Probe />)
     await vi.waitFor(() => expect(current.props.fastMode).toBe(false))
     await act(async () => { current.props.onFastModeChange?.(true) })
+    expect(current.fastModePending).toBe(true)
     await harness.render(<Probe currentTarget={{ ...target, sessionId: 'other-session' }} />)
+    expect(current.fastModePending).toBe(false)
     await vi.waitFor(() => expect(bridge.client).toHaveBeenLastCalledWith({ ...target, sessionId: 'other-session' }))
     await act(async () => {
       if (result === 'accepted') old.resolve(options('on'))

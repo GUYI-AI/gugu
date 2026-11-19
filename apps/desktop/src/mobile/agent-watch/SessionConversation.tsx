@@ -15,6 +15,7 @@ import { SessionChatLoading } from '@renderer/features/sessions/acp/session-chat
 import { toolImageUrl } from '@gugu/session-core/acp/client'
 import { openImageViewer } from '@/lib/imageViewer'
 import { PhoneTaskDraftRecovery } from '../local-agent/PhoneTaskDraftRecovery'
+import { usePhoneInterruptedRetry } from './usePhoneInterruptedRetry'
 import { machineRpc, fetchToolImage } from './sessionpage-rpc'
 import { assistantTimelineClient, readConversationFile } from '@/components/assistant/assistantTimelineClient'
 import { phoneTimelineClient } from '../local-agent/phoneTimelineClient'
@@ -26,8 +27,7 @@ import { appendToDraft } from '@/store/chatContext'
 import { useLocale } from '@/i18n'
 import type { ExistingSessionModel } from './CreateTarget'
 import { PhoneAttachmentMenuBar } from '../composer/PhoneAttachmentMenuBar'
-import { useCreationSkillDraft } from './create-skill-draft'
-import { SelectedCreationSkills } from './CreateSkills'
+import { creationSkillInput } from './create-skill-draft'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '@/store/theme'
 import { useSessionConversationDraft } from './use-session-conversation-draft'
@@ -100,7 +100,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   onBeforeSend?: () => void
   pendingSends: readonly PendingSend[]; sending: boolean; agentWorking: boolean
   headerRunning?: boolean
-  onStop: () => void; stopping: boolean; footerNotice?: ReactNode; composerControls?: (modelControl: ReactNode, model: ExistingSessionModel, skills: ReturnType<typeof useCreationSkillDraft>) => ReactNode; onLoadOlder: () => Promise<void>; onHeldShown?: (itemId: string) => void
+  onStop: () => void; stopping: boolean; footerNotice?: ReactNode; composerControls?: (modelControl: ReactNode, model: ExistingSessionModel, skills: ReturnType<typeof creationSkillInput>) => ReactNode; onLoadOlder: () => Promise<void>; onHeldShown?: (itemId: string) => void
   /** Only the existing Work controls may take ownership of the phone permission selector. */
   permissionsInWork?: boolean
   onAtBottom?: () => void; onLoadToolImage?: (itemId: string, index: number) => Promise<void>; emptyNote?: ReactNode
@@ -164,13 +164,12 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     editor.current?.setText(next)
     onDraftApplied?.()
   }, [draft, onDraftApplied, draftText, setDraftText])
-  const options = useConversationOptions({ deviceId, sessionId, local, phoneHost, reachable: hostReachable }, harness ? engineLabel(harness) : agentName)
+  const options = useConversationOptions({ deviceId, sessionId, local, phoneHost, reachable: hostReachable }, harness ? engineLabel(harness) : agentName, mobile)
   const workOwnsPermissions = mobile && permissionsInWork && !!composerControls && !appPanel
     && !!options.props.onPermissionModeChange && Object.keys(options.props.permissionModeOptions ?? {}).length > 0
   const senderInputs = useQueuedSessionInputs(sessionId)
   const account = useSessionInputAccount()
-  const skillDraft = useCreationSkillDraft(account, deviceId, `session:${sessionId}`, harness ?? null)
-  const { t: tControls } = useTranslation('mobileCreateControls')
+  const skillDraft = creationSkillInput(skill => editor.current?.insertMention(skill))
   const life = useSessionLifeView(deviceId, sessionId, local, !phoneHost && hostReachable,
     timeline.queuedPrompts.length > 0 || pendingSends.length > 0 || senderInputs.length > 0)
   const localQueue = useRef<{ key: string; inputs: readonly SessionInput[] }>({ key: '', inputs: [] })
@@ -239,7 +238,6 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   }
   const submit = async (value: string) => {
     if (sending || stopping || inFlight.current) return
-    const selectedSkills = composerControls ? [...skillDraft.skills] : []
     const annotated = annotationDraft.items
     const retained = currentAnnotationImages(annotated, attachmentsRef.current)
     uploads.keepOnly(new Set(retained.map(item => item.id))); setAttachments(retained)
@@ -266,8 +264,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       setAttachmentWaiting(false)
       const sentAttachments = attachmentsRef.current.filter(file => submission.attachments.has(file.id))
       const files = uploads.files(sentAttachments.map(file => file.id))
-      const requested = selectedSkills.length ? `${tControls('useSkills', { names: selectedSkills.map(skill => skill.name).join(', ') })}\n\n${value}` : value
-      const text = annotationPrompt(requested, annotated, resolvedLocale)
+      const text = annotationPrompt(value, annotated, resolvedLocale)
       if ((!text && !files.length) || !checkBeforeSend(attempt)) return
       try {
         // A later reader gesture supersedes this local send, including while its commit waits.
@@ -338,6 +335,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     ...send, held: true, baselineMessageIds: [...send.baseline], delivery: { state: 'sending' as const },
   }))], [settledInputs, projectedInputs, receiptHistory.visible, pendingSends, senderInputs, nativeTurns])
   const rejectedInputCommands = useRejectedSessionInputCommands(sessionId)
+  const phoneRetryCommands = usePhoneInterruptedRetry(phoneHost, deviceId, sessionId)
   const userAttachments = useMemo(() => nativeUserAttachmentCommands({
     readImage: async attachmentId => {
       const result = await machineRpc(deviceId, local).sessionTimeline.sessionNativeAttachment({ attachmentId })
@@ -358,6 +356,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   // phone draft must not rebuild the history before its outbox commit can run.
   const commands = useMemo<ChatCommands>(() => ({
     ...rejectedInputCommands,
+    ...phoneRetryCommands,
     onRetrySend: id => {
       const input = received.current.inputs.find(input => input.id === id && (input.delivery?.state === 'unknown' || (input.delivery?.state === 'failed' && settledHostRow(lifeView.current, id))))
       if (!input) return rejectedInputCommands.onRetrySend?.(id)
@@ -381,7 +380,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       setBackgroundError(null)
       void (localClient?.stopBackgroundTask ?? stopBackgroundTask)(deviceId, sessionId, stopId).catch(error => setBackgroundError(messageForUser(error)))
     },
-  }), [rejectedInputCommands, nativeRecord, phoneHost, userAttachments, openFile, outputHandlers, sessionId, agentUserId, quotes.commands, deviceId, local, localClient, agentName, onStop, onHeldShown])
+  }), [rejectedInputCommands, phoneRetryCommands, nativeRecord, phoneHost, userAttachments, openFile, outputHandlers, sessionId, agentUserId, quotes.commands, deviceId, local, localClient, agentName, onStop, onHeldShown])
   const composer = <>
     <ConversationSettlements sessionId={sessionId} settlements={timeline.settlements} runtime={sessionRuntime} mobile machine={machineLabel} busyItemId={respondingItemId} respond={onRespond} />
     {footerNotice}
@@ -393,13 +392,13 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     <AgentConversationComposer {...(appPanel ? panelComposerOptions(options.props) : options.props)} {...queue.props} {...(appPanel || composerControls ? {} : lockedHarness(harness))}
       permissionModeOptions={workOwnsPermissions || appPanel ? null : options.props.permissionModeOptions}
       renderPhoneHeader={composerControls ? modelControl => composerControls(modelControl, {
-        options: options.props.modelOptions, selected: options.props.selectedModel, onPick: options.props.onModelChange,
+        options: options.props.modelOptions, selected: options.props.selectedModel, onPick: options.props.onModelChange, onOpen: options.props.onModelMenuOpen,
         effortOptions: options.props.effortOptions, selectedEffort: options.props.selectedEffort, defaultEffort: options.props.defaultEffort,
         onEffortChange: options.props.onEffortChange, fastMode: options.props.fastMode, onFastModeChange: options.props.onFastModeChange,
+        fastModePending: options.fastModePending,
         ...(workOwnsPermissions ? { permissionModeOptions: options.props.permissionModeOptions,
           selectedPermissionMode: options.props.selectedPermissionMode, onPermissionModeChange: options.props.onPermissionModeChange } : {}),
-      }, skillDraft) : mobile && appPanel ? () => <PhoneAttachmentMenuBar disabled={sending} onOpen={() => input.current?.click()} /> : undefined}
-      inputHeader={composerControls ? <SelectedCreationSkills skills={skillDraft.skills} onChange={skillDraft.update} /> : undefined}
+      }, skillDraft) : mobile && appPanel ? () => <PhoneAttachmentMenuBar conversationKey={`${deviceId}:${sessionId}`} disabled={sending} onOpen={() => input.current?.click()} /> : undefined}
       placeholder={appPanel ? ta('chat.placeholder', { name: agentName }) : undefined} queuedPrompts={[...queue.props.queuedPrompts, ...localInputs.filter(input => !input.failure).map(input => ({ id: input.id, text: input.text, origin: 'manual' as const, locked: true })),
       ...[...waitingInputs].filter(([id]) => !queue.props.queuedPrompts.some(prompt => prompt.id === id) && !localInputs.some(input => input.id === id)).map(([id, input]) => ({ id, text: input.text, origin: 'manual' as const, locked: true }))]} mobile phoneActions={mobile} isWorking={agentWorking} canSubmit={!sending && !stopping && (!!composerDraft.text.trim() || attachments.length > 0 || annotationItems.length > 0)}
       onStop={agentWorking ? onStop : undefined} editorApiRef={receiveEditor} editorOptions={{ clearOnSubmit: false, enterBehavior: 'newline' }}

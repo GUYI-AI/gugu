@@ -53,7 +53,7 @@ export function bootAgentConfigRuntimeProcess(options: BootAgentConfigRuntimePro
         scope: runtimeScope,
         registry: options.pluginRegistry,
         exec,
-        fs: createLocalPluginFs(homeDir, { mcpWriteScope: 'user-config' }),
+        fs: createLocalPluginFs(homeDir),
         homeDir,
         hostDependencies: {
           ledger: hostDependencyLedger,

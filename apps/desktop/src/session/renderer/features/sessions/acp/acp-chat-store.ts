@@ -38,7 +38,7 @@ import { turnHeld } from '@gugu/session-core/session-record/held-turn';
 import { toolImageUrl } from '@gugu/session-core/acp/client';
 import { commandToken } from '@gugu/session-core/acp/commands';
 import { permissionWaitKind } from '@gugu/session-core/acp/models/permissions';
-import type { AgentState, LiveSettingResult, PermissionWaitKind } from '@gugu/session-core/acp';
+import type { AgentState, HistoryPage, LiveSettingResult, PermissionWaitKind } from '@gugu/session-core/acp';
 import { errorDetail, isDeepEqual } from '@gugu/session-shared';
 import { action, computed, makeObservable, observable, reaction, runInAction, when } from 'mobx';
 import { HistoryWindow } from './history-window';
@@ -538,6 +538,8 @@ export class AcpChatStore {
         {
           name: option.name,
           description: option.description,
+          disabled: option.disabled,
+          reviewByHaiku: option.reviewByHaiku,
           destructive: isDestructivePermissionMode(option.id),
         },
       ])
@@ -863,7 +865,7 @@ export class AcpChatStore {
     // unless the start failed terminally (the engine is not there), when queueing waits for something that never happens.
     // Starting with its message drawn is running: the composer stops it (`stop` asks the host), as in any turn.
     const deliveryState = this.chatState.session.state.pendingPrompt?.delivery?.state;
-    const startingDrawn = !state && this.transcriptPendingId !== null && deliveryState !== 'waiting' && deliveryState !== 'failed' && deliveryState !== 'unknown';
+    const startingDrawn = !!this.startPhaseOf(sessionLifeView(this.runtimeSessionId)) || (!state && this.transcriptPendingId !== null && deliveryState !== 'waiting' && deliveryState !== 'failed' && deliveryState !== 'unknown');
     return {
       isWorking: agentWorking || startingDrawn || deliveryState === 'sending' || deliveryState === 'receiving' || deliveryState === 'accepted',
       isBusy: state?.isGenerating ?? false,
@@ -1540,8 +1542,8 @@ export class AcpChatStore {
 
   stop(): void {
     const session = this.session;
-    // Not attached yet (session-life is still starting it): stopping is the host owner's user-stop.
-    if (!session) {
+    const life = sessionLifeView(this.runtimeSessionId);
+    if (!session || (life && lifeIsStarting(life))) {
       void stopSessionLife(this.runtimeSessionId).catch((error: unknown) => this._toastError('acpFailure.stop', error));
       return;
     }
@@ -3103,18 +3105,22 @@ export class AcpChatStore {
    * 整段重读一遍。被改过的旧轮次在库里已是新的,开场之后新落库的那几轮也由库里那份出。
    * 读到的是旧状态(另一次对账已经走到更新的游标、会话换了、转录放掉了)就什么都不改。
    *
-   * @returns `unsupported`:库里没有这条会话的行(历史只在引擎那侧)或者是侧边聊天,只能照旧重挂。
+   * 没有库页或侧边聊天从同一个 live session 分页重建已显示的窗口(#3167),也不拆 live。
+   * @returns `unsupported`:重读时发现运行时已经换代,需要重新附着。
    */
   private async _resyncHistoryInPlace(session: AcpLiveSession): Promise<'applied' | 'unsupported' | 'stale'> {
     const base = this._storedBaseSeq;
-    if (base === null || this.isTransient) return 'unsupported';
+    const runtimeOnly = base === null || this.isTransient;
+    const asked = this._runtimeCursor;
     const generation = this._historyGeneration;
     const stale = () => this._disposed || generation !== this._historyGeneration
       || this.session !== session || this._transcriptReleased;
     // 先定分界再读库(同开场):分界那一刻已经提交的轮,读库时一定已经在库里。
-    const head = await session.getHistory(undefined, 1);
+    const head = await session.getHistory(undefined, runtimeOnly ? 100 : 1);
     if (!head.success) throw resultError(head.error);
     if (stale()) return 'stale';
+    if (asked && (asked.epoch !== head.data.cursor.epoch || asked.seq > head.data.cursor.seq)) return 'unsupported';
+    if (runtimeOnly) return this._resyncRuntimeHistoryWindow(session, head.data, generation);
     let stored: Awaited<ReturnType<typeof rpc.sessions.getStoredHistory>> | null = null;
     try {
       stored = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, fromSeq: base });
@@ -3140,6 +3146,59 @@ export class AcpChatStore {
       this._runtimeReplayEndSeq = lastRuntimeSeq === undefined ? 0 : lastRuntimeSeq + 1;
       this._runtimeCursor = head.data.cursor;
       this._runtimeCount = head.data.count;
+    });
+    return 'applied';
+  }
+
+  /** Re-read only the displayed runtime window. History invalidation does not revoke a healthy live handle. */
+  private async _resyncRuntimeHistoryWindow(
+    session: AcpLiveSession,
+    head: HistoryPage,
+    generation: number,
+  ): Promise<'applied' | 'unsupported' | 'stale'> {
+    const stale = () => this._disposed || generation !== this._historyGeneration
+      || this.session !== session || this._transcriptReleased;
+    const loadedFloor = () => {
+      const older = this._visibleHistoryTurns(this._olderHistoryTurns)[0]?.seq;
+      const runtime = this._visibleHistoryTurns(this._runtimeTurns)[0]?.seq;
+      return older === undefined ? runtime : runtime === undefined ? older : Math.min(older, runtime);
+    };
+    let floor = loadedFloor();
+    const rebuilt = new Map<number, TranscriptTurn>();
+    let page = head;
+    for (;;) {
+      // A person can page farther back while this read is in flight. Include that newly displayed range too.
+      const now = loadedFloor();
+      if (now !== undefined) floor = floor === undefined ? now : Math.min(floor, now);
+      for (const turn of page.turns) rebuilt.set(turn.seq, turn);
+      const oldest = page.turns[0]?.seq;
+      if (floor === undefined || oldest === undefined || oldest <= floor || page.nextCursor === null) break;
+      const before = page.nextCursor;
+      const older = await session.getHistory(before, 100);
+      if (!older.success) throw resultError(older.error);
+      if (stale()) return 'stale';
+      if (older.data.cursor.epoch !== head.cursor.epoch || older.data.cursor.seq < head.cursor.seq) return 'unsupported';
+      if (older.data.turns.some(turn => turn.seq >= before)
+        || (older.data.nextCursor !== null && older.data.nextCursor >= before)) {
+        throw new Error('Runtime history pagination did not move backwards');
+      }
+      page = older.data;
+    }
+    if (stale()) return 'stale';
+    const current = this._runtimeCursor;
+    if (current && (current.epoch !== head.cursor.epoch || current.seq > head.cursor.seq)) return 'stale';
+    const turns = [...rebuilt.values()].filter(turn => floor === undefined || turn.seq >= floor).sort((a, b) => a.seq - b.seq);
+    const first = turns[0]?.seq;
+    const hasOlder = page.nextCursor !== null || (first !== undefined && [...rebuilt.keys()].some(seq => seq < first));
+    runInAction(() => {
+      this._runtimeReplayEndSeq = 0;
+      this._runtimeWindowStartSeq = first ?? 0;
+      this._runtimeTurns = turns;
+      this._runtimeCursor = head.cursor;
+      this._runtimeCount = head.count;
+      this._olderHistoryTurns = [];
+      this._olderSource = 'runtime';
+      this._olderCursor = first !== undefined && hasOlder ? first : null;
     });
     return 'applied';
   }
@@ -3341,7 +3400,7 @@ export class AcpChatStore {
    */
   private async _refreshHistory(options?: { preserveLiveTurn?: boolean }): Promise<void> {
     if (this.reverting) return;
-    const refreshGeneration = this._historyGeneration;
+    let refreshGeneration = this._historyGeneration;
     // 转录放掉了(`releaseTranscript`):不对账 —— 上屏时整份重读,这里读回来只会把它又攒起来。
     if (this._transcriptReleased) return;
     // 保留的那一帧就是此刻 activeTurn 上的这个对象：提交后 source.activeTurn 已是 null，
@@ -3356,6 +3415,8 @@ export class AcpChatStore {
       try {
         const failed = await this._mergeRuntimeChanges(session, refreshGeneration);
         if (failed && 'reset' in failed) {
+          // Invalidate in-flight history pages, while retaining the live session and its replicas.
+          if (failed.sameRun) refreshGeneration = ++this._historyGeneration;
           const resynced = failed.sameRun ? await this._resyncHistoryInPlace(session) : 'unsupported';
           if (resynced === 'applied') merged = true;
           else if (resynced === 'unsupported') {

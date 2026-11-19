@@ -23,6 +23,7 @@ export type SessionPromptReceipt =
 export type SessionForegroundState = {
   /** Request activity is the strongest observation available on some transports. */
   source: 'agent' | 'request';
+  retrying?: import('./models/session').SessionRetrying | null;
 } & (
   | { state: 'running' | 'requires_action' | 'unknown' }
   | {

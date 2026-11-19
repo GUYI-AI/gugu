@@ -13,10 +13,10 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
  * The mode is one outlined toggle that shows where a press goes: ✎ while reading, 👁 while editing (owner 11-06).
  * Narrowing, it gives way in that order: back's words; the name last.
  */
-export const FileToolbar = observer(function FileToolbar({ host, tabId, path, mode, canEdit = false, onModeChange, menu }: {
+export const FileToolbar = observer(function FileToolbar({ host, tabId, path, mode, canEdit = false, onModeChange, menu, actions }: {
   host: TabHost; tabId: string; path: ReactNode;
   mode?: 'preview' | 'source'; canEdit?: boolean;
-  onModeChange?: (mode: 'preview' | 'source') => void; menu: ReactNode;
+  onModeChange?: (mode: 'preview' | 'source') => void; menu: ReactNode; actions?: ReactNode;
 }) {
   const { translate } = useSessionMessages();
   const pane = useContext(PaneContext)?.pane;
@@ -29,6 +29,7 @@ export const FileToolbar = observer(function FileToolbar({ host, tabId, path, mo
     </div>
     {path}
     <div className="flex shrink-0 items-center gap-1">
+      {actions}
       {mode && (mode === 'preview'
         ? <Button size="icon-sm" variant="outline" aria-label={translate('tabs.edit')} title={translate('tabs.edit')} disabled={!canEdit} onClick={() => onModeChange?.('source')}><Pencil className="size-3.5" /></Button>
         : <Button size="icon-sm" variant="outline" aria-label={translate('tabs.read')} title={translate('tabs.read')} onClick={() => onModeChange?.('preview')}><Eye className="size-3.5" /></Button>)}

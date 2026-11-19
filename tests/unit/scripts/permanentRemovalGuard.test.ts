@@ -25,4 +25,12 @@ describe('permanent removal call-site guard', () => {
     expect(removalViolations(file, 'async function permanentlyDeleteAgentSession() { db.delete(sessions).run() }')).toHaveLength(1)
     expect(removalViolations(file, 'async function automaticCleanup() { db.delete(sessions).run() }')).toHaveLength(1)
   })
+  it('limits confirmed account-local roster erasure to its one named entry', () => {
+    const file = 'apps/desktop/electron/account-closure/roster.ts'
+    expect(removalViolations(file, 'async function eraseClosedAccountRoster(scope) { await removeAgents(match) }')).toEqual([])
+    expect(removalViolations(file, 'async function automaticCleanup(scope) { await removeAgents(match) }')).toHaveLength(1)
+    expect(removalViolations(file, "import { removeAgents as erase } from '@gugu/core'; async function automaticCleanup() { await erase(match) }")).toHaveLength(1)
+    expect(removalViolations('apps/desktop/electron/session/main/core/desktop-account-closure.ts', 'async function eraseClosedAccountRoster(scope) { await removeAgents(match) }')).toHaveLength(1)
+    expect(removalViolations(file, 'async function eraseClosedAccountRoster(scope) { await permanentlyRemove(target) }')).toHaveLength(1)
+  })
 })

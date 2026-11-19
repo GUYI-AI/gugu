@@ -12,12 +12,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Globe,
+  LogIn,
   GlobeFilled,
   Palette,
   PaletteFilled,
   Activity,
   Folder,
   FolderFilled,
+  FileText,
   SquarePen,
   SquarePenFilled,
   SidebarMinimalistic,
@@ -37,8 +39,8 @@ type NavGroupId = SettingsGroupId | 'diagnostics'
 // Desktop organization is independent of the existing mobile Settings order.
 const DESKTOP_NAV_GROUPS: readonly { id: NavGroupId; sections: readonly ActiveSection[] }[] = [
   { id: 'account', sections: ['account', 'subscriptions', 'usage'] },
-  { id: 'preferences', sections: ['general', 'interface', 'model', 'permissions', 'passwords'] },
-  { id: 'work', sections: ['sessions', 'devices', 'browser', 'files'] },
+  { id: 'preferences', sections: ['general', 'data-import', 'interface', 'model', 'permissions', 'passwords'] },
+  { id: 'work', sections: ['sessions', 'prompts', 'devices', 'browser', 'files'] },
   { id: 'diagnostics', sections: ['resource-monitor', 'about'] },
 ]
 
@@ -128,11 +130,12 @@ function IbPhone() {
 }
 
 // Nothing of the assistant here: its 资料 and 连接应用 live in its App (owner 11-12). 连接应用 here is the person's own
-// connected apps, a phone row under 通用 (a computer has them in the Library's 集成).
+// connected apps, under General in Preferences.
 const NAV_ITEMS: NavItem[] = [
   { key: 'connectors', labelKey: 'settings.nav.connectors', il: <Plug size={15} />, ib: <PlugFilled size={15} /> },
   { key: 'account', labelKey: 'settings.nav.account', il: <IlAccount />, ib: <IbAccount /> },
   { key: 'general', labelKey: 'settings.nav.general', il: <IlGeneral />, ib: <IbGeneral /> },
+  { key: 'data-import', labelKey: 'settings.nav.data-import', il: <LogIn size={15} />, ib: <LogIn size={15} /> },
   { key: 'passwords', labelKey: 'settings.nav.passwords', il: <IlPermissions />, ib: <IbPermissions /> },
   { key: 'permissions', labelKey: 'settings.nav.permissions', il: <IlPermissions />, ib: <IbPermissions /> },
   { key: 'devices', labelKey: 'settings.nav.devices', il: <IlDevices />, ib: <IbDevices /> },
@@ -144,6 +147,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'phone',   labelKey: 'settings.nav.phone', il: <IlPhone />,   ib: <IbPhone />   },
   { key: 'about',   labelKey: 'settings.nav.about', il: <IlAbout />,   ib: <IbAbout />   },
   // 会话页画的那几格(product spec)。同一套 Solar linear / bold,尺寸与上面这些一样。
+  { key: 'prompts', labelKey: 'settings.nav.prompts', il: <FileText size={15} />, ib: <FileText size={15} /> },
   { key: 'sessions', labelKey: 'settings.nav.sessions', il: <SquarePen size={15} />, ib: <SquarePenFilled size={15} /> },
   { key: 'interface', labelKey: 'settings.nav.interface', il: <Palette size={15} />, ib: <PaletteFilled size={15} /> },
   { key: 'resource-monitor', labelKey: 'settings.nav.resource-monitor', il: <Activity size={15} />, ib: <Activity size={15} /> },

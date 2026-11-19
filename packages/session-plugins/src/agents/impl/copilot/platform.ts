@@ -8,6 +8,7 @@ export const harnessPlatform = {
   //   实测 @github/copilot(隔离 HOME + 本地假端点)只加这一个变量:
   //     不设 → POST /v1/chat/completions;`responses` → POST /v1/responses。
   wireProtocol: 'openai-responses',
+  protocols: ['openai-responses', 'openai-chat-completions'],
   dialect: 'copilot-provider-env',
   injection: {
     cui: {

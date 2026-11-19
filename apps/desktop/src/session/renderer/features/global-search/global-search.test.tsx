@@ -9,6 +9,7 @@ import { messageQuoteLink } from '@gugu/core/shared/ui/messageQuote'
 import { publishChatSummaries, publishContactSummaries } from '@/lib/chatSummariesBridge'
 import { UI_EVENTS } from '@/lib/uiEvents'
 import { takeTaskReveal } from '@/hooks/useSourceMessageReveal'
+import { takeFlashWords } from '@/lib/sourceMessageReveal'
 import type { TaskTurnHit } from '@shared/core/search'
 import { GlobalSearch } from './global-search'
 import { messageKinds } from './use-global-search'
@@ -132,6 +133,33 @@ const sessionSnapshot = () => latestSession
 const options = () => [...host.querySelectorAll<HTMLElement>('[role=option]')]
 const recentWords = () => [...host.querySelectorAll<HTMLElement>('[data-testid=global-search-recent] button:not([data-testid=global-search-recent-clear])')].map((button) => button.textContent)
 const headers = () => [...host.querySelectorAll<HTMLElement>('[role=listbox] [data-search-scope]')].map((button) => button.textContent)
+
+
+it('drops a freshly cached message search after personal deletion while retaining the other conversation', async () => {
+  await render('回滚', false)
+  expect(host.textContent).toContain(rows[0].content)
+  const calls = remote.messages.mock.calls.length
+  remote.messages.mockResolvedValue({ data: [rows[1]], error: null })
+  await act(async () => publishChatSummaries([
+    { id: GROUP, kind: 'group', name: '搜索测试群甲', unread_count: 0, conversation_cleared_at: '2026-11-14T00:00:00.000501Z' },
+    { id: OTHER, kind: 'group', name: '设计组', unread_count: 0 },
+  ]))
+  await settle()
+  expect(host.textContent).not.toContain(rows[0].content)
+  expect(host.textContent).toContain('回滚方案.pdf')
+  expect(remote.messages.mock.calls.length).toBeGreaterThan(calls)
+})
+
+it('does not reuse another account message search when both accounts have no clear boundary', async () => {
+  await render('回滚', false)
+  expect(host.textContent).toContain(rows[0].content)
+  const calls = remote.messages.mock.calls.length
+  remote.messages.mockResolvedValue({ data: [], error: null })
+  await act(async () => publishSelfIdentity({ userId: 'other-account', displayName: null, guguNumber: null }))
+  await settle()
+  expect(host.textContent).not.toContain(rows[0].content)
+  expect(remote.messages.mock.calls.length).toBeGreaterThan(calls)
+})
 const tab = (key: string) => [...host.querySelectorAll<HTMLElement>('[role=tab]')].find((button) => button.textContent!.startsWith(key))!
 
 describe('global search sender avatars', () => {
@@ -296,7 +324,7 @@ describe('global search panel', () => {
     remote.desktop = true
     setNetwork(false)
     await render('orchid', false)
-    expect(queryClient?.getQueryCache().find({ queryKey: ['global-search-messages', 'orchid', null] })?.state.fetchStatus).toBe('paused')
+    expect(queryClient?.getQueryCache().find({ queryKey: ['global-search-messages', 'orchid', null, 'me-1'] })?.state.fetchStatus).toBe('paused')
     expect(remote.messages).not.toHaveBeenCalled()
     expect(remote.local).not.toHaveBeenCalled()
   })
@@ -518,6 +546,7 @@ describe('global search panel', () => {
     await render('回滚')
     await act(async () => options()[1]!.click())
     expect(Object.keys(sessionSnapshot()!).sort()).toEqual(['chips', 'facet', 'selectedId', 'text'])
+    expect(takeFlashWords(OLD), 'its words wait for that message\'s flash').toBe('回滚')
     expect(remote.opened).toEqual([conversationLink(OTHER, OLD)])
     await act(async () => updateSearchSession({ text: '' }))
     await settle()

@@ -13,7 +13,7 @@ import { UI_EVENTS } from '../../lib/uiEvents'
 import { openAssistantEntry } from '../../lib/assistantEntry'
 import { invokeOnMachine } from '../../session/renderer/lib/ipc'
 import { VOICE_NOTE_MEETINGS_CHANNEL, type VoiceNoteMeetingsResult } from '../../session/shared/core/voice-notes'
-import { meetingReminderEnabled } from '../../lib/meetingReminderPref'
+import { readDevicePreferences } from '../../lib/devicePreferences'
 import '../../i18n/registerVoiceNotesCatalog'
 import { useVoiceNoteHandler } from './useVoiceNoteHandler'
 
@@ -73,7 +73,7 @@ export function MeetingReminder({ enabled }: { enabled: boolean }) {
   const { recording } = useVoiceNoteHandler()
 
   const check = useCallback(async () => {
-    if (!enabled || !meetingReminderEnabled()) return
+    if (!enabled || !readDevicePreferences().meetingReminder) return
     const result = (await invokeOnMachine(null, VOICE_NOTE_MEETINGS_CHANNEL).catch(() => null)) as VoiceNoteMeetingsResult | null
     if (!result?.ok) return
     seen.current ??= readSeen()

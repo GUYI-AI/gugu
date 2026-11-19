@@ -36,7 +36,7 @@ export function useConnectionStatus(
       ? null
       : auth?.status.kind === 'unauthenticated' && auth.status.reason === 'expired'
         ? translate('subscriptions.connections.expired')
-        : currentConnection?.kind === 'api-key'
+        : form?.vendorKey && currentConnection?.kind === 'account'
           ? currentConnection.name || description
           : auth?.status.kind === 'authenticated' && auth.status.account
             ? auth.status.account

@@ -32,9 +32,11 @@ export function projectionVideoFeed(resources: ExtensionProjections, authority: 
   let generation: string | undefined;
   let ready = false, encoding = false, opening = false;
   let published = 0;
+  let presentation: Extract<ProjectionHostPacket, { type: 'presentation' }> | undefined;
   const stop = (reason: unknown) => {
     lifetime.abort(reason instanceof Error ? reason : new Error(String(reason)));
     latest = undefined;
+    presentation = undefined;
     connection?.close();
   };
   const revoke = () => stop(authority.signal.reason);
@@ -66,6 +68,11 @@ export function projectionVideoFeed(resources: ExtensionProjections, authority: 
           if (receipt.sequence !== frame.sequence || receipt.width !== frame.width || receipt.height !== frame.height) {
             throw new Error('Projection encoded receipt does not match its resource frame');
           }
+          // Pixel receipts and decorations share the already-authorized media control channel.
+          // The viewer joins only after the corresponding video frame was actually decoded.
+          await media!.sendControl(JSON.stringify({ type: 'projection-target', generation, sequence: frame.sequence,
+            width: frame.width, height: frame.height, target: frame.target ?? null }));
+          if (presentation) await media!.sendControl(JSON.stringify(presentation));
         } finally { pixels.release(); }
       }
     } catch (error) { stop(error); }
@@ -74,6 +81,11 @@ export function projectionVideoFeed(resources: ExtensionProjections, authority: 
   let size: { width: number; height: number } | undefined;
   const picture = (packet: ProjectionHostPacket) => {
     if (lifetime.signal.aborted) return;
+    if (packet.type === 'presentation') {
+      presentation = packet;
+      if (ready && media) void media.sendControl(JSON.stringify(packet)).catch(stop);
+      return;
+    }
     if (packet.type === 'state') {
       generation = packet.generation;
       if (packet.state === 'closed') stop(new Error(packet.reason ?? 'Projection source closed'));
@@ -87,7 +99,7 @@ export function projectionVideoFeed(resources: ExtensionProjections, authority: 
   try {
     decode = createDecoder();
     connection = resources.connect({ extensionId: authority.extensionId, sessionId: authority.sessionId }, authority.sourceId, {
-      transport: 'local', send: picture,
+      transport: 'local', presentation: true, send: picture,
       onClose: close => {
         lifetime.signal.addEventListener('abort', close, { once: true });
         if (lifetime.signal.aborted) close();

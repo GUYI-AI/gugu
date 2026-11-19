@@ -1,5 +1,6 @@
 import { type FileRowKind, fileRowsHeight } from '@gugu/session-shared/file-row';
 import { type ChatLayout, isDoubleColumnLayout } from '@session-chat/core/layout/preset';
+import { CONVERSATION_BLOCK_GAP } from '@session-chat/core/spacing';
 import type { ChatAttachment } from '@session-chat/model';
 
 export type MessageVars = {
@@ -23,8 +24,21 @@ export type MessageStyleVars = {
 export const USER_MESSAGE_ACTION_GAP = 4;
 
 /** Reserve the action row even while its hover controls are hidden. */
-export function userMessageActionsHeight(vars: Pick<MessageVars, 'footerH'>): number {
-  return USER_MESSAGE_ACTION_GAP + vars.footerH;
+export function actionGap(layout?: ChatLayout): number {
+  return layout?.agentConversation ? CONVERSATION_BLOCK_GAP : USER_MESSAGE_ACTION_GAP;
+}
+
+export function userMessageActionsHeight(vars: Pick<MessageVars, 'footerH'>, gap = USER_MESSAGE_ACTION_GAP): number {
+  return gap + vars.footerH;
+}
+
+export function messageAttachmentGap(vars: Pick<MessageVars, 'attachGap'>, layout: ChatLayout | undefined, hasBody: boolean): number {
+  return layout?.agentConversation && !hasBody ? 0 : vars.attachGap;
+}
+
+export const conversationGutter = (width: number): number => Math.max(32, Math.round(width * .14));
+export function conversationColumnWidth(width: number): number {
+  return userAvailableWidth(width, { preset: 'double', userGutter: conversationGutter(width) });
 }
 
 /**
@@ -81,7 +95,7 @@ export function userPillWidth(
  * 每一枚是一条定宽的文件行(图片是同高的方形缩略图),形状和尺寸只在 `@gugu/session-shared/file-row`,
  * 绘制读的也是那一组数 ⇒ 这里只把附件翻成「图 / 文件」交给它排。
  */
-export function attachStripHeight(attachments: readonly ChatAttachment[] | undefined, available: number, vars: MessageVars): number {
+export function attachStripHeight(attachments: readonly ChatAttachment[] | undefined, available: number, vars: Pick<MessageVars, 'attachGap'>): number {
   if (!attachments?.length) return 0;
   return fileRowsHeight(attachments.map(attachmentRowKind), available) + vars.attachGap;
 }

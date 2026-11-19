@@ -11,13 +11,13 @@ vi.mock('@renderer/utils/logger', () => ({ log: { error: errors, warn: vi.fn(), 
 async function start(snapshot?: Record<string, unknown> | null) {
   vi.resetModules();
   const win = window as unknown as Record<string, unknown>;
-  if (snapshot === undefined) delete win.guguViewState;
-  else win.guguViewState = { snapshot };
+  if (snapshot === undefined) delete win.guguFirstFrame;
+  else win.guguFirstFrame = { viewState: snapshot, devicePreferences: null };
   return (await import('./view-state-cache')).viewStateCache;
 }
 
 beforeEach(() => { localStorage.clear(); ipc.save.mockClear(); ipc.del.mockClear(); errors.mockClear(); });
-afterEach(() => { delete (window as unknown as Record<string, unknown>).guguViewState; });
+afterEach(() => { delete (window as unknown as Record<string, unknown>).guguFirstFrame; });
 
 describe('caps', () => {
   it('the worst case of every model together stays under the budget the first frame reads synchronously', () => {

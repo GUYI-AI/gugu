@@ -7,13 +7,6 @@ import type { Snapshottable } from './snapshottable';
 
 type ViewParamsStore = Partial<{ [K in ViewId]: WrapParams<K> }>;
 
-type LibraryViewId = 'library';
-type NonLibraryViewId = Exclude<ViewId, LibraryViewId>;
-
-function isLibraryView(viewId: ViewId): viewId is LibraryViewId {
-  return viewId === 'library';
-}
-
 export class NavigationStore implements Snapshottable<NavigationSnapshot> {
   currentViewId: ViewId = 'home';
   viewParamsStore: ViewParamsStore = {};
@@ -23,7 +16,6 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
    */
   retiredViewParams: Readonly<Record<string, unknown>> = {};
   isNavigating: boolean = false;
-  lastNonLibraryView: NonLibraryViewId = 'home';
 
   private readonly _guards = new Map<ViewId, (params: unknown) => GuardResult>();
   private readonly _registeredViewIds = new Set<ViewId>();
@@ -130,9 +122,6 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
         this.viewParamsStore = this._viewParamsWithoutTransient(owner, this.viewParamsStore);
       }
       this.currentViewId = viewId;
-      if (!isLibraryView(viewId)) {
-        this.lastNonLibraryView = viewId;
-      }
       this.isNavigating = true;
     }
     if (params !== undefined) {
@@ -162,9 +151,6 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
     // 一样不还原,留在首页(isRegisteredViewId)。
     if (this.isRegisteredViewId(snapshot.currentViewId)) {
       this.currentViewId = snapshot.currentViewId;
-      if (!isLibraryView(snapshot.currentViewId)) {
-        this.lastNonLibraryView = snapshot.currentViewId;
-      }
     }
     if (snapshot.viewParams) {
       const filtered: ViewParamsStore = {};
@@ -188,9 +174,6 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
     const guard = this._runGuard(this.currentViewId, this.viewParamsStore[this.currentViewId]);
     if (!guard.ok) {
       this.currentViewId = guard.redirect;
-      if (!isLibraryView(guard.redirect)) {
-        this.lastNonLibraryView = guard.redirect;
-      }
       if (guard.params !== undefined) {
         this.viewParamsStore = { ...this.viewParamsStore, [guard.redirect]: guard.params };
       }

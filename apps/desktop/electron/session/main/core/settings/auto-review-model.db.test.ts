@@ -1,0 +1,23 @@
+import { openFixture } from '@tooling/utils/db';
+import type { AppDb } from '@main/db/client';
+import { afterEach, expect, it, vi } from 'vitest';
+const h = vi.hoisted(() => ({ db: undefined as AppDb | undefined }));
+vi.mock('@main/db/client', () => ({ get db() { if (!h.db) throw new Error('fixture not open'); return h.db; } }));
+vi.mock('@main/core/agents/plugin-registry', () => ({ isValidProviderId: () => true }));
+import { SettingsStore } from './settings-service';
+let fixture: Awaited<ReturnType<typeof openFixture>>;
+afterEach(() => { fixture?.close(); h.db = undefined; });
+it('persists one global reviewer without altering session naming, and resets to the real default', async () => {
+  fixture = await openFixture('empty'); h.db = fixture.db;
+  const store = new SettingsStore();
+  const naming = await store.get('sessions');
+  expect(await store.get('autoReviewModel')).toBeNull();
+  const selection = { kind: 'custom' as const, connectionId: '481825a8-60b9-4c83-8d1b-f104e3db0269', modelId: 'provider/reviewer-v2' };
+  await store.update('autoReviewModel', selection);
+  const reopened = new SettingsStore();
+  expect(await reopened.get('autoReviewModel')).toEqual(selection);
+  expect(await reopened.get('sessions')).toEqual(naming);
+  await reopened.update('autoReviewModel', null);
+  expect(await new SettingsStore().get('autoReviewModel')).toBeNull();
+  expect(fixture.sqlite.prepare('SELECT value FROM app_settings WHERE key = ?').get('autoReviewModel')).toBeUndefined();
+});

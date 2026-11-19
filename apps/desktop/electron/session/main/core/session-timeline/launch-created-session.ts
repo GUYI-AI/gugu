@@ -1,6 +1,8 @@
+import { isAgentHomeImportCode } from '@gugu/session-core/workspace-server/agent-config';
+
 export type LaunchOutcome =
   | { ok: true }
-  | { ok: false; code: 'provision_failed' | 'session_start_failed'; detail: string };
+  | { ok: false; code: 'provision_failed' | 'session_start_failed' | 'AGENT_HOME_NOT_IMPORTED' | 'AGENT_HOME_IMPORT_REQUIRED'; detail: string };
 
 /**
  * 挂上工作区、起 agent。会话行已经由 `prepareCreateSession → commitCreateSession` 写下之后,**所有**不经会话页
@@ -40,7 +42,7 @@ export async function launchCreatedSession(input: {
     // session-life starts it: the creation turns are its first pending rows; startup progress and failure are
     // the session's own lifecycle facts from here on.
     try {
-      admitCreationTurns(session);
+      await admitCreationTurns(session);
     } catch (error) {
       return { ok: false, code: 'session_start_failed', detail: (error as Error)?.message ?? String(error) };
     }
@@ -50,7 +52,8 @@ export async function launchCreatedSession(input: {
   try {
     await hydrateSession(input.projectId, input.sessionId);
   } catch (error) {
-    return { ok: false, code: 'session_start_failed', detail: (error as Error)?.message ?? String(error) };
+    const code = error instanceof Error && 'code' in error && isAgentHomeImportCode(error.code) ? error.code : 'session_start_failed';
+    return { ok: false, code, detail: (error as Error)?.message ?? String(error) };
   }
   return { ok: true };
 }

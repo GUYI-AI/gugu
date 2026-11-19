@@ -7,11 +7,10 @@
 // 放在这里,这个文件永远不会被连带失效,Context 的身份跨热更新保持不变。
 import { createContext } from 'react';
 import type { EffectiveTheme, ThemePreference } from '@renderer/lib/theme/host-theme';
-import type { Theme } from '@shared/core/app-settings';
 
 export interface ThemeContextType {
-  theme: Theme;
-  setTheme: (theme: Theme) => void;
+  theme: EffectiveTheme;
+  setTheme: (theme: EffectiveTheme) => void;
   toggleTheme: () => void;
   effectiveTheme: EffectiveTheme;
   /** @@@5293 用户在设置里选的那一项,含「跟随系统」。只有设置界面画选中态需要它。 */

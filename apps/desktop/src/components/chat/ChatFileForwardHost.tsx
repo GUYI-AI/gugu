@@ -2,9 +2,8 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { APP_FORWARD_FILES_EVENT, type AppForwardFilesDetail } from '../../session/shared/extensions/app-runtime-protocol'
 import { useAuth } from '../../store/auth'
-import { useChatStore } from '../../store/chatContext'
-import { ForwardMessageDialog } from './ForwardMessageDialog'
-import type { ForwardNote } from './forwardToChats'
+import { LiveForwardMessageDialog } from './ForwardMessageDialog'
+import { useForwardToChats, type ForwardPiece } from './forwardToChats'
 
 /**
  * The folder's 「转发」 (`files.forward`, desktop and phone): the chat's own forward page. Each chat picked gets one file card
@@ -13,7 +12,7 @@ import type { ForwardNote } from './forwardToChats'
  */
 export function ChatFileForwardHost() {
   const { t } = useTranslation('messaging')
-  const { chats, forwardMessage, sendAttachmentsToChat, sendMessageToChat } = useChatStore('chats', 'forwardMessage', 'sendAttachmentsToChat', 'sendMessageToChat')
+  const forwardTo = useForwardToChats()
   const { user } = useAuth()
   const [request, setRequest] = useState<Extract<AppForwardFilesDetail, { files: unknown }> | { copies: File[] } | null>(null)
   useEffect(() => {
@@ -27,23 +26,16 @@ export function ChatFileForwardHost() {
   }, [])
   if (!request || !user) return null
   // The note follows the files, as a forward's note follows what has no words to quote.
-  const forward = async (targetChatIds: string[], note: ForwardNote, sent: (chatId: string) => void) => {
-    for (const chatId of targetChatIds) {
-      // The copies are rows once this returns; their note is delivered after the last of them.
-      const lastCopy = 'copies' in request ? await sendAttachmentsToChat(chatId, request.copies) : undefined
-      if (!('copies' in request)) for (const file of request.files) await forwardMessage(file, chatId)
-      if (note.text.trim()) await sendMessageToChat(chatId, note.text.trim(), { toUserIds: note.toUserIds, ...(lastCopy ? { dependsOn: lastCopy } : {}) })
-      sent(chatId)
-    }
-  }
   const named = 'copies' in request ? request.copies : request.files
+  const pieces: ForwardPiece[] = 'copies' in request
+    ? [{ kind: 'files', files: async () => request.copies }]
+    : request.files.map((file) => ({ kind: 'folder', file }))
   const [only] = named
   return (
-    <ForwardMessageDialog
-      chats={chats}
+    <LiveForwardMessageDialog
       sourceChatId={'copies' in request ? '' : request.chatId}
       preview={named.length === 1 && only ? only.name : t('forward.filesPreview', { count: named.length })}
-      onForward={forward}
+      onForward={(targetChatIds, note, sent) => forwardTo(pieces, targetChatIds, note, sent)}
       onClose={() => setRequest(null)}
     />
   )

@@ -4,6 +4,7 @@ export type BrowserAnnotationTarget = {
   url: string;
   selector: string | null;
   targetPath: string | null;
+  elementTag?: string;
   rect: { x: number; y: number; width: number; height: number };
   viewport: { width: number; height: number; scrollX: number; scrollY: number };
   text: string;
@@ -49,7 +50,7 @@ function inspectTarget(query: BrowserAnnotationQuery): BrowserAnnotationTarget {
     rect = { x: box.x, y: box.y, width: box.width, height: box.height };
     text = (element as HTMLElement).innerText ?? element.textContent ?? '';
   }
-  return { url: location.href, selector: region ? null : parts.join(' > '), targetPath: region ? null : names.join(' > '), rect, viewport, text };
+  return { url: location.href, selector: region ? null : parts.join(' > '), targetPath: region ? null : names.join(' > '), ...(!region ? { elementTag: element.localName } : {}), rect, viewport, text };
 }
 
 export function browserAnnotationScript(query: BrowserAnnotationQuery): string {

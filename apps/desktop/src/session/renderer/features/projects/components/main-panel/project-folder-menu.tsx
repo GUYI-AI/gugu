@@ -11,11 +11,13 @@ import type { ProjectFoldersState, ShownFolder } from './project-folders';
 export function ProjectFolderMenu({ folder, projectName, state, disabled, children }: {
   folder: ShownFolder;
   projectName: string;
-  state: Pick<ProjectFoldersState, 'detach'>;
+  state: Pick<ProjectFoldersState, 'detach' | 'folders'>;
   disabled: boolean;
   children: ReactElement;
 }) {
   const { translate } = useSessionMessages();
+  // 项目至少有一个文件夹(各台机器合计):最后一个摘不掉 —— 要不要这个项目,走「删除项目」。读不到列表时按「只剩一个」算。
+  const isLast = (state.folders?.length ?? 0) <= 1;
   const detach = async () => {
     try {
       await state.detach(folder);
@@ -44,7 +46,11 @@ export function ProjectFolderMenu({ folder, projectName, state, disabled, childr
     }}>
       <ContextMenu.Trigger render={children} />
       <ContextMenu.Content onClick={(event) => event.stopPropagation()}>
-        <MenuItem disabled={disabled || folder.offline} onClick={() => { void detach(); }}>
+        <MenuItem
+          disabled={disabled || folder.offline || isLast}
+          title={isLast ? translate('projects.folders.detachLast') : undefined}
+          onClick={() => { void detach(); }}
+        >
           {translate('projects.folders.detach')}
         </MenuItem>
       </ContextMenu.Content>

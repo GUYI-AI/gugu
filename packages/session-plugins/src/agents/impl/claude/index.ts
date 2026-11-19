@@ -17,13 +17,13 @@ import {
   miseDependency,
 } from '@gugu/session-core/agents/plugins/helpers';
 import { resolveWindowsHandoffLaunch, type WindowsHandoffLaunch } from '@gugu/session-core/exec';
-import { connectStdioAcpV2 } from '../../helpers/acp-v2';
 import { requireBridgeEntry } from '../../helpers/acp-bridge-entry';
 import {
   NODE_FOR_CLAUDE_ACP,
   resolveNodeInterpreter,
 } from '../../helpers/node-interpreter';
-import { createClaudeSessionDecoder } from './acp-transform';
+import { connectClaudeWithReview } from './auto-review-connection';
+import { claudeReviewConfig } from './auto-review';
 import { claudeAuthStatus } from './auth';
 import { claudeSubscriptionBehavior } from './subscription';
 import { buildClaudeHookConfig } from './hooks';
@@ -119,6 +119,7 @@ export const plugin = definePlugin(
   {
     id: 'claude',
     name: 'Claude Code',
+    publisher: 'Anthropic',
     description:
       'CLI that uses Anthropic Claude for code edits, explanations, and structured refactors in the terminal.',
     websiteUrl: 'https://code.claude.com/docs/en/quickstart',
@@ -179,8 +180,7 @@ export const plugin = definePlugin(
       //    Gemini CLI 把这两档并列排进 PLAN < DEFAULT < AUTO_EDIT < YOLO,同一个阶梯。
       // `dontAsk`(预授权工具,其余一律拒)最贴近只读,作别名归进去,这样 agent 处在
       // 该档时界面显示「只读」而不是错报成「编辑」。
-      // ⚠️ `auto`(交给模型分类器判批准/拒绝)**不进阶梯** —— 它不是"能改多少"这条轴上的
-      //    一个刻度,而是"谁来决定"。硬塞进任何一档都是骗人,所以不声明、界面也不摆。
+      // Native auto is a separate review authority, exposed only after executable/model admission.
       modes: CLAUDE_PERMISSION_MODES,
     },
     auth: {
@@ -385,6 +385,8 @@ export const provider = registerPluginBehavior(plugin, {
     // (@gugu-acp/claude-agent-acp 1.4.0 dist/acp-agent.js `...userProvidedOptions`)。
     // 10-17 mac1 实测(隔离 HOME,echo 账本):不带它起了 3 台、带它 0 台,`session/new` 照样回模型清单。
     catalogProbeSessionMeta: { claudeCode: { options: { strictMcpConfig: true } } },
+    // Signed out, the adapter still opens the probe session and lists Claude's models; none of them can run.
+    catalogNeedsSignIn: true,
     // 咕咕维护的构建 @gugu-acp/claude-agent-acp,按别名装在 @agentclientprotocol/claude-agent-acp 下;
     // 宿主按用户这份 Claude 的版本从配对表选版本,随包那份不合适就下载配对的那份(#6394)。
     bridge: {
@@ -425,7 +427,8 @@ export const provider = registerPluginBehavior(plugin, {
       };
     },
     // ACP v2:一轮在前台 idle 处结束,后台子智能体不再扣住这一轮的结局(子智能体在跑时下一句不进队列)。
-    connect: (io, toClient) => connectStdioAcpV2(io, toClient, createClaudeSessionDecoder()),
+    filterPermissionConfig: (options, context) => claudeReviewConfig(options, context.cliVersion, context.autoReviewAllowed, context.autoReviewUnavailable, context.autoReviewByHaiku),
+    connect: (io, toClient, context) => connectClaudeWithReview(io, toClient, context?.cliVersion, context?.autoReviewAllowed, context?.autoReviewUnavailable, context?.autoReviewByHaiku),
   },
   auth: {
     checkStatus: claudeAuthStatus,
@@ -434,7 +437,8 @@ export const provider = registerPluginBehavior(plugin, {
   prompt: {
     buildCommand: (ctx) => {
       const ultracode = ctx.effort === CLAUDE_ULTRACODE_EFFORT_ID;
-      const settings = claudeSessionFlagSettings({ fastMode: ctx.fastMode, reasoningEffort: ctx.effort });
+      const flags = claudeSessionFlagSettings({ fastMode: ctx.fastMode, reasoningEffort: ctx.effort });
+      const settings = flags;
       // Claude uses only the last --settings value. A caller-owned document must be
       // composed by its lifetime owner; never overwrite it or copy its credentials to argv.
       const hasSettingsDocument = (ctx.extraArgs ?? []).some((arg) => arg === '--settings' || arg.startsWith('--settings='));
@@ -452,6 +456,7 @@ export const provider = registerPluginBehavior(plugin, {
         // 只读档于是会静默变成 auto,比用户所选更松。
         readOnlyFlag: '--permission-mode default',
         editFlag: '--permission-mode acceptEdits',
+        aiReviewFlag: '--permission-mode auto',
         // 规划档。❌ 不能拿「不加 flag」(= default = 只读)顶替:只读允许 agent 动手做
         // 只读的事,规划连动手的意图都不产生,只产出方案 —— 顶替会让选了规划的用户拿到只读行为。
         planFlag: '--permission-mode plan',

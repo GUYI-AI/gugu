@@ -6,8 +6,10 @@ const flash = keyframes({
   '0%, 18%': {
     background: `var(--accent-tint-row, ${vars.bgSelected})`,
     boxShadow: `0 0 0 2px var(--accent-glow-soft, color-mix(in oklab, ${vars.fg} 12%, transparent))`,
+    // The desktop chat's search words fade with the row (tokens.css ::highlight(gugu-search-hit)); this rule may win there.
+    vars: { '--msg-src-flash-words': 'var(--text-selection, transparent)' },
   },
-  '100%': { background: 'transparent', boxShadow: '0 0 0 2px transparent' },
+  '100%': { background: 'transparent', boxShadow: '0 0 0 2px transparent', vars: { '--msg-src-flash-words': 'transparent' } },
 });
 
 globalStyle('.msg-src-flash', {

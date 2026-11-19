@@ -1,7 +1,7 @@
 import { useCallback, useSyncExternalStore } from 'react'
 
 /** An attachment's bytes going up after its message: how far, or failed (with a retry while this device still has them). */
-export type AttachmentUploadProgress = { loaded: number; total?: number; attempt: number; failed?: false } | { failed: true; retry?: () => void }
+export type AttachmentUploadProgress = { loaded: number; total?: number; attempt: number; failed?: false } | { failed: true; retry?: () => void; reason?: string }
 const values = new Map<string, AttachmentUploadProgress>()
 const listeners = new Map<string, Set<() => void>>()
 
@@ -12,8 +12,8 @@ export function setAttachmentUploadProgress(messageId: string, progress?: Attach
   for (const listener of listeners.get(messageId) ?? []) listener()
 }
 
-export function failAttachmentUploadProgress(messageId: string, retry?: () => void): void {
-  setAttachmentUploadProgress(messageId, { failed: true, retry })
+export function failAttachmentUploadProgress(messageId: string, retry?: () => void, reason?: string): void {
+  setAttachmentUploadProgress(messageId, { failed: true, retry, reason })
 }
 
 export function useAttachmentUploadProgress(messageId: string): AttachmentUploadProgress | undefined {

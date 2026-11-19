@@ -1,3 +1,4 @@
+import { testAttachmentUploads } from '../../../support/attachmentUploadHost'
 // message_send_file in a project chat: a file goes through this machine's publisher (the composer's) and stays on this
 // machine; a folder file's next version, an image's too, is published here from
 // the version named, on whichever member's machine sends it.
@@ -33,9 +34,10 @@ function setup(options: { publish?: ReturnType<typeof vi.fn> } = {}) {
     readHostSessionToken: async () => null,
     attachmentsEndpoint: async () => ({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 'token', fetch }),
   }
+  deps.attachments = testAttachmentUploads(deps.attachmentsEndpoint as () => Promise<import('@gugu/core/cloud/attachmentsApi').AttachmentsEndpoint>)
   const context = { supabaseUrl: '', anonKey: '', agentId: 'agent-1', chatId: CHAT, threadRootId: null, guguHome: dir,
     getAccessToken: async () => 'token', ...(options.publish ? { publishFile: options.publish } : {}) }
-  return { send: (args: Record<string, unknown>) => callToolImpl(context, 'message_send_file', { chat_id: CHAT, ...args }, deps), uploads }
+  return { send: (args: Record<string, unknown>) => callToolImpl(context, 'message_send', { chat_id: CHAT, ...args }, deps), uploads }
 }
 
 describe('message_send_file in a project chat', () => {

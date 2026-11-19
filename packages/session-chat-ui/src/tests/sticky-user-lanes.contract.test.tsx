@@ -17,8 +17,8 @@ import { DEFAULT_CONFIG, buildChatTheme } from '@session-chat/core/config';
 import type { ChatItem, TranscriptTurn } from '@session-chat/model';
 import { createChatState } from '@session-chat/state/chat-state';
 import type { SelfIdentity } from '@session-chat/lib/self-identity';
-import { afterEach, describe, expect, it } from 'vitest';
-import { page } from 'vitest/browser';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { cdp, page } from 'vitest/browser';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
 import { pinnedSummaryShown } from '../../../../tests/support/pinnedSummaryShown';
 
@@ -26,8 +26,15 @@ import { pinnedSummaryShown } from '../../../../tests/support/pinnedSummaryShown
 const PIN_LINE = UNIT_REGISTRY.message!.margin!.top!;
 
 const teardown: Array<() => void> = [];
-afterEach(() => {
-  while (teardown.length) teardown.pop()?.();
+// Geometry and front-layer sweeps below exercise the ordinary reversible push-out.
+// The host's accessibility preference must not silently select the other paint contract.
+beforeEach(async () => {
+  await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  expect(matchMedia('(prefers-reduced-motion: reduce)').matches).toBe(false);
+});
+afterEach(async () => {
+  try { while (teardown.length) teardown.pop()?.(); }
+  finally { await cdp().send('Emulation.setEmulatedMedia', { features: [] }); }
 });
 
 /** A user message and enough replies that its row leaves the virtualizer's overscan while they fill the screen. */
@@ -94,6 +101,28 @@ async function mount(
 }
 
 describe('sticky user lanes', () => {
+  it.each(['no-preference', 'reduce'] as const)('honors %s while a pinned summary leaves and returns', async motion => {
+    await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: motion }] });
+    expect(matchMedia('(prefers-reduced-motion: reduce)').matches).toBe(motion === 'reduce');
+    const t = await mount([longTurn('a', 0, 4), longTurn('b', 1, 20)]);
+    const lane = t.card('a-user')!.closest<HTMLElement>('[data-index]')!;
+    const summary = t.summary('a-user')!;
+    const laneEnd = t.scrollEl.scrollTop + lane.getBoundingClientRect().bottom - t.scrollEl.getBoundingClientRect().top;
+    const leavingAt = laneEnd - summary.getBoundingClientRect().height - PIN_SUMMARY_GAP - PIN_LINE;
+    await t.scrollTo(leavingAt - 8);
+    expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 1);
+    expect(lane.dataset.pinLeaving).toBe('false');
+    expect(pinnedSummaryShown(summary), 'both modes keep a fully stuck summary readable').toBe(true);
+    await t.scrollTo(leavingAt + 5);
+    expect(t.pinTop('a-user'), 'the browser still computes the same partial push-out').toBeCloseTo(PIN_LINE - 5, 1);
+    expect(lane.dataset.pinLeaving).toBe('true');
+    expect(getComputedStyle(summary).visibility).toBe(motion === 'reduce' ? 'hidden' : 'visible');
+    expect(pinnedSummaryShown(summary), 'reduced motion hides at push-out; ordinary motion stays in front').toBe(motion !== 'reduce');
+    await t.scrollTo(leavingAt - 8);
+    expect(lane.dataset.pinLeaving).toBe('false');
+    expect(pinnedSummaryShown(summary), 'scrolling back restores the summary in both modes').toBe(true);
+  });
+
   it('preserves the attachment-name summary when a pure attachment row has no text bubble', async () => {
     const committed = longTurn('a', 0, 1);
     committed.items = [{ kind: 'message', id: 'a-user', seq: 0, role: 'user', text: '',
@@ -186,6 +215,18 @@ describe('sticky user lanes', () => {
     const t = await mount([...[1, 2, 5, 6].map((n, i) => turn(ids[i]!, i, lines(n))), longTurn('z', 4, 150)], undefined, theme);
     const edge = () => t.scrollEl.getBoundingClientRect().top;
     const frames = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const scrollAndSettle = async (st: number) => {
+      let dispatched = false;
+      const onScroll = () => { dispatched = true; };
+      t.scrollEl.addEventListener('scroll', onScroll);
+      try {
+        const before = t.scrollEl.scrollTop;
+        t.scrollEl.scrollTop = st;
+        // The pin paint scheduler is armed by scroll, not by the test's rAFs.
+        if (t.scrollEl.scrollTop !== before) await until('jump scroll event dispatched', () => dispatched);
+        await frames();
+      } finally { t.scrollEl.removeEventListener('scroll', onScroll); }
+    };
     const sweep = async (id: string) => {
       await t.view.scrollToItem(`${id}-user`);
       await until(`${id} on screen`, () => t.card(`${id}-user`), el => el != null);
@@ -216,12 +257,22 @@ describe('sticky user lanes', () => {
         seen.set(st, now.top);
       }
       for (const st of down.filter(st => st % 21 === 0).sort((x, y) => (x * 7919) % 101 - (y * 7919) % 101)) {
-        t.scrollEl.scrollTop = st;
-        await frames();
+        await scrollAndSettle(st);
         const now = read(st);
         expect(now.top, `${id} scrollTop=${st}: the same place after a jump`).toBe(seen.get(st));
         // Pushed above the scroller, there is nothing left to hit.
-        if (now.top >= 0) expect(now.shown, `${id} scrollTop=${st}: in front exactly while stuck`).toBe(now.stuck);
+        if (now.top >= 0) {
+          let detail = '';
+          if (now.shown !== now.stuck) {
+            const pin = summary.getBoundingClientRect(), card = t.card(`${id}-user`)!.getBoundingClientRect();
+            const hit = document.elementFromPoint(pin.left + pin.width / 2, Math.max(edge() + 1, pin.top + 1));
+            detail = JSON.stringify({ scrollTop: t.scrollEl.scrollTop, sampledHeight: h, connected: summary.isConnected,
+              pin: pin.toJSON(), card: card.toJSON(), lane: lane.getBoundingClientRect().toJSON(),
+              stuckAttribute: lane.dataset.pinStuck, leavingAttribute: lane.dataset.pinLeaving,
+              layerHeight: lane.style.getPropertyValue('--pin-layer-h'), hit: hit?.outerHTML.slice(0, 700) });
+          }
+          expect(now.shown, `${id} scrollTop=${st}: in front exactly while stuck ${detail}`).toBe(now.stuck);
+        }
       }
     };
     for (const id of ids) await sweep(id);

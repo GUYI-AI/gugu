@@ -6,7 +6,7 @@ import { bindFileViewerMenu } from '@/components/preview/file-viewer-menu'
 import { createNode, createReactHarness, clickElement } from '../../../support/testHarness'
 
 const state = vi.hoisted(() => ({ mobile: true, copy: vi.fn(async (_text: string) => {}), browserCopy: vi.fn(async (_text: string) => {}), toast: vi.fn() }))
-vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => state.mobile }))
+vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => state.mobile, readMobileShell: () => state.mobile }))
 vi.mock('@/platform', () => ({ platform: { kind: 'capacitor', writeClipboardText: state.copy } }))
 vi.mock('@/components/toastContext', () => ({ useToast: () => ({ toast: state.toast }) }))
 vi.mock('react-i18next', async importOriginal => ({ ...await importOriginal<typeof import('react-i18next')>(), useTranslation: () => ({ t: (key: string) => key, i18n: { resolvedLanguage: 'en-US' } }) }))

@@ -1,6 +1,9 @@
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { queryClient } from '@/lib/replica';
+import { Button } from '@/components/ui/Button';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
+import type { HtmlPreviewAnnotationContext } from './use-html-preview-annotations';
 import { HtmlPreviewSurface } from './HtmlPreviewSurface';
 import { previewReloadQueue } from './preview-reload';
 import { rendererLogger } from '@/lib/log';
@@ -31,13 +34,15 @@ interface HtmlPreviewFrameProps {
   scrollPosition?: { x: number; y: number };
   /** The element a link named (`#id`): scrolled to instead of the kept position; a new object scrolls again. */
   anchor?: { id: string };
+  annotation?: HtmlPreviewAnnotationContext;
 }
 
 /**
  * 预览本体:本机与 #6264 别的机器上的「文件」页签共用 —— 两边只差「登记走哪条」「链接开到哪」,
  * 这两样由调用方注入;地址、沙箱、改字即见、链接拦截只写这一份。
  */
-export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloadKey, subscribeChanges, scrollPosition, anchor }: HtmlPreviewFrameProps) {
+export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloadKey, subscribeChanges, scrollPosition, anchor, annotation }: HtmlPreviewFrameProps) {
+  const reader = useId();
   const [preview, setPreview] = useState<Extract<HtmlPreviewRegistration, { ok: true }> | null>(null);
   const [url, setUrl] = useState<string>();
   const [failed, setFailed] = useState<string | null>(null);
@@ -56,16 +61,23 @@ export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloa
     let registered: Extract<HtmlPreviewRegistration, { ok: true }> | null = null;
     setPreview(null);
     setFailed(null);
+    const queryKey = ['html-preview-registration', reader, attempt];
     void (async () => {
       const content = rawContentRef.current;
-      const result = await register(content);
+      const result = await queryClient.fetchQuery({
+        queryKey, gcTime: 0, retry: 3,
+        queryFn: async ({ signal }) => {
+          const result = await register(content);
+          if (signal.aborted) {
+            if (result.ok) result.release();
+            throw signal.reason;
+          }
+          if (!result.ok) throw new Error(result.message);
+          return result;
+        },
+      });
       if (cancelled) {
         if (result.ok) result.release();
-        return;
-      }
-      if (!result.ok) {
-        // 预览起不来要说是哪一条起不来,❌ 别画一张白页让人以为文件是空的。
-        setFailed(result.message);
         return;
       }
       registered = result;
@@ -77,9 +89,11 @@ export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloa
     });
     return () => {
       cancelled = true;
+      void queryClient.cancelQueries({ queryKey, exact: true });
+      queryClient.removeQueries({ queryKey, exact: true });
       registered?.release();
     };
-  }, [register, attempt]);
+  }, [register, attempt, reader]);
 
   // 预览看的是**编辑器缓冲区**,不是磁盘那一份:改一个字、切到预览就该看见,不必先保存。
   // 更新后的地址由适配给出:协议追加版本,Blob 重建地址;frame 不判断平台。
@@ -128,8 +142,9 @@ export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloa
 
   if (failed) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-[var(--bg-elevated)] px-6 text-center text-xs text-[var(--text-secondary)]">
-        {failed}
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-[var(--bg-elevated)] px-6 text-center text-xs text-[var(--text-secondary)]">
+        <p role="alert">{failed}</p>
+        <Button size="sm" variant="secondary" onClick={() => setAttempt(n => n + 1)}>{translateSessionMessage('settings.readAgain')}</Button>
       </div>
     );
   }
@@ -137,7 +152,7 @@ export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloa
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--bg-elevated)]">
       {preview && url ? (
-        <HtmlPreviewSurface fileName={fileName} url={url} onLink={onLink} scrollPosition={scrollPosition} anchor={anchor} />
+        <HtmlPreviewSurface fileName={fileName} url={url} onLink={onLink} scrollPosition={scrollPosition} anchor={anchor} annotation={annotation} />
       ) : (
         <div className="flex h-full items-center justify-center">
           <LoadingIndicator ariaLabel={translateSessionMessage('task.loading')} />

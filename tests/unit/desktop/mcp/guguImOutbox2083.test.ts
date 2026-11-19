@@ -1,3 +1,4 @@
+import { testAttachmentUploads } from '../../../support/attachmentUploadHost'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -59,7 +60,9 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
     attachmentsEndpoint: attachmentsFake(uploads, commits),
     ...overrides,
   }
-  return { deps, inserted, rpcs, uploads, commits }
+  const attachments = testAttachmentUploads(async () => (deps.attachmentsEndpoint as () => Promise<import('@gugu/core/cloud/attachmentsApi').AttachmentsEndpoint>)())
+  deps.attachments = attachments
+  return { deps, inserted, rpcs, uploads, commits, attachments }
 }
 
 describe('#2051 command-authored message delivery (S2b: spontaneous stable-id insert)', () => {
@@ -135,9 +138,10 @@ describe('#2051 command-authored message delivery (S2b: spontaneous stable-id in
       blocks: [{ agent_user_id: 'removed-1', reason: 'identity_removed' }], expected: '对方已移除、未送达 (user:removed-1; identity_removed' },
     { who: 'an id that was never a member', to: 'ghost', refuse: 'ghost', blocks: [], expected: null },
   ])('#2383 file output to $who follows the server', async ({ to, refuse, blocks, expected }) => {
-    const { deps, uploads, commits } = makeDeps({
+    const { deps, uploads, commits, attachments } = makeDeps({
       restGet: async (path: string) => path.startsWith('message_agent_delivery_blocks?') ? blocks : [],
     })
+    const drop = vi.spyOn(attachments, 'drop')
     const endpoint = await (deps.attachmentsEndpoint as () => Promise<{ fetch: typeof globalThis.fetch }>)()
     deps.attachmentsEndpoint = async () => ({ ...endpoint, fetch: (async (url: string, init?: RequestInit) => {
       if (refuse && url.endsWith('/attachments/commit')) {
@@ -146,13 +150,15 @@ describe('#2051 command-authored message delivery (S2b: spontaneous stable-id in
       }
       return endpoint.fetch(url, init)
     }) as typeof globalThis.fetch })
-    const send = callTool('message_send_file', {
+    const send = callTool('message_send', {
       chat_id: '00000000-0000-4000-8000-000000000001', file_name: 'proof.txt', file_path: proofPath, mime_type: 'text/plain', to_user_ids: [`user:${to}`],
     }, deps)
     if (refuse) await expect(send).rejects.toThrow(`收件人不在本 chat（00000000-0000-4000-8000-000000000001）成员里：${refuse}。用 message_members 查有效成员后重发。`)
     else expect(await send).toContain(expected)
-    // Bytes go up only behind a committed message: a refused send uploads none.
-    expect(uploads).toEqual(refuse ? [] : ['proof.txt'])
+    // The host may start bytes before commit; a definite refusal releases its upload duty.
+    if (!refuse) expect(uploads).toEqual(['proof.txt'])
+    if (refuse) expect(drop).toHaveBeenCalledExactlyOnceWith(commits[0]!.message_id)
+    else expect(drop).not.toHaveBeenCalled()
     expect(commits).toHaveLength(1)
     expect(commits[0]).toMatchObject({ to_user_ids: [to] })
   })
@@ -164,7 +170,7 @@ describe('#2051 command-authored message delivery (S2b: spontaneous stable-id in
         ? [{ user_id: 'agent-1' }, { user_id: 'member-1' }]
         : [],
     })
-    const receipt = JSON.parse(await callTool('message_send_file', {
+    const receipt = JSON.parse(await callTool('message_send', {
       chat_id: '00000000-0000-4000-8000-000000000001',
       file_name: 'proof.txt',
       file_path: proofPath,

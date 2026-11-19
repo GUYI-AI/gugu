@@ -8,6 +8,7 @@ import {
 } from '@gugu/session-core/agents/plugins';
 import { claudePlatformModelOption } from '@gugu/session-core/acp/platform-model-address';
 import { harnessPlatform } from './platform';
+import { claudeReviewSettings } from './auto-review';
 
 /**
  * `--settings` 的**文档内容** —— 把这次会话的中转地址与令牌钉在**高于用户 settings 文件**的那一层。
@@ -121,7 +122,7 @@ function claudeSettingsOverride(
       ...(platformStandaloneSearchGranted(callableRoutes, selectedModel)
         ? { permissions: { deny: ['WebSearch'] } }
         : {}),
-      env: { ...platformSettingsEnv },
+      env: claudeReviewSettings({ env: platformSettingsEnv }).env,
     },
   }
 }
@@ -146,6 +147,7 @@ export type ClaudeAcpPlatformSessionMeta = {
   claudeCode: {
     options: {
       settings?: string
+      model?: string
       env: Record<string, string>
     }
   }
@@ -154,11 +156,13 @@ export type ClaudeAcpPlatformSessionMeta = {
 export function claudeAcpPlatformSessionMeta(input: {
   settingsDocumentPath: string | null
   env: Record<string, string>
+  model?: string
 }): ClaudeAcpPlatformSessionMeta {
   return {
     claudeCode: {
       options: {
         ...(input.settingsDocumentPath ? { settings: input.settingsDocumentPath } : {}),
+        ...(input.model ? { model: input.model } : {}),
         env: input.env,
       },
     },

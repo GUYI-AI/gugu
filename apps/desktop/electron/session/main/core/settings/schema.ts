@@ -1,6 +1,7 @@
 import { DEFAULT_SESSION_VIEW } from '@shared/core/sessions/new-session-defaults';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import z from 'zod';
+import { autoReviewModelSchema } from '@gugu/session-core/models/auto-review-model';
 import { BROWSER_ISOLATED_PROFILE_ID } from '@shared/browser';
 import {
   TERMINAL_FONT_SIZE_MAX,
@@ -10,6 +11,7 @@ import {
 import { openInAppIdSchema } from '@shared/openInApps';
 import { SESSION_TITLE_INSTRUCTIONS_MAX } from '@shared/core/sessions/session-title-namer';
 import { COMMANDS } from '@shared/commands';
+import type { DevicePreferences } from '../../../../../shared/device-preferences';
 import { isValidProviderId } from '../agents/plugin-registry';
 import { isGuguPermissionMode, type GuguPermissionMode } from '@gugu/session-core/acp/client';
 
@@ -32,6 +34,11 @@ export const sessionSettingsSchema = z.object({
   autoApproveByDefault: z.boolean(),
   autoTrustWorktrees: z.boolean(),
   preserveNameCapitalization: z.boolean(),
+  /**
+   * #3005 离开时压缩长对话(Claude Code 会话,赶在一小时提示缓存过期前)。关掉对已经在跑的会话立刻生效;
+   * 与 Claude Code 自己的 `idleCompaction` 是「任一关了就不压」。推到运行时见 acp/idle-compaction-setting.ts。
+   */
+  idleCompaction: z.boolean(),
   includeIssueContextByDefault: z.boolean(),
   /**
    * #7337 咕咕给会话起名用的平台模型(按积分计费,记在这条会话的 agent 名下);null = 不用模型起名,
@@ -56,12 +63,16 @@ export const terminalSettingsSchema = z.object({
   defaultShell: z.enum(TERMINAL_SHELL_IDS),
 });
 
-export const themeSchema = z
-  .enum(['emlight', 'emdark'])
-  .nullable()
-  .catch(null)
-  .optional()
-  .default(null);
+/** @@@device-preferences — this device's own preferences (shared/device-preferences.ts); main applies theme, language and tray badge. */
+export const devicePreferencesSchema = z.object({
+  theme: z.enum(['light', 'dark', 'system']),
+  locale: z.enum(['system', 'zh-CN', 'en-US']),
+  sidebarTint: z.boolean(),
+  trayBadge: z.boolean(),
+  chatMessages: z.boolean(),
+  chatSound: z.boolean(),
+  meetingReminder: z.boolean(),
+}) satisfies z.ZodType<DevicePreferences>;
 
 /**
  * 出厂**不预选任何 agent**。
@@ -246,15 +257,24 @@ export const openInSettingsSchema = z.object({
   hidden: z.array(openInAppIdSchema),
 });
 
+const dataImportSettingsSchema = z.object({
+  owners: z.record(z.string(), z.object({
+    automatic: z.boolean(),
+    sources: z.array(z.string()),
+  })),
+});
+
 export const APP_SETTINGS_SCHEMA_MAP = {
+  autoReviewModel: autoReviewModelSchema,
   localProject: localProjectSettingsSchema,
   project: projectSettingsSchema,
   sessions: sessionSettingsSchema,
   defaultAgent: defaultAgentSchema,
   newSessionMemory: newSessionMemorySchema,
+  dataImport: dataImportSettingsSchema,
   keyboard: keyboardSettingsSchema,
   notifications: notificationSettingsSchema,
-  theme: themeSchema,
+  devicePreferences: devicePreferencesSchema,
   openIn: openInSettingsSchema,
   interface: interfaceSettingsSchema,
   terminal: terminalSettingsSchema,
@@ -265,14 +285,16 @@ export const APP_SETTINGS_SCHEMA_MAP = {
 } as const;
 
 export const appSettingsSchema = z.object({
+  autoReviewModel: autoReviewModelSchema,
   localProject: localProjectSettingsSchema,
   project: projectSettingsSchema,
   sessions: sessionSettingsSchema,
   defaultAgent: defaultAgentSchema,
   newSessionMemory: newSessionMemorySchema,
+  dataImport: dataImportSettingsSchema,
   keyboard: keyboardSettingsSchema,
   notifications: notificationSettingsSchema,
-  theme: themeSchema,
+  devicePreferences: devicePreferencesSchema,
   openIn: openInSettingsSchema,
   interface: interfaceSettingsSchema,
   terminal: terminalSettingsSchema,

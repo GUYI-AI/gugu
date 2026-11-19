@@ -10,6 +10,7 @@ export const harnessPlatform = {
   //     `@ai-sdk/openai`            → POST /v1/responses
   //   ⇒ 包名由这里的 wireProtocol 查出(helpers/opencode-family-platform-model.ts 的 `OPENCODE_FAMILY_SDK_PACKAGE`)。
   wireProtocol: 'openai-responses',
+  protocols: ['openai-responses', 'openai-chat-completions'],
   dialect: 'opencode-config-content',
   injection: {
     tui: {

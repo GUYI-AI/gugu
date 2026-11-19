@@ -6,7 +6,7 @@ import {
   useTransform,
   type MotionValue,
 } from 'framer-motion';
-import { readInterface, takeLegacyInterface, writeInterface } from '@/lib/viewStateTable';
+import { clampPaneWidth, definePaneWidth, readPaneWidth, writePaneWidth } from '@/lib/paneWidth';
 import {
   createContext,
   useCallback,
@@ -26,12 +26,9 @@ export const SIDEBAR_MIN_WIDTH_PX = 200;
 export const SIDEBAR_MAX_WIDTH_PX = 520;
 export const SIDEBAR_DEFAULT_WIDTH_PX = NAV_COLUMN_WIDTH;
 
-const SIDEBAR_WIDTH_STORAGE_KEY = 'gugu.taskpage.sidebarWidth';
+const SIDEBAR_PANE = definePaneWidth({ id: 'gugu.taskpage.sidebarWidth', initial: SIDEBAR_DEFAULT_WIDTH_PX, min: SIDEBAR_MIN_WIDTH_PX, max: SIDEBAR_MAX_WIDTH_PX });
 
-export function clampSidebarWidth(width: number): number {
-  if (!Number.isFinite(width)) return SIDEBAR_DEFAULT_WIDTH_PX;
-  return Math.max(SIDEBAR_MIN_WIDTH_PX, Math.min(SIDEBAR_MAX_WIDTH_PX, width));
-}
+export const clampSidebarWidth = (width: number): number => clampPaneWidth(SIDEBAR_PANE, width);
 
 /**
  * GUYI-AI/gugu#2642 内层栏(打开一个群 / 项目时列表与正文之间那一列)的宽:拖它右边缘调。范围暂与左边列表同档,
@@ -43,11 +40,9 @@ export const INNER_SIDEBAR_DEFAULT_WIDTH_PX = SIDEBAR_DEFAULT_WIDTH_PX;
 /** 内层栏最多占这张卡片(内层栏 + 正文)宽的这个比例 —— 与列表占会话页的比例同一个口径,正文至少留六成。 */
 export const INNER_SIDEBAR_MAX_SHARE = 0.4;
 export const INNER_SIDEBAR_WIDTH_STORAGE_KEY = 'gugu.taskpage.innerSidebarWidth';
+const INNER_SIDEBAR_PANE = definePaneWidth({ id: INNER_SIDEBAR_WIDTH_STORAGE_KEY, initial: INNER_SIDEBAR_DEFAULT_WIDTH_PX, min: INNER_SIDEBAR_MIN_WIDTH_PX, max: INNER_SIDEBAR_MAX_WIDTH_PX });
 
-export function clampInnerSidebarWidth(width: number): number {
-  if (!Number.isFinite(width)) return INNER_SIDEBAR_DEFAULT_WIDTH_PX;
-  return Math.max(INNER_SIDEBAR_MIN_WIDTH_PX, Math.min(INNER_SIDEBAR_MAX_WIDTH_PX, width));
-}
+export const clampInnerSidebarWidth = (width: number): number => clampPaneWidth(INNER_SIDEBAR_PANE, width);
 
 /**
  * 内层栏此刻最宽能到哪:卡片宽(会话页宽 − 列表占位宽)的 INNER_SIDEBAR_MAX_SHARE,不过硬上限;`null` = 还没量到,只有硬上限。
@@ -64,19 +59,6 @@ export function innerSidebarMaxWidth(cardWidth: number | null): number {
  */
 export function innerSidebarShownWidth(width: number, cardWidth: number | null): number {
   return Math.max(INNER_SIDEBAR_MIN_WIDTH_PX, Math.min(innerSidebarMaxWidth(cardWidth), width));
-}
-
-// Pane widths are view state of the device (lib/viewStateTable), in the first frame; the old localStorage values move over.
-takeLegacyInterface(SIDEBAR_WIDTH_STORAGE_KEY, SIDEBAR_WIDTH_STORAGE_KEY, Number.parseFloat);
-takeLegacyInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY, INNER_SIDEBAR_WIDTH_STORAGE_KEY, Number.parseFloat);
-
-function readStoredWidth(key: string, clamp: (width: number) => number, fallback: number): number {
-  const width = readInterface<number>(key);
-  return width === undefined ? fallback : clamp(width);
-}
-
-function writeStoredWidth(key: string, width: number): void {
-  writeInterface(key, Math.round(width));
 }
 
 /**
@@ -200,12 +182,12 @@ const WorkspaceLayoutContext = createContext<WorkspaceLayoutContextValue | undef
  */
 export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   // Expanded until the user folds it (#2548 「默认展开」); the fold is stored with the sidebar's snapshot (sidebar-folds) and
-  // the width under SIDEBAR_WIDTH_STORAGE_KEY, so a restart comes back as it was left.
+  // the width under SIDEBAR_PANE, so a restart comes back as it was left.
   const [isLeftOpen, setIsLeftOpen] = useState(() => !sidebarFolds.has('left'));
   const prefersReducedMotion = useReducedMotion();
   const workspaceRootRef = useRef<HTMLDivElement | null>(null);
 
-  const leftWidth = useMotionValue(readStoredWidth(SIDEBAR_WIDTH_STORAGE_KEY, clampSidebarWidth, SIDEBAR_DEFAULT_WIDTH_PX));
+  const leftWidth = useMotionValue(readPaneWidth(SIDEBAR_PANE));
   const leftProgress = useMotionValue(isLeftOpen ? 1 : 0);
   const leftAnimatedWidth = useTransform([leftProgress, leftWidth], ([progress, width]: number[]) =>
     sidebarOccupiedWidth(progress, width, SIDEBAR_RAIL_PX)
@@ -251,14 +233,14 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     (width: number, options?: { persist?: boolean }) => {
       const next = clampSidebarWidth(width);
       leftWidth.set(next);
-      if (options?.persist) writeStoredWidth(SIDEBAR_WIDTH_STORAGE_KEY, next);
+      if (options?.persist) writePaneWidth(SIDEBAR_PANE, next);
     },
     [leftWidth]
   );
 
   const workspaceWidth = useMotionValue(0);
   const innerWidth = useMotionValue(
-    readStoredWidth(INNER_SIDEBAR_WIDTH_STORAGE_KEY, clampInnerSidebarWidth, INNER_SIDEBAR_DEFAULT_WIDTH_PX)
+    readPaneWidth(INNER_SIDEBAR_PANE)
   );
   // 卡片宽 = 会话页宽 − 列表在布局里的占位宽(拖动时逐帧跟着变,收展动画里只跳一次;❌ 读用户选定宽)。
   const innerShownWidth = useTransform([innerWidth, leftLayoutWidth, workspaceWidth], ([width, left, root]: number[]) =>
@@ -273,7 +255,7 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     (width: number, options?: { persist?: boolean }) => {
       const next = clampInnerSidebarWidth(width);
       innerWidth.set(next);
-      if (options?.persist) writeStoredWidth(INNER_SIDEBAR_WIDTH_STORAGE_KEY, next);
+      if (options?.persist) writePaneWidth(INNER_SIDEBAR_PANE, next);
     },
     [innerWidth]
   );
@@ -340,7 +322,7 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     edgeDragRef.current = null;
     if (sidebarEdgeSnapsOpen(leftProgress.get())) {
       restoreWidthRef.current = null;
-      writeStoredWidth(SIDEBAR_WIDTH_STORAGE_KEY, leftWidth.get());
+      writePaneWidth(SIDEBAR_PANE, leftWidth.get());
       setCollapsed('left', false);
     } else {
       restoreWidthRef.current = drag.startWidth;

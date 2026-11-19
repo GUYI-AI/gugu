@@ -1,8 +1,13 @@
+import { Folder, Globe, MessageSquare } from '@/lib/icons';
+import { openApp } from '@/components/appSlot/useOpenApp';
+import { OpenSuperseded, openLinkTarget } from '@/lib/guguLinks';
+import { notify } from '@/lib/notices';
+import { messageForUser } from '@/lib/userFacingError';
 import { useBrowserAnnotations } from './browser-annotations';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { usePaneContext } from '@renderer/features/tabs/pane-context';
-import { useWorkspaceSurface } from '@renderer/features/sessions/session-view-context';
+import { useSessionViewContext, useWorkspaceSurface, useWorkspaceViewModel } from '@renderer/features/sessions/session-view-context';
 import { events, rpc } from '@renderer/lib/ipc';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -22,6 +27,13 @@ import {
 import { decideBrowserReload } from './browser-navigation-controls';
 import { fitBrowserPageToPane } from './browser-page-fit';
 import { browserSessionStore } from './browser-session-store';
+import { installedExtensionsStore } from '../extensions/installed-extensions-store';
+import { ExtensionMark } from '../extensions/extension-mark';
+import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
+import { folderItem, WORKSPACE_APP_KIND } from '../chats/chat-tabs/chat-panel-item';
+import { openFileInSessionEditor } from '../sessions/stores/open-file-in-file-editor';
+import { BrowserStartTerminalOptions } from './browser-start-terminal-options';
+import { BrowserWorkspaceStartContent, type BrowserWorkspaceStart } from './browser-workspace-start-page';
 import { BrowserStartPage } from './browser-start-page';
 import { useSessionWorkspaceActions, type WorkspacePanelAction } from '../sessions/pane-empty-state';
 import { BrowserToolbar } from './browser-toolbar';
@@ -33,22 +45,55 @@ import type { BrowserTabResource } from './browser-tab-resource';
 import { bindBrowserPageEvents } from './browser-webview-events';
 import type { BrowserWebviewAdapter } from './browser-webview-types';
 
+function reportRecentToolError(error: unknown): void {
+  if (!(error instanceof OpenSuperseded)) notify({ tier: 'error', title: messageForUser(error) });
+}
+
 export const BrowserPane = observer(function BrowserPane({
   browserId,
   visible,
   focused = true,
+  startTabId,
 }: {
   browserId: string;
   visible: boolean;
+  startTabId?: string;
   /** 并排时屏上两页,只有拿着焦点的那页算(spec session-page「并排」)。 */
   focused?: boolean;
 }) {
   const { pane, paneId } = usePaneContext();
   const surface = useWorkspaceSurface();
-  const startPageActions = useSessionWorkspaceActions(
-    () => surface.paneLayout.openBeside('browser', {}, paneId),
-    (kind) => surface.paneLayout.openBeside(kind, {}, paneId)
+  const session = useWorkspaceViewModel();
+  const { projectId, sessionId } = useSessionViewContext();
+  const { translate } = useSessionMessages();
+  const openInStart = (kind: string) => startTabId
+    ? surface.paneLayout.open(kind, {}, { from: startTabId, intent: 'navigate', inPlace: true })
+    : surface.paneLayout.openBeside(kind, {}, paneId);
+  const available = useSessionWorkspaceActions(
+    () => surface.paneLayout.openBeside('browser', {}, paneId), openInStart,
   );
+  const startPageActions = startTabId ? available.map((item): WorkspacePanelAction => {
+    if (item.id === WORKSPACE_APP_KIND) return { ...item, id: 'files', section: 'builtin', label: translate('workspace.files'), shortcutSettingsKey: 'session.sidebarFiles' };
+    if (item.id === 'review') return { ...item, shortcutSettingsKey: 'session.sidebarChanges', onClick: () => openInStart('review') };
+    if (item.id === 'ports') return { ...item, onClick: () => openInStart('remote-ports') };
+    if (item.id === 'browser') return { ...item, shortcutSettingsKey: 'session.openBrowser' };
+    if (item.id === 'terminal') return {
+      ...item,
+      shortcutSettingsKey: 'session.newTerminal',
+      onClick: () => void session.openTerminalAsTab(undefined, paneId, startTabId),
+      trailing: !item.disabled && <BrowserStartTerminalOptions projectId={projectId} launch={(shell) => void session.openTerminalAsTab(shell, paneId, startTabId)} />,
+    };
+    return item;
+  }) : available;
+  const workspaceStart: BrowserWorkspaceStart | undefined = startTabId ? {
+    ctx: pane.ctx,
+    openRecent: (item) => {
+      if (item.kind === 'folder') openInStart(WORKSPACE_APP_KIND);
+      if (item.kind === 'file') {
+        void openFileInSessionEditor(projectId, sessionId, item.path, { from: startTabId, intent: 'navigate' }).catch(reportRecentToolError);
+      }
+    },
+  } : undefined;
   return (
     <BrowserPaneContent
       browserId={browserId}
@@ -62,6 +107,7 @@ export const BrowserPane = observer(function BrowserPane({
         if (tab && pane.resolvedActiveTabId !== tab.tabId) pane.setActiveTab(tab.tabId);
       }}
       startPageActions={startPageActions}
+      workspaceStart={workspaceStart}
       devServerUrls={[...surface.previewServerUrls]}
       onNavigateTab={(direction) => {
         if (direction === 'next') pane.setNextTabActive();
@@ -69,6 +115,42 @@ export const BrowserPane = observer(function BrowserPane({
       }}
     />
   );
+});
+
+export const ChatBrowserPane = observer(function ChatBrowserPane({ chatId, tabId, browserId, visible, focused, workspaceStart }: {
+  chatId: string;
+  tabId: string;
+  browserId: string;
+  visible: boolean;
+  focused: boolean;
+  workspaceStart: boolean;
+}) {
+  const { pane } = usePaneContext();
+  const { translate } = useSessionMessages();
+  const openFolder = () => openPanelItem(chatId, folderItem(), { from: tabId });
+  const startPageActions: WorkspacePanelAction[] = [
+    { id: 'files', label: translate('workspace.files'), icon: <Folder className="size-3.5" />, shortcutSettingsKey: 'session.sidebarFiles', onClick: openFolder },
+    { id: 'browser', label: translate('workspace.browser'), icon: <Globe className="size-3.5" />, shortcutSettingsKey: 'session.openBrowser', onClick() {} },
+    ...installedExtensionsStore.openableApps.map((app): WorkspacePanelAction => ({
+      id: app.extensionId, label: app.name, icon: <ExtensionMark iconDataUrl={app.iconDataUrl} />,
+      section: 'extensions',
+      onClick: () => openApp(app.extensionId, chatId, tabId),
+    })),
+  ];
+  return <BrowserPaneContent browserId={browserId} visible={visible} focused={focused} devServerUrls={[]}
+    onFocused={() => pane.setActiveTab(tabId)}
+    onNavigateTab={(direction) => direction === 'next' ? pane.setNextTabActive() : pane.setPreviousTabActive()}
+    startPageActions={startPageActions}
+    workspaceStart={workspaceStart ? {
+      ctx: pane.ctx,
+      openRecent: (item) => {
+        if (item.kind === 'folder') openFolder();
+        if (item.kind === 'chat-file') {
+          void openLinkTarget({ kind: 'file', itemId: item.itemId }, { from: { chatId, tabId }, fileName: item.title, intent: 'navigate' }).catch(reportRecentToolError);
+        }
+      },
+    } : undefined}
+  />;
 });
 
 export const StandaloneBrowserPane = observer(function StandaloneBrowserPane({
@@ -87,6 +169,7 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
   focused = true,
   devServerUrls,
   startPageActions,
+  workspaceStart,
   onNavigateTab,
   onFocused,
 }: {
@@ -96,6 +179,7 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
   onFocused?: () => void;
   devServerUrls: string[];
   startPageActions?: WorkspacePanelAction[];
+  workspaceStart?: BrowserWorkspaceStart;
   onNavigateTab?: (direction: 'next' | 'previous') => void;
 }) {
   const { translate } = useSessionMessages();
@@ -382,7 +466,10 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
       <BrowserToolbar
         session={session}
         adapter={adapter}
-        annotationAction={annotations.toolbar}
+        workspaceStart={showStartPage && !!workspaceStart}
+        annotationAction={annotations.toolbar ?? (workspaceStart && showStartPage
+          ? <Button type="button" size="icon-sm" variant="ghost" disabled aria-label={translate('annotations.annotate')}><MessageSquare className="size-4" /></Button>
+          : undefined)}
         // 空白页一露出来就把光标放进地址栏;并排时露出来的是另一页,❌ 把焦点从用户正看的那页抢走。
         autoFocusUrl={showStartPage && focused}
         onNavigate={navigateTo}
@@ -431,7 +518,9 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
             agent / 人一打开地址,起始页就自己让开。 */}
         {showStartPage && !loadError ? (
           <div className="absolute inset-0 bg-background">
-            <BrowserStartPage actions={startPageActions} devServerUrls={devServerUrls} onOpenUrl={navigateTo} />
+            {workspaceStart
+              ? <BrowserWorkspaceStartContent config={workspaceStart} actions={startPageActions ?? []} onOpenUrl={navigateTo} onFocusUrl={() => focusUrlRef.current()} />
+              : <BrowserStartPage actions={startPageActions} devServerUrls={devServerUrls} onOpenUrl={navigateTo} />}
           </div>
         ) : null}
       </div>

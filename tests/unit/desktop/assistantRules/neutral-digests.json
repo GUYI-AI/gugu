@@ -184,28 +184,28 @@
     "sha256": "7ea2f34019caa424e54577f9a4dea40eeb005d73997d7e4081e6c9d6c67ab157"
   },
   "platform/block": {
-    "bytes": 6870,
-    "sha256": "7a859bd62cdd39bebcc20d59accd6d94b6e0f49c090ab0cca41a21e9fba745b8"
+    "bytes": 6580,
+    "sha256": "6f74131f44d1e43be80cc99d5369a73622e3f0938258924625f94dc9d0751dc8"
   },
   "platform/assistant/alone": {
-    "bytes": 6731,
-    "sha256": "646526ce0348fe669cb5b83e62ef589fe9a7840411cf05ea4e29124afdd02c2e"
+    "bytes": 6441,
+    "sha256": "2114c14567df5f9ed042c56b8e19db3a42c66f23ac1a77067624dddc2662a375"
   },
   "platform/assistant/embedded": {
-    "bytes": 6750,
-    "sha256": "dd987763f223cf84013ce3310e0061f4ef940a27f0e6d02931d5fa0e89940d93"
+    "bytes": 6460,
+    "sha256": "daf383f3bae9cff3005e8134ecd45107ec28dd75225e1cf670e575f155aa5faa"
   },
   "platform/assistant/absent": {
     "bytes": 22,
     "sha256": "7d4a6e44082132e824d5327016f0a4ce9d2d8be64fdac31c4145851f75760ff8"
   },
   "session/claudeOptions/cloud": {
-    "bytes": 7455,
-    "sha256": "b50ca058c5668afa2d3c6e64f35f413db425bbdf6c6e9b6226e20ddf88d962ea"
+    "bytes": 7166,
+    "sha256": "9b3fd7b90c4f1481982684bff02ac5515d9c753f55daa4ada073769fe92ff8c1"
   },
   "session/claudeOptions/computer": {
-    "bytes": 7448,
-    "sha256": "2be07de1cb74d386a653a007b647e3165cd8ff725641b164a05e52f228a7302b"
+    "bytes": 7159,
+    "sha256": "5224f4607f7a8691033402edf68afdc16203a4e23e9d1f99b136e806adadc99e"
   },
   "session/taskAgentOptions": {
     "bytes": 464,

@@ -167,7 +167,8 @@ const sessionMainVite: ElectronOptions['vite'] = {
       // 绝不内联;清单是 verify-packaged-natives 探针的单一来源。
       // #7191 浏览器工具(@playwright/mcp + 它锁定的 playwright-core)运行时从 app/node_modules 加载:它们靠 __dirname
       // 找自己的文件,打进主进程包会断;根 dependencies 声明两者,electron-builder 原样带进包。
-      external: ['ws', '@playwright/mcp', 'playwright-core', './server-boot.cjs', ...EMDASH_EXTERNAL],
+      // The desktop-only Cursor reader ships as an npm dependency with its license and uses the same native SQLite module.
+      external: ['ws', '@playwright/mcp', 'playwright-core', 'cursor-history', './server-boot.cjs', ...EMDASH_EXTERNAL],
       output: {
         paths: id => id.replaceAll('\\', '/').endsWith('/server-boot.cjs') ? './server-boot.cjs' : id,
         // Electron 28 = Node 18:`globalThis.crypto` 不是全局,会话页 runtime 裸用
