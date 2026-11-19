@@ -32,7 +32,7 @@ export interface AccountClosureV2Snapshot {
   serverPreparationGeneration: string | null
   /** Unknown preparation/confirmation retains custody and permits only recovery. */
   recoveryOnly: boolean
-  pendingEffect: 'challenge' | 'prepare_device' | 'confirm' | 'cancel' | null
+  pendingEffect: 'register' | 'challenge' | 'prepare_device' | 'confirm' | 'cancel' | null
   agentsPaused: boolean
   /** Fixed item names; never values, paths or credentials. */
   retainedUnattributed: readonly string[]
@@ -60,4 +60,15 @@ export interface AccountClosureV2Native {
   cancel(handle: AccountClosureV2Handle): Promise<AccountClosureV2Snapshot>
   /** Requires trusted deleted, scoped cleanup and renderer sign-out completion. */
   finalize(handle: AccountClosureV2Handle): Promise<AccountClosureV2Snapshot>
+}
+
+/** Fixed categories only; unrecognized native/transport details stay private. */
+export const ACCOUNT_CLOSURE_V2_ERROR_CODES = [
+  'closure_context_missing', 'closure_not_prepared', 'wrong_local_owner', 'scope_conflict', 'receipt_missing', 'invalid_scope', 'closure_storage_unavailable',
+  'closure_busy', 'closure_unavailable', 'closure_not_available', 'closure_recovery_required', 'closure_not_complete',
+  'unauthorized', 'invalid_request', 'verification_failed', 'rate_limited', 'operation_busy', 'request_active', 'state_conflict', 'not_found', 'preparation_unavailable', 'outcome_unknown', 'email_outcome_unknown',
+] as const
+export type AccountClosureV2ErrorCode = typeof ACCOUNT_CLOSURE_V2_ERROR_CODES[number]
+export function isAccountClosureV2ErrorCode(value: unknown): value is AccountClosureV2ErrorCode {
+  return typeof value === 'string' && (ACCOUNT_CLOSURE_V2_ERROR_CODES as readonly string[]).includes(value)
 }
