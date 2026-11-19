@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { encodeAuthFrame } from './app-runtime-protocol';
 import { FileSyncRelay, type SocketEvents } from './file-sync-core';
+import { withServerClock } from '@gugu/core/shared/serverClock';
 
 function connection(seconds = 3600) {
   const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -105,4 +106,22 @@ it('uses the refreshed account token after actual expiry and preserves files on 
   expect(page.keys.get('item@0\0new')).not.toBe(old);
   expect(old?.owners.size).toBe(1);
   expect(c.close).not.toHaveBeenCalled();
+});
+
+it('judges the token’s expiry on the backend’s clock when this device’s runs 4 h 17 min fast (`@@@server-clock`)', async () => {
+  vi.useFakeTimers();
+  const server = Date.parse('2026-11-16T12:00:00.000Z');
+  vi.setSystemTime(server + (4 * 60 + 17) * 60_000);
+  await withServerClock(async (_url: string) => new Response('[]', { headers: { date: new Date(server).toUTCString() } }))('https://db.test/rest/v1/ping');
+  const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  const token = `${encode({ alg: 'none' })}.${encode({ sub: 'person', exp: server / 1000 + 3600 })}.sig`;
+  const connect = vi.fn((_url: string, _protocols: string[], events: SocketEvents) => {
+    queueMicrotask(() => events.open());
+    return { send: vi.fn(), close: vi.fn(), ping: () => false, terminate: vi.fn() };
+  });
+  const relay = new FileSyncRelay({ serviceUrl: () => 'wss://files.invalid', token: async () => token, connect, hasCapability: () => true, warn: vi.fn() });
+  relay.ensureFor(null);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(relay.ensureFor(null)).not.toBeNull();
+  expect(connect).toHaveBeenCalledOnce();
 });
