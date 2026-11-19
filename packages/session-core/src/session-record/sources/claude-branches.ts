@@ -15,8 +15,8 @@
  * A revert through claude-agent-acp (`_session/revert`) writes one more line at the point kept: a user line whose text is
  * `REVERT_MARK`, so the revert is on disk before anything is sent again. That line is a person prompt hanging off a node
  * that already had a child, so it opens the new branch by itself, and the turns removed are abandoned even when nothing
- * was sent after the revert. It is not something anyone said: it and the synthetic answer Claude Code gives it
- * (`No response requested.`) make no entries.
+ * was sent after the revert. It is not something anyone said: it, the attachment lines hung under it and the synthetic
+ * answer Claude Code gives it (`No response requested.`) make no entries.
  */
 /** claude-agent-acp's `REVERT_MARK` (1.7.1); a test compares it with the installed bridge. */
 export const CLAUDE_REVERT_MARK = '(The conversation was stepped back to this point. The turns after it were removed.)';
@@ -32,7 +32,9 @@ export class ClaudeBranches {
   see(record: Record<string, unknown>): boolean {
     const uuid = record.uuid;
     if (typeof uuid !== 'string' || record.isSidechain === true) return false;
-    const own = isRevertMark(record) || (isSynthetic(record) && this.marks.has(record.parentUuid as string));
+    // The lines Claude Code hangs under the mark before its synthetic answer (tool and MCP deltas) belong to the mark too.
+    const own = isRevertMark(record)
+      || ((record.type === 'attachment' || isSynthetic(record)) && this.marks.has(record.parentUuid as string));
     if (own) this.marks.add(uuid);
     if (this.position.has(uuid)) return own;
     const parent = typeof record.parentUuid === 'string' ? record.parentUuid : null;

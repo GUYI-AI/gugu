@@ -3217,6 +3217,24 @@ describe('native in-place conversation revert', () => {
     expect(anchors(cell)).toEqual([['only-point', undefined], [undefined, undefined]]);
   });
 
+  it('after a revert, the point of a kept turn reported again is not put on the next message', async () => {
+    const agent = new FakeAcpAgent();
+    let newest = 0;
+    const revert = { point: vi.fn(async () => ({ before: `p-${newest}` })), revert: vi.fn(async (_a: unknown, _s: string, before: string) => { newest = Number(before.slice(2)) - 1; }) };
+    const { cell } = makeCell(agent, { revert });
+    agent.prompt = vi.fn().mockImplementation(async () => { newest += 1; return { stopReason: 'end_turn' }; });
+    agent.extMethod = vi.fn();
+    for (const text of ['one', 'two', 'three']) await cell.prompt({ text });
+    await vi.waitFor(() => expect(anchors(cell)).toEqual([['p-1', undefined], ['p-2', undefined], ['p-3', undefined]]));
+    expect(await cell.revertSession('p-2')).toMatchObject({ success: true });
+    cell.finishHistoryRevert();
+    // This turn makes no point of its own: the newest one is still turn one's.
+    agent.prompt = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
+    await cell.prompt({ text: 'made none' });
+    await vi.waitFor(() => expect(cell.history().committed).toHaveLength(2));
+    expect(anchors(cell)).toEqual([['p-1', undefined], [undefined, undefined]]);
+  });
+
   it('a point lookup that never answers leaves the turn without a point, and the turn still settles', async () => {
     vi.useFakeTimers();
     try {

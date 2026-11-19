@@ -197,8 +197,6 @@ export class SessionCell {
   private preparationRetryTimer: ReturnType<typeof setTimeout> | undefined;
   private preparationRetryDelay = 1500;
   private reverting = false;
-  /** The revert point the previous turn settled with: reported again, it is still that turn's, not this one's. */
-  private lastRevertPoint: string | null = null;
   private compacting = false;
   /**
    * 这一轮是不是人亲手发起的(origin manual 的那一句开的工)。投递开的、agent 自己开的(后台跑完的通知等)都不是。
@@ -942,7 +940,6 @@ export class SessionCell {
     this.deps.callbacks?.onSessionStateChanged?.();
     try {
       await revert.revert(this.agent, this.acpSessionId, anchor, restoreFiles);
-      this.lastRevertPoint = null;
       this.transcript.revertBefore(anchor);
       this.emitTranscriptChanged();
       return ok({ providerSessionId: this.acpSessionId });
@@ -1592,8 +1589,8 @@ export class SessionCell {
     const cycle = this.activeTurnCompletion;
     const finish = (point: AcpRevertPoint | null = null) => {
       if (this.activeTurnCompletion !== cycle) return;
-      if (point && point.before !== this.lastRevertPoint) this.transcript.setActiveRevertAnchor(point.before, point.files === true);
-      if (point) this.lastRevertPoint = point.before;
+      // A turn that made no point of its own may report the newest one, which an earlier message already carries.
+      if (point && point.before !== this.transcript.lastRevertAnchor()) this.transcript.setActiveRevertAnchor(point.before, point.files === true);
       this.rawLog.record({ kind: 'prompt_result', sessionId: this.acpSessionId,
         stopReason: event.stopReason, ...(event.error ? { error: toSerializedError(Object.assign(new Error(event.error.message), event.error)) } : {}) });
       if (event.error || event.stopReason === 'error') {
@@ -1634,7 +1631,8 @@ export class SessionCell {
 
   private applyReceiptMetadata(requestId: string, meta: SessionPromptReceipt['_meta']): void {
     const request = this.requests.get(requestId);
-    const point = guguRevertPoint(meta);
+    // Only a harness that can revert gets revert points: no hook, no entry.
+    const point = this.deps.revert ? guguRevertPoint(meta) : null;
     if (request && point) {
       this.transcript.setRevertAnchor(request.messageId, point.before, point.files === true);
       this.emitTranscriptChanged();

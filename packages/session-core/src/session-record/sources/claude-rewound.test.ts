@@ -75,6 +75,27 @@ describe('claude record after a revert through claude-agent-acp', () => {
     });
   }
 
+  it('tool and MCP lines Claude Code hangs under the mark before its synthetic answer stay with the mark', async () => {
+    // The shape of a restart that wrote deltas first (Claude CLI, 11-19 probe): mark → attachment → attachment → synthetic.
+    const id = '22222222-3333-4444-8555-666666666666';
+    const line = (uuid: string, parentUuid: string | null, body: Record<string, unknown>) =>
+      JSON.stringify({ parentUuid, isSidechain: false, uuid, sessionId: id, timestamp: '2026-11-19T10:00:00.000Z', ...body });
+    const user = (text: string) => ({ type: 'user', message: { role: 'user', content: text } });
+    const reply = (text: string, model = 'claude-opus-5-5') =>
+      ({ type: 'assistant', message: { id: `m-${text}`, model, role: 'assistant', type: 'message', stop_reason: 'end_turn', content: [{ type: 'text', text }] } });
+    const attachment = (type: string) => ({ type: 'attachment', attachment: { type } });
+    const root = await mkdtemp(join(tmpdir(), 'claude-revert-chain-'));
+    disposers.push(() => rm(root, { recursive: true, force: true }));
+    const file = join(root, 'chain.jsonl');
+    await writeFile(file, [
+      line('u1', null, user('one')), line('a1', 'u1', reply('ok 1')), line('x1', 'a1', attachment('prompt_snapshot')),
+      line('u2', 'x1', user('two')), line('a2', 'u2', reply('ok 2')),
+      line('m', 'a1', user(CLAUDE_REVERT_MARK)), line('t1', 'm', attachment('deferred_tools_delta')), line('t2', 't1', attachment('mcp_instructions_delta')),
+      line('s', 't2', reply('No response requested.', '<synthetic>')), line('q', 's', user('what do you remember?')), line('r', 'q', reply('one')),
+    ].join('\n') + '\n');
+    expect(await messages(file, id)).toEqual([['user', 'one'], ['assistant', 'ok 1'], ['user', 'what do you remember?'], ['assistant', 'one']]);
+  });
+
   it('the mark is the text the installed bridge writes', () => {
     const require = createRequire(import.meta.url);
     const bridge = readFileSync(join(dirname(require.resolve('@agentclientprotocol/claude-agent-acp')), 'acp-agent.js'), 'utf8');

@@ -200,6 +200,18 @@ export class AcpTranscriptParser {
     this.state = { ...this.state, transcript: { ...this.state.transcript, active: { ...active, items } } };
   }
 
+  /** The revert point on the newest committed message that has one. */
+  lastRevertAnchor(): string | null {
+    for (let turn = this.history.length - 1; turn >= 0; turn -= 1) {
+      const items = this.history[turn]!.items;
+      for (let index = items.length - 1; index >= 0; index -= 1) {
+        const item = items[index]!;
+        if (item.kind === 'message' && item.revertAnchor) return item.revertAnchor;
+      }
+    }
+    return null;
+  }
+
   /** Retain only the prefix before a provider-confirmed user message. */
   revertBefore(anchor: string): void {
     const index = this.history.findIndex((turn) => turn.items.some((item) =>
