@@ -1467,8 +1467,8 @@ describe('session orchestration', () => {
   // #4566 —— owner 真机 0/4:四个 child 全部私发 parent,项目群里一条没有。回执里这一格正好落在
   // 「怎么跟新 child 说话」的决定点上,而且是机器可读的,提示词里那句「默认去项目群」跟它对着说时
   // 字段赢。所以判据读的是这一格:caller 有项目群 ⇒ 回执必须指向那个群。
-  it('routes the spawn receipt to the project group when the caller has one', async () => {
-    mocks.sessionpageGroup = { kind: 'group', groupChatId: 'group-chat-1' };
+  it('routes the spawn receipt to the caller’s group when the child lives there too', async () => {
+    mocks.sessionpageGroup = { kind: 'group', groupChatId: 'group-1' };
 
     const result = (await runSessionAction(context, {
       action: 'spawn',
@@ -1477,7 +1477,7 @@ describe('session orchestration', () => {
 
     expect((result as { message_route?: unknown }).message_route).toEqual({
       tool: 'message_send',
-      chat_id: 'group-chat-1',
+      chat_id: 'group-1',
       // 收件人必须在场。群里无寻址的发言唤不醒任何人(`agentInboxReader` 的广播分支要求发信人不是
       // agent),所以只给 chat_id 的路由是「发成功了、没人醒」—— 比原来那条点对点更糟(它至少响亮)。
       // 用 child 的 typed session 地址:它的 user id 要到自己 session start 才铸出来,而 spawn 不等那一步。
@@ -2152,7 +2152,7 @@ describe('session orchestration', () => {
     expect(fixture.sqlite.prepare('SELECT chat_id, parent_session_id, spawned_by_session_id FROM sessions WHERE id = ?').get(flat.session_id))
       .toEqual({ chat_id: 'group-1', parent_session_id: null, spawned_by_session_id: 'caller' });
     expect(await runSessionAction(context, { action: 'children' })).toEqual([
-      expect.objectContaining({ session_id: otherProject.session_id, parent_session_id: 'caller', chat_id: 'group-2' }),
+      expect.objectContaining({ session_id: otherProject.session_id, parent_session_id: 'caller', chat_id: 'group-1', cwd: '/other' }),
     ]);
   });
 
@@ -2788,11 +2788,11 @@ describe('session_archive', () => {
   });
 
   // owner 2026-09-30 拍板跨机器之后 `session:<id>` 是账号级地址:本机别的项目里的会话也够得着(别的机器上的由宿主转过去)。
-  it('reaches a session in another project on this machine', async () => {
+  it('reaches a session in another group on this machine', async () => {
     fixture.sqlite
       .prepare(
-        `INSERT INTO sessions (id, project_id, provider, runtime, config)
-         VALUES ('elsewhere', 'project-2', 'claude', 'acp', json_object('version', '1', 'type', 'acp', 'agentDisplayName', 'Elsewhere'))`
+        `INSERT INTO sessions (id, project_id, chat_id, workspace_id, provider, runtime, config)
+         VALUES ('elsewhere', 'c1-placeholder', 'group-2', 'workspace-2', 'claude', 'acp', json_object('version', '1', 'type', 'acp', 'agentDisplayName', 'Elsewhere'))`
       )
       .run();
     await expect(
