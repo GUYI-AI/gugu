@@ -1,9 +1,12 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { runInNewContext } from 'node:vm';
+import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  cleanupLegacyBrowserPartitions,
+  listPersistedBrowserPartitions,
   migrateLegacyBrowserPartitionDirs,
 } from './browser-partition-cleanup';
 
@@ -70,8 +73,8 @@ describe('migrateLegacyBrowserPartitionDirs', () => {
   });
 });
 
-describe('cleanupLegacyBrowserPartitions', () => {
-  it('removes per-tab partitions under either prefix and keeps profiles, per-task partitions and extensions', async () => {
+describe('explicit browsing-data cleanup', () => {
+  it('retains every old partition and includes it only when the person clears browsing data', async () => {
     const dir = partitionsDir({
       'emdash-browser-tab-1': 'x',
       'gugu-browser-tab-2': 'x',
@@ -81,13 +84,62 @@ describe('cleanupLegacyBrowserPartitions', () => {
       'gugu-extension-paper-desk': 'keep',
     });
 
-    await cleanupLegacyBrowserPartitions(dir);
+    migrateLegacyBrowserPartitionDirs(dir);
+    const persisted = await listPersistedBrowserPartitions(dir);
 
     expect(readdirSync(dir).sort()).toEqual([
       'emdash-browser-profile',
+      'emdash-browser-tab-1',
       'gugu-browser-isolated-Project-Task',
       'gugu-browser-profile',
+      'gugu-browser-tab-2',
       'gugu-extension-paper-desk',
     ]);
+    expect(readFileSync(join(dir, 'emdash-browser-tab-1', 'Cookies'), 'utf8')).toBe('x');
+    expect(readFileSync(join(dir, 'gugu-browser-tab-2', 'Cookies'), 'utf8')).toBe('x');
+    expect(persisted.sort()).toEqual([
+      'persist:emdash-browser-profile', 'persist:emdash-browser-tab-1',
+      'persist:gugu-browser-isolated-Project-Task', 'persist:gugu-browser-profile', 'persist:gugu-browser-tab-2',
+    ]);
+
+    const clear = vi.fn(async (_kind: string, _partitions: readonly string[]) => true);
+    const inert: unknown = new Proxy(function () { return inert; }, {
+      get: (_target, key) => key === 'then' ? undefined : key === Symbol.iterator ? function* () {} : inert,
+    });
+    const imports: Record<string, Record<string, unknown>> = {
+      '@shared/lib/ipc/rpc': { createRPCController: (controller: unknown) => controller },
+      '@shared/browser': { DEFAULT_BROWSER_PROFILE_ID: 'default', browserProfilePartition: (id: string) => id === 'default' ? 'persist:gugu-browser-profile' : `persist:gugu-browser-profile-${id}`, isBrowsingDataKind: (kind: string) => kind === 'all' },
+      '@main/core/settings/settings-service': { appSettingsService: { get: async () => ({ profiles: [{ id: 'work' }] }) } },
+      '@main/core/browser/browser-webcontents-registry': { browserWebContentsRegistry: { registeredPartitions: ['persist:gugu-browser-isolated-live'], clearBrowsingData: clear } },
+      './browser-partition-cleanup': { listPersistedBrowserPartitions: () => listPersistedBrowserPartitions(dir) },
+    };
+    const entry = join(__dirname, 'controller.ts');
+    const compiled = ts.transpileModule(readFileSync(entry, 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    });
+    const requireBuiltin = createRequire(import.meta.url);
+    const module = { exports: {} as { browserController: { clearBrowsingData: (kind: string) => Promise<{ success: boolean }> } } };
+    runInNewContext(compiled.outputText, {
+      require: (id: string) => id.startsWith('node:') ? requireBuiltin(id)
+        : new Proxy(imports[id] ?? {}, { get: (target, key) => key in target ? target[key as string] : inert }),
+      module, exports: module.exports,
+    });
+    expect(clear).not.toHaveBeenCalled();
+    expect(await module.exports.browserController.clearBrowsingData('all')).toEqual({ success: true });
+    expect(clear).toHaveBeenCalledOnce();
+    expect(clear).toHaveBeenCalledWith('all', expect.arrayContaining([
+      ...persisted, 'persist:gugu-browser-profile-work', 'persist:gugu-browser-isolated-live',
+    ]));
+    const targets = clear.mock.calls[0] as unknown as [string, string[]];
+    expect(new Set(targets[1]).size).toBe(targets[1].length);
+    expect(targets[1]).not.toContain('persist:gugu-extension-paper-desk');
+  });
+
+  it('an absent partition directory is empty, but an inspection failure is not an empty successful cleanup', async () => {
+    const dir = partitionsDir({});
+    expect(await listPersistedBrowserPartitions(join(dir, 'missing'))).toEqual([]);
+    const file = join(dir, 'not-a-directory');
+    writeFileSync(file, 'not a readable partition directory');
+    await expect(listPersistedBrowserPartitions(file)).rejects.toMatchObject({ code: 'ENOTDIR' });
   });
 });
