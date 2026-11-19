@@ -5,8 +5,10 @@ import { Check, Search, Sparkles, X } from '@/lib/icons'
 import { useReplica } from '@/lib/replica'
 import { creationSkills } from './create-skills-read'
 import { preserveComposerFocus } from '../composer/composer-focus'
-import { filterCreationSkills, type CreationSkill } from './create-skills'
+import { creationSkillsHostMethodMissing, creationSkillsHostTooOld, filterCreationSkills, type CreationSkill } from './create-skills'
 import './create-controls-catalog'
+
+declare const __APP_VERSION__: string | undefined
 
 export function SelectedCreationSkills({ skills, onChange }: { skills: readonly CreationSkill[]; onChange: (skills: CreationSkill[]) => void }) {
   const { t } = useTranslation('mobileCreateControls')
@@ -19,15 +21,20 @@ export function SelectedCreationSkills({ skills, onChange }: { skills: readonly 
   </div> : null
 }
 
-export function CreateSkillsList({ deviceId, phone, harness, projectId, search, selected, onChange }: {
+export function CreateSkillsList({ deviceId, deviceLabel, deviceVersion, phone, harness, projectId, search, selected, onChange }: {
   deviceId: string | null; phone: boolean; harness: string | null; projectId: string | null; search: string
+  deviceLabel?: string
+  deviceVersion?: string
   selected: readonly CreationSkill[]; onChange: (skills: CreationSkill[]) => void
 }) {
   const { t } = useTranslation('mobileCreateControls')
   const state = useReplica(creationSkills, deviceId && harness && !phone ? [deviceId, harness, projectId] : null)
   if (phone) return <p role="status" className="gg-phone-composer-sheet-status">{t('failedSkills')}</p>
   if (!deviceId || !harness || state.state === 'unknown') return <p role="status" className="gg-phone-composer-sheet-status">{t('loadingSkills')}</p>
-  const retry = <div className="gg-phone-composer-sheet-status" role="alert">{t('failedSkills')}
+  const missingMethod = state.error && creationSkillsHostMethodMissing(state.error)
+  const oldHost = state.error && creationSkillsHostTooOld(state.error, deviceVersion, typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : undefined)
+  const retry = <div className="gg-phone-composer-sheet-status" role="alert" data-testid="agent-watch-create-skills-error" data-failure={oldHost ? 'host-update-required' : missingMethod ? 'method-unavailable' : 'read-failed'}>
+    {oldHost ? t('skillsHostUpdateRequired', { device: deviceLabel ?? t('device') }) : missingMethod ? t('skillsHostMethodUnavailable', { device: deviceLabel ?? t('device') }) : t('failedSkills')}
     <Button variant="ghost" size="sm" onClick={() => void creationSkills.refresh(deviceId, harness, projectId)}>{t('retry')}</Button></div>
   if (state.state === 'error') return retry
   const filtered = filterCreationSkills(state.value.skills, search)

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { runInThisContext } from 'node:vm'
 import { app, ipcMain } from 'electron'
-import { registerErrorSummaryReporting } from '../../apps/desktop/electron/error-summary-reporting-host'
+import { registerErrorSummaryReporting, reportAgentHomeMigrationFailure } from '../../apps/desktop/electron/error-summary-reporting-host'
 import * as normalization from '../../apps/desktop/shared/error-summary'
 import * as stack from '../../apps/desktop/shared/error-summary-stack'
 
@@ -35,6 +35,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const listener of process.listeners('uncaughtExceptionMonitor')) if (!previousExceptionListeners.includes(listener)) process.removeListener('uncaughtExceptionMonitor', listener)
   for (const listener of process.listeners('unhandledRejection')) if (!previousRejectionListeners.includes(listener)) process.removeListener('unhandledRejection', listener)
+  process.removeAllListeners(Symbol.for('gugu.error-summary.agent-home-migration'))
   app.removeAllListeners()
   ipcMain.removeAllListeners()
   vi.unstubAllGlobals()
@@ -100,6 +101,38 @@ describe('native summary reporting boundary', () => {
     expect(sanitize).not.toHaveBeenCalled()
     expect(getter).not.toHaveBeenCalled()
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('reports a handled migration failure with only the Beta version, type and declared path category', async () => {
+    const version = '0.3.8-beta.44440414639.1'
+    vi.spyOn(app, 'getVersion').mockReturnValue(version)
+    registerErrorSummaryReporting({ eligible: true, owner: () => null })
+    const error = new TypeError('/private/profile/auth.json contains private-token')
+    reportAgentHomeMigrationFailure(error, 'marker')
+    expect(fetch).not.toHaveBeenCalled()
+    ipcMain.on('error-summary:read-local-consent', (reply: unknown) => { if (typeof reply === 'function') reply({ eligible: true, decision: 'allowed' }) })
+    reportAgentHomeMigrationFailure(error, 'marker')
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    const body = String(vi.mocked(fetch).mock.calls[0][1]!.body)
+    expect(JSON.parse(body).summary).toMatchObject({
+      type: 'TypeError', version, locations: ['packages/session-core/src/agents/plugins/helpers/agent-home-import.ts:320:1'],
+    })
+    expect(body).not.toMatch(/private|auth\.json|token/)
+  })
+
+  it.each(['allowed', 'denied'])('keeps startup migrations in memory until the first known %s preference', async decision => {
+    const owner: { current?: string } = {}
+    ipcMain.on('error-summary:read-local-consent', (reply: unknown) => {
+      if (typeof reply === 'function') reply({ eligible: owner.current !== undefined, decision })
+    })
+    registerErrorSummaryReporting({ eligible: true, owner: () => owner.current })
+    reportAgentHomeMigrationFailure(new RangeError('private'), 'history')
+    expect(fetch).not.toHaveBeenCalled()
+    expect(() => readFileSync(join(root, 'pending-error-summaries.json'))).toThrow()
+    owner.current = 'test-owner-only-local'
+    ipcMain.emit('error-summary:consent-changed')
+    if (decision === 'allowed') await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    else expect(fetch).not.toHaveBeenCalled()
   })
 
   it('reports an allowed native error category without formatting any error accessors', async () => {

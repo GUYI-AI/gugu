@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
 import { useTranslation } from 'react-i18next'
 import { sessionSend } from '@/session/renderer/features/sessions/session-send'
-import { selectionSendBody, type SelectionSendResult } from '@/session/shared/extensions/selection-send'
+import { selectionSendBody, type SelectionSendResult, type SelectionSendTo } from '@/session/shared/extensions/selection-send'
 import { rendererLogger } from '@/lib/log'
 import { Markdown } from '../markdown/Markdown'
 import { MentionPill } from '../markdown/MentionPill'
 import { Button } from '../ui/Button'
 import { useToast } from '../toastContext'
 import { NoteEditor } from './NoteEditor'
+import { useChatNote } from './useGroupMentionProvider'
+import { useChatStore } from '../../store/chatContext'
 import { takeSelectionSends, type SelectionSendAsked, type SelectionSendOptions } from './selectionSendAsk'
 import './selection-send.css'
 
@@ -42,7 +44,7 @@ export function SelectionSendLayer() {
   return open ? createPortal(<UiPortalContainerProvider value={container}><SelectionSendBox key={open.key} {...open.asked} done={result => finish(open.asked, result)} /></UiPortalContainerProvider>, container ?? document.body) : null
 }
 
-function SelectionSendBox({ cite, sessionId, anchor, cover, container, done }: SelectionSendOptions & { done(result: SelectionSendResult): void }) {
+function SelectionSendBox({ cite, to, anchor, cover, container, done }: SelectionSendOptions & { done(result: SelectionSendResult): void }) {
   const { t } = useTranslation('messaging')
   const { toast } = useToast()
   const box = useRef<HTMLDivElement>(null)
@@ -50,7 +52,7 @@ function SelectionSendBox({ cite, sessionId, anchor, cover, container, done }: S
   const [sending, setSending] = useState(false)
   const [failed, setFailed] = useState(false)
   const [place, setPlace] = useState<CSSProperties>({ visibility: 'hidden' })
-  const mentionProvider = sessionSend(sessionId)?.mentionProvider
+  const target = useSendTarget(to)
 
   useLayoutEffect(() => {
     const element = box.current
@@ -77,12 +79,10 @@ function SelectionSendBox({ cite, sessionId, anchor, cover, container, done }: S
 
   const send = async (said = words) => {
     if (sending) return
-    const target = sessionSend(sessionId)
     setSending(true)
     setFailed(false)
     try {
-      if (!target) throw new Error('No composer of this session is shown here')
-      await target.send(selectionSendBody(cite.draft, said))
+      await target.send(selectionSendBody(cite.draft, said), said)
       // The phone's bar covers the conversation the words went into: say they went. Beside a desktop page, it is in view.
       if (anchor === 'dock') toast(t('selectionSend.sent'), 'success')
       done('sent')
@@ -105,7 +105,8 @@ function SelectionSendBox({ cite, sessionId, anchor, cover, container, done }: S
         {cite.pills.map((label, index) => <MentionPill key={index} href="" title={label} file={label} mention onClick={event => event.preventDefault()}>{label}</MentionPill>)}
       </div>
       <div className="gg-selection-send-note">
-        <NoteEditor inputTestId="selection-send-note" placeholder={t('selectionSend.placeholder')} disabled={sending} mentionProvider={mentionProvider}
+        <NoteEditor inputTestId="selection-send-note" placeholder={t('selectionSend.placeholder')} disabled={sending} mentionProvider={target.mentionProvider}
+          renderMentionIcon={target.renderMentionIcon} onMentionInsert={target.onMentionInsert}
           enterBehavior={anchor === 'dock' ? 'newline' : 'submit'} onChange={setWords} onSubmit={(text) => void send(text)}
           inputRef={(element) => element?.focus({ preventScroll: true })} />
       </div>
@@ -115,4 +116,25 @@ function SelectionSendBox({ cite, sessionId, anchor, cover, container, done }: S
       </div>
     </div>
   </>
+}
+
+/**
+ * Where the words go and whose @ the box offers: the session composer's, sent as typed words are (54); or the chat's
+ * members, sent into the chat's outbox as a forward's note is (55) — addressed by the person's own words only, never by
+ * an @ inside the words they picked. Either way the box closes once the message is queued, as the composer does.
+ */
+function useSendTarget(to: SelectionSendTo) {
+  const { chats, sendMessageToChat } = useChatStore('chats', 'sendMessageToChat')
+  const chatId = 'chat' in to ? to.chat : null
+  const note = useChatNote(useMemo(() => chats.find((chat) => chat.id === chatId) ?? null, [chats, chatId]))
+  if (chatId) return { ...note, send: async (body: string, said: string) => { await sendMessageToChat(chatId, body, { toUserIds: note.addressed(said) }) } }
+  const session = 'session' in to ? to.session : ''
+  return {
+    mentionProvider: sessionSend(session)?.mentionProvider, renderMentionIcon: undefined, onMentionInsert: undefined,
+    send: async (body: string) => {
+      const composer = sessionSend(session)
+      if (!composer) throw new Error('No composer of this session is shown here')
+      await composer.send(body)
+    },
+  }
 }

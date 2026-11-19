@@ -3,7 +3,7 @@ import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { formatAttachmentMetadata, inferAttachmentKind, resolveFileMimeType, sniffFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
 import { keepSentAttachment } from '../../lib/attachmentBytes'
 import { rendererLogger } from '../../lib/log'
-import { type AttachmentsEndpoint } from '@gugu/core/cloud/attachmentsApi'
+import { SEND_GROUP_MAX_FILES, type AttachmentsEndpoint } from '@gugu/core/cloud/attachmentsApi'
 import { attachmentsEndpoint, prepareChatAttachment, type PreparedChatAttachment } from '../../lib/attachmentsEndpoint'
 import { requireThreadCapableChat } from '../../lib/chatThreadGate'
 import { attachmentAttemptEndpoint, attachmentSendTiming, type AttachmentSendTiming } from '../../lib/attachmentSendTiming'
@@ -84,10 +84,21 @@ type StagedRow = Awaited<ReturnType<typeof placeholderRow>>
 /** #2581 Files sent at once are one message: their rows share one id and say how many files the send holds. */
 type SendGroup = { id: string; size: number }
 
+/** Each file's send: every SEND_GROUP_MAX_FILES files in a row are one send; a file left on its own is no send of several. */
+function sendGroupsOf(count: number): (SendGroup | undefined)[] {
+  const groups: (SendGroup | undefined)[] = []
+  for (let start = 0; start < count; start += SEND_GROUP_MAX_FILES) {
+    const size = Math.min(SEND_GROUP_MAX_FILES, count - start)
+    const group = size > 1 ? { id: crypto.randomUUID(), size } : undefined
+    groups.push(...Array<SendGroup | undefined>(size).fill(group))
+  }
+  return groups
+}
+
 /**
  * Puts one row per file on screen, owned by the outbox, and returns the last row's id once they are there. Several files
- * are one send (#2581): their rows share a group and the text rides on the last file, so the conversation shows one
- * message. Each is declared and committed, then its bytes go up behind the message; a send that does not commit fails on its own row.
+ * are one send (#2581), up to SEND_GROUP_MAX_FILES of them, then the next send: their rows share a group and the text rides on the
+ * last file, so the conversation shows one message per send. Each is declared and committed, then its bytes go up behind the message; a send that does not commit fails on its own row.
  * Throws only when no row was kept: the files then still belong to whoever passed them.
  */
 export async function sendAttachmentBatch(args: BatchArgs): Promise<string | undefined> {
@@ -96,11 +107,11 @@ export async function sendAttachmentBatch(args: BatchArgs): Promise<string | und
   await Promise.all(args.files.map(sniffFileMimeType))
   // The text is the message's, written under all of it: it rides on the last file, whatever kind it is.
   const captionIndex = args.files.length - 1
-  const sendGroup: SendGroup | undefined = args.files.length > 1 ? { id: crypto.randomUUID(), size: args.files.length } : undefined
+  const sendGroups = sendGroupsOf(args.files.length)
   const rows: StagedRow[] = []
   try {
     for (const [fileIndex, file] of args.files.entries()) {
-      const row = await placeholderRow(file, fileIndex === captionIndex ? args.caption : undefined, args, sendGroup)
+      const row = await placeholderRow(file, fileIndex === captionIndex ? args.caption : undefined, args, sendGroups[fileIndex])
       rows.push(row)
       // Durable ownership precedes visibility; uploading does not block the lane.
       await args.outbox.stageAttachment(row.message)
@@ -121,7 +132,7 @@ export async function sendAttachmentBatch(args: BatchArgs): Promise<string | und
   void (async () => {
     // Commits keep the files' order: a later file never reaches the conversation before an earlier one that is ready.
     for (const [index, row] of rows.entries()) {
-      await commitWhenPrepared(args, args.files[index], row, prepared[index], timings[index], index === captionIndex ? args.caption : undefined, sendGroup)
+      await commitWhenPrepared(args, args.files[index], row, prepared[index], timings[index], index === captionIndex ? args.caption : undefined, sendGroups[index])
     }
   })().catch((error) => rendererLogger('chat/send').error({ chatId: args.chatId, error: String(error) }, 'attachment failure not recorded'))
   return rows.at(-1)?.message.id

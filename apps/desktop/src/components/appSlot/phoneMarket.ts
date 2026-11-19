@@ -1,7 +1,7 @@
 import { compatOf, marketCompatText, pickForHost, type CloudMarketEntry, type MarketCodeSource, type MarketHost, type MarketIndex, type MarketIndexVersion, type MarketUpdatesSummary, type MarketVersionHistoryEntry } from '../../session/shared/extensions/market'
 import { marketEntriesFrom, marketHistoryFrom, marketListingFrom, marketMetaPath, marketUpdatesFrom, type MarketListing } from '../../session/shared/extensions/market-entries'
 import { marketSnapshotSource, type MarketRefreshed, type MarketSnapshotStore } from '../../session/shared/extensions/market-snapshot'
-import { appPlatformDeclarationProblems, requireAppPlatform } from '../../session/shared/extensions/app-platforms'
+import { appPlatformDeclarationProblems, requireAppPlatform, type AppPlatform } from '../../session/shared/extensions/app-platforms'
 import type { MarketReleaseProof } from '../../session/shared/extensions/market'
 import {
   MAX_RELEASE_MANIFEST_BYTES, RELEASE_SIGNATURE_BYTES, releaseProof, releaseRequired, SHIPPED_RELEASE_TRUST, verifyMarketRelease,
@@ -30,8 +30,8 @@ export interface MarketPackage {
 }
 
 export interface PhoneMarket {
-  /** Every App the market offers this phone (the index taken now when `fresh`, else the one in hand). */
-  entries(fresh?: boolean): Promise<CloudMarketEntry[]>
+  /** Catalog preview for this phone or for a desktop install target. */
+  entries(fresh?: boolean, platform?: AppPlatform): Promise<CloudMarketEntry[]>
   /** This published version's product page text and screenshot URLs (the desktop's `listing`). */
   listing(extensionId: string, version: string): Promise<MarketListing>
   /** One file under the market's `media/` (a screenshot), through the shell: the page cannot read its bytes itself. */
@@ -97,9 +97,10 @@ export function phoneMarket(
     return { bytes, version: row.version, sha256, source: row.source, releaseNotes: row.releaseNotes, ...(signed ? { release: signed } : {}) }
   }
   return {
-    entries: async (fresh = false) => {
+    entries: async (fresh = false, platform) => {
       const snapshot = await index(fresh)
-      return marketEntriesFrom(snapshot.apps, host(), urlOf, snapshot.hostApi).extensions
+      const current = host()
+      return marketEntriesFrom(snapshot.apps, platform ? { ...current, platform } : current, urlOf, snapshot.hostApi).extensions
     },
     listing: async (extensionId, version) =>
       marketListingFrom(new TextDecoder().decode(await read(marketMetaPath(extensionId, version))), extensionId, version, urlOf),

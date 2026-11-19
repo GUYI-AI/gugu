@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 
 const shell = vi.hoisted(() => ({ mobile: true }))
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile, readMobileShell: () => shell.mobile }))
 vi.mock('../../../../apps/desktop/src/components/ui/IconButton', () => ({
   IconButton: ({ children, size: _size, ...props }: { children: ReactNode; size?: string }) => createElement('button', props, children),
 }))

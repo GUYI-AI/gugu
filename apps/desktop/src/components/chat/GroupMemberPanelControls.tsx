@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { confirmDanger } from '../../lib/confirmDanger'
 import { useTranslation } from 'react-i18next'
 import type { AgentDisplayStatus, GroupChatSettings, GroupCollabSnapshot, GroupMemberRole, ListenMode } from '@gugu/core/shared/types/chat'
 import { MoreHorizontal } from '@/lib/icons'
@@ -24,9 +25,10 @@ import { settingsErrorStyle } from './groupSettingsStyles'
 
 const errorStyle: CSSProperties = { ...settingsErrorStyle, padding: '4px 14px' }
 
-export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapshot, identities, agentStatuses, currentUserId, onReload, onOpenUserChat, onWhisper }: {
+export function useGroupMemberPanelControls({ chatId, chatKind, chatName, settings, snapshot, identities, agentStatuses, currentUserId, onReload, onOpenUserChat, onWhisper }: {
   chatId: string
   chatKind: 'group' | 'topic'
+  chatName?: string | null
   settings: GroupChatSettings | null
   snapshot: GroupCollabSnapshot | null
   identities: Readonly<Record<string, DisplayIdentity>>
@@ -102,9 +104,13 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
   const setListenMode = useCallback((profile: MemberProfileCardModel, mode: ListenMode) => (
     runMutation(() => chatService.setAgentListenMode(chatId, profile.id, mode))
   ), [chatId, runMutation])
+  // Removing someone from a group or topic (or leaving it) asks first, from the member menu and the profile card alike.
   const remove = useCallback(async (profile: MemberProfileCardModel) => {
+    const title = !isGroup ? topicRemovalLabel(profile) : ownsAgent(profile) ? t('group.memberList.agentLeave') : t('group.settings.removeMemberTitle')
+    const description = !isGroup ? topicRemovalHint(profile) : t('group.settings.removeMember', { name: profile.displayName })
+    if (!(await confirmDanger({ title, description, confirmLabel: title }))) return
     if (await runMutation(() => chatService.removeGroupMember(chatId, profile.id))) profileCard.close()
-  }, [chatId, profileCard, runMutation])
+  }, [chatId, isGroup, ownsAgent, profileCard, runMutation, t, topicRemovalHint, topicRemovalLabel])
 
   const editControlsFor = useCallback((profile: MemberProfileCardModel): MemberProfileEditControls | undefined => {
     const manageable = canManage(profile)
@@ -161,14 +167,17 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
           const menuProfile = payload ? profileOf(payload) : null
           return menuProfile ? (
             <DropdownMenu.Content className="min-w-[160px]" aria-label={t('group.memberList.manage', { name: menuProfile.displayName })}>
-              {isGroup && canManage(menuProfile) ? (
-                <MenuItem onClick={() => { void setRole(menuProfile, menuProfile.role === 'admin' ? 'member' : 'admin') }}>
-                  {menuProfile.role === 'admin' ? t('group.memberList.revokeAdmin') : t('group.memberList.makeAdmin')}
-                </MenuItem>
-              ) : null}
+              {/* Ordered by session/shared/menu-table.ts @@@menu-order (no click data; a short menu, so flat). Listen mode:
+                  weekly, tuning how an agent joins in. Admin: set once per member, if ever. Remove: rare, destructive, last,
+                  asks first. */}
               {canEditListenMode(menuProfile) ? (
                 <MenuItem onClick={() => { void setListenMode(menuProfile, menuProfile.listenMode === 'active' ? 'passive' : 'active') }}>
                   {menuProfile.listenMode === 'active' ? t('group.memberList.setPassive') : t('group.memberList.setActive')}
+                </MenuItem>
+              ) : null}
+              {isGroup && canManage(menuProfile) ? (
+                <MenuItem onClick={() => { void setRole(menuProfile, menuProfile.role === 'admin' ? 'member' : 'admin') }}>
+                  {menuProfile.role === 'admin' ? t('group.memberList.revokeAdmin') : t('group.memberList.makeAdmin')}
                 </MenuItem>
               ) : null}
               {canManage(menuProfile) || ownsAgent(menuProfile) || isSelfLeaving(menuProfile) ? (
@@ -200,6 +209,7 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
               } : undefined}
               onWhisper={member.id !== currentUserId && onWhisper ? (target) => { profileCard.close(); onWhisper(target) } : undefined}
               searchChatId={chatId}
+              listenRoom={chatName ? { kind: chatKind, name: chatName } : undefined}
               editControls={editControlsFor(member)}
             />
           )

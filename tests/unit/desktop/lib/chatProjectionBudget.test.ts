@@ -12,7 +12,7 @@ function request(key: string, args?: unknown): unknown {
   const chain: unknown = new Proxy({}, { get: (_, prop) => prop === 'then'
     ? (resolve: (value: unknown) => unknown) => {
       calls.push({ key, args })
-      const result = errors.has(key) ? { data: null, error: { message: 'read failed' } } : { data: rows.get(key) ?? [], error: null }
+      const result = errors.has(key) ? { data: null, error: { message: 'read failed' } } : { data: rows.get(key === 'list_conversation_memberships' ? 'active_members' : key) ?? [], error: null }
       return (key === 'list_chat_previews' && pausePreview ? pausePreview() : Promise.resolve()).then(() => result).then(resolve)
     } : () => chain })
   return chain
@@ -228,4 +228,18 @@ it('converges a different cold-painted list and the projection to the same row o
     await accept(next!)
     for (const row of owner.current()) expect(visible.current.find(current => current.id === row.id)).toBe(row)
   } finally { repository.close() }
+})
+
+it('keeps a newer personal state observed by an older wake when old hide receipts arrive later', async () => {
+  const owner = await hydrated()
+  const hidden = '2026-11-14T00:00:00.000501Z'
+  const seats = rows.get('active_members') as Record<string, unknown>[]
+  rows.set('active_members', seats.map(row => row.chat_id === 'c1' ? { ...row, conversation_hidden_at: hidden, personal_state_observed_revision: '12' } : row))
+  await advance(owner, 'chat_members_changed', { chat_id: 'c1', entity_id: viewer, kind: 'own', tombstone: false }, '10')
+  await owner.confirmPersonalHiding({ chat_id: 'c1', hidden_at: time, operation_id: 'old', account_revision: '11' })
+  expect(owner.current().find(row => row.id === 'c1')).toMatchObject({ conversation_hidden_at: hidden, conversation_visibility_revision: '12' })
+  rows.set('active_members', seats.map(row => row.chat_id === 'c1' ? { ...row, conversation_hidden_at: null, personal_state_observed_revision: '13' } : row))
+  await advance(owner, 'chat_members_changed', { chat_id: 'c1', entity_id: viewer, kind: 'own', tombstone: false }, '13')
+  await owner.confirmPersonalHiding({ chat_id: 'c1', hidden_at: time, operation_id: 'old', account_revision: '11' })
+  expect(owner.current().find(row => row.id === 'c1')?.conversation_hidden_at).toBeNull()
 })

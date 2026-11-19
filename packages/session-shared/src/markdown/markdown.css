@@ -36,8 +36,8 @@
   --md-indent: 1.35em;
   --md-li-gap: 0.12em;
   --md-code-pad: 8px 10px;
-  --md-code-size: 13px;
-  --md-code-leading: 20px; /* 代码块 13/20:等宽那一面自己的档(#7333) */
+  --md-code-size: calc(13px * var(--text-scale, 1));
+  --md-code-leading: calc(20px * var(--text-scale, 1)); /* 代码块 13/20:等宽那一面自己的档(#7333) */
   --md-cell-pad: 0.3em 0.75em 0.3em 0;
   line-height: 1.5;
 }
@@ -52,10 +52,11 @@
   --md-indent: 1.45em;
   --md-li-gap: 0.2em;
   --md-code-pad: 12px 14px;
-  --md-code-size: 13px;
-  --md-code-leading: 20px;
+  --md-code-size: calc(13px * var(--text-scale, 1));
+  --md-code-leading: calc(20px * var(--text-scale, 1));
   --md-cell-pad: 0.45em 0.9em 0.45em 0;
-  font-size: 16px;
+  /* @@@text-scale: the phone's system font size (apps/desktop/src/mobile/textScale.ts); 1 elsewhere. */
+  font-size: calc(16px * var(--text-scale, 1));
   line-height: 1.5;
 }
 
@@ -227,8 +228,8 @@
   background: transparent;
   color: var(--md-faint);
   /* 代码头(语言标签):代码头专用档 12/16(#7333),❌ 当通用标注 12/18 用。 */
-  font-size: 12px;
-  line-height: 16px;
+  font-size: calc(12px * var(--text-scale, 1));
+  line-height: calc(16px * var(--text-scale, 1));
 }
 .gg-md [data-streamdown='code-block-body'] {
   padding: var(--md-code-pad);
@@ -424,8 +425,8 @@
   padding: 4px 6px 0 14px;
   color: var(--md-faint);
   /* 代码头专用档 12/16(#7333),与转录的代码头同一档 */
-  font-size: 12px;
-  line-height: 16px;
+  font-size: calc(12px * var(--text-scale, 1));
+  line-height: calc(16px * var(--text-scale, 1));
 }
 .gg-md .gg-md-copy {
   width: 24px;

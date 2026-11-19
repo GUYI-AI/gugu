@@ -14,7 +14,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
 const chats: ChatItem[] = [
   { id: 'c-group', kind: 'group', name: 'Reading group' },
-  { id: 'c-dm', kind: 'dm', name: '', peer_user_id: 'u-alpha' },
+  { id: 'c-dm', kind: 'dm', name: '', peer_user_id: 'u-alpha', last_message_at: '2025-12-01T00:00:00.000Z' },
 ].map((overrides) => ({
   status: 'active', created_at: '2026-01-01T00:00:00.000Z', last_message_at: null, last_message_preview: null, unread_count: 0,
   pinned_message_id: null, last_read_seq: 0, next_message_seq: 1, ...overrides,

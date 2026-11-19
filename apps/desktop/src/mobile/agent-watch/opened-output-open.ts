@@ -1,3 +1,4 @@
+import { DeviceRpcChannelError, DeviceRpcTimeoutError } from '@gugu/core/cloud/deviceRpcRequester'
 import { openedFilePath, openedOutputLook, type OpenedOutput } from '@gugu/session-chat-ui/opened-outputs'
 import {
   OPENED_FILE_MAX_BYTES,
@@ -49,6 +50,11 @@ function transientReadFailure(error: unknown): boolean {
   const failure = error as { name?: string; code?: string; status?: number } | null
   if (failure?.name === 'AbortError') return false
   if (typeof failure?.status === 'number') return failure.status === 408 || failure.status === 429 || failure.status >= 500 && failure.status < 600
+  // App calls keep their public `unavailable` code for old hosts/offline states too. Only an actual
+  // transport cause is recoverable; replaying this read must not turn an old host or auth refusal into a wait.
+  const transport = error instanceof Error && failure?.code === 'unavailable' ? error.cause : error
+  if (transport instanceof DeviceRpcTimeoutError || transport instanceof DeviceRpcChannelError
+    && ['rejoined', 'closed', 'unreachable', 'timeout'].includes(transport.reason)) return true
   return ['unreachable', 'timeout', 'host_restarted', 'channel_resubscribed'].includes(failure?.code ?? '')
     || failure?.name === 'TimeoutError' || isTransientNetworkError(error)
     || error instanceof TypeError && /failed to fetch|load failed/i.test(error.message)
@@ -92,7 +98,7 @@ export async function readWholeOpenedFile({
   conversationId: string
   path: string
   signal?: AbortSignal
-  /** User-initiated downloads may wait through a transient native/RPC read failure. */
+  /** Read-only previews and downloads may resume the interrupted chunk after a transient native/RPC failure. */
   retryTransient?: boolean
   /** 每读到一块报一次:已读字节、总大小(大文件经转发通道每秒只走零点几 MB,等的时候要看得到在动)。 */
   onProgress?: (read: number, size: number) => void

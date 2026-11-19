@@ -6,6 +6,7 @@ export const harnessPlatform = {
   // Pi 的 models.json 由咕咕自己写,provider 与每个模型都标着 `api: 'openai-responses'`
   // (impl/pi/session-bundle.ts 的 modelArtifact)。
   wireProtocol: 'openai-responses',
+  protocols: ['openai-responses', 'openai-chat-completions'],
   dialect: 'pi-models-json',
   injection: {
     tui: {

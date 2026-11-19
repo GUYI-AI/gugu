@@ -1,4 +1,5 @@
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
+import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { makeObservable, observable, reaction, runInAction, toJS } from 'mobx';
 import { toast } from 'sonner';
 import { match } from 'ts-pattern';
@@ -359,7 +360,8 @@ export class ProjectSessionsStore {
       title: ic.title ?? '',
       lastInteractedAt: new Date().toISOString(),
       ...(ic.permissionMode !== undefined && { permissionMode: ic.permissionMode }),
-      model: ic.model,
+      model: runtimeModelId(ic.model),
+      customModel: customModelRefFromOption(ic.model) ?? undefined,
       effort: ic.effort,
       initialQueue: ic.initialQueue,
       startupOrigin: ic.startupOrigin,

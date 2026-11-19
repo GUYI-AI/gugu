@@ -20,7 +20,14 @@ export function isGuguHookText(text: string): boolean {
 /** Filter out gugu-managed entries (current or pre-rename marker) from a hook array. */
 export function filterUserHooks<T>(entries: T[], stringify?: (entry: T) => string): T[] {
   const toStr = stringify ?? JSON.stringify;
-  return entries.filter((entry) => !isGuguHookText(toStr(entry)));
+  return entries.flatMap((entry) => {
+    const nested = (entry as { hooks?: unknown } | null)?.hooks;
+    if (Array.isArray(nested)) {
+      const hooks = filterUserHooks(nested);
+      return hooks.length ? [{ ...entry, hooks } as T] : [];
+    }
+    return isGuguHookText(toStr(entry)) ? [] : [entry];
+  });
 }
 
 // ── Internal helpers ────────────────────────────────────────────────────────

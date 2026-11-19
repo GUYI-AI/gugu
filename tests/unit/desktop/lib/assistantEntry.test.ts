@@ -218,7 +218,7 @@ describe('openAssistantEntry', () => {
 /**
  * Owner 11-12「设置里面不应该有咕咕设置吧?」: every route of the shell's that used to open Settings' 咕咕 group (资料, 连接应用:
  * notifications, connection prompts, old section links — MainLayout sends them all here) lands in the App: its page, with that
- * page of the assistant over its panel; never a Settings event.
+ * page of the assistant over its panel. The user's fallback connections use Settings.
  */
 describe('openAssistantPageInApp', () => {
   const opened: unknown[] = []
@@ -311,9 +311,7 @@ describe('openAssistantPageInApp', () => {
     expect(appState.navigation.currentViewId).toBe('home')
   })
 
-  // 11-12 gap: no assistant and no App, no Settings group to fall back on. 资料 is 开通: the Apps page on the assistant App, to
-  // install or switch it on. The connected apps are the person's own: their computer home, the Library's 集成.
-  it('no assistant and the App not usable: 资料 opens the Apps page on the App; 连接应用 the Library\'s 集成; the web build neither', () => {
+  it('no assistant and the App not usable: 资料 opens the Apps page on the App; 连接应用 the user\'s installed connectors; the web build neither', () => {
     installApp(undefined, [ASSISTANT_APP_ID])
     publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null }))
     expect(openAssistantPageInApp('settings')).toBe(true)
@@ -321,8 +319,8 @@ describe('openAssistantPageInApp', () => {
     expect(revealed).toEqual([true])
     opened.length = 0
     expect(openAssistantPageInApp('connected-apps')).toBe(true)
-    expect(appState.navigation.currentViewId).toBe('library')
-    expect(appState.navigation.viewParamsStore.library?.tab).toBe('integrations')
+    expect(appState.navigation.currentViewId).toBe('apps')
+    expect(appState.navigation.viewParamsStore.apps).toMatchObject({ marketPage: 'connectors', installedSection: 'connectors' })
     expect(opened).toEqual([])
     expect(layer()).toBeNull()
     appState.navigation.navigate('home')

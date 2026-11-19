@@ -16,7 +16,7 @@ const args = { message_id: 'message', chat_id: 'group', sender_user_id: 'owner',
 const message = { id: 'message', chat_id: 'group', sender_user_id: 'owner', file_item_id: 'item', file_version: 3 }
 const file = () => new File(['pdf'], 'selected.pdf', { type: 'application/pdf' })
 function native(local = true) {
-  const invoke = vi.fn(async (_channel: string, request: { file?: unknown }) => request.file ? { id: 'item', version: 3, message } : local)
+  const invoke = vi.fn(async (channel: string, request: { file?: unknown }): Promise<unknown> => channel === 'attachments:declare' ? { staging_key: 'staging', sha256: 'sha', size_bytes: 3 } : request.file ? { id: 'item', version: 3, message } : local)
   const getPathForFile = vi.fn(() => '/project/actual.pdf')
   vi.stubGlobal('window', { electronAPI: { invoke, getPathForFile } })
   return { invoke, getPathForFile }
@@ -24,6 +24,19 @@ function native(local = true) {
 beforeEach(() => { vi.resetAllMocks(); f.plan.mockResolvedValue({ staging_key: 'staging', url: 'https://bucket', fields: {}, max_bytes: 10 }); f.begin.mockResolvedValue(undefined); f.commit.mockResolvedValue({ id: 'cloud-message' }) })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 describe('project composer attachments use the group-file publisher', () => {
+  it('a cancelled native prepare drops its upload even if the IPC declaration returns later', async () => {
+    const n = native(false), controller = new AbortController()
+    let release!: (value: never) => void
+    n.invoke.mockImplementation(async channel => channel === 'attachments:declare' ? await new Promise(resolve => { release = resolve }) : false)
+    const preparation = prepareChatAttachment(endpoint, file(), { chat_id: 'group', as: 'owner', message_id: 'message' }, controller.signal)
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+    controller.abort(new Error('cancelled'))
+    release({ staging_key: 'staging', sha256: 'sha', size_bytes: 3 } as never)
+    await expect(preparation).rejects.toThrow('cancelled')
+    expect(n.invoke).toHaveBeenCalledWith('attachments:drop', { messageId: 'message' })
+    expect(f.begin).not.toHaveBeenCalled()
+  })
+
   it('planning leaves the file private; ordered commit sends path and message together without whole-file IPC', async () => {
     const n = native(), selected = file(), arrayBuffer = vi.spyOn(selected, 'arrayBuffer').mockRejectedValue(new Error('No whole-file IPC'))
     const prepared = await prepareChatAttachment(endpoint, selected, { chat_id: 'group', as: 'owner', message_id: 'message' })
@@ -38,12 +51,11 @@ describe('project composer attachments use the group-file publisher', () => {
     const n = native(false), selected = file()
     const prepared = await prepareChatAttachment(endpoint, selected, { chat_id: 'group', as: 'owner', message_id: 'message' })
     expect(prepared).toEqual({ staging_key: 'staging', sha256: 'sha', size_bytes: 3 }); await commitPreparedChatAttachment(endpoint, prepared, args)
-    expect(n.invoke).toHaveBeenCalledOnce(); expect(n.getPathForFile).not.toHaveBeenCalled()
-    expect(f.plan).toHaveBeenCalledWith(endpoint, { size: 3, contentType: 'application/pdf' }, { chat_id: 'group', as: 'owner', request_id: 'message' }, undefined)
-    expect(f.begin).toHaveBeenCalledWith({ messageId: 'message', chatId: 'group', as: 'owner', pendingKey: 'staging', name: 'selected.pdf', contentType: 'application/pdf', size: 3 }, selected, expect.objectContaining({ staging_key: 'staging' }))
+    expect(n.invoke).toHaveBeenCalledTimes(2)
+    expect(n.invoke).toHaveBeenLastCalledWith('attachments:declare', { file: { name: 'selected.pdf', path: '/project/actual.pdf', size: 3, contentType: 'application/pdf' }, chatId: 'group', as: 'owner', messageId: 'message' })
+    expect(f.plan).not.toHaveBeenCalled(); expect(f.begin).not.toHaveBeenCalled()
     expect(f.commit).toHaveBeenCalledWith(endpoint, { ...args, staging_key: 'staging', sha256: 'sha', size_bytes: 3 })
-    expect(f.keep, 'kept by content before it is declared: a restart uploads it from this copy').toHaveBeenCalledWith(selected, 'sha')
-    expect(f.keep.mock.invocationCallOrder[0]).toBeLessThan(f.begin.mock.invocationCallOrder[0])
+    expect(f.keep, 'the renderer retains its own display copy').toHaveBeenCalledWith(selected, 'sha')
   })
   it('publishes an image as it does any other file of a project chat', async () => {
     const n = native(), image = new File(['png'], 'shot.png', { type: 'image/png' })
@@ -52,15 +64,16 @@ describe('project composer attachments use the group-file publisher', () => {
   })
   it('does not put a whisper into the shared project folder', async () => {
     const n = native(), selected = file(), prepared = await prepareChatAttachment(endpoint, selected, { chat_id: 'group', as: 'owner', is_whisper: true, message_id: 'message' })
-    expect(n.invoke).not.toHaveBeenCalled(); expect(prepared).toEqual({ staging_key: 'staging', sha256: 'sha', size_bytes: 3 })
+    expect(n.invoke).toHaveBeenCalledOnce(); expect(n.invoke.mock.calls[0]![0]).toBe('attachments:declare'); expect(prepared).toEqual({ staging_key: 'staging', sha256: 'sha', size_bytes: 3 })
     await expect(commitPreparedChatAttachment(endpoint, { local: selected }, { ...args, is_whisper: true })).rejects.toThrow('audience changed')
-    expect(n.invoke).not.toHaveBeenCalled()
+    expect(n.invoke).toHaveBeenCalledOnce()
   })
   it('reauthorizes through the same cloud uploader when the sender\'s storage setting changed after planning', async () => {
     const n = native(), selected = file(), prepared = await prepareChatAttachment(endpoint, selected, { chat_id: 'group', as: 'owner', message_id: 'message' })
     n.invoke.mockResolvedValueOnce(null as never)
     await expect(commitPreparedChatAttachment(endpoint, prepared, args)).resolves.toEqual({ id: 'cloud-message' })
-    expect(f.plan).toHaveBeenCalledExactlyOnceWith(endpoint, { size: 3, contentType: 'application/pdf' }, { chat_id: 'group', as: 'owner', request_id: 'message' }, undefined)
+    expect(n.invoke).toHaveBeenLastCalledWith('attachments:declare', expect.objectContaining({ chatId: 'group', messageId: 'message' }))
+    expect(f.plan).not.toHaveBeenCalled()
     expect(f.commit).toHaveBeenCalledExactlyOnceWith(endpoint, { ...args, staging_key: 'staging', sha256: 'sha', size_bytes: 3 })
   })
   it('propagates a publication or atomic message refusal without falling back to cloud', async () => {

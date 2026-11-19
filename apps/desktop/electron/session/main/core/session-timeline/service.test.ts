@@ -732,8 +732,13 @@ describe('session timeline service', () => {
     expect(state.deliverText.mock.calls[0]?.[1]).toBe('在吗');
     expect(await service.sessionOptions({ conversationId: 'conv-1' })).toEqual({
       ok: true,
-      value: { mode: null, effort: null, model: { selected: 'platform:gpt-5', available: [{ id: 'platform:gpt-5', name: 'GPT-5' }] } },
+      value: {
+        mode: null, effort: null,
+        model: { selected: 'platform:gpt-5', available: [{ id: 'platform:gpt-5', name: 'GPT-5' }] },
+        modelMenu: { agentName: 'menu-of-conv-1', platformModels: [], ownCatalog: null, ownAuth: null },
+      },
     });
+    expect(startCalls).toEqual([]);
   });
 
   // #6693:手机的权限档胶囊照桌面那一份排 —— 宿主随选项给出这家声明的档位表;没声明的家不给,手机照它报的名字显示。

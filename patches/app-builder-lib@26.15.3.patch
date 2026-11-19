@@ -19,6 +19,24 @@
 # #2734 adds two optional payload transaction hooks, retaining upstream UI, registration,
 # shortcut management, and uninstaller generation/signing. Without them ZIP installation
 # still uninstalls the old app before extraction and cannot roll back a disk/full or lock error.
+# The assisted-directory hook preserves registered custom installation locations;
+# the stock name-appending behavior would make a GUI upgrade target its own child.
+diff --git a/templates/nsis/assistedInstaller.nsh b/templates/nsis/assistedInstaller.nsh
+--- a/templates/nsis/assistedInstaller.nsh
++++ b/templates/nsis/assistedInstaller.nsh
+@@ -32,8 +32,12 @@
+     # sanitize the MUI_PAGE_DIRECTORY result to make sure it has a application name sub-folder
+     Function instFilesPre
++      !ifmacrodef customSanitizeInstallDirectory
++        !insertmacro customSanitizeInstallDirectory
++      !else
+       ${StrContains} $0 "${APP_FILENAME}" $INSTDIR
+       ${If} $0 == ""
+         StrCpy $INSTDIR "$INSTDIR\${APP_FILENAME}"
+       ${endIf}
++      !endif
+     FunctionEnd
+   !endif
 diff --git a/templates/nsis/include/allowOnlyOneInstallerInstance.nsh b/templates/nsis/include/allowOnlyOneInstallerInstance.nsh
 index a5cb3fe536a9fe95a95ac796f92a27f62d9762cc..f4c9ae6d7774cf9de873d77c86210cbff81545dc 100644
 --- a/templates/nsis/include/allowOnlyOneInstallerInstance.nsh

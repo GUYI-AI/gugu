@@ -1,5 +1,5 @@
 import type { ChatItem } from '@gugu/core/shared/types/chat'
-import { chatAttention } from '@gugu/core/shared/ui/chatModels'
+import { chatAttention, visibleConversationRows } from '@gugu/core/shared/ui/chatModels'
 import { chatLineCounts } from '@/lib/chatLineUnread'
 
 /**
@@ -9,5 +9,5 @@ import { chatLineCounts } from '@/lib/chatLineUnread'
  * 并法与桌面一个列表同一份(chatLineCounts);手机这一行的主聊天照旧全算(forYou)。
  */
 export function phoneChatUnread(chats: readonly ChatItem[]): ReadonlyMap<string, number> {
-  return chatLineCounts(chats, (chat) => chatAttention(chat).forYou)
+  return chatLineCounts(visibleConversationRows(chats), (chat) => chatAttention(chat).forYou)
 }

@@ -26,7 +26,7 @@ import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
 import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
 import { attachmentFolderLine, SHARED_READ_ONLY_COPY } from '../../../../packages/core/src/shared/attachmentFolderLine'
-import { AttachmentsError, commitAttachment, contentRequestId, declareAttachment, finishDeclaredAttachment, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { accountAttachmentsEndpoint, AttachmentsError, commitAttachment, contentRequestId, retryableAttachmentError, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
 import { fileSha256 } from '../../../../packages/core/src/local/agent/sessionFileHandoff'
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 import { createGroupAdmin, setGroupAvatar } from '../../../../packages/core/src/cloud/groupAdmin'
@@ -472,11 +472,7 @@ function rpcErrorDetail(raw) {
   return String(raw).slice(0, 600)
 }
 
-// The attachments function (core's one client, packages/core/src/cloud/attachmentsApi.ts): this session's server and token.
-async function attachmentsEndpoint(context, fetchImpl = fetch) {
-  // A main process: signed part PUTs go straight to the store, so large files upload in parts and resume.
-  return { supabaseUrl: context.supabaseUrl, anonKey: context.anonKey, token: await context.getAccessToken(), fetch: fetchImpl, signedParts: true }
-}
+const attachmentsEndpoint = accountAttachmentsEndpoint
 // 鉴权失效只允许读取一次 host fresh token；transport/5xx 在 post helper 内按稳定 row 有界重试。
 function isRefreshableAuthError(err) {
   return err instanceof RpcHttpError && err.status === 401 && !err.authRetryAttempted
@@ -561,6 +557,7 @@ function createDeps(context, injected = {}, state = createSessionState()) {
       return `${base}/storage/v1/object/public/chat-media/${storagePath}`
     },
     attachmentsEndpoint: () => attachmentsEndpoint(context, fetchImpl),
+    attachments: context.attachments,
     resolveFile: (ref, actor = context.agentId) => {
       if (!context.resolveFile) throw new Error('Verified file resolver is not installed')
       return context.resolveFile(ref, actor)
@@ -2317,17 +2314,16 @@ async function documentUploadBytes(args) {
 
 // gugu_file:send-file-as-owner = 字节经 attachments/upload 直传 OSS,再由 attachments/share 以 owner 名义发出;send-file 走声明路径
 // (消息带文件索引先提交,字节随后,和人发附件同一条路);download = 按消息 id 把附件下到本机(downloadAttachment)。
-async function uploadForSend(args, deps, label, chatId) {
+async function uploadForSend(args, deps, requestId) {
   const fileName = resolveUploadName(args)
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
-  const bytes = await uploadBlob(label, args, contentType)
+  const bytes = await uploadBlob('message_send_as_owner', args, contentType)
   const endpoint = await deps.attachmentsEndpoint()
-  // Its bytes go up before anything is sent, so the same file from this agent to the same friend is one upload: sent again
-  // after a timeout or restart, it resumes. Another friend is another upload, so parallel sends never share one.
+  // Bind the permit to this send and its bytes. A separate send of the same file has its own message request ID.
   const sha = await fileSha256(String(args.file_path))
-  const request_id = await contentRequestId('send', deps.context.agentId, chatId ? `chat ${chatId}` : `friend ${String(args.friend_user_id)}`, sha, String(bytes.size))
+  const request_id = await contentRequestId('send', requestId, deps.context.agentId, String(args.friend_user_id), sha, String(bytes.size))
   return { endpoint, fileName, contentType, stagingKey: await uploadAttachmentBytes(endpoint, { bytes, name: fileName, contentType },
-    { chat_id: chatId, as: deps.context.agentId, request_id }) }
+    { chat_id: null, as: deps.context.agentId, request_id }) }
 }
 
 /**
@@ -2392,16 +2388,17 @@ async function commitWithReplay(commit) {
     try {
       return await commit()
     } catch (error) {
-      if ((error instanceof AttachmentsError && error.status < 500) || attempt === 3) throw error
+      if ((error instanceof AttachmentsError && !retryableAttachmentError(error)) || attempt === 3) throw error
     }
   }
 }
 
 async function handleOwnerFile(args, deps) {
   const friendUserId = friendUserIdArg(args.friend_user_id)
-  const { endpoint, fileName, contentType, stagingKey } = await uploadForSend(args, deps, 'message_send_as_owner', null)
+  const request_id = randomUUID()
+  const { endpoint, fileName, contentType, stagingKey } = await uploadForSend(args, deps, request_id)
   // 库里那一半照 send_friend_message_as_owner 的规矩(gugu-supabase send_friend_file_as_owner):发送者是主人,记下是这个 agent 代发。
-  const send = { staging_key: stagingKey, friend_user_id: friendUserId, agent_user_id: deps.context.agentId, request_id: randomUUID(), file_name: fileName, content_type: contentType, ...(args.caption ? { caption: args.caption } : {}) }
+  const send = { staging_key: stagingKey, friend_user_id: friendUserId, agent_user_id: deps.context.agentId, request_id, file_name: fileName, content_type: contentType, ...(args.caption ? { caption: args.caption } : {}) }
   const result = await commitWithReplay(() => sendFileAsOwner(endpoint, send))
   if (typeof result.message_id !== 'string' || result.sent_by_agent !== true) {
     throw new Error('message_send_as_owner: the server did not confirm the send')
@@ -2531,6 +2528,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
   const meta = { to_user_ids: toUserIds ?? [], thread_root_id: threadRootId, ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {}), ...(said ? { caption: said } : {}) }
   let message
   let fileName
+  let uploadReceipt = {}
   // A text file the shared classifier makes a document goes up through the attachments commit, where the server makes it
   // one (as a person's upload does); only stored bytes are published from a project.
   let documentBytes = null
@@ -2553,10 +2551,12 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
   } else {
     // The message goes with the file's index; its bytes follow it (owner 11-15: one path for every sender).
     const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
-    const bytes = documentBytes ?? await uploadBlob('message_send', args, contentType)
+    const { target, size } = await uploadTarget('message_send', args)
     const endpoint = await deps.attachmentsEndpoint()
-    const declared = await declareAttachment(endpoint, { bytes, contentType }, { chat_id: chatId, as: deps.context.agentId })
     fileName = resolveUploadName(args)
+    if (!deps.attachments) throw new Error('The device attachment upload host is unavailable')
+    const { declared, uploaded } = await deps.attachments.declare({ file: { path: target, name: fileName, size, contentType,
+      ...(documentBytes ? { data: new Uint8Array(documentBytes).buffer } : {}) }, chatId, as: deps.context.agentId, messageId })
     const commit = {
       staging_key: declared.staging_key,
       sha256: declared.sha256,
@@ -2573,24 +2573,45 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
       // 临时 / 保留:这份上传的副本留多久,和人在 ⋯ 里改的是同一个标记。不给就照这个群的规矩。
       ...(args.temporary === true ? { keep: 'temporary' } : {}),
     }
-    message = await commitWithReplay(() => commitAttachment(endpoint, commit)).catch(async (error) => {
-      if (!(error instanceof AttachmentsError && error.code === 'version_conflict')) refused(error)
-      throw new Error(newerVersionRefusal(args.file, folderFile.version))
-    })
-    if (message?.id) await finishDeclaredAttachment(endpoint, declared, { bytes, name: fileName, contentType },
-      { id: message.id, chat_id: chatId, as: deps.context.agentId }, args.temporary === true ? { keep: 'temporary' } : {}).catch((error) => {
-      throw new Error(`message_send: message ${message.id} was sent, but its file did not upload (${error?.message ?? error}); readers see it as unavailable`)
+    try { message = await commitWithReplay(() => commitAttachment(endpoint, commit)) } catch (error) {
+      if (!(error instanceof AttachmentsError) || retryableAttachmentError(error)) {
+        // The message may already exist: keep delivering its bytes, and prevent the outer auth retry from resending it.
+        return JSON.stringify({ status: 'uncertain', message_id: messageId,
+          note: 'Whether the message committed is uncertain; this machine keeps delivering its bytes. Check message_history for this message_id before deciding whether to resend.' })
+      }
+      await deps.attachments.drop(messageId)
+      if (error.code === 'version_conflict') throw new Error(newerVersionRefusal(args.file, folderFile.version))
+      refused(error)
+    }
+    if (message?.id) await uploaded.catch((error) => {
+      const mismatch = error instanceof AttachmentsError && error.code === 'upload_mismatch'
+      const tooLarge = error instanceof AttachmentsError && (error.code === 'too_large' || error.status === 413)
+      const refused = error instanceof AttachmentsError && error.status !== 401 && error.code !== 'upload_not_found' && !retryableAttachmentError(error)
+      uploadReceipt = mismatch || tooLarge
+        ? { upload: 'failed', reason: mismatch ? 'upload_mismatch' : 'too_large', note: mismatch
+          ? 'The message was sent, but the file changed after declaration. Do not resend the same message; send the new file version if needed.'
+          : 'The message was sent, but the file exceeds the storage limit and cannot upload. Do not resend the same message.' }
+        : refused
+          ? { upload: 'failed', reason: error.code, note: 'The message was sent, but its attachment was refused. Do not send the same message again.' }
+          : retryableAttachmentError(error) || error instanceof AttachmentsError && (error.status === 401 || error.code === 'upload_not_found')
+            ? { upload: 'retrying', note: 'The attachment is pending and can resume from this machine. Do not send it again.' }
+            : { upload: 'unverified', note: 'The message was sent, but its attachment recovery could not be verified. Do not send the same message again.' }
     })
   }
   if (!message?.id) throw new Error('message_send: the server did not confirm the send')
   const pinned = typeof message.file_item_id === 'string' && Number.isInteger(message.file_version)
     ? { file: groupFileLink(message.file_item_id, { version: message.file_version }), version: message.file_version }
     : {}
-  const blocks = await messageDeliveryBlocks(deps, message.id)
   // Size and type let the task timeline draw the same file card as the chat (sentMessageOf), without reading the row back.
   const sent = parseAttachmentContent(String(message.content ?? ''), message)
   const card = sent ? { size_bytes: sent.sizeBytes, mime_type: sent.mimeType, ...(typeof message.file_blob_id === 'string' ? { file_blob_id: message.file_blob_id } : {}) } : {}
-  return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...card, ...pinned, ...(blocks.length ? { not_delivered_to: blocks, delivery_note: deliveryRefusalNotes(blocks).join('; ') } : {}),
+  let blocks
+  try { blocks = await messageDeliveryBlocks(deps, message.id) } catch {
+    return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...card, ...pinned, ...uploadReceipt,
+      delivery_status: 'unverified', delivery_note: 'The message was sent, but recipient delivery could not be verified. Do not send it again.',
+      source_link: conversationLink(chatId, String(message.id).replace(/^msg:/, '')) })
+  }
+  return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...card, ...pinned, ...uploadReceipt, ...(blocks.length ? { not_delivered_to: blocks, delivery_note: deliveryRefusalNotes(blocks).join('; ') } : {}),
     source_link: conversationLink(chatId, String(message.id).replace(/^msg:/, '')) })
 }
 

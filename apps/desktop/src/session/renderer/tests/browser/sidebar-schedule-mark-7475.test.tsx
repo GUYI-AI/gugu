@@ -41,7 +41,7 @@ async function mount(status: AgentStatus | null, schedule: SessionpageScheduleDi
     <SessionLocalizationProvider>
       <SessionRowShell
         sessionId="s-1" rowVariant="tree" depth={0} hasChildren={false} expanded={false}
-        needsAttention={false} title="盯一下 CI" harness={null} presentation={status ? presentAgentStatus({ reading: { status, detail: null } }) : null}
+        title="盯一下 CI" harness={null} presentation={status ? presentAgentStatus({ reading: { status, detail: null } }) : null}
         lastInteractedAt={new Date(Date.now() - 3 * 3600_000).toISOString()} schedule={schedule}
         doneUnread={false} isActive={false} isCursor={false} isPendingArchive={false}
         quickActions={{ isPinned: false, onSetPinned: () => {}, archiveLabel: 'Archive', onArchive: () => {} }}

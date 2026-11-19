@@ -1,5 +1,8 @@
+import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
+import type { OpenTopic } from '../../hooks/useTopicSurface'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { useTopicScopedMemberProfile } from '../../hooks/useTopicScopedMemberProfile'
+import { useActiveChatIdentity } from '../../store/chatContext'
 import type { MemberProfileCardModel, MemberProfileChatTarget, MemberProfileEditControls } from '../MemberProfileCard'
 import { MemberProfilePopover, MemberProfileRoot } from '../MemberProfilePopover'
 import type { ActiveMemberProfile, MemberProfileHandle } from '../memberProfileModels'
@@ -8,7 +11,7 @@ type LayerProps = {
   card: MemberProfileHandle
   memberProfiles: Record<string, MemberProfileCardModel>
   authorityRevision: number
-  topicChatId: string | null
+  asideTopic: OpenTopic | null
   chatId: string | null
   currentUserId: string | null
   isGroupChat: boolean
@@ -26,10 +29,25 @@ export function MessageMemberProfileLayer(props: LayerProps) {
 }
 
 /** The card a message avatar opened, refreshed from the roster and scoped to the topic it was opened in. */
-function MessageMemberProfileCard({ opened, card, memberProfiles, authorityRevision, topicChatId, chatId, currentUserId, isGroupChat, groupEditControlsFor, onOpenUserChat, onWhisper }: LayerProps & { opened: ActiveMemberProfile }) {
+function MessageMemberProfileCard({ opened, card, memberProfiles, authorityRevision, asideTopic, chatId, currentUserId, isGroupChat, groupEditControlsFor, onOpenUserChat, onWhisper }: LayerProps & { opened: ActiveMemberProfile }) {
   const latest = memberProfiles[opened.member.id]
   const profile = latest ? { ...opened, member: latest } : opened
-  const shown = useTopicScopedMemberProfile({ profile, authorityRevision, topicChatId, currentUserId, groupEditControlsFor })
+  const mainChat = useActiveChatIdentity()
+  const fromAside = opened.openedFrom === 'aside'
+  const mainTopicChatId = mainChat?.kind === 'topic' ? mainChat.id : null
+  const listenRoom = fromAside
+    ? (asideTopic && { kind: 'topic' as const, name: asideTopic.name })
+    : (mainChat?.kind === 'group' || mainChat?.kind === 'topic'
+        ? { kind: mainChat.kind, name: chatDisplayName(mainChat, null) }
+        : null)
+  const shown = useTopicScopedMemberProfile({
+    profile,
+    authorityRevision,
+    mainTopicChatId,
+    asideTopicChatId: asideTopic?.chatId ?? null,
+    currentUserId,
+    groupEditControlsFor,
+  })
   if (!shown) return null
   return (
     <MemberProfilePopover
@@ -45,7 +63,8 @@ function MessageMemberProfileCard({ opened, card, memberProfiles, authorityRevis
         card.close()
         onWhisper(target)
       } : undefined}
-      searchChatId={(shown.profile.openedFrom === 'aside' ? topicChatId : chatId) ?? undefined}
+      searchChatId={(fromAside ? asideTopic?.chatId : chatId) ?? undefined}
+      listenRoom={listenRoom ?? undefined}
       editControls={shown.editControls}
       testId={AUTOMATION_TEST_IDS.messageAvatarProfileMenu}
     />

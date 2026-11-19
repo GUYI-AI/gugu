@@ -6,6 +6,7 @@ import { remoteHostsStore } from '@/session/renderer/features/remote-hosts/remot
 import { wakeAndWaitOnline } from '@/lib/cloudComputerStore'
 import { listDevicesOnceIdentified } from '@/lib/listDevicesOnceIdentified'
 import { platform } from '@/platform'
+import { phoneLibraryTransport } from '@/mobile/agent-watch/sessionpage-rpc'
 import { connectionLibraryHost } from './connection-library-host'
 import { ownerConnectionActions } from './owner-connection-actions'
 import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting'
@@ -18,7 +19,8 @@ export function useOwnerLibraryHost(device: Device | null,route?: ConnectionRout
   const online = device?.is_online ?? false,hostKind = device?.capabilities.host_kind
   const executionPlatform = device?.platform,executionArch = device?.capabilities.arch
   const base = useMemo(() => ({ ...(!deviceId || local ? LOCAL_LIBRARY_HOST : createRemoteLibraryHost({ deviceId,deviceLabel: label,online,
-    lastSeenAt: device?.last_seen_at ?? null,hostKind: hostKind === 'server' ? 'server' : 'desktop' })),
+    lastSeenAt: device?.last_seen_at ?? null,hostKind: hostKind === 'server' ? 'server' : 'desktop' },undefined,
+    platform.kind === 'capacitor' ? phoneLibraryTransport(deviceId) : undefined)),
     ...(executionPlatform ? { executionHost: { platform: executionPlatform,arch: executionArch ?? '' } } : {}),
   }),[deviceId,local,label,online,device?.last_seen_at,hostKind,executionPlatform,executionArch])
   const store = useOwnerConnectionStore(deviceId,route,route?.mode === 'owner')

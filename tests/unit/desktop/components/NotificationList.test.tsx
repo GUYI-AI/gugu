@@ -17,7 +17,7 @@ const state = vi.hoisted(() => ({ sessions: [] as SessionpageSessionSummary[], m
 const followLink = vi.hoisted(() => vi.fn())
 const markSeen = vi.hoisted(() => vi.fn(async (_id: string) => { if (state.readError) throw state.readError }))
 vi.mock('@/lib/guguLinks', () => ({ followLink }))
-vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => state.mobile }))
+vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => state.mobile, readMobileShell: () => state.mobile }))
 vi.mock('@/platform', () => import('../../../support/capacitorPlatformTestDouble'))
 vi.mock('@/lib/chat', () => import('../../../support/contactsChatServiceTestDouble'))
 vi.mock('@/hooks/useAgentDisplayStatus', () => import('../../../support/agentDisplayStatusTestDouble'))

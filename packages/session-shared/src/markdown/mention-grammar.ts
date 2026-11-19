@@ -170,11 +170,15 @@ export function fileCiteDraft(words: string, refs: readonly { file: { id: string
 
 /** The same cite in its parts too, for a host that shows it before sending: the words, and each pill's label. */
 export function fileCite(words: string, refs: readonly { file: { id: string }; label?: unknown }[]): { draft: string; quote: string; pills: string[] } {
-  const quote = words.trim();
-  const pills = refs.map(({ file, label }) => {
+  return pillCite(words, refs.map(({ file, label }) => {
     const name = file.id.replace(/\\/g, '/').split('/').pop() ?? file.id;
     return { label: typeof label === 'string' && label ? `${name} (${label})` : name, target: file.id };
-  });
+  }));
+}
+
+/** A cite whose pills are already named and pointed (a chat folder's files: the folder's name, a `gugu-file://` link). */
+export function pillCite(words: string, pills: readonly { label: string; target: string }[]): { draft: string; quote: string; pills: string[] } {
+  const quote = words.trim();
   return { draft: draftWithPills(quote, pills.map(pill => stringifyMention({ ...pill, kind: 'file' })).join(' ')), quote, pills: pills.map(pill => pill.label) };
 }
 

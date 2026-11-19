@@ -12,6 +12,26 @@ export const FIRST_RUN_RECORD_FILE = 'first-run-apps.json';
 
 const fileOf = (userData: string) => path.join(userData, FIRST_RUN_RECORD_FILE);
 
+/** Call before noteFirstRunProfile writes this launch's record. */
+export function hasPriorProfile(userData: string): boolean {
+  return fs.existsSync(fileOf(userData)) || fs.existsSync(path.join(userData, EXTENSIONS_DIR_NAME));
+}
+
+/** Capture the profile's age before any first-run writer changes the evidence. */
+export function captureAgentHomeUpgradeProfile(userData: string): boolean {
+  const file = path.join(userData, 'agent-home-upgrade-profile');
+  if (!fs.existsSync(file)) {
+    const prior = hasPriorProfile(userData);
+    fs.mkdirSync(userData, { recursive: true });
+    const temporary = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(temporary, prior ? 'existing' : 'new', { mode: 0o600 });
+    fs.renameSync(temporary, file);
+  }
+  const recorded = fs.readFileSync(file, 'utf8');
+  if (recorded !== 'existing' && recorded !== 'new') throw new Error('Invalid agent home upgrade profile');
+  return recorded === 'existing';
+}
+
 /**
  * 启动最先调一次(embedded-boot.ts,早于任何东西建出 `task-extensions/`):还没有记录时,有 App 的记录目录 = 这个 profile
  * 早就用着(老 profile 升级上来,`existing`,永远不跑);没有 = 新 profile 的第一次启动(`pending`)。有记录就不动它。

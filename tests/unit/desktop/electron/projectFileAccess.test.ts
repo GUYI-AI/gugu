@@ -8,9 +8,9 @@ vi.mock('node:fs/promises', async importOriginal => {
     rename: (from: string, to: string) => (fsHooks.rename ?? fs.rename)(from, to),
     __actualRename: fs.rename }
 })
-import { chmod, mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createFileResolver, type FileProviders, type FileRevision } from '../../../../packages/core/src/shared/fileResolver'
 import { ciphertextSize, createFileKey, transformFile } from '../../../../packages/core/src/shared/fileCipher'
@@ -41,10 +41,18 @@ const chunksLeft = () => readdir(tempRoot).catch((error: NodeJS.ErrnoException) 
 describe('downloads consume one file and leave no cached chunks behind', () => {
   const remote = (content: Uint8Array = bytes) => {
     const stored = { ...revision, source: 'managed-object' as const }
-    const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       if (String(url).endsWith('/file-resolve')) return Response.json({ status: 'ready', ...stored })
       if (String(url).endsWith('/file-download')) return Response.json({ status: 'ready', url: 'https://objects.invalid/file', size_bytes: stored.size_bytes, sha256: stored.sha256, download_id: 'download' })
-      if (String(url) === 'https://objects.invalid/file') return new Response(content as Uint8Array<ArrayBuffer>)
+      if (String(url) === 'https://objects.invalid/file') {
+        const range = new Headers(init?.headers).get('range')
+        const from = range ? Number(/^bytes=(\d+)-$/.exec(range)?.[1]) : 0
+        if (!Number.isSafeInteger(from) || from < 0 || from >= content.length) return new Response(null, { status: 416 })
+        return new Response(content.subarray(from) as Uint8Array<ArrayBuffer>, {
+          status: range ? 206 : 200,
+          headers: range ? { 'content-range': `bytes ${from}-${content.length - 1}/${content.length}` } : {},
+        })
+      }
       throw new Error('Unexpected file request')
     })
     return { resolve: createNodeFileResolver(tempRoot, async () => ({ supabaseUrl: 'https://files.invalid', anonKey: 'public', token: 'test', fetch: fetcher as typeof fetch })), fetcher }
@@ -197,6 +205,45 @@ describe('downloads consume one file and leave no cached chunks behind', () => {
     const gets = fetcher.mock.calls.filter(([url]) => String(url) === 'https://objects.invalid/file').length
     await save()
     expect(fetcher.mock.calls.filter(([url]) => String(url) === 'https://objects.invalid/file')).toHaveLength(gets)
+  })
+  it('a concurrent save reads a cached prefix and requests only the remaining range', async () => {
+    const { resolve, fetcher } = remote()
+    const serve = fetcher.getMockImplementation()!
+    await mkdir(tempRoot, { recursive: true })
+    const cacheRoot = await realpath(tempRoot)
+    const cached = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>()
+    const ranges: string[] = []
+    let resolves = 0, objects = 0
+    // Hold the first stream's tail until the second save has inspected the shared cached prefix.
+    fsHooks.rename = async (from, to) => {
+      await actualRename(from, to)
+      if (dirname(to).startsWith(join(cacheRoot, 'open-')) && basename(to) === '0') cached.resolve()
+    }
+    fetcher.mockImplementation(async (url, init) => {
+      if (String(url).endsWith('/file-resolve') && ++resolves === 2) await cached.promise
+      if (String(url) === 'https://objects.invalid/file') {
+        const range = new Headers(init?.headers).get('range')
+        if (range) ranges.push(range)
+        if (++objects === 1) return new Response(new ReadableStream<Uint8Array>({
+          start(controller) { controller.enqueue(bytes.subarray(0, 512 * 1024)) },
+          async pull(controller) { await resume.promise; controller.enqueue(bytes.subarray(512 * 1024)); controller.close() },
+        }))
+        resume.resolve()
+      }
+      return serve(url, init)
+    })
+    const save = async () => {
+      const file = await resolve(ref, actor)
+      if (file.status !== 'ready') throw new Error('Missing fixture')
+      return saveFileHandle(file, join(home, 'attachments'), 'file.bin')
+    }
+    try {
+      const [first, concurrent] = await Promise.all([save(), save()])
+      expect(ranges).toEqual(['bytes=524288-'])
+      expect(first.file_path).toBe(concurrent.file_path)
+      expect(await readFile(first.file_path)).toEqual(bytes)
+      expect(await chunksLeft()).toEqual([])
+    } finally { resume.resolve() }
   })
   it('a save stopped halfway resumes from its cached chunks: the next call asks only for the rest', async () => {
     const big = Uint8Array.from({ length: 3 * 512 * 1024 + 7 }, (_, i) => i % 251)

@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
+import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
 import { folderItem, type PanelItem } from './chat-panel-item';
-import { askChat, chatAlone, chatBlockContentOf, chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, closeTopicTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, openTopicTab, panelFull, panelTabsOf, setPanelFull, showChatOnly, showChatTab, takeChatAsk, topicTabOf, updateFileNames } from './chat-layouts';
-import { CHAT_INFO_TAB_KIND, CHAT_TAB_KIND } from './chat-tab-providers';
+import { askChat, chatAlone, chatBlockContentOf, chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, closeTopicTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, openTopicTab, panelFull, panelTabsOf, revealChatWorkspaceMessage, setPanelFull, showChatOnly, showChatTab, takeChatAsk, topicTabOf, updateFileNames } from './chat-layouts';
+import { CHAT_INFO_TAB_KIND, CHAT_PANEL_TAB_KIND, CHAT_TAB_KIND } from './chat-tab-providers';
+import { openChatWorkspaceNewTab } from '../../tabs/chat-workspace-new-tab';
+import { browserSessionStore } from '../../browser/browser-session-store';
+import type { BrowserState } from '../../browser/browser-tab-provider';
+import { recentToolPanel, trackRecentTools } from '../../browser/workspace-recent-tools';
+import { readViewState } from '@/lib/viewStateTable';
 import { tabFullscreen } from '../../tabs/tab-fullscreen';
 import { SIDE_PAGE_WIDTH_PX } from '../../tabs/side-width';
 
@@ -11,6 +17,39 @@ const board: PanelItem = { kind: 'kanban.board', title: 'Board' };
 const count = (id: string) => chatLayoutOf(id).groups.reduce((sum, { pane }) => sum + pane.tabOrder.length, 0);
 
 describe('chat navigation uses the same page history and real panes as tasks', () => {
+  it('reveals a background file beside the pane current now, keeping the current topic in its pane', () => {
+    const id = 'background-topic-open';
+    const layout = chatLayoutOf(id);
+    const main = layout.mainGroup;
+    const chat = main.pane.resolvedActiveTabId!;
+    openTopicTab(id, { topicChatId: 'background-topic', name: 'Topic' });
+    const topic = topicTabOf(id)!.tabId;
+    showChatTab(id, topic);
+    const output = layout.open(CHAT_PANEL_TAB_KIND, file('background.html'), { from: chat, intent: 'beside', activate: false })!;
+    const side = layout.sideGroup!;
+    showChatTab(id, output);
+    expect(side.pane.resolvedActiveTabId).toBe(topic);
+    expect(main.pane.resolvedActiveTabId).toBe(output);
+  });
+  it('keeps the current topic when a group file opens; choosing another topic only navigates the topic slot', () => {
+    const id = 'current-topic-open';
+    const layout = chatLayoutOf(id);
+    const main = layout.mainGroup;
+    openTopicTab(id, { topicChatId: 'topic-a', name: 'A' });
+    const topic = topicTabOf(id)!.tabId;
+    const side = layout.sideGroup!;
+    showChatTab(id, topic);
+    openTopicTab(id, { topicChatId: 'topic-b', name: 'B' });
+    expect(topicTabOf(id)?.topic.topicChatId).toBe('topic-b');
+    expect(side.pane.resolvedActiveTabId).toBe(topic);
+    expect(main.pane.activeEntry?.kind).toBe(CHAT_TAB_KIND);
+    expect(layout.activePaneId).toBe(side.paneId);
+    const html = openPanelItem(id, { kind: null, itemId: 'html', title: 'preview.html', fileName: 'preview.html' })!;
+    expect(main.pane.resolvedActiveTabId).toBe(html);
+    expect(side.pane.resolvedActiveTabId).toBe(topic);
+    expect(topicTabOf(id)?.topic.topicChatId).toBe('topic-b');
+    expect(layout.activePaneId).toBe(side.paneId);
+  });
   it.each(['dm', 'group'])('keeps the folder context and real layout while browsing in %s', (kind) => {
     const id = `history-${kind}`;
     const layout = chatLayoutOf(id);
@@ -30,7 +69,8 @@ describe('chat navigation uses the same page history and real panes as tasks', (
   });
   it('repeated ordinary private file cards focus one existing tab in a narrow pane', () => {
     const id = 'private-repeat-card'; const layout = chatLayoutOf(id);
-    layout.focusedPane.setDimensions(390, 620);
+    layout.setDimensions(390, 620);
+    layout.setSinglePaneHost(true);
     const conversation = layout.focusedPane.resolvedActiveTabId!;
     const first = openPanelItem(id, file('same-file'))!;
     const order = [...layout.focusedPane.tabOrder];
@@ -109,6 +149,7 @@ describe('chat navigation uses the same page history and real panes as tasks', (
     const topic = { topicChatId: 'topic-members', name: 'Topic' };
     openTopicTab(id, topic);
     const topicTab = topicTabOf(id)!.tabId;
+    showChatTab(id, topicTab);
     expect(memberTopicOf(id)).toEqual(topic);
     openInfoTab(id, 'members', memberTopicOf(id));
     expect(infoTabOf(id)?.info.topic).toEqual(topic);
@@ -136,6 +177,7 @@ describe('chat navigation uses the same page history and real panes as tasks', (
     openInfoTab(id, 'members');
     const infoTab = infoTabOf(id)!.tabId;
     openTopicTab(id, { topicChatId: 'topic-members-switch', name: 'Topic' });
+    showChatTab(id, topicTabOf(id)!.tabId);
     openInfoTab(id, 'members', memberTopicOf(id));
     expect(infoTabOf(id)?.tabId).toBe(infoTab);
     expect(infoTabOf(id)?.info.topic?.topicChatId).toBe('topic-members-switch');
@@ -143,7 +185,8 @@ describe('chat navigation uses the same page history and real panes as tasks', (
   });
   it('closing topic members restores the topic on a phone-sized page', () => {
     const id = 'topic-members-phone';
-    chatLayoutOf(id).focusedPane.setDimensions(390, 620);
+    chatLayoutOf(id).setDimensions(390, 620);
+    chatLayoutOf(id).setSinglePaneHost(true);
     openTopicTab(id, { topicChatId: 'topic-members-phone', name: 'Topic' });
     const topicTab = topicTabOf(id)!.tabId;
     openInfoTab(id, 'members', memberTopicOf(id));
@@ -197,4 +240,116 @@ describe('pages beside the chat start at one declared width (side-width.ts, owne
     openInfoTab(id, 'members');
     expect(sideWidth(id, 2000)).toBe(SIDE_PAGE_WIDTH_PX);
   });
+});
+
+describe('chat tool state is scoped to the conversation ID', () => {
+  it('reveals explicitly opened files in mounted private and group chats', () => {
+    for (const id of ['layout-private-chat', 'layout-group-chat']) {
+      const layout = chatLayoutOf(id);
+      const detach = layout.attachChatWorkspace();
+      try {
+        expect(layout.chatToolLayout).toBe('empty');
+        const tab = openPanelItem(id, folderItem())!;
+        expect(layout.chatToolLayout).toBe('split');
+        layout.setChatToolLayout('hidden');
+        const extra = openPanelItem(id, file('extra'), { intent: 'newTab' })!;
+        expect(layout.chatToolLayout).toBe('split');
+        expect(layout.focusedPane.resolvedActiveTabId).toBe(extra);
+        expect(panelTabsOf(id).find((page) => page.tabId === extra)?.shown).toBe(true);
+        closeChatTab(id, extra);
+        closeChatTab(id, tab);
+        expect(layout.chatToolLayout).toBe('empty');
+      } finally { detach(); }
+    }
+  });
+
+  it('reveals a selected topic from a hidden group and selects its retained conversation tab from full view', () => {
+    const sourceId = 'workspace-source-navigation';
+    const topicId = 'workspace-topic-navigation';
+    const source = chatLayoutOf(sourceId);
+    const topic = chatLayoutOf(topicId);
+    const stopSource = source.attachChatWorkspace();
+    const stopTopic = topic.attachChatWorkspace();
+    try {
+      const groupTool = openPanelItem(sourceId, file('group-tool'))!;
+      source.setChatToolLayout('hidden');
+      openTopicTab(sourceId, { topicChatId: topicId, name: '打开话题' });
+      expect(source.chatWorkspaceMode).toBe('split');
+      expect(topicTabOf(sourceId)?.shown).toBe(true);
+      expect(panelTabsOf(sourceId).map((tab) => tab.tabId)).toEqual([groupTool]);
+
+      const topicTool = openPanelItem(topicId, file('topic-tool'))!;
+      const directionAndWidth = topic.layout;
+      topic.setChatToolLayout('full');
+      revealChatWorkspaceMessage(topicId);
+      expect(topic.chatWorkspaceMode).toBe('full');
+      expect(topic.activePaneId).toBe(topic.chatWorkspacePanes?.chat.paneId);
+      expect(topic.chatWorkspaceSinglePaneId).toBe(topic.chatWorkspacePanes?.chat.paneId);
+      expect(topic.layout).toBe(directionAndWidth);
+      expect(panelTabsOf(topicId).map((tab) => tab.tabId)).toEqual([topicTool]);
+      expect(topicTabOf(sourceId)?.topic.topicChatId).toBe(topicId);
+    } finally {
+      stopTopic();
+      stopSource();
+    }
+  });
+
+  it('keeps the group, current topic slot and each topic’s own tools independent', () => {
+    const sourceId = 'chat-tool-topic-source';
+    const topicId = 'chat-tool-topic-1';
+    const otherTopicId = 'chat-tool-topic-2';
+    openTopicTab(sourceId, { topicChatId: topicId, name: '话题一' });
+    const source = chatLayoutOf(sourceId);
+    const sourceRoot = source.primaryChatTabId;
+    const topicSlot = topicTabOf(sourceId)?.tabId;
+    openPanelItem(sourceId, file('source-tool'), { intent: 'newTab' });
+    source.setChatToolLayout('full');
+    expect(sourceRoot).toBeDefined();
+    expect(sourceRoot).not.toBe(topicSlot);
+
+    const topic = chatLayoutOf(topicId);
+    expect(topic.chatToolLayout).toBe('empty');
+    const topicTool = openPanelItem(topicId, file('topic-tool'))!;
+    topic.setChatToolLayout('hidden');
+    openTopicTab(sourceId, { topicChatId: otherTopicId, name: '话题二' });
+    expect(topicTabOf(sourceId)?.tabId).toBe(topicSlot);
+    expect(chatLayoutOf(otherTopicId).chatToolLayout).toBe('empty');
+    expect(panelTabsOf(sourceId).map(({ tabId }) => tabId)).not.toContain(topicTool);
+    expect(chatLayoutOf(topicId).chatToolLayout).toBe('hidden');
+    expect(panelTabsOf(topicId).map(({ tabId }) => tabId)).toEqual([topicTool]);
+    expect(viewStateCache.read(`chat:${topicId}:tabs`)).toMatchObject({ chatToolLayout: 'hidden' });
+    expect(viewStateCache.read(`chat:${sourceId}:tabs`)).toMatchObject({ chatToolLayout: 'full' });
+    expect(JSON.stringify(source.snapshot)).not.toContain(topicTool);
+  });
+});
+
+it('opens actual new browser tabs independently and reveals the explicitly selected group workspace', () => {
+  const scope = chatLayoutOf('start-page-test-group');
+  const topic = chatLayoutOf('start-page-test-topic');
+  const stopScope = scope.attachChatWorkspace();
+  const stopTopic = topic.attachChatWorkspace();
+  const stopRecent = trackRecentTools(scope);
+  try {
+    const first = openChatWorkspaceNewTab(scope)!;
+    expect(scope.chatWorkspaceMode).toBe('split');
+    const tools = scope.chatWorkspacePanes!.tools!.pane;
+    const state = tools.entries.get(first)!.state as BrowserState;
+    expect(state).toMatchObject({ workspaceStart: true, session: { workspaceId: 'start-page-test-group', sessionId: '', currentUrl: 'about:blank' } });
+    browserSessionStore.updateSession(state.browserId, { currentUrl: 'https://example.com/news', title: '测试网页', isLoading: false });
+    expect(readViewState(recentToolPanel(tools.ctx))).toMatchObject({ items: [{ kind: 'web', title: '测试网页' }] });
+
+    scope.setChatToolLayout('hidden');
+    const second = openChatWorkspaceNewTab(scope)!;
+    expect(scope.chatWorkspaceMode).toBe('split');
+    expect(scope.activePaneId).toBe(scope.chatWorkspacePanes!.tools!.paneId);
+    expect(tools.resolvedActiveTabId).toBe(second);
+    expect(tools.tabOrder).toEqual([first, second]);
+    expect(openChatWorkspaceNewTab(topic)).toBeTruthy();
+    expect(topic.chatWorkspacePanes!.tools!.pane.tabOrder).toHaveLength(1);
+    expect(readViewState(recentToolPanel(topic.focusedPane.ctx))).toEqual({});
+  } finally {
+    stopRecent();
+    stopTopic();
+    stopScope();
+  }
 });

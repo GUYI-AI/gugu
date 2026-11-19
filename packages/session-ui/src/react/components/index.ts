@@ -43,6 +43,7 @@ export type {
   PromptEditorRef,
 } from './chat-composer';
 export { useToolbarOutOfRoom } from './chat-composer/use-toolbar-disclosure';
+export { ComposerFastMode } from './chat-composer/composer-fast-mode';
 export { ComposerThinking, type ComposerThinkingProps } from './chat-composer/composer-thinking';
 /** The composer's editor alone, for a field that writes into a chat without the composer's chrome (a forward's note). */
 export { PromptEditor } from './prompt-editor/prompt-editor';

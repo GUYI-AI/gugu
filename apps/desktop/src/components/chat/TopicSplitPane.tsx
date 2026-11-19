@@ -1,3 +1,4 @@
+import { PhoneMessagesEmpty } from '@/mobile/chat/PhoneMessagesEmpty'
 import { useUnreadLocatorNavigation } from '@/hooks/useUnreadLocatorNavigation'
 import { useMessageQuote } from '@/hooks/useMessageQuote'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -18,6 +19,7 @@ import { useBackLayer } from '../ui/sheetStack'
 import { ChatMessageComposer } from './ChatMessageComposer'
 import { RunningBarSlot, RunningTokenBar, type RunningToken } from '../RunningTokenBar'
 import { TopicBreadcrumb } from './TopicBreadcrumb'
+import { TopicToolWorkspace } from './TopicToolWorkspace'
 import { MessageList, type ChatListRowItem, type MessageListRowProps } from './MessageList'
 import { useToast } from '../toastContext'
 import { useSourceMessageReveal } from '@/hooks/useSourceMessageReveal'
@@ -357,11 +359,10 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
         {/* 这一条**常驻**:面板开着时它也在。曾经开面板就把它收起来,代价是
             ①「收起分栏」与另一颗切换键一起消失,②这一栏里再没有一个字说明你在哪条话题上
             (找茬第十轮)。嵌进来的那两个面板自带的头由 tokens.css 收掉,所以不会两条头叠着摆。 */}
-        {mobile ? null : (
+        {mobile || embedded ? null : (
         <div style={TOPIC_SPLIT_HEADER_STYLE}>
           {headerTitle}
           <div style={TOPIC_SPLIT_HEADER_ACTIONS_STYLE}>
-            {embedded ? null : (
               <IconButton
                 size="sm"
                 data-testid="topic-split-close"
@@ -372,7 +373,6 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
               >
                 <X size={16} />
               </IconButton>
-            )}
           </div>
         </div>
         )}
@@ -384,8 +384,8 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
           {loading && messages.length === 0 && <MessageListSkeleton />}
           {history.messagesError && !(loading && messages.length === 0) && <MessageLoadFailure error={history.messagesError}
             inline={messages.length > 0} onRetry={() => history.refreshMessages()} />}
-          {!loading && !history.messagesError && rows.length === 0 && <div data-testid="topic-split-empty" style={TOPIC_SPLIT_EMPTY_STYLE}>
-            {t('topic.pane.empty')}
+          {!loading && !history.messagesError && rows.length === 0 && <div data-testid="topic-split-empty" style={mobile ? { flex: 1, display: 'grid', placeItems: 'center', padding: 16 } : TOPIC_SPLIT_EMPTY_STYLE}>
+            {mobile ? <PhoneMessagesEmpty /> : t('topic.pane.empty')}
           </div>}
           {rows.length > 0 && (
             // @@@5856 用主线那一份消息列表,❌ 不再自己 map + 手写贴底。
@@ -460,7 +460,10 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
       </div>
     </motion.div>
   )
-  if (mobile || embedded) return page
+  if (mobile) return page
+  if (embedded) {
+    return <TopicToolWorkspace chatId={topic.chatId} name={topic.name} memberCount={participantIds?.length} title={headerTitle} visible={visible !== false} onForward={onForward}>{page}</TopicToolWorkspace>
+  }
   return (
     <>
     {/* @@@5856 宽度归 ResizablePane —— owner 拿掉了「全宽打开」那颗键之后,

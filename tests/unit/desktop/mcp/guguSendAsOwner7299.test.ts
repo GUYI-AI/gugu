@@ -65,17 +65,24 @@ describe('owner-requested attachments (#7299; #7290 gugu-3: upload, then commit 
     return file
   }
   /** The attachments function: `answers` says what each commit gets (an answer, an HTTP error, or a transport failure). */
-  function deps(answers: Array<'ok' | number | 'lost'> = ['ok'], uploadFails = false, maxBytes = 25 * 1024 * 1024) {
+  function deps(answers: Array<'ok' | number | 'lost'> = ['ok'], uploadFails = false, maxBytes = 25 * 1024 * 1024, immutableKeys = false) {
     const uploads: Array<{ name: string; type: string; bytes: Buffer }> = []
     const commits: Array<Record<string, unknown>> = []
+    const stored = new Set<string>()
     const fetch = (async (url: string, init?: RequestInit) => {
       if (url.endsWith('/attachments/upload')) {
-        expect(JSON.parse(String(init?.body))).toMatchObject({ as: context.agentId, chat_id: null, size_bytes: expect.any(Number), request_id: expect.any(String) })
+        const request = JSON.parse(String(init?.body))
+        expect(request).toMatchObject({ as: context.agentId, chat_id: null, size_bytes: expect.any(Number), request_id: expect.any(String) })
         if (uploadFails) return new Response(JSON.stringify({ error: 'failed', message: 'Storage unavailable' }), { status: 503 })
-        return new Response(JSON.stringify({ staging_key: `staging/${owner}/s1`, url: 'https://oss.test/', fields: { key: 'k' }, max_bytes: maxBytes }))
+        const key = `staging/${owner}/${immutableKeys ? request.request_id : 's1'}`
+        return Response.json({ staging_key: key, url: 'https://oss.test/', fields: { key }, max_bytes: maxBytes })
       }
       if (url === 'https://oss.test/') {
-        const file = (init?.body as FormData).get('file') as File
+        const form = init?.body as FormData
+        const key = String(form.get('key'))
+        if (immutableKeys && stored.has(key)) return new Response(null, { status: 409 })
+        stored.add(key)
+        const file = form.get('file') as File
         uploads.push({ name: file.name, type: file.type, bytes: Buffer.from(await file.arrayBuffer()) })
         return new Response(null, { status: 204 })
       }
@@ -89,8 +96,17 @@ describe('owner-requested attachments (#7299; #7290 gugu-3: upload, then commit 
       restRpc: vi.fn(), restInsert: vi.fn(),
       attachmentsEndpoint: async () => ({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 'token', fetch }),
     }
-    return { d, uploads, commits }
+    return { d, uploads, commits, stored }
   }
+  it('keeps two sends of the same file to the same friend independent with immutable storage', async () => {
+    const { d, commits, stored } = deps(['ok'], false, 100, true)
+    const input = { friend_user_id: args.friend_user_id, file_path: fixture('separate-sends.bin') }
+    await callTool(fileContext, 'message_send_as_owner', input, d)
+    await callTool(fileContext, 'message_send_as_owner', input, d)
+    expect(commits).toHaveLength(2)
+    expect(commits[0]!.request_id).not.toBe(commits[1]!.request_id)
+    expect([...stored]).toEqual(commits.map(commit => commit.staging_key))
+  })
   it.each([
     ['chart.png', '报告.pdf', 'image/png'],
     ['report.pdf', '研究资料.pdf', 'application/pdf'],
@@ -125,20 +141,22 @@ describe('owner-requested attachments (#7299; #7290 gugu-3: upload, then commit 
     expect(uploads.map(({ name, type, bytes }) => ({ name, type, size: bytes.length }))).toEqual([{ name: 'large.pdf', type: 'application/pdf', size: 30 * 1024 * 1024 }])
     expect(commits).toHaveLength(1)
   })
-  it('the same file to the same friend is one upload (it resumes); to another friend it is another', async () => {
-    const file = fixture('same.pdf', 'same bytes')
+  it('retries a lost signing response within the same send without using another permit', async () => {
+    const { d, uploads, commits } = deps()
+    const endpoint = await d.attachmentsEndpoint()
     const permits: string[] = []
-    for (const friendId of [friend, friend, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc']) {
-      const { d } = deps()
-      const fetch = (await d.attachmentsEndpoint()).fetch
-      d.attachmentsEndpoint = async () => ({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 'token', fetch: (async (url: string, init?: RequestInit) => {
-        if (url.endsWith('/attachments/upload')) permits.push(JSON.parse(String(init?.body)).request_id)
-        return fetch(url, init)
-      }) as typeof globalThis.fetch })
-      await callTool(fileContext, 'message_send_as_owner', { friend_user_id: `user:${friendId}`, file_path: file }, d)
-    }
-    expect(permits[0]).toBe(permits[1])
-    expect(permits[2]).not.toBe(permits[0])
+    d.attachmentsEndpoint = async () => ({ ...endpoint, fetch: (async (url: string, init?: RequestInit) => {
+      const response = await endpoint.fetch(url, init)
+      if (url.endsWith('/attachments/upload')) {
+        permits.push(JSON.parse(String(init?.body)).request_id)
+        if (permits.length === 1) throw new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } })
+      }
+      return response
+    }) as typeof globalThis.fetch })
+    await callTool(fileContext, 'message_send_as_owner', { friend_user_id: args.friend_user_id, file_path: fixture('sign-retry.pdf') }, d)
+    expect(permits).toEqual([expect.any(String), permits[0]])
+    expect(uploads).toHaveLength(1)
+    expect(commits).toHaveLength(1)
   })
   it('retries a lost send response with the same upload and request key', async () => {
     const { d, uploads, commits } = deps(['lost', 'ok'])

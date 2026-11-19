@@ -62,7 +62,7 @@ describe('renderer auth response timeout', () => {
     await vi.advanceTimersByTimeAsync(30_000)
 
     expect(settlement).toBe('rejected')
-    expect(rejection).toEqual(expect.objectContaining({ message: 'IPC timeout: auth:cmd/getSessionTokens' }))
+    expect(rejection).toEqual(expect.objectContaining({ message: 'IPC timeout: auth:cmd/getSessionTokens', code: 'timeout' }))
     expect(window.webContents.send).toHaveBeenCalledOnce()
   })
 })

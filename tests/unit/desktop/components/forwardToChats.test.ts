@@ -9,7 +9,8 @@ function message(overrides: Partial<MessageItem>): MessageItem {
 const note = (text: string, toUserIds: string[] = []) => ({ text, toUserIds })
 const names: Record<string, string> = { 'u-han': 'Han', 'u-mei': 'Mei', me: 'Me' }
 function io() {
-  return { forwardMessage: vi.fn(async () => {}), sendMessageToChat: vi.fn(async () => undefined), knownName: (id: string | null) => names[id ?? 'me'], unknownName: 'Unknown member' }
+  return { forwardMessage: vi.fn(async () => {}), sendMessageToChat: vi.fn(async () => undefined),
+    sendAttachmentsToChat: vi.fn(async (chatId: string, _files: File[]): Promise<string | undefined> => `up@${chatId}`), knownName: (id: string | null) => names[id ?? 'me'], unknownName: 'Unknown member' }
 }
 
 describe('forwardToChats', () => {
@@ -117,5 +118,29 @@ describe('forwardToChats, the line a reply answered', () => {
     const send = io()
     await forwardToChats([lead, { kind: 'message', message: message({ id: 'r', content: 'Agreed.', reply_to_message_id: 'x', reply_to_content: '> **Mei**\n>\n> ship **Friday**', reply_to_sender_user_id: 'u-mei' }) }], ['g1'], note(''), send)
     expect((send.forwardMessage.mock.calls[0] as unknown as [MessageItem])[0].content).toContain('> > **Mei**：Mei ship Friday')
+  })
+})
+
+describe('forwardToChats, files in no chat and a folder\'s files', () => {
+  it('makes the bytes once, sends them as one send into each chat, the note after them', async () => {
+    const send = io()
+    const make = vi.fn(async () => [new File(['x'], 'app.guguext')])
+    await forwardToChats([{ kind: 'files', files: make }], ['g1', 'g2'], note('try it', ['bot']), send)
+    expect(make).toHaveBeenCalledTimes(1)
+    expect(send.sendAttachmentsToChat.mock.calls.map(([chat, files]) => `${chat}:${files.map((file) => file.name)}`)).toEqual(['g1:app.guguext', 'g2:app.guguext'])
+    expect(send.sendMessageToChat.mock.calls).toEqual([['g1', 'try it', { toUserIds: ['bot'], dependsOn: 'up@g1' }], ['g2', 'try it', { toUserIds: ['bot'], dependsOn: 'up@g2' }]])
+  })
+  it('writes nothing anywhere when the bytes cannot be made', async () => {
+    const send = io()
+    await expect(forwardToChats([{ kind: 'files', files: async () => { throw new Error('will not pack') } }], ['g1'], note('x'), send)).rejects.toThrow('will not pack')
+    expect(send.sendAttachmentsToChat).not.toHaveBeenCalled()
+    expect(send.sendMessageToChat).not.toHaveBeenCalled()
+  })
+  it('forwards a folder\'s file as that file, the note after it', async () => {
+    const send = io()
+    const file = { itemId: 'i1', version: 2, name: 'plan.md', document: true }
+    await forwardToChats([{ kind: 'folder', file }], ['g1'], note('see'), send)
+    expect(send.forwardMessage).toHaveBeenCalledWith(file, 'g1')
+    expect(send.sendMessageToChat).toHaveBeenCalledWith('g1', 'see', { toUserIds: [] })
   })
 })

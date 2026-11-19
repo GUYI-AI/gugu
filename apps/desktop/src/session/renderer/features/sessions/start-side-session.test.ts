@@ -188,7 +188,8 @@ describe('runtime-only side chat entry', () => {
     startSideSession('project-1', 'task-1'); await opened;
     expect(layout.groups).toHaveLength(2);
     expect(layout.pair?.pinned).toBe(source);
-    expect(layout.focusedPane.activeEntry?.kind).toBe('side-chat');
+    expect(layout.focusedPane.activeEntry?.kind).toBe('acp-chat');
+    expect(layout.sideGroup?.pane.activeEntry?.kind).toBe('side-chat');
     layout.dispose();
   });
 

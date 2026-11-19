@@ -3,7 +3,7 @@ import { act } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReactHarness, device } from '../../../support/testHarness'
 const state = vi.hoisted(() => ({ mobile: false, sync: vi.fn(), bridge: vi.fn() }))
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => state.mobile }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => state.mobile, readMobileShell: () => state.mobile }))
 vi.mock('../../../../apps/desktop/src/hooks/useRemoteHostsBridge', () => ({ useRemoteHostsBridge: state.bridge }))
 vi.mock('../../../../apps/desktop/src/mobile/local-agent/usePhoneAgentDirectory', () => ({ usePhoneAgentDirectory: state.sync }))
 vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [], phones: [device('phone', [], { platform: 'android', capabilities: { host_kind: 'phone', runtimes: ['pi'], terminals: [], host_runtime_capability: 1 } })] }) }))

@@ -1,3 +1,4 @@
+import { recordPhoneOwnerNotice } from './phone-conversation-publications.mjs'
 import { effectiveGroupRules, groupRulesVersion, groupRulesLedgerFor } from '../../../packages/core/src/local/agent/groupRulesDelivery.ts'
 import { stableId, uuid } from './phone-agent-store.mjs'
 import { createPhoneChatAccess } from './phone-agent-chat.mjs'
@@ -8,7 +9,7 @@ const bare = (value, prefix) => value.startsWith(`${prefix}:`) ? value.slice(pre
 const rowOf = (data) => Array.isArray(data) ? data[0] : data
 
 /** The Pi tools are real Gugu writes with the agent's own sender identity. */
-export function phoneCommunicationTools({ agent, job, cloud, store, env, sendSession, emit, authorize }) {
+export function phoneCommunicationTools({ agent, job, cloud, store, env, deviceId, sendSession, emit, publicationQueued = () => {}, authorize }) {
   const chatAccess = createPhoneChatAccess({ agent, cloud, store, env })
   const chatId = async (value) => {
     const target = text(value, 'chat_id')
@@ -49,10 +50,15 @@ export function phoneCommunicationTools({ agent, job, cloud, store, env, sendSes
     await chatAccess.beforeWrite(id, recipients)
     if (args.whisper && recipients?.length !== 1) throw new Error('悄悄话必须恰好指定一个收件人')
     const replyToMessageId = args.reply_to_message_id ? await chatAccess.messageId(args.reply_to_message_id, id, 'reply source') : null
-    const messageId = stableId('phone-message', agent.agentUserId, job.id, id, body, recipients, replyToMessageId, args.whisper === true)
+    const notice = id === agent.chatId && (!recipients?.length || recipients.includes(store.state.ownerId)) && deviceId
+      ? recordPhoneOwnerNotice(store, job, agent, deviceId, callId, body) : null
+    const messageId = notice?.publicationId ?? stableId('phone-message', agent.agentUserId, job.id, callId)
     const message = { id: messageId, chatId: id, agentUserId: agent.agentUserId, sessionId: agent.sessionId, usedGroups: [...(job.usedGroups ?? [])], permissionRequirements: structuredClone(job.permissionRequirements ?? []), toUserIds: recipients, content: body, replyToMessageId, threadRootId: job.route?.chatId === id ? job.route.threadRootId ?? null : null, isWhisper: args.whisper === true }
+    const previous = store.state.outbox[messageId]
+    if (previous && ['chatId', 'content', 'toUserIds', 'replyToMessageId', 'threadRootId', 'isWhisper'].some(key => JSON.stringify(previous[key]) !== JSON.stringify(message[key]))) throw new Error('phone message admission payload changed')
     store.state.outbox[messageId] ??= { ...message, status: 'pending', createdAt: new Date().toISOString() }
     await store.save()
+    if (notice) publicationQueued()
     const data = await deliverPhoneOutbox(cloud, store, messageId, authorize)
     job.sent = [...new Set([...(job.sent ?? []), messageId])]
     await store.save()

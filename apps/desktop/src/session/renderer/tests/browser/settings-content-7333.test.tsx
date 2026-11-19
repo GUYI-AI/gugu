@@ -5,6 +5,7 @@ import { createReactHarness, renderWithAppProviders } from '../../../../../../..
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import { AssistantSection } from '@/components/settings/AssistantSection';
 import { AccountSection } from '@/components/settings/AccountSection';
+import { writeOccupation } from '@/lib/firstRun';
 import { Pane, PaneHeader } from '@/components/ui/Pane';
 import { i18n } from '@/i18n';
 import '@/i18n/registerMainCatalog';
@@ -39,6 +40,7 @@ beforeEach(async () => {
   await i18n.changeLanguage('zh-CN');
   document.documentElement.dataset.theme = 'light';
   nicknameUpdate.mockClear();
+  vi.mocked(writeOccupation).mockClear();
   harness = createReactHarness();
   harness.container.style.cssText = 'display:flex;width:800px;height:760px;';
 });
@@ -104,6 +106,24 @@ it.each([800, 480])('actual account editors stay together at %ipx and retain exp
   const danger = harness.container.querySelector<HTMLElement>('[data-settings-group="danger"]')!;
   expect(danger.getBoundingClientRect().top).toBeGreaterThan(editor.getBoundingClientRect().bottom);
   expect(getComputedStyle(danger).borderTopWidth).toBe('1px');
+});
+
+it('the phone occupation sheet preserves the custom identity draft and explicit save', async () => {
+  await page.viewport(390, 844);
+  harness.container.style.width = '390px';
+  await renderWithAppProviders(harness, <Frame mobile><AccountSection mobile user={user} updateUser={vi.fn()} logout={vi.fn()} /></Frame>, { auth: user });
+  const sheet = page.getByTestId('settings-account-occupation-sheet');
+  await page.getByTestId('settings-account-occupation').click();
+  await expect.element(sheet).toBeVisible();
+  const popup = document.querySelector('[data-testid="settings-account-occupation-sheet"]')!;
+  expect(popup.querySelector('.gg-phone-composer-sheet-handle')).not.toBeNull();
+  expect(popup.querySelector('[data-option-value=""]')?.getAttribute('aria-checked')).toBe('true');
+  await page.elementLocator(popup.querySelector('[data-option-value="other"]')!).click();
+  const custom = page.getByTestId('settings-account-occupation-other');
+  await custom.fill('手机页面验收');
+  expect(writeOccupation).not.toHaveBeenCalled();
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  expect(writeOccupation).toHaveBeenCalledExactlyOnceWith(user.id, { key: 'other', text: '手机页面验收' });
 });
 
 it('a rejected assistant rename retains the edited name and exposes the original error feedback', async () => {
