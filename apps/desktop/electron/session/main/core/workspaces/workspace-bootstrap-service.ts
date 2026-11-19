@@ -176,7 +176,6 @@ export class WorkspaceBootstrapService {
   ): Promise<Result<WorkspaceBootstrapResult, ProvisionWorkspaceError>> {
     emitSessionProvisionProgress({
       sessionId: session.id,
-      folderId: folder.folderId,
       step: 'initialising-workspace',
       message: 'Initialising workspace…',
     });
@@ -200,7 +199,6 @@ export class WorkspaceBootstrapService {
 
     emitSessionProvisionProgress({
       sessionId: session.id,
-      folderId: folder.folderId,
       step: 'starting-sessions',
       message: 'Preparing task…',
     });

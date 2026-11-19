@@ -102,7 +102,6 @@ describe('AutomationsService.deleteAutomation', () => {
         runId: 'run-active',
         status: 'starting_agent',
         sessionId: 'session-active',
-        workspaceId: 'folder-1',
       },
     ]);
 

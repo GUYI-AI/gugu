@@ -25,7 +25,7 @@ function fixture() {
   return { pages, native, closures, source, entered, held };
 }
 
-it.each(['release', 'native-close', 'archive', 'delete-project', 'program-exit', 'task-stop', 'call-end', 'revocation'] as const)(
+it.each(['release', 'native-close', 'archive', 'program-exit', 'task-stop', 'call-end', 'revocation'] as const)(
   '%s settles a file-service wait before that service supplies its late result', async how => {
     const { pages, closures, entered, held } = fixture(), controller = new AbortController(), from = caller('held', 'file-close-task', controller);
     const lease = await pages.acquire(from, { watchId: how });
@@ -36,7 +36,6 @@ it.each(['release', 'native-close', 'archive', 'delete-project', 'program-exit',
       if (how === 'release') await pages.release(from, lease.id);
       else if (how === 'native-close') for (const close of [...closures]) close('native tab closed');
       else if (how === 'archive') pages.closeScope({ sessionId: 'file-close-task' });
-      else if (how === 'delete-project') pages.closeScope({ projectId: 'file-close-project' });
       else if (how === 'program-exit') await pages.closeProgram(from.pageId);
       else if (how === 'task-stop') cancelExtensionSessionCalls('file-close-task');
       else if (how === 'call-end') controller.abort(new Error('The tool call ended'));

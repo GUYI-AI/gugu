@@ -373,7 +373,7 @@ describe('App/session scoped picture and input', () => {
       s.resources.closeScope({ sessionId: owner.sessionId });
       await s.resource.close();
       expect(otherClose).not.toHaveBeenCalled();
-      s.resources.closeScope({ projectId: 'project-b' }); await other.close();
+      s.resources.closeScope({ sessionId: 'task-b' }); await other.close();
       expect(otherClose).toHaveBeenCalledOnce();
       const idle = setup();
       await vi.advanceTimersByTimeAsync(5 * 60_000);
