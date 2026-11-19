@@ -13,7 +13,7 @@ import { and, asc, eq, isNull, max } from 'drizzle-orm';
 import { computeWorkspaceKey } from '@main/core/workspaces/workspace-key';
 import { db, type AppDb, type DrizzleTx } from '@main/db/client';
 import { workspaces } from '@main/db/schema';
-import type { CanonicalPath } from '@shared/core/canonical-path';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 export type Folder = {
   /** The workspace id: the folder's id on this device and the key file versions held in it carry. */

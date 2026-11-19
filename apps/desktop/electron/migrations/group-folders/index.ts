@@ -19,6 +19,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { resolveGuguHome } from '@gugu/core'
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path'
 import { computeWorkspaceKey } from '../../session/main/core/workspaces/workspace-key'
 
 export const DONE_FILE = 'group-folders-v1.done'
@@ -112,7 +113,8 @@ export async function runGroupFoldersOnce(deps: GroupFoldersDeps): Promise<Group
       let root = project.repository_workspace_id && workspaceExists.get(project.repository_workspace_id)
         ? project.repository_workspace_id : null
       if (!root) {
-        const key = computeWorkspaceKey(project.path)
+        // projects.path is stored canonical (@@@canonical-path).
+        const key = computeWorkspaceKey(project.path as CanonicalPath)
         const existing = byKey.get(key) as { id: string } | undefined
         root = existing?.id ?? project.repository_workspace_id ?? randomUUID()
         if (!existing) {

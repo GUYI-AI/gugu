@@ -765,7 +765,7 @@ export type SessionpageSessionSummary = {
    */
   projectId: string;
   /** The group the session lives in; null = none (the task home). Absent on hosts before C1. */
-  chatId?: string | null;
+  groupChatId?: string | null;
   /** The folder (workspace) the session works in: its cwd. Absent on hosts before C1. */
   workspaceId?: string;
   title: string;
@@ -1144,7 +1144,7 @@ export type SessionpageSessionCreateResult = {
   conversationId: string;
   /** @@@group-folders — released readers only (asserted non-empty there): the session's folder id since C1. */
   projectId: string;
-  chatId?: string | null;
+  groupChatId?: string | null;
   workspaceId?: string;
   title: string;
   /** 手机宿主返回的真实入群结果；身份创建成功与入群成功分别表达。 */
