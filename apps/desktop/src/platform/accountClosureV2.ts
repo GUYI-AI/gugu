@@ -27,6 +27,8 @@ export interface AccountClosureV2Snapshot {
     state: AccountClosureV2ServerState
     operationRevision: number
     challengeGeneration: number
+    /** Authoritative request expiry, when present in original result. */
+    challengeExpiresAt?: string | null
   }
   /** Neither nativeGeneration nor local/server operation revision. */
   serverPreparationGeneration: string | null
