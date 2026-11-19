@@ -52,8 +52,21 @@ it('shows real independent windows and their original update/reset times on hove
   expect(host.textContent).toContain('剩余 60%')
   expect(control.reads).toEqual(['saved-account'])
   await userEvent.hover(page.getByTestId('model-quota-saved-account'))
-  await until('the quota tooltip exposes both reset times', () => document.querySelector('[role="tooltip"]')?.textContent?.match(/重置/g)?.length === 2)
-  expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('更新')
+  // Base UI 1.6 Popup does not assign role="tooltip"; the shared wrapper owns this open-popup marker.
+  const popup = () => document.querySelector<HTMLElement>('[data-slot="tooltip-popup"][data-open]')
+  await until('the quota details open on hover', () => popup() !== null)
+  const details = popup()!
+  const resetDate = new Intl.DateTimeFormat('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  expect(Array.from(details.querySelectorAll('.gg-model-quota-detail-window'), window => ({
+    label: window.querySelector('[role="meter"]')?.getAttribute('aria-label'),
+    reset: window.querySelector('.gg-model-quota-reset')?.textContent,
+  }))).toEqual([
+    { label: '5 小时', reset: `${resetDate.format(1_790_003_600_000)} 重置` },
+    { label: '每周', reset: `${resetDate.format(1_790_086_400_000)} 重置` },
+  ])
+  const updated = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(1_790_000_000_000)
+  expect(details.querySelector('.gg-model-quota-updated')?.textContent).toBe(`${updated} 更新`)
+  expect(details.textContent).toContain('Test account')
 })
 
 it('omits only the missing five-hour window instead of drawing a sample limit', async () => {
