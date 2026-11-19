@@ -3,6 +3,7 @@ import type { SessionCoordinatorStatus } from '../lib/sessionCoordinator'
 
 export interface AuthUser {
   id: string
+  accountKind?: import('../features/team/types').TeamAccountKind
   /** Session ownership is established, but the canonical identity row has not committed yet. */
   identityPending?: boolean
   gugu_number?: number | null

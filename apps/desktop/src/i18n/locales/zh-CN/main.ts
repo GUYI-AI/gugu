@@ -765,6 +765,7 @@ export default {
       "permissions": "本机控制",
       "prompts": "提示词",
       "sessions": "项目",
+      "team": "团队",
       "subscriptions": "订阅",
       "usage": "用量"
     },

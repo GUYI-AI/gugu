@@ -23,6 +23,7 @@ import {
   SquarePen,
   SquarePenFilled,
   SidebarMinimalistic,
+  Buildings,
 } from '@/lib/icons'
 import { useTranslation } from 'react-i18next'
 import { platformModels } from '../../lib/agentModelReplicas'
@@ -38,7 +39,7 @@ type NavGroupId = SettingsGroupId | 'diagnostics'
 
 // Desktop organization is independent of the existing mobile Settings order.
 const DESKTOP_NAV_GROUPS: readonly { id: NavGroupId; sections: readonly ActiveSection[] }[] = [
-  { id: 'account', sections: ['account', 'subscriptions', 'usage'] },
+  { id: 'account', sections: ['account', 'team', 'subscriptions', 'usage'] },
   { id: 'preferences', sections: ['general', 'data-import', 'interface', 'model', 'permissions', 'passwords'] },
   { id: 'work', sections: ['sessions', 'prompts', 'devices', 'browser', 'files'] },
   { id: 'diagnostics', sections: ['resource-monitor', 'about'] },
@@ -143,6 +144,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'usage',   labelKey: 'settings.nav.usage', il: <IlUsage />,   ib: <IbUsage />   },
   { key: 'files', labelKey: 'settings.nav.files', il: <Folder size={15} />, ib: <FolderFilled size={15} /> },
   { key: 'subscriptions', labelKey: 'settings.nav.subscriptions', il: <IlSubscriptions />, ib: <IbSubscriptions /> },
+  { key: 'team', labelKey: 'settings.nav.team', il: <Buildings size={15} />, ib: <Buildings size={15} /> },
   { key: 'apps',    labelKey: 'settings.nav.apps', il: <IlApps />,    ib: <IbApps />    },
   { key: 'phone',   labelKey: 'settings.nav.phone', il: <IlPhone />,   ib: <IbPhone />   },
   { key: 'about',   labelKey: 'settings.nav.about', il: <IlAbout />,   ib: <IbAbout />   },

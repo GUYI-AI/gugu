@@ -125,6 +125,8 @@ import { detectLocalSigning, downloadDmg, pickMacDmgFile, shouldUseDmgPath } fro
 import type { LocalSigning } from './macDmgUpdater'
 import { createSelectAccountHandler, webAuthnKeychainGroup } from './macWebAuthn'
 import { isOAuthCallback } from '../shared/oauth-callback'
+import { isTeamInvitationLink } from '../shared/team-invitation-link'
+import { teamAccountTokenHint } from '../shared/team-account-claims'
 import { OpenedLinkMailbox } from './opened-link-mailbox'
 import { googleAuthorizationUrl, googleIdentityLinkUrl } from '../shared/google-authorization-url'
 import { isOAuthAttemptRedirect } from '../shared/oauth-attempt'
@@ -3569,7 +3571,7 @@ let guguLinksReady = false
 function handleGuguLink(url: string): void {
   if (!url.startsWith(`${GUGU_LINK_SCHEME}://`)) return
   openedLinks.push(url)
-  if (isOAuthCallback(url)) {
+  if (isOAuthCallback(url) || isTeamInvitationLink(url)) {
     focusMainWindow()
     return
   }
@@ -3607,7 +3609,7 @@ function flushPendingGuguLinks(): void {
   guguLinksReady = true
   // Windows / Linux 冷启动:链接是这一次启动的参数。
   const coldStart = process.argv.find((arg) => arg.startsWith(`${GUGU_LINK_SCHEME}://`))
-  if (coldStart && !isOAuthCallback(coldStart)) pendingGuguLinks.push(coldStart)
+  if (coldStart && !isOAuthCallback(coldStart) && !isTeamInvitationLink(coldStart)) pendingGuguLinks.push(coldStart)
   for (const url of pendingGuguLinks.splice(0)) handleGuguLink(url)
 }
 
@@ -3848,11 +3850,14 @@ function crossMachine(): CrossMachineSessions {
 async function cloudComputerClient() {
   const baseUrl = cloudComputerBaseUrl({ enabled: cloudComputerEnabled(), override: process.env.GUGU_CLOUD_COMPUTER_URL ?? null, supabaseUrl: getSupabaseUrl() })
   if (!baseUrl) return null
+  const account = await desktopAuthProvider().getAuth()
+  if (account && teamAccountTokenHint(account.accessToken) !== 'personal') return null
   return createCloudComputerClient({
     baseUrl,
     accessToken: async () => {
       const auth = await desktopAuthProvider().getAuth()
       if (!auth?.accessToken) throw new Error('this machine is not signed in to 咕咕')
+      if (teamAccountTokenHint(auth.accessToken) !== 'personal') throw new Error('Cloud computer spending requires a separate personal account')
       return auth.accessToken
     },
     anonKey: getSupabaseAnonKey(),

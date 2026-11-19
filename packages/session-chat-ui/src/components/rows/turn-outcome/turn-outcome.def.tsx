@@ -299,7 +299,7 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
    * 量高度与画内容各读各的开关,行就会长成一个高度与内容对不上的框。
    */
   measure(data, ctx) {
-    if (isCreditExhaustion(data.outcome)) return creditExhaustionLayout(ctx, ctx.commands).height;
+    if (isCreditExhaustion(data.outcome)) return creditExhaustionLayout(ctx, ctx.commands, data.outcome).height;
     const detail = outcomeDetail(data.outcome);
     if (!detail || !ctx.expanded(turnOutcomeDetailId(data.turnId))) return outcomeLaneLayout(data, ctx).height;
     return outcomeLaneLayout(data, ctx).height + detailBandHeight(detail);
