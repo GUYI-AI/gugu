@@ -11,7 +11,7 @@ import { comparer, computed, makeAutoObservable, observable, reaction, runInActi
 import { deviceMachines } from '@gugu/core/shared/deviceMachines';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
 import type { SessionHostClient } from '@shared/lib/ipc/session-host-client';
-import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
+import { onMachineEvent, rpc, rpcOn } from '@renderer/lib/ipc';
 import type { EventDefinition } from '@shared/lib/ipc/events';
 import {
   projectCreatedChannel,
@@ -71,6 +71,12 @@ import {
   type RemoteHostsBridge,
 } from '@/session/shared/remote-hosts';
 import { browserStorage } from './browser-storage';
+import { i18n } from '@/i18n';
+import { platform } from '@/platform';
+import { agentStatusText } from '@/lib/agentStatusText';
+import { diffAlerts, statusMapOf, type AgentWatchStatusMap } from '@/mobile/agent-watch/agent-watch-alerts';
+import { announceAgentWait } from '@/mobile/agent-watch/agent-wait-banner';
+import type { SettingsMeta } from '@renderer/features/settings/app-settings-client';
 import { getProjectManagerStore } from '@renderer/features/projects/stores/project-selectors';
 
 const REMOTE_PREFIX = 'remote:';
@@ -160,13 +166,15 @@ export class RemoteHostsStore {
   private readonly projectPromises = new Map<string, Promise<string>>();
   /** #113 deviceId → 经连接读到它的清单之后、连着期间看到的账号上那份(内容指纹;见 accountCopyReplacesLive)。 */
   private readonly accountSeenLive = new Map<string, string>();
+  /** deviceId → its sessions' last readings, the baseline a new list is diffed against (bannerWaits). */
+  private readonly waitReadings = new Map<string, AgentWatchStatusMap>();
   private stopDevices: (() => void) | null = null;
   private started = false;
 
   constructor() {
     makeAutoObservable<
       RemoteHostsStore,
-      'bridge' | 'linkOffs' | 'projectPromises' | 'accountSeenLive' | 'stopDevices' | 'started' | 'listSyncs' | 'directorySessions' | 'digestSessions'
+      'bridge' | 'linkOffs' | 'projectPromises' | 'accountSeenLive' | 'waitReadings' | 'stopDevices' | 'started' | 'listSyncs' | 'directorySessions' | 'digestSessions'
     >(this, {
       bridge: observable.ref,
       directory: observable.ref,
@@ -176,6 +184,7 @@ export class RemoteHostsStore {
       linkOffs: false,
       projectPromises: false,
       accountSeenLive: false,
+      waitReadings: false,
       stopDevices: false,
       started: false,
     });
@@ -708,8 +717,10 @@ export class RemoteHostsStore {
     this.listSyncs.set(
       deviceId,
       startSessionListSync(machineSessionListClient, deviceId, {
-        onList: (result) =>
-          updateDeviceSessions(deviceId, { projects: result.projects, sessions: result.sessions, cached: false }),
+        onList: (result) => {
+          updateDeviceSessions(deviceId, { projects: result.projects, sessions: result.sessions, cached: false });
+          this.bannerWaits(deviceId, result.sessions);
+        },
         onLoading: (loading) => updateDeviceSessions(deviceId, { loading }),
         onError: (error) => {
           updateDeviceSessions(deviceId, { error, ...(error ? { connected: false } : {}) });
@@ -719,10 +730,33 @@ export class RemoteHostsStore {
     );
   }
 
+  /**
+   * @@@remote-wait-banner - a session on another machine (a Gugu server above all) stopped to wait for the person: the
+   * banner a session on this desktop gets from its own host (agent-hooks/notification.ts), by the same rule (diffAlerts:
+   * shouldNotify over two readings, never on first sight) and the same switch (the `notifications` setting). That host
+   * shows a banner only on its own screen, which on a server is nobody's; the phone watches every machine itself
+   * (useAgentWatchAlerts), so this is for the desktop only.
+   */
+  private bannerWaits(deviceId: string, sessions: readonly SessionpageSessionSummary[]): void {
+    if (platform.kind !== 'electron') return;
+    const alerts = diffAlerts(this.waitReadings.get(deviceId) ?? {}, sessions, () => false);
+    this.waitReadings.set(deviceId, statusMapOf(sessions));
+    if (alerts.length === 0) return;
+    void rpc.appSettings.getWithMeta('notifications').then((meta) => {
+      const { enabled, sound } = (meta as SettingsMeta<'notifications'>).value;
+      if (!enabled) return;
+      for (const alert of alerts) {
+        const title = i18n.t('agentWatch.notify.status', { ns: 'main', name: alert.title, status: agentStatusText(alert.label) });
+        void announceAgentWait(title, !sound);
+      }
+    }).catch((error: unknown) => log.warn('[machines] agent wait banner not shown', { deviceId, error: String(error) }));
+  }
+
   /** 名下没有这台机器了(被移除 / 换了账号):它的项目、线、缓存一起收掉。 */
   private forget(deviceId: string): void {
     this.listSyncs.get(deviceId)?.stop();
     this.listSyncs.delete(deviceId);
+    this.waitReadings.delete(deviceId);
     removeDeviceSessions(deviceId);
     this.linkOffs.get(deviceId)?.();
     this.linkOffs.delete(deviceId);
