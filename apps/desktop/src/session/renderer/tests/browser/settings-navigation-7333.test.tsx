@@ -146,7 +146,7 @@ describe('settings navigation hierarchy and interaction (#7333)', () => {
     await renderWithAppProviders(harness, <SettingsNav user={{ ...user, accountKind: 'team_member' }} sections={desktopSections}
       activeSection="team" onSelect={vi.fn()} />);
     const rows = harness.container.querySelectorAll('[data-testid^="settings-nav-"]');
-    expect(rows).toHaveLength(16);
+    expect(rows).toHaveLength(17);
     const team = harness.container.querySelector<HTMLElement>('[data-testid="settings-nav-team"]')!;
     expect(team).not.toBeNull();
     expect(team.getAttribute('aria-current')).toBe('page');
