@@ -133,7 +133,8 @@ export const ChatTabChip = observer(function ChatTabChip({
   menu: ReactNode;
   [data: `data-${string}`]: string | undefined;
 }) {
-  const workspaceRole = useContext(ChatWorkspaceTabContext)?.role;
+  const workspace = useContext(ChatWorkspaceTabContext);
+  const workspaceRole = workspace?.role;
   if (workspaceRole === 'title') {
     return (
       <div className="flex h-full min-w-0 flex-1 items-center gap-1" data-chat-workspace-title="" {...data}>
@@ -146,10 +147,11 @@ export const ChatTabChip = observer(function ChatTabChip({
   }
   const chip = <TabChip
     isActive={tab.isActive} isFocusedPane={focused && (tab.isFocused ?? true)} pairRole={tab.pairRole}
-    label={label} labelSlot={labelSlot} onClick={() => host.setActiveTab(tab.tabId)}
+    label={label} labelSlot={labelSlot} onClick={() => workspaceRole === 'conversation' ? workspace!.layout.showChatWorkspaceConversation() : host.setActiveTab(tab.tabId)}
+    onKeyDown={(event) => { if (workspaceRole === 'conversation' && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); workspace!.layout.showChatWorkspaceConversation(); } }}
   />;
   return (
-    <TabSlot data-tabid={tab.tabId} data-tab-pair={tab.pairRole} {...data}>
+    <TabSlot data-tabid={tab.tabId} data-tab-pair={tab.pairRole} data-chat-workspace-conversation-tab={workspaceRole === 'conversation' ? '' : undefined} {...data}>
       {menu ? <ContextMenu.Root>
         <ContextMenu.Trigger className="flex h-full w-full min-w-0">{chip}</ContextMenu.Trigger>
         <ContextMenu.Content finalFocus={false} className="min-w-40">{menu}</ContextMenu.Content>

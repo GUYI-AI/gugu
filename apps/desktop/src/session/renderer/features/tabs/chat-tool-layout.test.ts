@@ -33,6 +33,30 @@ function makeLayout(owner?: string) {
 afterEach(() => layouts.splice(0).forEach((layout) => layout.dispose()));
 
 describe('chat and tool layout', () => {
+  it('keeps the same conversation as a tab before the floating control and switches without restoring a split', () => {
+    const layout = makeLayout('owner');
+    const owner = layout.open('chat', { id: 'owner' }, newTab)!;
+    const tool = layout.open('tool', { id: 'one' }, newTab)!;
+    const detach = layout.attachChatWorkspace();
+    try {
+      const panes = layout.chatWorkspacePanes!;
+      layout.setDimensions(900, 600);
+      expect(layout.chatWorkspaceConversationPresentation).toBe('pane');
+      layout.collapseChatToolSide(layout.chatToolSide === 'right' ? 'left' : 'right');
+      expect(layout.chatWorkspaceConversationPresentation).toBe('tab');
+      const tree = layout.layout;
+      layout.setDimensions(380, 600);
+      expect(layout.chatWorkspaceConversationPresentation).toBe('bubble');
+      layout.showChatWorkspaceConversation();
+      expect(layout.chatWorkspaceSinglePaneId).toBe(panes.chat.paneId);
+      expect(layout.chatWorkspaceMode).toBe('full');
+      expect(layout.chatWorkspaceConversationPresentation).toBe('tab');
+      panes.tools!.pane.setActiveTab(tool);
+      expect(layout.chatWorkspaceSinglePaneId).toBe(panes.tools!.paneId);
+      expect(layout.layout).toBe(tree);
+      expect(panes.chat.pane.tabOrder).toEqual([owner]);
+    } finally { detach(); }
+  });
   it('splits when the first tool opens, keeps a chosen mode, and resets after the last tool closes', () => {
     const layout = makeLayout('owner');
     const owner = layout.open('chat', { id: 'owner' }, newTab)!;
