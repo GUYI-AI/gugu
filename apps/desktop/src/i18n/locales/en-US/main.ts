@@ -133,6 +133,10 @@ export default {
     "models": "Models"
   },
   "issue": {
+    "tooLargeSummary_one": "{{count}} file was too large to import",
+    "tooLargeSummary_other": "{{count}} files were too large to import",
+    "skippedSummary_one": "{{count}} file was skipped",
+    "skippedSummary_other": "{{count}} files were skipped",
     "symlink": "Symbolic link skipped",
     "tooLarge": "Too large; not imported",
     "sourceChanged": "Source changed; retry",

@@ -9,6 +9,23 @@ import { messageForUser } from '@/lib/userFacingError'
 import { showModal } from '@renderer/lib/modal/modal-provider'
 import './first-run-import.css'
 
+function visibleIssues(issues: AgentHomeScan['issues']) {
+  return issues.filter(({ reason }) => reason !== 'sensitive' && reason !== 'database')
+}
+
+function SkippedFiles({ issues }: { issues: AgentHomeScan['issues'] }) {
+  const { t } = useTranslation('main')
+  const [expanded, setExpanded] = useState(false)
+  if (!issues.length) return null
+  const summary = issues.every(({ reason }) => reason === 'tooLarge') ? 'tooLargeSummary' : 'skippedSummary'
+  return <details className="agent-home-note agent-home-skipped" onToggle={(event) => setExpanded(event.currentTarget.open)}>
+    <summary>{t(`agentHome.issue.${summary}`, { count: issues.length })}</summary>
+    {expanded && <ul>
+      {issues.map(({ path, reason }) => <li key={`${reason}:${path}`}>{path} · {t(`agentHome.issue.${reason}`)}</li>)}
+    </ul>}
+  </details>
+}
+
 /** Shared by onboarding and the per-harness session-start modal. */
 export function FirstRunImport({ homes, machine = null, onBack, onDone }: {
   homes: AgentHomeScan[]
@@ -22,7 +39,7 @@ export function FirstRunImport({ homes, machine = null, onBack, onDone }: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [issues, setIssues] = useState<AgentHomeScan['issues'] | null>(null)
-  const [notices, setNotices] = useState<{ providerId: string; name: string; terminal: boolean; skipped: number;
+  const [notices, setNotices] = useState<{ providerId: string; name: string; terminal: boolean;
     relogin: { connectionId: string; name: string; methodId: string }[] }[]>([])
   const proceed = async (skip: boolean) => {
     setBusy(true)
@@ -35,12 +52,12 @@ export function FirstRunImport({ homes, machine = null, onBack, onDone }: {
         const result = await client.importAgentHome({ providerId: home.providerId, groups: skip ? [] : [...picked[home.providerId]!], ...(skip ? { skip: true } : {}) })
         if (!result.success) throw new Error(result.error.type === 'unknown-provider' ? t('agentHome.failed') : result.error.message)
         skipped.push(...result.data.issues)
-        if (result.data.terminalNeedsSignIn || result.data.relogin?.length || result.data.oldSessionsSkipped) notes.push({
+        if (result.data.terminalNeedsSignIn || result.data.relogin?.length) notes.push({
           providerId: home.providerId, name: home.name, terminal: !!result.data.terminalNeedsSignIn,
-          relogin: result.data.relogin ?? [], skipped: result.data.oldSessionsSkipped ?? 0,
+          relogin: result.data.relogin ?? [],
         })
       }
-      const warnings = skipped.filter((issue) => !['sensitive', 'database'].includes(issue.reason))
+      const warnings = visibleIssues(skipped)
       if (warnings.length || notes.length) { setIssues(warnings); setNotices(notes) }
       else onDone()
     } catch (error) { setError(messageForUser(error)) }
@@ -53,48 +70,46 @@ export function FirstRunImport({ homes, machine = null, onBack, onDone }: {
     return { ...current, [providerId]: next }
   })
   return <>
-    <h1 className="ta-onb-title">{t('agentHome.title')}</h1>
-    <p className="ta-onb-sub">{t('agentHome.intro')}</p>
-    <div className="agent-home-cards">
-      {homes.map((home) => <section key={home.providerId} className="agent-home-card" data-testid={`agent-home-card-${home.providerId}`}>
-        <header><AppIcon id={home.providerId} size={28} /><div><strong>{home.name}</strong><p>{home.userRoot}</p></div></header>
-        <div className="agent-home-groups">
-          {home.groups.map((group) => <label key={group.id}>
-            <input type="checkbox" checked={picked[home.providerId]!.has(group.id)} disabled={busy || !!issues}
-              onChange={() => toggle(home.providerId, group.id)} data-testid={`agent-home-group-${home.providerId}-${group.id}`} />
-            {t(`agentHome.groups.${group.id}`)} <span>{group.count}</span>
-            {group.id !== 'mcp' && !!group.mcpCount && <small>{t('agentHome.mcpCount', { count: group.mcpCount })}</small>}
-          </label>)}
-        </div>
-        {home.mcpSecrets.length > 0 && <p className="agent-home-note">{t('agentHome.mcpSecrets', { names: home.mcpSecrets.join(', ') })}</p>}
-        {home.projectMcpCount > 0 && <p className="agent-home-note">{t('agentHome.projectMcp', { count: home.projectMcpCount })}</p>}
-        <p className="agent-home-signin">{t('agentHome.signIn')}</p>
-        {home.migration && <p className="agent-home-note">{t('agentHome.migration')}</p>}
-        {!!home.unmarkedMcp?.length && <p className="agent-home-note">{t('agentHome.unmarkedMcp', { names: home.unmarkedMcp.join(', ') })}</p>}
-        {home.issues.filter((issue) => !['sensitive', 'database'].includes(issue.reason)).map((issue) =>
-          <p className="agent-home-note" key={issue.path}>{issue.path} · {t(`agentHome.issue.${issue.reason}`)}</p>)}
-      </section>)}
+    <div className="agent-home-content">
+      <h1 className="ta-onb-title">{t('agentHome.title')}</h1>
+      <p className="ta-onb-sub">{t('agentHome.intro')}</p>
+      <div className="agent-home-cards">
+        {homes.map((home) => <section key={home.providerId} className="agent-home-card" data-testid={`agent-home-card-${home.providerId}`}>
+          <header><AppIcon id={home.providerId} size={28} /><div><strong>{home.name}</strong><p>{home.userRoot}</p></div></header>
+          <div className="agent-home-groups">
+            {home.groups.map((group) => <label key={group.id}>
+              <input type="checkbox" checked={picked[home.providerId]!.has(group.id)} disabled={busy || !!issues}
+                onChange={() => toggle(home.providerId, group.id)} data-testid={`agent-home-group-${home.providerId}-${group.id}`} />
+              {t(`agentHome.groups.${group.id}`)} <span>{group.count}</span>
+              {group.id !== 'mcp' && !!group.mcpCount && <small>{t('agentHome.mcpCount', { count: group.mcpCount })}</small>}
+            </label>)}
+          </div>
+          {home.mcpSecrets.length > 0 && <p className="agent-home-note">{t('agentHome.mcpSecrets', { names: home.mcpSecrets.join(', ') })}</p>}
+          {home.projectMcpCount > 0 && <p className="agent-home-note">{t('agentHome.projectMcp', { count: home.projectMcpCount })}</p>}
+          <p className="agent-home-signin">{t('agentHome.signIn')}</p>
+          {home.migration && <p className="agent-home-note">{t('agentHome.migration')}</p>}
+          {!!home.unmarkedMcp?.length && <p className="agent-home-note">{t('agentHome.unmarkedMcp', { names: home.unmarkedMcp.join(', ') })}</p>}
+          {!issues && <SkippedFiles issues={visibleIssues(home.issues)} />}
+        </section>)}
+      </div>
+      <p className="agent-home-note">{t('agentHome.copyNote')}</p>
+      {error && <p className="ta-onb-error" role="alert">{error}</p>}
+      {issues && <SkippedFiles issues={issues} />}
+      {notices.map((note) => <div key={note.providerId} role="status">
+        {note.terminal && <p>{t('agentHome.terminalSignIn', { name: note.name })}</p>}
+        {note.relogin.map((account) => <p key={account.connectionId}>{t('agentHome.accountSignIn', { name: account.name })} <Button variant="secondary" onClick={() => showModal('agentSignInModal', {
+          providerId: note.providerId, providerName: note.name, connectionId: account.connectionId, steps: [{ methodId: account.methodId }],
+          ...(machine ? { remote: { deviceId: machine, deviceLabel: machine, headless: true, command: note.providerId } } : {}),
+          onSuccess: () => { void (async () => {
+            try {
+              const result = await (await getAgentConfigRuntimeClient(machine)).selectConnection({ providerId: note.providerId, connectionId: account.connectionId })
+              if (!result.success) throw new Error('message' in result.error ? result.error.message : t('agentHome.failed'))
+              setNotices((current) => current.map((row) => row.providerId === note.providerId ? { ...row, relogin: row.relogin.filter((entry) => entry.connectionId !== account.connectionId) } : row))
+            } catch (error) { setError(messageForUser(error)) }
+          })() },
+        })}>{t('agentHome.signInAction')}</Button></p>)}
+      </div>)}
     </div>
-    <p className="agent-home-note">{t('agentHome.copyNote')}</p>
-    {error && <p className="ta-onb-error" role="alert">{error}</p>}
-    {issues && <div role="status">{issues.map((issue) => <p className="agent-home-note" key={issue.path}>
-      {issue.path} · {t(`agentHome.issue.${issue.reason}`)}
-    </p>)}</div>}
-    {notices.map((note) => <div key={note.providerId} role="status">
-      {note.terminal && <p>{t('agentHome.terminalSignIn', { name: note.name })}</p>}
-      {!!note.skipped && <p>{t('agentHome.oldSessionsSkipped', { count: note.skipped })}</p>}
-      {note.relogin.map((account) => <p key={account.connectionId}>{t('agentHome.accountSignIn', { name: account.name })} <Button variant="secondary" onClick={() => showModal('agentSignInModal', {
-        providerId: note.providerId, providerName: note.name, connectionId: account.connectionId, steps: [{ methodId: account.methodId }],
-        ...(machine ? { remote: { deviceId: machine, deviceLabel: machine, headless: true, command: note.providerId } } : {}),
-        onSuccess: () => { void (async () => {
-          try {
-            const result = await (await getAgentConfigRuntimeClient(machine)).selectConnection({ providerId: note.providerId, connectionId: account.connectionId })
-            if (!result.success) throw new Error('message' in result.error ? result.error.message : t('agentHome.failed'))
-            setNotices((current) => current.map((row) => row.providerId === note.providerId ? { ...row, relogin: row.relogin.filter((entry) => entry.connectionId !== account.connectionId) } : row))
-          } catch (error) { setError(messageForUser(error)) }
-        })() },
-      })}>{t('agentHome.signInAction')}</Button></p>)}
-    </div>)}
     <div className="ta-onb-actions first-run-step-actions agent-home-actions">
       {onBack && <Button variant="ghost" size="lg" onClick={onBack} disabled={busy}>{t('firstRun.back')}</Button>}
       {issues ? <Button variant="primary" size="lg" onClick={onDone}>{t('firstRun.continue')}</Button> : <>

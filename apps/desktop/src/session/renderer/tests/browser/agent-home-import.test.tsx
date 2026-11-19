@@ -11,7 +11,7 @@ import '@/i18n/registerMainCatalog'
 import '@/styles/tokens.css'
 
 const calls = vi.hoisted(() => ({
-  importHome: vi.fn(async () => ({ success: true, data: { issues: [] } })),
+  importHome: vi.fn(async () => ({ success: true, data: { issues: [] as AgentHomeScan['issues'] } })),
   scanHomes: vi.fn(),
   diffHome: vi.fn(),
   reimportHome: vi.fn(async () => ({ success: true, data: { issues: [], imported: 1 } })),
@@ -75,6 +75,50 @@ it('waits on the remote first-use card even when the remote has no readable user
   await launching
   expect(calls.importHome).toHaveBeenCalledWith({ providerId: 'claude', groups: [], skip: true })
   expect(start).toHaveBeenCalledTimes(1)
+})
+
+it('folds skipped files and keeps import and completion actions within a short dialog', async () => {
+  await page.viewport(860, 450)
+  const issues: AgentHomeScan['issues'] = Array.from({ length: 64 }, (_, index) => ({
+    path: `archive/${'long-relative-path/'.repeat(8)}file-${index}.jsonl`, reason: 'tooLarge',
+  }))
+  calls.scanHomes.mockResolvedValueOnce({ success: true, data: [{ ...home, issues }] })
+  calls.importHome.mockResolvedValueOnce({ success: true, data: { issues } })
+  harness = createReactHarness()
+  await harness.render(<ModalRenderer />)
+  const launching = ensureAgentHomeImported('claude', 'remote-headless')
+  await expect.poll(() => document.querySelector('details.agent-home-skipped summary')?.textContent).toMatch(/64.*(?:too large|太大)/)
+  const modal = document.querySelector<HTMLElement>('.agent-home-modal')!
+  const content = modal.querySelector<HTMLElement>('.agent-home-content')!
+  const footer = modal.querySelector<HTMLElement>('.agent-home-actions')!
+  const readBounds = () => ({ top: footer.getBoundingClientRect().top, bottom: footer.getBoundingClientRect().bottom })
+  const expectFooterOnScreen = () => {
+    const { top, bottom } = readBounds()
+    expect(top).toBeGreaterThanOrEqual(0)
+    expect(bottom).toBeLessThanOrEqual(window.innerHeight)
+  }
+
+  expect(modal.textContent).not.toContain(issues[0]!.path)
+  const skip = page.getByTestId('first-run-import-skip')
+  const confirm = page.getByTestId('first-run-import-continue')
+  await expect.element(skip).toBeVisible()
+  await expect.element(confirm).toBeVisible()
+  await clickElement(modal.querySelector('summary')!)
+  await expect.poll(() => modal.querySelectorAll('.agent-home-skipped li').length).toBe(issues.length)
+  expect(content.scrollHeight).toBeGreaterThan(content.clientHeight)
+  expectFooterOnScreen()
+  const expandedBounds = readBounds()
+  content.scrollTop = content.scrollHeight
+  expect(content.scrollTop).toBeGreaterThan(0)
+  expect(readBounds()).toEqual(expandedBounds)
+  await confirm.click()
+
+  await expect.poll(() => modal.querySelectorAll('.agent-home-skipped').length).toBe(1)
+  await expect.poll(() => modal.querySelector('.agent-home-actions [data-testid]')).toBeNull()
+  expect(modal.textContent).not.toContain(issues[0]!.path)
+  expectFooterOnScreen()
+  await page.getByRole('button', { name: /^(Continue|继续)$/ }).click()
+  await launching
 })
 
 it('warns once per upgraded provider and device when OAuth was carried over', () => {
