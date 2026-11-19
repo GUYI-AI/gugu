@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { ListRow } from '@/components/ui/ListRow';
 import { Avatar } from '@/components/Avatar';
 import { ProjectRecoverySubtitle } from '@/components/projects/ProjectRecoverySubtitle';
@@ -80,7 +80,8 @@ it('lets the existing dialog handle Escape without activating its enclosing proj
   const opened = vi.fn(); const row = await mount(true, opened);
   await page.elementLocator(button(row, '清理')).click();
   await vi.waitFor(() => expect(document.querySelector('[data-testid=project-cleanup-confirm]')).not.toBeNull());
-  await page.elementLocator(button(document.querySelector('[data-testid=project-cleanup-confirm]')!, '取消')).press('Escape');
+  await act(async () => button(document.querySelector('[data-testid=project-cleanup-confirm]')!, '取消').focus());
+  await userEvent.keyboard('{Escape}');
   await vi.waitFor(() => expect(document.querySelector('[data-testid=project-cleanup-confirm]')).toBeNull());
   expect(opened).not.toHaveBeenCalled(); expect(state.clean).not.toHaveBeenCalled();
 });
