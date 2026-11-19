@@ -14,6 +14,7 @@ import type { PersonalConversationDeletion } from '../lib/deleteListedConversati
 import type { PersonalConversationStateReceipt } from '../lib/hideListedConversation'
 import { prepareProjectedReadWatermark } from './chatRealtimeMutations'
 import { currentAuthSessionSignal } from '../lib/authSessionLoss'
+import { publishChatRemovalFacts, publishChatRemoved } from '../lib/chatRemovalBridge'
 import {
   createChatProjection, readProjectionCursor,
   type ChatProjection, type ChatProjectionAttachment,
@@ -235,6 +236,10 @@ export function useChatProjectionBinding(deps: {
       deferPersist: (persist) => pendingReads.push(persist),
     })
     acceptRows(accountId, shareRows(current, acknowledged))
+    const binding = ownerRef.current
+    if (binding?.accountId === accountId) publishChatRemovalFacts(accountId, id =>
+      ownerRef.current === binding && repositoryRef.current?.accountId === accountId
+      && (binding.owner.isConversationDeleted(id) || binding.owner.isMembershipRevoked(id)))
     for (const persist of pendingReads) persist()
     if (revokeMissingActive && activeChatId) onActiveRevoked(activeChatId)
   }, [ledger, activeChatIdRef, canAcknowledge, visibleSeqOf, chatsRef, getRepository, onActiveRevoked, acceptRows, repositoryRef])
@@ -262,6 +267,7 @@ export function useChatProjectionBinding(deps: {
     const binding = ownerRef.current
     if (!binding || binding.accountId !== accountId) return false
     binding.owner.confirmPersonalDeletion(receipt) // Synchronous, before any older result can publish.
+    publishChatRemoved(accountId, receipt.chat_id)
     ledger.forgetChat(receipt.chat_id)
     const repository = await getRepository()
     if (ownerRef.current !== binding || repository.accountId !== accountId) return false

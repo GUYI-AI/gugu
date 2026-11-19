@@ -11,7 +11,8 @@ import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-
 import { MIN_PANE_HEIGHT_PX, MIN_PANE_WIDTH_PX, type PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { minExtent, paneExtent, removePane } from '@renderer/features/tabs/pane-layout-tree';
 import { auxWindows, type TabWindowHome } from './aux-windows';
-import { readChatSummaries, subscribeChatSummaries } from '@/lib/chatSummariesBridge';
+import { readChatSummaries } from '@/lib/chatSummariesBridge';
+import { subscribeChatRemovals } from '@/lib/chatRemovalBridge';
 import { isScreenView } from './screen-views';
 import { MAX_SCREEN_BLOCKS, screenLayout, type ScreenBlockContent, type ScreenLayoutSnapshot, type ScreenSession, type WindowableContent } from './screen-layout';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
@@ -114,22 +115,12 @@ function pruneGoneApps(): void {
 }
 
 /**
- * 对话没了(删掉、退出、被移出):它那块收掉(收起来的组里也一样)。壳那份对话列表是「属于我的全部对话」(chatSummariesBridge),
- * 只认在里面出现过、后来不在了的 —— 刚建的群要晚一步才进列表(store/chat.tsx loadChats),❌ 把还没进过列表的当成没了。
- * 读回来的摆法里的对话上一次在列表里,算出现过(关着咕咕时被删、退出的,重启后第一份列表里就没有)。
+ * 只按权威的删除/退出事实收块。首帧、刷新和卸载都可能发布不完整摘要,缺席不改用户保存的摆法。
  */
 function pruneGoneChats(): void {
   const chatsInLayout = () =>
     [...screenLayout.blocks.values(), ...screenLayout.parkedContents].flatMap((block) => (block.kind === 'chat' ? [block.chatId] : []));
-  const listed = new Set(chatsInLayout());
-  const prune = () => {
-    const chats = readChatSummaries();
-    if (!chats) return;
-    for (const chatId of chats.keys()) listed.add(chatId);
-    for (const chatId of chatsInLayout()) if (listed.has(chatId) && !chats.has(chatId)) forgetChatOnScreen(chatId);
-  };
-  subscribeChatSummaries(prune);
-  prune();
+  subscribeChatRemovals(chatsInLayout, forgetChatOnScreen);
 }
 
 /** 这条对话没了:它那块收掉;它在这屏上、屏空了就摆回最近看过的会话。人正看着别的视图(资源库、设置……)时 ❌ 把人拽回这屏。 */
