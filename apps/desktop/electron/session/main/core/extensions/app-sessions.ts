@@ -42,8 +42,10 @@ export async function indexSessionsForApp(args: Record<string, unknown>): Promis
   }
   const [page, registeredRemotes] = await Promise.all([
     getLocalSessionSource().list({ engine: source, cwd, offset, limit }),
+    // Every recorded folder answers from its record (no remote: none), as the projects did; git is asked only elsewhere.
     db.select({ path: workspaces.path, url: workspaceRemotes.remoteUrl }).from(workspaces)
-      .innerJoin(workspaceRemotes, and(eq(workspaceRemotes.workspaceId, workspaces.id), eq(workspaceRemotes.remoteName, 'origin'))),
+      .leftJoin(workspaceRemotes, and(eq(workspaceRemotes.workspaceId, workspaces.id), eq(workspaceRemotes.remoteName, 'origin')))
+      .where(eq(workspaces.kind, 'project-root')),
   ]);
   // Transcripts group under this computer's recorded folders (the grouping leaves the task home out by its path).
   const localGroupOf = createLocalGroupOf([...listFolders(), ...listUnboundFolders()].map(({ path }) => ({ path, name: basename(path) || path })));
