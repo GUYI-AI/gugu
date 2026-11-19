@@ -101,6 +101,8 @@ describe('group folders data migration', () => {
     expect(rows['s-web']!.workspace_id).toBeTruthy()
     expect(rows['s-home']).toMatchObject({ chat_id: null, workspace_id: 'ws-home' })
     expect(rows['s-split']!.chat_id).toBeNull()
+    // The activity journal's record of each session's group follows.
+    expect(db.prepare(`SELECT chat_id FROM activity_session_chats WHERE session_id = 's-api'`).get()).toEqual({ chat_id: 'chat-api' })
     expect(Object.values(rows).every((row) => row.workspace_id)).toBe(true)
   })
 

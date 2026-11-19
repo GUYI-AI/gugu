@@ -102,6 +102,15 @@ export const activityEvents = sqliteTable('activity_events', {
   project: index('activity_events_project').on(table.projectId, table.seq),
   chat: index('activity_events_chat').on(table.chatId, table.seq) }));
 
+/**
+ * The group each session lives in, kept after the session row goes (events like session.deleted are journaled after the
+ * row is gone). Filled by a trigger on sessions; sessions never change group (@@@group-folders).
+ */
+export const activitySessionChats = sqliteTable('activity_session_chats', {
+  sessionId: text('session_id').primaryKey(),
+  chatId: text('chat_id'),
+});
+
 export const activityCoverage = sqliteTable('activity_coverage', {
   id: text('id').primaryKey(),
   startedAt: integer('started_at').notNull(),
