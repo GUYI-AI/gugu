@@ -174,8 +174,14 @@ export function formatRelativeTimeParts(
   words: RelativeTimeWords,
   options: RelativeTimeOptions,
 ): RelativeTimePart[] {
+  // TODO(server-clock): most callers pass a time our backend stamped (`last_seen_at`, `created_at`, …). Measured against
+  // this device's clock, a device N hours fast or slow shows "N hours ago" for something that just happened. Once
+  // `serverNow()` (packages/core/src/shared/serverClock.ts, #2973) is on dev, the default becomes
+  //   `options.nowMs ?? serverNow()`
+  // and callers that pass a locally stamped or third-party time (session history, GitHub) pass `nowMs: Date.now()`.
+  // `formatAgo` (remote-hosts/connection-status.ts) computes the same distance on its own and folds into this one.
   const nowMs = options.nowMs ?? Date.now();
-  const text = (value: string): RelativeTimePart[] => [{ type: 'value', value }];
+  const text =(value: string): RelativeTimePart[] => [{ type: 'value', value }];
   const distanceParts = (compact: boolean, addSuffix: boolean): RelativeTimePart[] => {
     const { count, unit } = strictDistance(timestamp, nowMs, compact ? Math.floor : Math.round);
     // 短形(侧栏、提交列表)与长形是同一个 Intl 单位格式,只差 narrow/long:中文「10分钟 / 3小时」,英文「10m / 3h」。
