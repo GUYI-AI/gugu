@@ -76,6 +76,38 @@ function harness(overrides: Partial<SessionCoordinatorDeps> = {}) {
 }
 describe('SessionCoordinator', () => {
   beforeEach(() => vi.useRealTimers())
+  it('awaits remote notification cleanup before sign-out and credential removal', async () => {
+    const cleanup = deferred<void>()
+    const prepareSignOut = vi.fn(() => cleanup.promise)
+    const h = harness({ prepareSignOut })
+    h.coordinator.start(); h.fire('INITIAL_SESSION', session()); await flush()
+    const logout = h.coordinator.logout()
+    expect(prepareSignOut).toHaveBeenCalledOnce()
+    expect(h.deps.signOut).not.toHaveBeenCalled()
+    expect(h.deps.clearPersistedSession).not.toHaveBeenCalled()
+    cleanup.resolve(undefined); await logout
+    expect(h.deps.signOut).toHaveBeenCalledOnce()
+    expect(h.deps.clearPersistedSession).toHaveBeenCalledOnce()
+    h.coordinator.stop()
+  })
+  it('retains credentials on failed notification cleanup and never signs out a replacement login', async () => {
+    const failure = new Error('push cleanup pending')
+    const h = harness({ prepareSignOut: async () => { throw failure } })
+    h.coordinator.start(); h.fire('INITIAL_SESSION', session()); await flush()
+    await expect(h.coordinator.logout()).rejects.toBe(failure)
+    expect(h.deps.signOut).not.toHaveBeenCalled(); expect(h.deps.clearPersistedSession).not.toHaveBeenCalled()
+    expect(h.coordinator.getSnapshot().session?.user.id).toBe('user-a')
+    h.coordinator.stop()
+    const cleanup = deferred<void>()
+    const other = harness({ prepareSignOut: () => cleanup.promise })
+    other.coordinator.start(); other.fire('INITIAL_SESSION', session()); await flush()
+    const logout = other.coordinator.logout()
+    other.fire('SIGNED_IN', session('replacement')); await flush()
+    cleanup.resolve(undefined)
+    expect(await logout).toEqual({ success: false })
+    expect(other.deps.signOut).not.toHaveBeenCalled()
+    other.coordinator.stop()
+  })
   it('keeps startup user validation on the request-only auth overload', async () => {
     const getUser = vi.fn<SessionCoordinatorDeps['getUser']>(async (accessToken) => {
       if (!accessToken) throw new Error('startup validation must provide the session access token')

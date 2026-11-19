@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // logic runs in jsdom.
 
 const mocks = vi.hoisted(() => ({
+  appState: vi.fn(),
   notificationsCheck: vi.fn(),
   notificationsRequest: vi.fn(),
   createChannel: vi.fn(),
@@ -73,8 +74,9 @@ vi.mock('capacitor-native-settings', () => ({
   IOSSettings: { App: 'App' },
   NativeSettings: { open: mocks.openSettings },
 }))
-vi.mock('@capacitor/app', () => ({ App: { addListener: vi.fn() } }))
+vi.mock('@capacitor/app', () => ({ App: { addListener: vi.fn(), getState: mocks.appState } }))
 
+import { setAndroidPushConfirmed } from '../../../../apps/desktop/src/mobile/android-push/androidPushState'
 import { capacitorPlatform, toSystemPermissionState } from '../../../../apps/desktop/src/platform/capacitor'
 import { desktopSystemPermissions, electronPlatform } from '../../../../apps/desktop/src/platform/electron'
 import { webPlatform } from '../../../../apps/desktop/src/platform/web'
@@ -82,6 +84,8 @@ import { systemPermissionAction } from '../../../../apps/desktop/src/lib/systemP
 
 beforeEach(() => {
   for (const mock of Object.values(mocks)) mock.mockReset()
+  setAndroidPushConfirmed(false)
+  mocks.appState.mockResolvedValue({ isActive: false })
   mocks.createChannel.mockResolvedValue(undefined)
   mocks.ensureQuietChannel.mockResolvedValue({ id: 'gugu-alerts-quiet-v2' })
   mocks.schedule.mockResolvedValue({ notifications: [] })
@@ -133,6 +137,18 @@ describe('capacitor showNotification', () => {
     expect(mocks.notificationsRequest).not.toHaveBeenCalled()
   })
 
+  it('uses the confirmed remote outlet for background chat/task, retaining local tests and foreground delivery', async () => {
+    mocks.notificationsCheck.mockResolvedValue({ display: 'granted' })
+    setAndroidPushConfirmed(true)
+    for (const payload of [{ title: 'chat', chatId: 'chat-1' }, { title: 'task', kind: 'task_attention' as const }]) {
+      await expect(capacitorPlatform.showNotification(payload)).resolves.toMatchObject({ displayed: false, error: 'APP_NOT_ACTIVE' })
+    }
+    expect(mocks.schedule).not.toHaveBeenCalled()
+    await expect(capacitorPlatform.showNotification({ title: 'settings test' })).resolves.toMatchObject({ displayed: true })
+    mocks.appState.mockResolvedValue({ isActive: true })
+    await expect(capacitorPlatform.showNotification({ title: 'foreground', chatId: 'chat-1' })).resolves.toMatchObject({ displayed: true })
+    setAndroidPushConfirmed(false)
+  })
   it('posts immediately, never as an exact alarm, on the sound or quiet channel; channels are created once', async () => {
     mocks.notificationsCheck.mockResolvedValue({ display: 'granted' })
 

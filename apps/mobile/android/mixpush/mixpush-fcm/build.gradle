@@ -1,0 +1,11 @@
+apply plugin: 'com.android.library'
+android {
+    namespace 'com.mixpush.fcm'
+    compileSdk rootProject.ext.compileSdkVersion
+    defaultConfig { minSdk rootProject.ext.minSdkVersion }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+dependencies {
+    api project(':mixpush-core')
+    implementation 'com.google.firebase:firebase-messaging:26.0.2'
+}
