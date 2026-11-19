@@ -14,13 +14,18 @@ vi.mock('../../../../apps/desktop/src/lib/onScreenChat', () => ({ isChatOnScreen
 
 const group = (id: string): ChatItem => chat({ id, kind: 'group', name: id, member_user_ids: [] })
 
-it('keeps a group selected during an older list commit on the phone chat page', async () => {
+it.each([
+  { name: 'keeps a group selected during an older list commit on the phone chat page', active: 'native', lateRow: false, revoked: false },
+  { name: 'closes the newly selected group when its membership is revoked during the commit', active: 'native', lateRow: false, revoked: true },
+  { name: 'keeps a late group row for an unchanged selection during the commit', active: 'big', lateRow: true, revoked: false },
+])('$name', async ({ active: initiallySelected, lateRow, revoked }) => {
   const rows = [group('native'), group('big')]
+  const initial = lateRow ? rows.slice(0, 1) : rows
   const memory = createMemoryLocalSyncDb()
   const repository = await openImRepository('selection-during-list-write', { adapter: memory })
   const harness = createReactHarness()
   const ledger = createChatListProjectionLedger()
-  ledger.seedFromCache(rows)
+  ledger.seedFromCache(initial)
   const entered = deferred<void>(), release = deferred<void>()
   const commit = memory.commit.bind(memory)
   vi.spyOn(memory, 'commit').mockImplementationOnce(async operations => {
@@ -28,13 +33,16 @@ it('keeps a group selected during an older list commit on the phone chat page', 
   })
   let binding!: ReturnType<typeof useChatProjectionBinding>
   let select!: (id: string) => void
+  let acceptRows!: (rows: ChatItem[]) => void
+  let membershipRevoked = false
   let shown: ChatItem[] = [], selected: string | null = null
   function Owner() {
-    const [current, setRows, chatsRef] = useChatListState(rows)
-    const [active, setActive] = useState<string | null>('native')
+    const [current, setRows, chatsRef] = useChatListState(initial)
+    const [active, setActive] = useState<string | null>(initiallySelected)
     const activeChatIdRef = useRef<string | null>(active), repositoryRef = useRef(repository)
     const requestSeqRef = useRef(0)
     selected = active; shown = current
+    acceptRows = setRows
     select = id => { activeChatIdRef.current = id; setActive(id) }
     binding = useChatProjectionBinding({ ledger, repositoryRef, chatsRef, activeChatIdRef, requestSeqRef,
       getRepository: async () => repository, setChats: setRows,
@@ -53,15 +61,25 @@ it('keeps a group selected during an older list commit on the phone chat page', 
     await harness.render(<Owner />)
     await act(async () => {
       pending = binding.publish([rows[0]!], [], { requestSeq: 1, notify: false,
-        preserveMissingActive: false, revokedMembership: () => false })
+        preserveMissingActive: false, revokedMembership: id => membershipRevoked && id === 'big' })
       await entered.promise
     })
-    await act(async () => { select('big') })
+    await act(async () => {
+      if (lateRow) acceptRows(rows)
+      select('big')
+      membershipRevoked = revoked
+    })
     expect(harness.container.querySelector('output')?.dataset.phoneChatShown).toBe('true')
     await act(async () => { release.resolve(); await pending })
-    expect(selected).toBe('big')
-    expect(shown.map(row => row.id), 'an older publication must not drop the newly selected group').toContain('big')
-    expect(harness.container.querySelector('output')?.dataset.phoneChatShown).toBe('true')
+    if (revoked) {
+      expect(selected).toBeNull()
+      expect(shown.map(row => row.id)).not.toContain('big')
+      expect(harness.container.querySelector('output')?.dataset.phoneChatShown).toBe('false')
+    } else {
+      expect(selected).toBe('big')
+      expect(shown.map(row => row.id), 'an older publication must not drop the newly selected group').toContain('big')
+      expect(harness.container.querySelector('output')?.dataset.phoneChatShown).toBe('true')
+    }
   } finally {
     release.resolve(); await pending
     harness.cleanup(); repository.close()
