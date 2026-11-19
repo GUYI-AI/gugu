@@ -42,5 +42,7 @@ export type GuguToolsOff = z.infer<typeof guguToolsOffSchema>;
  */
 export function guguToolsOffFromStored(stored: unknown): GuguToolsOff {
   if (!Array.isArray(stored)) return [];
-  return stored.filter((id): id is SwitchableGroupId => (switchableIds as readonly unknown[]).includes(id));
+  // 'projects' is the folder tools' group of earlier releases: a person who switched it off keeps it off.
+  return stored.map((id) => id === 'projects' ? 'folders' : id)
+    .filter((id): id is SwitchableGroupId => (switchableIds as readonly unknown[]).includes(id));
 }

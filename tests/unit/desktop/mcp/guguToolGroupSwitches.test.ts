@@ -96,6 +96,7 @@ describe('built-in gugu tool groups', () => {
   it('a stored id this build does not know, or a locked one, is dropped on read instead of failing every session', () => {
     expect(guguToolsOffFromStored(['schedules', 'apps-v0', 'messages', 7])).toEqual(['schedules'])
     expect(guguToolsOffFromStored(null)).toEqual([])
+    expect(guguToolsOffFromStored(['projects', 'apps'])).toEqual(['folders', 'apps'])
     expect(guguToolsOffFromStored({ devices: true })).toEqual([])
   })
 

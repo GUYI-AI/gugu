@@ -163,7 +163,7 @@ final class GuguIOSProvisioner {
                     do {
                         _ = try result.get(); try self.check()
                         guard let latest = try self.store.record("agents", id: agentId) else { throw Self.failure("invalid_journal", "Native session disappeared before admission receipt") }
-                        let result: [String: Any] = ["conversationId": sessionId, "projectId": self.projectId, "title": latest["displayName"] ?? saved["displayName"]!,
+                        let result: [String: Any] = ["conversationId": sessionId, "projectId": self.projectId, "workspaceId": self.projectId, "groupChatId": NSNull(), "title": latest["displayName"] ?? saved["displayName"]!,
                             "agentUserId": agentId, "chatId": chatId, "birthGroup": latest["birthGroup"] ?? NSNull(), "session": Self.summary(latest, projectId: self.projectId)]
                         try self.store.update("requests", id: key) { $0["result"] = result; $0["status"] = "completed" }
                         done(.success(result))
@@ -222,8 +222,8 @@ final class GuguIOSProvisioner {
         guard let prompt = input["prompt"] as? String, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               (input["harness"] as? String ?? "pi") == "pi", (input["transport"] as? String ?? "acp") == "acp",
               (input["sessionView"] as? String ?? "general") == "general", input["permissionMode"] == nil, input["effort"] == nil else { throw Self.failure("unsupported", "Unsupported phone task input or runtime options") }
-        for key in ["projectId", "project_id"] { if let value = input[key] as? String, value != projectId { throw Self.failure("invalid_args", "Task belongs to another phone project") } }
-        for key in ["projectPath", "project_path"] { if let value = input[key] as? String, value != projectPath { throw Self.failure("invalid_args", "Task belongs to another phone workspace") } }
+        for key in ["projectId", "workspaceId"] { if let value = input[key] as? String, value != projectId { throw Self.failure("invalid_args", "Task belongs to another phone folder") } }
+        for key in ["projectPath", "cwd"] { if let value = input[key] as? String, value != projectPath { throw Self.failure("invalid_args", "Task belongs to another phone workspace") } }
         for key in ["model", "chat_id", "chatId"] {
             if let value = input[key], !(value is NSNull), !(value is String) { throw Self.failure("invalid_args", "Task model and chat identifiers must be strings") }
         }
@@ -232,7 +232,8 @@ final class GuguIOSProvisioner {
             "model": input["model"] ?? NSNull(), "chatId": input["chat_id"] ?? input["chatId"] ?? NSNull()]
     }
     static func summary(_ agent: [String: Any], projectId: String) -> [String: Any] {
-        ["conversationId": agent["sessionId"] ?? NSNull(), "projectId": projectId, "title": agent["displayName"] ?? "手机任务 Agent", "harness": "pi", "runtime": "acp",
+        // projectId is the folder id for released readers; the session lives in no group.
+        ["conversationId": agent["sessionId"] ?? NSNull(), "projectId": projectId, "workspaceId": projectId, "groupChatId": NSNull(), "title": agent["displayName"] ?? "手机任务 Agent", "harness": "pi", "runtime": "acp",
          "agentStatus": agent["status"] ?? "idle", "status": ["status": agent["status"] ?? "idle", "detail": "plain"], "lastInteractedAt": agent["lastActiveAt"] ?? NSNull(),
          "supported": true, "agent": ["userId": agent["agentUserId"] ?? NSNull()], "chatId": agent["chatId"] ?? NSNull(), "isPinned": false,
          "parentConversationId": NSNull(), "spawnedByConversationId": NSNull(), "unseen": agent["agentStatusSeen"] as? Int != 1]
