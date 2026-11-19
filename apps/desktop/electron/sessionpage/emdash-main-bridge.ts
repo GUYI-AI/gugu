@@ -225,7 +225,7 @@ export { startSessionPtyAttachServer } from '@main/core/pty/attach/start-attach-
 export { broadcastDeviceSessionHostEvent, setDeviceSessionHostShellHandlers } from '@main/host-ws/device-session-host'
 export { setDirectTerminalResolver, type DirectTerminalResolver } from '@main/core/pty/direct-terminal/controller'
 // #113 这台机器的项目记到账号上:那一份,与「它可能变了」的信号(订阅在 boot 之后,同 onEmdashSessionpageReapTrigger)。
-export { deviceProjectsPublished, listDeviceProjectRecords, onDeviceProjectsMaybeChanged } from '@main/core/projects/operations/device-project-records'
+export { listPublishedFolders, onFoldersMaybeChanged, unbindRefusedFolders } from '@main/core/folders/folder-publish'
 export { projectFoldersPublished } from '@main/core/extensions/extension-bridge'
 export { sessionBootTasks } from '../session/main/core/boot-tasks'
 export { flushViewState, viewStateSnapshot } from '@main/core/view-state/view-state-service'

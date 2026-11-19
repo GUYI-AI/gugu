@@ -546,8 +546,8 @@ import { setAccountAccessTokenReader, setAccountFileResolver } from '@main/core/
 import { createLocalDeviceIdResolver, type DeviceHeartbeatTableClient } from '@gugu/core/cloud/deviceRuntime'
 import { announceLocalDeviceIdentity } from './local-device-identity'
 import { setAssistantHomeDeviceResolver } from '@main/core/app/assistant-home-controller'
-import { createDeviceProjectsPublisher, type DeviceProjectsPublisher } from '@gugu/core/cloud/deviceProjectsPublisher'
-import type { DeviceProjectsRpcClient } from '@gugu/core/cloud/deviceProjects'
+import { createChatFoldersPublisher, type ChatFoldersPublisher } from '@gugu/core/cloud/chatFoldersPublisher'
+import type { ChatFoldersPublishClient } from '@gugu/core/cloud/chatFolders'
 import { emdashPlatformReleaseIntent } from './session/main/core/acp/emdash-platform-injector'
 import type {
   EmdashSessionStartInfo as EmdashStartInfo,
@@ -800,7 +800,7 @@ let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let deviceRuntimeHost: DeviceRuntimeHost | null = null
 // #113 这台机器的项目记到账号上(会话页后端 boot 之后才有)。
-let deviceProjectsPublisher: DeviceProjectsPublisher | null = null
+let chatFoldersPublisher: ChatFoldersPublisher | null = null
 // @@@local-device-truth (#777) - retained so localDeviceId can resolve this machine's device id
 // instead of returning null → misrouting. Same provider the host ticks with.
 let authProvider: RuntimeAuthProvider | null = null
@@ -2706,7 +2706,7 @@ function onHumanAuthSessionChanged(): void {
     createLogger('device-runtime/auth').warn({ error: String(error) }, 'Realtime account auth update failed')
   })
   deviceRuntimeHost?.notifyAuthChanged()
-  deviceProjectsPublisher?.notify()
+  chatFoldersPublisher?.notify()
   // 登录一到就认本机(认出即通知窗口重读设备表);登出时答 null,下次登录认出来会再通知一次。
   void localDeviceId()
   void handOffWechatIfAny()
@@ -6639,27 +6639,21 @@ app.whenReady().then(async () => {
         // unhandledRejection —— 会话页后端直接起不来(e2e 的 launchApp 阶段现形,dev 的 vite 产物顺序
         // 不同所以只在生产打包里暴露)。
         emdash.onEmdashSessionpageReapTrigger(runSessionpageReap)
-        // #113 这台机器的项目记到账号上(桌面与 server 同一份):现在记一次,之后一变就再记。订阅同上要在 boot 之后。
-        deviceProjectsPublisher ??= createDeviceProjectsPublisher({
+        // @@@group-folders 这台机器挂在群上的文件夹记到账号上(桌面与 server 同一份):现在记一次,之后一变就再记。订阅同上要在 boot 之后。
+        chatFoldersPublisher ??= createChatFoldersPublisher({
           getAuth: () => desktopAuthProvider().getAuth(),
           deviceId: () => localDeviceId(),
-          client: (accessToken) => makeIdentityClient(accessToken) as unknown as DeviceProjectsRpcClient,
-          records: () => emdash.listDeviceProjectRecords(),
-          dropBindings: async (ownerUserId, localProjectIds) => {
-            for (const projectId of localProjectIds) await forgetProjectGroupId(projectId, ownerUserId)
-          },
-          warn: (message, fields) => createLogger('device-projects').warn(fields, message),
-          onPublished: () => {
-            emdash.projectFoldersPublished()
-            emdash.deviceProjectsPublished()
-          },
+          client: (accessToken) => makeIdentityClient(accessToken) as unknown as ChatFoldersPublishClient,
+          records: () => emdash.listPublishedFolders(),
+          dropBindings: (_ownerUserId, folderIds) => emdash.unbindRefusedFolders(folderIds),
+          warn: (message, fields) => createLogger('chat-folders').warn(fields, message),
         })
         try {
-          emdash.onDeviceProjectsMaybeChanged(() => deviceProjectsPublisher?.notify())
+          emdash.onFoldersMaybeChanged(() => chatFoldersPublisher?.notify())
         } catch (error) {
-          createLogger('device-projects').error({ err: error }, '订不上项目变化:账号上这台机器的项目只在开机与登录时更新')
+          createLogger('chat-folders').error({ err: error }, '订不上文件夹变化:账号上这台机器的文件夹只在开机与登录时更新')
         }
-        deviceProjectsPublisher.notify()
+        chatFoldersPublisher.notify()
         // #4008 —— 把会话页会话的 agent 状态接成咕咕侧的运行事实:「它在不在干活」是**读**会话页的状态,
         // 不再从「有没有一条投递命令正在执行」反推 —— 用户在会话页自己敲的回合、agent 之间的接力、以及
         // 一注入就返回的 transport,在咕咕的单聊/列表/群里都如实显示运行中。
