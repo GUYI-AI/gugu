@@ -483,37 +483,40 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
           focusUrlRef.current = focus;
         }}
       />
-      {/* 网页区固定浅色:emlight 给会话页那套名字,data-theme="light" 让它们接到的咕咕 token 也是浅色那一套(宿主是深色时也一样)。 */}
-      <div data-theme="light" className="emlight relative min-h-0 flex-1 bg-background">
-        {annotations.overlay}
-        {pageMount && isRegistered ? (
-          // #7274 网页一直挂着(加载失败页、起始页都盖在它上面,❌ 代替它):换了位置、出错重试都接着用同一张,
-          // 会话的 agent 也一直有页面可操作(#7191)。被这些盖住时网页自己让开(见 browser-page-occlusion.ts)。
-          <BrowserPageSurface
-            key={`${pageMount.browserId}:${pageMount.partition}`}
-            browserId={pageMount.browserId}
-            partition={pageMount.partition}
-            initialUrl={pageMount.src}
-            visible={visible}
-            onHandle={onPageHandle}
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-sm text-foreground-muted">
-            {translate('browser.preparingSession')}
-          </div>
-        )}
-        {loadError && loadErrorPresentation ? (
-          <div className="absolute inset-0 bg-background">
-            <BrowserLoadErrorView
-              url={loadErrorUrl}
-              presentation={loadErrorPresentation}
-              code={browserLoadErrorCode(loadError, translate)}
-              canOpenExternal={canOpenLoadErrorExternal}
-              onReload={reload}
-              onOpenExternal={() => openBrowserUrlExternally(loadErrorUrl)}
+      <div className="relative min-h-0 flex-1">
+        {/* 网页区固定浅色:emlight 给会话页那套名字,data-theme="light" 让它们接到的咕咕 token 也是浅色那一套(宿主是深色时也一样)。
+            起始页是咕咕自己的界面,跟主题走,所以放在这层外面。 */}
+        <div data-theme="light" className="emlight absolute inset-0 bg-background text-foreground">
+          {annotations.overlay}
+          {pageMount && isRegistered ? (
+            // #7274 网页一直挂着(加载失败页、起始页都盖在它上面,❌ 代替它):换了位置、出错重试都接着用同一张,
+            // 会话的 agent 也一直有页面可操作(#7191)。被这些盖住时网页自己让开(见 browser-page-occlusion.ts)。
+            <BrowserPageSurface
+              key={`${pageMount.browserId}:${pageMount.partition}`}
+              browserId={pageMount.browserId}
+              partition={pageMount.partition}
+              initialUrl={pageMount.src}
+              visible={visible}
+              onHandle={onPageHandle}
             />
-          </div>
-        ) : null}
+          ) : (
+            <div className="flex h-full items-center justify-center text-sm text-foreground-muted">
+              {translate('browser.preparingSession')}
+            </div>
+          )}
+          {loadError && loadErrorPresentation ? (
+            <div className="absolute inset-0 bg-background">
+              <BrowserLoadErrorView
+                url={loadErrorUrl}
+                presentation={loadErrorPresentation}
+                code={browserLoadErrorCode(loadError, translate)}
+                canOpenExternal={canOpenLoadErrorExternal}
+                onReload={reload}
+                onOpenExternal={() => openBrowserUrlExternally(loadErrorUrl)}
+              />
+            </div>
+          ) : null}
+        </div>
         {/* 起始页盖在空白网页上面,❌ 代替它:网页得一直在,会话的 agent 才有页面可操作(#7191)。
             agent / 人一打开地址,起始页就自己让开。 */}
         {showStartPage && !loadError ? (

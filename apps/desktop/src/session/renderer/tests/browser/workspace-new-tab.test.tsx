@@ -151,3 +151,47 @@ it('opens the actual group tab from the header and reveals explicitly requested 
     });
   }
 });
+
+it('draws the start page in the app theme and the pinned-light web area in light alone', async () => {
+  await i18n.changeLanguage('zh-CN');
+  await page.viewport(1240, 640);
+  const view = harness = createReactHarness();
+  view.container.className = 'emdark gugu-skin';
+  document.documentElement.dataset.theme = 'dark';
+  view.container.style.cssText = 'position:fixed;inset:0;width:1200px;height:580px';
+  installSessionTabViews();
+  await act(() => view.render(
+    <ChatPanes chatId={group.place.chatId} actionsSlot={null} body={<div>群聊正文</div>}
+      chip={({ tab, host }) => <ChatTabChip tab={tab} host={host} label="示例群聊" menu={null} focused />} />,
+  ));
+  // Relative luminance from a computed `rgb(...)`.
+  const luminance = (color: string) => {
+    const [r, g, b] = color.match(/[\d.]+/g)!.slice(0, 3).map((v) => Number(v) / 255)
+      .map((c) => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  try {
+    await act(() => userEvent.click(page.getByRole('button', { name: '显示标签页' })));
+    await expect.element(page.getByRole('heading', { name: '内置' })).toBeVisible();
+    const start = view.container.querySelector('[data-workspace-new-tab-page]')!;
+    const heading = page.getByRole('heading', { name: '内置' }).element();
+    const card = page.getByRole('button', { name: '文件', exact: true }).element();
+    expect(luminance(getComputedStyle(start).backgroundColor)).toBeLessThan(0.1);
+    expect(luminance(getComputedStyle(card).backgroundColor)).toBeLessThan(0.1);
+    expect(luminance(getComputedStyle(heading).color)).toBeGreaterThan(0.8);
+    expect(luminance(getComputedStyle(card).color)).toBeGreaterThan(0.3);
+
+    const pinned = view.container.querySelector('[data-theme="light"]')!;
+    expect(luminance(getComputedStyle(pinned).backgroundColor)).toBeGreaterThan(0.9);
+    expect(luminance(getComputedStyle(pinned).color)).toBeLessThan(0.1);
+  } finally {
+    const layout = chatLayoutOf(group.place.chatId);
+    await act(() => {
+      for (const { pane } of layout.groups) {
+        for (const entry of pane.resolvedTabs) {
+          if (entry.kind !== 'chat') closeChatTab(group.place.chatId, entry.tabId);
+        }
+      }
+    });
+  }
+});
