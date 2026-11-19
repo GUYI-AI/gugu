@@ -61,7 +61,8 @@ describe('Antigravity subscription comes from the signed-in CLI ACP response', (
     const requests = (await readFile(transcript, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
     expect(requests.map(request => request.method)).toEqual(['initialize', 'initialized', 'session/new']);
     expect(requests.at(-1).params.mcpServers).toEqual([]);
-    expect(vi.mocked(ctx.exec).mock.calls.filter(([, args]) => args?.includes('models'))).toHaveLength(1);
+    // Each read confirms sign-in; only the first opens an ACP session.
+    expect(vi.mocked(ctx.exec).mock.calls.filter(([, args]) => args?.includes('models'))).toHaveLength(2);
   });
 
   it('does not infer Ultra from Carbon access if the server reports no tier', async () => {
