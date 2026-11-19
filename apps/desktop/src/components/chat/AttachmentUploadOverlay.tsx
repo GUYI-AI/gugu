@@ -14,9 +14,10 @@ export function AttachmentUploadOverlay({ messageId }: { messageId: string }) {
   const progress = useAttachmentUploadProgress(messageId)
   if (!progress) return null
   if (progress.failed) {
-    const { retry } = progress
-    return <span role={retry ? 'button' : 'img'} tabIndex={retry ? 0 : undefined} aria-label={retry ? t('attachmentView.uploadFailed') : t('attachmentView.senderUploadFailed')}
-      title={retry ? t('attachmentView.uploadFailed') : undefined} data-attachment-upload="failed" className="attachment-upload-overlay"
+    const { retry, reason } = progress
+    const label = reason ?? t(retry ? 'attachmentView.uploadFailed' : 'attachmentView.senderUploadFailed')
+    return <span role={retry ? 'button' : 'img'} tabIndex={retry ? 0 : undefined} aria-label={label}
+      title={retry || reason ? label : undefined} data-attachment-upload="failed" className="attachment-upload-overlay"
       onClick={retry && (event => { event.stopPropagation(); retry() })}
       onKeyDown={retry && (event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); retry() } })}>
       <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
