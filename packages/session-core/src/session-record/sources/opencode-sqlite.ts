@@ -87,7 +87,7 @@ class OpencodeSqliteSource extends SqlitePollSource<SessionRecordLocator> {
       return;
     }
     // A revert (`POST /session/{id}/revert`, TUI `/undo`) only sets the marker; its rows go on the next prompt.
-    // Either change alters what the conversation is, so the whole reading starts over (#2970).
+    // Either change alters what the conversation is, so the whole reading starts over.
     if (this.readRevertMarker() !== this.revertMarker) {
       this.restart('source_replaced');
       return;

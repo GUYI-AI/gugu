@@ -98,7 +98,7 @@ export type ChatCommands = {
     onChange: (text: string) => void;
     onCancel: () => void;
     onSubmit: () => void;
-    /** Present only when the agent can also restore the files changed from this message on (#7304). */
+    /** Present only when the agent can also restore the files changed from this message on. */
     restoreFiles?: { checked: boolean; onChange: (checked: boolean) => void };
   };
   /**

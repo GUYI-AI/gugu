@@ -5,7 +5,7 @@ import { messageEntityId } from './ids';
 import type { AgentState } from '../models/agents';
 import type { SessionConfigState, SessionUsage } from '../models/config';
 import type { SessionPlans } from '../models/plan';
-import { markHistoryReverted, type TranscriptTurn, type TranscriptTurnOutcome } from '../models/turns';
+import type { TranscriptTurn, TranscriptTurnOutcome } from '../models/turns';
 import type { NormalizedEvent } from './normalized-event';
 import { initialState, reduce, type ParserState } from './reducer';
 
@@ -204,13 +204,8 @@ export class AcpTranscriptParser {
   revertBefore(anchor: string): void {
     const index = this.history.findIndex((turn) => turn.items.some((item) =>
       item.kind === 'message' && item.revertAnchor === anchor));
-    const kept = index < 0 ? [] : this.history.slice(0, index);
-    const removed = this.history.slice(kept.length).filter((turn) => turn.items.some((item) =>
-      item.kind === 'message' && item.role === 'user')).length;
-    const last = kept.at(-1);
-    if (last && removed > 0) kept[kept.length - 1] = markHistoryReverted(last, removed, Date.now());
     this.state = { ...this.state,
-      transcript: { committed: kept, active: null },
+      transcript: { committed: index < 0 ? [] : this.history.slice(0, index), active: null },
       agents: [], plan: null, usage: null,
     };
   }

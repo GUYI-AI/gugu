@@ -1173,7 +1173,7 @@ function replayItem(item, fallbackId, revertAnchor, steering) {
     // live 从不回声用户消息(客户端自己就有);重放时客户端手里是空的,这条只能由适配器补。
     // 复用 textPrompt:多段文本的连接方式必须和发送侧一致,否则重放出来的话和当初发出去的不一样。
     const text = joinPromptText(item?.content)
-    const meta = steering ? { guguSteering: true } : revertAnchor ? { guguRevertAnchor: revertAnchor } : null
+    const meta = steering ? { guguSteering: true } : revertAnchor ? { guguRevert: { before: revertAnchor } } : null
     if (text) sessionUpdate({ sessionUpdate: 'user_message', messageId, content: [{ type: 'text', text }], ...(meta ? { _meta: meta } : {}) })
     return
   }
@@ -2269,8 +2269,8 @@ async function handleAcpRequest(message) {
       throw new Error('Invalid conversation revert target')
     }
     if (!historyCanRevert) throw new Error('Conversation revert requires persisted paginated Codex history')
-    // `thread/revert` "does not revert local file changes": its anchors never offer files, so a restore is a client bug.
-    if (params.files !== undefined && params.files !== 'keep') throw new Error('Codex cannot restore files on revert')
+    // `thread/revert` "does not revert local file changes": its points never offer files, so a restore is a client bug.
+    if (params.restoreFiles) throw new Error('Codex cannot restore files on revert')
     if (revertingHistory || activeCycle || runningCommands.size) {
       throw new Error('Wait for current work to finish before reverting')
     }
@@ -2279,7 +2279,7 @@ async function handleAcpRequest(message) {
       const result = await appRequest('thread/revert', { threadId: sessionId, beforeTurnId: params.before })
       if (result?.thread?.id !== sessionId) throw new Error('Codex revert changed the thread ID')
       loadGeneration += 1
-      respond(id, { sessionId, files: 'kept' })
+      respond(id, { sessionId })
     } finally { revertingHistory = false }
     return
   }

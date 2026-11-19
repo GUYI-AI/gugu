@@ -88,8 +88,6 @@ export const plugin = definePlugin(
     },
     acp: {
       kind: 'supported',
-      // Rewind to before a message (#2970): SDK RPC `session.history.rewind` (1.0.112); the `--acp` method table has no rewind.
-      revert: { kind: 'unsupported', reason: 'off-acp' },
       /**
        * 只声明**量过的那一维**(三维各自声明,见 `LiveSettingsCapability`);permission / effort 没量,缺席 ——
        * 权限维一旦声明,启动时就会走 copilot 报的 mode 阶梯(agent/plan/autopilot),那是另一个命题。

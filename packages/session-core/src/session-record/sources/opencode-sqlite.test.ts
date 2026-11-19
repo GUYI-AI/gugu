@@ -623,7 +623,7 @@ describe('question 进结算(#7035)', () => {
   });
 });
 
-describe("opencode revert marker (#2970)", () => {
+describe("opencode revert marker", () => {
   const REVERTED = "msg_fb45512f1001d1dug7LR32eirc";
   const messageIdsOf = (entries: RecordEntry[], fixture: Fixture) => {
     const owner = new Map(fixture.parts.map((row) => [row.id, row.message_id]));

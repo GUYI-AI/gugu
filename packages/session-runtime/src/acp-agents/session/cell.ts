@@ -1,4 +1,4 @@
-import type { AcpPermissionParams, AcpRevertAnchor } from '@gugu/session-core/agents/plugins';
+import { guguRevertPoint, type AcpPermissionParams, type AcpRevertPoint } from '@gugu/session-core/agents/plugins';
 import type {
   RequestPermissionResponse,
   SessionConfigOption,
@@ -197,6 +197,8 @@ export class SessionCell {
   private preparationRetryTimer: ReturnType<typeof setTimeout> | undefined;
   private preparationRetryDelay = 1500;
   private reverting = false;
+  /** The revert point the previous turn settled with: reported again, it is still that turn's, not this one's. */
+  private lastRevertPoint: string | null = null;
   private compacting = false;
   /**
    * 这一轮是不是人亲手发起的(origin manual 的那一句开的工)。投递开的、agent 自己开的(后台跑完的通知等)都不是。
@@ -934,19 +936,13 @@ export class SessionCell {
       return acpErr.sessionBusy('Wait for the current work and queued messages to finish before reverting.');
     }
     if (this.machine.phase.kind !== 'ready') return acpErr.invalidState('Wait for the session to become ready before reverting.');
-    if (!this.agent.extMethod) return acpErr.invalidState('This agent does not support conversation revert.');
+    const revert = this.deps.revert;
+    if (!revert || !this.agent.extMethod) return acpErr.invalidState('This agent does not support conversation revert.');
     this.reverting = true;
     this.deps.callbacks?.onSessionStateChanged?.();
     try {
-      // One request for every harness (#2970): a vendor-native agent through its plugin's hook, a Gugu bridge through
-      // `_session/revert`. Either way the conversation is rewound in place, under the same session id.
-      const input = { sessionId: this.acpSessionId, before: anchor, files: restoreFiles ? 'restore' as const : 'keep' as const };
-      if (this.deps.revert) await this.deps.revert.revert(this.agent, input);
-      else {
-        const result = await this.agent.extMethod('_session/revert', input);
-        if (result.sessionId !== this.acpSessionId) throw new Error('Revert changed the provider session ID.');
-        if (input.files === 'restore' && result.files !== 'restored') throw new Error('The conversation was rewound, but the files were not restored.');
-      }
+      await revert.revert(this.agent, this.acpSessionId, anchor, restoreFiles);
+      this.lastRevertPoint = null;
       this.transcript.revertBefore(anchor);
       this.emitTranscriptChanged();
       return ok({ providerSessionId: this.acpSessionId });
@@ -1594,10 +1590,10 @@ export class SessionCell {
       return;
     }
     const cycle = this.activeTurnCompletion;
-    const finish = (hooked?: AcpRevertAnchor | null) => {
+    const finish = (point: AcpRevertPoint | null = null) => {
       if (this.activeTurnCompletion !== cycle) return;
-      const revert = hooked ?? event._meta?.guguRevert as { before?: unknown; files?: unknown } | undefined;
-      if (typeof revert?.before === 'string' && revert.before) this.transcript.setActiveRevertAnchor(revert.before, revert.files === true);
+      if (point && point.before !== this.lastRevertPoint) this.transcript.setActiveRevertAnchor(point.before, point.files === true);
+      if (point) this.lastRevertPoint = point.before;
       this.rawLog.record({ kind: 'prompt_result', sessionId: this.acpSessionId,
         stopReason: event.stopReason, ...(event.error ? { error: toSerializedError(Object.assign(new Error(event.error.message), event.error)) } : {}) });
       if (event.error || event.stopReason === 'error') {
@@ -1619,14 +1615,15 @@ export class SessionCell {
           ? this.settledOutcome(reason) : { kind: 'done', reason: 'cycle_end' }, { foreground: event });
       }
     };
-    // A vendor-native agent names this turn's rewind point only when asked (`acp.revert`); the turn settles after the
-    // answer so the point lands on this turn's own user message. A failed lookup only means no rewind entry for it.
-    const hook = this.deps.revert;
-    const settle = hook && this.agent.extMethod
-      ? () => void hook.anchorAfterTurn(this.agent, this.acpSessionId, event as unknown as Readonly<Record<string, unknown>>).then(finish, (error: unknown) => {
-        this.deps.logger.warn('SessionCell: rewind point lookup failed', { sessionId: this.sessionId, providerId: this.deps.providerId, error: toSerializedError(error) });
-        finish();
-      })
+    // The turn settles once its revert point is known, so the point lands on this turn's own user message.
+    // A lookup that fails or does not answer in time only means this turn has no revert entry.
+    const revert = this.deps.revert;
+    const settle = revert && this.agent.extMethod
+      ? () => void withTimeout(revert.point(this.agent, this.acpSessionId, event as unknown as Readonly<Record<string, unknown>>), REVERT_POINT_TIMEOUT_MS)
+        .then(finish, (error: unknown) => {
+          this.deps.logger.warn('SessionCell: revert point lookup failed', { sessionId: this.sessionId, providerId: this.deps.providerId, error: toSerializedError(error) });
+          finish();
+        })
       : () => finish();
     // Some providers report a swallowed failure on stderr, independently of their result pipe.
     if (event.stopReason === 'end_turn' && this.deps.turnFailure?.watchesStderr
@@ -1637,9 +1634,9 @@ export class SessionCell {
 
   private applyReceiptMetadata(requestId: string, meta: SessionPromptReceipt['_meta']): void {
     const request = this.requests.get(requestId);
-    const revert = meta?.guguRevert as { before?: unknown; files?: unknown } | undefined;
-    if (request && typeof revert?.before === 'string' && revert.before) {
-      this.transcript.setRevertAnchor(request.messageId, revert.before, revert.files === true);
+    const point = guguRevertPoint(meta);
+    if (request && point) {
+      this.transcript.setRevertAnchor(request.messageId, point.before, point.files === true);
       this.emitTranscriptChanged();
     }
   }
@@ -2837,6 +2834,14 @@ const PROMPT_ADMISSION_TIMEOUT_MS = 60_000;
 
 /** 「一个字都没回就正常结束」时,等 stderr 那行失败说明的最长时间。 */
 const STDERR_FAILURE_GRACE_MS = 300;
+/** A harness that does not name a turn's revert point in this long leaves that turn without one. */
+const REVERT_POINT_TIMEOUT_MS = 5_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`no answer in ${ms} ms`)), ms); });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 /**
  * 「主人亲手发的」只有一种:会话页输入框打的(`manual`)。插不插队、这一轮算不算主人开的、`trigger` 记不记 owner

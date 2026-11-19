@@ -143,7 +143,7 @@ describe('codebuddy jsonl 记录源', () => {
   });
 });
 
-describe("codebuddy rollback (#2970)", () => {
+describe("codebuddy rollback", () => {
   const userTexts = (entries: RecordEntry[]) => entries.flatMap((entry) =>
     entry.event?.kind === "message" && entry.event.role === "user" && typeof entry.event.text === "string" ? [entry.event.text] : []);
 

@@ -37,7 +37,7 @@ export function createCodebuddyJsonlSource(locator: SessionRecordLocator, option
 /**
  * A rollback (`_codebuddy.ai/session/rollback`, 2.184.0) appends one `resend-fork-notice` whose `parentId` is the point kept
  * (none = back to the start) and moves the lane tip there; later items hang off it. It is a node with no content, so the
- * path root→leaf drops the rolled-back tail at once instead of after the next prompt (#2970).
+ * path root→leaf drops the rolled-back tail at once instead of after the next prompt.
  */
 const FORK_NOTICE = 'resend-fork-notice';
 const CONVERSATION_TYPES = new Set(['message', 'reasoning', 'function_call', 'function_call_result', FORK_NOTICE]);

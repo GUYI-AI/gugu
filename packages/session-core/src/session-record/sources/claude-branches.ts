@@ -1,5 +1,5 @@
 /**
- * The record lines a rewind left behind in a Claude transcript (#2970).
+ * The record lines a revert left behind in a Claude transcript.
  *
  * A rewind (SDK `resumeSessionAt`, the TUI's `/rewind`) does not delete anything: the next prompt is written with its
  * `parentUuid` pointing back at the turn kept, so the turns after it stay in the file as a branch nobody continues

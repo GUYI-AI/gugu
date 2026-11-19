@@ -1,7 +1,7 @@
-import type { AcpRevertHook } from '@gugu/session-core/agents/plugins';
+import type { AcpRevert } from '@gugu/session-core/agents/plugins';
 
 /**
- * Rewind on CodeBuddy Code's own ACP server (#2970), read in 2.184.0 (`dist/codebuddy.js`):
+ * Revert on CodeBuddy Code's own ACP server, read in 2.184.0 (`dist/codebuddy.js`):
  * · `session/prompt` answers with a top-level `userMessageId`: the record id of the user item this turn added.
  * · `_codebuddy.ai/session/rollback {sessionId, targetMessageId, reason}` moves the conversation back to that item's
  *   parent, in place, and appends a `resend-fork-notice` to the record (`codebuddy-jsonl.ts`).
@@ -13,13 +13,13 @@ import type { AcpRevertHook } from '@gugu/session-core/agents/plugins';
  */
 const ROLLBACK = '_codebuddy.ai/session/rollback';
 
-export const codebuddyRevert: AcpRevertHook = {
-  async anchorAfterTurn(_agent, _sessionId, promptResponse) {
-    const id = promptResponse.userMessageId;
-    return typeof id === 'string' && id ? { before: id, files: false } : null;
+export const codebuddyRevert: AcpRevert = {
+  async point(_agent, _sessionId, response) {
+    const id = response.userMessageId;
+    return typeof id === 'string' && id ? { before: id } : null;
   },
-  async revert(agent, { sessionId, before, files }) {
-    if (files === 'restore') throw new Error('CodeBuddy rewinds the conversation only; its points never offer files');
+  async revert(agent, sessionId, before, restoreFiles) {
+    if (restoreFiles) throw new Error('CodeBuddy rewinds the conversation only; its points never offer files');
     const result = await agent.extMethod!(ROLLBACK, { sessionId, targetMessageId: before, reason: 'resend_edit' }) as { applied?: unknown; error?: unknown };
     if (result?.applied !== true) throw new Error(`CodeBuddy did not roll back: ${String(result?.error ?? 'no reason given')}`);
   },

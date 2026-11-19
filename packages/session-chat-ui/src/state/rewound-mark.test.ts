@@ -22,7 +22,7 @@ const kept: TranscriptTurn = {
 };
 const next: TranscriptTurn = { ...kept, id: 'next', seq: 1, startedAt: 6000, items: [{ kind: 'message', id: 'u2', seq: 0, role: 'user', text: 'again' }] as TranscriptTurn['items'] };
 
-describe('the rewound mark (#7304)', () => {
+describe('the rewound mark', () => {
   it('is drawn once, as the last row of the kept turn, before the next turn', () => {
     const ids = flattenTier([kept, next], context, segmenters).map(row => row.itemId);
     expect(ids.filter(id => id === 'kept:history-reverted')).toHaveLength(1);

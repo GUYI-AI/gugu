@@ -7,7 +7,7 @@
 
 import { z } from 'zod';
 import type { SessionUpdate, SessionConfigOption, ToolCallContent, ToolCallLocation, RequestPermissionRequest } from '@agentclientprotocol/sdk';
-import type { AcpPermissionParams } from '../../agents/plugins/capabilities/acp';
+import { guguRevertPoint, type AcpPermissionParams } from '../../agents/plugins/capabilities/acp';
 import type { PermissionSubject } from '../models/permissions';
 import { normalizeToolContent } from './file-patch';
 import { sessionRetryingSchema } from '../models/session';
@@ -527,8 +527,7 @@ function decodeEntityContentUpdate(update: SessionUpdate): NormalizedEvent | nul
       ...(raw.sessionUpdate === 'agent_thought' ? {} : { role: raw.sessionUpdate === 'user_message' ? 'user' : 'assistant' }),
       messageId: raw.messageId, text: messageContentText(content ?? []), contentMode: 'replace',
       ...(raw.sessionUpdate === 'user_message' && raw._meta?.guguSteering === true ? { steering: true } : {}),
-      ...(typeof raw._meta?.guguRevertAnchor === 'string' ? { revertAnchor: raw._meta.guguRevertAnchor } : {}),
-      ...(raw._meta?.guguRevertFiles === true ? { revertFiles: true as const } : {}),
+      ...revertFields(raw._meta),
       ...(content !== undefined ? { content } : {}),
       ...(raw._meta !== undefined ? { _meta: raw._meta } : {}),
     } as NormalizedEvent;
@@ -627,8 +626,7 @@ function decodeStandardSessionUpdate(raw: unknown): NormalizedEvent {
         text: update.content.type === 'text' ? update.content.text : '',
         content: [update.content as EntityContent],
         contentMode: 'append',
-        ...(typeof update._meta?.guguRevertAnchor === 'string' ? { revertAnchor: update._meta.guguRevertAnchor } : {}),
-        ...(update._meta?.guguRevertFiles === true ? { revertFiles: true as const } : {}),
+        ...revertFields(update._meta),
         ...(update._meta?.guguSteering === true ? { steering: true } : {}),
       };
     }
@@ -740,4 +738,10 @@ function decodeStandardSessionUpdate(raw: unknown): NormalizedEvent {
     default:
       return { kind: 'ignored' };
   }
+}
+
+/** A replayed prompt's revert point (`_meta.guguRevert`, the shape its live receipt had). */
+function revertFields(meta: unknown): { revertAnchor?: string; revertFiles?: true } {
+  const point = guguRevertPoint(meta);
+  return point ? { revertAnchor: point.before, ...(point.files ? { revertFiles: true as const } : {}) } : {};
 }

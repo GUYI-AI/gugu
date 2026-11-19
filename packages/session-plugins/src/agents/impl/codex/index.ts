@@ -8,6 +8,7 @@ import {
   type AgentAuthStatus,
   type AgentMemoryDescriptor,
   type SessionBundleDescriptor,
+  guguBridgeRevert,
 } from '@gugu/session-core/agents/plugins';
 import type { AcpPlatformInjection } from '@gugu/session-core/acp';
 import {
@@ -109,8 +110,6 @@ export const plugin = definePlugin(
     },
     acp: {
       kind: 'supported',
-      // Rewind to before a message (#2970): app-server `thread/revert` (schema 0.169: "does not revert local file changes"); measured in Gugu, #2970.
-      revert: { kind: 'native', via: 'bridge', files: 'none' },
       // The native app-server bridge owns exactly one Codex thread per adapter process.
       maxSessionsPerProcess: 1,
       liveSettings: {
@@ -333,6 +332,8 @@ export const provider = registerPluginBehavior(plugin, {
     materialize: materializeCodexSessionBundle,
   },
   acp: {
+    // Gugu's own bridge: `_meta.guguRevert` points, `_session/revert`.
+    revert: guguBridgeRevert,
     // Its session/load replays the user messages it received: canonical evidence of delivered communications.
     // Its record keeps the native prompt (the person's words plus the host's attachment lines): the receipt ties the two.
     historyRecovery: { canonicalReplay: true, promptMeta: nativePromptMeta },

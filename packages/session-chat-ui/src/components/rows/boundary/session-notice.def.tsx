@@ -38,7 +38,7 @@ function noticeLabel(data: TranscriptSessionNotice, translate: import('@session-
           running: running ?? '',
         });
       }
-      // #7304 退回:被删掉的几轮 agent 看不到、也切不回去,这里只记一个数。
+      // 退回:被删掉的几轮 agent 看不到、也切不回去,这里只记一个数。
       if (data.code === 'history-reverted') return translate('transcript.sessionNotice.historyReverted', { count: running ?? '' });
       // 推理档那一条只在 provider 确认了现在的档之后才会发出(runtime applyInitialEffort),恒带 running。
       if (data.code === 'effort-unavailable') {

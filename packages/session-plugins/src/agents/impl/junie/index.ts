@@ -67,8 +67,6 @@ export const plugin = definePlugin(
     sessionBundle,
     acp: {
       kind: 'supported',
-      // Rewind to before a message (#2970): binary not obtainable for inspection (1468.30.0).
-      revert: { kind: 'unsupported', reason: 'unmeasured' },
     },
     // 如实标缺:本家没有已知的「把工作区标成可信」的通道 —— 引擎自己问一次(或它压根不问)。
     // ⚠️ 这一格没有默认值(owner 2026-09-03「强类型,不存在灰色地带」):写出来的是一句

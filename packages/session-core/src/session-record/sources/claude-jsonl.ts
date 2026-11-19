@@ -93,7 +93,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
   private reader: TailReader | null = null;
   private seenUuids = new Set<string>();
   /**
-   * #2970 Branches a rewind abandoned (`claude-branches.ts`). A read of existing lines (whole, or from a resume point)
+   * Branches a revert abandoned (`claude-branches.ts`). A read of existing lines (whole, or from a resume point)
    * decodes as always but holds its entries until it ends, then hands on only those not on an abandoned branch.
    * A live tail that sees a rewind happen keeps the old branch until the next such read.
    */

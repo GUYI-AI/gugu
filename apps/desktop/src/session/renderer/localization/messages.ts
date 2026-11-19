@@ -1161,7 +1161,7 @@ const enUSCoreMessages = {
   'acpFailure.revert': 'Could not revert conversation',
   'transcript.restorePrompt': 'Restore prompt',
   'transcript.restorePromptHint': 'Put this prompt back in the composer (it is not re-sent)',
-  // #7304 on a failed turn whose agent can step back: opens the message's editor; sending removes this turn first.
+  // On a failed turn whose agent can step back: opens the message's editor; sending removes this turn first.
   'transcript.restoreFiles': 'Also restore the files it changed',
   'transcript.rewindTurn': 'Rewind and edit',
   'transcript.rewindTurnHint': 'Edit this message and send it again; the agent forgets this turn and everything after it',

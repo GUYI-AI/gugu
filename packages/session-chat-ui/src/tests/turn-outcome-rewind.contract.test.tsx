@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 /**
- * #7304 A failed turn whose agent can step back offers 「退回重新编辑」 in place of 「取回指令」:
+ * A failed turn whose agent can step back offers 「退回重新编辑」 in place of 「取回指令」:
  * it opens that turn's own message for editing (sending removes the turn first, so the agent no longer
  * sees the failure). Where the agent cannot step back, the row keeps 「取回指令」. Measured height === DOM either way.
  */
@@ -33,7 +33,7 @@ async function render(commands: ChatCommands, item: TurnOutcomeItem = failed) {
   return reading.inspected
 }
 
-describe('rewinding a failed turn (#7304)', () => {
+describe('rewinding a failed turn', () => {
   it('opens the failed turn\'s own message when the agent can step back', async () => {
     const onEditMessage = vi.fn()
     const read = await render({ onEditMessage, canRevertMessage: (id) => id === 'user-1', onRestorePrompt: () => {} })

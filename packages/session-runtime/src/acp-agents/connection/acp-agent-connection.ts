@@ -441,9 +441,8 @@ function initializeAgent(agent: AcpAgentApi, host: AcpAgentProcessHost) {
        */
       _meta: {
         'gugu.mcp-input-preview': true,
-        // #7304 prompts carry the point a revert steps back to (`_meta.guguRevert` / `guguRevertAnchor`), and
-        // `_session/revert` takes it. A bridge without the extension ignores this; one with it sends anchors only then.
-        // A vendor-native agent never sees this flag: its points come from the plugin's `acp.revert` hook (#2970).
+        // A Gugu bridge puts revert points on prompts (`_meta.guguRevert`) and takes `_session/revert` only when this is
+        // set; claude-agent-acp also turns on its file checkpoints for it. A vendor-native agent ignores it.
         'gugu.revert': true,
         'terminal-auth': true,
       },

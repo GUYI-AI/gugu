@@ -81,8 +81,6 @@ export const plugin = definePlugin(
      */
     acp: {
       kind: 'supported',
-      // Rewind to before a message (#2970): `/rewind` is a terminal command (0.68.0); the ACP command set has none.
-      revert: { kind: 'unsupported', reason: 'tui-only' },
     },
     /**
      * 四档由 ACP `session/new` 自报（0.57.0 逐字：default/autoEdit/yolo/plan），

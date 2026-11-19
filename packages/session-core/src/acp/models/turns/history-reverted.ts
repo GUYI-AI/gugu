@@ -2,9 +2,9 @@ import type { TranscriptSessionNotice } from './session-notice';
 import type { TranscriptTurn } from './turn';
 
 /**
- * Where a conversation was stepped back (#7304): the last kept turn carries one boundary that says how many turns were
- * removed after it. The removed turns are gone — from the agent and from this view — so the line only counts them.
- * The runtime transcript and the stored history both write it through this one function, so they agree after a reload.
+ * Where a conversation was stepped back: the last kept turn carries one notice that says how many turns were removed
+ * after it. The removed turns are gone, from the agent and from this view, so the line only counts them. Only the
+ * stored history writes it, in the same transaction that deletes those turns (`truncateStoredHistory`).
  */
 export function markHistoryReverted(turn: TranscriptTurn, removed: number, at: number): TranscriptTurn {
   const id = `${turn.id}:history-reverted`;

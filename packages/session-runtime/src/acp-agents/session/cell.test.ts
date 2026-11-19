@@ -1,5 +1,5 @@
 import type { PermissionOptionKind } from '@agentclientprotocol/sdk';
-import type { AcpAgentApi, LiveSettingsCapability } from '@gugu/session-core/agents/plugins';
+import { guguBridgeRevert, type AcpAgentApi, type LiveSettingsCapability } from '@gugu/session-core/agents/plugins';
 import { isOk } from '@gugu/session-shared';
 import { noopLogger } from '@gugu/session-shared/logger';
 import { describe, expect, it, vi } from 'vitest';
@@ -3151,42 +3151,45 @@ describe('SessionCell arrival order between typed prompts and deliveries', () =>
 });
 
 describe('native in-place conversation revert', () => {
+  const bridged = (agent = new FakeAcpAgent()) => makeCell(agent, { revert: guguBridgeRevert });
+  const anchors = (cell: SessionCell) => cell.history().committed.flatMap((turn) => turn.items).filter((item) => item.kind === 'message')
+    .map((item) => item.kind === 'message' && [item.revertAnchor, item.revertFiles]);
+
   it('keeps the native ID, removes the suffix, and holds admission until display history is committed', async () => {
-    const { cell, agent } = makeCell();
+    const { cell, agent } = bridged();
     let n = 0;
     agent.prompt = vi.fn().mockImplementation(async () => ({ stopReason: 'end_turn', _meta: { guguRevert: { before: `native-${++n}` } } }));
     for (const text of ['keep', 'discard', 'discard later']) await cell.prompt({ text });
-    expect(cell.history().committed.flatMap((turn) => turn.items).filter((item) => item.kind === 'message')
-      .map((item) => item.kind === 'message' && item.revertAnchor)).toEqual(['native-1', 'native-2', 'native-3']);
+    await vi.waitFor(() => expect(anchors(cell)).toEqual([['native-1', undefined], ['native-2', undefined], ['native-3', undefined]]));
     agent.extMethod = vi.fn().mockResolvedValue({ sessionId: 'session-1' });
     expect(await cell.revertSession('native-2')).toEqual({ success: true, data: { providerSessionId: 'session-1' } });
-    expect(agent.extMethod).toHaveBeenCalledWith('_session/revert', { sessionId: 'session-1', before: 'native-2', files: 'keep' });
+    expect(agent.extMethod).toHaveBeenCalledWith('_session/revert', { sessionId: 'session-1', before: 'native-2' });
     expect(cell.history().committed).toHaveLength(1);
     expect(cell.history().committed[0].items[0]).toMatchObject({ text: 'keep' });
-    expect(cell.history().committed[0].items.at(-1)).toMatchObject({ kind: 'session-notice', code: 'history-reverted', effectiveValue: '2' });
     expect(await cell.prompt({ text: 'cannot race persistence' })).toMatchObject({ success: false, error: { type: 'session_busy' } });
     cell.finishHistoryRevert();
     expect(await cell.prompt({ text: 'replacement' })).toMatchObject({ success: true });
     expect(cell.acpSessionId).toBe('session-1');
-    expect(cell.history().committed).toHaveLength(2);
+    await vi.waitFor(() => expect(cell.history().committed).toHaveLength(2));
   });
 
-  it('fails loudly when a bridge does not confirm a requested file restore', async () => {
-    const { cell, agent } = makeCell();
+  it('asks a bridge to restore files with one boolean, and a bridge that cannot fails the revert', async () => {
+    const { cell, agent } = bridged();
     agent.prompt = vi.fn().mockResolvedValue({ stopReason: 'end_turn', _meta: { guguRevert: { before: 'native-1', files: true } } });
     await cell.prompt({ text: 'wrote a file' });
+    await vi.waitFor(() => expect(anchors(cell)).toEqual([['native-1', true]]));
     const before = cell.transcript.history;
-    agent.extMethod = vi.fn().mockResolvedValue({ sessionId: 'session-1', files: 'kept' });
+    agent.extMethod = vi.fn().mockRejectedValue(new Error('Could not restore the files: no checkpoint'));
     expect(await cell.revertSession('native-1', true)).toMatchObject({ success: false });
-    expect(agent.extMethod).toHaveBeenCalledWith('_session/revert', { sessionId: 'session-1', before: 'native-1', files: 'restore' });
+    expect(agent.extMethod).toHaveBeenCalledWith('_session/revert', { sessionId: 'session-1', before: 'native-1', restoreFiles: true });
     expect(cell.transcript.history).toBe(before);
   });
 
-  it('a vendor-native agent names its points and rewinds through its plugin hook, never `_session/revert` (#2970)', async () => {
+  it('a vendor-native agent names its points and reverts through its own hook', async () => {
     const agent = new FakeAcpAgent();
     const revert = {
-      anchorAfterTurn: vi.fn(async (_agent: unknown, _sessionId: string, response: Readonly<Record<string, unknown>>) =>
-        typeof response.userMessageId === 'string' ? { before: response.userMessageId, files: true } : null),
+      point: vi.fn(async (_agent: unknown, _sessionId: string, response: Readonly<Record<string, unknown>>) =>
+        typeof response.userMessageId === 'string' ? { before: response.userMessageId, files: true as const } : null),
       revert: vi.fn(async () => {}),
     };
     const { cell } = makeCell(agent, { revert });
@@ -3195,19 +3198,56 @@ describe('native in-place conversation revert', () => {
     agent.extMethod = vi.fn();
     for (const text of ['keep', 'discard']) await cell.prompt({ text });
     await vi.waitFor(() => expect(cell.history().committed).toHaveLength(2));
-    expect(revert.anchorAfterTurn).toHaveBeenLastCalledWith(expect.anything(), 'session-1', expect.objectContaining({ userMessageId: 'vendor-2' }));
-    expect(cell.history().committed.flatMap((turn) => turn.items).filter((item) => item.kind === 'message')
-      .map((item) => item.kind === 'message' && [item.revertAnchor, item.revertFiles])).toEqual([['vendor-1', true], ['vendor-2', true]]);
+    expect(revert.point).toHaveBeenLastCalledWith(expect.anything(), 'session-1', expect.objectContaining({ userMessageId: 'vendor-2' }));
+    expect(anchors(cell)).toEqual([['vendor-1', true], ['vendor-2', true]]);
     expect(await cell.revertSession('vendor-2')).toMatchObject({ success: true });
-    expect(revert.revert).toHaveBeenCalledWith(expect.anything(), { sessionId: 'session-1', before: 'vendor-2', files: 'keep' });
+    expect(revert.revert).toHaveBeenCalledWith(expect.anything(), 'session-1', 'vendor-2', false);
     expect(agent.extMethod).not.toHaveBeenCalled();
     expect(cell.history().committed).toHaveLength(1);
   });
 
-  it('leaves the transcript unchanged on native refusal or identity change', async () => {
+  it('a point reported again by the next turn stays with the turn it came from', async () => {
+    const agent = new FakeAcpAgent();
+    const revert = { point: vi.fn(async () => ({ before: 'only-point' })), revert: vi.fn(async () => {}) };
+    const { cell } = makeCell(agent, { revert });
+    agent.prompt = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
+    agent.extMethod = vi.fn();
+    for (const text of ['made a point', 'made none']) await cell.prompt({ text });
+    await vi.waitFor(() => expect(cell.history().committed).toHaveLength(2));
+    expect(anchors(cell)).toEqual([['only-point', undefined], [undefined, undefined]]);
+  });
+
+  it('a point lookup that never answers leaves the turn without a point, and the turn still settles', async () => {
+    vi.useFakeTimers();
+    try {
+      const agent = new FakeAcpAgent();
+      const revert = { point: vi.fn(() => new Promise<never>(() => {})), revert: vi.fn(async () => {}) };
+      const { cell } = makeCell(agent, { revert });
+      agent.prompt = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
+      agent.extMethod = vi.fn();
+      void cell.prompt({ text: 'hello' });
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(cell.history().committed).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(cell.history().committed).toHaveLength(1);
+      expect(anchors(cell)).toEqual([[undefined, undefined]]);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('a harness without a revert hook cannot revert, whatever its turns carried', async () => {
     const { cell, agent } = makeCell();
     agent.prompt = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
+    await cell.prompt({ text: 'hello' });
+    agent.extMethod = vi.fn();
+    expect(await cell.revertSession('anything')).toMatchObject({ success: false, error: { type: 'invalid_state' } });
+    expect(agent.extMethod).not.toHaveBeenCalled();
+  });
+
+  it('leaves the transcript unchanged on native refusal or identity change', async () => {
+    const { cell, agent } = bridged();
+    agent.prompt = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
     await cell.prompt({ text: 'retained on failure' });
+    await vi.waitFor(() => expect(cell.history().committed).toHaveLength(1));
     const before = cell.transcript.history;
     agent.extMethod = vi.fn().mockRejectedValue(new Error('legacy history is unsupported'));
     expect(await cell.revertSession('native')).toMatchObject({ success: false });
@@ -3218,7 +3258,7 @@ describe('native in-place conversation revert', () => {
   });
 
   it('refuses concurrent work before issuing a native mutation', async () => {
-    const { cell, agent } = makeCell();
+    const { cell, agent } = bridged();
     let finish!: (value: { stopReason: 'end_turn' }) => void;
     agent.prompt = vi.fn().mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
     const running = cell.prompt({ text: 'in flight' });

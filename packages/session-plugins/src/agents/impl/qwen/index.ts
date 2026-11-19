@@ -51,8 +51,6 @@ export const plugin = definePlugin(
     subscription: { kind: 'supported', usageRefresh: 'on-open' },
     acp: {
       kind: 'supported',
-      // Rewind to before a message (#2970): ACP ext `qwen/control/session/rewind` (0.27.4); restores files unless `rewindFiles: false`. See `revert.ts`.
-      revert: { kind: 'native', via: 'hook', files: 'default-on' },
       /**
        * 只声明**量过的那一维**(三维各自声明,见 `LiveSettingsCapability`);effort 没量,缺席。
        *

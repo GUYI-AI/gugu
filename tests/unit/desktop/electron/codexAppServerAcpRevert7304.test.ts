@@ -110,6 +110,13 @@ describe('conversation revert keeps the native Codex thread (#7304)', () => {
     expect(rig.requests().filter((r) => r.method === 'thread/revert').map((r) => r.params))
       .toEqual([{ threadId: 'same-thread', beforeTurnId: 'turn-2' }])
   })
+  it('refuses a file restore it cannot do, before touching the thread', async () => {
+    const rig = await open()
+    await rig.request('session/prompt', { sessionId: 'same-thread', prompt: [{ type: 'text', text: 'hello' }] })
+    expect(await rig.request('_session/revert', { sessionId: 'same-thread', before: 'turn-1', restoreFiles: true }))
+      .toMatchObject({ error: { message: expect.stringContaining('cannot restore files') } })
+    expect(rig.requests().some((r) => r.method === 'thread/revert')).toBe(false)
+  })
   it('reports legacy-history refusal without falling back to a fork', async () => {
     const rig = await open()
     expect(await rig.request('_session/revert', { sessionId: 'same-thread', before: 'legacy' }))

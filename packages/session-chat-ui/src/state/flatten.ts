@@ -217,7 +217,7 @@ export function flattenTier(
     if (call !== undefined) sentReplyCalls.add(call);
   }
   else turns = turns.map(withoutSentRepliesOfAgentSends);
-  // #7304 The rewound mark is drawn once, after everything its turn drew; no other pass sees it as a turn item.
+  // The rewound mark is drawn once, after everything its turn drew; no other pass sees it as a turn item.
   const rewoundMarks = new Map<string, ChatItem>();
   turns = turns.map((turn) => {
     const mark = (turn.items as readonly ChatItem[]).find(isRewoundMark);
@@ -664,7 +664,7 @@ export function flattenTier(
       processItem({ kind: 'turn-completion', id: `${turn.id}:completion`, turnId: turn.id, text: completionResult }, undefined, resultOwner);
     }
 
-    // A refused turn ends like a done one, but it is the turn a person most needs to step back from (#7304).
+    // A refused turn ends like a done one, but it is the turn a person most needs to step back from.
     if (!ctx.active && turn.outcome && (turn.outcome.kind !== 'done' || turn.outcome.reason === 'refusal')) {
       const prompt = turnPrompt(turn);
       processItem({
@@ -676,7 +676,7 @@ export function flattenTier(
       });
     }
 
-    // #7304 Where the conversation was rewound: after everything the kept turn drew (its cards and outcome too).
+    // Where the conversation was rewound: after everything the kept turn drew (its cards and outcome too).
     const rewound = rewoundMarks.get(turn.id);
     if (rewound) processItem(rewound);
   }

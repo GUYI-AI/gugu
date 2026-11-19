@@ -48,7 +48,7 @@ export const sessionNoticeCodeSchema = z.enum([
    * 名字就是寻址名,所以这件事必须留在对话里 —— ❌ 不是侧栏上的名字悄悄变了。
    */
   'agent-renamed',
-  /** The conversation was stepped back after this turn; `effectiveValue` is how many turns were removed (#7304). */
+  /** The conversation was stepped back after this turn; `effectiveValue` is how many turns were removed. */
   'history-reverted',
   /**
    * The session opened on a model whose raw tool-call markers its harness passes through as reply text (`effectiveValue`

@@ -51,8 +51,6 @@ export const plugin = definePlugin(
     },
     acp: {
       kind: 'supported',
-      // Rewind to before a message (#2970): `/rewind` forks into a new session (3.0.0).
-      revert: { kind: 'unsupported', reason: 'fork-only' },
       // Kiro's `modes` are agent configs (vibe, spec, plan, ...), not permission tiers.
       sessionModes: 'none',
       // The first session unpacks the bundled agent server.

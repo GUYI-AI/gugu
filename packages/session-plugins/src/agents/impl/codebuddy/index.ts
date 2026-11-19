@@ -71,8 +71,6 @@ export const plugin = definePlugin(
     },
     acp: {
       kind: 'supported',
-      // Rewind to before a message (#2970): ACP ext `_codebuddy.ai/session/rollback` (2.184.0), conversation only. See `revert.ts`.
-      revert: { kind: 'native', via: 'hook', files: 'none' },
       /**
        * 2026-10-19 mac1 实测(2.169.0,裸 ACP + 本地假网关):`session/new` 报 configOptions `mode` / `model` /
        * `thought_level`;`session/set_config_option` 设 `mode=bypassPermissions` / `mode=default` /

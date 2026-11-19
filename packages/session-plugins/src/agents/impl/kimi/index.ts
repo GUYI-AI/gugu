@@ -89,8 +89,6 @@ export const plugin = definePlugin(
     },
     acp: {
       kind: 'supported',
-      // Rewind to before a message (#2970): terminal `/undo` (2.6.2); not in the ACP command set.
-      revert: { kind: 'unsupported', reason: 'tui-only' },
     },
     /**
      * 推理强度 —— **已接通**(2026-08-28)。五档,出处是官方 `[models.*] support_efforts`

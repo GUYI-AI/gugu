@@ -8,7 +8,7 @@ import type { RecordEntry, SessionRecordSource } from '../contract';
 import { createClaudeJsonlSource } from './claude-jsonl';
 
 /**
- * #2970: a real Claude CLI transcript (2.1.326, sanitized) where a refused prompt poisoned two turns, then
+ * A real Claude CLI transcript (2.1.326, sanitized) where a refused prompt poisoned two turns, then
  * `--resume-session-at <the first answer>` stepped back and two more turns followed. The rewound turns stay in the file
  * as a branch; the conversation is the path to the newest line, so a reader must never hand the rewound turns back
  * (a backfill would re-insert them after the turn kept).

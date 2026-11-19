@@ -52,8 +52,6 @@ export const plugin = definePlugin(
     },
     acp: {
       kind: 'supported',
-      // Rewind to before a message (#2970): session-store `fork(source, seq)` (0.2.2-rc.1), not on ACP.
-      revert: { kind: 'unsupported', reason: 'fork-only' },
       /**
        * 2026-11-05 gpu 实测(0.2.1-rc.5,裸 ACP + 假网关):`session/set_config_option` 设 `model` /
        * `reasoning_effort` 都在应答里读回新值,下一轮请求就是新模型 ⇒ `acp-config-option` + `ack-read-back`。
