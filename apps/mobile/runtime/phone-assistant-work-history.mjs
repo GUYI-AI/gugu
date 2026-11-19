@@ -1,6 +1,6 @@
 import {createReadStream} from 'node:fs'
 import {realpath} from 'node:fs/promises'
-import {createInterface} from 'node:readline'
+import {readJsonlLines} from '../../../packages/core/src/local/jsonl.mjs'
 import {join,relative,isAbsolute} from 'node:path'
 import {legacyAssistantDispatch,legacyAssistantReports} from '../../../packages/core/src/shared/assistantWorkHistory.ts'
 import {stableId} from './phone-agent-store.mjs'
@@ -18,7 +18,7 @@ export function createPhoneAssistantWorkHistory({root,store,cloud,deviceId,insta
     const part=relative(base,target)
     if(!part || part.startsWith('..') || isAbsolute(part)) throw Object.assign(new Error('record outside phone session'),{code:'HISTORY_PATH_REJECTED'})
     const entries=[],sent=new Set(job.sent??[])
-    for await(const line of createInterface({input:createReadStream(target),crlfDelay:Infinity})) {
+    for await(const line of readJsonlLines(createReadStream(target))) {
       if(!current()) break
       let row
       try{row=JSON.parse(line)}catch{continue}
