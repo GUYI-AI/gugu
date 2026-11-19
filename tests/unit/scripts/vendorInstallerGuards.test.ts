@@ -47,28 +47,46 @@ describe('installer archive boundaries', () => {
     } finally { rmSync(directory, { recursive: true, force: true }) }
   })
 
-  it('binds the locked extraction to server resolution and preserves other local npm install hooks', () => {
+  it('preserves the locked SQLite payload with competing node-addon-api versions and other native hooks', () => {
     const directory = mkdtempSync(join(tmpdir(), 'sqlite-napi-lifecycle-'))
     try {
       const hook = join(directory, 'fixtures', 'native-hook')
+      const addon7 = join(directory, 'fixtures', 'addon7')
+      mkdirSync(addon7, { recursive: true })
+      writeFileSync(join(addon7, 'package.json'), JSON.stringify({ name: 'node-addon-api', version: '7.1.1', main: 'index.js' }))
+      writeFileSync(join(addon7, 'index.js'), 'module.exports = {}')
       mkdirSync(hook, { recursive: true })
-      writeFileSync(join(hook, 'package.json'), JSON.stringify({ name: 'test-native-hook', version: '1.0.0', scripts: { install: 'node build.cjs' } }))
+      writeFileSync(join(hook, 'package.json'), JSON.stringify({ name: 'test-native-hook', version: '1.0.0', dependencies: {
+        'node-addon-api': `file:${addon7}`,
+      }, scripts: { install: 'node build.cjs' } }))
       writeFileSync(join(hook, 'build.cjs'), "require('node:fs').writeFileSync(require('node:path').join(__dirname, 'built.txt'), 'ready')")
       writeFileSync(join(directory, 'package.json'), JSON.stringify({ private: true, dependencies: {
         'better-sqlite3': '13.2.0', 'test-native-hook': 'file:./fixtures/native-hook',
       } }))
-      // Mock only npm ci's reviewed extraction, not the subsequent local npm install/rebuild.
-      // The real committed lock is copied unchanged; this synthetic payload is not a real SQLite proof.
+      // Keep the graph/rebuild real and offline with synthetic packages. Only the reviewed
+      // extraction and the registry transfer of its pinned node-addon-api are substituted.
       installServerNodeDependencies(directory, ['--offline', '--no-audit', '--no-fund', '--workspaces=false'], { run(cwd, args) {
         if (args[0] === 'ci') {
           const reviewed = join(__dirname, '../../../apps/desktop/session-tooling/node-deps/package-lock.json')
           expect(readFileSync(join(cwd, 'package-lock.json'))).toEqual(readFileSync(reviewed))
           const sqlite = join(cwd, 'node_modules/better-sqlite3')
+          const addon8 = join(cwd, 'node_modules/node-addon-api')
+          mkdirSync(addon8, { recursive: true })
+          writeFileSync(join(addon8, 'package.json'), JSON.stringify({ name: 'node-addon-api', version: '8.9.2', main: 'index.js' }))
+          writeFileSync(join(addon8, 'index.js'), 'module.exports = {}')
           mkdirSync(sqlite, { recursive: true })
-          writeFileSync(join(sqlite, 'package.json'), JSON.stringify({ name: 'better-sqlite3', version: '13.2.0', gypfile: false, main: 'index.cjs' }))
+          writeFileSync(join(sqlite, 'package.json'), JSON.stringify({ name: 'better-sqlite3', version: '13.2.0', gypfile: false, main: 'index.cjs', dependencies: {
+            'node-addon-api': `file:${addon8}`,
+          } }))
           writeFileSync(join(sqlite, 'binding.gyp'), 'not a build definition')
           writeFileSync(join(sqlite, 'index.cjs'), 'module.exports=class { prepare(){return {get(){return {ready:1}}}} close(){} }')
           return
+        }
+        if (args[0] === 'install') {
+          const manifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'))
+          expect(manifest.dependencies['node-addon-api']).toBe('8.9.2')
+          manifest.dependencies['node-addon-api'] = `file:${join(directory, '.sqlite-node-deps/node_modules/node-addon-api')}`
+          writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest))
         }
         const result = spawnSync('npm', args, { cwd, encoding: 'utf8', shell: process.platform === 'win32' })
         if (result.error) throw result.error
@@ -77,6 +95,9 @@ describe('installer archive boundaries', () => {
       const appRequire = createRequire(join(directory, 'package.json'))
       const installedHook = dirname(appRequire.resolve('test-native-hook/package.json'))
       expect(readFileSync(join(installedHook, 'built.txt'), 'utf8')).toBe('ready')
+      expect(appRequire('node-addon-api/package.json').version).toBe('8.9.2')
+      expect(createRequire(join(installedHook, 'package.json'))('node-addon-api/package.json').version).toBe('7.1.1')
+      expect(existsSync(join(directory, '.sqlite-node-deps/node_modules/better-sqlite3/node_modules'))).toBe(false)
       expect(existsSync(join(directory, '.sqlite-node-deps/node_modules/better-sqlite3/build'))).toBe(false)
     } finally { rmSync(directory, { recursive: true, force: true }) }
   }, 30_000)
