@@ -1,5 +1,5 @@
 import { createInterface } from 'node:readline';
-import { CODEX_INITIALIZE_TIMEOUT_MS, CODEX_INITIALIZE_TIMEOUT, retryCodexPreparation, type CodexPreparation } from '@gugu/core/local/codex-initialize.mjs';
+import { retryCodexPreparation, type CodexPreparation } from '@gugu/core/local/codex-initialize.mjs';
 import type {
   AgentAuthContext,
   ISubscriptionBehavior,
@@ -193,11 +193,11 @@ async function askAppServerAttempt(ctx: AgentAuthContext, method: string | null,
     signal?.addEventListener('abort', abort, { once: true });
   });
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = (ms: number, initializing = false) => new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(Object.assign(new Error('Codex app-server request timed out'), initializing ? { code: CODEX_INITIALIZE_TIMEOUT } : {})), ms);
+  const deadline = (ms: number) => new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Codex app-server request timed out')), ms);
   });
   try {
-    const initialized = await Promise.race([request('initialize', { clientInfo: { name: 'gugu', title: 'Gugu', version: '0' }, capabilities: null }), exited, aborted, deadline(CODEX_INITIALIZE_TIMEOUT_MS, true)]);
+    const initialized = await Promise.race([request('initialize', { clientInfo: { name: 'gugu', title: 'Gugu', version: '0' }, capabilities: null }), exited, aborted]);
     clearTimeout(timer);
     if (method === null) return initialized;
     child.stdin!.write(JSON.stringify({ method: 'initialized' }) + '\n');

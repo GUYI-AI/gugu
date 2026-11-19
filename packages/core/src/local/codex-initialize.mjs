@@ -1,12 +1,8 @@
-export const CODEX_INITIALIZE_TIMEOUT_MS = 120_000
-export const CODEX_INITIALIZE_TIMEOUT = 'codex_initialize_timeout'
+export const CODEX_INITIALIZE_PROGRESS_MS = 120_000
 export const CODEX_PREPARATION_PREFIX = '[gugu-codex-preparing] '
 
 export function codexBackfillWaiting(error) {
   return /timed out waiting for state db backfill[\s\S]*?status:\s*running/i.test(String(error?.stderrTail ?? error?.message ?? ''))
-}
-export function retryableCodexPreparation(error) {
-  return error?.code === CODEX_INITIALIZE_TIMEOUT || codexBackfillWaiting(error)
 }
 export function parseCodexPreparation(line) {
   if (!line.startsWith(CODEX_PREPARATION_PREFIX)) return undefined
@@ -25,23 +21,27 @@ function delay(ms, signal) {
     signal?.addEventListener('abort', abort, { once: true })
   })
 }
-/** One bounded native attempt; persisted backfill work survives its process. No private database edits. */
+/** Time updates progress; only a native exit waiting on the backfill lease starts another process. */
 export async function retryCodexPreparation(start, { stop = async () => {}, onProgress = () => {}, signal, wait = delay, retryDelayMs = 5_000 } = {}) {
   const startedAt = Date.now()
   let phase = 'preparing'
   for (let attempt = 1; ; attempt++) {
     signal?.throwIfAborted()
-    onProgress({ phase, startedAt, attempt })
+    const publish = () => onProgress({ phase, startedAt, attempt })
+    publish()
+    const progress = setTimeout(publish, CODEX_INITIALIZE_PROGRESS_MS)
+    progress.unref?.()
     try {
       const result = await start()
       onProgress(null)
       return result
     } catch (error) {
-      if (signal?.aborted || !retryableCodexPreparation(error)) throw error
+      clearTimeout(progress)
+      if (signal?.aborted || !codexBackfillWaiting(error)) throw error
       await stop()
-      if (codexBackfillWaiting(error)) phase = 'history'
-      onProgress({ phase, startedAt, attempt })
+      phase = 'history'
+      publish()
       await wait(retryDelayMs, signal)
-    }
+    } finally { clearTimeout(progress) }
   }
 }

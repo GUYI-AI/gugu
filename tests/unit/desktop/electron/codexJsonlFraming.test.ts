@@ -1,7 +1,7 @@
 // @@@vitest-environment node
 import { PassThrough } from 'node:stream'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, chmodSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -15,9 +15,10 @@ type WireMessage = { id?: number | null; result?: unknown; error?: { code: numbe
 const fixture = [
   '#!/usr/bin/env node',
   'const out = m => process.stdout.write(JSON.stringify(m) + "\\n");',
+  'process.on("SIGTERM",()=>{require("fs").appendFileSync(process.env.RESUME_RELEASE+".signals","SIGTERM\\n");process.exit(0)});',
   'let raw = ""; process.stdin.setEncoding("utf8");',
   'process.stdin.on("data", chunk => { raw += chunk; let end; while ((end=raw.indexOf("\\n"))!==-1) { const m=JSON.parse(raw.slice(0,end)); raw=raw.slice(end+1); if(m.id===undefined)continue;',
-  'if (m.method==="initialize") { const ready=()=>out({id:m.id,result:{userAgent:"fixture"}}); const mode=process.env.SCENARIO; if(mode==="initialize-slow"){process.stderr.write("NATIVE_INITIALIZE_PENDING\\n");const t=setInterval(()=>{if(require("fs").existsSync(process.env.RESUME_RELEASE)){clearInterval(t);ready()}},10)}else if(mode==="initialize-timeout-once" || mode==="backfill-once"){const fs=require("fs"),file=process.env.RESUME_RELEASE+".attempt";let n=fs.existsSync(file)?Number(fs.readFileSync(file,"utf8")):0;fs.writeFileSync(file,String(++n));if(n>1)ready();else if(mode==="backfill-once"){process.stderr.write("timed out waiting for state db backfill (status: running)\\n");process.exit(1)}else process.stderr.write("NATIVE_INITIALIZE_PENDING\\n")}else ready();}',
+  'if (m.method==="initialize") { const ready=()=>out({id:m.id,result:{userAgent:"fixture"}}); const mode=process.env.SCENARIO; if(mode==="initialize-slow"){process.stderr.write("NATIVE_INITIALIZE_PENDING\\n");const t=setInterval(()=>{if(require("fs").existsSync(process.env.RESUME_RELEASE)){clearInterval(t);ready()}},10)}else if(mode==="backfill-once"){const fs=require("fs"),file=process.env.RESUME_RELEASE+".attempt";let n=fs.existsSync(file)?Number(fs.readFileSync(file,"utf8")):0;fs.writeFileSync(file,String(++n));if(n>1)ready();else {process.stderr.write("timed out waiting for state db backfill (status: running)\\n");process.exit(1)}}else ready();}',
   'else if (m.method==="thread/resume") {',
   ' if(process.env.SCENARIO==="bad") {process.stdout.write("{broken\\n"); continue;}',
   ' if(process.env.SCENARIO==="eof") {process.exit(7);}',
@@ -108,13 +109,27 @@ describe('Codex bridge native preparation', () => {
     h.release();
     expect(await opening).toHaveProperty('result');
   });
-  it('a 120 second attempt ends but a new process continues its saved work', async () => {
-    const h = await bridge('initialize-timeout-once');
+  it('keeps the same native process beyond 120 seconds without SIGTERM and eventually initializes', async () => {
+    const h = await bridge('initialize-slow');
     const opening = h.request('session/resume', { sessionId: 'same-thread', cwd: dir, mcpServers: [] });
     await awaitFact('native initializing', () => h.stderr().includes('NATIVE_INITIALIZE_PENDING') || undefined, { producer: h.processChild });
     await h.expireDeadlines(120000);
+    await awaitFact('120 second progress', () => h.stderr().split('\n').map(parseCodexPreparation).filter(p => p !== undefined).length >= 2 || undefined, { producer: h.processChild });
+    expect(existsSync(join(dir, 'release-resume.signals'))).toBe(false);
+    expect(h.processChild.exitCode).toBeNull();
+    h.release();
     expect(await opening).toHaveProperty('result');
-    expect(readFileSync(join(dir, 'release-resume.attempt'), 'utf8')).toBe('2');
+    expect(existsSync(join(dir, 'release-resume.signals'))).toBe(false);
+    expect(h.stderr().match(/NATIVE_INITIALIZE_PENDING/g)).toHaveLength(1);
+  });
+  it('stops native preparation when the host cancels it', async () => {
+    const h = await bridge('initialize-slow');
+    const opening = h.request('session/resume', { sessionId: 'same-thread', cwd: dir, mcpServers: [] }).catch(() => undefined);
+    await awaitFact('native initializing', () => h.stderr().includes('NATIVE_INITIALIZE_PENDING') || undefined, { producer: h.processChild });
+    h.stdin.end();
+    await awaitFact('native SIGTERM on cancellation', () => existsSync(join(dir, 'release-resume.signals')) || undefined, { producer: h.processChild });
+    expect(readFileSync(join(dir, 'release-resume.signals'), 'utf8')).toBe('SIGTERM\n');
+    await opening;
   });
   it('session/list also recovers a busy backfill lease without reporting upgrade', async () => {
     const h = await bridge('backfill-once');
