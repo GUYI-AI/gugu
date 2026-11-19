@@ -1,10 +1,10 @@
 import { DeviceRpcChannelError, DeviceRpcTimeoutError } from '@gugu/core/cloud/deviceRpcRequester'
 import { callOnComputer } from '../../../apps/desktop/src/components/appSlot/phoneProgramCall'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { OpenedFileChangedError, readWholeOpenedFile } from '../../../apps/desktop/src/mobile/agent-watch/opened-output-open'
+import { OpenedFileChangedError, readWholeOpenedFile } from '../../../apps/desktop/src/components/session-watch/opened-output-open'
 
 const rpc = vi.hoisted(() => ({ call: vi.fn() }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   appCallOn: rpc.call,
   SessionpageRpcError: class extends Error { constructor(readonly code: string, message: string) { super(message) } },
 }))

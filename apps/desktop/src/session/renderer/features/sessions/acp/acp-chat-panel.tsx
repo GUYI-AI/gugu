@@ -200,6 +200,7 @@ import { useSessionHeroCopy } from './use-session-hero-copy';
 import { useLastTurnSignInRequired } from './use-last-turn-sign-in';
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { isAuthExpired } from '@renderer/lib/stores/harness-auth-expiry';
+import { useCodexPreparationNotice } from '@renderer/lib/stores/use-codex-preparation-notice';
 import { useHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { filterSlashCommands } from './slash-command-matching';
 import { startupPlaceholderKey } from './startup-placeholder';
@@ -868,6 +869,7 @@ const ComposerForStore = observer(function ComposerForStore({
   const [catalogMenuSession, setCatalogMenuSession] = useState<string | null>(null);
   const readOwnCatalog = route !== 'own' || !store.session || catalogMenuSession === store.sessionId;
   const harnessCatalog = useHarnessModelCatalog(readOwnCatalog ? providerId : null, 'acp');
+  const modelPreparationNotice = useCodexPreparationNotice(harnessCatalog.preparation);
   const onModelMenuOpen = () => {
     platformCatalog.refresh();
     if (readOwnCatalog) harnessCatalog.refresh();
@@ -1005,7 +1007,6 @@ const ComposerForStore = observer(function ComposerForStore({
       const recorded = customModelOptionId(runningCustomModel);
       options[recorded] ??= {
         name: runningCustomModel.modelId ?? translate('customModels.noModel'),
-        groupLabel: translate('customModels.title'),
         disabled: true,
         disabledReason: translate('composer.modelNotInCatalog'),
       };
@@ -1501,7 +1502,7 @@ const ComposerForStore = observer(function ComposerForStore({
         onModelChange={handleModelChange}
         modelMenuOpenRequest={modelMenuRequest}
         modelSettingNotice={modelSettingNotice}
-        modelMenuNotice={lockedForTurn ? translate('composer.modelBusy') : undefined}
+        modelMenuNotice={lockedForTurn ? translate('composer.modelBusy') : modelPreparationNotice}
         onModelMenuOpen={onModelMenuOpen}
         modelUnlock={ownCatalogRetry}
         onModelUnlock={ownCatalogRetry ? harnessCatalog.retry : undefined}
@@ -1991,7 +1992,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           // 认得的说法给修法,认不得的只说「无法启动」+ 重试:原话留在本机日志,不上界面(见 session-condition.def)。
           const reason = failureReason(error.message);
           const membership = reason !== null && guguReasonCopy(reason).action === 'join-membership';
-          const text = reason ? failureText(error.message, translate, membership ? membershipLock?.modelName : null) : sessionStartupFailureCopy(error.message, translate);
+          const text = reason ? failureText(error.message, translate, membership ? membershipLock?.modelName : null) : sessionStartupFailureCopy(error, translate);
           if (!reason) return { code: 'start-failed', label: text, detail: text, actions: [retry] };
           return {
             code: membership ? 'membership-required' : 'start-failed',

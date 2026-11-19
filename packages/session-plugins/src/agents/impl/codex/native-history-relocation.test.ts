@@ -46,7 +46,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
   if(m.params.model!==thread.meta.model)throw Error('model changed');
   if(!thread.path.endsWith('.zst'))fs.appendFileSync(thread.path,JSON.stringify({type:'thread_settings',payload:{model:m.params.model}})+'\\n');
   result={thread:{id:thread.meta.id,path:process.env.TEST_ESCAPE_PATH||thread.path},modelProvider:thread.meta.model_provider};
- } else if(m.method==='thread/read') { if(native&&process.env.TEST_NATIVE_READ_FAIL==='1')throw Error('native history no longer readable'); if(!thread)throw Error('thread not found'); result={thread:{id:thread.meta.id,model:thread.meta.model,path:thread.path}}; }
+ } else if(m.method==='thread/read') { if(native&&process.env.TEST_NATIVE_READ_FAIL==='1')throw Error('native history no longer readable'); if(!thread)throw Error('thread not found'); result={thread:{id:thread.meta.id,model:thread.meta.model,path:thread.path,title:thread.meta.title}}; }
  else if(m.method==='thread/turns/list') {
   if(native&&process.env.TEST_NATIVE_READ_FAIL==='1')throw Error('native history no longer readable');
   if(!thread)throw Error('thread not found'); let turns=thread.meta.turns||[];
@@ -117,6 +117,11 @@ describe('native Codex history relocation', () => {
     const result = await relocateNativeCodexHistory(r.options);
     expect(result.counts.removed).toBe(1); expect(result.counts.unowned).toBe(0); expect(result.entries[root.id]!.members.sort()).toEqual([root.id, child.id].sort());
     expect(await exists(join(r.native, child.path))).toBe(false); expect(await exists(join(r.native, onlyParent.path))).toBe(true);
+  });
+  it('accepts app-server replies containing Unicode line separators in metadata', async () => {
+    const r = await rig(); await r.add('gugu_platform', true, { title: 'before\u2028middle\u2029after' });
+    const result = await relocateNativeCodexHistory(r.options);
+    expect(result.counts.removed).toBe(1); expect(result.counts.pending).toBe(0);
   });
   it('retains an entire subtree containing a non-Gugu child', async () => {
     const provider = 'openai';

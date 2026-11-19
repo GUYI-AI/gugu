@@ -13,7 +13,7 @@ vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { listDevices: async () => [h.device] } }))
 vi.mock('@gugu/core/cloud/devices', () => ({ isPhoneDevice: () => false }))
 vi.mock('@renderer/lib/ipc', () => ({ rpcOn: () => ({ sessionTimeline: { sessionOfAgent: h.sessionOfAgent }, sessions: { renameSession: h.renameSession } }) }))
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ sessionTimeline: { sessionOfAgent: h.sessionOfAgent }, sessions: { renameSession: h.renameSession } }) }))
+vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ sessionTimeline: { sessionOfAgent: h.sessionOfAgent }, sessions: { renameSession: h.renameSession } }) }))
 vi.mock('../../../../apps/desktop/src/mobile/local-agent/phoneHostRpc', () => ({ invokePhoneHost: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { kind: 'electron' } }))
 vi.mock('@renderer/features/sessions/archive-session-flow', () => ({ confirmArchive: vi.fn() }))

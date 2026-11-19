@@ -7,8 +7,8 @@ import { createReactHarness } from '../../../../../../../tests/support/testHarne
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import { BACKGROUND_TASKS_TOGGLE } from '@session-chat/state/flatten'
 import '@/styles/tokens.css'
-import '@/mobile/agent-watch/agent-watch.css'
-import '@/mobile/agent-watch/phone-conversation.css'
+import '@/components/session-watch/agent-watch.css'
+import '@/components/session-watch/phone-conversation.css'
 
 let h: ReturnType<typeof createReactHarness>
 beforeEach(() => { h = createReactHarness() })

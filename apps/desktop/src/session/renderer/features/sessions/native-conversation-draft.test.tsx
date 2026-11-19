@@ -5,7 +5,7 @@ import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { ChatStoreProvider, useChatStore } from '@/store/chatContext';
 import { readNativeOfflineDraft, writeNativeOfflineDraft } from '@/lib/nativeOfflineDraft';
 import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
-import { useSessionConversationDraft } from '@/mobile/agent-watch/use-session-conversation-draft';
+import { useSessionConversationDraft } from '@/components/session-watch/use-session-conversation-draft';
 
 const scope = vi.hoisted(() => ({ account: 'owner' as string | null, initial: {} as Record<string, string> }));
 vi.mock('@/lib/sessionInputOutboxBridge', () => ({

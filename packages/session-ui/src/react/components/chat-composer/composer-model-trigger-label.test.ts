@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { composerModelTriggerLabel } from './composer-model-menu';
+import { composerModelTriggerLabel, resolveComposerModelPanel } from './composer-model-menu';
 
 describe('composerModelTriggerLabel —— 括号是规格还是身份', () => {
   it('规格:清单里有光秃秃的本名(Claude 的 Opus 那对),照旧剥', () => {
@@ -18,4 +18,12 @@ describe('composerModelTriggerLabel —— 括号是规格还是身份', () => {
     expect(composerModelTriggerLabel('Opus (1M context)')).toBe('Opus');
     expect(composerModelTriggerLabel('(default)')).toBe('(default)');
   });
+});
+
+
+it('keeps native preparation reachable with zero models and removes the empty menu after preparation', () => {
+  expect(resolveComposerModelPanel({ modelCount: 0, effortCount: 0, unlock: false, notice: true }))
+    .toEqual({ kind: 'shown', modelRow: 'none' });
+  expect(resolveComposerModelPanel({ modelCount: 0, effortCount: 0, unlock: false }))
+    .toEqual({ kind: 'hidden' });
 });

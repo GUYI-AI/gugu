@@ -18,7 +18,7 @@ import type {
 import { createNode, createReactHarness } from '../../support/testHarness'
 import { stubVisibleIntersection } from '../../support/visibleIntersection'
 
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class SessionpageRpcError extends Error {},
   fetchSessionOptions: vi.fn(() => new Promise(() => {})),
   setSessionOption: vi.fn(),
@@ -30,10 +30,10 @@ vi.mock('../../../apps/desktop/src/components/assistant-ui/session-transcript-vi
   SessionTranscriptView: ({ composerContent }: { composerContent: import('react').ReactNode }) => createElement('div', { 'data-shared-transcript': '' }, composerContent),
 }))
 
-const { SessionConversation } = await import('../../../apps/desktop/src/mobile/agent-watch/SessionConversation')
-const { emptyAgentWatchTimeline } = await import('../../../apps/desktop/src/mobile/agent-watch/agent-watch-store')
-const { useTimelineSession } = await import('../../../apps/desktop/src/mobile/agent-watch/use-timeline-session')
-const { clearTimelineCache, forgetInMemoryTimelines } = await import('../../../apps/desktop/src/mobile/agent-watch/timeline-cache')
+const { SessionConversation } = await import('../../../apps/desktop/src/components/session-watch/SessionConversation')
+const { emptyAgentWatchTimeline } = await import('../../../apps/desktop/src/components/session-watch/agent-watch-store')
+const { useTimelineSession } = await import('../../../apps/desktop/src/components/session-watch/use-timeline-session')
+const { clearTimelineCache, forgetInMemoryTimelines } = await import('../../../apps/desktop/src/components/session-watch/timeline-cache')
 type AgentWatchSession = ReturnType<typeof useTimelineSession>
 type SessionpageTimelineClient = Parameters<typeof useTimelineSession>[0]
 

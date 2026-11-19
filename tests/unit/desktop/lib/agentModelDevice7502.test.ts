@@ -3,7 +3,7 @@ const local = vi.hoisted(() => vi.fn())
 const remote = vi.hoisted(() => vi.fn())
 const rpcOn = vi.hoisted(() => vi.fn(() => ({ sessionTimeline: { sessionCreateModels: local } })))
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => ({ rpcOn }))
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ fetchCreateModels: remote }))
+vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ fetchCreateModels: remote }))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ identityDb: {}, dataClient: {} }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: {} }))
 import { fetchAgentHarnessModels } from '../../../../apps/desktop/src/lib/agentModelSelection'

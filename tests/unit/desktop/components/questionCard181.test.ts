@@ -22,7 +22,7 @@ vi.mock('../../../../apps/desktop/src/store/devicesContext', async (original) =>
   ...await original<object>(), useDevicesStore: () => ({ devices: viewer === 'owner-1' ? [{ device_id: 'device-1', is_current_device: true }] : [] }),
 }))
 vi.mock('../../../../apps/desktop/src/store/chatContext', async (original) => ({ ...await original<object>(), useChatStore: () => ({ sendMessageToChat: send }) }))
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/use-timeline-session', () => ({
+vi.mock('../../../../apps/desktop/src/components/session-watch/use-timeline-session', () => ({
   useTimelineSession: (_client: unknown, _by: string, deviceId: string | null, _session: string | null, enabled: boolean) => {
     reads.push({ enabled, deviceId })
     return { timeline: { settlements: enabled && settlement ? { 'agent-question:q1': settlement } : {} }, respond, link: 'ok' }

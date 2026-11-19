@@ -11,6 +11,9 @@ import { ChatDetailsMenuItems } from './ChatDetailsMenuItems'
 import { OpenAppMenuItems } from './OpenAppMenuItems'
 import { useChatFolderName } from './chatFolderName'
 import { groupSettings } from './useGroupChatSettings'
+import { getAppSettingValueSnapshot } from '@renderer/features/settings/app-settings-client'
+import { getEffectiveHotkey } from '@renderer/lib/hooks/useKeyboardShortcuts'
+import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format'
 
 /** The same conversation menu in the chat header and the desktop group sidebar. */
 export function ChatHeaderMenu({
@@ -35,6 +38,9 @@ export function ChatHeaderMenu({
 }) {
   const { t } = useTranslation('messaging')
   const folderName = useChatFolderName()
+  // #2609 The search item names the shortcut that runs it (app.find with the user's binding) in this platform's keys:
+  // ⌘F on macOS, Ctrl+F elsewhere. Read when the menu renders; ❌ a literal.
+  const findHotkey = getEffectiveHotkey('app.find', getAppSettingValueSnapshot('keyboard'))
   const settings = useReplica(groupSettings, open && isGroupChat && chatId ? [chatId] : null)
   const canAddMembers = chatId && settings.state === 'value' && groupInviteAccess(chatId, 'group', settings.value).showInvite
 
@@ -45,7 +51,7 @@ export function ChatHeaderMenu({
     {open && <DropdownMenu.Content data-testid={AUTOMATION_TEST_IDS.groupHeaderMenu} side="bottom" align="end" sideOffset={4} style={{ minWidth: 220 }}>
       {children}
       {onOpenGroupApps && <MenuItem onClick={onOpenGroupApps} icon={<LayoutGrid size={16} />}>{t('header.groupApps')}</MenuItem>}
-      <MenuItem data-testid={AUTOMATION_TEST_IDS.chatHeaderSearchButton} onClick={onSearch} icon={<Search size={16} />} shortcut={isRoomChat && !mobile ? '⌘F' : undefined}>
+      <MenuItem data-testid={AUTOMATION_TEST_IDS.chatHeaderSearchButton} onClick={onSearch} icon={<Search size={16} />} shortcut={isRoomChat && !mobile && findHotkey ? formatHotkeyText(findHotkey) : undefined}>
         {t(isRoomChat ? 'header.searchHistory' : 'header.searchChat')}
       </MenuItem>
       <MenuItem data-pane-opener="" onClick={onOpenFolder} icon={<Folder size={16} />}>{folderName}</MenuItem>

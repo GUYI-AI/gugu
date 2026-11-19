@@ -103,6 +103,8 @@ export const agentAuthStatusSchema = z.discriminatedUnion('kind', [
     account: z.string().optional(),
     /** How the authenticated session is paid for, when the provider can prove it. */
     credentialKind: z.enum(['subscription', 'api-key']).optional(),
+    /** Proven origin only; absent when the CLI cannot distinguish it. */
+    credentialSource: z.enum(['environment', 'config-file']).optional(),
   }),
   z.object({
     kind: z.literal('unauthenticated'),
@@ -120,7 +122,7 @@ export const agentAuthStatusSchema = z.discriminatedUnion('kind', [
 ]);
 
 export type AgentAuthStatus =
-  | { kind: 'authenticated'; account?: string; credentialKind?: 'subscription' | 'api-key' }
+  | { kind: 'authenticated'; account?: string; credentialKind?: 'subscription' | 'api-key'; credentialSource?: 'environment' | 'config-file' }
   | { kind: 'unauthenticated'; message?: string; reason?: 'expired' }
   | { kind: 'unknown'; message?: string };
 

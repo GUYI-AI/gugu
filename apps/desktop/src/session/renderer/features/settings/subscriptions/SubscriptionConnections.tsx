@@ -201,6 +201,13 @@ export function SubscriptionConnections({
       }
     }
   })
+  const rename = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const result = await (await getAgentConfigRuntimeClient(machine)).renameConnection({ providerId: agent.id, connectionId: id, name });
+      if (!result.success) throw new Error(errorText(result.error));
+      await refreshSubscriptionReadings(machine, agent.id);
+    },
+  });
   // 没有连接可管的家只有它 CLI 自己那一份:列着的就是正在用的,选它没有可切的。
   const select = (id: string) => {
     if (form) action.mutate({ kind: 'select', id })
@@ -408,9 +415,9 @@ export function SubscriptionConnections({
     ))
   return (
     <>
-      {modelRows ? <>{failure && <SwitchNoticeLine notice={{ tone, text: failure, ...(refusedId ? { closeAndSwitch } : {}), ...(closing ? { progress } : {}) }} />}<SubscriptionModelRows agent={agent} machine={machine} connections={listed} busy={action.isPending}
-        onSignIn={id => signIn(id)} onAddAccount={modelRows.onAddAccount} onTest={id => action.mutate({ kind: 'refresh', id })} onRemove={id => action.mutate({ kind: 'remove', id })}
-        onRetry={refresh} error={connections.error || native.error ? translate('customModels.connectionsReadFailed', { provider: agent.name }) : null} /></> : modelAccount ? <ConnectionForm
+      {modelRows ? <SubscriptionModelRows notice={failure ? <SwitchNoticeLine notice={{ tone, text: failure, ...(refusedId ? { closeAndSwitch } : {}), ...(closing ? { progress } : {}) }} /> : undefined} agent={agent} machine={machine} connections={listed} busy={action.isPending || rename.isPending}
+        onSignIn={id => signIn(id)} onAddAccount={modelRows.onAddAccount} onRemove={id => action.mutate({ kind: 'remove', id })} onSelect={select} onRename={(id, name) => rename.mutateAsync({ id, name })}
+        onRetry={refresh} error={rename.error ? translate('mcpLibrary.saveFailed') : connections.error || native.error ? translate('customModels.connectionsReadFailed', { provider: agent.name }) : null} /> : modelAccount ? <ConnectionForm
           agent={agent} machine={machine} account={accountMethod} vendorKey={false}
           onCreated={connection => { setModelAccountId(connection.id); onCreated(connection) }} onCliSignIn={signInCli}
           modelAccount={{ connectionId: modelAccountId, onLogin: () => { if (modelAccountId) signIn(modelAccountId) }, onClose: modelAccount.onClose, onBusyChange: modelAccount.onBusyChange }}

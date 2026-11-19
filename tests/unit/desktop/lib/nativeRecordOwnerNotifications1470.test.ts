@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import type { TranscriptTurn } from '@gugu/session-core/acp/client';
 import type { NativeSessionRecord } from '@gugu/session-core/session-record/contract';
-import { mergeNativeRecordPage, projectNativeRecord } from '../../../../apps/desktop/src/mobile/agent-watch/native-record-state';
+import { mergeNativeRecordPage, projectNativeRecord } from '../../../../apps/desktop/src/components/session-watch/native-record-state';
 
 const source: TranscriptTurn = { id: 's:turn:s60', seq: 60, initiator: 'user', items: [{ kind: 'message', id: 'input', seq: 0, role: 'user', text: 'Work' }] };
 const notice: TranscriptTurn = { id: 's:turn:s59', seq: 59, initiator: 'agent', items: [{ kind: 'message', id: 'notice', seq: 0, role: 'assistant', text: 'Review',

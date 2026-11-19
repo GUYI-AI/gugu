@@ -1,3 +1,4 @@
+import { serverNow } from '@gugu/core/shared/serverClock'
 import { rendererLogger } from '@/lib/log';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { messageForUser } from '@/lib/userFacingError';
@@ -26,7 +27,7 @@ import {
 import type { IntegrationMetadata } from '@/session/renderer/features/integrations/integrations-provider'
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
 import { githubAuthDeviceCodeChannel } from '@/session/shared/events/githubEvents'
-import { machineRpc, onMachineEvent } from '../agent-watch/sessionpage-rpc'
+import { machineRpc, onMachineEvent } from '../../components/session-watch/sessionpage-rpc'
 import { phoneAssistantAuthorization } from './phoneAssistantAuthorization'
 import type { PhoneConnectorScope } from './PhoneConnectors'
 import { ReadFailed,ReadingNow } from './PhoneMachineView'
@@ -327,7 +328,7 @@ function PlatformBrowserSetup({ item, rpc, onConnected }: {
       if (generation.current !== current) return
       attempt.current = id
       openInBrowser(begun.authorizationUrl)
-      while (generation.current === current && Date.now() < begun.expiresAt) {
+      while (generation.current === current && serverNow() < begun.expiresAt) {
         const status = await rpc.integrations.platformOAuthStatus(item.id, id)
         if (generation.current !== current) return
         if (status.state === 'connected') { onConnected(); return }

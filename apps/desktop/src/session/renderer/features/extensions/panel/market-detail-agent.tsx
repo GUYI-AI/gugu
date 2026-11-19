@@ -8,8 +8,8 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { agentMarketCategoryOf } from '@shared/extensions/catalog';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { InstallSection, type AgentInstallationHeader } from '@renderer/features/settings/agents-page/InstallSection';
-import { uninstallAgentWithToast } from '@renderer/features/settings/agents-page/uninstall-agent-with-toast';
-import { MarketDetailCard, useMarketDetailConfirmation } from './market-detail-dialog';
+import { useAgentUninstallConfirmation } from '@renderer/features/settings/agents-page/agent-uninstall-confirmation';
+import { MarketDetailCard } from './market-detail-dialog';
 import { MarketAgentDevices } from './market-detail-agent-devices';
 import { marketAgentDescription } from './market-agent-description';
 
@@ -52,16 +52,8 @@ function AgentCard({ agent, installation, onCreate }: {
   onCreate: () => void;
 }) {
   const { translate, locale } = useSessionMessages();
-  const confirm = useMarketDetailConfirmation();
+  const { confirmation, requestUninstall } = useAgentUninstallConfirmation();
   const { installed, runnable, install, update, uninstall, busy, installing, updating, uninstalling, version, source } = installation;
-  const uninstallHere = async () => {
-    if (uninstall && await confirm({
-      title: translate('extensions.uninstallConfirmTitle', { name: agent.name }),
-      description: translate('marketDetail.agentUninstallBody', { name: agent.name }),
-      confirmLabel: translate('extensions.uninstallAction'),
-      variant: 'destructive',
-    })) uninstallAgentWithToast(agent.name, uninstall, translate);
-  };
 
   const actions = installing || updating || uninstalling ? (
     <Button disabled aria-busy>
@@ -82,19 +74,22 @@ function AgentCard({ agent, installation, onCreate }: {
   ) : undefined;
 
   return (
-    <MarketDetailCard
-      name={agent.name}
-      publisher={agent.publisher ? translate('marketDetail.agentPublisher', { publisher: agent.publisher }) : undefined}
-      icon={<AppIcon id={agent.id} size={68} dimmed={!installed} />}
-      actions={actions}
-      devices={<MarketAgentDevices agentId={agent.id} />}
-      facts={[
-        { label: translate('extensions.stripVersion'), value: agentVersion(version) ?? '—' },
-        { label: translate('agentsPage.sourceHeading'), value: source ? translate(SOURCE_LABELS[source]) : '—' },
-        { label: translate('extensions.infoCategory'), value: translate(agentMarketCategoryOf(agent.id) === 'general' ? 'agentsPage.detailGeneral' : 'agentsPage.detailCoding') },
-      ]}
-      subtitle={marketAgentDescription(agent, locale)}
-      onUninstall={uninstall && !busy ? () => void uninstallHere() : undefined}
-    />
+    <>
+      <MarketDetailCard
+        name={agent.name}
+        publisher={agent.publisher ? translate('marketDetail.agentPublisher', { publisher: agent.publisher }) : undefined}
+        icon={<AppIcon id={agent.id} size={68} dimmed={!installed} />}
+        actions={actions}
+        devices={<MarketAgentDevices agentId={agent.id} />}
+        facts={[
+          { label: translate('extensions.stripVersion'), value: agentVersion(version) ?? '—' },
+          { label: translate('agentsPage.sourceHeading'), value: source ? translate(SOURCE_LABELS[source]) : '—' },
+          { label: translate('extensions.infoCategory'), value: translate(agentMarketCategoryOf(agent.id) === 'general' ? 'agentsPage.detailGeneral' : 'agentsPage.detailCoding') },
+        ]}
+        subtitle={marketAgentDescription(agent, locale)}
+        onUninstall={uninstall && !busy ? () => requestUninstall(agent.name, uninstall) : undefined}
+      />
+      {confirmation}
+    </>
   );
 }

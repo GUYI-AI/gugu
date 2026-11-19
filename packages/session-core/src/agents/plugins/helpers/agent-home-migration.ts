@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { constants, promises as fs } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ResolvedAgentHome } from '../capabilities/config-root'
 import type { AgentHomeGroupId } from '../capabilities/session-bundle'
 
@@ -81,6 +81,49 @@ function inside(root: string, path: string): boolean {
   const part = relative(root, path)
   return part !== '..' && !part.startsWith('..' + sep) && !isAbsolute(part)
 }
+// Protect credential stores by location. Skill assets with names like token.json are ordinary files.
+const PRIVATE_HOME_LOCATIONS = [
+  '.ssh', '.gnupg', '.aws', '.kube', '.azure', '.config/gcloud',
+  '.netrc', '.git-credentials', 'Library/Keychains'
+]
+
+export class AgentHomeSensitiveLinkError extends Error {
+  constructor() { super('Symbolic link points to a credential store') }
+}
+
+/** Resolve the existing part of a dangling target so aliases of private directories are still recognized. */
+async function resolveExistingPrefix(path: string): Promise<string> {
+  try { return await disk.realpath(path) }
+  catch (error) {
+    const parent = dirname(path)
+    if (!missing(error) || parent === path) throw error
+    return join(await resolveExistingPrefix(parent), basename(path))
+  }
+}
+
+export async function resolveAgentHomeImportLink(home: ResolvedAgentHome, source: string, sourceRoot: string) {
+  const raw = await disk.readlink(source)
+  const target = resolve(dirname(source), raw)
+  const resolved = await disk.realpath(source).catch((error: unknown) => {
+    if (missing(error)) return null
+    throw error
+  })
+  const effective = resolved ?? await resolveExistingPrefix(target)
+  const protectedLocations = [
+    ...PRIVATE_HOME_LOCATIONS.map((path) => resolve(home.osHomeDir, path)),
+    ...home.credentialPaths.map((path) => resolve(sourceRoot, path))
+  ]
+  for (const location of protectedLocations) {
+    if (inside(location, target) || inside(location, effective)) throw new AgentHomeSensitiveLinkError()
+    // If the credential store itself is a link, alternate paths to its real location are private too.
+    const canonical = await disk.realpath(location).catch(() => location)
+    if (inside(canonical, effective)) throw new AgentHomeSensitiveLinkError()
+  }
+  if (resolved && inside(resolved, dirname(source)) && (await disk.stat(resolved)).isDirectory())
+    throw Object.assign(new Error('Cyclic symbolic link'), { code: 'ELOOP' })
+  return { raw, target, resolved }
+}
+
 /** Copy the link, never the target. Relative links to unimported locations keep their original target. */
 export async function importedLinkTarget(
   home: ResolvedAgentHome,
@@ -88,16 +131,7 @@ export async function importedLinkTarget(
   included: readonly string[],
   sourceRoot = home.userConfigRoot
 ): Promise<string> {
-  const raw = await disk.readlink(source)
-  const target = resolve(dirname(source), raw)
-  try {
-    const real = await disk.realpath(source)
-    const stat = await disk.stat(real)
-    if (stat.isDirectory() && inside(real, dirname(source)))
-      throw Object.assign(new Error('Cyclic symbolic link'), { code: 'ELOOP' })
-  } catch (error) {
-    if (!missing(error)) throw error
-  }
+  const { raw, target } = await resolveAgentHomeImportLink(home, source, sourceRoot)
   if (isAbsolute(raw)) return raw
   const rel = relative(sourceRoot, target).split(sep).join('/')
   const copied =

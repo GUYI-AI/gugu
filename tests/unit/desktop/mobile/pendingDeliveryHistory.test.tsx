@@ -5,11 +5,11 @@ import { createReactHarness } from '../../../support/testHarness'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import type { PendingPrompt } from '@gugu/session-chat-ui'
 import { splitActiveTurn } from '@/components/assistant-ui/transcript-sync'
-import { mergePendingDeliveryHistoryTurns } from '@/mobile/agent-watch/pending-delivery-history-turns'
-import { usePendingDeliveryHistory } from '@/mobile/agent-watch/usePendingDeliveryHistory'
+import { mergePendingDeliveryHistoryTurns } from '@/components/session-watch/pending-delivery-history-turns'
+import { usePendingDeliveryHistory } from '@/components/session-watch/usePendingDeliveryHistory'
 
 const rpc = vi.hoisted(() => ({ history: vi.fn() }))
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ sessions: { getStoredHistory: rpc.history } }) }))
+vi.mock('@/components/session-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ sessions: { getStoredHistory: rpc.history } }) }))
 
 const stored = (seq: number): TranscriptTurn => ({ id: `session:turn:s${seq}`, seq, initiator: 'user',
   items: [], outcome: { kind: 'done', reason: 'end_turn' } })

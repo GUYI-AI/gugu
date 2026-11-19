@@ -199,7 +199,7 @@ export async function scanAgentHomes(providerIds?: readonly string[], upgradedOn
     rows.push({
       providerId, name: plugin.metadata.name, userRoot: home.userConfigRoot, sourceReadable,
       importedAt: scan.marker?.importedAt ?? null, needsImport: !scan.marker,
-      sourceUpdated: !!scan.marker && scan.newestMtime > Date.parse(scan.marker.importedAt),
+      sourceUpdated: scan.sourceUpdated,
       migration,
       ...(nativeHistory ? { nativeHistory } : {}),
       ...(nativePreparation ? { migrationPreparation: nativePreparation } : {}),

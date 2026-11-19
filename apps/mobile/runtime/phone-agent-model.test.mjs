@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createPhoneModelAccess } from './phone-agent-model.mjs'
+import { withServerClock } from '../../../packages/core/src/shared/serverClock.ts'
 
 test('the issuer relay root preserves its gateway prefix and targets the shared OpenAI protocol endpoint', async () => {
   const access = createPhoneModelAccess({ modelAccess: async (request) => request.action === 'issue' ? { session_id: 'protocol-lease', relay_url: 'https://models.invalid/gateway/', token: 'private-short-lived', model: 'free', protocol: 'openai-chat-completions', expires_at: new Date(Date.now() + 600_000).toISOString() } : {} }, { state: { leases: {} }, save: async () => undefined }, () => undefined)
@@ -35,4 +36,23 @@ test('issued token is scoped to the real agent/session and every finished turn c
   await lease.close()
   assert.deepEqual(requests.map((item) => item.action), ['issue', 'checkpoint', 'revoke'])
   assert.deepEqual(store.state.leases, {})
+})
+
+test('a ticket is judged on the backend’s clock: a phone clock 4 h 17 min fast still uses it, and renews before it ends', async (t) => {
+  const SERVER = Date.parse('2026-11-16T12:00:00.000Z')
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: SERVER + (4 * 60 + 17) * 60_000 })
+  await withServerClock(async () => new Response('[]', { headers: { date: new Date(SERVER).toUTCString() } }))('https://db.invalid/rest/v1/ping')
+  const requests = []
+  const access = createPhoneModelAccess({ modelAccess: async (request) => {
+    requests.push(request.action)
+    return request.action === 'issue' || request.action === 'renew'
+      ? { session_id: 'skewed-lease', relay_url: 'https://models.invalid', token: 'private-short-lived', model: 'free', protocol: 'openai-chat-completions', expires_at: new Date(SERVER + 900_000).toISOString() }
+      : {}
+  } }, { state: { leases: {} }, save: async () => undefined }, () => undefined)
+  const lease = await access.issue({ agentUserId: 'real-agent', sessionId: 'real-session', modelId: 'free' })
+  try {
+    t.mock.timers.tick(900_000 - 120_000)
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.deepEqual(requests, ['issue', 'renew'])
+  } finally { await lease.close() }
 })
