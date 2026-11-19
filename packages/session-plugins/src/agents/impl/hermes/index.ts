@@ -1,4 +1,3 @@
-import { hermesApiKeyConnection, hermesApiKeyConnectionBehavior } from './api-key-connection';
 import { platformModel } from './platform-model';
 import { nativePromptMeta } from '@gugu/session-core/acp/native-prompt';
 import {
@@ -51,6 +50,7 @@ export const plugin = definePlugin(
   {
     id: 'hermes',
     name: 'Hermes Agent',
+    publisher: 'Nous Research',
     description:
       'Nous Research terminal agent with interactive chat, model-provider routing, skills, and session workflows.',
     websiteUrl: 'https://hermes-agent.nousresearch.com/docs/',
@@ -76,7 +76,6 @@ export const plugin = definePlugin(
         },
       ],
     },
-    apiKeyConnection: hermesApiKeyConnection,
     vendorAccount: {
       kind: 'not-required',
       evidence:
@@ -192,7 +191,6 @@ export const plugin = definePlugin(
 );
 
 export const provider = registerPluginBehavior(plugin, {
-  apiKeyConnection: hermesApiKeyConnectionBehavior,
   auth: { checkStatus: hermesAuthStatus },
   sessionBundle: { materialize: materializeHermesSessionBundle, platformModel },
   subscription: hermesSubscription,

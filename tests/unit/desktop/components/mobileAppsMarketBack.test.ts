@@ -2,6 +2,8 @@
 // An App's market page opened from its settings page on the phone: back returns to the settings page, as on the desktop.
 import { act, createElement } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { createReactHarness } from '../../../support/testHarness'
 
 const manifest = vi.hoisted(() => ({ id: 'notes', name: 'Notes', version: '1.0.0', apiVersion: 35, defaultLocale: 'en', permissions: { capabilities: [] }, contributes: { tabs: [] } }))
@@ -15,13 +17,13 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/phoneApps', () => ({
   },
 }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: { manifests: [manifest], isEnabled: () => true, isPreinstalled: () => false, mainTabOf: () => null },
+  installedExtensionsStore: { isLoaded: true, manifests: [manifest], isEnabled: () => true, isPreinstalled: () => false, mainTabOf: () => null },
 }))
 vi.mock('../../../../apps/desktop/src/components/settings/phoneMarketPage', () => ({
   PHONE_HOST: 'phone',
-  keptPhoneMarketPage: market,
+  PHONE_MARKET_QUERY_KEY: ['phone-app-market'],
+  usePhoneMarketPage: () => ({ data: market }),
   phoneProductApi: {},
-  readPhoneMarketPage: async () => market,
   phoneMarketRows: (entries: unknown[]) => entries,
   useOfferedVersions: () => ({ updates: {}, gone: [] }),
 }))
@@ -34,8 +36,6 @@ vi.mock('../../../../apps/desktop/src/components/settings/PhoneAppManage', () =>
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/panel/app-product-page', () => ({
   AppProductPage: ({ onBack, backLabel }: { onBack: () => void; backLabel?: string }) => createElement('button', { 'data-testid': 'product', onClick: onBack }, backLabel ?? 'market'),
 }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/panel/app-market-content', () => ({ AppMarketContent: () => null }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/panel/app-featured', () => ({ featuredShotsReady: async () => {} }))
 
 const { MobileAppsSection } = await import('../../../../apps/desktop/src/components/settings/MobileAppsSection')
 
@@ -47,8 +47,7 @@ const find = (id: string) => harness.container.ownerDocument.querySelector<HTMLE
 const click = async (id: string) => { await act(async () => { find(id)!.click() }) }
 
 it('back from the market page returns to the settings page it was opened from', async () => {
-  await harness.render(createElement(MobileAppsSection))
-  await click('phone-apps-installed-tab')
+  await harness.render(createElement(QueryClientProvider, { client: queryClient, children: createElement(MobileAppsSection, { mode: 'installed' }) }))
   await click('row')
   await click('manage')
   expect(find('manage')).toBeNull()

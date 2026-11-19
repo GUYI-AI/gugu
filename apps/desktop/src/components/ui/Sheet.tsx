@@ -80,6 +80,8 @@ export interface SheetProps {
   titleId?: string
   /** Dismiss when the backdrop is clicked. Default true. */
   closeOnBackdrop?: boolean
+  /** Add the standard scrim when this sheet opens inside another dialog. */
+  dimNested?: boolean
   /** Stacking order. Default var(--z-modal)；非常规层传 var(--z-*) token（#1899），❌ 魔数。 */
   zIndex?: number | string
 }
@@ -101,6 +103,7 @@ export function Sheet({
   finalFocus,
   titleId,
   closeOnBackdrop = true,
+  dimNested = false,
   zIndex = 'var(--z-modal)',
 }: SheetProps) {
   const { t } = useTranslation()
@@ -152,7 +155,7 @@ export function Sheet({
           forceRender
           className={cn('gg-sheet-backdrop window-no-drag-region', sheetBackdropMotion)}
           data-sheet-mobile={mobile ? 'true' : 'false'}
-          style={{ zIndex }}
+          style={{ zIndex, ...(dimNested && { background: 'var(--bg-overlay-modal)' }) }}
         />
         <Dialog.Viewport
           className={cn('gg-sheet-viewport window-no-drag-region', sheetViewport)}

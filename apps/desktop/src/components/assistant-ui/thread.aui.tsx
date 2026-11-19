@@ -29,7 +29,7 @@ import {
   ToolGroupRoot,
   ToolGroupTrigger,
 } from "./tool-group.aui";
-import { ComposerAboveExtras, ComposerExtras, ComposerInputHeader, ThreadTailExtras, useComposerPlaceholder, useComposerStop } from "./composer-extras";
+import { ComposerAboveExtras, ComposerExtras, ComposerInputHeader, ThreadTailExtras, useComposerAttachmentPlacement, useComposerEditorRef, useComposerPlaceholder, useComposerStop } from "./composer-extras";
 import { useAuiCopy } from "./copy";
 import { TooltipIconButton } from "./tooltip-icon-button";
 import { Button } from "./ui/button";
@@ -249,7 +249,7 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean; submitOnEnter: bool
             {/* 咕咕加的第二个宿主插槽:输入框**正上方**(发送失败)。这一带贴底、没有高度上限,
                 待答的审批/提问卡 ❌ 放这里 —— 一张比视口高的卡会把整个视口盖住,见 ThreadTailExtras。 */}
             <ComposerAboveExtras />
-            <Composer autoFocus={autoFocus} submitOnEnter={submitOnEnter} sendDisabled={sendDisabled} />
+            <ThreadComposer autoFocus={autoFocus} submitOnEnter={submitOnEnter} sendDisabled={sendDisabled} />
             <AuiIf condition={(s) => isNewChatView(s) && s.composer.isEmpty}>
               <ThreadSuggestions />
             </AuiIf>
@@ -359,7 +359,7 @@ const ThreadSuggestionItem: FC = () => {
   );
 };
 
-function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boolean; submitOnEnter: boolean; sendDisabled: boolean }) {
+export function ThreadComposer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boolean; submitOnEnter: boolean; sendDisabled: boolean }) {
   const c = useAuiCopy();
   const { resolvedLocale } = useLocale();
   const { theme } = useTheme();
@@ -369,8 +369,14 @@ function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boole
   const fileSelection = useAttachmentFileSelection(attachments, composer);
   const { isRunning, isDisabled, capabilities } = useAuiState((s) => s.thread);
   const hostStop = useComposerStop();
+  const attachmentPlacement = useComposerAttachmentPlacement();
   const placeholder = useComposerPlaceholder() ?? c.placeholder;
   const editor = useRef<PromptEditorRef | null>(null);
+  const hostEditor = useComposerEditorRef();
+  const receiveEditor = useCallback((handle: PromptEditorRef | null) => {
+    editor.current = handle;
+    if (hostEditor) hostEditor.current = handle;
+  }, [hostEditor]);
   const picker = useRef<HTMLInputElement>(null);
   const previews = useRef(new Map<File, string>());
   const { byEngine, renderMentionIcon } = useSessionAgentCreationTools();
@@ -414,13 +420,13 @@ function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boole
     <SessionUiTheme theme={theme}>
       <MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
         {capabilities.attachments && <input ref={picker} type="file" multiple hidden onChange={(event) => { addFiles(Array.from(event.target.files ?? [])); event.target.value = ''; }} />}
-        <ChatComposer editorApiRef={editor} mobile={mobile} placeholder={placeholder}
-          renderPhoneHeader={mobile && capabilities.attachments ? () => <PhoneAttachmentMenuBar disabled={isDisabled} onOpen={() => picker.current?.click()} /> : undefined}
+        <ChatComposer editorApiRef={receiveEditor} mobile={mobile} placeholder={placeholder}
+          renderPhoneHeader={mobile && capabilities.attachments && attachmentPlacement === 'menu' ? () => <PhoneAttachmentMenuBar disabled={isDisabled} onOpen={() => picker.current?.click()} /> : undefined}
           editorOptions={{ enterBehavior: submitOnEnter ? 'submit' : 'newline', clearOnSubmit: false }}
           disabled={isDisabled} canSubmit={!sendDisabled && canSend && (!isRunning || capabilities.queue)}
           isWorking={!!hostStop && isEmpty} stopDisabled={hostStop?.stopping}
           onStop={hostStop?.onStop} onInputChange={(value) => composer.setText(value)} onSubmit={() => composer.send()}
-          onAttach={!mobile && capabilities.attachments ? () => picker.current?.click() : undefined}
+          onAttach={capabilities.attachments && (!mobile || attachmentPlacement === 'input') ? () => picker.current?.click() : undefined}
           onFilesDropped={capabilities.attachments ? addFiles : undefined} onImageFilesDropped={capabilities.attachments ? addFiles : undefined}
           attachments={chips} onAttachmentsChange={capabilities.attachments ? (next) => { for (const attachment of attachments) if (!next.some((chip) => chip.id === attachment.id)) void composer.attachment({ id: attachment.id }).remove(); } : undefined}
           onRetryAttachment={(id) => { const file = attachments.find((attachment) => attachment.id === id)?.file; if (file) void composer.attachment({ id }).remove().then(() => composer.addAttachment(file)); }}

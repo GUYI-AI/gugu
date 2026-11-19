@@ -17,6 +17,7 @@
  * 换算与上下限用 `pinch-zoom.ts` 同一套常量;普通双指滑动不带 ctrlKey,照常滚动。
  */
 
+import { PREVIEW_ANNOTATION_SPACE_RELEASE } from './html-preview-annotation';
 import { DOCUMENT_MAX_ZOOM, DOCUMENT_MIN_ZOOM } from './pinch-zoom';
 
 export const PREVIEW_LINK_MESSAGE_TYPE = 'gugu-preview-link';
@@ -58,6 +59,9 @@ const PREVIEW_SCROLL_SCRIPT = `
 `;
 
 const PREVIEW_PINCH_ZOOM = `
+  document.addEventListener('keyup', function(e){
+    if (e.code === 'Space') parent.postMessage({ type: '${PREVIEW_ANNOTATION_SPACE_RELEASE}' }, '*');
+  }, true);
   document.addEventListener('wheel', function(e){
     if (!e.ctrlKey) return;
     e.preventDefault();

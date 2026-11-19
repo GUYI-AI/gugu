@@ -7,6 +7,7 @@ import { InSettingsPanelProvider, PageHeader } from '@renderer/lib/components/pa
 import { modalStore } from '@renderer/lib/modal/modal-store';
 import { queryClient } from '@/lib/replica';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
+import { ThemePackSettings } from '@renderer/features/library/themes/themes-library-page';
 import { BrowserSettingsCard } from './BrowserSettingsCard';
 import HiddenToolsSettingsCard from './HiddenToolsSettingsCard';
 import InterfaceSettingsCard from './InterfaceSettingsCard';
@@ -19,21 +20,21 @@ import {
   AutoApproveByDefaultRow,
   AutoGenerateSessionNamesRow,
   AutoTrustWorktreesRow,
+  IdleCompactionRow,
   PreserveSessionNameCapitalizationRow,
   SessionTitleInstructionsRow,
-  SessionTitleModelRow,
 } from './SessionSettingsRows';
 import { SidebarTintRow } from './SidebarTintRow';
 import TerminalSettingsCard from './TerminalSettingsCard';
 import { terminalShown, useTerminalEnabled } from '../use-terminal-enabled';
 import ChatViewCard from './ChatViewCard';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { DeviceScopeProvider } from '@renderer/features/remote-hosts/device-scope-picker';
-import { settingsDeviceStore } from '@renderer/features/remote-hosts/device-scope-store';
 import { DeviceSettingsScope } from './DeviceSettingsScope';
+import { AuxiliaryModelsGroup } from '@/components/settings/AuxiliaryModelsGroup';
 import { SubscriptionsSettingsPage } from '../subscriptions/SubscriptionsSettingsPage';
-import { OwnerConnectorsSettings } from '@/components/connections/OwnerConnectorsSettings';
+import { OwnerConnectorsSettings, type PhoneConnectorPresentation } from '@/components/connections/OwnerConnectorsSettings';
 import { HomeConnectorsSettings,CloudConnectorsSettings } from '../../assistant/assistant-connectors-settings';
+import { PromptLibraryView } from '@renderer/features/library/prompts/prompt-library-view';
 import { ConnectionRouteBoundary } from '@/components/connections/ConnectionRouteBoundary';
 import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting';
 
@@ -50,11 +51,11 @@ function GeneralSettingsPage() {
       />
       <SettingsGroup>
         <AutoGenerateSessionNamesRow />
-        <SessionTitleModelRow />
         <SessionTitleInstructionsRow />
         <AutoApproveByDefaultRow />
         <AutoTrustWorktreesRow />
         <PreserveSessionNameCapitalizationRow />
+        <IdleCompactionRow />
       </SettingsGroup>
       <DeviceSettingsScope>
         <MachineSettingsCard />
@@ -107,7 +108,7 @@ function BrowserSettingsPage() {
 // ---------------------------------------------------------------------------
 
 /** 设置弹窗里由本页画的那几格(product spec);键与壳的 ActiveSection 同名。 */
-export type SessionSettingsSection = 'sessions' | 'interface' | 'browser' | 'subscriptions' | 'connectors' | 'resource-monitor';
+export type SessionSettingsSection = 'theme-packs' | 'sessions' | 'prompts' | 'interface' | 'browser' | 'subscriptions' | 'connectors' | 'resource-monitor' | 'auxiliary-models';
 
 /** 个别格要壳告诉它的事实(「连接应用」要知道咕咕住的那台云端宿主是谁);其余格不用。 */
 export type SessionSettingsContext = {
@@ -118,10 +119,14 @@ export type SessionSettingsContext = {
   panelNavigation?: boolean;
   connectionRoute?: ConnectionRoute;
   initialConnectorId?: string;
+  connectionDeviceId?: string | null;
+  phoneConnectorCatalog?: PhoneConnectorPresentation;
+  connectOnly?: boolean;
 };
 
 function RoutedConnectors(context: SessionSettingsContext) {
-  const owner = (route: ConnectionRoute) => <OwnerConnectorsSettings route={route} panelNavigation={context.panelNavigation} initialConnectorId={context.initialConnectorId} />;
+  const owner = (route: ConnectionRoute) => <OwnerConnectorsSettings route={route} panelNavigation={context.panelNavigation} initialConnectorId={context.initialConnectorId}
+    deviceId={context.connectionDeviceId} phoneCatalog={context.phoneConnectorCatalog} connectOnly={context.connectOnly} />;
   if (context.connectionRoute) return owner(context.connectionRoute);
   return <ConnectionRouteBoundary owner={owner} legacy={context.home
     ? <HomeConnectorsSettings home={context.home} assistantName={context.assistantName ?? ''} panelNavigation={context.panelNavigation} />
@@ -129,12 +134,14 @@ function RoutedConnectors(context: SessionSettingsContext) {
 }
 
 const SECTION_CONTENT: Record<SessionSettingsSection, (context: SessionSettingsContext) => ReactNode> = {
+  'theme-packs': () => <ThemePackSettings />,
   sessions: () => <GeneralSettingsPage />,
+  prompts: () => <PromptLibraryView />,
   interface: () => <InterfaceSettingsPage />,
   'resource-monitor': () => <ResourceMonitorSettingsPage />,
   browser: () => <BrowserSettingsPage />,
-  // 订阅与任务里的机器组共用一份机器选择。
-  subscriptions: () => <DeviceScopeProvider store={settingsDeviceStore}><SubscriptionsSettingsPage /></DeviceScopeProvider>,
+  subscriptions: () => <SubscriptionsSettingsPage />,
+  'auxiliary-models': () => <AuxiliaryModelsGroup />,
   connectors: context => <RoutedConnectors {...context} />,
 };
 

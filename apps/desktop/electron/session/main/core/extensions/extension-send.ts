@@ -2,7 +2,7 @@ import { userIdFromSupabaseAccessToken } from '@gugu/core';
 import { buildExtensionEnvelope, formatDeliveryTimestamp } from '@gugu/core/local/agent/deliveryEnvelope';
 import { extensionsService } from '@main/core/extensions/extensions-root';
 import { currentAccountAccessToken } from '@main/core/extensions/account-token';
-import { AppSendError, dispatchFromApp, type DispatchHere } from '@shared/extensions/app-send-core';
+import { AppSendError, chatSelectionPills, dispatchFromApp, type DispatchHere } from '@shared/extensions/app-send-core';
 import { createAppMessages } from '@shared/extensions/app-messages-core';
 import { createAppCloud, type CloudChannel } from '@shared/extensions/app-cloud-core';
 import { subscribeStatusName } from '@gugu/core/cloud/deviceRpcProtocol';
@@ -34,6 +34,9 @@ async function account(): Promise<{ token: string; userId: string }> {
   if (!token || !userId) throw new AppSendError('failed', 'Not signed in');
   return { token, userId };
 }
+
+/** API 55 Send from a chat's folder: its pills, read as the person (`chatSelectionPills`, the phone's too). */
+export const chatSelectionPillsForApp = (chatId: string, refs: unknown) => chatSelectionPills({ account }, chatId, refs);
 
 /** `gugu.messages`: a chat's messages, read with the same account (the shared answer, `app-messages-core.ts`, the phone's too). */
 export const messagesForApp = createAppMessages({ account });

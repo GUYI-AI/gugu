@@ -21,6 +21,10 @@ export function createPushedRuntimeAuthProvider(pushedAuth: () => PushedRuntimeA
   }
 }
 
+export interface HumanAuthChangePermit {
+  leave(): Promise<void>
+  mutate<T>(operation: () => Promise<T>): Promise<T>
+}
 export interface HumanAuthSessionHost<Mirror extends { access_token: string; refresh_token?: string | null }, Written, Cleared> {
   toAuth: (tokens: { accessToken: string; refreshToken?: string | null }) => RuntimeAuth | null
   set: (auth: PushedRuntimeAuth) => void
@@ -33,6 +37,11 @@ export interface HumanAuthSessionHost<Mirror extends { access_token: string; ref
   enter: () => Promise<void>
   /** Everyone else learns of the change after it is recorded, whether persistence succeeded or not. */
   changed: () => void
+  /** Optional native account-closure barrier. Runtime drains happen before it;
+   * only the short in-memory and on-disk credential mutation is serialized. */
+  mutate?<T>(nextUserId: string | null, operation: () => Promise<T>): Promise<T>
+  /** Native eligibility and source generation are captured before lifecycle effects. */
+  prepareChange?(nextUserId: string | null): Promise<HumanAuthChangePermit>
 }
 
 /**
@@ -42,28 +51,40 @@ export interface HumanAuthSessionHost<Mirror extends { access_token: string; ref
 export function createHumanAuthSessionIpc<Mirror extends { access_token: string; refresh_token?: string | null }, Written, Cleared>(
   host: HumanAuthSessionHost<Mirror, Written, Cleared>,
 ) {
+  const mutate = <T>(owner: string | null, operation: () => Promise<T>) => host.mutate ? host.mutate(owner, operation) : operation()
   return {
     async write(mirror: Mirror): Promise<Written> {
       const next = host.toAuth({ accessToken: mirror.access_token, refreshToken: mirror.refresh_token })
-      await host.leaveIfChanging(next?.userId ?? null)
+      const change = await host.prepareChange?.(next?.userId ?? null)
+      await (change ? change.leave() : host.leaveIfChanging(next?.userId ?? null))
+      let changed = false
       try {
-        host.set(undefined)
-        host.set(next)
-        host.revoke()
-        return await host.persist(mirror)
+        const operation = async () => {
+          changed = true
+          host.set(undefined)
+          host.set(next)
+          host.revoke()
+          return host.persist(mirror)
+        }
+        return await (change ? change.mutate(operation) : mutate(next?.userId ?? null, operation))
       } finally {
-        host.changed()
-        await host.enter()
+        if (changed) { host.changed(); await host.enter() }
       }
     },
     async clear(reason: unknown): Promise<Cleared> {
-      await host.leaveIfChanging(null)
+      const change = await host.prepareChange?.(null)
+      await (change ? change.leave() : host.leaveIfChanging(null))
+      let changed = false
       try {
-        host.set(reason === 'lost' ? 'lost' : null)
-        host.revoke()
-        return await host.erase()
+        const operation = async () => {
+          changed = true
+          host.set(reason === 'lost' ? 'lost' : null)
+          host.revoke()
+          return host.erase()
+        }
+        return await (change ? change.mutate(operation) : mutate(null, operation))
       } finally {
-        host.changed()
+        if (changed) host.changed()
       }
     },
   }

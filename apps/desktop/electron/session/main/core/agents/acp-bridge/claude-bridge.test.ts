@@ -80,7 +80,7 @@ type Wait = ReturnType<typeof waiter>;
 /** A real session start: waits for a paired bridge that is still downloading. */
 const resolve = (deps: ClaudeBridgeDeps, wait: Wait = waiter()) =>
   resolveClaudeBridgeEntry({ cliPath: '/usr/local/bin/claude', env: {}, cacheDir: CACHE, deps, wait });
-/** A model-catalog probe: never waits for a download. */
+/** A model-catalog probe: uses the same paired bridge without session progress callbacks. */
 const probe = (deps: ClaudeBridgeDeps) => resolveClaudeBridgeEntry({ cliPath: '/usr/local/bin/claude', env: {}, cacheDir: CACHE, deps });
 const entryOf = (version: string) => cachedBridgeEntry(CACHE, PKG, version);
 
@@ -103,6 +103,14 @@ describe('claude bridge pairing at session start (#6394)', () => {
     expect(wait.onWaiting).not.toHaveBeenCalled();
   });
 
+  it.each(['1.0.0', '1.1.0'])('keeps the lowest release for an older CLI when the bundle carries %s', async (bridgeVersion) => {
+    const { deps } = fakeDeps({ cli: '2.1.257', readBundled: () => ({ bridgeVersion, compat: BUNDLED }) });
+    await expect(resolve(deps)).resolves.toBe(bridgeVersion === '1.0.0' ? undefined : entryOf('1.0.0'));
+    expect(deps.fetchLatestCompat).not.toHaveBeenCalled();
+    if (bridgeVersion === '1.0.0') expect(deps.installBridge).not.toHaveBeenCalled();
+    else expect(deps.installBridge).toHaveBeenCalledWith(`${PKG}@1.0.0`, expect.any(String), {});
+  });
+
   it('a session downloads the release that serves a newer CLI, reporting the wait while it does', async () => {
     const { deps } = fakeDeps({ cli: '2.1.282' });
     const wait = waiter();
@@ -122,15 +130,14 @@ describe('claude bridge pairing at session start (#6394)', () => {
     expect(wait.onWaiting).not.toHaveBeenCalled();
   });
 
-  it('a probe that does not wait gets the bundled bridge at once and starts the shared download; a session joins it', async () => {
+  it('a probe and a session share the required bridge download without using an incompatible bundled bridge', async () => {
     let release!: () => void;
     const files = new Set<string>();
     const installBridge = vi.fn((_spec: string, dest: string) => new Promise<void>((done) => {
       release = () => { files.add(`${dest}/node_modules/@gugu-acp/claude-agent-acp/dist/index.js`.replace(/\\/g, '/')); done(); };
     }));
     const { deps } = fakeDeps({ cli: '2.1.283', installBridge, files, cache: { compat: null, lastCheck: { cli: '2.1.283', at: 1_000 } } });
-    await expect(probe(deps)).resolves.toBeUndefined();
-    expect(installBridge).toHaveBeenCalledTimes(1);
+    const probing = probe(deps);
     const wait = waiter();
     const waiting = Promise.withResolvers<void>();
     wait.onWaiting.mockImplementationOnce(() => waiting.resolve());
@@ -139,6 +146,7 @@ describe('claude bridge pairing at session start (#6394)', () => {
     expect(wait.onWaiting).toHaveBeenCalledWith(`${PKG}@1.1.0`);
     expect(wait.onSettled).not.toHaveBeenCalled();
     release();
+    await expect(probing).resolves.toBe(entryOf('1.1.0'));
     await expect(session).resolves.toBe(entryOf('1.1.0'));
     expect(wait.onSettled).toHaveBeenCalledTimes(1);
     expect(installBridge).toHaveBeenCalledTimes(1);
@@ -175,13 +183,27 @@ describe('claude bridge pairing at session start (#6394)', () => {
     expect(fetchLatestCompat).not.toHaveBeenCalled(); // checked for this version already
   });
 
-  it('falls back to the bundled bridge when the paired one cannot be downloaded, and ends the wait', async () => {
+  it('reports a paired bridge download failure without selecting the bundled bridge, and ends the wait', async () => {
     const installBridge = vi.fn(async () => { throw new Error('ENOTFOUND registry.npmjs.org'); });
     const { deps } = fakeDeps({ cli: '2.1.282', installBridge });
     const wait = waiter();
-    await expect(resolve(deps, wait)).resolves.toBeUndefined();
+    await expect(resolve(deps, wait)).rejects.toThrow(/1\.1\.0.*ENOTFOUND/);
     expect(installBridge).toHaveBeenCalledTimes(1);
     expect(wait.onSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the same failure to a model probe and lets a later explicit retry install the paired version', async () => {
+    const installBridge = vi.fn(async (): Promise<void> => { throw new Error('offline'); });
+    const { deps, files } = fakeDeps({ cli: '2.1.282', installBridge });
+    await expect(probe(deps)).rejects.toThrow(/1\.1\.0.*offline/);
+    installBridge.mockImplementationOnce(async () => { files.add(entryOf('1.1.0')); });
+    await expect(resolve(deps)).resolves.toBe(entryOf('1.1.0'));
+    expect(installBridge).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports an install that completed without the paired entry instead of selecting the bundled bridge', async () => {
+    const { deps } = fakeDeps({ cli: '2.1.282', installBridge: async () => {} });
+    await expect(resolve(deps)).rejects.toThrow(/1\.1\.0.*找不到入口/);
   });
 
   it('still records the check when going online fails, so it does not retry every session', async () => {
@@ -191,8 +213,20 @@ describe('claude bridge pairing at session start (#6394)', () => {
     expect(writes).toEqual([{ compat: null, lastCheck: { cli: '2.1.300', at: 1_000 } }]);
   });
 
-  it('uses the bundled bridge when the CLI version cannot be read', async () => {
+  it('keeps the existing bundled behavior when the CLI version is unknown', async () => {
     const { deps } = fakeDeps({ cli: null });
+    await expect(resolve(deps)).resolves.toBeUndefined();
+    expect(deps.installBridge).not.toHaveBeenCalled();
+  });
+
+  it('keeps the existing bundled behavior when a CLI version probe fails or times out', async () => {
+    const { deps } = fakeDeps({ probeCliVersion: async () => { throw new Error('version probe timed out'); } });
+    await expect(resolve(deps)).resolves.toBeUndefined();
+    expect(deps.installBridge).not.toHaveBeenCalled();
+  });
+
+  it('keeps the existing bundled behavior when reading its pairing metadata fails', async () => {
+    const { deps } = fakeDeps({ readBundled: () => { throw new Error('unreadable compat'); } });
     await expect(resolve(deps)).resolves.toBeUndefined();
     expect(deps.installBridge).not.toHaveBeenCalled();
   });

@@ -34,7 +34,7 @@ export const HtmlContentRenderer = observer(function HtmlContentRenderer({
   rawContent,
   scrollPosition,
 }: HtmlContentRendererProps) {
-  const { projectId } = useSessionViewContext();
+  const { projectId, sessionId } = useSessionViewContext();
   const workspaceId = useWorkspaceId();
   const workspacePath = useWorkspace().path;
   const { pane } = usePaneContext();
@@ -79,6 +79,7 @@ export const HtmlContentRenderer = observer(function HtmlContentRenderer({
   return (
     <HtmlPreviewFrame
       fileName={filePath.split('/').pop() ?? filePath}
+      annotation={{ sessionId, path: filePath }}
       rawContent={rawContent}
       register={register}
       onLink={onLink}

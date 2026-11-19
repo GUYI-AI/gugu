@@ -1,6 +1,7 @@
 import { projectionInput, type ProjectionFrame, type ProjectionHostPacket, type ProjectionInput } from '@shared/extensions/projection-protocol';
 import { ProjectionInputQueue, ProjectionInputNotSent } from './projection-input-queue';
 import type { ProjectionHost } from './projection-source';
+import { ProjectionPresentationState, type ProjectionPresentation, type ProjectionPicture } from '@shared/extensions/projection-presentation';
 
 /** Renderers ACK after paint, not after receiving bytes. No queued input survives a lost generation. */
 export async function projectionClient(host: ProjectionHost, id: string, options: {
@@ -8,6 +9,7 @@ export async function projectionClient(host: ProjectionHost, id: string, options
   state?(state: 'connecting' | 'live' | 'closed', reason?: string): void;
   error?(error: unknown): void;
   painted?(frame: Pick<ProjectionFrame, 'sequence' | 'width' | 'height'> | null): void;
+  presentation?(value: ProjectionPresentation | null): void;
 }) {
   const watchId = crypto.randomUUID();
   const bridge = host.projection!;
@@ -19,6 +21,8 @@ export async function projectionClient(host: ProjectionHost, id: string, options
   let painting = Promise.resolve();
   let paintEpoch = 0;
   let resetting: Promise<void> | null = null;
+  let presentation = new ProjectionPresentationState(id, value => options.presentation?.(value));
+  const shown = (frame: ProjectionPicture | null) => { presentation.painted(frame); options.painted?.(frame); };
   /**
    * The host admits input only on the picture it was told is shown. Input on a painted picture therefore goes out once
    * that picture's ACK is through, and the next ACK waits for input already on the wire: over a slow link (another
@@ -38,20 +42,28 @@ export async function projectionClient(host: ProjectionHost, id: string, options
     () => reset());
   const state = (value: 'connecting' | 'live' | 'closed', reason?: string) => {
     ready = value === 'live';
-    if (!ready) { paintEpoch++; options.painted?.(null); }
+    if (!ready) { paintEpoch++; shown(null); }
     options.state?.(value, reason);
   };
   const receive = async (packet: ProjectionHostPacket) => {
     if (closed) return;
+    if (packet.type === 'presentation') {
+      try { presentation.receive(packet); } catch { presentation.close(); }
+      return;
+    }
     if (packet.type === 'state') {
       if (packet.state === 'connecting') {
         inputs.clear();
         generation = packet.generation;
+        presentation.close();
+        presentation = new ProjectionPresentationState(packet.sourceId ?? id, value => options.presentation?.(value));
+        presentation.connect(generation);
         painted = sequence = 0;
         state('connecting');
       } else if (packet.generation === generation && packet.state === 'closed') {
         inputs.clear();
         generation = '';
+        presentation.close();
         painted = 0;
         state('closed', packet.reason);
       }
@@ -65,11 +77,12 @@ export async function projectionClient(host: ProjectionHost, id: string, options
       epoch = ++paintEpoch;
       ready = false;
       // Serial painting prevents an older decode from replacing a newer picture.
-      options.painted?.(null);
+      shown(null);
       await options.paint(packet.frame, current);
       if (!current()) return false;
       painted = packet.frame.sequence;
-      options.painted?.({ sequence: painted, width: packet.frame.width, height: packet.frame.height });
+      shown({ sequence: painted, width: packet.frame.width, height: packet.frame.height,
+        ...(packet.frame.target ? { target: packet.frame.target } : {}) });
       return true;
     });
     // An ACK may stall independently of decoding the next generation's picture.
@@ -87,7 +100,7 @@ export async function projectionClient(host: ProjectionHost, id: string, options
     } catch (error) {
       if (closed || packet.generation !== generation || paintEpoch !== epoch) return;
       ready = false;
-      options.painted?.(null);
+      shown(null);
       options.error?.(error);
     }
   };
@@ -95,16 +108,17 @@ export async function projectionClient(host: ProjectionHost, id: string, options
     if (watch === watchId) void receive(packet);
   });
   state('connecting');
-  try { await bridge.watch({ id, watchId }); }
+  try { await bridge.watch({ id, watchId, presentation: 1 }); }
   catch (error) { closed = true; off(); state('closed'); throw error; }
   function reset() {
       if (closed) return Promise.reject(new Error('Projection is closed'));
       if (resetting) return resetting;
       inputs.clear();
       generation = '';
+      presentation.close();
       painted = sequence = 0;
       state('connecting');
-      resetting = bridge.watch({ id, watchId }).catch(error => {
+      resetting = bridge.watch({ id, watchId, presentation: 1 }).catch(error => {
         state('closed', error instanceof Error ? error.message : String(error));
         throw error;
       }).finally(() => { resetting = null; });
@@ -123,6 +137,7 @@ export async function projectionClient(host: ProjectionHost, id: string, options
     async close() {
       if (closed) return;
       closed = true;
+      presentation.close();
       inputs.clear();
       ready = false;
       off();

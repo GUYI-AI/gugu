@@ -1,3 +1,4 @@
+import { testAttachmentUploads } from '../../../support/attachmentUploadHost'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -43,11 +44,12 @@ function deps() {
     return []
   })
   const restInsert = vi.fn(async () => [{ id: 'ffffffff-ffff-4fff-8fff-ffffffffffff' }])
+  const attachmentsEndpoint = attachmentsFake([], commits)
   return {
     restRpc, restGet, restInsert,
     restInsertReturning: restInsert,
     commits,
-    attachmentsEndpoint: attachmentsFake([], commits),
+    attachmentsEndpoint, attachments: testAttachmentUploads(attachmentsEndpoint),
   }
 }
 

@@ -23,7 +23,8 @@ export function createPhoneAgentCloud(config, onSession, fetcherImpl = fetch, { 
   // Every answer from the backend tunes this runtime's `serverNow()` (`@@@server-clock`).
   const fetcher = withServerClock(fetcherImpl)
   const url = new URL(config.supabaseUrl)
-  if (url.protocol !== 'https:') throw new Error('Supabase URL must use HTTPS')
+  const local = config.allowLocalHttp === true && url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]', '10.0.2.2'].includes(url.hostname)
+  if (!(url.protocol === 'https:' || local) || url.username || url.password || url.search || url.hash) throw new Error('Supabase URL must use HTTPS')
   const root = url.href.replace(/\/$/, '')
   const ownerId = uuid(config.ownerId, 'ownerId')
   let current = null

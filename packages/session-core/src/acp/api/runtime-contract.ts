@@ -81,6 +81,8 @@ export const acpRuntimeStartInputSchema = acpStartInputSchema.extend({
    * 所以每一家都要把这一格交到 runtime,由 `session-manager.applyInitialModel` 断言。
    */
   platformModel: z.string().min(1).optional(),
+  /** Host-verified billing selection; renderer input cannot establish an own-account route. */
+  billingRoute: z.enum(['own', 'platform', 'unknown']).optional(),
   /** Host-owned platform access generation; never accepted from the renderer contract. */
   platformAccessSessionId: z.string().min(1).optional(),
   capabilitySpawnEnv: z.record(z.string(), z.string()).optional(),
@@ -280,6 +282,14 @@ export const acpRuntimeApiContract = defineContract({
       credentialRefusal: z.string().min(1).nullable().optional(),
     }),
     output: z.object({ delivered: z.boolean() }),
+  }),
+  /**
+   * #3005 设置 → 通用里的「离开时压缩长对话」:宿主在运行时起来时与人改设置时推一次,定时器到点才读。
+   * 关掉对已经在跑的会话立刻生效;与 Claude Code 自己的 `idleCompaction` 是「任一关了就不压」。
+   */
+  setIdleCompaction: procedure({
+    input: z.object({ enabled: z.boolean() }),
+    output: z.object({}),
   }),
   promptDetached: procedure({
     input: detachedPromptInputSchema,

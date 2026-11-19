@@ -15,6 +15,10 @@ import { runInAction } from 'mobx'
 type ComposerClient = ReturnType<typeof useAui>['composer']
 const state = vi.hoisted(() => ({ owner: 'creation-navigation', composer: null as ComposerClient | null }))
 const rpc = vi.hoisted(() => ({ options: vi.fn(), models: vi.fn(), create: vi.fn(), machine: vi.fn() }))
+vi.mock('@renderer/features/settings/subscriptions/ensure-agent-home', () => ({
+  ensureAgentHomeImported: async () => undefined,
+}))
+
 vi.mock('../../../apps/desktop/src/store/auth', async (original) => ({
   ...(await original<typeof import('../../../apps/desktop/src/store/auth')>()),
   useAuth: () => ({ user: { id: state.owner } }),
@@ -48,8 +52,9 @@ vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
 }))
 vi.mock('../../../apps/desktop/src/components/assistant-ui/thread.aui', async () => {
   const { useAui } = await import('../../../apps/desktop/node_modules/@assistant-ui/react')
-  const { ComposerAboveExtras } = await import('../../../apps/desktop/src/components/assistant-ui/composer-extras')
-  return { Thread: () => { state.composer = useAui().composer; return createElement(ComposerAboveExtras) } }
+  const { ComposerAboveExtras, useComposerEditorRef } = await import('../../../apps/desktop/src/components/assistant-ui/composer-extras')
+  const { PromptEditor } = await import('../../../packages/session-ui/src/react/components/prompt-editor/prompt-editor')
+  return { Thread: () => { state.composer = useAui().composer; const ref = useComposerEditorRef(); return createElement('div', {}, createElement(ComposerAboveExtras), createElement(PromptEditor, { ref, onChange: text => state.composer!.setText(text) })) } }
 })
 
 const options: SessionpageSessionCreateOptions = {
@@ -146,14 +151,14 @@ describe('creation keeps its navigation and draft ownership', () => {
     expect(composer.getState().text).toBe('正在输入的草稿')
   })
 
-  it('delivers a selected real skill with the first task and clears its tag only after success', async () => {
+  it('delivers the inline skill reference with the first task and clears the complete draft after success', async () => {
     rpc.create.mockResolvedValue(result)
     await harness.render(pageOn(device, { onCreated: vi.fn() }))
     await act(async () => { harness.container.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-skills"]')!.click() })
     await vi.waitFor(() => expect(document.querySelector('[data-testid="agent-watch-create-skill"]')).not.toBeNull())
     await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-skill"]')!.click() })
-    await act(async () => { state.composer!.setText('整理今天的会议'); state.composer!.send() })
-    expect(rpc.create).toHaveBeenCalledWith(device.device_id, expect.objectContaining({ prompt: '请使用以下技能：meeting-notes。\n\n整理今天的会议' }))
+    await act(async () => { state.composer!.setText(`${state.composer!.getState().text}整理今天的会议`); state.composer!.send() })
+    expect(rpc.create).toHaveBeenCalledWith(device.device_id, expect.objectContaining({ prompt: '@[meeting-notes](/native/skills/meeting-notes/SKILL.md) 整理今天的会议' }))
     expect(composerDrafts.get(mobileCreationDraftKey(state.owner))).toBe('')
   })
 

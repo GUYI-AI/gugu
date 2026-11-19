@@ -183,6 +183,7 @@ describe('stripUntrustedSessionAuthority', () => {
       platform: { relayToken: 'renderer' },
       platformAccessSessionId: 'renderer-generation',
       platformModel: 'renderer-model',
+      billingRoute: 'own',
       sessionPrompt: 'renderer prompt',
       mcpServers: [{ type: 'http', name: 'renderer', url: 'http://renderer.invalid' }],
       capabilitySpawnEnv: { CODEX_HOME: '/renderer-controlled' },

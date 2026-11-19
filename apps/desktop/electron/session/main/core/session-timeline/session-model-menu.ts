@@ -1,3 +1,4 @@
+import type { CustomModelConnection, CustomModelRef, ModelProtocol } from '@gugu/session-core/models/custom-model';
 import { agentSteersActiveAcpTurn } from '@shared/core/agents/agent-payload';
 import type { ProviderPermissionModeMap } from '@gugu/session-core/acp/client';
 import type { LiveSettingCapability } from '@gugu/session-core/agents/plugins';
@@ -14,6 +15,11 @@ import { log } from '@main/lib/logger';
  * ❌ 宿主不替它排菜单、不判能不能热切 —— 那是第二份判据。
  */
 export type SessionModelMenu = {
+  providerId?: string;
+  customModels?: CustomModelConnection[];
+  customModel?: CustomModelRef;
+  modelProtocols?: readonly ModelProtocol[];
+  customModelCapability?: { modelOptional: true };
   steers?: boolean;
   /** 这条会话记下的计费路决定(`sessionPlatformModel`);缺席 = 没做过这个决定。 */
   conversationSelection?: { modelId: string } | null;
@@ -21,7 +27,7 @@ export type SessionModelMenu = {
   agentName: string;
   /** 咕咕目录(这家 × 聊天腿)。 */
   platformModels: PlatformCatalogModel[];
-  /** 用户自己凭据下的那份目录;会话明确在自己那条路上时不问 —— 活清单就是它(同桌面 @@@own-model-tier)。 */
+  /** 用户自己凭据下的目录。BYOK 会话先显示活清单；模型菜单打开后再查目录。 */
   ownCatalog: HarnessCatalogState | null;
   /** 这家此刻的登录读数(worker 发布的那一格,桌面 `useAgentAuthStatus` 读的同一份);手机据此叠 `withAuthExpiry`。 */
   ownAuth: AuthStatusModelState | null;
@@ -47,7 +53,7 @@ export async function readSessionPermissionAgentName(providerId: string): Promis
   return listPlugins().find((entry) => entry.metadata.id === providerId)?.metadata.name ?? providerId;
 }
 
-export async function readSessionModelMenu(sessionId: string, providerId: string): Promise<SessionModelMenu> {
+export async function readSessionModelMenu(sessionId: string, providerId: string, includeOwnModelCatalog?: true): Promise<SessionModelMenu> {
   const [{ sessionPlatformModel }, { getPlatformModelCatalogResolver }, { probeHarnessCatalogState }, { agentsController }] =
     await Promise.all([
       import('@main/core/sessions/platform-model-selection'),
@@ -56,15 +62,22 @@ export async function readSessionModelMenu(sessionId: string, providerId: string
       import('@main/core/agents/controller'),
     ]);
   const selection = await sessionPlatformModel(sessionId);
+  const readOwnCatalog = selection !== null || includeOwnModelCatalog === true;
   const [agents, platformModels, ownCatalog, ownAuth] = await Promise.all([
     agentsController.list(),
     readPlatformModels(getPlatformModelCatalogResolver(), providerId),
-    selection === null ? null : probeHarnessCatalogState(providerId, 'acp'),
-    selection === null ? null : readOwnAuth(providerId),
+    readOwnCatalog ? probeHarnessCatalogState(providerId, 'acp') : null,
+    // Published credential facts are needed by the permission reviewer hint as well. No CLI probe.
+    readOwnAuth(providerId),
   ]);
   const agent = agents.find((entry) => entry.id === providerId);
   const liveSetting = agent?.capabilities?.acp?.liveSettings?.model;
+  const [{ listCustomModels }, { db }, { sessions }, { eq }, { customModelRefFromOption }] = await Promise.all([import('@main/core/agents/custom-models'), import('@main/db/client'), import('@main/db/schema'), import('drizzle-orm'), import('@gugu/session-core/models/custom-model')]);
+  const records = await listCustomModels();
+  const customModel = customModelRefFromOption(db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)).get()?.config?.model);
   return {
+    providerId, customModels: records, ...(customModel ? { customModel } : {}), modelProtocols: agent?.capabilities.modelProtocols,
+    customModelCapability: agent?.capabilities.customModel,
     ...(selection !== undefined ? { conversationSelection: selection } : {}),
     agentName: agent?.name ?? providerId,
     steers: agentSteersActiveAcpTurn(agent?.capabilities),

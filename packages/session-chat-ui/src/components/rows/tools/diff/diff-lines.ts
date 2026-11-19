@@ -35,8 +35,14 @@ export function countChanges(rows: readonly DiffRow[]): { adds: number; dels: nu
 }
 
 /** Binary, omitted and opaque patches do not claim textual counts. */
+export function hasTextPatch(patch: SessionPatch): boolean {
+  return !!patch.patch && patch.patch.format === 'git_patch'
+    && !patch.changes.some(change => 'fileType' in change && change.fileType === 'binary')
+    && !/(?:^|\n)(?:GIT binary patch|Binary files )/.test(patch.patch.text);
+}
+
 export function patchStats(patch: SessionPatch): { adds: number; dels: number } | null {
-  if (!patch.patch || patch.patch.format !== 'git_patch' || patch.changes.some(change => 'fileType' in change && change.fileType === 'binary') || /(?:^|\n)(?:GIT binary patch|Binary files )/.test(patch.patch.text)) return null;
+  if (!hasTextPatch(patch)) return null;
   return countChanges(parsePatchRows(patch));
 }
 

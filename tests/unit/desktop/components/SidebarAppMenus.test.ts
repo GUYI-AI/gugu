@@ -84,7 +84,7 @@ describe('#7050 左栏的右键菜单', () => {
 
   it('右键没开的 App:打开 / 在新窗口打开 / 从左栏移走;点「打开」= 点它的图标', async () => {
     await fireContextMenu(dockButton('notes'))
-    expect(menuLabels()).toEqual(['打开', '在新窗口打开', 'App 设置', '从左栏移走'])
+    expect(menuLabels()).toEqual(['打开', '在新窗口打开', '应用设置', '从左栏移走'])
     expect(dockButton('notes').hasAttribute('data-menu-open')).toBe(true)
     await clickElement(menuItems()[0]!)
     expect(onTabChange).toHaveBeenCalledWith('tasks')
@@ -94,7 +94,7 @@ describe('#7050 左栏的右键菜单', () => {
 
   it('右键开着的 App:没有「打开」;「从左栏移走」只把它从左栏拿走', async () => {
     await fireContextMenu(dockButton('timer'))
-    expect(menuLabels()).toEqual(['在新窗口打开', 'App 设置', '从左栏移走', '退出'])
+    expect(menuLabels()).toEqual(['在新窗口打开', '应用设置', '从左栏移走', '退出'])
     await clickElement(menuItems()[2]!)
     expect(unpinFromDock).toHaveBeenCalledWith('timer')
     expect(quitApp).not.toHaveBeenCalled()

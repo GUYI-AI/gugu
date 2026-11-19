@@ -1,11 +1,5 @@
-import { motion, useMotionValue, useTransform, type MotionStyle } from 'framer-motion'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
-import type { ListColumnLayout } from '../hooks/useListColumnCollapse'
-import { panelContentLayout } from '../session/renderer/lib/layout/panel-motion'
-
-/** 可收起时内容窄过它就不再跟着缩,改为整块滑走 + 淡出(一行 = 头像 + 名字两个字 + 时间)。 */
-const COLLAPSE_CONTENT_MIN_PX = 160
 
 /**
  * 可拖宽窄的一栏 + 它边上那条分割线。
@@ -32,12 +26,6 @@ const RESIZER_STYLE: Record<ResizablePaneEdge, CSSProperties> = {
   } as CSSProperties,
 }
 
-// 可收起的那一栏自己裁溢出(收起动画要裁),分割线整条收进栏内,❌ 骑在边界上被裁掉一半抓取区。
-const RESIZER_INSET_STYLE: Record<ResizablePaneEdge, CSSProperties> = {
-  right: { ...RESIZER_STYLE.right, right: 0 },
-  left: { ...RESIZER_STYLE.left, left: 0 },
-}
-
 export function ResizablePane({
   children,
   edge,
@@ -53,7 +41,6 @@ export function ResizablePane({
   resizeLabel,
   paneTestId,
   handleTestId,
-  collapse,
 }: {
   children: ReactNode
   /** 分割线贴在这一栏的哪条边。左栏(会话列表)是 right,右栏(话题分栏)是 left。 */
@@ -77,8 +64,6 @@ export function ResizablePane({
   resizeLabel: string
   paneTestId: string
   handleTestId: string
-  /** 可收起的那一栏(会话列表,#6753):占位宽、内容排布与悬停浮出由 useListColumnCollapse 算好,这里只绑上。 */
-  collapse?: ListColumnLayout
 }) {
   const [dragging, setDragging] = useState(false)
   const [availableMaxWidth, setAvailableMaxWidth] = useState(initialMaxWidth)
@@ -94,48 +79,6 @@ export function ResizablePane({
   const renderedWidth = Math.min(width, availableMaxWidth)
   // 左边那条分割线:指针往右走 = 这一栏变窄,所以位移取反。
   const direction = edge === 'right' ? 1 : -1
-  const layout = mobile ? undefined : collapse
-  const collapseWidth = layout?.width
-  const collapseRoot = layout?.rootRef
-  useLayoutEffect(() => {
-    collapseWidth?.set(renderedWidth)
-  }, [collapseWidth, renderedWidth])
-  const setPaneRef = useCallback((node: HTMLDivElement | null) => {
-    paneRef.current = node
-    if (collapseRoot) collapseRoot.current = node
-  }, [collapseRoot])
-  // 与会话页 workspace-layout 同一组派生:停靠态内容跟着占位宽缩到下限再整块滑走;浮出态整宽从左缘滑入、不挤正文。
-  // 宽度用这一次渲染的 renderedWidth(闭包),❌ 另拿一个宽度 MotionValue 组合:拖分割线时它在提交阶段才被写,
-  // 那一刻组合值的订阅正在换新,最后一次写会丢(mac1 实测:拖 +40,占位停在 +36)。
-  const idle = useMotionValue(1)
-  const progress = layout?.progress ?? idle
-  const peek = layout?.peekProgress ?? idle
-  const docked = (p: number) => panelContentLayout(p, renderedWidth, COLLAPSE_CONTENT_MIN_PX)
-  const dockedWidth = useTransform(progress, (p) => Math.max(0, Math.min(1, p)) * renderedWidth)
-  const contentWidth = useTransform(progress, (p) => (p > 0 ? docked(p).width : renderedWidth))
-  const contentOpacity = useTransform([progress, peek], ([p, pk]: number[]) => (p > 0 ? docked(p).opacity : pk))
-  const contentX = useTransform([progress, peek], ([p, pk]: number[]) => (p > 0 ? docked(p).offset : (pk - 1) * renderedWidth))
-  // 收起时占位宽走弹簧、这一栏裁掉溢出;浮出时不裁,内容整宽盖在旁边那栏上。
-  const collapseStyle: MotionStyle | undefined = layout && {
-    width: dockedWidth,
-    flex: '0 0 auto',
-    minWidth: 0,
-    overflow: layout.peekVisible ? 'visible' : 'hidden',
-    zIndex: layout.peekVisible ? 'var(--z-float)' : undefined,
-  }
-  const contentStyle: MotionStyle | undefined = layout && {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    display: 'flex',
-    width: contentWidth,
-    x: contentX,
-    opacity: contentOpacity,
-    pointerEvents: layout.open || layout.peekVisible ? 'auto' : 'none',
-    boxShadow: layout.peekVisible ? 'var(--shadow-lift)' : undefined,
-  }
-
   useEffect(() => {
     widthRef.current = renderedWidth
   }, [renderedWidth])
@@ -248,10 +191,9 @@ export function ResizablePane({
   }, [availableMaxWidth, clampWidth, onWidthChange, onWidthCommit])
 
   return (
-    <motion.div
-      ref={setPaneRef}
+    <div
+      ref={paneRef}
       data-testid={paneTestId}
-      data-list-collapsed={layout && !layout.open ? '' : undefined}
       style={{
         position: 'relative',
         width: mobile ? '100%' : renderedWidth,
@@ -261,11 +203,10 @@ export function ResizablePane({
         minWidth: mobile ? 0 : minWidth,
         minHeight: 0,
         display: hidden ? 'none' : 'flex',
-        ...collapseStyle,
       }}
     >
-      {contentStyle ? <motion.div style={contentStyle}>{children}</motion.div> : children}
-      {!mobile && (!layout || layout.open) && (
+      {children}
+      {!mobile && (
         <div
           data-testid={handleTestId}
           role="separator"
@@ -298,9 +239,9 @@ export function ResizablePane({
               onWidthCommit(availableMaxWidth)
             }
           }}
-          style={(layout ? RESIZER_INSET_STYLE : RESIZER_STYLE)[edge]}
+          style={RESIZER_STYLE[edge]}
         />
       )}
-    </motion.div>
+    </div>
   )
 }

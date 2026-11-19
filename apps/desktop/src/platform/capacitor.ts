@@ -1,6 +1,8 @@
+import { nativeAndroidAccountClosure } from './androidAccountClosure'
 import { nativePhoneAgentHostAvailable } from './phoneAgentHostCapability'
 import { schedulePhoneNotification } from './phoneNotificationOutlet'
-import type { PermissionState } from '@capacitor/core'
+import { registerPlugin, type PermissionState } from '@capacitor/core'
+import { nativeTextSelection } from './nativeTextSelection'
 import { BackgroundMode } from '@anuradev/capacitor-background-mode'
 import { BarcodeFormat, BarcodeScanner } from '@capacitor-mlkit/barcode-scanning'
 import { App } from '@capacitor/app'
@@ -9,7 +11,8 @@ import { Clipboard } from '@capacitor/clipboard'
 import { LocalNotifications } from '@capacitor/local-notifications'
 import { AndroidSettings, IOSSettings, NativeSettings } from 'capacitor-native-settings'
 import { hostCatalog } from '../../shared/host-localization'
-import type { SupportedLocale } from '@/i18n'
+import type { SupportedLocale } from '@/i18n/locale'
+import { getLocaleSnapshot } from '@/i18n/runtime'
 import type { AppPlatform, SystemPermission, SystemPermissionState } from './types'
 import { createUnsupportedPlatform } from './unsupported'
 import { checkForUpdates, downloadUpdate, installUpdate, updateState } from './capacitorAppUpdate'
@@ -23,11 +26,12 @@ import { getSupabaseUrl } from '@gugu/core/cloud/config'
 
 const base = createUnsupportedPlatform('capacitor', 'Capacitor')
 declare const __GUGU_TIER__: string
-let resolvedLocale: SupportedLocale = 'zh-CN'
+// The phone's native labels (scan overlay, background watch, notification channels) speak the app's language.
+const resolvedLocale = (): SupportedLocale => getLocaleSnapshot().resolvedLocale
 
 // @@@scan (#537-A) - native QR scan via ML Kit's startScan, which uses the *bundled* barcode model
 function buildCancelOverlay(onCancel: () => void): HTMLElement {
-  const labels = hostCatalog(resolvedLocale).barcodeScan
+  const labels = hostCatalog(resolvedLocale()).barcodeScan
   const overlay = document.createElement('div')
   overlay.className = 'gugu-scan-overlay'
   const frame = document.createElement('div')
@@ -123,7 +127,7 @@ function backgroundWatchSettings({ label, text }: BackgroundWatchNotice) {
     // 一句英文、还讲的是它作者关心的事(2026-09-16 在模拟器通知栏里实际看到)。
     // 这一行回答「它凭什么常驻在我通知栏里」,所以说的是给用户的好处,不是机制。
     // 调用方没给就是看管机器那一句(这条通知原本的用途);#7199 只有「手机当设备」在用时,调用方给它自己的一句。
-    text: text ?? hostCatalog(resolvedLocale).backgroundWatch.text,
+    text: text ?? hostCatalog(resolvedLocale()).backgroundWatch.text,
     // 小图标也自己给:不给就是插件的默认图形,跟咕咕别的通知不是一家。
     icon: 'ic_stat_gugu',
     // 着色同理 —— 插件默认是它自己的绿(157f1f),与咕咕的 colorAccent 差一截,
@@ -162,22 +166,21 @@ function setBackgroundWatch(label: string | null, text?: string): Promise<void> 
   return next
 }
 
-/**
- * 两条渠道只差响不响 —— 桌面「提示音」开关的手机那一半。安卓 8+ 的声音挂在渠道上、不挂在单条通知上,
- * 而插件建渠道时不给声音就用系统默认声音,没有「静音」这个选项;所以静音那条只能用「低」重要性:
- * 不响、不弹横幅、只进通知栏。渠道建好之后重要性归用户在系统里改,咕咕不再覆盖。
- */
 const ALERT_CHANNEL_ID = 'gugu-alerts'
-const QUIET_CHANNEL_ID = 'gugu-alerts-quiet'
-let channelsReady: Promise<void> | null = null
+const notificationChannels = registerPlugin<{
+  ensureQuietChannel(options: { name: string }): Promise<{ id: string }>
+  readStatus(options: { alertChannelId: string; silent: boolean }): Promise<{ enabled: boolean; importance?: number }>
+  openSettings(options: { alertChannelId: string; silent: boolean; appWide: boolean }): Promise<void>
+}>('GuguNotificationChannels')
+let channelsReady: Promise<string> | null = null
 
-function ensureNotificationChannels(): Promise<void> {
+function ensureNotificationChannels(): Promise<string> {
   if (!channelsReady) {
-    const labels = hostCatalog(resolvedLocale).notificationChannels
+    const labels = hostCatalog(resolvedLocale()).notificationChannels
     channelsReady = Promise.all([
       LocalNotifications.createChannel({ id: ALERT_CHANNEL_ID, name: labels.alerts, importance: 4, vibration: true }),
-      LocalNotifications.createChannel({ id: QUIET_CHANNEL_ID, name: labels.quiet, importance: 2 }),
-    ]).then(() => undefined, (error: unknown) => {
+      notificationChannels.ensureQuietChannel({ name: labels.quiet }),
+    ]).then(([, quiet]) => quiet.id, (error: unknown) => {
       channelsReady = null
       throw error
     })
@@ -188,6 +191,8 @@ function ensureNotificationChannels(): Promise<void> {
 
 export const capacitorPlatform: AppPlatform = {
   ...base,
+  accountClosure: nativeAndroidAccountClosure,
+  textSelection: nativeTextSelection,
   accountOAuthBrowser: {
     openBrowser,
     openLinkBrowser: async (url) => openBrowser(googleIdentityLinkUrl(url, getSupabaseUrl())),
@@ -209,9 +214,6 @@ export const capacitorPlatform: AppPlatform = {
   downloadUpdate,
   installUpdate,
   systemPermissions: ['notifications', 'camera', 'batteryOptimization', 'microphone'],
-  async syncResolvedLocale(locale) {
-    resolvedLocale = locale
-  },
   subscribeAppForeground(listener, onError) {
     let active = true
     let handle: { remove: () => Promise<void> } | null = null
@@ -273,13 +275,17 @@ export const capacitorPlatform: AppPlatform = {
     if (await checkSystemPermission('notifications') !== 'granted') {
       return { success: false, displayed: false, error: 'NOTIFICATIONS_NOT_GRANTED' }
     }
-    await ensureNotificationChannels()
+    const quietChannelId = await ensureNotificationChannels()
     return schedulePhoneNotification(payload, {
-      channelId: payload.silent ? QUIET_CHANNEL_ID : ALERT_CHANNEL_ID,
-      foreground: !payload.silent,
+      channelId: payload.silent ? quietChannelId : ALERT_CHANNEL_ID,
+      foreground: true,
       // Never request exact-alarm permission for an immediate notification.
       isExactNotification: false,
     })
+  },
+  androidNotificationSettings: {
+    read: (silent) => notificationChannels.readStatus({ alertChannelId: ALERT_CHANNEL_ID, silent }),
+    open: (silent, appWide) => notificationChannels.openSettings({ alertChannelId: ALERT_CHANNEL_ID, silent, appWide }),
   },
   setBackgroundWatch,
   // @@@share-with-apps 系统分享两个方向,见 capacitorShare.ts。
@@ -291,7 +297,9 @@ export const capacitorPlatform: AppPlatform = {
   async requestSystemPermission(permission) {
     if (permission === 'microphone') return toSystemPermissionState((await nativeAudioPermissions.requestPermissions({ permissions: ['microphone'] })).microphone)
     if (permission === 'notifications') {
-      return toSystemPermissionState((await LocalNotifications.requestPermissions()).display)
+      const { display } = await LocalNotifications.requestPermissions()
+      window.dispatchEvent(new Event('gugu:android-notification-permission'))
+      return toSystemPermissionState(display)
     }
     if (permission === 'batteryOptimization') {
       // 系统自己的确认框(「允许咕咕一直在后台运行?」),用户点完才 resolve。

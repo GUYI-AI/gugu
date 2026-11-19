@@ -164,6 +164,8 @@ export function describeHotkey(hotkey: Hotkey, platform: Platform = detectPlatfo
 
 /** 纯文本形,给原生 title 与菜单用:mac 连写符号(⇧⌘S),其余平台用 + 连(Ctrl+Shift+S)。 */
 export function formatHotkeyText(hotkey: Hotkey, platform: Platform = detectPlatform()): string {
+  // macOS text labels follow the menu convention, with Shift before Command.
   const keys = getShortcutKeys(parseHotkey(hotkey, platform), platform);
-  return keys.map((key) => formatShortcutKey(key, platform)).join(platform === 'mac' ? '' : '+');
+  const text = keys.map((key) => formatShortcutKey(key, platform));
+  return platform === 'mac' ? text.join('').replace('⌘⇧', '⇧⌘') : text.join('+');
 }

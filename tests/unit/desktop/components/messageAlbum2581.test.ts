@@ -52,7 +52,7 @@ describe('collapseSendGroups', () => {
 describe('forwarding a send', () => {
   it('files of one send land as one new send in each chat; a file forwarded alone is on its own', async () => {
     const forwardMessage = vi.fn(async () => {})
-    const io = { forwardMessage, sendMessageToChat: vi.fn(async () => undefined), knownName: () => 'A', unknownName: '?' }
+    const io = { forwardMessage, sendMessageToChat: vi.fn(async () => undefined), sendAttachmentsToChat: vi.fn(async () => undefined), knownName: () => 'A', unknownName: '?' }
     const lone = message({ id: 'l', seq: 9, send_group_id: 'h', send_group_size: 2 })
     await forwardToChats([inSend('a', 2), inSend('b', 3), lone].map((m) => ({ kind: 'message' as const, message: m })), ['g1', 'g2'], { text: '', toUserIds: [] }, io)
     const calls = forwardMessage.mock.calls as unknown as Array<[MessageItem, string, { sendGroup?: { id: string; size: number } }?]>

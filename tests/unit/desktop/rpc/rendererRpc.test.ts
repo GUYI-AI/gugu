@@ -51,6 +51,19 @@ describe('renderer RPC event handling', () => {
     })
   })
 
+  it('an error\'s code crosses with its message (the App words its own text by it); none, none', async () => {
+    const respond = vi.fn()
+    await handleRendererRpcEvent(commandEvent('gone'), 'extensions', {
+      gone: () => { throw Object.assign(new Error('No such file in this chat'), { code: 'not-found' }) },
+      offline: () => { throw new TypeError('fetch failed') },
+    }, respond)
+    expect(respond).toHaveBeenLastCalledWith('req-1', { __rendererRpcError: true, error: 'No such file in this chat', code: 'not-found' })
+    await handleRendererRpcEvent(commandEvent('offline'), 'extensions', {
+      offline: () => { throw new TypeError('fetch failed') },
+    }, respond)
+    expect(respond).toHaveBeenLastCalledWith('req-1', { __rendererRpcError: true, error: 'fetch failed' })
+  })
+
   it('wraps handler exceptions for the Electron bridge', async () => {
     const respond = vi.fn()
 

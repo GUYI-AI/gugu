@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isUserFacingModelId } from '../../../../packages/session-core/src/acp/models/model-visibility.ts'
 import { codexTerminalUpdate } from './codex-terminals.mjs'
 import { codexFastConfigOptions, codexFastTier, codexTierForTurn } from './codex-fast-mode.mjs'
 
@@ -6,7 +7,8 @@ import { codexFastConfigOptions, codexFastTier, codexTierForTurn } from './codex
 import { execFile } from '../../../../packages/core/src/local/childProcess.ts'
 import { randomUUID } from 'node:crypto'
 import { appendFileSync, readFileSync, statSync } from 'node:fs'
-import { createInterface } from 'node:readline'
+import { createJsonlReader, jsonlParseError } from './jsonl-reader.mjs'
+import { CODEX_PREPARATION_PREFIX, retryCodexPreparation, codexBackfillWaiting } from '../../../../packages/core/src/local/codex-initialize.mjs'
 import { fileURLToPath } from 'node:url'
 import { GUGU_MCP_CONFIG_KEY, normalizeGuguToolName } from '../mcp/gugu-mcp-name.mjs'
 import { joinPromptText, promptInputItems } from './codex-app-server-prompt.mjs'
@@ -48,6 +50,7 @@ let historyCanRevert = false
  * **不**参与下发 —— 下发走 `thread/settings/update`,由 codex 自己持有生效状态。
  */
 let selectedPermissionProfile = null
+let autoReviewSupported = false
 /**
  * 线程当前的模型与推理档。
  * 来源是 `thread/start` / `thread/resume` / `thread/fork` 回包的**顶层** `model` /
@@ -257,11 +260,12 @@ function appWrite(message) {
 function appRequest(method, params, timeoutMs = 45_000) {
   const id = appNextId++
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
+    const timer = timeoutMs === null ? null : setTimeout(() => {
       appPending.delete(id)
-      reject(new Error(`local Codex app-server ${method} timed out after ${timeoutMs}ms`))
+      const error = new Error(`local Codex app-server ${method} timed out after ${timeoutMs}ms`)
+      reject(error)
     }, timeoutMs)
-    timer.unref?.()
+    timer?.unref?.()
     appPending.set(id, {
       resolve: (value) => {
         clearTimeout(timer)
@@ -425,7 +429,9 @@ function codexThreadPermissionFrom(params) {
   if (!approvalPolicy || !sandbox) {
     throw new Error('guguCodex session metadata has incomplete thread permission')
   }
-  return { profile, threadStart: { approvalPolicy, sandbox } }
+  const approvalsReviewer = threadStart.approvalsReviewer === 'auto_review' ? 'auto_review' : 'user'
+  if (approvalsReviewer === 'auto_review' && !autoReviewSupported) throw new Error('This Codex app-server does not expose verified Auto-review support')
+  return { profile, mode: approvalsReviewer === 'auto_review' ? 'auto-review' : profile, threadStart: { approvalPolicy, sandbox, approvalsReviewer } }
 }
 
 function permissionProfileId(profile) {
@@ -513,6 +519,7 @@ async function loadModelCatalog(timeoutMs = 45_000) {
     for (const raw of modelsFromResponse(response)) {
       if (!raw || typeof raw !== 'object') continue
       const id = String(raw.id ?? raw.model ?? '').trim()
+      if (!isUserFacingModelId(id)) continue
       if (!id) continue
       // `hidden` 的条目 codex 自己不给用户挑,我们也不放进下拉。
       if (raw.hidden === true) continue
@@ -527,7 +534,7 @@ async function loadModelCatalog(timeoutMs = 45_000) {
         ...(raw.description ? { description: String(raw.description) } : {}),
         efforts,
         defaultEffort: String(raw.defaultReasoningEffort ?? '').trim() || null,
-        serviceTiers: !process.env.GUGU_PLATFORM_MODELS?.trim() && Array.isArray(raw.serviceTiers) ? raw.serviceTiers : [],
+        serviceTiers: Array.isArray(raw.serviceTiers) ? raw.serviceTiers : [],
       })
     }
     cursor = String(response?.nextCursor ?? response?.next_cursor ?? '').trim() || null
@@ -726,6 +733,9 @@ async function loadPermissionModes(cwd, currentProfile, timeoutMs = 45_000) {
     safety += 1
     if (safety > 20) throw new Error('local Codex permissionProfile/list pagination did not terminate')
   } while (cursor)
+  if (autoReviewSupported && availableModes.some(mode => mode.id === ':workspace')) {
+    availableModes.push({ id: 'auto-review', name: 'Auto mode' })
+  }
   if (selected && !availableModes.some((mode) => mode.id === selected)) {
     availableModes.push({
       id: selected,
@@ -852,7 +862,29 @@ async function startApp(servers) {
   return appStarting
 }
 
+/**
+ * @@@codex-account-gate — signed out, Codex still opens threads and lists its models; the first turn 401s.
+ * So a session needing an OpenAI login (`requiresOpenaiAuth`) with no account is refused with ACP
+ * `authRequired` (-32000). Custom providers (gugu's route, API-key connections) report `false` and pass;
+ * `session/list` is not gated. Shapes measured on codex 0.163 / 0.169 are in codexAccountGate.test.ts.
+ */
+async function requireCodexAccount() {
+  const read = await appRequest('account/read', {})
+  if (read?.requiresOpenaiAuth === true && !read.account) {
+    throw Object.assign(new Error('Authentication required: sign in to Codex (codex login) first.'), { code: -32000 })
+  }
+}
+
+const preparationAbort = new AbortController()
 async function startAppOnce(servers) {
+  return retryCodexPreparation(() => startAppAttempt(servers), {
+    signal: preparationAbort.signal,
+    onProgress: value => process.stderr.write(CODEX_PREPARATION_PREFIX + JSON.stringify(value) + '\n'),
+    stop: async () => { await appServer?.stop(); appReader?.close(); appServer = null; app = null },
+  })
+}
+
+async function startAppAttempt(servers) {
   const mcp = mcpConfig(servers)
   appServerThreadConfig = mcp.config
   appServerThreadConfig['tools.update_plan.enabled'] = true
@@ -913,21 +945,26 @@ async function startAppOnce(servers) {
     onError: (error) => rejectAppPending(error),
   })
   app = appServer.child
-  app.stderr.on('data', (chunk) => process.stderr.write(chunk))
+  let startupStderr = ''
+  app.stderr.on('data', (chunk) => { startupStderr = (startupStderr + chunk.toString()).slice(-8192); process.stderr.write(chunk) })
   app.on('exit', (code, signal) => {
     const error = new Error(`local Codex app-server exited (code=${code} signal=${signal})`)
     rejectAppPending(error)
     appReady = false
     if (established && !shuttingDown) process.exit(code && code !== 0 ? code : 1)
   })
-  appReader = createInterface({ input: app.stdout, crlfDelay: Infinity })
-  appReader.on('line', onAppLine)
+  appReader = createJsonlReader({ input: app.stdout, onLine: onAppLine, onError: failProtocol })
   try {
-    await appRequest('initialize', {
+    const initialized = await appRequest('initialize', {
       clientInfo: { name: 'gugu', title: 'Gugu', version: '0' },
       capabilities: { experimentalApi: true },
-    })
+    }, null)
+    const version = String(initialized?.userAgent ?? '').match(/^[^/]+\/(\d+)\.(\d+)\.(\d+)(?:[\s(/]|$)/)
+    autoReviewSupported = !!version && (Number(version[1]) > 0 || Number(version[2]) > 156 || (Number(version[2]) === 156 && Number(version[3]) >= 1))
   } catch (error) {
+    if (app && (app.exitCode !== null || app.signalCode !== null) && !(app.stdout.readableEnded && app.stderr.readableEnded)) await new Promise(resolve => app.once('close', resolve))
+    error.stderrTail = startupStderr
+    if (codexBackfillWaiting(error)) throw error
     throw new Error(
       `本机 Codex 无法启动 app-server；请升级 Codex 后重试。原始错误：${error.message || String(error)}`,
     )
@@ -1436,7 +1473,20 @@ function onAppNotification(message) {
     const title = [params.error?.message, params.error?.additionalDetails]
       .filter((value) => typeof value === 'string' && value.trim())
       .join(': ')
-    if (title) sessionUpdate({ sessionUpdate: 'notice', severity: 'warning', title: redactAll(title) })
+    if (title) {
+      const message = redactAll(title)
+      if (activeCycle && (!params.turnId || String(params.turnId) === activeCycle.turnId)) {
+        activeCycle.retrying = { since: activeCycle.retrying?.since ?? Date.now(), message }
+        sessionUpdate({ sessionUpdate: 'state_update', state: 'running', _meta: { guguRetrying: activeCycle.retrying } })
+      }
+      sessionUpdate({ sessionUpdate: 'notice', severity: 'warning', title: message })
+    }
+    return
+  }
+  if (method === 'item/autoApprovalReview/completed' && params.review?.status === 'denied') {
+    const action = params.action ?? {}
+    const subject = action.command ?? action.toolName ?? action.host ?? action.reason ?? action.type ?? 'Action'
+    sessionUpdate({ sessionUpdate: 'notice', severity: 'warning', title: redactAll(`${subject}: ${params.review.rationale ?? 'Permission denied by the AI reviewer'}`) })
     return
   }
   if (method === 'thread/tokenUsage/updated') {
@@ -1444,8 +1494,9 @@ function onAppNotification(message) {
     return
   }
   if (method === 'thread/settings/updated') {
+    const settings = params.threadSettings ?? params
     const profile = permissionProfileId(
-      params.permissions ?? params.permissionProfile ?? params.activePermissionProfile,
+      settings.permissions ?? settings.permissionProfile ?? settings.activePermissionProfile,
     )
     if (!profile) {
       process.stderr.write(
@@ -1453,7 +1504,7 @@ function onAppNotification(message) {
       )
       return
     }
-    selectedPermissionProfile = profile
+    selectedPermissionProfile = settings.approvalsReviewer === 'auto_review' && profile === ':workspace' ? 'auto-review' : profile
     void (async () => {
       const modes = await probePermissionModes(null, selectedPermissionProfile)
       sessionUpdate({
@@ -1471,6 +1522,15 @@ function onAppNotification(message) {
       )
     })
     return
+  }
+  // Only this foreground cycle's output clears its provider-reported retry. Input echoes,
+  // settings, usage and a background/other turn are not evidence that its stream resumed.
+  if (activeCycle?.retrying && String(params.turnId ?? '') === activeCycle.turnId
+    && ((typeof params.delta === 'string' && params.delta.length > 0
+      && ['item/agentMessage/delta', 'item/reasoning/textDelta', 'item/reasoning/summaryTextDelta', 'item/commandExecution/outputDelta'].includes(method))
+      || (method === 'item/completed' && ['agentMessage', 'reasoning', 'mcpToolCall', 'commandExecution'].includes(params.item?.type)))) {
+    activeCycle.retrying = null
+    sessionUpdate({ sessionUpdate: 'state_update', state: 'running', _meta: { guguRetrying: null } })
   }
   if (method === 'item/agentMessage/delta') {
     streamedItems.set(String(params.itemId ?? ''), 0)
@@ -2222,7 +2282,7 @@ function onAppLine(line) {
   try {
     message = JSON.parse(line)
   } catch {
-    process.stderr.write(`[codex-app-server-acp] non-JSON app-server output: ${line.slice(0, 200)}\n`)
+    failProtocol(jsonlParseError('Codex app-server stdout', line))
     return
   }
   if (message.id !== undefined && (message.result !== undefined || message.error !== undefined)) {
@@ -2274,6 +2334,7 @@ async function handleAcpRequest(message) {
   }
   if (method === 'session/fork') {
     await startApp(params.mcpServers)
+    await requireCodexAccount()
     const requestedPermission = codexThreadPermissionFrom(params)
     // 运行时分叉(侧边聊天)不许在 codex 的线程台账里留痕 ⇒ `ephemeral: true`(缺省)。
     // 持久分叉(spec session-fork-share 的「Fork 会话」)正好相反:它就是要落成一条能重开的
@@ -2305,6 +2366,8 @@ async function handleAcpRequest(message) {
       await appRequest('thread/settings/update', {
         threadId: sessionId,
         permissions: requestedPermission.profile,
+        approvalsReviewer: requestedPermission.threadStart.approvalsReviewer,
+        approvalPolicy: requestedPermission.threadStart.approvalPolicy,
       })
     }
     historyCanRevert = forked?.thread?.historyMode === 'paginated' && !forked?.thread?.ephemeral
@@ -2312,10 +2375,10 @@ async function handleAcpRequest(message) {
     const activePermissionProfile = forked?.activePermissionProfile
       ?? forked?.thread?.activePermissionProfile
     const modes = await probePermissionModes(params.cwd, activePermissionProfile)
-    selectedPermissionProfile = requestedPermission?.profile
+    selectedPermissionProfile = requestedPermission?.mode
       ?? modes?.selected
       ?? permissionProfileId(activePermissionProfile)
-    const responseModes = permissionModesWithRequestedProfile(modes, requestedPermission?.profile)
+    const responseModes = permissionModesWithRequestedProfile(modes, requestedPermission?.mode)
     // 顶层的 `model` / `reasoningEffort` 才是这条线程当前生效的那一对(实测:`result.thread`
     // 那层没有这两项)。⚠️ 读出来叫 `reasoningEffort`,写回去只认 `effort` —— 名字不对称。
     selectedModel = String(forked?.model ?? '').trim() || null
@@ -2365,6 +2428,7 @@ async function handleAcpRequest(message) {
   }
   if (method === 'session/new') {
     await startApp(params.mcpServers)
+    await requireCodexAccount()
     const requestedPermission = codexThreadPermissionFrom(params)
     const started = await startThread({
       cwd: params.cwd,
@@ -2379,10 +2443,10 @@ async function handleAcpRequest(message) {
     const activePermissionProfile = started?.activePermissionProfile
       ?? started?.thread?.activePermissionProfile
     const modes = await probePermissionModes(params.cwd, activePermissionProfile)
-    selectedPermissionProfile = requestedPermission?.profile
+    selectedPermissionProfile = requestedPermission?.mode
       ?? modes?.selected
       ?? permissionProfileId(activePermissionProfile)
-    const responseModes = permissionModesWithRequestedProfile(modes, requestedPermission?.profile)
+    const responseModes = permissionModesWithRequestedProfile(modes, requestedPermission?.mode)
     // 顶层的 `model` / `reasoningEffort` 才是这条线程当前生效的那一对(实测:`result.thread`
     // 那层没有这两项)。⚠️ 读出来叫 `reasoningEffort`,写回去只认 `effort` —— 名字不对称。
     selectedModel = String(started?.model ?? '').trim() || null
@@ -2416,10 +2480,12 @@ async function handleAcpRequest(message) {
     const generation = ++loadGeneration
     const loadStartedAt = Date.now()
     await startApp(params.mcpServers)
+    await requireCodexAccount()
     const requestedPermission = codexThreadPermissionFrom(params)
     // 见 @@@resume-provider:resume 要用**这个进程**的 provider,❌ 不是 rollout 里记的那个。
     const resumeProvider = await processModelProviderOnce(params.cwd)
     const resumed = await appRequest('thread/resume', {
+      excludeTurns: true,
       serviceTier: 'default',
       threadId: params.sessionId,
       cwd: params.cwd,
@@ -2427,13 +2493,15 @@ async function handleAcpRequest(message) {
       ...(appServerThreadConfig ? { config: appServerThreadConfig } : {}),
       // 同 session/new:档位由 argv 单一决定。重开一个会话不该把它悄悄提到全权。
       ...developerInstructionsFrom(params),
-    })
+    }, null) // A live resume stays restoring; EOF, protocol failure or host cancellation ends it.
     sessionId = String(resumed?.thread?.id ?? params.sessionId ?? '')
     if (!sessionId) throw new Error('local Codex thread/resume returned no thread id')
     if (requestedPermission) {
       await appRequest('thread/settings/update', {
         threadId: sessionId,
         permissions: requestedPermission.profile,
+        approvalsReviewer: requestedPermission.threadStart.approvalsReviewer,
+        approvalPolicy: requestedPermission.threadStart.approvalPolicy,
       })
     }
     historyCanRevert = resumed?.thread?.historyMode === 'paginated' && !resumed?.thread?.ephemeral
@@ -2472,11 +2540,11 @@ async function handleAcpRequest(message) {
       selectedEffort = resumedEffort
       // 只记 provider 确实回报的档；目录探测失败时保留 thread/resume 给出的已知值。
       // active profile 本身缺席则保持 null，模型与会话生命周期不依赖这项可选观测。
-      selectedPermissionProfile = requestedPermission?.profile
+      selectedPermissionProfile = requestedPermission?.mode
         ?? modes?.selected
         ?? permissionProfileId(activePermissionProfile)
     }
-    const responseModes = permissionModesWithRequestedProfile(modes, requestedPermission?.profile)
+    const responseModes = permissionModesWithRequestedProfile(modes, requestedPermission?.mode)
     const models = await modelCatalogOnce()
     const resumedTurnId = activeTurnIdFromThread(resumed)
     if (resumedTurnId) beginCycle(resumedTurnId)
@@ -2659,8 +2727,8 @@ async function handleAcpRequest(message) {
     const autonomy = CODEX_AUTONOMY_BY_MODE[mode]
     await appRequest('thread/settings/update', {
       threadId: sessionId,
-      permissions: wanted,
-      ...(autonomy ? { approvalPolicy: autonomy.approvalPolicy } : {}),
+      permissions: mode === 'ai-review' ? ':workspace' : wanted,
+      ...(autonomy ? { approvalPolicy: autonomy.approvalPolicy, approvalsReviewer: autonomy.approvalsReviewer } : {}),
     })
     selectedPermissionProfile = wanted || null
     // 切权限档的回包也要带上 model / thought_level 两组 —— 只回 mode 一组,
@@ -2700,13 +2768,14 @@ function handleAcpNotification(message) {
   }
 }
 
-const reader = createInterface({ input: process.stdin, crlfDelay: Infinity })
-reader.on('line', (line) => {
+const reader = createJsonlReader({ input: process.stdin, onClose: shutdown, onError: failProtocol, onLine: (line) => {
   let message
   try {
     message = JSON.parse(line)
   } catch {
-    process.stderr.write(`[codex-app-server-acp] non-JSON ACP input: ${line.slice(0, 200)}\n`)
+    const error = jsonlParseError('ACP stdin', line)
+    respond(null, null, { code: -32700, message: error.message })
+    failProtocol(error)
     return
   }
   // 「只有 id、没有 method」= host 对**我们发出去的**请求的回答。原本没有这一支,
@@ -2735,21 +2804,32 @@ reader.on('line', (line) => {
     if (message.method === 'session/set_config_option') serializeConfigOption(run)
     else void run()
   } else if (message.method) handleAcpNotification(message)
-})
+} })
+
+let shutdownExitCode = 0
+function failProtocol(error) {
+  process.stderr.write(`[codex-app-server-acp] ERROR: ${error.message}\n`)
+  shutdownExitCode = 1
+  rejectAppPending(error)
+  shutdown()
+}
 
 function shutdown() {
   if (shuttingDown) return
   shuttingDown = true
+  preparationAbort.abort()
+  rejectAppPending(new Error('ACP host connection closed'))
   cancelAcpPending('ACP host connection closed')
   for (const entry of promptInsertions.values()) entry.resolve({ error: 'ACP host connection closed' })
   promptInsertions.clear()
+  reader.close()
   appReader?.close()
   // Let approval handlers flush their explicit denial before stopping the local server.
   // Exit only once the app-server tree is down; a tree that will not stop exits non-zero, loud.
   setTimeout(() => {
-    if (!appServer) process.exit(0)
+    if (!appServer) process.exit(shutdownExitCode)
     appServer.stop().then(
-      () => process.exit(0),
+      () => process.exit(shutdownExitCode),
       (error) => {
         process.stderr.write(`gugu codex-acp: app-server tree stop failed: ${error.message}\n`)
         process.exit(1)
@@ -2758,6 +2838,5 @@ function shutdown() {
   }, 0)
 }
 
-reader.on('close', shutdown)
 process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)

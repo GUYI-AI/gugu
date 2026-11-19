@@ -8,10 +8,12 @@ const summary = { type: 'TypeError', locations: ['apps/desktop/src/App.tsx:12:3'
 
 describe('outgoing error-summary allowlist', () => {
   it('preserves the published Beta run/attempt version through the transport boundary', () => {
-    const published = { ...summary, version: '0.3.3-beta.2001.1' }
-    expect(sanitizeErrorSummary(published)).toEqual(published)
-    expect(JSON.parse(errorSummaryRequest(published)!)).toEqual({ schemaVersion: 1, summary: published })
-    for (const version of ['0.3.3-beta.2001.1.private', '0.3.3-beta.2001.1000', '0.3.3-beta.100000.1']) {
+    for (const version of ['0.3.3-beta.2001.1', '0.3.8-beta.44440414639.1']) {
+      const published = { ...summary, version }
+      expect(sanitizeErrorSummary(published)).toEqual(published)
+      expect(JSON.parse(errorSummaryRequest(published)!)).toEqual({ schemaVersion: 1, summary: published })
+    }
+    for (const version of ['0.3.3-beta.2001.1.private', '0.3.3-beta.2001.1000', '0.3.3-beta.100000.1', '0.3.8-beta.44440414639', '0.3.8-beta.44440414639.1000']) {
       expect(errorSummaryRequest({ ...summary, version })).toBeNull()
     }
   })

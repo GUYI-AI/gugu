@@ -370,6 +370,7 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
                   <Button
                     size="sm"
                     data-testid="extension-bundle-card-install"
+                    data-pane-opener={installed ? '' : undefined}
                     data-action={machine ? 'install-on' : offer?.action === 'install' && offer.newer ? 'install-newer' : offer?.action}
                     disabled={install === 'installing' || (waiting && !machine) || !machineReady}
                     onClick={() => (installed && !machine ? openApp(manifest.id, chatId) : void installFromCard(newer?.card ?? card))}

@@ -1,13 +1,13 @@
 import { rpc } from '@renderer/lib/ipc';
 import { createSelectStore } from '@/lib/selectStore';
 import { log } from '@renderer/utils/logger';
-import { VIEW_STATE_GLOBAL, type ViewStateGlobal } from '../../../../../shared/view-state-snapshot';
+import { FIRST_FRAME_GLOBAL, type FirstFrameGlobal } from '../../../../../shared/first-frame';
 import { viewStateModelOf } from './view-state-models';
 
 /**
  * Where the view state (③ in the client state model: drafts, reading positions, tabs, what is folded) is kept. Both
  * hand over every entry synchronously, oldest write first, before the first frame:
- * - desktop: main's database, read by preload over one synchronous IPC (shared/view-state-snapshot.ts); writes go to main,
+ * - desktop: main's database, read by preload over one synchronous IPC (shared/first-frame.ts); writes go to main,
  *   which writes them behind and flushes them on every way out;
  * - the web page and the phone have no main process: localStorage, one key per entry, stamped for the order.
  */
@@ -19,8 +19,8 @@ interface ViewStateStorage {
 
 const notStored = (key: string) => (error: unknown) => log.error('view state not stored', { key, error: String(error) });
 
-function mainProcessStorage(global: ViewStateGlobal): ViewStateStorage {
-  if (!global.snapshot) log.error('main handed over no view state: this start begins without drafts, positions or tabs');
+function mainProcessStorage(global: FirstFrameGlobal): ViewStateStorage {
+  if (!global.viewState) log.error('main handed over no view state: this start begins without drafts, positions or tabs');
   // The IPC is sent before this returns; main holds it from then on, so a quit right after keeps it.
   const send = (key: string, write: () => Promise<void>) => {
     try {
@@ -30,7 +30,7 @@ function mainProcessStorage(global: ViewStateGlobal): ViewStateStorage {
     }
   };
   return {
-    entries: global.snapshot ?? {},
+    entries: global.viewState ?? {},
     save: (key, value) => send(key, () => rpc.viewState.save(key, value)),
     del: (key) => send(key, () => rpc.viewState.del(key)),
   };
@@ -169,7 +169,7 @@ class ViewStateCache {
 
 // No window (a node test importing this): nothing to keep across runs.
 const inNode: ViewStateStorage = { entries: {}, save: () => {}, del: () => {} };
-const global = typeof window === 'undefined' ? undefined : (window as unknown as Record<string, ViewStateGlobal | undefined>)[VIEW_STATE_GLOBAL];
+const global = typeof window === 'undefined' ? undefined : (window as unknown as Record<string, FirstFrameGlobal | undefined>)[FIRST_FRAME_GLOBAL];
 export const viewStateCache = new ViewStateCache(
   global ? mainProcessStorage(global) : typeof localStorage === 'undefined' ? inNode : localStorageStorage(),
 );

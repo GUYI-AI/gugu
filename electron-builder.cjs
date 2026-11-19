@@ -249,6 +249,8 @@ module.exports = {
   extraMetadata: {
     name: t.artifactPrefix,
     productName: t.productName,
+    // @@@linux-window-identity - Electron's app_id / WM_CLASS must match the packaged desktop filename.
+    desktopName: `${t.artifactPrefix}.desktop`,
     guguBuildDistribution: buildDistribution,
     ...(buildVersion ? { version: buildVersion } : {}),
   },
@@ -465,6 +467,8 @@ module.exports = {
     // ❌ Never as a mac/win/linux `files` list: a platform list of only `!` patterns makes electron-builder
     // add `**/*` and pack the whole checkout (0.3.1 betas shipped the repo and the CD overlay that way).
     '!**/node_modules/node-pty/prebuilds/!(${platform}-${arch})/**',
+    // SQLite 13 prefers our verified per-arch Release build; do not ship eight unused npm prebuilds.
+    '!**/node_modules/better-sqlite3/prebuilds/**',
     '!**/node_modules/@parcel/watcher-!(${platform}-${arch}*)/**',
   ],
   // @@@kill-asar (#2299 / 0.2.26 闪退治本) — asar 关闭:整个 app 落地为 Contents/Resources/app/ 一棵
@@ -552,6 +556,7 @@ module.exports = {
   // would bundle the macOS tmux into the Linux artifact. Linux needs a PNG icon (icns is rejected).
   linux: {
     icon: 'public/assets/app/gugu-icon-512.png',
+    syncDesktopName: true,
     category: 'Network',
     target: [{ target: 'AppImage', arch: ['x64'] }]
   },

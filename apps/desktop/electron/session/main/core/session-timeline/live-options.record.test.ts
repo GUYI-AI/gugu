@@ -58,9 +58,9 @@ describe('手机改选项:确认生效才写回记录', () => {
     expect(mocks.record).toHaveBeenCalledWith('c1', { dimension: 'fast', value: true });
   });
 
-  it('rejects Fast before applying it when the billing route is not eligible', async () => {
+  it('rejects Fast before applying it when the actual model has no eligible capability', async () => {
     useIo({ status: 'applied', effectiveValue: 'on' });
-    await expect(setSessionOption({ conversationId: 'c1', dimension: 'fast', value: 'on' })).rejects.toThrow(/自己的厂商账号/);
+    await expect(setSessionOption({ conversationId: 'c1', dimension: 'fast', value: 'on' })).rejects.toThrow(/当前模型不支持 Fast 模式/);
     expect(mocks.record).not.toHaveBeenCalled();
   });
 

@@ -126,7 +126,7 @@ export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileCh
           conversationId: sessionId,
           path: plan.path,
           signal: request.signal,
-          retryTransient: opts.download === true,
+          retryTransient: true,
           onProgress: (read, size) => {
             if (requestRef.current !== request) return
             setPreview((current) => (current && current.loading ? { ...current, progress: { read, size } } : current))

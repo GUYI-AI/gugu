@@ -29,7 +29,7 @@ import {
 } from '@shared/core/sessions/sessionEvents';
 import { sessionTabKind } from '@renderer/features/sessions/session-tab-kind';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
-import { closeTabsOfSession, findChatPaneId, sessionConversationTabId } from '../view/session-pane-policy';
+import { closeTabsOfSession, findChatPaneId, isSessionConversationTab, sessionConversationTabId } from '../view/session-pane-policy';
 import type { OpenedOutput } from '@gugu/session-chat-ui/opened-outputs';
 import type { TerminalShellId } from '@shared/core/terminals/terminal-settings';
 import type {
@@ -107,6 +107,7 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
       modelRootPath: `workspace:${workspaceId}`,
     };
     this.paneLayout = sessionTabView.createPaneLayoutStore(sessionCtx, {
+      isPrimaryChatTab: (entry) => isSessionConversationTab(entry, this.sessionId),
       // 一条会话一条页签条:分屏只有并排一种(spec session-page「并排」)。
       onActiveTabChange: (tabId) => {
         if (!tabId) return;
@@ -493,12 +494,15 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
    * @@@sessionpage layout — create a terminal and open it as a
    * workspace-panel tab (spec 会话页: terminals are named tabs, not a drawer).
    */
-  openTerminalAsTab(shell?: TerminalShellId, askedIn?: string): Promise<void> {
+  openTerminalAsTab(shell?: TerminalShellId, askedIn?: string, from?: string): Promise<void> {
     const terminals = terminalRegistry.get(this.sessionId);
     if (!terminals) return Promise.resolve();
     const { id, created } = terminals.createDefaultTerminal(shell);
     // This machine has no terminal cell: no tab to start a shell for.
-    if (!this.paneLayout.openBeside('terminal', { terminalId: id }, askedIn)) return terminals.deleteTerminal(id);
+    const tab = from
+      ? this.paneLayout.open('terminal', { terminalId: id }, { from, intent: 'navigate', inPlace: true })
+      : this.paneLayout.openBeside('terminal', { terminalId: id }, askedIn);
+    if (!tab) return terminals.deleteTerminal(id);
     return created.then(
       () => undefined,
       (error: unknown) => {

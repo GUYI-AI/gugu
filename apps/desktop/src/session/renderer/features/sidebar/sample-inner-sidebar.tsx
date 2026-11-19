@@ -78,7 +78,6 @@ const SampleAgentsSection = observer(function SampleAgentsSection({ agent, activ
             depth={0}
             hasChildren={false}
             expanded={false}
-            needsAttention={false}
             title={agent.name}
             harness={{ id: agent.engine, name: engineLabel(agent.engine) }}
             agent={{ userId: SAMPLE_AGENT_SEED, name: agent.name, avatarUrl: null }}

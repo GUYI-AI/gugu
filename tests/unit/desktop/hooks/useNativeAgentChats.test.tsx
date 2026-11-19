@@ -8,7 +8,7 @@ import { useNativeAgentChats } from '../../../../apps/desktop/src/hooks/useNativ
 import { installOwnedAgentEntry } from '../../../../apps/desktop/src/lib/ownedAgentConversation'
 import { publishDirectoryDevices, removeDeviceSessions, updateDeviceSessions } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 
-vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => false }))
+vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => false, readMobileShell: () => false }))
 let harness: ReturnType<typeof createReactHarness> | undefined
 let release: (() => void) | undefined
 afterEach(() => { harness?.cleanup(); release?.(); release = undefined; publishDirectoryDevices([]); removeDeviceSessions('host') })

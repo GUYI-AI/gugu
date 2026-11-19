@@ -335,9 +335,10 @@ export function normalizeBrowserProfileSelection(
 
 export function browserProfileLabel(
   profileId: string,
-  profiles: readonly BrowserProfile[]
+  profiles: readonly BrowserProfile[],
+  isolatedLabel = 'Isolated per agent'
 ): string {
-  if (profileId === BROWSER_ISOLATED_PROFILE_ID) return 'Isolated per task';
+  if (profileId === BROWSER_ISOLATED_PROFILE_ID) return isolatedLabel;
   return profiles.find((profile) => profile.id === profileId)?.name ?? profileId;
 }
 

@@ -26,7 +26,8 @@ export function ConnectionSettingsRows({
   unreadable = false,
   embedded = false,
   children,
-  form
+  form,
+  localConfiguration
 }: {
   agentId: string
   /** 只列真有东西的连接;undefined = 还在读。 */
@@ -48,6 +49,7 @@ export function ConnectionSettingsRows({
   children: ReactNode
   /** 「添加连接」的就地表单;给了就展开在那一行里。 */
   form: ReactNode
+  localConfiguration: ReactNode
 }) {
   const { translate } = useSessionMessages()
   const current = connections?.find((c) => c.current)
@@ -125,6 +127,7 @@ export function ConnectionSettingsRows({
           {form && <div className="agent-connection-form pt-1">{form}</div>}
         </SettingsRow>
       )}
+      {localConfiguration}
     </>
   )
   if (embedded)

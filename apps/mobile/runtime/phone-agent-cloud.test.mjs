@@ -10,6 +10,17 @@ const claims = { sub: ownerId, iat: now, exp: now + 3600 }
 const config = { ownerId, supabaseUrl: 'https://phone-host.invalid', supabaseAnonKey: 'public-anon', accessToken: jwt(claims), refreshToken: 'old-private-refresh' }
 const response = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } })
 
+test('the explicit native debug allowance admits only the emulator host and loopback HTTP endpoints', async () => {
+  for (const supabaseUrl of ['http://10.0.2.2:57741', 'http://127.0.0.1:57741']) {
+    assert.throws(() => createPhoneAgentCloud({ ...config, supabaseUrl }, () => undefined), /HTTPS/)
+    const cloud = createPhoneAgentCloud({ ...config, supabaseUrl, allowLocalHttp: true }, () => undefined)
+    await cloud.close()
+  }
+  for (const supabaseUrl of ['http://example.com', 'http://10.0.2.2.example.com', 'http://10.0.2.2/?token=secret', 'http://user@127.0.0.1']) {
+    assert.throws(() => createPhoneAgentCloud({ ...config, supabaseUrl, allowLocalHttp: true }, () => undefined), /HTTPS/)
+  }
+})
+
 test('a real preparation fetch records its leaf operation and DNS cause, then retries without exposing credentials', async () => {
   let issues = 0
   const failures = []

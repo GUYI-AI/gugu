@@ -69,7 +69,7 @@ vi.mock('../../../apps/desktop/src/mobile/agent-watch/SessionTimelinePage', asyn
   return {
     SessionTimelinePage: ({ onBack, session: shown }: { onBack: () => void; session: SessionpageSessionSummary }) => React.createElement(
       'button',
-      { type: 'button', 'data-testid': 'timeline-back', 'data-agent-status': shown.agentStatus, onClick: onBack },
+      { type: 'button', 'data-testid': 'timeline-back', 'data-agent-status': shown.agentStatus, 'data-session-id': shown.conversationId, onClick: onBack },
       'back',
     ),
   }
@@ -375,9 +375,76 @@ describe('AgentWatchPage native back routing', () => {
     await act(async () => { await import('../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage') })
     expect(harness.container.querySelector('[data-testid="create"]')).toBeTruthy()
     await act(async () => { (harness.container.querySelector('[data-testid="create-back"]') as HTMLButtonElement).click() })
-    expect(harness.container.querySelector('[data-testid="projects"]')).toBeTruthy()
+    expect(props.onExit).toHaveBeenCalledOnce()
+    expect(harness.container.querySelector('[data-testid="projects"]'), 'an external entry never visited Projects').toBeNull()
     await harness.render(createNode(AgentWatchPage, { ...props, createRequest: 5 }))
     expect(harness.container.querySelector('[data-testid="create"]'), 'a second tap opens it again').toBeTruthy()
+  })
+
+  it.each([
+    ['header', false], ['native', false], ['header', true], ['native', true],
+  ] as const)('returns an externally created Agent through %s Back without inventing a Projects parent (phone host: %s)', async (method, phone) => {
+    if (phone) deviceStore.devices = [{ ...deviceStore.devices[0]!, capabilities: { terminals: [], runtimes: ['pi'], host_kind: 'phone' } }]
+    const onExit = vi.fn()
+    const props = { onExit, onRouteChange: vi.fn() }
+    await harness.render(createNode(AgentWatchPage, { ...props, active: false, createRequest: 0 }))
+    await harness.render(createNode(AgentWatchPage, { ...props, active: true, createRequest: 1 }))
+    await act(async () => { await import('../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage') })
+    await act(async () => { (harness.container.querySelector('[data-testid="create-done"]') as HTMLButtonElement).click() })
+    expect(harness.container.querySelector('[data-testid="timeline-back"]')?.getAttribute('data-session-id')).toBe('made')
+    expect(harness.container.querySelector('[data-testid="create"]')).toBeNull()
+    expect(harness.container.querySelector('[data-testid="projects"]')).toBeNull()
+    await act(async () => {
+      if (method === 'native') expect(nativeBack()).toBe(true)
+      else (harness.container.querySelector('[data-testid="timeline-back"]') as HTMLButtonElement).click()
+    })
+    expect(onExit).toHaveBeenCalledOnce()
+    expect(harness.container.querySelector('[data-testid="projects"]'), 'Back hands control to the actual shell entry').toBeNull()
+  })
+
+  it('system Back cancels external creation directly into its shell origin', async () => {
+    const props = { active: true, onExit: vi.fn() }
+    await harness.render(createNode(AgentWatchPage, { ...props, createRequest: 0 }))
+    await harness.render(createNode(AgentWatchPage, { ...props, createRequest: 1 }))
+    await act(async () => { await import('../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage') })
+    expect(harness.container.querySelector('[data-testid="create"]')).toBeTruthy()
+    await act(async () => { expect(nativeBack()).toBe(true) })
+    expect(props.onExit).toHaveBeenCalledOnce()
+    expect(harness.container.querySelector('[data-testid="projects"]')).toBeNull()
+  })
+
+  it.each(['cancel', 'complete'] as const)('preserves a visited Agent and Projects route when creation is opened within the watch layer: %s', async outcome => {
+    const props = { active: true, onExit: vi.fn(), createFromCurrentRoute: true }
+    await harness.render(createNode(AgentWatchPage, { ...props, createRequest: 0 }))
+    await act(async () => { (harness.container.querySelector('[data-testid="open-session"]') as HTMLButtonElement).click() })
+    await harness.render(createNode(AgentWatchPage, { ...props, createRequest: 1 }))
+    await act(async () => { await import('../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage') })
+    // Reopening creation must replace the current form, rather than retaining it as a Back destination.
+    await harness.render(createNode(AgentWatchPage, { ...props, createRequest: 2 }))
+    await act(async () => { (harness.container.querySelector(`[data-testid="create-${outcome === 'cancel' ? 'back' : 'done'}"]`) as HTMLButtonElement).click() })
+    if (outcome === 'complete') {
+      expect(harness.container.querySelector('[data-testid="timeline-back"]')?.getAttribute('data-session-id')).toBe('made')
+      await act(async () => { expect(nativeBack()).toBe(true) })
+    }
+    expect(harness.container.querySelector('[data-testid="timeline-back"]')?.getAttribute('data-session-id')).toBe(session.conversationId)
+    expect(harness.container.querySelector('[data-testid="create"]')).toBeNull()
+    await act(async () => { expect(nativeBack()).toBe(true) })
+    expect(harness.container.querySelector('[data-testid="projects"]')).toBeTruthy()
+    expect(props.onExit).not.toHaveBeenCalled()
+    await act(async () => { expect(nativeBack()).toBe(true) })
+    expect(props.onExit).toHaveBeenCalledOnce()
+  })
+
+  it('Back from an external creation shortcut exits the watch layer', async () => {
+    const onExit = vi.fn()
+    await harness.render(createNode(AgentWatchPage, { active: true, onExit, createRequest: 0 }))
+    await harness.render(createNode(AgentWatchPage, { active: true, onExit, createRequest: 1 }))
+    await act(async () => { await import('../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage') })
+
+    await act(async () => { (harness.container.querySelector('[data-testid="create-back"]') as HTMLButtonElement).click() })
+
+    expect(onExit).toHaveBeenCalledOnce()
+    expect(harness.container.querySelector('[data-testid="projects"]')).toBeNull()
   })
 
   // gugu.showSession on the phone: the row an App named opens as a tap on it does — even an offline machine's (the row is

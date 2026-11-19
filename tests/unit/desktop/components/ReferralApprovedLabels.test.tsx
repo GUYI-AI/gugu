@@ -4,6 +4,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { i18n, setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import { createNode, createReactHarness, renderWithAppProviders, typeInto } from '../../../support/testHarness'
 
+vi.mock('../../../../apps/desktop/src/lib/referrals', () => ({ getMyReferral: vi.fn(async () => { throw new Error('unavailable') }) }))
+
 let AddFriendSearch: typeof import('../../../../apps/desktop/src/components/AddFriendSearch')['AddFriendSearch']
 let ReferralAccountPreview: typeof import('../../../../apps/desktop/src/components/referralPreview/ReferralPreview')['ReferralAccountPreview']
 let harness: ReturnType<typeof createReactHarness>
@@ -39,13 +41,13 @@ describe.each(variants)('approved referral entry labels (%s, %s)', (locale, them
     expect(invitation!.textContent).not.toContain(i18n.t('referralPreview.proposal', { ns: 'main' }))
   })
 
-  it('keeps the account title, disconnected status and View action without a review qualifier', async () => {
-    await harness.render(createNode(ReferralAccountPreview))
+  it('keeps the approved Invite friends row and an explicit failed-read state', async () => {
+    await renderWithAppProviders(harness, createNode(ReferralAccountPreview))
     const account = harness.container.querySelector('.gg-referral-account-preview')
     expect(account).not.toBeNull()
-    expect(account!.querySelector('.gg-settings-row-title')!.textContent).toBe(i18n.t('referralPreview.code', { ns: 'main' }))
-    expect(account!.querySelector('.gg-settings-row-description')!.textContent).toBe(i18n.t('referralPreview.disconnected', { ns: 'main' }))
-    expect(account!.querySelector('button')!.textContent).toBe(i18n.t('referralPreview.view', { ns: 'main' }))
+    expect(account!.querySelector('.gg-settings-row-title')!.textContent).toBe(i18n.t('referralPreview.invite', { ns: 'main' }))
+    expect(account!.querySelector('.gg-settings-row-description')!.textContent).toBe(i18n.t('referrals.unavailable', { ns: 'main' }))
+    expect(account!.querySelector('button')!.textContent).toBe(i18n.t('referrals.invite', { ns: 'main' }))
     expect(account!.textContent).not.toContain(i18n.t('referralPreview.proposal', { ns: 'main' }))
   })
 })

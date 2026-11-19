@@ -1,3 +1,4 @@
+import { testAttachmentUploads } from '../../support/attachmentUploadHost'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -35,7 +36,7 @@ async function renderPrefix(kind: 'computer' | 'cloud', clock: string, seed: num
       },
       agentUserId: 'assistant', threadRootId: null, sessionKey: 'assistant-session', model: null, autonomy: null,
       promptBlocks: { identity: buildAgentIdentityBlock({ guguUserId: 'assistant' }) },
-      socialBridgeDeps: {
+      socialBridgeDeps: { attachments: testAttachmentUploads(),
         host, grantKey: 'assistant-prefix', personalAssistant: true,
         getSupabaseUrl: () => 'https://supabase.example', getSupabaseAnonKey: () => 'anon',
         runSessionAction: async () => ({}), runExtensionAction: async () => ({}),

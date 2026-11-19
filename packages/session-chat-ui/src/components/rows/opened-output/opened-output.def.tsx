@@ -9,6 +9,7 @@
  *
  * 哪些调用算产出、挂在哪一轮、同一份只挂一张:`state/opened-outputs.ts`(手机会话页读同一份)。
  */
+import { conversationColumnWidth } from '../message/metrics';
 import type { MeasureCtx } from '@session-chat/core/define';
 import { readableLabel, rowTranslator } from '../readable-label';
 import { useCommands } from '@session-chat/components/contexts/CommandsContext';
@@ -17,7 +18,7 @@ import { defineUnit } from '@session-chat/core/units';
 import { useChatTranslator } from '@session-chat/localization';
 import type { OpenedOutput, OpenedOutputItem } from '@session-chat/model';
 import { openedOutputLook } from '@session-chat/state/opened-outputs';
-import { Show } from 'solid-js';
+import { createMemo, Show } from 'solid-js';
 import { vars } from '@session-chat/styles/theme.css';
 import { card, cardClickable, chevron, detail, modeButton, modeLabel, nameRow, slot, text, tile } from './opened-output.css';
 
@@ -50,7 +51,7 @@ export function outputControlWidth(output: OpenedOutput, ctx: MeasureCtx, canOpe
  * The row's end, wherever a file's row is drawn (an output card, the Edited card): its 「Open with ▾」, which opens the
  * host's menu and never counts as a click on the row; else the › of a row that opens.
  */
-export function OutputRowEnd(props: { output: OpenedOutput; itemId: string; name: string; canOpen: boolean }) {
+export function OutputRowEnd(props: { output: OpenedOutput; itemId: string; name: string; canOpen: boolean; fromFileChange?: boolean }) {
   const translate = useChatTranslator();
   const commands = useCommands();
   // 「侧边栏 ▾」:宿主说得出默认怎么打开、也接了菜单才摆;打不开的那行不摆。
@@ -76,7 +77,7 @@ export function OutputRowEnd(props: { output: OpenedOutput; itemId: string; name
           onClick={(event) => {
             // 只弹菜单,❌ 再冒泡成「点整行」按默认方式打开。
             event.stopPropagation();
-            commands().onOutputMenu?.({ output: props.output, itemId: props.itemId, anchor: event.currentTarget });
+            commands().onOutputMenu?.({ output: props.output, itemId: props.itemId, anchor: event.currentTarget, ...(props.fromFileChange ? { fromFileChange: true } : {}) });
           }}
           onKeyDown={(event) => event.stopPropagation()}
         >
@@ -103,6 +104,9 @@ function outputLayout(data: OpenedOutputItem, ctx: MeasureCtx) {
   return { name, description, rowHeight: Math.max(OPENED_OUTPUT_ROW_H, name.height + description.height + 24) };
 }
 
+const cardContext = (ctx: MeasureCtx): MeasureCtx => ctx.theme.layout.agentConversation
+  ? { ...ctx, width: conversationColumnWidth(ctx.width) } : ctx;
+
 export const openedOutputUnitDef = defineUnit<OpenedOutputItem, { rowH: number; gap: number }>({
   kind: 'opened-output',
   // 一组卡连成一块,行与行之间不留缝;与上下的间距算在组首 / 组末那一行自己里面(`slot` 的上下留白)。
@@ -110,12 +114,17 @@ export const openedOutputUnitDef = defineUnit<OpenedOutputItem, { rowH: number; 
   vars: { rowH: OPENED_OUTPUT_ROW_H, gap: OPENED_OUTPUT_GAP },
 
   measure(data, ctx, vars_) {
-    return outputLayout(data, ctx).rowHeight + (data.index === 0 ? vars_.gap : 0) + (data.index === data.count - 1 ? vars_.gap : 0);
+    const gap = ctx.theme.layout.agentConversation ? 0 : vars_.gap;
+    return outputLayout(data, cardContext(ctx)).rowHeight + (data.index === 0 ? gap : 0) + (data.index === data.count - 1 ? gap : 0);
   },
 
   Render(props) {
     const translate = useChatTranslator();
-    const layout = () => outputLayout(props.data, props.ctx.measureCtx!());
+    const ctx = () => props.ctx.measureCtx!();
+    const conversation = () => ctx().theme.layout.agentConversation;
+    const measured = createMemo(() => cardContext(ctx()));
+    const layout = () => outputLayout(props.data, measured());
+    const gap = () => conversation() ? 0 : props.vars.gap;
     const commands = useCommands();
     // 行按下标复用:读 props 一律在 accessor 里,❌ 一次性取出来。
     const look = () => openedOutputLook(props.data.output);
@@ -123,20 +132,22 @@ export const openedOutputUnitDef = defineUnit<OpenedOutputItem, { rowH: number; 
     const open = () => (unavailable() ? undefined : commands().onOpenOutput);
     const handleClick = () => open()?.({ output: props.data.output, itemId: props.data.id });
 
-    const first = () => props.data.index === 0;
-    const last = () => props.data.index === props.data.count - 1;
+    const first = () => conversation() || props.data.index === 0;
+    const last = () => conversation() || props.data.index === props.data.count - 1;
 
     return (
       <div
         class={slot}
         style={{
-          height: `${layout().rowHeight + (first() ? props.vars.gap : 0) + (last() ? props.vars.gap : 0)}px`,
-          'padding-top': `${first() ? props.vars.gap : 0}px`,
-          'padding-bottom': `${last() ? props.vars.gap : 0}px`,
+          width: conversation() ? `${measured().width}px` : undefined,
+          height: `${layout().rowHeight + (first() ? gap() : 0) + (last() ? gap() : 0)}px`,
+          'padding-top': `${first() ? gap() : 0}px`,
+          'padding-bottom': `${last() ? gap() : 0}px`,
         }}
       >
       <div
         data-slot="opened-output"
+        data-pane-opener=""
         data-output-kind={look().kind}
         class={open() ? cardClickable : card}
         data-first={first() ? '' : undefined}

@@ -1,23 +1,31 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SUPPORTED_LOCALES, useLocale, type LocalePreference } from '@/i18n'
 import { useTheme } from '../../store/theme'
-import { ChevronRight } from '@/lib/icons'
-import { useThemePackNames } from '@renderer/lib/theme/use-theme-packs'
+import { useMobileShell } from '../../hooks/useMobileShell'
 import { Button } from '../ui/Button'
-import { sendTestNotification } from '../../lib/notificationDiagnostics'
+import { SegmentedTabs } from '../ui/SegmentedTabs'
+import {
+  ANDROID_NOTIFICATION_PROBLEM_COPY, androidNotificationProblem, openAndroidNotificationSettings,
+  sendTestNotification, type AndroidNotificationProblem,
+} from '../../lib/notificationDiagnostics'
+import { useAppActive } from '../../lib/onScreenChat'
+import { useReplica } from '../../lib/replica'
 import { useSystemPermissionStates } from '../../lib/systemPermissions'
 import { platform } from '../../platform'
 import type { SystemPermission } from '../../platform/types'
-import { setNotificationSettings, useNotificationSettings, type NotificationSettings } from '../../lib/notificationSettings'
-import { setTrayBadgeEnabled, useTrayBadgeEnabled } from '../../lib/trayBadgeSetting'
+import { readDevicePreferences, useDevicePreferences, writeDevicePreferences } from '../../lib/devicePreferences'
+import { nativePhoneActions } from '../../mobile/phone-device/nativePhoneActions'
+import { SessionSettingsSection } from '../sessionpage/SessionSettingsSection'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow, Toggle } from './SettingsPrimitives'
+import { SettingsChoice } from './SettingsChoice'
 import { Unknown } from '../ui/Unknown'
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key'
 import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled'
 import { HelpImproveSettingGroup } from '../HelpImprove'
 
 const LANGUAGE_OPTIONS: readonly LocalePreference[] = ['system', ...SUPPORTED_LOCALES]
+const THEME_OPTIONS = ['light', 'dark', 'system'] as const
 
 /**
  * @@@5301 通知开关按**来源**排行:一行 = 一类发给你的东西,而不是一行 = 一个抽象层级。
@@ -27,7 +35,7 @@ const LANGUAGE_OPTIONS: readonly LocalePreference[] = ['system', ...SUPPORTED_LO
  * 那种开关正是本票要删掉的 `requests` 那类死字段,❌ 别为了和任务面板层数对齐把它造出来。
  */
 const NOTIFICATION_ROWS: ReadonlyArray<{
-  key: keyof NotificationSettings
+  key: 'chatMessages' | 'chatSound'
   labelKey: string
   descriptionKey?: string
   ariaKey: string
@@ -39,7 +47,7 @@ const NOTIFICATION_ROWS: ReadonlyArray<{
     ariaKey: 'settings.general.notificationsChatAria',
   },
   {
-    key: 'sound',
+    key: 'chatSound',
     labelKey: 'settings.general.notificationsSound',
     ariaKey: 'settings.general.notificationsSoundAria',
   },
@@ -64,56 +72,81 @@ const MOBILE_NOTIFICATION_HINT_KEYS: Record<keyof typeof NOTIFICATION_HINT_KEYS,
   unsupported: 'settings.general.notificationsTestFailed',
 }
 const NOTIFICATION_PERMISSION: readonly SystemPermission[] = ['notifications']
+const CHAT_BATTERY_GUIDANCE_KEY = 'gugu.android.chat-notifications.battery-guidance-v1'
 
 /**
  * 通用:语言 + 主题 + 通知 (+ 托盘角标)。通知是这一页的一个分组,不是顶层导航项。
  * @@@sidebar-tint 侧栏渐进底色**不在这一页** —— 2026-09-18 owner 把它归到会话页的设置里
- * (设置合一后是会话页画的「界面」那一格,features/settings/components/SidebarTintRow.tsx),真值仍是 lib/sidebarTint.ts。
+ * (设置合一后是会话页画的「界面」那一格,features/settings/components/SidebarTintRow.tsx),真值在这台设备的偏好里(lib/devicePreferences.ts)。
  */
-export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPermissions: () => void; onOpenThemes?: () => void }) {
+export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPermissions: () => void; showThemePacks?: boolean }) {
   const { t } = useTranslation('main')
   const { preference: themePreference, setTheme } = useTheme()
-  const themePacks = useThemePackNames()
+  const [batteryGuidance, setBatteryGuidance] = useState<{ onePlus: boolean; restricted: boolean } | null>(null)
+  const mobile = useMobileShell()
   const { preference, setPreference } = useLocale()
-  const notificationSettings = useNotificationSettings()
+  const devicePreferences = useDevicePreferences()
   // product spec:手机上「通用 → 通知」同时如实显示系统权限;读不到真值的宿主上恒为空、不渲染。
   const {
     states: systemNotificationStates,
     refresh: refreshSystemNotificationState,
   } = useSystemPermissionStates(NOTIFICATION_PERMISSION)
-  const trayBadgeEnabled = useTrayBadgeEnabled()
-  const [notificationHint, setNotificationHint] = useState<keyof typeof NOTIFICATION_HINT_KEYS | null>(null)
+  const [notificationTest, setNotificationTest] = useState<{
+    kind: keyof typeof NOTIFICATION_HINT_KEYS
+    silent?: boolean
+  } | null>(null)
+  const [bannerSeen, setBannerSeen] = useState<boolean | null>(null)
+  const foreground = useAppActive()
+  const testSilent = notificationTest?.silent
+  const reading = useReplica(androidNotificationProblem, testSilent === undefined ? null : [testSilent], { read: foreground })
+  const androidProblem = reading.state === 'value' ? reading.value.problem : undefined
+  useEffect(() => {
+    if (testSilent !== undefined && foreground) void androidNotificationProblem.refresh(testSilent)
+  }, [foreground, testSilent])
   const notificationBlocked = systemNotificationStates.notifications === 'prompt'
     || systemNotificationStates.notifications === 'blocked'
+  const notificationHint = notificationTest?.kind
+
+  function changeNotificationSetting(key: 'chatMessages' | 'chatSound', on: boolean) {
+    writeDevicePreferences({ [key]: on })
+    if (key !== 'chatMessages' || !platform.systemPermissions.includes('batteryOptimization')) return
+    if (!on) {
+      setBatteryGuidance(null)
+      return
+    }
+    void (async () => {
+      if (localStorage.getItem(CHAT_BATTERY_GUIDANCE_KEY)) return
+      if (await platform.checkSystemPermission('batteryOptimization') !== 'prompt') return
+      const device = await nativePhoneActions.deviceInfo().catch(() => null)
+      if (!readDevicePreferences().chatMessages || localStorage.getItem(CHAT_BATTERY_GUIDANCE_KEY)) return
+      localStorage.setItem(CHAT_BATTERY_GUIDANCE_KEY, 'shown')
+      const onePlus = [device?.brand, device?.manufacturer].some(name => name?.toLowerCase() === 'oneplus')
+      setBatteryGuidance({ onePlus, restricted: true })
+    })().catch(() => undefined)
+  }
 
   return (
     <SettingsPage>
       <SettingsGroup>
         <SettingsRow
           title={<label htmlFor="settings-language">{t('settings.general.language')}</label>}
-          control={(
-            <select
-              id="settings-language"
-              className="gg-settings-select"
-              value={preference}
-              onChange={(event) => setPreference(event.target.value as LocalePreference)}
-            >
-              {LANGUAGE_OPTIONS.map((locale) => (
-                <option key={locale} value={locale}>
-                  {t(`settings.general.languageOptions.${locale}`)}
-                </option>
-              ))}
-            </select>
-          )}
+          control={<SettingsChoice id="settings-language" label={t('settings.general.language')} mobile={mobile}
+            value={preference} onChange={setPreference}
+            options={LANGUAGE_OPTIONS.map(value => ({ value, label: t(`settings.general.languageOptions.${value}`) }))} />}
         />
         {/* 主题开关放在通用页。三种偏好(浅/深/跟随系统)——选中态画的是**偏好**不是真值,
             「跟随系统」在系统当下为浅色时解析出来也是 light,照真值画会把高亮落在「浅色」上。
-            单选、每次只有一个选中 → Button variant="option"(#2987:IconButton 强制正方形,装不下两个汉字)。 */}
+            单选、每次只有一个选中。手机复用用量页的分段胶囊，桌面保留独立选项按钮。 */}
         <SettingsRow
           title={t('settings.general.theme')}
-          control={(
+          control={mobile ? (
+            <div className="[&_.gg-segtab]:min-h-[var(--control-h-touch)]">
+              <SegmentedTabs ariaLabel={t('settings.general.theme')} value={themePreference} onChange={setTheme}
+                items={THEME_OPTIONS.map(value => ({ value, label: t(`settings.general.${value}`) }))} />
+            </div>
+          ) : (
             <div role="radiogroup" aria-label={t('settings.general.theme')} className="flex gap-[var(--spacing-xs)]">
-              {(['light', 'dark', 'system'] as const).map((themeOption) => (
+              {THEME_OPTIONS.map((themeOption) => (
                 <Button
                   key={themeOption}
                   variant="option"
@@ -128,41 +161,29 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
             </div>
           )}
         />
-        {/* @@@theme-packs 主题在资源库里选(owner 11-07);这里只说当下用的是哪族,点过去。只在有资源库的宿主上画。 */}
-        {onOpenThemes && (
-          <SettingsRow
-            title={t('settings.general.themePack')}
-            control={(
-              <>
-                <span className="gg-settings-row-value">
-                  {t('settings.general.themePackValue', {
-                    dark: themePacks.dark ?? t('settings.general.themePackDefault'),
-                    light: themePacks.light ?? t('settings.general.themePackDefault'),
-                  })}
-                </span>
-                <ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" />
-              </>
-            )}
-            onClick={onOpenThemes}
-          />
-        )}
       </SettingsGroup>
+
+      {showThemePacks && <SessionSettingsSection section="theme-packs" />}
 
       {/* @@@5301 通知。这一节**只管咕咕主界面这条链**(聊天新消息 + IM 侧 agent 会话的运行事件);
           会话页 agent 的通知是另一条独立的链、归任务设置面板。两个面板是既定结构,❌ 不要合并。 */}
       {(platform.kind !== 'capacitor' || platform.capabilities.notifications) && <SettingsGroup
         title={t('settings.general.notifications')}
         note={t('settings.general.notificationsScope')}
-        footer={notificationHint !== null ? (
-          <SettingsNote role="status">
-            {t((platform.kind === 'capacitor' ? MOBILE_NOTIFICATION_HINT_KEYS : NOTIFICATION_HINT_KEYS)[notificationHint])}
-          </SettingsNote>
-        ) : undefined}
+        footer={notificationHint && (testSilent === undefined ? <SettingsNote role="status">
+          {t((platform.kind === 'capacitor' ? MOBILE_NOTIFICATION_HINT_KEYS : NOTIFICATION_HINT_KEYS)[notificationHint])}
+        </SettingsNote> : <AndroidNotificationTestFeedback
+          problem={androidProblem}
+          kind={notificationHint}
+          silent={testSilent}
+          bannerSeen={bannerSeen}
+          onBannerSeen={setBannerSeen}
+        />)}
       >
         {/* 系统权限的**状态与开关入口只在「权限」页**(product spec)。owner 2026-09-15:
             「手机端通用这有通知,怎么权限这还有通知,这是我困糊的点」—— 同一个事实只显示一处。
             只有系统确实拦着时才出这一行指路;读不到系统状态的宿主上不出现 —— 不知道就不说。 */}
-        {notificationBlocked && (
+        {notificationBlocked && androidProblem !== 'app-disabled' && (
           <SettingsRow
             data-testid="settings-notifications-blocked"
             stack
@@ -181,13 +202,33 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
             description={row.descriptionKey ? t(row.descriptionKey) : undefined}
             control={(
               <Toggle
-                checked={notificationSettings[row.key]}
-                onChange={(on) => setNotificationSettings({ [row.key]: on })}
+                checked={devicePreferences[row.key]}
+                onChange={(on) => changeNotificationSetting(row.key, on)}
                 ariaLabel={t(row.ariaKey)}
               />
             )}
           />
         ))}
+        {batteryGuidance && <SettingsRow
+          stack
+          description={<>
+            {batteryGuidance.restricted && <span>{t('settings.general.notificationsAndroidBattery')}</span>}
+            {batteryGuidance.onePlus && <>
+              {batteryGuidance.restricted && <br />}
+              {t('settings.general.notificationsAndroidOnePlus')}
+            </>}
+          </>}
+          control={<div className="flex flex-wrap gap-2">
+            {batteryGuidance.restricted && <Button variant="secondary" size="sm" onClick={() => {
+              void platform.requestSystemPermission('batteryOptimization').then(state => {
+                if (state === 'granted') setBatteryGuidance(current => current?.onePlus ? { onePlus: true, restricted: false } : null)
+              }).catch(() => undefined)
+            }}>{t('settings.general.notificationsAndroidBatteryAllow')}</Button>}
+            {batteryGuidance.onePlus && <Button variant="secondary" size="sm" onClick={() => {
+              void nativePhoneActions.openSettings({ target: 'app' }).catch(() => undefined)
+            }}>{t('settings.general.notificationsAndroidAppInfo')}</Button>}
+          </div>}
+        />}
         {/* @@@5301 自验出口。开关只表达「用户想不想收」,能不能真的弹出来由系统权限说了算。
             Electron 读不到 macOS 的通知授权状态,所以给一个能自己动手验的出口:点一下,看横幅出不出来 ——
             出来了 = 整条链通;没出来 = 卡在系统设置那一层,而不是这几个开关。 */}
@@ -200,8 +241,11 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
               size="sm"
               aria-label={t('settings.general.notificationsTestAria')}
               onClick={() => {
-                void sendTestNotification().then((result) => {
-                  setNotificationHint(result.kind)
+                const silent = platform.androidNotificationSettings ? !devicePreferences.chatSound : undefined
+                void sendTestNotification(silent).then(async result => {
+                  if (silent !== undefined) await androidNotificationProblem.fetch(silent)
+                  setBannerSeen(null)
+                  setNotificationTest({ kind: result.kind, silent })
                   void refreshSystemNotificationState()
                 })
               }}
@@ -227,8 +271,8 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
             title={t('settings.general.trayBadgeEnabled')}
             control={(
               <Toggle
-                checked={trayBadgeEnabled}
-                onChange={setTrayBadgeEnabled}
+                checked={devicePreferences.trayBadge}
+                onChange={(on) => writeDevicePreferences({ trayBadge: on })}
                 ariaLabel={t('settings.general.trayBadgeAria')}
               />
             )}
@@ -239,6 +283,42 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
       <HelpImproveSettingGroup />
     </SettingsPage>
   )
+}
+
+function AndroidNotificationTestFeedback({ problem, kind, silent, bannerSeen, onBannerSeen }: {
+  problem: AndroidNotificationProblem | null | undefined
+  kind: keyof typeof NOTIFICATION_HINT_KEYS
+  silent: boolean
+  bannerSeen: boolean | null
+  onBannerSeen: (seen: boolean) => void
+}) {
+  const { t } = useTranslation('main')
+  const open = () => { void openAndroidNotificationSettings(silent, problem) }
+  if (!problem && kind === 'accepted' && bannerSeen === null) return <div>
+    <SettingsNote role="status">{t('settings.general.notificationsAndroidAsk')}</SettingsNote>
+    <div className="mt-2 flex gap-2">
+      <Button variant="secondary" size="sm" onClick={() => onBannerSeen(true)}>
+        {t('settings.general.notificationsAndroidYes')}
+      </Button>
+      <Button variant="secondary" size="sm" onClick={() => { onBannerSeen(false); open() }}>
+        {t('settings.general.notificationsAndroidNo')}
+      </Button>
+    </div>
+  </div>
+  if (!problem && kind === 'accepted' && bannerSeen) return <SettingsNote role="status">
+    {t('settings.general.notificationsAndroidSeen')}
+  </SettingsNote>
+  const copy = problem ? ANDROID_NOTIFICATION_PROBLEM_COPY[problem]
+    : kind === 'accepted' ? 'settings.general.notificationsAndroidBannerSettings'
+    : 'settings.general.notificationsAndroidUnconfirmed'
+  return <div>
+    <SettingsNote role="status">{t(copy)}</SettingsNote>
+    <div className="mt-2">
+      <Button variant="secondary" size="sm" onClick={open}>
+        {t('settings.general.notificationsAndroidOpen')}
+      </Button>
+    </div>
+  </div>
 }
 
 /** 本机 `terminal.enabled` 的那一行(设置服务本地那份,❌ 跟着机器设置页选的机器走)。 */

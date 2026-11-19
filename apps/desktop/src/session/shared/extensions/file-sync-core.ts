@@ -147,8 +147,6 @@ const identityKey = (asAgent: string | null) => asAgent ?? '';
 type Owner = { kind: 'page'; page: PageSync } | { kind: 'will'; will: Will };
 
 const SUBPROTOCOL = 'gugu-files.v1';
-/** A token closer than this to expiry does not take new open files: the service verifies it at each Auth. */
-const TOKEN_MIN_REMAINING_MS = 10 * 60_000;
 const PING_INTERVAL_MS = 15_000;
 const PONG_TIMEOUT_MS = 10_000;
 const IDLE_CLOSE_MS = 30_000;
@@ -219,8 +217,9 @@ export class SyncConnection {
   }
 
   get acceptsNewFiles(): boolean {
+    // The auth coordinator owns refresh; reopening with the same still-valid token cannot renew it.
     // A JWT's `exp` is on the backend's clock (`@@@server-clock`).
-    return this.state !== 'closed' && this.expiresAt - serverNow() > TOKEN_MIN_REMAINING_MS;
+    return this.state !== 'closed' && this.expiresAt > serverNow();
   }
 
   send(frame: Uint8Array): void {
@@ -673,12 +672,12 @@ export class FileSyncRelay {
     return this.ensureFor(null);
   }
 
-  /** The socket new open files of this identity go to — opening one when there is none, or the token is ending. */
+  /** The socket new open files of this identity go to — opening one when there is none, or the token has expired. */
   ensureFor(asAgent: string | null): SyncConnection | null {
     const current = this.currents.get(identityKey(asAgent));
     if (current?.acceptsNewFiles) return current;
     if (!this.opening.has(identityKey(asAgent))) void this.openSocket(asAgent);
-    return current?.state === 'open' || current?.state === 'connecting' ? current : null;
+    return null;
   }
 
   private async openSocket(asAgent: string | null): Promise<void> {

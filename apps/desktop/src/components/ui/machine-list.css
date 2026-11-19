@@ -1,0 +1,39 @@
+.gg-machine-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  overflow-y: auto;
+  border-inline-end: 1px solid var(--border);
+  padding: var(--spacing-md);
+}
+.gg-machine-list-title {
+  padding-inline: var(--spacing-sm);
+  padding-block-end: var(--spacing-xs);
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+}
+.gg-machine-list .gg-machine-list-row {
+  width: 100%;
+  height: 40px;
+  justify-content: flex-start;
+  padding-inline: var(--spacing-sm);
+}
+.gg-machine-list-row > svg { flex: none; }
+.gg-machine-list-row[aria-current="true"] { background: var(--hover); color: var(--text-primary); }
+.gg-machine-list-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-circle);
+  background: var(--text-secondary);
+}
+.gg-machine-list-dot[data-online] { background: var(--agent-tone-online); }
+
+.gg-machine-list[data-compact] { padding: var(--spacing-sm); }
+.gg-machine-list[data-compact] .gg-machine-list-row {
+  height: 44px;
+  gap: 10px;
+  border-radius: var(--radius-control);
+}
+.gg-machine-list[data-compact] .gg-machine-list-dot { margin-inline-start: auto; }

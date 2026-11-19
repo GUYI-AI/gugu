@@ -28,7 +28,7 @@ export function messageReplyReference(item: ChatMessage): ChatMessage['conversat
 }
 
 const speaker = (key: string | undefined, selfUserId: string | undefined) => key === '$owner' && selfUserId ? `user:${selfUserId}` : key;
-/** `previousSpeaker` is the one `decorateConversationDensity` stamps; flatten asks before that stamp, so it passes it in. */
+/** `decorateConversationDensity` stamps the previous speaker on each visible message. */
 export function conversationShowsName(item: ChatMessage, previousSpeaker: string | undefined, selfUserId: string | undefined): boolean {
   // What the reader typed here is theirs without saying so; a delivered message keeps its sender (owner 2026-11-07).
   if (conversationSpeaker(item) === '$owner') return false;
@@ -38,7 +38,7 @@ export function conversationShowsName(item: ChatMessage, previousSpeaker: string
 
 /**
  * The quote moves to the footer when the header has neither a name nor a process row to sit beside. Measure and paint
- * (through `conversationHeaderLayout`) and flatten (the gap below this message) all ask here.
+ * (through `conversationHeaderLayout`) use the same rule.
  */
 export function conversationReferenceInFooter(item: ChatMessage, namePainted: boolean): boolean {
   return Boolean(messageReplyReference(item)) && !namePainted && !(item.role === 'assistant' && item.conversationProcess);

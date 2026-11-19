@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { observer } from 'mobx-react-lite'
 import { usePhoneSessionSidebar } from '@/mobile/chat/usePhoneSessionSidebar'
 import { PhoneSessionSidebarControls } from '@/mobile/chat/PhoneSessionSidebarControls'
@@ -26,6 +26,7 @@ import type { SessionpageSessionSummary } from '@gugu/session-core/session-recor
 import type { TopicSummary } from '@gugu/core/shared/types/chat'
 import { chat, device, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
+import { revealPhoneControl } from '../../../../../../../tests/support/phoneControlTargets'
 import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
@@ -70,9 +71,20 @@ async function mount(sessionId:string,entry:string|null,full=false,width=390,the
  await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme={theme}><>{full ? <Conversation sessionId={sessionId} entry={entry}/> : <><Controls sessionId={sessionId} entry={entry}/><PhoneComposerControlRow><span>输入消息</span></PhoneComposerControlRow></>}</></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats},contacts:{contacts:[]}})
 }
 afterEach(()=>{actions.pickModel.mockClear();actions.send.mockClear();actions.reloadTopics.mockClear();actions.topics=null;actions.topicError=null;harness?.cleanup();dispose?.();removeDeviceSessions('qa-device');publishDirectoryDevices([]);document.documentElement.removeAttribute('data-phone-shell')})
+async function expectNavigationBottomSheet() {
+ const panel=document.querySelector<HTMLElement>('[data-testid="phone-room-controls-sheet"]')!
+ await Promise.all(panel.getAnimations().map(animation=>animation.finished))
+ const viewport=window.visualViewport!
+ const rect=panel.getBoundingClientRect()
+ expect(panel.querySelector('.gg-phone-composer-sheet-handle')).not.toBeNull()
+ expect(rect.left).toBeCloseTo(viewport.offsetLeft+12)
+ expect(rect.right).toBeCloseTo(viewport.offsetLeft+viewport.width-12)
+ expect(rect.bottom).toBeCloseTo(viewport.offsetTop+viewport.height-8)
+}
 it('a group-entered task lists the same resident sessions and preserves the group entry when switching',async()=>{
  await mount('room-task','chat:room');await page.getByTestId('phone-room-agents').click()
  await expect.element(page.getByTestId('phone-sidebar-agent')).toHaveTextContent('群里的验收任务')
+ await expectNavigationBottomSheet()
  expect(document.querySelectorAll('[data-testid="phone-sidebar-agent"]')).toHaveLength(1)
  const opened: unknown[]=[];const capture=(event:Event)=>opened.push((event as CustomEvent).detail);window.addEventListener(APP_SHOW_SESSION_EVENT,capture)
  try { await page.getByTestId('phone-sidebar-agent').click();expect(opened).toEqual([expect.objectContaining({innerSidebarEntry:'chat:room',session:expect.objectContaining({conversationId:'room-task'})})]) } finally {window.removeEventListener(APP_SHOW_SESSION_EVENT,capture)}
@@ -82,7 +94,7 @@ it('a standalone Agent offers only its children and no Topics button',async()=>{
  expect(document.querySelector('[data-testid="phone-room-topics"]')).toBeNull();await page.getByTestId('phone-room-agents').click()
  await expect.element(page.getByTestId('phone-sidebar-agent')).toHaveTextContent('排版子智能体');expect(document.querySelectorAll('[data-testid="phone-sidebar-agent"]')).toHaveLength(1)
 })
-it('an existing room task opens its short Topics menu and dispatches the actual topic id',async()=>{
+it('an existing room task opens the Topics bottom sheet and dispatches the actual topic id',async()=>{
  const topic:TopicSummary={chat_id:'long-room-topic',name:'这是一个必须在菜单里完整显示而不是铺到输入框菜单栏里的话题名称',source_message_id:'topic-anchor',creator_user_id:'owner',last_message_at:null,message_count:3,participant_count:2,is_participant:true}
  actions.topics=[topic]
  await mount('room-task','chat:room',true)
@@ -102,6 +114,7 @@ it('an existing room task opens its short Topics menu and dispatches the actual 
   expect(trigger.getAttribute('aria-expanded')).toBe('true')
   expect(document.querySelector('[data-testid="phone-room-controls-sheet"] .gg-phone-room-topic-name')?.textContent).toBe(topic.name)
  },{timeout:10000})
+ await expectNavigationBottomSheet()
  const panel=document.querySelector<HTMLElement>('[data-testid="phone-room-controls-sheet"]')!
  const name=panel.querySelector<HTMLElement>('.gg-phone-room-topic-name')!
  expect(name.textContent).toBe(topic.name)
@@ -116,16 +129,21 @@ it('an existing room task opens its short Topics menu and dispatches the actual 
  }
  window.addEventListener(OPEN_LINK_TARGET,capture)
  try {
+  const search = page.getByTestId('phone-topics-search')
+  await search.fill('没有这个话题')
+  await expect.element(page.getByText('没有匹配结果', { exact:true })).toBeVisible()
+  await search.fill('菜单里')
   await page.getByRole('button',{name:topic.name,exact:true}).click()
   await vi.waitFor(()=>expect(opened).toEqual([{kind:'chat',chatId:topic.chat_id}]),{timeout:10000})
   await until('topic navigation closes the panel',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
   await page.getByTestId('phone-room-topics').click()
+  await expect.element(search).toHaveValue('')
   await page.getByRole('button',{name:'群聊',exact:true}).click()
   await vi.waitFor(()=>expect(opened).toEqual([{kind:'chat',chatId:topic.chat_id},{kind:'chat',chatId:'room'}]),{timeout:10000})
  } finally { window.removeEventListener(OPEN_LINK_TARGET,capture) }
 })
 
-it.each([360,390].flatMap(width=>(['light','dark'] as const).map(theme=>({width,theme}))))('$width/$theme: the real four-control row fits with one topic dropdown icon',async({width,theme})=>{
+it.each([360,390].flatMap(width=>(['light','dark'] as const).map(theme=>({width,theme}))))('$width/$theme: the real four-control row fits with one glyph per label and a clickable final agent control',async({width,theme})=>{
  await mount('room-task','chat:room',true,width,theme)
  await vi.waitFor(()=>{
   const controls=harness!.container.querySelectorAll<HTMLElement>('[data-phone-composer-controls] .gg-phone-composer-control')
@@ -139,8 +157,13 @@ it.each([360,390].flatMap(width=>(['light','dark'] as const).map(theme=>({width,
  const row=harness!.container.querySelector<HTMLElement>('[data-phone-composer-controls]')!
  const buttons=[...row.querySelectorAll<HTMLElement>('.gg-phone-composer-control')]
  expect(buttons.map(button=>button.textContent)).toEqual(['工作','技能','话题','智能体'])
+ const items=row.querySelector<HTMLElement>('.gg-phone-composer-controls-items')!
+ expect(items.scrollWidth).toBeLessThanOrEqual(items.clientWidth)
  expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
+ expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width)
  for(const [index,button] of buttons.entries()){
+  expect(button.querySelectorAll('svg')).toHaveLength(1)
+  await revealPhoneControl(items,button)
   const box=button.getBoundingClientRect(),style=getComputedStyle(button)
   expect(box.y).toBe(buttons[0]!.getBoundingClientRect().y)
   expect(box.right).toBeLessThanOrEqual(width-16)
@@ -149,10 +172,15 @@ it.each([360,390].flatMap(width=>(['light','dark'] as const).map(theme=>({width,
   const label=button.querySelector<HTMLElement>('.gg-phone-composer-control-label')!
   expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth)
  }
+ await revealPhoneControl(items,buttons[2]!)
  const topic=buttons[2]!,label=topic.querySelector<HTMLElement>('.gg-phone-composer-control-label')!,icon=topic.querySelector('svg')!
  expect(topic.querySelectorAll('svg')).toHaveLength(1)
  expect(icon.getBoundingClientRect().left-label.getBoundingClientRect().right).toBe(4)
  expect(topic.getBoundingClientRect().right-icon.getBoundingClientRect().right).toBe(12)
+ await revealPhoneControl(items,buttons[3]!)
+ await page.elementLocator(buttons[3]!).click()
+ await expect.element(page.getByTestId('phone-sidebar-agent')).toBeVisible()
+ expect(buttons[3]!.getAttribute('aria-expanded')).toBe('true')
 })
 it('an unrelated task does not inherit room navigation',async()=>{
  await mount('other','chat:room');expect(document.querySelector('[data-testid="phone-room-topics"]')).toBeNull();expect(document.querySelector('[data-testid="phone-room-agents"]')).toBeNull()
@@ -200,13 +228,16 @@ it('the selected native skill is visible inside the input and accompanies the ac
  await mount('room-task','chat:room',true)
  await page.getByTestId('agent-watch-create-skills').click()
  await page.getByRole('checkbox',{name:/代码检查/}).click()
- await expect.element(page.getByTestId('agent-watch-create-skill-tags')).toBeVisible()
  const editor=harness!.container.querySelector<HTMLElement>('[contenteditable]')!
- await page.elementLocator(editor).fill('检查这一段')
+ await until('skill is an inline reference',()=>editor.querySelector('[data-skill-reference]')?.textContent?.includes('代码检查')===true)
+ expect(harness!.container.querySelector('[data-testid="agent-watch-create-skill-tags"]')).toBeNull()
+ await page.elementLocator(editor).click()
+ await userEvent.type(editor, '{End} 检查这一段')
  await page.getByRole('button',{name:'发送消息',exact:true}).click()
  await until('actual message sent',()=>actions.send.mock.calls.length===1)
- expect(actions.send.mock.calls[0]![0]).toContain('请使用以下技能：代码检查。')
+ expect(actions.send.mock.calls[0]![0]).toContain('@[代码检查](')
  expect(actions.send.mock.calls[0]![0]).toContain('检查这一段')
+ expect(actions.send.mock.calls[0]![0].split('@[代码检查](')).toHaveLength(2)
 })
 
 

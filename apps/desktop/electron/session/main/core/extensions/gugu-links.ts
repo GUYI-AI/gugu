@@ -1,4 +1,5 @@
 import { guguLinkScheme, guguLink, type GuguLinkTarget, type OpenTarget } from '@gugu/core/shared/ui/guguLink';
+import type { MessageItem } from '@gugu/core/shared/types/chat';
 import { openLinkWith, type LinkOpenOutcome } from '@shared/extensions/open-link';
 import { sessionHostLocale } from '@main/core/host-locale';
 
@@ -24,7 +25,7 @@ export function setSessionOpening(next: SessionOpening | null): void {
 }
 
 /** The live path: main.ts hands every URL the OS gives it to this, and every click that opens a session comes here. */
-export async function openLink(raw: string | OpenTarget, groupParticipantRequestId?: string): Promise<LinkOpenOutcome> {
+export async function openLink(raw: string | OpenTarget, groupParticipantRequestId?: string, source?: { message?: MessageItem }): Promise<LinkOpenOutcome> {
   const [{ extensionsService }, bridge, { sessionHere }, { actInWindow, listedSessionProject }] = await Promise.all([
     import('./extensions-root'),
     import('./extension-bridge'),
@@ -51,7 +52,7 @@ export async function openLink(raw: string | OpenTarget, groupParticipantRequest
       resourceChat: async (chatId) => (await import('./app-files')).resourceChatOf(chatId),
       // The account shell resolves the assistant's task records first; desktop Markdown and OS links both come here.
       openResource: async (target) => {
-        const result = await actInWindow({ kind: 'openLinkTarget', target });
+        const result = await actInWindow({ kind: 'openLinkTarget', target, ...(source ? { source } : {}) });
         if (result && typeof result === 'object' && 'navigated' in result) throw new Error('Unexpected navigation response');
         return result;
       },

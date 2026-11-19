@@ -6,6 +6,6 @@ import { UI_EVENTS } from '../../lib/uiEvents'
  * chat (`askChat`), answered by the chat on screen (`useChatOpener`): a group or a private chat — topics use their
  * source chat's shared panel (主人 10-05:「私聊也是得有面板的」), on the desktop as on the phone.
  */
-export function openApp(extensionId: string, chatId?: string): void {
-  window.dispatchEvent(new CustomEvent(UI_EVENTS.openApp, { detail: { extensionId, ...(chatId ? { chatId } : {}) } }))
+export function openApp(extensionId: string, chatId?: string, from?: string): void {
+  window.dispatchEvent(new CustomEvent(UI_EVENTS.openApp, { detail: { extensionId, ...(chatId ? { chatId } : {}), ...(from ? { from } : {}) } }))
 }

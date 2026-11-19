@@ -119,6 +119,7 @@ const gestureCalls: Record<string, Record<string, unknown>> = {
   filesDownload: { ref: { name: 'a.md' } },
   filesForward: { refs: [{ name: 'a.md' }] },
   filesOpenIn: { ref: { name: 'a.md' }, app: 'finder' },
+  filesAnnotateSelection: { file: { workspace: 'session:s-1', id: 'a.md' }, open: { selection: { startLine: 1, endLine: 1, text: 'x' }, rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } } },
   filesSendSelection: { text: 'x', refs: [{ file: { name: 'a.md' } }], rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } },
   showMessage: { id: 'msg-1' },
   showSession: { id: 's-1' },

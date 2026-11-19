@@ -42,7 +42,7 @@ vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
   },
 }))
 
-const { setNotificationSettings } = await import('../../../apps/desktop/src/lib/notificationSettings')
+const { writeDevicePreferences } = await import('../../../apps/desktop/src/lib/devicePreferences')
 
 const { useAgentWatchAlerts, useAgentWatchFocus } = await import('../../../apps/desktop/src/mobile/agent-watch/useAgentWatchAlerts')
 
@@ -78,7 +78,7 @@ function Probe({ focus, page = true }: { focus: { deviceId: string; sessionId: s
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
   harness = createReactHarness()
-  setNotificationSettings({ sound: true })
+  writeDevicePreferences({ chatSound: true })
   mocks.toast.mockReset()
   mocks.showNotification.mockReset().mockResolvedValue({ success: true, displayed: true })
   mocks.systemPermissions = ['notifications']
@@ -127,7 +127,7 @@ describe('agent watch alert delivery', () => {
 
   it('follows the existing sound switch without suppressing the banner', async () => {
     setVisibility('hidden')
-    setNotificationSettings({ sound: false })
+    writeDevicePreferences({ chatSound: false })
     await mountAndAsk()
     expect(mocks.showNotification).toHaveBeenCalledWith(expect.objectContaining({ silent: true }))
   })

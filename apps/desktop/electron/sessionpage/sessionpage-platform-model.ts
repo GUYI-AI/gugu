@@ -1,3 +1,4 @@
+import { PlatformClosureReleaseProofs, performPlatformRelease } from './platform-release-proof'
 import type { SessionBootTasks } from '@gugu/core/shared/sessionBootTasks'
 import { writeSessionSettingsFile, SESSION_SETTINGS_FILE_PREFIX as SETTINGS_FILE_PREFIX } from './session-settings-file'
 import { CLAUDE_TUI_BASE_SETTINGS } from './claude-tui-settings'
@@ -113,6 +114,10 @@ const activeAccessSessions = new Map<string, {
   observationSink?: (observation: PlatformCredentialRuntimeObservation) => void
 }>()
 
+const platformClosureReleaseProofs = new PlatformClosureReleaseProofs()
+/** Unit fixtures reuse synthetic access ids; production tickets are unique. */
+export function clearPlatformClosureProofsForTest(): void { platformClosureReleaseProofs.clearForTest() }
+
 /**
  * #6264 由宿主供给凭据的终端会话(claude 的取票脚本、回环代理)活过宿主进程重启。
  *
@@ -168,6 +173,7 @@ export function configurePlatformRelayPersistence(input: { dataDir: string; log:
 
 /** Test seam. */
 export function resetPlatformRelayPersistenceForTest(): void {
+  platformClosureReleaseProofs.clearForTest()
   relayPersistence = null
   relayRestore = null
   beginRelayRestore = null
@@ -275,6 +281,7 @@ async function restoreRelaySessions(input: RelayRestoreInput): Promise<RelayRest
       // 账本里没有这张票了(已被结清):认回也拿不到钱包,让第一次要票时重签(rotate 会带同一条会话的身份)。
       persistence.log.warn('认回的平台票不在账本里,第一次要票时重签', { sessionId: record.key, error: String(error) })
     }
+    platformClosureReleaseProofs.open(record.key, record.accessSessionId)
     credentialRoutes.set(record.credentialRoute, record.key)
     activeAccessSessions.set(record.key, {
       accessSessionId: record.accessSessionId,
@@ -439,6 +446,7 @@ async function proxyPlatformRequest(
       ? '平台中转:网关中途掐断了回答,给 harness 的那条也当场断开'
       : '平台中转:连不上网关'),
     streamTiming: timing => log.info({ sessionId, ...timing }, 'platform model stream timing'),
+    httpError: diagnostic => log.warn({ sessionId, ...diagnostic }, 'platform model HTTP rejection'),
   })
 }
 
@@ -1203,7 +1211,7 @@ async function rotatePlatformLease(sessionId: string): Promise<boolean> {
   const protocol = held.protocol
   const claudeHelperSession = Boolean(held.credentialConfigPath)
 
-  const pending = (async () => {
+  const pending = platformClosureReleaseProofs.rotation(sessionId, held.accessSessionId, async rotation => {
     // ❌ 这里不看盲续上限:rotate 只由真实使用触发(取票脚本 / 回环中转的请求、恢复闸的 ensureReady),
     // 走的是完整签发路径,服务端照常查登录、额度与模型上架 —— 见 MAX_RENEWED_LIFETIME_MS。
     const replacement = await issuePlatformModelAccess({
@@ -1217,11 +1225,12 @@ async function rotatePlatformLease(sessionId: string): Promise<boolean> {
       // harness 进程还是原来那个,它的可切清单是启动时那份 —— 新票继承旧票记下的那一份。
       keepFromAccessSessionId: held.accessSessionId,
     })
+    rotation.issued(replacement.accessSessionId)
     // The session may have been released while issue() was in flight. Do not commit a replacement
     // for a generation that teardown already removed; otherwise the new server lease would outlive
     // the conversation that owned it. (The replacement token lives only in memory — nothing to delete.)
     if (activeAccessSessions.get(sessionId) !== held) {
-      await revokePlatformModelAccess(held.authProvider, replacement.accessSessionId).catch((error: unknown) => {
+      await rotation.revoke(replacement.accessSessionId, () => revokePlatformModelAccess(held.authProvider, replacement.accessSessionId)).catch((error: unknown) => {
         log.error(
           { sessionId, accessSessionId: replacement.accessSessionId, err: error },
           '已结束会话的 replacement session 撤销失败',
@@ -1269,7 +1278,7 @@ async function rotatePlatformLease(sessionId: string): Promise<boolean> {
       outcome: 'success',
       classification: 'lease-reissued',
     })
-    await revokePlatformModelAccess(held.authProvider, previousAccessSessionId).catch((error: unknown) => {
+    await rotation.revoke(previousAccessSessionId, () => revokePlatformModelAccess(held.authProvider, previousAccessSessionId)).catch((error: unknown) => {
       log.error({ sessionId, accessSessionId: previousAccessSessionId, err: error }, '平台模型旧会话撤销失败')
     })
     log.info(
@@ -1278,7 +1287,7 @@ async function rotatePlatformLease(sessionId: string): Promise<boolean> {
     )
     scheduleRenewal(sessionId, replacement.expiresAt)
     return true
-  })()
+  })
   held.rotationPromise = pending
   try {
     return await pending
@@ -1953,6 +1962,7 @@ async function resolvePlatformModelForSession(input: PlatformModelForSessionInpu
     modelCapability,
     switchableModels,
   }
+  platformClosureReleaseProofs.open(input.sessionId, launch.access.accessSessionId)
   if (credentialProxyRoute) credentialRoutes.set(credentialProxyRoute, input.sessionId)
   activeAccessSessions.set(input.sessionId, {
     accessSessionId: launch.access.accessSessionId,
@@ -2107,6 +2117,7 @@ function perSessionSelection(modelId: string, providerId: string): AgentModelSel
   return { source: 'platform', modelId, protocol }
 }
 
+
 /** Settle and revoke the token a session-page session was issued, if any. */
 export async function releasePlatformModelForSession(
   sessionId: string,
@@ -2124,47 +2135,22 @@ export async function releasePlatformModelForSession(
     )
     return
   }
-  // ⚠️ **撤销必须留下痕迹。** 在这一行之前,「这条会话手里那张票被撤了」在日志里是**不存在的**:
-  // 唯一的记录是库里那行 `revoked_at`。#5550/#5552 这一族的症状全都是「下一轮 401 /
-  // Invalid token」——症状离原因隔着一层网关,而原因这一侧一声不响,查的人只能去翻库。
-  // 那不是「日志少一行」,是 fail-loud 缺的一格:一个有后果的动作没有账。
-  // ⚠️ 只打 id 与 conversationId,**❌ 不打令牌值、❌ 不打中转地址**。
-  log.info(
-    {
-      sessionId,
-      accessSessionId: held.accessSessionId,
-      surface: held.surface,
-      guarded: expectedAccessSessionId !== undefined,
-    },
-    '平台令牌结清:撤销这条会话手里那一份',
-  )
-  // 先停续期再结算:顺序反了会留下一个已结算会话的续期定时器,它醒来时会去续一条已经撤销的
-  // 会话(服务端会拒,但那是白白的一次响亮失败 + 一条误导的错误日志)。
-  if (held.renewTimer) clearTimeout(held.renewTimer)
-  activeAccessSessions.delete(sessionId)
-  relayPersistence?.sessions.remove(sessionId)
-  // 覆盖文件里有这次会话的中转令牌,会话没了就不该再留在磁盘上。删失败不阻断结算 ——
-  // 令牌本身马上就要被撤销,一个读不动的残留文件不值得让账结不上。
-  if (held.settingsPath) {
-    await rm(held.settingsPath, { force: true }).catch((error: unknown) => {
-      log.error({ sessionId, file: held.settingsPath, err: error }, '删除会话 platform settings 文件失败')
-    })
-  }
-  for (const file of [held.credentialConfigPath, held.helperPath]) {
-    if (!file) continue
-    await rm(file, { force: true }).catch((error: unknown) => {
-      log.error({ sessionId, file, err: error }, '删除会话 platform credential 文件失败')
-    })
-  }
-  if (held.credentialRoute) credentialRoutes.delete(held.credentialRoute)
-  await revokePlatformModelAccess(held.authProvider, held.accessSessionId).catch((error: unknown) => {
-    // 账本那一行留着(见 model-access 的 platform-access-ledger),下次启动由结清重试;这里只负责喊出来。
-    log.error(
-      { sessionId, accessSessionId: held.accessSessionId, err: error },
-      '平台令牌撤销失败:账本保留这张票,下次启动结清',
-    )
-    throw error
-  })
+  await performPlatformRelease(platformClosureReleaseProofs, sessionId, held, {
+    log,
+    detachLive: () => { activeAccessSessions.delete(sessionId); relayPersistence?.sessions.remove(sessionId) },
+    detachRoute: () => { if (held.credentialRoute) credentialRoutes.delete(held.credentialRoute) },
+    revoke: () => revokePlatformModelAccess(held.authProvider, held.accessSessionId),
+  }, expectedAccessSessionId !== undefined)
+}
+
+/** Strict closure acknowledgement comes from the actual native attempt. An
+ * absent live record alone is never evidence that a previous release worked. */
+export async function releasePlatformModelForClosure(sessionId: string, generation: string) {
+  platformClosureReleaseProofs.sealAdmission(sessionId, generation)
+  const current = activeAccessSessions.get(sessionId)?.accessSessionId
+  if (current && platformClosureReleaseProofs.sameLifetime(sessionId, generation, current))
+    await releasePlatformModelForSession(sessionId, current).catch(() => undefined)
+  return platformClosureReleaseProofs.require(sessionId, generation)
 }
 
 /**

@@ -42,7 +42,7 @@ import type {
 } from './capabilities/auth';
 import type { McpServerRegistration } from './capabilities/mcp';
 import type { SubscriptionPlanReading, SubscriptionUsageReading } from './capabilities/subscription';
-import { apiKeyConnectionPlan, apiKeyConnectionUsage } from './capabilities/api-key-connection';
+
 import { readAgentMemoryDocuments, type AgentMemoryDocument } from './capabilities/memory';
 import type { AgentCommand, CommandContext } from './capabilities/prompt';
 import { declaresSessionTuiLeg, harnessSelfUpdateLaunch } from './capabilities/session-bundle';
@@ -163,6 +163,10 @@ export type AgentHostLoginCommand = {
 };
 
 export type AgentHostAcpSpawn = AcpSpawnResult & {
+  cliVersion?: string;
+  autoReviewAllowed?: boolean;
+  autoReviewUnavailable?: boolean;
+  autoReviewByHaiku?: boolean;
   env: Record<string, string>;
   cwd: string;
 };
@@ -407,8 +411,7 @@ export class AgentPluginHost {
     runContext: AgentRunContext
   ): Promise<Result<SubscriptionPlanReading, AgentHostError>> {
     if (!this.registry.get(providerId)) return err({ type: 'unknown-provider', providerId });
-    // 选中的是 API Key 连接(#2507):付钱的就是这把 key,❌ 去读 CLI 自己的文件(那里没有它,只会答「未登录」)。
-    if (runContext.apiKeyConnection) return ok(apiKeyConnectionPlan(runContext.apiKeyConnection.endpoint));
+    if (runContext.vendorKeyAccount) return ok({ payer: 'api-key' });
     const behavior = this.subscriptionBehavior(providerId);
     if (!behavior) return ok(await this.planFromAuth(providerId, runContext, { payer: 'unknown' }, true));
     const ctx = await this.credentialContext(providerId, runContext);
@@ -421,7 +424,7 @@ export class AgentPluginHost {
     runContext: AgentRunContext
   ): Promise<Result<SubscriptionUsageReading, AgentHostError>> {
     if (!this.registry.get(providerId)) return err({ type: 'unknown-provider', providerId });
-    if (runContext.apiKeyConnection) return ok(apiKeyConnectionUsage(runContext.apiKeyConnection.endpoint));
+    if (runContext.vendorKeyAccount) return ok({ kind: 'unavailable', reason: 'not-reported', readAt: Date.now() });
     const behavior = this.subscriptionBehavior(providerId);
     if (!behavior) return ok({ kind: 'unavailable', reason: 'not-reported', readAt: Date.now() });
     const ctx = await this.credentialContext(providerId, runContext);
@@ -738,6 +741,10 @@ export class AgentPluginHost {
     });
     return ok({
       ...spawn,
+      ...(ctx.runContext.cliVersion ? { cliVersion: ctx.runContext.cliVersion } : {}),
+      ...(ctx.runContext.autoReviewAllowed !== undefined ? { autoReviewAllowed: ctx.runContext.autoReviewAllowed } : {}),
+      ...(ctx.runContext.autoReviewUnavailable ? { autoReviewUnavailable: true } : {}),
+      ...(ctx.runContext.autoReviewByHaiku ? { autoReviewByHaiku: true } : {}),
       env: composeAgentSpawnEnv(ctx.runContext, {
         providerEnv: {
           ...(await this.deps.resolveProviderEnv?.(providerId)),
@@ -815,7 +822,7 @@ export class AgentPluginHost {
   ): Promise<Result<AgentAuthStatus, AgentHostError>> {
     // 主程序跑在一把 API Key 连接上(#2507):登录态就是它 —— 与 Claude / Codex 的 API 连接同一种读数。
     // 伴随程序(#6335)不吃这把 key,照它自己的答。
-    if (program === undefined && runContext.apiKeyConnection) {
+    if (program === undefined && runContext.vendorKeyAccount) {
       if (!this.registry.get(providerId)) return err({ type: 'unknown-provider', providerId });
       return ok({ kind: 'authenticated', credentialKind: 'api-key' });
     }

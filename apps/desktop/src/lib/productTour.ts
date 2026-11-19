@@ -2,13 +2,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { readOwnSettings, updateOwnSettingsKey } from './ownSettings'
 
 /**
- * 功能栏导览(规范 4.1 第 6 步):七个功能,按功能栏从上到下的顺序。每一步指着一个真实存在的入口;
+ * 功能栏导览(规范 4.1 第 6 步):六个功能,按功能栏从上到下的顺序。每一步指着一个真实存在的入口;
  * 当前界面上找不到的那一步跳过,总步数跟着少(规范 2.3)。咕咕是 App 那一组的第一个(owner 11-12),紧跟「App」。
  */
-export const TOUR_STEPS = ['tasks', 'chats', 'contacts', 'library', 'apps', 'assistant', 'settings'] as const
+export const TOUR_STEPS = ['tasks', 'chats', 'contacts', 'apps', 'assistant', 'settings'] as const
 export type TourStepId = (typeof TOUR_STEPS)[number]
 /** The order the first version's progress counted its bubbles in (`index`). */
-const V1_STEPS: readonly TourStepId[] = ['assistant', 'tasks', 'chats', 'contacts', 'library', 'apps', 'settings']
+const V1_STEPS: readonly TourStepId[] = ['assistant', 'tasks', 'chats', 'contacts', 'apps', 'apps', 'settings']
 
 /** 功能短片:「通用 / 编程」那一段随 #634 去掉的切换一起下线,剩三段。只从「帮助与导览」里看。 */
 export const TOUR_FILMS = ['split', 'contacts', 'report'] as const
@@ -29,7 +29,8 @@ export function parseProductTourState(config: Record<string, unknown>): ProductT
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid product tour progress')
   const record = value as Record<string, unknown>
   if (record.version === 2) {
-    const { step, status } = record
+    const status = record.status
+    const step = record.step === 'library' ? 'apps' : record.step
     if (!TOUR_STEPS.includes(step as TourStepId) || (status !== 'active' && status !== 'skipped' && status !== 'done')) throw new Error('Invalid product tour progress')
     return { step: step as TourStepId, status }
   }

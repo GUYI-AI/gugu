@@ -13,26 +13,35 @@ export function resolveAttachmentDataUrl(store: AcpChatStore, id: string): Promi
   if (id.startsWith('gugu-message-file://')) return resolveDeliveredAttachment(id);
   const fixtureDataUrl = resolveVisualEvidenceAttachmentDataUrl(store, id);
   if (fixtureDataUrl) return Promise.resolve(fixtureDataUrl);
+  const machine = machineRegistry.machineOf(store.runtimeSessionId);
+  const key = JSON.stringify([machine, store.runtimeSessionId, id]);
+  const remember = (read: Promise<string | null>) => {
+    const pending = read.then(value => {
+      if (!value && attachmentDataUrlCache.get(key) === pending) attachmentDataUrlCache.delete(key);
+      return value;
+    });
+    attachmentDataUrlCache.set(key, pending);
+    return pending;
+  };
   // `path:` 附件(agent 给主人的通知里的文件、投递卡里人类工具交回的图):字节在盘上,不在 agent 的附件仓里 —— 照那条路径读。
   const path = pathAttachmentTarget(id);
   if (path) {
-    const cachedPath = attachmentDataUrlCache.get(id);
+    const cachedPath = attachmentDataUrlCache.get(key);
     if (cachedPath) return cachedPath;
     // 字节在会话所在的那台机器上(别的机器上的会话 = 问那台机器)。
-    const promise = rpcOn(machineRegistry.machineOf(store.projectId)).app.readUserImageDataUrl(path)
+    const promise = rpcOn(machine).app.readUserImageDataUrl(path)
       .then((result) => (result.success ? result.dataUrl : null))
       .catch((error: unknown) => {
         // 读不到就退回中性占位块(旧消息里那些指着临时目录的路径就是这种)——❌ 不弹错。
         log.warn('Failed to read attachment image', { path, error });
         return null;
       });
-    attachmentDataUrlCache.set(id, promise);
-    return promise;
+    return remember(promise);
   }
-  const cached = attachmentDataUrlCache.get(id);
+  const cached = attachmentDataUrlCache.get(key);
   if (cached) return cached;
   // 任务停着也一样:按附件 id 从会话那台机器的附件仓读,❌ 不经运行中的会话 —— 手机走的是同一个口。
-  const promise = rpcOn(machineRegistry.machineOf(store.runtimeSessionId)).sessionTimeline
+  const promise = rpcOn(machine).sessionTimeline
     .sessionNativeAttachment({ attachmentId: id })
     .then((result) => {
       if (result.ok) return result.value;
@@ -43,6 +52,5 @@ export function resolveAttachmentDataUrl(store: AcpChatStore, id: string): Promi
       log.warn('Failed to resolve ACP attachment', { id, error });
       return null;
     });
-  attachmentDataUrlCache.set(id, promise);
-  return promise;
+  return remember(promise);
 }

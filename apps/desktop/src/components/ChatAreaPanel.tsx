@@ -1,3 +1,5 @@
+import { PhoneConversationHeading } from '../mobile/chat/PhoneConversationHeading'
+import { PhoneGroupAgentCreation } from '../mobile/chat/PhoneNewTask'
 import { viewAnchor } from '@renderer/features/sidebar/inner-sidebar-anchor'; import { isProjectChat } from '@renderer/features/sidebar/inner-sidebar-scope'; import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useMessageQuote } from '@/hooks/useMessageQuote'
 import { GroupRenameContext, useChatCommands } from './chat/use-chat-commands'
@@ -18,7 +20,7 @@ import { useRoomCollab } from '../hooks/useRoomCollab'
 import { LiveForwardMessageDialog } from './chat/ForwardMessageDialog'
 import { useForwardToChats, type ForwardNote } from './chat/forwardToChats'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
-import { UI_EVENTS } from '../lib/uiEvents'
+import { requestGroupAgentCreation, UI_EVENTS } from '../lib/uiEvents'
 import { drainTopicSplitRequest, requestTopicSplit } from '../lib/topicSplitRequest'
 import { buildGroupRosterCandidates } from '../lib/mention'
 import { topicMentionCandidates } from './chat/topicMentionModels'
@@ -48,12 +50,12 @@ import { ChatMessageComposer, type ChatMessageComposerProps, type ComposerAttach
 import { MessageList, type MessageListRowProps } from './chat/MessageList'
 import { useTaskChatRows } from './assistant/useTaskChatRows'
 import { MessageLoadFailure } from './chat/MessageLoadFailure'
-import { MessageListSkeleton } from './chat/MessageListSkeleton'; import { ChatBottomDock } from './chat/ChatBottomDock'; import { PinnedTopicTabs } from './chat/PinnedTopicTabs'; import { PhoneRoomComposerControls } from '../mobile/chat/PhoneRoomComposerControls'; import { PhoneProjectEmpty } from '../mobile/chat/PhoneProjectEmpty'
+import { MessageListSkeleton } from './chat/MessageListSkeleton'; import { ChatBottomDock } from './chat/ChatBottomDock'; import { PinnedTopicTabs } from './chat/PinnedTopicTabs'; import { PhoneRoomComposerControls } from '../mobile/chat/PhoneRoomComposerControls'; import { PhoneProjectEmpty } from '../mobile/chat/PhoneProjectEmpty'; import { PhoneMessagesEmpty } from '../mobile/chat/PhoneMessagesEmpty'
 import { ChatHeaderActions } from './chat/ChatHeaderActions'
 import { useFollowingTail, useTailPinning } from './chat/useFollowingTail'
 import { useConversationScrollMemory } from './chat/useConversationScrollMemory'
 import { sessionComposerDockBandClassName } from '../session/renderer/features/sessions/session-composer-styles'
-import { GroupTabContent } from './appSlot/GroupTabContent'; import { useChatOpener } from './appSlot/useChatOpener'; import { ChatTabPage, ChatTabPortals } from './appSlot/ChatTabHosts'; import { TabBarAddMenu } from '../session/renderer/features/sessions/tab-bar-actions'; import { useTabsReading } from './appSlot/useTabsReading'
+import { GroupTabContent } from './appSlot/GroupTabContent'; import { useChatOpener } from './appSlot/useChatOpener'; import { ChatPaneContent, ChatTabPage, ChatTabPortals } from './appSlot/ChatTabHosts'; import { TabBarAddMenu } from '../session/renderer/features/sessions/tab-bar-actions'; import { useTabsReading } from './appSlot/useTabsReading'
 import { folderItem } from '../session/renderer/features/chats/chat-tabs/chat-panel-item'; import { closeInfoTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, panelFull, panelTabsOf, setPanelFull, showChatOnly, type ChatPanelTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { useTopicSurface } from '@/hooks/useTopicSurface'
 import { chatDisplayName, isRoomChat } from '@gugu/core/shared/ui/chatModels'
@@ -506,14 +508,20 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
   // 块的页签条最后那枚之后的「+」(gugu-dev#181 第 ⑥ 步);页签本身由会话页的页签引擎画(chat-tabs)。
   const blockTabs = blockHost?.tabs && activeChatId ? createPortal(<TabBarAddMenu chatId={activeChatId} />, blockHost.tabs) : null
+  const split = mobile ? topicSurface.splitTopic : null
+  const memberTopic = split ? { topicChatId: split.chatId, name: split.name } : tabs.memberTopic
+  const phoneTopic = mobile ? memberTopic : null
+  const phoneTopicMeta = phoneTopic ? topicSurface.topics.find(topic => topic.chat_id === phoneTopic.topicChatId) : undefined
+  const phoneTopicName = phoneTopicMeta?.name ?? phoneTopic?.name
   const headerActions = (
     <>
       <ChatHeaderActions
         isGroupChat={isGroupChat}
-        isRoomChat={isRoomChatSurface} memberTopic={tabs.memberTopic} memberTopicCount={topicSurface.topics.find((topic) => topic.chat_id === tabs.memberTopic?.topicChatId)?.participant_count}
+        isRoomChat={isRoomChatSurface} memberTopic={memberTopic} memberTopicCount={(phoneTopicMeta ?? topicSurface.topics.find(topic => topic.chat_id === memberTopic?.topicChatId))?.participant_count}
         infoShown={tabs.infoShown}
         showHeaderMenu={showHeaderMenu}
         mobile={mobile}
+        membersInMenu={mobile && !chrome && !blockHost}
         room={isRoomChatSurface ? {
           snapshot: groupCollabSnapshot,
           settings: groupSettings.settings,
@@ -522,8 +530,9 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         } : undefined}
         moreButtonRef={moreButtonRef}
         onSearch={() => { if (activeChatId) searchInChat(activeChatId) }}
+        onCreateAgent={mobile && !phoneTopic && isGroupChat ? () => requestGroupAgentCreation(activeChat.id) : undefined}
         onOpenFolder={handleOpenFolder}
-        onOpenInfo={(page) => { if (activeChatId) openInfoTab(activeChatId, page, page === 'members' ? tabs.memberTopic : null) }}
+        onOpenInfo={(page) => { if (activeChatId) openInfoTab(activeChatId, page, page === 'members' ? memberTopic : null) }}
         onCloseInfo={() => { if (activeChatId) closeInfoTab(activeChatId) }}
         onToggleHeaderMenu={() => setShowHeaderMenu((v) => !v)}
         onCloseHeaderMenu={() => setShowHeaderMenu(false)}
@@ -557,7 +566,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     /></GroupRenameContext.Provider>
   ) : null
 
-  const phoneRoomControls = mobile && activeChat && viewAnchor({ kind: 'chat', chatId: activeChat.id, chatKind: activeChat.kind, projectGroup: isProjectChat(activeChat.id) }) && !chrome && !blockHost ? <PhoneRoomComposerControls key={activeChat.id} chatId={activeChat.id} topics={topicSurface.topics} current={topicSurface.splitTopic} onPick={topic => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} members={drawerMemberProfiles} roster={{ ready: groupCollabSnapshot !== null, failed: groupCollabError !== null, retry: () => { void loadGroupCollab() } }} userId={user?.id ?? null} profileOpener={topicSurface.splitTopic ? messageProfile.asideOpener : messageProfile.mainOpener} onOpenAgent={onOpenUserChat} /> : null
+  const phoneRoomControls = mobile && activeChat && viewAnchor({ kind: 'chat', chatId: activeChat.id, chatKind: activeChat.kind, projectGroup: isProjectChat(activeChat.id) }) && !chrome && !blockHost ? <PhoneRoomComposerControls key={activeChat.id} chatId={activeChat.id} topics={topicSurface.topics} topicsReady={topicSurface.topicsReady} current={topicSurface.splitTopic} onPick={topic => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} members={drawerMemberProfiles} roster={{ ready: groupCollabSnapshot !== null, failed: groupCollabError !== null, retry: () => { void loadGroupCollab() } }} userId={user?.id ?? null} profileOpener={topicSurface.splitTopic ? messageProfile.asideOpener : messageProfile.mainOpener} onOpenAgent={onOpenUserChat} /> : null
   const topicPane = topicSurface.topic && (
     <TopicSplitPane
       viewportKey={`${viewportKey}:topic`} navigationTarget={navigationTarget}
@@ -609,7 +618,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       {blockHost && <ChatBlockHead host={blockHost} actions={headerActions} chat={activeChat} name={shownActiveChatName} avatar={activeChatAvatar} isAgent={peerIdentity?.type === 'agent'} />}
       {blockTabs}
       {!chrome && !blockHost && <PaneHeader
-        divider data-chat-area-header="" mobile={mobile}
+        divider data-chat-area-header="" data-chat-context-id={phoneTopic?.topicChatId ?? activeChat.id} mobile={mobile} centered={mobile}
         style={{
           background: mobile ? 'transparent' : 'var(--bg-primary)',
           paddingRight: 'calc(var(--pane-pad-x) + var(--titlebar-controls-width))',
@@ -621,39 +630,19 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
             size="lg"
             aria-label={topicSurface.splitTopic ? t('common.back') : t('chatArea.backToList')}
             title={t('common.back')}
-            onClick={onBack}
+            onClick={topicSurface.splitTopic ? topicSurface.closeSplit : onBack}
           >
             <ChevronLeft />
           </IconButton>
         ) : null}
-        /* @@@5856 这里曾有一支「话题全宽打开时顶栏画面包屑」。owner 2026-09-19 把全宽形态整个拿掉之后,
-           主区永远不会是一条话题(chats_topic_source_chk 保证话题必有来源,收口会把它换成来源线 + 分栏),
-           那一支就永远走不到了 ⇒ 删。面包屑本身搬进了分栏的标题块。 */
-        title={(
-          <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-            {/* @@@1146 对话头按设计稿(.top 仅 标题+状态行,无头像;单聊点
-                名称→设置)：删除咕咕旧版 WeChat 式头像,点「名称」开会话资料抽屉(名称带 no-drag 才可点)。 */}
-            <span
-              style={{
-                display: 'flex', alignItems: 'center', gap: 'var(--spacing-xs)', minWidth: 0,
-                fontSize: 'var(--font-title)', lineHeight: 'var(--lh-title)',
-              }}
-            >
-              <span
-                role="button"
-                tabIndex={0}
-                className="window-no-drag-region"
-                onClick={openConversationOrAgentSettings}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openConversationOrAgentSettings() } }}
-                title={t('chatArea.conversationProfile')}
-                aria-label={t('chatArea.conversationProfile')}
-                style={{ color: 'var(--fg)', fontWeight: 600, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, cursor: 'pointer' }}
-              >
-                {shownActiveChatName}
-              </span>
-            </span>
-          </div>
-        )}
+        title={<PhoneConversationHeading
+          name={phoneTopicName ?? shownActiveChatName}
+          topic={mobile && (Boolean(phoneTopic) || activeChat.kind === 'topic')}
+          centered={mobile}
+          label={t('chatArea.conversationProfile')}
+          onOpen={() => phoneTopic ? openInfoTab(activeChatId, 'main', { ...phoneTopic, name: phoneTopicName ?? phoneTopic.name }) : openConversationOrAgentSettings()}
+        />}
+        subtitle={phoneTopic ? <span data-phone-header-source="">{shownActiveChatName}</span> : undefined}
         actions={headerActions}
       />}{isGroupChat && !mobile ? <PinnedTopicTabs chatId={activeChat.id} topics={topicSurface.topics} messages={messages} current={topicSurface.splitTopic?.chatId ?? null} onPick={(topic) => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} /> : null}
 
@@ -667,7 +656,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
           position: 'relative',
         }}
       >
-        <div data-testid="session-chat-panel" className={`relative isolate flex min-h-0 min-w-0 flex-1 flex-col${mobile && topicSurface.splitTopic ? ' invisible pointer-events-none' : ''}`}>
+        <ChatPaneContent chatId={activeChat.id} data-testid="session-chat-panel" className={`relative isolate flex min-h-0 min-w-0 flex-1 flex-col${mobile && topicSurface.splitTopic ? ' invisible pointer-events-none' : ''}`}>
         {opener.overlay}
         {emptyProject ? <ChatPartSlot chatId={activeChat.id} part="empty" className="flex min-h-0 min-w-0 flex-1 flex-col" /> : <div
           style={{
@@ -698,7 +687,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
       {/* Message list —— 有行就画列表,与 loading 无关:加载中已有的行(盘缓存/乐观发送)照样可见,
           列表不会因为 loading 翻转被卸载重挂。骨架只在「在加载且一行都没有」时占位。 */}
-      {taskChatNotice}{loadingMessages && chatListRows.length === 0 && <MessageListSkeleton delayMs={threeParty?300:0} overlay={threeParty}/>}
+      {mobile && surfaceVisible && isGroupChat && !phoneTopic && <PhoneGroupAgentCreation key={activeChat.id} chatId={activeChat.id} name={shownActiveChatName} />}{taskChatNotice}{loadingMessages && chatListRows.length === 0 && <MessageListSkeleton delayMs={threeParty?300:0} overlay={threeParty}/>}
 
       {/* #7199 没读出来 ≠ 没聊过:读失败时说读不到 + 重试,❌ 往下落进首次对话欢迎页 / 「暂无消息」。 */}
       {messagesError && !(loadingMessages && chatListRows.length === 0) && (
@@ -713,8 +702,8 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         activeAgentActivity ? (
           <div data-testid={AUTOMATION_TEST_IDS.chatMessageList} style={{ flex: 1 }} />
         ) : (
-          <div style={{ flex: 1, textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--font-body)', padding: '40px 0' }}>
-            {mobile && isGroupChat ? <PhoneProjectEmpty chatId={activeChat.id} /> : t('chatArea.noMessages')}
+          <div style={mobile && isRoomChatSurface ? { flex: 1, display: 'grid', placeItems: 'center', padding: 16 } : { flex: 1, textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--font-body)', padding: '40px 0' }}>
+            {mobile && isRoomChatSurface ? isGroupChat ? <PhoneProjectEmpty chatId={activeChat.id} /> : <PhoneMessagesEmpty /> : t('chatArea.noMessages')}
           </div>
         )
       )}
@@ -811,7 +800,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
 
         </div>}
-        </div>
+        </ChatPaneContent>
 
         {inTabs(topicPane, infoPage)}
 
@@ -821,7 +810,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         card={messageProfile.card}
         memberProfiles={messageMemberProfiles}
         authorityRevision={authorityRevision}
-        topicChatId={topicSurface.splitTopic?.chatId ?? null}
+        asideTopic={topicSurface.splitTopic}
         chatId={activeChatId}
         currentUserId={user?.id ?? null}
         isGroupChat={isGroupChat}
