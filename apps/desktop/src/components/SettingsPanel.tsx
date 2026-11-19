@@ -1,3 +1,4 @@
+import { settingsSectionsForAccount } from './settings/sectionsForAccount'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { PasswordSection } from './settings/PasswordSection'
 import { lazy, Suspense, useRef, useState } from 'react'
@@ -97,7 +98,7 @@ export function SettingsPanel({
   const teamAccount = hasTeamAccountMarker(user)
   const { t } = useTranslation('main')
   const platformSections = mobile ? MOBILE_SECTIONS_FOR_PLATFORM : DESKTOP_SECTIONS_FOR_PLATFORM
-  const sections = platformSections.filter(section => teamAccount ? section !== 'subscriptions' : section !== 'team')
+  const sections = settingsSectionsForAccount(platformSections, user)
 
   // @@@1507 初始 section 可由调用方指定(如侧栏「额度」直接开到 quota);缺省 account。
   const [internalSection, setInternalSection] = useState<ActiveSection>(initialSection)

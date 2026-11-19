@@ -115,6 +115,20 @@ describe('settings navigation hierarchy and interaction (#7333)', () => {
     expect(tier(identity.querySelector('.gg-settings-identity-id')!)).toEqual([12, 18, '400']);
   });
 
+  it('replaces the subscription row with Team for a team identity even with a broad section allowlist', async () => {
+    await renderWithAppProviders(harness, <SettingsNav user={{ ...user, accountKind: 'team_member' }} sections={desktopSections}
+      activeSection="team" onSelect={vi.fn()} />);
+    const rows = harness.container.querySelectorAll('[data-testid^="settings-nav-"]');
+    expect(rows).toHaveLength(16);
+    const team = harness.container.querySelector<HTMLElement>('[data-testid="settings-nav-team"]')!;
+    expect(team).not.toBeNull();
+    expect(team.getAttribute('aria-current')).toBe('page');
+    expect(harness.container.querySelector('[data-testid="settings-nav-subscriptions"]')).toBeNull();
+    harness.container.querySelector<HTMLElement>('[data-testid="settings-nav-account"]')!.focus();
+    await userEvent.tab();
+    expect(document.activeElement).toBe(team);
+  });
+
   it('the real navigation responds to keyboard and copy keeps the original number', async () => {
     const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
     await renderWithAppProviders(harness, <NavHost />);
