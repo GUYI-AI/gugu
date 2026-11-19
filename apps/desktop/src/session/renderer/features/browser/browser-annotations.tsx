@@ -7,6 +7,7 @@ import { events, rpc } from '@renderer/lib/ipc';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { rendererLogger } from '@/lib/log';
+import { useAuth } from '@/store/auth';
 import { AnnotationEditor, AnnotationMarker } from '../sessions/annotations/annotation-editor';
 import { sessionAnnotations } from '../sessions/annotations/session-annotations';
 import { markedAnnotationScreenshot } from './annotation-screenshot';
@@ -37,7 +38,8 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ co
   filePath?: string; subscribeSpaceRelease?: SubscribeSpaceRelease;
 }) {
   const { translate } = useSessionMessages();
-  const draft = sessionAnnotations.forConversation(conversation);
+  const { user } = useAuth();
+  const draft = sessionAnnotations.forConversation(conversation, user?.id);
   const root = useRef<HTMLDivElement>(null);
   const [browsing, setBrowsing] = useState(false);
   const [hover, setHover] = useState<BrowserAnnotationTarget | null>(null);

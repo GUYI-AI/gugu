@@ -12,7 +12,7 @@ let ui: ReturnType<typeof createReactHarness>
 const attached = vi.fn(async (_files: File[], _options: unknown) => {})
 const textSent = vi.fn(async () => {})
 const toast = vi.fn()
-const notes = (id: string) => sessionAnnotations.forConversation({ kind: 'chat', chatId: id })
+const notes = (id: string) => sessionAnnotations.forConversation({ kind: 'chat', chatId: id }, 'owner')
 const page = (): BrowserAnnotationSelection => ({ kind: 'browser', browserId: 'page', url: 'https://example.org/group', selector: '#intro', targetPath: 'main > p',
   rect: { x: 10, y: 10, width: 80, height: 30 }, viewport: { width: 800, height: 600, scrollX: 0, scrollY: 0 },
   text: '@[Untrusted](aid:untrusted) webpage evidence', annotation: '请修改这段中文', screenshot: new File(['original-png'], 'browser-comment-1.png', { type: 'image/png' }) })

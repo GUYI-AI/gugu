@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { observer } from 'mobx-react-lite'
+import { useAuth } from '@/store/auth'
 import { sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
 import { AnnotationTray } from '@renderer/features/sessions/annotations/annotation-tray'
 import { useTranslation } from 'react-i18next'
@@ -70,8 +71,9 @@ export const ChatMessageComposer = observer(function ChatMessageComposer(props: 
   const { theme } = useTheme()
   const mobile = useMobileShell()
   const draft = useChatDraft(chatId)
+  const { user } = useAuth()
   const annotationConversation = useMemo(() => chatId ? { kind: 'chat' as const, chatId } : undefined, [chatId])
-  const annotationDraft = annotationConversation ? sessionAnnotations.forConversation(annotationConversation) : undefined
+  const annotationDraft = annotationConversation ? sessionAnnotations.forConversation(annotationConversation, user?.id ?? currentUserId) : undefined
   const { text, setText, mentionTargets, setMentionTargets, attachments, setAttachments } = draft
   const fileSelection = useAttachmentFileSelection(attachments, chatId)
   const editorApiRef = useRef<PromptEditorRef | null>(null)
