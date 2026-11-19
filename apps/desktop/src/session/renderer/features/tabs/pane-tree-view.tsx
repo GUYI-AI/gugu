@@ -4,7 +4,7 @@ import { trackRecentTools } from '../browser/workspace-recent-tools';
 import { Fragment, useContext, useEffect, useId, useLayoutEffect, type CSSProperties, type ReactNode } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useGroupRef } from 'react-resizable-panels';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@renderer/lib/ui/resizable';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup, setGroupLayout } from '@renderer/lib/ui/resizable';
 import { PaneDimensionProvider } from './pane-dimension-provider';
 import { RetainedTabContent } from './retained-tab-content';
 import { MIN_PANE_HEIGHT_PX, type PaneLayoutStore } from './pane-layout-store';
@@ -112,11 +112,7 @@ const Cut = observer(function Cut({ node, layout, narrow, visiblePaneId, anchorO
   useEffect(() => {
     const handle = groupRef.current;
     if (!handle || narrow) return;
-    const wanted = Object.fromEntries(ids.map((id, index) => [id, node.sizes[index] ?? 0]));
-    try {
-      const current = handle.getLayout();
-      if (!ids.every((id) => Math.abs((current[id] ?? -1) - wanted[id]) < 0.5)) handle.setLayout(wanted);
-    } catch { /* First paint uses the same default shares. */ }
+    setGroupLayout(handle, Object.fromEntries(ids.map((id, index) => [id, node.sizes[index] ?? 0])), 0.5);
   }, [idsKey, sizesKey, groupRef, narrow]);
   return <ResizablePanelGroup orientation={node.orientation} groupRef={groupRef} style={narrow ? { position: 'relative', display: 'block' } : undefined} onLayoutChanged={(sizes, meta) => {
     if (!narrow && meta.isUserInteraction) layout.setSplitSizes(node.id, ids.map((id) => sizes[id] ?? 0));
