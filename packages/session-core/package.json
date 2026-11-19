@@ -64,7 +64,8 @@
     "./git/status-worker": "./src/git/status-worker.ts",
     "./lib": "./src/lib/index.ts",
     "./pty": "./src/pty/index.ts",
-    "./acp/commands": "./src/acp/commands.ts"
+    "./acp/commands": "./src/acp/commands.ts",
+    "./acp/models/session": "./src/acp/models/session.ts"
   },
   "scripts": {
     "test": "vitest run"

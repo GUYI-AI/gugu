@@ -72,3 +72,35 @@ it('folds long paths in import results while keeping the original reason availab
   await expect.poll(() => harness.container.querySelectorAll('li').length).toBe(64)
   expect(harness.container.textContent).toContain(issues[0]!.path)
 })
+
+it('reports a deferred space shortfall without persisting away the next-startup notice', async () => {
+  const blocked = { ...home, migration: true, migrationSpace: {
+    requiredBytes: 4_000_000_000, availableBytes: 1_850_000_000, shortfallBytes: 2_150_000_000,
+  } }
+  calls.scanHomes.mockResolvedValue({ success: true, data: [blocked] })
+  expect(await readAgentHomeUpgradeResults()).toEqual([blocked])
+  showAgentHomeUpgradeNotice([blocked])
+  const [notice] = calls.notice.mock.calls[0]!
+  expect(notice.description).toContain('2.2')
+  expect(notice.description).toMatch(/space|空间/)
+  expect(localStorage.getItem(notice.key)).toBeNull()
+})
+
+it('groups skipped library links by skill and reveals paths only in the expanded skill', async () => {
+  const issues: AgentHomeScan['issues'] = [
+    { path: 'skills/movie/.venv/bin/python', reason: 'symlink' },
+    { path: 'skills/movie/node_modules/.bin/tool', reason: 'symlink' },
+    { path: 'skills/theme/tokens/file.json', reason: 'unreadable' },
+  ]
+  harness = createReactHarness()
+  await harness.render(<AgentHomeSkippedFiles issues={issues} />)
+  const summaries = harness.container.querySelectorAll('summary')
+  expect(summaries.length).toBe(2)
+  expect(summaries[0]!.textContent).toMatch(/movie.*2/)
+  expect(harness.container.textContent).not.toContain('.venv/bin/python')
+  await clickElement(summaries[0]!)
+  await expect.poll(() => harness.container.querySelectorAll('li').length).toBe(2)
+  expect(harness.container.textContent).toContain('.venv/bin/python')
+  expect(harness.container.textContent).not.toContain('tokens/file.json')
+  expect(harness.container.textContent).not.toContain('·')
+})

@@ -26,14 +26,14 @@ function AgentHomeMigrationResults() {
   const reading = useReplica(agentHomeUpgradeResults, [])
   if (reading.state === 'error') return <p role="status" className="gg-import-meta">{t('agentHome.migrationReadFailed')}</p>
   if (reading.state !== 'value') return null
-  const skipped = reading.value.filter((home) => (home.upgradeIssues?.length ?? home.oldSessionsSkipped ?? 0) > 0)
+  const skipped = reading.value.filter((home) => home.migrationSpace || (home.upgradeIssues?.length ?? home.oldSessionsSkipped ?? 0) > 0)
   if (!skipped.length) return null
   return <section className="gg-import-history">
     <h3>{t('agentHome.migrationResults')}</h3>
     <div className="gg-import-history-list">
       {skipped.map((home) => <div key={home.providerId} className="gg-import-history-entry p-3">
         <div className="gg-import-name">{home.name}</div>
-        {home.upgradeIssues ? <AgentHomeSkippedFiles issues={home.upgradeIssues} />
+        {home.migrationSpace ? <p className="gg-import-meta">{t('agentHome.migrationSpaceNotice', { size: Math.ceil(home.migrationSpace.shortfallBytes / 100_000_000) / 10 })}</p> : home.upgradeIssues ? <AgentHomeSkippedFiles issues={home.upgradeIssues} />
           : <p className="gg-import-meta">{t('agentHome.oldSessionsSkipped', { count: home.oldSessionsSkipped })}</p>}
       </div>)}
     </div>
