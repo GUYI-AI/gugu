@@ -72,11 +72,13 @@ export interface UsePtyOptions {
 export interface UseTerminalReturn {
   focus: () => void;
   sendInput: (data: string, options?: { track?: boolean }) => void;
+  pasteText: (text: string) => void;
 }
 
 export type PasteFromClipboardHandler = (helpers: {
   focus: UseTerminalReturn['focus'];
   sendInput: UseTerminalReturn['sendInput'];
+  pasteText: UseTerminalReturn['pasteText'];
 }) => void;
 
 /**
@@ -277,22 +279,26 @@ export function usePty(
     [ptySessionId]
   );
 
+  const pasteText = useCallback((text: string) => {
+    termRef.current?.paste(text);
+  }, []);
+
   const pasteFromClipboard = useCallback(() => {
     const customPasteFromClipboard = onPasteFromClipboardRef.current;
     if (customPasteFromClipboard) {
-      customPasteFromClipboard({ focus, sendInput });
+      customPasteFromClipboard({ focus, sendInput, pasteText });
       return;
     }
 
     void (async () => {
       try {
         const text = await navigator.clipboard.readText();
-        if (text) sendInput(text);
+        if (text) pasteText(text);
       } catch (error) {
         log.error({ error }, 'terminal paste failed'); toast({ title: i18n.t('shell.titlebar.items.paste', { ns: 'main' }), description: messageForUser(error), tier: 'error' });
       }
     })();
-  }, [focus, sendInput]);
+  }, [focus, sendInput, pasteText]);
 
   const pageShown = useContext(SurfaceShownContext);
 
@@ -702,5 +708,5 @@ export function usePty(
     };
   }, [pty, pageShown, scheduleLayoutMeasure, cancelScheduledLayoutMeasure]);
 
-  return { focus, sendInput };
+  return { focus, sendInput, pasteText };
 }
