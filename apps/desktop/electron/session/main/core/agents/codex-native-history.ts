@@ -16,9 +16,15 @@ export function setNativeHistoryProviderResolver(resolver: () => Promise<NativeH
 
 const attempts = new Map<string, Promise<void>>();
 const requested = new Set<string>();
+const startedAt = new Map<string, number>();
+export function nativeCodexHistoryPreparation(home: ResolvedAgentHome) {
+  const since = startedAt.get(home.configRoot);
+  return since === undefined ? undefined : { phase: 'history' as const, startedAt: since, attempt: 1 };
+}
 export function startNativeCodexHistoryRelocation(home: ResolvedAgentHome | null, signal: AbortSignal): void {
   if (!home || signal.aborted) return;
   if (attempts.has(home.configRoot)) { requested.add(home.configRoot); return; }
+  startedAt.set(home.configRoot, Date.now());
   const attempt = (async () => {
     if (!await readAgentHomeMarker(home)) return;
     const { relocateNativeCodexHistory, readNativeHistoryLedger } = await import('@gugu/session-plugins/agents/codex-history');
@@ -41,7 +47,7 @@ export function startNativeCodexHistoryRelocation(home: ResolvedAgentHome | null
     log.error('Could not relocate native Codex history');
     reportAgentHomeMigrationFailure(error, 'native-history');
   }).finally(() => {
-    attempts.delete(home.configRoot);
+    attempts.delete(home.configRoot); startedAt.delete(home.configRoot);
     if (requested.delete(home.configRoot)) startNativeCodexHistoryRelocation(home, signal);
   });
   attempts.set(home.configRoot, attempt);

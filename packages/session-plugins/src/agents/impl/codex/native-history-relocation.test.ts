@@ -80,7 +80,7 @@ async function rig() {
   await mkdir(native); await mkdir(managed, { recursive: true }); await writeFile(cli, FAKE); await chmod(cli, 0o700); await writeFile(calls, '');
   const original = await vi.importActual<typeof import('@gugu/session-core/agents/plugins/helpers')>('@gugu/session-core/agents/plugins/helpers');
   vi.mocked(streamImportFile).mockImplementation(original.streamImportFile);
-  const home: ResolvedAgentHome = { providerId: 'codex', userConfigRoot: native, configRoot: managed, shadowHome: dirname(managed), envVar: 'CODEX_HOME', importGroups: [], credentialPaths: [], carryExclusions: [] };
+  const home: ResolvedAgentHome = { providerId: 'codex', userConfigRoot: native, configRoot: managed, shadowHome: dirname(managed), envVar: 'CODEX_HOME', importGroups: [], credentialPaths: [], carryExclusions: [], seedFiles: [] };
   const ids = new Set<string>(), env = { ...process.env, TEST_NATIVE: native, TEST_CALLS: calls };
   const options: NativeHistoryOptions = { home, ownedIds: ids, context: { cli, env }, cliVersion: 'codex-cli 0.167.2', pageSize: 1,
     resolveProvider: async () => ({ args: codexPlatformProviderConfigArgs({ providerId: 'gugu_platform', providerName: 'Gugu', baseUrl: 'http://127.0.0.1:1/v1' }), env: { OPENAI_API_KEY: 'test-not-a-key' } }) };
@@ -142,6 +142,23 @@ describe('native Codex history relocation', () => {
     const result = await relocateNativeCodexHistory(r.options);
     expect(result.counts.pending).toBe(1); expect(await exists(join(r.managed, root.path))).toBe(false);
     expect(await readFile(join(r.native, root.path))).toEqual(root.content); expect((await r.calls()).some(c => c.method === 'thread/delete')).toBe(false);
+  });
+  it('keeps a concurrently created destination when wx loses the race', async () => {
+    const r = await rig(), root = await r.add();
+    vi.mocked(streamImportFile).mockImplementationOnce(async (_source, destination) => {
+      await writeFile(destination!, 'created by another importer');
+      throw Object.assign(new Error('destination exists'), { code: 'EEXIST' });
+    });
+    const result = await relocateNativeCodexHistory(r.options);
+    expect(result.counts.pending).toBe(1); expect(await readFile(join(r.managed, root.path), 'utf8')).toBe('created by another importer');
+    expect(await readFile(join(r.native, root.path))).toEqual(root.content);
+  });
+  it('moves an existing managed copy whose original bytes are an exact prefix', async () => {
+    const r = await rig(), root = await r.add(); await mkdir(dirname(join(r.managed, root.path)), { recursive: true });
+    const appended = Buffer.concat([root.content, Buffer.from(JSON.stringify({ type: 'thread_settings', payload: { model: 'original-model' } }) + '\n')]);
+    await writeFile(join(r.managed, root.path), appended);
+    const result = await relocateNativeCodexHistory(r.options);
+    expect(result.counts.removed).toBe(1); expect((await readFile(join(r.managed, root.path))).subarray(0, appended.length)).toEqual(appended);
   });
   it('retains a diverged managed file without overwriting either copy', async () => {
     const r = await rig(), root = await r.add(); await mkdir(dirname(join(r.managed, root.path)), { recursive: true }); await writeFile(join(r.managed, root.path), 'different');

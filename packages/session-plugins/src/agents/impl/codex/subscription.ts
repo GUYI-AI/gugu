@@ -200,24 +200,22 @@ async function withCodexAppServerAttempt<T>(ctx: Pick<AgentAuthContext, 'cli' | 
     abort = () => reject(signal?.reason ?? new Error('Codex preparation cancelled'));
     signal?.addEventListener('abort', abort, { once: true });
   });
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = (ms: number) => new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error('Codex app-server request timed out')), ms);
-  });
   try {
     const initialized = await Promise.race([request('initialize', { clientInfo: { name: 'gugu', title: 'Gugu', version: '0' }, capabilities: null }), exited, aborted]);
-    clearTimeout(timer);
-    child.stdin!.write(JSON.stringify({ method: 'initialized' }) + '\n');
+    let announced = false;
     return await run({ initialized, request: async (method, params) => {
       signal?.throwIfAborted();
-      try { return await Promise.race([request(method, params), exited, aborted, deadline(APP_SERVER_TIMEOUT_MS)]); }
+      if (!announced) { child.stdin!.write(JSON.stringify({ method: 'initialized' }) + '\n'); announced = true; }
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Codex app-server request timed out')), APP_SERVER_TIMEOUT_MS); });
+      try { return await Promise.race([request(method, params), exited, aborted, timeout]); }
       finally { clearTimeout(timer); }
     } });
   } catch (error) {
     if (error instanceof Error) Object.assign(error, { stderrTail });
     throw error;
   } finally {
-    clearTimeout(timer); signal?.removeEventListener('abort', abort); lines.close();
+    signal?.removeEventListener('abort', abort); lines.close();
     await owned.stop({ graceMs: 2_000 }).catch(() => undefined);
   }
 }

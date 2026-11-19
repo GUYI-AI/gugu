@@ -1,5 +1,5 @@
 import { access } from 'node:fs/promises';
-import { startNativeCodexHistoryRelocation, nativeCodexHistoryCounts } from './codex-native-history';
+import { startNativeCodexHistoryRelocation, nativeCodexHistoryCounts, nativeCodexHistoryPreparation } from './codex-native-history';
 import { homedir } from 'node:os';
 import { eq } from 'drizzle-orm';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
@@ -186,10 +186,12 @@ export async function scanAgentHomes(providerIds?: readonly string[], upgradedOn
         migrationSpace, groups: home.importGroups.map(({ id }) => ({ id, count: 0 })), issues: [], mcpSecrets: [], projectMcpCount: 0 });
       continue;
     }
+    const nativeHistory = providerId === 'codex' ? await nativeCodexHistoryCounts(home) : undefined;
+    const nativePreparation = providerId === 'codex' ? nativeCodexHistoryPreparation(home) : undefined;
     if (upgradedOnly) {
       // A provider with a failed or invalid import record cannot hide the other results.
       const marker = await readAgentHomeMarker(home).catch(() => null);
-      if (marker?.migratedFrom !== 'shared') continue;
+      if (marker?.migratedFrom !== 'shared' && !nativeHistory && !nativePreparation) continue;
     }
     const scan = await scanAgentHome(home);
     const migration = !scan.marker && !!(await upgradeProviders())?.has(providerId);
@@ -199,7 +201,8 @@ export async function scanAgentHomes(providerIds?: readonly string[], upgradedOn
       importedAt: scan.marker?.importedAt ?? null, needsImport: !scan.marker,
       sourceUpdated: !!scan.marker && scan.newestMtime > Date.parse(scan.marker.importedAt),
       migration,
-      ...(providerId === 'codex' ? { nativeHistory: await nativeCodexHistoryCounts(home) } : {}),
+      ...(nativeHistory ? { nativeHistory } : {}),
+      ...(nativePreparation ? { migrationPreparation: nativePreparation } : {}),
       ...(scan.marker?.migratedFrom === 'shared' ? {
         upgraded: true, upgradeSignIn: scan.marker.upgradeSignIn, terminalNeedsSignIn: scan.marker.terminalNeedsSignIn,
         oldSessionsSkipped: scan.marker.oldSessionsSkipped, upgradeIssues: scan.marker.upgradeIssues, historyImport: scan.marker.historyImport,
