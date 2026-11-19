@@ -35,6 +35,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const listener of process.listeners('uncaughtExceptionMonitor')) if (!previousExceptionListeners.includes(listener)) process.removeListener('uncaughtExceptionMonitor', listener)
   for (const listener of process.listeners('unhandledRejection')) if (!previousRejectionListeners.includes(listener)) process.removeListener('unhandledRejection', listener)
+  process.removeAllListeners(Symbol.for('gugu.error-summary.agent-home-migration'))
   app.removeAllListeners()
   ipcMain.removeAllListeners()
   vi.unstubAllGlobals()

@@ -23,7 +23,7 @@ const migrationLocations = {
 
 // The native main and session host are separate bundles in the same Electron process.
 const migrationFailureEvent = Symbol.for('gugu.error-summary.agent-home-migration')
-const migrationBus: EventEmitter = ipcMain
+const migrationBus: EventEmitter = process
 
 export function reportAgentHomeMigrationFailure(error: unknown, area: keyof typeof migrationLocations): void {
   migrationBus.emit(migrationFailureEvent, error, area)
