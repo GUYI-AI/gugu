@@ -11,6 +11,7 @@ const prose = '这是一段必须完整显示的中文说明，continued text wi
 const code = `const longIdentifier = "${'unbroken_identifier_'.repeat(100)}";`;
 const oldText = `previous ${code}`;
 const patch = (path: string, text: string): SessionPatch => ({
+  scope: 'file',
   changes: [{ operation: 'modify', path }],
   patch: { format: 'git_patch', text: `--- a/${path}\n+++ b/${path}\n@@ -7,2 +8,2 @@\n-${oldText}\n+${text}\n unchanged\n` },
 });
