@@ -201,7 +201,7 @@ export function useChatProjectionBinding(deps: {
     fetched: readonly ChatItem[],
     identities: readonly unknown[],
     options: { requestSeq: number; notify: boolean; preserveMissingActive?: boolean; revokedMembership?: (chatId: string) => boolean },
-  ): Promise<void> => {
+  ): Promise<void> {
     const repository = await getRepository()
     const accountId = repository.accountId
     if (repositoryRef.current?.accountId !== accountId) return
