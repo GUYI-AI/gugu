@@ -45,12 +45,17 @@ export function installServerNodeDependencies(directory, args = [], { run = runN
   // never from the unreviewed server installation or a newly generated lock.
   const reviewedRequire = createRequire(resolve(locked, 'package.json'))
   const reviewedRoot = dirname(realpathSync(reviewedRequire.resolve('better-sqlite3/package.json')))
+  const reviewedLock = JSON.parse(readFileSync(resolve(locked, 'package-lock.json'), 'utf8'))
   const expected = sqlitePayloadSnapshot(reviewedRoot)
   const expectedEntry = relative(reviewedRoot, realpathSync(reviewedRequire.resolve('better-sqlite3'))).split(sep).join('/')
   const manifestPath = resolve(directory, 'package.json')
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
   if (manifest.dependencies?.['better-sqlite3'] !== sqliteVersion) throw new Error('Server SQLite version differs from the reviewed pin')
   manifest.dependencies['better-sqlite3'] = 'file:./.sqlite-node-deps/node_modules/better-sqlite3'
+  // node-pty needs node-addon-api 7, while SQLite's committed lock contains 8. Without an
+  // explicit root binding npm hoists 7 and writes a nested 8 into the verified SQLite payload.
+  // Pin the committed-lock version at the app root; npm can nest 7 under node-pty.
+  manifest.dependencies['node-addon-api'] = reviewedLock.packages['node_modules/node-addon-api'].version
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
   run(directory, ['install', ...args, '--ignore-scripts'])
   const entry = assertSqlitePayload(directory, expected, expectedEntry)
