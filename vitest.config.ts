@@ -322,6 +322,7 @@ export default defineConfig({
         test: {
           name: 'session-main-db',
           environment: 'node',
+          setupFiles: [resolve(__dirname, 'apps/desktop/session-tooling/vitest-egress-setup.ts')],
           include: [
             'apps/desktop/electron/session/main/core/**/*.db.test.ts',
             'apps/desktop/electron/session/main/db/*.db.test.ts',

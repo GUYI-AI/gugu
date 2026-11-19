@@ -1,3 +1,5 @@
+import { EgressError } from './egress'
+
 /** Existing transient connection classification shared by device initialization and file reads. */
 export function transientNetworkErrorCode(err: unknown): string | null {
   const direct = (err as { code?: unknown } | null | undefined)?.code
@@ -7,6 +9,7 @@ export function transientNetworkErrorCode(err: unknown): string | null {
 }
 
 export function isTransientNetworkError(err: unknown): boolean {
+  if (err instanceof EgressError) return ['dns', 'connect', 'proxy', 'timeout', 'reset'].includes(err.kind)
   const code = transientNetworkErrorCode(err)
   if (code && /^(?:EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ECONNRESET|ECONNREFUSED|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT)$/i.test(code)) return true
   const rawMessage = (err as { message?: unknown } | null | undefined)?.message
