@@ -120,20 +120,6 @@ export { IMPLICIT_SESSION_HOME_PROJECT_ID } from '@gugu/core/shared/sessionProje
  */
 export { isImplicitSessionHomeProjectId } from '@gugu/core/shared/sessionProject'
 
-/**
- * 建群看的项目 id:用户眼里「没有项目」的会话不建、不进项目群,agent 只是私聊联系人(spec ⑨ 的群只对用户看得见的项目成立)。
- *  - 会话页的隐式任务工作区(见上)。
- *  - 云电脑(#7199,`GUGU_CLOUD_COMPUTER=1`,云电脑管家启动 server 前设):那台机器上的项目只是 agent 的落脚处,
- *    用户在「助理」里看见的是个人助理、不是项目;建群会把这层内部结构露成聊天列表里一个莫名的「云电脑」群
- *    (owner 2026-10-15 经统筹:「那是内部结构，露给了用户」)。会话照旧属于那个项目(server 上的会话一律属于某个项目),
- *    只是 agent 走与主人的私聊。已经建了的旧群不动。
- */
-export function groupProjectIdFor(rawProjectId: string | null | undefined, env: NodeJS.ProcessEnv): string {
-  const projectId = (rawProjectId ?? '').trim()
-  if (isImplicitSessionHomeProjectId(projectId)) return ''
-  if (env.GUGU_CLOUD_COMPUTER === '1') return ''
-  return projectId
-}
 
 /**
  * #6396 本机起号的起点:这个账号每个名字前缀在服务端已经用到几号(identity.agent_name_serials,
@@ -262,9 +248,11 @@ export interface SessionpageSessionInfo {
   agentUserId?: string
   displayName?: string
   chatId?: string | null
-  /** Session-page project this conversation belongs to (spec ⑨: project = gugu group). Empty/absent → the
-   *  conversation has no project → the agent is a plain DM contact, not a group member. */
-  projectId?: string | null
+  /**
+   * The group this session lives in (@@@group-folders: sessions.chat_id). Its agent joins it when its identity first
+   * lands; absent/null → no group, the agent is a plain DM contact.
+   */
+  groupChatId?: string | null
   /** Native transports can delay the UI notification until their delivery target is also registered. */
   deferProvisionedEvent?: boolean
   /** Session lifecycle from the start path. 'resume' rides the background lane of the provisioning
@@ -330,14 +318,12 @@ export interface ProvisionedSessionpageAgent {
    * 显示名不在这里(#6490):系统块不写名字,agent 要知道就调 profile_whoami。
    */
   agentIdentityFacts?: { specialFocus: string | null }
-  /** Dynamic facts for the session system bootstrap; absent when the session has no project group. */
-  projectContext?: {
-    projectId: string
-    projectName: string
-    projectPath: string
+  /** Dynamic facts for the session system bootstrap (@@@group-folders); absent when the session has no group. */
+  groupContext?: {
     groupChatId: string
-    groupName: string
-    /** #2347: `member` only once the landed identity's roster records the group; see SessionpageProjectContext. */
+    /** The session's folder on this machine (its cwd). */
+    path: string
+    /** #2347: `member` only once the landed identity's roster records the group. */
     membership: 'member' | 'unconfirmed'
   }
   event: SessionpageAgentProvisionedEvent
@@ -789,16 +775,16 @@ async function provisionLocked(
   const env = deps.env ?? process.env
   // session-page provider id → gugu agent_type ('codex'→'codex', 'claude'→'claude-code'). The gate above only
   // admits providers normalizeAgentType knows, so this never throws for a session-page session.
-  // A conversation under the implicit task-home project — or on a cloud computer — has no project AS FAR AS
-  // THE USER IS CONCERNED, so it gets no group — its agent is just a DM contact (spec ⑨; groupProjectIdFor).
-  const projectId = groupProjectIdFor(info.projectId, env)
+  // @@@group-folders The session's own group (sessions.chat_id); a session without one (the task home, a cloud
+  // computer's directory) gets no group — its agent is just a DM contact.
+  const groupChatId = (info.groupChatId ?? '').trim()
   const mark = provisionStage(`session ${info.sessionId}`, Date.now())
   mark('provision-begin', { providerId: info.providerId, surface: info.surface })
   // #5331 后台那些云端回写要等前台把名册写完(读-改-写不加锁,撞车就是「Agent 不存在」)。
   let bindingDone: () => void = () => {}
   const afterBinding = new Promise<void>((resolve) => { bindingDone = resolve })
   try {
-    return await provisionLockedBody(info, deps, deliveryOwnerKind, { env, projectId, mark, afterBinding })
+    return await provisionLockedBody(info, deps, deliveryOwnerKind, { env, groupChatId, mark, afterBinding })
   } finally {
     bindingDone()
   }
@@ -810,12 +796,12 @@ async function provisionLockedBody(
   deliveryOwnerKind: SessionpageDeliveryOwnerKind,
   ctx: {
     env: NodeJS.ProcessEnv
-    projectId: string
+    groupChatId: string
     mark: ReturnType<typeof provisionStage>
     afterBinding: Promise<void>
   },
 ): Promise<ProvisionedSessionpageAgent> {
-  const { env, projectId, mark, afterBinding } = ctx
+  const { env, groupChatId: sessionGroup, mark, afterBinding } = ctx
 
   // 1. Idempotent resolve: a roster record already bound to this conversation → reuse it (session resume /
   //    reopen). Register the live binding and return without minting a second identity. chatId may be ''
@@ -837,27 +823,22 @@ async function provisionLockedBody(
      * 这一查就把锚接上;没开过就一直是 ''。
      * ❌ 有项目却缺群仍要补:群是「项目 = 群」的承载,不是可有可无的锚(那一支不在本次改动范围)。
      */
-    const cachedProjectId = cacheString(existing.cache, PROJECT_CACHE_KEY)
     let directChatId = cacheString(existing.cache, DIRECT_CHAT_CACHE_KEY)
-    // Compatibility migration: projectless records historically stored their DM in GROUP_CACHE_KEY.
-    if (!directChatId && !cachedProjectId) directChatId = cacheString(existing.cache, GROUP_CACHE_KEY)
-    const groupChatId = cachedProjectId === projectId && projectId
-      ? cacheString(existing.cache, GROUP_CACHE_KEY)
-      : ''
-    const projectName = projectId ? await resolveProjectGroupName(deps, projectId) : ''
-    // #5331 重开也不等云端:缓存里的群 / 私聊直接用;「群还在不在」「owner 后来开没开私聊」「有项目却缺群」
-    // 三件事都是公网那一层的核对与补齐,放到后台做,结果回写名册,下次重开就对了。老代码在这里串着
-    // 1–3 发云往返(groupIsUsable / findOwnerDirectChat / ensureProjectGroupMembership),全挡在 spawn 前。
-    if (ownerAuth.accessToken && (groupChatId || !directChatId || (projectId && !groupChatId))) {
+    // Compatibility migration: records that never had a group stored their DM in GROUP_CACHE_KEY (the old
+    // PROJECT_CACHE_KEY was empty for them).
+    if (!directChatId && !cacheString(existing.cache, PROJECT_CACHE_KEY)) directChatId = cacheString(existing.cache, GROUP_CACHE_KEY)
+    // @@@group-folders The roster records the session's group once the agent joined it.
+    const joined = Boolean(sessionGroup) && cacheString(existing.cache, GROUP_CACHE_KEY) === sessionGroup
+    // #5331 重开也不等云端:「owner 后来开没开私聊」「会话的群还没进」都是公网那一层的核对与补齐,放到后台做,
+    // 结果回写名册,下次重开就对了。
+    if (ownerAuth.accessToken && (!directChatId || (sessionGroup && !joined))) {
       startReuseBackfill({
         env,
         accessToken: ownerAuth.accessToken,
         ownerUserId,
         sessionId: info.sessionId,
         agentUserId: existing.gugu_user_id,
-        projectId,
-        projectName,
-        groupChatId,
+        groupChatId: joined ? '' : sessionGroup,
         directChatId,
         afterBinding,
       })
@@ -875,7 +856,6 @@ async function provisionLockedBody(
           env,
           ownerAuth: { accessToken: ownerAuth.accessToken ?? '', refreshToken: ownerAuth.refreshToken ?? '', userId: ownerUserId },
           sessionId: info.sessionId,
-          projectId,
           guguAgentUserId: existing.gugu_user_id,
           displayName: existing.name ?? '',
           // #6396 这个名字早就发出去了(会话、agent 自己、owner 都拿它称呼这个身份),云端这一发只是补登记
@@ -885,8 +865,6 @@ async function provisionLockedBody(
           agentType,
           deviceId,
           localPath: info.cwd || null,
-          groupName: projectId ? projectName : null,
-          groupChatId,
           afterBinding,
           provisionalLocalRow: false,
           // The creation's cloud send never landed, so this is still its first mint — it still joins where it was born.
@@ -899,8 +877,6 @@ async function provisionLockedBody(
       cache: {
         ...(existing.cache ?? {}),
         [DIRECT_CHAT_CACHE_KEY]: directChatId,
-        [GROUP_CACHE_KEY]: groupChatId,
-        [PROJECT_CACHE_KEY]: projectId,
         [PROVIDER_CACHE_KEY]: info.providerId,
         [SURFACE_CACHE_KEY]: info.surface,
         [OWNER_CACHE_KEY]: ownerUserId,
@@ -919,18 +895,13 @@ async function provisionLockedBody(
       chatId: directChatId,
     }
     if (!info.deferProvisionedEvent) emitProvisioned(event)
-    // #2347 — the roster records the group only after the landed identity joined it. A refused or still
-    // pending join leaves it empty; the session is still told its project group (the mapping), as unconfirmed.
-    const contextGroupId = groupChatId || (projectId ? await readProjectGroupId(projectId, ownerUserId, env) ?? '' : '')
-    // Rows from before #5331 carry no state: those identities landed long ago (the retry below reads it the same way).
+    // #2347 — the roster records the group only after the landed identity joined it; until then the session is
+    // still told its group, as unconfirmed. Rows from before #5331 carry no state: those identities landed long ago.
     const landed = !['pending', 'failed'].includes(cacheString(existing.cache, CLOUD_STATE_CACHE_KEY))
-    const membership = groupChatId && landed ? 'member' : 'unconfirmed'
     return {
       guguAgentUserId: existing.gugu_user_id,
       chatId: directChatId,
-      ...(projectId && contextGroupId
-        ? { projectContext: { projectId, projectName, projectPath: info.cwd, groupChatId: contextGroupId, groupName: projectName, membership } }
-        : {}),
+      ...(sessionGroup ? { groupContext: { groupChatId: sessionGroup, path: info.cwd, membership: joined && landed ? 'member' as const : 'unconfirmed' as const } } : {}),
       event,
     }
   }
@@ -951,57 +922,40 @@ async function provisionLockedBody(
   let directChatId: string
   let displayName: string
   let identityCreated: boolean
-  let projectName = ''
-  let groupChatId = ''
+  /** The session's group once this identity is known to be in it (adopted identities join right here). */
+  let joinedGroup = ''
   if (!info.agentUserId?.trim()) {
-    const fresh = await provisionFreshLocalFirst(info, deps, { env, ownerAuth: { accessToken: ownerAuth.accessToken, refreshToken: ownerAuth.refreshToken, userId: ownerUserId }, roster, projectId, mark, afterBinding })
+    const fresh = await provisionFreshLocalFirst(info, deps, { env, ownerAuth: { accessToken: ownerAuth.accessToken, refreshToken: ownerAuth.refreshToken, userId: ownerUserId }, roster, mark, afterBinding })
     guguAgentUserId = fresh.guguAgentUserId
     displayName = fresh.displayName
-    groupChatId = fresh.groupChatId
-    projectName = fresh.projectName
     directChatId = ''
     identityCreated = true
     mark('identity-provisioned', { created: true, localFirst: true })
-    mark('project-group-ensured', { hasProject: Boolean(projectId), localFirst: true })
   } else {
-  // 启动提速 —— 群的第一拍(项目名 + 群在不在/还能不能用)只依赖项目,与接身份并行;没有项目就
-  // 什么都不发。这一拍是只读的(归档映射的清理挪到了 joinProjectGroup 建新群那一刻),所以身份那边
-  // 失败时它没有留下任何副作用;Promise.all 让任一失败都当场 fail-loud。
-  const [identity, group] = await Promise.all([
-    adoptSessionpageAgentIdentityLocked(
-      {
-        agentUserId: info.agentUserId,
-        displayName: info.displayName,
-        agentType: info.providerId,
-        projectPath: info.cwd,
-        chatId: info.chatId,
-        roster,
-      },
-      deps,
-    ),
-    projectId
-      ? Promise.all([
-          resolveProjectGroupName(deps, projectId),
-          prepareProjectGroup(ownerAuth.accessToken, ownerUserId, projectId, env),
-        ]).then(([projectName, prepared]) => ({ projectName, prepared }))
-      : null,
-  ])
+  const identity = await adoptSessionpageAgentIdentityLocked(
+    {
+      agentUserId: info.agentUserId,
+      displayName: info.displayName,
+      agentType: info.providerId,
+      projectPath: info.cwd,
+      chatId: info.chatId,
+      roster,
+    },
+    deps,
+  )
   guguAgentUserId = identity.guguAgentUserId
   directChatId = identity.chatId
   displayName = identity.displayName
   identityCreated = false
   mark('identity-provisioned', { created: false })
-
-  // 3. spec ⑨ — 项目 = 群。有项目的会话 → 进该项目的 gugu 群(owner 旁观其 agent 互发的场所);无项目的
-  //    会话 → owner 与它的**私聊**。
-  //
-  // @@@no-auto-dm — 无项目的会话**不自动获得私聊**(owner 2026-07-24,behavior session-fork-share /
-  // conversation-list)。群照建:项目 = 群,群是 agent 互发与 owner 旁观的场所,不建就没有那个场所;
-  // 私聊不建:它不承载会话页的对话(对话在任务会话里),只有 owner 真去开的那一刻才有意义。
-  // 「有没有私聊」由上面的 findOwnerDirectChat 只读地回答 —— `''` 是合法答案,不是待补的残缺。
-  projectName = group?.projectName ?? ''
-  groupChatId = group ? await joinProjectGroup(group.prepared, guguAgentUserId, projectName) : ''
-  mark('project-group-ensured', { hasProject: Boolean(projectId) })
+  // @@@group-folders An adopted identity is already in the cloud: it joins the session's group now, under the group's
+  // own rules (a refused or pending join is recorded for the session page to show and retry, as for any birth group).
+  if (sessionGroup) {
+    await joinBirthGroup({ env, accessToken: ownerAuth.accessToken, ownerUserId, sessionId: info.sessionId, agentUserId: guguAgentUserId,
+      group: { chatId: sessionGroup }, log: createLogger('sessionpage/provision') })
+    if (!await sessionpageBirthGroupJoin(info.sessionId, env, ownerUserId)) joinedGroup = sessionGroup
+    mark('group-joined', { joined: Boolean(joinedGroup) })
+  }
   }
 
   // Stamp the binding onto the roster record (SSOT for idempotent resolve, boot re-registration, and
@@ -1012,8 +966,7 @@ async function provisionLockedBody(
       cache: {
         [DIRECT_CHAT_CACHE_KEY]: directChatId,
         [SESSION_CACHE_KEY]: info.sessionId,
-        [GROUP_CACHE_KEY]: groupChatId,
-        [PROJECT_CACHE_KEY]: projectId,
+        [GROUP_CACHE_KEY]: joinedGroup,
         [PROVIDER_CACHE_KEY]: info.providerId,
         [SURFACE_CACHE_KEY]: info.surface,
         [OWNER_CACHE_KEY]: ownerUserId,
@@ -1043,11 +996,8 @@ async function provisionLockedBody(
     chatId: directChatId,
     // 刚铸的身份:persona 必然为空 —— 不必再去库里读。
     ...(identityCreated ? { agentIdentityFacts: { specialFocus: null } } : {}),
-    // #2347 — a freshly minted identity joins in the background (provision_taskpage_agent) and may be refused;
-    // an adopted identity's joinProjectGroup above already returned its seat (or threw).
-    ...(projectId && groupChatId
-      ? { projectContext: { projectId, projectName, projectPath: info.cwd, groupChatId, groupName: projectName, membership: identityCreated ? 'unconfirmed' as const : 'member' as const } }
-      : {}),
+    // #2347 — a freshly minted identity joins its session's group when it lands (background) and may be refused.
+    ...(sessionGroup ? { groupContext: { groupChatId: sessionGroup, path: info.cwd, membership: joinedGroup ? 'member' as const : 'unconfirmed' as const } } : {}),
     event,
   }
 }
@@ -1068,23 +1018,16 @@ async function provisionFreshLocalFirst(
     env: NodeJS.ProcessEnv
     ownerAuth: { accessToken: string; refreshToken: string; userId: string }
     roster: Awaited<ReturnType<typeof listAgents>>
-    projectId: string
     mark: ReturnType<typeof provisionStage>
     afterBinding: Promise<void>
   },
-): Promise<{ guguAgentUserId: string; displayName: string; groupChatId: string; projectName: string }> {
-  const { env, ownerAuth, roster, projectId, mark, afterBinding } = ctx
+): Promise<{ guguAgentUserId: string; displayName: string }> {
+  const { env, ownerAuth, roster, mark, afterBinding } = ctx
   const agentType = normalizeAgentType(info.providerId)
   // 设备 id 是**铸公网身份**的入参(death-bind),本机身份不需要它 —— 冷的那一次是一发云往返
   // (gugu_devices 查询,440ms 的库上实测 0.49 s)。❌ 不 await:整个交给后台那一发,连同它的失败。
   const deviceIdPromise = Promise.resolve(deps.resolveDeviceId())
   deviceIdPromise.catch(() => undefined)
-  const [projectName, mappedGroupId] = await Promise.all([
-    projectId ? resolveProjectGroupName(deps, projectId) : Promise.resolve(''),
-    projectId
-      ? readProjectGroupId(projectId, ownerAuth.userId, env).then((id) => id ?? '')
-      : Promise.resolve(''),
-  ])
   mark('identity-inputs-loaded', { rosterSize: roster.length, minting: true, localFirst: true })
   // #6396 序号只增不减:起点 = max(服务端账本记的这个前缀用到几号, 本机名册里归这个账号的最大号) + 1。
   const rosterNames = agentsForOwner(roster, ownerAuth.userId).map((a) => ({ display_name: a.name }))
@@ -1095,7 +1038,6 @@ async function provisionFreshLocalFirst(
   const displayName = uniqueAgentDisplayName(rosterNames, requested)
   noteAgentName(ownerAuth.userId, displayName, label)
   const guguAgentUserId = randomUUID()
-  const groupChatId = projectId ? (mappedGroupId || randomUUID()) : ''
   // 刚铸出来的身份必然没有私聊(@@@no-auto-dm)。
   directChatMemo.set(guguAgentUserId, { chatId: '', at: Date.now() })
   cloudStateByAgent.set(guguAgentUserId, 'pending')
@@ -1117,8 +1059,6 @@ async function provisionFreshLocalFirst(
     env,
   )
   mark('runtime-session-written')
-  // 群 id 现在就记进映射:背靠背起的下一条会话(同一把锁后面排着)拿到同一个 id,服务端撞主键改加座位。
-  if (projectId && groupChatId) await rememberProjectGroupId(projectId, groupChatId, ownerAuth.userId, env)
   mark('local-identity-ready', { localFirst: true })
 
   startCloudProvision({
@@ -1126,7 +1066,6 @@ async function provisionFreshLocalFirst(
     env,
     ownerAuth,
     sessionId: info.sessionId,
-    projectId,
     guguAgentUserId,
     displayName,
     // A name shaped `<label> <n>` is a serial name the server may lift past numbers used elsewhere (#6396).
@@ -1134,13 +1073,11 @@ async function provisionFreshLocalFirst(
     agentType,
     deviceId: deviceIdPromise,
     localPath: info.cwd || null,
-    groupName: projectId ? projectName : null,
-    groupChatId,
     afterBinding,
     provisionalLocalRow: true,
     ...(!info.replacesRemovedIdentity && deps.takeBirthGroup ? { birthGroup: () => deps.takeBirthGroup!(info.sessionId) } : {}),
   })
-  return { guguAgentUserId, displayName, groupChatId, projectName }
+  return { guguAgentUserId, displayName }
 }
 
 let cloudProvisionRetryDelaysMs: readonly number[] = [2_000, 8_000]
@@ -1159,7 +1096,6 @@ function startCloudProvision(job: {
   env: NodeJS.ProcessEnv
   ownerAuth: { accessToken: string; refreshToken: string; userId: string }
   sessionId: string
-  projectId: string
   guguAgentUserId: string
   displayName: string
   nameMode: 'serial' | 'explicit'
@@ -1167,8 +1103,6 @@ function startCloudProvision(job: {
   /** 设备 id 冷解析是一发云往返 ⇒ 它也在后台等,❌ 不挡会话。 */
   deviceId: string | Promise<string | null>
   localPath: string | null
-  groupName: string | null
-  groupChatId: string
   /** 前台把绑定盖章写完名册之后才 resolve:后台回写名册不能与前台的读-改-写撞车(实机撞出过「Agent 不存在」)。 */
   afterBinding: Promise<void>
   /**
@@ -1205,9 +1139,11 @@ function startCloudProvision(job: {
           agentType: job.agentType,
           deviceId,
           localPath: job.localPath,
-          groupName: job.groupName,
-          priorGroupChatId: job.groupChatId || null,
-          newGroupChatId: job.groupName ? randomUUID() : null,
+          // @@@group-folders Groups are never created or reserved here: the session's group exists, and the identity
+          // joins it as a birth group below.
+          groupName: null,
+          priorGroupChatId: null,
+          newGroupChatId: null,
         })
         break
       } catch (error) {
@@ -1225,31 +1161,14 @@ function startCloudProvision(job: {
     await job.afterBinding
     // The server may lift a serial past numbers used elsewhere: that is the identity's name now.
     if (minted.displayName !== job.displayName) await writeAgentName(job.guguAgentUserId, minted.displayName, 'cloud', job.env)
-    const resolved = resolveProvisionedProjectGroup(job, minted)
-    const groupChatId = resolved.groupChatId
-    if (resolved.kind === 'pending-approval') {
-      log.info(
-        { sessionId: job.sessionId, agentUserId: job.guguAgentUserId, groupChatId: job.groupChatId },
-        'project group requires approval for Agents — join request queued, agent not in the group yet',
-      )
-    } else if (resolved.kind === 'not-joined') {
-      log.warn(
-        { sessionId: job.sessionId, agentUserId: job.guguAgentUserId, groupChatId: job.groupChatId, priorGroupState: minted.priorGroupState },
-        'cloud identity created without project group membership',
-      )
-    } else if (resolved.kind === 'remapped') {
-      // 映射里的群已归档、或不是这个账号所在的群(foreign)⇒ 服务端另建了一个:映射与名册都改指新群。会话启动时拿到的旧 id 留在它的系统块里,
-      // 那是一个归档群 —— 与老链上「归档群在 provisioning 之外发生」同一形状,下次重开就对了。
-      await forgetProjectGroupId(job.projectId, job.ownerAuth.userId, job.env)
-      await rememberProjectGroupId(job.projectId, groupChatId, job.ownerAuth.userId, job.env)
-    }
-    // Born in a chat — joined now, once, while the identity is new: what reads this agent's groups waits for this
-    // work (awaitSessionpageCloudIdentity), so its first session already counts that group.
+    let groupChatId = ''
     if (job.birthGroup) {
+      const group = await job.birthGroup()
       await joinBirthGroup({
         env: job.env, accessToken: job.ownerAuth.accessToken, ownerUserId: job.ownerAuth.userId, sessionId: job.sessionId,
-        agentUserId: job.guguAgentUserId, group: await job.birthGroup(), log,
+        agentUserId: job.guguAgentUserId, group, log,
       })
+      if (group && !await sessionpageBirthGroupJoin(job.sessionId, job.env, job.ownerAuth.userId)) groupChatId = group.chatId
     }
     const current = (await listAgents(job.env, { includeGuests: true })).find((a) => a.gugu_user_id === job.guguAgentUserId)
     await updateAgent({ guguUserId: job.guguAgentUserId }, {
@@ -1267,8 +1186,6 @@ function startCloudProvision(job: {
         displayName: minted.displayName,
         renamed: minted.displayName !== job.displayName,
         groupChatId,
-        groupCreated: minted.groupCreated,
-        priorGroupState: minted.priorGroupState,
         tookMs: Date.now() - startedAt,
       },
       '#5331 cloud identity landed',
@@ -1334,37 +1251,27 @@ function startReuseBackfill(job: {
   ownerUserId: string
   sessionId: string
   agentUserId: string
-  projectId: string
-  projectName: string
+  /** The session's group the agent is not known to be in yet ('' = nothing to join). */
   groupChatId: string
   directChatId: string
   afterBinding: Promise<void>
 }): void {
   const log = createLogger('sessionpage/provision')
   const work = (async () => {
-    let { groupChatId, directChatId } = job
-    if (groupChatId) {
-      const state = await groupIsUsable(makeChatClient(job.accessToken), groupChatId)
-      if (state !== 'active') {
-        log.info(
-          { sessionId: job.sessionId, chatId: groupChatId, state },
-          '#4277 cached project group is no longer usable — re-ensuring the group for this agent',
-        )
-        groupChatId = ''
-      }
-    }
+    let { directChatId } = job
+    let groupChatId = ''
     if (!directChatId) directChatId = await findOwnerDirectChatMemoized(job.accessToken, job.agentUserId)
-    if (job.projectId && !groupChatId) {
-      groupChatId = await ensureProjectGroupMembership(
-        job.accessToken, job.ownerUserId, job.agentUserId, job.projectId, job.projectName, job.env,
-      )
+    if (job.groupChatId) {
+      await joinBirthGroup({ env: job.env, accessToken: job.accessToken, ownerUserId: job.ownerUserId, sessionId: job.sessionId,
+        agentUserId: job.agentUserId, group: { chatId: job.groupChatId }, log })
+      if (!await sessionpageBirthGroupJoin(job.sessionId, job.env, job.ownerUserId)) groupChatId = job.groupChatId
     }
-    if (groupChatId === job.groupChatId && directChatId === job.directChatId) return
+    if (!groupChatId && directChatId === job.directChatId) return
     await job.afterBinding
     const current = (await listAgents(job.env, { includeGuests: true })).find((a) => a.gugu_user_id === job.agentUserId)
     if (!current) return
     await updateAgent({ guguUserId: job.agentUserId }, {
-      cache: { ...(current.cache ?? {}), [DIRECT_CHAT_CACHE_KEY]: directChatId, [GROUP_CACHE_KEY]: groupChatId },
+      cache: { ...(current.cache ?? {}), [DIRECT_CHAT_CACHE_KEY]: directChatId, ...(groupChatId ? { [GROUP_CACHE_KEY]: groupChatId } : {}) },
     }, job.env)
     log.info(
       { sessionId: job.sessionId, agentUserId: job.agentUserId, groupChatId, directChatId: Boolean(directChatId) },
@@ -1463,23 +1370,7 @@ async function unparkSessionpageAgentBinding(
   return { ...agent, cache }
 }
 
-/** Resolve the project's display name for its group; best-effort — a lookup hiccup must not fail session
- *  start, so fall back to a stable name derived from the project id. */
-async function resolveProjectGroupName(deps: SessionpageProvisionDeps, projectId: string): Promise<string> {
-  let name: string | null | undefined = null
-  try {
-    name = await deps.resolveProjectName?.(projectId)
-  } catch {
-    // fall through to fallback
-  }
-  return projectGroupDisplayName(name, projectId)
-}
 
-/** 项目群的群名:项目名(截 60 字);没有名字就按项目 id 起一个稳定的。#7341 项目群绑定建群时用同一个口径。 */
-export function projectGroupDisplayName(projectName: string | null | undefined, projectId: string): string {
-  if (projectName && projectName.trim()) return projectName.trim().slice(0, 60)
-  return `${FALLBACK_PROJECT_GROUP_NAME} ${projectId.slice(0, 8)}`
-}
 
 /**
  * spec ⑨「项目 = 群」:resolve the gugu group mirroring THIS session-page project (one group per project) and make
@@ -1563,17 +1454,6 @@ export async function openOwnerDirectChatForAgent(
   return chatId
 }
 
-async function ensureProjectGroupMembership(
-  accessToken: string,
-  ownerUserId: string,
-  guguAgentUserId: string,
-  projectId: string,
-  groupName: string,
-  env: NodeJS.ProcessEnv,
-): Promise<string> {
-  const prepared = await prepareProjectGroup(accessToken, ownerUserId, projectId, env)
-  return joinProjectGroup(prepared, guguAgentUserId, groupName)
-}
 
 /** 「这个项目的群在哪、还能不能用」—— 只依赖项目,不依赖 agent。 */
 interface PreparedProjectGroup {
@@ -1593,121 +1473,14 @@ interface PreparedProjectGroup {
   reservedGroupId: string
 }
 
-/**
- * 启动提速 —— 入群拆成两拍。这一拍(查映射 + 群还在不在)只看项目、**只读**,与铸身份并行跑;
- * 下一拍(加座位 / 建群)才需要 agent id。串在一起时它是关键路径上又一次云往返。
- */
-async function prepareProjectGroup(
-  accessToken: string,
-  ownerUserId: string,
-  projectId: string,
-  env: NodeJS.ProcessEnv,
-): Promise<PreparedProjectGroup> {
-  const chat = makeChatClient(accessToken)
-  // 群的寿命属于项目,不属于某个 agent 实例 → 只问那份与 agent 生命周期无关的映射(老数据只记在 roster 上的群,
-  // 映射第一次被读时就迁了进去,见 sessionpage-project-groups 的 roster-migration)。
-  const priorGroupId = await readProjectGroupId(projectId, ownerUserId, env)
-  const priorState = priorGroupId ? await groupIsUsable(chat, priorGroupId) : 'missing'
-  return {
-    chat, ownerUserId, projectId, env,
-    activeGroupId: priorGroupId && priorState === 'active' ? priorGroupId : '',
-    archivedGroupId: priorGroupId && priorState === 'archived' ? priorGroupId : '',
-    reservedGroupId: priorGroupId && priorState === 'missing' ? priorGroupId : '',
-  }
-}
 
-async function joinProjectGroup(
-  prepared: PreparedProjectGroup,
-  guguAgentUserId: string,
-  groupName: string,
-): Promise<string> {
-  const { chat, ownerUserId, projectId, env } = prepared
-  const priorGroupId = prepared.activeGroupId
-  if (prepared.archivedGroupId) {
-    // 群在 provisioning 之外被归档了(见 groupIsUsable):映射忘掉,下面按「没有群」另建一个。
-    createLogger('sessionpage/provision').info(
-      { projectId, chatId: prepared.archivedGroupId },
-      '#4277 mapped project group is archived — forgetting the mapping and creating a fresh group',
-    )
-    await forgetProjectGroupId(projectId, ownerUserId, env)
-  }
-  const takeSeat = async (groupId: string): Promise<string> => {
-    const admin = createGroupAdmin(chat, ownerUserId)
-    // 任务 agent 进项目群坐任务座位:主动、不发入群提示(gugu-dev#181)。
-    const result = await admin.addAgent(groupId, guguAgentUserId, { asTask: true })
-    if (result.status === 'pending_approval') throw new Error('Project Agent join requires approval')
-    await rememberProjectGroupId(projectId, groupId, ownerUserId, env)
-    return groupId
-  }
-  if (priorGroupId) return takeSeat(priorGroupId)
-
-  const createGroup = (groupId: string) => chat.rpc('create_gugu_group', {
-    p_chat_id: groupId,
-    p_name: groupName,
-    p_owner_user_id: ownerUserId,
-    p_initial_members: [{ user_id: guguAgentUserId, role: 'member' }],
-    p_default_agent_type: null,
-    p_group_prompt: null,
-  })
-  let chatId = prepared.reservedGroupId || randomUUID()
-  let { error } = await createGroup(chatId)
-  if (error && prepared.reservedGroupId && isUniqueViolation(error)) {
-    // #7341 预留的 id 刚被占了:另一台机器 / 背靠背的另一条会话刚用它把群建出来(⇒ 加座位),或它是一个
-    // 这个账号看不见的群(⇒ 另建、改指映射)。与服务端 provision_taskpage_agent 的撞主键 / 'foreign' 两支同处置。
-    if ((await groupIsUsable(chat, chatId)) === 'active') return takeSeat(chatId)
-    createLogger('sessionpage/provision').warn(
-      { projectId, chatId },
-      '#7341 reserved project group id is taken by a group this account cannot see — creating a fresh group',
-    )
-    chatId = randomUUID()
-    ;({ error } = await createGroup(chatId))
-  }
-  if (error) throw new Error(`create project group failed: ${error.message}`)
-  // 建群时它是初始成员(建群不发入群提示);任务座位是主动档,与 takeSeat、provision_taskpage_agent 同一档。
-  await createGroupAdmin(chat, ownerUserId).setListenMode(chatId, guguAgentUserId, 'active')
-  await rememberProjectGroupId(projectId, chatId, ownerUserId, env)
-  return chatId
-}
 
 /** Postgres 撞主键(23505)。PostgREST 把 code 带在错误上;老一些的形状只有文字。 */
 export function isUniqueViolation(error: { code?: string | null; message?: string | null }): boolean {
   return error.code === '23505' || /duplicate key|unique constraint/i.test(error.message ?? '')
 }
 
-/**
- * 映射里的群还能不能用:在、且 active。
- *
- * #4277 只判「在不在」不够:群会在 provisioning 之外被归档 —— remove_owned_agent 摘掉一个群里最后一个
- * agent 时会把群归档(#1982 的成员数下限),回收器的群步骤不知道,映射还指着它;下一条会话拿到这个归档群
- * 「加座位」,agent 就进了一个通讯录不显示的群(真机 B 轮:项目 hello 的群 05:51 被归档,新铸的三个 agent
- * 全塞进去,owner 在通讯录看不到群)。归档的按「不能用」处理:忘掉映射、另建。
- * 真查询出错要抛(❌ 静默再铸一个重复群);data=null 且无错 = 群被删了 → 重建。
- */
-async function groupIsUsable(chat: ReturnType<typeof makeChatClient>, chatId: string): Promise<'active' | 'archived' | 'missing'> {
-  const { data, error } = await chat.from('chats').select('id, status').eq('id', chatId).maybeSingle()
-  if (error) throw new Error(`project group existence check failed: ${error.message}`)
-  if (!data) return 'missing'
-  return (data as { status?: string | null }).status === 'archived' ? 'archived' : 'active'
-}
 
-/**
- * 一次往返供给回来之后,这个 agent 实际在哪个项目群里(名册记这个)。
- *  · pending_approval:项目群开了「Agent 加入需审批」而账号不是管理员 ⇒ 进了待审请求、这次不在群里;
- *    映射照旧指着项目群(批准后再开会话即在群里),名册 ❌ 记它在群里。
- *  · 入群失败:身份已铸成,空群返回值为准;映射保留,名册不记群。
- *  · 服务端另建了群(映射的群已归档 / foreign)⇒ 映射与名册改指新群。
- */
-export function resolveProvisionedProjectGroup(
-  job: { groupName?: string | null; groupChatId: string },
-  minted: { groupChatId: string; priorGroupState: string },
-): { kind: 'pending-approval' | 'not-joined' | 'remapped' | 'unchanged'; groupChatId: string } {
-  if (minted.priorGroupState === 'pending_approval') return { kind: 'pending-approval', groupChatId: '' }
-  if (job.groupName && !minted.groupChatId) return { kind: 'not-joined', groupChatId: '' }
-  if (job.groupName && minted.groupChatId && minted.groupChatId !== job.groupChatId) {
-    return { kind: 'remapped', groupChatId: minted.groupChatId }
-  }
-  return { kind: 'unchanged', groupChatId: job.groupChatId }
-}
 
 /**
  * Rebuild persisted session-page identity bindings at boot. Every roster conversation stays represented behind
