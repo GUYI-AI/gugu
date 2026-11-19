@@ -11,16 +11,30 @@
  * Every main-chain line between that earlier child and the new prompt belongs to the abandoned branch, because a
  * transcript has one writer and the old branch stops growing at the rewind. Sidechain lines are not on the main chain.
  * It reads nothing itself: the reader feeds it the records it decodes anyway.
+ *
+ * A revert through claude-agent-acp (`_session/revert`) writes one more line at the point kept: a user line whose text is
+ * `REVERT_MARK`, so the revert is on disk before anything is sent again. That line is a person prompt hanging off a node
+ * that already had a child, so it opens the new branch by itself, and the turns removed are abandoned even when nothing
+ * was sent after the revert. It is not something anyone said: it and the synthetic answer Claude Code gives it
+ * (`No response requested.`) make no entries.
  */
+/** claude-agent-acp's `REVERT_MARK` (1.7.1); a test compares it with the installed bridge. */
+export const CLAUDE_REVERT_MARK = '(The conversation was stepped back to this point. The turns after it were removed.)';
+
 export class ClaudeBranches {
   private readonly order: string[] = [];
   private readonly position = new Map<string, number>();
   private readonly firstChild = new Map<string, string>();
   readonly abandoned = new Set<string>();
+  private readonly marks = new Set<string>();
 
-  see(record: Record<string, unknown>): void {
+  /** Takes in one record; true = it is a revert's own line, which makes no entries. */
+  see(record: Record<string, unknown>): boolean {
     const uuid = record.uuid;
-    if (typeof uuid !== 'string' || record.isSidechain === true || this.position.has(uuid)) return;
+    if (typeof uuid !== 'string' || record.isSidechain === true) return false;
+    const own = isRevertMark(record) || (isSynthetic(record) && this.marks.has(record.parentUuid as string));
+    if (own) this.marks.add(uuid);
+    if (this.position.has(uuid)) return own;
     const parent = typeof record.parentUuid === 'string' ? record.parentUuid : null;
     const earlier = parent ? this.firstChild.get(parent) : undefined;
     if (parent && earlier === undefined) this.firstChild.set(parent, uuid);
@@ -30,7 +44,19 @@ export class ClaudeBranches {
     }
     this.position.set(uuid, this.order.length);
     this.order.push(uuid);
+    return own;
   }
+}
+
+function isRevertMark(record: Record<string, unknown>): boolean {
+  if (record.type !== 'user') return false;
+  const content = (record.message as { content?: unknown } | undefined)?.content;
+  if (content === CLAUDE_REVERT_MARK) return true;
+  return Array.isArray(content) && content.length === 1 && (content[0] as { text?: unknown })?.text === CLAUDE_REVERT_MARK;
+}
+
+function isSynthetic(record: Record<string, unknown>): boolean {
+  return record.type === 'assistant' && (record.message as { model?: unknown } | undefined)?.model === '<synthetic>';
 }
 
 function isPersonPrompt(record: Record<string, unknown>): boolean {

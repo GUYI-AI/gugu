@@ -340,8 +340,9 @@ class ClaudeJsonlSource implements SessionRecordSource {
   }
 
   private decodeLine(record: Record<string, unknown>): RecordEntry[] {
-    this.branches.see(record);
+    const revertsOwn = this.branches.see(record);
     const entries = this.decodeRecord(record);
+    if (revertsOwn) return [];
     if (typeof record.uuid === 'string') for (const entry of entries) this.lineOf.set(entry, record.uuid);
     return entries;
   }
