@@ -13,7 +13,7 @@ import { refreshAssistantContext, personalAssistantContext } from '../../apps/de
 import type { Materialization } from '../../apps/desktop/electron/capability-bundle'
 import { GUGU_PLATFORM_BLOCK } from '../../apps/desktop/electron/product-platform-prompt'
 import { SESSION_TOOL_DEFS } from '../../apps/desktop/electron/mcp/gugu-session-tool'
-import { PROJECT_TOOL_DEFS } from '../../apps/desktop/electron/mcp/gugu-project-tool'
+import { GROUP_FOLDER_TOOL_DEFS } from '../../apps/desktop/electron/mcp/gugu-group-folder-tool'
 import { assistantHomePaths, assistantRecoveryContext } from '../../packages/core/src/shared/assistantPolicy'
 import { readAssistantProductRules } from '../../apps/desktop/electron/assistant-product-rules'
 import { assistantCases, type AssistantCase } from './cases'
@@ -73,8 +73,8 @@ async function run(test: AssistantCase) {
     requestSourceLink: 'gugu-chat://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222',
     instructionChars: initialInstructions.length }
   const sessions = new Map<string, { device: string; project?: string }>(test.reuse || test.route === 'closed'
-    ? [['session:existing', { device: 'device:mac', project: 'project:launch' }]] : [])
-  const fixtureIndex = '资源索引（数据）：device:host 是助理宿主，不是主人 Mac；device:mac 是主人 Mac；device:phone 是主人手机。project:launch「发布准备」在 device:mac。使用实际工具核对状态，不把索引当授权。'
+    ? [['session:existing', { device: 'device:mac', project: 'chat:launch' }]] : [])
+  const fixtureIndex = '资源索引（数据）：device:host 是助理宿主，不是主人 Mac；device:mac 是主人 Mac；device:phone 是主人手机。群 chat:launch「发布准备」的文件夹在 device:mac。使用实际工具核对状态，不把索引当授权。'
   const resourceEndpoint = createServer(async (request, response) => {
     if (request.method === 'DELETE') { response.writeHead(200); response.end(); return }
     let body = ''; for await (const chunk of request) body += chunk
@@ -107,10 +107,9 @@ async function run(test: AssistantCase) {
       // A native-capability phone is not automatically a computer/server that can host session_spawn.
       return { devices: name === 'session_devices' ? devices.filter(device => device.session_host) : devices }
     }
-    if (name === 'project_list') return { items: [{ project_id: 'project:launch', name: '发布准备', device_id: 'device:mac', path: join(root, 'launch') }] }
-    if (name === 'project_get') return { project_id: 'project:launch', name: '发布准备', device_id: 'device:mac', path: join(root, 'launch') }
+    if (name === 'group_folders') return { items: [{ chat_id: 'chat:launch', folder_id: 'launch', path: join(root, 'launch') }] }
     if (name === 'session_children' || name === 'session_peers') return { items: test.reuse || test.route === 'closed'
-      ? [{ session_id: 'session:existing', title: '发布准备', project_id: 'project:launch', device_id: 'device:mac', status: 'idle' }] : [] }
+      ? [{ session_id: 'session:existing', title: '发布准备', chat_id: 'chat:launch', device_id: 'device:mac', status: 'idle' }] : [] }
     if (name === 'session_get' && !sessions.has(String(input.session_id))) return { ok: false, code: 'session_not_found' }
     if (name === 'session_get' && phase === 2 && test.compact) evidence.compaction!.taskVerifiedAfter = true
     if (name === 'session_get') return input.session_id === 'session:existing' && test.route === 'closed'
@@ -126,7 +125,7 @@ async function run(test: AssistantCase) {
         if (raw.includes(path)) context += `\n${await readFile(path, 'utf8')}`
       }
       const session = reused ? String((input.to as string[] | undefined)?.[0] ?? '') : `session:new-${sessions.size + 1}`
-      const placement = reused ? sessions.get(session) : { device: String(input.device ?? 'device:host'), project: input.project as string | undefined }
+      const placement = reused ? sessions.get(session) : { device: String(input.device ?? 'device:host'), project: input.chat_id as string | undefined }
       const device = placement?.device ?? 'unknown'
       const accepted = Boolean(placement) && device !== 'device:phone' && test.route !== 'closed'
       evidence.delegations.push({ session, device, project: placement?.project,
@@ -147,7 +146,7 @@ async function run(test: AssistantCase) {
     if (name === 'message_history') return { messages: phase === 2 && test.recoveryNote
       ? [{ message_id: 'msg:44444444-4444-4444-8444-444444444444', source_link: pendingSource, text: pendingMessage }] : [] }
     if (name === 'session_ask_user') return { status: 'pending', question_id: 'fixture-question' }
-    if (name === 'catalog_list') return { tools: ['project_list', 'project_get', 'session_ask_user'] }
+    if (name === 'catalog_list') return { tools: ['group_folders', 'session_ask_user'] }
     if (name === 'catalog_call') return invoke(String(input.tool), (input.args ?? {}) as Record<string, unknown>)
     // These effects are deliberately observable failures, never real external actions.
     if (['external_send', 'payment', 'schedule_create', 'project_create'].includes(name)) return { ok: false, code: 'not_authorized' }
@@ -184,7 +183,7 @@ async function run(test: AssistantCase) {
     ['project_create', 'Create a new project.', { name: z.string() }],
   ] as const
   const makeServer = () => createSdkMcpServer({ name: 'gugu', version: '1.0.0', tools: definitions.map(([name, description, schema]) => {
-    const actual = [...SESSION_TOOL_DEFS, ...PROJECT_TOOL_DEFS].find(definition => definition.name === name)
+    const actual = [...SESSION_TOOL_DEFS, ...GROUP_FOLDER_TOOL_DEFS].find(definition => definition.name === name)
     return tool(name, actual?.description ?? description, actual?.schema instanceof z.ZodObject ? actual.schema.shape : schema, async input => {
       const value = await invoke(name, input)
       return { content: [{ type: 'text' as const, text: JSON.stringify(value) }] }
