@@ -7,7 +7,8 @@
  * 应用退出时没结的票由平台票账本统一结清(model-access 的 ledger),这里 ❌ 另记一份。
  */
 import * as electron from 'electron'
-import type { RuntimeAuthProvider } from '@gugu/core'
+import { requireRuntimeAuth, type RuntimeAuthProvider } from '@gugu/core'
+import { assertTeamTaskSession, readTeamModelContext } from './team-model-funding'
 import {
   issuePlatformModelAccess,
   modelAccessFailureReason,
@@ -48,20 +49,26 @@ function netFetch(url: string, init: RequestInit): Promise<Response> {
   return fetcher ? fetcher(url, init) : fetch(url, init)
 }
 
-async function ticketFor(authProvider: RuntimeAuthProvider, agentUserId: string): Promise<Held> {
+async function ticketFor(authProvider: RuntimeAuthProvider, agentUserId: string, previous?: IssuedModelAccess): Promise<Held> {
   const current = held.get(agentUserId)
+  const original = current?.access ?? previous
+  if (original?.teamTask) {
+    try { assertTeamTaskSession(await requireRuntimeAuth(authProvider, 'team voice note'), original.teamTask) }
+    catch (cause) { if (current) void retire(authProvider, current); throw cause }
+  }
   if (current && Date.parse(current.access.expiresAt) - serverNow() > TICKET_MARGIN_MS) return current
   const pending = issuing.get(agentUserId)
   if (pending) return pending
   const next = (async () => {
-    if (current) retire(authProvider, current)
     const access = await issuePlatformModelAccess({
       authProvider,
       agentUserId,
       engineId: VOICE_NOTE_ENGINE_ID,
       modelId: VOICE_NOTE_MODEL_ID,
       protocol: VOICE_NOTE_MODEL_PROTOCOL,
+      ...(original?.teamTask ? { sessionId: original.teamTask.funding.task_id, keepFromAccessSessionId: original.accessSessionId } : {}),
     })
+    if (current) void retire(authProvider, current)
     const entry: Held = { access, idle: null, busy: 0, retired: false }
     held.set(agentUserId, entry)
     return entry
@@ -160,10 +167,12 @@ export async function transcribeVoiceNoteSegment(
   // 网络断一下 / 限流 / 上游 5xx 再试一次;票失效(401)换一张再试一次;网关明说不给不重试。
   let retried = false
   let reissued = false
+  let originalAccess: IssuedModelAccess | undefined
   for (;;) {
     let entry: Held
     try {
-      entry = await ticketFor(authProvider, request.agentUserId)
+      entry = await ticketFor(authProvider, request.agentUserId, originalAccess)
+      originalAccess ??= entry.access
     } catch (error) {
       const code = modelAccessFailureReason(error)
       log.warn({ err: error, code }, '语音笔记签票失败')
@@ -178,6 +187,16 @@ export async function transcribeVoiceNoteSegment(
       if (entry.retired) {
         if (entry.busy === 0) void retire(authProvider, entry)
       } else armIdle(authProvider, request.agentUserId, entry)
+    }
+    if (!reply.ok && entry.access.teamTask && (reply.code === 'refused' || reply.code === 'ticket-expired')) {
+      try {
+        const auth = await requireRuntimeAuth(authProvider, 'team voice note refusal')
+        assertTeamTaskSession(auth, entry.access.teamTask)
+        const context = await readTeamModelContext(auth, netFetch)
+        if (context.teamId !== entry.access.teamTask.funding.team_id || context.memberId !== entry.access.teamTask.funding.member_id) return { ok: false, code: 'service-unavailable', message: '' }
+        if (context.stopReason) return { ok: false, code: context.stopReason === 'team_credits_exhausted' ? 'team-credits-exhausted' : 'team-monthly-cap-reached', message: '' }
+        if (reply.code === 'refused') return { ok: false, code: 'service-unavailable', message: '' }
+      } catch { return { ok: false, code: 'service-unavailable', message: '' } }
     }
     if (reply.ok || reply.code === 'refused' || reply.code === 'failed') return reply
     if (reply.code === 'ticket-expired' && !reissued) {

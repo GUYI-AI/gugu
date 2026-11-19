@@ -1,5 +1,7 @@
 import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
+import { codexStartupKind, isCodexProviderStartupKind } from '@gugu/core/local/codex-startup-failure.mjs'
+import { sessionStartupFailureCopy } from '@/session/renderer/features/sessions/session-input-failure-copy'
 
 const CONVERSATION_FAILURES = {
   dm_friendship_required: 'humanDm.friendshipRequired',
@@ -28,6 +30,8 @@ export function isDmFriendshipRequired(error: unknown): boolean {
 
 /** The existing UI error boundary preserves the cause and removes sensitive text. */
 export function messageForUser(error: unknown): string {
+  const kind = codexStartupKind(error)
+  if (isCodexProviderStartupKind(kind)) return sessionStartupFailureCopy({ startupReason: kind }, translateSessionMessage)
   const line = isDmFriendshipRequired(error) ? 'dm_friendship_required' : safeFailureLine(String((error as Error)?.message ?? error))
   const key = CONVERSATION_FAILURES[line as keyof typeof CONVERSATION_FAILURES]
   return key ? translateSessionMessage(key) : line

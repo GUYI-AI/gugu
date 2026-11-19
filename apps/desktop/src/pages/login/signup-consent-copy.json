@@ -1,0 +1,20 @@
+{
+  "zh": [
+    "咕咕的服务器在中国香港",
+    "接收你数据的是：咕咕（阿里云香港托管），联系邮箱 yiheyang1@gmail.com。",
+    "存在那里的数据：你的账号（邮箱）、聊天消息、上传的文件、积分和订单记录。",
+    "你在消息和文件里写的身份证号、病情、银行卡号等敏感信息，也会存在那里。不存在那里，就没法给你提供咕咕；万一泄露，可能给你造成财产损失或名誉损害。",
+    "用途：只用来给你提供咕咕的服务。你下载附件时，会在中国内地以外离你近的阿里云节点临时缓存。",
+    "你的权利：随时可以查看、导出、更正或删除你的数据，也可以注销账号，发邮件到上面的邮箱就行。保存多久见《隐私政策》。",
+    "未满 14 周岁的，请让父母或其他监护人来点同意。"
+  ],
+  "en": [
+    "Gugu’s servers are in Hong Kong, China",
+    "Your data is received by Gugu (hosted on Alibaba Cloud in Hong Kong). Contact email: yiheyang1@gmail.com.",
+    "Data stored there: your account (email address), chat messages, uploaded files, credit records and order records.",
+    "Sensitive information you include in messages and files, such as identity document numbers, medical conditions and bank card numbers, is also stored there. We cannot provide Gugu without storing it there. A data leak could cause financial loss or harm to your reputation.",
+    "Purpose: only to provide Gugu’s services to you. When you download attachments, they are temporarily cached at an Alibaba Cloud node close to you outside mainland China.",
+    "Your rights: at any time, you can view, export, correct or delete your data, or close your account. Just email the address above. See the Privacy Policy for retention periods.",
+    "If you are under 14, ask a parent or other guardian to give consent."
+  ]
+}

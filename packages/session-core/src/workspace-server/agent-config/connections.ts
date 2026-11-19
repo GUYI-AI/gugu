@@ -31,6 +31,11 @@ export const createHarnessConnectionSchema = z.object({
   apiKey: z.string().trim().min(1).max(8192).optional(),
 });
 
+export const renameHarnessConnectionSchema = harnessConnectionTargetSchema.extend({
+  name: z.string().trim().min(1).max(80),
+});
+export type RenameHarnessConnection = z.infer<typeof renameHarnessConnectionSchema>;
+
 export type HarnessConnection = z.infer<typeof harnessConnectionSchema>;
 export type CreateHarnessConnection = z.infer<typeof createHarnessConnectionSchema>;
 

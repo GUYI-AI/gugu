@@ -215,7 +215,11 @@ describe('profile_whoami / message_conversations against the migrated database',
     await db.query('INSERT INTO identity.friendships (user_a_id,user_b_id) VALUES ($1,$2)', [lo, hi])
     await db.query('INSERT INTO identity.contact_overrides (owner_user_id,contact_user_id,alias) VALUES ($1,$2,$3)', [owner, friend, 'Old Wang'])
     const friendDm = await dm(owner, friend)
+    // A retained chat can outlive friendship; opening a new human DM requires it.
+    const [formerLo, formerHi] = [owner, stranger].sort()
+    await db.query('INSERT INTO identity.friendships (user_a_id,user_b_id) VALUES ($1,$2)', [formerLo, formerHi])
     const strangerDm = await dm(owner, stranger)
+    await db.query('DELETE FROM identity.friendships WHERE user_a_id=$1 AND user_b_id=$2', [formerLo, formerHi])
     await db.query(`INSERT INTO chat.messages (id,chat_id,sender_user_id,content,content_type,created_at)
       VALUES ($1,$2,$3,'see you at noon','text',clock_timestamp())`, [randomUUID(), friendDm, friend])
 
