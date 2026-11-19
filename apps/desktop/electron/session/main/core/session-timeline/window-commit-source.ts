@@ -156,11 +156,25 @@ export async function readWindowCommitSourceChunk(directory: string, binding: Bi
   if (source.version === 2) {
     await assertWindowCommitSource(directory, binding, source);
     const file = await open(sourcePath(directory, binding), 'r');
-    let bytes: Buffer = Buffer.alloc(0);
+    let bytes: Buffer = Buffer.alloc(0), used = 0, failed = false, failure: unknown;
     try {
       const current = await file.stat({ bigint: true });
       if (current.size !== BigInt(source.storedBytes!) || !same(physical(current), source.physical)) throw new Error('Shared source changed before read');
-      await budget.read('indexBytes', source.storedBytes!, async () => { bytes = await file.readFile(); return bytes.length; });
+      await budget.read('indexBytes', source.storedBytes!, async () => {
+        bytes = Buffer.alloc(source.storedBytes!);
+        try {
+          while (used < bytes.length) {
+            signal?.throwIfAborted();
+            const result = await file.read(bytes, used, bytes.length - used, used);
+            if (!result.bytesRead) throw new Error('Shared source changed while reading');
+            used += result.bytesRead;
+          }
+        } catch (error) { failed = true; failure = error; }
+        return used;
+      });
+      if (failed) throw failure;
+      const after = await file.stat({ bigint: true });
+      if (after.size !== current.size || !same(physical(after), source.physical)) throw new Error('Shared source changed while reading');
     } finally { await file.close(); }
     if (createHash('sha256').update(bytes).digest('hex') !== source.sha256) throw new Error('Shared source descriptor changed');
     const value = JSON.parse(bytes.toString('utf8')) as SharedSource;
