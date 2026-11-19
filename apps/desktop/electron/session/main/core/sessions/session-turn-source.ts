@@ -18,6 +18,20 @@ const escape = (text: string, layers: number) => {
 function escapedText(input: Uint8Array, layers: number, range?: { start: number; end: number }): { bytes: number; value?: Buffer } {
   const expansion = 2 ** layers;
   if (!Number.isSafeInteger(layers) || layers < 0 || !Number.isSafeInteger(expansion)) throw new Error('Invalid canonical JSON escape');
+  if (!layers) {
+    if (range && (!Number.isSafeInteger(range.start) || !Number.isSafeInteger(range.end)
+      || range.start < 0 || range.end < range.start || range.end > input.byteLength)) throw new Error('Invalid escaped text range');
+    return { bytes: input.byteLength, value: range ? Buffer.from(input.subarray(range.start, range.end)) : undefined };
+  }
+  if (!range) {
+    // Source construction needs the length, not the expanded body. Scan the two ASCII bytes natively.
+    const bytes = Buffer.from(input.buffer, input.byteOffset, input.byteLength);
+    let special = 0;
+    for (const byte of [34, 92]) for (let at = bytes.indexOf(byte); at !== -1; at = bytes.indexOf(byte, at + 1)) special++;
+    const length = bytes.length + special * (expansion - 1);
+    if (!Number.isSafeInteger(length)) throw new Error('Canonical JSON length exceeds addressable bytes');
+    return { bytes: length };
+  }
   const output = range ? Buffer.alloc(range.end - range.start) : undefined;
   let offset = 0, written = 0;
   for (const byte of input) {

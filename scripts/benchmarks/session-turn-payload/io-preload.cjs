@@ -17,7 +17,7 @@ const size = (value, encoding) => typeof value === 'string' ? Buffer.byteLength(
 const open = fs.openSync.bind(fs), close = fs.closeSync.bind(fs);
 fs.openSync = (...args) => { const fd = open(...args); descriptors.set(fd, tracked(args[0])); return fd; };
 fs.closeSync = fd => { try { return close(fd); } finally { descriptors.delete(fd); } };
-const writeFile = fs.writeFileSync.bind(fs), read = fs.readSync.bind(fs), sync = fs.fsyncSync.bind(fs);
+const writeFile = fs.writeFileSync.bind(fs), read = fs.readSync.bind(fs), sync = fs.fsyncSync.bind(fs), syncAsync = fs.fsync.bind(fs);
 const writeSync = fs.writeSync.bind(fs);
 fs.writeSync = (...args) => { const count = writeSync(...args); if (active && tracked(args[0])) { counters.writtenBytes += count; counters.writeCalls++; } return count; };
 fs.writeFileSync = (file, data, options) => {
@@ -29,6 +29,10 @@ fs.writeFileSync = (file, data, options) => {
 };
 fs.readSync = (...args) => { const count = read(...args); if (active && tracked(args[0])) { counters.readBytes += count; counters.readCalls++; } return count; };
 fs.fsyncSync = fd => { const result = sync(fd); if (active && tracked(fd)) counters.syncCalls++; return result; };
+fs.fsync = (fd, callback) => syncAsync(fd, error => {
+  if (!error && active && tracked(fd)) counters.syncCalls++;
+  callback(error);
+});
 const promiseOpen = promises.open.bind(promises);
 promises.open = async (...args) => {
   const file = await promiseOpen(...args);

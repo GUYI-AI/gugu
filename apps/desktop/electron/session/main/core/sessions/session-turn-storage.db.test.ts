@@ -71,6 +71,21 @@ describe('versioned session turn storage', () => {
     expect(fixture.sqlite.prepare('SELECT max(length(CAST(value AS BLOB))) n FROM session_turn_fields').get()).toMatchObject({ n: expect.any(Number) });
   });
 
+  it('does not attempt object or edge inserts again when a successful writer settles', async () => {
+    fixture.sqlite.exec(`CREATE TEMP TABLE payload_insert_attempts(kind TEXT);
+      CREATE TEMP TRIGGER count_payload_object BEFORE INSERT ON session_turn_payload_objects
+        BEGIN INSERT INTO payload_insert_attempts VALUES('object'); END;
+      CREATE TEMP TRIGGER count_payload_edge BEFORE INSERT ON session_turn_payload_edges
+        BEGIN INSERT INTO payload_insert_attempts VALUES('edge'); END;`);
+    const original = turn();
+    const row = await withTurnPayloadWrite(fixture.sqlite, () => insert(original, false));
+    expect(readSessionTurn(fixture.sqlite, row)).toEqual(original);
+    for (const [kind, table] of [['object', 'session_turn_payload_objects'], ['edge', 'session_turn_payload_edges']]) {
+      const attempts = fixture.sqlite.prepare('SELECT count(*) n FROM payload_insert_attempts WHERE kind=?').get(kind);
+      expect(attempts).toEqual(fixture.sqlite.prepare(`SELECT count(*) n FROM ${table}`).get());
+    }
+  });
+
   it('updates a small field without rewriting data, static image bytes or searchable message rows', () => {
     const value = turn(), row = insert(value, false), files = turnPayloadFiles(fixture.sqlite);
     const before = files.counters.writtenBytes;

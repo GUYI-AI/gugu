@@ -1,6 +1,8 @@
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm, readdir } from 'node:fs/promises';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type Database from 'better-sqlite3';
@@ -41,7 +43,7 @@ describe('actual canonical writer capture', () => {
     fixture.sqlite.exec("INSERT INTO projects(id,name,path) VALUES('p','P','/fixture'); INSERT INTO sessions(id,project_id) VALUES('c','p')");
     root = await mkdtemp(join(tmpdir(), 'canonical-source-'));
   });
-  afterEach(async () => { vi.restoreAllMocks(); vi.clearAllMocks(); fixture?.close(); state.db = undefined; state.sqlite = undefined; if (root) await rm(root, { recursive: true, force: true }); });
+  afterEach(async () => { vi.restoreAllMocks(); syncBuiltinESMExports(); vi.clearAllMocks(); fixture?.close(); state.db = undefined; state.sqlite = undefined; if (root) await rm(root, { recursive: true, force: true }); });
   const settled = () => vi.mocked(events.emit).mock.calls.filter(([channel]) => channel.name === 'session:turn-settled').map(([, value]) => (value as { status: string }).status);
   function capture(sequence: number, phases: string[], completed: (receipt: WindowCommitReceipt | null) => Promise<void> = async () => {}) {
     return { directory: root, scope: 'a'.repeat(64), cursor: cursor(sequence),
@@ -72,6 +74,31 @@ describe('actual canonical writer capture', () => {
     expect(phases).toEqual(['source_durable', 'canonical_committed', 'owner-publication']);
     expect(serializations).toBe(0); expect(committed).toHaveBeenCalledTimes(1);
     expect(createWindowCommitReceipts(fixture.sqlite).byReference('c', 'source:real')).toMatchObject({ rowId: 'c:0', storedSeq: 0, firstCommitCursor: cursor(3) });
+  });
+
+  it('publishes neither canonical history nor its receipt until the final payload file is synchronized', async () => {
+    const pending: Array<{ fd: number; callback: (error: NodeJS.ErrnoException | null) => void }> = [];
+    vi.spyOn(fs, 'fsync').mockImplementation((fd, callback) => { pending.push({ fd, callback }); });
+    syncBuiltinESMExports();
+    const value = turn('two pictures'), phases: string[] = [], committed = vi.fn(async () => {});
+    for (const byte of [1, 2]) value.items.push({ kind: 'mcp-tool-call', id: `picture:${byte}`, seq: byte,
+      toolCallId: `picture:${byte}`, title: 'picture', tool: 'picture', status: 'done',
+      images: [{ mimeType: 'image/png', data: Buffer.alloc(128 * 1024, byte).toString('base64') }] });
+    const write = persistCommittedTurn({ sessionId: 'c', source: 'live', turn: value, windowCapture: capture(3, phases, committed) });
+    await vi.waitFor(() => expect(pending).toHaveLength(2));
+    const unpublished = () => {
+      expect(fixture.sqlite.prepare('SELECT id FROM session_turns').all()).toEqual([]);
+      expect(fixture.sqlite.prepare('SELECT source_id FROM session_window_commit_receipts').all()).toEqual([]);
+      expect(phases).toEqual([]); expect(committed).not.toHaveBeenCalled();
+    };
+    unpublished();
+    const finish = () => { const call = pending.shift()!; fs.fsyncSync(call.fd); call.callback(null); };
+    finish(); await Promise.resolve(); unpublished();
+    finish(); await write;
+    expect(phases).toEqual(['source_durable', 'canonical_committed']); expect(committed).toHaveBeenCalledTimes(1);
+    const row = fixture.sqlite.prepare('SELECT id,data FROM session_turns').get() as { id: string; data: string };
+    expect(readSessionTurn(fixture.sqlite, row).items.slice(1).map(item => 'images' in item ? item.images : null))
+      .toEqual(value.items.slice(1).map(item => 'images' in item ? item.images : null));
   });
 
   it('keeps writing after upgrading from a build that left a committed receipt and its intent but wrote no source catalog', async () => {

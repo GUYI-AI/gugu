@@ -20,10 +20,52 @@ it('syncs each whole file once and its batch directory once, independent of the 
   files.putBytes(first); files.putBytes(second); files.putBytes(first);
   expect(files.counters.writtenFiles).toBe(2);
   expect(readdirSync(root)).toHaveLength(2);
-  expect(synchronized).toEqual(['file', 'file']);
+  expect(synchronized).toEqual([]);
   files.durable();
   expect(synchronized).toEqual(['file', 'file', 'directory']);
   files.durable(); expect(synchronized).toHaveLength(3);
+});
+
+it('awaits the last file with at most two syncs in flight before syncing the directory', async () => {
+  const pending: Array<{ fd: number; callback: (error: NodeJS.ErrnoException | null) => void }> = [];
+  const completed: string[] = [], sync = fs.fsyncSync;
+  vi.spyOn(fs, 'fsync').mockImplementation((fd, callback) => { pending.push({ fd, callback }); });
+  vi.spyOn(fs, 'fsyncSync').mockImplementation(fd => {
+    completed.push(fs.fstatSync(fd).isDirectory() ? 'directory' : 'file'); sync(fd);
+  });
+  syncBuiltinESMExports();
+  const files = new TurnPayloadFiles(root);
+  for (const value of [1, 2, 3]) files.putBytes(Buffer.alloc(2 * INLINE_PAYLOAD_BYTES, value));
+  const barrier = files.durableAsync(), sharedBarrier = files.durableAsync();
+  expect(pending).toHaveLength(2); expect(completed).toEqual([]);
+  const finish = () => { const call = pending.shift()!; sync(call.fd); completed.push('file'); call.callback(null); };
+  finish(); await Promise.resolve();
+  expect(pending).toHaveLength(2); expect(completed).toEqual(['file']);
+  finish(); await Promise.resolve();
+  expect(pending).toHaveLength(1); expect(completed).toEqual(['file', 'file']);
+  finish(); await Promise.all([barrier, sharedBarrier]);
+  expect(completed).toEqual(['file', 'file', 'file', 'directory']);
+});
+
+it('does not settle a failed barrier or sync its directory while a sibling file is still syncing', async () => {
+  const pending: Array<{ fd: number; callback: (error: NodeJS.ErrnoException | null) => void }> = [];
+  const sync = vi.spyOn(fs, 'fsync').mockImplementation((fd, callback) => { pending.push({ fd, callback }); });
+  const directorySync = vi.spyOn(fs, 'fsyncSync');
+  syncBuiltinESMExports();
+  const files = new TurnPayloadFiles(root);
+  for (const value of [1, 2, 3]) files.putBytes(Buffer.alloc(2 * INLINE_PAYLOAD_BYTES, value));
+  const barrier = files.durableAsync();
+  let settled = false;
+  const outcome = barrier.then(() => { settled = true; }, error => { settled = true; return error as Error; });
+  pending.shift()!.callback(Object.assign(new Error('file sync failed'), { code: 'EIO' }));
+  await Promise.resolve();
+  expect(settled).toBe(false); expect(pending).toHaveLength(1); expect(directorySync).not.toHaveBeenCalled();
+  pending.shift()!.callback(null);
+  expect(await outcome).toMatchObject({ message: 'file sync failed' });
+  expect(directorySync).not.toHaveBeenCalled();
+  sync.mockRestore(); syncBuiltinESMExports();
+  await files.durableAsync();
+  expect(directorySync).toHaveBeenCalledTimes(1);
 });
 
 it('keeps small shared objects out of physical files', () => {

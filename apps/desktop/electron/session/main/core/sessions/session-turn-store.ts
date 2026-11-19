@@ -9,7 +9,7 @@ import { and, asc, desc, eq, gte, like, lt, notLike, sql } from 'drizzle-orm';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { nativePromptDigest } from '@gugu/session-core/acp/native-prompt';
 import { prepareSessionTurn, readSessionTurn, sessionTurnHeaderSql, sessionTurnRevision } from './session-turn-storage';
-import { withTurnPayloadWrite } from './session-turn-payload-owners';
+import { turnPayloadFiles, withTurnPayloadWrite } from './session-turn-payload-owners';
 import { db, sqlite } from '@main/db/client';
 import { sessionTurns } from '@main/db/schema';
 import { randomUUID } from 'node:crypto';
@@ -115,6 +115,7 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
     const revised = prepared.turn, normalized = prepareSessionTurn(db.connection, row, revised, false);
     const captured = input.windowCapture ? await prepareWindowCommitWrite(sqlite, { sessionId: input.sessionId, referenceId: input.turn.referenceId,
       rowId: row.id, storedSeq: row.seq, insert: false, normalized, capture: input.windowCapture }) : undefined;
+    await turnPayloadFiles(db.connection).durableAsync();
     const publish = db.transaction(tx => {
       prepared.commit(tx);
       normalized.commit();
@@ -139,6 +140,7 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
   const normalized = prepareSessionTurn(db.connection, { id: `${input.sessionId}:${next}`, data: '', revision: 0 }, turn, true);
   const captured = input.windowCapture ? await prepareWindowCommitWrite(sqlite, { sessionId: input.sessionId, referenceId: input.turn.referenceId,
     rowId: `${input.sessionId}:${next}`, storedSeq: next, insert: true, normalized, capture: input.windowCapture }) : undefined;
+  await turnPayloadFiles(db.connection).durableAsync();
   const inserted = db.transaction(tx => {
     const result = tx.insert(sessionTurns)
     .values({
@@ -266,6 +268,7 @@ export function reviseRecordTurnNow(sessionId: string, seq: number, turn: Transc
   const revised = renumberStoredTurn(turn, sessionId, stored.seq);
   const normalized = prepareSessionTurn(db.connection, stored, revised, false);
   if (normalized.changed) {
+    turnPayloadFiles(db.connection).durable();
     const publish = db.transaction(tx => {
       normalized.commit();
       return noteNativeConversationHistory(sessionId, revised, tx);
@@ -280,6 +283,7 @@ export function appendRecordTurnNow(sessionId: string, turn: TranscriptTurn): nu
   const next = nextSeqNow(sessionId);
   const stored = renumberStoredTurn(turn, sessionId, next);
   const normalized = prepareSessionTurn(db.connection, { id: `${sessionId}:${next}`, data: '', revision: 0 }, stored, true);
+  turnPayloadFiles(db.connection).durable();
   const publish = db.transaction(tx => {
     const inserted = tx.insert(sessionTurns).values({
       id: `${sessionId}:${next}`, sessionId, seq: next, turnId: `record:${turn.id}`, data: normalized.marker,

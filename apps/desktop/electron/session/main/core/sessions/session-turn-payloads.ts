@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { closeSync, constants, fstatSync, fsyncSync, linkSync, mkdirSync, openSync, readSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, fsync, fsyncSync, linkSync, mkdirSync, openSync, readSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { directorySyncOpenMode } from '@gugu/session-core/session-record/window-cache/disk-frame';
 
@@ -31,6 +31,8 @@ export class TurnPayloadFiles {
   readonly access: TurnPayloadAccess;
   private readonly index?: TurnPayloadAccess;
   private readonly dirtyDirectories = new Set<string>();
+  private readonly pendingFiles = new Map<string, number>();
+  private synchronizing?: Promise<void>;
   private directoryReady = false;
   private readonly inlineCache = new Map<string, Buffer>();
   private readonly chunkCache = new Map<string, Buffer>();
@@ -174,7 +176,7 @@ export class TurnPayloadFiles {
       this.ensureDirectory();
       try {
         const fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-        try { writeFileSync(fd, data); fsyncSync(fd); } finally { closeSync(fd); }
+        try { writeFileSync(fd, data); } finally { closeSync(fd); }
         try { linkSync(temporary, path); this.counters.writtenBytes += data.length; this.counters.writtenFiles++; }
         catch (error) {
           if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
@@ -191,6 +193,7 @@ export class TurnPayloadFiles {
             if (actual.digest('hex') !== ref.hash) throw new Error('Orphan payload integrity check failed');
           } finally { closeSync(fd); }
         }
+        this.pendingFiles.set(ref.hash, data.length);
         this.dirtyDirectories.add(this.directory);
       } finally { rmSync(temporary, { force: true }); }
     }
@@ -198,8 +201,16 @@ export class TurnPayloadFiles {
     return ref;
   }
 
-  /** Files are fsynced individually; publish the batch only after one directory synchronization. */
-  durable(): void {
+  private openPending(hash: string, bytes: number): number {
+    const fd = openSync(this.path(hash), constants.O_RDWR | constants.O_NOFOLLOW);
+    try {
+      const stat = fstatSync(fd);
+      if (!stat.isFile() || stat.size !== bytes) throw new Error('Pending payload file length mismatch');
+      return fd;
+    } catch (error) { closeSync(fd); throw error; }
+  }
+
+  private syncDirectories(): void {
     // Even an all-inline database has its paired, possibly empty, backup directory.
     this.ensureDirectory();
     for (const path of this.dirtyDirectories) {
@@ -207,6 +218,45 @@ export class TurnPayloadFiles {
       try { fsyncSync(directory); } finally { closeSync(directory); }
     }
     this.dirtyDirectories.clear();
+  }
+
+  /** Synchronous record-backfill commits use the same pending-file durability barrier. */
+  durable(): void {
+    for (const [hash, bytes] of this.pendingFiles) {
+      const fd = this.openPending(hash, bytes);
+      try { fsyncSync(fd); } finally { closeSync(fd); }
+      this.pendingFiles.delete(hash);
+    }
+    this.syncDirectories();
+  }
+
+  /** Await every file, at most two in flight, before the directory and canonical publication. */
+  async durableAsync(): Promise<void> {
+    while (this.pendingFiles.size || this.synchronizing) {
+      if (!this.synchronizing) {
+        const entries = [...this.pendingFiles];
+        let next = 0, failed = false;
+        const worker = async () => {
+          while (!failed && next < entries.length) {
+            const [hash, bytes] = entries[next++];
+            try {
+              const fd = this.openPending(hash, bytes);
+              try { await new Promise<void>((resolve, reject) => fsync(fd, error => error ? reject(error) : resolve())); }
+              finally { closeSync(fd); }
+              this.pendingFiles.delete(hash);
+            } catch (error) { failed = true; throw error; }
+          }
+        };
+        this.synchronizing = (async () => {
+          // A rejected sync must still wait for its sibling before writer cleanup can run.
+          const results = await Promise.allSettled(Array.from({ length: Math.min(2, entries.length) }, worker));
+          for (const result of results) if (result.status === 'rejected') throw result.reason;
+        })();
+      }
+      const current = this.synchronizing;
+      try { await current; } finally { if (this.synchronizing === current) this.synchronizing = undefined; }
+    }
+    this.syncDirectories();
   }
 
   clear(): void { this.staged.clear(); this.inlineCache.clear(); this.chunkCache.clear(); }

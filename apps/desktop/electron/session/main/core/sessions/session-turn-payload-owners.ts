@@ -3,7 +3,7 @@ import { opendirSync, type Dir } from 'node:fs';
 import { INLINE_PAYLOAD_BYTES, TurnPayloadFiles, unbindTurnPayloadDirectory, type TurnPayloadRef } from './session-turn-payloads';
 import { coreLogger } from '@gugu/core/log';
 
-type State = { files: TurnPayloadFiles; writers: number; timer?: NodeJS.Timeout; scanDone: boolean; scan?: Dir };
+type State = { files: TurnPayloadFiles; writers: number; timer?: NodeJS.Timeout; scanDone: boolean; scan?: Dir; statements?: ReturnType<typeof prepareStatements> };
 const log = coreLogger('session-turn-payloads');
 const states = new WeakMap<Database.Database, State>();
 function state(connection: Database.Database): State {
@@ -36,29 +36,52 @@ function state(connection: Database.Database): State {
 }
 export const turnPayloadFiles = (connection: Database.Database): TurnPayloadFiles => state(connection).files;
 
+function prepareStatements(connection: Database.Database) {
+  return {
+    put: connection.prepare('INSERT OR IGNORE INTO session_turn_payload_objects(hash,bytes,kind,inline_data) VALUES (?,?,?,?)'),
+    size: connection.prepare('SELECT bytes,kind,inline_data IS NOT NULL AS inlined FROM session_turn_payload_objects WHERE hash=?'),
+    chunk: connection.prepare('INSERT OR IGNORE INTO session_turn_payload_chunks(hash,ordinal,digest) VALUES (?,?,?)'),
+    children: connection.prepare('SELECT child_hash FROM session_turn_payload_edges WHERE parent_hash=?'),
+    edge: connection.prepare('INSERT OR IGNORE INTO session_turn_payload_edges(parent_hash,child_hash) VALUES (?,?)'),
+    clearField: connection.prepare('DELETE FROM session_turn_payload_fields WHERE row_id=? AND node_key=? AND field=?'),
+    putField: connection.prepare('INSERT OR IGNORE INTO session_turn_payload_fields(row_id,node_key,field,hash) VALUES (?,?,?,?)'),
+  };
+}
+
+function statements(connection: Database.Database) {
+  const value = state(connection);
+  return value.statements ??= prepareStatements(connection);
+}
+
 /** May be repeated after a rollback. Keep staging until the outer writer has settled. */
 export function registerTurnPayloads(connection: Database.Database): void {
   if (!connection.inTransaction) throw new Error('Payload objects need a registry transaction');
   const files = state(connection).files;
   files.durable();
-  const put = connection.prepare('INSERT OR IGNORE INTO session_turn_payload_objects(hash,bytes,kind,inline_data) VALUES (?,?,?,?)');
-  const size = connection.prepare('SELECT bytes,kind,inline_data IS NOT NULL AS inlined FROM session_turn_payload_objects WHERE hash=?');
-  const chunk = connection.prepare('INSERT OR IGNORE INTO session_turn_payload_chunks(hash,ordinal,digest) VALUES (?,?,?)');
-  const edge = connection.prepare('INSERT OR IGNORE INTO session_turn_payload_edges(parent_hash,child_hash) VALUES (?,?)');
+  const query = statements(connection), inserted = new Set<string>();
   for (const [hash, object] of files.staged) {
-    put.run(hash, object.bytes, object.kind, object.bytes <= INLINE_PAYLOAD_BYTES ? object.data : null);
-    const stored = size.get(hash) as { bytes: number; kind: number; inlined: number };
+    let stored = query.size.get(hash) as { bytes: number; kind: number; inlined: number } | undefined;
+    if (!stored) {
+      query.put.run(hash, object.bytes, object.kind, object.bytes <= INLINE_PAYLOAD_BYTES ? object.data : null);
+      stored = query.size.get(hash) as { bytes: number; kind: number; inlined: number };
+      for (let ordinal = 0; ordinal < object.chunks.length; ordinal++) query.chunk.run(hash, ordinal, object.chunks[ordinal]);
+      inserted.add(hash);
+    }
     if (stored.bytes !== object.bytes || stored.kind !== object.kind || Boolean(stored.inlined) !== (object.bytes <= INLINE_PAYLOAD_BYTES))
       throw new Error('Payload registry size or storage mismatch');
-    for (let ordinal = 0; ordinal < object.chunks.length; ordinal++) chunk.run(hash, ordinal, object.chunks[ordinal]);
   }
-  for (const [hash, object] of files.staged) for (const child of object.children.values()) edge.run(hash, child.hash);
+  // Consult the transaction, rather than optimistic JS flags: an earlier registration may have rolled back.
+  for (const [hash, object] of files.staged) if (object.children.size) {
+    const existing = inserted.has(hash) ? new Set<string>()
+      : new Set((query.children.all(hash) as { child_hash: string }[]).map(row => row.child_hash));
+    for (const child of object.children.values()) if (!existing.has(child.hash)) query.edge.run(hash, child.hash);
+  }
 }
 
 export function ownTurnFieldPayloads(connection: Database.Database, rowId: string, nodeKey: string, field: string, roots: readonly TurnPayloadRef[]): void {
-  connection.prepare('DELETE FROM session_turn_payload_fields WHERE row_id=? AND node_key=? AND field=?').run(rowId, nodeKey, field);
-  const put = connection.prepare('INSERT OR IGNORE INTO session_turn_payload_fields(row_id,node_key,field,hash) VALUES (?,?,?,?)');
-  for (const root of roots) put.run(rowId, nodeKey, field, root.hash);
+  const query = statements(connection);
+  query.clearField.run(rowId, nodeKey, field);
+  for (const root of roots) query.putField.run(rowId, nodeKey, field, root.hash);
 }
 
 export function ownTurnSourcePayload(connection: Database.Database, sourceId: string, root: TurnPayloadRef): void {
@@ -75,12 +98,13 @@ export async function withTurnPayloadWrite<T>(connection: Database.Database, wri
   finally {
     try {
       if (connection.open && value.files.staged.size) {
+        await value.files.durableAsync();
         connection.transaction(() => registerTurnPayloads(connection))();
       }
     } finally {
       // A failed durability/registry attempt must not leave an unregistered object adoptable from staging.
-      value.files.clear();
       value.writers--;
+      if (!value.writers) value.files.clear();
       schedule(connection, value, 0);
     }
   }
