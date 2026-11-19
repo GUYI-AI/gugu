@@ -9,7 +9,7 @@ import { canonicalPath } from '@gugu/session-core/files';
 import { db } from '@main/db/client';
 import { sessions, workspaces } from '@main/db/schema';
 import { events } from '@main/lib/events';
-import { bindFolder, ensureFolder, folderAtPath, getFolder, listFolders, reorderFolders, type Folder } from './folders';
+import { bindFolder, ensureFolder, folderAtPath, getFolder, listFolders, listUnboundFolders, reorderFolders, type Folder } from './folders';
 import { folderPathStatus } from './folder-path-status';
 
 function record(folder: Folder): FolderRecord {
@@ -27,6 +27,11 @@ function changed(...chatIds: (string | null)[]): void {
 /** This machine's folders of one group, in order; every bound folder when no chat is named. */
 export async function listGroupFolders(chatId?: string): Promise<FolderRecord[]> {
   return listFolders(chatId).map(record);
+}
+
+/** Every folder recorded on this machine, bound to a group or not (the task home, an App's own directory). */
+export async function listAllFolders(): Promise<FolderRecord[]> {
+  return [...listFolders(), ...listUnboundFolders()].map(record);
 }
 
 /** What is at a path on this machine, and the folder already recorded there. */
@@ -70,6 +75,7 @@ export async function reorderGroupFolders(params: { chatId: string; ids: string[
 
 export const folderController = createRPCController({
   listGroupFolders,
+  listAllFolders,
   inspectFolderPath,
   bindFolderAtPath,
   unbindFolder,
