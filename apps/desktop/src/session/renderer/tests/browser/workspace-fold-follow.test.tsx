@@ -1,7 +1,7 @@
 /**
- * @@@overlay-collapse — folding the list moves it over the page: the page is laid out at most twice per fold (at the start
- * of a collapse, where an expand lands), not in every frame, its left edge stays on the list's edge all the way, and the
- * re-layout of an expand comes with the frame the edge lands in (SIDEBAR_LANDED_PX), ❌ after the spring's sub-pixel tail.
+ * @@@list-clip — folding the list, either way, moves the page with the one spring: in every frame its left edge is on the
+ * list's drawn edge and its right edge stays put, so its width follows the motion. A collapse and an expand change the
+ * page's layout at the same moments, ❌ one at the start and the other where it lands.
  */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
@@ -9,7 +9,7 @@ import { motion } from 'framer-motion';
 import { useState } from 'react';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { WorkspaceLayout, WorkspaceContentLayout } from '@renderer/lib/layout/workspace-layout';
-import { SIDEBAR_LANDED_PX, SIDEBAR_RAIL_PX, WorkspaceLayoutContextProvider, useInnerSidebarFrame, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
+import { SIDEBAR_RAIL_PX, WorkspaceLayoutContextProvider, useInnerSidebarFrame, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { sidebarFolds } from '@renderer/features/sidebar/sidebar-folds';
 import { writeInterface } from '@/lib/viewStateTable';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
@@ -29,26 +29,27 @@ beforeEach(async () => { await page.viewport(1200, 800); localStorage.removeItem
 // A drag that lands open stores its width: ❌ leave it for the next file's list.
 afterEach(() => { harness?.cleanup(); sidebarFolds.clear(); writeInterface('gugu.taskpage.sidebarWidth', undefined); });
 
-/** Every frame until the list stops moving: the page's laid-out width, and how far its left edge is from the list's edge. */
+/** Every frame until the list stops moving: the page's laid-out width, how far its edges are from the list's edge and the shell's right. */
 async function foldFrames(shell: HTMLElement) {
   // The list is clipped at its edge, and the edge's handle rides on it.
   const handle = shell.querySelector<HTMLElement>('[data-panel-resize-handle]')!;
   const surface = shell.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
-  const frames: { width: number; gap: number; edge: number }[] = [];
+  const frames: { width: number; gap: number; right: number; edge: number }[] = [];
   let still = 0, last = -1;
   await userEvent.click([...shell.querySelectorAll('button')].find((button) => button.textContent === 'toggle list')!);
   while (still < 10) {
     await new Promise(requestAnimationFrame);
     const box = handle.getBoundingClientRect();
     const edge = box.left + box.width / 2;
-    frames.push({ width: surface.offsetWidth, gap: surface.getBoundingClientRect().left - edge, edge });
+    const page = surface.getBoundingClientRect();
+    frames.push({ width: surface.offsetWidth, gap: page.left - edge, right: shell.getBoundingClientRect().right - page.right, edge });
     still = Math.abs(edge - last) < 0.01 ? still + 1 : 0;
     last = edge;
   }
   return frames;
 }
 
-it('a fold lays the page out at most twice and keeps it on the list\'s edge, both ways', async () => {
+it('a fold moves the page with the list\'s edge in every frame, the same way in both directions', async () => {
   harness = createReactHarness();
   await harness.render(
     <div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>
@@ -58,18 +59,17 @@ it('a fold lays the page out at most twice and keeps it on the list\'s edge, bot
     </div>
   );
   const shell = harness.container.querySelector<HTMLElement>('[data-workspace-shell]')!;
+  const widthsPerFold: number[] = [];
   for (const direction of ['collapse', 'expand']) {
     const frames = await foldFrames(shell);
     expect(frames.length, `${direction}: the list animated`).toBeGreaterThan(15);
-    expect(new Set(frames.map((frame) => frame.width)).size, `${direction}: page widths`).toBeLessThanOrEqual(2);
     const gaps = frames.map((frame) => Math.round(frame.gap));
     expect(new Set(gaps).size, `${direction}: the page's left edge follows the list's edge (${gaps.join(',')})`).toBe(1);
-    // The page's width changes with the frame the edge lands in: at the start of a collapse, ❌ after the expand's tail.
-    const end = frames.at(-1)!;
-    const landed = frames.findIndex((frame) => Math.abs(frame.edge - end.edge) < SIDEBAR_LANDED_PX);
-    const relaid = frames.findIndex((frame) => frame.width === end.width);
-    if (direction === 'collapse') expect(relaid, 'collapse: laid out at the rail at once').toBeLessThanOrEqual(1);
-    else expect(relaid - landed, `expand: re-laid out ${relaid - landed} frames after the edge landed`).toBeLessThanOrEqual(1);
+    const rights = frames.map((frame) => Math.round(frame.right));
+    expect(new Set(rights).size, `${direction}: the page's right edge stays put (${rights.join(',')})`).toBe(1);
+    // Neither held at one end nor switched once: the page's width moves through the fold.
+    widthsPerFold.push(new Set(frames.map((frame) => frame.width)).size);
+    expect(widthsPerFold.at(-1), `${direction}: page widths through the fold`).toBeGreaterThan(5);
   }
 });
 
@@ -124,7 +124,7 @@ function pointer(type: 'pointerdown' | 'pointermove' | 'pointerup', target: HTML
   target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX, clientY: 200 }));
 }
 
-it('dragging the rail\'s edge out moves the list over a page laid out at the rail; let go, it lands in one re-layout', async () => {
+it('dragging the rail\'s edge out moves the page with it; let go, it lands the same way a click fold does', async () => {
   harness = createReactHarness();
   await harness.render(
     <div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>
@@ -138,6 +138,8 @@ it('dragging the rail\'s edge out moves the list over a page laid out at the rai
   const handle = shell.querySelector<HTMLElement>('[data-panel-resize-handle]')!;
   const surface = shell.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
   const railWidth = surface.offsetWidth;
+  const rightOf = () => Math.round(shell.getBoundingClientRect().right - surface.getBoundingClientRect().right);
+  const right = rightOf();
   const start = handle.getBoundingClientRect().left + handle.getBoundingClientRect().width / 2;
   pointer('pointerdown', handle, start);
   const widths: number[] = [];
@@ -150,7 +152,8 @@ it('dragging the rail\'s edge out moves the list over a page laid out at the rai
     const box = handle.getBoundingClientRect();
     gaps.add(Math.round(surface.getBoundingClientRect().left - (box.left + box.width / 2)));
   }
-  expect(new Set(widths), 'mid-drag the page keeps its rail layout').toEqual(new Set([railWidth]));
+  expect(widths.at(-1)!, 'mid-drag the page narrows with the edge').toBeLessThan(railWidth - 80);
+  expect(rightOf(), 'and keeps its right edge').toBe(right);
   expect(gaps.size, `the page rides on the edge (${[...gaps].join(',')})`).toBe(1);
   pointer('pointerup', handle, start + 100);
   const frames: { width: number; edge: number }[] = [];
@@ -164,8 +167,6 @@ it('dragging the rail\'s edge out moves the list over a page laid out at the rai
   }
   const end = frames.at(-1)!;
   expect(end.width, 'it snapped open').toBeLessThan(railWidth);
-  expect(new Set(frames.map((frame) => frame.width)).size, 'one re-layout on the way').toBeLessThanOrEqual(2);
-  const landed = frames.findIndex((frame) => Math.abs(frame.edge - end.edge) < SIDEBAR_LANDED_PX);
-  const relaid = frames.findIndex((frame) => frame.width === end.width);
-  expect(relaid - landed, `re-laid out ${relaid - landed} frames after the edge landed`).toBeLessThanOrEqual(1);
+  expect(new Set(frames.map((frame) => frame.width)).size, 'the page moved with the edge on the way').toBeGreaterThan(5);
+  expect(rightOf(), 'and kept its right edge').toBe(right);
 });

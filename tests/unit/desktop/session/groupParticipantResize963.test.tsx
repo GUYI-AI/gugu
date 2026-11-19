@@ -12,7 +12,8 @@ vi.mock('react-resizable-panels', () => ({
     setLayout: (layout: Record<string, number>) => { state.layout = layout; state.onLayoutChanged?.(layout, { isUserInteraction: false }); },
   }),
 }));
-vi.mock('@renderer/lib/ui/resizable', () => ({
+vi.mock('@renderer/lib/ui/resizable', async (importOriginal) => ({
+  setGroupLayout: (await importOriginal<typeof import('@renderer/lib/ui/resizable')>()).setGroupLayout,
   ResizablePanelGroup: ({ children, elementRef, onLayoutChanged }: { children: ReactNode; elementRef?: Ref<HTMLDivElement>; onLayoutChanged: typeof state.onLayoutChanged }) => {
     state.onLayoutChanged = onLayoutChanged;
     return <div ref={elementRef}>{children}</div>;

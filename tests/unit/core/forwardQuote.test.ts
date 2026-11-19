@@ -21,7 +21,7 @@ describe('forwardQuote', () => {
   })
 
   it('keeps a name from turning into markup', () => {
-    expect(forwardQuote([{ sender: '*bold*_[x]', text: 'hi' }])).toContain('> **\\*bold\\*\\_\\[x\\]**')
+    expect(forwardQuote([{ sender: '*bold*_[x]', text: 'hi' }])).toContain('> **\\*bold\\*\\_&#91;x&#93;**')
   })
 
   it('refuses an empty forward', () => {

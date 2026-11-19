@@ -51,7 +51,7 @@ describe('bind.codemirror: a pasted picture becomes a file of the folder, named 
     view.dispatch({ changes: { from: 0, insert: '> ' } });
     await until(() => view.state.doc.toString().includes('gugu-file://'));
     expect(verbs.upload).toHaveBeenCalledExactlyOnceWith({ chat: 'chat-1', folder: 'docs' }, [shot]);
-    expect(view.state.doc.toString()).toBe('> see: ![shot \\[1\\].png](gugu-file://0b6d3a52-5a3e-4b70-9f0e-1d2c3b4a5f60)');
+    expect(view.state.doc.toString()).toBe('> see: ![shot &#91;1&#93;.png](gugu-file://0b6d3a52-5a3e-4b70-9f0e-1d2c3b4a5f60)');
     unbind();
   });
 
