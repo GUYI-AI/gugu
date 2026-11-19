@@ -21,7 +21,7 @@ const fixture = [
   ' if(process.env.SCENARIO==="bad") {process.stdout.write("{broken\\n"); continue;}',
   ' if(process.env.SCENARIO==="eof") {process.exit(7);}',
   ' if(m.params.excludeTurns!==true) {out({id:m.id,error:{code:-32602,message:"excludeTurns missing"}});continue;}',
-  ' setTimeout(()=>{out({id:m.id,result:{thread:{id:"same-thread",historyMode:"paginated",turns:[],preview:"before\\u2028middle\\u2029after"},model:"gpt-6.2-sol"}});},process.env.SCENARIO==="slow"?180:0);',
+  ' const ready=()=>out({id:m.id,result:{thread:{id:"same-thread",historyMode:"paginated",turns:[],preview:"before\\u2028middle\\u2029after"},model:"gpt-6.2-sol"}}); if(process.env.SCENARIO==="slow"){process.stderr.write("NATIVE_RESUME_PENDING\\n");const waiting=setInterval(()=>{if(require("fs").existsSync(process.env.RESUME_RELEASE)){clearInterval(waiting);ready()}},10)}else ready();',
   '} else if(m.method==="model/list") out({id:m.id,result:{data:[{id:"gpt-6.2-sol",model:"gpt-6.2-sol",displayName:"GPT-6.2-Sol",supportedReasoningEfforts:[]}]}});',
   'else if(m.method==="turn/start"){',
   ' out({method:"item/started",params:{item:{type:"userMessage",id:"user-1",clientId:m.params.clientUserMessageId,content:m.params.input}}});',
@@ -48,13 +48,14 @@ async function bridge(scenario = 'unicode') {
   dir = realpathSync(mkdtempSync(join(tmpdir(), 'gugu-jsonl-')))
   const fake = join(dir, 'codex.cjs')
   writeFileSync(fake, fixture); chmodSync(fake, 0o755)
-  // Accelerate only the old 45s deadline, without accelerating the fake native process.
+  // Expire deadlines only after the native fixture acknowledges the in-flight resume.
   const shim = join(dir, 'clock.mjs')
-  writeFileSync(shim, 'const real=globalThis.setTimeout; globalThis.setTimeout=(fn,ms,...args)=>real(fn,ms===45000?50:ms,...args);')
+  writeFileSync(shim, "const realSet=globalThis.setTimeout, realClear=globalThis.clearTimeout, deadlines=new Map();\nglobalThis.setTimeout=(fn,ms,...args)=>{const timer=realSet(()=>{deadlines.delete(timer);fn(...args)},ms);if(ms===45000)deadlines.set(timer,()=>fn(...args));return timer;};\nglobalThis.clearTimeout=timer=>{deadlines.delete(timer);return realClear(timer);};\nprocess.on('message',message=>{if(message!=='expire-deadlines')return;const pending=[...deadlines];deadlines.clear();for(const [timer,fire]of pending){realClear(timer);fire()}process.send('deadlines-expired');});")
+  const release = join(dir, 'release-resume')
   const env: NodeJS.ProcessEnv = { ...process.env, GUGU_HOME: join(dir, 'gugu'), GUGU_USER_DATA_DIR: join(dir, 'userdata'),
-    CODEX_HOME: join(dir, 'codex-home'), GUGU_CODEX_BIN: fake, SCENARIO: scenario }
+    CODEX_HOME: join(dir, 'codex-home'), GUGU_CODEX_BIN: fake, SCENARIO: scenario, RESUME_RELEASE: release }
   delete env.GUGU_PLATFORM_MODELS
-  child = spawn(process.execPath, ['--import', shim, BRIDGE], { cwd: dir, env, stdio: ['pipe', 'pipe', 'pipe'] })
+  child = spawn(process.execPath, scenario === 'slow' ? ['--import', shim, BRIDGE] : [BRIDGE], { cwd: dir, env, stdio: ['pipe', 'pipe', 'pipe', 'ipc'] })
   const processChild = child
   const replies = new Map<number | null, WireMessage>()
   const updates: WireMessage[] = []
@@ -72,7 +73,10 @@ async function bridge(scenario = 'unicode') {
     return awaitFact(method, () => replies.get(id), { producer: processChild })
   }
   await request('initialize', { protocolVersion: 2 })
-  return { request, updates, replies, processChild, stderr: () => stderr }
+  return { request, updates, replies, processChild, stderr: () => stderr,
+    release: () => writeFileSync(release, 'ready'),
+    expireDeadlines: () => new Promise<void>(resolve => { processChild.once('message', () => resolve()); processChild.send('expire-deadlines') }),
+  }
 }
 
 describe('JSONL framing', () => {
@@ -103,7 +107,11 @@ describe('Codex bridge JSONL boundary', () => {
   })
   it('keeps a live resume pending beyond the old deadline instead of reporting start failure', async () => {
     const h = await bridge('slow')
-    expect(await h.request('session/resume', { sessionId: 'same-thread', cwd: dir, mcpServers: [] }))
+    const restoring = h.request('session/resume', { sessionId: 'same-thread', cwd: dir, mcpServers: [] })
+    await awaitFact('native resume pending', () => h.stderr().includes('NATIVE_RESUME_PENDING') || undefined, { producer: h.processChild })
+    await h.expireDeadlines()
+    h.release()
+    expect(await restoring)
       .toMatchObject({ result: { configOptions: [expect.objectContaining({ configId: 'model', currentValue: 'gpt-6.2-sol' })] } })
   })
   it('rejects corrupt native frames immediately with byte diagnostics', async () => {
