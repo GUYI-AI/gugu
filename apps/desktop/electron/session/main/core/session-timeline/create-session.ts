@@ -327,10 +327,10 @@ export async function createModels(
           platformModel ? 'platform' : customRef ? 'custom' : 'own', runtimeModelId(requestedModel) ?? (state.kind === 'ready' ? state.selected : null));
     const reviewAllowed = reviewQualified && customReview?.kind !== 'platform-fallback';
     const cliVersion = state.kind === 'ready' || state.kind === 'auth-required' ? state.cliVersion : undefined;
-    const floor = agent.capabilities?.autoApprove.modes?.['ai-review']?.reviewRequirements?.minimumCliVersion;
+    const floor = agent.capabilities?.autoApprove?.modes?.['ai-review']?.reviewRequirements?.minimumCliVersion;
     const versionTooOld = cliVersion && floor && cliVersion.split('.').reduce((n, part) => n * 10000 + Number(part), 0) < floor.split('.').reduce((n, part) => n * 10000 + Number(part), 0);
     const permissionOptions = buildSessionPermissionOptions({
-      modeMap: agent.capabilities?.autoApprove.modes,
+      modeMap: agent.capabilities?.autoApprove?.modes,
       native: state.kind === 'ready' || state.kind === 'auth-required' ? state.permissionModes : undefined,
       structuralFullAccess: request.harness === 'grok',
       leg: sessionpageLegOfView(view.view),

@@ -143,6 +143,7 @@ import type { AcpChatStore } from './acp-chat-store';
 import {
   localizePermissionModeOptions,
   PERMISSION_TIER_LABEL_KEYS,
+  sessionPermissionModeOptions,
   selectedPermissionModeId,
 } from './permission-mode-options';
 import { useOpenedOutputMenu } from './opened-output-menu';
@@ -826,10 +827,14 @@ const ComposerForStore = observer(function ComposerForStore({
   );
   const platformCatalog = usePlatformModelCatalog(providerId, 'acp', store.sessionId);
   const route = sessionBillingRoute(platformCatalog.sessionSelection);
-  const permissionGroup = usePermissionMenu({ provider: providerId, leg: 'acp', modeMap: providerPermissionModeMap,
+  const permissionGroup = usePermissionMenu({ provider: providerId, leg: 'acp', modeMap: providerPermissionModeMap, connectionKnown: route !== 'unknown',
     machine: machineRegistry.machineOf(store.projectId),
     model: composerSelectedOptionId({ platformModel: platformCatalog.sessionSelection?.modelId, model: store.model, customModel: runningCustomModel }) ?? null });
-  const sessionPermissionOptions = permissionGroup ? Object.fromEntries(permissionGroup.available.map(({ id, ...choice }) => [id, choice])) : null;
+  const sessionPermissionOptions = sessionPermissionModeOptions(
+    permissionGroup ? Object.fromEntries(permissionGroup.available.map(({ id, ...choice }) => [id, choice])) : null,
+    providerCapabilities?.acp.liveSettings?.permission,
+    providerCapabilities?.acp.sessionModes,
+  );
 
   /**
    * 这条会话的**计费路**,三态 —— 唯一写者是会话自己记下的那个决定

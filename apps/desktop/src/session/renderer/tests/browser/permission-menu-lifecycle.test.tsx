@@ -1,14 +1,15 @@
-import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import React from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { runInAction } from 'mobx';
 import { afterEach, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
-import { ChatComposer } from '@gugu/session-ui/react/components';
+import { MessageProvider } from '@gugu/session-ui/react/components';
+import { LocalizationProvider, setLocalePreference } from '@/i18n';
+import { registerSessionLocaleResources, translateSessionMessage } from '@renderer/localization/locale-store';
 import { buildSessionPermissionOptions } from '@shared/session-permission-options';
-import { usePermissionMenu } from '@renderer/features/sessions/session-config/use-permission-menu';
-import { localizePermissionModeOptions } from '@renderer/features/sessions/acp/permission-mode-options';
-import { translateSessionMessage } from '@renderer/localization/locale-store';
-import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
-import { i18n } from '@/i18n';
+import { queryClient as replicaClient } from '@/lib/replica';
+import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@gugu/session-ui/styles/global';
 import '@gugu/session-ui/theme/theme.css';
@@ -17,35 +18,122 @@ import '@gugu/session-ui/styles/base.css';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
 
-const rpc = vi.hoisted(() => ({ read: vi.fn() }));
-vi.mock('@renderer/lib/ipc', () => ({ rpcOn: () => ({ sessionTimeline: { sessionCreateModels: rpc.read } }) }));
-const modeMap = { plan: { id: 'plan' }, 'read-only': { id: 'default' }, edit: { id: 'acceptEdits' }, 'ai-review': { id: 'auto' }, 'full-access': { id: 'bypassPermissions' } };
+const active = vi.hoisted(() => ({
+  store: null as unknown, source: null as unknown, agents: [] as AgentPayload[],
+  read: vi.fn(), knownConnection: true,
+}));
+vi.mock('@renderer/features/tabs/pane-context', () => ({
+  PaneContext: React.createContext(null),
+  PaneProvider: ({ children }: { children: React.ReactNode }) => children,
+  usePaneContext: () => ({ pane: { resolvedTabs: [{ isActive: true, kind: 'acp-chat', resource: { store: active.store } }] } }),
+}));
+vi.mock('@renderer/features/sessions/stores/session-registry', () => ({
+  sessionRegistry: { get: () => active.source, allSessions: () => new Map() },
+}));
+vi.mock('@renderer/lib/chat/use-session-chat-layout', () => ({ useSessionChatLayout: () => ({ preset: 'single', userGutter: 0 }) }));
+vi.mock('@renderer/features/integrations/use-connected-issue-providers', () => ({ useConnectedIssueProviders: () => ({ connectedProviders: [], isProviderUsable: () => false }) }));
+vi.mock('@renderer/features/library/prompts/use-prompt-library', () => ({ usePromptLibrary: () => ({ value: [] }) }));
+vi.mock('@renderer/lib/stores/use-agents', () => ({
+  AGENTS_METADATA_QUERY_KEY: ['agents', 'metadata'],
+  useAgents: () => ({ data: active.agents }), useAgent: () => ({ data: undefined }), useAgentIcon: () => undefined,
+}));
+vi.mock('@renderer/features/sessions/session-config/platform-model-catalog', async importOriginal => ({
+  ...await importOriginal<typeof import('@renderer/features/sessions/session-config/platform-model-catalog')>(),
+  usePlatformModelCatalog: () => ({
+    models: [], agentDefault: null, sessionSelection: active.knownConnection ? null : undefined,
+    catalogError: null, settled: true, retry: () => {}, refresh: () => {},
+  }),
+}));
+Object.defineProperty(window, 'electronAPI', {
+  configurable: true,
+  value: {
+    invoke: async (channel: string, ...args: unknown[]) => channel === 'sessionTimeline.sessionCreateModels' ? active.read(...args) : [],
+    eventOn: () => () => {}, eventSend: () => {}, getPathForFile: () => '',
+    subscribeAppActive: (listener: (active: boolean) => void) => { listener(true); return () => {}; },
+  },
+});
+const { AcpChatStore } = await import('@renderer/features/sessions/acp/acp-chat-store');
+const { AcpChatPanel } = await import('@renderer/features/sessions/acp/acp-chat-panel');
+const modeMap = {
+  plan: { id: 'plan' }, 'read-only': { id: 'default' }, edit: { id: 'acceptEdits' },
+  'ai-review': { id: 'auto' }, 'full-access': { id: 'bypassPermissions' },
+};
 const native = Object.values(modeMap).map(({ id }) => ({ id, name: id }));
-const cleanups: Array<() => void> = [];
-afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); rpc.read.mockReset(); });
+let root: Root | null = null;
+let container: HTMLDivElement | null = null;
+let store: InstanceType<typeof AcpChatStore> | null = null;
+let client: QueryClient | null = null;
 
-function Session({ lifecycle }: { lifecycle: string }) {
-  const group = usePermissionMenu({ provider: 'claude', model: 'opus', modeMap, machine: null, leg: 'acp' });
-  const options = group ? Object.fromEntries(group.available.map(({ id, ...choice }) => [id, choice])) : null;
-  return <div data-lifecycle={lifecycle}><ChatComposer
-    permissionModeOptions={localizePermissionModeOptions(options, translateSessionMessage, 'Claude', modeMap)}
-    selectedPermissionMode="bypassPermissions" onPermissionModeChange={() => {}}
-    onSubmit={() => {}} onStop={() => {}} /></div>;
-}
+afterEach(() => {
+  root?.unmount(); container?.remove(); store?.dispose(); client?.clear(); replicaClient.clear();
+  root = null; container = null; store = null; client = null;
+  active.store = null; active.source = null; active.agents = []; active.read.mockReset(); active.knownConnection = true;
+});
 
-it.each(['running', 'stopped', 'disconnected'])('renders the same native-qualified five rows for %s', async lifecycle => {
-  await i18n.changeLanguage('zh-CN');
-  rpc.read.mockResolvedValue({ ok: true, value: { permissionOptions: buildSessionPermissionOptions({ modeMap, native, review: { allowed: true } }) } });
-  const container = document.createElement('div'); container.style.cssText = 'position:absolute;left:100px;bottom:40px;width:700px'; document.body.append(container);
-  const root = createRoot(container);
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  cleanups.push(() => { root.unmount(); container.remove(); client.clear(); });
-  root.render(<QueryClientProvider client={client}><SessionLocalizationProvider><Session lifecycle={lifecycle} /></SessionLocalizationProvider></QueryClientProvider>);
-  await until('native permission facts read', () => rpc.read.mock.calls.length === 1 && container.querySelector('[data-slot=composer-permission-mode]') !== null);
+it.each(['running', 'stopped', 'disconnected'].flatMap(lifecycle =>
+  ['allowed', 'native-denied', 'unreadable', 'connection-unknown'].map(qualification => ({ lifecycle, qualification }))
+))('the real ACP panel keeps the complete menu for $lifecycle / $qualification', async ({ lifecycle, qualification }) => {
+  registerSessionLocaleResources();
+  setLocalePreference('zh-CN');
+  await page.viewport(1100, 740);
+  const id = 'permission-menu-' + lifecycle + '-' + qualification;
+  active.knownConnection = qualification !== 'connection-unknown';
+  active.agents = [{
+    id: 'claude', name: 'Claude', status: 'available', reading: 'installed', command: 'claude',
+    capabilities: {
+      acp: { kind: 'supported', liveSettings: { permission: { channel: 'acp-config-option' } } },
+      autoApprove: { kind: 'supported', modes: modeMap }, models: { kind: 'none' }, effort: { kind: 'none' },
+      sessions: {}, sessionpage: { acp: { identity: 'addressable', messageTransport: 'router' } },
+      auth: { kind: 'none' },
+    },
+  } as unknown as AgentPayload];
+  active.source = { sessions: new Map([[id, {
+    status: lifecycle === 'running' ? 'idle' : 'closed', markSeen: async () => {},
+    data: { id, providerId: 'claude', model: 'opus', permissionMode: 'full-access', platformModel: null },
+  }]]) };
+  if (qualification === 'unreadable') active.read.mockRejectedValue(new Error('Native catalog unavailable'));
+  else active.read.mockResolvedValue({
+    ok: true, value: { permissionOptions: buildSessionPermissionOptions({ modeMap, native, review: { allowed: qualification === 'allowed', reason: 'taskConfig.reviewNativeUnavailable' } }) },
+  });
+  store = new AcpChatStore(id, 'project');
+  active.store = store;
+  const current = store;
+  const internals = current as unknown as { _bootstrapped: boolean };
+  runInAction(() => {
+    internals._bootstrapped = true;
+    current.historyLoading = false;
+    if (lifecycle === 'running') current.session = {
+      config: { current: () => ({
+        modelOptions: { selected: 'opus', available: [{ id: 'opus', name: 'Opus 5.5' }] },
+        modeOptions: { selected: 'bypassPermissions', available: native }, efforts: null, fastMode: null,
+        availableCommands: [], acceptsImagePrompts: false,
+      }) },
+      sessionState: { current: () => ({
+        lifecycle: 'ready', activeTurnId: null, pendingPermissions: [], queuedPrompts: [],
+        isGenerating: false, canSubmit: true, canCancel: false,
+      }) },
+      usage: { current: () => null }, dispose: () => {},
+    } as never;
+    if (lifecycle === 'disconnected') current.reconcileAwaitingLink = true;
+  });
+  const submit = vi.spyOn(current, 'submitPrompt').mockResolvedValue();
+  container = document.body.appendChild(document.createElement('div'));
+  container.className = 'emlight gugu-skin';
+  container.style.height = '700px';
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  root = createRoot(container);
+  root.render(<LocalizationProvider><QueryClientProvider client={client}><MessageProvider locale="zh-CN" translate={translateSessionMessage}><AcpChatPanel /></MessageProvider></QueryClientProvider></LocalizationProvider>);
+  if (active.knownConnection) await until('native qualification read', () => active.read.mock.calls.length > 0);
   await page.getByText('完全访问', { exact: true }).click();
-  await until('menu mounted', () => document.querySelector('[data-slot=combobox-content]') !== null);
-  const rows = [...document.querySelectorAll('[role=option]')].filter(e => e.getBoundingClientRect().width > 0);
-  expect(rows.map(row => row.textContent)).toEqual(['规划', '只读', '编辑', '自动模式', '完全访问']);
-  await until('review row qualified', () => rows.find(row => row.textContent === '自动模式')?.getAttribute('aria-disabled') !== 'true');
-  expect(rpc.read.mock.calls[0][0]).toEqual({ harness: 'claude', sessionView: 'general', model: 'opus' });
+  await until('permission menu appears', () => document.querySelector('[data-slot=combobox-content]') !== null);
+  const rows = () => [...document.querySelectorAll('[role=option]')].filter(row => row.getBoundingClientRect().width > 0);
+  expect(rows().map(row => row.textContent)).toEqual(['规划', '只读', '编辑', '自动模式', '完全访问']);
+  await until('Auto reflects qualification', () => {
+    const review = rows().find(row => row.textContent === '自动模式');
+    return !!review && (review.getAttribute('aria-disabled') !== 'true') === (qualification === 'allowed');
+  });
+  if (active.knownConnection) expect(active.read.mock.calls[0][0]).toEqual({ harness: 'claude', sessionView: 'general', model: 'opus' });
+  else expect(active.read).not.toHaveBeenCalled();
+  expect(current.session !== null).toBe(lifecycle === 'running');
+  expect(submit).not.toHaveBeenCalled();
 });

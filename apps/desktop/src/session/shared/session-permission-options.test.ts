@@ -11,7 +11,7 @@ const native = ['plan', 'default', 'acceptEdits', 'auto', 'bypassPermissions'].m
 const expected = native.map(({ id }) => id);
 
 describe('one permission menu source', () => {
-  it.each(['running', 'stopped', 'disconnected'])('keeps the complete qualified menu for %s sessions', () => {
+  it('keeps the complete native-qualified menu', () => {
     const catalog = { kind: 'ready', selected: 'opus', cliVersion: '2.1.322', autoReview: true };
     const group = buildSessionPermissionOptions({ modeMap: map, native,
       review: { allowed: catalogAllowsAutoReview(map, catalog, 'own', 'opus') } });

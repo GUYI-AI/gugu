@@ -1208,7 +1208,7 @@ class AcpProbeClient {
             : null,
       efforts,
       selectedEffort,
-      permissionModes: reviewOptions.flatMap(option => option.category === 'mode' && option.type === 'select' ? flattenSelectOptions(option.options).map(choice => ({ id: choice.value, name: choice.name, ...(choice.description ? { description: choice.description } : {}) })) : []),
+      ...(reviewOptions.some(option => option.category === 'mode' && option.type === 'select') ? { permissionModes: reviewOptions.flatMap(option => option.category === 'mode' && option.type === 'select' ? flattenSelectOptions(option.options).map(choice => ({ id: choice.value, name: choice.name, ...(choice.description ? { description: choice.description } : {}) })) : []) } : {}),
       autoReview, reviewerAvailable,
       ...(reviewPermission?.cliVersion ? { cliVersion: reviewPermission.cliVersion } : {}),
       ...(fastMode ? { fastMode } : {}),
