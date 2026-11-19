@@ -444,7 +444,7 @@ import {
   type AcpMcpServer,
   type DesktopGuguMcpHost,
 } from './acp-engine-utils'
-import { GUGU_PLATFORM_BLOCK, buildSessionpageProjectContextBlock } from './product-platform-prompt'
+import { GUGU_PLATFORM_BLOCK, buildSessionpageGroupContextBlock } from './product-platform-prompt'
 import {
   guguAgentUserIdForSession,
   localAgentForSession,
@@ -1056,7 +1056,6 @@ function createDeviceSessionpageBridge() {
             userId: auth.userId,
           }),
           resolveDeviceId: async () => deviceId,
-          resolveProjectName: (projectId: string) => emdash.emdashProjectName(projectId),
           takeBirthGroup: (sessionId: string) => emdash.emdashTakeBirthGroup(sessionId),
           provisionOneTrip: (input) => provisionSessionpageAgentOneTrip({ ...input, fetchImpl: electronFetch }),
           env: process.env,
@@ -5298,7 +5297,6 @@ app.whenReady().then(async () => {
       getAuth: getSessionpageAuth,
       // #4320② 锁内解析:localDeviceId 不起 tick,不会派发要同一把锁的设备命令。
       resolveDeviceId: localDeviceId,
-      resolveProjectName: (projectId: string) => emdash.emdashProjectName(projectId),
       takeBirthGroup: (sessionId: string) => emdash.emdashTakeBirthGroup(sessionId),
       sessionFacts: (target, options) => emdash.emdashSessionProvisionInput(target, options),
       listSessionFacts: () => emdash.emdashSessionpageSessionFacts(),
@@ -5934,7 +5932,7 @@ app.whenReady().then(async () => {
           if ((await getSessionpageAuth())?.userId !== assistantResourceOwner) throw new Error('Assistant resource owner changed')
           return resources
         } : undefined
-        const projectContextBlock = buildSessionpageProjectContextBlock(provisioned.projectContext)
+        const groupContextBlock = buildSessionpageGroupContextBlock(provisioned.groupContext)
         const bundle = await buildSessionBundle({
           runtime: { authProvider, env: process.env },
           agentUserId: provisioned.guguAgentUserId,
@@ -5954,7 +5952,7 @@ app.whenReady().then(async () => {
           // ⚠️ 解析式与运行时 `applyConfiguredPermissionMode` 同源(都从 permissionMode 来),
           //    ❌ 别在这里另写一套映射:两条路对同一个用户选择解释出不同档 = 界面与实际不一致。
           autonomy: { permissionMode: resolveSessionPermissionMode(info) },
-          promptBlocks: { platform: `${GUGU_PLATFORM_BLOCK}${projectContextBlock}`, identity: identityBlock },
+          promptBlocks: { platform: `${GUGU_PLATFORM_BLOCK}${groupContextBlock}`, identity: identityBlock },
           ...(processConfigPlatform
             ? {
                 additionalEnv: {

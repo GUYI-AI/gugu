@@ -1,7 +1,7 @@
 import type { SessionBootTasks } from '@gugu/core/shared/sessionBootTasks'
 import { isImplicitSessionHomeProjectId } from '@gugu/core/shared/sessionProject'
 import { createGroupAdmin } from '@gugu/core/cloud/groupAdmin'
-import { joinBirthGroup } from './sessionpage-birth-group-join'
+import { joinBirthGroup, sessionpageBirthGroupJoin } from './sessionpage-birth-group-join'
 // @@@sessionpage TASKPAGE-FUSION — AUTO-PROVISIONING (Part C, the real thing). Turns a session-page session
 // whose exact provider/surface declares addressable identity into a gugu agent at session start, so agents can
 // message each other in the shipped product with NO test hook. Two delivery transports feed the SAME
@@ -63,7 +63,6 @@ import {
   prepareSessionpageDeliveryOwner,
   type SessionpageDeliveryOwnerKind,
 } from './sessionpage-delivery-owner-registry'
-import { forgetProjectGroupId, readProjectGroupId, rememberProjectGroupId } from './sessionpage-project-groups'
 import { agentNameSerial, nextAgentDefaultName, uniqueAgentDisplayName } from '@gugu/core/shared/agentDefaultName'
 import { listAgentNameSerialsViaSupabase } from '@gugu/core/cloud/agentIdentityReconcile'
 import { registerOfflineLocalSessionDelivery, unregisterLocalSessionDeliveryForAgent } from './local-session-delivery'
@@ -99,7 +98,6 @@ export const SURFACE_CACHE_KEY = 'sessionpage_session_surface'
  */
 export const CLOUD_STATE_CACHE_KEY = AGENT_CLOUD_IDENTITY_STATE_CACHE_KEY
 /** Fallback group name when the project's display name can't be resolved. */
-const FALLBACK_PROJECT_GROUP_NAME = '任务项目'
 /**
  * The session page's sentinel "implicit task-home project" — the execution context it gives a task created BEFORE the
  * user opens a repository. The session page never renders it as a selectable project, so to the user such a
@@ -285,7 +283,6 @@ export interface SessionpageProvisionDeps {
   getAuth: () => Promise<{ accessToken: string; refreshToken: string; userId: string } | null>
   resolveDeviceId: () => Promise<string | null>
   /** Resolve a session-page project's display name (to name its gugu group). Absent / returns null → fallback. */
-  resolveProjectName?: (projectId: string) => Promise<string | null>
   /**
    * The chat a conversation's agent was born in (`session_spawn` chat_id, an App's `spawnAgent` chat), recorded at the
    * spawn and taken here when its identity is first minted (birth-groups.ts) — once: an agent later removed from the
@@ -838,7 +835,7 @@ async function provisionLockedBody(
         ownerUserId,
         sessionId: info.sessionId,
         agentUserId: existing.gugu_user_id,
-        groupChatId: joined ? '' : sessionGroup,
+        group: joined || !sessionGroup ? null : await deps.takeBirthGroup?.(info.sessionId) ?? { chatId: sessionGroup, asTask: false },
         directChatId,
         afterBinding,
       })
@@ -952,7 +949,7 @@ async function provisionLockedBody(
   // own rules (a refused or pending join is recorded for the session page to show and retry, as for any birth group).
   if (sessionGroup) {
     await joinBirthGroup({ env, accessToken: ownerAuth.accessToken, ownerUserId, sessionId: info.sessionId, agentUserId: guguAgentUserId,
-      group: { chatId: sessionGroup }, log: createLogger('sessionpage/provision') })
+      group: await deps.takeBirthGroup?.(info.sessionId) ?? { chatId: sessionGroup, asTask: false }, log: createLogger('sessionpage/provision') })
     if (!await sessionpageBirthGroupJoin(info.sessionId, env, ownerUserId)) joinedGroup = sessionGroup
     mark('group-joined', { joined: Boolean(joinedGroup) })
   }
@@ -1251,8 +1248,8 @@ function startReuseBackfill(job: {
   ownerUserId: string
   sessionId: string
   agentUserId: string
-  /** The session's group the agent is not known to be in yet ('' = nothing to join). */
-  groupChatId: string
+  /** The session's group the agent is not known to be in yet (null = nothing to join). */
+  group: BirthGroup | null
   directChatId: string
   afterBinding: Promise<void>
 }): void {
@@ -1261,10 +1258,10 @@ function startReuseBackfill(job: {
     let { directChatId } = job
     let groupChatId = ''
     if (!directChatId) directChatId = await findOwnerDirectChatMemoized(job.accessToken, job.agentUserId)
-    if (job.groupChatId) {
+    if (job.group) {
       await joinBirthGroup({ env: job.env, accessToken: job.accessToken, ownerUserId: job.ownerUserId, sessionId: job.sessionId,
-        agentUserId: job.agentUserId, group: { chatId: job.groupChatId }, log })
-      if (!await sessionpageBirthGroupJoin(job.sessionId, job.env, job.ownerUserId)) groupChatId = job.groupChatId
+        agentUserId: job.agentUserId, group: job.group, log })
+      if (!await sessionpageBirthGroupJoin(job.sessionId, job.env, job.ownerUserId)) groupChatId = job.group.chatId
     }
     if (!groupChatId && directChatId === job.directChatId) return
     await job.afterBinding
@@ -1455,23 +1452,6 @@ export async function openOwnerDirectChatForAgent(
 }
 
 
-/** 「这个项目的群在哪、还能不能用」—— 只依赖项目,不依赖 agent。 */
-interface PreparedProjectGroup {
-  chat: ReturnType<typeof makeChatClient>
-  ownerUserId: string
-  projectId: string
-  env: NodeJS.ProcessEnv
-  /** 可以直接加座位的既有群;'' = 要新建。 */
-  activeGroupId: string
-  /** 映射里指着的那个群已归档:建新群时把这条映射忘掉。 */
-  archivedGroupId: string
-  /**
-   * #7341 映射里指着一个云端还没有的群 = 预留的 id(本机先起的那一拍记下、云端那一发还没落地;或另一台机器的项目并进来时
-   * 记下的)。第一个 agent 用**这个 id** 把群建出来 —— 与服务端 provision_taskpage_agent 的 'missing' 一支同口径;
-   * ❌ 另起一个新 id(那样两台机器各记各的群,一个项目裂成两个)。
-   */
-  reservedGroupId: string
-}
 
 
 

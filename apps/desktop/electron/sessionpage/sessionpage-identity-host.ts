@@ -58,7 +58,6 @@ export interface SessionpageIdentityHostDeps {
   beforeIdentityRemoval?: (agentUserId: string) => ((removed: boolean) => void) | Promise<(removed: boolean) => void>
   getAuth: () => Promise<SessionpageIdentityAuthSnapshot | null>
   resolveDeviceId: () => Promise<string | null>
-  resolveProjectName: (projectId: string) => Promise<string | null>
   /** The chat a conversation's agent was born in (SessionpageProvisionDeps `takeBirthGroup`). */
   takeBirthGroup?: (sessionId: string) => Promise<BirthGroup | null>
   sessionFacts: (target: SessionShellAgentAddressInput, options?: { includeArchived?: boolean }) => Promise<SessionpageSessionFacts | null>
@@ -120,7 +119,6 @@ export function createSessionpageIdentityHost(deps: SessionpageIdentityHostDeps)
   const provisionDeps: SessionpageProvisionDeps = {
     getAuth: deps.getAuth,
     resolveDeviceId: deps.resolveDeviceId,
-    resolveProjectName: deps.resolveProjectName,
     ...(deps.takeBirthGroup ? { takeBirthGroup: deps.takeBirthGroup } : {}),
     // #5331 铸身份 + 名字去重 + 进群一次往返。
     provisionOneTrip: (input) => provisionSessionpageAgentOneTrip({ ...input, fetchImpl: electronFetch }),
