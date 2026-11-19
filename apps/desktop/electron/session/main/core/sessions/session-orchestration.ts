@@ -161,7 +161,7 @@ export type SessionAction =
       prompt: string;
       source_link?: string;
       title?: string;
-      /** A directory on the machine it starts on: a folder of the group, or a worktree / subfolder of one. Omit: the group's first folder there. */
+      /** A directory on the machine it starts on: a folder of the group, or a worktree / subfolder of one. Omit: the caller's own working copy when the group is the caller's on the same machine, else the group's first folder there. */
       cwd?: string;
       parent_session_id?: string | null;
       transport?: SessionRuntime;
@@ -858,11 +858,12 @@ async function spawnSession(
   }
 
   // #5665 child 是一条独立会话。@@@group-folders 落点:群缺省继承调用者的群(null = 不进群,落 task-home);
-  // 目录是点名的 cwd,否则这个群在本机的第一个文件夹(没有就落 task-home 并在回执里说明)—— 与新建会话同一条规则。
-  const placement = resolveSessionPlacement({
-    groupChatId: action.chat_id === undefined ? caller.chatId : action.chat_id,
-    cwd: action.cwd,
-  });
+  // 目录是点名的 cwd;没点名且仍在调用者的群里,就和调用者共用工作副本(与以前同项目 spawn 的缺省一致);
+  // 换了群才落那个群在本机的第一个文件夹(没有就落 task-home 并在回执里说明)—— 与新建会话同一条规则。
+  const groupChatId = action.chat_id === undefined ? caller.chatId : action.chat_id;
+  const placement = !action.cwd?.trim() && groupChatId === caller.chatId
+    ? { groupChatId, workspaceId: caller.workspaceId }
+    : resolveSessionPlacement({ groupChatId, cwd: action.cwd });
   signal?.throwIfAborted();
 
   // Shape is the caller's unless the agent asked for the other one — the same inheritance the provider,

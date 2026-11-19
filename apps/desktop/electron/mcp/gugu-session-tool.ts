@@ -162,7 +162,7 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
       title: z.string().min(1).describe('Short name; default automatic.').optional(),
       device: deviceSchema.describe(DEVICE_DESCRIPTION).optional(),
       // #7331: a cwd is never recorded as a new folder, so a worktree an agent cut does not become one.
-      cwd: z.string().min(1).describe('Directory there: a folder of the group or a worktree/subfolder of one. Omit: the group\'s first folder there.').optional(),
+      cwd: z.string().min(1).describe('Directory there: a folder of the group or a worktree/subfolder of one. Omit: your own working copy when it stays in your group on this machine, else the group\'s first folder there.').optional(),
       parent_session_id: sessionIdSchema.nullable().describe('session:<id>. Omit: you; null: root.').optional(),
       transport: z.enum(['acp', 'pty']).optional(),
       harness: z.string().describe('From session_list_harnesses; default: your sub-agent default.').optional(),
