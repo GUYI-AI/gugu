@@ -6,7 +6,7 @@ import { remoteHostsStore } from '@/session/renderer/features/remote-hosts/remot
 import { wakeAndWaitOnline } from '@/lib/cloudComputerStore'
 import { listDevicesOnceIdentified } from '@/lib/listDevicesOnceIdentified'
 import { platform } from '@/platform'
-import { phoneLibraryTransport } from '@/mobile/agent-watch/sessionpage-rpc'
+import { phoneLibraryTransport } from '@/components/session-watch/sessionpage-rpc'
 import { connectionLibraryHost } from './connection-library-host'
 import { ownerConnectionActions } from './owner-connection-actions'
 import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting'

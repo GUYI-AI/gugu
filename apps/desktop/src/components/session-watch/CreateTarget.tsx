@@ -7,7 +7,7 @@ import { ChevronRight, Cloud, Folder, Monitor, Smartphone, Sparkles } from '@/li
 import { useReplica } from '@/lib/replica'
 import { creationSkills } from './create-skills-read'
 import { Button } from '@/components/ui/Button'
-import { PhoneComposerControl, PhoneComposerControlRow, PhoneComposerSheet } from '../composer/PhoneComposerControls'
+import { PhoneComposerControl, PhoneComposerControlRow, PhoneComposerSheet } from '../../mobile/composer/PhoneComposerControls'
 import { CreateSkillSearch, CreateSkillsList } from './CreateSkills'
 import type { CreationSkill } from './create-skills'
 import type { ChatComposerProps, ComposerModelOption } from '@gugu/session-ui/react/components'
@@ -17,9 +17,9 @@ import { createPermissionModes, harnessBlockReason, harnessUsable, selectHarness
 import type { CreateMachine, CreateProject } from './create-target'
 import './create-controls-catalog'
 import './task-flow-catalog'
-import { phoneMenuBar } from '../composer/phone-menu-bar'
-import { PhoneComposerChoice as Choice } from '../composer/PhoneComposerChoice'
-import { PhoneThinkingOptions } from '../composer/PhoneThinkingOptions'
+import { phoneMenuBar } from '../../mobile/composer/phone-menu-bar'
+import { PhoneComposerChoice as Choice } from '../../mobile/composer/PhoneComposerChoice'
+import { PhoneThinkingOptions } from '../../mobile/composer/PhoneThinkingOptions'
 import { creationThinking } from './creation-thinking'
 
 export type ExistingSessionModel = { options?: Record<string, ComposerModelOption> | null; selected?: string; onPick?: (id: string) => void; onOpen?: () => void; fastModePending?: boolean }

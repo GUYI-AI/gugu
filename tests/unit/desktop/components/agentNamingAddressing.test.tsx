@@ -5,7 +5,7 @@ import { ShareAgentModal } from '../../../../apps/desktop/src/components/contact
 import { ChannelAgentPicker } from '../../../../apps/desktop/src/components/settings/channels/ChannelAgentPicker'
 import { MemberProfileCard } from '../../../../apps/desktop/src/components/MemberProfileCard'
 import { ContactsIndex } from '../../../../apps/desktop/src/components/contacts/ContactsIndex'
-import { SessionRow } from '../../../../apps/desktop/src/mobile/agent-watch/SessionsPage'
+import { SessionRow } from '../../../../apps/desktop/src/components/session-watch/SessionsPage'
 import { installIdentityDirectoryBridge, publishIdentityDirectory } from '../../../../apps/desktop/src/lib/identityDirectoryBridge'
 import { clickElement, contact, createNode, createReactHarness, displayIdentity, renderWithAppProviders } from '../../../support/testHarness'
 

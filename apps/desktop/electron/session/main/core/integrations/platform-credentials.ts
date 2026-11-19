@@ -1,4 +1,5 @@
 import { CloudComputerError } from '@gugu/core/cloud/cloudComputer';
+import { serverNow } from '@gugu/core/shared/serverClock';
 import {
   isPlatformServiceMissing,
   PlatformCredentialRejectedError,
@@ -455,16 +456,15 @@ export class PlatformCredentialService {
 
   /**
    * 连接时这台没等到回话:平台列表里这一家默认账号连着、**而且是这次 PUT 发出之后存的**,才算存下了
-   * (❌ 把编辑前那把旧 key 的「连着」当成新的)。「之后」用平台的钟比:重读应答的 `Date` 头(整秒,补 1 s),
-   * 减去这台从发出 PUT 到开始重读过了多久(一段时长,与这台的钟快慢无关)= 这次 PUT 最晚在平台钟上的哪一刻发出;
-   * 平台存它的时刻(`updatedAt`)晚于这一刻才算。没有 `Date` 头就不推断,照实说连不上。
+   * (❌ 把编辑前那把旧 key 的「连着」当成新的)。「之后」用平台的钟比:重读之后的 `serverNow()`(这一读的 `Date`
+   * 头也已读进去;整秒精度,补 1 s),减去这台从发出 PUT 到开始重读过了多久(一段时长,与这台的钟快慢无关)
+   * = 这次 PUT 最晚在平台钟上的哪一刻发出;平台存它的时刻(`updatedAt`)晚于这一刻才算。
    */
   private async keptAfterAll(client: PlatformIntegrationsClient, integrationId: string, sentAt: number): Promise<boolean> {
     const sinceSent = this.now() - sentAt;
     try {
-      const { providers, platformNow } = await client.listWithClock(AbortSignal.timeout(this.listTimeoutMs));
-      if (platformNow === null) return false;
-      const sentBy = platformNow + 1_000 - sinceSent;
+      const providers = await client.list(AbortSignal.timeout(this.listTimeoutMs));
+      const sentBy = serverNow() + 1_000 - sinceSent;
       return (providers.find((row) => row.provider === integrationId)?.accounts ?? []).some(
         (account) =>
           account.accountId === DEFAULT_INTEGRATION_ACCOUNT_ID &&
@@ -712,7 +712,7 @@ export class PlatformCredentialService {
     try {
       signal.throwIfAborted();
       await openExternal(attempt.authorizationUrl);
-      while (Date.now() < attempt.expiresAt) {
+      while (serverNow() < attempt.expiresAt) {
         signal.throwIfAborted();
         const result = await client.oauthStatus(integrationId, attempt.attemptId, signal);
         if (result.state === 'connected') {

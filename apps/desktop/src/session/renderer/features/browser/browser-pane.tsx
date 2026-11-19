@@ -201,7 +201,9 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
   const pendingInitialUrl = useRef<string | null>(null);
   const sessionBrowserId = session?.browserId;
   const sessionPartition = session?.partition;
-  const showStartPage = session?.currentUrl === 'about:blank' && !session.isLoading;
+  // 起始页 = 这张网页是空白页。❌ 再加「没在加载」:新页签挂网页时会先载一次 about:blank,那几十毫秒里起始页一撤,
+  // 底下的原生网页就露出来(深色外观下 about:blank 是黑的)。真去别的地址时 currentUrl 先变,起始页照常让开。
+  const showStartPage = session?.currentUrl === 'about:blank';
   const loadError = session && !session.isLoading ? session.loadError : undefined;
   const loadErrorUrl = loadError ? (loadError.url ?? session?.currentUrl ?? '') : '';
   const loadErrorPresentation = useMemo<BrowserLoadErrorPresentation | undefined>(

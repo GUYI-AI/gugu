@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import type { SessionInput } from '@/lib/sessionInputOutbox'
-import { canReleasePhoneInput, canResumePhoneInput, phoneInputQueueIntent, phoneManualHostPrompts, phoneQueuedPrompts, phoneWaitingReceipts } from '@/mobile/agent-watch/phone-input-queue'
-import { localQueuedInputs } from '@/mobile/agent-watch/local-queued-inputs'
-import { projectPhonePendingInputs } from '@/mobile/agent-watch/phone-pending-inputs'
+import { canReleasePhoneInput, canResumePhoneInput, phoneInputQueueIntent, phoneManualHostPrompts, phoneQueuedPrompts, phoneWaitingReceipts } from '@/components/session-watch/phone-input-queue'
+import { localQueuedInputs } from '@/components/session-watch/local-queued-inputs'
+import { projectPhonePendingInputs } from '@/components/session-watch/phone-pending-inputs'
 
 const input = (id: string, order: number): SessionInput => ({ id, accountId: 'owner', deviceId: 'host', sessionId: 'session',
   text: 'same words', createdAt: order, queued: true, sendQueue: { order } })

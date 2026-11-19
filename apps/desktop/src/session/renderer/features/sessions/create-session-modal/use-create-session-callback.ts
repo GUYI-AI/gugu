@@ -1,4 +1,5 @@
-import { codexNeedsUpgrade } from '../session-input-failure-copy';
+import { rawSessionFailure } from '../stores/raw-session-failure';
+import { isCodexStartupFailure } from '../session-input-failure-copy';
 import { sessionpageLegOfView } from '@shared/core/sessions/sessions';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { messageForUser } from '@/lib/userFacingError';
@@ -110,7 +111,7 @@ export function useCreateSessionCallback({
   const deliveryMachine = selectedProjectId ? machineRegistry.machineOf(selectedProjectId) ?? null : null;
   const deliveryLeg = sessionpageLegOfView(initialSession.sessionView);
   const setDeliveryError = useCallback((failure: SessionFailure | null) => {
-    if (failure?.kind === 'harness-unavailable' || failure?.kind === 'raw' && codexNeedsUpgrade(failure.detail)) {
+    if (failure?.kind === 'harness-unavailable' || failure?.kind === 'raw' && isCodexStartupFailure(failure)) {
       failure = { ...failure, target: {
         machineId: deliveryMachine,
         leg: deliveryLeg,
@@ -196,10 +197,7 @@ export function useCreateSessionCallback({
           onClose();
         },
         (error) => {
-          setDeliveryError({
-            kind: 'raw',
-            detail: error instanceof Error ? error.message : String(error),
-          });
+          setDeliveryError(rawSessionFailure(error));
           log.error('send message to created session failed', error);
         },
       ).finally(() => {
@@ -370,7 +368,7 @@ export function useCreateSessionCallback({
       //
       const failure: SessionFailure = error instanceof SessionCreationFailedError
         ? error.failure
-        : { kind: 'raw', detail: error instanceof Error ? error.message : String(error) };
+        : rawSessionFailure(error);
       finishSubmission(submission, true);
       if (openedOptimistically && !submission?.created) navigate('new-session');
       setDeliveryError(failure);
@@ -380,7 +378,7 @@ export function useCreateSessionCallback({
       else {
         const failure: SessionFailure = error instanceof SessionCreationFailedError
           ? error.failure
-          : { kind: 'raw', detail: error instanceof Error ? error.message : String(error) };
+          : rawSessionFailure(error);
         setDeliveryError(failure);
         log.error(pendingMessage() ? 'send message to created session failed' : 'create session failed', error);
       }
@@ -459,7 +457,7 @@ export function useCreateSessionCallback({
     }).catch((error: unknown) => {
       finishSubmission(submission, true);
       setIsCreating(false);
-      setDeliveryError({ kind: 'raw', detail: error instanceof Error ? error.message : String(error) });
+      setDeliveryError(rawSessionFailure(error));
     });
   }, [canCreate, creating, createSessionNow, draft, initialSession, pendingAttachmentCount, pendingMessage, selectedProjectId, setIsCreating, setDeliveryError, finishSubmission]);
 

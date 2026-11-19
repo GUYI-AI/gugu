@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useConversationSessionSummary } from '@/hooks/useConversationSessionSummary';
 import { rendererLogger } from '@/lib/log';
-import { machineRpc } from '@/mobile/agent-watch/sessionpage-rpc';
-import { rememberNativeTailPage } from '@/mobile/agent-watch/timeline-cache';
+import { machineRpc } from '@/components/session-watch/sessionpage-rpc';
+import { rememberNativeTailPage } from '@/components/session-watch/timeline-cache';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { machineUnavailableLabel } from '../machine-unavailable-label';
 

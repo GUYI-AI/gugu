@@ -1,3 +1,5 @@
+import { serverNow } from '../shared/serverClock'
+
 /** Upload writes use the same inactivity window on every device host. */
 // Chromium and fetch do not expose a socket idle event. Allow a minute between observed writes,
 // on the scale of HTTP socket idle timeouts, without imposing a throughput or response deadline.
@@ -49,7 +51,8 @@ export async function runAttachmentStage<T>(stage: string, operation: Attachment
   }
   const capDeadline = (expiresAt: string | undefined) => {
     if (!expiresAt) return
-    const expiry = Date.parse(expiresAt)
+    // The permit's expiry is on the backend's clock; `deadline` is on this device's (`@@@server-clock`).
+    const expiry = Date.parse(expiresAt) - serverNow() + Date.now()
     if (Number.isFinite(expiry)) { deadline = Math.min(deadline, expiry); arm() }
   }
   arm()

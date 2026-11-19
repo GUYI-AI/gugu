@@ -16,6 +16,21 @@ export function normalizeModelBaseUrl(value: string): string {
   return url.toString().replace(/\/+$/, '');
 }
 
+/**
+ * The protocol an address names by its own path, before any network request: the vendor's documented route tail or
+ * prefix. `undefined` when the path doesn't say (a bare `/v1` is served by several protocols), so the person chooses.
+ */
+export function detectModelProtocol(value: string): ModelProtocol | undefined {
+  let url: URL;
+  try { url = new URL(value.trim()); } catch { return undefined; }
+  const path = url.pathname.replace(/\/+$/, '').toLowerCase();
+  if (/\/(?:v1\/)?messages$/.test(path) || /(?:^|\/)anthropic$/.test(path)) return 'anthropic-messages';
+  if (/\/responses$/.test(path)) return 'openai-responses';
+  if (/\/chat\/completions$/.test(path) || /\/openai$/.test(path)) return 'openai-chat-completions';
+  if (url.hostname === 'generativelanguage.googleapis.com' && /^\/v1(?:beta)?(?:\/models)?$/.test(path)) return 'gemini-generate-content';
+  return undefined;
+}
+
 export const modelEndpointSchema = z.object({
   protocol: modelProtocolSchema,
   baseUrl: z.string().url().transform((value, ctx) => {
@@ -88,21 +103,27 @@ export function runtimeModelId(value: string | undefined | null): string | undef
 
 export type CustomModelUnavailableReason = 'protocol' | 'missing-key' | 'unsupported' | 'no-model';
 
-/** Native protocol wins, then the writer's other explicitly supported protocols. */
+/**
+ * Native protocol wins, then the writer's other explicitly supported protocols, then a protocol the harness declares the
+ * bundled local router can convert (`converted: true`).
+ */
 export function matchCustomModel(input: {
   nativeProtocol?: HarnessWireProtocol;
   protocols?: readonly HarnessWireProtocol[];
+  convertFrom?: readonly HarnessWireProtocol[];
   allowDefaultModel?: boolean;
   hasModel?: boolean;
   connection: Pick<CustomModelConnection, 'endpoints' | 'keySaved'>;
-}): { endpoint: CustomModelMeta['endpoints'][number]; reason?: never } | { endpoint?: never; reason: CustomModelUnavailableReason } {
+}): { endpoint: CustomModelMeta['endpoints'][number]; converted?: true; reason?: never } | { endpoint?: never; converted?: never; reason: CustomModelUnavailableReason } {
   if (!input.nativeProtocol) return { reason: 'unsupported' };
-  const protocols = [input.nativeProtocol, ...(input.protocols ?? [])];
-  const endpoint = protocols.map((protocol) => input.connection.endpoints.find((item) => item.protocol === protocol)).find(Boolean);
+  const find = (protocols: readonly HarnessWireProtocol[]) =>
+    protocols.map((protocol) => input.connection.endpoints.find((item) => item.protocol === protocol)).find(Boolean);
+  const direct = find([input.nativeProtocol, ...(input.protocols ?? [])]);
+  const endpoint = direct ?? find(input.convertFrom ?? []);
   if (!endpoint) return { reason: 'protocol' };
   if (!input.connection.keySaved) return { reason: 'missing-key' };
   if (input.hasModel === false && !input.allowDefaultModel) return { reason: 'no-model' };
-  return { endpoint };
+  return direct ? { endpoint } : { endpoint, converted: true };
 }
 
 /** Resolve only within the provider addressing reported by this running custom session. */

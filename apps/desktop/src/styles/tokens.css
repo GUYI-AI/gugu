@@ -702,7 +702,7 @@
   --selected: color-mix(in oklab, var(--fg) 7.5%, transparent);
   --rail-selected: color-mix(in oklab, var(--fg) 5%, transparent); /* 最左栏选中:比列表里的选中行轻一档(gugu-dev#181 原型) */
   --press: color-mix(in oklab, var(--fg) 6%, transparent); /* @@@1787 按压反馈,比 hover 深一档才可感知 */
-  --pinned: color-mix(in oklab, var(--fg) 2.5%, transparent); /* #2598 置顶行常驻底色(飞书式):静息态可辨,压在 hover/selected 之下 */
+  --pinned: color-mix(in oklab, var(--fg) 1%, transparent); /* #2598 置顶行常驻底色(飞书式):静息态可辨,压在 hover/selected 之下 */
   /* @@@state-ladder-mix (#2322) 上面三档的「实色配方」。--hover/--press/--selected 是半透明叠色,
      叠在任何面上都成立;而会话页的设计系统(vanilla-extract 生成的 --em-surface-* 契约)只吃**实色**,
      没有叠色这一层。于是把同一条阶梯拆成「叠什么色 + 叠多少」,让皮肤桥能对每个面 color-mix 出
@@ -941,7 +941,7 @@
   --selected: color-mix(in oklab, var(--fg) 7.5%, transparent); /* @@@selected-neutral-7333 */
   --rail-selected: color-mix(in oklab, var(--fg) 5%, transparent); /* 最左栏选中:比列表里的选中行轻一档(gugu-dev#181 原型) */
   --press: color-mix(in oklab, var(--fg) 6%, transparent); /* @@@1787 按压反馈,比 hover 深一档才可感知 */
-  --pinned: color-mix(in oklab, var(--fg) 2.5%, transparent); /* #2598 置顶行常驻底色(飞书式):静息态可辨,压在 hover/selected 之下 */
+  --pinned: color-mix(in oklab, var(--fg) 1%, transparent); /* #2598 置顶行常驻底色(飞书式):静息态可辨,压在 hover/selected 之下 */
   /* @@@state-ladder-mix 浅色配方(说明见 :root),#7333 起与暗色侧同一组数。 */
   --state-tint: var(--fg); /* 浅色下 --fg 近黑 = 叠黑;与暗色侧同一条式子 */
   --state-tint-selected: var(--fg); /* @@@selected-neutral-7333 */

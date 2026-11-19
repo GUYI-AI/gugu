@@ -152,7 +152,7 @@ final class GuguIOSLeaseModel: GuguModelCompleting {
 
     private func send(_ id: String, _ grant: GuguIOSModelGrant) throws {
         try check()
-        guard !stopped, grant.lease.expiresAt > Date(), let request = requests[id], transports[id] == nil else {
+        guard !stopped, grant.lease.expiresAt > GuguServerClock.shared.now(), let request = requests[id], transports[id] == nil else {
             throw Self.failure("model_lease_expired", "Native model request is unavailable or expired")
         }
         var wire = request.body; wire["model"] = grant.lease.modelId
@@ -173,7 +173,7 @@ final class GuguIOSLeaseModel: GuguModelCompleting {
         renewal?.cancel()
         guard !stopped, let grant else { return }
         let work = DispatchWorkItem { [weak self] in self?.renew() }; renewal = work
-        queue.asyncAfter(deadline: .now() + max(1, grant.lease.expiresAt.timeIntervalSinceNow - 120), execute: work)
+        queue.asyncAfter(deadline: .now() + max(1, grant.lease.expiresAt.timeIntervalSince(GuguServerClock.shared.now()) - 120), execute: work)
     }
     private func renew() {
         guard !stopped, let grant else { return }
@@ -182,13 +182,13 @@ final class GuguIOSLeaseModel: GuguModelCompleting {
             switch result {
             case .success(let next): self.grant = next; self.armRenewal()
             case .failure(let error):
-                if grant.lease.expiresAt <= Date() {
+                if grant.lease.expiresAt <= GuguServerClock.shared.now() {
                     for (id, transport) in self.transports { transport.cancel(id: id) }
                     self.failRequests(jobId: self.grantJobId ?? "", error: error)
                 }
                 else {
                     let work = DispatchWorkItem { [weak self] in self?.renew() }; self.renewal = work
-                    self.queue.asyncAfter(deadline: .now() + min(15, grant.lease.expiresAt.timeIntervalSinceNow), execute: work)
+                    self.queue.asyncAfter(deadline: .now() + min(15, grant.lease.expiresAt.timeIntervalSince(GuguServerClock.shared.now())), execute: work)
                 }
             }
         } }

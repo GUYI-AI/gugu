@@ -23,7 +23,7 @@ import {
 } from './create-session-form'
 import { createModelOptions } from './session-model-menu'
 import { allGuguHidden, offeredInCreateMenu } from '@/lib/createModelDefault'
-import { PhoneComposerChoice } from '../composer/PhoneComposerChoice'
+import { PhoneComposerChoice } from '../../mobile/composer/PhoneComposerChoice'
 import { ModelMenuFooter } from './ModelMenuFooter'
 import { phoneModelDescription, phoneModelName } from './phone-model-copy'
 import { composerModelSelection, composerTierLabel } from '@renderer/features/sessions/session-config/use-composer-model-options'

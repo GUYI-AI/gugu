@@ -27,7 +27,7 @@ import { Button } from '../ui/Button'
 import { PageLoading } from '../../lib/loading/PageLoading'
 import { useBackLayer } from '../ui/sheetStack'
 
-const OpenedFilePreview = lazy(() => import('../../mobile/agent-watch/opened-file-preview').then((m) => ({ default: m.OpenedFilePreview })))
+const OpenedFilePreview = lazy(() => import('../session-watch/opened-file-preview').then((m) => ({ default: m.OpenedFilePreview })))
 
 /** The App a frame draws: its page, what it may do, and the version — a new one reloads the frame in place (摩擦单 F66). */
 interface FramedPage {
@@ -188,7 +188,7 @@ export function PhoneAppFrame({
     let off: () => void = () => undefined
     let gone = false
     if (deviceId) {
-      void import('../../mobile/agent-watch/sessionpage-rpc').then(({ onMachineChannel }) => {
+      void import('../session-watch/sessionpage-rpc').then(({ onMachineChannel }) => {
         if (gone) return
         off = onMachineChannel(deviceId, extensionProgramNotifiedChannel.name, (data) => {
           const notification = data as { extensionId?: string; server?: string; method?: string; params?: unknown } | null

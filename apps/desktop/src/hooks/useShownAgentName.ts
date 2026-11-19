@@ -1,3 +1,4 @@
+import { serverNow } from '@gugu/core/shared/serverClock'
 import { agentNamingUntil } from '@gugu/core/shared/agentDefaultName'
 import { useTranslation } from 'react-i18next'
 import { useDeadlineClock } from './useDeadlineClock'
@@ -12,7 +13,7 @@ export function useShownAgentName(input: readonly AgentNameInput[]): string[]
 export function useShownAgentName(input: AgentNameInput | readonly AgentNameInput[]): string | string[] {
   const { t } = useTranslation('common')
   const names: readonly AgentNameInput[] = Array.isArray(input) ? input : [input as AgentNameInput]
-  const now = Date.now()
+  const now = serverNow()
   const deadlines = names.map(({ name, agentType, createdAt }) => agentNamingUntil(name, agentType, createdAt, now))
   const active = deadlines.filter((until): until is number => until !== null)
   useDeadlineClock(active.length ? Math.min(...active) : null)

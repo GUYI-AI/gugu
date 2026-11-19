@@ -238,7 +238,6 @@ async function collect(home: ResolvedAgentHome, options: {
       return null;
     });
     if (!stat) { if (depth > 0) issues.push({ path, reason: 'sourceChanged' }); return; }
-    newestMtime = Math.max(newestMtime, stat.mtimeMs);
     const selected = declarations.filter((entry) => matchesPath(path, entry.path));
     const projectLink = stat.isSymbolicLink() && selected.some(({ spec }) => spec.keys || spec.omitKeys);
     if (stat.isSymbolicLink() && !projectLink) {
@@ -269,6 +268,7 @@ async function collect(home: ResolvedAgentHome, options: {
         return;
       }
       items.push(...linkSnapshots);
+      if (linkSnapshots.length) newestMtime = Math.max(newestMtime, stat.mtimeMs);
       await options.consume?.(linkSnapshots);
       return;
     }
@@ -308,7 +308,6 @@ async function collect(home: ResolvedAgentHome, options: {
         if (excluded(targetRel, home.credentialPaths)) { issues.push({ path, reason: 'sensitive' }); return; }
         if (excluded(targetRel, home.carryExclusions)) { issues.push({ path, reason: 'excluded' }); return; }
         if (!inputStat.isFile()) { issues.push({ path, reason: 'unreadable' }); return; }
-        newestMtime = Math.max(newestMtime, inputStat.mtimeMs);
       }
       if (!wholeTree && inputStat.size > FILE_LIMIT) { issues.push({ path, reason: 'tooLarge' }); return; }
       if (wholeTree && stat.size > FILE_LIMIT) {
@@ -371,6 +370,7 @@ async function collect(home: ResolvedAgentHome, options: {
         snapshots.push({ ...item, bytes: projected });
       }
     }
+    if (snapshots.length) newestMtime = Math.max(newestMtime, inputStat.mtimeMs);
     } catch (error) {
       if (!missing(error)) {
         const rejected = issue(path, error);
@@ -380,7 +380,9 @@ async function collect(home: ResolvedAgentHome, options: {
     }
     // Source failures are listed; destination writes and stale choices must fail the operation.
     // Keep at most one bounded source file in memory; large tree assets are streamed.
-    if (snapshots.length) await options.consume?.(snapshots);
+    if (snapshots.length) {
+      await options.consume?.(snapshots);
+    }
   };
   const paths = [...new Set(declarations.map((entry) => entry.path))].sort();
   const parent = paths.some((path) => path.startsWith('../')) ? await realSource(dirname(home.userConfigRoot)) : root;
@@ -537,8 +539,17 @@ function groupCount(items: Item[], group: AgentHomeGroupId): number {
 export async function scanAgentHome(home: ResolvedAgentHome) {
   const { items, issues, newestMtime, mcpSecrets, mcpNames, projectMcpCount } = await collect(home);
   const marker = await readAgentHomeMarker(home);
+  // The import records hashes of its selected projections, not CLI runtime activity.
+  // Ignore unticked groups and metadata changes (including sibling-file runtime keys).
+  const imported = marker ? items.filter(item => marker.groups.includes(item.group)) : [];
+  const source = new Map(imported.map(item => [item.id, item.hash]));
+  const sourceUpdated = !!marker && !marker.skipped && (marker.legacyBaseline
+    // Old copied homes have no hashes. Keep their signal, restricted to importable files.
+    ? (await collect(home, { groups: new Set(marker.groups) })).newestMtime > Date.parse(marker.importedAt)
+    : imported.some(item => marker.files[item.id] !== item.hash)
+      || Object.keys(marker.files).some(id => !source.has(id) && !issues.some(issue => matchesPath(id.split('#')[0]!, issue.path))));
   return {
-    providerId: home.providerId, userRoot: home.userConfigRoot, marker, newestMtime,
+    providerId: home.providerId, userRoot: home.userConfigRoot, marker, newestMtime, sourceUpdated,
     groups: home.importGroups.map((group) => {
       const members = items.filter((item) => item.group === group.id);
       return { id: group.id, count: groupCount(members, group.id), mcpCount: members.reduce((count, item) => count + item.mcpCount, 0) };

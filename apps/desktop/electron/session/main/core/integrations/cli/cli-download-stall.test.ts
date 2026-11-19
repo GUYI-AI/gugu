@@ -9,6 +9,7 @@ import { downloadTo } from './cli-tool-installer';
 // ❌ 按总时长判 —— 从前整段 5 分钟一到就中止,14.7 MB 的飞书在云上永远下不完。
 let dir: string | undefined;
 afterEach(async () => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   if (dir) await rm(dir, { recursive: true, force: true });
 });
@@ -31,12 +32,17 @@ it('finishes a slow download that keeps moving for longer than the stall window'
   dir = await mkdtemp(path.join(tmpdir(), 'gugu-cli-stall-'));
   const source = stream();
   vi.stubGlobal('fetch', vi.fn(async () => new Response(source.body)));
+  // 卡住窗口按假时钟走:用真定时器的话，负载一高某一拍晚到 80 ms 以上，就真的判成卡住去重下了。
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   const file = path.join(dir, 'tool.tgz');
-  const done = downloadTo('https://example.test/tool.tgz', file, 'sha256', 'hex', () => undefined, { stallMs: 80 });
-  // 一共 ~300 ms,远超 80 ms 的卡住窗口,但每 30 ms 都有新字节。
+  let landed = (_bytes: number) => {};
+  const done = downloadTo('https://example.test/tool.tgz', file, 'sha256', 'hex', (progress) => landed(progress.receivedBytes), { stallMs: 80 });
+  // 一共 300 ms,远超 80 ms 的卡住窗口,但每 30 ms 都有新字节:等这一个字节真到了，再走 30 ms。
   for (let i = 0; i < 10; i += 1) {
+    const received = new Promise<void>((resolve) => { landed = (bytes) => { if (bytes === i + 1) resolve(); }; });
     source.push([i]);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await received;
+    vi.advanceTimersByTime(30);
   }
   source.end();
   await expect(done).resolves.toMatch(/^[0-9a-f]{64}$/);
