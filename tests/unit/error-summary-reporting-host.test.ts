@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { runInThisContext } from 'node:vm'
 import { app, ipcMain } from 'electron'
-import { registerErrorSummaryReporting } from '../../apps/desktop/electron/error-summary-reporting-host'
+import { registerErrorSummaryReporting, reportAgentHomeMigrationFailure } from '../../apps/desktop/electron/error-summary-reporting-host'
 import * as normalization from '../../apps/desktop/shared/error-summary'
 import * as stack from '../../apps/desktop/shared/error-summary-stack'
 
@@ -100,6 +100,23 @@ describe('native summary reporting boundary', () => {
     expect(sanitize).not.toHaveBeenCalled()
     expect(getter).not.toHaveBeenCalled()
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('reports a handled migration failure with only the Beta version, type and declared path category', async () => {
+    const version = '0.3.8-beta.44440413539'
+    vi.spyOn(app, 'getVersion').mockReturnValue(version)
+    registerErrorSummaryReporting({ eligible: true, owner: () => null })
+    const error = new TypeError('/private/profile/auth.json contains private-token')
+    reportAgentHomeMigrationFailure(error, 'marker')
+    expect(fetch).not.toHaveBeenCalled()
+    ipcMain.on('error-summary:read-local-consent', (reply: unknown) => { if (typeof reply === 'function') reply({ eligible: true, decision: 'allowed' }) })
+    reportAgentHomeMigrationFailure(error, 'marker')
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    const body = String(vi.mocked(fetch).mock.calls[0][1]!.body)
+    expect(JSON.parse(body).summary).toMatchObject({
+      type: 'TypeError', version, locations: ['packages/session-core/src/agents/plugins/helpers/agent-home-import.ts:320:1'],
+    })
+    expect(body).not.toMatch(/private|auth\.json|token/)
   })
 
   it('reports an allowed native error category without formatting any error accessors', async () => {

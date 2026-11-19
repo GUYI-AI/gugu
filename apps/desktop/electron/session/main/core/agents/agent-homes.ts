@@ -99,15 +99,21 @@ export function defaultAgentHomeGroups(groups: readonly { id: AgentHomeGroupId }
   return groups.filter((group) => group.id !== 'hooks').map((group) => group.id);
 }
 
-export async function scanAgentHomes(providerIds?: readonly string[]): Promise<AgentHomeScan[]> {
+export async function scanAgentHomes(providerIds?: readonly string[], upgradedOnly = false): Promise<AgentHomeScan[]> {
   const rows: AgentHomeScan[] = [];
-  if (!providerIds) await ensureAgentDependenciesProbed(localDependencyManager);
+  if (!providerIds && !upgradedOnly) await ensureAgentDependenciesProbed(localDependencyManager);
   for (const plugin of pluginRegistry.getAll()) {
     const providerId = plugin.metadata.id;
-    if (providerIds ? !providerIds.includes(providerId) : localDependencyManager.get(providerId as DependencyId)?.status !== 'available') continue;
+    if (providerIds && !providerIds.includes(providerId)) continue;
+    if (!providerIds && !upgradedOnly && localDependencyManager.get(providerId as DependencyId)?.status !== 'available') continue;
     const home = homeFor(providerId);
     if (!home) continue;
     await prepareAutomaticImport(providerId);
+    if (upgradedOnly) {
+      // A provider with a failed or invalid import record cannot hide the other results.
+      const marker = await readAgentHomeMarker(home).catch(() => null);
+      if (marker?.migratedFrom !== 'shared') continue;
+    }
     const scan = await scanAgentHome(home);
     const migration = !scan.marker && !!(await upgradeProviders())?.has(providerId);
     const sourceReadable = await access(home.userConfigRoot).then(() => true, () => scan.groups.some((group) => group.count > 0));

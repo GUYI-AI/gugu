@@ -108,7 +108,7 @@ export default {
   "agentHome": {
   "migrationNoticeTitle": "Configuration migration complete",
   "migrationNoticeCopied": "This update moved {{names}} configuration into Gugu and brought over your sign-in, skills, and session history.",
-  "migrationNotice": "This update moved {{names}} configuration into Gugu, including available skills and session history.",
+  "migrationNotice": "This update moved {{names}} configuration into Gugu.",
   "migrationSkipped_one": "View {{count}} skipped item",
   "migrationSkipped_other": "View {{count}} skipped items",
   "migrationResults": "Configuration migration results",

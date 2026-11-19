@@ -104,7 +104,7 @@ export default {
   "agentHome": {
   "migrationNoticeTitle": "配置迁移完成",
   "migrationNoticeCopied": "这次更新把 {{names}} 的配置迁到了咕咕自己管理，你的登录、Skills 和会话记录都已带过来。",
-  "migrationNotice": "这次更新把 {{names}} 的配置迁到了咕咕自己管理，已带过可迁移的 Skills 和会话记录。",
+  "migrationNotice": "这次更新把 {{names}} 的配置迁到了咕咕自己管理。",
   "migrationSkipped_other": "{{count}} 项没迁，查看",
   "migrationResults": "配置迁移结果",
   "migrationReadFailed": "暂时读不到配置迁移结果。",

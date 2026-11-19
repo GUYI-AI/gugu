@@ -174,7 +174,7 @@ export const subscriptionUsageRuntimeCommandSchema = subscriptionUsageCommandSch
 
 export const agentConfigContract = defineContract({
   ...commonAgentConfigContract,
-  scanAgentHomes: fallible({ input: z.object({ providerIds: z.array(z.string()).optional() }), data: z.array(agentHomeScanSchema), error: agentConfigAuthErrorSchema }),
+  scanAgentHomes: fallible({ input: z.object({ providerIds: z.array(z.string()).optional(), upgradedOnly: z.boolean().optional() }), data: z.array(agentHomeScanSchema), error: agentConfigAuthErrorSchema }),
   importAgentHome: fallible({ input: provider.extend({ groups: z.array(agentHomeGroupIdSchema), skip: z.boolean().optional() }), data: agentHomeImportResultSchema, error: agentConfigAuthErrorSchema }),
   diffAgentHome: fallible({ input: provider, data: agentHomeDiffSchema, error: agentConfigAuthErrorSchema }),
   reimportAgentHome: fallible({ input: provider.extend({ decisions: z.array(z.object({ id: z.string(), revision: z.string() })) }), data: z.object({ imported: z.number(), issues: z.array(agentHomeIssueSchema) }), error: agentConfigAuthErrorSchema }),

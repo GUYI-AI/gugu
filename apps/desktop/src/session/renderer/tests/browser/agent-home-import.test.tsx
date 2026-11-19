@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { createReactHarness, clickElement } from '../../../../../../../tests/support/testHarness'
 import { ModalRenderer } from '@renderer/lib/modal/modal-renderer'
 import { openAgentHomeImport } from '@renderer/features/settings/subscriptions/ensure-agent-home'
-import { showAgentHomeUpgradeNotice } from '@renderer/features/settings/subscriptions/agent-home-upgrade-notice'
+import { readAgentHomeUpgradeResults, showAgentHomeUpgradeNotice } from '@renderer/features/settings/subscriptions/agent-home-upgrade-notice'
 import { AgentHomeSkippedFiles } from '@/components/settings/data-import/AgentHomeSkippedFiles'
 import type { AgentHomeScan } from '@gugu/session-core/workspace-server/agent-config'
 import { UI_EVENTS } from '@/lib/uiEvents'
@@ -42,6 +42,21 @@ it('shows one notice with a link to the import page when an actual migration ski
   expect(notice.action.label).toMatch(/1/)
   notice.action.onClick()
   expect(open).toHaveBeenCalledWith(expect.objectContaining({ detail: { section: 'data-import', action: undefined } }))
+})
+
+it('names every migrated managed home and avoids promising sign-ins for unrelated providers', async () => {
+  const results = [
+    { ...home, providerId: 'kimi', name: 'Kimi' },
+    { ...home, providerId: 'antigravity', name: 'Antigravity' },
+  ].map((row) => ({ ...row, upgraded: true, needsImport: false, importedAt: new Date().toISOString() }))
+  calls.scanHomes.mockResolvedValue({ success: true, data: [home, ...results] })
+  showAgentHomeUpgradeNotice(await readAgentHomeUpgradeResults())
+  expect(calls.scanHomes).toHaveBeenCalledWith({ upgradedOnly: true })
+  const [notice] = calls.notice.mock.calls[0]!
+  expect(notice.description).toContain('Kimi')
+  expect(notice.description).toContain('Antigravity')
+  expect(notice.description).not.toContain('Codex')
+  expect(notice.action).toBeUndefined()
 })
 
 it('folds long paths in import results while keeping the original reason available', async () => {
