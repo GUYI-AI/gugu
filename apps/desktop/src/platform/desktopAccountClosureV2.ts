@@ -30,3 +30,13 @@ export const unsupportedAccountClosureV2: AccountClosureV2Native = {
   recover: async () => failure('closure_unavailable'), cancel: async () => failure('closure_unavailable'),
   finalize: async () => failure('closure_unavailable'),
 }
+
+/** Invoke only from an explicit user resume action, never reconciliation. */
+export async function resumeDesktopAgentsAfterAccountClosure(): Promise<void> {
+  const api = window.electronAPI
+  if (!api) return failure('closure_unavailable')
+  let reply: unknown
+  try { reply = await api.invoke('account-closure:resume-paused') } catch { return failure('closure_unavailable') }
+  if (!reply || typeof reply !== 'object' || !('ok' in reply)) return failure('closure_unavailable')
+  if (reply.ok !== true) return failure('code' in reply && isAccountClosureV2ErrorCode(reply.code) ? reply.code : 'closure_unavailable')
+}

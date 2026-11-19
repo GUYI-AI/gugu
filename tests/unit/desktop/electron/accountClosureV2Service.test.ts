@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createDesktopClosureV2Service } from '../../../../apps/desktop/electron/account-closure/v2-service'
 import { createClosureOperationRecords } from '../../../../apps/desktop/electron/account-closure/operation-record'
+import { ClosureFailure } from '../../../../apps/desktop/electron/account-closure/receipts'
 import { createDesktopClosureService } from '../../../../apps/desktop/electron/account-closure/service'
 import { ClosureV2HttpFailure, type ClosureV2Auth, type ClosureV2Binding, type ClosureV2Reply, type ClosureV2Route } from '../../../../apps/desktop/electron/account-closure/v2-http'
 const A='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', B='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', SID='cccccccc-cccc-4ccc-8ccc-cccccccccccc', OP='dddddddd-dddd-4ddd-8ddd-dddddddddddd', PREP='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', REQUEST='ffffffff-ffff-4fff-8fff-ffffffffffff'
@@ -8,7 +9,7 @@ const policy={protocol_version:2 as const,available:true,deletion:'immediate' as
 function fixture() {
  const values=new Map<string,string>(), effects:string[]=[]
  let auth:ClosureV2Auth|null|undefined={ownerId:A,sessionId:SID,accessToken:'native-fixture-only'}, failWrite=false, finish=true
- let server:ClosureV2Reply|null=null, reject=false
+ let server:ClosureV2Reply|null=null, reject=false, blocked=false, serverBinding:string|null=null
  const lost=new Set<ClosureV2Route>(), before=new Set<ClosureV2Route>()
  let transform:((reply:ClosureV2Reply)=>ClosureV2Reply)|null=null
  let after: (()=>void)|null=null
@@ -16,6 +17,7 @@ function fixture() {
  const http={
  policy:vi.fn(async()=>policy),
  post:vi.fn(async(route:ClosureV2Route,binding:ClosureV2Binding, extra:Record<string,string|number|boolean|null>={},_auth?:ClosureV2Auth):Promise<ClosureV2Reply>=>{
+  if(serverBinding!==binding.localOperationId){server=null;serverBinding=binding.localOperationId}
   if(before.has(route)) throw new ClosureV2HttpFailure('outcome_unknown',true)
   if(route==='result' && !server)throw new ClosureV2HttpFailure('not_found',true)
   if(!server)server={operation:{id:OP,state:'open',revision:1,challengeGeneration:0,requestId:null,requestState:null,request:null,confirmation:null,canReleasePreparation:false},preparation:null}
@@ -43,16 +45,17 @@ function fixture() {
  }
  const restart=()=>{
   const local=createDesktopClosureService({profileBinding:'test-profile',secrets,currentOwner:async()=>auth===undefined?undefined:auth?.ownerId??null,
+   recheckStopped:async()=>{if(blocked)throw new ClosureFailure('closure_not_prepared')},
    stopOwner:async()=>{effects.push('stop')},steps:[{name:'first',run:async()=>{effects.push('first');return true}},{name:'second',run:async()=>{effects.push('second');return finish}}],
    retained:async()=>['workspace-files']})
   const records=createClosureOperationRecords({profileBinding:'test-profile',secrets,underAuth:local.underAuth,identity:async()=>auth&&{ownerId:auth.ownerId,sessionId:auth.sessionId}})
-  const native=createDesktopClosureV2Service({local,records,http,auth:async()=>auth,deviceId:async()=>A})
+  const native=createDesktopClosureV2Service({local,records,http,auth:async()=>auth,deviceId:async()=>A,resumeOwner:async(owner)=>{if(auth?.ownerId!==owner)throw new ClosureFailure('wrong_local_owner');effects.push('resume')}})
   return {native,local,records}
  }
  const original=restart()
  return {...original, restart, effects, values, http, lost, before,
   auth:(v:typeof auth)=>{auth=v}, failure:(v:boolean)=>{failWrite=v}, finish:(v:boolean)=>{finish=v}, reject:()=>{reject=true},
-  transform:(v:typeof transform)=>{transform=v}, after:(fn:()=>void)=>{after=fn}, server:()=>server!,
+  blocked:(v:boolean)=>{blocked=v},transform:(v:typeof transform)=>{transform=v}, after:(fn:()=>void)=>{after=fn}, server:()=>server!,
  }
 }
 async function prepared(f:ReturnType<typeof fixture>){
@@ -190,6 +193,33 @@ describe('native V2 custody and trusted receiver',()=>{
   f.transform(null);const good=await f.native.recover(bad.handle)
   expect(good).toMatchObject({pendingEffect:null,phase:'challenge',serverOperation:{challengeExpiresAt:expect.any(String)}})
   expect(f.http.post.mock.calls.filter(c=>c[0]==='challenge')).toHaveLength(1)
+ })
+ it('rechecks native runtime exit proof immediately before confirmation, including restored server preparation',async()=>{
+  const f=fixture(), ready=await prepared(f), count=f.http.post.mock.calls.length
+  f.blocked(true)
+  await expect(f.native.confirm(ready.handle,{code:'123456',acknowledgeForfeit:true})).rejects.toMatchObject({code:'closure_not_prepared'})
+  expect(f.http.post).toHaveBeenCalledTimes(count)
+  expect(await f.native.discover()).toMatchObject({pendingEffect:null,phase:'prepared'})
+  expect(await f.local.isSealed(A)).toBe(true)
+  f.blocked(false)
+  expect((await f.native.confirm(ready.handle,{code:'123456',acknowledgeForfeit:true})).phase).toBe('local-complete')
+ })
+ it('keeps cancellation paused until separate explicit resume and refuses a newly pending operation',async()=>{
+  const f=fixture(), ready=await prepared(f)
+  expect((await f.native.cancel(ready.handle)).agentsPaused).toBe(true)
+  expect(f.effects).not.toContain('resume')
+  await f.native.resumePausedAgents()
+  expect(await f.local.isPaused(A)).toBe(false);expect(f.effects).toContain('resume')
+  await f.native.capture()
+  await expect(f.native.resumePausedAgents()).rejects.toMatchObject({code:'closure_not_complete'})
+ })
+ it('a new capture/cancel does not itself release an inherited pause',async()=>{
+  const f=fixture(),ready=await prepared(f)
+  await f.native.cancel(ready.handle)
+  const next=await f.native.capture()
+  await f.native.cancel(next.handle)
+  expect(await f.local.isPaused(A)).toBe(true)
+  await f.native.resumePausedAgents();expect(await f.local.isPaused(A)).toBe(false)
  })
  it('serializes mutating native commands while a network effect is pending',async()=>{
   const f=fixture(),cap=await f.native.capture()

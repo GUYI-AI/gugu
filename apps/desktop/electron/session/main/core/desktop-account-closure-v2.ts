@@ -9,6 +9,7 @@ export function createDesktopAccountClosureV2Host(input: {
   local: ReturnType<typeof createDesktopClosureService>
   auth(): Promise<ClosureV2Auth | null | undefined>
   deviceId(): Promise<string>
+  resumeOwner(ownerId: string): Promise<void>
   baseUrl: string
   anonKey: string
 }) {
@@ -16,6 +17,6 @@ export function createDesktopAccountClosureV2Host(input: {
     secrets: encryptedAppSecretsStore, profileBinding: input.profileBinding, underAuth: input.local.underAuth,
     identity: async () => { const a = await input.auth(); return a && { ownerId: a.ownerId, sessionId: a.sessionId } },
   })
-  return createDesktopClosureV2Service({ records, local: input.local, auth: input.auth, deviceId: input.deviceId,
+  return createDesktopClosureV2Service({ records, local: input.local, auth: input.auth, deviceId: input.deviceId, resumeOwner: input.resumeOwner,
     http: createClosureV2Http({ baseUrl: input.baseUrl, anonKey: input.anonKey }) })
 }

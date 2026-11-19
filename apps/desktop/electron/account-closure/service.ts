@@ -113,6 +113,28 @@ export function createDesktopClosureService(ports: DesktopClosureServicePorts) {
         return { cancelled: true }
       })
     },
+    /** Separate explicit user intent, never normal startup/reconciliation.
+     * A later captured/cancelled operation does not discard an older pause. */
+    async resumeCancelledOwner(ownerId: string): Promise<void> {
+      await underAuth(async () => {
+        if (await ports.currentOwner() !== ownerId) throw new ClosureFailure('wrong_local_owner')
+        const fence = await readFence(ownerId)
+        if (!fence) return
+        if (fence.active || fence.erasing) throw new ClosureFailure('closure_not_prepared')
+        if (fence.paused) await writeFence(ownerId, { ...fence, paused: false })
+      })
+    },
+    /** Private V2 pre-confirm proof. A restored server preparation cannot
+     * replace this installation's still-current runtime exit evidence. */
+    async requireNativePreparation(input: AccountClosureScope, epoch: string): Promise<void> {
+      const scope = scopeOf(input)
+      await underAuth(async () => {
+        await own(scope)
+        const fence = await readFence(scope.ownerId)
+        if (!fence?.active || !fence.ready || fence.erasing || fence.operation !== scope.localOperationId || fence.epoch !== epoch) throw new ClosureFailure('closure_not_prepared')
+        await ports.recheckStopped?.(scope.ownerId)
+      })
+    },
     /** Private V2 receiver only: callers have already persisted the exact
      * authoritative cancellation ACK. Never registered as a renderer command. */
     async releaseNativePreparation(input: AccountClosureScope, epoch: string): Promise<void> {

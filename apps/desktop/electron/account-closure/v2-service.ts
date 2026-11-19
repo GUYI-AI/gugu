@@ -10,6 +10,7 @@ interface Ports {
   http: ReturnType<typeof createClosureV2Http>
   auth(): Promise<ClosureV2Auth | null | undefined>
   deviceId(): Promise<string>
+  resumeOwner(ownerId: string): Promise<void>
 }
 const fail = (code: ConstructorParameters<typeof ClosureV2HttpFailure>[0]): never => { throw new ClosureV2HttpFailure(code) }
 const uuid = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value)
@@ -25,7 +26,7 @@ const binding = (r: ClosureOperationRecord): ClosureV2Binding => {
  * cleanup checkpoints never come from renderer claims. Network/drain work runs
  * outside the short identity barrier; receiving it still requires the same CAS.
  */
-export function createDesktopClosureV2Service(p: Ports): AccountClosureV2Native {
+export function createDesktopClosureV2Service(p: Ports): AccountClosureV2Native & { resumePausedAgents(): Promise<void> } {
   let busy = false
   const exclusive = async <T>(work: () => Promise<T>): Promise<T> => {
     if (busy) return fail('closure_busy')
@@ -139,6 +140,17 @@ export function createDesktopClosureV2Service(p: Ports): AccountClosureV2Native 
   }
   const recoverRecord = (r: ClosureOperationRecord) => request(r, 'result', {})
   return {
+    resumePausedAgents: () => exclusive(async () => {
+      const owner = await p.local.underAuth(async () => {
+        const auth = await live(), record = await p.records.currentNative()
+        if (!record || record.phase !== 'cancelled') return fail('closure_not_complete')
+        await p.local.resumeCancelledOwner(auth.ownerId)
+        return auth.ownerId
+      })
+      // The lifecycle transition requalifies identity before starting work. It
+      // runs outside the identity barrier, like the corresponding stop/drain.
+      await p.resumeOwner(owner)
+    }),
     readPolicy: async () => {
       const auth = await p.local.underAuth(() => live())
       const policy = await p.http.policy(auth)
@@ -188,7 +200,10 @@ export function createDesktopClosureV2Service(p: Ports): AccountClosureV2Native 
       if (!input || input.acknowledgeForfeit !== true || typeof input.code !== 'string' || !/^[0-9]{6,10}$/.test(input.code)) return fail('invalid_request')
       if (r.recoveryOnly || r.pendingEffect || r.phase !== 'prepared' || !r.serverPrepared || !r.serverGeneration || r.challengeGeneration < 1) return fail('closure_not_prepared')
       if (!r.serverRequest || r.serverRequest.id !== r.requestId || Date.parse(r.serverRequest.expiresAt) <= Date.now()) return fail('state_conflict')
-      const c = await claim(r, 'confirm', value => { value.confirmationId = randomUUID(); value.confirmationGeneration = value.challengeGeneration; value.phase = 'confirming' })
+      const c = await p.local.underAuth(async () => {
+        await p.local.requireNativePreparation(localScope(r), r.nativeGeneration)
+        return claim(r, 'confirm', value => { value.confirmationId = randomUUID(); value.confirmationGeneration = value.challengeGeneration; value.phase = 'confirming' })
+      })
       return snapshot(await request(c.record, 'confirm', { consent_version: 'immediate-forfeit-v1', generation: c.record.confirmationGeneration!,
         confirmation_id: c.record.confirmationId!, native_generation: r.nativeGeneration, server_generation: r.serverGeneration,
         code: input.code, acknowledge_forfeit: true }, c.auth))

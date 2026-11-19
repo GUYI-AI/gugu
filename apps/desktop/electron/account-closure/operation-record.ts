@@ -155,6 +155,14 @@ export function createClosureOperationRecords(ports: Ports) {
       await own(record, false)
       return metadata(record)
     }),
+    /** Native explicit-resume admission needs the current owner's terminal
+     * record too. It never selects another signed-out recovery owner. */
+    currentNative: () => guarded(async () => {
+      const current = await identity()
+      if (!current) return fail('wrong_local_owner')
+      const record = (await read()).records[current.ownerId]
+      return record ? structuredClone(record) : null
+    }),
     /** Only the native transport/eraser imports these methods. None is an IPC command. */
     readNative: (scope: Pick<ClosureOperationRecord, 'ownerId' | 'localOperationId'>, requireSession = false) => guarded(async () => {
       const record = (await read()).records[scope.ownerId]

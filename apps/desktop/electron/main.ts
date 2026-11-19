@@ -9,7 +9,8 @@ import { createPasswordBetaPolicyReader } from './password-vault/beta-policy-rea
 import { isNativeAccountSender, registerDesktopClosureIpc } from './account-closure/ipc'
 import { closureV2Auth } from './account-closure/v2-auth'
 import { registerDesktopClosureV2Ipc } from './account-closure/v2-ipc'
-import type { AccountClosureV2Native } from '../src/platform/accountClosureV2'
+import type { createDesktopClosureV2Service } from './account-closure/v2-service'
+import { isAccountClosureV2ErrorCode } from '../src/platform/accountClosureV2'
 import { createClosureAuthChange } from './account-closure/auth-change'
 import { ClosureFailure } from './account-closure/receipts'
 import type { createDesktopClosureService } from './account-closure/service'
@@ -2778,8 +2779,8 @@ function desktopClosureHost() {
   })
 }
 if (!SERVER_MODE) registerDesktopClosureIpc(ipcMain, () => mainWindow, desktopClosureHost)
-let desktopClosureV2Service: AccountClosureV2Native | undefined
-async function desktopClosureV2Host(): Promise<AccountClosureV2Native> {
+let desktopClosureV2Service: ReturnType<typeof createDesktopClosureV2Service> | undefined
+async function desktopClosureV2Host(): Promise<ReturnType<typeof createDesktopClosureV2Service>> {
   await desktopClosureReady.promise
   const bridge = loadEmdashBridge()
   if (!bridge) throw new ClosureFailure('closure_storage_unavailable')
@@ -2788,10 +2789,31 @@ async function desktopClosureV2Host(): Promise<AccountClosureV2Native> {
     local: desktopClosureHost(),
     auth: async () => closureV2Auth(pushedHumanAuth),
     deviceId: async () => { const id = await localDeviceId(); if (!id) throw new ClosureFailure('closure_not_prepared'); return id },
+    async resumeOwner(ownerId) {
+      if (!sessionLifeBooted) throw new ClosureFailure('closure_not_prepared')
+      await bootedSessionLife().signIn(ownerId, async () => desktopClosureHost().underAuth(async () => {
+        if (humanAuthUserId() !== ownerId || await desktopClosureHost().isPaused(ownerId)) throw new ClosureFailure('wrong_local_owner')
+        // Invalidate Auth permits which drained before this newly explicit start.
+        // Later permits must queue their own lifecycle drain behind this start.
+        humanAuthRevision += 1
+      }))
+      deviceRuntimeHost?.notifyAuthChanged()
+    },
     baseUrl: getSupabaseUrl(), anonKey: getSupabaseAnonKey(),
   })
 }
 if (!SERVER_MODE) registerDesktopClosureV2Ipc(ipcMain, () => mainWindow, desktopClosureV2Host)
+if (!SERVER_MODE) ipcMain.handle('account-closure:resume-paused', async (event, input: unknown) => {
+  if (!isNativeAccountSender(event, mainWindow)) return { ok: false, code: 'wrong_local_owner' }
+  if (input !== undefined) return { ok: false, code: 'invalid_scope' }
+  try {
+    await (await desktopClosureV2Host()).resumePausedAgents()
+    return { ok: true }
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code
+    return { ok: false, code: isAccountClosureV2ErrorCode(code) ? code : 'closure_unavailable' }
+  }
+})
 let closureV2RecoveryRunning = false
 function resumeAccountClosureV2(): void {
   // No new operation, policy admission, resend or confirm on startup/Auth loss.
