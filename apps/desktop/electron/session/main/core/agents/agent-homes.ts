@@ -161,12 +161,17 @@ async function importHarnessHomeOnce(home: NonNullable<ReturnType<typeof homeFor
     issues.filter((issue) => issue.reason === 'tooLarge' && historyPaths.some((path) => issue.path.startsWith(`${path}/`))).length;
   const result = await importAgentHome(home, {
     skip, groups: new Set(groups), ...(migration ? { migratedFrom: 'shared' as const, historyPaths } : {}),
-    beforeCommit: async (issues) => {
-      if (!migration) return;
-      if (providerId === 'claude' || providerId === 'codex') notice = await migrateOwnedHarnessAccounts(providerId, { ...process.env, ...loginShellEnv() }, true);
-      return { upgradeSignIn: notice?.upgradeSignIn, terminalNeedsSignIn: notice?.terminalNeedsSignIn, oldSessionsSkipped: oldSessionsSkipped(issues),
-        upgradeIssues: [...issues, ...cleanupIssues].filter(({ reason }) => reason !== 'database' && reason !== 'sensitive') };
-    },
+    ...(migration ? {
+      upgradeSummary: (issues: readonly AgentHomeImportIssue[]) => ({
+        oldSessionsSkipped: oldSessionsSkipped(issues),
+        upgradeIssues: [...issues, ...cleanupIssues].filter(({ reason }) => reason !== 'database' && reason !== 'sensitive'),
+      }),
+      afterCommit: async () => {
+        if (providerId !== 'claude' && providerId !== 'codex') return;
+        notice = await migrateOwnedHarnessAccounts(providerId, { ...process.env, ...loginShellEnv() }, true);
+        return { upgradeSignIn: notice.upgradeSignIn, terminalNeedsSignIn: notice.terminalNeedsSignIn };
+      },
+    } : {}),
   });
   if (migration && result.marker.migratedFrom === 'shared') log.info('Imported previous harness configuration', {
     providerId, sourceRoot: home.userConfigRoot, configRoot: home.configRoot, groups: result.marker.groups,
