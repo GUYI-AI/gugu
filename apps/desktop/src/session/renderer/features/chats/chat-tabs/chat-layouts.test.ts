@@ -323,7 +323,7 @@ describe('chat tool state is scoped to the conversation ID', () => {
   });
 });
 
-it('opens actual new browser tabs independently in a group and topic, retaining a hidden workspace', () => {
+it('opens actual new browser tabs independently and reveals the explicitly selected group workspace', () => {
   const scope = chatLayoutOf('start-page-test-group');
   const topic = chatLayoutOf('start-page-test-topic');
   const stopScope = scope.attachChatWorkspace();
@@ -340,7 +340,8 @@ it('opens actual new browser tabs independently in a group and topic, retaining 
 
     scope.setChatToolLayout('hidden');
     const second = openChatWorkspaceNewTab(scope)!;
-    expect(scope.chatWorkspaceMode).toBe('hidden');
+    expect(scope.chatWorkspaceMode).toBe('split');
+    expect(scope.activePaneId).toBe(scope.chatWorkspacePanes!.tools!.paneId);
     expect(tools.resolvedActiveTabId).toBe(second);
     expect(tools.tabOrder).toEqual([first, second]);
     expect(openChatWorkspaceNewTab(topic)).toBeTruthy();
