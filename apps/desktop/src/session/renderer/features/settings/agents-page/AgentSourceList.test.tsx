@@ -72,7 +72,7 @@ function vm(overrides: Partial<HostDependencyInstallation> = {}): HostDependency
     ...overrides
   };
 }
-async function render(model = vm(), local?: Installation, onUpdate?: () => void) {
+async function render(model = vm(), local?: Installation, onUpdate?: () => void, canUninstall = false) {
   const install = vi.fn();
   await act(async () =>
     root.render(
@@ -85,7 +85,7 @@ async function render(model = vm(), local?: Installation, onUpdate?: () => void)
           managed={undefined}
           custom={undefined}
           canInstall
-          canUninstall={false}
+          canUninstall={canUninstall}
           onSelect={vi.fn()}
           onInstall={install}
           onUpdate={onUpdate}
@@ -165,4 +165,34 @@ it('does not label a missing recorded binary as a failed-to-start binary', async
   await render(vm(), { ...program, status: 'missing', version: null });
   expect(container.querySelector('[data-testid="agent-installation-row"]')?.textContent).toContain('Not installed');
   expect(container.textContent).not.toContain('Fails to start');
+});
+
+it('only uninstalls the agent after confirming from the source menu', async () => {
+  const model = vm({ status: 'available', installations: [program] });
+  await render(model, program, undefined, true);
+  const menu = container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!;
+  const confirmation = () => document.querySelector('[data-testid="agent-uninstall-confirmation"]');
+  const open = async () => {
+    await act(async () => menu.click());
+    const uninstall = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      .find((item) => item.textContent?.trim() === 'Uninstall')!;
+    await act(async () => uninstall.click());
+  };
+  const choose = async (name: string) => {
+    const action = [...confirmation()!.querySelectorAll('button')].find((item) => item.textContent === name)!;
+    await act(async () => action.click());
+  };
+
+  await open();
+  expect(confirmation()?.textContent).toContain('Uninstall Agent?');
+  expect(confirmation()?.textContent).toContain('This will remove Agent from this computer.');
+  expect(model.uninstall).not.toHaveBeenCalled();
+  await choose('Cancel');
+  expect(confirmation()).toBeNull();
+  expect(model.uninstall).not.toHaveBeenCalled();
+
+  await open();
+  await choose('Uninstall');
+  expect(confirmation()).toBeNull();
+  expect(model.uninstall).toHaveBeenCalledOnce();
 });
