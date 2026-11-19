@@ -451,6 +451,30 @@ describe('one cloud provider and verified raw chunk cache', () => {
     expect(a.calls.map(row => row.route)).toEqual(['file-request'])
     expect(objectFetch).not.toHaveBeenCalled()
   })
+  // A relay copy the keeping machine was refused (its account's storage is full) ends the read at once, with the
+  // server's reason; the reader does not wait out its bound for a copy that cannot come.
+  it.each([
+    ['account_storage_full', 'quota_full', "its account's storage is full (quota_full)"],
+    ['group_storage_full', 'quota_full', '(quota_full)'],
+    ['global_storage_full', 'quota_full', '(quota_full)'],
+    ['upload_changed', 'upload_failed', '(upload_failed: upload_changed)'],
+    ['too_large', 'upload_failed', '(upload_failed: too_large)'],
+    ['something_new', 'upload_failed', '(upload_failed: something_new)'],
+  ])('stops on a failed relay transfer (%s → %s)', async (failure, code, text) => {
+    const local = { ...revision, source: 'local' as const, host_account_id: 'host', host_device_id: 'device', host_project_id: 'project', relative_path: 'file.bin', temporary_transfer: true }
+    const a = api(local), objectFetch = vi.fn()
+    a.fetcher.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      a.calls.push({ route: String(input).split('/').at(-1)!, body: JSON.parse(init!.body as string) })
+      return Response.json({ status: 'ready', transfer_status: 'failed', failure_code: failure, host_label: 'Studio Mac', host_online: true })
+    })
+    const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: cache().store, sink: async () => sink(), fetch: objectFetch as typeof fetch })
+    const error = await cloud.temporary(local, context).then(() => null, (failure: unknown) => failure as Error & { code?: string })
+    expect(error).toBeInstanceOf(Error)
+    expect(error!.code).toBe(code)
+    expect(error!.message).toContain(text)
+    expect(a.calls.map(row => row.route)).toEqual(['file-request'])
+    expect(objectFetch).not.toHaveBeenCalled()
+  })
   it('refuses a download denied after metadata without touching the object provider', async () => {
     const a = api(), c = cache(), fetcher = vi.fn()
     const cloud = cloudFileProviders({ endpoint: async () => ({ ...await a.endpoint(), fetch: async () => Response.json({ error: 'denied', message: 'Denied' }, { status: 403 }) }), cache: c.store, sink: async () => sink(), fetch: fetcher })
