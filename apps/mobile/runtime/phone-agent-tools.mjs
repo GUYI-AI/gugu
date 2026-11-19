@@ -49,10 +49,11 @@ export function phoneCommunicationTools({ agent, job, cloud, store, env, deviceI
     const recipients = Array.isArray(args.to_user_ids) ? await Promise.all(args.to_user_ids.map(userId)) : null
     await chatAccess.beforeWrite(id, recipients)
     if (args.whisper && recipients?.length !== 1) throw new Error('悄悄话必须恰好指定一个收件人')
+    const replyToMessageId = args.reply_to_message_id ? await chatAccess.messageId(args.reply_to_message_id, id, 'reply source') : null
     const notice = id === agent.chatId && (!recipients?.length || recipients.includes(store.state.ownerId)) && deviceId
       ? recordPhoneOwnerNotice(store, job, agent, deviceId, callId, body) : null
     const messageId = notice?.publicationId ?? stableId('phone-message', agent.agentUserId, job.id, callId)
-    const message = { id: messageId, chatId: id, agentUserId: agent.agentUserId, sessionId: agent.sessionId, usedGroups: [...(job.usedGroups ?? [])], permissionRequirements: structuredClone(job.permissionRequirements ?? []), toUserIds: recipients, content: body, replyToMessageId: args.reply_to_message_id ? uuid(bare(args.reply_to_message_id, 'msg'), 'reply source') : null, threadRootId: job.route?.chatId === id ? job.route.threadRootId ?? null : null, isWhisper: args.whisper === true }
+    const message = { id: messageId, chatId: id, agentUserId: agent.agentUserId, sessionId: agent.sessionId, usedGroups: [...(job.usedGroups ?? [])], permissionRequirements: structuredClone(job.permissionRequirements ?? []), toUserIds: recipients, content: body, replyToMessageId, threadRootId: job.route?.chatId === id ? job.route.threadRootId ?? null : null, isWhisper: args.whisper === true }
     const previous = store.state.outbox[messageId]
     if (previous && ['chatId', 'content', 'toUserIds', 'replyToMessageId', 'threadRootId', 'isWhisper'].some(key => JSON.stringify(previous[key]) !== JSON.stringify(message[key]))) throw new Error('phone message admission payload changed')
     store.state.outbox[messageId] ??= { ...message, status: 'pending', createdAt: new Date().toISOString() }

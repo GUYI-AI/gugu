@@ -11,6 +11,7 @@ import { ChevronLeft, MessageCircle } from '@/lib/icons'
 import { useImPageTab } from '../lib/shellTab'
 import { useActiveChatIdentity, useChatStore, useChatsWhile } from '../store/chatContext'
 import { ChatLineScope } from '../store/chatLineScope'
+import { usePresentedUnreadEntry } from '../lib/chatUnreadStreamNavigation'
 import { useAuth } from '../store/auth'
 import type { AgentConversationActivity, MessageItem } from '@gugu/core/shared/types/chat'
 import { useUnreadLocatorNavigation } from '../hooks/useUnreadLocatorNavigation'
@@ -99,12 +100,10 @@ interface ChatAreaPanelProps {
   onOpenUserChat?: (target: MemberProfileChatTarget) => void; onOpenSessionpageAgentFile?: (agentUserId: string, path: string) => Promise<void>
 }
 // ── ChatAreaPanel ──────────────────────────────────────────────────────────────
-// @@@group-agent-status-bar (#518) - in group chats, a compact row of agent avatars between the last
 // @@@1696 GroupAgentStatusLine / GroupAgentStatusBar 已删 —— 群聊运行态统一到共享 RunningTokenBar（见渲染点）：
 // 竖排多行纯文字「{名} 正在执行 …」+ hover 抛工具名 → 改横排单行流光 token + 去术语计数卡，与单聊同一套。
 // 运行中占位只剩 RunningTokenBar 一种形状(#6448 删掉了已无人引用的 AgentTypingIndicator;
 // #2186 删掉了它上面的 StreamingAgentBubble 纯转发壳)。
-
 
 const chatAreaLog = rendererLogger('chat/area-panel')
 
@@ -118,7 +117,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const activeChat = useActiveChatIdentity()
   const { subscribeAccountRevision, identitiesById, activeChatId, messages, loadingMessages, messagesError, refreshMessages, sendMessage, toggleReaction, memberReadSeqs, clearMessages, deleteMessage, sendAttachments, pinChat, deleteChat, leaveGroup, setChatNotificationLevel, loadOlderMessages, messageWindow, unreadEntry, jumpToUnreadEntry, loadNewerMessages, loadMessageAnchor, returnToLatestMessages, markMessageVisible, setFollowingTail, threadScope, setActiveChatId } = useChatStore('subscribeAccountRevision', 'identitiesById', 'activeChatId', 'messages', 'loadingMessages', 'messagesError', 'refreshMessages', 'sendMessage', 'toggleReaction', 'memberReadSeqs', 'clearMessages', 'deleteMessage', 'sendAttachments', 'pinChat', 'deleteChat', 'leaveGroup', 'setChatNotificationLevel', 'loadOlderMessages', 'messageWindow', 'unreadEntry', 'jumpToUnreadEntry', 'loadNewerMessages', 'loadMessageAnchor', 'returnToLatestMessages', 'markMessageVisible', 'setFollowingTail', 'threadScope', 'setActiveChatId')
   const { user } = useAuth()
-  const surfaceTab = useImPageTab(imPage), surfaceVisible = surfaceTab === 'chats' && !hidden
+  const surfaceTab = useImPageTab(imPage), surfaceVisible = surfaceTab === 'chats' && !hidden; usePresentedUnreadEntry(unreadEntry, surfaceVisible)
   const surfaceElement = useRef<HTMLDivElement>(null)
   const [showHeaderMenu, setShowHeaderMenu] = useState(false)
   useChatSearch(activeChatId, surfaceVisible && !!activeChatId, surfaceElement)
@@ -716,7 +715,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
           rows={chatListRows}
           rowProps={rowProps} footer={chrome?.typing}
           initialTopMostItemIndex={openLocation()}
-          followTail={!unreadNavigationPending && !messageWindow?.hasNewer && messageWindow?.change !== 'newer'} unreadAbove={unreadEntry ? { messageId: unreadEntry.locator.message_id, messageSeq: unreadEntry.locator.message_seq, label: t('chatArea.unreadAbove', { count: unreadEntry.locator.unread_count }), onSeen: unreadEntry.onSeen, onJump: () => void jumpToUnreadEntry(scrollerRef.current).catch(onHistoryError) } : null}
+          followTail={!unreadNavigationPending && !messageWindow?.hasNewer && messageWindow?.change !== 'newer'} unreadAbove={unreadEntry ? { messageId: unreadEntry.locator.message_id, messageSeq: unreadEntry.locator.message_seq, label: t('chatArea.unreadAbove', { count: unreadEntry.locator.unread_count }), onSeen: unreadEntry.consume, onJump: () => void jumpToUnreadEntry(scrollerRef.current).catch(onHistoryError) } : null}
           onAtBottomChange={onAtBottomChange}
         />
       )}
