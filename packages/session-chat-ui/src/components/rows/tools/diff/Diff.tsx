@@ -46,6 +46,8 @@ export type DiffLinesProps = {
   codeLineHeight: () => number;
   caches?: Pick<SharedCaches, 'highlightWhenReady'>;
   showMarkers?: boolean;
+  /** Full recorded diffs use natural height; transcript previews retain measured rows. */
+  wrapLines?: boolean;
   annotationSlots?: (row: DiffRow, index: number, control: HTMLElement, editor: HTMLElement) => void;
 };
 export function DiffLines(props: DiffLinesProps) {
@@ -64,13 +66,13 @@ export function DiffLines(props: DiffLinesProps) {
     }
     onCleanup(() => { cancelled = true; });
   });
-  return <div class={css.diffBodyCard}><div class={css.pdiffBody}>
+  return <div class={css.diffBodyCard} classList={{ [css.wrappedDiffBody]: props.wrapLines }}><div class={css.pdiffBody}>
     <For each={props.layout.previewRows}>{(row, index) => {
       let control: HTMLElement | undefined;
       const annotate = props.annotationSlots && (row.oldIdx !== undefined || row.newIdx !== undefined);
       return <>
-        <div class={css.diffRowClasses[row.type]} style={{ height: `${props.codeLineHeight()}px` }} data-patch-row={row.type} data-old-line={row.oldIdx === undefined ? undefined : row.oldIdx + 1} data-new-line={row.newIdx === undefined ? undefined : row.newIdx + 1}>
-          <Show when={annotate}><span class={css.annotationControl} ref={el => { control = el; }} /></Show>
+        <div class={css.diffRowClasses[row.type]} style={props.wrapLines ? { 'min-height': `${props.codeLineHeight()}px` } : { height: `${props.codeLineHeight()}px` }} data-patch-row={row.type} data-old-line={row.oldIdx === undefined ? undefined : row.oldIdx + 1} data-new-line={row.newIdx === undefined ? undefined : row.newIdx + 1}>
+          <Show when={annotate}><span class={css.annotationControl} style={{ height: `${props.codeLineHeight()}px` }} ref={el => { control = el; }} /></Show>
           <Show when={props.showMarkers}><span class={`${css.pdiffLine} ${css.diffMarker}`} style={{ 'line-height': `${props.codeLineHeight()}px` }}>{row.type === 'add' ? '+' : row.type === 'remove' ? '−' : ' '}</span></Show>
           <span class={`${css.pdiffLine} ${css.diffLineContent}`} style={{ 'line-height': `${props.codeLineHeight()}px` }} ref={el => { elements.set(index(), el); onCleanup(() => elements.delete(index())); }}>{row.text}</span>
         </div>

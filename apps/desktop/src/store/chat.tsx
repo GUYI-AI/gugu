@@ -1,4 +1,5 @@
 import { useChatListState } from './chatListState'
+import { publishChatRemoved } from '../lib/chatRemovalBridge'
 import { useConversationHiding } from './useConversationHiding'
 import { useChatCatchupPriority, useChatCatchupResume } from './chatCatchupPriority'
 import { useChatListRefresh } from './chatListRefresh'
@@ -15,7 +16,7 @@ import { chatAttention, upsertChatRow } from '@gugu/core/shared/ui/chatModels'
 import { writeRead } from '../lib/readWriter'
 import { useGroupCreation } from './useGroupCreation'
 import { mergeMessagesById, optimisticReplyFields, upsertMessageById } from '@gugu/core/shared/ui/messageListModels'
-import { useNotificationSettings } from '../lib/notificationSettings'
+import { useDevicePreferences } from '../lib/devicePreferences'
 import {
   openImRepository,
   imSelectors,
@@ -67,7 +68,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   const { toast } = useToast()
   const userId = user?.id ?? null
   const catchupPriority = useChatCatchupPriority(userId)
-  const notificationSettings = useNotificationSettings(); useWatchAppActive() // reads are taken only while the app is active
+  const devicePreferences = useDevicePreferences(); useWatchAppActive() // reads are taken only while the app is active
   const [chats, setChats, chatsRef] = useChatListState()
   const [identitiesById, setIdentitiesById] = useState<ReturnType<typeof imSelectors.identitiesById>>({})
   const [activeChatId, setActiveChatIdState] = useActiveChatTransitionState()
@@ -290,7 +291,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   const chatProjection = useChatProjectionBinding({
     ledger: projectionRef.current, repositoryRef: imRepositoryRef, getRepository: getImRepository, conversations: cache,
     chatsRef, activeChatIdRef, requestSeqRef: listRequestSeqRef, setChats, onActiveRevoked, canAcknowledge: canAcknowledgeOpenChat, visibleSeqOf: visibleSeqOfChat,
-    notifications: { chatMessages: notificationSettings.chatMessages, sound: notificationSettings.sound },
+    notifications: { chatMessages: devicePreferences.chatMessages, sound: devicePreferences.chatSound },
   })
 
   const loadChats = useChatListRefresh(userId, chatProjection, chatsRef, listRequestSeqRef, setChatsLoad, catchupPriority)
@@ -305,7 +306,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     }
     if (!chat || imRepositoryScope.disposed || repository.accountId !== userId) return
     await notifyForIngestedMessage(userId, chat, message, { onScreen: isChatOnScreen,
-      notificationsEnabled: notificationSettings.chatMessages, soundEnabled: notificationSettings.sound })
+      notificationsEnabled: devicePreferences.chatMessages, soundEnabled: devicePreferences.chatSound })
   }
 
   const patchChat: PatchChat = useCallback((chatId, partial, expectedReadStateVersion) => {
@@ -786,26 +787,25 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   }, [chatsRef, setChats, userId])
 
   const { hideConversation, clearConversation, undoConversationHide } = useConversationHiding(userId, chatProjection)
-  const deleteChat = useCallback(async (chatId: string, persist = false) => {
-    if (persist) { await (chatsRef.current.find((chat) => chat.id === chatId)?.kind === 'topic' ? topicService.archiveTopic(chatId) : chatService.archiveChat(chatId)); if (imRepositoryScope.disposed) return }
-    projectionRef.current.forgetChat(chatId) // 显式删除是权威动作:乐观行与投影水位一起出列 (#4314)
+  const removeLocalChat = useCallback((chatId: string) => {
+    projectionRef.current.forgetChat(chatId)
+    if (userId) publishChatRemoved(userId, chatId)
     setChats((prev) => prev.filter((c) => c.id !== chatId))
     dropTextDraft(chatId)
     dropDraftAttachments(chatId) // @@@draft-attachment (#1872) - drop queued attachments alongside the draft
     cache.delete(chatId)
     if (activeChatIdRef.current === chatId) setActiveChatId(null)
-  }, [setChats, dropTextDraft, dropDraftAttachments, cache, setActiveChatId, chatsRef, imRepositoryScope.disposed])
+  }, [setChats, dropTextDraft, dropDraftAttachments, cache, setActiveChatId, userId])
+  const deleteChat = useCallback(async (chatId: string, persist = false) => {
+    if (persist) { await (chatsRef.current.find((chat) => chat.id === chatId)?.kind === 'topic' ? topicService.archiveTopic(chatId) : chatService.archiveChat(chatId)); if (imRepositoryScope.disposed) return }
+    removeLocalChat(chatId)
+  }, [chatsRef, imRepositoryScope.disposed, removeLocalChat])
   // #901 退出群聊：共同 RPC 确认移除本人席位后，再本地清理。
   const leaveGroup = useCallback(async (chatId: string) => {
     if (!userId) throw new Error('Not authenticated')
     await chatService.removeGroupMember(chatId, userId)
-    projectionRef.current.forgetChat(chatId) // 同 deleteChat:退出是权威动作 (#4314)
-    setChats((prev) => prev.filter((c) => c.id !== chatId))
-    dropTextDraft(chatId)
-    dropDraftAttachments(chatId) // @@@draft-attachment (#1872) - drop queued attachments alongside the draft
-    cache.delete(chatId)
-    if (activeChatIdRef.current === chatId) setActiveChatId(null)
-  }, [userId, setChats, dropTextDraft, dropDraftAttachments, cache, setActiveChatId])
+    removeLocalChat(chatId)
+  }, [userId, removeLocalChat])
   const markUnread = useCallback((chatId: string) => markManualUnreadAndRefresh(chatId, { chats: chatsRef.current, patchChat, toast, refresh: loadChats }), [chatsRef, loadChats, patchChat, toast])
   const setChatNotificationLevel = useCallback(async (chatId: string, level: NotificationLevel) => {
     if (!userId) throw new Error('Not authenticated')

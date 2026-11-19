@@ -57,7 +57,7 @@ import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { nativeChatAppearance } from '@renderer/lib/chat/native-chat-appearance.css';
 import { useMarkSeenWhenShown } from '@renderer/features/sessions/hooks/use-mark-seen-when-shown';
 import { createPortal, flushSync } from 'react-dom';
-import { SessionChatLoading } from './session-chat-loading';
+import { SessionChatLoading, CodexPreparationStatus } from './session-chat-loading';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { IntegrationIcon } from '@renderer/features/integrations/integration-icon';
 import { useConnectedIssueProviders } from '@renderer/features/integrations/use-connected-issue-providers';
@@ -1448,7 +1448,7 @@ const ComposerForStore = observer(function ComposerForStore({
       ) : null}
       {/* This task's agent's failed deliveries (the shell draws the same bar a chat's composer shows). */}
       {agentUserId ? <AgentFailureSlot agentUserId={agentUserId} /> : null}
-      {/* History and lifecycle loading share the message area; a pending input keeps its own live row. */}
+      {providerId === 'codex' ? <CodexPreparationStatus sessionId={store.runtimeSessionId} /> : null}
       {contentOverlaySlot && life && lifeIsStarting(life) && !store.showHistoryLoading && !store.transcriptPendingId && !store.chatState.session.state.pendingMessages.length ? (
         createPortal(<SessionChatLoading label={translate(`transcript.${store.startPhaseOf(life) ?? 'starting'}`)} stage={life.stage?.at} />, contentOverlaySlot)
       ) : null}

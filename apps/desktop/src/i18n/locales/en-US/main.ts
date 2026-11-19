@@ -106,6 +106,12 @@ export default {
     "manageConnections": "Manage connections"
   },
   "agentHome": {
+  "historySummary_one": "Imported {{count}} recent session; {{skipped}} remain in the original location",
+  "historySummary_other": "Imported {{count}} recent sessions; {{skipped}} remain in the original location",
+  "preparation": { "preparing": "Preparing migration", "copying": "Importing configuration and sessions", "history": "Preparing history", "elapsedLabel_one": "{{label}}, {{count}} second elapsed", "elapsedLabel_other": "{{label}}, {{count}} seconds elapsed" },
+
+  "migrationDeferredTitle": "Configuration migration deferred",
+  "migrationSpaceNotice": "Not enough disk space. Free {{size}} GB for automatic migration on the next startup. Existing sessions remain available.",
   "migrationNoticeTitle": "Configuration migration complete",
   "migrationNoticeCopied": "This update moved {{names}} configuration into Gugu and brought over your sign-in, skills, and session history.",
   "migrationNotice": "This update moved {{names}} configuration into Gugu.",
@@ -124,10 +130,23 @@ export default {
     "models": "Models"
   },
   "issue": {
+    "historyLimit": "Outside the recent 4 GiB session budget; the original is unchanged",
+    "groupHistoryLimitSummary_one": "{{count}} older session was not migrated; the original is unchanged",
+    "groupHistoryLimitSummary_other": "{{count}} older sessions were not migrated; the originals are unchanged",
+
     "tooLargeSummary_one": "{{count}} file was too large to import",
     "tooLargeSummary_other": "{{count}} files were too large to import",
     "skippedSummary_one": "{{count}} file was skipped",
     "skippedSummary_other": "{{count}} files were skipped",
+    "groupSkippedSummary_one": "{{name}}: {{count}} item not imported",
+    "groupSkippedSummary_other": "{{name}}: {{count}} items not imported",
+    "groupLinksSummary_one": "{{name}}: {{count}} link not imported",
+    "groupLinksSummary_other": "{{name}}: {{count}} links not imported",
+    "groupTooLargeSummary_one": "{{name}}: {{count}} file too large to import",
+    "groupTooLargeSummary_other": "{{name}}: {{count}} files too large to import",
+    "sensitive": "Sign-in is migrated separately",
+    "database": "Database not imported",
+    "excluded": "Outside the selected configuration scope",
     "symlink": "Symbolic link skipped",
     "tooLarge": "Too large; not imported",
     "sourceChanged": "Source changed; retry",

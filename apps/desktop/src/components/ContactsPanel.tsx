@@ -6,10 +6,6 @@ import { contactAgents, peopleContacts } from './contacts/contactSelectors'
 import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { AgentSettingsModal } from './agentsettings/AgentSettingsModal'
 import { chatPublicId, displayName, sortContactsPinnedFirst, sortGroupChatsPinnedFirst } from '../lib/contactsListSort'
-import {
-  agentContactRowDotClass,
-  agentContactRowStatusClass
-} from './contactAgentTone'
 import { Collapse } from './ui/Collapse'
 import { PaneEmptyState } from './ui/PaneEmptyState'
 // @@@ui-ruler 通讯录只消费原语:列/列头 → Pane/PaneHeader、行 → ListRow、图标钮 → IconButton、
@@ -270,12 +266,7 @@ function GroupSectionRow({
         leading={<ContactGroupAvatar group={group} size="sm" />}
         title={groupDisplayName(group)}
         /* show member count like design's group row .st-dot.off — 静态灰点(非 agent 态),用 offline 档 */
-        subtitle={
-          <span className={agentContactRowStatusClass('offline')}>
-            <span className={agentContactRowDotClass('offline')} aria-hidden="true" />
-            {ct('panel.memberCount', { count: group.member_count })}
-          </span>
-        }
+        meta={ct('panel.memberCount', { count: group.member_count })}
         onClick={onSelect}
         onKeyDown={rowKeyActivate(onSelect)}
         onContextMenu={menu ? onContextMenu : undefined}
@@ -441,7 +432,7 @@ function ContactsThreeSectionSidebar({
           selected={newFriendsActive}
           data-testid={AUTOMATION_TEST_IDS.contactsNewFriendsNav}
           leading={
-            <div className="grid h-[var(--avatar-sm)] w-[var(--avatar-sm)] shrink-0 place-items-center rounded-full bg-[var(--warn)] text-[var(--color-white)]">
+            <div className="grid h-[var(--avatar-sm)] w-[var(--avatar-sm)] shrink-0 place-items-center rounded-full bg-[var(--muted)] text-[var(--fg)]">
               <UserPlus size={16} />
             </div>
           }
@@ -483,8 +474,7 @@ function ContactsThreeSectionSidebar({
               <SectionLabel
                 interactive
                 className={sectionLabelClass}
-                leading={<span className={sectionChevronClass(personCollapsed)}><ChevronDown size={16} /></span>}
-                trailing={personCollapsed ? <span className={sidebarCountClass}>{sortedHumans.length}</span> : undefined}
+                trailing={<><span className={sidebarCountClass}>{sortedHumans.length}</span><span className={sectionChevronClass(personCollapsed)}><ChevronDown size={14} /></span></>}
                 onClick={() => setPersonCollapsed((v) => !v)}
               >
                 {ct('panel.contactSectionTitle')}

@@ -56,6 +56,29 @@ it('runs unmarked homes as fresh and imports projections without copying credent
   expect(await ensureAgentHome(home)).toBe('already-present');
 });
 
+it('filters hooks from linked settings during upgrade and preserves links for whole skills', async () => {
+  const { home, root, source } = await fixture();
+  const settings = join(root, 'dotfiles-settings.json');
+  const original = '{"theme":"dark","hooks":{"Stop":[{"command":"local-hook"}]}}';
+  await writeFile(settings, original);
+  await symlink(settings, join(home.userConfigRoot, 'settings.json'));
+  await source('skills/local/SKILL.md', 'local skill');
+  await symlink(join(home.userConfigRoot, 'skills/local'), join(home.userConfigRoot, 'skills/linked'), 'dir');
+
+  await importAgentHome(home, { groups: new Set(['settings', 'skills']), migratedFrom: 'shared' });
+
+  const managed = join(home.configRoot, 'settings.json');
+  expect((await fs.lstat(managed)).isFile()).toBe(true);
+  expect(JSON.parse(await readFile(managed, 'utf8'))).toEqual({ theme: 'dark' });
+  expect(await readFile(settings, 'utf8')).toBe(original);
+  expect((await fs.lstat(join(home.configRoot, 'skills/linked'))).isSymbolicLink()).toBe(true);
+
+  const hookDiff = (await diffAgentHome(home)).entries.find((entry) => entry.group === 'hooks')!;
+  expect(hookDiff.state).toBe('bothChanged');
+  await reimportAgentHome(home, new Set([hookDiff.id]), new Map([[hookDiff.id, hookDiff.revision]]));
+  expect(JSON.parse(await readFile(managed, 'utf8'))).toEqual(JSON.parse(original));
+});
+
 it('keeps the old target and writes no sign-in when the staged marker cannot be committed', async () => {
   const { home, source } = await fixture();
   await source('config.toml', 'model = "fixture"');
@@ -170,7 +193,8 @@ it('follows the selected source root and its HOME boundary while refusing links 
   await symlink(dotfiles, home.userConfigRoot, 'dir');
   await symlink(join(dotfiles, 'RULES.md'), join(dotfiles, 'inner-link'));
   const imported = await importAgentHome(home, { groups: new Set(['settings', 'rules', 'mcp']), historyPaths: ['sessions'] });
-  expect(imported.issues).toContainEqual({ path: 'inner-link', reason: 'symlink' });
+  expect(imported.issues).not.toContainEqual({ path: 'inner-link', reason: 'symlink' });
+  expect(await fs.readlink(join(home.configRoot, 'inner-link'))).toBe(join(dotfiles, 'RULES.md'));
   expect(await readFile(join(home.configRoot, 'RULES.md'), 'utf8')).toBe('local rules');
   expect(await readFile(join(home.configRoot, 'sessions/old.jsonl'), 'utf8')).toBe('existing task');
   expect(await readFile(join(home.configRoot, '.global.json'), 'utf8')).toContain('"local"');
@@ -212,9 +236,9 @@ it('skips declared symlinks and oversized files and reports each skipped source'
   await truncate(join(home.userConfigRoot, 'large'), 50 * 1024 * 1024 + 1);
   const result = await importAgentHome(home, { groups: new Set(['settings']) });
   expect(result.issues).toEqual(expect.arrayContaining([
-    { path: 'link', reason: 'symlink' }, { path: 'directory-link', reason: 'symlink' }, { path: 'large', reason: 'tooLarge' },
+    { path: 'directory-link', reason: 'symlink' }, { path: 'large', reason: 'tooLarge' },
   ]));
-  await expect(readFile(join(home.configRoot, 'link'))).rejects.toMatchObject({ code: 'ENOENT' });
+  expect(await fs.readlink(join(home.configRoot, 'link'))).toBe(join(root, 'outside'));
 });
 
 it('distinguishes six states and never deletes a managed file or overwrites an unselected conflict', async () => {
@@ -308,7 +332,7 @@ it('streams old transcripts above the configuration-file cap and keeps copies al
   await importAgentHome(home, { groups: new Set(), historyPaths: ['sessions'] });
   expect((await stat(join(home.configRoot, 'sessions/large.jsonl'))).size).toBe(size);
   await truncate(join(home.userConfigRoot, 'sessions/large.jsonl'), 2 * 1024 * 1024 * 1024 + 1);
-  expect(await copyAgentHomeHistory(home, ['sessions'])).toEqual([]);
+  expect(await copyAgentHomeHistory(home, ['sessions'])).toEqual([{ path: 'sessions/large.jsonl', reason: 'sourceChanged' }]);
   expect((await stat(join(home.configRoot, 'sessions/large.jsonl'))).size).toBe(size);
 });
 
@@ -346,4 +370,96 @@ it('walks only declared configuration and transcript paths in a populated Codex 
   }
   expect(await readFile(join(home.configRoot, 'sessions/2026/11/19/rollout.jsonl'), 'utf8')).toBe('current transcript');
   expect(await readFile(join(home.configRoot, 'archived_sessions/rollout-old.jsonl'), 'utf8')).toBe('archived transcript');
+});
+
+it('defers before copying when the full migration and reserve do not fit, then retries without a marker', async () => {
+  const { home, source } = await fixture();
+  await source('RULES.md', 'rules');
+  const afterCommit = vi.fn();
+  const space = vi.spyOn(fs, 'statfs').mockResolvedValue({ bavail: 1, bsize: 1 } as never);
+  await expect(importAgentHome(home, { groups: new Set(['rules']), migratedFrom: 'shared', afterCommit }))
+    .rejects.toMatchObject({ cause: { code: 'AGENT_HOME_INSUFFICIENT_SPACE', space: { shortfallBytes: 2 * 1024 ** 3 + 4 } } });
+  expect(afterCommit).not.toHaveBeenCalled();
+  expect(await readAgentHomeMarker(home)).toBeNull();
+  await expect(stat(home.shadowHome)).rejects.toMatchObject({ code: 'ENOENT' });
+  space.mockRestore();
+  await importAgentHome(home, { groups: new Set(['rules']), migratedFrom: 'shared' });
+  expect(await readFile(join(home.configRoot, 'RULES.md'), 'utf8')).toBe('rules');
+});
+
+it('reserves all providers together and uses ten percent when it exceeds two GiB', async () => {
+  const { home, source } = await fixture();
+  await source('RULES.md', 'x'.repeat(100));
+  const reserve = 2 * 1024 ** 3;
+  const available = vi.spyOn(fs, 'statfs').mockResolvedValue({ bavail: reserve + 150, bsize: 1 } as never);
+  const { checkAgentHomeImportSpace } = await import('./agent-home-migration');
+  const other = { ...home, providerId: 'other', shadowHome: home.shadowHome + '-other', configRoot: home.configRoot + '-other' };
+  await expect(checkAgentHomeImportSpace([home, other].map((home) => ({ home, groups: new Set(['rules'] as const) }))))
+    .rejects.toMatchObject({ space: { requiredBytes: reserve + 200, shortfallBytes: 50 } });
+  await source('RULES.md', '');
+  await truncate(join(home.userConfigRoot, 'RULES.md'), 25 * 1024 ** 3);
+  const total = 25 * 1024 ** 3;
+  available.mockResolvedValue({ bavail: total, bsize: 1 } as never);
+  await expect(checkAgentHomeImportSpace([{ home, groups: new Set(['rules']) }]))
+    .rejects.toMatchObject({ space: { requiredBytes: total + Math.ceil(total * 0.1) } });
+});
+
+it('rolls back the whole staged home on a mid-history ENOSPC and never transfers sign-in', async () => {
+  const { home, source } = await fixture();
+  await source('RULES.md', 'new rules');
+  await source('sessions/old.jsonl', 'old session');
+  await ensureAgentHome(home);
+  await writeFile(join(home.configRoot, 'local-only'), 'keep');
+  const open = fs.open.bind(fs), afterCommit = vi.fn();
+  let partialWrite = false;
+  vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+    const handle = await open(...args);
+    if (String(args[0]).includes('.gugu-upgrade-') && String(args[0]).endsWith('/sessions/old.jsonl') && args[1] === 'wx') {
+      await handle.write(Buffer.from('part'));
+      partialWrite = true;
+      vi.spyOn(handle, 'write').mockRejectedValue(Object.assign(new Error('disk full'), { code: 'ENOSPC' }));
+    }
+    return handle;
+  });
+  await expect(importAgentHome(home, { groups: new Set(['rules']), migratedFrom: 'shared', historyPaths: ['sessions'], afterCommit }))
+    .rejects.toMatchObject({ stage: 'history', cause: { code: 'ENOSPC' } });
+  expect(partialWrite).toBe(true);
+  expect(afterCommit).not.toHaveBeenCalled();
+  expect(await readAgentHomeMarker(home)).toBeNull();
+  expect(await readFile(join(home.configRoot, 'local-only'), 'utf8')).toBe('keep');
+  await expect(stat(join(home.configRoot, 'RULES.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  expect(await fs.readdir(dirname(home.shadowHome))).toEqual(['fixture']);
+});
+
+it('preserves internal and external links, refuses cycles, and copies token/cookie skill assets completely', async () => {
+  const { home, source } = await fixture();
+  const external = join(dirname(home.userConfigRoot), '.agents/skills/find-skills');
+  await mkdir(external, { recursive: true });
+  await writeFile(join(external, 'SKILL.md'), 'external skill');
+  const paths = ['skills/movie/SKILL.md', 'skills/movie/node_modules/playwright-core/cssTokenizer.js',
+    'skills/movie/node_modules/playwright-core/cookieStore.js', 'skills/movie/node_modules/playwright-core/cookies.js',
+    'skills/movie/.venv/lib/module.py', 'rules/tokens.json',
+    ...Array.from({ length: 23 }, (_, n) => 'skills/theming-components/tokens/token-' + n + '.json')];
+  for (const path of paths) await source(path, path.endsWith('.json') ? '{}' : 'module');
+  await symlink('lib', join(home.userConfigRoot, 'skills/movie/.venv/lib64'));
+  await symlink('../../.agents/skills/find-skills', join(home.userConfigRoot, 'skills/find-skills'));
+  await symlink('loop', join(home.userConfigRoot, 'skills/movie/loop'));
+  const imported = await importAgentHome(home, { groups: new Set(['skills', 'rules']), migratedFrom: 'shared' });
+  for (const path of paths) expect(await readFile(join(home.configRoot, path), 'utf8')).toBe(path.endsWith('.json') ? '{}' : 'module');
+  expect(await fs.readlink(join(home.configRoot, 'skills/movie/.venv/lib64'))).toBe('lib');
+  expect(await fs.readlink(join(home.configRoot, 'skills/find-skills'))).toBe(await realpath(external));
+  expect(imported.issues).toEqual([{ path: 'skills/movie/loop', reason: 'symlink' }]);
+  expect((await diffAgentHome(home)).entries.filter((entry) => entry.path.includes('lib64') || entry.path === 'skills/find-skills'))
+    .toEqual(expect.arrayContaining([expect.objectContaining({ state: 'unchanged' })]));
+});
+
+it('streams large files inside declared skill trees instead of omitting them by the configuration cap', async () => {
+  const { home, source } = await fixture();
+  const path = 'skills/example/large.data', size = 50 * 1024 * 1024 + 1;
+  await source(path, '');
+  await truncate(join(home.userConfigRoot, path), size);
+  const result = await importAgentHome(home, { groups: new Set(['skills']), migratedFrom: 'shared' });
+  expect(result.issues).toEqual([]);
+  expect((await stat(join(home.configRoot, path))).size).toBe(size);
+  expect((await diffAgentHome(home)).entries).toContainEqual(expect.objectContaining({ path, state: 'unchanged' }));
 });

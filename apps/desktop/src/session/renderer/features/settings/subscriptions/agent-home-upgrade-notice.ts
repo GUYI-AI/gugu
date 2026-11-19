@@ -10,10 +10,23 @@ export async function readAgentHomeUpgradeResults(): Promise<AgentHomeScan[]> {
   const client = await getAgentConfigRuntimeClient()
   const result = await client.scanAgentHomes({ upgradedOnly: true })
   if (!result.success) throw new Error('Could not read configuration migration results')
-  return result.data.filter(({ upgraded }) => upgraded)
+  return result.data.filter(({ upgraded, migrationSpace, migrationPreparation }) => upgraded || migrationSpace || migrationPreparation)
 }
 
 export function showAgentHomeUpgradeNotice(homes: readonly AgentHomeScan[]): void {
+  const blocked = homes.filter(({ migrationSpace }) => migrationSpace)
+  if (blocked.length) {
+    const key = 'gugu.agentHomeMigration.space:' + JSON.stringify(blocked.map((home) => [home.providerId, home.migrationSpace]))
+    if (!shown.has(key)) {
+      shown.add(key)
+      const t = i18n.getFixedT(null, 'main')
+      const shortfall = Math.max(...blocked.map((home) => home.migrationSpace!.shortfallBytes))
+      notify({ key, title: t('agentHome.migrationDeferredTitle'), tier: 'info', duration: 12000,
+        description: t('agentHome.migrationSpaceNotice', { size: Math.ceil(shortfall / 100_000_000) / 10 }),
+        action: { label: t('agentHome.migrationResults'), onClick: () => openShellSettings('data-import') } })
+    }
+  }
+  homes = homes.filter(({ upgraded }) => upgraded)
   if (!homes.length) return
   const key = `gugu.agentHomeMigration:${JSON.stringify(homes.map(({ providerId, importedAt }) => [providerId, importedAt]))}`
   if (shown.has(key)) return

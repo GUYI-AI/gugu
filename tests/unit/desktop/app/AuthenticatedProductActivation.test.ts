@@ -229,8 +229,9 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({
     upsertChat: vi.fn(),
   }),
 }))
-vi.mock('../../../../apps/desktop/src/lib/notificationSettings', () => ({
-  useNotificationSettings: () => ({ messages: false, requests: false }),
+vi.mock('../../../../apps/desktop/src/lib/devicePreferences', async (importOriginal) => ({
+  ...await importOriginal<object>(),
+  useDevicePreferences: () => ({ chatMessages: false, chatSound: false }),
 }))
 
 function setSessionUser(user: SessionUser | null) {

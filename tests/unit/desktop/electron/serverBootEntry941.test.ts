@@ -32,6 +32,7 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
   started?: () => void
   registered?: () => void
   deliveryReady?: () => void
+  globalVersionProcessSweep?: () => Promise<void>
 }, viaModule = false, database?: { initialize: () => Promise<Database.Database>; migrate: () => void; editorBufferService?: EditorBufferService }) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gugu-boot-entry941-'))
   const tasks = sessionBootTasks
@@ -80,6 +81,10 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
     '@main/core/sessions/attachments/session-attachment-store': { sweepOrphanSessionAttachmentDirectories: async () => 0 },
     '@main/core/data-dir-occupancy': { dataDirHeldByAnotherHost: () => ({ held: false }) },
     '@main/core/pty/tmux-session-name': { listTmuxSessionNames: async () => presenceProbe?.tmuxSessionNames ?? new Set() },
+    '@main/core/dependencies/probe-orphan-sweep': {
+      createProbeOrphanSweepDeps: () => ({}),
+      sweepProbeOrphans: async () => presenceProbe?.globalVersionProcessSweep?.(),
+    },
     '@main/core/projects/operations/migrate-project-kind': { migrateProjectKind: () => [] },
     '@main/core/usage/run-interval-recorder': { closeInterruptedRunIntervals: fault('interval'), installRunIntervalRecorder: noop },
     '@main/core/sessions/sendMessage': { claimInterruptedDispatches: fault('dispatch') },
@@ -124,6 +129,12 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
 }
 
 describe('real session host boot entry', () => {
+  it('does not trigger a global version-process sweep during startup', async () => {
+    const sweep = vi.fn(async () => {})
+    const result = await boot('', false, { reconciliation: async () => {}, globalVersionProcessSweep: sweep })
+    expect(result.registered).toHaveBeenCalledOnce()
+    expect(sweep).not.toHaveBeenCalled()
+  })
   it('keeps old unsaved drafts through startup and still lets the person discard one explicitly', async () => {
     const sqlite = new Database(':memory:')
     try {

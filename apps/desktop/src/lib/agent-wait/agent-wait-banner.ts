@@ -1,5 +1,5 @@
 import { platform } from '@/platform'
-import { readNotificationSettings } from '@/lib/notificationSettings'
+import { readDevicePreferences } from '@/lib/devicePreferences'
 
 /**
  * 「agent 在等你」怎么送到人眼前 —— **只有一个通道:系统横幅**,不分 App 在不在前台。
@@ -16,7 +16,7 @@ import { readNotificationSettings } from '@/lib/notificationSettings'
  * 手机的看管(useAgentWatchAlerts)与桌面对别的机器的会话列表(remote-hosts-store `bannerWaits`)都从这里发:
  * 同一件事(一条会话停下来等你)只有这一个出口。`silent` 缺省照聊天横幅的声音开关;桌面传它自己的 agent 通知开关。
  */
-export async function announceAgentWait(text: string, silent = !readNotificationSettings().sound): Promise<void> {
+export async function announceAgentWait(text: string, silent = !readDevicePreferences().chatSound): Promise<void> {
   // The desktop's banner is its main process's (on every OS); a phone's is its native outlet.
   if (platform.kind === 'electron' || platform.systemPermissions.includes('notifications')) {
     void platform.showNotification({ title: text, chatId: null, silent }).catch(() => undefined)

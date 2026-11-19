@@ -102,6 +102,11 @@ export default {
     "manageConnections": "管理连接"
   },
   "agentHome": {
+  "historySummary_other": "已导入 {{count}} 条最近会话，{{skipped}} 条仍在原处",
+  "preparation": { "preparing": "正在准备迁移", "copying": "正在导入配置和会话", "history": "正在整理历史", "elapsedLabel_other": "{{label}}，已用 {{count}} 秒" },
+
+  "migrationDeferredTitle": "配置迁移暂缓",
+  "migrationSpaceNotice": "空间不够，腾出 {{size}} GB 后会在下次启动时自动迁移。原有会话可以继续使用。",
   "migrationNoticeTitle": "配置迁移完成",
   "migrationNoticeCopied": "这次更新把 {{names}} 的配置迁到了咕咕自己管理，你的登录、Skills 和会话记录都已带过来。",
   "migrationNotice": "这次更新把 {{names}} 的配置迁到了咕咕自己管理。",
@@ -119,8 +124,17 @@ export default {
     "models": "模型"
   },
   "issue": {
+    "historyLimit": "超出最近 4 GiB 会话范围，原件仍在原处",
+    "groupHistoryLimitSummary_other": "{{count}} 条较早会话未迁，原件仍在原处",
+
     "tooLargeSummary_other": "{{count}} 个文件太大，未导入",
     "skippedSummary_other": "{{count}} 个文件未导入",
+    "groupSkippedSummary_other": "{{name}}：{{count}} 个未导入项",
+    "groupLinksSummary_other": "{{name}}：{{count}} 个链接未导入",
+    "groupTooLargeSummary_other": "{{name}}：{{count}} 个文件太大，未导入",
+    "sensitive": "登录凭据由登录迁移单独处理",
+    "database": "数据库未导入",
+    "excluded": "不在所选配置范围内",
     "symlink": "符号链接，未导入",
     "tooLarge": "文件太大，未导入",
     "sourceChanged": "来源已更新，请重试",

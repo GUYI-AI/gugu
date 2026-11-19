@@ -366,11 +366,6 @@ export {
 import { reconcileResourceSampler, stopResourceSampler } from '@main/core/resource-monitor/resource-sampler'
 import { ensureAgentDependenciesProbed, localDependencyManager } from '@main/core/dependencies/dependency-managers'
 import { ensureAgentInstalled } from '@main/core/agents/ensure-agent-installed'
-import { DEPENDENCIES } from '@main/core/dependencies/registry'
-import {
-  createProbeOrphanSweepDeps,
-  sweepProbeOrphans,
-} from '@main/core/dependencies/probe-orphan-sweep'
 import { projectManager } from '@main/core/projects/project-manager'
 import { runtimeManager } from '@main/core/runtime/runtime-manager'
 import { appScope } from '@main/app/app-scope'
@@ -673,25 +668,6 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   }
   searchService.initialize()
   workspaceFileIndexService.initialize()
-  // 依赖体检的 `<bin> --version` 是 detached 起的(不然只杀得掉直接子进程)，收尾在 finally 里 ——
-  // 那一半只在我们还活着时有效。被强杀时子进程活下来，stdio 管道读端却没了，不处理 SIGPIPE 的
-  // 程序就在写失败上空转：mac1 实测两个 `amp --version` 各占满一核，清掉两个半小时后又长出两个。
-  // ⚠️ 只在这里跑：判据里的「ppid 已变成 1」要求 spawner 确实已经不在，运行中跑会误伤正在进行的探测。
-  {
-    const deps = createProbeOrphanSweepDeps((rows) =>
-      log.info('probe-orphans: swept stuck --version probes', {
-        pids: rows.map((row) => row.pid),
-      })
-    )
-    if (deps) {
-      void sweepProbeOrphans(
-        DEPENDENCIES.flatMap((dependency) => dependency.commands),
-        deps
-      ).catch((error: unknown) =>
-        log.warn('probe-orphans: sweep failed', { error: String(error) })
-      )
-    }
-  }
   // 分区改名后的目录搬迁:必须赶在任何浏览器会话打开之前(下面注册 RPC 之前)同步做完,见函数注释。
   if (browserFeatures) migrateLegacyBrowserPartitionDirs()
 

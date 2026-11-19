@@ -122,6 +122,7 @@ export function resolveAgentHome(input: {
       return moved && path.path.startsWith('../') ? { ...path, path: path.path.slice(3) } : entry;
     }) })),
     credentialPaths: spec.credentialPaths.map((entry) => entry.path),
+    historySession: spec.historySession,
     upgradeHistory: spec.carryExclusions.filter((entry) => entry.upgradeHistory).map((entry) => entry.path),
     legacyCleanup: spec.legacyCleanup,
     seedFiles: (spec.seedFiles ?? []).map((seed) => ({ path: seed.path, content: seed.content })),
