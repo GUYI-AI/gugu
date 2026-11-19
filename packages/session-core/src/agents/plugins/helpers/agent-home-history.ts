@@ -6,7 +6,7 @@ import type { AgentHomeImportIssue } from './agent-home-import';
 
 const disk: typeof fs = process.versions.electron
   ? (createRequire(import.meta.url)('original-fs') as typeof import('node:fs')).promises : fs;
-export const AGENT_HISTORY_LIMIT = 1024 ** 3;
+export const AGENT_HISTORY_LIMIT = 4 * 1024 ** 3;
 export type AgentHomeHistoryPlan = {
   paths: string[];
   sessions: number;

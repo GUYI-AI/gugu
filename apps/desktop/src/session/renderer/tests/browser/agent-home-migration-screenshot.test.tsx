@@ -31,7 +31,7 @@ it('captures the actual Chinese migration result component with preparing and qu
   const homes: AgentHomeScan[] = [
     { ...common, migrationPreparation: { phase: 'history', startedAt: Date.now() - 42_000, attempt: 1 } },
     { ...common, providerId: 'claude', name: 'Claude Code', needsImport: false, upgraded: true,
-      importedAt: new Date().toISOString(), historyImport: { imported: 16, skipped: 389, sessionBytes: 956_208_287, limitBytes: 1024 ** 3 },
+      importedAt: new Date().toISOString(), historyImport: { imported: 16, skipped: 389, sessionBytes: 956_208_287, limitBytes: 4 * 1024 ** 3 },
       upgradeIssues: Array.from({ length: 389 }, (_, index) => ({ path: `projects/fixture/older-${index}.jsonl`, reason: 'historyLimit' as const })) },
   ]
   await harness.render(<AgentHomeMigrationResultList homes={homes} />)

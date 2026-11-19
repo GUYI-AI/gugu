@@ -130,7 +130,7 @@ export default {
     "models": "Models"
   },
   "issue": {
-    "historyLimit": "Outside the recent 1 GiB session budget; the original is unchanged",
+    "historyLimit": "Outside the recent 4 GiB session budget; the original is unchanged",
     "groupHistoryLimitSummary_one": "{{count}} older session was not migrated; the original is unchanged",
     "groupHistoryLimitSummary_other": "{{count}} older sessions were not migrated; the originals are unchanged",
 

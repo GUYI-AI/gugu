@@ -101,7 +101,7 @@ it('publishes at the final home, records an interrupted preparation, and resumes
 });
 
 
-it('uses exactly one GiB and makes the oversize exception only for the newest session', async () => {
+it('uses exactly four GiB and makes the oversize exception only for the newest session', async () => {
   const { home, add } = await fixture('codex');
   await add(`sessions/${newest}.jsonl`, 1, 300);
   await add(`sessions/${older}.jsonl`, 1, 200);
@@ -109,10 +109,10 @@ it('uses exactly one GiB and makes the oversize exception only for the newest se
   await truncate(join(home.userConfigRoot, `sessions/${older}.jsonl`), 2);
   await utimes(join(home.userConfigRoot, `sessions/${newest}.jsonl`), 300, 300);
   await utimes(join(home.userConfigRoot, `sessions/${older}.jsonl`), 200, 200);
-  expect(await planAgentHomeHistory(home)).toMatchObject({ sessions: 1, bytes: 1_073_741_823, skipped: [{ id: older }] });
+  expect(await planAgentHomeHistory(home)).toMatchObject({ sessions: 1, bytes: 4_294_967_295, skipped: [{ id: older }] });
   await truncate(join(home.userConfigRoot, `sessions/${newest}.jsonl`), AGENT_HISTORY_LIMIT + 1);
   await utimes(join(home.userConfigRoot, `sessions/${newest}.jsonl`), 300, 300);
-  expect(await planAgentHomeHistory(home)).toMatchObject({ sessions: 1, bytes: 1_073_741_825, skipped: [{ id: older }] });
+  expect(await planAgentHomeHistory(home)).toMatchObject({ sessions: 1, bytes: 4_294_967_297, skipped: [{ id: older }] });
 })
 
 it('leaves an already migrated managed history untouched', async () => {
