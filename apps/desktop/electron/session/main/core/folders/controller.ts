@@ -9,7 +9,7 @@ import { canonicalPath } from '@gugu/session-core/files';
 import { db } from '@main/db/client';
 import { sessions, workspaces } from '@main/db/schema';
 import { events } from '@main/lib/events';
-import { bindFolder, ensureFolder, folderAtPath, getFolder, isTaskHomeFolder, listFolders, listUnboundFolders, reorderFolders, type Folder } from './folders';
+import { bindFolder, ensureFolder, ensureTaskHomeFolder, folderAtPath, getFolder, isTaskHomeFolder, listFolders, listUnboundFolders, reorderFolders, type Folder } from './folders';
 import { folderPathStatus } from './folder-path-status';
 
 function record(folder: Folder): FolderRecord {
@@ -32,6 +32,11 @@ export async function listGroupFolders(chatId?: string): Promise<FolderRecord[]>
 /** Every folder recorded on this machine, bound to a group or not (the task home, an App's own directory). */
 export async function listAllFolders(): Promise<FolderRecord[]> {
   return [...listFolders(), ...listUnboundFolders()].map(record);
+}
+
+/** This machine's task home folder (where sessions without a group start), recorded on first use. Idempotent. */
+export async function ensureTaskHome(): Promise<FolderRecord> {
+  return record(ensureTaskHomeFolder());
 }
 
 /** What is at a path on this machine, and the folder already recorded there. */
@@ -76,6 +81,7 @@ export async function reorderGroupFolders(params: { chatId: string; ids: string[
 export const folderController = createRPCController({
   listGroupFolders,
   listAllFolders,
+  ensureTaskHome,
   inspectFolderPath,
   bindFolderAtPath,
   unbindFolder,
