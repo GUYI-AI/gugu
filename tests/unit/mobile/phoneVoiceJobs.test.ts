@@ -29,23 +29,23 @@ function fakeHome() {
   const rpc = {
     workspace: {
       files: {
-        readExternalFile: async (_p: string, _w: string, path: string) => {
+        readExternalFile: async (_w: string, path: string) => {
           const content = text.get(path)
           if (content === undefined) return { success: false, error: { type: 'fs_error', message: `ENOENT: no such file or directory, open '${path}'` } }
           return { success: true, data: { content, truncated: false, totalSize: content.length } }
         },
-        writeExternalFile: async (_p: string, _w: string, path: string, content: string) => {
+        writeExternalFile: async (_w: string, path: string, content: string) => {
           log.push(`write ${path.slice(path.lastIndexOf('/') + 1)}`)
           text.set(path, content)
           return { success: true, data: {} }
         },
-        createEntry: async (_p: string, _w: string, dir: string, name: string) => {
+        createEntry: async (_w: string, dir: string, name: string) => {
           const path = `${dir}/${name}`
           if (dirs.has(path)) return { success: false, error: { type: 'exists' } }
           dirs.add(path)
           return { success: true, data: { path } }
         },
-        writeChunk: async (_p: string, _w: string, chunk: { path: string; data: string; final: boolean }) => {
+        writeChunk: async (_w: string, chunk: { path: string; data: string; final: boolean }) => {
           const parts = pending.get(chunk.path) ?? []
           parts.push(new Uint8Array(Buffer.from(chunk.data, 'base64')))
           pending.set(chunk.path, parts)
@@ -56,7 +56,7 @@ function fakeHome() {
           }
           return { success: true, data: {} }
         },
-        removeFile: async (_p: string, _w: string, path: string) => {
+        removeFile: async (_w: string, path: string) => {
           log.push(`remove ${path.slice(path.lastIndexOf('/') + 1)}`)
           for (const key of [...text.keys()]) if (key.startsWith(path)) text.delete(key)
           for (const key of [...binary.keys()]) if (key.startsWith(path)) binary.delete(key)

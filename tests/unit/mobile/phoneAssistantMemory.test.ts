@@ -54,7 +54,7 @@ function fakeMachine(initial: Record<string, string | Node>) {
     },
     workspace: {
       files: {
-        readExternalFile: async (_project: string, _workspace: string, path: string, maxBytes: number) => {
+        readExternalFile: async (_w: string, path: string, maxBytes: number) => {
           const node = fs.get(path)
           if (!node) return { success: false, error: { type: 'fs_error', message: `ENOENT: no such file or directory, open '${path}'` } }
           if (node.kind === 'dir') return { success: false, error: { type: 'fs_error', message: `EISDIR: ${path}` } }
@@ -63,25 +63,25 @@ function fakeMachine(initial: Record<string, string | Node>) {
           if (node.binary) return { success: true, data: { content: '', binary: true, truncated: false, totalSize } }
           return { success: true, data: { content: node.content, truncated: false, totalSize } }
         },
-        writeExternalFile: async (_project: string, _workspace: string, path: string, content: string) => {
+        writeExternalFile: async (_w: string, path: string, content: string) => {
           writes.push(path)
           put(path, { kind: 'file', content })
           return { success: true, data: {} }
         },
-        removeFile: async (_project: string, _workspace: string, path: string, { recursive }: { recursive: boolean }) => {
+        removeFile: async (_w: string, path: string, { recursive }: { recursive: boolean }) => {
           const node = fs.get(path)
           if (!node) return { success: true, data: { success: false, error: { type: 'not_found', message: 'ENOENT' } } }
           if (node.kind === 'dir' && !recursive) return { success: true, data: { success: false, error: { type: 'fs_error', message: 'EISDIR' } } }
           for (const key of [...fs.keys()]) if (key === path || key.startsWith(`${path}/`)) fs.delete(key)
           return { success: true, data: { success: true } }
         },
-        createEntry: async (_project: string, _workspace: string, dir: string, name: string) => {
+        createEntry: async (_w: string, dir: string, name: string) => {
           const path = `${dir}/${name}`
           if (fs.has(path)) return { success: false, error: { type: 'exists' } }
           put(path, { kind: 'dir' })
           return { success: true, data: { path } }
         },
-        writeChunk: async (_project: string, _workspace: string, chunk: { path: string; data: string; final: boolean }) => {
+        writeChunk: async (_w: string, chunk: { path: string; data: string; final: boolean }) => {
           const so_far = (chunks.get(chunk.path) ?? '') + Buffer.from(chunk.data, 'base64').toString('utf8')
           chunks.set(chunk.path, so_far)
           if (chunk.final) put(chunk.path, { kind: 'file', content: so_far })

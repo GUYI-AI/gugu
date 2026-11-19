@@ -86,17 +86,17 @@ function fakeHome() {
   const rpc = {
     workspace: {
       files: {
-        readExternalFile: async (_p: string, _w: string, path: string) => {
+        readExternalFile: async (_w: string, path: string) => {
           const content = text.get(path)
           if (content === undefined) return { success: false, error: { type: 'fs_error', message: `ENOENT: no such file or directory, open '${path}'` } }
           return { success: true, data: { content, truncated: false, totalSize: content.length } }
         },
-        writeExternalFile: async (_p: string, _w: string, path: string, content: string) => {
+        writeExternalFile: async (_w: string, path: string, content: string) => {
           text.set(path, content)
           return { success: true, data: {} }
         },
-        createEntry: async (_p: string, _w: string, dir: string, name: string) => ({ success: true, data: { path: `${dir}/${name}` } }),
-        writeChunk: async (_p: string, _w: string, chunk: { path: string }) => {
+        createEntry: async (_w: string, dir: string, name: string) => ({ success: true, data: { path: `${dir}/${name}` } }),
+        writeChunk: async (_w: string, chunk: { path: string }) => {
           uploads.push(chunk.path)
           return { success: true, data: {} }
         },
@@ -115,7 +115,7 @@ beforeEach(() => {
   mocks.sendMessage.mockReset()
   mocks.readChunk.mockReset()
   // 云上的音频:任意一段都读回同样 1234 字节。
-  mocks.readChunk.mockImplementation(async (_p: string, _w: string, { offset, length }: { offset: number; length: number }) => {
+  mocks.readChunk.mockImplementation(async (_w: string, { offset, length }: { offset: number; length: number }) => {
     const slice = AUDIO.slice(offset, offset + length)
     return { success: true, data: { data: Buffer.from(slice).toString('base64'), size: AUDIO.length } }
   })
@@ -175,7 +175,7 @@ describe('桌面「开始转写」= retryVoiceNote:手机传上来的 uploaded �
     )
     // 交给助理自己那条会话(session-direct),话里带着这一条的文件夹。
     expect(mocks.sendMessage).toHaveBeenCalledTimes(1)
-    expect(mocks.sendMessage.mock.calls[0]![0]).toMatchObject({ projectId: 'p1', sessionId: 'assistant-session', kind: 'session-direct' })
+    expect(mocks.sendMessage.mock.calls[0]![0]).toMatchObject({ sessionId: 'assistant-session', kind: 'session-direct' })
     expect(mocks.sendMessage.mock.calls[0]![0].text).toContain(`${DIR}/summary.md`)
     // 它写好了就是好了:note.json 标 ready、带标题;段都标转写过。
     const done = parseVoiceNoteMeta(home.text.get(`${DIR}/note.json`) ?? '')!
