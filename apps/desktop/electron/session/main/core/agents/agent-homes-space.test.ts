@@ -1,9 +1,10 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => {
   class SpaceError extends Error { constructor(readonly space: { requiredBytes: number; availableBytes: number; shortfallBytes: number }) { super('space'); } }
-  return { SpaceError, check: vi.fn(), importer: vi.fn(), prepare: undefined as undefined | ((id: string) => Promise<void>), markers: new Map<string, unknown>(), cleanup: vi.fn(), login: vi.fn() };
+  return { SpaceError, check: vi.fn(), importer: vi.fn(), prepare: undefined as undefined | ((id: string) => Promise<void>), markers: new Map<string, unknown>(), nativeModuleLoaded: vi.fn(), cleanup: vi.fn(), login: vi.fn() };
 });
-vi.mock('@gugu/session-plugins/agents', () => ({
+vi.mock('@gugu/session-plugins/agents', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@gugu/session-plugins/agents')>(),
   pluginRegistry: {
     getAll: () => ['codex', 'claude'].map((id) => ({ metadata: { id, name: id }, capabilities: { sessionBundle: { configRoot: {} } } })),
     get: () => ({ capabilities: { sessionBundle: { configRoot: {} } } }),
@@ -24,6 +25,10 @@ vi.mock('@gugu/session-core/agents/plugins/helpers', () => ({
   importAgentHome: state.importer, updateAgentHomeSource: state.cleanup,
   scanAgentHome: vi.fn(), diffAgentHome: vi.fn(), reimportAgentHome: vi.fn(),
 }));
+vi.mock('@main/core/acp/transport/local-acp-process-host', () => {
+  state.nativeModuleLoaded();
+  return { resolveLocalAgentCli: vi.fn() };
+});
 vi.mock('@main/app/app-scope', () => ({ appScope: { add: vi.fn() } }));
 vi.mock('@main/db/client', () => ({ db: {} }));
 vi.mock('@main/db/schema', () => ({ sessions: {} }));
@@ -34,7 +39,7 @@ vi.mock('@main/utils/userEnv', () => ({ loginShellEnv: () => ({}) }));
 vi.mock('./harness-connections', () => ({ migrateOwnedHarnessAccounts: state.login }));
 vi.mock('./agent-home', () => ({ setAgentHomeUpgradePreparation: (prepare: typeof state.prepare) => { state.prepare = prepare; } }));
 vi.mock('../../../../error-summary-reporting-host', () => ({ reportAgentHomeMigrationFailure: vi.fn() }));
-beforeEach(() => { vi.resetModules(); state.check.mockReset(); state.importer.mockReset(); state.cleanup.mockReset(); state.login.mockReset(); state.markers.clear(); state.prepare = undefined; });
+beforeEach(() => { vi.resetModules(); state.check.mockReset(); state.importer.mockReset(); state.cleanup.mockReset(); state.login.mockReset(); state.markers.clear(); state.nativeModuleLoaded.mockReset(); state.prepare = undefined; });
 
 it('defers all pending providers before source cleanup or sign-in and does not reject session preparation', async () => {
   const space = { requiredBytes: 4_000_000_000, availableBytes: 1_000_000_000, shortfallBytes: 3_000_000_000 };
@@ -52,6 +57,7 @@ it('defers all pending providers before source cleanup or sign-in and does not r
   expect(state.cleanup).not.toHaveBeenCalled();
   expect(state.importer).not.toHaveBeenCalled();
   expect(state.login).not.toHaveBeenCalled();
+  expect(state.nativeModuleLoaded).not.toHaveBeenCalled();
 });
 
 it('retries automatic migration on a new startup after space becomes available', async () => {
