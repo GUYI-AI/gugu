@@ -34,6 +34,8 @@ export interface AccountClosureV2Snapshot {
   serverPreparationGeneration: string | null
   /** Unknown preparation/confirmation retains custody and permits only recovery. */
   recoveryOnly: boolean
+  /** A server 409/request_active leaves only original-result recovery. */
+  confirmCancellationBlocked?: boolean
   pendingEffect: 'register' | 'challenge' | 'prepare_device' | 'confirm' | 'cancel' | null
   agentsPaused: boolean
   /** Fixed item names; never values, paths or credentials. */
@@ -58,7 +60,8 @@ export interface AccountClosureV2Native {
   confirm(handle: AccountClosureV2Handle, input: AccountClosureV2Confirmation): Promise<AccountClosureV2Snapshot>
   /** Original result only: never registers, resends, prepares or reconfirms. */
   recover(handle: AccountClosureV2Handle): Promise<AccountClosureV2Snapshot>
-  /** Only a trusted matching-generation ACK permits native unsealing. */
+  /** Each explicit click sends at most one idempotent cancel, including an
+   * unknown confirmation. No automatic loop; only a matching ACK unseals. */
   cancel(handle: AccountClosureV2Handle): Promise<AccountClosureV2Snapshot>
   /** Requires trusted deleted, scoped cleanup and renderer sign-out completion. */
   finalize(handle: AccountClosureV2Handle): Promise<AccountClosureV2Snapshot>

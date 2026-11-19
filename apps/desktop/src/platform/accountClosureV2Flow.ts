@@ -78,7 +78,10 @@ export function createAccountClosureV2Flow(ports: AccountClosureV2FlowPorts) {
     recover: () => run(async () => { accept(await ports.native.recover(operation().handle)) }),
     cancel: () => run(async () => {
       const current = operation()
-      if (current.pendingEffect === 'confirm' || ['confirming', 'processing', 'deleted', 'local-complete', 'finalized'].includes(current.phase)) return fail('closure_recovery_required')
+      // Maintainer-approved recovery: an unknown confirmation may be fenced
+      // by one explicit idempotent cancellation per click. Never retry it here.
+      if (['processing', 'deleted', 'local-complete', 'finalized'].includes(current.phase)
+        || current.pendingEffect === 'confirm' && current.confirmCancellationBlocked) return fail('closure_recovery_required')
       accept(await ports.native.cancel(current.handle))
     }),
     finalize: () => run(async () => {
