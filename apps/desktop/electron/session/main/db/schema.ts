@@ -245,8 +245,19 @@ export const workspaces = sqliteTable(
      * #7341 这个文件夹挂在哪个项目下(product spec「挂文件夹」)。根目录**不**记在这里 ——
      * 它由 `projects.repositoryWorkspaceId` 指着;null = 没挂在任何项目下。
      */
+    /** @@@c1-legacy-project — read only by the previous release after a rollback; C1 never reads or writes it. */
     projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
-    /** 挂上的时间(ISO);挂上时写、摘下时清。只在 `projectId` 有值时有意义(项目删了外键只清 `projectId`)。 */
+    /**
+     * The group this folder is bound to on this device (a group is the only container); null = a folder the device
+     * keeps without a group (the task home, a cloud computer's working directory, an App's own directory).
+     */
+    chatId: text('chat_id'),
+    /** Order of a group's folders on this device: the first is where a new task starts by default. */
+    sort: integer('sort'),
+    /** A folder that is not a git repository (base_ref null means "main" for a git folder). */
+    gitless: integer('gitless', { mode: 'boolean' }).notNull().default(false),
+    baseRef: text('base_ref'),
+    /** When the folder was bound to its group (ISO); null when it has none. */
     attachedAt: text('attached_at'),
     createdAt: text('created_at')
       .notNull()
@@ -258,7 +269,59 @@ export const workspaces = sqliteTable(
   (table) => ({
     keyIdx: uniqueIndex('idx_workspaces_key').on(table.key).where(isNotNull(table.key)),
     projectIdIdx: index('idx_workspaces_project_id').on(table.projectId),
+    chatIdx: index('idx_workspaces_chat_id').on(table.chatId, table.sort),
   })
+);
+
+/**
+ * Settings of a repository-root folder (formerly per project): base, shareable and migration marker, as
+ * `project_settings` had them. Keyed by the root folder's workspace id.
+ */
+export const workspaceSettings = sqliteTable('workspace_settings', {
+  workspaceId: text('workspace_id').primaryKey(),
+  baseSettingsJson: text('base_settings_json').notNull().default('{}'),
+  shareableSettingsJson: text('shareable_settings_json').notNull().default('{}'),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+/** Git remotes of a repository-root folder (formerly `project_remotes`). */
+export const workspaceRemotes = sqliteTable(
+  'workspace_remotes',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    remoteName: text('remote_name').notNull(),
+    remoteUrl: text('remote_url').notNull(),
+  },
+  (table) => ({ pk: primaryKey({ columns: [table.workspaceId, table.remoteName] }) })
+);
+
+/**
+ * Local project ids of earlier releases, kept forever where they were written down outside this database: cloud file
+ * versions (`host_project_id`), task cards, `gugu://project/` links, tmux session names, agent-create defaults.
+ * Written once by the C1 migration, never after: an id with no row here is gone.
+ */
+export const legacyProjectAliases = sqliteTable('legacy_project_aliases', {
+  projectId: text('project_id').primaryKey(),
+  /** The project's repository-root folder; its path is what the project's relative paths are relative to. */
+  rootWorkspaceId: text('root_workspace_id'),
+  chatId: text('chat_id'),
+});
+
+/**
+ * This device's own published file versions by chat item (formerly the `files` part of taskpage-project-groups.json):
+ * a cache of the database's immutable version records, filled when this device publishes a version or the database
+ * answers for one.
+ */
+export const fileRevisionCache = sqliteTable(
+  'file_revision_cache',
+  {
+    accountId: text('account_id').notNull(),
+    itemId: text('item_id').notNull(),
+    version: integer('version').notNull(),
+    revisionJson: text('revision_json').notNull(),
+  },
+  (table) => ({ pk: primaryKey({ columns: [table.accountId, table.itemId, table.version] }) })
 );
 
 export const pullRequestUsers = sqliteTable('pull_request_users', {
@@ -382,9 +445,12 @@ export const automations = sqliteTable(
   {
     id: text('id').primaryKey(),
     name: text('name').notNull(),
+    /** @@@c1-legacy-project — read only by the previous release after a rollback. */
     projectId: text('project_id').references(() => projects.id, {
       onDelete: 'set null',
     }),
+    /** The folder an automation's sessions start in. */
+    workspaceId: text('workspace_id'),
     triggerConfig: versionedJsonColumn(automationTriggerConfig)('trigger_config'),
     agentConfig: versionedJsonColumn(automationAgentConfig)('agent_config'),
     sessionConfig: versionedJsonColumn(storedAutomationSessionConfig)('session_config'),
@@ -451,9 +517,15 @@ export const sessions = sqliteTable(
   'sessions',
   {
     id: text('id').primaryKey(),
+    /**
+     * @@@c1-legacy-project — read only by the previous release after a rollback: C1 writes the placeholder project
+     * (`LEGACY_PLACEHOLDER_PROJECT_ID`) so that release still boots; dropped next release.
+     */
     projectId: text('project_id')
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
+    /** The group this session lives in (null: no group, e.g. the task home). Its cwd is `workspaceId`. */
+    chatId: text('chat_id'),
     /** Read only by the previous release after a rollback (0043 @@@rollback-title); dropped next release. */
     legacyTitle: text('title').notNull().default(''),
     provider: text('provider'),
@@ -511,6 +583,7 @@ export const sessions = sqliteTable(
   },
   (table) => ({
     workspaceIdIdx: index('idx_sessions_workspace_id').on(table.workspaceId),
+    chatIdx: index('idx_sessions_chat_id').on(table.chatId),
     parentSessionIdIdx: index('idx_sessions_parent_session_id').on(
       table.parentSessionId
     ),

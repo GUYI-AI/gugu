@@ -117,6 +117,7 @@ import { flushViewState } from '@main/core/view-state/view-state-service'
 import { resolveDatabasePath } from '@main/db/path'
 import { backupBeforeTaskToSession, runTaskToSessionOnce } from '../../migrations/task-to-session'
 import { backupBeforeSessionNaming, runSessionNamingOnce } from '../../migrations/session-naming'
+import { runGroupFoldersOnce } from '../../migrations/group-folders'
 import { tmuxBackendStartupSweepSettled } from '../../sessionpage/tmux-backend'
 import { sessions, projects as projectsTable, workspaces as workspacesTable } from '@main/db/schema'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
@@ -586,6 +587,11 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   await runSessionNamingOnce({ db: sqlite, userData: app.getPath('userData') }).then(
     (summary) => { if (summary) log.info('session-naming: segment 2 done', { summary }) },
     (error: unknown) => log.error('session-naming: segment 2 failed; retrying next start', { error: String(error) })
+  )
+  // Projects become folders of groups (@@@group-folders): the data half of drizzle 0054, before any reader of folders.
+  await runGroupFoldersOnce({ db: sqlite, userData: app.getPath('userData') }).then(
+    (summary) => { if (summary) log.info('group-folders: done', { summary }) },
+    (error: unknown) => log.error('group-folders: failed; retrying next start', { error: String(error) })
   )
   // 开门即已迁完(退役的 lifecycle 条目在门里先迁走);同上面两段一样不等占用判定。
   await setSessionMessageOutboxReady()

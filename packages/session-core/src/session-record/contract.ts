@@ -759,7 +759,15 @@ export type SessionpageSessionSummary = {
   nativeOwnerNotificationEpoch?: number;
   nativeUnreadAliases?: Record<string, string>;
   conversationId: string;
+  /**
+   * @@@group-folders — for released readers only: since C1 it is the session's folder (workspace) id, an opaque key.
+   * New readers use `chatId` and `workspaceId`. Removed in the cleanup release.
+   */
   projectId: string;
+  /** The group the session lives in; null = none (the task home). Absent on hosts before C1. */
+  chatId?: string | null;
+  /** The folder (workspace) the session works in: its cwd. Absent on hosts before C1. */
+  workspaceId?: string;
   title: string;
   harness: SessionRecordHarness | string;
   /** 会话启动形态：协议腿或终端腿。写侧按它走，读侧不看它。 */
@@ -1115,8 +1123,13 @@ export type SessionpageSessionCreateRequest = {
   effort?: string;
   /** Native Fast intent; the host revalidates the target before creating. */
   fastMode?: boolean;
-  /** 生在哪个群里(群成员里「新建 Agent」):它的身份第一次建出来时进这个群,群规照常生效。老宿主不认这一格。 */
+  /**
+   * The group the session lives in (@@@group-folders): its agent joins it, and it starts in that group's first folder on
+   * the machine unless `workspaceId` or `cwd` names one. Absent = no group (the task home).
+   */
   chatId?: string;
+  /** The folder (workspace id on that machine) to start in; must be bound to `chatId` when both are given. */
+  workspaceId?: string;
   /**
    * 派任务(gugu-dev#181):第一句由那台机器落成这个对话里的一张任务卡,agent 进群坐任务座位(与 `chatId` 同给)。
    * 老宿主不认这一格。
@@ -1129,7 +1142,10 @@ export type SessionpageSessionCreateRequest = {
 /** 建成了：手机拿这两个 id 直接跳进新会话的时间线。 */
 export type SessionpageSessionCreateResult = {
   conversationId: string;
+  /** @@@group-folders — released readers only (asserted non-empty there): the session's folder id since C1. */
   projectId: string;
+  chatId?: string | null;
+  workspaceId?: string;
   title: string;
   /** 手机宿主返回的真实入群结果；身份创建成功与入群成功分别表达。 */
   birthGroup?: { chatId: string; status: 'joined' | 'pending_approval' | 'failed'; error?: string } | null;
