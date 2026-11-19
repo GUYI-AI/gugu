@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { app, ipcMain, BrowserWindow } from 'electron'
 import { createErrorSummaryReporter } from '../shared/error-summary-reporter'
-import { errorSummaryFromError, sanitizeErrorSummary } from '../shared/error-summary'
+import { errorSummaryFromError, sanitizeErrorSummary, type ErrorSummary } from '../shared/error-summary'
 import { errorSummaryStackLocations } from '../shared/error-summary-stack'
 import { errorSummaryDestination, errorSummaryRequest } from '../shared/error-summary-transport'
 
@@ -87,16 +87,32 @@ export function registerErrorSummaryReporting(deps: {
     if (captureScope() === undefined) return
     reporter.report(errorSummaryFromError(error, metadata(), type, errorSummaryStackLocations(error)))
   })
+  // Device upgrade starts before the renderer restores its account. Retain at most one
+  // sanitized summary per phase in memory and resolve it against the first known consent.
+  const bootMigrationFailures = new Map<keyof typeof migrationLocations, ErrorSummary>()
   ipcMain.on(migrationFailureEvent, (error: unknown, area: keyof typeof migrationLocations) => safely(() => {
-    if (captureScope() === undefined || !Object.hasOwn(migrationLocations, area)) return
-    reporter.report(errorSummaryFromError(error, metadata(), undefined, [migrationLocations[area]]))
+    if (!Object.hasOwn(migrationLocations, area)) return
+    const current = context()
+    if (current.scope !== undefined && !current.allowed) return
+    const summary = errorSummaryFromError(error, metadata(), undefined, [migrationLocations[area]])
+    if (!summary) return
+    if (current.scope === undefined) bootMigrationFailures.set(area, summary)
+    else reporter.report(summary)
   }))
   let initialized = false
   let previousOwner = deps.owner()
   ipcMain.on('error-summary:consent-changed', () => safely(() => {
     const owner = deps.owner()
     if (owner === undefined) return
-    if (!initialized) { initialized = true; previousOwner = owner; reporter.start(); return }
+    if (!initialized) {
+      initialized = true
+      previousOwner = owner
+      reporter.start()
+      const buffered = [...bootMigrationFailures.values()]
+      bootMigrationFailures.clear()
+      if (captureScope() !== undefined) for (const summary of buffered) reporter.report(summary)
+      return
+    }
     if (owner !== previousOwner || !context().allowed) reporter.changed()
     previousOwner = owner
   }))

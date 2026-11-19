@@ -119,6 +119,21 @@ describe('native summary reporting boundary', () => {
     expect(body).not.toMatch(/private|auth\.json|token/)
   })
 
+  it.each(['allowed', 'denied'])('keeps startup migrations in memory until the first known %s preference', async decision => {
+    let owner: string | undefined
+    ipcMain.on('error-summary:read-local-consent', (reply: unknown) => {
+      if (typeof reply === 'function') reply({ eligible: owner !== undefined, decision })
+    })
+    registerErrorSummaryReporting({ eligible: true, owner: () => owner })
+    reportAgentHomeMigrationFailure(new RangeError('private'), 'history')
+    expect(fetch).not.toHaveBeenCalled()
+    expect(() => readFileSync(join(root, 'pending-error-summaries.json'))).toThrow()
+    owner = 'test-owner-only-local'
+    ipcMain.emit('error-summary:consent-changed')
+    if (decision === 'allowed') await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    else expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('reports an allowed native error category without formatting any error accessors', async () => {
     ipcMain.on('error-summary:read-local-consent', (reply: unknown) => { if (typeof reply === 'function') reply({ eligible: true, decision: 'allowed' }) })
     registerErrorSummaryReporting({ eligible: true, owner: () => null })
