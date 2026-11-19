@@ -211,22 +211,6 @@ export async function runMiseOperation(context: InstallCommandContext, preparati
     if (!Array.isArray(entries) || entries.some((entry) => !entry || typeof entry.version !== 'string' || typeof entry.install_path !== 'string' || typeof entry.installed !== 'boolean')) throw new Error('Invalid mise installation inventory');
     return entries;
   };
-  /**
-   * #6264 升级一家 agent 之后收掉更早的版本:mise 每个版本一个目录,以前从不回收 —— codex 一版 370MB,
-   * 每升级一次盘上就多一份(d22 的系统盘就是这样满的)。只留新装的这一版与启动器原来指着的那一版
-   * (它可能正被一条还开着的会话用着,npm 系的 agent 运行中还会按需读自己目录里的文件)。
-   * 收不掉只记一笔:新版本已经在用了,❌ 为清理失败把这次安装判成失败。
-   */
-  const pruneStaleVersions = async (previousLauncher: string): Promise<void> => {
-    try {
-      const stale = (await inventory()).filter(
-        (entry) => entry.installed && entry.version !== candidate && !previousLauncher.includes(path.resolve(entry.install_path)),
-      );
-      for (const entry of stale) await run(['uninstall', tool + '@' + entry.version], false);
-    } catch (error) {
-      log.warn('[mise-installer] 收旧版本失败(不影响这次安装)', { tool, error: String(error) });
-    }
-  };
   const perform = async (): Promise<Result<void, InstallCommandError>> => {
     try {
       signal.throwIfAborted();
@@ -354,9 +338,7 @@ export async function runMiseOperation(context: InstallCommandContext, preparati
       }
       signal.throwIfAborted();
       await mkdir(path.dirname(launcher), { recursive: true });
-      // 换启动器之前记下它原来指着哪一版:那一版可能正被一条还开着的会话用着,收旧版本时留下它。
       const publish = async (assertOwned: () => void) => {
-        const previous = await readFile(launcher, 'utf8').catch(() => '');
         const temporaryLauncher = path.join(work, 'launcher.tmp');
         await writeFile(temporaryLauncher, managedLauncher(executable, nodeBin, distribution.version, distribution.kind === 'npm' ? [] : distribution.args));
         await chmod(temporaryLauncher, 0o755);
@@ -364,10 +346,9 @@ export async function runMiseOperation(context: InstallCommandContext, preparati
         assertOwned();
         await replaceManagedLauncher(temporaryLauncher, launcher);
         published = true;
-        return previous;
       };
-      const previousLauncher = preparation ? await publish(() => {}) : await withManagedLauncherPublication(publish);
-      await pruneStaleVersions(previousLauncher);
+      if (preparation) await publish(() => {});
+      else await withManagedLauncherPublication(publish);
       return ok();
     } catch (error) {
       let output = error instanceof Error ? error.message : String(error);
