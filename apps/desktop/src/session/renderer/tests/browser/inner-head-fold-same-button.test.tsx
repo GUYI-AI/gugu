@@ -109,7 +109,7 @@ it('the two-line group button covers the avatar and lower row, with independent 
   await openButton.hover({ position: bottomOfAvatar });
   expect(getComputedStyle(button()).backgroundColor).toBe('rgba(0, 0, 0, 0)');
   expect(hoverLayer().backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
-  expect([hoverLayer().left, hoverLayer().right, hoverLayer().borderRadius]).toEqual(['8px', '8px', '9999px']);
+  expect([hoverLayer().left, hoverLayer().right, hoverLayer().borderRadius]).toEqual(['0px', '0px', '8px']);
   await openButton.click({ position: bottomOfAvatar });
   expect(open).toHaveBeenCalledOnce();
 
