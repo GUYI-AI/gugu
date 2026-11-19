@@ -1331,7 +1331,7 @@ describe('session orchestration', () => {
 
     describe('a PTY session this host has not mounted (lazy reattach after an account-process restart)', () => {
       const cold = { sessionId: 'pty-cold' };
-      const coldTmuxName = 'tmux:project-1:pty-cold:pty-cold';
+      const coldTmuxName = 'tmux:workspace-1:pty-cold:pty-cold';
       beforeEach(() => {
         fixture.sqlite
           .prepare(
@@ -1339,16 +1339,12 @@ describe('session orchestration', () => {
              VALUES ('pty-cold', 'c1-placeholder', 'workspace-1', 'claude', 'pty', json_object('version', '1', 'type', 'pty', 'agentDisplayName', 'PTY cold'))`
           )
           .run();
-        mocks.openProjects = new Set(['c1-placeholder']);
         mocks.tmuxEnabled.mockImplementation(async () => true);
         mocks.tmuxSessionNames = new Set();
         mocks.listTmuxSessionNames.mockImplementation(async () => mocks.tmuxSessionNames);
         mocks.killTmuxSession.mockClear();
         mocks.listTmuxSessionNames.mockClear();
         mocks.settleSessionExited.mockClear();
-      });
-      afterEach(() => {
-        mocks.openProjects = new Set();
       });
 
       it('kills its engine still running in tmux and settles it as exited — without mounting it', async () => {
@@ -1363,7 +1359,7 @@ describe('session orchestration', () => {
       });
 
       it('kills nothing when tmux has no session of that name: only the exact name is ever killed', async () => {
-        mocks.tmuxSessionNames = new Set(['tmux:project-1:pty-cold-2:pty-cold-2']);
+        mocks.tmuxSessionNames = new Set(['tmux:workspace-1:pty-cold-2:pty-cold-2']);
 
         await expect(stopExactSessionpageSession(cold)).resolves.toBe(true);
         expect(mocks.killTmuxSession).not.toHaveBeenCalled();
@@ -1390,8 +1386,7 @@ describe('session orchestration', () => {
         expect(mocks.ensureSessionMounted).not.toHaveBeenCalled();
       });
 
-      it('stops a surviving engine without requiring its project to be opened first', async () => {
-        mocks.openProjects = new Set();
+      it('stops a surviving engine without requiring its folder to be opened first', async () => {
         mocks.tmuxSessionNames.add(coldTmuxName);
 
         await expect(stopExactSessionpageSession(cold)).resolves.toBe(true);
@@ -2940,7 +2935,7 @@ describe('session_archive', () => {
 // 看与取消主人另一条会话的「已安排」:与 session_archive 同一个口径 —— 这台机器上的任一会话(含已归档),
 // 别的机器由宿主按 session_id 路由过来(runRemoteSessionAction)。账号之外的会话不在这个库里,够不着。
 describe('schedule_list / schedule_cancel with session_id', () => {
-  const context: SessionCallerContext = { sessionId: 'caller', projectId: 'c1-placeholder', workspaceId: 'workspace-1' };
+  const context: SessionCallerContext = { sessionId: 'caller', workspaceId: 'workspace-1' };
   const remoteCaller: RemoteSessionCaller = {
     deviceId: 'device-a', deviceLabel: 'mac1', sessionId: 'remote-caller', agentUserId: 'agent-remote',
     name: 'Claude 7', harness: 'codex', transport: 'acp', model: null, platformModel: null,
@@ -2953,7 +2948,7 @@ describe('schedule_list / schedule_cancel with session_id', () => {
       .run();
     const { runAgentScheduleAction } = await import('../automations/agent-schedules');
     const created = await runAgentScheduleAction(
-      { sessionId: 'patrol', projectId: 'c1-placeholder', provider: 'codex' },
+      { sessionId: 'patrol', provider: 'codex' },
       { action: 'schedule_create', prompt: 'patrol', cron: '*/30 * * * *', tz: 'UTC' },
     ) as { schedule_id: string };
     return created.schedule_id;

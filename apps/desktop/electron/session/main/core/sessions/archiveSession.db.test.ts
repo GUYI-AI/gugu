@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -26,7 +26,6 @@ const mocks = vi.hoisted(() => ({
   teardown: vi.fn(),
   mounted: new Set<string>(),
   userData: '',
-  getProject: vi.fn(),
   // session-life owner of ACP sessions: archive/restore are asked of it, not of the ACP runtime client.
   life: {
     interrupt: vi.fn(async (_sessionId: string, _event: { k: 'interrupt'; reason: string }) => undefined),
@@ -56,12 +55,10 @@ vi.mock('@main/core/acp/controller', () => ({
     },
   }),
 }));
-vi.mock('@main/core/projects/project-manager', () => ({ projectManager: { getProject: mocks.getProject } }));
 // The folder guard below exercises real session preparation/commit; engines and
 // account group bindings are external to directory membership and stay isolated.
 vi.mock('@main/core/sessions/impl/harness-availability', () => ({ checkLocalHarnessAvailable: async () => null }));
 vi.mock('@main/core/mcp-library/service', () => ({ mcpLibraryService: { list: async () => [] } }));
-vi.mock('../projects/operations/project-groups', () => ({ listProjectGroupBindings: async () => ({ success: true, data: [] }) }));
 vi.mock('@main/core/pty/tmux-session-name', () => ({
   killTmuxSession: vi.fn(),
   makeTmuxSessionName: (id: string) => id,
@@ -80,10 +77,7 @@ vi.mock('./session-events', () => ({ sessionEvents: { _emit: vi.fn() } }));
 
 vi.mock('@main/core/session-import/host-source', () => ({ hasLocalSessionSource: () => false }));
 
-vi.mock('@main/core/pull-requests/pr-sync-engine', () => ({ prSyncEngine: { deleteProjectData: vi.fn() } }));
-vi.mock('../../../../sessionpage/sessionpage-project-groups', () => ({ listProjectGroupIds: async () => [], forgetProjectGroupId: vi.fn() }));
 
-const { getProjects } = await import('../projects/operations/getProjects');
 const { listSessionHistory } = await import('../session-history/list-session-history');
 const { archiveSession, restoreSession } = await import('./archiveSession');
 const { setOtherMachines } = await import('./session-family');
@@ -94,7 +88,7 @@ const { setSessionIdentityHost } = await import('./session-identity-host');
 const identityHost = {
   archive: vi.fn(async (_sessionId: string, confirmedRemoval?: RemovedSessionIdentity): Promise<RemovedSessionIdentity | null> => confirmedRemoval ?? null),
   release: vi.fn(async (_identity: RemovedSessionIdentity) => {}),
-  restore: vi.fn(async (_target: { projectId: string; sessionId: string }, _identity: RemovedSessionIdentity) => {}),
+  restore: vi.fn(async (_target: { sessionId: string }, _identity: RemovedSessionIdentity) => {}),
 };
 
 beforeEach(async () => {
@@ -127,8 +121,8 @@ describe('archiveSession', () => {
     fixture.sqlite
       .prepare(
         `INSERT INTO sessions
-           (id, project_id, runtime, parent_session_id, spawned_by_session_id, config)
-         VALUES (?, 'p1', 'acp', ?, ?, ?)`
+           (id, project_id, workspace_id, runtime, parent_session_id, spawned_by_session_id, config)
+         VALUES (?, 'p1', 'ws1', 'acp', ?, ?, ?)`
       )
       .run(
         id,
@@ -158,8 +152,7 @@ describe('archiveSession', () => {
     mocks.teardown.mockReset()
     mocks.teardown.mockResolvedValue({ success: true })
     mocks.mounted.clear()
-    mocks.getProject.mockReset();
-    fixture.sqlite.prepare(`INSERT INTO projects (id, name, path) VALUES ('p1', 'P', '/repo')`).run();
+    fixture.sqlite.exec(`INSERT INTO projects (id, name, path) VALUES ('p1', 'P', '/repo'); INSERT INTO workspaces (id, type, kind, location, path, key) VALUES ('ws1', 'local', 'project-root', 'local', '/repo', 'ws1')`);
   });
 
   afterEach(() => {
@@ -210,146 +203,32 @@ describe('archiveSession', () => {
     await expect(restoreSession('same-task')).rejects.toThrow('provisioning unavailable');
     expect(archivedAt('same-task')).not.toBeNull();
     await restoreSession('same-task');
-    expect(identityHost.restore).toHaveBeenLastCalledWith({ projectId: 'p1', sessionId: 'same-task' }, receipt);
+    expect(identityHost.restore).toHaveBeenLastCalledWith({ sessionId: 'same-task' }, receipt);
     expect(fixture.sqlite.prepare('SELECT id, project_id, config, archived_at FROM sessions').all()).toEqual([{ id: 'same-task', project_id: 'p1', config, archived_at: null }]);
     expect(fixture.sqlite.prepare('SELECT session_id, content FROM messages').all()).toEqual([{ session_id: 'same-task', content: 'original history' }]);
     expect(existsSync(file)).toBe(true);
   });
 
-  it.each(['PR cleanup', 'task archival'])('retains a task and messages arriving during %s when removing a project', async (boundary) => {
-    const { prSyncEngine } = await import('../pull-requests/pr-sync-engine');
-    const { deleteProject } = await import('../projects/operations/deleteProject');
-    fixture.sqlite.exec("INSERT INTO workspaces (id,type,kind,location,path,key) VALUES ('late-root','local','project-root','local','/repo','late-root'); UPDATE projects SET repository_workspace_id='late-root' WHERE id='p1';");
-    const arrive = () => {
-      insertSession('late-task');
-      fixture.sqlite.prepare("INSERT INTO messages (id, session_id, content, sender) VALUES ('late-message', 'late-task', 'Keep the original message', 'user')").run();
-      expect(fixture.sqlite.prepare("SELECT id FROM sessions WHERE id='late-task'").get()).toEqual({ id: 'late-task' });
-    };
-    if (boundary === 'PR cleanup') {
-      expect(fixture.sqlite.prepare("SELECT id FROM sessions WHERE project_id='p1'").all()).toEqual([]);
-      vi.mocked(prSyncEngine.deleteProjectData).mockImplementationOnce(async () => { arrive(); });
-    } else {
-      insertSession('original-task');
-      mocks.mounted.add('original-task');
-      mocks.teardown.mockImplementationOnce(async () => { arrive(); return { success: true }; });
-    }
-    await deleteProject('p1');
-    expect(fixture.sqlite.prepare("SELECT id FROM projects WHERE id='p1'").get()).toEqual({ id: 'p1' });
-    expect(fixture.sqlite.prepare("SELECT id FROM sessions WHERE id='late-task'").get()).toEqual({ id: 'late-task' });
-    expect(archivedAt('late-task')).not.toBeNull();
-    await expect(restoreSession('late-task')).resolves.toMatchObject({ id: 'late-task', archivedAt: null });
-    expect(fixture.sqlite.prepare("SELECT session_id, content FROM messages WHERE id='late-message'").get()).toEqual({ session_id: 'late-task', content: 'Keep the original message' });
-    if (boundary === 'task archival') expect(archivedAt('original-task')).not.toBeNull();
-  });
-
-  it('project removal retains real tasks through the actual reaper; only a genuine missing task is marked', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'gugu-archive-roster-'));
-    const env = { GUGU_HOME: home };
-    const { createAgent, updateAgent, listAgents } = await import('@gugu/core');
-    const { reconcileSessionpageAgents } = await import('../../../../sessionpage/sessionpage-agent-reaper');
-    const bind = async (id: string, sessionId: string) => {
-      await createAgent({ name: id, gugu_user_id: id, agent_type: 'codex' }, env);
-      await updateAgent({ guguUserId: id }, { cache: { emdash_session_id: sessionId, sessionpage_owner_user_id: 'owner' } }, env);
-    };
-    const deps = {
-      env, getAuth: async () => ({ userId: 'owner', accessToken: 'unused', refreshToken: 'unused' }),
-      resolveDeviceId: async () => 'device',
-      getInventory: async () => ({
-        sessionIds: (fixture.sqlite.prepare('SELECT id FROM sessions').all() as { id: string }[]).map(row => row.id), projectIds: ['p1'],
-      }),
-    };
-    try {
-      insertSession('incident');
-      await bind('kept-identity', 'incident');
-      fixture.sqlite.exec("INSERT INTO workspaces (id,type,kind,location,path,key) VALUES ('incident-root','local','project-root','local','/repo','incident-root'); UPDATE projects SET repository_workspace_id='incident-root' WHERE id='p1';");
-      await (await import('../projects/operations/deleteProject')).deleteProject('p1');
-      expect(await reconcileSessionpageAgents(deps)).toEqual({ reapedAgents: 0, archivedGroups: 0 });
-      expect(archivedAt('incident')).not.toBeNull();
-      await bind('orphan-identity', 'legacy-missing');
-      expect(await reconcileSessionpageAgents(deps)).toEqual({ reapedAgents: 1, archivedGroups: 0 });
-      const roster = await listAgents(env);
-      expect(roster.find(row => row.gugu_user_id === 'orphan-identity')?.status).toBe('archived');
-      expect(roster.find(row => row.gugu_user_id === 'kept-identity')?.status).not.toBe('archived');
-      await restoreSession('incident');
-      expect(archivedAt('incident')).toBeNull();
-      expect(fixture.sqlite.prepare("SELECT id FROM sessions WHERE id='incident'").get()).toEqual({ id: 'incident' });
-    } finally { await rm(home, { recursive: true }); }
-  });
-
-  it('restores every original project folder, including an unused one, without reattaching or changing identities', async () => {
-    const root = join(mocks.userData, 'project');
-    const used = join(mocks.userData, 'used');
-    const unused = join(mocks.userData, 'unused');
-    for (const path of [root, used, unused]) await mkdir(path);
-    await writeFile(join(unused, 'keep.txt'), 'original file');
-    fixture.sqlite.prepare("UPDATE projects SET path=?, repository_workspace_id='restore-root' WHERE id='p1'").run(root);
-    const insertFolder = fixture.sqlite.prepare('INSERT INTO workspaces (id,type,kind,location,path,key,project_id,attached_at) VALUES (?,\'local\',?,\'local\',?,?,?,?)');
-    insertFolder.run('restore-root', 'project-root', root, root, null, null);
-    insertFolder.run('restore-used', 'path', used, used, 'p1', '2026-10-29T01:00:00Z');
-    insertFolder.run('restore-unused', 'path', unused, unused, 'p1', '2026-10-29T02:00:00Z');
-    insertSession('folder-task');
-    fixture.sqlite.prepare("UPDATE sessions SET workspace_id='restore-used' WHERE id='folder-task'").run();
-    const { listProjectFolderRefs, resolveProjectFolder } = await import('../projects/operations/project-folders');
-    const { listDeviceProjectRecords } = await import('../projects/operations/device-project-records');
-    const before = await listProjectFolderRefs('p1');
-    expect(before).toHaveLength(3);
-    const rows = fixture.sqlite.prepare('SELECT id, project_id, attached_at, path FROM workspaces ORDER BY id').all();
-
-    await (await import('../projects/operations/deleteProject')).deleteProject('p1');
-    expect(await getProjects()).toEqual([]);
-    expect(await listDeviceProjectRecords()).toEqual([]);
-    expect((await getProjects({ includeHidden: true })).map(project => project.id)).toContain('p1');
-    expect(fixture.sqlite.prepare('SELECT id, project_id, attached_at, path FROM workspaces ORDER BY id').all()).toEqual(rows);
-
-    await restoreSession('folder-task');
-    const after = await listProjectFolderRefs('p1');
-    expect(after).toHaveLength(before!.length);
-    expect(after).toEqual(before);
-    expect((await getProjects()).map(project => project.id)).toContain('p1');
-    expect((await listDeviceProjectRecords())[0]?.folders).toEqual(before);
-    expect(fixture.sqlite.prepare('SELECT id, project_id, attached_at, path FROM workspaces ORDER BY id').all()).toEqual(rows);
-    const { prepareCreateSession, commitCreateSession } = await import('./operations/createSession');
-    mocks.getProject.mockReturnValue({});
-    for (const folder of after!) {
-      expect(await resolveProjectFolder('p1', folder.workspaceId)).not.toBeNull();
-      const id = `new-task-${folder.workspaceId}`;
-      const prepared = await prepareCreateSession({ projectId: 'p1',
-        sessionConfig: { version: '1', name: id, initialSession: { id, provider: 'codex',
-          title: id, origin: { kind: 'create', firstUtterance: 'Continue work' } } },
-        workspaceConfig: { version: '2', workspace: { kind: 'repository-instance', workspaceId: folder.workspaceId } },
-      });
-      expect(prepared.success).toBe(true);
-      if (!prepared.success) throw new Error(JSON.stringify(prepared.error));
-      const created = fixture.db.transaction(tx => commitCreateSession(prepared.data, tx));
-      expect(created).toMatchObject({ id, projectId: 'p1', workspaceId: folder.workspaceId });
-    }
-    expect(await (await import('node:fs/promises')).readFile(join(unused, 'keep.txt'), 'utf8')).toBe('original file');
-  });
-
-  it('无目录项目归档后隐藏,历史仍能恢复原会话与工作区,重读清单也保留', async () => {
+  // @@@group-folders — an archived session stays in the history, and comes back with its workspace and timeline.
+  it('an archived session is in the history and restores with its workspace and timeline', async () => {
     fixture.sqlite.exec(`
-      UPDATE projects SET root_folder_detached = 1 WHERE id = 'p1';
-      INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('historic-ws', 'path', 'local', 'local', '/repo', 'historic-key');
       INSERT INTO sessions (id, project_id, workspace_id, runtime, provider_session_id, config)
-        VALUES ('historic-session', 'p1', 'historic-ws', 'acp', 'provider-original',
+        VALUES ('historic-session', 'p1', 'ws1', 'acp', 'provider-original',
           json_object('version', '1', 'type', 'acp', 'agentDisplayName', 'history survives'));
     `);
     const originalTurn = JSON.stringify({ id: 'original-turn', seq: 0, initiator: 'user', items: [{ kind: 'message', id: 'original-message', seq: 0, role: 'user', text: '完整时间线必须保留' }] });
     fixture.sqlite.prepare(`INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES ('historic-session:0', 'historic-session', 0, 'original-turn', ?)`)
       .run(originalTurn);
-    expect((await getProjects()).map((project) => project.id)).toContain('p1');
     await archiveSession('historic-session');
-    expect(await getProjects()).toEqual([]);
     const history = await listSessionHistory({ source: 'gugu', status: 'archived' });
     expect(history.rows).toHaveLength(1);
-    expect(history.rows[0]).toMatchObject({ title: 'history survives', gugu: { projectId: 'p1', sessionId: 'historic-session' } });
+    expect(history.rows[0]).toMatchObject({ title: 'history survives', gugu: { projectId: 'ws1', groupChatId: null, sessionId: 'historic-session' } });
 
     const restored = await restoreSession('historic-session');
-    expect(restored).toMatchObject({ id: 'historic-session', projectId: 'p1', workspaceId: 'historic-ws', archivedAt: null });
+    expect(restored).toMatchObject({ id: 'historic-session', projectId: 'ws1', workspaceId: 'ws1', groupChatId: null, archivedAt: null });
     expect(fixture.sqlite.prepare(`SELECT id, workspace_id, provider_session_id FROM sessions`).all()).toEqual([
-      { id: 'historic-session', workspace_id: 'historic-ws', provider_session_id: 'provider-original' },
+      { id: 'historic-session', workspace_id: 'ws1', provider_session_id: 'provider-original' },
     ]);
-    expect((await getProjects()).map((project) => project.id)).toEqual(['p1']);
     expect((await listSessionHistory({ source: 'gugu', status: 'active' })).rows).toHaveLength(1);
     expect(fixture.sqlite.prepare('SELECT session_id, data FROM session_turns').all()).toEqual([{ session_id: 'historic-session', data: originalTurn }]);
   });
@@ -360,7 +239,7 @@ describe('archiveSession', () => {
     insertSession('grandchild', { parent: 'child' });
     insertSession('already', { parent: 'parent' });
     expect(await archiveSession('already')).toEqual({
-      archived: [{ projectId: 'p1', sessionId: 'already' }],
+      archived: [{ sessionId: 'already' }],
       unreached: [],
     });
 
@@ -557,7 +436,7 @@ describe('archiveSession', () => {
         'parent',
       ]);
       // 别的机器上的行按它所在的项目记,撤销照着走回那台机器。
-      expect(outcome.archived[0]).toEqual({ projectId: 'p-dev-c', sessionId: 'c-grandchild' });
+      expect(outcome.archived[0]).toEqual({ sessionId: 'c-grandchild' });
       expect(archivedThere).toEqual(['c-grandchild', 'b-child']);
       expect(archivedAt('local-grandchild')).not.toBeNull();
       expect(outcome.unreached).toEqual([{ deviceId: 'dev-d', label: 'dev-d', detail: 'offline' }]);
@@ -578,8 +457,8 @@ describe('archiveSession', () => {
       });
       expect(await archiveSession('parent', { withChildren: true })).toEqual({
         archived: [
-          { projectId: 'p1', sessionId: 'child' },
-          { projectId: 'p1', sessionId: 'parent' },
+          { sessionId: 'child' },
+          { sessionId: 'parent' },
         ],
         unreached: [{ deviceId: 'dev-b', label: 'dev-b', detail: 'on "dev-b" (device:dev-b): failed to stop ACP conversation' }],
       });
@@ -618,7 +497,7 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
     mocks.teardown.mockReset()
     mocks.teardown.mockResolvedValue({ success: true })
     mocks.mounted.clear()
-    fixture.sqlite.prepare(`INSERT INTO projects (id, name, path) VALUES ('p1', 'P', '/repo')`).run();
+    fixture.sqlite.exec(`INSERT INTO projects (id, name, path) VALUES ('p1', 'P', '/repo'); INSERT INTO workspaces (id, type, kind, location, path, key) VALUES ('ws1', 'local', 'project-root', 'local', '/repo', 'ws1')`);
   });
 
   afterEach(() => {
@@ -629,8 +508,8 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
   const insert = (id: string, runtime: 'acp' | null = 'acp') =>
     fixture.sqlite
       .prepare(
-        `INSERT INTO sessions (id, project_id, runtime, config)
-         VALUES (?, 'p1', ?, json_object('version', '1', 'type', CASE WHEN ? = 'acp' THEN 'acp' ELSE 'pty' END, 'agentDisplayName', ?))`
+        `INSERT INTO sessions (id, project_id, workspace_id, runtime, config)
+         VALUES (?, 'p1', 'ws1', ?, json_object('version', '1', 'type', CASE WHEN ? = 'acp' THEN 'acp' ELSE 'pty' END, 'agentDisplayName', ?))`
       )
       .run(id, runtime, runtime, id);
   const archivedAt = (id: string) =>
@@ -679,7 +558,7 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
     expect(fixture.sqlite.prepare('SELECT id FROM messages').all()).toHaveLength(2);
     expect(fixture.sqlite.prepare('SELECT id FROM session_turns').all()).toHaveLength(2);
     await expect(restoreSession('removed-agent')).resolves.toMatchObject({ id: 'removed-agent', archivedAt: null });
-    expect(identityHost.restore).toHaveBeenCalledExactlyOnceWith({ projectId: 'p1', sessionId: 'removed-agent' }, receipt);
+    expect(identityHost.restore).toHaveBeenCalledExactlyOnceWith({ sessionId: 'removed-agent' }, receipt);
     await expect(restoreSession('kept-agent')).resolves.toMatchObject({ id: 'kept-agent', archivedAt: null });
   });
 
@@ -747,7 +626,7 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
     stopping.resolve({ success: true });
     await archiving;
     await expect(restoring).resolves.toMatchObject({ id: 'archive-race', archivedAt: null });
-    expect(identityHost.restore).toHaveBeenCalledExactlyOnceWith({ projectId: 'p1', sessionId: 'archive-race' }, receipt);
+    expect(identityHost.restore).toHaveBeenCalledExactlyOnceWith({ sessionId: 'archive-race' }, receipt);
     expect(fixture.sqlite.prepare('SELECT id FROM sessions').all()).toEqual([{ id: 'archive-race' }]);
   });
 
@@ -761,7 +640,7 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
     const schedules = new Map<string, string>();
     for (const sessionId of ['assistant-task', 'assistant-unbound', 'started-task', 'other-task']) {
       const { automation } = await createAgentSchedule({
-        agentSessionId: sessionId, projectId: 'p1', name: sessionId,
+        agentSessionId: sessionId, name: sessionId,
         prompt: 'Continue the original task', provider: 'codex',
         triggerConfig: { expr: '', at: Date.now() + 3_600_000, tz: 'UTC' },
       });
@@ -862,7 +741,7 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
       await serializeSessionArchival('restore-owner', async () => undefined);
     });
     await restoreSession('restore-owner');
-    expect(drainSessionMessageOutbox).toHaveBeenCalledExactlyOnceWith({ projectId: 'p1', sessionId: 'restore-owner' });
+    expect(drainSessionMessageOutbox).toHaveBeenCalledExactlyOnceWith({ sessionId: 'restore-owner' });
     expect(mocks.life.restore).not.toHaveBeenCalled();
   });
 
