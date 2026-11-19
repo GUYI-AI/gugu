@@ -17,6 +17,8 @@ export type FolderRecord = {
   branch: string | null;
   /** Sessions working in it right now that are not archived. */
   sessionIds: string[];
+  /** The task home: where sessions without a group start (one per machine; its id differs per machine). */
+  taskHome: boolean;
 };
 
 export type FolderPathStatus = {

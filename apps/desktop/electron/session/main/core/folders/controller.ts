@@ -9,14 +9,14 @@ import { canonicalPath } from '@gugu/session-core/files';
 import { db } from '@main/db/client';
 import { sessions, workspaces } from '@main/db/schema';
 import { events } from '@main/lib/events';
-import { bindFolder, ensureFolder, folderAtPath, getFolder, listFolders, listUnboundFolders, reorderFolders, type Folder } from './folders';
+import { bindFolder, ensureFolder, folderAtPath, getFolder, isTaskHomeFolder, listFolders, listUnboundFolders, reorderFolders, type Folder } from './folders';
 import { folderPathStatus } from './folder-path-status';
 
 function record(folder: Folder): FolderRecord {
   const [ws] = db.select({ branch: workspaces.branchName }).from(workspaces).where(eq(workspaces.id, folder.id)).limit(1).all();
   const running = db.select({ id: sessions.id }).from(sessions)
     .where(and(eq(sessions.workspaceId, folder.id), isNull(sessions.archivedAt))).all();
-  return { ...folder, branch: folder.gitless ? null : ws?.branch ?? null, sessionIds: running.map((row) => row.id) };
+  return { ...folder, branch: folder.gitless ? null : ws?.branch ?? null, sessionIds: running.map((row) => row.id), taskHome: isTaskHomeFolder(folder.id) };
 }
 
 function changed(...chatIds: (string | null)[]): void {

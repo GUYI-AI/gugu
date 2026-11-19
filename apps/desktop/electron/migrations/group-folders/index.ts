@@ -25,8 +25,7 @@ import { computeWorkspaceKey } from '../../session/main/core/workspaces/workspac
 export const DONE_FILE = 'group-folders-v1.done'
 export const SUMMARY_FILE = 'group-folders-v1.summary.json'
 export const MAPPING_FILE = 'taskpage-project-groups.json'
-/** The previous release requires sessions.project_id (NOT NULL, FK): new sessions point here until it is dropped. */
-export const LEGACY_PLACEHOLDER_PROJECT_ID = 'c1-placeholder'
+import { LEGACY_PLACEHOLDER_PROJECT_ID } from '../../session/main/core/folders/legacy-project-aliases'
 
 export interface GroupFoldersDeps {
   db: Database.Database
