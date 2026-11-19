@@ -2499,6 +2499,14 @@ describe('InitialSessionField', () => {
     expect(JSON.stringify(mocks.notify.mock.calls)).not.toMatch(/app-server|code=|signal=/);
   });
 
+  it('keeps an unclassified catalog error on the ordinary notice route', async () => {
+    harnessCatalog({ kind: 'unavailable', reason: 'unrelated catalog failure' });
+    await renderField({ provider: 'kimi' });
+    await guguCatalogAnswers();
+    expect(mocks.notify).toHaveBeenCalled();
+    expect(JSON.stringify(mocks.notify.mock.calls)).not.toMatch(/codexUpgrade|codexStartFailed|runtimeUpgradeOpenInstaller/);
+  });
+
   it('offers the Codex update action only for a verified version failure', async () => {
     harnessCatalog({ kind: 'unavailable', reason: 'native version unsupported', startupReason: 'version' });
     await renderField({ provider: 'codex' });
