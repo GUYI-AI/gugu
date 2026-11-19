@@ -279,9 +279,8 @@ export class ProjectSessionsStore {
     sessions: Session[];
     gitByWorkspace: Map<string, { linesAdded: number; linesDeleted: number }>;
   }> {
-    // @@@group-folders — the host lists sessions by group, not by folder: this folder's are the machine's sessions whose
-    // `projectId` (the workspace id) is this folder, and their groups give the workspaces' line counts.
-    const sessions = (await rpc.sessions.getSessions()).filter((session) => session.projectId === this.projectId);
+    // @@@group-folders — this folder's sessions (the host reads them by folder), and their groups give the workspaces' line counts.
+    const sessions = await rpc.sessions.getSessionsForFolder(this.projectId);
     const groups = [...new Set(sessions.flatMap((session) => (session.groupChatId ? [session.groupChatId] : [])))];
     const workspaces = (await Promise.all(groups.map((chatId) => rpc.sessionCreate.getGroupWorkspaces(chatId)))).flat();
     const gitByWorkspace = new Map<string, { linesAdded: number; linesDeleted: number }>();
