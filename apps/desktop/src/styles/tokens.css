@@ -1031,7 +1031,7 @@
 
 /* ── 侧栏渐进底色(设置 · 通用,默认关) ───────────────────────────────────────────
    @@@sidebar-tint owner 2026-09-10:「最左边菜单栏是这个色,消息列表是白色,会话列表要介于
-   两者之间」。开关的真值是 `<html data-sidebar-tint="on">`(见 lib/sidebarTint.ts),这里只改写
+   两者之间」。开关的真值是 `<html data-sidebar-tint="on">`(偏好在 lib/devicePreferences.ts),这里只改写
    `--sidebar` 一个 token —— 会话列表/通讯录/设置导航列(.gg-pane[data-role='nav'])与会话页左栏
    (皮肤桥把 .bg-background-tertiary 与 --em-background-secondary 都接在它上面)本来就同吃这一档,
    所以一处改完全都跟上;会话页那棵 Shadow DOM 靠自定义属性继承拿到同一个值。

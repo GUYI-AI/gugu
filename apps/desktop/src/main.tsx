@@ -22,9 +22,7 @@ import {
   windowControlsWidth,
   windowTitlebarHeight,
 } from './lib/window-chrome'
-import { getLocaleSnapshot, LocalizationProvider, subscribeLocale } from './i18n'
-import { platform } from './platform'
-import { installPlatformLocaleSync } from './platform/locale-sync'
+import { LocalizationProvider } from './i18n'
 import { startShellChromeTone } from './platform/capacitorShellChrome'
 import { installTextScale } from './mobile/textScale'
 import { BuildTagBadge } from './components/BuildTagBadge'
@@ -50,11 +48,6 @@ installPerfCounterResponder(window.electronAPI)
 installErrorSummaryConsent()
 // The shared getter also installs this document's native/DOM visibility listeners.
 isAnimationWindowVisible()
-
-installPlatformLocaleSync(platform, {
-  getSnapshot: getLocaleSnapshot,
-  subscribe: subscribeLocale,
-})
 
 // 首启默认组(owner 10-16「为什么会有安装这一步,而不是一启动就装好了」):一启动就开始,和登录并行 —— 桌面听 main 装到哪了,
 // 手机在这一页里自己装(firstRunApps.ts)。

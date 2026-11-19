@@ -3,8 +3,8 @@ import {
   i18n,
   registerLocaleNamespace,
   subscribeLocale,
-  type SupportedLocale,
-} from '@/i18n';
+} from '@/i18n/runtime';
+import type { SupportedLocale } from '@/i18n/locale';
 import { enUSMessages, type SessionMessageKey, zhCNMessages } from './messages';
 
 export type SessionLocale = SupportedLocale;

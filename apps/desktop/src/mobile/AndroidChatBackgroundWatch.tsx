@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNotificationSettings } from '@/lib/notificationSettings'
+import { useDevicePreferences } from '@/lib/devicePreferences'
 import { rendererLogger } from '@/lib/log'
 import { platform } from '../platform'
 import { claimBackgroundWatch } from './backgroundWatchClaims'
@@ -9,7 +9,7 @@ const log = rendererLogger('mobile/chat-background-watch')
 
 export function AndroidChatBackgroundWatch({ active }: { active: boolean }) {
   const { t } = useTranslation('main')
-  const { chatMessages } = useNotificationSettings()
+  const { chatMessages } = useDevicePreferences()
   const label = t('settings.general.notificationsAndroidReceiving')
 
   useEffect(() => {

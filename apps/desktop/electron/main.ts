@@ -67,7 +67,7 @@ import { captureReading, currentReading, historyReading } from './session/main/c
 import { setMacFootprintReader } from './session/main/core/resource-monitor/footprint'
 import { clearTraceLeftovers } from './session/main/core/resource-monitor/capture'
 import { createScreenCapture } from './device-actions/screen-capture'
-import { installNativeAppearanceSync, installWindowMaterial, type WindowMaterialHost } from './window-material'
+import { applyNativeThemePreference, installWindowMaterial, type WindowMaterialHost } from './window-material'
 import { createDeviceActionCaller, type DeviceActionCaller } from '@gugu/core/cloud/deviceActionCaller'
 import type { DeviceActionResult } from '@gugu/core/shared/deviceActions'
 import {
@@ -578,14 +578,15 @@ import {
   probeBusNameHasOwner,
   resolveSessionBusPath,
 } from './linux-notification-service'
-import { HOST_LOCALE_STATE_FILE, HostLocaleStore } from './host-locale-store'
+import { HostLocaleStore } from './host-locale-store'
 import {
   OVERLAY_BADGE_SIZE,
   buildOverlayBadgeBitmap,
   formatBadgeCount,
   paintBadgeOnBitmap,
 } from './tray-badge'
-import { VIEW_STATE_SNAPSHOT_CHANNEL } from '../shared/view-state-snapshot'
+import { FIRST_FRAME_CHANNEL, type FirstFrameAnswer, type FirstFrameRequest } from '../shared/first-frame'
+import type { DevicePreferences } from '../shared/device-preferences'
 import { HOST_SYSTEM_LANGUAGES_CHANNEL, hostCatalog, updateRestartCopy, type HostCatalog } from '../shared/host-localization'
 
 // ── Dual-instance support ────────────────────────────────────────────────────
@@ -1374,15 +1375,28 @@ function refreshApplicationMenu(): void {
   })
 }
 
-function syncResolvedHostLocale(value: unknown): void {
+/** Resolve the host's language again (its preference changed, or the system's languages may have); its surfaces follow a change. */
+function applyHostLocale(preference?: DevicePreferences['locale']): void {
   if (!hostLocaleStore) throw new Error('HOST_LOCALE_NOT_INITIALIZED')
-  const before = hostLocaleStore.current()
-  hostLocaleStore.syncResolvedLocale(value)
+  if (!hostLocaleStore.apply(preference)) return
   refreshTrayChrome()
   refreshApplicationMenu()
   publishSessionHostLocale()
   publishWindowChromeLabels()
-  if (hostLocaleStore.current() !== before) tellHostPresentationChanged()
+  tellHostPresentationChanged()
+}
+
+/**
+ * @@@device-preferences — the host applies this device's preferences from its own settings (shared/device-preferences.ts):
+ * at startup, before the window's contents load, and on every change. ❌ The renderer pushing them: one owner of each value.
+ */
+function applyDevicePreferences(preferences: DevicePreferences): void {
+  applyNativeThemePreference(process.platform, nativeTheme, preferences.theme)
+  applyHostLocale(preferences.locale)
+  if (trayBadgeEnabled !== preferences.trayBadge) {
+    trayBadgeEnabled = preferences.trayBadge
+    applyUnreadBadge()
+  }
 }
 
 function currentHostLocale(): string {
@@ -2320,13 +2334,6 @@ ipcMain.on('set-badge', (_event, count: number) => {
   applyUnreadBadge()
 })
 
-// @@@5295 托盘角标开关(app 设置 · 通用)。关掉 = 角标一律不画,计数照常在内存里跟着走,
-// 重新打开立刻显示当前真值,❌ 不需要等下一条消息来触发。
-ipcMain.on('set-tray-badge-enabled', (_event, enabled: unknown) => {
-  trayBadgeEnabled = enabled !== false
-  applyUnreadBadge()
-})
-
 // @@@822 frameless 自绘标题栏的窗口控制 —— Windows/Linux 无原生边框时,renderer 的 <WindowControls> 经此驱动。
 // 用事件来源窗口(BrowserWindow.fromWebContents)而非全局 mainWindow,兼容多窗(widget)。
 ipcMain.on('window:minimize', (event) => BrowserWindow.fromWebContents(event.sender)?.minimize())
@@ -2345,6 +2352,8 @@ const isAppActive = (): boolean => BrowserWindow.getFocusedWindow() !== null
 ipcMain.handle('app:is-active', () => isAppActive())
 const sendAppActive = (): void => { mainWindow?.webContents.send('app:active-changed', isAppActive()) }
 app.on('browser-window-focus', sendAppActive)
+// 「跟随系统」的语言:系统语言可能在咕咕不在前台时变了,回到前台时重新解析一次(变了才动托盘、菜单)。
+app.on('browser-window-focus', () => { if (hostLocaleStore) applyHostLocale() })
 app.on('browser-window-blur', sendAppActive)
 // @@@win-titlebar-row — Windows 标题栏「编辑 / 视图」菜单的命令(清单与理由见 window-menu-commands.ts)。
 ipcMain.on('window:menu-command', (event, command: unknown) => {
@@ -2358,9 +2367,6 @@ ipcMain.on('window:menu-command', (event, command: unknown) => {
 })
 ipcMain.on('window-chrome:get-labels', (event) => {
   event.returnValue = currentHostCatalog().windowChrome
-})
-ipcMain.handle('locale:sync-resolved', (_event, locale: unknown) => {
-  syncResolvedHostLocale(locale)
 })
 // @@@window-tone — 渲染层是主题真值的唯一写入者,落属性时顺带告诉主进程,主进程只被告知。
 ipcMain.on('window:sync-tone', (event, tone: unknown, colors: Record<string, string> | undefined) => {
@@ -2377,15 +2383,23 @@ ipcMain.on('window:sync-tone', (event, tone: unknown, colors: Record<string, str
 ipcMain.on(HOST_SYSTEM_LANGUAGES_CHANNEL, (event) => {
   event.returnValue = app.getPreferredSystemLanguages()
 })
-// @@@view-state-snapshot — the renderer's view state before its first frame (shared/view-state-snapshot.ts). The window loads
-// after the session page module (loadMainWindowContents), so it is there; a failed read is logged and answered with null.
-ipcMain.on(VIEW_STATE_SNAPSHOT_CHANNEL, (event) => {
+// @@@first-frame — the renderer's view state and this device's preferences before its first frame (shared/first-frame.ts),
+// with the one-time move of the old preference keys. The window loads after the session page module
+// (loadMainWindowContents), so it is there; a part that fails is logged and answered with null (and nothing settled).
+ipcMain.on(FIRST_FRAME_CHANNEL, (event, request: FirstFrameRequest) => {
+  const answer: FirstFrameAnswer = { viewState: null, devicePreferences: null, settled: [] }
   try {
-    event.returnValue = emdashBridgeModule?.viewStateSnapshot() ?? null
+    answer.viewState = emdashBridgeModule?.viewStateSnapshot() ?? null
   } catch (error) {
     createLogger('view-state').error({ error: String(error) }, 'view state snapshot failed; the renderer starts without it')
-    event.returnValue = null
   }
+  try {
+    const preferences = emdashBridgeModule?.answerDevicePreferences(request.storedPreferences)
+    if (preferences) Object.assign(answer, preferences)
+  } catch (error) {
+    createLogger('device-preferences').error({ error: String(error) }, 'device preferences could not be read; the renderer reads them later, the old keys stay')
+  }
+  event.returnValue = answer
 })
 // @@@logging (#2382) - renderer 的日志回传到主进程,和主进程日志同流、同脱敏、同落盘:
 // 渲染侧崩在用户机器上时,`console` 只活在 devtools 里,拿不回来。
@@ -4651,10 +4665,7 @@ app.whenReady().then(async () => {
   } catch (error) {
     createLogger('engine-reap').error({ err: error }, '启动回收自身失败,残留留待下轮')
   }
-  hostLocaleStore = new HostLocaleStore(
-    join(app.getPath('userData'), HOST_LOCALE_STATE_FILE),
-    app.getPreferredSystemLanguages(),
-  )
+  hostLocaleStore = new HostLocaleStore(() => app.getPreferredSystemLanguages())
   try {
     enableMacTouchIdPasskeys()
   } catch (error) {
@@ -4718,7 +4729,6 @@ app.whenReady().then(async () => {
       materialWindow: () => (process.platform === 'darwin' ? mainWindow : null),
     })
     windowMaterial.onChange(() => syncWindowTone(readWindowTone()))
-    installNativeAppearanceSync({ platform: process.platform, nativeTheme, ipcMain })
     createWindow(false)
   }
   // PATH 补救不再挑启动方式（曾经只在「mac 且已打包」时跑 → ssh/agent 起的验证流程、以及
@@ -4737,6 +4747,10 @@ app.whenReady().then(async () => {
     fatalSessionpageBoot(err)
     return
   }
+  // @@@device-preferences — theme (mac native appearance), language and tray badge from this device's settings, before the
+  // window's contents load; then on every change (a settings write, or the first-frame move of the old keys).
+  applyDevicePreferences(emdashBridgeModule.devicePreferencesNow())
+  emdashBridgeModule.onDevicePreferencesChanged(applyDevicePreferences)
   hydrateLoginShellPath()
   ensureWindowsNpmGlobalBinInPath()
   if (SERVER_MODE) {
