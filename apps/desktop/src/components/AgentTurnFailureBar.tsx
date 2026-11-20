@@ -143,12 +143,14 @@ export function AgentQuotaStatus({ agentId, displayName: name, avatar, state, on
 }
 
 // 几何与运行条 `.rtb-bar/.rtb-tok` 一致（同一排、同一刻度）；状态词用 --warn，不流光。
+// #907 窄窗里长名字只让 `.aqs-nm` 省略收缩，状态词与关闭钮的既有宽度不动。
 const QUOTA_STYLE = `
 .aqs-bar{display:flex;align-items:center;gap:16px;padding:4px 14px 2px 24px;font-size:var(--font-caption);color:var(--faint-fg);white-space:nowrap;flex-shrink:0}
+.aqs-tok{min-width:0}
 .aqs-tok:not([data-disabled]):hover .aqs-state{text-decoration:underline;text-underline-offset:2px}
 .aqs-tok[data-disabled]{opacity:1;cursor:default}
-.aqs-nm{color:var(--faint-fg)}
-.aqs-state{color:var(--warn-fg);font-weight:500}
+.aqs-nm{color:var(--faint-fg);min-width:0;overflow:hidden;text-overflow:ellipsis}
+.aqs-state{color:var(--warn-fg);font-weight:500;flex-shrink:0}
 `
 
 const turnFailureLog = rendererLogger('agent/turn-failure')
