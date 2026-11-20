@@ -268,7 +268,7 @@ function FirstRunProfile({ user, initial, step, onDone }: { user: AuthUser; init
   return (
     <>
       {step}
-      <Avatar name={name || user.nickname} avatarUrl={avatarUrl} seed={user.id} size={88} />
+      <Avatar name={name || user.nickname} avatarUrl={avatarUrl} seed={user.id} isAgent={false} size={88} />
       <Button
         variant="secondary"
         size="sm"
