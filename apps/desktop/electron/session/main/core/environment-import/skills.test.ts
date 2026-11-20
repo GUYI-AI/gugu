@@ -127,15 +127,17 @@ it('does not peel a plugin-cache skill out through a user skill alias', async ()
   expect((await scanCodexSkills({ home: f.home })).items[0]).toMatchObject({ status: 'skipped', reason: 'excluded' });
 });
 
-it('accepts YAML block descriptions and rejects names or descriptions outside the skill metadata limits', async () => {
+it('matches native metadata limits while allowing spaced names and long or block descriptions', async () => {
   const f = await fixture();
   await f.write(join(f.codex, 'block', 'SKILL.md'), '---\nname: block\ndescription: >-\n  First line\n  second line\n---\nBody stays private.\n');
-  await f.write(join(f.codex, 'bad-name', 'SKILL.md'), '---\nname: Bad Name\ndescription: Description\n---\n');
-  await f.write(join(f.codex, 'bad-description', 'SKILL.md'), '---\nname: bad-description\ndescription: ' + 'x'.repeat(1025) + '\n---\n');
+  await f.write(join(f.codex, 'spaced', 'SKILL.md'), '---\nname: Friendly Skill\ndescription: Description\n---\n');
+  await f.write(join(f.codex, 'long-description', 'SKILL.md'), '---\nname: long-description\ndescription: ' + 'x'.repeat(1025) + '\n---\n');
+  await f.write(join(f.codex, 'long-name', 'SKILL.md'), '---\nname: ' + 'n'.repeat(65) + '\ndescription: Description\n---\n');
   const scan = await scanCodexSkills({ home: f.home });
-  expect(scan.count).toBe(1);
+  expect(scan.count).toBe(3);
   expect(scan.items.find(({ name }) => name === 'block')).toMatchObject({ status: 'ready', description: 'First line second line' });
-  expect(scan.items.filter(({ reason }) => reason === 'invalid-skill')).toHaveLength(2);
+  expect(scan.items.find(({ name }) => name === 'Friendly Skill')).toMatchObject({ status: 'ready' });
+  expect(scan.items.filter(({ reason }) => reason === 'invalid-skill')).toHaveLength(1);
 });
 
 it('keeps distinct same-name sources as conflicts and protects a differently named existing target folder', async () => {

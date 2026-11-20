@@ -95,9 +95,9 @@ async function metadata(root: string, snapshot: AgentHomeDirectorySnapshot) {
     try { fields = parse(match[1]!) as Record<string, unknown> | null; }
     catch { return null; } // YAML exceptions may embed source contents.
     if (typeof fields?.name !== 'string' || typeof fields.description !== 'string') return null;
-    const name = fields.name.trim(), description = fields.description.trim();
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name) || name.length > 64
-      || !description || description.length > 1024) return null;
+    // Match Codex's runtime parser, not the stricter skill-authoring validator.
+    const name = fields.name.trim().replace(/\s+/gu, ' '), description = fields.description.trim().replace(/\s+/gu, ' ');
+    if (!name || Array.from(name).length > 64 || !description) return null;
     return { name, description };
   } finally { await handle.close(); }
 }
