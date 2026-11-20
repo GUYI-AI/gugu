@@ -20,6 +20,7 @@ import { ProjectionSignals } from '../../../../../../native/projection-media/nod
 import { withFixtureCleanup } from '../../test-support/fixture-failure';
 import { captureColorWitness } from './projection-capture-witness';
 import { untilObserved } from './fixture-wait';
+import { spawnHeadlessViewer } from './headless-viewer';
 
 if (!process.env.GUGU_HOME || !process.env.GUGU_USER_DATA_DIR) throw new Error('Pipeline fixture needs isolated paths');
 app.setPath('userData', process.env.GUGU_USER_DATA_DIR);
@@ -165,8 +166,7 @@ void app.whenReady().then(async () => {
     await new Promise<void>(resolve => listening.listen(0, '127.0.0.1', resolve));
     const address = server.address(); assert.ok(address && typeof address !== 'string');
     mark('browser-spawn-called');
-    browser = spawn(process.env.GUGU_TEST_CHROMIUM!, ['--headless=new', '--autoplay-policy=no-user-gesture-required',
-      '--disable-dev-shm-usage', `--user-data-dir=${path.join(app.getPath('userData'), 'headless-viewer')}`, `http://127.0.0.1:${address.port}`], { stdio: ['ignore', 'ignore', 'pipe'] });
+    browser = spawnHeadlessViewer(path.join(app.getPath('userData'), 'headless-viewer'), `http://127.0.0.1:${address.port}`);
     browser.once('spawn', () => mark('browser-spawned'));
     let stderr = '';
     browser.stderr?.on('data', data => { stderr = (stderr + data).slice(-4096); });
