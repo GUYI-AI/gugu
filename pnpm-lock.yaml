@@ -431,6 +431,9 @@ importers:
       concurrently:
         specifier: ^8.2.2
         version: 8.2.2
+      core-js:
+        specifier: 3.48.0
+        version: 3.48.0
       croner:
         specifier: ^10.0.1
         version: 10.0.1
@@ -509,6 +512,9 @@ importers:
       libsodium-wrappers:
         specifier: 0.8.4
         version: 0.8.4
+      lightningcss:
+        specifier: 1.33.0
+        version: 1.33.0
       mobx:
         specifier: ^6.15.0
         version: 6.16.1

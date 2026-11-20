@@ -129,12 +129,6 @@ export const githubController = createRPCController({
 
   // -- Repositories --------------------------------------------------------
 
-  getRepositories: (accountId?: string) =>
-    Result.tryAsync(() => repoService.listRepositories({ accountId })).unwrapOrElse((error) => {
-      log.error('Failed to get repositories:', error);
-      return [];
-    }),
-
   getOwners: (
     accountId?: string
   ): Promise<
@@ -197,20 +191,5 @@ export const githubController = createRPCController({
     }).unwrapOrElse((error) => {
       log.error('Failed to create repository:', error);
       return { success: false, error: error.message ?? 'Failed to create repository' };
-    }),
-
-  deleteRepository: (params: {
-    owner: string;
-    name: string;
-    accountId?: string | null;
-  }): Promise<{ success: true } | { success: false; error: string }> =>
-    Result.tryAsync<{ success: true } | { success: false; error: string }>(async () => {
-      await repoService.deleteRepository(params.owner, params.name, {
-        accountId: params.accountId ?? undefined,
-      });
-      return { success: true };
-    }).unwrapOrElse((error) => {
-      log.error('Failed to delete repository:', error);
-      return { success: false, error: error.message ?? 'Failed to delete repository' };
     }),
 });

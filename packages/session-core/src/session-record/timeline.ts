@@ -604,6 +604,8 @@ class RecordTimeline implements SessionTimeline {
           ? { host: { kind: request.origin.source, payload: request.origin.payload } }
           : {}),
         ...(request.origin?.source === 'agent-question' && request.questions ? { questions: request.questions, askedAt: request.askedAt } : {}),
+        ...(request.origin?.source === 'agent-question' && request.skippable === true ? { skippable: true } : {}),
+        ...(request.origin?.source === 'agent-question' && request.canDiscuss === true ? { canDiscuss: true } : {}),
         state: 'pending',
         optionId: null,
         resolvedBy: null,
@@ -1175,7 +1177,9 @@ function outcomeOf(boundary: RecordBoundary): TranscriptTurnOutcome {
   if (boundary.kind === 'turn_aborted') return { kind: 'cancelled', reason: 'cancelled' };
   if (boundary.kind === 'turn_failed') {
     // A rebuilt transcript says the same as the live one: the recorded words, read by the one shared parser.
-    const detail = boundary.creditExhausted
+    const detail = boundary.teamCreditReason
+      ? JSON.stringify({ error: { code: 'credits_exhausted', reason_code: boundary.teamCreditReason } })
+      : boundary.creditExhausted
       ? '{"error":{"code":"credits_exhausted","message":"Gugu credits"}}'
       : boundary.detail && redactSecrets(boundary.detail);
     const said = boundary.detail ? upstreamSaid(boundary.detail) : undefined;

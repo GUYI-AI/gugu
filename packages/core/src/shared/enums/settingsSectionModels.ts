@@ -6,6 +6,7 @@ export type ActiveSection =
   // Also the user's own connected apps in phone Settings.
   | 'connectors'
   | 'account'
+  | 'team'
   | 'general'
   | 'data-import'
   | 'devices'
@@ -54,7 +55,7 @@ export const SETTINGS_GROUPS: readonly { readonly id: SettingsGroupId; readonly 
   // #986:用量合并积分与活跃统计;手机也能看,只是不上传本机数据。
   // File storage remains beside Usage; personal harness subscriptions stay in the same group.
   // 它读的是这台电脑上装着的 Harness,由会话页那一侧画 ⇒ 只在有会话页的地方出现。
-  { id: 'account', sections: ['account', 'usage', 'files', 'subscriptions'] },
+  { id: 'account', sections: ['account', 'team', 'usage', 'files', 'subscriptions'] },
   // product spec:桌面与手机同一页;这台机器读不读得到真值由 SettingsPanel 那道过滤决定。
   // 连接应用:the user's own connected apps.
   { id: 'preferences', sections: ['general', 'data-import', 'connectors', 'interface', 'permissions', 'passwords', 'model', 'resource-monitor'] },

@@ -15,10 +15,15 @@ export type AgentHomeHistoryPlan = {
   skipped: { id: string; path: string; bytes: number }[];
   issues: AgentHomeImportIssue[];
 };
+/** Manual imports select native IDs through the same whole-session planner. */
+export type AgentHomeHistorySelection = {
+  sessionIds?: ReadonlySet<string>;
+  includeShared?: boolean;
+};
 type File = { path: string; bytes: number; active: number; session?: { id: string; primary: boolean } };
 
 /** A session is indivisible: primary transcript plus its declared auxiliary files. */
-export async function planAgentHomeHistory(home: ResolvedAgentHome, limit = AGENT_HISTORY_LIMIT): Promise<AgentHomeHistoryPlan> {
+export async function planAgentHomeHistory(home: ResolvedAgentHome, limit = AGENT_HISTORY_LIMIT, selection: AgentHomeHistorySelection = {}): Promise<AgentHomeHistoryPlan> {
   if (home.upgradeHistory?.length && !home.historySession) throw new Error('History migration requires a declared session classifier');
   const files: File[] = [], issues: AgentHomeImportIssue[] = [];
   const root = await disk.realpath(home.userConfigRoot).catch((error: NodeJS.ErrnoException) => {
@@ -41,13 +46,16 @@ export async function planAgentHomeHistory(home: ResolvedAgentHome, limit = AGEN
   };
   for (const path of home.upgradeHistory ?? []) await visit(path.replace(/\/$/, ''));
   const sessions = new Map<string, { id: string; path: string; files: File[]; bytes: number; active: number }>();
-  for (const file of files) if (file.session?.primary && !sessions.has(file.session.id)) {
+  const selectedFiles = files.filter(file => file.session
+    ? !selection.sessionIds || selection.sessionIds.has(file.session.id)
+    : selection.includeShared !== false);
+  for (const file of selectedFiles) if (file.session?.primary && !sessions.has(file.session.id)) {
     sessions.set(file.session.id, { id: file.session.id, path: file.path, files: [], bytes: 0, active: 0 });
   }
   const shared: File[] = [];
-  for (const file of files) {
+  for (const file of selectedFiles) {
     const session = file.session && sessions.get(file.session.id);
-    if (!session) { shared.push(file); continue; }
+    if (!session) { if (selection.includeShared !== false) shared.push(file); continue; }
     session.files.push(file); session.bytes += file.bytes; session.active = Math.max(session.active, file.active);
   }
   const ordered = [...sessions.values()].sort((a, b) => b.active - a.active || a.id.localeCompare(b.id));

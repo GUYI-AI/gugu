@@ -8,19 +8,13 @@ import { Button } from '@renderer/lib/ui/button';
 import type { SessionMessageKey } from '@renderer/localization/messages';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
-type Stage = 'creating-repo' | 'cloning' | 'registering';
+type Stage = 'registering';
 
 const STAGE_LABEL_KEYS: Record<Stage, SessionMessageKey> = {
-  'creating-repo': 'projects.pending.creatingRepo',
-  cloning: 'projects.pending.cloning',
   registering: 'projects.pending.registering',
 };
 
-const STAGES_BY_MODE: Record<'pick' | 'clone' | 'new', Stage[]> = {
-  pick: ['registering'],
-  clone: ['cloning', 'registering'],
-  new: ['creating-repo', 'cloning', 'registering'],
-};
+const STAGES: Stage[] = ['registering'];
 
 export const PendingProjectStatus = observer(function PendingProjectStatus({
   project,
@@ -29,7 +23,7 @@ export const PendingProjectStatus = observer(function PendingProjectStatus({
 }) {
   const { navigate } = useNavigate();
   const { translate } = useSessionMessages();
-  const stages = STAGES_BY_MODE[project.mode];
+  const stages = STAGES;
   const currentStageIndex = stages.indexOf(project.phase as Stage);
   const isError = project.phase === 'error';
 
