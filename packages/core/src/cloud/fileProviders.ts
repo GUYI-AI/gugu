@@ -169,9 +169,8 @@ export function cloudFileProviders(deps: {
     if (encrypted && !lease) await sign()
     const digest = encrypted ? lease!.ciphertext_sha256! : revision.sha256, key = cacheKey(context, digest ?? crypto.randomUUID())
     const source = remoteSource(encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes, key, revision.legacy_object ? uncached : deps.cache, async (renew, origin) => renew || origin ? sign(renew, origin) : lease ? { lease, direct } : sign(), () => objectTransport(context), session, context.signal, context.progress)
-    // @@@save-through-cache - a save to disk reads through the same chunk cache as a read for display, so a save that dies
-    // halfway (the process stops, the retry window runs out) resumes from the chunks it has; once saved they are dropped.
-    const saved = async (target: FileSink) => { const bytes = await target.commit(); await deps.cache.clear(key); return bytes }
+    // @@@save-through-cache - a save to disk reads through the same chunk cache as a read for display, so a read that dies
+    // halfway (the process stops, the retry window runs out) resumes from the chunks it has; once it ends they are dropped.
     let dataKey: Uint8Array | undefined
     let sink: FileSink | undefined
     try {
@@ -209,11 +208,8 @@ export function cloudFileProviders(deps: {
         })
         // A saved copy cannot be taken back: a download still waits. Bytes for display are returned now and the
         // acknowledgement follows; whoever shows them takes them down if it fails (`acknowledged`).
-        if (destination) { await acknowledge(); return await saved(sink) }
-        const acknowledged = acknowledge().catch(async error => {
-          if (error instanceof FileReadRevokedError || error instanceof MissingFileObjectError) await deps.cache.clear(key)
-          throw error
-        })
+        if (destination) { await acknowledge(); return await sink.commit() }
+        const acknowledged = acknowledge()
         acknowledged.catch(() => undefined)
         return { size: file.size, read: (offset, length) => file.read(offset, length), dispose: () => file.dispose(), acknowledged }
       }
@@ -223,13 +219,12 @@ export function cloudFileProviders(deps: {
       changed(current)
       if (encrypted) await request(context, 'file-read-complete', { download_id: lease!.download_id, as: context.actor.actorId })
       context.signal?.throwIfAborted()
-      return destination ? await saved(sink) : file
-    } catch (error) {
-      await sink?.abort()
-      // An interrupted or abandoned read keeps its chunks, a save included: the next call for the same bytes resumes there.
+      return destination ? await sink.commit() : file
+    } catch (error) { await sink?.abort(); throw error } finally {
+      dataKey?.fill(0); if (lease) delete lease.key; await source.dispose()
+      // The sink holds the bytes once read. Only an interrupted or abandoned read keeps its chunks, to resume from them.
       if (!source.interrupted() && !context.signal?.aborted) await deps.cache.clear(key)
-      throw error
-    } finally { dataKey?.fill(0); if (lease) delete lease.key; await source.dispose() }
+    }
   }
   const metadata = deps.metadata ?? ((context: FileContext) => request(context, 'file-resolve', { ref: context.ref, as: context.actor.actorId }))
   return {
