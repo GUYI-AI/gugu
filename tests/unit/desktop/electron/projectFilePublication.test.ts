@@ -63,18 +63,18 @@ describe('external selections become durable project-owned copies through the sa
     expect(f.rpc.mock.calls.filter(([name]) => name === 'file_device_publish')[1][1].p_filename).toBe('renamed.bin')
   })
   it('imports a pasted file that has no disk path from its bytes, leaving no temp copy behind', async () => {
-    const f = fixture(), pasted = { name: 'image.png', path: '', size: data.length, contentType: 'image/png', data: data.buffer }
+    const f = fixture(), pasted = { name: 'notes.bin', path: '', size: data.length, contentType: 'application/octet-stream', data: data.buffer }
     await expect(f.publish('group', pasted, null, 'owner')).resolves.toEqual(row)
     const [path] = publishedPaths(f)
-    expect(path).toMatch(/^\.gugu\/attachments\/[0-9a-f-]{36}\/image\.png$/)
+    expect(path).toMatch(/^\.gugu\/attachments\/[0-9a-f-]{36}\/notes\.bin$/)
     expect(await readFile(join(root, path))).toEqual(Buffer.from(data))
-    expect(f.rpc.mock.calls.find(([name]) => name === 'file_device_publish')?.[1]).toMatchObject({ p_filename: 'image.png', p_type: 'image/png', p_sha: createHash('sha256').update(data).digest('hex') })
+    expect(f.rpc.mock.calls.find(([name]) => name === 'file_device_publish')?.[1]).toMatchObject({ p_filename: 'notes.bin', p_type: 'application/octet-stream', p_sha: createHash('sha256').update(data).digest('hex') })
     expect((await readdir(tmpdir())).filter(name => name.startsWith('gugu-pasted-'))).toHaveLength(0)
   })
   it('still imports a pasted file when the bound root contains the temp directory', async () => {
     const f = fixture(), previous = process.env.TMPDIR, inside = join(root, 'tmp')
     await mkdir(inside); process.env.TMPDIR = inside
-    try { await f.publish('group', { name: 'image.png', path: '', size: data.length, contentType: 'image/png', data: data.buffer }, null, 'owner') }
+    try { await f.publish('group', { name: 'notes.bin', path: '', size: data.length, contentType: 'application/octet-stream', data: data.buffer }, null, 'owner') }
     finally { if (previous === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = previous }
     const [path] = publishedPaths(f)
     expect(path).toMatch(/^\.gugu\/attachments\/[0-9a-f-]{36}\/image\.png$/)
@@ -177,9 +177,9 @@ describe('project file publication runs before document conversion or cloud uplo
   })
   it('plans without publishing and commits a message in the same existing publication RPC', async () => {
     const f = fixture(), message = { message_id: 'message', chat_id: 'group', sender_user_id: 'owner', file_name: file.name, to_user_ids: ['member'], caption: 'caption' }
-    await expect(f.publish.local('group')).resolves.toBe(true)
-    await expect(fixture(true).publish.local('group')).resolves.toBe(false)
-    await expect(f.publish.local('ordinary')).resolves.toBe(false)
+    await expect(f.publish.local('group', file.contentType)).resolves.toBe(true)
+    await expect(fixture(true).publish.local('group', file.contentType)).resolves.toBe(false)
+    await expect(f.publish.local('ordinary', file.contentType)).resolves.toBe(false)
     expect(f.rpc).not.toHaveBeenCalled()
     expect(await readProjectFile({ item_id: 'item', version: 1 }, 'owner', 'device', env, noRecord)).toBeNull()
     await expect(f.publish('group', { name: file.name, path: join(root, file.name), size: data.length, contentType: file.contentType }, null, 'owner', undefined, { message }))
@@ -315,8 +315,8 @@ describe('a project chat is one of the account\'s projects, as the backend lists
     const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }) as never, root: async () => root, project: async () => undefined,
       links: () => null, tempRoot: join(home, 'snapshots'), fetch: vi.fn() as never, rpc: vi.fn(), env,
       deviceStore: store, identityDb: () => db as never })
-    expect(await access.publish.local('folderless-project')).toBe(true)
-    expect(await access.publish.local('a-dm')).toBe(false)
+    expect(await access.publish.local('folderless-project', 'text/plain')).toBe(true)
+    expect(await access.publish.local('a-dm', 'text/plain')).toBe(false)
     expect(asked.filter((name) => name !== 'user_settings')).toEqual(['is_my_project', 'is_my_project'])
   })
 })

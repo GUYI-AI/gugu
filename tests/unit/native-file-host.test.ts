@@ -44,8 +44,8 @@ describe('native file capabilities are scoped and never expose incomplete origin
   })
   it('plans a local publication without publishing a file or reading any bytes', async () => {
     const f = await fixture()
-    await expect(f.host.publish(1, { chatId: 'group' })).resolves.toBe(true)
-    expect(f.publication).toHaveBeenCalledWith('group', 'owner')
+    await expect(f.host.publish(1, { chatId: 'group', contentType: 'text/plain' })).resolves.toBe(true)
+    expect(f.publication).toHaveBeenCalledWith('group', 'text/plain')
     expect(f.publish).not.toHaveBeenCalled(); expect(f.file.read).not.toHaveBeenCalled()
   })
   it('keeps handles across a same-account token refresh and revokes them across an account ABA switch', async () => {
