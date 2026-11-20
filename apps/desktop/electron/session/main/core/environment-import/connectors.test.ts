@@ -32,7 +32,8 @@ const selection = async () => (await scanCodexConnectors({ home })).items.map(({
 beforeEach(async () => {
   root = await fs.mkdtemp(join(tmpdir(), 'gugu-connectors-3216-'));
   home = resolveAgentHome({ providerId: 'codex', injectionMode: 'managed-config-root', guguHome: join(root, 'gugu'), osHomeDir: join(root, 'person'), sourceEnv: {},
-    configRoot: { envVar: 'CODEX_HOME', userPath: '.codex', credentialPaths: [{ path: 'auth.json', evidence: 'Fixture login store.' }], importGroups: [] },
+    configRoot: { envVar: 'CODEX_HOME', userPath: '.codex', evidence: 'Fixture Codex configuration root.', carryExclusions: [],
+      credentialPaths: [{ path: 'auth.json', evidence: 'Fixture login store.' }], importGroups: [] },
   })!;
   await write(source(), stringify({ model: 'fixture-model', mcp_servers: servers }));
 });
