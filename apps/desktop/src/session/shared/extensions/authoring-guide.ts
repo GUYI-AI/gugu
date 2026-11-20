@@ -383,7 +383,7 @@ Each call names a file: an entry, \`ctx.file\`, or \`{ chat | workspace, name }\
 - \`gugu.files.upload(place)\` (\`files:write\`, a click or key) opens the picker → the new entries (\`[]\`);
   a File: uploaded (≤ 25 MB, else \`too-large\`). \`gugu.files.download(entry)\` (a click or key) asks where
   to save → \`true\` saved; \`gugu.files.forward(entry|[…])\`: the forward page (working copy ≤ 512 MiB, else \`too-large\`).
-- \`gugu.files.pick({ chat }, { suffixes?, multiple?, upload? })\` (61, click/key, no capability): the host's
+- \`gugu.files.pick({ chat }, { suffixes?, multiple?, upload? })\` (62, click/key, no capability): the host's
   file sheet → the picks (\`[]\`), open to this page as \`ctx.file\`; \`upload\` + \`files:write\`: from this device too.
 - Media opens read-only: \`URL.createObjectURL(await f.blob())\`; \`files.replace(entry,
   blob, { expectedVersion: entry.version })\` makes its next version (needed; else \`content-changed\`).

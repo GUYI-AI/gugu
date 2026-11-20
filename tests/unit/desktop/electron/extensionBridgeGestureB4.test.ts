@@ -48,7 +48,7 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   taskMessage: () => host.taskMessage({ intent: 'pause' }),
   filesOpenWith: () => host.appFiles.openWith({ ref: { chat: 'chat-1', name: 'a.md' } }),
   filesUpload: () => host.appFiles.upload({}),
-  // 61: the host's sheet of a chat's files.
+  // 62: the host's sheet of a chat's files.
   filesPick: () => host.appFiles.pick({ place: { chat: 'chat-1' } }),
   filesDownload: () => host.appFiles.download({ ref: { chat: 'chat-1', name: 'a.md' } }),
   filesForward: () => host.appFiles.forward({ refs: [{ chat: 'chat-1', name: 'a.md' }] }),
