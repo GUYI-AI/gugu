@@ -39,6 +39,15 @@ describe('atomic device registration client', () => {
     expect(rpc).toHaveBeenCalledWith('register_gugu_device', { p_device: device })
   })
 
+  it.each([
+    [{ label: '' }, 'computer'], [{ label: '  ' }, 'computer'],
+    [{ label: '', hostname: ' ' }, 'linux'],
+  ])('never sends the blank label the registration RPC refuses: %j', async (override, expected) => {
+    const rpc = vi.fn(async () => ({ data: { device_id: device.device_id, created: true }, error: null }))
+    await registerGuguDevice({ rpc }, { ...device, ...override })
+    expect(rpc).toHaveBeenCalledWith('register_gugu_device', { p_device: expect.objectContaining({ label: expected }) })
+  })
+
   it.each([null, {}, [], { device_id: 'id' }, { device_id: 'id', created: 1 }, { device_id: ' ', created: false }])(
     'does not report success for a malformed registration receipt: %j', async data => {
       await expect(registerGuguDevice({ rpc: async () => ({ data, error: null }) }, device))

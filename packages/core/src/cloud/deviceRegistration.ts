@@ -28,6 +28,16 @@ export class DeviceRegistrationError extends Error {
   }
 }
 
+/**
+ * The registration RPC refuses a blank label, but a blank one is a normal input: a server installed over SSH
+ * without a name, or a machine whose only name looks like an IP, reports ''. The old table write let the
+ * default-label trigger name such rows; the RPC never reaches it. Fall back to the hostname, then the platform,
+ * so the machine still registers. An existing row keeps its label (the preserve trigger ignores heartbeat labels).
+ */
+function registrationLabel(input: DeviceRegistrationInput): string {
+  return input.label.trim() || input.hostname.trim() || input.platform.trim() || 'device'
+}
+
 /** The server derives ownership from auth.uid(); never forward a device row wholesale. */
 export async function registerGuguDevice(
   client: DeviceRegistrationClient,
@@ -38,7 +48,7 @@ export async function registerGuguDevice(
     device_id: input.device_id,
     machine_id: input.machine_id,
     tier: input.tier,
-    label: input.label,
+    label: registrationLabel(input),
     hostname: input.hostname,
     platform: input.platform,
     capabilities: input.capabilities,
