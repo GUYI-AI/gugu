@@ -334,7 +334,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
         await db.update(sessions)
           .set({ agentStatus: 'idle', agentStatusDetail: 'plain', agentStatusSeen: 1 })
           .where(eq(sessions.id, sessionId));
-        recordPtyEngineEnd(sessionId, this.now(), true);
+        recordPtyEngineEnd(sessionId, this.now().timestamp, true);
         recordInterruptedTurns([sessionId], lastExit);
         settled.push(sessionId);
       });
@@ -397,7 +397,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
     this.providerBlockers.delete(params.sessionId);
     const at = this.now();
     await this.inOrder(params.sessionId, async () => {
-      recordPtyEngineEnd(params.sessionId, at);
+      recordPtyEngineEnd(params.sessionId, at.timestamp);
       await this.apply(params.sessionId, () => [{ kind: 'Interrupted', sessionId: params.sessionId }], at);
     });
   }
