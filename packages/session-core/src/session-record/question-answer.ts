@@ -49,7 +49,7 @@ export function readQuestionAnswerDelivery(text: string): { answer: string | nul
   if (!data || typeof data !== 'object' || Array.isArray(data)) return undefined
   const fact = data as { state?: unknown; answers?: unknown }
   if (fact.state === 'withdrawn') return { answer: null }
-  if (fact.state === 'discuss') return { answer: '先聊聊' }
+  if (fact.state === 'discuss') return { answer: '先讨论' }
   const answers = parseQuestionAnswers(fact.answers)
   return fact.state === 'answered' && answers ? { answer: questionAnswerText(answers) } : undefined
 }

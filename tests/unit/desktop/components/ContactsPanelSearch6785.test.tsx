@@ -54,7 +54,7 @@ describe('contacts search (desktop sidebar)', () => {
     await typeInto(input(), 'codex5')
     expect(titles()).toEqual(['Codex 5'])
     await press('Enter')
-    expect(detailTitle()).toBe('正在起名…')
+    expect(detailTitle()).toBe('正在生成名称…')
     expect(titles()).toEqual(['Codex 5'])
   })
   it('swaps the browse tree for one grouped results table and brings it back on clear', async () => {

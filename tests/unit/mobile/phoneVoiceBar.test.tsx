@@ -110,7 +110,7 @@ describe('录音尚未上传:保留手机备份，不依赖执行设备', () => 
   it.each(['asleep','waking','unreachable'] as const)('设备 %s 时不叫宿主，也没有连接或重连按钮', async held => {
     mocks.jobs = [job({ phase: 'uploading',held })]
     await render()
-    expect(q('phone-voice-bar-held')?.textContent).toContain('录音先存在手机上')
+    expect(q('phone-voice-bar-held')?.textContent).toContain('录音已暂存在手机上')
     expect(q('phone-voice-bar-held')?.textContent).not.toMatch(/连接|叫醒|休息/)
     expect(mocks.wake).not.toHaveBeenCalled()
     await render()
