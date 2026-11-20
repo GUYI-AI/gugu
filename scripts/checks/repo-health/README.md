@@ -70,3 +70,26 @@ and `crap` is crapper's score.
 
 `typeCoverage.excludedFiles` lists files that crash TypeScript 6's checker (type-coverage needs the TS 6 API; the repo
 itself typechecks with tsgo). They are excluded one at a time and named here.
+
+## CI
+
+Two workflows run these scripts; neither is a required check.
+
+- `.github/workflows/repo-health-pr.yml`, on every PR that changes source files, warn-only. crapper and type-coverage
+  look only at the changed files (`--files`); knip, jscpd and dependency-cruiser scan the whole repo. `pr-report.mts`
+  keeps the findings in changed files and compares them with the latest weekly scan of dev (the
+  `repo-health-reference` artifact): a finding that scan already had is listed as existing, the rest as new, and a
+  changed function is flagged when its complexity crosses 10, 20 or 50. Only new findings are counted per rule.
+  repowise is not rerun (it indexes the whole history): churn comes from the same weekly scan, so hotspots are weekly
+  churn × the complexity of the changed functions. Stryker runs only on a PR labelled `repo-health:mutation`,
+  mutating the changed files.
+- `.github/workflows/repo-health-weekly.yml`, Mondays and on demand: unit-test coverage, then every tool on the whole
+  repo, then `compare.mts` against the previous weekly `summary.json` (downloaded from that run's artifact) and
+  `rule-stats.mts` over the past week's PR scans. Reports stay in artifacts; nothing is committed.
+
+```bash
+node scripts/checks/repo-health/run.mjs --out <dir> --files a.ts,b.ts --skip repowise,stryker   # what a PR runs
+node scripts/checks/repo-health/pr-report.mts --out <dir> --changed-from <base> --reference <weekly dir>
+node scripts/checks/repo-health/compare.mts --previous <old summary.json> --current <dir>/summary.json
+node scripts/checks/repo-health/rule-stats.mts --dir <dir holding */pr-hits.json>
+```

@@ -1,0 +1,132 @@
+name: Repo health (weekly)
+# Full scan of the whole repository with every repo-health tool, compared with the previous weekly
+# run's summary.json (taken from that run's artifact; nothing is committed). The first run, with no
+# earlier artifact, compares with scripts/checks/repo-health/seed-summary.json when the repo has one.
+on:
+  schedule:
+    # Monday 01:00 UTC (09:00 Beijing).
+    - cron: '0 1 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+# Saves the repo-health Python venv for PR scans to restore.
+cache-mode: write
+concurrency:
+  group: repo-health-weekly
+  cancel-in-progress: false
+env:
+  CI: true
+  # The unit projects need the same public placeholders as ci.yml to import.
+  GUGU_SUPABASE_URL: http://127.0.0.1:54321
+  VITE_SUPABASE_URL: http://127.0.0.1:54321
+  GUGU_SUPABASE_ANON_KEY: community-build-placeholder
+  VITE_SUPABASE_ANON_KEY: community-build-placeholder
+jobs:
+  full:
+    name: Repo health (full scan)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-community
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          # crapper's tree-sitter grammars are downloaded on first use next to the venv's packages.
+          path: |
+            node_modules/.cache/repo-health-venv
+            ~/.cache/tree-sitter-language-pack
+          key: repo-health-venv-v1-${{ runner.os }}-${{ runner.arch }}-py3.12-${{ hashFiles('scripts/checks/repo-health/tools.json') }}
+      # crapper reads LCOV for CRAP scores. A red unit test lowers coverage but must not stop the scan:
+      # the required CI gate owns test failures, this report only measures.
+      - name: Measure unit-test coverage for crapper
+        id: coverage
+        continue-on-error: true
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: >-
+          pnpm exec vitest run --project gugu --project tooling --project session-packages --project session-main
+          --project session-chat-ui --coverage.enabled --coverage.provider=v8 --coverage.reporter=lcov
+          --coverage.reportOnFailure --coverage.reportsDirectory=target/coverage/typescript
+      - name: Run every repo-health tool on the whole repository
+        id: scan
+        continue-on-error: true
+        run: |
+          args=(--out "$RUNNER_TEMP/repo-health")
+          if [ -f target/coverage/typescript/lcov.info ]; then
+            args+=(--coverage target/coverage/typescript/lcov.info)
+          else
+            echo "::warning::No coverage report; crapper scores complexity only"
+          fi
+          node scripts/checks/repo-health/run.mjs "${args[@]}"
+      - name: Write the full report
+        if: always() && hashFiles(format('{0}/repo-health/summary.json', runner.temp)) != ''
+        run: node scripts/checks/repo-health/report.mjs "$RUNNER_TEMP/repo-health" > "$RUNNER_TEMP/repo-health/REPORT.md"
+      - name: Fetch the previous weekly summary
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/previous"
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow repo-health-weekly.yml --branch "$GITHUB_REF_NAME" \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -n "$run_id" ] && gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n repo-health-summary -D "$RUNNER_TEMP/previous"; then
+            echo "summary=$RUNNER_TEMP/previous/summary.json" >> "$GITHUB_OUTPUT"
+            echo "label=weekly run $run_id" >> "$GITHUB_OUTPUT"
+          elif [ -f scripts/checks/repo-health/seed-summary.json ]; then
+            echo "::notice::No earlier weekly artifact; comparing with the seed baseline"
+            echo "summary=scripts/checks/repo-health/seed-summary.json" >> "$GITHUB_OUTPUT"
+            echo "label=the seed baseline" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No earlier weekly artifact and no seed baseline: this run is the first baseline"
+          fi
+      - name: Compare with the previous summary
+        if: steps.previous.outputs.summary != ''
+        run: |
+          node scripts/checks/repo-health/compare.mts --previous "${{ steps.previous.outputs.summary }}" \
+            --current "$RUNNER_TEMP/repo-health/summary.json" --previous-label "${{ steps.previous.outputs.label }}" \
+            --markdown "$RUNNER_TEMP/repo-health/weekly-report.md" --json "$RUNNER_TEMP/repo-health/compare.json"
+      # Rule hits from the last seven days of PR scans: the evidence for promoting a rule to required.
+      - name: Count changed-file rule hits of the past week
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dir="$RUNNER_TEMP/pr-hits"
+          mkdir -p "$dir"
+          since=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?name=repo-health-pr&per_page=100" \
+            --jq ".artifacts[] | select(.expired == false and .created_at >= \"$since\") | .workflow_run.id" |
+            sort -u | while read -r id; do
+              gh run download "$id" --repo "$GITHUB_REPOSITORY" -n repo-health-pr -D "$dir/$id" || echo "::warning::could not download PR scan $id"
+            done
+          node scripts/checks/repo-health/rule-stats.mts --dir "$dir" --markdown "$RUNNER_TEMP/repo-health/rule-stats.md" --json "$RUNNER_TEMP/repo-health/rule-stats.json"
+      # PR scans compare against this: findings already here are not new, and churn comes from here.
+      - name: Upload the reference for PR scans
+        if: always() && hashFiles(format('{0}/repo-health/summary.json', runner.temp)) != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: repo-health-reference
+          path: |
+            ${{ runner.temp }}/repo-health/*.findings.json
+            ${{ runner.temp }}/repo-health/crapper.raw.jsonl
+            ${{ runner.temp }}/repo-health/repowise.raw.json
+          retention-days: 90
+      - name: Upload the weekly report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          # The next weekly run downloads this artifact by name for its comparison.
+          name: repo-health-summary
+          path: ${{ runner.temp }}/repo-health/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Report a scan failure
+        if: steps.scan.outcome == 'failure'
+        run: |
+          echo "::error::repo-health run.mjs failed; the artifact holds what finished"
+          exit 1

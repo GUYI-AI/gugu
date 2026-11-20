@@ -1,0 +1,102 @@
+name: Repo health (changed files)
+# Warn-only: runs the repo-health tools over the files a PR changes and writes the findings to the
+# job summary. It is not part of the required "Typecheck, lint, and test" gate and never fails a PR
+# for findings; only a broken script turns it red. The weekly full scan is repo-health-weekly.yml.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    # Only source changes can produce findings; docs-only PRs do not start the job at all.
+    paths: ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts', '**/*.js', '**/*.jsx', '**/*.mjs', '**/*.cjs']
+permissions:
+  contents: read
+  actions: read
+cache-mode: read
+concurrency:
+  group: repo-health-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+env:
+  CI: true
+jobs:
+  changed:
+    name: Repo health (changed files, warn-only)
+    # A label event re-runs only when it adds the mutation label; other labels change nothing here.
+    if: github.event.action != 'labeled' || github.event.label.name == 'repo-health:mutation'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      # Churn ranks files by their recent history, so the job needs the commits, not only the tree.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-community
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # The weekly scan saves the venv (crapper's tree-sitter grammars download slowly); PRs only restore it.
+      - uses: actions/cache/restore@v4
+        with:
+          # crapper's tree-sitter grammars are downloaded on first use next to the venv's packages.
+          path: |
+            node_modules/.cache/repo-health-venv
+            ~/.cache/tree-sitter-language-pack
+          key: repo-health-venv-v1-${{ runner.os }}-${{ runner.arch }}-py3.12-${{ hashFiles('scripts/checks/repo-health/tools.json') }}
+      # The latest weekly scan of dev is the reference: findings it already had are listed as existing, not
+      # new. It also supplies churn, because repowise indexes the whole history (~9 min), longer than any
+      # required job; hotspots are then weekly churn × the complexity of the changed functions.
+      - name: Take the latest weekly scan as the reference
+        id: reference
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/repo-health" "$RUNNER_TEMP/reference"
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow repo-health-weekly.yml --branch dev \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -n "$run_id" ] && gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n repo-health-reference -D "$RUNNER_TEMP/reference"; then
+            cp "$RUNNER_TEMP/reference/repowise.raw.json" "$RUNNER_TEMP/repo-health/" ||
+              echo "::notice::The weekly scan has no churn; hotspots are left out"
+            echo "args=--reference $RUNNER_TEMP/reference --reference-label weekly-scan-run-$run_id" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No weekly scan yet: findings are not split into new and existing, and hotspots are left out"
+          fi
+      # A pull_request run checks out the merge commit; HEAD^1 is the base branch tip it was built on.
+      # Mutation testing is slow, so it runs on a PR only when the PR carries the mutation label.
+      - name: Run repo-health on the changed files
+        id: scan
+        continue-on-error: true
+        env:
+          MUTATION: ${{ contains(github.event.pull_request.labels.*.name, 'repo-health:mutation') && 'true' || 'false' }}
+        run: |
+          args=(--out "$RUNNER_TEMP/repo-health")
+          changed=$(node scripts/checks/repo-health/pr-report.mts --changed-from HEAD^1 --list-changed)
+          # Per-function tools (complexity, type coverage) look only at the changed files; whole-graph
+          # tools (dead code, duplication, dependencies, churn) scan everything and are filtered afterwards.
+          if [ -z "$changed" ]; then
+            mkdir -p "$RUNNER_TEMP/repo-health"
+            echo "No non-test source files changed; nothing to scan."
+            exit 0
+          fi
+          args+=(--files "$changed")
+          if [ "$MUTATION" = true ]; then
+            args+=(--skip repowise --stryker-files "$changed")
+          else
+            args+=(--skip repowise,stryker)
+          fi
+          node scripts/checks/repo-health/run.mjs "${args[@]}"
+      - name: Write the changed-file report
+        run: >-
+          node scripts/checks/repo-health/pr-report.mts --out "$RUNNER_TEMP/repo-health" --changed-from HEAD^1
+          --pr "${{ github.event.pull_request.number }}" ${{ steps.reference.outputs.args }}
+      - name: Upload findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          # One fixed name per run: the weekly report lists these by name to count rule hits.
+          name: repo-health-pr
+          path: ${{ runner.temp }}/repo-health/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Report a scan failure
+        if: steps.scan.outcome == 'failure'
+        run: |
+          echo "::error::repo-health run.mjs failed; the report above lists the tools that finished"
+          exit 1

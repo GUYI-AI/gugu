@@ -117,7 +117,9 @@ async function typeCoverage(ctx) {
   const env = { NODE_OPTIONS: '--max-old-space-size=32768' }
   for (let attempt = 0; attempt < 20; attempt++) {
     const ignore = excluded.flatMap((file) => ['--ignore-files', file])
-    const args = ['-p', 'tsconfig.json', '--detail', '--json-output', '--show-relative-path', ...ignore]
+    // `-- <files>` checks only those files (the program still loads the whole project for types).
+    const only = ctx.files.length ? ['--', ...ctx.files] : []
+    const args = ['-p', 'tsconfig.json', '--detail', '--json-output', '--show-relative-path', ...ignore, ...only]
     const { stdout } = run(ctx, bin(ctx, 'type-coverage'), args, { allowExit: [0, 1], env })
     // type-coverage prints `warning: unhandled node kind …` lines on stdout before the JSON.
     const report = JSON.parse(stdout.slice(stdout.indexOf('{')))
@@ -136,13 +138,23 @@ async function typeCoverage(ctx) {
       excluded.push(crashed)
       continue
     }
+    // A PR may change only files outside tsconfig.json (plain .mjs, apps/mobile): nothing to measure, not a failure.
+    if (ctx.files.length && /No files were measured/.test(report.error ?? '')) {
+      return {
+        dimension: 'typeCoverage',
+        version: versionOf('type-coverage'),
+        scope: `none of the ${ctx.files.length} files from --files are in tsconfig.json`,
+        metrics: { percent: null, typed: 0, total: 0, anyCount: 0, excludedFiles: excluded },
+        findings: [],
+      }
+    }
     if (report.error) throw new Error(`type-coverage: ${report.error}`)
     writeFileSync(raw(ctx, 'type-coverage.raw.json'), stdout)
     const details = report.details ?? []
     return {
       dimension: 'typeCoverage',
       version: versionOf('type-coverage'),
-      scope: 'tsconfig.json',
+      scope: ctx.files.length ? `tsconfig.json, ${ctx.files.length} files from --files` : 'tsconfig.json',
       excluded,
       metrics: {
         percent: Number(report.percent.toFixed(2)),
@@ -171,7 +183,8 @@ async function crapper(ctx) {
   } else {
     args.push('--no-coverage')
   }
-  for (const dir of ['apps/desktop', 'apps/mobile/runtime', 'packages', 'scripts']) args.push('-s', dir)
+  if (ctx.files.length) args.push(...ctx.files)
+  else for (const dir of ['apps/desktop', 'apps/mobile/runtime', 'packages', 'scripts']) args.push('-s', dir)
   const { stdout } = run(ctx, python, args)
   writeFileSync(raw(ctx, 'crapper.raw.jsonl'), stdout)
   if (existsSync(resolve(ctx.root, '.metrics/crap.edn'))) {
@@ -184,7 +197,7 @@ async function crapper(ctx) {
   return {
     dimension: 'complexity',
     version: pinOf('crapper'),
-    scope: ctx.coverage ? 'TS/JS functions, vitest unit coverage' : 'TS/JS functions, complexity only (no coverage)',
+    scope: `${ctx.files.length ? `${ctx.files.length} files from --files` : 'TS/JS functions'}, ${ctx.coverage ? 'vitest unit coverage' : 'complexity only (no coverage)'}`,
     metrics: {
       functions: functions.length,
       withCoverage: Boolean(ctx.coverage),

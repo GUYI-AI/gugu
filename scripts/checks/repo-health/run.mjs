@@ -4,7 +4,9 @@
 //   <tool>.findings.json    [{file, line?, rule, message}] — what a PR-mode filter or a reviewer reads
 //   summary.json            totals per dimension + hotspots (see README.md for the schema)
 // Usage: node scripts/checks/repo-health/run.mjs --out <dir> [--only knip,jscpd] [--skip stryker]
-//        [--coverage <lcov.info>] [--stryker-files <a.ts,b.ts>]
+//        [--coverage <lcov.info>] [--stryker-files <a.ts,b.ts>] [--files <a.ts,b.ts>]
+// --files limits the per-function tools (crapper, type-coverage) to those files, for a PR scan; whole-graph
+// tools still scan everything and their findings are filtered by pr-report.mts.
 // Tools and their pins: knip, jscpd, dependency-cruiser, type-coverage, Stryker are root devDependencies;
 // crapper and repowise are Python tools pinned in tools.json and installed by venv.mjs.
 import { execFileSync } from 'node:child_process'
@@ -21,6 +23,7 @@ const { values: args } = parseArgs({
     skip: { type: 'string' },
     coverage: { type: 'string' },
     'stryker-files': { type: 'string' },
+    files: { type: 'string' },
     'hotspot-count': { type: 'string', default: '20' },
   },
 })
@@ -39,6 +42,7 @@ const ctx = {
   out,
   coverage: args.coverage ? resolve(args.coverage) : undefined,
   strykerFiles: list(args['stryker-files']),
+  files: list(args.files),
   results: {},
 }
 const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
