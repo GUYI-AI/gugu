@@ -598,7 +598,8 @@ describe('MainLayout', () => {
     chatStoreMock.activeChatId = 'original-chat'
     chatStoreMock.setActiveChatId.mockImplementation(id => { chatStoreMock.activeChatId = id })
     await renderMainLayoutWithToast()
-    if (source === 'chat') await clickElement(harness.container.querySelector('[data-testid="mock-chat-row"]') as HTMLElement)
+    const listRow = harness.container.querySelector('[data-testid="mock-chat-row"]') as HTMLElement
+    if (source === 'chat') await clickElement(listRow)
     const { openOwnedAgentEntry } = await import('../../../../apps/desktop/src/lib/ownedAgentConversation')
     for (const method of ['header', 'native']) {
       await act(async () => { expect(openOwnedAgentEntry('task-dm')).toBe(true) })
@@ -608,7 +609,9 @@ describe('MainLayout', () => {
       else await nativeBack()
       expect(layerOpen('mobile-sessions-layer')).toBe(false)
       expect(chatStoreMock.activeChatId).toBe('original-chat')
-      expect(Boolean(harness.container.querySelector('[data-testid="mock-chat-row"]'))).toBe(source === 'list')
+      expect(harness.container.querySelector('[data-testid="mock-chat-row"]')).toBe(listRow)
+      expect(harness.container.querySelector('[data-mobile-tab-page="chats"]')?.hasAttribute('inert')).toBe(source === 'chat')
+      expect(harness.container.querySelector('nav') !== null).toBe(source === 'list')
       expect(harness.container.querySelector('[data-testid="mock-chat-area"]')?.getAttribute('data-hidden')).toBe(String(source !== 'chat'))
     }
   })

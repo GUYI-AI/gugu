@@ -97,6 +97,8 @@ it('inspects a return destination without consuming it, skipping conversations t
   let listed = ['group', 'dm', 'other']
   let active = 'group'
   const store = createShellTabStore('chats', { activeId: () => active, listed: id => listed.includes(id), subscribe: () => () => {} })
+  store.openChat('chats', null)
+  expect(store.peekChat(), 'the first conversation is entered from the root').toBeNull()
   store.openChat('chats', 'group'); active = 'dm'
   store.openChat('chats', 'dm'); active = 'other'
   expect(store.peekChat()).toEqual({ chatId: 'dm' })
