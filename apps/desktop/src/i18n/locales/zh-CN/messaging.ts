@@ -995,6 +995,23 @@ export default {
     "helpAsk": "补上要做的事",
     "helpConfirm": "改动前先确认",
   },
+  "projectRecovery": {
+    "unavailable": "失效",
+    "folderMissing": "本机找不到文件夹",
+    "restore": "恢复",
+    "clean": "清理",
+    "cancel": "取消",
+    "cleanLabel": "清理失效项目",
+    "cleanTitle": "清理 {{count}} 个失效项目？",
+    "cleanBody": "这些项目的群将被收起，之后仍可恢复。",
+    "checkFailed": "无法核对项目状态，请稍后重试。",
+    "incompleteHistory": "恢复记录不完整，请联系维护者核对。",
+    "invalidDirectory": "请选择一个可用的文件夹。",
+    "inspectFailed": "无法读取此文件夹，请检查访问权限。",
+    "pathConflict": "此文件夹已属于其他项目，请选择其他文件夹。",
+    "stateChanged": "项目状态已变化，请重新确认。",
+    "failed": "操作未完成，请检查文件夹访问权限和项目群权限后重试。"
+  },
   "filePill": {
     "picked": "第 {{version}} 版上选的"
   }

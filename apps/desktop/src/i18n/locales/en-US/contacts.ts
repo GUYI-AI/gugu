@@ -262,9 +262,9 @@ export default {
   },
   "requestsPane": {
     "empty": "No new requests",
-    "nonePending": "Nothing waiting for you",
-    "pending_one": "{{count}} waiting for you",
-    "pending_other": "{{count}} waiting for you"
+    "nonePending": "No pending requests",
+    "pending_one": "{{count}} pending",
+    "pending_other": "{{count}} pending"
   },
   "searchPane": {
     "count_one": "{{count}} result",

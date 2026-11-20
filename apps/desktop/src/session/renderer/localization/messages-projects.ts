@@ -236,6 +236,10 @@ export const enUSProjectMessages = {
   'projects.create.folderNameUnreadable': 'Could not read the folder name from the path',
   'projects.create.folderUnusableDetail':
     'Check that the folder still exists and that you can read and write it, or pick a different one.',
+  'projects.create.restoreFailed': 'Project not restored',
+  'projects.create.restoreIncomplete': 'The recovery record is incomplete. Contact the maintainers to check it.',
+  'projects.create.restoreCheckPermissions':
+    'Check the folder access permissions and the project group permissions, then try again.',
   'projects.create.blankProject': 'New blank project',
   'projects.create.existingFolder': 'Use an existing folder',
   'projects.create.creating': 'Creating…',
@@ -489,6 +493,9 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'projects.create.folderUnusable': '无法使用此文件夹',
   'projects.create.folderNameUnreadable': '无法从路径中读取文件夹名称',
   'projects.create.folderUnusableDetail': '请确认该文件夹存在且你有读写权限，或选择其他文件夹。',
+  'projects.create.restoreFailed': '项目未恢复',
+  'projects.create.restoreIncomplete': '恢复记录不完整，请联系维护者核对。',
+  'projects.create.restoreCheckPermissions': '请检查文件夹访问权限和项目群权限后重试。',
   'projects.create.blankProject': '新建空白项目',
   'projects.create.existingFolder': '使用现有文件夹',
   'projects.create.creating': '创建中…',

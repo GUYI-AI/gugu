@@ -262,7 +262,7 @@ export default {
   },
   "requestsPane": {
     "empty": "没有新的请求",
-    "nonePending": "没有待处理的",
+    "nonePending": "暂无待处理的请求",
     "pending_one": "{{count}} 个待处理",
     "pending_other": "{{count}} 个待处理"
   },

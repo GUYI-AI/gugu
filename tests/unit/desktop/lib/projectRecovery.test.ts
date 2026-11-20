@@ -48,21 +48,21 @@ describe('project recovery actions', () => {
     state.restore.mockRejectedValue(new Error('group_recovery_requires_topic_evidence'))
     await expect(recoverUnavailableProject(original, '/selected')).rejects.toThrow('group_recovery_requires_topic_evidence')
     expect(state.save).not.toHaveBeenCalled(); expect(state.changed).not.toHaveBeenCalled()
-    expect(projectRecoveryMessage(new Error('group_recovery_requires_topic_evidence'))).toBe('恢复记录不完整，请联系维护者核对')
+    expect(projectRecoveryMessage(new Error('group_recovery_requires_topic_evidence'))).toBe('恢复记录不完整，请联系维护者核对。')
   })
   it.each([
-    ['group_recovery_requires_topic_evidence', '恢复记录不完整，请联系维护者核对'],
-    ['SQLITE_BUSY internal diagnostic detail', '请检查文件夹访问权限和项目群权限后再试。'],
+    ['group_recovery_requires_topic_evidence', 'projects.create.restoreIncomplete'],
+    ['SQLITE_BUSY internal diagnostic detail', 'projects.create.restoreCheckPermissions'],
   ])('keeps diagnostic %s in the logger and shows only approved next-step copy', async (diagnostic, description) => {
     state.restore.mockRejectedValue(new Error(diagnostic))
     expect(await createProjectFromLocalFolder('/old', key => key)).toBeNull()
-    expect(state.notify).toHaveBeenCalledWith({ title: '恢复项目未完成', description, variant: 'destructive' })
+    expect(state.notify).toHaveBeenCalledWith({ title: 'projects.create.restoreFailed', description, variant: 'destructive' })
     expect(state.logError).toHaveBeenCalledWith({ path: '/old', error: diagnostic }, '恢复原项目失败')
     expect(state.save).not.toHaveBeenCalled(); expect(state.create).not.toHaveBeenCalled()
   })
   it('validates a selected folder before restoring its group', async () => {
-    state.inspect.mockResolvedValue({ success: false, error: { message: '文件夹已属于其他项目' } })
-    await expect(recoverUnavailableProject(original, '/selected')).rejects.toThrow()
+    state.inspect.mockResolvedValue({ success: false, error: { type: 'path-conflict', message: '文件夹已属于其他项目' } })
+    await expect(recoverUnavailableProject(original, '/selected')).rejects.toMatchObject({ type: 'path-conflict' })
     expect(state.restore).not.toHaveBeenCalled(); expect(state.save).not.toHaveBeenCalled()
   })
   it('archives only after an explicit call and preserves the retained projects for restoration', async () => {
@@ -73,7 +73,7 @@ describe('project recovery actions', () => {
   })
   it('does not clean a folder restored after the confirmation was opened', async () => {
     state.rows = []
-    await expect(archiveUnavailableProjects([original])).rejects.toThrow('项目状态已变化')
+    await expect(archiveUnavailableProjects([original])).rejects.toMatchObject({ type: 'state-changed' })
     expect(state.archive).not.toHaveBeenCalled()
   })
 })
