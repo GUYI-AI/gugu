@@ -93,8 +93,6 @@ export type ProjectSettingsPage = {
   settings: ProjectSettings;
   writeTargets: ProjectSettingsWriteTargetOption[];
   overrideState: ProjectSettingsOverrideState;
-  configMigrations: ProjectConfigMigration[];
-  shouldPromptConfigMigration: boolean;
 };
 
 export type ProjectSettingsWriteTarget =
@@ -136,28 +134,6 @@ export type ProjectSettingsOverrideState = Record<
   ShareableProjectSettingsWriteField,
   ProjectSettingsOverrideSource[]
 >;
-
-export type ProjectConfigMigrationProvider = 'conductor' | 'superset' | 'paseo' | 'codex';
-
-export type ProjectConfigMigration = {
-  provider: ProjectConfigMigrationProvider;
-  label: string;
-  files: string[];
-  fields: ShareableProjectSettingsWriteField[];
-  unsupportedFields: string[];
-};
-
-export type ProjectConfigMigrationDestination = 'local' | 'shared';
-
-export type MigrateProjectConfigRequest = {
-  provider: ProjectConfigMigrationProvider;
-  destination: ProjectConfigMigrationDestination;
-};
-
-export type MigrateProjectConfigResult = {
-  page: ProjectSettingsPage;
-  migration: ProjectConfigMigration;
-};
 
 export function emptyProjectSettingsOverrideState(): ProjectSettingsOverrideState {
   return {

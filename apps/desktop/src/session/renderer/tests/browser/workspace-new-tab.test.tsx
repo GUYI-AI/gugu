@@ -14,7 +14,7 @@ import { commandRegistry } from '@renderer/lib/commands/registry';
 import '@renderer/index.css';
 import '@/styles/tokens.css';
 
-const { navigate } = vi.hoisted(() => ({ navigate: vi.fn() }));
+const { navigate, registerBrowser } = vi.hoisted(() => ({ navigate: vi.fn(), registerBrowser: vi.fn(async () => ({ success: false })) }));
 vi.mock('@renderer/features/chats/owned-agent-chat-boundary', () => ({
   OwnedAgentChatBoundary: ({ children }: { children: ReactNode }) => children,
 }));
@@ -24,7 +24,7 @@ vi.mock('@renderer/lib/ipc', async (original) => {
     get(target, key) {
       // A real renderer page with no Electron web contents behind it.
       if (key === 'browser') return {
-        registerSession: async () => ({ success: false }),
+        registerSession: registerBrowser,
         unregisterSession: async () => ({ success: true }),
         setActiveBrowser: async () => ({ success: true }),
       };
@@ -41,6 +41,33 @@ let harness: ReturnType<typeof createReactHarness> | undefined;
 const previousTheme = document.documentElement.dataset.theme;
 const group = { viewId: 'new-tab-group', place: { kind: 'chat', chatId: 'new-tab-group' } } as const;
 const topic = { viewId: 'new-tab-topic', place: { kind: 'chat', chatId: 'new-tab-topic' } } as const;
+
+it('keeps the annotation entry visible on an ordinary group browser and registers the tab conversation', async () => {
+  await i18n.changeLanguage('zh-CN');
+  await page.viewport(1240, 640);
+  const view = harness = createReactHarness();
+  view.container.className = 'emlight gugu-skin';
+  view.container.style.cssText = 'position:fixed;inset:0;width:1200px;height:580px';
+  const chatId = 'annotation-entry-group';
+  installSessionTabViews();
+  const layout = chatLayoutOf(chatId);
+  try {
+    await view.render(<ChatPanes chatId={chatId} actionsSlot={null} body={<div>群聊正文</div>}
+      chip={({ tab, host }) => <ChatTabChip tab={tab} host={host} label="批注测试群" menu={null} focused />} />);
+    await act(() => { layout.open('browser', { initialUrl: 'https://example.org/group' }, { from: null, intent: 'newTab' }); });
+    await expect.element(page.getByRole('button', { name: '批注', exact: true })).toBeVisible();
+    // Without an Electron page behind this browser fixture, the visible action waits disabled.
+    await expect.element(page.getByRole('button', { name: '批注', exact: true })).toBeDisabled();
+    expect(registerBrowser).toHaveBeenCalledWith(expect.objectContaining({ conversation: { kind: 'chat', chatId } }));
+    const toolbar = page.getByRole('button', { name: '批注', exact: true }).element();
+    const address = page.getByPlaceholder('搜索或输入网址').element();
+    expect(toolbar.compareDocumentPosition(address) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  } finally {
+    await act(() => {
+      for (const { pane } of layout.groups) for (const tab of [...pane.resolvedTabs]) if (tab.kind !== 'chat') closeChatTab(chatId, tab.tabId);
+    });
+  }
+});
 afterEach(() => {
   harness?.cleanup();
   harness = undefined;
@@ -140,6 +167,55 @@ it('opens the actual group tab from the header and reveals explicitly requested 
     await act(() => userEvent.click(page.getByRole('button', { name: '文件', exact: true })));
     expect(panelTabsOf(group.place.chatId)).toHaveLength(1);
     expect(panelTabsOf(group.place.chatId)[0]?.shown).toBe(true);
+  } finally {
+    const layout = chatLayoutOf(group.place.chatId);
+    await act(() => {
+      for (const { pane } of layout.groups) {
+        for (const entry of pane.resolvedTabs) {
+          if (entry.kind !== 'chat') closeChatTab(group.place.chatId, entry.tabId);
+        }
+      }
+    });
+  }
+});
+
+it('draws the start page in the app theme and the pinned-light web area in light alone', async () => {
+  await i18n.changeLanguage('zh-CN');
+  await page.viewport(1240, 640);
+  const view = harness = createReactHarness();
+  view.container.className = 'emdark gugu-skin';
+  document.documentElement.dataset.theme = 'dark';
+  view.container.style.cssText = 'position:fixed;inset:0;width:1200px;height:580px';
+  installSessionTabViews();
+  await act(() => view.render(
+    <ChatPanes chatId={group.place.chatId} actionsSlot={null} body={<div>群聊正文</div>}
+      chip={({ tab, host }) => <ChatTabChip tab={tab} host={host} label="示例群聊" menu={null} focused />} />,
+  ));
+  // Relative luminance from a computed `rgb(...)`.
+  const luminance = (color: string) => {
+    const [r, g, b] = color.match(/[\d.]+/g)!.slice(0, 3).map((v) => Number(v) / 255)
+      .map((c) => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  try {
+    await act(() => userEvent.click(page.getByRole('button', { name: '显示标签页' })));
+    await expect.element(page.getByRole('heading', { name: '内置' })).toBeVisible();
+    const start = view.container.querySelector('[data-workspace-new-tab-page]')!;
+    const heading = page.getByRole('heading', { name: '内置' }).element();
+    const card = page.getByRole('button', { name: '文件', exact: true }).element();
+    expect(luminance(getComputedStyle(start).backgroundColor)).toBeLessThan(0.1);
+    expect(luminance(getComputedStyle(card).backgroundColor)).toBeLessThan(0.1);
+    expect(luminance(getComputedStyle(heading).color)).toBeGreaterThan(0.8);
+    expect(luminance(getComputedStyle(card).color)).toBeGreaterThan(0.3);
+
+    // The web area pins itself light once the start page steps aside; its colour classes must resolve to that light set.
+    const pinned = document.createElement('div');
+    pinned.dataset.theme = 'light';
+    pinned.className = 'emlight bg-background text-foreground';
+    start.append(pinned);
+    expect(luminance(getComputedStyle(pinned).backgroundColor)).toBeGreaterThan(0.9);
+    expect(luminance(getComputedStyle(pinned).color)).toBeLessThan(0.1);
+    pinned.remove();
   } finally {
     const layout = chatLayoutOf(group.place.chatId);
     await act(() => {

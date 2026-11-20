@@ -672,10 +672,11 @@ export async function importAgentHome(home: ResolvedAgentHome, options: AgentHom
 }
 
 /** Stream resumable transcripts separately from the configuration-file budget. */
-export async function copyAgentHomeHistory(home: ResolvedAgentHome, paths: readonly string[], sourceRoot?: string): Promise<AgentHomeImportIssue[]> {
+export async function copyAgentHomeHistory(home: ResolvedAgentHome, paths: readonly string[], sourceRoot?: string, signal?: AbortSignal): Promise<AgentHomeImportIssue[]> {
   const root = sourceRoot ?? (await realSource(home.userConfigRoot));
   const issues: AgentHomeImportIssue[] = [];
   const visit = async (path: string, depth: number): Promise<void> => {
+    signal?.throwIfAborted();
     if (excluded(path, home.credentialPaths)) { issues.push({ path, reason: 'sensitive' }); return; }
     const source = join(root, localPath(path)), target = join(home.configRoot, localPath(path));
     let created = false;
@@ -732,6 +733,7 @@ export async function copyAgentHomeHistory(home: ResolvedAgentHome, paths: reado
         try {
           const buffer = Buffer.alloc(64 * 1024);
           for (;;) {
+            signal?.throwIfAborted();
             const result = await input.read(buffer, 0, buffer.length, null);
             if (!result.bytesRead) break;
             if (read + result.bytesRead > before.size) throw Object.assign(new Error('Source changed'), { code: 'ESTALE' });
@@ -750,6 +752,7 @@ export async function copyAgentHomeHistory(home: ResolvedAgentHome, paths: reado
       } finally { await input.close(); }
     } catch (error) {
       if (created) await disk.rm(target, { force: true });
+      signal?.throwIfAborted();
       if ((error as NodeJS.ErrnoException).code === 'ENOSPC') throw error;
       if (!missing(error)) issues.push(issue(path, error));
     }

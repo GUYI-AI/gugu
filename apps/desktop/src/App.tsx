@@ -41,6 +41,7 @@ import './features/team/team.css'
 import { teamInvitation } from './features/team/invitation'
 import { TeamInvitationHandoff } from './features/team/TeamInvitationHandoff'
 import { iosOwnerAvailable } from './mobile/ios-runtime/iosOwnerClient'
+import { startAndroidPush } from './mobile/android-push/startAndroidPush'
 import { startIOSPush } from './mobile/ios-push/startIOSPush'
 import { startIOSOwnerPublication } from './mobile/ios-runtime/startIOSOwnerPublication'
 import { IOSHostRoot } from './mobile/ios-host/IOSHostRoot'
@@ -133,6 +134,7 @@ export default function App() {
     if (iosOwnerAvailable()) return startIOSOwnerPublication()
   }, [])
   useEffect(startIOSPush, [])
+  useEffect(startAndroidPush, [])
   useEffect(startAuthCallbackRouting, [])
   useEffect(() => watchReferralLinks(platform.watchOpenedLinks, sessionCoordinator), [])
   useEffect(() => teamInvitation.start(), [])

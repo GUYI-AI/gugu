@@ -8,6 +8,7 @@ import {
   type AgentAuthStatus,
   type AgentMemoryDescriptor,
   type SessionBundleDescriptor,
+  guguBridgeRevert,
 } from '@gugu/session-core/agents/plugins';
 import type { AcpPlatformInjection } from '@gugu/session-core/acp';
 import {
@@ -331,6 +332,8 @@ export const provider = registerPluginBehavior(plugin, {
     materialize: materializeCodexSessionBundle,
   },
   acp: {
+    // Gugu's own bridge: `_meta.guguRevert` points, `_session/revert`.
+    revert: guguBridgeRevert,
     // Its session/load replays the user messages it received: canonical evidence of delivered communications.
     // Its record keeps the native prompt (the person's words plus the host's attachment lines): the receipt ties the two.
     historyRecovery: { canonicalReplay: true, promptMeta: nativePromptMeta },

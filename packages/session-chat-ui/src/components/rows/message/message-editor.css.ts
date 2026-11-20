@@ -14,7 +14,12 @@ export const messageEditorText = style({
   fontWeight: vars.typeBodyFontWeight, lineHeight: vars.typeBodyLineHeight,
   whiteSpace: 'pre-wrap', overflowWrap: 'break-word',
 });
-export const messageEditorActions = style({ display: 'flex', justifyContent: 'flex-end', gap: 8, height: MESSAGE_EDITOR_BUTTON_HEIGHT, flexShrink: 0 });
+export const messageEditorActions = style({ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, height: MESSAGE_EDITOR_BUTTON_HEIGHT, flexShrink: 0 });
+/** Sits in the action row (left of the buttons), so it never changes the editor's measured height. */
+export const messageEditorOption = style({
+  marginRight: 'auto', display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, color: vars.fgMuted,
+  fontFamily: vars.fontSans, fontSize: vars.typeChromeFontSize, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer',
+});
 /** In the body font, because `messageEditorMetrics` measures its lines with that font. */
 export const messageEditorNotice = style({
   flexShrink: 0, color: vars.fgBody, overflowWrap: 'break-word',

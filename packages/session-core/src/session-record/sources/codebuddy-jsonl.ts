@@ -34,7 +34,13 @@ export function createCodebuddyJsonlSource(locator: SessionRecordLocator, option
   });
 }
 
-const CONVERSATION_TYPES = new Set(['message', 'reasoning', 'function_call', 'function_call_result']);
+/**
+ * A rollback (`_codebuddy.ai/session/rollback`, 2.184.0) appends one `resend-fork-notice` whose `parentId` is the point kept
+ * (none = back to the start) and moves the lane tip there; later items hang off it. It is a node with no content, so the
+ * path root→leaf drops the rolled-back tail at once instead of after the next prompt.
+ */
+const FORK_NOTICE = 'resend-fork-notice';
+const CONVERSATION_TYPES = new Set(['message', 'reasoning', 'function_call', 'function_call_result', FORK_NOTICE]);
 
 // ─── 定位 ────────────────────────────────────────────────────────────────────
 
@@ -53,6 +59,7 @@ async function resolveSessionFile(locator: SessionRecordLocator): Promise<string
 
 function decode(node: TreeNode): RecordEntry[] {
   const record = node.raw;
+  if (record.type === FORK_NOTICE) return [];
   const at = parseTimestamp(record.timestamp);
   const stamp = at !== undefined ? { at } : {};
   const key = (index: number) => `codebuddy:${node.id}#${index}`;

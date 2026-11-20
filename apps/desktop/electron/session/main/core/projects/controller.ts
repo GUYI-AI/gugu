@@ -38,8 +38,6 @@ export const projectController = createRPCController({
     projectSettingsService.patchProjectSettings(projectId, patch),
   shareProjectSettingsToConfig: (projectId, request) =>
     projectSettingsService.shareProjectSettingsToConfig(projectId, request),
-  migrateProjectConfig: (projectId, request) =>
-    projectSettingsService.migrateProjectConfig(projectId, request),
   countProjectsUsingGithubAccount,
   openProject,
   acquireProjectWorkspace,

@@ -12,6 +12,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { log } from '@renderer/utils/logger';
 import { answerAppInstall, answeredTooLate, appInstallWords, sessionWaitsOnApproval } from './app-install-approval';
 import { deviceCapabilityWords } from './device-capability-approval';
+import { latestAgentQuestion } from '@/lib/agentQuestion';
 
 const pendingHostAsk = (settlements: ReadonlyMap<string, Settlement>, sources: readonly AskSource[]): Settlement | null =>
   [...settlements.values()].find((settlement) => settlement.origin && sources.includes(settlement.origin.source) && settlement.state === 'pending') ?? null;
@@ -25,7 +26,8 @@ const HOST_APPROVALS: readonly AskSource[] = ['app-install', 'device-capability'
  */
 export function useSessionHostAsk(
   sessionId: string | null,
-  sources: readonly AskSource[]
+  sources: readonly AskSource[],
+  includeDiscussion = false
 ): Settlement | null {
   const [ask, setAsk] = useState<Settlement | null>(null);
   useEffect(() => {
@@ -35,7 +37,9 @@ export function useSessionHostAsk(
     const settlements = new Map<string, Settlement>();
     const take = (batch: readonly Settlement[]) => {
       for (const settlement of batch) settlements.set(settlement.itemId, settlementFromWire(settlement));
-      if (alive) setAsk(pendingHostAsk(settlements, sources));
+      if (alive) setAsk(includeDiscussion
+        ? latestAgentQuestion(Object.fromEntries([...settlements].filter(([, item]) => item.origin && sources.includes(item.origin.source))))
+        : pendingHostAsk(settlements, sources));
     };
     const subscriptionId = crypto.randomUUID();
     const there = rpcOn(machineRegistry.machineOf(sessionId));
@@ -60,7 +64,7 @@ export function useSessionHostAsk(
       off();
       void there.sessionTimeline.sessionUnsubscribe({ subscriptionId }).catch(() => undefined);
     };
-  }, [sessionId, sources]);
+  }, [sessionId, sources, includeDiscussion]);
   return ask;
 }
 

@@ -38,6 +38,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(GuguAppStorePlugin.class);
         registerPlugin(GuguPhoneActionsPlugin.class);
         registerPlugin(GuguNotificationChannelsPlugin.class);
+        registerPlugin(GuguAndroidPushPlugin.class);
         registerPlugin(GuguAgentPlugin.class);
         registerPlugin(GuguPhoneDataPlugin.class);
         registerPlugin(GuguAudioPermissionsPlugin.class);

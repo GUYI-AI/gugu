@@ -84,7 +84,9 @@ describe("the shell's first value", () => {
 })
 
 describe('the boot script draws the first frame from the same store', () => {
-  const bootScript = readFileSync('apps/desktop/index.html', 'utf8').match(/<script>([\s\S]*?)<\/script>/)![1]!
+  // The theme boot script, picked by what it writes: the engine-floor gate runs before it.
+  const bootScript = [...readFileSync('apps/desktop/index.html', 'utf8').matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map(m => m[1]!).find(s => s.includes('data-theme-preference'))!
   const runBoot = () => new Function('window', 'document', 'localStorage', bootScript)(window, document, localStorage)
   const root = document.documentElement
 

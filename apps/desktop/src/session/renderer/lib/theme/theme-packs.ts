@@ -99,7 +99,7 @@ export const MIN_TEXT_STEP = 0.1;
 
 const FALLBACK = { live: { dark: '#61a5fa', light: '#3b82f6' }, danger: '#ef4444', warn: '#f59e0b', ok: '#16a34a' } as const;
 
-// 颜色算术交给仓库已有的 colorjs.io(session-ui 的主题生成也用它);这里只包成「进出都是 #rrggbb」的几行。
+// 颜色算术交给仓库已有的 colorjs.io;这里只包成「进出都是 #rrggbb」的几行。
 const toHex = (c: Color) => c.to('srgb').toString({ format: 'hex', collapse: false });
 const lightness = (value: string) => new Color(value).to('oklab').coords[0];
 const contrastRatio = (a: string, b: string) => new Color(a).contrast(new Color(b), 'WCAG21');

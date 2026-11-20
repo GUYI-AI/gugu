@@ -1,5 +1,6 @@
 import { defaultBrowser, importDefaultBrowserCookies } from '@main/core/browser/browser-cookie-import';
 import { inspectBrowserAnnotation } from './browser-annotation';
+import { isAnnotationConversation, type AnnotationConversation } from '@shared/browser-annotation';
 import { configureBrowserProfileSession } from '@main/core/browser/browser-profile-session';
 import {
   destroyBrowserPage,
@@ -32,8 +33,9 @@ import { createRPCController } from '@shared/lib/ipc/rpc';
 
 export const browserController = createRPCController({
   /** `sessionId`:页签开在哪条会话里(#7191 会话的 agent 据此找到自己的页签);新建任务的草稿面板不带。 */
-  registerSession: (args: { browserId: string; partition: string; sessionId?: string }) => {
-    if (!args.browserId.trim() || !isBrowserPartition(args.partition)) {
+  registerSession: (args: { browserId: string; partition: string; sessionId?: string; conversation?: AnnotationConversation }) => {
+    if (!args.browserId.trim() || !isBrowserPartition(args.partition) || (args.conversation !== undefined && (!isAnnotationConversation(args.conversation)
+      || (args.sessionId && (args.conversation.kind !== 'session' || args.conversation.sessionId !== args.sessionId))))) {
       return { success: false as const, error: 'Invalid browser session' };
     }
     configureBrowserProfileSession(args.partition);
@@ -41,6 +43,7 @@ export const browserController = createRPCController({
       browserId: args.browserId,
       partition: args.partition,
       ...(args.sessionId?.trim() ? { sessionId: args.sessionId } : {}),
+      ...(args.conversation ? { conversation: args.conversation } : {}),
     });
     return { success: true as const };
   },
