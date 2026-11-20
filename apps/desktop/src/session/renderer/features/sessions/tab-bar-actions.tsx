@@ -1,11 +1,11 @@
 import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
-import { Cable, Folder, Globe, Plus, SquareTerminal } from '@/lib/icons'
+import { Cable, Globe, Plus, SquareTerminal } from '@/lib/icons'
 import { GitFork, GitPullRequest } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
 import type { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { useState } from 'react';
-import { ExtensionMark } from '@renderer/features/extensions/extension-mark';
+import { ExtensionMark, TabKindMark } from '@renderer/features/extensions/extension-mark';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { usePaneContext } from '@renderer/features/tabs/pane-context';
@@ -142,7 +142,7 @@ const ChatAddItems = observer(function ChatAddItems({ chatId }: { chatId: string
 
 /** One built-in folder entry; its context supplies the name and the page to open. */
 function FolderMenuItem({ label, onOpen }: { label: string; onOpen: () => void }) {
-  return <DropdownMenuItem onClick={onOpen}><Folder className="size-3.5" /> {label}</DropdownMenuItem>;
+  return <DropdownMenuItem onClick={onOpen}><TabKindMark kind={WORKSPACE_APP_KIND} /> {label}</DropdownMenuItem>;
 }
 
 /**
