@@ -73,6 +73,16 @@ it('an external CLI update before token use avoids starting any renewal process'
   expect(state.run).not.toHaveBeenCalled();
 });
 
+it('keeps native API-key mode usable after OAuth, without exporting inactive refresh tokens', async () => {
+  await source.nativeCodexAuthEnvironment(native, {});
+  const mixed = { ...auth(), auth_mode: 'apikey', OPENAI_API_KEY: 'fixture-active-key' };
+  await writeFile(join(native, 'auth.json'), JSON.stringify(mixed));
+  const env = await source.nativeCodexAuthEnvironment(native, {});
+  expect(env).toEqual({ OPENAI_API_KEY: 'fixture-active-key' });
+  expect(JSON.stringify(env)).not.toContain('fixture-source-refresh');
+  expect(state.run).not.toHaveBeenCalled();
+});
+
 it('revocation remains invalid despite the auth file, and a new native login recovers', async () => {
   state.run.mockRejectedValue(new Error('refresh token was revoked (fixture)'));
   const env = await source.nativeCodexAuthEnvironment(native, {});

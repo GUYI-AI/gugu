@@ -89,6 +89,11 @@ function endpoint(): Promise<{ server: Server; endpoint: string }> {
 /** Register a path/identity reference, not a copy of OAuth credentials. No refresh happens here. */
 export async function nativeCodexAuthEnvironment(root: string, userEnv: Record<string, string>): Promise<Record<string, string> | null> {
   const auth = await readNativeCodexOAuth(root);
+  const mode = auth?.auth_mode ?? (auth?.OPENAI_API_KEY != null ? 'apikey' : 'chatgpt');
+  if (mode === 'apikey' && typeof auth?.OPENAI_API_KEY === 'string' && auth.OPENAI_API_KEY.trim()) {
+    // The existing native connection can change mode. Never trap a valid key behind an old OAuth reference.
+    return { OPENAI_API_KEY: auth.OPENAI_API_KEY.trim() };
+  }
   const identity = codexOAuthIdentity(auth);
   if (!identity) return null;
   const source = await realpath(root);
