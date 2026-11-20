@@ -77,7 +77,7 @@ describe('external selections become durable project-owned copies through the sa
     try { await f.publish('group', { name: 'notes.bin', path: '', size: data.length, contentType: 'application/octet-stream', data: data.buffer }, null, 'owner') }
     finally { if (previous === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = previous }
     const [path] = publishedPaths(f)
-    expect(path).toMatch(/^\.gugu\/attachments\/[0-9a-f-]{36}\/image\.png$/)
+    expect(path).toMatch(/^\.gugu\/attachments\/[0-9a-f-]{36}\/notes\.bin$/)
     expect(await readFile(join(root, path))).toEqual(Buffer.from(data))
     expect(await readdir(inside)).toEqual([])
   })
