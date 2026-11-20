@@ -6,7 +6,7 @@ import { isAssistantHome } from '../../lib/assistantHome'
 import { readCachedDevices } from '../../store/devicesCache'
 import { appDeviceId } from '../../session/shared/extensions/machine-call'
 import { directoryRows, liveDeviceSessions, rowOpens } from '../../session/shared/remote-sessions/session-directory'
-import { visibleMachines, workspaceDevices } from '../../mobile/agent-watch/machine-list'
+import { visibleMachines, workspaceDevices } from '../session-watch/machine-list'
 import { composeTaskDraft } from '@/lib/composeDraft'
 import { AppSendError, type AppDispatchPlatform, type DispatchAgent } from '../../session/shared/extensions/app-send-core'
 import { grantedReach, type ExtensionCapability } from '../../session/shared/extensions/manifest'
@@ -31,7 +31,7 @@ export function phoneDispatch(app: { extensionId: string; extensionName: string 
   const spawnOn = (computers.find((device) => device.device_id === context.deviceId) ?? computers.find((device) => inGroup(device.device_id)) ?? computers[0])?.device_id ?? null
   // Read the same list as the task tab, afresh for an App call: a just-started agent may precede its subscription push.
   const read = async () => {
-    const { fetchSessionsList } = await import('../../mobile/agent-watch/sessionpage-rpc')
+    const { fetchSessionsList } = await import('../session-watch/sessionpage-rpc')
     const computers = workspaceDevices(readCachedDevices())
     const answers = await Promise.allSettled(computers.map(async (device) => {
       if (!device.is_online) throw new Error(`${device.label} is offline`)
@@ -69,7 +69,7 @@ export function phoneDispatch(app: { extensionId: string; extensionName: string 
     return agentReport(agents, all ? unreached : [], all ? readCachedDevices().map(({ device_id, label, is_online }) => ({ deviceId: device_id, label, online: is_online, thisMachine: false })) : [])
   }
   const request = async <A extends AppMessageAction | AppSpawnAction>(deviceId: string, action: A) => {
-    const { appCallOn } = await import('../../mobile/agent-watch/sessionpage-rpc')
+    const { appCallOn } = await import('../session-watch/sessionpage-rpc')
     return appCallOn(deviceId, phoneAppCaller(app), action)
   }
   const agents: NonNullable<AppDispatchPlatform['agents']> = {

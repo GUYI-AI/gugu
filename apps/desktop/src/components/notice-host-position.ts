@@ -5,10 +5,10 @@ const ANCHORS = '[data-slot="composer"], [data-phone-shell] [data-phone-tabbar]'
 // Product spacing: the notice stack ends 8px above every visible composer or phone bar.
 const COMPOSER_GAP = 8
 
-export function readNoticeComposerBottom(): number | undefined {
+export function readNoticeComposerBottom(anchors: Iterable<Element> = document.querySelectorAll(ANCHORS)): number | undefined {
   let top = window.innerHeight
   let visible = false
-  for (const composer of document.querySelectorAll<HTMLElement>(ANCHORS)) {
+  for (const composer of anchors) {
     // Retained task/chat surfaces keep their layout while content-visibility hides them.
     if (!composer.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue
     const rect = composer.getBoundingClientRect()
@@ -32,36 +32,44 @@ export function useNoticeComposerBottom(active: boolean): number | undefined {
     if (!active) return
     let frame = 0
     const observed = new Set<Element>()
-    const resize = new ResizeObserver(() => measure())
-    const measure = () => {
-      const next = new Set<Element>()
-      for (const composer of document.querySelectorAll(ANCHORS)) {
-        // A parent can move the composer without changing its own size (pane/layout changes).
-        for (let element: Element | null = composer; element; element = element.parentElement) next.add(element)
-      }
-      for (const element of observed) if (!next.has(element)) { resize.unobserve(element); observed.delete(element) }
-      for (const element of next) if (!observed.has(element)) { resize.observe(element); observed.add(element) }
-      const value = readNoticeComposerBottom()
+    let anchors: Element[] = []
+    // @@@anchor-scan - the document is searched for anchors only when the DOM may have added, removed, shown or hidden one
+    // (the mutation filter below). A resize or scroll re-reads the anchors already found: ❌ a whole-document query there. A
+    // fold resizes the page every frame, and that query grew with every mounted message row (~116k nodes at 120 rows).
+    const read = () => {
+      const value = readNoticeComposerBottom(anchors)
       setBottom((previous) => previous === value ? previous : value)
     }
-    const schedule = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; measure() }) }
+    const resize = new ResizeObserver(read)
+    const scan = () => {
+      anchors = [...document.querySelectorAll(ANCHORS)]
+      const next = new Set<Element>()
+      // A parent can move the composer without changing its own size (pane/layout changes).
+      for (const composer of anchors) for (let element: Element | null = composer; element; element = element.parentElement) next.add(element)
+      for (const element of observed) if (!next.has(element)) { resize.unobserve(element); observed.delete(element) }
+      for (const element of next) if (!observed.has(element)) { resize.observe(element); observed.add(element) }
+      read()
+    }
+    let rescan = false
+    const schedule = (again: boolean) => { rescan ||= again; if (!frame) frame = requestAnimationFrame(() => { frame = 0; const scanNow = rescan; rescan = false; if (scanNow) scan(); else read() }) }
+    const reread = () => schedule(false)
     const containsComposer = (node: Node) => node instanceof Element && (node.matches(ANCHORS) || node.querySelector(ANCHORS) !== null)
     const mutations = new MutationObserver((records) => {
       // Streaming transcript rows and Sonner's own style updates do not change the anchor.
       if (records.some((record) => record.type === 'attributes'
         ? (record.attributeName !== 'style' || showsOrHides(record)) && containsComposer(record.target)
-        : [...record.addedNodes, ...record.removedNodes].some(containsComposer))) schedule()
+        : [...record.addedNodes, ...record.removedNodes].some(containsComposer))) schedule(true)
     })
     mutations.observe(document.body, { childList: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ['class', 'style', 'hidden', 'data-state'] })
-    window.addEventListener('resize', schedule)
-    document.addEventListener('scroll', schedule, true)
-    measure()
+    window.addEventListener('resize', reread)
+    document.addEventListener('scroll', reread, true)
+    scan()
     return () => {
       if (frame) cancelAnimationFrame(frame)
       resize.disconnect()
       mutations.disconnect()
-      window.removeEventListener('resize', schedule)
-      document.removeEventListener('scroll', schedule, true)
+      window.removeEventListener('resize', reread)
+      document.removeEventListener('scroll', reread, true)
     }
   }, [active])
   return bottom

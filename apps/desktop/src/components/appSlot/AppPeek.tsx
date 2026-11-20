@@ -16,7 +16,7 @@ import { OpenWithPick } from './OpenWithPick'
 
 // Desktop-only and phone-only halves, loaded where they are drawn.
 const PeekFolderFile = lazy(() => import('../../session/renderer/features/extensions/peek-folder-file').then((m) => ({ default: m.PeekFolderFile })))
-const PeekSessionTimeline = lazy(() => import('../../mobile/agent-watch/PeekSessionTimeline').then((m) => ({ default: m.PeekSessionTimeline })))
+const PeekSessionTimeline = lazy(() => import('../session-watch/PeekSessionTimeline').then((m) => ({ default: m.PeekSessionTimeline })))
 
 export function AppPeek({ target, slotKey, beside, onClose }: { target: PeekTarget; slotKey: string; beside: boolean; onClose: () => void }) {
   const { t } = useTranslation('messaging')

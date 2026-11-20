@@ -1,3 +1,4 @@
+import { serverNow } from '@gugu/core/shared/serverClock'
 import { useEffect, useCallback, useMemo, useRef, useSyncExternalStore, useLayoutEffect } from 'react'
 import { chatService } from '../lib/chat'
 import { recentMachineLimitRefusal } from '../lib/device-labels'
@@ -27,7 +28,7 @@ import { platform } from '../platform'
 import { SERVER_SSH_MACHINES_CHANNELS } from '../lib/serverSshMachines'
 import { reportAssistantAppChange } from '../components/assistant/assistant-app-client'
 import { useMyAssistant } from '../lib/myAssistant'
-import { machineRpc } from '../mobile/agent-watch/sessionpage-rpc'
+import { machineRpc } from '../components/session-watch/sessionpage-rpc'
 import {
   cloudComputerPollMs,
   cloudComputerWatchMs,
@@ -196,7 +197,7 @@ export function DevicesProvider({ children, active = true }: { children: React.R
         withCloudComputerPresence(
           withSshLinkOnline(devices, sshMachineIds, linkProblems),
           cloudComputer.snapshot,
-          Date.now(),
+          serverNow(),
           cloudComputer.wakeRefused?.deviceId ?? null,
         ),
       ),

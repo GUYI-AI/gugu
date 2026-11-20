@@ -225,8 +225,8 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     setImmediate(() => { void drain().catch((error) => warn(error.message)) })
     return job
   }
-  const inbox = async (agentUserId) => {
-    const agent = agents().find((row) => row.agentUserId === agentUserId)
+  const inbox = async (agentUserId, registrations = agents()) => {
+    const agent = registrations.find((row) => row.agentUserId === agentUserId)
     if (!agent || stopped || signingOut) return { pulled: 0, injected: 0 }
     const scanGap = inboxGap
     await verifyAgent(agentUserId)
@@ -333,7 +333,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     'agent.deliver': async (command) => {
       // From an App, not a chat (`source`): the chat inbox has nothing of it and App programs do not run here. Said, ❌ recorded as done.
       if (command.payload.source) throw Object.assign(new Error(`App ${command.payload.source} cannot deliver to an agent on a phone`), { reason: 'appUnavailable' })
-      return { agent_user_id: command.payload.agent_user_id, delivered: (await inbox(command.payload.agent_user_id)).injected > 0 }
+      return { agent_user_id: command.payload.agent_user_id, delivered: (await inbox(command.payload.agent_user_id, retainedAgents())).injected > 0 }
     },
     'agent.stop': async (command) => { const agent = agents().find((row) => row.agentUserId === command.payload.agent_user_id); if (!agent) throw new Error('Agent 没有在这台手机上建立会话'); await cancel(agent); return { stopped: true } },
     // Retire hands the identity to its new device: archive here, keep the social identity.

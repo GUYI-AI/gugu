@@ -26,7 +26,7 @@ import { chatService } from './chat'
 import type { SessionpageSessionCreateModels } from '@gugu/session-core/session-record/contract'
 import { rpcOn } from '@/session/renderer/lib/ipc'
 import { platformModelsEnabled } from '@gugu/core/cloud/optionalServices'
-import { fetchCreateModels } from '@/mobile/agent-watch/sessionpage-rpc'
+import { fetchCreateModels } from '@/components/session-watch/sessionpage-rpc'
 
 export interface PlatformCatalogModel {
   id: string

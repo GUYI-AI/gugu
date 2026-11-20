@@ -1,3 +1,4 @@
+import { serverNow } from '../shared/serverClock'
 import { bindBackendProbe, noteBackendAnswer } from './backendReachability'
 import {
   createAgentRuntimeStateReporter,
@@ -1084,14 +1085,15 @@ export function createDeviceRuntimeHostLoop(
       const { nextDueAtMs } = await options.runScheduledTasks!({
         ownerUserId: auth.userId,
         accessToken: auth.accessToken,
-        nowMs: nowMs(),
+        // `next_run_at` is written on the server's clock, by whichever device scheduled it (`@@@server-clock`).
+        nowMs: serverNow(),
         deviceId: lastDeviceId,
       })
       if (generation !== lifecycleGeneration || stopped) return
       clearScheduledTasksTimer()
       if (nextDueAtMs === null || superviseTimer === null) return
       // setTimeout 的上限约 24.8 天;更远的到期时刻由监督 tick 的重排逐步逼近。
-      const delayMs = Math.min(Math.max(0, nextDueAtMs - nowMs()), 2 ** 31 - 1)
+      const delayMs = Math.min(Math.max(0, nextDueAtMs - serverNow()), 2 ** 31 - 1)
       scheduledTasksTimer = setTimeout(() => {
         scheduledTasksTimer = null
         scheduleScheduledTasksRun()
@@ -1553,7 +1555,8 @@ export function createDeviceRuntimeHostLoop(
       await retireRuntimeInstance(client, instanceId, options.operationTimeouts)
       // 同账号同机的别的实例共用这一行(#5041):它还活着,这台机器就没走 ——
       // ❌ 替它说离线(要等它下一拍心跳才写回在线,中间别的设备都读成离线)。
-      const live = await readLiveDeviceRuntimeInstanceIds(client, deviceId, nowMs(), options.operationTimeouts)
+      // `last_heartbeat_at` is the database's clock (`@@@server-clock`).
+      const live = await readLiveDeviceRuntimeInstanceIds(client, deviceId, serverNow(), options.operationTimeouts)
       live.delete(instanceId)
       if (live.size > 0) return
       await markDeviceOffline(client, deviceId, {

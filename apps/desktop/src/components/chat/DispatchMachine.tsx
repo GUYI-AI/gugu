@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDevicesStore } from '@/store/devicesContext'
-import { MachinesPage } from '@/mobile/agent-watch/MachinesPage'
-import { useMachineLabel } from '@/mobile/agent-watch/useMachineLabel'
+import { MachinesPage } from '@/components/session-watch/MachinesPage'
+import { useMachineLabel } from '@/components/session-watch/useMachineLabel'
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
 

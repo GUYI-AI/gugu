@@ -12,7 +12,7 @@ import {
   assertWorkspaceWriteAllowed,
   resolveWorkspacePath,
 } from './workspace-file-policy';
-import { dirnameMachinePath, isAbsoluteMachinePath, joinMachinePath } from '../path-utils';
+import { isAbsoluteMachinePath, joinMachinePath } from '../path-utils';
 import { createChatFolderPreview, createDocumentPreview, createPreview, createRemotePreview, previewAssetsChanged, releasePreview, setPreviewDocument, type PreviewFailureCopy } from '../preview-protocol';
 import {
   createWorkspaceUploads,
@@ -458,28 +458,6 @@ export const workspaceFileSystemController = createRPCController({
         ? await fileSystem.mkdir(target.data.path)
         : await fileSystem.writeText(target.data.path, '');
     if (!made.success) return err({ type: 'fs_error' as const, message: fileErrorToMessage(made.error) });
-    return ok({ path: target.data.path });
-  },
-
-  /** 文件树里「重命名」(同一个目录里换名字)。同名已有 = `exists`。 */
-  renameEntry: async (projectId: string, workspaceId: string, filePath: string, name: string) => {
-    const resolved = await resolveWorkspaceFiles(projectId, workspaceId);
-    if (!resolved.success) return resolved;
-    const { env, fileSystem } = resolved.data;
-    if (!isSingleSegmentName(name)) return err({ type: 'invalid_name' as const, message: 'Invalid name' });
-    const source = await assertWorkspaceRemoveAllowed(env.path, filePath);
-    if (!source.success) return err({ type: 'fs_error' as const, message: fileErrorToMessage(source.error) });
-    const target = await assertWorkspaceWriteAllowed(env.path,
-      joinMachinePath(dirnameMachinePath(source.data.path), name)
-    );
-    if (!target.success) return err({ type: 'fs_error' as const, message: fileErrorToMessage(target.error) });
-    const moved = await fileSystem.rename(source.data.path, target.data.path);
-    if (!moved.success) {
-      if (moved.error.type === 'fs-error' && moved.error.code === 'EEXIST') {
-        return err({ type: 'exists' as const, message: 'Name already exists' });
-      }
-      return err({ type: 'fs_error' as const, message: fileErrorToMessage(moved.error) });
-    }
     return ok({ path: target.data.path });
   },
 });

@@ -15,15 +15,15 @@ const agentHome = replica({
   read: (_device: string, machine: string | null, providerId: string) => readAgentHome(providerId, machine),
 })
 
-export function AgentHomeRow({ providerId, machine }: { providerId: string; machine: string | null }) {
+export function AgentHomeRow({ providerId, machine, disabled = false }: { providerId: string; machine: string | null; disabled?: boolean }) {
   const { t, i18n } = useTranslation('main')
-  const { data: home, error: readError } = queryView(useReplica(agentHome, [machine, providerId]))
+  const { data: home, error: readError } = queryView(useReplica(agentHome, [machine, providerId], { read: !disabled }))
   const preparing = !!home?.migrationPreparation
   useEffect(() => {
-    if (!preparing) return
+    if (!preparing || disabled) return
     const timer = setInterval(() => { void agentHome.refresh(machine, providerId).catch(() => {}) }, 1000)
     return () => clearInterval(timer)
-  }, [preparing, machine, providerId])
+  }, [preparing, disabled, machine, providerId])
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const error = actionError ?? (readError && messageForUser(readError))
@@ -42,5 +42,5 @@ export function AgentHomeRow({ providerId, machine }: { providerId: string; mach
         {home.sourceUpdated && t('agentHome.updated')}
       </> : t('agentHome.upgradeRelogin', { name: home?.name ?? providerId })}
         {error && <span role="alert" className="block text-destructive">{error}</span>}</>}
-      control={home?.needsImport ? undefined : <Button variant="secondary" size="sm" onClick={() => void open()} disabled={busy || !home} data-testid={`agent-home-reimport-${providerId}`}>{t('agentHome.reimport')}</Button>} />
+      control={home?.needsImport ? undefined : <Button variant="secondary" size="sm" onClick={() => void open()} disabled={disabled || busy || !home} data-testid={`agent-home-reimport-${providerId}`}>{t('agentHome.reimport')}</Button>} />
 }

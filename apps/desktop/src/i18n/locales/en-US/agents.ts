@@ -142,10 +142,13 @@ export default {
       "broadPickAnother": "Pick another"
     },
     "title": "Create agent",
-    "unfinishedSweep": {
-      "cancelledWithWarning": "An Agent from last time was never finished and has been cancelled, but {{steps}} did not complete cleanly. Please create it again.",
-      "pending": "An Agent from last time was never finished; cancelling it is not done yet ({{steps}} did not complete cleanly). It will be retried on next launch.",
-      "pendingError": "An Agent from last time was never finished and could not be cancelled this time. It will be retried on next launch."
+    "unfinished": {
+      "title": "Unfinished creation",
+      "continue": "Continue",
+      "delete": "Delete",
+      "deleteTitle": "Delete this creation?",
+      "deleteDescription": "Cancel the unfinished creation of “{{name}}”.",
+      "readFailed": "Could not read creation status. The record was kept"
     },
     "toast": {
       "cancelFailed": "Could not cancel Agent creation. Try again.",

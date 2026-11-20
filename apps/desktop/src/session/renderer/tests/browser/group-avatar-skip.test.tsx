@@ -2,6 +2,7 @@ import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { GroupAvatarSlot } from '@/components/chat/StickyGroupAvatar'
+import { MessageRow } from '@/components/chat/MessageRow'
 import '@renderer/index.css'
 import '@/styles/tokens.css'
 import { until } from '../../../../../../../tests/support/awaitCondition'
@@ -10,17 +11,18 @@ let root: Root, host: HTMLDivElement
 let setWidth: (width: number) => void = () => {}
 const TEXT = 'A bubble long enough to wrap onto more lines when its column gets narrower than it was. '.repeat(3)
 
-// The shape MessageList + MessageBubble give a row: the avatar slot beside the message column, which holds the bubble.
-// A laid-out row's message column is content-visibility:auto (tokens.css); the avatar slot is outside it.
-// groupSize rows per group; the last row of each group is its tail, with the avatar layer.
+// The shape MessageList + MessageBubble give a row: the real MessageRow (avatar track + body), and in its body the avatar slot
+// beside the message column, which holds the bubble. A laid-out row's body is content-visibility:auto (tokens.css); the avatar
+// track is outside it (@@@avatar-track). groupSize rows per group; the last row of each group is its tail, with the track.
 // codeBlockRow: that row's bubble also holds what streamdown renders for a fenced code block (content-visibility:auto inline),
 // below a tall paragraph, so the bubble is in view while the code block is not.
 function Scene({ rows, groupSize = 2, codeBlockRow }: { rows: number; groupSize?: number; codeBlockRow?: number }) {
   const [width, setState] = useState(500)
   setWidth = setState
-  return <div data-scroller="" style={{ height: 300, width, overflowY: 'auto' }}>
+  // The scroller is positioned, as MessageList's is: the avatar tracks are absolute and scroll with their rows.
+  return <div data-scroller="" style={{ height: 300, width, overflowY: 'auto', position: 'relative' }}>
     <div>{Array.from({ length: rows }, (_, index) =>
-      <div key={index} data-row={index} role="listitem" data-laid-out="" className="gg-msg-row">
+      <MessageRow key={index} messageId={String(index)}>
         <div style={{ display: 'flex' }}>
           <GroupAvatarSlot wide={false} groupedWithPrev={index % groupSize !== 0} groupedWithNext={index % groupSize !== groupSize - 1}><button>Avatar</button></GroupAvatarSlot>
           <div data-message-bubble-column="" style={{ flex: 1, minWidth: 0 }}><div data-message-bubble-row="">{TEXT}{index === codeBlockRow && <>
@@ -28,16 +30,16 @@ function Scene({ rows, groupSize = 2, codeBlockRow }: { rows: number; groupSize?
             <div data-streamdown="code-block" style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 200px' }}><pre data-code="">{'const x = 1\n'.repeat(8)}</pre></div>
           </>}</div></div>
         </div>
-      </div>)}</div>
+      </MessageRow>)}</div>
   </div>
 }
 
 const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
 const frames = async (count: number) => { for (let i = 0; i < count; i++) await frame() }
-const row = (index: number) => host.querySelector<HTMLElement>(`[data-row="${index}"]`)!
+const row = (index: number) => host.querySelector<HTMLElement>(`[data-msg-id="${index}"]`)!
 const bubble = (index: number) => row(index).querySelector('[data-message-bubble-row]')!.getBoundingClientRect()
-const layer = (index: number) => row(index).querySelector<HTMLElement>('.absolute')!
-// What the layer has to be: from the group's first bubble top to the tail's bubble bottom.
+const layer = (index: number) => row(index).querySelector<HTMLElement>('[data-avatar-track]')!
+// What the track has to be: from the group's first bubble top to the tail's bubble bottom.
 const expected = (tail: number) => bubble(tail).bottom - bubble(tail - 1).top
 
 let bubbleReads = 0
@@ -54,7 +56,7 @@ afterEach(() => { Element.prototype.getBoundingClientRect = nativeRect; root.unm
 
 async function readsPerWidthChange(rows: number) {
   await act(async () => root.render(<Scene rows={rows} />))
-  // Offscreen message columns are skipped (their contents report hidden) before the width changes.
+  // Offscreen row bodies are skipped (their contents report hidden) before the width changes.
   await until('offscreen rows skipped', () => !row(rows - 1).querySelector('[data-message-bubble-row]')!.checkVisibility({ contentVisibilityAuto: true }))
   await frames(3)
   bubbleReads = 0
@@ -95,6 +97,14 @@ it('paints a group avatar at the bottom of the view while its tail is below it, 
   expect(avatar.bottom).toBeGreaterThan(view.bottom - 40)
   // Painted there: the hit test lands on this group's avatar, not on what is under it.
   expect(document.elementFromPoint(avatar.left + avatar.width / 2, avatar.top + avatar.height / 2)).toBe(row(19).querySelector('button'))
+})
+
+it('hit-tests a group avatar beside its own bubble, over its row\'s skippable body', async () => {
+  await act(async () => root.render(<Scene rows={4} groupSize={2} />))
+  await until('rows laid out', () => row(3).hasAttribute('data-laid-out'))
+  await frames(3)
+  const avatar = row(1).querySelector('button')!.getBoundingClientRect()
+  expect(document.elementFromPoint(avatar.left + avatar.width / 2, avatar.top + avatar.height / 2)).toBe(row(1).querySelector('button'))
 })
 
 it('keeps measuring a shown row when content inside its bubble is skipped', async () => {

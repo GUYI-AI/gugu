@@ -19,7 +19,7 @@ vi.mock('../../../../apps/desktop/src/lib/assistantWork',()=>({assistantWorkClou
 vi.mock('../../../../apps/desktop/src/components/assistant/TaskExchangeBubble',()=>({TaskExchangeBubble:({message}:{message:{content:string}})=><div>{message.content}</div>}))
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', async original => ({ ...await original<object>(), readRequiredDisplayIdentities: mocks.identities }))
 // The window shows the task's session through the phone task page (PeekSessionTimeline); its own reads are covered there.
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/PeekSessionTimeline', () => ({ PeekSessionTimeline: ({ sessionId, local, onBack, fallback }: { sessionId: string; local?: boolean; onBack: () => void; fallback?: React.ReactNode }) =>
+vi.mock('../../../../apps/desktop/src/components/session-watch/PeekSessionTimeline', () => ({ PeekSessionTimeline: ({ sessionId, local, onBack, fallback }: { sessionId: string; local?: boolean; onBack: () => void; fallback?: React.ReactNode }) =>
   mocks.listed ? <div data-testid="task-chat-panel" data-session-id={sessionId} data-local={String(!!local)}><button type="button" data-testid="assistant-task-chat-close" onClick={onBack} /></div> : <>{fallback}</> }))
 vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: mocks.devices.map((device) => device.device_id === 'worker' ? { ...device, is_current_device: device.is_current_device || mocks.localWorker } : device), phones: mocks.phones }) }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/remote-hosts/remote-hosts-store', () => ({ remoteHostsStore: { allListedSessions: () => mocks.rows, device: () => ({ label: 'Worker' }) } }))

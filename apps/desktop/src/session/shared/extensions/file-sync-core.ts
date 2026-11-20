@@ -1,4 +1,5 @@
 import { accessTokenExpirySeconds, userIdFromSupabaseAccessToken } from '@gugu/core/cloud/runtimeAuthProvider';
+import { serverNow } from '@gugu/core/shared/serverClock';
 import type { ExtensionCapability } from './manifest';
 import {
   FRAME_TYPE,
@@ -217,7 +218,8 @@ export class SyncConnection {
 
   get acceptsNewFiles(): boolean {
     // The auth coordinator owns refresh; reopening with the same still-valid token cannot renew it.
-    return this.state !== 'closed' && this.expiresAt > Date.now();
+    // A JWT's `exp` is on the backend's clock (`@@@server-clock`).
+    return this.state !== 'closed' && this.expiresAt > serverNow();
   }
 
   send(frame: Uint8Array): void {
@@ -362,7 +364,8 @@ export class FileSyncRelay {
    * the connections here and now: a person taken out of a group is cut off at once (真源原则 9).
    */
   revoke(id: number, reason: SyncRevokeReason | null, docNames?: (grant: Grant) => boolean): Promise<void> {
-    if (reason !== null) for (const listener of this.pageReleaseListeners) listener(id, docNames);
+    // A revocation always names what it takes (all of the page when no docNames): only a page that is gone passes none.
+    if (reason !== null) for (const listener of this.pageReleaseListeners) listener(id, docNames ?? (() => true));
     const page = this.pages.get(id);
     if (!page) return Promise.resolve();
     const letGo: Promise<void>[] = [];
