@@ -2584,9 +2584,12 @@ async function handleAcpRequest(message) {
   if (method === 'session/prompt') {
     if (revertingHistory) throw new Error('Conversation revert is in progress')
     if (!sessionId) throw new Error('no local Codex session')
-    await nativeAuthSession?.ensure()
     const input = promptInputItems(params.prompt)
+    // Register before the first await: a `session/cancel` that lands while native auth is being confirmed
+    // (an HTTP round trip) must find this request, or the cancel is lost and the prompt still starts a turn.
     const insertion = expectPromptInsertion(id, params.prompt)
+    await nativeAuthSession?.ensure()
+    throwIfInsertionCancelled(insertion)
     if (joinPromptText(params.prompt).trim() === '/compact') {
       if (activeCycle || compactInsertion) throw new Error('local Codex cannot compact while foreground work is active')
       compactInsertion = insertion
