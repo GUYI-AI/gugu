@@ -28,13 +28,14 @@ export function turnImages(value: unknown, images: ImagePayloads = new Map(), se
  * serializes to its own literal wherever it sits, so when the skeleton round-trips and every placeholder comes back as one
  * whole string value, the whole value round-trips too. Any doubt falls back to the full check; the stored form is the same.
  */
-export function sharedJson(value: string, bodies: readonly string[]): { parsed: object; indent: 0 | 2 } | undefined {
+export function sharedJson(value: string, bodies: readonly string[], literalOf: (body: string) => string = JSON.stringify)
+  : { parsed: object; indent: 0 | 2 } | undefined {
   const token = randomUUID();
   if (value.includes(token)) return undefined;
   const slots = new Map<string, string>(), cuts: Array<{ at: number; end: number; placeholder: string }> = [];
   for (const body of new Set(bodies)) {
     if (body === value || body.length > value.length || cuts.length >= 16) continue;
-    const literal = JSON.stringify(body);
+    const literal = literalOf(body);
     for (let at = value.indexOf(literal); at !== -1 && cuts.length < 16; at = value.indexOf(literal, at + literal.length)) {
       if (cuts.some(cut => at < cut.end && cut.at < at + literal.length)) continue;
       const placeholder = `\u0000gugu-shared-body:${token}:${cuts.length}`;
@@ -84,7 +85,7 @@ export function encodeTurnValue(value: unknown, files: TurnPayloadFiles, field?:
       if (ref) return { t: 'base64', ref };
     }
     if (field === 'rawOutput' || field === 'rawInput') {
-      const shared = bodies.length ? sharedJson(value, bodies) : undefined;
+      const shared = bodies.length ? sharedJson(value, bodies, body => files.textLiteral(body)) : undefined;
       if (shared) {
         turnImages(shared.parsed, images);
         return compact({ t: 'json', indent: shared.indent, value: encodeTurnValue(shared.parsed, files, undefined, images) }, files);

@@ -38,6 +38,7 @@ export class TurnPayloadFiles {
   private readonly chunkCache = new Map<string, Buffer>();
   private readonly textCache = new Map<string, TurnPayloadRef>();
   private textCacheBytes = 0;
+  private literal?: { text: string; json: string };
 
   constructor(readonly directory: string, private readonly meterRead?: Meter, index?: TurnPayloadAccess) {
     this.index = index ?? directories.get(directory);
@@ -263,7 +264,7 @@ export class TurnPayloadFiles {
 
   clear(): void {
     this.staged.clear(); this.inlineCache.clear(); this.chunkCache.clear();
-    this.textCache.clear(); this.textCacheBytes = 0;
+    this.textCache.clear(); this.textCacheBytes = 0; this.literal = undefined;
   }
   remove(hash: string): void { if (!this.access.metadata(hash)?.inline) rmSync(this.path(hash), { force: true }); }
   removeTemporary(hash: string, id: string): void {
@@ -272,12 +273,17 @@ export class TurnPayloadFiles {
   }
 
   putBytes(bytes: Uint8Array): TurnPayloadRef { return this.put(0, bytes); }
+  /** A body and the raw JSON sibling that embeds it ask for the same literal in turn: escape it once. */
+  textLiteral(text: string): string {
+    if (this.literal?.text !== text) this.literal = { text, json: JSON.stringify(text) };
+    return this.literal.json;
+  }
   putText(text: string, references: readonly TurnPayloadRef[] = []): TurnPayloadRef {
     // outputText and rawOutput's parsed leaf often share a body. Reuse only within
     // this writer, with bounded retention; descriptors must still attach their child owners.
     const cached = references.length ? undefined : this.textCache.get(text);
     if (cached && this.staged.has(cached.hash)) return cached;
-    const root = this.put(2, Buffer.from(JSON.stringify(text)));
+    const root = this.put(2, Buffer.from(this.textLiteral(text)));
     if (!references.length && root.bytes <= 1024 * 1024) {
       while (this.textCache.size >= 64 || this.textCacheBytes + root.bytes > 1024 * 1024) {
         const oldest = this.textCache.keys().next().value!;
