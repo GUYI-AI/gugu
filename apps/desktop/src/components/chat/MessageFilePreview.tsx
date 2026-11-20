@@ -12,7 +12,7 @@ import type { TFunction } from 'i18next'
 import { downloadBlob } from '../../lib/download'
 import { attachmentBytes, attachmentPreview, openAttachmentInSystemApp, sourceKeyOf } from '../../lib/attachmentBytes'
 import { sentFileCopy } from '../../lib/sentFileCopies'
-import { FileReadRevokedError } from '@gugu/core/shared/fileResolver'
+import { FileReadRevokedError, isFileIntegrityError } from '@gugu/core/shared/fileResolver'
 import { rendererLogger } from '../../lib/log'
 import { holderOfflineText, offlineHolder, useHolderBack } from '../../lib/fileHost'
 import { messageForUser } from '../../lib/userFacingError'
@@ -93,6 +93,8 @@ class OfflinePreviewRead extends Error {
 }
 function previewFailure(error: unknown, t: TFunction<'messaging'>): PreviewRead {
   if (error instanceof FileReadRevokedError && (error.reason === 'access' || error.reason === 'revision')) return { content: null, errorStatus: 'failed', error: t(error.reason === 'access' ? 'attachmentView.fileNoAccess' : 'attachmentView.fileUpdated') }
+  // The same bytes come again on a retry: not retryable.
+  if (isFileIntegrityError(error)) return { content: null, errorStatus: 'failed', retryable: false, error: t('attachmentView.fileIntegrity') }
   const errorStatus = error instanceof Error && (error.message === 'gone' || error.message === 'expired' || error.message === 'missing') ? error.message : 'failed'
   const status = (error as { status?: number } | null)?.status
   const retryable = errorStatus === 'failed' && !(status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 429)

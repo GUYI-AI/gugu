@@ -744,7 +744,7 @@ describe('the host’s on-demand client-encrypted transfer', () => {
   it.each(['quota', 'revision', 'source-sha'])('does not upload or commit when %s fails', async failure => {
     const f = fixture({ denied: failure === 'quota', changed: failure === 'revision' })
     if (failure === 'source-sha') await writeFile(join(root, 'file.bin'), Buffer.alloc(bytes.length, 9))
-    await expect(f.drain()).rejects.toThrow(failure === 'quota' ? '(transfer: file-accept 403 quota)' : failure === 'revision' ? '(transfer: Transfer revision changed)' : '(transfer: File SHA-256 mismatch)')
+    await expect(f.drain()).rejects.toThrow(failure === 'quota' ? '(transfer: file-accept 403 quota)' : failure === 'revision' ? '(transfer: Transfer revision changed)' : '(transfer: integrity_failed)')
     expect(f.calls).not.toContain('object'); expect(f.calls).not.toContain('file-commit')
     if (failure !== 'source-sha') expect(f.read).not.toHaveBeenCalled()
     expect(await readdir(tempRoot).catch(() => [])).toEqual([])

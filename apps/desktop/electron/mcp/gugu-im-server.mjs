@@ -20,7 +20,7 @@ import { findRosterNameHits } from '../../../../packages/core/src/shared/rosterN
 import { findMentionSpans } from '../../../../packages/core/src/shared/mentionToken.mjs'
 import { EXTENSION_ARCHIVE_MIME, resolveAttachmentMimeType } from '../../../../packages/core/src/shared/imageMime.mjs'
 import { saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
-import { ATTACHMENT_PENDING_WAIT_MS, AttachmentUploadPendingError, fileRefKey } from '@gugu/core/shared/fileResolver'
+import { ATTACHMENT_PENDING_WAIT_MS, AttachmentUploadPendingError, fileRefKey, isFileIntegrityError } from '@gugu/core/shared/fileResolver'
 import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
 import { matchIdPrefix, uuidPrefixRange } from '../../../../packages/core/src/shared/idPrefix'
 import { WORKSPACE_TEXT_MAX_BYTES, workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
@@ -2475,7 +2475,11 @@ async function downloadFile(args, deps) {
       const home = typeof deps.context.guguHome === 'string' ? deps.context.guguHome.trim() : ''
       if (!home) { await file.dispose(); throw new Error('gugu MCP context has no guguHome; cannot save the file') }
       const item = source.item ?? (file.revision.item_id && file.revision.version ? { itemId: file.revision.item_id, version: file.revision.version } : null)
-      const saved = await saveToFileStore(file, home, source.name ?? file.revision.file_name)
+      const saved = await saveToFileStore(file, home, source.name ?? file.revision.file_name).catch((error) => {
+        // §2.5: the bytes are not the ones their sha names (the uploader's claim). Nothing was saved.
+        if (isFileIntegrityError(error)) throw new Error(`message_download_file: integrity_failed — the bytes of ${source.name ?? file.revision.file_name} do not match their SHA-256; nothing was saved`)
+        throw error
+      })
       return { ...saved, ...(saved.read_only ? { note: SHARED_READ_ONLY_COPY } : {}), ...(item ? { file: groupFileLink(item.itemId, { version: item.version }), next: attachmentFolderLine(item.itemId, item.version) } : {}) }
     })()
     // Registered before any caller's wait, so it runs first: a failure a caller is waiting for goes to that caller; one

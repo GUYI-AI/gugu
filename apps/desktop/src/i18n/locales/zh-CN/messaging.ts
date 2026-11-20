@@ -397,6 +397,7 @@ export default {
     "usageUnavailable": "文件用量暂不可用。",
 
     "fileUnavailable": "文件暂时打不开",
+    "fileIntegrity": "文件校验没通过：内容和它的校验值对不上，没有打开",
     "fileNoAccess": "你已无权访问这个文件",
     "fileUpdated": "文件已更新，请重新打开",
     "holderOffline": "{{machine}} 离线，上线后才能打开这个文件。",

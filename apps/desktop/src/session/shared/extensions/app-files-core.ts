@@ -4,7 +4,7 @@ import { AttachmentsError, configuredEndpoint, placeAttachment, withUploadedAtta
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
 import { coreLogger } from '@gugu/core/log';
 import { isDeviceOnline } from '@gugu/core/shared/enums/deviceModels';
-import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileBlob, type FileHandle, type ResolvedFile } from '@gugu/core/shared/fileResolver';
+import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileBlob, isFileIntegrityError, type FileHandle, type ResolvedFile } from '@gugu/core/shared/fileResolver';
 import { fetchInChunks } from '@gugu/core/shared/inChunks';
 import { isRenderableImage, mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
 import { opensAsStoredText, workspaceFileText, workspaceUploadKind } from '@gugu/core/shared/workspaceUpload.mjs';
@@ -62,6 +62,9 @@ import { readUserSettingsConfig, updateUserSettingsConfig, type VersionedSetting
  */
 
 /** A refusal of `gugu.files`: `code` and `detail` are what an App branches on (bridge-protocol.ts `ErrorDetail`), the message is for people. */
+/** Bytes that do not match their pinned sha256 reach no App: the read fails with the code, nothing of it delivered. */
+const integrityRefusal = (error: unknown) => new AppFileError('failed', error instanceof Error ? `${error.message}: nothing of this file was read` : 'integrity_failed');
+
 export class AppFileError extends Error {
   constructor(
     readonly code: 'denied' | 'invalid' | 'failed' | 'not-found' | 'ambiguous' | 'too-large' | 'content-changed' | 'name-taken' | 'unavailable' | 'stale-version',
@@ -985,6 +988,7 @@ export function createAppFiles(platform: FilesPlatform) {
     } catch (error) {
       if (held.file === pending) disposeSnapshot(key, held);
       if (error instanceof MissingFileObjectError || error instanceof AppFileError && error.code === 'not-found') throw staleVersion();
+      if (isFileIntegrityError(error)) throw integrityRefusal(error);
       throw error;
     } finally {
       held.active--;
@@ -1699,6 +1703,7 @@ export function createAppFiles(platform: FilesPlatform) {
       } catch (error) {
         // Gone between asking and reading: as the metadata would have said. Access withdrawn meanwhile: refused.
         if (error instanceof MissingFileObjectError) return { state: 'unprepared' };
+        if (isFileIntegrityError(error)) throw integrityRefusal(error);
         if (error instanceof FileReadRevokedError) {
           if (error.reason === 'access' || error.reason === 'revision') throw new AppFileError('denied', 'Access to this file changed while it was read');
           return { state: 'missing' };

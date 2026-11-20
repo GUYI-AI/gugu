@@ -8,6 +8,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 // @ts-expect-error — 注入式 MCP server 是无类型 .mjs;运行时 import 可用。
 import { callTool, DOWNLOAD_CALL_BUDGET_MS } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
 import { verifiedFileHandle } from '../../../support/verifiedFileHandle'
+import { forgedFileServer } from '../../../support/forgedFileHandle'
 import { attachmentDownloadName } from '../../../../packages/core/src/shared/attachmentDownloadName.mjs'
 import { createNodeFileResolver } from '../../../../packages/core/src/local/files/fileSnapshots'
 import type { FileRef } from '../../../../packages/core/src/shared/fileResolver'
@@ -20,7 +21,7 @@ const envelope = '[附件] deck.pdf (application/pdf)\n[Size] 5\n[Kind] file'
 const homes: string[] = []
 afterEach(async () => { await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true }))) })
 
-async function setup(message: Record<string, unknown> | null, opts: { agentSees?: boolean; signed?: boolean; bytes?: Buffer; pending?: number } = {}) {
+async function setup(message: Record<string, unknown> | null, opts: { agentSees?: boolean; signed?: boolean; bytes?: Buffer; pending?: number; handle?: () => Promise<unknown> } = {}) {
   const home = await mkdtemp(join(tmpdir(), 'gugu-download-test-'))
   homes.push(home)
   const asked: unknown[] = []
@@ -41,6 +42,7 @@ async function setup(message: Record<string, unknown> | null, opts: { agentSees?
       if (opts.signed === false) return { status: 'gone', sha256: null }
       if (opts.pending && asked.length <= opts.pending) return { status: 'pending', sha256: null }
       fetched.push('verified original')
+      if (opts.handle) return opts.handle()
       return verifiedFileHandle(opts.bytes ?? Buffer.from('bytes'), { file_name: 'notes.pdf', content_type: 'application/pdf' })
     },
   }
@@ -281,6 +283,14 @@ describe('message_download_file by source_message_id (#7290)', () => {
     await expect(callTool(context, 'message_download_file', args, {})).rejects.toThrow('(quota_full)')
     expect(JSON.parse(await callTool(context, 'message_download_file', args, {}))).toMatchObject({ file_name: 'big.bin' })
     expect(opened).toBe(2)
+  })
+
+  test('a forged upload claim (the sha of other bytes): integrity_failed, nothing saved in the file store', async () => {
+    const server = forgedFileServer(Buffer.from('bytes'), Buffer.from('BYTES'), { file_name: 'notes.pdf', content_type: 'application/pdf' })
+    const { call, home } = await setup({ id: 'm1', chat_id: CHAT, content: envelope, content_type: 'attachment', file_item_id: 'i1', file_version: 1 }, { handle: () => server.handle() })
+    await expect(call()).rejects.toThrow('message_download_file: integrity_failed')
+    expect(await readdir(home, { recursive: true }).then(entries => entries.filter(entry => !/^file-store(\/[0-9a-f]{64})?$/.test(entry)))).toEqual([])
+    expect(server.delivered).toEqual([])
   })
 
   test('refuses: a message the agent cannot see, one without an attachment, a deleted file, one it may no longer read', async () => {

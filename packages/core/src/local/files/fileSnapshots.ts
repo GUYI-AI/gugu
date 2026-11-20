@@ -3,7 +3,7 @@ import { openAsBlob, createReadStream } from 'node:fs'
 import { chmod, link, mkdir, mkdtemp, open, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import type { FileSink } from '../../shared/fileCipher'
-import { FILE_CHUNK_BYTES, requireFileRange, requireFileRevision } from '../../shared/fileResolver'
+import { FILE_CHUNK_BYTES, FileIntegrityError, requireFileRange, requireFileRevision } from '../../shared/fileResolver'
 import type { FileChunkCache } from '../../shared/fileCache'
 import { createHash, randomUUID } from 'node:crypto'
 import { attachmentDownloadName } from '../../shared/attachmentDownloadName.mjs'
@@ -254,7 +254,7 @@ export async function writeFileHandle(file: FileHandle, path: string) {
     createdPartial = true
     for await (const chunk of file.stream()) { size += chunk.length; if (size > file.revision.size_bytes) throw new Error('File export size changed'); hash.update(chunk); await output.writeFile(chunk) }
     const observedSha = hash.digest('hex')
-    if (size !== file.revision.size_bytes || file.revision.sha256 !== null && observedSha !== file.revision.sha256) throw new Error('File export SHA-256 mismatch')
+    if (size !== file.revision.size_bytes || file.revision.sha256 !== null && observedSha !== file.revision.sha256) throw new FileIntegrityError('File export')
     await output.sync(); await output.close(); await requireAgentFileAccess(path); await rename(partial, path)
     return { file_path: path, file_name: basename(path), size_bytes: size, sha256: observedSha, content_type: file.revision.content_type }
   } catch (error) {
