@@ -37,7 +37,7 @@ export function AgentHomeRow({ providerId, machine, disabled = false }: { provid
       description={<>{home?.migrationPreparation ? <AgentHomePreparationStatus preparation={home.migrationPreparation} /> : home?.importedAt ? <>
         {t('agentHome.row', { date: new Intl.DateTimeFormat(i18n.language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(home.importedAt)) })}
         {home.sourceUpdated && t('agentHome.updated')}
-      </> : t('agentHome.upgradeRelogin', { name: home?.name ?? providerId })}
+      </> : !machine && home?.needsImport ? t('firstInstallImport.available', { name: home.name }) : t('agentHome.upgradeRelogin', { name: home?.name ?? providerId })}
         {error && <span role="alert" className="block text-destructive">{error}</span>}</>}
-      control={home?.needsImport ? undefined : <Button variant="secondary" size="sm" onClick={() => void open()} disabled={disabled || busy || !home} data-testid={`agent-home-reimport-${providerId}`}>{t('agentHome.reimport')}</Button>} />
+      control={home?.needsImport && (machine || !home.sourceReadable) ? undefined : <Button variant="secondary" size="sm" onClick={() => void open()} disabled={disabled || busy || !home} data-testid={`agent-home-reimport-${providerId}`}>{t(home?.needsImport ? 'settings.dataImport.action' : 'agentHome.reimport')}</Button>} />
 }

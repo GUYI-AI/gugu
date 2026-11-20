@@ -18,6 +18,7 @@ import { publishNativeConversationInbox, queueNativeConversationInbox } from './
 import { mayFillReplay, didFillReplay, stopFillingReplay, readableParsedRows, readableStoredRows } from './session-turn-replay';
 import { ownerNotificationEpoch, rewindOwnerNotificationState, publishOwnerNotificationState } from './owner-notification-state';
 import { persistWithTurnSettlement } from './turn-settlement';
+import { noteSwitchedModelReply } from './switched-model-memory';
 import { events } from '@main/lib/events';
 import { sessionTurnSettledChannel, type StoredSettledTurn } from '@shared/core/sessions/sessionEvents';
 import { commitWindowReceipt, prepareWindowCommitWrite, type WindowCommitCapture } from '../session-timeline/window-commit-write';
@@ -77,6 +78,7 @@ export function persistCommittedTurn(input: PersistInput): Promise<void> {
       if (input.windowCapture) await recoverWindowCommitIntent(sqlite, { ...input.windowCapture, sessionId: input.sessionId }, input.windowCapture.intentBudget!);
     }
     if (phaseFailed) throw phaseError;
+    if (input.source === 'live') noteSwitchedModelReply(input.sessionId, input.turn.outcome);
     return captured;
   };
   const completed = beginCanonicalQueueTask(input.sessionId);
