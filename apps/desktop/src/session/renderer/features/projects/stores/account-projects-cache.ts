@@ -40,3 +40,12 @@ export function writeCachedAccountProjects(accountId: string, list: readonly Acc
 export function forgetCachedAccountProjects(): void {
   localStorage.removeItem(CACHE_KEY);
 }
+
+/** Native closure owns A only; a concurrently cached B or unattributed value is preserved. */
+export function forgetCachedAccountProjectsForOwner(ownerId: string): void {
+  const raw = localStorage.getItem(CACHE_KEY);
+  if (!raw) return;
+  let cached: Partial<Cached> | null;
+  try { cached = JSON.parse(raw) as Partial<Cached> | null; } catch { return; }
+  if (cached?.accountId === ownerId) localStorage.removeItem(CACHE_KEY);
+}

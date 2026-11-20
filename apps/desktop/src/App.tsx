@@ -45,6 +45,9 @@ import { startAndroidPush } from './mobile/android-push/startAndroidPush'
 import { startIOSPush } from './mobile/ios-push/startIOSPush'
 import { startIOSOwnerPublication } from './mobile/ios-runtime/startIOSOwnerPublication'
 import { IOSHostRoot } from './mobile/ios-host/IOSHostRoot'
+import { observeAccountClosureV2Recovery } from './components/settings/accountDeletion/accountClosureV2Runtime'
+import { rendererLogger } from './lib/log'
+import { isAccountClosureV2ErrorCode } from './platform/accountClosureV2'
 
 import { platform } from './platform'
 import { type RendererRpcHandlers, useRendererRpcHandlers } from './rpc-renderer/rendererRpc'
@@ -135,6 +138,10 @@ export default function App() {
   }, [])
   useEffect(startIOSPush, [])
   useEffect(startAndroidPush, [])
+  useEffect(() => observeAccountClosureV2Recovery(error => {
+    const code = (error as { code?: unknown } | null)?.code
+    rendererLogger('account-closure/recovery').warn({ code: isAccountClosureV2ErrorCode(code) ? code : 'closure_unavailable' }, 'Original account closure remains pending')
+  }), [])
   useEffect(startAuthCallbackRouting, [])
   useEffect(() => watchReferralLinks(platform.watchOpenedLinks, sessionCoordinator), [])
   useEffect(() => teamInvitation.start(), [])

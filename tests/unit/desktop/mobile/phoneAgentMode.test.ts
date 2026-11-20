@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PhoneAgentHostState } from '../../../../apps/desktop/src/mobile/local-agent/nativeAgent'
 
 const test = vi.hoisted(() => ({
-  ownerId: 'mode-owner', state: { ownerId: '', deviceId: '', status: 'ready', ready: true, sessions: [] } as PhoneAgentHostState,
+  ownerId: 'mode-owner', authenticated: true, state: { ownerId: '', deviceId: '', status: 'ready', ready: true, sessions: [] } as PhoneAgentHostState,
   configure: vi.fn(), stopHost: vi.fn(), hostState: vi.fn(), grants: vi.fn(), register: vi.fn(), rpcHost: vi.fn(), subscribe: vi.fn(),
   select: vi.fn(), readEq: vi.fn(), read: vi.fn(), update: vi.fn(), updateEq: vi.fn(), updated: vi.fn(), remove: vi.fn(),
   deviceInfo: vi.fn(), checkPermissions: vi.fn(),
@@ -14,7 +14,7 @@ vi.mock('../../../../apps/desktop/src/mobile/local-agent/nativeAgent', () => ({
   nativeAgent: { configure: test.configure, stopHost: test.stopHost, grants: test.grants, hostState: test.hostState },
 }))
 vi.mock('../../../../apps/desktop/src/lib/phoneHostAuth', () => ({ withPhoneHostAuthHandoff: (work: () => Promise<unknown>) => work(), phoneHostSessionForHandoff: (session: unknown) => session }))
-vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererSession: () => ({ user: { id: test.ownerId }, access_token: 'test-access', refresh_token: 'test-refresh', expires_at: 123 }), observeRendererSession: () => () => {} }))
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererSession: () => test.authenticated ? ({ user: { id: test.ownerId }, access_token: 'test-access', refresh_token: 'test-refresh', expires_at: 123 }) : null, observeRendererSession: () => () => {} }))
 vi.mock('@gugu/core/cloud/config', () => ({ getSupabaseUrl: () => 'https://test.invalid', getSupabaseAnonKey: () => 'public-anon' }))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
   identityDb: { rpc: (_name: string, args: { p_device: unknown }) => test.register(args.p_device), from: () => ({ select: test.select, update: test.update }) },
@@ -36,7 +36,7 @@ vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneActionCatalog', (
 vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneActionProvider', () => ({ createPhoneActionProvider: () => ({}), mergeCallRecord: () => [] }))
 vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneDeviceRpcHost', () => ({ createPhoneDeviceRpcHost: test.rpcHost }))
 
-import { disconnectPhoneDevice, startPhoneDevice, stopPhoneAgentHost, restartPhoneAgentHost, refreshPhoneDevice, quiescePhoneForAccountClosure, PHONE_HEARTBEAT_MS, usePhoneDevice as readSnapshot } from '../../../../apps/desktop/src/mobile/phone-device/phoneDeviceRuntime'
+import { disconnectPhoneDevice, startPhoneDevice, stopPhoneAgentHost, restartPhoneAgentHost, refreshPhoneDevice, quiescePhoneForAccountClosure, quiesceClosedPhoneOwner, PHONE_HEARTBEAT_MS, usePhoneDevice as readSnapshot } from '../../../../apps/desktop/src/mobile/phone-device/phoneDeviceRuntime'
 import { phoneDeviceId, phoneInstallId, readPhoneDeviceSettings, setPhoneAgentHostEnabled, setPhoneDeviceEnabled } from '../../../../apps/desktop/src/mobile/phone-device/phoneDeviceSettings'
 
 function deferred<T = void>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done }); return { promise, resolve } }
@@ -48,6 +48,7 @@ beforeEach(() => {
   vi.stubGlobal('localStorage', { get length() { return values.size }, key: (index: number) => [...values.keys()][index] ?? null, getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value) } })
   phoneInstallId('owned-install', 'owned-registration')
   test.ownerId = crypto.randomUUID()
+  test.authenticated = true
   test.state = { ownerId: test.ownerId, status: 'stopped', ready: false, sessions: [] }
   test.hostState.mockReset().mockImplementation(async () => test.state)
   test.stopHost.mockResolvedValue(undefined)
@@ -69,6 +70,7 @@ beforeEach(() => {
   test.configure.mockImplementation(async (config) => { test.state = { ...test.state, ownerId: config.ownerId, deviceId: config.deviceId }; return test.state })
 })
 afterEach(async () => {
+  test.authenticated = true
   test.hostState.mockReset().mockImplementation(async () => test.state)
   stop?.(); stop = null
   await stopPhoneAgentHost(test.ownerId)
@@ -77,6 +79,28 @@ afterEach(async () => {
 })
 
 describe('one phone endpoint owns registration and RPC', () => {
+  it('drains original renderer work after native retired Auth without another ordinary native stop', async () => {
+    const owner = test.ownerId
+    setPhoneAgentHostEnabled(owner, true)
+    stop = start(true)
+    await vi.waitFor(() => expect(test.configure).toHaveBeenCalledOnce())
+    test.authenticated = false
+    await quiesceClosedPhoneOwner(owner)
+    expect(readPhoneDeviceSettings(owner)).toMatchObject({ enabled: false, hostEnabled: false })
+    expect(test.stopHost).not.toHaveBeenCalled()
+    stop(); stop = null
+    expect(test.stopHost).not.toHaveBeenCalled()
+  })
+  it('refuses original A cleanup before touching either preference when B is current', async () => {
+    const original = test.ownerId, other = crypto.randomUUID()
+    setPhoneAgentHostEnabled(original, true); setPhoneAgentHostEnabled(other, true)
+    test.ownerId = other
+    test.state = { ...test.state, ownerId: other }
+    await expect(quiesceClosedPhoneOwner(original)).rejects.toMatchObject({ code: 'wrong_local_owner' })
+    expect(readPhoneDeviceSettings(original).hostEnabled).toBe(true)
+    expect(readPhoneDeviceSettings(other).hostEnabled).toBe(true)
+    expect(test.stopHost).not.toHaveBeenCalled()
+  })
   it('drains renderer publication for V2 while leaving the sealed native stop to native preparation', async () => {
     setPhoneAgentHostEnabled(test.ownerId, true)
     stop = start(true)

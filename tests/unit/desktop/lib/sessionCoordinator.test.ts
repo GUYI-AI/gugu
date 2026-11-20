@@ -108,6 +108,31 @@ describe('SessionCoordinator', () => {
     expect(other.deps.signOut).not.toHaveBeenCalled()
     stopOther()
   })
+  it('finalizes the closed owner locally without another live-auth logout or mirror clear', async () => {
+    const h = harness(); h.coordinator.start(); await h.login(session())
+    vi.mocked(h.deps.clearMirror).mockClear(); vi.mocked(h.deps.clearPersistedSession).mockClear()
+    await h.coordinator.finalizeClosedOwner('user-a')
+    expect(h.coordinator.getSnapshot()).toMatchObject({ status: 'anonymous', session: null })
+    expect(h.deps.clearPersistedSession).toHaveBeenCalledWith(session(), expect.any(AbortSignal))
+    expect(h.deps.signOut).not.toHaveBeenCalled(); expect(h.deps.clearMirror).not.toHaveBeenCalled()
+    expect(h.deps.publishSession).toHaveBeenLastCalledWith('ACCOUNT_CLOSED', null)
+  })
+  it('refuses A closure finalization while B is current', async () => {
+    const h = harness(); h.coordinator.start(); await h.login(session('user-b'))
+    await expect(h.coordinator.finalizeClosedOwner('user-a')).rejects.toMatchObject({ code: 'wrong_local_owner' })
+    expect(h.coordinator.getSnapshot().session?.user.id).toBe('user-b')
+    expect(h.deps.clearPersistedSession).not.toHaveBeenCalled(); expect(h.deps.signOut).not.toHaveBeenCalled()
+  })
+  it('a B login during A local cleanup is preserved and cannot be published as signed out', async () => {
+    const clearing = deferred<void>()
+    const h = harness({ clearPersistedSession: vi.fn(() => clearing.promise) }); h.coordinator.start(); await h.login(session())
+    const closing = h.coordinator.finalizeClosedOwner('user-a')
+    await vi.waitFor(() => expect(h.deps.clearPersistedSession).toHaveBeenCalledOnce())
+    await h.login(session('user-b')); clearing.resolve()
+    await expect(closing).rejects.toMatchObject({ code: 'wrong_local_owner' })
+    expect(h.coordinator.getSnapshot().session?.user.id).toBe('user-b')
+    expect(h.deps.publishSession).not.toHaveBeenCalledWith('ACCOUNT_CLOSED', null)
+  })
   it('keeps startup user validation on the request-only auth overload', async () => {
     const getUser = vi.fn<SessionCoordinatorDeps['getUser']>(async (accessToken) => {
       if (!accessToken) throw new Error('startup validation must provide the session access token')
