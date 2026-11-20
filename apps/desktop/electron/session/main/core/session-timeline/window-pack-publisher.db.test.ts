@@ -12,11 +12,14 @@ import { createWindowCommitReceipts,type WindowCommitReceipt } from './window-co
 import { readPublishedCommitEntity } from './window-commit-publisher';
 import { openCommitBodySlot,readCommitBodySlot } from './window-commit-slot';
 import { beginCanonicalQueueTask } from '../sessions/canonical-queue-state';
+import { windowFrameBackend } from '@gugu/session-core/session-record/window-cache/frame-backend';
+import * as source from './window-commit-source';
 const state=vi.hoisted(()=>({db:undefined as AppDb|undefined,sqlite:undefined as Database.Database|undefined}));
 vi.mock('@main/db/client',()=>({get db(){return state.db;},get sqlite(){return state.sqlite;}}));
 vi.mock('@main/lib/events',()=>({events:{emit:vi.fn()}}));
 import { persistCommittedTurn } from '../sessions/session-turn-store';
 
+const READS_PER_ENTITY=13,PROOFS_PER_ENTITY=31;
 describe('actual publisher with canonical idle group commit',()=>{
   let fixture:Awaited<ReturnType<typeof openFixture>>,directory:string,publisher:ReturnType<typeof createWindowPackPublisher>|undefined;
   const receipts:WindowCommitReceipt[]=[];
@@ -69,6 +72,21 @@ describe('actual publisher with canonical idle group commit',()=>{
     const slot=openCommitBodySlot(directory,c.receipts,receipt,row.facts,'text',row.bodyBuildId);
     expect(await readCommitBodySlot(slot,0,createWindowBudget())).toMatchObject({kind:'body',text:'body:19:'+'中文😀'.repeat(1024)});
   },30000);
+  it('publishes each further entity with a constant, small number of frame reads and source proofs',async()=>{
+    // Per-entity cost must not re-derive its array, read itself back or walk fields one step at a time.
+    const proofs=vi.spyOn(source,'assertWindowCommitSource');
+    publisher=createWindowPackPublisher(directory,fixture.sqlite);const backend=windowFrameBackend(directory)!,read=backend.read.bind(backend);
+    let reads=0;backend.read=(key,budget)=>{reads++;return read(key,budget);};
+    const cost=async(seq:number,items:number)=>{
+      const turn:TranscriptTurn={id:`runtime:${seq}`,seq,referenceId:`ref:${seq}`,initiator:'user',items:Array.from({length:items},(_,i)=>({
+        kind:'message' as const,id:`runtime:${seq}:${i}`,seq:i,role:'assistant' as const,text:`body:${seq}:${i}`}))};let receipt!:WindowCommitReceipt;
+      await persistCommittedTurn({sessionId:'c',source:'live',turn,windowCapture:{directory,scope:'a'.repeat(64),cursor:{workerEpoch:'w',storeEpoch:'s',sequence:seq+1},committed:async r=>{receipt=r!;}}});
+      reads=0;proofs.mockClear();await publisher!.project(receipt,true);return {reads,proofs:proofs.mock.calls.length};
+    };
+    const small=await cost(10,4),large=await cost(11,20),per=(k:'reads'|'proofs')=>(large[k]-small[k])/16;
+    console.log('PER-ENTITY',JSON.stringify({small,large,reads:per('reads'),proofs:per('proofs')}));
+    expect(per('reads')).toBeLessThanOrEqual(READS_PER_ENTITY);expect(per('proofs')).toBeLessThanOrEqual(PROOFS_PER_ENTITY);
+  });
   it('rejects the final publication proof when its pack disappears after preparation returned',async()=>{
     publisher=createWindowPackPublisher(directory,fixture.sqlite);const projected=await publisher.project(receipts[0]);projected.validate?.();
     for(const file of (await readdir(directory)).filter(n=>n.endsWith('.pack')))await rm(join(directory,file));

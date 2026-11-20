@@ -95,9 +95,10 @@ function finish(p: CommitEntityPosition, s: CommitEntityState): CommitEntityFact
   entities.add(facts); return facts;
 }
 
-/** One field per step; exact slots stay ranges in the same entity. No second
- * message/tool or guessed stdout/body alias is created. Lease/ACK ownership is
- * above these private producer objects, which are not public wire types. */
+/** One page per step, like the root batch: its members share one page read and
+ * one two-frame reader under the caller's budget, stopping at the page's end or
+ * once over 12 KiB is used (reserving a worst-case member). Exact slots stay
+ * ranges in the same entity; no guessed stdout/body alias is created. */
 export async function advanceCommitEntityFields(p: CommitEntityPosition, input: CommitEntityState, budget: WindowBudget, signal?: AbortSignal) {
   const c = positions.get(p); if (!c) throw new Error('Unknown canonical entity position');
   const next = state(p, input); signal?.throwIfAborted();
@@ -105,9 +106,9 @@ export async function advanceCommitEntityFields(p: CommitEntityPosition, input: 
     return { kind: 'complete' as const, state: next, facts: finish(p, next) }; }
   const result = await readIndexedCommitContainerPage({ ...c, binding: c.receipt.binding, source: c.receipt.source }, next.page, budget, signal);
   if (result.kind !== 'page') return result;
-  const member = result.page.members[next.member]; if (!member?.key) throw new Error('Entity checkpoint is outside its page');
   const reader = createWindowCommitReader(c.directory, c.receipt.binding, c.receipt.source, budget, signal);
-  try {
+  try { for (;;) {
+    const member = result.page.members[next.member]; if (!member?.key) throw new Error('Entity checkpoint is outside its page');
     const name = member.key.end - member.key.start > 512 ? null : await reader.string({ start: member.key.start + 1, end: member.key.end },
       { rawOffset: member.key.start + 1, decodedOffset: 0 }, 128);
     const field = name?.complete ? name.text : null;
@@ -118,10 +119,10 @@ export async function advanceCommitEntityFields(p: CommitEntityPosition, input: 
       if (field === 'kind') next.kind = value.text; else next.id = value.text;
     } else if (field && fields.includes(field as Field)) next.candidates[field as Field] = { range: { ...member.range }, string: member.kind === 'string' };
     else if (field === 'children' && member.kind === 'array') next.children = { ...member.range };
-  } finally { reader.close(); }
-  if (next.member + 1 < result.page.members.length) next.member++;
-  else if (result.next !== null) { next.page = result.next; next.member = 0; }
-  else next.done = true;
+    if (next.member + 1 < result.page.members.length) next.member++;
+    else { if (result.next !== null) { next.page = result.next; next.member = 0; } else next.done = true; break; }
+    if (budget.counters.indexBytes > 12 * 1024) break;
+  } } finally { reader.close(); }
   return next.done ? { kind: 'complete' as const, state: next, facts: finish(p, next) } : { kind: 'progress' as const, state: next };
 }
 
