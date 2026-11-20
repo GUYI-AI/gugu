@@ -16,9 +16,16 @@ export type CapabilityGateFacts = {
  * - relax CORS for localhost: applied through the built-in browser's request hooks (browser-cors-relaxation.ts); the standalone
  *   Chrome has no equivalent.
  */
-export async function kernelAfterCapabilityGate(wanted: BrowserKernelKind, browserId: string, facts: CapabilityGateFacts): Promise<BrowserKernelKind> {
+export async function kernelAfterCapabilityGate(
+  wanted: BrowserKernelKind,
+  browserId: string,
+  facts: CapabilityGateFacts,
+  /** `adoptsWindow`: the tab shows a window the standalone Chrome already created for a page, which no built-in tab can show. */
+  options: { adoptsWindow?: boolean } = {}
+): Promise<BrowserKernelKind> {
   if (wanted !== 'standalone') return wanted;
   if (facts.remoteSession(browserId)) return 'builtin';
+  if (options.adoptsWindow) return 'standalone';
   if (await facts.relaxCorsForLocalhost()) return 'builtin';
   return 'standalone';
 }

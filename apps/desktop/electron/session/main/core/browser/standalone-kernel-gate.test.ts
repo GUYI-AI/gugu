@@ -50,6 +50,25 @@ describe('which engine a tab gets when the standalone browser is selected', () =
     expect(m.reserveTab).not.toHaveBeenCalled();
   });
 
+  it('keeps the tab of a window the standalone Chrome already made on the standalone browser, which no built-in tab can show: "relax CORS" does not move it', async () => {
+    m.relax = true;
+    expect((await registerBrowserKernel({ ...tab, browserId: 'tab-4', kernel: 'standalone', adoptsWindow: true })).kernel).toBe('standalone');
+    expect((await registerBrowserKernel({ ...tab, browserId: 'tab-5', kernel: 'standalone' })).kernel).toBe('builtin'); // Any other tab still follows the rule.
+    expect(m.reserveTab).toHaveBeenCalledExactlyOnceWith('tab-4', tab.partition);
+    browserKernelBindings.delete('tab-4');
+    browserKernelBindings.delete('tab-5');
+  });
+
+  it('still keeps a window\'s tab off the standalone browser when the person chose the built-in one or the tab is of another machine\'s session', async () => {
+    m.selection.mockResolvedValue('builtin');
+    expect((await registerBrowserKernel({ ...tab, kernel: 'builtin', adoptsWindow: true })).kernel).toBe('builtin');
+    m.selection.mockResolvedValue('standalone');
+    bindRemoteBrowser('tab-6', { deviceId: 'dev-1', sessionId: 'sess-1' });
+    expect((await registerBrowserKernel({ ...tab, browserId: 'tab-6', kernel: 'standalone', adoptsWindow: true })).kernel).toBe('builtin');
+    unbindRemoteBrowser('tab-6');
+    browserKernelBindings.delete('tab-6');
+  });
+
   it('does not look at either when the built-in browser was chosen anyway', async () => {
     m.selection.mockResolvedValue('builtin');
     expect((await registerBrowserKernel(tab)).kernel).toBe('builtin');

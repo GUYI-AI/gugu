@@ -7,6 +7,8 @@ const claims = new Map<string, string>();
 
 export const popupClaims = {
   remember(browserId: string, popup: string): void { claims.set(browserId, popup); },
+  /** This tab was opened for a window Chrome created and has not taken it yet. */
+  has(browserId: string): boolean { return claims.has(browserId); },
   /** The window this tab was opened for, once; `undefined` for a tab that was not opened for one, or asks again. */
   take(browserId: string): string | undefined {
     const popup = claims.get(browserId);

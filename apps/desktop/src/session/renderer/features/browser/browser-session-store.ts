@@ -23,6 +23,8 @@ export type BrowserSessionCreateInput = {
   sessionId: string;
   browserId?: string;
   profileId?: BrowserProfileSelection;
+  /** Only for a tab that must live in another tab's browser (a sign-in window of the standalone browser); otherwise it follows from the identity and profile. */
+  partition?: string;
   initialUrl?: string;
 };
 
@@ -79,6 +81,7 @@ export class BrowserSessionStore {
       identity,
       kernel: input.kernel,
       profileId: input.profileId,
+      partition: input.partition,
       currentUrl: input.initialUrl,
     });
     this.sessions.set(snapshot.browserId, snapshot);

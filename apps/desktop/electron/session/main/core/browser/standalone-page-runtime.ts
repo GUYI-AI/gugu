@@ -87,7 +87,7 @@ async function chooseFiles({ multiple }: { multiple: boolean }): Promise<string[
   return canceled ? null : filePaths;
 }
 
-export function registerBrowserKernel(input: { browserId: string; partition: string; sessionId?: string; conversation?: AnnotationConversation; kernel?: BrowserKernelKind; url?: string }) {
+export function registerBrowserKernel({ adoptsWindow, ...input }: { browserId: string; partition: string; sessionId?: string; conversation?: AnnotationConversation; kernel?: BrowserKernelKind; url?: string; adoptsWindow?: boolean }) {
   return browserKernelBindings.run(input.browserId, async () => {
     const old = browserKernelBindings.get(input.browserId);
     browserKernelBindings.assertOwner(input);
@@ -95,7 +95,7 @@ export function registerBrowserKernel(input: { browserId: string; partition: str
     // Internal preview/file protocols belong to Electron and never leave its document sandbox.
     const web = !input.url || input.url === 'about:blank' || /^https?:\/\//i.test(input.url);
     const wanted = web ? input.kernel ?? await standaloneKernelService().selection() : 'builtin';
-    const kernel = old?.kernel ?? await kernelAfterCapabilityGate(wanted, input.browserId, capabilityFacts);
+    const kernel = old?.kernel ?? await kernelAfterCapabilityGate(wanted, input.browserId, capabilityFacts, { adoptsWindow });
     if (kernel === 'standalone' && !await standaloneKernelService().installation()) throw new Error('The standalone browser is not installed');
     if (kernel === 'standalone') standaloneKernelService().pool.reserveTab(input.browserId, input.partition);
     return browserKernelBindings.bind(input, kernel);

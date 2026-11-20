@@ -330,6 +330,22 @@ export function newTabSharesPartition(sourcePartition: string, defaultProfileId:
   return sourcePartition === browserProfilePartition(defaultProfileId);
 }
 
+/** The profile and partition of the tab whose standalone Chrome created the window a new tab is opened for. */
+export type BrowserWindowOwner = { profileId: BrowserProfileSelection; partition: string };
+
+/**
+ * The profile of a new tab. It is the profile chosen in Settings, whatever profile the tab of the page that opened it is on. The one
+ * exception is a tab opened to show a window the standalone Chrome already created for that page (a sign-in window): the window
+ * lives in the Chrome of the page's tab, so the tab is in that profile and partition. The built-in browser has no such tab.
+ */
+export function profileForNewTab(
+  settings: { defaultProfileId?: string; profiles?: readonly BrowserProfile[] } | undefined,
+  windowOf?: BrowserWindowOwner
+): { profileId: BrowserProfileSelection; partition?: string } {
+  if (windowOf) return { profileId: windowOf.profileId, partition: windowOf.partition };
+  return { profileId: normalizeBrowserProfileSelection(settings?.defaultProfileId, settings?.profiles) };
+}
+
 export function isNamedBrowserProfileId(value: string): boolean {
   return value !== BROWSER_ISOLATED_PROFILE_ID && /^[a-z0-9][a-z0-9-]{0,63}$/.test(value);
 }
@@ -363,6 +379,8 @@ export function createBrowserSessionSnapshot(input: {
   identity: BrowserSessionIdentity;
   kernel?: 'builtin' | 'standalone';
   profileId?: BrowserProfileSelection;
+  /** Only a tab that must live in another tab's browser says so (see `profileForNewTab`); every other tab's is worked out from its identity and profile. */
+  partition?: string;
   currentUrl?: string;
   now?: number;
 }): BrowserSessionSnapshot {
@@ -376,7 +394,7 @@ export function createBrowserSessionSnapshot(input: {
     ...input.identity,
     ...(input.kernel ? { kernel: input.kernel } : {}),
     profileId,
-    partition: browserPartitionForProfile(input.identity, profileId),
+    partition: input.partition ?? browserPartitionForProfile(input.identity, profileId),
     currentUrl: normalized.ok ? normalized.url : BROWSER_DEFAULT_URL,
     title: '',
     isLoading: false,

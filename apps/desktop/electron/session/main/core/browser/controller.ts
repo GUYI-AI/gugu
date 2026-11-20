@@ -41,12 +41,13 @@ export const browserController = createRPCController({
   kernelStatus: () => standaloneKernelService().status(),
   kernelAction: (action: BrowserKernelAction) => standaloneKernelService().action(action),
   /** `sessionId`:页签开在哪条会话里(#7191 会话的 agent 据此找到自己的页签);新建任务的草稿面板不带。 */
-  registerSession: async (args: { browserId: string; partition: string; sessionId?: string; conversation?: AnnotationConversation; kernel?: BrowserKernelKind; url?: string }) => {
+  registerSession: async (args: { browserId: string; partition: string; sessionId?: string; conversation?: AnnotationConversation; kernel?: BrowserKernelKind; url?: string; adoptsWindow?: boolean }) => {
     if (!args.browserId.trim() || !isBrowserPartition(args.partition) || (args.conversation !== undefined && (!isAnnotationConversation(args.conversation)
       || (args.sessionId && (args.conversation.kind !== 'session' || args.conversation.sessionId !== args.sessionId))))) {
       return { success: false as const, error: 'Invalid browser session' };
     }
     if (args.kernel !== undefined && args.kernel !== 'builtin' && args.kernel !== 'standalone') throw new Error('Invalid browser kernel');
+    if (args.adoptsWindow !== undefined && typeof args.adoptsWindow !== 'boolean') throw new Error('Invalid browser registration');
     const { kernel } = await registerBrowserKernel(args);
     if (kernel === 'builtin') configureBrowserProfileSession(args.partition);
     browserWebContentsRegistry.registerSession({

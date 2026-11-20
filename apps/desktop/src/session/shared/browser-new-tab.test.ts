@@ -3,9 +3,11 @@ import {
   BROWSER_ISOLATED_PROFILE_ID,
   browserPartitionForProfile,
   browserProfilePartition,
+  createBrowserSessionSnapshot,
   isIsolatedBrowserPartition,
   makeBrowserSessionIdentity,
   newTabSharesPartition,
+  profileForNewTab,
 } from './browser';
 
 const identity = makeBrowserSessionIdentity({ projectId: 'p1', workspaceId: 'w1', sessionId: 's1' });
@@ -36,5 +38,32 @@ describe('which tabs share a browser (partition) with the tab a link was clicked
   it('a profile that is named like an isolated one is not mistaken for it', () => {
     expect(isIsolatedBrowserPartition(browserProfilePartition('isolated-x'))).toBe(false);
     expect(isIsolatedBrowserPartition(browserProfilePartition('default'))).toBe(false);
+  });
+});
+
+describe('the profile and partition of a new tab', () => {
+  const settings = { defaultProfileId: 'work', profiles: [{ id: 'work', name: 'Work' }, { id: 'default', name: 'Default' }] };
+
+  it('opens in the profile chosen in Settings and works its partition out from the tab\'s own identity, as every tab did before', () => {
+    expect(profileForNewTab(settings)).toStrictEqual({ profileId: 'work' });
+    expect(profileForNewTab({ defaultProfileId: BROWSER_ISOLATED_PROFILE_ID })).toStrictEqual({ profileId: BROWSER_ISOLATED_PROFILE_ID });
+    expect(profileForNewTab(undefined)).toStrictEqual({ profileId: 'default' });
+    expect(profileForNewTab({ defaultProfileId: 'gone', profiles: [{ id: 'work', name: 'Work' }] })).toStrictEqual({ profileId: 'work' });
+    const tab = createBrowserSessionSnapshot({ identity, ...profileForNewTab({ defaultProfileId: BROWSER_ISOLATED_PROFILE_ID }) });
+    expect(tab.partition).toBe(browserPartitionForProfile(identity, BROWSER_ISOLATED_PROFILE_ID));
+  });
+
+  it('is the profile and partition of the page\'s tab when the tab shows a window that tab\'s Chrome made, whatever Settings says', () => {
+    const windowOf = { profileId: BROWSER_ISOLATED_PROFILE_ID, partition: browserPartitionForProfile(identity, BROWSER_ISOLATED_PROFILE_ID) };
+    expect(profileForNewTab(settings, windowOf)).toStrictEqual(windowOf);
+    const tab = createBrowserSessionSnapshot({ identity: { ...identity, browserId: 'other' }, ...profileForNewTab(settings, windowOf) });
+    expect(tab).toMatchObject({ profileId: BROWSER_ISOLATED_PROFILE_ID, partition: windowOf.partition });
+  });
+
+  it('keeps the partition it is told to, even for an identity that would work out another one', () => {
+    const elsewhere = makeBrowserSessionIdentity({ projectId: 'p1', workspaceId: 'w1', sessionId: 'another-session' });
+    const told = browserPartitionForProfile(identity, BROWSER_ISOLATED_PROFILE_ID);
+    expect(createBrowserSessionSnapshot({ identity: elsewhere, profileId: BROWSER_ISOLATED_PROFILE_ID, partition: told }).partition).toBe(told);
+    expect(createBrowserSessionSnapshot({ identity: elsewhere, profileId: BROWSER_ISOLATED_PROFILE_ID }).partition).toBe(browserPartitionForProfile(elsewhere, BROWSER_ISOLATED_PROFILE_ID));
   });
 });

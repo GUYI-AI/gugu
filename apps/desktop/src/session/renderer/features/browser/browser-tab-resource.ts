@@ -2,6 +2,7 @@ import { reaction } from 'mobx';
 import { browserDiagnosticsStore } from '@renderer/features/browser/browser-diagnostics-store';
 import { browserSessionStore } from '@renderer/features/browser/browser-session-store';
 import { popupClaims } from '@renderer/features/browser/browser-popup-claims';
+import { newTabArgs } from './browser-new-tab-args';
 import type { TabEntry, TabHandle, TabResource } from '@renderer/features/tabs/core/tab-provider';
 import { events, rpc } from '@renderer/lib/ipc';
 import type { BrowserSessionSnapshot } from '@shared/browser';
@@ -74,7 +75,7 @@ export class BrowserTabResource implements TabResource {
       browserOpenInNewTabChannel,
       ({ sourceBrowserId, url, popup }: { sourceBrowserId: string; url: string; popup?: string }) => {
         if (sourceBrowserId !== this.browserId) return;
-        handle.open('browser', { initialUrl: url, ...(popup && { popup }) }, { intent: 'newTab' });
+        handle.open('browser', newTabArgs({ url, popup }, browserSessionStore.getSession(this.browserId)), { intent: 'newTab' });
       }
     );
 

@@ -28,6 +28,7 @@ import {
 import { decideBrowserReload } from './browser-navigation-controls';
 import { fitBrowserPageToPane } from './browser-page-fit';
 import { browserSessionStore } from './browser-session-store';
+import { popupClaims } from './browser-popup-claims';
 import { installedExtensionsStore } from '../extensions/installed-extensions-store';
 import { ExtensionMark } from '../extensions/extension-mark';
 import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
@@ -258,6 +259,8 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
         kernel: session?.kernel,
         url: session?.currentUrl,
         ...(conversation ? { conversation } : {}),
+        // A tab opened to show a window the standalone Chrome made stays standalone: no built-in tab can show that window.
+        ...(popupClaims.has(sessionBrowserId) ? { adoptsWindow: true } : {}),
       })
       .then((result) => {
         if (!disposed) {

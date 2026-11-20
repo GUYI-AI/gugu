@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { BROWSER_ISOLATED_PROFILE_ID, browserPartitionForProfile } from '@shared/browser';
 import { BrowserSessionStore } from './browser-session-store';
 
 function setup() {
@@ -27,6 +28,42 @@ describe('browser engine snapshots', () => {
     const legacy = store.getSnapshot(browserId)!;
     expect(legacy.kernel).toBeUndefined();
     expect(new BrowserSessionStore().restoreSession(legacy).kernel).toBe('builtin');
+  });
+});
+
+describe('the partition of a tab', () => {
+  const identity = { projectId: 'p', workspaceId: 'w', sessionId: 'task' };
+
+  it('works out from its identity and profile unless it is told one, as before: named, default and isolated profiles', () => {
+    const store = new BrowserSessionStore();
+    for (const profileId of ['default', 'work', BROWSER_ISOLATED_PROFILE_ID]) {
+      const tab = store.createSession({ ...identity, profileId });
+      expect(tab.partition).toBe(browserPartitionForProfile(tab, profileId));
+    }
+    expect(store.createSession({ ...identity }).partition).toBe(browserPartitionForProfile({ ...identity, browserId: 'x' }, 'default'));
+  });
+
+  it('is the partition a sign-in window\'s tab is told to live in, and is written to and read back from the snapshot', () => {
+    const store = new BrowserSessionStore();
+    const page = store.createSession({ ...identity, kernel: 'standalone', profileId: BROWSER_ISOLATED_PROFILE_ID });
+    const popup = store.createSession({ ...identity, kernel: 'standalone', profileId: page.profileId, partition: page.partition, initialUrl: 'https://github.com/login' });
+    expect(popup.partition).toBe(page.partition);
+    expect(popup.browserId).not.toBe(page.browserId);
+    // What is saved is what has always been saved: restoring it (an app restart) gives the tab the same profile and partition.
+    const restored = new BrowserSessionStore().restoreSession(JSON.parse(JSON.stringify(store.getSnapshot(popup.browserId))));
+    expect(restored).toMatchObject({ kernel: 'standalone', profileId: BROWSER_ISOLATED_PROFILE_ID, partition: page.partition });
+  });
+
+  it('restores a snapshot saved before windows could be shown in another tab\'s browser exactly as it did', () => {
+    const store = new BrowserSessionStore();
+    const old = store.createSession({ ...identity, profileId: 'work' });
+    const saved = JSON.parse(JSON.stringify(old));
+    delete saved.kernel;
+    const restored = new BrowserSessionStore().restoreSession(saved);
+    expect(restored).toMatchObject({ kernel: 'builtin', profileId: 'work', partition: browserPartitionForProfile(old, 'work') });
+    // The partition is worked out again from the profile, never taken from the file: a profile that was removed falls back to the default one.
+    const stale = new BrowserSessionStore().restoreSession({ ...saved, partition: 'persist:gugu-browser-profile-elsewhere' }, [{ id: 'default', name: 'Default' }]);
+    expect(stale).toMatchObject({ profileId: 'default', partition: browserPartitionForProfile(old, 'default') });
   });
 });
 
