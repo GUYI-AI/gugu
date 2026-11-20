@@ -15,6 +15,8 @@ import { StandaloneKernelManager } from './standalone-kernel-manager';
 import { StandaloneBrowserPool } from './standalone-browser-pool';
 import { standaloneBrowserCredentialStore } from './standalone-browser-launch-policy';
 import { StandaloneProfileData } from './standalone-profile-data';
+import { readChromeStorageKeys } from './standalone-chrome-storage';
+import { openChromeStorageCopy } from './standalone-chrome-storage-sqlite';
 import { browserProfilePartition, DEFAULT_BROWSER_PROFILE_ID } from '@shared/browser';
 
 const execute = promisify(execFile);
@@ -38,6 +40,7 @@ class StandaloneKernelService {
     profilesRoot: this.profilesRoot,
     partitions: async () => [DEFAULT_BROWSER_PROFILE_ID, ...(await appSettingsService.get('browser')).profiles.map(profile => profile.id)]
       .map(browserProfilePartition),
+    storageKeys: directory => readChromeStorageKeys(directory, { open: openChromeStorageCopy }),
   });
   private readonly manager = new StandaloneKernelManager({
     asset: this.asset,

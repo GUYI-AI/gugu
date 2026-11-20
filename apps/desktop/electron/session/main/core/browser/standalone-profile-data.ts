@@ -44,6 +44,8 @@ export class StandaloneProfileData {
     profilesRoot: string;
     /** Every browser profile the person has, whether or not it has been opened in the standalone engine. */
     partitions(): Promise<readonly string[]>;
+    /** Sites Chrome holds local storage or quota-managed data for in a profile directory; throws when it cannot say. */
+    storageKeys(profileDirectory: string): readonly string[];
   }) {}
 
   /** One throwaway tab per import, opened by the first cookie and closed by `flushStore` so Chrome writes them to disk. */
@@ -68,7 +70,7 @@ export class StandaloneProfileData {
     switch (kind) {
       case 'cookies': return this.host(partition, command => command('Network.clearBrowserCookies'));
       case 'cache': return this.host(partition, command => command('Network.clearBrowserCache'));
-      // A running profile keeps its tabs: Chrome clears one origin at a time, so only a dormant one can be emptied whole.
+      // A running profile keeps its tabs and its Chrome, so its sites are cleared one by one; a dormant one is emptied whole.
       case 'siteData': return this.options.pool.livePartitions.includes(partition) ? this.clearSiteDataInPlace(partition) : this.reset(partition, true);
       case 'all': return this.reset(partition, false);
     }
@@ -91,25 +93,30 @@ export class StandaloneProfileData {
   }
 
   /**
-   * `Storage.clearDataForOrigin` takes one origin and nothing lists the origins holding data, so this covers the sites
-   * that are open or hold cookies. A site with stored data, no cookie and no open tab is left until its profile is idle.
+   * No CDP command lists the sites holding data, so they are the union of what Chrome's own databases list (local storage,
+   * quota-managed IndexedDB, Cache Storage, service workers, file systems), the open pages and the cookie domains. Each is
+   * cleared by storage key. What cannot be listed or cleared is reported after everything else was cleared.
    */
   private async clearSiteDataInPlace(partition: string): Promise<void> {
-    const origins = new Set(await this.options.pool.openOrigins(partition));
+    const keys = new Set((await this.options.pool.openOrigins(partition)).map(origin => `${origin}/`));
+    const problems: string[] = [];
+    try { for (const key of this.options.storageKeys(this.options.pool.directoryFor(partition))) keys.add(key); }
+    catch (error) { problems.push(error instanceof Error ? error.message : String(error)); }
     await this.host(partition, async command => {
       const { cookies = [] } = await command('Network.getAllCookies') as { cookies?: { domain?: string; secure?: boolean }[] };
       for (const { domain, secure } of cookies) {
         const host = domain?.replace(/^\./, '');
         if (!host) continue;
-        origins.add(`https://${host}`);
-        if (!secure) origins.add(`http://${host}`);
+        keys.add(`https://${host}/`);
+        if (!secure) keys.add(`http://${host}/`);
       }
       let failed = 0;
-      for (const origin of origins) {
-        await command('Storage.clearDataForOrigin', { origin, storageTypes: SITE_DATA_STORAGE_TYPES }).catch(() => { failed += 1; });
+      for (const storageKey of keys) {
+        await command('Storage.clearDataForStorageKey', { storageKey, storageTypes: SITE_DATA_STORAGE_TYPES }).catch(() => { failed += 1; });
       }
-      if (failed) throw new Error(`Chrome could not clear the data of ${failed} site${failed === 1 ? '' : 's'}`);
+      if (failed) problems.push(`Chrome could not clear the data of ${failed} site${failed === 1 ? '' : 's'}`);
     });
+    if (problems.length) throw new Error(problems.join('; '));
   }
 
   /** Chrome offers no "clear all site data" command, so an idle profile is emptied; cookies may be carried over. */
