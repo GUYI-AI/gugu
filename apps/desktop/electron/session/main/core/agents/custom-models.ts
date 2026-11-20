@@ -13,7 +13,7 @@ import { sessions } from '@main/db/schema';
 import { log } from '@main/lib/logger';
 import { loginShellEnv } from '@main/utils/userEnv';
 import { migrateCustomModels } from './custom-model-migration';
-import { discoverLocalConnections, discoveredSecret, discoveryIdentity, keyLast4, type DiscoveredConnection } from './local-connection-discovery';
+import { describeDiscoveryIssues, discoverLocalConnections, discoveredSecret, discoveryIdentity, keyLast4, type DiscoveredConnection } from './local-connection-discovery';
 import { nativeConfigRoot } from './native-config-root';
 import { listEndpointModels, probeEndpointProtocols, verifyEndpointModel } from './connection-endpoint-probe';
 
@@ -52,7 +52,7 @@ async function scanLocal(): Promise<DiscoveredConnection[]> {
   try {
     const env = { ...process.env, ...loginShellEnv() };
     const { connections, issues } = await discoverLocalConnections({ root: nativeConfigRoot('codex', env), env });
-    const signature = issues.map(({ code, where, provider }) => `${code}@${where}${provider ? `:${provider}` : ''}`).join(' ');
+    const signature = describeDiscoveryIssues(issues);
     if (signature !== loggedDiscoveryIssues) {
       loggedDiscoveryIssues = signature;
       if (signature) log.warn(`[custom-models] some existing connections on this machine could not be listed: ${signature}`);
@@ -113,7 +113,7 @@ function ensureStored(id: string, options: { keepKey: boolean } = { keepKey: tru
     const key = candidate && discoveredSecret(candidate);
     if (!candidate || !key) return;
     await registry.upsertAccount({
-      providerId: namespace, accountId: id, ...(options.keepKey ? { secret: key } : {}),
+      providerId: namespace, accountId: id, ...(options.keepKey ? { secret: key } : { electDefault: false }),
       meta: { displayName: candidate.name, customModel: {
         preset: candidate.preset, endpoints: candidate.endpoints, models: candidate.models,
         discovery: { source: candidate.source, identity: candidate.identity, keyLast4: candidate.keyLast4, ...(candidate.aliases.length ? { aliases: candidate.aliases } : {}) },

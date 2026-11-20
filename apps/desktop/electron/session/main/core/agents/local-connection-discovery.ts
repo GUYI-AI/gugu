@@ -34,6 +34,14 @@ export type DiscoveredConnection = {
 
 export type LocalDiscovery = { connections: DiscoveredConnection[]; issues: DiscoveryIssue[] };
 
+/**
+ * What the log says about unreadable sources: codes and provider ids only, never a value. `:` joins the parts because
+ * the log redactor takes anything shaped like `a@b.c` for an email and would blank the signature.
+ */
+export function describeDiscoveryIssues(issues: DiscoveryIssue[]): string {
+  return issues.map(({ code, where, provider }) => `${code}:${where}${provider ? `:${provider}` : ''}`).join(' ');
+}
+
 const secrets = new WeakMap<DiscoveredConnection, string>();
 /** The key of a discovered connection. For the host process that is about to store it or call the provider only. */
 export function discoveredSecret(connection: DiscoveredConnection): string | undefined {

@@ -129,6 +129,16 @@ it('removing a discovered connection keeps it removed on every later scan and ke
   expect(rows()[0]!.meta?.customModel).toMatchObject({ removed: true, discovery: { source: 'codex-provider' } });
 });
 
+it('a removal record never holds the default; the first connection really used takes it, as any first saved row does', async () => {
+  await twoFound();
+  const acme = await named('Acme Gateway');
+  const openai = await named('OpenAI');
+  await removeCustomModel(acme.id);
+  expect(rows().map(row => row.isDefault)).toEqual([false]);
+  await saveCustomModel({ id: openai.id, name: 'OpenAI', preset: 'openai', endpoints: openai.endpoints, models: [{ id: 'picked' }] });
+  expect(Object.fromEntries(rows().map(row => [row.accountId, row.isDefault]))).toEqual({ [acme.id]: false, [openai.id]: true });
+});
+
 it('editing a discovered connection saves it as that connection and keeps its discovery identity', async () => {
   await twoFound();
   const acme = await named('Acme Gateway');

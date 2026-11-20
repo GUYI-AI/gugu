@@ -3,7 +3,8 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'n
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { discoverLocalConnections, discoveredSecret, type LocalDiscovery } from './local-connection-discovery';
+import { redactAll } from '@gugu/session-shared/logger';
+import { describeDiscoveryIssues, discoverLocalConnections, discoveredSecret, type DiscoveryIssue, type LocalDiscovery } from './local-connection-discovery';
 
 const OFFICIAL = 'https://api.openai.com/v1';
 const KEY = 'sk-live-0123456789abcdefWXYZ';
@@ -241,4 +242,17 @@ it('its diagnostics and public fields never carry a key, only the last four char
   const text = JSON.stringify(found);
   for (const secret of [KEY, OTHER_KEY, 'sk-live-bbbbbbbbbbbbbbbbbbbb']) expect(text).not.toContain(secret);
   expect(found.connections.every(connection => connection.keyLast4.length === 4)).toBe(true);
+});
+
+it('names the unreadable sources in a form the log redactor leaves alone', () => {
+  const issues: DiscoveryIssue[] = [
+    { code: 'incompatible', where: 'config.toml', provider: 'query' },
+    { code: 'key-missing', where: 'config.toml', provider: 'acme' },
+    { code: 'invalid-config', where: 'config.toml' },
+    { code: 'unreadable', where: 'auth.json' },
+    { code: 'unsupported-store', where: 'auth.json' },
+  ];
+  const signature = describeDiscoveryIssues(issues);
+  expect(signature).toBe('incompatible:config.toml:query key-missing:config.toml:acme invalid-config:config.toml unreadable:auth.json unsupported-store:auth.json');
+  expect(redactAll(signature)).toBe(signature);
 });
