@@ -18,7 +18,7 @@ export function createNativeFileHost(deps: {
   publish?(chatId: string, file: SelectedProjectFile, owner: string, message?: ProjectFileMessage, task?: { itemId?: string }): Promise<unknown>
   /** A task attachment's own copy for the agent (`writeTaskCopy`): its path. */
   taskCopy?(name: string, bytes: Uint8Array, mimeType?: string): Promise<{ path: string; name: string; size: number; mimeType?: string }>
-  publication?(chatId: string, owner: string): Promise<boolean>
+  publication?(chatId: string, contentType: string): Promise<boolean>
 }) {
   type Entry = { scope: number; epoch: number; owner: string; file?: FileBytes; context?: string; name?: string; size?: number; sha?: string;
     sink?: Awaited<ReturnType<typeof createFileSink>>; hash?: ReturnType<typeof createHash>; written?: number; path?: string; busy?: boolean }
@@ -51,9 +51,9 @@ export function createNativeFileHost(deps: {
       return result
     },
     /** `task`: a task's input attachment, kept on this device (`ProjectFilePublishOptions.task`). */
-    async publish(scope: number, request: { chatId: string; file?: SelectedProjectFile; message?: ProjectFileMessage; task?: boolean; itemId?: string }) {
+    async publish(scope: number, request: { chatId: string; contentType?: string; file?: SelectedProjectFile; message?: ProjectFileMessage; task?: boolean; itemId?: string }) {
       const epoch = epochOf(scope), owner = await deps.owner(); if (!owner || !deps.publish || !request.file && !deps.publication) throw new Error('File publisher is unavailable')
-      await check(scope, owner, epoch); const row = request.file ? await deps.publish(request.chatId, request.file, owner, request.message, request.task === true ? { itemId: request.itemId } : undefined) : await deps.publication!(request.chatId, owner); await check(scope, owner, epoch); return row
+      await check(scope, owner, epoch); const row = request.file ? await deps.publish(request.chatId, request.file, owner, request.message, request.task === true ? { itemId: request.itemId } : undefined) : await deps.publication!(request.chatId, request.contentType ?? ''); await check(scope, owner, epoch); return row
     },
     async taskCopy(scope: number, request: { name: string; data: ArrayBuffer; mimeType?: string }) {
       const epoch = epochOf(scope), owner = await deps.owner(); if (!owner || !deps.taskCopy) throw new Error('File publisher is unavailable')

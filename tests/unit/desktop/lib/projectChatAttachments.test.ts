@@ -41,7 +41,7 @@ describe('project composer attachments use the group-file publisher', () => {
     const n = native(), selected = file(), arrayBuffer = vi.spyOn(selected, 'arrayBuffer').mockRejectedValue(new Error('No whole-file IPC'))
     const prepared = await prepareChatAttachment(endpoint, selected, { chat_id: 'group', as: 'owner', message_id: 'message' })
     expect(prepared).toEqual({ local: selected })
-    expect(n.invoke).toHaveBeenCalledExactlyOnceWith('files:publish', { chatId: 'group' })
+    expect(n.invoke).toHaveBeenCalledExactlyOnceWith('files:publish', { chatId: 'group', contentType: 'application/pdf' })
     expect(n.getPathForFile).not.toHaveBeenCalled()
     await expect(commitPreparedChatAttachment(endpoint, prepared, args)).resolves.toEqual(message)
     expect(n.invoke).toHaveBeenLastCalledWith('files:publish', { chatId: 'group', file: { name: 'selected.pdf', path: '/project/actual.pdf', size: 3, contentType: 'application/pdf' }, message: args })

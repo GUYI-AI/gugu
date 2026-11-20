@@ -26,6 +26,12 @@ export type FileStorage = {
 export const FILE_KEEPS = ['temporary', 'permanent'] as const
 export type FileKeep = (typeof FILE_KEEPS)[number]
 
+/**
+ * Whether a folder group's file goes up as a cloud copy instead of staying on the sender's device: every file when the
+ * account uploads proactively, an image always (kept for `image_retention`; the server classifies by the same `image/*`).
+ */
+export const uploadsManaged = (storage: FileStorage, contentType: string): boolean => storage.proactive_upload || contentType.startsWith('image/')
+
 export const DEFAULT_FILE_STORAGE: FileStorage = { proactive_upload: false, temporary_transfer: true, retention: '7d', image_retention: '7d', temporary_retention: '7d' }
 
 /**

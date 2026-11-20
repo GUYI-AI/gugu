@@ -10,9 +10,8 @@ import { isInside, readWorkspaceChunk } from './session/main/core/files/workspac
 import { findProjectFileCopy, rememberProjectFile } from './sessionpage/sessionpage-project-groups'
 import { importProjectFile } from './projectFileImport'
 import { sanitizeRemoteFileName } from './remoteFileOpen'
-import { createLogger } from './lib/logger'
 import type { CommitArgs } from '@gugu/core/cloud/attachmentsApi'
-import type { FileStorage } from '@gugu/core/shared/fileStorage'
+import { uploadsManaged, type FileStorage } from '@gugu/core/shared/fileStorage'
 import type { FilesPlatform } from '../src/session/shared/extensions/app-files-core'
 
 export type ProjectFileMessage = Omit<CommitArgs, 'staging_key'>
@@ -44,8 +43,6 @@ export function createProjectFilePublisher(deps: {
   project(chatId: string): Promise<string | undefined>
   /** Whether the chat is one of this account's projects (its project group), whatever folders its machines bind. */
   projectChat(chatId: string): Promise<boolean>
-  /** Ask for a version's temporary copy, as a reader's first open does. */
-  requestCopy?(itemId: string, version: number): Promise<unknown>
 }) {
   /** Null: not a project chat, so the ordinary upload decides. */
   const place = async (chatId: string, task = false) => {
@@ -59,7 +56,7 @@ export function createProjectFilePublisher(deps: {
     store?: Parameters<Publisher>[4], { message, next, task, itemId }: ProjectFilePublishOptions = {}, temporary = false): Promise<Awaited<ReturnType<Publisher>> & { message?: Record<string, unknown>; path?: string } | null> => {
     const here = await place(chatId, task)
     if (!here) return null
-    if (here.storage?.proactive_upload) return store ? store() : null
+    if (here.storage && uploadsManaged(here.storage, file.contentType)) return store ? store() : null
     const handed = file.path
     const { identity, projectId } = here
     const root = await deps.root(projectId)
@@ -92,11 +89,6 @@ export function createProjectFilePublisher(deps: {
       content_type: row.content_type, size_bytes: first.size, sha256, host_account_id: identity.accountId, host_device_id: identity.deviceId, host_project_id: projectId, relative_path: path,
       workspace: { path: row.path, parent_id: row.parent_id, created_at: row.created_at, updated_at: row.updated_at, created_by: row.created_by, source_message_ids: row.source_message_ids ?? [] } }
     await rememberProjectFile(revision, identity.accountId, deps.env)
-    // An image is read at a glance, often when this machine is off: its temporary copy goes up now instead of at the first read.
-    // Not when its owner turned copies off, nor for a read-once copy: the first reader would use it up, and the sender's own screen must not be that reader.
-    if (message && file.contentType.startsWith('image/') && here.storage?.temporary_transfer !== false && here.storage?.retention !== 'read-once') {
-      void deps.requestCopy?.(row.id, row.version).catch((error: unknown) => createLogger('project-file').warn({ item: row.id, error: String(error) }, 'image copy request failed'))
-    }
     const published = sent ? { ...row, message: sent } : row
     return task ? { ...published, path: handed } : published
   }
@@ -121,7 +113,7 @@ export function createProjectFilePublisher(deps: {
       return await publishFile(chatId, { ...selected, path }, parentId, actor, store, options, true)
     } finally { await rm(directory, { recursive: true, force: true }).catch(() => undefined) } // the message is already committed: a stuck temp file must not turn it into an error
   }
-  return Object.assign(publish, { async local(chatId: string) { const here = await place(chatId); return !!here && !here.storage?.proactive_upload } })
+  return Object.assign(publish, { async local(chatId: string, contentType: string) { const here = await place(chatId); return !!here && !!here.storage && !uploadsManaged(here.storage, contentType) } })
 }
 
 /**
