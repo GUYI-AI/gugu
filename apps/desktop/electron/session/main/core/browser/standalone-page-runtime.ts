@@ -15,6 +15,7 @@ import { watchTaskPageConnection } from './remote-task-page';
 import { wireStandalonePageDialogs, type AskPerson, type DialogPage } from './standalone-page-dialogs';
 import { wireStandalonePageFeatures, type FeatureHost, type FeaturePage } from './standalone-page-features';
 import { kernelAfterCapabilityGate } from './standalone-capability-gate';
+import { TaskPopupClosed } from '../../../../server/task-popups';
 import { remoteBrowserBinding } from './remote-loopback-requests';
 import { appSettingsService } from '../settings/settings-service';
 import { log } from '@main/lib/logger';
@@ -98,7 +99,11 @@ export async function standalonePage(browserId: string, url?: string, signal: Ab
     throw new Error('This standalone browser tab is not registered');
   }
   if (url && url !== 'about:blank' && !/^https?:\/\//i.test(url)) throw new Error('Only web pages open in the standalone browser');
-  const page = await standaloneKernelService().pool.pageFor({ ...binding, url, signal });
+  const page = await standaloneKernelService().pool.pageFor({ ...binding, url, signal }).catch((error: unknown) => {
+    // The tab was opened for a window that had already closed itself: the tab goes too.
+    if (error instanceof TaskPopupClosed) events.emit(browserCloseTabChannel, { browserId });
+    throw error;
+  });
   if (contents.get(browserId) !== page) {
     contents.set(browserId, page);
     const dialogs = dialogPage(page);

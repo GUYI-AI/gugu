@@ -1,5 +1,12 @@
 /** How long a window Chrome already opened waits for the Gugu tab that will show it. */
 export const POPUP_CLAIM_MS = 5_000;
+/** How long the tab that opens the address of a window that already closed is told so. */
+export const POPUP_CLOSED_MS = 10_000;
+
+/** The tab was opened for a window the page had already closed: there is nothing to show and the address must not load again. */
+export class TaskPopupClosed extends Error {
+  constructor(readonly url: string) { super(`The window opened for ${url} closed before its tab opened`); }
+}
 
 type Held = { targetId: string; timer: ReturnType<typeof setTimeout> };
 
@@ -12,6 +19,8 @@ type Held = { targetId: string; timer: ReturnType<typeof setTimeout> };
  */
 export class TaskPopups {
   private readonly held = new Map<string, Held[]>();
+  /** Addresses of windows that closed themselves before a tab took them, with when. */
+  private readonly closedEarly = new Map<string, number[]>();
 
   constructor(private readonly close: (targetId: string) => void, private readonly claimMs = POPUP_CLAIM_MS) {}
 
@@ -24,7 +33,7 @@ export class TaskPopups {
   hold(url: string, targetId: string): void {
     const key = TaskPopups.key(url);
     const timer = setTimeout(() => {
-      this.drop(key, targetId);
+      this.drop(key, targetId); // Gugu closes it: nothing to tell a tab that comes later, it opens the address itself.
       this.close(targetId);
     }, this.claimMs);
     timer.unref?.();
@@ -49,12 +58,24 @@ export class TaskPopups {
       if (!found) continue;
       clearTimeout(found.timer);
       this.drop(key, targetId);
+      this.closedEarly.set(key, [...(this.closedEarly.get(key) ?? []), Date.now()]);
     }
+  }
+
+  /** Whether a window with this address closed itself before any tab took it. Told once per window, for a few seconds. */
+  closedBeforeTaken(url: string | undefined): boolean {
+    if (!url) return false;
+    const key = TaskPopups.key(url);
+    const recent = (this.closedEarly.get(key) ?? []).filter(at => Date.now() - at <= POPUP_CLOSED_MS);
+    const told = recent.length > 0;
+    if (recent.length > 1) this.closedEarly.set(key, recent.slice(1)); else this.closedEarly.delete(key);
+    return told;
   }
 
   dispose(): void {
     for (const list of this.held.values()) for (const item of list) clearTimeout(item.timer);
     this.held.clear();
+    this.closedEarly.clear();
   }
 
   private drop(key: string, targetId: string): void {

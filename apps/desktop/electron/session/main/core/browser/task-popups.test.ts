@@ -49,6 +49,34 @@ describe('windows a page opened that wait for the tab that shows them', () => {
     expect(popups.take('https://b.test/')).toBeNull();
   });
 
+  it('remembers a window that closed itself before any tab took it, so the tab that opens its address knows there is nothing to show', () => {
+    const close = vi.fn();
+    const popups = new TaskPopups(close);
+    popups.hold('https://auth.test/login', 'P1');
+    popups.forget('P1'); // The page called window.close() already.
+    expect(popups.take('https://auth.test/login')).toBeNull();
+    expect(popups.closedBeforeTaken('https://auth.test/other')).toBe(false);
+    expect(popups.closedBeforeTaken('https://auth.test/login')).toBe(true);
+    expect(popups.closedBeforeTaken('https://auth.test/login')).toBe(false); // Told once.
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('does not remember a window Gugu closed because nobody took it, or one that was taken, or one told long after', () => {
+    const popups = new TaskPopups(vi.fn());
+    popups.hold('https://a.test/', 'P1');
+    vi.advanceTimersByTime(6_000); // Unclaimed: closed by Gugu.
+    popups.forget('P1');
+    expect(popups.closedBeforeTaken('https://a.test/')).toBe(false);
+    popups.hold('https://b.test/', 'P2');
+    expect(popups.take('https://b.test/')).toBe('P2');
+    popups.forget('P2');
+    expect(popups.closedBeforeTaken('https://b.test/')).toBe(false);
+    popups.hold('https://c.test/', 'P3');
+    popups.forget('P3');
+    vi.advanceTimersByTime(11_000);
+    expect(popups.closedBeforeTaken('https://c.test/')).toBe(false);
+  });
+
   it('forgets a window Chrome closed, and stops waiting when disposed', () => {
     const close = vi.fn();
     const popups = new TaskPopups(close);

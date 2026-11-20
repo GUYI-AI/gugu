@@ -13,7 +13,7 @@ import { TaskPageCapture } from './server-task-page-capture';
 import { TaskPageViewport } from './task-page-viewport';
 import { CHROME_ERROR_PAGE_URL, READ_CHROME_ERROR_SCRIPT, taskPageLoadFailure } from './task-page-load-error';
 import { READ_FAVICONS_SCRIPT } from './task-page-favicons';
-import { TaskPopups } from './task-popups';
+import { TaskPopupClosed, TaskPopups } from './task-popups';
 
 /**
  * #1607 node 4b — a Gugu server's task pages (owner decision 11-08): one headless Chromium ("new" headless) per
@@ -633,6 +633,8 @@ export function createServerTaskBrowser(options: {
   async function open(sessionId: string, url: string | undefined): Promise<PageTarget> {
     const { connection } = await browser();
     let target = await adopt(connection, url);
+    // The window the tab was opened for closed itself already (sign-in finished fast): no page to adopt, and none to load.
+    if (!target && url && popups.closedBeforeTaken(url)) throw new TaskPopupClosed(url);
     if (!target) {
       const { targetId } = await connection.send('Target.createTarget', { url: url ?? 'about:blank' }) as { targetId: string };
       target = new PageTarget(connection, targetId);
