@@ -12,10 +12,14 @@ const generations = new Map<string, number>()
 export function messageWindowGeneration(accountId: string): number { return generations.get(accountId) ?? 0 }
 const nextGeneration = (accountId: string) => generations.set(accountId, messageWindowGeneration(accountId) + 1)
 const key = (chatId: string, root: string | null) => JSON.stringify([chatId, root])
-/** One viewport cache per account; a rebind replaces the previous one. null rows = the conversation left. */
-const publishers = new Map<string, (chatId: string, rows: MessageItem[] | null) => void>()
+/**
+ * One viewport cache per account; a rebind replaces the previous one. null rows = the conversation left. Rows only add
+ * to the cache, so a deletion names its ids.
+ */
+type Publish = (chatId: string, rows: MessageItem[] | null, deletedIds?: readonly string[]) => void
+const publishers = new Map<string, Publish>()
 
-export function publishMessageWindows(accountId: string, publish: (chatId: string, rows: MessageItem[] | null) => void): void {
+export function publishMessageWindows(accountId: string, publish: Publish): void {
   publishers.set(accountId, publish)
 }
 
@@ -63,6 +67,7 @@ export function acceptMessageWrites(accountId: string, writes: readonly ImMessag
         window.rows = window.rows.filter(row => row.id !== write.id)
         reads.set(id, { chatId: window.chatId, root: window.root })
       }
+      publishers.get(accountId)?.(write.chatId, [], [write.id])
     }
   }
   return [...reads.values()]

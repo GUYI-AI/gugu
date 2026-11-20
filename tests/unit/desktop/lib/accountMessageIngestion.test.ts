@@ -146,7 +146,8 @@ it('does not retry an alert after a committed claim even when the notification o
 it('keeps the stored tail verified through a revision batch whose sequence skips numbers', async () => {
   const r = await rig()
   await r.send(...Array.from({ length: 30 }, (_, index) => arrival(String(index + 1), `m${index + 1}`, row(`m${index + 1}`, 2 * index + 50))))
-  const page = await readMessagePage('viewer', { chatId: 'room', limit: 30 })
+  // Cold open asks whether the stored tail is contiguous up to its own newest row (seq 108).
+  const page = await readMessagePage('viewer', { chatId: 'room', beforeSeq: 109, limit: 30 })
   expect(page.rows).toHaveLength(30)
   expect(page.covered).toBe(true)
 })

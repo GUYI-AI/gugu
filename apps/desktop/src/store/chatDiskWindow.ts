@@ -9,7 +9,11 @@ import { recordNativeConversationHistoryClear } from '../lib/nativeConversationH
 /** One account commit feeds every viewport, including conversations not open yet. */
 export function bindRepositoryMessageCache(repository: AccountImRepository, cache: ChatWindowCache): () => void {
   // Windows come from the message store (messageIngest); the repository carries no message rows.
-  publishMessageWindows(repository.accountId, (chatId, rows) => { if (rows) cache.set(chatId, rows); else cache.delete(chatId) })
+  publishMessageWindows(repository.accountId, (chatId, rows, deletedIds) => {
+    if (!rows) cache.delete(chatId)
+    else if (!deletedIds) cache.set(chatId, rows)
+    else if (cache.rows(chatId).some(row => deletedIds.includes(row.id))) cache.update(chatId, previous => previous.filter(row => !deletedIds.includes(row.id)))
+  })
   let previous: ReturnType<AccountImRepository['snapshot']> | undefined
   return repository.subscribe(snapshot => snapshot, snapshot => {
     for (const row of snapshot.chat) {
