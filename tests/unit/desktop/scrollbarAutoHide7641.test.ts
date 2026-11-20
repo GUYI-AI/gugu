@@ -98,6 +98,8 @@ describe('@@@scrollbar-autohide (#7641) 滚动中标记', () => {
     expect(backgrounds).toEqual({
       '::-webkit-scrollbar-thumb': 'transparent',
       '[data-scrolling]::-webkit-scrollbar-thumb': 'var(--border-color)',
+      // 横着滚的(消息里的表格、代码块)常亮:鼠标滚轮滚不动它们。
+      '::-webkit-scrollbar-thumb:horizontal': 'var(--border-color)',
       '::-webkit-scrollbar-thumb:hover': 'var(--text-tertiary)',
     })
   })

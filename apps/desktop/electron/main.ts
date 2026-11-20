@@ -580,7 +580,6 @@ import { applyApplicationMenu } from './app-menu'
 import { createMainRendererGoneHandler, createMainRendererResponsivenessLog, type CrashDialogChoice } from './renderer-crash-recovery'
 import { menuOpenSettingsChannel } from '@shared/events/appEvents'
 import { pinDesktopPointerMedia } from './linux-pointer-media'
-import { enableOverlayScrollbars } from './windows-overlay-scrollbars'
 import {
   NOTIFICATION_BUS_NAME,
   PROBE_TIMEOUT_MS,
@@ -723,9 +722,6 @@ if (process.env.GUGU_FAKE_MICROPHONE_FILE?.trim() && !app.isPackaged) {
 // pointer:none,Tailwind 的整块 hover 样式随之失效(置顶 / 归档等 hover 浮出按钮全灭)。command-line
 // 开关必须在 app ready 前追加,所以与上面的 CDP 端口放在一起。细节与真机读数见 linux-pointer-media.ts。
 pinDesktopPointerMedia(app.commandLine)
-// @@@win-overlay-scrollbar Windows 上让 Chromium 画悬浮滚动条(会话页树的 scrollbar-width: thin 默认是常驻带箭头的 10px 经典条)。
-// 同样必须在 app ready 前追加;`enable-features` 只在这一处写,细节见 windows-overlay-scrollbars.ts。
-enableOverlayScrollbars(app.commandLine)
 forwardWindowSeen()
 // @@@devtools-lock — 必须在任何窗口创建之前注册 'web-contents-created',否则主窗口漏在守卫外面。
 installDevtoolsLock((url) => {
