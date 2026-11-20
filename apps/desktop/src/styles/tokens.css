@@ -1092,15 +1092,15 @@
    它们靠根的底色当正文底,不能跟着透。 */
 :root[data-window-material='native'] .gg-session-frame:has([data-workspace-left-panel]:not(.hidden)),
 :root[data-window-material='native'] .gugu-skin:has([data-workspace-left-panel]:not(.hidden)),
-:root[data-window-material='native'] .gugu-skin [data-workspace-left-panel] > :not([data-peek]),
+:root[data-window-material='native'] .gugu-skin :is([data-workspace-left-panel] > :not([data-peek]), [data-region='inner-sidebar']),
 :root[data-window-material='native'] .gugu-skin [data-workspace-left-panel] > :not([data-peek]) [data-region='left-sidebar']:not(.bg-background-2) {
   background-color: transparent;
 }
-:root[data-window-material='native'][data-sidebar-tint='on'] .gugu-skin [data-workspace-left-panel] > :not([data-peek]) {
+:root[data-window-material='native'][data-sidebar-tint='on'] .gugu-skin :is([data-workspace-left-panel] > :not([data-peek]), [data-region='inner-sidebar']) {
   background-color: color-mix(in oklab, var(--bg) 40%, transparent);
 }
-/* 同 @@@dark-material-veil:任务页停靠列与壳里的导航列同一层薄纱。 */
-:root[data-window-material='native']:not([data-theme='light']) .gugu-skin [data-workspace-left-panel] > :not([data-peek]) {
+/* 同 @@@dark-material-veil:任务页停靠列、群 / 项目的内层栏与壳里的导航列同一层薄纱。 */
+:root[data-window-material='native']:not([data-theme='light']) .gugu-skin :is([data-workspace-left-panel] > :not([data-peek]), [data-region='inner-sidebar']) {
   background-color: color-mix(in oklab, var(--bg) 70%, transparent);
 }
 
