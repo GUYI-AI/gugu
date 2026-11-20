@@ -56,7 +56,7 @@ function probeNativePtyErrorBoundary() {
   }
 
   const message = String(caught?.message || caught || '')
-  if (!message.includes('posix_spawnp failed')) {
+  if (!message.includes('posix_spawn failed')) {
     throw new Error('[verify-dev-native] node-pty native error did not return to the JavaScript boundary')
   }
   return message
@@ -89,7 +89,7 @@ function probeNormalPtySpawn(pty) {
   })
 }
 
-// @@@abi-only — symbol interposition 与 `posix_spawnp failed` 那两条断言都是**macOS 特有**的
+// @@@abi-only — symbol interposition 与 `posix_spawn failed` 那两条断言都是**macOS 特有**的
 // (前者靠 nm 读 Mach-O,后者是 Darwin 的错误文案;Linux 上文案不同,照抄断言必红)。
 // 但 ABI 不一致是**跨平台**的坑,而且正是本探针要防的那一个。所以非 macOS 跑这一档:
 // 只把三个原生模块真加载一遍 —— 加载成功即 ABI 相符,加载失败即 NODE_MODULE_VERSION 报错。
