@@ -186,18 +186,10 @@ export const enUSProjectMessages = {
   // ── projects: pending creation ─────────────────────────────────────────
 
   // ── projects: directory browser ────────────────────────────────────────
-  'projects.remoteDir.loading': 'Loading directory',
-  'projects.remoteDir.useThis': 'Use this directory',
-  'projects.remoteDir.selectDirectory': 'Select a directory',
 
   // ── projects: directory tree (web local folder picker) ────────────────
-  'projects.dirTree.label': 'Folders',
-  'projects.dirTree.loadFailed': 'Could not read',
-  'projects.dirTree.homeUnavailable': 'Could not find the home directory on the host',
   // 原属 projects.remote.*,那一组随 #5058「下线远程项目入口」一起删了。文案一字不改地搬过来:
   // 「使用现有文件夹」用的就是这一句,它与远程无关,只是当初共用了那个目录浏览器。
-  'projects.dirTree.notAGitRepo':
-    'This directory is not a git repository; work will happen in it directly (an agent can initialize one if needed).',
 
   // ── projects: GitHub account select ────────────────────────────────────
   // "GitHub CLI" and "OAuth" are proper nouns and stay verbatim.
@@ -391,15 +383,8 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   // ── projects: pending creation ─────────────────────────────────────────
 
   // ── projects: directory browser ────────────────────────────────────────
-  'projects.remoteDir.loading': '正在读取目录',
-  'projects.remoteDir.useThis': '使用此目录',
-  'projects.remoteDir.selectDirectory': '选择目录',
 
   // ── projects: directory tree (web local folder picker) ────────────────
-  'projects.dirTree.label': '文件夹',
-  'projects.dirTree.loadFailed': '读取失败',
-  'projects.dirTree.homeUnavailable': '找不到宿主的家目录',
-  'projects.dirTree.notAGitRepo': '该目录不是 git 仓库，将直接在其中工作（agent 可按需自行初始化）。',
 
   // ── projects: GitHub account select ────────────────────────────────────
   // "GitHub CLI" and "OAuth" are proper nouns and stay verbatim.
