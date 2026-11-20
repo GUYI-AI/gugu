@@ -157,7 +157,8 @@ describe('message-owned send failure notices', () => {
     send.mockResolvedValue(row)
     h.wiring.retrySend(row.id)
     await vi.advanceTimersByTimeAsync(100)
-    expect(h.messages()[0]).toMatchObject({ id: row.id, seq: 42, local_send_state: null })
+    // The acknowledgement settles the row after its message-store write lands.
+    await vi.waitFor(() => expect(h.messages()[0]).toMatchObject({ id: row.id, seq: 42, local_send_state: null }))
     expect(notices.visible.size, 'the acknowledged message still has its old failure notice').toBe(0)
     h.wiring.dispose()
   })
@@ -203,7 +204,7 @@ describe('message-owned send failure notices', () => {
     send.mockResolvedValue(persistedMessage('first'))
     h.wiring.retrySend('first')
     await vi.advanceTimersByTimeAsync(100)
-    expect(notices.visible.size, 'success must retire only the matching message').toBe(1)
+    await vi.waitFor(() => expect(notices.visible.size, 'success must retire only the matching message').toBe(1))
     h.wiring.dispose()
   })
 })
@@ -384,7 +385,7 @@ describe('投递前置:乐观行先上屏,就绪/对端解析在投递阶段 (C1
     await vi.advanceTimersByTimeAsync(100)
     expect(beforeDeliver).toHaveBeenCalledTimes(4)
     expect(send).toHaveBeenCalledTimes(1)
-    expect(harness.messages()[0]).toMatchObject({ seq: 42, local_send_state: null })
+    await vi.waitFor(() => expect(harness.messages()[0]).toMatchObject({ seq: 42, local_send_state: null }))
   })
 
   it.each(['zh-CN', 'en-US'] as const)('names the original conversation in an off-screen failure (%s)', async (locale) => {

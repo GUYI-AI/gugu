@@ -13,8 +13,12 @@ const listTopicsOfChat = vi.hoisted(() => vi.fn<(sourceChatId: string, topicChat
 const ingested = vi.hoisted(() => [] as ImMessageBatch[])
 vi.mock('../../../../apps/desktop/src/lib/topics', () => ({ topicService: { listTopicsOfChat } }))
 vi.mock('../../../../apps/desktop/src/lib/messageIngest', () => ({
-  localMessageQueries: () => ({ throughRevision: async () => '41' }),
   ingestMessages: async (_userId: string, batch: ImMessageBatch) => { ingested.push(batch) },
+}))
+// Access facts are stamped with the account's committed revision cursor.
+vi.mock('../../../../apps/desktop/src/lib/imRepository', async original => ({
+  ...await original<object>(),
+  openImRepositoryNow: () => ({ snapshot: () => ({ sync_state: [{ key: 'account-revision-cursor', value: { revision: '41' } }] }) }),
 }))
 const { useTopicsOfChat } = await import('../../../../apps/desktop/src/hooks/useTopics')
 // The topics are an account replica: it follows the published session, which the product signs in with the same user.

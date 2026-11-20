@@ -1,5 +1,5 @@
 import { displayIdentityFromRow } from './displayIdentity'
-import { createIndexedDbHandle, type IndexedDbHandle } from './indexedDbHandle'
+import { createIndexedDbHandle, requestResult, transactionDone, type IndexedDbHandle } from './indexedDbHandle'
 import { ACCOUNT_REVISION_CURSOR_KEY } from './accountRevisionRuntime'
 import { rendererLogger } from './log'
 
@@ -380,21 +380,6 @@ function deleteAccountRows(store: IDBObjectStore, accountId: string, done: () =>
     store.delete(current.primaryKey)
     current.continue()
   }
-}
-
-export function requestResult<T>(request: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'))
-    request.onsuccess = () => resolve(request.result)
-  })
-}
-
-export function transactionDone(transaction: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    transaction.oncomplete = () => resolve()
-    transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB transaction failed'))
-    transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB transaction aborted'))
-  })
 }
 
 function keyForRow(store: ImStoreName, row: LocalImRow): IDBValidKey {

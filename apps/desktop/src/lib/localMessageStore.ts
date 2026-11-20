@@ -2,7 +2,7 @@ import type { MessageItem } from '@gugu/core/shared/types/chat'
 import type { ImMessageBatch, ImMessagePage, ImMessagePageResult, ImMessageWrite, MessageStore } from '../session/shared/core/im-messages'
 import { chatsOfBatch, messageStoreOperations, requireId, type ChatAccessRow, type MessageStoreAdapter, type SeqRange } from '../session/shared/core/im-message-store'
 import { createIndexedDbHandle } from './indexedDbHandle'
-import { requestResult, transactionDone } from './localSyncDb'
+import { requestResult, transactionDone } from './indexedDbHandle'
 
 // @@@client-state-model - the phone's adapter of the one message storage contract (session/shared/core/im-message-store).
 // The contract runs synchronously over this account's rows held in memory; each batch then commits to IndexedDB in one
