@@ -308,12 +308,19 @@ it.each(['claude', 'codex'])('an expired current %s account offers "Sign in agai
   expect(thrown).toEqual([]);
 });
 
-it('a signed-in account and the native CLI configuration get no sign-in button on the row', async () => {
+// #3394: an auth file can still read as signed in after revocation, so re-login must stay reachable.
+it('a signed-in account offers re-login on the row for that same connection', async () => {
   control.connections = [{ id: 'account', kind: 'account', name: 'Saved account', current: true }];
   root.render(<ConnectionDetailsFixture />);
-  await until('the harness connection action is ready', () => !!host.querySelector('[data-testid="subscription-switch-claude"]'));
-  await new Promise((resolve) => setTimeout(resolve, 200));
-  expect(host.querySelector('[data-testid="subscription-sign-in-claude"]')).toBeNull();
+  await until('the signed-in identity is read', () => host.querySelector('[data-testid="connection-status-claude"]')?.textContent?.includes('me@example.test') === true);
+  await until('the signed-in row offers re-login', () => host.querySelector('[data-testid="subscription-sign-in-claude"]')?.textContent === 'Sign in again');
+  await userEvent.click(page.getByTestId('subscription-sign-in-claude'));
+  expect(modalStore.activeModalId).toBe('agentSignInModal');
+  expect(modalStore.activeModalArgs).toMatchObject({ providerId: 'claude', connectionId: 'account' });
+  expect(control.created).toBeNull();
+  expect(control.removed).toEqual([]);
+  expect(control.selected).toBe('');
+  expect(thrown).toEqual([]);
 });
 
 it.each(['claude', 'codex'])('an expired saved %s account preserves its sign-in menu', async provider => {
@@ -326,7 +333,8 @@ it.each(['claude', 'codex'])('an expired saved %s account preserves its sign-in 
   await until('the connection list opens', () => !!layer.querySelector('[data-testid="connection-expired-account"]'));
   expect(host.querySelector('.subscription-connection-form')).toBeNull();
   await userEvent.click(page.getByRole('button', { name: 'Options for Saved account', exact: true }));
-  const signIn = page.getByRole('menuitem', { name: 'Sign in', exact: true });
+  // #3394: an expired saved account says "Sign in again", rather than first-time "Sign in".
+  const signIn = page.getByRole('menuitem', { name: 'Sign in again', exact: true });
   await expect.element(signIn).toBeVisible();
   await untilStable('the saved account sign-in menu settles', () => {
     const { x, y, width, height } = signIn.element().getBoundingClientRect();
@@ -336,6 +344,8 @@ it.each(['claude', 'codex'])('an expired saved %s account preserves its sign-in 
   expect(modalStore.activeModalId).toBe('agentSignInModal');
   expect(modalStore.activeModalArgs).toMatchObject({ providerId: provider, connectionId: 'expired-account' });
   expect(control.created).toBeNull();
+  expect(control.removed).toEqual([]);
+  expect(control.selected).toBe('');
   expect(thrown).toEqual([]);
 });
 
@@ -692,23 +702,27 @@ it('the switch menu shows how much each account has left without switching to it
 it.each([
   { provider: 'claude', kind: 'native' as const }, { provider: 'codex', kind: 'native' as const },
   { provider: 'claude', kind: 'account' as const }, { provider: 'codex', kind: 'account' as const },
-])('an authenticated $provider $kind connection has no login or reauthorization action', async ({ provider, kind }) => {
+])('an authenticated $provider $kind connection can re-login without creating or selecting an account', async ({ provider, kind }) => {
   control.codex = true;
   control.connections = [{ id: 'existing', kind, name: 'Existing account', current: true }];
   root.render(<ConnectionDetailsFixture />);
   await openSwitch(provider);
   await until('the account has been read', () => layer.querySelector('[data-testid="connection-existing"]')?.textContent?.includes('me@example.test') === true);
   const existing = layer.querySelector('[data-testid="connection-existing"]')!;
-  if (kind === 'native') {
-    // 「现有 CLI 配置」是 CLI 自己那一份:没有「⋯」。
-    expect(existing.querySelector('[aria-haspopup="menu"]')).toBeNull();
-  } else {
-    // 账号连接的「⋯」里只有「移除」(#2507:正在用的也能删,落回原生),没有登录 / 重新授权。
-    await userEvent.click(page.getByRole('button', { name: 'Options for Existing account', exact: true }));
-    await until('its options open', () => layer.querySelectorAll('[role="menuitem"]').length > 0);
-    expect([...layer.querySelectorAll('[role="menuitem"]')].map(item => item.textContent)).toEqual(['Remove']);
-  }
-  expect(host.querySelector(`[data-testid="subscription-sign-in-${provider}"]`)).toBeNull();
+  // #3394: both kinds keep re-login visible while authenticated; native still cannot be removed.
+  expect(host.querySelector(`[data-testid="subscription-sign-in-${provider}"]`)?.textContent).toBe('Sign in again');
+  const options = existing.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
+  expect(options).not.toBeNull();
+  await userEvent.click(options!);
+  await until('its options open', () => layer.querySelectorAll('[role="menuitem"]').length > 0);
+  expect([...layer.querySelectorAll('[role="menuitem"]')].map(item => item.textContent))
+    .toEqual(kind === 'native' ? ['Sign in again'] : ['Sign in again', 'Remove']);
+  await userEvent.click(page.getByRole('menuitem', { name: 'Sign in again', exact: true }));
+  expect(modalStore.activeModalId).toBe('agentSignInModal');
+  expect(modalStore.activeModalArgs).toMatchObject({ providerId: provider, connectionId: 'existing' });
+  expect(control.created).toBeNull();
+  expect(control.removed).toEqual([]);
+  expect(control.selected).toBe('');
   expect(addButton(provider)).not.toBeNull();
   expect(thrown).toEqual([]);
 });
@@ -915,10 +929,17 @@ it.each(['claude', 'codex'].flatMap(provider => [{ provider, expired: true }, { 
 
   const row = () => host.querySelector(`[data-subscription-model="${provider}:native"]`);
   await until('the native row displays its actual state', () => row()?.textContent?.includes(expired ? 'Sign-in expired' : 'Signed in') === true);
-  expect(row()?.textContent).toContain('Sign in again');
-  await userEvent.click(page.getByTestId('model-sign-in-native'));
+  // Both providers have a native connection: scope the click to this provider, never pick the first match.
+  await until('both native providers have their login entry', () => host.querySelectorAll('[data-testid="model-sign-in-native"]').length === 2);
+  expect(row()!.querySelectorAll('[data-testid="model-sign-in-native"]')).toHaveLength(1);
+  const signIn = row()!.querySelector<HTMLButtonElement>('[data-testid="model-sign-in-native"]');
+  expect(signIn?.textContent).toBe('Sign in again');
+  expect(row()!.querySelector('[data-testid="model-remove-native"]')).toBeNull();
+  await userEvent.click(signIn!);
   await until('the same native connection signs in', () => modalStore.activeModalId === 'agentSignInModal');
   expect(control.created).toBeNull();
+  expect(control.removed).toEqual([]);
+  expect(control.selected).toBe('');
   expect(modalStore.activeModalArgs).toMatchObject({ providerId: provider, connectionId: 'native' });
   expect(thrown).toEqual([]);
 });
