@@ -127,6 +127,8 @@ export const MessageBubble = memo(function MessageBubble({
   const mediaAttachment = msg.content_type === 'attachment' && !voiceAttachment
     ? parseAttachmentContent(msg.content, msg)
     : null
+  // A file sent with words: those words are the bubble's text (a send of several files shows its last caption, as MessageAlbumBubble does).
+  const caption = album ? album.map(member => parseAttachmentContent(member.content, member)?.caption).findLast(Boolean) : mediaAttachment?.caption
   useEffect(() => {
     if (!showMenu && !showMoreMenu && !showEmojiPicker) return
     const closeFromSharedEvent = () => {
@@ -146,7 +148,7 @@ export const MessageBubble = memo(function MessageBubble({
     onReact: (emoji: string) => { onReaction(msg.id, emoji); close() },
     onQuoteSelection: menuSelection && msg.content_type === 'text' ? () => { onQuote({ ...msg, content: menuSelection }, { originalContent: msg.content }); close() } : undefined,
     onCopy: (content = menuSelection || undefined) => { void handleCopyText(content); close() },
-    onSelectText: compactMobile && msg.content_type === 'text' && phone.source ? () => { phone.setSelecting(true); close() } : undefined,
+    onSelectText: compactMobile && (msg.content_type === 'text' || !!caption) && phone.source ?() => { phone.setSelecting(true); close() } : undefined,
     onCopyLink: menuLink ? () => { void handleCopyText(menuLink.href); close() } : undefined, onOpenLink: menuLink ? () => { menuLink.click(); close() } : undefined,
     onForward: () => { onForward(msg); close() }, onKeep: keepAction({ id: msg.id, mine: msg.is_mine, live: !!mediaAttachment && mediaAttachment.source.kind !== 'gone' }, close, toast, t),
     onDownload: mediaAttachment && mediaAttachment.source.kind !== 'gone' ? () => { void (album ? downloadSendFiles(album) : downloadAttachment(mediaAttachment.source, mediaAttachment.fileName)).catch((error) => toast(t('chatArea.downloadFailed'), 'error', safeFailureLine(String((error as Error)?.message ?? error)))); close() } : undefined,
