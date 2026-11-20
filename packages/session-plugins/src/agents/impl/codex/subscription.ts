@@ -158,14 +158,22 @@ export async function prepareCodexHistory(ctx: Pick<AgentAuthContext, 'cli' | 'e
 }
 
 async function askAppServer(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, method: string | null, params: unknown, options: CodexPrepareOptions = {}): Promise<unknown> {
-  return retryCodexPreparation(() => askAppServerAttempt(ctx, method, params, options.signal, options.verifyThreads), options);
+  return withCodexAppServer(ctx, (server) => method === null ? Promise.resolve(server.initialized) : server.request(method, params), options);
 }
 
-async function askAppServerAttempt(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, method: string | null, params: unknown, signal?: AbortSignal, verifyThreads: CodexPrepareOptions['verifyThreads'] = []): Promise<unknown> {
+export type CodexAppServer = { initialized: unknown; request: (method: string, params: unknown) => Promise<unknown> };
+export type CodexAppServerOptions = CodexPrepareOptions & { args?: readonly string[] };
+
+export function withCodexAppServer<T>(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, run: (server: CodexAppServer) => Promise<T>, options: CodexAppServerOptions = {}): Promise<T> {
+  return retryCodexPreparation(() => withCodexAppServerAttempt(ctx, run, options), options);
+}
+
+async function withCodexAppServerAttempt<T>(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, run: (server: CodexAppServer) => Promise<T>, options: CodexAppServerOptions): Promise<T> {
+  const { signal } = options;
   signal?.throwIfAborted();
   const binary = ctx.env.GUGU_CODEX_BIN?.trim() || ctx.cli;
   let failure: Error | null = null;
-  const owned = spawnOwnedChild(binary, ['app-server'], { env: ctx.env, stdio: ['pipe', 'pipe', 'pipe'], onError: error => { failure = error; } });
+  const owned = spawnOwnedChild(binary, [...options.args ?? [], 'app-server'], { env: ctx.env, stdio: ['pipe', 'pipe', 'pipe'], onError: error => { failure = error; } });
   const child = owned.child;
   let stderrTail = '';
   child.stderr?.on('data', (chunk: Buffer) => { stderrTail = (stderrTail + chunk.toString('utf8')).slice(-8192); });
@@ -195,32 +203,31 @@ async function askAppServerAttempt(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, m
     abort = () => reject(signal?.reason ?? new Error('Codex preparation cancelled'));
     signal?.addEventListener('abort', abort, { once: true });
   });
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = (ms: number) => new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error('Codex app-server request timed out')), ms);
-  });
   try {
     const initialized = await Promise.race([request('initialize', { clientInfo: { name: 'gugu', title: 'Gugu', version: '0' }, capabilities: null }), exited, aborted]);
-    clearTimeout(timer);
     child.stdin!.write(JSON.stringify({ method: 'initialized' }) + '\n');
-    if (method === null) {
-      for (const expected of verifyThreads) {
-        const response = await Promise.race([request('thread/read', { threadId: expected.id, includeTurns: false }), exited, aborted]);
-        const thread = objectAt(response, 'thread');
-        // Native lookup can fall back to rollout files after a completed backfill. Never accept a path back into the user's source home.
-        const path = typeof thread?.path === 'string' ? resolve(thread.path).replace(/\.zst$/, '') : null;
-        if (thread?.id !== expected.id || path !== resolve(expected.path).replace(/\.zst$/, '')) {
-          throw new Error('Codex returned a different imported session or rollout path');
-        }
+    const server: CodexAppServer = { initialized, request: async (method, params) => {
+      signal?.throwIfAborted();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Codex app-server request timed out')), APP_SERVER_TIMEOUT_MS); });
+      try { return await Promise.race([request(method, params), exited, aborted, timeout]); }
+      finally { clearTimeout(timer); }
+    } };
+    for (const expected of options.verifyThreads ?? []) {
+      const response = await server.request('thread/read', { threadId: expected.id, includeTurns: false });
+      const thread = objectAt(response, 'thread');
+      // Native lookup can fall back to source rollouts after backfill; require the managed path.
+      const path = typeof thread?.path === 'string' ? resolve(thread.path).replace(/\.zst$/, '') : null;
+      if (thread?.id !== expected.id || path !== resolve(expected.path).replace(/\.zst$/, '')) {
+        throw new Error('Codex returned a different imported session or rollout path');
       }
-      return initialized;
     }
-    return await Promise.race([request(method, params), exited, aborted, deadline(APP_SERVER_TIMEOUT_MS)]);
+    return await run(server);
   } catch (error) {
     if (error instanceof Error) Object.assign(error, { stderrTail });
     throw error;
   } finally {
-    clearTimeout(timer); signal?.removeEventListener('abort', abort); lines.close();
+    signal?.removeEventListener('abort', abort); lines.close();
     await owned.stop({ graceMs: 2_000 }).catch(() => undefined);
   }
 }

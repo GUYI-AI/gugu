@@ -12,14 +12,10 @@ import { setInnerSidebarFolded } from './inner-sidebar-fold';
 import {
   SidebarMenu,
   SidebarMenuButton,
-  sidebarGroupHeaderClass,
   sidebarRowContentInsetX,
 } from './sidebar-primitives';
 
 // #2548 内层侧栏里几样零件:群 / 项目那一列(inner-sidebar.tsx)与示例项目那一列(sample-inner-sidebar.tsx)画同一个样子。
-
-/** 分区头:贴在滚动区顶上(往下滚时还看得见是哪一段)。 */
-export const innerSectionHeaderClass = cn(sidebarGroupHeaderClass, 'sticky top-0 z-10 bg-background');
 
 /** 分区里什么都没有时那一行字。 */
 export const innerSectionEmptyClass = 'px-5 pb-2 text-xs text-foreground-muted';

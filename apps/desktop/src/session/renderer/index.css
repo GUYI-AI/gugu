@@ -856,15 +856,7 @@
   --em-primary-button-foreground: var(--primary-fg);
   --em-primary-button-border: var(--primary);
 
-  /* ── Typography → gugu 正文字体(#7333 起系统字体;下文说的 Sora 即这条正文栈) (#2220 后续:「缺乏精致感,没在一套设计语言上」) ─────────
-     会话页的 --em-type-<role>-font-family 由 vanilla-extract codegen 生成为
-     var(var(--em-font-sans)) —— 双层嵌套 var()。这不是合法 CSS(var() 的第一参数必须是裸
-     自定义属性名,不能再是一个 var() 调用),在真实属性上使用时 computed-value-time 判定
-     invalid;因为 font-family 是继承属性,浏览器退回「继承值」而非「初始值」——恰好等于
-     html/body 上 font-family:var(--em-font-sans) 那条(单层、合法)。也就是说仅改
-     --em-font-sans 大概率也能带到大多数文字,但不能全信这个「无效值退回继承」的隐性行为,
-     故对每个 SANS 角色的 font-family 直接给字面量值,绕开那层坏引用。MONO 角色(code/
-     inline-code)不动——会话页自定义 mono 栈(JetBrains Mono…)保持不变。 */
+  /* ── Typography → gugu 正文字体(#7333 起系统字体;下文说的 Sora 即这条正文栈) (#2220 后续:「缺乏精致感,没在一套设计语言上」) ───────── */
   --em-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif; /* #7333 与 tokens.css --font-family-system 同一条栈 */
   /* 会话页原本只在 :root 声明 --em-font-mono(shadow 树里 :root 不生效的同一个坑,见上),
      从没在 .emlight/.emdark 这类真能命中挂载元素的地方重声明过——意味着这条 mono 桥接前,
@@ -876,19 +868,10 @@
      ❌ 别把 Sarasa 提到 JetBrains 前面 —— 那会把西文的脸也换掉。 */
   --em-font-mono:
     'JetBrains Mono Variable', 'JetBrains Mono', 'Sarasa Mono SC', Menlo, Monaco, monospace;
-  --em-type-body-font-family: var(--em-font-sans);
-  --em-type-body-bold-font-family: var(--em-font-sans);
-  --em-type-body-italic-font-family: var(--em-font-sans);
-  --em-type-body-link-font-family: var(--em-font-sans);
-  --em-type-code-lang-font-family: var(--em-font-sans);
-  --em-type-h1-font-family: var(--em-font-sans);
-  --em-type-h2-font-family: var(--em-font-sans);
-  --em-type-h3-font-family: var(--em-font-sans);
-  --em-type-mention-font-family: var(--em-font-sans);
 
   /* type scale → gugu 字阶(#7333:body 14/20、h3 16/24、h2 20/28、h1 24/32,字重钉死)。
      只改 role 级 var,不碰共享的 --em-text-*(那是一堆非 role 组件/工具类的字号来源,
-     全局改动爆炸半径太大)。字重钉死同样是因为双层 var 坑,不能全信继承。 */
+     全局改动爆炸半径太大)。 */
   --em-type-body-font-size: calc(14px * var(--text-scale, 1));
   --em-type-body-font-weight: 400;
   --em-type-body-line-height: calc(20px * var(--text-scale, 1));

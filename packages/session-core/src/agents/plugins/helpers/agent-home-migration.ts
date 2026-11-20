@@ -27,7 +27,8 @@ export async function checkAgentHomeImportSpace(
     groups: ReadonlySet<AgentHomeGroupId>
     historyPaths?: readonly string[]
   }[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options: { includeStaging?: boolean; includeCredentials?: boolean } = {}
 ): Promise<void> {
   signal?.throwIfAborted()
   if (!entries.length) return
@@ -56,9 +57,9 @@ export async function checkAgentHomeImportSpace(
       for (const item of group.paths) {
         await size(resolve(root, typeof item === 'string' ? item : item.path))
       }
-    for (const path of [...historyPaths, ...home.credentialPaths]) await size(resolve(root, path))
+    for (const path of [...historyPaths, ...(options.includeCredentials === false ? [] : home.credentialPaths)]) await size(resolve(root, path))
     // Staging preserves the existing managed home using an ordinary copy as well.
-    await size(home.shadowHome)
+    if (options.includeStaging !== false) await size(home.shadowHome)
   }
   let parent = dirname(entries[0]!.home.shadowHome)
   for (;;) {
@@ -148,7 +149,8 @@ export async function streamImportFile(
   destination?: string,
   expected?: string,
   root = dirname(source),
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onDestinationOpened?: (identity: { ino: number; dev: number }) => Promise<void>
 ): Promise<string> {
   signal?.throwIfAborted()
   const checkParents = async () => {
@@ -167,7 +169,11 @@ export async function streamImportFile(
     const opened = await input.stat()
     if (!opened.isFile() || opened.ino !== before.ino || opened.dev !== before.dev)
       throw Object.assign(new Error('Source changed'), { code: 'ESTALE' })
-    if (destination) output = await disk.open(destination, 'wx', before.mode & 0o777)
+    if (destination) {
+      output = await disk.open(destination, 'wx', before.mode & 0o777)
+      const { ino, dev } = await output.stat()
+      await onDestinationOpened?.({ ino, dev })
+    }
     const hash = createHash('sha256'),
       buffer = Buffer.alloc(64 * 1024)
     let total = 0
