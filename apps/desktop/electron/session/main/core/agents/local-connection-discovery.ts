@@ -181,5 +181,9 @@ export async function discoverLocalConnections(input: { root: string; env: Recor
     });
   }
 
-  return { connections: [...found.values()], issues };
+  // Two different keys can carry the same name (an official key in the file and another in the shell); the list shows names only.
+  const connections = [...found.values()];
+  const shared = new Set(connections.map(({ name }) => name).filter((name, index, names) => names.indexOf(name) !== index));
+  for (const connection of connections) if (shared.has(connection.name) && connection.keyLast4) connection.name = `${connection.name} (…${connection.keyLast4})`;
+  return { connections, issues };
 }

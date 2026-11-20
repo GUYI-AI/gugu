@@ -77,6 +77,14 @@ it('merges the same key and address found in the file and the login shell; a dif
   expect(new Set(two.connections.map(connection => connection.id)).size).toBe(2);
 });
 
+it('tells two connections that would carry the same name apart by their key ending, and leaves unique names alone', async () => {
+  await auth({ auth_mode: 'apikey', OPENAI_API_KEY: KEY });
+  await config('[model_providers.acme]\nname = "Acme"\nbase_url = "https://acme.example.test/v1"\nenv_key = "K"\n');
+  const found = await scan({ OPENAI_API_KEY: OTHER_KEY, K: KEY });
+  expect(found.connections.map(connection => connection.name).sort()).toEqual(['Acme', 'OpenAI (…QRST)', 'OpenAI (…WXYZ)']);
+  expect((await scan({ OPENAI_API_KEY: KEY })).connections.map(connection => connection.name)).toEqual(['OpenAI']);
+});
+
 it('takes a shell key even when Codex has no file at all', async () => {
   const found = await scan({ OPENAI_API_KEY: KEY });
   expect(found.connections).toMatchObject([{ source: 'shell-env', name: 'OpenAI', preset: 'openai', keyLast4: 'WXYZ' }]);
