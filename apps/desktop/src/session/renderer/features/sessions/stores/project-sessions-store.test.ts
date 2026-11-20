@@ -386,8 +386,8 @@ describe('ProjectSessionsStore session lifecycle', () => {
 
     await manager.provisionSession(session.id);
 
-    expect(mocks.sessionAcquire).toHaveBeenCalledWith('session-1', 'project-1');
-    expect(mocks.terminalAcquire).toHaveBeenCalledWith('session-1', 'project-1');
+    expect(mocks.sessionAcquire).toHaveBeenCalledWith('session-1', 'workspace-1');
+    expect(mocks.terminalAcquire).toHaveBeenCalledWith('session-1', 'workspace-1');
     expect(store.state).toBe('provisioned');
     expect(store.viewModel).toBe(mocks.viewModels[0]);
     expect(mocks.viewModels[0].restoreSnapshot).toHaveBeenCalledWith(snapshot);

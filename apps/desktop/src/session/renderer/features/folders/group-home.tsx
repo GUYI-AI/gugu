@@ -18,6 +18,7 @@ import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { readChatSummary } from '@/lib/chatSummariesBridge';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useGroupFolderStage, type GroupFolderStage } from './group-folder-stage';
+import { useImplicitProjectId } from '@renderer/features/sessions/task-dispatch-composer';
 
 /** A group's new-task box keeps what was written in it per group. */
 export function groupDraftKey(chatId: string): string {
@@ -79,7 +80,10 @@ export const GroupTaskComposer = observer(function GroupTaskComposer({
 }) {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
-  const { chatId, runMachinePicker, scopedFolders, targetFolderId, executionDevice, machineContext, machineOf, pickAndAttach } = stage;
+  const { chatId, runMachinePicker, scopedFolders, executionDevice, machineContext, machineOf, pickAndAttach } = stage;
+  // A group with no folder anywhere runs its new task on this computer, in the task home (v2 ⑨, Q5).
+  const taskHome = useImplicitProjectId(stage.folderless);
+  const targetFolderId = stage.targetFolderId ?? (stage.folderless ? taskHome ?? null : null);
   const boxRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (focusOnOpen && boxRef.current) focusSessionComposer(boxRef.current);

@@ -9,7 +9,6 @@ import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-s
 import { useMachineCreateContext } from '@renderer/features/sessions/use-machine-create-target';
 import { useEnsureMounted } from '@renderer/features/projects/hooks/use-ensure-mounted';
 import { foldersInScope, machineOfKey, scopeKey, useProjectRunMachine } from '@renderer/features/projects/components/main-panel/project-run-machine';
-import { useImplicitProjectId } from '@renderer/features/sessions/implicit-session-home-project';
 import { ProjectFolderCard, shortHome, type AttachMachine, type FolderCardMachine } from '@renderer/features/projects/components/main-panel/project-folder-card';
 import { electronApi } from '@renderer/lib/electron-api';
 import { toast } from '@renderer/lib/hooks/use-toast';
@@ -64,8 +63,7 @@ export function useGroupFolderStage(chatId: string, { floating = false, onChosen
   // The machine a new task starts on = the one the tray shows (runMachine); its folder is chosen among that machine's.
   // No folder anywhere = this computer (a group without folders runs its tasks in the task home, Q5).
   const executionDevice = runMachine.machine !== undefined ? runMachine.machine : null;
-  const taskHome = useImplicitProjectId(folderless);
-  const targetFolderId = scopedFolders.chosen?.id ?? (folderless ? taskHome ?? null : null);
+  const targetFolderId = scopedFolders.chosen?.id ?? null;
   // The folder a new session is created in must be mounted: sending needs its session list.
   useEnsureMounted(targetFolderId ? [targetFolderId] : []);
   useEffect(() => remoteHostsStore.start(), []);
@@ -214,7 +212,7 @@ export function useGroupFolderStage(chatId: string, { floating = false, onChosen
     />
   );
   return {
-    chatId, groupName, folders, runMachine, runMachinePicker, scopedFolders, targetFolderId, executionDevice, machineContext,
+    chatId, groupName, folders, folderless, runMachine, runMachinePicker, scopedFolders, targetFolderId, executionDevice, machineContext,
     machineOf, pickAndAttach, card,
   };
 }
