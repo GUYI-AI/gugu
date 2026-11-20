@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { popupClaims } from './browser-popup-claims';
 import { createStandaloneSurfaceState, mountStandaloneBrowserSurface } from './standalone-browser-surface-lifetime';
 
 const mocks = vi.hoisted(() => ({
@@ -31,6 +32,16 @@ beforeEach(() => {
 });
 
 describe('standalone page stream lifetime', () => {
+  it('asks for the window the tab was opened for once, and a later mount of the same tab loads normally', async () => {
+    mocks.mountPage.mockResolvedValue(mounted);
+    popupClaims.remember('fixture', 'POPUP-1');
+    start();
+    await flush();
+    start();
+    await flush();
+    expect(mocks.mountPage.mock.calls.map(([args]) => args.popup)).toEqual(['POPUP-1', undefined]);
+  });
+
   it('does not mount a picture or publish a handle after the surface has closed', async () => {
     const pending = deferred<typeof mounted>();
     mocks.mountPage.mockReturnValueOnce(pending.promise);

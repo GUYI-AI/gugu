@@ -12,8 +12,8 @@ export type FeaturePage = {
 export type LoadFailure = { errorCode: number; errorDescription: string; validatedURL: string };
 
 export type FeatureHost = {
-  /** A new Gugu tab next to the one that opened it. */
-  openInNewTab(url: string): void;
+  /** A new Gugu tab next to the one that opened it. `popup` names the window Chrome already created for it, which the tab shows. */
+  openInNewTab(url: string, popup?: string): void;
   /** The files the person picks for an `<input type=file>`; `null` when they cancel. */
   chooseFiles(options: { multiple: boolean }): Promise<string[] | null>;
   /** The page this tab shows closed itself (window.close()): the tab goes with it. */
@@ -46,7 +46,7 @@ export async function wireStandalonePageFeatures(page: FeaturePage, host: Featur
     const { url, popup } = args[0] as { url?: unknown; popup?: unknown };
     if (typeof url !== 'string') return;
     // A window Chrome created can start empty and be pointed somewhere by the page that opened it.
-    if (isWebAddress(url) || (popup !== undefined && url === 'about:blank')) host.openInNewTab(url);
+    if (isWebAddress(url) || (popup !== undefined && url === 'about:blank')) host.openInNewTab(url, typeof popup === 'string' ? popup : undefined);
   });
 
   page.on('closed-by-page', () => host.closeTab());

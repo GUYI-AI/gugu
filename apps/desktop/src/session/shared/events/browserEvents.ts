@@ -9,6 +9,8 @@ export const browserKernelSelectionChannel = defineEvent<{ kernel: BrowserKernel
 export const browserOpenInNewTabChannel = defineEvent<{
   sourceBrowserId: string;
   url: string;
+  /** The window the standalone Chrome already created for this tab: the tab shows that window instead of loading `url`. */
+  popup?: string;
 }>('browser:open-in-new-tab');
 
 /** 页签里的网页自己关了(窗口里的 `window.close()`,登录弹窗收尾就是这样):页签跟着关。 */

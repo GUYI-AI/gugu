@@ -49,7 +49,7 @@ export interface TaskPageContents {
   agentListening?(): boolean;
   /**
    * Windows this page opens (window.open, target=_blank) are reported as 'window-open' ({ url }, plus `popup` when Chrome created a page
-   * for it). Such a page waits a few seconds to be adopted by the tab that opens `url` (`pageFor`), or is closed.
+   * for it). Such a page waits a few seconds to be adopted by the tab opened for it, which names it by that id (`pageFor`), or is closed.
    */
   reportNewWindows?(): void;
   /** Chrome hands file choosers over: 'file-chooser' (multiple, backendNodeId) is reported, `setFileInputFiles` fills the input. */
@@ -545,8 +545,12 @@ export interface TaskPageScreenTarget {
 }
 
 export interface ServerTaskBrowser {
-  /** This task's page (opened at `url` the first time), as the shared page protocol's contents. */
-  pageFor(sessionId: string, url: string | undefined, signal: AbortSignal): Promise<TaskPageContents>;
+  /**
+   * This task's page (opened at `url` the first time), as the shared page protocol's contents. A tab opened for a window a page
+   * opened passes that window's id (`popup`, from 'window-open') to show that window; without it, or when the window is not held
+   * by this browser, the tab loads `url` itself.
+   */
+  pageFor(sessionId: string, url: string | undefined, signal: AbortSignal, popup?: string): Promise<TaskPageContents>;
   /** The task's page if it has one already; watching never opens one. */
   existingPage(sessionId: string): Promise<TaskPageScreenTarget | null>;
   /** The task ended: close its page. */
@@ -565,6 +569,8 @@ export function createServerTaskBrowser(options: {
   automationControlled?: boolean;
   /** Runs once the browser is up and before any page is opened, for host-side setup such as download handling. A failure stops the browser. */
   connected?: (connection: PipeConnection) => Promise<void>;
+  /** Stands in for starting Chrome, for tests that play the browser themselves. */
+  spawn?: () => { process: ChildProcess; connection: PipeConnection };
   log: { info(message: string, fields?: object): void; warn(message: string, fields?: object): void };
 }): ServerTaskBrowser {
   let starting: Promise<{ process: ChildProcess; connection: PipeConnection }> | null = null;
@@ -574,7 +580,7 @@ export function createServerTaskBrowser(options: {
     void starting?.then(running => running.connection.send('Target.closeTarget', { targetId }), () => {}).catch(() => {});
   });
 
-  async function launch() {
+  async function spawnChrome() {
     const binary = options.binary();
     if (!binary) throw new Error('Browser Use on this server needs Chrome or Chromium (GUGU_APP_BROWSER_CHROME selects it)');
     const { stdout } = await promisify(execFile)(binary, [`--user-data-dir=${options.profile}`, '--version'], { timeout: 15_000 });
@@ -595,6 +601,11 @@ export function createServerTaskBrowser(options: {
       connection.fail(new Error(`the task browser exited (${signal ?? code})`));
       options.log.warn('Task browser exited', { code, signal, stderr: stderr.trim().slice(-500) });
     });
+    return { process: child, connection, userAgent };
+  }
+
+  async function launch() {
+    const { process: child, connection, userAgent } = options.spawn ? { ...options.spawn(), userAgent: undefined } : await spawnChrome();
     connection.on('event', (message: CdpMessage) => {
       if (message.method === 'Target.targetDestroyed') popups.forget(String(message.params?.targetId));
     });
@@ -615,26 +626,29 @@ export function createServerTaskBrowser(options: {
     return starting;
   }
 
-  /** The window a page opened for this address, if one is waiting and still there. */
-  async function adopt(connection: PipeConnection, url: string | undefined): Promise<PageTarget | null> {
-    const targetId = popups.take(url);
-    if (!targetId) return null;
-    const target = new PageTarget(connection, targetId);
+  /**
+   * The window a page opened that this tab was opened for, if this browser holds it. Null when it does not (another profile's
+   * browser, or one closed unclaimed): the tab loads the address itself. A window that is gone by the time it is taken is a
+   * window that closed itself: the tab has nothing to show, and the address must not be requested again.
+   */
+  async function adopt(connection: PipeConnection, popup: string | undefined, url: string | undefined): Promise<PageTarget | null> {
+    if (!popup || !popups.take(popup)) return null;
+    const target = new PageTarget(connection, popup);
     try {
       await target.watch();
       await target.adopted();
       return target;
     } catch {
       target.destroy();
-      return null; // Gone meanwhile: the tab gets a page of its own.
+      throw new TaskPopupClosed(url ?? 'about:blank');
     }
   }
 
-  async function open(sessionId: string, url: string | undefined): Promise<PageTarget> {
+  async function open(sessionId: string, url: string | undefined, popup: string | undefined): Promise<PageTarget> {
     const { connection } = await browser();
-    let target = await adopt(connection, url);
+    let target = await adopt(connection, popup, url);
     // The window the tab was opened for closed itself already (sign-in finished fast): no page to adopt, and none to load.
-    if (!target && url && popups.closedBeforeTaken(url)) throw new TaskPopupClosed(url);
+    if (!target && popups.closedBeforeTaken(popup)) throw new TaskPopupClosed(url ?? 'about:blank');
     if (!target) {
       const { targetId } = await connection.send('Target.createTarget', { url: url ?? 'about:blank' }) as { targetId: string };
       target = new PageTarget(connection, targetId);
@@ -644,7 +658,7 @@ export function createServerTaskBrowser(options: {
     const opened = target;
     opened.on('screen-error', error => options.log.warn('Could not capture the task browser page', { error: String(error) }));
     // Registered before anything can ask for a new tab, so the window is waiting by the time the tab looks for it.
-    opened.on('window-open', (window: { url: string; popup?: string }) => { if (window.popup) popups.hold(window.url, window.popup); });
+    opened.on('window-open', (window: { url: string; popup?: string }) => { if (window.popup) popups.hold(window.popup); });
     opened.once('destroyed', () => {
       void pages.get(sessionId)?.then((current) => { if (current === opened) pages.delete(sessionId); }, () => {});
     });
@@ -652,11 +666,11 @@ export function createServerTaskBrowser(options: {
   }
 
   return {
-    async pageFor(sessionId, url, signal) {
+    async pageFor(sessionId, url, signal, popup) {
       signal.throwIfAborted();
       let page = pages.get(sessionId);
       if (!page) {
-        page = open(sessionId, url);
+        page = open(sessionId, url, popup);
         pages.set(sessionId, page);
         void page.catch(() => { if (pages.get(sessionId) === page) pages.delete(sessionId); });
       }
@@ -664,7 +678,7 @@ export function createServerTaskBrowser(options: {
       signal.throwIfAborted();
       if (target.isDestroyed()) {
         pages.delete(sessionId);
-        return this.pageFor(sessionId, url, signal);
+        return this.pageFor(sessionId, url, signal, popup);
       }
       return target;
     },

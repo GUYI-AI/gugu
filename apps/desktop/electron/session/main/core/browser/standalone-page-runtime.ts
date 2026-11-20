@@ -93,13 +93,13 @@ export function unregisterBrowserKernel(browserId: string) {
 
 export function isStandalonePage(browserId: string): boolean { return browserKernelBindings.get(browserId)?.kernel === 'standalone'; }
 
-export async function standalonePage(browserId: string, url?: string, signal: AbortSignal = AbortSignal.timeout(30_000)) {
+export async function standalonePage(browserId: string, url?: string, signal: AbortSignal = AbortSignal.timeout(30_000), popup?: string) {
   const binding = browserKernelBindings.get(browserId);
   if (!binding || binding.kernel !== 'standalone' || !browserWebContentsRegistry.isRegistered(browserId, binding.partition)) {
     throw new Error('This standalone browser tab is not registered');
   }
   if (url && url !== 'about:blank' && !/^https?:\/\//i.test(url)) throw new Error('Only web pages open in the standalone browser');
-  const page = await standaloneKernelService().pool.pageFor({ ...binding, url, signal }).catch((error: unknown) => {
+  const page = await standaloneKernelService().pool.pageFor({ ...binding, url, popup, signal }).catch((error: unknown) => {
     // The tab was opened for a window that had already closed itself: the tab goes too.
     if (error instanceof TaskPopupClosed) events.emit(browserCloseTabChannel, { browserId });
     throw error;
@@ -113,7 +113,7 @@ export async function standalonePage(browserId: string, url?: string, signal: Ab
     const features = featurePage(page);
     if (features) {
       const host: FeatureHost = {
-        openInNewTab: url => events.emit(browserOpenInNewTabChannel, { sourceBrowserId: browserId, url }),
+        openInNewTab: (url, popup) => events.emit(browserOpenInNewTabChannel, { sourceBrowserId: browserId, url, ...(popup && { popup }) }),
         chooseFiles,
         closeTab: () => { if (contents.get(browserId) === page) events.emit(browserCloseTabChannel, { browserId }); },
         faviconsUpdated: favicons => events.emit(browserPageEventChannel, { browserId, type: 'page-favicon-updated', state: screen.state(), detail: { favicons } }),
@@ -147,10 +147,10 @@ export async function standaloneScreen(browserId: string): Promise<TaskPageScree
   return page;
 }
 
-export async function mountStandalonePage(input: { browserId: string; partition: string; url: string }) {
+export async function mountStandalonePage(input: { browserId: string; partition: string; url: string; popup?: string }) {
   if (!browserWebContentsRegistry.isRegistered(input.browserId, input.partition)) throw new Error('Browser profile mismatch');
   const reused = contents.has(input.browserId);
-  await standalonePage(input.browserId, input.url);
+  await standalonePage(input.browserId, input.url, undefined, input.popup);
   const state = (await standaloneScreen(input.browserId)).state();
   return { success: true as const, reused, ready: !state.isLoading, state };
 }

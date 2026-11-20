@@ -4,6 +4,7 @@ import type { ProjectionHost } from '@/session/app-runtime/projection-source';
 import { events, rpc } from '@renderer/lib/ipc';
 import { browserPageEventChannel, browserTaskPagePacketChannel } from '@shared/events/browserEvents';
 import { BrowserPageHandle } from './browser-page-handle';
+import { popupClaims } from './browser-popup-claims';
 
 type Size = { width: number; height: number };
 export type StandaloneSurfaceState = {
@@ -83,7 +84,8 @@ export function mountStandaloneBrowserSurface(options: {
   const observer = new ResizeObserver(() => { clearTimeout(resizeTimer); resizeTimer = setTimeout(resize, 120); });
   observer.observe(viewport);
   resize();
-  void rpc.browser.mountPage({ browserId, partition: options.partition, url: options.initialUrl, windowName: window.name }).then(result => {
+  const popup = popupClaims.take(browserId); // The window Chrome opened for this tab, when it was opened for one.
+  void rpc.browser.mountPage({ browserId, partition: options.partition, url: options.initialUrl, windowName: window.name, ...(popup && { popup }) }).then(result => {
     if (closed) return;
     if (!result.success) throw new Error(result.error);
     handle.mounted(result);

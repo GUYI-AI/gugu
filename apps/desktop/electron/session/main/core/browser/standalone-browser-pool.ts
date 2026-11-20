@@ -48,7 +48,7 @@ export class StandaloneBrowserPool {
   }
 
   /** A new version takes effect after this profile's last tab and process have exited. */
-  async pageFor(input: { browserId: string; partition: string; url?: string; signal: AbortSignal }): Promise<TaskPageContents> {
+  async pageFor(input: { browserId: string; partition: string; url?: string; popup?: string; signal: AbortSignal }): Promise<TaskPageContents> {
     if (!input.browserId.trim() || input.browserId.length > 256 || !isBrowserPartition(input.partition)) {
       throw new Error('Invalid standalone browser tab');
     }
@@ -155,7 +155,7 @@ export class StandaloneBrowserPool {
     }
   }
 
-  private async open(input: { browserId: string; partition: string; url?: string; signal: AbortSignal }): Promise<TaskPageContents> {
+  private async open(input: { browserId: string; partition: string; url?: string; popup?: string; signal: AbortSignal }): Promise<TaskPageContents> {
     if (this.disposed) throw new Error('The standalone browser pool is closed');
     input.signal.throwIfAborted();
     this.partitionsByTab.set(input.browserId, input.partition);
@@ -177,7 +177,7 @@ export class StandaloneBrowserPool {
       this.tabs.set(input.browserId, binding);
     }
     try {
-      const page = await binding.entry.browser.pageFor(input.browserId, input.url, input.signal);
+      const page = await binding.entry.browser.pageFor(input.browserId, input.url, input.signal, input.popup);
       await this.watch(binding.partition, input.browserId, binding.entry.browser);
       return page;
     } catch (error) {

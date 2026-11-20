@@ -41,6 +41,15 @@ describe('a standalone page in the Gugu window', () => {
     expect(f.host.openInNewTab.mock.calls.map(call => call[0])).toEqual(['https://auth.test/login', 'about:blank']);
   });
 
+  it('names the window Chrome created for the tab, and names none for a window it blocked', async () => {
+    const f = fixture();
+    await f.ready;
+    f.page.emit('window-open', { url: 'https://auth.test/login', popup: 'P1' });
+    f.page.emit('window-open', { url: 'about:blank', popup: 'P2' });
+    f.page.emit('window-open', { url: 'https://ads.test/' });
+    expect(f.host.openInNewTab.mock.calls).toEqual([['https://auth.test/login', 'P1'], ['about:blank', 'P2'], ['https://ads.test/', undefined]]);
+  });
+
   it('closes the tab when the page it shows closes itself, as a window does after sign-in', async () => {
     const f = fixture();
     await f.ready;

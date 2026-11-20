@@ -1,6 +1,7 @@
 import { reaction } from 'mobx';
 import { browserDiagnosticsStore } from '@renderer/features/browser/browser-diagnostics-store';
 import { browserSessionStore } from '@renderer/features/browser/browser-session-store';
+import { popupClaims } from '@renderer/features/browser/browser-popup-claims';
 import type { TabEntry, TabHandle, TabResource } from '@renderer/features/tabs/core/tab-provider';
 import { events, rpc } from '@renderer/lib/ipc';
 import type { BrowserSessionSnapshot } from '@shared/browser';
@@ -71,9 +72,9 @@ export class BrowserTabResource implements TabResource {
     // Subscribe to open-in-new-tab requests for this browser.
     this._unsubscribeOpenInNewTab = events.on(
       browserOpenInNewTabChannel,
-      ({ sourceBrowserId, url }: { sourceBrowserId: string; url: string }) => {
+      ({ sourceBrowserId, url, popup }: { sourceBrowserId: string; url: string; popup?: string }) => {
         if (sourceBrowserId !== this.browserId) return;
-        handle.open('browser', { initialUrl: url }, { intent: 'newTab' });
+        handle.open('browser', { initialUrl: url, ...(popup && { popup }) }, { intent: 'newTab' });
       }
     );
 
@@ -135,6 +136,7 @@ export class BrowserTabResource implements TabResource {
     this._unsubscribeCloseTab();
     this._disposeSessionSync();
     this._unsubscribePageState();
+    popupClaims.forget(this.browserId);
     browserDiagnosticsStore.clearBrowser(this.browserId);
     browserSessionStore.removeSession(this.browserId);
     void rpc.browser.unregisterSession(this.browserId);

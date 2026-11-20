@@ -30,6 +30,13 @@ describe('a tab opened for a window the page had already closed', () => {
     expect(m.emit).toHaveBeenCalledExactlyOnceWith(browserCloseTabChannel, { browserId: 'popup-tab' });
   });
 
+  it('asks the browser for the window it was opened for by that window\'s id, and for none when it was not opened for one', async () => {
+    m.pageFor.mockRejectedValueOnce(new Error('stop here')).mockRejectedValueOnce(new Error('stop here'));
+    await expect(standalonePage('popup-tab', 'about:blank', undefined, 'P1')).rejects.toThrow('stop here');
+    await expect(standalonePage('popup-tab', 'about:blank')).rejects.toThrow('stop here');
+    expect(m.pageFor.mock.calls.map(([input]) => input.popup)).toEqual(['P1', undefined]);
+  });
+
   it('leaves the tab alone when the page could not be opened for any other reason', async () => {
     m.pageFor.mockRejectedValueOnce(new Error('Chrome is not installed'));
     await expect(standalonePage('popup-tab', 'https://site.test/')).rejects.toThrow('Chrome is not installed');

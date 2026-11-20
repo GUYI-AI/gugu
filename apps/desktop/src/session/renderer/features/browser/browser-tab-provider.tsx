@@ -1,5 +1,6 @@
 import { workspaceBackend } from '@renderer/features/sessions/workspace-backend/workspace-backend';
 import { browserSessionStore } from '@renderer/features/browser/browser-session-store';
+import { popupClaims } from '@renderer/features/browser/browser-popup-claims';
 import { getAppSettingValueSnapshot } from '@renderer/features/settings/app-settings-client';
 import type { TabEntry, TabHandle, TabProvider, TabViewContext } from '@renderer/features/tabs/core/tab-provider';
 import { createTabProvider } from '@renderer/features/tabs/core/tab-provider-registry';
@@ -25,6 +26,8 @@ export interface BrowserState {
 export interface BrowserOpenArgs {
   initialUrl?: string;
   workspaceStart?: true;
+  /** The window the standalone Chrome already created for this tab: the tab shows it instead of loading `initialUrl`. */
+  popup?: string;
 }
 
 export const browserTabProvider: TabProvider<
@@ -62,6 +65,7 @@ export const browserTabProvider: TabProvider<
       profileId,
       initialUrl: args.initialUrl,
     });
+    if (args.popup) popupClaims.remember(session.browserId, args.popup);
     const persistent = !!chatId || workspaceBackend(sessionCtx.projectId).browser.persistent;
     return {
       browserId: session.browserId,

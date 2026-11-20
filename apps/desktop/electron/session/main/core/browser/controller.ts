@@ -69,7 +69,7 @@ export const browserController = createRPCController({
    * #7274 页签的网页(主进程持有的 WebContentsView,见 browser-page-views.ts)。页签那边只有一块占位:
    * 挂上 / 报位置 / 卸下,以及代它向网页发的那几样操作。
    */
-  mountPage: (args: { browserId: string; partition: string; url: string; windowName: string }) => isStandalonePage(args.browserId) ? mountStandalonePage(args) : mountBrowserPage(args),
+  mountPage: (args: { browserId: string; partition: string; url: string; windowName: string; popup?: string }) => isStandalonePage(args.browserId) ? mountStandalonePage(args) : mountBrowserPage(args),
   ensureAgentPage: (args: { browserId: string; partition: string; url: string }) => isStandalonePage(args.browserId) ? mountStandalonePage(args) : ensureAgentBrowserPage(args),
   watchStandalonePage,
   layoutPage: (args: Parameters<typeof layoutBrowserPage>[0]) => ({ success: isStandalonePage(args.browserId) || layoutBrowserPage(args) }),
