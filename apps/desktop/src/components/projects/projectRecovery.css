@@ -1,0 +1,13 @@
+[data-unavailable-project] .gg-list-row-leading,
+[data-unavailable-project] .gg-list-row-title { opacity: 0.42; }
+[data-unavailable-project] .gg-list-row-meta { display: none; }
+.gg-project-recovery-actions { display: none; gap: var(--spacing-xs); }
+.gg-project-recovery-actions button {
+  min-height: var(--lh-body);
+  height: var(--lh-body);
+  padding: 0 var(--spacing-xs);
+  font-size: var(--font-caption);
+}
+[data-unavailable-project]:is(:hover, :focus-within, [data-selected]) .gg-project-unavailable-status { display: none; }
+[data-unavailable-project]:is(:hover, :focus-within, [data-selected]) .gg-project-recovery-actions { display: inline-flex; }
+.gg-project-recovery-error { display: block; color: var(--danger); white-space: normal; }

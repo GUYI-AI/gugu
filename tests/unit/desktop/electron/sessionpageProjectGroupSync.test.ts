@@ -564,7 +564,7 @@ describe('spec ⑨ 创建侧:项目=群 / 无项目=私聊 / 序号命名', () =
       "Agent plugin 'gemini' does not declare a tui sessionpage integration",
     )
   })
-  it('映射里的群已归档 ⇒ 不复用,另建新群并换掉映射', async () => {
+  it('旧服务端替换归档群的回执不能覆盖原映射，显式恢复后仍接回原群', async () => {
     await provisionCreated(
       { sessionId: 'conv-g1', providerId: 'codex', surface: 'tui', cwd: '/w', projectId: 'proj-gamma' }, deps)
     await settleCloud()
@@ -573,21 +573,21 @@ describe('spec ⑨ 创建侧:项目=群 / 无项目=私聊 / 序号命名', () =
     await provisionCreated(
       { sessionId: 'conv-g2', providerId: 'codex', surface: 'tui', cwd: '/w', projectId: 'proj-gamma' }, deps)
     await settleCloud()
-    const fresh = groups.find((g) => g.chatId !== first.chatId)!
-    expect(fresh, '归档群不复用,得另建一个').toBeTruthy()
-    expect(roster.find((r) => r.cache?.emdash_session_id === 'conv-g2')?.cache).toMatchObject({ sessionpage_group_chat_id: fresh.chatId })
+    const { readProjectGroupId } = await import('../../../../apps/desktop/electron/sessionpage/sessionpage-project-groups')
+    expect(await readProjectGroupId('proj-gamma', 'owner-1', deps.env)).toBe(first.chatId)
+    expect(roster.find((r) => r.cache?.emdash_session_id === 'conv-g2')?.cache).toMatchObject({ sessionpage_group_chat_id: '' })
     expect(first.members, '新 agent 没被塞进归档群').toHaveLength(2)
+    first.status = 'active'
     await provisionCreated(
       { sessionId: 'conv-g3', providerId: 'codex', surface: 'tui', cwd: '/w', projectId: 'proj-gamma' }, deps)
     await settleCloud()
-    expect(groups.filter((g) => g.chatId !== first.chatId), '第三条会话复用新群,不再建').toHaveLength(1)
+    expect(roster.find((r) => r.cache?.emdash_session_id === 'conv-g3')?.cache).toMatchObject({ sessionpage_group_chat_id: first.chatId })
     const { settleSessionpageCloudProvisioning } = await import(SUT)
     await provisionCreated(
       { sessionId: 'conv-g1', providerId: 'codex', surface: 'tui', cwd: '/w', projectId: 'proj-gamma' }, deps)
     await settleSessionpageCloudProvisioning()
-    expect(roster.find((r) => r.cache?.emdash_session_id === 'conv-g1')?.cache).toMatchObject({ sessionpage_group_chat_id: fresh.chatId })
-    expect(fresh.members, 'conv-g1 的 agent 进了新群').toContain(roster.find((r) => r.cache?.emdash_session_id === 'conv-g1')!.gugu_user_id)
-    expect(groups.filter((g) => g.chatId !== first.chatId), '仍只有那一个新群').toHaveLength(1)
+    expect(roster.find((r) => r.cache?.emdash_session_id === 'conv-g1')?.cache).toMatchObject({ sessionpage_group_chat_id: first.chatId })
+    expect(await readProjectGroupId('proj-gamma', 'owner-1', deps.env)).toBe(first.chatId)
   })
   it('reuses a group only for the exact cached project and clears it when projectless', async () => {
     const alpha = await provisionCreated(

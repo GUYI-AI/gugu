@@ -3,6 +3,7 @@ import { createProject, inspectProjectPath } from './operations/createProject';
 import { deleteProject } from './operations/deleteProject';
 import { getProjects } from './operations/getProjects';
 import { openProject } from './operations/openProject';
+import { findRetainedProjectAtPath, inspectProjectRecovery, listUnavailableProjects, restoreProjectFolder } from './operations/project-recovery';
 import {
   attachProjectFolder,
   detachProjectFolder,
@@ -26,6 +27,10 @@ import { getAssistantProjectCleanupReport, migrateAssistantProject } from './ope
 export const projectController = createRPCController({
   createProject,
   inspectProjectPath,
+  listUnavailableProjects,
+  findRetainedProjectAtPath,
+  inspectProjectRecovery,
+  restoreProjectFolder,
   getProjects,
   deleteProject,
   getAssistantProjectCleanupReport,

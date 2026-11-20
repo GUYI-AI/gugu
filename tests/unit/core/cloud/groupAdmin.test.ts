@@ -3,6 +3,12 @@ import { createGroupAdmin } from '../../../../packages/core/src/cloud/groupAdmin
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 
 describe('the common group transport', () => {
+  it('restores only with the trusted actor and an authoritative active receipt', async () => {
+    const rpc = vi.fn(async () => ({ data: { chat_id: 'group', status: 'active' }, error: null }))
+    await createGroupAdmin({ rpc }, 'owner').restore('group')
+    expect(rpc).toHaveBeenCalledWith('restore_group_as', { p_chat_id: 'group', p_as_user_id: 'owner' })
+    await expect(createGroupAdmin({ rpc: async () => ({ data: { chat_id: 'group', status: 'archived' }, error: null }) }, 'owner').restore('group')).rejects.toThrow()
+  })
   it('binds the trusted actor on both human and agent calls', async () => {
     for (const actor of ['human', 'agent']) {
       const rpc = vi.fn(async () => ({ data: { chat_id: 'group', user_id: 'target', status: 'removed' }, error: null }))

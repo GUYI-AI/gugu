@@ -1,7 +1,6 @@
 export default {
   "humanDm": { "notFriends": "This person is not your friend yet.", "addFriend": "Add friend" },
-  "fileCite": { "cite": "Cite", "selectLine": "Select line {{line}}", "line": "Line {{first}}", "lines": "Lines {{first}}–{{last}}" },
-  "selectionSend": { "label": "Send this selection", "send": "Send", "sending": "Sending…", "placeholder": "Add a note, @ to mention (optional)", "failed": "Not sent. Try again.", "sent": "Sent" },
+  "fileCite": { "selectLine": "Select line {{line}}", "line": "Line {{first}}", "lines": "Lines {{first}}–{{last}}" },
   "agent": {
     "identity": {
       "phone": "Phone Agent",
