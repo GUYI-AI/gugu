@@ -10,8 +10,8 @@ import '@renderer/index.css';
 
 /**
  * GUYI-AI/gugu#2548 叠一层(owner 11-12): beside the one list, the content is a card stacked on the list — the same
- * layering as the icon rail and the list. A chat's inner column is the card's left half, the content surface its right
- * half: one card, inset from the list's top, right and bottom, rounded at all four outer corners (the bottom too).
+ * layering as the icon rail and the list. A group's / project's inner column belongs to the list layer (full height, no
+ * card of its own), so the content surface alone is the card — the same shape as the task page.
  */
 
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
@@ -44,7 +44,7 @@ async function renderDesktop(theme: 'light' | 'dark', inner: boolean) {
           <SessionLocalizationProvider><WorkspaceLayoutContextProvider>
             <WorkspaceLayout
               leftSidebar={<div>one list</div>}
-              innerSidebar={inner ? <div data-region="inner-sidebar" className="relative flex h-full shrink-0 flex-col border-r border-border" style={{ width: 240 }} /> : null}
+              innerSidebar={inner ? <div data-region="inner-sidebar" className="relative flex h-full shrink-0 flex-col bg-background-tertiary" style={{ width: 240 }} /> : null}
               mainContent={<WorkspaceContentLayout titlebarSlot={null} mainPanel={<div>reading surface</div>} />}
             />
           </WorkspaceLayoutContextProvider></SessionLocalizationProvider>
@@ -74,21 +74,21 @@ for (const theme of ['light', 'dark'] as const) {
     expect(style.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
   });
 
-  it(`${theme}: the inner column and the content surface are one card stacked on the list, bottom corners included`, async () => {
+  it(`${theme}: the inner column sits on the list layer and the content surface alone is the card`, async () => {
     const { shell, list, surface, column } = await renderDesktop(theme, true);
     expect(column).not.toBeNull();
     const left = column!.getBoundingClientRect();
     const right = surface.getBoundingClientRect();
     expect(left.left).toBeCloseTo(list.right);
-    expect(right.left, 'the two halves meet').toBeCloseTo(left.right);
-    for (const half of [left, right]) {
-      expect(half.top - shell.top).toBeCloseTo(5);
-      expect(shell.bottom - half.bottom).toBeCloseTo(5);
-    }
+    expect(left.top, 'the column runs the full height, like the list').toBeCloseTo(shell.top);
+    expect(left.bottom).toBeCloseTo(shell.bottom);
+    expect(getComputedStyle(column!).borderRadius).toBe('0px');
+    expect(getComputedStyle(column!).boxShadow).toBe('none');
+    expect(right.left).toBeCloseTo(left.right);
+    expect(right.top - shell.top).toBeCloseTo(5);
     expect(shell.right - right.right).toBeCloseTo(5);
-    expect(getComputedStyle(column!).borderRadius).toBe('12px 0px 0px 12px');
-    expect(getComputedStyle(surface).borderRadius).toBe('0px 12px 12px 0px');
-    expect(getComputedStyle(column!).boxShadow).not.toBe('none');
+    expect(shell.bottom - right.bottom).toBeCloseTo(5);
+    expect(getComputedStyle(surface).borderRadius).toBe('12px');
     expect(getComputedStyle(surface).boxShadow).not.toBe('none');
   });
 }
