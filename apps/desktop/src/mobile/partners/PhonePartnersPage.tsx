@@ -24,7 +24,6 @@ import { PhoneMeButton } from '@/mobile/PhoneMeButton'
 import type { AuthUser } from '@/store/auth'
 import { useContactsStore } from '@/store/contactsContext'
 import { partnerFriends, partnerGroupAgents } from './partnersModel'
-import { PhoneNewProjectPage } from './PhoneNewProjectPage'
 import './partners.css'
 
 /** 推在「伙伴」首页上的一页:整屏、没有底栏,返回一步回到下面那一页。 */
@@ -32,7 +31,6 @@ type PartnersPage =
   | { kind: 'requests' }
   | { kind: 'add'; seed: { query: string; token: number } | null }
   | { kind: 'friend'; contactId: string }
-  | { kind: 'newProject'; fromOutside: boolean }
 
 /** 入口行:ContactsPanel NavButton 的手机几何(44 高、20 图标、16 字、计数、尾部 ›)。 */
 function NavRow({ icon, label, badge, testId, onClick }: { icon: ReactNode; label: string; badge?: number; testId?: string; onClick: () => void }) {
@@ -56,29 +54,23 @@ export function PhonePartnersPage({
   active,
   externalContactId,
   scanSeed,
-  newProjectRequest,
   onOpenMe,
   onPushedChange,
   onLeave,
   onSwitchToChat,
   onOpenGroupChat,
-  onOpenProjectGroup,
 }: {
   user: AuthUser
   /** 「伙伴」这一格此刻在屏上(切走 = 回到首页)。 */
   active: boolean
   externalContactId?: string
   scanSeed?: { route: QrScanRoute; token: number } | null
-  /** 「消息」右上「新项目」:每次加一就推进新项目页。 */
-  newProjectRequest?: number
   onOpenMe: () => void
   onPushedChange: (pushed: boolean) => void
   /** 从「消息」进来的新项目页退回去:回到「消息」。 */
   onLeave: () => void
   onSwitchToChat?: (target: ContactUser) => void
   onOpenGroupChat?: (group: ContactGroupChat) => void
-  /** 打开一个群(新建的群建好之后落在它的群聊页签)。 */
-  onOpenProjectGroup: (chatId: string) => void
 }) {
   const { t } = useTranslation('main')
   const { t: ct } = useTranslation('contacts')
@@ -105,10 +97,6 @@ export function PhonePartnersPage({
     if (route.nav === 'group_join') setGroupInviteJoin({ publicId: route.publicId, joinToken: route.joinToken, token: Date.now() })
     else setStack([{ kind: 'add', seed: { query: route.query, token: Date.now() } }])
   }, [scanSeed])
-  useEffect(() => {
-    if (!newProjectRequest) return
-    setStack([{ kind: 'newProject', fromOutside: true }])
-  }, [newProjectRequest])
 
   const friends = useMemo(() => partnerFriends(contacts), [contacts])
   const groupAgents = useMemo(() => partnerGroupAgents(contacts, sharedGroupAgents, user.id), [contacts, sharedGroupAgents, user.id])
@@ -152,15 +140,6 @@ export function PhonePartnersPage({
           />
         )
       }
-      case 'newProject':
-        return (
-          <PhoneNewProjectPage
-            active={active}
-            onBack={top.fromOutside && stack.length === 1 ? onLeave : pop}
-            // 建好了:进这个新群(群一律在「消息」)。
-            onCreated={(created) => { setStack([]); onOpenProjectGroup(created.chatId) }}
-          />
-        )
     }
   })()
 

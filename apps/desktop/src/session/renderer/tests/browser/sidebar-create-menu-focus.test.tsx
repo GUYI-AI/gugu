@@ -10,7 +10,6 @@ import '@renderer/index.css'
 
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ locale: 'en-US', translate: (key: string) => key }) }))
 vi.mock('@/lib/sidebarChatsBridge', () => ({ requestShellChatAction: () => {}, useSidebarNotificationsOpen: () => false, useProductTourOnScreen: () => false }))
-vi.mock('@renderer/features/sidebar/add-project-menu-items', () => ({ AddProjectMenuItems: () => null }))
 
 const { SidebarOneListTop } = await import('@renderer/features/sidebar/sidebar-one-list-chrome')
 

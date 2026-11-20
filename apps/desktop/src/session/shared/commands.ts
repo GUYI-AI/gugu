@@ -42,18 +42,10 @@ export const COMMANDS = defineCommands({
     defaultHotkey: 'Mod+L',
     category: 'Navigation',
   },
-  'app.newProject': {
-    label: 'New Project',
-    labelKey: 'sidebar.addProject',
-    description: 'Add a new local or SSH project',
-    iconKey: 'folder-plus',
-    defaultHotkey: 'Mod+Shift+N',
-    category: 'Navigation',
-  },
   'app.newSession': {
     label: 'New Task',
     labelKey: 'sidebar.newTask',
-    description: 'Create a new task in this project',
+    description: 'Create a new task in this group',
     iconKey: 'bolt',
     defaultHotkey: 'Mod+N',
     category: 'Navigation',
@@ -296,7 +288,7 @@ export const COMMANDS = defineCommands({
     capture: true,
     defaultHotkey: 'Mod+O',
     label: 'Quick Switcher',
-    description: 'Switch between tasks, groups, projects, and contacts',
+    description: 'Switch between tasks, groups, and contacts',
     category: 'Navigation',
   },
   'app.globalSearch': {
@@ -330,7 +322,7 @@ export const COMMANDS = defineCommands({
   },
   'project.openInEditor': {
     label: 'Open in Editor',
-    description: 'Open the project in the default editor',
+    description: 'Open the folder in the default editor',
     category: 'Navigation',
   },
   'session.tabNext': {
@@ -416,8 +408,8 @@ export const COMMANDS = defineCommands({
   },
   'session.projectHome': {
     defaultHotkey: 'ArrowLeft',
-    label: 'Project Home',
-    description: "Jump to the parent project's home, where a new task is started",
+    label: 'Group Home',
+    description: "Jump to the group's home, where a new task is started",
     category: 'Navigation',
     conflictBehavior: 'allow',
     ignoreWhenCodeEditorFocused: true,

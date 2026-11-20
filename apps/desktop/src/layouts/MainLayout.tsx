@@ -370,11 +370,6 @@ function InnerLayout({
     shellTab.setChatFrom(null)
     if (under) reopenGlobalSearch()
   }, 'pop'), [shellTab, setActiveChatId])
-  const [newProjectRequest, setNewProjectRequest] = useState(0)
-  const openNewProject = useCallback(() => navigateMobile(() => {
-    setActiveTab('contacts')
-    setNewProjectRequest((n) => n + 1)
-  }, 'push'), [setActiveTab])
   const shownChatId = activeTab === 'chats' && !showCreateSurface && (!mobile || phoneChatShown) && !assistantOnPhone ? activeChatId : null
   useReportChatOnScreen(shownChatId)
   // showSessionCreate already derives "closed" the instant activeTab leaves 'chats', but the underlying state must
@@ -1088,7 +1083,6 @@ function InnerLayout({
                       }, 'push')}
                       onScan={handleScan}
                       onOpenSessionCreate={mobile ? openAgentCreateDraftFromContacts : undefined}
-                      onNewProject={mobile ? openNewProject : undefined}
                     />
                   </ResizableChatListPane>
                   <div data-shell-chat-detail={mobile ? undefined : ''} style={{ flex: '1 1 auto', minWidth: 0, minHeight: 0, position: 'relative', display: mobile && (!phoneChatShown || showCreateSurface) ? 'none' : 'flex' }}>
@@ -1129,16 +1123,11 @@ function InnerLayout({
                       active={activeTab === 'contacts' || (phoneChatShown && phoneRootTab === 'contacts') || (activeTab === 'tasks' && watchParentTab === 'contacts')}
                       externalContactId={externalContactId}
                       scanSeed={scanSeed}
-                      newProjectRequest={newProjectRequest}
                       onOpenMe={() => selectTab('settings')}
                       onPushedChange={setPartnersPushed}
                       onLeave={() => navigateMobile(() => setActiveTab('chats'), 'pop')}
                       onSwitchToChat={handleSwitchToChat}
                       onOpenGroupChat={handleOpenGroupChat}
-                      onOpenProjectGroup={(chatId) => navigateMobile(() => {
-                        openChatTarget(chatId)
-                        closeTopicTab(chatId)
-                      }, 'push')}
                     />
                   ) : (
                     <ContactsPanel externalContactId={externalContactId} mobile={mobile} scanSeed={scanSeed} onSwitchToChat={contactsSwitchToChat} onOpenGroupChat={contactsOpenGroupChat} onOpenAgentCreateDraft={openAgentCreateDraftFromContacts} />

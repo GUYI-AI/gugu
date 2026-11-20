@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import {
-  newProjectPath,
   partnerFriends,
   partnerGroupAgents,
-  projectNameProblem,
 } from '../../../apps/desktop/src/mobile/partners/partnersModel'
 
 function contact(id: string, fields: Partial<ContactUser> = {}): ContactUser {
@@ -43,19 +41,5 @@ describe('partnerGroupAgents', () => {
     )
     expect(agents.map(agent => agent.id)).toEqual(['their-agent', 'their-other-agent'])
     expect(agents[0]).toBe(shared)
-  })
-})
-
-describe('new project', () => {
-  it('makes a new empty folder named after the project in the machine’s projects directory', () => {
-    expect(newProjectPath('/Users/me/Documents', '咕咕')).toBe('/Users/me/Documents/咕咕')
-    expect(newProjectPath('/Users/me/Documents/', 'x')).toBe('/Users/me/Documents/x')
-  })
-
-  it('takes the same names the computer’s 新建项目 takes', () => {
-    expect(projectNameProblem('  ')).toBe('empty')
-    expect(projectNameProblem('a/b')).toBe('invalid')
-    expect(projectNameProblem('..')).toBe('invalid')
-    expect(projectNameProblem('新项目')).toBeNull()
   })
 })

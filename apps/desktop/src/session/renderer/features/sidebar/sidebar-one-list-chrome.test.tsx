@@ -101,7 +101,6 @@ vi.mock('@renderer/lib/layout/navigation-provider', () => ({
 }));
 vi.mock('@renderer/lib/commands/registry', () => ({ commandRegistry: { dispatch: state.dispatch } }));
 // The group itself (新建空白项目 / 使用现有文件夹 / 使用远程文件夹) is the old sidebar's, tested where it lives.
-vi.mock('./add-project-menu-items', () => ({ AddProjectMenuItems: () => <div data-testid="add-project-menu-items" /> }));
 vi.mock('@/lib/sidebarChatsBridge', () => ({
   requestShellChatAction: state.request,
   useSidebarNotificationsOpen: () => {
@@ -185,7 +184,7 @@ describe('the top: 创建智能体 and the 「+」 menu', () => {
     await render(<SidebarOneListTop collapsed={false} onCreateAgent={vi.fn()} />);
     await click(q('sidebar-create-menu')!);
     const items = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
-    expect(items.map((item) => item.textContent)).toEqual(['sidebar.newGroupChat', 'task.projectNew', 'sidebar.addContact']);
+    expect(items.map((item) => item.textContent)).toEqual(['sidebar.newGroupChat', 'sidebar.addContact']);
 
     await click(q('sidebar-create-create-group')!);
     expect(state.request).toHaveBeenLastCalledWith('create-group');
@@ -193,18 +192,6 @@ describe('the top: 创建智能体 and the 「+」 menu', () => {
     await click(q('sidebar-create-add-contact')!);
     expect(state.request).toHaveBeenLastCalledWith('add-contact');
     expect(state.request).toHaveBeenCalledTimes(2);
-  });
-
-  it('新建项目 opens the old sidebar\'s 「添加项目」 group beside it, ❌ straight into a blank project', async () => {
-    await render(<SidebarOneListTop collapsed={false} onCreateAgent={vi.fn()} />);
-    await click(q('sidebar-create-menu')!);
-    const row = q('sidebar-create-new-project')!;
-    expect(row.getAttribute('aria-haspopup')).toBe('menu');
-    expect(q('add-project-menu-items')).toBeNull();
-    await click(row);
-    expect(q('add-project-menu-items')).not.toBeNull();
-    expect(state.dispatch).not.toHaveBeenCalled();
-    expect(state.request).not.toHaveBeenCalled();
   });
 
   it('collapsing moves the 「+」 and narrows 创建智能体 with the open/close progress, ❌ a jump at the start', async () => {
@@ -232,7 +219,7 @@ describe('the top: 创建智能体 and the 「+」 menu', () => {
     expect(q('sidebar-create-agent')!.hasAttribute('inert')).toBe(true);
     await click(q('sidebar-create-menu')!);
     const items = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
-    expect(items.map((item) => item.textContent)).toEqual(['sidebar.createAgent', 'sidebar.newGroupChat', 'task.projectNew', 'sidebar.addContact']);
+    expect(items.map((item) => item.textContent)).toEqual(['sidebar.createAgent', 'sidebar.newGroupChat', 'sidebar.addContact']);
     await click(q('sidebar-create-create-agent')!);
     expect(create).toHaveBeenCalledTimes(1);
   });
