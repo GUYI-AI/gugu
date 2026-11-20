@@ -1,8 +1,8 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
-import { dirname, join } from 'node:path';
-import { app } from 'electron';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 import { withCodexAppServer } from '@gugu/session-plugins/agents/codex-auth';
 import {
   CODEX_NATIVE_AUTH_BEARER, CODEX_NATIVE_AUTH_ENDPOINT, CODEX_NATIVE_AUTH_ROOT,
@@ -104,8 +104,9 @@ export async function nativeCodexAuthEnvironment(root: string, userEnv: Record<s
   let route = routes.get(id);
   if (route) route.context.env = env;
   if (!route) {
-    // All profiles under this user's application-data parent share source admission.
-    const lockRoot = join(dirname(app.getPath('userData')), 'gugu-codex-native-auth-operations');
+    // Profile/userData overrides must not create a second renewal owner for the same native file.
+    // HOME is private in test instances; the native Codex directory itself stays read-only here.
+    const lockRoot = join(homedir(), '.gugu-codex-native-auth-operations');
     const context = { env };
     let admitted: CodexAuthProcessObserver | undefined;
     let admittedSignal: AbortSignal | undefined;

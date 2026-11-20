@@ -5,7 +5,6 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { CODEX_NATIVE_AUTH_ENDPOINT, requestNativeCodexAccess } from '@gugu/core/local/codex-native-auth.mjs';
 
 const state = vi.hoisted(() => ({ home: '', run: vi.fn(), cli: vi.fn(async () => '/fixture/selected-official-codex') }));
-vi.mock('electron', () => ({ app: { getPath: () => join(state.home, 'gugu-profile') } }));
 vi.mock('@gugu/session-plugins/agents/codex-auth', () => ({ withCodexAppServer: state.run }));
 vi.mock('@main/core/acp/transport/local-acp-process-host', () => ({ resolveLocalAgentCli: state.cli }));
 let source: typeof import('./codex-native-auth-source');
@@ -19,10 +18,11 @@ function auth(seconds = 30, refresh = 'fixture-source-refresh') {
 beforeEach(async () => {
   vi.resetModules(); state.run.mockReset(); state.cli.mockClear();
   state.home = await mkdtemp(join(tmpdir(), 'codex-native-authority-')); native = join(state.home, 'native');
+  vi.stubEnv('HOME', join(state.home, 'private-home'));
   await mkdir(native); await writeFile(join(native, 'auth.json'), JSON.stringify(auth()));
   source = await import('./codex-native-auth-source');
 });
-afterEach(async () => { await source.releaseNativeCodexAuthSources(); await rm(state.home, { recursive: true, force: true }); });
+afterEach(async () => { await source.releaseNativeCodexAuthSources(); vi.unstubAllEnvs(); await rm(state.home, { recursive: true, force: true }); });
 
 it('status is a read-only access projection, and Gugu never calls an OAuth endpoint', async () => {
   const before = await readFile(join(native, 'auth.json'));
