@@ -82,7 +82,7 @@ async function renderPanel(blockHost?: { actions: HTMLElement | null; title: HTM
   shell.mobile = mobile
   const chrome = hideRunningStatus ? { placeholder: 'Chat', attachGlyph: null, hideRunningStatus: true } : undefined
   const panel = createNode(ChatAreaPanel, { openNonce: 0, blockHost, mobile, ...(chrome ? { chrome } : {}) })
-  await renderWithAppProviders(harness, inSlot ? createNode(InChatSlot.Provider, { value: { groupName: 'Settings group' } }, panel) : panel, {
+  await renderWithAppProviders(harness, inSlot ? createNode(InChatSlot.Provider, { value: { groupName: 'Settings group', home: true } }, panel) : panel, {
     chat: {
       getImRepository: getImRepositoryMock,
       activeChatId: 'group-1',
