@@ -113,11 +113,13 @@ describe('device file reads', () => {
     const failure = expect(refused.result).rejects.toMatchObject({ code: 'gone' })
     expect(await (await fileBlob((await good.result).file)).bytes()).toEqual(body)
     await failure
+    // The peer's refusal changes nothing for the authorized reader. A finished read keeps no chunks, so its repeat reads
+    // again, as it would with no peer at all.
     const retry = await reads.request(message, account, { purpose: 'bytes' }).result
-    expect(retry.reused).toBe('chunks')
-    await retry.file.dispose()
-    expect(requests.filter(row => row.op === 'file-download')).toHaveLength(1)
-    expect(options.gets).toBe(1)
+    expect(await (await fileBlob(retry.file)).bytes()).toEqual(body)
+    expect(retry.reused).toBeNull()
+    expect(requests.filter(row => row.op === 'file-download')).toHaveLength(2)
+    expect(options.gets).toBe(2)
   })
 
   it.each(['account', 'backend'])('isolates both the verified store and raw chunk cache by %s', async scope => {
