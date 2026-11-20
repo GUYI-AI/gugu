@@ -449,6 +449,7 @@ import {
   createDesktopGuguMcpHost,
   setSessionExtensionCatalog,
   type AcpMcpServer,
+  type BuildSocialBridgeDeps,
   type DesktopGuguMcpHost,
 } from './acp-engine-utils'
 import { GUGU_PLATFORM_BLOCK, buildSessionpageProjectContextBlock } from './product-platform-prompt'
@@ -2550,6 +2551,25 @@ const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments
   taskCopy: (name, bytes, mimeType) => writeTaskCopy(join(resolveGuguHome(process.env), 'attachments'), name, bytes, mimeType), publication: desktopFiles.publish.local,
   openPath: path => shell.openPath(path), published: directory => trackRemoteFileDirectory(remoteFileOpenDirectories, directory),
 })
+/**
+ * The one social bridge every session surface wires (an ACP session, its side-chat fork, a terminal session): the same
+ * file resolver and publisher, uploads and session actions, so no surface loses a tool another has.
+ */
+function sessionSocialBridge(host: DesktopGuguMcpHost, sessionId: string, runAction: BuildSocialBridgeDeps['runHostAction']): BuildSocialBridgeDeps {
+  return {
+    host,
+    resolveFile: desktopFiles.resolve,
+    publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
+    attachments: attachmentUploads,
+    grantKey: sessionpageSurfaceKey(sessionId),
+    nativeSessionId: sessionId,
+    runHostAction: runAction,
+    runSessionAction: runAction,
+    // @@@2374 No auth: writing files and installing Apps call no cloud API for the person. Without the bridge this leg
+    // is not wired, so gugu_session's app_* actions fail when called rather than look usable.
+    ...(emdashBridge ? { runExtensionAction: extensionActionsFor(sessionId) } : {}),
+  }
+}
 registerNativeFileIpc(ipcMain, nativeFiles, error => createLogger('files').warn({ error: String(error) }, 'Native file operation failed'))
 app.on('will-quit', () => { attachmentUploads.dispose(); void nativeFiles.drop().catch(error => createLogger('files').warn({ error: String(error) }, 'File handle cleanup failed')) })
 
@@ -5739,21 +5759,8 @@ app.whenReady().then(async () => {
                 forkSource.agentUserId,
               ),
             },
-            socialBridgeDeps: {
-              host: primaryGuguMcpHost,
-              resolveFile: desktopFiles.resolve,
-              publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
-              attachments: attachmentUploads,
-              // grant key 用**分叉自己**的会话 id:它必须是独立一格,否则会顶掉来源会话的 grant。
-              grantKey: sessionpageSurfaceKey(info.sessionId),
-              nativeSessionId: info.sessionId,
-              runHostAction: runAction,
-              runSessionAction: runAction,
-              forkOf: forkSource.forkOf,
-              ...(emdashBridge
-                ? { runExtensionAction: extensionActionsFor(info.sessionId) }
-                : {}),
-            },
+            // grant key 用**分叉自己**的会话 id:它必须是独立一格,否则会顶掉来源会话的 grant。
+            socialBridgeDeps: { ...sessionSocialBridge(primaryGuguMcpHost, info.sessionId, runAction), forkOf: forkSource.forkOf },
           })
           const forkCapabilities = loadSessionAcpCapabilities(info.providerId, forkBundle, {
             cwd: info.cwd,
@@ -6014,25 +6021,13 @@ app.whenReady().then(async () => {
           // 它们的宿主侧注入已经闭嘴,这份声明是模型唯一的来路。
           model: sessionBundleModelFor(info.providerId, 'acp', processConfigPlatform, info.fastMode),
           socialBridgeDeps: {
-            host: primaryGuguMcpHost,
-            resolveFile: desktopFiles.resolve,
-            publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
-            attachments: attachmentUploads,
-            grantKey: sessionpageSurfaceKey(info.sessionId),
-            nativeSessionId: info.sessionId,
+            ...sessionSocialBridge(primaryGuguMcpHost, info.sessionId, runAction),
+            ownerReadsSession: true,
             ...(assistantRole ? { personalAssistant: true as const, assistantWork: {
               ...assistantWorkBinding(persistedSessionId, info.cwd, assistantHomeKind(process.env), provisioned.guguAgentUserId),
               currentInput: () => emdashBridge?.readCurrentActivityInput(persistedSessionId) ?? Promise.resolve(undefined),
             } } : {}),
             ...(readAssistantResources ? { readAssistantResources } : {}),
-            runHostAction: runAction,
-            runSessionAction: runAction,
-            // @@@2374 不带 auth:写文件与装扩展都不代表用户去调任何云端接口。桥没
-            // 加载成功时这条腿就不接,gugu_session 的 app_* 动作于是在调用时报错 ——
-            // ❌ 不给一个看起来能用却调不通的动作。
-            ...(emdashBridge
-              ? { runExtensionAction: extensionActionsFor(info.sessionId) }
-              : {}),
           },
         })
         injectMark('session-bundle-built')
@@ -6177,20 +6172,7 @@ app.whenReady().then(async () => {
       },
       socialBridge(info, host) {
         const sessionContext = ptySessionCallerContext(info)
-        const runAction = (action: unknown, auth: RuntimeAuth, signal: AbortSignal) =>
-          runLocalSessionAction(auth, sessionContext, action, signal)
-        return {
-          host,
-          attachments: attachmentUploads,
-          grantKey: sessionpageSurfaceKey(info.sessionId),
-          nativeSessionId: info.sessionId,
-          runHostAction: runAction,
-          runSessionAction: runAction,
-          // @@@2374 不带 auth:写文件与装扩展都不代表用户去调任何云端接口。桥没
-          // 加载成功时这条腿就不接,gugu_session 的 app_* 动作于是在调用时报错 ——
-          // ❌ 不给一个看起来能用却调不通的动作。
-          ...(emdashBridge ? { runExtensionAction: extensionActionsFor(info.sessionId) } : {}),
-        }
+        return sessionSocialBridge(host, info.sessionId, (action, auth, signal) => runLocalSessionAction(auth, sessionContext, action, signal))
       },
       platformRecovery: () => sessionpagePlatformRecovery,
       recordFailedSessionDirectMessage(params, message, error) {
