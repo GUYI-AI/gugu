@@ -9,6 +9,8 @@ type Project = { test?: { name?: string; pool?: string } }
 
 export default defineConfig({
   ...root,
+  // A mutation run never needs a file watcher; watching the checkout (coverage HTML, reports) exhausts inotify.
+  server: { ...root.server, watch: null },
   test: {
     ...root.test,
     projects: (root.test?.projects as Project[])
