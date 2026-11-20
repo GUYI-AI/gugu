@@ -15,7 +15,7 @@ function chrome() {
     /** Pages that are gone: Chrome has no such target any more, whether or not it has said so yet. */
     gone: new Set<string>(),
     sessions: new Map<string, string>(),
-    send: vi.fn(async (method: string, params: Record<string, unknown> = {}, sessionId?: string) => {
+    send: vi.fn(async (method: string, params: Record<string, unknown> = {}) => {
       if (method === 'Target.createTarget') {
         const targetId = `T${connection.created.length + 1}`;
         connection.created.push(targetId);
