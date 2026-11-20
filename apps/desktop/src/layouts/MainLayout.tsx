@@ -98,7 +98,7 @@ import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { platform } from '../platform'
 import { PhoneSessionModalHost } from '../components/PhoneSessionModalHost'
 import { useToast } from '../components/toastContext'
-import { askChat, askChatFile, closeTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askChat, askChatFile } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { openOwnedAgentResource } from '../lib/ownedAgentConversation'
 import { filePillText } from '../components/markdown/filePills'
 import { draftWithPills } from '@gugu/session-shared/markdown'
@@ -1125,7 +1125,6 @@ function InnerLayout({
                       scanSeed={scanSeed}
                       onOpenMe={() => selectTab('settings')}
                       onPushedChange={setPartnersPushed}
-                      onLeave={() => navigateMobile(() => setActiveTab('chats'), 'pop')}
                       onSwitchToChat={handleSwitchToChat}
                       onOpenGroupChat={handleOpenGroupChat}
                     />

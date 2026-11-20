@@ -56,7 +56,6 @@ export function PhonePartnersPage({
   scanSeed,
   onOpenMe,
   onPushedChange,
-  onLeave,
   onSwitchToChat,
   onOpenGroupChat,
 }: {
@@ -67,8 +66,6 @@ export function PhonePartnersPage({
   scanSeed?: { route: QrScanRoute; token: number } | null
   onOpenMe: () => void
   onPushedChange: (pushed: boolean) => void
-  /** 从「消息」进来的新项目页退回去:回到「消息」。 */
-  onLeave: () => void
   onSwitchToChat?: (target: ContactUser) => void
   onOpenGroupChat?: (group: ContactGroupChat) => void
 }) {
