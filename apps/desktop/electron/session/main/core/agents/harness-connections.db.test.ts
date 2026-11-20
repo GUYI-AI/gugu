@@ -90,6 +90,19 @@ it('references the terminal account and keeps the former native vault as an inde
   expect((await state.fixture!.registry.getAccount('harness:codex', work.id))?.meta?.harnessConnection?.migratedTo).toBe('native');
 });
 
+it('lists the ChatGPT sign-in the terminal already holds as the native connection, without a request, a copy or a row per read', async () => {
+  const terminalRoot = process.env.CODEX_HOME!;
+  await writeAuthAt(terminalRoot, chatgptAuth('person'));
+  const before = await readFile(join(terminalRoot, 'auth.json'));
+  const first = await listHarnessConnections('codex');
+  expect(first).toMatchObject([{ id: 'native', kind: 'native', current: true }]);
+  const rows = (await state.fixture!.registry.listAccounts('harness:codex')).map(row => row.accountId).sort();
+  for (let index = 0; index < 3; index += 1) expect(await listHarnessConnections('codex')).toEqual(first);
+  expect((await state.fixture!.registry.listAccounts('harness:codex')).map(row => row.accountId).sort()).toEqual(rows);
+  expect(await readFile(join(terminalRoot, 'auth.json'))).toEqual(before);
+  await expect(readFile(join(state.codexRoot, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
 it('migrates copied OAuth into one native reference and removes both managed copies idempotently', async () => {
   const terminal = process.env.CODEX_HOME!;
   const terminalAuth = join(terminal, 'auth.json');

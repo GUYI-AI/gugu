@@ -10,7 +10,11 @@ import type { ConnectionModelList, CustomModelProtocolProbe, DetectCustomModelPr
 import { providerAccountRegistry as registry } from '@main/core/provider-accounts/provider-account-registry-instance';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
+import { log } from '@main/lib/logger';
+import { loginShellEnv } from '@main/utils/userEnv';
 import { migrateCustomModels } from './custom-model-migration';
+import { discoverLocalConnections, discoveredSecret, discoveryIdentity, keyLast4, type DiscoveredConnection } from './local-connection-discovery';
+import { nativeConfigRoot } from './native-config-root';
 import { listEndpointModels, probeEndpointProtocols, verifyEndpointModel } from './connection-endpoint-probe';
 
 const namespace = 'models:custom';
@@ -25,37 +29,137 @@ export function migrateCustomModelConnections(): void {
   migratedDatabases.add(db);
 }
 
+type StoredRow = NonNullable<Awaited<ReturnType<typeof registry.getAccount>>>;
+
+/** What a renderer may read of a stored connection: never the key, never the discovery identity. */
+function viewRow(row: StoredRow, keySaved: boolean): CustomModelConnection {
+  const { discovery, ...meta } = row.meta!.customModel!;
+  return {
+    id: row.accountId, name: row.meta?.displayName || row.accountId, credentialRef: row.credentialRef, keySaved, ...meta,
+    ...(discovery ? { discovered: { source: discovery.source, keyLast4: discovery.keyLast4 } } : {}),
+  };
+}
+
 async function view(id: string): Promise<CustomModelConnection> {
   const row = await registry.getAccount(namespace, id);
   if (!row?.meta?.customModel) throw new Error('The custom model no longer exists');
+  return viewRow(row, Boolean(await registry.resolveSecret(namespace, id)));
+}
+
+let loggedDiscoveryIssues = '';
+/** Connections this machine already has configured elsewhere, read-only. A broken source yields fewer candidates, never an error. */
+async function scanLocal(): Promise<DiscoveredConnection[]> {
+  try {
+    const env = { ...process.env, ...loginShellEnv() };
+    const { connections, issues } = await discoverLocalConnections({ root: nativeConfigRoot('codex', env), env });
+    const signature = issues.map(({ code, where, provider }) => `${code}@${where}${provider ? `:${provider}` : ''}`).join(' ');
+    if (signature !== loggedDiscoveryIssues) {
+      loggedDiscoveryIssues = signature;
+      if (signature) log.warn(`[custom-models] some existing connections on this machine could not be listed: ${signature}`);
+    }
+    return connections;
+  } catch (error) {
+    log.warn('[custom-models] scanning the existing connections on this machine failed', { error: error instanceof Error ? error.name : 'unknown' });
+    return [];
+  }
+}
+
+/**
+ * The discovered connections nobody has stored yet. A stored connection hides its candidate when it is that candidate's
+ * own record (removed ones included, so a removal sticks) or when it has the same address and key.
+ */
+async function unstoredCandidates(rows: StoredRow[], secretOf: (id: string) => Promise<string | null>): Promise<DiscoveredConnection[]> {
+  const candidates = await scanLocal();
+  if (candidates.length === 0) return [];
+  const taken = new Set<string>();
+  await Promise.all(rows.map(async (row) => {
+    const meta = row.meta?.customModel;
+    if (!meta) return;
+    if (meta.discovery) taken.add(meta.discovery.identity);
+    else {
+      const key = await secretOf(row.accountId);
+      if (key) for (const { baseUrl } of meta.endpoints) taken.add(discoveryIdentity(baseUrl, key));
+    }
+  }));
+  return candidates.filter(({ identity }) => !taken.has(identity));
+}
+
+function candidateView(candidate: DiscoveredConnection): CustomModelConnection {
   return {
-    id, name: row.meta.displayName || id, credentialRef: row.credentialRef,
-    keySaved: Boolean(await registry.resolveSecret(namespace, id)), ...row.meta.customModel,
+    id: candidate.id, name: candidate.name, credentialRef: '', keySaved: true, preset: candidate.preset,
+    endpoints: candidate.endpoints, models: candidate.models, discovered: { source: candidate.source, keyLast4: candidate.keyLast4 },
   };
+}
+
+function secretReader(): (id: string) => Promise<string | null> {
+  const cache = new Map<string, Promise<string | null>>();
+  return (id) => cache.get(id) ?? cache.set(id, registry.resolveSecret(namespace, id)).get(id)!;
+}
+
+const materializing = new Map<string, Promise<void>>();
+
+/**
+ * First use of a discovered connection: store it under the id it was listed with. Nothing happens for an id that is
+ * already stored (including a removed one), and an id whose source changed since it was listed is left unstored, so
+ * it can never be pointed at another key. Concurrent first uses share one write.
+ */
+function ensureStored(id: string, options: { keepKey: boolean } = { keepKey: true }): Promise<void> {
+  const inflight = materializing.get(id);
+  if (inflight) return inflight;
+  const work = (async () => {
+    if (await registry.getAccount(namespace, id)) return;
+    const rows = await registry.listAccounts(namespace);
+    const candidate = (await unstoredCandidates(rows, secretReader())).find((entry) => entry.id === id);
+    const key = candidate && discoveredSecret(candidate);
+    if (!candidate || !key) return;
+    await registry.upsertAccount({
+      providerId: namespace, accountId: id, ...(options.keepKey ? { secret: key } : {}),
+      meta: { displayName: candidate.name, customModel: {
+        preset: candidate.preset, endpoints: candidate.endpoints, models: candidate.models,
+        discovery: { source: candidate.source, identity: candidate.identity, keyLast4: candidate.keyLast4, ...(candidate.aliases.length ? { aliases: candidate.aliases } : {}) },
+      } },
+    });
+  })().finally(() => { materializing.delete(id); });
+  materializing.set(id, work);
+  return work;
 }
 
 export async function listCustomModels(): Promise<CustomModelConnection[]> {
   migrateCustomModelConnections();
   const rows = await registry.listAccounts(namespace);
-  return Promise.all(rows.filter((row) => row.meta?.customModel && !row.meta.customModel.removed).map((row) => view(row.accountId)));
+  const secretOf = secretReader();
+  const stored = await Promise.all(rows.filter((row) => row.meta?.customModel && !row.meta.customModel.removed)
+    .map(async (row) => viewRow(row, Boolean(await secretOf(row.accountId)))));
+  return [...stored, ...(await unstoredCandidates(rows, secretOf)).map(candidateView)];
 }
 
 export async function saveCustomModel(input: SaveCustomModel): Promise<CustomModelConnection> {
   migrateCustomModelConnections();
   const id = input.id ?? randomUUID();
+  if (input.id) await ensureStored(input.id);
   const existing = input.id ? await registry.getAccount(namespace, input.id) : null;
   if (input.id && (!existing?.meta?.customModel || existing.meta.customModel.removed)) throw new Error('The custom model no longer exists');
   if (!input.apiKey && !(existing && await registry.resolveSecret(namespace, id))) throw new Error('An API key is required on this device');
+  // Editing keeps where the connection came from: its identity is what stops the same source being listed again.
+  const discovery = existing?.meta?.customModel?.discovery;
   await registry.upsertAccount({
     providerId: namespace, accountId: id,
     ...(input.apiKey ? { secret: input.apiKey } : {}),
-    meta: { displayName: input.name, customModel: { preset: input.preset, endpoints: input.endpoints, models: input.models } },
+    meta: {
+      displayName: input.name,
+      customModel: {
+        preset: input.preset, endpoints: input.endpoints, models: input.models,
+        ...(discovery ? { discovery: input.apiKey ? { ...discovery, keyLast4: keyLast4(input.apiKey) } : discovery } : {}),
+      },
+    },
   });
   return view(id);
 }
 
 /** Soft deletion retains credentials for already-bound sessions and downgrade. */
 export async function removeCustomModel(connectionId: string): Promise<void> {
+  // A connection nobody has used is removed without ever keeping its key; only the removal is recorded.
+  await ensureStored(connectionId, { keepKey: false });
   const row = await registry.getAccount(namespace, connectionId);
   if (!row?.meta?.customModel) throw new Error('The custom model no longer exists');
   await registry.upsertAccount({
@@ -69,9 +173,16 @@ export async function testCustomModel(input: TestCustomModel): Promise<Connectio
   let key = input.apiKey;
   if (input.connectionId) {
     const row = await registry.getAccount(namespace, input.connectionId);
-    if (!row?.meta?.customModel) throw new Error('The custom model no longer exists');
-    endpoints ??= row.meta.customModel.endpoints;
-    key ??= (await registry.resolveSecret(namespace, input.connectionId)) ?? undefined;
+    if (row?.meta?.customModel) {
+      endpoints ??= row.meta.customModel.endpoints;
+      key ??= (await registry.resolveSecret(namespace, input.connectionId)) ?? undefined;
+    } else {
+      // Trying a discovered connection is not using it: its key is read for this request and nothing is stored.
+      const candidate = (await unstoredCandidates(await registry.listAccounts(namespace), secretReader())).find(({ id }) => id === input.connectionId);
+      if (!candidate) throw new Error('The custom model no longer exists');
+      endpoints ??= candidate.endpoints;
+      key ??= discoveredSecret(candidate);
+    }
   }
   if (!key) throw new Error('The model’s API key is unavailable on this device');
   const endpoint = endpoints?.find(({ protocol }) => protocol.startsWith('openai-')) ?? endpoints?.[0];
@@ -147,6 +258,7 @@ async function listPiCustomModelProviders(): Promise<PiCustomModelProvider[]> {
 }
 
 async function readSelectedCustomModel(providerId: string, ref: CustomModelRef, selection: 'new' | 'bound') {
+  await ensureStored(ref.connectionId);
   const row = await registry.getAccount(namespace, ref.connectionId);
   const meta = row?.meta?.customModel;
   if (!meta || (selection === 'new' && meta.removed)) throw new Error('The custom model no longer exists');

@@ -1,6 +1,6 @@
 import z from 'zod';
 import { defineVersionedSchema } from '@shared/lib/versioned-schema/versioned-schema';
-import { customModelMetaSchema } from '@gugu/session-core/models/custom-model';
+import { customModelMetaSchema, discoverySourceSchema } from '@gugu/session-core/models/custom-model';
 
 // ---------------------------------------------------------------------------
 // v1 schema — initial version
@@ -29,8 +29,19 @@ const v1Schema = z.object({
    * `PLATFORM_CREDENTIAL_SOURCE`: the Gugu platform keeps it (#921); the row carries no secret.
    */
   credentialSource: z.string().optional(),
-  /** One device-owned provider connection, shared by all compatible harnesses. */
-  customModel: customModelMetaSchema.optional(),
+  /**
+   * One device-owned provider connection, shared by all compatible harnesses. `discovery` marks a connection this
+   * device already had configured elsewhere (identity = SHA-256 of address and key, never the key); it stays on this
+   * device and is never part of what a renderer reads.
+   */
+  customModel: customModelMetaSchema.extend({
+    discovery: z.object({
+      source: discoverySourceSchema,
+      identity: z.string().regex(/^[\da-f]{64}$/),
+      keyLast4: z.string().max(4),
+      aliases: z.array(z.string().max(200)).max(32).optional(),
+    }).optional(),
+  }).optional(),
   /** Harness credentials belong to this device; removed connections remain available to bound sessions. */
   harnessConnection: z.object({
     kind: z.enum(['native', 'account', 'api-key']),
