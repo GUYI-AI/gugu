@@ -103,9 +103,9 @@ describe('the install sheet asks which computers', () => {
     expect(answers.map(({ requestId, outcome }) => [requestId, outcome])).toEqual([['r1', 'declined'], ['r2', 'confirmed']])
   })
 
-  it("an agent's ask: the no is 「不装」, and closing it (Esc) is no answer", async () => {
+  it("an agent's ask: the no is 「不安装」, and closing it (Esc) is no answer", async () => {
     await ask(forGroup, 'r1', true, { name: 'Claude 8' })
-    expect(q('[data-testid="extension-consent-cancel"]')!.textContent).toBe('不装')
+    expect(q('[data-testid="extension-consent-cancel"]')!.textContent).toBe('不安装')
     await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
     expect(answers.map(({ outcome }) => outcome)).toEqual(['dismissed'])
   })
