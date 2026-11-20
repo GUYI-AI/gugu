@@ -1025,23 +1025,6 @@ export default {
     "assistant": "Personal assistant",
     "groupOffline": "The computer with this folder is offline",
     "groupUnavailable": "Couldn't open the group",
-    "newProject": {
-      "title": "New group",
-      "name": "Group name",
-      "create": "Create",
-      "machine": "Computer",
-      "folder": "Folder",
-      "newFolder": "New folder",
-      "existingFolder": "Existing folder",
-      "pickFolder": "Choose folder",
-      "offline": "Offline",
-      "noMachine": "No computer is online",
-      "readingDirectory": "Reading this computer's default location for new folders",
-      "noDefaultDirectory": "This computer has no default location for new folders",
-      "invalidName": "A group name can't contain / \\ : * ? \" < > |",
-      "pathTaken": "This folder is taken by “{{name}}”",
-      "failed": "Didn't work. Try again"
-    }
   },
   "widget": {
     "empty": "No content"

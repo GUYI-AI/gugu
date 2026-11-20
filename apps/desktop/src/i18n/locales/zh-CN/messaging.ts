@@ -292,7 +292,6 @@ export default {
     "createTask": "新建任务",
     "createGroup": "新建群聊",
     "createGroupMobile": "发起群聊",
-    "newProject": "新建群",
     "delete": "删除",
     "disableNotifications": "关闭通知",
     "deleteFailed": "无法删除这条对话",

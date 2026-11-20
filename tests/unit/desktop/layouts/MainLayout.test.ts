@@ -254,15 +254,14 @@ vi.mock('../../../../apps/desktop/src/components/ContactsPanel', async () => {
     )
   }
 })
-// #446 手机「伙伴」:替身记下外壳给它的几样(在不在屏上、新项目请求),并能报「推进了一页」。
+// #446 手机「伙伴」:替身记下外壳给它的几样(在不在屏上),并能报「推进了一页」。
 vi.mock('../../../../apps/desktop/src/mobile/partners/PhonePartnersPage', async () => {
   const React = await vi.importActual<typeof import('react')>('react')
   return {
-    PhonePartnersPage: ({ active, newProjectRequest, onPushedChange, onOpenProjectGroup }: { active: boolean; newProjectRequest?: number; onPushedChange: (pushed: boolean) => void; onOpenProjectGroup: (chatId: string) => void }) => (
-      React.createElement('div', { 'data-testid': 'mock-phone-partners', 'data-active': String(active), 'data-new-project-request': String(newProjectRequest ?? 0) },
+    PhonePartnersPage: ({ active, onPushedChange }: { active: boolean; onPushedChange: (pushed: boolean) => void }) => (
+      React.createElement('div', { 'data-testid': 'mock-phone-partners', 'data-active': String(active) },
         React.createElement('button', { type: 'button', 'data-testid': 'mock-phone-partners-push', onClick: () => onPushedChange(true) }, 'push'),
-        React.createElement('button', { type: 'button', 'data-testid': 'mock-phone-partners-pop', onClick: () => onPushedChange(false) }, 'pop'),
-        React.createElement('button', { type: 'button', 'data-testid': 'mock-phone-partners-group', onClick: () => onOpenProjectGroup('project-chat') }, 'group'))
+        React.createElement('button', { type: 'button', 'data-testid': 'mock-phone-partners-pop', onClick: () => onPushedChange(false) }, 'pop'))
     )
   }
 })
@@ -556,7 +555,7 @@ describe('MainLayout', () => {
     await ask()
     expect(panel()?.getAttribute('data-section')).toBe('about')
   })
-  it('#446 mobile: 伙伴 replaces the contacts panel, and 新项目 from 消息 opens it with a new-project request', async () => {
+  it('#446 mobile: 伙伴 replaces the contacts panel', async () => {
     platformMock.kind = 'capacitor'
     platformMock.capabilities.sessionHost = false
     await harness.render(createNode(MainLayout, {
@@ -565,10 +564,8 @@ describe('MainLayout', () => {
     const partners = () => harness.container.querySelector('[data-testid="mock-phone-partners"]') as HTMLElement
     expect(harness.container.querySelector('[data-testid="mock-contacts-panel"]'), 'the desktop contacts panel is not the phone page').toBeNull()
     expect(partners().getAttribute('data-active')).toBe('false')
-    expect(partners().getAttribute('data-new-project-request')).toBe('0')
-    await clickElement(harness.container.querySelector('[data-testid="mock-chat-new-project"]') as HTMLElement)
+    await clickElement(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.mobileContactsNav}"]`) as HTMLElement)
     expect(partners().getAttribute('data-active'), 'lands on 伙伴').toBe('true')
-    expect(partners().getAttribute('data-new-project-request'), 'and asks it to open 新项目').toBe('1')
     const pager = harness.container.querySelector('[data-mobile-tab-pager]') as HTMLElement
     expect(harness.container.querySelector('nav')).not.toBeNull()
     await clickElement(harness.container.querySelector('[data-testid="mock-phone-partners-push"]') as HTMLElement)
@@ -577,12 +574,11 @@ describe('MainLayout', () => {
     await clickElement(harness.container.querySelector('[data-testid="mock-phone-partners-pop"]') as HTMLElement)
     expect(harness.container.querySelector('nav')).not.toBeNull()
   })
-  it('keeps the phone 伙伴 page and its 新项目 entry off the desktop shell', async () => {
+  it('keeps the phone 伙伴 page off the desktop shell', async () => {
     await harness.render(createNode(MainLayout, {
       user: { id: 'user-1', email: 'user@example.com', nickname: 'User' }
     }))
     expect(harness.container.querySelector('[data-testid="mock-phone-partners"]')).toBeNull()
-    expect(harness.container.querySelector('[data-testid="mock-chat-new-project"]'), 'no phone 新项目 entry on the desktop').toBeNull()
   })
   it.each(['list', 'chat'] as const)('returns from an owned phone task to the unchanged %s opener in one step', async source => {
     platformMock.kind = 'capacitor'
@@ -667,22 +663,6 @@ describe('MainLayout', () => {
       expect(harness.container.querySelector(`[data-mobile-tab-page="${page}"]`)?.hasAttribute('inert')).toBe(false)
       expect(Boolean(harness.container.querySelector('nav'))).toBe(source === 'messages' || source === 'contacts')
     }
-  })
-  // 伙伴里只有项目群聊那一行(话题不成行,owner 10-28):进去落在群聊页签,❌ 开话题分屏。
-  it('returns from a project group opened in Partners to the retained project directory without showing the root tab bar', async () => {
-    platformMock.kind = 'capacitor'
-    platformMock.capabilities.sessionHost = false
-    await harness.render(createNode(MainLayout, { user: { id: 'user-1', email: 'user@example.com', nickname: 'User' } }))
-    await clickElement(harness.container.querySelector('[data-testid="mock-chat-new-project"]') as HTMLElement)
-    await clickElement(harness.container.querySelector('[data-testid="mock-phone-partners-push"]') as HTMLElement)
-    await clickElement(harness.container.querySelector('[data-testid="mock-phone-partners-group"]') as HTMLElement)
-    const { drainTopicSplitRequest } = await import('../../../../apps/desktop/src/lib/topicSplitRequest')
-    expect(drainTopicSplitRequest('project-chat')).toBeNull()
-    expect(harness.container.querySelector('[data-testid="mock-phone-partners"]')?.getAttribute('data-active')).toBe('true')
-    expect(harness.container.querySelector('nav')).toBeNull()
-    await clickElement(harness.container.querySelector('[data-testid="mock-chat-area-back"]') as HTMLElement)
-    expect(harness.container.querySelector('[data-testid="mock-chat-area"]')?.getAttribute('data-active-tab')).toBe('contacts')
-    expect(harness.container.querySelector('nav')).toBeNull()
   })
   it('handles Android back from the mobile chat pane by returning to the chat list', async () => {
     platformMock.kind = 'capacitor'

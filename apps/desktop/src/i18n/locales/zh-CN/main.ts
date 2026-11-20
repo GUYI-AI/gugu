@@ -1005,23 +1005,6 @@ export default {
     "assistant": "个人助理",
     "groupOffline": "文件夹所在的电脑不在线",
     "groupUnavailable": "群没打开",
-    "newProject": {
-      "title": "新建群",
-      "name": "群名",
-      "create": "创建",
-      "machine": "机器",
-      "folder": "文件夹",
-      "newFolder": "新文件夹",
-      "existingFolder": "已有文件夹",
-      "pickFolder": "选文件夹",
-      "offline": "离线",
-      "noMachine": "没有在线的电脑",
-      "readingDirectory": "正在读这台电脑上新文件夹的默认位置",
-      "noDefaultDirectory": "这台电脑没设新文件夹的默认位置",
-      "invalidName": "群名里不能有 / \\ : * ? \" < > |",
-      "pathTaken": "这个文件夹已被「{{name}}」占着",
-      "failed": "没建成，再试一次"
-    }
   },
   "widget": {
     "empty": "无内容"
