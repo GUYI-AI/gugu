@@ -123,6 +123,8 @@ export type {
   AcpBridgeSource,
   AcpCommandDiscoveryContext,
   AcpStorageForkContext,
+  AcpRevert,
+  AcpRevertPoint,
   AcpTurnEndContext,
   AcpSessionPrepareContext,
   AcpSpawnContext,
@@ -137,7 +139,7 @@ export type {
   LiveSettingDimension,
   LiveSettingsCapability,
 } from './capabilities/acp';
-export { UNSUPPORTED_LIVE_SETTINGS, liveSettingsCapabilitySchema } from './capabilities/acp';
+export { UNSUPPORTED_LIVE_SETTINGS, liveSettingsCapabilitySchema, guguBridgeRevert, guguRevertPoint } from './capabilities/acp';
 export type {
   AgentAuthContext,
   AgentAuthDescriptor,

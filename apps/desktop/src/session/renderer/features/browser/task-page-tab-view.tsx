@@ -117,7 +117,7 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
           onForceReload={() => control({ action: 'reload' })}
         />
       )}
-      <div ref={viewport} data-theme="light" className="emlight relative min-h-0 flex-1 bg-background">
+      <div ref={viewport} data-theme="light" className="emlight relative min-h-0 flex-1 bg-background text-foreground">
         <BrowserPictureFrame viewport={pictureSize} frame={frame}>
           <div ref={root} className="absolute inset-0" />
           {annotations.overlay}

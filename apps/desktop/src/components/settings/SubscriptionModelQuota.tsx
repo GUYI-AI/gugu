@@ -42,7 +42,7 @@ export function SubscriptionModelQuota({ machine, provider, connectionId, accoun
     <Tooltip.Trigger render={<div className={children ? 'gg-model-subscription-row' : undefined} tabIndex={children ? 0 : undefined} />}>
       {children ?? inline}
     </Tooltip.Trigger>
-    <Tooltip.Portal><Tooltip.Positioner side="bottom" align="end" sideOffset={10}>
+    <Tooltip.Portal><Tooltip.Positioner side="bottom" align="end" sideOffset={10} className="z-[var(--z-settings-modal)]">
       <Tooltip.Popup className="gg-model-quota-popup gg-model-quota-colors" data-usage-provider={provider}>
         <div className="gg-model-quota-heading"><strong>{plan || (provider === 'claude' ? 'Claude' : 'ChatGPT')}</strong><span>{account}</span></div>
         {updated && <div className="gg-model-quota-updated">{updated}</div>}

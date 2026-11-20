@@ -25,7 +25,10 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     return out({id:m.id,result:{thread:{id:m.params.beforeTurnId === 'wrong-id' ? 'other-thread' : 'same-thread'}}})
   }
   if (m.method === 'turn/start') {
-    const turn = {id:'turn-' + ++n,status:'completed'}
+    const refused = JSON.stringify(m.params.input).includes('refuse me')
+    const turn = refused
+      ? {id:'turn-' + ++n,status:'failed',error:{message:'This request has been flagged for possible cybersecurity risk.',codexErrorInfo:'cyberPolicy'}}
+      : {id:'turn-' + ++n,status:'completed'}
     out({id:m.id,result:{turn}})
     return out({method:'turn/completed',params:{threadId:'same-thread',turn}})
   }
@@ -96,6 +99,23 @@ describe('conversation revert keeps the native Codex thread (#7304)', () => {
     expect(requests.filter((r) => r.method === 'thread/revert').map((r) => r.params))
       .toEqual([{ threadId: 'same-thread', beforeTurnId: 'turn-1' }])
     expect(requests.some((r) => r.method === 'thread/fork')).toBe(false)
+  })
+  it('gives a refused turn the same revert point as any other', async () => {
+    const rig = await open()
+    await rig.request('session/prompt', { sessionId: 'same-thread', prompt: [{ type: 'text', text: 'hello' }] })
+    expect(await rig.request('session/prompt', { sessionId: 'same-thread', prompt: [{ type: 'text', text: 'refuse me' }] }))
+      .toMatchObject({ error: { message: expect.stringContaining('cybersecurity') }, _meta: { guguRevert: { before: 'turn-2' } } })
+    expect(await rig.request('_session/revert', { sessionId: 'same-thread', before: 'turn-2' }))
+      .toMatchObject({ result: { sessionId: 'same-thread' } })
+    expect(rig.requests().filter((r) => r.method === 'thread/revert').map((r) => r.params))
+      .toEqual([{ threadId: 'same-thread', beforeTurnId: 'turn-2' }])
+  })
+  it('refuses a file restore it cannot do, before touching the thread', async () => {
+    const rig = await open()
+    await rig.request('session/prompt', { sessionId: 'same-thread', prompt: [{ type: 'text', text: 'hello' }] })
+    expect(await rig.request('_session/revert', { sessionId: 'same-thread', before: 'turn-1', restoreFiles: true }))
+      .toMatchObject({ error: { message: expect.stringContaining('cannot restore files') } })
+    expect(rig.requests().some((r) => r.method === 'thread/revert')).toBe(false)
   })
   it('reports legacy-history refusal without falling back to a fork', async () => {
     const rig = await open()

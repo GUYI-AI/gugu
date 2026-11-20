@@ -173,7 +173,7 @@ describe('#7304 原地回退后的历史对账', () => {
   it('裁掉缓存中的未来、恢复原文,后续对账也不复活旧消息', async () => {
     const { store, internals, session } = setup();
     await store.revertMessage('m1');
-    expect(session.revertSession).toHaveBeenCalledWith('native-1');
+    expect(session.revertSession).toHaveBeenCalledWith('native-1', false);
     expect(committedIds(store)).toEqual(['s0']);
     expect(store.draftText).toBe('text-1');
     expect(store.reverting).toBe(false);
@@ -225,7 +225,7 @@ describe('#7304 原地回退后的历史对账', () => {
     store.beginMessageEdit('m1');
     store.changeMessageEdit('m1', 'edited B');
     await store.sendMessageEdit('m1');
-    expect(session.revertSession).toHaveBeenCalledExactlyOnceWith('native-1');
+    expect(session.revertSession).toHaveBeenCalledExactlyOnceWith('native-1', false);
     expect(custody).toHaveBeenCalledTimes(1);
     expect(custody.mock.calls[0]![0]).toBe(store);
     expect(custody.mock.calls[0]!.slice(1)).toEqual(['edited B',

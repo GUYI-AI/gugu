@@ -179,8 +179,8 @@ export class AcpLiveSession {
     return this.client.exportRawAcpLog({ sessionId: this.sessionId });
   }
 
-  revertSession(anchor: string) {
-    return this.client.revertSession({ sessionId: this.sessionId, anchor });
+  revertSession(anchor: string, restoreFiles = false) {
+    return this.client.revertSession({ sessionId: this.sessionId, anchor, ...(restoreFiles ? { restoreFiles } : {}) });
   }
 
   editQueuedPrompt(id: string, input: PromptInput, queueEdit?: QueuedPromptEdit | null): Promise<Result<void, unknown>> {

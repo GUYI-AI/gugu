@@ -182,9 +182,13 @@ describe('an App program as a caller of its App (F16)', () => {
       expect(files.readHandleCount()).toBe(0);
       await readBoth();
       expect(files.readHandleCount()).toBe(2);
+      // A page that is merely gone is not a refusal: its reads wait out the idle timer for the next page of the same reader.
+      vi.useFakeTimers();
       relay.pageGone(program.pageId);
+      expect(files.readHandleCount()).toBe(2);
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
       expect(files.readHandleCount()).toBe(0);
-    } finally { relay.pageGone(program.pageId); await program.close(); }
+    } finally { vi.useRealTimers(); relay.pageGone(program.pageId); await program.close(); }
   });
 
   it('a person\'s stamped page call keeps person membership for files, chats and messages', async () => {
