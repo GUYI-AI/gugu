@@ -1,6 +1,7 @@
 import { reportHandledError } from '@/lib/errorSummaryReporting';
 import { replica } from '@/lib/replica';
-import { rpc, rpcOn } from '@renderer/lib/ipc';
+import { events, rpc, rpcOn } from '@renderer/lib/ipc';
+import { newSessionMemoryChangedChannel } from '@shared/core/sessions/sessionEvents';
 import type { AppSettings, AppSettingsKey } from '@shared/core/app-settings';
 
 export type SettingsMeta<K extends AppSettingsKey> = {
@@ -77,4 +78,9 @@ export function updateAppSettingsRequest<K extends AppSettingsKey>(key: K, value
 
 export function invalidateAppSettingsKey<K extends AppSettingsKey>(key: K, host = LOCAL_SETTINGS_HOST_KEY): void {
   void appSettingsModel.refresh(key, host);
+}
+
+/** Main writes the new-session memory itself after a switched model's first reply (#3293): the box reads it fresh. */
+export function wireNewSessionMemoryRefresh(): void {
+  events.on(newSessionMemoryChangedChannel, () => invalidateAppSettingsKey('newSessionMemory'));
 }
