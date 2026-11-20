@@ -84,8 +84,8 @@ describe('actual publisher with canonical idle group commit',()=>{
       reads=0;proofs.mockClear();await publisher!.project(receipt,true);return {reads,proofs:proofs.mock.calls.length};
     };
     const small=await cost(10,4),large=await cost(11,20),per=(k:'reads'|'proofs')=>(large[k]-small[k])/16;
-    console.log('PER-ENTITY',JSON.stringify({small,large,reads:per('reads'),proofs:per('proofs')}));
-    expect(per('reads')).toBeLessThanOrEqual(READS_PER_ENTITY);expect(per('proofs')).toBeLessThanOrEqual(PROOFS_PER_ENTITY);
+    const measured=JSON.stringify({small,large});
+    expect(per('reads'),measured).toBeLessThanOrEqual(READS_PER_ENTITY);expect(per('proofs'),measured).toBeLessThanOrEqual(PROOFS_PER_ENTITY);
   });
   it('rejects the final publication proof when its pack disappears after preparation returned',async()=>{
     publisher=createWindowPackPublisher(directory,fixture.sqlite);const projected=await publisher.project(receipts[0]);projected.validate?.();
