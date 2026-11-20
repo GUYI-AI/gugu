@@ -526,35 +526,6 @@ export const chatService = {
     return (data as { user_id: string }[] | null)?.[0]?.user_id ?? null
   },
 
-  /** Toggle an emoji reaction on a message. */
-  async toggleReaction(messageId: string, userId: string, emoji: string): Promise<void> {
-    const { data: existing } = await chatDb
-      .from('message_reactions')
-      .select('id')
-      .eq('message_id', messageId)
-      .eq('user_id', userId)
-      .eq('emoji', emoji)
-      .maybeSingle().throwOnError()
-
-    if (existing) {
-      await chatDb
-        .from('message_reactions')
-        .delete()
-        .eq('message_id', messageId)
-        .eq('user_id', userId)
-        .eq('emoji', emoji).throwOnError()
-    } else {
-      await chatDb.from('message_reactions').insert(
-        dbPayload({
-          id: crypto.randomUUID(),
-          message_id: messageId,
-          user_id: userId,
-          emoji
-        })
-      ).throwOnError()
-    }
-  },
-
   /**
    * Returns each OTHER member's last_read_seq, keyed by user_id (the current
    * user is excluded). Read-receipt rendering intersects this with a message's

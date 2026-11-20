@@ -22,7 +22,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reaction, runInAction } from 'mobx';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import type { Session } from '@shared/core/sessions/sessions';
-import { state as inputState, changed as inputsChanged, EMPTY as NO_INPUTS } from '@/lib/sessionInputOutboxBridge';
+import { state as inputState, changed as inputsChanged, EMPTY as NO_INPUTS } from '@/lib/outbox/kinds/sessionInput';
 import { installAcpChatStoreHost, replica } from './acp-chat-store.test-host';
 import { sessionLifeView } from '../stores/session-life-views';
 

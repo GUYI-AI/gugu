@@ -1,4 +1,4 @@
-import { state } from './sessionInputOutboxBridge'
+import { state } from './outbox/kinds/sessionInput'
 import { clearViewState, readViewState, writeViewState, type ViewPanel } from './viewStateTable'
 
 // A task session's unsent input, per account, device and session: in the view-state table (panel `draft`, the same caps as

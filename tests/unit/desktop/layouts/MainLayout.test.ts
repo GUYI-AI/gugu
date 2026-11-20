@@ -1,7 +1,7 @@
 vi.mock('../../../../apps/desktop/src/components/appSlot/OwnedAgentResourcesHost', () => ({ OwnedAgentResourcesHost: () => null }))
 const resourceHosts = vi.hoisted(() => ({ host: vi.fn(), suspend: vi.fn(), resume: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/ownedAgentResources', () => ({ hostOwnedAgentResources: resourceHosts.host, suspendOwnedAgentResources: resourceHosts.suspend, resumeOwnedAgentResources: resourceHosts.resume }))
-vi.mock('../../../../apps/desktop/src/hooks/useSessionInputOutbox', () => ({ SessionInputOutboxHost: () => null }))
+vi.mock('../../../../apps/desktop/src/hooks/useOutboxHost', () => ({ OutboxHost: () => null }))
 // #1925 Which chats are drawn beside an App's page right now (the host's own answer is AppConversationSurfaceHost.test.tsx's).
 const besideApp = vi.hoisted(() => new Set<string>())
 vi.mock('../../../../apps/desktop/src/lib/appConversationSurfaceBridge', async (original) => ({

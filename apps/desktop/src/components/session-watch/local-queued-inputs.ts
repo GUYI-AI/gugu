@@ -1,6 +1,6 @@
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import { nativeMessageKey } from '@gugu/session-core/session-record/native-read'
-import type { SessionInput } from '@/lib/sessionInputOutbox'
+import type { SessionInput } from '@/lib/sessionInput'
 
 /** Native IDs may change at admission; the host carries the original client identity alongside them. */
 export function hostedInputIds(hosted: readonly { id: string; clientMessageId?: string }[], turns: readonly TranscriptTurn[]): ReadonlySet<string> {

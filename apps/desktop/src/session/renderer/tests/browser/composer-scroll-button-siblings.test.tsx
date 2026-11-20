@@ -9,7 +9,7 @@ import { ConversationCreditNotice } from '@/components/chat/ConversationCreditNo
 import { SessionInputQueue } from '@/components/chat/SessionInputQueue'
 import { SessionHostQuestion } from '@renderer/features/extensions/session-host-question'
 import { publishSelfIdentity } from '@/lib/selfIdentityBridge'
-import { state, changed, EMPTY } from '@/lib/sessionInputOutboxBridge'
+import { state, changed, EMPTY } from '@/lib/outbox/kinds/sessionInput'
 import { type FrameOptions } from '../../../../../../../tests/fixtures/composer-band-scroll/frame'
 import { until, untilStable } from '../../../../../../../tests/support/awaitCondition'
 import '@/i18n/registerMessagingCatalog'

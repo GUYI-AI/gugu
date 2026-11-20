@@ -3,7 +3,6 @@ import { publishChatRemoved } from '../lib/chatRemovalBridge'
 import { useConversationHiding } from './useConversationHiding'
 import { useChatCatchupPriority, useChatCatchupResume } from './chatCatchupPriority'
 import { useChatListRefresh } from './chatListRefresh'
-import { observeAttachmentMessage } from '../lib/attachmentSendRecovery'
 import type { UnreadLocatorCommit } from '../lib/chatUnreadLocatorWindow'
 import { topicService } from '../lib/topics'
 import type { ConversationViewport } from './chatWindowCache'
@@ -62,6 +61,7 @@ import { subscribeAgentPresenceRevisions } from '../lib/agentPresenceStore'
 import { sendAttachmentBatch } from '../components/chat/sendAttachmentBatch'
 import { i18n } from '../i18n'
 import { rendererLogger } from '../lib/log'
+import { enqueueReaction, registerReactions, wishReaction } from '../lib/outbox/kinds/reaction'
 const revisionLog = rendererLogger('chat/account-revision')
 export function ChatProvider({ children, active = true }: { children: React.ReactNode; active?: boolean }) {
   const { user: authenticatedUser } = useAuth(), user = active ? authenticatedUser : null
@@ -248,7 +248,6 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   useEffect(() => {
     if (!userId) return
     const wiring = createOutboxWiring({
-      observeMessage: (senderId, chatId) => observeAttachmentMessage(subscribeAccountRevision, senderId, chatId),
       getImRepository,
       user: () => userRef.current ? { id: userRef.current.id, nickname: userRef.current.nickname, avatarUrl: userRef.current.avatarUrl ?? null } : null,
       chats: () => chatsRef.current,
@@ -268,7 +267,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
       wiring.dispose()
       if (outboxRef.current === wiring) outboxRef.current = null
     }
-  }, [cache, userId, getImRepository, subscribeAccountRevision, chatsRef])
+  }, [cache, userId, getImRepository, chatsRef])
 
   const { epochOf: getMessageSnapshotEpoch, bump: bumpMessageSnapshotEpoch } = useMessageSnapshotEpochs((id) => unreadNavigationRef.current?.dropUnreadEntry(id))
 
@@ -652,7 +651,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
         is_whisper: !!opts.isWhisper,
         seq: -1,
         content: content.trim(),
-        content_type: 'text',
+        content_type: opts.contentType ?? 'text',
         ...optimisticReplyFields(cache.rows(targetChatId), opts.replyToMessageId ?? null), // @@@2015 乐观回复带全引用预览,回声前空名会触发 #1624
         thread_root_id: threadRootId,
         is_thread_root: !!opts.isThreadRoot, // @@@threads (#1531) 乐观显 tanchor，不等 openThread 异步补
@@ -685,7 +684,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
           id, chatId: targetChatId, senderUserId: userId, content: content.trim(),
           toUserIds, replyToMessageId: opts.replyToMessageId ?? null,
           threadRootId, isThreadRoot: !!opts.isThreadRoot, isWhisper: !!opts.isWhisper,
-          resolveDmPeer, beforeDeliver: opts.beforeDeliver, submittedAt: opts.submittedAt, dependsOn: opts.dependsOn,
+          resolveDmPeer, beforeDeliver: opts.beforeDeliver, submittedAt: opts.submittedAt, dependsOn: opts.dependsOn, contentType: opts.contentType,
         })
       } catch (error) {
         if (threadRootId) {
@@ -707,17 +706,15 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
 
   const outboxActions = useMemo(() => bindOutboxActions(outboxRef, userId), [userId])
 
-  const toggleReaction = useCallback(
-    async (messageId: string, emoji: string, chatId = activeChatIdRef.current) => {
-      if (!userId || !chatId) return
-      const epoch = getMessageSnapshotEpoch(chatId)
-      await chatService.toggleReaction(messageId, userId, emoji)
-      const msgs = await chatService.getMessages(chatId, userId, 'toggleReaction')
-      applyFreshMessageSnapshot(chatId, msgs, epoch)
-      await revalidateWindowOverlays(chatId)
-    },
-    [applyFreshMessageSnapshot, getMessageSnapshotEpoch, revalidateWindowOverlays, userId],
-  )
+  // A reaction is the person's wish, shown at once and sent through the outbox; its confirmation re-reads the counts.
+  const toggleReaction = useCallback(async (messageId: string, emoji: string, chatId = activeChatIdRef.current) => {
+    if (!userId || !chatId) return
+    const wish = wishReaction(messageId, emoji, cache.rows(chatId) ?? [], cache.view(chatId).threadMessages)
+    setMessagesAndCache((rows) => rows.map(wish.apply), chatId); setThreadMessagesFor(chatId, (rows) => rows.map(wish.apply))
+    await enqueueReaction({ chatId, messageId, userId, emoji, on: wish.on })
+  }, [cache, setMessagesAndCache, setThreadMessagesFor, userId])
+  const revalidateOverlaysRef = useRef(revalidateWindowOverlays); revalidateOverlaysRef.current = revalidateWindowOverlays
+  useEffect(() => registerReactions((wish) => { void revalidateOverlaysRef.current(wish.chatId) }), [])
 
   const createGroupChat = useGroupCreation({ userId, loadChats, setChats, toast })
 

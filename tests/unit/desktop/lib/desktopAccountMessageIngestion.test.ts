@@ -32,7 +32,7 @@ vi.mock('../../../../apps/desktop/src/platform/desktopIpc', () => ({ desktopIpc:
 } }) }))
 
 const { createMemoryLocalSyncDb } = await import('../../../../apps/desktop/src/lib/localSyncDb')
-const { openImRepository, ackOutboxRecord } = await import('../../../../apps/desktop/src/lib/imRepository')
+const { openImRepository, confirmSentMessage } = await import('../../../../apps/desktop/src/lib/imRepository')
 const { createAccountRevisionCoordinator } = await import('../../../../apps/desktop/src/lib/accountRevisionCoordinator')
 const { ChatWindowCache } = await import('../../../../apps/desktop/src/store/chatWindowCache')
 const { bindRepositoryMessageCache } = await import('../../../../apps/desktop/src/store/chatDiskWindow')
@@ -113,7 +113,7 @@ it('does not notify a desktop arrival deleted later in the same revision page', 
 it('acknowledges a sent desktop message into SQLite without an IndexedDB body', async () => {
   const r = await rig()
   const sent = row('sent', 3)
-  await ackOutboxRecord(r.repository, 'sent', sent)
+  await confirmSentMessage(r.repository, { clientMessageId: 'sent' } as import('../../../../apps/desktop/src/lib/imRepository').OutboxRecord, sent)
   expect(sqlite.rows.get('sent')).toEqual(sent)
   expect(r.repository.snapshot().message).toEqual([])
 })

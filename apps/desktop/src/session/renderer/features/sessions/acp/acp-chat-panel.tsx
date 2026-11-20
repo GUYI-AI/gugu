@@ -14,7 +14,7 @@ import { agentOffersConnections } from '@renderer/features/settings/agents-page/
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
 import { isTranscriptDelivery } from '@/lib/pendingSessionDeliveries';
 import { readNativeOfflineDraft, writeNativeOfflineDraft } from '@/lib/nativeOfflineDraft';
-import { useSessionInputAccount } from '@/lib/sessionInputOutboxBridge';
+import { useSessionInputAccount } from '@/lib/outbox/kinds/sessionInput';
 import { appendToDraft } from '@/store/chatContext';
 import { registerNativeComposer } from '@/lib/nativeComposerHandoff';
 import { useSearchedTaskReveal, useSessionSourceMessage } from './use-session-source-message';

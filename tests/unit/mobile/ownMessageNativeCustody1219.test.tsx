@@ -9,7 +9,7 @@ import { projectPhonePendingInputs } from '../../../apps/desktop/src/components/
 import { activeTurnWithInputs } from '@session-chat/state/pending-prompt'
 import { splitActiveTurn } from '../../../apps/desktop/src/components/assistant-ui/transcript-sync'
 import { sessionInputBaseline } from '../../../apps/desktop/src/lib/pendingSessionInput'
-import type { SessionInput } from '../../../apps/desktop/src/lib/sessionInputOutbox'
+import type { SessionInput } from '../../../apps/desktop/src/lib/sessionInput'
 
 const scope = vi.hoisted(() => ({ stored: vi.fn(), rpc: vi.fn() }))
 vi.mock('../../../apps/desktop/electron/session/main/core/sessions/session-conversation-read', () => ({ nativeConversationUnread: () => [] }))

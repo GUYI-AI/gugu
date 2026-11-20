@@ -2,7 +2,7 @@ import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import type { PendingPrompt } from '@gugu/session-chat-ui'
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope'
 import { projectSessionPendingInput, sessionInputBaseline } from '@/lib/pendingSessionInput'
-import type { HostPendingRow, SessionInput } from '@/lib/sessionInputOutbox'
+import type { HostPendingRow, SessionInput } from '@/lib/sessionInput'
 
 /**
  * This phone's queue inputs the page cannot place yet (#2367). The send queue releases an input once the record its

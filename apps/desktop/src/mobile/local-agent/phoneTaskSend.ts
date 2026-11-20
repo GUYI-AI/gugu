@@ -1,5 +1,5 @@
 import { getCurrentAuthUserId } from '@/lib/supabase'
-import { SessionInputFailureError, withSessionInputDeadline } from '@/lib/sessionInputOutbox'
+import { SessionInputFailureError, withSessionInputDeadline } from '@/lib/sessionInput'
 import { invokePhoneHost } from './phoneHostRpc'
 
 export type StoredPhoneTaskSend = { version: 1; id: string; text: string }

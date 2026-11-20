@@ -4,10 +4,9 @@
  * (一次原子调用,❌ 取消、❌ 渲染层自己拼「删 + 发」);插不了 ⇒ 挪到队首,在跑就取消。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { SessionInputOutbox, openSessionInputStorage } from '@/lib/sessionInputOutbox';
+import { installSessionInputOutbox, memoryOutboxStorage, settle as settleOutbox, type InstalledSessionInputs } from '../../../../../../../../tests/helpers/sessionInputOutbox';
 import { SessionInputAdmissionError } from '@gugu/core/shared/sessionInputAdmission';
-import { state as inputState, changed as inputsChanged, EMPTY } from '@/lib/sessionInputOutboxBridge';
+import { enqueueSessionInput, state as inputState } from '@/lib/outbox/kinds/sessionInput';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { installAcpChatStoreHost } from './acp-chat-store.test-host';
 
@@ -111,7 +110,8 @@ describe('#6574 立即发送按插话能力分两路', () => {
   });
 });
 
-afterEach(() => { vi.unstubAllGlobals(); Object.assign(inputState(), { accountId: null, queue: null, rows: EMPTY, valid: () => false }); inputsChanged(); });
+let installed: InstalledSessionInputs | undefined;
+afterEach(() => { vi.unstubAllGlobals(); installed?.dispose(); installed = undefined; });
 
 it('keeps one notice per native queued message across failed retries and retires only its successful retry', async () => {
   const { store, session } = makeStore();
@@ -129,28 +129,24 @@ it('keeps one notice per native queued message across failed retries and retires
   expect(visible.size).toBe(1);
 });
 
-it('retries a rejected input through real sender storage, preserving another message failure', async () => {
-  vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+it('retries a rejected input through the real outbox, preserving another message failure', async () => {
   const { store } = makeStore();
-  const storage = await openSessionInputStorage(new IDBFactory());
+  const storage = memoryOutboxStorage();
   let refuse = true;
-  const queue = new SessionInputOutbox('owner', storage, async () => {
+  installed = installSessionInputOutbox({ storage, send: async () => {
     if (refuse) throw new SessionInputAdmissionError('refused', 'rejected');
-  }, () => true, rows => { if (rows) inputState().rows = rows; inputsChanged(); });
-  Object.assign(inputState(), { accountId: 'owner', queue: Promise.resolve(queue), valid: () => true });
-  const a = await queue.enqueue({ deviceId: null, sessionId: store.runtimeSessionId, text: 'same words' });
-  const b = await queue.enqueue({ deviceId: null, sessionId: store.runtimeSessionId, text: 'same words' });
-  await queue.flush(); await queue.flush();
-  inputState().rows = await queue.list(); inputsChanged();
-  const put = vi.spyOn(storage, 'put').mockRejectedValue(new Error('storage unavailable'));
+  } });
+  const a = await enqueueSessionInput({ deviceId: null, sessionId: store.runtimeSessionId, text: 'same words' });
+  const b = await enqueueSessionInput({ deviceId: null, sessionId: store.runtimeSessionId, text: 'same words' });
+  await settleOutbox();
+  const write = vi.spyOn(storage, 'write').mockRejectedValue(new Error('storage unavailable'));
   store.retryPendingInput(a.id); store.retryPendingInput(b.id);
   await vi.waitFor(() => expect(visible.size).toBe(2));
-  store.retryPendingInput(a.id); await settle();
-  expect(visible.size).toBe(2);
-  put.mockRestore(); refuse = false;
+  write.mockRestore(); await settleOutbox(); installed.outbox.kick(); await settleOutbox();
+  refuse = false;
   store.retryPendingInput(a.id);
   await vi.waitFor(() => expect(visible.size).toBe(1));
-  expect((await queue.list()).map(input => input.id)).toEqual([b.id]);
+  await vi.waitFor(() => expect(inputState().rows.map(input => input.id)).toEqual([b.id]));
 });
 
 it('keeps host-owned unknown retries message-owned even before they enter the local pending projection', async () => {

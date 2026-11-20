@@ -1,5 +1,5 @@
-import type { SessionInput } from '@/lib/sessionInputOutbox'
-import { releaseQueuedSessionInput, state, subscribeSessionInputs } from '@/lib/sessionInputOutboxBridge'
+import type { SessionInput } from '@/lib/sessionInput'
+import { releaseQueuedSessionInput, state, subscribeSessionInputs } from '@/lib/outbox/kinds/sessionInput'
 import { rendererLogger } from '@/lib/log'
 import { subscribeCachedDevices } from '@/store/devicesCache'
 import { isAgentHostDevice, isPhoneDevice } from '@gugu/core/cloud/devices'
