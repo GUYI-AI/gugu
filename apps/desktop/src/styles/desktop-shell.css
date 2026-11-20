@@ -21,6 +21,11 @@
   overflow: hidden;
 }
 
+/* #2548 群 / 项目的内层栏归列表那一层(整列通高、无卡片);只让出正文卡片的上缝,头一行与正文页头对齐。 */
+.gugu-skin [data-workspace-shell] > [data-region='inner-sidebar'] {
+  padding-top: var(--desktop-surface-inset);
+}
+
 /* The curved content surface owns this boundary. Full-height list borders otherwise
  * continue above and below it, producing the spurs visible at both rounded corners.
  * The invisible resize target is kept, including keyboard resizing.

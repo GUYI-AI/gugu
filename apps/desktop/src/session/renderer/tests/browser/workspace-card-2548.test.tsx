@@ -85,6 +85,7 @@ for (const theme of ['light', 'dark'] as const) {
     expect(getComputedStyle(column!).borderRadius).toBe('0px');
     expect(getComputedStyle(column!).boxShadow).toBe('none');
     expect(right.left).toBeCloseTo(left.right);
+    expect(left.top + parseFloat(getComputedStyle(column!).paddingTop), 'its first row lines up with the card').toBeCloseTo(right.top);
     expect(right.top - shell.top).toBeCloseTo(5);
     expect(shell.right - right.right).toBeCloseTo(5);
     expect(shell.bottom - right.bottom).toBeCloseTo(5);
