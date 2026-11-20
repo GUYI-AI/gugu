@@ -425,6 +425,17 @@ export default {
     "textPlaceholder": "Say what to do",
     "visible": "Visible to everyone in the chat (by default only they see it)"
   },
+  "filePick": {
+    "title": "Choose files",
+    "search": "Search file names or paths",
+    "empty": "No files to choose in this chat",
+    "action": "Choose",
+    "picked": "{{count}} chosen",
+    "picked_one": "{{count}} chosen",
+    "picked_other": "{{count}} chosen",
+    "upload": "Add from computer…",
+    "uploadPhone": "Add from phone…"
+  },
   "composePick": {
     "title": "Choose where to send",
     "chats": "Chats",

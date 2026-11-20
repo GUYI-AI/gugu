@@ -142,6 +142,12 @@ export const EXTENSION_LISTED_SESSION_METHOD = 'extensions.listedSession';
 export const EXTENSION_PICK_DISPATCH_TARGET_METHOD = 'extensions.pickDispatchTarget';
 
 /**
+ * API 60 `gugu.files.pick`: main asks the window that draws the page to let the person pick chat files (`FilePickSheet`):
+ * `FilePickAsk` → `FilePicked`. It waits on a person and closes by itself as dispatch's picker does.
+ */
+export const EXTENSION_PICK_CHAT_FILES_METHOD = 'extensions.pickChatFiles';
+
+/**
  * API 54/55 `gugu.files.sendSelection` (selection-send.ts): main asks the window that draws the page to open Send beside the
  * page's selection: `SelectionSendAsk` → `SelectionSendResult`. It waits on a person, so it closes by itself after
  * `INSTALL_CONSENT_HUMAN_WINDOW_MS`, as dispatch's picker does (ipc-bridge's clock is longer).

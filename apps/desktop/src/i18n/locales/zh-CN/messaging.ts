@@ -424,6 +424,17 @@ export default {
     "textPlaceholder": "写上要做什么",
     "visible": "群里所有人可见（默认只有对方看得到）"
   },
+  "filePick": {
+    "title": "选择文件",
+    "search": "搜索文件名或路径",
+    "empty": "这个对话里没有可选的文件",
+    "action": "选好了",
+    "picked": "已选 {{count}} 个",
+    "picked_one": "已选 {{count}} 个",
+    "picked_other": "已选 {{count}} 个",
+    "upload": "从电脑添加…",
+    "uploadPhone": "从手机添加…"
+  },
   "composePick": {
     "title": "选择发送位置",
     "chats": "对话",

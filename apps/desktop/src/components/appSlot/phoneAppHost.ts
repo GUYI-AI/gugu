@@ -14,8 +14,10 @@ import { platform } from '../../platform'
 import { getRendererAccessToken } from '../../lib/sessionPublication'
 import { AppFileError, contentTypeOf, createAppFiles, rosterMoved, tooLargeError, viewedAmongOf, type ChatFileRef, type FileSurface, type MemberChange } from '../../session/shared/extensions/app-files-core'
 import { AppSendError, chatSelectionPills, dispatchFromApp, type AppSendPlatform } from '../../session/shared/extensions/app-send-core'
-import { answerAgentPick, pickAgentAsk } from '../../session/shared/extensions/app-dispatch-core'
+import { answerAgentPick, pickAgentAsk, pickAgentInclude } from '../../session/shared/extensions/app-dispatch-core'
+import { filePickCallOf, pickableFiles, pickedEntries, type FilePickAsk } from '../../session/shared/extensions/app-file-pick-core'
 import { pickDispatchTarget } from '../chat/dispatchAsk'
+import { pickChatFiles } from '../chat/filePickAsk'
 import { openSelectionSend } from '../chat/selectionSendAsk'
 import { chatOf, createAppMessages } from '../../session/shared/extensions/app-messages-core'
 import { createAppCloud, type CloudChannel } from '../../session/shared/extensions/app-cloud-core'
@@ -448,10 +450,13 @@ export function hostAppFrame(
   const cloudApp = () => ({ id: hosted.binding.extensionId, origin: installedExtensionsStore.origins[hosted.binding.extensionId] })
   const event = (hostEvent: ExtensionHostEvent) => send({ m: APP_FRAME_MARKER, t: 'event', event: hostEvent })
   /** The page, and the one chat file the host handed it (`ctx.file`): every call names its own target (真源原则 13). */
+  /** API 60: the chat files the person picked for this page (`files.pick`): as handed as `ctx.file`, while the page lives. */
+  const pickedFiles = new Set<string>()
   const surface = (): FileSurface => ({
     pageId,
     extensionId: hosted.binding.extensionId,
     itemId: hosted.binding.itemId ?? null,
+    picked: pickedFiles,
   })
   /** Who is in the chat the page is drawn for (摩擦单 F36): read when the frame first asks, again when the members change. */
   let members: ExtensionMember[] | null = null
@@ -746,8 +751,31 @@ export function hostAppFrame(
         cloudWatches.delete(key)
         return Promise.resolve(undefined)
       }
-      case 'pickAgent':
-        return Promise.resolve().then(() => pickDispatchTarget(pickAgentAsk(args))).then((picked) => answerAgentPick(args, picked, (name, given) => cloudForApp.write(cloudApp(), name, given)))
+      case 'pickAgent': {
+        // API 60 `include`: the page's chat and who is in it, as dispatch's sheet has them; the default reads none.
+        if (pickAgentInclude(args) !== 'agents' && chat === undefined) await readMembers()
+        const here = pickAgentInclude(args) !== 'agents' && chat ? { id: chat.id, name: chat.name, members: contextHasMembers() ? members ?? [] : await files.members(chat.id) } : null
+        const ask = pickAgentAsk(args, here)
+        return pickDispatchTarget(ask).then((picked) => answerAgentPick(args, ask, picked, (name, given) => cloudForApp.write(cloudApp(), name, given)))
+      }
+      case 'filesPick': {
+        // API 60: the chat's files as the person, in the shell's sheet (FilePickSheet); only the ids it was handed count.
+        const call = filePickCallOf(args)
+        const ask: FilePickAsk = {
+          files: pickableFiles(await files.groupFiles(call.chat), call.suffixes),
+          multiple: call.multiple,
+          ...(call.title === undefined ? {} : { title: call.title }),
+          ...(call.action === undefined ? {} : { action: call.action }),
+          upload: call.upload && hosted.binding.capabilities.includes('files:write'),
+        }
+        const chosen = await pickChatFiles(ask)
+        if (!chosen) return []
+        const entries = 'upload' in chosen
+          ? (ask.upload ? await pickFiles().then((uploads) => (uploads.length === 0 ? [] : files.upload(call.chat, uploads, {}))) : [])
+          : pickedEntries(ask, chosen.ids)
+        for (const entry of entries) pickedFiles.add(entry.id)
+        return entries
+      }
       case 'showMessage':
         return files.messageToShow(args as never).then((detail) => hooks.showMessage(detail))
       case 'showSession': {

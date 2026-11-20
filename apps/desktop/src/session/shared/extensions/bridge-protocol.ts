@@ -160,7 +160,10 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // box in the page). Presentation only, as 51: an older host opens the one image.
 // 58: frame-bound, App-owned projection presentation, without granting input or surface authority.
 // 59 (file-annotation-draft.ts): the preinstalled Files App can save a source selection to the session's annotation draft.
-export const EXTENSION_API_VERSION = 59;
+// 60 (app-file-pick-core.ts): `files.pick(place, { suffixes, multiple, title, action, upload })`, the person picks chat files
+// in the host's sheet; the picked ones open for that page with no capability. `pickAgent({ include })` may also offer the
+// page's chat members (`people`, `all`); a person picked answers `{ member }`.
+export const EXTENSION_API_VERSION = 60;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
@@ -1040,6 +1043,12 @@ export const BRIDGE_VERBS = {
    * The answer is whom, or that they cancelled.
    */
   pickAgent: { needs: null, gesture: true, only: 'page', toAgent: { answer: { cancelled: true } } },
+  /**
+   * API 60: the person picks files of the page's chat in the host's sheet (`app-file-pick-core.ts`). No capability: the App
+   * sees only what was picked, and the pick is the consent to open those (as `ctx.file`). The sheet's 「从电脑添加…」 row
+   * is there only for an App holding `files:write`, the rule `files.upload` has.
+   */
+  filesPick: { needs: null, gesture: true, only: 'page', toAgent: { answer: [] } },
   /**
    * The agents at work, and how each one is doing.
    *

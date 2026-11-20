@@ -24,6 +24,7 @@ import {
   EXTENSION_INSTALLED_CHANGED_METHOD,
   EXTENSION_LISTED_SESSION_METHOD,
   EXTENSION_MEMBER_FACES_METHOD,
+  EXTENSION_PICK_CHAT_FILES_METHOD,
   EXTENSION_PICK_DISPATCH_TARGET_METHOD,
   EXTENSION_SELECTION_SEND_METHOD,
   EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD,
@@ -47,6 +48,7 @@ import {
   boxOnWindow,
   type ViewBox,
 } from '@shared/extensions/app-runtime-protocol';
+import type { FilePickAsk } from '@shared/extensions/app-file-pick-core';
 import type { DispatchAsk } from '@shared/extensions/app-dispatch-core';
 import { openApp } from './app-dock';
 import { installedExtensionsStore } from './installed-extensions-store';
@@ -464,6 +466,11 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
   [EXTENSION_PICK_DISPATCH_TARGET_METHOD]: async (params: unknown) => {
     const { pickDispatchTarget } = await import('@/components/chat/dispatchAsk');
     return pickDispatchTarget(params as DispatchAsk);
+  },
+  /** API 60 `gugu.files.pick`: the person picks chat files main listed, in the shell's sheet (FilePickSheet). */
+  [EXTENSION_PICK_CHAT_FILES_METHOD]: async (params: unknown) => {
+    const { pickChatFiles } = await import('@/components/chat/filePickAsk');
+    return pickChatFiles(params as FilePickAsk);
   },
   /**
    * API 54/55 Send, over the page that asked, at its selection (into its session, or its chat): the page's CSS px scaled to its guest's box here (its zoom
