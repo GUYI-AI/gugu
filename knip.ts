@@ -26,12 +26,22 @@ const desktopEntries = [
   // esbuild / fork / App-runtime entries named `*-entry.ts` and built one by one in vite.config.mts.
   '**/*-entry.{ts,mts,tsx}',
   '**/entry.{ts,mts}',
+  // Tests run from the root vitest projects; knip does not credit another workspace's test files.
+  '**/*.test.{ts,tsx,mts}',
+  'native/**/*.node-test.mjs',
+  'session-tooling/generate-fixtures.ts',
+  'electron/session/drizzle.config.ts',
 ]
+const testEntries = ['**/*.test.{ts,tsx,mts}', '**/tests/**/*.{ts,tsx}', '**/fixtures/**/*.{mjs,ts,tsx}']
 
 const config: KnipConfig = {
   workspaces: {
     '.': {
-      entry: ['scripts/**/*.{ts,mts,mjs,cjs,js}', '*.config.{ts,mts,cjs,mjs}', 'electron-builder.cjs'],
+      entry: [
+        'scripts/**/*.{ts,mts,mjs,cjs,js}', '*.config.{ts,mts,cjs,mjs}', 'electron-builder.cjs',
+        'tests/**/*.test.{ts,tsx,mts}', 'tests/**/*.typecheck.ts', 'tests/fixtures/**', 'tests/mutation/**',
+        'tests/unit/**/fixtures/**',
+      ],
       project: ['scripts/**/*.{ts,mts,mjs,cjs,js}', 'tests/**/*.{ts,tsx,mts,mjs}'],
       ignore: ['examples/**'],
     },
@@ -40,8 +50,9 @@ const config: KnipConfig = {
       project: ['**/*.{ts,tsx,mts,mjs,cjs,js}'],
       ignore: ['preinstalled-apps/**', 'session-tooling/node-deps/**', '**/__generated__/**'],
     },
-    'apps/mobile': {},
-    'packages/*': {},
+    // The Android/iOS shells load the phone runtime by path.
+    'apps/mobile': { entry: ['runtime/**/*.{mjs,js}'] },
+    'packages/*': { entry: testEntries },
   },
 }
 

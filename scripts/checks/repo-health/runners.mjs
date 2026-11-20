@@ -2,7 +2,7 @@
 //   { dimension, version, scope, metrics, findings: [{file, line?, rule, message}], ...extra }
 // and leaves the tool's own output in <out>/<tool>.raw.*. Paths in findings are repo-relative.
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { ensureVenv, pinOf } from './venv.mjs'
 
@@ -122,8 +122,16 @@ async function typeCoverage(ctx) {
     // type-coverage prints `warning: unhandled node kind …` lines on stdout before the JSON.
     const report = JSON.parse(stdout.slice(stdout.indexOf('{')))
     if (report.succeeded === false && /Debug Failure/.test(report.error ?? '')) {
-      const debug = run(ctx, bin(ctx, 'type-coverage'), ['-p', 'tsconfig.json', '--debug', ...ignore], { allowExit: [0, 1], env })
-      const crashed = [...debug.stdout.matchAll(/^node: ([^:]+):/gm)].at(-1)?.[1]
+      // The checker crash exits the process at once: piped stdout loses its tail, so the last node printed would
+      // name an innocent file. Write the debug trace to a file (synchronous writes) and read the real last node.
+      const trace = raw(ctx, 'type-coverage.debug.log')
+      const fd = openSync(trace, 'w')
+      const debug = spawnSync(bin(ctx, 'type-coverage'), ['-p', 'tsconfig.json', '--debug', ...ignore], {
+        cwd: ctx.root, env: { ...process.env, ...env }, stdio: ['ignore', fd, fd],
+      })
+      closeSync(fd)
+      if (debug.error) throw debug.error
+      const crashed = [...readFileSync(trace, 'utf8').matchAll(/^node: ([^:]+):/gm)].at(-1)?.[1]
       if (!crashed) throw new Error(`type-coverage checker crash without a file: ${report.error}`)
       excluded.push(crashed)
       continue
