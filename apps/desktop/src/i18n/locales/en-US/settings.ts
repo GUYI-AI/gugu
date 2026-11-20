@@ -521,7 +521,6 @@ export default {
     },
     "link": {
       "connecting": "Connecting to {{name}} over SSH…",
-      "signInNeeded": "Sign in to {{name}} over SSH.",
       "signIn": "Sign in",
       "hostKeyChanged": "{{name}}'s host key changed. Confirm it's safe, remove its entry from ~/.ssh/known_hosts, then",
       "outdated": "Gugu server on {{name}} is too old and couldn't be updated.",
@@ -829,7 +828,7 @@ export default {
       "retryUpdate": "Retry",
       "matchFailed": "Update failed",
       "matchRetrying": "Updating…",
-      "sshSignIn": "Sign in over SSH first",
+      "sshSignIn": "Needs SSH sign-in",
       "sshSignInAction": "Sign in",
       "expired": "Sign-in expired (since {{time}})",
       "offlineHint": "Run gugu-server status on that machine to see why.",

@@ -521,7 +521,6 @@ export default {
     },
     "link": {
       "connecting": "正在经 SSH 连接「{{name}}」…",
-      "signInNeeded": "请先经 SSH 登录「{{name}}」。",
       "signIn": "登录",
       "hostKeyChanged": "「{{name}}」的指纹变了。确认安全后删掉 ~/.ssh/known_hosts 里它的旧记录，再点",
       "outdated": "「{{name}}」上的咕咕 server 版本太旧，更新没成功。",
@@ -829,7 +828,7 @@ export default {
       "retryUpdate": "重试",
       "matchFailed": "更新没成功",
       "matchRetrying": "正在更新…",
-      "sshSignIn": "要先经 SSH 登录",
+      "sshSignIn": "需要 SSH 登录",
       "sshSignInAction": "登录",
       "expired": "登录已失效（{{time}}起）",
       "offlineHint": "在那台机器上运行 gugu-server status 查看原因。",
