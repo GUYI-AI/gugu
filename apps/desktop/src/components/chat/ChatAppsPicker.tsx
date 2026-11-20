@@ -1,15 +1,14 @@
-import type { RefObject } from 'react'
+import type { ComponentProps, RefObject } from 'react'
 import { observer } from 'mobx-react-lite'
 import { useTranslation } from 'react-i18next'
-import { X } from '@/lib/icons'
-import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
+import { LayoutGrid, X } from '@/lib/icons'
+import { installedExtensionsStore, type RailApp } from '../../session/renderer/features/extensions/installed-extensions-store'
 import { RailAppIcon } from '../RailAppIcon'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { Popover } from '../ui/Popover'
 import { Sheet } from '../ui/Sheet'
 import { menuSurfaceClassName } from '../ui/Menu'
-import { openApp } from '../appSlot/useOpenApp'
 import { appsHere } from '../appSlot/appsHere'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { replica, useReplicas } from '../../lib/replica'
@@ -30,11 +29,14 @@ const chatAppHasFiles = replica({
   },
 })
 
-/** The Apps to list, and whether some file-only App is not answered yet (its row is a placeholder, ❌「无应用」). */
-function useChatApps(chatId: string) {
+/**
+ * The Apps to list, and whether some file-only App is not answered yet (its row is a placeholder, ❌「无应用」). A task has no
+ * chat folder (`chatId` null): only Apps with a page of their own.
+ */
+function useChatApps(chatId: string | null) {
   const all = installedExtensionsStore.chatOpenableApps
-  const fileOnly = all.filter((app) => !installedExtensionsStore.mainTabOf(app.extensionId))
-  const readings = useReplicas(chatAppHasFiles, fileOnly.map((app) => [chatId, app.extensionId] as [string, string]))
+  const fileOnly = chatId ? all.filter((app) => !installedExtensionsStore.mainTabOf(app.extensionId)) : []
+  const readings = useReplicas(chatAppHasFiles, fileOnly.map((app) => [chatId!, app.extensionId] as [string, string]))
   const hasFiles = new Map(fileOnly.map((app, index) => [app.extensionId, readings[index]!]))
   const apps = all.filter((app) => {
     if (installedExtensionsStore.mainTabOf(app.extensionId)) return true
@@ -44,8 +46,16 @@ function useChatApps(chatId: string) {
   return { apps, pending: readings.some((reading) => reading.state === 'unknown') }
 }
 
-export const ChatAppsPicker = observer(function ChatAppsPicker({ chatId, mobile, anchor, onClose }: {
-  chatId: string
+/** The one Apps button of a chat's or a task's header (`size`/`labeled` follow the header's density). */
+export function AppsButton({ labeled, ...props }: Omit<ComponentProps<typeof Button>, 'children'> & { labeled?: boolean }) {
+  const { t } = useTranslation('messaging')
+  return <Button variant="ghost" data-testid={AUTOMATION_TEST_IDS.chatHeaderAppsButton} aria-label={t('header.apps')} title={t('header.apps')} {...props}><LayoutGrid />{labeled && t('header.apps')}</Button>
+}
+
+/** The Apps a chat or a task can open, one picker for both; where a picked App opens is the caller's (`onOpen`): beside the chat, or a tab of the task. */
+export const ChatAppsPicker = observer(function ChatAppsPicker({ chatId, onOpen, mobile, anchor, onClose }: {
+  chatId: string | null
+  onOpen: (app: RailApp) => void
   mobile?: boolean
   anchor: RefObject<HTMLButtonElement | null>
   onClose: () => void
@@ -60,7 +70,7 @@ export const ChatAppsPicker = observer(function ChatAppsPicker({ chatId, mobile,
       </div>
       {apps.map((app) => (
           <div key={app.extensionId} data-app-id={app.extensionId} className="flex items-center gap-1">
-            <Button variant="ghost" className="min-w-0 flex-1 justify-start" data-testid="chat-apps-open" data-pane-opener="" onClick={() => { openApp(app.extensionId, chatId); onClose() }}>
+            <Button variant="ghost" className="min-w-0 flex-1 justify-start" data-testid="chat-apps-open" data-pane-opener="" onClick={() => { onOpen(app); onClose() }}>
               <RailAppIcon app={app} className="gg-sidebar-launch-icon" /><span className="truncate">{app.name}</span>
             </Button>
           </div>

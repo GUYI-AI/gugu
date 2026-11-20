@@ -11,7 +11,8 @@ import { IconButton } from '../ui/IconButton'
 import { Popover } from '../ui/Popover'
 import { DropdownMenu, MenuItem, MenuSeparator, MenuSubmenu } from '../ui/Menu'
 import { ChatHeaderMenu } from './ChatHeaderMenu'
-import { ChatAppsPicker } from './ChatAppsPicker'
+import { AppsButton, ChatAppsPicker } from './ChatAppsPicker'
+import { openApp } from '../appSlot/useOpenApp'
 import { GroupTopicsRows, TopicCallChip, TopicUnreadChip } from './GroupTopicsRows'
 import { useChatTopicPins } from './useChatTopicPins'
 import { topicCallTotal, topicUnreadTotal } from './topicPinsModel'
@@ -102,8 +103,7 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
       </DropdownMenu.Root>}
     </>}
     {showApps && <>
-      <Popover.Trigger ref={appsButton} data-testid={AUTOMATION_TEST_IDS.chatHeaderAppsButton} onClick={onCloseHeaderMenu}
-        render={<Button variant="ghost" size={actionSize} aria-label={t('header.apps')} title={t('header.apps')}><LayoutGrid />{labeled && t('header.apps')}</Button>} />
+      <Popover.Trigger ref={appsButton} onClick={onCloseHeaderMenu} render={<AppsButton size={actionSize} labeled={labeled} />} />
       {labeled && <span aria-hidden className="mx-1 h-4 border-s border-[var(--border)]" />}
     </>}
     <ChatHeaderMenu
@@ -121,7 +121,7 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
       {appsInMore && <MenuItem icon={<LayoutGrid size={16} />} onClick={() => openPopup('apps')}>{t('header.apps')}</MenuItem>}
       {hasFoldedItems && <MenuSeparator />}
     </ChatHeaderMenu>
-    {activeChatId && popup.kind === 'apps' && <ChatAppsPicker chatId={activeChatId} mobile={mobile} anchor={showApps ? appsButton : moreButtonRef} onClose={closePopup} />}
+    {activeChatId && popup.kind === 'apps' && <ChatAppsPicker chatId={activeChatId} onOpen={(app) => openApp(app.extensionId, activeChatId)} mobile={mobile} anchor={showApps ? appsButton : moreButtonRef} onClose={closePopup} />}
   </Popover.Root>
 })
 

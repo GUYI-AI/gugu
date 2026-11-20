@@ -34,7 +34,7 @@ function Picker() {
   const anchor = useRef<HTMLButtonElement>(null);
   return <Popover.Root open modal={false}>
     <Popover.Trigger ref={anchor} style={{ margin: 40 }}>Apps</Popover.Trigger>
-    <ChatAppsPicker chatId="width-fixture" anchor={anchor} onClose={() => {}} />
+    <ChatAppsPicker chatId="width-fixture" onOpen={() => {}} anchor={anchor} onClose={() => {}} />
   </Popover.Root>;
 }
 
