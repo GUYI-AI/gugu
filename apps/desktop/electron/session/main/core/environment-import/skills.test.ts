@@ -17,6 +17,7 @@ async function fixture() {
     providerId: 'codex', injectionMode: 'managed-config-root', guguHome: join(root, 'gugu'),
     osHomeDir: join(root, 'user'), sourceEnv: {},
     configRoot: { envVar: 'CODEX_HOME', userPath: '.codex', evidence: 'Fixture native root.',
+      carryExclusions: [],
       credentialPaths: [{ path: 'auth.json', evidence: 'Fixture credential store.' }],
       importGroups: [{ id: 'skills', paths: ['skills/'], evidence: 'Fixture skills.' }] },
   })!;
