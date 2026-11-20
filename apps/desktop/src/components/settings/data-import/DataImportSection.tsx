@@ -85,6 +85,7 @@ export const DataImportSection = observer(function DataImportSection({
   const { t } = useTranslation('main')
   const { user } = useAuth()
   const importSettings = useAppSettingsKey('dataImport').settings
+  // @@@reading-default - past imports not read yet: the history lists only this session's finished imports until settings answer; import actions do not depend on it
   const storedCategoryHistory = user && importSettings.state === 'value' ? importSettings.value.value.owners[user.id]?.categoryResults ?? [] : []
   const [tab, setTab] = useState<ImportTab>('apps')
   const panelId = useId()
