@@ -232,8 +232,6 @@ interface ChatRowProps {
   pinnedHome?: string
   /** …and the pinned session, which its menu unpins. */
   pinnedSessionId?: string
-  /** #2548 a row of the one list is a place to open, ❌ dragged beside to split (the inner column's rows still are). */
-  noDrag?: boolean
 }
 
 // @@@5856 会话列表里的话题子行。
@@ -322,7 +320,7 @@ export function TopicSubRows({ topics, isSunk, expanded, onExpand, children }: {
 
 // @@@chat-row-memo - 一条消息只重画它那一行:props 只有这一行自己的数据(store 里没变的会话行是同一个对象,
 // 见 applyFetchedChatList 的结构共享) + 一份稳定的动作。❌ 每次渲染新建的闭包 / 对象 props —— 那会让一次更新重画整列。
-const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, agentStatus, isActive, topicsExpanded, draft, mobile = false, tabIndex, actions, joinPos, joinOnScreen, pinnedHome, pinnedSessionId, noDrag = false }: ChatRowProps) {
+const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, agentStatus, isActive, topicsExpanded, draft, mobile = false, tabIndex, actions, joinPos, joinOnScreen, pinnedHome, pinnedSessionId }: ChatRowProps) {
   const { t } = useTranslation('messaging')
   const { identitiesById } = useChatStore('identitiesById')
   const menu = useRowContextMenu()
@@ -346,9 +344,9 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
         data-chat-id={chat.id}
         data-chat-row={chat.id}
         data-unavailable-project={unavailable?.id}
-        draggable={!mobile && !noDrag}
-        onDragStart={noDrag ? undefined : (event) => startChatDrag(event, chat, displayName)}
-        onDragEnd={noDrag ? undefined : clearDraggedScreenContent}
+        draggable={!mobile}
+        onDragStart={(event) => startChatDrag(event, chat, displayName)}
+        onDragEnd={clearDraggedScreenContent}
         data-join={joinPos}
         data-join-on={joinOnScreen || undefined}
         data-unread-stream-id={chat.unread_locator?.stream_id ?? undefined}
@@ -811,7 +809,6 @@ export function ChatListPanel({
         actions={rowActions}
         pinnedHome={pinOf.get(chat.id)?.home.name}
         pinnedSessionId={pinOf.get(chat.id)?.sessionId}
-        noDrag={oneList}
       />
     )
     if (!hasTopics) return row
