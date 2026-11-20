@@ -893,7 +893,7 @@ describe('session orchestration', () => {
       setSessionHostLocale('en-US');
       await expect(spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x' })).rejects.toThrow('No agent is installed on this computer yet. Install one from New task, then try again.');
       setSessionHostLocale('zh-CN');
-      await expect(spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x' })).rejects.toThrow('这台电脑上还没有装 agent。先在「新建任务」里装一个，再试一次。');
+      await expect(spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x' })).rejects.toThrow('这台电脑上尚未安装 agent。请先在「新建任务」中安装，然后重试。');
       expect(childRows()).toEqual([]);
     });
 

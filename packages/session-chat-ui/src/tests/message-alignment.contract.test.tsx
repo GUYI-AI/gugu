@@ -206,7 +206,7 @@ it.each([{ width: 1440, mode: 'light' }, { width: 1440, mode: 'dark' }, { width:
   const process = [...host.querySelectorAll<HTMLElement>('[data-slot="turn-process"]')].at(-1)!;
   const silent = process.lastElementChild as HTMLElement;
   const strip = host.querySelector<HTMLElement>('[data-slot="background-tasks"]')!;
-  const silentText = textBox(silent, '不回话');
+  const silentText = textBox(silent, '未回复');
   const stripText = textBox(strip, '后台');
   const siblingGap = Math.max(turnProcessUnitDef.margin?.bottom ?? 0, backgroundTasksUnitDef.margin?.top ?? 0);
   const reading = { phase: capturePhase ?? 'test', width, mode, roots: host.querySelectorAll('[data-chat-root]').length,

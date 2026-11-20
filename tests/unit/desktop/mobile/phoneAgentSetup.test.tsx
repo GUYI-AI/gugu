@@ -118,7 +118,7 @@ describe('phone permission actions and real Android state', () => {
     for (const row of PHONE_PERMISSION_ROWS) expect(byId(`phone-device-group-${row.id}`)?.textContent).toContain(row.purpose)
     for (const p of mocks.permissions) expect(byId(`phone-device-system-${p}`)).not.toBeNull()
     expect(byId('phone-permissions-list')?.querySelectorAll('[role="button"]')).toHaveLength(14)
-    expect(byId('phone-permissions-list')?.textContent).toContain('这台手机上的任务 Agent 能用')
+    expect(byId('phone-permissions-list')?.textContent).toContain('此手机上的任务 Agent 可用')
     expect(readPhoneDeviceSettings(mocks.owner)).toMatchObject({ enabled: false, hostEnabled: false })
     expect(mocks.runtimeRequest).not.toHaveBeenCalled(); expect(mocks.dataRequest).not.toHaveBeenCalled(); expect(mocks.nativeSettings).not.toHaveBeenCalled()
   })
@@ -175,7 +175,7 @@ describe('phone permission actions and real Android state', () => {
   })
   it('keeps unreadable rows visible and reports one combined failure', async () => {
     mocks.refresh.mockRejectedValue(new Error('read failed')); mocks.check.mockRejectedValue(new Error('system failed')); await render()
-    expect(byId('phone-device-group-photos')?.textContent).toContain('查不到')
+    expect(byId('phone-device-group-photos')?.textContent).toContain('无法读取')
     expect(document.querySelectorAll('[role="alert"]')).toHaveLength(1)
     expect(mocks.request).not.toHaveBeenCalled()
   })

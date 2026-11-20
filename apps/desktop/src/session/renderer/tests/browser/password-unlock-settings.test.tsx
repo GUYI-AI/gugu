@@ -61,8 +61,8 @@ async function capture(name: string) {
 it.each(['light', 'dark'])('uses the full-page entry and grouped code while retaining the corner card in %s', async theme => {
   document.documentElement.dataset.theme = theme;
   const entry = await mount(true);
-  expect(entry.textContent).toContain('这台电脑还没解锁密码');
-  expect(entry.textContent).toContain('在另一台设备的咕咕上点「允许」，核对是这串数字');
+  expect(entry.textContent).toContain('此电脑尚未解锁密码');
+  expect(entry.textContent).toContain('请在另一台设备的咕咕上核对以下数字，并点击「允许」。');
   expect(entry.querySelector('[data-testid="password-unlock-code"]')?.textContent).toBe('482 916');
   expect(entry.querySelector('[aria-label="验证码 4 8 2 9 1 6"]')).not.toBeNull();
   expect(harness.container.textContent).not.toContain('Example login');
@@ -143,7 +143,7 @@ it('reuses recovery input, retains errors, and shows the replacement code after 
   const sheet = () => document.querySelector<HTMLElement>('[data-testid="password-recover"]')!;
   await vi.waitFor(() => expect(sheet()).not.toBeNull());
   expect(sheet().textContent).toContain('用恢复码解锁');
-  expect(sheet().textContent).not.toContain('恢复后这台设备就能用你的密码');
+  expect(sheet().textContent).not.toContain('恢复后，此设备可使用你的密码');
   expect(button(sheet(), '解锁').disabled).toBe(true);
   await page.elementLocator(button(sheet(), '取消')).click();
   await vi.waitFor(() => expect(sheet()).toBeNull());
@@ -153,7 +153,7 @@ it('reuses recovery input, retains errors, and shows the replacement code after 
   await capture('recovery-dialog');
   invoke.mockImplementation(async command => command.type === 'sync-recover' ? { ok: false, code: 'RECOVERY_INVALID' } : { ok: true, snapshot: current });
   await page.elementLocator(button(sheet(), '解锁')).click();
-  await vi.waitFor(() => expect(sheet().textContent).toContain('恢复码不对，请核对后重输。'));
+  await vi.waitFor(() => expect(sheet().textContent).toContain('恢复码不正确，请核对后重新输入。'));
   invoke.mockImplementation(async command => {
     if (command.type === 'sync-recover') { current = ready(); return { ok: true, snapshot: current, recoveryCode: 'NEW-TEST-RECOVERY-CODE' }; }
     return { ok: true, snapshot: current };

@@ -32,7 +32,7 @@ describe('connection-status(#6264 侧栏的点 / 聊天末尾那一行)', () => 
     expect(hostConnectionState({ ...base, sshLink: 'outdated' })).toBe('update-failed');
     expect(hostConnectionState({ ...base, sshLink: 'unreachable' })).toBe('reconnecting');
     expect(hostStatusLabel('updating', 'd22', null, NOW, zh)).toBe('d22 上的咕咕正在更新，稍后会自动重新连接。');
-    expect(hostStatusLabel('update-failed', 'd22', null, NOW, zh)).toBe('d22 上的咕咕更新未完成，可以在 设置 → 设备 里重试。');
+    expect(hostStatusLabel('update-failed', 'd22', null, NOW, zh)).toBe('d22 上的咕咕更新未完成，请在 设置 → 设备 中重试。');
     // 远程隧道的机器可能是桌面或 server，统一指向那台机器上的咕咕。
     expect(hostStatusLabel('outdated', 'd22', null, NOW, zh)).toBe('d22 上的咕咕需要更新，请在 设置 → 设备 中更新。');
   });
@@ -44,10 +44,10 @@ describe('connection-status(#6264 侧栏的点 / 聊天末尾那一行)', () => 
       return template.replace(/\{(\w+)\}/g, (_, name: string) => String(values[name]));
     };
     expect(machineUnavailableReason('updating', 'd22', session)).toBe('d22 上的咕咕正在更新，稍后会自动重新连接。草稿已保留。');
-    expect(machineUnavailableReason('update-failed', 'd22', session)).toBe('d22 上的咕咕更新未完成，可以在 设置 → 设备 里重试。草稿已保留。');
+    expect(machineUnavailableReason('update-failed', 'd22', session)).toBe('d22 上的咕咕更新未完成，请在「设置 → 设备」中重试。草稿已保留。');
     expect(machineUnavailableReason('outdated', 'd22', session)).toBe('d22 上的咕咕需要更新，请在 设置 → 设备 中更新。草稿已保留。');
-    expect(machineUnavailableReason('sign-in', 'd22', session)).toBe('要先经 SSH 登录 d22。草稿已保留。');
-    expect(machineUnavailableReason('offline', 'd22', session)).toBe('d22 离线。草稿已保留，上线后可发送，或换一台机器。');
+    expect(machineUnavailableReason('sign-in', 'd22', session)).toBe('请先通过 SSH 登录 d22。草稿已保留。');
+    expect(machineUnavailableReason('offline', 'd22', session)).toBe('d22 离线。草稿已保留，设备上线后可发送，或选择其他设备。');
   });
 
   it('上次在线 X 前', () => {
@@ -88,15 +88,15 @@ describe('connection-status(#6264 侧栏的点 / 聊天末尾那一行)', () => 
   it('放弃之后:说清为什么;版本太旧时指出要更新哪台机器', () => {
     const base = { device: 'Linux 1', online: true, lastSeenAt: null, now: NOW, translate: zh, phase: { kind: 'gave-up' } as const };
     const tooOld = chatLinkRow({ ...base, errorCode: 'unknown_method' });
-    expect(tooOld?.label).toBe('Linux 1 上的咕咕版本太旧，请更新那台机器上的咕咕');
+    expect(tooOld?.label).toBe('Linux 1 上的咕咕版本过旧，请更新该设备上的咕咕');
     expect(tooOld?.action).toEqual({ label: '重新连接', kind: 'reconnect' });
-    expect(chatLinkRow({ ...base, errorCode: null })?.label).toBe('连不上 Linux 1，已停止重连');
+    expect(chatLinkRow({ ...base, errorCode: null })?.label).toBe('无法连接 Linux 1，已停止重连');
     expect(isRetryableRemoteError('unknown_method')).toBe(false);
     expect(isRetryableRemoteError('client_outdated')).toBe(false);
     expect(isRetryableRemoteError(null)).toBe(true);
     expect(isRetryableRemoteError('timeline_failed')).toBe(true);
     expect(chatLinkRow({ ...base, errorCode: 'client_outdated' })).toEqual({
-      label: 'Linux 1 的咕咕较新，请更新这台电脑上的咕咕', action: null,
+      label: 'Linux 1 的咕咕较新，请更新本机的咕咕', action: null,
     });
   });
 
@@ -120,7 +120,7 @@ describe('machineNoticeLabel(#6264 那台机器连得上,但有件事会让操�
     expect(machineNoticeLabel([{ kind: 'disk-low', freeBytes: 312 * 1024 * 1024 }], 'Linux 1', zh)).toBe(
       'Linux 1 磁盘只剩 312 MB，保存和更新可能失败'
     );
-    expect(machineNoticeLabel([{ kind: 'desktop-too-old' }, { kind: 'disk-low', freeBytes: 1 }], 'Linux 1', zh)).toContain('更新这台电脑上的咕咕');
+    expect(machineNoticeLabel([{ kind: 'desktop-too-old' }, { kind: 'disk-low', freeBytes: 1 }], 'Linux 1', zh)).toContain('更新本机的咕咕');
   });
 
   it('升级被退回已经自愈,只在设备行告知;没有事就不说', () => {
@@ -133,9 +133,9 @@ describe('machineNoticeLabel(#6264 那台机器连得上,但有件事会让操�
   it('#6264 远程 SSH 要先登录:侧栏、聊天末尾那一行同一个说法,❌ 说「重连中」', () => {
     expect(hostConnectionState({ online: false, loading: false, unreachable: true, sshLink: 'signInRequired' })).toBe('sign-in');
     expect(hostConnectionState({ online: true, loading: false, unreachable: false, sshLink: 'unreachable' })).toBe('reconnecting');
-    expect(hostStatusLabel('sign-in', 'Linux 1', null, NOW, zh)).toBe('要先经 SSH 登录 Linux 1');
+    expect(hostStatusLabel('sign-in', 'Linux 1', null, NOW, zh)).toBe('请先通过 SSH 登录 Linux 1');
     expect(
       chatLinkRow({ device: 'Linux 1', online: false, lastSeenAt: null, phase: { kind: 'waiting', attempt: 1, retryAt: NOW }, errorCode: null, now: NOW, translate: zh, signInRequired: true }),
-    ).toEqual({ label: '要先经 SSH 登录「Linux 1」。', action: { label: '登录', kind: 'sign-in' } });
+    ).toEqual({ label: '请先通过 SSH 登录「Linux 1」。', action: { label: '登录', kind: 'sign-in' } });
   });
 });

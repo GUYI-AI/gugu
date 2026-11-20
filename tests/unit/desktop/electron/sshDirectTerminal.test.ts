@@ -216,9 +216,9 @@ describe('经本机套接字找账号进程(link / open-url / match-version 共�
   it('checks only the current identity and never selects another directory', () => {
     expect(accountRequestError(account(), UID)).toBeNull()
     expect(accountRequestError(account(), null)).toBeNull()
-    expect(accountRequestError(account({ signedIn: false }), UID)).toContain('还没有登录')
+    expect(accountRequestError(account({ signedIn: false }), UID)).toContain('尚未登录')
     expect(accountRequestError(account(), 'other')).toContain('a@b.c')
-    expect(accountRequestError(null, null)).toContain('还没有登录')
+    expect(accountRequestError(null, null)).toContain('尚未登录')
   })
 
   it('进程没在跑(套接字不在):人话', () => {

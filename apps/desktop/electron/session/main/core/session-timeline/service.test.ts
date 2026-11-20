@@ -1515,7 +1515,7 @@ describe('session timeline service', () => {
       title: 'Claude 1: install Reader',
       options: [
         { optionId: 'install', name: 'Install', kind: 'allow_once' },
-        { optionId: 'decline', name: "Don't install", kind: 'reject_once' },
+        { optionId: 'decline', name: 'Do not install', kind: 'reject_once' },
       ],
       origin: { source: 'app-install' as const, payload: { request: { manifestDigest: 'digest-r' } } },
     });

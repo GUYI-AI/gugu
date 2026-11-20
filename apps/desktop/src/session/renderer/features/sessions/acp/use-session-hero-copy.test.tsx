@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// #2548 the empty session's hero (mock v33 创建智能体): it asks 「想让新智能体做点什么？」 with a muted line
-// 「写一句需求就行，名字和头像会自动生成」 under it, keeping the suggestion chips.
+// #2548 the empty session's hero (mock v33 创建智能体): it asks 「新智能体要做什么？」 with a muted line
+// 「用一句话描述需求，名称和头像将自动生成」 under it, keeping the suggestion chips.
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -50,11 +50,11 @@ afterEach(async () => {
 const welcome = () => host.querySelector<HTMLElement>('[data-slot="aui-thread-welcome"]')!;
 const chips = () => [...host.querySelectorAll('[data-slot="aui-thread-welcome-suggestions"] button')].map((chip) => chip.textContent);
 
-it('asks 想让新智能体做点什么？ with the muted hint under the title, chips kept', async () => {
+it('asks 新智能体要做什么？ with the muted hint under the title, chips kept', async () => {
   await act(async () => root.render(<Hero />));
-  expect(welcome().querySelector('h1')?.textContent).toBe('想让新智能体做点什么？');
+  expect(welcome().querySelector('h1')?.textContent).toBe('新智能体要做什么？');
   const hint = welcome().querySelector('h1 + p');
-  expect(hint?.textContent).toBe('写一句需求就行，名字和头像会自动生成');
+  expect(hint?.textContent).toBe('用一句话描述需求，名称和头像将自动生成');
   expect(hint?.className).toBe('text-sm text-foreground-muted');
   expect(chips()).toEqual(suggestions.map((suggestion) => suggestion.title));
 });

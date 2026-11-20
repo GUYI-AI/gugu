@@ -81,7 +81,7 @@ describe('SshHostKeyChanged', () => {
     const harness = createReactHarness()
     await harness.render(<SshHostKeyChanged hostKey={{ host: '[box]:2222', fingerprint: 'SHA256:new' }} explain />)
     const text = document.body.textContent ?? ''
-    expect(text).toContain('这台机器的身份变了')
+    expect(text).toContain('这台机器的身份已变更')
     expect(text).toContain('SHA256:new')
     expect(document.querySelector('[data-testid="ssh-host-key-remove"] code')?.textContent).toBe("ssh-keygen -R '[box]:2222'")
     expect(buttons()).not.toContain('信任并继续')
