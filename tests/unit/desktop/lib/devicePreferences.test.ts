@@ -8,6 +8,7 @@ import {
   readStoredPreferences,
   removeStoredPreferences,
   storedPreferenceStrings,
+  writeStoredPreferences,
   type DevicePreferences,
 } from '../../../../apps/desktop/shared/device-preferences'
 
@@ -36,7 +37,7 @@ describe('the one-time move of the old keys (main adopts, preload deletes what w
     const adoption = adoptStoredPreferences(storedPreferenceStrings(localStorage), () => false)
     expect(adoption.patch).toEqual({
       theme: 'dark', locale: 'en-US', sidebarTint: true, trayBadge: false, chatMessages: false, chatSound: true, meetingReminder: false,
-    } satisfies DevicePreferences)
+    } satisfies Partial<DevicePreferences>)
     expect(adoption.unreadable).toEqual([])
     removeStoredPreferences(localStorage, adoption.settled)
     expect(Object.keys(OLD_KEYS).filter((key) => localStorage.getItem(key) !== null)).toEqual([])
@@ -67,6 +68,16 @@ describe('the one-time move of the old keys (main adopts, preload deletes what w
 })
 
 describe("the shell's first value", () => {
+  it('keeps the send confirmation local and lets the device turn it back on', () => {
+    const initial = readStoredPreferences(localStorage)
+    expect(initial.confirmBeforeCancelAndSend).toBe(true)
+    writeStoredPreferences(localStorage, { ...initial, confirmBeforeCancelAndSend: false }, initial)
+    const saved = readStoredPreferences(localStorage)
+    expect(saved.confirmBeforeCancelAndSend).toBe(false)
+    writeStoredPreferences(localStorage, initial, saved)
+    expect(readStoredPreferences(localStorage).confirmBeforeCancelAndSend).toBe(true)
+  })
+
   it('web / phone read localStorage, the retired plain-white as light', () => {
     localStorage.setItem('app-theme', 'plain-white')
     localStorage.setItem('gugu.sidebar-tint', 'true')

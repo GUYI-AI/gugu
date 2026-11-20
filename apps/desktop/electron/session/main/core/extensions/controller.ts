@@ -926,7 +926,7 @@ export const extensionsController = createRPCController({
   },
 
   /**
-   * API 60 (app-credentials.ts): the saved credentials of a website the person may pick for an App — in an install's sheet
+   * API 61 (app-credentials.ts): the saved credentials of a website the person may pick for an App — in an install's sheet
    * (held for that manifest, given to the App when it lands) or in the App's permissions. Trusted App permissions UI only,
    * never an App bridge verb; no value ever comes here.
    */

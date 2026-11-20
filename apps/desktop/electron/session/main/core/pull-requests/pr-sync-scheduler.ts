@@ -58,7 +58,7 @@ export class PrSyncScheduler implements IInitializable, IDisposable {
   async onProjectMounted(projectId: string): Promise<void> {
     log.info('PrSyncScheduler: onProjectMounted', { projectId });
     const remoteUrls = await this._syncAndGetGitHubRemotes(projectId);
-    this._subscribeToRepository(projectId);
+    await this._subscribeToRepository(projectId);
 
     if (remoteUrls.length === 0) {
       log.info('PrSyncScheduler: no GitHub remotes found, skipping sync', { projectId });
@@ -169,15 +169,16 @@ export class PrSyncScheduler implements IInitializable, IDisposable {
     this._intervals.delete(projectId);
   }
 
-  private _subscribeToRepository(projectId: string): void {
+  private async _subscribeToRepository(projectId: string): Promise<void> {
     if (this._repositoryUnsubscribes.has(projectId)) return;
 
     const project = projectManager.getProject(projectId);
     if (!project) return;
-    // gugu #2358: 非 git 项目无远端/PR —— 不订阅 remotes。
-    if (!project.gitRepository) return;
+    // A directory without Git has no remotes or PRs.
+    const repository = (await project.git.open())?.repository;
+    if (!repository || this._repositoryUnsubscribes.has(projectId)) return;
 
-    const unsubscribe = project.gitRepository.subscribeRemotes(() => {
+    const unsubscribe = repository.subscribeRemotes(() => {
       void this.onRemoteChanged(projectId).catch((error) => {
         log.warn('PrSyncScheduler: failed to handle remote model update', {
           projectId,
@@ -242,11 +243,9 @@ export class PrSyncScheduler implements IInitializable, IDisposable {
   private async _syncAndGetGitHubRemotes(projectId: string): Promise<string[]> {
     const project = projectManager.getProject(projectId);
     if (!project) return [];
-    // gugu #2358: 非 git 项目无远端。
-    if (!project.gitRepository) return [];
-
     try {
-      const remotes = await project.gitRepository.getRemotes();
+      // A directory without Git has no remotes.
+      const remotes = (await (await project.git.open())?.repository.getRemotes()) ?? [];
       await syncProjectRemotes(projectId, remotes);
       const resolved = await Promise.all(
         remotes.map((r) => githubRepositoryResolver.resolve(r.url))

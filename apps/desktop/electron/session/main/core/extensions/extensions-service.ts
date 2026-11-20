@@ -988,7 +988,7 @@ export class ExtensionsService {
     // caller sees a failure and skips the rest of its teardown — its cookies and
     // localStorage would outlive it. Nothing is destroyed until every step that
     // can fail has succeeded.
-    // API 60: the saved credentials it used are no longer its own (the vault's grants to it), named while it still has a
+    // API 61: the saved credentials it used are no longer its own (the vault's grants to it), named while it still has a
     // name. By that name alone: its manifest may no longer read (#6984).
     const credentialIdentity = this.identityOf(extensionId);
     if (credentialIdentity && PASSWORD_BETA_ENABLED) {

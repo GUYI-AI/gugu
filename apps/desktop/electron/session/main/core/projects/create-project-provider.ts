@@ -1,10 +1,9 @@
 import type { IFileSystem } from '@gugu/session-core/files';
 import type { CanonicalPath } from '@gugu/session-core/files';
-import type { IGitRepository, IGitRuntime } from '@gugu/session-core/git';
+import type { IGitRuntime } from '@gugu/session-core/git';
 import { err, ok, type Lease, type Result } from '@gugu/session-shared';
 import { LocalExecutionContext } from '@main/core/execution-context/local-execution-context';
-import { GitRepositoryFetchService } from '@main/core/git/repository/fetch-service';
-import { GitRepositoryService } from '@main/core/git/repository/service';
+import { DirectoryGit } from '@main/core/git/repository/directory-git';
 import { openFileSystem } from '@main/core/runtime/files-helpers';
 import { runtimeManager } from '@main/core/runtime/runtime-manager';
 import type { MachineRuntime } from '@main/core/runtime/types';
@@ -16,7 +15,6 @@ import { projectSettingsChangedChannel } from '@shared/core/projects/projectEven
 import type { LocalProject } from '@shared/projects';
 import { ensureEmdashGitExcludedSafe } from './ensure-emdash-excluded';
 import { ProjectProvider, type ProjectProviderTransport } from './project-provider';
-import { resolveProjectGitless } from './resolve-project-gitless';
 import type { ProjectSettingsProvider } from './settings/provider';
 import { LocalProjectSettingsProvider } from './settings/providers/local-project-settings-provider';
 
@@ -34,28 +32,27 @@ export async function createProvider(
       await runtimeLease.release();
       return err({ message: projectFileSystem.error.message });
     }
-    const gitless = await resolveProjectGitless(
-      project,
-      projectFileSystem.data,
-      runtimeLease.value.files.path
-    );
     const settings = new LocalProjectSettingsProvider(
       project.id,
       project.path,
       // gugu #2358: 非 git 项目 baseRef=null → 无默认分支回退(undefined)。
-      gitless ? undefined : (project.baseRef ?? undefined),
+      project.baseRef ?? undefined,
       projectFileSystem.data
     );
-    await runLegacyProjectSettingsMigration(
-      settings,
-      runtimeLease.value.git,
+    const git = new DirectoryGit(
       project.path,
-      gitless
+      runtimeLease.value.files.path.join(project.path, '.git'),
+      runtimeLease.value.git,
+      projectFileSystem.data,
+      settings,
+      (repository) => {
+        // Keep the project's `.gugu/` runtime state (attachments, uploads) out of the user's `git status`.
+        ensureEmdashGitExcludedSafe(projectFileSystem.data, project.path, project.id);
+        return repository.subscribe((update) => events.emit(gitRepoUpdateChannel, { projectId: project.id, update }));
+      }
     );
-    // Both explicitly gitless projects and repositories whose metadata was
-    // removed mount the ordinary directory without acquiring a Git lease.
-    const repoLease = gitless ? undefined : await runtimeLease.value.git.openRepository(project.path);
     try {
+      await runLegacyProjectSettingsMigration(settings, runtimeLease.value.git, project.path, !(await git.open()));
       const provider = buildProvider(
         project.id,
         project.path,
@@ -68,12 +65,12 @@ export async function createProvider(
         settings,
         () => {},
         runtimeLease,
-        repoLease
+        git
       );
       await migrateGitHubAccount(provider);
       return ok(provider);
     } catch (error) {
-      await repoLease?.release();
+      await git.close();
       throw error;
     }
   } catch (error) {
@@ -140,14 +137,8 @@ function buildProvider(
   settings: ProjectSettingsProvider,
   dispose: () => void | Promise<void>,
   runtimeLease: Lease<MachineRuntime>,
-  // gugu #2358: 非 git 项目没有 repo lease —— 三个 git 服务全部缺省。
-  repoLease: Lease<IGitRepository> | undefined
+  git: DirectoryGit
 ): ProjectProvider {
-  // Keep the project's `.gugu/` runtime state (attachments, uploads) out of the
-  // user's `git status`. Best effort and non-blocking.
-  if (repoLease) ensureEmdashGitExcludedSafe(projectFileSystem, repoPath, projectId);
-
-  const gitRepository = repoLease ? new GitRepositoryService(repoLease.value, settings) : undefined;
   const transport: ProjectProviderTransport = {
     ...transportMeta,
     fileSystem: projectFileSystem,
@@ -156,20 +147,8 @@ function buildProvider(
     configPathForDirectory: (directoryPath) => files.path.join(directoryPath, PROJECT_CONFIG_FILE),
     settings,
   };
-  // gugu #2358: 非 git 项目无 git 仓 → 不建 fetch 服务、不订阅 repo 更新(否则底层 openWorktree 抛错)。
-  const gitRepositoryFetchService = gitRepository
-    ? new GitRepositoryFetchService(gitRepository, () => gitRepository.getBaseRemote())
-    : undefined;
-  gitRepositoryFetchService?.start();
-  const unsubscribeRepoUpdates = repoLease
-    ? repoLease.value.subscribe((update) => {
-        events.emit(gitRepoUpdateChannel, { projectId, update });
-      })
-    : undefined;
-
   const releaseProjectLeases = async () => {
-    unsubscribeRepoUpdates?.();
-    await repoLease?.release();
+    await git.close();
     await runtimeLease.release();
   };
 
@@ -177,8 +156,7 @@ function buildProvider(
     projectId,
     repoPath,
     transport,
-    gitRepository,
-    gitRepositoryFetchService,
+    git,
     runtimeLease.value.git,
     async () => {
       await releaseProjectLeases();

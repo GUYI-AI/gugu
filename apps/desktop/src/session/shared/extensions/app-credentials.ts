@@ -1,10 +1,10 @@
 /**
- * An App's use of the person's saved credentials (App API 60, `permissions.credentials`): the website a credential is for,
+ * An App's use of the person's saved credentials (App API 61, `permissions.credentials`): the website a credential is for,
  * and how its value travels — one request header, in one format — when the host sends a request for the App. The App
  * never sees the value; which saved credential it uses is the person's choice (password vault grant `app:<publisher>/<id>`),
  * bound to the App's code: when the code changes the person confirms again.
  */
-export const APP_CREDENTIALS_API_VERSION = 60;
+export const APP_CREDENTIALS_API_VERSION = 61;
 /** Headers a credential may go into; never one the platform owns (Cookie, Host) or that steers a request. */
 export const APP_CREDENTIAL_HEADERS = ['Authorization', 'X-API-Key', 'Private-Token', 'X-Auth-Token'] as const;
 export type AppCredentialHeader = (typeof APP_CREDENTIAL_HEADERS)[number];

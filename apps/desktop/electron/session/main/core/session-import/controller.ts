@@ -1,3 +1,5 @@
+import type { EnvironmentImportCategory, EnvironmentImportRequest } from '@shared/core/session-import/environment-import';
+import { scanEnvironmentImport, importEnvironmentCategory, cancelEnvironmentImport } from '../environment-import/controller-service';
 import type { ImportCodexTaskParams } from '@shared/core/session-import/codex-tasks';
 import { scanCodexTaskImport, importCodexTasks, cancelCodexTaskImport, codexTaskImportProgress } from './codex-tasks';
 import type {
@@ -10,6 +12,9 @@ import { hasLocalSessionSource, getLocalSessionSource } from './host-source';
 import { importLocalSession } from './import-local-session';
 
 export const sessionImportController = createRPCController({
+  scanEnvironmentImport: (category: Exclude<EnvironmentImportCategory, 'tasks'>) => scanEnvironmentImport(category),
+  importEnvironmentCategory: (request: EnvironmentImportRequest) => importEnvironmentCategory(request),
+  cancelEnvironmentImport: async (id: string) => { cancelEnvironmentImport(id); },
   scanCodexTasks: () => scanCodexTaskImport(),
   importCodexTasks: (params: ImportCodexTaskParams[]) => importCodexTasks(params),
   cancelCodexTaskImport: async () => { cancelCodexTaskImport(); },

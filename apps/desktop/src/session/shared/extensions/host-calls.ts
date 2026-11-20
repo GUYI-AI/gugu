@@ -127,7 +127,7 @@ export const HOST_CALLS = {
   'prompts.list': { verb: 'promptsList', pack: (args: Record<string, unknown> = {}) => args },
   'prompts.save': { verb: 'promptsSave' },
   'prompts.delete': { verb: 'promptsDelete', pack: (id: string) => ({ id }) },
-  // `gugu.credentials` (60): a request sent by the host with the person's chosen credential for that website.
+  // `gugu.credentials` (61): a request sent by the host with the person's chosen credential for that website.
   'credentials.read': { verb: 'credentialsRead', pack: (site: string, url: string, options?: { headers?: Record<string, string> }) => ({ site, url, ...(options?.headers ? { headers: options.headers } : {}) }) },
   'credentials.write': { verb: 'credentialsWrite', pack: (site: string, method: string, url: string, body?: unknown, options?: { headers?: Record<string, string> }) => ({ site, method, url, ...(body === undefined ? {} : { body }), ...(options?.headers ? { headers: options.headers } : {}) }) },
   pickAgent: { verb: 'pickAgent' },
@@ -159,8 +159,7 @@ export const HOST_CALLS = {
   'appFiles.close': { verb: 'filesClose' },
   'appFiles.list': { verb: 'filesList' },
   'appFiles.read': { verb: 'filesRead' },
-  'appFiles.sendSelection': { verb: 'filesSendSelection' },
-  'appFiles.annotateSelection': { verb: 'filesAnnotateSelection' },
+  'appFiles.selectionAction': { verb: 'filesSelectionAction' },
   'appFiles.readText': { verb: 'filesReadText' },
   'appFiles.exists': { verb: 'filesExists' },
   'appFiles.draft': { verb: 'filesDraft' },

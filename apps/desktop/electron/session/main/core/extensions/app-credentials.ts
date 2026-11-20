@@ -9,7 +9,7 @@ import { VaultError } from '../../../../password-vault/contracts';
 import { CONNECTOR_SUBJECT } from '../github/github-credential';
 
 /**
- * An App's saved credentials (`permissions.credentials`, App API 60). Which one an App uses on a website is one thing only:
+ * An App's saved credentials (`permissions.credentials`, App API 61). Which one an App uses on a website is one thing only:
  * the password vault's grant to `app:<publisher>/<id>` on that credential, carrying the fingerprint of the App code the
  * person confirmed (`assignSiteGrant` keeps it to one per website). Nothing here stores a choice of its own, and no value
  * ever passes through: the request goes out from the vault's request sink.

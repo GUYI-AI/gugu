@@ -27,6 +27,8 @@ describe('ContactsPanel contact multi-select', () => {
     const createGroupButton = () => harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.contactsCreateGroupFromSelection}"]`) as HTMLButtonElement | null
     expect(createGroupButton()).toBeTruthy()
     expect(createGroupButton()?.disabled).toBe(true)
+    // 人住在「个人」分组:点开它,右边铺开的就是可勾选的人。
+    await clickElement(harness.container.querySelector('[data-section-key="people"]') as HTMLElement)
     const rows = () => Array.from(harness.container.querySelectorAll('[data-contact-option]')) as HTMLElement[]
     await clickElement(rows().find((row) => row.dataset.contactOption === 'alice')!)
     await clickElement(rows().find((row) => row.dataset.contactOption === 'brenda')!)

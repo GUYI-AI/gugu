@@ -236,17 +236,16 @@ img.details-picture { object-fit: contain; }
 .doc-actions > .status { margin-left: auto; }
 .json-actions { display: none; gap: var(--em-spacing-sm); }
 
-/* Selection and citation keep the same editor and preview behavior. */
+/* The source's marks above a selection; the host draws the selection's own menu. */
 .sel-bar { position: fixed; z-index: 10; display: flex; overflow: hidden; border: 1px solid var(--em-border); border-radius: var(--em-radius-control); background: var(--em-background); box-shadow: var(--em-shadow-lift); }
 body:not(.has-selection) .sel-bar, body:not([data-state='doc']) .sel-bar { display: none; }
 .sel-bar button { border: 0; }
-.sel-bar button + button { border-left: 1px solid var(--em-border); }
-/* The marks a selection in the source can be wrapped in, before Copy · Cite (not for the reading page's or a JSON file's). */
-.fmt-bar { display: flex; border-right: 1px solid var(--em-border); }
+/* Not for the reading page's selection or a JSON file's. */
+.fmt-bar { display: flex; }
 .sel-bar .fmt { min-width: 0; padding-inline: var(--em-spacing-sm); color: var(--em-foreground-muted); }
 .sel-bar .fmt gugu-icon { width: var(--em-icon-sm); height: var(--em-icon-sm); }
 .sel-bar .fmt + .fmt { border-left: 0; }
-body.picks-in-preview .fmt-bar, body[data-kind='json'] .fmt-bar { display: none; }
+body.picks-in-preview .sel-bar, body[data-kind='json'] .sel-bar { display: none; }
 .cm-found { background: color-mix(in srgb, var(--em-accent-11) 16%, transparent); box-shadow: inset 2px 0 var(--em-accent-11); }
 .preview .md-found { outline: 2px solid var(--em-accent-11); outline-offset: 3px; border-radius: var(--em-radius-document); }
 .cm-found-text, ::highlight(found) { background-color: color-mix(in srgb, var(--em-accent-11) 36%, transparent); }
@@ -310,10 +309,13 @@ body[data-mode='edit'] .preview-cut, .preview-cut[hidden] { display: none; }
 @container panes (max-width: 1167px) {
   .outline { left: 12px; }
   .outline:not(:hover, :focus-within) { width: 28px; gap: 8px; padding: 6px; }
-  .outline:not(:hover, :focus-within) > .outline-item { width: 16px; height: 2px; padding: 0; border-radius: 1px; font-size: 0; background: var(--em-border-1); }
+  /* A folded row's line is its own mark, not the button's fill: the fill is the button's state, and the host fades it
+     (ui.css), so a line drawn as the fill faded out over every row as the list opened — each row looked picked. */
+  .outline:not(:hover, :focus-within) > .outline-item { width: 16px; height: 2px; padding: 0; border-radius: 1px; font-size: 0; }
+  .outline:not(:hover, :focus-within) > .outline-item::before { content: ''; display: block; height: 100%; background: var(--em-border-1); }
   .outline:not(:hover, :focus-within) > .outline-item[data-depth='1'] { width: 12px; }
   .outline:not(:hover, :focus-within) > .outline-item[data-depth='2'] { width: 8px; }
-  .outline:not(:hover, :focus-within) > .outline-item[aria-current] { background: var(--em-foreground); }
+  .outline:not(:hover, :focus-within) > .outline-item[aria-current]::before { background: var(--em-foreground); }
   .outline:is(:hover, :focus-within) { width: 240px; padding: 6px; border: 1px solid var(--em-border); border-radius: var(--em-radius-control); background: var(--em-background); box-shadow: var(--em-shadow-dialog); }
 }
 @media (hover: none) and (pointer: coarse) { .outline { display: none; } }

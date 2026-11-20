@@ -56,27 +56,28 @@ function DropdownMenuContent({
   );
 }
 
-function DropdownMenuGroup({ ...props }: MenuPrimitive.Group.Props) {
-  return <MenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />;
-}
-
-function DropdownMenuLabel({
-  className,
-  inset,
+/**
+ * A titled section of a menu. The title is a prop rather than a separate part: Base UI's Menu.GroupLabel
+ * throws outside a Menu.Group and takes the whole window down with it, so the label only exists inside its group.
+ */
+function DropdownMenuGroup({
+  label,
+  labelClassName,
+  children,
   ...props
-}: MenuPrimitive.GroupLabel.Props & {
-  inset?: boolean;
-}) {
+}: MenuPrimitive.Group.Props & { label?: React.ReactNode; labelClassName?: string }) {
   return (
-    <MenuPrimitive.GroupLabel
-      data-slot="dropdown-menu-label"
-      data-inset={inset}
-      className={cn(
-        'px-2 py-1.5 text-xs font-medium text-foreground-muted data-inset:pl-8',
-        className
-      )}
-      {...props}
-    />
+    <MenuPrimitive.Group data-slot="dropdown-menu-group" {...props}>
+      {label ? (
+        <MenuPrimitive.GroupLabel
+          data-slot="dropdown-menu-label"
+          className={cn('px-2 py-1.5 text-xs font-medium text-foreground-muted', labelClassName)}
+        >
+          {label}
+        </MenuPrimitive.GroupLabel>
+      ) : null}
+      {children}
+    </MenuPrimitive.Group>
   );
 }
 
@@ -251,7 +252,6 @@ export {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuGroup,
-  DropdownMenuLabel,
   DropdownMenuItem,
   DropdownMenuCheckboxItem,
   DropdownMenuRadioGroup,

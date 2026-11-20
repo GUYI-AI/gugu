@@ -10,7 +10,7 @@ import { seal, unseal } from '../../../apps/desktop/electron/password-vault/cryp
 import type { CredentialRequest } from '../../../apps/desktop/electron/password-vault/request-sink'
 
 /**
- * App API 60 / the GitHub connector on the vault: an App's or the connector's choice is the vault's grant (one credential per
+ * App API 61 / the GitHub connector on the vault: an App's or the connector's choice is the vault's grant (one credential per
  * user and website, on this device only), and the value only ever goes into one header of one request the vault sends.
  */
 const owner = randomUUID(), person = {}

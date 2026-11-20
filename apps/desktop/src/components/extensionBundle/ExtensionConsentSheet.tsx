@@ -18,7 +18,7 @@ import { remoteHostsStore } from '../../session/renderer/features/remote-hosts/r
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
 import { Check } from '../../lib/icons'
 import { DispatchSheet } from '../chat/DispatchSheet'
-import { SelectionSendLayer } from '../chat/SelectionSend'
+import { FileSelectionLayer } from '../../session/renderer/features/sessions/annotations/file-selection-overlay'
 import { ConsentCredentialPickers } from '../../session/renderer/features/extensions/app-credential-picker'
 import { rpc } from '../../session/renderer/lib/ipc'
 
@@ -54,13 +54,13 @@ function RequesterFace({ requester }: { requester: ExtensionConsentRequester }) 
  * they answer they are where they were. The session page asks through EXTENSION_CONSENT_EVENT.
  */
 export function ExtensionConsentSheet() {
-  // And whom a dispatch goes to when the App did not say (`gugu.dispatch(text)`), and a selection's Send: the same shell,
-  // the same promise.
+  // And whom a dispatch goes to when the App did not say (`gugu.dispatch(text)`), and an App page's selection menu: the same
+  // shell, so what they send goes the way typed words go.
   return (
     <>
       <InstallConsentSheet />
       <DispatchSheet />
-      <SelectionSendLayer />
+      <FileSelectionLayer />
     </>
   )
 }
@@ -73,7 +73,7 @@ function InstallConsentSheet() {
   /** owner 10-16: the other computers ticked to install on too — none until the person ticks one. */
   const [alsoOn, setAlsoOn] = useState<string[]>([])
   const titleId = useId()
-  /** API 60: the saved credential picked per website, held for this manifest when the person says yes. */
+  /** API 61: the saved credential picked per website, held for this manifest when the person says yes. */
   const [picks, setPicks] = useState<Record<string, string | null>>({})
   const [pickError, setPickError] = useState('')
   // Each ask starts with none ticked.

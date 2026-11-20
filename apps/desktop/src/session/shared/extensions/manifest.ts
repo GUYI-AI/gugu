@@ -508,7 +508,7 @@ const permissionsSchema = z.strictObject({
     }).optional(),
   })).length(1).optional(),
   /**
-   * API 60 (app-credentials.ts): saved credentials the App's requests may carry, one per website. The person picks which
+   * API 61 (app-credentials.ts): saved credentials the App's requests may carry, one per website. The person picks which
    * of their saved ones at install and in the App's permissions; the value only ever goes into the declared header of a
    * request the host sends (`gugu.credentials`) to a host in `network` that the credential serves.
    */

@@ -1,4 +1,3 @@
-import { chatSelectionSendOf, requirePreinstalledFiles, selectionSendOf, type SelectionSendOpen, type SelectionSendTo } from '@shared/extensions/selection-send';
 import type { ExtensionFileChangeBatch } from '@shared/extensions/bridge-protocol';
 import { chatForCapabilities } from '@shared/extensions/bridge-protocol';
 import type { AppSurfaceIntent } from '@shared/extensions/unread-binding';
@@ -52,17 +51,12 @@ import {
   callRefusal,
   type CallRefusalCaller,
 } from '@shared/extensions/bridge-protocol';
-import {
-  EXTENSION_SELECTION_SEND_METHOD,
-  type ExtensionHostAction,
-  type ExtensionHostActionOrigin,
-  type ExtensionHostActionResult,
-  type SelectionSendAsk,
-} from '@shared/extensions/host-actions';
-import { annotationFilePath, EXTENSION_FILE_ANNOTATION_METHOD, parseFileAnnotation, type FileAnnotationAsk } from '@shared/extensions/file-annotation-draft';
+import type { ExtensionHostAction, ExtensionHostActionOrigin, ExtensionHostActionResult } from '@shared/extensions/host-actions';
+import { EXTENSION_FILE_SELECTION_METHOD, parseSelectionAction, selectionConversationOf, selectionMenu, type FileReference, type FileSelectionAsk } from '@shared/extensions/file-selection';
+import type { AnnotationConversation } from '@shared/browser-annotation';
 import { fileSync } from '@main/core/extensions/file-sync';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
-import { fileRefOf, folderOf, isWorkspace, openingNameOf, openingViewOf, opensAsLink, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
+import { fileRefOf, folderOf, isWorkspace, openingNameOf, openingViewOf, opensAsLink, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileOpened, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
 import { placeFor, placeLink, type FileOpenerCandidate } from '@shared/extensions/file-openers';
 import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
 import { rosterMoved, type MemberChange } from '@shared/extensions/app-files-core';
@@ -1918,6 +1912,54 @@ async function machineCall(caller: BridgeCaller, method: MachineVerb, args: Reco
     : sessionId ? { sessionId } : {});
 }
 
+/** Each page's files named for its conversation (`selectionTarget`), read once per file. */
+const selectionNames = new WeakMap<SurfaceBinding, Map<string, FileReference | null>>();
+
+/** The page's conversation, and whether a file is one this page shows: its own working copy's, its chat's folders', its chat's. */
+function selectionPlace(page: SurfaceBinding, ref: AppFileRef) {
+  const conversation = selectionConversationOf({ session: sessionOfBinding(page), chat: page.conversation });
+  const folders = (page.conversation ? chatsDrawnIn.get(page.conversation)?.chat?.folders : undefined) ?? [];
+  const own = 'workspace' in ref
+    ? ref.workspace === page.workspace || folders.some((folder) => folder.workspace === ref.workspace)
+    : Boolean(ref.chat ?? page.conversation);
+  return { conversation, folders, own };
+}
+
+/**
+ * The menu an opened file's selections have on this page (file-selection.ts), from what is known here, without reading
+ * anything remote: an opened file must not wait for it. Whether a computer's file can be named: its folder is here, or
+ * the chat's record says where it is.
+ */
+async function selectionMenuOf(page: SurfaceBinding, ref: AppFileRef) {
+  const { conversation, folders, own } = selectionPlace(page, ref);
+  let named = own;
+  if (own && 'workspace' in ref && !folders.some((folder) => folder.workspace === ref.workspace)) {
+    const { localRootOf } = await import('@main/core/extensions/app-files');
+    named = await localRootOf({ workspace: ref.workspace }).then(() => true, () => false);
+  }
+  return selectionMenu(conversation, named, true, requireHost().presentation().locale);
+}
+
+/**
+ * A press on a page's selection menu: the conversation it goes to, and the file named for its readers (`fileReferenceOf`,
+ * once per file; a chat file checked against the chat as its pill is read). A file of another place is refused.
+ */
+async function selectionTarget(page: SurfaceBinding, ref: AppFileRef, version?: number): Promise<{ conversation: AnnotationConversation; file: FileReference }> {
+  const { conversation, folders, own } = selectionPlace(page, ref);
+  if (!own) throw Object.assign(new Error('A selection is in a file of this page\'s own places'), { code: 'denied' });
+  if (!conversation) throw Object.assign(new Error('This page\'s selection has no conversation to go to'), { code: 'denied' });
+  const key = JSON.stringify([ref, version ?? null, conversation]);
+  const named = selectionNames.get(page) ?? new Map<string, FileReference | null>();
+  selectionNames.set(page, named);
+  if (!named.has(key)) {
+    const { fileReferenceOf } = await import('./file-selection-reference');
+    named.set(key, await fileReferenceOf(ref, version, { chat: page.conversation, folders }));
+  }
+  const file = named.get(key);
+  if (!file) throw Object.assign(new Error('Where this file is cannot be named from this computer'), { code: 'not-found' });
+  return { conversation, file };
+}
+
 async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, args: Record<string, unknown>): Promise<unknown> {
   if (method.startsWith('projectionMedia')) {
     const { extensionProjectionViewers } = await import('./projection-viewer-host');
@@ -1949,32 +1991,18 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
   if (isMachineVerb(method)) return await machineCall(caller, method, args);
   const { binding, extensionId } = caller;
   switch (method) {
-    case 'filesAnnotateSelection': {
-      requirePreinstalledFiles({ id: extensionId, origin: extensionsService().origins()[extensionId] });
-      const page = thePage(caller), sessionId = sessionOfBinding(page);
-      if (!sessionId || !page.workspace) throw Object.assign(new Error('File annotations require a task workspace'), { code: 'denied' });
-      const ask: FileAnnotationAsk = {
-        sessionId, webContentsId: caller.pageId,
-        path: annotationFilePath(args.file, page.workspace),
-        open: parseFileAnnotation(args.open),
-      };
+    case 'filesSelectionAction': {
+      // 60 Cite or Send pressed on the menu the runtime drew (file-selection.ts), in the person's gesture: a draft, or the
+      // host's own box at the selection, sent only by the person. A page an agent works has no menu of the person's.
+      const page = thePage(caller);
+      if (page.operator.kind !== 'person') throw Object.assign(new Error('A selection menu is the person\'s: a page an agent works draws none'), { code: 'denied' });
+      const pressed = parseSelectionAction(args);
+      const { conversation, file } = await selectionTarget(page, pressed.file, pressed.version);
       const { invokeInEmbedder } = await import('@main/core/extensions/extension-bridge-relay');
-      return await invokeInEmbedder(page.embedderId, EXTENSION_FILE_ANNOTATION_METHOD, ask) === true;
-    }
-    case 'filesSendSelection': {
-      requirePreinstalledFiles({ id: caller.extensionId, origin: extensionsService().origins()[caller.extensionId] });
-      const page = thePage(caller), sessionId = sessionOfBinding(page), chatId = page.workspace ? null : page.conversation;
-      let to: SelectionSendTo, open: SelectionSendOpen;
-      if (sessionId) [to, open] = [{ session: sessionId }, selectionSendOf(args, page.workspace)];
-      else if (chatId) {
-        // API 55 A chat's folder: the chat is the page's, as the binding says; the call names none.
-        const { chatSelectionPillsForApp } = await import('@main/core/extensions/extension-send');
-        [to, open] = [{ chat: chatId }, await chatSelectionSendOf(args, refs => chatSelectionPillsForApp(chatId, refs))];
-      } else throw Object.assign(new Error('Send needs a session page or a chat\'s folder'), { code: 'denied' });
-      const ask: SelectionSendAsk = { to, webContentsId: caller.pageId, open };
-      const { invokeInEmbedder } = await import('@main/core/extensions/extension-bridge-relay');
-      // Only the outcome goes back to the page: never the words, a member or a message id.
-      return await invokeInEmbedder(page.embedderId, EXTENSION_SELECTION_SEND_METHOD, ask) === 'sent' ? 'sent' : 'cancelled';
+      await invokeInEmbedder(page.embedderId, EXTENSION_FILE_SELECTION_METHOD, {
+        webContentsId: caller.pageId, action: pressed.action, conversation, file, pick: pressed.pick, rect: pressed.rect, viewport: pressed.viewport,
+      } satisfies FileSelectionAsk);
+      return undefined;
     }
     case 'taskMessage': {
       const service = extensionsService();
@@ -2130,6 +2158,7 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
             return chatMembersOf(drawnIn.chat!.id, { asAgent: operator?.kind === 'agent' ? operator.id.replace(/^user:/, '') : null });
           } } : {}),
           session: page ? sessionOfBinding(page) : null,
+          folders: drawnIn?.chat?.folders ?? [],
           ...(operator?.kind === 'agent' ? { as: operator.id.replace(/^user:/, '') } : {}),
         },
         {
@@ -2486,7 +2515,12 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
         filesReadVersion: 'readAppFileVersion',
       } as const satisfies Record<typeof method, keyof typeof files>;
       try {
-        return await (files[verbs[method]] as (on: typeof page, input: never) => unknown)(page, args as never);
+        const answer = await (files[verbs[method]] as (on: typeof page, input: never) => unknown)(page, args as never);
+        // 60 An opened file carries the menu a selection in it has on this page (file-selection.ts).
+        if ((method === 'filesOpen' || method === 'filesReopen') && binding && answer && typeof answer === 'object' && 'entry' in answer) {
+          return { ...answer, selectionMenu: await selectionMenuOf(binding, fileRefOf((answer as AppFileOpened).entry)) };
+        }
+        return answer;
       } finally {
         // The page went away while it listed: `stopPageWatches` let go before this listing's tree was kept.
         if (listsWorkingCopy && !workingCopyPages.has(caller.pageId)) {

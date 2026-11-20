@@ -45,8 +45,7 @@ export const WithLabel: Story = {
         <Button variant="ghost">Open menu</Button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Content>
-        <DropdownMenu.Group>
-          <DropdownMenu.Label>Text formatting</DropdownMenu.Label>
+        <DropdownMenu.Group label="Text formatting">
           <DropdownMenu.Separator />
           <DropdownMenu.Item>
             <BoldIcon />

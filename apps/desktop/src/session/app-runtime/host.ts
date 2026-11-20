@@ -134,9 +134,8 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     watch(args: { watchId: string; place: AppPlace & { folder?: string; id?: string }; on: boolean }): Promise<void>;
     replace(args: { ref: AppFileRef; file: AppFileUpload; expectedVersion?: number | null }): Promise<AppFileEntry>;
     readText(args: { ref: AppFileRef; maxBytes?: number; transferId?: string }): Promise<AppFileText>;
-    /** API 54, the preinstalled Files App's page only (selection-send.ts): the host's Send box; only the outcome comes back. */
-    annotateSelection?(args: Record<string, unknown>): Promise<boolean>;
-    sendSelection?(args: Record<string, unknown>): Promise<import('@shared/extensions/selection-send').SelectionSendResult>;
+    /** API 60, a page's (file-selection.ts): the person pressed Cite or Send on the menu the runtime drew; in their gesture. */
+    selectionAction?(args: Record<string, unknown>): Promise<void>;
     exists(args: { ref: AppFileRef }): Promise<boolean>;
     draft(args: { ref: AppFileRef; text?: string | null }): Promise<string | null>;
     writeText(args: { ref: AppFileRef; text: string }): Promise<{ entry: AppFileEntry }>;
@@ -176,7 +175,7 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     save(args: Record<string, unknown>): Promise<unknown>;
     delete(id: string): Promise<unknown>;
   };
-  /** `gugu.credentials` (60): a request the host sends with the person's chosen credential for a website (app-credentials.ts). */
+  /** `gugu.credentials` (61): a request the host sends with the person's chosen credential for a website (app-credentials.ts). */
   readonly credentials?: {
     read(site: string, url: string, options?: { headers?: Record<string, string> }): Promise<unknown>;
     write(site: string, method: string, url: string, body?: unknown, options?: { headers?: Record<string, string> }): Promise<unknown>;

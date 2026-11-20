@@ -31,7 +31,7 @@ function useVaultRefresh(): void {
 }
 
 /**
- * Which saved credential of a website an App uses (App API 60): one picker, drawn in an install's sheet and in the App's
+ * Which saved credential of a website an App uses (App API 61): one picker, drawn in an install's sheet and in the App's
  * permissions. The choices are the password vault's credentials for that website, read by the host (again on every vault change); picking one is the
  * person's grant to the App. No value ever reaches here.
  */

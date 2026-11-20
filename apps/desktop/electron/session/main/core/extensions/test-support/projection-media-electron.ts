@@ -17,10 +17,10 @@ import { projectionSources, type ProjectionHost } from '../../../../../../src/se
 import { openMediaProcess } from '../../../../../../native/projection-media/node/host.mjs';
 import { ProjectionSignals } from '../../../../../../native/projection-media/node/signaling.mjs';
 import { withFixtureCleanup } from '../../test-support/fixture-failure';
+import { untilObserved } from './fixture-wait';
 
 if (!process.env.GUGU_HOME || !process.env.GUGU_USER_DATA_DIR) throw new Error('Pipeline fixture needs isolated paths');
 app.setPath('userData', process.env.GUGU_USER_DATA_DIR);
-const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 void app.whenReady().then(async () => {
   const id = 'projection-media-native-fixture', service = extensionsService();
@@ -127,11 +127,9 @@ void app.whenReady().then(async () => {
     browser.stderr?.on('data', data => { stderr = (stderr + data).slice(-4096); });
     const chromium = browser;
     browserExit = new Promise<void>(resolve => { chromium.once('error', error => { fault = error; }); chromium.once('close', () => { exited = true; resolve(); }); });
-    const until = async (condition: () => boolean) => {
-      const deadline = Date.now() + 12000;
-      while (!condition()) { if (fault) throw fault; if (exited) throw new Error('Chromium exited: ' + stderr);
-        if (Date.now() > deadline) throw new Error('Pipeline timed out: ' + JSON.stringify(observations()) + '\n' + stderr); await pause(20); }
-    };
+    const until = (condition: () => boolean) => untilObserved(condition, {
+      phase, fault: () => fault, exited: () => exited ? stderr : undefined, arrived: observations,
+    });
     phase = 'first-paint';
     await until(() => paints.some(paint => paint.sequence === 1) && outcomes.length > 0);
     const first = paints.find(paint => paint.sequence === 1)!;

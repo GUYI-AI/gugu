@@ -394,7 +394,7 @@ export function AppManagePage({
     : translate(permissions.length === 0 && !credentialSites ? 'extensions.permissionsNoteNone' : onTogglePermission ? 'extensions.permissionsNoteAsked' : 'extensions.permissionsNoteInstall')), body: permissions.length === 0 && !credentialSites
     ? <Row title={translate('extensions.permissionsNone')} />
     : <fieldset disabled={readOnly} className="contents">{permissions.map(permissionRow)}
-      {/* API 60: the saved credentials it uses, one per website (the vault's grant to this App), on an installed App. */}
+      {/* API 61: the saved credentials it uses, one per website (the vault's grant to this App), on an installed App. */}
       {credentialSites && onTogglePermission ? <AppCredentialRows extensionId={manifest.id} hosts={manifest.permissions?.network ?? []} disabled={readOnly || !enabled} /> : null}</fieldset> });
   if (api.appData && onClearData) {
     sections.push({ id: 'data', label: translate('extensions.manageData'), body: (

@@ -25,7 +25,7 @@ export interface ConsentPrompt {
   /** The button that says no, when 「取消」 would mislead (first run's 「不装」: never asked again). */
   cancelLabel?: string;
   variant: 'default';
-  /** API 60: the websites whose saved credential is picked on the sheet (installConsentPrompt adds the manifest it binds to). */
+  /** API 61: the websites whose saved credential is picked on the sheet (installConsentPrompt adds the manifest it binds to). */
   credentialSites?: string[];
 }
 
@@ -149,7 +149,7 @@ export function programDetails(manifest: ExtensionManifest, translate: SessionTr
   return { label: translate('extensions.consentDetails'), caption: translate('extensions.consentDetailsCommands'), lines };
 }
 
-/** `permissions.credentials` (60), one line per website: which saved credential, and the only place its value goes. */
+/** `permissions.credentials` (61), one line per website: which saved credential, and the only place its value goes. */
 function describeCredentials(manifest: Pick<ExtensionManifest, 'permissions'>, translate: SessionTranslate, key: 'extensions.permissionsCredential' | 'extensions.permissionsCredentialAgain'): string[] {
   const hosts = manifest.permissions?.network ?? [];
   return (manifest.permissions?.credentials ?? []).map(({ site }) => translate(key, {

@@ -1,4 +1,5 @@
 import type { MessageItem } from '@gugu/core/shared/types/chat'
+import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
 
 // #2581 Files sent at once are one message: each file keeps its own row (upload, failure, resend stay per file) and the
 // rows of one send share send_group_id. The list draws a send as its first row, which stands for all of them.
@@ -12,6 +13,11 @@ function sendKey(message: MessageItem): string | null {
 /** Every drawn send by the id of the row that stands for it, its rows in the order they were sent. */
 export type MessageAlbums = ReadonlyMap<string, readonly MessageItem[]>
 const NO_ALBUMS: MessageAlbums = new Map()
+
+/** The words a file was sent with (the rows of a send carry them on the last one, where MessageAlbumBubble draws them). */
+export function sendCaption(rows: readonly MessageItem[]): string | undefined {
+  return rows.map(row => row.content_type === 'attachment' ? parseAttachmentContent(row.content, row)?.caption : undefined).findLast(Boolean)
+}
 
 /** A send whose files are still arriving: its sender declared them and is uploading their bytes (the rows come within a moment). */
 export function sendStillArriving(members: readonly MessageItem[]): boolean {

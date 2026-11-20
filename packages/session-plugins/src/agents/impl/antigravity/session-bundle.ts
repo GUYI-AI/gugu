@@ -108,7 +108,7 @@ export function withLoopbackNoProxy(env: Readonly<Record<string, string>>): Reco
 export const ANTIGRAVITY_CLI_VERSION = '1.2.9';
 
 /**
- * 终端腿**只在 macOS / Linux 上开**。Windows 上如实关掉,聊天面板腿照常。
+ * 终端腿只在 macOS / Linux 上开。Windows 聊天用 agy acp 的 --gemini-dir，不依赖下述终端 HOME 启动器。
  *
  * ## 为什么 Windows 关
  *
@@ -557,7 +557,7 @@ function shadowHomePath(bundle: SessionCapabilityBundle, basename: string): stri
 
 /**
  * 咕咕 MCP 的 stdio ⇄ HTTP 中继(`apps/desktop/electron/runtime/gugu-mcp-stdio-relay.mjs`)的入口 ——
- * 宿主在起终端腿之前登记成进程环境事实(`registerGuguMcpStdioRelayEntry`,与 codex 桥的
+ * 宿主在起终端腿之前登记成进程环境事实(local-session,与 codex 桥的
  * `GUGU_CODEX_APP_SERVER_ACP_ENTRY` 同一个做法)。
  */
 export const GUGU_MCP_STDIO_RELAY_ENTRY_ENV = 'GUGU_MCP_STDIO_RELAY_ENTRY';

@@ -6,7 +6,7 @@ import { safeParseExtensionManifest } from '../../../../apps/desktop/src/session
 import { fakeVaultForHost } from '../github/fakeVaultForHost'
 
 /**
- * App API 60: an App's saved credential is the person's pick, kept as the vault's grant to the App bound to its code. The
+ * App API 61: an App's saved credential is the person's pick, kept as the vault's grant to the App bound to its code. The
  * install sheet's pick lands with the install; another version of the code is confirmed again; nothing falls back.
  */
 const state = vi.hoisted(() => ({ vault: null as ReturnType<typeof import('../github/fakeVaultForHost').fakeVaultForHost> | null, rootDir: '', identity: { publisher: 'gugu', id: 'github-pr' } as { publisher: string; id: string } | null,
@@ -69,10 +69,10 @@ describe('which saved credential an App uses', () => {
 })
 
 describe('permissions.credentials in the manifest', () => {
-  const manifest = (permissions: unknown, apiVersion = 60) => ({ id: 'github-pr', name: 'PR', version: '1.0.0', apiVersion, defaultLocale: 'en', platforms: ['desktop'], entry: 'card.html', permissions,
+  const manifest = (permissions: unknown, apiVersion = 61) => ({ id: 'github-pr', name: 'PR', version: '1.0.0', apiVersion, defaultLocale: 'en', platforms: ['desktop'], entry: 'card.html', permissions,
     contributes: { tabs: [{ name: 'pr', title: 'PR', entry: 'card.html' }] } })
   const ok = { network: ['api.github.com'], credentials: [{ site: 'github.com', header: 'Authorization', format: 'Bearer {value}', value: 'password' }] }
-  it('takes one per website, a listed header, {value} once, a network host it can reach, at API 60', () => {
+  it('takes one per website, a listed header, {value} once, a network host it can reach, at API 61', () => {
     const parsed = safeParseExtensionManifest(manifest(ok))
     expect(parsed.ok ? null : parsed.issues).toBeNull()
     for (const bad of [

@@ -42,6 +42,24 @@ function isCsiFinalByte(ch: string): boolean {
 class AnsiDecoder {
   private mode: SanitizerMode = 'normal';
   private csiBuffer = '';
+  private paste: string | null = null;
+  private pasteDelimiter = '';
+
+  private feedPaste(ch: string): InputAction[] {
+    const end = '\x1b[201~';
+    this.pasteDelimiter += ch;
+    if (this.pasteDelimiter === end) {
+      const text = this.paste!.replace(/\r\n?/g, '\n');
+      this.paste = null;
+      this.pasteDelimiter = '';
+      return [{ type: 'insert', text }];
+    }
+    while (this.pasteDelimiter && !end.startsWith(this.pasteDelimiter)) {
+      this.paste += this.pasteDelimiter[0];
+      this.pasteDelimiter = this.pasteDelimiter.slice(1);
+    }
+    return [];
+  }
 
   private readCount(payload: string): number {
     const raw = payload.split(';', 1)[0] ?? '';
@@ -81,6 +99,7 @@ class AnsiDecoder {
 
     if (finalByte === '~') {
       const code = Number.parseInt(payload.split(';', 1)[0] ?? '', 10);
+      if (payload === '200') { this.paste = ''; return []; }
       if (code === 3) return [{ type: 'delete' }];
       if (code === 1 || code === 7) return [{ type: 'move-home' }];
       if (code === 4 || code === 8) return [{ type: 'move-end' }];
@@ -101,6 +120,10 @@ class AnsiDecoder {
     const actions: InputAction[] = [];
 
     for (const ch of chunk) {
+      if (this.paste !== null) {
+        actions.push(...this.feedPaste(ch));
+        continue;
+      }
       switch (this.mode) {
         case 'normal':
           if (ch === '\x1b') {

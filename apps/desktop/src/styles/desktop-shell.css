@@ -21,28 +21,9 @@
   overflow: hidden;
 }
 
-/* GUYI-AI/gugu#2548 叠一层(owner 11-12):一个对话的内层栏和正文是同一张卡片,叠在一级列表上 ——
- * 与图标栏和列表那一层同一种层次。内层栏是卡片的左半(上、下、左三条边和左边两个圆角),正文是右半;
- * 两半之间那条竖线是内层栏自己的右边线。❌ 内层栏平铺在列表上、只靠一条线和正文分开(owner 圈过「层次没出来」)。
- */
+/* #2548 群 / 项目的内层栏归列表那一层(整列通高、无卡片);只让出正文卡片的上缝,头一行与正文页头对齐。 */
 .gugu-skin [data-workspace-shell] > [data-region='inner-sidebar'] {
-  margin-block: var(--desktop-surface-inset);
-  height: auto;
-  border-start-start-radius: var(--radius-surface);
-  border-end-start-radius: var(--radius-surface);
-  box-shadow:
-    -0.5px 0 0 0 var(--border-color),
-    0 -0.5px 0 0 var(--border-color),
-    0 0.5px 0 0 var(--border-color);
-}
-
-.gugu-skin [data-region='inner-sidebar'] + [data-workspace-content-surface] {
-  border-start-start-radius: 0;
-  border-end-start-radius: 0;
-  box-shadow:
-    0.5px 0 0 0 var(--border-color),
-    0 -0.5px 0 0 var(--border-color),
-    0 0.5px 0 0 var(--border-color);
+  padding-top: var(--desktop-surface-inset);
 }
 
 /* The curved content surface owns this boundary. Full-height list borders otherwise
@@ -55,11 +36,6 @@
   border-inline-end: 0;
 }
 
-/* A blank contacts header remains a window-drag lane, without a decorative rule. */
-[data-shell-contacts] > div > .gg-pane[data-role='detail'] > .gg-pane-header:not(:has(.gg-pane-title)) {
-  border-bottom: 0;
-}
-
 /* Embedded full-width pages (assistant, library, Apps) use the same inset surface as
  * projects. Their frame/skin must expose the shell underneath even with no list open;
  * an opaque backing here paints white corners around the surface's rounded edge.
@@ -69,13 +45,13 @@
   background: var(--shell-bg);
 }
 
-/* #7610:浅色 C 档是一整块工作区,从 rail 右边开始包住列表、页签条与内容。
+/* #7610:C 档是一整块工作区(浅色、深色同一结构,只换颜色 token),从 rail 右边开始包住列表、页签条与内容。
  * 桌面主窗都用这一档,不分材质:native 时 rail 透出系统材质,opaque(Windows / Linux / mac 减弱透明度)时 rail 是
  * --nav-rail 实色;选择器只要 data-window-material 存在(只有带主进程桥的主窗才写),网页版与子窗口不在内。
  * MainLayout 这层已有 margin:0 的内联布局;这里只覆盖该值,不搬 DOM 或重建会话。
  * fixed 的会话页 overlay 仍按 viewport 定位,clip-path 只负责把它裁在共同圆角里。
  */
-:root[data-window-material][data-theme='light'] [data-desktop-shell] > .gg-sidebar-rail + div {
+:root[data-window-material] [data-desktop-shell] > .gg-sidebar-rail + div {
   --shell-bg: var(--desktop-workspace-bg);
   --radius-page: var(--radius-surface);
   margin: var(--desktop-surface-inset) var(--desktop-surface-inset) var(--desktop-surface-inset) 0 !important;
@@ -85,9 +61,9 @@
 }
 
 /* 正文不再单独画第二层外框。它与侧栏之间的分隔、用户保存的栏宽仍归原布局。
- * #2548 会话页只有不带一级列表的整页(资源库、App)这样平铺;列表在旁边时正文是叠在列表上的那张卡片(见上面「叠一层」)。
+ * #2548 会话页只有不带一级列表的整页(资源库、App)这样平铺;列表在旁边时正文是叠在列表上的那张卡片,群 / 项目的内层栏归列表那一层。
  */
-:root[data-window-material][data-theme='light'] :is(
+:root[data-window-material] :is(
   [data-desktop-shell] [data-shell-chat-detail],
   [data-desktop-shell] [data-shell-contacts] > div > :nth-child(2),
   [data-desktop-shell] .gugu-skin [data-workspace-sidebar-hidden] > [data-workspace-content-surface]
@@ -101,12 +77,12 @@
 }
 
 /* 材质只透出最左图标栏;列表与外框之间不重复叠半透明色。 */
-:root[data-window-material][data-theme='light'] [data-desktop-shell][data-gugu-shell-phase] .gg-pane[data-role='nav'],
-:root[data-window-material][data-theme='light'] [data-desktop-shell] .gugu-skin [data-workspace-left-panel] > :not([data-peek]) {
+:root[data-window-material] [data-desktop-shell][data-gugu-shell-phase] .gg-pane[data-role='nav'],
+:root[data-window-material] [data-desktop-shell] .gugu-skin :is([data-workspace-left-panel] > :not([data-peek]), [data-region='inner-sidebar']) {
   background-color: transparent;
 }
 
-:root[data-window-material][data-theme='light'] [data-desktop-shell] .gugu-skin {
+:root[data-window-material] [data-desktop-shell] .gugu-skin {
   --tab-strip: var(--desktop-workspace-bg);
 }
 
@@ -114,7 +90,7 @@
  * 审阅正文、侧边聊天与其加载层也用 bg-background-secondary-1,
  * 它们必须继续跟阅读面/聊天渐隐的白底一致。
  */
-:root[data-window-material][data-theme='light'] [data-desktop-shell] :is(
+:root[data-window-material] [data-desktop-shell] :is(
   [data-app-shell-focus-area='right-panel'],
   #file-tab-tree > div,
   [data-testid='editor-file-tree']:not(.bg-background-1),

@@ -21,10 +21,9 @@ export function topicCallTotal(topics: readonly ChatItem[]): number {
   return topics.reduce((total, topic) => total + chatAttention(topic).askingYou, 0)
 }
 
-/** 话题菜单:叫到你的排最前,其余照旧是置顶、再按活跃。 */
+/** 话题菜单:同会话列表,置顶的在前、再按活跃;未读只挂角标,不挪位置。 */
 export function topicMenuGroups({ pinned, others }: { pinned: readonly SourceTopic[]; others: readonly SourceTopic[] }) {
-  const calling = (topic: SourceTopic) => chatAttention(topic).askingYou > 0
-  return [[...pinned, ...others].filter(calling), pinned.filter(topic => !calling(topic)), others.filter(topic => !calling(topic))].filter(group => group.length > 0)
+  return [pinned, others].filter(group => group.length > 0)
 }
 
 export function openPinnedTopic(topic: SourceTopic) {

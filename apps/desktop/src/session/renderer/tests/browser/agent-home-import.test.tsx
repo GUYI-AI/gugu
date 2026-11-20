@@ -6,6 +6,8 @@ import { readAgentHomeUpgradeResults, showAgentHomeUpgradeNotice } from '@render
 import { AgentHomePreparationStatus } from '@/components/settings/data-import/AgentHomePreparationStatus'
 import { AgentHomeSkippedFiles } from '@/components/settings/data-import/AgentHomeSkippedFiles'
 import { QwenConfigImport } from '@/components/settings/data-import/QwenConfigImport'
+import { AgentConfigImport } from '@/components/settings/data-import/AgentConfigImport'
+import { firstInstallImportHomes, showFirstInstallImportNotice } from '@renderer/features/settings/subscriptions/first-install-import-notice'
 import { Sheet } from '@/components/ui/Sheet'
 import type { AgentHomeScan } from '@gugu/session-core/workspace-server/agent-config'
 import { UI_EVENTS } from '@/lib/uiEvents'
@@ -74,6 +76,52 @@ it('never opens the removed configuration import dialog on an unmarked remote ho
   await harness.render(<ModalRenderer />)
   expect(await openAgentHomeImport('codex', 'remote-headless')).toBe(false)
   expect(document.querySelector('[role="dialog"]')).toBeNull()
+})
+
+it('opens the import page for an unmarked local home without copying its data', async () => {
+  calls.scanHomes.mockResolvedValue({ success: true, data: [home] })
+  const open = vi.fn()
+  window.addEventListener(UI_EVENTS.openSettings, open, { once: true })
+  expect(await openAgentHomeImport('codex', null)).toBe(false)
+  expect(open).toHaveBeenCalledWith(expect.objectContaining({ detail: { section: 'data-import', action: undefined } }))
+  expect(calls.importHome).not.toHaveBeenCalled()
+  expect(calls.diffHome).not.toHaveBeenCalled()
+})
+
+it('offers one persistent first-install prompt and only remembers an explicit action', async () => {
+  calls.scanHomes.mockResolvedValue({ success: true, data: [home] })
+  const homes = await firstInstallImportHomes.fetch()
+  expect(calls.scanHomes).toHaveBeenCalledWith({ firstInstallOnly: true })
+  showFirstInstallImportNotice([])
+  expect(calls.notice).not.toHaveBeenCalled()
+  showFirstInstallImportNotice(homes)
+  showFirstInstallImportNotice(homes)
+  expect(calls.notice).toHaveBeenCalledTimes(1)
+  const [notice] = calls.notice.mock.calls[0]!
+  expect(notice).toMatchObject({ ongoing: true, presentation: 'first-install-import' })
+  expect(localStorage.getItem(notice.key)).toBeNull()
+  expect(calls.importHome).not.toHaveBeenCalled()
+  const open = vi.fn()
+  window.addEventListener(UI_EVENTS.openSettings, open, { once: true })
+  notice.action.onClick()
+  expect(open).toHaveBeenCalledWith(expect.objectContaining({ detail: { section: 'data-import', action: undefined } }))
+  expect(localStorage.getItem(notice.key)).toBe('1')
+  expect(calls.importHome).not.toHaveBeenCalled()
+  localStorage.removeItem(notice.key)
+})
+
+it('uses the existing explicit group import for Codex without importing on mount', async () => {
+  calls.scanHomes.mockResolvedValue({ success: true, data: [{ ...home, groups: [
+    { id: 'settings', count: 1 }, { id: 'skills', count: 2 },
+  ] }] })
+  calls.importHome.mockResolvedValue({ success: true, data: { issues: [] } })
+  harness = createReactHarness()
+  await harness.render(<AgentConfigImport providerId="codex" />)
+  const row = () => harness.container.querySelector('[data-testid="codex-config-import"]')!
+  await expect.poll(() => row()?.querySelectorAll('input[type="checkbox"]').length).toBe(2)
+  expect(calls.importHome).not.toHaveBeenCalled()
+  await clickElement(row().querySelector<HTMLButtonElement>('button[type="submit"]')!)
+  await expect.poll(() => calls.importHome.mock.calls[0]?.[0]).toEqual({ providerId: 'codex', groups: ['settings', 'skills'] })
 })
 
 it('shows one notice with a link to the import page when an actual migration skipped files', () => {
