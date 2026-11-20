@@ -11,7 +11,7 @@ const other = 'persist:gugu-browser-profile-other';
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 
-async function fixture(initial: Record<string, string> = {}) {
+async function fixture(initial: Record<string, string> = {}, storageKeys: (directory: string) => string[] = () => []) {
   const root = await mkdtemp(path.join(tmpdir(), 'standalone-profile-data-'));
   roots.push(root);
   const commands: { profile: string; method: string; params?: Record<string, unknown> }[] = [];
@@ -26,7 +26,7 @@ async function fixture(initial: Record<string, string> = {}) {
         pages.set(id, url ?? 'about:blank');
         return { hostCommand: async (method: string, params?: Record<string, unknown>) => {
           commands.push({ profile, method, params });
-          if (method === 'Storage.clearDataForOrigin' && failures.has(String(params?.origin))) throw new Error('Chrome refused');
+          if (method === 'Storage.clearDataForStorageKey' && failures.has(String(params?.storageKey))) throw new Error('Chrome refused');
           return method === 'Network.getAllCookies' ? cookies() : method === 'Network.setCookie' ? { success: true } : {};
         } } as unknown as TaskPageContents;
       }),
@@ -36,7 +36,7 @@ async function fixture(initial: Record<string, string> = {}) {
     };
   });
   const pool = new StandaloneBrowserPool({ profilesRoot: root, installation: async () => ({ version: '1', executable: '/chrome' } as never), create });
-  const data = new StandaloneProfileData({ pool, profilesRoot: root, partitions: async () => [work, other] });
+  const data = new StandaloneProfileData({ pool, profilesRoot: root, partitions: async () => [work, other], storageKeys });
   const seed = async (partition: string, file = 'Cookies') => {
     const directory = pool.directoryFor(partition);
     await mkdir(directory, { recursive: true });
@@ -114,21 +114,29 @@ describe('standalone cookie import and data clearing', () => {
   });
 
   it('site data of a running profile is cleared in place: no restart, tabs untouched, cookies kept', async () => {
-    const f = await fixture({ [work]: 'Cookies' });
+    const seen: string[] = [];
+    const f = await fixture({ [work]: 'Cookies' }, directory => { seen.push(directory); return [
+      'https://sw-only.test/', 'http://127.0.0.1:8080/', 'https://open.test/', 'https://a.test/^0https://top.test',
+    ]; });
     f.cookies.mockResolvedValueOnce({ cookies: [
       { name: 'sid', value: 'v', domain: '.secure.test', secure: true },
       { name: 'plain', value: 'v', domain: 'plain.test', secure: false },
+      { name: 'dup', value: 'v', domain: 'sw-only.test', secure: true },
     ] });
     await f.pool.pageFor({ browserId: 'tab', partition: work, url: 'https://open.test/page?x=1', signal });
     await f.data.clear(work, 'siteData');
     const types = 'file_systems,indexeddb,local_storage,websql,service_workers,cache_storage';
-    const cleared = f.commands.filter(command => command.method === 'Storage.clearDataForOrigin');
+    const cleared = f.commands.filter(command => command.method === 'Storage.clearDataForStorageKey');
     expect(cleared.map(command => command.params)).toEqual([
-      { origin: 'https://open.test', storageTypes: types },
-      { origin: 'https://secure.test', storageTypes: types },
-      { origin: 'https://plain.test', storageTypes: types },
-      { origin: 'http://plain.test', storageTypes: types },
+      { storageKey: 'https://open.test/', storageTypes: types },
+      { storageKey: 'https://sw-only.test/', storageTypes: types },
+      { storageKey: 'http://127.0.0.1:8080/', storageTypes: types },
+      { storageKey: 'https://a.test/^0https://top.test', storageTypes: types },
+      { storageKey: 'https://secure.test/', storageTypes: types },
+      { storageKey: 'https://plain.test/', storageTypes: types },
+      { storageKey: 'http://plain.test/', storageTypes: types },
     ]);
+    expect(seen).toEqual([f.pool.directoryFor(work)]);
     expect(methods(f)).not.toContain('Network.clearBrowserCookies');
     expect(methods(f)).not.toContain('Storage.setCookies');
     expect(f.create).toHaveBeenCalledOnce();
@@ -137,11 +145,18 @@ describe('standalone cookie import and data clearing', () => {
     await f.pool.dispose();
   });
 
-  it('reports sites Chrome refused to clear instead of pretending the data is gone', async () => {
-    const f = await fixture({ [work]: 'Cookies' });
-    f.cookies.mockResolvedValueOnce({ cookies: [{ name: 'a', value: 'v', domain: 'a.test', secure: true }] });
+  it('when the sites Chrome stored cannot be listed, still clears what is known and then reports it', async () => {
+    const f = await fixture({ [work]: 'Cookies' }, () => { throw new Error('Chrome quota database is locked'); });
     await f.pool.pageFor({ browserId: 'tab', partition: work, url: 'https://open.test/', signal });
-    f.failures.add('https://a.test');
+    await expect(f.data.clear(work, 'siteData')).rejects.toThrow('quota database is locked');
+    expect(f.commands.filter(command => command.method === 'Storage.clearDataForStorageKey').map(command => command.params?.storageKey)).toEqual(['https://open.test/']);
+    await f.pool.dispose();
+  });
+
+  it('reports sites Chrome refused to clear instead of pretending the data is gone', async () => {
+    const f = await fixture({ [work]: 'Cookies' }, () => ['https://a.test/']);
+    await f.pool.pageFor({ browserId: 'tab', partition: work, url: 'https://open.test/', signal });
+    f.failures.add('https://a.test/');
     await expect(f.data.clear(work, 'siteData')).rejects.toThrow('1 site');
     await f.pool.dispose();
   });
