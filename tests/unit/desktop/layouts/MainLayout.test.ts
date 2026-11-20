@@ -258,10 +258,11 @@ vi.mock('../../../../apps/desktop/src/components/ContactsPanel', async () => {
 vi.mock('../../../../apps/desktop/src/mobile/partners/PhonePartnersPage', async () => {
   const React = await vi.importActual<typeof import('react')>('react')
   return {
-    PhonePartnersPage: ({ active, onPushedChange }: { active: boolean; onPushedChange: (pushed: boolean) => void }) => (
+    PhonePartnersPage: ({ active, onPushedChange, onOpenGroupChat }: { active: boolean; onPushedChange: (pushed: boolean) => void; onOpenGroupChat?: (group: { id: string; kind: 'group'; name: string; avatar_url: null }) => void }) => (
       React.createElement('div', { 'data-testid': 'mock-phone-partners', 'data-active': String(active) },
         React.createElement('button', { type: 'button', 'data-testid': 'mock-phone-partners-push', onClick: () => onPushedChange(true) }, 'push'),
-        React.createElement('button', { type: 'button', 'data-testid': 'mock-phone-partners-pop', onClick: () => onPushedChange(false) }, 'pop'))
+        React.createElement('button', { type: 'button', 'data-testid': 'mock-phone-partners-pop', onClick: () => onPushedChange(false) }, 'pop'),
+        React.createElement('button', { type: 'button', 'data-testid': 'mock-phone-partners-group', onClick: () => onOpenGroupChat?.({ id: 'group-chat', kind: 'group', name: 'Group', avatar_url: null }) }, 'group'))
     )
   }
 })
@@ -634,7 +635,7 @@ describe('MainLayout', () => {
     expect(chatStoreMock.activeChatId).toBe('original-chat')
     expect(harness.container.querySelector('[data-testid="mock-chat-area"]')?.getAttribute('data-hidden')).toBe('false')
   })
-  it.each(['messages', 'contacts', 'project', 'notification'] as const)('adds one session layer from %s and returns to the retained source', async source => {
+  it.each(['messages', 'contacts', 'pushed', 'notification'] as const)('adds one session layer from %s and returns to the retained source', async source => {
     platformMock.kind = 'capacitor'
     platformMock.capabilities.sessionHost = false
     taskRoute.remote = true
@@ -734,15 +735,15 @@ describe('MainLayout', () => {
       expect(chatPageShown()).toBe(false)
       expect(tabBarShown()).toBe(true)
     })
-    it('returns to Partners when a project group opened there goes away', async () => {
+    it('returns to Partners when a group opened there goes away', async () => {
       platformMock.kind = 'capacitor'
       platformMock.capabilities.sessionHost = false
-      chatStoreMock.chats = [{ id: 'project-chat' }]
+      chatStoreMock.chats = [{ id: 'group-chat' }]
       chatStoreMock.setActiveChatId.mockImplementation(id => { chatStoreMock.activeChatId = id; for (const listener of [...chatListListeners]) listener() })
       await harness.render(createNode(MainLayout, { user }))
       await clickElement(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.mobileContactsNav}"]`) as HTMLElement)
       await clickElement(harness.container.querySelector('[data-testid="mock-phone-partners-group"]') as HTMLElement)
-      expect(chatPageShown(), 'positive control: the project group is open').toBe(true)
+      expect(chatPageShown(), 'positive control: the group is open').toBe(true)
       await publishChats({ chats: [], activeChatId: null })
       expect(chatPageShown()).toBe(false)
       expect(pageActive('contacts')).toBe(true)
