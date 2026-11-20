@@ -1,3 +1,4 @@
+import { isIpLikeLabel } from '../shared/ipLikeLabel'
 import { withAbortSignal, type AbortablePromiseLike } from './boundedOperation'
 
 export interface DeviceRegistrationInput {
@@ -31,11 +32,20 @@ export class DeviceRegistrationError extends Error {
 /**
  * The registration RPC refuses a blank label, but a blank one is a normal input: a server installed over SSH
  * without a name, or a machine whose only name looks like an IP, reports ''. The old table write let the
- * default-label trigger name such rows; the RPC never reaches it. Fall back to the hostname, then the platform,
- * so the machine still registers. An existing row keeps its label (the preserve trigger ignores heartbeat labels).
+ * default-label trigger name such rows; the RPC never reaches it. Fall back to the hostname (unless it looks like an
+ * IP), then the platform name, so the machine still registers. An existing row keeps its label (the preserve
+ * trigger ignores heartbeat labels). Remove once the RPC hands a blank label back to the default-label trigger.
  */
 function registrationLabel(input: DeviceRegistrationInput): string {
-  return input.label.trim() || input.hostname.trim() || input.platform.trim() || 'device'
+  const label = input.label.trim()
+  if (label) return label
+  const host = input.hostname.trim()
+  if (host && !isIpLikeLabel(host)) return host
+  return PLATFORM_LABELS[input.platform.trim().toLowerCase()] ?? input.platform
+}
+
+const PLATFORM_LABELS: Record<string, string> = {
+  darwin: 'Mac', mac: 'Mac', linux: 'Linux', win32: 'Windows', windows: 'Windows', android: 'Android', ios: 'iPhone',
 }
 
 /** The server derives ownership from auth.uid(); never forward a device row wholesale. */

@@ -41,7 +41,8 @@ describe('atomic device registration client', () => {
 
   it.each([
     [{ label: '' }, 'computer'], [{ label: '  ' }, 'computer'],
-    [{ label: '', hostname: ' ' }, 'linux'],
+    [{ label: '', hostname: ' ' }, 'Linux'], [{ label: '', hostname: '10.0.0.5' }, 'Linux'],
+    [{ label: '', hostname: '192.168.10.98', platform: 'darwin' }, 'Mac'],
   ])('never sends the blank label the registration RPC refuses: %j', async (override, expected) => {
     const rpc = vi.fn(async () => ({ data: { device_id: device.device_id, created: true }, error: null }))
     await registerGuguDevice({ rpc }, { ...device, ...override })
