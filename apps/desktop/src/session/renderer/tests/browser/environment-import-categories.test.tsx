@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
 import { i18n } from '@/i18n'
 import { createReactHarness, clickElement } from '../../../../../../../tests/support/testHarness'
 import { LocalImportSources } from '@/components/settings/data-import/ImportSourceRows'
@@ -38,6 +40,9 @@ vi.mock('@/components/settings/data-import/import-sync-preferences', () => ({
 }))
 vi.mock('@/components/settings/data-import/import-sync', () => ({ syncImports: vi.fn() }))
 
+/** Source rows draw agent icons, which read through react-query. */
+const withQueries = (node: ReactNode) => <QueryClientProvider client={new QueryClient()}>{node}</QueryClientProvider>
+
 const providers: ImportProvider[] = ENVIRONMENT_IMPORT_CATEGORIES.map((category, index) => ({
   id: category === 'tasks' ? 'codex' : `codex:${category}`, label: 'ChatGPT', sourceLabel: 'ChatGPT', sourceId: 'codex',
   category, iconId: 'codex', scan: async () => ({ count: index + 1, pending: false }),
@@ -60,7 +65,7 @@ afterEach(async () => {
 })
 
 it('renders all five real category rows and queues only the selected category or all five', async () => {
-  await harness.render(<LocalImportSources providers={providers} ownerId="fixture" jobs={[]} />)
+  await harness.render(withQueries(<LocalImportSources providers={providers} ownerId="fixture" jobs={[]} />))
   const rows = [...harness.container.querySelectorAll('.gg-import-row')]
   expect(rows.map(row => row.querySelector('.gg-import-row-label')?.textContent)).toEqual([
     '全部（15）', '任务 (1)', '空间 (2)', '记忆 (3)', '技能 (4)', '连接器 (5)',
@@ -78,7 +83,7 @@ it('renders all five real category rows and queues only the selected category or
 
 it('a failed category never becomes a complete total or blocks another category from importing', async () => {
   state.counts['codex:skills'] = 'error'
-  await harness.render(<LocalImportSources providers={providers} ownerId="fixture" jobs={[]} />)
+  await harness.render(withQueries(<LocalImportSources providers={providers} ownerId="fixture" jobs={[]} />))
   const rows = [...harness.container.querySelectorAll('.gg-import-row')]
   expect(rows[0]!.querySelector('button')!.disabled).toBe(true)
   expect(rows[0]!.textContent).not.toContain('11')
@@ -89,7 +94,7 @@ it('a failed category never becomes a complete total or blocks another category 
 })
 
 it('persists selected sync categories and reads the saved range after remount', async () => {
-  await harness.render(<ImportSyncSettings ownerId="fixture" />)
+  await harness.render(withQueries(<ImportSyncSettings ownerId="fixture" />))
   await clickElement([...harness.container.querySelectorAll('button')].find(button => button.textContent === '自定义')!)
   const labels = () => [...document.querySelectorAll('label.gg-import-checkbox')]
   await expect.poll(() => labels().length).toBe(6)
@@ -98,7 +103,7 @@ it('persists selected sync categories and reads the saved range after remount', 
   await expect.poll(() => state.owners.fixture.categories).toEqual(['tasks', 'skills'])
   expect(state.cancelAutomatic).toHaveBeenCalledWith('fixture', ['tasks', 'skills'])
   harness.cleanup(); harness = createReactHarness()
-  await harness.render(<ImportSyncSettings ownerId="fixture" />)
+  await harness.render(withQueries(<ImportSyncSettings ownerId="fixture" />))
   expect(harness.container.textContent).toContain('已选择 2 个类别')
 })
 
@@ -106,7 +111,7 @@ it('renders the actual preparing-history status while a task import is running',
   const job: ImportJob = { id: 'running', ownerId: 'fixture', provider: providers[0]!,
     devices: [{ deviceId: null, deviceName: 'This computer', count: 1 }], state: 'running', done: 0, total: 1,
     preparation: { phase: 'history', startedAt: Date.now() - 42_000 } };
-  await harness.render(<LocalImportSources providers={providers} ownerId="fixture" jobs={[job]} />);
+  await harness.render(withQueries(<LocalImportSources providers={providers} ownerId="fixture" jobs={[job]} />));
   expect(harness.container.textContent).toContain('正在整理历史');
   expect(harness.container.textContent).toContain('已用 42 秒');
   expect(harness.container.textContent).not.toContain('%');
@@ -117,7 +122,7 @@ it('keeps legacy export-file histories distinct from resumable native tasks', as
   const history = { ...providers[0]!, id: 'chatgpt-json', sourceId: undefined, sourceLabel: undefined,
     label: 'ChatGPT 导出文件', historyOnly: true };
   state.counts[history.id] = 2;
-  await harness.render(<LocalImportSources providers={[history]} ownerId="fixture" jobs={[]} />);
+  await harness.render(withQueries(<LocalImportSources providers={[history]} ownerId="fixture" jobs={[]} />));
   await clickElement(harness.container.querySelector('.gg-import-card-trigger')!);
   expect(harness.container.textContent).toContain('只读历史记录');
   expect(harness.container.querySelectorAll('.gg-import-row')).toHaveLength(2);
