@@ -34,7 +34,7 @@ type Host = {
   showSession(id: string): Promise<unknown>
   dispatch(text: string, options?: Record<string, unknown>): Promise<unknown>
   clipboard: { writeText(text: string): Promise<unknown> }
-  appFiles: Record<'openWith' | 'upload' | 'download' | 'forward' | 'sendSelection' | 'annotateSelection', (args: unknown) => Promise<unknown>>
+  appFiles: Record<'openWith' | 'pick' | 'upload' | 'download' | 'forward' | 'sendSelection' | 'annotateSelection', (args: unknown) => Promise<unknown>>
   cloud: Record<'write', (...args: unknown[]) => Promise<unknown>>
   pickAgent(ask: Record<string, unknown>): Promise<unknown>
   assistant: Record<'open' | 'advanceSetup' | 'rename' | 'connect', (name: string, value: string) => Promise<unknown>>
@@ -48,6 +48,8 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   taskMessage: () => host.taskMessage({ intent: 'pause' }),
   filesOpenWith: () => host.appFiles.openWith({ ref: { chat: 'chat-1', name: 'a.md' } }),
   filesUpload: () => host.appFiles.upload({}),
+  // 61: the host's sheet of a chat's files.
+  filesPick: () => host.appFiles.pick({ place: { chat: 'chat-1' } }),
   filesDownload: () => host.appFiles.download({ ref: { chat: 'chat-1', name: 'a.md' } }),
   filesForward: () => host.appFiles.forward({ refs: [{ chat: 'chat-1', name: 'a.md' }] }),
   // 54: the host's Send box beside a selection.
