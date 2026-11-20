@@ -53,7 +53,7 @@ export async function openCommitEntity(directory: string, inputReceipt: WindowCo
   const position = Object.freeze({ sourceId: receipt.sourceId, rowId: receipt.rowId, turnId: parent.turnId,
     entity: parent.entity, range: Object.freeze({ ...selected.range }), buildId });
   positions.set(position, { directory, receipt, index: { buildId, kind: 'object', range: { ...selected.range } } });
-  return { kind: 'position' as const, position };
+  return { kind: 'position' as const, position, members: result.page.members.length, next: result.next };
 }
 export function commitEntityIndex(position: CommitEntityPosition): CommitContainerIndex {
   const c = positions.get(position); if (!c) throw new Error('Unknown canonical entity position');
