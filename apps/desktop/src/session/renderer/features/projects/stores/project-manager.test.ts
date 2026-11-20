@@ -744,6 +744,26 @@ describe('remote project classification on reconnect', () => {
     }
   });
 
+  it('does not re-point a task at a project this desktop has no entry for (the other machine\'s hidden task workspace is in no account copy)', async () => {
+    const { machineRegistry } = await import('@renderer/lib/machine-routing');
+    const deviceId = 'other-config-device';
+    const home = '00000000-0000-4000-8000-000000000001';
+    const ordinary = localProject({ id: 'other-config-project' });
+    const store = new ProjectManagerStore();
+    const saved = appState.navigation.viewParamsStore;
+    appState.navigation.viewParamsStore = { session: { projectId: home, sessionId: 'local-task' } };
+    try {
+      // that machine's session list names the same task under its hidden task workspace, which its project list does not carry
+      store.syncMachineProjects(deviceId, [ordinary], [{ conversationId: 'local-task', projectId: `${home}~${deviceId}` }]);
+      expect(appState.navigation.updateViewParams).not.toHaveBeenCalled();
+    } finally {
+      appState.navigation.viewParamsStore = saved;
+      vi.mocked(appState.navigation.updateViewParams).mockReset();
+      store.dispose();
+      machineRegistry.forgetMachine(deviceId);
+    }
+  });
+
   it('aligns a moved task after registering its new project and before removing the old one or checking the route', async () => {
     const { machineRegistry } = await import('@renderer/lib/machine-routing');
     const deviceId = 'migrated-assistant-device';
